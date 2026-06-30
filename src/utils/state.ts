@@ -81,7 +81,7 @@ export async function updateState(
     throw new Error(`State file not found: ${statePath}`);
   }
 
-  const current: StateFile = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+  const current: StateFile = safeJsonParse<StateFile>(statePath);
   const updated: StateFile = {
     ...current,
     ...patch,
@@ -96,6 +96,14 @@ export async function updateState(
   return updated;
 }
 
+function safeJsonParse<T>(filePath: string): T {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch (err: any) {
+    throw new Error(`Failed to parse ${filePath}: ${err.message}`);
+  }
+}
+
 /**
  * 加载状态文件
  */
@@ -104,7 +112,7 @@ export async function loadState(goalId: string, projectDir: string = '.'): Promi
   if (!fs.existsSync(statePath)) {
     throw new Error(`State file not found: ${statePath}`);
   }
-  return JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+  return safeJsonParse<StateFile>(statePath);
 }
 
 /**
@@ -115,7 +123,7 @@ export async function loadRequest(goalId: string, projectDir: string = '.'): Pro
   if (!fs.existsSync(reqPath)) {
     throw new Error(`Request file not found: ${reqPath}`);
   }
-  return JSON.parse(fs.readFileSync(reqPath, 'utf-8'));
+  return safeJsonParse<GoalRequest>(reqPath);
 }
 
 /**
@@ -137,7 +145,7 @@ export async function loadWaves(goalId: string, projectDir: string = '.'): Promi
   if (!fs.existsSync(wavesPath)) {
     return [];
   }
-  const data = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+  const data = safeJsonParse<any>(wavesPath);
   return data.waves || [];
 }
 
@@ -150,7 +158,7 @@ export async function loadReceipts(goalId: string, projectDir: string = '.'): Pr
     return [];
   }
   const files = fs.readdirSync(receiptsDir).filter(f => f.endsWith('.json'));
-  return files.map(f => JSON.parse(fs.readFileSync(path.join(receiptsDir, f), 'utf-8')));
+  return files.map(f => safeJsonParse<any>(path.join(receiptsDir, f)));
 }
 
 /**
