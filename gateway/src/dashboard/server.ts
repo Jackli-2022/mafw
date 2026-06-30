@@ -7,7 +7,7 @@ import * as http from 'http';
 export class DashboardServer {
   private port: number;
 
-  constructor(port: number = 3000) {
+  constructor(port: number = 3001) {
     this.port = port;
   }
 
