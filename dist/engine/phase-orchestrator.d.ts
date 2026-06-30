@@ -17,6 +17,7 @@ export interface PhaseTransition {
     totalWaves?: number;
     artifacts?: Record<string, string>;
     metrics?: Record<string, number>;
+    error?: string;
 }
 /**
  * 验证并执行 Phase 转换

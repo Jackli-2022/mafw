@@ -114,15 +114,28 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
   await writeReceipts(goalId, projectDir, receipts);
   console.log(`[mafw-execute] Written ${receipts.length} receipts`);
 
-  // 8. 【显式状态更新】通知 Scheduler 进入 REVIEWING
-  await transitionPhase(goalId, {
-    from: 'EXECUTING',
-    to: 'EXECUTING_COMPLETE',
-    nextAction: 'CREATE_REVIEW_SESSION',
-    artifacts: { execute: `receipts/${goalId}/` }
-  }, projectDir);
+  // 8. 检查 Wave 合并结果
+  const hasPartialMerge = receipts.some((r: any) => r.merge && r.merge.status !== 'merged');
 
-  console.log(`[mafw-execute] Execute complete. State updated → CREATE_REVIEW_SESSION`);
+  // 9. 【显式状态更新】通知 Scheduler 进入 REVIEWING 或 FAILED
+  if (hasPartialMerge) {
+    await transitionPhase(goalId, {
+      from: 'EXECUTING',
+      to: 'EXECUTING_COMPLETE',
+      nextAction: 'FAILED',
+      error: 'wave_merge_partial',
+      artifacts: { execute: `receipts/${goalId}/` }
+    }, projectDir);
+    console.log(`[mafw-execute] Execute complete with partial merge. State updated → FAILED`);
+  } else {
+    await transitionPhase(goalId, {
+      from: 'EXECUTING',
+      to: 'EXECUTING_COMPLETE',
+      nextAction: 'CREATE_REVIEW_SESSION',
+      artifacts: { execute: `receipts/${goalId}/` }
+    }, projectDir);
+    console.log(`[mafw-execute] Execute complete. State updated → CREATE_REVIEW_SESSION`);
+  }
 }
 
 // ── Wave 执行 ──

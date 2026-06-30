@@ -89,6 +89,9 @@ async function transitionPhase(goalId, transition, projectDir = '.') {
     if (transition.metrics) {
         patch.metrics = transition.metrics;
     }
+    if (transition.error !== undefined) {
+        patch.error = transition.error;
+    }
     return (0, state_1.updateState)(goalId, patch, projectDir);
 }
 /**

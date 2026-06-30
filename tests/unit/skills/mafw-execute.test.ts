@@ -101,6 +101,22 @@ test('mafwExecuteEntry executes wave, merges task branches and transitions to re
   expect(log.latest?.message).toContain('Merge task t1');
 });
 
+test('mafwExecuteEntry transitions to FAILED when wave merge is partial', async () => {
+  const mockLlm = {
+    chat: jest.fn().mockResolvedValue({ content: 'console.log("ok");' })
+  };
+
+  jest.spyOn(require('../../../src/engine/task-branch-manager').TaskBranchManager.prototype, 'mergeTaskBranch')
+    .mockRejectedValueOnce(new Error('merge conflict'));
+
+  await mafwExecuteEntry({ message: '/skill mafw-execute 001-auth', llm: mockLlm, config: { model: 'test' }, sessionId: 's1' });
+
+  const state = JSON.parse(fs.readFileSync(path.join(repoDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
+  expect(state.phase).toBe('EXECUTING_COMPLETE');
+  expect(state.nextAction).toBe('FAILED');
+  expect(state.error).toBe('wave_merge_partial');
+});
+
 test('mergeWaveToGoal merges completed task branches and reports partial status', async () => {
   const mgr = new TaskBranchManager();
   const mergeSpy = jest.spyOn(mgr, 'mergeTaskBranch')

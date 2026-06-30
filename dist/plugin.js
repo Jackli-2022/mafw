@@ -340,42 +340,8 @@ async function registerWithGateway(directory, mafwDir, retries = 3) {
 `);
 }
 async function sessionEndingFallback(sessionId, mafwDir) {
-    const stateDir = path.join(mafwDir, 'state');
-    if (!fs.existsSync(stateDir))
-        return;
-    const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
-    let targetGoalId = null;
-    let targetPhase = null;
-    for (const file of files) {
-        try {
-            const state = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf-8'));
-            for (const [phase, session] of Object.entries(state.sessions || {})) {
-                const sess = session;
-                if (sess.id === sessionId && sess.active) {
-                    targetGoalId = state.goalId;
-                    targetPhase = phase;
-                    break;
-                }
-            }
-            if (targetGoalId)
-                break;
-        }
-        catch { }
-    }
-    if (!targetGoalId)
-        return;
-    const statePath = path.join(stateDir, `${targetGoalId}.json`);
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-    if (state.nextAction === 'WAIT_PHASE_COMPLETE') {
-        console.warn(`[MAFW] Session ${sessionId} (${targetPhase}) ended without state update for ${targetGoalId}`);
-        const updated = {
-            ...state,
-            nextAction: `CREATE_${targetPhase.toUpperCase()}_SESSION`,
-            error: 'session_ended_without_state_update',
-            updatedAt: new Date().toISOString()
-        };
-        fs.writeFileSync(statePath, JSON.stringify(updated, null, 2));
-    }
+    const projectDir = path.dirname(path.dirname(mafwDir));
+    await (0, session_ending_1.sessionEndingHook)({ sessionId, projectDir });
 }
 async function findPendingGoal(directory) {
     const stateDir = path.join(directory, '.opencode', 'mafw', 'state');

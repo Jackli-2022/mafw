@@ -21,6 +21,7 @@ export interface PhaseTransition {
   totalWaves?: number;
   artifacts?: Record<string, string>;
   metrics?: Record<string, number>;
+  error?: string;
 }
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -79,6 +80,10 @@ export async function transitionPhase(
 
   if (transition.metrics) {
     patch.metrics = transition.metrics;
+  }
+
+  if (transition.error !== undefined) {
+    patch.error = transition.error;
   }
 
   return updateState(goalId, patch, projectDir);
