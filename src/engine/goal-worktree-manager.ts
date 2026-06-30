@@ -44,11 +44,8 @@ export class GoalWorktreeManager {
       const branches = await this.git.branchLocal();
       if (!branches.all.includes(branch)) {
         await this.git.checkoutLocalBranch(branch);
-        console.log(`[GoalWorktree] Created branch ${branch}`);
-      } else {
-        await this.git.checkout(branch);
-        console.log(`[GoalWorktree] Checked out existing branch ${branch}`);
       }
+      await this.git.checkout(branch);
       return { worktreeDir: projectDir, branch, isIsolated: false };
     }
 

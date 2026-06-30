@@ -16,6 +16,8 @@ import simpleGit from 'simple-git';
  */
 
 export class TaskBranchManager {
+  private baseBranches = new Map<string, string>();
+
   /**
    * 创建 Task 分支
    */
@@ -30,12 +32,11 @@ export class TaskBranchManager {
     const branches = await git.branchLocal();
     if (!branches.all.includes(branch)) {
       await git.checkoutLocalBranch(branch);
-      console.log(`[TaskBranch] Created branch ${branch} from ${baseBranch}`);
     } else {
       await git.checkout(branch);
-      console.log(`[TaskBranch] Checked out existing branch ${branch}`);
     }
 
+    this.baseBranches.set(`${worktreeDir}::${taskId}`, baseBranch);
     return branch;
   }
 
@@ -45,7 +46,7 @@ export class TaskBranchManager {
   async mergeTaskBranch(worktreeDir: string, taskId: string): Promise<void> {
     const git = simpleGit(worktreeDir);
     const branch = `change/${taskId}`;
-    const goalBranch = await this.getCurrentBranch(worktreeDir);
+    const goalBranch = this.baseBranches.get(`${worktreeDir}::${taskId}`) || await this.getCurrentBranch(worktreeDir);
 
     // 切换回 Goal 分支
     await git.checkout(goalBranch);
