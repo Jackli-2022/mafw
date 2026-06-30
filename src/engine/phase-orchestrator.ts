@@ -54,8 +54,7 @@ export async function transitionPhase(
   // 验证转换合法性
   const validNext = VALID_TRANSITIONS[state.phase || ''] || [];
   if (!validNext.includes(transition.to)) {
-    console.warn(`[PhaseOrchestrator] Invalid transition: ${state.phase} → ${transition.to}`);
-    // 仍然允许转换（降级策略），但记录警告
+    throw new Error(`Invalid phase transition: ${state.phase} → ${transition.to}`);
   }
 
   // 计算 nextAction
