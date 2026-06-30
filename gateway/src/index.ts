@@ -557,6 +557,14 @@ class MafwScheduler {
 
   // ── 7. Archive ──
 
+  private async loadArchiveModule(): Promise<{ archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> }> {
+    const pluginRoot = path.resolve(__dirname, '..', '..');
+    const builtPath = path.join(pluginRoot, 'dist', 'tools', 'archive-worktree');
+    const srcPath = path.join(pluginRoot, 'src', 'tools', 'archive-worktree');
+    const modulePath = fs.existsSync(`${builtPath}.js`) ? builtPath : srcPath;
+    return await import(modulePath) as { archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> };
+  }
+
   private async archiveGoal(goalId: string) {
     console.log(`[Scheduler] Archiving goal ${goalId}`);
     await this.destroyAllSessions(goalId);
@@ -570,13 +578,20 @@ class MafwScheduler {
     }
 
     if (projectDir) {
-      const pluginRoot = path.resolve(__dirname, '..', '..');
-      const builtPath = path.join(pluginRoot, 'dist', 'tools', 'archive-worktree');
-      const srcPath = path.join(pluginRoot, 'src', 'tools', 'archive-worktree');
-      const modulePath = fs.existsSync(`${builtPath}.js`) ? builtPath : srcPath;
-      const { archiveWorktree } = await import(modulePath) as { archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> };
-      const state = this.activeGoals.get(goalId);
-      await archiveWorktree({ goalId, projectDir, loopCount: state?.loop || 1 });
+      try {
+        const { archiveWorktree } = await this.loadArchiveModule();
+        const state = this.activeGoals.get(goalId);
+        await archiveWorktree({ goalId, projectDir, loopCount: state?.loop || 1 });
+      } catch (err: any) {
+        console.error(`[Scheduler] Archive failed for ${goalId}: ${err.message}`);
+        await this.destroyAllSessions(goalId);
+        await this.patchState(goalId, {
+          nextAction: 'FAILED',
+          phase: 'ARCHIVED',
+          error: 'archive_failed'
+        });
+        return;
+      }
     }
 
     await this.patchState(goalId, {
