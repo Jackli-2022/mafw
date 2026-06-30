@@ -189,25 +189,33 @@ function showConfig() {
 
 function registerService() {
   const platform = process.platform;
-  console.log(`[Gateway] Registering service on ${platform}...`);
-
+  ensureDirs();
   if (platform === 'win32') {
-    try {
-      const ps = require('powershell');
-      console.log('[Gateway] Windows: Please run as Administrator:');
-      console.log(`  schtasks /create /tn "MAFW-Gateway" /tr "node ${GATEWAY_SCRIPT}" /sc onstart /ru SYSTEM`);
-    } catch {
-      console.log('[Gateway] Windows service registration requires manual setup');
+    const script = path.join(__dirname, '..', 'install-mafw.ps1');
+    if (fs.existsSync(script)) {
+      execSync(`powershell -ExecutionPolicy Bypass -File "${script}"`, { stdio: 'inherit' });
+    } else {
+      console.error('[Gateway] install-mafw.ps1 not found');
     }
   } else if (platform === 'darwin') {
-    console.log('[Gateway] macOS: LaunchAgent registration not yet implemented');
+    console.log('[Gateway] macOS LaunchAgent registration not yet implemented');
   } else {
-    console.log('[Gateway] Linux: systemd user service registration not yet implemented');
+    console.log('[Gateway] Linux systemd user service registration not yet implemented');
   }
 }
 
 function unregisterService() {
-  console.log('[Gateway] Service unregistration not yet implemented');
+  const platform = process.platform;
+  if (platform === 'win32') {
+    const script = path.join(__dirname, '..', 'uninstall-mafw.ps1');
+    if (fs.existsSync(script)) {
+      execSync(`powershell -ExecutionPolicy Bypass -File "${script}"`, { stdio: 'inherit' });
+    } else {
+      console.error('[Gateway] uninstall-mafw.ps1 not found');
+    }
+  } else {
+    console.log('[Gateway] Service unregistration not yet implemented');
+  }
 }
 
 main();
