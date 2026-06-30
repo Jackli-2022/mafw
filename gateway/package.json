@@ -1,0 +1,19 @@
+{
+  "name": "mafw-gateway",
+  "version": "4.1.0",
+  "description": "MAFW Loop Agent v4.1 — Gateway (Phase Relay Scheduler + Automation Engine)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "ts-node": "^10.9.0"
+  }
+}

@@ -1,0 +1,9 @@
+# AGENTS.md.runtime — 运行时副本（含固化约束）
+
+> 此文件由 Delta Validator 在 Archive 阶段自动维护。
+> 不要手动编辑。
+
+## 固化约束清单
+
+> 当前无固化约束。运行一个 Goal 后，verified Δ 将被合并到此文件。
+

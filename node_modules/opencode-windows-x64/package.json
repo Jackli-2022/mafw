@@ -1,0 +1,11 @@
+{
+  "name": "opencode-windows-x64",
+  "version": "1.17.9",
+  "preferUnplugged": true,
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

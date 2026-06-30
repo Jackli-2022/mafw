@@ -1,0 +1,177 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.mafwPlanEntry = mafwPlanEntry;
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+const state_1 = require("../../utils/state");
+const phase_orchestrator_1 = require("../../engine/phase-orchestrator");
+const memory_index_1 = require("../../compression/memory-index");
+const store_1 = require("../../memory/store");
+const injector_1 = require("../../memory/injector");
+async function mafwPlanEntry(context) {
+    const goalId = (0, state_1.extractGoalId)(context.message);
+    const projectDir = process.cwd();
+    console.log(`[mafw-plan] Starting Plan for Goal: ${goalId}`);
+    // 1. 读取状态
+    const state = await (0, state_1.loadState)(goalId, projectDir);
+    // 2. 记录 Session（用于 hook 兜底反查）
+    await (0, phase_orchestrator_1.recordSession)(goalId, 'plan', context.sessionId, projectDir);
+    // 3. 读取 L1: Goal Charter
+    const goal = await (0, state_1.loadGoal)(goalId, projectDir);
+    console.log(`[mafw-plan] Loaded Goal Charter (${goal.length} chars)`);
+    // 4. 读取 L2: 相关 Lessons
+    const index = new memory_index_1.MemoryIndexManager(path.join(projectDir, '.opencode/mafw/memory-index.json'));
+    const keywords = extractKeywords(goal);
+    const domain = extractDomain(goal);
+    const relevantLessons = index.search(keywords, domain, 3);
+    console.log(`[mafw-plan] L2: ${relevantLessons.length} lessons loaded`);
+    // 5. 读取 L3: Parametric Deltas
+    const store = new store_1.ParametricStore({
+        baseDir: path.join(projectDir, '.opencode/mafw/parametric'),
+        bannedDir: path.join(projectDir, '.opencode/mafw/parametric/banned'),
+        manifestFile: path.join(projectDir, '.opencode/mafw/parametric/base-skill-manifest.yaml')
+    });
+    const matchedDeltas = store.match({
+        domain,
+        goalKeywords: keywords,
+        loopStage: 'planning',
+        loopCount: state.loop
+    });
+    const injector = new injector_1.DeltaInjector();
+    const injection = injector.inject(matchedDeltas);
+    console.log(`[mafw-plan] L3: ${injection.injected.length} deltas injected (${injection.totalTokens} tokens)`);
+    // 6. 拼接 Prompt
+    const prompt = buildPlanPrompt({ goal, lessons: relevantLessons, deltas: injection.injected, handoff: null, loopNum: state.loop });
+    // 7. 调用 LLM
+    console.log(`[mafw-plan] Calling LLM...`);
+    const response = await context.llm.chat({
+        model: context.config.model,
+        messages: [{ role: 'user', content: prompt }]
+    });
+    // 8. 解析并写入产出
+    const plan = parsePlanResponse(response.content);
+    // 写入 waves.json
+    const wavesPath = path.join(projectDir, '.opencode/mafw/waves.json');
+    fs.writeFileSync(wavesPath, JSON.stringify({ waves: plan.waves }, null, 2), 'utf-8');
+    console.log(`[mafw-plan] Written waves.json (${plan.waves.length} waves)`);
+    // 写入 tasks/
+    const tasksDir = path.join(projectDir, '.opencode/mafw/tasks');
+    if (!fs.existsSync(tasksDir))
+        fs.mkdirSync(tasksDir, { recursive: true });
+    for (const task of plan.tasks) {
+        const taskPath = path.join(tasksDir, `${task.id}.md`);
+        fs.writeFileSync(taskPath, formatTaskMarkdown(task), 'utf-8');
+    }
+    console.log(`[mafw-plan] Written ${plan.tasks.length} tasks`);
+    // 9. 【显式状态更新】通知 Scheduler 进入 EXECUTING
+    // 这是主路径，必须成功；如果失败会抛异常，Scheduler 心跳监控会重建
+    await (0, phase_orchestrator_1.transitionPhase)(goalId, {
+        from: 'PLANNING',
+        to: 'PLANNING_COMPLETE',
+        nextAction: 'CREATE_EXECUTE_SESSION',
+        artifacts: { plan: 'waves.json' }
+    }, projectDir);
+    console.log(`[mafw-plan] Plan complete. State updated → CREATE_EXECUTE_SESSION`);
+    // 10. 函数返回 → OpenCode 关闭 Session
+    // hook 'session-ending' 会做兜底检查，但正常情况下 state 已更新
+}
+// ── 辅助函数 ──
+function buildPlanPrompt(options) {
+    const { goal, lessons, deltas, handoff, loopNum } = options;
+    let prompt = `# Plan Agent — Loop ${loopNum}\n\n`;
+    prompt += `## Goal Charter\n\n${goal}\n\n`;
+    if (handoff) {
+        prompt += `## Handoff from Loop ${loopNum - 1}\n\n${handoff.summary}\n\n`;
+    }
+    if (lessons.length > 0) {
+        prompt += `## Lessons Learned (L2)\n\n`;
+        for (const lesson of lessons) {
+            prompt += `- ${lesson}\n`;
+        }
+        prompt += '\n';
+    }
+    if (deltas.length > 0) {
+        prompt += `## Parametric Constraints (L3)\n\n`;
+        for (const delta of deltas) {
+            if (delta.type === 'constraint') {
+                prompt += `- ${delta.type}: ${delta.rule}\n`;
+            }
+            else if (delta.type === 'prompt') {
+                prompt += `- ${delta.type}: ${delta.prompt_delta}\n`;
+            }
+            else if (delta.type === 'pattern') {
+                prompt += `- ${delta.type}: ${delta.pattern_template}\n`;
+            }
+        }
+        prompt += '\n';
+    }
+    prompt += `## Instructions\n\n`;
+    prompt += `Generate a detailed execution plan with waves and tasks.\n`;
+    prompt += `Output format: JSON with "waves" and "tasks" arrays.\n`;
+    prompt += `Each task must have: id, description, affected_files, acceptance_criteria.\n`;
+    return prompt;
+}
+function parsePlanResponse(content) {
+    try {
+        // 尝试直接解析 JSON
+        return JSON.parse(content);
+    }
+    catch {
+        // 尝试从 markdown 代码块中提取
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[1].trim());
+        }
+        // fallback: 返回空结构
+        console.warn('[mafw-plan] Failed to parse LLM response, using fallback');
+        return { waves: [], tasks: [] };
+    }
+}
+function formatTaskMarkdown(task) {
+    return `# Task: ${task.id}\n\n${task.description}\n\n## Affected Files\n\n${(task.affected_files || []).map((f) => `- ${f}`).join('\n')}\n\n## Acceptance Criteria\n\n${(task.acceptance_criteria || []).map((c) => `- [ ] ${c}`).join('\n')}\n`;
+}
+function extractKeywords(charter) {
+    const words = charter.toLowerCase()
+        .replace(/[^\u4e00-\u9fff\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3 && !['the', 'and', 'for', 'with', 'this', 'that'].includes(w));
+    return Array.from(new Set(words)).slice(0, 10);
+}
+function extractDomain(charter) {
+    const domains = ['auth', 'api', 'viz', 'db', 'ui', 'test', 'ci', 'deploy'];
+    return domains.find(d => charter.toLowerCase().includes(d));
+}
+//# sourceMappingURL=entry.js.map
