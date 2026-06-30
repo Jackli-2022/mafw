@@ -91,6 +91,6 @@ export async function sessionEndingHook(hookContext: HookContext): Promise<void>
       console.log(`[hook:session-ending] State already updated for ${targetGoalId}: ${state.nextAction}`);
     }
   } catch (err: any) {
-    console.error(`[hook:session-ending] Failed to check state for ${targetGoalId}: ${err.message}`);
+    console.error(`[hook:session-ending] Failed to load state for ${targetGoalId}: ${err.message}`);
   }
 }

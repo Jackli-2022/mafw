@@ -4,6 +4,7 @@ import { ParametricStore } from './memory/store';
 import { MemoryIndexManager } from './compression/memory-index';
 import { SessionPruner } from './compression/session-pruner';
 import { loadState } from './utils/state';
+import { sessionEndingHook } from './hooks/session-ending';
 
 /**
  * MAFW Plugin — OpenCode Official Format v4.1
@@ -32,6 +33,12 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   });
   const memoryIndex = new MemoryIndexManager(path.join(mafwDir, 'memory-index.json'));
   const sessionPruner = new SessionPruner({ maxContextTokens: 8000, compressionThreshold: 0.6 });
+
+  const toolExecutedHook = async ({ tool }: any, { output }: any) => {
+    if (output && output.length > 1000) {
+      console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
+    }
+  };
 
   return {
     // ── 配置 ──
@@ -246,12 +253,16 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       }
     },
 
-    // ── Tool 执行后：输出过大时自动压缩 ──
-    'tool.execute.after': async ({ tool }: any, { output }: any) => {
-      if (output && output.length > 1000) {
-        console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
-      }
+    // ── Hook aliases for OpenCode v4.1 format ──
+    hooks: {
+      'session.end': async ({ sessionID }: any) => {
+        await sessionEndingHook({ sessionId: sessionID, projectDir: directory });
+      },
+      'tool.execute.after': toolExecutedHook
     },
+
+    // ── Tool 执行后：输出过大时自动压缩 ──
+    'tool.execute.after': toolExecutedHook,
 
     // ── Session 压缩前：保存状态快照 ──
     'experimental.session.compacting': async ({ sessionID }: any, { snapshot }: any) => {
