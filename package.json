@@ -12,7 +12,9 @@
   },
   "scripts": {
     "build": "tsc && cd gateway && npm run build",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "jest",
+    "test:unit": "jest tests/unit"
   },
   "files": [
     "dist/",
