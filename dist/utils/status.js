@@ -118,11 +118,13 @@ class StatusManager {
      * 写入多 Goal STATUS.md
      */
     write(goals) {
+        fs.mkdirSync(path.dirname(this.statusPath), { recursive: true });
         const lines = [
             '# MAFW Status',
             '',
             `lastUpdated: "${new Date().toISOString()}"`,
             `activeGoals: ${goals.filter(g => g.state === 'RUNNING').length}`,
+            `pendingGoals: ${goals.filter(g => g.state === 'PENDING').length}`,
             ''
         ];
         for (const g of goals) {

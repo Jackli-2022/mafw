@@ -87,10 +87,9 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
       taskBranchManager
     });
 
-    receipts.push({ waveId: wave.id, ...waveResult });
-
     // 合并 Wave 到 Goal 分支
-    await mergeWaveToGoal(wave, worktree.worktreeDir);
+    const mergeResult = await mergeWaveToGoal(wave, worktree.worktreeDir, taskBranchManager, waveResult.tasks);
+    receipts.push({ waveId: wave.id, ...waveResult, merge: mergeResult });
   }
 
   // 6. 远程 CLI 同步（如果配置）
@@ -183,21 +182,38 @@ async function executeWave(
     })
   );
 
-  for (const task of tasks) {
-    if (taskResults.find((r: any) => r.taskId === task.id && r.status === 'completed')) {
-      await taskBranchManager.mergeTaskBranch(worktreeDir, task.id);
-    }
-  }
-
   return { tasks: taskResults, status: 'completed' };
 }
 
 // ── 合并 Wave ──
 
-async function mergeWaveToGoal(wave: any, worktreeDir: string): Promise<void> {
-  // 合并 Wave 内所有 Task 分支到 Goal 分支
-  console.log(`[mafw-execute] Merging wave ${wave.id} into goal branch`);
-  // 实际实现应使用 git merge
+export async function mergeWaveToGoal(
+  wave: any,
+  worktreeDir: string,
+  taskBranchManager: TaskBranchManager,
+  taskResults: any[]
+): Promise<{ merged: string[]; failed: string[]; status: string }> {
+  const completedTasks = taskResults.filter((r: any) => r.status === 'completed');
+  const taskIds = completedTasks.map((r: any) => r.taskId);
+  console.log(`[mafw-execute] Merging wave ${wave.id} (${taskIds.length} tasks) into goal branch`);
+
+  const merged: string[] = [];
+  const failed: string[] = [];
+  for (const taskId of taskIds) {
+    try {
+      await taskBranchManager.mergeTaskBranch(worktreeDir, taskId);
+      merged.push(taskId);
+    } catch (err: any) {
+      console.error(`[mafw-execute] Failed to merge task ${taskId}: ${err.message}`);
+      failed.push(taskId);
+    }
+  }
+
+  return {
+    merged,
+    failed,
+    status: failed.length === 0 ? 'merged' : 'partial'
+  };
 }
 
 // ── 写入 Receipts ──

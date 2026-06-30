@@ -69,8 +69,7 @@ async function transitionPhase(goalId, transition, projectDir = '.') {
     // 验证转换合法性
     const validNext = VALID_TRANSITIONS[state.phase || ''] || [];
     if (!validNext.includes(transition.to)) {
-        console.warn(`[PhaseOrchestrator] Invalid transition: ${state.phase} → ${transition.to}`);
-        // 仍然允许转换（降级策略），但记录警告
+        throw new Error(`Invalid phase transition: ${state.phase} → ${transition.to}`);
     }
     // 计算 nextAction
     const nextAction = transition.nextAction || NEXT_ACTION_MAP[transition.to] || 'WAIT_PHASE_COMPLETE';
@@ -83,6 +82,9 @@ async function transitionPhase(goalId, transition, projectDir = '.') {
     };
     if (transition.artifacts) {
         patch.artifacts = { ...state.artifacts, ...transition.artifacts };
+    }
+    if (transition.totalWaves !== undefined) {
+        patch.totalWaves = transition.totalWaves;
     }
     if (transition.metrics) {
         patch.metrics = transition.metrics;

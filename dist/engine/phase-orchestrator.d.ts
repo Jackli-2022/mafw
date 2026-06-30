@@ -14,6 +14,7 @@ export interface PhaseTransition {
     from: string | null;
     to: string;
     nextAction: string;
+    totalWaves?: number;
     artifacts?: Record<string, string>;
     metrics?: Record<string, number>;
 }

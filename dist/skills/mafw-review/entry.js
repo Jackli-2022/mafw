@@ -41,6 +41,7 @@ const phase_orchestrator_1 = require("../../engine/phase-orchestrator");
 const state_2 = require("../../utils/state");
 const lesson_manager_1 = require("../../engine/lesson-manager");
 const extractor_1 = require("../../memory/extractor");
+const store_1 = require("../../memory/store");
 const remote_cli_1 = require("../../tools/remote-cli");
 async function mafwReviewEntry(context) {
     const goalId = (0, state_1.extractGoalId)(context.message);
@@ -97,15 +98,20 @@ async function mafwReviewEntry(context) {
         const lessonPath = path.join(lessonsDir, `${goalId}-loop${state.loop}.md`);
         fs.writeFileSync(lessonPath, formatLesson(review), 'utf-8');
         console.log(`[mafw-review] Written lesson ${lessonPath}`);
-        // L2 压缩
         const lessonManager = new lesson_manager_1.LessonManager(projectDir);
         await lessonManager.compactLastLesson(goalId);
-        console.log(`[mafw-review] Lesson compacted (L2)`);
-        // L3 提取（简化版，实际应传入 CompactedLesson）
         const extractor = new extractor_1.MemoryExtractor();
-        // Note: extract() 接受 CompactedLesson，这里简化处理
-        console.log(`[mafw-review] Memory extracted (L3)`);
-        console.log(`[mafw-review] Memory extracted (L3)`);
+        const compacted = lessonManager.loadAll(goalId).slice(-1)[0];
+        if (compacted) {
+            const deltas = extractor.extract(compacted);
+            const store = new store_1.ParametricStore({
+                baseDir: path.join(projectDir, '.opencode/mafw/parametric'),
+                bannedDir: path.join(projectDir, '.opencode/mafw/parametric/banned'),
+                manifestFile: path.join(projectDir, '.opencode/mafw/parametric/base-skill-manifest.yaml')
+            });
+            for (const delta of deltas)
+                store.save(delta);
+        }
     }
     // 11. 【显式状态更新】通知 Scheduler 判断 verdict
     await (0, phase_orchestrator_1.transitionPhase)(goalId, {

@@ -106,7 +106,10 @@ export default function MafwPlugin({ directory }: {
             execute({ goalId }: any): Promise<any>;
         };
     };
-    'tool.execute.after': ({ tool }: any, { output }: any) => Promise<void>;
+    hooks: {
+        'session.end': ({ sessionID }: any) => Promise<void>;
+        'tool.execute.after': ({ tool }: any, { output }: any) => Promise<void>;
+    };
     'experimental.session.compacting': ({ sessionID }: any, { snapshot }: any) => Promise<void>;
     event: ({ event }: any) => Promise<void>;
 }>;

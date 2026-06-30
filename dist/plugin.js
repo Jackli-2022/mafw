@@ -40,6 +40,7 @@ const store_1 = require("./memory/store");
 const memory_index_1 = require("./compression/memory-index");
 const session_pruner_1 = require("./compression/session-pruner");
 const state_1 = require("./utils/state");
+const session_ending_1 = require("./hooks/session-ending");
 /**
  * MAFW Plugin — OpenCode Official Format v4.1
  *
@@ -62,6 +63,11 @@ async function MafwPlugin({ directory }) {
     });
     const memoryIndex = new memory_index_1.MemoryIndexManager(path.join(mafwDir, 'memory-index.json'));
     const sessionPruner = new session_pruner_1.SessionPruner({ maxContextTokens: 8000, compressionThreshold: 0.6 });
+    const toolExecutedHook = async ({ tool }, { output }) => {
+        if (output && output.length > 1000) {
+            console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
+        }
+    };
     return {
         // ── 配置 ──
         config: async (config) => {
@@ -111,7 +117,7 @@ async function MafwPlugin({ directory }) {
             }
             catch { /* ignore */ }
             try {
-                state = (0, state_1.loadState)(goalId, directory);
+                state = await (0, state_1.loadState)(goalId, directory);
             }
             catch { /* ignore */ }
             const waveContext = state?.currentWave && state.currentWave > 0
@@ -136,7 +142,7 @@ async function MafwPlugin({ directory }) {
             goal: {
                 description: 'Submit a new Goal to MAFW',
                 async execute(args, context) {
-                    const result = await context.runSkill('mafw-interview', { text: args });
+                    const result = await context.runSkill('mafw-goal', { text: args });
                     if (result?.confirmed) {
                         await writeGoalRequest(result, directory);
                         return {
@@ -261,11 +267,12 @@ async function MafwPlugin({ directory }) {
                 }
             }
         },
-        // ── Tool 执行后：输出过大时自动压缩 ──
-        'tool.execute.after': async ({ tool }, { output }) => {
-            if (output && output.length > 1000) {
-                console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
-            }
+        // ── Hook aliases for OpenCode v4.1 format ──
+        hooks: {
+            'session.end': async ({ sessionID }) => {
+                await (0, session_ending_1.sessionEndingHook)({ sessionId: sessionID, projectDir: directory });
+            },
+            'tool.execute.after': toolExecutedHook
         },
         // ── Session 压缩前：保存状态快照 ──
         'experimental.session.compacting': async ({ sessionID }, { snapshot }) => {

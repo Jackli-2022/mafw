@@ -85,8 +85,6 @@ async function mafwGoalEntry(context) {
     console.log(`[mafw-goal] Written request: ${requestPath}`);
     // 6. 初始化状态机
     (0, state_1.initState)(goalId, projectDir);
-    console.log(`[mafw-goal] Initialized state: state/${goalId}.json`);
-    // 7. 更新 STATUS.md
     const statusManager = new status_1.StatusManager(projectDir);
     statusManager.update(goalId, {
         state: 'PENDING',
@@ -97,7 +95,6 @@ async function mafwGoalEntry(context) {
         sessionId: null,
         directory: projectDir
     });
-    console.log(`[mafw-goal] Updated STATUS.md`);
     return interview;
 }
 // ── Interview 实现 ──

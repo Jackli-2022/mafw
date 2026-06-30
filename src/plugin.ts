@@ -92,7 +92,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
         lessons = memoryIndex.search([goalId], phase, 3);
       } catch { /* ignore */ }
       try {
-        state = loadState(goalId, directory);
+        state = await loadState(goalId, directory);
       } catch { /* ignore */ }
 
       const waveContext = state?.currentWave && state.currentWave > 0
@@ -127,7 +127,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       goal: {
         description: 'Submit a new Goal to MAFW',
         async execute(args: string, context: any) {
-          const result = await context.runSkill('mafw-interview', { text: args });
+          const result = await context.runSkill('mafw-goal', { text: args });
           if (result?.confirmed) {
             await writeGoalRequest(result, directory);
             return {
@@ -260,9 +260,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       },
       'tool.execute.after': toolExecutedHook
     },
-
-    // ── Tool 执行后：输出过大时自动压缩 ──
-    'tool.execute.after': toolExecutedHook,
 
     // ── Session 压缩前：保存状态快照 ──
     'experimental.session.compacting': async ({ sessionID }: any, { snapshot }: any) => {

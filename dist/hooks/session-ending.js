@@ -101,7 +101,7 @@ async function sessionEndingHook(hookContext) {
         }
     }
     catch (err) {
-        console.error(`[hook:session-ending] Failed to check state for ${targetGoalId}: ${err.message}`);
+        console.error(`[hook:session-ending] Failed to load state for ${targetGoalId}: ${err.message}`);
     }
 }
 //# sourceMappingURL=session-ending.js.map

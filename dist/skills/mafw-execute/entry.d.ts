@@ -1,3 +1,4 @@
+import { TaskBranchManager } from '../../engine/task-branch-manager';
 /**
  * mafw-execute Skill Entry — Execute Agent（独立 Session）
  *
@@ -31,4 +32,9 @@ export interface ExecuteSkillContext {
     sessionId: string;
 }
 export declare function mafwExecuteEntry(context: ExecuteSkillContext): Promise<void>;
+export declare function mergeWaveToGoal(wave: any, worktreeDir: string, taskBranchManager: TaskBranchManager, taskResults: any[]): Promise<{
+    merged: string[];
+    failed: string[];
+    status: string;
+}>;
 //# sourceMappingURL=entry.d.ts.map

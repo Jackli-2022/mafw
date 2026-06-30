@@ -13,6 +13,7 @@
  *   - Task 完成后合并回 Goal 分支，然后删除 Task 分支
  */
 export declare class TaskBranchManager {
+    private baseBranches;
     /**
      * 创建 Task 分支
      */

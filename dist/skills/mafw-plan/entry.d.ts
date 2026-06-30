@@ -1,3 +1,4 @@
+import { SkillContext } from '../../types/state';
 /**
  * mafw-plan Skill Entry — Plan Agent（独立 Session）
  *
@@ -15,20 +16,5 @@
  *
  * 调用方式：Scheduler 创建 Plan Session → 发送 /skill mafw-plan {goalId}
  */
-export interface SkillContext {
-    message: string;
-    llm: {
-        chat: (options: {
-            model: string;
-            messages: any[];
-        }) => Promise<{
-            content: string;
-        }>;
-    };
-    config: {
-        model: string;
-    };
-    sessionId: string;
-}
 export declare function mafwPlanEntry(context: SkillContext): Promise<void>;
 //# sourceMappingURL=entry.d.ts.map

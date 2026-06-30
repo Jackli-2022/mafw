@@ -34,12 +34,14 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.mafwExecuteEntry = mafwExecuteEntry;
+exports.mergeWaveToGoal = mergeWaveToGoal;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const state_1 = require("../../utils/state");
 const phase_orchestrator_1 = require("../../engine/phase-orchestrator");
 const goal_worktree_manager_1 = require("../../engine/goal-worktree-manager");
 const task_branch_manager_1 = require("../../engine/task-branch-manager");
+const git_1 = require("../../utils/git");
 const remote_cli_1 = require("../../tools/remote-cli");
 async function mafwExecuteEntry(context) {
     const goalId = (0, state_1.extractGoalId)(context.message);
@@ -82,9 +84,9 @@ async function mafwExecuteEntry(context) {
             model: context.config.model,
             taskBranchManager
         });
-        receipts.push({ waveId: wave.id, ...waveResult });
         // 合并 Wave 到 Goal 分支
-        await mergeWaveToGoal(wave, worktree.worktreeDir);
+        const mergeResult = await mergeWaveToGoal(wave, worktree.worktreeDir, taskBranchManager, waveResult.tasks);
+        receipts.push({ waveId: wave.id, ...waveResult, merge: mergeResult });
     }
     // 6. 远程 CLI 同步（如果配置）
     if (req.remoteCli?.syncOnExecute) {
@@ -133,7 +135,8 @@ async function executeWave(wave, options) {
             // 实际应由 LLM 生成文件内容并写入
             await writeTaskCode(task, response.content, worktreeDir);
             // Git commit
-            // await gitCommit(worktreeDir, `task(${task.id}): ${task.description}`);
+            const git = new git_1.GitUtils(worktreeDir);
+            await git.commit(task.affected_files || [], `task(${task.id}): ${task.description}`);
             return {
                 taskId: task.id,
                 status: 'completed',
@@ -153,10 +156,27 @@ async function executeWave(wave, options) {
     return { tasks: taskResults, status: 'completed' };
 }
 // ── 合并 Wave ──
-async function mergeWaveToGoal(wave, worktreeDir) {
-    // 合并 Wave 内所有 Task 分支到 Goal 分支
-    console.log(`[mafw-execute] Merging wave ${wave.id} into goal branch`);
-    // 实际实现应使用 git merge
+async function mergeWaveToGoal(wave, worktreeDir, taskBranchManager, taskResults) {
+    const completedTasks = taskResults.filter((r) => r.status === 'completed');
+    const taskIds = completedTasks.map((r) => r.taskId);
+    console.log(`[mafw-execute] Merging wave ${wave.id} (${taskIds.length} tasks) into goal branch`);
+    const merged = [];
+    const failed = [];
+    for (const taskId of taskIds) {
+        try {
+            await taskBranchManager.mergeTaskBranch(worktreeDir, taskId);
+            merged.push(taskId);
+        }
+        catch (err) {
+            console.error(`[mafw-execute] Failed to merge task ${taskId}: ${err.message}`);
+            failed.push(taskId);
+        }
+    }
+    return {
+        merged,
+        failed,
+        status: failed.length === 0 ? 'merged' : 'partial'
+    };
 }
 // ── 写入 Receipts ──
 async function writeReceipts(goalId, projectDir, receipts) {

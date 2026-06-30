@@ -53,7 +53,7 @@ async function updateState(goalId, patch, projectDir = '.') {
     if (!fs.existsSync(statePath)) {
         throw new Error(`State file not found: ${statePath}`);
     }
-    const current = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    const current = safeJsonParse(statePath);
     const updated = {
         ...current,
         ...patch,
@@ -65,6 +65,14 @@ async function updateState(goalId, patch, projectDir = '.') {
     fs.renameSync(tmpPath, statePath);
     return updated;
 }
+function safeJsonParse(filePath) {
+    try {
+        return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    }
+    catch (err) {
+        throw new Error(`Failed to parse ${filePath}: ${err.message}`);
+    }
+}
 /**
  * 加载状态文件
  */
@@ -73,7 +81,7 @@ async function loadState(goalId, projectDir = '.') {
     if (!fs.existsSync(statePath)) {
         throw new Error(`State file not found: ${statePath}`);
     }
-    return JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    return safeJsonParse(statePath);
 }
 /**
  * 加载请求配置
@@ -83,7 +91,7 @@ async function loadRequest(goalId, projectDir = '.') {
     if (!fs.existsSync(reqPath)) {
         throw new Error(`Request file not found: ${reqPath}`);
     }
-    return JSON.parse(fs.readFileSync(reqPath, 'utf-8'));
+    return safeJsonParse(reqPath);
 }
 /**
  * 加载 Goal Charter
@@ -103,7 +111,7 @@ async function loadWaves(goalId, projectDir = '.') {
     if (!fs.existsSync(wavesPath)) {
         return [];
     }
-    const data = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+    const data = safeJsonParse(wavesPath);
     return data.waves || [];
 }
 /**
@@ -115,7 +123,7 @@ async function loadReceipts(goalId, projectDir = '.') {
         return [];
     }
     const files = fs.readdirSync(receiptsDir).filter(f => f.endsWith('.json'));
-    return files.map(f => JSON.parse(fs.readFileSync(path.join(receiptsDir, f), 'utf-8')));
+    return files.map(f => safeJsonParse(path.join(receiptsDir, f)));
 }
 /**
  * 加载 Review 文件
