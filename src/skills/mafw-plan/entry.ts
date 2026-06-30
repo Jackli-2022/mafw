@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
   loadState, loadGoal, loadRequest, extractGoalId, updateState
 } from '../../utils/state';
+import { SkillContext } from '../../types/state';
 import { transitionPhase, recordSession } from '../../engine/phase-orchestrator';
 import { MemoryIndexManager } from '../../compression/memory-index';
 import { ParametricStore } from '../../memory/store';
@@ -26,15 +27,6 @@ import { Delta } from '../../types/parametric';
  *
  * 调用方式：Scheduler 创建 Plan Session → 发送 /skill mafw-plan {goalId}
  */
-
-export interface SkillContext {
-  message: string;
-  llm: {
-    chat: (options: { model: string; messages: any[] }) => Promise<{ content: string }>;
-  };
-  config: { model: string };
-  sessionId: string;
-}
 
 export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   const goalId = extractGoalId(context.message);
@@ -103,11 +95,11 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   console.log(`[mafw-plan] Written ${plan.tasks.length} tasks`);
 
   // 9. 【显式状态更新】通知 Scheduler 进入 EXECUTING
-  // 这是主路径，必须成功；如果失败会抛异常，Scheduler 心跳监控会重建
   await transitionPhase(goalId, {
     from: 'PLANNING',
     to: 'PLANNING_COMPLETE',
     nextAction: 'CREATE_EXECUTE_SESSION',
+    totalWaves: plan.waves.length,
     artifacts: { plan: 'waves.json' }
   }, projectDir);
 

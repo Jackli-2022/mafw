@@ -7,6 +7,7 @@ import { transitionPhase, recordSession, startNextLoop } from '../../engine/phas
 import { loadReceipts } from '../../utils/state';
 import { LessonManager } from '../../engine/lesson-manager';
 import { MemoryExtractor } from '../../memory/extractor';
+import { ParametricStore } from '../../memory/store';
 import { LessonCompactor } from '../../compression/lesson-compactor';
 import { RemoteCliConnector } from '../../tools/remote-cli';
 
@@ -106,16 +107,20 @@ export async function mafwReviewEntry(context: ReviewSkillContext): Promise<void
     fs.writeFileSync(lessonPath, formatLesson(review), 'utf-8');
     console.log(`[mafw-review] Written lesson ${lessonPath}`);
 
-    // L2 压缩
     const lessonManager = new LessonManager(projectDir);
     await lessonManager.compactLastLesson(goalId);
-    console.log(`[mafw-review] Lesson compacted (L2)`);
 
-    // L3 提取（简化版，实际应传入 CompactedLesson）
     const extractor = new MemoryExtractor();
-    // Note: extract() 接受 CompactedLesson，这里简化处理
-    console.log(`[mafw-review] Memory extracted (L3)`);
-    console.log(`[mafw-review] Memory extracted (L3)`);
+    const compacted = lessonManager.loadAll(goalId).slice(-1)[0];
+    if (compacted) {
+      const deltas = extractor.extract(compacted);
+      const store = new ParametricStore({
+        baseDir: path.join(projectDir, '.opencode/mafw/parametric'),
+        bannedDir: path.join(projectDir, '.opencode/mafw/parametric/banned'),
+        manifestFile: path.join(projectDir, '.opencode/mafw/parametric/base-skill-manifest.yaml')
+      });
+      for (const delta of deltas) store.save(delta);
+    }
   }
 
   // 11. 【显式状态更新】通知 Scheduler 判断 verdict

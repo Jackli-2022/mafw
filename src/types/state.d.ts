@@ -49,3 +49,12 @@ export interface GoalRequest {
     testCommand: string;
   };
 }
+
+export interface SkillContext {
+  message: string;
+  llm: {
+    chat: (options: { model: string; messages: any[] }) => Promise<{ content: string }>;
+  };
+  config: { model: string };
+  sessionId: string;
+}

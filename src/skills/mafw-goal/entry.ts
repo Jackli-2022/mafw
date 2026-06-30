@@ -100,9 +100,6 @@ export async function mafwGoalEntry(context: GoalSkillContext): Promise<Intervie
 
   // 6. 初始化状态机
   initState(goalId, projectDir);
-  console.log(`[mafw-goal] Initialized state: state/${goalId}.json`);
-
-  // 7. 更新 STATUS.md
   const statusManager = new StatusManager(projectDir);
   statusManager.update(goalId, {
     state: 'PENDING',
@@ -113,7 +110,6 @@ export async function mafwGoalEntry(context: GoalSkillContext): Promise<Intervie
     sessionId: null,
     directory: projectDir
   });
-  console.log(`[mafw-goal] Updated STATUS.md`);
 
   return interview;
 }

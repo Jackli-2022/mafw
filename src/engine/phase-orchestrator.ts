@@ -18,6 +18,7 @@ export interface PhaseTransition {
   from: string | null;
   to: string;
   nextAction: string;
+  totalWaves?: number;
   artifacts?: Record<string, string>;
   metrics?: Record<string, number>;
 }
@@ -70,6 +71,10 @@ export async function transitionPhase(
 
   if (transition.artifacts) {
     patch.artifacts = { ...state.artifacts, ...transition.artifacts };
+  }
+
+  if (transition.totalWaves !== undefined) {
+    patch.totalWaves = transition.totalWaves;
   }
 
   if (transition.metrics) {

@@ -6,6 +6,7 @@ import {
 import { transitionPhase, recordSession, updateWaveProgress } from '../../engine/phase-orchestrator';
 import { GoalWorktreeManager } from '../../engine/goal-worktree-manager';
 import { TaskBranchManager } from '../../engine/task-branch-manager';
+import { GitUtils } from '../../utils/git';
 import { RemoteCliConnector } from '../../tools/remote-cli';
 
 /**
@@ -162,7 +163,8 @@ async function executeWave(
         await writeTaskCode(task, response.content, worktreeDir);
 
         // Git commit
-        // await gitCommit(worktreeDir, `task(${task.id}): ${task.description}`);
+        const git = new GitUtils(worktreeDir);
+        await git.commit(task.affected_files || [], `task(${task.id}): ${task.description}`);
 
         return {
           taskId: task.id,
@@ -180,6 +182,12 @@ async function executeWave(
       }
     })
   );
+
+  for (const task of tasks) {
+    if (taskResults.find((r: any) => r.taskId === task.id && r.status === 'completed')) {
+      await taskBranchManager.mergeTaskBranch(worktreeDir, task.id);
+    }
+  }
 
   return { tasks: taskResults, status: 'completed' };
 }
