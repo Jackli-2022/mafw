@@ -171,8 +171,9 @@ function showLogs() {
     return;
   }
   try {
-    const output = execSync(`tail -n 50 "${logFile}"`, { encoding: 'utf-8' });
-    console.log(output);
+    const lines = fs.readFileSync(logFile, 'utf-8').split(/\r?\n/);
+    const tail = lines.length > 50 ? lines.slice(lines.length - 50) : lines;
+    console.log(tail.join('\n'));
   } catch {
     console.log('[Gateway] Cannot read logs');
   }

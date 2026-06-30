@@ -40,7 +40,7 @@ exports.DashboardServer = void 0;
 const http = __importStar(require("http"));
 class DashboardServer {
     port;
-    constructor(port = 3000) {
+    constructor(port = 3001) {
         this.port = port;
     }
     start() {

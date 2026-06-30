@@ -1,10 +1,15 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { phaseToCreateAction } from '../../../gateway/src/index';
 
-// We cannot easily import the singleton scheduler; instead test helpers via a small refactor.
-// For this plan we test verdict logic and archive path via fs stubs.
+test('phaseToCreateAction maps completion phases back to session creation actions', () => {
+  expect(phaseToCreateAction('PLANNING')).toBe('CREATE_PLAN_SESSION');
+  expect(phaseToCreateAction('PLANNING_COMPLETE')).toBe('CREATE_PLAN_SESSION');
+  expect(phaseToCreateAction('EXECUTING')).toBe('CREATE_EXECUTE_SESSION');
+  expect(phaseToCreateAction('EXECUTING_COMPLETE')).toBe('CREATE_EXECUTE_SESSION');
+  expect(phaseToCreateAction('REVIEWING')).toBe('CREATE_REVIEW_SESSION');
+  expect(phaseToCreateAction('REVIEWING_COMPLETE')).toBe('CREATE_REVIEW_SESSION');
+});
 
-test('scheduler plan stubs load state correctly', () => {
-  expect(true).toBe(true);
+test('phaseToCreateAction falls back for unknown or null phases', () => {
+  expect(phaseToCreateAction('UNKNOWN')).toBe('CREATE_UNKNOWN_SESSION');
+  expect(phaseToCreateAction(null)).toBe('CREATE_UNKNOWN_SESSION');
 });

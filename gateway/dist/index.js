@@ -33,10 +33,27 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.MafwScheduler = void 0;
+exports.phaseToCreateAction = phaseToCreateAction;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const os = __importStar(require("os"));
 const http = __importStar(require("http"));
 const child_process_1 = require("child_process");
+const server_1 = require("./dashboard/server");
+function phaseToCreateAction(phase) {
+    const normalized = (phase || '').replace(/_COMPLETE$/, '');
+    switch (normalized) {
+        case 'PLANNING':
+            return 'CREATE_PLAN_SESSION';
+        case 'EXECUTING':
+            return 'CREATE_EXECUTE_SESSION';
+        case 'REVIEWING':
+            return 'CREATE_REVIEW_SESSION';
+        default:
+            return `CREATE_${(phase || 'UNKNOWN').toUpperCase()}_SESSION`;
+    }
+}
 class MafwScheduler {
     serveProcess;
     serveUrl = 'http://127.0.0.1:4096';
@@ -48,9 +65,12 @@ class MafwScheduler {
     sessionMonitors = new Map();
     registryPath;
     registryWriteQueue = Promise.resolve();
+    configPath;
+    configWriteQueue = Promise.resolve();
     running = true;
     constructor(projectDir = '.') {
         this.projectDir = projectDir;
+        this.configPath = path.join(os.homedir(), '.config', 'mafw', 'config.json');
         this.registryPath = path.join(projectDir, 'scheduler', 'registered-projects.json');
     }
     async start() {
@@ -59,7 +79,11 @@ class MafwScheduler {
         await this.startServe();
         // 2. 启动 HTTP API
         await this.startApiServer();
-        // 3. 恢复注册表
+        // 2.5 启动 Dashboard
+        const dashboard = new server_1.DashboardServer(3001);
+        dashboard.start();
+        // 3. 恢复配置和注册表
+        await this.recoverConfig();
         await this.recoverRegistry();
         // 4. 恢复活跃 Goal
         await this.recoverState();
@@ -156,6 +180,7 @@ class MafwScheduler {
                             });
                             // 持久化到磁盘（写队列防并发覆盖）
                             await this.persistRegistry();
+                            await this.persistConfig();
                             console.log(`[Scheduler] Project registered: ${projectDir}`);
                             res.writeHead(200);
                             res.end(JSON.stringify({ status: 'ok', registered: projectDir }));
@@ -251,6 +276,31 @@ class MafwScheduler {
             }
             catch (err) {
                 console.error(`[Scheduler] Failed to recover registry: ${err.message}`);
+            }
+        }
+    }
+    async persistConfig() {
+        this.configWriteQueue = this.configWriteQueue.then(async () => {
+            const dir = path.dirname(this.configPath);
+            if (!fs.existsSync(dir))
+                fs.mkdirSync(dir, { recursive: true });
+            let config = {};
+            if (fs.existsSync(this.configPath)) {
+                config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+            }
+            config.projects = Object.fromEntries(this.registeredProjects);
+            fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
+        });
+        await this.configWriteQueue;
+    }
+    async recoverConfig() {
+        if (fs.existsSync(this.configPath)) {
+            try {
+                const config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+                this.registeredProjects = new Map(Object.entries(config.projects || {}));
+            }
+            catch (err) {
+                console.error(`[Scheduler] Failed to recover config: ${err.message}`);
             }
         }
     }
@@ -429,15 +479,27 @@ class MafwScheduler {
     // ── 7. Archive ──
     async archiveGoal(goalId) {
         console.log(`[Scheduler] Archiving goal ${goalId}`);
-        // 销毁所有 session
         await this.destroyAllSessions(goalId);
-        // 更新 state
+        let projectDir = null;
+        for (const [pDir, info] of this.registeredProjects) {
+            if (fs.existsSync(path.join(info.mafwDir, 'state', `${goalId}.json`))) {
+                projectDir = pDir;
+                break;
+            }
+        }
+        if (projectDir) {
+            const pluginRoot = path.resolve(__dirname, '..', '..');
+            const builtPath = path.join(pluginRoot, 'dist', 'tools', 'archive-worktree');
+            const srcPath = path.join(pluginRoot, 'src', 'tools', 'archive-worktree');
+            const modulePath = fs.existsSync(`${builtPath}.js`) ? builtPath : srcPath;
+            const { archiveWorktree } = await Promise.resolve(`${modulePath}`).then(s => __importStar(require(s)));
+            const state = this.activeGoals.get(goalId);
+            await archiveWorktree({ goalId, projectDir, loopCount: state?.loop || 1 });
+        }
         await this.patchState(goalId, {
             nextAction: 'COMPLETED',
             phase: 'ARCHIVED'
         });
-        // 更新 STATUS.md
-        // 实际应调用 StatusManager
         console.log(`[Scheduler] Goal ${goalId} archived`);
     }
     // ── 8. 心跳监控 ──
@@ -466,7 +528,7 @@ class MafwScheduler {
                 if (currentPhase && currentPhase !== 'COMPLETED' && currentPhase !== 'ARCHIVED') {
                     console.error(`[Scheduler] Goal ${goalId} heartbeat timeout, resetting phase ${currentPhase}`);
                     await this.patchState(goalId, {
-                        nextAction: `CREATE_${currentPhase.toUpperCase()}_SESSION`,
+                        nextAction: phaseToCreateAction(currentPhase),
                         error: 'goal_heartbeat_timeout'
                     });
                 }
@@ -641,14 +703,17 @@ class MafwScheduler {
         return new Promise(r => setTimeout(r, ms));
     }
 }
+exports.MafwScheduler = MafwScheduler;
 // ── 入口 ──
-const scheduler = new MafwScheduler('.');
-process.on('SIGINT', () => {
-    console.log('\n[Scheduler] Received SIGINT, shutting down...');
-    scheduler.stop();
-    process.exit(0);
-});
-scheduler.start().catch(err => {
-    console.error('[Scheduler] Fatal error:', err);
-    process.exit(1);
-});
+if (require.main === module) {
+    const scheduler = new MafwScheduler('.');
+    process.on('SIGINT', () => {
+        console.log('\n[Scheduler] Received SIGINT, shutting down...');
+        scheduler.stop();
+        process.exit(0);
+    });
+    scheduler.start().catch(err => {
+        console.error('[Scheduler] Fatal error:', err);
+        process.exit(1);
+    });
+}

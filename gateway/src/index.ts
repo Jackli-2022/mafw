@@ -60,6 +60,20 @@ interface Session {
   createdAt: string;
 }
 
+function phaseToCreateAction(phase: string | null): string {
+  const normalized = (phase || '').replace(/_COMPLETE$/, '');
+  switch (normalized) {
+    case 'PLANNING':
+      return 'CREATE_PLAN_SESSION';
+    case 'EXECUTING':
+      return 'CREATE_EXECUTE_SESSION';
+    case 'REVIEWING':
+      return 'CREATE_REVIEW_SESSION';
+    default:
+      return `CREATE_${(phase || 'UNKNOWN').toUpperCase()}_SESSION`;
+  }
+}
+
 class MafwScheduler {
   private serveProcess?: ChildProcess;
   private serveUrl = 'http://127.0.0.1:4096';
@@ -556,8 +570,10 @@ class MafwScheduler {
     }
 
     if (projectDir) {
-      const isBuilt = path.basename(__dirname) === 'dist';
-      const modulePath = path.join(__dirname, isBuilt ? '../../dist/tools/archive-worktree' : '../../src/tools/archive-worktree');
+      const pluginRoot = path.resolve(__dirname, '..', '..');
+      const builtPath = path.join(pluginRoot, 'dist', 'tools', 'archive-worktree');
+      const srcPath = path.join(pluginRoot, 'src', 'tools', 'archive-worktree');
+      const modulePath = fs.existsSync(`${builtPath}.js`) ? builtPath : srcPath;
       const { archiveWorktree } = await import(modulePath) as { archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> };
       const state = this.activeGoals.get(goalId);
       await archiveWorktree({ goalId, projectDir, loopCount: state?.loop || 1 });
@@ -602,7 +618,7 @@ class MafwScheduler {
         if (currentPhase && currentPhase !== 'COMPLETED' && currentPhase !== 'ARCHIVED') {
           console.error(`[Scheduler] Goal ${goalId} heartbeat timeout, resetting phase ${currentPhase}`);
           await this.patchState(goalId, {
-            nextAction: `CREATE_${currentPhase.toUpperCase()}_SESSION`,
+            nextAction: phaseToCreateAction(currentPhase),
             error: 'goal_heartbeat_timeout'
           });
         }
@@ -811,4 +827,4 @@ if (require.main === module) {
   });
 }
 
-export { MafwScheduler };
+export { MafwScheduler, phaseToCreateAction };

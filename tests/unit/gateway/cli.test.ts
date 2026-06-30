@@ -1,7 +1,32 @@
 import { execSync, spawnSync } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 const CLI = path.join(__dirname, '../../../bin/mafw-gateway.js');
+
+// ... existing tests ...
+
+test('mafw-gateway logs prints the last 50 lines without tail', () => {
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-home-'));
+  const logDir = path.join(tmpHome, '.config', 'mafw', 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFile = path.join(logDir, 'gateway.log');
+  const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`);
+  fs.writeFileSync(logFile, lines.join('\n'), 'utf-8');
+
+  const result = spawnSync('node', [CLI, 'logs'], {
+    encoding: 'utf-8',
+    env: { ...process.env, USERPROFILE: tmpHome }
+  });
+
+  fs.rmSync(tmpHome, { recursive: true, force: true });
+
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('line 11');
+  expect(result.stdout).toContain('line 60');
+  expect(result.stdout).not.toMatch(/^line 1$/m);
+});
 
 test('mafw-gateway --help prints usage', () => {
   const out = execSync(`node ${CLI} --help`, { encoding: 'utf-8' });
