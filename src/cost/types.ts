@@ -28,7 +28,7 @@ export function estimateTokens(toolName: string, input: string): number {
 }
 
 export function estimateCost(tokens: number, model: string = 'sonnet'): number {
-  const RATES: Record<string, number> = { sonnet: 3.0, haiku: 1.5 };
-  const rate = RATES[model] || RATES.sonnet;
+  const RATES: Record<string, number> = { sonnet: 0.003, haiku: 0.0015 };
+  const rate = RATES[model] ?? RATES.sonnet;
   return (tokens / 1000) * rate;
 }
