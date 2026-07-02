@@ -1,125 +1,136 @@
-## Task 1: Foundation — Atomic State Utilities + Tests
+# Task 1: Cost types + SQLite table
 
-**Files:**
-- Create: `tests/unit/utils/state.test.ts`
-- Modify: `src/utils/state.ts:73-212`
+## Purpose
+First task of MAFW v6.0 P1. Create the foundational cost tracking types and SQLite storage table. All subsequent cost features depend on these types.
 
-**Interfaces:**
-- Consumes: Node `fs`.
-- Produces: `updateState(goalId, patch, projectDir?)`, `loadState`, `loadRequest`, `loadGoal`, `loadWaves`, `loadReceipts`, `loadReview`, `extractGoalId`, `stateExists`, `initState`.
+## Files
+- Create: `src/cost/types.ts` — CostRecord, CostSummary interfaces, estimation functions
+- Modify: `src/storage/sqlite-storage.ts` — add `cost_logs` table to `initSchema()`
+- Test: `tests/unit/cost-types.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+## Interfaces (Produced)
+- `CostRecord` — per-tool-call cost record
+- `CostSummary` — aggregated cost with byWave/byTool breakdown
+- `generateCostId()` — unique ID generator
+- `estimateTokens(toolName, input)` — token estimation per tool type
+- `estimateCost(tokens, model)` — USD cost calculation
 
-```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import {
-  initState,
-  updateState,
-  loadState,
-  loadRequest,
-  loadWaves,
-  loadReceipts,
-  extractGoalId
-} from '../../../src/utils/state';
+## Global Constraints
+- Do NOT modify any v5.0 Search/Graph/Storage/StateLock/Energy modules except `src/storage/sqlite-storage.ts`
+- All new SQLite tables must be created via `initSchema()` in `src/storage/sqlite-storage.ts`
+- Every new module must have a unit test
+- commit messages: conventional commits (`feat:` prefix)
+- Cost estimation coefficients: file_edit/mafw_observe/search = 0 tokens; LLM calls = inputChars/4 tokens; Sonnet rate = $0.003/1K tokens
 
-let tmpDir: string;
-let projectDir: string;
+## Existing code to be aware of
+- `src/storage/sqlite-storage.ts` has an `initSchema()` method at line 35 that creates the `memories` table with FTS5 and triggers. Append the `cost_logs` table creation after line 68.
+- `better-sqlite3` is the database library.
 
-beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-state-'));
-  projectDir = tmpDir;
-  fs.mkdirSync(path.join(projectDir, '.opencode', 'mafw', 'state'), { recursive: true });
-  fs.mkdirSync(path.join(projectDir, '.opencode', 'mafw', 'requests'), { recursive: true });
-  fs.mkdirSync(path.join(projectDir, '.opencode', 'mafw', 'goals'), { recursive: true });
-});
+## Step-by-step
 
-afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-});
+### Step 1: Write `src/cost/types.ts`
 
-test('initState writes a valid initial state file', () => {
-  initState('001-auth', projectDir);
-  const statePath = path.join(projectDir, '.opencode', 'mafw', 'state', '001-auth.json');
-  expect(fs.existsSync(statePath)).toBe(true);
-  const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-  expect(state.goalId).toBe('001-auth');
-  expect(state.nextAction).toBe('CREATE_PLAN_SESSION');
-});
-
-test('updateState atomically patches state', async () => {
-  initState('001-auth', projectDir);
-  const updated = await updateState('001-auth', { phase: 'PLANNING_COMPLETE', nextAction: 'CREATE_EXECUTE_SESSION' }, projectDir);
-  expect(updated.phase).toBe('PLANNING_COMPLETE');
-  expect(updated.nextAction).toBe('CREATE_EXECUTE_SESSION');
-  expect(fs.existsSync(path.join(projectDir, '.opencode', 'mafw', 'state', '001-auth.json.tmp'))).toBe(false);
-});
-
-test('loadState throws for missing file', async () => {
-  await expect(loadState('missing', projectDir)).rejects.toThrow(/State file not found/);
-});
-
-test('loadRequest parses request file', async () => {
-  const reqPath = path.join(projectDir, '.opencode', 'mafw', 'requests', '001-auth.json');
-  fs.writeFileSync(reqPath, JSON.stringify({ goalId: '001-auth', title: 'Auth', metrics: {}, boundaries: [] }));
-  const req = await loadRequest('001-auth', projectDir);
-  expect(req.title).toBe('Auth');
-});
-
-test('loadWaves returns empty array when missing', async () => {
-  const waves = await loadWaves('001-auth', projectDir);
-  expect(waves).toEqual([]);
-});
-
-test('loadReceipts returns empty array when missing', async () => {
-  const receipts = await loadReceipts('001-auth', projectDir);
-  expect(receipts).toEqual([]);
-});
-
-test('extractGoalId supports /skill mafw-plan 001-auth', () => {
-  expect(extractGoalId('/skill mafw-plan 001-auth')).toBe('001-auth');
-});
-
-test('extractGoalId supports raw goal id', () => {
-  expect(extractGoalId('001-auth')).toBe('001-auth');
-});
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `npx jest tests/unit/utils/state.test.ts -v`
-Expected: FAIL — `tests/unit/utils/state.test.ts` not found or no tests matched.
-
-- [ ] **Step 3: Fix state.ts edge cases**
-
-Modify `src/utils/state.ts`:
-1. Ensure `loadWaves` and `loadReceipts` return `[]` instead of throwing when directories/files are missing (already implemented; verify).
-2. Ensure `extractGoalId` trims and returns the last non-empty token (already implemented; verify).
-3. Add explicit error wrapping if `JSON.parse` fails in loaders.
+Full content:
 
 ```typescript
-// In loadState, loadRequest, etc. wrap JSON.parse in try/catch
-function safeJsonParse<T>(path: string): T {
-  try {
-    return JSON.parse(fs.readFileSync(path, 'utf-8'));
-  } catch (err: any) {
-    throw new Error(`Failed to parse ${path}: ${err.message}`);
+export interface CostRecord {
+  id: string;
+  goalId: string;
+  loopNum: number;
+  waveNum?: number;
+  toolName: string;
+  estimatedTokens: number;
+  estimatedCost: number;
+  timestamp: string;
+}
+
+export interface CostSummary {
+  totalTokens: number;
+  totalCost: number;
+  byWave: Array<{ waveNum: number; tokens: number; cost: number }>;
+  byTool: Array<{ toolName: string; tokens: number; cost: number }>;
+}
+
+export function generateCostId(): string {
+  return `cost_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function estimateTokens(toolName: string, input: string): number {
+  if (['file_edit', 'file_write', 'mafw_observe', 'mafw_search_hybrid'].includes(toolName)) {
+    return 0;
   }
+  return Math.ceil(input.length / 4);
+}
+
+export function estimateCost(tokens: number, model: string = 'sonnet'): number {
+  const RATES: Record<string, number> = { sonnet: 0.003, haiku: 0.0015 };
+  const rate = RATES[model] || RATES.sonnet;
+  return (tokens / 1000) * rate;
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+### Step 2: Write `tests/unit/cost-types.test.ts`
 
-Run: `npx jest tests/unit/utils/state.test.ts -v`
-Expected: PASS.
+```typescript
+import { estimateTokens, estimateCost, generateCostId } from '../../src/cost/types';
 
-- [ ] **Step 5: Commit**
+describe('Cost Types', () => {
+  it('estimates zero tokens for file tools', () => {
+    expect(estimateTokens('file_edit', 'some content')).toBe(0);
+    expect(estimateTokens('mafw_observe', 'some content')).toBe(0);
+  });
 
-```bash
-git add tests/unit/utils/state.test.ts src/utils/state.ts
-git commit -m "test(plugin): add state utility tests and harden loaders"
+  it('estimates tokens for LLM calls based on input length', () => {
+    const result = estimateTokens('mafw_review', 'a'.repeat(100));
+    expect(result).toBe(25);
+  });
+
+  it('calculates cost based on token count and model rate', () => {
+    const sonnetCost = estimateCost(1000, 'sonnet');
+    expect(sonnetCost).toBeCloseTo(3.0, 1);
+
+    const haikuCost = estimateCost(1000, 'haiku');
+    expect(haikuCost).toBeCloseTo(1.5, 1);
+  });
+
+  it('generates unique cost IDs', () => {
+    const a = generateCostId();
+    const b = generateCostId();
+    expect(a).not.toBe(b);
+  });
+});
 ```
 
----
+### Step 3: Modify `src/storage/sqlite-storage.ts`
 
+In the `initSchema()` method, after the existing triggers (line 68), append:
+
+```typescript
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS cost_logs (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT NOT NULL,
+        loop_num INTEGER NOT NULL,
+        wave_num INTEGER,
+        tool_name TEXT NOT NULL,
+        estimated_tokens INTEGER DEFAULT 0,
+        estimated_cost REAL DEFAULT 0,
+        timestamp TEXT NOT NULL,
+        metadata TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_cost_goal ON cost_logs(goal_id);
+      CREATE INDEX IF NOT EXISTS idx_cost_timestamp ON cost_logs(timestamp);
+    `);
+```
+
+## Tests to Run
+```bash
+npx vitest run tests/unit/cost-types.test.ts --reporter=verbose
+```
+
+## Report Contract
+Write report to `.superpowers/sdd/task-1-report.md` with:
+- Status: DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED
+- Commits (short hashes + messages)
+- Test results (command + output)
+- Any concerns

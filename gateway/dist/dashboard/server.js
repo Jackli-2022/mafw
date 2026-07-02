@@ -1,7 +1,4 @@
 "use strict";
-/**
- * Dashboard Server — Gateway 内置 Web 看板
- */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -37,30 +34,105 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardServer = void 0;
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const http = __importStar(require("http"));
+const api_1 = require("./api");
+const MIME_TYPES = {
+    '.html': 'text/html',
+    '.js': 'application/javascript',
+    '.css': 'text/css',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon'
+};
 class DashboardServer {
     port;
-    constructor(port = 3001) {
+    server;
+    api;
+    publicDir;
+    sseClients = new Set();
+    constructor(port = 3111, projectDir = '.', scheduler) {
         this.port = port;
+        this.publicDir = path.resolve(__dirname, 'public');
+        this.api = new api_1.DashboardAPI(projectDir, scheduler);
+    }
+    resolveFilePath(url) {
+        let cleanUrl = url.split('?')[0].split('#')[0];
+        if (cleanUrl === '/')
+            return null;
+        return path.join(this.publicDir, cleanUrl);
     }
     start() {
-        const server = http.createServer((req, res) => {
-            res.setHeader('Content-Type', 'application/json');
-            if (req.url === '/dashboard' || req.url === '/') {
-                res.writeHead(200);
-                res.end(JSON.stringify({
-                    status: 'ok',
-                    message: 'MAFW Dashboard v4.1',
-                    endpoints: ['/health', '/metrics', '/dashboard']
-                }));
-                return;
+        return new Promise((resolve) => {
+            this.server = http.createServer(async (req, res) => {
+                const url = req.url || '/';
+                // SSE stream
+                if (url === '/api/events?stream=true' && req.method === 'GET') {
+                    res.writeHead(200, {
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive'
+                    });
+                    res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+                    this.sseClients.add(res);
+                    req.on('close', () => { this.sseClients.delete(res); });
+                    return;
+                }
+                // API routes
+                if (url.startsWith('/api/')) {
+                    await this.api.handle(req, res);
+                    return;
+                }
+                // Static files
+                const filePath = this.resolveFilePath(url);
+                if (filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                    const ext = path.extname(filePath);
+                    const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
+                    const content = fs.readFileSync(filePath);
+                    res.writeHead(200, { 'Content-Type': mimeType });
+                    res.end(content);
+                    return;
+                }
+                // SPA fallback: serve index.html for non-API, non-file routes
+                const indexPath = path.join(this.publicDir, 'index.html');
+                if (fs.existsSync(indexPath)) {
+                    const content = fs.readFileSync(indexPath);
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.end(content);
+                    return;
+                }
+                res.writeHead(404);
+                res.end('Not found');
+            });
+            this.server.listen(this.port, () => {
+                console.log(`[DashboardServer] HTTP server @ http://localhost:${this.port}`);
+                resolve();
+            });
+        });
+    }
+    broadcast(event) {
+        const data = `data: ${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n\n`;
+        for (const client of this.sseClients) {
+            try {
+                client.write(data);
             }
-            res.writeHead(404);
-            res.end(JSON.stringify({ error: 'Not found' }));
-        });
-        server.listen(this.port, () => {
-            console.log(`[Dashboard] HTTP server @ http://localhost:${this.port}/dashboard`);
-        });
+            catch {
+                this.sseClients.delete(client);
+            }
+        }
+    }
+    stop() {
+        for (const client of this.sseClients) {
+            try {
+                client.end();
+            }
+            catch { }
+        }
+        this.sseClients.clear();
+        this.server?.close();
     }
 }
 exports.DashboardServer = DashboardServer;

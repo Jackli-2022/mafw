@@ -1,19 +1,19 @@
 {
   "name": "mafw-gateway",
-  "version": "4.1.0",
-  "description": "MAFW Loop Agent v4.1 — Gateway (Phase Relay Scheduler + Automation Engine)",
+  "version": "5.0.0",
+  "description": "MAFW Gateway v5.0 — SSE Event-Driven Scheduler",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const s=p.join(__dirname,'src','dashboard','public'),d=p.join(__dirname,'dist','dashboard','public');if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});console.log('[copy] public/')}\"",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts"
   },
   "dependencies": {
-    "axios": "^1.6.0"
+    "@opencode-ai/sdk": "^1.17.12"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.3.0",
-    "ts-node": "^10.9.0"
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
   }
 }

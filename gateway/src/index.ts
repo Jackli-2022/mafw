@@ -2,29 +2,21 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, execSync, ChildProcess } from 'child_process';
 import { DashboardServer } from './dashboard/server';
 
 /**
- * MAFW Scheduler — v3.5 极简状态机编排器
+ * MAFW Scheduler — v5.0 SDK 编排器
  *
  * 核心设计原则：
- *   - 极简: 只负责 Session 生命周期（create → send → monitor → destroy）
+ *   - 使用 @opencode-ai/sdk 管理 Serve 进程和 Session 生命周期
  *   - 无状态业务判断: 不读取 waves.json、不解析 review、不计算 loop
  *   - 文件驱动: 只读取已注册项目的 state/{goalId}.json 的 nextAction 字段
  *   - 注册表持久化: 插件注册信息写入磁盘，崩溃后可恢复
  *   - 写队列防并发: 多个 /register 同时到达时，写磁盘串行化
  *   - 可恢复: 崩溃重启后从 state/ 文件 + 注册表恢复所有活跃 Goal
- *
- * 职责：
- *   1. 启动并监控 OpenCode Serve 子进程
- *   2. 启动 HTTP API 接收插件注册和控制指令
- *   3. 维护已注册项目索引（内存 + 磁盘持久化）
- *   4. 轮询已注册项目的 state/*.json 读取 nextAction，执行对应的 Session 创建/销毁
- *   5. 监控活跃 Session 心跳，卡死时重建 Session 从断点恢复
- *
- * 【不碰】业务判断、verdict、loop 计数、Prompt 拼接、Wave 调度、Lesson 压缩
  */
+
 
 interface StateFile {
   version: string;
@@ -74,6 +66,26 @@ function phaseToCreateAction(phase: string | null): string {
   }
 }
 
+function resolveOpencode(): string {
+  // 按优先级查找 opencode.exe
+  const npmPrefix = process.env.MAFW_OPENCODE_PATH
+    ? path.dirname(process.env.MAFW_OPENCODE_PATH)
+    : execSync('npm config get prefix', { encoding: 'utf-8' }).trim();
+
+  const candidates = [
+    path.join(npmPrefix, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
+    path.join(npmPrefix, 'node_modules', '@opencode-ai', 'cli', 'bin', 'lildax'),
+    path.join(npmPrefix, 'opencode.cmd'),
+    path.join(npmPrefix, 'opencode'),
+    process.env.MAFW_OPENCODE_PATH || '',
+  ];
+
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  throw new Error('opencode CLI not found. Install: npm install -g @opencode-ai/cli');
+}
+
 class MafwScheduler {
   private serveProcess?: ChildProcess;
   private serveUrl = 'http://127.0.0.1:4096';
@@ -81,14 +93,17 @@ class MafwScheduler {
   private pollInterval = 5000;
   private projectDir: string;
 
-  private activeGoals = new Map<string, StateFile>();
-  private registeredProjects = new Map<string, RegisteredProject>();
+  activeGoals = new Map<string, StateFile>();
+  registeredProjects = new Map<string, RegisteredProject>();
   private sessionMonitors = new Map<string, NodeJS.Timeout>();
   private registryPath: string;
   private registryWriteQueue: Promise<void> = Promise.resolve();
   private configPath: string;
   private configWriteQueue: Promise<void> = Promise.resolve();
   private running = true;
+  private dashboard?: DashboardServer;
+  private opencodeClient: any = null;
+  private sseClients: Set<http.ServerResponse> = new Set();
 
   constructor(projectDir: string = '.') {
     this.projectDir = projectDir;
@@ -96,39 +111,73 @@ class MafwScheduler {
     this.registryPath = path.join(projectDir, 'scheduler', 'registered-projects.json');
   }
 
-  async start() {
-    console.log('[Scheduler] MAFW Scheduler v3.5 starting...');
+  get serveRunning(): boolean {
+    return !!this.serveProcess && !this.serveProcess.killed;
+  }
 
-    // 1. 启动 Serve
+  async start() {
+    console.log('[Scheduler] MAFW Scheduler v5.0 starting...');
+
+    // 1. 启动 Serve（spawn opencode.exe 全路径）
     await this.startServe();
 
-    // 2. 启动 HTTP API
+    // 2. 初始化 SDK 客户端
+    if (this.serveProcess) {
+      await this.initClient();
+      this.subscribeToEvents();
+    }
+
+    // 3. 启动 HTTP API
     await this.startApiServer();
 
-    // 2.5 启动 Dashboard
-    const dashboard = new DashboardServer(3001);
-    dashboard.start();
+    // 4. 启动 Dashboard
+    this.dashboard = new DashboardServer(3001, this.projectDir, this);
+    this.dashboard.start();
 
-    // 3. 恢复配置和注册表
+    // 5. 恢复配置和注册表
     await this.recoverConfig();
     await this.recoverRegistry();
 
-    // 4. 恢复活跃 Goal
+    // 6. 恢复活跃 Goal
     await this.recoverState();
 
-    // 5. 开始轮询
-    console.log('[Scheduler] Starting polling loop...');
-    await this.startPolling();
+    // 7. 开始轮询（降级兜底，30s）
+    console.log('[Scheduler] Starting backup polling loop (30s)...');
+    this.startBackupPolling();
+  }
+
+  private async subscribeToEvents() {
+    try {
+      const stream = await this.opencodeClient.event.subscribe({});
+      if (stream && typeof stream.on === 'function') {
+        stream.on('data', (event: any) => {
+          this.broadcast({ type: 'opencode_event', data: event });
+        });
+        console.log('[Scheduler] Subscribed to OpenCode events');
+      }
+    } catch (err: any) {
+      console.warn(`[Scheduler] SDK event subscribe failed (non-fatal): ${err.message}`);
+    }
+  }
+
+  private broadcast(event: { type: string; [key: string]: any }): void {
+    const data = `data: ${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n\n`;
+    for (const client of this.sseClients) {
+      try { client.write(data); } catch { this.sseClients.delete(client); }
+    }
   }
 
   stop() {
     this.running = false;
     if (this.serveProcess) {
       this.serveProcess.kill('SIGTERM');
+      this.serveProcess = undefined;
     }
-    // 清理所有监控定时器
     for (const timer of this.sessionMonitors.values()) {
       clearTimeout(timer);
+    }
+    if (this.dashboard) {
+      this.dashboard.stop();
     }
     console.log('[Scheduler] Stopping...');
   }
@@ -136,28 +185,26 @@ class MafwScheduler {
   // ── 1. Serve 管理 ──
 
   private async startServe() {
-    if (await this.isServeHealthy()) {
-      console.log('[Scheduler] Serve already running, skip start');
-      return;
-    }
-
-    console.log('[Scheduler] Starting OpenCode Serve...');
-    this.serveProcess = spawn('opencode', [
+    const opencodeExe = resolveOpencode();
+    console.log(`[Scheduler] Starting OpenCode Serve: ${opencodeExe}`);
+    this.serveProcess = spawn(opencodeExe, [
       'serve', '--port', '4096', '--hostname', '127.0.0.1'
     ], {
       cwd: this.projectDir,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'inherit', 'inherit'],
+      env: { ...process.env, PATH: process.env.PATH }
     });
 
-    this.serveProcess.stdout?.on('data', (data: Buffer) => {
-      const line = data.toString().trim();
-      if (line) console.log(`[Serve] ${line}`);
-    });
-
-    this.serveProcess.stderr?.on('data', (data: Buffer) => {
-      const line = data.toString().trim();
-      if (line) console.error(`[Serve] ${line}`);
-    });
+    if (this.serveProcess.stdout) {
+      this.serveProcess.stdout?.on('data', (data: Buffer) => {
+        const line = data.toString().trim();
+        if (line) console.log(`[Serve] ${line}`);
+      });
+      this.serveProcess.stderr?.on('data', (data: Buffer) => {
+        const line = data.toString().trim();
+        if (line) console.error(`[Serve] ${line}`);
+      });
+    }
 
     this.serveProcess.on('exit', (code: number | null) => {
       console.error(`[Scheduler] Serve exited with code ${code}, restarting in 5s...`);
@@ -180,16 +227,20 @@ class MafwScheduler {
   }
 
   private async waitForServeReady(): Promise<void> {
-    let retries = 0;
-    while (retries < 60) {
+    for (let retries = 0; retries < 60; retries++) {
       await this.sleep(1000);
       if (await this.isServeHealthy()) {
         console.log('[Scheduler] Serve is ready');
         return;
       }
-      retries++;
     }
     throw new Error('Failed to start OpenCode Serve after 60 seconds');
+  }
+
+  private async initClient() {
+    const { createOpencodeClient } = await import('@opencode-ai/sdk');
+    this.opencodeClient = createOpencodeClient({ baseUrl: this.serveUrl });
+    console.log('[Scheduler] SDK client initialized');
   }
 
   // ── 2. HTTP API ──
@@ -290,6 +341,44 @@ class MafwScheduler {
           return;
         }
 
+        // 状态变更回调 (来自 Plugin updateState)
+        // 状态变更回调 (来自 Plugin updateState)
+        if (req.url && req.url.startsWith('/api/events') && req.method === 'POST') {
+          let body = '';
+          req.on('data', chunk => body += chunk);
+          req.on('end', async () => {
+            try {
+              const event = JSON.parse(body);
+              console.log(`[Events] Received: ${event.type} for ${event.goalId || ''}`);
+              this.broadcast(event);
+              // 立即处理该 goal 的状态机
+              if (event.type === 'state_change' && event.goalId) {
+                await this.advanceSingleGoal(event.goalId);
+              }
+              res.writeHead(200);
+              res.end(JSON.stringify({ status: 'ok' }));
+            } catch (err) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'Invalid event' }));
+            }
+          });
+          return;
+        }
+
+        // SSE 事件流 (给 Dashboard)
+        if (req.url && req.url.startsWith('/api/events') && req.method === 'GET') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+          });
+          res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+          this.sseClients.add(res);
+          req.on('close', () => { this.sseClients.delete(res); });
+          return;
+        }
+
         res.writeHead(404);
         res.end(JSON.stringify({ error: 'Not found' }));
       });
@@ -355,20 +444,34 @@ class MafwScheduler {
     }
   }
 
-  // ── 4. 轮询 ──
+  // ── 4. 轮询（降级兜底：仅处理 SSE 丢失的 goal） ──
 
-  private async startPolling() {
-    while (this.running) {
+  private startBackupPolling() {
+    const poll = async () => {
+      if (!this.running) return;
       try {
-        await this.processControlFile();
         await this.discoverNewGoals();
-        await this.advanceStateMachines();
-        await this.checkHeartbeats();
+        // 仅处理不在活跃缓存中的 goal
+        for (const [goalId, state] of this.activeGoals) {
+          if (['COMPLETED', 'FAILED'].includes(state.nextAction)) {
+            this.activeGoals.delete(goalId);
+          }
+        }
       } catch (err: any) {
-        console.error('[Scheduler] Poll error:', err.message);
+        console.error('[Scheduler] Backup poll error:', err.message);
       }
-      await this.sleep(this.pollInterval);
+      setTimeout(poll, 30000);
+    };
+    setTimeout(poll, 30000);
+  }
+
+  private async advanceSingleGoal(goalId: string) {
+    const state = this.activeGoals.get(goalId);
+    if (!state) {
+      // 可能还没被发现，先 discover 一下
+      await this.discoverNewGoals();
     }
+    await this.advanceStateMachines();
   }
 
   // 轮询已注册项目的 state/ 目录
@@ -412,31 +515,34 @@ class MafwScheduler {
     for (const [goalId, state] of this.activeGoals) {
       const nextAction = state.nextAction;
 
+      let transitioned = false;
+
       switch (nextAction) {
         case 'CREATE_PLAN_SESSION':
           await this.createPhaseSession(goalId, 'plan', '/skill mafw-plan');
+          transitioned = true;
           break;
 
         case 'CREATE_EXECUTE_SESSION':
           await this.createPhaseSession(goalId, 'execute', '/skill mafw-execute');
+          transitioned = true;
           break;
 
         case 'CREATE_REVIEW_SESSION':
           await this.createPhaseSession(goalId, 'review', '/skill mafw-review');
-          break;
-
-        case 'CHECK_VERDICT':
-          await this.handleVerdict(goalId);
+          transitioned = true;
           break;
 
         case 'ARCHIVE':
           await this.archiveGoal(goalId);
           this.activeGoals.delete(goalId);
+          transitioned = true;
           break;
 
         case 'COMPLETED':
         case 'FAILED':
           this.activeGoals.delete(goalId);
+          transitioned = true;
           break;
 
         case 'WAIT_PHASE_COMPLETE':
@@ -445,6 +551,18 @@ class MafwScheduler {
 
         default:
           console.warn(`[Scheduler] Unknown nextAction: ${nextAction} for ${goalId}`);
+      }
+
+      // 广播 loop_transition 事件到 Dashboard
+      if (transitioned) {
+        this.broadcast({
+          type: 'loop_transition',
+          timestamp: new Date().toISOString(),
+          goalId,
+          loopNum: state.loop,
+          waveNum: state.currentWave,
+          data: { from: state.nextAction, to: nextAction }
+        });
       }
     }
   }
@@ -503,59 +621,7 @@ class MafwScheduler {
     console.log(`[Scheduler] ${phase} session ${session.id} created for ${goalId}`);
   }
 
-  // ── 6. Verdict 处理（极简，只读文件） ──
-
-  private async handleVerdict(goalId: string) {
-    const state = this.activeGoals.get(goalId);
-    if (!state) return;
-
-    // 读取请求配置
-    const req = await this.loadRequest(goalId);
-    if (!req) {
-      console.error(`[Scheduler] No request file for ${goalId}`);
-      await this.patchState(goalId, { nextAction: 'FAILED' });
-      return;
-    }
-
-    const reviewPath = state.artifacts?.review;
-    if (!reviewPath) {
-      console.error(`[Scheduler] No review artifact for ${goalId}`);
-      await this.patchState(goalId, { nextAction: 'FAILED' });
-      return;
-    }
-
-    // 读取 review 文件（只读，不解析业务逻辑）
-    const review = await this.loadReviewFile(reviewPath, req.projectDir);
-    if (!review) {
-      console.error(`[Scheduler] Cannot read review file for ${goalId}`);
-      await this.patchState(goalId, { nextAction: 'FAILED' });
-      return;
-    }
-
-    // 检查 verdict
-    if (review.verdict === 'PASS' && this.checkMetrics(req.metrics, review.metrics)) {
-      await this.patchState(goalId, { nextAction: 'ARCHIVE' });
-      console.log(`[Scheduler] Goal ${goalId} verdict: PASS → ARCHIVE`);
-    } else {
-      const currentLoop = state.loop;
-      if (currentLoop >= req.maxLoops) {
-        await this.patchState(goalId, { nextAction: 'ARCHIVE' });
-        console.log(`[Scheduler] Goal ${goalId} maxLoops reached → ARCHIVE`);
-      } else {
-        // 进入下一轮
-        await this.patchState(goalId, {
-          loop: currentLoop + 1,
-          phase: 'PLANNING',
-          nextAction: 'CREATE_PLAN_SESSION',
-          sessions: {},
-          artifacts: {}
-        });
-        console.log(`[Scheduler] Goal ${goalId} verdict: FAIL → Loop ${currentLoop + 1}`);
-      }
-    }
-  }
-
-  // ── 7. Archive ──
+  // ── 6. Archive ──
 
   private async loadArchiveModule(): Promise<{ archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> }> {
     const pluginRoot = path.resolve(__dirname, '..', '..');
@@ -707,28 +773,26 @@ class MafwScheduler {
     }
   }
 
-  // ── 工具函数 ──
+  // ── 工具函数（使用 SDK 客户端） ──
 
   private async createSession(projectDir: string): Promise<Session> {
-    const res = await fetch(`${this.serveUrl}/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ metadata: { mafw: true }, directory: projectDir })
+    const result = await this.opencodeClient.session.create({
+      directory: projectDir,
+      metadata: { mafw: true }
     });
-    return res.json() as Promise<Session>;
+    return { id: result.id, createdAt: result.createdAt || new Date().toISOString() };
   }
 
   private async sendPrompt(sessionId: string, message: string) {
-    await fetch(`${this.serveUrl}/session/${sessionId}/prompt_async`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message })
+    await this.opencodeClient.session.promptAsync({
+      sessionID: sessionId,
+      message
     });
   }
 
   private async destroySession(sessionId: string) {
     try {
-      await fetch(`${this.serveUrl}/session/${sessionId}`, { method: 'DELETE' });
+      await this.opencodeClient.session.delete({ sessionID: sessionId });
     } catch (err: any) {
       console.warn(`[Scheduler] Failed to destroy session ${sessionId}: ${err.message}`);
     }
@@ -776,6 +840,14 @@ class MafwScheduler {
 
     // 更新内存缓存
     this.activeGoals.set(goalId, updated);
+
+    // 广播 state_change 事件到 Dashboard
+    this.broadcast({
+      type: 'state_change',
+      timestamp: new Date().toISOString(),
+      goalId,
+      data: patch
+    });
   }
 
   private async loadRequest(goalId: string): Promise<any> {
@@ -786,38 +858,6 @@ class MafwScheduler {
       }
     }
     return null;
-  }
-
-  private async loadReviewFile(reviewPath: string, projectDir: string): Promise<any> {
-    const fullPath = path.join(projectDir, '.opencode/mafw', reviewPath);
-    if (!fs.existsSync(fullPath)) return null;
-    const content = fs.readFileSync(fullPath, 'utf-8');
-    // 简单解析：查找 verdict
-    const pass = content.includes('Verdict: PASS') || content.toLowerCase().includes('pass');
-    const fail = content.includes('Verdict: FAIL') || content.toLowerCase().includes('fail');
-    const verdict = pass ? 'PASS' : fail ? 'FAIL' : 'UNKNOWN';
-    // 解析 metrics
-    const metrics: Record<string, number> = {};
-    const metricMatches = content.matchAll(/- (\w+):\s*(\d+\.?\d*)/g);
-    for (const match of metricMatches) {
-      metrics[match[1]] = parseFloat(match[2]);
-    }
-    return { verdict, metrics };
-  }
-
-  private checkMetrics(
-    reqMetrics: Record<string, { target: number; unit: string }>,
-    reviewMetrics: Record<string, number> | undefined
-  ): boolean {
-    if (!reviewMetrics) return true;
-    for (const [key, target] of Object.entries(reqMetrics)) {
-      const actual = reviewMetrics[key];
-      if (actual === undefined) continue;
-      if (actual < target.target) {
-        return false;
-      }
-    }
-    return true;
   }
 
   private sleep(ms: number): Promise<void> {

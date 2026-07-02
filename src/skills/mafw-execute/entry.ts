@@ -3,7 +3,7 @@ import * as path from 'path';
 import {
   loadState, loadRequest, loadWaves, extractGoalId, updateState
 } from '../../utils/state';
-import { transitionPhase, recordSession, updateWaveProgress } from '../../engine/phase-orchestrator';
+import { transitionPhase, recordSession, updateWaveProgress, handleLoopEvent } from '../../engine/phase-orchestrator';
 import { GoalWorktreeManager } from '../../engine/goal-worktree-manager';
 import { TaskBranchManager } from '../../engine/task-branch-manager';
 import { GitUtils } from '../../utils/git';
@@ -126,6 +126,7 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
       error: 'wave_merge_partial',
       artifacts: { execute: `receipts/${goalId}/` }
     }, projectDir);
+    await handleLoopEvent(goalId, 'wave.fail', undefined, state.loop, projectDir);
     console.log(`[mafw-execute] Execute complete with partial merge. State updated → FAILED`);
   } else {
     await transitionPhase(goalId, {
@@ -134,6 +135,7 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
       nextAction: 'CREATE_REVIEW_SESSION',
       artifacts: { execute: `receipts/${goalId}/` }
     }, projectDir);
+    await handleLoopEvent(goalId, 'wave.complete', undefined, state.loop, projectDir);
     console.log(`[mafw-execute] Execute complete. State updated → CREATE_REVIEW_SESSION`);
   }
 }

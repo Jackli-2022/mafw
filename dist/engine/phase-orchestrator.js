@@ -41,9 +41,13 @@ exports.markSessionDestroyed = markSessionDestroyed;
 exports.updateWaveProgress = updateWaveProgress;
 exports.shouldStartNextLoop = shouldStartNextLoop;
 exports.startNextLoop = startNextLoop;
+exports.createLoopStateMachine = createLoopStateMachine;
+exports.clearLoopMachineCache = clearLoopMachineCache;
+exports.handleLoopEvent = handleLoopEvent;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const state_1 = require("../utils/state");
+const loop_state_machine_1 = require("./loop-state-machine");
 const VALID_TRANSITIONS = {
     'PLANNING': ['PLANNING_COMPLETE'],
     'PLANNING_COMPLETE': ['EXECUTING'],
@@ -53,12 +57,14 @@ const VALID_TRANSITIONS = {
     'REVIEWING_COMPLETE': ['PLANNING', 'ARCHIVED'],
     'ARCHIVED': ['COMPLETED'],
     'COMPLETED': [],
-    'FAILED': []
+    'FAILED': [],
+    'WAVE_CHECK': ['WAVE_READY', 'REVIEWING'],
+    'WAVE_RETRY': ['WAVE_READY']
 };
 const NEXT_ACTION_MAP = {
     'PLANNING_COMPLETE': 'CREATE_EXECUTE_SESSION',
     'EXECUTING_COMPLETE': 'CREATE_REVIEW_SESSION',
-    'REVIEWING_COMPLETE': 'CHECK_VERDICT',
+    'REVIEWING_COMPLETE': 'ARCHIVE',
     'ARCHIVED': 'COMPLETED'
 };
 /**
@@ -169,5 +175,58 @@ async function startNextLoop(goalId, projectDir = '.') {
         artifacts: {},
         error: undefined
     }, projectDir);
+}
+/**
+ * 创建 Loop 状态机实例
+ */
+const loopMachines = new Map();
+function createLoopStateMachine(goalId, loopNum, projectDir = '.') {
+    const key = `${goalId}:${loopNum}:${path.resolve(projectDir)}`;
+    if (loopMachines.has(key)) {
+        return loopMachines.get(key);
+    }
+    const machine = new loop_state_machine_1.LoopStateMachineImpl(goalId, loopNum, projectDir);
+    loopMachines.set(key, machine);
+    return machine;
+}
+/** Clear cached loop machine instances (for testing) */
+function clearLoopMachineCache() {
+    loopMachines.clear();
+}
+/**
+ * 处理 Loop 事件（包裹状态机 handleEvent）
+ * 自动从 state.json 同步当前 Phase → LoopState
+ */
+async function handleLoopEvent(goalId, trigger, data, loopNum, projectDir = '.') {
+    const state = await (0, state_1.loadState)(goalId, projectDir);
+    if (loopNum === undefined) {
+        loopNum = state.loop;
+    }
+    const machine = createLoopStateMachine(goalId, loopNum, projectDir);
+    // 从 state.json phase → LoopState 同步
+    const phase = state.phase || '';
+    const basePhase = phase.replace(/_COMPLETE$/, '');
+    const phaseStateMap = {
+        'IDLE': loop_state_machine_1.LoopState.IDLE,
+        'PLANNING': loop_state_machine_1.LoopState.PLANNING,
+        'PLANNING_COMPLETE': loop_state_machine_1.LoopState.PLANNING,
+        'WAVE_READY': loop_state_machine_1.LoopState.WAVE_READY,
+        'EXECUTING': loop_state_machine_1.LoopState.EXECUTING,
+        'EXECUTING_COMPLETE': loop_state_machine_1.LoopState.EXECUTING,
+        'WAVE_CHECK': loop_state_machine_1.LoopState.WAVE_CHECK,
+        'REVIEWING': loop_state_machine_1.LoopState.REVIEWING,
+        'REVIEWING_COMPLETE': loop_state_machine_1.LoopState.REVIEWING,
+        'WAVE_RETRY': loop_state_machine_1.LoopState.WAVE_RETRY,
+        'VERDICT': loop_state_machine_1.LoopState.VERDICT,
+        'ARCHIVED': loop_state_machine_1.LoopState.PASS,
+        'FAILED': loop_state_machine_1.LoopState.FAIL,
+    };
+    if (phase in phaseStateMap) {
+        machine.state = phaseStateMap[phase];
+    }
+    else if (basePhase in phaseStateMap) {
+        machine.state = phaseStateMap[basePhase];
+    }
+    return machine.handleEvent(trigger, data);
 }
 //# sourceMappingURL=phase-orchestrator.js.map

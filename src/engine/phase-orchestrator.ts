@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadState, updateState, StateFile } from '../utils/state';
+import { LoopState, LoopStateMachineImpl } from './loop-state-machine';
 
 /**
  * Phase Orchestrator — Phase 接力状态机
@@ -33,13 +34,15 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   'REVIEWING_COMPLETE': ['PLANNING', 'ARCHIVED'],
   'ARCHIVED': ['COMPLETED'],
   'COMPLETED': [],
-  'FAILED': []
+  'FAILED': [],
+  'WAVE_CHECK': ['WAVE_READY', 'REVIEWING'],
+  'WAVE_RETRY': ['WAVE_READY']
 };
 
 const NEXT_ACTION_MAP: Record<string, string> = {
   'PLANNING_COMPLETE': 'CREATE_EXECUTE_SESSION',
   'EXECUTING_COMPLETE': 'CREATE_REVIEW_SESSION',
-  'REVIEWING_COMPLETE': 'CHECK_VERDICT',
+  'REVIEWING_COMPLETE': 'ARCHIVE',
   'ARCHIVED': 'COMPLETED'
 };
 
@@ -198,4 +201,66 @@ export async function startNextLoop(
     artifacts: {},
     error: undefined
   }, projectDir);
+}
+
+/**
+ * 创建 Loop 状态机实例
+ */
+const loopMachines = new Map<string, LoopStateMachineImpl>();
+
+export function createLoopStateMachine(goalId: string, loopNum: number, projectDir: string = '.'): LoopStateMachineImpl {
+  const key = `${goalId}:${loopNum}:${path.resolve(projectDir)}`;
+  if (loopMachines.has(key)) {
+    return loopMachines.get(key)!;
+  }
+  const machine = new LoopStateMachineImpl(goalId, loopNum, projectDir);
+  loopMachines.set(key, machine);
+  return machine;
+}
+
+/** Clear cached loop machine instances (for testing) */
+export function clearLoopMachineCache(): void {
+  loopMachines.clear();
+}
+
+/**
+ * 处理 Loop 事件（包裹状态机 handleEvent）
+ * 自动从 state.json 同步当前 Phase → LoopState
+ */
+export async function handleLoopEvent(
+  goalId: string,
+  trigger: string,
+  data?: any,
+  loopNum?: number,
+  projectDir: string = '.'
+): Promise<boolean> {
+  const state = await loadState(goalId, projectDir);
+  if (loopNum === undefined) {
+    loopNum = state.loop;
+  }
+  const machine = createLoopStateMachine(goalId, loopNum, projectDir);
+  // 从 state.json phase → LoopState 同步
+  const phase = state.phase || '';
+  const basePhase = phase.replace(/_COMPLETE$/, '');
+  const phaseStateMap: Record<string, LoopState> = {
+    'IDLE': LoopState.IDLE,
+    'PLANNING': LoopState.PLANNING,
+    'PLANNING_COMPLETE': LoopState.PLANNING,
+    'WAVE_READY': LoopState.WAVE_READY,
+    'EXECUTING': LoopState.EXECUTING,
+    'EXECUTING_COMPLETE': LoopState.EXECUTING,
+    'WAVE_CHECK': LoopState.WAVE_CHECK,
+    'REVIEWING': LoopState.REVIEWING,
+    'REVIEWING_COMPLETE': LoopState.REVIEWING,
+    'WAVE_RETRY': LoopState.WAVE_RETRY,
+    'VERDICT': LoopState.VERDICT,
+    'ARCHIVED': LoopState.PASS,
+    'FAILED': LoopState.FAIL,
+  };
+  if (phase in phaseStateMap) {
+    machine.state = phaseStateMap[phase];
+  } else if (basePhase in phaseStateMap) {
+    machine.state = phaseStateMap[basePhase];
+  }
+  return machine.handleEvent(trigger, data);
 }

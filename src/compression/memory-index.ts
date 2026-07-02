@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { MemoryIndex, MemoryIndexEntry } from '../types/compression';
+import { BM25Index } from './bm25-index';
 
 /**
  * Memory Index — L2 倒排索引检索器
@@ -21,10 +22,12 @@ import { MemoryIndex, MemoryIndexEntry } from '../types/compression';
 export class MemoryIndexManager {
   private indexPath: string;
   private index: MemoryIndex;
+  private bm25: BM25Index;
 
   constructor(indexPath = '.opencode/mafw/memory-index.json') {
     this.indexPath = indexPath;
     this.index = this.load();
+    this.bm25 = new BM25Index();
   }
 
   private load(): MemoryIndex {
@@ -65,6 +68,9 @@ export class MemoryIndexManager {
         this.index.domain_index[entry.goal].push(entry.id);
       }
     }
+
+    // Also index into BM25 for keyword search
+    this.bm25.addDocument(entry.id, entry.tags.join(' '));
   }
 
   /**
@@ -107,6 +113,13 @@ export class MemoryIndexManager {
       .map(x => x.entry!);
 
     return scored;
+  }
+
+  /**
+   * BM25 关键词搜索
+   */
+  searchBM25(query: string, topK = 10): Array<{ id: string; score: number; text: string }> {
+    return this.bm25.search(query, topK);
   }
 
   /**

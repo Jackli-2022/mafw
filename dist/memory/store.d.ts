@@ -1,4 +1,5 @@
 import { Delta, DeltaType, StoreConfig, BaseSkillManifest, OscillationResult, MergeResult } from '../types/parametric';
+import { EnergyEvent } from './energy-system';
 /**
  * Parametric Memory Store
  *
@@ -15,7 +16,12 @@ import { Delta, DeltaType, StoreConfig, BaseSkillManifest, OscillationResult, Me
  */
 export declare class ParametricStore {
     private config;
-    constructor(config?: Partial<StoreConfig>);
+    private energySystem;
+    constructor(config?: Partial<StoreConfig>, energyConfig?: {
+        decayRatePerDay?: number;
+        cleanupThreshold?: number;
+        criticalThreshold?: number;
+    });
     private ensureDirs;
     private deltaDir;
     private deltaPath;
@@ -23,6 +29,10 @@ export declare class ParametricStore {
      * 保存一个 Δ。如果已存在且内容相同，跳过写入。
      */
     save(delta: Delta): void;
+    /**
+     * 更新 Δ 的能量值（基于事件和时间的衰减/奖励）
+     */
+    updateEnergy(id: string, type: DeltaType, event: EnergyEvent): void;
     /**
      * 读取单个 Δ
      */

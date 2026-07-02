@@ -39,19 +39,22 @@ const path = __importStar(require("path"));
 const store_1 = require("./memory/store");
 const memory_index_1 = require("./compression/memory-index");
 const session_pruner_1 = require("./compression/session-pruner");
+const vector_index_1 = require("./compression/vector-index");
+const token_budget_allocator_1 = require("./compression/token-budget-allocator");
+const rrf_fusion_1 = require("./compression/rrf-fusion");
 const state_1 = require("./utils/state");
 const session_ending_1 = require("./hooks/session-ending");
-/**
- * MAFW Plugin — OpenCode Official Format v4.1
- *
- * Architecture: §8.1
- * Returns an object with config, command, tool, hooks.
- * No activate() function. No registerSkill/registerCommand API.
- */
+const config_loader_1 = require("./utils/config-loader");
+const hook_manager_1 = require("./hooks/hook-manager");
+const retry_1 = require("./utils/retry");
+const knowledge_graph_manager_1 = require("./graph/knowledge-graph-manager");
+const graph_searcher_1 = require("./graph/graph-searcher");
 async function MafwPlugin({ directory }) {
     const mafwDir = path.join(directory, '.opencode', 'mafw');
     // 0. 初始化 MAFW 目录结构（插件运行时创建）
     await ensureMafwDirectories(mafwDir);
+    // 0a. Load configuration
+    const config = config_loader_1.ConfigLoader.getInstance(directory).getAll();
     // 1. 向 Gateway 注册项目（探测端口 3000-3010）
     await registerWithGateway(directory, mafwDir);
     console.log('[MAFW] Plugin activated. All skills loaded. All commands registered.');
@@ -62,17 +65,140 @@ async function MafwPlugin({ directory }) {
         manifestFile: path.join(mafwDir, 'parametric', 'base-skill-manifest.yaml')
     });
     const memoryIndex = new memory_index_1.MemoryIndexManager(path.join(mafwDir, 'memory-index.json'));
+    const vectorIndex = new vector_index_1.VectorIndex();
+    const tokenBudgetAllocator = new token_budget_allocator_1.TokenBudgetAllocator({ defaultBudget: 2000 });
     const sessionPruner = new session_pruner_1.SessionPruner({ maxContextTokens: 8000, compressionThreshold: 0.6 });
+    const knowledgeGraphManager = new knowledge_graph_manager_1.KnowledgeGraphManager(path.join(mafwDir, 'knowledge-graph.json'));
+    await knowledgeGraphManager.load();
     const toolExecutedHook = async ({ tool }, { output }) => {
         if (output && output.length > 1000) {
             console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
         }
     };
+    // ── Hook Manager (Wave 2: Task 3) ──
+    const hookManager = new hook_manager_1.HookManager({ failBehavior: 'continue', timeout: 30000 });
+    hookManager.register({
+        name: 'session-ending',
+        event: 'session.end',
+        handler: async (ctx) => {
+            await (0, session_ending_1.sessionEndingHook)({ sessionId: ctx.sessionID, projectDir: directory });
+        },
+        priority: 100
+    });
+    hookManager.register({
+        name: 'tool-executed',
+        event: 'tool.execute.after',
+        handler: async (ctx) => {
+            const { tool, output } = ctx.data || ctx;
+            if (output && output.length > 1000) {
+                console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
+            }
+        },
+        priority: 50
+    });
+    // ── V5 Hybrid Search 工具函数 ──
+    async function executeHybridSearch({ goalId, query, maxResults = 10, tokenBudget = 2000 }) {
+        // 1. Read goal memories/data from filesystem
+        const goalFile = path.join(mafwDir, 'goals', `${goalId}.md`);
+        const goalText = fs.existsSync(goalFile) ? fs.readFileSync(goalFile, 'utf-8') : '';
+        const stateFile = path.join(mafwDir, 'state', `${goalId}.json`);
+        const stateData = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf-8')) : null;
+        const loop = stateData?.loop || 1;
+        // 2. Search BM25 index
+        let bm25Results = [];
+        try {
+            bm25Results = (memoryIndex.searchBM25(query, maxResults) || []).map(r => ({ id: `bm25-${r.id}`, score: r.score, text: r.text, loopNum: 1 }));
+        }
+        catch { /* ignore */ }
+        // 3. Search Vector index (if initialized and has vectors)
+        let vectorResults = [];
+        try {
+            if (vectorIndex.size > 0) {
+                const vecResults = await vectorIndex.search(query, maxResults);
+                vectorResults = vecResults.map(r => ({ id: `vec-${r.id}`, score: r.score, text: r.text, metadata: r.metadata, loopNum: r.metadata?.loopNum || 1 }));
+            }
+        }
+        catch { /* ignore */ }
+        // 4. Read parametric deltas from store
+        let parametricDeltas = [];
+        try {
+            parametricDeltas = parametricStore.match({ domain: 'any', goalKeywords: [goalId] });
+        }
+        catch { /* ignore */ }
+        // 5. Read review files for episodic memories
+        const reviewFiles = [];
+        try {
+            const reviewsDir = path.join(mafwDir, 'reviews');
+            if (fs.existsSync(reviewsDir)) {
+                const files = fs.readdirSync(reviewsDir).filter(f => f.startsWith(goalId) && f.endsWith('.md'));
+                for (const f of files) {
+                    const content = fs.readFileSync(path.join(reviewsDir, f), 'utf-8');
+                    const loopMatch = f.match(/loop(\d+)/);
+                    const loopNum = loopMatch ? parseInt(loopMatch[1]) : 1;
+                    const verdictMatch = content.match(/verdict:\s*(\w+)/i);
+                    const verdict = verdictMatch ? verdictMatch[1] : 'unknown';
+                    reviewFiles.push({ id: f.replace('.md', ''), content, verdict, loopNum, energy: 0.5 });
+                }
+            }
+        }
+        catch { /* ignore */ }
+        // 6. RRF fusion
+        const fused = (0, rrf_fusion_1.reciprocalRankFusion)(60, bm25Results, vectorResults);
+        const diversified = (0, rrf_fusion_1.diversifyByLoop)(fused, 3);
+        // 7. Build categorized result sets
+        const semantic = [];
+        const procedural = [];
+        const parametric = [];
+        const episodic = [];
+        for (const item of diversified) {
+            const meta = item.metadata || {};
+            const type = meta.type || '';
+            if (type === 'pattern' || item.id.startsWith('pattern-')) {
+                procedural.push({ id: item.id, score: item.score, pattern: item.text || '', successRate: meta.successRate || 0.5, energy: meta.energy || 0.5 });
+            }
+            else if (type === 'constraint' || type === 'prompt' || type === 'parametric') {
+                parametric.push({ id: item.id, score: item.score, content: item.text || '', energy: meta.energy || 0.5, type });
+            }
+            else if (type === 'review' || type === 'episodic') {
+                episodic.push({ id: item.id, score: item.score, summary: item.text || '', verdict: meta.verdict || 'unknown', energy: meta.energy || 0.5 });
+            }
+            else {
+                semantic.push({ id: item.id, score: item.score, facts: item.text ? [item.text] : [], concepts: meta.concepts || [], energy: meta.energy || 0.5 });
+            }
+        }
+        for (const d of parametricDeltas) {
+            parametric.push({ id: d.id || `delta-${parametric.length}`, score: d.energy_score || 0.5, content: d.rule || d.prompt_delta || d.pattern_template || '', energy: d.energy_score || 0.5, type: d.type || 'constraint' });
+        }
+        for (const r of reviewFiles) {
+            episodic.push({ id: r.id, score: 0.5, summary: r.content.substring(0, 200), verdict: r.verdict, energy: r.energy });
+        }
+        if (goalText && semantic.length === 0) {
+            semantic.push({ id: `${goalId}-charter`, score: 1.0, facts: [goalText.substring(0, 500)], concepts: [goalId], energy: 0.8 });
+        }
+        // 8. Apply token budget
+        const allocated = tokenBudgetAllocator.allocate({ parametric: parametric, procedural: procedural, semantic: semantic, episodic: episodic }, tokenBudget);
+        return {
+            semantic: allocated.semantic,
+            procedural: allocated.procedural,
+            parametric: allocated.parametric,
+            episodic: allocated.episodic,
+            totalTokens: allocated.totalTokens
+        };
+    }
+    async function executeGetDeltas({ goalId, phase, maxResults = 5 }) {
+        try {
+            const deltas = parametricStore.match({ domain: phase, goalKeywords: [goalId], loopStage: phase, loopCount: 1 });
+            return { deltas: deltas.slice(0, maxResults) };
+        }
+        catch {
+            return { deltas: [] };
+        }
+    }
     return {
         // ── 配置 ──
         config: async (config) => {
             config.mafw = {
-                gatewayPort: 3000,
+                gatewayPort: config.dashboard.port,
                 maxLoops: 5,
                 heartbeatTimeout: 300000,
                 agents: {
@@ -82,7 +208,7 @@ async function MafwPlugin({ directory }) {
                 }
             };
         },
-        // ── 三层记忆自动注入 User Message ──
+        // ── V5 四层记忆自动注入 User Message（Hybrid Search + 向后兼容）──
         'experimental.chat.messages.transform': async (input, output) => {
             const messages = output.messages || [];
             const firstUser = messages.find((m) => m.info?.role === 'user');
@@ -104,7 +230,13 @@ async function MafwPlugin({ directory }) {
             }
             if (!goalId || !phase)
                 return;
-            // 读取三层记忆（Plugin 直接读文件，不通过 Gateway）
+            // 1. V5 Hybrid search (try; fall back to existing logic)
+            let hybridResults = null;
+            try {
+                hybridResults = await executeHybridSearch({ goalId, query: text, maxResults: 10, tokenBudget: 2000 });
+            }
+            catch { /* ignore search failures */ }
+            // 2. 读取三层记忆（Plugin 直接读文件，不通过 Gateway）
             let deltas = [];
             let lessons = [];
             let state = null;
@@ -123,16 +255,44 @@ async function MafwPlugin({ directory }) {
             const waveContext = state?.currentWave && state.currentWave > 0
                 ? `Wave ${state.currentWave}/${state.totalWaves || '?'}`
                 : '';
-            // 注入到 user message
+            // 3. Build memory block
             const parts = [];
-            if (deltas.length > 0) {
-                parts.push('<mafw-deltas>', ...deltas.map((d) => `[Δ ${d.type}] ${d.id} (energy=${d.energy || 0.5}): ${d.rule || d.prompt_delta || d.pattern_template || ''}`), '</mafw-deltas>');
+            const hasHybridResults = hybridResults && (hybridResults.parametric.length > 0 ||
+                hybridResults.procedural.length > 0 ||
+                hybridResults.semantic.length > 0 ||
+                hybridResults.episodic.length > 0);
+            if (hasHybridResults) {
+                // V5 enhanced pipeline: token-budgeted hybrid results
+                const allocated = tokenBudgetAllocator.allocate({
+                    parametric: [...deltas, ...(hybridResults.parametric || [])],
+                    procedural: hybridResults.procedural || [],
+                    semantic: hybridResults.semantic || [],
+                    episodic: hybridResults.episodic || []
+                }, 2000);
+                if (allocated.parametric.length > 0) {
+                    parts.push('<mafw-deltas>', ...allocated.parametric.map((d) => `[${d.type || 'constraint'}] ${d.content || d.rule || ''}`), '</mafw-deltas>');
+                }
+                if (allocated.procedural.length > 0) {
+                    parts.push('<mafw-patterns>', ...allocated.procedural.map((p) => `[${((p.successRate || 0) * 100).toFixed(0)}%] ${p.pattern || ''}`), '</mafw-patterns>');
+                }
+                if (allocated.semantic.length > 0) {
+                    parts.push('<mafw-facts>', ...allocated.semantic.map((s) => `• ${(s.facts || []).join('; ')}`), '</mafw-facts>');
+                }
+                if (allocated.episodic.length > 0) {
+                    parts.push('<mafw-history>', ...allocated.episodic.map((e) => `Loop ${e.loopNum || '?'}: ${e.verdict || '?'} — ${e.summary || e.content || ''}`), '</mafw-history>');
+                }
             }
-            if (lessons.length > 0) {
-                parts.push('<mafw-lessons>', ...lessons.map((l) => `[Lesson] ${typeof l === 'string' ? l : l.content || ''}`), '</mafw-lessons>');
-            }
-            if (waveContext) {
-                parts.push('<mafw-context>', waveContext, '</mafw-context>');
+            else {
+                // Fall back to v4.1 simple injection
+                if (deltas.length > 0) {
+                    parts.push('<mafw-deltas>', ...deltas.map((d) => `[Δ ${d.type}] ${d.id} (energy=${d.energy || 0.5}): ${d.rule || d.prompt_delta || d.pattern_template || ''}`), '</mafw-deltas>');
+                }
+                if (lessons.length > 0) {
+                    parts.push('<mafw-lessons>', ...lessons.map((l) => `[Lesson] ${typeof l === 'string' ? l : l.content || ''}`), '</mafw-lessons>');
+                }
+                if (waveContext) {
+                    parts.push('<mafw-context>', waveContext, '</mafw-context>');
+                }
             }
             parts.push(text);
             firstUser.parts[0].text = parts.join('\n\n');
@@ -232,6 +392,55 @@ async function MafwPlugin({ directory }) {
         },
         // ── Tools ──
         tool: {
+            mafw_search_hybrid: {
+                description: 'Hybrid search across memories using BM25 + Vector + RRF fusion',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        goalId: { type: 'string' },
+                        query: { type: 'string' },
+                        maxResults: { type: 'number', default: 10 },
+                        tokenBudget: { type: 'number', default: 2000 }
+                    },
+                    required: ['goalId', 'query']
+                },
+                async execute({ goalId, query, maxResults, tokenBudget }) {
+                    const results = await executeHybridSearch({ goalId, query, maxResults, tokenBudget });
+                    if (config.retrieval?.graph?.enabled && knowledgeGraphManager.getGraph().nodes.length > 0) {
+                        const graphAccessor = new graph_searcher_1.GraphSearcher({
+                            nodes: knowledgeGraphManager.getGraph().nodes.reduce((map, n) => { map.set(n.id, n); return map; }, new Map()),
+                            edges: knowledgeGraphManager.getGraph().edges.reduce((map, e) => { map.set(e.id, e); return map; }, new Map()),
+                        });
+                        const graphNodes = graphAccessor.search([query], config.retrieval.graph.maxDepth || 2);
+                        results.semantic = [
+                            ...results.semantic,
+                            ...graphNodes.map(n => ({
+                                id: `graph-${n.id}`,
+                                score: 0.4,
+                                facts: [`[graph] ${n.label}`],
+                                concepts: [n.type],
+                                energy: n.energy,
+                            })),
+                        ];
+                    }
+                    return results;
+                }
+            },
+            mafw_get_deltas: {
+                description: 'Get parametric deltas for a Goal and phase',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        goalId: { type: 'string' },
+                        phase: { type: 'string' },
+                        maxResults: { type: 'number', default: 5 }
+                    },
+                    required: ['goalId']
+                },
+                async execute({ goalId, phase, maxResults }) {
+                    return executeGetDeltas({ goalId, phase, maxResults });
+                }
+            },
             mafw_update_state: {
                 description: 'Update the state file for a Goal. Call this after completing a phase.',
                 parameters: {
@@ -246,11 +455,9 @@ async function MafwPlugin({ directory }) {
                     required: ['goalId', 'patch']
                 },
                 async execute({ goalId, patch }) {
-                    const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
-                    const current = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-                    const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
-                    fs.writeFileSync(statePath, JSON.stringify(updated, null, 2));
-                    return { updated, path: statePath };
+                    const projectDir = path.dirname(path.dirname(mafwDir));
+                    const updated = await (0, state_1.updateState)(goalId, patch, projectDir);
+                    return { updated, path: path.join(mafwDir, 'state', `${goalId}.json`) };
                 }
             },
             mafw_load_state: {
@@ -267,12 +474,10 @@ async function MafwPlugin({ directory }) {
                 }
             }
         },
-        // ── Hook aliases for OpenCode v4.1 format ──
+        // ── Hook aliases for OpenCode v4.1 format (delegated to HookManager) ──
         hooks: {
-            'session.end': async ({ sessionID }) => {
-                await (0, session_ending_1.sessionEndingHook)({ sessionId: sessionID, projectDir: directory });
-            },
-            'tool.execute.after': toolExecutedHook
+            'session.end': (ctx) => hookManager.execute('session.end', ctx),
+            'tool.execute.after': (ctx, result) => hookManager.execute('tool.execute.after', { ...ctx, data: result })
         },
         // ── Session 压缩前：保存状态快照 ──
         'experimental.session.compacting': async ({ sessionID }, { snapshot }) => {
@@ -283,9 +488,6 @@ async function MafwPlugin({ directory }) {
         event: async ({ event }) => {
             if (event.type === 'session.start') {
                 console.log('[MAFW] Session started:', event.sessionID);
-            }
-            if (event.type === 'session.end') {
-                await sessionEndingFallback(event.sessionID, mafwDir);
             }
         }
     };
@@ -310,7 +512,7 @@ async function ensureMafwDirectories(mafwDir) {
         fs.writeFileSync(manifestPath, 'manifest_version: 1\nmerged_deltas: []\n', 'utf-8');
     }
 }
-async function registerWithGateway(directory, mafwDir, retries = 3) {
+async function registerWithGateway(directory, mafwDir) {
     const payload = {
         projectDir: directory,
         mafwDir,
@@ -319,13 +521,13 @@ async function registerWithGateway(directory, mafwDir, retries = 3) {
     };
     for (let port = 3000; port <= 3010; port++) {
         try {
-            const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(500) });
+            const res = await (0, retry_1.withRetry)(() => fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(500) }), { maxRetries: 2 });
             if (res.ok) {
-                await fetch(`http://127.0.0.1:${port}/register`, {
+                await (0, retry_1.withRetry)(() => fetch(`http://127.0.0.1:${port}/register`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
-                });
+                }), { maxRetries: 2 });
                 console.log(`[MAFW] Registered with Gateway @ localhost:${port}`);
                 return;
             }
@@ -338,10 +540,6 @@ async function registerWithGateway(directory, mafwDir, retries = 3) {
   Or register system service: npx mafw-gateway service-register
   Goal submission will write to filesystem, Gateway will take over when started.
 `);
-}
-async function sessionEndingFallback(sessionId, mafwDir) {
-    const projectDir = path.dirname(path.dirname(mafwDir));
-    await (0, session_ending_1.sessionEndingHook)({ sessionId, projectDir });
 }
 async function findPendingGoal(directory) {
     const stateDir = path.join(directory, '.opencode', 'mafw', 'state');

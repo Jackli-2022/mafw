@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAFW Loop Engineering Workbench</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --border: #30363d;
+    --border-light: #484f58;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-yellow: #d29922;
+    --accent-red: #f85149;
+    --accent-purple: #a371f7;
+  }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  .card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .card:hover {
+    border-color: var(--border-light);
+  }
+  .nav-tab {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .nav-tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+  .nav-tab.active { color: var(--text-primary); background: var(--bg-tertiary); }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+  .status-green { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+  .status-yellow { background: var(--accent-yellow); box-shadow: 0 0 6px var(--accent-yellow); }
+  .status-red { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
+  .status-gray { background: var(--text-secondary); }
+  .pulse { animation: pulse 2s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .timeline-line {
+    width: 2px;
+    background: var(--border);
+    position: absolute;
+    left: 15px;
+    top: 30px;
+    bottom: 0;
+  }
+  .timeline-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    position: absolute; left: 10px; top: 6px;
+    border: 2px solid var(--bg-primary);
+  }
+  .kpi-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .kpi-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .tag-blue { background: rgba(88, 166, 255, 0.15); color: var(--accent-blue); }
+  .tag-green { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); }
+  .tag-yellow { background: rgba(210, 153, 34, 0.15); color: var(--accent-yellow); }
+  .tag-red { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); }
+  .tag-purple { background: rgba(163, 113, 247, 0.15); color: var(--accent-purple); }
+  .table-row:hover { background: rgba(255,255,255,0.03); }
+  .btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    transition: all 0.2s;
+  }
+  .btn:hover { background: var(--border-light); border-color: var(--border-light); }
+  .btn-primary {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+  }
+  .btn-primary:hover { background: #79b8ff; }
+  .scroll-hide::-webkit-scrollbar { display: none; }
+  .fade-in { animation: fadeIn 0.3s ease-in; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .view { display: none; }
+  .view.active { display: block; }
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<nav style="background: var(--bg-secondary); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50;">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #58a6ff, #a371f7);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <span class="font-bold text-lg tracking-tight">MAFW Workbench</span>
+      <span class="text-xs px-2 py-0.5 rounded-full font-mono" style="background: rgba(88,166,255,0.15); color: var(--accent-blue);">v3.5</span>
+    </div>
+    <div class="flex items-center gap-1">
+      <div class="nav-tab active" onclick="switchView('overview')">Overview</div>
+      <div class="nav-tab" onclick="switchView('sessions')">Sessions</div>
+      <div class="nav-tab" onclick="switchView('goals')">Goals</div>
+      <div class="nav-tab" onclick="switchView('loops')">Loops</div>
+      <div class="nav-tab" onclick="switchView('analytics')">Analytics</div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 text-sm" style="color: var(--accent-green);">
+        <span class="status-dot status-green pulse"></span>
+        <span class="font-mono">● Live</span>
+      </div>
+      <div class="w-8 h-8 rounded-full flex items-center justify-center" style="background: var(--bg-tertiary); border: 1px solid var(--border);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.24 4.24l-4.24-4.24M6.34 6.34L2.1 2.1"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-7xl mx-auto px-6 py-6">
+
+<!-- ==================== OVERVIEW VIEW ==================== -->
+<div id="view-overview" class="view active fade-in">
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-6 gap-4 mb-6">
+    <div class="card p-4">
+      <div class="flex items-center gap-2 text-sm mb-2" style="color: var(--text-secondary);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Active Goals
+      </div>
+      <div class="kpi-value" style="color: var(--accent-blue);">3</div>
+      <div class="kpi-sub">1 completed today</div>
+    </div>
+    <div class="card p-4">
+      <div class="flex items-center gap-2 text-sm mb-2" style="color: var(--text-secondary);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><path d="M21 12a9 9 0 11-6.22-8.56"/><path d="M21 3v9h-9"/></svg>
+        Loops Today
+      </div>
+      <div class="kpi-value" style="color: var(--accent-purple);">7</div>
+      <div class="kpi-sub">5 passed · 2 reviewing</div>
+    </div>
+    <div class="card p-4">
+      <div class="flex items-center gap-2 text-sm mb-2" style="color: var(--text-secondary);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Waves Today
+      </div>
+      <div class="kpi-value" style="color: var(--accent-green);">23</div>
+      <div class="kpi-sub">18 success · 5 pending</div>
+    </div>
+    <div class="card p-4">
+      <div class="flex items-center gap-2 text-sm mb-2" style="color: var(--text-secondary);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>
+        Active Sessions
+      </div>
+      <div class="kpi-value" style="color: var(--accent-yellow);">2</div>
+      <div class="kpi-sub">1 connected · 1 stalled</div>
+    </div>
+    <div class="card p-4">
+      <div class="flex items-center gap-2 text-sm mb-2" style="color: var(--text-secondary);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Total Duration
+      </div>
+      <div class="kpi-value">2h 14m</div>
+      <div class="kpi-sub">avg 18m per loop</div>
+    </div>
+    <div class="card p-4">
+      <div class="flex items-center gap-2 text-sm mb-2" style="color: var(--text-secondary);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        Memory Entries
+      </div>
+      <div class="kpi-value" style="color: var(--accent-blue);">156</div>
+      <div class="kpi-sub font-mono">L1:120 · L2:36 · L3:0</div>
+    </div>
+  </div>
+
+  <!-- Middle Charts -->
+  <div class="grid grid-cols-2 gap-4 mb-6">
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-sm">Loop Phase Distribution</h3>
+        <span class="text-xs" style="color: var(--text-secondary);">Today</span>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span style="color: var(--text-secondary);">Planning</span><span class="font-mono">2 (29%)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 29%; background: var(--accent-blue);"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span style="color: var(--text-secondary);">Executing</span><span class="font-mono">3 (43%)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 43%; background: var(--accent-green);"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span style="color: var(--text-secondary);">Reviewing</span><span class="font-mono">2 (29%)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 29%; background: var(--accent-yellow);"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span style="color: var(--text-secondary);">Completed</span><span class="font-mono">5 (71%)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 71%; background: var(--accent-purple);"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span style="color: var(--text-secondary);">Failed</span><span class="font-mono">0 (0%)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 0%; background: var(--accent-red);"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-sm">Agent Workload</h3>
+        <span class="text-xs" style="color: var(--text-secondary);">Calls Today</span>
+      </div>
+      <div class="space-y-3">
+        <div class="flex items-center gap-3">
+          <span class="w-20 text-xs font-mono" style="color: var(--text-secondary);">PlanAgent</span>
+          <div class="flex-1 h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 35%; background: var(--accent-blue);"></div></div>
+          <span class="w-12 text-xs font-mono text-right">35%</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="w-20 text-xs font-mono" style="color: var(--text-secondary);">CodeAgent</span>
+          <div class="flex-1 h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 52%; background: var(--accent-green);"></div></div>
+          <span class="w-12 text-xs font-mono text-right">52%</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="w-20 text-xs font-mono" style="color: var(--text-secondary);">ReviewAgent</span>
+          <div class="flex-1 h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 8%; background: var(--accent-yellow);"></div></div>
+          <span class="w-12 text-xs font-mono text-right">8%</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="w-20 text-xs font-mono" style="color: var(--text-secondary);">ToolAgent</span>
+          <div class="flex-1 h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 5%; background: var(--accent-purple);"></div></div>
+          <span class="w-12 text-xs font-mono text-right">5%</span>
+        </div>
+      </div>
+      <div class="mt-4 pt-3" style="border-top: 1px solid var(--border);">
+        <div class="flex justify-between text-xs">
+          <span style="color: var(--text-secondary);">Total Agent Calls</span>
+          <span class="font-mono font-semibold">1,247</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Activity Table -->
+  <div class="card p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-semibold text-sm">Live Activity</h3>
+      <div class="flex items-center gap-2">
+        <span class="status-dot status-green pulse"></span>
+        <span class="text-xs" style="color: var(--text-secondary);">Auto-refresh 5s</span>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--border); color: var(--text-secondary);">
+            <th class="text-left py-2 px-3 font-medium">Project</th>
+            <th class="text-left py-2 px-3 font-medium">Goal</th>
+            <th class="text-left py-2 px-3 font-medium">Loop</th>
+            <th class="text-left py-2 px-3 font-medium">Phase</th>
+            <th class="text-left py-2 px-3 font-medium">Waves</th>
+            <th class="text-left py-2 px-3 font-medium">Status</th>
+            <th class="text-left py-2 px-3 font-medium">Duration</th>
+            <th class="text-left py-2 px-3 font-medium">Last Active</th>
+            <th class="text-left py-2 px-3 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="table-row" style="border-bottom: 1px solid var(--border);">
+            <td class="py-3 px-3">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" style="background: var(--accent-green);"></div>
+                <span class="font-mono text-xs">todo-app</span>
+              </div>
+            </td>
+            <td class="py-3 px-3">实现用户登录模块</td>
+            <td class="py-3 px-3 font-mono">#7</td>
+            <td class="py-3 px-3"><span class="tag tag-yellow">REVIEWING</span></td>
+            <td class="py-3 px-3 font-mono">3/3</td>
+            <td class="py-3 px-3"><span class="tag tag-yellow">🟡 review</span></td>
+            <td class="py-3 px-3 font-mono">4m 32s</td>
+            <td class="py-3 px-3 font-mono" style="color: var(--accent-green);">10s ago</td>
+            <td class="py-3 px-3"><button class="btn">Details</button></td>
+          </tr>
+          <tr class="table-row" style="border-bottom: 1px solid var(--border);">
+            <td class="py-3 px-3">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" style="background: var(--accent-blue);"></div>
+                <span class="font-mono text-xs">hello-world</span>
+              </div>
+            </td>
+            <td class="py-3 px-3">初始化项目结构</td>
+            <td class="py-3 px-3 font-mono">#1</td>
+            <td class="py-3 px-3"><span class="tag tag-purple">COMPLETED</span></td>
+            <td class="py-3 px-3 font-mono">2/2</td>
+            <td class="py-3 px-3"><span class="tag tag-green">✅ pass</span></td>
+            <td class="py-3 px-3 font-mono">1m 15s</td>
+            <td class="py-3 px-3 font-mono" style="color: var(--text-secondary);">5m ago</td>
+            <td class="py-3 px-3"><button class="btn">Details</button></td>
+          </tr>
+          <tr class="table-row">
+            <td class="py-3 px-3">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" style="background: var(--accent-yellow);"></div>
+                <span class="font-mono text-xs">mafw-core</span>
+              </div>
+            </td>
+            <td class="py-3 px-3">重构记忆注入逻辑</td>
+            <td class="py-3 px-3 font-mono">#3</td>
+            <td class="py-3 px-3"><span class="tag tag-green">EXECUTING</span></td>
+            <td class="py-3 px-3 font-mono">1/3</td>
+            <td class="py-3 px-3"><span class="tag tag-green">🟢 running</span></td>
+            <td class="py-3 px-3 font-mono">2m 08s</td>
+            <td class="py-3 px-3 font-mono" style="color: var(--accent-green);">just now</td>
+            <td class="py-3 px-3"><button class="btn">Details</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SESSIONS VIEW ==================== -->
+<div id="view-sessions" class="view fade-in">
+  <div class="card p-5 mb-4">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-semibold text-sm">OpenCode Sessions</h3>
+      <button class="btn btn-primary">+ New Session</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr style="border-bottom: 1px solid var(--border); color: var(--text-secondary);">
+            <th class="text-left py-2 px-3 font-medium">Session ID</th>
+            <th class="text-left py-2 px-3 font-medium">Project Dir</th>
+            <th class="text-left py-2 px-3 font-medium">Agent</th>
+            <th class="text-left py-2 px-3 font-medium">Status</th>
+            <th class="text-left py-2 px-3 font-medium">SSE Health</th>
+            <th class="text-left py-2 px-3 font-medium">Idle</th>
+            <th class="text-left py-2 px-3 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="table-row" style="border-bottom: 1px solid var(--border);">
+            <td class="py-3 px-3 font-mono text-xs">ses_0f76a068...</td>
+            <td class="py-3 px-3 font-mono text-xs">D:\code\todo-app</td>
+            <td class="py-3 px-3">default</td>
+            <td class="py-3 px-3"><span class="tag tag-green">🟢 Active</span></td>
+            <td class="py-3 px-3"><span class="tag tag-green">🟢 Connected</span></td>
+            <td class="py-3 px-3 font-mono">12s</td>
+            <td class="py-3 px-3 flex gap-2">
+              <button class="btn">Inject</button>
+              <button class="btn" style="color: var(--accent-red);">Close</button>
+            </td>
+          </tr>
+          <tr class="table-row">
+            <td class="py-3 px-3 font-mono text-xs">ses_a1b2c3d4...</td>
+            <td class="py-3 px-3 font-mono text-xs">D:\code\hello-world</td>
+            <td class="py-3 px-3">mafw-loop</td>
+            <td class="py-3 px-3"><span class="tag tag-yellow">🟡 Idle</span></td>
+            <td class="py-3 px-3"><span class="tag tag-red">🔴 Reconnecting</span></td>
+            <td class="py-3 px-3 font-mono">5m</td>
+            <td class="py-3 px-3 flex gap-2">
+              <button class="btn btn-primary">Recover</button>
+              <button class="btn" style="color: var(--accent-red);">Close</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Session Detail Panel -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">SSE Event Stream</h3>
+      <div class="font-mono text-xs p-3 rounded-lg overflow-y-auto max-h-64" style="background: #010409; border: 1px solid var(--border);">
+        <div style="color: var(--text-secondary);">[15:32:01] <span style="color: var(--accent-green);">→</span> SESSION_CREATED ses_0f76a068</div>
+        <div style="color: var(--text-secondary);">[15:32:02] <span style="color: var(--accent-blue);">→</span> GOAL_ATTACHED goal_login_module</div>
+        <div style="color: var(--text-secondary);">[15:32:05] <span style="color: var(--accent-purple);">→</span> LOOP_STARTED #7</div>
+        <div style="color: var(--text-secondary);">[15:32:06] <span style="color: var(--accent-yellow);">→</span> PHASE_TRANSITION PLANNING → EXECUTING</div>
+        <div style="color: var(--text-secondary);">[15:32:08] <span style="color: var(--accent-blue);">→</span> WAVE_STARTED 1/3 setup-auth</div>
+        <div style="color: var(--text-secondary);">[15:32:10] <span style="color: var(--accent-green);">→</span> TOOL_CALL shell.exec("npm install jsonwebtoken")</div>
+        <div style="color: var(--text-secondary);">[15:32:12] <span style="color: var(--accent-green);">→</span> WAVE_COMPLETE 1/3</div>
+        <div style="color: var(--text-secondary);">[15:32:15] <span style="color: var(--accent-blue);">→</span> WAVE_STARTED 2/3 implement-jwt</div>
+        <div style="color: var(--text-secondary);">[15:32:18] <span style="color: var(--accent-green);">→</span> FILE_WRITE src/auth/jwt.ts</div>
+        <div style="color: var(--text-secondary);">[15:32:25] <span style="color: var(--accent-green);">→</span> WAVE_COMPLETE 2/3</div>
+        <div style="color: var(--text-secondary);">[15:32:30] <span style="color: var(--accent-yellow);">→</span> PHASE_TRANSITION EXECUTING → REVIEWING</div>
+        <div style="color: var(--accent-yellow);">[15:32:35] <span style="color: var(--accent-yellow);">→</span> REVIEW_PENDING ⚠️ 2 issues found</div>
+        <div class="pulse" style="color: var(--accent-yellow);">[15:36:42] <span style="color: var(--accent-yellow);">→</span> ... waiting for decision</div>
+      </div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Session Metrics</h3>
+      <div class="space-y-4">
+        <div class="flex justify-between items-center py-2" style="border-bottom: 1px solid var(--border);">
+          <span class="text-sm" style="color: var(--text-secondary);">Connection Uptime</span>
+          <span class="font-mono font-semibold">4m 32s</span>
+        </div>
+        <div class="flex justify-between items-center py-2" style="border-bottom: 1px solid var(--border);">
+          <span class="text-sm" style="color: var(--text-secondary);">SSE Reconnects</span>
+          <span class="font-mono font-semibold">0</span>
+        </div>
+        <div class="flex justify-between items-center py-2" style="border-bottom: 1px solid var(--border);">
+          <span class="text-sm" style="color: var(--text-secondary);">Messages Sent</span>
+          <span class="font-mono font-semibold">27</span>
+        </div>
+        <div class="flex justify-between items-center py-2" style="border-bottom: 1px solid var(--border);">
+          <span class="text-sm" style="color: var(--text-secondary);">Total Tokens</span>
+          <span class="font-mono font-semibold">45.2K</span>
+        </div>
+        <div class="flex justify-between items-center py-2">
+          <span class="text-sm" style="color: var(--text-secondary);">Idle Timeout Risk</span>
+          <span class="tag tag-green">Low (12s)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== GOALS VIEW ==================== -->
+<div id="view-goals" class="view fade-in">
+  <div class="card p-5 mb-4">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-3 h-3 rounded-full" style="background: var(--accent-green);"></div>
+      <div>
+        <div class="font-semibold">Project: todo-app</div>
+        <div class="text-xs font-mono" style="color: var(--text-secondary);">D:\code\todo-app · Git: feature/login · AGENTS.md ✅</div>
+      </div>
+    </div>
+
+    <div class="space-y-4">
+      <!-- Goal 1 -->
+      <div class="p-4 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border);">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🎯</span>
+            <span class="font-semibold">实现用户登录模块</span>
+          </div>
+          <span class="tag tag-yellow">IN_PROGRESS</span>
+        </div>
+        <div class="grid grid-cols-4 gap-4 text-sm mb-3">
+          <div>
+            <div style="color: var(--text-secondary);" class="text-xs mb-1">Loops</div>
+            <div class="font-mono font-semibold">3 <span style="color: var(--text-secondary); font-weight: 400;">(2 passed, 1 reviewing)</span></div>
+          </div>
+          <div>
+            <div style="color: var(--text-secondary);" class="text-xs mb-1">Current Loop</div>
+            <div class="font-mono font-semibold">#3 <span class="tag tag-green text-xs">EXECUTING</span></div>
+          </div>
+          <div>
+            <div style="color: var(--text-secondary);" class="text-xs mb-1">Session</div>
+            <div class="font-mono text-xs">ses_0f76a068...</div>
+          </div>
+          <div>
+            <div style="color: var(--text-secondary);" class="text-xs mb-1">Memory</div>
+            <div class="font-mono text-xs">L1:12 · L2:4 · L3:1</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex-1 h-1.5 rounded-full" style="background: var(--bg-primary);">
+            <div class="h-1.5 rounded-full" style="width: 66%; background: linear-gradient(90deg, var(--accent-green), var(--accent-yellow));"></div>
+          </div>
+          <span class="text-xs font-mono" style="color: var(--text-secondary);">66%</span>
+        </div>
+      </div>
+
+      <!-- Goal 2 -->
+      <div class="p-4 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border);">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🎯</span>
+            <span class="font-semibold">优化数据库查询性能</span>
+          </div>
+          <span class="tag" style="background: rgba(139, 148, 158, 0.15); color: var(--text-secondary);">PENDING</span>
+        </div>
+        <div class="text-sm" style="color: var(--text-secondary);">
+          Planned Loops: ~2 (estimated) · No active session
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== LOOPS VIEW ==================== -->
+<div id="view-loops" class="view fade-in">
+  <div class="card p-5">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="font-mono text-xs px-2 py-0.5 rounded" style="background: var(--bg-tertiary);">Loop #7</span>
+          <span class="font-semibold">实现用户登录模块</span>
+        </div>
+        <div class="text-xs font-mono" style="color: var(--text-secondary);">Project: todo-app · Duration: 4m 32s · Status: <span class="tag tag-yellow">REVIEWING</span></div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary">Approve & Complete</button>
+        <button class="btn">Request Changes</button>
+        <button class="btn" style="color: var(--accent-red);">Abort</button>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="relative pl-8">
+      <div class="timeline-line"></div>
+
+      <!-- Plan -->
+      <div class="relative mb-6">
+        <div class="timeline-dot" style="background: var(--accent-blue);"></div>
+        <div class="p-4 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border);">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-mono text-xs px-2 py-0.5 rounded" style="background: rgba(88,166,255,0.15); color: var(--accent-blue);">PLAN</span>
+            <span class="text-xs" style="color: var(--text-secondary);">Wave 0</span>
+          </div>
+          <div class="font-mono text-xs space-y-1" style="color: var(--text-secondary);">
+            <div><span style="color: var(--accent-blue);">16:32:01</span> PlanAgent → 生成 Plan Spec (3 waves)</div>
+            <div><span style="color: var(--accent-blue);">16:32:03</span> PlanAgent → 划分 Wave: [setup-auth] [implement-jwt] [add-middleware]</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wave 1 -->
+      <div class="relative mb-6">
+        <div class="timeline-dot" style="background: var(--accent-green);"></div>
+        <div class="p-4 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border);">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-mono text-xs px-2 py-0.5 rounded" style="background: rgba(63,185,80,0.15); color: var(--accent-green);">EXECUTE</span>
+            <span class="text-xs" style="color: var(--text-secondary);">Wave 1/3: setup-auth</span>
+            <span class="tag tag-green text-xs">✅ Complete</span>
+          </div>
+          <div class="font-mono text-xs space-y-1" style="color: var(--text-secondary);">
+            <div><span style="color: var(--accent-green);">16:32:05</span> CodeAgent → 📝 File: src/auth/config.ts</div>
+            <div><span style="color: var(--accent-green);">16:32:08</span> CodeAgent → 🛠️ Tool: shell.exec("npm install jsonwebtoken")</div>
+            <div><span style="color: var(--accent-green);">16:32:12</span> CodeAgent → ✅ Wave 1 complete</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wave 2 -->
+      <div class="relative mb-6">
+        <div class="timeline-dot" style="background: var(--accent-green);"></div>
+        <div class="p-4 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border);">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-mono text-xs px-2 py-0.5 rounded" style="background: rgba(63,185,80,0.15); color: var(--accent-green);">EXECUTE</span>
+            <span class="text-xs" style="color: var(--text-secondary);">Wave 2/3: implement-jwt</span>
+            <span class="tag tag-green text-xs">✅ Complete</span>
+          </div>
+          <div class="font-mono text-xs space-y-1" style="color: var(--text-secondary);">
+            <div><span style="color: var(--accent-green);">16:32:15</span> CodeAgent → 📝 File: src/auth/jwt.ts</div>
+            <div><span style="color: var(--accent-green);">16:32:20</span> CodeAgent → 🛠️ Tool: file.write("src/auth/jwt.ts", ...)</div>
+            <div><span style="color: var(--accent-green);">16:32:25</span> CodeAgent → ✅ Wave 2 complete</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Review (Current) -->
+      <div class="relative">
+        <div class="timeline-dot pulse" style="background: var(--accent-yellow); box-shadow: 0 0 8px var(--accent-yellow);"></div>
+        <div class="p-4 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--accent-yellow);">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="font-mono text-xs px-2 py-0.5 rounded" style="background: rgba(210,153,34,0.15); color: var(--accent-yellow);">REVIEW</span>
+            <span class="text-xs" style="color: var(--text-secondary);">Wave 3/3</span>
+            <span class="tag tag-yellow text-xs pulse">🟡 In Progress</span>
+          </div>
+          <div class="font-mono text-xs space-y-1" style="color: var(--text-secondary);">
+            <div><span style="color: var(--accent-yellow);">16:32:30</span> ReviewAgent → 开始代码审查...</div>
+            <div><span style="color: var(--accent-yellow);">16:32:35</span> ReviewAgent → ⚠️ 发现 2 个问题:</div>
+            <div class="pl-4" style="color: var(--accent-red);">
+              <div>· jwt.ts 缺少错误处理</div>
+              <div>· config.ts 硬编码 secret</div>
+            </div>
+            <div class="mt-2 pulse" style="color: var(--accent-yellow);">→ ReviewAgent 等待决策...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ANALYTICS VIEW ==================== -->
+<div id="view-analytics" class="view fade-in">
+  <div class="grid grid-cols-4 gap-4 mb-6">
+    <div class="card p-4 text-center">
+      <div class="text-xs mb-1" style="color: var(--text-secondary);">Cost per Loop</div>
+      <div class="text-xl font-bold font-mono">$0.0231</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs mb-1" style="color: var(--text-secondary);">Cost per 1K tokens</div>
+      <div class="text-xl font-bold font-mono">$0.0009</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs mb-1" style="color: var(--text-secondary);">Prompt/Completion Ratio</div>
+      <div class="text-xl font-bold font-mono">118.4:1</div>
+    </div>
+    <div class="card p-4 text-center">
+      <div class="text-xs mb-1" style="color: var(--text-secondary);">Avg Waves per Loop</div>
+      <div class="text-xl font-bold font-mono">2.8</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-4">
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Loop Success Rate (24h)</h3>
+      <div class="flex items-center gap-4">
+        <div class="relative w-32 h-32">
+          <svg class="w-32 h-32 transform -rotate-90">
+            <circle cx="64" cy="64" r="56" fill="none" stroke="var(--bg-tertiary)" stroke-width="8"/>
+            <circle cx="64" cy="64" r="56" fill="none" stroke="var(--accent-green)" stroke-width="8" stroke-dasharray="351.86" stroke-dashoffset="77.41"/>
+          </svg>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <div class="text-center">
+              <div class="text-2xl font-bold">78%</div>
+              <div class="text-xs" style="color: var(--text-secondary);">7/9 passed</div>
+            </div>
+          </div>
+        </div>
+        <div class="flex-1 space-y-2 text-sm">
+          <div class="flex justify-between"><span style="color: var(--text-secondary);">Passed</span><span class="font-mono font-semibold" style="color: var(--accent-green);">7</span></div>
+          <div class="flex justify-between"><span style="color: var(--text-secondary);">Reviewing</span><span class="font-mono font-semibold" style="color: var(--accent-yellow);">2</span></div>
+          <div class="flex justify-between"><span style="color: var(--text-secondary);">Failed</span><span class="font-mono font-semibold" style="color: var(--accent-red);">0</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card p-5">
+      <h3 class="font-semibold text-sm mb-4">Agent Token Consumption</h3>
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span>PlanAgent</span><span class="font-mono">45% (90.2K)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 45%; background: var(--accent-blue);"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span>CodeAgent</span><span class="font-mono">52% (104.1K)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 52%; background: var(--accent-green);"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-xs mb-1"><span>ReviewAgent</span><span class="font-mono">3% (6.0K)</span></div>
+          <div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: 3%; background: var(--accent-yellow);"></div></div>
+        </div>
+      </div>
+      <div class="mt-3 pt-3 text-xs font-mono" style="border-top: 1px solid var(--border); color: var(--text-secondary);">
+        Total: 200.3K tokens · $0.1723
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function switchView(viewName) {
+  // Hide all views
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  // Show target view
+  document.getElementById('view-' + viewName).classList.add('active');
+  // Update nav tabs
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>

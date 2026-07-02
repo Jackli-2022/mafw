@@ -3,7 +3,7 @@ import * as path from 'path';
 import {
   loadState, loadRequest, loadGoal, extractGoalId, updateState
 } from '../../utils/state';
-import { transitionPhase, recordSession, startNextLoop } from '../../engine/phase-orchestrator';
+import { transitionPhase, recordSession, startNextLoop, handleLoopEvent } from '../../engine/phase-orchestrator';
 import { loadReceipts } from '../../utils/state';
 import { LessonManager } from '../../engine/lesson-manager';
 import { MemoryExtractor } from '../../memory/extractor';
@@ -123,16 +123,71 @@ export async function mafwReviewEntry(context: ReviewSkillContext): Promise<void
     }
   }
 
-  // 11. 【显式状态更新】通知 Scheduler 判断 verdict
+  // 11. 【显式状态更新】由 Review Skill 直接判定 verdict，不再交给 Gateway
+  await evaluateReviewResult(goalId, state, req, review, projectDir);
+
+  console.log(`[mafw-review] Review complete. State updated`);
+}
+
+async function evaluateReviewResult(
+  goalId: string,
+  state: any,
+  req: any,
+  review: { verdict: 'PASS' | 'FAIL'; reason: string; metrics: Record<string, number> },
+  projectDir: string
+) {
+  const metricsOk = checkMetrics(req.metrics, review.metrics);
+  const reviewArtifact = `reviews/${goalId}-loop${state.loop}.md`;
+
+  if (review.verdict === 'PASS' && metricsOk) {
+    await transitionPhase(goalId, {
+      from: 'REVIEWING',
+      to: 'REVIEWING_COMPLETE',
+      nextAction: 'PASS',
+      artifacts: { review: reviewArtifact },
+      metrics: review.metrics
+    }, projectDir);
+    console.log(`[mafw-review] PASS → REVIEWING_COMPLETE`);
+    await handleLoopEvent(goalId, 'review.complete', { verdict: 'PASS' }, state.loop, projectDir);
+    return;
+  }
+
+  if (state.loop >= req.maxLoops) {
+    await transitionPhase(goalId, {
+      from: 'REVIEWING',
+      to: 'REVIEWING_COMPLETE',
+      nextAction: 'FAIL',
+      error: 'max_loops_reached',
+      artifacts: { review: reviewArtifact },
+      metrics: review.metrics
+    }, projectDir);
+    console.log(`[mafw-review] FAIL but maxLoops reached → REVIEWING_COMPLETE`);
+    await handleLoopEvent(goalId, 'review.complete', { verdict: 'PARTIAL' }, state.loop, projectDir);
+    return;
+  }
+
   await transitionPhase(goalId, {
     from: 'REVIEWING',
     to: 'REVIEWING_COMPLETE',
-    nextAction: 'CHECK_VERDICT',
-    artifacts: { review: `reviews/${goalId}-loop${state.loop}.md` },
+    nextAction: 'FAIL',
+    artifacts: { review: reviewArtifact },
     metrics: review.metrics
   }, projectDir);
+  console.log(`[mafw-review] FAIL → REVIEWING_COMPLETE`);
+  await handleLoopEvent(goalId, 'review.complete', { verdict: 'FAIL' }, state.loop, projectDir);
+}
 
-  console.log(`[mafw-review] Review complete. State updated → CHECK_VERDICT`);
+function checkMetrics(
+  reqMetrics: Record<string, { target: number; unit: string }>,
+  reviewMetrics: Record<string, number> | undefined
+): boolean {
+  if (!reviewMetrics) return true;
+  for (const [key, target] of Object.entries(reqMetrics)) {
+    const actual = reviewMetrics[key];
+    if (actual === undefined) continue;
+    if (actual < target.target) return false;
+  }
+  return true;
 }
 
 // ── 辅助函数 ──

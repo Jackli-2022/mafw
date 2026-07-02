@@ -90,6 +90,25 @@ export async function sessionEndingHook(hookContext: HookContext): Promise<void>
     } else {
       console.log(`[hook:session-ending] State already updated for ${targetGoalId}: ${state.nextAction}`);
     }
+
+    // Pre-compact protection: detect high-energy memories
+    try {
+      const parametricDir = path.join(projectDir, '.opencode/mafw/parametric');
+      if (fs.existsSync(parametricDir)) {
+        const files = fs.readdirSync(parametricDir).filter(f => f.endsWith('.json'));
+        let highEnergyCount = 0;
+        for (const file of files) {
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(parametricDir, file), 'utf-8'));
+            if ((data.energy_score || data.energy || 0) > 0.8) highEnergyCount++;
+          } catch { /* skip unparseable files */ }
+        }
+        if (highEnergyCount > 0) {
+          console.log(`[mafw:pre-compact] Preserving ${highEnergyCount} high-energy memories for ${targetGoalId}`);
+        }
+      }
+    } catch { /* ignore parametric errors */ }
+
   } catch (err: any) {
     console.error(`[hook:session-ending] Failed to load state for ${targetGoalId}: ${err.message}`);
   }

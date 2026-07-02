@@ -1,6 +1,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+
+jest.mock('../../src/compression/vector-index', () => ({
+  VectorIndex: jest.fn().mockImplementation(() => ({
+    search: jest.fn().mockResolvedValue([]),
+    size: 0,
+    addDocument: jest.fn(),
+    addDocuments: jest.fn(),
+    removeDocument: jest.fn(),
+    clear: jest.fn(),
+    save: jest.fn(),
+    load: jest.fn(),
+    init: jest.fn().mockResolvedValue(undefined),
+  }))
+}));
+
 import MafwPlugin from '../../src/plugin';
 import { initState, updateState } from '../../src/utils/state';
 
@@ -27,6 +42,31 @@ test('/goal command runs the mafw-goal skill', async () => {
   expect(runSkill).toHaveBeenCalledWith('mafw-goal', { text: 'build auth system' });
 });
 
+test('/goal command handles empty args', async () => {
+  const plugin = await MafwPlugin({ directory: tmpDir });
+  const runSkill = jest.fn().mockResolvedValue({ confirmed: true, goalId: '20260101-123', title: 'Test Goal' });
+
+  await plugin.command.goal.execute('', { runSkill });
+
+  expect(runSkill).toHaveBeenCalledWith('mafw-goal', { text: '' });
+});
+
+test('/goal command handles very long text', async () => {
+  const plugin = await MafwPlugin({ directory: tmpDir });
+  const longText = 'x'.repeat(10000);
+  const runSkill = jest.fn().mockResolvedValue({ confirmed: true, goalId: '20260101-123', title: 'Test Goal' });
+
+  await plugin.command.goal.execute(longText, { runSkill });
+
+  expect(runSkill).toHaveBeenCalledWith('mafw-goal', { text: longText });
+});
+
+test('status command returns fallback when STATUS.md missing', async () => {
+  const plugin = await MafwPlugin({ directory: tmpDir });
+  const result = await plugin.command.status.execute('', {});
+  expect(result.text).toContain('No active Goals');
+});
+
 test('chat messages transform awaits loadState and injects wave context', async () => {
   fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
   fs.writeFileSync(
@@ -47,7 +87,7 @@ test('chat messages transform awaits loadState and injects wave context', async 
   expect(output.messages[0].parts[0].text).toContain('Wave 1/2');
 });
 
-test('event session.end fallback delegates to sessionEndingHook', async () => {
+test("hooks['session.end'] fallback delegates to sessionEndingHook", async () => {
   fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
   initState('001-auth', tmpDir);
   await updateState('001-auth', {
@@ -56,10 +96,24 @@ test('event session.end fallback delegates to sessionEndingHook', async () => {
   }, tmpDir);
 
   const plugin = await MafwPlugin({ directory: tmpDir });
-  await plugin.event({ event: { type: 'session.end', sessionID: 'sess-1' } });
+  await plugin.hooks['session.end']({ sessionID: 'sess-1' });
 
   const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
   expect(state.nextAction).toBe('CREATE_PLAN_SESSION');
   expect(state.error).toBe('session_ended_without_state_update');
   expect(state.sessions.plan.active).toBe(false);
+});
+
+test('mafw_update_state tool uses atomic updateState', async () => {
+  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
+  initState('001-auth', tmpDir);
+
+  const plugin = await MafwPlugin({ directory: tmpDir });
+  const result = await plugin.tool.mafw_update_state.execute({
+    goalId: '001-auth',
+    patch: { nextAction: 'WAIT_PHASE_COMPLETE', phase: 'EXECUTING' }
+  });
+
+  expect(result.updated.nextAction).toBe('WAIT_PHASE_COMPLETE');
+  expect(fs.existsSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json.tmp'))).toBe(false);
 });

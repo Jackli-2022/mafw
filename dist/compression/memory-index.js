@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MemoryIndexManager = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const bm25_index_1 = require("./bm25-index");
 /**
  * Memory Index — L2 倒排索引检索器
  *
@@ -55,9 +56,11 @@ const path = __importStar(require("path"));
 class MemoryIndexManager {
     indexPath;
     index;
+    bm25;
     constructor(indexPath = '.opencode/mafw/memory-index.json') {
         this.indexPath = indexPath;
         this.index = this.load();
+        this.bm25 = new bm25_index_1.BM25Index();
     }
     load() {
         if (!fs.existsSync(this.indexPath)) {
@@ -96,6 +99,8 @@ class MemoryIndexManager {
                 this.index.domain_index[entry.goal].push(entry.id);
             }
         }
+        // Also index into BM25 for keyword search
+        this.bm25.addDocument(entry.id, entry.tags.join(' '));
     }
     /**
      * 根据关键词检索相关 lessons，最多 3 条，按 energy 排序。
@@ -134,6 +139,12 @@ class MemoryIndexManager {
             .slice(0, maxResults)
             .map(x => x.entry);
         return scored;
+    }
+    /**
+     * BM25 关键词搜索
+     */
+    searchBM25(query, topK = 10) {
+        return this.bm25.search(query, topK);
     }
     /**
      * 从关键词自动提取 tags（简单分词）

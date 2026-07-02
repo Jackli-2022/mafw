@@ -117,6 +117,7 @@ async function mafwExecuteEntry(context) {
             error: 'wave_merge_partial',
             artifacts: { execute: `receipts/${goalId}/` }
         }, projectDir);
+        await (0, phase_orchestrator_1.handleLoopEvent)(goalId, 'wave.fail', undefined, state.loop, projectDir);
         console.log(`[mafw-execute] Execute complete with partial merge. State updated → FAILED`);
     }
     else {
@@ -126,6 +127,7 @@ async function mafwExecuteEntry(context) {
             nextAction: 'CREATE_REVIEW_SESSION',
             artifacts: { execute: `receipts/${goalId}/` }
         }, projectDir);
+        await (0, phase_orchestrator_1.handleLoopEvent)(goalId, 'wave.complete', undefined, state.loop, projectDir);
         console.log(`[mafw-execute] Execute complete. State updated → CREATE_REVIEW_SESSION`);
     }
 }

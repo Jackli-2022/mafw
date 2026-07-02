@@ -93,6 +93,17 @@ export async function updateState(
   fs.writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
   fs.renameSync(tmpPath, statePath);
 
+  // 事件回调：通知 Gateway 状态变更 (fire-and-forget)
+  try {
+    const gatewayUrl = process.env.MAFW_GATEWAY_URL || 'http://127.0.0.1:3000';
+    fetch(`${gatewayUrl}/api/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'state_change', goalId, patch, projectDir }),
+      signal: AbortSignal.timeout(500)
+    }).catch(() => {});
+  } catch {}
+
   return updated;
 }
 

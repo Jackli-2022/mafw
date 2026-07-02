@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAFW Loop Engineering Workbench</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --border: #30363d;
+    --border-light: #484f58;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-yellow: #d29922;
+    --accent-red: #f85149;
+    --accent-purple: #a371f7;
+  }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+  }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  .card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .card:hover {
+    border-color: var(--border-light);
+  }
+  .nav-tab {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .nav-tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+  .nav-tab.active { color: var(--text-primary); background: var(--bg-tertiary); }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+  .status-green { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+  .status-yellow { background: var(--accent-yellow); box-shadow: 0 0 6px var(--accent-yellow); }
+  .status-red { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
+  .status-gray { background: var(--text-secondary); }
+  .pulse { animation: pulse 2s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .timeline-line {
+    width: 2px;
+    background: var(--border);
+    position: absolute;
+    left: 15px;
+    top: 30px;
+    bottom: 0;
+  }
+  .timeline-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    position: absolute; left: 10px; top: 6px;
+    border: 2px solid var(--bg-primary);
+  }
+  .kpi-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .kpi-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .tag-blue { background: rgba(88, 166, 255, 0.15); color: var(--accent-blue); }
+  .tag-green { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); }
+  .tag-yellow { background: rgba(210, 153, 34, 0.15); color: var(--accent-yellow); }
+  .tag-red { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); }
+  .tag-purple { background: rgba(163, 113, 247, 0.15); color: var(--accent-purple); }
+  .table-row:hover { background: rgba(255,255,255,0.03); }
+  .btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    transition: all 0.2s;
+  }
+  .btn:hover { background: var(--border-light); border-color: var(--border-light); }
+  .btn-primary {
+    background: var(--accent-blue);
+    border-color: var(--accent-blue);
+    color: white;
+  }
+  .btn-primary:hover { background: #79b8ff; }
+  .scroll-hide::-webkit-scrollbar { display: none; }
+  .fade-in { animation: fadeIn 0.3s ease-in; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .view { display: none; }
+  .view.active { display: block; }
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<nav style="background: var(--bg-secondary); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50;">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #58a6ff, #a371f7);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <span class="font-bold text-lg tracking-tight">MAFW Workbench</span>
+      <span class="text-xs px-2 py-0.5 rounded-full font-mono" style="background: rgba(88,166,255,0.15); color: var(--accent-blue);">v3.5</span>
+    </div>
+    <div class="flex items-center gap-1">
+      <div class="nav-tab active" data-view="overview" onclick="switchView('overview')">Overview</div>
+      <div class="nav-tab" data-view="sessions" onclick="switchView('sessions')">Sessions</div>
+      <div class="nav-tab" data-view="goals" onclick="switchView('goals')">Goals</div>
+      <div class="nav-tab" data-view="loops" onclick="switchView('loops')">Loops</div>
+      <div class="nav-tab" data-view="analytics" onclick="switchView('analytics')">Analytics</div>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 text-sm" style="color: var(--accent-green);">
+        <span class="status-dot status-green pulse" id="live-dot"></span>
+        <span class="font-mono" id="live-label">● Live</span>
+      </div>
+      <div class="w-8 h-8 rounded-full flex items-center justify-center" style="background: var(--bg-tertiary); border: 1px solid var(--border);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m4.22-10.22l4.24-4.24M6.34 17.66l-4.24 4.24M23 12h-6m-6 0H1m20.24 4.24l-4.24-4.24M6.34 6.34L2.1 2.1"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-7xl mx-auto px-6 py-6">
+
+<div id="view-overview" class="view active fade-in"></div>
+<div id="view-sessions" class="view fade-in"></div>
+<div id="view-goals" class="view fade-in"></div>
+<div id="view-loops" class="view fade-in"></div>
+<div id="view-analytics" class="view fade-in"></div>
+
+</div>
+
+<script>
+function switchView(viewName) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + viewName).classList.add('active');
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  var tab = document.querySelector('.nav-tab[data-view="' + viewName + '"]');
+  if (tab) tab.classList.add('active');
+}
+</script>
+
+<script src="/app.js"></script>
+</body>
+</html>

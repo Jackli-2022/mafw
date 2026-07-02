@@ -1,0 +1,12 @@
+{
+  "agents": {
+    "plan": { "model": "claude-sonnet-4-20250514", "priority": "quality" },
+    "execute": { "model": "claude-sonnet-4-20250514", "priority": "quality" },
+    "review": { "model": "claude-haiku-3-5-20241022", "priority": "cost" }
+  },
+  "budget": {
+    "total": 1000000,
+    "perGoal": 200000,
+    "threshold": 0.8
+  }
+}

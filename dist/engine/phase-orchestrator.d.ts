@@ -1,4 +1,5 @@
 import { StateFile } from '../utils/state';
+import { LoopStateMachineImpl } from './loop-state-machine';
 /**
  * Phase Orchestrator — Phase 接力状态机
  *
@@ -54,4 +55,12 @@ export declare function shouldStartNextLoop(goalId: string, projectDir?: string)
  * 进入下一轮 Loop
  */
 export declare function startNextLoop(goalId: string, projectDir?: string): Promise<StateFile>;
+export declare function createLoopStateMachine(goalId: string, loopNum: number, projectDir?: string): LoopStateMachineImpl;
+/** Clear cached loop machine instances (for testing) */
+export declare function clearLoopMachineCache(): void;
+/**
+ * 处理 Loop 事件（包裹状态机 handleEvent）
+ * 自动从 state.json 同步当前 Phase → LoopState
+ */
+export declare function handleLoopEvent(goalId: string, trigger: string, data?: any, loopNum?: number, projectDir?: string): Promise<boolean>;
 //# sourceMappingURL=phase-orchestrator.d.ts.map

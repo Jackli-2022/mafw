@@ -54,6 +54,24 @@ function phaseToCreateAction(phase) {
             return `CREATE_${(phase || 'UNKNOWN').toUpperCase()}_SESSION`;
     }
 }
+function resolveOpencode() {
+    // 按优先级查找 opencode.exe
+    const npmPrefix = process.env.MAFW_OPENCODE_PATH
+        ? path.dirname(process.env.MAFW_OPENCODE_PATH)
+        : (0, child_process_1.execSync)('npm config get prefix', { encoding: 'utf-8' }).trim();
+    const candidates = [
+        path.join(npmPrefix, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
+        path.join(npmPrefix, 'node_modules', '@opencode-ai', 'cli', 'bin', 'lildax'),
+        path.join(npmPrefix, 'opencode.cmd'),
+        path.join(npmPrefix, 'opencode'),
+        process.env.MAFW_OPENCODE_PATH || '',
+    ];
+    for (const c of candidates) {
+        if (c && fs.existsSync(c))
+            return c;
+    }
+    throw new Error('opencode CLI not found. Install: npm install -g @opencode-ai/cli');
+}
 class MafwScheduler {
     serveProcess;
     serveUrl = 'http://127.0.0.1:4096';
@@ -68,63 +86,102 @@ class MafwScheduler {
     configPath;
     configWriteQueue = Promise.resolve();
     running = true;
+    dashboard;
+    opencodeClient = null;
+    sseClients = new Set();
     constructor(projectDir = '.') {
         this.projectDir = projectDir;
         this.configPath = path.join(os.homedir(), '.config', 'mafw', 'config.json');
         this.registryPath = path.join(projectDir, 'scheduler', 'registered-projects.json');
     }
+    get serveRunning() {
+        return !!this.serveProcess && !this.serveProcess.killed;
+    }
     async start() {
-        console.log('[Scheduler] MAFW Scheduler v3.5 starting...');
-        // 1. 启动 Serve
+        console.log('[Scheduler] MAFW Scheduler v5.0 starting...');
+        // 1. 启动 Serve（spawn opencode.exe 全路径）
         await this.startServe();
-        // 2. 启动 HTTP API
+        // 2. 初始化 SDK 客户端
+        if (this.serveProcess) {
+            await this.initClient();
+            this.subscribeToEvents();
+        }
+        // 3. 启动 HTTP API
         await this.startApiServer();
-        // 2.5 启动 Dashboard
-        const dashboard = new server_1.DashboardServer(3001);
-        dashboard.start();
-        // 3. 恢复配置和注册表
+        // 4. 启动 Dashboard
+        this.dashboard = new server_1.DashboardServer(3001, this.projectDir, this);
+        this.dashboard.start();
+        // 5. 恢复配置和注册表
         await this.recoverConfig();
         await this.recoverRegistry();
-        // 4. 恢复活跃 Goal
+        // 6. 恢复活跃 Goal
         await this.recoverState();
-        // 5. 开始轮询
-        console.log('[Scheduler] Starting polling loop...');
-        await this.startPolling();
+        // 7. 开始轮询（降级兜底，30s）
+        console.log('[Scheduler] Starting backup polling loop (30s)...');
+        this.startBackupPolling();
+    }
+    async subscribeToEvents() {
+        try {
+            const stream = await this.opencodeClient.event.subscribe({});
+            if (stream && typeof stream.on === 'function') {
+                stream.on('data', (event) => {
+                    this.broadcast({ type: 'opencode_event', data: event });
+                });
+                console.log('[Scheduler] Subscribed to OpenCode events');
+            }
+        }
+        catch (err) {
+            console.warn(`[Scheduler] SDK event subscribe failed (non-fatal): ${err.message}`);
+        }
+    }
+    broadcast(event) {
+        const data = `data: ${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n\n`;
+        for (const client of this.sseClients) {
+            try {
+                client.write(data);
+            }
+            catch {
+                this.sseClients.delete(client);
+            }
+        }
     }
     stop() {
         this.running = false;
         if (this.serveProcess) {
             this.serveProcess.kill('SIGTERM');
+            this.serveProcess = undefined;
         }
-        // 清理所有监控定时器
         for (const timer of this.sessionMonitors.values()) {
             clearTimeout(timer);
+        }
+        if (this.dashboard) {
+            this.dashboard.stop();
         }
         console.log('[Scheduler] Stopping...');
     }
     // ── 1. Serve 管理 ──
     async startServe() {
-        if (await this.isServeHealthy()) {
-            console.log('[Scheduler] Serve already running, skip start');
-            return;
-        }
-        console.log('[Scheduler] Starting OpenCode Serve...');
-        this.serveProcess = (0, child_process_1.spawn)('opencode', [
+        const opencodeExe = resolveOpencode();
+        console.log(`[Scheduler] Starting OpenCode Serve: ${opencodeExe}`);
+        this.serveProcess = (0, child_process_1.spawn)(opencodeExe, [
             'serve', '--port', '4096', '--hostname', '127.0.0.1'
         ], {
             cwd: this.projectDir,
-            stdio: ['ignore', 'pipe', 'pipe']
+            stdio: ['ignore', 'inherit', 'inherit'],
+            env: { ...process.env, PATH: process.env.PATH }
         });
-        this.serveProcess.stdout?.on('data', (data) => {
-            const line = data.toString().trim();
-            if (line)
-                console.log(`[Serve] ${line}`);
-        });
-        this.serveProcess.stderr?.on('data', (data) => {
-            const line = data.toString().trim();
-            if (line)
-                console.error(`[Serve] ${line}`);
-        });
+        if (this.serveProcess.stdout) {
+            this.serveProcess.stdout?.on('data', (data) => {
+                const line = data.toString().trim();
+                if (line)
+                    console.log(`[Serve] ${line}`);
+            });
+            this.serveProcess.stderr?.on('data', (data) => {
+                const line = data.toString().trim();
+                if (line)
+                    console.error(`[Serve] ${line}`);
+            });
+        }
         this.serveProcess.on('exit', (code) => {
             console.error(`[Scheduler] Serve exited with code ${code}, restarting in 5s...`);
             this.serveProcess = undefined;
@@ -144,16 +201,19 @@ class MafwScheduler {
         }
     }
     async waitForServeReady() {
-        let retries = 0;
-        while (retries < 60) {
+        for (let retries = 0; retries < 60; retries++) {
             await this.sleep(1000);
             if (await this.isServeHealthy()) {
                 console.log('[Scheduler] Serve is ready');
                 return;
             }
-            retries++;
         }
         throw new Error('Failed to start OpenCode Serve after 60 seconds');
+    }
+    async initClient() {
+        const { createOpencodeClient } = await import('@opencode-ai/sdk');
+        this.opencodeClient = createOpencodeClient({ baseUrl: this.serveUrl });
+        console.log('[Scheduler] SDK client initialized');
     }
     // ── 2. HTTP API ──
     async startApiServer() {
@@ -245,6 +305,43 @@ class MafwScheduler {
                     }));
                     return;
                 }
+                // 状态变更回调 (来自 Plugin updateState)
+                // 状态变更回调 (来自 Plugin updateState)
+                if (req.url && req.url.startsWith('/api/events') && req.method === 'POST') {
+                    let body = '';
+                    req.on('data', chunk => body += chunk);
+                    req.on('end', async () => {
+                        try {
+                            const event = JSON.parse(body);
+                            console.log(`[Events] Received: ${event.type} for ${event.goalId || ''}`);
+                            this.broadcast(event);
+                            // 立即处理该 goal 的状态机
+                            if (event.type === 'state_change' && event.goalId) {
+                                await this.advanceSingleGoal(event.goalId);
+                            }
+                            res.writeHead(200);
+                            res.end(JSON.stringify({ status: 'ok' }));
+                        }
+                        catch (err) {
+                            res.writeHead(400);
+                            res.end(JSON.stringify({ error: 'Invalid event' }));
+                        }
+                    });
+                    return;
+                }
+                // SSE 事件流 (给 Dashboard)
+                if (req.url && req.url.startsWith('/api/events') && req.method === 'GET') {
+                    res.writeHead(200, {
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive',
+                        'Access-Control-Allow-Origin': '*'
+                    });
+                    res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+                    this.sseClients.add(res);
+                    req.on('close', () => { this.sseClients.delete(res); });
+                    return;
+                }
                 res.writeHead(404);
                 res.end(JSON.stringify({ error: 'Not found' }));
             });
@@ -304,20 +401,34 @@ class MafwScheduler {
             }
         }
     }
-    // ── 4. 轮询 ──
-    async startPolling() {
-        while (this.running) {
+    // ── 4. 轮询（降级兜底：仅处理 SSE 丢失的 goal） ──
+    startBackupPolling() {
+        const poll = async () => {
+            if (!this.running)
+                return;
             try {
-                await this.processControlFile();
                 await this.discoverNewGoals();
-                await this.advanceStateMachines();
-                await this.checkHeartbeats();
+                // 仅处理不在活跃缓存中的 goal
+                for (const [goalId, state] of this.activeGoals) {
+                    if (['COMPLETED', 'FAILED'].includes(state.nextAction)) {
+                        this.activeGoals.delete(goalId);
+                    }
+                }
             }
             catch (err) {
-                console.error('[Scheduler] Poll error:', err.message);
+                console.error('[Scheduler] Backup poll error:', err.message);
             }
-            await this.sleep(this.pollInterval);
+            setTimeout(poll, 30000);
+        };
+        setTimeout(poll, 30000);
+    }
+    async advanceSingleGoal(goalId) {
+        const state = this.activeGoals.get(goalId);
+        if (!state) {
+            // 可能还没被发现，先 discover 一下
+            await this.discoverNewGoals();
         }
+        await this.advanceStateMachines();
     }
     // 轮询已注册项目的 state/ 目录
     async discoverNewGoals() {
@@ -358,32 +469,46 @@ class MafwScheduler {
     async advanceStateMachines() {
         for (const [goalId, state] of this.activeGoals) {
             const nextAction = state.nextAction;
+            let transitioned = false;
             switch (nextAction) {
                 case 'CREATE_PLAN_SESSION':
                     await this.createPhaseSession(goalId, 'plan', '/skill mafw-plan');
+                    transitioned = true;
                     break;
                 case 'CREATE_EXECUTE_SESSION':
                     await this.createPhaseSession(goalId, 'execute', '/skill mafw-execute');
+                    transitioned = true;
                     break;
                 case 'CREATE_REVIEW_SESSION':
                     await this.createPhaseSession(goalId, 'review', '/skill mafw-review');
-                    break;
-                case 'CHECK_VERDICT':
-                    await this.handleVerdict(goalId);
+                    transitioned = true;
                     break;
                 case 'ARCHIVE':
                     await this.archiveGoal(goalId);
                     this.activeGoals.delete(goalId);
+                    transitioned = true;
                     break;
                 case 'COMPLETED':
                 case 'FAILED':
                     this.activeGoals.delete(goalId);
+                    transitioned = true;
                     break;
                 case 'WAIT_PHASE_COMPLETE':
                     // 等待 Skill Entry 更新 state 文件
                     break;
                 default:
                     console.warn(`[Scheduler] Unknown nextAction: ${nextAction} for ${goalId}`);
+            }
+            // 广播 loop_transition 事件到 Dashboard
+            if (transitioned) {
+                this.broadcast({
+                    type: 'loop_transition',
+                    timestamp: new Date().toISOString(),
+                    goalId,
+                    loopNum: state.loop,
+                    waveNum: state.currentWave,
+                    data: { from: state.nextAction, to: nextAction }
+                });
             }
         }
     }
@@ -427,62 +552,13 @@ class MafwScheduler {
         this.startSessionMonitor(goalId, phase, session.id);
         console.log(`[Scheduler] ${phase} session ${session.id} created for ${goalId}`);
     }
-    // ── 6. Verdict 处理（极简，只读文件） ──
-    async handleVerdict(goalId) {
-        const state = this.activeGoals.get(goalId);
-        if (!state)
-            return;
-        // 读取请求配置
-        const req = await this.loadRequest(goalId);
-        if (!req) {
-            console.error(`[Scheduler] No request file for ${goalId}`);
-            await this.patchState(goalId, { nextAction: 'FAILED' });
-            return;
-        }
-        const reviewPath = state.artifacts?.review;
-        if (!reviewPath) {
-            console.error(`[Scheduler] No review artifact for ${goalId}`);
-            await this.patchState(goalId, { nextAction: 'FAILED' });
-            return;
-        }
-        // 读取 review 文件（只读，不解析业务逻辑）
-        const review = await this.loadReviewFile(reviewPath, req.projectDir);
-        if (!review) {
-            console.error(`[Scheduler] Cannot read review file for ${goalId}`);
-            await this.patchState(goalId, { nextAction: 'FAILED' });
-            return;
-        }
-        // 检查 verdict
-        if (review.verdict === 'PASS' && this.checkMetrics(req.metrics, review.metrics)) {
-            await this.patchState(goalId, { nextAction: 'ARCHIVE' });
-            console.log(`[Scheduler] Goal ${goalId} verdict: PASS → ARCHIVE`);
-        }
-        else {
-            const currentLoop = state.loop;
-            if (currentLoop >= req.maxLoops) {
-                await this.patchState(goalId, { nextAction: 'ARCHIVE' });
-                console.log(`[Scheduler] Goal ${goalId} maxLoops reached → ARCHIVE`);
-            }
-            else {
-                // 进入下一轮
-                await this.patchState(goalId, {
-                    loop: currentLoop + 1,
-                    phase: 'PLANNING',
-                    nextAction: 'CREATE_PLAN_SESSION',
-                    sessions: {},
-                    artifacts: {}
-                });
-                console.log(`[Scheduler] Goal ${goalId} verdict: FAIL → Loop ${currentLoop + 1}`);
-            }
-        }
-    }
-    // ── 7. Archive ──
+    // ── 6. Archive ──
     async loadArchiveModule() {
         const pluginRoot = path.resolve(__dirname, '..', '..');
         const builtPath = path.join(pluginRoot, 'dist', 'tools', 'archive-worktree');
         const srcPath = path.join(pluginRoot, 'src', 'tools', 'archive-worktree');
         const modulePath = fs.existsSync(`${builtPath}.js`) ? builtPath : srcPath;
-        return await Promise.resolve(`${modulePath}`).then(s => __importStar(require(s)));
+        return await import(modulePath);
     }
     async archiveGoal(goalId) {
         console.log(`[Scheduler] Archiving goal ${goalId}`);
@@ -612,25 +688,23 @@ class MafwScheduler {
             }
         }
     }
-    // ── 工具函数 ──
+    // ── 工具函数（使用 SDK 客户端） ──
     async createSession(projectDir) {
-        const res = await fetch(`${this.serveUrl}/session`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metadata: { mafw: true }, directory: projectDir })
+        const result = await this.opencodeClient.session.create({
+            directory: projectDir,
+            metadata: { mafw: true }
         });
-        return res.json();
+        return { id: result.id, createdAt: result.createdAt || new Date().toISOString() };
     }
     async sendPrompt(sessionId, message) {
-        await fetch(`${this.serveUrl}/session/${sessionId}/prompt_async`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message })
+        await this.opencodeClient.session.promptAsync({
+            sessionID: sessionId,
+            message
         });
     }
     async destroySession(sessionId) {
         try {
-            await fetch(`${this.serveUrl}/session/${sessionId}`, { method: 'DELETE' });
+            await this.opencodeClient.session.delete({ sessionID: sessionId });
         }
         catch (err) {
             console.warn(`[Scheduler] Failed to destroy session ${sessionId}: ${err.message}`);
@@ -674,6 +748,13 @@ class MafwScheduler {
         fs.renameSync(tmpPath, statePath);
         // 更新内存缓存
         this.activeGoals.set(goalId, updated);
+        // 广播 state_change 事件到 Dashboard
+        this.broadcast({
+            type: 'state_change',
+            timestamp: new Date().toISOString(),
+            goalId,
+            data: patch
+        });
     }
     async loadRequest(goalId) {
         for (const [projectDir, info] of this.registeredProjects) {
@@ -683,36 +764,6 @@ class MafwScheduler {
             }
         }
         return null;
-    }
-    async loadReviewFile(reviewPath, projectDir) {
-        const fullPath = path.join(projectDir, '.opencode/mafw', reviewPath);
-        if (!fs.existsSync(fullPath))
-            return null;
-        const content = fs.readFileSync(fullPath, 'utf-8');
-        // 简单解析：查找 verdict
-        const pass = content.includes('Verdict: PASS') || content.toLowerCase().includes('pass');
-        const fail = content.includes('Verdict: FAIL') || content.toLowerCase().includes('fail');
-        const verdict = pass ? 'PASS' : fail ? 'FAIL' : 'UNKNOWN';
-        // 解析 metrics
-        const metrics = {};
-        const metricMatches = content.matchAll(/- (\w+):\s*(\d+\.?\d*)/g);
-        for (const match of metricMatches) {
-            metrics[match[1]] = parseFloat(match[2]);
-        }
-        return { verdict, metrics };
-    }
-    checkMetrics(reqMetrics, reviewMetrics) {
-        if (!reviewMetrics)
-            return true;
-        for (const [key, target] of Object.entries(reqMetrics)) {
-            const actual = reviewMetrics[key];
-            if (actual === undefined)
-                continue;
-            if (actual < target.target) {
-                return false;
-            }
-        }
-        return true;
     }
     sleep(ms) {
         return new Promise(r => setTimeout(r, ms));

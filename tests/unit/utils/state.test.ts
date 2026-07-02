@@ -71,3 +71,26 @@ test('extractGoalId supports /skill mafw-plan 001-auth', () => {
 test('extractGoalId supports raw goal id', () => {
   expect(extractGoalId('001-auth')).toBe('001-auth');
 });
+
+test('loadRequest throws for missing file', async () => {
+  await expect(loadRequest('missing', projectDir)).rejects.toThrow(/Request file not found/);
+});
+
+test('loadState throws for corrupt JSON', async () => {
+  const statePath = path.join(projectDir, '.opencode', 'mafw', 'state', 'bad.json');
+  fs.writeFileSync(statePath, '{ not json');
+  await expect(loadState('bad', projectDir)).rejects.toThrow(/Failed to parse/);
+});
+
+test('loadWaves throws for corrupt JSON', async () => {
+  fs.writeFileSync(path.join(projectDir, '.opencode', 'mafw', 'waves.json'), 'invalid');
+  await expect(loadWaves('001-auth', projectDir)).rejects.toThrow(/Failed to parse/);
+});
+
+test('updateState throws for missing goal', async () => {
+  await expect(updateState('missing', { phase: 'PLANNING' }, projectDir)).rejects.toThrow(/State file not found/);
+});
+
+test('extractGoalId returns empty for empty message', () => {
+  expect(extractGoalId('')).toBe('');
+});

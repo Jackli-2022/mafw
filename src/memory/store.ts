@@ -5,6 +5,7 @@ import {
   Delta, DeltaType, StoreConfig, BaseSkillManifest,
   OscillationResult, MergeResult, Conflict
 } from '../types/parametric';
+import { EnergySystem, EnergyEvent } from './energy-system';
 
 const DEFAULT_CONFIG: StoreConfig = {
   baseDir: '.opencode/mafw/parametric',
@@ -28,9 +29,15 @@ const DEFAULT_CONFIG: StoreConfig = {
  */
 export class ParametricStore {
   private config: StoreConfig;
+  private energySystem: EnergySystem;
 
-  constructor(config: Partial<StoreConfig> = {}) {
+  constructor(config: Partial<StoreConfig> = {}, energyConfig?: {
+    decayRatePerDay?: number;
+    cleanupThreshold?: number;
+    criticalThreshold?: number;
+  }) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.energySystem = new EnergySystem(energyConfig);
     this.ensureDirs();
   }
 
@@ -62,7 +69,20 @@ export class ParametricStore {
       const existing = fs.readFileSync(p, 'utf-8');
       if (existing === data) return; // 无变化，跳过
     }
-    fs.writeFileSync(p, data, 'utf-8');
+    const daysSinceCreated = Math.max(0, (Date.now() - new Date(delta.created_at).getTime()) / 86_400_000);
+    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, { type: 'retrieved' }, daysSinceCreated);
+    fs.writeFileSync(p, yaml.dump(delta, { lineWidth: -1 }), 'utf-8');
+  }
+
+  /**
+   * 更新 Δ 的能量值（基于事件和时间的衰减/奖励）
+   */
+  updateEnergy(id: string, type: DeltaType, event: EnergyEvent): void {
+    const delta = this.load(id, type);
+    if (!delta) return;
+    const daysSinceCreated = Math.max(0, (Date.now() - new Date(delta.created_at).getTime()) / 86_400_000);
+    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, event, daysSinceCreated);
+    fs.writeFileSync(this.deltaPath(id, type), yaml.dump(delta, { lineWidth: -1 }), 'utf-8');
   }
 
   /**

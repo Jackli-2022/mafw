@@ -1,10 +1,41 @@
 /**
- * MAFW Plugin — OpenCode Official Format v4.1
+ * MAFW Plugin — OpenCode Official Format v5.0
  *
  * Architecture: §8.1
  * Returns an object with config, command, tool, hooks.
  * No activate() function. No registerSkill/registerCommand API.
  */
+interface HybridSearchResult {
+    semantic: Array<{
+        id: string;
+        score: number;
+        facts: string[];
+        concepts: string[];
+        energy: number;
+    }>;
+    procedural: Array<{
+        id: string;
+        score: number;
+        pattern: string;
+        successRate: number;
+        energy: number;
+    }>;
+    parametric: Array<{
+        id: string;
+        score: number;
+        content: string;
+        energy: number;
+        type: string;
+    }>;
+    episodic: Array<{
+        id: string;
+        score: number;
+        summary: string;
+        verdict: string;
+        energy: number;
+    }>;
+    totalTokens: number;
+}
 export default function MafwPlugin({ directory }: {
     directory: string;
 }): Promise<{
@@ -72,6 +103,52 @@ export default function MafwPlugin({ directory }: {
         };
     };
     tool: {
+        mafw_search_hybrid: {
+            description: string;
+            parameters: {
+                type: string;
+                properties: {
+                    goalId: {
+                        type: string;
+                    };
+                    query: {
+                        type: string;
+                    };
+                    maxResults: {
+                        type: string;
+                        default: number;
+                    };
+                    tokenBudget: {
+                        type: string;
+                        default: number;
+                    };
+                };
+                required: string[];
+            };
+            execute({ goalId, query, maxResults, tokenBudget }: any): Promise<HybridSearchResult>;
+        };
+        mafw_get_deltas: {
+            description: string;
+            parameters: {
+                type: string;
+                properties: {
+                    goalId: {
+                        type: string;
+                    };
+                    phase: {
+                        type: string;
+                    };
+                    maxResults: {
+                        type: string;
+                        default: number;
+                    };
+                };
+                required: string[];
+            };
+            execute({ goalId, phase, maxResults }: any): Promise<{
+                deltas: any[];
+            }>;
+        };
         mafw_update_state: {
             description: string;
             parameters: {
@@ -88,7 +165,7 @@ export default function MafwPlugin({ directory }: {
                 required: string[];
             };
             execute({ goalId, patch }: any): Promise<{
-                updated: any;
+                updated: import("./utils/state").StateFile;
                 path: string;
             }>;
         };
@@ -107,10 +184,11 @@ export default function MafwPlugin({ directory }: {
         };
     };
     hooks: {
-        'session.end': ({ sessionID }: any) => Promise<void>;
-        'tool.execute.after': ({ tool }: any, { output }: any) => Promise<void>;
+        'session.end': (ctx: any) => Promise<void>;
+        'tool.execute.after': (ctx: any, result: any) => Promise<void>;
     };
     'experimental.session.compacting': ({ sessionID }: any, { snapshot }: any) => Promise<void>;
     event: ({ event }: any) => Promise<void>;
 }>;
+export {};
 //# sourceMappingURL=plugin.d.ts.map

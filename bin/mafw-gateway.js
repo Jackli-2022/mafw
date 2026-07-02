@@ -67,7 +67,7 @@ function main() {
 
 function printUsage() {
   console.log(`
-MAFW Gateway CLI v4.1
+MAFW Gateway CLI v5.0
 
 Usage: npx mafw-gateway <command>
 
@@ -191,31 +191,113 @@ function showConfig() {
 function registerService() {
   const platform = process.platform;
   ensureDirs();
+  const gatewayScript = path.resolve(GATEWAY_SCRIPT);
+
   if (platform === 'win32') {
-    const script = path.join(__dirname, '..', 'install-mafw.ps1');
-    if (fs.existsSync(script)) {
-      execSync(`powershell -ExecutionPolicy Bypass -File "${script}"`, { stdio: 'inherit' });
-    } else {
-      console.error('[Gateway] install-mafw.ps1 not found');
+    const taskName = 'MAFW-Gateway';
+    const cmd = `schtasks /create /tn "${taskName}" /tr "node \\"${gatewayScript}\\"" /sc onlogon /rl highest /f`;
+    try {
+      execSync(cmd, { stdio: 'inherit' });
+      console.log(`[Gateway] Windows scheduled task "${taskName}" registered (runs at logon)`);
+    } catch (err) {
+      console.error(`[Gateway] Failed to register scheduled task: ${err.message}`);
+      process.exit(1);
     }
   } else if (platform === 'darwin') {
-    console.log('[Gateway] macOS LaunchAgent registration not yet implemented');
+    const agentDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
+    const plistPath = path.join(agentDir, 'com.mafw.gateway.plist');
+    if (!fs.existsSync(agentDir)) fs.mkdirSync(agentDir, { recursive: true });
+
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.mafw.gateway</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>${gatewayScript}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${path.join(LOG_DIR, 'gateway.log')}</string>
+  <key>StandardErrorPath</key>
+  <string>${path.join(LOG_DIR, 'gateway.log')}</string>
+</dict>
+</plist>`;
+    fs.writeFileSync(plistPath, plist, 'utf-8');
+    try {
+      execSync(`launchctl load "${plistPath}"`, { stdio: 'inherit' });
+      console.log(`[Gateway] macOS LaunchAgent registered: ${plistPath}`);
+    } catch (err) {
+      console.error(`[Gateway] Failed to load LaunchAgent: ${err.message}`);
+    }
   } else {
-    console.log('[Gateway] Linux systemd user service registration not yet implemented');
+    const unitDir = path.join(os.homedir(), '.config', 'systemd', 'user');
+    const unitPath = path.join(unitDir, 'mafw-gateway.service');
+    if (!fs.existsSync(unitDir)) fs.mkdirSync(unitDir, { recursive: true });
+
+    const unit = `[Unit]
+Description=MAFW Gateway
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node ${gatewayScript}
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:${path.join(LOG_DIR, 'gateway.log')}
+StandardError=append:${path.join(LOG_DIR, 'gateway.log')}
+
+[Install]
+WantedBy=default.target
+`;
+    fs.writeFileSync(unitPath, unit, 'utf-8');
+    try {
+      execSync('systemctl --user daemon-reload', { stdio: 'inherit' });
+      execSync('systemctl --user enable mafw-gateway.service', { stdio: 'inherit' });
+      console.log(`[Gateway] Linux systemd user service registered: ${unitPath}`);
+    } catch (err) {
+      console.error(`[Gateway] Failed to register systemd service: ${err.message}`);
+    }
   }
 }
 
 function unregisterService() {
   const platform = process.platform;
   if (platform === 'win32') {
-    const script = path.join(__dirname, '..', 'uninstall-mafw.ps1');
-    if (fs.existsSync(script)) {
-      execSync(`powershell -ExecutionPolicy Bypass -File "${script}"`, { stdio: 'inherit' });
+    const taskName = 'MAFW-Gateway';
+    try {
+      execSync(`schtasks /delete /tn "${taskName}" /f`, { stdio: 'inherit' });
+      console.log(`[Gateway] Windows scheduled task "${taskName}" unregistered`);
+    } catch (err) {
+      console.error(`[Gateway] Failed to unregister scheduled task: ${err.message}`);
+    }
+  } else if (platform === 'darwin') {
+    const plistPath = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.mafw.gateway.plist');
+    if (fs.existsSync(plistPath)) {
+      try {
+        execSync(`launchctl unload "${plistPath}"`, { stdio: 'inherit' });
+        fs.unlinkSync(plistPath);
+        console.log('[Gateway] macOS LaunchAgent unregistered');
+      } catch (err) {
+        console.error(`[Gateway] Failed to unload LaunchAgent: ${err.message}`);
+      }
     } else {
-      console.error('[Gateway] uninstall-mafw.ps1 not found');
+      console.log('[Gateway] No LaunchAgent found');
     }
   } else {
-    console.log('[Gateway] Service unregistration not yet implemented');
+    try {
+      execSync('systemctl --user disable mafw-gateway.service', { stdio: 'inherit' });
+      const unitPath = path.join(os.homedir(), '.config', 'systemd', 'user', 'mafw-gateway.service');
+      if (fs.existsSync(unitPath)) fs.unlinkSync(unitPath);
+      console.log('[Gateway] Linux systemd service unregistered');
+    } catch (err) {
+      console.error(`[Gateway] Failed to unregister systemd service: ${err.message}`);
+    }
   }
 }
 

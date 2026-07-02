@@ -18,6 +18,7 @@ import { MemoryIndexEntry } from '../types/compression';
 export declare class MemoryIndexManager {
     private indexPath;
     private index;
+    private bm25;
     constructor(indexPath?: string);
     private load;
     save(): void;
@@ -29,6 +30,14 @@ export declare class MemoryIndexManager {
      * 根据关键词检索相关 lessons，最多 3 条，按 energy 排序。
      */
     search(keywords: string[], domain?: string, maxResults?: number): MemoryIndexEntry[];
+    /**
+     * BM25 关键词搜索
+     */
+    searchBM25(query: string, topK?: number): Array<{
+        id: string;
+        score: number;
+        text: string;
+    }>;
     /**
      * 从关键词自动提取 tags（简单分词）
      */
