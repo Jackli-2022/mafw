@@ -547,13 +547,14 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           type: 'object',
           properties: {
             question: { type: 'string' },
+            goalId: { type: 'string' },
             options: { type: 'array', items: { type: 'string' } },
             priority: { type: 'string', enum: ['normal', 'high'] }
           },
-          required: ['question']
+          required: ['question', 'goalId']
         },
-        async execute({ question, options, priority }: any) {
-          return askUser({ question, options, priority: priority || 'normal', goalId: '', loopNum: 1 });
+        async execute({ question, goalId, options, priority }: any) {
+          return askUser({ question, goalId, options, priority: priority || 'normal', loopNum: 1 });
         }
       },
       mafw_record_feedback: {
@@ -563,12 +564,13 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           properties: {
             targetId: { type: 'string' },
             type: { type: 'string', enum: ['thumbs_up', 'thumbs_down', 'correction'] },
+            goalId: { type: 'string' },
             comment: { type: 'string' }
           },
-          required: ['targetId', 'type']
+          required: ['targetId', 'type', 'goalId']
         },
-        async execute({ targetId, type, comment }: any) {
-          return recordFeedback({ targetId, type, comment, goalId: '', loopNum: 1 });
+        async execute({ targetId, type, goalId, comment }: any) {
+          return recordFeedback({ targetId, type, goalId, comment, loopNum: 1 });
         }
       }
     },

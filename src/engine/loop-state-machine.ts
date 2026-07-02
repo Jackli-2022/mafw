@@ -297,6 +297,12 @@ export class LoopStateMachineImpl implements LoopStateMachine {
     if (wave) {
       wave.state = WaveState.COMPLETED;
       wave.endTime = new Date().toISOString();
+      // Save checkpoint at wave level for rollback
+      const recovery = new RecoveryManager(this.configDir);
+      recovery.saveCheckpoint(this.goalId, this.loopNum,
+        { phase: this.phase, currentWave: wave.waveNum },
+        wave.waveNum
+      );
     }
   }
 
