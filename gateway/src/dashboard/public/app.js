@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderCurrentView();
   };
   setupSSE();
-  await Promise.all([loadStats(), loadGoals(), loadSessions()]);
+  await Promise.all([loadStats(), loadGoals(), loadSessions(), loadCostData()]);
   renderCurrentView();
 });
 
@@ -26,7 +26,52 @@ function renderCurrentView() {
     case 'goals': renderGoals(); break;
     case 'loops': renderLoops(); break;
     case 'analytics': renderAnalytics(); break;
+    case 'cost': renderCost(); break;
   }
+}
+
+async function loadCostData() {
+  try {
+    var res = await fetch(API + '/costs/summary');
+    app.state.costSummary = await res.json();
+  } catch (_) { app.state.costSummary = null; }
+}
+
+function renderCost() {
+  var data = app.state.costSummary || {};
+  var container = document.getElementById('view-cost');
+  var tokens = data.totalTokens || 0;
+  var cost = data.totalCost || 0;
+  var goals = data.totalGoals || 0;
+
+  container.innerHTML =
+    '<div class="grid grid-cols-3 gap-4 mb-6">' +
+      kpiCard('Total Tokens', 'var(--accent-blue)', 'M21 12a9 9 0 11-6.22-8.56M21 3v9h-9', tokens.toLocaleString(), 'estimated') +
+      kpiCard('Total Cost (USD)', 'var(--accent-green)', 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', '$' + cost.toFixed(4), goals + ' goals tracked') +
+      kpiCard('Budget Usage', 'var(--accent-yellow)', 'M13 2L3 14h9l-1 8 10-12h-9l1-8z', cost > 0 ? Math.min(100, Math.round(cost / 0.03)) + '%' : '0%', 'of $0.03 target') +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-4">' +
+      '<div class="card p-5">' +
+        '<h3 class="font-semibold text-sm mb-4">Cost by Wave</h3>' +
+        '<div id="cost-by-wave" class="space-y-2">' +
+          ((data.byWave || []).length ? data.byWave.map(function(w) {
+            var pct = tokens > 0 ? (w.tokens / tokens * 100).toFixed(0) : 0;
+            return '<div class="flex items-center gap-2"><span class="text-xs w-16 font-mono">Wave ' + w.waveNum + '</span><div class="flex-1 h-4 rounded-full" style="background: var(--bg-tertiary);"><div class="h-4 rounded-full" style="width: ' + pct + '%; background: var(--accent-blue);"></div></div><span class="text-xs w-28 text-right font-mono" style="color: var(--text-secondary);">' + w.tokens + ' tok / $' + w.cost.toFixed(4) + '</span></div>';
+          }).join('') : '<div class="text-sm" style="color: var(--text-secondary);">No cost data yet.</div>') +
+        '</div>' +
+      '</div>' +
+      '<div class="card p-5">' +
+        '<h3 class="font-semibold text-sm mb-4">Cost by Tool</h3>' +
+        '<div id="cost-by-tool" class="space-y-2">' +
+          ((data.byTool || []).length ? data.byTool.map(function(t) {
+            var pct = tokens > 0 ? (t.tokens / tokens * 100).toFixed(0) : 0;
+            var colors = ['var(--accent-green)', 'var(--accent-purple)', 'var(--accent-yellow)', 'var(--accent-red)'];
+            var ci = data.byTool.indexOf(t) % colors.length;
+            return '<div class="flex items-center gap-2"><span class="text-xs w-24 font-mono">' + t.toolName + '</span><div class="flex-1 h-4 rounded-full" style="background: var(--bg-tertiary);"><div class="h-4 rounded-full" style="width: ' + pct + '%; background: ' + colors[ci] + ';"></div></div><span class="text-xs w-28 text-right font-mono" style="color: var(--text-secondary);">$' + t.cost.toFixed(4) + '</span></div>';
+          }).join('') : '<div class="text-sm" style="color: var(--text-secondary);">No tool data yet.</div>') +
+        '</div>' +
+      '</div>' +
+    '</div>';
 }
 
 function setupSSE() {
