@@ -15,6 +15,8 @@ import { KnowledgeGraphManager } from './graph/knowledge-graph-manager';
 import { GraphSearcher } from './graph/graph-searcher';
 import { CostEstimator } from './cost/cost-estimator';
 import type { CostRecord } from './cost/types';
+import { askUser } from './tools/run-ask-user';
+import { recordFeedback } from './tools/run-record-feedback';
 
 /**
  * MAFW Plugin — OpenCode Official Format v5.0
@@ -537,6 +539,36 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
           const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
           return state;
+        }
+      },
+      mafw_ask_user: {
+        description: 'Ask user a clarifying question (non-blocking, answer consumed next loop)',
+        parameters: {
+          type: 'object',
+          properties: {
+            question: { type: 'string' },
+            options: { type: 'array', items: { type: 'string' } },
+            priority: { type: 'string', enum: ['normal', 'high'] }
+          },
+          required: ['question']
+        },
+        async execute({ question, options, priority }: any) {
+          return askUser({ question, options, priority: priority || 'normal', goalId: '', loopNum: 1 });
+        }
+      },
+      mafw_record_feedback: {
+        description: 'Record user feedback for a specific Wave result',
+        parameters: {
+          type: 'object',
+          properties: {
+            targetId: { type: 'string' },
+            type: { type: 'string', enum: ['thumbs_up', 'thumbs_down', 'correction'] },
+            comment: { type: 'string' }
+          },
+          required: ['targetId', 'type']
+        },
+        async execute({ targetId, type, comment }: any) {
+          return recordFeedback({ targetId, type, comment, goalId: '', loopNum: 1 });
         }
       }
     },
