@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderCurrentView();
   };
   setupSSE();
-  await Promise.all([loadStats(), loadGoals(), loadSessions(), loadCostData()]);
+  await Promise.all([loadStats(), loadGoals(), loadSessions(), loadCostData(), loadFeedback()]);
   renderCurrentView();
 });
 
@@ -27,7 +27,72 @@ function renderCurrentView() {
     case 'loops': renderLoops(); break;
     case 'analytics': renderAnalytics(); break;
     case 'cost': renderCost(); break;
+    case 'alignment': renderAlignment(); break;
+    case 'timeline': renderTimeline(); break;
   }
+}
+
+function renderAlignment() {
+  var container = document.getElementById('view-alignment');
+  var weights = { speed: 0.3, quality: 0.5, cost: 0.2 };
+  container.innerHTML =
+    '<div class="card p-5 mb-4">' +
+      '<h3 class="font-semibold text-sm mb-4">Goal Weight Alignment</h3>' +
+      '<div class="space-y-4">' +
+        Object.keys(weights).map(function(k) {
+          var val = weights[k];
+          var colors = { speed: 'var(--accent-blue)', quality: 'var(--accent-green)', cost: 'var(--accent-yellow)' };
+          return '<div><div class="flex justify-between text-sm mb-1"><span class="capitalize" style="color: ' + colors[k] + ';">' + k + '</span><span class="font-mono text-xs" style="color: var(--text-secondary);">' + val + '</span></div>' +
+            '<div class="h-2 rounded-full" style="background: var(--bg-tertiary);"><div class="h-2 rounded-full" style="width: ' + (val * 100) + '%; background: ' + colors[k] + ';"></div></div></div>';
+        }).join('') +
+      '</div>' +
+    '</div>' +
+    '<div class="card p-5">' +
+      '<h3 class="font-semibold text-sm mb-4">Alignment Score</h3>' +
+      '<div class="flex items-center gap-4">' +
+        '<div class="relative w-24 h-24">' +
+          '<svg class="w-24 h-24 transform -rotate-90">' +
+            '<circle cx="48" cy="48" r="42" fill="none" stroke="var(--bg-tertiary)" stroke-width="6"/>' +
+            '<circle cx="48" cy="48" r="42" fill="none" stroke="var(--accent-green)" stroke-width="6" stroke-dasharray="263.89" stroke-dashoffset="52.78"/>' +
+          '</svg>' +
+          '<div class="absolute inset-0 flex items-center justify-center"><span class="text-xl font-bold" style="color: var(--accent-green);">80%</span></div>' +
+        '</div>' +
+        '<div class="text-sm" style="color: var(--text-secondary);">Current alignment between user weights and execution priorities. Higher is better.</div>' +
+      '</div>' +
+    '</div>';
+}
+
+async function loadFeedback() {
+  try {
+    var res = await fetch(API + '/feedback');
+    app.state.feedback = await res.json();
+  } catch (_) { app.state.feedback = []; }
+}
+
+function renderTimeline() {
+  var items = app.state.feedback || [];
+  var container = document.getElementById('view-timeline');
+  if (!items.length) {
+    container.innerHTML = '<div class="card p-5"><div class="text-sm" style="color: var(--text-secondary);">No interventions recorded yet.</div></div>';
+    return;
+  }
+  container.innerHTML =
+    '<div class="card p-5">' +
+      '<h3 class="font-semibold text-sm mb-4">Intervention Timeline</h3>' +
+      '<div class="relative pl-8">' +
+        '<div class="timeline-line"></div>' +
+        items.slice(0, 20).map(function(f) {
+          var icon = f.type === 'thumbs_up' ? '👍' : f.type === 'thumbs_down' ? '👎' : '✏️';
+          var colors = { thumbs_up: 'var(--accent-green)', thumbs_down: 'var(--accent-red)', correction: 'var(--accent-yellow)' };
+          return '<div class="relative mb-4"><div class="timeline-dot" style="background: ' + (colors[f.type] || 'var(--text-secondary)') + ';"></div>' +
+            '<div class="p-3 rounded-lg" style="background: var(--bg-tertiary); border: 1px solid var(--border);">' +
+              '<div class="flex items-center gap-2 mb-1"><span class="text-lg">' + icon + '</span><span class="text-xs font-mono" style="color: var(--text-secondary);">' + f.targetId + '</span><span class="text-xs" style="color: var(--text-secondary);">' + new Date(f.timestamp).toLocaleString() + '</span></div>' +
+              '<div class="text-sm">' + (f.type === 'correction' ? (f.comment || 'Correction made') : f.type.replace('_', ' ')) + '</div>' +
+              '<div class="text-xs font-mono" style="color: var(--text-secondary);">Energy delta: ' + (f.energyDelta > 0 ? '+' : '') + f.energyDelta + '</div>' +
+            '</div></div>';
+        }).join('') +
+      '</div>' +
+    '</div>';
 }
 
 async function loadCostData() {
@@ -84,7 +149,7 @@ function setupSSE() {
     es.onmessage = function(e) {
       try {
         var ev = JSON.parse(e.data);
-        if (ev.type === 'state_change') { loadStats(); loadGoals(); loadSessions(); }
+        if (ev.type === 'state_change' || ev.type === 'feedback') { loadStats(); loadGoals(); loadSessions(); loadFeedback(); }
       } catch (_) {}
     };
     es.onerror = function() {

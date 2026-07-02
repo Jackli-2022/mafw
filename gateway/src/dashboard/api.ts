@@ -167,12 +167,82 @@ export class DashboardAPI {
         return;
       }
 
+      // POST /api/feedback — record user feedback
+      if (pathname === '/api/feedback' && method === 'POST') {
+        const body = await this.readBody(req);
+        const input = JSON.parse(body);
+        const result = await this.recordFeedback(input);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // GET /api/feedback — list all feedback for timeline
+      if (pathname === '/api/feedback' && method === 'GET') {
+        const result = await this.listFeedback();
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // POST /api/user-answers/:questionId
+      const answerMatch = pathname.match(/^\/api\/user-answers\/([^/]+)$/);
+      if (answerMatch && method === 'POST') {
+        const [, questionId] = answerMatch;
+        const body = await this.readBody(req);
+        const { answer } = JSON.parse(body);
+        const ok = this.recordAnswer(questionId, answer);
+        res.writeHead(ok ? 200 : 404);
+        res.end(JSON.stringify({ success: ok }));
+        return;
+      }
+
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message || 'Internal server error' }));
     }
+  }
+
+  private async recordFeedback(input: any): Promise<any> {
+    const { recordFeedback } = require('../../src/tools/run-record-feedback');
+    return recordFeedback(input);
+  }
+
+  private async listFeedback(): Promise<any[]> {
+    const dir = path.join(this.mafwDir, 'user-feedback');
+    if (!fs.existsSync(dir)) return [];
+    const all: any[] = [];
+    const goals = fs.readdirSync(dir);
+    for (const goal of goals) {
+      const goalDir = path.join(dir, goal);
+      if (!fs.statSync(goalDir).isDirectory()) continue;
+      for (const file of fs.readdirSync(goalDir).filter(f => f.endsWith('.json'))) {
+        try {
+          all.push(JSON.parse(fs.readFileSync(path.join(goalDir, file), 'utf-8')));
+        } catch {}
+      }
+    }
+    return all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
+  private recordAnswer(questionId: string, answer: string): boolean {
+    const dir = path.join(this.mafwDir, 'user-questions');
+    if (!fs.existsSync(dir)) return false;
+    const goals = fs.readdirSync(dir);
+    for (const goal of goals) {
+      const p = path.join(dir, goal, `${questionId}.json`);
+      if (fs.existsSync(p)) {
+        const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        data.answered = true;
+        data.answer = answer;
+        data.answeredAt = new Date().toISOString();
+        fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+        return true;
+      }
+    }
+    return false;
   }
 
   private async getGoals(): Promise<any[]> {
@@ -593,6 +663,15 @@ export class DashboardAPI {
     }
 
     return null;
+  }
+
+  private readBody(req: IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', (chunk: string) => body += chunk);
+      req.on('end', () => resolve(body));
+      req.on('error', reject);
+    });
   }
 
   private async getCosts(goalId: string, loop?: number): Promise<any> {
