@@ -24,11 +24,11 @@ export class CompressionPipeline {
   private selector: CompressionStrategySelector;
   private privacyFilter?: PrivacyFilter;
 
-  constructor(config?: { privacyFilter?: PrivacyFilter }) {
+  constructor(config?: { privacyFilter?: PrivacyFilter; harmonicIndex?: any; baseDir?: string }) {
     this.deduplicator = new ObservationDeduplicator();
     this.classifier = new ObservationClassifier();
     this.zeroToken = new ZeroTokenCompressor();
-    this.llm = new HybridCompressor();
+    this.llm = new HybridCompressor(undefined, config?.harmonicIndex, config?.baseDir);
     this.diff = new DiffCompressor();
     this.selector = new CompressionStrategySelector();
     if (config?.privacyFilter) {
@@ -78,8 +78,15 @@ export class CompressionPipeline {
           break;
         case 'llm':
         default: {
-          const llmResult = await this.llm.compress(group);
-          compressed = [llmResult];
+          const llmResult: any = await this.llm.compress(group);
+          compressed = [{
+            id: llmResult.id,
+            type: 'llm_compressed',
+            facts: [llmResult.memory_value || ''],
+            concepts: llmResult.cue_anchors || [],
+            energy: llmResult.energy || 0.5,
+            sourceLoops: group.map((o: any) => o.loopNum || 0)
+          }];
           break;
         }
       }
