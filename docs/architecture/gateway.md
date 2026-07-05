@@ -1,6 +1,6 @@
 # MAFW Gateway 架构
 
-> 常驻进程，负责 Phase 调度、Session 管理、Dashboard 服务、SSE 事件推送。
+> 常驻进程，负责 Phase 调度、Session 管理、Dashboard 服务、SSE 事件推送、LLM 代理。
 
 ## 目录
 
@@ -24,7 +24,7 @@ gateway/
 │   │   ├── api.ts            # REST API 处理器（DashboardAPI）
 │   │   ├── types.ts          # SchedulerState 接口
 │   │   └── public/
-│   │       ├── index.html    # SPA 入口（7 视图）
+│   │       ├── index.html    # SPA 入口（8 视图）
 │   │       └── app.js        # SPA 逻辑
 │   ├── health.ts             # 健康检查
 │   ├── heartbeat.ts          # Agent 心跳
@@ -37,18 +37,12 @@ gateway/
 ## 生命周期
 
 ```
-启动 → 注册已安装项目 → 轮询状态文件
-    → 发现 nextAction → 创建 Session → 等待完成
-    → 状态变更 → SSE 广播 → Dashboard 更新
-```
-
-```
 Gateway CLI
     │
     ▼
 MafwScheduler.start()
     │
-    ├── DashboardServer.start()      ← HTTP :3000 + SSE
+    ├── DashboardServer.start()      ← HTTP :3001 + SSE
     ├── registerProjects()           ← 扫描已安装 Plugin 的项目
     ├── pollLoop()                   ← 每 5s 轮询状态文件
     │
@@ -71,10 +65,10 @@ MafwScheduler.start()
 
 ```typescript
 class MafwScheduler {
-  activeGoals: Map<string, GoalState>;    // 运行中的 Goal
-  serveProcess: ChildProcess | null;       // opencode serve 进程
-  registeredProjects: Set<string>;         // 已注册的项目
-  pollInterval: NodeJS.Timeout | null;     // 轮询定时器
+  activeGoals: Map<string, GoalState>;
+  serveProcess: ChildProcess | null;
+  registeredProjects: Set<string>;
+  pollInterval: NodeJS.Timeout | null;
 }
 ```
 
@@ -87,15 +81,7 @@ class MafwScheduler {
 
 ### DashboardServer (`dashboard/server.ts`)
 
-HTTP + SSE 服务器：
-
-```typescript
-class DashboardServer {
-  port: number;                    // 默认 3000
-  sseClients: Set<Response>;       // EventSource 连接池
-  api: DashboardAPI;               // REST API 处理器
-}
-```
+HTTP + SSE 服务器，端口 3001：
 
 - 静态文件服务（`public/` 目录）
 - API 路由代理到 `DashboardAPI.handle()`
@@ -104,27 +90,33 @@ class DashboardServer {
 
 ### DashboardAPI (`dashboard/api.ts`)
 
-REST API 处理器，支持运行时数据（内存）和文件系统回退：
+REST API 处理器，支持运行时（SchedulerState 内存）和文件系统回退：
 
-| 端点 | 方法 | 用途 |
-|---|---|---|
-| `/api/health` | GET | 健康检查 |
-| `/api/goals` | GET | 列出所有 Goal |
-| `/api/goals/:id` | GET | Goal 详情 |
-| `/api/goals/:id/loops` | GET | Loop 列表 |
-| `/api/goals/:id/loops/:loop` | GET | Loop 回放 |
-| `/api/sessions` | GET | Session 列表 |
-| `/api/sessions/:id/metrics` | GET | Session 指标 |
-| `/api/stats` | GET | 聚合统计 |
-| `/api/memory/:goalId` | GET | 记忆浏览 |
-| `/api/memory/:goalId/:tier` | GET | 指定层级记忆 |
-| `/api/memory/search` | GET | 记忆搜索 |
-| `/api/memory/energy-distribution` | GET | 能量分布 |
-| `/api/costs/:goalId` | GET | Goal 成本（v6.0） |
-| `/api/costs/summary` | GET | 成本汇总（v6.0） |
-| `/api/feedback` | GET | 反馈列表（v6.0） |
-| `/api/feedback` | POST | 记录反馈（v6.0） |
-| `/api/user-answers/:id` | POST | 用户回答（v6.0） |
+| 端点 | 方法 | 用途 | 版本 |
+|---|---|---|---|
+| `/api/health` | GET | 健康检查 | v5.0 |
+| `/api/goals` | GET | 列出所有 Goal | v5.0 |
+| `/api/goals/:id` | GET | Goal 详情 | v5.0 |
+| `/api/goals/:id/loops` | GET | Loop 列表 | v5.0 |
+| `/api/goals/:id/loops/:loop` | GET | Loop 回放 | v5.0 |
+| `/api/sessions` | GET | Session 列表 | v5.0 |
+| `/api/sessions/:id/metrics` | GET | Session 指标 | v5.0 |
+| `/api/stats` | GET | 聚合统计 | v5.0 |
+| `/api/memory/:goalId` | GET | 谐波记忆浏览 | v6.3 |
+| `/api/memory/:goalId/:tier` | GET | 指定层级记忆 | v5.0 |
+| `/api/memory/search` | GET | 记忆搜索 | v5.0 |
+| `/api/memory/energy-distribution` | GET | 能量分布 | v5.0 |
+| `/api/costs/:goalId` | GET | Goal 成本 | v6.0 |
+| `/api/costs/summary` | GET | 成本汇总 | v6.0 |
+| `/api/feedback` | GET/POST | 反馈列表/记录 | v6.0 |
+| `/api/user-answers/:id` | POST | 用户回答 | v6.0 |
+| `/api/alignment` | GET/POST | 权重对齐 | v6.0 |
+| `/api/llm/compress` | POST | LLM 压缩代理 | v6.0 |
+| `/api/gateway/pause` | POST | 暂停 Goal | v6.0 |
+| `/api/gateway/resume` | POST | 恢复 Goal | v6.0 |
+| `/api/gateway/cancel` | POST | 取消 Goal | v6.0 |
+| `/api/gateway/checkpoint` | POST | 保存 Checkpoint | v6.0 |
+| `/api/gateway/rollback` | POST | 回滚到 Checkpoint | v6.0 |
 
 ### RecoveryManager (`recovery.ts`)
 
@@ -138,25 +130,6 @@ class RecoveryManager {
   restoreLoop(goalId, loop, targetWaveNum?)       → boolean
   recoverAll(callback)                            → void
 }
-```
-
-Checkpoint 存储路径：
-```
-.opencode/mafw/checkpoints/{goalId}/
-├── loop-{loop}.json              ← Loop 级快照
-└── wave-{loop}-{waveNum}.json    ← Wave 级快照（v6.0）
-```
-
-## API 端点
-
-详细端点列表见 DashboardAPI 表格。所有 API 端点在 `DashboardAPI.handle()` 中注册，路径匹配模式：
-
-```typescript
-// 精确路径
-if (pathname === '/api/health' && method === 'GET') { ... }
-
-// 正则路径参数
-const goalMatch = pathname.match(/^\/api\/goals\/([^/]+)$/);
 ```
 
 ## 数据流
@@ -179,6 +152,24 @@ Plugin (Tool Call)
                 └── Recovery 读取（Checkpoint 恢复）
 ```
 
+### v6.4 新增数据流
+
+```
+Search returns results
+    → CognitiveGraph.addConnection()  (联想网络)
+    → 更新 top_associations
+
+ReviewScheduler 每小时 tick
+    → 扫描 .harmonic_index.json entries
+    → 计算逾期复习
+    → 写入 .review_queue.json
+
+HybridCompressor.compress()
+    → calculateSalience()  (显著度感知)
+    → 写入 tier 文件 + 更新索引
+    → 触发 MinHash 合并检查
+```
+
 ## 配置
 
 ### 环境变量
@@ -187,7 +178,8 @@ Plugin (Tool Call)
 |---|---|---|
 | `MAFW_GATEWAY_URL` | `http://127.0.0.1:3000` | Gateway API 地址 |
 | `PORT` | 3000 | HTTP 端口 |
-| `DASHBOARD_PORT` | 3000 | Dashboard 端口（同 HTTP） |
+| `DASHBOARD_PORT` | 3001 | Dashboard 端口 |
+| `MAFW_LLM_API_KEY` | — | LLM 压缩 API Key |
 
 ### 命令行
 
@@ -196,15 +188,8 @@ npx mafw-gateway start               # 前台
 npx mafw-gateway daemon              # 后台守护
 npx mafw-gateway stop                # 停止
 npx mafw-gateway status              # 状态
+npx mafw-gateway dashboard           # 打开 Dashboard
 npx mafw-gateway logs                # 日志
 npx mafw-gateway service-register    # 系统服务注册
 npx mafw-gateway service-unregister  # 系统服务卸载
 ```
-
-### 跨平台服务注册
-
-| 平台 | 机制 |
-|---|---|
-| Windows | schtasks（任务计划程序） |
-| macOS | launchctl（LaunchDaemon） |
-| Linux | systemd（systemctl） |
