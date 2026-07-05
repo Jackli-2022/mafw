@@ -71,7 +71,9 @@ describe('TokenBudgetAllocator', () => {
     });
 
     test('buffer allocation carries unused budget across categories', () => {
-      const allocator = new TokenBudgetAllocator();
+      const allocator = new TokenBudgetAllocator({
+        allocations: { parametric: 0.25, procedural: 0.20, semantic: 0.30, episodic: 0.15, buffer: 0.10 }
+      });
       const result = allocator.allocate({
         parametric: [
           { content: 'x'.repeat(96), energy: 10 },
@@ -131,6 +133,22 @@ describe('TokenBudgetAllocator', () => {
 
       expect(result.parametric).toHaveLength(1);
       expect(result.totalTokens).toBe(11);
+    });
+
+    test('watermark mode compresses P2/P3 when model is haiku', () => {
+      const allocator = new TokenBudgetAllocator({ defaultBudget: 20000 });
+      const result = allocator.allocate({
+        parametric: [], procedural: [], semantic: [{ facts: ['a'], energy: 5 }], episodic: [],
+      }, 20000, 'haiku');
+
+      expect(result.p2Budget).toBeDefined();
+      expect(result.p3Budget).toBeDefined();
+      // P2 should be compressed by 50% compared to default (4000 → 2000)
+      // P3 should be compressed by 50% compared to default (2000 → 1000)
+      if (result.p2Budget && result.p3Budget) {
+        expect(result.p2Budget).toBeLessThanOrEqual(2000);
+        expect(result.p3Budget).toBeLessThanOrEqual(1000);
+      }
     });
   });
 
