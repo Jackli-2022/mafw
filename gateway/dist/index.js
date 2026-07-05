@@ -168,7 +168,8 @@ class MafwScheduler {
         ], {
             cwd: this.projectDir,
             stdio: ['ignore', 'inherit', 'inherit'],
-            env: { ...process.env, PATH: process.env.PATH }
+            env: { ...process.env, PATH: process.env.PATH },
+            windowsHide: true
         });
         if (this.serveProcess.stdout) {
             this.serveProcess.stdout?.on('data', (data) => {

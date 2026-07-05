@@ -113,7 +113,32 @@ async function mafwPlanEntry(context) {
         fs.writeFileSync(taskPath, formatTaskMarkdown(task), 'utf-8');
     }
     console.log(`[mafw-plan] Written ${plan.tasks.length} tasks`);
-    // 9. 【显式状态更新】通知 Scheduler 进入 EXECUTING
+    // 9a. Plan Reflection: inject previous loop feedback
+    const prevLoop = state_1.loadState?.loop ? state_1.loadState.loop - 1 : null;
+    if (prevLoop && prevLoop > 0) {
+        try {
+            const { loadReview } = require('../../utils/state');
+            const prevReview = await loadReview(goalId, prevLoop, projectDir);
+            if (prevReview) {
+                const text = typeof prevReview === 'string' ? prevReview : JSON.stringify(prevReview);
+                const scoreMatch = text.match(/[Ss]core[:\s]+(\d+)/i);
+                const reasonMatch = text.match(/[Rr]eason[:\s]+"?([^"\n]+)"?/i);
+                if (scoreMatch || reasonMatch) {
+                    let reflection = '\n\n## Previous Loop Feedback\n';
+                    if (scoreMatch)
+                        reflection += `Score: ${scoreMatch[1]}/100`;
+                    if (reasonMatch)
+                        reflection += `\nFailure reason: ${reasonMatch[1].trim()}`;
+                    plan.waves.forEach((w) => {
+                        w.reflection = reflection;
+                    });
+                    console.log(`[mafw-plan] Reflection injected from loop ${prevLoop}`);
+                }
+            }
+        }
+        catch { /* skip if no previous review */ }
+    }
+    // 9b. 【显式状态更新】通知 Scheduler 进入 EXECUTING
     await (0, phase_orchestrator_1.transitionPhase)(goalId, {
         from: 'PLANNING',
         to: 'PLANNING_COMPLETE',

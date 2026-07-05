@@ -49,6 +49,10 @@ const hook_manager_1 = require("./hooks/hook-manager");
 const retry_1 = require("./utils/retry");
 const knowledge_graph_manager_1 = require("./graph/knowledge-graph-manager");
 const graph_searcher_1 = require("./graph/graph-searcher");
+const harmonic_index_1 = require("./memory/harmonic-index");
+const cost_estimator_1 = require("./cost/cost-estimator");
+const run_ask_user_1 = require("./tools/run-ask-user");
+const run_record_feedback_1 = require("./tools/run-record-feedback");
 async function MafwPlugin({ directory }) {
     const mafwDir = path.join(directory, '.opencode', 'mafw');
     // 0. 初始化 MAFW 目录结构（插件运行时创建）
@@ -70,11 +74,60 @@ async function MafwPlugin({ directory }) {
     const sessionPruner = new session_pruner_1.SessionPruner({ maxContextTokens: 8000, compressionThreshold: 0.6 });
     const knowledgeGraphManager = new knowledge_graph_manager_1.KnowledgeGraphManager(path.join(mafwDir, 'knowledge-graph.json'));
     await knowledgeGraphManager.load();
+    // ── v6.3 Harmonic Index ──
+    const harmonicIndex = new harmonic_index_1.HarmonicIndexManager(mafwDir);
+    // ── v6.3 Auto-migration (first load) ──
+    if (!fs.existsSync(path.join(mafwDir, 'memory', '.harmonic_index.json'))) {
+        console.log('[MAFW] No harmonic index found, running v6.1→v6.3 migration...');
+        try {
+            const { migrateV61 } = require('./memory/migrate-v6.1');
+            const result = await migrateV61(mafwDir, harmonicIndex);
+            console.log(`[MAFW] Migration complete: ${result.migrated} migrated, ${result.errors.length} errors`);
+        }
+        catch (err) {
+            console.error(`[MAFW] Migration failed: ${err.message}`);
+        }
+    }
     const toolExecutedHook = async ({ tool }, { output }) => {
         if (output && output.length > 1000) {
             console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
         }
     };
+    // ── Cost Estimator (Task 6) ──
+    const costEstimator = new cost_estimator_1.CostEstimator();
+    function persistCosts() {
+        const all = costEstimator.getAllRecords();
+        if (all.length === 0)
+            return;
+        // Write to SQLite
+        try {
+            const dbPath = path.join(mafwDir, 'data', 'state.db');
+            if (fs.existsSync(dbPath)) {
+                const { SQLiteStorage } = require('./storage/sqlite-storage');
+                const storage = new SQLiteStorage(dbPath);
+                storage.batch(all.map((r) => ({
+                    type: 'set',
+                    scope: 'cost_logs',
+                    key: r.id,
+                    value: r
+                })));
+            }
+        }
+        catch { }
+        // Write JSON for Dashboard FS fallback
+        const costDir = path.join(mafwDir, 'cost');
+        if (!fs.existsSync(costDir))
+            fs.mkdirSync(costDir, { recursive: true });
+        const byGoal = new Map();
+        for (const r of all) {
+            const list = byGoal.get(r.goalId) || [];
+            list.push(r);
+            byGoal.set(r.goalId, list);
+        }
+        for (const [goalId, records] of byGoal) {
+            fs.writeFileSync(path.join(costDir, `${goalId}.json`), JSON.stringify(records, null, 2), 'utf-8');
+        }
+    }
     // ── Hook Manager (Wave 2: Task 3) ──
     const hookManager = new hook_manager_1.HookManager({ failBehavior: 'continue', timeout: 30000 });
     hookManager.register({
@@ -95,6 +148,61 @@ async function MafwPlugin({ directory }) {
             }
         },
         priority: 50
+    });
+    hookManager.register({
+        name: 'cost-recording',
+        event: 'tool.execute.after',
+        handler: async (ctx) => {
+            const data = ctx.data || ctx;
+            const { tool, input } = data;
+            if (!tool)
+                return;
+            let goalId = 'unknown';
+            let loopNum = 1;
+            if (input) {
+                try {
+                    const parsed = typeof input === 'string' ? JSON.parse(input) : input;
+                    goalId = parsed.goalId || parsed.goal_id || goalId;
+                    loopNum = parsed.loopNum || parsed.loop_num || loopNum;
+                }
+                catch { /* ignore parse errors */ }
+            }
+            if (goalId === 'unknown') {
+                try {
+                    const stateDir = path.join(mafwDir, 'state');
+                    if (fs.existsSync(stateDir)) {
+                        const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
+                        if (files.length > 0)
+                            goalId = files[0].replace('.json', '');
+                    }
+                }
+                catch { /* ignore */ }
+            }
+            costEstimator.recordToolCall({
+                goalId,
+                loopNum,
+                toolName: tool,
+                input: typeof input === 'string' ? input : JSON.stringify(input || {})
+            });
+            persistCosts();
+        },
+        priority: 40
+    });
+    // ── v6.0 Cost Threshold Hook ──
+    hookManager.register({
+        name: 'cost-threshold',
+        event: 'session.start',
+        priority: 10,
+        handler: async (ctx) => {
+            const allRecords = costEstimator.getAllRecords();
+            const totalCost = allRecords.reduce((s, r) => s + (r.estimatedCost || 0), 0);
+            const budget = config?.cost?.budget?.total || 1000000;
+            const threshold = config?.cost?.budget?.threshold || 0.8;
+            if (budget > 0 && totalCost / budget > threshold) {
+                ctx.forceHaiku = true;
+                ctx.compressInjection = true;
+            }
+        }
     });
     // ── V5 Hybrid Search 工具函数 ──
     async function executeHybridSearch({ goalId, query, maxResults = 10, tokenBudget = 2000 }) {
@@ -117,6 +225,18 @@ async function MafwPlugin({ directory }) {
                 const vecResults = await vectorIndex.search(query, maxResults);
                 vectorResults = vecResults.map(r => ({ id: `vec-${r.id}`, score: r.score, text: r.text, metadata: r.metadata, loopNum: r.metadata?.loopNum || 1 }));
             }
+        }
+        catch { /* ignore */ }
+        // 3b. Search v6.3 Harmonic Index (tier-agnostic)
+        let harmonicResults = [];
+        try {
+            harmonicResults = (harmonicIndex.search(query, maxResults) || []).map((e) => ({
+                id: `harmonic-${e.id}`,
+                score: e.energy * 0.8,
+                text: e.primary_abstraction + ' ' + e.cue_anchors.join(' '),
+                loopNum: 1,
+                metadata: { tier: e.tier, memory_type: e.memory_type }
+            }));
         }
         catch { /* ignore */ }
         // 4. Read parametric deltas from store
@@ -143,7 +263,7 @@ async function MafwPlugin({ directory }) {
         }
         catch { /* ignore */ }
         // 6. RRF fusion
-        const fused = (0, rrf_fusion_1.reciprocalRankFusion)(60, bm25Results, vectorResults);
+        const fused = (0, rrf_fusion_1.reciprocalRankFusion)(60, bm25Results, vectorResults, harmonicResults);
         const diversified = (0, rrf_fusion_1.diversifyByLoop)(fused, 3);
         // 7. Build categorized result sets
         const semantic = [];
@@ -472,6 +592,54 @@ async function MafwPlugin({ directory }) {
                     const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
                     return state;
                 }
+            },
+            mafw_ask_user: {
+                description: 'Ask user a clarifying question (non-blocking, answer consumed next loop)',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        question: { type: 'string' },
+                        goalId: { type: 'string' },
+                        options: { type: 'array', items: { type: 'string' } },
+                        priority: { type: 'string', enum: ['normal', 'high'] }
+                    },
+                    required: ['question', 'goalId']
+                },
+                async execute({ question, goalId, options, priority }) {
+                    return (0, run_ask_user_1.askUser)({ question, goalId, options, priority: priority || 'normal', loopNum: 1 });
+                }
+            },
+            mafw_record_feedback: {
+                description: 'Record user feedback for a specific Wave result',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        targetId: { type: 'string' },
+                        type: { type: 'string', enum: ['thumbs_up', 'thumbs_down', 'correction'] },
+                        goalId: { type: 'string' },
+                        comment: { type: 'string' }
+                    },
+                    required: ['targetId', 'type', 'goalId']
+                },
+                async execute({ targetId, type, goalId, comment }) {
+                    return (0, run_record_feedback_1.recordFeedback)({ targetId, type, goalId, comment, loopNum: 1 });
+                }
+            },
+            mafw_get_model_route: {
+                description: 'Decide which LLM model to use based on task type and remaining budget',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        taskType: { type: 'string', enum: ['planning', 'coding', 'reviewing'] },
+                        remainingBudget: { type: 'number' }
+                    },
+                    required: ['taskType', 'remainingBudget']
+                },
+                async execute({ taskType, remainingBudget }) {
+                    const { CognitiveRouter } = require('./cost/cognitive-router');
+                    const router = new CognitiveRouter(config?.router);
+                    return router.selectModel(taskType, remainingBudget, config?.cost?.budget?.total || 1000000);
+                }
             }
         },
         // ── Hook aliases for OpenCode v4.1 format (delegated to HookManager) ──
@@ -497,7 +665,7 @@ async function ensureMafwDirectories(mafwDir) {
     const dirs = [
         'state', 'requests', 'goals', 'waves', 'tasks',
         'lessons', 'handoffs', 'receipts', 'reviews', 'reports',
-        'checkpoints', 'decisions', 'triage', 'automations',
+        'checkpoints', 'decisions', 'triage', 'automations', 'cost',
         'parametric/prompt-deltas', 'parametric/constraint-deltas',
         'parametric/pattern-deltas', 'parametric/banned'
     ];

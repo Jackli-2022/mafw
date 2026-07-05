@@ -52,6 +52,7 @@ function buildReviewPrompt(context) {
     prompt += `Review the execution results against the goal charter, metrics, and boundaries.\n`;
     prompt += `Return a JSON with:\n`;
     prompt += `- verdict: "PASS" or "FAIL"\n`;
+    prompt += `- score: 0-100 (optional, overall quality score)\n`;
     prompt += `- reason: explanation\n`;
     prompt += `- metrics: actual metric values\n`;
     return prompt;
@@ -64,6 +65,7 @@ function parseReviewResponse(content) {
         const data = JSON.parse(content);
         return {
             verdict: data.verdict === 'PASS' ? 'PASS' : 'FAIL',
+            score: typeof data.score === 'number' ? Math.max(0, Math.min(100, data.score)) : undefined,
             reason: data.reason || 'No reason provided',
             metrics: data.metrics || {}
         };
@@ -71,8 +73,10 @@ function parseReviewResponse(content) {
     catch {
         // Fallback: 解析文本
         const pass = content.toLowerCase().includes('pass') || content.toLowerCase().includes('通过');
+        const scoreMatch = content.match(/score[:\s]+(\d+)/i);
         return {
             verdict: pass ? 'PASS' : 'FAIL',
+            score: scoreMatch ? Math.max(0, Math.min(100, parseInt(scoreMatch[1], 10))) : undefined,
             reason: content.slice(0, 200),
             metrics: {}
         };

@@ -16,11 +16,12 @@ export declare class RecoveryManager {
     /**
      * 保存 Checkpoint
      */
-    saveCheckpoint(goalId: string, loop: number, data: any): void;
+    saveCheckpoint(goalId: string, loop: number, data: any, waveNum?: number): void;
     /**
      * 加载 Checkpoint
      */
     loadCheckpoint(checkpointPath: string): any;
+    restoreLoop(goalId: string, loop: number, targetWaveNum?: number): Promise<boolean>;
     /**
      * 恢复所有需要重启的 Goal
      */

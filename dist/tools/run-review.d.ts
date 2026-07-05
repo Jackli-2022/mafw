@@ -21,6 +21,7 @@ export interface ReviewContext {
 }
 export interface ReviewResult {
     verdict: 'PASS' | 'FAIL';
+    score?: number;
     reason: string;
     metrics: Record<string, number>;
 }

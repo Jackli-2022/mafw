@@ -17,7 +17,7 @@ const PID_FILE = path.join(CONFIG_DIR, 'gateway.pid');
 const LOG_DIR = path.join(CONFIG_DIR, 'logs');
 const GATEWAY_SCRIPT = path.join(__dirname, '..', 'gateway', 'dist', 'index.js');
 
-const COMMANDS = ['start', 'stop', 'status', 'restart', 'daemon', 'service-register', 'service-unregister', 'logs', 'config'];
+const COMMANDS = ['start', 'stop', 'status', 'restart', 'daemon', 'service-register', 'service-unregister', 'logs', 'config', 'dashboard'];
 
 function main() {
   const cmd = process.argv[2];
@@ -62,6 +62,9 @@ function main() {
     case 'config':
       showConfig();
       break;
+    case 'dashboard':
+      openDashboard();
+      break;
   }
 }
 
@@ -77,6 +80,7 @@ Commands:
   stop               Stop running Gateway
   status             Show Gateway status
   restart            Restart Gateway
+  dashboard          Open Dashboard in browser
   service-register   Register as system service (auto-start)
   service-unregister Unregister system service
   logs               Show recent logs
@@ -112,7 +116,8 @@ function startGateway(background) {
   const args = [GATEWAY_SCRIPT];
   const opts = {
     stdio: background ? 'ignore' : 'inherit',
-    detached: background
+    detached: background,
+    windowsHide: true
   };
 
   if (background) {
@@ -123,7 +128,7 @@ function startGateway(background) {
     console.log(`[Gateway] Logs: ${path.join(LOG_DIR, 'gateway.log')}`);
   } else {
     console.log('[Gateway] Starting in foreground...');
-    const child = spawn(process.execPath, args, { stdio: 'inherit' });
+    const child = spawn(process.execPath, args, { stdio: 'inherit', windowsHide: true });
     fs.writeFileSync(PID_FILE, String(child.pid));
     child.on('exit', (code) => {
       fs.unlinkSync(PID_FILE);
@@ -298,6 +303,23 @@ function unregisterService() {
     } catch (err) {
       console.error(`[Gateway] Failed to unregister systemd service: ${err.message}`);
     }
+  }
+}
+
+function openDashboard() {
+  const url = 'http://localhost:3001/';
+  const platform = process.platform;
+  console.log(`[Gateway] Opening Dashboard: ${url}`);
+  try {
+    if (platform === 'win32') {
+      execSync(`start "" "${url}"`, { stdio: 'ignore' });
+    } else if (platform === 'darwin') {
+      execSync(`open "${url}"`, { stdio: 'ignore' });
+    } else {
+      execSync(`xdg-open "${url}"`, { stdio: 'ignore' });
+    }
+  } catch (err) {
+    console.log(`[Gateway] Open in browser: ${url}`);
   }
 }
 

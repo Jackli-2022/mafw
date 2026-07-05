@@ -182,6 +182,72 @@ export default function MafwPlugin({ directory }: {
             };
             execute({ goalId }: any): Promise<any>;
         };
+        mafw_ask_user: {
+            description: string;
+            parameters: {
+                type: string;
+                properties: {
+                    question: {
+                        type: string;
+                    };
+                    goalId: {
+                        type: string;
+                    };
+                    options: {
+                        type: string;
+                        items: {
+                            type: string;
+                        };
+                    };
+                    priority: {
+                        type: string;
+                        enum: string[];
+                    };
+                };
+                required: string[];
+            };
+            execute({ question, goalId, options, priority }: any): Promise<import("./tools/run-ask-user").AskUserOutput>;
+        };
+        mafw_record_feedback: {
+            description: string;
+            parameters: {
+                type: string;
+                properties: {
+                    targetId: {
+                        type: string;
+                    };
+                    type: {
+                        type: string;
+                        enum: string[];
+                    };
+                    goalId: {
+                        type: string;
+                    };
+                    comment: {
+                        type: string;
+                    };
+                };
+                required: string[];
+            };
+            execute({ targetId, type, goalId, comment }: any): Promise<import("./tools/run-record-feedback").FeedbackOutput>;
+        };
+        mafw_get_model_route: {
+            description: string;
+            parameters: {
+                type: string;
+                properties: {
+                    taskType: {
+                        type: string;
+                        enum: string[];
+                    };
+                    remainingBudget: {
+                        type: string;
+                    };
+                };
+                required: string[];
+            };
+            execute({ taskType, remainingBudget }: any): Promise<any>;
+        };
     };
     hooks: {
         'session.end': (ctx: any) => Promise<void>;
