@@ -1,7 +1,7 @@
 import { ObservationDeduplicator } from './observation-deduplicator';
 import { ObservationClassifier } from './observation-classifier';
 import { ZeroTokenCompressor } from './zero-token-compressor';
-import { RuleBasedCompressor } from './rule-based-compressor';
+import { HybridCompressor } from './hybrid-compressor';
 import { DiffCompressor } from './diff-compressor';
 import { CompressionStrategySelector } from './compression-strategy-selector';
 import { PrivacyFilter } from '../memory/privacy-filter';
@@ -19,7 +19,7 @@ export class CompressionPipeline {
   private deduplicator: ObservationDeduplicator;
   private classifier: ObservationClassifier;
   private zeroToken: ZeroTokenCompressor;
-  private llm: RuleBasedCompressor;
+  private llm: HybridCompressor;
   private diff: DiffCompressor;
   private selector: CompressionStrategySelector;
   private privacyFilter?: PrivacyFilter;
@@ -28,7 +28,7 @@ export class CompressionPipeline {
     this.deduplicator = new ObservationDeduplicator();
     this.classifier = new ObservationClassifier();
     this.zeroToken = new ZeroTokenCompressor();
-    this.llm = new RuleBasedCompressor();
+    this.llm = new HybridCompressor();
     this.diff = new DiffCompressor();
     this.selector = new CompressionStrategySelector();
     if (config?.privacyFilter) {

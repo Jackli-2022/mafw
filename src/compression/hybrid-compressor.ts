@@ -2,19 +2,21 @@ import { ZeroTokenCompressor } from './zero-token-compressor';
 
 export interface CompressedMemory {
   id: string;
-  type: 'rule_compressed' | 'fallback';
+  type: 'hybrid' | 'fallback';
   facts: string[];
   concepts: string[];
   narrative?: string;
   energy: number;
 }
 
-export class RuleBasedCompressor {
+export class HybridCompressor {
   private zeroToken: ZeroTokenCompressor;
   private energyThreshold: number = 0.6;
+  private gatewayUrl: string;
 
-  constructor() {
+  constructor(gatewayUrl?: string) {
     this.zeroToken = new ZeroTokenCompressor();
+    this.gatewayUrl = gatewayUrl || 'http://127.0.0.1:3001';
   }
 
   async compress(observations: any[]): Promise<CompressedMemory> {
@@ -22,17 +24,33 @@ export class RuleBasedCompressor {
       return { id: 'empty', type: 'fallback', facts: [], concepts: [], energy: 0 };
     }
     const highEnergy = observations.filter(o => (o.energy ?? 0.5) > this.energyThreshold);
-    if (highEnergy.length === 0) {
-      const zeroResult = this.zeroToken.compress(observations);
-      return {
-        id: `fallback_${Date.now()}`,
-        type: 'fallback',
-        facts: zeroResult.map(r => r.fact).filter(Boolean),
-        concepts: [...new Set(zeroResult.map(r => r.concept).filter(Boolean))],
-        energy: observations.reduce((s, o) => s + (o.energy ?? 0.5), 0) / observations.length
-      };
-    }
-    const narrative = highEnergy.map(o => o.content).join('\n');
+    if (highEnergy.length === 0) return this.ruleFallback(observations);
+
+    try {
+      const res = await fetch(`${this.gatewayUrl}/api/llm/compress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ observations: highEnergy.map(o => o.content || '') }),
+        signal: AbortSignal.timeout(10000)
+      });
+      if (res.ok) {
+        const result: any = await res.json();
+        return {
+          id: `hybrid_${Date.now()}`,
+          type: 'hybrid',
+          facts: result.facts || [],
+          concepts: result.concepts || [],
+          narrative: result.narrative || '',
+          energy: result.energy ?? 0.5
+        };
+      }
+    } catch {}
+
+    return this.ruleFallback(highEnergy);
+  }
+
+  private ruleFallback(observations: any[]): CompressedMemory {
+    const zeroResult = this.zeroToken.compress(observations);
     const allFacts: string[] = [];
     const allConcepts: string[] = [];
     const conceptPatterns = [
@@ -42,7 +60,7 @@ export class RuleBasedCompressor {
       { regex: /(api|endpoint|route)/i, concept: 'api' },
       { regex: /(config|setting|env)/i, concept: 'configuration' }
     ];
-    for (const obs of highEnergy) {
+    for (const obs of observations) {
       const content = obs.content || '';
       const lines = content.split('\n').filter((l: string) => l.length > 20);
       allFacts.push(...lines.slice(0, 3));
@@ -51,15 +69,11 @@ export class RuleBasedCompressor {
       }
     }
     return {
-      id: `rule_${Date.now()}`,
-      type: 'rule_compressed',
-      narrative,
+      id: `fallback_${Date.now()}`,
+      type: 'fallback',
       facts: [...new Set(allFacts)],
       concepts: [...new Set(allConcepts)],
-      energy: Math.min(
-        highEnergy.reduce((s, o) => s + (o.energy ?? 0.5), 0) / highEnergy.length + 0.1,
-        1.0
-      )
+      energy: observations.reduce((s: number, o: any) => s + (o.energy ?? 0.5), 0) / observations.length
     };
   }
 }
