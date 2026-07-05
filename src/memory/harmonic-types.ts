@@ -1,0 +1,32 @@
+export interface HarmonicUnit {
+  id: string;
+  goal_id: string | null;
+  memory_type: 'episodic' | 'semantic' | 'procedural' | 'global';
+  primary_abstraction: string;
+  cue_anchors: string[];
+  memory_value: string;
+  energy: number;
+  created_at: string;
+  updated_at: string;
+  merged_from?: string[];
+}
+
+export interface HarmonicIndex {
+  version: number;
+  updated_at: string;
+  entries: HarmonicIndexEntry[];
+}
+
+export interface HarmonicIndexEntry {
+  id: string;
+  primary_abstraction: string;
+  cue_anchors: string[];
+  memory_type: string;
+  goal_id: string | null;
+  tier: string;
+  energy: number;
+}
+
+export function generateHarmonicId(): string {
+  return `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
