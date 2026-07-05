@@ -9,6 +9,11 @@ export interface HarmonicUnit {
   created_at: string;
   updated_at: string;
   merged_from?: string[];
+  salience?: number;
+  abstraction_level?: number;
+  review_count?: number;
+  last_reviewed?: string;
+  top_associations?: string[];
 }
 
 export interface HarmonicIndex {

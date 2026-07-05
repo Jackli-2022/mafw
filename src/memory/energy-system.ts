@@ -38,8 +38,9 @@ export class EnergySystem {
     this.criticalThreshold = config?.criticalThreshold ?? 0.8;
   }
 
-  calculateEnergy(currentEnergy: number, event: EnergyEvent, daysSinceLastUpdate: number): number {
-    let energy = currentEnergy - this.decayRatePerDay * Math.max(0, daysSinceLastUpdate);
+  calculateEnergy(currentEnergy: number, event: EnergyEvent, daysSinceLastUpdate: number, salience: number = 1.0): number {
+    const effectiveDecay = this.decayRatePerDay * (1 / Math.max(0.1, salience));
+    let energy = currentEnergy - effectiveDecay * Math.max(0, daysSinceLastUpdate);
     energy += EVENT_DELTAS[event.type];
     return Math.max(this.minEnergy, Math.min(this.maxEnergy, energy));
   }

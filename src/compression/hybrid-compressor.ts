@@ -1,6 +1,7 @@
 import { ZeroTokenCompressor } from './zero-token-compressor';
 import { HarmonicUnit, generateHarmonicId } from '../memory/harmonic-types';
 import { HarmonicIndexManager } from '../memory/harmonic-index';
+import { calculateSalience } from '../memory/salience-perceptor';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -67,14 +68,18 @@ export class HybridCompressor {
   }
 
   private makeUnit(observations: any[], concepts: string[], energy: number): HarmonicUnit {
+    const allContent = observations.map(o => o.content || '').join(' ');
+    const memoryType = this.detectMemoryType(observations);
     return {
       id: generateHarmonicId(),
       goal_id: this.extractGoalId(observations),
-      memory_type: 'semantic',
+      memory_type: memoryType,
       primary_abstraction: 'compressed',
       cue_anchors: concepts.slice(0, 8),
       memory_value: '',
       energy: Math.max(0, Math.min(1, energy)),
+      salience: calculateSalience(allContent),
+      abstraction_level: memoryType === 'procedural' ? 2 : memoryType === 'episodic' ? 1 : 2,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
