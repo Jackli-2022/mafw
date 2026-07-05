@@ -26,8 +26,11 @@ export class RecoveryManager {
 
     const files = fs.readdirSync(checkpointsDir)
       .filter(f => f.endsWith('.json'))
-      .sort()
-      .reverse();
+      .sort((a, b) => {
+        const numA = parseInt(a.match(/(\d+)\.json$/)![1], 10);
+        const numB = parseInt(b.match(/(\d+)\.json$/)![1], 10);
+        return numB - numA;
+      });
 
     return files.length > 0 ? path.join(checkpointsDir, files[0]) : null;
   }

@@ -254,6 +254,17 @@ export class DashboardAPI {
         return;
       }
 
+      // POST /api/alignment — save user weight preferences
+      if (pathname === '/api/alignment' && method === 'POST') {
+        const body = await this.readBody(req);
+        const weights = JSON.parse(body);
+        const weightsPath = path.join(this.mafwDir, 'user-weights.json');
+        fs.writeFileSync(weightsPath, JSON.stringify(weights, null, 2), 'utf-8');
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
+        return;
+      }
+
       // POST /api/llm/compress — LLM compression proxy
       if (pathname === '/api/llm/compress' && method === 'POST') {
         const body = await this.readBody(req);

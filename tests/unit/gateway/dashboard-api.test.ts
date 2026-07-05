@@ -131,11 +131,14 @@ describe('DashboardAPI', () => {
     expect(Array.isArray(body)).toBe(true);
   });
 
-  test('GET /api/memory/:goalId returns memory items', async () => {
+  test('GET /api/memory/:goalId returns memory object with tiers and entries', async () => {
     const res = await request('GET', `${BASE}/api/memory/test-goal`);
     expect(res.status).toBe(200);
     const body = JSON.parse(res.body);
-    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveProperty('tiers');
+    expect(body).toHaveProperty('entries');
+    expect(body).toHaveProperty('total');
+    expect(Array.isArray(body.entries)).toBe(true);
   });
 
   test('GET /api/memory/energy-distribution returns distribution', async () => {

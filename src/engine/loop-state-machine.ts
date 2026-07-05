@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { loadState, updateState, loadWaves, loadReview } from '../utils/state';
 import { startNextLoop } from './phase-orchestrator';
-import { RecoveryManager } from '../../gateway/src/recovery';
 
 export enum LoopState {
   IDLE = 'idle',
@@ -141,8 +140,35 @@ export class LoopStateMachineImpl implements LoopStateMachine {
         },
         action: async (m) => {
           const prevWave = m.currentWave > 1 ? m.currentWave - 1 : undefined;
-          const recovery = new RecoveryManager(m.configDir);
-          await recovery.restoreLoop(m.goalId, m.loopNum, prevWave);
+          // Restore from checkpoint
+          const checkpointsDir = path.join(m.configDir, '.opencode/mafw/checkpoints', m.goalId);
+          const pattern = prevWave !== undefined
+            ? `wave-${m.loopNum}-${prevWave}.json`
+            : `loop-${m.loopNum}.json`;
+          const cpPath = path.join(checkpointsDir, pattern);
+          if (fs.existsSync(cpPath)) {
+            const statePath = path.join(m.configDir, '.opencode/mafw/state', `${m.goalId}.json`);
+            if (fs.existsSync(statePath)) {
+              try {
+                const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+                state.phase = 'PLANNING';
+                state.currentWave = prevWave ?? state.currentWave;
+                state.error = undefined;
+                state.updatedAt = new Date().toISOString();
+                fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
+              } catch {}
+            }
+            if (prevWave !== undefined) {
+              const wavesPath = path.join(m.configDir, '.opencode/mafw/waves.json');
+              if (fs.existsSync(wavesPath)) {
+                try {
+                  const wavesData = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
+                  wavesData.waves = (wavesData.waves || []).filter((w: any) => w.waveNum <= prevWave);
+                  fs.writeFileSync(wavesPath, JSON.stringify(wavesData, null, 2), 'utf-8');
+                } catch {}
+              }
+            }
+          }
           await m.startNewLoop();
         }
       },
@@ -297,12 +323,19 @@ export class LoopStateMachineImpl implements LoopStateMachine {
     if (wave) {
       wave.state = WaveState.COMPLETED;
       wave.endTime = new Date().toISOString();
-      // Save checkpoint at wave level for rollback
-      const recovery = new RecoveryManager(this.configDir);
-      recovery.saveCheckpoint(this.goalId, this.loopNum,
-        { phase: this.phase, currentWave: wave.waveNum },
-        wave.waveNum
-      );
+      // Save wave-level checkpoint for rollback
+      const checkpointsDir = path.join(this.configDir, '.opencode/mafw/checkpoints', this.goalId);
+      if (!fs.existsSync(checkpointsDir)) {
+        fs.mkdirSync(checkpointsDir, { recursive: true });
+      }
+      const cpPath = path.join(checkpointsDir, `wave-${this.loopNum}-${wave.waveNum}.json`);
+      fs.writeFileSync(cpPath, JSON.stringify({
+        goalId: this.goalId,
+        loop: this.loopNum,
+        wave: wave.waveNum,
+        phase: this.phase,
+        timestamp: new Date().toISOString()
+      }, null, 2), 'utf-8');
     }
   }
 
@@ -323,7 +356,6 @@ export class LoopStateMachineImpl implements LoopStateMachine {
   }
 
   private async parseVerdict(): Promise<void> {
-    // Check for forced verdict from pendingData first
     if (this.pendingData && this.pendingData.verdict) {
       this.verdict = this.pendingData.verdict;
     } else {
@@ -332,20 +364,28 @@ export class LoopStateMachineImpl implements LoopStateMachine {
         if (!reviewContent) {
           this.verdict = 'FAIL';
         } else {
-          const verdictMatch = reviewContent.match(/Verdict:\s*(PASS|FAIL|PARTIAL)/i);
-          if (verdictMatch) {
-            this.verdict = verdictMatch[1].toUpperCase();
-          } else if (reviewContent.includes('PASS') || reviewContent.includes('pass')) {
-            this.verdict = 'PASS';
+          const text = typeof reviewContent === 'string' ? reviewContent : JSON.stringify(reviewContent);
+          const scoreMatch = text.match(/[Ss]core[:\s]+(\d+)/i);
+          if (scoreMatch) {
+            const score = parseInt(scoreMatch[1], 10);
+            if (score >= 85) this.verdict = 'PASS';
+            else if (score >= 60) this.verdict = 'PARTIAL';
+            else this.verdict = 'FAIL';
           } else {
-            this.verdict = 'FAIL';
+            const verdictMatch = text.match(/Verdict:\s*(PASS|FAIL|PARTIAL)/i);
+            if (verdictMatch) {
+              this.verdict = verdictMatch[1].toUpperCase();
+            } else if (text.includes('PASS') || text.includes('pass')) {
+              this.verdict = 'PASS';
+            } else {
+              this.verdict = 'FAIL';
+            }
           }
         }
       } catch {
         this.verdict = 'FAIL';
       }
     }
-    // Auto-trigger the verdict routing
     await this.handleEvent('auto');
   }
 

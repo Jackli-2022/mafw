@@ -74,6 +74,23 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   function persistCosts(): void {
     const all = costEstimator.getAllRecords();
     if (all.length === 0) return;
+
+    // Write to SQLite
+    try {
+      const dbPath = path.join(mafwDir, 'data', 'state.db');
+      if (fs.existsSync(dbPath)) {
+        const { SQLiteStorage } = require('./storage/sqlite-storage');
+        const storage = new SQLiteStorage(dbPath);
+        storage.batch(all.map((r: any) => ({
+          type: 'set' as const,
+          scope: 'cost_logs',
+          key: r.id,
+          value: r
+        })));
+      }
+    } catch {}
+
+    // Write JSON for Dashboard FS fallback
     const costDir = path.join(mafwDir, 'cost');
     if (!fs.existsSync(costDir)) fs.mkdirSync(costDir, { recursive: true });
     const byGoal = new Map<string, CostRecord[]>();
@@ -146,6 +163,23 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       persistCosts();
     },
     priority: 40
+  });
+
+  // ── v6.0 Cost Threshold Hook ──
+  hookManager.register({
+    name: 'cost-threshold',
+    event: 'session.start',
+    priority: 10,
+    handler: async (ctx: any) => {
+      const allRecords = costEstimator.getAllRecords();
+      const totalCost = allRecords.reduce((s: number, r: any) => s + (r.estimatedCost || 0), 0);
+      const budget = (config as any)?.cost?.budget?.total || 1000000;
+      const threshold = (config as any)?.cost?.budget?.threshold || 0.8;
+      if (budget > 0 && totalCost / budget > threshold) {
+        ctx.forceHaiku = true;
+        ctx.compressInjection = true;
+      }
+    }
   });
 
   // ── V5 Hybrid Search 工具函数 ──
@@ -571,6 +605,26 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
         },
         async execute({ targetId, type, goalId, comment }: any) {
           return recordFeedback({ targetId, type, goalId, comment, loopNum: 1 });
+        }
+      },
+      mafw_get_model_route: {
+        description: 'Decide which LLM model to use based on task type and remaining budget',
+        parameters: {
+          type: 'object',
+          properties: {
+            taskType: { type: 'string', enum: ['planning', 'coding', 'reviewing'] },
+            remainingBudget: { type: 'number' }
+          },
+          required: ['taskType', 'remainingBudget']
+        },
+        async execute({ taskType, remainingBudget }: any) {
+          const { CognitiveRouter } = require('./cost/cognitive-router');
+          const router = new CognitiveRouter((config as any)?.router);
+          return router.selectModel(
+            taskType as any,
+            remainingBudget,
+            (config as any)?.cost?.budget?.total || 1000000
+          );
         }
       }
     },
