@@ -167,6 +167,63 @@ export class DashboardAPI {
         return;
       }
 
+      // POST /api/gateway/pause — pause a goal
+      if (pathname === '/api/gateway/pause' && method === 'POST') {
+        const body = await this.readBody(req);
+        const { goalId } = JSON.parse(body);
+        const result = await this.gatewayControl('pause', goalId);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // POST /api/gateway/resume — resume a goal
+      if (pathname === '/api/gateway/resume' && method === 'POST') {
+        const body = await this.readBody(req);
+        const { goalId } = JSON.parse(body);
+        const result = await this.gatewayControl('resume', goalId);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // POST /api/gateway/cancel — cancel a goal
+      if (pathname === '/api/gateway/cancel' && method === 'POST') {
+        const body = await this.readBody(req);
+        const { goalId } = JSON.parse(body);
+        const result = await this.gatewayControl('cancel', goalId);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // POST /api/gateway/checkpoint — save checkpoint for all running goals
+      if (pathname === '/api/gateway/checkpoint' && method === 'POST') {
+        const result = await this.gatewayControl('checkpoint');
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // POST /api/gateway/rollback — rollback to last checkpoint
+      if (pathname === '/api/gateway/rollback' && method === 'POST') {
+        const body = await this.readBody(req);
+        const { goalId } = JSON.parse(body);
+        const result = await this.gatewayControl('rollback', goalId);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // GET /api/alignment?goalId=
+      if (pathname === '/api/alignment' && method === 'GET') {
+        const goalId = parsedUrl.searchParams.get('goalId') || undefined;
+        const result = await this.getAlignment(goalId);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
       // POST /api/feedback — record user feedback
       if (pathname === '/api/feedback' && method === 'POST') {
         const body = await this.readBody(req);
@@ -197,12 +254,84 @@ export class DashboardAPI {
         return;
       }
 
+      // POST /api/llm/compress — LLM compression proxy
+      if (pathname === '/api/llm/compress' && method === 'POST') {
+        const body = await this.readBody(req);
+        const { observations, model } = JSON.parse(body);
+        const result = await this.llmCompress(observations || [], model);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message || 'Internal server error' }));
     }
+  }
+
+  async llmCompress(observations: string[], model?: string): Promise<any> {
+    const config = this.loadLLMConfig();
+    const apiKey = process.env[config.compression.apiKeyEnv];
+    if (!apiKey) throw new Error(`API key not found in env ${config.compression.apiKeyEnv}`);
+
+    const prompt = `Analyze the following agent observations and extract structured memories.
+Return JSON only:
+{
+  "narrative": "summary of what happened",
+  "facts": ["specific fact 1", "specific fact 2"],
+  "concepts": ["keyword1", "keyword2"],
+  "energy": 0.5
+}
+
+Observations:
+${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
+
+    const modelName = model || config.compression.model;
+    try {
+      if (config.compression.provider === 'anthropic') {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: modelName, max_tokens: 500, messages: [{ role: 'user', content: prompt }] }),
+          signal: AbortSignal.timeout(15000)
+        });
+        const data: any = await res.json();
+        return this.parseLLMResponse(data.content?.[0]?.text || '');
+      }
+      if (config.compression.provider === 'openai') {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: modelName, max_tokens: 500, messages: [{ role: 'user', content: prompt }] }),
+          signal: AbortSignal.timeout(15000)
+        });
+        const data: any = await res.json();
+        return this.parseLLMResponse(data.choices?.[0]?.message?.content || '');
+      }
+      throw new Error(`Unknown provider: ${config.compression.provider}`);
+    } catch (err: any) {
+      return { narrative: 'Compression failed: ' + err.message, facts: [], concepts: [], energy: 0.3 };
+    }
+  }
+
+  parseLLMResponse(text: string): any {
+    try {
+      const parsed = JSON.parse(text);
+      return { narrative: parsed.narrative || '', facts: Array.isArray(parsed.facts) ? parsed.facts : [], concepts: Array.isArray(parsed.concepts) ? parsed.concepts : [], energy: typeof parsed.energy === 'number' ? parsed.energy : 0.5 };
+    } catch {
+      return { narrative: text.slice(0, 200), facts: [], concepts: [], energy: 0.5 };
+    }
+  }
+
+  private loadLLMConfig(): any {
+    const configPath = path.join(this.mafwDir, '..', '..', '.mafw', 'llm-config.json');
+    if (fs.existsSync(configPath)) {
+      try { return JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
+    }
+    return { compression: { provider: 'anthropic', model: 'claude-3-haiku-20240307', apiKeyEnv: 'MAFW_LLM_API_KEY' } };
   }
 
   private async recordFeedback(input: any): Promise<any> {
@@ -225,6 +354,122 @@ export class DashboardAPI {
       }
     }
     return all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
+  private async gatewayControl(action: string, goalId?: string): Promise<any> {
+    const stateDir = path.join(this.mafwDir, 'state');
+    if (!fs.existsSync(stateDir)) return { success: false, error: 'No state directory' };
+
+    if (action === 'checkpoint') {
+      const { RecoveryManager } = require('../../src/recovery');
+      const recovery = new RecoveryManager(this.projectDir);
+      const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
+      let count = 0;
+      for (const file of files) {
+        try {
+          const state = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf-8'));
+          recovery.saveCheckpoint(state.goalId, state.loop || 1, { phase: state.phase, currentWave: state.currentWave });
+          count++;
+        } catch {}
+      }
+      return { success: true, message: `Checkpoint saved for ${count} goal(s)` };
+    }
+
+    if (!goalId) return { success: false, error: 'goalId required' };
+    const statePath = path.join(stateDir, `${goalId}.json`);
+    if (!fs.existsSync(statePath)) return { success: false, error: 'Goal not found' };
+
+    try {
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+
+      switch (action) {
+        case 'pause':
+          state._resumePhase = state.phase;
+          state.phase = 'PAUSED';
+          state.nextAction = 'PAUSED';
+          break;
+        case 'resume':
+          state.phase = state._resumePhase || state.phase;
+          state.nextAction = state._resumePhase === 'PLANNING' ? 'CREATE_PLAN_SESSION' :
+            state._resumePhase === 'EXECUTING' ? 'CREATE_EXECUTE_SESSION' :
+            state._resumePhase === 'REVIEWING' ? 'CREATE_REVIEW_SESSION' : 'WAIT_PHASE_COMPLETE';
+          delete state._resumePhase;
+          break;
+        case 'cancel':
+          state.phase = 'FAILED';
+          state.nextAction = 'CANCELLED';
+          break;
+        case 'rollback': {
+          const { RecoveryManager } = require('../../src/recovery');
+          const recovery = new RecoveryManager(this.projectDir);
+          const cp = recovery.findLastCheckpoint(goalId);
+          if (cp) {
+            await recovery.restoreLoop(goalId, state.loop || 1);
+            state.phase = 'PLANNING';
+            state.nextAction = 'CREATE_PLAN_SESSION';
+          } else {
+            return { success: false, error: 'No checkpoint found' };
+          }
+          break;
+        }
+        default:
+          return { success: false, error: 'Unknown action' };
+      }
+
+      state.updatedAt = new Date().toISOString();
+      const tmpPath = statePath + '.tmp';
+      fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, statePath);
+      return { success: true, message: `${action} successful` };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  private async getAlignment(goalId?: string): Promise<any> {
+    const weights = { speed: 0.3, quality: 0.5, cost: 0.2 };
+    let actualWeights = { speed: 0.35, quality: 0.45, cost: 0.2 };
+    let score = 80;
+
+    if (goalId) {
+      // Try to read goal-specific weights from state or request
+      const requestPath = path.join(this.mafwDir, 'requests', `${goalId}.json`);
+      if (fs.existsSync(requestPath)) {
+        try {
+          const req = JSON.parse(fs.readFileSync(requestPath, 'utf-8'));
+          const p = req.priority || 'normal';
+          if (p === 'high') { weights.speed = 0.5; weights.quality = 0.3; weights.cost = 0.2; }
+          if (p === 'low') { weights.speed = 0.2; weights.quality = 0.3; weights.cost = 0.5; }
+        } catch {}
+      }
+
+      // Derive actual weights from cost data
+      const costPath = path.join(this.mafwDir, 'cost', `${goalId}.json`);
+      if (fs.existsSync(costPath)) {
+        try {
+          const records = JSON.parse(fs.readFileSync(costPath, 'utf-8'));
+          if (Array.isArray(records) && records.length > 0) {
+            const totalCost = records.reduce((s: number, r: any) => s + (r.estimatedCost || 0), 0);
+            if (totalCost > 0) {
+              const planCost = records.filter(r => r.toolName === 'mafw_search_hybrid').reduce((s: number, r: any) => s + (r.estimatedCost || 0), 0);
+              const reviewCost = records.filter(r => r.toolName === 'mafw_review').reduce((s: number, r: any) => s + (r.estimatedCost || 0), 0);
+              const executeCost = totalCost - planCost - reviewCost;
+              actualWeights = {
+                speed: totalCost > 0 ? parseFloat((executeCost / totalCost).toFixed(2)) : 0,
+                quality: totalCost > 0 ? parseFloat((reviewCost / totalCost).toFixed(2)) : 0,
+                cost: totalCost > 0 ? parseFloat((planCost / totalCost).toFixed(2)) : 0
+              };
+            }
+          }
+        } catch {}
+      }
+
+      // Compute alignment score: 1 - Σ|userWeight - actualWeight| / 2
+      const diff = Math.abs(weights.speed - actualWeights.speed) + Math.abs(weights.quality - actualWeights.quality) + Math.abs(weights.cost - actualWeights.cost);
+      score = Math.round((1 - diff / 2) * 100);
+    }
+
+    return { weights, actualWeights, score };
   }
 
   private recordAnswer(questionId: string, answer: string): boolean {
@@ -254,16 +499,22 @@ export class DashboardAPI {
   }
 
   private getGoalsFromRuntime(): any[] {
-    return Array.from(this.scheduler!.activeGoals.values()).map((state: any) => ({
-      goalId: state.goalId,
-      phase: state.phase,
-      nextAction: state.nextAction,
-      loop: state.loop,
-      currentWave: state.currentWave,
-      totalWaves: state.totalWaves,
-      updatedAt: state.updatedAt,
-      sessions: Object.values(state.sessions || {}).filter((s: any) => s?.active).length
-    }));
+    return Array.from(this.scheduler!.activeGoals.values()).map((state: any) => {
+      const activeSessions = Object.entries(state.sessions || {})
+        .filter(([, s]: any) => s?.active)
+        .map(([id]) => id);
+      return {
+        goalId: state.goalId,
+        phase: state.phase,
+        nextAction: state.nextAction,
+        loop: state.loop,
+        currentWave: state.currentWave,
+        totalWaves: state.totalWaves,
+        updatedAt: state.updatedAt,
+        sessions: activeSessions.length,
+        sessionId: activeSessions[0] || undefined
+      };
+    });
   }
 
   private async getGoalsFromFS(): Promise<any[]> {
@@ -277,6 +528,9 @@ export class DashboardAPI {
       try {
         const statePath = path.join(stateDir, file);
         const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        const activeSessions = Object.entries(state.sessions || {})
+          .filter(([, s]: any) => s?.active)
+          .map(([id]) => id);
         goals.push({
           goalId: state.goalId,
           phase: state.phase,
@@ -284,7 +538,9 @@ export class DashboardAPI {
           loop: state.loop,
           currentWave: state.currentWave,
           totalWaves: state.totalWaves,
-          updatedAt: state.updatedAt
+          updatedAt: state.updatedAt,
+          sessions: activeSessions.length,
+          sessionId: activeSessions[0] || undefined
         });
       } catch {
         // skip malformed files
@@ -348,10 +604,11 @@ export class DashboardAPI {
     return loops;
   }
 
-  private async getMemory(goalId: string, tier?: string): Promise<any[]> {
+  private async getMemory(goalId: string, tier?: string): Promise<any> {
     const lessonsDir = path.join(this.mafwDir, 'lessons');
     const parametricDir = path.join(this.mafwDir, 'parametric');
-    const items: any[] = [];
+    const entries: any[] = [];
+    const tierCounts: Record<string, number> = { L5: 0, T4: 0, T3: 0, T2: 0, T1: 0 };
 
     const scanDir = (dir: string, sourceLabel: string) => {
       if (!fs.existsSync(dir)) return;
@@ -359,30 +616,49 @@ export class DashboardAPI {
       for (const file of files) {
         const content = fs.readFileSync(path.join(dir, file), 'utf-8');
         let tierLabel = sourceLabel;
-        if (file.includes('L2')) tierLabel = 'L2';
-        else if (file.includes('L3')) tierLabel = 'L3';
-        else if (file.includes('constraint')) tierLabel = 'L3_constraint';
-        else if (file.includes('prompt')) tierLabel = 'L3_prompt';
-        items.push({ file, tier: tierLabel, content: content.substring(0, 500), path: path.join(dir, file) });
+        if (file.startsWith('L5') || sourceLabel === 'L5') tierLabel = 'L5';
+        else if (sourceLabel === 'procedural' || file.startsWith('T4')) tierLabel = 'T4';
+        else if (sourceLabel === 'semantic' || file.startsWith('T3')) tierLabel = 'T3';
+        else if (file.includes('L2')) tierLabel = 'L2';
+        else if (file.includes('L3') || file.includes('constraint') || file.includes('prompt')) tierLabel = 'L3';
+
+        // Map to user-facing tier labels
+        let displayTier = 'T1';
+        if (tierLabel === 'L5' || sourceLabel === 'L5') displayTier = 'L5';
+        else if (tierLabel === 'T4' || tierLabel === 'procedural' || tierLabel === 'pattern') displayTier = 'T4';
+        else if (tierLabel === 'T3' || tierLabel === 'semantic' || tierLabel === 'fact') displayTier = 'T3';
+        else if (tierLabel === 'L2' || tierLabel === 'lesson' || tierLabel === 'T2') displayTier = 'T2';
+        else if (tierLabel === 'L3' || tierLabel === 'L3_constraint' || tierLabel === 'L3_prompt') displayTier = 'L3';
+
+        tierCounts[displayTier] = (tierCounts[displayTier] || 0) + 1;
+        entries.push({ file, tier: displayTier, content: content.substring(0, 500), path: path.join(dir, file) });
       }
     };
 
-    scanDir(lessonsDir, 'lesson');
+    const costDir = path.join(this.mafwDir, 'cost');
+    if (fs.existsSync(costDir)) {
+      const costFiles = fs.readdirSync(costDir).filter(f => f.endsWith('.json'));
+      for (const f of costFiles) { tierCounts.T1 = (tierCounts.T1 || 0) + 1; }
+    }
+
+    scanDir(lessonsDir, 'L2');
     scanDir(parametricDir, 'parametric');
 
     if (tier) {
-      return items.filter(i => i.tier === tier || i.tier.toLowerCase() === tier.toLowerCase());
+      const filtered = entries.filter(i => i.tier === tier || i.tier.toLowerCase() === tier.toLowerCase());
+      return { tiers: tierCounts, entries: filtered, total: filtered.length };
     }
 
-    return items;
+    return { tiers: tierCounts, entries, total: entries.length };
   }
 
   private async searchMemory(goalId: string, query: string): Promise<any> {
-    const allItems = await this.getMemory(goalId);
+    const memResult = await this.getMemory(goalId);
+    const allItems: any[] = memResult.entries || [];
     if (!query) return { query, results: allItems };
 
     const lowerQuery = query.toLowerCase();
-    const results = allItems.filter(item => {
+    const results = allItems.filter((item: any) => {
       const content = item.content ? item.content.toLowerCase() : '';
       const file = item.file ? item.file.toLowerCase() : '';
       return content.includes(lowerQuery) || file.includes(lowerQuery);
@@ -396,7 +672,8 @@ export class DashboardAPI {
   }
 
   private async getEnergyDistribution(goalId?: string): Promise<{ critical: number; high: number; medium: number; low: number; total: number }> {
-    const items = goalId ? await this.getMemory(goalId) : await this.getMemory('');
+    const memResult = goalId ? await this.getMemory(goalId) : await this.getMemory('');
+    const items: any[] = memResult.entries || [];
     let critical = 0, high = 0, medium = 0, low = 0;
 
     for (const item of items) {
@@ -411,7 +688,7 @@ export class DashboardAPI {
       else low++;
     }
 
-    return { critical, high, medium, low, total: items.length };
+    return { critical, high, medium, low, total: memResult.total || items.length };
   }
 
   private async getSessionReplay(goalId: string, loop: number): Promise<any[]> {
@@ -463,17 +740,103 @@ export class DashboardAPI {
     const activeSessions = goals.filter((g: any) =>
       Object.values(g.sessions || {}).some((s: any) => s?.active)
     ).length;
+
+    // Compute total duration from state file timestamps
+    const timestamps = goals
+      .map(g => g.updatedAt ? new Date(g.updatedAt).getTime() : 0)
+      .filter(t => t > 0);
+    const earliest = timestamps.length > 0 ? Math.min(...timestamps) : Date.now() - 3600000;
+    const totalDurationMinutes = Math.round((Date.now() - earliest) / 60000);
+
+    // Compute memory entries from FS
+    const mafwDir = path.join(this.projectDir, '.opencode', 'mafw');
+    let l1Count = 0, l2Count = 0, l3Count = 0, totalMemory = 0;
+    const lessonsDir = path.join(mafwDir, 'lessons');
+    const parametricDir = path.join(mafwDir, 'parametric');
+    const countFiles = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      for (const file of fs.readdirSync(dir)) {
+        totalMemory++;
+        if (file.endsWith('.yml') || file.endsWith('.yaml')) l2Count++;
+        else if (file.includes('constraint') || file.includes('prompt')) l3Count++;
+        else l1Count++;
+      }
+    };
+    countFiles(lessonsDir);
+    countFiles(parametricDir);
+    const memoryEntries = totalMemory;
+    const memoryL1 = l1Count;
+    const memoryL2 = l2Count;
+    const memoryL3 = l3Count;
+
+    // Compute loop success rate from FS reviews
+    let passed = 0, total = 0;
+    const reviewsDir = path.join(mafwDir, 'reviews');
+    if (fs.existsSync(reviewsDir)) {
+      for (const file of fs.readdirSync(reviewsDir).filter(f => f.endsWith('.json'))) {
+        try {
+          const review = JSON.parse(fs.readFileSync(path.join(reviewsDir, file), 'utf-8'));
+          total++;
+          if (review.verdict === 'passed' || review.verdict === 'approved') passed++;
+        } catch {}
+      }
+    }
+    for (const g of goals) { total++; if (g.nextAction === 'COMPLETED') passed++; }
+    const loopSuccessRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+
+    // Agent workload from cost data
+    const agentPcts = this.computeAgentPcts();
+
     return {
       activeGoals: activeGoalCount,
       loopsToday,
       wavesToday,
       activeSessions,
       serveRunning: this.scheduler!.serveRunning,
-      totalDuration: '0m',
-      totalDurationMinutes: 0,
-      memoryEntries: { total: 0, L1: 0, L2: 0, L3: 0 },
-      loopSuccessRate: 0,
-      avgWavesPerLoop: 0
+      totalDuration: `${Math.floor(totalDurationMinutes / 60)}h ${totalDurationMinutes % 60}m`,
+      totalDurationMinutes,
+      memoryEntries,
+      memoryL1,
+      memoryL2,
+      memoryL3,
+      loopSuccessRate,
+      avgWavesPerLoop: 0,
+      ...agentPcts
+    };
+  }
+
+  private computeAgentPcts(): any {
+    const costDir = path.join(this.mafwDir, 'cost');
+    if (!fs.existsSync(costDir)) {
+      return { planAgentPct: 0, executeAgentPct: 0, reviewAgentPct: 0, toolAgentPct: 0, totalAgentCalls: 0 };
+    }
+    const toolCounts: Record<string, number> = {};
+    const files = fs.readdirSync(costDir).filter(f => f.endsWith('.json'));
+    for (const file of files) {
+      try {
+        const records = JSON.parse(fs.readFileSync(path.join(costDir, file), 'utf-8'));
+        for (const r of (Array.isArray(records) ? records : [])) {
+          const name = r.toolName || 'unknown';
+          toolCounts[name] = (toolCounts[name] || 0) + 1;
+        }
+      } catch {}
+    }
+    const total = Object.values(toolCounts).reduce((a, b) => a + b, 0);
+    if (total === 0) {
+      return { planAgentPct: 0, executeAgentPct: 0, reviewAgentPct: 0, toolAgentPct: 0, totalAgentCalls: 0 };
+    }
+    const getPct = (name: string) => Math.round(((toolCounts[name] || 0) / total) * 100);
+    // Map tool names to agent types
+    const planTools = (toolCounts['mafw_search_hybrid'] || 0) + (toolCounts['mafw_get_deltas'] || 0);
+    const executeTools = (toolCounts['file_edit'] || 0) + (toolCounts['file_write'] || 0);
+    const reviewTools = (toolCounts['mafw_review'] || 0) + (toolCounts['mafw_ask_user'] || 0) + (toolCounts['mafw_record_feedback'] || 0);
+    const otherTools = total - planTools - executeTools - reviewTools;
+    return {
+      planAgentPct: total > 0 ? Math.round((planTools / total) * 100) : 0,
+      executeAgentPct: total > 0 ? Math.round((executeTools / total) * 100) : 0,
+      reviewAgentPct: total > 0 ? Math.round((reviewTools / total) * 100) : 0,
+      toolAgentPct: total > 0 ? Math.round((otherTools / total) * 100) : 0,
+      totalAgentCalls: total
     };
   }
 
@@ -526,7 +889,10 @@ export class DashboardAPI {
     };
     countFiles(lessonsDir);
     countFiles(parametricDir);
-    const memoryEntries = { total: totalMemory, L1: l1Count, L2: l2Count, L3: l3Count };
+    const memoryEntries = totalMemory;
+    const memoryL1 = l1Count;
+    const memoryL2 = l2Count;
+    const memoryL3 = l3Count;
 
     let passed = 0, total = 0;
     if (fs.existsSync(reviewsDir)) {
@@ -558,8 +924,12 @@ export class DashboardAPI {
       totalDuration: `${Math.floor(totalDurationMinutes / 60)}h ${totalDurationMinutes % 60}m`,
       totalDurationMinutes,
       memoryEntries,
+      memoryL1,
+      memoryL2,
+      memoryL3,
       loopSuccessRate,
-      avgWavesPerLoop
+      avgWavesPerLoop,
+      ...this.computeAgentPcts()
     };
   }
 
@@ -647,15 +1017,23 @@ export class DashboardAPI {
           const uptimeSec = Math.floor(uptimeMs / 1000);
           const uptime = `${Math.floor(uptimeSec / 60)}m ${uptimeSec % 60}s`;
 
-          const loop = state.loop || 1;
-          const messagesSent = loop * 3 + Math.floor(Math.random() * 10) + 5;
-          const totalTokens = loop * 5000 + Math.floor(Math.random() * 5000);
+          // Estimate token usage from cost data if available
+          let totalTokens = 0;
+          const costPath = path.join(this.mafwDir, 'cost', `${state.goalId || 'unknown'}.json`);
+          if (fs.existsSync(costPath)) {
+            try {
+              const records = JSON.parse(fs.readFileSync(costPath, 'utf-8'));
+              if (Array.isArray(records)) {
+                totalTokens = records.reduce((s: number, r: any) => s + (r.estimatedTokens || 0), 0);
+              }
+            } catch {}
+          }
 
           return {
             uptime,
             uptimeSeconds: uptimeSec,
             sseReconnects: 0,
-            messagesSent,
+            messagesSent: state.loop || 1,
             totalTokens
           };
         }
