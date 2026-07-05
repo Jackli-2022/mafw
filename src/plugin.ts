@@ -14,6 +14,8 @@ import { withRetry } from './utils/retry';
 import { KnowledgeGraphManager } from './graph/knowledge-graph-manager';
 import { GraphSearcher } from './graph/graph-searcher';
 import { HarmonicIndexManager } from './memory/harmonic-index';
+import { CognitiveGraphManager } from './memory/cognitive-graph';
+import { ReviewScheduler } from './memory/review-scheduler';
 import { CostEstimator } from './cost/cost-estimator';
 import type { CostRecord } from './cost/types';
 import { askUser } from './tools/run-ask-user';
@@ -65,6 +67,13 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
 
   // ── v6.3 Harmonic Index ──
   const harmonicIndex = new HarmonicIndexManager(mafwDir);
+
+  // ── v6.4 Cognitive Graph (association network) ──
+  const cognitiveGraph = new CognitiveGraphManager(mafwDir);
+
+  // ── v6.4 Review Scheduler (spaced repetition) ──
+  const reviewScheduler = new ReviewScheduler(harmonicIndex, mafwDir);
+  reviewScheduler.start();
 
   // ── v6.3 Auto-migration (first load) ──
   if (!fs.existsSync(path.join(mafwDir, 'memory', '.harmonic_index.json'))) {
@@ -291,7 +300,21 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       semantic.push({ id: `${goalId}-charter`, score: 1.0, facts: [goalText.substring(0, 500)], concepts: [goalId], energy: 0.8 });
     }
 
-    // 8. Apply token budget
+    // 8a. Record associations in cognitive graph
+    if (cognitiveGraph) {
+      const allResultIds: string[] = [];
+      for (const r of [...bm25Results, ...vectorResults, ...harmonicResults]) {
+        const id = (r.id || '').replace(/^(bm25|vec|harmonic)-/, '');
+        if (id) allResultIds.push(id);
+      }
+      for (let i = 0; i < allResultIds.length; i++) {
+        for (let j = i + 1; j < allResultIds.length; j++) {
+          cognitiveGraph.addConnection(allResultIds[i], allResultIds[j]);
+        }
+      }
+    }
+
+    // 8b. Apply token budget
     const allocated = tokenBudgetAllocator.allocate({ parametric: parametric as any, procedural: procedural as any, semantic: semantic as any, episodic: episodic as any }, tokenBudget);
 
     return {
