@@ -13,6 +13,7 @@ import { HookManager } from './hooks/hook-manager';
 import { withRetry } from './utils/retry';
 import { KnowledgeGraphManager } from './graph/knowledge-graph-manager';
 import { GraphSearcher } from './graph/graph-searcher';
+import { HarmonicIndexManager } from './memory/harmonic-index';
 import { CostEstimator } from './cost/cost-estimator';
 import type { CostRecord } from './cost/types';
 import { askUser } from './tools/run-ask-user';
@@ -61,6 +62,21 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
 
   const knowledgeGraphManager = new KnowledgeGraphManager(path.join(mafwDir, 'knowledge-graph.json'));
   await knowledgeGraphManager.load();
+
+  // ── v6.3 Harmonic Index ──
+  const harmonicIndex = new HarmonicIndexManager(mafwDir);
+
+  // ── v6.3 Auto-migration (first load) ──
+  if (!fs.existsSync(path.join(mafwDir, 'memory', '.harmonic_index.json'))) {
+    console.log('[MAFW] No harmonic index found, running v6.1→v6.3 migration...');
+    try {
+      const { migrateV61 } = require('./memory/migrate-v6.1');
+      const result = await migrateV61(mafwDir, harmonicIndex);
+      console.log(`[MAFW] Migration complete: ${result.migrated} migrated, ${result.errors.length} errors`);
+    } catch (err: any) {
+      console.error(`[MAFW] Migration failed: ${err.message}`);
+    }
+  }
 
   const toolExecutedHook = async ({ tool }: any, { output }: any) => {
     if (output && output.length > 1000) {
@@ -206,6 +222,18 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       }
     } catch { /* ignore */ }
 
+    // 3b. Search v6.3 Harmonic Index (tier-agnostic)
+    let harmonicResults: any[] = [];
+    try {
+      harmonicResults = (harmonicIndex.search(query, maxResults) || []).map((e: any) => ({
+        id: `harmonic-${e.id}`,
+        score: e.energy * 0.8,
+        text: e.primary_abstraction + ' ' + e.cue_anchors.join(' '),
+        loopNum: 1,
+        metadata: { tier: e.tier, memory_type: e.memory_type }
+      }));
+    } catch { /* ignore */ }
+
     // 4. Read parametric deltas from store
     let parametricDeltas: any[] = [];
     try { parametricDeltas = parametricStore.match({ domain: 'any', goalKeywords: [goalId] }); } catch { /* ignore */ }
@@ -228,7 +256,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     } catch { /* ignore */ }
 
     // 6. RRF fusion
-    const fused = reciprocalRankFusion(60, bm25Results, vectorResults);
+    const fused = reciprocalRankFusion(60, bm25Results, vectorResults, harmonicResults);
     const diversified = diversifyByLoop(fused, 3);
 
     // 7. Build categorized result sets
