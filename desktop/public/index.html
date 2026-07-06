@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>MAFW Logs</title>
+<style>
+body{background:#0d1117;color:#e6edf3;font-family:monospace;font-size:13px;padding:16px;margin:0}
+pre{white-space:pre-wrap;word-break:break-all}
+.log-info{color:#58a6ff}.log-warn{color:#d29922}.log-error{color:#f85149}
+#status{position:fixed;top:0;right:0;padding:8px 16px;font-size:12px;background:#161b22;border:1px solid #30363d;border-radius:0 0 0 8px}
+.running{color:#3fb950}.stopped{color:#f85149}
+</style>
+</head>
+<body>
+<div id="status">Gateway: <span id="status-text" class="stopped">stopped</span></div>
+<pre id="log"></pre>
+<script src="app.js"></script>
+</body>
+</html>
