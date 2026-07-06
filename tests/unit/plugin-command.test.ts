@@ -104,16 +104,3 @@ test("hooks['session.end'] fallback delegates to sessionEndingHook", async () =>
   expect(state.sessions.plan.active).toBe(false);
 });
 
-test('mafw_update_state tool uses atomic updateState', async () => {
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
-  initState('001-auth', tmpDir);
-
-  const plugin = await MafwPlugin({ directory: tmpDir });
-  const result = await plugin.tool.mafw_update_state.execute({
-    goalId: '001-auth',
-    patch: { nextAction: 'WAIT_PHASE_COMPLETE', phase: 'EXECUTING' }
-  });
-
-  expect(result.updated.nextAction).toBe('WAIT_PHASE_COMPLETE');
-  expect(fs.existsSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json.tmp'))).toBe(false);
-});

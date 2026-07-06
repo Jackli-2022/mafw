@@ -1,0 +1,12 @@
+{
+  "plugin": [
+    "superpowers@latest",
+    "opencode-plugin-mafw"
+  ],
+  "mcpServers": {
+    "mafw": {
+      "command": "node",
+      "args": ["node_modules/opencode-plugin-mafw/dist/mcp-server.js"]
+    }
+  }
+}

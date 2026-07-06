@@ -12,14 +12,12 @@ import { ConfigLoader } from './utils/config-loader';
 import { HookManager } from './hooks/hook-manager';
 import { withRetry } from './utils/retry';
 import { KnowledgeGraphManager } from './graph/knowledge-graph-manager';
-import { GraphSearcher } from './graph/graph-searcher';
 import { HarmonicIndexManager } from './memory/harmonic-index';
 import { CognitiveGraphManager } from './memory/cognitive-graph';
 import { ReviewScheduler } from './memory/review-scheduler';
 import { CostEstimator } from './cost/cost-estimator';
 import type { CostRecord } from './cost/types';
-import { askUser } from './tools/run-ask-user';
-import { recordFeedback } from './tools/run-record-feedback';
+
 
 /**
  * MAFW Plugin — OpenCode Official Format v5.0
@@ -539,143 +537,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           fs.writeFileSync(filePath, JSON.stringify(rule, null, 2));
           fs.writeFileSync(path.join(mafwDir, 'control'), JSON.stringify({ action: 'RELOAD_AUTOMATIONS' }));
           return { type: 'automation_toggled', autoId, enabled: rule.enabled };
-        }
-      }
-    },
-
-    // ── Tools ──
-    tool: {
-      mafw_search_hybrid: {
-        description: 'Hybrid search across memories using BM25 + Vector + RRF fusion',
-        parameters: {
-          type: 'object',
-          properties: {
-            goalId: { type: 'string' },
-            query: { type: 'string' },
-            maxResults: { type: 'number', default: 10 },
-            tokenBudget: { type: 'number', default: 2000 }
-          },
-          required: ['goalId', 'query']
-        },
-        async execute({ goalId, query, maxResults, tokenBudget }: any) {
-          const results = await executeHybridSearch({ goalId, query, maxResults, tokenBudget });
-          if (config.retrieval?.graph?.enabled && knowledgeGraphManager.getGraph().nodes.length > 0) {
-            const graphAccessor = new GraphSearcher({
-              nodes: knowledgeGraphManager.getGraph().nodes.reduce((map, n) => { map.set(n.id, n); return map; }, new Map()),
-              edges: knowledgeGraphManager.getGraph().edges.reduce((map, e) => { map.set(e.id, e); return map; }, new Map()),
-            });
-            const graphNodes = graphAccessor.search([query], config.retrieval.graph.maxDepth || 2);
-            results.semantic = [
-              ...results.semantic,
-              ...graphNodes.map(n => ({
-                id: `graph-${n.id}`,
-                score: 0.4,
-                facts: [`[graph] ${n.label}`],
-                concepts: [n.type],
-                energy: n.energy,
-              })),
-            ];
-          }
-          return results;
-        }
-      },
-      mafw_get_deltas: {
-        description: 'Get parametric deltas for a Goal and phase',
-        parameters: {
-          type: 'object',
-          properties: {
-            goalId: { type: 'string' },
-            phase: { type: 'string' },
-            maxResults: { type: 'number', default: 5 }
-          },
-          required: ['goalId']
-        },
-        async execute({ goalId, phase, maxResults }: any) {
-          return executeGetDeltas({ goalId, phase, maxResults });
-        }
-      },
-      mafw_update_state: {
-        description: 'Update the state file for a Goal. Call this after completing a phase.',
-        parameters: {
-          type: 'object',
-          properties: {
-            goalId: { type: 'string' },
-            patch: {
-              type: 'object',
-              description: 'Partial state update. Must include phase, nextAction, and optionally artifacts/metrics.'
-            }
-          },
-          required: ['goalId', 'patch']
-        },
-        async execute({ goalId, patch }: any) {
-          const projectDir = path.dirname(path.dirname(mafwDir));
-          const updated = await updateState(goalId, patch, projectDir);
-          return { updated, path: path.join(mafwDir, 'state', `${goalId}.json`) };
-        }
-      },
-      mafw_load_state: {
-        description: 'Load the current state file for a Goal',
-        parameters: {
-          type: 'object',
-          properties: { goalId: { type: 'string' } },
-          required: ['goalId']
-        },
-        async execute({ goalId }: any) {
-          const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
-          const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-          return state;
-        }
-      },
-      mafw_ask_user: {
-        description: 'Ask user a clarifying question (non-blocking, answer consumed next loop)',
-        parameters: {
-          type: 'object',
-          properties: {
-            question: { type: 'string' },
-            goalId: { type: 'string' },
-            options: { type: 'array', items: { type: 'string' } },
-            priority: { type: 'string', enum: ['normal', 'high'] }
-          },
-          required: ['question', 'goalId']
-        },
-        async execute({ question, goalId, options, priority }: any) {
-          return askUser({ question, goalId, options, priority: priority || 'normal', loopNum: 1 });
-        }
-      },
-      mafw_record_feedback: {
-        description: 'Record user feedback for a specific Wave result',
-        parameters: {
-          type: 'object',
-          properties: {
-            targetId: { type: 'string' },
-            type: { type: 'string', enum: ['thumbs_up', 'thumbs_down', 'correction'] },
-            goalId: { type: 'string' },
-            comment: { type: 'string' }
-          },
-          required: ['targetId', 'type', 'goalId']
-        },
-        async execute({ targetId, type, goalId, comment }: any) {
-          return recordFeedback({ targetId, type, goalId, comment, loopNum: 1 });
-        }
-      },
-      mafw_get_model_route: {
-        description: 'Decide which LLM model to use based on task type and remaining budget',
-        parameters: {
-          type: 'object',
-          properties: {
-            taskType: { type: 'string', enum: ['planning', 'coding', 'reviewing'] },
-            remainingBudget: { type: 'number' }
-          },
-          required: ['taskType', 'remainingBudget']
-        },
-        async execute({ taskType, remainingBudget }: any) {
-          const { CognitiveRouter } = require('./cost/cognitive-router');
-          const router = new CognitiveRouter((config as any)?.router);
-          return router.selectModel(
-            taskType as any,
-            remainingBudget,
-            (config as any)?.cost?.budget?.total || 1000000
-          );
         }
       }
     },
