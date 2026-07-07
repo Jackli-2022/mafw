@@ -28,7 +28,7 @@ describe('FileCheckpointer', () => {
     await cp.put(config, checkpoint as any, metadata as any);
     const retrieved = await cp.get(config);
     expect(retrieved).toBeDefined();
-    expect((retrieved as any).state.round).toBe(1);
+    expect((retrieved as any).channel_values.round).toBe(1);
   });
 
   it('returns undefined for nonexistent thread', async () => {

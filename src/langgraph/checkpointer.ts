@@ -46,7 +46,7 @@ export class FileCheckpointer extends BaseCheckpointSaver {
     return maxStep + 1;
   }
 
-  async get(config: RunnableConfig): Promise<any | undefined> {
+  async get(config: RunnableConfig): Promise<Checkpoint | undefined> {
     const { thread_id } = config.configurable ?? {};
     if (!thread_id) return undefined;
     const dir = this.threadDir(thread_id);
@@ -54,7 +54,15 @@ export class FileCheckpointer extends BaseCheckpointSaver {
     const files = fs.readdirSync(dir).filter(f => f.startsWith('step_'));
     if (files.length === 0) return undefined;
     const maxStep = Math.max(...files.map(f => parseInt(f.replace('step_', '').replace('.json', ''), 10)));
-    return JSON.parse(fs.readFileSync(this.stepPath(thread_id, maxStep), 'utf-8'));
+    const data: CheckpointData = JSON.parse(fs.readFileSync(this.stepPath(thread_id, maxStep), 'utf-8'));
+    return {
+      v: 1,
+      id: `${thread_id}-step-${maxStep}`,
+      ts: data.ts,
+      channel_values: data.state,
+      channel_versions: {},
+      versions_seen: {},
+    };
   }
 
   async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
@@ -123,7 +131,16 @@ export class FileCheckpointer extends BaseCheckpointSaver {
     if (!thread_id) return;
     const dir = this.threadDir(thread_id);
     if (!fs.existsSync(dir)) return;
-    const files = fs.readdirSync(dir).filter(f => f.startsWith('step_')).sort();
+    let files = fs.readdirSync(dir).filter(f => f.startsWith('step_')).sort();
+    if (options?.before?.configurable?.checkpoint_id) {
+      const beforeStep = parseInt(options.before.configurable.checkpoint_id.replace('step_', ''), 10);
+      if (!isNaN(beforeStep)) {
+        files = files.filter(f => {
+          const step = parseInt(f.replace('step_', '').replace('.json', ''), 10);
+          return step < beforeStep;
+        });
+      }
+    }
     const toRead = options?.limit ? files.slice(-options.limit) : files;
     for (const f of toRead) {
       const data: CheckpointData = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'));
@@ -136,7 +153,7 @@ export class FileCheckpointer extends BaseCheckpointSaver {
         channel_versions: {},
         versions_seen: {},
       };
-      yield { config, checkpoint };
+      yield { config: { configurable: { thread_id, checkpoint_id: `step_${String(step).padStart(7, '0')}` } }, checkpoint };
     }
   }
 
@@ -161,9 +178,9 @@ export class FileCheckpointer extends BaseCheckpointSaver {
     const maxStep = Math.max(...files.map(f => parseInt(f.replace('step_', '').replace('.json', ''), 10)));
     const cp: CheckpointData = JSON.parse(fs.readFileSync(this.stepPath(threadId, maxStep), 'utf-8'));
     return {
-      round: cp.state.round || 1,
-      phase: cp.state.phase || 'UNKNOWN',
-      verdict: cp.state.reviewVerdict || 'FAIL',
+      round: cp.state.round ?? 1,
+      phase: cp.state.phase ?? 'UNKNOWN',
+      verdict: cp.state.reviewVerdict ?? 'FAIL',
       lastError: meta.lastError,
     };
   }
