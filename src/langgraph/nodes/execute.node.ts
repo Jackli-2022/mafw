@@ -1,43 +1,38 @@
+import { interrupt } from "@langchain/langgraph";
 import { LoopStateType } from '../loop-state';
-import {
-  createAndPromptSession,
-  destroySession,
-  waitForFile,
-  SessionClient,
-} from './session.utils';
 import * as path from 'path';
+import * as fs from 'fs';
 
-export interface ExecuteNodeOptions {
-  client: SessionClient;
-  sessionTimeoutMs?: number;
+export interface ExecuteAgentOptions {
+  createSession: (projectDir: string) => Promise<string>;
+  sendPrompt: (sessionId: string, message: string) => Promise<void>;
+  destroySession: (sessionId: string) => Promise<void>;
+  syncToFile: (state: Partial<LoopStateType>) => void;
 }
 
 export async function executeNode(
   state: LoopStateType,
-  options: ExecuteNodeOptions
+  options: ExecuteAgentOptions
 ): Promise<Partial<LoopStateType>> {
-  const { client, sessionTimeoutMs = 10 * 60 * 1000 } = options;
-  const { mafwDir, goalId } = state;
+  const { createSession, sendPrompt, destroySession, syncToFile } = options;
+  const { mafwDir, goalId, projectDir } = state;
 
-  const sessionId = await createAndPromptSession(
-    client,
-    state.projectDir,
-    '/skill mafw-execute',
-    goalId,
-  );
+  syncToFile({ ...state, phase: 'EXECUTING' });
+
+  const sessionId = await createSession(projectDir);
+  await sendPrompt(sessionId, `/skill mafw-execute ${goalId}`);
+
+  interrupt('awaiting_execution');
 
   const receiptsDir = path.join(mafwDir, 'receipts', goalId);
   const receiptPath = path.join(receiptsDir, 'loop-receipt.json');
-  const found = await waitForFile(receiptPath, sessionTimeoutMs);
-
-  await destroySession(client, sessionId);
-
-  if (!found) {
-    return {
-      lastError: `Execute session ${sessionId} timed out waiting for receipts`,
-      reviewVerdict: 'ERROR',
-    };
+  if (!fs.existsSync(receiptPath)) {
+    return { lastError: 'receipts not found after execute', reviewVerdict: 'ERROR' };
   }
+
+  await destroySession(sessionId);
+
+  syncToFile({ receiptPath, phase: 'EXECUTING_COMPLETE' });
 
   return { receiptPath };
 }

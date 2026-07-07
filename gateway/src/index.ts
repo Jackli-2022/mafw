@@ -884,19 +884,9 @@ class MafwScheduler {
     console.log(`[Scheduler] Goal ${goalId} round ${state.loop}: route → ${route}`);
 
     switch (route) {
-      case 'plan_node':
+      case 'plan':
         await this.createPhaseSession(goalId, 'plan', '/skill mafw-plan');
         await this.patchState(goalId, { nextAction: 'WAIT_PHASE_COMPLETE', phase: 'PLANNING' });
-        break;
-
-      case 'execute_node':
-        await this.createPhaseSession(goalId, 'execute', '/skill mafw-execute');
-        await this.patchState(goalId, { nextAction: 'WAIT_PHASE_COMPLETE', phase: 'EXECUTING' });
-        break;
-
-      case 'review_node':
-        await this.createPhaseSession(goalId, 'review', '/skill mafw-review');
-        await this.patchState(goalId, { nextAction: 'WAIT_PHASE_COMPLETE', phase: 'REVIEWING' });
         break;
 
       case 'archive_success':

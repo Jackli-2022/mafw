@@ -1,16 +1,13 @@
+import { interrupt } from "@langchain/langgraph";
 import { LoopStateType } from '../loop-state';
-import {
-  createAndPromptSession,
-  destroySession,
-  waitForFile,
-  SessionClient,
-} from './session.utils';
 import * as path from 'path';
 import * as fs from 'fs';
 
-export interface ReviewNodeOptions {
-  client: SessionClient;
-  sessionTimeoutMs?: number;
+export interface ReviewAgentOptions {
+  createSession: (projectDir: string) => Promise<string>;
+  sendPrompt: (sessionId: string, message: string) => Promise<void>;
+  destroySession: (sessionId: string) => Promise<void>;
+  syncToFile: (state: Partial<LoopStateType>) => void;
 }
 
 export interface VerdictResult {
@@ -40,45 +37,34 @@ export function parseReviewVerdict(content: string): VerdictResult {
 
 export async function reviewNode(
   state: LoopStateType,
-  options: ReviewNodeOptions
+  options: ReviewAgentOptions
 ): Promise<Partial<LoopStateType>> {
-  const { client, sessionTimeoutMs = 5 * 60 * 1000 } = options;
-  const { mafwDir, goalId } = state;
+  const { createSession, sendPrompt, destroySession, syncToFile } = options;
+  const { mafwDir, goalId, projectDir } = state;
 
-  const sessionId = await createAndPromptSession(
-    client,
-    state.projectDir,
-    '/skill mafw-review',
-    goalId,
-  );
+  syncToFile({ ...state, phase: 'REVIEWING' });
 
-  const reviewPath = path.join(
-    mafwDir,
-    'reviews',
-    `${goalId}-loop${state.round}.md`,
-  );
-  const found = await waitForFile(reviewPath, sessionTimeoutMs);
+  const sessionId = await createSession(projectDir);
+  await sendPrompt(sessionId, `/skill mafw-review ${goalId}`);
 
-  await destroySession(client, sessionId);
+  interrupt('awaiting_review');
 
-  if (!found) {
-    return {
-      lastError: `Review session ${sessionId} timed out waiting for review report`,
-      reviewVerdict: 'ERROR',
-    };
+  const reviewPath = path.join(mafwDir, 'reviews', `${goalId}-loop${state.round}.md`);
+  if (!fs.existsSync(reviewPath)) {
+    return { lastError: 'review report not found', reviewVerdict: 'ERROR' };
   }
 
-  let content: string;
-  try {
-    content = fs.readFileSync(reviewPath, 'utf-8');
-  } catch (err: any) {
-    return {
-      lastError: `Cannot read review report at ${reviewPath}: ${err.message}`,
-      reviewVerdict: 'ERROR',
-    };
-  }
-
+  const content = fs.readFileSync(reviewPath, 'utf-8');
   const verdict = parseReviewVerdict(content);
+
+  await destroySession(sessionId);
+
+  syncToFile({
+    reviewVerdict: verdict.verdict,
+    reviewReportPath: reviewPath,
+    reviewFeedback: verdict.feedback,
+    phase: 'REVIEWING_COMPLETE',
+  });
 
   return {
     reviewVerdict: verdict.verdict,

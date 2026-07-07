@@ -2,50 +2,45 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { LoopState } from "./loop-state";
 
 export function routeAfterReview(state: typeof LoopState.State): string {
-  if (state.reviewVerdict === "ERROR" || state.lastError) {
-    return "archive_fail";
-  }
-  if (state.reviewVerdict === "PASS") {
-    return "archive_success";
-  }
-  if (state.round >= state.maxRounds) {
-    return "archive_max_retries";
-  }
-  return "plan_node";
+  if (state.reviewVerdict === "ERROR" || state.lastError) return "archive_fail";
+  if (state.reviewVerdict === "PASS") return "archive_success";
+  if (state.round >= state.maxRounds) return "archive_max_retries";
+  return "plan";
 }
 
-export interface GraphNodes {
-  planNode: any;
-  executeNode: any;
-  reviewNode: any;
-  syncNode: any;
-  archiveSuccess: any;
-  archiveFail: any;
-  archiveMaxRetries: any;
+export interface GraphOptions {
+  plan: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
+  execute: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
+  review: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
+  archiveSuccess: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
+  archiveFail: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
+  archiveMaxRetries: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
 }
 
-export function buildLoopGraph(nodes: GraphNodes) {
+export function buildExecutionGraph(options: GraphOptions) {
   const workflow = new StateGraph(LoopState)
-    .addNode("plan_node", nodes.planNode)
-    .addNode("execute_node", nodes.executeNode)
-    .addNode("review_node", nodes.reviewNode)
-    .addNode("sync_node", nodes.syncNode)
-    .addNode("archive_success", nodes.archiveSuccess)
-    .addNode("archive_fail", nodes.archiveFail)
-    .addNode("archive_max_retries", nodes.archiveMaxRetries)
+    .addNode("plan", options.plan, {
+      retryPolicy: { maxAttempts: 2 },
+    })
+    .addNode("execute", options.execute, {
+      retryPolicy: { maxAttempts: 2 },
+    })
+    .addNode("review", options.review, {
+      retryPolicy: { maxAttempts: 2 },
+    })
+    .addNode("archive_success", options.archiveSuccess)
+    .addNode("archive_fail", options.archiveFail)
+    .addNode("archive_max_retries", options.archiveMaxRetries)
 
-    .addEdge("__start__", "plan_node")
-    .addEdge("plan_node", "execute_node")
-    .addEdge("execute_node", "review_node")
-    .addEdge("review_node", "sync_node")
-
-    .addConditionalEdges("sync_node", routeAfterReview, {
-      plan_node: "plan_node",
+    .addEdge("__start__", "plan")
+    .addEdge("plan", "execute")
+    .addEdge("execute", "review")
+    .addConditionalEdges("review", routeAfterReview, {
+      plan: "plan",
       archive_success: "archive_success",
       archive_fail: "archive_fail",
       archive_max_retries: "archive_max_retries",
     })
-
     .addEdge("archive_success", END)
     .addEdge("archive_fail", END)
     .addEdge("archive_max_retries", END);

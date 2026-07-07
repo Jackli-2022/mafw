@@ -47,6 +47,11 @@ export const LoopState = Annotation.Root({
     value: (a, b) => b ?? a,
     default: () => null,
   }),
+
+  phase: Annotation<string | null>({
+    value: (a, b) => b ?? a,
+    default: () => null,
+  }),
 });
 
 export type LoopStateType = typeof LoopState.State;

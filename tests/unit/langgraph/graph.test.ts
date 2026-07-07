@@ -21,14 +21,14 @@ describe('routeAfterReview', () => {
     expect(result).toBe('archive_fail');
   });
 
-  it('routes back to plan_node on FAIL when rounds remain', () => {
+  it('routes back to plan on FAIL when rounds remain', () => {
     const result = routeAfterReview({
       reviewVerdict: 'FAIL',
       round: 1,
       maxRounds: 3,
       lastError: null,
     } as any);
-    expect(result).toBe('plan_node');
+    expect(result).toBe('plan');
   });
 
   it('routes to archive_max_retries on FAIL when maxRounds reached', () => {

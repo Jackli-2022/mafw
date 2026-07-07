@@ -1,56 +1,42 @@
+import { interrupt } from "@langchain/langgraph";
 import { LoopStateType } from '../loop-state';
-import {
-  createAndPromptSession,
-  destroySession,
-  waitForFile,
-  SessionClient,
-} from './session.utils';
 import * as path from 'path';
 import * as fs from 'fs';
 
-export interface PlanNodeOptions {
-  client: SessionClient;
-  sessionTimeoutMs?: number;
+export interface AgentOptions {
+  createSession: (projectDir: string) => Promise<string>;
+  sendPrompt: (sessionId: string, message: string) => Promise<void>;
+  destroySession: (sessionId: string) => Promise<void>;
+  syncToFile: (state: Partial<LoopStateType>) => void;
 }
 
 export async function planNode(
   state: LoopStateType,
-  options: PlanNodeOptions
+  options: AgentOptions
 ): Promise<Partial<LoopStateType>> {
-  const { client, sessionTimeoutMs = 5 * 60 * 1000 } = options;
-  const { mafwDir, goalId } = state;
+  const { createSession, sendPrompt, destroySession, syncToFile } = options;
+  const { mafwDir, goalId, projectDir } = state;
 
-  const sessionId = await createAndPromptSession(
-    client,
-    state.projectDir,
-    '/skill mafw-plan',
-    goalId,
-  );
+  syncToFile({ ...state, phase: 'PLANNING' });
+
+  const sessionId = await createSession(projectDir);
+  await sendPrompt(sessionId, `/skill mafw-plan ${goalId}`);
+
+  interrupt('awaiting_plan');
 
   const wavesPath = path.join(mafwDir, 'waves.json');
-  const found = await waitForFile(wavesPath, sessionTimeoutMs);
-
-  await destroySession(client, sessionId);
-
-  if (!found) {
-    return {
-      lastError: `Plan session ${sessionId} timed out waiting for waves.json`,
-      reviewVerdict: 'ERROR',
-    };
+  if (!fs.existsSync(wavesPath)) {
+    return { lastError: 'waves.json not found after plan', reviewVerdict: 'ERROR' };
   }
-
   try {
-    const content = fs.readFileSync(wavesPath, 'utf-8');
-    JSON.parse(content);
+    JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
   } catch (err: any) {
-    return {
-      lastError: `Plan output waves.json is invalid: ${err.message}`,
-      reviewVerdict: 'ERROR',
-    };
+    return { lastError: `Invalid waves.json: ${err.message}`, reviewVerdict: 'ERROR' };
   }
 
-  return {
-    wavePlanPath: wavesPath,
-    round: state.round,
-  };
+  await destroySession(sessionId);
+
+  syncToFile({ round: state.round, wavePlanPath: wavesPath, phase: 'PLANNING_COMPLETE' });
+
+  return { wavePlanPath: wavesPath, round: state.round };
 }
