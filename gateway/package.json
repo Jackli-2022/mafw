@@ -2,10 +2,10 @@
   "name": "mafw-gateway",
   "version": "5.0.0",
   "description": "MAFW Gateway v5.0 — SSE Event-Driven Scheduler",
-  "main": "dist/index.js",
+  "main": "dist/gateway/src/index.js",
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const s=p.join(__dirname,'src','dashboard','public'),d=p.join(__dirname,'dist','dashboard','public');if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});console.log('[copy] public/')}\"",
-    "start": "node dist/index.js",
+    "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const s=p.join(__dirname,'src','dashboard','public'),d=p.join(__dirname,'dist','gateway','src','dashboard','public');if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});console.log('[copy] public/')}\"",
+    "start": "node dist/gateway/src/index.js",
     "dev": "ts-node src/index.ts"
   },
   "dependencies": {

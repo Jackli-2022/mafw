@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as http from 'http';
 import { spawn, execSync, ChildProcess } from 'child_process';
 import { DashboardServer } from './dashboard/server';
+import { buildLoopGraph, planNode, executeNode, reviewNode, syncNode, syncToDashboard, SessionClient } from '../../src/langgraph';
+import { MemorySaver } from '@langchain/langgraph';
 
 /**
  * MAFW Scheduler — v5.0 SDK 编排器
@@ -52,20 +54,6 @@ interface Session {
   createdAt: string;
 }
 
-function phaseToCreateAction(phase: string | null): string {
-  const normalized = (phase || '').replace(/_COMPLETE$/, '');
-  switch (normalized) {
-    case 'PLANNING':
-      return 'CREATE_PLAN_SESSION';
-    case 'EXECUTING':
-      return 'CREATE_EXECUTE_SESSION';
-    case 'REVIEWING':
-      return 'CREATE_REVIEW_SESSION';
-    default:
-      return `CREATE_${(phase || 'UNKNOWN').toUpperCase()}_SESSION`;
-  }
-}
-
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -104,7 +92,6 @@ class MafwScheduler {
 
   activeGoals = new Map<string, StateFile>();
   registeredProjects = new Map<string, RegisteredProject>();
-  private sessionMonitors = new Map<string, NodeJS.Timeout>();
   private registryPath: string;
   private registryWriteQueue: Promise<void> = Promise.resolve();
   private configPath: string;
@@ -181,9 +168,6 @@ class MafwScheduler {
     if (this.serveProcess) {
       this.serveProcess.kill('SIGTERM');
       this.serveProcess = undefined;
-    }
-    for (const timer of this.sessionMonitors.values()) {
-      clearTimeout(timer);
     }
     if (this.dashboard) {
       this.dashboard.stop();
@@ -396,10 +380,6 @@ class MafwScheduler {
               const event = JSON.parse(body);
               console.log(`[Events] Received: ${event.type} for ${event.goalId || ''}`);
               this.broadcast(event);
-              // 立即处理该 goal 的状态机
-              if (event.type === 'state_change' && event.goalId) {
-                await this.advanceSingleGoal(event.goalId);
-              }
               res.writeHead(200);
               res.end(JSON.stringify({ status: 'ok' }));
             } catch (err) {
@@ -510,15 +490,6 @@ class MafwScheduler {
     setTimeout(poll, 30000);
   }
 
-  private async advanceSingleGoal(goalId: string) {
-    const state = this.activeGoals.get(goalId);
-    if (!state) {
-      // 可能还没被发现，先 discover 一下
-      await this.discoverNewGoals();
-    }
-    await this.advanceStateMachines();
-  }
-
   // 轮询已注册项目的 state/ 目录
   private async discoverNewGoals() {
     for (const [projectDir, info] of this.registeredProjects) {
@@ -553,117 +524,6 @@ class MafwScheduler {
         }
       }
     }
-  }
-
-  // 推进状态机
-  private async advanceStateMachines() {
-    for (const [goalId, state] of this.activeGoals) {
-      const nextAction = state.nextAction;
-
-      let transitioned = false;
-
-      switch (nextAction) {
-        case 'CREATE_PLAN_SESSION':
-          await this.createPhaseSession(goalId, 'plan', '/skill mafw-plan');
-          transitioned = true;
-          break;
-
-        case 'CREATE_EXECUTE_SESSION':
-          await this.createPhaseSession(goalId, 'execute', '/skill mafw-execute');
-          transitioned = true;
-          break;
-
-        case 'CREATE_REVIEW_SESSION':
-          await this.createPhaseSession(goalId, 'review', '/skill mafw-review');
-          transitioned = true;
-          break;
-
-        case 'ARCHIVE':
-          await this.archiveGoal(goalId);
-          this.activeGoals.delete(goalId);
-          transitioned = true;
-          break;
-
-        case 'COMPLETED':
-        case 'FAILED':
-          this.activeGoals.delete(goalId);
-          transitioned = true;
-          break;
-
-        case 'WAIT_PHASE_COMPLETE':
-          // 等待 Skill Entry 更新 state 文件
-          break;
-
-        default:
-          console.warn(`[Scheduler] Unknown nextAction: ${nextAction} for ${goalId}`);
-      }
-
-      // 广播 loop_transition 事件到 Dashboard
-      if (transitioned) {
-        this.broadcast({
-          type: 'loop_transition',
-          timestamp: new Date().toISOString(),
-          goalId,
-          loopNum: state.loop,
-          waveNum: state.currentWave,
-          data: { from: state.nextAction, to: nextAction }
-        });
-      }
-    }
-  }
-
-  // ── 5. Phase Session 创建 ──
-
-  private async createPhaseSession(
-    goalId: string,
-    phase: 'plan' | 'execute' | 'review',
-    prompt: string
-  ) {
-    // 读取请求配置获取 projectDir
-    const state = this.activeGoals.get(goalId);
-    if (!state) return;
-
-    // 从注册表查找项目
-    let projectDir: string | null = null;
-    for (const [pDir, info] of this.registeredProjects) {
-      const stateDir = path.join(info.mafwDir, 'state');
-      if (fs.existsSync(path.join(stateDir, `${goalId}.json`))) {
-        projectDir = pDir;
-        break;
-      }
-    }
-
-    if (!projectDir) {
-      console.error(`[Scheduler] Cannot find project for goal ${goalId}`);
-      return;
-    }
-
-    // 如果该 phase 已有活跃 session，先销毁
-    const existing = state.sessions?.[phase];
-    if (existing?.active) {
-      await this.destroySession(existing.id);
-    }
-
-    console.log(`[Scheduler] Creating ${phase} session for ${goalId}`);
-
-    const session = await this.createSession(projectDir);
-
-    // 更新 state 文件（追加 session 记录，设置 WAIT_PHASE_COMPLETE）
-    await this.patchState(goalId, {
-      sessions: {
-        ...state.sessions,
-        [phase]: { id: session.id, createdAt: new Date().toISOString(), active: true }
-      },
-      nextAction: 'WAIT_PHASE_COMPLETE'
-    });
-
-    // 发送 prompt
-    await this.sendPrompt(session.id, `${prompt} ${goalId}`);
-
-    // 启动心跳监控
-    this.startSessionMonitor(goalId, phase, session.id);
-
-    console.log(`[Scheduler] ${phase} session ${session.id} created for ${goalId}`);
   }
 
   // ── 6. Archive ──
@@ -711,45 +571,6 @@ class MafwScheduler {
     });
 
     console.log(`[Scheduler] Goal ${goalId} archived`);
-  }
-
-  // ── 8. 心跳监控 ──
-
-  private startSessionMonitor(goalId: string, phase: string, sessionId: string) {
-    const key = `${goalId}:${phase}`;
-
-    // 清除旧监控
-    if (this.sessionMonitors.has(key)) {
-      clearTimeout(this.sessionMonitors.get(key)!);
-    }
-
-    const timeout = setTimeout(async () => {
-      console.error(`[Scheduler] ${goalId} ${phase} session timeout, recreating...`);
-      await this.destroySession(sessionId);
-      await this.patchState(goalId, {
-        nextAction: `CREATE_${phase.toUpperCase()}_SESSION`,
-        error: 'heartbeat_timeout'
-      });
-    }, 5 * 60 * 1000); // 5 分钟
-
-    this.sessionMonitors.set(key, timeout);
-  }
-
-  private async checkHeartbeats() {
-    for (const [goalId, state] of this.activeGoals) {
-      const lastUpdate = new Date(state.updatedAt).getTime();
-      if (Date.now() - lastUpdate > 5 * 60 * 1000) {
-        // 整个 Goal 卡死，重置到当前 phase 的 CREATE 状态
-        const currentPhase = state.phase;
-        if (currentPhase && currentPhase !== 'COMPLETED' && currentPhase !== 'ARCHIVED') {
-          console.error(`[Scheduler] Goal ${goalId} heartbeat timeout, resetting phase ${currentPhase}`);
-          await this.patchState(goalId, {
-            nextAction: phaseToCreateAction(currentPhase),
-            error: 'goal_heartbeat_timeout'
-          });
-        }
-      }
-    }
   }
 
   // ── 9. 恢复 ──
@@ -846,15 +667,9 @@ class MafwScheduler {
   private async destroyAllSessions(goalId: string) {
     const state = this.activeGoals.get(goalId);
     if (!state) return;
-    for (const [phase, session] of Object.entries(state.sessions)) {
+    for (const [, session] of Object.entries(state.sessions)) {
       if (session.active) {
         await this.destroySession(session.id);
-        // 清除监控
-        const key = `${goalId}:${phase}`;
-        if (this.sessionMonitors.has(key)) {
-          clearTimeout(this.sessionMonitors.get(key)!);
-          this.sessionMonitors.delete(key);
-        }
       }
     }
   }
@@ -906,12 +721,15 @@ class MafwScheduler {
   }
 
   private async handleValidate(goalId: string, data?: { projectDir?: string }): Promise<any> {
+    let projectDir: string;
     let mafwDir: string;
     if (data?.projectDir && this.registeredProjects.has(data.projectDir)) {
+      projectDir = data.projectDir;
       mafwDir = this.registeredProjects.get(data.projectDir)!.mafwDir;
     } else {
       const first = this.registeredProjects.values().next().value;
       if (!first) throw new Error('No registered projects');
+      projectDir = first.projectDir;
       mafwDir = first.mafwDir;
     }
 
@@ -934,7 +752,7 @@ class MafwScheduler {
       currentWave: 0,
       totalWaves: null,
       sessions: {},
-      nextAction: 'CREATE_PLAN_SESSION',
+      nextAction: 'LANGGRAPH_RUNNING',
       artifacts: {},
       updatedAt: new Date().toISOString()
     };
@@ -945,9 +763,9 @@ class MafwScheduler {
 
     this.activeGoals.set(goalId, state);
 
-    await this.createPhaseSession(goalId, 'plan', '/skill mafw-plan');
+    setImmediate(() => this.runLoopGraph(goalId, projectDir, mafwDir));
 
-    return { success: true, goalId, nextAction: 'CREATE_PLAN_SESSION' };
+    return { success: true, goalId, nextAction: 'LANGGRAPH_RUNNING' };
   }
 
   private async handleComplete(goalId: string, data?: { score?: number }): Promise<any> {
@@ -1011,24 +829,6 @@ class MafwScheduler {
     fs.renameSync(tmpPath, statePath);
     this.activeGoals.set(goalId, updated);
 
-    const nextAction = updated.nextAction;
-    if (nextAction.startsWith('CREATE_') && nextAction.endsWith('_SESSION')) {
-      const phaseMap: Record<string, 'plan' | 'execute' | 'review'> = {
-        CREATE_PLAN_SESSION: 'plan',
-        CREATE_EXECUTE_SESSION: 'execute',
-        CREATE_REVIEW_SESSION: 'review'
-      };
-      const phase = phaseMap[nextAction];
-      if (phase) {
-        const promptMap: Record<string, string> = {
-          plan: '/skill mafw-plan',
-          execute: '/skill mafw-execute',
-          review: '/skill mafw-review'
-        };
-        await this.createPhaseSession(goalId, phase, promptMap[phase]);
-      }
-    }
-
     return { success: true, nextAction: updated.nextAction, phase: updated.phase };
   }
 
@@ -1040,6 +840,88 @@ class MafwScheduler {
       }
     }
     return null;
+  }
+
+  private async runLoopGraph(goalId: string, projectDir: string, mafwDir: string) {
+    const reqPath = path.join(mafwDir, 'requests', `${goalId}.json`);
+    let maxRounds = 3;
+    try {
+      if (fs.existsSync(reqPath)) {
+        const req = JSON.parse(fs.readFileSync(reqPath, 'utf-8'));
+        maxRounds = req.maxLoops ?? 3;
+      }
+    } catch (err: any) {
+      console.warn(`[Scheduler] Failed to read request ${reqPath}: ${err.message}, using default maxRounds=3`);
+    }
+
+    const wrap = (pDir: string, mDir: string) => ({
+      planNode: async (state: any) => {
+        const result = await planNode(state, { client: this.opencodeClient as SessionClient });
+        this.loopSync(state, result, pDir, mDir);
+        return result;
+      },
+      executeNode: async (state: any) => {
+        const result = await executeNode(state, { client: this.opencodeClient as SessionClient });
+        this.loopSync(state, result, pDir, mDir);
+        return result;
+      },
+      reviewNode: async (state: any) => {
+        const result = await reviewNode(state, { client: this.opencodeClient as SessionClient });
+        this.loopSync(state, result, pDir, mDir);
+        return result;
+      },
+      syncNode: async (state: any) => {
+        const result = await syncNode(state);
+        this.loopSync(state, result, pDir, mDir);
+        return result;
+      },
+      archiveSuccess: async (state: any) => {
+        syncToDashboard(state);
+        console.log(`[Scheduler] Goal ${goalId} completed successfully`);
+      },
+      archiveFail: async (state: any) => {
+        syncToDashboard(state);
+        console.log(`[Scheduler] Goal ${goalId} failed`);
+      },
+      archiveMaxRetries: async (state: any) => {
+        syncToDashboard(state);
+        console.log(`[Scheduler] Goal ${goalId} max retries reached`);
+      },
+    });
+
+    const graph = buildLoopGraph(wrap(projectDir, mafwDir));
+
+    const initialState: any = {
+      goalId,
+      projectDir,
+      mafwDir,
+      round: 1,
+      maxRounds,
+    };
+
+    const config = {
+      configurable: { thread_id: goalId },
+      checkpointer: new MemorySaver(),
+    };
+
+    try {
+      await graph.invoke(initialState, config);
+    } catch (err: any) {
+      console.error(`[Scheduler] LangGraph invoke failed for ${goalId}: ${err.message}`);
+      syncToDashboard({ goalId, projectDir, mafwDir, round: 1, maxRounds, lastError: err.message, reviewVerdict: 'ERROR' } as any);
+    }
+  }
+
+  private loopSync(current: any, result: any, projectDir: string, mafwDir: string) {
+    const merged = { ...current, ...result, projectDir, mafwDir };
+    syncToDashboard(merged);
+    this.broadcast({
+      type: 'loop_transition',
+      timestamp: new Date().toISOString(),
+      goalId: merged.goalId,
+      loopNum: merged.round,
+      data: { phase: merged.phase || 'UNKNOWN' },
+    });
   }
 
   private sleep(ms: number): Promise<void> {
@@ -1064,4 +946,4 @@ if (require.main === module) {
   });
 }
 
-export { MafwScheduler, phaseToCreateAction };
+export { MafwScheduler };
