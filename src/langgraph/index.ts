@@ -11,3 +11,4 @@ export {
   destroySession,
 } from './nodes/session.utils';
 export type { SessionClient } from './nodes/session.utils';
+export { FileCheckpointer } from './checkpointer';
