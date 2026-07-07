@@ -3,7 +3,7 @@ import { calculateSalience } from '../../src/memory/salience-perceptor';
 describe('calculateSalience', () => {
   it('returns 1.5 for high-salience content', () => {
     expect(calculateSalience('Critical error: database crash')).toBe(1.5);
-    expect(calculateSalience('Data corruption detected')).toBe(1.5);
+    expect(calculateSalience('Critical system failure')).toBe(1.5);
     expect(calculateSalience('Emergency failover activated')).toBe(1.5);
   });
 

@@ -48,11 +48,10 @@ const config_loader_1 = require("./utils/config-loader");
 const hook_manager_1 = require("./hooks/hook-manager");
 const retry_1 = require("./utils/retry");
 const knowledge_graph_manager_1 = require("./graph/knowledge-graph-manager");
-const graph_searcher_1 = require("./graph/graph-searcher");
 const harmonic_index_1 = require("./memory/harmonic-index");
+const cognitive_graph_1 = require("./memory/cognitive-graph");
+const review_scheduler_1 = require("./memory/review-scheduler");
 const cost_estimator_1 = require("./cost/cost-estimator");
-const run_ask_user_1 = require("./tools/run-ask-user");
-const run_record_feedback_1 = require("./tools/run-record-feedback");
 async function MafwPlugin({ directory }) {
     const mafwDir = path.join(directory, '.opencode', 'mafw');
     // 0. 初始化 MAFW 目录结构（插件运行时创建）
@@ -76,6 +75,11 @@ async function MafwPlugin({ directory }) {
     await knowledgeGraphManager.load();
     // ── v6.3 Harmonic Index ──
     const harmonicIndex = new harmonic_index_1.HarmonicIndexManager(mafwDir);
+    // ── v6.4 Cognitive Graph (association network) ──
+    const cognitiveGraph = new cognitive_graph_1.CognitiveGraphManager(mafwDir);
+    // ── v6.4 Review Scheduler (spaced repetition) ──
+    const reviewScheduler = new review_scheduler_1.ReviewScheduler(harmonicIndex, mafwDir);
+    reviewScheduler.start();
     // ── v6.3 Auto-migration (first load) ──
     if (!fs.existsSync(path.join(mafwDir, 'memory', '.harmonic_index.json'))) {
         console.log('[MAFW] No harmonic index found, running v6.1→v6.3 migration...');
@@ -295,7 +299,21 @@ async function MafwPlugin({ directory }) {
         if (goalText && semantic.length === 0) {
             semantic.push({ id: `${goalId}-charter`, score: 1.0, facts: [goalText.substring(0, 500)], concepts: [goalId], energy: 0.8 });
         }
-        // 8. Apply token budget
+        // 8a. Record associations in cognitive graph
+        if (cognitiveGraph) {
+            const allResultIds = [];
+            for (const r of [...bm25Results, ...vectorResults, ...harmonicResults]) {
+                const id = (r.id || '').replace(/^(bm25|vec|harmonic)-/, '');
+                if (id)
+                    allResultIds.push(id);
+            }
+            for (let i = 0; i < allResultIds.length; i++) {
+                for (let j = i + 1; j < allResultIds.length; j++) {
+                    cognitiveGraph.addConnection(allResultIds[i], allResultIds[j]);
+                }
+            }
+        }
+        // 8b. Apply token budget
         const allocated = tokenBudgetAllocator.allocate({ parametric: parametric, procedural: procedural, semantic: semantic, episodic: episodic }, tokenBudget);
         return {
             semantic: allocated.semantic,
@@ -507,138 +525,6 @@ async function MafwPlugin({ directory }) {
                     fs.writeFileSync(filePath, JSON.stringify(rule, null, 2));
                     fs.writeFileSync(path.join(mafwDir, 'control'), JSON.stringify({ action: 'RELOAD_AUTOMATIONS' }));
                     return { type: 'automation_toggled', autoId, enabled: rule.enabled };
-                }
-            }
-        },
-        // ── Tools ──
-        tool: {
-            mafw_search_hybrid: {
-                description: 'Hybrid search across memories using BM25 + Vector + RRF fusion',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        goalId: { type: 'string' },
-                        query: { type: 'string' },
-                        maxResults: { type: 'number', default: 10 },
-                        tokenBudget: { type: 'number', default: 2000 }
-                    },
-                    required: ['goalId', 'query']
-                },
-                async execute({ goalId, query, maxResults, tokenBudget }) {
-                    const results = await executeHybridSearch({ goalId, query, maxResults, tokenBudget });
-                    if (config.retrieval?.graph?.enabled && knowledgeGraphManager.getGraph().nodes.length > 0) {
-                        const graphAccessor = new graph_searcher_1.GraphSearcher({
-                            nodes: knowledgeGraphManager.getGraph().nodes.reduce((map, n) => { map.set(n.id, n); return map; }, new Map()),
-                            edges: knowledgeGraphManager.getGraph().edges.reduce((map, e) => { map.set(e.id, e); return map; }, new Map()),
-                        });
-                        const graphNodes = graphAccessor.search([query], config.retrieval.graph.maxDepth || 2);
-                        results.semantic = [
-                            ...results.semantic,
-                            ...graphNodes.map(n => ({
-                                id: `graph-${n.id}`,
-                                score: 0.4,
-                                facts: [`[graph] ${n.label}`],
-                                concepts: [n.type],
-                                energy: n.energy,
-                            })),
-                        ];
-                    }
-                    return results;
-                }
-            },
-            mafw_get_deltas: {
-                description: 'Get parametric deltas for a Goal and phase',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        goalId: { type: 'string' },
-                        phase: { type: 'string' },
-                        maxResults: { type: 'number', default: 5 }
-                    },
-                    required: ['goalId']
-                },
-                async execute({ goalId, phase, maxResults }) {
-                    return executeGetDeltas({ goalId, phase, maxResults });
-                }
-            },
-            mafw_update_state: {
-                description: 'Update the state file for a Goal. Call this after completing a phase.',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        goalId: { type: 'string' },
-                        patch: {
-                            type: 'object',
-                            description: 'Partial state update. Must include phase, nextAction, and optionally artifacts/metrics.'
-                        }
-                    },
-                    required: ['goalId', 'patch']
-                },
-                async execute({ goalId, patch }) {
-                    const projectDir = path.dirname(path.dirname(mafwDir));
-                    const updated = await (0, state_1.updateState)(goalId, patch, projectDir);
-                    return { updated, path: path.join(mafwDir, 'state', `${goalId}.json`) };
-                }
-            },
-            mafw_load_state: {
-                description: 'Load the current state file for a Goal',
-                parameters: {
-                    type: 'object',
-                    properties: { goalId: { type: 'string' } },
-                    required: ['goalId']
-                },
-                async execute({ goalId }) {
-                    const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
-                    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-                    return state;
-                }
-            },
-            mafw_ask_user: {
-                description: 'Ask user a clarifying question (non-blocking, answer consumed next loop)',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        question: { type: 'string' },
-                        goalId: { type: 'string' },
-                        options: { type: 'array', items: { type: 'string' } },
-                        priority: { type: 'string', enum: ['normal', 'high'] }
-                    },
-                    required: ['question', 'goalId']
-                },
-                async execute({ question, goalId, options, priority }) {
-                    return (0, run_ask_user_1.askUser)({ question, goalId, options, priority: priority || 'normal', loopNum: 1 });
-                }
-            },
-            mafw_record_feedback: {
-                description: 'Record user feedback for a specific Wave result',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        targetId: { type: 'string' },
-                        type: { type: 'string', enum: ['thumbs_up', 'thumbs_down', 'correction'] },
-                        goalId: { type: 'string' },
-                        comment: { type: 'string' }
-                    },
-                    required: ['targetId', 'type', 'goalId']
-                },
-                async execute({ targetId, type, goalId, comment }) {
-                    return (0, run_record_feedback_1.recordFeedback)({ targetId, type, goalId, comment, loopNum: 1 });
-                }
-            },
-            mafw_get_model_route: {
-                description: 'Decide which LLM model to use based on task type and remaining budget',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        taskType: { type: 'string', enum: ['planning', 'coding', 'reviewing'] },
-                        remainingBudget: { type: 'number' }
-                    },
-                    required: ['taskType', 'remainingBudget']
-                },
-                async execute({ taskType, remainingBudget }) {
-                    const { CognitiveRouter } = require('./cost/cognitive-router');
-                    const router = new CognitiveRouter(config?.router);
-                    return router.selectModel(taskType, remainingBudget, config?.cost?.budget?.total || 1000000);
                 }
             }
         },

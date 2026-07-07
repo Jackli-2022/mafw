@@ -54,6 +54,14 @@ function phaseToCreateAction(phase) {
             return `CREATE_${(phase || 'UNKNOWN').toUpperCase()}_SESSION`;
     }
 }
+function readBody(req) {
+    return new Promise((resolve, reject) => {
+        let body = '';
+        req.on('data', (chunk) => body += chunk);
+        req.on('end', () => resolve(body));
+        req.on('error', reject);
+    });
+}
 function resolveOpencode() {
     // 按优先级查找 opencode.exe
     const npmPrefix = process.env.MAFW_OPENCODE_PATH
@@ -293,6 +301,41 @@ class MafwScheduler {
                             res.end(JSON.stringify({ error: 'Invalid JSON' }));
                         }
                     });
+                    return;
+                }
+                // POST /api/work/{goalId}/validate — MCP calls when agent completes goal creation
+                const validateMatch = req.url?.match(/^\/api\/work\/([^/]+)\/validate$/);
+                if (validateMatch && req.method === 'POST') {
+                    try {
+                        const goalId = validateMatch[1];
+                        const body = await readBody(req);
+                        const data = body ? JSON.parse(body) : {};
+                        const result = await this.handleValidate(goalId, data);
+                        res.writeHead(200);
+                        res.end(JSON.stringify(result));
+                    }
+                    catch (err) {
+                        const status = err.message === 'Goal already exists' ? 409 : 400;
+                        res.writeHead(status);
+                        res.end(JSON.stringify({ error: err.message }));
+                    }
+                    return;
+                }
+                // POST /api/work/{goalId}/complete — MCP calls when agent completes a phase
+                const completeMatch = req.url?.match(/^\/api\/work\/([^/]+)\/complete$/);
+                if (completeMatch && req.method === 'POST') {
+                    try {
+                        const goalId = completeMatch[1];
+                        const body = await readBody(req);
+                        const data = body ? JSON.parse(body) : {};
+                        const result = await this.handleComplete(goalId, data);
+                        res.writeHead(200);
+                        res.end(JSON.stringify(result));
+                    }
+                    catch (err) {
+                        res.writeHead(400);
+                        res.end(JSON.stringify({ error: err.message }));
+                    }
                     return;
                 }
                 // 健康检查
@@ -756,6 +799,128 @@ class MafwScheduler {
             goalId,
             data: patch
         });
+    }
+    findGoalStatePath(goalId) {
+        for (const [, info] of this.registeredProjects) {
+            const p = path.join(info.mafwDir, 'state', `${goalId}.json`);
+            if (fs.existsSync(p)) {
+                return { statePath: p, info };
+            }
+        }
+        return null;
+    }
+    async handleValidate(goalId, data) {
+        let mafwDir;
+        if (data?.projectDir && this.registeredProjects.has(data.projectDir)) {
+            mafwDir = this.registeredProjects.get(data.projectDir).mafwDir;
+        }
+        else {
+            const first = this.registeredProjects.values().next().value;
+            if (!first)
+                throw new Error('No registered projects');
+            mafwDir = first.mafwDir;
+        }
+        const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
+        if (fs.existsSync(statePath)) {
+            throw new Error('Goal already exists');
+        }
+        const stateDir = path.dirname(statePath);
+        if (!fs.existsSync(stateDir)) {
+            fs.mkdirSync(stateDir, { recursive: true });
+        }
+        const state = {
+            version: '2',
+            goalId,
+            loop: 1,
+            phase: 'PLANNING',
+            lastPhase: null,
+            currentWave: 0,
+            totalWaves: null,
+            sessions: {},
+            nextAction: 'CREATE_PLAN_SESSION',
+            artifacts: {},
+            updatedAt: new Date().toISOString()
+        };
+        const tmpPath = `${statePath}.tmp`;
+        fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf-8');
+        fs.renameSync(tmpPath, statePath);
+        this.activeGoals.set(goalId, state);
+        await this.createPhaseSession(goalId, 'plan', '/skill mafw-plan');
+        return { success: true, goalId, nextAction: 'CREATE_PLAN_SESSION' };
+    }
+    async handleComplete(goalId, data) {
+        const found = this.findGoalStatePath(goalId);
+        if (!found)
+            throw new Error(`State not found for goal ${goalId}`);
+        const { statePath, info } = found;
+        const current = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        const score = data?.score;
+        let updated;
+        switch (current.phase) {
+            case 'PLANNING':
+                updated = {
+                    ...current,
+                    phase: 'EXECUTING',
+                    nextAction: 'CREATE_EXECUTE_SESSION',
+                    updatedAt: new Date().toISOString()
+                };
+                break;
+            case 'EXECUTING':
+                updated = {
+                    ...current,
+                    phase: 'REVIEWING',
+                    nextAction: 'CREATE_REVIEW_SESSION',
+                    updatedAt: new Date().toISOString()
+                };
+                break;
+            case 'REVIEWING':
+                if (score != null && score >= 85) {
+                    await this.archiveGoal(goalId);
+                    return { success: true, nextAction: 'COMPLETED', phase: 'ARCHIVED' };
+                }
+                if (score != null && score >= 60) {
+                    updated = {
+                        ...current,
+                        phase: 'EXECUTING',
+                        nextAction: 'CREATE_EXECUTE_SESSION',
+                        updatedAt: new Date().toISOString()
+                    };
+                }
+                else {
+                    updated = {
+                        ...current,
+                        loop: current.loop + 1,
+                        phase: 'PLANNING',
+                        nextAction: 'CREATE_PLAN_SESSION',
+                        updatedAt: new Date().toISOString()
+                    };
+                }
+                break;
+            default:
+                throw new Error(`Unknown phase: ${current.phase}`);
+        }
+        const tmpPath = `${statePath}.tmp`;
+        fs.writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
+        fs.renameSync(tmpPath, statePath);
+        this.activeGoals.set(goalId, updated);
+        const nextAction = updated.nextAction;
+        if (nextAction.startsWith('CREATE_') && nextAction.endsWith('_SESSION')) {
+            const phaseMap = {
+                CREATE_PLAN_SESSION: 'plan',
+                CREATE_EXECUTE_SESSION: 'execute',
+                CREATE_REVIEW_SESSION: 'review'
+            };
+            const phase = phaseMap[nextAction];
+            if (phase) {
+                const promptMap = {
+                    plan: '/skill mafw-plan',
+                    execute: '/skill mafw-execute',
+                    review: '/skill mafw-review'
+                };
+                await this.createPhaseSession(goalId, phase, promptMap[phase]);
+            }
+        }
+        return { success: true, nextAction: updated.nextAction, phase: updated.phase };
     }
     async loadRequest(goalId) {
         for (const [projectDir, info] of this.registeredProjects) {

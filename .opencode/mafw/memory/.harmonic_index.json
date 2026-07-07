@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-07T14:58:33.133Z",
+  "entries": [
+    {
+      "id": "mem_1783436313132_8mvzma",
+      "primary_abstraction": "base-skill-manifest",
+      "cue_anchors": [],
+      "memory_type": "semantic",
+      "goal_id": null,
+      "tier": "tier3",
+      "energy": 0.6
+    }
+  ]
+}
