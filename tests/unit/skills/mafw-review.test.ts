@@ -60,7 +60,7 @@ function mockLlm(content: string) {
   };
 }
 
-test('mafwReviewEntry PASS with metrics met → ARCHIVE', async () => {
+test('mafwReviewEntry PASS with metrics met → REVIEWING_COMPLETE', async () => {
   writeBaseState();
 
   await mafwReviewEntry({
@@ -71,12 +71,12 @@ test('mafwReviewEntry PASS with metrics met → ARCHIVE', async () => {
   });
 
   const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
-  expect(state.nextAction).toBe('ARCHIVE');
-  expect(state.phase).toBe('ARCHIVED');
+  expect(state.nextAction).toBe('PASS');
+  expect(state.phase).toBe('REVIEWING_COMPLETE');
   expect(fs.existsSync(path.join(tmpDir, '.opencode', 'mafw', 'reviews', '001-auth-loop1.md'))).toBe(true);
 });
 
-test('mafwReviewEntry FAIL with maxLoops reached → PARTIAL retry', async () => {
+test('mafwReviewEntry FAIL with maxLoops reached → REVIEWING_COMPLETE with error', async () => {
   writeBaseState('REVIEWING', 'CREATE_REVIEW_SESSION', 1, 1);
 
   await mafwReviewEntry({
@@ -87,11 +87,11 @@ test('mafwReviewEntry FAIL with maxLoops reached → PARTIAL retry', async () =>
   });
 
   const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
-  expect(state.nextAction).toBe('WAIT_PHASE_COMPLETE');
+  expect(state.nextAction).toBe('FAIL');
   expect(state.error).toBe('max_loops_reached');
 });
 
-test('mafwReviewEntry FAIL with loop available → next loop', async () => {
+test('mafwReviewEntry FAIL with loop available → REVIEWING_COMPLETE', async () => {
   writeBaseState('REVIEWING', 'CREATE_REVIEW_SESSION', 1, 3);
 
   await mafwReviewEntry({
@@ -102,9 +102,8 @@ test('mafwReviewEntry FAIL with loop available → next loop', async () => {
   });
 
   const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
-  expect(state.nextAction).toBe('CREATE_PLAN_SESSION');
-  expect(state.phase).toBe('PLANNING');
-  expect(state.loop).toBe(2);
+  expect(state.nextAction).toBe('FAIL');
+  expect(state.phase).toBe('REVIEWING_COMPLETE');
 });
 
 test('mafwReviewEntry handles non-JSON LLM response', async () => {
@@ -118,6 +117,6 @@ test('mafwReviewEntry handles non-JSON LLM response', async () => {
   });
 
   const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
-  expect(state.nextAction).toBe('ARCHIVE');
-  expect(state.phase).toBe('ARCHIVED');
+  expect(state.nextAction).toBe('PASS');
+  expect(state.phase).toBe('REVIEWING_COMPLETE');
 });

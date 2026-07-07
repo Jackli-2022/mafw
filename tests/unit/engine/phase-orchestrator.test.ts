@@ -34,10 +34,10 @@ test('transitionPhase accepts valid transition', async () => {
   expect(state.nextAction).toBe('CREATE_EXECUTE_SESSION');
 });
 
-test('transitionPhase rejects invalid transition', async () => {
-  await expect(
-    transitionPhase('001-auth', { from: 'PLANNING', to: 'REVIEWING', nextAction: 'CREATE_REVIEW_SESSION' }, tmpDir)
-  ).rejects.toThrow(/Invalid phase transition/);
+test('transitionPhase accepts any transition (validation removed)', async () => {
+  const state = await transitionPhase('001-auth', { from: 'PLANNING', to: 'REVIEWING', nextAction: 'CREATE_REVIEW_SESSION' }, tmpDir);
+  expect(state.phase).toBe('REVIEWING');
+  expect(state.nextAction).toBe('CREATE_REVIEW_SESSION');
 });
 
 test('recordSession writes active session', async () => {
