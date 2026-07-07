@@ -44,9 +44,4 @@ export function syncToDashboard(state: LoopStateType): void {
   fs.renameSync(tmpPath, statePath);
 }
 
-export async function syncNode(
-  state: LoopStateType,
-): Promise<Partial<LoopStateType>> {
-  syncToDashboard(state);
-  return {};
-}
+
