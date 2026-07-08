@@ -4,10 +4,14 @@ import { updateState, loadState } from '../utils/state';
 import { askUser } from '../tools/run-ask-user';
 import { recordFeedback } from '../tools/run-record-feedback';
 import { CognitiveRouter } from '../cost/cognitive-router';
+import { HarmonicUnit, generateHarmonicId } from '../memory/harmonic-types';
+import { HarmonicIndexManager } from '../memory/harmonic-index';
+import { calculateSalience } from '../memory/salience-perceptor';
 
 const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 const gatewayUrl = process.env.MAFW_GATEWAY_URL || 'http://localhost:3004';
 const cognitiveRouter = new CognitiveRouter();
+const mafwDir = path.join(projectDir, '.opencode/mafw');
 
 export interface ToolDefinition {
   name: string;
@@ -138,6 +142,22 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           totalBudget: { type: 'number', description: 'Total available token budget' },
         },
         required: ['agentType', 'remainingBudget', 'totalBudget'],
+      },
+    },
+    {
+      name: 'mafw_add_memory',
+      description: 'Save a memory unit to the harmonic memory system. Agent calls this to persist reusable experiences, solutions, patterns, and insights for future retrieval.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'Memory content text to remember' },
+          memoryType: { type: 'string', enum: ['semantic', 'episodic', 'procedural', 'global'], description: 'Memory type. semantic=fact, episodic=narrative, procedural=pattern, global=cross-project' },
+          cueAnchors: { type: 'array', items: { type: 'string' }, description: 'Tags/keywords for retrieval (max 8)' },
+          scope: { type: 'string', enum: ['project', 'global'], description: 'Scope: project (bound to goal) or global', default: 'project' },
+          goalId: { type: 'string', description: 'Goal ID to bind this memory to (required if scope=project)' },
+          primaryAbstraction: { type: 'string', description: '6-8 word summary (auto-generated from content if omitted)' },
+        },
+        required: ['content', 'memoryType'],
       },
     },
   ];
@@ -332,6 +352,71 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         return { content: [{ type: 'text', text: JSON.stringify(selection) }] };
       } catch (err: any) {
         return { content: [{ type: 'text', text: JSON.stringify({ error: err.message }) }], isError: true };
+      }
+    },
+
+    mafw_add_memory: async (args) => {
+      try {
+        const content = args.content as string;
+        const memoryType = (args.memoryType as string) || 'semantic';
+        const cueAnchors = (args.cueAnchors as string[]) || [];
+        const scope = (args.scope as string) || 'project';
+        const goalId = (args.goalId as string) || null;
+        const primaryAbstraction = (args.primaryAbstraction as string) || content.slice(0, 80);
+
+        if (!['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
+          return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
+        }
+
+        const now = new Date().toISOString();
+        const unit: HarmonicUnit = {
+          id: generateHarmonicId(),
+          goal_id: scope === 'global' ? null : goalId,
+          memory_type: memoryType as HarmonicUnit['memory_type'],
+          primary_abstraction: primaryAbstraction.slice(0, 200),
+          cue_anchors: cueAnchors.slice(0, 8),
+          memory_value: content,
+          energy: 0.8,
+          salience: calculateSalience(content),
+          abstraction_level: memoryType === 'procedural' ? 3 : memoryType === 'global' ? 4 : 2,
+          created_at: now,
+          updated_at: now,
+        };
+
+        const tier =
+          memoryType === 'procedural' ? 'tier4'
+          : memoryType === 'episodic' ? 'tier2'
+          : memoryType === 'global' ? 'tier1'
+          : 'tier3';
+
+        const goalFile = unit.goal_id || '__global__';
+        const tierDir = path.join(mafwDir, 'memory', tier);
+        const filePath = path.join(tierDir, `${goalFile}.json`);
+
+        if (!fs.existsSync(tierDir)) {
+          fs.mkdirSync(tierDir, { recursive: true });
+        }
+
+        const existing: HarmonicUnit[] = fs.existsSync(filePath)
+          ? JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+          : [];
+        existing.push(unit);
+
+        const tmpPath = `${filePath}.tmp`;
+        fs.writeFileSync(tmpPath, JSON.stringify(existing, null, 2), 'utf-8');
+        fs.renameSync(tmpPath, filePath);
+
+        const index = new HarmonicIndexManager(mafwDir);
+        index.addEntry(unit, tier);
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ success: true, id: unit.id, tier, filePath }),
+          }],
+        };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
       }
     },
   };
