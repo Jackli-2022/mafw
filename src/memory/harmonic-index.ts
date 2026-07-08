@@ -2,14 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HarmonicUnit, HarmonicIndex, HarmonicIndexEntry } from './harmonic-types';
 
+interface HookManagerLike {
+  execute(event: string, context: any): Promise<void>;
+}
+
 export class HarmonicIndexManager {
   private indexPath: string;
   private index: HarmonicIndex;
+  private hookManager: HookManagerLike | null;
 
-  constructor(baseDir: string) {
+  constructor(baseDir: string, hookManager?: HookManagerLike | null) {
     const memoryDir = path.join(baseDir, 'memory');
     this.indexPath = path.join(memoryDir, '.harmonic_index.json');
     this.index = this.load();
+    this.hookManager = hookManager || null;
   }
 
   private load(): HarmonicIndex {
@@ -34,11 +40,15 @@ export class HarmonicIndexManager {
       primary_abstraction: unit.primary_abstraction,
       cue_anchors: unit.cue_anchors,
       memory_type: unit.memory_type,
-      goal_id: unit.goal_id,
       tier,
       energy: unit.energy
     });
     this.save();
+    this.hookManager?.execute('memory.write', {
+      unit,
+      tier,
+      source: 'HarmonicIndexManager.addEntry'
+    });
   }
 
   removeEntry(id: string): void {
@@ -69,11 +79,19 @@ export class HarmonicIndexManager {
       return { entry, score: score * entry.energy };
     });
 
-    return scored
+    const results = scored
       .filter(s => s.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
       .map(s => s.entry);
+
+    this.hookManager?.execute('memory.recall', {
+      query,
+      resultIds: results.map(r => r.id),
+      source: 'HarmonicIndexManager.search'
+    });
+
+    return results;
   }
 
   getIndex(): HarmonicIndex {
