@@ -3,9 +3,14 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import { spawn, execSync, ChildProcess } from 'child_process';
-import { DashboardServer } from './dashboard/server';
+// import { DashboardServer } from './dashboard/server';
 import { buildExecutionGraph, FileCheckpointer, planNode, executeNode, reviewNode, syncToDashboard } from '../../src/langgraph';
 import { Command } from '@langchain/langgraph';
+import { McpSSEEndpoint } from "./mcp/sse-transport";
+import { createToolRegistry } from "./mcp/tool-registry";
+import { MemoryService } from "./memory/service";
+import { CostService } from "./cost/service";
+import { eventBus } from "./event-bus";
 
 /**
  * MAFW Scheduler — v5.0 SDK 编排器
@@ -97,7 +102,8 @@ class MafwScheduler {
   private configPath: string;
   private configWriteQueue: Promise<void> = Promise.resolve();
   private running = true;
-  private dashboard?: DashboardServer;
+  // private dashboard?: DashboardServer;
+  private mcpEndpoint?: McpSSEEndpoint;
   private opencodeClient: any = null;
   private sseClients: Set<http.ServerResponse> = new Set();
 
@@ -114,7 +120,11 @@ class MafwScheduler {
   async start() {
     console.log('[Scheduler] MAFW Scheduler v5.0 starting...');
 
-    // 1. 启动 Serve（spawn opencode.exe 全路径）
+    // 0. Init services
+    await this.initServices();
+    this.setupEventBus();
+
+    // 1. Start Serve
     await this.startServe();
 
     // 2. 初始化 SDK 客户端
@@ -126,9 +136,9 @@ class MafwScheduler {
     // 3. 启动 HTTP API
     await this.startApiServer();
 
-    // 4. 启动 Dashboard
-    this.dashboard = new DashboardServer(3001, this.projectDir, this);
-    this.dashboard.start();
+    // 4. Dashboard is now served via the API server on the same port
+    // this.dashboard = new DashboardServer(3001, this.projectDir, this);
+    // this.dashboard.start();
 
     // 5. 恢复配置和注册表
     await this.recoverConfig();
@@ -169,10 +179,53 @@ class MafwScheduler {
       this.serveProcess.kill('SIGTERM');
       this.serveProcess = undefined;
     }
-    if (this.dashboard) {
-      this.dashboard.stop();
-    }
+    // if (this.dashboard) {
+    //   this.dashboard.stop();
+    // }
     console.log('[Scheduler] Stopping...');
+  }
+
+  // ── Services & Event Bus ──
+
+  private async initServices() {
+    const projectDir = this.projectDir;
+    const mafwDir = path.join(projectDir, ".opencode", "mafw");
+
+    const memory = new MemoryService(mafwDir);
+    const cost = new CostService();
+    const services = { memory, cost };
+
+    const toolRegistry = createToolRegistry();
+    this.mcpEndpoint = new McpSSEEndpoint(toolRegistry, services);
+
+    console.log("[Scheduler] Services initialized (Memory + Cost + MCP SSE)");
+
+    const enableLegacy = process.env.ENABLE_LEGACY_MCP === "true";
+    if (enableLegacy) {
+      console.log("[Scheduler] Legacy MCP mode enabled — spawning old MCP Server");
+      const { spawn } = require("child_process");
+      spawn("node", [path.join(__dirname, "../../src/mcp-server.js")], {
+        cwd: this.projectDir,
+        stdio: "inherit",
+      });
+    }
+  }
+
+  private setupEventBus() {
+    eventBus.on("goal_created", (data: any) => {
+      this.broadcast({ type: "goal_created", ...data });
+      if (data.goalId) setImmediate(() => this.onEvent(data.goalId));
+    });
+    eventBus.on("state_change", (data: any) => {
+      this.broadcast({ type: "state_change", ...data });
+      if (data.goalId) setImmediate(() => this.onEvent(data.goalId));
+    });
+    eventBus.on("user_question", (data: any) => {
+      this.broadcast({ type: "user_question", ...data });
+    });
+    eventBus.on("user_feedback", (data: any) => {
+      this.broadcast({ type: "user_feedback", ...data });
+    });
   }
 
   // ── 1. Serve 管理 ──
@@ -243,6 +296,67 @@ class MafwScheduler {
     return new Promise<void>((resolve) => {
       const server = http.createServer(async (req, res) => {
         res.setHeader('Content-Type', 'application/json');
+
+        // CORS headers for SSE
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+        if (req.method === "OPTIONS") {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        // MCP SSE session establishment
+        if (req.url === "/mcp" && req.method === "GET") {
+          try {
+            await this.mcpEndpoint!.handleSSE(req, res);
+          } catch (err: any) {
+            console.error("[MCP SSE] Error:", err.message);
+            if (!res.headersSent) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          }
+          return;
+        }
+
+        // MCP client messages
+        if (req.url?.startsWith("/mcp") && req.method === "POST") {
+          try {
+            await this.mcpEndpoint!.handleMessage(req, res);
+          } catch (err: any) {
+            console.error("[MCP Message] Error:", err.message);
+            if (!res.headersSent) {
+              res.writeHead(500);
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          }
+          return;
+        }
+
+        // Dashboard SPA
+        if (req.url === "/" || req.url?.startsWith("/static/") || req.url === "/index.html") {
+          res.setHeader("Content-Type", "text/html");
+          const publicDir = path.join(__dirname, "..", "src", "dashboard", "public");
+          const filePath = req.url === "/" || req.url === "/index.html"
+            ? path.join(publicDir, "index.html")
+            : path.join(publicDir, req.url!.replace("/static/", ""));
+          if (fs.existsSync(filePath)) {
+            res.end(fs.readFileSync(filePath, "utf-8"));
+          } else {
+            res.end(fs.readFileSync(path.join(publicDir, "index.html"), "utf-8"));
+          }
+          return;
+        }
+
+        // Dashboard API
+        if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(await this.handleDashboardAPI(req)));
+          return;
+        }
 
         // 插件注册：必须传递 projectDir + mafwDir
         if (req.url === '/register' && req.method === 'POST') {
@@ -416,6 +530,9 @@ class MafwScheduler {
         console.log(`[Scheduler]  - POST /register  { projectDir, mafwDir }`);
         console.log(`[Scheduler]  - POST /control  { action, goalId, ... }`);
         console.log(`[Scheduler]  - GET  /health`);
+        console.log(`[Scheduler]  - GET  /mcp           (MCP SSE)`);
+        console.log(`[Scheduler]  - POST /mcp           (MCP messages)`);
+        console.log(`[Scheduler]  - GET  /              (Dashboard SPA)`);
         resolve();
       });
     });
@@ -880,6 +997,33 @@ class MafwScheduler {
         }
       }
     }
+  }
+
+  private async handleDashboardAPI(req: http.IncomingMessage): Promise<any> {
+    if (req.url?.startsWith("/api/goals")) {
+      return {
+        goals: Array.from(this.activeGoals.values()).map(s => ({
+          goalId: s.goalId,
+          phase: s.phase,
+          loop: s.loop,
+          nextAction: s.nextAction,
+          error: s.error || null,
+          updatedAt: s.updatedAt,
+        })),
+      };
+    }
+    if (req.url?.startsWith("/api/stats")) {
+      return {
+        activeGoals: this.activeGoals.size,
+        registeredProjects: this.registeredProjects.size,
+        sseClients: this.sseClients.size,
+        serveRunning: this.serveRunning,
+      };
+    }
+    if (req.url?.startsWith("/api/memory")) {
+      return { status: "ok", message: "Memory API not yet implemented" };
+    }
+    return { error: "Unknown endpoint" };
   }
 
   private sleep(ms: number): Promise<void> {

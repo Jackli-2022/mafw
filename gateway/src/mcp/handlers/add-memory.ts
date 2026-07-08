@@ -1,6 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import { ToolHandler } from "../../types";
+import { generateHarmonicId } from "../../../../src/memory/harmonic-types";
+import { calculateSalience } from "../../../../src/memory/salience-perceptor";
 
 const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 
@@ -33,17 +35,17 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
       ? JSON.parse(fs.readFileSync(filePath, "utf-8"))
       : [];
 
-    const id = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
+    const unitId = generateHarmonicId();
 
     const unit = {
-      id,
+      id: unitId,
       memory_type: memoryType,
       primary_abstraction: primaryAbstraction.slice(0, 200),
       cue_anchors: cueAnchors.slice(0, 8),
       memory_value: content,
       energy: 0.8,
-      salience: memoryType === "procedural" || memoryType === "global" ? 1.0 : 0.8,
+      salience: calculateSalience(content),
       abstraction_level: memoryType === "procedural" ? 3 : memoryType === "global" ? 4 : 2,
       created_at: now,
       updated_at: now,
@@ -56,7 +58,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
 
     memory.harmonicIndex.addEntry(unit as any, tier);
 
-    return { content: [{ type: "text", text: JSON.stringify({ success: true, id, tier, filePath }) }] };
+    return { content: [{ type: "text", text: JSON.stringify({ success: true, id: unitId, tier, filePath }) }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
   }

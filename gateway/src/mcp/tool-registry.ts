@@ -122,7 +122,7 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_add_memory",
-    description: "Save a memory unit to the harmonic memory system",
+    description: "Save a memory unit to the harmonic memory system. Agent calls this to persist reusable experiences, solutions, patterns, and insights for future retrieval.",
     inputSchema: {
       type: "object",
       properties: {
