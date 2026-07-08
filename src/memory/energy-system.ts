@@ -21,28 +21,47 @@ const EVENT_DELTAS: Record<EnergyEvent['type'], number> = {
   merged: 0.03,
 };
 
+interface HookManagerLike {
+  execute(event: string, context: any): Promise<void>;
+}
+
 export class EnergySystem {
   private decayRatePerDay: number;
   private readonly minEnergy = 0.0;
   private readonly maxEnergy = 1.0;
   private cleanupThreshold: number;
   private criticalThreshold: number;
+  private hookManager: HookManagerLike | null;
 
   constructor(config?: {
     decayRatePerDay?: number;
     cleanupThreshold?: number;
     criticalThreshold?: number;
+    hookManager?: HookManagerLike | null;
   }) {
     this.decayRatePerDay = config?.decayRatePerDay ?? 0.01;
     this.cleanupThreshold = config?.cleanupThreshold ?? 0.3;
     this.criticalThreshold = config?.criticalThreshold ?? 0.8;
+    this.hookManager = config?.hookManager || null;
   }
 
   calculateEnergy(currentEnergy: number, event: EnergyEvent, daysSinceLastUpdate: number, salience: number = 1.0): number {
     const effectiveDecay = this.decayRatePerDay * (1 / Math.max(0.1, salience));
     let energy = currentEnergy - effectiveDecay * Math.max(0, daysSinceLastUpdate);
     energy += EVENT_DELTAS[event.type];
-    return Math.max(this.minEnergy, Math.min(this.maxEnergy, energy));
+    const clamped = Math.max(this.minEnergy, Math.min(this.maxEnergy, energy));
+
+    const threshold = currentEnergy * 0.3;
+    if (clamped < currentEnergy - threshold) {
+      this.hookManager?.execute('memory.decay', {
+        oldEnergy: currentEnergy,
+        newEnergy: clamped,
+        reason: `decay: ${effectiveDecay * Math.max(0, daysSinceLastUpdate)} over ${daysSinceLastUpdate} days, event: ${event.type}`,
+        unitId: 'unknown'
+      });
+    }
+
+    return clamped;
   }
 
   shouldCleanup(energy: number): boolean {
