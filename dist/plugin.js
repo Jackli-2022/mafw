@@ -52,6 +52,12 @@ const harmonic_index_1 = require("./memory/harmonic-index");
 const cognitive_graph_1 = require("./memory/cognitive-graph");
 const review_scheduler_1 = require("./memory/review-scheduler");
 const cost_estimator_1 = require("./cost/cost-estimator");
+const session_start_1 = require("./hooks/session-start");
+const tool_before_1 = require("./hooks/tool-before");
+const user_prompt_1 = require("./hooks/user-prompt");
+const llm_after_1 = require("./hooks/llm-after");
+const session_compacting_1 = require("./hooks/session-compacting");
+const handoff_1 = require("./hooks/handoff");
 async function MafwPlugin({ directory }) {
     const mafwDir = path.join(directory, '.opencode', 'mafw');
     // 0. 初始化 MAFW 目录结构（插件运行时创建）
@@ -73,8 +79,10 @@ async function MafwPlugin({ directory }) {
     const sessionPruner = new session_pruner_1.SessionPruner({ maxContextTokens: 8000, compressionThreshold: 0.6 });
     const knowledgeGraphManager = new knowledge_graph_manager_1.KnowledgeGraphManager(path.join(mafwDir, 'knowledge-graph.json'));
     await knowledgeGraphManager.load();
+    // ── Hook Manager (moved before HarmonicIndex which needs it) ──
+    const hookManager = new hook_manager_1.HookManager({ failBehavior: 'continue', timeout: 30000 });
     // ── v6.3 Harmonic Index ──
-    const harmonicIndex = new harmonic_index_1.HarmonicIndexManager(mafwDir);
+    const harmonicIndex = new harmonic_index_1.HarmonicIndexManager(mafwDir, hookManager);
     // ── v6.4 Cognitive Graph (association network) ──
     const cognitiveGraph = new cognitive_graph_1.CognitiveGraphManager(mafwDir);
     // ── v6.4 Review Scheduler (spaced repetition) ──
@@ -132,8 +140,6 @@ async function MafwPlugin({ directory }) {
             fs.writeFileSync(path.join(costDir, `${goalId}.json`), JSON.stringify(records, null, 2), 'utf-8');
         }
     }
-    // ── Hook Manager (Wave 2: Task 3) ──
-    const hookManager = new hook_manager_1.HookManager({ failBehavior: 'continue', timeout: 30000 });
     hookManager.register({
         name: 'session-ending',
         event: 'session.end',
@@ -208,14 +214,160 @@ async function MafwPlugin({ directory }) {
             }
         }
     });
+    // ── Wave 1: Memory Internal Hooks ──
+    hookManager.register({
+        name: 'memory-write-handler',
+        event: 'memory.write',
+        handler: async (ctx) => {
+            const { unit, tier, source } = ctx.data || ctx;
+            console.log(`[hook:memory.write] ${unit?.id} -> tier ${tier} (from ${source})`);
+            if (cognitiveGraph && unit) {
+                if (unit.goal_id) {
+                    cognitiveGraph.addConnection(unit.id, `goal:${unit.goal_id}`);
+                }
+            }
+        },
+        priority: 100
+    });
+    hookManager.register({
+        name: 'memory-recall-handler',
+        event: 'memory.recall',
+        handler: async (ctx) => {
+            const { query, resultIds } = ctx.data || ctx;
+            console.log(`[hook:memory.recall] "${query?.substring(0, 50) || ''}" -> ${resultIds?.length || 0} results`);
+            if (cognitiveGraph && resultIds && resultIds.length > 1) {
+                for (let i = 0; i < resultIds.length; i++) {
+                    for (let j = i + 1; j < resultIds.length; j++) {
+                        cognitiveGraph.addConnection(resultIds[i], resultIds[j]);
+                    }
+                }
+            }
+        },
+        priority: 100
+    });
+    hookManager.register({
+        name: 'memory-contradiction-handler',
+        event: 'memory.contradiction',
+        handler: async (ctx) => {
+            const { existingId, newId, field, existingValue, newValue } = ctx.data || ctx;
+            console.log(`[hook:memory.contradiction] ${existingId} vs ${newId} on ${field}`);
+        },
+        priority: 100
+    });
+    hookManager.register({
+        name: 'memory-decay-handler',
+        event: 'memory.decay',
+        handler: async (ctx) => {
+            const { oldEnergy, newEnergy, reason, unitId } = ctx.data || ctx;
+            if (newEnergy < 0.3) {
+                console.log(`[hook:memory.decay] ${unitId} fell below cleanup threshold (${newEnergy})`);
+            }
+        },
+        priority: 100
+    });
+    // ── Wave 2: Session Start ──
+    hookManager.register({
+        name: 'session-start',
+        event: 'session.start',
+        handler: async (ctx) => {
+            await (0, session_start_1.sessionStartHook)({ sessionId: ctx.sessionId, projectDir: directory });
+        },
+        priority: 5
+    });
+    // ── Wave 2: Tool Before ──
+    hookManager.register({
+        name: 'tool-before',
+        event: 'tool.execute.before',
+        handler: async (ctx) => {
+            await (0, tool_before_1.toolBeforeHook)({ tool: ctx.tool, sessionID: ctx.sessionID, callID: ctx.callID, args: ctx.args });
+        },
+        priority: 100
+    });
+    // ── Wave 2: User Prompt ──
+    hookManager.register({
+        name: 'user-prompt',
+        event: 'user.prompt.submit',
+        handler: async (ctx) => {
+            await (0, user_prompt_1.userPromptHook)({ sessionID: ctx.sessionID, text: ctx.message?.parts?.[0]?.text || '' });
+        },
+        priority: 50
+    });
+    // ── Wave 2: LLM After ──
+    hookManager.register({
+        name: 'llm-after',
+        event: 'llm.call.after',
+        handler: async (ctx) => {
+            await (0, llm_after_1.llmAfterHook)({ sessionID: ctx.sessionID, text: ctx.text });
+        },
+        priority: 50
+    });
+    // ── Wave 2: Session Compacting ──
+    hookManager.register({
+        name: 'session-compacting',
+        event: 'session.compacting',
+        handler: async (ctx) => {
+            await (0, session_compacting_1.sessionCompactingHook)({ sessionID: ctx.sessionID, projectDir: directory });
+        },
+        priority: 100
+    });
+    // ── Handoff detection: fires session.handoff on phase transitions ──
+    hookManager.register({
+        name: 'handoff-detector',
+        event: 'session.end',
+        priority: 90,
+        handler: async (ctx) => {
+            try {
+                const stateDir = path.join(mafwDir, 'state');
+                if (!fs.existsSync(stateDir))
+                    return;
+                const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
+                for (const file of files) {
+                    const state = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf-8'));
+                    const session = Object.entries(state.sessions || {}).find(([_, s]) => s.id === ctx.sessionID);
+                    if (!session)
+                        continue;
+                    const [phase] = session;
+                    let nextPhase = '';
+                    if (state.nextAction === 'CREATE_EXECUTE_SESSION')
+                        nextPhase = 'EXECUTING';
+                    else if (state.nextAction === 'CREATE_REVIEW_SESSION')
+                        nextPhase = 'REVIEW';
+                    else if (state.nextAction === 'CREATE_PLAN_SESSION')
+                        nextPhase = 'PLANNING';
+                    else if (state.nextAction === 'PASS' || state.nextAction === 'FAIL')
+                        nextPhase = state.nextAction;
+                    if (nextPhase) {
+                        await hookManager.execute('session.handoff', {
+                            from: phase,
+                            to: nextPhase,
+                            goalId: state.goalId,
+                            context: { wave: state.currentWave, loop: state.loop }
+                        });
+                    }
+                }
+            }
+            catch (err) {
+                console.error(`[hook:handoff-detector] Error: ${err.message}`);
+            }
+        }
+    });
+    // ── Wave 3: Handoff ──
+    hookManager.register({
+        name: 'session-handoff',
+        event: 'session.handoff',
+        handler: async (ctx) => {
+            await (0, handoff_1.handoffHook)({
+                from: ctx.from,
+                to: ctx.to,
+                goalId: ctx.goalId,
+                context: ctx.context,
+                projectDir: directory
+            });
+        },
+        priority: 100
+    });
     // ── V5 Hybrid Search 工具函数 ──
-    async function executeHybridSearch({ goalId, query, maxResults = 10, tokenBudget = 2000 }) {
-        // 1. Read goal memories/data from filesystem
-        const goalFile = path.join(mafwDir, 'goals', `${goalId}.md`);
-        const goalText = fs.existsSync(goalFile) ? fs.readFileSync(goalFile, 'utf-8') : '';
-        const stateFile = path.join(mafwDir, 'state', `${goalId}.json`);
-        const stateData = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf-8')) : null;
-        const loop = stateData?.loop || 1;
+    async function executeHybridSearch({ query, maxResults = 10, tokenBudget = 2000 }) {
         // 2. Search BM25 index
         let bm25Results = [];
         try {
@@ -246,7 +398,7 @@ async function MafwPlugin({ directory }) {
         // 4. Read parametric deltas from store
         let parametricDeltas = [];
         try {
-            parametricDeltas = parametricStore.match({ domain: 'any', goalKeywords: [goalId] });
+            parametricDeltas = parametricStore.match({ domain: 'any' });
         }
         catch { /* ignore */ }
         // 5. Read review files for episodic memories
@@ -254,7 +406,7 @@ async function MafwPlugin({ directory }) {
         try {
             const reviewsDir = path.join(mafwDir, 'reviews');
             if (fs.existsSync(reviewsDir)) {
-                const files = fs.readdirSync(reviewsDir).filter(f => f.startsWith(goalId) && f.endsWith('.md'));
+                const files = fs.readdirSync(reviewsDir).filter(f => f.endsWith('.md'));
                 for (const f of files) {
                     const content = fs.readFileSync(path.join(reviewsDir, f), 'utf-8');
                     const loopMatch = f.match(/loop(\d+)/);
@@ -295,9 +447,6 @@ async function MafwPlugin({ directory }) {
         }
         for (const r of reviewFiles) {
             episodic.push({ id: r.id, score: 0.5, summary: r.content.substring(0, 200), verdict: r.verdict, energy: r.energy });
-        }
-        if (goalText && semantic.length === 0) {
-            semantic.push({ id: `${goalId}-charter`, score: 1.0, facts: [goalText.substring(0, 500)], concepts: [goalId], energy: 0.8 });
         }
         // 8a. Record associations in cognitive graph
         if (cognitiveGraph) {
@@ -371,7 +520,7 @@ async function MafwPlugin({ directory }) {
             // 1. V5 Hybrid search (try; fall back to existing logic)
             let hybridResults = null;
             try {
-                hybridResults = await executeHybridSearch({ goalId, query: text, maxResults: 10, tokenBudget: 2000 });
+                hybridResults = await executeHybridSearch({ query: text, maxResults: 10, tokenBudget: 2000 });
             }
             catch { /* ignore search failures */ }
             // 2. 读取三层记忆（Plugin 直接读文件，不通过 Gateway）
@@ -531,19 +680,31 @@ async function MafwPlugin({ directory }) {
         // ── Hook aliases for OpenCode v4.1 format (delegated to HookManager) ──
         hooks: {
             'session.end': (ctx) => hookManager.execute('session.end', ctx),
-            'tool.execute.after': (ctx, result) => hookManager.execute('tool.execute.after', { ...ctx, data: result })
+            'tool.execute.before': (ctx) => hookManager.execute('tool.execute.before', ctx),
+            'tool.execute.after': (ctx, result) => hookManager.execute('tool.execute.after', { ...ctx, data: result }),
+            'chat.message': (ctx) => {
+                hookManager.execute('user.prompt.submit', ctx);
+                return { message: ctx.message, parts: ctx.parts };
+            },
         },
         // ── Session 压缩前：保存状态快照 ──
         'experimental.session.compacting': async ({ sessionID }, { snapshot }) => {
-            // 简化实现：记录日志，不做复杂操作
-            console.log(`[MAFW] Session compacting: ${sessionID}`);
+            await hookManager.execute('session.compacting', { sessionID, projectDir: directory });
+        },
+        'experimental.text.complete': async ({ sessionID, messageID, partID }, result) => {
+            await hookManager.execute('llm.call.after', {
+                sessionID, messageID, partID, text: result?.text || ''
+            });
         },
         // ── 事件钩子：Session 生命周期兜底 ──
         event: async ({ event }) => {
-            if (event.type === 'session.start') {
-                console.log('[MAFW] Session started:', event.sessionID);
+            if (event.type === 'session.created' || event.type === 'session.start') {
+                await hookManager.execute('session.start', {
+                    sessionId: event.info?.id || event.sessionID,
+                    projectDir: directory
+                });
             }
-        }
+        },
     };
 }
 // ── 内部工具函数 ──

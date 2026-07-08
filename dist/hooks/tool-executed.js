@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.toolExecutedHook = toolExecutedHook;
+const observation_capture_1 = require("./observation-capture");
 async function toolExecutedHook(hookContext) {
     const { toolName, output, projectDir } = hookContext;
     // 检查输出长度
@@ -10,5 +11,6 @@ async function toolExecutedHook(hookContext) {
         const truncated = output.length > 2000 ? output.slice(0, 500) + '\n... [TRUNCATED] ...\n' + output.slice(-500) : output;
         console.log(`[hook:tool-executed] Output compressed for ${toolName} (${truncated.length} chars)`);
     }
+    await (0, observation_capture_1.captureObservation)({ toolName, output, args: '' });
 }
 //# sourceMappingURL=tool-executed.js.map

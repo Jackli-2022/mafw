@@ -8,7 +8,12 @@ import { Delta, MergeResult } from '../types/parametric';
  *   3. 版本升级（superseded 标记）
  *   4. 与 ParametricStore.ban 配合处理震荡 Δ
  */
+interface HookManagerLike {
+    execute(event: string, context: any): Promise<void>;
+}
 export declare class DeltaMerger {
+    private hookManager;
+    constructor(hookManager?: HookManagerLike | null);
     /**
      * 合并候选 Δ 列表，去重并解决冲突。
      */
@@ -19,4 +24,5 @@ export declare class DeltaMerger {
     private findSemanticDuplicate;
     private getContent;
 }
+export {};
 //# sourceMappingURL=merger.d.ts.map

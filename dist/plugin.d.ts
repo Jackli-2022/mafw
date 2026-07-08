@@ -66,9 +66,15 @@ export default function MafwPlugin({ directory }: {
     };
     hooks: {
         'session.end': (ctx: any) => Promise<void>;
+        'tool.execute.before': (ctx: any) => Promise<void>;
         'tool.execute.after': (ctx: any, result: any) => Promise<void>;
+        'chat.message': (ctx: any) => {
+            message: any;
+            parts: any;
+        };
     };
     'experimental.session.compacting': ({ sessionID }: any, { snapshot }: any) => Promise<void>;
+    'experimental.text.complete': ({ sessionID, messageID, partID }: any, result: any) => Promise<void>;
     event: ({ event }: any) => Promise<void>;
 }>;
 //# sourceMappingURL=plugin.d.ts.map
