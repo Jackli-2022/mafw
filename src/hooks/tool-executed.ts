@@ -1,4 +1,5 @@
 import { SessionPruner } from '../compression/session-pruner';
+import { captureObservation } from './observation-capture';
 
 /**
  * tool-executed Hook — 工具输出压缩
@@ -30,4 +31,6 @@ export async function toolExecutedHook(hookContext: ToolExecutedHookContext): Pr
     const truncated = output.length > 2000 ? output.slice(0, 500) + '\n... [TRUNCATED] ...\n' + output.slice(-500) : output;
     console.log(`[hook:tool-executed] Output compressed for ${toolName} (${truncated.length} chars)`);
   }
+
+  await captureObservation({ toolName, output, args: '' });
 }
