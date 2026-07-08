@@ -1,6 +1,6 @@
 export interface HarmonicUnit {
   id: string;
-  goal_id: string | null;
+  goal_id?: string;
   memory_type: 'episodic' | 'semantic' | 'procedural' | 'global';
   primary_abstraction: string;
   cue_anchors: string[];
@@ -24,10 +24,10 @@ export interface HarmonicIndex {
 
 export interface HarmonicIndexEntry {
   id: string;
+  goal_id?: string;
   primary_abstraction: string;
   cue_anchors: string[];
   memory_type: string;
-  goal_id: string | null;
   tier: string;
   energy: number;
 }

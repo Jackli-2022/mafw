@@ -40,6 +40,7 @@ export class HarmonicIndexManager {
       primary_abstraction: unit.primary_abstraction,
       cue_anchors: unit.cue_anchors,
       memory_type: unit.memory_type,
+      goal_id: unit.goal_id,
       tier,
       energy: unit.energy
     });
