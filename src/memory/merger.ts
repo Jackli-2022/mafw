@@ -9,7 +9,17 @@ import { Delta, MergeResult, Conflict } from '../types/parametric';
  *   3. 版本升级（superseded 标记）
  *   4. 与 ParametricStore.ban 配合处理震荡 Δ
  */
+interface HookManagerLike {
+  execute(event: string, context: any): Promise<void>;
+}
+
 export class DeltaMerger {
+  private hookManager: HookManagerLike | null;
+
+  constructor(hookManager?: HookManagerLike | null) {
+    this.hookManager = hookManager || null;
+  }
+
   /**
    * 合并候选 Δ 列表，去重并解决冲突。
    */
@@ -22,6 +32,13 @@ export class DeltaMerger {
       // 1. 严格去重：相同 ID
       if (merged.has(d.id)) {
         const existing = merged.get(d.id)!;
+        this.hookManager?.execute('memory.contradiction', {
+          existingId: existing.id,
+          newId: d.id,
+          field: 'id',
+          existingValue: existing.id,
+          newValue: d.id
+        });
         if (d.energy_score > existing.energy_score) {
           conflicts.push({
             deltaId: d.id,
@@ -46,6 +63,13 @@ export class DeltaMerger {
           deltaId: d.id,
           reason: 'duplicate',
           suggestion: `语义重复于 ${semanticDup.id}`
+        });
+        this.hookManager?.execute('memory.contradiction', {
+          existingId: semanticDup.id,
+          newId: d.id,
+          field: 'content',
+          existingValue: this.getContent(semanticDup).substring(0, 100),
+          newValue: this.getContent(d).substring(0, 100)
         });
         if (d.energy_score > semanticDup.energy_score) {
           merged.set(d.id, d);
