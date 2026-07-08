@@ -1,0 +1,37 @@
+import * as fs from "fs";
+import * as path from "path";
+import { ToolHandler } from "../../types";
+import { eventBus } from "../../event-bus";
+
+const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
+
+export const handleAskUser: ToolHandler = async (args) => {
+  try {
+    const question = args.question as string;
+    const goalId = args.goalId as string;
+    const loopNum = args.loopNum as number;
+    const options = args.options as string[] | undefined;
+    const priority = (args.priority as string) || "normal";
+
+    const questionDir = path.join(projectDir, ".opencode/mafw/user-questions", goalId);
+    fs.mkdirSync(questionDir, { recursive: true });
+
+    const questionId = `${goalId}-q-${Date.now()}`;
+    const questionFile = {
+      id: questionId, goalId, loopNum, question, options, priority,
+      status: "pending", createdAt: new Date().toISOString(),
+    };
+
+    fs.writeFileSync(
+      path.join(questionDir, `${questionId}.json`),
+      JSON.stringify(questionFile, null, 2),
+      "utf-8"
+    );
+
+    eventBus.emit("user_question", { type: "user_question", goalId, questionId });
+
+    return { content: [{ type: "text", text: JSON.stringify({ success: true, questionId, status: "pending" }) }] };
+  } catch (err: any) {
+    return { content: [{ type: "text", text: JSON.stringify({ error: err.message }) }], isError: true };
+  }
+};

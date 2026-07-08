@@ -1,3 +1,9 @@
+/**
+ * @deprecated MCP Server is now embedded in Gateway via SSE transport.
+ * This file is kept for ENABLE_LEGACY_MCP fallback only.
+ * See gateway/src/mcp/sse-transport.ts for the active implementation.
+ * Will be removed in next major version.
+ */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {

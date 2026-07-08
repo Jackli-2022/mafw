@@ -5,8 +5,13 @@
   ],
   "mcpServers": {
     "mafw": {
-      "command": "node",
-      "args": ["node_modules/opencode-plugin-mafw/dist/mcp-server.js"]
+      "transports": [
+        {
+          "type": "sse",
+          "url": "http://127.0.0.1:3000/mcp",
+          "sessionId": "mafw"
+        }
+      ]
     }
   }
 }

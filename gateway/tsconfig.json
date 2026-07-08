@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "moduleResolution": "nodenext"
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../src/**/*"]
 }
