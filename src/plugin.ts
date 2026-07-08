@@ -17,6 +17,11 @@ import { CognitiveGraphManager } from './memory/cognitive-graph';
 import { ReviewScheduler } from './memory/review-scheduler';
 import { CostEstimator } from './cost/cost-estimator';
 import type { CostRecord } from './cost/types';
+import { sessionStartHook } from './hooks/session-start';
+import { toolBeforeHook } from './hooks/tool-before';
+import { userPromptHook } from './hooks/user-prompt';
+import { llmAfterHook } from './hooks/llm-after';
+import { sessionCompactingHook } from './hooks/session-compacting';
 
 
 /**
@@ -261,17 +266,60 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 100
   });
 
-  // ── V5 Hybrid Search 工具函数 ──
-  async function executeHybridSearch({ goalId, query, maxResults = 10, tokenBudget = 2000 }: {
-    goalId: string; query: string; maxResults?: number; tokenBudget?: number;
-  }): Promise<HybridSearchResult> {
-    // 1. Read goal memories/data from filesystem
-    const goalFile = path.join(mafwDir, 'goals', `${goalId}.md`);
-    const goalText = fs.existsSync(goalFile) ? fs.readFileSync(goalFile, 'utf-8') : '';
-    const stateFile = path.join(mafwDir, 'state', `${goalId}.json`);
-    const stateData = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf-8')) : null;
-    const loop = stateData?.loop || 1;
+  // ── Wave 2: Session Start ──
+  hookManager.register({
+    name: 'session-start',
+    event: 'session.start',
+    handler: async (ctx) => {
+      await sessionStartHook({ sessionId: ctx.sessionId, projectDir: directory });
+    },
+    priority: 5
+  });
 
+  // ── Wave 2: Tool Before ──
+  hookManager.register({
+    name: 'tool-before',
+    event: 'tool.execute.before',
+    handler: async (ctx) => {
+      await toolBeforeHook({ tool: ctx.tool, sessionID: ctx.sessionID, callID: ctx.callID, args: ctx.args });
+    },
+    priority: 100
+  });
+
+  // ── Wave 2: User Prompt ──
+  hookManager.register({
+    name: 'user-prompt',
+    event: 'user.prompt.submit',
+    handler: async (ctx) => {
+      await userPromptHook({ sessionID: ctx.sessionID, text: ctx.message?.parts?.[0]?.text || '' });
+    },
+    priority: 50
+  });
+
+  // ── Wave 2: LLM After ──
+  hookManager.register({
+    name: 'llm-after',
+    event: 'llm.call.after',
+    handler: async (ctx) => {
+      await llmAfterHook({ sessionID: ctx.sessionID, text: ctx.text });
+    },
+    priority: 50
+  });
+
+  // ── Wave 2: Session Compacting ──
+  hookManager.register({
+    name: 'session-compacting',
+    event: 'session.compacting',
+    handler: async (ctx) => {
+      await sessionCompactingHook({ sessionID: ctx.sessionID, projectDir: directory });
+    },
+    priority: 100
+  });
+
+  // ── V5 Hybrid Search 工具函数 ──
+  async function executeHybridSearch({ query, maxResults = 10, tokenBudget = 2000 }: {
+    query: string; maxResults?: number; tokenBudget?: number;
+  }): Promise<HybridSearchResult> {
     // 2. Search BM25 index
     let bm25Results: RRFResult[] = [];
     try { bm25Results = (memoryIndex.searchBM25(query, maxResults) || []).map(r => ({ id: `bm25-${r.id}`, score: r.score, text: r.text, loopNum: 1 })); } catch { /* ignore */ }
@@ -299,14 +347,14 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
 
     // 4. Read parametric deltas from store
     let parametricDeltas: any[] = [];
-    try { parametricDeltas = parametricStore.match({ domain: 'any', goalKeywords: [goalId] }); } catch { /* ignore */ }
+    try { parametricDeltas = parametricStore.match({ domain: 'any' }); } catch { /* ignore */ }
 
     // 5. Read review files for episodic memories
     const reviewFiles: any[] = [];
     try {
       const reviewsDir = path.join(mafwDir, 'reviews');
       if (fs.existsSync(reviewsDir)) {
-        const files = fs.readdirSync(reviewsDir).filter(f => f.startsWith(goalId) && f.endsWith('.md'));
+        const files = fs.readdirSync(reviewsDir).filter(f => f.endsWith('.md'));
         for (const f of files) {
           const content = fs.readFileSync(path.join(reviewsDir, f), 'utf-8');
           const loopMatch = f.match(/loop(\d+)/);
@@ -348,10 +396,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
 
     for (const r of reviewFiles) {
       episodic.push({ id: r.id, score: 0.5, summary: r.content.substring(0, 200), verdict: r.verdict, energy: r.energy });
-    }
-
-    if (goalText && semantic.length === 0) {
-      semantic.push({ id: `${goalId}-charter`, score: 1.0, facts: [goalText.substring(0, 500)], concepts: [goalId], energy: 0.8 });
     }
 
     // 8a. Record associations in cognitive graph
@@ -430,7 +474,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
 
       // 1. V5 Hybrid search (try; fall back to existing logic)
       let hybridResults: HybridSearchResult | null = null;
-      try { hybridResults = await executeHybridSearch({ goalId, query: text, maxResults: 10, tokenBudget: 2000 }); } catch { /* ignore search failures */ }
+      try { hybridResults = await executeHybridSearch({ query: text, maxResults: 10, tokenBudget: 2000 }); } catch { /* ignore search failures */ }
 
       // 2. 读取三层记忆（Plugin 直接读文件，不通过 Gateway）
       let deltas: any[] = [];
@@ -600,21 +644,34 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     // ── Hook aliases for OpenCode v4.1 format (delegated to HookManager) ──
     hooks: {
       'session.end': (ctx: any) => hookManager.execute('session.end', ctx),
-      'tool.execute.after': (ctx: any, result: any) => hookManager.execute('tool.execute.after', { ...ctx, data: result })
+      'tool.execute.before': (ctx: any) => hookManager.execute('tool.execute.before', ctx),
+      'tool.execute.after': (ctx: any, result: any) => hookManager.execute('tool.execute.after', { ...ctx, data: result }),
+      'chat.message': (ctx: any) => {
+        hookManager.execute('user.prompt.submit', ctx);
+        return { message: ctx.message, parts: ctx.parts };
+      },
     },
 
     // ── Session 压缩前：保存状态快照 ──
     'experimental.session.compacting': async ({ sessionID }: any, { snapshot }: any) => {
-      // 简化实现：记录日志，不做复杂操作
-      console.log(`[MAFW] Session compacting: ${sessionID}`);
+      await hookManager.execute('session.compacting', { sessionID, projectDir: directory });
+    },
+
+    'experimental.text.complete': async ({ sessionID, messageID, partID }: any, result: any) => {
+      await hookManager.execute('llm.call.after', {
+        sessionID, messageID, partID, text: result?.text || ''
+      });
     },
 
     // ── 事件钩子：Session 生命周期兜底 ──
     event: async ({ event }: any) => {
-      if (event.type === 'session.start') {
-        console.log('[MAFW] Session started:', event.sessionID);
+      if (event.type === 'session.created' || event.type === 'session.start') {
+        await hookManager.execute('session.start', {
+          sessionId: event.info?.id || event.sessionID,
+          projectDir: directory
+        });
       }
-    }
+    },
   };
 }
 

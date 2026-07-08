@@ -71,7 +71,6 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         properties: {
           query: { type: 'string', description: 'Search query text' },
           topK: { type: 'number', description: 'Maximum results to return', default: 20 },
-          goalId: { type: 'string', description: 'Optional goal ID filter' },
           memoryType: { type: 'string', enum: ['episodic', 'semantic', 'procedural', 'global'], description: 'Optional memory type filter' },
         },
         required: ['query'],

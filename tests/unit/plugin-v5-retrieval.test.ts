@@ -67,7 +67,7 @@ function setupReviewFile(goalId = '001-auth', loop = 1, verdict = 'FAIL') {
 
 describe('experimental.chat.messages.transform with V5 hybrid search', () => {
 
-  test('injects <mafw-deltas>, <mafw-facts>, <mafw-history> when hybrid search has results', async () => {
+  test('injects <mafw-context> when goal state exists', async () => {
     setupGoalFiles('005-hybrid');
     const plugin = await MafwPlugin({ directory: tmpDir });
     const output = {
@@ -75,8 +75,8 @@ describe('experimental.chat.messages.transform with V5 hybrid search', () => {
     };
     await (plugin as any)['experimental.chat.messages.transform']({}, output);
     const injected = output.messages[0].parts[0].text;
-    expect(injected).toContain('<mafw-facts>');
-    expect(injected).toContain('Goal Charter');
+    expect(injected).toContain('<mafw-context>');
+    expect(injected).toContain('/skill mafw-plan 005-hybrid');
   });
 
   test('falls back to original message when no memories exist', async () => {
