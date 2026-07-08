@@ -63,6 +63,9 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   const knowledgeGraphManager = new KnowledgeGraphManager(path.join(mafwDir, 'knowledge-graph.json'));
   await knowledgeGraphManager.load();
 
+  // ── Hook Manager (moved before HarmonicIndex which needs it) ──
+  const hookManager = new HookManager({ failBehavior: 'continue', timeout: 30000 });
+
   // ── v6.3 Harmonic Index ──
   const harmonicIndex = new HarmonicIndexManager(mafwDir, hookManager);
 
@@ -131,8 +134,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     }
   }
 
-  // ── Hook Manager (Wave 2: Task 3) ──
-  const hookManager = new HookManager({ failBehavior: 'continue', timeout: 30000 });
   hookManager.register({
     name: 'session-ending',
     event: 'session.end',
@@ -203,6 +204,61 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
         ctx.compressInjection = true;
       }
     }
+  });
+
+  // ── Wave 1: Memory Internal Hooks ──
+  hookManager.register({
+    name: 'memory-write-handler',
+    event: 'memory.write',
+    handler: async (ctx) => {
+      const { unit, tier, source } = ctx.data || ctx;
+      console.log(`[hook:memory.write] ${unit?.id} -> tier ${tier} (from ${source})`);
+      if (cognitiveGraph && unit) {
+        if (unit.goal_id) {
+          cognitiveGraph.addConnection(unit.id, `goal:${unit.goal_id}`);
+        }
+      }
+    },
+    priority: 100
+  });
+
+  hookManager.register({
+    name: 'memory-recall-handler',
+    event: 'memory.recall',
+    handler: async (ctx) => {
+      const { query, resultIds } = ctx.data || ctx;
+      console.log(`[hook:memory.recall] "${query?.substring(0, 50) || ''}" -> ${resultIds?.length || 0} results`);
+      if (cognitiveGraph && resultIds && resultIds.length > 1) {
+        for (let i = 0; i < resultIds.length; i++) {
+          for (let j = i + 1; j < resultIds.length; j++) {
+            cognitiveGraph.addConnection(resultIds[i], resultIds[j]);
+          }
+        }
+      }
+    },
+    priority: 100
+  });
+
+  hookManager.register({
+    name: 'memory-contradiction-handler',
+    event: 'memory.contradiction',
+    handler: async (ctx) => {
+      const { existingId, newId, field, existingValue, newValue } = ctx.data || ctx;
+      console.log(`[hook:memory.contradiction] ${existingId} vs ${newId} on ${field}`);
+    },
+    priority: 100
+  });
+
+  hookManager.register({
+    name: 'memory-decay-handler',
+    event: 'memory.decay',
+    handler: async (ctx) => {
+      const { oldEnergy, newEnergy, reason, unitId } = ctx.data || ctx;
+      if (newEnergy < 0.3) {
+        console.log(`[hook:memory.decay] ${unitId} fell below cleanup threshold (${newEnergy})`);
+      }
+    },
+    priority: 100
   });
 
   // ── V5 Hybrid Search 工具函数 ──
