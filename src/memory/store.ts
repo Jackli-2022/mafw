@@ -70,7 +70,7 @@ export class ParametricStore {
       if (existing === data) return; // 无变化，跳过
     }
     const daysSinceCreated = Math.max(0, (Date.now() - new Date(delta.created_at).getTime()) / 86_400_000);
-    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, { type: 'retrieved' }, daysSinceCreated);
+    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, { type: 'retrieved' }, daysSinceCreated, 1.0, delta.id);
     fs.writeFileSync(p, yaml.dump(delta, { lineWidth: -1 }), 'utf-8');
   }
 
@@ -81,7 +81,7 @@ export class ParametricStore {
     const delta = this.load(id, type);
     if (!delta) return;
     const daysSinceCreated = Math.max(0, (Date.now() - new Date(delta.created_at).getTime()) / 86_400_000);
-    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, event, daysSinceCreated);
+    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, event, daysSinceCreated, 1.0, delta.id);
     fs.writeFileSync(this.deltaPath(id, type), yaml.dump(delta, { lineWidth: -1 }), 'utf-8');
   }
 

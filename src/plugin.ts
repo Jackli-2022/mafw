@@ -317,6 +317,43 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 100
   });
 
+  // ── Handoff detection: fires session.handoff on phase transitions ──
+  hookManager.register({
+    name: 'handoff-detector',
+    event: 'session.end',
+    priority: 90,
+    handler: async (ctx) => {
+      try {
+        const stateDir = path.join(mafwDir, 'state');
+        if (!fs.existsSync(stateDir)) return;
+        const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
+        for (const file of files) {
+          const state = JSON.parse(fs.readFileSync(path.join(stateDir, file), 'utf-8'));
+          const session = Object.entries(state.sessions || {}).find(([_, s]: any) => (s as any).id === ctx.sessionID);
+          if (!session) continue;
+          const [phase] = session;
+
+          let nextPhase = '';
+          if (state.nextAction === 'CREATE_EXECUTE_SESSION') nextPhase = 'EXECUTING';
+          else if (state.nextAction === 'CREATE_REVIEW_SESSION') nextPhase = 'REVIEW';
+          else if (state.nextAction === 'CREATE_PLAN_SESSION') nextPhase = 'PLANNING';
+          else if (state.nextAction === 'PASS' || state.nextAction === 'FAIL') nextPhase = state.nextAction;
+
+          if (nextPhase) {
+            await hookManager.execute('session.handoff', {
+              from: phase,
+              to: nextPhase,
+              goalId: state.goalId,
+              context: { wave: state.currentWave, loop: state.loop }
+            });
+          }
+        }
+      } catch (err: any) {
+        console.error(`[hook:handoff-detector] Error: ${err.message}`);
+      }
+    }
+  });
+
   // ── Wave 3: Handoff ──
   hookManager.register({
     name: 'session-handoff',

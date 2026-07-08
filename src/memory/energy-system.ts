@@ -45,7 +45,7 @@ export class EnergySystem {
     this.hookManager = config?.hookManager || null;
   }
 
-  calculateEnergy(currentEnergy: number, event: EnergyEvent, daysSinceLastUpdate: number, salience: number = 1.0): number {
+  calculateEnergy(currentEnergy: number, event: EnergyEvent, daysSinceLastUpdate: number, salience: number = 1.0, unitId?: string): number {
     const effectiveDecay = this.decayRatePerDay * (1 / Math.max(0.1, salience));
     let energy = currentEnergy - effectiveDecay * Math.max(0, daysSinceLastUpdate);
     energy += EVENT_DELTAS[event.type];
@@ -57,7 +57,7 @@ export class EnergySystem {
         oldEnergy: currentEnergy,
         newEnergy: clamped,
         reason: `decay: ${effectiveDecay * Math.max(0, daysSinceLastUpdate)} over ${daysSinceLastUpdate} days, event: ${event.type}`,
-        unitId: 'unknown'
+        unitId: unitId || 'unknown'
       });
     }
 
