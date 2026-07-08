@@ -9,6 +9,7 @@ import { HarmonicIndexManager } from "./memory/harmonic-index";
 import { KnowledgeGraphManager } from "./graph/knowledge-graph-manager";
 import { CostEstimator } from "./cost/cost-estimator";
 import { CognitiveRouter } from "./cost/cognitive-router";
+import { registerTools } from "./mcp/tools";
 
 const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 const gatewayUrl = process.env.MAFW_GATEWAY_URL || "http://localhost:3004";
@@ -19,6 +20,8 @@ const knowledgeGraph = new KnowledgeGraphManager(
 );
 const costEstimator = new CostEstimator();
 const cognitiveRouter = new CognitiveRouter();
+
+const { definitions, handlers } = registerTools();
 
 const server = new Server(
   {
@@ -33,11 +36,17 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [],
+  tools: definitions,
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  throw new Error(`Unknown tool: ${request.params.name}`);
+  const toolName = request.params.name;
+  const handler = handlers[toolName];
+  if (!handler) {
+    throw new Error(`Unknown tool: ${toolName}`);
+  }
+  const args = request.params.arguments ?? {};
+  return handler(args as Record<string, unknown>);
 });
 
 async function main(): Promise<void> {
