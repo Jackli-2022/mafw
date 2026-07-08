@@ -22,6 +22,7 @@ import { toolBeforeHook } from './hooks/tool-before';
 import { userPromptHook } from './hooks/user-prompt';
 import { llmAfterHook } from './hooks/llm-after';
 import { sessionCompactingHook } from './hooks/session-compacting';
+import { handoffHook } from './hooks/handoff';
 
 
 /**
@@ -312,6 +313,22 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     event: 'session.compacting',
     handler: async (ctx) => {
       await sessionCompactingHook({ sessionID: ctx.sessionID, projectDir: directory });
+    },
+    priority: 100
+  });
+
+  // ── Wave 3: Handoff ──
+  hookManager.register({
+    name: 'session-handoff',
+    event: 'session.handoff',
+    handler: async (ctx) => {
+      await handoffHook({
+        from: ctx.from,
+        to: ctx.to,
+        goalId: ctx.goalId,
+        context: ctx.context,
+        projectDir: directory
+      });
     },
     priority: 100
   });
