@@ -153,8 +153,6 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           content: { type: 'string', description: 'Memory content text to remember' },
           memoryType: { type: 'string', enum: ['semantic', 'episodic', 'procedural', 'global'], description: 'Memory type. semantic=fact, episodic=narrative, procedural=pattern, global=cross-project' },
           cueAnchors: { type: 'array', items: { type: 'string' }, description: 'Tags/keywords for retrieval (max 8)' },
-          scope: { type: 'string', enum: ['project', 'global'], description: 'Scope: project (bound to goal) or global', default: 'project' },
-          goalId: { type: 'string', description: 'Goal ID to bind this memory to (required if scope=project)' },
           primaryAbstraction: { type: 'string', description: '6-8 word summary (auto-generated from content if omitted)' },
         },
         required: ['content', 'memoryType'],
@@ -243,9 +241,6 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         const results = index.search(query, topK);
 
         let filtered = results;
-        if (args.goalId) {
-          filtered = filtered.filter((r) => r.goal_id === args.goalId);
-        }
         if (args.memoryType) {
           filtered = filtered.filter((r) => r.memory_type === args.memoryType);
         }
@@ -360,8 +355,6 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         const content = args.content as string;
         const memoryType = (args.memoryType as string) || 'semantic';
         const cueAnchors = (args.cueAnchors as string[]) || [];
-        const scope = (args.scope as string) || 'project';
-        const goalId = (args.goalId as string) || null;
         const primaryAbstraction = (args.primaryAbstraction as string) || content.slice(0, 80);
 
         if (!['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
@@ -371,7 +364,6 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         const now = new Date().toISOString();
         const unit: HarmonicUnit = {
           id: generateHarmonicId(),
-          goal_id: scope === 'global' ? null : goalId,
           memory_type: memoryType as HarmonicUnit['memory_type'],
           primary_abstraction: primaryAbstraction.slice(0, 200),
           cue_anchors: cueAnchors.slice(0, 8),
@@ -389,12 +381,11 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           : memoryType === 'global' ? 'tier1'
           : 'tier3';
 
-        const goalFile = unit.goal_id || '__global__';
-        const tierDir = path.join(mafwDir, 'memory', tier);
-        const filePath = path.join(tierDir, `${goalFile}.json`);
+        const memoryDir = path.join(mafwDir, 'memory');
+        const filePath = path.join(memoryDir, `${tier}.json`);
 
-        if (!fs.existsSync(tierDir)) {
-          fs.mkdirSync(tierDir, { recursive: true });
+        if (!fs.existsSync(memoryDir)) {
+          fs.mkdirSync(memoryDir, { recursive: true });
         }
 
         const existing: HarmonicUnit[] = fs.existsSync(filePath)

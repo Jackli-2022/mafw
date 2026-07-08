@@ -18,18 +18,18 @@ function getSimilarityKey(abstraction: string): string {
     .join(' ');
 }
 
-function loadTierUnits(baseDir: string, tier: string, goalId: string): HarmonicUnit[] {
-  const filePath = path.join(baseDir, 'memory', tier, `${goalId}.json`);
+function loadTierUnits(baseDir: string, tier: string): HarmonicUnit[] {
+  const filePath = path.join(baseDir, 'memory', `${tier}.json`);
   if (!fs.existsSync(filePath)) return [];
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
-function saveTierUnits(baseDir: string, tier: string, goalId: string, units: HarmonicUnit[]): void {
-  const dirPath = path.join(baseDir, 'memory', tier);
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
+function saveTierUnits(baseDir: string, tier: string, units: HarmonicUnit[]): void {
+  const memoryDir = path.join(baseDir, 'memory');
+  if (!fs.existsSync(memoryDir)) {
+    fs.mkdirSync(memoryDir, { recursive: true });
   }
-  fs.writeFileSync(path.join(dirPath, `${goalId}.json`), JSON.stringify(units, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(memoryDir, `${tier}.json`), JSON.stringify(units, null, 2), 'utf-8');
 }
 
 export async function runDistillation(
@@ -44,8 +44,7 @@ export async function runDistillation(
 
   const groups = new Map<string, typeof t2Entries>();
   for (const entry of t2Entries) {
-    const goalKey = entry.goal_id || '__global__';
-    const key = `${goalKey}::${getSimilarityKey(entry.primary_abstraction)}`;
+    const key = getSimilarityKey(entry.primary_abstraction);
     if (!groups.has(key)) {
       groups.set(key, []);
     }
@@ -55,15 +54,14 @@ export async function runDistillation(
   for (const [, entries] of groups) {
     if (entries.length < 3) continue;
 
-    const goalId = entries[0].goal_id || '__global__';
     const oldIds = entries.map(e => e.id);
 
     // Load full unit data from tier2 files
-    const tier2Units = loadTierUnits(baseDir, 'tier2', goalId);
+    const tier2Units = loadTierUnits(baseDir, 'tier2');
     const matchedUnits = tier2Units.filter(u => oldIds.includes(u.id));
 
     if (matchedUnits.length < 3) {
-      result.errors.push(`Found ${entries.length} index entries but only ${matchedUnits.length} full units for goal ${goalId}`);
+      result.errors.push(`Found ${entries.length} index entries but only ${matchedUnits.length} full units`);
       continue;
     }
 
@@ -73,7 +71,6 @@ export async function runDistillation(
 
     const newUnit: HarmonicUnit = {
       id: generateHarmonicId(),
-      goal_id: goalId,
       memory_type: 'semantic',
       primary_abstraction: matchedUnits[0].primary_abstraction,
       cue_anchors: mergedAnchors,
@@ -85,9 +82,9 @@ export async function runDistillation(
     };
 
     // Write to tier3 file (append to array)
-    const existingT3 = loadTierUnits(baseDir, 'tier3', goalId);
+    const existingT3 = loadTierUnits(baseDir, 'tier3');
     existingT3.push(newUnit);
-    saveTierUnits(baseDir, 'tier3', goalId, existingT3);
+    saveTierUnits(baseDir, 'tier3', existingT3);
 
     indexManager.addEntry(newUnit, 'tier3');
     result.created++;
@@ -101,15 +98,8 @@ export async function runDistillation(
 
   // Rule 2: T4 Procedural → L5 Global (count only)
   const t4Entries = index.entries.filter(e => e.tier === 'tier4' && e.memory_type === 'procedural');
-  const t4ByGoal = new Map<string, number>();
-  for (const entry of t4Entries) {
-    const gid = entry.goal_id || 'null';
-    t4ByGoal.set(gid, (t4ByGoal.get(gid) || 0) + 1);
-  }
-  for (const [gid, count] of t4ByGoal) {
-    if (count >= 5) {
-      console.log(`[AbstractionDistiller] Goal ${gid} has ${count} T4 entries (threshold: 5). L5 creation not yet implemented.`);
-    }
+  if (t4Entries.length >= 5) {
+    console.log(`[AbstractionDistiller] Found ${t4Entries.length} T4 entries in total (threshold: 5). L5 creation not yet implemented.`);
   }
 
   return result;

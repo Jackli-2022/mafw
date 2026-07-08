@@ -28,7 +28,6 @@ export async function migrateV61(baseDir: string, indexManager: HarmonicIndexMan
         const content = fs.readFileSync(path.join(lessonsDir, file), 'utf-8');
         const unit: HarmonicUnit = {
           id: generateHarmonicId(),
-          goal_id: file.split('-')[0] || null,
           memory_type: 'episodic',
           primary_abstraction: file.replace(/\.[^.]+$/, '').slice(0, 50),
           cue_anchors: extractAnchors(content),
@@ -37,8 +36,7 @@ export async function migrateV61(baseDir: string, indexManager: HarmonicIndexMan
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
-        const goalId = unit.goal_id || '__global__';
-        const tier2File = path.join(memoryDir, 'tier2', `${goalId}.json`);
+        const tier2File = path.join(memoryDir, 'tier2.json');
         const existing = fs.existsSync(tier2File) ? JSON.parse(fs.readFileSync(tier2File, 'utf-8')) : [];
         existing.push(unit);
         fs.writeFileSync(tier2File, JSON.stringify(existing, null, 2), 'utf-8');
@@ -59,7 +57,6 @@ export async function migrateV61(baseDir: string, indexManager: HarmonicIndexMan
         const content = fs.readFileSync(path.join(parametricDir, file), 'utf-8');
         const unit: HarmonicUnit = {
           id: generateHarmonicId(),
-          goal_id: null,
           memory_type: 'semantic',
           primary_abstraction: file.replace(/\.[^.]+$/, '').slice(0, 50),
           cue_anchors: extractAnchors(content),
@@ -68,7 +65,7 @@ export async function migrateV61(baseDir: string, indexManager: HarmonicIndexMan
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
-        const tier3File = path.join(memoryDir, 'tier3', 'parametric.json');
+        const tier3File = path.join(memoryDir, 'tier3.json');
         const existing = fs.existsSync(tier3File) ? JSON.parse(fs.readFileSync(tier3File, 'utf-8')) : [];
         existing.push(unit);
         fs.writeFileSync(tier3File, JSON.stringify(existing, null, 2), 'utf-8');

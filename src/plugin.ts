@@ -64,7 +64,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   await knowledgeGraphManager.load();
 
   // ── v6.3 Harmonic Index ──
-  const harmonicIndex = new HarmonicIndexManager(mafwDir);
+  const harmonicIndex = new HarmonicIndexManager(mafwDir, hookManager);
 
   // ── v6.4 Cognitive Graph (association network) ──
   const cognitiveGraph = new CognitiveGraphManager(mafwDir);

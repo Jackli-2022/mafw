@@ -12,7 +12,7 @@ describe('Harmonic Types', () => {
     const types: HarmonicUnit['memory_type'][] = ['episodic', 'semantic', 'procedural', 'global'];
     types.forEach(t => {
       const unit: HarmonicUnit = {
-        id: generateHarmonicId(), goal_id: null, memory_type: t,
+        id: generateHarmonicId(), memory_type: t,
         primary_abstraction: 'test', cue_anchors: [], memory_value: '',
         energy: 0.5, created_at: new Date().toISOString(), updated_at: new Date().toISOString()
       };
@@ -22,7 +22,7 @@ describe('Harmonic Types', () => {
 
   it('merged_from is optional', () => {
     const unit: HarmonicUnit = {
-      id: 'test', goal_id: 'g1', memory_type: 'semantic',
+      id: 'test', memory_type: 'semantic',
       primary_abstraction: 'test', cue_anchors: ['a'], memory_value: 'v',
       energy: 0.5, created_at: '', updated_at: ''
     };

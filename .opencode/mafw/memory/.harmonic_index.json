@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-07-07T14:58:33.133Z",
+  "updated_at": "2026-07-08T10:57:30.538Z",
   "entries": [
     {
       "id": "mem_1783436313132_8mvzma",
@@ -10,6 +10,19 @@
       "goal_id": null,
       "tier": "tier3",
       "energy": 0.6
+    },
+    {
+      "id": "mem_1783508250535_8wgp7q",
+      "primary_abstraction": "Fixed payment timeout by adjusting from 3s to 10s with exponential backoff",
+      "cue_anchors": [
+        "payment",
+        "timeout",
+        "retry"
+      ],
+      "memory_type": "semantic",
+      "goal_id": "test-goal",
+      "tier": "tier3",
+      "energy": 0.8
     }
   ]
 }

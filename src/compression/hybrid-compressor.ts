@@ -72,7 +72,6 @@ export class HybridCompressor {
     const memoryType = this.detectMemoryType(observations);
     return {
       id: generateHarmonicId(),
-      goal_id: this.extractGoalId(observations),
       memory_type: memoryType,
       primary_abstraction: 'compressed',
       cue_anchors: concepts.slice(0, 8),
@@ -88,22 +87,13 @@ export class HybridCompressor {
   private async persistUnit(unit: HarmonicUnit): Promise<void> {
     if (!this.baseDir || !this.harmonicIndex) return;
     const tier = unit.memory_type === 'procedural' ? 'tier4' : unit.memory_type === 'episodic' ? 'tier2' : 'tier3';
-    const goalId = unit.goal_id || '__global__';
-    const filePath = path.join(this.baseDir, 'memory', tier, `${goalId}.json`);
+    const filePath = path.join(this.baseDir, 'memory', `${tier}.json`);
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const existing = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) : [];
     existing.push(unit);
     fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf-8');
     this.harmonicIndex.addEntry(unit, tier);
-  }
-
-  private extractGoalId(observations: any[]): string | null {
-    for (const o of observations) {
-      if (o.goalId) return o.goalId;
-      if (o.metadata?.goalId) return o.metadata.goalId;
-    }
-    return null;
   }
 
   private extractConcepts(observations: any[]): string[] {

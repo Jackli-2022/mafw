@@ -1,0 +1,19 @@
+[
+  {
+    "id": "mem_1783508250535_8wgp7q",
+    "goal_id": "test-goal",
+    "memory_type": "semantic",
+    "primary_abstraction": "Fixed payment timeout by adjusting from 3s to 10s with exponential backoff",
+    "cue_anchors": [
+      "payment",
+      "timeout",
+      "retry"
+    ],
+    "memory_value": "Fixed payment timeout by adjusting from 3s to 10s with exponential backoff",
+    "energy": 0.8,
+    "salience": 1,
+    "abstraction_level": 2,
+    "created_at": "2026-07-08T10:57:30.535Z",
+    "updated_at": "2026-07-08T10:57:30.535Z"
+  }
+]
