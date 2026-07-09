@@ -220,9 +220,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       const { unit, tier, source } = ctx.data || ctx;
       console.log(`[hook:memory.write] ${unit?.id} -> tier ${tier} (from ${source})`);
       if (cognitiveGraph && unit) {
-        if (unit.goal_id) {
-          cognitiveGraph.addConnection(unit.id, `goal:${unit.goal_id}`);
-        }
+        // goal_id connections removed in v6.6 flattening
       }
     },
     priority: 100
@@ -395,7 +393,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
         score: e.energy * 0.8,
         text: e.primary_abstraction + ' ' + e.cue_anchors.join(' '),
         loopNum: 1,
-        metadata: { tier: e.tier, memory_type: e.memory_type }
+        metadata: { tier: e.tier, type: e.type }
       }));
     } catch { /* ignore */ }
 

@@ -63,8 +63,7 @@ describe('ReviewScheduler', () => {
       id: 'mem_overdue',
       primary_abstraction: 'JWT token config',
       cue_anchors: ['jwt'],
-      memory_type: 'semantic',
-      goal_id: 'g1',
+      type: 'semantic',
       tier: 'tier3',
       energy: 0.8
     }]);
@@ -85,8 +84,7 @@ describe('ReviewScheduler', () => {
       id: 'mem_low_energy',
       primary_abstraction: 'Old config',
       cue_anchors: ['old'],
-      memory_type: 'semantic',
-      goal_id: 'g1',
+      type: 'semantic',
       tier: 'tier3',
       energy: 0.3
     }]);
@@ -106,8 +104,7 @@ describe('ReviewScheduler', () => {
         id: `mem_${i}`,
         primary_abstraction: `Entry ${i}`,
         cue_anchors: [],
-        memory_type: 'semantic',
-        goal_id: 'g1',
+        type: 'semantic',
         tier: 'tier3',
         energy: 0.9
       });
@@ -134,8 +131,7 @@ describe('ReviewScheduler', () => {
       id: 'mem_file',
       primary_abstraction: 'File test',
       cue_anchors: [],
-      memory_type: 'semantic',
-      goal_id: 'g1',
+      type: 'semantic',
       tier: 'tier3',
       energy: 0.9
     }]);

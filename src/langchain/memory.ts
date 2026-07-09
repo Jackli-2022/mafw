@@ -3,7 +3,7 @@ import { BaseMemory, InputValues, MemoryVariables } from "@langchain/core/memory
 export interface HarmonicIndexEntryLike {
   id: string;
   primary_abstraction: string;
-  memory_type: string;
+  type: string;
   energy: number;
 }
 

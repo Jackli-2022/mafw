@@ -37,10 +37,9 @@ export class HarmonicIndexManager {
   addEntry(unit: HarmonicUnit, tier: string): void {
     this.index.entries.push({
       id: unit.id,
+      type: unit.type || (unit as any).memory_type || 'semantic',
       primary_abstraction: unit.primary_abstraction,
       cue_anchors: unit.cue_anchors,
-      memory_type: unit.memory_type,
-      goal_id: unit.goal_id,
       tier,
       energy: unit.energy
     });

@@ -27,7 +27,7 @@ describe('HarmonicIndexManager', () => {
 
   it('adds and retrieves an entry', () => {
     const unit: HarmonicUnit = {
-      id: 'mem_1', memory_type: 'semantic',
+      id: 'mem_1', type: 'semantic',
       primary_abstraction: 'JWT token configuration',
       cue_anchors: ['jwt', 'auth', 'token'],
       memory_value: 'JWT should expire in 30 minutes',
@@ -40,8 +40,8 @@ describe('HarmonicIndexManager', () => {
   });
 
   it('search returns matching entries', () => {
-    const u1: HarmonicUnit = { id: 'm1', memory_type: 'semantic', primary_abstraction: 'JWT auth', cue_anchors: ['jwt'], memory_value: 'v1', energy: 0.8, created_at: '', updated_at: '' };
-    const u2: HarmonicUnit = { id: 'm2', memory_type: 'episodic', primary_abstraction: 'Error handling', cue_anchors: ['error'], memory_value: 'v2', energy: 0.5, created_at: '', updated_at: '' };
+    const u1: HarmonicUnit = { id: 'm1', type: 'semantic', primary_abstraction: 'JWT auth', cue_anchors: ['jwt'], memory_value: 'v1', energy: 0.8, created_at: '', updated_at: '' };
+    const u2: HarmonicUnit = { id: 'm2', type: 'episodic', primary_abstraction: 'Error handling', cue_anchors: ['error'], memory_value: 'v2', energy: 0.5, created_at: '', updated_at: '' };
     manager.addEntry(u1, 'tier3');
     manager.addEntry(u2, 'tier2');
     const results = manager.search('JWT');
@@ -50,8 +50,8 @@ describe('HarmonicIndexManager', () => {
   });
 
   it('search is tier-agnostic', () => {
-    const u1: HarmonicUnit = { id: 'm1', memory_type: 'semantic', primary_abstraction: 'API design', cue_anchors: ['api'], memory_value: 'v1', energy: 0.6, created_at: '', updated_at: '' };
-    const u2: HarmonicUnit = { id: 'm2', memory_type: 'episodic', primary_abstraction: 'API bug fix', cue_anchors: ['api'], memory_value: 'v2', energy: 0.7, created_at: '', updated_at: '' };
+    const u1: HarmonicUnit = { id: 'm1', type: 'semantic', primary_abstraction: 'API design', cue_anchors: ['api'], memory_value: 'v1', energy: 0.6, created_at: '', updated_at: '' };
+    const u2: HarmonicUnit = { id: 'm2', type: 'episodic', primary_abstraction: 'API bug fix', cue_anchors: ['api'], memory_value: 'v2', energy: 0.7, created_at: '', updated_at: '' };
     manager.addEntry(u1, 'tier3');
     manager.addEntry(u2, 'tier2');
     const results = manager.search('API');
@@ -65,7 +65,7 @@ describe('HarmonicIndexManager', () => {
     };
     const hookedManager = new HarmonicIndexManager(tmpDir, mockHookManager);
     const unit: HarmonicUnit = {
-      id: 'mem_hook_1', memory_type: 'semantic',
+      id: 'mem_hook_1', type: 'semantic',
       primary_abstraction: 'test', cue_anchors: ['t'],
       memory_value: 'val', energy: 0.5, created_at: '', updated_at: ''
     };
@@ -84,7 +84,7 @@ describe('HarmonicIndexManager', () => {
     };
     const hookedManager = new HarmonicIndexManager(tmpDir, mockHookManager);
     const unit: HarmonicUnit = {
-      id: 'mem_recall_1', memory_type: 'semantic',
+      id: 'mem_recall_1', type: 'semantic',
       primary_abstraction: 'JWT auth', cue_anchors: ['jwt'],
       memory_value: 'val', energy: 0.8, created_at: '', updated_at: ''
     };
@@ -100,7 +100,7 @@ describe('HarmonicIndexManager', () => {
   it('works silently without hookManager', () => {
     const manager_no_hook = new HarmonicIndexManager(tmpDir);
     const unit: HarmonicUnit = {
-      id: 'no_hook', memory_type: 'semantic',
+      id: 'no_hook', type: 'semantic',
       primary_abstraction: 'test', cue_anchors: ['t'],
       memory_value: 'val', energy: 0.5, created_at: '', updated_at: ''
     };

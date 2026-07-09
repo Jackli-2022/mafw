@@ -5,7 +5,7 @@ export interface HarmonicIndexEntryLike {
   id: string;
   primary_abstraction: string;
   cue_anchors: string[];
-  memory_type: string;
+  type: string;
   tier: string;
   energy: number;
 }
@@ -32,7 +32,7 @@ export class MAFWRetriever extends BaseRetriever {
       pageContent: entry.primary_abstraction,
       metadata: {
         id: entry.id,
-        type: entry.memory_type,
+        type: entry.type,
         tier: entry.tier,
         energy: entry.energy,
       },

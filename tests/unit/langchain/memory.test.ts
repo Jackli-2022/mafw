@@ -1,6 +1,6 @@
 import { MAFWMemory, HarmonicIndexLike, ParametricStoreLike } from "../../../src/langchain/memory";
 
-function makeIndex(entries: Array<{ id: string; primary_abstraction: string; memory_type: string; energy: number }>): jest.Mocked<HarmonicIndexLike> {
+function makeIndex(entries: Array<{ id: string; primary_abstraction: string; type: string; energy: number }>): jest.Mocked<HarmonicIndexLike> {
   return {
     search: jest.fn().mockReturnValue(entries),
   };
@@ -15,8 +15,8 @@ function makeStore(rules: Array<{ id: string; type: string; rule: string }>): je
 describe("MAFWMemory", () => {
   it("loads hot memories", async () => {
     const entries = [
-      { id: "mem_1", primary_abstraction: "hot memory 1", memory_type: "episodic", energy: 0.9 },
-      { id: "mem_2", primary_abstraction: "hot memory 2", memory_type: "semantic", energy: 0.7 },
+      { id: "mem_1", primary_abstraction: "hot memory 1", type: "episodic", energy: 0.9 },
+      { id: "mem_2", primary_abstraction: "hot memory 2", type: "semantic", energy: 0.7 },
     ];
     const index = makeIndex(entries);
     const memory = new MAFWMemory(index);

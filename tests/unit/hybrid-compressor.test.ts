@@ -16,7 +16,7 @@ describe('HybridCompressor', () => {
     ];
     const result = await c.compress(obs);
     expect(result.id).toBeTruthy();
-    expect(result.memory_type).toBe('semantic');
+    expect(result.type).toBe('semantic');
   });
 
   it('falls back to rules when Gateway is unreachable', async () => {

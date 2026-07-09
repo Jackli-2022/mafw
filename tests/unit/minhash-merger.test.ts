@@ -87,8 +87,7 @@ describe('MinHashMerger', () => {
       const manager = new HarmonicIndexManager(tmpDir);
       const unit: HarmonicUnit = {
         id: 'mem_new',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'unique abstraction about something',
         cue_anchors: ['unique'],
         memory_value: 'some value',
@@ -108,8 +107,7 @@ describe('MinHashMerger', () => {
 
       const existing: HarmonicUnit = {
         id: 'mem_existing',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'JWT token auth configuration setup',
         cue_anchors: ['jwt', 'auth', 'token'],
         memory_value: 'JWT should expire in 30 minutes',
@@ -126,8 +124,7 @@ describe('MinHashMerger', () => {
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'JWT token authentication configuration setup for users',
         cue_anchors: ['jwt', 'user-auth'],
         memory_value: 'tokens should be short-lived',
@@ -156,8 +153,7 @@ describe('MinHashMerger', () => {
 
       const existing: HarmonicUnit = {
         id: 'mem_high',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'JWT token auth configuration setup',
         cue_anchors: ['jwt'],
         memory_value: 'value1',
@@ -173,8 +169,7 @@ describe('MinHashMerger', () => {
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'JWT token authentication configuration',
         cue_anchors: ['token'],
         memory_value: 'value2',
@@ -192,8 +187,7 @@ describe('MinHashMerger', () => {
 
       const existing: HarmonicUnit = {
         id: 'mem_removed',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'JWT token auth configuration setup',
         cue_anchors: ['jwt'],
         memory_value: 'value1',
@@ -209,8 +203,7 @@ describe('MinHashMerger', () => {
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'JWT token authentication configuration',
         cue_anchors: ['token'],
         memory_value: 'value2',
@@ -230,8 +223,7 @@ describe('MinHashMerger', () => {
 
       const existing: HarmonicUnit = {
         id: 'mem_diff',
-        goal_id: 'g1',
-        memory_type: 'semantic',
+        type: 'semantic',
         primary_abstraction: 'python async web framework django flask',
         cue_anchors: ['python'],
         memory_value: 'use async views',
@@ -247,8 +239,7 @@ describe('MinHashMerger', () => {
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
-        goal_id: 'g2',
-        memory_type: 'procedural',
+        type: 'procedural',
         primary_abstraction: 'database indexing postgresql query optimization',
         cue_anchors: ['database'],
         memory_value: 'index columns',

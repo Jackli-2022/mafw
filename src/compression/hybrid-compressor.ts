@@ -42,7 +42,7 @@ export class HybridCompressor {
       if (res.ok) {
         const result: any = await res.json();
         const unit = this.makeUnit(useHighEnergy, result.concepts || [], result.energy ?? energy);
-        unit.memory_type = memoryType;
+        unit.type = memoryType;
         unit.primary_abstraction = (result.narrative || 'compressed').slice(0, 50);
         unit.cue_anchors = Array.isArray(result.concepts) ? result.concepts.slice(0, 8) : [];
         unit.memory_value = result.narrative || useHighEnergy.map(o => o.content).join('\n');
@@ -52,7 +52,7 @@ export class HybridCompressor {
     } catch {}
 
     const unit = this.makeUnit(useHighEnergy, [], energy);
-    unit.memory_type = memoryType;
+    unit.type = memoryType;
     unit.primary_abstraction = (useHighEnergy[0]?.content || 'rule-compressed').slice(0, 50);
     unit.cue_anchors = this.extractConcepts(useHighEnergy).slice(0, 8);
     unit.memory_value = useHighEnergy.map(o => o.content).join('\n').slice(0, 1000);
@@ -72,7 +72,7 @@ export class HybridCompressor {
     const memoryType = this.detectMemoryType(observations);
     return {
       id: generateHarmonicId(),
-      memory_type: memoryType,
+      type: memoryType,
       primary_abstraction: 'compressed',
       cue_anchors: concepts.slice(0, 8),
       memory_value: '',
@@ -86,14 +86,17 @@ export class HybridCompressor {
 
   private async persistUnit(unit: HarmonicUnit): Promise<void> {
     if (!this.baseDir || !this.harmonicIndex) return;
-    const tier = unit.memory_type === 'procedural' ? 'tier4' : unit.memory_type === 'episodic' ? 'tier2' : 'tier3';
-    const filePath = path.join(this.baseDir, 'memory', `${tier}.json`);
+    const filePath = path.join(this.baseDir, 'memory', 'memories.json');
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const existing = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) : [];
+    const existing = fs.existsSync(filePath)
+      ? JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+      : [];
     existing.push(unit);
-    fs.writeFileSync(filePath, JSON.stringify(existing, null, 2), 'utf-8');
-    this.harmonicIndex.addEntry(unit, tier);
+    const tmpPath = filePath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(existing, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, filePath);
+    this.harmonicIndex.addEntry(unit, 'memories');
   }
 
   private extractConcepts(observations: any[]): string[] {

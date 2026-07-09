@@ -8,21 +8,21 @@ describe('Harmonic Types', () => {
     expect(a.startsWith('mem_')).toBe(true);
   });
 
-  it('supports all memory_type values', () => {
-    const types: HarmonicUnit['memory_type'][] = ['episodic', 'semantic', 'procedural', 'global'];
+  it('supports all type values', () => {
+    const types: HarmonicUnit['type'][] = ['episodic', 'semantic', 'procedural'];
     types.forEach(t => {
       const unit: HarmonicUnit = {
-        id: generateHarmonicId(), memory_type: t,
+        id: generateHarmonicId(), type: t,
         primary_abstraction: 'test', cue_anchors: [], memory_value: '',
         energy: 0.5, created_at: new Date().toISOString(), updated_at: new Date().toISOString()
       };
-      expect(unit.memory_type).toBe(t);
+      expect(unit.type).toBe(t);
     });
   });
 
   it('merged_from is optional', () => {
     const unit: HarmonicUnit = {
-      id: 'test', memory_type: 'semantic',
+      id: 'test', type: 'semantic',
       primary_abstraction: 'test', cue_anchors: ['a'], memory_value: 'v',
       energy: 0.5, created_at: '', updated_at: ''
     };

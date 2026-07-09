@@ -41,7 +41,7 @@ export async function runDistillation(
   const index = indexManager.getIndex();
 
   // Rule 1: T2 Episodic → T3 Semantic
-  const t2Entries = index.entries.filter(e => e.tier === 'tier2' && e.memory_type === 'episodic');
+  const t2Entries = index.entries.filter(e => e.tier === 'tier2' && e.type === 'episodic');
 
   const groups = new Map<string, typeof t2Entries>();
   for (const entry of t2Entries) {
@@ -72,7 +72,7 @@ export async function runDistillation(
 
     const newUnit: HarmonicUnit = {
       id: generateHarmonicId(),
-      memory_type: 'semantic',
+      type: 'semantic',
       primary_abstraction: matchedUnits[0].primary_abstraction,
       cue_anchors: mergedAnchors,
       memory_value: mergedValue,
@@ -111,7 +111,7 @@ export function distillT4toL5(
   l5Store: L5Store,
 ): number {
   const index = indexManager.getIndex();
-  const t4Entries = index.entries.filter(e => e.tier === 'tier4' && e.memory_type === 'procedural');
+  const t4Entries = index.entries.filter(e => e.tier === 'tier4' && e.type === 'procedural');
 
   if (t4Entries.length < 5) return 0;
 
@@ -133,9 +133,7 @@ export function distillT4toL5(
     if (entries.length < 5) continue;
 
     const triggerContext = [...new Set(entries.flatMap(e => e.cue_anchors))];
-    const sourceGoalIds = entries
-      .map(e => e.goal_id)
-      .filter((id): id is string => !!id);
+    const sourceGoalIds: string[] = [];
 
     const heuristic = l5Store.addHeuristic(
       key,

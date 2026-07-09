@@ -241,7 +241,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
 
         let filtered = results;
         if (args.memoryType) {
-          filtered = filtered.filter((r) => r.memory_type === args.memoryType);
+          filtered = filtered.filter((r) => r.type === args.memoryType);
         }
 
         return { content: [{ type: 'text', text: JSON.stringify({ results: filtered, count: filtered.length }) }] };
@@ -363,7 +363,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         const now = new Date().toISOString();
         const unit: HarmonicUnit = {
           id: generateHarmonicId(),
-          memory_type: memoryType as HarmonicUnit['memory_type'],
+          type: memoryType as HarmonicUnit['type'],
           primary_abstraction: primaryAbstraction.slice(0, 200),
           cue_anchors: cueAnchors.slice(0, 8),
           memory_value: content,
@@ -374,12 +374,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           updated_at: now,
         };
 
-        const tier =
-          memoryType === 'procedural' ? 'tier4'
-          : memoryType === 'episodic' ? 'tier2'
-          : memoryType === 'global' ? 'tier1'
-          : 'tier3';
-
+        const tier = 'memories';
         const memoryDir = path.join(mafwDir, 'memory');
         const filePath = path.join(memoryDir, `${tier}.json`);
 

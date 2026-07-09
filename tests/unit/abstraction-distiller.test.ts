@@ -13,7 +13,7 @@ function makeT2Unit(
 ): HarmonicUnit {
   return {
     id,
-    memory_type: 'episodic',
+    type: 'episodic',
     primary_abstraction: abstraction,
     cue_anchors: ['anchor1', 'anchor2'],
     memory_value: `value for ${id}`,
@@ -74,14 +74,14 @@ describe('AbstractionDistiller', () => {
       expect(t3Entries).toHaveLength(1);
 
       const t3 = t3Entries[0];
-      expect(t3.memory_type).toBe('semantic');
+      expect(t3.type).toBe('semantic');
 
       const tier3File = path.join(tmpDir, 'memory', 'tier3.json');
       expect(fs.existsSync(tier3File)).toBe(true);
       const fileContents = JSON.parse(fs.readFileSync(tier3File, 'utf-8'));
       expect(fileContents).toHaveLength(1);
       expect(fileContents[0].id).toBe(t3.id);
-      expect(fileContents[0].memory_type).toBe('semantic');
+      expect(fileContents[0].type).toBe('semantic');
       expect(fileContents[0].merged_from).toEqual(['t2_a', 't2_b', 't2_c']);
 
       const lockedEntries = similar.map(u => idx.entries.find(e => e.id === u.id));
@@ -144,7 +144,7 @@ describe('AbstractionDistiller', () => {
     it('counts but does not create L5 when 5+ T4 entries exist for same goal', async () => {
       for (let i = 0; i < 5; i++) {
         const unit: HarmonicUnit = {
-          id: `t4_${i}`, memory_type: 'procedural',
+          id: `t4_${i}`, type: 'procedural',
           primary_abstraction: 't4 abstraction', cue_anchors: ['proc'],
           memory_value: `value ${i}`, energy: 0.6,
           created_at: '2024-01-01T00:00:00Z', updated_at: '2024-01-01T00:00:00Z'
@@ -174,11 +174,11 @@ describe('distillT4toL5', () => {
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test('does nothing with fewer than 5 T4 entries', () => {
-    const index = new HarmonicIndexManager(tmpDir);
-    for (let i = 0; i < 3; i++) {
-      const unit: HarmonicUnit = {
-        id: `t4_${i}`, memory_type: 'procedural',
+    test('does nothing with fewer than 5 T4 entries', () => {
+      const index = new HarmonicIndexManager(tmpDir);
+      for (let i = 0; i < 3; i++) {
+        const unit: HarmonicUnit = {
+          id: `t4_${i}`, type: 'procedural',
         primary_abstraction: `test pattern ${i}`, cue_anchors: [],
         memory_value: '', energy: 0.7,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -194,7 +194,7 @@ describe('distillT4toL5', () => {
     const index = new HarmonicIndexManager(tmpDir);
     for (let i = 0; i < 5; i++) {
       const unit: HarmonicUnit = {
-        id: `t4_${i}`, memory_type: 'procedural',
+        id: `t4_${i}`, type: 'procedural',
         primary_abstraction: 'deploy pattern', cue_anchors: ['deploy', 'build'],
         memory_value: `Step ${i}: run build`, energy: 0.8,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(),

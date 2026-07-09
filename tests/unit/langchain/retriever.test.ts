@@ -6,7 +6,7 @@ function makeEntry(overrides: Partial<HarmonicIndexEntryLike> = {}): HarmonicInd
     id: 'mem_1',
     primary_abstraction: 'test memory summary',
     cue_anchors: ['test', 'memory'],
-    memory_type: 'semantic',
+    type: 'semantic',
     tier: 'T2',
     energy: 0.8,
     ...overrides,

@@ -28,7 +28,7 @@ export async function migrateV61(baseDir: string, indexManager: HarmonicIndexMan
         const content = fs.readFileSync(path.join(lessonsDir, file), 'utf-8');
         const unit: HarmonicUnit = {
           id: generateHarmonicId(),
-          memory_type: 'episodic',
+          type: 'episodic',
           primary_abstraction: file.replace(/\.[^.]+$/, '').slice(0, 50),
           cue_anchors: extractAnchors(content),
           memory_value: content.slice(0, 1000),
@@ -57,7 +57,7 @@ export async function migrateV61(baseDir: string, indexManager: HarmonicIndexMan
         const content = fs.readFileSync(path.join(parametricDir, file), 'utf-8');
         const unit: HarmonicUnit = {
           id: generateHarmonicId(),
-          memory_type: 'semantic',
+          type: 'semantic',
           primary_abstraction: file.replace(/\.[^.]+$/, '').slice(0, 50),
           cue_anchors: extractAnchors(content),
           memory_value: content.slice(0, 1000),

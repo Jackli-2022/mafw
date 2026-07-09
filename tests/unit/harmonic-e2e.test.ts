@@ -8,8 +8,7 @@ import { MinHashMerger } from '../../src/memory/minhash-merger';
 function makeUnit(overrides: Partial<HarmonicUnit> = {}): HarmonicUnit {
   return {
     id: generateHarmonicId(),
-    goal_id: 'goal-1',
-    memory_type: 'semantic',
+    type: 'semantic',
     primary_abstraction: 'JWT token configuration',
     cue_anchors: ['jwt', 'auth'],
     memory_value: 'Tokens expire in 30 minutes',
@@ -63,13 +62,13 @@ describe('Harmonic Memory E2E', () => {
       id: generateHarmonicId(),
       primary_abstraction: 'API rate limiting strategy',
       cue_anchors: ['api', 'rate', 'limit'],
-      memory_type: 'semantic',
+      type: 'semantic',
     });
     const u2 = makeUnit({
       id: generateHarmonicId(),
       primary_abstraction: 'API gateway circuit breaker',
       cue_anchors: ['api', 'circuit'],
-      memory_type: 'procedural',
+      type: 'procedural',
     });
 
     indexManager.addEntry(u1, 'tier2');
