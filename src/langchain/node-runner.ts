@@ -110,7 +110,7 @@ export function createAgentNode(type: 'plan' | 'execute' | 'review') {
     try {
       result = config.parseResult(filePath, state);
     } catch (err: any) {
-      return { lastError: `Invalid result: ${err.message}`, reviewVerdict: 'ERROR' as const };
+      return { lastError: `Invalid ${type} result at ${filePath}: ${err.message}`, reviewVerdict: 'ERROR' as const };
     }
 
     await destroySession(sessionId);
