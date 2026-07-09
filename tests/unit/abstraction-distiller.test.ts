@@ -27,7 +27,7 @@ function makeT2Unit(
 function writeT2Units(baseDir: string, units: HarmonicUnit[]): void {
   const memoryDir = path.join(baseDir, 'memory');
   if (!fs.existsSync(memoryDir)) fs.mkdirSync(memoryDir, { recursive: true });
-  const filePath = path.join(memoryDir, 'tier2.json');
+  const filePath = path.join(memoryDir, 'memories.json');
   const existing = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) : [];
   fs.writeFileSync(filePath, JSON.stringify([...existing, ...units], null, 2), 'utf-8');
 }
@@ -76,13 +76,13 @@ describe('AbstractionDistiller', () => {
       const t3 = t3Entries[0];
       expect(t3.type).toBe('semantic');
 
-      const tier3File = path.join(tmpDir, 'memory', 'tier3.json');
-      expect(fs.existsSync(tier3File)).toBe(true);
-      const fileContents = JSON.parse(fs.readFileSync(tier3File, 'utf-8'));
-      expect(fileContents).toHaveLength(1);
-      expect(fileContents[0].id).toBe(t3.id);
-      expect(fileContents[0].type).toBe('semantic');
-      expect(fileContents[0].merged_from).toEqual(['t2_a', 't2_b', 't2_c']);
+      const tier3File = path.join(tmpDir, 'memory', 'memories.json');
+      const fileContents: HarmonicUnit[] = JSON.parse(fs.readFileSync(tier3File, 'utf-8'));
+      const t3Units = fileContents.filter(u => u.type === 'semantic');
+      expect(t3Units).toHaveLength(1);
+      expect(t3Units[0].id).toBe(t3.id);
+      expect(t3Units[0].type).toBe('semantic');
+      expect(t3Units[0].merged_from).toEqual(['t2_a', 't2_b', 't2_c']);
 
       const lockedEntries = similar.map(u => idx.entries.find(e => e.id === u.id));
       for (const entry of lockedEntries) {
@@ -132,11 +132,12 @@ describe('AbstractionDistiller', () => {
       expect(t3.cue_anchors).toEqual(expect.arrayContaining(['login', 'auth', 'token', 'session']));
       expect(t3.cue_anchors).toHaveLength(4);
 
-      const tier3File = path.join(tmpDir, 'memory', 'tier3.json');
-      const fileContents = JSON.parse(fs.readFileSync(tier3File, 'utf-8'));
-      expect(fileContents[0].memory_value).toContain('handle login');
-      expect(fileContents[0].memory_value).toContain('validate token');
-      expect(fileContents[0].memory_value).toContain('manage session');
+      const tier3File = path.join(tmpDir, 'memory', 'memories.json');
+      const fileContents: HarmonicUnit[] = JSON.parse(fs.readFileSync(tier3File, 'utf-8'));
+      const t3Unit = fileContents.find(u => u.type === 'semantic')!;
+      expect(t3Unit.memory_value).toContain('handle login');
+      expect(t3Unit.memory_value).toContain('validate token');
+      expect(t3Unit.memory_value).toContain('manage session');
     });
   });
 

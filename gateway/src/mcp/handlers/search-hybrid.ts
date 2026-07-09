@@ -8,7 +8,7 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory }) => {
 
     let filtered = results;
     if (args.memoryType) {
-      filtered = filtered.filter((r: any) => r.memory_type === args.memoryType);
+      filtered = filtered.filter((r: any) => r.type === args.memoryType);
     }
 
     return { content: [{ type: "text", text: JSON.stringify({ results: filtered, count: filtered.length }) }] };

@@ -20,17 +20,18 @@ function getSimilarityKey(abstraction: string): string {
 }
 
 function loadTierUnits(baseDir: string, tier: string): HarmonicUnit[] {
-  const filePath = path.join(baseDir, 'memory', `${tier}.json`);
+  const filePath = path.join(baseDir, 'memory', 'memories.json');
   if (!fs.existsSync(filePath)) return [];
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  const all: HarmonicUnit[] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  return all;
 }
 
-function saveTierUnits(baseDir: string, tier: string, units: HarmonicUnit[]): void {
+function saveTierUnits(baseDir: string, _tier: string, units: HarmonicUnit[]): void {
   const memoryDir = path.join(baseDir, 'memory');
   if (!fs.existsSync(memoryDir)) {
     fs.mkdirSync(memoryDir, { recursive: true });
   }
-  fs.writeFileSync(path.join(memoryDir, `${tier}.json`), JSON.stringify(units, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(memoryDir, 'memories.json'), JSON.stringify(units, null, 2), 'utf-8');
 }
 
 export async function runDistillation(

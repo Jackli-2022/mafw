@@ -18,14 +18,9 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
     }
 
     const mafwDir = path.join(projectDir, ".mafw");
-    const tier =
-      memoryType === "procedural" ? "tier4"
-      : memoryType === "episodic" ? "tier2"
-      : memoryType === "global" ? "tier1"
-      : "tier3";
 
     const memoryDir = path.join(mafwDir, "memory");
-    const filePath = path.join(memoryDir, `${tier}.json`);
+    const filePath = path.join(memoryDir, 'memories.json');
 
     if (!fs.existsSync(memoryDir)) {
       fs.mkdirSync(memoryDir, { recursive: true });
@@ -40,7 +35,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
 
     const unit = {
       id: unitId,
-      memory_type: memoryType,
+      type: memoryType,
       primary_abstraction: primaryAbstraction.slice(0, 200),
       cue_anchors: cueAnchors.slice(0, 8),
       memory_value: content,
@@ -56,9 +51,9 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
     fs.writeFileSync(tmpPath, JSON.stringify(existing, null, 2), "utf-8");
     fs.renameSync(tmpPath, filePath);
 
-    memory.harmonicIndex.addEntry(unit as any, tier);
+    memory.harmonicIndex.addEntry(unit as any, 'memories');
 
-    return { content: [{ type: "text", text: JSON.stringify({ success: true, id: unitId, tier, filePath }) }] };
+    return { content: [{ type: "text", text: JSON.stringify({ success: true, id: unitId, tier: 'memories', filePath }) }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
   }
