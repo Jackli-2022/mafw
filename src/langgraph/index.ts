@@ -7,3 +7,5 @@ export { reviewNode, parseReviewVerdict } from './nodes/review.node';
 export { archiveSuccessNode, archiveFailNode, archiveMaxRetriesNode } from './nodes/archive.node';
 export { syncToDashboard } from './nodes/sync.node';
 export { FileCheckpointer } from './checkpointer';
+export { createAgentNode } from '../langchain/node-runner';
+export type { AgentServices } from '../langchain/node-runner';
