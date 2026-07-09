@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HarmonicUnit, generateHarmonicId } from './harmonic-types';
 import { HarmonicIndexManager } from './harmonic-index';
+import { L5Store } from './l5-store';
 
 export interface DistillationResult {
   created: number;
@@ -96,11 +97,58 @@ export async function runDistillation(
     }
   }
 
-  // Rule 2: T4 Procedural → L5 Global (count only)
-  const t4Entries = index.entries.filter(e => e.tier === 'tier4' && e.memory_type === 'procedural');
-  if (t4Entries.length >= 5) {
-    console.log(`[AbstractionDistiller] Found ${t4Entries.length} T4 entries in total (threshold: 5). L5 creation not yet implemented.`);
-  }
+  // Rule 2: T4 Procedural → L5 Global
+  const l5Store = new L5Store();
+  const t4Created = distillT4toL5(indexManager, baseDir, l5Store);
+  result.created += t4Created;
 
   return result;
+}
+
+export function distillT4toL5(
+  indexManager: HarmonicIndexManager,
+  baseDir: string,
+  l5Store: L5Store,
+): number {
+  const index = indexManager.getIndex();
+  const t4Entries = index.entries.filter(e => e.tier === 'tier4' && e.memory_type === 'procedural');
+
+  if (t4Entries.length < 5) return 0;
+
+  // Group by similar patterns (first 3 sorted words)
+  const groups = new Map<string, typeof t4Entries>();
+  for (const entry of t4Entries) {
+    const key = entry.primary_abstraction
+      .toLowerCase()
+      .split(/\s+/)
+      .sort()
+      .slice(0, 3)
+      .join(' ');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(entry);
+  }
+
+  let created = 0;
+  for (const [key, entries] of groups) {
+    if (entries.length < 5) continue;
+
+    const triggerContext = [...new Set(entries.flatMap(e => e.cue_anchors))];
+    const sourceGoalIds = entries
+      .map(e => e.goal_id)
+      .filter((id): id is string => !!id);
+
+    const heuristic = l5Store.addHeuristic(
+      key,
+      triggerContext.slice(0, 8),
+      [...new Set(sourceGoalIds)]
+    );
+    created++;
+
+    // Lock old T4 entries (reduce energy)
+    for (const entry of entries) {
+      indexManager.updateEnergy(entry.id, -0.3);
+    }
+  }
+
+  return created;
 }

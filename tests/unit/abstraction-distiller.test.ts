@@ -3,7 +3,8 @@ import * as path from 'path';
 import os from 'os';
 import { HarmonicIndexManager } from '../../src/memory/harmonic-index';
 import { HarmonicUnit } from '../../src/memory/harmonic-types';
-import { runDistillation, DistillationResult } from '../../src/memory/abstraction-distiller';
+import { runDistillation, distillT4toL5, DistillationResult } from '../../src/memory/abstraction-distiller';
+import { L5Store } from '../../src/memory/l5-store';
 
 function makeT2Unit(
   id: string,
@@ -157,5 +158,53 @@ describe('AbstractionDistiller', () => {
       const t5Entries = idx.entries.filter(e => e.tier === 'tier5');
       expect(t5Entries).toHaveLength(0);
     });
+  });
+});
+
+describe('distillT4toL5', () => {
+  const tmpDir = path.join(os.tmpdir(), 'mafw-distill-' + Date.now());
+  const l5Dir = path.join(tmpDir, 'l5');
+
+  beforeEach(() => {
+    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'memory'), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('does nothing with fewer than 5 T4 entries', () => {
+    const index = new HarmonicIndexManager(tmpDir);
+    for (let i = 0; i < 3; i++) {
+      const unit: HarmonicUnit = {
+        id: `t4_${i}`, memory_type: 'procedural',
+        primary_abstraction: `test pattern ${i}`, cue_anchors: [],
+        memory_value: '', energy: 0.7,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      };
+      index.addEntry(unit, 'tier4');
+    }
+    const l5 = new L5Store(l5Dir);
+    distillT4toL5(index, tmpDir, l5);
+    expect(l5.loadHeuristics()).toHaveLength(0);
+  });
+
+  test('promotes T4 entries to L5 heuristic when >= 5 present', () => {
+    const index = new HarmonicIndexManager(tmpDir);
+    for (let i = 0; i < 5; i++) {
+      const unit: HarmonicUnit = {
+        id: `t4_${i}`, memory_type: 'procedural',
+        primary_abstraction: 'deploy pattern', cue_anchors: ['deploy', 'build'],
+        memory_value: `Step ${i}: run build`, energy: 0.8,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      };
+      index.addEntry(unit, 'tier4');
+    }
+    const l5 = new L5Store(l5Dir);
+    distillT4toL5(index, tmpDir, l5);
+    const heuristics = l5.loadHeuristics();
+    expect(heuristics.length).toBeGreaterThanOrEqual(1);
+    expect(heuristics[0].pattern).toContain('deploy');
   });
 });
