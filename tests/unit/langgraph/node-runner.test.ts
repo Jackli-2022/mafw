@@ -12,7 +12,7 @@ function makeState(overrides: Partial<LoopStateType> = {}): LoopStateType {
   return {
     goalId: 'test-goal',
     projectDir: '/tmp/test',
-    mafwDir: '/tmp/test/.opencode/mafw',
+    mafwDir: '/tmp/test/.mafw',
     round: 1,
     maxRounds: 3,
     wavePlanPath: null,
@@ -43,7 +43,7 @@ describe('planNode', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nrt-plan-'));
-    mafwDir = path.join(tmpDir, '.opencode', 'mafw');
+    mafwDir = path.join(tmpDir, '.mafw');
     fs.mkdirSync(mafwDir, { recursive: true });
     state = makeState({ projectDir: tmpDir, mafwDir });
     services = makeServices();
@@ -79,7 +79,7 @@ describe('executeNode', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nrt-exec-'));
-    mafwDir = path.join(tmpDir, '.opencode', 'mafw');
+    mafwDir = path.join(tmpDir, '.mafw');
     fs.mkdirSync(path.join(mafwDir, 'receipts', 'test-goal'), { recursive: true });
     state = makeState({ projectDir: tmpDir, mafwDir });
     services = makeServices();
@@ -114,7 +114,7 @@ describe('reviewNode', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nrt-rev-'));
-    mafwDir = path.join(tmpDir, '.opencode', 'mafw');
+    mafwDir = path.join(tmpDir, '.mafw');
     fs.mkdirSync(path.join(mafwDir, 'reviews'), { recursive: true });
     state = makeState({ projectDir: tmpDir, mafwDir });
     services = makeServices();

@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
-const QUESTIONS_DIR = '.opencode/mafw/user-questions';
+const QUESTIONS_DIR = '.mafw/user-questions';
 
 let cwdSpy: jest.SpyInstance;
 let tmpDir: string;

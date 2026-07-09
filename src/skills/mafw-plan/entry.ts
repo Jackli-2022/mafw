@@ -45,7 +45,7 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   console.log(`[mafw-plan] Loaded Goal Charter (${goal.length} chars)`);
 
   // 4. 读取 L2: 相关 Lessons
-  const index = new MemoryIndexManager(path.join(projectDir, '.opencode/mafw/memory-index.json'));
+  const index = new MemoryIndexManager(path.join(projectDir, '.mafw/memory-index.json'));
   const keywords = extractKeywords(goal);
   const domain = extractDomain(goal);
   const relevantLessons = index.search(keywords, domain, 3);
@@ -53,9 +53,9 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
 
   // 5. 读取 L3: Parametric Deltas
   const store = new ParametricStore({
-    baseDir: path.join(projectDir, '.opencode/mafw/parametric'),
-    bannedDir: path.join(projectDir, '.opencode/mafw/parametric/banned'),
-    manifestFile: path.join(projectDir, '.opencode/mafw/parametric/base-skill-manifest.yaml')
+    baseDir: path.join(projectDir, '.mafw/parametric'),
+    bannedDir: path.join(projectDir, '.mafw/parametric/banned'),
+    manifestFile: path.join(projectDir, '.mafw/parametric/base-skill-manifest.yaml')
   });
   const matchedDeltas = store.match({
     domain,
@@ -81,12 +81,12 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   const plan = parsePlanResponse(response.content);
 
   // 写入 waves.json
-  const wavesPath = path.join(projectDir, '.opencode/mafw/waves.json');
+  const wavesPath = path.join(projectDir, '.mafw/waves.json');
   fs.writeFileSync(wavesPath, JSON.stringify({ waves: plan.waves }, null, 2), 'utf-8');
   console.log(`[mafw-plan] Written waves.json (${plan.waves.length} waves)`);
 
   // 写入 tasks/
-  const tasksDir = path.join(projectDir, '.opencode/mafw/tasks');
+  const tasksDir = path.join(projectDir, '.mafw/tasks');
   if (!fs.existsSync(tasksDir)) fs.mkdirSync(tasksDir, { recursive: true });
   for (const task of plan.tasks) {
     const taskPath = path.join(tasksDir, `${task.id}.md`);

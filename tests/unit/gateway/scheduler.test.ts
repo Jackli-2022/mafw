@@ -15,7 +15,7 @@ afterEach(() => {
 
 test('archiveGoal patches state to FAILED when archiveWorktree throws', async () => {
   const projectDir = path.join(tmpDir, 'project');
-  const mafwDir = path.join(projectDir, '.opencode', 'mafw');
+  const mafwDir = path.join(projectDir, '.mafw');
   fs.mkdirSync(path.join(mafwDir, 'state'), { recursive: true });
   fs.writeFileSync(
     path.join(mafwDir, 'state', '001-auth.json'),

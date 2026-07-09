@@ -9,7 +9,7 @@ export const handleUpdateState: ToolHandler = async (args) => {
   try {
     const goalId = args.goalId as string;
     const patch = args.patch as Record<string, unknown>;
-    const mafwDir = path.join(projectDir, ".opencode/mafw");
+    const mafwDir = path.join(projectDir, ".mafw");
     const statePath = path.join(mafwDir, "state", `${goalId}.json`);
     const state = JSON.parse(fs.readFileSync(statePath, "utf-8"));
     const updated = { ...state, ...patch, updatedAt: new Date().toISOString() };

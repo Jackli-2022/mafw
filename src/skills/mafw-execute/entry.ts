@@ -234,7 +234,7 @@ export async function mergeWaveToGoal(
 // ── 写入 Receipts ──
 
 async function writeReceipts(goalId: string, projectDir: string, receipts: any[]): Promise<void> {
-  const receiptsDir = path.join(projectDir, '.opencode/mafw/receipts', goalId);
+  const receiptsDir = path.join(projectDir, '.mafw/receipts', goalId);
   if (!fs.existsSync(receiptsDir)) {
     fs.mkdirSync(receiptsDir, { recursive: true });
   }

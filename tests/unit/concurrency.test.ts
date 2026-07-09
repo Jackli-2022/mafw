@@ -143,7 +143,7 @@ afterEach(() => {
 });
 
 test('updateState succeeds with correct version', async () => {
-  const stateDir = path.join(tmpDir, '.opencode', 'mafw', 'state');
+  const stateDir = path.join(tmpDir, '.mafw', 'state');
   fs.mkdirSync(stateDir, { recursive: true });
   fs.writeFileSync(
     path.join(stateDir, 'g1.json'),
@@ -160,7 +160,7 @@ test('updateState succeeds with correct version', async () => {
 });
 
 test('updateState fails with wrong version', async () => {
-  const stateDir = path.join(tmpDir, '.opencode', 'mafw', 'state');
+  const stateDir = path.join(tmpDir, '.mafw', 'state');
   fs.mkdirSync(stateDir, { recursive: true });
   fs.writeFileSync(
     path.join(stateDir, 'g1.json'),
@@ -180,7 +180,7 @@ test('readCurrentVersion returns correct value', async () => {
   let v = await sync.readCurrentVersion('g1');
   expect(v).toBe(-1);
 
-  const stateDir = path.join(tmpDir, '.opencode', 'mafw', 'state');
+  const stateDir = path.join(tmpDir, '.mafw', 'state');
   fs.mkdirSync(stateDir, { recursive: true });
   fs.writeFileSync(
     path.join(stateDir, 'g1.json'),

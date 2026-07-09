@@ -8,9 +8,9 @@ import {
 import { EnergySystem, EnergyEvent } from './energy-system';
 
 const DEFAULT_CONFIG: StoreConfig = {
-  baseDir: '.opencode/mafw/parametric',
-  bannedDir: '.opencode/mafw/parametric/banned',
-  manifestFile: '.opencode/mafw/parametric/base-skill-manifest.yaml'
+  baseDir: '.mafw/parametric',
+  bannedDir: '.mafw/parametric/banned',
+  manifestFile: '.mafw/parametric/base-skill-manifest.yaml'
 };
 
 /**

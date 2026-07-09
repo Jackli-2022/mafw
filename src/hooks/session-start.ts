@@ -9,7 +9,7 @@ export interface SessionStartContext {
 
 export async function sessionStartHook(ctx: SessionStartContext, options?: { mafwDir?: string }): Promise<void> {
   const projectDir = ctx.projectDir || process.cwd();
-  const mafwDir = options?.mafwDir || path.join(projectDir, '.opencode', 'mafw');
+  const mafwDir = options?.mafwDir || path.join(projectDir, '.mafw');
   const goalDir = path.join(mafwDir, 'goals');
 
   console.log(`[hook:session-start] Session ${ctx.sessionId} started`);

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const QUESTIONS_DIR = '.opencode/mafw/user-questions';
+const QUESTIONS_DIR = '.mafw/user-questions';
 
 export interface AskUserInput {
   question: string;

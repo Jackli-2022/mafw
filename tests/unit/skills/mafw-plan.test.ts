@@ -9,10 +9,10 @@ let cwdSpy: jest.SpyInstance;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-plan-'));
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'goals'), { recursive: true });
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'lessons'), { recursive: true });
-  fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'goals', '001-auth.md'), '# Auth');
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'goals'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'lessons'), { recursive: true });
+  fs.writeFileSync(path.join(tmpDir, '.mafw', 'goals', '001-auth.md'), '# Auth');
   initState('001-auth', tmpDir);
   cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 });
@@ -30,8 +30,8 @@ test('mafwPlanEntry writes waves.json and updates state', async () => {
   };
   await mafwPlanEntry({ message: '/skill mafw-plan 001-auth', llm: mockLlm, config: { model: 'test' }, sessionId: 's1' });
 
-  const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
+  const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.mafw', 'state', '001-auth.json'), 'utf-8'));
   expect(state.nextAction).toBe('CREATE_EXECUTE_SESSION');
   expect(state.totalWaves).toBe(1);
-  expect(fs.existsSync(path.join(tmpDir, '.opencode', 'mafw', 'waves.json'))).toBe(true);
+  expect(fs.existsSync(path.join(tmpDir, '.mafw', 'waves.json'))).toBe(true);
 });

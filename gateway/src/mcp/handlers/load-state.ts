@@ -7,7 +7,7 @@ const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 export const handleLoadState: ToolHandler = async (args) => {
   try {
     const goalId = args.goalId as string;
-    const statePath = path.join(projectDir, ".opencode/mafw/state", `${goalId}.json`);
+    const statePath = path.join(projectDir, ".mafw/state", `${goalId}.json`);
     if (!fs.existsSync(statePath)) {
       return { content: [{ type: "text", text: JSON.stringify({ error: `State not found for ${goalId}` }) }], isError: true };
     }

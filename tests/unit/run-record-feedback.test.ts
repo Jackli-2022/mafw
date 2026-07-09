@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
-const FEEDBACK_DIR = '.opencode/mafw/user-feedback';
+const FEEDBACK_DIR = '.mafw/user-feedback';
 
 let cwdSpy: jest.SpyInstance;
 let tmpDir: string;

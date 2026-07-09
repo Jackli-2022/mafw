@@ -8,7 +8,7 @@ let tmpDir: string;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-precompact-'));
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
   jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 test('pre-compact detects high-energy memories and logs preservation', async () => {
-  const parametricDir = path.join(tmpDir, '.opencode', 'mafw', 'parametric');
+  const parametricDir = path.join(tmpDir, '.mafw', 'parametric');
   fs.mkdirSync(parametricDir, { recursive: true });
   fs.writeFileSync(path.join(parametricDir, 'high-energy.json'), JSON.stringify({ id: 'delta-1', energy_score: 0.95 }), 'utf-8');
   fs.writeFileSync(path.join(parametricDir, 'low-energy.json'), JSON.stringify({ id: 'delta-2', energy_score: 0.3 }), 'utf-8');
@@ -39,7 +39,7 @@ test('pre-compact detects high-energy memories and logs preservation', async () 
 });
 
 test('pre-compact does not log when no high-energy memories exist', async () => {
-  const parametricDir = path.join(tmpDir, '.opencode', 'mafw', 'parametric');
+  const parametricDir = path.join(tmpDir, '.mafw', 'parametric');
   fs.mkdirSync(parametricDir, { recursive: true });
   fs.writeFileSync(path.join(parametricDir, 'low-energy.json'), JSON.stringify({ id: 'delta-1', energy_score: 0.3 }), 'utf-8');
 
@@ -68,7 +68,7 @@ test('pre-compact does not crash when parametric directory is missing', async ()
 });
 
 test('pre-compact handles unparseable files without crashing', async () => {
-  const parametricDir = path.join(tmpDir, '.opencode', 'mafw', 'parametric');
+  const parametricDir = path.join(tmpDir, '.mafw', 'parametric');
   fs.mkdirSync(parametricDir, { recursive: true });
   fs.writeFileSync(path.join(parametricDir, 'corrupt.json'), 'not-json', 'utf-8');
   fs.writeFileSync(path.join(parametricDir, 'high-energy.json'), JSON.stringify({ id: 'delta-1', energy_score: 0.95 }), 'utf-8');

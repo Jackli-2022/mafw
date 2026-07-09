@@ -13,7 +13,7 @@ export const handleAskUser: ToolHandler = async (args) => {
     const options = args.options as string[] | undefined;
     const priority = (args.priority as string) || "normal";
 
-    const questionDir = path.join(projectDir, ".opencode/mafw/user-questions", goalId);
+    const questionDir = path.join(projectDir, ".mafw/user-questions", goalId);
     fs.mkdirSync(questionDir, { recursive: true });
 
     const questionId = `${goalId}-q-${Date.now()}`;

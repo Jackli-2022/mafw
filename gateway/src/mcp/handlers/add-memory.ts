@@ -17,7 +17,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
     }
 
-    const mafwDir = path.join(projectDir, ".opencode/mafw");
+    const mafwDir = path.join(projectDir, ".mafw");
     const tier =
       memoryType === "procedural" ? "tier4"
       : memoryType === "episodic" ? "tier2"

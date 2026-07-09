@@ -10,7 +10,7 @@ export const handleGetDeltas: ToolHandler = async (args) => {
     const agentType = args.agentType as string;
     const loopNum = (args.loopNum as number) || 1;
 
-    const parametricDir = path.join(projectDir, ".opencode/mafw/parametric");
+    const parametricDir = path.join(projectDir, ".mafw/parametric");
     const deltas: any[] = [];
 
     if (fs.existsSync(parametricDir)) {

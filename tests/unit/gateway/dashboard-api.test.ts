@@ -41,7 +41,7 @@ describe('DashboardAPI', () => {
   beforeAll(async () => {
     // Create temp project dir with mafw structure
     tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'mafw-test-'));
-    mafwDir = path.join(tmpDir, '.opencode', 'mafw');
+    mafwDir = path.join(tmpDir, '.mafw');
     fs.mkdirSync(path.join(mafwDir, 'state'), { recursive: true });
     fs.mkdirSync(path.join(mafwDir, 'requests'), { recursive: true });
     fs.mkdirSync(path.join(mafwDir, 'reviews'), { recursive: true });

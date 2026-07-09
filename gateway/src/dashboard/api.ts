@@ -10,7 +10,7 @@ export class DashboardAPI {
 
   constructor(projectDir: string = '.', scheduler?: SchedulerState) {
     this.projectDir = projectDir;
-    this.mafwDir = path.join(projectDir, '.opencode', 'mafw');
+    this.mafwDir = path.join(projectDir, '.mafw');
     this.scheduler = scheduler;
   }
 
@@ -781,7 +781,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const totalDurationMinutes = Math.round((Date.now() - earliest) / 60000);
 
     // Compute memory entries from FS
-    const mafwDir = path.join(this.projectDir, '.opencode', 'mafw');
+    const mafwDir = path.join(this.projectDir, '.mafw');
     let l1Count = 0, l2Count = 0, l3Count = 0, totalMemory = 0;
     const lessonsDir = path.join(mafwDir, 'lessons');
     const parametricDir = path.join(mafwDir, 'parametric');

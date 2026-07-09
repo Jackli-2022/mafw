@@ -25,7 +25,7 @@ export class StatusManager {
   private statusPath: string;
 
   constructor(projectDir: string = '.') {
-    this.statusPath = path.join(projectDir, '.opencode/mafw/STATUS.md');
+    this.statusPath = path.join(projectDir, '.mafw/STATUS.md');
   }
 
   /**

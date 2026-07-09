@@ -8,9 +8,9 @@ let cwdSpy: jest.SpyInstance;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-goal-'));
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'goals'), { recursive: true });
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'requests'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'goals'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'requests'), { recursive: true });
   cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(tmpDir);
 });
 
@@ -43,10 +43,10 @@ test('mafwGoalEntry writes charter, request, and initial state', async () => {
   });
 
   expect(result.title).toBe('Auth System');
-  expect(fs.existsSync(path.join(tmpDir, '.opencode', 'mafw', 'goals', `${result.goalId}.md`))).toBe(true);
-  expect(fs.existsSync(path.join(tmpDir, '.opencode', 'mafw', 'requests', `${result.goalId}.json`))).toBe(true);
+  expect(fs.existsSync(path.join(tmpDir, '.mafw', 'goals', `${result.goalId}.md`))).toBe(true);
+  expect(fs.existsSync(path.join(tmpDir, '.mafw', 'requests', `${result.goalId}.json`))).toBe(true);
 
-  const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', `${result.goalId}.json`), 'utf-8'));
+  const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.mafw', 'state', `${result.goalId}.json`), 'utf-8'));
   expect(state.nextAction).toBe('CREATE_PLAN_SESSION');
   expect(state.phase).toBe('PLANNING');
 });
@@ -61,7 +61,7 @@ test('mafwGoalEntry falls back on empty LLM response', async () => {
 
   expect(result.title).toBe('');
   expect(result.metrics).toBeDefined();
-  expect(fs.existsSync(path.join(tmpDir, '.opencode', 'mafw', 'state', `${result.goalId}.json`))).toBe(true);
+  expect(fs.existsSync(path.join(tmpDir, '.mafw', 'state', `${result.goalId}.json`))).toBe(true);
 });
 
 test('mafwGoalEntry falls back on malformed LLM response', async () => {

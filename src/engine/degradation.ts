@@ -45,7 +45,7 @@ export class DegradationStrategy {
     console.log(warning);
 
     // 简化：自动选择继续（实际应读取用户输入或 control 文件）
-    const controlFile = path.join(this.projectDir, '.opencode/mafw/control');
+    const controlFile = path.join(this.projectDir, '.mafw/control');
     if (fs.existsSync(controlFile)) {
       const control = fs.readFileSync(controlFile, 'utf-8').trim();
       if (control.startsWith('DEGRADE:')) return 'accept_partial';

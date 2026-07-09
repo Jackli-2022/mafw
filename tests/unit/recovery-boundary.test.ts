@@ -26,7 +26,7 @@ describe('RecoveryManager boundary', () => {
   });
 
   it('handles corrupted checkpoint JSON', () => {
-    const dir = path.join(tmpDir, '.opencode/mafw/checkpoints', 'g1');
+    const dir = path.join(tmpDir, '.mafw/checkpoints', 'g1');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'loop-1.json'), 'not json', 'utf-8');
     const found = manager.findLastCheckpoint('g1');

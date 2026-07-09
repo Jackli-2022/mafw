@@ -18,8 +18,8 @@ export async function validateGoalCreation(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const goalsDir = path.join(projectDir, '.opencode/mafw/goals');
-  const requestsDir = path.join(projectDir, '.opencode/mafw/requests');
+  const goalsDir = path.join(projectDir, '.mafw/goals');
+  const requestsDir = path.join(projectDir, '.mafw/requests');
 
   const charterPath = path.join(goalsDir, `${goalId}.md`);
   const requestPath = path.join(requestsDir, `${goalId}.json`);
@@ -75,7 +75,7 @@ export async function validatePhaseCompletion(
 
   switch (phase.toUpperCase()) {
     case 'PLANNING': {
-      const wavesPath = path.join(projectDir, '.opencode/mafw/waves.json');
+      const wavesPath = path.join(projectDir, '.mafw/waves.json');
       if (!fs.existsSync(wavesPath)) {
         errors.push(`Waves file not found: ${wavesPath}`);
       } else {
@@ -93,7 +93,7 @@ export async function validatePhaseCompletion(
     }
 
     case 'EXECUTING': {
-      const receiptsDir = path.join(projectDir, '.opencode/mafw/receipts', goalId);
+      const receiptsDir = path.join(projectDir, '.mafw/receipts', goalId);
       if (!fs.existsSync(receiptsDir)) {
         errors.push(`Receipts directory not found: ${receiptsDir}`);
       } else {
@@ -116,7 +116,7 @@ export async function validatePhaseCompletion(
     }
 
     case 'REVIEWING': {
-      const reviewsDir = path.join(projectDir, '.opencode/mafw/reviews');
+      const reviewsDir = path.join(projectDir, '.mafw/reviews');
       if (!fs.existsSync(reviewsDir)) {
         errors.push(`Reviews directory not found: ${reviewsDir}`);
       } else {

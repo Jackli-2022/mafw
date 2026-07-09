@@ -15,7 +15,7 @@ import { MemoryIndexManager } from '../compression/memory-index';
  *   4. 提供加载接口（loadAll / loadRelevant）
  *
  * 文件结构：
- *   .opencode/mafw/lessons/{goal_id}.md
+ *   .mafw/lessons/{goal_id}.md
  */
 export class LessonManager {
   private lessonsDir: string;
@@ -24,11 +24,11 @@ export class LessonManager {
   private index: MemoryIndexManager;
 
   constructor(projectDir: string = '.') {
-    this.lessonsDir = path.join(projectDir, '.opencode/mafw/lessons');
+    this.lessonsDir = path.join(projectDir, '.mafw/lessons');
     if (!fs.existsSync(this.lessonsDir)) fs.mkdirSync(this.lessonsDir, { recursive: true });
     this.compactor = new LessonCompactor();
     this.verifier = new CompressionVerifier();
-    this.index = new MemoryIndexManager(path.join(projectDir, '.opencode/mafw/memory-index.json'));
+    this.index = new MemoryIndexManager(path.join(projectDir, '.mafw/memory-index.json'));
   }
 
   /**

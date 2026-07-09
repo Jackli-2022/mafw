@@ -34,7 +34,7 @@ test('update preserves existing goals', () => {
 test('write includes global header with activeGoals count', () => {
   manager.update('001-auth', { state: 'RUNNING' });
   manager.update('002-viz', { state: 'COMPLETED' });
-  const content = fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'STATUS.md'), 'utf-8');
+  const content = fs.readFileSync(path.join(tmpDir, '.mafw', 'STATUS.md'), 'utf-8');
   expect(content).toContain('# MAFW Status');
   expect(content).toContain('activeGoals: 1');
 });
@@ -42,7 +42,7 @@ test('write includes global header with activeGoals count', () => {
 test('write includes global header with pendingGoals count', () => {
   manager.update('001-auth', { state: 'PENDING' });
   manager.update('002-viz', { state: 'RUNNING' });
-  const content = fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'STATUS.md'), 'utf-8');
+  const content = fs.readFileSync(path.join(tmpDir, '.mafw', 'STATUS.md'), 'utf-8');
   expect(content).toContain('pendingGoals: 1');
 });
 

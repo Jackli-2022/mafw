@@ -13,7 +13,7 @@ let mafwDir: string;
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-mcp-'));
   projectDir = path.join(tmpDir, 'project');
-  mafwDir = path.join(projectDir, '.opencode', 'mafw');
+  mafwDir = path.join(projectDir, '.mafw');
   fs.mkdirSync(path.join(mafwDir, 'state'), { recursive: true });
 });
 
@@ -113,7 +113,7 @@ test('handleValidate writes atomically (no .tmp file remains)', async () => {
 
 // ── POST /api/work/{goalId}/complete ──
 
-test('handleComplete transitions PLANNING → EXECUTING', async () => {
+test('handleComplete transitions PLANNING �?EXECUTING', async () => {
   writeState('001-auth', { phase: 'PLANNING', nextAction: 'WAIT_PHASE_COMPLETE' });
   const scheduler = createScheduler();
 
@@ -130,7 +130,7 @@ test('handleComplete transitions PLANNING → EXECUTING', async () => {
   expect(state.nextAction).toBe('CREATE_EXECUTE_SESSION');
 });
 
-test('handleComplete transitions EXECUTING → REVIEWING', async () => {
+test('handleComplete transitions EXECUTING �?REVIEWING', async () => {
   writeState('001-auth', { phase: 'EXECUTING', nextAction: 'WAIT_PHASE_COMPLETE' });
   const scheduler = createScheduler();
 

@@ -25,7 +25,7 @@ export class OptimisticStateSync {
   }
 
   private statePath(goalId: string): string {
-    return path.join(this.projectDir, '.opencode', 'mafw', 'state', `${goalId}.json`);
+    return path.join(this.projectDir, '.mafw', 'state', `${goalId}.json`);
   }
 
   async updateState(

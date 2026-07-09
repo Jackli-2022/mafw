@@ -16,7 +16,7 @@ export const handleCreateGoal: ToolHandler = async (args) => {
     const priority = (args.priority as string) || "medium";
     const maxLoops = (args.maxLoops as number) || 5;
 
-    const mafwDir = path.join(projectDir, ".opencode/mafw");
+    const mafwDir = path.join(projectDir, ".mafw");
     const goalsDir = path.join(mafwDir, "goals");
     const requestsDir = path.join(mafwDir, "requests");
     fs.mkdirSync(goalsDir, { recursive: true });

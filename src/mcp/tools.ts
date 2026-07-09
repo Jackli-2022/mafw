@@ -11,7 +11,7 @@ import { calculateSalience } from '../memory/salience-perceptor';
 const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 const gatewayUrl = process.env.MAFW_GATEWAY_URL || 'http://localhost:3004';
 const cognitiveRouter = new CognitiveRouter();
-const mafwDir = path.join(projectDir, '.opencode/mafw');
+const mafwDir = path.join(projectDir, '.mafw');
 
 export interface ToolDefinition {
   name: string;
@@ -171,8 +171,8 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         const priority = (args.priority as string) || 'medium';
         const maxLoops = (args.maxLoops as number) || 5;
 
-        const goalsDir = path.join(projectDir, '.opencode/mafw/goals');
-        const requestsDir = path.join(projectDir, '.opencode/mafw/requests');
+        const goalsDir = path.join(projectDir, '.mafw/goals');
+        const requestsDir = path.join(projectDir, '.mafw/requests');
         fs.mkdirSync(goalsDir, { recursive: true });
         fs.mkdirSync(requestsDir, { recursive: true });
 
@@ -192,7 +192,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           confirmedAt: new Date().toISOString(),
           source,
           projectDir,
-          mafwDir: path.join(projectDir, '.opencode/mafw'),
+          mafwDir: path.join(projectDir, '.mafw'),
           goalCharter: charterPath,
           metrics,
           boundaries,
@@ -256,7 +256,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         const agentType = args.agentType as string;
         const loopNum = (args.loopNum as number) || 1;
 
-        const parametricDir = path.join(projectDir, '.opencode/mafw/parametric');
+        const parametricDir = path.join(projectDir, '.mafw/parametric');
         const deltas: any[] = [];
 
         if (fs.existsSync(parametricDir)) {

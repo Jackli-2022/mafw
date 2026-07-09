@@ -17,9 +17,9 @@ let projectDir: string;
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-state-'));
   projectDir = tmpDir;
-  fs.mkdirSync(path.join(projectDir, '.opencode', 'mafw', 'state'), { recursive: true });
-  fs.mkdirSync(path.join(projectDir, '.opencode', 'mafw', 'requests'), { recursive: true });
-  fs.mkdirSync(path.join(projectDir, '.opencode', 'mafw', 'goals'), { recursive: true });
+  fs.mkdirSync(path.join(projectDir, '.mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(projectDir, '.mafw', 'requests'), { recursive: true });
+  fs.mkdirSync(path.join(projectDir, '.mafw', 'goals'), { recursive: true });
 });
 
 afterEach(() => {
@@ -28,7 +28,7 @@ afterEach(() => {
 
 test('initState writes a valid initial state file', () => {
   initState('001-auth', projectDir);
-  const statePath = path.join(projectDir, '.opencode', 'mafw', 'state', '001-auth.json');
+  const statePath = path.join(projectDir, '.mafw', 'state', '001-auth.json');
   expect(fs.existsSync(statePath)).toBe(true);
   const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
   expect(state.goalId).toBe('001-auth');
@@ -40,7 +40,7 @@ test('updateState atomically patches state', async () => {
   const updated = await updateState('001-auth', { phase: 'PLANNING_COMPLETE', nextAction: 'CREATE_EXECUTE_SESSION' }, projectDir);
   expect(updated.phase).toBe('PLANNING_COMPLETE');
   expect(updated.nextAction).toBe('CREATE_EXECUTE_SESSION');
-  expect(fs.existsSync(path.join(projectDir, '.opencode', 'mafw', 'state', '001-auth.json.tmp'))).toBe(false);
+  expect(fs.existsSync(path.join(projectDir, '.mafw', 'state', '001-auth.json.tmp'))).toBe(false);
 });
 
 test('loadState throws for missing file', async () => {
@@ -48,7 +48,7 @@ test('loadState throws for missing file', async () => {
 });
 
 test('loadRequest parses request file', async () => {
-  const reqPath = path.join(projectDir, '.opencode', 'mafw', 'requests', '001-auth.json');
+  const reqPath = path.join(projectDir, '.mafw', 'requests', '001-auth.json');
   fs.writeFileSync(reqPath, JSON.stringify({ goalId: '001-auth', title: 'Auth', metrics: {}, boundaries: [] }));
   const req = await loadRequest('001-auth', projectDir);
   expect(req.title).toBe('Auth');
@@ -77,13 +77,13 @@ test('loadRequest throws for missing file', async () => {
 });
 
 test('loadState throws for corrupt JSON', async () => {
-  const statePath = path.join(projectDir, '.opencode', 'mafw', 'state', 'bad.json');
+  const statePath = path.join(projectDir, '.mafw', 'state', 'bad.json');
   fs.writeFileSync(statePath, '{ not json');
   await expect(loadState('bad', projectDir)).rejects.toThrow(/Failed to parse/);
 });
 
 test('loadWaves throws for corrupt JSON', async () => {
-  fs.writeFileSync(path.join(projectDir, '.opencode', 'mafw', 'waves.json'), 'invalid');
+  fs.writeFileSync(path.join(projectDir, '.mafw', 'waves.json'), 'invalid');
   await expect(loadWaves('001-auth', projectDir)).rejects.toThrow(/Failed to parse/);
 });
 

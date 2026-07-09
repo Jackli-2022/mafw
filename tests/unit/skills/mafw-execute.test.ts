@@ -23,10 +23,10 @@ beforeEach(async () => {
   await git.checkoutLocalBranch('main');
   await git.checkoutLocalBranch('goal/001-auth');
 
-  fs.mkdirSync(path.join(repoDir, '.opencode', 'mafw', 'state'), { recursive: true });
-  fs.mkdirSync(path.join(repoDir, '.opencode', 'mafw', 'requests'), { recursive: true });
+  fs.mkdirSync(path.join(repoDir, '.mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(repoDir, '.mafw', 'requests'), { recursive: true });
   fs.writeFileSync(
-    path.join(repoDir, '.opencode', 'mafw', 'state', '001-auth.json'),
+    path.join(repoDir, '.mafw', 'state', '001-auth.json'),
     JSON.stringify({
       version: '2',
       goalId: '001-auth',
@@ -42,7 +42,7 @@ beforeEach(async () => {
     }, null, 2)
   );
   fs.writeFileSync(
-    path.join(repoDir, '.opencode', 'mafw', 'requests', '001-auth.json'),
+    path.join(repoDir, '.mafw', 'requests', '001-auth.json'),
     JSON.stringify({
       version: '1',
       goalId: '001-auth',
@@ -52,7 +52,7 @@ beforeEach(async () => {
       confirmedAt: new Date().toISOString(),
       source: 'test',
       projectDir: repoDir,
-      mafwDir: path.join(repoDir, '.opencode', 'mafw'),
+      mafwDir: path.join(repoDir, '.mafw'),
       goalCharter: 'goals/001-auth.md',
       metrics: {},
       boundaries: [],
@@ -63,7 +63,7 @@ beforeEach(async () => {
     }, null, 2)
   );
   fs.writeFileSync(
-    path.join(repoDir, '.opencode', 'mafw', 'waves.json'),
+    path.join(repoDir, '.mafw', 'waves.json'),
     JSON.stringify({
       waves: [{
         id: 'w1',
@@ -87,11 +87,11 @@ test('mafwExecuteEntry executes wave, merges task branches and transitions to re
 
   await mafwExecuteEntry({ message: '/skill mafw-execute 001-auth', llm: mockLlm, config: { model: 'test' }, sessionId: 's1' });
 
-  const state = JSON.parse(fs.readFileSync(path.join(repoDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
+  const state = JSON.parse(fs.readFileSync(path.join(repoDir, '.mafw', 'state', '001-auth.json'), 'utf-8'));
   expect(state.phase).toBe('EXECUTING_COMPLETE');
   expect(state.nextAction).toBe('CREATE_REVIEW_SESSION');
 
-  const receipt = JSON.parse(fs.readFileSync(path.join(repoDir, '.opencode', 'mafw', 'receipts', '001-auth', 'loop-receipt.json'), 'utf-8'));
+  const receipt = JSON.parse(fs.readFileSync(path.join(repoDir, '.mafw', 'receipts', '001-auth', 'loop-receipt.json'), 'utf-8'));
   expect(receipt.receipts[0].merge.status).toBe('merged');
   expect(receipt.receipts[0].merge.merged).toContain('t1');
 
@@ -111,7 +111,7 @@ test('mafwExecuteEntry transitions to FAILED when wave merge is partial', async 
 
   await mafwExecuteEntry({ message: '/skill mafw-execute 001-auth', llm: mockLlm, config: { model: 'test' }, sessionId: 's1' });
 
-  const state = JSON.parse(fs.readFileSync(path.join(repoDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
+  const state = JSON.parse(fs.readFileSync(path.join(repoDir, '.mafw', 'state', '001-auth.json'), 'utf-8'));
   expect(state.phase).toBe('EXECUTING_COMPLETE');
   expect(state.nextAction).toBe('FAILED');
   expect(state.error).toBe('wave_merge_partial');

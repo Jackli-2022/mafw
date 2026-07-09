@@ -53,7 +53,7 @@ export async function archiveWorktree(context: ArchiveContext): Promise<void> {
  * 生成报告
  */
 async function generateReport(goalId: string, projectDir: string, loopCount: number): Promise<void> {
-  const reportsDir = path.join(projectDir, '.opencode/mafw/reports');
+  const reportsDir = path.join(projectDir, '.mafw/reports');
   if (!fs.existsSync(reportsDir)) {
     fs.mkdirSync(reportsDir, { recursive: true });
   }
@@ -87,7 +87,7 @@ Goal completed successfully after ${loopCount} loop(s).
  * 更新 STATUS.md 为 COMPLETED
  */
 function updateStatusArchive(goalId: string, projectDir: string): void {
-  const statusPath = path.join(projectDir, '.opencode/mafw/STATUS.md');
+  const statusPath = path.join(projectDir, '.mafw/STATUS.md');
   
   if (!fs.existsSync(statusPath)) {
     return;

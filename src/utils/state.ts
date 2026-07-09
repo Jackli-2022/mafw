@@ -75,7 +75,7 @@ export async function updateState(
   patch: Partial<StateFile>,
   projectDir: string = '.'
 ): Promise<StateFile> {
-  const statePath = path.join(projectDir, '.opencode/mafw/state', `${goalId}.json`);
+  const statePath = path.join(projectDir, '.mafw/state', `${goalId}.json`);
 
   if (!fs.existsSync(statePath)) {
     throw new Error(`State file not found: ${statePath}`);
@@ -119,7 +119,7 @@ function safeJsonParse<T>(filePath: string): T {
  * 加载状态文件
  */
 export async function loadState(goalId: string, projectDir: string = '.'): Promise<StateFile> {
-  const statePath = path.join(projectDir, '.opencode/mafw/state', `${goalId}.json`);
+  const statePath = path.join(projectDir, '.mafw/state', `${goalId}.json`);
   if (!fs.existsSync(statePath)) {
     throw new Error(`State file not found: ${statePath}`);
   }
@@ -130,7 +130,7 @@ export async function loadState(goalId: string, projectDir: string = '.'): Promi
  * 加载请求配置
  */
 export async function loadRequest(goalId: string, projectDir: string = '.'): Promise<GoalRequest> {
-  const reqPath = path.join(projectDir, '.opencode/mafw/requests', `${goalId}.json`);
+  const reqPath = path.join(projectDir, '.mafw/requests', `${goalId}.json`);
   if (!fs.existsSync(reqPath)) {
     throw new Error(`Request file not found: ${reqPath}`);
   }
@@ -141,7 +141,7 @@ export async function loadRequest(goalId: string, projectDir: string = '.'): Pro
  * 加载 Goal Charter
  */
 export async function loadGoal(goalId: string, projectDir: string = '.'): Promise<string> {
-  const goalPath = path.join(projectDir, '.opencode/mafw/goals', `${goalId}.md`);
+  const goalPath = path.join(projectDir, '.mafw/goals', `${goalId}.md`);
   if (!fs.existsSync(goalPath)) {
     throw new Error(`Goal Charter not found: ${goalPath}`);
   }
@@ -152,7 +152,7 @@ export async function loadGoal(goalId: string, projectDir: string = '.'): Promis
  * 加载 Waves 配置
  */
 export async function loadWaves(goalId: string, projectDir: string = '.'): Promise<any[]> {
-  const wavesPath = path.join(projectDir, '.opencode/mafw/waves.json');
+  const wavesPath = path.join(projectDir, '.mafw/waves.json');
   if (!fs.existsSync(wavesPath)) {
     return [];
   }
@@ -164,7 +164,7 @@ export async function loadWaves(goalId: string, projectDir: string = '.'): Promi
  * 加载 Receipts
  */
 export async function loadReceipts(goalId: string, projectDir: string = '.'): Promise<any[]> {
-  const receiptsDir = path.join(projectDir, '.opencode/mafw/receipts', goalId);
+  const receiptsDir = path.join(projectDir, '.mafw/receipts', goalId);
   if (!fs.existsSync(receiptsDir)) {
     return [];
   }
@@ -176,7 +176,7 @@ export async function loadReceipts(goalId: string, projectDir: string = '.'): Pr
  * 加载 Review 文件
  */
 export async function loadReview(goalId: string, loop: number, projectDir: string = '.'): Promise<any> {
-  const reviewPath = path.join(projectDir, '.opencode/mafw/reviews', `${goalId}-loop${loop}.md`);
+  const reviewPath = path.join(projectDir, '.mafw/reviews', `${goalId}-loop${loop}.md`);
   if (!fs.existsSync(reviewPath)) {
     return null;
   }
@@ -196,7 +196,7 @@ export function extractGoalId(message: string): string {
  * 检查状态文件是否存在
  */
 export function stateExists(goalId: string, projectDir: string = '.'): boolean {
-  const statePath = path.join(projectDir, '.opencode/mafw/state', `${goalId}.json`);
+  const statePath = path.join(projectDir, '.mafw/state', `${goalId}.json`);
   return fs.existsSync(statePath);
 }
 
@@ -204,7 +204,7 @@ export function stateExists(goalId: string, projectDir: string = '.'): boolean {
  * 初始化新 Goal 的状态文件
  */
 export function initState(goalId: string, projectDir: string = '.'): void {
-  const stateDir = path.join(projectDir, '.opencode/mafw/state');
+  const stateDir = path.join(projectDir, '.mafw/state');
   if (!fs.existsSync(stateDir)) {
     fs.mkdirSync(stateDir, { recursive: true });
   }

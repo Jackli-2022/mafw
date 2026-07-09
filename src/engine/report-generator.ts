@@ -9,13 +9,13 @@ import * as path from 'path';
  *   2. 降级完成时生成降级报告
  *   3. Archive 阶段调用 L3 Validator
  *
- * 输出：.opencode/mafw/reports/{goal_id}.md
+ * 输出：.mafw/reports/{goal_id}.md
  */
 export class ReportGenerator {
   private reportsDir: string;
 
   constructor(projectDir: string = '.') {
-    this.reportsDir = path.join(projectDir, '.opencode/mafw/reports');
+    this.reportsDir = path.join(projectDir, '.mafw/reports');
     if (!fs.existsSync(this.reportsDir)) fs.mkdirSync(this.reportsDir, { recursive: true });
   }
 

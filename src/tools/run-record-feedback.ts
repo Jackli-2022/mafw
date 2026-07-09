@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const FEEDBACK_DIR = '.opencode/mafw/user-feedback';
+const FEEDBACK_DIR = '.mafw/user-feedback';
 
 export interface FeedbackInput {
   targetId: string;

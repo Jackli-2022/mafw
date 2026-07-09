@@ -68,9 +68,9 @@ test('status command returns fallback when STATUS.md missing', async () => {
 });
 
 test('chat messages transform awaits loadState and injects wave context', async () => {
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
   fs.writeFileSync(
-    path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'),
+    path.join(tmpDir, '.mafw', 'state', '001-auth.json'),
     JSON.stringify({ goalId: '001-auth', currentWave: 1, totalWaves: 2 })
   );
 
@@ -88,7 +88,7 @@ test('chat messages transform awaits loadState and injects wave context', async 
 });
 
 test("hooks['session.end'] fallback delegates to sessionEndingHook", async () => {
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
   initState('001-auth', tmpDir);
   await updateState('001-auth', {
     nextAction: 'WAIT_PHASE_COMPLETE',
@@ -98,7 +98,7 @@ test("hooks['session.end'] fallback delegates to sessionEndingHook", async () =>
   const plugin = await MafwPlugin({ directory: tmpDir });
   await plugin.hooks['session.end']({ sessionID: 'sess-1' });
 
-  const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.opencode', 'mafw', 'state', '001-auth.json'), 'utf-8'));
+  const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.mafw', 'state', '001-auth.json'), 'utf-8'));
   expect(state.nextAction).toBe('CREATE_PLAN_SESSION');
   expect(state.error).toBe('session_ended_without_state_update');
   expect(state.sessions.plan.active).toBe(false);

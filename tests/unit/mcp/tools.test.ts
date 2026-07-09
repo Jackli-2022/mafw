@@ -9,8 +9,8 @@ describe('validateGoalCreation', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-val-'));
-    fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'goals'), { recursive: true });
-    fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'requests'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '.mafw', 'goals'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '.mafw', 'requests'), { recursive: true });
   });
 
   afterEach(() => {
@@ -18,8 +18,8 @@ describe('validateGoalCreation', () => {
   });
 
   it('passes when both charter and request exist and are valid', async () => {
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'goals', '001-test.md'), '# Test Goal\nDo the thing.', 'utf-8');
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'requests', '001-test.json'), JSON.stringify({
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'goals', '001-test.md'), '# Test Goal\nDo the thing.', 'utf-8');
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'requests', '001-test.json'), JSON.stringify({
       goalId: '001-test', title: 'Test Goal', maxLoops: 5, priority: 'medium', metrics: {}, boundaries: []
     }), 'utf-8');
 
@@ -29,7 +29,7 @@ describe('validateGoalCreation', () => {
   });
 
   it('fails when charter file is missing', async () => {
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'requests', '001-test.json'), JSON.stringify({
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'requests', '001-test.json'), JSON.stringify({
       goalId: '001-test', title: 'Test', maxLoops: 3
     }), 'utf-8');
 
@@ -40,7 +40,7 @@ describe('validateGoalCreation', () => {
   });
 
   it('fails when request file is missing', async () => {
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'goals', '001-test.md'), '# Test', 'utf-8');
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'goals', '001-test.md'), '# Test', 'utf-8');
 
     const result = await validateGoalCreation('001-test', tmpDir);
     expect(result.valid).toBe(false);
@@ -49,8 +49,8 @@ describe('validateGoalCreation', () => {
   });
 
   it('fails when request has goalId mismatch', async () => {
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'goals', '001-test.md'), '# Test', 'utf-8');
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'requests', '001-test.json'), JSON.stringify({
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'goals', '001-test.md'), '# Test', 'utf-8');
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'requests', '001-test.json'), JSON.stringify({
       goalId: '002-wrong'
     }), 'utf-8');
 
@@ -60,8 +60,8 @@ describe('validateGoalCreation', () => {
   });
 
   it('warns when charter is empty', async () => {
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'goals', '001-test.md'), '', 'utf-8');
-    fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'requests', '001-test.json'), JSON.stringify({
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'goals', '001-test.md'), '', 'utf-8');
+    fs.writeFileSync(path.join(tmpDir, '.mafw', 'requests', '001-test.json'), JSON.stringify({
       goalId: '001-test', title: 'Test', maxLoops: 5
     }), 'utf-8');
 
@@ -76,7 +76,7 @@ describe('validatePhaseCompletion', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-phase-'));
-    fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '.mafw'), { recursive: true });
   });
 
   afterEach(() => {
@@ -85,7 +85,7 @@ describe('validatePhaseCompletion', () => {
 
   describe('PLANNING', () => {
     it('passes when waves.json exists with waves', async () => {
-      fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'waves.json'), JSON.stringify({
+      fs.writeFileSync(path.join(tmpDir, '.mafw', 'waves.json'), JSON.stringify({
         waves: [{ waveNum: 1, tasks: ['task-1'] }]
       }), 'utf-8');
 
@@ -100,14 +100,14 @@ describe('validatePhaseCompletion', () => {
     });
 
     it('fails when waves array is empty', async () => {
-      fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'waves.json'), JSON.stringify({ waves: [] }), 'utf-8');
+      fs.writeFileSync(path.join(tmpDir, '.mafw', 'waves.json'), JSON.stringify({ waves: [] }), 'utf-8');
       const result = await validatePhaseCompletion('g1', 'PLANNING', tmpDir);
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('no waves');
     });
 
     it('fails when waves.json is malformed JSON', async () => {
-      fs.writeFileSync(path.join(tmpDir, '.opencode', 'mafw', 'waves.json'), '{invalid}', 'utf-8');
+      fs.writeFileSync(path.join(tmpDir, '.mafw', 'waves.json'), '{invalid}', 'utf-8');
       const result = await validatePhaseCompletion('g1', 'PLANNING', tmpDir);
       expect(result.valid).toBe(false);
     });
@@ -115,7 +115,7 @@ describe('validatePhaseCompletion', () => {
 
   describe('EXECUTING', () => {
     it('passes when receipts exist', async () => {
-      const receiptsDir = path.join(tmpDir, '.opencode', 'mafw', 'receipts', 'g1');
+      const receiptsDir = path.join(tmpDir, '.mafw', 'receipts', 'g1');
       fs.mkdirSync(receiptsDir, { recursive: true });
       fs.writeFileSync(path.join(receiptsDir, 'task-1.json'), JSON.stringify({ taskId: 'task-1', waveNum: 1 }), 'utf-8');
 
@@ -130,14 +130,14 @@ describe('validatePhaseCompletion', () => {
     });
 
     it('fails when receipts directory is empty', async () => {
-      fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'receipts', 'g1'), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, '.mafw', 'receipts', 'g1'), { recursive: true });
       const result = await validatePhaseCompletion('g1', 'EXECUTING', tmpDir);
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('receipt');
     });
 
     it('warns when receipt is missing required fields', async () => {
-      const receiptsDir = path.join(tmpDir, '.opencode', 'mafw', 'receipts', 'g1');
+      const receiptsDir = path.join(tmpDir, '.mafw', 'receipts', 'g1');
       fs.mkdirSync(receiptsDir, { recursive: true });
       fs.writeFileSync(path.join(receiptsDir, 'bad.json'), JSON.stringify({ foo: 'bar' }), 'utf-8');
 
@@ -149,7 +149,7 @@ describe('validatePhaseCompletion', () => {
 
   describe('REVIEWING', () => {
     it('passes when review file exists with verdict', async () => {
-      const reviewsDir = path.join(tmpDir, '.opencode', 'mafw', 'reviews');
+      const reviewsDir = path.join(tmpDir, '.mafw', 'reviews');
       fs.mkdirSync(reviewsDir, { recursive: true });
       fs.writeFileSync(path.join(reviewsDir, 'g1-loop1.md'), '# Review\nVerdict: PASS\nScore: 90', 'utf-8');
 
@@ -164,14 +164,14 @@ describe('validatePhaseCompletion', () => {
     });
 
     it('fails when review file is missing', async () => {
-      fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'reviews'), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, '.mafw', 'reviews'), { recursive: true });
       const result = await validatePhaseCompletion('g1', 'REVIEWING', tmpDir);
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('Review');
     });
 
     it('warns when review file is empty', async () => {
-      const reviewsDir = path.join(tmpDir, '.opencode', 'mafw', 'reviews');
+      const reviewsDir = path.join(tmpDir, '.mafw', 'reviews');
       fs.mkdirSync(reviewsDir, { recursive: true });
       fs.writeFileSync(path.join(reviewsDir, 'g1-loop1.md'), '', 'utf-8');
 
@@ -181,7 +181,7 @@ describe('validatePhaseCompletion', () => {
     });
 
     it('warns when review file lacks verdict or score', async () => {
-      const reviewsDir = path.join(tmpDir, '.opencode', 'mafw', 'reviews');
+      const reviewsDir = path.join(tmpDir, '.mafw', 'reviews');
       fs.mkdirSync(reviewsDir, { recursive: true });
       fs.writeFileSync(path.join(reviewsDir, 'g1-loop1.md'), '# Just notes nothing else', 'utf-8');
 

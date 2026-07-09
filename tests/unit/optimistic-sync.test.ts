@@ -10,7 +10,7 @@ describe('OptimisticStateSync', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opt-sync-'));
     sync = new OptimisticStateSync(tmpDir);
-    const mafwDir = path.join(tmpDir, '.opencode', 'mafw', 'state');
+    const mafwDir = path.join(tmpDir, '.mafw', 'state');
     fs.mkdirSync(mafwDir, { recursive: true });
     fs.writeFileSync(
       path.join(mafwDir, 'goal-001.json'),

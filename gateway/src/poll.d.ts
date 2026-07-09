@@ -1,7 +1,6 @@
 /**
- * Request Manager — 读写 requests/ 目录的请求文件
- *
- * Schema: .opencode/mafw/requests/{goalId}.json
+ * Request Manager �?读写 requests/ 目录的请求文�? *
+ * Schema: .mafw/requests/{goalId}.json
  */
 export interface GoalRequest {
     version: string;
@@ -29,16 +28,14 @@ export declare class RequestManager {
     private requestsDir;
     constructor(projectDir?: string);
     /**
-     * 加载所有请求文件
-     */
+     * 加载所有请求文�?     */
     loadAll(): GoalRequest[];
     /**
      * 加载单个请求
      */
     load(goalId: string): GoalRequest | null;
     /**
-     * 更新请求状态
-     */
+     * 更新请求状�?     */
     updateState(goalId: string, state: GoalRequest['state'], sessionId?: string): void;
     /**
      * 保存请求
@@ -53,7 +50,7 @@ export declare class RequestManager {
      */
     findRunning(): GoalRequest[];
     /**
-     * 移动已完成的请求到 processed/
+     * 移动已完成的请求�?processed/
      */
     archive(goalId: string): void;
 }

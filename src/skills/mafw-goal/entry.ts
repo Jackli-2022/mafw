@@ -50,7 +50,7 @@ export interface InterviewResult {
 export async function mafwGoalEntry(context: GoalSkillContext): Promise<InterviewResult> {
   const goalText = context.message;
   const projectDir = context.projectDir || process.cwd();
-  const mafwDir = path.join(projectDir, '.opencode/mafw');
+  const mafwDir = path.join(projectDir, '.mafw');
 
   console.log(`[mafw-goal] Starting interview for: "${goalText}"`);
 

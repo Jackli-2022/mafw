@@ -42,7 +42,7 @@ describe('RecoveryManager', () => {
   });
 
   it('restoreLoop restores state file from checkpoint', async () => {
-    const mafwDir = path.join(tmpDir, '.opencode/mafw');
+    const mafwDir = path.join(tmpDir, '.mafw');
     fs.mkdirSync(path.join(mafwDir, 'state'), { recursive: true });
     fs.mkdirSync(path.join(mafwDir, 'checkpoints', 'goal-001'), { recursive: true });
     fs.writeFileSync(

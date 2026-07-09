@@ -15,11 +15,11 @@ let tmpDir: string;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-phase-'));
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'state'), { recursive: true });
-  fs.mkdirSync(path.join(tmpDir, '.opencode', 'mafw', 'requests'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
+  fs.mkdirSync(path.join(tmpDir, '.mafw', 'requests'), { recursive: true });
   initState('001-auth', tmpDir);
   fs.writeFileSync(
-    path.join(tmpDir, '.opencode', 'mafw', 'requests', '001-auth.json'),
+    path.join(tmpDir, '.mafw', 'requests', '001-auth.json'),
     JSON.stringify({ maxLoops: 5 })
   );
 });

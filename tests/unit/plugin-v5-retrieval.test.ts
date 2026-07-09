@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 function setupGoalFiles(goalId = '001-auth') {
-  const mafwDir = path.join(tmpDir, '.opencode', 'mafw');
+  const mafwDir = path.join(tmpDir, '.mafw');
   fs.mkdirSync(path.join(mafwDir, 'goals'), { recursive: true });
   fs.mkdirSync(path.join(mafwDir, 'state'), { recursive: true });
   fs.mkdirSync(path.join(mafwDir, 'reviews'), { recursive: true });
@@ -55,7 +55,7 @@ function setupGoalFiles(goalId = '001-auth') {
 }
 
 function setupReviewFile(goalId = '001-auth', loop = 1, verdict = 'FAIL') {
-  const mafwDir = path.join(tmpDir, '.opencode', 'mafw');
+  const mafwDir = path.join(tmpDir, '.mafw');
   const reviewsDir = path.join(mafwDir, 'reviews');
   if (!fs.existsSync(reviewsDir)) fs.mkdirSync(reviewsDir, { recursive: true });
   fs.writeFileSync(

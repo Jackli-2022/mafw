@@ -190,7 +190,7 @@ class MafwScheduler {
 
   private async initServices() {
     const projectDir = this.projectDir;
-    const mafwDir = path.join(projectDir, ".opencode", "mafw");
+    const mafwDir = path.join(projectDir, ".mafw");
 
     const memory = new MemoryService(mafwDir);
     const cost = new CostService();

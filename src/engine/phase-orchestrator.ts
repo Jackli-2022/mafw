@@ -129,7 +129,7 @@ export async function shouldStartNextLoop(
   projectDir: string = '.'
 ): Promise<{ should: boolean; reason: string }> {
   const state = await loadState(goalId, projectDir);
-  const reqPath = path.join(projectDir, '.opencode/mafw/requests', `${goalId}.json`);
+  const reqPath = path.join(projectDir, '.mafw/requests', `${goalId}.json`);
   if (!fs.existsSync(reqPath)) {
     return { should: true, reason: 'no request file, allowing' };
   }

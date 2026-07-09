@@ -2,11 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Heartbeat — 监控活跃 Goal 的心跳
- *
- * 通过读取 STATUS.md 判断每个 RUNNING Goal 是否活跃。
- * 超过 5 分钟无心跳 → 标记为 STUCK，触发恢复。
- */
+ * Heartbeat �?监控活跃 Goal 的心�? *
+ * 通过读取 STATUS.md 判断每个 RUNNING Goal 是否活跃�? * 超过 5 分钟无心�?�?标记�?STUCK，触发恢复�? */
 
 export interface HeartbeatStatus {
   goalId: string;
@@ -25,13 +22,12 @@ export class HeartbeatMonitor {
   private timeoutMs: number;
 
   constructor(projectDir: string = '.', timeoutMs: number = 5 * 60 * 1000) {
-    this.statusPath = path.join(projectDir, '.opencode/mafw/STATUS.md');
+    this.statusPath = path.join(projectDir, '.mafw/STATUS.md');
     this.timeoutMs = timeoutMs;
   }
 
   /**
-   * 检查所有活跃 Goal 的心跳
-   */
+   * 检查所有活�?Goal 的心�?   */
   check(): { healthy: HeartbeatStatus[]; stuck: HeartbeatStatus[] } {
     const all = this.loadAll();
     const running = all.filter(g => g.state === 'RUNNING');
@@ -53,8 +49,7 @@ export class HeartbeatMonitor {
   }
 
   /**
-   * 加载所有 Goal 状态
-   */
+   * 加载所�?Goal 状�?   */
   loadAll(): HeartbeatStatus[] {
     if (!fs.existsSync(this.statusPath)) return [];
     const content = fs.readFileSync(this.statusPath, 'utf-8');
@@ -62,7 +57,7 @@ export class HeartbeatMonitor {
   }
 
   /**
-   * 解析多 Goal STATUS.md 格式
+   * 解析�?Goal STATUS.md 格式
    */
   private parse(content: string): HeartbeatStatus[] {
     const blocks = content.split('---').filter(b => b.trim());

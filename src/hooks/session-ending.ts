@@ -25,7 +25,7 @@ export interface HookContext {
 export async function sessionEndingHook(hookContext: HookContext): Promise<void> {
   const sessionId = hookContext.sessionId;
   const projectDir = hookContext.projectDir || process.cwd();
-  const mafwDir = path.join(projectDir, '.opencode/mafw');
+  const mafwDir = path.join(projectDir, '.mafw');
   const stateDir = path.join(mafwDir, 'state');
 
   console.log(`[hook:session-ending] Session ${sessionId} ending`);
@@ -93,7 +93,7 @@ export async function sessionEndingHook(hookContext: HookContext): Promise<void>
 
     // Pre-compact protection: detect high-energy memories
     try {
-      const parametricDir = path.join(projectDir, '.opencode/mafw/parametric');
+      const parametricDir = path.join(projectDir, '.mafw/parametric');
       if (fs.existsSync(parametricDir)) {
         const files = fs.readdirSync(parametricDir).filter(f => f.endsWith('.json'));
         let highEnergyCount = 0;

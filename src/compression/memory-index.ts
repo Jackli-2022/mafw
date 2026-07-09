@@ -24,7 +24,7 @@ export class MemoryIndexManager {
   private index: MemoryIndex;
   private bm25: BM25Index;
 
-  constructor(indexPath = '.opencode/mafw/memory-index.json') {
+  constructor(indexPath = '.mafw/memory-index.json') {
     this.indexPath = indexPath;
     this.index = this.load();
     this.bm25 = new BM25Index();
@@ -137,7 +137,7 @@ export class MemoryIndexManager {
   /**
    * 重建完整索引（用于手动清理后）
    */
-  rebuild(lessonsDir = '.opencode/mafw/lessons'): void {
+  rebuild(lessonsDir = '.mafw/lessons'): void {
     this.index = { version: '1', entries: [], inverted_index: {}, domain_index: {} };
     if (!fs.existsSync(lessonsDir)) return;
 

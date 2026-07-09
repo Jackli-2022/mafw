@@ -77,7 +77,7 @@ export interface TriggerCondition {
 
 /** Parametric Memory Store 配置 */
 export interface StoreConfig {
-  baseDir: string;           // .opencode/mafw/parametric/
+  baseDir: string;           // .mafw/parametric/
   bannedDir: string;
   manifestFile: string;
 }

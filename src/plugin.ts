@@ -42,7 +42,7 @@ interface HybridSearchResult {
 }
 
 export default async function MafwPlugin({ directory }: { directory: string }) {
-  const mafwDir = path.join(directory, '.opencode', 'mafw');
+  const mafwDir = path.join(directory, '.mafw');
 
   // 0. 初始化 MAFW 目录结构（插件运行时创建）
   await ensureMafwDirectories(mafwDir);
@@ -788,7 +788,7 @@ async function registerWithGateway(directory: string, mafwDir: string) {
 }
 
 async function findPendingGoal(directory: string): Promise<string> {
-  const stateDir = path.join(directory, '.opencode', 'mafw', 'state');
+  const stateDir = path.join(directory, '.mafw', 'state');
   if (!fs.existsSync(stateDir)) return 'unknown';
   const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
   if (files.length === 0) return 'unknown';
@@ -797,7 +797,7 @@ async function findPendingGoal(directory: string): Promise<string> {
 
 async function writeGoalRequest(result: any, directory: string) {
   const goalId = result.goalId;
-  const mafwDir = path.join(directory, '.opencode', 'mafw');
+  const mafwDir = path.join(directory, '.mafw');
   await ensureMafwDirectories(mafwDir);
 
   const goalsDir = path.join(mafwDir, 'goals');

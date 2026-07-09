@@ -15,7 +15,7 @@ export const handleRecordFeedback: ToolHandler = async (args) => {
 
     const feedback = { targetId, type, goalId, loopNum, comment, createdAt: new Date().toISOString() };
 
-    const feedbackDir = path.join(projectDir, ".opencode/mafw/feedback");
+    const feedbackDir = path.join(projectDir, ".mafw/feedback");
     fs.mkdirSync(feedbackDir, { recursive: true });
     fs.writeFileSync(
       path.join(feedbackDir, `${targetId}-${Date.now()}.json`),
