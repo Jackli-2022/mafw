@@ -134,6 +134,29 @@ const DEFINITIONS: ToolDefinition[] = [
       required: ["content", "memoryType"],
     },
   },
+  {
+    name: "mafw_commit_heuristic",
+    description: "Commit a new L5 heuristic (global, cross-project)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "The heuristic pattern/rule" },
+        triggerContext: { type: "array", items: { type: "string" }, description: "Keywords that trigger this heuristic" },
+        sourceGoalIds: { type: "array", items: { type: "string" }, description: "Goal IDs that contributed to this heuristic" },
+      },
+      required: ["pattern"],
+    },
+  },
+  {
+    name: "mafw_get_axioms",
+    description: "Get top L5 axioms and heuristics by energy",
+    inputSchema: {
+      type: "object",
+      properties: {
+        topK: { type: "number", description: "Number of results to return", default: 10 },
+      },
+    },
+  },
 ];
 
 import { handleCreateGoal } from "./handlers/create-goal";
@@ -145,6 +168,8 @@ import { handleAskUser } from "./handlers/ask-user";
 import { handleRecordFeedback } from "./handlers/record-feedback";
 import { handleGetModelRoute } from "./handlers/get-model-route";
 import { handleAddMemory } from "./handlers/add-memory";
+import { handleCommitHeuristic } from "./handlers/commit-heuristic";
+import { handleGetAxioms } from "./handlers/get-axioms";
 
 export function createToolRegistry(): ToolRegistry {
   return {
@@ -159,6 +184,8 @@ export function createToolRegistry(): ToolRegistry {
       mafw_record_feedback: handleRecordFeedback,
       mafw_get_model_route: handleGetModelRoute,
       mafw_add_memory: handleAddMemory,
+      mafw_commit_heuristic: handleCommitHeuristic,
+      mafw_get_axioms: handleGetAxioms,
     },
   };
 }

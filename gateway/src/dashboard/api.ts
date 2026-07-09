@@ -275,6 +275,27 @@ export class DashboardAPI {
         return;
       }
 
+      // GET /api/l5/axioms
+      if (pathname === '/api/l5/axioms' && method === 'GET') {
+        const topK = parseInt(parsedUrl.searchParams.get('topK') || '10', 10);
+        const { L5Store } = require('../../src/memory/l5-store');
+        const store = new L5Store();
+        const result = store.getTop(topK);
+        res.writeHead(200);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // GET /api/l5/heuristics
+      if (pathname === '/api/l5/heuristics' && method === 'GET') {
+        const { L5Store } = require('../../src/memory/l5-store');
+        const store = new L5Store();
+        const heuristics = store.loadHeuristics();
+        res.writeHead(200);
+        res.end(JSON.stringify({ heuristics }));
+        return;
+      }
+
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not found' }));
     } catch (err: any) {

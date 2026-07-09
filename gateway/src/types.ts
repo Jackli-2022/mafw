@@ -1,11 +1,13 @@
 import type { HarmonicIndexManager } from "../../src/memory/harmonic-index";
 import type { CognitiveGraphManager } from "../../src/memory/cognitive-graph";
+import type { L5Store } from "../../src/memory/l5-store";
 import type { CostEstimator } from "../../src/cost/cost-estimator";
 import type { CognitiveRouter } from "../../src/cost/cognitive-router";
 
 export interface MemoryService {
   harmonicIndex: HarmonicIndexManager;
   cognitiveGraph: CognitiveGraphManager;
+  l5: L5Store;
   search(query: string, topK?: number): ReturnType<HarmonicIndexManager["search"]>;
 }
 
