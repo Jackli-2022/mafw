@@ -235,13 +235,13 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
         const query = args.query as string;
         const topK = (args.topK as number) || 20;
 
-        const { HarmonicIndexManager } = await import('../memory/harmonic-index');
+        const { HarmonicIndexManager } = await import('../memory/harmonic-index.js');
         const index = new HarmonicIndexManager(projectDir);
         const results = index.search(query, topK);
 
         let filtered = results;
         if (args.memoryType) {
-          filtered = filtered.filter((r) => r.type === args.memoryType);
+          filtered = filtered.filter((r: { type: string }) => r.type === args.memoryType);
         }
 
         return { content: [{ type: 'text', text: JSON.stringify({ results: filtered, count: filtered.length }) }] };

@@ -5,7 +5,7 @@ import * as http from 'http';
 import { spawn, execSync, ChildProcess } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { buildExecutionGraph, FileCheckpointer, planNode, executeNode, reviewNode, syncToDashboard } from '../../src/langgraph';
-import { Command } from '@langchain/langgraph';
+
 import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { createToolRegistry } from "./mcp/tool-registry";
 import { MemoryService } from "./memory/service";
@@ -982,7 +982,7 @@ class MafwScheduler {
 
     const graph = buildExecutionGraph(this.buildNodeOptions(info.mafwDir));
     graph.checkpointer = cp;
-    await graph.invoke(new Command({}), {
+    await graph.invoke(null, {
       configurable: { thread_id: goalId },
     });
     await this.syncFromCheckpoint(goalId, cp);
