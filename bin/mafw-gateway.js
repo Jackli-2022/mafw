@@ -15,7 +15,7 @@ const os = require('os');
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mafw');
 const PID_FILE = path.join(CONFIG_DIR, 'gateway.pid');
 const LOG_DIR = path.join(CONFIG_DIR, 'logs');
-const GATEWAY_SCRIPT = path.join(__dirname, '..', 'gateway', 'dist', 'index.js');
+const GATEWAY_SCRIPT = path.join(__dirname, '..', 'gateway', 'dist', 'gateway', 'src', 'index.js');
 
 const COMMANDS = ['start', 'stop', 'status', 'restart', 'daemon', 'service-register', 'service-unregister', 'logs', 'config', 'dashboard'];
 

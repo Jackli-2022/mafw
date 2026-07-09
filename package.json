@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "tsc && cd gateway && npm run build",
+    "postinstall": "node -e \"var p=require('path'),f=require('fs'),d=p.join(__dirname,'gateway');if(f.existsSync(d)){require('child_process').execSync('npm install --no-audit --no-fund --loglevel=error',{cwd:d,stdio:'inherit'})}\"",
     "prepare": "npm run build",
     "test": "jest",
     "test:unit": "jest tests/unit"
