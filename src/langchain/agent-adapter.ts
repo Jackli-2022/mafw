@@ -45,10 +45,14 @@ export class CodeAgentAdapter extends BaseSingleActionAgent {
     _config: RunnableConfig | undefined,
   ): Promise<AgentAction | AgentFinish> {
     const sessionId = await this.services.createSession(this.goalId);
-    await this.services.sendPrompt(sessionId, this.instruction);
-    return {
-      returnValues: { output: 'delegated_to_opencode' },
-      log: `Delegated to OpenCode SDK: ${this.instruction}`,
-    };
+    try {
+      await this.services.sendPrompt(sessionId, this.instruction);
+      return {
+        returnValues: { output: 'delegated_to_opencode' },
+        log: `Delegated to OpenCode SDK: ${this.instruction}`,
+      };
+    } finally {
+      await this.services.destroySession(sessionId);
+    }
   }
 }

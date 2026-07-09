@@ -19,6 +19,7 @@ describe('CodeAgentAdapter', () => {
     expect((result as AgentFinish).returnValues.output).toBe('delegated_to_opencode');
     expect(services.createSession).toHaveBeenCalledWith('goal-1');
     expect(services.sendPrompt).toHaveBeenCalledWith('session-1', 'test instruction');
+    expect(services.destroySession).toHaveBeenCalledWith('session-1');
   });
 
   it('has correct input/output keys', () => {
