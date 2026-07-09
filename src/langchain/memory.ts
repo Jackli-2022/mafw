@@ -18,8 +18,8 @@ export interface ParametricStoreLike {
 export class MAFWMemory extends BaseMemory {
   lc_namespace = ["mafw", "memory"];
 
-  get memoryKeys(): string[] {
-    return ["l3_constraints", "hot_memories"];
+  get memoryKeys(): ["l3_constraints", "hot_memories"] {
+    return ["l3_constraints", "hot_memories"] as const;
   }
 
   constructor(
