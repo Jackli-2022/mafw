@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.0.0",
-    "@opencode-ai/sdk": "^1.17.12"
+    "@opencode-ai/sdk": "^1.17.12",
+    "langchain-mcp-adapters": "^0.6.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

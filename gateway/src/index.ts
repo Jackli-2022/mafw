@@ -941,7 +941,12 @@ class MafwScheduler {
 
   private async initLangChainTools() {
     try {
-      const mcpClient = MultiServerMCPClient.fromSSE('http://localhost:3001/sse');
+      const mcpClient = new MultiServerMCPClient({
+        "mafw-server": {
+          url: "http://localhost:3001/sse",
+          transport: "sse",
+        },
+      });
       const tools = await mcpClient.getTools();
       console.log(`[LangChain] Loaded ${tools.length} MCP tools`);
       return tools;
