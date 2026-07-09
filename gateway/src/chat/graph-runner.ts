@@ -1,5 +1,5 @@
-import { buildExecutionGraph, FileCheckpointer } from '../../src/langgraph';
-import { LoopStateType } from '../../src/langgraph/loop-state';
+import { buildExecutionGraph, FileCheckpointer } from '../../../src/langgraph';
+import { LoopStateType } from '../../../src/langgraph/loop-state';
 
 export class GraphRunner {
   constructor(
@@ -16,9 +16,8 @@ export class GraphRunner {
     const timeoutSignal = AbortSignal.timeout(120_000);
     const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
-    const cp = new FileCheckpointer(this.mafwDir);
     const graph = buildExecutionGraph(this.buildNodeOptions(this.mafwDir));
-    const app = graph.compile({ checkpointer: cp });
+    graph.checkpointer = new FileCheckpointer(this.mafwDir);
 
     const initialState: Partial<LoopStateType> = {
       goalId: goalId as any,
@@ -29,14 +28,14 @@ export class GraphRunner {
       ...extraContext,
     };
 
-    const stream = await app.stream(initialState, {
+    const stream = await graph.stream(initialState, {
       configurable: { thread_id: goalId },
       signal: combinedSignal,
     });
 
-    for await (const event of stream) {
-      const nodeName = event.name;
-      const nodeOutput = event.data?.output;
+    for await (const event of stream as any) {
+      const nodeName = event.name || event.metadata?.name;
+      const nodeOutput = event.data?.output || event;
       if (nodeName && nodeOutput?.phase) {
         onState({ activeNodeId: nodeName.toUpperCase(), phase: nodeOutput.phase });
       }

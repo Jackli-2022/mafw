@@ -1,8 +1,8 @@
 import { IncomingMessage, ServerResponse } from 'http';
-import { MAFWRetriever } from '../../src/langchain/retriever';
-import { MAFWMemory } from '../../src/langchain/memory';
-import { HarmonicIndexManager } from '../../src/memory/harmonic-index';
-import { ParametricStore } from '../../src/memory/store';
+import { MAFWRetriever } from '../../../src/langchain/retriever';
+import { MAFWMemory } from '../../../src/langchain/memory';
+import { HarmonicIndexManager } from '../../../src/memory/harmonic-index';
+import { ParametricStore } from '../../../src/memory/store';
 import { IntentClassifier } from './intent-classifier';
 import { GraphRunner } from './graph-runner';
 import { RAGResponder } from './rag-responder';
@@ -51,7 +51,7 @@ export class ChatAgentService {
       }
 
       const [context, memoryVars] = await Promise.all([
-        this.retriever.getRelevantDocuments(message),
+        this.retriever._getRelevantDocuments(message),
         this.memory.loadMemoryVariables({}),
       ]);
 

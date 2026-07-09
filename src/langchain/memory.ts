@@ -12,7 +12,7 @@ export interface HarmonicIndexLike {
 }
 
 export interface ParametricStoreLike {
-  loadAll(): Array<{ id: string; type: string; rule: string }>;
+  loadAll(): Array<{ id: string; type: string; [key: string]: any }>;
 }
 
 export class MAFWMemory extends BaseMemory {
@@ -38,7 +38,7 @@ export class MAFWMemory extends BaseMemory {
 
     const l3_constraints = this.parametricStore
       ? this.parametricStore.loadAll()
-          .map((c) => `[${c.type}] ${c.rule}`)
+          .map((c) => `[${c.type}] ${c.rule || c.prompt_delta || c.pattern_template || ''}`)
           .join("\n")
       : "";
 
