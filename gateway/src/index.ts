@@ -11,6 +11,7 @@ import { createToolRegistry } from "./mcp/tool-registry";
 import { MemoryService } from "./memory/service";
 import { CostService } from "./cost/service";
 import { eventBus } from "./event-bus";
+import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 
 /**
  * MAFW Scheduler — v5.0 SDK 编排器
@@ -936,6 +937,18 @@ class MafwScheduler {
         return {};
       },
     };
+  }
+
+  private async initLangChainTools() {
+    try {
+      const mcpClient = MultiServerMCPClient.fromSSE('http://localhost:3001/sse');
+      const tools = await mcpClient.getTools();
+      console.log(`[LangChain] Loaded ${tools.length} MCP tools`);
+      return tools;
+    } catch (err) {
+      console.warn('[LangChain] MCP client init failed (non-fatal):', err);
+      return [];
+    }
   }
 
   private async onGoalCreated(goalId: string, projectDir: string, mafwDir: string) {
