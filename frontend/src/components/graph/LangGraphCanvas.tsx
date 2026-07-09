@@ -66,7 +66,7 @@ export function LangGraphCanvas() {
   useEffect(() => { syncNodes(); }, [syncNodes]);
 
   return (
-    <div className="h-[600px] bg-gray-900/30 rounded-xl border border-gray-800">
+    <div className="h-[600px] rounded-xl border border-white/5 overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(8,11,20,0.95) 0%, rgba(16,22,40,0.8) 100%)' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -74,9 +74,11 @@ export function LangGraphCanvas() {
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         fitView
+        minZoom={0.5}
+        maxZoom={2}
       >
-        <Background color="rgba(255,255,255,0.02)" />
-        <Controls />
+        <Background color="rgba(255,255,255,0.03)" gap={24} />
+        <Controls className="!bg-white/5 !border !border-white/10 !rounded-lg !backdrop-blur-sm [&_button]:!border-white/10 [&_button]:!text-gray-400 [&_button:hover]:!bg-white/10" />
       </ReactFlow>
     </div>
   );
