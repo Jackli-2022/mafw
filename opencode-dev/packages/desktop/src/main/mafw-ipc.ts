@@ -81,6 +81,7 @@ export function registerMafwIpcHandlers() {
   })
 
   ipcMain.handle("mafw-invoke", async (_event: IpcMainInvokeEvent, namespace: string, method: string, ...args: unknown[]) => {
+    console.log(`[mafw] IPC invoke: ${namespace}.${method}`, args.length > 0 ? JSON.stringify(args).slice(0, 100) : '')
     if (!mafwClient) throw new Error("MAFW Gateway not ready")
     const ns = (mafwClient as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)[namespace]
     if (!ns) throw new Error(`Unknown namespace: ${namespace}`)

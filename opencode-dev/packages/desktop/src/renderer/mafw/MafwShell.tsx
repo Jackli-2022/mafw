@@ -20,6 +20,7 @@ import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
 import { AutomationsPage } from "./pages/Automations"
 import { ConfigPage } from "./pages/Config"
+import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import "./mafw.css"
 
 interface ChatSession {
@@ -46,6 +47,10 @@ export function MafwShell() {
     part: {} as Record<string, any[]>,
   })
 
+  // Question widget state
+  const [activeQuestion, setActiveQuestion] = createSignal<QuestionData | null>(null)
+  const [gatewayUrl, setGatewayUrl] = createSignal("")
+
   // Chat sessions (tabs)
   const [sessions, setSessions] = createSignal<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null)
@@ -55,12 +60,26 @@ export function MafwShell() {
   // Direct EventSource SSE connection (renderer has native EventSource)
   onMount(async () => {
     const info = await window.api.mafw.gateway.info()
-    if (!info?.url) return
+    if (!info?.url) {
+      console.log("[mafw] SSE: no gateway URL yet")
+      return
+    }
+    console.log("[mafw] SSE connecting to", info.url)
+    setGatewayUrl(info.url)
     const es = new EventSource(`${info.url}/api/events`)
+    es.onopen = () => console.log("[mafw] SSE connected")
     es.onmessage = (e: MessageEvent) => {
       let raw: any
       try { raw = JSON.parse(e.data) } catch { return }
       const event = raw?.data || raw
+      if (!event) return
+
+      if (event.type === "user_question") {
+        console.log("[mafw] SSE user_question", event.goalId, event.questionId)
+        setActiveQuestion(event as QuestionData)
+        return
+      }
+
       if (!event?.sessionID) return
 
       const sid = event.sessionID
@@ -103,8 +122,8 @@ export function MafwShell() {
         })
       }
     }
-    es.onerror = () => {}  // EventSource auto-reconnects
-    onCleanup(() => { es.close() })
+    es.onerror = () => { console.log("[mafw] SSE error (will auto-reconnect)") }
+    onCleanup(() => { console.log("[mafw] SSE closing"); es.close() })
   })
 
   // Load history when active session changes
@@ -115,8 +134,10 @@ export function MafwShell() {
 
   // Load session message history from the gateway
   async function loadSessionHistory(sessionID: string) {
+    console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const data = await window.api.mafw.sessions.messages(sessionID, 100) as any
+      console.log("[mafw] loadSessionHistory result:", data?.data?.length ? `${data.data.length} messages` : 'no data')
       if (!data?.data) return
       const msgs: any[] = []
       const parts: Record<string, any[]> = {}
@@ -146,9 +167,11 @@ export function MafwShell() {
   const active = () => sessions().find(s => s.id === activeSessionId()) || null
 
   async function createSession() {
+    console.log("[mafw] createSession")
     try {
       const result = await window.api.mafw.sessions.create() as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
+      console.log("[mafw] createSession result id:", id)
       const userMsgId = `user-${Date.now()}`
       const sess: ChatSession = { id, title: `Chat ${sessions().length + 1}`, userMsgId, assistantMsgId: null, done: false }
       setSessions(prev => [...prev, sess])
@@ -199,9 +222,12 @@ export function MafwShell() {
       return { ...prev, message: msgs }
     })
 
+    console.log("[mafw] sendMessage", sid)
     try {
       const result = await window.api.mafw.chat.sendEnriched(text) as any
+      console.log("[mafw] sendEnriched result:", result?.sessionID ? `session ${result.sessionID}` : 'no sessionID')
     } catch (err: any) {
+      console.log("[mafw] sendEnriched error:", err.message)
       setSending(false)
       showToastV2({ description: "Failed to send message", duration: 5000 })
     }
@@ -299,6 +325,13 @@ export function MafwShell() {
         </div>
       </div>
       <StatusBar />
+      <Show when={activeQuestion()}>
+        <QuestionWidget
+          question={activeQuestion()!}
+          gatewayUrl={gatewayUrl()}
+          onDismiss={() => setActiveQuestion(null)}
+        />
+      </Show>
     </div>
   )
 }

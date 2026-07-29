@@ -33,6 +33,7 @@ let gatewayProcess: ReturnType<typeof utilityProcess.fork> | null = null
 let healthInterval: ReturnType<typeof setInterval> | null = null
 
 function notifyState(s: GatewayState) {
+  writeLog("utility", `mafw gateway state -> ${s}`, { port, previousState: state }, "info")
   state = s
   for (const cb of stateListeners) cb(s)
 }
@@ -69,6 +70,7 @@ const CANDIDATE_PORTS = [3000]
 async function tryConnect(port: number): Promise<string | null> {
   const url = `http://127.0.0.1:${port}`
   const ok = await checkHealth(url)
+  if (ok) writeLog("utility", "mafw gateway probe found", { url }, "info")
   return ok ? url : null
 }
 
@@ -77,6 +79,7 @@ async function probeExistingGateway(): Promise<string | null> {
   if (process.env.MAFW_SERVER_API_PORT) seen.add(Number(process.env.MAFW_SERVER_API_PORT))
   if (process.env.MAFW_GATEWAY_PORT) seen.add(Number(process.env.MAFW_GATEWAY_PORT))
   for (const p of CANDIDATE_PORTS) seen.add(p)
+  writeLog("utility", "mafw gateway probing ports", { ports: [...seen] }, "info")
   for (const p of seen) {
     const url = await tryConnect(p)
     if (url) return url

@@ -1,0 +1,17 @@
+{
+  "version": "2",
+  "goalId": "002-defaults",
+  "title": "Defaults",
+  "state": "draft",
+  "createdAt": "2026-07-29T16:46:32.117Z",
+  "confirmedAt": "2026-07-29T16:46:32.117Z",
+  "source": "manager",
+  "projectDir": "C:\\work\\work-loop\\opencode-plugin-mafw",
+  "mafwDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\.mafw",
+  "goalCharter": "C:\\work\\work-loop\\opencode-plugin-mafw\\.mafw\\goals\\002-defaults.md",
+  "metrics": {},
+  "boundaries": [],
+  "priority": "medium",
+  "maxLoops": 5,
+  "parallel": false
+}

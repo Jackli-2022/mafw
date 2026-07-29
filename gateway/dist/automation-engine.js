@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AutomationEngine = exports.actionRegistry = void 0;
+exports.parseDuration = parseDuration;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const cron_1 = require("cron");
@@ -42,6 +43,7 @@ const energy_system_1 = require("./core/memory/energy-system");
 const review_scheduler_1 = require("./core/memory/review-scheduler");
 const cognitive_graph_1 = require("./core/memory/cognitive-graph");
 const abstraction_distiller_1 = require("./core/memory/abstraction-distiller");
+const event_bus_1 = require("./event-bus");
 exports.actionRegistry = new Map();
 exports.actionRegistry.set('memory:distill', async (_rule, engine) => {
     console.log('[AutomationEngine] Starting memory distillation...');
@@ -94,6 +96,10 @@ class AutomationEngine {
     jobs = new Map();
     mafwDir;
     _ledger;
+    eventListeners = new Map();
+    lastFireTimes = new Map();
+    reportedPairs = new Set();
+    eventHandlerRefs = new Map();
     constructor(mafwDir) {
         this.mafwDir = mafwDir;
     }
@@ -134,7 +140,11 @@ class AutomationEngine {
             job.stop();
             this.jobs.delete(id);
         }
-        console.log(`[AutomationEngine] Stopped ${this.jobs.size} jobs`);
+        const eventRuleIds = Array.from(this.eventHandlerRefs.keys());
+        for (const id of eventRuleIds) {
+            this.unregisterEventRule(id);
+        }
+        console.log(`[AutomationEngine] Stopped ${this.jobs.size} cron jobs and cleaned up event listeners`);
     }
     scheduleRule(id, rule) {
         try {
@@ -147,8 +157,70 @@ class AutomationEngine {
             console.warn(`[AutomationEngine] Failed to schedule rule ${id}: ${err.message}`);
         }
     }
-    scheduleEventRule(_id, _rule) {
-        // Stub — will be implemented in Task 8
+    scheduleEventRule(id, rule) {
+        const et = rule.trigger;
+        for (const eventName of et.on) {
+            if (!this.eventListeners.has(eventName)) {
+                this.eventListeners.set(eventName, new Set());
+            }
+            this.eventListeners.get(eventName).add(id);
+        }
+        console.log(`[AutomationEngine] Registered event rule ${id} for events: ${et.on.join(', ')}`);
+        const handler = (_data) => {
+            const goalId = _data?.goalId;
+            if (goalId)
+                this.fireEventRule(rule, goalId);
+        };
+        const refs = [];
+        for (const eventName of et.on) {
+            event_bus_1.eventBus.on(eventName, handler);
+            refs.push({ event: eventName, handler });
+        }
+        this.eventHandlerRefs.set(id, refs);
+    }
+    fireEventRule(rule, goalId) {
+        const et = rule.trigger;
+        const cooldownMs = parseDuration(et.perGoalCooldown);
+        const lastFire = this.lastFireTimes.get(`${rule.id}:${goalId}`);
+        if (lastFire && Date.now() - lastFire < cooldownMs)
+            return;
+        const stateVersion = this.getStateVersion(goalId);
+        const pairKey = `${goalId}:${stateVersion}`;
+        if (this.reportedPairs.has(pairKey))
+            return;
+        this.lastFireTimes.set(`${rule.id}:${goalId}`, Date.now());
+        this.reportedPairs.add(pairKey);
+        if (rule.action) {
+            this.executeRule(rule.id, 'event', this._ledger);
+        }
+    }
+    getStateVersion(_goalId) {
+        const stateDir = path.join(this.mafwDir, 'state');
+        const stateFile = path.join(stateDir, `${_goalId}.json`);
+        if (fs.existsSync(stateFile)) {
+            try {
+                const s = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+                return s.stateVersion ?? 0;
+            }
+            catch {
+                return 0;
+            }
+        }
+        return 0;
+    }
+    unregisterEventRule(id) {
+        const refs = this.eventHandlerRefs.get(id);
+        if (refs) {
+            for (const { event, handler } of refs) {
+                event_bus_1.eventBus.off(event, handler);
+            }
+            this.eventHandlerRefs.delete(id);
+        }
+        this.eventListeners.forEach((ids) => ids.delete(id));
+        for (const key of this.lastFireTimes.keys()) {
+            if (key.startsWith(`${id}:`))
+                this.lastFireTimes.delete(key);
+        }
     }
     async executeRule(id, source, ledger) {
         const rule = this.rules.get(id);
@@ -522,8 +594,7 @@ class AutomationEngine {
                     job.stop();
                     this.jobs.delete(id);
                 }
-                // Unregister event listener (stub until Task 8):
-                // this.unregisterEventRule(id);
+                this.unregisterEventRule(id);
             }
             return true;
         }
@@ -574,3 +645,13 @@ class AutomationEngine {
     }
 }
 exports.AutomationEngine = AutomationEngine;
+function parseDuration(d) {
+    const num = parseInt(d);
+    if (d.endsWith('s'))
+        return num * 1000;
+    if (d.endsWith('m'))
+        return num * 60 * 1000;
+    if (d.endsWith('h'))
+        return num * 60 * 60 * 1000;
+    return 60000;
+}
