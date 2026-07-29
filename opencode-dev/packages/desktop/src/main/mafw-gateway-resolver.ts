@@ -11,20 +11,26 @@ export function resolveGatewayEntry(): string | null {
 
   const candidates: string[] = [
     join(homedir(), ".mafw", "gateway", "dist", "gateway", "src", "index.js"),
+    join(homedir(), ".mafw", "gateway", "dist", "index.js"),
   ]
 
   try {
     const localPlugin = require.resolve("mafw-plugin/package.json")
     candidates.push(join(localPlugin, "..", "..", "gateway", "dist", "gateway", "src", "index.js"))
+    candidates.push(join(localPlugin, "..", "..", "gateway", "dist", "index.js"))
   } catch {}
 
   if (process.env.MAFW_DIR) {
     candidates.push(join(process.env.MAFW_DIR, "gateway", "dist", "gateway", "src", "index.js"))
+    candidates.push(join(process.env.MAFW_DIR, "gateway", "dist", "index.js"))
   }
 
   if (process.env.OPENCODE_PROJECT_ROOT) {
     candidates.push(
       join(process.env.OPENCODE_PROJECT_ROOT, "gateway", "dist", "gateway", "src", "index.js"),
+    )
+    candidates.push(
+      join(process.env.OPENCODE_PROJECT_ROOT, "gateway", "dist", "index.js"),
     )
   }
 
@@ -32,6 +38,12 @@ export function resolveGatewayEntry(): string | null {
   try {
     const dir = fileURLToPath(new URL(".", import.meta.url))
     candidates.push(join(dir, "..", "..", "..", "..", "..", "gateway", "dist", "gateway", "src", "index.js"))
+    candidates.push(join(dir, "..", "..", "..", "..", "..", "gateway", "dist", "index.js"))
+  } catch {}
+
+  // Fallback: check relative to cwd (development from repo)
+  try {
+    candidates.push(join(process.cwd(), "..", "..", "gateway", "dist", "index.js"))
   } catch {}
 
   for (const candidate of candidates) {
