@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { config } from './config';
 
-export type LedgerSource = 'cron' | 'llm' | 'user';
+export type LedgerSource = 'cron' | 'event' | 'llm' | 'user';
 
 export interface LedgerEntry {
   timestamp: string;
