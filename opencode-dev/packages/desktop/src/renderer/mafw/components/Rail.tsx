@@ -96,7 +96,7 @@ export function Rail(props: Props) {
                       <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
                         <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
                           <Icon name="server" size="small" style={{ color: "var(--icon-success-base, #2bc94a)" }} />
-                          <span class="mafw-rail-session-title">{s.title || s.id.slice(0, 12)}</span>
+                          <span class="mafw-rail-session-title">{s.title || (s.id || "").slice(0, 12)}</span>
                           <span class="mafw-badge" style={{ background: "var(--icon-success-base, #2bc94a)", color: "#fff", "margin-left": "auto" }}>Manager</span>
                         </span>
                       </TooltipV2>
@@ -111,7 +111,7 @@ export function Rail(props: Props) {
                       <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
                         <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
                           <span style={{ opacity: 0.5 }}>⋮</span>
-                          <span class="mafw-rail-session-title">{s.title || s.id.slice(0, 12)}</span>
+                          <span class="mafw-rail-session-title">{s.title || (s.id || "").slice(0, 12)}</span>
                           <span class="mafw-rail-session-time" style={{ "font-size": 10, opacity: 0.35, "margin-left": "auto" }}>
                             {s.time?.created ? new Date(s.time.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
                           </span>
