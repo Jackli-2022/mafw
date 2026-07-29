@@ -1,5 +1,6 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
 import { MemoryRouter } from "@solidjs/router"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
@@ -40,8 +41,8 @@ export function MafwShell() {
   const [sending, setSending] = createSignal(false)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
 
-  // Reactive data store for SessionTurn
-  const [store, setStore] = createSignal({
+  // Reactive data store for SessionTurn (SolidJS store Proxy for fine-grained tracking)
+  const [store, setStore] = createStore({
     session: [] as any[],
     session_status: {} as Record<string, any>,
     session_diff: {} as Record<string, any[]>,
@@ -216,12 +217,10 @@ export function MafwShell() {
         } else {
           console.warn("[mafw] no user message found, first msg role:", msgs[0]?.role, "id:", msgs[0]?.id)
         }
-        // Verify store after update
         setTimeout(() => {
-          const st = store()
-          const msgCount = st.message[sessionID]?.length || 0
-          const partKeys = Object.keys(st.part).length
-          console.log("[mafw] store verify - msgs:", msgCount, "partKeys:", partKeys, "sid:", sessionID, "sidExists:", !!st.message[sessionID])
+          const msgCount = store.message[sessionID]?.length || 0
+          const partKeys = Object.keys(store.part).length
+          console.log("[mafw] store verify - msgs:", msgCount, "partKeys:", partKeys, "sid:", sessionID, "sidExists:", !!store.message[sessionID])
         }, 100)
       }
     } catch (e) { console.warn("[mafw] loadHistory failed", e); showToastV2({ description: "Failed to load session history", duration: 5000 }) }
@@ -312,7 +311,7 @@ export function MafwShell() {
     // Fallback: find first user message in store
     const sid = currentSessionID()
     if (sid) {
-      const msgs = store().message[sid]
+      const msgs = store.message[sid]
       if (msgs) {
         const userMsg = msgs.find(m => m.role === "user")
         if (userMsg) return userMsg.id
@@ -320,7 +319,7 @@ export function MafwShell() {
     }
     return ""
   }
-  const storeData = () => store()
+  const storeData = () => store
 
   // Gateway status
   onMount(async () => {
