@@ -1,5 +1,5 @@
 ﻿// @ts-nocheck
-import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { createSignal, createEffect, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Router } from "@solidjs/router"
 
@@ -283,14 +283,6 @@ export function MafwShell() {
     }
     return ""
   }
-  const storeData = createMemo(() => ({
-    session: store.session,
-    session_status: store.session_status,
-    session_diff: store.session_diff,
-    message: store.message,
-    part: store.part,
-  }))
-
   // Gateway status
   onMount(async () => {
     const info = await window.api.mafw.gateway.info()
@@ -300,10 +292,11 @@ export function MafwShell() {
   })
 
   return (
+      <Router>
       <DialogProvider>
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
-            <DataProvider data={storeData()} directory=".">
+            <DataProvider data={store} directory=".">
               <div class="mafw-shell">
       <ToastV2.Region />
       <div class="mafw-titlebar">
@@ -351,16 +344,14 @@ export function MafwShell() {
                   ))}
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
-                {/* SessionTurn — provider order matches opencode Desktop app.tsx */}
-                          <Router>
-                            <div class="mafw-session-turn-container">
-                              {active() ? (
-                                <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
-                              ) : (
-                                <div class="mafw-chat-empty">Create a new session to start chatting</div>
-                              )}
-                            </div>
-                          </Router>
+                {/* SessionTurn */}
+                          <div class="mafw-session-turn-container">
+                            {active() ? (
+                              <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                            ) : (
+                              <div class="mafw-chat-empty">Create a new session to start chatting</div>
+                            )}
+                          </div>
                 {/* InputBar */}
                 <div class="mafw-inputbar">
                   <TextareaV2
@@ -403,5 +394,6 @@ export function MafwShell() {
           </FileComponentProvider>
         </MarkedProvider>
       </DialogProvider>
+      </Router>
   )
 }
