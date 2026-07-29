@@ -20,6 +20,7 @@ import { eventBus } from "./event-bus";
 import { AutomationEngine } from "./automation-engine";
 import { SchedulerLedger } from "./ledger";
 import { DesktopClient } from "./desktop-client";
+import { QuestionLedger } from './core/manager/question-ledger';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 
 /**
@@ -144,6 +145,11 @@ class MafwScheduler {
     // 0. Init services
     await this.initServices();
     this.setupEventBus();
+
+    // Boot reconcile: orphan questions for inactive goals
+    const bootLedger = new QuestionLedger(this.mafwDir);
+    const activeCheckpoints = new Set(Array.from(this.activeGoals.keys()));
+    bootLedger.bootReconcile(activeCheckpoints);
 
     // 1. Start HTTP API immediately (health check endpoint, MCP, etc.)
     await this.startApiServer();
@@ -620,6 +626,61 @@ class MafwScheduler {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
+          return;
+        }
+
+        // POST /api/goals/{goalId}/questions/{questionId}/respond
+        const respondMatch = req.url?.match(/^\/api\/goals\/([^/]+)\/questions\/([^/]+)\/respond$/);
+        if (respondMatch && req.method === 'POST') {
+          const goalId = respondMatch[1];
+          const questionId = respondMatch[2];
+          const body = await readBody(req);
+          let data: any;
+          try { data = JSON.parse(body); } catch {
+            res.writeHead(400);
+            res.end(JSON.stringify({ status: 'bad_request', error: 'Invalid JSON' }));
+            return;
+          }
+          const ledger = new QuestionLedger(this.mafwDir);
+          const state = ledger.getQuestionState(questionId);
+          if (!state) {
+            res.writeHead(404);
+            res.end(JSON.stringify({ status: 'not_found' }));
+            return;
+          }
+          if (state !== 'pending') {
+            res.writeHead(409);
+            res.end(JSON.stringify({ status: 'conflict', currentState: state }));
+            return;
+          }
+          if (data.type === 'cancel') {
+            ledger.appendQuestionEvent({
+              type: 'cancelled', questionId, goalId, cancelledAt: new Date().toISOString(),
+            });
+            eventBus.emit('question_cancelled', { questionId, goalId });
+            res.writeHead(200);
+            res.end(JSON.stringify({ status: 'accepted', action: 'cancelled' }));
+            return;
+          }
+          // answer or redirect
+          ledger.appendQuestionEvent({
+            type: 'answered', questionId, goalId,
+            answer: data.answer || '', answeredAt: new Date().toISOString(),
+          });
+          // Resume graph
+          const found = this.findGoalStatePath(goalId);
+          if (found) {
+            const cp = new FileCheckpointer(found.info.mafwDir);
+            const graph = buildExecutionGraph(this.buildNodeOptions(found.info.mafwDir));
+            graph.checkpointer = cp;
+            const { Command } = await import('@langchain/langgraph');
+            await graph.invoke(new Command({ resume: { answer: data.answer || '' } }) as any, {
+              configurable: { thread_id: goalId },
+            });
+          }
+          eventBus.emit('question_answered', { questionId, goalId, answer: data.answer });
+          res.writeHead(200);
+          res.end(JSON.stringify({ status: 'accepted' }));
           return;
         }
 
