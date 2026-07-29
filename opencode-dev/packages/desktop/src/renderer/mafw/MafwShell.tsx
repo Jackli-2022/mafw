@@ -174,7 +174,7 @@ export function MafwShell() {
             currentTurn.assistants.push(m)
           }
         }
-        console.log("[mafw] turns built:", turns.length, "user:", userMsgId, "first user text:", turns[0]?.user?.text?.slice(0, 50))
+        console.log("[mafw] turns built:", turns.length, "first user text:", turns[0]?.user?.text?.slice(0, 50))
 
         msgs.sort((a, b) => a.id.localeCompare(b.id))
         setStore(prev => ({
