@@ -1,5 +1,6 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
 import { MemoryRouter } from "@solidjs/router"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
@@ -41,7 +42,7 @@ export function MafwShell() {
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
 
   // Reactive data store for SessionTurn (SolidJS store Proxy for fine-grained tracking)
-  const [store, setStore] = createSignal({
+  const [store, setStore] = createStore({
     session: [] as any[],
     session_status: {} as Record<string, any>,
     session_diff: {} as Record<string, any[]>,
@@ -163,43 +164,6 @@ export function MafwShell() {
         }
       }
       if (msgs.length > 0) {
-        // Debug: print the first message raw format
-        const firstUser = msgs.find(m => m.role === "user")
-        if (firstUser) {
-          const firstParts = parts[firstUser.id] || []
-          const firstTextPart = firstParts.find((p: any) => p.type === "text")
-          console.log("[mafw] first user id:", firstUser.id, "parts count:", firstParts.length, "textPart text:", firstTextPart?.text?.slice(0, 80))
-          // Log the FULL part object to see its keys
-          if (firstParts.length > 0) {
-            console.log("[mafw] first part keys:", Object.keys(firstParts[0]).join(","), "part:", JSON.stringify(firstParts[0]).slice(0, 300))
-          }
-
-          // Also check what keys the raw API item has for user messages
-          const rawFirst = rawItems.find((r: any) => (r.info || r).id === firstUser.id)
-          if (rawFirst) {
-            const rawInfo = rawFirst.info || rawFirst
-            const keys = Object.keys(rawInfo)
-            console.log("[mafw] raw user keys:", keys.join(","), "hasText:", !!rawInfo.text, "hasContent:", !!rawInfo.textContent, "partsLen info:", rawInfo.parts?.length, "raw.parts:", rawFirst.parts?.length)
-            // Log the item.parts top-level if it exists
-            if (rawFirst.parts?.length > 0) {
-              console.log("[mafw] rawFirst.parts[0] keys:", Object.keys(rawFirst.parts[0]).join(","), JSON.stringify(rawFirst.parts[0]).slice(0, 300))
-            }
-          }
-        }
-
-        // Group messages into turns: [user msg, ...assistant msgs] pairs
-        const turns: { user: any; assistants: any[]; parts: any[] }[] = []
-        let currentTurn: { user: any; assistants: any[]; parts: any[] } | null = null
-        for (const m of msgs) {
-          if (m.role === "user") {
-            currentTurn = { user: m, assistants: [], parts: parts[m.id] || [] }
-            turns.push(currentTurn)
-          } else if (currentTurn && m.role === "assistant") {
-            currentTurn.assistants.push(m)
-          }
-        }
-        console.log("[mafw] turns built:", turns.length, "first user text:", turns[0]?.user?.text?.slice(0, 50))
-
         msgs.sort((a, b) => a.id.localeCompare(b.id))
         setStore(prev => ({
           ...prev,
@@ -217,10 +181,9 @@ export function MafwShell() {
           console.warn("[mafw] no user message found, first msg role:", msgs[0]?.role, "id:", msgs[0]?.id)
         }
         setTimeout(() => {
-          const st = store()
-          const msgCount = st.message[sessionID]?.length || 0
-          const partKeys = Object.keys(st.part).length
-          console.log("[mafw] store verify - msgs:", msgCount, "partKeys:", partKeys, "sid:", sessionID, "sidExists:", !!st.message[sessionID])
+          const msgCount = store.message[sessionID]?.length || 0
+          const partKeys = Object.keys(store.part).length
+          console.log("[mafw] store verify - msgs:", msgCount, "partKeys:", partKeys, "sid:", sessionID, "sidExists:", !!store.message[sessionID])
         }, 100)
       }
     } catch (e) { console.warn("[mafw] loadHistory failed", e); showToastV2({ description: "Failed to load session history", duration: 5000 }) }
@@ -311,7 +274,7 @@ export function MafwShell() {
     // Fallback: find first user message in store
     const sid = currentSessionID()
     if (sid) {
-      const msgs = store().message[sid]
+      const msgs = store.message[sid]
       if (msgs) {
         const userMsg = msgs.find(m => m.role === "user")
         if (userMsg) return userMsg.id
@@ -319,7 +282,13 @@ export function MafwShell() {
     }
     return ""
   }
-  const storeData = () => store()
+  const storeData = createMemo(() => ({
+    session: store.session,
+    session_status: store.session_status,
+    session_diff: store.session_diff,
+    message: store.message,
+    part: store.part,
+  }))
 
   // Gateway status
   onMount(async () => {
@@ -378,54 +347,23 @@ export function MafwShell() {
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
                 {/* SessionTurn */}
-                <div class="mafw-session-turn-container">
-                  {active() ? (
-                    <>
-                      {/* Direct message rendering (bypasses SessionTurn, uses store signal directly) */}
-                      <div style="flex: 1; overflow-y: auto; font-size: 13px; color: var(--text-base); padding: 8px; border-top: 1px solid #555;">
-                        {(() => {
-                          const sid = currentSessionID()
-                          const msgs = store().message?.[sid]
-
-                          if (!msgs || msgs.length === 0) return <div style="opacity: 0.5; padding: 8px;">No messages</div>
-                          const turns: any[][] = []
-
-                          let curTurn: any[] = []
-                          for (const m of msgs) {
-                            if (m.role === "user") { curTurn = [m]; turns.push(curTurn) }
-                            else if (curTurn.length > 0) { curTurn.push(m) }
-                          }
-                          return turns.slice(-10).map((turn: any[]) => {
-                            const userMsg = turn[0]
-                            const userParts = store().part?.[userMsg.id] || []
-                            const userText = userParts.find((p: any) => p.type === "text")?.text || userMsg.text || ""
-                            const assistants = turn.slice(1)
-                            return (
-                              <div style="margin-bottom: 16px; border-bottom: 1px solid var(--border-weak-base); padding-bottom: 8px;">
-                                <div style="display: flex; gap: 8px; margin-bottom: 4px;">
-                                  <span style="font-weight: 600; color: var(--text-strong); min-width: 50px;">You:</span>
-                                  <span>{userText}</span>
-                                </div>
-                                {assistants.map((a: any) => {
-                                  const aParts = store().part?.[a.id] || []
-                                  const aText = aParts.find((p: any) => p.type === "text")?.text || ""
-                                  return (
-                                    <div style="display: flex; gap: 8px; margin-bottom: 2px;">
-                                      <span style="font-weight: 600; color: var(--accent-base); min-width: 50px;">AI:</span>
-                                      <span>{aText.slice(0, 500)}</span>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )
-                          })
-                        })()}
-                      </div>
-                    </>
-                  ) : (
-                    <div class="mafw-chat-empty">Create a new session to start chatting</div>
-                  )}
-                </div>
+                <DataProvider data={storeData()} directory=".">
+                  <FileComponentProvider component={FileSSR}>
+                    <DialogProvider>
+                      <MarkedProvider>
+                      <MemoryRouter>
+                        <div class="mafw-session-turn-container">
+                          {active() ? (
+                            <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                          ) : (
+                            <div class="mafw-chat-empty">Create a new session to start chatting</div>
+                          )}
+                        </div>
+                      </MemoryRouter>
+                    </MarkedProvider>
+                    </DialogProvider>
+                  </FileComponentProvider>
+                </DataProvider>
                 {/* InputBar */}
                 <div class="mafw-inputbar">
                   <TextareaV2
