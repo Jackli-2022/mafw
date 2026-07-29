@@ -169,13 +169,21 @@ export function MafwShell() {
           const firstParts = parts[firstUser.id] || []
           const firstTextPart = firstParts.find((p: any) => p.type === "text")
           console.log("[mafw] first user id:", firstUser.id, "parts count:", firstParts.length, "textPart text:", firstTextPart?.text?.slice(0, 80))
+          // Log the FULL part object to see its keys
+          if (firstParts.length > 0) {
+            console.log("[mafw] first part keys:", Object.keys(firstParts[0]).join(","), "part:", JSON.stringify(firstParts[0]).slice(0, 300))
+          }
 
           // Also check what keys the raw API item has for user messages
           const rawFirst = rawItems.find((r: any) => (r.info || r).id === firstUser.id)
           if (rawFirst) {
             const rawInfo = rawFirst.info || rawFirst
             const keys = Object.keys(rawInfo)
-            console.log("[mafw] raw user keys:", keys.join(","), "hasText:", !!rawInfo.text, "hasContent:", !!rawInfo.textContent, "partsLen:", rawInfo.parts?.length, rawFirst.parts?.length)
+            console.log("[mafw] raw user keys:", keys.join(","), "hasText:", !!rawInfo.text, "hasContent:", !!rawInfo.textContent, "partsLen info:", rawInfo.parts?.length, "raw.parts:", rawFirst.parts?.length)
+            // Log the item.parts top-level if it exists
+            if (rawFirst.parts?.length > 0) {
+              console.log("[mafw] rawFirst.parts[0] keys:", Object.keys(rawFirst.parts[0]).join(","), JSON.stringify(rawFirst.parts[0]).slice(0, 300))
+            }
           }
         }
 
