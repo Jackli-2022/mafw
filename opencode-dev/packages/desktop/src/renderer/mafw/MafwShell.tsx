@@ -379,52 +379,23 @@ export function MafwShell() {
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
                 {/* SessionTurn */}
-                <div class="mafw-session-turn-container">
-                  {active() ? (
-                    <>
-                      {/* Direct message rendering (bypasses SessionTurn, uses store signal directly) */}
-                      <div style="flex: 1; overflow-y: auto; font-size: 13px; color: var(--text-base); padding: 8px; border-top: 1px solid #555;">
-                        {(() => {
-                          const sid = currentSessionID()
-                          const msgs = store().message?.[sid]
-                          if (!msgs || msgs.length === 0) return <div style="opacity: 0.5; padding: 8px;">No messages</div>
-                          const turns: any[][] = []
-                          let curTurn: any[] = []
-                          for (const m of msgs) {
-                            if (m.role === "user") { curTurn = [m]; turns.push(curTurn) }
-                            else if (curTurn.length > 0) { curTurn.push(m) }
-                          }
-                          return turns.slice(-10).map((turn: any[]) => {
-                            const userMsg = turn[0]
-                            const userParts = store().part?.[userMsg.id] || []
-                            const userText = userParts.find((p: any) => p.type === "text")?.text || userMsg.text || ""
-                            const assistants = turn.slice(1)
-                            return (
-                              <div style="margin-bottom: 16px; border-bottom: 1px solid var(--border-weak-base); padding-bottom: 8px;">
-                                <div style="display: flex; gap: 8px; margin-bottom: 4px;">
-                                  <span style="font-weight: 600; color: var(--text-strong); min-width: 50px;">You:</span>
-                                  <span>{userText}</span>
-                                </div>
-                                {assistants.map((a: any) => {
-                                  const aParts = store().part?.[a.id] || []
-                                  const aText = aParts.find((p: any) => p.type === "text")?.text || ""
-                                  return (
-                                    <div style="display: flex; gap: 8px; margin-bottom: 2px;">
-                                      <span style="font-weight: 600; color: var(--accent-base); min-width: 50px;">AI:</span>
-                                      <span>{aText.slice(0, 500)}</span>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )
-                          })
-                        })()}
-                      </div>
-                    </>
-                  ) : (
-                    <div class="mafw-chat-empty">Create a new session to start chatting</div>
-                  )}
-                </div>
+                <DataProvider data={storeData()} directory=".">
+                  <FileComponentProvider component={FileSSR}>
+                    <DialogProvider>
+                      <MarkedProvider>
+                      <MemoryRouter>
+                        <div class="mafw-session-turn-container">
+                          {active() ? (
+                            <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                          ) : (
+                            <div class="mafw-chat-empty">Create a new session to start chatting</div>
+                          )}
+                        </div>
+                      </MemoryRouter>
+                    </MarkedProvider>
+                    </DialogProvider>
+                  </FileComponentProvider>
+                </DataProvider>
                 {/* InputBar */}
                 <div class="mafw-inputbar">
                   <TextareaV2
