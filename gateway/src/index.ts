@@ -21,6 +21,8 @@ import { AutomationEngine } from "./automation-engine";
 import { SchedulerLedger } from "./ledger";
 import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
+import { ensureManagerRules } from './core/manager/system-rule-templates';
+import { wakeCompletedHandler, wakeFailedHandler, wakeQuestionHandler } from './core/manager/wake-handlers';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 
 /**
@@ -345,6 +347,10 @@ class MafwScheduler {
     this.automationEngine = new AutomationEngine(mafwDir);
     this.automationEngine.setLedger(this.ledger);
     this.automationEngine.loadRules();
+
+    actionRegistry.set('manager:report_completed', wakeCompletedHandler);
+    actionRegistry.set('manager:report_failed', wakeFailedHandler);
+    actionRegistry.set('manager:report_question', wakeQuestionHandler);
 
     const desktopClient = DesktopClient.tryLoad();
     if (desktopClient) {

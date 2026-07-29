@@ -84,6 +84,10 @@ export interface GatewayConfig {
     executeGraphKeywords: string[];
     searchMemoryKeywords: string[];
   };
+  manager: {
+    wakeCooldownMs: number;
+    reportIntervalMin: number;
+  };
   alignment: {
     userWeightsFile: string;
   };
@@ -183,6 +187,10 @@ function defaults(projectDir: string): GatewayConfig {
     alignment: {
       userWeightsFile: 'user-weights.json',
     },
+    manager: {
+      wakeCooldownMs: parseInt(process.env.MAFW_MANAGER_WAKE_COOLDOWN || '') || 60000,
+      reportIntervalMin: parseInt(process.env.MAFW_MANAGER_REPORT_INTERVAL || '') || 5,
+    },
     env: {
       mafwOpencodePath: 'MAFW_OPENCODE_PATH',
       enableLegacyMcp: 'ENABLE_LEGACY_MCP',
@@ -221,6 +229,7 @@ export class Config {
   get chat() { return this.data.chat; }
   get alignment() { return this.data.alignment; }
   get env() { return this.data.env; }
+  get manager() { return this.data.manager; }
 
   resolvePath(...segments: string[]): string {
     return path.join(this.data.paths.projectDir, this.data.paths.mafwDir, ...segments);
