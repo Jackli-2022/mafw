@@ -205,7 +205,16 @@ class MafwScheduler {
     // 6. 恢复活跃 Goal
     await this.recoverState();
 
-    // 7. 启动自动化引�?
+    // 7. 为所有已注册项目初始化 Manager session（不存在则自动创建）
+    for (const [projectDir, info] of this.registeredProjects) {
+      try {
+        await this.ensureManagerSession(projectDir, info.mafwDir);
+      } catch (err: any) {
+        console.warn(`[Scheduler] Manager session init failed for ${projectDir}: ${err.message}`);
+      }
+    }
+
+    // 8. 启动自动化引�?
     if (this.automationEngine) {
       this.automationEngine.start();
       console.log('[Scheduler] Automation engine started');
