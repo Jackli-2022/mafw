@@ -163,6 +163,19 @@ export function MafwShell() {
         }
       }
       if (msgs.length > 0) {
+        // Group messages into turns: [user msg, ...assistant msgs] pairs
+        const turns: { user: any; assistants: any[]; parts: any[] }[] = []
+        let currentTurn: { user: any; assistants: any[]; parts: any[] } | null = null
+        for (const m of msgs) {
+          if (m.role === "user") {
+            currentTurn = { user: m, assistants: [], parts: parts[m.id] || [] }
+            turns.push(currentTurn)
+          } else if (currentTurn && m.role === "assistant") {
+            currentTurn.assistants.push(m)
+          }
+        }
+        console.log("[mafw] turns built:", turns.length, "user:", userMsgId, "first user text:", turns[0]?.user?.text?.slice(0, 50))
+
         msgs.sort((a, b) => a.id.localeCompare(b.id))
         setStore(prev => ({
           ...prev,
@@ -179,6 +192,13 @@ export function MafwShell() {
         } else {
           console.warn("[mafw] no user message found, first msg role:", msgs[0]?.role, "id:", msgs[0]?.id)
         }
+        // Verify store after update
+        setTimeout(() => {
+          const st = store()
+          const msgCount = st.message[sessionID]?.length || 0
+          const partKeys = Object.keys(st.part).length
+          console.log("[mafw] store verify - msgs:", msgCount, "partKeys:", partKeys, "sid:", sessionID, "sidExists:", !!st.message[sessionID])
+        }, 100)
       }
     } catch (e) { console.warn("[mafw] loadHistory failed", e); showToastV2({ description: "Failed to load session history", duration: 5000 }) }
   }
@@ -348,6 +368,21 @@ export function MafwShell() {
                         </DialogProvider>
                       </FileComponentProvider>
                     </DataProvider>
+                    {/* Debug: raw messages fallback */}
+                    {(() => {
+                      const mid = currentUserMsgId()
+                      const msgs = store().message?.[currentSessionID()]
+                      const found = msgs?.find(m => m.id === mid)
+                      return (
+                        <pre style="color: var(--text-base); font-size: 11px; padding: 8px; border-top: 1px solid #333; max-height: 200px; overflow: auto; background: var(--surface-base); white-space: pre-wrap;">
+                          {`mid: ${mid || '(empty)'}
+userMsgId exists in msgs: ${!!found}
+msgs count: ${msgs?.length || 0}
+session active: ${!!active()}
+store key exists: ${!!store().message?.[currentSessionID()]}`}
+                        </pre>
+                      )
+                    })()}
                   ) : (
                     <div class="mafw-chat-empty">Create a new session to start chatting</div>
                   )}
