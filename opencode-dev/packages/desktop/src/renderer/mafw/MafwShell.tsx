@@ -169,6 +169,9 @@ export function MafwShell() {
         const userMsg = msgs.find(m => m.role === "user")
         if (userMsg) {
           setSessions(prev => prev.map(s => s.id === sessionID ? { ...s, userMsgId: userMsg.id } : s))
+          console.log("[mafw] set userMsgId:", userMsg.id, "found in msgs:", msgs.some(m => m.id === userMsg.id))
+        } else {
+          console.warn("[mafw] no user message found, first msg role:", msgs[0]?.role, "id:", msgs[0]?.id)
         }
       }
     } catch (e) { console.warn("[mafw] loadHistory failed", e); showToastV2({ description: "Failed to load session history", duration: 5000 }) }
@@ -253,7 +256,20 @@ export function MafwShell() {
 
   // Current rendering state for SessionTurn
   const currentSessionID = () => active()?.id || ""
-  const currentUserMsgId = () => active()?.userMsgId || ""
+  const currentUserMsgId = () => {
+    const stored = active()?.userMsgId
+    if (stored) return stored
+    // Fallback: find first user message in store
+    const sid = currentSessionID()
+    if (sid) {
+      const msgs = store().message[sid]
+      if (msgs) {
+        const userMsg = msgs.find(m => m.role === "user")
+        if (userMsg) return userMsg.id
+      }
+    }
+    return ""
+  }
   const storeData = () => store()
 
   // Gateway status
