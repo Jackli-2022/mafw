@@ -2,10 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ToolHandler } from '../../types';
 
-export const handleManagerListGoals: ToolHandler = async () => {
+export const handleManagerListGoals: ToolHandler = async (_args, services) => {
   try {
-    const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
-    const mafwDir = path.join(projectDir, '.mafw');
+    const mafwDir = services.mafwDir ?? (process.env.MAFW_PROJECT_DIR ? path.join(process.env.MAFW_PROJECT_DIR, '.mafw') : undefined) ?? path.join(process.cwd(), '.mafw');
     const stateDir = path.join(mafwDir, 'state');
     if (!fs.existsSync(stateDir)) return { content: [{ type: 'text', text: JSON.stringify({ success: true, goals: [] }) }] };
     const goals = fs.readdirSync(stateDir).filter(f => f.endsWith('.json')).map(f => {

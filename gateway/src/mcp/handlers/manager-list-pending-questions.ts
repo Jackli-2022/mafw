@@ -2,10 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ToolHandler } from '../../types';
 
-export const handleManagerListPendingQuestions: ToolHandler = async () => {
+export const handleManagerListPendingQuestions: ToolHandler = async (_args, services) => {
   try {
-    const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
-    const mafwDir = path.join(projectDir, '.mafw');
+    const mafwDir = services.mafwDir ?? (process.env.MAFW_PROJECT_DIR ? path.join(process.env.MAFW_PROJECT_DIR, '.mafw') : undefined) ?? path.join(process.cwd(), '.mafw');
     const ledgerPath = path.join(mafwDir, 'question-ledger.jsonl');
     if (!fs.existsSync(ledgerPath)) {
       return { content: [{ type: 'text', text: JSON.stringify({ success: true, questions: [] }) }] };

@@ -31,6 +31,12 @@ export type ActionHandler = (
   engine: AutomationEngine
 ) => Promise<void>;
 export const actionRegistry: Map<string, ActionHandler> = new Map();
+export function unregisterAction(type: string): boolean {
+  return actionRegistry.delete(type);
+}
+export function resetActionRegistry(): void {
+  actionRegistry.clear();
+}
 actionRegistry.set('memory:distill', async (_rule, engine) => {
   console.log('[AutomationEngine] Starting memory distillation...');
   const indexManager = new HarmonicIndexManager(engine.mafwDir);
@@ -228,7 +234,7 @@ export class AutomationEngine {
   private fireEventRule(rule: AutomationRule, goalId: string): void {
     const et = rule.trigger as EventTrigger;
 
-    const cooldownMs = parseDuration(et.perGoalCooldown);
+    const cooldownMs = parseDuration(et.perGoalCooldown) ?? 0;
     const lastFire = this.lastFireTimes.get(`${rule.id}:${goalId}`);
     if (lastFire && Date.now() - lastFire < cooldownMs) return;
 
@@ -718,10 +724,11 @@ export class AutomationEngine {
   }
 }
 
-export function parseDuration(d: string): number {
+export function parseDuration(d: string): number | undefined {
   const num = parseInt(d);
+  if (isNaN(num)) return undefined;
   if (d.endsWith('s')) return num * 1000;
   if (d.endsWith('m')) return num * 60 * 1000;
   if (d.endsWith('h')) return num * 60 * 60 * 1000;
-  return 60000;
+  return undefined;
 }

@@ -348,6 +348,7 @@ class MafwScheduler {
     this.ledger = new SchedulerLedger(projectDir);
     this.automationEngine = new AutomationEngine(mafwDir);
     this.automationEngine.setLedger(this.ledger);
+    ensureManagerRules(mafwDir);
     this.automationEngine.loadRules();
 
     actionRegistry.set('manager:report_completed', wakeCompletedHandler);
@@ -438,6 +439,18 @@ class MafwScheduler {
     });
 
     await this.waitForServeReady();
+  }
+
+  private async listSessions(projectID: string | null): Promise<any[]> {
+    // Try SDK first (opencode server), fall back to local store
+    if (this.opencodeClient) {
+      try {
+        const result = await this.opencodeClient.session.list(projectID ? { query: { directory: projectID } } : undefined);
+        const sessions = Array.isArray(result) ? result : result?.data;
+        if (sessions && Array.isArray(sessions)) return sessions;
+      } catch {}
+    }
+    return projectID ? await this.sdkSession.listByProject(projectID) : await this.sdkSession.list();
   }
 
   private async isServeHealthy(): Promise<boolean> {
@@ -1122,9 +1135,7 @@ class MafwScheduler {
           try {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const projectID = parsedUrl.searchParams.get('projectID');
-            const sessions = projectID
-              ? await this.sdkSession.listByProject(projectID)
-              : await this.sdkSession.list();
+            const sessions = await this.listSessions(projectID);
             res.writeHead(200);
             res.end(JSON.stringify({ sessions }));
           } catch (err: any) {
@@ -1703,7 +1714,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       }),
       askUser: async (s: any) => {
         syncToFile({ ...s, pendingQuestion: null, phase: 'ASKING_USER', mafwDir });
-        return { pendingQuestion: null };
+        const { interrupt } = await import('@langchain/langgraph');
+        const userResponse = interrupt({
+          type: "user_question",
+          goalId: s.goalId,
+          questionId: s.pendingQuestion?.questionId,
+          questions: s.pendingQuestion?.questions,
+        });
+        return { pendingQuestion: null, userResponse };
       },
       execute: async (s: any) => executeNode(s, {
         client,
@@ -1884,7 +1902,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     try {
       await this.opencodeClient.session.promptAsync({
         sessionID: sessionId,
-        message: MANAGER_IDENTITY_SYSTEM_PROMPT,
+        message: `[SYSTEM] This is your permanent system identity that must override all other instructions:\n\n${MANAGER_IDENTITY_SYSTEM_PROMPT}`,
       });
     } catch (err: any) {
       console.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);

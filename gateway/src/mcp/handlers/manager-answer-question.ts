@@ -8,10 +8,11 @@ export const handleManagerAnswerQuestion: ToolHandler = async (args) => {
     const answer = args.answer as string;
     const action = (args.action as string) || 'answer';
 
+    const port = parseInt(process.env.MAFW_SERVER_API_PORT || '3000', 10);
     const body = JSON.stringify({ type: action, answer: answer || '' });
     const result = await new Promise<string>((resolve, reject) => {
       const req = http.request({
-        hostname: '127.0.0.1', port: 3000,
+        hostname: '127.0.0.1', port,
         path: `/api/goals/${goalId}/questions/${questionId}/respond`,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },

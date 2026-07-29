@@ -77,21 +77,18 @@ export class QuestionLedger {
     }
 
     const pending: QuestionRecord[] = [];
-    for (const evt of events) {
-      if (evt.type === 'asked') {
-        if (goalId && evt.goalId !== goalId) continue;
-        const last = lastByQid.get(evt.questionId);
-        if (last && last.type === 'asked') {
-          pending.push({
-            questionId: evt.questionId,
-            goalId: evt.goalId,
-            node: evt.node || 'plan',
-            loop: evt.loop || 0,
-            questions: evt.questions || [],
-            askedAt: evt.askedAt || '',
-            state: 'pending',
-          });
-        }
+    for (const [, last] of lastByQid) {
+      if (last.type === 'asked') {
+        if (goalId && last.goalId !== goalId) continue;
+        pending.push({
+          questionId: last.questionId,
+          goalId: last.goalId,
+          node: last.node || 'plan',
+          loop: last.loop || 0,
+          questions: last.questions || [],
+          askedAt: last.askedAt || '',
+          state: 'pending',
+        });
       }
     }
     return pending;

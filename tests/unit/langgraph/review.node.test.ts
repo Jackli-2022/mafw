@@ -50,6 +50,7 @@ function makeState(overrides: Record<string, any> = {}): any {
     lastError: null,
     phase: null,
     pendingQuestion: null,
+    sameSigCount: 0,
     stateVersion: 0,
     ...overrides,
   };
@@ -103,13 +104,13 @@ describe('reviewNode', () => {
     expect(result.reviewFeedback).toContain('Great job!');
   });
 
-  it('returns FAIL and tracks _sameSigCount on first fail', async () => {
+  it('returns FAIL and tracks sameSigCount on first fail', async () => {
     const reviewPath = path.join(mafwDir, 'reviews', 'test-goal-loop1.md');
     fs.writeFileSync(reviewPath, '{"verdict":"FAIL","reason":"Missing error handling"}', 'utf-8');
     const result = await reviewNode(state, services);
     expect(result.reviewVerdict).toBe('FAIL');
     expect(result.reviewFeedback).toContain('Missing error handling');
-    expect((result as any)._sameSigCount).toBe(1);
+    expect(result.sameSigCount).toBe(1);
     expect(result.pendingQuestion).toBeUndefined();
   });
 
@@ -118,23 +119,23 @@ describe('reviewNode', () => {
     fs.writeFileSync(reviewPath, '{"verdict":"FAIL","reason":"Missing error handling"}', 'utf-8');
     state.reviewFeedback = 'Missing error handling';
     state.round = 2;
-    (state as any)._sameSigCount = 1;
+    state.sameSigCount = 1;
     const result = await reviewNode(state, services);
     expect(result.reviewVerdict).toBe('FAIL');
     expect(result.pendingQuestion).not.toBeUndefined();
     expect(result.pendingQuestion!.node).toBe('review');
     expect(result.pendingQuestion!.questions[0]).toContain('Missing error handling');
-    expect((result as any)._sameSigCount).toBe(2);
+    expect(result.sameSigCount).toBe(2);
   });
 
-  it('resets _sameSigCount on different feedback', async () => {
+  it('resets sameSigCount on different feedback', async () => {
     const reviewPath = path.join(mafwDir, 'reviews', 'test-goal-loop1.md');
     fs.writeFileSync(reviewPath, '{"verdict":"FAIL","reason":"Different issue now"}', 'utf-8');
     state.reviewFeedback = 'Old issue';
-    (state as any)._sameSigCount = 2;
+    state.sameSigCount = 2;
     const result = await reviewNode(state, services);
     expect(result.reviewVerdict).toBe('FAIL');
     expect(result.pendingQuestion).toBeUndefined();
-    expect((result as any)._sameSigCount).toBe(1);
+    expect(result.sameSigCount).toBe(1);
   });
 });

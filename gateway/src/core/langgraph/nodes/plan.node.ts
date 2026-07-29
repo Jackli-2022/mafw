@@ -13,6 +13,10 @@ async function finalizeWithAnswer(state: LoopStateType): Promise<Partial<LoopSta
     pendingQuestion: null,
     userResponse: null,
     round: state.round,
+    wavePlanPath: state.wavePlanPath ?? null,
+    reviewFeedback: state.userResponse?.answer
+      ? `Plan refined with user input: ${state.userResponse.answer}`
+      : undefined,
   };
 }
 
@@ -63,7 +67,11 @@ export async function planNode(
       : null,
   };
 
-  await client.session.delete({ sessionID: sessionId });
+  try {
+    await client.session.delete({ sessionID: sessionId });
+  } catch {
+    // non-fatal: session may have already been cleaned up
+  }
   syncToFile({ ...result, phase: 'PLANNING_COMPLETE' });
 
   return result;

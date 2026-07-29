@@ -78,6 +78,11 @@ export const LoopState = Annotation.Root({
     default: () => null,
   }),
 
+  sameSigCount: Annotation<number>({
+    value: (a, b) => b ?? a ?? 0,
+    default: () => 0,
+  }),
+
   stateVersion: Annotation<number>({
     value: (a, b) => b ?? a ?? 0,
     default: () => 0,

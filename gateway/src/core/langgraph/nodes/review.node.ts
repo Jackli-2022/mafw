@@ -64,7 +64,7 @@ export async function reviewNode(
   if (verdict.verdict === 'FAIL' && state.round < state.maxRounds) {
     const prevFeedback = state.reviewFeedback;
     const sameSignature = prevFeedback && matchesSignature(prevFeedback, verdict.feedback);
-    const sameSigCount = (state as any)._sameSigCount || 0;
+    const sameSigCount = state.sameSigCount;
 
     if (sameSignature && sameSigCount + 1 >= 2) {
       result.pendingQuestion = {
@@ -74,9 +74,9 @@ export async function reviewNode(
         questions: [`Review keeps failing with same issue: ${verdict.feedback}. Continue retrying?`],
         askedAt: new Date().toISOString(),
       };
-      (result as any)._sameSigCount = sameSigCount + 1;
+      result.sameSigCount = sameSigCount + 1;
     } else {
-      (result as any)._sameSigCount = sameSignature ? sameSigCount + 1 : 1;
+      result.sameSigCount = sameSignature ? sameSigCount + 1 : 1;
     }
   }
 

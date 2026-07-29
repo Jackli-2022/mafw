@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { QuestionLedger } from './question-ledger';
 
+const reportedQuestions: Set<string> = new Set();
+
 async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], reason: string): Promise<void> {
   const mafwDir = engine['mafwDir'] as string;
   const managerSessionFile = path.join(mafwDir, 'manager-session.json');
@@ -76,9 +78,12 @@ export async function wakeQuestionHandler(_rule: AutomationRule, engine: Automat
 
   const goalIds: string[] = [];
   for (const q of pending) {
+    if (reportedQuestions.has(q.questionId)) continue;
+    reportedQuestions.add(q.questionId);
     if (!goalIds.includes(q.goalId)) {
       goalIds.push(q.goalId);
     }
   }
+  if (goalIds.length === 0) return;
   await injectWakeMessage(engine, goalIds, 'report_question');
 }

@@ -3,7 +3,7 @@ import * as path from 'path';
 import { ToolHandler } from '../../types';
 import { eventBus } from '../../event-bus';
 
-export const handleManagerSetGoal: ToolHandler = async (args, _services) => {
+export const handleManagerSetGoal: ToolHandler = async (args, services) => {
   try {
     const goalId = args.goalId as string;
     const title = args.title as string;
@@ -14,8 +14,8 @@ export const handleManagerSetGoal: ToolHandler = async (args, _services) => {
     const priority = (args.priority as string) || 'medium';
     const maxLoops = (args.maxLoops as number) || 5;
 
-    const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
-    const mafwDir = path.join(projectDir, '.mafw');
+    const mafwDir = services.mafwDir ?? (process.env.MAFW_PROJECT_DIR ? path.join(process.env.MAFW_PROJECT_DIR, '.mafw') : undefined) ?? path.join(process.cwd(), '.mafw');
+    const projectDir = path.resolve(mafwDir, '..');
     const goalsDir = path.join(mafwDir, 'goals');
     const requestsDir = path.join(mafwDir, 'requests');
     fs.mkdirSync(goalsDir, { recursive: true });
