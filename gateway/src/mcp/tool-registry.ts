@@ -183,6 +183,81 @@ const DEFINITIONS: ToolDefinition[] = [
       required: ["conflictingId", "newAbstraction", "action"],
     },
   },
+  // ── Manager tools ──
+  {
+    name: "mafw_set_goal",
+    description: "Create a new MAFW goal (Manager tool — must confirm with user first)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string", description: "Unique goal identifier" },
+        title: { type: "string", description: "Human-readable goal title" },
+        charter: { type: "string", description: "Goal charter in markdown" },
+        source: { type: "string", description: "Source", default: "manager" },
+        boundaries: { type: "array", items: { type: "string" } },
+        priority: { type: "string", enum: ["low", "medium", "high", "critical"], default: "medium" },
+        maxLoops: { type: "number", default: 5 },
+      },
+      required: ["goalId", "title", "charter"],
+    },
+  },
+  {
+    name: "mafw_get_goal_status",
+    description: "Get goal state/progress/verdict from checkpoint",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string", description: "Goal identifier" },
+      },
+      required: ["goalId"],
+    },
+  },
+  {
+    name: "mafw_list_goals",
+    description: "List all active goals with their phase and verdict",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mafw_answer_question",
+    description: "Answer a pending loop question on behalf of the user",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string" },
+        questionId: { type: "string" },
+        answer: { type: "string" },
+        action: { type: "string", enum: ["answer", "cancel", "redirect"], default: "answer" },
+      },
+      required: ["goalId", "questionId", "answer"],
+    },
+  },
+  {
+    name: "mafw_get_evidence",
+    description: "Read review report / evidence for a goal",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string" },
+      },
+      required: ["goalId"],
+    },
+  },
+  {
+    name: "mafw_cancel_goal",
+    description: "Cancel a goal (requires user confirmation)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goalId: { type: "string" },
+      },
+      required: ["goalId"],
+    },
+  },
+  {
+    name: "mafw_list_pending_questions",
+    description: "List all currently pending loop questions",
+    inputSchema: { type: "object", properties: {} },
+  },
   // ── Tier 1: Read-only automation tools ──
   {
     name: "mafw_list_automation_rules",
@@ -441,6 +516,13 @@ import { handleDesktopGetState } from "./handlers/desktop-get-state";
 import { handleDesktopClick } from "./handlers/desktop-click";
 import { handleDesktopType } from "./handlers/desktop-type";
 import { handleDesktopScroll } from "./handlers/desktop-scroll";
+import { handleManagerSetGoal } from "./handlers/manager-set-goal";
+import { handleManagerGetGoalStatus } from "./handlers/manager-get-goal-status";
+import { handleManagerListGoals } from "./handlers/manager-list-goals";
+import { handleManagerAnswerQuestion } from "./handlers/manager-answer-question";
+import { handleManagerGetEvidence } from "./handlers/manager-get-evidence";
+import { handleManagerCancelGoal } from "./handlers/manager-cancel-goal";
+import { handleManagerListPendingQuestions } from "./handlers/manager-list-pending-questions";
 
 export function createToolRegistry(): ToolRegistry {
   return {
@@ -474,6 +556,13 @@ export function createToolRegistry(): ToolRegistry {
       mafw_desktop_click: handleDesktopClick,
       mafw_desktop_type: handleDesktopType,
       mafw_desktop_scroll: handleDesktopScroll,
+      mafw_set_goal: handleManagerSetGoal,
+      mafw_get_goal_status: handleManagerGetGoalStatus,
+      mafw_list_goals: handleManagerListGoals,
+      mafw_answer_question: handleManagerAnswerQuestion,
+      mafw_get_evidence: handleManagerGetEvidence,
+      mafw_cancel_goal: handleManagerCancelGoal,
+      mafw_list_pending_questions: handleManagerListPendingQuestions,
     },
   };
 }
