@@ -1,5 +1,6 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { MemoryRouter } from "@solidjs/router"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
@@ -8,6 +9,7 @@ import { ToastV2, showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 import { DataProvider } from "@opencode-ai/session-ui/context"
 import { SessionTurn } from "@opencode-ai/session-ui/session-turn"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
+import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { FileSSR } from "@opencode-ai/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
@@ -129,30 +131,39 @@ export function MafwShell() {
   // Load history when active session changes
   createEffect(() => {
     const sid = activeSessionId()
-    if (sid && sessions().length > 0) loadSessionHistory(sid)
+    if (sid) loadSessionHistory(sid)
   })
 
   // Load session message history from the gateway
   async function loadSessionHistory(sessionID: string) {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
-      const data = await window.api.mafw.sessions.messages(sessionID, 100) as any
-      console.log("[mafw] loadSessionHistory result:", data?.data?.length ? `${data.data.length} messages` : 'no data')
-      if (!data?.data) return
+      const [data, sessionData] = await Promise.all([
+        window.api.mafw.sessions.messages(sessionID, 100) as any,
+        window.api.mafw.sessions.get(sessionID).catch(() => null),
+      ]) as [any, any]
+      const rawItems = Array.isArray(data) ? data : data?.data
+      console.log("[mafw] loadSessionHistory result:", rawItems?.length ? `${rawItems.length} messages` : 'no data')
+      if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) return
       const msgs: any[] = []
       const parts: Record<string, any[]> = {}
-      for (const item of data.data) {
-        const msg = { id: item.id, sessionID, role: item.role || "assistant", parentID: item.parentID || null, time: item.time || { created: Date.now() } }
+      for (const item of rawItems) {
+        const info = item.info || item
+        const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
+        const msg = { id: msgId, sessionID, role: info.role || "assistant", parentID: info.parentID || null, time: info.time || { created: Date.now() } }
         msgs.push(msg)
-        if (item.parts) {
-          parts[item.id] = item.parts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, messageID: item.id }))
+        const itemParts = item.parts || info.parts || []
+        if (itemParts.length > 0) {
+          parts[msgId] = itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, messageID: msgId }))
         }
       }
       if (msgs.length > 0) {
         setStore(prev => ({
           ...prev,
+          session: sessionData ? [...prev.session.filter(s => s.id !== sessionID), sessionData] : prev.session,
           message: { ...prev.message, [sessionID]: msgs },
           part: { ...prev.part, ...parts },
+          session_status: { ...prev.session_status, [sessionID]: { type: "idle" } },
         }))
         // Set userMsgId to the first user message
         const userMsg = msgs.find(m => m.role === "user")
@@ -225,11 +236,18 @@ export function MafwShell() {
     console.log("[mafw] sendMessage", sid)
     try {
       const result = await window.api.mafw.chat.sendEnriched(text) as any
-      console.log("[mafw] sendEnriched result:", result?.sessionID ? `session ${result.sessionID}` : 'no sessionID')
+      if (result?.sessionID) {
+        console.log("[mafw] sendEnriched result: session", result.sessionID)
+      } else {
+        const errMsg = result?.error || 'no session ID returned'
+        console.warn("[mafw] sendEnriched failed:", errMsg)
+        showToastV2({ description: `Chat failed: ${errMsg}`, duration: 5000 })
+        setSending(false)
+      }
     } catch (err: any) {
-      console.log("[mafw] sendEnriched error:", err.message)
+      console.warn("[mafw] sendEnriched error:", err.message)
       setSending(false)
-      showToastV2({ description: "Failed to send message", duration: 5000 })
+      showToastV2({ description: `Chat failed: ${err.message}`, duration: 5000 })
     }
   }
 
@@ -263,7 +281,20 @@ export function MafwShell() {
         )}
       </div>
       <div class="mafw-body">
-        <Rail activeSessionId={activeSessionId()} onSelectSession={(id) => { setActiveTab("chat"); setActiveSessionId(id) }} onSettings={() => setShowConfig(true)} />
+        <Rail activeSessionId={activeSessionId()} onSelectSession={(id) => {
+          setActiveTab("chat")
+          // Ensure session exists in local tabs and store
+          if (!sessions().find(s => s.id === id)) {
+            setSessions(prev => [...prev, { id, title: `Chat ${prev.length + 1}`, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false }])
+            setStore(prev => ({
+              ...prev,
+              session: [...prev.session, { id, title: `Chat ${prev.session.length + 1}`, directory: ".", time: { created: Date.now() }, projectID: "." }],
+              session_status: { ...prev.session_status, [id]: { type: "idle" } },
+              message: { ...prev.message, [id]: [] },
+            }))
+          }
+          setActiveSessionId(id)
+        }} onSettings={() => setShowConfig(true)} />
         <div class="mafw-main">
           {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
@@ -287,7 +318,11 @@ export function MafwShell() {
                     <DataProvider data={storeData()} directory=".">
                       <FileComponentProvider component={FileSSR}>
                         <DialogProvider>
-                          <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                          <MarkedProvider>
+                          <MemoryRouter>
+                            <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                          </MemoryRouter>
+                        </MarkedProvider>
                         </DialogProvider>
                       </FileComponentProvider>
                     </DataProvider>
