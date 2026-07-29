@@ -1,9 +1,5 @@
-import { fork as childFork } from "node:child_process"
-import { randomUUID } from "node:crypto"
-import { createServer } from "node:net"
+import { execFile } from "node:child_process"
 import { MafwClient } from "@mafw/sdk"
-import { BrowserWindow, utilityProcess } from "electron"
-import { resolveGatewayEntry } from "./mafw-gateway-resolver"
 import { write as writeLog } from "./logging"
 
 export type GatewayState = "stopped" | "starting" | "ready" | "failed"
@@ -29,30 +25,12 @@ const eventListeners = new Set<EventListener>()
 
 let state: GatewayState = "stopped"
 let port: number | null = null
-let gatewayProcess: ReturnType<typeof utilityProcess.fork> | null = null
 let healthInterval: ReturnType<typeof setInterval> | null = null
 
 function notifyState(s: GatewayState) {
   writeLog("utility", `mafw gateway state -> ${s}`, { port, previousState: state }, "info")
   state = s
   for (const cb of stateListeners) cb(s)
-}
-
-async function findFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.on("error", reject)
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address()
-      if (typeof addr !== "object" || !addr) {
-        server.close()
-        reject(new Error("Failed to get port"))
-        return
-      }
-      const p = addr.port
-      server.close(() => resolve(p))
-    })
-  })
 }
 
 async function checkHealth(url: string): Promise<boolean> {
@@ -99,42 +77,24 @@ export async function startGateway(opts?: { opencodeServerUrl?: string; opencode
     return
   }
 
-  const entry = resolveGatewayEntry()
-  if (!entry) {
-    writeLog("utility", "mafw gateway entry not found", {}, "error")
-    notifyState("failed")
-    return
-  }
-  writeLog("utility", "mafw gateway entry resolved", { entry }, "info")
-
   notifyState("starting")
-  port = await findFreePort()
+  port = 3000
 
   try {
-    const env: Record<string, string | undefined> = { ...process.env, MAFW_SERVER_API_PORT: String(port) }
+    const env: Record<string, string | undefined> = { ...process.env }
     if (opts?.opencodeServerUrl) env.MAFW_SERVER_SERVE_URL = opts.opencodeServerUrl
     if (opts?.opencodeServerPassword) env.MAFW_OPENCODE_PASSWORD = opts.opencodeServerPassword
-    gatewayProcess = utilityProcess.fork(entry, [], {
-      env,
-      stdio: "pipe",
+    writeLog("utility", "mafw starting gateway via CLI", { port }, "info")
+    execFile("mafw", ["daemon"], { env }, (err, stdout, stderr) => {
+      if (err) {
+        writeLog("utility", "mafw CLI daemon failed", { error: err.message, stderr: stderr?.trim() }, "error")
+        notifyState("failed")
+        return
+      }
+      writeLog("utility", "mafw CLI daemon output", { stdout: stdout?.trim() }, "info")
     })
-
-    const logStd = (stream: string, data: Buffer) => {
-      writeLog("utility", `mafw gateway ${stream}`, { text: data.toString().trim() }, "info")
-    }
-    gatewayProcess.stdout?.on("data", (d: Buffer) => logStd("stdout", d))
-    gatewayProcess.stderr?.on("data", (d: Buffer) => logStd("stderr", d))
-
-    gatewayProcess.on("exit", (code) => {
-      writeLog("utility", "mafw gateway exited", { code }, "warn")
-      gatewayProcess = null
-      notifyState("failed")
-    })
-    gatewayProcess.on("spawn", () => {
-      writeLog("utility", "mafw gateway spawned", { entry, port }, "info")
-    })
-  } catch {
-    gatewayProcess = null
+  } catch (err: any) {
+    writeLog("utility", "mafw CLI exec failed", { error: err.message }, "error")
     notifyState("failed")
     return
   }
@@ -161,12 +121,9 @@ export async function startGateway(opts?: { opencodeServerUrl?: string; opencode
 }
 
 export function stopGateway(): void {
-  if (gatewayProcess) {
-    try {
-      gatewayProcess.kill()
-    } catch {}
-    gatewayProcess = null
-  }
+  try {
+    execFile("mafw", ["stop"])
+  } catch {}
   if (healthInterval) {
     clearInterval(healthInterval)
     healthInterval = null
