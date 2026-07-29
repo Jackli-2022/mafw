@@ -1,6 +1,7 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
+import { MemoryRouter } from "@solidjs/router"
 
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
@@ -351,13 +352,15 @@ export function MafwShell() {
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
                 {/* SessionTurn — provider order matches opencode Desktop app.tsx */}
-                          <div class="mafw-session-turn-container">
-                            {active() ? (
-                              <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
-                            ) : (
-                              <div class="mafw-chat-empty">Create a new session to start chatting</div>
-                            )}
-                          </div>
+                          <MemoryRouter>
+                            <div class="mafw-session-turn-container">
+                              {active() ? (
+                                <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                              ) : (
+                                <div class="mafw-chat-empty">Create a new session to start chatting</div>
+                              )}
+                            </div>
+                          </MemoryRouter>
                 {/* InputBar */}
                 <div class="mafw-inputbar">
                   <TextareaV2
