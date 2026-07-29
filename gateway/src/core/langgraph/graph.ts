@@ -5,11 +5,18 @@ export function routeAfterReview(state: typeof LoopState.State): string {
   if (state.reviewVerdict === "ERROR" || state.lastError) return "archive_fail";
   if (state.reviewVerdict === "PASS") return "archive_success";
   if (state.round >= state.maxRounds) return "archive_max_retries";
+  if (state.pendingQuestion) return "askUser";
   return "plan";
+}
+
+export function routeAfterPlan(state: typeof LoopState.State): string {
+  if (state.pendingQuestion) return "askUser";
+  return "execute";
 }
 
 export interface GraphOptions {
   plan: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
+  askUser: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
   execute: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
   review: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
   archiveSuccess: (state: typeof LoopState.State) => Promise<Partial<typeof LoopState.State>>;
@@ -22,6 +29,7 @@ export function buildExecutionGraph(options: GraphOptions) {
     .addNode("plan", options.plan, {
       retryPolicy: { maxAttempts: 2 },
     })
+    .addNode("askUser", options.askUser)
     .addNode("execute", options.execute, {
       retryPolicy: { maxAttempts: 2 },
     })
@@ -33,10 +41,15 @@ export function buildExecutionGraph(options: GraphOptions) {
     .addNode("archive_max_retries", options.archiveMaxRetries)
 
     .addEdge("__start__", "plan")
-    .addEdge("plan", "execute")
+    .addConditionalEdges("plan", routeAfterPlan, {
+      askUser: "askUser",
+      execute: "execute",
+    })
+    .addEdge("askUser", "plan")
     .addEdge("execute", "review")
     .addConditionalEdges("review", routeAfterReview, {
       plan: "plan",
+      askUser: "askUser",
       archive_success: "archive_success",
       archive_fail: "archive_fail",
       archive_max_retries: "archive_max_retries",

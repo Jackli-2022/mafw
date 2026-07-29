@@ -1612,6 +1612,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         client,
         syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
       }),
+      askUser: async (s: any) => {
+        syncToFile({ ...s, pendingQuestion: null, phase: 'ASKING_USER', mafwDir });
+        return { pendingQuestion: null };
+      },
       execute: async (s: any) => executeNode(s, {
         client,
         syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),

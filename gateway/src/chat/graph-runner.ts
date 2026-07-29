@@ -48,6 +48,7 @@ export class GraphRunner {
   private buildNodeOptions(mafwDir: string) {
     return {
       plan: async (s: any) => ({ wavePlanPath: null, round: s.round }),
+      askUser: async (s: any) => ({ pendingQuestion: null }),
       execute: async (s: any) => ({ receiptPath: null }),
       review: async (s: any) => ({ reviewVerdict: 'PASS' as const, reviewReportPath: null, reviewFeedback: '' }),
       archiveSuccess: async (s: any) => { console.log(`[ChatGraph] ${s.goalId} PASSED`); return {}; },
