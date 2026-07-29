@@ -447,7 +447,30 @@ class MafwScheduler {
       try {
         const result = await this.opencodeClient.session.list(projectID ? { query: { directory: projectID } } : undefined);
         const sessions = Array.isArray(result) ? result : result?.data;
-        if (sessions && Array.isArray(sessions)) return sessions;
+        if (sessions && Array.isArray(sessions)) {
+          // Enrich SDK sessions with local metadata (manager session markers, etc.)
+          const localSessions = await this.sdkSession.list();
+          const localMap = new Map(localSessions.map(s => [s.id, s]));
+          const enriched = sessions.map((s: any) => {
+            const local = localMap.get(s.id);
+            return local?.metadata ? { ...s, metadata: local.metadata } : s;
+          });
+          // Also include local-only sessions (e.g. Manager session registered via registerExternal)
+          // that the opencode server doesn't know about
+          const sdkIds = new Set<string>(sessions.map((s: any) => s.id));
+          const missingLocal = localSessions.filter(s => s.metadata && !sdkIds.has(s.id));
+          if (missingLocal.length > 0) {
+            enriched.push(...missingLocal.map(s => ({
+              id: s.id,
+              projectID: s.projectID,
+              directory: s.directory,
+              title: s.title,
+              metadata: s.metadata,
+              time: s.time,
+            })));
+          }
+          return enriched;
+        }
       } catch {}
     }
     return projectID ? await this.sdkSession.listByProject(projectID) : await this.sdkSession.list();
@@ -1145,11 +1168,18 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/sessions/{id} �?get session
+        // GET /api/sessions/{id} — get session via SDK (with local fallback)
         const sessionsGetMatch = req.url?.match(/^\/api\/sessions\/([^/]+)$/);
         if (sessionsGetMatch && req.method === 'GET') {
           try {
             const id = sessionsGetMatch[1];
+            if (this.opencodeClient) {
+              try {
+                const result = await this.opencodeClient.session.get({ path: { id } });
+                const session = result?.data || result;
+                if (session) { res.writeHead(200); res.end(JSON.stringify(session)); return; }
+              } catch {}
+            }
             const session = await this.sdkSession.get(id);
             res.writeHead(200);
             res.end(JSON.stringify(session || { error: 'not found' }));
@@ -1173,8 +1203,9 @@ class MafwScheduler {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const limit = parseInt(parsedUrl.searchParams.get('limit') || '100', 10);
             const result = await this.opencodeClient.session.messages({ path: { id }, query: { limit } });
+            const rawData = result?.data || result || [];
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result.data || result));
+            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [] }));
           } catch (err: any) {
             res.writeHead(502);
             res.end(JSON.stringify({ error: err.message }));
@@ -1897,6 +1928,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
     fs.writeFileSync(managerFile, JSON.stringify({ sessionId, createdAt }, null, 2), 'utf-8');
     this.managerSessionInfo = { sessionId, projectDir, createdAt };
+
+    try {
+      await this.sdkSession.registerExternal(sessionId, projectDir, {
+        mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
+      });
+    } catch (err: any) {
+      console.warn(`[Scheduler] Manager session local register failed: ${err.message} (non-fatal)`);
+    }
     console.log(`[Scheduler] Manager session created: ${sessionId}`);
 
     try {

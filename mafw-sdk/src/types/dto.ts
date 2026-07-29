@@ -5,6 +5,7 @@ export interface Session {
   projectID: string
   directory: string
   title: string
+  metadata?: Record<string, unknown>
   time: { created: number; updated: number }
   parentID?: string
 }

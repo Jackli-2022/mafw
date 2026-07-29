@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { MemoryFact, withMemoryInjection } from '../interceptors/memory-injector';
 
 export interface SessionRecord {
@@ -7,6 +8,7 @@ export interface SessionRecord {
   projectID: string;
   directory: string;
   title: string;
+  metadata?: Record<string, unknown>;
   time: { created: number; updated: number };
 }
 
@@ -54,16 +56,49 @@ export class SdkSessionResource {
   }
 
   async create(directory?: string, metadata?: Record<string, unknown>): Promise<SessionRecord> {
-    if (!this.opencodeClient) throw new Error('OpenCode client not available');
-    const result = await this.opencodeClient.session.create({
-      directory: directory || '.',
-      metadata: { ...metadata, mafw: true },
-    });
+    let id: string;
+    let projectID: string;
+    let title: string;
+    if (this.opencodeClient) {
+      try {
+        const result = await this.opencodeClient.session.create({
+          directory: directory || '.',
+          metadata: { ...metadata, mafw: true },
+        });
+        id = result.id;
+        projectID = result.projectID || '';
+        title = result.title || '';
+      } catch {
+        // SDK unavailable — create local-only session
+        id = crypto.randomUUID();
+        projectID = directory || '';
+        title = '';
+      }
+    } else {
+      id = crypto.randomUUID();
+      projectID = directory || '';
+      title = '';
+    }
     const record: SessionRecord = {
-      id: result.id,
-      projectID: result.projectID || '',
-      directory: directory || result.directory || '.',
-      title: result.title || '',
+      id,
+      projectID,
+      directory: directory || '.',
+      title,
+      metadata,
+      time: { created: Date.now(), updated: Date.now() },
+    };
+    this.sessions.set(record.id, record);
+    this.saveToDisk(record);
+    return record;
+  }
+
+  async registerExternal(id: string, directory: string, metadata?: Record<string, unknown>): Promise<SessionRecord> {
+    const record: SessionRecord = {
+      id,
+      projectID: directory,
+      directory,
+      title: '',
+      metadata,
       time: { created: Date.now(), updated: Date.now() },
     };
     this.sessions.set(record.id, record);
