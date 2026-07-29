@@ -163,6 +163,22 @@ export function MafwShell() {
         }
       }
       if (msgs.length > 0) {
+        // Debug: print the first message raw format
+        const firstUser = msgs.find(m => m.role === "user")
+        if (firstUser) {
+          const firstParts = parts[firstUser.id] || []
+          const firstTextPart = firstParts.find((p: any) => p.type === "text")
+          console.log("[mafw] first user id:", firstUser.id, "parts count:", firstParts.length, "textPart text:", firstTextPart?.text?.slice(0, 80))
+
+          // Also check what keys the raw API item has for user messages
+          const rawFirst = rawItems.find((r: any) => (r.info || r).id === firstUser.id)
+          if (rawFirst) {
+            const rawInfo = rawFirst.info || rawFirst
+            const keys = Object.keys(rawInfo)
+            console.log("[mafw] raw user keys:", keys.join(","), "hasText:", !!rawInfo.text, "hasContent:", !!rawInfo.textContent, "partsLen:", rawInfo.parts?.length, rawFirst.parts?.length)
+          }
+        }
+
         // Group messages into turns: [user msg, ...assistant msgs] pairs
         const turns: { user: any; assistants: any[]; parts: any[] }[] = []
         let currentTurn: { user: any; assistants: any[]; parts: any[] } | null = null
@@ -374,6 +390,22 @@ export function MafwShell() {
 msgs count: ${store().message?.[currentSessionID()]?.length || 0}
 session active: ${!!active()}`}
                       </pre>
+                      {/* Raw message fallback: render first 3 turns directly */}
+                      <div style="color: var(--text-base); font-size: 12px; padding: 4px 8px; border-top: 1px solid #555; max-height: 400px; overflow: auto; background: var(--surface-base);">
+                        {store().session_status?.[currentSessionID()]?.type === "idle" ? "status:idle" : "status:?"}
+                        {(() => {
+                          const sid = currentSessionID()
+                          const msgs = store().message?.[sid]
+                          if (!msgs) return <div>No messages in store</div>
+                          return msgs.filter((m: any) => m.role === "user").slice(0, 3).map((m: any) => {
+                            const p = store().part?.[m.id]
+                            const text = p?.find((x: any) => x.type === "text")
+                            return <div style="padding: 4px 0; border-bottom: 1px dotted #333;">
+                              <b>[{m.role}]</b> {text?.text?.slice(0, 100) || "(no text part)"} <span style="opacity:0.4">parts:{p?.length || 0}</span>
+                            </div>
+                          })
+                        })()}
+                      </div>
                     </>
                   ) : (
                     <div class="mafw-chat-empty">Create a new session to start chatting</div>
