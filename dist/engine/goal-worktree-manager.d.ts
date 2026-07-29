@@ -43,5 +43,17 @@ export declare class GoalWorktreeManager {
      * 检查分支是否存在
      */
     branchExists(branch: string): Promise<boolean>;
+    /**
+     * 列出所有 git worktree
+     */
+    listWorktrees(): Promise<Array<{
+        path: string;
+        branch: string;
+        head: string;
+    }>>;
+    /**
+     * 清理已删除的 worktree 记录
+     */
+    prune(): Promise<void>;
 }
 //# sourceMappingURL=goal-worktree-manager.d.ts.map

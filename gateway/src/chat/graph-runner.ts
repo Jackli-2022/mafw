@@ -1,5 +1,6 @@
-import { buildExecutionGraph, FileCheckpointer } from '../../../src/langgraph';
-import { LoopStateType } from '../../../src/langgraph/loop-state';
+import { config } from '../config';
+import { buildExecutionGraph, FileCheckpointer } from '../core/langgraph';
+import { LoopStateType } from '../core/langgraph/loop-state';
 
 export class GraphRunner {
   constructor(
@@ -13,7 +14,7 @@ export class GraphRunner {
     onState: (update: { activeNodeId: string; phase: string }) => void,
     signal?: AbortSignal,
   ): Promise<{ status: string }> {
-    const timeoutSignal = AbortSignal.timeout(120_000);
+    const timeoutSignal = AbortSignal.timeout(config.timeouts.graphRunTimeout);
     const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
     const graph = buildExecutionGraph(this.buildNodeOptions(this.mafwDir));
@@ -24,7 +25,7 @@ export class GraphRunner {
       projectDir: this.projectDir as any,
       mafwDir: this.mafwDir as any,
       round: 1,
-      maxRounds: 3,
+      maxRounds: config.loop.maxRounds,
       ...extraContext,
     };
 

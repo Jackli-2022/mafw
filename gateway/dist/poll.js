@@ -36,17 +36,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RequestManager = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const config_1 = require("./config");
 class RequestManager {
     requestsDir;
     constructor(projectDir = '.') {
-        this.requestsDir = path.join(projectDir, '.opencode/mafw/requests');
+        this.requestsDir = path.join(projectDir, config_1.config.paths.mafwDir, 'requests');
         if (!fs.existsSync(this.requestsDir)) {
             fs.mkdirSync(this.requestsDir, { recursive: true });
         }
     }
     /**
-     * 加载所有请求文件
-     */
+     * 加载所有请求文�?   */
     loadAll() {
         const files = fs.readdirSync(this.requestsDir).filter(f => f.endsWith('.json'));
         return files.map(f => this.load(f.replace('.json', ''))).filter(Boolean);
@@ -61,8 +61,7 @@ class RequestManager {
         return JSON.parse(fs.readFileSync(p, 'utf-8'));
     }
     /**
-     * 更新请求状态
-     */
+     * 更新请求状�?   */
     updateState(goalId, state, sessionId) {
         const req = this.load(goalId);
         if (!req)
@@ -93,7 +92,7 @@ class RequestManager {
         return this.loadAll().filter(r => r.state === 'RUNNING');
     }
     /**
-     * 移动已完成的请求到 processed/
+     * 移动已完成的请求�?processed/
      */
     archive(goalId) {
         const src = path.join(this.requestsDir, `${goalId}.json`);

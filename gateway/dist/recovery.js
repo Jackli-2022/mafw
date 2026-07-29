@@ -36,24 +36,27 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RecoveryManager = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const MAFW_DIR = '.mafw';
 /**
- * Recovery — 崩溃恢复器
- *
+ * Recovery �?崩溃恢复�? *
  * Scheduler 重启后：
- *   1. 读取 STATUS.md，找到所有 RUNNING 状态的 Goal
+ *   1. 读取 STATUS.md，找到所�?RUNNING 状态的 Goal
  *   2. 尝试找到最近的 Checkpoint
- *   3. 重新创建 session 并启动 Loop
+ *   3. 重新创建 session 并启�?Loop
  */
 class RecoveryManager {
     projectDir;
     constructor(projectDir = '.') {
         this.projectDir = projectDir;
     }
+    get mafwDir() {
+        return path.join(this.projectDir, MAFW_DIR);
+    }
     /**
      * 查找最近的 Checkpoint
      */
     findLastCheckpoint(goalId) {
-        const checkpointsDir = path.join(this.projectDir, '.opencode/mafw/checkpoints', goalId);
+        const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
         if (!fs.existsSync(checkpointsDir))
             return null;
         const files = fs.readdirSync(checkpointsDir)
@@ -69,7 +72,7 @@ class RecoveryManager {
      * 保存 Checkpoint
      */
     saveCheckpoint(goalId, loop, data, waveNum) {
-        const checkpointsDir = path.join(this.projectDir, '.opencode/mafw/checkpoints', goalId);
+        const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
         if (!fs.existsSync(checkpointsDir))
             fs.mkdirSync(checkpointsDir, { recursive: true });
         const name = waveNum !== undefined
@@ -92,7 +95,7 @@ class RecoveryManager {
         return JSON.parse(fs.readFileSync(checkpointPath, 'utf-8'));
     }
     async restoreLoop(goalId, loop, targetWaveNum) {
-        const checkpointsDir = path.join(this.projectDir, '.opencode/mafw/checkpoints', goalId);
+        const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
         if (!fs.existsSync(checkpointsDir))
             return false;
         const pattern = targetWaveNum !== undefined
@@ -105,7 +108,7 @@ class RecoveryManager {
         if (!checkpoint)
             return false;
         // Restore state file
-        const statePath = path.join(this.projectDir, '.opencode/mafw/state', `${goalId}.json`);
+        const statePath = path.join(this.mafwDir, 'state', `${goalId}.json`);
         if (fs.existsSync(statePath)) {
             const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
             state.phase = checkpoint.phase || 'PLANNING';
@@ -116,7 +119,7 @@ class RecoveryManager {
         }
         // Truncate waves.json to remove waves after the rollback point
         if (targetWaveNum !== undefined) {
-            const wavesPath = path.join(this.projectDir, '.opencode/mafw/waves.json');
+            const wavesPath = path.join(this.mafwDir, 'waves.json');
             if (fs.existsSync(wavesPath)) {
                 const wavesData = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
                 wavesData.waves = (wavesData.waves || []).filter((w) => w.waveNum <= targetWaveNum);
@@ -129,7 +132,7 @@ class RecoveryManager {
      * 恢复所有需要重启的 Goal
      */
     async recoverAll(callback) {
-        const statusPath = path.join(this.projectDir, '.opencode/mafw/STATUS.md');
+        const statusPath = path.join(this.mafwDir, 'STATUS.md');
         if (!fs.existsSync(statusPath))
             return;
         const content = fs.readFileSync(statusPath, 'utf-8');

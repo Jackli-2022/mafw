@@ -37,6 +37,7 @@ exports.DashboardServer = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const http = __importStar(require("http"));
+const config_1 = require("../config");
 const api_1 = require("./api");
 const MIME_TYPES = {
     '.html': 'text/html',
@@ -54,7 +55,7 @@ class DashboardServer {
     api;
     publicDir;
     sseClients = new Set();
-    constructor(port = 3111, projectDir = '.', scheduler) {
+    constructor(port = config_1.config.server.dashboardPort, projectDir = '.', scheduler) {
         this.port = port;
         this.publicDir = path.resolve(__dirname, 'public');
         this.api = new api_1.DashboardAPI(projectDir, scheduler);

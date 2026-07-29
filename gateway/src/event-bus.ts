@@ -1,7 +1,8 @@
+import { config } from "./config";
 import { EventEmitter } from "events";
 
 export const eventBus = new EventEmitter();
-eventBus.setMaxListeners(100);
+eventBus.setMaxListeners(config.metrics.maxEventEmitterListeners);
 
 export type GatewayEvent =
   | { type: "goal_created"; goalId: string; projectDir: string }

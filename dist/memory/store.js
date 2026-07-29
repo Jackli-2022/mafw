@@ -39,9 +39,9 @@ const path = __importStar(require("path"));
 const yaml = __importStar(require("js-yaml"));
 const energy_system_1 = require("./energy-system");
 const DEFAULT_CONFIG = {
-    baseDir: '.opencode/mafw/parametric',
-    bannedDir: '.opencode/mafw/parametric/banned',
-    manifestFile: '.opencode/mafw/parametric/base-skill-manifest.yaml'
+    baseDir: '.mafw/parametric',
+    bannedDir: '.mafw/parametric/banned',
+    manifestFile: '.mafw/parametric/base-skill-manifest.yaml'
 };
 /**
  * Parametric Memory Store

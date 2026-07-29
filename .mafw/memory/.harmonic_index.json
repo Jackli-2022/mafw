@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-13T15:57:14.899Z",
+  "entries": [
+    {
+      "id": "mem_1783958234899_68dkez",
+      "type": "semantic",
+      "primary_abstraction": "base-skill-manifest",
+      "cue_anchors": [],
+      "tier": "tier3",
+      "energy": 0.6
+    }
+  ]
+}

@@ -1,8 +1,11 @@
-import type { HarmonicIndexManager } from "../../src/memory/harmonic-index";
-import type { CognitiveGraphManager } from "../../src/memory/cognitive-graph";
-import type { L5Store } from "../../src/memory/l5-store";
-import type { CostEstimator } from "../../src/cost/cost-estimator";
-import type { CognitiveRouter } from "../../src/cost/cognitive-router";
+import type { HarmonicIndexManager } from "./core/memory/harmonic-index";
+import type { CognitiveGraphManager } from "./core/memory/cognitive-graph";
+import type { L5Store } from "./core/memory/l5-store";
+import type { CostEstimator } from "./core/cost/cost-estimator";
+import type { CognitiveRouter } from "./core/cost/cognitive-router";
+import type { AutomationEngine } from "./automation-engine";
+import type { SchedulerLedger } from "./ledger";
+import type { DesktopClient } from "./desktop-client";
 
 export interface MemoryService {
   harmonicIndex: HarmonicIndexManager;
@@ -20,6 +23,10 @@ export interface CostService {
 export interface Services {
   memory: MemoryService;
   cost: CostService;
+  automation?: AutomationEngine;
+  ledger?: SchedulerLedger;
+  mafwDir?: string;
+  desktop?: DesktopClient;
 }
 
 export type ToolHandler = (

@@ -4,12 +4,8 @@ exports.toolExecutedHook = toolExecutedHook;
 const observation_capture_1 = require("./observation-capture");
 async function toolExecutedHook(hookContext) {
     const { toolName, output, projectDir } = hookContext;
-    // 检查输出长度
     if (output.length > 1000) {
-        console.log(`[hook:tool-executed] Compressing output for ${toolName} (${output.length} chars)`);
-        // 简化实现：直接截断输出
         const truncated = output.length > 2000 ? output.slice(0, 500) + '\n... [TRUNCATED] ...\n' + output.slice(-500) : output;
-        console.log(`[hook:tool-executed] Output compressed for ${toolName} (${truncated.length} chars)`);
     }
     await (0, observation_capture_1.captureObservation)({ toolName, output, args: '' });
 }

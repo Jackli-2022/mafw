@@ -1,0 +1,1 @@
+{"version":3,"file":"write-queue.d.ts","sourceRoot":"","sources":["write-queue.ts"],"names":[],"mappings":"AAAA,KAAK,OAAO,GAAG,MAAM,OAAO,CAAC,IAAI,CAAC,CAAC;AAEnC,qBAAa,UAAU;IACrB,OAAO,CAAC,KAAK,CAAiB;IAC9B,OAAO,CAAC,UAAU,CAAS;IAErB,OAAO,CAAC,EAAE,EAAE,OAAO,GAAG,OAAO,CAAC,IAAI,CAAC;YAS3B,OAAO;CAQtB"}

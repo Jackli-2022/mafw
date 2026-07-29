@@ -1,12 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+const MAFW_DIR = '.mafw';
+
 /**
- * Recovery �?崩溃恢复�? *
+ * Recovery �?崩溃恢复�? *
  * Scheduler 重启后：
- *   1. 读取 STATUS.md，找到所�?RUNNING 状态的 Goal
+ *   1. 读取 STATUS.md，找到所�?RUNNING 状态的 Goal
  *   2. 尝试找到最近的 Checkpoint
- *   3. 重新创建 session 并启�?Loop
+ *   3. 重新创建 session 并启�?Loop
  */
 
 export class RecoveryManager {
@@ -16,11 +18,15 @@ export class RecoveryManager {
     this.projectDir = projectDir;
   }
 
+  private get mafwDir(): string {
+    return path.join(this.projectDir, MAFW_DIR);
+  }
+
   /**
    * 查找最近的 Checkpoint
    */
   findLastCheckpoint(goalId: string): string | null {
-    const checkpointsDir = path.join(this.projectDir, '.mafw/checkpoints', goalId);
+    const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
     if (!fs.existsSync(checkpointsDir)) return null;
 
     const files = fs.readdirSync(checkpointsDir)
@@ -38,7 +44,7 @@ export class RecoveryManager {
    * 保存 Checkpoint
    */
   saveCheckpoint(goalId: string, loop: number, data: any, waveNum?: number): void {
-    const checkpointsDir = path.join(this.projectDir, '.mafw/checkpoints', goalId);
+    const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
     if (!fs.existsSync(checkpointsDir)) fs.mkdirSync(checkpointsDir, { recursive: true });
 
     const name = waveNum !== undefined
@@ -62,7 +68,7 @@ export class RecoveryManager {
   }
 
   async restoreLoop(goalId: string, loop: number, targetWaveNum?: number): Promise<boolean> {
-    const checkpointsDir = path.join(this.projectDir, '.mafw/checkpoints', goalId);
+    const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
     if (!fs.existsSync(checkpointsDir)) return false;
     const pattern = targetWaveNum !== undefined
       ? `wave-${loop}-${targetWaveNum}.json`
@@ -73,7 +79,7 @@ export class RecoveryManager {
     if (!checkpoint) return false;
 
     // Restore state file
-    const statePath = path.join(this.projectDir, '.mafw/state', `${goalId}.json`);
+    const statePath = path.join(this.mafwDir, 'state', `${goalId}.json`);
     if (fs.existsSync(statePath)) {
       const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
       state.phase = checkpoint.phase || 'PLANNING';
@@ -85,7 +91,7 @@ export class RecoveryManager {
 
     // Truncate waves.json to remove waves after the rollback point
     if (targetWaveNum !== undefined) {
-      const wavesPath = path.join(this.projectDir, '.mafw/waves.json');
+      const wavesPath = path.join(this.mafwDir, 'waves.json');
       if (fs.existsSync(wavesPath)) {
         const wavesData = JSON.parse(fs.readFileSync(wavesPath, 'utf-8'));
         wavesData.waves = (wavesData.waves || []).filter((w: any) => w.waveNum <= targetWaveNum);
@@ -100,7 +106,7 @@ export class RecoveryManager {
    * 恢复所有需要重启的 Goal
    */
   async recoverAll(callback: (goalId: string, checkpoint: string | null) => Promise<void>): Promise<void> {
-    const statusPath = path.join(this.projectDir, '.mafw/STATUS.md');
+    const statusPath = path.join(this.mafwDir, 'STATUS.md');
     if (!fs.existsSync(statusPath)) return;
 
     const content = fs.readFileSync(statusPath, 'utf-8');

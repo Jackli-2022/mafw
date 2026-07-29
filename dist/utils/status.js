@@ -39,7 +39,7 @@ const path = __importStar(require("path"));
 class StatusManager {
     statusPath;
     constructor(projectDir = '.') {
-        this.statusPath = path.join(projectDir, '.opencode/mafw/STATUS.md');
+        this.statusPath = path.join(projectDir, '.mafw/STATUS.md');
     }
     /**
      * 读取所有 Goal 状态

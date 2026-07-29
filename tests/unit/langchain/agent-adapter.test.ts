@@ -4,9 +4,13 @@ import { AgentServices } from '../../../src/langchain/node-runner';
 
 function makeServices(): jest.Mocked<AgentServices> {
   return {
-    createSession: jest.fn().mockResolvedValue('session-1'),
-    sendPrompt: jest.fn().mockResolvedValue(undefined),
-    destroySession: jest.fn().mockResolvedValue(undefined),
+    client: {
+      session: {
+        create: jest.fn().mockResolvedValue({ id: 'session-1' }),
+        promptAsync: jest.fn().mockResolvedValue(undefined),
+        delete: jest.fn().mockResolvedValue(undefined),
+      },
+    },
     syncToFile: jest.fn(),
   };
 }
@@ -17,9 +21,9 @@ describe('CodeAgentAdapter', () => {
     const adapter = new CodeAgentAdapter(services, 'test instruction', 'goal-1');
     const result = await adapter.plan([], undefined, undefined);
     expect((result as AgentFinish).returnValues.output).toBe('delegated_to_opencode');
-    expect(services.createSession).toHaveBeenCalledWith('goal-1');
-    expect(services.sendPrompt).toHaveBeenCalledWith('session-1', 'test instruction');
-    expect(services.destroySession).toHaveBeenCalledWith('session-1');
+    expect(services.client.session.create).toHaveBeenCalledWith({ directory: 'test instruction' });
+    expect(services.client.session.promptAsync).toHaveBeenCalledWith({ sessionID: 'session-1', message: 'test instruction' });
+    expect(services.client.session.delete).toHaveBeenCalledWith({ sessionID: 'session-1' });
   });
 
   it('has correct input/output keys', () => {

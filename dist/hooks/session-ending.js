@@ -40,10 +40,29 @@ const state_1 = require("../utils/state");
 async function sessionEndingHook(hookContext) {
     const sessionId = hookContext.sessionId;
     const projectDir = hookContext.projectDir || process.cwd();
-    const mafwDir = path.join(projectDir, '.opencode/mafw');
+    const mafwDir = path.join(projectDir, '.mafw');
     const stateDir = path.join(mafwDir, 'state');
-    console.log(`[hook:session-ending] Session ${sessionId} ending`);
-    // 1. 遍历所有 state 文件，找到包含该 sessionId 的 goal
+    // Pre-compact protection: detect high-energy memories (goal-independent)
+    try {
+        const parametricDir = path.join(projectDir, '.mafw/parametric');
+        if (fs.existsSync(parametricDir)) {
+            const files = fs.readdirSync(parametricDir).filter(f => f.endsWith('.json'));
+            let highEnergyCount = 0;
+            for (const file of files) {
+                try {
+                    const data = JSON.parse(fs.readFileSync(path.join(parametricDir, file), 'utf-8'));
+                    if ((data.energy_score || data.energy || 0) > 0.8)
+                        highEnergyCount++;
+                }
+                catch { /* skip unparseable files */ }
+            }
+            if (highEnergyCount > 0) {
+                console.log(`[mafw:pre-compact] Preserving ${highEnergyCount} high-energy memories`);
+            }
+        }
+    }
+    catch { /* ignore parametric errors */ }
+    // 1. 遍历所�?state 文件，找到包含该 sessionId �?goal
     if (!fs.existsSync(stateDir)) {
         console.warn(`[hook:session-ending] State directory not found: ${stateDir}`);
         return;
@@ -74,14 +93,13 @@ async function sessionEndingHook(hookContext) {
         console.warn(`[hook:session-ending] No active state found for session ${sessionId}`);
         return;
     }
-    console.log(`[hook:session-ending] Found session ${sessionId} in goal ${targetGoalId} phase ${targetPhase}`);
-    // 2. 兜底检查：如果 state 的 nextAction 还是 WAIT_PHASE_COMPLETE，
-    // 说明 Skill Entry 没来得及更新 state（异常或超时）
+    // 2. 兜底检查：如果 state �?nextAction 还是 WAIT_PHASE_COMPLETE�?
+    // 说明 Skill Entry 没来得及更新 state（异常或超时�?
     try {
         const state = await (0, state_1.loadState)(targetGoalId, projectDir);
         if (state.nextAction === 'WAIT_PHASE_COMPLETE') {
             console.warn(`[hook:session-ending] Session ${sessionId} (${targetPhase}) ended without state update for ${targetGoalId}`);
-            // 写入异常状态，让 Scheduler 重建
+            // 写入异常状态，�?Scheduler 重建
             await (0, state_1.updateState)(targetGoalId, {
                 nextAction: `CREATE_${targetPhase.toUpperCase()}_SESSION`,
                 error: 'session_ended_without_state_update',
@@ -94,31 +112,9 @@ async function sessionEndingHook(hookContext) {
                     }
                 }
             }, projectDir);
-            console.log(`[hook:session-ending] Recovery state written for ${targetGoalId}: CREATE_${targetPhase.toUpperCase()}_SESSION`);
         }
         else {
-            console.log(`[hook:session-ending] State already updated for ${targetGoalId}: ${state.nextAction}`);
         }
-        // Pre-compact protection: detect high-energy memories
-        try {
-            const parametricDir = path.join(projectDir, '.opencode/mafw/parametric');
-            if (fs.existsSync(parametricDir)) {
-                const files = fs.readdirSync(parametricDir).filter(f => f.endsWith('.json'));
-                let highEnergyCount = 0;
-                for (const file of files) {
-                    try {
-                        const data = JSON.parse(fs.readFileSync(path.join(parametricDir, file), 'utf-8'));
-                        if ((data.energy_score || data.energy || 0) > 0.8)
-                            highEnergyCount++;
-                    }
-                    catch { /* skip unparseable files */ }
-                }
-                if (highEnergyCount > 0) {
-                    console.log(`[mafw:pre-compact] Preserving ${highEnergyCount} high-energy memories for ${targetGoalId}`);
-                }
-            }
-        }
-        catch { /* ignore parametric errors */ }
     }
     catch (err) {
         console.error(`[hook:session-ending] Failed to load state for ${targetGoalId}: ${err.message}`);

@@ -7,13 +7,13 @@
     "plugin": "dist/plugin.js"
   },
   "bin": {
-    "mafw-gateway": "./bin/mafw-gateway.js",
-    "mafw-uninstall": "./bin/mafw-uninstall.js"
+    "mafw": "./bin/mafw.js"
   },
   "scripts": {
     "build": "tsc && cd gateway && npm run build",
     "postinstall": "node -e \"var p=require('path'),f=require('fs'),d=p.join(__dirname,'gateway');if(f.existsSync(d)){require('child_process').execSync('npm install --no-audit --no-fund --loglevel=error',{cwd:d,stdio:'inherit'})}\"",
     "prepare": "npm run build",
+    "pack:install": "npm run build && npm pack && npm install -g opencode-plugin-mafw-*.tgz && mafw version",
     "test": "jest",
     "test:unit": "jest tests/unit"
   },

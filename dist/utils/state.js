@@ -49,7 +49,7 @@ const path = __importStar(require("path"));
  * 更新状态文件（主路径，Skill Entry 末尾调用）
  */
 async function updateState(goalId, patch, projectDir = '.') {
-    const statePath = path.join(projectDir, '.opencode/mafw/state', `${goalId}.json`);
+    const statePath = path.join(projectDir, '.mafw/state', `${goalId}.json`);
     if (!fs.existsSync(statePath)) {
         throw new Error(`State file not found: ${statePath}`);
     }
@@ -63,17 +63,6 @@ async function updateState(goalId, patch, projectDir = '.') {
     const tmpPath = `${statePath}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
     fs.renameSync(tmpPath, statePath);
-    // 事件回调：通知 Gateway 状态变更 (fire-and-forget)
-    try {
-        const gatewayUrl = process.env.MAFW_GATEWAY_URL || 'http://127.0.0.1:3000';
-        fetch(`${gatewayUrl}/api/events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'state_change', goalId, patch, projectDir }),
-            signal: AbortSignal.timeout(500)
-        }).catch(() => { });
-    }
-    catch { }
     return updated;
 }
 function safeJsonParse(filePath) {
@@ -88,7 +77,7 @@ function safeJsonParse(filePath) {
  * 加载状态文件
  */
 async function loadState(goalId, projectDir = '.') {
-    const statePath = path.join(projectDir, '.opencode/mafw/state', `${goalId}.json`);
+    const statePath = path.join(projectDir, '.mafw/state', `${goalId}.json`);
     if (!fs.existsSync(statePath)) {
         throw new Error(`State file not found: ${statePath}`);
     }
@@ -98,7 +87,7 @@ async function loadState(goalId, projectDir = '.') {
  * 加载请求配置
  */
 async function loadRequest(goalId, projectDir = '.') {
-    const reqPath = path.join(projectDir, '.opencode/mafw/requests', `${goalId}.json`);
+    const reqPath = path.join(projectDir, '.mafw/requests', `${goalId}.json`);
     if (!fs.existsSync(reqPath)) {
         throw new Error(`Request file not found: ${reqPath}`);
     }
@@ -108,7 +97,7 @@ async function loadRequest(goalId, projectDir = '.') {
  * 加载 Goal Charter
  */
 async function loadGoal(goalId, projectDir = '.') {
-    const goalPath = path.join(projectDir, '.opencode/mafw/goals', `${goalId}.md`);
+    const goalPath = path.join(projectDir, '.mafw/goals', `${goalId}.md`);
     if (!fs.existsSync(goalPath)) {
         throw new Error(`Goal Charter not found: ${goalPath}`);
     }
@@ -118,7 +107,7 @@ async function loadGoal(goalId, projectDir = '.') {
  * 加载 Waves 配置
  */
 async function loadWaves(goalId, projectDir = '.') {
-    const wavesPath = path.join(projectDir, '.opencode/mafw/waves.json');
+    const wavesPath = path.join(projectDir, '.mafw/waves.json');
     if (!fs.existsSync(wavesPath)) {
         return [];
     }
@@ -129,7 +118,7 @@ async function loadWaves(goalId, projectDir = '.') {
  * 加载 Receipts
  */
 async function loadReceipts(goalId, projectDir = '.') {
-    const receiptsDir = path.join(projectDir, '.opencode/mafw/receipts', goalId);
+    const receiptsDir = path.join(projectDir, '.mafw/receipts', goalId);
     if (!fs.existsSync(receiptsDir)) {
         return [];
     }
@@ -140,7 +129,7 @@ async function loadReceipts(goalId, projectDir = '.') {
  * 加载 Review 文件
  */
 async function loadReview(goalId, loop, projectDir = '.') {
-    const reviewPath = path.join(projectDir, '.opencode/mafw/reviews', `${goalId}-loop${loop}.md`);
+    const reviewPath = path.join(projectDir, '.mafw/reviews', `${goalId}-loop${loop}.md`);
     if (!fs.existsSync(reviewPath)) {
         return null;
     }
@@ -158,14 +147,14 @@ function extractGoalId(message) {
  * 检查状态文件是否存在
  */
 function stateExists(goalId, projectDir = '.') {
-    const statePath = path.join(projectDir, '.opencode/mafw/state', `${goalId}.json`);
+    const statePath = path.join(projectDir, '.mafw/state', `${goalId}.json`);
     return fs.existsSync(statePath);
 }
 /**
  * 初始化新 Goal 的状态文件
  */
 function initState(goalId, projectDir = '.') {
-    const stateDir = path.join(projectDir, '.opencode/mafw/state');
+    const stateDir = path.join(projectDir, '.mafw/state');
     if (!fs.existsSync(stateDir)) {
         fs.mkdirSync(stateDir, { recursive: true });
     }

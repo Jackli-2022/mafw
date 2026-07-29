@@ -4,13 +4,14 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetricsCollector = void 0;
+const config_1 = require("../config");
 class MetricsCollector {
     metrics = [];
     async record(data) {
         this.metrics.push(data);
         // 限制内存中的指标数量
-        if (this.metrics.length > 1000) {
-            this.metrics = this.metrics.slice(-500);
+        if (this.metrics.length > config_1.config.metrics.maxInMemory) {
+            this.metrics = this.metrics.slice(-config_1.config.metrics.pruneRetainCount);
         }
     }
     async getSnapshot() {
@@ -20,7 +21,7 @@ class MetricsCollector {
                 acc[m.phase] = (acc[m.phase] || 0) + 1;
                 return acc;
             }, {}),
-            recent: this.metrics.slice(-50)
+            recent: this.metrics.slice(-config_1.config.metrics.recentSnapshotSize)
         };
     }
 }

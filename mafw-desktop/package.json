@@ -1,0 +1,35 @@
+{
+  "name": "mafw-desktop",
+  "version": "1.0.0",
+  "description": "MAFW Desktop — Gateway management UI",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-builder --config electron-builder.config.ts",
+    "package:win": "electron-builder --win --config electron-builder.config.ts",
+    "package:mac": "electron-builder --mac --config electron-builder.config.ts",
+    "package:linux": "electron-builder --linux --config electron-builder.config.ts"
+  },
+  "dependencies": {
+    "@opencode-ai/ui": "file:../opencode-dev/packages/ui",
+    "dagre": "^0.8.5",
+    "js-yaml": "^4.1.0",
+    "solid-js": "^1.9.0"
+  },
+  "devDependencies": {
+    "@types/dagre": "^0.7.0",
+    "@types/node": "^22.0.0",
+    "autoprefixer": "^10.4.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^3.0.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.6.0",
+    "vite-plugin-solid": "^2.11.12"
+  }
+}

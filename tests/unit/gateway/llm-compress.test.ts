@@ -16,18 +16,21 @@ describe('DashboardAPI llmCompress', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('throws when no API key is configured', async () => {
-    await expect(api.llmCompress(['test observation'])).rejects.toThrow();
-  });
-
-  it('returns fallback result on API failure', async () => {
-    process.env.MAFW_LLM_API_KEY = 'test-key';
+  it('returns fallback result when no SDK client available', async () => {
     const result = await api.llmCompress(['test observation']);
     expect(result).toHaveProperty('narrative');
     expect(result).toHaveProperty('facts');
     expect(result).toHaveProperty('concepts');
     expect(result).toHaveProperty('energy');
-    delete process.env.MAFW_LLM_API_KEY;
+    expect(result.narrative).toContain('Compression failed');
+  });
+
+  it('returns fallback result with SDK client when session fails', async () => {
+    const mockClient = { session: { create: async () => { throw new Error('no serve'); } } };
+    const apiWithClient = new DashboardAPI(tmpDir, undefined, mockClient);
+    const result = await apiWithClient.llmCompress(['test observation']);
+    expect(result).toHaveProperty('narrative');
+    expect(result.energy).toBe(0.3);
   });
 
   it('parses LLM JSON response correctly', () => {

@@ -27,10 +27,17 @@ function makeState(overrides: Partial<LoopStateType> = {}): LoopStateType {
 }
 
 function makeServices(): jest.Mocked<AgentServices> {
+  const mockCreate = jest.fn().mockResolvedValue({ id: 'session-1' });
+  const mockPrompt = jest.fn().mockResolvedValue(undefined);
+  const mockDelete = jest.fn().mockResolvedValue(undefined);
   return {
-    createSession: jest.fn().mockResolvedValue('session-1'),
-    sendPrompt: jest.fn().mockResolvedValue(undefined),
-    destroySession: jest.fn().mockResolvedValue(undefined),
+    client: {
+      session: {
+        create: mockCreate,
+        promptAsync: mockPrompt,
+        delete: mockDelete,
+      },
+    },
     syncToFile: jest.fn(),
   };
 }

@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
@@ -17,7 +18,7 @@ export class McpSSEEndpoint {
     this.services = services;
 
     this.server = new Server(
-      { name: "mafw-mcp-server", version: "4.1.0" },
+      { name: config.mcpserver.name, version: config.mcpserver.version },
       { capabilities: { tools: {} } }
     );
 

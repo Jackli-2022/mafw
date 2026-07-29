@@ -84,7 +84,7 @@ async function mafwReviewEntry(context) {
     const review = parseReviewResponse(response.content);
     console.log(`[mafw-review] Verdict: ${review.verdict}`);
     // 9. 写入 review 文件
-    const reviewsDir = path.join(projectDir, '.opencode/mafw/reviews');
+    const reviewsDir = path.join(projectDir, '.mafw/reviews');
     if (!fs.existsSync(reviewsDir))
         fs.mkdirSync(reviewsDir, { recursive: true });
     const reviewPath = path.join(reviewsDir, `${goalId}-loop${state.loop}.md`);
@@ -92,7 +92,7 @@ async function mafwReviewEntry(context) {
     console.log(`[mafw-review] Written ${reviewPath}`);
     // 10. 如果失败，写入 lesson + 压缩 + 提取 Δ
     if (review.verdict === 'FAIL') {
-        const lessonsDir = path.join(projectDir, '.opencode/mafw/lessons');
+        const lessonsDir = path.join(projectDir, '.mafw/lessons');
         if (!fs.existsSync(lessonsDir))
             fs.mkdirSync(lessonsDir, { recursive: true });
         const lessonPath = path.join(lessonsDir, `${goalId}-loop${state.loop}.md`);
@@ -105,9 +105,9 @@ async function mafwReviewEntry(context) {
         if (compacted) {
             const deltas = extractor.extract(compacted);
             const store = new store_1.ParametricStore({
-                baseDir: path.join(projectDir, '.opencode/mafw/parametric'),
-                bannedDir: path.join(projectDir, '.opencode/mafw/parametric/banned'),
-                manifestFile: path.join(projectDir, '.opencode/mafw/parametric/base-skill-manifest.yaml')
+                baseDir: path.join(projectDir, '.mafw/parametric'),
+                bannedDir: path.join(projectDir, '.mafw/parametric/banned'),
+                manifestFile: path.join(projectDir, '.mafw/parametric/base-skill-manifest.yaml')
             });
             for (const delta of deltas)
                 store.save(delta);

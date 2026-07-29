@@ -42,13 +42,14 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_search_hybrid",
-    description: "Search memory units using BM25 + vector hybrid retrieval",
+    description: "Search memory units using guided iterative retrieval or BM25 hybrid",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query text" },
-        topK: { type: "number", description: "Maximum results to return", default: 20 },
-        memoryType: { type: "string", enum: ["episodic", "semantic", "procedural", "global"], description: "Optional memory type filter" },
+        topK: { type: "number", description: "Maximum results", default: 20 },
+        memoryType: { type: "string", enum: ["episodic", "semantic", "procedural", "global"], description: "Optional filter" },
+        policy: { type: "string", enum: ["guided", "oneshot"], default: "guided", description: "Retrieval strategy" },
       },
       required: ["query"],
     },
@@ -157,6 +158,259 @@ const DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: "mafw_merge_memory",
+    description: "Merge memories from another worktree into the current project. Extracts unique high-value memories, detects conflicts, and writes fusion log.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sourceWorktree: { type: "string", description: "Path to the source worktree root directory" },
+        resolveStrategy: { type: "string", enum: ["manual", "higher_energy", "newer"], default: "manual", description: "Conflict resolution strategy" },
+      },
+      required: ["sourceWorktree"],
+    },
+  },
+  {
+    name: "mafw_resolve_merge",
+    description: "Resolve merge conflict. Actions: merge (combine values), link (cross-reference), abstract (create parent node)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conflictingId: { type: "string", description: "ID of existing conflicting memory" },
+        newAbstraction: { type: "string", description: "Primary abstraction of new memory" },
+        action: { type: "string", enum: ["merge", "link", "abstract"], description: "Resolution action" },
+      },
+      required: ["conflictingId", "newAbstraction", "action"],
+    },
+  },
+  // ── Tier 1: Read-only automation tools ──
+  {
+    name: "mafw_list_automation_rules",
+    description: "List all automation rules with next trigger times and recent execution records",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "mafw_get_automation_rule",
+    description: "Get detailed information about a specific automation rule",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Automation rule ID" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "mafw_list_triage_items",
+    description: "List pending triage items, optionally filtered by status",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["PENDING_CONFIRMATION", "CONFIRMED", "REJECTED"], description: "Filter by status (default: PENDING_CONFIRMATION)" },
+      },
+    },
+  },
+  {
+    name: "mafw_get_triage_item",
+    description: "Get detailed information about a specific triage item including findings and LLM suggestions",
+    inputSchema: {
+      type: "object",
+      properties: {
+        triage_id: { type: "string", description: "Triage item ID" },
+      },
+      required: ["triage_id"],
+    },
+  },
+  {
+    name: "mafw_get_automation_history",
+    description: "Get audit history for automation rules from the ledger",
+    inputSchema: {
+      type: "object",
+      properties: {
+        rule_id: { type: "string", description: "Optional rule ID filter" },
+        limit: { type: "number", description: "Maximum entries to return", default: 20 },
+      },
+    },
+  },
+  // ── Tier 2: Safe action automation tools ──
+  {
+    name: "mafw_run_automation",
+    description: "Run a scan-type automation rule. Force auto_confirm=false — results always go to PENDING_CONFIRMATION for your review",
+    inputSchema: {
+      type: "object",
+      properties: {
+        rule_id: { type: "string", description: "Automation rule ID to execute" },
+      },
+      required: ["rule_id"],
+    },
+  },
+  {
+    name: "mafw_validate_rule",
+    description: "Dry-run validation of an automation rule: checks cron expression syntax, timezone validity, and previews next 5 trigger times. Does NOT persist anything",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Proposed rule identifier" },
+        trigger: {
+          type: "object",
+          description: "Trigger configuration",
+          properties: {
+            type: { type: "string", enum: ["cron"], description: "Trigger type (only cron supported)" },
+            schedule: { type: "string", description: "Cron expression (e.g. '0 2 * * *')" },
+            timezone: { type: "string", description: "IANA timezone (e.g. 'Asia/Shanghai')", default: "UTC" },
+          },
+          required: ["schedule"],
+        },
+        skill: { type: "string", description: "Skill to execute" },
+        action: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["memory:distill", "memory:decay", "memory:review", "memory:prune"], description: "Memory action type" },
+          },
+        },
+        onResult: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["triage", "goal"] },
+            auto_confirm: { type: "boolean" },
+            template: { type: "string" },
+          },
+        },
+        goal_defaults: {
+          type: "object",
+          properties: {
+            maxLoops: { type: "number" },
+          },
+        },
+      },
+      required: ["id", "trigger"],
+    },
+  },
+  // ── Tier 3: Draft/Suggest automation tools ──
+  {
+    name: "mafw_propose_triage_decision",
+    description: "Attach your analysis and suggestion to a triage item. Item REMAINS PENDING_CONFIRMATION — the user sees your suggestion when they review triage items and can accept or override it",
+    inputSchema: {
+      type: "object",
+      properties: {
+        triage_id: { type: "string", description: "Triage item ID" },
+        suggestion: { type: "string", enum: ["confirm", "reject"], description: "Your recommended action" },
+        reason: { type: "string", description: "Detailed reasoning for your suggestion" },
+        priority: { type: "string", enum: ["high", "medium", "low"], description: "Suggested priority", default: "medium" },
+      },
+      required: ["triage_id", "suggestion", "reason"],
+    },
+  },
+  {
+    name: "mafw_draft_automation_rule",
+    description: "Validate and save a new automation rule draft with enabled=false. The user must manually enable it in the dashboard or config file. Overwrites existing disabled drafts but rejects overwriting enabled rules",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Unique rule identifier" },
+        trigger: {
+          type: "object",
+          description: "Trigger configuration",
+          properties: {
+            type: { type: "string", enum: ["cron"], description: "Trigger type (only cron supported)" },
+            schedule: { type: "string", description: "Cron expression (e.g. '0 */6 * * *')" },
+            timezone: { type: "string", description: "IANA timezone", default: "UTC" },
+          },
+          required: ["schedule"],
+        },
+        skill: { type: "string", description: "Skill to execute" },
+        action: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["memory:distill", "memory:decay", "memory:review", "memory:prune"] },
+          },
+        },
+        onResult: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["triage", "goal"] },
+            auto_confirm: { type: "boolean" },
+            template: { type: "string" },
+          },
+        },
+        goal_defaults: {
+          type: "object",
+          properties: {
+            maxLoops: { type: "number" },
+          },
+        },
+      },
+      required: ["id", "trigger"],
+    },
+  },
+  // ── Desktop GUI automation tools ──
+  {
+    name: "mafw_desktop_screenshot",
+    description: "Take a screenshot of the MAFW Desktop GUI. Optionally capture a specific region by CSS selector. The PNG is saved to .mafw/screenshots/ and the file path is returned. Use this to verify visual output.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "Optional CSS selector to capture a specific region (e.g. '.mafw-content')" },
+      },
+    },
+  },
+  {
+    name: "mafw_desktop_navigate",
+    description: "Switch to a specific tab in the MAFW Desktop GUI. Valid tabs: chat, goals, memory, approvals, triage, automation",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tab: { type: "string", enum: ["chat", "goals", "memory", "approvals", "triage", "automation"], description: "Target tab" },
+      },
+      required: ["tab"],
+    },
+  },
+  {
+    name: "mafw_desktop_get_ui_state",
+    description: "Get a structured snapshot of the current Desktop UI: active tab, visible elements with bounding boxes, scroll position, and window dimensions. Use before interacting to confirm element exists.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "mafw_desktop_click",
+    description: "Click an element in the Desktop GUI identified by CSS selector. Returns the clicked element's tag, text, and bounding box. Use after get_ui_state to verify the target.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "CSS selector for the element to click (e.g. '.mafw-tab:nth-child(3)', '#submit-btn')" },
+      },
+      required: ["selector"],
+    },
+  },
+  {
+    name: "mafw_desktop_type",
+    description: "Type text into an input field or textarea in the Desktop GUI. Only works on INPUT, TEXTAREA, or contentEditable elements.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        selector: { type: "string", description: "CSS selector for the input element" },
+        text: { type: "string", description: "Text to type" },
+      },
+      required: ["selector", "text"],
+    },
+  },
+  {
+    name: "mafw_desktop_scroll",
+    description: "Scroll the Desktop GUI window in a direction. Useful to bring elements into view.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        direction: { type: "string", enum: ["up", "down", "left", "right"], description: "Scroll direction" },
+        amount: { type: "number", description: "Scroll amount in pixels (default: 200)" },
+      },
+      required: ["direction"],
+    },
+  },
 ];
 
 import { handleCreateGoal } from "./handlers/create-goal";
@@ -170,6 +424,23 @@ import { handleGetModelRoute } from "./handlers/get-model-route";
 import { handleAddMemory } from "./handlers/add-memory";
 import { handleCommitHeuristic } from "./handlers/commit-heuristic";
 import { handleGetAxioms } from "./handlers/get-axioms";
+import { handleMergeMemory } from "./handlers/merge-memory";
+import { handleResolveMerge } from "./handlers/resolve-merge";
+import { handleListAutomationRules } from "./handlers/list-automation-rules";
+import { handleGetAutomationRule } from "./handlers/get-automation-rule";
+import { handleListTriageItems } from "./handlers/list-triage-items";
+import { handleGetTriageItem } from "./handlers/get-triage-item";
+import { handleGetAutomationHistory } from "./handlers/get-automation-history";
+import { handleRunAutomation } from "./handlers/run-automation";
+import { handleValidateRule } from "./handlers/validate-rule";
+import { handleProposeTriageDecision } from "./handlers/propose-triage-decision";
+import { handleDraftAutomationRule } from "./handlers/draft-automation-rule";
+import { handleDesktopScreenshot } from "./handlers/desktop-screenshot";
+import { handleDesktopNavigate } from "./handlers/desktop-navigate";
+import { handleDesktopGetState } from "./handlers/desktop-get-state";
+import { handleDesktopClick } from "./handlers/desktop-click";
+import { handleDesktopType } from "./handlers/desktop-type";
+import { handleDesktopScroll } from "./handlers/desktop-scroll";
 
 export function createToolRegistry(): ToolRegistry {
   return {
@@ -186,6 +457,23 @@ export function createToolRegistry(): ToolRegistry {
       mafw_add_memory: handleAddMemory,
       mafw_commit_heuristic: handleCommitHeuristic,
       mafw_get_axioms: handleGetAxioms,
+      mafw_merge_memory: handleMergeMemory,
+      mafw_resolve_merge: handleResolveMerge,
+      mafw_list_automation_rules: handleListAutomationRules,
+      mafw_get_automation_rule: handleGetAutomationRule,
+      mafw_list_triage_items: handleListTriageItems,
+      mafw_get_triage_item: handleGetTriageItem,
+      mafw_get_automation_history: handleGetAutomationHistory,
+      mafw_run_automation: handleRunAutomation,
+      mafw_validate_rule: handleValidateRule,
+      mafw_propose_triage_decision: handleProposeTriageDecision,
+      mafw_draft_automation_rule: handleDraftAutomationRule,
+      mafw_desktop_screenshot: handleDesktopScreenshot,
+      mafw_desktop_navigate: handleDesktopNavigate,
+      mafw_desktop_get_ui_state: handleDesktopGetState,
+      mafw_desktop_click: handleDesktopClick,
+      mafw_desktop_type: handleDesktopType,
+      mafw_desktop_scroll: handleDesktopScroll,
     },
   };
 }

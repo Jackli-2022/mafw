@@ -6,7 +6,7 @@
  *   2. 降级完成时生成降级报告
  *   3. Archive 阶段调用 L3 Validator
  *
- * 输出：.opencode/mafw/reports/{goal_id}.md
+ * 输出：.mafw/reports/{goal_id}.md
  */
 export declare class ReportGenerator {
     private reportsDir;

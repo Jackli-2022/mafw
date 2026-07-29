@@ -36,16 +36,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.HeartbeatMonitor = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const config_1 = require("./config");
 class HeartbeatMonitor {
     statusPath;
     timeoutMs;
-    constructor(projectDir = '.', timeoutMs = 5 * 60 * 1000) {
-        this.statusPath = path.join(projectDir, '.opencode/mafw/STATUS.md');
+    constructor(projectDir = '.', timeoutMs = config_1.config.timeouts.heartbeatTimeout) {
+        this.statusPath = path.join(projectDir, config_1.config.paths.mafwDir, 'STATUS.md');
         this.timeoutMs = timeoutMs;
     }
     /**
-     * 检查所有活跃 Goal 的心跳
-     */
+     * 检查所有活�?Goal 的心�?   */
     check() {
         const all = this.loadAll();
         const running = all.filter(g => g.state === 'RUNNING');
@@ -64,8 +64,7 @@ class HeartbeatMonitor {
         return { healthy, stuck };
     }
     /**
-     * 加载所有 Goal 状态
-     */
+     * 加载所�?Goal 状�?   */
     loadAll() {
         if (!fs.existsSync(this.statusPath))
             return [];
@@ -73,7 +72,7 @@ class HeartbeatMonitor {
         return this.parse(content);
     }
     /**
-     * 解析多 Goal STATUS.md 格式
+     * 解析�?Goal STATUS.md 格式
      */
     parse(content) {
         const blocks = content.split('---').filter(b => b.trim());

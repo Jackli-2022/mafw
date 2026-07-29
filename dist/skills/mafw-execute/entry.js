@@ -196,7 +196,7 @@ async function mergeWaveToGoal(wave, worktreeDir, taskBranchManager, taskResults
 }
 // ── 写入 Receipts ──
 async function writeReceipts(goalId, projectDir, receipts) {
-    const receiptsDir = path.join(projectDir, '.opencode/mafw/receipts', goalId);
+    const receiptsDir = path.join(projectDir, '.mafw/receipts', goalId);
     if (!fs.existsSync(receiptsDir)) {
         fs.mkdirSync(receiptsDir, { recursive: true });
     }

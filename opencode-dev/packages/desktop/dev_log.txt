@@ -1,0 +1,145 @@
+﻿bun.exe : $ bun ./scripts/predev.ts
+所在位置 C:\home\ubuntu\.npm-global\bun.ps1:14 字符: 3
++   & "$basedir/node_modules/bun/bin/bun.exe"   $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ bun ./scripts/predev.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Copied dev icons from ./icons/dev to resources/icons
+opencode script {
+  "channel": "master",
+  "version": "0.0.0-master-202607271549",
+  "preview": true,
+  "release": false,
+  "team": [
+    "adamdotdevin",
+    "arvsrn",
+    "Brendonovich",
+    "fwang",
+    "Hona",
+    "iamdavidhill",
+    "jayair",
+    "jlongster",
+    "kitlangton",
+    "kommander",
+    "ludvigrask",
+    "MrMushrooooom",
+    "nexxeln",
+    "R44VC0RP",
+    "rekram1-node",
+    "thdxr",
+    "simonklee",
+    "Slickstef11",
+    "usrnk1",
+    "vimtor",
+    "StarpTech",
+    "actions-user",
+    "opencode",
+    "opencode-agent[bot]"
+  ]
+}
+Loaded models.dev snapshot
+Build complete
+$ electron-vite dev
+[36mvite v7.1.4 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[33m"execFileSync" is imported from external module "node:child_process" but never used in "../opencode/dist/node/node
+.js".[39m
+[32m鉁?[39m 47 modules transformed.
+[33m../opencode/dist/node/node.js (91762:15): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged a
+s it poses security risks and may cause issues with minification.[39m
+[33m../opencode/dist/node/node.js (461603:34): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged 
+as it poses security risks and may cause issues with minification.[39m
+[33m../opencode/dist/node/node.js (461626:36): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged 
+as it poses security risks and may cause issues with minification.[39m
+rendering chunks...
+[2mout/main/[22m[36msidecar.js               [39m[1m[2m     3.38 kB[22m[1m[22m
+[2mout/main/[22m[36mindex.js                 [39m[1m[2m   158.01 kB[22m[1m[22m
+[2mout/main/[22m[36mchunks/node-DrtCgtY0.js  [39m[1m[33m31,412.34 kB[39m[22m
+[32m鉁?built in 15.83s[39m
+[32m
+electron main process built successfully[39m
+[90m
+-----
+[39m
+[36mvite v7.1.4 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m鉁?[39m 2 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m8.10 kB[22m[1m[22m
+[32m鉁?built in 36ms[39m
+[32m
+electron preload scripts built successfully[39m
+[90m
+-----
+[39m
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m鉃?[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m鉃?[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+starting electron app...
+[39m
+
+23:49:48.566 (crash) > crash reporter started {
+  path: 'C:\\Users\\15524\\AppData\\Roaming\\ai.opencode.desktop.dev\\Crashpad'
+}
+23:49:48.587         > app starting { version: '1.18.1', packaged: false, onboardingTest: false }
+
+DevTools listening on ws://127.0.0.1:9222/devtools/browser/d2cc59de-19bf-4556-8fca-c85fef22cdb4
+23:49:48.635         > tauri migration: already done, skipping
+23:49:48.645         > auto updater configured {
+  channel: 'latest',
+  allowPrerelease: false,
+  allowDowngrade: true,
+  currentVersion: '1.18.1'
+}
+23:49:48.702 (network) > net log started {
+  path: 'C:\\Users\\15524\\AppData\\Roaming\\ai.opencode.desktop.dev\\logs\\20260727T154948\\network.netlog'
+}
+23:49:48.713           > sidecar connection started { url: 'http://127.0.0.1:12973' }
+23:49:48.714           > spawning sidecar { url: 'http://127.0.0.1:12973' }
+23:49:49.699           > loading task finished
+23:49:49.700 (utility) > mafw gateway entry resolved {
+  entry: 'C:\\work\\work-loop\\opencode-plugin-mafw\\gateway\\dist\\gateway\\src\\index.js'
+}
+23:49:49.731 (utility) > mafw gateway spawned {
+  entry: 'C:\\work\\work-loop\\opencode-plugin-mafw\\gateway\\dist\\gateway\\src\\index.js',
+  port: 12976
+}
+23:49:50.153 (utility) > mafw gateway stdout { text: '[Scheduler] MAFW Scheduler v5.0 starting...' }
+23:49:50.155 (utility) > mafw gateway stdout { text: '[AutomationEngine] Loaded 0 automation rules' }
+23:49:50.155 (utility) > mafw gateway stdout {
+  text: '[Scheduler] Services initialized (Memory + Cost + MCP SSE + Automation)'
+}
+23:49:50.157 (utility) > mafw gateway stdout {
+  text: '[Scheduler] HTTP API on port 12976\n' +
+    '[Scheduler]  - POST /register  { projectDir, mafwDir }\n' +
+    '[Scheduler]  - POST /control  { action, goalId, ... }'
+}
+23:49:50.158 (utility) > mafw gateway stdout {
+  text: '[Scheduler]  - GET  /health\n' +
+    '[Scheduler]  - GET  /mcp           (MCP SSE)\n' +
+    '[Scheduler]  - POST /mcp           (MCP messages)\n' +
+    '[Scheduler]  - POST /api/llm/compress (LLM compression)\n' +
+    '[Scheduler]  - GET  /              (Dashboard SPA)\n' +
+    '[Scheduler] Using external OpenCode Serve at http://127.0.0.1:12973'
+}
+23:49:51.746           > automation server started { port: 0 }
+23:49:51.747 (automation) > server started { port: 12980 }
+(electron) 'console-message' arguments are deprecated and will be removed. Please use Event<WebContentsConsoleMessageEv
+entParams> object instead.
+23:49:51.874              > [vite] connecting...
+23:49:51.884              > [vite] connected.
+23:49:53.374              > cleanups created outside a `createRoot` or `render` will never be run
+23:49:53.378              > %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This rend
+erer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+23:50:01.941 (utility)    > mafw gateway exited { code: 0 }
+23:50:01.944 (utility)    > sidecar exited { code: 0 }

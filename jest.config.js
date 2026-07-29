@@ -3,6 +3,19 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
+  moduleNameMapper: {
+    '^electron$': '<rootDir>/tests/mocks/electron.ts',
+    '^@mafw/sdk$': '<rootDir>/mafw-sdk/src/index.ts',
+  },
+  globals: {
+    'ts-jest': {
+      tsconfig: {
+        paths: {
+          '@mafw/sdk': ['./mafw-sdk/src/index.ts'],
+        },
+      },
+    },
+  },
   collectCoverageFrom: ['src/**/*.ts', 'gateway/src/**/*.ts'],
   coverageThreshold: {
     global: {

@@ -20,6 +20,24 @@ describe('Harmonic Types', () => {
     });
   });
 
+  it('allows optional granularity', () => {
+    const unit: HarmonicUnit = {
+      id: 'test', type: 'semantic', granularity: 'function',
+      primary_abstraction: 'test func', cue_anchors: [], memory_value: 'code',
+      energy: 0.5, created_at: '', updated_at: '',
+    };
+    expect(unit.granularity).toBe('function');
+  });
+
+  it('defaults granularity to undefined', () => {
+    const unit: HarmonicUnit = {
+      id: 'test', type: 'semantic',
+      primary_abstraction: 'test fact', cue_anchors: [], memory_value: 'fact',
+      energy: 0.5, created_at: '', updated_at: '',
+    };
+    expect(unit.granularity).toBeUndefined();
+  });
+
   it('merged_from is optional', () => {
     const unit: HarmonicUnit = {
       id: 'test', type: 'semantic',

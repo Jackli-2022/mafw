@@ -1,251 +1,168 @@
-### Task 1: L5Store + findGlobalMafwDir
+ï»¿## Task 1: AutomationEngine handler registry refactor
 
-**Files:**
-- Create: `src/utils/global-path.ts`
-- Create: `src/memory/l5-store.ts`
-- Test: `tests/unit/l5-store.test.ts`
+**Files**
+- Modify: `gateway/src/automation-engine.ts`
+- Create: `tests/unit/automation-engine-actions.test.ts`
 
-**Interfaces:**
-- Consumes: nothing
-- Produces: `findGlobalMafwDir(): string`, `L5Store` class with `loadAxioms()`, `addAxiom()`, `loadHeuristics()`, `addHeuristic()`, `getTop()`
+**Interfaces**
+- Consumes: `MemoryActionType`, `AutomationRule`
+- Produces: `ActionHandler` type, `actionRegistry` export
 
-- [ ] **Step 1: Write the failing test**
+**Steps**
 
-Create `tests/unit/l5-store.test.ts`:
+- [ ] 1. Add `ActionHandler` type and `actionRegistry` Map at module top (after imports):
 
 ```typescript
-import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
-import { L5Store, L5Axiom, L5Heuristic } from '../../src/memory/l5-store';
+export type ActionHandler = (
+  rule: AutomationRule,
+  engine: AutomationEngine
+) => Promise<void>;
+export const actionRegistry: Map<string, ActionHandler> = new Map();
+```
 
-describe('L5Store', () => {
-  const tmpDir = path.join(os.tmpdir(), 'mafw-l5-test-' + Date.now());
-  const store = new L5Store(tmpDir);
+- [ ] 2. Replace `private async executeAction(actionType: MemoryActionType)` with:
+
+```typescript
+private async executeAction(actionType: string, rule: AutomationRule): Promise<void> {
+  const handler = actionRegistry.get(actionType);
+  if (!handler) {
+    console.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
+    return;
+  }
+  try {
+    await handler(rule, this);
+  } catch (err: any) {
+    console.error(`[AutomationEngine] Action ${actionType} failed: ${err.message}`);
+  }
+}
+```
+
+- [ ] 3. Update `executeRule()` call sites â€” change `this.executeAction(rule.action.type)` to `this.executeAction(rule.action.type, rule)` (lines ~143 and ~392)
+
+- [ ] 4. Update `validateRule()` line ~442 â€” change action type check from `['memory:distill', 'memory:decay', 'memory:review', 'memory:prune'].includes(rule.action.type)` to `actionRegistry.has(rule.action.type)`
+
+- [ ] 5. Register 4 memory actions in constructor (at end of `constructor(mafwDir)`):
+
+```typescript
+actionRegistry.set('memory:distill', async (_rule, engine) => {
+  console.log('[AutomationEngine] Starting memory distillation...');
+  const indexManager = new HarmonicIndexManager(engine['mafwDir']);
+  const result = await runDistillation(indexManager, engine['mafwDir']);
+  console.log(`[AutomationEngine] Distillation complete: created ${result.created}, locked ${result.locked}`);
+});
+actionRegistry.set('memory:decay', async (_rule, engine) => {
+  console.log('[AutomationEngine] Running energy decay...');
+  const indexManager = new HarmonicIndexManager(engine['mafwDir']);
+  const index = indexManager.getIndex();
+  const energySystem = new EnergySystem();
+  let decayed = 0;
+  for (const entry of index.entries) {
+    const salience = (entry as any).salience || 1.0;
+    const daysSinceUpdate = entry.energy > 0 ? 1 : 0;
+    const newEnergy = energySystem.calculateEnergy(entry.energy, { type: 'retrieved' }, daysSinceUpdate, salience, entry.id);
+    const diff = entry.energy - newEnergy;
+    if (diff > 0.005) { indexManager.updateEnergy(entry.id, -(diff)); decayed++; }
+  }
+  console.log(`[AutomationEngine] Energy decay applied to ${decayed} entries`);
+});
+actionRegistry.set('memory:review', async (_rule, engine) => {
+  console.log('[AutomationEngine] Checking review queue...');
+  const indexManager = new HarmonicIndexManager(engine['mafwDir']);
+  const scheduler = new ReviewScheduler(indexManager, engine['mafwDir']);
+  scheduler.tick();
+  const queue = scheduler.getReviewQueue();
+  console.log(`[AutomationEngine] Review queue: ${queue.length} items due`);
+});
+actionRegistry.set('memory:prune', async (_rule, engine) => {
+  console.log('[AutomationEngine] Pruning cognitive graph...');
+  const graph = new CognitiveGraphManager(engine['mafwDir']);
+  const before = graph.getGraph().edges.length;
+  graph.prune(0.1);
+  const after = graph.getGraph().edges.length;
+  const pruned = before - after;
+  if (pruned > 0) {
+    console.log(`[AutomationEngine] Pruned ${pruned} low-weight edges`);
+  } else {
+    console.log('[AutomationEngine] No edges to prune');
+  }
+});
+```
+
+- [ ] 6. Remove dead private methods: `runDistill()`, `runDecay()`, `runReview()`, `runPrune()` (these are now inline in registry)
+
+- [ ] 7. Move `mafwDir` from `private` to `readonly mafwDir: string` so it's accessible from handlers
+
+- [ ] 8. Write test `tests/unit/automation-engine-actions.test.ts`:
+
+```typescript
+import { AutomationEngine, actionRegistry, ActionHandler, AutomationRule } from '../../../src/automation-engine';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+
+describe('AutomationEngine actionRegistry', () => {
+  let tmpDir: string;
 
   beforeEach(() => {
-    // Clean test dir
-    if (fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true });
-    }
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-ae-test-'));
+  });
+  afterEach(() => {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   });
 
-  test('loadAxioms returns empty array for fresh store', () => {
-    const axioms = store.loadAxioms();
-    expect(axioms).toEqual([]);
+  it('has 4 memory actions registered', () => {
+    expect(actionRegistry.has('memory:distill')).toBe(true);
+    expect(actionRegistry.has('memory:decay')).toBe(true);
+    expect(actionRegistry.has('memory:review')).toBe(true);
+    expect(actionRegistry.has('memory:prune')).toBe(true);
   });
 
-  test('addAxiom persists and returns axiom with id', () => {
-    const axiom = store.addAxiom('All payments must be idempotent', 'manual');
-    expect(axiom.id).toBeTruthy();
-    expect(axiom.content).toBe('All payments must be idempotent');
-    expect(axiom.source).toBe('manual');
-    expect(axiom.energy).toBe(0.8);
-    const loaded = store.loadAxioms();
-    expect(loaded).toHaveLength(1);
-    expect(loaded[0].content).toBe('All payments must be idempotent');
+  it('executes handler without error for memory:distill', async () => {
+    const handler = actionRegistry.get('memory:distill')!;
+    const engine = new AutomationEngine(tmpDir);
+    // should not throw
+    await handler({ id: 'test', enabled: true, trigger: { type: 'cron', schedule: '* * * * *', timezone: 'UTC' } }, engine);
   });
 
-  test('addHeuristic persists heuristic', () => {
-    const h = store.addHeuristic('Deploy: build â†?migrate â†?smoke', ['deploy', 'migration'], ['goal_001']);
-    expect(h.id).toBeTruthy();
-    expect(h.pattern).toBe('Deploy: build â†?migrate â†?smoke');
-    expect(h.success_rate).toBe(0.9);
-    const loaded = store.loadHeuristics();
-    expect(loaded).toHaveLength(1);
+  it('validateRule accepts registered action types', () => {
+    const engine = new AutomationEngine(tmpDir);
+    const result = engine.validateRule({
+      id: 'test', enabled: false,
+      trigger: { type: 'cron', schedule: '0 0 * * *', timezone: 'UTC' },
+      action: { type: 'memory:distill' },
+    });
+    expect(result.valid).toBe(true);
   });
 
-  test('getTop returns topK axioms and heuristics by energy', () => {
-    store.addAxiom('Low energy axiom', 'manual');
-    store.addAxiom('High energy axiom', 'distilled');
-    const highAxiom = store.addAxiom('Critical axiom', 'manual');
-    // Manually bump energy by re-adding via internal file edit
-    const axioms = store.loadAxioms();
-    const target = axioms.find(a => a.content === 'Critical axiom')!;
-    target.energy = 1.0;
-    const axiomsPath = path.join(tmpDir, 'axioms.json');
-    fs.writeFileSync(axiomsPath, JSON.stringify(axioms, null, 2));
-
-    const top = store.getTop(2);
-    expect(top.axioms).toHaveLength(2);
-    expect(top.axioms[0].energy).toBeGreaterThanOrEqual(top.axioms[1].energy);
+  it('validateRule rejects unregistered action types', () => {
+    const engine = new AutomationEngine(tmpDir);
+    const result = engine.validateRule({
+      id: 'test', enabled: false,
+      trigger: { type: 'cron', schedule: '0 0 * * *', timezone: 'UTC' },
+      action: { type: 'manager:report_completed' },
+    });
+    // manager:* not yet registered â€” should fail validation
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('Unknown action type'))).toBe(true);
   });
 
-  test('addAxiom with same content does not duplicate', () => {
-    store.addAxiom('Unique axiom', 'manual');
-    store.addAxiom('Unique axiom', 'manual');
-    const axioms = store.loadAxioms();
-    expect(axioms).toHaveLength(1);
+  it('executeRule logs warning for unregistered action', async () => {
+    const engine = new AutomationEngine(tmpDir);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    engine['rules'].set('bad', {
+      id: 'bad', enabled: true,
+      trigger: { type: 'cron', schedule: '* * * * *', timezone: 'UTC' },
+      action: { type: 'nonexistent:action' },
+    });
+    await engine.executeRule('bad');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('No handler registered'));
+    warnSpy.mockRestore();
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `npx jest tests/unit/l5-store.test.ts --no-coverage 2>&1`
-Expected: FAIL â€?`Cannot find module '../../src/memory/l5-store'`
-
-- [ ] **Step 3: Create `src/utils/global-path.ts`**
-
-```typescript
-import * as os from 'os';
-import * as path from 'path';
-
-export function findGlobalMafwDir(): string {
-  return path.join(os.homedir(), '.mafw');
-}
-```
-
-- [ ] **Step 4: Create `src/memory/l5-store.ts`**
-
-```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-
-export interface L5Axiom {
-  id: string;
-  content: string;
-  source: 'manual' | 'distilled';
-  energy: number;
-  created_at: string;
-}
-
-export interface L5Heuristic {
-  id: string;
-  pattern: string;
-  trigger_context: string[];
-  success_rate: number;
-  source_goal_ids: string[];
-  energy: number;
-  created_at: string;
-}
-
-function generateId(): string {
-  return `l5_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-export class L5Store {
-  private baseDir: string;
-
-  constructor(baseDir?: string) {
-    const { findGlobalMafwDir } = require('./global-path');
-    this.baseDir = baseDir || path.join(findGlobalMafwDir(), 'l5');
-    this.ensureDir();
-  }
-
-  private ensureDir(): void {
-    if (!fs.existsSync(this.baseDir)) {
-      fs.mkdirSync(this.baseDir, { recursive: true });
-    }
-  }
-
-  private axiomsPath(): string {
-    return path.join(this.baseDir, 'axioms.json');
-  }
-
-  private heuristicsPath(): string {
-    return path.join(this.baseDir, 'heuristics.json');
-  }
-
-  loadAxioms(): L5Axiom[] {
-    try {
-      if (fs.existsSync(this.axiomsPath())) {
-        return JSON.parse(fs.readFileSync(this.axiomsPath(), 'utf-8'));
-      }
-    } catch {}
-    return [];
-  }
-
-  addAxiom(content: string, source: 'manual' | 'distilled' = 'manual'): L5Axiom {
-    const axioms = this.loadAxioms();
-    const existing = axioms.find(a => a.content === content);
-    if (existing) {
-      existing.energy = Math.min(1, existing.energy + 0.1);
-      this.saveAxioms(axioms);
-      return existing;
-    }
-    const axiom: L5Axiom = {
-      id: generateId(),
-      content,
-      source,
-      energy: 0.8,
-      created_at: new Date().toISOString(),
-    };
-    axioms.push(axiom);
-    this.saveAxioms(axioms);
-    return axiom;
-  }
-
-  private saveAxioms(axioms: L5Axiom[]): void {
-    const tmpPath = this.axiomsPath() + '.tmp';
-    fs.writeFileSync(tmpPath, JSON.stringify(axioms, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, this.axiomsPath());
-  }
-
-  loadHeuristics(): L5Heuristic[] {
-    try {
-      if (fs.existsSync(this.heuristicsPath())) {
-        return JSON.parse(fs.readFileSync(this.heuristicsPath(), 'utf-8'));
-      }
-    } catch {}
-    return [];
-  }
-
-  addHeuristic(
-    pattern: string,
-    triggerContext: string[],
-    sourceGoalIds: string[]
-  ): L5Heuristic {
-    const heuristics = this.loadHeuristics();
-    const existing = heuristics.find(h => h.pattern === pattern);
-    if (existing) {
-      existing.success_rate = Math.min(1, existing.success_rate + 0.05);
-      existing.energy = Math.min(1, existing.energy + 0.05);
-      this.saveHeuristics(heuristics);
-      return existing;
-    }
-    const heuristic: L5Heuristic = {
-      id: generateId(),
-      pattern,
-      trigger_context: triggerContext,
-      success_rate: 0.9,
-      source_goal_ids: sourceGoalIds,
-      energy: 0.8,
-      created_at: new Date().toISOString(),
-    };
-    heuristics.push(heuristic);
-    this.saveHeuristics(heuristics);
-    return heuristic;
-  }
-
-  private saveHeuristics(heuristics: L5Heuristic[]): void {
-    const tmpPath = this.heuristicsPath() + '.tmp';
-    fs.writeFileSync(tmpPath, JSON.stringify(heuristics, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, this.heuristicsPath());
-  }
-
-  getTop(topK: number = 3): { axioms: L5Axiom[]; heuristics: L5Heuristic[] } {
-    const axioms = this.loadAxioms()
-      .sort((a, b) => b.energy - a.energy)
-      .slice(0, topK);
-    const heuristics = this.loadHeuristics()
-      .sort((a, b) => b.energy - a.energy)
-      .slice(0, topK);
-    return { axioms, heuristics };
-  }
-}
-```
-
-- [ ] **Step 5: Run test to verify it passes**
-
-Run: `npx jest tests/unit/l5-store.test.ts --no-coverage 2>&1`
-Expected: PASS (all 5 tests)
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/utils/global-path.ts src/memory/l5-store.ts tests/unit/l5-store.test.ts
-git commit -m "feat: add L5Store + findGlobalMafwDir for global ~/.mafw/l5/"
-```
+- [ ] 9. Run tests: `npx jest tests/unit/automation-engine-actions.test.ts --coverage`
 
 ---
+
+

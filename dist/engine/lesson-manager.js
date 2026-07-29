@@ -49,7 +49,7 @@ const memory_index_1 = require("../compression/memory-index");
  *   4. 提供加载接口（loadAll / loadRelevant）
  *
  * 文件结构：
- *   .opencode/mafw/lessons/{goal_id}.md
+ *   .mafw/lessons/{goal_id}.md
  */
 class LessonManager {
     lessonsDir;
@@ -57,12 +57,12 @@ class LessonManager {
     verifier;
     index;
     constructor(projectDir = '.') {
-        this.lessonsDir = path.join(projectDir, '.opencode/mafw/lessons');
+        this.lessonsDir = path.join(projectDir, '.mafw/lessons');
         if (!fs.existsSync(this.lessonsDir))
             fs.mkdirSync(this.lessonsDir, { recursive: true });
         this.compactor = new lesson_compactor_1.LessonCompactor();
         this.verifier = new compression_verifier_1.CompressionVerifier();
-        this.index = new memory_index_1.MemoryIndexManager(path.join(projectDir, '.opencode/mafw/memory-index.json'));
+        this.index = new memory_index_1.MemoryIndexManager(path.join(projectDir, '.mafw/memory-index.json'));
     }
     /**
      * 写入一个自然语言 Lesson。

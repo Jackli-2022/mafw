@@ -1,0 +1,23 @@
+/* OpenCode design system — CSS variables from @opencode-ai/ui */
+:root {
+  --v2-background-bg-deep: #080808;
+  --v2-background-bg-base: #161616;
+  --v2-background-bg-elevated: #242424;
+  --text-text-strong: #ffffff;
+  --text-text-base: #d4d4d8;
+  --text-text-muted: #808080;
+  --border-border-secondary: rgba(255,255,255,0.08);
+  --border-border-strong: rgba(255,255,255,0.12);
+  --accent-9: #7698fd;
+  --accent-8: #8aabff;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #root { height: 100%; overflow: hidden; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  background: var(--v2-background-bg-deep);
+  color: var(--text-text-base);
+}

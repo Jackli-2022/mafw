@@ -70,16 +70,16 @@ async function mafwPlanEntry(context) {
     const goal = await (0, state_1.loadGoal)(goalId, projectDir);
     console.log(`[mafw-plan] Loaded Goal Charter (${goal.length} chars)`);
     // 4. 读取 L2: 相关 Lessons
-    const index = new memory_index_1.MemoryIndexManager(path.join(projectDir, '.opencode/mafw/memory-index.json'));
+    const index = new memory_index_1.MemoryIndexManager(path.join(projectDir, '.mafw/memory-index.json'));
     const keywords = extractKeywords(goal);
     const domain = extractDomain(goal);
     const relevantLessons = index.search(keywords, domain, 3);
     console.log(`[mafw-plan] L2: ${relevantLessons.length} lessons loaded`);
     // 5. 读取 L3: Parametric Deltas
     const store = new store_1.ParametricStore({
-        baseDir: path.join(projectDir, '.opencode/mafw/parametric'),
-        bannedDir: path.join(projectDir, '.opencode/mafw/parametric/banned'),
-        manifestFile: path.join(projectDir, '.opencode/mafw/parametric/base-skill-manifest.yaml')
+        baseDir: path.join(projectDir, '.mafw/parametric'),
+        bannedDir: path.join(projectDir, '.mafw/parametric/banned'),
+        manifestFile: path.join(projectDir, '.mafw/parametric/base-skill-manifest.yaml')
     });
     const matchedDeltas = store.match({
         domain,
@@ -101,11 +101,11 @@ async function mafwPlanEntry(context) {
     // 8. 解析并写入产出
     const plan = parsePlanResponse(response.content);
     // 写入 waves.json
-    const wavesPath = path.join(projectDir, '.opencode/mafw/waves.json');
+    const wavesPath = path.join(projectDir, '.mafw/waves.json');
     fs.writeFileSync(wavesPath, JSON.stringify({ waves: plan.waves }, null, 2), 'utf-8');
     console.log(`[mafw-plan] Written waves.json (${plan.waves.length} waves)`);
     // 写入 tasks/
-    const tasksDir = path.join(projectDir, '.opencode/mafw/tasks');
+    const tasksDir = path.join(projectDir, '.mafw/tasks');
     if (!fs.existsSync(tasksDir))
         fs.mkdirSync(tasksDir, { recursive: true });
     for (const task of plan.tasks) {

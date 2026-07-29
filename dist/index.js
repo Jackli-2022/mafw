@@ -22,8 +22,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.writeLesson = exports.formatLesson = exports.formatReview = exports.parseReviewResponse = exports.buildReviewPrompt = exports.buildTaskPrompt = exports.formatTaskMarkdown = exports.parsePlanResponse = exports.buildPlanPrompt = exports.RemoteCliConnector = exports.toolExecutedHook = exports.sessionEndingHook = exports.GitHubConnector = exports.GitUtils = exports.StatusManager = exports.initState = exports.stateExists = exports.extractGoalId = exports.loadReview = exports.loadReceipts = exports.loadWaves = exports.loadGoal = exports.loadRequest = exports.loadState = exports.updateState = exports.MemoryIndexManager = exports.CompressionVerifier = exports.LessonCompactor = exports.SessionPruner = exports.DeltaMerger = exports.TriggerMatcher = exports.DeltaValidator = exports.MemoryExtractor = exports.DeltaInjector = exports.ParametricStore = exports.WaveExecutor = exports.DegradationStrategy = exports.ReportGenerator = exports.LessonManager = exports.TaskBranchManager = exports.GoalWorktreeManager = exports.startNextLoop = exports.shouldStartNextLoop = exports.updateWaveProgress = exports.markSessionDestroyed = exports.recordSession = exports.canExecuteInPhase = exports.getCurrentPhase = exports.transitionPhase = exports.MafwPlugin = void 0;
-exports.archiveWorktree = void 0;
+exports.formatReview = exports.parseReviewResponse = exports.buildReviewPrompt = exports.buildTaskPrompt = exports.formatTaskMarkdown = exports.parsePlanResponse = exports.buildPlanPrompt = exports.RemoteCliConnector = exports.toolExecutedHook = exports.sessionEndingHook = exports.GitHubConnector = exports.GitUtils = exports.StatusManager = exports.initState = exports.stateExists = exports.extractGoalId = exports.loadReview = exports.loadReceipts = exports.loadWaves = exports.loadGoal = exports.loadRequest = exports.loadState = exports.updateState = exports.MemoryIndexManager = exports.CompressionVerifier = exports.LessonCompactor = exports.SessionPruner = exports.T1ToT2Compressor = exports.T1Store = exports.DeltaMerger = exports.TriggerMatcher = exports.DeltaValidator = exports.MemoryExtractor = exports.DeltaInjector = exports.ParametricStore = exports.WaveExecutor = exports.DegradationStrategy = exports.ReportGenerator = exports.LessonManager = exports.TaskBranchManager = exports.GoalWorktreeManager = exports.startNextLoop = exports.shouldStartNextLoop = exports.updateWaveProgress = exports.markSessionDestroyed = exports.recordSession = exports.canExecuteInPhase = exports.getCurrentPhase = exports.transitionPhase = exports.MafwPlugin = void 0;
+exports.archiveWorktree = exports.writeLesson = exports.formatLesson = void 0;
 // ── Plugin ──
 var plugin_1 = require("./plugin");
 Object.defineProperty(exports, "MafwPlugin", { enumerable: true, get: function () { return __importDefault(plugin_1).default; } });
@@ -62,6 +62,11 @@ var matcher_1 = require("./memory/matcher");
 Object.defineProperty(exports, "TriggerMatcher", { enumerable: true, get: function () { return matcher_1.TriggerMatcher; } });
 var merger_1 = require("./memory/merger");
 Object.defineProperty(exports, "DeltaMerger", { enumerable: true, get: function () { return merger_1.DeltaMerger; } });
+// ── Memory (T1 Observations / Harmonic) ──
+var t1_store_1 = require("./memory/t1-store");
+Object.defineProperty(exports, "T1Store", { enumerable: true, get: function () { return t1_store_1.T1Store; } });
+var t1_to_t2_compressor_1 = require("./memory/t1-to-t2-compressor");
+Object.defineProperty(exports, "T1ToT2Compressor", { enumerable: true, get: function () { return t1_to_t2_compressor_1.T1ToT2Compressor; } });
 // ── Compression (L1, L2) ──
 var session_pruner_1 = require("./compression/session-pruner");
 Object.defineProperty(exports, "SessionPruner", { enumerable: true, get: function () { return session_pruner_1.SessionPruner; } });

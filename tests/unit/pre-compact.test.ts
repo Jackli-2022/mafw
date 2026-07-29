@@ -34,7 +34,7 @@ test('pre-compact detects high-energy memories and logs preservation', async () 
   await sessionEndingHook({ sessionId: 'sess-1', projectDir: tmpDir });
 
   expect(console.log).toHaveBeenCalledWith(
-    expect.stringContaining('[mafw:pre-compact] Preserving 1 high-energy memories for 001-auth')
+    expect.stringContaining('[mafw:pre-compact] Preserving 1 high-energy memories')
   );
 });
 
@@ -82,6 +82,6 @@ test('pre-compact handles unparseable files without crashing', async () => {
   await sessionEndingHook({ sessionId: 'sess-1', projectDir: tmpDir });
 
   expect(console.log).toHaveBeenCalledWith(
-    expect.stringContaining('[mafw:pre-compact] Preserving 1 high-energy memories for 001-auth')
+    expect.stringContaining('[mafw:pre-compact] Preserving 1 high-energy memories')
   );
 });

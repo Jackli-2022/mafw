@@ -65,9 +65,10 @@ test('recordFeedback writes JSON file with all fields', async () => {
     loopNum: 5,
     comment: 'great work'
   });
-  const files = fs.readdirSync(path.join(tmpDir, FEEDBACK_DIR, 'goal-2'));
-  expect(files).toHaveLength(1);
-  const data = JSON.parse(fs.readFileSync(path.join(tmpDir, FEEDBACK_DIR, 'goal-2', files[0]), 'utf-8'));
+  const files = fs.readdirSync(path.join(tmpDir, FEEDBACK_DIR));
+  const file = files.find(f => f.startsWith('fb_'))!;
+  expect(file).toBeDefined();
+  const data = JSON.parse(fs.readFileSync(path.join(tmpDir, FEEDBACK_DIR, file), 'utf-8'));
   expect(data.targetId).toBe('t4');
   expect(data.type).toBe('thumbs_up');
   expect(data.energyDelta).toBe(0.2);
@@ -84,13 +85,13 @@ test('ENERGY_DELTAS has correct values', () => {
 });
 
 test('recordFeedback creates directory if missing', async () => {
-  const goalDir = path.join(tmpDir, FEEDBACK_DIR, 'new-goal');
-  expect(fs.existsSync(goalDir)).toBe(false);
+  const feedbackDir = path.join(tmpDir, FEEDBACK_DIR);
+  expect(fs.existsSync(feedbackDir)).toBe(false);
   await recordFeedback({
     targetId: 't5',
     type: 'thumbs_up',
     goalId: 'new-goal',
     loopNum: 0
   });
-  expect(fs.existsSync(goalDir)).toBe(true);
+  expect(fs.existsSync(feedbackDir)).toBe(true);
 });

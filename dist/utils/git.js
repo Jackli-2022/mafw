@@ -36,6 +36,36 @@ class GitUtils {
     async stash() {
         await this.git.stash(['push', '-m', 'MAFW auto-stash']);
     }
+    async listWorktrees() {
+        const output = await this.git.raw(['worktree', 'list']);
+        const lines = output.trim().split('\n').filter(Boolean);
+        return lines.map(line => {
+            const parts = line.split(/\s+/);
+            return {
+                path: parts[0],
+                branch: (parts[1] || '').replace(/\[|\]/g, ''),
+                head: parts[2] || '',
+            };
+        });
+    }
+    async pruneWorktrees() {
+        await this.git.raw(['worktree', 'prune']);
+    }
+    async hasLocalChanges() {
+        const status = await this.git.status();
+        return status.files.length > 0;
+    }
+    async fetch() {
+        await this.git.fetch();
+    }
+    async push(branch) {
+        if (branch) {
+            await this.git.push('origin', branch);
+        }
+        else {
+            await this.git.push();
+        }
+    }
 }
 exports.GitUtils = GitUtils;
 //# sourceMappingURL=git.js.map

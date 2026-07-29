@@ -1,0 +1,78 @@
+import { ipcRenderer } from "electron"
+import type { MafwAPI } from "./mafw-types"
+
+function invoke<T = unknown>(namespace: string, method: string, ...args: unknown[]): Promise<T> {
+  return ipcRenderer.invoke("mafw-invoke", namespace, method, ...args) as Promise<T>
+}
+
+export function createMafwApi(): MafwAPI {
+  return {
+    gateway: {
+      info: () => ipcRenderer.invoke("mafw-gateway-info"),
+      start: () => ipcRenderer.invoke("mafw-gateway-start"),
+      restart: () => ipcRenderer.invoke("mafw-gateway-restart"),
+      onStateChange: (cb) => {
+        const handler = (_event: any, status: any) => cb(status)
+        ipcRenderer.on("mafw-gateway-state", handler)
+        return () => ipcRenderer.removeListener("mafw-gateway-state", handler)
+      },
+    },
+
+    sessions: {
+      list: (projectID?) => invoke("session", "list", projectID),
+      create: (opts?) => invoke("session", "create", opts || {}),
+      get: (id) => invoke("session", "get", id),
+      messages: (sessionID, limit?, before?) => invoke("session", "messages", sessionID, limit, before),
+      delete: (id) => invoke("session", "delete", { sessionID: id }),
+      promptAsync: (opts) => invoke("session", "promptAsync", opts),
+    },
+
+    projects: {
+      list: () => invoke("project", "list"),
+      current: () => invoke("project", "current"),
+      setCurrent: (path) => invoke("project", "setCurrent", path),
+    },
+
+    goals: {
+      list: () => invoke("goals", "list"),
+      get: (id) => invoke("goals", "get", id),
+      create: (input) => invoke("goals", "create", input),
+      control: (action) => invoke("goals", "control", action),
+    },
+
+    memory: {
+      search: (opts) => invoke("memory", "search", opts),
+      mergedSearch: (opts) => invoke("memory", "mergedSearch", opts),
+      delete: (id) => invoke("memory", "delete", id),
+    },
+
+    approvals: {
+      list: () => invoke("approvals", "list"),
+      respond: (id, decision) => invoke("approvals", "respond", id, decision),
+    },
+
+    triage: {
+      list: () => invoke("triage", "list"),
+      dismiss: (id) => invoke("triage", "dismiss", id),
+      confirm: (id) => invoke("triage", "confirm", id),
+      reject: (id) => invoke("triage", "reject", id),
+    },
+
+    automations: {
+      list: () => invoke("automations", "list"),
+      toggle: (id, enabled) => invoke("automations", "toggle", id, enabled),
+    },
+
+    chat: {
+      send: (message) => invoke("chat", "send", message),
+      sendEnriched: (message) => invoke("chat", "sendEnriched", message),
+    },
+
+    config: {
+      get: (key?) => invoke("config", "get", key),
+      set: (key, value) => invoke("config", "set", key, value),
+    },
+
+    invoke: (namespace, method, ...args) => invoke(namespace, method, ...args),
+  }
+}

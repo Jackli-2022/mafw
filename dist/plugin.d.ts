@@ -1,8 +1,18 @@
 export default function MafwPlugin({ directory }: {
     directory: string;
 }): Promise<{
-    config: (config: any) => Promise<void>;
-    'experimental.chat.messages.transform': (input: any, output: any) => Promise<void>;
+    config: {
+        skills: {
+            name: string;
+            enabled: boolean;
+        }[];
+    };
+    hooks: {
+        'session.end': (ctx: any) => Promise<void>;
+        'tool.execute.before': (ctx: any) => Promise<void>;
+        'tool.execute.after': (ctx: any, result: any) => Promise<void>;
+        'chat.message': (ctx: any) => Promise<void>;
+    };
     command: {
         goal: {
             description: string;
@@ -18,63 +28,12 @@ export default function MafwPlugin({ directory }: {
                 text: string;
             }>;
         };
-        'mafw-loop': {
-            description: string;
-            execute(args: string, context: any): Promise<any>;
-        };
-        triage: {
+        'merge-memory': {
             description: string;
             execute(args: string, context: any): Promise<{
-                type: string;
-                items: never[];
-                actions?: undefined;
-            } | {
-                type: string;
-                items: any[];
-                actions: string[];
-            }>;
-        };
-        'triage-confirm': {
-            description: string;
-            execute(args: string, context: any): Promise<{
-                type: string;
-                triageId: string;
-            }>;
-        };
-        'automation-add': {
-            description: string;
-            execute(args: string, context: any): Promise<{
-                type: string;
-                message: string;
-            }>;
-        };
-        'automation-list': {
-            description: string;
-            execute(args: string, context: any): Promise<{
-                type: string;
-                rules: any[];
-            }>;
-        };
-        'automation-toggle': {
-            description: string;
-            execute(args: string, context: any): Promise<{
-                type: string;
-                autoId: string;
-                enabled: any;
+                text: string;
             }>;
         };
     };
-    hooks: {
-        'session.end': (ctx: any) => Promise<void>;
-        'tool.execute.before': (ctx: any) => Promise<void>;
-        'tool.execute.after': (ctx: any, result: any) => Promise<void>;
-        'chat.message': (ctx: any) => {
-            message: any;
-            parts: any;
-        };
-    };
-    'experimental.session.compacting': ({ sessionID }: any, { snapshot }: any) => Promise<void>;
-    'experimental.text.complete': ({ sessionID, messageID, partID }: any, result: any) => Promise<void>;
-    event: ({ event }: any) => Promise<void>;
 }>;
 //# sourceMappingURL=plugin.d.ts.map

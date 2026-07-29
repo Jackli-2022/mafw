@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import { config } from '../config';
 import { DashboardAPI } from './api';
 import { SchedulerState } from './types';
 
@@ -22,7 +23,7 @@ export class DashboardServer {
   private publicDir: string;
   private sseClients: Set<http.ServerResponse> = new Set();
 
-  constructor(port: number = 3111, projectDir: string = '.', scheduler?: SchedulerState) {
+  constructor(port: number = config.server.dashboardPort, projectDir: string = '.', scheduler?: SchedulerState) {
     this.port = port;
     this.publicDir = path.resolve(__dirname, 'public');
     this.api = new DashboardAPI(projectDir, scheduler);

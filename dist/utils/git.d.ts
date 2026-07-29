@@ -11,5 +11,14 @@ export declare class GitUtils {
     getBranches(): Promise<string[]>;
     commit(files: string[], message: string): Promise<void>;
     stash(): Promise<void>;
+    listWorktrees(): Promise<Array<{
+        path: string;
+        branch: string;
+        head: string;
+    }>>;
+    pruneWorktrees(): Promise<void>;
+    hasLocalChanges(): Promise<boolean>;
+    fetch(): Promise<void>;
+    push(branch?: string): Promise<void>;
 }
 //# sourceMappingURL=git.d.ts.map

@@ -9,7 +9,7 @@ import { CompactedLesson } from '../types/compression';
  *   4. 提供加载接口（loadAll / loadRelevant）
  *
  * 文件结构：
- *   .opencode/mafw/lessons/{goal_id}.md
+ *   .mafw/lessons/{goal_id}.md
  */
 export declare class LessonManager {
     private lessonsDir;

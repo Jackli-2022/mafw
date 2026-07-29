@@ -3,8 +3,16 @@
     "C:\\work\\work-loop\\opencode-plugin-mafw",
     {
       "projectDir": "C:\\work\\work-loop\\opencode-plugin-mafw",
-      "mafwDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\.opencode\\mafw",
-      "registeredAt": "2026-07-02T15:11:00.665Z"
+      "mafwDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\.mafw",
+      "registeredAt": "2026-07-29T16:28:22.401Z"
+    }
+  ],
+  [
+    "C:\\work\\work-loop",
+    {
+      "projectDir": "C:\\work\\work-loop",
+      "mafwDir": "C:\\work\\work-loop/.mafw",
+      "registeredAt": "2026-07-29T15:50:43.723Z"
     }
   ]
 ]

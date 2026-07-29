@@ -36,18 +36,30 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SchedulerLedger = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const config_1 = require("./config");
 class SchedulerLedger {
     ledgerPath;
     constructor(projectDir = '.') {
-        this.ledgerPath = path.join(projectDir, '.opencode/mafw/ledger.md');
+        this.ledgerPath = path.join(projectDir, config_1.config.paths.mafwDir, 'ledger.md');
     }
     append(entry) {
-        const line = `[${entry.timestamp}] [${entry.event}]` +
-            (entry.goalId ? ` [${entry.goalId}]` : '') +
-            (entry.reason ? ` reason=${entry.reason}` : '') +
-            (entry.sessionId ? ` session=${entry.sessionId}` : '') +
-            (entry.details ? ` ${JSON.stringify(entry.details)}` : '');
-        fs.appendFileSync(this.ledgerPath, line + '\n', 'utf-8');
+        const parts = [
+            `[${entry.timestamp}]`,
+            `[${entry.event}]`,
+        ];
+        if (entry.ruleId)
+            parts.push(`[${entry.ruleId}]`);
+        if (entry.goalId)
+            parts.push(`[${entry.goalId}]`);
+        if (entry.source)
+            parts.push(`source=${entry.source}`);
+        if (entry.reason)
+            parts.push(`reason=${entry.reason}`);
+        if (entry.sessionId)
+            parts.push(`session=${entry.sessionId}`);
+        if (entry.details)
+            parts.push(JSON.stringify(entry.details));
+        fs.appendFileSync(this.ledgerPath, parts.join(' ') + '\n', 'utf-8');
     }
     read() {
         if (!fs.existsSync(this.ledgerPath))
@@ -55,20 +67,55 @@ class SchedulerLedger {
         const content = fs.readFileSync(this.ledgerPath, 'utf-8');
         return content.split('\n').filter(Boolean).map(line => this.parse(line));
     }
+    getHistory(ruleId, limit) {
+        let entries = this.read();
+        if (ruleId) {
+            entries = entries.filter(e => e.ruleId === ruleId);
+        }
+        entries.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        if (limit && entries.length > limit) {
+            entries = entries.slice(-limit);
+        }
+        return entries.reverse();
+    }
     parse(line) {
-        // 简单解析：[$timestamp] [$event] ...
-        const match = line.match(/^\[(.+?)\] \[(.+?)\](?: \[(.+?)\])?(?: reason=(.+?))?(?: session=(.+?))?(?: (.+))?$/);
-        if (!match)
-            return { timestamp: new Date().toISOString(), event: 'UNKNOWN' };
-        const [, timestamp, event, goalId, reason, sessionId, details] = match;
-        return {
-            timestamp,
-            event,
-            goalId,
-            reason,
-            sessionId,
-            details: details ? JSON.parse(details) : undefined
-        };
+        const entry = { timestamp: new Date().toISOString(), event: 'UNKNOWN' };
+        const tsMatch = line.match(/^\[(.+?)\]/);
+        if (!tsMatch)
+            return entry;
+        entry.timestamp = tsMatch[1];
+        const eventMatch = line.match(/^\[.+?\] \[(.+?)\]/);
+        if (!eventMatch)
+            return entry;
+        entry.event = eventMatch[1];
+        const rest = line.slice(line.indexOf(']', line.indexOf(']') + 1) + 1).trim();
+        const bracketIds = [...rest.matchAll(/\[([^\]]+)\]/g)];
+        if (bracketIds.length >= 1) {
+            entry.ruleId = bracketIds[0][1];
+        }
+        if (bracketIds.length >= 2) {
+            entry.goalId = bracketIds[1][1];
+        }
+        const sourceMatch = rest.match(/source=(\w+)/);
+        if (sourceMatch && ['cron', 'llm', 'user'].includes(sourceMatch[1])) {
+            entry.source = sourceMatch[1];
+        }
+        const reasonMatch = rest.match(/reason=([^\s{}]+)/);
+        if (reasonMatch)
+            entry.reason = reasonMatch[1];
+        const sessionMatch = rest.match(/session=([^\s{}]+)/);
+        if (sessionMatch)
+            entry.sessionId = sessionMatch[1];
+        const detailsMatch = rest.match(/(\{.+})/);
+        if (detailsMatch) {
+            try {
+                entry.details = JSON.parse(detailsMatch[1]);
+            }
+            catch {
+                entry.details = { raw: detailsMatch[1] };
+            }
+        }
+        return entry;
     }
 }
 exports.SchedulerLedger = SchedulerLedger;

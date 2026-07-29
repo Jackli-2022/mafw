@@ -50,7 +50,7 @@ const path = __importStar(require("path"));
  */
 function writeLesson(data, projectDir = '.') {
     const { goalId, loop, reason, metrics, domain = 'general', task = 'unknown' } = data;
-    const lessonsDir = path.join(projectDir, '.opencode/mafw/lessons');
+    const lessonsDir = path.join(projectDir, '.mafw/lessons');
     if (!fs.existsSync(lessonsDir)) {
         fs.mkdirSync(lessonsDir, { recursive: true });
     }

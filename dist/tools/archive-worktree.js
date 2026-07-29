@@ -4,9 +4,10 @@
  *
  * 职责：
  *   1. 合并 Goal 分支到 main
- *   2. 生成报告
- *   3. 更新 STATUS.md
- *   4. 清理临时资源
+ *   2. 从 worktree 提取独有记忆到主项目
+ *   3. 生成报告
+ *   4. 更新 STATUS.md
+ *   5. 清理临时资源
  *
  * 被 Scheduler 在 ARCHIVE 阶段调用。
  */
@@ -45,18 +46,29 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.archiveWorktree = archiveWorktree;
+exports.mergeMemoryFromWorktree = mergeMemoryFromWorktree;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const goal_worktree_manager_1 = require("../engine/goal-worktree-manager");
+const minhash_merger_1 = require("../memory/minhash-merger");
+const harmonic_types_1 = require("../memory/harmonic-types");
 /**
  * 执行 Archive 流程
  */
 async function archiveWorktree(context) {
     const { goalId, projectDir, loopCount } = context;
     console.log(`[archive-worktree] Archiving goal ${goalId}`);
-    // 1. 合并 Goal 分支到 main
     const worktreeManager = new goal_worktree_manager_1.GoalWorktreeManager(projectDir);
     const info = await worktreeManager.getCurrentInfo(goalId);
+    // 1. 在 git 合并前，从 worktree 提取独有记忆
+    let fusionResult = null;
+    if (info.worktreeDir !== projectDir) {
+        fusionResult = await mergeMemoryFromWorktree(info.worktreeDir, projectDir);
+        if (fusionResult.added > 0 || fusionResult.conflicts > 0) {
+            console.log(`[archive-worktree] Memory fusion: ${fusionResult.added} added, ${fusionResult.conflicts} conflicts`);
+        }
+    }
+    // 2. 合并 Goal 分支到 main
     try {
         await worktreeManager.archive(info, 'merge');
         console.log(`[archive-worktree] Merged goal/${goalId} into main`);
@@ -65,19 +77,87 @@ async function archiveWorktree(context) {
         console.error(`[archive-worktree] Merge failed: ${err.message}`);
         throw err;
     }
-    // 2. 生成报告
-    await generateReport(goalId, projectDir, loopCount);
-    // 3. 更新 STATUS.md
+    // 3. 生成报告
+    await generateReport(goalId, projectDir, loopCount, fusionResult);
+    // 4. 更新 STATUS.md
     updateStatusArchive(goalId, projectDir);
     console.log(`[archive-worktree] Goal ${goalId} archived successfully`);
 }
 /**
- * 生成报告
+ * 从 worktree 提取独有记忆到主项目
  */
-async function generateReport(goalId, projectDir, loopCount) {
-    const reportsDir = path.join(projectDir, '.opencode/mafw/reports');
+async function mergeMemoryFromWorktree(sourceDir, targetDir) {
+    const sourceMafw = path.join(sourceDir, '.mafw');
+    const targetMafw = path.join(targetDir, '.mafw');
+    const sourceMemPath = path.join(sourceMafw, 'memory', 'memories.json');
+    if (!fs.existsSync(sourceMemPath)) {
+        return { added: 0, conflicts: 0, fusionLog: false };
+    }
+    const sourceUnits = JSON.parse(fs.readFileSync(sourceMemPath, 'utf-8'));
+    if (sourceUnits.length === 0) {
+        return { added: 0, conflicts: 0, fusionLog: false };
+    }
+    const { HarmonicUnitFileStore } = await Promise.resolve().then(() => __importStar(require('../../gateway/src/memory/harmonic-file-store.js')));
+    const store = new HarmonicUnitFileStore(targetMafw);
+    const minhash = new minhash_merger_1.MinHashMerger();
+    const targetIndex = store.indexManager_().getIndex();
+    let added = 0;
+    let conflicts = 0;
+    for (const srcUnit of sourceUnits) {
+        if (srcUnit.type === 'episodic')
+            continue;
+        const srcSig = minhash.generateSignature(srcUnit.primary_abstraction || '');
+        let bestSim = 0;
+        for (const tgtEntry of targetIndex.entries) {
+            const tgtSig = minhash.generateSignature(tgtEntry.primary_abstraction || '');
+            const sim = minhash.similarity(srcSig, tgtSig);
+            if (sim > bestSim)
+                bestSim = sim;
+        }
+        if (bestSim > 0.6) {
+            conflicts++;
+        }
+        else {
+            srcUnit.id = (0, harmonic_types_1.generateHarmonicId)();
+            srcUnit.energy = 0.4;
+            srcUnit.merged_from = [srcUnit.id];
+            const now = new Date().toISOString();
+            srcUnit.created_at = now;
+            srcUnit.updated_at = now;
+            await store.write(srcUnit);
+            added++;
+        }
+    }
+    if (added > 0 || conflicts > 0) {
+        const fusionLogPath = path.join(targetMafw, 'fusion-log.jsonl');
+        const logEntry = JSON.stringify({
+            timestamp: new Date().toISOString(),
+            source_worktree: sourceDir,
+            added,
+            conflicts,
+        });
+        fs.appendFileSync(fusionLogPath, logEntry + '\n', 'utf-8');
+        return { added, conflicts, fusionLog: true };
+    }
+    return { added: 0, conflicts: 0, fusionLog: false };
+}
+/**
+ * 生成报告（含融合结果）
+ */
+async function generateReport(goalId, projectDir, loopCount, fusion) {
+    const reportsDir = path.join(projectDir, '.mafw/reports');
     if (!fs.existsSync(reportsDir)) {
         fs.mkdirSync(reportsDir, { recursive: true });
+    }
+    let fusionSection = '';
+    if (fusion && (fusion.added > 0 || fusion.conflicts > 0)) {
+        fusionSection = `
+## Memory Fusion
+
+- New memories extracted: ${fusion.added}
+- Conflicts detected: ${fusion.conflicts}
+- Fusion log: .mafw/fusion-log.jsonl
+`;
     }
     const reportPath = path.join(reportsDir, `${goalId}.md`);
     const report = `# Report: ${goalId}
@@ -94,11 +174,10 @@ async function generateReport(goalId, projectDir, loopCount) {
 - Plan: waves.json
 - Receipts: receipts/${goalId}/
 - Reviews: reviews/${goalId}-loop*.md
-
 ## Notes
 
 Goal completed successfully after ${loopCount} loop(s).
-`;
+${fusionSection}`;
     fs.writeFileSync(reportPath, report, 'utf-8');
     console.log(`[archive-worktree] Report generated: ${reportPath}`);
 }
@@ -106,7 +185,7 @@ Goal completed successfully after ${loopCount} loop(s).
  * 更新 STATUS.md 为 COMPLETED
  */
 function updateStatusArchive(goalId, projectDir) {
-    const statusPath = path.join(projectDir, '.opencode/mafw/STATUS.md');
+    const statusPath = path.join(projectDir, '.mafw/STATUS.md');
     if (!fs.existsSync(statusPath)) {
         return;
     }

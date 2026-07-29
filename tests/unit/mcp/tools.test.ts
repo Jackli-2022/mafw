@@ -201,9 +201,9 @@ describe('validatePhaseCompletion', () => {
 });
 
 describe('registerTools', () => {
-  it('returns 9 tool definitions', () => {
+  it('returns 10 tool definitions', () => {
     const { definitions, handlers } = registerTools();
-    expect(definitions).toHaveLength(9);
+    expect(definitions).toHaveLength(10);
   });
 
   it('each definition has name, description, and inputSchema', () => {
@@ -216,7 +216,7 @@ describe('registerTools', () => {
     }
   });
 
-  it('all 9 tool names match mafw_* pattern', () => {
+  it('all 10 tool names match mafw_* pattern', () => {
     const { definitions } = registerTools();
     const names = definitions.map(d => d.name);
     expect(names).toEqual([
@@ -229,6 +229,7 @@ describe('registerTools', () => {
       'mafw_record_feedback',
       'mafw_get_model_route',
       'mafw_add_memory',
+      'mafw_merge_memory',
     ]);
   });
 

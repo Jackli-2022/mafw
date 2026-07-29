@@ -1,5 +1,5 @@
-import { CostEstimator } from "../../../src/cost/cost-estimator";
-import { CognitiveRouter } from "../../../src/cost/cognitive-router";
+import { CostEstimator } from "../core/cost/cost-estimator";
+import { CognitiveRouter } from "../core/cost/cognitive-router";
 
 export class CostService {
   estimator: CostEstimator;

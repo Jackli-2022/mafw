@@ -118,7 +118,7 @@ async function markSessionDestroyed(goalId, phase, projectDir = '.') {
 }
 async function shouldStartNextLoop(goalId, projectDir = '.') {
     const state = await (0, state_1.loadState)(goalId, projectDir);
-    const reqPath = path.join(projectDir, '.opencode/mafw/requests', `${goalId}.json`);
+    const reqPath = path.join(projectDir, '.mafw/requests', `${goalId}.json`);
     if (!fs.existsSync(reqPath)) {
         return { should: true, reason: 'no request file, allowing' };
     }

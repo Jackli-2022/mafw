@@ -1,9 +1,10 @@
+import { config } from "../../config";
 import { ToolHandler } from "../../types";
 
 export const handleSearchHybrid: ToolHandler = async (args, { memory }) => {
   try {
     const query = args.query as string;
-    const topK = (args.topK as number) || 20;
+    const topK = (args.topK as number) || config.search.defaultTopK;
     const results = memory.search(query, topK);
 
     let filtered = results;

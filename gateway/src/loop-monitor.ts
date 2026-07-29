@@ -2,6 +2,7 @@
  * Loop Monitor — Loop 心跳监控
  */
 import * as fs from 'fs';
+import { config } from './config';
 
 export class LoopMonitor {
   private statusPath: string;
@@ -10,7 +11,7 @@ export class LoopMonitor {
     this.statusPath = statusPath;
   }
 
-  isStuck(timeoutMs: number = 5 * 60 * 1000): boolean {
+  isStuck(timeoutMs: number = config.timeouts.stuckLoopTimeout): boolean {
     if (!fs.existsSync(this.statusPath)) return false;
     const content = fs.readFileSync(this.statusPath, 'utf-8');
     const match = content.match(/updated_at:\s*(.+)/);

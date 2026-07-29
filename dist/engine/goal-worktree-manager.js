@@ -99,6 +99,33 @@ class GoalWorktreeManager {
         const branches = await this.git.branchLocal();
         return branches.all.includes(branch);
     }
+    /**
+     * 列出所有 git worktree
+     */
+    async listWorktrees() {
+        const output = await this.git.raw(['worktree', 'list']);
+        const lines = output.trim().split('\n').filter(Boolean);
+        return lines.map(line => {
+            const parts = line.split(/\s+/);
+            return {
+                path: parts[0],
+                branch: (parts[1] || '').replace(/\[|\]/g, ''),
+                head: parts[2] || '',
+            };
+        });
+    }
+    /**
+     * 清理已删除的 worktree 记录
+     */
+    async prune() {
+        try {
+            await this.git.raw(['worktree', 'prune']);
+            console.log('[GoalWorktree] Pruned stale worktree records');
+        }
+        catch (err) {
+            console.warn(`[GoalWorktree] Prune warning: ${err.message}`);
+        }
+    }
 }
 exports.GoalWorktreeManager = GoalWorktreeManager;
 //# sourceMappingURL=goal-worktree-manager.js.map

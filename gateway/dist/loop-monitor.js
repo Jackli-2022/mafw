@@ -38,12 +38,13 @@ exports.LoopMonitor = void 0;
  * Loop Monitor — Loop 心跳监控
  */
 const fs = __importStar(require("fs"));
+const config_1 = require("./config");
 class LoopMonitor {
     statusPath;
     constructor(statusPath) {
         this.statusPath = statusPath;
     }
-    isStuck(timeoutMs = 5 * 60 * 1000) {
+    isStuck(timeoutMs = config_1.config.timeouts.stuckLoopTimeout) {
         if (!fs.existsSync(this.statusPath))
             return false;
         const content = fs.readFileSync(this.statusPath, 'utf-8');

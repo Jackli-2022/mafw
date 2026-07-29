@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as yaml from 'js-yaml';
+import { config as gatewayConfig } from '../config';
 import { IncomingMessage, ServerResponse } from 'http';
 import { SchedulerState } from './types';
 
@@ -7,18 +9,26 @@ export class DashboardAPI {
   private projectDir: string;
   private mafwDir: string;
   private scheduler?: SchedulerState;
+  private opencodeClient: any;
+  private compressSessionId: string | null;
 
-  constructor(projectDir: string = '.', scheduler?: SchedulerState) {
+  constructor(projectDir: string = '.', scheduler?: SchedulerState, opencodeClient?: any) {
     this.projectDir = projectDir;
-    this.mafwDir = path.join(projectDir, '.mafw');
+    this.mafwDir = path.join(projectDir, gatewayConfig.paths.mafwDir);
     this.scheduler = scheduler;
+    this.opencodeClient = opencodeClient || null;
+    this.compressSessionId = null;
+  }
+
+  private async getClient(): Promise<any> {
+    return this.opencodeClient;
   }
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Origin', gatewayConfig.server.cors.origin);
+    res.setHeader('Access-Control-Allow-Methods', gatewayConfig.server.cors.methods);
+    res.setHeader('Access-Control-Allow-Headers', gatewayConfig.server.cors.headers);
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -37,6 +47,27 @@ export class DashboardAPI {
         const result = { status: 'ok' };
         res.writeHead(200);
         res.end(JSON.stringify(result));
+        return;
+      }
+
+      // GET /api/config â€?return effective config
+      if (pathname === '/api/config' && method === 'GET') {
+        res.writeHead(200);
+        res.end(JSON.stringify(gatewayConfig.raw));
+        return;
+      }
+
+      // PUT /api/config â€?persist config overrides
+      if (pathname === '/api/config' && method === 'PUT') {
+        const body = await this.readBody(req);
+        const overrides = JSON.parse(body);
+        const configPath = path.join(this.mafwDir, 'config.yaml');
+        const dir = path.dirname(configPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const yamlStr = yaml.dump(overrides, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: true });
+        fs.writeFileSync(configPath, yamlStr, 'utf-8');
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true }));
         return;
       }
 
@@ -167,7 +198,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/pause â€” pause a goal
+      // POST /api/gateway/pause â€?pause a goal
       if (pathname === '/api/gateway/pause' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -177,7 +208,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/resume â€” resume a goal
+      // POST /api/gateway/resume â€?resume a goal
       if (pathname === '/api/gateway/resume' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -187,7 +218,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/cancel â€” cancel a goal
+      // POST /api/gateway/cancel â€?cancel a goal
       if (pathname === '/api/gateway/cancel' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -197,7 +228,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/checkpoint â€” save checkpoint for all running goals
+      // POST /api/gateway/checkpoint â€?save checkpoint for all running goals
       if (pathname === '/api/gateway/checkpoint' && method === 'POST') {
         const result = await this.gatewayControl('checkpoint');
         res.writeHead(200);
@@ -205,7 +236,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/rollback â€” rollback to last checkpoint
+      // POST /api/gateway/rollback â€?rollback to last checkpoint
       if (pathname === '/api/gateway/rollback' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -224,7 +255,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/feedback â€” record user feedback
+      // POST /api/feedback â€?record user feedback
       if (pathname === '/api/feedback' && method === 'POST') {
         const body = await this.readBody(req);
         const input = JSON.parse(body);
@@ -234,7 +265,7 @@ export class DashboardAPI {
         return;
       }
 
-      // GET /api/feedback â€” list all feedback for timeline
+      // GET /api/feedback â€?list all feedback for timeline
       if (pathname === '/api/feedback' && method === 'GET') {
         const result = await this.listFeedback();
         res.writeHead(200);
@@ -254,7 +285,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/alignment â€” save user weight preferences
+      // POST /api/alignment â€?save user weight preferences
       if (pathname === '/api/alignment' && method === 'POST') {
         const body = await this.readBody(req);
         const weights = JSON.parse(body);
@@ -265,7 +296,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/llm/compress â€” LLM compression proxy
+      // POST /api/llm/compress â€?LLM compression proxy
       if (pathname === '/api/llm/compress' && method === 'POST') {
         const body = await this.readBody(req);
         const { observations, model } = JSON.parse(body);
@@ -278,7 +309,7 @@ export class DashboardAPI {
       // GET /api/l5/axioms
       if (pathname === '/api/l5/axioms' && method === 'GET') {
         const topK = parseInt(parsedUrl.searchParams.get('topK') || '10', 10);
-        const { L5Store } = require('../../../src/memory/l5-store');
+        const { L5Store } = require('../core/memory/l5-store');
         const store = new L5Store();
         const result = store.getTop(topK);
         res.writeHead(200);
@@ -288,7 +319,7 @@ export class DashboardAPI {
 
       // GET /api/l5/heuristics
       if (pathname === '/api/l5/heuristics' && method === 'GET') {
-        const { L5Store } = require('../../../src/memory/l5-store');
+        const { L5Store } = require('../core/memory/l5-store');
         const store = new L5Store();
         const heuristics = store.loadHeuristics();
         res.writeHead(200);
@@ -305,10 +336,6 @@ export class DashboardAPI {
   }
 
   async llmCompress(observations: string[], model?: string): Promise<any> {
-    const config = this.loadLLMConfig();
-    const apiKey = process.env[config.compression.apiKeyEnv];
-    if (!apiKey) throw new Error(`API key not found in env ${config.compression.apiKeyEnv}`);
-
     const prompt = `Analyze the following agent observations and extract structured memories.
 Return JSON only:
 {
@@ -321,29 +348,33 @@ Return JSON only:
 Observations:
 ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
-    const modelName = model || config.compression.model;
+    const systemPrompt = 'You are a memory compression system. Extract structured memories from observations. Return ONLY valid JSON.';
+
     try {
-      if (config.compression.provider === 'anthropic') {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: modelName, max_tokens: 500, messages: [{ role: 'user', content: prompt }] }),
-          signal: AbortSignal.timeout(15000)
-        });
-        const data: any = await res.json();
-        return this.parseLLMResponse(data.content?.[0]?.text || '');
+      const client = await this.getClient();
+
+      if (!this.compressSessionId) {
+        const session = await client.session.create({ query: { directory: this.projectDir } });
+        this.compressSessionId = session.id;
       }
-      if (config.compression.provider === 'openai') {
-        const res = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: modelName, max_tokens: 500, messages: [{ role: 'user', content: prompt }] }),
-          signal: AbortSignal.timeout(15000)
-        });
-        const data: any = await res.json();
-        return this.parseLLMResponse(data.choices?.[0]?.message?.content || '');
-      }
-      throw new Error(`Unknown provider: ${config.compression.provider}`);
+
+      const result = await client.session.prompt({
+        path: { id: this.compressSessionId },
+        body: {
+          parts: [{ type: 'text', text: prompt }],
+          system: systemPrompt,
+          noReply: false,
+          ...(model ? {
+            model: { providerID: 'opencode', modelID: model }
+          } : {}),
+        }
+      });
+
+      const text = result.parts
+        ?.filter((p: any) => p.type === 'text')
+        .map((p: any) => p.text)
+        .join('\n') || '';
+      return this.parseLLMResponse(text);
     } catch (err: any) {
       return { narrative: 'Compression failed: ' + err.message, facts: [], concepts: [], energy: 0.3 };
     }
@@ -358,16 +389,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
   }
 
-  private loadLLMConfig(): any {
-    const configPath = path.join(this.mafwDir, '..', '..', '.mafw', 'llm-config.json');
-    if (fs.existsSync(configPath)) {
-      try { return JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch {}
-    }
-    return { compression: { provider: 'anthropic', model: 'claude-3-haiku-20240307', apiKeyEnv: 'MAFW_LLM_API_KEY' } };
-  }
-
   private async recordFeedback(input: any): Promise<any> {
-    const { recordFeedback } = require('../../src/tools/run-record-feedback');
+    const { recordFeedback } = require('./core/tools/run-record-feedback');
     return recordFeedback(input);
   }
 
@@ -393,7 +416,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     if (!fs.existsSync(stateDir)) return { success: false, error: 'No state directory' };
 
     if (action === 'checkpoint') {
-      const { RecoveryManager } = require('../../src/recovery');
+      const { RecoveryManager } = require('./core/recovery');
       const recovery = new RecoveryManager(this.projectDir);
       const files = fs.readdirSync(stateDir).filter(f => f.endsWith('.json'));
       let count = 0;
@@ -432,7 +455,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           state.nextAction = 'CANCELLED';
           break;
         case 'rollback': {
-          const { RecoveryManager } = require('../../src/recovery');
+          const { RecoveryManager } = require('./core/recovery');
           const recovery = new RecoveryManager(this.projectDir);
           const cp = recovery.findLastCheckpoint(goalId);
           if (cp) {

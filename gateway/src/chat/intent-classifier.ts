@@ -5,13 +5,17 @@ export interface Intent {
   entities: Record<string, string>;
 }
 
+import { config } from '../config';
+
 export class IntentClassifier {
   classify(message: string): Intent {
     const lower = message.toLowerCase();
-    if (lower.includes('开始') || lower.includes('规划') || lower.includes('执行') || lower.includes('run')) {
+    const executeKw = config.chat.executeGraphKeywords;
+    if (executeKw.some(kw => lower.includes(kw))) {
       return { action: 'EXECUTE_GRAPH', entities: {} };
     }
-    if (lower.includes('搜索') || lower.includes('查找') || lower.includes('记忆') || lower.includes('search')) {
+    const searchKw = config.chat.searchMemoryKeywords;
+    if (searchKw.some(kw => lower.includes(kw))) {
       return { action: 'SEARCH_MEMORY', entities: {} };
     }
     return { action: 'RAG_ONLY', entities: {} };

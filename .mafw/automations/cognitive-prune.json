@@ -1,0 +1,17 @@
+{
+  "id": "cognitive-prune",
+  "enabled": true,
+  "trigger": {
+    "type": "cron",
+    "schedule": "0 4 * * 0",
+    "timezone": "Asia/Shanghai"
+  },
+  "action": {
+    "type": "memory:prune"
+  },
+  "skill": "",
+  "args": {},
+  "onResult": {
+    "type": "goal"
+  }
+}
