@@ -151,16 +151,12 @@ export function MafwShell() {
       for (const item of rawItems) {
         const info = item.info || item
         const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
-        const textContent = info.text || info.textContent || ""
-        const msg = { id: msgId, sessionID, role: info.role || "assistant", parentID: info.parentID || null, time: info.time || { created: Date.now() }, text: textContent }
+        // Preserve all API fields — spread entire info object
+        const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
         msgs.push(msg)
         let itemParts = item.parts || info.parts || []
-        // Convert message.text to a text part if not already present
-        if (textContent && !itemParts.some((p: any) => p.type === "text" && p.text === textContent)) {
-          itemParts = [{ type: "text", text: textContent, id: `${msgId}-text`, messageID: msgId }, ...itemParts]
-        }
         if (itemParts.length > 0) {
-          parts[msgId] = itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, messageID: msgId }))
+          parts[msgId] = itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId }))
         }
       }
       if (msgs.length > 0) {
@@ -243,9 +239,13 @@ export function MafwShell() {
     setStore(prev => {
       const msgs = { ...prev.message }
       const sessionMsgs = [...(msgs[sid] || [])]
-      sessionMsgs.push({ id: userMsgId, sessionID: sid, role: "user", parentID: null, time: { created: Date.now() }, text })
+      sessionMsgs.push({ id: userMsgId, sessionID: sid, role: "user", parentID: null, time: { created: Date.now() }, text, agent: "general", model: { providerID: "opencode", modelID: "" } })
       msgs[sid] = sessionMsgs
-      return { ...prev, message: msgs }
+      return {
+        ...prev,
+        message: msgs,
+        part: { ...prev.part, [userMsgId]: [{ type: "text", text, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId }] },
+      }
     })
 
     console.log("[mafw] sendMessage", sid)
@@ -346,24 +346,24 @@ export function MafwShell() {
                   ))}
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
-                {/* SessionTurn */}
-                <DataProvider data={storeData()} directory=".">
-                  <FileComponentProvider component={FileSSR}>
-                    <DialogProvider>
-                      <MarkedProvider>
-                      <MemoryRouter>
-                        <div class="mafw-session-turn-container">
-                          {active() ? (
-                            <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
-                          ) : (
-                            <div class="mafw-chat-empty">Create a new session to start chatting</div>
-                          )}
-                        </div>
-                      </MemoryRouter>
+                {/* SessionTurn — provider order matches opencode Desktop app.tsx */}
+                <MemoryRouter>
+                  <DialogProvider>
+                    <MarkedProvider>
+                      <FileComponentProvider component={FileSSR}>
+                        <DataProvider data={storeData()} directory=".">
+                          <div class="mafw-session-turn-container">
+                            {active() ? (
+                              <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                            ) : (
+                              <div class="mafw-chat-empty">Create a new session to start chatting</div>
+                            )}
+                          </div>
+                        </DataProvider>
+                      </FileComponentProvider>
                     </MarkedProvider>
-                    </DialogProvider>
-                  </FileComponentProvider>
-                </DataProvider>
+                  </DialogProvider>
+                </MemoryRouter>
                 {/* InputBar */}
                 <div class="mafw-inputbar">
                   <TextareaV2
