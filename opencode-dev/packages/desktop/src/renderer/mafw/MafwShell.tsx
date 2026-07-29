@@ -382,35 +382,41 @@ export function MafwShell() {
                 <div class="mafw-session-turn-container">
                   {active() ? (
                     <>
-                      <DataProvider data={storeData()} directory=".">
-                        <FileComponentProvider component={FileSSR}>
-                          <DialogProvider>
-                            <MarkedProvider>
-                            <MemoryRouter>
-                              <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
-                            </MemoryRouter>
-                          </MarkedProvider>
-                          </DialogProvider>
-                        </FileComponentProvider>
-                      </DataProvider>
-                      <pre style="color: var(--text-base); font-size: 11px; padding: 8px; border-top: 1px solid #333; max-height: 200px; overflow: auto; background: var(--surface-base); white-space: pre-wrap;">
-                        {`mid: ${currentUserMsgId() || '(empty)'}
-msgs count: ${store().message?.[currentSessionID()]?.length || 0}
-session active: ${!!active()}`}
-                      </pre>
-                      {/* Raw message fallback: render first 3 turns directly */}
-                      <div style="color: var(--text-base); font-size: 12px; padding: 4px 8px; border-top: 1px solid #555; max-height: 400px; overflow: auto; background: var(--surface-base);">
-                        {store().session_status?.[currentSessionID()]?.type === "idle" ? "status:idle" : "status:?"}
+                      {/* Direct message rendering (bypasses SessionTurn, uses store signal directly) */}
+                      <div style="flex: 1; overflow-y: auto; font-size: 13px; color: var(--text-base); padding: 8px; border-top: 1px solid #555;">
                         {(() => {
                           const sid = currentSessionID()
                           const msgs = store().message?.[sid]
-                          if (!msgs) return <div>No messages in store</div>
-                          return msgs.filter((m: any) => m.role === "user").slice(0, 3).map((m: any) => {
-                            const p = store().part?.[m.id]
-                            const text = p?.find((x: any) => x.type === "text")
-                            return <div style="padding: 4px 0; border-bottom: 1px dotted #333;">
-                              <b>[{m.role}]</b> {text?.text?.slice(0, 100) || "(no text part)"} <span style="opacity:0.4">parts:{p?.length || 0}</span>
-                            </div>
+                          if (!msgs || msgs.length === 0) return <div style="opacity: 0.5; padding: 8px;">No messages</div>
+                          const turns: any[][] = []
+                          let curTurn: any[] = []
+                          for (const m of msgs) {
+                            if (m.role === "user") { curTurn = [m]; turns.push(curTurn) }
+                            else if (curTurn.length > 0) { curTurn.push(m) }
+                          }
+                          return turns.slice(-10).map((turn: any[]) => {
+                            const userMsg = turn[0]
+                            const userParts = store().part?.[userMsg.id] || []
+                            const userText = userParts.find((p: any) => p.type === "text")?.text || userMsg.text || ""
+                            const assistants = turn.slice(1)
+                            return (
+                              <div style="margin-bottom: 16px; border-bottom: 1px solid var(--border-weak-base); padding-bottom: 8px;">
+                                <div style="display: flex; gap: 8px; margin-bottom: 4px;">
+                                  <span style="font-weight: 600; color: var(--text-strong); min-width: 50px;">You:</span>
+                                  <span>{userText}</span>
+                                </div>
+                                {assistants.map((a: any) => {
+                                  const aParts = store().part?.[a.id] || []
+                                  const aText = aParts.find((p: any) => p.type === "text")?.text || ""
+                                  return (
+                                    <div style="display: flex; gap: 8px; margin-bottom: 2px;">
+                                      <span style="font-weight: 600; color: var(--accent-base); min-width: 50px;">AI:</span>
+                                      <span>{aText.slice(0, 500)}</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
                           })
                         })()}
                       </div>
