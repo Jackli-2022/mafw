@@ -159,7 +159,8 @@ export class AutomationEngine {
 
   start(): void {
     for (const [id, rule] of this.rules) {
-      if (rule.trigger.type === 'cron') {
+      // Defensive: trigger may be null despite earlier validation (fall-through)
+      if (rule.trigger?.type === 'cron') {
         this.scheduleRule(id, rule);
       } else {
         this.scheduleEventRule(id, rule);
@@ -428,7 +429,7 @@ export class AutomationEngine {
     if (!rule.trigger || (rule.trigger.type !== 'cron' && rule.trigger.type !== 'event')) {
       errors.push('Trigger type must be "cron" or "event"');
     }
-    if (rule.trigger.type === 'cron') {
+    if (rule.trigger?.type === 'cron') {
       const ct = rule.trigger as CronTrigger;
       if (typeof ct.schedule !== 'string' || ct.schedule.trim() === '') {
         errors.push('Schedule must be a non-empty cron expression');
@@ -446,7 +447,7 @@ export class AutomationEngine {
         }
       }
     }
-    if (rule.trigger.type === 'event') {
+    if (rule.trigger?.type === 'event') {
       const et = rule.trigger as EventTrigger;
       if (!Array.isArray(et.on) || et.on.length === 0) {
         errors.push('Event trigger must have a non-empty "on" array');
@@ -466,7 +467,7 @@ export class AutomationEngine {
     }
 
     let nextTriggers: string[] = [];
-    if (errors.length === 0 && rule.trigger.type === 'cron') {
+    if (errors.length === 0 && rule.trigger?.type === 'cron') {
       const ct = rule.trigger as CronTrigger;
       try {
         const job = new CronJob(ct.schedule, () => {}, null, false, ct.timezone || 'UTC');
@@ -584,7 +585,8 @@ export class AutomationEngine {
       fs.writeFileSync(filePath, JSON.stringify(rule, null, 2), 'utf-8');
       if (enabled) {
         this.rules.set(id, rule);
-        if (rule.trigger.type === 'cron') {
+        // Defensive: trigger may be null despite earlier validation (fall-through)
+        if (rule.trigger?.type === 'cron') {
           this.scheduleRule(id, rule);
         } else {
           this.scheduleEventRule(id, rule);
