@@ -6,12 +6,14 @@ module.exports = {
   moduleNameMapper: {
     '^electron$': '<rootDir>/tests/mocks/electron.ts',
     '^@mafw/sdk$': '<rootDir>/mafw-sdk/src/index.ts',
+    '^@opencode-ai/sdk$': '<rootDir>/tests/mocks/@opencode-ai/sdk.ts',
   },
   globals: {
     'ts-jest': {
       tsconfig: {
         paths: {
           '@mafw/sdk': ['./mafw-sdk/src/index.ts'],
+          '@opencode-ai/sdk': ['./tests/mocks/@opencode-ai/sdk.ts'],
         },
       },
     },

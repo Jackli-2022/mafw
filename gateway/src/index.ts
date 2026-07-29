@@ -17,7 +17,7 @@ import { createToolRegistry } from "./mcp/tool-registry";
 import { MemoryService } from "./memory/service";
 import { CostService } from "./cost/service";
 import { eventBus } from "./event-bus";
-import { AutomationEngine } from "./automation-engine";
+import { AutomationEngine, actionRegistry } from "./automation-engine";
 import { SchedulerLedger } from "./ledger";
 import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
