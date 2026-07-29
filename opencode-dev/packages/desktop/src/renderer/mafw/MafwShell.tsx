@@ -1,7 +1,7 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Router } from "@solidjs/router"
+
 
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
@@ -292,7 +292,6 @@ export function MafwShell() {
   })
 
   return (
-      <Router>
       <DialogProvider>
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
@@ -394,6 +393,5 @@ export function MafwShell() {
           </FileComponentProvider>
         </MarkedProvider>
       </DialogProvider>
-      </Router>
   )
 }
