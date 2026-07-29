@@ -299,7 +299,12 @@ export function MafwShell() {
   })
 
   return (
-    <div class="mafw-shell">
+    <MemoryRouter>
+      <DialogProvider>
+        <MarkedProvider>
+          <FileComponentProvider component={FileSSR}>
+            <DataProvider data={storeData()} directory=".">
+              <div class="mafw-shell">
       <ToastV2.Region />
       <div class="mafw-titlebar">
         <Icon name="logo" size="small" />
@@ -347,11 +352,6 @@ export function MafwShell() {
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
                 {/* SessionTurn — provider order matches opencode Desktop app.tsx */}
-                <MemoryRouter>
-                  <DialogProvider>
-                    <MarkedProvider>
-                      <FileComponentProvider component={FileSSR}>
-                        <DataProvider data={storeData()} directory=".">
                           <div class="mafw-session-turn-container">
                             {active() ? (
                               <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
@@ -359,11 +359,6 @@ export function MafwShell() {
                               <div class="mafw-chat-empty">Create a new session to start chatting</div>
                             )}
                           </div>
-                        </DataProvider>
-                      </FileComponentProvider>
-                    </MarkedProvider>
-                  </DialogProvider>
-                </MemoryRouter>
                 {/* InputBar */}
                 <div class="mafw-inputbar">
                   <TextareaV2
@@ -402,5 +397,10 @@ export function MafwShell() {
         />
       </Show>
     </div>
+            </DataProvider>
+          </FileComponentProvider>
+        </MarkedProvider>
+      </DialogProvider>
+    </MemoryRouter>
   )
 }
