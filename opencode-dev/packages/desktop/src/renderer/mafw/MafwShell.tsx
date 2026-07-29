@@ -1,7 +1,7 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { MemoryRouter } from "@solidjs/router"
+
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
