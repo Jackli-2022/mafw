@@ -54,6 +54,9 @@ const event_bus_1 = require("./event-bus");
 const automation_engine_1 = require("./automation-engine");
 const ledger_1 = require("./ledger");
 const desktop_client_1 = require("./desktop-client");
+const question_ledger_1 = require("./core/manager/question-ledger");
+const wake_handlers_1 = require("./core/manager/wake-handlers");
+const manager_identity_1 = require("./skills/manager-identity");
 const langchain_mcp_adapters_1 = require("langchain-mcp-adapters");
 function readBody(req) {
     return new Promise((resolve, reject) => {
@@ -104,6 +107,7 @@ class MafwScheduler {
     automationEngine;
     ledger;
     mafwDir;
+    managerSessionInfo = null;
     constructor(projectDir = '.') {
         this.projectDir = projectDir;
         this.serveUrl = config_1.config.server.serveUrl;
@@ -122,6 +126,10 @@ class MafwScheduler {
         // 0. Init services
         await this.initServices();
         this.setupEventBus();
+        // Boot reconcile: orphan questions for inactive goals
+        const bootLedger = new question_ledger_1.QuestionLedger(this.mafwDir);
+        const activeCheckpoints = new Set(Array.from(this.activeGoals.keys()));
+        bootLedger.bootReconcile(activeCheckpoints);
         // 1. Start HTTP API immediately (health check endpoint, MCP, etc.)
         await this.startApiServer();
         // 2. 创建 SDK 客户端（�?auth），用于健康检查和后续通信
@@ -327,6 +335,9 @@ class MafwScheduler {
         this.automationEngine = new automation_engine_1.AutomationEngine(mafwDir);
         this.automationEngine.setLedger(this.ledger);
         this.automationEngine.loadRules();
+        automation_engine_1.actionRegistry.set('manager:report_completed', wake_handlers_1.wakeCompletedHandler);
+        automation_engine_1.actionRegistry.set('manager:report_failed', wake_handlers_1.wakeFailedHandler);
+        automation_engine_1.actionRegistry.set('manager:report_question', wake_handlers_1.wakeQuestionHandler);
         const desktopClient = desktop_client_1.DesktopClient.tryLoad();
         if (desktopClient) {
             console.log('[Scheduler] Desktop automation client connected');
@@ -608,6 +619,63 @@ class MafwScheduler {
                         }
                         return;
                     }
+                    // POST /api/goals/{goalId}/questions/{questionId}/respond
+                    const respondMatch = req.url?.match(/^\/api\/goals\/([^/]+)\/questions\/([^/]+)\/respond$/);
+                    if (respondMatch && req.method === 'POST') {
+                        const goalId = respondMatch[1];
+                        const questionId = respondMatch[2];
+                        const body = await readBody(req);
+                        let data;
+                        try {
+                            data = JSON.parse(body);
+                        }
+                        catch {
+                            res.writeHead(400);
+                            res.end(JSON.stringify({ status: 'bad_request', error: 'Invalid JSON' }));
+                            return;
+                        }
+                        const ledger = new question_ledger_1.QuestionLedger(this.mafwDir);
+                        const state = ledger.getQuestionState(questionId);
+                        if (!state) {
+                            res.writeHead(404);
+                            res.end(JSON.stringify({ status: 'not_found' }));
+                            return;
+                        }
+                        if (state !== 'pending') {
+                            res.writeHead(409);
+                            res.end(JSON.stringify({ status: 'conflict', currentState: state }));
+                            return;
+                        }
+                        if (data.type === 'cancel') {
+                            ledger.appendQuestionEvent({
+                                type: 'cancelled', questionId, goalId, cancelledAt: new Date().toISOString(),
+                            });
+                            event_bus_1.eventBus.emit('question_cancelled', { questionId, goalId });
+                            res.writeHead(200);
+                            res.end(JSON.stringify({ status: 'accepted', action: 'cancelled' }));
+                            return;
+                        }
+                        // answer or redirect
+                        ledger.appendQuestionEvent({
+                            type: 'answered', questionId, goalId,
+                            answer: data.answer || '', answeredAt: new Date().toISOString(),
+                        });
+                        // Resume graph
+                        const found = this.findGoalStatePath(goalId);
+                        if (found) {
+                            const cp = new langgraph_1.FileCheckpointer(found.info.mafwDir);
+                            const graph = (0, langgraph_1.buildExecutionGraph)(this.buildNodeOptions(found.info.mafwDir));
+                            graph.checkpointer = cp;
+                            const { Command } = await import('@langchain/langgraph');
+                            await graph.invoke(new Command({ resume: { answer: data.answer || '' } }), {
+                                configurable: { thread_id: goalId },
+                            });
+                        }
+                        event_bus_1.eventBus.emit('question_answered', { questionId, goalId, answer: data.answer });
+                        res.writeHead(200);
+                        res.end(JSON.stringify({ status: 'accepted' }));
+                        return;
+                    }
                     // Dashboard API
                     if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
                         res.setHeader("Content-Type", "application/json");
@@ -635,6 +703,14 @@ class MafwScheduler {
                                 // 持久化到磁盘（写队列防并发覆盖）
                                 await this.persistRegistry();
                                 await this.persistConfig();
+                                if (this.opencodeClient) {
+                                    try {
+                                        await this.ensureManagerSession(projectDir, mafwDir);
+                                    }
+                                    catch (err) {
+                                        console.warn(`[Scheduler] Manager session bootstrap failed: ${err.message} (non-fatal)`);
+                                    }
+                                }
                                 console.log(`[Scheduler] Project registered: ${projectDir}`);
                                 res.writeHead(200);
                                 res.end(JSON.stringify({ status: 'ok', registered: projectDir }));
@@ -721,6 +797,17 @@ class MafwScheduler {
                             res.writeHead(400);
                             res.end(JSON.stringify({ error: err.message }));
                         }
+                        return;
+                    }
+                    // GET /api/manager/session — return manager session info
+                    if (req.url === '/api/manager/session' && req.method === 'GET') {
+                        if (!this.managerSessionInfo) {
+                            res.writeHead(404);
+                            res.end(JSON.stringify({ error: 'No manager session' }));
+                            return;
+                        }
+                        res.writeHead(200);
+                        res.end(JSON.stringify(this.managerSessionInfo));
                         return;
                     }
                     // 健康检�?
@@ -1555,6 +1642,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
                 client,
                 syncToFile: (st) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
             }),
+            askUser: async (s) => {
+                syncToFile({ ...s, pendingQuestion: null, phase: 'ASKING_USER', mafwDir });
+                return { pendingQuestion: null };
+            },
             execute: async (s) => (0, langgraph_1.executeNode)(s, {
                 client,
                 syncToFile: (st) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
@@ -1688,6 +1779,52 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
     sleep(ms) {
         return new Promise(r => setTimeout(r, ms));
+    }
+    async ensureManagerSession(projectDir, mafwDir) {
+        const managerFile = path.join(mafwDir, 'manager-session.json');
+        if (fs.existsSync(managerFile)) {
+            try {
+                const data = JSON.parse(fs.readFileSync(managerFile, 'utf-8'));
+                const { sessionId, createdAt } = data;
+                this.managerSessionInfo = { sessionId, projectDir, createdAt: createdAt || new Date().toISOString() };
+                console.log(`[Scheduler] Manager session already exists: ${sessionId}`);
+                return sessionId;
+            }
+            catch {
+                // corrupt file, fall through to create
+            }
+        }
+        const session = await this.opencodeClient.session.create({
+            directory: projectDir,
+            metadata: {
+                mafw: {
+                    role: 'manager',
+                    pinned: true,
+                    exemptFromTrim: true,
+                    exemptFromEvict: true,
+                    exemptFromArchive: true,
+                },
+            },
+        });
+        const sessionId = session.id;
+        const createdAt = new Date().toISOString();
+        const dir = path.dirname(managerFile);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(managerFile, JSON.stringify({ sessionId, createdAt }, null, 2), 'utf-8');
+        this.managerSessionInfo = { sessionId, projectDir, createdAt };
+        console.log(`[Scheduler] Manager session created: ${sessionId}`);
+        try {
+            await this.opencodeClient.session.promptAsync({
+                sessionID: sessionId,
+                message: manager_identity_1.MANAGER_IDENTITY_SYSTEM_PROMPT,
+            });
+        }
+        catch (err) {
+            console.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);
+        }
+        return sessionId;
     }
 }
 exports.MafwScheduler = MafwScheduler;

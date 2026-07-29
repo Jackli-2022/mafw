@@ -23,6 +23,7 @@ import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { wakeCompletedHandler, wakeFailedHandler, wakeQuestionHandler } from './core/manager/wake-handlers';
+import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 
 /**
@@ -125,6 +126,7 @@ class MafwScheduler {
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
   private mafwDir!: string;
+  private managerSessionInfo: { sessionId: string; projectDir: string; createdAt: string } | null = null;
 
   constructor(projectDir: string = '.') {
     this.projectDir = projectDir;
@@ -722,6 +724,14 @@ class MafwScheduler {
               await this.persistRegistry();
               await this.persistConfig();
 
+              if (this.opencodeClient) {
+                try {
+                  await this.ensureManagerSession(projectDir, mafwDir);
+                } catch (err: any) {
+                  console.warn(`[Scheduler] Manager session bootstrap failed: ${err.message} (non-fatal)`);
+                }
+              }
+
               console.log(`[Scheduler] Project registered: ${projectDir}`);
               res.writeHead(200);
               res.end(JSON.stringify({ status: 'ok', registered: projectDir }));
@@ -808,6 +818,18 @@ class MafwScheduler {
             res.writeHead(400);
             res.end(JSON.stringify({ error: err.message }));
           }
+          return;
+        }
+
+        // GET /api/manager/session — return manager session info
+        if (req.url === '/api/manager/session' && req.method === 'GET') {
+          if (!this.managerSessionInfo) {
+            res.writeHead(404);
+            res.end(JSON.stringify({ error: 'No manager session' }));
+            return;
+          }
+          res.writeHead(200);
+          res.end(JSON.stringify(this.managerSessionInfo));
           return;
         }
 
@@ -1819,6 +1841,56 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   private sleep(ms: number): Promise<void> {
     return new Promise(r => setTimeout(r, ms));
+  }
+
+  private async ensureManagerSession(projectDir: string, mafwDir: string): Promise<string> {
+    const managerFile = path.join(mafwDir, 'manager-session.json');
+    if (fs.existsSync(managerFile)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(managerFile, 'utf-8'));
+        const { sessionId, createdAt } = data;
+        this.managerSessionInfo = { sessionId, projectDir, createdAt: createdAt || new Date().toISOString() };
+        console.log(`[Scheduler] Manager session already exists: ${sessionId}`);
+        return sessionId;
+      } catch {
+        // corrupt file, fall through to create
+      }
+    }
+
+    const session = await this.opencodeClient.session.create({
+      directory: projectDir,
+      metadata: {
+        mafw: {
+          role: 'manager',
+          pinned: true,
+          exemptFromTrim: true,
+          exemptFromEvict: true,
+          exemptFromArchive: true,
+        },
+      },
+    });
+
+    const sessionId = session.id;
+    const createdAt = new Date().toISOString();
+
+    const dir = path.dirname(managerFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(managerFile, JSON.stringify({ sessionId, createdAt }, null, 2), 'utf-8');
+    this.managerSessionInfo = { sessionId, projectDir, createdAt };
+    console.log(`[Scheduler] Manager session created: ${sessionId}`);
+
+    try {
+      await this.opencodeClient.session.promptAsync({
+        sessionID: sessionId,
+        message: MANAGER_IDENTITY_SYSTEM_PROMPT,
+      });
+    } catch (err: any) {
+      console.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);
+    }
+
+    return sessionId;
   }
 }
 
