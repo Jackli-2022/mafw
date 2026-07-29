@@ -163,6 +163,7 @@ export function MafwShell() {
         }
       }
       if (msgs.length > 0) {
+        msgs.sort((a, b) => a.id.localeCompare(b.id))
         setStore(prev => ({
           ...prev,
           session: sessionData ? [...prev.session.filter(s => s.id !== sessionID), sessionData] : prev.session,
