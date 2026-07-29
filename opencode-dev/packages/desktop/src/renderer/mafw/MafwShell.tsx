@@ -150,9 +150,14 @@ export function MafwShell() {
       for (const item of rawItems) {
         const info = item.info || item
         const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
-        const msg = { id: msgId, sessionID, role: info.role || "assistant", parentID: info.parentID || null, time: info.time || { created: Date.now() } }
+        const textContent = info.text || info.textContent || ""
+        const msg = { id: msgId, sessionID, role: info.role || "assistant", parentID: info.parentID || null, time: info.time || { created: Date.now() }, text: textContent }
         msgs.push(msg)
-        const itemParts = item.parts || info.parts || []
+        let itemParts = item.parts || info.parts || []
+        // Convert message.text to a text part if not already present
+        if (textContent && !itemParts.some((p: any) => p.type === "text" && p.text === textContent)) {
+          itemParts = [{ type: "text", text: textContent, id: `${msgId}-text`, messageID: msgId }, ...itemParts]
+        }
         if (itemParts.length > 0) {
           parts[msgId] = itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, messageID: msgId }))
         }
