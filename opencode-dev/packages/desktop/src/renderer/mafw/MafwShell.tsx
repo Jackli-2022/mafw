@@ -299,7 +299,6 @@ export function MafwShell() {
   })
 
   return (
-    <MemoryRouter>
       <DialogProvider>
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
@@ -401,6 +400,5 @@ export function MafwShell() {
           </FileComponentProvider>
         </MarkedProvider>
       </DialogProvider>
-    </MemoryRouter>
   )
 }
