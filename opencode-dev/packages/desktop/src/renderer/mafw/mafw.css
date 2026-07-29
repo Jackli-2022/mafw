@@ -62,6 +62,7 @@
   box-shadow: inset 2px 0 0 var(--text-interactive-base);
 }
 .mafw-rail-session { padding-left: 40px; }
+.mafw-rail-manager-session { padding-left: 40px; border-left: 2px solid var(--icon-success-base, #2bc94a); margin-bottom: 4px; }
 .mafw-rail-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-rail-add { padding-left: 40px; color: var(--text-weak); opacity: 0.6; font-size: 12px; }
 .mafw-rail-add:hover { opacity: 1; color: var(--text-strong); }
@@ -249,3 +250,139 @@
 .mafw-delta-text { color: var(--text-strong); font-size: 13px; }
 .mafw-delta-priority { color: var(--text-weak); font-size: 11px; }
 .mafw-tool-output { color: var(--text-base); overflow-x: auto; padding: 8px; background: var(--surface-inset-base, var(--background-weak)); border-radius: 4px; max-height: 200px; font-size: 12px; }
+
+/* ── Question Widget ── */
+.mafw-question-overlay {
+  position: fixed;
+  bottom: 48px;
+  right: 16px;
+  z-index: 1000;
+  max-width: 400px;
+  width: 100%;
+}
+.mafw-question-card {
+  background: var(--surface-raised-base, var(--background-stronger));
+  border: 0.5px solid var(--border-base, rgba(255,255,255,0.12));
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+.mafw-question-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(232,184,75,0.12);
+  border-bottom: 0.5px solid var(--border-weak-base);
+}
+.mafw-question-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.mafw-question-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-weak);
+  padding: 2px 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+.mafw-question-close:hover { color: var(--text-strong); }
+.mafw-question-body {
+  padding: 12px;
+}
+.mafw-question-text {
+  font-size: 13px;
+  color: var(--text-strong);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.mafw-question-list {
+  margin: 4px 0 8px 20px;
+  font-size: 12px;
+  color: var(--text-base);
+  line-height: 1.5;
+}
+.mafw-question-input {
+  margin-top: 8px;
+}
+.mafw-question-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mafw-question-result {
+  font-size: 12px;
+  color: var(--text-base);
+  padding: 4px 0;
+}
+
+/* ── Compression Divider ── */
+.mafw-compression-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  flex-wrap: wrap;
+}
+.mafw-compression-divider:hover .mafw-compression-label { color: var(--text-strong); }
+.mafw-compression-line { flex: 1; height: 0.5px; background: var(--border-weak-base); }
+.mafw-compression-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-weak);
+  font-size: 11px;
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+.mafw-compression-summary {
+  width: 100%;
+  padding: 8px;
+  background: var(--surface-base-active);
+  border-radius: 4px;
+  color: var(--text-base);
+  font-size: 12px;
+}
+
+/* ── Handoff Card ── */
+.mafw-handoff-card {
+  border: 0.5px solid var(--border-weak-base);
+  border-radius: 6px;
+  margin: 8px 12px;
+  background: var(--background-base);
+  overflow: hidden;
+}
+.mafw-handoff-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface-base-hover);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 0.5px solid var(--border-weak-base);
+}
+.mafw-handoff-card-body { padding: 8px 10px; }
+.mafw-handoff-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.mafw-handoff-field-label { color: var(--text-weak); }
+.mafw-handoff-field-value { color: var(--text-strong); font-weight: 500; }
+.mafw-handoff-section { margin-top: 6px; }
+.mafw-handoff-section-title { display: block; color: var(--text-weak); font-size: 11px; margin-bottom: 4px; }
+.mafw-handoff-goal { padding: 2px 6px; font-size: 12px; color: var(--text-base); }
+.mafw-handoff-details { margin-top: 6px; font-size: 11px; color: var(--text-weak); }
+.mafw-handoff-details summary { cursor: pointer; color: var(--text-base); }
+.mafw-handoff-details summary:hover { color: var(--text-strong); }
+.mafw-handoff-previous-id { margin-top: 4px; padding: 4px 6px; background: var(--surface-base-active); border-radius: 4px; font-size: 10px; color: var(--text-weak); overflow-x: auto; word-break: break-all; }
