@@ -11,6 +11,20 @@ import { runDistillation } from './core/memory/abstraction-distiller';
 import { SchedulerLedger } from './ledger';
 
 export type MemoryActionType = string;
+
+export interface CronTrigger {
+  type: 'cron';
+  schedule: string;
+  timezone: string;
+}
+
+export interface EventTrigger {
+  type: 'event';
+  on: string[];
+  perGoalCooldown: string;
+}
+
+export type Trigger = CronTrigger | EventTrigger;
 export type ActionHandler = (
   rule: AutomationRule,
   engine: AutomationEngine
@@ -62,11 +76,7 @@ actionRegistry.set('memory:prune', async (_rule, engine) => {
 export interface AutomationRule {
   id: string;
   enabled: boolean;
-  trigger: {
-    type: 'cron';
-    schedule: string;
-    timezone: string;
-  };
+  trigger: Trigger;
   skill?: string;
   args?: Record<string, any>;
   onResult?: {
@@ -149,7 +159,11 @@ export class AutomationEngine {
 
   start(): void {
     for (const [id, rule] of this.rules) {
-      this.scheduleRule(id, rule);
+      if (rule.trigger.type === 'cron') {
+        this.scheduleRule(id, rule);
+      } else {
+        this.scheduleEventRule(id, rule);
+      }
     }
   }
 
@@ -163,18 +177,23 @@ export class AutomationEngine {
 
   private scheduleRule(id: string, rule: AutomationRule): void {
     try {
+      const cronTrigger = rule.trigger as CronTrigger;
       const job = new CronJob(
-        rule.trigger.schedule,
+        cronTrigger.schedule,
         () => this.executeRule(id, 'cron', this._ledger),
         null,
         true,
-        rule.trigger.timezone,
+        cronTrigger.timezone,
       );
       this.jobs.set(id, job);
-      console.log(`[AutomationEngine] Scheduled rule ${id}: ${rule.trigger.schedule} (${rule.trigger.timezone})`);
+      console.log(`[AutomationEngine] Scheduled rule ${id}: ${cronTrigger.schedule} (${cronTrigger.timezone})`);
     } catch (err: any) {
       console.warn(`[AutomationEngine] Failed to schedule rule ${id}: ${err.message}`);
     }
+  }
+
+  private scheduleEventRule(_id: string, _rule: AutomationRule): void {
+    // Stub — will be implemented in Task 8
   }
 
   async executeRule(id: string, source?: 'cron' | 'user', ledger?: SchedulerLedger): Promise<void> {
@@ -342,14 +361,16 @@ export class AutomationEngine {
   }
 
   getNextTriggers(rule: AutomationRule, count: number = 5): { next5: string[] } {
+    if (rule.trigger.type !== 'cron') return { next5: [] };
+    const cronTrigger = rule.trigger as CronTrigger;
     const next5: string[] = [];
     try {
       const job = new CronJob(
-        rule.trigger.schedule,
+        cronTrigger.schedule,
         () => {},
         null,
         false,
-        rule.trigger.timezone,
+        cronTrigger.timezone,
       );
       const dates = job.nextDates(count);
       for (const dt of dates) {
@@ -357,7 +378,7 @@ export class AutomationEngine {
       }
       job.stop();
     } catch {
-      // invalid cron �?return empty
+      // invalid cron —return empty
     }
     return { next5 };
   }
@@ -404,22 +425,34 @@ export class AutomationEngine {
     if (!rule.id || typeof rule.id !== 'string') {
       errors.push('Rule must have a string id');
     }
-    if (!rule.trigger || rule.trigger.type !== 'cron') {
-      errors.push('Trigger type must be "cron"');
+    if (!rule.trigger || (rule.trigger.type !== 'cron' && rule.trigger.type !== 'event')) {
+      errors.push('Trigger type must be "cron" or "event"');
     }
-    if (typeof rule.trigger?.schedule !== 'string' || rule.trigger.schedule.trim() === '') {
-      errors.push('Schedule must be a non-empty cron expression');
-    } else {
-      try {
-        const job = new CronJob(rule.trigger.schedule, () => {}, null, false, rule.trigger.timezone || 'UTC');
-        job.stop();
-      } catch (e: any) {
-        errors.push(`Invalid cron expression: ${e.message}`);
+    if (rule.trigger.type === 'cron') {
+      const ct = rule.trigger as CronTrigger;
+      if (typeof ct.schedule !== 'string' || ct.schedule.trim() === '') {
+        errors.push('Schedule must be a non-empty cron expression');
+      } else {
+        try {
+          const job = new CronJob(ct.schedule, () => {}, null, false, ct.timezone || 'UTC');
+          job.stop();
+        } catch (e: any) {
+          errors.push(`Invalid cron expression: ${e.message}`);
+        }
+      }
+      if (ct.timezone && !Intl.supportedValuesOf?.('timeZone')?.includes(ct.timezone)) {
+        try { new Intl.DateTimeFormat(undefined, { timeZone: ct.timezone }); } catch {
+          errors.push(`Invalid timezone: ${ct.timezone}`);
+        }
       }
     }
-    if (rule.trigger?.timezone && !Intl.supportedValuesOf?.('timeZone')?.includes(rule.trigger.timezone)) {
-      try { new Intl.DateTimeFormat(undefined, { timeZone: rule.trigger.timezone }); } catch {
-        errors.push(`Invalid timezone: ${rule.trigger.timezone}`);
+    if (rule.trigger.type === 'event') {
+      const et = rule.trigger as EventTrigger;
+      if (!Array.isArray(et.on) || et.on.length === 0) {
+        errors.push('Event trigger must have a non-empty "on" array');
+      }
+      if (typeof et.perGoalCooldown !== 'string' || !/^\d+(s|m|h)$/.test(et.perGoalCooldown)) {
+        errors.push('Event trigger perGoalCooldown must be a valid duration (e.g. "60s", "5m")');
       }
     }
     if (!rule.action && !rule.skill) {
@@ -433,9 +466,10 @@ export class AutomationEngine {
     }
 
     let nextTriggers: string[] = [];
-    if (errors.length === 0 && rule.trigger?.schedule) {
+    if (errors.length === 0 && rule.trigger.type === 'cron') {
+      const ct = rule.trigger as CronTrigger;
       try {
-        const job = new CronJob(rule.trigger.schedule, () => {}, null, false, rule.trigger.timezone || 'UTC');
+        const job = new CronJob(ct.schedule, () => {}, null, false, ct.timezone || 'UTC');
         nextTriggers = job.nextDates(5).map((d: any) => d.toJSDate().toISOString());
         job.stop();
       } catch { /* nextTriggers stays empty */ }
@@ -550,11 +584,17 @@ export class AutomationEngine {
       fs.writeFileSync(filePath, JSON.stringify(rule, null, 2), 'utf-8');
       if (enabled) {
         this.rules.set(id, rule);
-        this.scheduleRule(id, rule);
+        if (rule.trigger.type === 'cron') {
+          this.scheduleRule(id, rule);
+        } else {
+          this.scheduleEventRule(id, rule);
+        }
       } else {
         this.rules.delete(id);
         const job = this.jobs.get(id);
         if (job) { job.stop(); this.jobs.delete(id); }
+        // Unregister event listener (stub until Task 8):
+        // this.unregisterEventRule(id);
       }
       return true;
     } catch {
