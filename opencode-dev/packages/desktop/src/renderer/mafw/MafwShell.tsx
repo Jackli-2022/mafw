@@ -357,32 +357,24 @@ export function MafwShell() {
                 {/* SessionTurn */}
                 <div class="mafw-session-turn-container">
                   {active() ? (
-                    <DataProvider data={storeData()} directory=".">
-                      <FileComponentProvider component={FileSSR}>
-                        <DialogProvider>
-                          <MarkedProvider>
-                          <MemoryRouter>
-                            <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
-                          </MemoryRouter>
-                        </MarkedProvider>
-                        </DialogProvider>
-                      </FileComponentProvider>
-                    </DataProvider>
-                    {/* Debug: raw messages fallback */}
-                    {(() => {
-                      const mid = currentUserMsgId()
-                      const msgs = store().message?.[currentSessionID()]
-                      const found = msgs?.find(m => m.id === mid)
-                      return (
-                        <pre style="color: var(--text-base); font-size: 11px; padding: 8px; border-top: 1px solid #333; max-height: 200px; overflow: auto; background: var(--surface-base); white-space: pre-wrap;">
-                          {`mid: ${mid || '(empty)'}
-userMsgId exists in msgs: ${!!found}
-msgs count: ${msgs?.length || 0}
-session active: ${!!active()}
-store key exists: ${!!store().message?.[currentSessionID()]}`}
-                        </pre>
-                      )
-                    })()}
+                    <>
+                      <DataProvider data={storeData()} directory=".">
+                        <FileComponentProvider component={FileSSR}>
+                          <DialogProvider>
+                            <MarkedProvider>
+                            <MemoryRouter>
+                              <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
+                            </MemoryRouter>
+                          </MarkedProvider>
+                          </DialogProvider>
+                        </FileComponentProvider>
+                      </DataProvider>
+                      <pre style="color: var(--text-base); font-size: 11px; padding: 8px; border-top: 1px solid #333; max-height: 200px; overflow: auto; background: var(--surface-base); white-space: pre-wrap;">
+                        {`mid: ${currentUserMsgId() || '(empty)'}
+msgs count: ${store().message?.[currentSessionID()]?.length || 0}
+session active: ${!!active()}`}
+                      </pre>
+                    </>
                   ) : (
                     <div class="mafw-chat-empty">Create a new session to start chatting</div>
                   )}
