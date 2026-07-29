@@ -43,7 +43,7 @@ export function resolveGatewayEntry(): string | null {
 
   // Fallback: check relative to cwd (development from repo)
   try {
-    candidates.push(join(process.cwd(), "..", "..", "gateway", "dist", "index.js"))
+    candidates.push(join(process.cwd(), "..", "..", "..", "gateway", "dist", "index.js"))
   } catch {}
 
   for (const candidate of candidates) {
