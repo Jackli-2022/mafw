@@ -1957,6 +1957,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         const data = JSON.parse(fs.readFileSync(managerFile, 'utf-8'));
         const { sessionId, createdAt } = data;
         this.managerSessionInfo = { sessionId, projectDir, createdAt: createdAt || new Date().toISOString() };
+        // Re-register in local store (idempotent — ensures session appears in sessions.list)
+        await this.sdkSession.registerExternal(sessionId, projectDir, {
+          mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
+        }).catch(() => {});
         console.log(`[Scheduler] Manager session already exists: ${sessionId}`);
         return sessionId;
       } catch {
