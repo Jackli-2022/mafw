@@ -1,7 +1,7 @@
 ﻿// @ts-nocheck
-import { createSignal, createEffect, onMount, onCleanup } from "solid-js"
+import { createSignal, createEffect, onMount, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Router, Route } from "@solidjs/router"
+import { MemoryRouter, Route } from "@solidjs/router"
 
 
 import { Icon } from "@opencode-ai/ui/icon"
@@ -346,15 +346,17 @@ export function MafwShell() {
                 </div>
                 {/* SessionTurn */}
                           <div class="mafw-session-turn-container">
-                            <Router>
-                              <Route path="/*">
-                                {active() ? (
-                                  <SessionTurn sessionID={currentSessionID()} messageID={currentUserMsgId()} />
-                                ) : (
-                                  <div class="mafw-chat-empty">Create a new session to start chatting</div>
-                                )}
-                              </Route>
-                            </Router>
+                            <MemoryRouter>
+                              <Route path="*" component={() => {
+                                const sid = currentSessionID()
+                                const mid = currentUserMsgId()
+                                return (
+                                  <Show when={sid} keyed>
+                                    <SessionTurn sessionID={sid} messageID={mid} />
+                                  </Show>
+                                )
+                              }} />
+                            </MemoryRouter>
                           </div>
                 {/* InputBar */}
                 <div class="mafw-inputbar">
