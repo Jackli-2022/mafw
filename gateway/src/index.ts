@@ -597,7 +597,7 @@ class MafwScheduler {
               res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
             }
 
-            const session = await this.opencodeClient.session.create({ query: { directory: projectDir } });
+            const session = await this.opencodeClient.session.create({ directory: projectDir });
             const sessionID = session.id;
 
             await this.opencodeClient.session.promptAsync({
@@ -647,7 +647,7 @@ class MafwScheduler {
               }
             }
 
-            const session = await this.opencodeClient.session.create({ query: { directory: projectDir } });
+            const session = await this.opencodeClient.session.create({ directory: projectDir });
             const sessionID = session.id;
             await this.opencodeClient.session.promptAsync({
               path: { id: sessionID },
@@ -1218,6 +1218,55 @@ class MafwScheduler {
           } catch (err: any) {
             res.writeHead(502);
             res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // GET /api/recall/context — boundary recall for memory injection
+        if (req.url?.startsWith('/api/recall/context') && req.method === 'GET') {
+          try {
+            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const query = parsedUrl.searchParams.get('query') || '';
+            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+            if (!query.trim()) {
+              res.writeHead(200);
+              res.end(JSON.stringify({ pointers: null, constraints: null }));
+              return;
+            }
+            const { formatRecallContext } = require('./recall/inject-format');
+            let memories: any[] = [];
+            if (this.memoryService) {
+              const results = await this.memoryService.harmonicIndex.search(query, 3);
+              memories = (results || []).map((e: any) => ({
+                id: e.id,
+                primary_abstraction: e.primary_abstraction || '',
+                memory_value: e.memory_value || e.content || '',
+                energy: e.energy || 0,
+              }));
+            }
+            // Load pinned constraints from .mafw/constraints.json — try CWD then registered projects
+            let constraints: string[] = [];
+            try {
+              const candidates = [
+                path.join(process.cwd(), '.mafw', 'constraints.json'),
+                ...Array.from(this.registeredProjects.values()).map(p => path.join(p.projectDir, '.mafw', 'constraints.json')),
+              ];
+              for (const cp of candidates) {
+                if (fs.existsSync(cp)) {
+                  const raw = JSON.parse(fs.readFileSync(cp, 'utf-8'));
+                  if (Array.isArray(raw)) constraints = raw;
+                  else if (raw.constraints) constraints = raw.constraints;
+                  if (constraints.length > 0) break;
+                }
+              }
+            } catch {}
+            const formatted = formatRecallContext(memories, constraints);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(formatted));
+          } catch (err: any) {
+            console.error('[Scheduler] recall/context error:', err.message);
+            res.writeHead(200);
+            res.end(JSON.stringify({ pointers: null, constraints: null }));
           }
           return;
         }
