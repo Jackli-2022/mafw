@@ -15,7 +15,7 @@
 - **CSS 变量两套值**：`:root` 暗色（默认，文档 §3.1–3.3）+ `[data-theme="light"]` 亮色（§3.4 表）+ `@media (prefers-color-scheme: light)` 下的 `:root:not([data-theme])`。
 - **切换**：标题栏右侧日/月按钮，两态 toggle；写入 `html[data-theme]` + `localStorage('mafw-theme')`；无手动选择时跟随系统（媒体查询自动响应）。
 - **`color-scheme: dark|light`** 同步声明（原生滚动条/表单跟随）。
-- **v2 token 同步覆盖**：暗/亮两套变量同时覆盖 `--v2-background-bg-*`、`--v2-border-*`、`--v2-text-*` 等，让 session-ui 气泡、ButtonV2 等组件跟随全量主题化。
+- **v2 token 同步覆盖**：暗/亮两套变量同时覆盖 `--v2-background-bg-*`、`--v2-border-*`、`--v2-text-*` 等，让 session-ui 气泡、ButtonV2 等组件跟随全量主题化。**作用域限定在 `.mafw-shell`（MAFW 容器）之下**，暗/亮两套变量都在该作用域声明——防止主题泄漏到 Goals/Memory 等非 MAFW 区域。
 - **迁移**：全仓搜索替换硬编码色值（已定位约 25 处：Rail.tsx、TaskPanel.tsx、Dashboard.tsx、Graph.tsx、TriagePage.tsx、MafwToolCards.tsx、mafw.css），禁止写死白透明度类（`bg-white/[.x]`），一律 `var(--...)`。
 
 ## 3. 分区改造（文档 §4）
@@ -26,9 +26,9 @@
 | 4.2 导航 | 分段 pill 组（高 44px、icon 15px + 13px/500、圆角 8px）；激活 `--accent-dim` 底 + `--text-1` + icon 染 `--accent`；计数徽章 |
 | 4.3 侧栏 | 宽 264px；HISTORY 分组头（12px/600 大写 + 计数 + hover 折叠/搜索）；工作区文件夹行 32px；会话行 36px + 20px agent 图标位；**选中 = 2px `--accent` 指示条 + `--bg-hover` 底**（去整条绿底）；Manager 徽章降级中性 11px；日期分组（>20 条 今天/昨天/7月）；底部状态条 32px |
 | 4.4 会话 Tab | 高 36px；tab 10px 圆角小卡 `--bg-overlay`（激活）/透明 hover `--bg-hover`；agent 色点 + 名称 + hover ×；"+" 24×24 |
-| 4.5 聊天 | 底 `--bg-raised`；消息列 max-width **760px** 居中、水平 padding 32px；Agent sticky 头（20px 圆头像 `--accent-dim` + 名称 15px/600 + 运行状态绿点）；行内代码 12.5px mono `--bg-overlay`；**工具块卡片化**（`--bg-overlay` + 圆角 10 + 头部 32px + 计数徽章 + chevron 折叠，子行缩进线 + hover）；用户气泡 16/16/4/16 圆角、max-width 70%、`--bg-overlay`；间距 user→agent 24px / 同角色 8px |
-| 4.6 Tasks | **悬浮输入框上方 12px**、同宽（760px 对齐）；`--bg-float` + `--shadow-float` + 圆角 16 + 右侧辉光；有任务滑入（translateY 8px + fade 200ms）；全部完成 5s 折叠为摘要（"✓ 3 tasks · 42s"）；消息列表底部预留 padding = 面板高 + 12px |
-| 4.7 Composer | `--bg-float` + 圆角 16 + 1px 边框；聚焦绿描边 `rgba(63,208,122,.35)` + 外圈 3px 光晕；最小 52px / 最大 200px 自动生长；**Send 主按钮：`--accent` 底 + `var(--on-accent)` 文字**（注意：文档 §4.7 写 `#0C0C0E` 是暗色值，实现用 `--on-accent` 保证亮色正确）；空输入 40% 透明；快捷键提示 `⏎ Send · ⇧⏎ New line` |
+| 4.5 聊天 | 底 `--bg-raised`；消息列 max-width **760px** 居中、水平 padding 32px；Agent sticky 头（20px 圆头像 `--accent-dim` + 名称 15px/600 + 运行状态绿点）；**sticky 头必须给实底 `--bg-raised` + 下缘渐变（或 backdrop-blur），防止消息滚动穿透标题文字**；行内代码 12.5px mono `--bg-overlay`；**工具块卡片化**（`--bg-overlay` + 圆角 10 + 头部 32px + 计数徽章 + chevron 折叠，子行缩进线 + hover）；用户气泡 16/16/4/16 圆角、max-width 70%、`--bg-overlay`；间距 user→agent 24px / 同角色 8px |
+| 4.6 Tasks | **悬浮输入框上方 12px**、同宽（760px 对齐）；`--bg-float` + `--shadow-float` + 圆角 16 + 右侧辉光；有任务滑入（translateY 8px + fade 200ms）；全部完成 5s 折叠为摘要（"✓ 3 tasks · 42s"），**折叠状态按 session 记忆（组件内保持），切 Tab 回来不自动展开**；消息列表底部预留 padding = 面板高 + 12px |
+| 4.7 Composer | `--bg-float` + 圆角 16 + 1px 边框；聚焦绿描边 `rgba(63,208,122,.35)` + 外圈 3px 光晕；最小 52px / 最大 200px 自动生长；**Send 主按钮：`--accent` 底 + `var(--on-accent)` 文字**（注意：文档 §4.7 写 `#0C0C0E` 是暗色值，实现用 `--on-accent` 保证亮色正确）；空输入 40% 透明；快捷键提示 **纯文本 `Enter 发送 · Shift+Enter 换行`**（不用 ⏎/⇧ 字形——部分系统字体缺失渲染豆腐块） |
 | 4.8 全局 | 8px 滚动条 thumb `rgba(255,255,255,.09)` hover .16；选中文本绿 20%；焦点环 2px 绿 40%（仅 focus-visible）；动效 ≤300ms 无回弹；数字 tabular-nums |
 
 ## 4. 落地文件
@@ -43,4 +43,6 @@
 ## 5. 验证
 
 - 构建通过（gateway 无关，仅 desktop HMR）
+- **Electron 主进程设 `nativeTheme.themeSource = 'system'`**，让窗口框架（标题栏按钮、菜单）与页面主题同步
 - 文档 §7 全量验收（含 6 项双主题：亮色四阶背景、默认跟随系统、localStorage 覆盖重启保持、亮色交互清晰）
+- **明/暗两主题各跑一遍 §7 验收**；亮色下重点检查 hover / 选中 / 焦点环辨识度（黑透明度系容易过淡）
