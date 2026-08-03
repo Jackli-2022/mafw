@@ -3,6 +3,7 @@ import {
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
+  QuestionRequest, PermissionRequest,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
