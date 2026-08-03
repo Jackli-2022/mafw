@@ -600,10 +600,11 @@ html[data-theme="light"] .mafw-shell {
 
 /* ── InputBar (composer, §4.7) ── */
 .mafw-inputbar {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px 12px;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 16px 10px;
   flex-shrink: 0;
   background: var(--bg-float);
   border-top: 1px solid var(--border-subtle);
@@ -612,36 +613,96 @@ html[data-theme="light"] .mafw-shell {
   outline-color: var(--composer-focus);
   box-shadow: 0 0 0 3px var(--composer-halo);
 }
-/* TextareaV2 puts `class` on its wrapper div — only stretch it, let the
-   component's own v2 styling (gradient, elevation, radius) render. */
+/* TextareaV2 puts `class` on its wrapper div — override the v2 defaults
+   (min-height 80px, flex: 1 would grow vertically in the column layout). */
 .mafw-inputbar .mafw-input {
-  flex: 1;
   width: auto;
+  min-height: 52px;
   align-self: stretch;
   background: var(--bg-float);
 }
 .mafw-inputbar .mafw-input [data-slot="textarea-v2-textarea"] {
+  box-sizing: border-box;
   min-height: 52px;
   max-height: 200px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-1);
+  padding: 14px 16px 0;
+  caret-color: var(--accent);
+  outline: none;
+  resize: none;
 }
+.mafw-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 10px 10px;
+}
+.mafw-composer-left, .mafw-composer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mafw-inputbar [data-component="button-v2"].mafw-composer-icon {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--text-4);
+  font-size: 14px;
+}
+.mafw-inputbar [data-component="button-v2"].mafw-composer-icon:hover {
+  background: var(--hover-strong);
+  color: var(--text-2);
+}
+.mafw-inputbar [data-component="button-v2"].mafw-model-pill {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--bg-overlay);
+  color: var(--text-3);
+  font-size: 12px;
+}
+.mafw-inputbar [data-component="button-v2"].mafw-model-pill:hover {
+  color: var(--text-2);
+}
+.mafw-model-chevron { font-size: 9px; opacity: 0.6; }
 .mafw-inputbar [data-component="button-v2"].mafw-send {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
 }
 .mafw-inputbar [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled) {
-  filter: brightness(1.08);
+  background: var(--accent);
+  filter: brightness(1.05);
 }
-.mafw-inputbar [data-component="button-v2"].mafw-send-disabled {
+.mafw-inputbar [data-component="button-v2"].mafw-send.mafw-send-disabled {
   opacity: 0.4;
+  cursor: default;
+}
+.mafw-stop-icon {
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  border-radius: 2px;
 }
 .mafw-keyhint {
+  position: absolute;
+  right: 10px;
+  bottom: 54px;
   font-size: 11px;
   color: var(--text-5);
   opacity: 0;
   transition: opacity 0.12s;
   flex-shrink: 0;
   white-space: nowrap;
+  pointer-events: none;
 }
 .mafw-inputbar:focus-within .mafw-keyhint { opacity: 1; }
 

@@ -45,6 +45,7 @@ export function MafwShell() {
   const [input, setInput] = createSignal("")
   const [sending, setSending] = createSignal(false)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
+  const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
 
   // Reactive data store for SessionTurn (SolidJS store Proxy for fine-grained tracking)
@@ -381,6 +382,12 @@ export function MafwShell() {
     setSessionRefreshKey(k => k + 1)
   }
 
+  // Auto-grow the composer textarea up to 200px (single line at rest).
+  const autoGrow = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto"
+    el.style.height = Math.min(el.scrollHeight, 200) + "px"
+  }
+
   async function sendMessage() {
     const text = input()
     if (!text.trim() || sending()) return
@@ -389,6 +396,9 @@ export function MafwShell() {
 
     setSending(true)
     setInput("")
+    // Collapse the textarea back to single line after the message is queued
+    const ta = textareaEl()
+    if (ta) ta.style.height = "auto"
 
     const userMsgId = `user-${Date.now()}`
     setSessions(prev => prev.map(s => s.id === sid ? { ...s, userMsgId } : s))
@@ -457,6 +467,15 @@ export function MafwShell() {
 
   // Current rendering state for SessionTurn
   const currentSessionID = () => active()?.id || ""
+
+  // Real model name of the last assistant message (fallback: agent → "default")
+  const modelName = createMemo(() => {
+    const sid = currentSessionID()
+    const msgs = sid ? (store.message[sid] || []) : []
+    const assistants = msgs.filter(m => m.role === "assistant")
+    const last = assistants[assistants.length - 1]
+    return last?.model?.modelID || last?.agent || "default"
+  })
 
   // One user message = one turn. Sorted by time as insurance against any
   // reordering between SSE appends and the history merge.
@@ -720,35 +739,58 @@ export function MafwShell() {
                 <div class="mafw-inputbar">
                   <TextareaV2
                     value={input()}
-                    onInput={e => setInput(e.currentTarget.value)}
+                    onInput={e => { setInput(e.currentTarget.value); autoGrow(e.currentTarget) }}
                     onKeyDown={e => {
                       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
                     }}
-                    placeholder="Type a message..."
-                    disabled={sending()}
+                    ref={setTextareaEl}
+                    placeholder={gwStatus()?.state === "ready" ? "输入消息…" : "Reconnecting…"}
+                    disabled={gwStatus()?.state !== "ready"}
                     class="mafw-input"
                   />
                   <span class="mafw-keyhint">Enter 发送 · Shift+Enter 换行</span>
-                  <Show when={sending()} fallback={
-                    <ButtonV2
-                      variant="contrast"
-                      size="small"
-                      onClick={sendMessage}
-                      disabled={!input().trim()}
-                      class="mafw-send"
-                      classList={{ "mafw-send-disabled": !input().trim() }}
-                    >Send</ButtonV2>
-                  }>
-                    <ButtonV2
-                      variant="contrast"
-                      size="small"
-                      onClick={interrupt}
-                      aria-label="Stop conversation"
-                      class="mafw-send"
-                    >
-                      <span style={{ "font-size": 14, "line-height": 1 }}>■</span>
-                    </ButtonV2>
-                  </Show>
+                  <div class="mafw-composer-toolbar">
+                    <div class="mafw-composer-left">
+                      <TooltipV2 value="附件" openDelay={300}>
+                        <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="附件">+</ButtonV2>
+                      </TooltipV2>
+                      <TooltipV2 value="引用 Agent" openDelay={300}>
+                        <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="引用 Agent">@</ButtonV2>
+                      </TooltipV2>
+                    </div>
+                    <div class="mafw-composer-right">
+                      <TooltipV2 value="模型" openDelay={300}>
+                        <ButtonV2 variant="ghost" size="small" class="mafw-model-pill" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="模型">
+                          {modelName()}<span class="mafw-model-chevron">▾</span>
+                        </ButtonV2>
+                      </TooltipV2>
+                      <Show when={sending()} fallback={
+                        <ButtonV2
+                          variant="contrast"
+                          size="small"
+                          onClick={sendMessage}
+                          disabled={!input().trim()}
+                          class="mafw-send"
+                          classList={{ "mafw-send-disabled": !input().trim() }}
+                          aria-label="发送"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                            <path d="M7 11.5V2.5M3 6.5L7 2.5L11 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        </ButtonV2>
+                      }>
+                        <ButtonV2
+                          variant="contrast"
+                          size="small"
+                          onClick={interrupt}
+                          aria-label="停止"
+                          class="mafw-send"
+                        >
+                          <span class="mafw-stop-icon" />
+                        </ButtonV2>
+                      </Show>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : activeTab() === "goals" ? (
