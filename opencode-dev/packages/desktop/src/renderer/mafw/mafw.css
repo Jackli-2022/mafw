@@ -346,6 +346,7 @@ html[data-theme="light"] .mafw-shell {
 
 /* ── Chat Layout ── */
 .mafw-chat {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -403,6 +404,7 @@ html[data-theme="light"] .mafw-shell {
   overflow-y: auto;
   min-height: 0;
   padding: 0 32px;
+  padding-bottom: 140px;    /* last message clears the floating TaskPanel + 12px */
   position: relative;
 }
 .mafw-session-turn-container [data-component="session-turn"] {
@@ -542,19 +544,37 @@ html[data-theme="light"] .mafw-shell {
   font-size: 13px;
 }
 
-/* ── TaskPanel ── */
+/* ── TaskPanel (floats above the inputbar, §4.6) ── */
+.mafw-tasks-float {
+  position: absolute;
+  left: 50%;
+  bottom: 104px;              /* inputbar top + ~12px */
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 64px));  /* aligned with the 760px message column */
+  z-index: 40;
+  animation: mafw-slide-in 200ms ease-out;
+}
+@keyframes mafw-slide-in {
+  from { transform: translateX(-50%) translateY(8px); opacity: 0; }
+  to   { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
 .mafw-task-panel [data-slot="task-row"]:hover {
   background: var(--v2-overlay-simple-overlay-hover, var(--surface-base-hover));
 }
 
-/* ── InputBar ── */
+/* ── InputBar (composer, §4.7) ── */
 .mafw-inputbar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 16px 12px;
   flex-shrink: 0;
-  background: var(--v2-background-bg-base, var(--background-base));
+  background: var(--bg-float);
+  border-top: 1px solid var(--border-subtle);
+}
+.mafw-inputbar:focus-within [data-component="textarea-v2"] {
+  outline-color: var(--composer-focus);
+  box-shadow: 0 0 0 3px var(--composer-halo);
 }
 /* TextareaV2 puts `class` on its wrapper div — only stretch it, let the
    component's own v2 styling (gradient, elevation, radius) render. */
@@ -562,10 +582,24 @@ html[data-theme="light"] .mafw-shell {
   flex: 1;
   width: auto;
   align-self: stretch;
+  background: var(--bg-float);
 }
 .mafw-inputbar .mafw-input [data-slot="textarea-v2-textarea"] {
-  max-height: 160px;
+  min-height: 52px;
+  max-height: 200px;
 }
+.mafw-inputbar [data-component="button-v2"].mafw-send-disabled {
+  opacity: 0.4;
+}
+.mafw-keyhint {
+  font-size: 11px;
+  color: var(--text-5);
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.mafw-inputbar:focus-within .mafw-keyhint { opacity: 1; }
 
 /* ── StatusBar ── */
 .mafw-statusbar {

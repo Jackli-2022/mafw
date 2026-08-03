@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createSignal, createMemo, onMount, onCleanup, For, Show } from "solid-js"
+import { createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from "solid-js"
 
 const formatDuration = (ms: number): string => {
   if (!ms || ms < 0) return "0s"
@@ -51,10 +51,39 @@ export function TaskPanel(props: {
 }) {
   const [collapsed, setCollapsed] = createSignal(false)
   const [now, setNow] = createSignal(Date.now())
+  // Collapse state remembered per session: switching tabs keeps a session's
+  // auto-collapsed summary collapsed instead of expanding it back.
+  const [collapsedBySession, setCollapsedBySession] = createSignal<Record<string, boolean>>({})
+
+  const applyCollapsed = (v: boolean) => {
+    setCollapsed(v)
+    setCollapsedBySession(prev => ({ ...prev, [props.sessionID]: v }))
+  }
+
+  createEffect(() => {
+    setCollapsed(collapsedBySession()[props.sessionID] ?? false)
+  })
+
+  // Auto-collapse to the one-line summary 5s after all todos are done.
+  let collapseTimer: ReturnType<typeof setTimeout> | null = null
+  createEffect(() => {
+    const allDone = done() === total() && total() > 0
+    if (allDone) {
+      if (collapseTimer) return
+      collapseTimer = setTimeout(() => applyCollapsed(true), 5000)
+    } else if (collapseTimer) {
+      clearTimeout(collapseTimer)
+      collapseTimer = null
+    }
+  })
 
   onMount(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
     onCleanup(() => clearInterval(t))
+  })
+
+  onCleanup(() => {
+    if (collapseTimer) clearTimeout(collapseTimer)
   })
 
   const elapsedMs = createMemo(() => (props.started ? Math.max(0, now() - props.started) : 0))
@@ -66,21 +95,22 @@ export function TaskPanel(props: {
     <section
       class="mafw-task-panel relative overflow-hidden shrink-0"
       style={{
-        background: "var(--v2-background-bg-layer-01, var(--surface-raised-base))",
-        border: "0.5px solid var(--v2-border-border-muted, var(--border-weak-base))",
+        background: "var(--bg-float)",
+        border: "1px solid var(--border-subtle)",
         "border-radius": "16px",
+        "box-shadow": "var(--shadow-float)",
       }}
     >
       {/* decorative glow */}
       <div
         class="pointer-events-none absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse at right, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%)",
+          background: "var(--tasks-glow)",
         }}
       />
       <header
         class="relative flex h-10 items-center gap-2 px-4 cursor-pointer select-none"
-        onClick={() => setCollapsed(c => !c)}
+        onClick={() => applyCollapsed(!collapsed())}
       >
         <svg
           width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"
@@ -90,17 +120,28 @@ export function TaskPanel(props: {
           <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         <h2 class="text-[14px] font-medium" style={{ color: "var(--v2-text-text-base, var(--text-strong))" }}>Tasks</h2>
-        <div class="ml-auto flex items-center gap-3">
-          <span
-            class="rounded-full px-3 py-1 text-[12px] tabular-nums"
-            style={{ background: "var(--v2-background-bg-layer-02, var(--surface-base-hover))", color: "var(--v2-text-text-muted, var(--text-base))" }}
-          >
-            {formatDuration(elapsedMs())} · {formatTokens(props.tokens)}
-          </span>
-          <span class="text-[13px] tabular-nums" style={{ color: "var(--v2-text-text-base, var(--text-strong))" }}>
-            {done()}/{total()}
-          </span>
-        </div>
+        <Show
+          when={collapsed()}
+          fallback={
+            <div class="ml-auto flex items-center gap-3">
+              <span
+                class="rounded-full px-3 py-1 text-[12px] tabular-nums"
+                style={{ background: "var(--v2-background-bg-layer-02, var(--surface-base-hover))", color: "var(--v2-text-text-muted, var(--text-base))" }}
+              >
+                {formatDuration(elapsedMs())} · {formatTokens(props.tokens)}
+              </span>
+              <span class="text-[13px] tabular-nums" style={{ color: "var(--v2-text-text-base, var(--text-strong))" }}>
+                {done()}/{total()}
+              </span>
+            </div>
+          }
+        >
+          <div class="ml-auto flex items-center gap-3">
+            <span class="text-[12px] tabular-nums" style={{ color: "var(--accent-text)" }}>
+              ✓ {done()} tasks · {formatDuration(elapsedMs())}
+            </span>
+          </div>
+        </Show>
       </header>
       <div
         class="grid transition-[grid-template-rows] duration-200"

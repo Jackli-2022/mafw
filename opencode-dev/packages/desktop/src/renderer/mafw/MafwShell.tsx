@@ -687,9 +687,9 @@ export function MafwShell() {
                               </ButtonV2>
                             </Show>
                           </div>
-                {/* TaskPanel — collapsible task progress (visible when the session has todos) */}
+                {/* TaskPanel — floats above the inputbar (visible when the session has todos) */}
                 <Show when={currentSessionID() && (todos[currentSessionID()] || []).length > 0}>
-                  <div style={{ padding: "0 16px 4px" }}>
+                  <div class="mafw-tasks-float">
                     <TaskPanel
                       sessionID={currentSessionID()!}
                       todos={todos[currentSessionID()] || []}
@@ -710,10 +710,26 @@ export function MafwShell() {
                     disabled={sending()}
                     class="mafw-input"
                   />
+                  <span class="mafw-keyhint">Enter 发送 · Shift+Enter 换行</span>
                   <Show when={sending()} fallback={
-                    <ButtonV2 variant="contrast" size="small" onClick={sendMessage} disabled={!input().trim()}>Send</ButtonV2>
+                    <ButtonV2
+                      variant="contrast"
+                      size="small"
+                      onClick={sendMessage}
+                      disabled={!input().trim()}
+                      class="mafw-send"
+                      classList={{ "mafw-send-disabled": !input().trim() }}
+                      style={{ background: "var(--accent)", color: "var(--on-accent)", "border-color": "transparent" }}
+                    >Send</ButtonV2>
                   }>
-                    <ButtonV2 variant="contrast" size="small" onClick={interrupt} aria-label="Stop conversation">
+                    <ButtonV2
+                      variant="contrast"
+                      size="small"
+                      onClick={interrupt}
+                      aria-label="Stop conversation"
+                      class="mafw-send"
+                      style={{ background: "var(--accent)", color: "var(--on-accent)", "border-color": "transparent" }}
+                    >
                       <span style={{ "font-size": 14, "line-height": 1 }}>■</span>
                     </ButtonV2>
                   </Show>
