@@ -666,7 +666,7 @@ html[data-theme="light"] .mafw-shell {
 /* TextareaV2 puts `class` on its wrapper div — kill the v2 box (gradient bg,
    elevation shadow, 80px min-height, focus outline) so the composer box is
    the only surface and the only focus ring. */
-.mafw-composer .mafw-input {
+.mafw-composer .mafw-input[data-component="textarea-v2"] {
   width: auto;
   min-height: 52px;
   align-self: stretch;
