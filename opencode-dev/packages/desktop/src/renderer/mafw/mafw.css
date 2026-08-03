@@ -1,6 +1,8 @@
 /* ══ 主题变量层（作用域 .mafw-shell，暗色默认，v3 色板） ══ */
 .mafw-shell {
   color-scheme: dark;
+  /* 消息列宽分档（§4.5：宽屏不再两侧大留白） */
+  --msg-col-width: 760px;
   /* 背景四阶（文档 §3.1，v3: 07/0E/16/1F） */
   --bg-base: #070709;
   --bg-raised: #0E0E12;
@@ -147,6 +149,11 @@ html[data-theme="light"] .mafw-shell {
 }
 
 @keyframes blink { 0%,100% { opacity: 0.3 } 50% { opacity: 1 } }
+
+/* ── 宽屏列宽分档（§4.5） ── */
+@media (min-width: 1500px) { .mafw-shell { --msg-col-width: 880px; } }
+@media (min-width: 1800px) { .mafw-shell { --msg-col-width: 1000px; } }
+@media (min-width: 2200px) { .mafw-shell { --msg-col-width: 1100px; } }
 
 /* ── Motion (§5: hover 120ms / collapse 200ms / enter 200ms, 无 >300ms 装饰动画) ── */
 @keyframes mafw-enter {
@@ -345,7 +352,7 @@ html[data-theme="light"] .mafw-shell {
   text-decoration: underline;
   padding: 0 2px;
 }
-.mafw-rail-status-starting { color: var(--text-4); }
+.mafw-rail-status-reconnecting { color: var(--text-3); }
 .mafw-rail-status-offline { color: var(--text-3); }
 .mafw-rail-status-offline .mafw-rail-status-dot {
   background: #E5484D;
@@ -359,10 +366,22 @@ html[data-theme="light"] .mafw-shell {
   flex-shrink: 0;
   animation: mafw-breathe 2s ease-in-out infinite;
 }
-.mafw-rail-status-dot.starting {
-  background: var(--text-4);
-  animation: none;
+.mafw-rail-status-dot.reconnecting {
+  background: #E7A13D;
+  animation: mafw-breathe 2s ease-in-out infinite;
 }
+.mafw-rail-restart {
+  margin-left: auto;
+  height: 22px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--bg-overlay);
+  color: var(--text-2);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.mafw-rail-restart:hover { background: var(--hover-strong); color: var(--text-1); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
@@ -421,8 +440,8 @@ html[data-theme="light"] .mafw-shell {
   height: 16px;
   padding: 0 5px;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--accent-dim);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 600;
   line-height: 16px;
@@ -515,7 +534,7 @@ html[data-theme="light"] .mafw-shell {
 }
 .mafw-session-turn-container [data-component="session-turn"] {
   height: auto;             /* override session-ui's height:100% (viewport-filling) */
-  max-width: 760px;
+  max-width: var(--msg-col-width);
   margin-inline: auto;
 }
 .mafw-session-turn-container [data-component="session-turn"] + [data-component="session-turn"] {
@@ -535,7 +554,7 @@ html[data-theme="light"] .mafw-shell {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: 760px;
+  max-width: var(--msg-col-width);
   margin-inline: auto;
 }
 .mafw-agent-avatar {
@@ -682,7 +701,7 @@ html[data-theme="light"] .mafw-shell {
 
 /* ── InputBar (composer, §4.7: one bordered box = textarea + 44px toolbar) ── */
 .mafw-input-area {
-  width: min(760px, calc(100% - 64px));
+  width: min(var(--msg-col-width), calc(100% - 64px));
   margin-inline: auto;
   padding: 0 0 8px;
   flex-shrink: 0;
@@ -1028,6 +1047,8 @@ html[data-theme="light"] .mafw-shell {
   border-radius: 16px;
   overflow: hidden;
   margin-bottom: 12px;
+  max-width: var(--msg-col-width);
+  margin-inline: auto;
 }
 .mafw-flow-card-dimmed { opacity: 0.6; }
 .mafw-flow-card-resolved .mafw-flow-leftbar { display: none; }

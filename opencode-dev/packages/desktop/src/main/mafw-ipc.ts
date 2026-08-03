@@ -1,6 +1,7 @@
 import { MafwClient } from "@mafw/sdk"
-import { BrowserWindow, ipcMain } from "electron"
+import { BrowserWindow, app, ipcMain } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
+import { join } from "path"
 import {
   getGatewayStatus,
   getGatewayPort,
@@ -66,6 +67,10 @@ export function registerMafwIpcHandlers() {
   })
 
   ipcMain.handle("mafw-gateway-info", () => getGatewayStatus())
+
+  ipcMain.handle("mafw-gateway-logs-path", () => {
+    return join(app.getPath("home"), ".mafw", "logs", "mafw.log")
+  })
 
   ipcMain.handle("mafw-gateway-start", async () => {
     await startGateway()

@@ -236,16 +236,16 @@ export function Rail(props: Props) {
         <span>Settings</span>
       </div>
       <div class="mafw-rail-status" classList={{
-        "mafw-rail-status-offline": !gwReady(),
-        "mafw-rail-status-starting": gwStatus()?.state === "starting",
+        "mafw-rail-status-reconnecting": gwStatus()?.state === "starting" || gwStatus()?.state === "stopped",
+        "mafw-rail-status-offline": gwStatus()?.state === "failed",
       }}>
         <ContextMenu>
           <ContextMenu.Trigger as="div" class="mafw-rail-status-inner">
-            <span class="mafw-rail-status-dot" classList={{ starting: gwStatus()?.state === "starting" }} />
+            <span class="mafw-rail-status-dot" classList={{ reconnecting: gwStatus()?.state === "starting" || gwStatus()?.state === "stopped" }} />
             <span class="mafw-rail-status-text">
               {gwStatus()?.state === "ready" ? `connected :${gwStatus()?.port ?? 3000}` :
-               gwStatus()?.state === "starting" ? "starting..." :
-               "disconnected"}
+               gwStatus()?.state === "starting" || gwStatus()?.state === "stopped" ? "Reconnecting…" :
+               "连接失败"}
             </span>
           </ContextMenu.Trigger>
           <ContextMenu.Portal>
@@ -255,6 +255,14 @@ export function Rail(props: Props) {
               </ContextMenu.Item>
               <ContextMenu.Item onSelect={() => copyText(gwStatus()?.url || "")} disabled={!gwStatus()?.url}>
                 <ContextMenu.ItemLabel>Copy Gateway URL</ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+              <ContextMenu.Item onSelect={async () => {
+                try {
+                  const p = await window.api.mafw.gateway.logsPath()
+                  copyText(p)
+                } catch { /* ignore */ }
+              }}>
+                <ContextMenu.ItemLabel>Copy logs path</ContextMenu.ItemLabel>
               </ContextMenu.Item>
             </ContextMenu.Content>
           </ContextMenu.Portal>

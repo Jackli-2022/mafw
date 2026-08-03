@@ -11,6 +11,7 @@ export function createMafwApi(): MafwAPI {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
       start: () => ipcRenderer.invoke("mafw-gateway-start"),
       restart: () => ipcRenderer.invoke("mafw-gateway-restart"),
+      logsPath: () => ipcRenderer.invoke("mafw-gateway-logs-path"),
       onStateChange: (cb) => {
         const handler = (_event: any, status: any) => cb(status)
         ipcRenderer.on("mafw-gateway-state", handler)
