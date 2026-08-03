@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MafwScheduler = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const os = __importStar(require("os"));
 const http = __importStar(require("http"));
 const child_process_1 = require("child_process");
 // import { DashboardServer } from './dashboard/server';
@@ -65,6 +66,11 @@ function readBody(req) {
         req.on('end', () => resolve(body));
         req.on('error', reject);
     });
+}
+// Normalize a directory path for comparison: lowercase + forward slashes
+// (Windows drives/case differences must not split sessions across projects).
+function normalizeDir(dir) {
+    return dir.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
 }
 function killProcessOnPort(port) {
     try {
@@ -383,6 +389,32 @@ class MafwScheduler {
         // }
         logger_1.log.info('[Scheduler] Stopping...');
     }
+    // Proxy a native opencode request by trying every registered workspace.
+    // Native reply/reject routes are workspace-scoped (WorkspaceRoutingMiddleware),
+    // but the gateway's own projectDir is its cwd — the request may belong to any
+    // registered project. GET list endpoints are cross-workspace and unaffected.
+    async proxyNativeWorkspaces(path, method, body) {
+        const dirs = new Set([this.projectDir || '.']);
+        for (const key of this.registeredProjects.keys())
+            dirs.add(key);
+        let lastStatus = 502;
+        for (const dir of dirs) {
+            try {
+                const r = await fetch(`${this.serveUrl}${path}?directory=${encodeURIComponent(dir)}`, {
+                    method,
+                    headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
+                    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+                });
+                if (r.ok)
+                    return { ok: true, status: r.status };
+                lastStatus = r.status;
+            }
+            catch (e) {
+                logger_1.log.error(`[Native proxy] ${path} failed for ${dir}: ${e.message}`);
+            }
+        }
+        return { ok: false, status: lastStatus };
+    }
     // 鈹€鈹€ Services & Event Bus 鈹€鈹€
     async initServices() {
         const projectDir = this.projectDir;
@@ -492,12 +524,17 @@ class MafwScheduler {
                         const local = localMap.get(s.id);
                         return local?.metadata ? { ...s, metadata: local.metadata } : s;
                     });
-                    // Also include local-only sessions (e.g. Manager session registered via registerExternal)
-                    // that the opencode server doesn't know about
+                    // Also include local-only sessions (e.g. Manager session registered via
+                    // registerExternal) that the opencode server doesn't know about — but only
+                    // those belonging to the queried project, so switching projects shows only
+                    // that project's manager session.
                     const sdkIds = new Set(sessions.map((s) => s.id));
                     const missingLocal = localSessions.filter(s => s.metadata && !sdkIds.has(s.id));
                     if (missingLocal.length > 0) {
-                        enriched.push(...missingLocal.map(s => ({
+                        const targetDir = projectID ? normalizeDir(projectID) : null;
+                        enriched.push(...missingLocal
+                            .filter(s => !targetDir || normalizeDir(s.directory || s.projectID || '') === targetDir)
+                            .map(s => ({
                             id: s.id,
                             projectID: s.projectID,
                             directory: s.directory,
@@ -814,6 +851,16 @@ class MafwScheduler {
                                     res.end(JSON.stringify({ error: 'Missing projectDir or mafwDir' }));
                                     return;
                                 }
+                                // Never register the user's home directory (or its standard data
+                                // folders) as a project — desktop's opencode server plugin activates
+                                // with cwd=$HOME (or a folder under it) and would otherwise pollute
+                                // the registry with bogus "projects" (and manager sessions).
+                                if (this.isUserDataDir(projectDir)) {
+                                    logger_1.log.warn(`[Scheduler] Refusing to register user data directory as project: ${projectDir}`);
+                                    res.writeHead(400);
+                                    res.end(JSON.stringify({ error: 'User data directory cannot be a project' }));
+                                    return;
+                                }
                                 this.registeredProjects.set(projectDir, {
                                     projectDir,
                                     mafwDir,
@@ -990,6 +1037,102 @@ class MafwScheduler {
                     const approveMatch = req.url?.match(/^\/api\/approvals\/([^/]+)\/respond$/);
                     if (approveMatch && req.method === 'POST') {
                         res.end(JSON.stringify({ status: 'ok' }));
+                        return;
+                    }
+                    // 鈹€鈹€ Question endpoints (AskCard 鈹€ proxy to native opencode Question API) 鈹€鈹€
+                    // GET /api/questions 鈹€ list pending questions
+                    if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
+                        try {
+                            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
+                            const r = await fetch(`${this.serveUrl}/question?directory=${encodeURIComponent(dir)}`, {
+                                headers: { 'x-opencode-directory': encodeURIComponent(dir) },
+                            });
+                            const items = await r.json();
+                            res.end(JSON.stringify({ items }));
+                        }
+                        catch (err) {
+                            logger_1.log.error('[Question] list error:', err.message);
+                            res.end(JSON.stringify({ items: [] }));
+                        }
+                        return;
+                    }
+                    // POST /api/questions/{id}/reply 鈹€ { answers: string[][] }
+                    const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
+                    if (qReplyMatch && req.method === 'POST') {
+                        try {
+                            const body = JSON.parse(await readBody(req));
+                            const r = await this.proxyNativeWorkspaces(`/question/${qReplyMatch[1]}/reply`, 'POST', { answers: body.answers });
+                            if (!r.ok) {
+                                res.writeHead(r.status);
+                                res.end(JSON.stringify({ status: 'error', code: r.status }));
+                                return;
+                            }
+                            res.end(JSON.stringify({ status: 'ok' }));
+                        }
+                        catch (err) {
+                            logger_1.log.error('[Question] reply error:', err.message);
+                            res.writeHead(400);
+                            res.end(JSON.stringify({ status: 'error', error: err.message }));
+                        }
+                        return;
+                    }
+                    // POST /api/questions/{id}/reject
+                    const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
+                    if (qRejectMatch && req.method === 'POST') {
+                        try {
+                            const r = await this.proxyNativeWorkspaces(`/question/${qRejectMatch[1]}/reject`, 'POST');
+                            if (!r.ok) {
+                                res.writeHead(r.status);
+                                res.end(JSON.stringify({ status: 'error', code: r.status }));
+                                return;
+                            }
+                            res.end(JSON.stringify({ status: 'ok' }));
+                        }
+                        catch (err) {
+                            logger_1.log.error('[Question] reject error:', err.message);
+                            res.writeHead(400);
+                            res.end(JSON.stringify({ status: 'error', error: err.message }));
+                        }
+                        return;
+                    }
+                    // 鈹€鈹€ Permission endpoints (PermissionCard 鈹€ proxy to native opencode Permission API) 鈹€鈹€
+                    // GET /api/permissions 鈹€ list pending permission requests
+                    if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
+                        try {
+                            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
+                            const r = await fetch(`${this.serveUrl}/permission?directory=${encodeURIComponent(dir)}`, {
+                                headers: { 'x-opencode-directory': encodeURIComponent(dir) },
+                            });
+                            const items = await r.json();
+                            res.end(JSON.stringify({ items }));
+                        }
+                        catch (err) {
+                            logger_1.log.error('[Permission] list error:', err.message);
+                            res.end(JSON.stringify({ items: [] }));
+                        }
+                        return;
+                    }
+                    // POST /api/permissions/{id}/reply 鈹€ { reply: 'once'|'always'|'reject', message?: string }
+                    const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
+                    if (pReplyMatch && req.method === 'POST') {
+                        try {
+                            const body = JSON.parse(await readBody(req));
+                            const payload = { reply: body.reply };
+                            if (body.message)
+                                payload.message = body.message;
+                            const r = await this.proxyNativeWorkspaces(`/permission/${pReplyMatch[1]}/reply`, 'POST', payload);
+                            if (!r.ok) {
+                                res.writeHead(r.status);
+                                res.end(JSON.stringify({ status: 'error', code: r.status }));
+                                return;
+                            }
+                            res.end(JSON.stringify({ status: 'ok' }));
+                        }
+                        catch (err) {
+                            logger_1.log.error('[Permission] reply error:', err.message);
+                            res.writeHead(400);
+                            res.end(JSON.stringify({ status: 'error', error: err.message }));
+                        }
                         return;
                     }
                     // 鈹€鈹€ Triage endpoints (Tier 4 锟?user only, not MCP) 鈹€鈹€
@@ -1487,12 +1630,25 @@ class MafwScheduler {
         });
         await this.registryWriteQueue;
     }
+    // User data directories that must never be treated as projects (desktop's
+    // opencode server plugin activates with cwd=$HOME or a folder under it).
+    userDataDirs() {
+        const homeNorm = normalizeDir(os.homedir());
+        const dirs = ['', 'Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']
+            .map(s => s ? `${homeNorm}/${s.toLowerCase()}` : homeNorm);
+        return new Set(dirs);
+    }
+    isUserDataDir(projectDir) {
+        return this.userDataDirs().has(normalizeDir(projectDir));
+    }
     async recoverRegistry() {
         if (fs.existsSync(this.registryPath)) {
             try {
                 const data = JSON.parse(fs.readFileSync(this.registryPath, 'utf-8'));
-                this.registeredProjects = new Map(data);
-                logger_1.log.info(`[Scheduler] Recovered ${data.length} registered projects`);
+                const entries = data
+                    .filter(([dir]) => !this.isUserDataDir(dir));
+                this.registeredProjects = new Map(entries);
+                logger_1.log.info(`[Scheduler] Recovered ${entries.length} registered projects`);
             }
             catch (err) {
                 logger_1.log.error(`[Scheduler] Failed to recover registry: ${err.message}`);
@@ -1517,7 +1673,9 @@ class MafwScheduler {
         if (fs.existsSync(this.configPath)) {
             try {
                 const config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
-                this.registeredProjects = new Map(Object.entries(config.projects || {}));
+                const entries = Object.entries((config.projects || {}))
+                    .filter(([dir]) => !this.isUserDataDir(dir));
+                this.registeredProjects = new Map(entries);
             }
             catch (err) {
                 logger_1.log.error(`[Scheduler] Failed to recover config: ${err.message}`);
