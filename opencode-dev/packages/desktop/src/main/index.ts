@@ -1,21 +1,20 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import * as http from "node:http"
-import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app } from "electron"
+import { app, nativeTheme } from "electron"
 
-import { Deferred, Effect, Fiber } from "effect"
+import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
-import { forwardInitializationFailure } from "./initialization"
+
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { startMafwGw, stopMafwGw } from "./mafw-bootstrap"
 import { parseMarkdown } from "./markdown"
@@ -30,8 +29,6 @@ import {
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
-  spawnLocalServer,
-  type SidecarListener,
 } from "./server"
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import {
@@ -50,6 +47,8 @@ import { migrate } from "./migrate"
 import { cleanupStoreFiles } from "./store-cleanup"
 import { startAutomationServer } from "./automation-server"
 
+nativeTheme.themeSource = "system"
+
 const APP_NAMES: Record<string, string> = {
   dev: "OpenCode Dev",
   beta: "OpenCode Beta",
@@ -64,7 +63,6 @@ const TEST_ONBOARDING = process.env.OPENCODE_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
 let logger: ReturnType<typeof initLogging>
-let server: SidecarListener | null = null
 
 const pendingDeepLinks: string[] = []
 
@@ -82,13 +80,6 @@ function emitDeepLinks(urls: string[]) {
   pendingDeepLinks.push(...urls)
   const win = getLastFocusedWindow()
   if (win) sendDeepLinks(win, urls)
-}
-
-async function killSidecar() {
-  if (!server) return
-  const current = server
-  server = null
-  await current.stop()
 }
 
 function ensureLoopbackNoProxy() {
@@ -164,7 +155,6 @@ const main = Effect.gen(function* () {
     },
   )
   const stopSidecars = async () => {
-    await killSidecar()
     stopMafwGw()
     wslServers.stopAll()
   }
@@ -273,7 +263,7 @@ const main = Effect.gen(function* () {
   setDockIcon()
   const updater = setupAutoUpdater(stopSidecars)
   registerIpcHandlers({
-    killSidecar: () => killSidecar(),
+    killSidecar: () => {},
     relaunch,
     awaitInitialization: Effect.fnUntraced(
       function* () {
@@ -314,82 +304,21 @@ const main = Effect.gen(function* () {
     ),
   )
 
-  const port = yield* Effect.gen(function* () {
-    const fromEnv = process.env.OPENCODE_PORT
-    if (fromEnv) {
-      const parsed = Number.parseInt(fromEnv, 10)
-      if (!Number.isNaN(parsed)) return parsed
-    }
+  if (process.platform === "win32") {
+    void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
+  }
 
-    const res = yield* Deferred.make<number, unknown>()
-    const server = createServer()
-    server.on("error", (e) => Deferred.failSync(res, () => e))
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      if (typeof address !== "object" || !address) {
-        server.close()
-        Deferred.failSync(res, () => new Error("Failed to get port"))
-        return
-      }
-      const port = address.port
-      server.close(() => Effect.runSync(Deferred.succeed(res, port)))
-    })
-
-    return yield* Deferred.await(res)
-  })
-  const hostname = "127.0.0.1"
-  const url = `http://${hostname}:${port}`
-  const password = randomUUID()
-
-  const loadingTask = yield* Effect.gen(function* () {
-    logger.log("sidecar connection started", { url })
-
-    ensureLoopbackNoProxy()
-    useEnvProxy()
-
-    logger.log("spawning sidecar", { url })
-    const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
-        userDataPath: app.getPath("userData"),
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
-      }),
-    )
-    server = listener
-
-    if (process.platform === "win32") {
-      void wslServers.initialize().catch((error) => logger.error("wsl server initialization failed", error))
-    }
-
-    yield* Effect.promise(() => health.wait).pipe(
-      Effect.timeout("30 seconds"),
-      Effect.catch((e) =>
-        Effect.sync(() => {
-          logger.error("sidecar health check failed", e.toString())
-        }),
-      ),
-    )
-
-    logger.log("loading task finished")
-  }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
-
-  yield* Fiber.await(loadingTask)
-
-  // Start MAFW Gateway (with opencode server URL + password for reverse proxy)
-  const gwUrl = yield* Effect.promise(() => startMafwGw({ opencodeServerUrl: url, opencodeServerPassword: password }))
+  // Start MAFW Gateway (gateway manages its own opencode server)
+  const gwUrl = yield* Effect.promise(() => startMafwGw())
   if (gwUrl) {
     yield* Deferred.succeed(serverReady, {
       url: gwUrl,
       username: "opencode",
-      password,
+      password: null,
     })
   } else {
-    yield* Deferred.succeed(serverReady, {
-      url,
-      username: "opencode",
-      password,
-    })
+    logger.error("MAFW Gateway failed to start")
+    yield* Deferred.fail(serverReady, new Error("MAFW Gateway failed to start"))
   }
 
   const windows = restoreMainWindows()

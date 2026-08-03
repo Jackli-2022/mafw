@@ -1,3 +1,108 @@
+/* ══ 主题变量层（作用域 .mafw-shell，暗色默认） ══ */
+.mafw-shell {
+  color-scheme: dark;
+  /* 背景四阶（文档 §3.1） */
+  --bg-base: #08080A;
+  --bg-raised: #0D0D10;
+  --bg-overlay: #131316;
+  --bg-float: #18181C;
+  --bg-hover: rgba(255,255,255,.03);
+  --border-subtle: rgba(255,255,255,.055);
+  /* 品牌绿（§3.2） */
+  --accent: #3FD07A;
+  --accent-dim: rgba(63,208,122,.12);
+  --accent-text: #6FD89B;
+  --on-accent: #08080A;
+  /* 文字六阶（§3.3） */
+  --text-1: #E2E2E6;
+  --text-2: #C4C4CA;
+  --text-3: #8C8C94;
+  --text-4: #606068;
+  --text-5: #44444B;
+  /* 交互态 / 阴影 / 全局（§3.4–3.5） */
+  --hover: rgba(255,255,255,.03);
+  --hover-strong: rgba(255,255,255,.05);
+  --active: rgba(255,255,255,.04);
+  --pill: rgba(255,255,255,.05);
+  --shadow-float: 0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.05);
+  --glow-accent: 0 0 10px rgba(63,208,122,.28);
+  --scrollbar: rgba(255,255,255,.09);
+  --scrollbar-hover: rgba(255,255,255,.16);
+  --selection: rgba(63,208,122,.2);
+  --focus-ring: rgba(63,208,122,.4);
+  --composer-focus: rgba(63,208,122,.35);
+  --composer-halo: rgba(63,208,122,.09);
+  --tasks-glow: radial-gradient(ellipse at right, rgba(63,208,122,.10), transparent 60%);
+  /* v2 token 覆盖（限定本作用域，防泄漏到非 MAFW 区） */
+  --v2-background-bg-base: #08080A;
+  --v2-background-bg-layer-01: #131316;
+  --v2-background-bg-layer-02: #18181C;
+  --v2-border-border-muted: rgba(255,255,255,.055);
+  --v2-text-text-base: #C4C4CA;
+  --v2-text-text-muted: #8C8C94;
+  --v2-text-text-faint: #606068;
+}
+/* 亮色：手动覆盖（html[data-theme]） */
+html[data-theme="light"] .mafw-shell {
+  color-scheme: light;
+  --bg-base: #EFEFF2;
+  --bg-raised: #FAFAFB;
+  --bg-overlay: #F1F1F4;
+  --bg-float: #FFFFFF;
+  --bg-hover: rgba(0,0,0,.03);
+  --border-subtle: rgba(0,0,0,.08);
+  --accent: #1F9D5A;
+  --accent-dim: rgba(31,157,90,.10);
+  --accent-text: #177A48;
+  --on-accent: #FFFFFF;
+  --text-1: #17171B;
+  --text-2: #34343B;
+  --text-3: #5E5E66;
+  --text-4: #8E8E96;
+  --text-5: #B9B9BF;
+  --hover: rgba(0,0,0,.04);
+  --hover-strong: rgba(0,0,0,.06);
+  --active: rgba(0,0,0,.05);
+  --pill: rgba(0,0,0,.05);
+  --shadow-float: 0 8px 24px rgba(0,0,0,.10), 0 0 0 1px rgba(0,0,0,.04);
+  --glow-accent: 0 0 8px rgba(31,157,90,.30);
+  --scrollbar: rgba(0,0,0,.15);
+  --scrollbar-hover: rgba(0,0,0,.25);
+  --selection: rgba(31,157,90,.18);
+  --focus-ring: rgba(31,157,90,.35);
+  --composer-focus: rgba(31,157,90,.45);
+  --composer-halo: rgba(31,157,90,.10);
+  --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
+  --v2-background-bg-base: #EFEFF2;
+  --v2-background-bg-layer-01: #F1F1F4;
+  --v2-background-bg-layer-02: #FFFFFF;
+  --v2-border-border-muted: rgba(0,0,0,.08);
+  --v2-text-text-base: #34343B;
+  --v2-text-text-muted: #5E5E66;
+  --v2-text-text-faint: #8E8E96;
+}
+/* 亮色：跟随系统（无手动覆盖时） */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) .mafw-shell {
+    color-scheme: light;
+    /* 与上面 [data-theme="light"] 完全相同的亮色变量块（复制，勿引用选择器） */
+    --bg-base: #EFEFF2; --bg-raised: #FAFAFB; --bg-overlay: #F1F1F4; --bg-float: #FFFFFF;
+    --bg-hover: rgba(0,0,0,.03); --border-subtle: rgba(0,0,0,.08);
+    --accent: #1F9D5A; --accent-dim: rgba(31,157,90,.10); --accent-text: #177A48; --on-accent: #FFFFFF;
+    --text-1: #17171B; --text-2: #34343B; --text-3: #5E5E66; --text-4: #8E8E96; --text-5: #B9B9BF;
+    --hover: rgba(0,0,0,.04); --hover-strong: rgba(0,0,0,.06); --active: rgba(0,0,0,.05); --pill: rgba(0,0,0,.05);
+    --shadow-float: 0 8px 24px rgba(0,0,0,.10), 0 0 0 1px rgba(0,0,0,.04);
+    --glow-accent: 0 0 8px rgba(31,157,90,.30);
+    --scrollbar: rgba(0,0,0,.15); --scrollbar-hover: rgba(0,0,0,.25);
+    --selection: rgba(31,157,90,.18); --focus-ring: rgba(31,157,90,.35);
+    --composer-focus: rgba(31,157,90,.45); --composer-halo: rgba(31,157,90,.10);
+    --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
+    --v2-background-bg-base: #EFEFF2; --v2-background-bg-layer-01: #F1F1F4; --v2-background-bg-layer-02: #FFFFFF;
+    --v2-border-border-muted: rgba(0,0,0,.08);
+    --v2-text-text-base: #34343B; --v2-text-text-muted: #5E5E66; --v2-text-text-faint: #8E8E96;
+  }
+}
+
 @keyframes blink { 0%,100% { opacity: 0.3 } 50% { opacity: 1 } }
 
 /* ── Shell Layout ── */
@@ -18,6 +123,23 @@
   border-bottom: 0.5px solid var(--border-weak-base);
   background: var(--background-stronger);
 }
+
+.mafw-theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-4);
+  font-size: 13px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s, background 0.12s;
+}
+.mafw-theme-toggle:hover { color: var(--text-2); background: var(--hover); }
 
 /* ── Body ── */
 .mafw-body { display: grid; grid-template-columns: 200px 1fr; overflow: hidden; }
@@ -42,15 +164,25 @@
   font-size: 12px;
 }
 .mafw-rail-section:hover { color: var(--text-strong); }
-.mafw-rail-tree { padding: 2px 0; }
+.mafw-rail-section-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-weak);
+  opacity: 0.6;
+  background: var(--surface-base-hover);
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+.mafw-rail-tree { padding: 4px 0 8px; }
 .mafw-rail-item-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px 4px 28px;
+  padding: 5px 10px 5px 28px;
   cursor: pointer;
   color: var(--text-base);
-  border-radius: 4px;
+  border-radius: 6px;
   margin: 1px 4px;
   font-size: 12px;
   transition: background 0.12s;
@@ -64,9 +196,42 @@
 .mafw-rail-session { padding-left: 40px; }
 .mafw-rail-manager-session { padding-left: 40px; border-left: 2px solid var(--icon-success-base, #2bc94a); margin-bottom: 4px; }
 .mafw-rail-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-rail-manager-session .mafw-badge {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.mafw-rail-session-time {
+  font-size: 10px;
+  opacity: 0.45;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.mafw-rail-project-list {
+  border-top: 0.5px solid var(--border-weak-base);
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.mafw-rail-empty {
+  color: var(--text-weak);
+  font-style: italic;
+}
 .mafw-rail-add { padding-left: 40px; color: var(--text-weak); opacity: 0.6; font-size: 12px; }
 .mafw-rail-add:hover { opacity: 1; color: var(--text-strong); }
 .mafw-rail-spacer { flex: 1; }
+
+/* ── Hide scrollbars on app chrome (wheel/touch still scroll) ── */
+.mafw-rail, .mafw-session-turn-container, .mafw-sessionstrip, .mafw-tabstrip, .mafw-content {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.mafw-rail::-webkit-scrollbar,
+.mafw-session-turn-container::-webkit-scrollbar,
+.mafw-sessionstrip::-webkit-scrollbar,
+.mafw-tabstrip::-webkit-scrollbar,
+.mafw-content::-webkit-scrollbar { display: none; }
 
 /* ── Main ── */
 .mafw-main { display: grid; grid-template-rows: 36px 1fr; overflow: hidden; }
@@ -83,7 +248,16 @@
 .mafw-chat-content { overflow: hidden; padding: 0; }
 
 /* ── Chat Layout ── */
-.mafw-chat { display: flex; flex-direction: column; height: 100%; }
+.mafw-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin: 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--v2-background-bg-base, var(--background-stronger));
+  box-shadow: var(--v2-elevation-raised, var(--shadow-md));
+}
 
 /* ── SessionStrip ── */
 .mafw-sessionstrip {
@@ -104,14 +278,13 @@
   padding: 4px 10px;
   cursor: pointer;
   color: var(--text-base);
-  border-bottom: 2px solid transparent;
   white-space: nowrap;
-  transition: color 0.12s, border-color 0.12s;
-  border-radius: 4px;
+  transition: color 0.12s, background 0.12s;
+  border-radius: 6px;
   font-size: 12px;
 }
-.mafw-session-tab.active { color: var(--text-strong); background: var(--surface-base-active); border-color: var(--border-weak-base); }
-.mafw-session-tab:hover { color: var(--text-strong); background: var(--surface-base-hover); }
+.mafw-session-tab.active { color: var(--text-strong); background: var(--v2-overlay-simple-tab-active-scrim, var(--surface-base-active)); }
+.mafw-session-tab:hover { color: var(--text-strong); background: var(--v2-overlay-simple-overlay-hover, var(--surface-base-hover)); }
 .mafw-session-title { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .mafw-session-close { background: none; border: none; cursor: pointer; color: var(--text-weak); padding: 0; line-height: 1; opacity: 0; transition: opacity 0.1s; font-size: 10px; }
 .mafw-session-tab:hover .mafw-session-close { opacity: 1; }
@@ -120,7 +293,72 @@
 .mafw-session-new:hover { color: var(--text-strong); }
 
 /* ── SessionTurn Container ── */
-.mafw-session-turn-container { flex: 1; overflow-y: auto; min-height: 0; }
+.mafw-session-turn-container {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 16px;
+  position: relative;
+}
+.mafw-session-turn-container [data-component="session-turn"] {
+  height: auto;             /* override session-ui's height:100% (viewport-filling) */
+  max-width: min(1000px, 100%);
+  margin-inline: auto;
+}
+.mafw-session-turn-container [data-component="session-turn"] + [data-component="session-turn"] {
+  margin-top: 12px;
+}
+
+/* ── Sticky session title ── */
+.mafw-session-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin: 0 -16px;
+  padding: 10px 16px 16px;
+  background: linear-gradient(to bottom, var(--v2-background-bg-base, var(--background-stronger)) 48px, transparent);
+}
+.mafw-session-titlebar-text {
+  display: block;
+  max-width: min(1000px, 100%);
+  margin-inline: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Jump to latest ── */
+.mafw-jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%) translateY(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--v2-text-text-base, var(--text-strong));
+  background: color-mix(in srgb, var(--v2-background-bg-base, var(--background-base)) 92%, transparent);
+  box-shadow: var(--v2-elevation-raised, var(--shadow-md)), 0 2px 8px var(--v2-background-bg-base, var(--background-base));
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.mafw-jump-latest:hover { color: var(--v2-text-text-accent, var(--text-interactive-base)); }
+.mafw-jump-latest.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
 .mafw-chat-empty {
   display: flex;
   align-items: center;
@@ -130,20 +368,29 @@
   font-size: 13px;
 }
 
+/* ── TaskPanel ── */
+.mafw-task-panel [data-slot="task-row"]:hover {
+  background: var(--v2-overlay-simple-overlay-hover, var(--surface-base-hover));
+}
+
 /* ── InputBar ── */
 .mafw-inputbar {
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 16px 12px;
   flex-shrink: 0;
-  border-top: 0.5px solid var(--border-weak-base);
-  background: var(--background-base);
+  background: var(--v2-background-bg-base, var(--background-base));
 }
-.mafw-input {
+/* TextareaV2 puts `class` on its wrapper div — only stretch it, let the
+   component's own v2 styling (gradient, elevation, radius) render. */
+.mafw-inputbar .mafw-input {
   flex: 1;
-  min-height: 32px;
-  max-height: 120px;
-  resize: none;
+  width: auto;
+  align-self: stretch;
+}
+.mafw-inputbar .mafw-input [data-slot="textarea-v2-textarea"] {
+  max-height: 160px;
 }
 
 /* ── StatusBar ── */
@@ -243,7 +490,7 @@
 .mafw-tool-meta { color: var(--text-base); }
 .mafw-tool-meta-label { display: block; color: var(--text-weak); margin-bottom: 2px; font-size: 11px; }
 .mafw-tool-anchors { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0; align-items: center; }
-.mafw-tool-chip { padding: 1px 6px; border-radius: 3px; border: 0.5px solid var(--border-weak-base); color: var(--text-base); font-size: 11px; }
+.mafw-tool-chip { padding: 1px 6px; border-radius: 3px; border: 0.5px solid var(--v2-border-border-base, var(--border-weak-base)); color: var(--text-base); font-size: 11px; }
 .mafw-delta-row { display: flex; gap: 8px; padding: 4px 8px; border-radius: 4px; align-items: flex-start; }
 .mafw-delta-row:hover { background: var(--surface-base-hover); }
 .mafw-delta-content { flex: 1; }
