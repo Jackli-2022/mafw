@@ -14,6 +14,18 @@ const copyText = async (text: string) => {
   }
 }
 
+const dayStart = (ts: number) => {
+  const d = new Date(ts)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+const dateGroupLabel = (ts: number): string => {
+  const diff = dayStart(Date.now()) - dayStart(ts)
+  if (diff <= 0) return "今天"
+  if (diff === 86400000) return "昨天"
+  return `${new Date(ts).getMonth() + 1}月`
+}
+
 type Props = {
   activeSessionId: string | null
   sessionRefreshKey: number
@@ -26,17 +38,17 @@ export function Rail(props: Props) {
   const [projects, setProjects] = createSignal<any[]>([])
   const [currentProject, setCurrentProject] = createSignal<any>(null)
   const [sessions, setSessions] = createSignal<any[]>([])
-  const [gwReady, setGwReady] = createSignal(false)
+  const [gwStatus, setGwStatus] = createSignal<any>(null)
+
+  const gwReady = createMemo(() => gwStatus()?.state === "ready")
 
   onMount(async () => {
     const status = await window.api.mafw.gateway.info()
-    if (status.state === "ready") {
-      setGwReady(true)
-      return
-    }
+    setGwStatus(status)
+    if (status.state === "ready") return
     const unsub = window.api.mafw.gateway.onStateChange((s) => {
+      setGwStatus(s)
       if (s.state === "ready") {
-        setGwReady(true)
         unsub()
       }
     })
@@ -79,13 +91,69 @@ export function Rail(props: Props) {
     sessions().filter(s => s.metadata?.mafw?.role !== 'manager')
   )
 
+  const sortedRegularSessions = createMemo(() =>
+    regularSessions().filter(Boolean).sort((a, b) => (b.time?.created || 0) - (a.time?.created || 0))
+  )
+
+  const regularDateGroups = createMemo(() => {
+    const list = sortedRegularSessions().slice(0, 50)
+    if (list.length <= 20) return null
+    const groups: { label: string; items: any[] }[] = []
+    for (const s of list) {
+      const label = dateGroupLabel(s.time?.created || Date.now())
+      const last = groups[groups.length - 1]
+      if (last && last.label === label) last.items.push(s)
+      else groups.push({ label, items: [s] })
+    }
+    return groups
+  })
+
   const sessionName = (s: any): string =>
     s.metadata?.mafw?.role === 'manager' ? 'Manager' : (s.title || (s.id || '').slice(0, 12))
+
+  const agentGlyph = (s: any): string => {
+    const name = sessionName(s).trim()
+    return name ? [...name][0].toUpperCase() : "⋮"
+  }
 
   const selectProject = (p: any) => {
     setCurrentProject(p)
     try { window.api.mafw.projects.setCurrent(p.worktree) } catch (e) { console.warn("[mafw]", e) }
   }
+
+  const renderSessionRow = (s: any, manager: boolean) => (
+    <ContextMenu>
+      <ContextMenu.Trigger
+        as="div"
+        class={`mafw-rail-item-label mafw-rail-session${manager ? " mafw-rail-manager-session" : ""}`}
+        classList={{ active: props.activeSessionId === s.id }}
+        onClick={() => props.onSelectSession(s.id, sessionName(s))}
+      >
+        <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
+          <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
+            <span class="mafw-agent-icon">{agentGlyph(s)}</span>
+            <span class="mafw-rail-session-title">{sessionName(s)}</span>
+            {manager && <span class="mafw-rail-manager-label">Manager</span>}
+            {!manager && (
+              <span class="mafw-rail-session-time">
+                {s.time?.created ? new Date(s.time.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
+              </span>
+            )}
+          </span>
+        </TooltipV2>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content>
+          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s))}>
+            <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item onSelect={() => copyText(s.id)}>
+            <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu>
+  )
 
   return (
     <div class="mafw-rail">
@@ -109,64 +177,17 @@ export function Rail(props: Props) {
                 </div>
               ) : (
                 <>
-                  {managerSessions().filter(Boolean).map(s => (
-                    <ContextMenu>
-                      <ContextMenu.Trigger
-                        as="div"
-                        class="mafw-rail-item-label mafw-rail-session mafw-rail-manager-session"
-                        classList={{ active: props.activeSessionId === s.id }}
-                        onClick={() => props.onSelectSession(s.id, sessionName(s))}
-                      >
-                        <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
-                          <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
-                            <Icon name="server" size="small" style={{ color: "var(--accent)" }} />
-                            <span class="mafw-rail-session-title">{sessionName(s)}</span>
-                            <span class="mafw-badge" style={{ background: "var(--accent)", color: "var(--on-accent)", "margin-left": "auto" }}>Manager</span>
-                          </span>
-                        </TooltipV2>
-                      </ContextMenu.Trigger>
-                      <ContextMenu.Portal>
-                        <ContextMenu.Content>
-                          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s))}>
-                            <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
-                          </ContextMenu.Item>
-                          <ContextMenu.Item onSelect={() => copyText(s.id)}>
-                            <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
-                          </ContextMenu.Item>
-                        </ContextMenu.Content>
-                      </ContextMenu.Portal>
-                    </ContextMenu>
-                  ))}
-                  {regularSessions().filter(Boolean).slice(0, 50).map(s => (
-                    <ContextMenu>
-                      <ContextMenu.Trigger
-                        as="div"
-                        class="mafw-rail-item-label mafw-rail-session"
-                        classList={{ active: props.activeSessionId === s.id }}
-                        onClick={() => props.onSelectSession(s.id, sessionName(s))}
-                      >
-                        <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
-                          <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
-                            <span style={{ opacity: 0.5 }}>⋮</span>
-                            <span class="mafw-rail-session-title">{sessionName(s)}</span>
-                            <span class="mafw-rail-session-time" style={{ "font-size": 10, opacity: 0.35, "margin-left": "auto" }}>
-                              {s.time?.created ? new Date(s.time.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
-                            </span>
-                          </span>
-                        </TooltipV2>
-                      </ContextMenu.Trigger>
-                      <ContextMenu.Portal>
-                        <ContextMenu.Content>
-                          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s))}>
-                            <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
-                          </ContextMenu.Item>
-                          <ContextMenu.Item onSelect={() => copyText(s.id)}>
-                            <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
-                          </ContextMenu.Item>
-                        </ContextMenu.Content>
-                      </ContextMenu.Portal>
-                    </ContextMenu>
-                  ))}
+                  {managerSessions().filter(Boolean).map(s => renderSessionRow(s, true))}
+                  {regularDateGroups() ? (
+                    regularDateGroups()!.map(g => (
+                      <>
+                        <div class="mafw-rail-date-group">{g.label}</div>
+                        {g.items.map(s => renderSessionRow(s, false))}
+                      </>
+                    ))
+                  ) : (
+                    sortedRegularSessions().slice(0, 50).map(s => renderSessionRow(s, false))
+                  )}
                 </>
               )}
               <div
@@ -220,6 +241,10 @@ export function Rail(props: Props) {
       <div class="mafw-rail-section" onClick={() => props.onSettings?.()}>
         <Icon name="settings-gear" size="small" />
         <span>Settings</span>
+      </div>
+      <div class="mafw-rail-status" classList={{ "mafw-rail-status-offline": !gwReady() }}>
+        <span class="mafw-rail-status-dot" />
+        <span>{gwReady() ? `connected :${gwStatus()?.port ?? 3000}` : "disconnected"}</span>
       </div>
     </div>
   )

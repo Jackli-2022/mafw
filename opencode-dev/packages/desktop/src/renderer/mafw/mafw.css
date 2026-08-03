@@ -146,34 +146,37 @@ html[data-theme="light"] .mafw-shell {
 .mafw-theme-toggle:hover { color: var(--text-2); background: var(--hover); }
 
 /* ── Body ── */
-.mafw-body { display: grid; grid-template-columns: 200px 1fr; overflow: hidden; }
+.mafw-body { display: grid; grid-template-columns: 264px 1fr; overflow: hidden; }
 
 /* ── Rail ── */
 .mafw-rail {
+  width: 264px;
   display: flex;
   flex-direction: column;
-  border-right: 0.5px solid var(--border-weak-base);
-  background: var(--background-base);
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
 }
 .mafw-rail-section {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
-  cursor: pointer;
-  color: var(--text-base);
-  user-select: none;
-  border-bottom: 0.5px solid var(--border-weak-base);
+  padding: 10px 12px 6px;
+  color: var(--text-4);
   font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: none;
 }
-.mafw-rail-section:hover { color: var(--text-strong); }
+.mafw-rail-section:hover { color: var(--text-1); }
 .mafw-rail-section-count {
   margin-left: auto;
   font-size: 10px;
-  color: var(--text-weak);
-  opacity: 0.6;
-  background: var(--surface-base-hover);
+  color: var(--text-5);
+  background: var(--bg-overlay);
   border-radius: 999px;
   padding: 0 6px;
   line-height: 16px;
@@ -185,25 +188,43 @@ html[data-theme="light"] .mafw-shell {
   gap: 6px;
   padding: 5px 10px 5px 28px;
   cursor: pointer;
-  color: var(--text-base);
+  color: var(--text-3);
   border-radius: 6px;
   margin: 1px 4px;
   font-size: 12px;
-  transition: background 0.12s;
+  transition: background 0.12s, color 0.12s;
 }
-.mafw-rail-item-label:hover { background: var(--surface-base-hover); color: var(--text-strong); }
+.mafw-rail-item-label:hover { background: var(--hover); color: var(--text-1); }
 .mafw-rail-item-label.active {
-  background: var(--surface-interactive-base);
-  color: var(--text-interactive-base);
-  box-shadow: inset 2px 0 0 var(--text-interactive-base);
+  background: var(--hover);
+  color: var(--text-1);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
-.mafw-rail-session { padding-left: 40px; }
-.mafw-rail-manager-session { padding-left: 40px; border-left: 2px solid var(--accent); margin-bottom: 4px; }
+.mafw-rail-tree-item > .mafw-rail-item-label { height: 32px; }
+.mafw-rail-project-item { height: 32px; }
+.mafw-rail-session { padding-left: 12px; height: 36px; }
+.mafw-rail-manager-session { margin-bottom: 2px; }
 .mafw-rail-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mafw-rail-manager-session .mafw-badge {
+.mafw-agent-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--bg-overlay);
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.mafw-rail-manager-label {
+  margin-left: auto;
+  background: var(--bg-overlay);
+  color: var(--text-4);
   border-radius: 999px;
   padding: 1px 8px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   flex-shrink: 0;
 }
@@ -213,18 +234,60 @@ html[data-theme="light"] .mafw-shell {
   margin-left: auto;
   flex-shrink: 0;
 }
+.mafw-rail-date-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 12px 4px;
+  background: var(--bg-base);
+  color: var(--text-5);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  user-select: none;
+}
 .mafw-rail-project-list {
-  border-top: 0.5px solid var(--border-weak-base);
+  border-top: 1px solid var(--border-subtle);
   margin-top: 8px;
   padding-top: 4px;
 }
 .mafw-rail-empty {
-  color: var(--text-weak);
+  color: var(--text-5);
   font-style: italic;
 }
-.mafw-rail-add { padding-left: 40px; color: var(--text-weak); opacity: 0.6; font-size: 12px; }
-.mafw-rail-add:hover { opacity: 1; color: var(--text-strong); }
+.mafw-rail-add { padding-left: 12px; color: var(--text-4); opacity: 0.6; font-size: 12px; }
+.mafw-rail-add:hover { opacity: 1; color: var(--text-1); }
 .mafw-rail-spacer { flex: 1; }
+.mafw-rail-status {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+}
+.mafw-rail-status-offline { color: var(--text-3); }
+.mafw-rail-status-offline .mafw-rail-status-dot {
+  background: #E5484D;
+  animation: none;
+}
+.mafw-rail-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: mafw-breathe 2.4s ease-in-out infinite;
+}
+@keyframes mafw-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
 
 /* ── Hide scrollbars on app chrome (wheel/touch still scroll) ── */
 .mafw-rail, .mafw-session-turn-container, .mafw-sessionstrip, .mafw-tabstrip, .mafw-content {
