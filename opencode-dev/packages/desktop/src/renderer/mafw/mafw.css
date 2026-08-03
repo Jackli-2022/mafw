@@ -33,6 +33,19 @@
   --composer-focus: rgba(63,208,122,.35);
   --composer-halo: rgba(63,208,122,.09);
   --tasks-glow: radial-gradient(ellipse at right, rgba(63,208,122,.10), transparent 60%);
+  /* v1 token 覆盖：chrome 组件全量跟随暗色（statusbar/card/session-close 等） */
+  --background-base: #08080A;
+  --background-weak: #0D0D10;
+  --background-stronger: #0D0D10;
+  --surface-base: #131316;
+  --surface-base-hover: rgba(255,255,255,.03);
+  --surface-base-active: rgba(255,255,255,.05);
+  --surface-raised-base: #18181C;
+  --text-base: #8C8C94;
+  --text-weak: #606068;
+  --text-strong: #E2E2E6;
+  --border-weak-base: rgba(255,255,255,.055);
+  --border-base: rgba(255,255,255,.10);
   /* v2 token 覆盖（限定本作用域，防泄漏到非 MAFW 区） */
   --v2-background-bg-base: #08080A;
   --v2-background-bg-layer-01: #131316;
@@ -73,6 +86,18 @@ html[data-theme="light"] .mafw-shell {
   --composer-focus: rgba(31,157,90,.45);
   --composer-halo: rgba(31,157,90,.10);
   --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
+  --background-base: #EFEFF2;
+  --background-weak: #F6F6F8;
+  --background-stronger: #FAFAFB;
+  --surface-base: #F1F1F4;
+  --surface-base-hover: rgba(0,0,0,.04);
+  --surface-base-active: rgba(0,0,0,.05);
+  --surface-raised-base: #FFFFFF;
+  --text-base: #5E5E66;
+  --text-weak: #8E8E96;
+  --text-strong: #17171B;
+  --border-weak-base: rgba(0,0,0,.08);
+  --border-base: rgba(0,0,0,.12);
   --v2-background-bg-base: #EFEFF2;
   --v2-background-bg-layer-01: #F1F1F4;
   --v2-background-bg-layer-02: #FFFFFF;
@@ -97,6 +122,10 @@ html[data-theme="light"] .mafw-shell {
     --selection: rgba(31,157,90,.18); --focus-ring: rgba(31,157,90,.35);
     --composer-focus: rgba(31,157,90,.45); --composer-halo: rgba(31,157,90,.10);
     --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
+    --background-base: #EFEFF2; --background-weak: #F6F6F8; --background-stronger: #FAFAFB;
+    --surface-base: #F1F1F4; --surface-base-hover: rgba(0,0,0,.04); --surface-base-active: rgba(0,0,0,.05); --surface-raised-base: #FFFFFF;
+    --text-base: #5E5E66; --text-weak: #8E8E96; --text-strong: #17171B;
+    --border-weak-base: rgba(0,0,0,.08); --border-base: rgba(0,0,0,.12);
     --v2-background-bg-base: #EFEFF2; --v2-background-bg-layer-01: #F1F1F4; --v2-background-bg-layer-02: #FFFFFF;
     --v2-border-border-muted: rgba(0,0,0,.08);
     --v2-text-text-base: #34343B; --v2-text-text-muted: #5E5E66; --v2-text-text-faint: #8E8E96;
@@ -555,7 +584,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-tasks-float {
   position: absolute;
   left: 50%;
-  bottom: 104px;              /* inputbar top + ~12px */
+  bottom: 84px;               /* inputbar top (~72px) + 12px */
   transform: translateX(-50%);
   width: min(760px, calc(100% - 64px));  /* aligned with the 760px message column */
   z-index: 40;
@@ -594,6 +623,14 @@ html[data-theme="light"] .mafw-shell {
 .mafw-inputbar .mafw-input [data-slot="textarea-v2-textarea"] {
   min-height: 52px;
   max-height: 200px;
+}
+.mafw-inputbar [data-component="button-v2"].mafw-send {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+.mafw-inputbar [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled) {
+  filter: brightness(1.08);
 }
 .mafw-inputbar [data-component="button-v2"].mafw-send-disabled {
   opacity: 0.4;

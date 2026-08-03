@@ -1,5 +1,5 @@
 ﻿// @ts-nocheck
-import { createSignal, createEffect, createMemo, onMount } from "solid-js"
+import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -45,24 +45,16 @@ export function Rail(props: Props) {
   onMount(async () => {
     const status = await window.api.mafw.gateway.info()
     setGwStatus(status)
-    if (status.state === "ready") return
-    const unsub = window.api.mafw.gateway.onStateChange((s) => {
-      setGwStatus(s)
-      if (s.state === "ready") {
-        unsub()
-      }
-    })
+    onCleanup(window.api.mafw.gateway.onStateChange((s) => setGwStatus(s)))
   })
 
   createEffect(() => {
     if (!gwReady()) return
     console.log("[mafw] Rail gwReady, fetching projects")
     window.api.mafw.projects.list().then(list => {
-      console.log("[mafw] projects.list result:", JSON.stringify(list).slice(0, 200))
       setProjects(list as any[])
     }).catch(e => console.warn("[mafw] projects.list error:", e))
     window.api.mafw.projects.current().then((res: any) => {
-      console.log("[mafw] projects.current result:", JSON.stringify(res).slice(0, 200))
       if (res) setCurrentProject(res)
     }).catch(e => console.warn("[mafw] projects.current error:", e))
   })

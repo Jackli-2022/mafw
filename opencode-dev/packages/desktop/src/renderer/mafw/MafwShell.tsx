@@ -86,19 +86,38 @@ export function MafwShell() {
     document.body.setAttribute("data-new-layout", "")
   })
 
-  // Theme: restore manual override from localStorage (null = follow system)
+  // Theme: MafwShell owns documentElement.dataset.theme (the theme preload
+  // unconditionally sets "oc-2", which would otherwise dead-code the CSS
+  // follow-system media block). A saved 'light'/'dark' override wins; otherwise
+  // delete the marker and keep data-color-scheme (the v2 gate) synced to the OS
+  // via matchMedia so chrome and session-ui flip together.
   onMount(() => {
+    const root = document.documentElement
     const saved = localStorage.getItem('mafw-theme')
-    if (saved) {
-      document.documentElement.dataset.theme = saved
+    const mq = window.matchMedia('(prefers-color-scheme: light)')
+    if (saved === 'light' || saved === 'dark') {
+      root.dataset.theme = saved
+      root.dataset.colorScheme = saved
       setTheme(saved)
+    } else {
+      delete root.dataset.theme
+      root.dataset.colorScheme = mq.matches ? 'light' : 'dark'
+      const onMq = () => {
+        const cur = localStorage.getItem('mafw-theme')
+        if (cur === 'light' || cur === 'dark') return
+        root.dataset.colorScheme = mq.matches ? 'light' : 'dark'
+      }
+      mq.addEventListener('change', onMq)
+      onCleanup(() => mq.removeEventListener('change', onMq))
     }
   })
   const toggleTheme = () => {
     const mq = window.matchMedia('(prefers-color-scheme: light)')
-    const cur = document.documentElement.dataset.theme || (mq.matches ? 'light' : 'dark')
+    const root = document.documentElement
+    const cur = root.dataset.theme === 'light' ? 'light' : root.dataset.theme === 'dark' ? 'dark' : (mq.matches ? 'light' : 'dark')
     const next = cur === 'light' ? 'dark' : 'light'
-    document.documentElement.dataset.theme = next
+    root.dataset.theme = next
+    root.dataset.colorScheme = next
     localStorage.setItem('mafw-theme', next)
     setTheme(next)
   }
@@ -132,7 +151,6 @@ export function MafwShell() {
         || event?.properties?.part?.sessionID
         || event?.properties?.info?.sessionID
         || ""
-      console.log("[mafw] SSE recv:", event.type, "sid:", sid)
       if (!sid) return
       if (event.type === "todo.updated") {
         const list = event.properties?.todos
@@ -719,7 +737,6 @@ export function MafwShell() {
                       disabled={!input().trim()}
                       class="mafw-send"
                       classList={{ "mafw-send-disabled": !input().trim() }}
-                      style={{ background: "var(--accent)", color: "var(--on-accent)", "border-color": "transparent" }}
                     >Send</ButtonV2>
                   }>
                     <ButtonV2
@@ -728,7 +745,6 @@ export function MafwShell() {
                       onClick={interrupt}
                       aria-label="Stop conversation"
                       class="mafw-send"
-                      style={{ background: "var(--accent)", color: "var(--on-accent)", "border-color": "transparent" }}
                     >
                       <span style={{ "font-size": 14, "line-height": 1 }}>■</span>
                     </ButtonV2>

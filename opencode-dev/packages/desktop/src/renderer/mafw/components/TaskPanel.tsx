@@ -19,7 +19,7 @@ function StatusSlot(props: { status: string }) {
     return (
       <span
         class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-        style={{ background: "var(--text-interactive-base, #136FF4)", color: "var(--icon-invert-base, #fff)" }}
+        style={{ background: "var(--accent)", color: "var(--on-accent)" }}
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
           <path d="M3 7.5L5.5 10L11 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
