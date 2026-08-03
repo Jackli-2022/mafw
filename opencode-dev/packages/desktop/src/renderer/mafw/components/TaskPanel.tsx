@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createSignal, createMemo, createEffect, onMount, onCleanup, For, Show } from "solid-js"
+import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js"
 
 const formatDuration = (ms: number): string => {
   if (!ms || ms < 0) return "0s"
@@ -77,12 +77,19 @@ export function TaskPanel(props: {
     }
   })
 
-  onMount(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    onCleanup(() => clearInterval(t))
+  // Elapsed ticker freezes when the run is not running (all done / interrupted).
+  let tickTimer: ReturnType<typeof setInterval> | null = null
+  createEffect(() => {
+    const active = running() > 0
+    if (active && !tickTimer) tickTimer = setInterval(() => setNow(Date.now()), 1000)
+    else if (!active && tickTimer) {
+      clearInterval(tickTimer)
+      tickTimer = null
+    }
   })
 
   onCleanup(() => {
+    if (tickTimer) clearInterval(tickTimer)
     if (collapseTimer) clearTimeout(collapseTimer)
   })
 

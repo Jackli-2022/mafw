@@ -1,69 +1,70 @@
-/* ══ 主题变量层（作用域 .mafw-shell，暗色默认） ══ */
+/* ══ 主题变量层（作用域 .mafw-shell，暗色默认，v3 色板） ══ */
 .mafw-shell {
   color-scheme: dark;
-  /* 背景四阶（文档 §3.1） */
-  --bg-base: #08080A;
-  --bg-raised: #0D0D10;
-  --bg-overlay: #131316;
-  --bg-float: #18181C;
-  --bg-hover: rgba(255,255,255,.03);
-  --border-subtle: rgba(255,255,255,.055);
+  /* 背景四阶（文档 §3.1，v3: 07/0E/16/1F） */
+  --bg-base: #070709;
+  --bg-raised: #0E0E12;
+  --bg-overlay: #16161B;
+  --bg-float: #1F1F26;
+  --bg-hover: rgba(255,255,255,.04);
+  --border-subtle: rgba(255,255,255,.07);
   /* 品牌绿（§3.2） */
-  --accent: #3FD07A;
-  --accent-dim: rgba(63,208,122,.12);
-  --accent-text: #6FD89B;
-  --on-accent: #08080A;
+  --accent: #46DC82;
+  --accent-dim: rgba(70,220,130,.13);
+  --accent-text: #7FE3A6;
+  --on-accent: #070709;
   /* 文字六阶（§3.3） */
-  --text-1: #E2E2E6;
-  --text-2: #C4C4CA;
+  --text-1: #ECECF0;
+  --text-2: #CFCFD6;
   --text-3: #8C8C94;
-  --text-4: #606068;
-  --text-5: #44444B;
+  --text-4: #5C5C64;
+  --text-5: #404047;
   /* 交互态 / 阴影 / 全局（§3.4–3.5） */
-  --hover: rgba(255,255,255,.03);
-  --hover-strong: rgba(255,255,255,.05);
-  --active: rgba(255,255,255,.04);
-  --pill: rgba(255,255,255,.05);
-  --shadow-float: 0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.05);
-  --glow-accent: 0 0 10px rgba(63,208,122,.28);
-  --scrollbar: rgba(255,255,255,.09);
-  --scrollbar-hover: rgba(255,255,255,.16);
-  --selection: rgba(63,208,122,.2);
-  --focus-ring: rgba(63,208,122,.4);
-  --composer-focus: rgba(63,208,122,.35);
-  --composer-halo: rgba(63,208,122,.09);
-  --tasks-glow: radial-gradient(ellipse at right, rgba(63,208,122,.10), transparent 60%);
+  --ring: rgba(255,255,255,.07);
+  --hover: rgba(255,255,255,.04);
+  --hover-strong: rgba(255,255,255,.07);
+  --active: rgba(255,255,255,.05);
+  --pill: rgba(255,255,255,.07);
+  --shadow-float: 0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+  --glow-accent: 0 0 10px rgba(70,220,130,.3);
+  --scrollbar: rgba(255,255,255,.1);
+  --scrollbar-hover: rgba(255,255,255,.18);
+  --selection: rgba(70,220,130,.22);
+  --focus-ring: rgba(70,220,130,.45);
+  --composer-focus: rgba(70,220,130,.4);
+  --composer-halo: rgba(70,220,130,.1);
+  --tasks-glow: radial-gradient(ellipse at right, rgba(44,80,68,.4), transparent 60%);
   /* v1 token 覆盖：chrome 组件全量跟随暗色（statusbar/card/session-close 等） */
-  --background-base: #08080A;
-  --background-weak: #0D0D10;
-  --background-stronger: #0D0D10;
-  --surface-base: #131316;
-  --surface-base-hover: rgba(255,255,255,.03);
+  --background-base: #070709;
+  --background-weak: #0E0E12;
+  --background-stronger: #0E0E12;
+  --surface-base: #16161B;
+  --surface-base-hover: rgba(255,255,255,.04);
   --surface-base-active: rgba(255,255,255,.05);
-  --surface-raised-base: #18181C;
+  --surface-raised-base: #1F1F26;
   --text-base: #8C8C94;
-  --text-weak: #606068;
-  --text-strong: #E2E2E6;
-  --border-weak-base: rgba(255,255,255,.055);
+  --text-weak: #5C5C64;
+  --text-strong: #ECECF0;
+  --border-weak-base: rgba(255,255,255,.07);
   --border-base: rgba(255,255,255,.10);
   /* v2 token 覆盖（限定本作用域，防泄漏到非 MAFW 区） */
-  --v2-background-bg-base: #08080A;
-  --v2-background-bg-layer-01: #131316;
-  --v2-background-bg-layer-02: #18181C;
-  --v2-border-border-muted: rgba(255,255,255,.055);
-  --v2-text-text-base: #C4C4CA;
+  --v2-background-bg-base: #070709;
+  --v2-background-bg-layer-01: #16161B;
+  --v2-background-bg-layer-02: #1F1F26;
+  --v2-border-border-muted: rgba(255,255,255,.07);
+  --v2-text-text-base: #CFCFD6;
   --v2-text-text-muted: #8C8C94;
-  --v2-text-text-faint: #606068;
+  --v2-text-text-faint: #5C5C64;
 }
 /* 亮色：手动覆盖（html[data-theme]） */
 html[data-theme="light"] .mafw-shell {
   color-scheme: light;
-  --bg-base: #EFEFF2;
+  --bg-base: #ECECF0;
   --bg-raised: #FAFAFB;
-  --bg-overlay: #F1F1F4;
+  --bg-overlay: #EDEDF1;
   --bg-float: #FFFFFF;
-  --bg-hover: rgba(0,0,0,.03);
-  --border-subtle: rgba(0,0,0,.08);
+  --bg-hover: rgba(0,0,0,.04);
+  --border-subtle: rgba(0,0,0,.09);
   --accent: #1F9D5A;
   --accent-dim: rgba(31,157,90,.10);
   --accent-text: #177A48;
@@ -73,6 +74,7 @@ html[data-theme="light"] .mafw-shell {
   --text-3: #5E5E66;
   --text-4: #8E8E96;
   --text-5: #B9B9BF;
+  --ring: rgba(0,0,0,.07);
   --hover: rgba(0,0,0,.04);
   --hover-strong: rgba(0,0,0,.06);
   --active: rgba(0,0,0,.05);
@@ -86,22 +88,22 @@ html[data-theme="light"] .mafw-shell {
   --composer-focus: rgba(31,157,90,.45);
   --composer-halo: rgba(31,157,90,.10);
   --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
-  --background-base: #EFEFF2;
+  --background-base: #ECECF0;
   --background-weak: #F6F6F8;
   --background-stronger: #FAFAFB;
-  --surface-base: #F1F1F4;
+  --surface-base: #EDEDF1;
   --surface-base-hover: rgba(0,0,0,.04);
   --surface-base-active: rgba(0,0,0,.05);
   --surface-raised-base: #FFFFFF;
   --text-base: #5E5E66;
   --text-weak: #8E8E96;
   --text-strong: #17171B;
-  --border-weak-base: rgba(0,0,0,.08);
+  --border-weak-base: rgba(0,0,0,.09);
   --border-base: rgba(0,0,0,.12);
-  --v2-background-bg-base: #EFEFF2;
-  --v2-background-bg-layer-01: #F1F1F4;
+  --v2-background-bg-base: #ECECF0;
+  --v2-background-bg-layer-01: #EDEDF1;
   --v2-background-bg-layer-02: #FFFFFF;
-  --v2-border-border-muted: rgba(0,0,0,.08);
+  --v2-border-border-muted: rgba(0,0,0,.09);
   --v2-text-text-base: #34343B;
   --v2-text-text-muted: #5E5E66;
   --v2-text-text-faint: #8E8E96;
@@ -111,10 +113,11 @@ html[data-theme="light"] .mafw-shell {
   html:not([data-theme]) .mafw-shell {
     color-scheme: light;
     /* 与上面 [data-theme="light"] 完全相同的亮色变量块（复制，勿引用选择器） */
-    --bg-base: #EFEFF2; --bg-raised: #FAFAFB; --bg-overlay: #F1F1F4; --bg-float: #FFFFFF;
-    --bg-hover: rgba(0,0,0,.03); --border-subtle: rgba(0,0,0,.08);
+    --bg-base: #ECECF0; --bg-raised: #FAFAFB; --bg-overlay: #EDEDF1; --bg-float: #FFFFFF;
+    --bg-hover: rgba(0,0,0,.04); --border-subtle: rgba(0,0,0,.09);
     --accent: #1F9D5A; --accent-dim: rgba(31,157,90,.10); --accent-text: #177A48; --on-accent: #FFFFFF;
     --text-1: #17171B; --text-2: #34343B; --text-3: #5E5E66; --text-4: #8E8E96; --text-5: #B9B9BF;
+    --ring: rgba(0,0,0,.07);
     --hover: rgba(0,0,0,.04); --hover-strong: rgba(0,0,0,.06); --active: rgba(0,0,0,.05); --pill: rgba(0,0,0,.05);
     --shadow-float: 0 8px 24px rgba(0,0,0,.10), 0 0 0 1px rgba(0,0,0,.04);
     --glow-accent: 0 0 8px rgba(31,157,90,.30);
@@ -122,12 +125,12 @@ html[data-theme="light"] .mafw-shell {
     --selection: rgba(31,157,90,.18); --focus-ring: rgba(31,157,90,.35);
     --composer-focus: rgba(31,157,90,.45); --composer-halo: rgba(31,157,90,.10);
     --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
-    --background-base: #EFEFF2; --background-weak: #F6F6F8; --background-stronger: #FAFAFB;
-    --surface-base: #F1F1F4; --surface-base-hover: rgba(0,0,0,.04); --surface-base-active: rgba(0,0,0,.05); --surface-raised-base: #FFFFFF;
+    --background-base: #ECECF0; --background-weak: #F6F6F8; --background-stronger: #FAFAFB;
+    --surface-base: #EDEDF1; --surface-base-hover: rgba(0,0,0,.04); --surface-base-active: rgba(0,0,0,.05); --surface-raised-base: #FFFFFF;
     --text-base: #5E5E66; --text-weak: #8E8E96; --text-strong: #17171B;
-    --border-weak-base: rgba(0,0,0,.08); --border-base: rgba(0,0,0,.12);
-    --v2-background-bg-base: #EFEFF2; --v2-background-bg-layer-01: #F1F1F4; --v2-background-bg-layer-02: #FFFFFF;
-    --v2-border-border-muted: rgba(0,0,0,.08);
+    --border-weak-base: rgba(0,0,0,.09); --border-base: rgba(0,0,0,.12);
+    --v2-background-bg-base: #ECECF0; --v2-background-bg-layer-01: #EDEDF1; --v2-background-bg-layer-02: #FFFFFF;
+    --v2-border-border-muted: rgba(0,0,0,.09);
     --v2-text-text-base: #34343B; --v2-text-text-muted: #5E5E66; --v2-text-text-faint: #8E8E96;
   }
 }
@@ -194,6 +197,7 @@ html[data-theme="light"] .mafw-shell {
   background: var(--bg-base);
   border-right: 1px solid var(--border-subtle);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 .mafw-rail-section {
   display: flex;
@@ -271,6 +275,7 @@ html[data-theme="light"] .mafw-shell {
   opacity: 0.45;
   margin-left: auto;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .mafw-rail-date-group {
   position: sticky;
@@ -301,13 +306,33 @@ html[data-theme="light"] .mafw-shell {
   bottom: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  height: 32px;
+  padding: 0 12px;
   font-size: 12px;
   color: var(--text-4);
   font-variant-numeric: tabular-nums;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-base);
+  flex-shrink: 0;
+}
+.mafw-rail-status-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  cursor: context-menu;
+}
+.mafw-rail-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-rail-restart {
+  margin-left: auto;
+  color: var(--text-interactive-base, var(--text-4));
+  font-size: 11px;
+  text-decoration: underline;
+  padding: 0 2px;
 }
 .mafw-rail-status-offline { color: var(--text-3); }
 .mafw-rail-status-offline .mafw-rail-status-dot {
@@ -321,6 +346,10 @@ html[data-theme="light"] .mafw-shell {
   background: var(--accent);
   flex-shrink: 0;
   animation: mafw-breathe 2s ease-in-out infinite;
+}
+.mafw-rail-status-dot.starting {
+  background: var(--text-4);
+  animation: none;
 }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
@@ -440,7 +469,7 @@ html[data-theme="light"] .mafw-shell {
   overflow-y: auto;
   min-height: 0;
   padding: 0 32px;
-  padding-bottom: 140px;    /* last message clears the floating TaskPanel + 12px */
+  padding-bottom: 12px;
   position: relative;
 }
 .mafw-session-turn-container [data-component="session-turn"] {
@@ -541,12 +570,16 @@ html[data-theme="light"] .mafw-shell {
 }
 
 /* ── Scoped session-ui overrides (§4.5) ── */
-/* User bubble: 16/16/4/16 radius, max-width 70%, --bg-overlay fill.
+/* User bubble: 16/16/4/16 radius, 1px border, 10px 14px padding, max-width 70%.
    body is an ANCESTOR of .mafw-shell, and data-color-scheme lives on html —
    selector (0,5,1) beats session-ui's [data-color-scheme="light"] rule (0,4,1). */
 [data-color-scheme] body[data-new-layout] .mafw-shell [data-component="user-message"] [data-slot="user-message-text"] {
   border-radius: 16px 16px 4px 16px;
   background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text-1);
 }
 .mafw-shell [data-component="user-message"] [data-slot="user-message-body"] {
   max-width: min(70%, 64ch);
@@ -579,48 +612,53 @@ html[data-theme="light"] .mafw-shell {
   font-size: 13px;
 }
 
-/* ── TaskPanel (floats above the inputbar, §4.6) ── */
+/* ── TaskPanel (in-flow above the composer, §4.6) ── */
 .mafw-tasks-float {
-  position: absolute;
-  left: 50%;
-  bottom: 120px;              /* inputbar top (~108px: textarea 54 + toolbar 44 + pad) + 12px */
-  transform: translateX(-50%);
-  width: min(760px, calc(100% - 64px));  /* aligned with the 760px message column */
-  z-index: 40;
+  width: 100%;
+  margin-bottom: 12px;
   animation: mafw-slide-in 200ms ease-out;
 }
 @keyframes mafw-slide-in {
-  from { transform: translateX(-50%) translateY(8px); opacity: 0; }
-  to   { transform: translateX(-50%) translateY(0); opacity: 1; }
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
 }
 .mafw-task-panel [data-slot="task-row"]:hover {
   background: var(--v2-overlay-simple-overlay-hover, var(--surface-base-hover));
 }
 
-/* ── InputBar (composer, §4.7) ── */
-.mafw-inputbar {
+/* ── InputBar (composer, §4.7: one bordered box = textarea + 44px toolbar) ── */
+.mafw-input-area {
+  width: min(760px, calc(100% - 64px));
+  margin-inline: auto;
+  padding: 0 0 8px;
+  flex-shrink: 0;
+}
+.mafw-composer {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0 16px 10px;
-  flex-shrink: 0;
   background: var(--bg-float);
-  border-top: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  transition: outline-color 0.12s, box-shadow 0.12s;
 }
-.mafw-inputbar:focus-within [data-component="textarea-v2"] {
-  outline-color: var(--composer-focus);
+.mafw-composer:focus-within {
+  outline: none;
+  border-color: var(--composer-focus);
   box-shadow: 0 0 0 3px var(--composer-halo);
 }
-/* TextareaV2 puts `class` on its wrapper div — override the v2 defaults
-   (min-height 80px, flex: 1 would grow vertically in the column layout). */
-.mafw-inputbar .mafw-input {
+/* TextareaV2 puts `class` on its wrapper div — kill the v2 box (gradient bg,
+   elevation shadow, 80px min-height) so the composer box is the only surface. */
+.mafw-composer .mafw-input {
   width: auto;
   min-height: 52px;
   align-self: stretch;
-  background: var(--bg-float);
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
 }
-.mafw-inputbar .mafw-input [data-slot="textarea-v2-textarea"] {
+.mafw-composer .mafw-input [data-slot="textarea-v2-textarea"] {
   box-sizing: border-box;
   min-height: 52px;
   max-height: 200px;
@@ -644,7 +682,7 @@ html[data-theme="light"] .mafw-shell {
   align-items: center;
   gap: 8px;
 }
-.mafw-inputbar [data-component="button-v2"].mafw-composer-icon {
+.mafw-composer [data-component="button-v2"].mafw-composer-icon {
   width: 28px;
   height: 28px;
   padding: 0;
@@ -652,11 +690,11 @@ html[data-theme="light"] .mafw-shell {
   color: var(--text-4);
   font-size: 14px;
 }
-.mafw-inputbar [data-component="button-v2"].mafw-composer-icon:hover {
+.mafw-composer [data-component="button-v2"].mafw-composer-icon:hover {
   background: var(--hover-strong);
   color: var(--text-2);
 }
-.mafw-inputbar [data-component="button-v2"].mafw-model-pill {
+.mafw-composer [data-component="button-v2"].mafw-model-pill {
   height: 28px;
   padding: 0 10px;
   border-radius: 8px;
@@ -664,11 +702,11 @@ html[data-theme="light"] .mafw-shell {
   color: var(--text-3);
   font-size: 12px;
 }
-.mafw-inputbar [data-component="button-v2"].mafw-model-pill:hover {
+.mafw-composer [data-component="button-v2"].mafw-model-pill:hover {
   color: var(--text-2);
 }
 .mafw-model-chevron { font-size: 9px; opacity: 0.6; }
-.mafw-inputbar [data-component="button-v2"].mafw-send {
+.mafw-composer [data-component="button-v2"].mafw-send {
   width: 32px;
   height: 32px;
   padding: 0;
@@ -677,11 +715,11 @@ html[data-theme="light"] .mafw-shell {
   color: var(--on-accent);
   border-color: transparent;
 }
-.mafw-inputbar [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled) {
+.mafw-composer [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled) {
   background: var(--accent);
   filter: brightness(1.05);
 }
-.mafw-inputbar [data-component="button-v2"].mafw-send.mafw-send-disabled {
+.mafw-composer [data-component="button-v2"].mafw-send.mafw-send-disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -703,31 +741,7 @@ html[data-theme="light"] .mafw-shell {
   white-space: nowrap;
   pointer-events: none;
 }
-.mafw-inputbar:focus-within .mafw-keyhint { opacity: 1; }
-
-/* ── StatusBar ── */
-.mafw-statusbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  border-top: 0.5px solid var(--border-weak-base);
-  background: var(--surface-weak, var(--background-weak));
-  color: var(--text-base);
-  font-size: 11px;
-}
-.mafw-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.mafw-status-dot.ready {
-  background: var(--accent);
-  box-shadow: var(--glow-accent);
-  animation: blink 2s infinite;
-}
-.mafw-status-dot.starting { background: var(--icon-warning-base, #e8b84b); animation: blink 1s infinite; }
-.mafw-status-dot.failed { background: var(--icon-critical-base, #e8636b); }
-.mafw-status-dot.stopped { background: var(--text-weak); }
-.mafw-status-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mafw-status-port { color: var(--text-weak); }
-.mafw-status-restart { background: none; border: none; cursor: pointer; color: var(--text-interactive-base); text-decoration: underline; padding: 0; font-size: 11px; }
+.mafw-composer:focus-within .mafw-keyhint { opacity: 1; }
 
 /* ── Page shared ── */
 .mafw-page-title {

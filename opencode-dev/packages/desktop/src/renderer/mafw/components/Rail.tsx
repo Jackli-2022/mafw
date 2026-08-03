@@ -2,6 +2,7 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 
@@ -235,8 +236,31 @@ export function Rail(props: Props) {
         <span>Settings</span>
       </div>
       <div class="mafw-rail-status" classList={{ "mafw-rail-status-offline": !gwReady() }}>
-        <span class="mafw-rail-status-dot" />
-        <span>{gwReady() ? `connected :${gwStatus()?.port ?? 3000}` : "disconnected"}</span>
+        <ContextMenu>
+          <ContextMenu.Trigger as="div" class="mafw-rail-status-inner">
+            <span class="mafw-rail-status-dot" classList={{ starting: gwStatus()?.state === "starting" }} />
+            <span class="mafw-rail-status-text">
+              {gwStatus()?.state === "ready" ? `connected :${gwStatus()?.port ?? 3000}` :
+               gwStatus()?.state === "starting" ? "starting..." :
+               "disconnected"}
+            </span>
+          </ContextMenu.Trigger>
+          <ContextMenu.Portal>
+            <ContextMenu.Content>
+              <ContextMenu.Item onSelect={() => window.api.mafw.gateway.restart()}>
+                <ContextMenu.ItemLabel>Restart Gateway</ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+              <ContextMenu.Item onSelect={() => copyText(gwStatus()?.url || "")} disabled={!gwStatus()?.url}>
+                <ContextMenu.ItemLabel>Copy Gateway URL</ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+        </ContextMenu>
+        {gwStatus()?.state === "failed" && (
+          <ButtonV2 variant="ghost" size="small" class="mafw-rail-restart" onClick={() => window.api.mafw.gateway.restart()}>
+            restart
+          </ButtonV2>
+        )}
       </div>
     </div>
   )

@@ -18,7 +18,6 @@ import { FileSSR } from "@opencode-ai/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { TaskPanel } from "./components/TaskPanel"
 import { TabStrip, type Tab } from "./components/TabStrip"
-import { StatusBar } from "./components/StatusBar"
 import { registerMafwToolCards } from "./components/MafwToolCards"
 import { DashboardPage } from "./pages/Dashboard"
 import { MemoryPage } from "./pages/Memory"
@@ -628,7 +627,11 @@ export function MafwShell() {
         }} style={{ "margin-left": 4 }} />
         <TooltipV2 value="切换主题" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" class="mafw-theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme() === 'light' ? '☀' : '☾'}
+            {theme() === 'light' ? '☀' : (
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M11.2 8.9A5 5 0 1 1 5.1 2.8a4 4 0 0 0 6.1 6.1Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            )}
           </ButtonV2>
         </TooltipV2>
         {showConfig() && (
@@ -724,7 +727,7 @@ export function MafwShell() {
                               </ButtonV2>
                             </Show>
                           </div>
-                {/* TaskPanel — floats above the inputbar (visible when the session has todos) */}
+                {/* TaskPanel — in-flow above the composer (visible when the session has todos) */}
                 <Show when={currentSessionID() && (todos[currentSessionID()] || []).length > 0}>
                   <div class="mafw-tasks-float">
                     <TaskPanel
@@ -735,60 +738,62 @@ export function MafwShell() {
                     />
                   </div>
                 </Show>
-                {/* InputBar */}
-                <div class="mafw-inputbar">
-                  <TextareaV2
-                    value={input()}
-                    onInput={e => { setInput(e.currentTarget.value); autoGrow(e.currentTarget) }}
-                    onKeyDown={e => {
-                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
-                    }}
-                    ref={setTextareaEl}
-                    placeholder={gwStatus()?.state === "ready" ? "输入消息…" : "Reconnecting…"}
-                    disabled={gwStatus()?.state !== "ready"}
-                    class="mafw-input"
-                  />
-                  <span class="mafw-keyhint">Enter 发送 · Shift+Enter 换行</span>
-                  <div class="mafw-composer-toolbar">
-                    <div class="mafw-composer-left">
-                      <TooltipV2 value="附件" openDelay={300}>
-                        <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="附件">+</ButtonV2>
-                      </TooltipV2>
-                      <TooltipV2 value="引用 Agent" openDelay={300}>
-                        <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="引用 Agent">@</ButtonV2>
-                      </TooltipV2>
-                    </div>
-                    <div class="mafw-composer-right">
-                      <TooltipV2 value="模型" openDelay={300}>
-                        <ButtonV2 variant="ghost" size="small" class="mafw-model-pill" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="模型">
-                          {modelName()}<span class="mafw-model-chevron">▾</span>
-                        </ButtonV2>
-                      </TooltipV2>
-                      <Show when={sending()} fallback={
-                        <ButtonV2
-                          variant="contrast"
-                          size="small"
-                          onClick={sendMessage}
-                          disabled={!input().trim()}
-                          class="mafw-send"
-                          classList={{ "mafw-send-disabled": !input().trim() }}
-                          aria-label="发送"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                            <path d="M7 11.5V2.5M3 6.5L7 2.5L11 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        </ButtonV2>
-                      }>
-                        <ButtonV2
-                          variant="contrast"
-                          size="small"
-                          onClick={interrupt}
-                          aria-label="停止"
-                          class="mafw-send"
-                        >
-                          <span class="mafw-stop-icon" />
-                        </ButtonV2>
-                      </Show>
+                {/* InputBar — composer box (textarea + 44px toolbar in one bordered container) */}
+                <div class="mafw-input-area">
+                  <div class="mafw-composer">
+                    <TextareaV2
+                      value={input()}
+                      onInput={e => { setInput(e.currentTarget.value); autoGrow(e.currentTarget) }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
+                      }}
+                      ref={setTextareaEl}
+                      placeholder={gwStatus()?.state === "ready" ? "输入消息…" : "重新连接中…"}
+                      disabled={gwStatus()?.state !== "ready"}
+                      class="mafw-input"
+                    />
+                    <span class="mafw-keyhint">Enter 发送 · Shift+Enter 换行</span>
+                    <div class="mafw-composer-toolbar">
+                      <div class="mafw-composer-left">
+                        <TooltipV2 value="附件" openDelay={300}>
+                          <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="附件">+</ButtonV2>
+                        </TooltipV2>
+                        <TooltipV2 value="引用 Agent" openDelay={300}>
+                          <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="引用 Agent">@</ButtonV2>
+                        </TooltipV2>
+                      </div>
+                      <div class="mafw-composer-right">
+                        <TooltipV2 value="模型" openDelay={300}>
+                          <ButtonV2 variant="ghost" size="small" class="mafw-model-pill" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="模型">
+                            {modelName()}<span class="mafw-model-chevron">▾</span>
+                          </ButtonV2>
+                        </TooltipV2>
+                        <Show when={sending()} fallback={
+                          <ButtonV2
+                            variant="contrast"
+                            size="small"
+                            onClick={sendMessage}
+                            disabled={!input().trim()}
+                            class="mafw-send"
+                            classList={{ "mafw-send-disabled": !input().trim() }}
+                            aria-label="发送"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                              <path d="M7 11.5V2.5M3 6.5L7 2.5L11 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                          </ButtonV2>
+                        }>
+                          <ButtonV2
+                            variant="contrast"
+                            size="small"
+                            onClick={interrupt}
+                            aria-label="停止"
+                            class="mafw-send"
+                          >
+                            <span class="mafw-stop-icon" />
+                          </ButtonV2>
+                        </Show>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -807,7 +812,6 @@ export function MafwShell() {
           </div>
         </div>
       </div>
-      <StatusBar />
       <Show when={activeQuestion()}>
         <QuestionWidget
           question={activeQuestion()!}
