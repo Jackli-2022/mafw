@@ -35,6 +35,7 @@ interface ChatSession {
   userMsgId: string
   assistantMsgId: string | null
   done: boolean
+  metadata?: { mafw?: { role?: string } }
 }
 
 export function MafwShell() {
@@ -629,6 +630,7 @@ export function MafwShell() {
                         classList={{ active: s.id === activeSessionId() }}
                         onClick={() => setActiveSessionId(s.id)}
                       >
+                        <span class="mafw-agent-dot" style={{ background: s.metadata?.mafw?.role === "manager" ? "var(--accent)" : "var(--text-4)" }} />
                         <span class="mafw-session-title">{s.title}</span>
                         <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); closeSession(s.id) }}>✕</ButtonV2>
                       </ContextMenu.Trigger>
@@ -650,7 +652,16 @@ export function MafwShell() {
                           <div ref={setContainerRef} onScroll={handleScroll} class="mafw-session-turn-container">
                             <Show when={currentSessionID()}>
                               <div class="mafw-session-titlebar">
-                                <span class="mafw-session-titlebar-text">{active()?.title || "Chat"}</span>
+                                <div class="mafw-session-titlebar-inner">
+                                  <span class="mafw-agent-avatar">{(active()?.title || "A").charAt(0)}</span>
+                                  <span class="mafw-session-titlebar-text">{active()?.title || "Chat"}</span>
+                                  <Show when={store.session_status[currentSessionID()]?.type === "busy"}>
+                                    <span class="mafw-session-status">
+                                      <span class="mafw-session-status-dot" />
+                                      Running
+                                    </span>
+                                  </Show>
+                                </div>
                               </div>
                               <For each={userMessages()}>
                                 {(msg) => (
@@ -661,8 +672,9 @@ export function MafwShell() {
                                   />
                                 )}
                               </For>
-                              <button
-                                type="button"
+                              <ButtonV2
+                                variant="ghost"
+                                size="small"
                                 class="mafw-jump-latest"
                                 classList={{ visible: jumpVisible() }}
                                 onClick={jumpToLatest}
@@ -671,7 +683,7 @@ export function MafwShell() {
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                                   <path d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332" stroke="currentColor" stroke-linecap="square" />
                                 </svg>
-                              </button>
+                              </ButtonV2>
                             </Show>
                           </div>
                 {/* TaskPanel — collapsible task progress (visible when the session has todos) */}

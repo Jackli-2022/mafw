@@ -350,38 +350,46 @@ html[data-theme="light"] .mafw-shell {
   flex-direction: column;
   height: 100%;
   margin: 8px;
-  border-radius: 10px;
+  border-radius: 16px;
   overflow: hidden;
-  background: var(--v2-background-bg-base, var(--background-stronger));
-  box-shadow: var(--v2-elevation-raised, var(--shadow-md));
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-float);
 }
 
-/* ── SessionStrip ── */
+/* ── SessionStrip (§4.4: 10px 小卡) ── */
 .mafw-sessionstrip {
   display: flex;
-  gap: 2px;
-  border-bottom: 0.5px solid var(--border-weak-base);
+  gap: 4px;
+  align-items: center;
+  height: 36px;
   padding: 0 8px;
+  background: var(--bg-base);
   overflow-x: auto;
   flex-shrink: 0;
-  min-height: 32px;
-  align-items: center;
-  background: var(--background-base);
 }
 .mafw-session-tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-4);
+  background: transparent;
   cursor: pointer;
-  color: var(--text-base);
   white-space: nowrap;
-  transition: color 0.12s, background 0.12s;
-  border-radius: 6px;
-  font-size: 12px;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
 }
-.mafw-session-tab.active { color: var(--text-strong); background: var(--v2-overlay-simple-tab-active-scrim, var(--surface-base-active)); }
-.mafw-session-tab:hover { color: var(--text-strong); background: var(--v2-overlay-simple-overlay-hover, var(--surface-base-hover)); }
+.mafw-session-tab:hover { background: var(--hover); color: var(--text-2); }
+.mafw-session-tab.active { background: var(--bg-overlay); color: var(--text-1); }
+.mafw-agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 .mafw-session-title { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .mafw-session-close { background: none; border: none; cursor: pointer; color: var(--text-weak); padding: 0; line-height: 1; opacity: 0; transition: opacity 0.1s; font-size: 10px; }
 .mafw-session-tab:hover .mafw-session-close { opacity: 1; }
@@ -389,42 +397,80 @@ html[data-theme="light"] .mafw-shell {
 .mafw-session-new { background: none; border: none; cursor: pointer; color: var(--text-interactive-base); padding: 4px 8px; flex-shrink: 0; font-size: 14px; }
 .mafw-session-new:hover { color: var(--text-strong); }
 
-/* ── SessionTurn Container ── */
+/* ── SessionTurn Container (§4.5: 760px 列) ── */
 .mafw-session-turn-container {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 0 16px;
+  padding: 0 32px;
   position: relative;
 }
 .mafw-session-turn-container [data-component="session-turn"] {
   height: auto;             /* override session-ui's height:100% (viewport-filling) */
-  max-width: min(1000px, 100%);
+  max-width: 760px;
   margin-inline: auto;
 }
 .mafw-session-turn-container [data-component="session-turn"] + [data-component="session-turn"] {
-  margin-top: 12px;
+  margin-top: 24px;
 }
 
-/* ── Sticky session title ── */
+/* ── Sticky Agent header (实底防穿透) ── */
 .mafw-session-titlebar {
   position: sticky;
   top: 0;
   z-index: 30;
-  margin: 0 -16px;
-  padding: 10px 16px 16px;
-  background: linear-gradient(to bottom, var(--v2-background-bg-base, var(--background-stronger)) 48px, transparent);
+  margin: 0 -32px;
+  padding: 10px 32px 14px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mafw-session-titlebar-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 760px;
+  margin-inline: auto;
+}
+.mafw-agent-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  user-select: none;
 }
 .mafw-session-titlebar-text {
-  display: block;
-  max-width: min(1000px, 100%);
-  margin-inline: auto;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+.mafw-session-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-text);
+  flex-shrink: 0;
+}
+.mafw-session-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--glow-accent);
+  animation: blink 1.5s infinite;
 }
 
 /* ── Jump to latest ── */
@@ -455,6 +501,36 @@ html[data-theme="light"] .mafw-shell {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(-50%) translateY(0);
+}
+
+/* ── Scoped session-ui overrides (§4.5) ── */
+/* User bubble: 16/16/4/16 radius, max-width 70%, --bg-overlay fill.
+   Specificity beats session-ui's body[data-new-layout] branch (0,3,1). */
+.mafw-shell body[data-new-layout] [data-component="user-message"] [data-slot="user-message-text"] {
+  border-radius: 16px 16px 4px 16px;
+  background: var(--bg-overlay);
+}
+.mafw-shell [data-component="user-message"] [data-slot="user-message-body"] {
+  max-width: min(70%, 64ch);
+}
+
+/* Tool blocks card-ized: real DOM is [data-component="tool-part-wrapper"]
+   > [data-component="collapsible"] > [data-slot="collapsible-trigger"|content] */
+.mafw-session-turn-container [data-component="tool-part-wrapper"] {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"] {
+  height: 32px;
+  padding: 0 10px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-content"] > * {
+  border-left: 2px solid var(--border-subtle);
 }
 .mafw-chat-empty {
   display: flex;
