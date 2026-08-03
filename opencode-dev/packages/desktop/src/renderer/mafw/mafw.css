@@ -108,21 +108,24 @@ html[data-theme="light"] .mafw-shell {
 /* ── Shell Layout ── */
 .mafw-shell {
   display: grid;
-  grid-template-rows: 36px 1fr 24px;
+  grid-template-rows: 38px 1fr 24px;
   height: 100vh;
   background: var(--background-base);
   color: var(--text-strong);
 }
 
-/* ── Titlebar ── */
+/* ── Titlebar (38px, §4.1) ── */
 .mafw-titlebar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border-bottom: 0.5px solid var(--border-weak-base);
-  background: var(--background-stronger);
+  height: 38px;
+  background: var(--bg-base);
+  -webkit-app-region: drag;
+  user-select: none;
 }
+.mafw-titlebar button, .mafw-titlebar .mafw-theme-toggle { -webkit-app-region: no-drag; }
 
 .mafw-theme-toggle {
   background: none;
@@ -235,14 +238,44 @@ html[data-theme="light"] .mafw-shell {
 .mafw-content::-webkit-scrollbar { display: none; }
 
 /* ── Main ── */
-.mafw-main { display: grid; grid-template-rows: 36px 1fr; overflow: hidden; }
+.mafw-main { display: grid; grid-template-rows: 44px 1fr; overflow: hidden; }
 
-/* ── TabStrip ── */
-.mafw-tabstrip {
-  border-bottom: 0.5px solid var(--border-weak-base);
-  background: var(--background-stronger);
+/* ── TabStrip (pill group, §4.2) ──
+   TabsV2's base rules (data-component/data-variant/data-orientation +
+   data-slot) carry (0,5,0) specificity; mirror them with the .mafw-shell /
+   .mafw-tabstrip anchors so our overrides win deterministically. Active tab
+   is marked by Kobalte's [data-selected] on the [role="tab"] trigger. */
+.mafw-shell [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] [data-slot="tabs-v2-list"].mafw-tabstrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 0 8px;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border-subtle);
   overflow-x: auto;
-} 
+}
+.mafw-shell [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] [data-slot="tabs-v2-list"].mafw-tabstrip::before {
+  content: none;
+}
+.mafw-shell [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] .mafw-tabstrip [role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-4);
+  transition: color 0.12s, background 0.12s;
+}
+.mafw-shell .mafw-tabstrip [role="tab"]:hover { color: var(--text-2); }
+.mafw-shell .mafw-tabstrip [role="tab"][data-selected] {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
+.mafw-shell .mafw-tabstrip [role="tab"][data-selected] svg { color: var(--accent); }
 
 /* ── Content ── */
 .mafw-content { overflow: auto; padding: 16px; }
@@ -406,7 +439,11 @@ html[data-theme="light"] .mafw-shell {
   font-size: 11px;
 }
 .mafw-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.mafw-status-dot.ready { background: var(--accent); }
+.mafw-status-dot.ready {
+  background: var(--accent);
+  box-shadow: var(--glow-accent);
+  animation: blink 2s infinite;
+}
 .mafw-status-dot.starting { background: var(--icon-warning-base, #e8b84b); animation: blink 1s infinite; }
 .mafw-status-dot.failed { background: var(--icon-critical-base, #e8636b); }
 .mafw-status-dot.stopped { background: var(--text-weak); }

@@ -580,7 +580,7 @@ export function MafwShell() {
       <ToastV2.Region />
       <div class="mafw-titlebar">
         <Icon name="logo" size="small" />
-        <span style={{ "font-size": 12, "font-weight": 500, color: "var(--text-strong)" }}>MAFW</span>
+        <span style={{ "font-size": 13, "font-weight": 600, color: "var(--text-2)" }}>MAFW</span>
         <div class="mafw-status-dot" classList={{
           ready: gwStatus()?.state === "ready",
           starting: gwStatus()?.state === "starting",
