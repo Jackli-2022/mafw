@@ -587,15 +587,11 @@ export function MafwShell() {
           failed: gwStatus()?.state === "failed",
           stopped: !gwStatus() || gwStatus()?.state === "stopped",
         }} style={{ "margin-left": 4 }} />
-        <button
-          type="button"
-          class="mafw-theme-toggle"
-          onClick={toggleTheme}
-          aria-label="Toggle theme"
-          title="切换主题"
-        >
-          {theme() === 'light' ? '☀' : '☾'}
-        </button>
+        <TooltipV2 value="切换主题" openDelay={300}>
+          <ButtonV2 variant="ghost" size="small" class="mafw-theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme() === 'light' ? '☀' : '☾'}
+          </ButtonV2>
+        </TooltipV2>
         {showConfig() && (
           <ButtonV2 variant="ghost" size="small" onClick={() => setShowConfig(false)} style={{ "margin-left": "auto" }}>← Back to tabs</ButtonV2>
         )}

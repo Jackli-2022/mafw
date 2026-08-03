@@ -127,6 +127,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-theme-toggle {
   background: none;
   border: none;
+  flex-shrink: 0;
   cursor: pointer;
   color: var(--text-4);
   font-size: 13px;
