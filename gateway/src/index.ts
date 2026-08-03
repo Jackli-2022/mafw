@@ -82,6 +82,12 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+// Normalize a directory path for comparison: lowercase + forward slashes
+// (Windows drives/case differences must not split sessions across projects).
+function normalizeDir(dir: string): string {
+  return dir.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
+}
+
 function killProcessOnPort(port: number): void {
   try {
     if (process.platform === 'win32') {
@@ -372,8 +378,7 @@ class MafwScheduler {
     const data = `data: ${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n\n`;
     for (const client of this.sseClients) {
       try { client.write(data); } catch { this.sseClients.delete(client); }
-    }
-  }
+    }  }
 
   stop() {
     this.running = false;
@@ -388,6 +393,30 @@ class MafwScheduler {
     //   this.dashboard.stop();
     // }
     log.info('[Scheduler] Stopping...');
+  }
+
+  // Proxy a native opencode request by trying every registered workspace.
+  // Native reply/reject routes are workspace-scoped (WorkspaceRoutingMiddleware),
+  // but the gateway's own projectDir is its cwd — the request may belong to any
+  // registered project. GET list endpoints are cross-workspace and unaffected.
+  private async proxyNativeWorkspaces(path: string, method: string, body?: any): Promise<{ ok: boolean; status: number }> {
+    const dirs = new Set<string>([this.projectDir || '.']);
+    for (const key of this.registeredProjects.keys()) dirs.add(key);
+    let lastStatus = 502;
+    for (const dir of dirs) {
+      try {
+        const r = await fetch(`${this.serveUrl}${path}?directory=${encodeURIComponent(dir)}`, {
+          method,
+          headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        });
+        if (r.ok) return { ok: true, status: r.status };
+        lastStatus = r.status;
+      } catch (e: any) {
+        log.error(`[Native proxy] ${path} failed for ${dir}: ${e.message}`);
+      }
+    }
+    return { ok: false, status: lastStatus };
   }
 
   // 鈹€鈹€ Services & Event Bus 鈹€鈹€
@@ -507,19 +536,24 @@ class MafwScheduler {
             const local = localMap.get(s.id);
             return local?.metadata ? { ...s, metadata: local.metadata } : s;
           });
-          // Also include local-only sessions (e.g. Manager session registered via registerExternal)
-          // that the opencode server doesn't know about
+          // Also include local-only sessions (e.g. Manager session registered via
+          // registerExternal) that the opencode server doesn't know about — but only
+          // those belonging to the queried project, so switching projects shows only
+          // that project's manager session.
           const sdkIds = new Set<string>(sessions.map((s: any) => s.id));
           const missingLocal = localSessions.filter(s => s.metadata && !sdkIds.has(s.id));
           if (missingLocal.length > 0) {
-            enriched.push(...missingLocal.map(s => ({
-              id: s.id,
-              projectID: s.projectID,
-              directory: s.directory,
-              title: s.title,
-              metadata: s.metadata,
-              time: s.time,
-            })));
+            const targetDir = projectID ? normalizeDir(projectID) : null;
+            enriched.push(...missingLocal
+              .filter(s => !targetDir || normalizeDir(s.directory || s.projectID || '') === targetDir)
+              .map(s => ({
+                id: s.id,
+                projectID: s.projectID,
+                directory: s.directory,
+                title: s.title,
+                metadata: s.metadata,
+                time: s.time,
+              })));
           }
           return enriched;
         }
@@ -821,6 +855,17 @@ class MafwScheduler {
                 return;
               }
 
+              // Never register the user's home directory (or its standard data
+              // folders) as a project — desktop's opencode server plugin activates
+              // with cwd=$HOME (or a folder under it) and would otherwise pollute
+              // the registry with bogus "projects" (and manager sessions).
+              if (this.isUserDataDir(projectDir)) {
+                log.warn(`[Scheduler] Refusing to register user data directory as project: ${projectDir}`);
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: 'User data directory cannot be a project' }));
+                return;
+              }
+
               this.registeredProjects.set(projectDir, {
                 projectDir,
                 mafwDir,
@@ -1029,12 +1074,7 @@ class MafwScheduler {
         if (qReplyMatch && req.method === 'POST') {
           try {
             const body = JSON.parse(await readBody(req));
-            const dir = this.projectDir || '.';
-            const r = await fetch(`${this.serveUrl}/question/${qReplyMatch[1]}/reply?directory=${encodeURIComponent(dir)}`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
-              body: JSON.stringify({ answers: body.answers }),
-            });
+            const r = await this.proxyNativeWorkspaces(`/question/${qReplyMatch[1]}/reply`, 'POST', { answers: body.answers });
             if (!r.ok) {
               res.writeHead(r.status);
               res.end(JSON.stringify({ status: 'error', code: r.status }));
@@ -1053,11 +1093,7 @@ class MafwScheduler {
         const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
         if (qRejectMatch && req.method === 'POST') {
           try {
-            const dir = this.projectDir || '.';
-            const r = await fetch(`${this.serveUrl}/question/${qRejectMatch[1]}/reject?directory=${encodeURIComponent(dir)}`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
-            });
+            const r = await this.proxyNativeWorkspaces(`/question/${qRejectMatch[1]}/reject`, 'POST');
             if (!r.ok) {
               res.writeHead(r.status);
               res.end(JSON.stringify({ status: 'error', code: r.status }));
@@ -1095,14 +1131,9 @@ class MafwScheduler {
         if (pReplyMatch && req.method === 'POST') {
           try {
             const body = JSON.parse(await readBody(req));
-            const dir = this.projectDir || '.';
             const payload: any = { reply: body.reply };
             if (body.message) payload.message = body.message;
-            const r = await fetch(`${this.serveUrl}/permission/${pReplyMatch[1]}/reply?directory=${encodeURIComponent(dir)}`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
-              body: JSON.stringify(payload),
-            });
+            const r = await this.proxyNativeWorkspaces(`/permission/${pReplyMatch[1]}/reply`, 'POST', payload);
             if (!r.ok) {
               res.writeHead(r.status);
               res.end(JSON.stringify({ status: 'error', code: r.status }));
@@ -1599,12 +1630,27 @@ class MafwScheduler {
     await this.registryWriteQueue;
   }
 
+  // User data directories that must never be treated as projects (desktop's
+  // opencode server plugin activates with cwd=$HOME or a folder under it).
+  private userDataDirs(): Set<string> {
+    const homeNorm = normalizeDir(os.homedir());
+    const dirs = ['', 'Desktop', 'Documents', 'Downloads', 'Pictures', 'Music', 'Videos']
+      .map(s => s ? `${homeNorm}/${s.toLowerCase()}` : homeNorm);
+    return new Set(dirs);
+  }
+
+  private isUserDataDir(projectDir: string): boolean {
+    return this.userDataDirs().has(normalizeDir(projectDir));
+  }
+
   private async recoverRegistry() {
     if (fs.existsSync(this.registryPath)) {
       try {
         const data = JSON.parse(fs.readFileSync(this.registryPath, 'utf-8'));
-        this.registeredProjects = new Map(data);
-        log.info(`[Scheduler] Recovered ${data.length} registered projects`);
+        const entries = (data as [string, any][])
+          .filter(([dir]) => !this.isUserDataDir(dir));
+        this.registeredProjects = new Map(entries);
+        log.info(`[Scheduler] Recovered ${entries.length} registered projects`);
       } catch (err: any) {
         log.error(`[Scheduler] Failed to recover registry: ${err.message}`);
       }
@@ -1629,7 +1675,9 @@ class MafwScheduler {
     if (fs.existsSync(this.configPath)) {
       try {
         const config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
-        this.registeredProjects = new Map(Object.entries(config.projects || {}));
+        const entries = Object.entries((config.projects || {}) as Record<string, any>)
+          .filter(([dir]) => !this.isUserDataDir(dir));
+        this.registeredProjects = new Map(entries);
       } catch (err: any) {
         log.error(`[Scheduler] Failed to recover config: ${err.message}`);
       }
