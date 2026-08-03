@@ -289,6 +289,46 @@ export class MafwClient implements IMafwClient {
     },
   }
 
+  // ── Questions (AskCard — proxies the native opencode Question API) ──
+
+  questions = {
+    list: async (): Promise<QuestionRequest[]> => {
+      const data = await this.request<{ items: QuestionRequest[] }>('/api/questions')
+      return data.items || []
+    },
+
+    reply: async (id: string, answers: string[][]): Promise<void> => {
+      await this.request(`/api/questions/${id}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({ answers }),
+      })
+    },
+
+    reject: async (id: string): Promise<void> => {
+      await this.request(`/api/questions/${id}/reject`, { method: 'POST' })
+    },
+  }
+
+  // ── Permissions (PermissionCard — proxies the native opencode Permission API) ──
+
+  permissions = {
+    list: async (): Promise<PermissionRequest[]> => {
+      const data = await this.request<{ items: PermissionRequest[] }>('/api/permissions')
+      return data.items || []
+    },
+
+    reply: async (
+      id: string,
+      reply: 'once' | 'always' | 'reject',
+      message?: string,
+    ): Promise<void> => {
+      await this.request(`/api/permissions/${id}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({ reply, message }),
+      })
+    },
+  }
+
   // ── Chat ──
 
   chat = {

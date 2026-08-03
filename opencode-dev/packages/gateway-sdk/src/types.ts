@@ -105,6 +105,40 @@ export interface Approval {
   createdAt: string
 }
 
+// ── Questions (AskCard) — mirrors opencode QuestionV1 ──
+
+export interface QuestionOption {
+  label: string
+  description?: string
+}
+
+export interface QuestionInfo {
+  question: string
+  header?: string
+  options: QuestionOption[]
+  multiple?: boolean
+  custom?: boolean
+}
+
+export interface QuestionRequest {
+  id: string
+  sessionID: string
+  questions: QuestionInfo[]
+  tool?: { messageID: string; callID: string }
+}
+
+// ── Permissions (PermissionCard) — mirrors opencode PermissionV1 ──
+
+export interface PermissionRequest {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: string[]
+  metadata?: Record<string, unknown>
+  always?: string[]
+  tool?: { messageID: string; callID: string }
+}
+
 export interface TriageItem {
   goalId: string
   reason: string

@@ -2,6 +2,7 @@ import type {
   Session, Project, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
   Approval, TriageItem, AutomationRule, GatewayStatus,
+  QuestionRequest, PermissionRequest,
 } from "@mafw/sdk"
 
 export type MafwAPI = {
@@ -43,6 +44,17 @@ export type MafwAPI = {
   approvals: {
     list: () => Promise<Approval[]>
     respond: (id: string, decision: 'approve' | 'reject') => Promise<void>
+  }
+
+  questions: {
+    list: () => Promise<QuestionRequest[]>
+    reply: (id: string, answers: string[][]) => Promise<void>
+    reject: (id: string) => Promise<void>
+  }
+
+  permissions: {
+    list: () => Promise<PermissionRequest[]>
+    reply: (id: string, reply: 'once' | 'always' | 'reject', message?: string) => Promise<void>
   }
 
   triage: {

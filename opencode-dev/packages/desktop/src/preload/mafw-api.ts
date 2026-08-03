@@ -53,6 +53,17 @@ export function createMafwApi(): MafwAPI {
       respond: (id, decision) => invoke("approvals", "respond", id, decision),
     },
 
+    questions: {
+      list: () => invoke("questions", "list"),
+      reply: (id, answers) => invoke("questions", "reply", id, answers),
+      reject: (id) => invoke("questions", "reject", id),
+    },
+
+    permissions: {
+      list: () => invoke("permissions", "list"),
+      reply: (id, reply, message?) => invoke("permissions", "reply", id, reply, message),
+    },
+
     triage: {
       list: () => invoke("triage", "list"),
       dismiss: (id) => invoke("triage", "dismiss", id),

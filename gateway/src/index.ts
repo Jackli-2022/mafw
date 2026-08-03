@@ -1006,6 +1006,99 @@ class MafwScheduler {
           return;
         }
 
+        // 鈹€鈹€ Question endpoints (AskCard 鈹€ proxy to native opencode Question API) 鈹€鈹€
+
+        // GET /api/questions 鈹€ list pending questions
+        if (req.url === '/api/questions' && req.method === 'GET') {
+          try {
+            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
+            const r = await fetch(`${this.serveUrl}/question?directory=${encodeURIComponent(dir)}`, {
+              headers: { 'x-opencode-directory': encodeURIComponent(dir) },
+            });
+            const items = await r.json();
+            res.end(JSON.stringify({ items }));
+          } catch (err: any) {
+            log.error('[Question] list error:', err.message);
+            res.end(JSON.stringify({ items: [] }));
+          }
+          return;
+        }
+
+        // POST /api/questions/{id}/reply 鈹€ { answers: string[][] }
+        const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
+        if (qReplyMatch && req.method === 'POST') {
+          try {
+            const body = JSON.parse(await readBody(req));
+            const dir = this.projectDir || '.';
+            const r = await fetch(`${this.serveUrl}/question/${qReplyMatch[1]}/reply?directory=${encodeURIComponent(dir)}`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
+              body: JSON.stringify({ answers: body.answers }),
+            });
+            res.end(JSON.stringify({ status: r.ok ? 'ok' : 'error', code: r.status }));
+          } catch (err: any) {
+            log.error('[Question] reply error:', err.message);
+            res.end(JSON.stringify({ status: 'error', error: err.message }));
+          }
+          return;
+        }
+
+        // POST /api/questions/{id}/reject
+        const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
+        if (qRejectMatch && req.method === 'POST') {
+          try {
+            const dir = this.projectDir || '.';
+            const r = await fetch(`${this.serveUrl}/question/${qRejectMatch[1]}/reject?directory=${encodeURIComponent(dir)}`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
+            });
+            res.end(JSON.stringify({ status: r.ok ? 'ok' : 'error', code: r.status }));
+          } catch (err: any) {
+            log.error('[Question] reject error:', err.message);
+            res.end(JSON.stringify({ status: 'error', error: err.message }));
+          }
+          return;
+        }
+
+        // 鈹€鈹€ Permission endpoints (PermissionCard 鈹€ proxy to native opencode Permission API) 鈹€鈹€
+
+        // GET /api/permissions 鈹€ list pending permission requests
+        if (req.url === '/api/permissions' && req.method === 'GET') {
+          try {
+            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
+            const r = await fetch(`${this.serveUrl}/permission?directory=${encodeURIComponent(dir)}`, {
+              headers: { 'x-opencode-directory': encodeURIComponent(dir) },
+            });
+            const items = await r.json();
+            res.end(JSON.stringify({ items }));
+          } catch (err: any) {
+            log.error('[Permission] list error:', err.message);
+            res.end(JSON.stringify({ items: [] }));
+          }
+          return;
+        }
+
+        // POST /api/permissions/{id}/reply 鈹€ { reply: 'once'|'always'|'reject', message?: string }
+        const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
+        if (pReplyMatch && req.method === 'POST') {
+          try {
+            const body = JSON.parse(await readBody(req));
+            const dir = this.projectDir || '.';
+            const payload: any = { reply: body.reply };
+            if (body.message) payload.message = body.message;
+            const r = await fetch(`${this.serveUrl}/permission/${pReplyMatch[1]}/reply?directory=${encodeURIComponent(dir)}`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
+              body: JSON.stringify(payload),
+            });
+            res.end(JSON.stringify({ status: r.ok ? 'ok' : 'error', code: r.status }));
+          } catch (err: any) {
+            log.error('[Permission] reply error:', err.message);
+            res.end(JSON.stringify({ status: 'error', error: err.message }));
+          }
+          return;
+        }
+
         // 鈹€鈹€ Triage endpoints (Tier 4 锟?user only, not MCP) 鈹€鈹€
 
         // GET /api/triage 锟?list triage items (with llmSuggestions)

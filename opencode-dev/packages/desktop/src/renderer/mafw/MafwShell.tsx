@@ -26,6 +26,8 @@ import { TriagePage } from "./pages/TriagePage"
 import { AutomationsPage } from "./pages/Automations"
 import { ConfigPage } from "./pages/Config"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
+import { AskCard, type AskCardData } from "./components/AskCard"
+import { PermissionCard, type PermissionCardData } from "./components/PermissionCard"
 import "./mafw.css"
 
 interface ChatSession {
@@ -70,6 +72,181 @@ export function MafwShell() {
 
   // Todo list per session (drives the TaskPanel; updated live via SSE todo.updated)
   const [todos, setTodos] = createStore<Record<string, any[]>>({})
+
+  // AskCard / PermissionCard per session (in-chat flow cards)
+  type FlowCardRecord =
+    | { kind: "ask"; data: AskCardData }
+    | { kind: "permission"; data: PermissionCardData }
+  const [flowCards, setFlowCards] = createSignal<Record<string, FlowCardRecord[]>>({})
+
+  const upsertCard = (sid: string, rec: FlowCardRecord) => {
+    setFlowCards(prev => {
+      const list = prev[sid] || []
+      const existing = list.find(c => (c.kind === "ask" ? c.data.id : c.data.id) === rec.data.id)
+      if (existing) {
+        return { ...prev, [sid]: list.map(c => (c.data.id === rec.data.id ? rec : c)) }
+      }
+      return { ...prev, [sid]: [...list, rec] }
+    })
+  }
+
+  const resolveCard = (sid: string, id: string, patch: Partial<AskCardData> & Partial<PermissionCardData>) => {
+    setFlowCards(prev => {
+      const list = (prev[sid] || []).map(c => (c.data.id === id ? { ...c, data: { ...c.data, ...patch } } : c))
+      return { ...prev, [sid]: list }
+    })
+  }
+
+  const expireSessionCards = (sid: string) => {
+    setFlowCards(prev => {
+      const list = (prev[sid] || []).map(c => {
+        if (c.data.status !== "pending") return c
+        return { ...c, data: { ...c.data, status: c.kind === "permission" ? "expired" : "expired" } }
+      })
+      return { ...prev, [sid]: list }
+    })
+  }
+
+  const actionTypeOf = (permission: string): { type: string; title: string } => {
+    const p = permission.toLowerCase()
+    if (p.includes("bash") || p.includes("shell") || p.includes("terminal") || p.includes("command")) {
+      return { type: "shell", title: "执行 Shell 命令" }
+    }
+    if (p.includes("unlink") || p.includes("delete")) return { type: "file-delete", title: "删除文件" }
+    if (p.includes("write") || p.includes("edit")) return { type: "file-write", title: "写入文件" }
+    if (p.includes("network") || p.includes("webfetch") || p.includes("http")) return { type: "network", title: "访问网络" }
+    return { type: "custom", title: permission }
+  }
+
+  const riskOf = (permission: string, patterns: string[]): "medium" | "high" => {
+    const p = permission.toLowerCase()
+    const joined = patterns.join(" ").toLowerCase()
+    if (p.includes("unlink") || p.includes("delete")) return "high"
+    if (p.includes("bash") && /\b(rm|del|format)\b/.test(joined)) return "high"
+    return "medium"
+  }
+
+  const dangerousPartsOf = (permission: string, patterns: string[]): string[] => {
+    const parts: string[] = []
+    for (const pat of patterns) {
+      if (/\b(rm|del|format|mv|dd)\b/.test(pat.toLowerCase())) parts.push(pat)
+    }
+    return parts
+  }
+
+  const mapAskCard = (req: any, createdAt: number): AskCardData => ({
+    id: req.id,
+    sessionID: req.sessionID,
+    agentName: sessions().find(s => s.id === req.sessionID)?.title || "Agent",
+    status: "pending",
+    createdAt,
+    questions: (req.questions || []).map((q: any, i: number) => ({
+      id: `${req.id}-q${i}`,
+      title: q.question,
+      mode: q.multiple ? "multi" : "single",
+      options: (q.options || []).map((o: any) => ({ id: o.label, title: o.label, description: o.description })),
+      allowCustom: q.custom !== false,
+    })),
+  })
+
+  const mapPermissionCard = (req: any, createdAt: number): PermissionCardData => {
+    const patterns = Array.isArray(req.patterns) ? req.patterns : []
+    const { type, title } = actionTypeOf(req.permission)
+    return {
+      id: req.id,
+      sessionID: req.sessionID,
+      agentName: sessions().find(s => s.id === req.sessionID)?.title || "Agent",
+      status: "pending",
+      risk: riskOf(req.permission, patterns),
+      action: {
+        type,
+        title,
+        payload: patterns.join(" && ") || req.permission,
+        dangerousParts: dangerousPartsOf(req.permission, patterns),
+      },
+      impact: req.metadata?.impact as string | undefined,
+      createdAt,
+    }
+  }
+
+  const answersToRecord = (answers: string[][], sid: string, cardId: string): Record<string, string[]> => {
+    const rec: Record<string, string[]> = {}
+    const card = flowCards()[sid]?.find(c => c.data.id === cardId)
+    if (!card || card.kind !== "ask") return rec
+    card.data.questions.forEach((q, i) => { rec[q.id] = answers[i] || [] })
+    return rec
+  }
+
+  // ── Flow card actions ──
+
+  const askSubmit = async (card: AskCardData, answers: Record<string, string[]>, customText: Record<string, string>) => {
+    const ordered: string[][] = card.questions.map(q => answers[q.id] || [])
+    try {
+      await window.api.mafw.questions.reply(card.id, ordered)
+      resolveCard(card.sessionID, card.id, { status: "answered", answers, customText })
+    } catch (e) {
+      console.warn("[mafw] question reply failed:", e)
+      showToastV2({ description: "提交失败", duration: 2000 })
+    }
+  }
+
+  const askCancel = async (card: AskCardData) => {
+    try {
+      await window.api.mafw.questions.reject(card.id)
+      resolveCard(card.sessionID, card.id, { status: "cancelled" })
+    } catch (e) {
+      console.warn("[mafw] question reject failed:", e)
+    }
+  }
+
+  const permReply = async (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string) => {
+    try {
+      await window.api.mafw.permissions.reply(card.id, reply, message)
+      resolveCard(card.sessionID, card.id, {
+        status: reply === "always" ? "allowed-always" : reply === "reject" ? "denied" : "allowed-once",
+      })
+    } catch (e) {
+      console.warn("[mafw] permission reply failed:", e)
+      showToastV2({ description: "操作失败", duration: 2000 })
+    }
+  }
+
+  // Visible cards for a session: permission cards first (serial queue — only the
+  // first pending is shown interactively), then ask cards, both in creation order.
+  const sessionCards = (sid: string) => {
+    const list = flowCards()[sid] || []
+    const byTime = (a: FlowCardRecord, b: FlowCardRecord) => a.data.createdAt - b.data.createdAt
+    const perms = list.filter(c => c.kind === "permission").sort(byTime) as { kind: "permission"; data: PermissionCardData }[]
+    const asks = list.filter(c => c.kind === "ask").sort(byTime) as { kind: "ask"; data: AskCardData }[]
+    const pendingPerms = perms.filter(p => p.data.status === "pending")
+    const queueLength = Math.max(0, pendingPerms.length - 1)
+    const visiblePerms = [
+      ...(pendingPerms[0] ? [pendingPerms[0]] : []),
+      ...perms.filter(p => p.data.status !== "pending"),
+    ]
+    return { visible: [...visiblePerms, ...asks], queueLength }
+  }
+
+  const pendingCardsCount = createMemo(() => {
+    let n = 0
+    for (const list of Object.values(flowCards())) {
+      for (const c of list) if (c.data.status === "pending") n++
+    }
+    return n
+  })
+
+  const pendingPermissionCount = createMemo(() => {
+    let n = 0
+    for (const list of Object.values(flowCards())) {
+      for (const c of list) if (c.kind === "permission" && c.data.status === "pending") n++
+    }
+    return n
+  })
+
+  const sessionPending = (sid: string) => {
+    const list = flowCards()[sid] || []
+    return list.filter(c => c.data.status === "pending").length
+  }
 
   const copyText = async (text: string) => {
     try {
@@ -133,6 +310,13 @@ export function MafwShell() {
     setGatewayUrl(info.url)
     const es = new EventSource(`${info.url}/api/events`)
     es.onopen = () => console.log("[mafw] SSE connected")
+    // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
+    window.api.mafw.permissions.list().then((items: any[]) => {
+      for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
+    }).catch(e => console.warn("[mafw] permissions.list seed:", e))
+    window.api.mafw.questions.list().then((items: any[]) => {
+      for (const req of items || []) upsertCard(req.sessionID, { kind: "ask", data: mapAskCard(req, Date.now()) })
+    }).catch(e => console.warn("[mafw] questions.list seed:", e))
     es.onmessage = (e: MessageEvent) => {
       let raw: any
       try { raw = JSON.parse(e.data) } catch { return }
@@ -152,6 +336,41 @@ export function MafwShell() {
         || event?.properties?.info?.sessionID
         || ""
       if (!sid) return
+
+      // Flow cards: native question / permission requests (AskCard / PermissionCard)
+      if (event.type === "question.asked") {
+        console.log("[mafw] SSE question.asked", sid, event.properties?.id)
+        upsertCard(sid, { kind: "ask", data: mapAskCard(event.properties || {}, Date.now()) })
+        return
+      }
+      if (event.type === "permission.asked") {
+        console.log("[mafw] SSE permission.asked", sid, event.properties?.id, event.properties?.permission)
+        upsertCard(sid, { kind: "permission", data: mapPermissionCard(event.properties || {}, Date.now()) })
+        return
+      }
+      if (event.type === "question.replied") {
+        const props = event.properties || {}
+        const id = props.requestID || props.id
+        const answers = props.answers || []
+        if (id) resolveCard(sid, id, { status: "answered", answers: answersToRecord(answers, sid, id) })
+        return
+      }
+      if (event.type === "question.rejected") {
+        const props = event.properties || {}
+        const id = props.requestID || props.id
+        if (id) resolveCard(sid, id, { status: "cancelled" })
+        return
+      }
+      if (event.type === "permission.replied") {
+        const props = event.properties || {}
+        const id = props.requestID || props.id
+        if (id) {
+          const reply = props.reply
+          resolveCard(sid, id, { status: reply === "always" ? "allowed-always" : reply === "reject" ? "denied" : "allowed-once" })
+        }
+        return
+      }
+
       if (event.type === "todo.updated") {
         const list = event.properties?.todos
         if (Array.isArray(list)) setTodos(sid, list)
@@ -230,6 +449,7 @@ export function MafwShell() {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
         setSending(false)
+        expireSessionCards(sid)
       } else if (event.type === "message.error" || event.type === "message.aborted") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSending(false)
@@ -544,6 +764,17 @@ export function MafwShell() {
     if (sid) forceAnchor()
   })
 
+  // A new pending flow card scrolls into view only when pinned to the bottom;
+  // otherwise the jump pill signals pending answers.
+  createEffect(() => {
+    const sid = currentSessionID()
+    const cards = sid ? sessionCards(sid).visible : []
+    const pending = cards.filter(c => c.data.status === "pending").length
+    void pending
+    const el = containerRef()
+    if (el && stickToBottom(el)) forceAnchor()
+  })
+
   // Lazy load older messages when scrolled near the top.
   async function loadOlder(sessionID: string) {
     const page = pageState[sessionID]
@@ -655,7 +886,7 @@ export function MafwShell() {
           setActiveSessionId(id)
         }} onSettings={() => setShowConfig(true)} />
         <div class="mafw-main">
-          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} />}
+          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             {showConfig() ? (
               <ConfigPage />
@@ -713,6 +944,26 @@ export function MafwShell() {
                                   />
                                 )}
                               </For>
+                              {/* Flow cards: permission first (serial queue), then ask cards */}
+                              <Show when={currentSessionID()}>
+                                <For each={sessionCards(currentSessionID()!).visible}>
+                                  {(c) => c.kind === "permission" ? (
+                                    <PermissionCard
+                                      data={c.data}
+                                      queueLength={sessionCards(currentSessionID()!).queueLength}
+                                      onAllowOnce={() => permReply(c.data, "once")}
+                                      onAllowAlways={() => permReply(c.data, "always")}
+                                      onDeny={(note) => permReply(c.data, "reject", note)}
+                                    />
+                                  ) : (
+                                    <AskCard
+                                      data={c.data}
+                                      onSubmit={(answers, custom) => askSubmit(c.data, answers, custom)}
+                                      onCancel={() => askCancel(c.data)}
+                                    />
+                                  )}
+                                </For>
+                              </Show>
                               <ButtonV2
                                 variant="ghost"
                                 size="small"
@@ -738,6 +989,12 @@ export function MafwShell() {
                         started={taskMetrics().started}
                       />
                     </div>
+                  </Show>
+                  <Show when={currentSessionID() && sessionPending(currentSessionID()!) > 0 && jumpVisible()}>
+                    <ButtonV2 variant="outline" size="small" class="mafw-pending-pill" onClick={jumpToLatest} aria-label="有待回答卡片">
+                      <span class="mafw-flow-pulse" />
+                      有 {sessionPending(currentSessionID()!)} 个待回答 ↓
+                    </ButtonV2>
                   </Show>
                   <div class="mafw-composer">
                     <TextareaV2
