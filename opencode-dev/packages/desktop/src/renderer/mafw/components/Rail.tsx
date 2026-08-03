@@ -29,7 +29,7 @@ const dateGroupLabel = (ts: number): string => {
 type Props = {
   activeSessionId: string | null
   sessionRefreshKey: number
-  onSelectSession: (id: string, title?: string) => void
+  onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSettings?: () => void
 }
 
@@ -127,7 +127,7 @@ export function Rail(props: Props) {
         as="div"
         class={`mafw-rail-item-label mafw-rail-session${manager ? " mafw-rail-manager-session" : ""}`}
         classList={{ active: props.activeSessionId === s.id }}
-        onClick={() => props.onSelectSession(s.id, sessionName(s))}
+        onClick={() => props.onSelectSession(s.id, sessionName(s), manager)}
       >
         <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
           <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
@@ -144,7 +144,7 @@ export function Rail(props: Props) {
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
-          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s))}>
+          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), manager)}>
             <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Item onSelect={() => copyText(s.id)}>

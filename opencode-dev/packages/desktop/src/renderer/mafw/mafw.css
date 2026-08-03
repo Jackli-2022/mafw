@@ -505,8 +505,9 @@ html[data-theme="light"] .mafw-shell {
 
 /* ── Scoped session-ui overrides (§4.5) ── */
 /* User bubble: 16/16/4/16 radius, max-width 70%, --bg-overlay fill.
-   Specificity beats session-ui's body[data-new-layout] branch (0,3,1). */
-.mafw-shell body[data-new-layout] [data-component="user-message"] [data-slot="user-message-text"] {
+   body is an ANCESTOR of .mafw-shell, and data-color-scheme lives on html —
+   selector (0,5,1) beats session-ui's [data-color-scheme="light"] rule (0,4,1). */
+[data-color-scheme] body[data-new-layout] .mafw-shell [data-component="user-message"] [data-slot="user-message-text"] {
   border-radius: 16px 16px 4px 16px;
   background: var(--bg-overlay);
 }
@@ -520,7 +521,7 @@ html[data-theme="light"] .mafw-shell {
   background: var(--bg-overlay);
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: clip;
 }
 .mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"] {
   height: 32px;

@@ -35,6 +35,7 @@ interface ChatSession {
   userMsgId: string
   assistantMsgId: string | null
   done: boolean
+  manager?: boolean
   metadata?: { mafw?: { role?: string } }
 }
 
@@ -598,12 +599,12 @@ export function MafwShell() {
         )}
       </div>
       <div class="mafw-body">
-        <Rail activeSessionId={activeSessionId()} sessionRefreshKey={sessionRefreshKey()} onSelectSession={(id, title) => {
+        <Rail activeSessionId={activeSessionId()} sessionRefreshKey={sessionRefreshKey()} onSelectSession={(id, title, manager) => {
           setActiveTab("chat")
           // Ensure session exists in local tabs and store
           if (!sessions().find(s => s.id === id)) {
             const tabTitle = title || `Chat ${sessions().length + 1}`
-            setSessions(prev => [...prev, { id, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false }])
+            setSessions(prev => [...prev, { id, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager }])
             setStore(prev => ({
               ...prev,
               session: [...prev.session, { id, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
@@ -630,7 +631,7 @@ export function MafwShell() {
                         classList={{ active: s.id === activeSessionId() }}
                         onClick={() => setActiveSessionId(s.id)}
                       >
-                        <span class="mafw-agent-dot" style={{ background: s.metadata?.mafw?.role === "manager" ? "var(--accent)" : "var(--text-4)" }} />
+                        <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
                         <span class="mafw-session-title">{s.title}</span>
                         <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); closeSession(s.id) }}>✕</ButtonV2>
                       </ContextMenu.Trigger>
