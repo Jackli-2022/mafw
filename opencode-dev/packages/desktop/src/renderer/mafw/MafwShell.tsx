@@ -619,7 +619,7 @@ export function MafwShell() {
       <div class="mafw-titlebar">
         <Icon name="logo" size="small" />
         <span style={{ "font-size": 13, "font-weight": 600, color: "var(--text-2)" }}>MAFW</span>
-        <div class="mafw-status-dot" classList={{
+        <div class="mafw-titlebar-dot" classList={{
           ready: gwStatus()?.state === "ready",
           starting: gwStatus()?.state === "starting",
           failed: gwStatus()?.state === "failed",
@@ -727,19 +727,18 @@ export function MafwShell() {
                               </ButtonV2>
                             </Show>
                           </div>
-                {/* TaskPanel — in-flow above the composer (visible when the session has todos) */}
-                <Show when={currentSessionID() && (todos[currentSessionID()] || []).length > 0}>
-                  <div class="mafw-tasks-float">
-                    <TaskPanel
-                      sessionID={currentSessionID()!}
-                      todos={todos[currentSessionID()] || []}
-                      tokens={taskMetrics().tokens}
-                      started={taskMetrics().started}
-                    />
-                  </div>
-                </Show>
-                {/* InputBar — composer box (textarea + 44px toolbar in one bordered container) */}
+                {/* InputArea — 760px centered wrapper: TaskPanel (in-flow, §4.6) + composer box (§4.7) */}
                 <div class="mafw-input-area">
+                  <Show when={currentSessionID() && (todos[currentSessionID()] || []).length > 0}>
+                    <div class="mafw-tasks-float">
+                      <TaskPanel
+                        sessionID={currentSessionID()!}
+                        todos={todos[currentSessionID()] || []}
+                        tokens={taskMetrics().tokens}
+                        started={taskMetrics().started}
+                      />
+                    </div>
+                  </Show>
                   <div class="mafw-composer">
                     <TextareaV2
                       value={input()}

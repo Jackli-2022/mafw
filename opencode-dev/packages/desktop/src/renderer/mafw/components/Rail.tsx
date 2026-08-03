@@ -235,7 +235,10 @@ export function Rail(props: Props) {
         <Icon name="settings-gear" size="small" />
         <span>Settings</span>
       </div>
-      <div class="mafw-rail-status" classList={{ "mafw-rail-status-offline": !gwReady() }}>
+      <div class="mafw-rail-status" classList={{
+        "mafw-rail-status-offline": !gwReady(),
+        "mafw-rail-status-starting": gwStatus()?.state === "starting",
+      }}>
         <ContextMenu>
           <ContextMenu.Trigger as="div" class="mafw-rail-status-inner">
             <span class="mafw-rail-status-dot" classList={{ starting: gwStatus()?.state === "starting" }} />

@@ -175,7 +175,7 @@ export function TaskPanel(props: {
                             ? "var(--v2-text-text-faint, var(--text-weak))"
                             : "var(--v2-text-text-base, var(--text-strong))",
                         "text-decoration": completed ? "line-through" : "none",
-                        "text-decoration-color": "var(--v2-text-text-faint, var(--text-weak))",
+                        "text-decoration-color": completed ? "color-mix(in srgb, var(--v2-text-text-faint, var(--text-weak)) 70%, transparent)" : undefined,
                       }}
                     >
                       <span class="truncate">{t.content}</span>
