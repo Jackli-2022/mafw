@@ -105,6 +105,14 @@ html[data-theme="light"] .mafw-shell {
 
 @keyframes blink { 0%,100% { opacity: 0.3 } 50% { opacity: 1 } }
 
+/* ── Motion (§5: hover 120ms / collapse 200ms / enter 200ms, 无 >300ms 装饰动画) ── */
+@keyframes mafw-enter {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+.mafw-session-turn-container [data-component="session-turn"] { animation: mafw-enter 200ms ease-out; }
+.mafw-task-panel [data-slot="task-row"] { animation: mafw-enter 200ms ease-out; }
+
 /* ── Shell Layout ── */
 .mafw-shell {
   display: grid;
@@ -112,6 +120,7 @@ html[data-theme="light"] .mafw-shell {
   height: 100vh;
   background: var(--background-base);
   color: var(--text-strong);
+  font-variant-numeric: tabular-nums;   /* §4.8: 所有数字等宽（耗时/token/计数） */
 }
 
 /* ── Titlebar (38px, §4.1) ── */
@@ -282,23 +291,21 @@ html[data-theme="light"] .mafw-shell {
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
-  animation: mafw-breathe 2.4s ease-in-out infinite;
+  animation: mafw-breathe 2s ease-in-out infinite;
 }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
 
-/* ── Hide scrollbars on app chrome (wheel/touch still scroll) ── */
-.mafw-rail, .mafw-session-turn-container, .mafw-sessionstrip, .mafw-tabstrip, .mafw-content {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.mafw-rail::-webkit-scrollbar,
-.mafw-session-turn-container::-webkit-scrollbar,
-.mafw-sessionstrip::-webkit-scrollbar,
-.mafw-tabstrip::-webkit-scrollbar,
-.mafw-content::-webkit-scrollbar { display: none; }
+/* ── Global: visible thin scrollbars, selection, focus ring (§4.8) ── */
+.mafw-shell * { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
+.mafw-shell *::-webkit-scrollbar { width: 8px; height: 8px; }
+.mafw-shell *::-webkit-scrollbar-track { background: transparent; }
+.mafw-shell *::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+.mafw-shell *::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+.mafw-shell ::selection { background: var(--selection); }
+.mafw-shell :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
 /* ── Main ── */
 .mafw-main { display: grid; grid-template-rows: 44px 1fr; overflow: hidden; }
@@ -646,7 +653,7 @@ html[data-theme="light"] .mafw-shell {
   border: 0.5px solid var(--border-weak-base);
   border-radius: 6px;
   background: var(--background-base);
-  transition: background 0.15s;
+  transition: background 0.12s;
   box-shadow: var(--shadow-xxs-border);
 }
 .mafw-card:hover { background: var(--surface-base-hover); }
@@ -680,7 +687,7 @@ html[data-theme="light"] .mafw-shell {
   color: var(--text-base);
   cursor: pointer;
   font-size: 12px;
-  transition: background 0.15s;
+  transition: background 0.12s;
 }
 .mafw-btn:hover { background: var(--surface-base-hover); color: var(--text-strong); }
 .mafw-btn-primary { background: var(--text-interactive-base, var(--text-strong)); color: var(--icon-invert-base, #fff); border-color: transparent; }
