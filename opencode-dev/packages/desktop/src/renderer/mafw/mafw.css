@@ -583,7 +583,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-tasks-float {
   position: absolute;
   left: 50%;
-  bottom: 84px;               /* inputbar top (~72px) + 12px */
+  bottom: 120px;              /* inputbar top (~108px: textarea 54 + toolbar 44 + pad) + 12px */
   transform: translateX(-50%);
   width: min(760px, calc(100% - 64px));  /* aligned with the 760px message column */
   z-index: 40;
