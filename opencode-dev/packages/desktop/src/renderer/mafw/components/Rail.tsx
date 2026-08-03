@@ -119,9 +119,9 @@ export function Rail(props: Props) {
                       >
                         <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
                           <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
-                            <Icon name="server" size="small" style={{ color: "var(--icon-success-base, #2bc94a)" }} />
+                            <Icon name="server" size="small" style={{ color: "var(--accent)" }} />
                             <span class="mafw-rail-session-title">{sessionName(s)}</span>
-                            <span class="mafw-badge" style={{ background: "var(--icon-success-base, #2bc94a)", color: "#fff", "margin-left": "auto" }}>Manager</span>
+                            <span class="mafw-badge" style={{ background: "var(--accent)", color: "var(--on-accent)", "margin-left": "auto" }}>Manager</span>
                           </span>
                         </TooltipV2>
                       </ContextMenu.Trigger>

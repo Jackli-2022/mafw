@@ -75,7 +75,7 @@ export function TaskPanel(props: {
       <div
         class="pointer-events-none absolute inset-0"
         style={{
-          background: "radial-gradient(ellipse at right, color-mix(in srgb, var(--icon-success-base, #2bc94a) 10%, transparent), transparent 60%)",
+          background: "radial-gradient(ellipse at right, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%)",
         }}
       />
       <header

@@ -195,7 +195,7 @@ html[data-theme="light"] .mafw-shell {
   box-shadow: inset 2px 0 0 var(--text-interactive-base);
 }
 .mafw-rail-session { padding-left: 40px; }
-.mafw-rail-manager-session { padding-left: 40px; border-left: 2px solid var(--icon-success-base, #2bc94a); margin-bottom: 4px; }
+.mafw-rail-manager-session { padding-left: 40px; border-left: 2px solid var(--accent); margin-bottom: 4px; }
 .mafw-rail-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-rail-manager-session .mafw-badge {
   border-radius: 999px;
@@ -406,7 +406,7 @@ html[data-theme="light"] .mafw-shell {
   font-size: 11px;
 }
 .mafw-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.mafw-status-dot.ready { background: var(--icon-success-base, #2bc94a); }
+.mafw-status-dot.ready { background: var(--accent); }
 .mafw-status-dot.starting { background: var(--icon-warning-base, #e8b84b); animation: blink 1s infinite; }
 .mafw-status-dot.failed { background: var(--icon-critical-base, #e8636b); }
 .mafw-status-dot.stopped { background: var(--text-weak); }
@@ -485,7 +485,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-tool-tag { padding: 1px 6px; border-radius: 3px; flex-shrink: 0; text-transform: uppercase; font-size: 10px; }
 .mafw-tag-semantic { background: rgba(118,152,253,0.15); color: var(--text-interactive-base, #7698fd); }
 .mafw-tag-procedural { background: rgba(168,85,247,0.15); color: #a855f7; }
-.mafw-tag-episodic { background: rgba(43,201,74,0.15); color: var(--icon-success-base, #2bc94a); }
+.mafw-tag-episodic { background: var(--accent-dim); color: var(--accent); }
 .mafw-tag-delta { background: rgba(232,184,75,0.15); color: var(--icon-warning-base, #e8b84b); }
 .mafw-tool-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 4px 0; }
 .mafw-tool-meta { color: var(--text-base); }

@@ -12,12 +12,12 @@ const LAYOUT: Record<string, { x: number; y: number }> = {
 }
 const COLORS: Record<string, string> = {
   PLAN: "#7698fd", EXECUTE: "#a855f7", REVIEW: "#e8b84b",
-  ARCHIVE_SUCCESS: "#2bc94a", ARCHIVE_FAIL: "#e8636b", ARCHIVE_MAX_RETRIES: "#e8636b",
+  ARCHIVE_SUCCESS: "var(--accent)", ARCHIVE_FAIL: "#e8636b", ARCHIVE_MAX_RETRIES: "#e8636b",
 }
 const EDGES = [
   { from: "PLAN", to: "EXECUTE", color: "#7698fd" },
   { from: "EXECUTE", to: "REVIEW", color: "#7698fd" },
-  { from: "REVIEW", to: "ARCHIVE_SUCCESS", color: "#2bc94a", label: "PASS" },
+  { from: "REVIEW", to: "ARCHIVE_SUCCESS", color: "var(--accent)", label: "PASS" },
   { from: "REVIEW", to: "ARCHIVE_FAIL", color: "#e8636b", label: "ERROR" },
   { from: "REVIEW", to: "PLAN", color: "#e8b84b", label: "FAIL (retry)" },
   { from: "REVIEW", to: "ARCHIVE_MAX_RETRIES", color: "#e8636b", label: "max" },
@@ -85,7 +85,7 @@ export function GraphPage() {
         <svg viewBox="0 0 500 450" style={{ width: "100%", height: "auto", "min-height": 380 }}>
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-              <path d="M 0 0 L 10 5 L 0 10 Z" fill="rgba(255,255,255,0.25)" />
+              <path d="M 0 0 L 10 5 L 0 10 Z" fill="var(--text-4)" />
             </marker>
           </defs>
           <For each={EDGES}>{edge => {
@@ -108,8 +108,8 @@ export function GraphPage() {
             return (
               <g>
                 {isRun && <circle cx={p.x} cy={p.y} r="34" fill={c} opacity="0.1"><animate attributeName="r" values="34;40;34" dur="2s" repeatCount="indefinite" /></circle>}
-                <rect x={p.x - 40} y={p.y - 18} width="80" height="36" rx="6" fill={isRun ? `${c}18` : "var(--background-hover, rgba(255,255,255,0.03))"} stroke={isRun ? c : "var(--border-base)"} stroke-width={isRun ? 1.5 : 0.5} />
-                <circle cx={p.x - 32} cy={p.y} r="3" fill={isRun ? c : st === "done" ? "#2bc94a" : "var(--text-secondary)"} />
+                <rect x={p.x - 40} y={p.y - 18} width="80" height="36" rx="6" fill={isRun ? `color-mix(in srgb, ${c} 10%, transparent)` : "var(--background-hover, rgba(255,255,255,0.03))"} stroke={isRun ? c : "var(--border-base)"} stroke-width={isRun ? 1.5 : 0.5} />
+                <circle cx={p.x - 32} cy={p.y} r="3" fill={isRun ? c : st === "done" ? "var(--accent)" : "var(--text-secondary)"} />
                 <text x={p.x} y={p.y + 4} fill={isRun ? c : st === "done" ? "var(--text-primary)" : "var(--text-secondary)"} font-size="11" text-anchor="middle" font-weight="500">{id === "ARCHIVE_SUCCESS" ? "Success" : id === "ARCHIVE_FAIL" ? "Fail" : id === "ARCHIVE_MAX_RETRIES" ? "Max Retries" : id.charAt(0) + id.slice(1).toLowerCase()}</text>
               </g>
             )
