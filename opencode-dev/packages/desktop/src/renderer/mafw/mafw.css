@@ -469,7 +469,7 @@ html[data-theme="light"] .mafw-shell {
   overflow-y: auto;
   min-height: 0;
   padding: 0 32px;
-  padding-bottom: 12px;
+  padding-bottom: 48px;   /* last message clears the jump-to-latest button */
   position: relative;
 }
 .mafw-session-turn-container [data-component="session-turn"] {
@@ -641,7 +641,7 @@ html[data-theme="light"] .mafw-shell {
   background: var(--bg-float);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  transition: outline-color 0.12s, box-shadow 0.12s;
+  transition: outline-color 0.12s, box-shadow 0.12s, border-color 0.12s;
 }
 .mafw-composer:focus-within {
   outline: none;
@@ -657,6 +657,7 @@ html[data-theme="light"] .mafw-shell {
   background: transparent;
   box-shadow: none;
   border-radius: 0;
+  padding: 0;
 }
 .mafw-composer .mafw-input [data-slot="textarea-v2-textarea"] {
   box-sizing: border-box;
@@ -675,7 +676,7 @@ html[data-theme="light"] .mafw-shell {
   align-items: center;
   justify-content: space-between;
   height: 44px;
-  padding: 0 10px 10px;
+  padding: 0 10px 0;
 }
 .mafw-composer-left, .mafw-composer-right {
   display: flex;
