@@ -452,15 +452,14 @@ html[data-theme="light"] .mafw-shell {
   margin-top: 24px;
 }
 
-/* ── Sticky Agent header (实底防穿透) ── */
+/* ── Sticky Agent header (实底 + 12px 下缘渐变遮罩) ── */
 .mafw-session-titlebar {
   position: sticky;
   top: 0;
   z-index: 30;
   margin: 0 -32px;
   padding: 10px 32px 14px;
-  background: var(--bg-raised);
-  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(to bottom, var(--bg-raised) calc(100% - 12px), transparent);
 }
 .mafw-session-titlebar-inner {
   display: flex;
