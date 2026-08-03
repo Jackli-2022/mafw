@@ -1030,6 +1030,7 @@ html[data-theme="light"] .mafw-shell {
   margin-bottom: 12px;
 }
 .mafw-flow-card-dimmed { opacity: 0.6; }
+.mafw-flow-card-resolved .mafw-flow-leftbar { display: none; }
 .mafw-flow-leftbar {
   position: absolute;
   left: 0;
@@ -1148,23 +1149,25 @@ html[data-theme="light"] .mafw-shell {
   transition: border-color 0.12s, background 0.12s;
   box-sizing: border-box;
 }
+.mafw-flow-mark-multi { border-radius: 4px; }
 .mafw-flow-opt.selected .mafw-flow-mark.checked {
   border-color: var(--accent);
-  background: var(--accent);
+  background: transparent;
   color: var(--on-accent);
 }
-.mafw-flow-opt.selected .mafw-flow-mark:not(.checked) {
-  border-color: var(--accent);
-  background: transparent;
-  position: relative;
-}
-.mafw-flow-opt.selected .mafw-flow-mark:not(.checked)::after {
+/* radio: 5px accent dot inside the ring */
+.mafw-flow-opt.selected .mafw-flow-mark-single.checked::after {
   content: "";
-  position: absolute;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
+}
+/* checkbox: filled square + ✓ */
+.mafw-flow-opt.selected .mafw-flow-mark-multi.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 .mafw-flow-opt-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mafw-flow-opt-title {

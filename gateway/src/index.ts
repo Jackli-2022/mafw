@@ -1009,7 +1009,7 @@ class MafwScheduler {
         // 鈹€鈹€ Question endpoints (AskCard 鈹€ proxy to native opencode Question API) 鈹€鈹€
 
         // GET /api/questions 鈹€ list pending questions
-        if (req.url === '/api/questions' && req.method === 'GET') {
+        if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
             const r = await fetch(`${this.serveUrl}/question?directory=${encodeURIComponent(dir)}`, {
@@ -1035,9 +1035,15 @@ class MafwScheduler {
               headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
               body: JSON.stringify({ answers: body.answers }),
             });
-            res.end(JSON.stringify({ status: r.ok ? 'ok' : 'error', code: r.status }));
+            if (!r.ok) {
+              res.writeHead(r.status);
+              res.end(JSON.stringify({ status: 'error', code: r.status }));
+              return;
+            }
+            res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {
             log.error('[Question] reply error:', err.message);
+            res.writeHead(400);
             res.end(JSON.stringify({ status: 'error', error: err.message }));
           }
           return;
@@ -1052,9 +1058,15 @@ class MafwScheduler {
               method: 'POST',
               headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
             });
-            res.end(JSON.stringify({ status: r.ok ? 'ok' : 'error', code: r.status }));
+            if (!r.ok) {
+              res.writeHead(r.status);
+              res.end(JSON.stringify({ status: 'error', code: r.status }));
+              return;
+            }
+            res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {
             log.error('[Question] reject error:', err.message);
+            res.writeHead(400);
             res.end(JSON.stringify({ status: 'error', error: err.message }));
           }
           return;
@@ -1063,7 +1075,7 @@ class MafwScheduler {
         // 鈹€鈹€ Permission endpoints (PermissionCard 鈹€ proxy to native opencode Permission API) 鈹€鈹€
 
         // GET /api/permissions 鈹€ list pending permission requests
-        if (req.url === '/api/permissions' && req.method === 'GET') {
+        if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
             const r = await fetch(`${this.serveUrl}/permission?directory=${encodeURIComponent(dir)}`, {
@@ -1091,9 +1103,15 @@ class MafwScheduler {
               headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
               body: JSON.stringify(payload),
             });
-            res.end(JSON.stringify({ status: r.ok ? 'ok' : 'error', code: r.status }));
+            if (!r.ok) {
+              res.writeHead(r.status);
+              res.end(JSON.stringify({ status: 'error', code: r.status }));
+              return;
+            }
+            res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {
             log.error('[Permission] reply error:', err.message);
+            res.writeHead(400);
             res.end(JSON.stringify({ status: 'error', error: err.message }));
           }
           return;

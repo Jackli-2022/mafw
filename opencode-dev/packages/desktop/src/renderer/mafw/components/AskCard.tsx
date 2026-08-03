@@ -40,13 +40,25 @@ function StatusBadge(props: { status: string }) {
 
 export function AskCard(props: {
   data: AskCardData
+  keyboardOwner?: boolean
   onSubmit?: (answers: Record<string, string[]>, customText: Record<string, string>) => void
   onCancel?: () => void
 }) {
   const [selected, setSelected] = createSignal<Record<string, string[]>>({})
   const [customVals, setCustomVals] = createSignal<Record<string, string>>({})
+  const customRefs: Record<string, HTMLInputElement | undefined> = {}
 
   const questions = () => props.data.questions
+
+  // Auto-focus the custom input when the "其他" option is selected.
+  createEffect(() => {
+    for (const q of questions()) {
+      if ((selected()[q.id] || []).includes(CUSTOM_ID)) {
+        const el = customRefs[q.id]
+        if (el && document.activeElement !== el) el.focus()
+      }
+    }
+  })
 
   const answeredCount = createMemo(() =>
     questions().filter(q => {
@@ -86,9 +98,9 @@ export function AskCard(props: {
   }
 
   // Keyboard: 1-9 select (per in-group index of the first unanswered question),
-  // Enter submit, Esc cancel — only while pending and no input focused.
+  // Enter submit, Esc cancel — only while pending, keyboard-owner, no input focused.
   createEffect(() => {
-    if (props.data.status !== "pending") return
+    if (props.data.status !== "pending" || !props.keyboardOwner) return
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return
@@ -122,7 +134,10 @@ export function AskCard(props: {
   })
 
   return (
-    <section class="mafw-flow-card" classList={{ "mafw-flow-card-dimmed": props.data.status === "cancelled" || props.data.status === "expired" }}>
+    <section class="mafw-flow-card" classList={{
+      "mafw-flow-card-dimmed": props.data.status === "cancelled" || props.data.status === "expired",
+      "mafw-flow-card-resolved": props.data.status !== "pending",
+    }}>
       <div class="mafw-flow-leftbar" />
       {/* Header */}
       <header class="mafw-flow-header">
@@ -167,7 +182,14 @@ export function AskCard(props: {
                         classList={{ selected: isSel() }}
                         onClick={() => toggleOption(q, opt.id)}
                       >
-                        <span class="mafw-flow-mark" classList={{ checked: isSel() }}>
+                        <span
+                          class="mafw-flow-mark"
+                          classList={{
+                            checked: isSel(),
+                            "mafw-flow-mark-multi": q.mode === "multi",
+                            "mafw-flow-mark-single": q.mode === "single",
+                          }}
+                        >
                           {q.mode === "multi" && isSel() && (
                             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
                               <path d="M2 5.2L4 7.2L8 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
@@ -193,7 +215,7 @@ export function AskCard(props: {
                     classList={{ selected: (selected()[q.id] || []).includes(CUSTOM_ID) }}
                     onClick={() => toggleOption(q, CUSTOM_ID)}
                   >
-                    <span class="mafw-flow-mark" classList={{ checked: (selected()[q.id] || []).includes(CUSTOM_ID) }} />
+                    <span class="mafw-flow-mark mafw-flow-mark-single" classList={{ checked: (selected()[q.id] || []).includes(CUSTOM_ID) }} />
                     <span class="mafw-flow-opt-body">
                       <span class="mafw-flow-opt-title">其他（输入自定义回答）</span>
                     </span>
@@ -208,6 +230,7 @@ export function AskCard(props: {
                         class="mafw-flow-custom-input"
                         placeholder="输入你的回答…"
                         value={customVals()[q.id] || ""}
+                        ref={el => { customRefs[q.id] = el }}
                         onInput={e => setCustomVals(prev => ({ ...prev, [q.id]: e.currentTarget.value }))}
                       />
                     </div>

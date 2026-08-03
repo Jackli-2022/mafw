@@ -37,6 +37,7 @@ function StatusBadge(props: { status: string }) {
 export function PermissionCard(props: {
   data: PermissionCardData
   queueLength?: number
+  keyboardOwner?: boolean
   onAllowOnce?: () => void
   onAllowAlways?: () => void
   onDeny?: (note?: string) => void
@@ -65,20 +66,23 @@ export function PermissionCard(props: {
     props.onDeny?.(withNote ? (note().trim() || undefined) : undefined)
   }
 
-  // Keyboard: Y/Enter allow-once, A allow-always, N open note, Esc close note or deny.
+  // Keyboard: Y/Enter allow-once, A allow-always, N open note, Esc deny.
+  // Only the keyboard-owner pending card captures global keys (no collisions
+  // when several pending cards coexist).
   createEffect(() => {
-    if (props.data.status !== "pending") return
+    if (props.data.status !== "pending" || !props.keyboardOwner) return
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
         if (noteOpen() && e.key === "Enter") { e.preventDefault(); deny(true) }
+        else if (noteOpen() && e.key === "Escape") { e.preventDefault(); deny(false) }
         return
       }
       const k = e.key.toLowerCase()
       if (k === "y" || e.key === "Enter") { e.preventDefault(); allowOnce() }
       else if (k === "a") { e.preventDefault(); props.onAllowAlways?.() }
       else if (k === "n") { e.preventDefault(); setNoteOpen(true) }
-      else if (e.key === "Escape") { e.preventDefault(); noteOpen() ? setNoteOpen(false) : setNoteOpen(true) }
+      else if (e.key === "Escape") { e.preventDefault(); deny(false) }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -111,7 +115,10 @@ export function PermissionCard(props: {
   return (
     <section
       class="mafw-flow-card"
-      classList={{ "mafw-flow-card-dimmed": props.data.status === "denied" || props.data.status === "expired" }}
+      classList={{
+        "mafw-flow-card-dimmed": props.data.status === "denied" || props.data.status === "expired",
+        "mafw-flow-card-resolved": props.data.status !== "pending",
+      }}
     >
       <div class="mafw-flow-leftbar" classList={{ danger: highRisk() }} />
       {/* Header */}

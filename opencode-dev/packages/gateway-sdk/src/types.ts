@@ -260,6 +260,17 @@ export interface AutomationsNamespace {
   toggle(id: string, enabled: boolean): Promise<void>
 }
 
+export interface QuestionsNamespace {
+  list(): Promise<QuestionRequest[]>
+  reply(id: string, answers: string[][]): Promise<void>
+  reject(id: string): Promise<void>
+}
+
+export interface PermissionsNamespace {
+  list(): Promise<PermissionRequest[]>
+  reply(id: string, reply: 'once' | 'always' | 'reject', message?: string): Promise<void>
+}
+
 // ============================================================
 // MafwClient — full client interface
 // ============================================================
@@ -273,6 +284,8 @@ export interface MafwClient {
   goals: GoalsNamespace
   memory: MemoryNamespace
   approvals: ApprovalsNamespace
+  questions: QuestionsNamespace
+  permissions: PermissionsNamespace
   triage: TriageNamespace
   automations: AutomationsNamespace
 }

@@ -82,7 +82,7 @@ export function MafwShell() {
   const upsertCard = (sid: string, rec: FlowCardRecord) => {
     setFlowCards(prev => {
       const list = prev[sid] || []
-      const existing = list.find(c => (c.kind === "ask" ? c.data.id : c.data.id) === rec.data.id)
+      const existing = list.find(c => c.data.id === rec.data.id)
       if (existing) {
         return { ...prev, [sid]: list.map(c => (c.data.id === rec.data.id ? rec : c)) }
       }
@@ -101,7 +101,7 @@ export function MafwShell() {
     setFlowCards(prev => {
       const list = (prev[sid] || []).map(c => {
         if (c.data.status !== "pending") return c
-        return { ...c, data: { ...c.data, status: c.kind === "permission" ? "expired" : "expired" } }
+        return { ...c, data: { ...c.data, status: "expired" } }
       })
       return { ...prev, [sid]: list }
     })
@@ -196,6 +196,7 @@ export function MafwShell() {
       resolveCard(card.sessionID, card.id, { status: "cancelled" })
     } catch (e) {
       console.warn("[mafw] question reject failed:", e)
+      showToastV2({ description: "取消失败", duration: 2000 })
     }
   }
 
@@ -213,6 +214,7 @@ export function MafwShell() {
 
   // Visible cards for a session: permission cards first (serial queue — only the
   // first pending is shown interactively), then ask cards, both in creation order.
+  // keyboardOwnerId = the single card allowed to capture global keys (first pending).
   const sessionCards = (sid: string) => {
     const list = flowCards()[sid] || []
     const byTime = (a: FlowCardRecord, b: FlowCardRecord) => a.data.createdAt - b.data.createdAt
@@ -224,16 +226,10 @@ export function MafwShell() {
       ...(pendingPerms[0] ? [pendingPerms[0]] : []),
       ...perms.filter(p => p.data.status !== "pending"),
     ]
-    return { visible: [...visiblePerms, ...asks], queueLength }
+    const visible = [...visiblePerms, ...asks]
+    const firstPending = visible.find(c => c.data.status === "pending")
+    return { visible, queueLength, keyboardOwnerId: firstPending?.data.id ?? null }
   }
-
-  const pendingCardsCount = createMemo(() => {
-    let n = 0
-    for (const list of Object.values(flowCards())) {
-      for (const c of list) if (c.data.status === "pending") n++
-    }
-    return n
-  })
 
   const pendingPermissionCount = createMemo(() => {
     let n = 0
@@ -445,14 +441,19 @@ export function MafwShell() {
             : [...existing, partObj]
           return { ...prev, part: parts }
         })
-      } else if (event.type === "message.complete" || event.type === "message.part.complete") {
+      } else if (event.type === "message.complete") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
         setSending(false)
         expireSessionCards(sid)
+      } else if (event.type === "message.part.complete") {
+        setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
+        setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
+        setSending(false)
       } else if (event.type === "message.error" || event.type === "message.aborted") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSending(false)
+        expireSessionCards(sid)
       }
 
       if (event.type?.startsWith("session.next.tool.") && event.assistantMessageID) {
@@ -947,21 +948,26 @@ export function MafwShell() {
                               {/* Flow cards: permission first (serial queue), then ask cards */}
                               <Show when={currentSessionID()}>
                                 <For each={sessionCards(currentSessionID()!).visible}>
-                                  {(c) => c.kind === "permission" ? (
-                                    <PermissionCard
-                                      data={c.data}
-                                      queueLength={sessionCards(currentSessionID()!).queueLength}
-                                      onAllowOnce={() => permReply(c.data, "once")}
-                                      onAllowAlways={() => permReply(c.data, "always")}
-                                      onDeny={(note) => permReply(c.data, "reject", note)}
-                                    />
-                                  ) : (
-                                    <AskCard
-                                      data={c.data}
-                                      onSubmit={(answers, custom) => askSubmit(c.data, answers, custom)}
-                                      onCancel={() => askCancel(c.data)}
-                                    />
-                                  )}
+                                  {(c) => {
+                                    const sc = sessionCards(currentSessionID()!)
+                                    return c.kind === "permission" ? (
+                                      <PermissionCard
+                                        data={c.data}
+                                        queueLength={c.data.status === "pending" ? sc.queueLength : 0}
+                                        keyboardOwner={c.data.id === sc.keyboardOwnerId}
+                                        onAllowOnce={() => permReply(c.data, "once")}
+                                        onAllowAlways={() => permReply(c.data, "always")}
+                                        onDeny={(note) => permReply(c.data, "reject", note)}
+                                      />
+                                    ) : (
+                                      <AskCard
+                                        data={c.data}
+                                        keyboardOwner={c.data.id === sc.keyboardOwnerId}
+                                        onSubmit={(answers, custom) => askSubmit(c.data, answers, custom)}
+                                        onCancel={() => askCancel(c.data)}
+                                      />
+                                    )
+                                  }}
                                 </For>
                               </Show>
                               <ButtonV2
