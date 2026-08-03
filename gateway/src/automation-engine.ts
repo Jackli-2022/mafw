@@ -1,3 +1,4 @@
+﻿import { log } from './core/utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CronJob } from 'cron';
@@ -38,13 +39,19 @@ export function resetActionRegistry(): void {
   actionRegistry.clear();
 }
 actionRegistry.set('memory:distill', async (_rule, engine) => {
-  console.log('[AutomationEngine] Starting memory distillation...');
+  log.info('[AutomationEngine] Starting memory distillation...');
   const indexManager = new HarmonicIndexManager(engine.mafwDir);
   const result = await runDistillation(indexManager, engine.mafwDir);
-  console.log(`[AutomationEngine] Distillation complete: created ${result.created}, locked ${result.locked}`);
+  log.info(`[AutomationEngine] Distillation complete: created ${result.created}, locked ${result.locked}`);
+  eventBus.emit('memory_distillation_complete', {
+    type: 'memory_distillation_complete',
+    created: result.created,
+    locked: result.locked,
+    errors: result.errors,
+  });
 });
 actionRegistry.set('memory:decay', async (_rule, engine) => {
-  console.log('[AutomationEngine] Running energy decay...');
+  log.info('[AutomationEngine] Running energy decay...');
   const indexManager = new HarmonicIndexManager(engine.mafwDir);
   const index = indexManager.getIndex();
   const energySystem = new EnergySystem();
@@ -56,27 +63,27 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
     const diff = entry.energy - newEnergy;
     if (diff > 0.005) { indexManager.updateEnergy(entry.id, -(diff)); decayed++; }
   }
-  console.log(`[AutomationEngine] Energy decay applied to ${decayed} entries`);
+  log.info(`[AutomationEngine] Energy decay applied to ${decayed} entries`);
 });
 actionRegistry.set('memory:review', async (_rule, engine) => {
-  console.log('[AutomationEngine] Checking review queue...');
+  log.info('[AutomationEngine] Checking review queue...');
   const indexManager = new HarmonicIndexManager(engine.mafwDir);
   const scheduler = new ReviewScheduler(indexManager, engine.mafwDir);
   scheduler.tick();
   const queue = scheduler.getReviewQueue();
-  console.log(`[AutomationEngine] Review queue: ${queue.length} items due`);
+  log.info(`[AutomationEngine] Review queue: ${queue.length} items due`);
 });
 actionRegistry.set('memory:prune', async (_rule, engine) => {
-  console.log('[AutomationEngine] Pruning cognitive graph...');
+  log.info('[AutomationEngine] Pruning cognitive graph...');
   const graph = new CognitiveGraphManager(engine.mafwDir);
   const before = graph.getGraph().edges.length;
   graph.prune(0.1);
   const after = graph.getGraph().edges.length;
   const pruned = before - after;
   if (pruned > 0) {
-    console.log(`[AutomationEngine] Pruned ${pruned} low-weight edges`);
+    log.info(`[AutomationEngine] Pruned ${pruned} low-weight edges`);
   } else {
-    console.log('[AutomationEngine] No edges to prune');
+    log.info('[AutomationEngine] No edges to prune');
   }
 });
 
@@ -161,11 +168,11 @@ export class AutomationEngine {
           this.rules.set(rule.id, rule);
         }
       } catch (err: any) {
-        console.warn(`[AutomationEngine] Failed to load rule ${file}: ${err.message}`);
+        log.warn(`[AutomationEngine] Failed to load rule ${file}: ${err.message}`);
       }
     }
 
-    console.log(`[AutomationEngine] Loaded ${this.rules.size} automation rules`);
+    log.info(`[AutomationEngine] Loaded ${this.rules.size} automation rules`);
   }
 
   start(): void {
@@ -188,7 +195,7 @@ export class AutomationEngine {
     for (const id of eventRuleIds) {
       this.unregisterEventRule(id);
     }
-    console.log(`[AutomationEngine] Stopped ${this.jobs.size} cron jobs and cleaned up event listeners`);
+    log.info(`[AutomationEngine] Stopped ${this.jobs.size} cron jobs and cleaned up event listeners`);
   }
 
   private scheduleRule(id: string, rule: AutomationRule): void {
@@ -202,9 +209,9 @@ export class AutomationEngine {
         cronTrigger.timezone,
       );
       this.jobs.set(id, job);
-      console.log(`[AutomationEngine] Scheduled rule ${id}: ${cronTrigger.schedule} (${cronTrigger.timezone})`);
+      log.info(`[AutomationEngine] Scheduled rule ${id}: ${cronTrigger.schedule} (${cronTrigger.timezone})`);
     } catch (err: any) {
-      console.warn(`[AutomationEngine] Failed to schedule rule ${id}: ${err.message}`);
+      log.warn(`[AutomationEngine] Failed to schedule rule ${id}: ${err.message}`);
     }
   }
 
@@ -216,7 +223,7 @@ export class AutomationEngine {
       }
       this.eventListeners.get(eventName)!.add(id);
     }
-    console.log(`[AutomationEngine] Registered event rule ${id} for events: ${et.on.join(', ')}`);
+    log.info(`[AutomationEngine] Registered event rule ${id} for events: ${et.on.join(', ')}`);
 
     const handler = (_data: any) => {
       const goalId = _data?.goalId;
@@ -279,14 +286,27 @@ export class AutomationEngine {
   async executeRule(id: string, source?: 'cron' | 'event' | 'user', ledger?: SchedulerLedger): Promise<void> {
     const rule = this.rules.get(id);
     if (!rule) {
-      console.warn(`[AutomationEngine] Rule not found: ${id}`);
+      log.warn(`[AutomationEngine] Rule not found: ${id}`);
       return;
     }
 
-    console.log(`[AutomationEngine] Executing rule ${id}${rule.action ? ` [action: ${rule.action.type}]` : ''} (source=${source || 'cron'})`);
+    log.info(`[AutomationEngine] Executing rule ${id}${rule.action ? ` [action: ${rule.action.type}]` : ''} (source=${source || 'cron'})`);
+
+    eventBus.emit('automation_triggered', {
+      type: 'automation_triggered',
+      ruleId: id,
+      action: rule.action?.type || null,
+      source: source || 'cron',
+    });
 
     if (rule.action) {
       await this.executeAction(rule.action.type, rule);
+      const result = { action: rule.action.type };
+      eventBus.emit('automation_completed', {
+        type: 'automation_completed',
+        ruleId: id,
+        result,
+      });
       if (ledger) {
         ledger.append({
           timestamp: new Date().toISOString(),
@@ -300,7 +320,7 @@ export class AutomationEngine {
     }
 
     if (!rule.onResult || !rule.skill) {
-      console.log(`[AutomationEngine] Rule ${id} has no action, skill, or onResult �?skipping`);
+      log.info(`[AutomationEngine] Rule ${id} has no action, skill, or onResult 锟?skipping`);
       return;
     }
 
@@ -325,13 +345,13 @@ export class AutomationEngine {
   private async executeAction(actionType: string, rule: AutomationRule): Promise<void> {
     const handler = actionRegistry.get(actionType);
     if (!handler) {
-      console.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
+      log.warn(`[AutomationEngine] No handler registered for action: ${actionType}`);
       return;
     }
     try {
       await handler(rule, this);
     } catch (err: any) {
-      console.error(`[AutomationEngine] Action ${actionType} failed: ${err.message}`);
+      log.error(`[AutomationEngine] Action ${actionType} failed: ${err.message}`);
     }
   }
 
@@ -361,7 +381,7 @@ export class AutomationEngine {
       updatedAt: new Date().toISOString(),
     }, null, 2));
 
-    console.log(`[AutomationEngine] Created triage: ${triageId}`);
+    log.info(`[AutomationEngine] Created triage: ${triageId}`);
   }
 
   private async createGoal(automationId: string, rule: AutomationRule): Promise<void> {
@@ -404,10 +424,10 @@ export class AutomationEngine {
     };
     fs.writeFileSync(stateFile, JSON.stringify(initialState, null, 2), 'utf-8');
 
-    console.log(`[AutomationEngine] Created goal: ${goalId}`);
+    log.info(`[AutomationEngine] Created goal: ${goalId}`);
   }
 
-  // ── Tier 1: Read-only methods ──
+  // 鈹€鈹€ Tier 1: Read-only methods 鈹€鈹€
 
   getRules(): AutomationRule[] {
     const rules = Array.from(this.rules.values());
@@ -458,22 +478,22 @@ export class AutomationEngine {
       }
       job.stop();
     } catch {
-      // invalid cron —return empty
+      // invalid cron 鈥攔eturn empty
     }
     return { next5 };
   }
 
-  // ── Tier 2: Safe action methods ──
+  // 鈹€鈹€ Tier 2: Safe action methods 鈹€鈹€
 
   async runRuleFromLLM(id: string, ledger: SchedulerLedger): Promise<{ triageId: string; message: string }> {
     const rule = this.rules.get(id);
     if (!rule) throw new Error(`Rule not found: ${id}`);
 
     if (!rule.action && !rule.skill) {
-      throw new Error(`Rule ${id} has no action or skill �?nothing to run`);
+      throw new Error(`Rule ${id} has no action or skill 锟?nothing to run`);
     }
 
-    console.log(`[AutomationEngine] LLM triggered rule ${id}`);
+    log.info(`[AutomationEngine] LLM triggered rule ${id}`);
 
     if (rule.action) {
       await this.executeAction(rule.action.type, rule);
@@ -496,7 +516,7 @@ export class AutomationEngine {
       reason: `scan:${rule.skill}`,
       details: { triageId, autoConfirmForced: true },
     });
-    return { triageId, message: `Scan complete �?triage item ${triageId} created (pending your confirmation)` };
+    return { triageId, message: `Scan complete 锟?triage item ${triageId} created (pending your confirmation)` };
   }
 
   validateRule(rule: AutomationRule): ValidationResult {
@@ -558,7 +578,7 @@ export class AutomationEngine {
     return { valid: errors.length === 0, errors, nextTriggers };
   }
 
-  // ── Tier 3: Draft/Suggest methods ──
+  // 鈹€鈹€ Tier 3: Draft/Suggest methods 鈹€鈹€
 
   getTriageItems(status?: string): TriageItem[] {
     const triageDir = path.join(this.mafwDir, 'triage');
@@ -624,7 +644,7 @@ export class AutomationEngine {
     if (fs.existsSync(existingPath)) {
       const existing: AutomationRule = JSON.parse(fs.readFileSync(existingPath, 'utf-8'));
       if (existing.enabled) {
-        return { id: rule.id, valid: false, errors: [`Rule "${rule.id}" is already enabled �?cannot overwrite. Disable it first or use a different id`] };
+        return { id: rule.id, valid: false, errors: [`Rule "${rule.id}" is already enabled 锟?cannot overwrite. Disable it first or use a different id`] };
       }
     }
 
@@ -719,7 +739,7 @@ export class AutomationEngine {
       updatedAt: new Date().toISOString(),
     }, null, 2));
 
-    console.log(`[AutomationEngine] LLM-created triage (auto_confirm forced false): ${triageId}`);
+    log.info(`[AutomationEngine] LLM-created triage (auto_confirm forced false): ${triageId}`);
     return triageId;
   }
 }
@@ -732,3 +752,6 @@ export function parseDuration(d: string): number | undefined {
   if (d.endsWith('h')) return num * 60 * 60 * 1000;
   return undefined;
 }
+
+
+

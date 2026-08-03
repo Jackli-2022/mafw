@@ -62,12 +62,12 @@ export class SdkSessionResource {
     if (this.opencodeClient) {
       try {
         const result = await this.opencodeClient.session.create({
-          directory: directory || '.',
-          metadata: { ...metadata, mafw: true },
+          query: { directory: directory || '.' },
         });
-        id = result.id;
-        projectID = result.projectID || '';
-        title = result.title || '';
+        const created = result.data ?? result;
+        id = created.id;
+        projectID = created.projectID || '';
+        title = created.title || '';
       } catch {
         // SDK unavailable — create local-only session
         id = crypto.randomUUID();
@@ -108,7 +108,11 @@ export class SdkSessionResource {
 
   private async _rawPromptAsync(sessionID: string, message: string): Promise<void> {
     if (!this.opencodeClient) throw new Error('OpenCode client not available');
-    await this.opencodeClient.session.promptAsync({ sessionID, message });
+    if (!sessionID) return;
+    await this.opencodeClient.session.promptAsync({
+      path: { id: sessionID },
+      body: { parts: [{ type: 'text', text: message }] },
+    });
   }
 
   private async _rawPrompt(
@@ -117,12 +121,16 @@ export class SdkSessionResource {
     system?: string,
   ): Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }> }> {
     if (!this.opencodeClient) throw new Error('OpenCode client not available');
+    if (!sessionID) {
+      return { parts: [] };
+    }
     const result = await this.opencodeClient.session.prompt({
       path: { id: sessionID },
       body: { parts, system },
     });
 
-    const responseText = result.parts
+    const data = result.data ?? result;
+    const responseText = data.parts
       ?.filter((p: any) => p.type === 'text')
       .map((p: any) => p.text)
       .join('\n') || '';
@@ -133,8 +141,8 @@ export class SdkSessionResource {
   }
 
   async delete(sessionID: string): Promise<void> {
-    if (this.opencodeClient) {
-      await this.opencodeClient.session.delete({ sessionID }).catch(() => {});
+    if (this.opencodeClient && sessionID) {
+      await this.opencodeClient.session.delete({ path: { id: sessionID } }).catch(() => {});
     }
     this.sessions.delete(sessionID);
     if (this.sessionsDir) {

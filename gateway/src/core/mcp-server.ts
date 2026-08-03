@@ -1,3 +1,4 @@
+﻿import { log } from './utils/logger';
 /**
  * @deprecated MCP Server is now embedded in Gateway via SSE transport.
  * This file is kept for ENABLE_LEGACY_MCP fallback only.
@@ -61,6 +62,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error("MCP server error:", err);
+  log.error("MCP server error:", err);
   process.exit(1);
 });
+
+

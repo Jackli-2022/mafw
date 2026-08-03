@@ -1,3 +1,4 @@
+﻿import { log } from '../utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -40,13 +41,13 @@ export function ensureManagerRules(mafwDir: string): void {
     const rulePath = path.join(autoDir, `${id}.json`);
     if (!fs.existsSync(rulePath)) {
       fs.writeFileSync(rulePath, JSON.stringify(template, null, 2), 'utf-8');
-      console.log(`[Scheduler] Created system rule: ${id}`);
+      log.info(`[Scheduler] Created system rule: ${id}`);
     } else {
       try {
         const existing = JSON.parse(fs.readFileSync(rulePath, 'utf-8'));
         if (existing.enabled !== template.enabled) {
-          console.log(
-            `[Scheduler] Rule ${id} exists with user override (enabled: ${existing.enabled}) — keeping user value`,
+          log.info(
+            `[Scheduler] Rule ${id} exists with user override (enabled: ${existing.enabled}) 鈥?keeping user value`,
           );
         }
       } catch {
@@ -55,3 +56,6 @@ export function ensureManagerRules(mafwDir: string): void {
     }
   }
 }
+
+
+

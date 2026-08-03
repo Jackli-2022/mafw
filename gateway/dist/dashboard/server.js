@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardServer = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const logger_1 = require("../core/utils/logger");
 const http = __importStar(require("http"));
 const config_1 = require("../config");
 const api_1 = require("./api");
@@ -109,7 +110,7 @@ class DashboardServer {
                 res.end('Not found');
             });
             this.server.listen(this.port, () => {
-                console.log(`[DashboardServer] HTTP server @ http://localhost:${this.port}`);
+                logger_1.log.info(`DashboardServer HTTP server @ http://localhost:${this.port}`);
                 resolve();
             });
         });

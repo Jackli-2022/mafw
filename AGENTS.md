@@ -1,78 +1,6 @@
-# MAFW Agent 规范 v6.8
+# MAFW Gateway & Plugin 架构
 
-## 1. 架构原则
-
-- Interview 后全自动：用户只确认 Goal Charter，之后零干预
-- Ralph Loop 迭代：Plan → Execute → Review → 自动重试直到完成
-- Wave 并行：Wave 内 Task 并行，Wave 间串行
-- 磁盘记忆：所有状态写进仓库，Agent 会忘，repo 不会
-- 成本感知：Cognitive Router 根据预算自动降级模型，CostEstimator 追踪每次调用
-- 用户对齐：mafw_ask_user 非阻塞提问，mafw_record_feedback 修正记忆能量
-- 记忆生长：显著度保护、联想网络、间隔复习、抽象蒸馏（v6.4）
-- 零 LLM 依赖：所有认知引擎纯规则驱动
-
-## 2. Agent 定义
-
-### 2.1 Goal Agent
-- 职责：Interview 阶段，追问确立目标/指标/边界
-- 输出：Goal Charter（goals/{id}.md）
-- 交互：用户确认前唯一可交互点
-
-### 2.2 Plan Agent
-- 职责：拆解 Task，划分 Wave
-- 输入：Goal Charter + L2 Lessons + L3 Δ + L1 Wave Digest
-- 输出：waves.json + tasks/{id}.md
-
-### 2.3 Execute Agent
-- 职责：编写代码，生成 Receipt
-- 输入：Task 定义 + L3 Constraint Δ + L3 Prompt Δ
-- 输出：代码变更 + Receipt
-
-### 2.4 Reviewer
-- 职责：审查代码，输出 Review 报告
-- 输入：Goal Charter + Task 定义 + Receipt + Diff + L3 Constraint Δ
-- 输出：Review 报告（verdict / metrics_check / boundary_check / code_quality / critical_issues / warnings / suggestions / handoff_suggestion / delta_compliance）
-
-### 2.5 Memory Extractor Agent
-- 职责：从 Review 失败中提取参数化记忆（Δ）
-- 输入：L2 YAML Lesson + Review 报告 + AGENTS.md
-- 输出：0~2 个 Δ yaml
-
-### 2.6 Cognitive Router（v6.0）
-- 职责：Agent 级别动态模型选择
-- 输入：剩余 Token 预算、总预算、Agent 类型
-- 输出：`{ model: string, reason: string }`
-- 规则：`usage > 80% && agentType === 'execute'` → 切换 Haiku
-
-### 2.7 Cost Accountant（v6.0）
-- 职责：记录每次 Tool 调用的估算 Token/成本
-- 输入：`ToolCallRecord { goalId, loopNum, toolName, input }`
-- 输出：`CostRecord` 持久化到 `cost_logs` 表 + JSON 文件
-
-### 2.8 Alignment Agent（v6.0）
-- 职责：追踪用户反馈，更新记忆能量
-- 输入：`FeedbackInput { targetId, type, goalId }`
-- 输出：`FeedbackOutput { energyDelta }`
-- 规则：thumbs_up → +0.2, thumbs_down → -0.1
-
-### 2.9 Salience Perceptor（v6.4 新增）
-- 职责：自动识别观察内容的显著度
-- 输入：原始观察文本
-- 输出：salience 值 (0.5 / 1.0 / 1.5)
-- 规则：故障/错误 → 1.5，常规日志 → 0.5，默认 → 1.0
-- 影响：高显著度记忆衰减慢 3 倍
-
-### 2.10 Review Scheduler（v6.4 新增）
-- 职责：后台调度记忆复习任务
-- 算法：艾宾浩斯曲线 `1 * 2^reviewCount` 天
-- 输出：复习队列 `memory/.review_queue.json`
-
-### 2.11 Abstraction Distiller（v6.4 新增）
-- 职责：从重复记忆中提炼更高层次知识
-- 规则一：≥3 条相似 T2 叙事 → 合并为 1 条 T3 事实
-- 规则二：≥5 次成功 T4 流程 → 上升为 L5 全局启发式
-
-## 3. 谐波记忆系统（v6.3）
+## 1. 谐波记忆系统
 
 ### 3.1 数据模型
 
@@ -164,15 +92,15 @@ interface HarmonicUnit {
 - 主 UI：左侧 Rail(200px) + 上部 TabStrip + 内容区
 
 ### 5.6 Rail 侧边栏数据流
-Rail 通过 `window.api.mafw.invoke(namespace, method, ...args)` 从 Gateway SDK 获取数据：
+Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类型 API 获取数据：
 ```
 onMount → gateway.info() 等 ready
        → invoke("project", "list")       → GET /api/projects
        → invoke("project", "current")    → GET /api/projects/current
        → invoke("session", "list", pid)  → GET /api/sessions?projectID=...
 ```
-注意：`project.current()` 返回的是 `Project` 对象本身，不是 `{ project: Project }` 信封。
-点击"All projects"里的其他项目时，同时调 `invoke("project", "setCurrent", path)` 同步到 gateway。
+注意：`projects.current()` 返回的是 `Project` 对象本身，不是 `{ project: Project }` 信封。
+点击"All projects"里的其他项目时，同时调 `projects.setCurrent(path)` 同步到 gateway。
 
 所有 data fetching 在组件内 inline 使用 `createEffect`，无独立 hook。
 轮询间隔：Dashboard 15s / Approvals 10s / Triage 10s / Automations 10s。
@@ -217,29 +145,92 @@ probeExistingGateway()
 ### 5.9 Client SDK → Gateway IPC 通道
 ```
 Renderer (SolidJS)                    Main Process                    Gateway
-window.api.mafw.invoke(ns, m, args)
+window.api.mafw.{sessions}.{list}()
   └─ ipcRenderer.invoke("mafw-invoke")
        └─ mafw-ipc.ts
             └─ mafwClient[ns][m](...args)
                  └─ fetch("http://localhost:<port>/api/...")
                       └─ Gateway HTTP API
 ```
+Renderer 调用静态类型 API（`window.api.mafw.sessions.list()`），不再用 `invoke(ns, m, args)` 字符串派发。
 SSE 事件直接从前端 EventSource 连 gateway，不走 IPC。
 
-## 6. 关键规范
+`@mafw/sdk` 包通过 workspace 解析到 `opencode-dev/packages/gateway-sdk/`，提供 `MafwClient` 类 + 全部 DTO 类型。
 
-### 6.1 加密算法
-所有生产环境的认证系统必须使用 RS256 非对称加密算法。
+### 5.11 后台记忆召回（Background Recall）
 
-### 6.2 测试覆盖率
-测试覆盖率低于 80% 的代码必须标记为 DEGRADED，除非 Task 标签包含 "prototype" 或 "spike"。
+系统概述 — **边界 recall + 回合末 recall** 两个机制：
 
-### 6.3 边界测试
-每个功能必须有边界测试（空值、超长输入、特殊字符、时序攻击）。
+```
+opencode server 进程                    Gateway 进程
+┌─────────────────────────────┐        ┌──────────────────────┐
+│ Plugin (两个 hook)          │        │ HarmonicIndexManager │
+│                             │        │                      │
+│ experimental.chat.messages  │        │ GET /api/recall/     │
+│  .transform                 │ HTTP──▶│ context?query=...    │
+│  → 边界 recall 触发         │◀───────│ → search → format    │
+│  → 注入指针块到 messages 尾部│        │ → {pointers,constraints}│
+│                             │        │                      │
+│ experimental.chat.system    │        │ .mafw/constraints.json│
+│  .transform                 │        │ (pinned 约束块)       │
+│  → 注入约束块到 system 前缀  │        │                      │
+└─────────────────────────────┘        └──────────────────────┘
+```
 
-## 7. Gateway 运维
+四个 recall beat 通过官方 hook 覆盖（零 fork patch）：
 
-### 7.1 CLI 命令
+| Beat | 时机 | Hook |
+|------|------|------|
+| ① | 用户消息到达 | `chat.message`（daemon 信号） |
+| ② | LLM 推理→tool-call | `tool.execute.before`（并行执行） |
+| ③ | 工具执行完毕 | `tool.execute.after`（结果合并） |
+| ④ | 回合结束 | `event`（`session.idle`）（daemon） |
+
+**职责分工：** Plugin = 两个 transform 注射口。Daemon = gateway 事件流订阅四拍信号。
+
+### 5.12 注入点收敛
+
+所有注入路径统一使用 `gateway/src/recall/inject-format.ts` 的 `formatRecallContext()` 渲染：
+
+| 路径 | 注入物 | 格式 |
+|------|--------|------|
+| `experimental.chat.messages.transform` | pointer 块（`<mafw-recall>`） | 尾部，per-turn |
+| `experimental.chat.system.transform` | constraint 块（`<mafw-constraints>`） | 前部，常驻 |
+| `withMemoryInjection()` | deltas + facts + recall | 全量，每次 promptAsync |
+| `/api/chat/enriched` | deltas + facts + recall | 全量，首次会话创建 |
+
+所有路径通过同一 `formatRecallContext()` 渲染，格式收敛在 `inject-format.ts`。
+
+### 5.13 Pinned 约束存储
+
+用户约束独立存储在 `.mafw/constraints.json`，不经过谐波系统：
+
+```
+.mafw/constraints.json:
+["user prefers self-hosted deployment over SaaS",
+ "user is allergic to nuts"]
+```
+
+特点：
+- 文件 JSON 数组，每条一个字符串
+- 只读不自动操作（不受 MinHashMerger/EnergySystem/AbstractionDistiller 影响）
+- 每次 `/api/recall/context` 请求时读取，注入 `<mafw-constraints>` 块
+- 来源：④ 写回路捕获用户显式陈述
+
+### api/recall/context endpoint
+
+```
+GET /api/recall/context?sessionID=xxx&query=xxx
+Response: { pointers: string|null, constraints: string|null }
+```
+
+- v0：同步 HarmonicIndexManager.search(query, 3) → formatRecallContext()
+- fail-open：超时/错误返回 `{ pointers: null, constraints: null }`，不阻塞 LLM 流程
+- 未来：daemon 预计算好注入载荷，endpoint 读快照 ~1ms
+
+## 6. Gateway 运维
+
+### 6.1 CLI 命令
 Gateway 唯一运维入口是 `mafw` CLI，用 `npm install -g` 全局安装或 `npx mafw` 使用：
 
 ```bash
@@ -266,25 +257,42 @@ mafw dashboard         # 打开 Web Dashboard
 mafw version           # 版本号
 ```
 
-### 7.2 日志路径
+### 6.2 日志路径
 Gateway 的 console.log/warn/error 自动写入文件：
 - `~/.mafw/logs/mafw.log` — 文件日志（daemon 模式下也用这个）
 - 5MB 自动轮转，格式 `[ISO时间] [LEVEL] 消息`
 - Error 对象在日志中需要用 `err.message` 而非 `err`（JSON.stringify Error → {}）
 
-### 7.3 重启注意事项
+### 6.3 重启注意事项
 - Restart 前会自动 kill 旧进程（基于 PID 文件）
 - 如果旧进程是非 CLI 启动的，先 `mafw stop` 再 `mafw start`
 
-### 7.4 构建与发布
+### 6.4 构建、安装与发布
+
 ```bash
-npm run build           # 构建 plugin + gateway
-npm pack                # 打包为 .tgz（317 kB）
-npm run pack:install    # build → pack → npm install -g → verify
+npm run build                 # 构建 plugin + gateway
+npm pack                      # 打包为 .tgz（324 kB）
+npm install -g opencode-plugin-mafw-4.1.0.tgz    # 全局安装
+mafw version                  # 验证安装
 ```
+
 发布后用户只需 `npm install -g opencode-plugin-mafw` 即可使用 `mafw` CLI。
 
-### 7.5 HTTP 路由注意事项
+**完整重装流程（清旧 + 构建 + 安装）：**
+```bash
+npm run build
+npm pack
+npm install -g opencode-plugin-mafw-*.tgz     # 覆盖旧版本
+```
+
+**注意事项：**
+- 全局安装路径可通过 `npm config get prefix` 查看
+- 安装后 `mafw` 命令在 PATH 中，如果 shell 找不到请刷新 PATH（新开终端或重启 shell）
+- `.npm-global` 路径下的文件名为 `mafw`（无后缀）、`mafw.cmd`、`mafw.ps1`，对应不同 shell
+
+Desktop 构建需要先 `cd opencode-dev/packages/desktop && npm install`（workspace 解析 `@mafw/sdk` 到 `packages/gateway-sdk/`）。
+
+### 6.5 HTTP 路由注意事项
 Gateway API 路由使用正则匹配，query string 会导致 `$` 锚定不匹配：
 - 正确：`req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/)`
 - 错误：`req.url?.match(/^\/api\/sessions\/([^/]+)\/messages$/)`（不匹配 `?limit=100`）

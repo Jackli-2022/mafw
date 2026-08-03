@@ -54,6 +54,12 @@ export interface GoalCreateInput {
   maxLoops?: number
 }
 
+export interface GoalControlAction {
+  action: 'PAUSE' | 'ABORT' | 'FORCE_PHASE' | 'RESET_PARAMETRIC'
+  goalId: string
+  targetPhase?: string
+}
+
 export interface MemoryUnit {
   id: string
   type: 'episodic' | 'semantic' | 'procedural' | 'global'
@@ -130,14 +136,35 @@ export interface SessionMessagePart {
   text?: string
 }
 
+export interface Todo {
+  id: string
+  content: string
+  status: string
+  priority: string
+}
+
+export interface GatewayStatus {
+  state: 'stopped' | 'starting' | 'ready' | 'failed'
+  port: number | null
+  url: string | null
+  error: string | null
+}
+
+// ============================================================
+// Namespace interfaces (aligned with @opencode-ai/sdk v2)
+// ============================================================
+
 export interface SessionNamespace {
-  create(opts: { directory?: string; metadata?: Record<string, unknown> }): Promise<Session>
-  promptAsync(opts: { sessionID: string; message: string }): Promise<void>
-  prompt(opts: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
-  delete(opts: { sessionID: string } | { path: { id: string } }): Promise<void>
-  list(projectID?: string): Promise<Session[]>
-  get(id: string): Promise<Session>
-  messages(sessionID: string, limit?: number, before?: string): Promise<any>
+  create(params?: { directory?: string; metadata?: Record<string, unknown> }): Promise<Session>
+  get(params: { path: { id: string } }): Promise<Session>
+  list(params?: { query?: { projectID?: string } }): Promise<Session[]>
+  delete(params: { path: { id: string } }): Promise<void>
+  messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }>
+  todo(params: { path: { id: string } }): Promise<{ data: Todo[] }>
+  abort(params: { path: { id: string } }): Promise<void>
+  prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
+  promptAsync(params: { path: { id: string }; body: { message: string } }): Promise<void>
+  events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
 }
 
 export interface ProjectNamespace {
@@ -147,7 +174,8 @@ export interface ProjectNamespace {
 }
 
 export interface EventNamespace {
-  subscribe(opts?: {}): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  subscribe(): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
 }
 
 export interface ConfigNamespace {
@@ -156,14 +184,15 @@ export interface ConfigNamespace {
 }
 
 export interface ChatNamespace {
-  send(message: string): Promise<{ sessionID: string }>
-  sendEnriched(message: string): Promise<{ sessionID: string }>
+  send(message: string, sessionID?: string): Promise<{ sessionID: string }>
+  sendEnriched(message: string, sessionID?: string): Promise<{ sessionID: string }>
 }
 
 export interface GoalsNamespace {
   list(): Promise<Goal[]>
   get(id: string): Promise<Goal | null>
-  create(input: GoalCreateInput): Promise<{ goalId: string }>
+  validate(input: GoalCreateInput): Promise<{ goalId: string }>
+  control(action: GoalControlAction): Promise<void>
 }
 
 export interface MemorySearchOptions {
@@ -177,6 +206,7 @@ export interface MemoryNamespace {
   mergedSearch(opts: MergedSearchOptions): Promise<MemoryFact[]>
   getEnergyDistribution(): Promise<EnergyDistribution>
   getL5Axioms(topK?: number): Promise<Axiom[]>
+  delete(id: string): Promise<void>
 }
 
 export interface ApprovalsNamespace {
@@ -186,6 +216,9 @@ export interface ApprovalsNamespace {
 
 export interface TriageNamespace {
   list(): Promise<TriageItem[]>
+  dismiss(id: string): Promise<void>
+  confirm(id: string): Promise<void>
+  reject(id: string): Promise<void>
 }
 
 export interface AutomationsNamespace {
@@ -194,17 +227,14 @@ export interface AutomationsNamespace {
 }
 
 // ============================================================
-// GatewayClient — full client interface
+// MafwClient — full client interface
 // ============================================================
 
-export interface GatewayClient {
-  // Core (aligned with @opencode-ai/sdk)
+export interface MafwClient {
   session: SessionNamespace
   project: ProjectNamespace
   event: EventNamespace
   config: ConfigNamespace
-
-  // MAFW extensions
   chat: ChatNamespace
   goals: GoalsNamespace
   memory: MemoryNamespace
@@ -213,6 +243,6 @@ export interface GatewayClient {
   automations: AutomationsNamespace
 }
 
-export interface GatewayClientOptions {
+export interface MafwClientOptions {
   baseUrl?: string
 }

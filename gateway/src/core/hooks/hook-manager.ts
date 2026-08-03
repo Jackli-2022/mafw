@@ -1,3 +1,4 @@
+﻿import { log } from '../utils/logger';
 export interface HookContext {
   event: string;
   data: any;
@@ -78,7 +79,7 @@ export class HookManager {
         ]);
       } catch (err: any) {
         if (this.config.failBehavior === 'continue') {
-          console.error(`[HookManager] Hook "${hook.name}" failed: ${err.message}`);
+          log.error(`[HookManager] Hook "${hook.name}" failed: ${err.message}`);
         } else {
           throw err;
         }
@@ -109,3 +110,6 @@ export class HookManager {
     return count;
   }
 }
+
+
+

@@ -1,3 +1,4 @@
+﻿import { log } from '../core/utils/logger';
 import { config } from '../config';
 import { buildExecutionGraph, FileCheckpointer } from '../core/langgraph';
 import { LoopStateType } from '../core/langgraph/loop-state';
@@ -51,9 +52,12 @@ export class GraphRunner {
       askUser: async (s: any) => ({ pendingQuestion: null }),
       execute: async (s: any) => ({ receiptPath: null }),
       review: async (s: any) => ({ reviewVerdict: 'PASS' as const, reviewReportPath: null, reviewFeedback: '' }),
-      archiveSuccess: async (s: any) => { console.log(`[ChatGraph] ${s.goalId} PASSED`); return {}; },
-      archiveFail: async (s: any) => { console.error(`[ChatGraph] ${s.goalId} FAILED: ${s.lastError}`); return {}; },
-      archiveMaxRetries: async (s: any) => { console.error(`[ChatGraph] ${s.goalId} max retries`); return {}; },
+      archiveSuccess: async (s: any) => { log.info(`[ChatGraph] ${s.goalId} PASSED`); return {}; },
+      archiveFail: async (s: any) => { log.error(`[ChatGraph] ${s.goalId} FAILED: ${s.lastError}`); return {}; },
+      archiveMaxRetries: async (s: any) => { log.error(`[ChatGraph] ${s.goalId} max retries`); return {}; },
     };
   }
 }
+
+
+

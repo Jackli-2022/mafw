@@ -19,12 +19,14 @@ export function createMafwApi(): MafwAPI {
     },
 
     sessions: {
-      list: (projectID?) => invoke("session", "list", projectID),
+      list: (projectID?) => invoke("session", "list", projectID ? { query: { projectID } } : {}),
       create: (opts?) => invoke("session", "create", opts || {}),
-      get: (id) => invoke("session", "get", id),
-      messages: (sessionID, limit?, before?) => invoke("session", "messages", sessionID, limit, before),
-      delete: (id) => invoke("session", "delete", { sessionID: id }),
-      promptAsync: (opts) => invoke("session", "promptAsync", opts),
+      get: (id) => invoke("session", "get", { path: { id } }),
+      messages: (sessionID, limit?, before?) => invoke("session", "messages", { path: { id: sessionID }, query: { limit, before } }),
+      todo: (sessionID) => invoke("session", "todo", { path: { id: sessionID } }),
+      abort: (sessionID) => invoke("session", "abort", { path: { id: sessionID } }),
+      delete: (id) => invoke("session", "delete", { path: { id } }),
+      promptAsync: ({ sessionID, message }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message } }),
     },
 
     projects: {
@@ -36,7 +38,7 @@ export function createMafwApi(): MafwAPI {
     goals: {
       list: () => invoke("goals", "list"),
       get: (id) => invoke("goals", "get", id),
-      create: (input) => invoke("goals", "create", input),
+      validate: (input) => invoke("goals", "validate", input),
       control: (action) => invoke("goals", "control", action),
     },
 
@@ -64,8 +66,8 @@ export function createMafwApi(): MafwAPI {
     },
 
     chat: {
-      send: (message) => invoke("chat", "send", message),
-      sendEnriched: (message) => invoke("chat", "sendEnriched", message),
+      send: (message, sessionID?) => invoke("chat", "send", message, sessionID),
+      sendEnriched: (message, sessionID?) => invoke("chat", "sendEnriched", message, sessionID),
     },
 
     config: {

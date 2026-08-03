@@ -1,7 +1,7 @@
 import { startGateway, stopGateway, getGatewayStatus } from "./mafw-sidecar"
 
-export async function startMafwGw(opts: { opencodeServerUrl: string; opencodeServerPassword?: string }): Promise<string | null> {
-  await startGateway({ opencodeServerUrl: opts.opencodeServerUrl, opencodeServerPassword: opts.opencodeServerPassword })
+export async function startMafwGw(): Promise<string | null> {
+  await startGateway()
   for (let i = 0; i < 30; i++) {
     const status = getGatewayStatus()
     if (status.state === "ready" && status.url) return status.url

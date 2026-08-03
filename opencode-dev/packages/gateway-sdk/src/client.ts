@@ -1,18 +1,20 @@
 import {
-  GatewayClient as IGatewayClient, GatewayClientOptions,
-  Session, Project, TextPart, Goal, GoalCreateInput,
+  MafwClient as IMafwClient, MafwClientOptions,
+  Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom,
-  Approval, TriageItem, AutomationRule,
+  Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
 
-export class GatewayClient implements IGatewayClient {
+export class MafwClient implements IMafwClient {
   private baseUrl: string
   private _sse: SSEConnection
 
-  constructor(opts?: GatewayClientOptions) {
-    this.baseUrl = opts?.baseUrl || 'http://localhost:3000'
+  constructor(opts?: string | MafwClientOptions) {
+    this.baseUrl = typeof opts === 'string'
+      ? opts
+      : opts?.baseUrl || 'http://localhost:3000'
     this._sse = new SSEConnection()
   }
 
@@ -28,50 +30,87 @@ export class GatewayClient implements IGatewayClient {
   // ── Session ──
 
   session = {
-    create: async (opts: { directory?: string; metadata?: Record<string, unknown> }): Promise<Session> => {
+    create: async (
+      params?: { directory?: string; metadata?: Record<string, unknown> },
+    ): Promise<Session> => {
       return this.request<Session>('/api/session', {
         method: 'POST',
-        body: JSON.stringify(opts),
+        body: JSON.stringify(params || {}),
       })
     },
 
-    promptAsync: async (opts: { sessionID: string; message: string }): Promise<void> => {
-      const res = await fetch(`${this.baseUrl}/api/session/${opts.sessionID}/promptAsync`, {
+    get: async (params: { path: { id: string } }): Promise<Session> => {
+      return this.request<Session>(`/api/sessions/${params.path.id}`)
+    },
+
+    list: async (
+      params?: { query?: { projectID?: string } },
+    ): Promise<Session[]> => {
+      const pid = params?.query?.projectID
+      const query = pid ? `?projectID=${encodeURIComponent(pid)}` : ''
+      const data = await this.request<{ sessions: Session[] }>(`/api/sessions${query}`)
+      if (!data || !Array.isArray(data.sessions)) return []
+      return data.sessions
+    },
+
+    delete: async (params: { path: { id: string } }): Promise<void> => {
+      const res = await fetch(`${this.baseUrl}/api/session/${params.path.id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    },
+
+    messages: async (
+      params: { path: { id: string }; query?: { limit?: number; before?: string } },
+    ): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }> => {
+      const q = new URLSearchParams()
+      if (params.query?.limit) q.set('limit', String(params.query.limit))
+      if (params.query?.before) q.set('before', params.query.before)
+      return this.request<{ data: SessionMessagePart[]; nextCursor: string | null }>(`/api/sessions/${params.path.id}/messages?${q}`)
+    },
+
+    todo: async (params: { path: { id: string } }): Promise<{ data: Todo[] }> => {
+      return this.request<{ data: Todo[] }>(`/api/sessions/${params.path.id}/todo`)
+    },
+
+    abort: async (params: { path: { id: string } }): Promise<void> => {
+      await this.request(`/api/session/${params.path.id}/abort`, { method: 'POST' })
+    },
+
+    prompt: async (
+      params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } },
+    ): Promise<{ parts: TextPart[] }> => {
+      return this.request<{ parts: TextPart[] }>(`/api/session/${params.path.id}/prompt`, {
+        method: 'POST',
+        body: JSON.stringify(params.body),
+      })
+    },
+
+    promptAsync: async (
+      params: { path: { id: string }; body: { message: string } },
+    ): Promise<void> => {
+      const res = await fetch(`${this.baseUrl}/api/session/${params.path.id}/promptAsync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: opts.message }),
+        body: JSON.stringify({ message: params.body.message }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
 
-    prompt: async (opts: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }> => {
-      return this.request<{ parts: TextPart[] }>(`/api/session/${opts.path.id}/prompt`, {
-        method: 'POST',
-        body: JSON.stringify(opts.body),
-      })
-    },
-
-    delete: async (opts: { sessionID: string } | { path: { id: string } }): Promise<void> => {
-      const id = 'sessionID' in opts ? opts.sessionID : opts.path.id
-      const res = await fetch(`${this.baseUrl}/api/session/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-    },
-
-    list: async (projectID?: string): Promise<Session[]> => {
-      const query = projectID ? `?projectID=${encodeURIComponent(projectID)}` : ''
-      const data = await this.request<{ sessions: Session[] }>(`/api/sessions${query}`)
-      return data.sessions || data as any || []
-    },
-
-    get: async (id: string): Promise<Session> => {
-      return this.request<Session>(`/api/sessions/${id}`)
-    },
-
-    messages: async (sessionID: string, limit?: number, before?: string): Promise<any> => {
-      const params = new URLSearchParams()
-      if (limit) params.set('limit', String(limit))
-      if (before) params.set('before', before)
-      return this.request<any>(`/api/sessions/${sessionID}/messages?${params}`)
+    events: async (
+      params: { path: { id: string } },
+    ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
+      const sse = new SSEConnection()
+      sse.connectToSession(this.baseUrl, params.path.id)
+      return {
+        on: (event: string, cb: (data: any) => void) => {
+          if (event === 'data') {
+            sse.on('*', cb)
+          } else {
+            sse.on(event, cb)
+          }
+        },
+      }
     },
   }
 
@@ -90,7 +129,7 @@ export class GatewayClient implements IGatewayClient {
     },
 
     setCurrent: async (path: string): Promise<void> => {
-      await this.request('/register', {
+      await this.request('/api/projects/register', {
         method: 'POST',
         body: JSON.stringify({ projectDir: path, mafwDir: path + '/.mafw' }),
       })
@@ -112,6 +151,21 @@ export class GatewayClient implements IGatewayClient {
         },
       }
     },
+
+    subscribeToSession: async (
+      sessionID: string,
+    ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
+      this._sse.connectToSession(this.baseUrl, sessionID)
+      return {
+        on: (event: string, cb: (data: any) => void) => {
+          if (event === 'data') {
+            this._sse.on('*', cb)
+          } else {
+            this._sse.on(event, cb)
+          }
+        },
+      }
+    },
   }
 
   // ── Config ──
@@ -122,6 +176,8 @@ export class GatewayClient implements IGatewayClient {
       return key ? data[key] : data
     },
     set: async (key: string, value: any): Promise<void> => {
+      // NOTE: read-then-write pattern — concurrent set() calls will race.
+      // The backend should support PATCH for individual keys to avoid lost updates.
       const current = await this.request<any>('/api/config')
       current[key] = value
       await fetch(`${this.baseUrl}/api/config`, {
@@ -142,13 +198,23 @@ export class GatewayClient implements IGatewayClient {
 
     get: async (id: string): Promise<Goal | null> => {
       try { return await this.request<Goal>(`/api/goals/${id}`) }
-      catch { return null }
+      catch (e: any) {
+        if (e.message?.includes('HTTP 404')) return null
+        throw e
+      }
     },
 
-    create: async (input: GoalCreateInput): Promise<{ goalId: string }> => {
+    validate: async (input: GoalCreateInput): Promise<{ goalId: string }> => {
       return this.request<{ goalId: string }>(`/api/work/${input.goalId}/validate`, {
         method: 'POST',
         body: JSON.stringify(input),
+      })
+    },
+
+    control: async (action: GoalControlAction): Promise<void> => {
+      await this.request('/api/goals/control', {
+        method: 'POST',
+        body: JSON.stringify(action),
       })
     },
   }
@@ -180,6 +246,10 @@ export class GatewayClient implements IGatewayClient {
       const data = await this.request<{ axioms: Axiom[] }>(`/api/l5/axioms${params}`)
       return data.axioms || []
     },
+
+    delete: async (id: string): Promise<void> => {
+      await this.request(`/api/memory/${id}`, { method: 'DELETE' })
+    },
   }
 
   // ── Approvals ──
@@ -205,26 +275,38 @@ export class GatewayClient implements IGatewayClient {
       const data = await this.request<{ items: TriageItem[] }>('/api/triage')
       return data.items || []
     },
+
+    dismiss: async (id: string): Promise<void> => {
+      await this.request(`/api/triage/${id}/dismiss`, { method: 'POST' })
+    },
+
+    confirm: async (id: string): Promise<void> => {
+      await this.request(`/api/triage/${id}/confirm`, { method: 'POST' })
+    },
+
+    reject: async (id: string): Promise<void> => {
+      await this.request(`/api/triage/${id}/reject`, { method: 'POST' })
+    },
   }
 
   // ── Chat ──
 
   chat = {
-    send: async (message: string): Promise<{ sessionID: string }> => {
+    send: async (message: string, sessionID?: string): Promise<{ sessionID: string }> => {
       const res = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, sessionID }),
       })
       if (!res.ok) throw new Error(`Chat send failed: ${res.status}`)
       return res.json()
     },
 
-    sendEnriched: async (message: string): Promise<{ sessionID: string }> => {
+    sendEnriched: async (message: string, sessionID?: string): Promise<{ sessionID: string }> => {
       const res = await fetch(`${this.baseUrl}/api/chat/enriched`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, sessionID }),
       })
       if (!res.ok) throw new Error(`Chat sendEnriched failed: ${res.status}`)
       return res.json()

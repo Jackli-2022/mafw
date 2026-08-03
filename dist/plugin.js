@@ -45,6 +45,8 @@ const user_prompt_1 = require("./hooks/user-prompt");
 const llm_after_1 = require("./hooks/llm-after");
 const session_compacting_1 = require("./hooks/session-compacting");
 const handoff_1 = require("./hooks/handoff");
+const session_recall_1 = require("./hooks/session-recall");
+const session_system_1 = require("./hooks/session-system");
 function getGatewayUrl(mafwDir) {
     const configPath = path.join(mafwDir, '..', '.config', 'mafw', 'desktop-automation.json');
     try {
@@ -190,6 +192,8 @@ async function MafwPlugin({ directory }) {
             'tool.execute.before': (ctx) => hookManager.execute('tool.before', ctx),
             'tool.execute.after': (ctx, result) => hookManager.execute('tool.executed', { ...ctx, data: result }),
             'chat.message': (ctx) => hookManager.execute('user.prompt', ctx),
+            'experimental.chat.messages.transform': (input, output) => (0, session_recall_1.sessionRecallHook)(input, output),
+            'experimental.chat.system.transform': (input, output) => (0, session_system_1.sessionSystemHook)(input, output),
         },
         command: {
             goal: {

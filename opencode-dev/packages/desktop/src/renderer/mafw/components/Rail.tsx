@@ -1,11 +1,23 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
+import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
+
+const copyText = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    showToastV2({ description: "Copied", duration: 2000 })
+  } catch (e) {
+    console.warn("[mafw] clipboard failed", e)
+  }
+}
 
 type Props = {
   activeSessionId: string | null
-  onSelectSession: (id: string) => void
+  sessionRefreshKey: number
+  onSelectSession: (id: string, title?: string) => void
   onSettings?: () => void
 }
 
@@ -44,6 +56,7 @@ export function Rail(props: Props) {
   })
 
   createEffect(() => {
+    props.sessionRefreshKey
     if (!gwReady()) return
     const project = currentProject()
     const projectID = project ? (project.id || project.worktree) : undefined
@@ -66,12 +79,21 @@ export function Rail(props: Props) {
     sessions().filter(s => s.metadata?.mafw?.role !== 'manager')
   )
 
+  const sessionName = (s: any): string =>
+    s.metadata?.mafw?.role === 'manager' ? 'Manager' : (s.title || (s.id || '').slice(0, 12))
+
+  const selectProject = (p: any) => {
+    setCurrentProject(p)
+    try { window.api.mafw.projects.setCurrent(p.worktree) } catch (e) { console.warn("[mafw]", e) }
+  }
+
   return (
     <div class="mafw-rail">
       <div class="mafw-rail-section" onClick={() => setExpanded(!expanded)}>
         <Icon name="chevron-down" size="small" style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.12s" }} />
         <Icon name="folder" size="small" />
         <span>History</span>
+        <span class="mafw-rail-section-count">{sessions().filter(Boolean).length}</span>
       </div>
       {expanded && (
         <div class="mafw-rail-tree">
@@ -88,36 +110,62 @@ export function Rail(props: Props) {
               ) : (
                 <>
                   {managerSessions().filter(Boolean).map(s => (
-                    <div
-                      class="mafw-rail-item-label mafw-rail-session mafw-rail-manager-session"
-                      classList={{ active: props.activeSessionId === s.id }}
-                      onClick={() => props.onSelectSession(s.id)}
-                    >
-                      <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
-                        <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
-                          <Icon name="server" size="small" style={{ color: "var(--icon-success-base, #2bc94a)" }} />
-                          <span class="mafw-rail-session-title">{s.title || (s.id || "").slice(0, 12)}</span>
-                          <span class="mafw-badge" style={{ background: "var(--icon-success-base, #2bc94a)", color: "#fff", "margin-left": "auto" }}>Manager</span>
-                        </span>
-                      </TooltipV2>
-                    </div>
+                    <ContextMenu>
+                      <ContextMenu.Trigger
+                        as="div"
+                        class="mafw-rail-item-label mafw-rail-session mafw-rail-manager-session"
+                        classList={{ active: props.activeSessionId === s.id }}
+                        onClick={() => props.onSelectSession(s.id, sessionName(s))}
+                      >
+                        <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
+                          <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
+                            <Icon name="server" size="small" style={{ color: "var(--icon-success-base, #2bc94a)" }} />
+                            <span class="mafw-rail-session-title">{sessionName(s)}</span>
+                            <span class="mafw-badge" style={{ background: "var(--icon-success-base, #2bc94a)", color: "#fff", "margin-left": "auto" }}>Manager</span>
+                          </span>
+                        </TooltipV2>
+                      </ContextMenu.Trigger>
+                      <ContextMenu.Portal>
+                        <ContextMenu.Content>
+                          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s))}>
+                            <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
+                          </ContextMenu.Item>
+                          <ContextMenu.Item onSelect={() => copyText(s.id)}>
+                            <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
+                          </ContextMenu.Item>
+                        </ContextMenu.Content>
+                      </ContextMenu.Portal>
+                    </ContextMenu>
                   ))}
                   {regularSessions().filter(Boolean).slice(0, 50).map(s => (
-                    <div
-                      class="mafw-rail-item-label mafw-rail-session"
-                      classList={{ active: props.activeSessionId === s.id }}
-                      onClick={() => props.onSelectSession(s.id)}
-                    >
-                      <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
-                        <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
-                          <span style={{ opacity: 0.5 }}>⋮</span>
-                          <span class="mafw-rail-session-title">{s.title || (s.id || "").slice(0, 12)}</span>
-                          <span class="mafw-rail-session-time" style={{ "font-size": 10, opacity: 0.35, "margin-left": "auto" }}>
-                            {s.time?.created ? new Date(s.time.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
+                    <ContextMenu>
+                      <ContextMenu.Trigger
+                        as="div"
+                        class="mafw-rail-item-label mafw-rail-session"
+                        classList={{ active: props.activeSessionId === s.id }}
+                        onClick={() => props.onSelectSession(s.id, sessionName(s))}
+                      >
+                        <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
+                          <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
+                            <span style={{ opacity: 0.5 }}>⋮</span>
+                            <span class="mafw-rail-session-title">{sessionName(s)}</span>
+                            <span class="mafw-rail-session-time" style={{ "font-size": 10, opacity: 0.35, "margin-left": "auto" }}>
+                              {s.time?.created ? new Date(s.time.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
+                            </span>
                           </span>
-                        </span>
-                      </TooltipV2>
-                    </div>
+                        </TooltipV2>
+                      </ContextMenu.Trigger>
+                      <ContextMenu.Portal>
+                        <ContextMenu.Content>
+                          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s))}>
+                            <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
+                          </ContextMenu.Item>
+                          <ContextMenu.Item onSelect={() => copyText(s.id)}>
+                            <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
+                          </ContextMenu.Item>
+                        </ContextMenu.Content>
+                      </ContextMenu.Portal>
+                    </ContextMenu>
                   ))}
                 </>
               )}
@@ -142,17 +190,27 @@ export function Rail(props: Props) {
                 All projects
               </div>
               {projects().map(p => (
-                <div
-                  class="mafw-rail-item-label mafw-rail-project-item"
-                  classList={{ active: currentProject()?.worktree === p.worktree }}
-                  onClick={async () => {
-                    setCurrentProject(p)
-                    try { await window.api.mafw.projects.setCurrent(p.worktree) } catch {}
-                  }}
-                >
-                  <Icon name="folder" size="small" />
-                  {p.worktree?.split(/[/\\]/).pop() || p.id}
-                </div>
+                <ContextMenu>
+                  <ContextMenu.Trigger
+                    as="div"
+                    class="mafw-rail-item-label mafw-rail-project-item"
+                    classList={{ active: currentProject()?.worktree === p.worktree }}
+                    onClick={() => selectProject(p)}
+                  >
+                    <Icon name="folder" size="small" />
+                    {p.worktree?.split(/[/\\]/).pop() || p.id}
+                  </ContextMenu.Trigger>
+                  <ContextMenu.Portal>
+                    <ContextMenu.Content>
+                      <ContextMenu.Item onSelect={() => selectProject(p)}>
+                        <ContextMenu.ItemLabel>Set as current</ContextMenu.ItemLabel>
+                      </ContextMenu.Item>
+                      <ContextMenu.Item onSelect={() => copyText(p.worktree || p.id)}>
+                        <ContextMenu.ItemLabel>Copy path</ContextMenu.ItemLabel>
+                      </ContextMenu.Item>
+                    </ContextMenu.Content>
+                  </ContextMenu.Portal>
+                </ContextMenu>
               ))}
             </div>
           )}

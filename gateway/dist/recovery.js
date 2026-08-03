@@ -34,15 +34,16 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RecoveryManager = void 0;
+const logger_1 = require("./core/utils/logger");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const MAFW_DIR = '.mafw';
 /**
- * Recovery �?崩溃恢复�? *
- * Scheduler 重启后：
- *   1. 读取 STATUS.md，找到所�?RUNNING 状态的 Goal
- *   2. 尝试找到最近的 Checkpoint
- *   3. 重新创建 session 并启�?Loop
+ * Recovery 锟?宕╂簝鎭㈠锟? *
+ * Scheduler 閲嶅惎鍚庯細
+ *   1. 璇诲彇 STATUS.md锛屾壘鍒版墍锟?RUNNING 鐘舵€佺殑 Goal
+ *   2. 灏濊瘯鎵惧埌鏈€杩戠殑 Checkpoint
+ *   3. 閲嶆柊鍒涘缓 session 骞跺惎锟?Loop
  */
 class RecoveryManager {
     projectDir;
@@ -53,7 +54,7 @@ class RecoveryManager {
         return path.join(this.projectDir, MAFW_DIR);
     }
     /**
-     * 查找最近的 Checkpoint
+     * 鏌ユ壘鏈€杩戠殑 Checkpoint
      */
     findLastCheckpoint(goalId) {
         const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
@@ -69,7 +70,7 @@ class RecoveryManager {
         return files.length > 0 ? path.join(checkpointsDir, files[0]) : null;
     }
     /**
-     * 保存 Checkpoint
+     * 淇濆瓨 Checkpoint
      */
     saveCheckpoint(goalId, loop, data, waveNum) {
         const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
@@ -87,7 +88,7 @@ class RecoveryManager {
         fs.writeFileSync(checkpointPath, JSON.stringify(checkpoint, null, 2), 'utf-8');
     }
     /**
-     * 加载 Checkpoint
+     * 鍔犺浇 Checkpoint
      */
     loadCheckpoint(checkpointPath) {
         if (!fs.existsSync(checkpointPath))
@@ -129,7 +130,7 @@ class RecoveryManager {
         return true;
     }
     /**
-     * 恢复所有需要重启的 Goal
+     * 鎭㈠鎵€鏈夐渶瑕侀噸鍚殑 Goal
      */
     async recoverAll(callback) {
         const statusPath = path.join(this.mafwDir, 'STATUS.md');
@@ -148,7 +149,7 @@ class RecoveryManager {
             if (!goalId || state !== 'RUNNING')
                 continue;
             const checkpoint = this.findLastCheckpoint(goalId);
-            console.log(`[Recovery] Goal ${goalId} needs restart, checkpoint: ${checkpoint || 'none'}`);
+            logger_1.log.info(`[Recovery] Goal ${goalId} needs restart, checkpoint: ${checkpoint || 'none'}`);
             await callback(goalId, checkpoint);
         }
     }

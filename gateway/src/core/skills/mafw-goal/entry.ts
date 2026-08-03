@@ -1,23 +1,24 @@
+﻿import { log } from '../../utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { initState } from '../../utils/state';
 import { StatusManager } from '../../utils/status';
 
 /**
- * mafw-goal Skill Entry — Goal Interview Agent
+ * mafw-goal Skill Entry 鈥?Goal Interview Agent
  *
- * 职责：
- *   1. 接收用户输入的目标描述
- *   2. 进行多轮追问（3-5 个问题）
- *   3. 生成 Goal Charter
- *   4. 用户确认后写入：
+ * 鑱岃矗锛?
+ *   1. 鎺ユ敹鐢ㄦ埛杈撳叆鐨勭洰鏍囨弿杩?
+ *   2. 杩涜澶氳疆杩介棶锛?-5 涓棶棰橈級
+ *   3. 鐢熸垚 Goal Charter
+ *   4. 鐢ㄦ埛纭鍚庡啓鍏ワ細
  *      - goals/{goalId}.md
  *      - requests/{goalId}.json
  *      - state/{goalId}.json (nextAction: CREATE_PLAN_SESSION)
  *      - STATUS.md
- *   5. 返回确认结果给 TUI
+ *   5. 杩斿洖纭缁撴灉缁?TUI
  *
- * 调用方式：TUI 中 /goal 命令 → context.runSkill('mafw-goal', { text: '...' })
+ * 璋冪敤鏂瑰紡锛歍UI 涓?/goal 鍛戒护 鈫?context.runSkill('mafw-goal', { text: '...' })
  */
 
 export interface GoalSkillContext {
@@ -52,29 +53,29 @@ export async function mafwGoalEntry(context: GoalSkillContext): Promise<Intervie
   const projectDir = context.projectDir || process.cwd();
   const mafwDir = path.join(projectDir, '.mafw');
 
-  console.log(`[mafw-goal] Starting interview for: "${goalText}"`);
+  log.info(`[mafw-goal] Starting interview for: "${goalText}"`);
 
-  // 1. 进行 Interview（多轮追问）
+  // 1. 杩涜 Interview锛堝杞拷闂級
   const interview = await runInterview(context, goalText);
-  console.log(`[mafw-goal] Interview complete: ${interview.title}`);
+  log.info(`[mafw-goal] Interview complete: ${interview.title}`);
 
-  // 2. 生成 Goal ID
+  // 2. 鐢熸垚 Goal ID
   const goalId = generateGoalId();
   interview.goalId = goalId;
 
-  // 3. 创建目录
+  // 3. 鍒涘缓鐩綍
   const goalsDir = path.join(mafwDir, 'goals');
   const requestsDir = path.join(mafwDir, 'requests');
   [goalsDir, requestsDir].forEach(d => {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
   });
 
-  // 4. 写入 Goal Charter
+  // 4. 鍐欏叆 Goal Charter
   const charterPath = path.join(goalsDir, `${goalId}.md`);
   fs.writeFileSync(charterPath, formatGoalCharter(interview), 'utf-8');
-  console.log(`[mafw-goal] Written Goal Charter: ${charterPath}`);
+  log.info(`[mafw-goal] Written Goal Charter: ${charterPath}`);
 
-  // 5. 写入请求文件
+  // 5. 鍐欏叆璇锋眰鏂囦欢
   const requestPath = path.join(requestsDir, `${goalId}.json`);
   const requestData = {
     version: '1',
@@ -96,9 +97,9 @@ export async function mafwGoalEntry(context: GoalSkillContext): Promise<Intervie
     remoteCli: interview.remoteCli
   };
   fs.writeFileSync(requestPath, JSON.stringify(requestData, null, 2), 'utf-8');
-  console.log(`[mafw-goal] Written request: ${requestPath}`);
+  log.info(`[mafw-goal] Written request: ${requestPath}`);
 
-  // 6. 初始化状态机
+  // 6. 鍒濆鍖栫姸鎬佹満
   initState(goalId, projectDir);
   const statusManager = new StatusManager(projectDir);
   statusManager.update(goalId, {
@@ -114,11 +115,11 @@ export async function mafwGoalEntry(context: GoalSkillContext): Promise<Intervie
   return interview;
 }
 
-// ── Interview 实现 ──
+// 鈹€鈹€ Interview 瀹炵幇 鈹€鈹€
 
 async function runInterview(context: GoalSkillContext, goalText: string): Promise<InterviewResult> {
-  // 简化版：直接调用 LLM 生成完整 Interview 结果
-  // 实际版本应进行多轮追问
+  // 绠€鍖栫増锛氱洿鎺ヨ皟鐢?LLM 鐢熸垚瀹屾暣 Interview 缁撴灉
+  // 瀹為檯鐗堟湰搴旇繘琛屽杞拷闂?
 
   const prompt = buildInterviewPrompt(goalText);
   const response = await context.llm.chat({
@@ -165,7 +166,7 @@ function parseInterviewResponse(content: string, goalText: string): InterviewRes
       remoteCli: data.remoteCli
     };
   } catch {
-    // Fallback: 返回默认结构
+    // Fallback: 杩斿洖榛樿缁撴瀯
     return {
       goalId: '',
       title: goalText,
@@ -181,7 +182,7 @@ function parseInterviewResponse(content: string, goalText: string): InterviewRes
 }
 
 function formatGoalCharter(result: InterviewResult): string {
-  return `# Goal Charter — ${result.title}
+  return `# Goal Charter 鈥?${result.title}
 
 > Goal ID: ${result.goalId}
 > Created: ${new Date().toISOString()}
@@ -223,3 +224,6 @@ function generateGoalId(): string {
   const seq = Math.floor(Math.random() * 900 + 100);
   return `${date}-${seq}`;
 }
+
+
+

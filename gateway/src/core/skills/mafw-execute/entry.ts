@@ -1,3 +1,4 @@
+﻿import { log } from '../../utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -10,21 +11,21 @@ import { GitUtils } from '../../utils/git';
 import { RemoteCliConnector } from '../../tools/remote-cli';
 
 /**
- * mafw-execute Skill Entry — Execute Agent（独立 Session）
+ * mafw-execute Skill Entry 鈥?Execute Agent锛堢嫭绔?Session锛?
  *
- * 【关键】状态更新是主路径，写在函数末尾
+ * 銆愬叧閿€戠姸鎬佹洿鏂版槸涓昏矾寰勶紝鍐欏湪鍑芥暟鏈熬
  *
- * 职责：
- *   1. 读取 waves.json
- *   2. Wave 1: Task 并行执行（各自 Git 分支）
- *   3. 每个 Task: 调用 LLM 编写代码，写入文件，git commit
- *   4. 合并 Wave → goal/{goalId}
- *   5. Wave 2+: 重复
- *   6. 远程 CLI 同步（如果配置）
- *   7. 写入 receipts/{goalId}/
- *   8. 【显式】更新 state.json → nextAction: CREATE_REVIEW_SESSION
+ * 鑱岃矗锛?
+ *   1. 璇诲彇 waves.json
+ *   2. Wave 1: Task 骞惰鎵ц锛堝悇鑷?Git 鍒嗘敮锛?
+ *   3. 姣忎釜 Task: 璋冪敤 LLM 缂栧啓浠ｇ爜锛屽啓鍏ユ枃浠讹紝git commit
+ *   4. 鍚堝苟 Wave 鈫?goal/{goalId}
+ *   5. Wave 2+: 閲嶅
+ *   6. 杩滅▼ CLI 鍚屾锛堝鏋滈厤缃級
+ *   7. 鍐欏叆 receipts/{goalId}/
+ *   8. 銆愭樉寮忋€戞洿鏂?state.json 鈫?nextAction: CREATE_REVIEW_SESSION
  *
- * 调用方式：Scheduler 创建 Execute Session → 发送 /skill mafw-execute {goalId}
+ * 璋冪敤鏂瑰紡锛歋cheduler 鍒涘缓 Execute Session 鈫?鍙戦€?/skill mafw-execute {goalId}
  */
 
 export interface ExecuteSkillContext {
@@ -40,43 +41,43 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
   const goalId = extractGoalId(context.message);
   const projectDir = process.cwd();
 
-  console.log(`[mafw-execute] Starting Execute for Goal: ${goalId}`);
+  log.info(`[mafw-execute] Starting Execute for Goal: ${goalId}`);
 
-  // 1. 读取状态
+  // 1. 璇诲彇鐘舵€?
   const state = await loadState(goalId, projectDir);
   const req = await loadRequest(goalId, projectDir);
 
-  // 2. 记录 Session
+  // 2. 璁板綍 Session
   await recordSession(goalId, 'execute', context.sessionId, projectDir);
 
-  // 3. 准备 Worktree
+  // 3. 鍑嗗 Worktree
   const worktreeManager = new GoalWorktreeManager(projectDir);
   const worktree = await worktreeManager.prepare({
     projectDir,
     goalId,
     parallel: req.parallel || false
   });
-  console.log(`[mafw-execute] Worktree ready: ${worktree.branch} at ${worktree.worktreeDir}`);
+  log.info(`[mafw-execute] Worktree ready: ${worktree.branch} at ${worktree.worktreeDir}`);
 
-  // 4. 读取 Waves
+  // 4. 璇诲彇 Waves
   const waves = await loadWaves(goalId, projectDir);
   if (waves.length === 0) {
     throw new Error(`No waves found for goal ${goalId}`);
   }
-  console.log(`[mafw-execute] ${waves.length} waves to execute`);
+  log.info(`[mafw-execute] ${waves.length} waves to execute`);
 
-  // 5. 执行 Waves
+  // 5. 鎵ц Waves
   const taskBranchManager = new TaskBranchManager();
   const receipts: any[] = [];
 
   for (let i = 0; i < waves.length; i++) {
     const wave = waves[i];
-    console.log(`[mafw-execute] Wave ${i + 1}/${waves.length}: ${wave.name || 'unnamed'}`);
+    log.info(`[mafw-execute] Wave ${i + 1}/${waves.length}: ${wave.name || 'unnamed'}`);
 
-    // 更新 Wave 进度
+    // 鏇存柊 Wave 杩涘害
     await updateWaveProgress(goalId, i + 1, waves.length, projectDir);
 
-    // Wave 内 Task 并行（各自 Git 分支）
+    // Wave 鍐?Task 骞惰锛堝悇鑷?Git 鍒嗘敮锛?
     const waveResult = await executeWave(wave, {
       goalId,
       worktreeDir: worktree.worktreeDir,
@@ -87,15 +88,15 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
       taskBranchManager
     });
 
-    // 合并 Wave 到 Goal 分支
+    // 鍚堝苟 Wave 鍒?Goal 鍒嗘敮
     const mergeResult = await mergeWaveToGoal(wave, worktree.worktreeDir, taskBranchManager, waveResult.tasks);
     receipts.push({ waveId: wave.id, ...waveResult, merge: mergeResult });
   }
 
-  // 6. 远程 CLI 同步（如果配置）
+  // 6. 杩滅▼ CLI 鍚屾锛堝鏋滈厤缃級
   if (req.remoteCli?.syncOnExecute) {
     const remoteCli = new RemoteCliConnector();
-    console.log(`[mafw-execute] Syncing to remote: ${req.remoteCli.host}`);
+    log.info(`[mafw-execute] Syncing to remote: ${req.remoteCli.host}`);
     const syncResult = await remoteCli.sync({
       localDir: worktree.worktreeDir,
       remoteHost: req.remoteCli.host,
@@ -103,21 +104,21 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
     });
 
     if (!syncResult.success) {
-      console.error(`[mafw-execute] Remote sync failed: ${syncResult.output}`);
-      // 不抛出错误，继续执行，但记录
+      log.error(`[mafw-execute] Remote sync failed: ${syncResult.output}`);
+      // 涓嶆姏鍑洪敊璇紝缁х画鎵ц锛屼絾璁板綍
     }
 
     receipts.push({ phase: 'sync', result: syncResult });
   }
 
-  // 7. 写入 receipts
+  // 7. 鍐欏叆 receipts
   await writeReceipts(goalId, projectDir, receipts);
-  console.log(`[mafw-execute] Written ${receipts.length} receipts`);
+  log.info(`[mafw-execute] Written ${receipts.length} receipts`);
 
-  // 8. 检查 Wave 合并结果
+  // 8. 妫€鏌?Wave 鍚堝苟缁撴灉
   const hasPartialMerge = receipts.some((r: any) => r.merge && r.merge.status !== 'merged');
 
-  // 9. 【显式状态更新】通知 Scheduler 进入 REVIEWING 或 FAILED
+  // 9. 銆愭樉寮忕姸鎬佹洿鏂般€戦€氱煡 Scheduler 杩涘叆 REVIEWING 鎴?FAILED
   if (hasPartialMerge) {
     await transitionPhase(goalId, {
       from: 'EXECUTING',
@@ -127,7 +128,7 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
       artifacts: { execute: `receipts/${goalId}/` }
     }, projectDir);
     await handleLoopEvent(goalId, 'wave.fail', undefined, state.loop, projectDir);
-    console.log(`[mafw-execute] Execute complete with partial merge. State updated → FAILED`);
+    log.info(`[mafw-execute] Execute complete with partial merge. State updated 鈫?FAILED`);
   } else {
     await transitionPhase(goalId, {
       from: 'EXECUTING',
@@ -136,11 +137,11 @@ export async function mafwExecuteEntry(context: ExecuteSkillContext): Promise<vo
       artifacts: { execute: `receipts/${goalId}/` }
     }, projectDir);
     await handleLoopEvent(goalId, 'wave.complete', undefined, state.loop, projectDir);
-    console.log(`[mafw-execute] Execute complete. State updated → CREATE_REVIEW_SESSION`);
+    log.info(`[mafw-execute] Execute complete. State updated 鈫?CREATE_REVIEW_SESSION`);
   }
 }
 
-// ── Wave 执行 ──
+// 鈹€鈹€ Wave 鎵ц 鈹€鈹€
 
 async function executeWave(
   wave: any,
@@ -157,23 +158,23 @@ async function executeWave(
   const { goalId, worktreeDir, baseBranch, loopNum, llm, model, taskBranchManager } = options;
   const tasks = wave.tasks || [];
 
-  // Task 并行执行（各自 Git 分支）
+  // Task 骞惰鎵ц锛堝悇鑷?Git 鍒嗘敮锛?
   const taskResults = await Promise.all(
     tasks.map(async (task: any) => {
       try {
-        // 创建 Task 分支
+        // 鍒涘缓 Task 鍒嗘敮
         const branch = await taskBranchManager.createTaskBranch(worktreeDir, task.id, baseBranch);
-        console.log(`  [Task] ${task.id}: branch ${branch}`);
+        log.info(`  [Task] ${task.id}: branch ${branch}`);
 
-        // 调用 LLM 编写代码
+        // 璋冪敤 LLM 缂栧啓浠ｇ爜
         const taskPrompt = buildTaskPrompt(task, worktreeDir);
         const response = await llm.chat({
           model,
           messages: [{ role: 'user', content: taskPrompt }]
         });
 
-        // 写入文件（模拟）
-        // 实际应由 LLM 生成文件内容并写入
+        // 鍐欏叆鏂囦欢锛堟ā鎷燂級
+        // 瀹為檯搴旂敱 LLM 鐢熸垚鏂囦欢鍐呭骞跺啓鍏?
         await writeTaskCode(task, response.content, worktreeDir);
 
         // Git commit
@@ -187,7 +188,7 @@ async function executeWave(
           filesChanged: task.affected_files || []
         };
       } catch (err: any) {
-        console.error(`  [Task] ${task.id} failed: ${err.message}`);
+        log.error(`  [Task] ${task.id} failed: ${err.message}`);
         return {
           taskId: task.id,
           status: 'failed',
@@ -200,7 +201,7 @@ async function executeWave(
   return { tasks: taskResults, status: 'completed' };
 }
 
-// ── 合并 Wave ──
+// 鈹€鈹€ 鍚堝苟 Wave 鈹€鈹€
 
 export async function mergeWaveToGoal(
   wave: any,
@@ -210,7 +211,7 @@ export async function mergeWaveToGoal(
 ): Promise<{ merged: string[]; failed: string[]; status: string }> {
   const completedTasks = taskResults.filter((r: any) => r.status === 'completed');
   const taskIds = completedTasks.map((r: any) => r.taskId);
-  console.log(`[mafw-execute] Merging wave ${wave.id} (${taskIds.length} tasks) into goal branch`);
+  log.info(`[mafw-execute] Merging wave ${wave.id} (${taskIds.length} tasks) into goal branch`);
 
   const merged: string[] = [];
   const failed: string[] = [];
@@ -219,7 +220,7 @@ export async function mergeWaveToGoal(
       await taskBranchManager.mergeTaskBranch(worktreeDir, taskId);
       merged.push(taskId);
     } catch (err: any) {
-      console.error(`[mafw-execute] Failed to merge task ${taskId}: ${err.message}`);
+      log.error(`[mafw-execute] Failed to merge task ${taskId}: ${err.message}`);
       failed.push(taskId);
     }
   }
@@ -231,7 +232,7 @@ export async function mergeWaveToGoal(
   };
 }
 
-// ── 写入 Receipts ──
+// 鈹€鈹€ 鍐欏叆 Receipts 鈹€鈹€
 
 async function writeReceipts(goalId: string, projectDir: string, receipts: any[]): Promise<void> {
   const receiptsDir = path.join(projectDir, '.mafw/receipts', goalId);
@@ -247,15 +248,15 @@ async function writeReceipts(goalId: string, projectDir: string, receipts: any[]
   }, null, 2), 'utf-8');
 }
 
-// ── 辅助 ──
+// 鈹€鈹€ 杈呭姪 鈹€鈹€
 
 function buildTaskPrompt(task: any, worktreeDir: string): string {
   return `# Task: ${task.id}\n\n${task.description}\n\n## Affected Files\n\n${(task.affected_files || []).join('\n')}\n\n## Instructions\n\nImplement this task. Write the code to the affected files.\nWorktree: ${worktreeDir}\n`;
 }
 
 async function writeTaskCode(task: any, content: string, worktreeDir: string): Promise<void> {
-  // 解析 content 中的文件内容并写入
-  // 简化实现：直接写入一个文件
+  // 瑙ｆ瀽 content 涓殑鏂囦欢鍐呭骞跺啓鍏?
+  // 绠€鍖栧疄鐜帮細鐩存帴鍐欏叆涓€涓枃浠?
   for (const file of task.affected_files || []) {
     const filePath = path.join(worktreeDir, file);
     const dir = path.dirname(filePath);
@@ -265,3 +266,6 @@ async function writeTaskCode(task: any, content: string, worktreeDir: string): P
     fs.writeFileSync(filePath, `// Generated by MAFW Execute Agent\n// Task: ${task.id}\n\n${content}`, 'utf-8');
   }
 }
+
+
+

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { log } from '../core/utils/logger';
 import * as http from 'http';
 import { config } from '../config';
 import { DashboardAPI } from './api';
@@ -84,7 +85,7 @@ export class DashboardServer {
       });
 
       this.server.listen(this.port, () => {
-        console.log(`[DashboardServer] HTTP server @ http://localhost:${this.port}`);
+        log.info(`DashboardServer HTTP server @ http://localhost:${this.port}`);
         resolve();
       });
     });

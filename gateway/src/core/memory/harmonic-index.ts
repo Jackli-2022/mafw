@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { HarmonicUnit, HarmonicIndex, HarmonicIndexEntry } from './harmonic-types';
+import { eventBus } from '../../event-bus';
 
 interface HookManagerLike {
   execute(event: string, context: any): Promise<void>;
@@ -50,6 +51,14 @@ export class HarmonicIndexManager {
       tier,
       source: 'HarmonicIndexManager.addEntry'
     });
+    eventBus.emit('memory_written', {
+      type: 'memory_written',
+      id: unit.id,
+      memory_type: unit.type || 'semantic',
+      primary_abstraction: unit.primary_abstraction,
+      energy: unit.energy,
+      tier,
+    });
   }
 
   removeEntry(id: string): void {
@@ -60,8 +69,16 @@ export class HarmonicIndexManager {
   updateEnergy(id: string, delta: number): void {
     const entry = this.index.entries.find(e => e.id === id);
     if (entry) {
+      const before = entry.energy;
       entry.energy = Math.max(0, Math.min(1, entry.energy + delta));
       this.save();
+      eventBus.emit('memory_energy_changed', {
+        type: 'memory_energy_changed',
+        id,
+        from: before,
+        to: entry.energy,
+        delta,
+      });
     }
   }
 

@@ -36,7 +36,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MafwScheduler = void 0;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const os = __importStar(require("os"));
 const http = __importStar(require("http"));
 const child_process_1 = require("child_process");
 // import { DashboardServer } from './dashboard/server';
@@ -55,6 +54,7 @@ const automation_engine_1 = require("./automation-engine");
 const ledger_1 = require("./ledger");
 const desktop_client_1 = require("./desktop-client");
 const question_ledger_1 = require("./core/manager/question-ledger");
+const system_rule_templates_1 = require("./core/manager/system-rule-templates");
 const wake_handlers_1 = require("./core/manager/wake-handlers");
 const manager_identity_1 = require("./skills/manager-identity");
 const langchain_mcp_adapters_1 = require("langchain-mcp-adapters");
@@ -66,26 +66,37 @@ function readBody(req) {
         req.on('error', reject);
     });
 }
-function resolveOpencode() {
-    // 按优先级查找 opencode.exe
-    const npmPrefix = process.env.MAFW_OPENCODE_PATH
-        ? path.dirname(process.env.MAFW_OPENCODE_PATH)
-        : (0, child_process_1.execSync)('npm config get prefix', { encoding: 'utf-8' }).trim();
-    const candidates = [
-        path.join(npmPrefix, 'node_modules', 'opencode-ai', 'bin', 'opencode.exe'),
-        path.join(npmPrefix, 'node_modules', '@opencode-ai', 'cli', 'bin', 'lildax'),
-        path.join(npmPrefix, 'opencode.cmd'),
-        path.join(npmPrefix, 'opencode'),
-        process.env.MAFW_OPENCODE_PATH || '',
-    ];
-    for (const c of candidates) {
-        if (c && fs.existsSync(c))
-            return c;
+function killProcessOnPort(port) {
+    try {
+        if (process.platform === 'win32') {
+            const out = (0, child_process_1.execSync)(`netstat -ano | findstr :${port}`).toString();
+            const match = out.match(/LISTENING\s+(\d+)/);
+            const pid = match ? Number(match[1]) : null;
+            if (pid)
+                process.kill(pid, 'SIGTERM');
+        }
+        else {
+            const out = (0, child_process_1.execSync)(`lsof -ti:${port}`).toString().trim();
+            const pid = Number(out) || null;
+            if (pid)
+                process.kill(pid, 'SIGTERM');
+        }
     }
-    throw new Error('opencode CLI not found. Install: npm install -g @opencode-ai/cli');
+    catch { /* port is free */ }
+}
+async function isPortHealthy(port) {
+    try {
+        const res = await fetch(`http://127.0.0.1:${port}/health`, {
+            signal: AbortSignal.timeout(1000),
+        });
+        return res.ok;
+    }
+    catch {
+        return false;
+    }
 }
 class MafwScheduler {
-    serveProcess;
+    serveInstance;
     serveUrl;
     apiPort;
     pollInterval;
@@ -118,11 +129,18 @@ class MafwScheduler {
         this.chatSessions = new chat_sessions_1.ChatSessionManager();
     }
     get serveRunning() {
-        return !!this.serveProcess && !this.serveProcess.killed;
+        return !!this.serveInstance;
     }
     async start() {
-        (0, logger_1.installFileLogging)(path.join(os.homedir(), '.mafw', 'logs'));
-        console.log('[Scheduler] MAFW Scheduler v5.0 starting...');
+        logger_1.log.info('MAFW Scheduler v5.0 starting...');
+        // Single-instance guard: if a healthy gateway already owns apiPort, this
+        // instance is redundant — exit before spawning anything (avoids two
+        // gateways fighting over ports 3000/4096).
+        if (await isPortHealthy(this.apiPort)) {
+            logger_1.log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
+            process.exit(0);
+            return;
+        }
         // 0. Init services
         await this.initServices();
         this.setupEventBus();
@@ -132,7 +150,7 @@ class MafwScheduler {
         bootLedger.bootReconcile(activeCheckpoints);
         // 1. Start HTTP API immediately (health check endpoint, MCP, etc.)
         await this.startApiServer();
-        // 2. 创建 SDK 客户端（�?auth），用于健康检查和后续通信
+        // 2. 鍒涘缓 SDK 瀹㈡埛绔紙锟?auth锛夛紝鐢ㄤ簬鍋ュ悍妫€鏌ュ拰鍚庣画閫氫俊
         const { createOpencodeClient } = await import('@opencode-ai/sdk');
         const sdkConfig = { baseUrl: this.serveUrl };
         const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
@@ -141,32 +159,34 @@ class MafwScheduler {
         }
         this.opencodeClient = createOpencodeClient(sdkConfig);
         this.sdkSession.setClient(this.opencodeClient);
-        console.log('[Scheduler] SDK client initialized');
+        logger_1.log.info('SDK client initialized');
         // 3. Background: connect to OpenCode server
         const serveUrlOverridden = !!process.env.MAFW_SERVER_SERVE_URL;
         let serveReady = false;
         if (serveUrlOverridden) {
-            console.log(`[Scheduler] Using external OpenCode Serve at ${this.serveUrl}`);
+            logger_1.log.info(`[Scheduler] Using external OpenCode Serve at ${this.serveUrl}`);
             try {
                 await this.waitForServeReady();
                 serveReady = true;
             }
             catch {
-                console.error('[Scheduler] External OpenCode Serve not available �?MCP-only mode');
+                logger_1.log.warn('External OpenCode Serve not available 锟?MCP-only mode');
             }
         }
         else {
             if (await this.isServeHealthy()) {
-                console.log('[Scheduler] OpenCode Serve already running');
+                logger_1.log.info('OpenCode Serve already running');
                 serveReady = true;
             }
             else {
+                logger_1.log.info('OpenCode Serve not reachable, checking for stale process...');
+                killProcessOnPort(config_1.config.server.servePort);
                 try {
                     await this.startServe();
-                    serveReady = !!this.serveProcess;
+                    serveReady = !!this.serveInstance;
                 }
                 catch (err) {
-                    console.error(`[Scheduler] Failed to start OpenCode Serve: ${err instanceof Error ? err.message : String(err)}`);
+                    logger_1.log.error(`Failed to start OpenCode Serve: ${err instanceof Error ? err.message : String(err)}`);
                 }
             }
         }
@@ -176,23 +196,32 @@ class MafwScheduler {
         // 4. Dashboard is now served via the API server on the same port
         // this.dashboard = new DashboardServer(3001, this.projectDir, this);
         // this.dashboard.start();
-        // 5. 恢复配置和注册表
+        // 5. 鎭㈠閰嶇疆鍜屾敞鍐岃〃
         await this.recoverConfig();
         await this.recoverRegistry();
-        // 6. 恢复活跃 Goal
+        // 6. 鎭㈠娲昏穬 Goal
         await this.recoverState();
-        // 7. 启动自动化引�?
+        // 7. 涓烘墍鏈夊凡娉ㄥ唽椤圭洰鍒濆鍖?Manager session锛堜笉瀛樺湪鍒欒嚜鍔ㄥ垱寤猴級
+        for (const [projectDir, info] of this.registeredProjects) {
+            try {
+                await this.ensureManagerSession(projectDir, info.mafwDir);
+            }
+            catch (err) {
+                logger_1.log.warn(`[Scheduler] Manager session init failed for ${projectDir}: ${err.message}`);
+            }
+        }
+        // 8. 鍚姩鑷姩鍖栧紩锟?
         if (this.automationEngine) {
             this.automationEngine.start();
-            console.log('[Scheduler] Automation engine started');
+            logger_1.log.info('[Scheduler] Automation engine started');
         }
-        // 8. 开始轮询（降级兜底�?
+        // 8. 寮€濮嬭疆璇紙闄嶇骇鍏滃簳锟?
         const pollInterval = config_1.config.timeouts.backupPollInterval;
-        console.log(`[Scheduler] Starting backup polling loop (${pollInterval / 1000}s)...`);
+        logger_1.log.info(`[Scheduler] Starting backup polling loop (${pollInterval / 1000}s)...`);
         this.startBackupPolling();
-        // 9. 监听 events 目录 (替代 HTTP POST /api/events)
+        // 9. 鐩戝惉 events 鐩綍 (鏇夸唬 HTTP POST /api/events)
         this.watchEventsDir();
-        // 10. 监听 registry 目录 (替代 HTTP POST /register)
+        // 10. 鐩戝惉 registry 鐩綍 (鏇夸唬 HTTP POST /register)
         this.watchRegistryDir();
     }
     watchEventsDir() {
@@ -212,7 +241,7 @@ class MafwScheduler {
                         return;
                     const content = fs.readFileSync(filePath, 'utf-8');
                     const event = JSON.parse(content);
-                    console.log(`[Events] Received: ${event.type} for ${event.goalId || ''}`);
+                    logger_1.log.info(`[Events] Received: ${event.type} for ${event.goalId || ''}`);
                     this.broadcast(event);
                     if (event.goalId && this.activeGoals.has(event.goalId)) {
                         setImmediate(() => this.onEvent(event.goalId));
@@ -223,10 +252,10 @@ class MafwScheduler {
                     // non-fatal: race condition or invalid json
                 }
             });
-            console.log(`[Scheduler] Watching events dir: ${eventsDir}`);
+            logger_1.log.info(`[Scheduler] Watching events dir: ${eventsDir}`);
         }
         catch (err) {
-            console.warn(`[Scheduler] Events dir watch failed (non-fatal): ${err.message}`);
+            logger_1.log.warn(`[Scheduler] Events dir watch failed (non-fatal): ${err.message}`);
         }
     }
     watchRegistryDir() {
@@ -256,49 +285,80 @@ class MafwScheduler {
                     });
                     this.persistRegistry();
                     this.persistConfig();
-                    console.log(`[Scheduler] Project registered via filesystem: ${projectDir}`);
+                    logger_1.log.info(`[Scheduler] Project registered via filesystem: ${projectDir}`);
                 }
                 catch {
                     // non-fatal
                 }
             });
-            console.log(`[Scheduler] Watching registry dir: ${registryDir}`);
+            logger_1.log.info(`[Scheduler] Watching registry dir: ${registryDir}`);
         }
         catch (err) {
-            console.warn(`[Scheduler] Registry dir watch failed (non-fatal): ${err.message}`);
+            logger_1.log.warn(`[Scheduler] Registry dir watch failed (non-fatal): ${err.message}`);
         }
     }
     async subscribeToEvents() {
         try {
-            const stream = await this.opencodeClient.event.subscribe({});
-            if (stream && typeof stream.on === 'function') {
-                stream.on('data', (event) => {
-                    // Route message deltas to ChatSessionManager for SSE streaming
-                    const payload = event?.payload || event?.properties || event;
-                    const sessionID = payload?.sessionID || event?.sessionID;
-                    if (sessionID && this.chatSessions.hasListeners(sessionID)) {
-                        if (event.type === 'message.part.updated') {
-                            const text = payload?.part?.text || payload?.delta || '';
-                            if (text)
-                                this.chatSessions.pushDelta(sessionID, text);
-                        }
-                        else if (event.type === 'message.complete' || event.type === 'message.part.complete') {
-                            this.chatSessions.pushComplete(sessionID);
-                        }
-                        else if (event.type === 'message.error' || event.type === 'message.aborted') {
-                            this.chatSessions.pushError(sessionID, payload?.error || 'Unknown error');
-                        }
-                    }
-                    this.broadcast({ type: 'opencode_event', data: event });
-                });
-                console.log('[Scheduler] Subscribed to OpenCode events');
+            // Use /global/event (GlobalEvent = { directory, payload }) so we receive
+            // events from ALL workspaces — /event only delivers the current
+            // request-scoped workspace, missing sessions in other project dirs.
+            const result = await this.opencodeClient.global.event({});
+            // SDK SSE client returns { stream } where stream is an async generator
+            const stream = result?.stream ?? result;
+            if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') {
+                logger_1.log.warn('[Scheduler] SDK event subscribe returned no async stream');
+                return;
             }
+            logger_1.log.info('[Scheduler] Subscribed to OpenCode events');
+            void (async () => {
+                try {
+                    for await (const evt of stream)
+                        this.handleOpencodeEvent(evt);
+                }
+                catch (err) {
+                    logger_1.log.warn(`[Scheduler] OpenCode event stream ended: ${err.message}`);
+                }
+            })();
         }
         catch (err) {
-            console.warn(`[Scheduler] SDK event subscribe failed (non-fatal): ${err.message}`);
+            logger_1.log.warn(`[Scheduler] SDK event subscribe failed (non-fatal): ${err.message}`);
+        }
+    }
+    handleOpencodeEvent(evt) {
+        // GlobalEvent shape: { directory, payload: { id, type, properties } }
+        const payload = evt?.payload || {};
+        const type = payload?.type || evt?.type;
+        const props = payload?.properties || evt?.properties || {};
+        const sessionID = props?.sessionID || props?.part?.sessionID || props?.info?.sessionID || payload?.sessionID || evt?.sessionID;
+        logger_1.log.info(`[SSE] opencode event: ${type} sessionID=${sessionID}`);
+        // Per-session SSE (Mode B) forwarding
+        if (sessionID && this.chatSessions.hasListeners(sessionID)) {
+            if (type === 'message.part.updated') {
+                const text = props?.part?.text || props?.delta || '';
+                if (text)
+                    this.chatSessions.pushDelta(sessionID, text);
+            }
+            else if (type === 'session.idle' || type === 'message.updated') {
+                this.chatSessions.pushComplete(sessionID);
+            }
+            else if (type === 'session.error' || type === 'message.error') {
+                this.chatSessions.pushError(sessionID, props?.error || 'Unknown error');
+            }
+        }
+        // Global broadcast (Mode A — used by the desktop renderer).
+        // Normalize to the renderer's contract: { type, properties, sessionID }.
+        if (type === 'session.idle') {
+            this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID } });
+        }
+        else if (type === 'session.error') {
+            this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error } });
+        }
+        else {
+            this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID } });
         }
     }
     broadcast(event) {
+        logger_1.log.info(`[SSE] broadcast ${event.type} clients=${this.sseClients.size}`);
         const data = `data: ${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n\n`;
         for (const client of this.sseClients) {
             try {
@@ -311,9 +371,9 @@ class MafwScheduler {
     }
     stop() {
         this.running = false;
-        if (this.serveProcess) {
-            this.serveProcess.kill('SIGTERM');
-            this.serveProcess = undefined;
+        if (this.serveInstance) {
+            this.serveInstance.close();
+            this.serveInstance = undefined;
         }
         if (this.automationEngine) {
             this.automationEngine.stop();
@@ -321,9 +381,9 @@ class MafwScheduler {
         // if (this.dashboard) {
         //   this.dashboard.stop();
         // }
-        console.log('[Scheduler] Stopping...');
+        logger_1.log.info('[Scheduler] Stopping...');
     }
-    // ── Services & Event Bus ──
+    // 鈹€鈹€ Services & Event Bus 鈹€鈹€
     async initServices() {
         const projectDir = this.projectDir;
         const mafwDir = config_1.config.resolvePath();
@@ -334,13 +394,14 @@ class MafwScheduler {
         this.ledger = new ledger_1.SchedulerLedger(projectDir);
         this.automationEngine = new automation_engine_1.AutomationEngine(mafwDir);
         this.automationEngine.setLedger(this.ledger);
+        (0, system_rule_templates_1.ensureManagerRules)(mafwDir);
         this.automationEngine.loadRules();
         automation_engine_1.actionRegistry.set('manager:report_completed', wake_handlers_1.wakeCompletedHandler);
         automation_engine_1.actionRegistry.set('manager:report_failed', wake_handlers_1.wakeFailedHandler);
         automation_engine_1.actionRegistry.set('manager:report_question', wake_handlers_1.wakeQuestionHandler);
         const desktopClient = desktop_client_1.DesktopClient.tryLoad();
         if (desktopClient) {
-            console.log('[Scheduler] Desktop automation client connected');
+            logger_1.log.info('[Scheduler] Desktop automation client connected');
         }
         const services = {
             memory: this.memoryService,
@@ -352,10 +413,10 @@ class MafwScheduler {
         };
         const toolRegistry = (0, tool_registry_1.createToolRegistry)();
         this.mcpEndpoint = new sse_transport_1.McpSSEEndpoint(toolRegistry, services);
-        console.log("[Scheduler] Services initialized (Memory + Cost + MCP SSE + Automation)");
+        logger_1.log.info("[Scheduler] Services initialized (Memory + Cost + MCP SSE + Automation)");
         const enableLegacy = process.env[config_1.config.env.enableLegacyMcp] === "true";
         if (enableLegacy) {
-            console.log("[Scheduler] Legacy MCP mode enabled �?spawning old MCP Server");
+            logger_1.log.info("[Scheduler] Legacy MCP mode enabled 锟?spawning old MCP Server");
             const { spawn } = require("child_process");
             spawn("node", [path.join(__dirname, "./core/mcp-server.js")], {
                 cwd: this.projectDir,
@@ -380,42 +441,77 @@ class MafwScheduler {
         event_bus_1.eventBus.on("user_feedback", (data) => {
             this.broadcast({ type: "user_feedback", ...data });
         });
+        event_bus_1.eventBus.on("phase_transition", (data) => {
+            this.broadcast({ type: "phase_transition", ...data });
+        });
+        event_bus_1.eventBus.on("memory_written", (data) => {
+            this.broadcast({ type: "memory_written", ...data });
+        });
+        event_bus_1.eventBus.on("memory_energy_changed", (data) => {
+            this.broadcast({ type: "memory_energy_changed", ...data });
+        });
+        event_bus_1.eventBus.on("memory_distillation_complete", (data) => {
+            this.broadcast({ type: "memory_distillation_complete", ...data });
+        });
+        event_bus_1.eventBus.on("automation_triggered", (data) => {
+            this.broadcast({ type: "automation_triggered", ...data });
+        });
+        event_bus_1.eventBus.on("automation_completed", (data) => {
+            this.broadcast({ type: "automation_completed", ...data });
+        });
     }
-    // ── 1. Serve 管理 ──
     async startServe() {
-        const opencodeExe = resolveOpencode();
-        console.log(`[Scheduler] Starting OpenCode Serve: ${opencodeExe}`);
-        const port = String(config_1.config.server.servePort);
+        logger_1.log.info('Starting OpenCode Serve via SDK...');
+        const port = config_1.config.server.servePort;
         const host = config_1.config.server.serveHost;
-        this.serveProcess = (0, child_process_1.spawn)(opencodeExe, [
-            'serve', '--port', port, '--hostname', host
-        ], {
-            cwd: this.projectDir,
-            stdio: ['ignore', 'inherit', 'inherit'],
-            env: { ...process.env, PATH: process.env.PATH },
-            windowsHide: true
-        });
-        if (this.serveProcess.stdout) {
-            this.serveProcess.stdout?.on('data', (data) => {
-                const line = data.toString().trim();
-                if (line)
-                    console.log(`[Serve] ${line}`);
+        try {
+            const { createOpencodeServer } = await import('@opencode-ai/sdk');
+            const instance = await createOpencodeServer({
+                hostname: host,
+                port,
             });
-            this.serveProcess.stderr?.on('data', (data) => {
-                const line = data.toString().trim();
-                if (line)
-                    console.error(`[Serve] ${line}`);
-            });
+            this.serveInstance = instance;
+            logger_1.log.info(`OpenCode Serve started at ${instance.url}`);
         }
-        this.serveProcess.on('exit', (code) => {
-            const delay = config_1.config.timeouts.serveRestartDelay;
-            console.error(`[Scheduler] Serve exited with code ${code}, restarting in ${delay / 1000}s...`);
-            this.serveProcess = undefined;
-            if (this.running) {
-                setTimeout(() => this.startServe(), delay);
+        catch (err) {
+            logger_1.log.error(`Failed to start OpenCode Serve: ${err.message}`);
+            throw err;
+        }
+    }
+    async listSessions(projectID) {
+        // Try SDK first (opencode server), fall back to local store
+        if (this.opencodeClient) {
+            try {
+                const result = await this.opencodeClient.session.list(projectID ? { query: { directory: projectID } } : undefined);
+                const sessions = Array.isArray(result) ? result : result?.data;
+                if (sessions && Array.isArray(sessions)) {
+                    // Enrich SDK sessions with local metadata (manager session markers, etc.)
+                    const localSessions = await this.sdkSession.list();
+                    const localMap = new Map(localSessions.map(s => [s.id, s]));
+                    const enriched = sessions.map((s) => {
+                        const local = localMap.get(s.id);
+                        return local?.metadata ? { ...s, metadata: local.metadata } : s;
+                    });
+                    // Also include local-only sessions (e.g. Manager session registered via registerExternal)
+                    // that the opencode server doesn't know about
+                    const sdkIds = new Set(sessions.map((s) => s.id));
+                    const missingLocal = localSessions.filter(s => s.metadata && !sdkIds.has(s.id));
+                    if (missingLocal.length > 0) {
+                        enriched.push(...missingLocal.map(s => ({
+                            id: s.id,
+                            projectID: s.projectID,
+                            directory: s.directory,
+                            title: s.title,
+                            metadata: s.metadata,
+                            time: s.time,
+                        })));
+                    }
+                    return enriched;
+                }
             }
-        });
-        await this.waitForServeReady();
+            catch { }
+        }
+        return projectID ? await this.sdkSession.listByProject(projectID) : await this.sdkSession.list();
     }
     async isServeHealthy() {
         try {
@@ -434,13 +530,13 @@ class MafwScheduler {
         for (let retries = 0; retries < maxRetries; retries++) {
             await this.sleep(interval);
             if (await this.isServeHealthy()) {
-                console.log('[Scheduler] Serve is ready');
+                logger_1.log.info('[Scheduler] Serve is ready');
                 return;
             }
         }
         throw new Error(`Failed to start OpenCode Serve after ${maxRetries * interval / 1000} seconds`);
     }
-    // ── 2. HTTP API ──
+    // 鈹€鈹€ 2. HTTP API 鈹€鈹€
     async startApiServer() {
         return new Promise((resolve) => {
             const server = http.createServer(async (req, res) => {
@@ -461,7 +557,7 @@ class MafwScheduler {
                             await this.mcpEndpoint.handleSSE(req, res);
                         }
                         catch (err) {
-                            console.error("[MCP SSE] Error:", err.message);
+                            logger_1.log.error("[MCP SSE] Error:", err.message);
                             if (!res.headersSent) {
                                 res.writeHead(500);
                                 res.end(JSON.stringify({ error: err.message }));
@@ -475,7 +571,7 @@ class MafwScheduler {
                             await this.mcpEndpoint.handleMessage(req, res);
                         }
                         catch (err) {
-                            console.error("[MCP Message] Error:", err.message);
+                            logger_1.log.error("[MCP Message] Error:", err.message);
                             if (!res.headersSent) {
                                 res.writeHead(500);
                                 res.end(JSON.stringify({ error: err.message }));
@@ -513,7 +609,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // Chat API �?fire-and-forget promptAsync, returns sessionID for SSE streaming
+                    // Chat API 锟?fire-and-forget promptAsync, returns sessionID for SSE streaming
                     if (req.url === "/api/chat" && req.method === "POST") {
                         try {
                             const body = await readBody(req);
@@ -531,11 +627,23 @@ class MafwScheduler {
                                 return;
                             }
                             const session = await this.opencodeClient.session.create({ query: { directory: projectDir } });
-                            const sessionID = session.id;
-                            await this.opencodeClient.session.promptAsync({
+                            const sessionID = session.data?.id ?? session.id;
+                            if (!sessionID) {
+                                res.writeHead(500);
+                                res.end(JSON.stringify({ error: 'Failed to create session' }));
+                                return;
+                            }
+                            const result = await this.opencodeClient.session.promptAsync({
                                 path: { id: sessionID },
                                 body: { parts: [{ type: 'text', text: message }] },
                             });
+                            if (result?.error) {
+                                logger_1.log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
+                                res.writeHead(500);
+                                res.end(JSON.stringify({ error: 'promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)) }));
+                                return;
+                            }
+                            logger_1.log.info(`[Scheduler] promptAsync ok session=${sessionID} status=${result?.response?.status}`);
                             res.writeHead(200);
                             res.end(JSON.stringify({ sessionID }));
                         }
@@ -545,11 +653,11 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // POST /api/chat/enriched �?chat with memory context injection
+                    // POST /api/chat/enriched 锟?chat with memory context injection
                     if (req.url === "/api/chat/enriched" && req.method === "POST") {
                         try {
                             const body = await readBody(req);
-                            const { message } = JSON.parse(body);
+                            const { message, sessionID: existingID } = JSON.parse(body);
                             if (!message) {
                                 res.writeHead(400);
                                 res.end(JSON.stringify({ error: 'message required' }));
@@ -570,8 +678,8 @@ class MafwScheduler {
                                     const facts = [];
                                     for (const r of results) {
                                         const line = r.source === 'parametric'
-                                            ? `[Δ ${r.type}] ${r.content}`
-                                            : `�?[${r.type}] ${r.content}`;
+                                            ? `[螖 ${r.type}] ${r.content}`
+                                            : `锟?[${r.type}] ${r.content}`;
                                         (r.source === 'parametric' ? deltas : facts).push(line);
                                     }
                                     const chunks = [];
@@ -583,12 +691,23 @@ class MafwScheduler {
                                         enrichedMessage = chunks.join('\n\n') + '\n\n' + message;
                                 }
                             }
-                            const session = await this.opencodeClient.session.create({ query: { directory: projectDir } });
-                            const sessionID = session.id;
-                            await this.opencodeClient.session.promptAsync({
+                            const sessionID = existingID || (await this.opencodeClient.session.create({ query: { directory: projectDir } })).data?.id;
+                            if (!sessionID) {
+                                res.writeHead(500);
+                                res.end(JSON.stringify({ error: 'Failed to create session' }));
+                                return;
+                            }
+                            const result = await this.opencodeClient.session.promptAsync({
                                 path: { id: sessionID },
                                 body: { parts: [{ type: 'text', text: enrichedMessage }] },
                             });
+                            if (result?.error) {
+                                logger_1.log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
+                                res.writeHead(500);
+                                res.end(JSON.stringify({ error: 'promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)) }));
+                                return;
+                            }
+                            logger_1.log.info(`[Scheduler] promptAsync ok session=${sessionID} status=${result?.response?.status}`);
                             res.writeHead(200);
                             res.end(JSON.stringify({ sessionID }));
                         }
@@ -598,7 +717,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // GET /api/memory/merged-search �?expose memory context injection results
+                    // GET /api/memory/merged-search 锟?expose memory context injection results
                     if (req.url === "/api/memory/merged-search" && req.method === "GET") {
                         try {
                             const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -682,7 +801,7 @@ class MafwScheduler {
                         res.end(JSON.stringify(await this.handleDashboardAPI(req)));
                         return;
                     }
-                    // 插件注册：必须传�?projectDir + mafwDir
+                    // 鎻掍欢娉ㄥ唽锛氬繀椤讳紶锟?projectDir + mafwDir
                     if (req.url === '/register' && req.method === 'POST') {
                         let body = '';
                         req.on('data', chunk => body += chunk);
@@ -700,7 +819,7 @@ class MafwScheduler {
                                     mafwDir,
                                     registeredAt: new Date().toISOString()
                                 });
-                                // 持久化到磁盘（写队列防并发覆盖）
+                                // 鎸佷箙鍖栧埌纾佺洏锛堝啓闃熷垪闃插苟鍙戣鐩栵級
                                 await this.persistRegistry();
                                 await this.persistConfig();
                                 if (this.opencodeClient) {
@@ -708,10 +827,10 @@ class MafwScheduler {
                                         await this.ensureManagerSession(projectDir, mafwDir);
                                     }
                                     catch (err) {
-                                        console.warn(`[Scheduler] Manager session bootstrap failed: ${err.message} (non-fatal)`);
+                                        logger_1.log.warn(`[Scheduler] Manager session bootstrap failed: ${err.message} (non-fatal)`);
                                     }
                                 }
-                                console.log(`[Scheduler] Project registered: ${projectDir}`);
+                                logger_1.log.info(`[Scheduler] Project registered: ${projectDir}`);
                                 res.writeHead(200);
                                 res.end(JSON.stringify({ status: 'ok', registered: projectDir }));
                             }
@@ -722,15 +841,15 @@ class MafwScheduler {
                         });
                         return;
                     }
-                    // 控制指令
+                    // 鎺у埗鎸囦护
                     if (req.url === '/control' && req.method === 'POST') {
                         let body = '';
                         req.on('data', chunk => body += chunk);
                         req.on('end', async () => {
                             try {
                                 const control = JSON.parse(body);
-                                console.log(`[Scheduler] HTTP control: ${control.action} ${control.goalId || ''}`);
-                                // 直接处理控制指令（同 processControlFile 逻辑�?
+                                logger_1.log.info(`[Scheduler] HTTP control: ${control.action} ${control.goalId || ''}`);
+                                // 鐩存帴澶勭悊鎺у埗鎸囦护锛堝悓 processControlFile 閫昏緫锟?
                                 switch (control.action) {
                                     case 'PAUSE':
                                         if (control.goalId)
@@ -751,7 +870,7 @@ class MafwScheduler {
                                         }
                                         break;
                                     case 'RESET_PARAMETRIC':
-                                        console.log('[Scheduler] Resetting parametric cache...');
+                                        logger_1.log.info('[Scheduler] Resetting parametric cache...');
                                         break;
                                 }
                                 res.writeHead(200);
@@ -764,7 +883,7 @@ class MafwScheduler {
                         });
                         return;
                     }
-                    // POST /api/work/{goalId}/validate �?MCP calls when agent completes goal creation
+                    // POST /api/work/{goalId}/validate 锟?MCP calls when agent completes goal creation
                     const validateMatch = req.url?.match(/^\/api\/work\/([^/]+)\/validate$/);
                     if (validateMatch && req.method === 'POST') {
                         try {
@@ -782,7 +901,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // POST /api/work/{goalId}/complete �?MCP calls when agent completes a phase
+                    // POST /api/work/{goalId}/complete 锟?MCP calls when agent completes a phase
                     const completeMatch = req.url?.match(/^\/api\/work\/([^/]+)\/complete$/);
                     if (completeMatch && req.method === 'POST') {
                         try {
@@ -799,7 +918,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // GET /api/manager/session — return manager session info
+                    // GET /api/manager/session 鈥?return manager session info
                     if (req.url === '/api/manager/session' && req.method === 'GET') {
                         if (!this.managerSessionInfo) {
                             res.writeHead(404);
@@ -810,18 +929,18 @@ class MafwScheduler {
                         res.end(JSON.stringify(this.managerSessionInfo));
                         return;
                     }
-                    // 健康检�?
+                    // 鍋ュ悍妫€锟?
                     if (req.url === '/health' && req.method === 'GET') {
                         res.writeHead(200);
                         res.end(JSON.stringify({
                             status: 'ok',
-                            serveRunning: !!this.serveProcess && !this.serveProcess.killed,
+                            serveRunning: !!this.serveInstance,
                             registeredProjects: Array.from(this.registeredProjects.keys()),
                             activeGoals: Array.from(this.activeGoals.keys())
                         }));
                         return;
                     }
-                    // GET /api/projects �?list registered projects
+                    // GET /api/projects 锟?list registered projects
                     if (req.url === '/api/projects' && req.method === 'GET') {
                         const projects = Array.from(this.registeredProjects.values()).map(p => ({
                             id: p.projectDir,
@@ -830,7 +949,7 @@ class MafwScheduler {
                         res.end(JSON.stringify({ projects }));
                         return;
                     }
-                    // GET /api/projects/current �?current/active project
+                    // GET /api/projects/current 锟?current/active project
                     if (req.url === '/api/projects/current' && req.method === 'GET') {
                         const entries = Array.from(this.registeredProjects.entries());
                         if (entries.length === 0) {
@@ -843,7 +962,7 @@ class MafwScheduler {
                         }));
                         return;
                     }
-                    // GET /api/approvals �?list pending approvals
+                    // GET /api/approvals 锟?list pending approvals
                     if (req.url === '/api/approvals' && req.method === 'GET') {
                         const approvals = [];
                         // Read from .mafw/user-questions/ directories
@@ -867,20 +986,20 @@ class MafwScheduler {
                         res.end(JSON.stringify({ approvals }));
                         return;
                     }
-                    // POST /api/approvals/{id}/respond �?respond to an approval
+                    // POST /api/approvals/{id}/respond 锟?respond to an approval
                     const approveMatch = req.url?.match(/^\/api\/approvals\/([^/]+)\/respond$/);
                     if (approveMatch && req.method === 'POST') {
                         res.end(JSON.stringify({ status: 'ok' }));
                         return;
                     }
-                    // ── Triage endpoints (Tier 4 �?user only, not MCP) ──
-                    // GET /api/triage �?list triage items (with llmSuggestions)
+                    // 鈹€鈹€ Triage endpoints (Tier 4 锟?user only, not MCP) 鈹€鈹€
+                    // GET /api/triage 锟?list triage items (with llmSuggestions)
                     if (req.url === '/api/triage' && req.method === 'GET') {
                         const items = this.automationEngine?.getTriageItems() || [];
                         res.end(JSON.stringify({ items }));
                         return;
                     }
-                    // POST /api/triage/{id}/confirm �?user confirms triage �?creates goal
+                    // POST /api/triage/{id}/confirm 锟?user confirms triage 锟?creates goal
                     const triageConfirmMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/confirm$/);
                     if (triageConfirmMatch && req.method === 'POST') {
                         const triageId = triageConfirmMatch[1];
@@ -920,7 +1039,7 @@ class MafwScheduler {
                         res.end(JSON.stringify({ status: 'confirmed', goalId }));
                         return;
                     }
-                    // POST /api/triage/{id}/reject �?user rejects triage
+                    // POST /api/triage/{id}/reject 锟?user rejects triage
                     const triageRejectMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/reject$/);
                     if (triageRejectMatch && req.method === 'POST') {
                         const triageId = triageRejectMatch[1];
@@ -935,8 +1054,8 @@ class MafwScheduler {
                         res.end(JSON.stringify({ status: ok ? 'rejected' : 'not_found' }));
                         return;
                     }
-                    // ── Automation endpoints (Tier 4 �?user only) ──
-                    // GET /api/automations �?list automation rules with next trigger + recent history
+                    // 鈹€鈹€ Automation endpoints (Tier 4 锟?user only) 鈹€鈹€
+                    // GET /api/automations 锟?list automation rules with next trigger + recent history
                     if (req.url === '/api/automations' && req.method === 'GET') {
                         const rules = this.automationEngine?.getRules() || [];
                         const enriched = rules.map(r => ({
@@ -947,7 +1066,7 @@ class MafwScheduler {
                         res.end(JSON.stringify({ rules: enriched }));
                         return;
                     }
-                    // GET /api/automations/{id} �?single rule detail
+                    // GET /api/automations/{id} 锟?single rule detail
                     const autoGetMatch = req.url?.match(/^\/api\/automations\/([^/]+)$/);
                     if (autoGetMatch && req.method === 'GET') {
                         const id = autoGetMatch[1];
@@ -964,7 +1083,7 @@ class MafwScheduler {
                         }));
                         return;
                     }
-                    // PUT /api/automations/{id} �?toggle an automation rule (enabled/disabled)
+                    // PUT /api/automations/{id} 锟?toggle an automation rule (enabled/disabled)
                     if (autoGetMatch && req.method === 'PUT') {
                         try {
                             const id = autoGetMatch[1];
@@ -986,7 +1105,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // DELETE /api/automations/{id} �?delete an automation rule
+                    // DELETE /api/automations/{id} 锟?delete an automation rule
                     if (autoGetMatch && req.method === 'DELETE') {
                         const id = autoGetMatch[1];
                         const ok = this.automationEngine?.deleteRule(id);
@@ -1000,7 +1119,7 @@ class MafwScheduler {
                         res.end(JSON.stringify({ status: ok ? 'deleted' : 'not_found' }));
                         return;
                     }
-                    // GET /api/automations/{id}/history �?audit trail for a rule
+                    // GET /api/automations/{id}/history 锟?audit trail for a rule
                     const autoHistoryMatch = req.url?.match(/^\/api\/automations\/([^/]+)\/history$/);
                     if (autoHistoryMatch && req.method === 'GET') {
                         const id = autoHistoryMatch[1];
@@ -1009,7 +1128,7 @@ class MafwScheduler {
                         res.end(JSON.stringify({ history }));
                         return;
                     }
-                    // POST /api/llm/compress �?LLM compression proxy (via SDK)
+                    // POST /api/llm/compress 锟?LLM compression proxy (via SDK)
                     if (req.url === '/api/llm/compress' && req.method === 'POST') {
                         try {
                             const body = await readBody(req);
@@ -1026,8 +1145,8 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // ── SdkSessionResource REST endpoints ──
-                    // POST /api/session �?create a session
+                    // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
+                    // POST /api/session 锟?create a session
                     if (req.url === '/api/session' && req.method === 'POST') {
                         try {
                             const body = await readBody(req);
@@ -1042,7 +1161,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // POST /api/session/{id}/promptAsync �?fire-and-forget prompt
+                    // POST /api/session/{id}/promptAsync 锟?fire-and-forget prompt
                     const promptAsyncMatch = req.url?.match(/^\/api\/session\/([^/]+)\/promptAsync$/);
                     if (promptAsyncMatch && req.method === 'POST') {
                         try {
@@ -1064,7 +1183,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // POST /api/session/{id}/prompt �?synchronous prompt
+                    // POST /api/session/{id}/prompt 锟?synchronous prompt
                     const promptMatch = req.url?.match(/^\/api\/session\/([^/]+)\/prompt$/);
                     if (promptMatch && req.method === 'POST') {
                         try {
@@ -1081,7 +1200,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // DELETE /api/session/{id} �?delete a session
+                    // DELETE /api/session/{id} 锟?delete a session
                     const deleteMatch = req.url?.match(/^\/api\/session\/([^/]+)$/);
                     if (deleteMatch && req.method === 'DELETE') {
                         try {
@@ -1096,14 +1215,32 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // GET /api/sessions �?list sessions (optional ?projectID=xxx)
+                    // POST /api/session/{id}/abort 鈥?abort an in-flight run
+                    const abortMatch = req.url?.match(/^\/api\/session\/([^/]+)\/abort$/);
+                    if (abortMatch && req.method === 'POST') {
+                        try {
+                            const sessionID = abortMatch[1];
+                            if (!this.opencodeClient) {
+                                res.writeHead(503);
+                                res.end(JSON.stringify({ error: 'LLM client not available' }));
+                                return;
+                            }
+                            await this.opencodeClient.session.abort({ path: { id: sessionID } });
+                            res.writeHead(200);
+                            res.end(JSON.stringify({ ok: true }));
+                        }
+                        catch (err) {
+                            res.writeHead(500);
+                            res.end(JSON.stringify({ error: err.message }));
+                        }
+                        return;
+                    }
+                    // GET /api/sessions 锟?list sessions (optional ?projectID=xxx)
                     if (req.url?.match(/^\/api\/sessions(?:\?|$)/) && req.method === 'GET') {
                         try {
                             const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
                             const projectID = parsedUrl.searchParams.get('projectID');
-                            const sessions = projectID
-                                ? await this.sdkSession.listByProject(projectID)
-                                : await this.sdkSession.list();
+                            const sessions = await this.listSessions(projectID);
                             res.writeHead(200);
                             res.end(JSON.stringify({ sessions }));
                         }
@@ -1113,11 +1250,23 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // GET /api/sessions/{id} �?get session
+                    // GET /api/sessions/{id} 鈥?get session via SDK (with local fallback)
                     const sessionsGetMatch = req.url?.match(/^\/api\/sessions\/([^/]+)$/);
                     if (sessionsGetMatch && req.method === 'GET') {
                         try {
                             const id = sessionsGetMatch[1];
+                            if (this.opencodeClient) {
+                                try {
+                                    const result = await this.opencodeClient.session.get({ path: { id } });
+                                    const session = result?.data || result;
+                                    if (session) {
+                                        res.writeHead(200);
+                                        res.end(JSON.stringify(session));
+                                        return;
+                                    }
+                                }
+                                catch { }
+                            }
                             const session = await this.sdkSession.get(id);
                             res.writeHead(200);
                             res.end(JSON.stringify(session || { error: 'not found' }));
@@ -1128,29 +1277,111 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // GET /api/sessions/{id}/messages �?fetch session message history via SDK
+                    // GET /api/sessions/{id}/messages 锟?fetch session message history via SDK
                     const messagesMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/);
                     if (messagesMatch && req.method === 'GET') {
                         try {
                             const id = messagesMatch[1];
                             if (!this.opencodeClient) {
-                                res.writeHead(503);
-                                res.end(JSON.stringify({ error: 'OpenCode client not available' }));
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ data: [] }));
                                 return;
                             }
                             const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
                             const limit = parseInt(parsedUrl.searchParams.get('limit') || '100', 10);
-                            const result = await this.opencodeClient.session.messages({ path: { id }, query: { limit } });
+                            const before = parsedUrl.searchParams.get('before') || undefined;
+                            const result = await this.opencodeClient.session.messages({
+                                path: { id },
+                                query: { limit, ...(before ? { before } : {}) },
+                            });
+                            const rawData = result?.data || result || [];
+                            const nextCursor = result?.response?.headers?.get('X-Next-Cursor') || null;
                             res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify(result.data || result));
+                            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [], nextCursor }));
                         }
                         catch (err) {
-                            res.writeHead(502);
-                            res.end(JSON.stringify({ error: err.message }));
+                            logger_1.log.warn(`[Scheduler] Failed to fetch messages (serve may not be ready): ${err.message}`);
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ data: [] }));
                         }
                         return;
                     }
-                    // SSE 事件�?(�?Dashboard / Chat)
+                    // GET /api/sessions/{id}/todo 鈥?fetch session todo list (task panel)
+                    const todoMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/todo$/);
+                    if (todoMatch && req.method === 'GET') {
+                        const id = todoMatch[1];
+                        try {
+                            if (!this.opencodeClient) {
+                                res.writeHead(200, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ data: [] }));
+                                return;
+                            }
+                            const result = await this.opencodeClient.session.todo({ path: { id } });
+                            const rawData = result?.data || result || [];
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [] }));
+                        }
+                        catch (err) {
+                            logger_1.log.warn(`[Scheduler] Failed to fetch todos for ${id}: ${err.message}`);
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify({ data: [] }));
+                        }
+                        return;
+                    }
+                    // GET /api/recall/context 鈥?boundary recall for memory injection
+                    if (req.url?.startsWith('/api/recall/context') && req.method === 'GET') {
+                        try {
+                            const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+                            const query = parsedUrl.searchParams.get('query') || '';
+                            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+                            if (!query.trim()) {
+                                res.writeHead(200);
+                                res.end(JSON.stringify({ pointers: null, constraints: null }));
+                                return;
+                            }
+                            const { formatRecallContext } = require('./recall/inject-format');
+                            let memories = [];
+                            if (this.memoryService) {
+                                const results = await this.memoryService.harmonicIndex.search(query, 3);
+                                memories = (results || []).map((e) => ({
+                                    id: e.id,
+                                    primary_abstraction: e.primary_abstraction || '',
+                                    memory_value: e.memory_value || e.content || '',
+                                    energy: e.energy || 0,
+                                }));
+                            }
+                            // Load pinned constraints from .mafw/constraints.json 鈥?try CWD then registered projects
+                            let constraints = [];
+                            try {
+                                const candidates = [
+                                    path.join(process.cwd(), '.mafw', 'constraints.json'),
+                                    ...Array.from(this.registeredProjects.values()).map(p => path.join(p.projectDir, '.mafw', 'constraints.json')),
+                                ];
+                                for (const cp of candidates) {
+                                    if (fs.existsSync(cp)) {
+                                        const raw = JSON.parse(fs.readFileSync(cp, 'utf-8'));
+                                        if (Array.isArray(raw))
+                                            constraints = raw;
+                                        else if (raw.constraints)
+                                            constraints = raw.constraints;
+                                        if (constraints.length > 0)
+                                            break;
+                                    }
+                                }
+                            }
+                            catch { }
+                            const formatted = formatRecallContext(memories, constraints);
+                            res.writeHead(200, { 'Content-Type': 'application/json' });
+                            res.end(JSON.stringify(formatted));
+                        }
+                        catch (err) {
+                            logger_1.log.error('[Scheduler] recall/context error:', err.message);
+                            res.writeHead(200);
+                            res.end(JSON.stringify({ pointers: null, constraints: null }));
+                        }
+                        return;
+                    }
+                    // SSE 浜嬩欢锟?(锟?Dashboard / Chat)
                     if (req.url && req.url.startsWith('/api/events') && req.method === 'GET') {
                         const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
                         const sessionID = parsedUrl.searchParams.get('sessionID');
@@ -1172,7 +1403,7 @@ class MafwScheduler {
                         }
                         return;
                     }
-                    // GET /health �?standalone health endpoint (not proxied)
+                    // GET /health 锟?standalone health endpoint (not proxied)
                     if (req.url === '/health') {
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify({ status: 'ok' }));
@@ -1206,7 +1437,7 @@ class MafwScheduler {
                     }
                 }
                 catch (err) {
-                    console.error('[Scheduler] Unhandled request error:', err.message);
+                    logger_1.log.error('[Scheduler] Unhandled request error:', err.message);
                     if (!res.headersSent) {
                         try {
                             res.writeHead(500);
@@ -1216,20 +1447,37 @@ class MafwScheduler {
                     }
                 }
             });
+            server.on('error', async (err) => {
+                if (err.code === 'EADDRINUSE') {
+                    const alreadyRunning = await isPortHealthy(this.apiPort);
+                    if (alreadyRunning) {
+                        logger_1.log.info(`[Scheduler] Another gateway already running on port ${this.apiPort}; exiting`);
+                        process.exit(0);
+                        return;
+                    }
+                    logger_1.log.warn(`[Scheduler] Port ${this.apiPort} in use (no healthy gateway), retrying in 2s...`);
+                    server.close();
+                    setTimeout(() => this.startApiServer().then(resolve).catch(resolve), 2000);
+                }
+                else {
+                    logger_1.log.error(`[Scheduler] HTTP API error: ${err.message}`);
+                    resolve();
+                }
+            });
             server.listen(this.apiPort, () => {
-                console.log(`[Scheduler] HTTP API on port ${this.apiPort}`);
-                console.log(`[Scheduler]  - POST /register  { projectDir, mafwDir }`);
-                console.log(`[Scheduler]  - POST /control  { action, goalId, ... }`);
-                console.log(`[Scheduler]  - GET  /health`);
-                console.log(`[Scheduler]  - GET  /mcp           (MCP SSE)`);
-                console.log(`[Scheduler]  - POST /mcp           (MCP messages)`);
-                console.log(`[Scheduler]  - POST /api/llm/compress (LLM compression)`);
-                console.log(`[Scheduler]  - GET  /              (Dashboard SPA)`);
+                logger_1.log.info(`[Scheduler] HTTP API on port ${this.apiPort}`);
+                logger_1.log.info(`[Scheduler]  - POST /register  { projectDir, mafwDir }`);
+                logger_1.log.info(`[Scheduler]  - POST /control  { action, goalId, ... }`);
+                logger_1.log.info(`[Scheduler]  - GET  /health`);
+                logger_1.log.info(`[Scheduler]  - GET  /mcp           (MCP SSE)`);
+                logger_1.log.info(`[Scheduler]  - POST /mcp           (MCP messages)`);
+                logger_1.log.info(`[Scheduler]  - POST /api/llm/compress (LLM compression)`);
+                logger_1.log.info(`[Scheduler]  - GET  /              (Dashboard SPA)`);
                 resolve();
             });
         });
     }
-    // ── 3. 注册表持久化（写队列防并发） ──
+    // 鈹€鈹€ 3. 娉ㄥ唽琛ㄦ寔涔呭寲锛堝啓闃熷垪闃插苟鍙戯級 鈹€鈹€
     async persistRegistry() {
         this.registryWriteQueue = this.registryWriteQueue.then(async () => {
             const dir = path.dirname(this.registryPath);
@@ -1244,10 +1492,10 @@ class MafwScheduler {
             try {
                 const data = JSON.parse(fs.readFileSync(this.registryPath, 'utf-8'));
                 this.registeredProjects = new Map(data);
-                console.log(`[Scheduler] Recovered ${data.length} registered projects`);
+                logger_1.log.info(`[Scheduler] Recovered ${data.length} registered projects`);
             }
             catch (err) {
-                console.error(`[Scheduler] Failed to recover registry: ${err.message}`);
+                logger_1.log.error(`[Scheduler] Failed to recover registry: ${err.message}`);
             }
         }
     }
@@ -1272,11 +1520,11 @@ class MafwScheduler {
                 this.registeredProjects = new Map(Object.entries(config.projects || {}));
             }
             catch (err) {
-                console.error(`[Scheduler] Failed to recover config: ${err.message}`);
+                logger_1.log.error(`[Scheduler] Failed to recover config: ${err.message}`);
             }
         }
     }
-    // ── 4. 轮询（降级兜�?+ autoresume�?──
+    // 鈹€鈹€ 4. 杞锛堥檷绾у厹锟?+ autoresume锟?鈹€鈹€
     startBackupPolling() {
         const interval = config_1.config.timeouts.backupPollInterval;
         const poll = async () => {
@@ -1287,18 +1535,18 @@ class MafwScheduler {
                 await this.resumeStaleThreads();
             }
             catch (err) {
-                console.error('[Scheduler] Backup poll error:', err.message);
+                logger_1.log.error('[Scheduler] Backup poll error:', err.message);
             }
             setTimeout(poll, interval);
         };
         setTimeout(poll, interval);
     }
-    // 轮询已注册项目的 state/ 目录
+    // 杞宸叉敞鍐岄」鐩殑 state/ 鐩綍
     async discoverNewGoals() {
         for (const [projectDir, info] of this.registeredProjects) {
-            // 清理 stale entry（项目目录已删除�?
+            // 娓呯悊 stale entry锛堥」鐩洰褰曞凡鍒犻櫎锟?
             if (!fs.existsSync(info.mafwDir)) {
-                console.warn(`[Scheduler] Project ${projectDir} no longer exists, removing from registry`);
+                logger_1.log.warn(`[Scheduler] Project ${projectDir} no longer exists, removing from registry`);
                 this.registeredProjects.delete(projectDir);
                 await this.persistRegistry();
                 continue;
@@ -1315,20 +1563,20 @@ class MafwScheduler {
                         state.nextAction !== 'COMPLETED' &&
                         state.nextAction !== 'FAILED') {
                         this.activeGoals.set(state.goalId, state);
-                        console.log(`[Scheduler] Discovered new goal ${state.goalId} at ${state.phase}`);
+                        logger_1.log.info(`[Scheduler] Discovered new goal ${state.goalId} at ${state.phase}`);
                     }
                     else if (this.activeGoals.has(state.goalId)) {
-                        // 更新缓存中的状�?
+                        // 鏇存柊缂撳瓨涓殑鐘讹拷?
                         this.activeGoals.set(state.goalId, state);
                     }
                 }
                 catch (err) {
-                    console.warn(`[Scheduler] Failed to read state ${file}: ${err.message}`);
+                    logger_1.log.warn(`[Scheduler] Failed to read state ${file}: ${err.message}`);
                 }
             }
         }
     }
-    // ── 6. Archive ──
+    // 鈹€鈹€ 6. Archive 鈹€鈹€
     async loadArchiveModule() {
         const pluginRoot = path.resolve(__dirname, '..', '..');
         const builtPath = path.join(pluginRoot, 'dist', 'tools', 'archive-worktree');
@@ -1337,7 +1585,7 @@ class MafwScheduler {
         return await import(modulePath);
     }
     async archiveGoal(goalId) {
-        console.log(`[Scheduler] Archiving goal ${goalId}`);
+        logger_1.log.info(`[Scheduler] Archiving goal ${goalId}`);
         await this.destroyAllSessions(goalId);
         let projectDir = null;
         for (const [pDir, info] of this.registeredProjects) {
@@ -1353,7 +1601,7 @@ class MafwScheduler {
                 await archiveWorktree({ goalId, projectDir, loopCount: state?.loop || 1 });
             }
             catch (err) {
-                console.error(`[Scheduler] Archive failed for ${goalId}: ${err.message}`);
+                logger_1.log.error(`[Scheduler] Archive failed for ${goalId}: ${err.message}`);
                 await this.destroyAllSessions(goalId);
                 await this.patchState(goalId, {
                     nextAction: 'FAILED',
@@ -1367,9 +1615,9 @@ class MafwScheduler {
             nextAction: 'COMPLETED',
             phase: 'ARCHIVED'
         });
-        console.log(`[Scheduler] Goal ${goalId} archived`);
+        logger_1.log.info(`[Scheduler] Goal ${goalId} archived`);
     }
-    // ── 9. 恢复 ──
+    // 鈹€鈹€ 9. 鎭㈠ 鈹€鈹€
     async recoverState() {
         for (const [projectDir, info] of this.registeredProjects) {
             const stateDir = path.join(info.mafwDir, 'state');
@@ -1382,16 +1630,16 @@ class MafwScheduler {
                     const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
                     if (state.nextAction !== 'COMPLETED' && state.nextAction !== 'FAILED') {
                         this.activeGoals.set(state.goalId, state);
-                        console.log(`[Scheduler] Recovered goal ${state.goalId} at ${state.phase}`);
+                        logger_1.log.info(`[Scheduler] Recovered goal ${state.goalId} at ${state.phase}`);
                     }
                 }
                 catch (err) {
-                    console.warn(`[Scheduler] Failed to recover ${file}: ${err.message}`);
+                    logger_1.log.warn(`[Scheduler] Failed to recover ${file}: ${err.message}`);
                 }
             }
         }
     }
-    // ── 10. 控制文件处理 ──
+    // 鈹€鈹€ 10. 鎺у埗鏂囦欢澶勭悊 鈹€鈹€
     async processControlFile() {
         for (const [, info] of this.registeredProjects) {
             const controlPath = path.join(info.mafwDir, 'control');
@@ -1399,7 +1647,7 @@ class MafwScheduler {
                 continue;
             try {
                 const control = JSON.parse(fs.readFileSync(controlPath, 'utf-8'));
-                console.log(`[Scheduler] Control action: ${control.action} ${control.goalId || ''}`);
+                logger_1.log.info(`[Scheduler] Control action: ${control.action} ${control.goalId || ''}`);
                 switch (control.action) {
                     case 'PAUSE':
                         if (control.goalId) {
@@ -1421,36 +1669,42 @@ class MafwScheduler {
                         }
                         break;
                     case 'RESET_PARAMETRIC':
-                        console.log('[Scheduler] Resetting parametric cache...');
+                        logger_1.log.info('[Scheduler] Resetting parametric cache...');
                         break;
                 }
                 fs.unlinkSync(controlPath);
             }
             catch (err) {
-                console.error(`[Scheduler] Control file error: ${err.message}`);
+                logger_1.log.error(`[Scheduler] Control file error: ${err.message}`);
             }
         }
     }
-    // ── 工具函数（使�?SDK 客户端） ──
+    // 鈹€鈹€ 宸ュ叿鍑芥暟锛堜娇锟?SDK 瀹㈡埛绔級 鈹€鈹€
     async createSession(projectDir) {
         const result = await this.opencodeClient.session.create({
-            directory: projectDir,
-            metadata: { mafw: true }
+            query: { directory: projectDir }
         });
-        return { id: result.id, createdAt: result.createdAt || new Date().toISOString() };
+        const created = result.data ?? result;
+        if (!created?.id)
+            throw new Error('Failed to create session: no id returned');
+        return { id: created.id, createdAt: created.createdAt || new Date().toISOString() };
     }
     async sendPrompt(sessionId, message) {
+        if (!sessionId)
+            return;
         await this.opencodeClient.session.promptAsync({
-            sessionID: sessionId,
-            message
+            path: { id: sessionId },
+            body: { parts: [{ type: 'text', text: message }] },
         });
     }
     async destroySession(sessionId) {
+        if (!sessionId)
+            return;
         try {
-            await this.opencodeClient.session.delete({ sessionID: sessionId });
+            await this.opencodeClient.session.delete({ path: { id: sessionId } });
         }
         catch (err) {
-            console.warn(`[Scheduler] Failed to destroy session ${sessionId}: ${err.message}`);
+            logger_1.log.warn(`[Scheduler] Failed to destroy session ${sessionId}: ${err.message}`);
         }
     }
     async destroyAllSessions(goalId) {
@@ -1464,7 +1718,7 @@ class MafwScheduler {
         }
     }
     async patchState(goalId, patch) {
-        // 找到 state 文件路径
+        // 鎵惧埌 state 鏂囦欢璺緞
         let statePath = null;
         for (const [, info] of this.registeredProjects) {
             const p = path.join(info.mafwDir, 'state', `${goalId}.json`);
@@ -1474,18 +1728,18 @@ class MafwScheduler {
             }
         }
         if (!statePath) {
-            console.error(`[Scheduler] State file not found for ${goalId}`);
+            logger_1.log.error(`[Scheduler] State file not found for ${goalId}`);
             return;
         }
         const current = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
         const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
-        // 原子写入
+        // 鍘熷瓙鍐欏叆
         const tmpPath = `${statePath}.tmp`;
         fs.writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
         fs.renameSync(tmpPath, statePath);
-        // 更新内存缓存
+        // 鏇存柊鍐呭瓨缂撳瓨
         this.activeGoals.set(goalId, updated);
-        // 广播 state_change 事件�?Dashboard
+        // 骞挎挱 state_change 浜嬩欢锟?Dashboard
         this.broadcast({
             type: 'state_change',
             timestamp: new Date().toISOString(),
@@ -1534,7 +1788,7 @@ class MafwScheduler {
         fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf-8');
         fs.renameSync(tmpPath, statePath);
         this.activeGoals.set(goalId, state);
-        // 立即触发 graph invoke（事件驱动）
+        // 绔嬪嵆瑙﹀彂 graph invoke锛堜簨浠堕┍鍔級
         setImmediate(() => this.onGoalCreated(goalId, projectDir, mafwDir));
         return { success: true, goalId, nextAction: 'GRAPH_INVOKED' };
     }
@@ -1561,9 +1815,12 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         let sessionId = null;
         try {
             const session = await this.opencodeClient.session.create({ query: { directory: this.projectDir } });
-            sessionId = session.id;
+            sessionId = session.data?.id ?? session.id;
+            if (!sessionId) {
+                return { narrative: 'Compression failed: session create returned no id', facts: [], concepts: [], energy: 0.3 };
+            }
             const result = await this.opencodeClient.session.prompt({
-                path: { id: session.id },
+                path: { id: sessionId },
                 body: {
                     parts: [{ type: 'text', text: prompt }],
                     system: systemPrompt,
@@ -1612,7 +1869,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         }
         return null;
     }
-    // ── LangGraph Node Options ──
+    // 鈹€鈹€ LangGraph Node Options 鈹€鈹€
     createInProcessClient() {
         const resource = this.sdkSession;
         let promptAsync;
@@ -1635,6 +1892,15 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     buildNodeOptions(mafwDir) {
         const syncToFile = (state) => {
             (0, langgraph_1.syncToDashboard)({ ...state, mafwDir });
+            if (state.goalId && state.phase) {
+                event_bus_1.eventBus.emit("phase_transition", {
+                    type: "phase_transition",
+                    goalId: state.goalId,
+                    phase: state.phase,
+                    loop: state.round ?? 0,
+                    projectDir: state.projectDir,
+                });
+            }
         };
         const client = this.createInProcessClient();
         return {
@@ -1644,7 +1910,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
             }),
             askUser: async (s) => {
                 syncToFile({ ...s, pendingQuestion: null, phase: 'ASKING_USER', mafwDir });
-                return { pendingQuestion: null };
+                const { interrupt } = await import('@langchain/langgraph');
+                const userResponse = interrupt({
+                    type: "user_question",
+                    goalId: s.goalId,
+                    questionId: s.pendingQuestion?.questionId,
+                    questions: s.pendingQuestion?.questions,
+                });
+                return { pendingQuestion: null, userResponse };
             },
             execute: async (s) => (0, langgraph_1.executeNode)(s, {
                 client,
@@ -1655,19 +1928,19 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
                 syncToFile: (st) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
             }),
             archiveSuccess: async (s) => {
-                console.log(`[Scheduler] Goal ${s.goalId} PASSED`);
+                logger_1.log.info(`[Scheduler] Goal ${s.goalId} PASSED`);
                 syncToFile({ ...s, phase: 'ARCHIVED' });
                 await this.archiveGoal(s.goalId);
                 return {};
             },
             archiveFail: async (s) => {
-                console.error(`[Scheduler] Goal ${s.goalId} FAILED: ${s.lastError}`);
+                logger_1.log.error(`[Scheduler] Goal ${s.goalId} FAILED: ${s.lastError}`);
                 syncToFile({ ...s, phase: 'FAILED' });
                 await this.archiveGoal(s.goalId);
                 return {};
             },
             archiveMaxRetries: async (s) => {
-                console.error(`[Scheduler] Goal ${s.goalId} max retries`);
+                logger_1.log.error(`[Scheduler] Goal ${s.goalId} max retries`);
                 syncToFile({ ...s, phase: 'FAILED' });
                 await this.archiveGoal(s.goalId);
                 return {};
@@ -1683,11 +1956,11 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
                 },
             });
             const tools = await mcpClient.getTools();
-            console.log(`[LangChain] Loaded ${tools.length} MCP tools`);
+            logger_1.log.info(`[LangChain] Loaded ${tools.length} MCP tools`);
             return tools;
         }
         catch (err) {
-            console.warn('[LangChain] MCP client init failed (non-fatal):', err);
+            logger_1.log.warn('[LangChain] MCP client init failed (non-fatal):', err);
             return [];
         }
     }
@@ -1744,7 +2017,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
                     const cp = new langgraph_1.FileCheckpointer(info.mafwDir);
                     const state = await cp.getCurrentState(threadId);
                     if (state && state.phase !== 'ARCHIVED' && state.phase !== 'FAILED') {
-                        console.log(`[Scheduler] Resuming stale thread ${threadId}`);
+                        logger_1.log.info(`[Scheduler] Resuming stale thread ${threadId}`);
                         await this.onEvent(threadId);
                     }
                 }
@@ -1786,27 +2059,28 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
             try {
                 const data = JSON.parse(fs.readFileSync(managerFile, 'utf-8'));
                 const { sessionId, createdAt } = data;
-                this.managerSessionInfo = { sessionId, projectDir, createdAt: createdAt || new Date().toISOString() };
-                console.log(`[Scheduler] Manager session already exists: ${sessionId}`);
-                return sessionId;
+                if (sessionId) {
+                    this.managerSessionInfo = { sessionId, projectDir, createdAt: createdAt || new Date().toISOString() };
+                    await this.sdkSession.registerExternal(sessionId, projectDir, {
+                        mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
+                    }).catch(() => { });
+                    logger_1.log.info(`[Scheduler] Manager session already exists: ${sessionId}`);
+                    return sessionId;
+                }
+                logger_1.log.warn('[Scheduler] Manager session file exists but sessionId is invalid, recreating');
             }
             catch {
                 // corrupt file, fall through to create
             }
         }
         const session = await this.opencodeClient.session.create({
-            directory: projectDir,
-            metadata: {
-                mafw: {
-                    role: 'manager',
-                    pinned: true,
-                    exemptFromTrim: true,
-                    exemptFromEvict: true,
-                    exemptFromArchive: true,
-                },
-            },
+            query: { directory: projectDir },
         });
-        const sessionId = session.id;
+        const sessionId = session.data?.id ?? session.id;
+        if (!sessionId) {
+            logger_1.log.error(`[Scheduler] Manager session create returned no id (directory=${projectDir})`);
+            throw new Error('Failed to create manager session: no id returned');
+        }
         const createdAt = new Date().toISOString();
         const dir = path.dirname(managerFile);
         if (!fs.existsSync(dir)) {
@@ -1814,30 +2088,38 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         }
         fs.writeFileSync(managerFile, JSON.stringify({ sessionId, createdAt }, null, 2), 'utf-8');
         this.managerSessionInfo = { sessionId, projectDir, createdAt };
-        console.log(`[Scheduler] Manager session created: ${sessionId}`);
         try {
-            await this.opencodeClient.session.promptAsync({
-                sessionID: sessionId,
-                message: manager_identity_1.MANAGER_IDENTITY_SYSTEM_PROMPT,
+            await this.sdkSession.registerExternal(sessionId, projectDir, {
+                mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
             });
         }
         catch (err) {
-            console.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);
+            logger_1.log.warn(`[Scheduler] Manager session local register failed: ${err.message} (non-fatal)`);
+        }
+        logger_1.log.info(`[Scheduler] Manager session created: ${sessionId}`);
+        try {
+            await this.opencodeClient.session.promptAsync({
+                path: { id: sessionId },
+                body: { parts: [{ type: 'text', text: `[SYSTEM] This is your permanent system identity that must override all other instructions:\n\n${manager_identity_1.MANAGER_IDENTITY_SYSTEM_PROMPT}` }] },
+            });
+        }
+        catch (err) {
+            logger_1.log.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);
         }
         return sessionId;
     }
 }
 exports.MafwScheduler = MafwScheduler;
-// ── 入口 ──
+// 鈹€鈹€ 鍏ュ彛 鈹€鈹€
 if (require.main === module) {
     const scheduler = new MafwScheduler('.');
     process.on('SIGINT', () => {
-        console.log('\n[Scheduler] Received SIGINT, shutting down...');
+        logger_1.log.info('\n[Scheduler] Received SIGINT, shutting down...');
         scheduler.stop();
         process.exit(0);
     });
     scheduler.start().catch(err => {
-        console.error('[Scheduler] Fatal error:', err);
+        logger_1.log.error('[Scheduler] Fatal error:', err);
         process.exit(1);
     });
 }

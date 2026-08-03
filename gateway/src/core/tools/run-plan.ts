@@ -1,13 +1,14 @@
+﻿import { log } from '../utils/logger';
 /**
- * Run Plan Tool — Prompt 拼接 + LLM 调用
+ * Run Plan Tool 鈥?Prompt 鎷兼帴 + LLM 璋冪敤
  *
- * 职责：
- *   1. 读取 Goal Charter、Lessons、Parametric Deltas
- *   2. 拼接完整 Plan Prompt
- *   3. 调用 LLM
- *   4. 解析回复为结构化 Plan
+ * 鑱岃矗锛?
+ *   1. 璇诲彇 Goal Charter銆丩essons銆丳arametric Deltas
+ *   2. 鎷兼帴瀹屾暣 Plan Prompt
+ *   3. 璋冪敤 LLM
+ *   4. 瑙ｆ瀽鍥炲涓虹粨鏋勫寲 Plan
  *
- * 被 mafw-plan/entry.ts 调用。
+ * 琚?mafw-plan/entry.ts 璋冪敤銆?
  */
 
 import { Delta } from '../types/parametric';
@@ -26,12 +27,12 @@ export interface PlanResult {
 }
 
 /**
- * 拼接 Plan Prompt
+ * 鎷兼帴 Plan Prompt
  */
 export function buildPlanPrompt(context: PlanContext): string {
   const { goal, lessons, deltas, handoff, loopNum } = context;
 
-  let prompt = `# Plan Agent — Loop ${loopNum}\n\n`;
+  let prompt = `# Plan Agent 鈥?Loop ${loopNum}\n\n`;
   prompt += `## Goal Charter\n\n${goal}\n\n`;
 
   if (handoff) {
@@ -69,27 +70,30 @@ export function buildPlanPrompt(context: PlanContext): string {
 }
 
 /**
- * 解析 LLM 回复为 Plan
+ * 瑙ｆ瀽 LLM 鍥炲涓?Plan
  */
 export function parsePlanResponse(content: string): PlanResult {
   try {
-    // 尝试直接解析 JSON
+    // 灏濊瘯鐩存帴瑙ｆ瀽 JSON
     return JSON.parse(content);
   } catch {
-    // 尝试从 markdown 代码块中提取
+    // 灏濊瘯浠?markdown 浠ｇ爜鍧椾腑鎻愬彇
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[1].trim());
     }
-    // fallback: 返回空结构
-    console.warn('[run-plan] Failed to parse LLM response, using fallback');
+    // fallback: 杩斿洖绌虹粨鏋?
+    log.warn('[run-plan] Failed to parse LLM response, using fallback');
     return { waves: [], tasks: [] };
   }
 }
 
 /**
- * 格式化 Task 为 Markdown
+ * 鏍煎紡鍖?Task 涓?Markdown
  */
 export function formatTaskMarkdown(task: any): string {
   return `# Task: ${task.id}\n\n${task.description}\n\n## Affected Files\n\n${(task.affected_files || []).map((f: string) => `- ${f}`).join('\n')}\n\n## Acceptance Criteria\n\n${(task.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join('\n')}\n`;
 }
+
+
+

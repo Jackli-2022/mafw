@@ -1,3 +1,4 @@
+﻿import { log } from '../utils/logger';
 export interface PrivacyRule {
   name: string;
   pattern: RegExp;
@@ -149,7 +150,7 @@ export class PrivacyFilter {
     }
 
     if (this.logRedactions && redactions.length > 0) {
-      console.log(`[PrivacyFilter] Redacted ${redactions.length} items`);
+      log.info(`[PrivacyFilter] Redacted ${redactions.length} items`);
     }
 
     return { filtered, redactions };
@@ -197,3 +198,6 @@ export class PrivacyFilter {
     };
   }
 }
+
+
+

@@ -65,7 +65,7 @@ async function probeExistingGateway(): Promise<string | null> {
   return null
 }
 
-export async function startGateway(opts?: { opencodeServerUrl?: string; opencodeServerPassword?: string }): Promise<void> {
+export async function startGateway(): Promise<void> {
   if (state !== "stopped") return
 
   // Try connecting to an already-running gateway before spawning a new one
@@ -81,11 +81,8 @@ export async function startGateway(opts?: { opencodeServerUrl?: string; opencode
   port = 3000
 
   try {
-    const env: Record<string, string | undefined> = { ...process.env }
-    if (opts?.opencodeServerUrl) env.MAFW_SERVER_SERVE_URL = opts.opencodeServerUrl
-    if (opts?.opencodeServerPassword) env.MAFW_OPENCODE_PASSWORD = opts.opencodeServerPassword
     writeLog("utility", "mafw starting gateway via CLI", { port }, "info")
-    execFile("mafw", ["daemon"], { env }, (err, stdout, stderr) => {
+      execFile("mafw", ["daemon"], { shell: true }, (err, stdout, stderr) => {
       if (err) {
         writeLog("utility", "mafw CLI daemon failed", { error: err.message, stderr: stderr?.trim() }, "error")
         notifyState("failed")
@@ -122,7 +119,7 @@ export async function startGateway(opts?: { opencodeServerUrl?: string; opencode
 
 export function stopGateway(): void {
   try {
-    execFile("mafw", ["stop"])
+    execFile("mafw", ["stop"], { shell: true })
   } catch {}
   if (healthInterval) {
     clearInterval(healthInterval)

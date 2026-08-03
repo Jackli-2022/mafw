@@ -12,6 +12,8 @@ export default function MafwPlugin({ directory }: {
         'tool.execute.before': (ctx: any) => Promise<void>;
         'tool.execute.after': (ctx: any, result: any) => Promise<void>;
         'chat.message': (ctx: any) => Promise<void>;
+        'experimental.chat.messages.transform': (input: any, output: any) => Promise<any>;
+        'experimental.chat.system.transform': (input: any, output: any) => any;
     };
     command: {
         goal: {

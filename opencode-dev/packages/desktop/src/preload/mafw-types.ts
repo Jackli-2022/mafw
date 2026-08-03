@@ -2,7 +2,7 @@ import type {
   Session, Project, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
   Approval, TriageItem, AutomationRule, GatewayStatus,
-} from "../../../../mafw-sdk/src"
+} from "@mafw/sdk"
 
 export type MafwAPI = {
   gateway: {
@@ -30,7 +30,7 @@ export type MafwAPI = {
   goals: {
     list: () => Promise<Goal[]>
     get: (id: string) => Promise<Goal | null>
-    create: (input: GoalCreateInput) => Promise<{ goalId: string }>
+    validate: (input: GoalCreateInput) => Promise<{ goalId: string }>
     control: (action: GoalControlAction) => Promise<void>
   }
 
@@ -58,8 +58,8 @@ export type MafwAPI = {
   }
 
   chat: {
-    send: (message: string) => Promise<{ sessionID: string }>
-    sendEnriched: (message: string) => Promise<{ sessionID: string }>
+    send: (message: string, sessionID?: string) => Promise<{ sessionID: string }>
+    sendEnriched: (message: string, sessionID?: string) => Promise<{ sessionID: string }>
   }
 
   config: {

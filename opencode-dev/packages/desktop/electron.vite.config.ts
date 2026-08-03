@@ -2,10 +2,8 @@ import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { defineConfig } from "electron-vite"
 import appPlugin from "@opencode-ai/app/vite"
 import * as fs from "node:fs/promises"
-import * as path from "node:path"
 
 const OPENCODE_SERVER_DIST = "../opencode/dist/node"
-const MAFW_SDK_PATH = path.resolve(__dirname, "../../../mafw-sdk/src")
 
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
@@ -35,9 +33,6 @@ const sentry =
 
 export default defineConfig({
   main: {
-    resolve: {
-      alias: { '@mafw/sdk': MAFW_SDK_PATH },
-    },
     define: {
       "import.meta.env.OPENCODE_CHANNEL": JSON.stringify(channel),
     },
@@ -85,9 +80,6 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     ],
   },
   preload: {
-    resolve: {
-      alias: { '@mafw/sdk': MAFW_SDK_PATH },
-    },
     build: {
       rollupOptions: {
         input: { index: "src/preload/index.ts" },

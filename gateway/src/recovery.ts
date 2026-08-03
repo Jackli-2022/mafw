@@ -1,14 +1,15 @@
+﻿import { log } from './core/utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const MAFW_DIR = '.mafw';
 
 /**
- * Recovery �?崩溃恢复�? *
- * Scheduler 重启后：
- *   1. 读取 STATUS.md，找到所�?RUNNING 状态的 Goal
- *   2. 尝试找到最近的 Checkpoint
- *   3. 重新创建 session 并启�?Loop
+ * Recovery 锟?宕╂簝鎭㈠锟? *
+ * Scheduler 閲嶅惎鍚庯細
+ *   1. 璇诲彇 STATUS.md锛屾壘鍒版墍锟?RUNNING 鐘舵€佺殑 Goal
+ *   2. 灏濊瘯鎵惧埌鏈€杩戠殑 Checkpoint
+ *   3. 閲嶆柊鍒涘缓 session 骞跺惎锟?Loop
  */
 
 export class RecoveryManager {
@@ -23,7 +24,7 @@ export class RecoveryManager {
   }
 
   /**
-   * 查找最近的 Checkpoint
+   * 鏌ユ壘鏈€杩戠殑 Checkpoint
    */
   findLastCheckpoint(goalId: string): string | null {
     const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
@@ -41,7 +42,7 @@ export class RecoveryManager {
   }
 
   /**
-   * 保存 Checkpoint
+   * 淇濆瓨 Checkpoint
    */
   saveCheckpoint(goalId: string, loop: number, data: any, waveNum?: number): void {
     const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
@@ -60,7 +61,7 @@ export class RecoveryManager {
   }
 
   /**
-   * 加载 Checkpoint
+   * 鍔犺浇 Checkpoint
    */
   loadCheckpoint(checkpointPath: string): any {
     if (!fs.existsSync(checkpointPath)) return null;
@@ -103,7 +104,7 @@ export class RecoveryManager {
   }
 
   /**
-   * 恢复所有需要重启的 Goal
+   * 鎭㈠鎵€鏈夐渶瑕侀噸鍚殑 Goal
    */
   async recoverAll(callback: (goalId: string, checkpoint: string | null) => Promise<void>): Promise<void> {
     const statusPath = path.join(this.mafwDir, 'STATUS.md');
@@ -124,8 +125,11 @@ export class RecoveryManager {
       if (!goalId || state !== 'RUNNING') continue;
 
       const checkpoint = this.findLastCheckpoint(goalId);
-      console.log(`[Recovery] Goal ${goalId} needs restart, checkpoint: ${checkpoint || 'none'}`);
+      log.info(`[Recovery] Goal ${goalId} needs restart, checkpoint: ${checkpoint || 'none'}`);
       await callback(goalId, checkpoint);
     }
   }
 }
+
+
+
