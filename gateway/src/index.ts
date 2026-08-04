@@ -1167,6 +1167,38 @@ class MafwScheduler {
           return;
         }
 
+        // 鈹€鈹€ OpenCode config (Settings page 鈹€ proxy to native opencode /config) 鈹€鈹€
+
+        // GET /api/opencode-config 鈹€ return the effective opencode Config
+        if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'GET') {
+          try {
+            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            const result = await this.opencodeClient.config.get();
+            const config = result?.data ?? result ?? {};
+            res.end(JSON.stringify({ config }));
+          } catch (err: any) {
+            log.error('[OpenCodeConfig] get error:', err.message);
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // PATCH /api/opencode-config 鈹€ merge-update the opencode Config (native merge semantics)
+        if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'PATCH') {
+          try {
+            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            const body = JSON.parse(await readBody(req));
+            const result = await this.opencodeClient.config.update({ body });
+            res.end(JSON.stringify({ status: 'ok', config: result?.data ?? result ?? null }));
+          } catch (err: any) {
+            log.error('[OpenCodeConfig] update error:', err.message);
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // POST /api/permissions/{id}/reply 鈹€ { reply: 'once'|'always'|'reject', message?: string }
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {

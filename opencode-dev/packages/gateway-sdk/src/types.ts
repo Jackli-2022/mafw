@@ -218,6 +218,11 @@ export interface ConfigNamespace {
   set(key: string, value: any): Promise<void>
 }
 
+export interface OpenCodeConfigNamespace {
+  get(): Promise<any>
+  update(config: Record<string, unknown>): Promise<any>
+}
+
 export interface ChatNamespace {
   send(message: string, sessionID?: string): Promise<{ sessionID: string }>
   sendEnriched(opts: { message: string; sessionID?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }): Promise<{ sessionID: string }>
@@ -289,6 +294,7 @@ export interface MafwClient {
   project: ProjectNamespace
   event: EventNamespace
   config: ConfigNamespace
+  opencodeConfig: OpenCodeConfigNamespace
   chat: ChatNamespace
   goals: GoalsNamespace
   memory: MemoryNamespace

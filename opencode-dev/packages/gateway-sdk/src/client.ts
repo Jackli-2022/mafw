@@ -202,6 +202,25 @@ export class MafwClient implements IMafwClient {
     },
   }
 
+  // ── OpenCode config (native opencode /config) ──
+
+  opencodeConfig = {
+    get: async (): Promise<any> => {
+      const data = await this.request<{ config: any }>('/api/opencode-config')
+      return data.config
+    },
+
+    update: async (config: Record<string, unknown>): Promise<any> => {
+      const res = await fetch(`${this.baseUrl}/api/opencode-config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      })
+      if (!res.ok) throw new Error(`OpenCodeConfig update failed: ${res.status}`)
+      return res.json()
+    },
+  }
+
   // ── Goals ──
 
   goals = {

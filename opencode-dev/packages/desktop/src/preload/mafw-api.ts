@@ -96,6 +96,11 @@ export function createMafwApi(): MafwAPI {
       set: (key, value) => invoke("config", "set", key, value),
     },
 
+    opencodeConfig: {
+      get: () => invoke("opencodeConfig", "get"),
+      update: (config) => invoke("opencodeConfig", "update", config),
+    },
+
     invoke: (namespace, method, ...args) => invoke(namespace, method, ...args),
   }
 }

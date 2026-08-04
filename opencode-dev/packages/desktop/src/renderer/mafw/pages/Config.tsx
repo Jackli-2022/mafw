@@ -36,7 +36,7 @@ export function ConfigPage(props: { onBack?: () => void }) {
     setLoading(false)
   }
 
-  onMount(() => { loadConfig() })
+  onMount(() => { loadConfig(); loadOpenCodeConfig() })
 
   function toggleSection(key: string) {
     setSections(prev => prev.map(s => s.key === key ? { ...s, expanded: !s.expanded } : s))
@@ -108,6 +108,60 @@ export function ConfigPage(props: { onBack?: () => void }) {
     setRestarting(false)
   }
 
+  // ── OpenCode config (native opencode /config) ──
+  const [ocSections, setOcSections] = createSignal<ConfigSection[]>([])
+  const [ocLoading, setOcLoading] = createSignal(true)
+  const [ocSaving, setOcSaving] = createSignal(false)
+  const [ocMessage, setOcMessage] = createSignal("")
+
+  async function loadOpenCodeConfig() {
+    setOcLoading(true)
+    try {
+      const cfg = await window.api.mafw.opencodeConfig.get() as Record<string, any>
+      const secs: ConfigSection[] = Object.entries(cfg || {}).map(([key, value]) => ({
+        key,
+        expanded: false,
+        fields: typeof value === "object" && value !== null
+          ? Object.entries(value).map(([k, v]) => [k, typeof v === "object" ? JSON.stringify(v) : String(v)])
+          : [["value", String(value)]],
+      }))
+      setOcSections(secs)
+    } catch (err: any) {
+      setOcMessage(`加载失败: ${err.message}`)
+      setOcSections([])
+    }
+    setOcLoading(false)
+  }
+
+  function toggleOcSection(key: string) {
+    setOcSections(prev => prev.map(s => s.key === key ? { ...s, expanded: !s.expanded } : s))
+  }
+
+  function updateOcField(sectionKey: string, fieldKey: string, value: string) {
+    setOcSections(prev => prev.map(s => {
+      if (s.key !== sectionKey) return s
+      return { ...s, fields: s.fields.map(([k, v]) => k === fieldKey ? [k, value] : [k, v]) }
+    }))
+  }
+
+  async function saveOcSection(sectionKey: string) {
+    const sec = ocSections().find(s => s.key === sectionKey)
+    if (!sec) return
+    setOcSaving(true)
+    setOcMessage("")
+    try {
+      const obj: Record<string, any> = {}
+      for (const [k, v] of sec.fields) {
+        try { obj[k] = JSON.parse(v) } catch { obj[k] = v }
+      }
+      await window.api.mafw.opencodeConfig.update({ [sectionKey]: obj })
+      setOcMessage(`Section "${sectionKey}" saved（可能需要重启 Gateway 生效）`)
+    } catch (err: any) {
+      setOcMessage(`Error: ${err.message}`)
+    }
+    setOcSaving(false)
+  }
+
   return (
     <div>
       <div class="mafw-config-head">
@@ -146,6 +200,49 @@ export function ConfigPage(props: { onBack?: () => void }) {
             Copy logs path
           </ButtonV2>
         </div>
+      </div>
+      {/* OpenCode config */}
+      <div class="mafw-config-ops" style={{ "margin-bottom": 16 }}>
+        <div class="mafw-config-ops-title">opencode 配置</div>
+        {ocLoading() ? (
+          <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "8px 0" }}>
+            <LoaderV2 width={16} height={16} />
+            <span class="mafw-empty">Loading...</span>
+          </div>
+        ) : ocSections().length === 0 ? (
+          <div class="mafw-empty">Unable to load opencode config</div>
+        ) : (
+          ocSections().map(sec => (
+            <div style={{ "margin-bottom": 8 }}>
+              <div
+                onClick={() => toggleOcSection(sec.key)}
+                class="mafw-card"
+                style={{ cursor: "pointer", "font-size": 13, "font-weight": 500 }}
+              >
+                <Icon name="chevron-down" size="small" style={{ transform: sec.expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s" }} />
+                {sec.key}
+              </div>
+              {sec.expanded && (
+                <div style={{ padding: "8px 10px 8px 24px" }}>
+                  {sec.fields.map(([fieldKey, fieldValue]) => (
+                    <div style={{ "margin-bottom": 8 }}>
+                      <label style={{ display: "block", "font-size": 11, "margin-bottom": 2, color: "var(--text-base)" }}>{fieldKey}</label>
+                      <TextInputV2
+                        value={fieldValue}
+                        onInput={e => updateOcField(sec.key, fieldKey, e.currentTarget.value)}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  ))}
+                  <ButtonV2 variant="contrast" size="small" onClick={() => saveOcSection(sec.key)} disabled={ocSaving()} style={{ "margin-top": 4 }}>
+                    {ocSaving() ? "Saving..." : `Save ${sec.key}`}
+                  </ButtonV2>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+        {ocMessage() && <div style={{ "font-size": 11, "margin-top": 8, color: "var(--text-interactive-base)" }}>{ocMessage()}</div>}
       </div>
       {loading() ? (
           <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "20px 0" }}>
