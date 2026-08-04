@@ -978,6 +978,10 @@ export function MafwShell() {
 
   const propsBusy = () => store.session_status[currentSessionID()]?.type === "busy"
 
+  // Manager sessions are locked to the manager agent — switching to another
+  // primary agent is not allowed there.
+  const isManagerSession = createMemo(() => active()?.manager === true)
+
   const onAgentSelect = (a: AgentEntry) => {
     setPickerOpen(null)
     if (propsBusy()) {
@@ -1448,6 +1452,7 @@ export function MafwShell() {
                     subagentAgents={subagentAgents()}
                     subagents={subagents()}
                     isRunning={subagentRunning}
+                    lockedManager={isManagerSession()}
                     currentName={agentSel()?.name || "manager"}
                     onSelect={(a) => {
                       if (pickerOpen() === "agent-mention") {

@@ -1041,6 +1041,12 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-picker-row-cap { font-size: 12px; color: var(--text-4); }
 .mafw-picker-row-check { font-size: 14px; color: var(--accent); font-weight: 700; }
 .mafw-picker-empty { height: 64px; display: flex; align-items: center; justify-content: center; color: var(--text-4); font-size: 12px; }
+.mafw-picker-lock-hint {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
 .mafw-picker-hint {
   height: 28px;
   display: flex;

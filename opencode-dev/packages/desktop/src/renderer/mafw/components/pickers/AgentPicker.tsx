@@ -29,6 +29,7 @@ export function AgentPicker(props: {
   subagentAgents: AgentEntry[]
   subagents: { id: string; title: string }[]
   isRunning: (sessionID: string) => boolean
+  lockedManager?: boolean
   currentName?: string
   onSelect: (a: AgentEntry) => void
   onSubagentClick: (s: { id: string; title: string }) => void
@@ -37,6 +38,10 @@ export function AgentPicker(props: {
   const [hi, setHi] = createSignal(0)
 
   const selectableRows = () => {
+    if (props.mode === "switch" && props.lockedManager) {
+      // Manager sessions can only use the manager agent.
+      return props.primaryAgents.filter(a => a.name === "manager")
+    }
     if (props.mode === "switch") return props.primaryAgents
     return [...props.primaryAgents, ...props.subagentAgents]
   }
@@ -87,6 +92,9 @@ export function AgentPicker(props: {
               </div>
             )}
           </For>
+        </Show>
+        <Show when={props.mode === "switch" && props.lockedManager}>
+          <div class="mafw-picker-lock-hint">Manager 会话仅使用 manager agent</div>
         </Show>
         <Show when={readonlyRows().length > 0}>
           <div class="mafw-picker-group-label">子代理（本次运行）</div>
