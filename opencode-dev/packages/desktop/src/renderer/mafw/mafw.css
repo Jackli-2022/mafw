@@ -900,7 +900,62 @@ html[data-theme="light"] .mafw-shell {
 .mafw-menu-model-name { font-size: 13px; color: var(--text-1); }
 .mafw-menu-model-id { font-size: 11px; color: var(--text-4); }
 
-/* ── Pickers (PopoverShell + ModelPicker + AgentPicker) ── */
+/* ── Pickers (PopoverShell + ModelPicker + AgentPicker) ──
+   Rendered via Portal into document.body — declare the theme variables here
+   (the .mafw-shell scoped vars don't reach it). */
+.mafw-picker-pop {
+  color-scheme: dark;
+  --bg-float: #1F1F26;
+  --bg-overlay: #16161B;
+  --border-subtle: rgba(255,255,255,.07);
+  --shadow-float: 0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+  --text-1: #ECECF0;
+  --text-2: #CFCFD6;
+  --text-3: #8C8C94;
+  --text-4: #5C5C64;
+  --text-5: #404047;
+  --accent: #46DC82;
+  --accent-dim: rgba(70,220,130,.13);
+  --accent-text: #7FE3A6;
+  --on-accent: #070709;
+  --hover: rgba(255,255,255,.04);
+}
+html[data-theme="light"] .mafw-picker-pop {
+  color-scheme: light;
+  --bg-float: #FFFFFF;
+  --bg-overlay: #EDEDF1;
+  --border-subtle: rgba(0,0,0,.09);
+  --shadow-float: 0 8px 24px rgba(0,0,0,.10), 0 0 0 1px rgba(0,0,0,.04);
+  --text-1: #17171B;
+  --text-2: #34343B;
+  --text-3: #5E5E66;
+  --text-4: #8E8E96;
+  --text-5: #B9B9BF;
+  --accent: #1F9D5A;
+  --accent-dim: rgba(31,157,90,.10);
+  --accent-text: #177A48;
+  --on-accent: #FFFFFF;
+  --hover: rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) .mafw-picker-pop {
+    color-scheme: light;
+    --bg-float: #FFFFFF;
+    --bg-overlay: #EDEDF1;
+    --border-subtle: rgba(0,0,0,.09);
+    --shadow-float: 0 8px 24px rgba(0,0,0,.10), 0 0 0 1px rgba(0,0,0,.04);
+    --text-1: #17171B;
+    --text-2: #34343B;
+    --text-3: #5E5E66;
+    --text-4: #8E8E96;
+    --text-5: #B9B9BF;
+    --accent: #1F9D5A;
+    --accent-dim: rgba(31,157,90,.10);
+    --accent-text: #177A48;
+    --on-accent: #FFFFFF;
+    --hover: rgba(0,0,0,.04);
+  }
+}
 .mafw-picker-pop {
   position: fixed;
   z-index: 80;
