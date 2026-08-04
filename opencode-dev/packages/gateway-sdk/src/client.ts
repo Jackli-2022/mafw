@@ -88,12 +88,20 @@ export class MafwClient implements IMafwClient {
     },
 
     promptAsync: async (
-      params: { path: { id: string }; body: { message: string } },
+      params: {
+        path: { id: string }
+        body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }
+      },
     ): Promise<void> => {
       const res = await fetch(`${this.baseUrl}/api/session/${params.path.id}/promptAsync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: params.body.message }),
+        body: JSON.stringify({
+          message: params.body.message,
+          parts: params.body.parts,
+          agent: params.body.agent,
+          model: params.body.model,
+        }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
@@ -343,14 +351,38 @@ export class MafwClient implements IMafwClient {
       return res.json()
     },
 
-    sendEnriched: async (message: string, sessionID?: string): Promise<{ sessionID: string }> => {
+    sendEnriched: async (
+      opts: {
+        message: string
+        sessionID?: string
+        parts?: Record<string, unknown>[]
+        agent?: string
+        model?: { providerID: string; modelID: string }
+      },
+    ): Promise<{ sessionID: string }> => {
       const res = await fetch(`${this.baseUrl}/api/chat/enriched`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, sessionID }),
+        body: JSON.stringify(opts),
       })
       if (!res.ok) throw new Error(`Chat sendEnriched failed: ${res.status}`)
       return res.json()
+    },
+  }
+
+  // ── Providers & Agents (composer model pill / @agent mention) ──
+
+  providers = {
+    list: async (): Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null> => {
+      const data = await this.request<{ items: any }>('/api/provider')
+      return data.items
+    },
+  }
+
+  agents = {
+    list: async (): Promise<any[]> => {
+      const data = await this.request<{ items: any[] }>('/api/agents')
+      return data.items || []
     },
   }
 

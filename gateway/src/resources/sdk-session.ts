@@ -16,7 +16,7 @@ export class SdkSessionResource {
   private opencodeClient: any;
   private sessions: Map<string, SessionRecord> = new Map();
   private sessionsDir: string;
-  public promptAsync: (sessionID: string, message: string) => Promise<void>;
+  public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }) => Promise<void>;
   public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }> }>;
 
   constructor(opencodeClient?: any, mafwDir?: string) {
@@ -106,12 +106,23 @@ export class SdkSessionResource {
     return record;
   }
 
-  private async _rawPromptAsync(sessionID: string, message: string): Promise<void> {
+  private async _rawPromptAsync(
+    sessionID: string,
+    message: string,
+    parts?: Array<{ type: string; [key: string]: any }>,
+    agent?: string,
+    model?: { providerID: string; modelID: string },
+  ): Promise<void> {
     if (!this.opencodeClient) throw new Error('OpenCode client not available');
     if (!sessionID) return;
+    const promptParts: Array<{ type: string; [key: string]: any }> = [{ type: 'text', text: message }];
+    if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
+    const body: any = { parts: promptParts };
+    if (agent) body.agent = agent;
+    if (model?.providerID && model?.modelID) body.model = model;
     await this.opencodeClient.session.promptAsync({
       path: { id: sessionID },
-      body: { parts: [{ type: 'text', text: message }] },
+      body,
     });
   }
 

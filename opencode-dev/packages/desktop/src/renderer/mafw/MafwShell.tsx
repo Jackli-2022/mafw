@@ -8,6 +8,7 @@ import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { ToastV2, showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 import { DataProvider } from "@opencode-ai/session-ui/context"
 import { SessionTurn } from "@opencode-ai/session-ui/session-turn"
@@ -48,6 +49,53 @@ export function MafwShell() {
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
   const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
+
+  // Composer extras: attachments (picker token + files), @agent mentions, model selection
+  const [attachments, setAttachments] = createSignal<{ token: string; path: string; name: string; size: number }[]>([])
+  const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
+  const [modelSel, setModelSel] = createSignal<{ providerID: string; modelID: string; label: string } | null>(null)
+
+  const addAttachments = async () => {
+    try {
+      const picked: any = await (window as any).api?.openFilePicker?.({ multiple: true })
+      if (!picked?.files?.length) return
+      setAttachments(prev => [...prev, ...picked.files.map((f: any) => ({ token: picked.token, path: f.path, name: f.name, size: f.size }))])
+    } catch (e) {
+      console.warn("[mafw] openFilePicker error:", e)
+    }
+  }
+
+  const removeAttachment = (idx: number) => {
+    const att = attachments()[idx]
+    setAttachments(prev => prev.filter((_, i) => i !== idx))
+    if (att?.token) (window as any).api?.releasePickedFiles?.(att.token)
+  }
+
+  const addAgent = (name: string) => {
+    if (name && !mentionedAgents().some(a => a.name === name)) {
+      setMentionedAgents(prev => [...prev, { name }])
+    }
+  }
+
+  const removeAgent = (name: string) => {
+    setMentionedAgents(prev => prev.filter(a => a.name !== name))
+  }
+
+  const encodeFilePath = (filepath: string): string => {
+    let normalized = filepath.replace(/\\/g, "/")
+    if (/^[A-Za-z]:/.test(normalized)) normalized = "/" + normalized
+    return normalized.split("/").map(seg => encodeURIComponent(seg)).join("/")
+  }
+
+  const mimeOf = (name: string): string => {
+    const ext = name.split(".").pop()?.toLowerCase() || ""
+    const map: Record<string, string> = {
+      md: "text/markdown", txt: "text/plain", json: "application/json", js: "text/plain", ts: "text/plain",
+      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+      pdf: "application/pdf", csv: "text/csv", yaml: "text/plain", yml: "text/plain", py: "text/plain",
+    }
+    return map[ext] || "application/octet-stream"
+  }
 
   // Reactive data store for SessionTurn (SolidJS store Proxy for fine-grained tracking)
   const [store, setStore] = createStore({
@@ -610,12 +658,17 @@ export function MafwShell() {
 
   async function sendMessage() {
     const text = input()
-    if (!text.trim() || sending()) return
+    const atts = attachments()
+    const agents = mentionedAgents()
+    if ((!text.trim() && atts.length === 0) || sending()) return
     let sid = activeSessionId()
     if (!sid) { sid = await createSession(); if (!sid) return }
 
     setSending(true)
     setInput("")
+    setAttachments([])
+    setMentionedAgents([])
+    for (const a of atts) if (a.token) (window as any).api?.releasePickedFiles?.(a.token)
     // Collapse the textarea back to single line after the message is queued
     const ta = textareaEl()
     if (ta) ta.style.height = "auto"
@@ -624,6 +677,9 @@ export function MafwShell() {
     setSessions(prev => prev.map(s => s.id === sid ? { ...s, userMsgId } : s))
 
     // Add user message to store
+    const parts: any[] = [{ type: "text", text, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId }]
+    atts.forEach((a, i) => parts.push({ type: "file", id: `prt_att_${Date.now()}_${i}`, sessionID: sid, messageID: userMsgId, mime: mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path) }))
+    agents.forEach(a => parts.push({ type: "agent", id: `prt_agent_${Date.now()}_${a.name}`, sessionID: sid, messageID: userMsgId, name: a.name }))
     setStore(prev => {
       const msgs = { ...prev.message }
       const sessionMsgs = [...(msgs[sid] || [])]
@@ -632,14 +688,23 @@ export function MafwShell() {
       return {
         ...prev,
         message: msgs,
-        part: { ...prev.part, [userMsgId]: [{ type: "text", text, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId }] },
+        part: { ...prev.part, [userMsgId]: parts },
       }
     })
     forceAnchor()
 
     console.log("[mafw] sendMessage", sid)
     try {
-      const result = await window.api.mafw.chat.sendEnriched(text, sid) as any
+      const result = await window.api.mafw.chat.sendEnriched({
+        message: text,
+        sessionID: sid,
+        parts: atts.length || agents.length
+          ? [...atts.map((a, i) => ({ type: "file", id: `prt_att_${Date.now()}_${i}`, mime: mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path) })),
+             ...agents.map(a => ({ type: "agent", id: `prt_agent_${Date.now()}_${a.name}`, name: a.name }))]
+          : undefined,
+        agent: undefined,
+        model: modelSel() ? { providerID: modelSel()!.providerID, modelID: modelSel()!.modelID } : undefined,
+      }) as any
       if (result?.sessionID) {
         console.log("[mafw] sendEnriched result: session", result.sessionID)
       } else {
@@ -695,6 +760,38 @@ export function MafwShell() {
     const assistants = msgs.filter(m => m.role === "assistant")
     const last = assistants[assistants.length - 1]
     return last?.model?.modelID || last?.agent || "default"
+  })
+
+  // Composer menus: agents (@ mention) + providers/models (model pill)
+  const gwReadyForMenus = createMemo(() => gwStatus()?.state === "ready")
+  const [agentsData, setAgentsData] = createSignal<any[]>([])
+  const [providersData, setProvidersData] = createSignal<any>(null)
+  createEffect(() => {
+    if (!gwReadyForMenus()) return
+    window.api.mafw.agents.list().then((list: any[]) => {
+      setAgentsData(Array.isArray(list) ? list : [])
+    }).catch(e => console.warn("[mafw] agents.list:", e))
+    window.api.mafw.providers.list().then((p: any) => {
+      setProvidersData(p)
+    }).catch(e => console.warn("[mafw] providers.list:", e))
+  })
+
+  const agentOptions = createMemo(() =>
+    (agentsData() || []).filter((a: any) => !a.hidden && a.mode !== "primary")
+  )
+
+  const modelGroups = createMemo(() => {
+    const p = providersData()
+    const connected = new Set(p?.connected || [])
+    const all = p?.all || []
+    const groups: { provider: string; providerID: string; models: any[] }[] = []
+    for (const prov of all) {
+      if (!connected.has(prov.id)) continue
+      const models = Object.values(prov.models || {})
+      if (models.length === 0) continue
+      groups.push({ provider: prov.name || prov.id, providerID: prov.id, models })
+    }
+    return groups
   })
 
   // One user message = one turn. Sorted by time as insurance against any
@@ -1003,6 +1100,29 @@ export function MafwShell() {
                     </ButtonV2>
                   </Show>
                   <div class="mafw-composer">
+                    {/* Attachment + @agent chips row */}
+                    <Show when={attachments().length > 0 || mentionedAgents().length > 0}>
+                      <div class="mafw-composer-chips">
+                        <For each={attachments()}>
+                          {(a, i) => (
+                            <span class="mafw-chip">
+                              <Icon name="file" size="small" />
+                              <span class="mafw-chip-label">{a.name}</span>
+                              <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAttachment(i())} aria-label="移除附件">✕</ButtonV2>
+                            </span>
+                          )}
+                        </For>
+                        <For each={mentionedAgents()}>
+                          {(a) => (
+                            <span class="mafw-chip">
+                              <Icon name="sparkles" size="small" />
+                              <span class="mafw-chip-label">@{a.name}</span>
+                              <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAgent(a.name)} aria-label="移除引用">✕</ButtonV2>
+                            </span>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
                     <TextareaV2
                       value={input()}
                       onInput={e => { setInput(e.currentTarget.value); autoGrow(e.currentTarget) }}
@@ -1018,26 +1138,79 @@ export function MafwShell() {
                     <div class="mafw-composer-toolbar">
                       <div class="mafw-composer-left">
                         <TooltipV2 value="附件" openDelay={300}>
-                          <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="附件">+</ButtonV2>
+                          <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">+</ButtonV2>
                         </TooltipV2>
                         <TooltipV2 value="引用 Agent" openDelay={300}>
-                          <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="引用 Agent">@</ButtonV2>
+                          <MenuV2>
+                            <MenuV2.Trigger as="div" role="button" aria-label="引用 Agent">
+                              <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon">@</ButtonV2>
+                            </MenuV2.Trigger>
+                            <MenuV2.Portal>
+                              <MenuV2.Content class="mafw-composer-menu" onClick={(e: any) => e.stopPropagation()}>
+                                <For each={agentOptions()}>
+                                  {(a) => (
+                                    <MenuV2.Item onSelect={() => addAgent(a.name)} disabled={mentionedAgents().some(x => x.name === a.name)}>
+                                      <span class="mafw-menu-agent">
+                                        <span class="mafw-agent-dot" style={{ background: a.color || "var(--text-4)" }} />
+                                        {a.name}
+                                        <Show when={a.description}><span class="mafw-menu-agent-desc">{a.description}</span></Show>
+                                      </span>
+                                    </MenuV2.Item>
+                                  )}
+                                </For>
+                                <Show when={agentOptions().length === 0}>
+                                  <MenuV2.Item disabled>暂无可用 agent</MenuV2.Item>
+                                </Show>
+                              </MenuV2.Content>
+                            </MenuV2.Portal>
+                          </MenuV2>
                         </TooltipV2>
                       </div>
                       <div class="mafw-composer-right">
                         <TooltipV2 value="模型" openDelay={300}>
-                          <ButtonV2 variant="ghost" size="small" class="mafw-model-pill" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="模型">
-                            {modelName()}<span class="mafw-model-chevron">▾</span>
-                          </ButtonV2>
+                          <MenuV2>
+                            <MenuV2.Trigger as="div" role="button" aria-label="模型">
+                              <ButtonV2 variant="ghost" size="small" class="mafw-model-pill">
+                                {modelSel()?.label || modelName()}<span class="mafw-model-chevron">▾</span>
+                              </ButtonV2>
+                            </MenuV2.Trigger>
+                            <MenuV2.Portal>
+                              <MenuV2.Content class="mafw-composer-menu" onClick={(e: any) => e.stopPropagation()}>
+                                <For each={modelGroups()}>
+                                  {(g) => (
+                                    <>
+                                      <MenuV2.GroupLabel>{g.provider}</MenuV2.GroupLabel>
+                                      <For each={g.models}>
+                                        {(m) => (
+                                          <MenuV2.Item
+                                            onSelect={() => setModelSel({ providerID: g.providerID, modelID: m.id, label: m.name || m.id })}
+                                            classList={{ selected: modelSel()?.modelID === m.id && modelSel()?.providerID === g.providerID }}
+                                          >
+                                            <span class="mafw-menu-model">
+                                              <span class="mafw-menu-model-name">{m.name || m.id}</span>
+                                              <Show when={m.id !== (m.name || m.id)}><span class="mafw-menu-model-id">{m.id}</span></Show>
+                                            </span>
+                                          </MenuV2.Item>
+                                        )}
+                                      </For>
+                                    </>
+                                  )}
+                                </For>
+                                <Show when={modelGroups().length === 0}>
+                                  <MenuV2.Item disabled>暂无可用模型</MenuV2.Item>
+                                </Show>
+                              </MenuV2.Content>
+                            </MenuV2.Portal>
+                          </MenuV2>
                         </TooltipV2>
                         <Show when={sending()} fallback={
                           <ButtonV2
                             variant="contrast"
                             size="small"
                             onClick={sendMessage}
-                            disabled={!input().trim()}
+                            disabled={!input().trim() && attachments().length === 0}
                             class="mafw-send"
-                            classList={{ "mafw-send-disabled": !input().trim() }}
+                            classList={{ "mafw-send-disabled": !input().trim() && attachments().length === 0 }}
                             aria-label="发送"
                           >
                             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">

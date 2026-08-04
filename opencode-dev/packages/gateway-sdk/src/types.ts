@@ -197,7 +197,7 @@ export interface SessionNamespace {
   todo(params: { path: { id: string } }): Promise<{ data: Todo[] }>
   abort(params: { path: { id: string } }): Promise<void>
   prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
-  promptAsync(params: { path: { id: string }; body: { message: string } }): Promise<void>
+  promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
   events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
 }
 
@@ -219,7 +219,15 @@ export interface ConfigNamespace {
 
 export interface ChatNamespace {
   send(message: string, sessionID?: string): Promise<{ sessionID: string }>
-  sendEnriched(message: string, sessionID?: string): Promise<{ sessionID: string }>
+  sendEnriched(opts: { message: string; sessionID?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }): Promise<{ sessionID: string }>
+}
+
+export interface ProvidersNamespace {
+  list(): Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null>
+}
+
+export interface AgentsNamespace {
+  list(): Promise<any[]>
 }
 
 export interface GoalsNamespace {
@@ -286,6 +294,8 @@ export interface MafwClient {
   approvals: ApprovalsNamespace
   questions: QuestionsNamespace
   permissions: PermissionsNamespace
+  providers: ProvidersNamespace
+  agents: AgentsNamespace
   triage: TriageNamespace
   automations: AutomationsNamespace
 }

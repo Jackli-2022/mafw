@@ -705,7 +705,7 @@ class MafwScheduler {
         if (req.url === "/api/chat/enriched" && req.method === "POST") {
           try {
             const body = await readBody(req);
-            const { message, sessionID: existingID } = JSON.parse(body);
+            const { message, sessionID: existingID, parts, agent, model } = JSON.parse(body);
             if (!message) { res.writeHead(400); res.end(JSON.stringify({ error: 'message required' })); return; }
 
             const firstProject = this.registeredProjects.values().next().value;
@@ -738,9 +738,15 @@ class MafwScheduler {
             if (!sessionID) {
               res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
             }
+            // Extra parts (file/agent attachments) ride along after the enriched text.
+            const promptParts: any[] = [{ type: 'text', text: enrichedMessage }];
+            if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
+            const promptBody: any = { parts: promptParts };
+            if (agent) promptBody.agent = agent;
+            if (model?.providerID && model?.modelID) promptBody.model = model;
             const result = await this.opencodeClient.session.promptAsync({
               path: { id: sessionID },
-              body: { parts: [{ type: 'text', text: enrichedMessage }] },
+              body: promptBody,
             });
             if (result?.error) {
               log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
@@ -1126,6 +1132,37 @@ class MafwScheduler {
           return;
         }
 
+        // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
+
+        // GET /api/provider 鈹€ list providers + models (legacy /provider)
+        if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
+          try {
+            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            const result = await this.opencodeClient.provider.list();
+            res.end(JSON.stringify({ items: result?.data ?? result ?? null }));
+          } catch (err: any) {
+            log.error('[Provider] list error:', err.message);
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // GET /api/agents 鈹€ list available agents (legacy /agent)
+        if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
+          try {
+            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            const result = await this.opencodeClient.app.agents();
+            const agents = Array.isArray(result) ? result : result?.data;
+            res.end(JSON.stringify({ items: Array.isArray(agents) ? agents : [] }));
+          } catch (err: any) {
+            log.error('[Agents] list error:', err.message);
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // POST /api/permissions/{id}/reply 鈹€ { reply: 'once'|'always'|'reject', message?: string }
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {
@@ -1317,14 +1354,14 @@ class MafwScheduler {
         }
 
         // POST /api/session/{id}/promptAsync 锟?fire-and-forget prompt
-        const promptAsyncMatch = req.url?.match(/^\/api\/session\/([^/]+)\/promptAsync$/);
+        const promptAsyncMatch = req.url?.match(/^\/api\/session\/([^/]+)\/promptAsync(?:\?|$)/);
         if (promptAsyncMatch && req.method === 'POST') {
           try {
             const sessionID = promptAsyncMatch[1];
             const body = await readBody(req);
-            const { message } = body ? JSON.parse(body) : {};
-            if (!message) { res.writeHead(400); res.end(JSON.stringify({ error: 'message required' })); return; }
-            await this.sdkSession.promptAsync(sessionID, message);
+            const { message, parts, agent, model } = body ? JSON.parse(body) : {};
+            if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
+            await this.sdkSession.promptAsync(sessionID, message, parts, agent, model);
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {

@@ -20,7 +20,7 @@ export type MafwAPI = {
     get: (id: string) => Promise<Session | null>
     messages: (sessionID: string, limit?: number, before?: string) => Promise<any>
     delete: (id: string) => Promise<void>
-    promptAsync: (opts: { sessionID: string; message: string }) => Promise<void>
+    promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
   }
 
   projects: {
@@ -72,7 +72,15 @@ export type MafwAPI = {
 
   chat: {
     send: (message: string, sessionID?: string) => Promise<{ sessionID: string }>
-    sendEnriched: (message: string, sessionID?: string) => Promise<{ sessionID: string }>
+    sendEnriched: (opts: { message: string; sessionID?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<{ sessionID: string }>
+  }
+
+  providers: {
+    list: () => Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null>
+  }
+
+  agents: {
+    list: () => Promise<any[]>
   }
 
   config: {

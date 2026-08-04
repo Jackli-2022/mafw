@@ -79,7 +79,15 @@ export function createMafwApi(): MafwAPI {
 
     chat: {
       send: (message, sessionID?) => invoke("chat", "send", message, sessionID),
-      sendEnriched: (message, sessionID?) => invoke("chat", "sendEnriched", message, sessionID),
+      sendEnriched: (opts) => invoke("chat", "sendEnriched", opts),
+    },
+
+    providers: {
+      list: () => invoke("providers", "list"),
+    },
+
+    agents: {
+      list: () => invoke("agents", "list"),
     },
 
     config: {
