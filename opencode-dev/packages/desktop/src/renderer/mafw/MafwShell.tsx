@@ -84,7 +84,12 @@ export function MafwShell() {
   const encodeFilePath = (filepath: string): string => {
     let normalized = filepath.replace(/\\/g, "/")
     if (/^[A-Za-z]:/.test(normalized)) normalized = "/" + normalized
-    return normalized.split("/").map(seg => encodeURIComponent(seg)).join("/")
+    return normalized.split("/").map((seg, i) => {
+      // Keep the colon in the Windows drive segment (/C:/...) so downstream
+      // file URL parsers can reliably detect drives.
+      if (i === 0 && /^[A-Za-z]:$/.test(seg)) return seg
+      return encodeURIComponent(seg)
+    }).join("/")
   }
 
   const mimeOf = (name: string): string => {
@@ -674,12 +679,17 @@ export function MafwShell() {
     if (ta) ta.style.height = "auto"
 
     const userMsgId = `user-${Date.now()}`
+    const ts = Date.now()
     setSessions(prev => prev.map(s => s.id === sid ? { ...s, userMsgId } : s))
 
-    // Add user message to store
-    const parts: any[] = [{ type: "text", text, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId }]
-    atts.forEach((a, i) => parts.push({ type: "file", id: `prt_att_${Date.now()}_${i}`, sessionID: sid, messageID: userMsgId, mime: mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path) }))
-    agents.forEach(a => parts.push({ type: "agent", id: `prt_agent_${Date.now()}_${a.name}`, sessionID: sid, messageID: userMsgId, name: a.name }))
+    // Build parts ONCE — the same ids feed the optimistic store entry and the
+    // request payload, so the server echo (which preserves part ids) merges
+    // instead of duplicating chips.
+    const fileParts = atts.map((a, i) => ({ type: "file", id: `prt_att_${ts}_${i}`, mime: mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path) }))
+    const agentParts = agents.map(a => ({ type: "agent", id: `prt_agent_${ts}_${a.name}`, name: a.name }))
+    const optimisticParts: any[] = [{ type: "text", text, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId }]
+    optimisticParts.push(...fileParts.map(p => ({ ...p, sessionID: sid, messageID: userMsgId })))
+    optimisticParts.push(...agentParts.map(p => ({ ...p, sessionID: sid, messageID: userMsgId })))
     setStore(prev => {
       const msgs = { ...prev.message }
       const sessionMsgs = [...(msgs[sid] || [])]
@@ -688,7 +698,7 @@ export function MafwShell() {
       return {
         ...prev,
         message: msgs,
-        part: { ...prev.part, [userMsgId]: parts },
+        part: { ...prev.part, [userMsgId]: optimisticParts },
       }
     })
     forceAnchor()
@@ -698,10 +708,7 @@ export function MafwShell() {
       const result = await window.api.mafw.chat.sendEnriched({
         message: text,
         sessionID: sid,
-        parts: atts.length || agents.length
-          ? [...atts.map((a, i) => ({ type: "file", id: `prt_att_${Date.now()}_${i}`, mime: mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path) })),
-             ...agents.map(a => ({ type: "agent", id: `prt_agent_${Date.now()}_${a.name}`, name: a.name }))]
-          : undefined,
+        parts: fileParts.length || agentParts.length ? [...fileParts, ...agentParts] : undefined,
         agent: undefined,
         model: modelSel() ? { providerID: modelSel()!.providerID, modelID: modelSel()!.modelID } : undefined,
       }) as any

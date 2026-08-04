@@ -706,7 +706,7 @@ class MafwScheduler {
           try {
             const body = await readBody(req);
             const { message, sessionID: existingID, parts, agent, model } = JSON.parse(body);
-            if (!message) { res.writeHead(400); res.end(JSON.stringify({ error: 'message required' })); return; }
+            if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
 
             const firstProject = this.registeredProjects.values().next().value;
             const projectDir = firstProject?.projectDir || this.projectDir;
@@ -739,10 +739,10 @@ class MafwScheduler {
               res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
             }
             // Extra parts (file/agent attachments) ride along after the enriched text.
-            const promptParts: any[] = [{ type: 'text', text: enrichedMessage }];
+            const promptParts: any[] = [];
+            if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
             if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-            const promptBody: any = { parts: promptParts };
-            if (agent) promptBody.agent = agent;
+            const promptBody: any = { parts: promptParts };            if (agent) promptBody.agent = agent;
             if (model?.providerID && model?.modelID) promptBody.model = model;
             const result = await this.opencodeClient.session.promptAsync({
               path: { id: sessionID },

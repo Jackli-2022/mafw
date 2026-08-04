@@ -115,7 +115,8 @@ export class SdkSessionResource {
   ): Promise<void> {
     if (!this.opencodeClient) throw new Error('OpenCode client not available');
     if (!sessionID) return;
-    const promptParts: Array<{ type: string; [key: string]: any }> = [{ type: 'text', text: message }];
+    const promptParts: Array<{ type: string; [key: string]: any }> = [];
+    if (message) promptParts.push({ type: 'text', text: message });
     if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
     const body: any = { parts: promptParts };
     if (agent) body.agent = agent;

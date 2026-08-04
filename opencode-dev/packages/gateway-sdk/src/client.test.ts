@@ -361,17 +361,47 @@ test("chat.send passes optional sessionID in body", async () => {
 test("chat.sendEnriched returns sessionID", async () => {
   fetchMock.mockResolvedValue(okJson({ sessionID: "cs2" }))
   const c = new MafwClient()
-  const r = await c.chat.sendEnriched("hello enriched")
+  const r = await c.chat.sendEnriched({ message: "hello enriched" })
   expect(r.sessionID).toBe("cs2")
 })
 
 test("chat.sendEnriched passes optional sessionID in body", async () => {
   fetchMock.mockResolvedValue(okJson({ sessionID: "sess-2" }))
   const c = new MafwClient()
-  const r = await c.chat.sendEnriched("hello enriched", "sess-2")
+  const r = await c.chat.sendEnriched({ message: "hello enriched", sessionID: "sess-2" })
   const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
   expect(body.sessionID).toBe("sess-2")
   expect(r.sessionID).toBe("sess-2")
+})
+
+test("chat.sendEnriched forwards parts/agent/model", async () => {
+  fetchMock.mockResolvedValue(okJson({ sessionID: "cs3" }))
+  const c = new MafwClient()
+  await c.chat.sendEnriched({
+    message: "hi",
+    sessionID: "sess-3",
+    parts: [{ type: "file", id: "prt_x", mime: "text/plain", filename: "a.txt", url: "file:///C:/a.txt" }],
+    agent: "explore",
+    model: { providerID: "deepseek", modelID: "deepseek-v4-pro" },
+  })
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body.parts).toHaveLength(1)
+  expect(body.parts[0].type).toBe("file")
+  expect(body.agent).toBe("explore")
+  expect(body.model).toEqual({ providerID: "deepseek", modelID: "deepseek-v4-pro" })
+})
+
+test("providers.list + agents.list hit their routes", async () => {
+  fetchMock.mockResolvedValue(okJson({ items: { all: [], connected: [] } }))
+  const c = new MafwClient()
+  const p = await c.providers.list()
+  expect((fetchMock as any).mock.calls[0][0]).toContain("/api/provider")
+  expect(p).toEqual({ all: [], connected: [] })
+
+  fetchMock.mockResolvedValue(okJson({ items: [{ name: "explore" }] }))
+  const a = await c.agents.list()
+  expect((fetchMock as any).mock.calls[1][0]).toContain("/api/agents")
+  expect(a).toHaveLength(1)
 })
 
 // ── Config ──
