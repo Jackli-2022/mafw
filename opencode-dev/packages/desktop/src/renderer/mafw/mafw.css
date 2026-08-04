@@ -414,7 +414,7 @@ html[data-theme="light"] .mafw-shell {
   display: flex;
   flex-direction: column;
   height: calc(100% - 24px);
-  margin: 8px 8px 16px;
+  margin: 4px 8px 16px;
   border-radius: 16px;
   overflow: hidden;
   background: var(--bg-raised);
