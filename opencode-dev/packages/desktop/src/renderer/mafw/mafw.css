@@ -335,7 +335,7 @@ html[data-theme="light"] .mafw-shell {
   flex-shrink: 0;
   transition: color 0.12s, background 0.12s;
 }
-.mafw-rail-settings-bar:hover { color: var(--text-1); background: var(--hover); }
+.mafw-rail-settings-bar:hover { color: var(--text-1); background: var(--bg-overlay); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
