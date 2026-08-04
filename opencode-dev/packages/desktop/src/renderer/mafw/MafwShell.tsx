@@ -50,16 +50,18 @@ export function MafwShell() {
   const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
 
-  // Composer extras: attachments (picker token + files), @agent mentions, model selection
-  const [attachments, setAttachments] = createSignal<{ token: string; path: string; name: string; size: number }[]>([])
+  // Composer extras: attachments (picker token + files / pasted dataUrl images),
+  // @agent mentions, model selection
+  const [attachments, setAttachments] = createSignal<{ token?: string; path?: string; name: string; size: number; mime?: string; dataUrl?: string }[]>([])
   const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
   const [modelSel, setModelSel] = createSignal<{ providerID: string; modelID: string; label: string } | null>(null)
+  const [dragging, setDragging] = createSignal(false)
 
   const addAttachments = async () => {
     try {
       const picked: any = await (window as any).api?.openFilePicker?.({ multiple: true })
       if (!picked?.files?.length) return
-      setAttachments(prev => [...prev, ...picked.files.map((f: any) => ({ token: picked.token, path: f.path, name: f.name, size: f.size }))])
+      setAttachments(prev => [...prev, ...picked.files.map((f: any) => ({ token: picked.token, path: f.path, name: f.name, size: f.size, mime: f.type || undefined }))])
     } catch (e) {
       console.warn("[mafw] openFilePicker error:", e)
     }
@@ -69,6 +71,123 @@ export function MafwShell() {
     const att = attachments()[idx]
     setAttachments(prev => prev.filter((_, i) => i !== idx))
     if (att?.token) (window as any).api?.releasePickedFiles?.(att.token)
+  }
+
+  // Electron 42 removed File.path — resolve via webUtils through preload.
+  const pathOfFile = (file: File): string | undefined => {
+    try {
+      return (window as any).api?.getPathForFile?.(file) as string | undefined
+    } catch { return undefined }
+  }
+
+  // Client-side downscale for pasted images: the opencode server's
+  // image.normalize caps at 2000px / ~5MB base64 and throws (uncaught) when a
+  // paste exceeds it — flatten to canvas first to keep sends reliable.
+  const imageToDataUrl = async (file: File): Promise<string | undefined> => {
+    try {
+      const raw = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader()
+        r.onload = () => resolve(r.result as string)
+        r.onerror = () => reject(r.error)
+        r.readAsDataURL(file)
+      })
+      const img = new Image()
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = () => reject(new Error("image decode failed"))
+        img.src = raw
+      })
+      let { width, height } = img
+      const MAX = 2000
+      if (width > MAX || height > MAX) {
+        const scale = Math.min(MAX / width, MAX / height)
+        width = Math.round(width * scale)
+        height = Math.round(height * scale)
+      }
+      const canvas = document.createElement("canvas")
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return raw
+      ctx.drawImage(img, 0, 0, width, height)
+      const quality = raw.length > 4 * 1024 * 1024 ? 0.7 : 0.85
+      return canvas.toDataURL(file.type === "image/png" ? "image/png" : "image/jpeg", quality)
+    } catch (e) {
+      console.warn("[mafw] imageToDataUrl error:", e)
+      return undefined
+    }
+  }
+
+  const addPastedFile = async (file: File) => {
+    if (!file) return
+    if (file.type.startsWith("image/")) {
+      const dataUrl = await imageToDataUrl(file)
+      if (!dataUrl) return
+      setAttachments(prev => [...prev, { name: file.name || "粘贴图片.png", size: file.size, mime: file.type, dataUrl }])
+    } else {
+      const path = pathOfFile(file)
+      if (path) {
+        setAttachments(prev => [...prev, { path, name: file.name, size: file.size, mime: file.type || undefined }])
+      }
+    }
+  }
+
+  // ── Paste (Ctrl+V / right-click / Shift+Insert all fire onPaste) ──
+  const handlePaste = async (e: ClipboardEvent) => {
+    const cd = e.clipboardData
+    if (!cd) return
+    const files = Array.from(cd.items || []).flatMap(item => {
+      if (item.kind !== "file") return []
+      const f = item.getAsFile()
+      return f ? [f] : []
+    })
+    if (files.length > 0) {
+      e.preventDefault()
+      for (const f of files) await addPastedFile(f)
+      return
+    }
+    const plainText = cd.getData("text/plain") ?? ""
+    // Browser clipboard has no file items and no text — try system clipboard image.
+    if (!plainText) {
+      try {
+        const img: any = await (window as any).api?.readClipboardImage?.()
+        if (img?.buffer) {
+          e.preventDefault()
+          const file = new File([img.buffer], "剪贴板图片.png", { type: "image/png" })
+          await addPastedFile(file)
+        }
+      } catch (err) {
+        console.warn("[mafw] readClipboardImage error:", err)
+      }
+    }
+    // Pure text: no preventDefault — native paste proceeds.
+  }
+
+  // ── Drag & drop onto the composer ──
+  const handleDragOver = (e: DragEvent) => {
+    if (e.dataTransfer?.types?.includes("Files")) {
+      e.preventDefault()
+      setDragging(true)
+    }
+  }
+  const handleDragLeave = (e: DragEvent) => {
+    if (!e.currentTarget?.contains(e.relatedTarget as Node)) setDragging(false)
+  }
+  const handleDrop = async (e: DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    const dt = e.dataTransfer
+    if (!dt) return
+    const plainText = dt.getData("text/plain")
+    if (plainText?.startsWith("file:")) {
+      const p = plainText.slice(5)
+      if (p) setAttachments(prev => [...prev, { path: p, name: p.split(/[\\/]/).pop() || p, size: 0 }])
+      return
+    }
+    const dropped = dt.files
+    if (dropped?.length) {
+      for (const f of Array.from(dropped)) await addPastedFile(f)
+    }
   }
 
   const addAgent = (name: string) => {
@@ -685,7 +804,9 @@ export function MafwShell() {
     // Build parts ONCE — the same ids feed the optimistic store entry and the
     // request payload, so the server echo (which preserves part ids) merges
     // instead of duplicating chips.
-    const fileParts = atts.map((a, i) => ({ type: "file", id: `prt_att_${ts}_${i}`, mime: mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path) }))
+    const fileParts = atts.map((a, i) => a.dataUrl
+      ? { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || "image/png", filename: a.name, url: a.dataUrl }
+      : { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path || "") })
     const agentParts = agents.map(a => ({ type: "agent", id: `prt_agent_${ts}_${a.name}`, name: a.name }))
     const optimisticParts: any[] = [{ type: "text", text, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId }]
     optimisticParts.push(...fileParts.map(p => ({ ...p, sessionID: sid, messageID: userMsgId })))
@@ -943,6 +1064,14 @@ export function MafwShell() {
     setGwStatus(info)
     const unsub = window.api.mafw.gateway.onStateChange(s => setGwStatus(s))
     onCleanup(unsub)
+    // Global drag guard: dropping a file anywhere must not navigate the window.
+    const preventGlobal = (e: DragEvent) => e.preventDefault()
+    document.addEventListener("dragover", preventGlobal)
+    document.addEventListener("drop", preventGlobal)
+    onCleanup(() => {
+      document.removeEventListener("dragover", preventGlobal)
+      document.removeEventListener("drop", preventGlobal)
+    })
   })
 
   return (
@@ -1106,14 +1235,22 @@ export function MafwShell() {
                       有 {sessionPending(currentSessionID()!)} 个待回答 ↓
                     </ButtonV2>
                   </Show>
-                  <div class="mafw-composer">
+                  <div
+                    class="mafw-composer"
+                    classList={{ "mafw-composer-dragging": dragging() }}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                  >
                     {/* Attachment + @agent chips row */}
                     <Show when={attachments().length > 0 || mentionedAgents().length > 0}>
                       <div class="mafw-composer-chips">
                         <For each={attachments()}>
                           {(a, i) => (
                             <span class="mafw-chip">
-                              <Icon name="file" size="small" />
+                              <Show when={a.dataUrl} fallback={<Icon name="file" size="small" />}>
+                                <img class="mafw-chip-thumb" src={a.dataUrl} alt="" />
+                              </Show>
                               <span class="mafw-chip-label">{a.name}</span>
                               <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAttachment(i())} aria-label="移除附件">✕</ButtonV2>
                             </span>
@@ -1136,6 +1273,7 @@ export function MafwShell() {
                       onKeyDown={e => {
                         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
                       }}
+                      onPaste={handlePaste}
                       ref={setTextareaEl}
                       placeholder={gwStatus()?.state === "ready" ? "输入消息…" : "重新连接中…"}
                       disabled={gwStatus()?.state !== "ready"}

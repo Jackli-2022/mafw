@@ -720,6 +720,11 @@ html[data-theme="light"] .mafw-shell {
   border-color: var(--composer-focus);
   box-shadow: 0 0 0 3px var(--composer-halo);
 }
+.mafw-composer-dragging {
+  border-color: var(--composer-focus);
+  box-shadow: 0 0 0 3px var(--composer-halo);
+  background: color-mix(in srgb, var(--accent-dim) 40%, var(--bg-float));
+}
 /* TextareaV2 puts `class` on its wrapper div — kill the v2 box (gradient bg,
    elevation shadow, 80px min-height, focus outline) so the composer box is
    the only surface and the only focus ring. */
@@ -842,6 +847,13 @@ html[data-theme="light"] .mafw-shell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mafw-chip-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 .mafw-chip-x {
   width: 18px;
