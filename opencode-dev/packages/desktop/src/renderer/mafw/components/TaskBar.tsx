@@ -51,35 +51,36 @@ export function TaskBar(props: {
   })
   onCleanup(() => { if (hideTimer) clearTimeout(hideTimer) })
 
-  // No tasks → zero footprint.
-  if (total() === 0) return null
-  if (allDone() && allDoneHidden()) return null
+  // No tasks → zero footprint. Reactive (Show) — SolidJS component bodies run once.
+  const visible = () => total() > 0 && !(allDone() && allDoneHidden())
 
   const current = () => running()[0] || [...props.todos].reverse().find(t => t.status === "completed")
   const elapsedMs = createMemo(() => (props.started ? Math.max(0, now() - props.started) : 0))
   const pct = () => (total() > 0 ? Math.round((done() / total()) * 100) : 0)
 
   return (
-    <button
-      type="button"
-      class="mafw-taskbar"
-      classList={{ open: props.open }}
-      onClick={props.onToggle}
-      aria-label="任务列表"
-    >
-      <Show when={!allDone()} fallback={<span class="mafw-taskbar-check">✔ 全部完成（{done()}/{total()}）</span>}>
-        <Show when={running().length > 0} fallback={<span class="mafw-taskbar-spinner" />}>
-          <span class="mafw-taskbar-spinner running" />
+    <Show when={visible()}>
+      <button
+        type="button"
+        class="mafw-taskbar"
+        classList={{ open: props.open }}
+        onClick={props.onToggle}
+        aria-label="任务列表"
+      >
+        <Show when={!allDone()} fallback={<span class="mafw-taskbar-check">✔ 全部完成（{done()}/{total()}）</span>}>
+          <Show when={running().length > 0} fallback={<span class="mafw-taskbar-spinner" />}>
+            <span class="mafw-taskbar-spinner running" />
+          </Show>
+          <span class="mafw-taskbar-text">{current()?.content || ""}</span>
+          <Show when={current()?.priority === "high"}>
+            <span class="mafw-taskbar-priority">HIGH</span>
+          </Show>
+          <span class="mafw-taskbar-num">{done()}/{total()}</span>
+          <span class="mafw-taskbar-progress"><span style={{ width: `${pct()}%` }} /></span>
+          <span class="mafw-taskbar-time">{formatDuration(elapsedMs())}</span>
         </Show>
-        <span class="mafw-taskbar-text">{current()?.content || ""}</span>
-        <Show when={current()?.priority === "high"}>
-          <span class="mafw-taskbar-priority">HIGH</span>
-        </Show>
-        <span class="mafw-taskbar-num">{done()}/{total()}</span>
-        <span class="mafw-taskbar-progress"><span style={{ width: `${pct()}%` }} /></span>
-        <span class="mafw-taskbar-time">{formatDuration(elapsedMs())}</span>
-      </Show>
-      <span class="mafw-taskbar-chevron" classList={{ open: props.open }}>▾</span>
-    </button>
+        <span class="mafw-taskbar-chevron" classList={{ open: props.open }}>▾</span>
+      </button>
+    </Show>
   )
 }
