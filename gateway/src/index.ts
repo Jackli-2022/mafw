@@ -24,6 +24,7 @@ import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { wakeCompletedHandler, wakeFailedHandler, wakeQuestionHandler } from './core/manager/wake-handlers';
 import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
+import { ensureManagerAgentConfig } from './skills/manager-agent-config';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 
 /**
@@ -223,6 +224,9 @@ class MafwScheduler {
     // 5. 鎭㈠閰嶇疆鍜屾敞鍐岃〃
     await this.recoverConfig();
     await this.recoverRegistry();
+
+    // 5.1 Install the global `manager` primary agent (opencode config) if missing
+    ensureManagerAgentConfig();
 
     // 6. 鎭㈠娲昏穬 Goal
     await this.recoverState();

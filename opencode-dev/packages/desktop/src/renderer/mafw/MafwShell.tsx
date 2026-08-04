@@ -834,7 +834,7 @@ export function MafwShell() {
         message: text,
         sessionID: sid,
         parts: fileParts.length || agentParts.length ? [...fileParts, ...agentParts] : undefined,
-        agent: agentSel()?.isManager ? undefined : agentSel()?.name,
+        agent: agentSel()?.name === "manager" ? undefined : agentSel()?.name,
         model: modelSel() ? { providerID: modelSel()!.providerID, modelID: modelSel()!.modelID } : undefined,
       }) as any
       if (result?.sessionID) {
@@ -909,18 +909,14 @@ export function MafwShell() {
   })
 
   // Primary agents (switchable driver) vs subagent agents (mentionable too).
+  // The `manager` primary agent ships with the gateway install (global opencode
+  // config), so it appears here as a regular primary agent.
   const primaryAgents = createMemo(() =>
     (agentsData() || []).filter((a: any) => !a.hidden && a.mode === "primary")
   )
   const subagentAgents = createMemo(() =>
     (agentsData() || []).filter((a: any) => !a.hidden && a.mode === "subagent")
   )
-
-  const managerAgent = createMemo<AgentEntry | null>(() => {
-    const s = sessions().find(x => x.id === currentSessionID())
-    const name = s?.title || "Manager"
-    return { name, description: "编排 · 分解任务与调度", isManager: true }
-  })
 
   const modelGroups = createMemo(() => {
     const p = providersData()
@@ -984,7 +980,6 @@ export function MafwShell() {
 
   const onAgentSelect = (a: AgentEntry) => {
     setPickerOpen(null)
-    if (a.isManager) return
     if (propsBusy()) {
       setSwitchConfirm(a)
       return
@@ -1392,7 +1387,7 @@ export function MafwShell() {
                             ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
                             onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
                           >
-                            {agentSel()?.isManager ? "Manager" : (agentSel()?.name || "Manager")}<span class="mafw-model-chevron">▾</span>
+                            {agentSel()?.name || "manager"}<span class="mafw-model-chevron">▾</span>
                           </ButtonV2>
                         </TooltipV2>
                         <TooltipV2 value="模型" openDelay={300}>
@@ -1449,12 +1444,11 @@ export function MafwShell() {
                     trigger={pickerTrigger()}
                     mode={pickerOpen() === "agent-switch" ? "switch" : "mention"}
                     anchor={pickerOpen() === "agent-switch" ? "tr" : "bl"}
-                    manager={managerAgent()}
                     primaryAgents={primaryAgents()}
                     subagentAgents={subagentAgents()}
                     subagents={subagents()}
                     isRunning={subagentRunning}
-                    currentName={agentSel()?.name}
+                    currentName={agentSel()?.name || "manager"}
                     onSelect={(a) => {
                       if (pickerOpen() === "agent-mention") {
                         addAgent(a.name)
