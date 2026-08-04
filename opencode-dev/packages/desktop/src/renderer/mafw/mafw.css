@@ -1086,6 +1086,13 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 
 /* ── ConfigPage: gateway ops ── */
+.mafw-config-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.mafw-config-head .mafw-page-title { margin-bottom: 0; }
 .mafw-config-ops {
   background: var(--bg-overlay);
   border: 1px solid var(--border-subtle);

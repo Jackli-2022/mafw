@@ -1213,12 +1213,10 @@ export function MafwShell() {
             )}
           </ButtonV2>
         </TooltipV2>
-        {showConfig() && (
-          <ButtonV2 variant="ghost" size="small" onClick={() => setShowConfig(false)} style={{ "margin-left": "auto" }}>← Back to tabs</ButtonV2>
-        )}
       </div>
       <div class="mafw-body">
         <Rail activeSessionId={activeSessionId()} sessionRefreshKey={sessionRefreshKey()} onSelectSession={(id, title, manager) => {
+          setShowConfig(false)
           setActiveTab("chat")
           // Ensure session exists in local tabs and store
           if (!sessions().find(s => s.id === id)) {
@@ -1237,7 +1235,7 @@ export function MafwShell() {
           {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             {showConfig() ? (
-              <ConfigPage />
+              <ConfigPage onBack={() => setShowConfig(false)} />
             ) : activeTab() === "chat" ? (
               <div class="mafw-chat">
                 {/* SessionStrip */}

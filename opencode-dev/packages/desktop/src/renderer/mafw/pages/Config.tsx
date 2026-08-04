@@ -12,7 +12,7 @@ interface ConfigSection {
   fields: [string, any][]
 }
 
-export function ConfigPage() {
+export function ConfigPage(props: { onBack?: () => void }) {
   const [sections, setSections] = createSignal<ConfigSection[]>([])
   const [loading, setLoading] = createSignal(true)
   const [saving, setSaving] = createSignal(false)
@@ -110,7 +110,12 @@ export function ConfigPage() {
 
   return (
     <div>
-      <h2 class="mafw-page-title">Configuration</h2>
+      <div class="mafw-config-head">
+        {props.onBack && (
+          <ButtonV2 variant="ghost" size="small" onClick={() => props.onBack?.()}>← 返回</ButtonV2>
+        )}
+        <h2 class="mafw-page-title">Configuration</h2>
+      </div>
       {/* Gateway ops */}
       <div class="mafw-config-ops">
         <div class="mafw-config-ops-title">Gateway 运维</div>
