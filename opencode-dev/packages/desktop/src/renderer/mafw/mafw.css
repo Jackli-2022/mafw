@@ -166,7 +166,7 @@ html[data-theme="light"] .mafw-shell {
 /* ── Shell Layout ── */
 .mafw-shell {
   display: grid;
-  grid-template-rows: 38px 1fr 24px;
+  grid-template-rows: 38px 1fr;
   height: 100vh;
   background: var(--background-base);
   color: var(--text-strong);
