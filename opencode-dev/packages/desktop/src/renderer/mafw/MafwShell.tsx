@@ -905,6 +905,25 @@ export function MafwShell() {
     }).catch(e => console.warn("[mafw] agents.list:", e))
     window.api.mafw.providers.list().then((p: any) => {
       setProvidersData(p)
+      // Default the model pill to the most recently used model (first entry of
+      // localStorage mafw-recent-models) — only when the user hasn't picked one.
+      if (modelSel() === null) {
+        try {
+          const recent: string[] = JSON.parse(localStorage.getItem("mafw-recent-models") || "[]")
+          const first = recent[0]
+          if (first) {
+            const connected = new Set(p?.connected || [])
+            for (const prov of p?.all || []) {
+              if (!connected.has(prov.id)) continue
+              const m: any = prov.models?.[first]
+              if (m) {
+                setModelSel({ providerID: prov.id, modelID: first, label: m.name || first })
+                break
+              }
+            }
+          }
+        } catch { /* ignore */ }
+      }
     }).catch(e => console.warn("[mafw] providers.list:", e))
   })
 
