@@ -16,6 +16,7 @@ import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { FileSSR } from "@opencode-ai/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
+import { TaskBar } from "./components/TaskBar"
 import { TaskPanel } from "./components/TaskPanel"
 import { TabStrip, type Tab } from "./components/TabStrip"
 import { registerMafwToolCards } from "./components/MafwToolCards"
@@ -979,6 +980,10 @@ export function MafwShell() {
   const [subagents, setSubagents] = createSignal<{ id: string; title: string }[]>([])
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
   const [switchLogs, setSwitchLogs] = createSignal<Record<string, string[]>>({})
+  const [taskListOpen, setTaskListOpen] = createSignal(false)
+  const [tasksPlacement, setTasksPlacement] = createSignal<"bar" | "dock">(
+    (localStorage.getItem("mafw-tasks-placement") as "bar" | "dock") || "bar"
+  )
 
   const currentModelLabel = createMemo(() => modelSel()?.label || modelName())
 
@@ -1269,11 +1274,31 @@ export function MafwShell() {
                 {/* SessionTurns — one SessionTurn per user message (turn = user msg + its assistant replies incl. tool calls) */}
                           <div ref={setContainerRef} onScroll={handleScroll} class="mafw-session-turn-container">
                             <Show when={currentSessionID()}>
-                              <div class="mafw-session-titlebar">
+                              <div
+                                class="mafw-session-titlebar"
+                                classList={{ "tasks-active": (todos[currentSessionID()] || []).length > 0 }}
+                              >
                                 <div class="mafw-session-titlebar-inner">
                                   <span class="mafw-agent-avatar">{(active()?.title || "A").charAt(0)}</span>
                                   <span class="mafw-session-titlebar-text">{active()?.title || "Chat"}</span>
-                                  <Show when={store.session_status[currentSessionID()]?.type === "busy"}>
+                                  <Show when={(todos[currentSessionID()] || []).length > 0}>
+                                    <span class="mafw-chat-header-divider" />
+                                  </Show>
+                                  <TaskBar
+                                    todos={todos[currentSessionID()] || []}
+                                    tokens={taskMetrics().tokens}
+                                    started={taskMetrics().started}
+                                    open={taskListOpen() && tasksPlacement() === "bar"}
+                                    onToggle={() => setTaskListOpen(!taskListOpen())}
+                                  />
+                                  <Show when={(todos[currentSessionID()] || []).length > 0}>
+                                    <span class="mafw-chat-header-done">
+                                      {(todos[currentSessionID()] || []).filter(t => t.status === "completed").length}/
+                                      {(todos[currentSessionID()] || []).length}
+                                    </span>
+                                  </Show>
+                                  <Show when={store.session_status[currentSessionID()]?.type === "busy" &&
+                                    ((todos[currentSessionID()] || []).length === 0 || tasksPlacement() === "dock")}>
                                     <span class="mafw-session-status">
                                       <span class="mafw-session-status-dot" />
                                       Running
