@@ -1,4 +1,4 @@
-# Tasks 迁入聊天头部行 Implementation Plan
+﻿# Tasks 迁入聊天头部行 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -106,7 +106,7 @@ git commit -m "feat(desktop): PopoverShell below-center anchor"
 
 **Interfaces:**
 - Consumes: `todos: any[]`（task 对象含 `status: 'pending'|'in_progress'|'completed'|'cancelled'`、`content`、`priority?`）、`tokens: number`、`started: number`、`open: boolean`（列表是否打开）
-- Produces: `TaskBar({ todos, tokens, started, open, onToggle, onPin })` —— 单行指示条；**无任务时返回 `null`**；全部完成显示 `✔ 全部完成（N/N）` 3-5s 后自动隐藏（内部定时器）
+- Produces: `TaskBar({ todos, tokens, started, open, onToggle })` —— 单行指示条；**无任务时返回 `null`**；全部完成显示 `✔ 全部完成（N/N）` 3-5s 后自动隐藏（内部定时器）
 
 - [ ] **Step 1: 创建 TaskBar.tsx**
 
@@ -133,7 +133,6 @@ export function TaskBar(props: {
   started: number
   open: boolean
   onToggle: () => void
-  onPin: () => void
 }) {
   const total = () => props.todos.length
   const done = () => props.todos.filter(t => t.status === "completed").length
@@ -244,7 +243,6 @@ git commit -m "feat(desktop): TaskBar indicator component"
                                     started={taskMetrics().started}
                                     open={taskListOpen() && tasksPlacement() === "bar"}
                                     onToggle={() => setTaskListOpen(!taskListOpen())}
-                                    onPin={() => {}}
                                   />
                                   <Show when={(todos[currentSessionID()] || []).length > 0}>
                                     <span class="mafw-chat-header-done">
@@ -480,8 +478,7 @@ export function TaskList(props: {
   started: number
   placement: "popover" | "dock" | "overlay"
   onClose: () => void
-  onPin: () => void
-}) {
+  }) {
   const total = () => props.todos.length
   const done = () => props.todos.filter(t => t.status === "completed").length
   const running = () => props.todos.filter(t => t.status === "in_progress")
@@ -879,5 +876,5 @@ git commit -m "chore(desktop): cleanup legacy tasks float/panel styles"
 
 - **Spec 覆盖**：架构（§1）→ Task 1/4/5；ChatHeader+TaskBar（§2）→ Task 2/3；TaskList+placement（§3）→ Task 4/5；状态机（§4）→ Task 5；数据流迁移清理（§5）→ Task 4/6；验收（§6）→ Task 6 Step 2。✓
 - **占位符扫描**：所有代码步骤含完整代码；无 TBD/TODO。✓
-- **类型一致性**：`TaskBar({todos,tokens,started,open,onToggle,onPin})`、`TaskList({todos,tokens,started,placement,onClose,onPin})`、`PopoverShell anchor: 'tr'|'bl'|'below-center'` 在 Task 间一致；`taskListOpen`/`tasksPlacement`/`applyTasksPlacement` 命名在 Task 3/5 一致。✓
+- **类型一致性**：`TaskBar({todos,tokens,started,open,onToggle})`、`TaskList({todos,tokens,started,placement,onClose,onPin})`、`PopoverShell anchor: 'tr'|'bl'|'below-center'` 在 Task 间一致；`taskListOpen`/`tasksPlacement`/`applyTasksPlacement` 命名在 Task 3/5 一致。✓
 - **已知取舍**：Task 3 Step 1 提前引用 Task 5 的状态名——Task 3 Step 1 同步添加占位状态定义保证每步可 build；Task 5 Step 1 完善。Task 5 Step 2 的 trigger 用 ref 而非 querySelector（响应式）。✓
