@@ -1185,7 +1185,7 @@ export function MafwShell() {
                               <MenuV2.Content class="mafw-composer-menu" onClick={(e: any) => e.stopPropagation()}>
                                 <For each={modelGroups()}>
                                   {(g) => (
-                                    <>
+                                    <MenuV2.Group>
                                       <MenuV2.GroupLabel>{g.provider}</MenuV2.GroupLabel>
                                       <For each={g.models}>
                                         {(m) => (
@@ -1200,7 +1200,7 @@ export function MafwShell() {
                                           </MenuV2.Item>
                                         )}
                                       </For>
-                                    </>
+                                    </MenuV2.Group>
                                   )}
                                 </For>
                                 <Show when={modelGroups().length === 0}>
