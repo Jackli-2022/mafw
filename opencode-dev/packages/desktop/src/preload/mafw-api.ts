@@ -25,6 +25,7 @@ export function createMafwApi(): MafwAPI {
       get: (id) => invoke("session", "get", { path: { id } }),
       messages: (sessionID, limit?, before?) => invoke("session", "messages", { path: { id: sessionID }, query: { limit, before } }),
       todo: (sessionID) => invoke("session", "todo", { path: { id: sessionID } }),
+      children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
       abort: (sessionID) => invoke("session", "abort", { path: { id: sessionID } }),
       delete: (id) => invoke("session", "delete", { path: { id } }),
       promptAsync: ({ sessionID, message, parts, agent, model }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model } }),

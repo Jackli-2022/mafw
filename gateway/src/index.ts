@@ -1511,6 +1511,28 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/sessions/{id}/children 鈥?subagent sessions of this run (AgentPicker)
+        const childrenMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/children(?:\?|$)/);
+        if (childrenMatch && req.method === 'GET') {
+          const id = childrenMatch[1];
+          try {
+            if (!this.opencodeClient) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ items: [] }));
+              return;
+            }
+            const result = await this.opencodeClient.session.children({ path: { id } });
+            const items = Array.isArray(result) ? result : result?.data;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ items: Array.isArray(items) ? items : [] }));
+          } catch (err: any) {
+            log.warn(`[Scheduler] Failed to fetch children for ${id}: ${err.message}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ items: [] }));
+          }
+          return;
+        }
+
         // GET /api/recall/context 鈥?boundary recall for memory injection
         if (req.url?.startsWith('/api/recall/context') && req.method === 'GET') {
           try {

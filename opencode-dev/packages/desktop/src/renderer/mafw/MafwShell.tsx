@@ -8,7 +8,6 @@ import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
-import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { ToastV2, showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 import { DataProvider } from "@opencode-ai/session-ui/context"
 import { SessionTurn } from "@opencode-ai/session-ui/session-turn"
@@ -29,6 +28,8 @@ import { ConfigPage } from "./pages/Config"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import { AskCard, type AskCardData } from "./components/AskCard"
 import { PermissionCard, type PermissionCardData } from "./components/PermissionCard"
+import { ModelPicker, type ModelEntry } from "./components/pickers/ModelPicker"
+import { AgentPicker, type AgentEntry } from "./components/pickers/AgentPicker"
 import "./mafw.css"
 
 interface ChatSession {
@@ -191,9 +192,12 @@ export function MafwShell() {
   }
 
   const addAgent = (name: string) => {
-    if (name && !mentionedAgents().some(a => a.name === name)) {
-      setMentionedAgents(prev => [...prev, { name }])
+    if (!name || mentionedAgents().some(a => a.name === name)) return
+    if (mentionedAgents().length >= 3) {
+      showToastV2({ description: "最多引用 3 个 Agent", duration: 2000 })
+      return
     }
+    setMentionedAgents(prev => [...prev, { name }])
   }
 
   const removeAgent = (name: string) => {
@@ -830,7 +834,7 @@ export function MafwShell() {
         message: text,
         sessionID: sid,
         parts: fileParts.length || agentParts.length ? [...fileParts, ...agentParts] : undefined,
-        agent: undefined,
+        agent: agentSel()?.isManager ? undefined : agentSel()?.name,
         model: modelSel() ? { providerID: modelSel()!.providerID, modelID: modelSel()!.modelID } : undefined,
       }) as any
       if (result?.sessionID) {
@@ -908,19 +912,89 @@ export function MafwShell() {
     (agentsData() || []).filter((a: any) => !a.hidden && a.mode !== "primary")
   )
 
+  const managerAgent = createMemo<AgentEntry | null>(() => {
+    const s = sessions().find(x => x.id === currentSessionID())
+    const name = s?.title || "Manager"
+    return { name, description: "编排 · 分解任务与调度", isManager: true }
+  })
+
   const modelGroups = createMemo(() => {
     const p = providersData()
     const connected = new Set(p?.connected || [])
     const all = p?.all || []
-    const groups: { provider: string; providerID: string; models: any[] }[] = []
+    const groups: { provider: string; providerID: string; models: ModelEntry[] }[] = []
     for (const prov of all) {
       if (!connected.has(prov.id)) continue
-      const models = Object.values(prov.models || {})
+      const models: ModelEntry[] = Object.values(prov.models || {}).map((m: any) => ({
+        id: m.id,
+        name: m.name || m.id,
+        providerID: prov.id,
+        provider: prov.name || prov.id,
+        contextK: m.limit?.context ? Math.round(m.limit.context / 1000) : undefined,
+        vision: !!(m.capabilities?.input?.image || m.capabilities?.output?.image),
+        thinking: !!m.capabilities?.reasoning,
+      }))
       if (models.length === 0) continue
       groups.push({ provider: prov.name || prov.id, providerID: prov.id, models })
     }
     return groups
   })
+
+  // ── Pickers: model pill / agent pill (@ mention) ──
+  const [agentSel, setAgentSel] = createSignal<AgentEntry | null>(null)
+  const [pickerOpen, setPickerOpen] = createSignal<"model" | "agent-switch" | "agent-mention" | null>(null)
+  const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
+  const [subagents, setSubagents] = createSignal<{ id: string; title: string }[]>([])
+  const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
+  const [switchLogs, setSwitchLogs] = createSignal<Record<string, string[]>>({})
+
+  const currentModelLabel = createMemo(() => modelSel()?.label || modelName())
+
+  const pickerCurrentId = createMemo(() => {
+    const sid = currentSessionID()
+    const msgs = sid ? (store.message[sid] || []) : []
+    const last = [...msgs].reverse().find(m => m.role === "assistant")
+    return last?.model?.modelID || modelSel()?.modelID
+  })
+
+  const refreshSubagents = async () => {
+    const sid = currentSessionID()
+    if (!sid) { setSubagents([]); return }
+    try {
+      const items: any[] = await window.api.mafw.sessions.children(sid)
+      setSubagents((items || []).map((c: any) => ({ id: c.id, title: c.title || "子代理" })))
+    } catch (e) {
+      console.warn("[mafw] children fetch:", e)
+      setSubagents([])
+    }
+  }
+
+  const subagentRunning = (id: string) => store.session_status[id]?.type === "busy"
+
+  const onModelSelect = (m: ModelEntry) => {
+    setModelSel({ providerID: m.providerID, modelID: m.id, label: m.name })
+    setPickerOpen(null)
+  }
+
+  const propsBusy = () => store.session_status[currentSessionID()]?.type === "busy"
+
+  const onAgentSelect = (a: AgentEntry) => {
+    setPickerOpen(null)
+    if (a.isManager) return
+    if (propsBusy()) {
+      setSwitchConfirm(a)
+      return
+    }
+    applyAgentSwitch(a)
+  }
+
+  const applyAgentSwitch = (a: AgentEntry) => {
+    setAgentSel(a)
+    const sid = currentSessionID()
+    if (sid) {
+      setSwitchLogs(prev => ({ ...prev, [sid]: [...(prev[sid] || []), `已切换到 ${a.name}`] }))
+    }
+  }
 
   // One user message = one turn. Sorted by time as insurance against any
   // reordering between SSE appends and the history merge.
@@ -1178,6 +1252,10 @@ export function MafwShell() {
                                   />
                                 )}
                               </For>
+                              {/* Agent switch traces (local UI only) */}
+                              <For each={switchLogs()[currentSessionID()!] || []}>
+                                {(t) => <div class="mafw-switch-trace">{t}</div>}
+                              </For>
                               {/* Flow cards: permission first (serial queue), then ask cards */}
                               <Show when={currentSessionID()}>
                                 <For each={sessionCards(currentSessionID()!).visible}>
@@ -1272,6 +1350,10 @@ export function MafwShell() {
                       onInput={e => { setInput(e.currentTarget.value); autoGrow(e.currentTarget) }}
                       onKeyDown={e => {
                         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
+                        else if (e.key === "Backspace" && !e.currentTarget.value && mentionedAgents().length > 0) {
+                          e.preventDefault()
+                          setMentionedAgents(prev => prev.slice(0, -1))
+                        }
                       }}
                       onPaste={handlePaste}
                       ref={setTextareaEl}
@@ -1286,67 +1368,40 @@ export function MafwShell() {
                           <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">+</ButtonV2>
                         </TooltipV2>
                         <TooltipV2 value="引用 Agent" openDelay={300}>
-                          <MenuV2>
-                            <MenuV2.Trigger as="div" role="button" aria-label="引用 Agent">
-                              <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon">@</ButtonV2>
-                            </MenuV2.Trigger>
-                            <MenuV2.Portal>
-                              <MenuV2.Content class="mafw-composer-menu" onClick={(e: any) => e.stopPropagation()}>
-                                <For each={agentOptions()}>
-                                  {(a) => (
-                                    <MenuV2.Item onSelect={() => addAgent(a.name)} disabled={mentionedAgents().some(x => x.name === a.name)}>
-                                      <span class="mafw-menu-agent">
-                                        <span class="mafw-agent-dot" style={{ background: a.color || "var(--text-4)" }} />
-                                        {a.name}
-                                        <Show when={a.description}><span class="mafw-menu-agent-desc">{a.description}</span></Show>
-                                      </span>
-                                    </MenuV2.Item>
-                                  )}
-                                </For>
-                                <Show when={agentOptions().length === 0}>
-                                  <MenuV2.Item disabled>暂无可用 agent</MenuV2.Item>
-                                </Show>
-                              </MenuV2.Content>
-                            </MenuV2.Portal>
-                          </MenuV2>
+                          <ButtonV2
+                            variant="ghost"
+                            size="small"
+                            class="mafw-composer-icon"
+                            aria-label="引用 Agent"
+                            ref={(el: any) => { if (pickerOpen() === "agent-mention") setPickerTrigger(el) }}
+                            onClick={() => { setPickerTrigger(document.activeElement as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}
+                          >@</ButtonV2>
                         </TooltipV2>
                       </div>
                       <div class="mafw-composer-right">
+                        <TooltipV2 value="切换 Agent" openDelay={300}>
+                          <ButtonV2
+                            variant="ghost"
+                            size="small"
+                            class="mafw-model-pill"
+                            aria-label="切换 Agent"
+                            ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
+                            onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
+                          >
+                            {agentSel()?.isManager ? "Manager" : (agentSel()?.name || "Manager")}<span class="mafw-model-chevron">▾</span>
+                          </ButtonV2>
+                        </TooltipV2>
                         <TooltipV2 value="模型" openDelay={300}>
-                          <MenuV2>
-                            <MenuV2.Trigger as="div" role="button" aria-label="模型">
-                              <ButtonV2 variant="ghost" size="small" class="mafw-model-pill">
-                                {modelSel()?.label || modelName()}<span class="mafw-model-chevron">▾</span>
-                              </ButtonV2>
-                            </MenuV2.Trigger>
-                            <MenuV2.Portal>
-                              <MenuV2.Content class="mafw-composer-menu" onClick={(e: any) => e.stopPropagation()}>
-                                <For each={modelGroups()}>
-                                  {(g) => (
-                                    <MenuV2.Group>
-                                      <MenuV2.GroupLabel>{g.provider}</MenuV2.GroupLabel>
-                                      <For each={g.models}>
-                                        {(m) => (
-                                          <MenuV2.Item
-                                            onSelect={() => setModelSel({ providerID: g.providerID, modelID: m.id, label: m.name || m.id })}
-                                            classList={{ selected: modelSel()?.modelID === m.id && modelSel()?.providerID === g.providerID }}
-                                          >
-                                            <span class="mafw-menu-model">
-                                              <span class="mafw-menu-model-name">{m.name || m.id}</span>
-                                              <Show when={m.id !== (m.name || m.id)}><span class="mafw-menu-model-id">{m.id}</span></Show>
-                                            </span>
-                                          </MenuV2.Item>
-                                        )}
-                                      </For>
-                                    </MenuV2.Group>
-                                  )}
-                                </For>
-                                <Show when={modelGroups().length === 0}>
-                                  <MenuV2.Item disabled>暂无可用模型</MenuV2.Item>
-                                </Show>
-                              </MenuV2.Content>
-                            </MenuV2.Portal>
-                          </MenuV2>
+                          <ButtonV2
+                            variant="ghost"
+                            size="small"
+                            class="mafw-model-pill"
+                            aria-label="模型"
+                            ref={(el: any) => { if (pickerOpen() === "model") setPickerTrigger(el) }}
+                            onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("model") }}
+                          >
+                            {currentModelLabel()}<span class="mafw-model-chevron">▾</span>
+                          </ButtonV2>
                         </TooltipV2>
                         <Show when={sending()} fallback={
                           <ButtonV2
@@ -1376,6 +1431,55 @@ export function MafwShell() {
                       </div>
                     </div>
                   </div>
+                  {/* Pickers */}
+                  <ModelPicker
+                    open={pickerOpen() === "model"}
+                    trigger={pickerTrigger()}
+                    groups={modelGroups()}
+                    currentId={pickerCurrentId()}
+                    onSelect={onModelSelect}
+                    onClose={() => setPickerOpen(null)}
+                  />
+                  <AgentPicker
+                    open={pickerOpen() === "agent-switch" || pickerOpen() === "agent-mention"}
+                    trigger={pickerTrigger()}
+                    mode={pickerOpen() === "agent-switch" ? "switch" : "mention"}
+                    anchor={pickerOpen() === "agent-switch" ? "tr" : "bl"}
+                    manager={managerAgent()}
+                    agents={agentOptions()}
+                    subagents={subagents()}
+                    isRunning={subagentRunning}
+                    currentName={agentSel()?.name}
+                    onSelect={(a) => {
+                      if (pickerOpen() === "agent-mention") {
+                        addAgent(a.name)
+                        setPickerOpen(null)
+                      } else {
+                        onAgentSelect(a)
+                      }
+                    }}
+                    onSubagentClick={(s) => showToastV2({ description: `${s.title}（子代理）`, duration: 2000 })}
+                    onClose={() => setPickerOpen(null)}
+                  />
+                  {/* Switch-agent confirm (running) */}
+                  <Show when={switchConfirm()}>
+                    <div class="mafw-confirm-backdrop">
+                      <div class="mafw-confirm">
+                        <div class="mafw-confirm-title">切换将中断当前任务</div>
+                        <div class="mafw-confirm-text">切换到 {switchConfirm()!.name} 会中断当前正在运行的会话，确定继续？</div>
+                        <div class="mafw-confirm-actions">
+                          <ButtonV2 variant="ghost" size="small" onClick={() => setSwitchConfirm(null)}>取消</ButtonV2>
+                          <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" onClick={() => {
+                            const a = switchConfirm()!
+                            setSwitchConfirm(null)
+                            if (currentSessionID()) window.api.mafw.sessions.abort(currentSessionID()!).catch(() => {})
+                            setSending(false)
+                            applyAgentSwitch(a)
+                          }}>确认切换</ButtonV2>
+                        </div>
+                      </div>
+                    </div>
+                  </Show>
                 </div>
               </div>
             ) : activeTab() === "goals" ? (

@@ -74,6 +74,11 @@ export class MafwClient implements IMafwClient {
       return this.request<{ data: Todo[] }>(`/api/sessions/${params.path.id}/todo`)
     },
 
+    children: async (params: { path: { id: string } }): Promise<any[]> => {
+      const data = await this.request<{ items: any[] }>(`/api/sessions/${params.path.id}/children`)
+      return data.items || []
+    },
+
     abort: async (params: { path: { id: string } }): Promise<void> => {
       await this.request(`/api/session/${params.path.id}/abort`, { method: 'POST' })
     },
