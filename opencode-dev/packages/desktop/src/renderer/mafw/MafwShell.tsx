@@ -908,8 +908,12 @@ export function MafwShell() {
     }).catch(e => console.warn("[mafw] providers.list:", e))
   })
 
-  const agentOptions = createMemo(() =>
-    (agentsData() || []).filter((a: any) => !a.hidden && a.mode !== "primary")
+  // Primary agents (switchable driver) vs subagent agents (mentionable too).
+  const primaryAgents = createMemo(() =>
+    (agentsData() || []).filter((a: any) => !a.hidden && a.mode === "primary")
+  )
+  const subagentAgents = createMemo(() =>
+    (agentsData() || []).filter((a: any) => !a.hidden && a.mode === "subagent")
   )
 
   const managerAgent = createMemo<AgentEntry | null>(() => {
@@ -1446,7 +1450,8 @@ export function MafwShell() {
                     mode={pickerOpen() === "agent-switch" ? "switch" : "mention"}
                     anchor={pickerOpen() === "agent-switch" ? "tr" : "bl"}
                     manager={managerAgent()}
-                    agents={agentOptions()}
+                    primaryAgents={primaryAgents()}
+                    subagentAgents={subagentAgents()}
                     subagents={subagents()}
                     isRunning={subagentRunning}
                     currentName={agentSel()?.name}

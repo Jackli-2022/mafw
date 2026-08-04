@@ -12,13 +12,21 @@ export type AgentEntry = {
 
 const TINTS = ["var(--accent)", "#7698fd", "#e8b84b", "#a855f7"]
 
+/**
+ * AgentPicker — two modes with different selectable sets:
+ *  - switch  (agent pill): only Manager + primary agents are switchable;
+ *    subagents (running children) are shown read-only.
+ *  - mention (@ button): Manager + primary + subagent agents are all
+ *    mentionable (assign this message to them); running children read-only.
+ */
 export function AgentPicker(props: {
   open: boolean
   trigger: HTMLElement | null
   mode: "switch" | "mention"
   anchor: "tr" | "bl"
   manager: AgentEntry | null
-  agents: AgentEntry[]
+  primaryAgents: AgentEntry[]
+  subagentAgents: AgentEntry[]
   subagents: { id: string; title: string }[]
   isRunning: (sessionID: string) => boolean
   currentName?: string
@@ -28,82 +36,134 @@ export function AgentPicker(props: {
 }) {
   const [hi, setHi] = createSignal(0)
 
-  const rows = () => {
-    const list: ({ kind: "agent"; agent: AgentEntry } | { kind: "sub"; s: { id: string; title: string } })[] = []
-    if (props.manager) list.push({ kind: "agent", agent: props.manager })
-    for (const a of props.agents) list.push({ kind: "agent", agent: a })
-    for (const s of props.subagents) list.push({ kind: "sub", s })
+  // Selectable rows only (read-only subagent instances are not in the list).
+  const selectableRows = () => {
+    const list: AgentEntry[] = []
+    if (props.manager) list.push(props.manager)
+    if (props.mode === "switch") {
+      list.push(...props.primaryAgents)
+    } else {
+      list.push(...props.primaryAgents, ...props.subagentAgents)
+    }
     return list
   }
+
+  const readonlyRows = () => props.subagents
+
+  const allRowCount = () => selectableRows().length + readonlyRows().length
 
   createEffect(() => {
     if (props.open) setHi(0)
   })
 
-  const tintOf = (name: string): string => {
-    let h = 0
-    for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0
-    return TINTS[h % TINTS.length]
-  }
-
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, rows().length - 1)) }
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, selectableRows().length - 1)) }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
     else if (e.key === "Enter") {
       e.preventDefault()
-      const r = rows()[hi()]
-      if (!r) return
-      if (r.kind === "agent") props.onSelect(r.agent)
-      else props.onSubagentClick(r.s)
+      const a = selectableRows()[hi()]
+      if (a) props.onSelect(a)
     }
+  }
+
+  const selectableGroupLabel = () => {
+    if (props.mode === "switch") return props.manager ? "可用主 Agent" : "可用 Agent"
+    return "可用 Agent"
   }
 
   return (
     <PopoverShell open={props.open} trigger={props.trigger} anchor={props.anchor} onClose={props.onClose}>
       <div class="mafw-picker-title">{props.mode === "switch" ? "切换 Agent" : "引用 Agent"}</div>
       <div class="mafw-picker-list">
-        <For each={rows()}>
-          {(r, i) => (
-            <div
-              class="mafw-agent-row"
-              classList={{
-                hi: hi() === i(),
-                current: r.kind === "agent" && props.mode === "switch" && r.agent.name === props.currentName,
-                readonly: r.kind === "sub",
-              }}
-              onClick={() => {
-                if (r.kind === "agent") props.onSelect(r.agent)
-                else props.onSubagentClick(r.s)
-              }}
-            >
-              <span class="mafw-agent-avatar" style={{ background: r.kind === "agent" ? tintOf(r.agent.name) : "var(--bg-overlay)", color: r.kind === "agent" ? "var(--on-accent)" : "var(--text-3)" }}>
-                {(r.kind === "agent" ? r.agent.name : r.s.title).charAt(0).toUpperCase()}
-              </span>
-              <span class="mafw-agent-row-body">
-                <span class="mafw-agent-row-top">
-                  <span class="mafw-agent-row-name">{r.kind === "agent" ? r.agent.name : r.s.title}</span>
-                  <Show when={r.kind === "sub"}>
-                    <span class={`mafw-agent-row-status ${props.isRunning(r.s.id) ? "running" : ""}`}>
-                      <span class="mafw-agent-row-dot" classList={{ running: props.isRunning(r.s.id) }} />
-                      {props.isRunning(r.s.id) ? "运行中" : "空闲"}
-                    </span>
-                  </Show>
-                  <Show when={r.kind === "agent" && props.mode === "switch" && r.agent.name === props.currentName}>
-                    <span class="mafw-picker-row-check">✓</span>
-                  </Show>
+        <Show when={props.manager}>
+          <div class="mafw-picker-group-label">当前会话</div>
+          <For each={[props.manager!]}>
+            {(a, i) => (
+              <AgentRow
+                a={a}
+                hi={hi() === i()}
+                current={props.mode === "switch" && a.name === props.currentName}
+                onClick={() => props.onSelect(a)}
+              />
+            )}
+          </For>
+        </Show>
+        <Show when={selectableRows().length > (props.manager ? 1 : 0)}>
+          <div class="mafw-picker-group-label">{selectableGroupLabel()}</div>
+          <For each={props.mode === "switch" ? props.primaryAgents : [...props.primaryAgents, ...props.subagentAgents]}>
+            {(a, i) => (
+              <AgentRow
+                a={a}
+                hi={hi() === (props.manager ? 1 : 0) + i()}
+                current={props.mode === "switch" && a.name === props.currentName}
+                onClick={() => props.onSelect(a)}
+              />
+            )}
+          </For>
+        </Show>
+        <Show when={readonlyRows().length > 0}>
+          <div class="mafw-picker-group-label">子代理（本次运行）</div>
+          <For each={readonlyRows()}>
+            {(s) => (
+              <div
+                class="mafw-agent-row readonly"
+                onClick={() => props.onSubagentClick(s)}
+              >
+                <span class="mafw-agent-avatar" style={{ background: "var(--bg-overlay)", color: "var(--text-3)" }}>
+                  {s.title.charAt(0).toUpperCase()}
                 </span>
-                <Show when={r.kind === "agent" && r.agent.description}>
-                  <span class="mafw-agent-row-role">{r.agent.description}</span>
-                </Show>
-              </span>
-            </div>
-          )}
-        </For>
-        <Show when={rows().length === 0}>
-          <div class="mafw-picker-empty">仅 Manager 可用</div>
+                <span class="mafw-agent-row-body">
+                  <span class="mafw-agent-row-top">
+                    <span class="mafw-agent-row-name">{s.title}</span>
+                    <span class={`mafw-agent-row-status ${props.isRunning(s.id) ? "running" : ""}`}>
+                      <span class="mafw-agent-row-dot" classList={{ running: props.isRunning(s.id) }} />
+                      {props.isRunning(s.id) ? "运行中" : "空闲"}
+                    </span>
+                  </span>
+                </span>
+              </div>
+            )}
+          </For>
+        </Show>
+        <Show when={selectableRows().length === 0 && readonlyRows().length === 0}>
+          <div class="mafw-picker-empty">{props.mode === "switch" ? "仅 Manager 可用" : "无可引用 Agent"}</div>
         </Show>
       </div>
       <div class="mafw-picker-hint">↑↓ 选择 · Enter 确认 · Esc 关闭</div>
     </PopoverShell>
   )
+}
+
+function AgentRow(props: { a: AgentEntry; hi: boolean; current: boolean; onClick: () => void }) {
+  return (
+    <div
+      class="mafw-agent-row"
+      classList={{ hi: props.hi, current: props.current }}
+      onClick={props.onClick}
+    >
+      <span class="mafw-agent-avatar" style={{ background: tintOf(props.a.name), color: "var(--on-accent)" }}>
+        {props.a.name.charAt(0).toUpperCase()}
+      </span>
+      <span class="mafw-agent-row-body">
+        <span class="mafw-agent-row-top">
+          <span class="mafw-agent-row-name">{props.a.name}</span>
+          <Show when={props.a.isManager && props.current}>
+            <span class="mafw-picker-row-check">✓</span>
+          </Show>
+        </span>
+        <Show when={props.a.description}>
+          <span class="mafw-agent-row-role">{props.a.description}</span>
+        </Show>
+      </span>
+      <Show when={props.current}>
+        <span class="mafw-picker-row-check">✓</span>
+      </Show>
+    </div>
+  )
+}
+
+function tintOf(name: string): string {
+  let h = 0
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return TINTS[h % TINTS.length]
 }
