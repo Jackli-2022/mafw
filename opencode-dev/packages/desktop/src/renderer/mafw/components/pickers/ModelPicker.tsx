@@ -14,11 +14,15 @@ export type ModelEntry = {
 
 const RECENT_KEY = "mafw-recent-models"
 
+// Composite identity: same model id under different providers is a different
+// model (e.g. deepseek-v4-pro under deepseek vs opencode-go).
+const key = (m: { providerID: string; id: string }) => `${m.providerID}/${m.id}`
+
 function loadRecent(): string[] {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY) || "[]") } catch { return [] }
 }
-function saveRecent(ids: string[]) {
-  try { localStorage.setItem(RECENT_KEY, JSON.stringify(ids.slice(0, 3))) } catch { /* ignore */ }
+function saveRecent(keys: string[]) {
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(keys.slice(0, 3))) } catch { /* ignore */ }
 }
 
 function fmtContext(k?: number): string | undefined {
@@ -31,7 +35,7 @@ export function ModelPicker(props: {
   open: boolean
   trigger: HTMLElement | null
   groups: { provider: string; providerID: string; models: ModelEntry[] }[]
-  currentId?: string
+  currentKey?: string
   onSelect: (m: ModelEntry) => void
   onClose: () => void
 }) {
@@ -50,14 +54,19 @@ export function ModelPicker(props: {
   })
 
   const recentModels = createMemo(() => {
+    const byKey = new Map(allModels().map(m => [key(m), m]))
     const byId = new Map(allModels().map(m => [m.id, m]))
-    return recent().map(id => byId.get(id)).filter(Boolean)
+    return recent().map(k => {
+      // Composite key first; legacy plain-id entries resolve to any provider.
+      return byKey.get(k) ?? (k.includes("/") ? undefined : byId.get(k))
+    }).filter(Boolean)
   })
 
   const visible = createMemo(() => {
     const q = query().trim()
     const rec = q ? [] : recentModels()
-    const rest = filtered().filter(m => !rec.some(r => r.id === m.id))
+    const recKeys = new Set(rec.map(r => key(r)))
+    const rest = filtered().filter(m => !recKeys.has(key(m)))
     // Group rest by provider preserving order
     const groups: { provider: string; items: ModelEntry[] }[] = []
     for (const m of rest) {
@@ -78,16 +87,17 @@ export function ModelPicker(props: {
   // Scroll the current model into view when opened
   createEffect(() => {
     if (!props.open || !listRef) return
-    const cur = props.currentId
+    const cur = props.currentKey
     if (!cur) return
     requestAnimationFrame(() => {
-      const el = listRef?.querySelector(`[data-model-id="${cur}"]`)
+      const el = listRef?.querySelector(`[data-model-key="${CSS.escape(cur)}"]`)
       el?.scrollIntoView({ block: "nearest" })
     })
   })
 
   const select = (m: ModelEntry) => {
-    const next = [m.id, ...recent().filter(id => id !== m.id)].slice(0, 3)
+    const k = key(m)
+    const next = [k, ...recent().filter(x => x !== k)].slice(0, 3)
     setRecent(next)
     saveRecent(next)
     props.onSelect(m)
@@ -119,7 +129,7 @@ export function ModelPicker(props: {
         <Show when={visible().rec.length > 0}>
           <div class="mafw-picker-group-label">最近使用</div>
           <For each={visible().rec}>
-            {(m) => <ModelRow m={m} hi={hi() === flatIdx(m)} current={m.id === props.currentId} onClick={() => select(m)} />}
+            {(m) => <ModelRow m={m} hi={hi() === flatIdx(m)} current={key(m) === props.currentKey} onClick={() => select(m)} />}
           </For>
         </Show>
         <For each={visible().groups}>
@@ -127,7 +137,7 @@ export function ModelPicker(props: {
             <>
               <div class="mafw-picker-group-label">{g.provider}</div>
               <For each={g.items}>
-                {(m) => <ModelRow m={m} hi={hi() === flatIdx(m)} current={m.id === props.currentId} onClick={() => select(m)} />}
+                {(m) => <ModelRow m={m} hi={hi() === flatIdx(m)} current={key(m) === props.currentKey} onClick={() => select(m)} />}
               </For>
             </>
           )}
@@ -146,8 +156,7 @@ function ModelRow(props: { m: ModelEntry; hi: boolean; current: boolean; onClick
     <div
       class="mafw-picker-row"
       classList={{ hi: props.hi, current: props.current }}
-      data-model-id={props.m.id}
-      onMouseEnter={() => { /* hover handled via CSS */ }}
+      data-model-key={key(props.m)}
       onClick={props.onClick}
     >
       <span class="mafw-picker-row-name">

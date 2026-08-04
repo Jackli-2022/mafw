@@ -913,14 +913,27 @@ export function MafwShell() {
           const first = recent[0]
           if (first) {
             const connected = new Set(p?.connected || [])
-            for (const prov of p?.all || []) {
-              if (!connected.has(prov.id)) continue
-              const m: any = prov.models?.[first]
-              if (m) {
-                setModelSel({ providerID: prov.id, modelID: first, label: m.name || first })
-                break
+            const findModel = (prov: any, mid: string) => {
+              if (!connected.has(prov.id)) return null
+              const m: any = prov.models?.[mid]
+              return m ? { providerID: prov.id, modelID: mid, label: m.name || mid } : null
+            }
+            let found: { providerID: string; modelID: string; label: string } | null = null
+            const slash = first.indexOf("/")
+            if (slash > 0) {
+              // Composite key: providerID/modelID
+              const pid = first.slice(0, slash)
+              const mid = first.slice(slash + 1)
+              const prov = (p?.all || []).find((x: any) => x.id === pid)
+              found = prov ? findModel(prov, mid) : null
+            } else {
+              // Legacy plain id: match the first connected provider that has it
+              for (const prov of p?.all || []) {
+                found = findModel(prov, first)
+                if (found) break
               }
             }
+            if (found) setModelSel(found)
           }
         } catch { /* ignore */ }
       }
@@ -969,11 +982,16 @@ export function MafwShell() {
 
   const currentModelLabel = createMemo(() => modelSel()?.label || modelName())
 
-  const pickerCurrentId = createMemo(() => {
+  // Composite key (providerID/modelID) so same-id models under different
+  // providers stay distinct.
+  const pickerCurrentKey = createMemo(() => {
     const sid = currentSessionID()
     const msgs = sid ? (store.message[sid] || []) : []
     const last = [...msgs].reverse().find(m => m.role === "assistant")
-    return last?.model?.modelID || modelSel()?.modelID
+    const m = last?.model
+    if (m?.providerID && m?.modelID) return `${m.providerID}/${m.modelID}`
+    if (modelSel()) return `${modelSel()!.providerID}/${modelSel()!.modelID}`
+    return undefined
   })
 
   const refreshSubagents = async () => {
@@ -1458,7 +1476,7 @@ export function MafwShell() {
                     open={pickerOpen() === "model"}
                     trigger={pickerTrigger()}
                     groups={modelGroups()}
-                    currentId={pickerCurrentId()}
+                    currentKey={pickerCurrentKey()}
                     onSelect={onModelSelect}
                     onClose={() => setPickerOpen(null)}
                   />
