@@ -319,69 +319,6 @@ html[data-theme="light"] .mafw-shell {
 .mafw-rail-add { padding-left: 12px; color: var(--text-4); opacity: 0.6; font-size: 12px; }
 .mafw-rail-add:hover { opacity: 1; color: var(--text-1); }
 .mafw-rail-spacer { flex: 1; }
-.mafw-rail-status {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 12px;
-  color: var(--text-4);
-  font-variant-numeric: tabular-nums;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-base);
-  flex-shrink: 0;
-}
-.mafw-rail-status-inner {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  cursor: context-menu;
-}
-.mafw-rail-status-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mafw-rail-restart {
-  margin-left: auto;
-  color: var(--text-interactive-base, var(--text-4));
-  font-size: 11px;
-  text-decoration: underline;
-  padding: 0 2px;
-}
-.mafw-rail-status-reconnecting { color: var(--text-3); }
-.mafw-rail-status-offline { color: var(--text-3); }
-.mafw-rail-status-offline .mafw-rail-status-dot {
-  background: #E5484D;
-  animation: none;
-}
-.mafw-rail-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-  animation: mafw-breathe 2s ease-in-out infinite;
-}
-.mafw-rail-status-dot.reconnecting {
-  background: #E7A13D;
-  animation: mafw-breathe 2s ease-in-out infinite;
-}
-.mafw-rail-restart {
-  margin-left: auto;
-  height: 22px;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 6px;
-  background: var(--bg-overlay);
-  color: var(--text-2);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-.mafw-rail-restart:hover { background: var(--hover-strong); color: var(--text-1); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
@@ -1129,6 +1066,37 @@ html[data-theme="light"] .mafw-picker-pop {
   font-weight: 600;
   margin-bottom: 16px;
   color: var(--text-strong);
+}
+
+/* ── ConfigPage: gateway ops ── */
+.mafw-config-ops {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.mafw-config-ops-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.mafw-config-ops-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.mafw-config-ops-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .mafw-empty {
   color: var(--text-base);

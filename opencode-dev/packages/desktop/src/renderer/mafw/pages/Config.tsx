@@ -4,6 +4,7 @@ import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon } from "@opencode-ai/ui/icon"
+import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 
 interface ConfigSection {
   key: string
@@ -70,9 +71,77 @@ export function ConfigPage() {
     setSaving(false)
   }
 
+  // ── Gateway ops (moved from the rail status bar) ──
+  const [gwStatus, setGwStatus] = createSignal<any>(null)
+  const [restarting, setRestarting] = createSignal(false)
+
+  onMount(() => {
+    window.api.mafw.gateway.info().then(setGwStatus).catch(() => {})
+    const unsub = window.api.mafw.gateway.onStateChange(s => setGwStatus(s))
+    onCleanup(unsub)
+  })
+
+  const gwStateText = () => {
+    const s = gwStatus()
+    if (!s) return "unknown"
+    if (s.state === "ready") return `connected :${s.port ?? 3000}`
+    if (s.state === "starting" || s.state === "stopped") return "Reconnecting…"
+    if (s.state === "failed") return "连接失败"
+    return s.state
+  }
+
+  const copyText = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      showToastV2({ description: `${label} 已复制`, duration: 2000 })
+    } catch { /* ignore */ }
+  }
+
+  const restartGateway = async () => {
+    setRestarting(true)
+    try {
+      await window.api.mafw.gateway.restart()
+      showToastV2({ description: "Gateway 重启中…", duration: 2000 })
+    } catch (err: any) {
+      showToastV2({ description: `重启失败: ${err.message}`, duration: 3000 })
+    }
+    setRestarting(false)
+  }
+
   return (
     <div>
       <h2 class="mafw-page-title">Configuration</h2>
+      {/* Gateway ops */}
+      <div class="mafw-config-ops">
+        <div class="mafw-config-ops-title">Gateway 运维</div>
+        <div class="mafw-config-ops-row">
+          <span class="mafw-config-ops-status">
+            <span class="mafw-titlebar-dot" classList={{
+              ready: gwStatus()?.state === "ready",
+              starting: gwStatus()?.state === "starting",
+              failed: gwStatus()?.state === "failed",
+              stopped: !gwStatus() || gwStatus()?.state === "stopped",
+            }} />
+            {gwStateText()}
+          </span>
+        </div>
+        <div class="mafw-config-ops-actions">
+          <ButtonV2 variant="outline" size="small" onClick={restartGateway} disabled={restarting()}>
+            {restarting() ? "重启中…" : "Restart Gateway"}
+          </ButtonV2>
+          <ButtonV2 variant="outline" size="small" onClick={() => gwStatus()?.url && copyText(gwStatus().url, "URL")} disabled={!gwStatus()?.url}>
+            Copy Gateway URL
+          </ButtonV2>
+          <ButtonV2 variant="outline" size="small" onClick={async () => {
+            try {
+              const p = await window.api.mafw.gateway.logsPath()
+              copyText(p, "日志路径")
+            } catch { /* ignore */ }
+          }}>
+            Copy logs path
+          </ButtonV2>
+        </div>
+      </div>
       {loading() ? (
           <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "20px 0" }}>
             <LoaderV2 width={16} height={16} />
