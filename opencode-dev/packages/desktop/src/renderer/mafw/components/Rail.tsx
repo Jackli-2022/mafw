@@ -238,7 +238,7 @@ export function Rail(props: Props) {
         </div>
       )}
       <div class="mafw-rail-spacer" />
-      <div class="mafw-rail-section" onClick={() => props.onSettings?.()}>
+      <div class="mafw-rail-settings-bar" onClick={() => props.onSettings?.()}>
         <Icon name="settings-gear" size="small" />
         <span>Settings</span>
       </div>

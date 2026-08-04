@@ -319,6 +319,23 @@ html[data-theme="light"] .mafw-shell {
 .mafw-rail-add { padding-left: 12px; color: var(--text-4); opacity: 0.6; font-size: 12px; }
 .mafw-rail-add:hover { opacity: 1; color: var(--text-1); }
 .mafw-rail-spacer { flex: 1; }
+.mafw-rail-settings-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--text-3);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s, background 0.12s;
+}
+.mafw-rail-settings-bar:hover { color: var(--text-1); background: var(--hover); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
