@@ -17,6 +17,7 @@ export function PopoverShell(props: {
   class?: string
 }) {
   const [pos, setPos] = createSignal<{ top: number; left: number } | null>(null)
+  const [selfRef, setSelfRef] = createSignal<HTMLDivElement | null>(null)
 
   const compute = () => {
     const t = props.trigger
@@ -26,12 +27,14 @@ export function PopoverShell(props: {
     const GAP = 8
     const vw = window.innerWidth
     const vh = window.innerHeight
-    // Prefer above; flip below if not enough room (leave 8px margin).
+    // Use the rendered popover height (fallback estimate before first paint).
+    const h = selfRef()?.offsetHeight || 320
     const spaceAbove = rect.top - GAP
     const spaceBelow = vh - rect.bottom - GAP
+    // Only pop above when the popover fully fits; otherwise flip below.
     let top: number
-    if (spaceAbove >= 120 || spaceAbove >= spaceBelow) {
-      top = rect.top - GAP
+    if (spaceAbove >= Math.min(h, spaceBelow)) {
+      top = rect.top - GAP - (h - Math.min(h, spaceAbove))
     } else {
       top = rect.bottom + GAP
     }
@@ -53,6 +56,13 @@ export function PopoverShell(props: {
       window.removeEventListener("resize", onResize)
       window.removeEventListener("scroll", onScroll, true)
     })
+  })
+
+  // Re-position once the popover has actually rendered (content height known).
+  createEffect(() => {
+    if (props.open && pos()) {
+      requestAnimationFrame(() => compute())
+    }
   })
 
   createEffect(() => {
@@ -80,6 +90,7 @@ export function PopoverShell(props: {
     <Show when={props.open && pos()}>
       {(p) => (
         <div
+          ref={setSelfRef}
           data-pickpop=""
           class={`mafw-picker-pop ${props.class || ""}`}
           style={{ top: `${p().top}px`, left: `${p().left}px` }}
