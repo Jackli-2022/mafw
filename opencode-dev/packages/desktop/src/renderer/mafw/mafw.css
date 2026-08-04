@@ -460,7 +460,7 @@ html[data-theme="light"] .mafw-shell {
   display: flex;
   flex-direction: column;
   height: 100%;
-  margin: 8px;
+  margin: 8px 8px 16px;
   border-radius: 16px;
   overflow: hidden;
   background: var(--bg-raised);
