@@ -1,12 +1,15 @@
 // @ts-nocheck
 import { createEffect, createSignal, Show, onCleanup } from "solid-js"
+import { Portal } from "solid-js/web"
 import type { JSX } from "solid-js"
 
 /**
  * Self-drawn popover shell for the ModelPicker / AgentPicker.
- * Anchors above the trigger (8px gap), right-edge (tr) or left-edge (bl)
- * aligned; flips below when there is no room above; clamps to the viewport.
- * Closes on outside click / Esc. 120ms appear animation.
+ * Rendered through a Portal into document.body so no ancestor container
+ * (overflow/transform/filter) can clip or constrain it — it floats over the
+ * whole desktop window. Anchors above the trigger (8px gap), right-edge (tr)
+ * or left-edge (bl) aligned; flips below when there is no room above; clamps
+ * to the viewport. Closes on outside click / Esc. 120ms appear animation.
  */
 export function PopoverShell(props: {
   open: boolean
@@ -27,16 +30,19 @@ export function PopoverShell(props: {
     const GAP = 8
     const vw = window.innerWidth
     const vh = window.innerHeight
-    // Use the rendered popover height (fallback estimate before first paint).
-    const h = selfRef()?.offsetHeight || 320
+    const h = Math.min(selfRef()?.offsetHeight || 320, 380)
     const spaceAbove = rect.top - GAP
     const spaceBelow = vh - rect.bottom - GAP
-    // Only pop above when the popover fully fits; otherwise flip below.
+    // Three-state placement: fully above → fully below → clamp on the larger side.
     let top: number
-    if (spaceAbove >= Math.min(h, spaceBelow)) {
-      top = rect.top - GAP - (h - Math.min(h, spaceAbove))
-    } else {
+    if (spaceAbove >= h) {
+      top = rect.top - GAP - h
+    } else if (spaceBelow >= h) {
       top = rect.bottom + GAP
+    } else if (spaceAbove >= spaceBelow) {
+      top = Math.max(8, rect.top - GAP - h)
+    } else {
+      top = Math.min(vh - 8 - h, rect.bottom + GAP)
     }
     // Right-edge aligned (tr) or left-edge aligned (bl); clamp right overflow.
     let left = props.anchor === "tr" ? rect.right - W : rect.left
@@ -87,17 +93,19 @@ export function PopoverShell(props: {
   })
 
   return (
-    <Show when={props.open && pos()}>
-      {(p) => (
-        <div
-          ref={setSelfRef}
-          data-pickpop=""
-          class={`mafw-picker-pop ${props.class || ""}`}
-          style={{ top: `${p().top}px`, left: `${p().left}px` }}
-        >
-          {props.children}
-        </div>
-      )}
-    </Show>
+    <Portal>
+      <Show when={props.open && pos()}>
+        {(p) => (
+          <div
+            ref={setSelfRef}
+            data-pickpop=""
+            class={`mafw-picker-pop ${props.class || ""}`}
+            style={{ top: `${p().top}px`, left: `${p().left}px` }}
+          >
+            {props.children}
+          </div>
+        )}
+      </Show>
+    </Portal>
   )
 }
