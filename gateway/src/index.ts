@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
 import * as https from 'https';
+import * as yaml from 'js-yaml';
 import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
@@ -847,6 +848,32 @@ class MafwScheduler {
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(await this.handleDashboardAPI(req)));
+          return;
+        }
+
+        // GET /api/config 鈥?gateway effective config
+        if (req.url?.match(/^\/api\/config(?:\?|$)/) && req.method === 'GET') {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify(config.raw));
+          return;
+        }
+
+        // PUT /api/config 鈥?persist config overrides to <project>/.mafw/config.yaml
+        if (req.url?.match(/^\/api\/config(?:\?|$)/) && req.method === 'PUT') {
+          try {
+            const overrides = JSON.parse(await readBody(req));
+            const mafwDir = path.join(this.projectDir || '.', config.paths.mafwDir);
+            const configPath = path.join(mafwDir, 'config.yaml');
+            if (!fs.existsSync(mafwDir)) fs.mkdirSync(mafwDir, { recursive: true });
+            const yamlStr = yaml.dump(overrides, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: true });
+            fs.writeFileSync(configPath, yamlStr, 'utf-8');
+            res.writeHead(200);
+            res.end(JSON.stringify({ success: true }));
+          } catch (err: any) {
+            log.error('[Config] PUT error:', err.message);
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: err.message }));
+          }
           return;
         }
 
