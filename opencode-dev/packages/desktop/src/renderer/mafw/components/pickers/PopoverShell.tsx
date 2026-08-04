@@ -14,7 +14,7 @@ import type { JSX } from "solid-js"
 export function PopoverShell(props: {
   open: boolean
   trigger: HTMLElement | null
-  anchor: "tr" | "bl"
+  anchor: "tr" | "bl" | "below-center"
   onClose: () => void
   children: JSX.Element
   class?: string
@@ -33,19 +33,29 @@ export function PopoverShell(props: {
     const h = Math.min(selfRef()?.offsetHeight || 320, 380)
     const spaceAbove = rect.top - GAP
     const spaceBelow = vh - rect.bottom - GAP
-    // Three-state placement: fully above → fully below → clamp on the larger side.
     let top: number
-    if (spaceAbove >= h) {
-      top = rect.top - GAP - h
-    } else if (spaceBelow >= h) {
-      top = rect.bottom + GAP
-    } else if (spaceAbove >= spaceBelow) {
-      top = Math.max(8, rect.top - GAP - h)
+    let left: number
+    if (props.anchor === "below-center") {
+      // Below the trigger, centered; flip above when not enough room below.
+      if (spaceBelow >= h) {
+        top = rect.bottom + 2
+      } else {
+        top = Math.max(8, rect.top - GAP - h)
+      }
+      left = rect.left + rect.width / 2 - W / 2
     } else {
-      top = Math.min(vh - 8 - h, rect.bottom + GAP)
+      // Three-state placement: fully above → fully below → clamp on the larger side.
+      if (spaceAbove >= h) {
+        top = rect.top - GAP - h
+      } else if (spaceBelow >= h) {
+        top = rect.bottom + GAP
+      } else if (spaceAbove >= spaceBelow) {
+        top = Math.max(8, rect.top - GAP - h)
+      } else {
+        top = Math.min(vh - 8 - h, rect.bottom + GAP)
+      }
+      left = props.anchor === "tr" ? rect.right - W : rect.left
     }
-    // Right-edge aligned (tr) or left-edge aligned (bl); clamp right overflow.
-    let left = props.anchor === "tr" ? rect.right - W : rect.left
     if (left < 8) left = 8
     if (left + W > vw - 8) left = vw - 8 - W
     setPos({ top, left })
