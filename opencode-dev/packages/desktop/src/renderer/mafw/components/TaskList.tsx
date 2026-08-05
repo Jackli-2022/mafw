@@ -46,6 +46,7 @@ export function TaskList(props: {
   started: number
   placement: "popover" | "dock" | "overlay"
   onClose: () => void
+  onPin: () => void
   }) {
   const total = () => props.todos.length
   const done = () => props.todos.filter(t => t.status === "completed").length
