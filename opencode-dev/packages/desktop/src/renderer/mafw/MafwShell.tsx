@@ -1571,6 +1571,7 @@ export function MafwShell() {
                     trigger={titlebarRef()}
                     anchor="below-center"
                     onClose={() => setTaskListOpen(false)}
+                    width={560}
                     class="mafw-tasklist-popover-wrap"
                   >
                     <TaskList

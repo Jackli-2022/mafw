@@ -18,6 +18,7 @@ export function PopoverShell(props: {
   onClose: () => void
   children: JSX.Element
   class?: string
+  width?: number
 }) {
   const [pos, setPos] = createSignal<{ top: number; left: number } | null>(null)
   const [selfRef, setSelfRef] = createSignal<HTMLDivElement | null>(null)
@@ -26,7 +27,7 @@ export function PopoverShell(props: {
     const t = props.trigger
     if (!t || !props.open) return
     const rect = t.getBoundingClientRect()
-    const W = 288
+    const W = props.width ?? selfRef()?.offsetWidth ?? 288
     const GAP = 8
     const vw = window.innerWidth
     const vh = window.innerHeight
@@ -110,7 +111,7 @@ export function PopoverShell(props: {
             ref={setSelfRef}
             data-pickpop=""
             class={`mafw-picker-pop ${props.class || ""}`}
-            style={{ top: `${p().top}px`, left: `${p().left}px` }}
+            style={{ top: `${p().top}px`, left: `${p().left}px`, ...(props.width ? { width: `${props.width}px` } : {}) }}
           >
             {props.children}
           </div>
