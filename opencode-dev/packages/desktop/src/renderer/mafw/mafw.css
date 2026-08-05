@@ -161,7 +161,6 @@ html[data-theme="light"] .mafw-shell {
   to   { transform: translateY(0); opacity: 1; }
 }
 .mafw-session-turn-container [data-component="session-turn"] { animation: mafw-enter 200ms ease-out; }
-.mafw-task-panel [data-slot="task-row"] { animation: mafw-enter 200ms ease-out; }
 
 /* ── Shell Layout ── */
 .mafw-shell {
@@ -733,12 +732,7 @@ html[data-theme="light"] .mafw-shell {
   font-size: 13px;
 }
 
-/* ── TaskPanel (in-flow above the composer, §4.6) ── */
-.mafw-tasks-float {
-  width: 100%;
-  margin-bottom: 12px;
-  animation: mafw-slide-in 200ms ease-out;
-}
+/* ── Pending-cards pill (above the composer) ── */
 .mafw-pending-pill {
   display: flex;
   align-items: center;
@@ -751,13 +745,6 @@ html[data-theme="light"] .mafw-shell {
   border: 1px solid var(--border-subtle);
   color: var(--text-3);
   font-size: 12px;
-}
-@keyframes mafw-slide-in {
-  from { transform: translateY(8px); opacity: 0; }
-  to   { transform: translateY(0); opacity: 1; }
-}
-.mafw-task-panel [data-slot="task-row"]:hover {
-  background: var(--v2-overlay-simple-overlay-hover, var(--surface-base-hover));
 }
 
 /* ── InputBar (composer, §4.7: one bordered box = textarea + 44px toolbar) ── */

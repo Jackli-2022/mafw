@@ -248,7 +248,7 @@ export function MafwShell() {
   // Lazy-load pagination state per session (older messages via `before` cursor)
   const [pageState, setPageState] = createStore<Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>>({})
 
-  // Todo list per session (drives the TaskPanel; updated live via SSE todo.updated)
+  // Todo list per session (drives the TaskList; updated live via SSE todo.updated)
   const [todos, setTodos] = createStore<Record<string, any[]>>({})
 
   // AskCard / PermissionCard per session (in-chat flow cards)
@@ -668,7 +668,7 @@ export function MafwShell() {
         window.api.mafw.sessions.messages(sessionID, 100) as any,
         window.api.mafw.sessions.get(sessionID).catch(() => null),
       ]) as [any, any]
-      // Fetch the todo list for the TaskPanel (also updated live via SSE)
+      // Fetch the todo list for the TaskList (also updated live via SSE)
       window.api.mafw.sessions.todo(sessionID).then((t: any) => {
         const arr = Array.isArray(t) ? t : t?.data
         if (Array.isArray(arr)) setTodos(sessionID, arr)
@@ -1082,7 +1082,7 @@ export function MafwShell() {
       .sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
   }
 
-  // TaskPanel metrics: tokens + start time of the current (last) turn
+  // TaskList metrics: tokens + start time of the current (last) turn
   const taskMetrics = createMemo(() => {
     const sid = currentSessionID()
     if (!sid) return { tokens: 0, started: 0 }
@@ -1387,7 +1387,7 @@ export function MafwShell() {
                               </ButtonV2>
                             </Show>
                           </div>
-                {/* InputArea — 760px centered wrapper: TaskPanel (in-flow, §4.6) + composer box (§4.7) */}
+                {/* InputArea — 760px centered wrapper: composer box (§4.7) */}
                 <div class="mafw-input-area">
                   <Show when={currentSessionID() && sessionPending(currentSessionID()!) > 0 && jumpVisible()}>
                     <ButtonV2 variant="outline" size="small" class="mafw-pending-pill" onClick={jumpToLatest} aria-label="有待回答卡片">
@@ -1572,7 +1572,6 @@ export function MafwShell() {
                     anchor="below-center"
                     onClose={() => setTaskListOpen(false)}
                     width={560}
-                    class="mafw-tasklist-popover-wrap"
                   >
                     <TaskList
                       todos={todos[currentSessionID()] || []}
