@@ -502,10 +502,10 @@ html[data-theme="light"] .mafw-shell {
   border-bottom: 1px solid var(--border-subtle);
 }
 .mafw-session-titlebar.tasks-active {
-  border-bottom: none;
-  box-shadow: inset 0 -2px 0 0 var(--accent);
-  border-bottom-left-radius: 2px;
-  border-bottom-right-radius: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+  border-top-left-radius: 3px;
+  border-bottom-left-radius: 3px;
 }
 .mafw-session-titlebar-inner {
   display: flex;
