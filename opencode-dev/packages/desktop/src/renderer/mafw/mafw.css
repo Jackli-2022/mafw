@@ -1748,7 +1748,6 @@ html[data-theme="light"] .mafw-picker-pop {
 /* ── TaskList（popover / dock / overlay）── */
 .mafw-tasklist { display: flex; flex-direction: column; }
 .mafw-tasklist-popover {
-  width: min(560px, calc(100% - 32px));
   max-height: 320px;
 }
 .mafw-tasklist-dock {

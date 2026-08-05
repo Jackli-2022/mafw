@@ -20,17 +20,19 @@ export function PopoverShell(props: {
   class?: string
   width?: number
 }) {
-  const [pos, setPos] = createSignal<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = createSignal<{ top: number; left: number; width: number } | null>(null)
   const [selfRef, setSelfRef] = createSignal<HTMLDivElement | null>(null)
 
   const compute = () => {
     const t = props.trigger
     if (!t || !props.open) return
     const rect = t.getBoundingClientRect()
-    const W = props.width ?? selfRef()?.offsetWidth ?? 288
-    const GAP = 8
     const vw = window.innerWidth
     const vh = window.innerHeight
+    const GAP = 8
+    // Clamp width to the viewport (8px margin, symmetric with the left clamp) so
+    // fixed-width popovers (e.g. the 560px TaskList) never overflow narrow windows.
+    const W = Math.min(props.width ?? selfRef()?.offsetWidth ?? 288, vw - 16)
     const h = Math.min(selfRef()?.offsetHeight || 320, 380)
     const spaceAbove = rect.top - GAP
     const spaceBelow = vh - rect.bottom - GAP
@@ -59,7 +61,7 @@ export function PopoverShell(props: {
     }
     if (left < 8) left = 8
     if (left + W > vw - 8) left = vw - 8 - W
-    setPos({ top, left })
+    setPos({ top, left, width: W })
   }
 
   createEffect(() => {
@@ -111,7 +113,7 @@ export function PopoverShell(props: {
             ref={setSelfRef}
             data-pickpop=""
             class={`mafw-picker-pop ${props.class || ""}`}
-            style={{ top: `${p().top}px`, left: `${p().left}px`, ...(props.width ? { width: `${props.width}px` } : {}) }}
+            style={{ top: `${p().top}px`, left: `${p().left}px`, width: `${p().width}px` }}
           >
             {props.children}
           </div>
