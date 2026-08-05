@@ -17,6 +17,8 @@ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { FileSSR } from "@opencode-ai/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { TaskBar } from "./components/TaskBar"
+import { TaskList } from "./components/TaskList"
+import { PopoverShell } from "./components/pickers/PopoverShell"
 import { TabStrip, type Tab } from "./components/TabStrip"
 import { registerMafwToolCards } from "./components/MafwToolCards"
 import { DashboardPage } from "./pages/Dashboard"
@@ -983,6 +985,34 @@ export function MafwShell() {
   const [tasksPlacement, setTasksPlacement] = createSignal<"bar" | "dock">(
     (localStorage.getItem("mafw-tasks-placement") as "bar" | "dock") || "bar"
   )
+  const [viewportNarrow, setViewportNarrow] = createSignal(window.innerWidth < 1200)
+  const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
+
+  const applyTasksPlacement = (p: "bar" | "dock") => {
+    setTasksPlacement(p)
+    try { localStorage.setItem("mafw-tasks-placement", p) } catch { /* ignore */ }
+  }
+
+  // Ctrl/Cmd+J: toggle task list (bar) / return to bar (dock). Skip when typing.
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "j") return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return
+      e.preventDefault()
+      if (tasksPlacement() === "dock") applyTasksPlacement("bar")
+      else setTaskListOpen(o => !o)
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
+  // Dock → overlay under 1200px viewport (storage unchanged).
+  createEffect(() => {
+    const onResize = () => setViewportNarrow(window.innerWidth < 1200)
+    window.addEventListener("resize", onResize)
+    onCleanup(() => window.removeEventListener("resize", onResize))
+  })
 
   const currentModelLabel = createMemo(() => modelSel()?.label || modelName())
 
@@ -1277,7 +1307,7 @@ export function MafwShell() {
                                 class="mafw-session-titlebar"
                                 classList={{ "tasks-active": (todos[currentSessionID()] || []).length > 0 }}
                               >
-                                <div class="mafw-session-titlebar-inner">
+                                <div class="mafw-session-titlebar-inner" ref={setTitlebarRef}>
                                   <span class="mafw-agent-avatar">{(active()?.title || "A").charAt(0)}</span>
                                   <span class="mafw-session-titlebar-text">{active()?.title || "Chat"}</span>
                                   <Show when={(todos[currentSessionID()] || []).length > 0}>
@@ -1534,6 +1564,35 @@ export function MafwShell() {
                     </div>
                   </Show>
                 </div>
+                {/* TaskList: popover (bar state) / dock / overlay */}
+                <Show when={taskListOpen() && tasksPlacement() === "bar"}>
+                  <PopoverShell
+                    open={taskListOpen() && tasksPlacement() === "bar"}
+                    trigger={titlebarRef()}
+                    anchor="below-center"
+                    onClose={() => setTaskListOpen(false)}
+                    class="mafw-tasklist-popover-wrap"
+                  >
+                    <TaskList
+                      todos={todos[currentSessionID()] || []}
+                      tokens={taskMetrics().tokens}
+                      started={taskMetrics().started}
+                      placement="popover"
+                      onClose={() => setTaskListOpen(false)}
+                      onPin={() => { setTaskListOpen(false); applyTasksPlacement("dock") }}
+                    />
+                  </PopoverShell>
+                </Show>
+                <Show when={tasksPlacement() === "dock"}>
+                  <TaskList
+                    todos={todos[currentSessionID()] || []}
+                    tokens={taskMetrics().tokens}
+                    started={taskMetrics().started}
+                    placement={viewportNarrow() ? "overlay" : "dock"}
+                    onClose={() => applyTasksPlacement("bar")}
+                    onPin={() => applyTasksPlacement("bar")}
+                  />
+                </Show>
               </div>
             ) : activeTab() === "goals" ? (
               <DashboardPage />
