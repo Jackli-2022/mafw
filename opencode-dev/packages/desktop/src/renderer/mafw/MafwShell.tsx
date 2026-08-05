@@ -987,11 +987,32 @@ export function MafwShell() {
   )
   const [viewportNarrow, setViewportNarrow] = createSignal(window.innerWidth < 1200)
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
+  const [dockRef, setDockRef] = createSignal<HTMLDivElement | null>(null)
 
   const applyTasksPlacement = (p: "bar" | "dock") => {
     setTasksPlacement(p)
     try { localStorage.setItem("mafw-tasks-placement", p) } catch { /* ignore */ }
   }
+
+  // Narrow-viewport overlay closes on Esc / outside click (spec §3). The wide
+  // dock is persistent — no dismiss handlers there.
+  createEffect(() => {
+    if (!(tasksPlacement() === "dock" && viewportNarrow())) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") applyTasksPlacement("bar")
+    }
+    const onDown = (e: MouseEvent) => {
+      const el = dockRef()
+      if (el && el.contains(e.target as Node)) return
+      applyTasksPlacement("bar")
+    }
+    window.addEventListener("keydown", onKey)
+    document.addEventListener("mousedown", onDown)
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKey)
+      document.removeEventListener("mousedown", onDown)
+    })
+  })
 
   // Ctrl/Cmd+J: toggle task list (bar) / return to bar (dock). Skip when typing.
   createEffect(() => {
@@ -1094,6 +1115,12 @@ export function MafwShell() {
     const last = assistants[assistants.length - 1]
     const tokens = last?.tokens?.total || last?.tokens?.output || 0
     return { tokens, started: userMsg.time?.created || 0 }
+  })
+
+  // All todos completed → header accent line/badge collapse ("细线收起", spec §2).
+  const tasksAllDone = createMemo(() => {
+    const ts = todos[currentSessionID()] || []
+    return ts.length > 0 && ts.every(t => t.status === "completed")
   })
 
   // Scroll container: the outer .mafw-session-turn-container is the single
@@ -1305,12 +1332,12 @@ export function MafwShell() {
                             <Show when={currentSessionID()}>
                               <div
                                 class="mafw-session-titlebar"
-                                classList={{ "tasks-active": (todos[currentSessionID()] || []).length > 0 }}
+                                classList={{ "tasks-active": (todos[currentSessionID()] || []).length > 0 && !tasksAllDone() }}
                               >
                                 <div class="mafw-session-titlebar-inner" ref={setTitlebarRef}>
                                   <span class="mafw-agent-avatar">{(active()?.title || "A").charAt(0)}</span>
                                   <span class="mafw-session-titlebar-text">{active()?.title || "Chat"}</span>
-                                  <Show when={(todos[currentSessionID()] || []).length > 0}>
+                                  <Show when={(todos[currentSessionID()] || []).length > 0 && !tasksAllDone()}>
                                     <span class="mafw-chat-header-divider" />
                                   </Show>
                                   <TaskBar
@@ -1320,7 +1347,7 @@ export function MafwShell() {
                                     open={taskListOpen() && tasksPlacement() === "bar"}
                                     onToggle={() => setTaskListOpen(!taskListOpen())}
                                   />
-                                  <Show when={(todos[currentSessionID()] || []).length > 0}>
+                                  <Show when={(todos[currentSessionID()] || []).length > 0 && !tasksAllDone()}>
                                     <span class="mafw-chat-header-done">
                                       {(todos[currentSessionID()] || []).filter(t => t.status === "completed").length}/
                                       {(todos[currentSessionID()] || []).length}
@@ -1584,14 +1611,16 @@ export function MafwShell() {
                   </PopoverShell>
                 </Show>
                 <Show when={tasksPlacement() === "dock"}>
-                  <TaskList
-                    todos={todos[currentSessionID()] || []}
-                    tokens={taskMetrics().tokens}
-                    started={taskMetrics().started}
-                    placement={viewportNarrow() ? "overlay" : "dock"}
-                    onClose={() => applyTasksPlacement("bar")}
-                    onPin={() => applyTasksPlacement("bar")}
-                  />
+                  <div ref={setDockRef}>
+                    <TaskList
+                      todos={todos[currentSessionID()] || []}
+                      tokens={taskMetrics().tokens}
+                      started={taskMetrics().started}
+                      placement={viewportNarrow() ? "overlay" : "dock"}
+                      onClose={() => applyTasksPlacement("bar")}
+                      onPin={() => applyTasksPlacement("bar")}
+                    />
+                  </div>
                 </Show>
               </div>
             ) : activeTab() === "goals" ? (

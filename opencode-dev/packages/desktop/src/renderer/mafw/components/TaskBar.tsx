@@ -68,7 +68,7 @@ export function TaskBar(props: {
         aria-label="任务列表"
       >
         <Show when={!allDone()} fallback={<span class="mafw-taskbar-check">✔ 全部完成（{done()}/{total()}）</span>}>
-          <Show when={running().length > 0} fallback={<span class="mafw-taskbar-spinner" />}>
+          <Show when={running().length > 0} fallback={<span class="mafw-taskbar-spinner pending" />}>
             <span class="mafw-taskbar-spinner running" />
           </Show>
           <span class="mafw-taskbar-text">{current()?.content || ""}</span>

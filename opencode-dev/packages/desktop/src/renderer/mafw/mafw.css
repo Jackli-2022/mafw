@@ -40,7 +40,6 @@
   --focus-ring: rgba(70,220,130,.45);
   --composer-focus: rgba(70,220,130,.4);
   --composer-halo: rgba(70,220,130,.1);
-  --tasks-glow: radial-gradient(ellipse at right, rgba(44,80,68,.4), transparent 60%);
   /* v1 token 覆盖：chrome 组件全量跟随暗色（statusbar/card/session-close 等） */
   --background-base: #070709;
   --background-weak: #0E0E12;
@@ -98,7 +97,6 @@ html[data-theme="light"] .mafw-shell {
   --focus-ring: rgba(31,157,90,.35);
   --composer-focus: rgba(31,157,90,.45);
   --composer-halo: rgba(31,157,90,.10);
-  --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
   --background-base: #ECECF0;
   --background-weak: #F6F6F8;
   --background-stronger: #FAFAFB;
@@ -137,7 +135,6 @@ html[data-theme="light"] .mafw-shell {
     --scrollbar: rgba(0,0,0,.15); --scrollbar-hover: rgba(0,0,0,.25);
     --selection: rgba(31,157,90,.18); --focus-ring: rgba(31,157,90,.35);
     --composer-focus: rgba(31,157,90,.45); --composer-halo: rgba(31,157,90,.10);
-    --tasks-glow: radial-gradient(ellipse at right, rgba(31,157,90,.07), transparent 60%);
     --background-base: #ECECF0; --background-weak: #F6F6F8; --background-stronger: #FAFAFB;
     --surface-base: #EDEDF1; --surface-base-hover: rgba(0,0,0,.04); --surface-base-active: rgba(0,0,0,.05); --surface-raised-base: #FFFFFF;
     --text-base: #5E5E66; --text-weak: #8E8E96; --text-strong: #17171B;
@@ -565,6 +562,11 @@ html[data-theme="light"] .mafw-shell {
   animation: mafw-spin 1s linear infinite;
 }
 .mafw-taskbar-spinner.running { border-top-color: var(--accent); }
+.mafw-taskbar-spinner.pending {
+  border: 1.5px solid var(--text-4);
+  border-radius: 50%;
+  animation: none;
+}
 .mafw-taskbar-check { color: var(--accent-text); font-size: 13px; white-space: nowrap; }
 .mafw-taskbar-text {
   overflow: hidden;
@@ -1747,10 +1749,6 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-tasklist { display: flex; flex-direction: column; }
 .mafw-tasklist-popover {
   width: min(560px, calc(100% - 32px));
-  background: var(--bg-float);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  box-shadow: var(--shadow-float);
   max-height: 320px;
 }
 .mafw-tasklist-dock {
