@@ -72,7 +72,10 @@ export function TaskList(props: {
   // Density model (§9.1): completed collapsed when >4 total; pending window 2 (running) / 3 (no running).
   const compact = () => total() > 4
   const pendingWindow = () => (running().length > 0 ? 2 : 3)
-  const visiblePending = createMemo(() => (compact() ? pending().slice(0, pendingWindow()) : pending()))
+  const visiblePending = createMemo(() => {
+    if (!compact() || overflowExpanded()) return pending()
+    return pending().slice(0, pendingWindow())
+  })
   const pendingOverflow = createMemo(() => pending().length - visiblePending().length)
   const completedVisible = createMemo(() => {
     if (!compact() || completedExpanded()) return props.todos.filter(t => t.status === "completed")

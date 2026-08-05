@@ -61,7 +61,12 @@ export function PopoverShell(props: {
     }
     if (left < 8) left = 8
     if (left + W > vw - 8) left = vw - 8 - W
-    setPos({ top, left, width: W })
+    // Only update when the position actually changed: `setPos` always receives a
+    // fresh object, so without this guard the rAF re-position loop (compute →
+    // setPos → effect → rAF) spins at 60fps for the whole time the popover is
+    // open, and anything creating computations inside it runs on a null Owner.
+    const p = pos()
+    if (!p || p.top !== top || p.left !== left || p.width !== W) setPos({ top, left, width: W })
   }
 
   createEffect(() => {
