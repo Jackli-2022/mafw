@@ -1156,13 +1156,24 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .mafw-confirm-ok { background: var(--accent); color: var(--on-accent); }
 
-/* Agent switch trace */
+/* Agent switch trace (ChatGPT-style centered divider) */
 .mafw-switch-trace {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   max-width: var(--msg-col-width);
-  margin-inline: auto;
-  padding: 2px 32px;
+  margin: 6px auto;
+  padding: 0 32px;
   font-size: 11px;
-  color: var(--text-5);
+  color: var(--text-4);
+  white-space: nowrap;
+}
+.mafw-switch-trace::before,
+.mafw-switch-trace::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
 }
 
 /* ── Page shared ── */
