@@ -145,8 +145,6 @@ html[data-theme="light"] .mafw-shell {
   }
 }
 
-@keyframes blink { 0%,100% { opacity: 0.3 } 50% { opacity: 1 } }
-
 /* ── 宽屏列宽分档（§4.5） ── */
 @media (min-width: 1500px) { .mafw-shell { --msg-col-width: 880px; } }
 @media (min-width: 1800px) { .mafw-shell { --msg-col-width: 1000px; } }
@@ -501,12 +499,6 @@ html[data-theme="light"] .mafw-shell {
   background: linear-gradient(to bottom, var(--bg-raised) calc(100% - 12px), transparent);
   border-bottom: 1px solid var(--border-subtle);
 }
-.mafw-session-titlebar.tasks-active {
-  border-bottom: 1px solid var(--border-subtle);
-  box-shadow: inset 3px 0 0 0 var(--accent);
-  border-top-left-radius: 3px;
-  border-bottom-left-radius: 3px;
-}
 .mafw-session-titlebar-inner {
   display: flex;
   align-items: center;
@@ -653,12 +645,12 @@ html[data-theme="light"] .mafw-shell {
   flex-shrink: 0;
 }
 .mafw-session-status-dot {
-  width: 6px;
-  height: 6px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: var(--glow-accent);
-  animation: blink 1.5s infinite;
+  border: 2px solid var(--text-5);
+  border-top-color: var(--accent);
+  animation: mafw-spin 1s linear infinite;
 }
 
 /* ── Jump to latest ── */

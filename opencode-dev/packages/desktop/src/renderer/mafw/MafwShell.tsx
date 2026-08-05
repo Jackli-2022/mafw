@@ -1330,10 +1330,7 @@ export function MafwShell() {
                 {/* SessionTurns — one SessionTurn per user message (turn = user msg + its assistant replies incl. tool calls) */}
                           <div ref={setContainerRef} onScroll={handleScroll} class="mafw-session-turn-container">
                             <Show when={currentSessionID()}>
-                              <div
-                                class="mafw-session-titlebar"
-                                classList={{ "tasks-active": (todos[currentSessionID()] || []).length > 0 && !tasksAllDone() }}
-                              >
+                              <div class="mafw-session-titlebar">
                                 <div class="mafw-session-titlebar-inner" ref={setTitlebarRef}>
                                   <span class="mafw-agent-avatar">{(active()?.title || "A").charAt(0)}</span>
                                   <span class="mafw-session-titlebar-text">{active()?.title || "Chat"}</span>
@@ -1353,8 +1350,7 @@ export function MafwShell() {
                                       {(todos[currentSessionID()] || []).length}
                                     </span>
                                   </Show>
-                                  <Show when={store.session_status[currentSessionID()]?.type === "busy" &&
-                                    ((todos[currentSessionID()] || []).length === 0 || tasksPlacement() === "dock")}>
+                                  <Show when={store.session_status[currentSessionID()]?.type === "busy"}>
                                     <span class="mafw-session-status">
                                       <span class="mafw-session-status-dot" />
                                       Running

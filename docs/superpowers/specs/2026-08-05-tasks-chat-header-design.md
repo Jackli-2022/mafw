@@ -11,7 +11,7 @@
 ```
 MafwShell
 ├─ ChatHeader（改造 .mafw-session-titlebar，sticky 40px）
-│    Agent 头像 + 标题 + 分隔线 + <TaskBar> (flex-1) + 状态点 + 下缘细线 + done/total 徽章
+│    Agent 头像 + 标题 + 分隔线 + <TaskBar> (flex-1) + done/total 徽章 + 状态点（Running spinner）
 ├─ <TaskList placement>（单例）
 │    placement: 'popover'（默认）| 'dock'（Pin 右栏）| 'overlay'（<1200px dock 变体）
 ├─ todos + taskMetrics（现有数据源不变）
@@ -35,24 +35,24 @@ MafwShell
 [◉] Agent 标题    │  [⏳ 当前任务…  ████░ 2/5  1m23s  ▾]    [3/5]
  └20px头像 └15px/600      └ 14px 分隔线 └── TaskBar (flex-1) ──┘ └done/total徽章
 ```
-- 结构：20px 圆形头像（`--accent-dim` 底 + glyph）+ 标题 15px/600 `--text-1` + **14px 分隔线**（1px `--border-subtle`）+ TaskBar（flex-1）+ **done/total 徽章**（`--bg-overlay` 圆角 999px，任务 >0 时）
-- 下缘：**2px `--accent` 圆角细线**（有任务时）替代 1px border-subtle；保留 12px 渐变遮罩
-- **状态点**：busy 且（无任务 或 dock 态）→ `✔ Running` 12px `--accent-text`；空闲不显示
-- 移除旧 "Running" 徽章（`mafw-session-status`，与 TaskBar spinner 语义重复）
-- **无任务形态 = `[◉] Agent 标题`**：纯头像 + 标题，无分隔线/TaskBar/徽章；busy 时右侧 `✔ Running`
+- 结构：20px 圆形头像（`--accent-dim` 底 + glyph）+ 标题 15px/600 `--text-1` + **14px 分隔线**（1px `--border-subtle`）+ TaskBar（flex-1）+ **done/total 徽章**（`--bg-overlay` 圆角 999px，任务 >0 时）+ **状态点**（最右端）
+- 下缘：始终 1px border-subtle（无 tasks-active 附加样式）；保留 12px 渐变遮罩
+- **状态点**：会话 busy（`store.session_status.type === "busy"`）→ 右端 12px spinner（`--text-5` 环 + `--accent` 顶边，`mafw-spin`）+ `Running` 12px `--accent-text`；空闲不显示
+- `.mafw-session-status` 保留改造（点→spinner），语义 = 会话运行中，与 TaskBar 任务指示互补
+- **无任务形态 = `[◉] Agent 标题`**：纯头像 + 标题，无分隔线/TaskBar/徽章；busy 时右侧 `Running` spinner
 
 **TaskBar**
 - 无任务 → `null`
 - 内容：状态图标（running = 12px spinner / 最后 completed = ✔）+ 当前任务文本 13px `--text-1` truncate + 优先级小图标（high = 11px `--warning`）+ `n/N` 11px `--text-3` + 进度条（48×3px，`--pill` 底 + `--accent` 填充，<640px 视口隐藏）+ 耗时 11px `--text-4` + chevron 9px（列表开时 180°）
 - button 形态：hover `--hover` 圆角 6px；点击 / Ctrl+J → 开 popover
-- 状态：run 开始淡入（200ms）；**全部完成** → 耗时归零、细线收起、`✔ 全部完成（N/N）` → 3-5s 自动隐藏；点击提前收起
+- 状态：run 开始淡入（200ms）；**全部完成** → 耗时归零、`✔ 全部完成（N/N）` → 3-5s 自动隐藏；点击提前收起
 - 当前任务 = running 第一条，无 running 则最后一条 completed
 
 ## 3. TaskList + placement
 
 **TaskList（重构自 TaskPanel）**
 - **popover**（bar 默认态）：锚定头部行下方 2px 居中（宽 `min(560px, 100%-32px)`，`--bg-float` + 圆角 12px + `--shadow-float`）；Header 44px（Tasks 13px/500 + 指示 pill（耗时·tokens）+ `n/N` + **?? Pin** 22×22 + 关闭 22×22）；列表 `max-height: 320px` 内滚 + 密度模型；Esc / 点外部关闭
-- **dock**（Pin 态）：右 320px 平铺 `--bg-base`、左缘 1px 分隔线、无辉光/阴影/圆角；Header 44px + 关闭按钮（= 回归 bar）；`flex-1` 全高内滚 + 密度模型全展开；指示条收回、头部行右侧 busy 时 `✔ Running`
+- **dock**（Pin 态）：右 320px 平铺 `--bg-base`、左缘 1px 分隔线、无辉光/阴影/圆角；Header 44px + 关闭按钮（= 回归 bar）；`flex-1` 全高内滚 + 密度模型全展开；指示条收回、头部行右侧 busy 时 `Running` spinner
 - **overlay**（视口 <1200px 时 dock 变体）：absolute 右侧全高浮层 + `--shadow-float`；点外部/Esc 关闭
 - 密度模型 §9.1：>4 任务时 completed 折叠「✔ N 个已完成」、running/failed 全可见、pending 显前 2（有 running）/3（无）、底部「还有 N 个待执行」、展开后内滚；≤4 全平铺
 - 行渲染：pending 空心圆 `--text-3` / running spinner `--accent` / completed 绿勾 `--accent` + 删除线（70% 透明）/ failed ✗；priority high 11px `--warning` 小图标；ToolChip；新行入场 200ms fade；无 grab 图标
@@ -80,9 +80,9 @@ bar（默认）──点击 TaskBar / Ctrl+J──▶ popover 列表开
 ## 6. 验收与边界
 
 - 常态成本 = 0：无任务头部行 = `[◉] Agent 标题`
-- 任务进行中：TaskBar 嵌入头部行 flex-1，不占额外行；下缘 2px accent 细线
+- 任务进行中：TaskBar 嵌入头部行 flex-1，不占额外行；busy 时头部行右端 `Running` spinner
 - 全部完成：`✔ 全部完成（N/N）` → 3-5s 自动隐藏
 - popover 锚定/关闭/Pin/dock/overlay/Ctrl+J/localStorage 记忆全部可用
 - 密度模型默认 ≈5 行；双主题 tokens
-- 边界：多会话 todos 隔离；TaskBar 单行 truncate 不增高头部行；overlay 与 popover 不并存；会话 busy 无任务 = 头像+标题+`✔ Running`
+- 边界：多会话 todos 隔离；TaskBar 单行 truncate 不增高头部行；overlay 与 popover 不并存；会话 busy 无任务 = 头像+标题+`Running` spinner
 - 纯前端改动（gateway 不动）
