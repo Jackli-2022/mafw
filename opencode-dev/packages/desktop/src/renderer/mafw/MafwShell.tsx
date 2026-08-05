@@ -17,7 +17,6 @@ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { FileSSR } from "@opencode-ai/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { TaskBar } from "./components/TaskBar"
-import { TaskPanel } from "./components/TaskPanel"
 import { TabStrip, type Tab } from "./components/TabStrip"
 import { registerMafwToolCards } from "./components/MafwToolCards"
 import { DashboardPage } from "./pages/Dashboard"
@@ -1360,16 +1359,6 @@ export function MafwShell() {
                           </div>
                 {/* InputArea — 760px centered wrapper: TaskPanel (in-flow, §4.6) + composer box (§4.7) */}
                 <div class="mafw-input-area">
-                  <Show when={currentSessionID() && (todos[currentSessionID()] || []).length > 0}>
-                    <div class="mafw-tasks-float">
-                      <TaskPanel
-                        sessionID={currentSessionID()!}
-                        todos={todos[currentSessionID()] || []}
-                        tokens={taskMetrics().tokens}
-                        started={taskMetrics().started}
-                      />
-                    </div>
-                  </Show>
                   <Show when={currentSessionID() && sessionPending(currentSessionID()!) > 0 && jumpVisible()}>
                     <ButtonV2 variant="outline" size="small" class="mafw-pending-pill" onClick={jumpToLatest} aria-label="有待回答卡片">
                       <span class="mafw-flow-pulse" />

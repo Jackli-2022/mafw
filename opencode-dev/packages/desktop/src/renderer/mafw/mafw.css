@@ -1755,3 +1755,135 @@ html[data-theme="light"] .mafw-picker-pop {
   text-overflow: ellipsis;
   flex-shrink: 1;
 }
+
+/* ── TaskList（popover / dock / overlay）── */
+.mafw-tasklist { display: flex; flex-direction: column; }
+.mafw-tasklist-popover {
+  width: min(560px, calc(100% - 32px));
+  background: var(--bg-float);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-float);
+  max-height: 320px;
+}
+.mafw-tasklist-dock {
+  position: fixed;
+  top: 38px;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  background: var(--bg-base);
+  border-left: 1px solid var(--border-subtle);
+  z-index: 70;
+}
+.mafw-tasklist-overlay {
+  position: fixed;
+  top: 38px;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  background: var(--bg-base);
+  box-shadow: var(--shadow-float);
+  z-index: 70;
+}
+.mafw-tasklist-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.mafw-tasklist-title { font-size: 13px; font-weight: 500; color: var(--text-2); }
+.mafw-tasklist-metrics {
+  font-size: 11px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mafw-tasklist-progress {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.mafw-tasklist-pin, .mafw-tasklist-close {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-4);
+}
+.mafw-tasklist-body {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px;
+  min-height: 0;
+}
+.mafw-task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  animation: mafw-enter 200ms ease-out;
+}
+.mafw-task-row:hover { background: var(--hover); }
+.mafw-task-status { width: 14px; height: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.mafw-task-status.pending {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-4);
+}
+.mafw-task-status.running {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--text-5);
+  border-top-color: var(--accent);
+  animation: mafw-spin 1s linear infinite;
+}
+.mafw-task-status.done { color: var(--accent); }
+.mafw-task-status.failed { color: var(--danger); }
+.mafw-task-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.mafw-task-content.done {
+  color: var(--text-4);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-4) 70%, transparent);
+}
+.mafw-task-content.failed { color: var(--text-4); }
+.mafw-task-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-task-priority {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--warning);
+}
+.mafw-tasklist-collapse {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-4);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.mafw-tasklist-collapse:hover { background: var(--hover); color: var(--text-2); }
