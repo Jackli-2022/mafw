@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import '../cache/session_cache.dart';
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
 import '../network/ws_client.dart';
@@ -17,6 +18,7 @@ class ChatPage extends StatefulWidget {
   final MafwSession session;
   final GatewayClient client;
   final WsClient ws;
+  final SessionCache? cache;
   final Future<void> Function() onSpeak; // P3: voice input hook
 
   const ChatPage({
@@ -24,6 +26,7 @@ class ChatPage extends StatefulWidget {
     required this.session,
     required this.client,
     required this.ws,
+    this.cache,
     required this.onSpeak,
   });
 
@@ -70,6 +73,30 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _loadHistory() async {
     setState(() => _loading = true);
     try {
+      // Check cache first
+      final cached = widget.cache?.getBySession(widget.session.id);
+      if (cached != null && cached.isNotEmpty) {
+        final msgs = cached
+            .map((m) => MafwMessage(
+                  id: m.id,
+                  sessionID: m.sessionID,
+                  role: m.role,
+                  text: m.text,
+                  timeCreated: m.timeCreated,
+                ))
+            .toList();
+        if (!mounted) return;
+        setState(() {
+          _messages = msgs;
+          _loading = false;
+        });
+        _jumpToBottom();
+        // Still refresh from gateway in background to get any new messages
+        _refreshFromGateway();
+        return;
+      }
+
+      // No cache — fetch from gateway
       final msgs = await widget.client.messages(widget.session.id, limit: 50);
       if (!mounted) return;
       setState(() {
@@ -77,10 +104,38 @@ class _ChatPageState extends State<ChatPage> {
         _loading = false;
       });
       _jumpToBottom();
+      // Populate cache
+      _updateCache(msgs);
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
       _snack('加载历史失败: $e');
+    }
+  }
+
+  Future<void> _refreshFromGateway() async {
+    try {
+      final msgs = await widget.client.messages(widget.session.id, limit: 50);
+      if (!mounted) return;
+      setState(() => _messages = msgs);
+      _jumpToBottom();
+      _updateCache(msgs);
+    } catch (_) {
+      // Offline — keep cached data
+    }
+  }
+
+  void _updateCache(List<MafwMessage> msgs) {
+    final cache = widget.cache;
+    if (cache == null) return;
+    for (final m in msgs) {
+      cache.put(CachedMessage(
+        id: m.id,
+        sessionID: m.sessionID,
+        role: m.role,
+        text: m.text,
+        timeCreated: m.timeCreated,
+      ));
     }
   }
 

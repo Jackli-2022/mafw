@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import 'src/cache/session_cache.dart';
 import 'src/config/connection_config.dart';
 import 'src/models/mafw_models.dart';
 import 'src/network/gateway_client.dart';
@@ -48,6 +49,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   PushService? _pushService;
   ConnectivityWatcher? _connectivityWatcher;
   LifecycleWsManager? _lifecycleManager;
+  final SessionCache _sessionCache = SessionCache();
   List<MafwSession> _sessions = [];
   bool _connecting = true;
   bool _wsConnected = false;
@@ -56,11 +58,13 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   @override
   void initState() {
     super.initState();
+    _sessionCache.init();
     _init();
   }
 
   @override
   void dispose() {
+    _sessionCache.dispose();
     _lifecycleManager?.dispose();
     _connectivityWatcher?.dispose();
     _wsStatusSub?.cancel();
@@ -202,6 +206,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         session: s,
         client: c,
         ws: ws,
+        cache: _sessionCache,
         onSpeak: () async {
           _snack('语音输入将在下一版本启用');
         },

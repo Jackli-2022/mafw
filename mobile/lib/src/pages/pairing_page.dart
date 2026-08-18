@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:http/http.dart' as http;
 
 import '../config/connection_config.dart';
 import '../services/secure_config_store.dart';
@@ -9,7 +11,8 @@ import '../services/secure_config_store.dart';
 /// QR code scanner page for gateway pairing.
 ///
 /// Scans a `mafw://pair?url=...&token=...&v=1&exp=...&nonce=...` deep link,
-/// writes credentials to SecureStorage, and returns [ConnectionConfig] on success.
+/// verifies the nonce with the gateway, writes credentials to SecureStorage,
+/// and returns [ConnectionConfig] on success.
 class PairingPage extends StatefulWidget {
   const PairingPage({super.key});
 
@@ -44,16 +47,16 @@ class _PairingPageState extends State<PairingPage> {
     for (final barcode in capture.barcodes) {
       final raw = barcode.rawValue;
       if (raw == null) continue;
-      final config = _parsePairUrl(raw);
-      if (config != null) {
+      final result = _parsePairUrl(raw);
+      if (result != null) {
         _processing = true;
-        _connect(config);
+        _verifyAndConnect(result.url, result.token, result.nonce);
         return;
       }
     }
   }
 
-  ConnectionConfig? _parsePairUrl(String raw) {
+  ({String url, String token, String nonce})? _parsePairUrl(String raw) {
     try {
       final uri = Uri.parse(raw);
       if (uri.scheme != 'mafw' || uri.host != 'pair') return null;
@@ -71,14 +74,36 @@ class _PairingPageState extends State<PairingPage> {
         if (mounted) setState(() => _error = '配对码已过期');
         return null;
       }
-      return ConnectionConfig(baseUrl: url, apiToken: token);
+      return (url: url, token: token, nonce: nonce);
     } catch (_) {
       return null;
     }
   }
 
-  Future<void> _connect(ConnectionConfig config) async {
+  Future<void> _verifyAndConnect(String url, String token, String nonce) async {
     try {
+      // Verify nonce with gateway
+      final verifyUri = Uri.parse('$url/api/mobile/pairing/verify');
+      final verifyRes = await http.post(
+        verifyUri,
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'nonce': nonce}),
+      );
+
+      if (verifyRes.statusCode != 200) {
+        if (!mounted) return;
+        setState(() {
+          _error = '配对验证失败: ${verifyRes.statusCode}';
+          _processing = false;
+        });
+        return;
+      }
+
+      // Save credentials
+      final config = ConnectionConfig(baseUrl: url, apiToken: token);
       await config.save();
       if (!mounted) return;
       Navigator.of(context).pop<ConnectionConfig>(config);

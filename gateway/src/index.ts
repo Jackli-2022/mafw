@@ -2526,6 +2526,30 @@ class MafwScheduler {
           return;
         }
 
+        // POST /api/mobile/devices/register — mobile device registration alias
+        // Maps mobile's { token, platform, deviceName } to gateway's { id, fcmToken, platform, apiTokenHash }
+        if (req.url === '/api/mobile/devices/register' && req.method === 'POST') {
+          try {
+            const body = JSON.parse(await readBody(req));
+            const { token, platform, deviceName } = body;
+            if (!token || !platform) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'token and platform required' }));
+              return;
+            }
+            const { createHash } = require('crypto');
+            const id = createHash('sha256').update(token).digest('hex').slice(0, 32);
+            const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
+            const entry = this.pushGateway?.registerDevice({ id, fcmToken: token, platform, apiTokenHash });
+            res.writeHead(200);
+            res.end(JSON.stringify({ ok: true, device: entry }));
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // GET /api/mobile/pairing-code — generate a single-use pairing URL for mobile scan
         if (req.url?.match(/^\/api\/mobile\/pairing-code(?:\?|$)/) && req.method === 'GET') {
           try {
@@ -2543,6 +2567,36 @@ class MafwScheduler {
             const status = /rate limit/i.test(msg) ? 429 : 500;
             res.writeHead(status, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: msg }));
+          }
+          return;
+        }
+
+        // POST /api/mobile/pairing/verify — consume a pairing nonce after mobile scan
+        if (req.url === '/api/mobile/pairing/verify' && req.method === 'POST') {
+          try {
+            if (!this.pairingService) {
+              res.writeHead(503);
+              res.end(JSON.stringify({ error: 'Pairing service not available' }));
+              return;
+            }
+            const body = JSON.parse(await readBody(req));
+            const { nonce } = body;
+            if (!nonce) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'nonce required' }));
+              return;
+            }
+            const consumed = this.pairingService.consumeNonce(nonce);
+            if (!consumed) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'Invalid or expired pairing nonce' }));
+              return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
           }
           return;
         }
