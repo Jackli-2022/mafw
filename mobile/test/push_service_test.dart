@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 
 import 'package:mafw_mobile/src/config/connection_config.dart';
+import 'package:mafw_mobile/src/models/mafw_models.dart';
+import 'package:mafw_mobile/src/network/ws_client.dart';
 import 'package:mafw_mobile/src/services/push_service.dart';
 
 void main() {
@@ -181,6 +183,60 @@ void main() {
 
       // Double dispose should be safe
       service.dispose();
+    });
+
+    test('constructor accepts optional WsClient and callbacks', () {
+      // Verify the expanded constructor compiles and doesn't throw
+      service = PushService(
+        config: config,
+        ws: null,
+        onRefreshSessions: () async {},
+        onNavigateToSession: (_) {},
+      );
+
+      expect(service.currentToken, isNull);
+    });
+
+    test('handleNotificationTap returns sessionID for message type', () async {
+      service = PushService(config: config);
+
+      final sessionID = await service.handleNotificationTap({
+        'type': 'message',
+        'sessionID': 'sess-456',
+        'title': 'Test',
+        'body': 'Hello',
+      });
+
+      expect(sessionID, 'sess-456');
+    });
+
+    test('handleNotificationTap returns null for non-message type', () async {
+      service = PushService(config: config);
+
+      final sessionID = await service.handleNotificationTap({
+        'type': 'goal_update',
+        'sessionID': 'sess-456',
+      });
+
+      expect(sessionID, isNull);
+    });
+
+    test('handleNotificationTap returns null when sessionID is missing', () async {
+      service = PushService(config: config);
+
+      final sessionID = await service.handleNotificationTap({
+        'type': 'message',
+      });
+
+      expect(sessionID, isNull);
+    });
+
+    test('setCurrentToken updates currentToken', () {
+      service = PushService(config: config);
+
+      service.setCurrentToken('test-token-123');
+
+      expect(service.currentToken, 'test-token-123');
     });
   });
 }

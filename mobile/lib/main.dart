@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'src/config/connection_config.dart';
@@ -11,9 +12,20 @@ import 'src/pages/connection_settings_page.dart';
 import 'src/pages/pairing_page.dart';
 import 'src/pages/sessions_page.dart';
 import 'src/services/connectivity_watcher.dart';
+import 'src/services/push_service.dart';
 import 'src/services/secure_config_store.dart';
 
-void main() {
+/// Top-level handler for WorkManager background callbacks.
+/// Must be a top-level function (not a closure) for Android background execution.
+@pragma('vm:entry-point')
+void _backgroundCallback() {
+  // Handled by PushService._backgroundCallback — this is the Workmanager entry point.
+  // Workmanager calls are registered in PushService.init().
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const MafwMobileApp());
 }
 
@@ -28,12 +40,12 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   ConnectionConfig? _config;
   GatewayClient? _client;
   WsClient? _ws;
+  PushService? _pushService;
   ConnectivityWatcher? _connectivityWatcher;
   List<MafwSession> _sessions = [];
   bool _connecting = true;
   bool _wsConnected = false;
   StreamSubscription? _wsStatusSub;
-  StreamSubscription? _wsEventSub;
 
   @override
   void initState() {
@@ -45,7 +57,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   void dispose() {
     _connectivityWatcher?.dispose();
     _wsStatusSub?.cancel();
-    _wsEventSub?.cancel();
+    _pushService?.dispose();
     _ws?.dispose();
     _client?.dispose();
     super.dispose();
@@ -61,13 +73,12 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _connectivityWatcher?.dispose();
     _ws?.dispose();
     _wsStatusSub?.cancel();
-    _wsEventSub?.cancel();
+    _pushService?.dispose();
     final client = GatewayClient(cfg);
     final ws = WsClient(cfg);
     _wsStatusSub = ws.connectionStatus.listen((ok) {
       if (mounted) setState(() => _wsConnected = ok);
     });
-    _wsEventSub = ws.events.listen(_onEvent);
     setState(() {
       _config = cfg;
       _client = client;
@@ -79,25 +90,26 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     _connectivityWatcher!.start();
     await ws.connect();
     await _refreshSessions();
+
+    // Initialize push service with WsClient event wiring and navigation callback
+    final pushService = PushService(
+      config: cfg,
+      ws: ws,
+      onRefreshSessions: _refreshSessions,
+      onNavigateToSession: _navigateToSession,
+    );
+    await pushService.init();
+    _pushService = pushService;
+
     if (mounted) setState(() => _connecting = false);
   }
 
-  void _onEvent(MafwEvent ev) {
-    // New/changed sessions → refresh the list (debounced).
-    final propsType = ev.properties?['type'] ?? '';
-    if (ev.type == 'opencode_event' &&
-        (propsType == 'session.created' ||
-            propsType == 'message.updated' ||
-            propsType == 'session.idle')) {
-      _refreshSessionsDebounced();
-    }
-  }
-
-  Timer? _sessionsDebounce;
   void _refreshSessionsDebounced() {
     _sessionsDebounce?.cancel();
     _sessionsDebounce = Timer(const Duration(milliseconds: 500), _refreshSessions);
   }
+
+  Timer? _sessionsDebounce;
 
   Future<void> _refreshSessions() async {
     final c = _client;
@@ -114,6 +126,31 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     } catch (_) {
       // offline — keep previous list
     }
+  }
+
+  /// Navigate to a specific session by ID (for click-through from notifications).
+  void _navigateToSession(String sessionID) {
+    final c = _client;
+    final ws = _ws;
+    if (c == null || ws == null) return;
+
+    // Find the session in the current list
+    final session = _sessions.where((s) => s.id == sessionID).firstOrNull;
+    if (session != null) {
+      _openChat(session);
+      return;
+    }
+
+    // Session not in list — refresh then try again
+    _refreshSessions().then((_) {
+      if (!mounted) return;
+      final s = _sessions.where((x) => x.id == sessionID).firstOrNull;
+      if (s != null) {
+        _openChat(s);
+      } else {
+        _snack('会话 $sessionID 未找到');
+      }
+    });
   }
 
   Future<void> _createSession() async {

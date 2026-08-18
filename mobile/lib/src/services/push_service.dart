@@ -1,15 +1,23 @@
 /// Push notification service for MAFW mobile.
 ///
-/// Manages FCM token lifecycle, notification channels, and click-through
-/// routing. Uses HTTP client injection for testability.
+/// Manages FCM token lifecycle, notification channels, click-through
+/// routing, WsClient event consumption, and WorkManager background fetch.
+/// Uses HTTP client injection for testability.
 library;
 
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
 
 import '../config/connection_config.dart';
+import '../models/mafw_models.dart';
+import '../network/ws_client.dart';
 
 /// Importance levels for notification channels.
 enum NotificationImportance {
@@ -66,14 +74,28 @@ class PushServiceException implements Exception {
 
 /// Push notification service for MAFW mobile.
 ///
-/// Handles FCM token lifecycle, notification channel setup, and
-/// device registration with the MAFW gateway.
+/// Handles FCM token lifecycle, notification channel setup, device
+/// registration with the MAFW gateway, WsClient event consumption,
+/// click-through navigation, and WorkManager background health checks.
 class PushService {
   final ConnectionConfig config;
   final http.Client _httpClient;
+  final WsClient? _ws;
+  final Future<void> Function()? _onRefreshSessions;
+  final void Function(String sessionID)? _onNavigateToSession;
+
   String? _currentToken;
   Timer? _retryTimer;
+  Timer? _tokenRefreshTimer;
   bool _disposed = false;
+
+  StreamSubscription<RemoteMessage>? _onMessageSub;
+  StreamSubscription<RemoteMessage>? _onMessageOpenedAppSub;
+  StreamSubscription<String>? _onTokenRefreshSub;
+  StreamSubscription<MafwEvent>? _wsEventSub;
+
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   /// Notification channel definitions.
   static const List<NotificationChannelConfig> notificationChannels = [
@@ -93,25 +115,100 @@ class PushService {
     ),
   ];
 
+  /// WorkManager task identifier for periodic gateway health checks.
+  static const String _healthCheckTask = 'mafw_gateway_health_check';
+
   PushService({
     required this.config,
     http.Client? httpClient,
-  }) : _httpClient = httpClient ?? http.Client();
+    WsClient? ws,
+    Future<void> Function()? onRefreshSessions,
+    void Function(String sessionID)? onNavigateToSession,
+  })  : _httpClient = httpClient ?? http.Client(),
+        _ws = ws,
+        _onRefreshSessions = onRefreshSessions,
+        _onNavigateToSession = onNavigateToSession;
 
   /// Get current FCM token.
   String? get currentToken => _currentToken;
 
   /// Initialize the push service.
   ///
-  /// This should be called after Firebase.initializeApp().
-  /// In production, this would:
-  /// 1. Request notification permissions
-  /// 2. Get FCM token
-  /// 3. Set up token refresh listener
-  /// 4. Register device with gateway
+  /// Must be called after Firebase.initializeApp().
+  /// Sets up:
+  /// 1. Notification channels via flutter_local_notifications
+  /// 2. Notification permission request (Android 13+ POST_NOTIFICATIONS)
+  /// 3. FCM token retrieval and device registration
+  /// 4. Token refresh listener
+  /// 5. Foreground message display via local notifications
+  /// 6. Click-through navigation via onMessageOpenedApp / getInitialMessage
+  /// 7. WsClient event consumption for session refresh
+  /// 8. WorkManager periodic health check (15 min)
   Future<void> init() async {
-    // In production, this would use FirebaseMessaging.instance
-    // For now, we just set up the token refresh listener
+    FirebaseMessaging.instance.setAutoInitEnabled(true);
+
+    // 1. Notification channels
+    await _createNotificationChannels();
+
+    // 2. Request notification permissions (Android 13+ POST_NOTIFICATIONS)
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      // Permission denied — continue without push, token will be null
+    }
+
+    // 3. Initialize local notifications for foreground display
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initSettings = InitializationSettings(android: androidSettings);
+    await _localNotifications.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: _onNotificationTap,
+    );
+
+    // 4. Get FCM token and register
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      _currentToken = token;
+      await _registerCurrentToken();
+    }
+
+    // 5. Token refresh listener
+    _onTokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
+      onTokenRefresh,
+      onError: (_) {},
+    );
+
+    // 6. Foreground message listener
+    _onMessageSub = FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+
+    // 7. Click-through: app opened via notification tap
+    _onMessageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(
+      _onMessageOpenedApp,
+    );
+
+    // 8. Click-through: app opened from terminated state via notification
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      _handleInitialMessage(initialMessage);
+    }
+
+    // 9. Periodic token refresh (every 12h)
+    _tokenRefreshTimer = Timer.periodic(
+      const Duration(hours: 12),
+      (_) => _refreshToken(),
+    );
+
+    // 10. WsClient event consumption
+    _subscribeToWsEvents();
+
+    // 11. WorkManager background health check
+    await _registerBackgroundHealthCheck();
+
+    // 12. Persist config for background handler
+    await _persistConfigForBackground();
   }
 
   /// Handle FCM token refresh.
@@ -202,6 +299,211 @@ class PushService {
     if (_disposed) return;
     _disposed = true;
     _retryTimer?.cancel();
+    _tokenRefreshTimer?.cancel();
+    _onMessageSub?.cancel();
+    _onMessageOpenedAppSub?.cancel();
+    _onTokenRefreshSub?.cancel();
+    _wsEventSub?.cancel();
     _httpClient.close();
   }
+
+  // --- Private: Notification Channels ---
+
+  Future<void> _createNotificationChannels() async {
+    final plugin = _localNotifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (plugin == null) return;
+
+    for (final ch in notificationChannels) {
+      final importance = _mapImportance(ch.importance);
+      final androidCh = AndroidNotificationChannel(
+        ch.id,
+        ch.name,
+        description: ch.description,
+        importance: importance,
+        enableVibration: ch.enableVibration,
+        enableLights: ch.enableLights,
+      );
+      await plugin.createNotificationChannel(androidCh);
+    }
+  }
+
+  Importance _mapImportance(NotificationImportance i) {
+    switch (i) {
+      case NotificationImportance.low:
+        return Importance.low;
+      case NotificationImportance.defaultImportance:
+        return Importance.defaultImportance;
+      case NotificationImportance.high:
+        return Importance.high;
+      case NotificationImportance.max:
+        return Importance.max;
+    }
+  }
+
+  // --- Private: Token Management ---
+
+  Future<void> _registerCurrentToken() async {
+    final token = _currentToken;
+    if (token == null) return;
+    try {
+      await registerDevice(token: token, platform: 'android');
+    } catch (_) {
+      // Best-effort; will retry on next token refresh
+    }
+  }
+
+  Future<void> _refreshToken() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null && token != _currentToken) {
+        await onTokenRefresh(token);
+      }
+    } catch (_) {
+      // Non-fatal; next periodic refresh will retry
+    }
+  }
+
+  // --- Private: Foreground Messages ---
+
+  void _onForegroundMessage(RemoteMessage message) {
+    final notification = message.notification;
+    if (notification == null) return;
+
+    final data = message.data;
+    final parsed = parseNotificationData(data);
+    final channelId = parsed.type == 'goal_update'
+        ? 'mafw_goals'
+        : 'mafw_messages';
+
+    _localNotifications.show(
+      notification.hashCode,
+      notification.title ?? 'MAFW',
+      notification.body ?? '',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          channelId,
+          channelId == 'mafw_goals' ? 'MAFW Goals' : 'MAFW 消息',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+      payload: jsonEncode(data),
+    );
+  }
+
+  // --- Private: Click-Through Navigation ---
+
+  void _onNotificationTap(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload == null) return;
+    try {
+      final data = jsonDecode(payload) as Map<String, dynamic>;
+      final parsed = parseNotificationData(data);
+      if (parsed.sessionID != null) {
+        _onNavigateToSession?.call(parsed.sessionID!);
+      }
+    } catch (_) {
+      // malformed payload
+    }
+  }
+
+  void _onMessageOpenedApp(RemoteMessage message) {
+    final data = message.data;
+    final parsed = parseNotificationData(data);
+    if (parsed.sessionID != null) {
+      _onNavigateToSession?.call(parsed.sessionID!);
+    }
+  }
+
+  void _handleInitialMessage(RemoteMessage message) {
+    final data = message.data;
+    final parsed = parseNotificationData(data);
+    if (parsed.sessionID != null) {
+      // Delay navigation until first frame is rendered
+      Future.delayed(
+        Duration.zero,
+        () => _onNavigateToSession?.call(parsed.sessionID!),
+      );
+    }
+  }
+
+  // --- Private: WsClient Event Consumption ---
+
+  void _subscribeToWsEvents() {
+    final ws = _ws;
+    if (ws == null) return;
+
+    _wsEventSub = ws.events.listen((event) {
+      final propsType = event.properties?['type'] ?? '';
+      if (event.type == 'opencode_event' &&
+          (propsType == 'session.created' ||
+              propsType == 'message.updated' ||
+              propsType == 'session.idle')) {
+        _onRefreshSessions?.call();
+      }
+    });
+  }
+
+  // --- Private: WorkManager Background Health Check ---
+
+  Future<void> _registerBackgroundHealthCheck() async {
+    await Workmanager().initialize(
+      _backgroundCallback,
+      isInDebugMode: false,
+    );
+    await Workmanager().registerPeriodicTask(
+      _healthCheckTask,
+      _healthCheckTask,
+      frequency: const Duration(minutes: 15),
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+      ),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+    );
+  }
+
+  Future<void> _persistConfigForBackground() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('mafw_bg_base_url', config.normalizedBaseUrl);
+    await prefs.setString('mafw_bg_api_token', config.apiToken);
+  }
+
+  // --- Private: Token Helpers (exposed for testing) ---
+
+  @visibleForTesting
+  void setCurrentToken(String token) {
+    _currentToken = token;
+  }
+}
+
+/// Top-level WorkManager background callback.
+///
+/// Runs every 15 minutes to check gateway health. Reads config from
+/// SharedPreferences (persisted by PushService.init()).
+@pragma('vm:entry-point')
+void _backgroundCallback() {
+  Workmanager().executeTask((task, inputData) async {
+    if (task != PushService._healthCheckTask) return Future.value(true);
+
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl = prefs.getString('mafw_bg_base_url');
+    final apiToken = prefs.getString('mafw_bg_api_token');
+    if (baseUrl == null || baseUrl.isEmpty) return Future.value(true);
+
+    try {
+      final url = Uri.parse('$baseUrl/health');
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        if (apiToken != null && apiToken.isNotEmpty)
+          'Authorization': 'Bearer $apiToken',
+      };
+      final response = await http.get(url, headers: headers).timeout(
+        const Duration(seconds: 10),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  });
 }

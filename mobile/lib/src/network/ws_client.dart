@@ -36,14 +36,12 @@ class WsClient {
     _channel?.sink.close();
     try {
       final wsUrl = Uri.parse(config.wsUrl);
-      // Prefer Bearer header over query token for auth
-      final headers = <String, String>{};
-      if (config.apiToken.isNotEmpty) {
-        headers['Authorization'] = 'Bearer ${config.apiToken}';
-      }
-      final channel = headers.isNotEmpty
-          ? WebSocketChannel.connect(wsUrl, headers: headers)
-          : WebSocketChannel.connect(wsUrl);
+      // Prefer query token for auth (web_socket_channel 3.x doesn't support
+      // custom headers directly; Bearer header via query param is the fallback).
+      final url = config.apiToken.isNotEmpty
+          ? wsUrl.replace(queryParameters: {...wsUrl.queryParameters, 'token': config.apiToken})
+          : wsUrl;
+      final channel = WebSocketChannel.connect(url);
       _channel = channel;
 
       _sub = channel.stream.listen(
