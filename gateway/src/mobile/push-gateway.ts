@@ -71,14 +71,27 @@ export class PushGateway {
         continue;
       }
 
-      if (entry.ws.readyState === WebSocket.OPEN) {
+      // 3x exponential backoff on send failure
+      let delivered = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (entry.ws.readyState !== WebSocket.OPEN) break;
         try {
           entry.ws.send(frame);
-          this.deviceLastSend.set(deviceId, now);
-          sent = true;
+          delivered = true;
+          break;
         } catch {
-          this.onlineDevices.delete(deviceId);
+          if (attempt < 2) {
+            const delay = Math.pow(2, attempt) * 100; // 100ms, 200ms
+            await new Promise((r) => setTimeout(r, delay));
+          }
         }
+      }
+
+      if (delivered) {
+        this.deviceLastSend.set(deviceId, now);
+        sent = true;
+      } else {
+        this.onlineDevices.delete(deviceId);
       }
     }
 

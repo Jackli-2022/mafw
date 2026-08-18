@@ -43,6 +43,8 @@ import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
 import { ensureManagerAgentConfig } from './skills/manager-agent-config';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 import { WebSocketServer, WebSocket } from 'ws';
+import { PushGateway } from './mobile/push-gateway';
+import { DeviceStore } from './mobile/device-store';
 import { startTray, stopTray } from './tray';
 import { startServeSidecar } from './serve-sidecar';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
@@ -232,6 +234,7 @@ class MafwScheduler {
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
+  private pushGateway?: PushGateway;
   private mafwDir!: string;
   // Manager sessions live in the gateway DB (kv_store scope=manager-session);
   // see GET /api/manager/session.
@@ -964,6 +967,10 @@ class MafwScheduler {
         try { ws.send(frame); } catch { this.wsClients.delete(ws); }
       }
     }
+    // Push to registered mobile devices via PushGateway (online WS + offline fallback)
+    this.pushGateway?.onBroadcast(event).catch((err: any) => {
+      log.warn(`[PushGateway] broadcast failed: ${err.message}`);
+    });
   }
 
   /** Upstream WebSocket messages: { type: 'send', sessionID?, message, parts?, agent?, model? }. */
@@ -1076,6 +1083,7 @@ class MafwScheduler {
     if (this.automationEngine) {
       this.automationEngine.stop();
     }
+    this.pushGateway?.destroy();
     // if (this.dashboard) {
     //   this.dashboard.stop();
     // }
@@ -1136,6 +1144,11 @@ class MafwScheduler {
     ensureManagerRules(mafwDir);
     ensureMemoryPipelineRules(mafwDir);
     this.automationEngine.loadRules();
+
+    // Mobile push: device store + push gateway for WS online tracking
+    const deviceStorePath = path.join(config.resolvePath(), 'devices.json');
+    const deviceStore = new DeviceStore(deviceStorePath);
+    this.pushGateway = new PushGateway(deviceStore);
 
     actionRegistry.set('manager:report_completed', wakeCompletedHandler);
     actionRegistry.set('manager:report_failed', wakeFailedHandler);
@@ -2473,6 +2486,26 @@ class MafwScheduler {
           return;
         }
 
+        // POST /api/devices — register a mobile device for push notifications
+        if (req.url === '/api/devices' && req.method === 'POST') {
+          try {
+            const body = JSON.parse(await readBody(req));
+            const { id, fcmToken, platform, apiTokenHash } = body;
+            if (!id || !fcmToken || !platform || !apiTokenHash) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'id, fcmToken, platform, apiTokenHash required' }));
+              return;
+            }
+            const entry = this.pushGateway?.registerDevice({ id, fcmToken, platform, apiTokenHash });
+            res.writeHead(200);
+            res.end(JSON.stringify({ ok: true, device: entry }));
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // GET /api/approvals — list pending approvals
         if (req.url === '/api/approvals' && req.method === 'GET') {
           const approvals: any[] = [];
@@ -3217,25 +3250,43 @@ class MafwScheduler {
         wss.on('connection', (ws) => {
           this.wsClients.add(ws);
           (ws as any).isAlive = true;
-          ws.on('pong', () => { (ws as any).isAlive = true; });
+          (ws as any).missedPongs = 0;
+          ws.on('pong', () => { (ws as any).isAlive = true; (ws as any).missedPongs = 0; });
           ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() }));
           ws.on('message', (raw) => {
             void this.handleWsMessage(ws, raw);
           });
-          ws.on('close', () => this.wsClients.delete(ws));
-          ws.on('error', () => this.wsClients.delete(ws));
+          ws.on('close', () => {
+            this.wsClients.delete(ws);
+            const deviceId = (ws as any).deviceId;
+            if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
+          });
+          ws.on('error', () => {
+            this.wsClients.delete(ws);
+            const deviceId = (ws as any).deviceId;
+            if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
+          });
         });
 
-        // WS heartbeat: ping every 30s, prune dead connections every 60s.
+        // WS heartbeat: ping every 30s, prune dead connections after 2 missed pongs (60s).
         const wsPingInterval = setInterval(() => {
           for (const ws of this.wsClients) {
             if ((ws as any).isAlive === false) {
-              this.wsClients.delete(ws);
-              try { ws.terminate(); } catch { /* already closed */ }
-              continue;
+              (ws as any).missedPongs = ((ws as any).missedPongs || 0) + 1;
+              if ((ws as any).missedPongs >= 2) {
+                this.wsClients.delete(ws);
+                const deviceId = (ws as any).deviceId;
+                if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
+                try { ws.terminate(); } catch { /* already closed */ }
+                continue;
+              }
             }
             (ws as any).isAlive = false;
-            try { ws.ping(); } catch { this.wsClients.delete(ws); }
+            try { ws.ping(); } catch {
+              this.wsClients.delete(ws);
+              const deviceId = (ws as any).deviceId;
+              if (deviceId) this.pushGateway?.removeOnlineWs(deviceId);
+            }
           }
         }, 30_000);
         // Allow the process to exit without waiting for the ping timer.
@@ -3262,7 +3313,18 @@ class MafwScheduler {
               return;
             }
           }
-          wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            // Extract deviceId from query string for PushGateway tracking
+            try {
+              const q = new URL(url, `http://${req.headers.host || 'localhost'}`);
+              const deviceId = q.searchParams.get('deviceId');
+              if (deviceId) {
+                (ws as any).deviceId = deviceId;
+                this.pushGateway?.addOnlineWs(deviceId, ws);
+              }
+            } catch { /* non-fatal */ }
+            wss.emit('connection', ws, req);
+          });
         });
         startTray(this.apiPort);
         resolve();
