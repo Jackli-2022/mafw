@@ -26,45 +26,37 @@ void main() {
     });
 
     test('pause triggers disconnect', () async {
-      manager.pause();
-      await Future.delayed(Duration.zero);
+      await manager.pause();
       expect(disconnectCalls, 1);
       expect(manager.isInBackground, isTrue);
     });
 
     test('resume triggers connect', () async {
-      manager.pause();
-      await Future.delayed(Duration.zero);
+      await manager.pause();
       expect(disconnectCalls, 1);
 
-      manager.resume();
-      await Future.delayed(Duration.zero);
+      await manager.resume();
       expect(connectCalls, 1);
       expect(manager.isInBackground, isFalse);
     });
 
     test('multiple pauses only disconnect once', () async {
-      manager.pause();
-      manager.pause();
-      manager.pause();
-      await Future.delayed(Duration.zero);
+      await manager.pause();
+      await manager.pause();
+      await manager.pause();
       expect(disconnectCalls, 1);
     });
 
     test('pause then resume then pause disconnects twice total', () async {
-      manager.pause();
-      await Future.delayed(Duration.zero);
-      manager.resume();
-      await Future.delayed(Duration.zero);
-      manager.pause();
-      await Future.delayed(Duration.zero);
+      await manager.pause();
+      await manager.resume();
+      await manager.pause();
       expect(disconnectCalls, 2);
     });
 
     test('dispose prevents further callbacks', () async {
       manager.dispose();
-      manager.pause();
-      await Future.delayed(Duration.zero);
+      await manager.pause();
       expect(disconnectCalls, 0);
     });
 
@@ -91,7 +83,7 @@ void main() {
         const Duration(milliseconds: 50),
         onReconnect: () async => called = true,
       );
-      manager.pause();
+      await manager.pause();
       await Future.delayed(const Duration(milliseconds: 100));
       expect(called, isFalse);
     });

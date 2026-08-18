@@ -41,17 +41,25 @@ class LifecycleWsManager with WidgetsBindingObserver {
     }
   }
 
-  void pause() {
+  Future<void> pause() async {
     if (_disposed || !_isResumed) return;
     _isResumed = false;
     _reconnectTimer?.cancel();
-    onDisconnect();
+    try {
+      await onDisconnect();
+    } catch (_) {
+      // Swallow — disconnect failure should not crash lifecycle.
+    }
   }
 
-  void resume() {
+  Future<void> resume() async {
     if (_disposed || _isResumed) return;
     _isResumed = true;
-    onConnect();
+    try {
+      await onConnect();
+    } catch (_) {
+      // Swallow — connect failure should not crash lifecycle.
+    }
   }
 
   /// Schedule a reconnect after [delay]. If [onReconnect] is provided,
