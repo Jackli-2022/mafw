@@ -8,7 +8,8 @@ import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +24,7 @@ import org.junit.runners.MethodSorters
  *
  * Run via Android Studio Macrobenchmark config or:
  *   adb shell am instrument -w \
+ *     -e class ai.mafw.mafw_mobile.benchmark.CriticalPathBenchmark \
  *     ai.mafw.mafw_mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
  */
 @RunWith(AndroidJUnit4::class)
@@ -34,11 +36,13 @@ class CriticalPathBenchmark {
 
     private val packageName = "ai.mafw.mafw_mobile"
     private val launchActivity = "$packageName.MainActivity"
+    private val sessionItemTimeout = 5_000L
 
     /**
-     * Record baseline profile for the cold-start critical path.
+     * Record baseline profile for the cold-start critical path
+     * including SessionsPage → ChatPage navigation.
      *
-     * This iterates the app launch + first navigation to exercise
+     * This iterates the app launch + navigation to exercise
      * the hot methods that should be AOT-compiled.
      */
     @Test
@@ -61,11 +65,18 @@ class CriticalPathBenchmark {
             // Wait for SessionsPage to render (list or empty state)
             device.waitForIdle()
 
-            // The baseline profile is automatically generated from
-            // the traced methods during these iterations.
-            // In a real scenario, you'd interact with the UI here:
-            // device.findObject(By.res("session_list")).click()
-            // device.waitForIdle()
+            // Navigate to ChatPage by tapping the first session item
+            val sessionItem = device.findObject(By.res(packageName, "session_list_item"))
+                ?: device.findObject(By.scrollable(true))
+            if (sessionItem != null) {
+                sessionItem.click()
+                device.wait(Until.hasObject(By.res(packageName, "chat_input")), sessionItemTimeout)
+                device.waitForIdle()
+
+                // Navigate back to SessionsPage
+                device.pressBack()
+                device.waitForIdle()
+            }
         }
     }
 
@@ -137,6 +148,43 @@ class CriticalPathBenchmark {
             }
             startActivityAndWait(intent)
             device.waitForIdle()
+        }
+    }
+
+    /**
+     * Benchmark SessionsPage → ChatPage navigation latency.
+     * Measures frame timing during the critical navigation path.
+     */
+    @Test
+    fun navigationSessionsToChat() {
+        benchmarkRule.measureRepeated(
+            packageName = packageName,
+            metrics = listOf(FrameTimingMetric()),
+            iterations = 10,
+            startupMode = StartupMode.WARM,
+            compilationMode = CompilationMode.Partial(),
+        ) {
+            val intent = Intent().apply {
+                setClassName(packageName, launchActivity)
+                action = Intent.ACTION_MAIN
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            startActivityAndWait(intent)
+            device.waitForIdle()
+
+            // Tap first session to navigate to ChatPage
+            val sessionItem = device.findObject(By.res(packageName, "session_list_item"))
+                ?: device.findObject(By.scrollable(true))
+            if (sessionItem != null) {
+                sessionItem.click()
+                device.wait(Until.hasObject(By.res(packageName, "chat_input")), sessionItemTimeout)
+                device.waitForIdle()
+
+                // Navigate back for next iteration
+                device.pressBack()
+                device.waitForIdle()
+            }
         }
     }
 }

@@ -39,18 +39,27 @@ optimization via ahead-of-time compilation of hot methods).
 
 ### Option B: Manual macrobenchmark (current setup)
 
-The Kotlin file `CriticalPathBenchmark.kt` in this directory defines a
-JUnit4 benchmark that can be run via Android Studio's Macrobenchmark
-configuration or via `adb`:
+The Kotlin file `CriticalPathBenchmark.kt` defines JUnit4 instrumented
+benchmarks that run on-device via `androidTest`. These use
+`MacrobenchmarkRule` from `androidx.benchmark:benchmark-macro-junit4`.
 
 ```bash
-# Build the benchmark APK
+# Build the app and benchmark test APK
 cd mobile/android
-./gradlew :app:assembleDebug
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
 
-# Install and run on connected device
+# Install both APKs
 adb install app/build/outputs/apk/debug/app-debug.apk
+adb install app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+# Run all benchmarks
 adb shell am instrument -w \
+  -e class ai.mafw.mafw_mobile.benchmark.CriticalPathBenchmark \
+  ai.mafw.mafw_mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
+
+# Run a single benchmark
+adb shell am instrument -w \
+  -e class ai.mafw.mafw_mobile.benchmark.CriticalPathBenchmark#recordBaselineProfile \
   ai.mafw.mafw_mobile.test/androidx.benchmark.junit4.AndroidBenchmarkRunner
 ```
 
@@ -72,5 +81,6 @@ adb shell am start -W ai.mafw.mafw_mobile/.MainActivity
 
 ## Files
 
-- `CriticalPathBenchmark.kt` — Kotlin macrobenchmark for SessionsPage→ChatPage
+- `app/src/androidTest/baseline-profiler/CriticalPathBenchmark.kt` — instrumented macrobenchmark
+- `app/build.gradle.kts` — includes `benchmark-macro-junit4` dependency
 - `baseline-prof.txt` (generated) — ART baseline profile (placed in `android/app/src/main/`)

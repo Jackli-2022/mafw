@@ -57,3 +57,7 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    androidTestImplementation("androidx.benchmark:benchmark-macro-junit4:1.2.0")
+}

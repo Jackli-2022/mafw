@@ -216,7 +216,7 @@ elif [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "415" ]; then
 elif echo "$BODY" | grep -qi "<!doctype html>"; then
   pass "4a: 21MB image upload — gateway running, media endpoint not yet routed (SPA catch-all)"
 elif [ "$HTTP_CODE" = "000" ]; then
-  pass "4a: 21MB image upload — curl timeout/transfer error (expected for large file on slow link)"
+  skip "4a: 21MB image upload — curl timeout (cannot verify 413 response)"
 else
   fail "4a: 21MB image upload returned $HTTP_CODE (expected 413)"
 fi
@@ -243,7 +243,7 @@ elif [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "415" ]; then
 elif echo "$BODY" | grep -qi "<!doctype html>"; then
   pass "4b: 51MB video upload — gateway running, media endpoint not yet routed (SPA catch-all)"
 elif [ "$HTTP_CODE" = "000" ]; then
-  pass "4b: 51MB video upload — curl timeout/transfer error (expected for large file on slow link)"
+  skip "4b: 51MB video upload — curl timeout (cannot verify 413 response)"
 else
   fail "4b: 51MB video upload returned $HTTP_CODE (expected 413)"
 fi
@@ -270,7 +270,7 @@ elif [ "$HTTP_CODE" = "400" ] || [ "$HTTP_CODE" = "415" ]; then
 elif echo "$BODY" | grep -qi "<!doctype html>"; then
   pass "4c: 26MB audio upload — gateway running, media endpoint not yet routed (SPA catch-all)"
 elif [ "$HTTP_CODE" = "000" ]; then
-  pass "4c: 26MB audio upload — curl timeout/transfer error (expected for large file on slow link)"
+  skip "4c: 26MB audio upload — curl timeout (cannot verify 413 response)"
 else
   fail "4c: 26MB audio upload returned $HTTP_CODE (expected 413)"
 fi
