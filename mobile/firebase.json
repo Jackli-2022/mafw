@@ -1,0 +1,17 @@
+{
+  "project": {
+    "id": "mafw-mobile-placeholder"
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": {
+    "source": "functions"
+  },
+  "messaging": {
+    "senderId": "000000000000",
+    "appId": "1:000000000000:android:0000000000000000",
+    "apiKey": "AIzaSyPlaceholder"
+  }
+}
