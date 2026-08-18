@@ -51,6 +51,8 @@ dependencies:
   flutter_image_compress: ^2.3.4
   # Audio playback for TTS
   just_audio: ^0.9.43
+  # Local cache for session messages (TTL + size limit)
+  hive_ce: ^2.10.0
 
 dev_dependencies:
   flutter_test:

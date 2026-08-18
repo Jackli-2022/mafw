@@ -74,6 +74,15 @@ class WsClient {
     await connect();
   }
 
+  /// Close the WebSocket connection without disposing the client.
+  /// Used by lifecycle management — the client remains usable for reconnect.
+  void disconnect() {
+    _reconnectTimer?.cancel();
+    _channel?.sink.close();
+    _channel = null;
+    _status.add(false);
+  }
+
   void _scheduleReconnect() {
     if (_disposed) return;
     _channel = null;

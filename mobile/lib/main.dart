@@ -12,8 +12,8 @@ import 'src/pages/connection_settings_page.dart';
 import 'src/pages/pairing_page.dart';
 import 'src/pages/sessions_page.dart';
 import 'src/services/connectivity_watcher.dart';
+import 'src/services/lifecycle_ws.dart';
 import 'src/services/push_service.dart';
-import 'src/services/secure_config_store.dart';
 
 /// Top-level handler for WorkManager background callbacks.
 /// Must be a top-level function (not a closure) for Android background execution.
@@ -25,7 +25,12 @@ void _backgroundCallback() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+
+  // Parallel init: config loading + Firebase concurrently to reduce startup time
+  final configFuture = ConnectionConfig.load();
+  final firebaseFuture = Firebase.initializeApp();
+  await Future.wait([configFuture, firebaseFuture]);
+
   runApp(const MafwMobileApp());
 }
 
@@ -42,6 +47,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   WsClient? _ws;
   PushService? _pushService;
   ConnectivityWatcher? _connectivityWatcher;
+  LifecycleWsManager? _lifecycleManager;
   List<MafwSession> _sessions = [];
   bool _connecting = true;
   bool _wsConnected = false;
@@ -55,6 +61,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
 
   @override
   void dispose() {
+    _lifecycleManager?.dispose();
     _connectivityWatcher?.dispose();
     _wsStatusSub?.cancel();
     _pushService?.dispose();
@@ -71,25 +78,47 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
 
   Future<void> _applyConfig(ConnectionConfig cfg) async {
     _connectivityWatcher?.dispose();
+    _lifecycleManager?.dispose();
     _ws?.dispose();
     _wsStatusSub?.cancel();
     _pushService?.dispose();
+
     final client = GatewayClient(cfg);
     final ws = WsClient(cfg);
+
     _wsStatusSub = ws.connectionStatus.listen((ok) {
       if (mounted) setState(() => _wsConnected = ok);
     });
+
     setState(() {
       _config = cfg;
       _client = client;
       _ws = ws;
-      _connecting = true;
+      _connecting = false;
     });
+
+    // Lifecycle manager: close WS on background, reconnect on foreground
+    _lifecycleManager = LifecycleWsManager(
+      onConnect: () async {
+        if (ws.isConnected) return;
+        await ws.reconnect();
+      },
+      onDisconnect: () async {
+        // Close socket but keep WsClient alive (dispose would kill stream controllers)
+        ws.disconnect();
+      },
+    );
+
     // Start connectivity watcher for auto-reconnect
     _connectivityWatcher = ConnectivityWatcher(onChanged: () => ws.reconnect());
     _connectivityWatcher!.start();
-    await ws.connect();
-    await _refreshSessions();
+
+    // Connect WS lazily — don't block first frame
+    Future.delayed(const Duration(milliseconds: 100), () async {
+      if (!mounted) return;
+      await ws.connect();
+      await _refreshSessions();
+    });
 
     // Initialize push service with WsClient event wiring and navigation callback
     final pushService = PushService(
@@ -100,8 +129,6 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     );
     await pushService.init();
     _pushService = pushService;
-
-    if (mounted) setState(() => _connecting = false);
   }
 
   void _refreshSessionsDebounced() {
