@@ -1700,6 +1700,19 @@ class MafwScheduler {
           return;
         }
 
+        // ── Mobile media proxy (POST /api/mobile/media/*) ──
+        // Simplified endpoints for the Android app: multipart upload → A2A task,
+        // and auth-proxy follow-up questions. Delegates to createMobileMediaHandler.
+        if (req.url?.startsWith('/api/mobile/media/')) {
+          const { createMobileMediaHandler } = await import('./mobile/media-proxy.js');
+          const mobileMediaHandler = createMobileMediaHandler({
+            agent: this.mediaAgent!,
+            apiToken,
+          });
+          const handled = await mobileMediaHandler(req, res);
+          if (handled) return;
+        }
+
         // POST /api/tts/stream — 流式 TTS（SSE，pcm16 24kHz mono 分块）。
         // 每块：data: {"data":"<base64 pcm16>","voice":"<voice>"}\n\n；结束：data: {"done":true}
         if (req.url === "/api/tts/stream" && req.method === "POST") {
