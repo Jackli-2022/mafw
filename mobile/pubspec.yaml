@@ -47,6 +47,10 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   # Background health checks
   workmanager: ^0.5.2
+  # Image compression before upload
+  flutter_image_compress: ^2.3.4
+  # Audio playback for TTS
+  just_audio: ^0.9.43
 
 dev_dependencies:
   flutter_test:

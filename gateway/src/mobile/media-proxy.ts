@@ -13,7 +13,7 @@
  */
 
 import * as http from 'http';
-import { MediaAgent } from '../media/media-agent';
+import { MediaAgent, MAX_VIDEO_BYTES, MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from '../media/media-agent';
 import { isLoopbackAddr } from './auth-helpers';
 
 /** Dependencies injected for testability. */
@@ -22,11 +22,6 @@ export interface MobileMediaDeps {
   /** API token for non-loopback auth (empty = loopback-only). */
   apiToken: string;
 }
-
-// Reuse the same size caps as MediaAgent (media-agent.ts lines 165-167).
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
-const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 function maxSizeForType(mediaType: string): number {
   if (mediaType.startsWith('video/')) return MAX_VIDEO_BYTES;
@@ -215,6 +210,12 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
         const { question } = JSON.parse(bodyStr);
         if (!question || typeof question !== 'string' || !question.trim()) {
           jsonResponse(res, 400, { error: 'question is required' });
+          return true;
+        }
+
+        // Block external URLs in question text (defense-in-depth SSRF protection).
+        if (/https?:\/\//i.test(question)) {
+          jsonResponse(res, 400, { error: 'external URLs are not allowed in questions' });
           return true;
         }
 

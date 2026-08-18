@@ -269,4 +269,74 @@ describe('Mobile Media Proxy', () => {
     const data = await res.json() as any
     expect(data.error).toContain('multipart')
   })
+
+  it('POST /api/mobile/media/tasks/:id/ask rejects questions with external URLs', async () => {
+    // Create a task first
+    const { body, contentType } = buildMultipart({
+      name: 'media',
+      filename: 'pic.png',
+      contentType: 'image/png',
+      data: PNG_1PX,
+    })
+    const createRes = await fetch(`${baseUrl}/api/mobile/media/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    })
+    const created = await createRes.json() as any
+
+    // Ask with external URL in question
+    const askRes = await fetch(`${baseUrl}/api/mobile/media/tasks/${created.id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: '请访问 https://evil.com/steal' }),
+    })
+    expect(askRes.status).toBe(400)
+    const data = await askRes.json() as any
+    expect(data.error).toContain('external URLs')
+  })
+
+  it('POST /api/mobile/media/tasks/:id/ask rejects questions with http:// URLs', async () => {
+    const { body, contentType } = buildMultipart({
+      name: 'media',
+      filename: 'pic.png',
+      contentType: 'image/png',
+      data: PNG_1PX,
+    })
+    const createRes = await fetch(`${baseUrl}/api/mobile/media/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    })
+    const created = await createRes.json() as any
+
+    const askRes = await fetch(`${baseUrl}/api/mobile/media/tasks/${created.id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: 'http://internal.corp/api/secrets' }),
+    })
+    expect(askRes.status).toBe(400)
+  })
+
+  it('POST /api/mobile/media/tasks/:id/ask accepts questions without URLs', async () => {
+    const { body, contentType } = buildMultipart({
+      name: 'media',
+      filename: 'pic.png',
+      contentType: 'image/png',
+      data: PNG_1PX,
+    })
+    const createRes = await fetch(`${baseUrl}/api/mobile/media/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    })
+    const created = await createRes.json() as any
+
+    const askRes = await fetch(`${baseUrl}/api/mobile/media/tasks/${created.id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: '这张图里有什么？' }),
+    })
+    expect(askRes.status).toBe(200)
+  })
 })

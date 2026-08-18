@@ -2,7 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
@@ -31,6 +35,7 @@ class _ChatPageState extends State<ChatPage> {
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final _picker = ImagePicker();
+  final _audioPlayer = AudioPlayer();
   List<MafwMessage> _messages = [];
   bool _loading = true;
   bool _sending = false;
@@ -56,6 +61,7 @@ class _ChatPageState extends State<ChatPage> {
   void dispose() {
     _sub?.cancel();
     _refreshDebounce?.cancel();
+    _audioPlayer.dispose();
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -128,7 +134,16 @@ class _ChatPageState extends State<ChatPage> {
       if (xFile == null) return;
       setState(() => _sending = true);
       _snack('正在上传媒体…');
-      final result = await widget.client.uploadMediaTask(xFile.path);
+
+      // Compress images > 1280px before upload
+      String uploadPath = xFile.path;
+      if (xFile.path.toLowerCase().endsWith('.jpg') ||
+          xFile.path.toLowerCase().endsWith('.jpeg') ||
+          xFile.path.toLowerCase().endsWith('.png')) {
+        uploadPath = await _compressImage(xFile.path);
+      }
+
+      final result = await widget.client.uploadMediaTask(uploadPath);
       if (!mounted) return;
       final taskId = result['id']?.toString() ?? '';
       final state = result['state']?.toString() ?? '';
@@ -157,6 +172,28 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  /// Compress an image to max 1280px width/height, JPEG quality 85.
+  Future<String> _compressImage(String imagePath) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetPath = p.join(dir.path, 'compressed_${p.basename(imagePath)}');
+      final result = await FlutterImageCompress.compressAndGetFile(
+        imagePath,
+        targetPath,
+        minWidth: 1280,
+        minHeight: 1280,
+        quality: 85,
+        format: CompressFormat.jpeg,
+      );
+      if (result != null) {
+        return result.path;
+      }
+    } catch (_) {
+      // Compression failed — upload original
+    }
+    return imagePath;
+  }
+
   Future<void> _speakText(String text) async {
     if (text.isEmpty) return;
     try {
@@ -165,8 +202,9 @@ class _ChatPageState extends State<ChatPage> {
       if (!mounted) return;
       final url = result['url']?.toString() ?? '';
       if (url.isNotEmpty) {
-        _snack('语音已生成，URL: $url');
-        // TODO: play with just_audio when integrated
+        _snack('正在播放语音…');
+        await _audioPlayer.setUrl(url);
+        await _audioPlayer.play();
       }
     } catch (e) {
       if (!mounted) return;
