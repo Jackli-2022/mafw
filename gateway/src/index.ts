@@ -3216,6 +3216,8 @@ class MafwScheduler {
         const wss = new WebSocketServer({ noServer: true });
         wss.on('connection', (ws) => {
           this.wsClients.add(ws);
+          (ws as any).isAlive = true;
+          ws.on('pong', () => { (ws as any).isAlive = true; });
           ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() }));
           ws.on('message', (raw) => {
             void this.handleWsMessage(ws, raw);
@@ -3223,6 +3225,21 @@ class MafwScheduler {
           ws.on('close', () => this.wsClients.delete(ws));
           ws.on('error', () => this.wsClients.delete(ws));
         });
+
+        // WS heartbeat: ping every 30s, prune dead connections every 60s.
+        const wsPingInterval = setInterval(() => {
+          for (const ws of this.wsClients) {
+            if ((ws as any).isAlive === false) {
+              this.wsClients.delete(ws);
+              try { ws.terminate(); } catch { /* already closed */ }
+              continue;
+            }
+            (ws as any).isAlive = false;
+            try { ws.ping(); } catch { this.wsClients.delete(ws); }
+          }
+        }, 30_000);
+        // Allow the process to exit without waiting for the ping timer.
+        if (wsPingInterval.unref) wsPingInterval.unref();
         server.on('upgrade', (req, socket, head) => {
           const url = req.url || '';
           if (!url.startsWith('/api/ws')) {
