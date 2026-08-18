@@ -45,6 +45,7 @@ import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
+import { PairingService } from './mobile/pairing';
 import { startTray, stopTray } from './tray';
 import { startServeSidecar } from './serve-sidecar';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
@@ -235,6 +236,7 @@ class MafwScheduler {
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
+  private pairingService?: PairingService;
   private mafwDir!: string;
   // Manager sessions live in the gateway DB (kv_store scope=manager-session);
   // see GET /api/manager/session.
@@ -1149,6 +1151,11 @@ class MafwScheduler {
     const deviceStorePath = path.join(config.resolvePath(), 'devices.json');
     const deviceStore = new DeviceStore(deviceStorePath);
     this.pushGateway = new PushGateway(deviceStore);
+
+    // Mobile pairing service
+    const apiToken = (config.raw as any)?.server?.apiToken || '';
+    const tailscaleUrl = process.env.MAFW_MOBILE_TAILSCALE_URL || `http://localhost:${this.apiPort}`;
+    this.pairingService = new PairingService({ apiToken, tailscaleUrl });
 
     actionRegistry.set('manager:report_completed', wakeCompletedHandler);
     actionRegistry.set('manager:report_failed', wakeFailedHandler);
@@ -2502,6 +2509,27 @@ class MafwScheduler {
           } catch (err: any) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // GET /api/mobile/pairing-code — generate a single-use pairing URL for mobile scan
+        if (req.url?.match(/^\/api\/mobile\/pairing-code(?:\?|$)/) && req.method === 'GET') {
+          try {
+            if (!this.pairingService) {
+              res.writeHead(503);
+              res.end(JSON.stringify({ error: 'Pairing service not available' }));
+              return;
+            }
+            const ip = req.socket.remoteAddress || '';
+            const result = this.pairingService.generatePairingCode(ip);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            const msg = err?.message || String(err);
+            const status = /rate limit/i.test(msg) ? 429 : 500;
+            res.writeHead(status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: msg }));
           }
           return;
         }
