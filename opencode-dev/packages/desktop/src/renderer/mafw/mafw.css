@@ -383,6 +383,25 @@ html[data-theme="light"] .mafw-shell {
   color: var(--text-1);
 }
 .mafw-shell .mafw-tabstrip [role="tab"][data-selected] svg { color: var(--accent); }
+.mafw-tabstrip-trajectory {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-4);
+  transition: color 0.12s, background 0.12s;
+}
+.mafw-tabstrip-trajectory:hover { color: var(--text-2); }
+.mafw-tabstrip-trajectory.active {
+  background: var(--accent-dim);
+  color: var(--text-1);
+}
 .mafw-tab-count {
   min-width: 16px;
   height: 16px;
@@ -540,10 +559,27 @@ html[data-theme="light"] .mafw-shell {
   cursor: pointer;
   color: var(--text-2);
   font-size: 13px;
-  transition: background 0.12s;
+  opacity: 0;
+  pointer-events: none;
+  transition: background 0.12s, opacity 0.12s;
+}
+/* 无任务时 hover 标题栏才出现；有任务/展开时常驻 */
+.mafw-session-titlebar:hover .mafw-taskbar,
+.mafw-taskbar.has-tasks,
+.mafw-taskbar.open {
+  opacity: 1;
+  pointer-events: auto;
 }
 .mafw-taskbar:hover { background: var(--hover); }
 .mafw-taskbar.open { background: var(--hover); }
+.mafw-taskbar-empty {
+  color: var(--text-4);
+  font-size: 12px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .mafw-taskbar-spinner {
   width: 12px;
   height: 12px;
@@ -579,8 +615,8 @@ html[data-theme="light"] .mafw-shell {
   flex-shrink: 0;
 }
 .mafw-taskbar-progress {
-  width: 48px;
-  height: 3px;
+  width: 64px;
+  height: 4px;
   border-radius: 999px;
   background: var(--pill);
   overflow: hidden;
@@ -589,7 +625,10 @@ html[data-theme="light"] .mafw-shell {
 .mafw-taskbar-progress span {
   display: block;
   height: 100%;
-  background: var(--accent);
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-text));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: width 0.25s ease;
 }
 .mafw-taskbar-time {
   font-size: 11px;
@@ -604,9 +643,6 @@ html[data-theme="light"] .mafw-shell {
   transition: transform 0.12s;
 }
 .mafw-taskbar-chevron.open { transform: rotate(180deg); }
-@media (max-width: 640px) {
-  .mafw-taskbar-progress { display: none; }
-}
 @keyframes mafw-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
@@ -1875,17 +1911,33 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 .mafw-tasklist-collapse:hover { background: var(--hover); color: var(--text-2); }
 
-/* ── Unified right dock (tasks / trajectory tabs) ── */
+/* ── Unified right dock (tasks / trajectory tabs) ──
+   Wide viewports: in-flow third grid column of .mafw-body (real sidebar).
+   Narrow (<1200px, JS class .overlay): fixed overlay so chat stays full width. */
 .mafw-right-dock {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-base);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.mafw-dock-slot {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mafw-dock-slot.overlay {
   position: fixed;
   top: 38px;
   right: 0;
   bottom: 0;
-  background: var(--bg-base);
-  border-left: 1px solid var(--border-subtle);
   z-index: 70;
-  display: flex;
-  flex-direction: column;
   box-shadow: -4px 0 16px rgba(0,0,0,0.06);
 }
 .mafw-right-dock-tabs {

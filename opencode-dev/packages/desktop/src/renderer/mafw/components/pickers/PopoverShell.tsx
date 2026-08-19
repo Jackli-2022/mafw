@@ -22,6 +22,8 @@ export function PopoverShell(props: {
   trigger: HTMLElement | null
   anchor: "tr" | "bl" | "below-center"
   onClose: () => void
+  onHoverEnter?: () => void
+  onHoverExit?: () => void
   children: JSX.Element
   class?: string
   width?: number
@@ -137,6 +139,8 @@ export function PopoverShell(props: {
             data-pickpop=""
             class={`mafw-picker-pop ${props.class || ""}`}
             style={{ top: `${p().top}px`, left: `${p().left}px`, width: `${p().width}px` }}
+            onMouseEnter={props.onHoverEnter}
+            onMouseLeave={props.onHoverExit}
           >
             {props.children}
           </div>

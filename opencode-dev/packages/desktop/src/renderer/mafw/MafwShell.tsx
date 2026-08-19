@@ -1156,7 +1156,9 @@ export function MafwShell() {
       // Merge with any existing in-store messages by id (preserve object identity so
       // <For>-keyed SessionTurn list doesn't fully remount on reload; avoids clobbering
       // live SSE / optimistic messages that arrived while the fetch was in flight).
-      const existing = store.message[sessionID] || []
+      const rawExisting = store.message[sessionID]
+      const existing = Array.isArray(rawExisting) ? rawExisting : []
+      if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
       const existingById = new Map(existing.map(m => [m.id, m]))
       const msgs: any[] = [...existing]
       const parts: Record<string, any[]> = {}
@@ -1167,8 +1169,8 @@ export function MafwShell() {
         // Preserve all API fields — spread entire info object
         const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
         msgs.push(msg)
-        let itemParts = item.parts || info.parts || []
-        if (itemParts.length > 0) {
+        let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
+        if (Array.isArray(itemParts) && itemParts.length > 0) {
           parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
         }
       }
@@ -1377,6 +1379,41 @@ export function MafwShell() {
   const [taskAnchor, setTaskAnchor] = createSignal<HTMLElement | null>(null)
   const [dockRef, setDockRef] = createSignal<HTMLDivElement | null>(null)
 
+  // Hover-intent for the TaskList popover: opening on TaskBar hover, closing a
+  // short delay after the mouse leaves (canceled while inside the popover).
+  const [taskHover, setTaskHover] = createSignal(false)
+  let taskHoverTimer: ReturnType<typeof setTimeout> | null = null
+  const openTasks = (el: HTMLElement | null) => { setTaskAnchor(el); setTaskListOpen(true) }
+  const openTasksHover = (el: HTMLElement | null) => {
+    setTaskHover(true)
+    if (taskHoverTimer) { clearTimeout(taskHoverTimer); taskHoverTimer = null }
+    openTasks(el)
+  }
+  const scheduleTaskClose = () => {
+    if (!taskHover()) return
+    if (taskHoverTimer) clearTimeout(taskHoverTimer)
+    taskHoverTimer = setTimeout(() => {
+      taskHoverTimer = null
+      setTaskHover(false)
+      setTaskListOpen(false)
+    }, 250)
+  }
+  const cancelTaskClose = () => {
+    if (taskHoverTimer) { clearTimeout(taskHoverTimer); taskHoverTimer = null }
+  }
+  const closeTaskHover = () => {
+    if (!taskHover()) return
+    setTaskHover(false)
+    if (taskHoverTimer) { clearTimeout(taskHoverTimer); taskHoverTimer = null }
+    setTaskListOpen(false)
+  }
+  const toggleTasks = (el: HTMLElement | null) => {
+    setTaskHover(false)
+    if (taskHoverTimer) { clearTimeout(taskHoverTimer); taskHoverTimer = null }
+    setTaskAnchor(el)
+    setTaskListOpen(o => !o)
+  }
+
   // ── Unified right dock (tasks / trajectory tabs) ──
   const [rightDockOpen, setRightDockOpen] = createSignal(localStorage.getItem("mafw-right-dock-open") === "1")
   const [rightDockTab, setRightDockTab] = createSignal<"tasks" | "trajectory">(
@@ -1566,7 +1603,7 @@ export function MafwShell() {
         </TooltipV2>
         <div style={{ flex: 1 }} />
       </div>
-      <div class="mafw-body" style={{ "grid-template-columns": railCollapsed() ? "32px 1fr" : `${railWidth()}px 1fr` }}>
+      <div class="mafw-body" style={{ "grid-template-columns": `${railCollapsed() ? 32 : railWidth()}px 1fr ${rightDockOpen() && !viewportNarrow() ? `${rightDockWidth()}px` : "0px"}` }}>
         {railCollapsed() ? (
           <div class="mafw-rail-collapsed">
             <ButtonV2 variant="ghost" size="small" class="mafw-rail-expand" onClick={() => applyRailCollapsed(false)} aria-label="展开侧边栏">
@@ -1606,7 +1643,7 @@ export function MafwShell() {
           </div>
         )}
         <div class="mafw-main">
-          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} />}
+          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(true, "trajectory")} trajectoryActive={rightDockOpen() && rightDockTab() === "trajectory"} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             {showConfig() ? (
               <ConfigPage onBack={() => setShowConfig(false)} />
@@ -1744,8 +1781,9 @@ export function MafwShell() {
                           onTitlebarRef={(el) => setTitlebarRef(el)}
                           taskListOpen={taskListOpen()}
                           tasksPlacement={tasksPlacement()}
-                          onTaskToggle={(el) => { setTaskAnchor(el); setTaskListOpen(o => !o) }}
-                          onOpenRightDock={(tab) => applyRightDock(true, tab)}
+                          onTaskToggle={(el) => toggleTasks(el)}
+                          onTaskHoverOpen={(el) => openTasksHover(el)}
+                          onTaskHoverLeave={scheduleTaskClose}
                           onFocus={() => { setShowConfig(false); setActiveTab("chat"); setActiveSessionId(leaf.sid) }}
                           onClosePane={() => closePane(leaf.sid)}
                           onCreateSession={createSession}
@@ -1888,6 +1926,8 @@ export function MafwShell() {
                     trigger={taskAnchor()}
                     anchor="below-center"
                     onClose={() => setTaskListOpen(false)}
+                    onHoverEnter={cancelTaskClose}
+                    onHoverExit={closeTaskHover}
                     width={560}
                   >
                     <TaskList
@@ -1899,35 +1939,6 @@ export function MafwShell() {
                       onPin={() => { setTaskListOpen(false); applyRightDock(true, "tasks") }}
                     />
                   </PopoverShell>
-                </Show>
-                {/* Unified right dock (tasks / trajectory tabs, replaces tasksPlacement=dock) */}
-                <Show when={rightDockOpen()}>
-                  <div ref={setDockRef}>
-                    <RightDock
-                      open={rightDockOpen()}
-                      tab={rightDockTab()}
-                      width={rightDockWidth()}
-                      onClose={() => applyRightDock(false)}
-                      onTab={(t) => applyRightDock(true, t)}
-                    >
-                      <Show when={rightDockTab() === "tasks"} fallback={
-                        <TrajectoryDock
-                          sessionID={currentSessionID()}
-                          liveEvents={trajectoryLive()[currentSessionID()] || []}
-                          liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
-                        />
-                      }>
-                        <TaskList
-                          todos={todos[currentSessionID()] || []}
-                          tokens={taskMetrics(currentSessionID()).tokens}
-                          started={taskMetrics(currentSessionID()).started}
-                          placement={viewportNarrow() ? "overlay" : "dock"}
-                          onClose={() => applyRightDock(false)}
-                          onPin={() => applyRightDock(false)}
-                        />
-                      </Show>
-                    </RightDock>
-                  </div>
                 </Show>
                 {/* Legacy dock fallback: tasksPlacement=dock when right dock is closed */}
                 <Show when={tasksPlacement() === "dock" && !rightDockOpen()}>
@@ -1955,6 +1966,48 @@ export function MafwShell() {
               <AutomationsPage />
             ) : null}
           </div>
+        </div>
+        {/* Unified right dock (tasks / trajectory tabs): real sidebar on wide
+            viewports (third grid column), overlay on narrow (<1200px) */}
+        <div class="mafw-dock-slot" classList={{ overlay: viewportNarrow() }} ref={setDockRef}>
+          <Show when={rightDockOpen()}>
+            <RightDock
+              open={rightDockOpen()}
+              tab={rightDockTab()}
+              width={rightDockWidth()}
+              onClose={() => applyRightDock(false)}
+              onTab={(t) => applyRightDock(true, t)}
+            >
+              <Show when={rightDockTab() === "tasks"} fallback={
+                <TrajectoryDock
+                  sessionID={currentSessionID()}
+                  liveEvents={trajectoryLive()[currentSessionID()] || []}
+                  liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
+                />
+              }>
+                <TaskList
+                  todos={todos[currentSessionID()] || []}
+                  tokens={taskMetrics(currentSessionID()).tokens}
+                  started={taskMetrics(currentSessionID()).started}
+                  placement={viewportNarrow() ? "overlay" : "dock"}
+                  onClose={() => applyRightDock(false)}
+                  onPin={() => applyRightDock(false)}
+                />
+              </Show>
+            </RightDock>
+            <Show when={!viewportNarrow()}>
+              <ResizeHandle
+                direction="horizontal"
+                edge="start"
+                size={rightDockWidth()}
+                min={240}
+                max={480}
+                collapseThreshold={140}
+                onResize={applyRightDockWidth}
+                onCollapse={() => applyRightDock(false)}
+              />
+            </Show>
+          </Show>
         </div>
       </div>
       <Show when={activeQuestion()}>

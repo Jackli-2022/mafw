@@ -39,7 +39,7 @@ const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+
 // rewrites: history reloads replace parts wholesale, so re-merge the local
 // set from the previous store snapshot.
 export const mergeLocalParts = (oldParts: any[] | undefined, newParts: any[]): any[] => {
-  const locals = (oldParts || []).filter(p => p?.id?.startsWith("prt_local_"))
+  const locals = (Array.isArray(oldParts) ? oldParts : []).filter(p => p?.id?.startsWith("prt_local_"))
   return locals.length > 0 ? [...newParts, ...locals] : newParts
 }
 
@@ -90,7 +90,8 @@ export type ChatPaneProps = {
   taskListOpen: boolean
   tasksPlacement: "bar" | "dock"
   onTaskToggle: (el: HTMLElement | null) => void
-  onOpenRightDock: (tab: "tasks" | "trajectory") => void
+  onTaskHoverOpen: (el: HTMLElement | null) => void
+  onTaskHoverLeave: () => void
   onFocus: () => void
   onClosePane: () => void
   onCreateSession: () => Promise<string | null>
@@ -1196,7 +1197,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       const el = containerRef()
       const prevHeight = el?.scrollHeight || 0
       if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
-        const existing = props.store.message[sessionID] || []
+        const rawExisting = props.store.message[sessionID]
+        const existing = Array.isArray(rawExisting) ? rawExisting : []
+        if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
         const existingById = new Map(existing.map(m => [m.id, m]))
         const msgs: any[] = [...existing]
         const parts: Record<string, any[]> = {}
@@ -1206,8 +1209,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           if (existingById.has(msgId)) continue
           const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
           msgs.push(msg)
-          let itemParts = item.parts || info.parts || []
-          if (itemParts.length > 0) {
+          let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
+          if (Array.isArray(itemParts) && itemParts.length > 0) {
             parts[msgId] = mergeLocalParts(props.store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
           }
         }
@@ -1322,13 +1325,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 started={props.taskMetrics(sidProp()).started}
                 open={props.taskListOpen && props.tasksPlacement === "bar"}
                 onToggle={() => props.onTaskToggle(titlebarEl)}
+                onHoverOpen={() => props.onTaskHoverOpen(titlebarEl)}
+                onHoverLeave={props.onTaskHoverLeave}
               />
-              <TooltipV2 value="任务列表" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-rightdock-btn" onClick={e => { e.stopPropagation(); props.onOpenRightDock("tasks") }} aria-label="任务列表">📋</ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value="轨迹时间线" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-rightdock-btn" onClick={e => { e.stopPropagation(); props.onOpenRightDock("trajectory") }} aria-label="轨迹时间线">📊</ButtonV2>
-              </TooltipV2>
               <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
                 <span class="mafw-chat-header-done">
                   {(props.todos[sidProp()] || []).filter(t => t.status === "completed").length}/
