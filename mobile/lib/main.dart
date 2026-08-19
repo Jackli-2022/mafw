@@ -57,6 +57,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   List<MafwSession> _sessions = [];
   bool _connecting = true;
   bool _wsConnected = false;
+  bool _isInBackground = false;
   StreamSubscription? _wsStatusSub;
 
   @override
@@ -115,13 +116,17 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
       _connecting = false;
     });
 
-    // Lifecycle manager: close WS on background, reconnect on foreground
+    // Lifecycle manager: close WS on background, reconnect on foreground.
+    // The intentional lifecycle disconnect must NOT flip the offline banner —
+    // isInBackground gates the banner so only real failures show in foreground.
     _lifecycleManager = LifecycleWsManager(
       onConnect: () async {
+        if (mounted) setState(() => _isInBackground = false);
         if (ws.isConnected) return;
         await ws.reconnect();
       },
       onDisconnect: () async {
+        if (mounted) setState(() => _isInBackground = true);
         // Close socket but keep WsClient alive (dispose would kill stream controllers)
         ws.disconnect();
       },
@@ -272,7 +277,10 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
 
   @override
   Widget build(BuildContext context) {
-    final connected = _client != null && _wsConnected;
+    // Background lifecycle disconnect must not drive the banner — otherwise
+    // the banner only flashes when switching away. In background, hold last
+    // known state; foreground offline is driven by real WS status.
+    final connected = _client != null && (_wsConnected || _isInBackground);
     return MaterialApp(
       title: 'MAFW Mobile',
       theme: ThemeData(
