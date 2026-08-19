@@ -34,20 +34,20 @@ describe('Harmonic memory quality improvements (A1/A2/B4/B5/C)', () => {
     } as any;
   }
 
-  // ── A1: 超长 primary_abstraction 截断参与检索 ──
-  describe('A1: long abstraction truncated for retrieval', () => {
-    it('a 1500-char mega entry does not outrank a short precise hit even when it contains the query words', () => {
+  // ── A1: 超长 primary_abstraction 全文参与检索（不截断） ──
+  describe('A1: long abstractions stay fully retrievable', () => {
+    it('does not truncate away answer tokens in long single-document entries', () => {
       const manager = new HarmonicIndexManager(tmpDir);
-      // 巨型合并条目：包含查询词 FlutterSecureStorage/mobile/tests 但堆了大量无关主题
-      const mega =
-        'FlutterSecureStorage API change breaks mobile tests | ' +
-        Array.from({ length: 15 }, (_, i) => `topic${i} keyword${i} alpha${i} beta${i} gamma${i} delta${i} epsilon${i}`).join(' | ');
-      manager.addEntry(unit('mem_mega', mega, [], 0.95, 1), 'tier3');
-      // 精确命中的短条目
-      manager.addEntry(unit('mem_precise', 'FlutterSecureStorage API change breaks mobile tests', ['flutter'], 0.8, 1), 'tier3');
+      // LongMemEval 风格：全文入 primary_abstraction，答案在 1000 字符之后
+      const body = 'user: what is the wifi password?\nassistant: The wifi password is S3cr3t-Passw0rd-2024 and the router is in the hall closet.\nuser: thanks\nassistant: you are welcome, happy to help with anything else';
+      const filler = 'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum. ';
+      const padded = filler.repeat(3) + body;
+      expect(padded.length).toBeGreaterThan(1000);
+      manager.addEntry(unit('mem_long', padded, ['lmesid:s1'], 0.8, 1), 'tier3');
 
-      const results = manager.search('FlutterSecureStorage API change breaks mobile tests', 5, { retriever: 'bm25' });
-      expect(results[0].id).toBe('mem_precise');
+      const results = manager.search('what is the wifi password S3cr3t-Passw0rd-2024', 5, { retriever: 'bm25' });
+      expect(results.length).toBe(1);
+      expect(results[0].id).toBe('mem_long');
     });
   });
 

@@ -167,12 +167,14 @@ export class HarmonicIndexManager {
     const queryTokens = this.tokenizeBM25(query);
     if (queryTokens.length === 0) return [];
 
-    // A1: truncate very long abstractions for retrieval — mega merge blobs
-    // otherwise win every BM25 query by raw term frequency.
-    const MAX_ABS_CHARS = 300;
+    // LongMemEval (98% of session transcripts >1000 chars) proved truncating
+    // abstractions for retrieval destroys answer recall — BM25's length
+    // normalization (b=0.75) already handles long documents. Mega-merge blob
+    // pollution is instead handled at write time (B4 length cap) and via the
+    // merged_from penalty (A2).
     const docs = entries.map(entry => {
       const text = (entry.primary_abstraction + ' ' + entry.cue_anchors.join(' ')).toLowerCase();
-      return { entry, toks: this.tokenizeBM25(text.slice(0, MAX_ABS_CHARS)) };
+      return { entry, toks: this.tokenizeBM25(text) };
     });
     const docLengths = docs.map(d => d.toks.length);
     const avgdl = docLengths.reduce((a, c) => a + c, 0) / N;
