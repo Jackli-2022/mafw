@@ -75,6 +75,8 @@ export interface GatewayConfig {
       candidateCap: number;
       rerankGraphWeight: number;
     };
+    /** Agent-driven iterative expansion rounds for mafw_search_hybrid (0 = first round only). */
+    maxExpandRounds: number;
   };
   memory: {
     defaultEnergy: number;
@@ -232,6 +234,7 @@ function defaults(projectDir: string): GatewayConfig {
         candidateCap: 50,
         rerankGraphWeight: 0.15,
       },
+      maxExpandRounds: 2,
     },
     memory: {
       defaultEnergy: 0.8,

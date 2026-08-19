@@ -224,4 +224,11 @@ describe('HarmonicIndexManager', () => {
       expect((results[0] as any).score).toBeUndefined();
     });
   });
+
+  it('getAnchorGraphStore returns null by default and the injected store after set', () => {
+    expect(manager.getAnchorGraphStore()).toBeNull();
+    const fake = {} as any;
+    manager.setAnchorGraphStore(fake);
+    expect(manager.getAnchorGraphStore()).toBe(fake);
+  });
 });

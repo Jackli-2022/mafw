@@ -46,6 +46,10 @@ export class HarmonicIndexManager {
     this.anchorGraphStore = store;
   }
 
+  getAnchorGraphStore(): import('../../graph/anchor-graph-store').AnchorGraphStore | null {
+    return this.anchorGraphStore;
+  }
+
   private load(): HarmonicIndex {
     try {
       if (fs.existsSync(this.indexPath)) {
