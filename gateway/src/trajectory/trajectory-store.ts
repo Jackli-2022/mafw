@@ -142,7 +142,13 @@ export class TrajectoryStore {
       )
       .all(...(opts.beforeTurn !== undefined ? [sessionID, opts.beforeTurn, opts.limit] : [sessionID, opts.limit])) as any[];
     if (turns.length === 0) {
-      return { turns: [], events: [] };
+      const allEvents = this.rawDb
+        .prepare('SELECT * FROM trajectory_events WHERE session_id = ? ORDER BY turn_id ASC, seq ASC')
+        .all(sessionID) as any[];
+      if (allEvents.length === 0) {
+        return { turns: [], events: [] };
+      }
+      return { turns: [], events: allEvents.map(rowToEvent) };
     }
     const turnIDs = turns.map((t: any) => t.turn_id);
     const placeholders = turnIDs.map(() => '?').join(',');
