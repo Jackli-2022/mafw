@@ -153,9 +153,10 @@ class GatewayClient {
   /// Upload a media file (image/video/audio) to the gateway and create an A2A task.
   /// Returns { id, contextId, state, artifactId }.
   Future<Map<String, dynamic>> uploadMediaTask(String filePath, {String? filename}) async {
-    final file = _http.MultipartFile.fromPath('media', filePath, filename: filename);
+    final file = await http.MultipartFile.fromPath('media', filePath, filename: filename);
+    final uploadHeaders = Map<String, String>.from(_headers)..remove('Content-Type');
     final request = http.MultipartRequest('POST', _uri('/api/mobile/media/tasks'))
-      ..headers.addAll(_headers)
+      ..headers.addAll(uploadHeaders)
       ..files.add(file);
     final streamed = await request.send();
     final body = await http.Response.fromStream(streamed);

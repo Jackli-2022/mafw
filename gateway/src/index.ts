@@ -1448,6 +1448,7 @@ class MafwScheduler {
 
         // A2A Media Agent — loopback-only (security: the gateway API may
         // listen on all interfaces; the A2A surface must stay local).
+        // Keep in sync with gateway/src/mobile/auth-helpers.ts:isLoopbackAddr (127.0.0.0/8).
         const isLoopback = (() => {
           const addr = req.socket.remoteAddress || '';
           return addr === '127.0.0.1' || addr.startsWith('127.') || addr === '::1' || addr === '::ffff:127.0.0.1';
@@ -2528,7 +2529,7 @@ class MafwScheduler {
 
         // POST /api/mobile/devices/register — mobile device registration alias
         // Maps mobile's { token, platform, deviceName } to gateway's { id, fcmToken, platform, apiTokenHash }
-        if (req.url === '/api/mobile/devices/register' && req.method === 'POST') {
+        if (req.url?.match(/^\/api\/mobile\/devices\/register(?:\?|$)/) && req.method === 'POST') {
           try {
             const body = JSON.parse(await readBody(req));
             const { token, platform, deviceName } = body;
@@ -2572,7 +2573,7 @@ class MafwScheduler {
         }
 
         // POST /api/mobile/pairing/verify — consume a pairing nonce after mobile scan
-        if (req.url === '/api/mobile/pairing/verify' && req.method === 'POST') {
+        if (req.url?.match(/^\/api\/mobile\/pairing\/verify(?:\?|$)/) && req.method === 'POST') {
           try {
             if (!this.pairingService) {
               res.writeHead(503);
@@ -3393,8 +3394,10 @@ class MafwScheduler {
             return;
           }
           // Token auth on upgrade: loopback or ?token= / Authorization header.
-          const addr = (socket as any).remoteAddress || '';
-          const isLocal = addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+          // Use req.socket.remoteAddress (authoritative for the HTTP request)
+          // and 127.0.0.0/8 consistency with auth-helpers.ts:isLoopbackAddr.
+          const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
+          const isLocal = rawAddr === '127.0.0.1' || rawAddr.startsWith('127.') || rawAddr === '::1' || rawAddr === '::ffff:127.0.0.1';
           const token = (config.raw as any)?.server?.apiToken || '';
           if (!isLocal && token) {
             const q = new URL(url, `http://${req.headers.host || 'localhost'}`);

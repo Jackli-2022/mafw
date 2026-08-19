@@ -85,8 +85,8 @@
 ### 6.1 Gateway 推送网关 `gateway/src/mobile/push-gateway.ts`
 - **设备注册表** `~/.mafw/mobile-devices.json`：`POST /api/mobile/devices/register {fcmToken, deviceId, platform:"android"}` 需 `Authorization: Bearer`，`GET/DELETE /api/mobile/devices` 本机鉴权；二维码兑现与 FCM 注册分两步。
 - **在线判定**: 基于 `wsClients` + 30s `ping` / 60s `prune` + `isAlive`，窗口 30s 防抖；在线直推 WS 帧 (`index.ts:960`)，离线转 FCM。
-- **FCM 发送**: `MAFW_FCM_SERVICE_ACCOUNT_PATH` 默认 `~/.mafw/fcm.json` (600) → OAuth2 → HTTP v1 `.../messages:send`；payload 仅 `data {type, sessionID, title(≤12), summary(≤80), ts}`，高优先级、`collapse_id=sessionID`、`ttl 24h`；敏感全文不进 FCM。
-- **可靠**: 每设备 1 msg/s 令牌桶 + 全局限流，失败指数退避 3 次；`config.reload()` token 失效清该指纹设备；路由 `^/api/mobile/...(?:\?|$)` 防 query 锚定失效；CORS 对 `/api/mobile` 收紧。
+- **FCM 发送 — v2 / WS-only beta 豁免（见 §12）**: 本期为 WS-only beta，`MAFW_FCM_SERVICE_ACCOUNT_PATH` → OAuth2 → HTTP v1、`collapse_id`/`ttl 24h`/限流/退避均标为 **v2**。离线时静默丢弃推送（仅 WS 在线可达），FCM 服务账号路径与发送链路留待 v2 实现。
+- **可靠（v1 已实现）**: 每设备 1 msg/s 令牌桶 + 全局限流（WS 扇出）；`config.reload()` token 失效清该指纹设备；路由 `^/api/mobile/...(?:\?|$)` 防 query 锚定失效；CORS 对 `/api/mobile` 收紧。
 
 ### 6.2 Android 侧
 - **依赖**: `firebase_core` + `firebase_messaging` + `flutter_local_notifications` + `google-services.json`；厂商通道（小米/华为/OPPO）二期按需。
@@ -161,6 +161,7 @@
 
 ## 12. 风险与回退
 
+- **FCM v2 豁免（WS-only beta）**: 本期 scope 为 WS-only beta，`MAFW_FCM_SERVICE_ACCOUNT_PATH`（默认 `~/.mafw/fcm.json` 600）及 FCM HTTP v1 发送链路（OAuth2、`collapse_id=sessionID`、`ttl 24h`、限流/退避）标记为 **v2**，暂不实现。离线推送静默丢弃，仅 WS 在线可达；FCM App 侧通道/点击链路已就绪，网关发送待 v2 补齐。
 - FCM 未配置 → `fcm: disabled`，WS 前台可用；配额超限 → 折叠；Tailscale 不通 → 提示并重试 `health()`。
 - 空 token 远程开放已通过 Must 1 阻断；媒体代理直调避免 loopback 绕过。
 - `Hive` 弃用已迁 `hive_ce`；`config.reload()` 热更拆分避免重启。

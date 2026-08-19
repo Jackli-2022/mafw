@@ -45,19 +45,19 @@ export class DeviceStore {
     };
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+    try { fs.chmodSync(this.filePath, 0o600); } catch { /* Windows: no POSIX perms */ }
   }
 
   register(input: { id: string; fcmToken: string; platform: string; apiTokenHash: string }): DeviceEntry {
     if (!this.devices.has(input.id) && this.devices.size >= MAX_DEVICES) {
       throw new Error(`Device limit reached (${MAX_DEVICES})`);
     }
-    const existing = this.devices.get(input.id);
     const entry: DeviceEntry = {
       id: input.id,
       fcmToken: input.fcmToken,
       platform: input.platform,
       apiTokenHash: input.apiTokenHash,
-      lastSeen: existing?.lastSeen || new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
     };
     this.devices.set(input.id, entry);
     this.save();

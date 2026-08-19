@@ -109,7 +109,7 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
     const isLoopback = isLoopbackAddr(addr);
 
     // ── POST /api/mobile/media/tasks — multipart upload → A2A task ──
-    if (req.url === '/api/mobile/media/tasks' && req.method === 'POST') {
+    if (req.url?.match(/^\/api\/mobile\/media\/tasks(?:\?|$)/) && req.method === 'POST') {
       if (!isLoopback) {
         jsonResponse(res, 403, { error: 'forbidden' });
         return true;
@@ -197,7 +197,7 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
     }
 
     // ── POST /api/mobile/media/tasks/:id/ask — follow-up question ──
-    const askMatch = req.url?.match(/^\/api\/mobile\/media\/tasks\/([^/]+)\/ask$/);
+    const askMatch = req.url?.match(/^\/api\/mobile\/media\/tasks\/([^/]+)\/ask(?:\?|$)/);
     if (askMatch && req.method === 'POST') {
       if (!isLoopback) {
         jsonResponse(res, 403, { error: 'forbidden' });
