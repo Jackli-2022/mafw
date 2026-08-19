@@ -1643,7 +1643,7 @@ export function MafwShell() {
           </div>
         )}
         <div class="mafw-main">
-          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(true, "trajectory")} trajectoryActive={rightDockOpen() && rightDockTab() === "trajectory"} />}
+          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} trajectoryActive={rightDockOpen() && rightDockTab() === "trajectory"} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             {showConfig() ? (
               <ConfigPage onBack={() => setShowConfig(false)} />
