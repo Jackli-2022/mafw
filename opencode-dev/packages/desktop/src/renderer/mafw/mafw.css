@@ -1874,3 +1874,68 @@ html[data-theme="light"] .mafw-picker-pop {
   text-align: left;
 }
 .mafw-tasklist-collapse:hover { background: var(--hover); color: var(--text-2); }
+
+/* ── Unified right dock (tasks / trajectory tabs) ── */
+.mafw-right-dock {
+  position: fixed;
+  top: 38px;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-base);
+  border-left: 1px solid var(--border-subtle);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.06);
+}
+.mafw-right-dock-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex: none;
+}
+.mafw-right-dock-tab { font-size: 12px; }
+.mafw-right-dock-spacer { flex: 1; }
+.mafw-right-dock-body { flex: 1; overflow-y: auto; min-height: 0; }
+.mafw-trajectory-dock { height: 100%; display: flex; flex-direction: column; }
+.mafw-trajectory-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mafw-trajectory-empty { padding: 40px 16px; text-align: center; color: var(--text-4); font-size: 13px; line-height: 1.8; }
+.mafw-trajectory-error { padding: 12px; color: #E5484D; font-size: 12px; }
+.mafw-trajectory-list { flex: 1; overflow-y: auto; padding: 6px; }
+.mafw-trajectory-turn { border-bottom: 1px solid var(--border-subtle); }
+.mafw-trajectory-turn-head {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mafw-trajectory-turn-user { font-size: 12px; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-trajectory-turn-kpis { display: flex; gap: 8px; font-size: 11px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.mafw-trajectory-finish-badge { font-size: 10px; color: #f59e0b; border: 1px solid rgba(245,158,11,0.33); border-radius: 4px; padding: 0 4px; width: fit-content; }
+.mafw-trajectory-events { padding: 0 10px 8px; }
+.mafw-trajectory-event { display: flex; align-items: flex-start; gap: 6px; padding: 3px 0; font-size: 12px; }
+.mafw-trajectory-event-icon { flex: none; width: 16px; text-align: center; color: var(--text-4); }
+.mafw-trajectory-event-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mafw-trajectory-tool-name { font-weight: 500; color: var(--text-1); }
+.mafw-trajectory-model, .mafw-trajectory-agent { font-size: 11px; color: var(--text-4); }
+.mafw-trajectory-output { font-size: 11px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.mafw-trajectory-tokens { font-size: 11px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.mafw-trajectory-duration { flex: none; font-size: 11px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.mafw-trajectory-turn.open .mafw-trajectory-turn-user { white-space: normal; }
+.mafw-rightdock-btn { font-size: 13px; }

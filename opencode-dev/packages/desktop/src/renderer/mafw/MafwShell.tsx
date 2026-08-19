@@ -4,23 +4,27 @@ import { createStore } from "solid-js/store"
 
 
 import { Icon } from "@opencode-ai/ui/icon"
-import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
+import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { ToastV2, showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 import { DataProvider } from "@opencode-ai/session-ui/context"
-import { SessionTurn } from "@opencode-ai/session-ui/session-turn"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { FileSSR } from "@opencode-ai/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
-import { TaskBar } from "./components/TaskBar"
+import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
+import { SplitView, leafIds, leafCount, fillEmpty, removeLeaf, setRatio, splitLeaf, splitAtPath, replaceAtPath, removeSid, isSidLeaf, firstLeafPath, findSidPath, parentDirOf, splitWithTarget, zoneForPoint, zoneToDir, type SplitNode, type SplitLeaf, type DropZone } from "./components/SplitView"
+import { SplitPlaceholder } from "./components/SplitPlaceholder"
 import { TaskList } from "./components/TaskList"
+import { RightDock } from "./components/RightDock"
+import { TrajectoryDock } from "./components/TrajectoryDock"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { TabStrip, type Tab } from "./components/TabStrip"
 import { registerMafwToolCards } from "./components/MafwToolCards"
+import { WelcomeHome } from "./components/WelcomeHome"
 import { DashboardPage } from "./pages/Dashboard"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
@@ -28,10 +32,10 @@ import { TriagePage } from "./pages/TriagePage"
 import { AutomationsPage } from "./pages/Automations"
 import { ConfigPage } from "./pages/Config"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
-import { AskCard, type AskCardData } from "./components/AskCard"
-import { PermissionCard, type PermissionCardData } from "./components/PermissionCard"
-import { ModelPicker, type ModelEntry } from "./components/pickers/ModelPicker"
-import { AgentPicker, type AgentEntry } from "./components/pickers/AgentPicker"
+import type { AskCardData } from "./components/AskCard"
+import type { PermissionCardData } from "./components/PermissionCard"
+import type { ModelEntry } from "./components/pickers/ModelPicker"
+import type { AgentEntry } from "./components/pickers/AgentPicker"
 import "./mafw.css"
 
 interface ChatSession {
@@ -43,189 +47,14 @@ interface ChatSession {
   manager?: boolean
   metadata?: { mafw?: { role?: string } }
 }
-
 export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<Tab>("chat")
   const [showConfig, setShowConfig] = createSignal(false)
-  const [input, setInput] = createSignal("")
-  const [sending, setSending] = createSignal(false)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
-  const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
 
-  // Composer extras: attachments (picker token + files / pasted dataUrl images),
-  // @agent mentions, model selection
-  const [attachments, setAttachments] = createSignal<{ token?: string; path?: string; name: string; size: number; mime?: string; dataUrl?: string }[]>([])
-  const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
+  // Model selection (shared across panes; recent-models persistence below)
   const [modelSel, setModelSel] = createSignal<{ providerID: string; modelID: string; label: string } | null>(null)
-  const [dragging, setDragging] = createSignal(false)
-
-  const addAttachments = async () => {
-    try {
-      const picked: any = await (window as any).api?.openFilePicker?.({ multiple: true })
-      if (!picked?.files?.length) return
-      setAttachments(prev => [...prev, ...picked.files.map((f: any) => ({ token: picked.token, path: f.path, name: f.name, size: f.size, mime: f.type || undefined }))])
-    } catch (e) {
-      console.warn("[mafw] openFilePicker error:", e)
-    }
-  }
-
-  const removeAttachment = (idx: number) => {
-    const att = attachments()[idx]
-    setAttachments(prev => prev.filter((_, i) => i !== idx))
-    if (att?.token) (window as any).api?.releasePickedFiles?.(att.token)
-  }
-
-  // Electron 42 removed File.path — resolve via webUtils through preload.
-  const pathOfFile = (file: File): string | undefined => {
-    try {
-      return (window as any).api?.getPathForFile?.(file) as string | undefined
-    } catch { return undefined }
-  }
-
-  // Client-side downscale for pasted images: the opencode server's
-  // image.normalize caps at 2000px / ~5MB base64 and throws (uncaught) when a
-  // paste exceeds it — flatten to canvas first to keep sends reliable.
-  const imageToDataUrl = async (file: File): Promise<string | undefined> => {
-    try {
-      const raw = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader()
-        r.onload = () => resolve(r.result as string)
-        r.onerror = () => reject(r.error)
-        r.readAsDataURL(file)
-      })
-      const img = new Image()
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve()
-        img.onerror = () => reject(new Error("image decode failed"))
-        img.src = raw
-      })
-      let { width, height } = img
-      const MAX = 2000
-      if (width > MAX || height > MAX) {
-        const scale = Math.min(MAX / width, MAX / height)
-        width = Math.round(width * scale)
-        height = Math.round(height * scale)
-      }
-      const canvas = document.createElement("canvas")
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext("2d")
-      if (!ctx) return raw
-      ctx.drawImage(img, 0, 0, width, height)
-      const quality = raw.length > 4 * 1024 * 1024 ? 0.7 : 0.85
-      return canvas.toDataURL(file.type === "image/png" ? "image/png" : "image/jpeg", quality)
-    } catch (e) {
-      console.warn("[mafw] imageToDataUrl error:", e)
-      return undefined
-    }
-  }
-
-  const addPastedFile = async (file: File) => {
-    if (!file) return
-    if (file.type.startsWith("image/")) {
-      const dataUrl = await imageToDataUrl(file)
-      if (!dataUrl) return
-      setAttachments(prev => [...prev, { name: file.name || "粘贴图片.png", size: file.size, mime: file.type, dataUrl }])
-    } else {
-      const path = pathOfFile(file)
-      if (path) {
-        setAttachments(prev => [...prev, { path, name: file.name, size: file.size, mime: file.type || undefined }])
-      }
-    }
-  }
-
-  // ── Paste (Ctrl+V / right-click / Shift+Insert all fire onPaste) ──
-  const handlePaste = async (e: ClipboardEvent) => {
-    const cd = e.clipboardData
-    if (!cd) return
-    const files = Array.from(cd.items || []).flatMap(item => {
-      if (item.kind !== "file") return []
-      const f = item.getAsFile()
-      return f ? [f] : []
-    })
-    if (files.length > 0) {
-      e.preventDefault()
-      for (const f of files) await addPastedFile(f)
-      return
-    }
-    const plainText = cd.getData("text/plain") ?? ""
-    // Browser clipboard has no file items and no text — try system clipboard image.
-    if (!plainText) {
-      try {
-        const img: any = await (window as any).api?.readClipboardImage?.()
-        if (img?.buffer) {
-          e.preventDefault()
-          const file = new File([img.buffer], "剪贴板图片.png", { type: "image/png" })
-          await addPastedFile(file)
-        }
-      } catch (err) {
-        console.warn("[mafw] readClipboardImage error:", err)
-      }
-    }
-    // Pure text: no preventDefault — native paste proceeds.
-  }
-
-  // ── Drag & drop onto the composer ──
-  const handleDragOver = (e: DragEvent) => {
-    if (e.dataTransfer?.types?.includes("Files")) {
-      e.preventDefault()
-      setDragging(true)
-    }
-  }
-  const handleDragLeave = (e: DragEvent) => {
-    if (!e.currentTarget?.contains(e.relatedTarget as Node)) setDragging(false)
-  }
-  const handleDrop = async (e: DragEvent) => {
-    e.preventDefault()
-    setDragging(false)
-    const dt = e.dataTransfer
-    if (!dt) return
-    const plainText = dt.getData("text/plain")
-    if (plainText?.startsWith("file:")) {
-      const p = plainText.slice(5)
-      if (p) setAttachments(prev => [...prev, { path: p, name: p.split(/[\\/]/).pop() || p, size: 0 }])
-      return
-    }
-    const dropped = dt.files
-    if (dropped?.length) {
-      for (const f of Array.from(dropped)) await addPastedFile(f)
-    }
-  }
-
-  const addAgent = (name: string) => {
-    if (!name || mentionedAgents().some(a => a.name === name)) return
-    if (mentionedAgents().length >= 3) {
-      showToastV2({ description: "最多引用 3 个 Agent", duration: 2000 })
-      return
-    }
-    setMentionedAgents(prev => [...prev, { name }])
-  }
-
-  const removeAgent = (name: string) => {
-    setMentionedAgents(prev => prev.filter(a => a.name !== name))
-  }
-
-  const encodeFilePath = (filepath: string): string => {
-    let normalized = filepath.replace(/\\/g, "/")
-    if (/^[A-Za-z]:/.test(normalized)) normalized = "/" + normalized
-    return normalized.split("/").map((seg, i) => {
-      // Keep the colon in the Windows drive segment (/C:/...) so downstream
-      // file URL parsers can reliably detect drives.
-      if (i === 0 && /^[A-Za-z]:$/.test(seg)) return seg
-      return encodeURIComponent(seg)
-    }).join("/")
-  }
-
-  const mimeOf = (name: string): string => {
-    const ext = name.split(".").pop()?.toLowerCase() || ""
-    const map: Record<string, string> = {
-      md: "text/markdown", txt: "text/plain", json: "application/json", js: "text/plain", ts: "text/plain",
-      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
-      pdf: "application/pdf", csv: "text/csv", yaml: "text/plain", yml: "text/plain", py: "text/plain",
-    }
-    return map[ext] || "application/octet-stream"
-  }
 
   // Reactive data store for SessionTurn (SolidJS store Proxy for fine-grained tracking)
   const [store, setStore] = createStore({
@@ -245,16 +74,615 @@ export function MafwShell() {
   const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null)
   const [sessionRefreshKey, setSessionRefreshKey] = createSignal(0)
 
+  // Subagent navigation: childID → parentID. Entering a subagent session only
+  // switches the content pane (no tab change); this map powers the back button.
+  const [subagentStack, setSubagentStack] = createStore<Record<string, string>>({})
+
+  // Open a subagent session inside the current tab (no tab-list mutation, no
+  // view/tab highlight change). Loads its data into the store so the pane
+  // renders history; readOnly follows from store.session[child].parentID.
+  const openSubagentSession = async (childID: string) => {
+    setShowConfig(false)
+    setActiveTab("chat")
+    setShowWelcome(false)
+    const parentID = activeSessionId()
+    try {
+      const s = await window.api.mafw.sessions.get(childID)
+      if (s?.parentID) setSubagentStack(childID, s.parentID)
+      else if (parentID) setSubagentStack(childID, parentID)
+      if (s) {
+        setStore(prev => ({
+          ...prev,
+          session: prev.session.some(x => x.id === childID)
+            ? prev.session.map(x => x.id === childID ? { ...x, title: s.title || x.title, parentID: s.parentID } : x)
+            : [...prev.session, { ...s, directory: s.directory || ".", projectID: s.projectID || "." }],
+          session_status: { ...prev.session_status, [childID]: { type: "idle" } },
+          message: prev.message[childID] ? prev.message : { ...prev.message, [childID]: [] },
+        }))
+      }
+    } catch (e) { console.warn("[mafw] open subagent failed:", e) }
+    setActiveSessionId(childID)
+  }
+
+  // Return from a subagent session to its parent (content pane only).
+  const backToParent = (childID: string) => {
+    const parentID = subagentStack[childID] || store.session.find((s: any) => s.id === childID)?.parentID
+    console.log("[mafw] backToParent", childID, "->", parentID, "stack:", subagentStack[childID], "storeRec:", store.session.find((s: any) => s.id === childID))
+    showToastV2({ description: `backToParent ${childID.slice(-8)} -> ${parentID ? parentID.slice(-8) : "NULL"}`, duration: 3000 })
+    if (parentID) {
+      setSubagentStack(childID, undefined as any)
+      setActiveSessionId(parentID)
+    }
+  }
+
+  // Startup welcome pane ("今天要做什么？"): shown on launch until the user
+  // picks a session, creates one, or navigates into the chat.
+  const [showWelcome, setShowWelcome] = createSignal(true)
+
+  // All project sessions (for the split placeholder picker). Loaded once when
+  // the gateway is ready; the Rail refreshes its own copy on sessionRefreshKey.
+  const [historySessions, setHistorySessions] = createSignal<{ id: string; title?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]>([])
+  createEffect(() => {
+    if (gwStatus()?.state !== "ready") return
+    let cancelled = false
+    window.api.mafw.sessions.list(currentProject() ?? undefined).then((list: any) => {
+      if (cancelled) return
+      setHistorySessions(Array.isArray(list) ? list : [])
+    }).catch(() => { if (!cancelled) setHistorySessions([]) })
+    onCleanup(() => { cancelled = true })
+  })
+
+  // Registered projects + current selection (welcome pane project switcher).
+  const [projects, setProjects] = createSignal<{ id: string; worktree: string }[]>([])
+  const [currentProject, setCurrentProject] = createSignal<string | null>(null)
+
+  // Authoritative per-project manager session (from the gateway DB kv store).
+  // Orphan/stale role=manager sessions from the pre-fix era are ignored.
+  const [managerSessionId, setManagerSessionId] = createSignal<string | null>(null)
+  createEffect(() => {
+    const pd = currentProject()
+    if (!pd) { setManagerSessionId(null); return }
+    let cancelled = false
+    window.api.mafw.manager.session(pd).then((info: any) => {
+      if (!cancelled) setManagerSessionId(info?.sessionId || null)
+    }).catch(() => { if (!cancelled) setManagerSessionId(null) })
+    onCleanup(() => { cancelled = true })
+  })
+  createEffect(() => {
+    if (gwStatus()?.state !== "ready") return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const [list, cur] = await Promise.all([
+          window.api.mafw.projects.list().catch(() => []),
+          window.api.mafw.projects.current().catch(() => null),
+        ])
+        if (cancelled) return
+        setProjects(Array.isArray(list) ? list.map((p: any) => ({ id: p.id || p.worktree, worktree: p.worktree || p.id })) : [])
+        setCurrentProject(cur?.worktree ?? cur?.id ?? null)
+      } catch { /* gateway not ready */ }
+    }
+    void load()
+    onCleanup(() => { cancelled = true })
+  })
+
+  // Switch the current project: gateway register + refresh sessions for it.
+  const handleSelectProject = async (worktree: string) => {
+    setCurrentProject(worktree)
+    try {
+      await window.api.mafw.projects.setCurrent(worktree)
+    } catch (e) { console.warn("[mafw] setCurrent failed:", e) }
+    const list = await window.api.mafw.sessions.list(worktree).catch(() => [])
+    setHistorySessions(Array.isArray(list) ? list : [])
+  }
+
+  // Open a session as a plain single-pane tab (no split view involvement).
+  // Welcome-page entries (manager / new session / recent session) must never
+  // create a split view — that only happens via explicit split actions.
+  const openSessionTab = (sid: string, title?: string, manager?: boolean, metadata?: any) => {
+    setShowConfig(false)
+    setActiveTab("chat")
+    setShowWelcome(false)
+    if (!sessions().some(s => s.id === sid)) {
+      const tabTitle = title || `Chat ${sessions().length + 1}`
+      setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager, metadata }])
+      setStore(prev => ({
+        ...prev,
+        session: [...prev.session, { id: sid, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
+        session_status: { ...prev.session_status, [sid]: { type: "idle" } },
+        message: { ...prev.message, [sid]: [] },
+      }))
+    }
+    setActiveSessionId(sid)
+    setActiveViewId(sid)
+  }
+
+  // "Manager 会话": jump straight into the manager session. Prefers the
+  // authoritative manager (gateway DB) and falls back to any role=manager
+  // session in history.
+  const handleOpenManager = async (): Promise<boolean> => {
+    const authId = managerSessionId()
+    const manager = (authId && historySessions().find(s => s.id === authId))
+      || historySessions().find((s: any) => s?.metadata?.mafw?.role === "manager")
+    if (!manager) {
+      setActiveTab("goals")
+      return false
+    }
+    openSessionTab(manager.id, manager.title || "Manager", true, manager.metadata)
+    return true
+  }
+  // "新建 Goal": jump to the manager session and send a create-goal message.
+  const handleNewGoal = async (description: string): Promise<boolean> => {
+    if (!await handleOpenManager()) return false
+    const manager = historySessions().find((s: any) => s?.metadata?.mafw?.role === "manager")
+    if (!manager) return false
+    const message = `创建新 Goal：${description}`
+    // Optimistic insert (matches sendMessage's store pattern).
+    const userMsgId = `user-${Date.now()}`
+    const ts = Date.now()
+    setSessions(prev => prev.map(s => s.id === manager.id ? { ...s, userMsgId } : s))
+    setStore(prev => {
+      const msgs = { ...prev.message }
+      const sessionMsgs = [...(msgs[manager.id] || [])]
+      sessionMsgs.push({ id: userMsgId, sessionID: manager.id, role: "user", parentID: null, time: { created: Date.now() }, text: message, agent: "general", model: { providerID: "opencode", modelID: "" } })
+      msgs[manager.id] = sessionMsgs
+      return { ...prev, message: msgs, part: { ...prev.part, [userMsgId]: [{ type: "text", text: message, id: `${userMsgId}-text`, sessionID: manager.id, messageID: userMsgId }] } }
+    })
+    try {
+      await window.api.mafw.chat.sendEnriched({ message, sessionID: manager.id })
+      return true
+    } catch (e) {
+      console.warn("[mafw] send goal message failed:", e)
+      return true
+    }
+  }
+
   // Lazy-load pagination state per session (older messages via `before` cursor)
   const [pageState, setPageState] = createStore<Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>>({})
 
   // Todo list per session (drives the TaskList; updated live via SSE todo.updated)
   const [todos, setTodos] = createStore<Record<string, any[]>>({})
 
+  // ── Split views (tmux-window model) ──
+  // SessionStrip shows one tab per session AND one tab per split view. A split
+  // view is a multi-pane layout; clicking its tab shows it, clicking a session
+  // tab shows that session as a single pane. Split views are session-local
+  // only (never persisted; each launch starts fresh on the welcome page).
+  type SplitViewRec = { id: string; title: string; layout: SplitNode | null }
+
+  const loadSplitViews = (): SplitViewRec[] => {
+    // Fresh start: never restore layouts across restarts. Clear any legacy
+    // persisted keys once so stale data cannot resurface later.
+    try {
+      localStorage.removeItem("mafw-split-layout")
+      localStorage.removeItem("mafw-split-layouts")
+    } catch { /* ignore */ }
+    return []
+  }
+
+  // Scroll anchors / sending-reset per session, keyed by sid. Used by
+  // loadHistory to scroll the pane showing a session, and by the SSE lifecycle
+  // to clear a pane's "stop" button state.
+  const anchorRegistry: Record<string, () => void> = {}
+  const sendingResetters: Record<string, () => void> = {}
+  // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
+  const mediaSpeakHandlers: Record<string, (text: string, voice?: string) => void> = {}
+
+  const [splitViews, setSplitViews] = createSignal<SplitViewRec[]>(loadSplitViews())
+  const [activeViewId, setActiveViewId] = createSignal<string | null>(null)
+
+  // Current split view record (when the active view is a split), else null.
+  const activeSplitView = createMemo<SplitViewRec | null>(() => {
+    const id = activeViewId()
+    if (!id || !id.startsWith("split-")) return null
+    return splitViews().find(v => v.id === id) ?? null
+  })
+
+  const persistSplitViews = (recs: SplitViewRec[]) => {
+    setSplitViews(recs)
+  }
+
+  // Update the layout of the currently active split view.
+  const updateCurrentLayout = (node: SplitNode | null) => {
+    const id = activeViewId()
+    if (!id || !id.startsWith("split-")) return
+    setSplitViews(prev => prev.map(v => v.id === id ? { ...v, layout: node } : v))
+  }
+
+  // The effective tree: the active split view's layout, or a single leaf
+  // following the active session.
+  const currentTree = createMemo<SplitNode>(() => {
+    const split = activeSplitView()
+    if (split?.layout) return split.layout
+    return activeSessionId() ? { sid: activeSessionId()! } : { empty: true }
+  })
+
+  // Register persisted split-pane sessions that are not yet in the local
+  // session list so panes render titles and the strip shows them.
+  createEffect(() => {
+    const recs = splitViews()
+    if (recs.length === 0) return
+    for (const rec of recs) {
+      if (!rec.layout) continue
+      for (const sid of leafIds(rec.layout)) {
+        if (sessions().some(s => s.id === sid)) continue
+        const existing = store.session.find(s => s.id === sid)
+        const title = existing?.title || `Chat ${sessions().length + 1}`
+        setSessions(prev => prev.some(s => s.id === sid) ? prev : [...prev, {
+          id: sid, title, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false,
+        }])
+        if (!existing) {
+          setStore(prev => ({
+            ...prev,
+            session: [...prev.session, { id: sid, title, directory: ".", time: { created: Date.now() }, projectID: "." }],
+            session_status: { ...prev.session_status, [sid]: { type: "idle" } },
+            message: { ...prev.message, [sid]: [] },
+          }))
+        }
+      }
+    }
+  })
+
+  // Create a new split view tab (auto-numbered title) and switch to it.
+  const createSplitView = (initial: SplitNode | null): string => {
+    const nextId = `split-${Date.now()}`
+    const n = splitViews().length + 1
+    const rec: SplitViewRec = { id: nextId, title: `分屏 ${n}`, layout: initial }
+    persistSplitViews([...splitViews(), rec])
+    setActiveViewId(nextId)
+    return nextId
+  }
+
+  const closeSplitView = (id: string) => {
+    setSplitViews(prev => prev.filter(v => v.id !== id))
+    if (activeViewId() === id) {
+      const firstSession = sessions()[0]
+      setActiveViewId(firstSession?.id ?? null)
+    }
+  }
+
+  const renameSplitView = (id: string, title: string) => {
+    setSplitViews(prev => prev.map(v => v.id === id ? { ...v, title } : v))
+  }
+
+  // Ensure a session is visible in the current view. In a split view, fill a
+  // placeholder pane if one exists; in a single-session view it is already
+  // shown (the view is that session).
+  const ensureSessionVisible = (id: string) => {
+    const split = activeSplitView()
+    if (!split?.layout) return
+    const tree = split.layout
+    if (leafIds(tree).includes(id)) return
+    if (leafCount(tree) === 1) {
+      updateCurrentLayout({ sid: id })
+      return
+    }
+    const filled = fillEmpty(tree, id)
+    if (filled !== tree) updateCurrentLayout(filled)
+  }
+
+  /**
+   * Unified split entry for operations INSIDE a split view (drag, placeholder
+   * fill, pane close). Updates the active split view's layout; if no split view
+   * is active, creates a new one.
+   */
+  const applySplit = (path: number[], dir: "h" | "v", place: "before" | "after", target: SplitLeaf) => {
+    const split = activeSplitView()
+    const tree = split?.layout ?? null
+    if (!tree) {
+      // No active split view: create one, splitting the single-session view.
+      const base: SplitLeaf = activeSessionId() && sessions().some(s => s.id === activeSessionId())
+        ? { sid: activeSessionId()! }
+        : { empty: true }
+      const a = place === "before" ? target : base
+      const b = place === "after" ? target : base
+      createSplitView({ dir, ratio: 0.5, a, b })
+      if ("sid" in target) setActiveSessionId(target.sid)
+      return
+    }
+    const next = splitWithTarget(tree, path, dir, place, target)
+    if (next !== tree) {
+      updateCurrentLayout(next)
+      if ("sid" in target) setActiveSessionId(target.sid)
+    }
+  }
+
+  /**
+   * Four directional split options. Filtered by the no-same-direction rule:
+   * children of an `h` split may only split vertically and vice versa; the
+   * root (or a single-pane layout) is free. Returns [] when the 4-pane cap is
+   * reached.
+   */
+  type DirOption = { dir: "h" | "v"; place: "before" | "after"; label: string; glyph: string }
+  const ALL_FOUR: DirOption[] = [
+    { dir: "h", place: "before", label: "向左分屏", glyph: "⇤" },
+    { dir: "h", place: "after", label: "向右分屏", glyph: "⇥" },
+    { dir: "v", place: "before", label: "向上分屏", glyph: "⇧" },
+    { dir: "v", place: "after", label: "向下分屏", glyph: "⇩" },
+  ]
+  const directionOptions = (path: number[]): DirOption[] => {
+    const split = activeSplitView()
+    const tree = split?.layout ?? null
+    if (!tree) return ALL_FOUR
+    if (leafCount(tree) >= 4) return []
+    const parentDir = parentDirOf(tree, path)
+    if (parentDir === "h") return ALL_FOUR.filter(o => o.dir === "v")
+    if (parentDir === "v") return ALL_FOUR.filter(o => o.dir === "h")
+    return ALL_FOUR
+  }
+
+  // Direction options for a tab's session: no active split (or session absent
+  // from it) → free four ways; otherwise governed by the parent split
+  // direction of the pane holding it.
+  const directionOptionsFor = (sid: string): DirOption[] => {
+    const split = activeSplitView()
+    const tree = split?.layout ?? null
+    if (!tree) return ALL_FOUR
+    if (leafCount(tree) >= 4) return []
+    const sidPath = findSidPath(tree, sid)
+    if (!sidPath) return ALL_FOUR // not on screen yet → treated as free
+    return directionOptions(sidPath)
+  }
+
+  // Per-tab split (session tab ⿻ menu): create a NEW split view whose layout
+  // is [the session | empty placeholder], then switch to it.
+  const splitTab = (sid: string, dir: "h" | "v", place: "before" | "after") => {
+    if (!sessions().some(s => s.id === sid)) return
+    const base: SplitLeaf = { sid }
+    const other: SplitLeaf = { empty: true }
+    const layout: SplitNode = place === "before"
+      ? { dir, ratio: 0.5, a: other, b: base }
+      : { dir, ratio: 0.5, a: base, b: other }
+    createSplitView(layout)
+    setActiveSessionId(sid)
+  }
+
+  // Global split (⿻ button): create a NEW split view beside the focused
+  // session, with an empty placeholder on the other side.
+  const splitGlobal = (dir: "h" | "v", place: "before" | "after") => {
+    const base: SplitLeaf = activeSessionId() && sessions().some(s => s.id === activeSessionId())
+      ? { sid: activeSessionId()! }
+      : { empty: true }
+    const other: SplitLeaf = { empty: true }
+    const layout: SplitNode = place === "before"
+      ? { dir, ratio: 0.5, a: other, b: base }
+      : { dir, ratio: 0.5, a: base, b: other }
+    createSplitView(layout)
+  }
+
+  // Continue splitting inside an existing split view (its ⿻ button): split an
+  // empty placeholder pane beside the focused pane, updating that view's
+  // layout (no new split view tab).
+  const continueSplitIn = (viewId: string, dir: "h" | "v", place: "before" | "after") => {
+    const rec = splitViews().find(v => v.id === viewId)
+    const tree = rec?.layout ?? null
+    if (!tree) return
+    const focusedPath = activeSessionId() ? findSidPath(tree, activeSessionId()!) : null
+    const target = focusedPath ?? firstLeafPath(tree)
+    const next = splitWithTarget(tree, target, dir, place, { empty: true })
+    if (next !== tree) {
+      setSplitViews(prev => prev.map(v => v.id === viewId ? { ...v, layout: next } : v))
+      setActiveViewId(viewId)
+    }
+  }
+
+  const closePane = (sid: string) => {
+    const split = activeSplitView()
+    const tree = split?.layout ?? null
+    if (!tree) return
+    const leaves = leafIds(tree)
+    if (leaves.length <= 1) return
+    const next = removeLeaf(tree, sid)
+    updateCurrentLayout(next)
+    if (activeSessionId() === sid) setActiveSessionId(leafIds(next)[0] || null)
+  }
+
+  // Close the pane at a tree path (used by placeholder panes, which have no sid).
+  const closePaneAtPath = (path: number[]) => {
+    const split = activeSplitView()
+    const tree = split?.layout ?? null
+    if (!tree) return
+    if (leafCount(tree) <= 1) return
+    const nodeAt = walkPath(tree, path)
+    if (isSidLeaf(nodeAt)) {
+      closePane(nodeAt.sid)
+      return
+    }
+    // Remove the leaf at path: walk down, collapsing the vacated side.
+    const remove = (n: SplitNode, idxs: number[]): SplitNode | null => {
+      if (isLeaf(n)) return null // removing the leaf itself
+      if (idxs.length === 0) return n
+      const [head, ...rest] = idxs
+      if (head !== 0 && head !== 1) return n
+      const child = head === 0 ? n.a : n.b
+      const next = remove(child, rest)
+      if (next === null) {
+        // This child collapsed away; keep the sibling.
+        return head === 0 ? n.b : n.a
+      }
+      if (next === child) return n
+      return head === 0 ? { ...n, a: next } : { ...n, b: next }
+    }
+    const next = remove(tree, path)
+    if (next && next !== tree) {
+      updateCurrentLayout(next)
+      if (activeSessionId() && !leafIds(next).includes(activeSessionId()!)) {
+        setActiveSessionId(leafIds(next)[0] || null)
+      }
+    }
+  }
+
+  // Fill the first empty placeholder pane with a session. If no split view is
+  // active, create one holding just that session.
+  const fillPlaceholder = (sid: string) => {
+    setShowWelcome(false)
+    const split = activeSplitView()
+    if (!split?.layout) {
+      createSplitView({ sid })
+      setActiveSessionId(sid)
+      return
+    }
+    const tree = split.layout
+    const next = fillEmpty(tree, sid)
+    if (next !== tree) updateCurrentLayout(next)
+    setActiveSessionId(sid)
+  }
+
+  const setSplitRatio = (path: number[], ratio: number) => {
+    const split = activeSplitView()
+    const tree = split?.layout ?? null
+    if (!tree) return
+    updateCurrentLayout(setRatio(tree, path, ratio))
+  }
+
+  // ── Split menu (Windows-style: explicit button + edge-drag) ──
+  const [splitMenuFor, setSplitMenuFor] = createSignal<{ sid: string; el: HTMLElement | null } | null>(null)
+  const [globalSplitMenu, setGlobalSplitMenu] = createSignal<{ el: HTMLElement | null } | null>(null)
+  const [splitViewMenuFor, setSplitViewMenuFor] = createSignal<{ id: string; el: HTMLElement | null } | null>(null)
+  const [splitPreview, setSplitPreview] = createSignal<{ path: number[]; zone: DropZone } | null>(null)
+
+  const onTabDragStart = (e: DragEvent, sid: string) => {
+    e.dataTransfer?.setData("text/mafw-sid", sid)
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"
+  }
+
+  const onLeafDragOver = (path: number[], e: DragEvent) => {
+    // dragover 阶段 getData() 返回空（Chromium 安全限制）；用 types 判断来源。
+    const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : []
+    if (!types.some(t => t.includes("mafw-sid"))) return
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move"
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const zone = zoneForPoint(rect, x, y)
+    // Idempotent update: dragover fires per mousemove; returning the previous
+    // object reference when nothing changed stops SolidJS from re-rendering the
+    // whole split tree on every pixel (which manifested as flicker).
+    setSplitPreview(prev => {
+      if (prev && prev.path.length === path.length && prev.path.every((v, i) => v === path[i]) && prev.zone === zone) {
+        return prev
+      }
+      return { path, zone }
+    })
+  }
+
+  const onLeafDrop = (path: number[], e: DragEvent) => {
+    const sid = e.dataTransfer?.getData("text/mafw-sid")
+    setSplitPreview(null)
+    if (!sid) return
+    e.preventDefault()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const zone = zoneForPoint(rect, x, y)
+
+    // Dragging in a single-session view: create a split view from it.
+    if (!activeSplitView()?.layout) {
+      const mapping0 = zoneToDir(zone)
+      if (!mapping0) {
+        // Drop on the only pane's center in single view → just switch view.
+        setActiveViewId(sid)
+        return
+      }
+      applySplit([], mapping0.dir, mapping0.place, { sid })
+      return
+    }
+
+    const tree = currentTree()
+    const ids = leafIds(tree)
+    const alreadyOpen = ids.includes(sid)
+
+    // Dragging a session onto its own current pane → no-op.
+    const targetOwn = (() => {
+      const nodeAt = walkPath(tree, path)
+      return isSidLeaf(nodeAt) && nodeAt.sid === sid
+    })()
+
+    // Move semantics: remove the old position first, then insert at target.
+    // removeSid collapses the tree, which may invalidate `path` when the removed
+    // leaf sat in the same branch as the target pane. A path is only valid if
+    // every step stays inside the tree (never hits a leaf early).
+    const removal = alreadyOpen ? removeSid(tree, sid) : null
+    const base = removal ? removal.tree : tree
+    const pathDrifted = removal?.removed ? !isValidPath(base, path) : false
+    // When the target pane itself was the removed leaf, targetOwn already
+    // returned above; a drifted path means the target pane collapsed away.
+
+    const mapping = zoneToDir(zone)
+    if (!mapping) {
+      // center → replace this pane's content with the dragged session.
+      if (alreadyOpen && targetOwn) return
+      if (leafCount(base) === 1) {
+        // The whole view collapsed to a single pane → it becomes the dragged
+        // session (the replaced pane's content already went back to tabs).
+        updateCurrentLayout({ sid })
+        setActiveSessionId(sid)
+        return
+      }
+      const target = pathDrifted ? firstLeafPath(base) : path
+      const final = replaceAtPath(base, target, sid)
+      if (final !== base) {
+        updateCurrentLayout(final)
+        setActiveSessionId(sid)
+      }
+      return
+    }
+
+    const { dir, place } = mapping
+    if (targetOwn) return // dropping onto its own pane edge does nothing
+    // No-same-direction nesting rule: a drag that would nest the same
+    // direction (h inside h, v inside v) is rejected with a hint.
+    const layout = activeSplitView()?.layout ?? null
+    if (layout) {
+      const parentDir = parentDirOf(layout, path)
+      if (parentDir === dir) {
+        showToastV2({ description: "不允许同向嵌套分屏（父 pane 已是该方向）", duration: 3000 })
+        return
+      }
+    }
+    if (leafCount(base) === 1) {
+      // Old position collapsed to a single pane → split it in the chosen
+      // direction with the dragged session on the selected side.
+      const leaf = base
+      const next = place === "before"
+        ? { dir, ratio: 0.5, a: { sid } as SplitLeaf, b: leaf }
+        : { dir, ratio: 0.5, a: leaf, b: { sid } as SplitLeaf }
+      updateCurrentLayout(next)
+      setActiveSessionId(sid)
+      return
+    }
+    const target = pathDrifted ? firstLeafPath(base) : path
+    const next = splitAtPath(base, target, dir, sid, place)
+    if (next !== base) {
+      updateCurrentLayout(next)
+      setActiveSessionId(sid)
+    }
+  }
+
+  // Walk the split tree along a path to the node (leaf or internal).
+  const walkPath = (root: SplitNode, path: number[]): SplitNode => {
+    let node = root
+    for (const idx of path) {
+      if (isLeaf(node)) break
+      node = idx === 0 ? node.a : node.b
+    }
+    return node
+  }
+
+  // A path is valid if every step descends into the tree (never hits a leaf
+  // before the path is exhausted). Used to detect paths invalidated by the
+  // tree collapsing after removeSid.
+  const isValidPath = (root: SplitNode, path: number[]): boolean => {
+    let node = root
+    for (const idx of path) {
+      if (isLeaf(node)) return false
+      node = idx === 0 ? node.a : node.b
+    }
+    return true
+  }
+
   // AskCard / PermissionCard per session (in-chat flow cards)
-  type FlowCardRecord =
-    | { kind: "ask"; data: AskCardData }
-    | { kind: "permission"; data: PermissionCardData }
   const [flowCards, setFlowCards] = createSignal<Record<string, FlowCardRecord[]>>({})
 
   const upsertCard = (sid: string, rec: FlowCardRecord) => {
@@ -318,6 +746,7 @@ export function MafwShell() {
     agentName: sessions().find(s => s.id === req.sessionID)?.title || "Agent",
     status: "pending",
     createdAt,
+    messageID: req.tool?.messageID,
     questions: (req.questions || []).map((q: any, i: number) => ({
       id: `${req.id}-q${i}`,
       title: q.question,
@@ -344,6 +773,7 @@ export function MafwShell() {
       },
       impact: req.metadata?.impact as string | undefined,
       createdAt,
+      messageID: req.tool?.messageID,
     }
   }
 
@@ -622,15 +1052,15 @@ export function MafwShell() {
       } else if (event.type === "message.complete") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
-        setSending(false)
+        sendingResetters[sid]?.()
         expireSessionCards(sid)
       } else if (event.type === "message.part.complete") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
-        setSending(false)
+        sendingResetters[sid]?.()
       } else if (event.type === "message.error" || event.type === "message.aborted") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
-        setSending(false)
+        sendingResetters[sid]?.()
         expireSessionCards(sid)
       }
 
@@ -646,6 +1076,31 @@ export function MafwShell() {
           }
           return { ...prev, message: msgs }
         })
+      }
+
+      // mafw_media_speak 工具事件 → 流式 TTS 播放（合成即出声，与回复生成并行）。
+      // 参数字段多形态兼容：input（opencode tool part 标准字段）优先，args 保留兼容。
+      const toolName = event.properties?.tool || event.properties?.info?.tool || event.info?.tool || (event.properties?.part as any)?.tool
+      if (toolName === "mafw_media_speak" && sid) {
+        const propsArgs = event.properties?.input || event.properties?.info?.input || event.properties?.part?.input
+          || event.properties?.args || event.properties?.info?.args || event.info?.args
+        let text = typeof propsArgs?.text === "string" ? propsArgs.text : ""
+        let voice = typeof propsArgs?.voice === "string" ? propsArgs.voice : undefined
+        if (!text) {
+          // 兜底：从 store 里该 assistant 消息的 tool part 提取（part 结构 { type, tool, input }）
+          const msgId = event.assistantMessageID
+          const parts = msgId ? (store.part[msgId] || []) : []
+          for (const p of parts) {
+            if (p?.type === "tool" && (p.tool === "mafw_media_speak" || p.tool === "mafw_speak")) {
+              text = typeof p.input?.text === "string" ? p.input.text : ""
+              voice = typeof p.input?.voice === "string" ? p.input.voice : voice
+              break
+            }
+          }
+        }
+        console.log("[mafw] media_speak event:", event.type, "| toolName:", toolName, "| text len:", text.length, "| voice:", voice)
+        console.log("[mafw] media_speak raw:", JSON.stringify(raw).slice(0, 600))
+        if (text) mediaSpeakHandlers[sid]?.(text, voice)
       }
     }
     es.onerror = () => { console.log("[mafw] SSE error (will auto-reconnect)") }
@@ -697,7 +1152,7 @@ export function MafwShell() {
         msgs.push(msg)
         let itemParts = item.parts || info.parts || []
         if (itemParts.length > 0) {
-          parts[msgId] = itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId }))
+          parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
         }
       }
       if (msgs.length > 0) {
@@ -734,7 +1189,7 @@ export function MafwShell() {
           console.log("[mafw] store verify - msgs:", msgCount, "partKeys:", partKeys, "sid:", sessionID, "sidExists:", !!store.message[sessionID])
         }, 100)
         setPageState(sessionID, { cursor: nextCursor, hasMore: !!nextCursor, loading: false })
-        forceAnchor()
+        anchorRegistry[sessionID]?.()
       }
     } catch (e) { console.warn("[mafw] loadHistory failed", e); showToastV2({ description: "Failed to load session history", duration: 5000 }) }
   }
@@ -742,8 +1197,9 @@ export function MafwShell() {
   // Active session
   const active = () => sessions().find(s => s.id === activeSessionId()) || null
 
-  async function createSession() {
+  async function createSession(opts?: { noReveal?: boolean }) {
     console.log("[mafw] createSession")
+    setShowWelcome(false)
     try {
       const result = await window.api.mafw.sessions.create() as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
@@ -761,140 +1217,56 @@ export function MafwShell() {
         message: { ...prev.message, [id]: [] },
       }))
       setSessionRefreshKey(k => k + 1)
+      if (!opts?.noReveal) {
+        setActiveViewId(id)
+        ensureSessionVisible(id)
+      }
       return id
     } catch {
       const id = `local-${Date.now()}`
       setSessions(prev => [...prev, { id, title: `Chat ${sessions().length + 1}`, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false }])
       setActiveSessionId(id)
       setSessionRefreshKey(k => k + 1)
+      if (!opts?.noReveal) {
+        setActiveViewId(id)
+        ensureSessionVisible(id)
+      }
       return id
     }
   }
 
   function closeSession(id: string) {
     setSessions(prev => prev.filter(s => s.id !== id))
-    if (activeSessionId() === id) {
+    const wasActive = activeSessionId() === id
+    const wasActiveView = activeViewId() === id
+    // Remove the session from every split view's layout.
+    let changed = false
+    setSplitViews(prev => prev.map(v => {
+      if (!v.layout || !leafIds(v.layout).includes(id)) return v
+      changed = true
+      const next = removeLeaf(v.layout, id)
+      return { ...v, layout: next }
+    }))
+    if (changed) {
+      setSessionRefreshKey(k => k + 1)
+    }
+    if (wasActiveView) {
+      // The active view was that session → fall back to another session or a split.
+      const firstSplit = splitViews()[0]
+      const firstSession = sessions()[0]
+      setActiveViewId(firstSplit?.id ?? firstSession?.id ?? null)
+    } else if (wasActive) {
       const remaining = sessions().filter(s => s.id !== id)
       setActiveSessionId(remaining.length > 0 ? remaining[remaining.length - 1].id : null)
     }
     setSessionRefreshKey(k => k + 1)
   }
 
-  // Auto-grow the composer textarea up to 200px (single line at rest).
-  const autoGrow = (el: HTMLTextAreaElement) => {
-    el.style.height = "auto"
-    el.style.height = Math.min(el.scrollHeight, 200) + "px"
-  }
-
-  async function sendMessage() {
-    const text = input()
-    const atts = attachments()
-    const agents = mentionedAgents()
-    if ((!text.trim() && atts.length === 0) || sending()) return
-    let sid = activeSessionId()
-    if (!sid) { sid = await createSession(); if (!sid) return }
-
-    setSending(true)
-    setInput("")
-    setAttachments([])
-    setMentionedAgents([])
-    for (const a of atts) if (a.token) (window as any).api?.releasePickedFiles?.(a.token)
-    // Collapse the textarea back to single line after the message is queued
-    const ta = textareaEl()
-    if (ta) ta.style.height = "auto"
-
-    const userMsgId = `user-${Date.now()}`
-    const ts = Date.now()
-    setSessions(prev => prev.map(s => s.id === sid ? { ...s, userMsgId } : s))
-
-    // Build parts ONCE — the same ids feed the optimistic store entry and the
-    // request payload, so the server echo (which preserves part ids) merges
-    // instead of duplicating chips.
-    const fileParts = atts.map((a, i) => a.dataUrl
-      ? { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || "image/png", filename: a.name, url: a.dataUrl }
-      : { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path || "") })
-    const agentParts = agents.map(a => ({ type: "agent", id: `prt_agent_${ts}_${a.name}`, name: a.name }))
-    const optimisticParts: any[] = [{ type: "text", text, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId }]
-    optimisticParts.push(...fileParts.map(p => ({ ...p, sessionID: sid, messageID: userMsgId })))
-    optimisticParts.push(...agentParts.map(p => ({ ...p, sessionID: sid, messageID: userMsgId })))
-    setStore(prev => {
-      const msgs = { ...prev.message }
-      const sessionMsgs = [...(msgs[sid] || [])]
-      sessionMsgs.push({ id: userMsgId, sessionID: sid, role: "user", parentID: null, time: { created: Date.now() }, text, agent: "general", model: { providerID: "opencode", modelID: "" } })
-      msgs[sid] = sessionMsgs
-      return {
-        ...prev,
-        message: msgs,
-        part: { ...prev.part, [userMsgId]: optimisticParts },
-      }
-    })
-    forceAnchor()
-
-    console.log("[mafw] sendMessage", sid)
-    try {
-      const result = await window.api.mafw.chat.sendEnriched({
-        message: text,
-        sessionID: sid,
-        parts: fileParts.length || agentParts.length ? [...fileParts, ...agentParts] : undefined,
-        agent: agentSel()?.name === "manager" ? undefined : agentSel()?.name,
-        model: modelSel() ? { providerID: modelSel()!.providerID, modelID: modelSel()!.modelID } : undefined,
-      }) as any
-      if (result?.sessionID) {
-        console.log("[mafw] sendEnriched result: session", result.sessionID)
-      } else {
-        const errMsg = result?.error || 'no session ID returned'
-        console.warn("[mafw] sendEnriched failed:", errMsg)
-        showToastV2({ description: `Chat failed: ${errMsg}`, duration: 5000 })
-        setSending(false)
-      }
-    } catch (err: any) {
-      console.warn("[mafw] sendEnriched error:", err.message)
-      setSending(false)
-      showToastV2({ description: `Chat failed: ${err.message}`, duration: 5000 })
-    }
-  }
-
-  // Interrupt the in-flight conversation (ESC / Ctrl+C / stop button)
-  async function interrupt() {
-    const sid = activeSessionId()
-    if (!sid) return
-    try {
-      await window.api.mafw.sessions.abort(sid)
-    } catch (e) {
-      console.warn("[mafw] interrupt failed", e)
-    }
-    setSending(false)
-  }
-
-  onMount(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!sending()) return
-      const isEsc = e.key === "Escape"
-      const isCtrlC = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c"
-      if (!isEsc && !isCtrlC) return
-      // Keep Ctrl+C as copy inside editable fields
-      if (isCtrlC) {
-        const el = document.activeElement as HTMLElement | null
-        if (el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable) return
-      }
-      e.preventDefault()
-      void interrupt()
-    }
-    window.addEventListener("keydown", onKey)
-    onCleanup(() => window.removeEventListener("keydown", onKey))
-  })
+  // Interrupt the in-flight conversation (ESC / Ctrl+C / stop button) lives in
+  // ChatPane per-pane now.
 
   // Current rendering state for SessionTurn
   const currentSessionID = () => active()?.id || ""
-
-  // Real model name of the last assistant message (fallback: agent → "default")
-  const modelName = createMemo(() => {
-    const sid = currentSessionID()
-    const msgs = sid ? (store.message[sid] || []) : []
-    const assistants = msgs.filter(m => m.role === "assistant")
-    const last = assistants[assistants.length - 1]
-    return last?.model?.modelID || last?.agent || "default"
-  })
 
   // Composer menus: agents (@ mention) + providers/models (model pill)
   const gwReadyForMenus = createMemo(() => gwStatus()?.state === "ready")
@@ -974,12 +1346,8 @@ export function MafwShell() {
     return groups
   })
 
-  // ── Pickers: model pill / agent pill (@ mention) ──
+  // ── Pickers: agent selection (shared), per-pane picker state lives in ChatPane ──
   const [agentSel, setAgentSel] = createSignal<AgentEntry | null>(null)
-  const [pickerOpen, setPickerOpen] = createSignal<"model" | "agent-switch" | "agent-mention" | null>(null)
-  const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
-  const [subagents, setSubagents] = createSignal<{ id: string; title: string }[]>([])
-  const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
   const [switchLogs, setSwitchLogs] = createSignal<Record<string, string[]>>({})
   const [taskListOpen, setTaskListOpen] = createSignal(false)
   const [tasksPlacement, setTasksPlacement] = createSignal<"bar" | "dock">(
@@ -987,15 +1355,68 @@ export function MafwShell() {
   )
   const [viewportNarrow, setViewportNarrow] = createSignal(window.innerWidth < 1200)
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
+  // Anchor for the TaskList popover: the titlebar of the pane whose TaskBar the
+  // user clicked (per-pane; the shared titlebarRef is unreliable in splits).
+  const [taskAnchor, setTaskAnchor] = createSignal<HTMLElement | null>(null)
   const [dockRef, setDockRef] = createSignal<HTMLDivElement | null>(null)
+
+  // ── Unified right dock (tasks / trajectory tabs) ──
+  const [rightDockOpen, setRightDockOpen] = createSignal(localStorage.getItem("mafw-right-dock-open") === "1")
+  const [rightDockTab, setRightDockTab] = createSignal<"tasks" | "trajectory">(
+    (localStorage.getItem("mafw-right-dock-tab") as "tasks" | "trajectory") || "tasks"
+  )
+  const [rightDockWidth, setRightDockWidth] = createSignal(Number(localStorage.getItem("mafw-right-dock-width")) || 320)
+
+  const applyRightDock = (open: boolean, tab?: "tasks" | "trajectory") => {
+    setRightDockOpen(open)
+    if (tab !== undefined) setRightDockTab(tab)
+    try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch {}
+    if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
+  }
+  const applyRightDockWidth = (w: number) => {
+    setRightDockWidth(w)
+    try { localStorage.setItem("mafw-right-dock-width", String(w)) } catch {}
+  }
+
+  // SSE live trajectory signals
+  const [trajectoryLive, setTrajectoryLive] = createSignal<Record<string, any[]>>({})
+  const [trajectoryTurnLive, setTrajectoryTurnLive] = createSignal<Record<string, any>>({})
+
+  const [railCollapsed, setRailCollapsed] = createSignal(localStorage.getItem("mafw-rail-collapsed") === "1")
+  const [railWidth, setRailWidth] = createSignal(Number(localStorage.getItem("mafw-rail-width")) || 264)
+
+  const applyRailCollapsed = (c: boolean) => {
+    setRailCollapsed(c)
+    try { localStorage.setItem("mafw-rail-collapsed", c ? "1" : "0") } catch { /* ignore */ }
+  }
+  const applyRailWidth = (w: number) => {
+    setRailWidth(w)
+    try { localStorage.setItem("mafw-rail-width", String(w)) } catch { /* ignore */ }
+  }
 
   const applyTasksPlacement = (p: "bar" | "dock") => {
     setTasksPlacement(p)
     try { localStorage.setItem("mafw-tasks-placement", p) } catch { /* ignore */ }
   }
 
-  // Narrow-viewport overlay closes on Esc / outside click (spec §3). The wide
-  // dock is persistent — no dismiss handlers there.
+  // Narrow-viewport overlay: right dock + legacy dock fallback.
+  createEffect(() => {
+    if (!(rightDockOpen() && viewportNarrow())) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") applyRightDock(false)
+    }
+    const onDown = (e: MouseEvent) => {
+      const el = dockRef()
+      if (el && el.contains(e.target as Node)) return
+      applyRightDock(false)
+    }
+    window.addEventListener("keydown", onKey)
+    document.addEventListener("mousedown", onDown)
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKey)
+      document.removeEventListener("mousedown", onDown)
+    })
+  })
   createEffect(() => {
     if (!(tasksPlacement() === "dock" && viewportNarrow())) return
     const onKey = (e: KeyboardEvent) => {
@@ -1028,6 +1449,19 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
+  // Ctrl/Cmd+T: toggle unified right dock. Skip when typing.
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "t") return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return
+      e.preventDefault()
+      applyRightDock(!rightDockOpen())
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
   // Dock → overlay under 1200px viewport (storage unchanged).
   createEffect(() => {
     const onResize = () => setViewportNarrow(window.innerWidth < 1200)
@@ -1035,53 +1469,15 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("resize", onResize))
   })
 
-  const currentModelLabel = createMemo(() => modelSel()?.label || modelName())
-
-  // Composite key (providerID/modelID) so same-id models under different
-  // providers stay distinct.
-  const pickerCurrentKey = createMemo(() => {
-    const sid = currentSessionID()
-    const msgs = sid ? (store.message[sid] || []) : []
-    const last = [...msgs].reverse().find(m => m.role === "assistant")
-    const m = last?.model
-    if (m?.providerID && m?.modelID) return `${m.providerID}/${m.modelID}`
-    if (modelSel()) return `${modelSel()!.providerID}/${modelSel()!.modelID}`
-    return undefined
-  })
-
-  const refreshSubagents = async () => {
-    const sid = currentSessionID()
-    if (!sid) { setSubagents([]); return }
-    try {
-      const items: any[] = await window.api.mafw.sessions.children(sid)
-      setSubagents((items || []).map((c: any) => ({ id: c.id, title: c.title || "子代理" })))
-    } catch (e) {
-      console.warn("[mafw] children fetch:", e)
-      setSubagents([])
-    }
-  }
-
   const subagentRunning = (id: string) => store.session_status[id]?.type === "busy"
 
   const onModelSelect = (m: ModelEntry) => {
     setModelSel({ providerID: m.providerID, modelID: m.id, label: m.name })
-    setPickerOpen(null)
   }
-
-  const propsBusy = () => store.session_status[currentSessionID()]?.type === "busy"
 
   // Manager sessions are locked to the manager agent — switching to another
   // primary agent is not allowed there.
   const isManagerSession = createMemo(() => active()?.manager === true)
-
-  const onAgentSelect = (a: AgentEntry) => {
-    setPickerOpen(null)
-    if (propsBusy()) {
-      setSwitchConfirm(a)
-      return
-    }
-    applyAgentSwitch(a)
-  }
 
   const applyAgentSwitch = (a: AgentEntry) => {
     setAgentSel(a)
@@ -1091,21 +1487,8 @@ export function MafwShell() {
     }
   }
 
-  // One user message = one turn. Sorted by time as insurance against any
-  // reordering between SSE appends and the history merge.
-  const userMessages = () => {
-    const sid = currentSessionID()
-    if (!sid) return []
-    const msgs = store.message[sid]
-    if (!msgs?.length) return []
-    return msgs
-      .filter(m => m.role === "user")
-      .sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
-  }
-
   // TaskList metrics: tokens + start time of the current (last) turn
-  const taskMetrics = createMemo(() => {
-    const sid = currentSessionID()
+  const taskMetrics = (sid: string) => {
     if (!sid) return { tokens: 0, started: 0 }
     const msgs = store.message[sid] || []
     const userMsgs = msgs.filter(m => m.role === "user")
@@ -1115,122 +1498,12 @@ export function MafwShell() {
     const last = assistants[assistants.length - 1]
     const tokens = last?.tokens?.total || last?.tokens?.output || 0
     return { tokens, started: userMsg.time?.created || 0 }
-  })
+  }
 
   // All todos completed → header accent line/badge collapse ("细线收起", spec §2).
-  const tasksAllDone = createMemo(() => {
-    const ts = todos[currentSessionID()] || []
+  const tasksAllDone = (sid: string) => {
+    const ts = todos[sid] || []
     return ts.length > 0 && ts.every(t => t.status === "completed")
-  })
-
-  // Scroll container: the outer .mafw-session-turn-container is the single
-  // scroller (each SessionTurn's internal content is forced overflow-visible).
-  const [containerRef, setContainerRef] = createSignal<HTMLDivElement | null>(null)
-  const [jumpVisible, setJumpVisible] = createSignal(false)
-  const stickToBottom = (el: HTMLDivElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 80
-  const updateJump = (el: HTMLDivElement) => {
-    setJumpVisible(el.scrollHeight - el.scrollTop - el.clientHeight > 120)
-  }
-  const forceAnchor = () => {
-    const el = containerRef()
-    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
-    setJumpVisible(false)
-  }
-  const jumpToLatest = () => {
-    const el = containerRef()
-    if (el) el.scrollTop = el.scrollHeight
-    setJumpVisible(false)
-  }
-
-  // Follow streaming only when already pinned to the bottom (don't steal the
-  // scrollbar while the user is reading older content).
-  createEffect(() => {
-    const el = containerRef()
-    const sid = currentSessionID()
-    if (!el || !sid) return
-    const msgs = store.message[sid]
-    const partCount = (msgs || []).reduce((n, m) => n + (store.part[m.id]?.length || 0), 0)
-    void partCount
-    if (stickToBottom(el)) {
-      el.scrollTop = el.scrollHeight
-      setJumpVisible(false)
-    } else {
-      updateJump(el)
-    }
-  })
-
-  // New tab / session switch anchors to the bottom (show latest).
-  createEffect(() => {
-    const sid = activeSessionId()
-    if (sid) forceAnchor()
-  })
-
-  // A new pending flow card scrolls into view only when pinned to the bottom;
-  // otherwise the jump pill signals pending answers.
-  createEffect(() => {
-    const sid = currentSessionID()
-    const cards = sid ? sessionCards(sid).visible : []
-    const pending = cards.filter(c => c.data.status === "pending").length
-    void pending
-    const el = containerRef()
-    if (el && stickToBottom(el)) forceAnchor()
-  })
-
-  // Lazy load older messages when scrolled near the top.
-  async function loadOlder(sessionID: string) {
-    const page = pageState[sessionID]
-    if (!page || page.loading || !page.hasMore || !page.cursor) return
-    setPageState(sessionID, 'loading', true)
-    try {
-      const data = await window.api.mafw.sessions.messages(sessionID, 100, page.cursor) as any
-      const rawItems = Array.isArray(data) ? data : data?.data
-      const nextCursor = data?.nextCursor ?? null
-      const el = containerRef()
-      const prevHeight = el?.scrollHeight || 0
-      if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
-        const existing = store.message[sessionID] || []
-        const existingById = new Map(existing.map(m => [m.id, m]))
-        const msgs: any[] = [...existing]
-        const parts: Record<string, any[]> = {}
-        for (const item of rawItems) {
-          const info = item.info || item
-          const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
-          if (existingById.has(msgId)) continue
-          const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
-          msgs.push(msg)
-          let itemParts = item.parts || info.parts || []
-          if (itemParts.length > 0) {
-            parts[msgId] = itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId }))
-          }
-        }
-        if (msgs.length > 0) {
-          msgs.sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
-          setStore(prev => ({
-            ...prev,
-            message: { ...prev.message, [sessionID]: msgs },
-            part: { ...prev.part, ...parts },
-          }))
-          // Preserve viewport position: older content is prepended above.
-          if (el) {
-            requestAnimationFrame(() => {
-              el.scrollTop += el.scrollHeight - prevHeight
-            })
-          }
-        }
-      }
-      setPageState(sessionID, { cursor: nextCursor, hasMore: !!nextCursor, loading: false })
-    } catch (e) {
-      console.warn("[mafw] loadOlder failed", e)
-      setPageState(sessionID, 'loading', false)
-    }
-  }
-
-  const handleScroll = () => {
-    const el = containerRef()
-    const sid = currentSessionID()
-    if (!el || !sid) return
-    updateJump(el)
-    if (el.scrollTop < 100) void loadOlder(sid)
   }
 
   // Gateway status
@@ -1253,7 +1526,7 @@ export function MafwShell() {
       <DialogProvider>
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
-            <DataProvider data={store} directory=".">
+            <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
               <div class="mafw-shell">
       <ToastV2.Region />
       <div class="mafw-titlebar">
@@ -1274,24 +1547,47 @@ export function MafwShell() {
             )}
           </ButtonV2>
         </TooltipV2>
+        <div style={{ flex: 1 }} />
       </div>
-      <div class="mafw-body">
-        <Rail activeSessionId={activeSessionId()} sessionRefreshKey={sessionRefreshKey()} onSelectSession={(id, title, manager) => {
-          setShowConfig(false)
-          setActiveTab("chat")
-          // Ensure session exists in local tabs and store
-          if (!sessions().find(s => s.id === id)) {
-            const tabTitle = title || `Chat ${sessions().length + 1}`
-            setSessions(prev => [...prev, { id, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager }])
-            setStore(prev => ({
-              ...prev,
-              session: [...prev.session, { id, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
-              session_status: { ...prev.session_status, [id]: { type: "idle" } },
-              message: { ...prev.message, [id]: [] },
-            }))
-          }
-          setActiveSessionId(id)
-        }} onSettings={() => setShowConfig(true)} />
+      <div class="mafw-body" style={{ "grid-template-columns": railCollapsed() ? "32px 1fr" : `${railWidth()}px 1fr` }}>
+        {railCollapsed() ? (
+          <div class="mafw-rail-collapsed">
+            <ButtonV2 variant="ghost" size="small" class="mafw-rail-expand" onClick={() => applyRailCollapsed(false)} aria-label="展开侧边栏">
+              <span>▶</span>
+            </ButtonV2>
+          </div>
+        ) : (
+          <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
+            <Rail activeSessionId={activeSessionId()} sessionRefreshKey={sessionRefreshKey()} managerSessionId={managerSessionId()} onSelectSession={(id, title, manager) => {
+              setShowConfig(false)
+              setActiveTab("chat")
+              setShowWelcome(false)
+              // Ensure session exists in local tabs and store
+              if (!sessions().find(s => s.id === id)) {
+                const tabTitle = title || `Chat ${sessions().length + 1}`
+                setSessions(prev => [...prev, { id, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager }])
+                setStore(prev => ({
+                  ...prev,
+                  session: [...prev.session, { id, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
+                  session_status: { ...prev.session_status, [id]: { type: "idle" } },
+                  message: { ...prev.message, [id]: [] },
+                }))
+              }
+              setActiveSessionId(id)
+              setActiveViewId(id)
+            }} onSettings={() => setShowConfig(true)} onToggleCollapsed={() => applyRailCollapsed(true)} />
+            <ResizeHandle
+              direction="horizontal"
+              edge="end"
+              size={railWidth()}
+              min={180}
+              max={400}
+              collapseThreshold={120}
+              onResize={applyRailWidth}
+              onCollapse={() => applyRailCollapsed(true)}
+            />
+          </div>
+        )}
         <div class="mafw-main">
           {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
@@ -1306,15 +1602,37 @@ export function MafwShell() {
                       <ContextMenu.Trigger
                         as="div"
                         class="mafw-session-tab"
-                        classList={{ active: s.id === activeSessionId() }}
-                        onClick={() => setActiveSessionId(s.id)}
+                        classList={{ active: activeViewId() === s.id }}
+                        draggable
+                        onDragStart={e => onTabDragStart(e, s.id)}
+                        onDragEnd={() => setSplitPreview(null)}
+                        onClick={() => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(s.id); setActiveViewId(s.id); ensureSessionVisible(s.id) }}
                       >
                         <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
                         <span class="mafw-session-title">{s.title}</span>
+                        <TooltipV2 value="分屏" openDelay={300}>
+                          <ButtonV2 variant="ghost" size="small" class="mafw-session-split" onClick={e => {
+                            e.stopPropagation()
+                            setGlobalSplitMenu(null)
+                            setSplitMenuFor({ sid: s.id, el: (e.currentTarget as HTMLElement).parentElement })
+                          }} aria-label="分屏">⿻</ButtonV2>
+                        </TooltipV2>
                         <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); closeSession(s.id) }}>✕</ButtonV2>
                       </ContextMenu.Trigger>
                       <ContextMenu.Portal>
                         <ContextMenu.Content>
+                          <For each={directionOptionsFor(s.id)}>
+                            {(o) => (
+                              <ContextMenu.Item onSelect={() => splitTab(s.id, o.dir, o.place)}>
+                                <ContextMenu.ItemLabel>{o.glyph} {o.label}</ContextMenu.ItemLabel>
+                              </ContextMenu.Item>
+                            )}
+                          </For>
+                          <Show when={directionOptionsFor(s.id).length === 0 && leafCount(currentTree()) >= 4}>
+                            <ContextMenu.Item disabled>
+                              <ContextMenu.ItemLabel>已达最多 4 个 pane</ContextMenu.ItemLabel>
+                            </ContextMenu.Item>
+                          </Show>
                           <ContextMenu.Item onSelect={() => closeSession(s.id)}>
                             <ContextMenu.ItemLabel>Close</ContextMenu.ItemLabel>
                           </ContextMenu.Item>
@@ -1325,296 +1643,285 @@ export function MafwShell() {
                       </ContextMenu.Portal>
                     </ContextMenu>
                   ))}
+                  {/* Split view tabs */}
+                  {splitViews().map(v => (
+                    <div
+                      class="mafw-session-tab mafw-split-view-tab"
+                      classList={{ active: activeViewId() === v.id }}
+                      onClick={() => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveViewId(v.id) }}
+                    >
+                      <span class="mafw-split-view-icon">⛶</span>
+                      <span
+                        class="mafw-session-title"
+                        title="双击重命名"
+                        onDblClick={e => {
+                          e.stopPropagation()
+                          const next = prompt("重命名分屏", v.title)
+                          if (next?.trim()) renameSplitView(v.id, next.trim())
+                        }}
+                      >{v.title}</span>
+                      <TooltipV2 value="在此分屏中继续分屏" openDelay={300}>
+                        <ButtonV2 variant="ghost" size="small" class="mafw-session-split" onClick={e => {
+                          e.stopPropagation()
+                          setGlobalSplitMenu(null)
+                          setSplitViewMenuFor({ id: v.id, el: (e.currentTarget as HTMLElement).parentElement })
+                        }} aria-label="继续分屏">⿻</ButtonV2>
+                      </TooltipV2>
+                      <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); closeSplitView(v.id) }}>✕</ButtonV2>
+                    </div>
+                  ))}
+                  <TooltipV2 value="分屏" openDelay={300}>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={e => {
+                      setSplitMenuFor(null)
+                      setGlobalSplitMenu({ el: (e.currentTarget as HTMLElement).parentElement })
+                    }}>⿻</ButtonV2>
+                  </TooltipV2>
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
-                {/* SessionTurns — one SessionTurn per user message (turn = user msg + its assistant replies incl. tool calls) */}
-                          <div ref={setContainerRef} onScroll={handleScroll} class="mafw-session-turn-container">
-                            <Show when={currentSessionID()}>
-                              <div class="mafw-session-titlebar">
-                                <div class="mafw-session-titlebar-inner" ref={setTitlebarRef}>
-                                  <span class="mafw-agent-avatar">{(active()?.title || "A").charAt(0)}</span>
-                                  <span class="mafw-session-titlebar-text">{active()?.title || "Chat"}</span>
-                                  <Show when={(todos[currentSessionID()] || []).length > 0 && !tasksAllDone()}>
-                                    <span class="mafw-chat-header-divider" />
-                                  </Show>
-                                  <TaskBar
-                                    todos={todos[currentSessionID()] || []}
-                                    tokens={taskMetrics().tokens}
-                                    started={taskMetrics().started}
-                                    open={taskListOpen() && tasksPlacement() === "bar"}
-                                    onToggle={() => setTaskListOpen(!taskListOpen())}
-                                  />
-                                  <Show when={(todos[currentSessionID()] || []).length > 0 && !tasksAllDone()}>
-                                    <span class="mafw-chat-header-done">
-                                      {(todos[currentSessionID()] || []).filter(t => t.status === "completed").length}/
-                                      {(todos[currentSessionID()] || []).length}
-                                    </span>
-                                  </Show>
-                                  <Show when={store.session_status[currentSessionID()]?.type === "busy"}>
-                                    <span class="mafw-session-status">
-                                      <span class="mafw-session-status-dot" />
-                                      Running
-                                    </span>
-                                  </Show>
-                                </div>
-                              </div>
-                              <For each={userMessages()}>
-                                {(msg) => (
-                                  <SessionTurn
-                                    sessionID={currentSessionID()!}
-                                    messageID={msg.id}
-                                    classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
-                                  />
-                                )}
-                              </For>
-                              {/* Agent switch traces (local UI only) */}
-                              <For each={switchLogs()[currentSessionID()!] || []}>
-                                {(t) => <div class="mafw-switch-trace">{t}</div>}
-                              </For>
-                              {/* Flow cards: permission first (serial queue), then ask cards */}
-                              <Show when={currentSessionID()}>
-                                <For each={sessionCards(currentSessionID()!).visible}>
-                                  {(c) => {
-                                    const sc = sessionCards(currentSessionID()!)
-                                    return c.kind === "permission" ? (
-                                      <PermissionCard
-                                        data={c.data}
-                                        queueLength={c.data.status === "pending" ? sc.queueLength : 0}
-                                        keyboardOwner={c.data.id === sc.keyboardOwnerId}
-                                        onAllowOnce={() => permReply(c.data, "once")}
-                                        onAllowAlways={() => permReply(c.data, "always")}
-                                        onDeny={(note) => permReply(c.data, "reject", note)}
-                                      />
-                                    ) : (
-                                      <AskCard
-                                        data={c.data}
-                                        keyboardOwner={c.data.id === sc.keyboardOwnerId}
-                                        onSubmit={(answers, custom) => askSubmit(c.data, answers, custom)}
-                                        onCancel={() => askCancel(c.data)}
-                                      />
-                                    )
-                                  }}
-                                </For>
-                              </Show>
-                              <ButtonV2
-                                variant="ghost"
-                                size="small"
-                                class="mafw-jump-latest"
-                                classList={{ visible: jumpVisible() }}
-                                onClick={jumpToLatest}
-                                aria-label="Jump to latest"
-                              >
-                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                                  <path d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332" stroke="currentColor" stroke-linecap="square" />
-                                </svg>
+                {/* Split panes — one ChatPane per leaf */}
+                <Show
+                  when={showWelcome()}
+                  fallback={
+                    <div class="mafw-chat-panes">
+                      <SplitView
+                        root={currentTree()}
+                    onRatio={setSplitRatio}
+                    preview={splitPreview()}
+                    onLeafDragOver={onLeafDragOver}
+                    onLeafDrop={onLeafDrop}
+                    renderLeaf={(leaf, path) => (
+                      "sid" in leaf ? (
+                        <ChatPane
+                          sessionID={leaf.sid}
+                          focused={activeSessionId() === leaf.sid}
+                          canClosePane={leafCount(currentTree()) > 1}
+                          store={store as any}
+                          setStore={setStore as any}
+                          todos={todos}
+                          switchLogs={switchLogs}
+                          sessionCards={sessionCards}
+                          sessionPending={sessionPending}
+                          taskMetrics={taskMetrics}
+                          tasksAllDone={tasksAllDone}
+                          gwReady={gwStatus()?.state === "ready"}
+                          agentSel={agentSel}
+                          model={modelSel}
+                          modelGroups={modelGroups}
+                          primaryAgents={primaryAgents}
+                          subagentAgents={subagentAgents}
+                          subagentRunning={subagentRunning}
+                          isManager={isManagerSession()}
+                          readOnly={!!store.session.find((s: any) => s.id === leaf.sid)?.parentID}
+                          parentID={store.session.find((s: any) => s.id === leaf.sid)?.parentID ?? null}
+                          onBackToParent={() => backToParent(leaf.sid)}
+                          onOpenSubagent={(id) => void openSubagentSession(id)}
+                          currentProject={currentProject()}
+                          onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
+                          onToggleTheme={toggleTheme}
+                          onOpenSettings={() => setShowConfig(true)}
+                          onModelSelect={onModelSelect}
+                          onApplyAgentSwitch={applyAgentSwitch}
+                          onPermReply={permReply}
+                          onAskSubmit={askSubmit}
+                          onAskCancel={askCancel}
+                          onTitlebarRef={(el) => setTitlebarRef(el)}
+                          taskListOpen={taskListOpen()}
+                          tasksPlacement={tasksPlacement()}
+                          onTaskToggle={(el) => { setTaskAnchor(el); setTaskListOpen(o => !o) }}
+                          onOpenRightDock={(tab) => applyRightDock(true, tab)}
+                          onFocus={() => { setShowConfig(false); setActiveTab("chat"); setActiveSessionId(leaf.sid) }}
+                          onClosePane={() => closePane(leaf.sid)}
+                          onCreateSession={createSession}
+                          onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
+                          onRegisterAnchor={(s, fn) => { anchorRegistry[s] = fn }}
+                          onUnregisterAnchor={(s) => { delete anchorRegistry[s] }}
+                          onRegisterResetSending={(s, fn) => { sendingResetters[s] = fn }}
+                          onUnregisterResetSending={(s) => { delete sendingResetters[s] }}
+                          onRegisterMediaSpeak={(s, fn) => { mediaSpeakHandlers[s] = fn }}
+                          onUnregisterMediaSpeak={(s) => { delete mediaSpeakHandlers[s] }}
+                          pageState={pageState}
+                          setPageState={setPageState as any}
+                        />
+                      ) : (
+                        <SplitPlaceholder
+                          openSessions={sessions()}
+                          historySessions={historySessions()}
+                          canClosePane={leafCount(currentTree()) > 1}
+                          onClose={() => closePaneAtPath(path)}
+                          onSelect={fillPlaceholder}
+                          onCreate={() => void createSession({ noReveal: true }).then(id => id && fillPlaceholder(id))}
+                        />
+                      )
+                    )}
+                  />
+                    </div>
+                  }
+                >
+                  <WelcomeHome
+                    projects={projects()}
+                    currentProject={currentProject()}
+                    onSelectProject={(w) => void handleSelectProject(w)}
+                    openSessions={sessions()}
+                    historySessions={historySessions()}
+                    onSelect={(sid) => { const h = historySessions().find(x => x.id === sid); openSessionTab(sid, h?.title) }}
+                    onCreate={() => void createSession()}
+                    onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }}
+                    onNewGoal={handleNewGoal}
+                    onOpenManager={handleOpenManager}
+                  />
+                </Show>
+                {/* Split direction menus */}
+                <Show when={splitMenuFor()}>
+                  {(m) => {
+                    const opts = () => directionOptionsFor(m().sid)
+                    return (
+                      <PopoverShell
+                        open={!!splitMenuFor()}
+                        trigger={m().el}
+                        anchor="below-center"
+                        width={160}
+                        onClose={() => setSplitMenuFor(null)}
+                      >
+                        <div class="mafw-split-menu">
+                          <For each={opts()}>
+                            {(o) => (
+                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => { setSplitMenuFor(null); splitTab(m().sid, o.dir, o.place) }}>
+                                <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
                               </ButtonV2>
-                            </Show>
-                          </div>
-                {/* InputArea — 760px centered wrapper: composer box (§4.7) */}
-                <div class="mafw-input-area">
-                  <Show when={currentSessionID() && sessionPending(currentSessionID()!) > 0 && jumpVisible()}>
-                    <ButtonV2 variant="outline" size="small" class="mafw-pending-pill" onClick={jumpToLatest} aria-label="有待回答卡片">
-                      <span class="mafw-flow-pulse" />
-                      有 {sessionPending(currentSessionID()!)} 个待回答 ↓
-                    </ButtonV2>
-                  </Show>
-                  <div
-                    class="mafw-composer"
-                    classList={{ "mafw-composer-dragging": dragging() }}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                  >
-                    {/* Attachment + @agent chips row */}
-                    <Show when={attachments().length > 0 || mentionedAgents().length > 0}>
-                      <div class="mafw-composer-chips">
-                        <For each={attachments()}>
-                          {(a, i) => (
-                            <span class="mafw-chip">
-                              <Show when={a.dataUrl} fallback={<Icon name="file" size="small" />}>
-                                <img class="mafw-chip-thumb" src={a.dataUrl} alt="" />
-                              </Show>
-                              <span class="mafw-chip-label">{a.name}</span>
-                              <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAttachment(i())} aria-label="移除附件">✕</ButtonV2>
-                            </span>
-                          )}
-                        </For>
-                        <For each={mentionedAgents()}>
-                          {(a) => (
-                            <span class="mafw-chip">
-                              <Icon name="sparkles" size="small" />
-                              <span class="mafw-chip-label">@{a.name}</span>
-                              <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAgent(a.name)} aria-label="移除引用">✕</ButtonV2>
-                            </span>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                    <TextareaV2
-                      value={input()}
-                      onInput={e => { setInput(e.currentTarget.value); autoGrow(e.currentTarget) }}
-                      onKeyDown={e => {
-                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() }
-                        else if (e.key === "Backspace" && !e.currentTarget.value && mentionedAgents().length > 0) {
-                          e.preventDefault()
-                          setMentionedAgents(prev => prev.slice(0, -1))
-                        }
-                      }}
-                      onPaste={handlePaste}
-                      ref={setTextareaEl}
-                      placeholder={gwStatus()?.state === "ready" ? "输入消息…" : "重新连接中…"}
-                      disabled={gwStatus()?.state !== "ready"}
-                      class="mafw-input"
-                    />
-                    <span class="mafw-keyhint">Enter 发送 · Shift+Enter 换行</span>
-                    <div class="mafw-composer-toolbar">
-                      <div class="mafw-composer-left">
-                        <TooltipV2 value="附件" openDelay={300}>
-                          <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">+</ButtonV2>
-                        </TooltipV2>
-                        <TooltipV2 value="引用 Agent" openDelay={300}>
-                          <ButtonV2
-                            variant="ghost"
-                            size="small"
-                            class="mafw-composer-icon"
-                            aria-label="引用 Agent"
-                            ref={(el: any) => { if (pickerOpen() === "agent-mention") setPickerTrigger(el) }}
-                            onClick={() => { setPickerTrigger(document.activeElement as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}
-                          >@</ButtonV2>
-                        </TooltipV2>
-                      </div>
-                      <div class="mafw-composer-right">
-                        <TooltipV2 value="切换 Agent" openDelay={300}>
-                          <ButtonV2
-                            variant="ghost"
-                            size="small"
-                            class="mafw-model-pill"
-                            aria-label="切换 Agent"
-                            ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
-                            onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
-                          >
-                            {agentSel()?.name || "manager"}<span class="mafw-model-chevron">▾</span>
-                          </ButtonV2>
-                        </TooltipV2>
-                        <TooltipV2 value="模型" openDelay={300}>
-                          <ButtonV2
-                            variant="ghost"
-                            size="small"
-                            class="mafw-model-pill"
-                            aria-label="模型"
-                            ref={(el: any) => { if (pickerOpen() === "model") setPickerTrigger(el) }}
-                            onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("model") }}
-                          >
-                            {currentModelLabel()}<span class="mafw-model-chevron">▾</span>
-                          </ButtonV2>
-                        </TooltipV2>
-                        <Show when={sending()} fallback={
-                          <ButtonV2
-                            variant="contrast"
-                            size="small"
-                            onClick={sendMessage}
-                            disabled={!input().trim() && attachments().length === 0}
-                            class="mafw-send"
-                            classList={{ "mafw-send-disabled": !input().trim() && attachments().length === 0 }}
-                            aria-label="发送"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                              <path d="M7 11.5V2.5M3 6.5L7 2.5L11 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                          </ButtonV2>
-                        }>
-                          <ButtonV2
-                            variant="contrast"
-                            size="small"
-                            onClick={interrupt}
-                            aria-label="停止"
-                            class="mafw-send"
-                          >
-                            <span class="mafw-stop-icon" />
-                          </ButtonV2>
-                        </Show>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Pickers */}
-                  <ModelPicker
-                    open={pickerOpen() === "model"}
-                    trigger={pickerTrigger()}
-                    groups={modelGroups()}
-                    currentKey={pickerCurrentKey()}
-                    onSelect={onModelSelect}
-                    onClose={() => setPickerOpen(null)}
-                  />
-                  <AgentPicker
-                    open={pickerOpen() === "agent-switch" || pickerOpen() === "agent-mention"}
-                    trigger={pickerTrigger()}
-                    mode={pickerOpen() === "agent-switch" ? "switch" : "mention"}
-                    anchor={pickerOpen() === "agent-switch" ? "tr" : "bl"}
-                    primaryAgents={primaryAgents()}
-                    subagentAgents={subagentAgents()}
-                    subagents={subagents()}
-                    isRunning={subagentRunning}
-                    lockedManager={isManagerSession()}
-                    currentName={agentSel()?.name || "manager"}
-                    onSelect={(a) => {
-                      if (pickerOpen() === "agent-mention") {
-                        addAgent(a.name)
-                        setPickerOpen(null)
-                      } else {
-                        onAgentSelect(a)
-                      }
-                    }}
-                    onSubagentClick={(s) => showToastV2({ description: `${s.title}（子代理）`, duration: 2000 })}
-                    onClose={() => setPickerOpen(null)}
-                  />
-                  {/* Switch-agent confirm (running) */}
-                  <Show when={switchConfirm()}>
-                    <div class="mafw-confirm-backdrop">
-                      <div class="mafw-confirm">
-                        <div class="mafw-confirm-title">切换将中断当前任务</div>
-                        <div class="mafw-confirm-text">切换到 {switchConfirm()!.name} 会中断当前正在运行的会话，确定继续？</div>
-                        <div class="mafw-confirm-actions">
-                          <ButtonV2 variant="ghost" size="small" onClick={() => setSwitchConfirm(null)}>取消</ButtonV2>
-                          <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" onClick={() => {
-                            const a = switchConfirm()!
-                            setSwitchConfirm(null)
-                            if (currentSessionID()) window.api.mafw.sessions.abort(currentSessionID()!).catch(() => {})
-                            setSending(false)
-                            applyAgentSwitch(a)
-                          }}>确认切换</ButtonV2>
+                            )}
+                          </For>
+                          <Show when={opts().length === 0}>
+                            <div class="mafw-split-menu-hint">已达最多 4 个 pane</div>
+                          </Show>
                         </div>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-                {/* TaskList: popover (bar state) / dock / overlay */}
+                      </PopoverShell>
+                    )
+                  }}
+                </Show>
+                <Show when={globalSplitMenu()}>
+                  {(m) => {
+                    // Global split always creates a NEW split view with a free
+                    // four-way direction choice (not constrained by the
+                    // current split view's layout).
+                    const opts = () => ALL_FOUR
+                    return (
+                      <PopoverShell
+                        open={!!globalSplitMenu()}
+                        trigger={m().el}
+                        anchor="below-center"
+                        width={160}
+                        onClose={() => setGlobalSplitMenu(null)}
+                      >
+                        <div class="mafw-split-menu">
+                          <For each={opts()}>
+                            {(o) => (
+                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => { setGlobalSplitMenu(null); splitGlobal(o.dir, o.place) }}>
+                                <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
+                              </ButtonV2>
+                            )}
+                          </For>
+                          <Show when={opts().length === 0}>
+                            <div class="mafw-split-menu-hint">已达最多 4 个 pane</div>
+                          </Show>
+                        </div>
+                      </PopoverShell>
+                    )
+                  }}
+                </Show>
+                {/* Continue-split menu inside a split view tab */}
+                <Show when={splitViewMenuFor()}>
+                  {(m) => {
+                    const opts = () => {
+                      const rec = splitViews().find(v => v.id === m().id)
+                      const tree = rec?.layout ?? null
+                      if (!tree) return ALL_FOUR
+                      if (leafCount(tree) >= 4) return []
+                      const focused = activeSessionId() ? findSidPath(tree, activeSessionId()!) : null
+                      const target = focused ?? firstLeafPath(tree)
+                      return directionOptions(target)
+                    }
+                    return (
+                      <PopoverShell
+                        open={!!splitViewMenuFor()}
+                        trigger={m().el}
+                        anchor="below-center"
+                        width={160}
+                        onClose={() => setSplitViewMenuFor(null)}
+                      >
+                        <div class="mafw-split-menu">
+                          <For each={opts()}>
+                            {(o) => (
+                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => { setSplitViewMenuFor(null); continueSplitIn(m().id, o.dir, o.place) }}>
+                                <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
+                              </ButtonV2>
+                            )}
+                          </For>
+                          <Show when={opts().length === 0}>
+                            <div class="mafw-split-menu-hint">已达最多 4 个 pane</div>
+                          </Show>
+                        </div>
+                      </PopoverShell>
+                    )
+                  }}
+                </Show>
+                {/* TaskList: popover (bar state) - kept for inline TaskBar popover */}
                 <Show when={taskListOpen() && tasksPlacement() === "bar"}>
                   <PopoverShell
                     open={taskListOpen() && tasksPlacement() === "bar"}
-                    trigger={titlebarRef()}
+                    trigger={taskAnchor()}
                     anchor="below-center"
                     onClose={() => setTaskListOpen(false)}
                     width={560}
                   >
                     <TaskList
                       todos={todos[currentSessionID()] || []}
-                      tokens={taskMetrics().tokens}
-                      started={taskMetrics().started}
+                      tokens={taskMetrics(currentSessionID()).tokens}
+                      started={taskMetrics(currentSessionID()).started}
                       placement="popover"
                       onClose={() => setTaskListOpen(false)}
-                      onPin={() => { setTaskListOpen(false); applyTasksPlacement("dock") }}
+                      onPin={() => { setTaskListOpen(false); applyRightDock(true, "tasks") }}
                     />
                   </PopoverShell>
                 </Show>
-                <Show when={tasksPlacement() === "dock"}>
+                {/* Unified right dock (tasks / trajectory tabs, replaces tasksPlacement=dock) */}
+                <Show when={rightDockOpen()}>
+                  <div ref={setDockRef}>
+                    <RightDock
+                      open={rightDockOpen()}
+                      tab={rightDockTab()}
+                      width={rightDockWidth()}
+                      onClose={() => applyRightDock(false)}
+                      onTab={(t) => applyRightDock(true, t)}
+                    >
+                      <Show when={rightDockTab() === "tasks"} fallback={
+                        <TrajectoryDock
+                          sessionID={currentSessionID()}
+                          liveEvents={trajectoryLive()[currentSessionID()] || []}
+                          liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
+                        />
+                      }>
+                        <TaskList
+                          todos={todos[currentSessionID()] || []}
+                          tokens={taskMetrics(currentSessionID()).tokens}
+                          started={taskMetrics(currentSessionID()).started}
+                          placement={viewportNarrow() ? "overlay" : "dock"}
+                          onClose={() => applyRightDock(false)}
+                          onPin={() => applyRightDock(false)}
+                        />
+                      </Show>
+                    </RightDock>
+                  </div>
+                </Show>
+                {/* Legacy dock fallback: tasksPlacement=dock when right dock is closed */}
+                <Show when={tasksPlacement() === "dock" && !rightDockOpen()}>
                   <div ref={setDockRef}>
                     <TaskList
                       todos={todos[currentSessionID()] || []}
-                      tokens={taskMetrics().tokens}
-                      started={taskMetrics().started}
+                      tokens={taskMetrics(currentSessionID()).tokens}
+                      started={taskMetrics(currentSessionID()).started}
                       placement={viewportNarrow() ? "overlay" : "dock"}
                       onClose={() => applyTasksPlacement("bar")}
-                      onPin={() => applyTasksPlacement("bar")}
+                      onPin={() => { applyTasksPlacement("bar"); applyRightDock(true, "tasks") }}
                     />
                   </div>
                 </Show>
