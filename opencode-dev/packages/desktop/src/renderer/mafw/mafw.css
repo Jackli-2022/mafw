@@ -203,13 +203,13 @@ html[data-theme="light"] .mafw-shell {
 
 /* ── Rail ── */
 .mafw-rail {
-  width: 264px;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-base);
   border-right: 1px solid var(--border-subtle);
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 .mafw-rail-section {
   display: flex;
@@ -345,7 +345,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-shell :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
 /* ── Main ── */
-.mafw-main { display: grid; grid-template-rows: 44px 1fr; overflow: hidden; }
+.mafw-main { display: grid; grid-template-rows: 44px 1fr; overflow: hidden; min-width: 0; }
 
 /* ── TabStrip (pill group, §4.2) ──
    TabsV2's base rules (data-component/data-variant/data-orientation +
