@@ -15,6 +15,10 @@ export interface HarmonicUnit {
   review_count?: number;
   last_reviewed?: string;
   top_associations?: string[];
+  /** If set, this memory has been superseded by the referenced newer unit; retrieval should penalize it. */
+  superseded_by?: string;
+  /** Origin session for pipeline-written memories (per-session worker bookkeeping). */
+  source_session_id?: string;
 }
 
 export interface HarmonicIndex {
@@ -30,7 +34,12 @@ export interface HarmonicIndexEntry {
   cue_anchors: string[];
   tier: string;
   energy: number;
+  salience?: number;
   filePath?: string;
+  created_at?: string;
+  source_session_id?: string;
+  superseded_by?: string;
+  merged_from?: string[];
 }
 
 export function generateHarmonicId(): string {

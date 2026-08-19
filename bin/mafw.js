@@ -9,7 +9,8 @@ const os = require('os');
 const pkg = require('../package.json');
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'mafw');
 const PID_FILE = path.join(CONFIG_DIR, 'gateway.pid');
-const LOG_DIR = path.join(CONFIG_DIR, 'logs');
+const LOG_DIR = path.join(os.homedir(), '.mafw', 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'mafw.log');
 const GATEWAY_SCRIPT = path.resolve(__dirname, '..', 'gateway', 'dist', 'index.js');
 const GATEWAY_PORT = process.env.MAFW_GATEWAY_PORT || process.env.MAFW_SERVER_API_PORT || '3000';
 const GATEWAY_URL = process.env.MAFW_GATEWAY_URL || `http://localhost:${GATEWAY_PORT}`;
@@ -57,7 +58,7 @@ const COMMANDS = [
   'sessions', 'control', 'memory-search',
   'automations', 'approvals', 'triage',
   'service-register', 'service-unregister',
-  'config', 'dashboard', 'uninstall', 'version',
+  'config', 'dashboard', 'uninstall', 'version', 'update',
 ];
 
 function httpRequest(method, urlPath, body) {
@@ -123,7 +124,7 @@ function startGateway(background) {
   }
 
   const child = spawn(process.execPath, [GATEWAY_SCRIPT], {
-    stdio: background ? 'ignore' : 'inherit',
+    stdio: background ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     detached: background,
     windowsHide: true,
   });
@@ -131,9 +132,17 @@ function startGateway(background) {
   writePid(child.pid);
 
   if (background) {
+    // Diagnostics: capture stderr to a file (a detached gateway that crashes
+    // silently otherwise leaves no trace). stdout is discarded; the gateway's
+    // own file logging covers normal logs.
+    const errLog = path.join(LOG_DIR, 'gateway-stderr.log');
+    try { if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+    const errStream = fs.createWriteStream(errLog, { flags: 'a' });
+    child.stderr?.pipe(errStream);
+    child.stdout?.resume();
     child.unref();
     console.log(`Gateway started in background (PID: ${child.pid})`);
-    console.log(`Logs: ${path.join(LOG_DIR, 'gateway.log')}`);
+    console.log(`Logs: ${LOG_FILE}`);
   } else {
     console.log(`Gateway starting (PID: ${child.pid})`);
     child.on('exit', (code) => { removePid(); process.exit(code); });
@@ -166,23 +175,15 @@ function showStatus() {
   }
   console.log(`Gateway: RUNNING (PID: ${pid})`);
   console.log(`URL: ${GATEWAY_URL}`);
-  console.log(`Logs: ${path.join(LOG_DIR, 'gateway.log')}`);
+  console.log(`Logs: ${LOG_FILE}`);
 }
 
 function showLogs() {
-  const logFile = path.join(LOG_DIR, 'gateway.log');
-  if (!fs.existsSync(logFile)) {
-    const altLog = path.join(os.homedir(), '.mafw', 'logs', 'mafw.log');
-    if (fs.existsSync(altLog)) {
-      const lines = fs.readFileSync(altLog, 'utf-8').split(/\r?\n/);
-      const tail = lines.length > 50 ? lines.slice(-50) : lines;
-      console.log(tail.join('\n'));
-      return;
-    }
+  if (!fs.existsSync(LOG_FILE)) {
     console.log('No logs yet');
     return;
   }
-  const lines = fs.readFileSync(logFile, 'utf-8').split(/\r?\n/);
+  const lines = fs.readFileSync(LOG_FILE, 'utf-8').split(/\r?\n/);
   const tail = lines.length > 50 ? lines.slice(-50) : lines;
   console.log(tail.join('\n'));
 }
@@ -224,8 +225,8 @@ function registerService() {
   <array><string>/usr/local/bin/node</string><string>${script}</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${path.join(LOG_DIR, 'gateway.log')}</string>
-  <key>StandardErrorPath</key><string>${path.join(LOG_DIR, 'gateway.log')}</string>
+  <key>StandardOutPath</key><string>${LOG_FILE}</string>
+  <key>StandardErrorPath</key><string>${LOG_FILE}</string>
 </dict>
 </plist>`;
     fs.writeFileSync(plistPath, plist, 'utf-8');
@@ -242,8 +243,8 @@ After=network.target
 ExecStart=/usr/bin/node ${script}
 Restart=on-failure
 RestartSec=5
-StandardOutput=append:${path.join(LOG_DIR, 'gateway.log')}
-StandardError=append:${path.join(LOG_DIR, 'gateway.log')}
+StandardOutput=append:${LOG_FILE}
+StandardError=append:${LOG_FILE}
 [Install]
 WantedBy=default.target`;
     fs.writeFileSync(unitPath, unit, 'utf-8');
@@ -333,7 +334,7 @@ async function main() {
     case 'status': showStatus(); break;
     case 'restart':
       stopGateway();
-      setTimeout(() => startGateway(false), 1000);
+      startGateway(true);
       break;
     case 'logs': showLogs(); break;
 
@@ -372,7 +373,39 @@ async function main() {
     case 'dashboard': openDashboard(); break;
     case 'uninstall': showUninstall(); break;
     case 'version': console.log(`v${pkg.version}`); break;
+    case 'update': requestUpdate(); break;
+  }
+}
+
+// `mafw update`: write the self-update token (atomic tmp+rename). The running
+// gateway watches ~/.mafw/pending-restart.json, rebuilds itself and hands off
+// to a takeover process; it then notifies the caller session.
+function requestUpdate() {
+  const pid = readPid();
+  if (!pid || !isRunning(pid)) {
+    console.error('Gateway is not running. Start it first: mafw start / mafw daemon');
+    process.exit(1);
+  }
+  ensureDirs();
+  const token = {
+    target: 'gateway',
+    action: 'update',
+    reason: 'mafw update (CLI)',
+    requestedAt: new Date().toISOString(),
+    delayMs: 3000,
+  };
+  const tmp = path.join(CONFIG_DIR, 'pending-restart.json.tmp');
+  const dst = path.join(os.homedir(), '.mafw', 'pending-restart.json');
+  try {
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(token, null, 2), 'utf-8');
+    fs.renameSync(tmp, dst);
+    console.log('Update requested: gateway will rebuild and restart itself (~3s).');
+  } catch (err) {
+    console.error(`Failed to write update token: ${err.message}`);
+    process.exit(1);
   }
 }
 
 main().catch(err => { console.error(err.message); process.exit(1); });
+

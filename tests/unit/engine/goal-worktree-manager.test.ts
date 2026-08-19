@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import simpleGit from 'simple-git';
-import { GoalWorktreeManager } from '../../../src/engine/goal-worktree-manager';
+import { GoalWorktreeManager } from '../../../gateway/src/core/engine/goal-worktree-manager';
 
 let tmpDir: string;
 let repoDir: string;

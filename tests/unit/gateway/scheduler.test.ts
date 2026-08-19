@@ -59,3 +59,79 @@ test('archiveGoal patches state to FAILED when archiveWorktree throws', async ()
   expect(state.nextAction).toBe('FAILED');
   expect(state.error).toBe('archive_failed');
 });
+
+describe('handleOpencodeEvent StepInject trigger', () => {
+  test('legacy session.next.step.ended still triggers evaluateStepInjection', async () => {
+    const scheduler = new MafwScheduler(tmpDir) as any;
+    scheduler.evaluateStepInjection = jest.fn();
+
+    scheduler.handleOpencodeEvent({
+      type: 'session.next.step.ended',
+      properties: { sessionID: 's1', assistantMessageID: 'm1', finish: 'stop' },
+    });
+
+    expect(scheduler.evaluateStepInjection).toHaveBeenCalledWith('s1', 'm1');
+  });
+
+  test('message.part.updated with step-finish part triggers evaluateStepInjection', async () => {
+    const scheduler = new MafwScheduler(tmpDir) as any;
+    scheduler.evaluateStepInjection = jest.fn();
+
+    scheduler.handleOpencodeEvent({
+      type: 'message.part.updated',
+      properties: {
+        part: { type: 'step-finish', sessionID: 's1', messageID: 'm2', reason: 'stop' },
+      },
+    });
+
+    expect(scheduler.evaluateStepInjection).toHaveBeenCalledWith('s1', 'm2');
+  });
+
+  test('message.updated with completed assistant triggers evaluateStepInjection', async () => {
+    const scheduler = new MafwScheduler(tmpDir) as any;
+    scheduler.evaluateStepInjection = jest.fn();
+
+    scheduler.handleOpencodeEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          role: 'assistant',
+          id: 'm3',
+          sessionID: 's1',
+          finish: 'stop',
+          time: { completed: '2026-08-18T00:00:00Z' },
+        },
+      },
+    });
+
+    expect(scheduler.evaluateStepInjection).toHaveBeenCalledWith('s1', 'm3');
+  });
+
+  test('message.updated with non-completed assistant does not trigger', async () => {
+    const scheduler = new MafwScheduler(tmpDir) as any;
+    scheduler.evaluateStepInjection = jest.fn();
+
+    scheduler.handleOpencodeEvent({
+      type: 'message.updated',
+      properties: {
+        info: { role: 'assistant', id: 'm4', sessionID: 's1' },
+      },
+    });
+
+    expect(scheduler.evaluateStepInjection).not.toHaveBeenCalled();
+  });
+
+  test('message.part.updated with non-step-finish part does not trigger', async () => {
+    const scheduler = new MafwScheduler(tmpDir) as any;
+    scheduler.evaluateStepInjection = jest.fn();
+
+    scheduler.handleOpencodeEvent({
+      type: 'message.part.updated',
+      properties: {
+        part: { type: 'text', sessionID: 's1', messageID: 'm3', text: 'hello' },
+      },
+    });
+
+    expect(scheduler.evaluateStepInjection).not.toHaveBeenCalled();
+  });
+});

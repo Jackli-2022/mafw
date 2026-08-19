@@ -1,3 +1,4 @@
+﻿import { log } from '../../utils/logger';
 import { LoopStateType } from '../loop-state';
 
 export interface ArchiveOptions {
@@ -7,7 +8,7 @@ export interface ArchiveOptions {
 
 export async function archiveSuccessNode(state: LoopStateType, options: ArchiveOptions): Promise<Partial<LoopStateType>> {
   const { archiveGoal, syncToFile } = options;
-  console.log(`[LangGraph] Goal ${state.goalId} PASSED after ${state.round} round(s)`);
+  log.info(`[LangGraph] Goal ${state.goalId} PASSED after ${state.round} round(s)`);
   syncToFile({ ...state, phase: 'ARCHIVED' });
   await archiveGoal(state.goalId);
   return {};
@@ -15,7 +16,7 @@ export async function archiveSuccessNode(state: LoopStateType, options: ArchiveO
 
 export async function archiveFailNode(state: LoopStateType, options: ArchiveOptions): Promise<Partial<LoopStateType>> {
   const { archiveGoal, syncToFile } = options;
-  console.error(`[LangGraph] Goal ${state.goalId} FAILED: ${state.lastError}`);
+  log.error(`[LangGraph] Goal ${state.goalId} FAILED: ${state.lastError}`);
   syncToFile({ ...state, phase: 'FAILED' });
   await archiveGoal(state.goalId);
   return {};
@@ -23,8 +24,11 @@ export async function archiveFailNode(state: LoopStateType, options: ArchiveOpti
 
 export async function archiveMaxRetriesNode(state: LoopStateType, options: ArchiveOptions): Promise<Partial<LoopStateType>> {
   const { archiveGoal, syncToFile } = options;
-  console.error(`[LangGraph] Goal ${state.goalId} max retries (${state.maxRounds}) reached`);
+  log.error(`[LangGraph] Goal ${state.goalId} max retries (${state.maxRounds}) reached`);
   syncToFile({ ...state, phase: 'FAILED' });
   await archiveGoal(state.goalId);
   return {};
 }
+
+
+

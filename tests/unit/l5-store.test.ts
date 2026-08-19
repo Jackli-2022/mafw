@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { L5Store, L5Axiom, L5Heuristic } from '../../src/memory/l5-store';
+import { L5Store, L5Axiom, L5Heuristic } from '../../gateway/src/core/memory/l5-store';
 
 describe('L5Store', () => {
   const tmpDir = path.join(os.tmpdir(), 'mafw-l5-test-' + Date.now());

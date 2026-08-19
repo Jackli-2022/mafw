@@ -1,3 +1,4 @@
+﻿import { log } from '../utils/logger';
 import { BaseMemory, InputValues, MemoryVariables } from "@langchain/core/memory";
 
 export interface HarmonicIndexEntryLike {
@@ -46,6 +47,9 @@ export class MAFWMemory extends BaseMemory {
   }
 
   async saveContext(_input: InputValues, _output: Record<string, any>): Promise<void> {
-    console.log("[MAFWMemory] Agent output:", JSON.stringify(_output));
+    log.info("[MAFWMemory] Agent output:", JSON.stringify(_output));
   }
 }
+
+
+

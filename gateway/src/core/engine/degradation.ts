@@ -1,3 +1,4 @@
+import { log } from '../utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ReportGenerator } from './report-generator';
@@ -42,7 +43,7 @@ export class DegradationStrategy {
       '选项: [1]继续 [2]放宽 [3]暂停 [4]接受降级'
     ].join('\n');
 
-    console.log(warning);
+    log.info(warning);
 
     // 简化：自动选择继续（实际应读取用户输入或 control 文件）
     const controlFile = path.join(this.projectDir, '.mafw/control');
@@ -75,7 +76,7 @@ export class DegradationStrategy {
       message = '回滚到上一个稳定 Loop';
     }
 
-    console.log(`[Degradation] L2 策略: ${strategy} — ${message}`);
+    log.info(`[Degradation] L2 策略: ${strategy} — ${message}`);
     await this.reportGenerator.generateDegraded(goalId, {
       loopCount: executeResult.loopCount,
       reason: `L2 降级: ${message}`,
@@ -87,7 +88,7 @@ export class DegradationStrategy {
    * L2 降级：接受部分完成
    */
   async degradeToPartial(goalId: string, executeResult: any): Promise<void> {
-    console.log(`[Degradation] ${goalId}: 接受部分完成，生成降级报告`);
+    log.info(`[Degradation] ${goalId}: 接受部分完成，生成降级报告`);
     await this.reportGenerator.generateDegraded(goalId, {
       loopCount: executeResult.loopCount,
       reason: '用户接受部分完成',
@@ -103,7 +104,7 @@ export class DegradationStrategy {
     if (last3.length < 3) return false;
     const sameReason = last3.every(l => l.reason === last3[0].reason);
     if (sameReason) {
-      console.log(`[Degradation] L3 熔断: 连续 3 次相同原因 — ${last3[0].reason}`);
+      log.info(`[Degradation] L3 熔断: 连续 3 次相同原因 — ${last3[0].reason}`);
       return true;
     }
     return false;
@@ -113,7 +114,7 @@ export class DegradationStrategy {
    * L4 紧急：从 Checkpoint 恢复
    */
   async recoverFromCheckpoint(goalId: string, checkpointPath: string): Promise<void> {
-    console.log(`[Degradation] L4 恢复: 从 ${checkpointPath} 恢复状态`);
+    log.info(`[Degradation] L4 恢复: 从 ${checkpointPath} 恢复状态`);
     // 恢复 L1 Session + L3 Parametric 状态
   }
 
@@ -122,7 +123,7 @@ export class DegradationStrategy {
    */
   async exportForDisaster(goalId: string): Promise<string> {
     const exportBranch = `disaster-export/${goalId}`;
-    console.log(`[Degradation] L5 导出: parametric/ + lessons/ → ${exportBranch}`);
+    log.info(`[Degradation] L5 导出: parametric/ + lessons/ → ${exportBranch}`);
     return exportBranch;
   }
 }

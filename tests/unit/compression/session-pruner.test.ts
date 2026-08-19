@@ -1,4 +1,4 @@
-import { SessionPruner } from '../../../src/compression/session-pruner';
+import { SessionPruner } from '../../../gateway/src/core/compression/session-pruner';
 
 let pruner: SessionPruner;
 

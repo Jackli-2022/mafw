@@ -1,4 +1,4 @@
-import { BM25Index } from '../../src/compression/bm25-index';
+import { BM25Index } from '../../gateway/src/core/compression/bm25-index';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { HarmonicIndexManager } from '../../../src/memory/harmonic-index';
+import { HarmonicIndexManager } from '../../../gateway/src/core/memory/harmonic-index';
 import { GuidedRetriever } from '../../../gateway/src/retrieval/guided-retriever';
 
 describe('GuidedRetriever', () => {

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { ConfigLoader } from '../../src/utils/config-loader';
+import { ConfigLoader } from '../../gateway/src/core/utils/config-loader';
 
 let tmpDir: string;
 

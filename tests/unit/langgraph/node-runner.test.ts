@@ -1,5 +1,5 @@
-import { createAgentNode, AgentServices } from '../../../src/langchain/node-runner';
-import { LoopStateType } from '../../../src/langgraph/loop-state';
+import { createAgentNode, AgentServices } from '../../../gateway/src/core/langchain/node-runner';
+import { LoopStateType } from '../../../gateway/src/core/langgraph/loop-state';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -21,7 +21,19 @@ function makeState(overrides: Partial<LoopStateType> = {}): LoopStateType {
     reviewReportPath: null,
     reviewFeedback: '',
     lastError: null,
+
     phase: null,
+
+    draftPlan: null,
+
+    pendingQuestion: null,
+
+    userResponse: null,
+
+    sameSigCount: 0,
+
+    stateVersion: 0,
+
     ...overrides,
   };
 }

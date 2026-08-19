@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';
-import { HarmonicIndexManager } from '../../src/memory/harmonic-index';
-import { HarmonicUnit, generateHarmonicId } from '../../src/memory/harmonic-types';
-import { MinHashMerger } from '../../src/memory/minhash-merger';
+import { HarmonicIndexManager } from '../../gateway/src/core/memory/harmonic-index';
+import { HarmonicUnit, generateHarmonicId } from '../../gateway/src/core/memory/harmonic-types';
+import { MinHashMerger } from '../../gateway/src/core/memory/minhash-merger';
+import { HarmonicUnitFileStore } from '../../gateway/src/memory/harmonic-file-store';
 
 function makeUnit(overrides: Partial<HarmonicUnit> = {}): HarmonicUnit {
   return {
@@ -119,18 +120,10 @@ describe('Harmonic Memory E2E', () => {
       energy: 0.5,
     });
 
-    const tierExisting = 'tier3';
-    const tierDir = path.join(tmpDir, 'memory', tierExisting);
-    fs.mkdirSync(tierDir, { recursive: true });
-    fs.writeFileSync(path.join(tierDir, `${existing.id}.json`), JSON.stringify(existing), 'utf-8');
-    indexManager.addEntry(existing, tierExisting);
+    const store = new HarmonicUnitFileStore(tmpDir);
+    await store.write(existing, 'tier3');
 
-    const tierIncoming = 'tier2';
-    const tierDir2 = path.join(tmpDir, 'memory', tierIncoming);
-    fs.mkdirSync(tierDir2, { recursive: true });
-    fs.writeFileSync(path.join(tierDir2, `${incoming.id}.json`), JSON.stringify(incoming), 'utf-8');
-
-    const result = await merger.merge(incoming, tierIncoming, indexManager, tmpDir);
+    const result = await merger.merge(incoming, store.indexManager_(), store);
 
     expect(result.merged_from).toBeDefined();
     expect(result.merged_from).toContain('mem_existing_e2e');

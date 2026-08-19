@@ -11,6 +11,7 @@ export function createMafwApi(): MafwAPI {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
       start: () => ipcRenderer.invoke("mafw-gateway-start"),
       restart: () => ipcRenderer.invoke("mafw-gateway-restart"),
+      logsPath: () => ipcRenderer.invoke("mafw-gateway-logs-path"),
       onStateChange: (cb) => {
         const handler = (_event: any, status: any) => cb(status)
         ipcRenderer.on("mafw-gateway-state", handler)
@@ -19,12 +20,33 @@ export function createMafwApi(): MafwAPI {
     },
 
     sessions: {
-      list: (projectID?) => invoke("session", "list", projectID),
+      list: (projectID?) => invoke("session", "list", projectID ? { query: { projectID } } : {}),
       create: (opts?) => invoke("session", "create", opts || {}),
-      get: (id) => invoke("session", "get", id),
-      messages: (sessionID, limit?, before?) => invoke("session", "messages", sessionID, limit, before),
-      delete: (id) => invoke("session", "delete", { sessionID: id }),
-      promptAsync: (opts) => invoke("session", "promptAsync", opts),
+      get: (id) => invoke("session", "get", { path: { id } }),
+      messages: (sessionID, limit?, before?) => invoke("session", "messages", { path: { id: sessionID }, query: { limit, before } }),
+      todo: (sessionID) => invoke("session", "todo", { path: { id: sessionID } }),
+      children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
+      abort: (sessionID) => invoke("session", "abort", { path: { id: sessionID } }),
+      delete: (id) => invoke("session", "delete", { path: { id } }),
+      trajectory: (sessionID, query?) => invoke("session", "trajectory", { path: { id: sessionID }, query: query || {} }),
+      promptAsync: ({ sessionID, message, parts, agent, model }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model } }),
+      command: ({ sessionID, command, arguments: args, agent, model }) => invoke("session", "command", { path: { id: sessionID }, body: { command, arguments: args, agent, model } }),
+    },
+
+    command: {
+      list: (directory?) => invoke("command", "list", directory),
+    },
+
+    skill: {
+      list: (directory?) => invoke("skill", "list", directory),
+    },
+
+    mafwCommands: {
+      run: (opts) => invoke("mafwCommands", "run", opts),
+    },
+
+    manager: {
+      session: (projectDir?) => invoke("manager", "session", projectDir),
     },
 
     projects: {
@@ -36,7 +58,7 @@ export function createMafwApi(): MafwAPI {
     goals: {
       list: () => invoke("goals", "list"),
       get: (id) => invoke("goals", "get", id),
-      create: (input) => invoke("goals", "create", input),
+      validate: (input) => invoke("goals", "validate", input),
       control: (action) => invoke("goals", "control", action),
     },
 
@@ -44,11 +66,24 @@ export function createMafwApi(): MafwAPI {
       search: (opts) => invoke("memory", "search", opts),
       mergedSearch: (opts) => invoke("memory", "mergedSearch", opts),
       delete: (id) => invoke("memory", "delete", id),
+      getEnergyDistribution: () => invoke("memory", "getEnergyDistribution"),
+      getL5Axioms: (topK) => invoke("memory", "getL5Axioms", topK),
     },
 
     approvals: {
       list: () => invoke("approvals", "list"),
       respond: (id, decision) => invoke("approvals", "respond", id, decision),
+    },
+
+    questions: {
+      list: () => invoke("questions", "list"),
+      reply: (id, answers) => invoke("questions", "reply", id, answers),
+      reject: (id) => invoke("questions", "reject", id),
+    },
+
+    permissions: {
+      list: () => invoke("permissions", "list"),
+      reply: (id, reply, message?) => invoke("permissions", "reply", id, reply, message),
     },
 
     triage: {
@@ -64,13 +99,35 @@ export function createMafwApi(): MafwAPI {
     },
 
     chat: {
-      send: (message) => invoke("chat", "send", message),
-      sendEnriched: (message) => invoke("chat", "sendEnriched", message),
+      send: (message, sessionID?) => invoke("chat", "send", message, sessionID),
+      sendEnriched: (opts) => invoke("chat", "sendEnriched", opts),
+    },
+
+    media: {
+      createTask: (opts) => invoke("media", "createTask", opts),
+    },
+
+    tts: {
+      speak: (opts) => invoke("tts", "speak", opts),
+      voices: () => invoke("tts", "voices"),
+    },
+
+    providers: {
+      list: () => invoke("providers", "list"),
+    },
+
+    agents: {
+      list: () => invoke("agents", "list"),
     },
 
     config: {
       get: (key?) => invoke("config", "get", key),
       set: (key, value) => invoke("config", "set", key, value),
+    },
+
+    opencodeConfig: {
+      get: () => invoke("opencodeConfig", "get"),
+      update: (config) => invoke("opencodeConfig", "update", config),
     },
 
     invoke: (namespace, method, ...args) => invoke(namespace, method, ...args),

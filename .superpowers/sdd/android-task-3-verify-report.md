@@ -1,0 +1,1 @@
+Task 3 verification report for pairing QR code + App scan page + connection strategy.

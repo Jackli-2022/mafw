@@ -1,4 +1,4 @@
-import { askUser, getUnansweredQuestions, recordAnswer } from '../../src/tools/run-ask-user';
+import { askUser, getUnansweredQuestions, recordAnswer } from '../../gateway/src/core/tools/run-ask-user';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';

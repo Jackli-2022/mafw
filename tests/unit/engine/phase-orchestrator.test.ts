@@ -8,8 +8,8 @@ import {
   updateWaveProgress,
   shouldStartNextLoop,
   startNextLoop
-} from '../../../src/engine/phase-orchestrator';
-import { initState } from '../../../src/utils/state';
+} from '../../../gateway/src/core/engine/phase-orchestrator';
+import { initState } from '../../../gateway/src/core/utils/state';
 
 let tmpDir: string;
 

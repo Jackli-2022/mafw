@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+﻿import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { Config, GatewayConfig } from '../../../gateway/src/config';
@@ -15,7 +15,7 @@ describe('Config', () => {
   });
 
   it('returns default values when no file or env overrides', () => {
-    const cfg = new Config(tmpDir);
+    const cfg = new Config(tmpDir, tmpDir);
     expect(cfg.server.apiPort).toBe(3000);
     expect(cfg.server.serveUrl).toBe('http://127.0.0.1:4096');
     expect(cfg.loop.maxRounds).toBe(3);
@@ -25,14 +25,14 @@ describe('Config', () => {
     expect(cfg.paths.projectDir).toBe(tmpDir);
   });
 
-  it('resolves paths relative to mafwDir', () => {
-    const cfg = new Config(tmpDir);
-    expect(cfg.resolvePath('state')).toBe(path.join(tmpDir, '.mafw', 'state'));
-    expect(cfg.resolvePath('requests', 'goal-1.json')).toBe(path.join(tmpDir, '.mafw', 'requests', 'goal-1.json'));
+  it('resolves paths relative to the data dir', () => {
+    const cfg = new Config(tmpDir, tmpDir);
+    expect(cfg.resolvePath('state')).toBe(path.join(tmpDir, 'state'));
+    expect(cfg.resolvePath('requests', 'goal-1.json')).toBe(path.join(tmpDir, 'requests', 'goal-1.json'));
   });
 
   it('loads project-level YAML config', () => {
-    const mafwDir = path.join(tmpDir, '.mafw');
+    const mafwDir = tmpDir;
     fs.mkdirSync(mafwDir, { recursive: true });
     fs.writeFileSync(path.join(mafwDir, 'config.yaml'), `
 server:
@@ -41,7 +41,7 @@ loop:
   maxRounds: 5
 `, 'utf-8');
 
-    const cfg = new Config(tmpDir);
+    const cfg = new Config(tmpDir, tmpDir);
     expect(cfg.server.apiPort).toBe(4000);
     expect(cfg.loop.maxRounds).toBe(5);
     expect(cfg.search.defaultTopK).toBe(20);
@@ -52,7 +52,7 @@ loop:
     process.env.MAFW_SERVER_API_PORT = '5000';
 
     try {
-      const cfg = new Config(tmpDir);
+      const cfg = new Config(tmpDir, tmpDir);
       expect(cfg.server.apiPort).toBe(5000);
     } finally {
       if (oldPort) process.env.MAFW_SERVER_API_PORT = oldPort;
@@ -65,7 +65,7 @@ loop:
     process.env.MAFW_LOOP_MAX_ROUNDS = '7';
 
     try {
-      const cfg = new Config(tmpDir);
+      const cfg = new Config(tmpDir, tmpDir);
       expect(cfg.loop.maxRounds).toBe(7);
     } finally {
       if (old) process.env.MAFW_LOOP_MAX_ROUNDS = old;
@@ -78,7 +78,7 @@ loop:
     process.env.MAFW_CHAT_EXECUTE_GRAPH_KEYWORDS = 'go,run,start';
 
     try {
-      const cfg = new Config(tmpDir);
+      const cfg = new Config(tmpDir, tmpDir);
       expect(cfg.chat.executeGraphKeywords).toEqual(['go', 'run', 'start']);
     } finally {
       if (old) process.env.MAFW_CHAT_EXECUTE_GRAPH_KEYWORDS = old;
@@ -87,7 +87,7 @@ loop:
   });
 
   it('prioritizes env > project YAML > defaults', () => {
-    const mafwDir = path.join(tmpDir, '.mafw');
+    const mafwDir = tmpDir;
     fs.mkdirSync(mafwDir, { recursive: true });
     fs.writeFileSync(path.join(mafwDir, 'config.yaml'), `
 server:
@@ -98,7 +98,7 @@ server:
     process.env.MAFW_SERVER_API_PORT = '6000';
 
     try {
-      const cfg = new Config(tmpDir);
+      const cfg = new Config(tmpDir, tmpDir);
       expect(cfg.server.apiPort).toBe(6000);
     } finally {
       if (oldPort) process.env.MAFW_SERVER_API_PORT = oldPort;
@@ -107,12 +107,12 @@ server:
   });
 
   it('ignores missing YAML file', () => {
-    const cfg = new Config(tmpDir);
+    const cfg = new Config(tmpDir, tmpDir);
     expect(cfg.server.apiPort).toBe(3000);
   });
 
   it('provides typed accessors for all config groups', () => {
-    const cfg = new Config(tmpDir);
+    const cfg = new Config(tmpDir, tmpDir);
     expect(cfg.server).toBeDefined();
     expect(cfg.paths).toBeDefined();
     expect(cfg.timeouts).toBeDefined();

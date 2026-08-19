@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { Icon } from "@opencode-ai/ui/icon"
 import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
+import { Show } from "solid-js"
 
 export type Tab = "chat" | "goals" | "memory" | "approvals" | "triage" | "automation"
 
@@ -16,6 +17,7 @@ const TABS: { id: Tab; icon: string; label: string }[] = [
 type Props = {
   active: Tab
   onChange: (tab: Tab) => void
+  counts?: Partial<Record<Tab, number>>
 }
 
 export function TabStrip(props: Props) {
@@ -26,6 +28,9 @@ export function TabStrip(props: Props) {
           <TabsV2.Trigger value={t.id}>
             <Icon name={t.icon} size="small" />
             {t.label}
+            <Show when={(props.counts?.[t.id] || 0) > 0}>
+              <span class="mafw-tab-count">{props.counts?.[t.id]}</span>
+            </Show>
           </TabsV2.Trigger>
         ))}
       </TabsV2.List>

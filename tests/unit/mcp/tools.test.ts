@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { validateGoalCreation, validatePhaseCompletion } from '../../../src/mcp/validator';
-import { registerTools } from '../../../src/mcp/tools';
+import { validateGoalCreation, validatePhaseCompletion } from '../../../gateway/src/core/mcp/validator';
+import { registerTools } from '../../../gateway/src/core/mcp/tools';
 
 describe('validateGoalCreation', () => {
   let tmpDir: string;

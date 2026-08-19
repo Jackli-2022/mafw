@@ -1,3 +1,4 @@
+﻿import { log } from '../core/utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { HarmonicUnit } from '../core/memory/harmonic-types';
@@ -22,7 +23,7 @@ export async function migrateFromJson(mafwDir: string): Promise<{ migrated: numb
       await store.write(unit);
       migrated++;
     } catch (err) {
-      console.warn(`[migrate] Failed to migrate ${unit.id}: ${err}`);
+      log.warn(`[migrate] Failed to migrate ${unit.id}: ${err}`);
       skipped++;
     }
   }
@@ -37,3 +38,6 @@ export async function migrateFromJson(mafwDir: string): Promise<{ migrated: numb
 
   return { migrated, skipped };
 }
+
+
+

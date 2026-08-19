@@ -43,12 +43,12 @@ describe('preload createMafwApi', () => {
   describe('sessions namespace', () => {
     it('list', async () => {
       await api.sessions.list()
-      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'list', undefined)
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'list', {})
     })
 
     it('list with projectID', async () => {
       await api.sessions.list('proj-1')
-      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'list', 'proj-1')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'list', { query: { projectID: 'proj-1' } })
     })
 
     it('create', async () => {
@@ -58,12 +58,12 @@ describe('preload createMafwApi', () => {
 
     it('messages with limit', async () => {
       await api.sessions.messages('sid-1', 50)
-      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'messages', 'sid-1', 50, undefined)
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'messages', { path: { id: 'sid-1' }, query: { limit: 50, before: undefined } })
     })
 
     it('delete', async () => {
       await api.sessions.delete('sid-1')
-      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'delete', { sessionID: 'sid-1' })
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'session', 'delete', { path: { id: 'sid-1' } })
     })
   })
 
@@ -152,12 +152,12 @@ describe('preload createMafwApi', () => {
   describe('chat namespace', () => {
     it('send', async () => {
       await api.chat.send('hello')
-      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'chat', 'send', 'hello')
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'chat', 'send', 'hello', undefined)
     })
 
     it('sendEnriched', async () => {
-      await api.chat.sendEnriched('hi')
-      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'chat', 'sendEnriched', 'hi')
+      await api.chat.sendEnriched({ message: 'hi', sessionID: 's-1' })
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('mafw-invoke', 'chat', 'sendEnriched', { message: 'hi', sessionID: 's-1' })
     })
   })
 

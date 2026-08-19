@@ -1,4 +1,4 @@
-import { GitUtils } from '../../../src/utils/git';
+import { GitUtils } from '../../../gateway/src/core/utils/git';
 
 const mockGit = {
   checkoutBranch: jest.fn().mockResolvedValue(undefined),

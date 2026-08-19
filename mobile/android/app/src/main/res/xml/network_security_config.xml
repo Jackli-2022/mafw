@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- I2 hardening: global cleartext disabled; Tailscale=https/wss required.
+         Private LAN http (192.168/10.x) is blocked at OS layer; app layer
+         shows a warning and advises switching to https. -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

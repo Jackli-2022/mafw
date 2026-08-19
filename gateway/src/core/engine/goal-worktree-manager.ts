@@ -1,26 +1,27 @@
+﻿import { log } from '../utils/logger';
 import simpleGit from 'simple-git';
 
 /**
- * Goal Worktree Manager — Goal 级 Git Worktree 隔离
+ * Goal Worktree Manager —Goal 绾?Git Worktree 闅旂
  *
- * 职责：
- *   1. 为每个 Goal 创建/准备 Git 分支（goal/{goalId}）
- *   2. 支持两种模式：
- *      - 非并行：在当前目录切换分支
- *      - 并行：创建独立 worktree 目录
- *   3. Goal 完成后合并到 main
- *   4. 清理独立 worktree
+ * 鑱岃矗锛?
+ *   1. 涓烘瘡涓?Goal 鍒涘缓/鍑嗗 Git 鍒嗘敮锛坓oal/{goalId}锛?
+ *   2. 鏀寔涓ょ妯″紡锛?
+ *      - 闈炲苟琛岋細鍦ㄥ綋鍓嶇洰褰曞垏鎹㈠垎鏀?
+ *      - 骞惰锛氬垱寤虹嫭绔?worktree 鐩綍
+ *   3. Goal 瀹屾垚鍚庡悎骞跺埌 main
+ *   4. 娓呯悊鐙珛 worktree
  *
- * 设计原则：
- *   - Goal 隔离在分支级别
- *   - Task 隔离在分支内继续用 change/{taskId} 分支
- *   - 默认非并行模式（简单，节省空间）
+ * 璁捐鍘熷垯锛?
+ *   - Goal 闅旂鍦ㄥ垎鏀骇鍒?
+ *   - Task 闅旂鍦ㄥ垎鏀唴缁х画鐢?change/{taskId} 鍒嗘敮
+ *   - 榛樿闈炲苟琛屾ā寮忥紙绠€鍗曪紝鑺傜渷绌洪棿锛?
  */
 
 export interface WorktreeInfo {
-  worktreeDir: string;    // 实际工作目录
-  branch: string;         // 分支名
-  isIsolated: boolean;    // 是否独立 worktree
+  worktreeDir: string;    // 瀹為檯宸ヤ綔鐩綍
+  branch: string;         // 鍒嗘敮鍚?
+  isIsolated: boolean;    // 鏄惁鐙珛 worktree
 }
 
 export class GoalWorktreeManager {
@@ -33,13 +34,13 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 准备 Goal 的 Worktree
+   * 鍑嗗 Goal 鐨?Worktree
    */
   async prepare(config: { projectDir: string; goalId: string; parallel: boolean }): Promise<WorktreeInfo> {
     const { projectDir, goalId, parallel } = config;
 
     if (!parallel) {
-      // 非并行模式：在当前目录切换分支
+      // 闈炲苟琛屾ā寮忥細鍦ㄥ綋鍓嶇洰褰曞垏鎹㈠垎鏀?
       const branch = `goal/${goalId}`;
       const branches = await this.git.branchLocal();
       if (!branches.all.includes(branch)) {
@@ -49,7 +50,7 @@ export class GoalWorktreeManager {
       return { worktreeDir: projectDir, branch, isIsolated: false };
     }
 
-    // 并行模式：创建独立 worktree
+    // 骞惰妯″紡锛氬垱寤虹嫭绔?worktree
     const worktreeDir = `${projectDir}-goal-${goalId}`;
     const branch = `goal/${goalId}`;
 
@@ -58,32 +59,32 @@ export class GoalWorktreeManager {
       await this.git.checkoutLocalBranch(branch);
     }
 
-    // 创建 worktree
+    // 鍒涘缓 worktree
     try {
       await this.git.raw(['worktree', 'add', worktreeDir, branch]);
-      console.log(`[GoalWorktree] Created worktree ${worktreeDir} for branch ${branch}`);
+      log.info(`[GoalWorktree] Created worktree ${worktreeDir} for branch ${branch}`);
     } catch (err: any) {
-      // 如果 worktree 已存在，直接返回
-      console.log(`[GoalWorktree] Worktree ${worktreeDir} already exists`);
+      // 濡傛灉 worktree 宸插瓨鍦紝鐩存帴杩斿洖
+      log.info(`[GoalWorktree] Worktree ${worktreeDir} already exists`);
     }
 
     return { worktreeDir, branch, isIsolated: true };
   }
 
   /**
-   * 归档 Goal（合并到 main）
+   * 褰掓。 Goal锛堝悎骞跺埌 main锛?
    */
   async archive(info: WorktreeInfo, strategy: 'merge' | 'squash' = 'merge'): Promise<void> {
-    console.log(`[GoalWorktree] Archiving goal ${info.branch}`);
+    log.info(`[GoalWorktree] Archiving goal ${info.branch}`);
 
     await this.git.checkout('main');
 
     if (strategy === 'merge') {
       try {
         await this.git.merge([info.branch, '--no-ff', '-m', `Merge goal ${info.branch}`]);
-        console.log(`[GoalWorktree] Merged ${info.branch} into main`);
+        log.info(`[GoalWorktree] Merged ${info.branch} into main`);
       } catch (err: any) {
-        console.error(`[GoalWorktree] Merge conflict in ${info.branch}:`, err.message);
+        log.error(`[GoalWorktree] Merge conflict in ${info.branch}:`, err.message);
         await this.git.merge(['--abort']);
         throw new Error(`Merge conflict: ${info.branch}`);
       }
@@ -91,23 +92,23 @@ export class GoalWorktreeManager {
       // Squash merge
       await this.git.merge([info.branch, '--squash', '-m', `Squash merge goal ${info.branch}`]);
       await this.git.commit(`Squash merge goal ${info.branch}`);
-      console.log(`[GoalWorktree] Squash merged ${info.branch} into main`);
+      log.info(`[GoalWorktree] Squash merged ${info.branch} into main`);
     }
 
-    // 清理独立 worktree
+    // 娓呯悊鐙珛 worktree
     if (info.isIsolated) {
       try {
         await this.git.raw(['worktree', 'remove', info.worktreeDir]);
         await this.git.deleteBranch(info.branch);
-        console.log(`[GoalWorktree] Removed worktree ${info.worktreeDir} and branch ${info.branch}`);
+        log.info(`[GoalWorktree] Removed worktree ${info.worktreeDir} and branch ${info.branch}`);
       } catch (err: any) {
-        console.warn(`[GoalWorktree] Cleanup warning: ${err.message}`);
+        log.warn(`[GoalWorktree] Cleanup warning: ${err.message}`);
       }
     }
   }
 
   /**
-   * 获取当前 Goal 分支信息
+   * 鑾峰彇褰撳墠 Goal 鍒嗘敮淇℃伅
    */
   async getCurrentInfo(goalId: string): Promise<WorktreeInfo> {
     const branch = `goal/${goalId}`;
@@ -120,7 +121,7 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 检查分支是否存在
+   * 妫€鏌ュ垎鏀槸鍚﹀瓨鍦?
    */
   async branchExists(branch: string): Promise<boolean> {
     const branches = await this.git.branchLocal();
@@ -128,7 +129,7 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 列出所有 git worktree
+   * 鍒楀嚭鎵€鏈?git worktree
    */
   async listWorktrees(): Promise<Array<{ path: string; branch: string; head: string }>> {
     const output: string = await this.git.raw(['worktree', 'list']);
@@ -144,14 +145,17 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 清理已删除的 worktree 记录
+   * 娓呯悊宸插垹闄ょ殑 worktree 璁板綍
    */
   async prune(): Promise<void> {
     try {
       await this.git.raw(['worktree', 'prune']);
-      console.log('[GoalWorktree] Pruned stale worktree records');
+      log.info('[GoalWorktree] Pruned stale worktree records');
     } catch (err: any) {
-      console.warn(`[GoalWorktree] Prune warning: ${err.message}`);
+      log.warn(`[GoalWorktree] Prune warning: ${err.message}`);
     }
   }
 }
+
+
+

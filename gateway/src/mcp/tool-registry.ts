@@ -42,7 +42,7 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_search_hybrid",
-    description: "Search memory units using guided iterative retrieval or BM25 hybrid",
+    description: "Search memory units using token-count or BM25 retrieval (×energy)",
     inputSchema: {
       type: "object",
       properties: {
@@ -50,6 +50,7 @@ const DEFINITIONS: ToolDefinition[] = [
         topK: { type: "number", description: "Maximum results", default: 20 },
         memoryType: { type: "string", enum: ["episodic", "semantic", "procedural", "global"], description: "Optional filter" },
         policy: { type: "string", enum: ["guided", "oneshot"], default: "guided", description: "Retrieval strategy" },
+        retriever: { type: "string", enum: ["token", "bm25"], default: "token", description: "Retrieval scoring engine" },
       },
       required: ["query"],
     },
@@ -85,12 +86,12 @@ const DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         question: { type: "string", description: "Question to ask the user" },
-        goalId: { type: "string", description: "Goal identifier" },
-        loopNum: { type: "number", description: "Current loop number" },
+        goalId: { type: "string", description: "Optional goal identifier" },
+        loopNum: { type: "number", description: "Optional current loop number" },
         options: { type: "array", items: { type: "string" }, description: "Optional answer choices" },
         priority: { type: "string", enum: ["normal", "high"], description: "Question priority", default: "normal" },
       },
-      required: ["question", "goalId", "loopNum"],
+      required: ["question"],
     },
   },
   {

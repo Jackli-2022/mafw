@@ -1,48 +1,37 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
-/**
- * Tees console.log/warn/error to both the original console and a log file.
- * Once installed, ALL existing console.* calls automatically go to both.
- */
-export function installFileLogging(logDir: string, maxFileSize = 5 * 1024 * 1024): void {
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
-  }
+const LOG_DIR = path.join(os.homedir(), '.mafw', 'logs');
+const LOG_PATH = path.join(LOG_DIR, 'mafw.log');
+const MAX_SIZE = 5 * 1024 * 1024;
 
-  const logFilePath = path.join(logDir, 'mafw.log');
-
-  function appendToFile(text: string): void {
-    try {
-      if (fs.existsSync(logFilePath)) {
-        const stat = fs.statSync(logFilePath);
-        if (stat.size >= maxFileSize) {
-          fs.renameSync(logFilePath, `${logFilePath}.${Date.now()}`);
-        }
-      }
-      fs.appendFileSync(logFilePath, text, 'utf-8');
-    } catch { /* non-fatal */ }
-  }
-
-  const origLog = console.log.bind(console);
-  const origWarn = console.warn.bind(console);
-  const origError = console.error.bind(console);
-
-  console.log = (...args: any[]) => {
-    origLog(...args);
-    const line = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-    appendToFile(`[${new Date().toISOString()}] [INFO] ${line}\n`);
-  };
-
-  console.warn = (...args: any[]) => {
-    origWarn(...args);
-    const line = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-    appendToFile(`[${new Date().toISOString()}] [WARN] ${line}\n`);
-  };
-
-  console.error = (...args: any[]) => {
-    origError(...args);
-    const line = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-    appendToFile(`[${new Date().toISOString()}] [ERROR] ${line}\n`);
-  };
+function rotateIfNeeded(): void {
+  try {
+    if (fs.existsSync(LOG_PATH) && fs.statSync(LOG_PATH).size >= MAX_SIZE) {
+      fs.renameSync(LOG_PATH, `${LOG_PATH}.${Date.now()}`);
+    }
+  } catch { /* non-fatal */ }
 }
+
+function redact(s: string): string {
+  return s.replace(/Bearer\s+[^\s"]+/gi, "Bearer ***").replace(/([?&]token=)[^&\s"]+/gi, "$1***");
+}
+
+function write(level: string, msg: string, ...args: any[]): void {
+  try {
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+    rotateIfNeeded();
+    const line = args.length === 0
+      ? `[${new Date().toISOString()}] [${level}] ${redact(msg)}\n`
+      : `[${new Date().toISOString()}] [${level}] ${redact(msg)} ${redact(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '))}\n`;
+    fs.appendFileSync(LOG_PATH, line, 'utf-8');
+  } catch { /* non-fatal */ }
+}
+
+export const log = {
+  info: (msg: string, ...args: any[]) => write('INFO', msg, ...args),
+  warn: (msg: string, ...args: any[]) => write('WARN', msg, ...args),
+  error: (msg: string, ...args: any[]) => write('ERROR', msg, ...args),
+  debug: (msg: string, ...args: any[]) => write('DEBUG', msg, ...args),
+};

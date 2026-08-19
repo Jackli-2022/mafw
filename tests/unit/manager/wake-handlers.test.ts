@@ -64,7 +64,7 @@ describe('wake-handlers', () => {
 
   it('does nothing when state dir is empty', async () => {
     writeManagerSession();
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeCompletedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:completed'], perGoalCooldown: '60s' } }, engine);
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
     logSpy.mockRestore();
@@ -74,7 +74,7 @@ describe('wake-handlers', () => {
     writeManagerSession();
     writeStateFile('g1', { reviewVerdict: 'FAIL' });
     writeStateFile('g2', { reviewVerdict: 'ERROR' });
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeCompletedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:completed'], perGoalCooldown: '60s' } }, engine);
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
     logSpy.mockRestore();
@@ -83,7 +83,7 @@ describe('wake-handlers', () => {
   it('does nothing when PASS goal already has reportedAt set', async () => {
     writeManagerSession();
     writeStateFile('g1', { reviewVerdict: 'PASS', reportedAt: new Date().toISOString() });
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeCompletedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:completed'], perGoalCooldown: '60s' } }, engine);
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
     logSpy.mockRestore();
@@ -95,7 +95,7 @@ describe('wake-handlers', () => {
     writeStateFile('g2', { reviewVerdict: 'PASS', reportedAt: null });
     writeStateFile('g3', { reviewVerdict: 'FAIL' });
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeCompletedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:completed'], perGoalCooldown: '60s' } }, engine);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
@@ -108,7 +108,7 @@ describe('wake-handlers', () => {
     writeStateFile('g1', { reviewVerdict: 'PASS', reportedAt: null });
     fs.writeFileSync(path.join(stateDir, 'corrupt.json'), '{invalid', 'utf-8');
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeCompletedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:completed'], perGoalCooldown: '60s' } }, engine);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
@@ -120,7 +120,7 @@ describe('wake-handlers', () => {
   it('does nothing when no goal has FAIL or ERROR verdict', async () => {
     writeManagerSession();
     writeStateFile('g1', { reviewVerdict: 'PASS' });
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeFailedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:failed'], perGoalCooldown: '60s' } }, engine);
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
     logSpy.mockRestore();
@@ -129,7 +129,7 @@ describe('wake-handlers', () => {
   it('does nothing when FAIL goal already has reportedAt set', async () => {
     writeManagerSession();
     writeStateFile('g1', { reviewVerdict: 'FAIL', reportedAt: new Date().toISOString() });
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeFailedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:failed'], perGoalCooldown: '60s' } }, engine);
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
     logSpy.mockRestore();
@@ -140,7 +140,7 @@ describe('wake-handlers', () => {
     writeStateFile('g1', { reviewVerdict: 'FAIL', reportedAt: null });
     writeStateFile('g2', { reviewVerdict: 'PASS' });
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeFailedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:failed'], perGoalCooldown: '60s' } }, engine);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
@@ -153,7 +153,7 @@ describe('wake-handlers', () => {
     writeStateFile('g1', { reviewVerdict: 'ERROR', reportedAt: null });
     writeStateFile('g2', { reviewVerdict: 'FAIL', reportedAt: null });
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeFailedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:failed'], perGoalCooldown: '60s' } }, engine);
 
     expect(logSpy).toHaveBeenCalledTimes(1);
@@ -164,7 +164,7 @@ describe('wake-handlers', () => {
 
   it('does nothing when question-ledger has no pending questions', async () => {
     writeManagerSession();
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeQuestionHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['question:asked'], perGoalCooldown: '60s' } }, engine);
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
     logSpy.mockRestore();
@@ -180,7 +180,7 @@ describe('wake-handlers', () => {
       'utf-8',
     );
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeQuestionHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['question:asked'], perGoalCooldown: '60s' } }, engine);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
@@ -197,7 +197,7 @@ describe('wake-handlers', () => {
     ];
     fs.writeFileSync(path.join(tmpDir, 'question-ledger.jsonl'), lines.join('\n') + '\n', 'utf-8');
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeQuestionHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['question:asked'], perGoalCooldown: '60s' } }, engine);
 
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Injecting wake prompt'));
@@ -210,7 +210,7 @@ describe('wake-handlers', () => {
     // No writeManagerSession() — file intentionally missing
     writeStateFile('g1', { reviewVerdict: 'PASS', reportedAt: null });
 
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
+    const logSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation();
     await wakeCompletedHandler({ id: 'test', enabled: true, trigger: { type: 'event', on: ['goal:completed'], perGoalCooldown: '60s' } }, engine);
 
     expect(logSpy).toHaveBeenCalledWith('[WakeHandler] No manager session found — skipping wake injection');

@@ -54,6 +54,12 @@ export interface GoalCreateInput {
   maxLoops?: number
 }
 
+export interface GoalControlAction {
+  action: 'PAUSE' | 'ABORT' | 'FORCE_PHASE' | 'RESET_PARAMETRIC'
+  goalId: string
+  targetPhase?: string
+}
+
 export interface MemoryUnit {
   id: string
   type: 'episodic' | 'semantic' | 'procedural' | 'global'
@@ -91,12 +97,56 @@ export interface Axiom {
   energy: number
 }
 
+export interface L5Heuristic {
+  id: string
+  pattern: string
+  trigger_context: string[]
+  success_rate?: number
+  source_goal_ids?: string[]
+  energy: number
+  created_at?: string
+}
+
 export interface Approval {
   id: string
   goalId: string
   question: string
   status: 'pending' | 'answered' | 'expired'
   createdAt: string
+}
+
+// ── Questions (AskCard) — mirrors opencode QuestionV1 ──
+
+export interface QuestionOption {
+  label: string
+  description?: string
+}
+
+export interface QuestionInfo {
+  question: string
+  header?: string
+  options: QuestionOption[]
+  multiple?: boolean
+  custom?: boolean
+}
+
+export interface QuestionRequest {
+  id: string
+  sessionID: string
+  questions: QuestionInfo[]
+  tool?: { messageID: string; callID: string }
+}
+
+// ── Permissions (PermissionCard) — mirrors opencode PermissionV1 ──
+
+export interface PermissionRequest {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: string[]
+  metadata?: Record<string, unknown>
+  always?: string[]
+  tool?: { messageID: string; callID: string }
 }
 
 export interface TriageItem {
@@ -130,14 +180,146 @@ export interface SessionMessagePart {
   text?: string
 }
 
+export interface Todo {
+  id: string
+  content: string
+  status: string
+  priority: string
+}
+
+export interface TrajectoryTokens {
+  input: number
+  output: number
+  reasoning: number
+  cache: { read: number; write: number }
+}
+
+export interface TrajectoryTurn {
+  projectID?: string
+  turnID: number
+  turnStartMs: number
+  turnEndMs: number | null
+  durationMs: number | null
+  toolCount: number
+  toolErrorCount: number
+  reasoningCount: number
+  agentSwitchCount: number
+  tokens: TrajectoryTokens
+  cost: number
+  finish: string | null
+  model: string | null
+  agent: string | null
+  userText: string
+}
+
+export interface TrajectoryEvent {
+  id?: number
+  projectID?: string
+  turnID: number
+  seq: number
+  eventType: string
+  toolName?: string
+  callID?: string
+  toolState?: 'running' | 'completed' | 'error'
+  agent?: string
+  model?: string
+  inputSummary?: string
+  outputSummary?: string
+  error?: string
+  tokens?: TrajectoryTokens
+  cost?: number
+  finish?: string
+  timeMs: number
+  durationMs?: number
+}
+
+export interface TrajectoryResponse {
+  turns: TrajectoryTurn[]
+  events: TrajectoryEvent[]
+}
+
+export interface GatewayStatus {
+  state: 'stopped' | 'starting' | 'ready' | 'failed'
+  port: number | null
+  url: string | null
+  error: string | null
+}
+
+// ============================================================
+// Namespace interfaces (aligned with @opencode-ai/sdk v2)
+// ============================================================
+
 export interface SessionNamespace {
-  create(opts: { directory?: string; metadata?: Record<string, unknown> }): Promise<Session>
-  promptAsync(opts: { sessionID: string; message: string }): Promise<void>
-  prompt(opts: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
-  delete(opts: { sessionID: string } | { path: { id: string } }): Promise<void>
-  list(projectID?: string): Promise<Session[]>
-  get(id: string): Promise<Session>
-  messages(sessionID: string, limit?: number, before?: string): Promise<any>
+  create(params?: { directory?: string; metadata?: Record<string, unknown> }): Promise<Session>
+  get(params: { path: { id: string } }): Promise<Session>
+  list(params?: { query?: { projectID?: string } }): Promise<Session[]>
+  delete(params: { path: { id: string } }): Promise<void>
+  messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }>
+  todo(params: { path: { id: string } }): Promise<{ data: Todo[] }>
+  children(params: { path: { id: string } }): Promise<any[]>
+  abort(params: { path: { id: string } }): Promise<void>
+  prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
+  promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
+  trajectory(params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } }): Promise<TrajectoryResponse>
+  events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  command(params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
+}
+
+// ── Commands & skills (opencode serve shapes) ──
+
+export interface CommandInfo {
+  name: string
+  description?: string
+  agent?: string
+  model?: string
+  source?: "command" | "mcp" | "skill" | "builtin"
+  template?: string
+  subtask?: boolean
+  hints?: Record<string, unknown>
+}
+
+export interface SkillInfo {
+  name: string
+  description?: string
+  slash?: boolean
+  location?: string
+  content?: string
+}
+
+export interface CommandNamespace {
+  list(directory?: string): Promise<CommandInfo[]>
+}
+
+export interface SkillNamespace {
+  list(directory?: string): Promise<SkillInfo[]>
+}
+
+// ── MAFW native commands (desktop slash panel) ──
+
+export interface MafwCommandResult {
+  ok: boolean
+  message?: string
+  text?: string
+  error?: string
+  sessionID?: string
+  added?: number
+  conflicts?: number
+  skipped?: number
+  details?: unknown
+}
+
+export interface MafwCommandsNamespace {
+  run(params: { command: string; args?: string; sessionID?: string }): Promise<MafwCommandResult>
+}
+
+export interface ManagerSessionInfo {
+  projectDir: string
+  sessionId: string
+  createdAt?: string | null
+}
+
+export interface ManagerNamespace {
+  session(projectDir?: string): Promise<ManagerSessionInfo | null>
 }
 
 export interface ProjectNamespace {
@@ -147,7 +329,8 @@ export interface ProjectNamespace {
 }
 
 export interface EventNamespace {
-  subscribe(opts?: {}): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  subscribe(): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
 }
 
 export interface ConfigNamespace {
@@ -155,15 +338,29 @@ export interface ConfigNamespace {
   set(key: string, value: any): Promise<void>
 }
 
+export interface OpenCodeConfigNamespace {
+  get(): Promise<any>
+  update(config: Record<string, unknown>): Promise<any>
+}
+
 export interface ChatNamespace {
-  send(message: string): Promise<{ sessionID: string }>
-  sendEnriched(message: string): Promise<{ sessionID: string }>
+  send(message: string, sessionID?: string): Promise<{ sessionID: string }>
+  sendEnriched(opts: { message: string; sessionID?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }): Promise<{ sessionID: string }>
+}
+
+export interface ProvidersNamespace {
+  list(): Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null>
+}
+
+export interface AgentsNamespace {
+  list(): Promise<any[]>
 }
 
 export interface GoalsNamespace {
   list(): Promise<Goal[]>
   get(id: string): Promise<Goal | null>
-  create(input: GoalCreateInput): Promise<{ goalId: string }>
+  validate(input: GoalCreateInput): Promise<{ goalId: string }>
+  control(action: GoalControlAction): Promise<void>
 }
 
 export interface MemorySearchOptions {
@@ -176,7 +373,8 @@ export interface MemoryNamespace {
   search(opts: MemorySearchOptions): Promise<MemoryUnit[]>
   mergedSearch(opts: MergedSearchOptions): Promise<MemoryFact[]>
   getEnergyDistribution(): Promise<EnergyDistribution>
-  getL5Axioms(topK?: number): Promise<Axiom[]>
+  getL5Axioms(topK?: number): Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>
+  delete(id: string): Promise<void>
 }
 
 export interface ApprovalsNamespace {
@@ -186,6 +384,9 @@ export interface ApprovalsNamespace {
 
 export interface TriageNamespace {
   list(): Promise<TriageItem[]>
+  dismiss(id: string): Promise<void>
+  confirm(id: string): Promise<void>
+  reject(id: string): Promise<void>
 }
 
 export interface AutomationsNamespace {
@@ -193,26 +394,80 @@ export interface AutomationsNamespace {
   toggle(id: string, enabled: boolean): Promise<void>
 }
 
+export interface QuestionsNamespace {
+  list(): Promise<QuestionRequest[]>
+  reply(id: string, answers: string[][]): Promise<void>
+  reject(id: string): Promise<void>
+}
+
+export interface PermissionsNamespace {
+  list(): Promise<PermissionRequest[]>
+  reply(id: string, reply: 'once' | 'always' | 'reject', message?: string): Promise<void>
+}
+
 // ============================================================
-// GatewayClient — full client interface
+// MafwClient — full client interface
 // ============================================================
 
-export interface GatewayClient {
-  // Core (aligned with @opencode-ai/sdk)
+export interface MafwClient {
   session: SessionNamespace
   project: ProjectNamespace
   event: EventNamespace
   config: ConfigNamespace
-
-  // MAFW extensions
+  opencodeConfig: OpenCodeConfigNamespace
   chat: ChatNamespace
   goals: GoalsNamespace
   memory: MemoryNamespace
   approvals: ApprovalsNamespace
+  questions: QuestionsNamespace
+  permissions: PermissionsNamespace
+  providers: ProvidersNamespace
+  agents: AgentsNamespace
   triage: TriageNamespace
   automations: AutomationsNamespace
+  media: MediaNamespace
+  tts: TtsNamespace
+  command: CommandNamespace
+  skill: SkillNamespace
+  mafwCommands: MafwCommandsNamespace
+  manager: ManagerNamespace
 }
 
-export interface GatewayClientOptions {
+export interface MafwClientOptions {
   baseUrl?: string
+}
+
+// ============================================================
+// Media (A2A Media Agent)
+// ============================================================
+
+export interface MediaTask {
+  id: string
+  contextId: string
+  state: string
+}
+
+export interface MediaNamespace {
+  /** Create an A2A vision task from an image (data URL) + initial question. */
+  createTask: (opts: { dataUrl?: string; artifactId?: string; mediaType?: string; question?: string }) => Promise<MediaTask>
+}
+
+// ============================================================
+// TTS (MiMo-V2.5-TTS speech synthesis)
+// ============================================================
+
+export interface TtsResult {
+  artifactId: string
+  voice: string
+  mime: string
+  url: string
+}
+
+export interface TtsNamespace {
+  /** Synthesize speech from text (preset voice, wav). Returns artifact reference. */
+  speak: (opts: { text: string; voice?: string; style?: string }) => Promise<TtsResult>
+  /** Preset voice list + model info (desktop voice picker). */
+  voices: () => Promise<{ voices: { id: string; label: string; lang: string }[]; models: { id: string; description: string }[]; defaultVoice: string; defaultModel: string }>
+  /** Streaming TTS (SSE, PCM16 24kHz mono): async iterable of base64 chunks. */
+  speakStream: (opts: { text: string; voice?: string; style?: string }) => AsyncGenerator<{ data: string; voice: string }>
 }

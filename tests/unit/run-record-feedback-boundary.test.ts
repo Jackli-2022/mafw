@@ -1,4 +1,4 @@
-import { recordFeedback } from '../../src/tools/run-record-feedback';
+import { recordFeedback } from '../../gateway/src/core/tools/run-record-feedback';
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';

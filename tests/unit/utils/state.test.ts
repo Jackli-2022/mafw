@@ -9,7 +9,7 @@ import {
   loadWaves,
   loadReceipts,
   extractGoalId
-} from '../../../src/utils/state';
+} from '../../../gateway/src/core/utils/state';
 
 let tmpDir: string;
 let projectDir: string;

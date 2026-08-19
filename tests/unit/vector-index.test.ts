@@ -2,7 +2,7 @@ jest.mock('@xenova/transformers', () => ({
   pipeline: jest.fn()
 }));
 
-import { VectorIndex } from '../../src/compression/vector-index';
+import { VectorIndex } from '../../gateway/src/core/compression/vector-index';
 import { pipeline } from '@xenova/transformers';
 import * as fs from 'fs';
 import * as path from 'path';

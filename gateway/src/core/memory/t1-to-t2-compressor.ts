@@ -134,6 +134,7 @@ export class T1ToT2Compressor {
       salience: calculateSalience(memoryValue),
       abstraction_level: 1,
       goal_id: goalId !== 'default' ? goalId : undefined,
+      source_session_id: sessionID,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

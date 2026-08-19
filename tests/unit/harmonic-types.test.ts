@@ -1,4 +1,4 @@
-import { generateHarmonicId, HarmonicUnit } from '../../src/memory/harmonic-types';
+import { generateHarmonicId, HarmonicUnit } from '../../gateway/src/core/memory/harmonic-types';
 
 describe('Harmonic Types', () => {
   it('generates unique IDs', () => {

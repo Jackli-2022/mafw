@@ -1,4 +1,4 @@
-import { PrivacyFilter } from '../../src/memory/privacy-filter';
+import { PrivacyFilter } from '../../gateway/src/core/memory/privacy-filter';
 
 function makeFilter(config?: {
   enabled?: boolean;

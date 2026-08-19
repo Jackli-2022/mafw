@@ -1,8 +1,8 @@
-import { EntityExtractor } from '../../src/graph/entity-extractor';
-import { RelationInferencer } from '../../src/graph/relation-inferencer';
-import { GraphSearcher } from '../../src/graph/graph-searcher';
-import { KnowledgeGraphManager } from '../../src/graph/knowledge-graph-manager';
-import { GraphNode, GraphEdge, KnowledgeGraph } from '../../src/graph/types';
+import { EntityExtractor } from '../../gateway/src/core/graph/entity-extractor';
+import { RelationInferencer } from '../../gateway/src/core/graph/relation-inferencer';
+import { GraphSearcher } from '../../gateway/src/core/graph/graph-searcher';
+import { KnowledgeGraphManager } from '../../gateway/src/core/graph/knowledge-graph-manager';
+import { GraphNode, GraphEdge, KnowledgeGraph } from '../../gateway/src/core/graph/types';
 
 jest.mock('fs');
 

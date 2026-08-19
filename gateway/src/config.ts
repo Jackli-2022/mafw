@@ -12,6 +12,9 @@ export interface GatewayConfig {
     mcpUrl: string;
     dashboardPort: number;
     cors: { origin: string; methods: string; headers: string };
+    /** Optional API token — required for non-loopback connections (remote
+     *  mobile clients over Tailscale etc.). Env: MAFW_SERVER_API_TOKEN. */
+    apiToken?: string;
   };
   paths: {
     projectDir: string;
@@ -48,6 +51,21 @@ export interface GatewayConfig {
     defaultTopK: number;
     maxMemoryResults: number;
     axiomsTopK: number;
+    /** Default harmonic retriever: 'token' (legacy substring counting) or 'bm25'. */
+    defaultRetriever: 'token' | 'bm25';
+    /** Two-stage reranking: 'off' | 'heuristic' | 'cross-encoder'. */
+    reranker: 'off' | 'heuristic' | 'cross-encoder';
+    /** How many candidates the retriever returns before reranking. */
+    recallK: number;
+    /** Drop reranked results below topScore × cutoffRatio (0 = disabled). */
+    cutoffRatio: number;
+    /** Heuristic reranker weights. */
+    rerankWeights: {
+      bm25: number;
+      recency: number;
+      energy: number;
+      salience: number;
+    };
   };
   memory: {
     defaultEnergy: number;
@@ -88,6 +106,44 @@ export interface GatewayConfig {
     wakeCooldownMs: number;
     reportIntervalMin: number;
   };
+  recall: {
+    stepInjectThreshold: number;
+    stepInjectMaxMemories: number;
+    stepInjectIntervalMs: number;
+    stepInjectQueueCap: number;
+    stepInjectTtlMs: number;
+    turnStaleMs: number;
+    obsCapturePath: string;
+    sessionWorkerTtlMs: number;
+    reflectThresholdEpisodic: number;
+    maxEpisodicPerReflect: number;
+    /** Model pinned to background compress/reflect worker prompts. */
+    workerModel: { providerID: string; modelID: string };
+    /** Summarize worker session after this much idle time to cap token growth. */
+    workerCompactIdleMs: number;
+  };
+  media: {
+    /** opencode provider that owns the credentials (must be connected in opencode). */
+    provider: string;
+    /** default model ID for every modality. */
+    model: string;
+    /** per-modality overrides: { provider?, model } — provider falls back to `provider`. */
+    image?: { provider?: string; model: string };
+    video?: { provider?: string; model: string };
+    audio?: { provider?: string; model: string };
+    lang?: string;
+    /** TTS (text-to-speech) configuration — MiMo-V2.5-TTS family. */
+    tts?: {
+      /** OpenAI-compatible endpoint (sk- billing: https://api.xiaomimimo.com/v1). */
+      baseUrl?: string;
+      /** TTS model ID. */
+      model?: string;
+      /** Default preset voice. */
+      defaultVoice?: string;
+      /** Allowed preset voices (display list). */
+      voices?: string[];
+    };
+  };
   alignment: {
     userWeightsFile: string;
   };
@@ -112,6 +168,7 @@ function defaults(projectDir: string): GatewayConfig {
         methods: 'GET, POST, OPTIONS',
         headers: 'Content-Type',
       },
+      apiToken: '',
     },
     paths: {
       projectDir,
@@ -148,6 +205,16 @@ function defaults(projectDir: string): GatewayConfig {
       defaultTopK: 20,
       maxMemoryResults: 50,
       axiomsTopK: 10,
+      defaultRetriever: 'bm25',
+      reranker: 'off',
+      recallK: 50,
+      cutoffRatio: 0,
+      rerankWeights: {
+        bm25: 0.6,
+        recency: 0.2,
+        energy: 0.1,
+        salience: 0.1,
+      },
     },
     memory: {
       defaultEnergy: 0.8,
@@ -191,6 +258,38 @@ function defaults(projectDir: string): GatewayConfig {
       wakeCooldownMs: parseInt(process.env.MAFW_MANAGER_WAKE_COOLDOWN || '') || 60000,
       reportIntervalMin: parseInt(process.env.MAFW_MANAGER_REPORT_INTERVAL || '') || 5,
     },
+    recall: {
+      stepInjectThreshold: 0.7,
+      stepInjectMaxMemories: 2,
+      stepInjectIntervalMs: 15 * 60 * 1000,
+      stepInjectQueueCap: 3,
+      stepInjectTtlMs: 24 * 60 * 60 * 1000,
+      turnStaleMs: 30 * 60 * 1000,
+      obsCapturePath: 'memory/gateway.db',
+      sessionWorkerTtlMs: 24 * 60 * 60 * 1000,
+      reflectThresholdEpisodic: 3,
+      maxEpisodicPerReflect: 100,
+      workerModel: { providerID: 'xiaomi', modelID: 'mimo-v2.5' },
+      workerCompactIdleMs: 8 * 60 * 60 * 1000,
+    },
+    media: {
+      provider: 'xiaomi',
+      model: 'mimo-v2.5',
+      // Nested stubs so MAFW_MEDIA_IMAGE_MODEL / MAFW_MEDIA_VIDEO_MODEL /
+      // MAFW_MEDIA_AUDIO_MODEL / MAFW_MEDIA_LANG env overrides are honored by
+      // applyEnvOverrides (it only walks keys present in the defaults).
+      // Empty model falls back to the top-level `model` at resolve time.
+      image: { model: '' },
+      video: { model: '' },
+      audio: { model: '' },
+      lang: '',
+      tts: {
+        baseUrl: 'https://api.xiaomimimo.com/v1',
+        model: 'mimo-v2.5-tts',
+        defaultVoice: '茉莉',
+        voices: ['冰糖', '茉莉', '苏打', '白桦', 'Mia', 'Chloe', 'Milo', 'Dean'],
+      },
+    },
     env: {
       mafwOpencodePath: 'MAFW_OPENCODE_PATH',
       enableLegacyMcp: 'ENABLE_LEGACY_MCP',
@@ -201,20 +300,83 @@ function defaults(projectDir: string): GatewayConfig {
 
 export class Config {
   private data: GatewayConfig;
+  private readonly projectDirValue: string;
+  private readonly dataDirValue: string;
 
   get raw(): GatewayConfig { return this.data; }
 
-  constructor(projectDir?: string) {
-    const pd = projectDir || process.env[defaults('.').env.mafwProjectDir] || '.';
-    this.data = defaults(pd);
+  /**
+   * MAFW data root — pinned to the user's home .mafw directory so the memory
+   * store (T1 db, harmonic index, reflect cursor), manager sessions and the
+   * registry never depend on the process working directory, MAFW_PROJECT_DIR
+   * or the gateway package's install location. The `paths.mafwDir` config key
+   * no longer redirects this. Tests may inject an alternative dataDir.
+   */
+  private static gatewayMafwDir(): string {
+    return path.join(os.homedir(), '.mafw');
+  }
 
-    const globalFile = this.data.paths.globalConfig;
-    this.deepMerge(this.data, this.loadYaml(globalFile));
+  constructor(projectDir?: string, dataDir?: string) {
+    // Resolve to an absolute path so relative stores (T1 db, cursors, memory
+    // files) never depend on the process working directory at runtime.
+    this.projectDirValue = path.resolve(
+      projectDir || process.env[defaults('.').env.mafwProjectDir] || '.',
+    );
+    this.dataDirValue = dataDir ? path.resolve(dataDir) : Config.gatewayMafwDir();
+    this.data = this.buildData(this.projectDirValue);
+  }
 
-    const projectFile = path.join(pd, this.data.paths.mafwDir, 'config.yaml');
-    this.deepMerge(this.data, this.loadYaml(projectFile));
+  private buildData(pd: string): GatewayConfig {
+    const data = defaults(pd);
 
-    this.applyEnvOverrides(this.data);
+    const globalFile = data.paths.globalConfig;
+    this.deepMerge(data, this.loadYaml(globalFile));
+
+    // Project-level config now lives in the fixed data directory (migrated
+    // with the memory store) rather than the project-relative .mafw.
+    const projectFile = path.join(this.dataDirValue, 'config.yaml');
+    this.deepMerge(data, this.loadYaml(projectFile));
+
+    this.applyEnvOverrides(data);
+    return data;
+  }
+
+  /**
+   * Hot-reload config files. Rebuilds from defaults so deleted keys fall back
+   * to default values; immutable sections (server/paths) keep their old values
+   * and are reported as restart-required so runtime state stays consistent
+   * with what is actually listening/serving.
+   */
+  reload(): { changed: string[]; restartRequired: string[] } {
+    const before = JSON.stringify(this.data);
+    const next = this.buildData(this.projectDirValue);
+    const restartRequired: string[] = [];
+    if (JSON.stringify(next.server) !== JSON.stringify(this.data.server)) {
+      // Split apiToken from restart-required: token changes take effect on
+      // next request without a gateway restart.
+      const { apiToken: _nextToken, ...nextServerRest } = next.server as any;
+      const { apiToken: _curToken, ...curServerRest } = this.data.server as any;
+      if (JSON.stringify(nextServerRest) !== JSON.stringify(curServerRest)) {
+        next.server = this.data.server;
+        restartRequired.push('server');
+      } else {
+        // Only apiToken changed — apply it without restart
+        this.data.server.apiToken = next.server.apiToken;
+      }
+    }
+    if (JSON.stringify(next.paths) !== JSON.stringify(this.data.paths)) {
+      next.paths = this.data.paths;
+      restartRequired.push('paths');
+    }
+    const after = JSON.stringify(next);
+    const changed: string[] = [];
+    if (before !== after) {
+      for (const key of Object.keys(this.data)) {
+        if (JSON.stringify((this.data as any)[key]) !== JSON.stringify((next as any)[key])) changed.push(key);
+      }
+    }
+    this.data = next;
+    return { changed, restartRequired };
   }
 
   get server() { return this.data.server; }
@@ -230,9 +392,16 @@ export class Config {
   get alignment() { return this.data.alignment; }
   get env() { return this.data.env; }
   get manager() { return this.data.manager; }
+  get recall() { return this.data.recall; }
 
+  /**
+   * MAFW data root — pinned to the gateway package's own .mafw directory so
+   * the memory store (T1 db, harmonic index, reflect cursor) and pipeline
+   * runtime files never depend on the process working directory or
+   * MAFW_PROJECT_DIR. The `paths.mafwDir` config key no longer redirects this.
+   */
   resolvePath(...segments: string[]): string {
-    return path.join(this.data.paths.projectDir, this.data.paths.mafwDir, ...segments);
+    return path.join(this.dataDirValue, ...segments);
   }
 
   private loadYaml(filePath: string): Partial<GatewayConfig> | null {

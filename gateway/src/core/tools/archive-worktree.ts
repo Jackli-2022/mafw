@@ -1,14 +1,15 @@
+﻿import { log } from '../utils/logger';
 /**
- * Archive Worktree Tool �?Archive tool 函数
+ * Archive Worktree Tool —Archive tool 鍑芥暟
  *
- * 职责�?
- *   1. 合并 Goal 分支�?main
- *   2. �?worktree 提取独有记忆到主项目
- *   3. 生成报告
- *   4. 更新 STATUS.md
- *   5. 清理临时资源
+ * 鑱岃矗锛?
+ *   1. 鍚堝苟 Goal 鍒嗘敮鍒?main
+ *   2. 浠?worktree 鎻愬彇鐙湁璁板繂鍒颁富椤圭洰
+ *   3. 鐢熸垚鎶ュ憡
+ *   4. 鏇存柊 STATUS.md
+ *   5. 娓呯悊涓存椂璧勬簮
  *
- * �?Scheduler �?ARCHIVE 阶段调用�?
+ * 琚?Scheduler 鍦?ARCHIVE 闃舵璋冪敤銆?
  */
 
 import * as fs from 'fs';
@@ -30,45 +31,45 @@ export interface FusionResult {
 }
 
 /**
- * 执行 Archive 流程
+ * 鎵ц Archive 娴佺▼
  */
 export async function archiveWorktree(context: ArchiveContext): Promise<void> {
   const { goalId, projectDir, loopCount } = context;
 
-  console.log(`[archive-worktree] Archiving goal ${goalId}`);
+  log.info(`[archive-worktree] Archiving goal ${goalId}`);
 
   const worktreeManager = new GoalWorktreeManager(projectDir);
   const info = await worktreeManager.getCurrentInfo(goalId);
 
-  // 1. �?git 合并前，�?worktree 提取独有记忆
+  // 1. 鍦?git 鍚堝苟鍓嶏紝浠?worktree 鎻愬彇鐙湁璁板繂
   let fusionResult: FusionResult | null = null;
   if (info.worktreeDir !== projectDir) {
     fusionResult = await mergeMemoryFromWorktree(info.worktreeDir, projectDir);
     if (fusionResult.added > 0 || fusionResult.conflicts > 0) {
-      console.log(`[archive-worktree] Memory fusion: ${fusionResult.added} added, ${fusionResult.conflicts} conflicts`);
+      log.info(`[archive-worktree] Memory fusion: ${fusionResult.added} added, ${fusionResult.conflicts} conflicts`);
     }
   }
 
-  // 2. 合并 Goal 分支�?main
+  // 2. 鍚堝苟 Goal 鍒嗘敮鍒?main
   try {
     await worktreeManager.archive(info, 'merge');
-    console.log(`[archive-worktree] Merged goal/${goalId} into main`);
+    log.info(`[archive-worktree] Merged goal/${goalId} into main`);
   } catch (err: any) {
-    console.error(`[archive-worktree] Merge failed: ${err.message}`);
+    log.error(`[archive-worktree] Merge failed: ${err.message}`);
     throw err;
   }
 
-  // 3. 生成报告
+  // 3. 鐢熸垚鎶ュ憡
   await generateReport(goalId, projectDir, loopCount, fusionResult);
 
-  // 4. 更新 STATUS.md
+  // 4. 鏇存柊 STATUS.md
   updateStatusArchive(goalId, projectDir);
 
-  console.log(`[archive-worktree] Goal ${goalId} archived successfully`);
+  log.info(`[archive-worktree] Goal ${goalId} archived successfully`);
 }
 
 /**
- * �?worktree 提取独有记忆到主项目
+ * 浠?worktree 鎻愬彇鐙湁璁板繂鍒颁富椤圭洰
  */
 export async function mergeMemoryFromWorktree(
   sourceDir: string,
@@ -76,18 +77,26 @@ export async function mergeMemoryFromWorktree(
 ): Promise<FusionResult> {
   const sourceMafw = path.join(sourceDir, '.mafw');
   const targetMafw = path.join(targetDir, '.mafw');
-  const sourceMemPath = path.join(sourceMafw, 'memory', 'memories.json');
+  const { HarmonicUnitFileStore } = await import('../../memory/harmonic-file-store.js');
 
-  if (!fs.existsSync(sourceMemPath)) {
+  // Read the source worktree's memories via the harmonic index + OKF store
+  // (the legacy `memory/memories.json` layout was replaced by OKF + index and
+  // is deleted by the data-dir migration, so reading it would silently no-op).
+  const sourceStore = new HarmonicUnitFileStore(sourceMafw);
+  const sourceIndex = sourceStore.indexManager_().getIndex();
+  if (sourceIndex.entries.length === 0) {
     return { added: 0, conflicts: 0, fusionLog: false };
   }
 
-  const sourceUnits: any[] = JSON.parse(fs.readFileSync(sourceMemPath, 'utf-8'));
+  const sourceUnits: any[] = [];
+  for (const entry of sourceIndex.entries) {
+    const unit = await sourceStore.read(entry.id);
+    if (unit) sourceUnits.push(unit);
+  }
   if (sourceUnits.length === 0) {
     return { added: 0, conflicts: 0, fusionLog: false };
   }
 
-  const { HarmonicUnitFileStore } = await import('../../memory/harmonic-file-store.js');
   const store = new HarmonicUnitFileStore(targetMafw);
   const minhash = new MinHashMerger();
   const targetIndex = store.indexManager_().getIndex();
@@ -106,9 +115,10 @@ export async function mergeMemoryFromWorktree(
     if (bestSim > 0.6) {
       conflicts++;
     } else {
+      const origId = srcUnit.id;
       srcUnit.id = generateHarmonicId();
       srcUnit.energy = 0.4;
-      srcUnit.merged_from = [srcUnit.id];
+      srcUnit.merged_from = [origId];
       const now = new Date().toISOString();
       srcUnit.created_at = now;
       srcUnit.updated_at = now;
@@ -133,7 +143,7 @@ export async function mergeMemoryFromWorktree(
 }
 
 /**
- * 生成报告（含融合结果�?
+ * 鐢熸垚鎶ュ憡锛堝惈铻嶅悎缁撴灉锛?
  */
 async function generateReport(goalId: string, projectDir: string, loopCount: number, fusion?: FusionResult | null): Promise<void> {
   const reportsDir = path.join(projectDir, '.mafw/reports');
@@ -173,11 +183,11 @@ Goal completed successfully after ${loopCount} loop(s).
 ${fusionSection}`;
 
   fs.writeFileSync(reportPath, report, 'utf-8');
-  console.log(`[archive-worktree] Report generated: ${reportPath}`);
+  log.info(`[archive-worktree] Report generated: ${reportPath}`);
 }
 
 /**
- * 更新 STATUS.md �?COMPLETED
+ * 鏇存柊 STATUS.md 涓?COMPLETED
  */
 function updateStatusArchive(goalId: string, projectDir: string): void {
   const statusPath = path.join(projectDir, '.mafw/STATUS.md');
@@ -187,12 +197,15 @@ function updateStatusArchive(goalId: string, projectDir: string): void {
   }
 
   const content = fs.readFileSync(statusPath, 'utf-8');
-  // 更新对应 Goal 的状�?
+  // 鏇存柊瀵瑰簲 Goal 鐨勭姸鎬?
   const updated = content.replace(
     new RegExp(`(goalId: "${goalId}"[\s\S]*?state:) "[^"]*"`, 'g'),
     `$1 "COMPLETED"`
   );
   
   fs.writeFileSync(statusPath, updated, 'utf-8');
-  console.log(`[archive-worktree] STATUS.md updated for ${goalId}`);
+  log.info(`[archive-worktree] STATUS.md updated for ${goalId}`);
 }
+
+
+

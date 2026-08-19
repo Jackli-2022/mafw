@@ -1,5 +1,5 @@
-import { LessonCompactor } from '../../../src/compression/lesson-compactor';
-import { RawLesson } from '../../../src/types/compression';
+import { LessonCompactor } from '../../../gateway/src/core/compression/lesson-compactor';
+import { RawLesson } from '../../../gateway/src/core/types/compression';
 
 function makeRaw(lesson: string): RawLesson {
   return {

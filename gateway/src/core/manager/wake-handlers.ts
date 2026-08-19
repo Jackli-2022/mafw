@@ -1,3 +1,4 @@
+﻿import { log } from '../utils/logger';
 import { AutomationRule, AutomationEngine } from '../../automation-engine';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -9,10 +10,14 @@ async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], re
   const mafwDir = engine['mafwDir'] as string;
   const managerSessionFile = path.join(mafwDir, 'manager-session.json');
   if (!fs.existsSync(managerSessionFile)) {
-    console.log('[WakeHandler] No manager session found — skipping wake injection');
+    log.info('[WakeHandler] No manager session found — skipping wake injection');
     return;
   }
   const { sessionId } = JSON.parse(fs.readFileSync(managerSessionFile, 'utf-8'));
+  if (!sessionId) {
+    log.warn('[WakeHandler] Manager session id missing — skipping wake injection');
+    return;
+  }
 
   const countCompleted = goalIds.filter(gid => {
     const sf = path.join(mafwDir, 'state', `${gid}.json`);
@@ -24,13 +29,16 @@ async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], re
   const countFailed = goalIds.length - countCompleted;
   const wakePrompt = `[MANAGER SYSTEM WAKE] Goals updated. Active: ${countCompleted} completed, ${countFailed} failed.\nUse mafw_get_goal_status for details. Do NOT fabricate results.`;
 
-  console.log(`[WakeHandler] Injecting wake prompt into session ${sessionId}: ${reason}`);
+  log.info(`[WakeHandler] Injecting wake prompt into session ${sessionId}: ${reason}`);
   try {
     const { createOpencodeClient } = await import('@opencode-ai/sdk');
     const client = createOpencodeClient({ baseUrl: process.env.MAFW_SERVE_URL || 'http://127.0.0.1:4096' });
-    await client.session.promptAsync({ sessionID: sessionId, message: wakePrompt });
+    await client.session.promptAsync({
+      path: { id: sessionId },
+      body: { parts: [{ type: 'text', text: wakePrompt }] },
+    });
   } catch (err: any) {
-    console.warn(`[WakeHandler] Failed to inject wake prompt: ${err.message}`);
+    log.warn(`[WakeHandler] Failed to inject wake prompt: ${err.message}`);
   }
 }
 
@@ -87,3 +95,6 @@ export async function wakeQuestionHandler(_rule: AutomationRule, engine: Automat
   if (goalIds.length === 0) return;
   await injectWakeMessage(engine, goalIds, 'report_question');
 }
+
+
+

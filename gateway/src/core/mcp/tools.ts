@@ -252,6 +252,11 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
       }
     },
 
+    // TODO: Deprecated legacy MCP tool path. Active gateway runtime routes
+    // `mafw_search_hybrid` via `gateway/src/mcp/tool-registry.ts` and
+    // `gateway/src/mcp/handlers/search-hybrid.ts` (token/BM25 retrievers × energy).
+    // This implementation (`policy`/`rrf`/BM25Index persistent build) is retained
+    // only for backward compatibility with old consumers; do not extend it.
     mafw_search_hybrid: async (args) => {
       try {
         const query = args.query as string;

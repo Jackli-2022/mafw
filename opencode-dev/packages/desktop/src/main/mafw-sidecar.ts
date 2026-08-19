@@ -9,6 +9,7 @@ export type GatewayStatus = {
   port: number | null
   url: string | null
   error: string | null
+  spawnedByUs?: boolean
 }
 
 type Listener = (state: GatewayState) => void
@@ -26,6 +27,7 @@ const eventListeners = new Set<EventListener>()
 let state: GatewayState = "stopped"
 let port: number | null = null
 let healthInterval: ReturnType<typeof setInterval> | null = null
+let spawnedByUs = false
 
 function notifyState(s: GatewayState) {
   writeLog("utility", `mafw gateway state -> ${s}`, { port, previousState: state }, "info")
@@ -65,13 +67,14 @@ async function probeExistingGateway(): Promise<string | null> {
   return null
 }
 
-export async function startGateway(opts?: { opencodeServerUrl?: string; opencodeServerPassword?: string }): Promise<void> {
+export async function startGateway(): Promise<void> {
   if (state !== "stopped") return
 
   // Try connecting to an already-running gateway before spawning a new one
   const existingUrl = await probeExistingGateway()
   if (existingUrl) {
     port = Number(new URL(existingUrl).port)
+    spawnedByUs = false
     writeLog("utility", "mafw gateway found running", { url: existingUrl }, "info")
     notifyState("ready")
     return
@@ -79,13 +82,11 @@ export async function startGateway(opts?: { opencodeServerUrl?: string; opencode
 
   notifyState("starting")
   port = 3000
+  spawnedByUs = true
 
   try {
-    const env: Record<string, string | undefined> = { ...process.env }
-    if (opts?.opencodeServerUrl) env.MAFW_SERVER_SERVE_URL = opts.opencodeServerUrl
-    if (opts?.opencodeServerPassword) env.MAFW_OPENCODE_PASSWORD = opts.opencodeServerPassword
     writeLog("utility", "mafw starting gateway via CLI", { port }, "info")
-    execFile("mafw", ["daemon"], { env }, (err, stdout, stderr) => {
+      execFile("mafw", ["daemon"], { shell: true, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
         writeLog("utility", "mafw CLI daemon failed", { error: err.message, stderr: stderr?.trim() }, "error")
         notifyState("failed")
@@ -122,13 +123,14 @@ export async function startGateway(opts?: { opencodeServerUrl?: string; opencode
 
 export function stopGateway(): void {
   try {
-    execFile("mafw", ["stop"])
+    execFile("mafw", ["stop"], { shell: true, windowsHide: true })
   } catch {}
   if (healthInterval) {
     clearInterval(healthInterval)
     healthInterval = null
   }
   port = null
+  spawnedByUs = false
   notifyState("stopped")
 }
 
@@ -138,6 +140,7 @@ export function getGatewayStatus(): GatewayStatus {
     port,
     url: port ? `http://127.0.0.1:${port}` : null,
     error: state === "failed" ? "Gateway failed to start" : null,
+    spawnedByUs,
   }
 }
 

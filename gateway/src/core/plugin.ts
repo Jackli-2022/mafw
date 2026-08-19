@@ -1,3 +1,4 @@
+﻿import { log } from './utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ParametricStore } from './memory/store';
@@ -26,12 +27,19 @@ import { T1Store } from './memory/t1-store';
 import { CompressionPipeline } from './compression/compression-pipeline';
 import { T1ToT2Compressor } from './memory/t1-to-t2-compressor';
 import { ObservationService } from './memory/observation-service';
+import { renderMemoryBlocks } from '../recall/inject-format';
+import { TtlMap } from '../recall/ttl-map';
+
+// First-turn injection dedup: keyed by the first-user message ID (globally
+// unique), so each user message gets memory blocks injected exactly once —
+// tool-call rounds re-present the same firstUser and must not re-inject.
+const injectedFirstUser = new TtlMap<string, string>(24 * 60 * 60 * 1000);
 
 
 /**
- * MAFW Plugin �?OpenCode Official Format v5.0
+ * MAFW Plugin 锟?OpenCode Official Format v5.0
  *
- * Architecture: §8.1
+ * Architecture: 搂8.1
  * Returns an object with config, command, tool, hooks.
  * No activate() function. No registerSkill/registerCommand API.
  */
@@ -47,23 +55,22 @@ interface HybridSearchResult {
 export default async function MafwPlugin({ directory }: { directory: string }) {
   const mafwDir = path.join(directory, '.mafw');
 
-  // 0. 初始�?MAFW 目录结构（插件运行时创建�?
+  // 0. 鍒濆锟?MAFW 鐩綍缁撴瀯锛堟彃浠惰繍琛屾椂鍒涘缓锟?
   await ensureMafwDirectories(mafwDir);
 
-  // 0a. �?console.log/warn/error 同时写入文件 .mafw/logs/mafw.log
-  const { installFileLogging } = require('./utils/logger');
-  installFileLogging(path.join(mafwDir, 'logs'));
-  console.log(`[MAFW] File logging enabled: ${mafwDir}/logs/mafw.log`);
+  // 0a. 锟?console.log/warn/error 鍚屾椂鍐欏叆鏂囦欢 .mafw/logs/mafw.log
+  const { log } = require('./utils/logger');
+  log.info('Plugin activated');
 
   // 0b. Load configuration
   const config = ConfigLoader.getInstance(directory).getAll();
 
-  // 1. �?Gateway 注册项目（探测端�?3000-3010�?
+  // 1. 锟?Gateway 娉ㄥ唽椤圭洰锛堟帰娴嬬锟?3000-3010锟?
   await registerWithGateway(directory, mafwDir);
 
-  console.log('[MAFW] Plugin activated. All skills loaded. All commands registered.');
+  log.info('[MAFW] Plugin activated. All skills loaded. All commands registered.');
 
-  // 2. 初始化记忆层
+  // 2. 鍒濆鍖栬蹇嗗眰
   const parametricStore = new ParametricStore({
     baseDir: path.join(mafwDir, 'parametric'),
     bannedDir: path.join(mafwDir, 'parametric', 'banned'),
@@ -77,44 +84,44 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   const knowledgeGraphManager = new KnowledgeGraphManager(path.join(mafwDir, 'knowledge-graph.json'));
   await knowledgeGraphManager.load();
 
-  // ── Hook Manager (moved before HarmonicIndex which needs it) ──
+  // 鈹€鈹€ Hook Manager (moved before HarmonicIndex which needs it) 鈹€鈹€
   const hookManager = new HookManager({ failBehavior: 'continue', timeout: 30000 });
 
-  // ── v6.3 Harmonic Index ──
+  // 鈹€鈹€ v6.3 Harmonic Index 鈹€鈹€
   const harmonicIndex = new HarmonicIndexManager(mafwDir, hookManager);
 
-  // ── v6.4 Cognitive Graph (association network) ──
+  // 鈹€鈹€ v6.4 Cognitive Graph (association network) 鈹€鈹€
   const cognitiveGraph = new CognitiveGraphManager(mafwDir);
 
-  // ── v6.4 Review Scheduler (spaced repetition) ──
+  // 鈹€鈹€ v6.4 Review Scheduler (spaced repetition) 鈹€鈹€
   const reviewScheduler = new ReviewScheduler(harmonicIndex, mafwDir);
   reviewScheduler.start();
 
-  // ── T1 Observation Store ──
+  // 鈹€鈹€ T1 Observation Store 鈹€鈹€
   const t1Store = new T1Store(mafwDir);
   const compressionPipeline = new CompressionPipeline({ baseDir: mafwDir, harmonicIndex });
   const t1ToT2Compressor = new T1ToT2Compressor(t1Store, compressionPipeline, harmonicIndex, mafwDir);
   const observationService = new ObservationService({ t1Store, compressor: t1ToT2Compressor });
 
-  // ── v6.3 Auto-migration (first load) ──
+  // 鈹€鈹€ v6.3 Auto-migration (first load) 鈹€鈹€
   if (!fs.existsSync(path.join(mafwDir, 'memory', '.harmonic_index.json'))) {
-    console.log('[MAFW] No harmonic index found, running v6.1→v6.3 migration...');
+    log.info('[MAFW] No harmonic index found, running v6.1鈫抳6.3 migration...');
     try {
       const { migrateV61 } = require('./memory/migrate-v6.1');
       const result = await migrateV61(mafwDir, harmonicIndex);
-      console.log(`[MAFW] Migration complete: ${result.migrated} migrated, ${result.errors.length} errors`);
+      log.info(`[MAFW] Migration complete: ${result.migrated} migrated, ${result.errors.length} errors`);
     } catch (err: any) {
-      console.error(`[MAFW] Migration failed: ${err.message}`);
+      log.error(`[MAFW] Migration failed: ${err.message}`);
     }
   }
 
   const toolExecutedHook = async ({ tool }: any, { output }: any) => {
     if (output && output.length > 1000) {
-      console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
+      log.info(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
     }
   };
 
-  // ── Cost Estimator (Task 6) ──
+  // 鈹€鈹€ Cost Estimator (Task 6) 鈹€鈹€
   const costEstimator = new CostEstimator();
 
   function persistCosts(): void {
@@ -169,7 +176,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     handler: async (ctx) => {
       const { tool, output, input, sessionID } = ctx.data || ctx;
       if (output && output.length > 1000) {
-        console.log(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
+        log.info(`[MAFW] Compressing output for ${tool} (${output.length} chars)`);
       }
       const args = typeof input === 'string' ? input : JSON.stringify(input || {});
       observationService.captureToolResult(sessionID || '', tool || '', output || '', args);
@@ -212,7 +219,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 40
   });
 
-  // ── v6.0 Cost Threshold Hook ──
+  // 鈹€鈹€ v6.0 Cost Threshold Hook 鈹€鈹€
   hookManager.register({
     name: 'cost-threshold',
     event: 'session.start',
@@ -229,7 +236,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     }
   });
 
-  // ── Wave 1: Memory Internal Hooks ──
+  // 鈹€鈹€ Wave 1: Memory Internal Hooks 鈹€鈹€
   hookManager.register({
     name: 'memory-write-handler',
     event: 'memory.write',
@@ -279,7 +286,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 100
   });
 
-  // ── Wave 2: Session Start ──
+  // 鈹€鈹€ Wave 2: Session Start 鈹€鈹€
   hookManager.register({
     name: 'session-start',
     event: 'session.start',
@@ -289,7 +296,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 5
   });
 
-  // ── Wave 2: Tool Before ──
+  // 鈹€鈹€ Wave 2: Tool Before 鈹€鈹€
   hookManager.register({
     name: 'tool-before',
     event: 'tool.execute.before',
@@ -299,7 +306,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 100
   });
 
-  // ── Wave 2: User Prompt ──
+  // 鈹€鈹€ Wave 2: User Prompt 鈹€鈹€
   hookManager.register({
     name: 'user-prompt',
     event: 'user.prompt.submit',
@@ -311,7 +318,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 50
   });
 
-  // ── Wave 2: LLM After ──
+  // 鈹€鈹€ Wave 2: LLM After 鈹€鈹€
   hookManager.register({
     name: 'llm-after',
     event: 'llm.call.after',
@@ -322,7 +329,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 50
   });
 
-  // ── Session End: trigger turn-based T1→T2 compression ──
+  // 鈹€鈹€ Session End: trigger turn-based T1鈫扵2 compression 鈹€鈹€
   hookManager.register({
     name: 'session-end-compress',
     event: 'session.end',
@@ -332,7 +339,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 50
   });
 
-  // ── Wave 2: Session Compacting ──
+  // 鈹€鈹€ Wave 2: Session Compacting 鈹€鈹€
   hookManager.register({
     name: 'session-compacting',
     event: 'session.compacting',
@@ -342,7 +349,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 100
   });
 
-  // ── Handoff detection: fires session.handoff on phase transitions ──
+  // 鈹€鈹€ Handoff detection: fires session.handoff on phase transitions 鈹€鈹€
   hookManager.register({
     name: 'handoff-detector',
     event: 'session.end',
@@ -374,12 +381,12 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           }
         }
       } catch (err: any) {
-        console.error(`[hook:handoff-detector] Error: ${err.message}`);
+        log.error(`[hook:handoff-detector] Error: ${err.message}`);
       }
     }
   });
 
-  // ── Wave 3: Handoff ──
+  // 鈹€鈹€ Wave 3: Handoff 鈹€鈹€
   hookManager.register({
     name: 'session-handoff',
     event: 'session.handoff',
@@ -395,7 +402,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 100
   });
 
-  // ── V5 Hybrid Search 工具函数 ──
+  // 鈹€鈹€ V5 Hybrid Search 宸ュ叿鍑芥暟 鈹€鈹€
   async function executeHybridSearch({ query, maxResults = 10, tokenBudget = 2000 }: {
     query: string; maxResults?: number; tokenBudget?: number;
   }): Promise<HybridSearchResult> {
@@ -515,7 +522,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   }
 
   return {
-    // ── 配置 ──
+    // 鈹€鈹€ 閰嶇疆 鈹€鈹€
     config: async (config: any) => {
       config.mafw = {
         gatewayPort: config.dashboard.port,
@@ -529,15 +536,23 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       };
     },
 
-    // ── V5 四层记忆自动注入 User Message（Hybrid Search + 向后兼容）──
+    // 鈹€鈹€ V5 鍥涘眰璁板繂鑷姩娉ㄥ叆 User Message锛圚ybrid Search + 鍚戝悗鍏煎锛夆攢鈹€
     'experimental.chat.messages.transform': async (input: any, output: any) => {
       const messages = output.messages || [];
       const firstUser = messages.find((m: any) => m.info?.role === 'user');
       if (!firstUser?.parts?.[0]?.text) return;
 
+      // First-turn-only dedup: real messages always carry info.id; without one
+      // (tests / degraded payloads) we still inject but skip dedup.
+      const firstUserId = firstUser?.info?.id as string | undefined;
+      if (firstUserId) {
+        if (injectedFirstUser.has(firstUserId)) return;
+        injectedFirstUser.set(firstUserId, '1');
+      }
+
       const text = firstUser.parts[0].text;
 
-      // 解析 goalId �?phase
+      // 瑙ｆ瀽 goalId 锟?phase
       let goalId: string | null = null;
       let phase: string | null = null;
 
@@ -557,7 +572,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       let hybridResults: HybridSearchResult | null = null;
       try { hybridResults = await executeHybridSearch({ query: text, maxResults: 10, tokenBudget: 2000 }); } catch { /* ignore search failures */ }
 
-      // 2. 读取记忆（不�?goal 绑定�?
+      // 2. 璇诲彇璁板繂锛堜笉锟?goal 缁戝畾锟?
       let deltas: any[] = [];
       let lessons: any[] = [];
       let state: any = null;
@@ -596,40 +611,27 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           episodic: hybridResults!.episodic || []
         }, 2000);
 
-        if (allocated.parametric.length > 0) {
-          parts.push('<mafw-deltas>',
-            ...allocated.parametric.map((d: any) => `[${d.type || 'constraint'}] ${d.content || d.rule || ''}`),
-            '</mafw-deltas>');
-        }
-        if (allocated.procedural.length > 0) {
-          parts.push('<mafw-patterns>',
-            ...allocated.procedural.map((p: any) => `[${((p.successRate || 0) * 100).toFixed(0)}%] ${p.pattern || ''}`),
-            '</mafw-patterns>');
-        }
-        if (allocated.semantic.length > 0) {
-          parts.push('<mafw-facts>',
-            ...allocated.semantic.map((s: any) => `�?${(s.facts || []).join('; ')}`),
-            '</mafw-facts>');
-        }
-        if (allocated.episodic.length > 0) {
-          parts.push('<mafw-history>',
-            ...allocated.episodic.map((e: any) => `Loop ${e.loopNum || '?'}: ${e.verdict || '?'} �?${e.summary || e.content || ''}`),
-            '</mafw-history>');
-        }
+        const blocks = renderMemoryBlocks([
+          ...allocated.parametric.map((d: any) => ({ source: 'parametric', type: d.type || 'constraint', content: d.content || d.rule || '' })),
+          ...allocated.procedural.map((p: any) => ({ source: 'procedural', type: 'pattern', pattern: p.pattern || '', successRate: p.successRate })),
+          ...allocated.semantic.map((s: any) => ({ source: 'semantic', type: 'fact', facts: s.facts || [] })),
+          ...allocated.episodic.map((e: any) => ({ source: 'episodic', type: 'history', summary: e.summary || e.content || '', verdict: e.verdict, loopNum: e.loopNum })),
+        ]);
+        parts.push(...blocks);
       } else {
         // Fall back to v4.1 simple injection
         if (deltas.length > 0) {
-          parts.push('<mafw-deltas>',
+          parts.push('<deltas>',
             ...deltas.map((d: any) => `[Δ ${d.type}] ${d.id} (energy=${d.energy || 0.5}): ${(d as any).rule || (d as any).prompt_delta || (d as any).pattern_template || ''}`),
-            '</mafw-deltas>');
+            '</deltas>');
         }
         if (lessons.length > 0) {
-          parts.push('<mafw-lessons>',
+          parts.push('<lessons>',
             ...lessons.map((l: any) => `[Lesson] ${typeof l === 'string' ? l : l.content || ''}`),
-            '</mafw-lessons>');
+            '</lessons>');
         }
         if (waveContext) {
-          parts.push('<mafw-context>', waveContext, '</mafw-context>');
+          parts.push('<context>', waveContext, '</context>');
         }
       }
 
@@ -637,7 +639,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       firstUser.parts[0].text = parts.join('\n\n');
     },
 
-    // ── 自定义命�?──
+    // 鈹€鈹€ 鑷畾涔夊懡锟?鈹€鈹€
     command: {
       goal: {
         description: 'Submit a new Goal to MAFW',
@@ -648,7 +650,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
             return {
               type: 'goal_submitted',
               goalId: result.goalId,
-              message: `�?Goal "${result.title}" confirmed\n📁 requests/${result.goalId}.json\n📊 state/${result.goalId}.json\n�?Gateway will auto-schedule...\n\n💡 Tip: TUI can be closed, Goal runs in background.`
+              message: `锟?Goal "${result.title}" confirmed\n馃搧 requests/${result.goalId}.json\n馃搳 state/${result.goalId}.json\n锟?Gateway will auto-schedule...\n\n馃挕 Tip: TUI can be closed, Goal runs in background.`
             };
           }
         }
@@ -816,7 +818,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       },
     },
 
-    // ── Hook aliases for OpenCode v4.1 format (delegated to HookManager) ──
+    // 鈹€鈹€ Hook aliases for OpenCode v4.1 format (delegated to HookManager) 鈹€鈹€
     hooks: {
       'session.end': (ctx: any) => hookManager.execute('session.end', ctx),
       'tool.execute.before': (ctx: any) => hookManager.execute('tool.execute.before', ctx),
@@ -827,7 +829,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       },
     },
 
-    // ── Session 压缩前：保存状态快�?──
+    // 鈹€鈹€ Session 鍘嬬缉鍓嶏細淇濆瓨鐘舵€佸揩锟?鈹€鈹€
     'experimental.session.compacting': async ({ sessionID }: any, { snapshot }: any) => {
       await hookManager.execute('session.compacting', { sessionID, projectDir: directory });
     },
@@ -838,7 +840,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       });
     },
 
-    // ── 事件钩子：Session 生命周期兜底 ──
+    // 鈹€鈹€ 浜嬩欢閽╁瓙锛歋ession 鐢熷懡鍛ㄦ湡鍏滃簳 鈹€鈹€
     event: async ({ event }: any) => {
       if (event.type === 'session.created' || event.type === 'session.start') {
         await hookManager.execute('session.start', {
@@ -850,7 +852,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   };
 }
 
-// ── 内部工具函数 ──
+// 鈹€鈹€ 鍐呴儴宸ュ叿鍑芥暟 鈹€鈹€
 
 async function ensureMafwDirectories(mafwDir: string) {
   const dirs = [
@@ -890,7 +892,7 @@ async function registerWithGateway(directory: string, mafwDir: string) {
 
   const registryFile = path.join(registryDir, 'plugin.json');
   fs.writeFileSync(registryFile, JSON.stringify(payload, null, 2), 'utf-8');
-  console.log(`[MAFW] Registered via filesystem: ${registryFile}`);
+  log.info(`[MAFW] Registered via filesystem: ${registryFile}`);
 }
 
 async function findPendingGoal(directory: string): Promise<string> {
@@ -942,5 +944,7 @@ async function writeGoalRequest(result: any, directory: string) {
 }
 
 function formatGoalCharter(result: any): string {
-  return `# Goal Charter �?${result.title}\n\n> Goal ID: ${result.goalId}\n> Created: ${new Date().toISOString()}\n> Priority: ${result.priority || 'normal'}\n> Max Loops: ${result.maxLoops || 5}\n\n## Objective\n\n${result.title}\n\n## Metrics\n\n${Object.entries(result.metrics || {}).map(([k, v]: [string, any]) => `- ${k}: ${v.target}${v.unit}`).join('\n')}\n\n## Boundaries\n\n${(result.boundaries || []).map((b: string) => `- [ ] ${b}`).join('\n')}\n`;
+  return `# Goal Charter 锟?${result.title}\n\n> Goal ID: ${result.goalId}\n> Created: ${new Date().toISOString()}\n> Priority: ${result.priority || 'normal'}\n> Max Loops: ${result.maxLoops || 5}\n\n## Objective\n\n${result.title}\n\n## Metrics\n\n${Object.entries(result.metrics || {}).map(([k, v]: [string, any]) => `- ${k}: ${v.target}${v.unit}`).join('\n')}\n\n## Boundaries\n\n${(result.boundaries || []).map((b: string) => `- [ ] ${b}`).join('\n')}\n`;
 }
+
+

@@ -1,11 +1,12 @@
+﻿import { log } from '../utils/logger';
 /**
- * Write Lesson Tool — 写入 Lesson tool 函数
+ * Write Lesson Tool —鍐欏叆 Lesson tool 鍑芥暟
  *
- * 职责：
- *   1. 将 Review 失败结果写入 lessons/{goalId}-loop{loop}.md
- *   2. 格式化 Lesson 结构
+ * 鑱岃矗锛?
+ *   1. 灏?Review 澶辫触缁撴灉鍐欏叆 lessons/{goalId}-loop{loop}.md
+ *   2. 鏍煎紡鍖?Lesson 缁撴瀯
  *
- * 被 mafw-review/entry.ts 调用。
+ * 琚?mafw-review/entry.ts 璋冪敤銆?
  */
 
 import * as fs from 'fs';
@@ -21,7 +22,7 @@ export interface LessonData {
 }
 
 /**
- * 写入 Lesson 文件
+ * 鍐欏叆 Lesson 鏂囦欢
  */
 export function writeLesson(data: LessonData, projectDir: string = '.'): string {
   const { goalId, loop, reason, metrics, domain = 'general', task = 'unknown' } = data;
@@ -35,18 +36,18 @@ export function writeLesson(data: LessonData, projectDir: string = '.'): string 
   const content = formatLesson(data);
   
   fs.writeFileSync(lessonPath, content, 'utf-8');
-  console.log(`[write-lesson] Written: ${lessonPath}`);
+  log.info(`[write-lesson] Written: ${lessonPath}`);
   
   return lessonPath;
 }
 
 /**
- * 格式化 Lesson 内容
+ * 鏍煎紡鍖?Lesson 鍐呭
  */
 function formatLesson(data: LessonData): string {
   const { goalId, loop, reason, metrics, domain, task } = data;
   
-  return `# Lesson: ${goalId} — Loop ${loop}
+  return `# Lesson: ${goalId} —Loop ${loop}
 
 ## Trigger
 
@@ -75,3 +76,6 @@ Address the above issues in the next loop.
 _generated: ${new Date().toISOString()}_
 `;
 }
+
+
+

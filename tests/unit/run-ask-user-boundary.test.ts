@@ -1,4 +1,4 @@
-import { askUser } from '../../src/tools/run-ask-user';
+import { askUser } from '../../gateway/src/core/tools/run-ask-user';
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';

@@ -53,6 +53,10 @@ const getBase = (appId: string): Configuration => ({
     desktopName: `${appId}.desktop`,
   },
   files: ["out/**/*", "resources/**/*"],
+  // Silero VAD assets (onnx model + onnxruntime wasm) are binary fetch targets
+  // for the renderer — they cannot live inside asar (fetch can't resolve the
+  // virtual path), so unpack them next to the app.
+  asarUnpack: ["**/*.onnx", "**/*.wasm"],
   extraResources: [
     {
       from: "native/",

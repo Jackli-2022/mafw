@@ -3,15 +3,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const CLI = path.join(__dirname, '../../../bin/mafw-gateway.js');
+const CLI = path.join(__dirname, '../../../bin/mafw.js');
 
 // ... existing tests ...
 
 test('mafw-gateway logs prints the last 50 lines without tail', () => {
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-home-'));
-  const logDir = path.join(tmpHome, '.config', 'mafw', 'logs');
+  const logDir = path.join(tmpHome, '.mafw', 'logs');
   fs.mkdirSync(logDir, { recursive: true });
-  const logFile = path.join(logDir, 'gateway.log');
+  const logFile = path.join(logDir, 'mafw.log');
   const lines = Array.from({ length: 60 }, (_, i) => `line ${i + 1}`);
   fs.writeFileSync(logFile, lines.join('\n'), 'utf-8');
 

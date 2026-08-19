@@ -1,4 +1,4 @@
-import { CognitiveRouter, defaultRouterConfig } from '../../src/cost/cognitive-router';
+import { CognitiveRouter, defaultRouterConfig } from '../../gateway/src/core/cost/cognitive-router';
 
 describe('CognitiveRouter', () => {
   it('returns default model when budget is healthy', () => {

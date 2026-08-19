@@ -1,4 +1,4 @@
-import { calculateSalience } from '../../src/memory/salience-perceptor';
+import { calculateSalience } from '../../gateway/src/core/memory/salience-perceptor';
 
 describe('calculateSalience', () => {
   it('returns 1.5 for high-salience content', () => {

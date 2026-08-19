@@ -51,7 +51,7 @@ describe('AutomationEngine actionRegistry', () => {
 
   it('executeRule logs warning for unregistered action', async () => {
     const engine = new AutomationEngine(tmpDir);
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    const warnSpy = jest.spyOn(require('../../gateway/src/core/utils/logger').log, 'warn').mockImplementation();
     engine['rules'].set('bad', {
       id: 'bad', enabled: true,
       trigger: { type: 'cron', schedule: '* * * * *', timezone: 'UTC' },

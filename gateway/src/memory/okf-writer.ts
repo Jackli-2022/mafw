@@ -17,6 +17,8 @@ export function buildOKF(unit: HarmonicUnit): string {
   if (unit.salience !== undefined) frontmatter.salience = unit.salience;
   if (unit.abstraction_level !== undefined) frontmatter.abstraction_level = unit.abstraction_level;
   if (unit.merged_from?.length) frontmatter.merged_from = unit.merged_from;
+  if (unit.superseded_by) frontmatter.superseded_by = unit.superseded_by;
+  if (unit.source_session_id) frontmatter.source_session_id = unit.source_session_id;
 
   const yamlStr = yaml.dump(frontmatter, { lineWidth: -1, quotingType: '"' });
   return `---\n${yamlStr}---\n${unit.memory_value}\n`;
@@ -26,7 +28,9 @@ export function getOKFFilename(unit: HarmonicUnit): string {
   const typeLabel = unit.type === 'semantic' && unit.granularity
     ? 'knowledge'
     : unit.type === 'procedural' ? 'procedural'
-    : unit.type === 'episodic' ? 'episodic' : 'semantic';
+    : unit.type === 'episodic' ? 'episodic'
+    : unit.type === 'global' ? 'global'
+    : 'semantic';
   const slug = unit.primary_abstraction
     .toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
   return `${typeLabel}-${unit.id.slice(0, 12)}-${slug}.md`;
@@ -37,6 +41,7 @@ export function getOKFDirectory(unit: HarmonicUnit): string {
   if (unit.type === 'semantic' && unit.granularity) return 'concepts/knowledge';
   if (unit.type === 'semantic') return 'concepts/semantic';
   if (unit.type === 'episodic') return 'concepts/episodic';
+  if (unit.type === 'global') return 'concepts/global';
   throw new Error(`unknown type ${unit.type} should not be written to OKF directly`);
 }
 

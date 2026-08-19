@@ -1,6 +1,6 @@
-import { withRetry } from '../../src/utils/retry';
-import { CircuitBreaker, CircuitBreakerOpenError } from '../../src/utils/circuit-breaker';
-import { executeWithFallback } from '../../src/utils/fallback';
+import { withRetry } from '../../gateway/src/core/utils/retry';
+import { CircuitBreaker, CircuitBreakerOpenError } from '../../gateway/src/core/utils/circuit-breaker';
+import { executeWithFallback } from '../../gateway/src/core/utils/fallback';
 
 jest.useFakeTimers({ advanceTimers: true });
 

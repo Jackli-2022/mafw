@@ -1,4 +1,4 @@
-import { SQLiteStorage } from '../../src/storage/sqlite-storage';
+import { SQLiteStorage } from '../../gateway/src/core/storage/sqlite-storage';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';

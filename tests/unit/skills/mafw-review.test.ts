@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { mafwReviewEntry } from '../../../src/skills/mafw-review/entry';
+import { mafwReviewEntry } from '../../../gateway/src/core/skills/mafw-review/entry';
 
 let tmpDir: string;
 let cwdSpy: jest.SpyInstance;
@@ -60,7 +60,7 @@ function mockLlm(content: string) {
   };
 }
 
-test('mafwReviewEntry PASS with metrics met â†?REVIEWING_COMPLETE', async () => {
+test('mafwReviewEntry PASS with metrics met ï¿½?REVIEWING_COMPLETE', async () => {
   writeBaseState();
 
   await mafwReviewEntry({
@@ -76,7 +76,7 @@ test('mafwReviewEntry PASS with metrics met â†?REVIEWING_COMPLETE', async () => 
   expect(fs.existsSync(path.join(tmpDir, '.mafw', 'reviews', '001-auth-loop1.md'))).toBe(true);
 });
 
-test('mafwReviewEntry FAIL with maxLoops reached â†?REVIEWING_COMPLETE with error', async () => {
+test('mafwReviewEntry FAIL with maxLoops reached ï¿½?REVIEWING_COMPLETE with error', async () => {
   writeBaseState('REVIEWING', 'CREATE_REVIEW_SESSION', 1, 1);
 
   await mafwReviewEntry({
@@ -91,7 +91,7 @@ test('mafwReviewEntry FAIL with maxLoops reached â†?REVIEWING_COMPLETE with erro
   expect(state.error).toBe('max_loops_reached');
 });
 
-test('mafwReviewEntry FAIL with loop available â†?REVIEWING_COMPLETE', async () => {
+test('mafwReviewEntry FAIL with loop available ï¿½?REVIEWING_COMPLETE', async () => {
   writeBaseState('REVIEWING', 'CREATE_REVIEW_SESSION', 1, 3);
 
   await mafwReviewEntry({

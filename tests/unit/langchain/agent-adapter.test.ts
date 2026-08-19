@@ -1,6 +1,6 @@
 import { AgentFinish } from '@langchain/core/agents';
-import { CodeAgentAdapter } from '../../../src/langchain/agent-adapter';
-import { AgentServices } from '../../../src/langchain/node-runner';
+import { CodeAgentAdapter } from '../../../gateway/src/core/langchain/agent-adapter';
+import { AgentServices } from '../../../gateway/src/core/langchain/node-runner';
 
 function makeServices(): jest.Mocked<AgentServices> {
   return {

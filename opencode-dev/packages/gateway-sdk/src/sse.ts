@@ -10,13 +10,27 @@ export class SSEConnection {
   }
 
   connect(baseUrl: string): void {
-    if (this.eventSource) return
+    this.disconnect()
     this.eventSource = new EventSource(`${baseUrl}/api/events`)
     this.eventSource.onopen = () => { this._connected = true }
     this.eventSource.onerror = () => {
       this._connected = false
-      // EventSource auto-reconnects
     }
+    this.setupMessageHandler()
+  }
+
+  connectToSession(baseUrl: string, sessionID: string): void {
+    this.disconnect()
+    this.eventSource = new EventSource(`${baseUrl}/api/events?sessionID=${encodeURIComponent(sessionID)}`)
+    this.eventSource.onopen = () => { this._connected = true }
+    this.eventSource.onerror = () => {
+      this._connected = false
+    }
+    this.setupMessageHandler()
+  }
+
+  private setupMessageHandler(): void {
+    if (!this.eventSource) return
     this.eventSource.onmessage = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data)
@@ -47,7 +61,7 @@ export class SSEConnection {
     }
   }
 
-  /** For testing: emit an event without a real SSE connection */
+  /** @internal For testing: emit an event without a real SSE connection */
   emit(event: any): void {
     const type = event.type || 'message'
     const set = this.listeners.get(type)

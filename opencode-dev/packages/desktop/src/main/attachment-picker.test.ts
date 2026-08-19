@@ -12,12 +12,19 @@ import {
 describe("assertAttachmentBudget", () => {
   test("accepts selections within the media ingest limit", () => {
     expect(() =>
-      assertAttachmentBudget([{ size: MAX_ATTACHMENT_BYTES / 2 }, { size: MAX_ATTACHMENT_BYTES / 2 }]),
+      assertAttachmentBudget([{ size: 10 * 1024 * 1024, name: "a.png" }, { size: 10 * 1024 * 1024, name: "b.png" }]),
     ).not.toThrow()
   })
 
-  test("rejects the selection before files are read when its total exceeds the limit", () => {
-    expect(() => assertAttachmentBudget([{ size: MAX_ATTACHMENT_BYTES }, { size: 1 }])).toThrow("20 MB limit")
+  test("accepts video files up to the video limit", () => {
+    expect(() => assertAttachmentBudget([{ size: 40 * 1024 * 1024, name: "clip.mp4" }])).not.toThrow()
+    expect(() => assertAttachmentBudget([{ size: 20 * 1024 * 1024, name: "note.mp3" }])).not.toThrow()
+  })
+
+  test("rejects a selection whose media exceeds the per-modality limit", () => {
+    expect(() => assertAttachmentBudget([{ size: 21 * 1024 * 1024, name: "a.png" }])).toThrow("20 MB limit")
+    expect(() => assertAttachmentBudget([{ size: 51 * 1024 * 1024, name: "clip.mp4" }])).toThrow("50 MB limit")
+    expect(() => assertAttachmentBudget([{ size: 26 * 1024 * 1024, name: "note.mp3" }])).toThrow("25 MB limit")
   })
 
   test("reads an approved file through a bounded buffer", async () => {
@@ -36,7 +43,7 @@ describe("assertAttachmentBudget", () => {
     const file = join(directory, "oversized.txt")
     try {
       await writeFile(file, "")
-      await truncate(file, MAX_ATTACHMENT_BYTES + 1)
+      await truncate(file, 20 * 1024 * 1024 + 1)
       await expect(readAttachment(file)).rejects.toThrow("20 MB limit")
     } finally {
       await rm(directory, { recursive: true, force: true })

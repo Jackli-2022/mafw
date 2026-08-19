@@ -11,7 +11,7 @@ export interface MemoryService {
   harmonicIndex: HarmonicIndexManager;
   cognitiveGraph: CognitiveGraphManager;
   l5: L5Store;
-  search(query: string, topK?: number): ReturnType<HarmonicIndexManager["search"]>;
+  search(query: string, topK?: number, options?: { retriever?: 'token' | 'bm25' }): ReturnType<HarmonicIndexManager["search"]>;
 }
 
 export interface CostService {

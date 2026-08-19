@@ -1,4 +1,4 @@
-import { MAFWMemory, HarmonicIndexLike, ParametricStoreLike } from "../../../src/langchain/memory";
+import { MAFWMemory, HarmonicIndexLike, ParametricStoreLike } from "../../../gateway/src/core/langchain/memory";
 
 function makeIndex(entries: Array<{ id: string; primary_abstraction: string; type: string; energy: number }>): jest.Mocked<HarmonicIndexLike> {
   return {
@@ -52,7 +52,7 @@ describe("MAFWMemory", () => {
 
   it("saveContext stores without error", async () => {
     const memory = new MAFWMemory();
-    const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    const consoleSpy = jest.spyOn(require('../../../gateway/src/core/utils/logger').log, 'info').mockImplementation(() => {});
 
     await expect(memory.saveContext({ input: "hello" }, { output: "world" })).resolves.toBeUndefined();
 

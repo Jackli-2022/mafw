@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-const mhash = require('../../../src/memory/minhash-merger');
-const htypes = require('../../../src/memory/harmonic-types');
+const mhash = require('../../../gateway/src/core/memory/minhash-merger');
+const htypes = require('../../../gateway/src/core/memory/harmonic-types');
 
 function makeMemory(overrides: Record<string, any> = {}): any {
   const now = new Date().toISOString();
