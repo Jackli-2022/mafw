@@ -2076,9 +2076,11 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-split-h { flex-direction: row; }
 .mafw-split-v { flex-direction: column; }
 .mafw-split-cell { display: flex; min-width: 0; min-height: 0; }
-.mafw-split-divider { flex: 0 0 6px; background: var(--border-subtle); }
+.mafw-split-divider { flex: 0 0 6px; background: var(--border-subtle); cursor: col-resize; transition: background 0.15s ease-in-out; }
 .mafw-split-divider-h { width: 6px; height: auto; align-self: stretch; }
-.mafw-split-divider-v { height: 6px; width: auto; align-self: stretch; }
+.mafw-split-divider-v { height: 6px; width: auto; align-self: stretch; cursor: row-resize; }
+.mafw-split-divider:hover,
+.mafw-split-divider-active { background: var(--accent); }
 .mafw-pane {
   flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;
   overflow: hidden; background: var(--bg-raised);

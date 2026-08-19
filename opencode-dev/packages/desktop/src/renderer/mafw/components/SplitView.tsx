@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, type JSX } from "solid-js"
+import { createEffect, createSignal, onCleanup, type JSX } from "solid-js"
 
 /**
  * Split tree node. Leaves are either a concrete session (`sid`) or an empty
@@ -268,6 +268,19 @@ export function setRatio(root: SplitNode, path: number[], ratio: number): SplitN
   return walk(root, path)
 }
 
+/** Leaf at `path`, or null if the path no longer terminates in a leaf (tree shrank). */
+function leafAtPath(root: SplitNode, path: number[]): SplitLeaf | null {
+  let node = root
+  for (let i = 0; i < path.length; i++) {
+    if (isLeaf(node)) return null
+    node = path[i] === 0 ? node.a : node.b
+  }
+  return isLeaf(node) ? node : null
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+const samePath = (a: number[], b: number[]) => JSON.stringify(a) === JSON.stringify(b)
+
 /** Zone of a drop position within a pane (left/right/top/bottom edge or center). */
 export type DropZone = "left" | "right" | "top" | "bottom" | "center"
 
@@ -314,6 +327,9 @@ type NodeProps = {
   onLeafDragOver?: (path: number[], e: DragEvent) => void
   onLeafDrop?: (path: number[], e: DragEvent) => void
   preview?: { path: number[]; zone: DropZone } | null
+  /** Leaf is temporarily hidden by a maximized sibling (DOM kept alive). */
+  hidden?: boolean
+  onToggleMaximize?: (path: number[]) => void
 }
 
 /** Observe a container's size with a ResizeObserver; returns its current size. */
@@ -354,9 +370,17 @@ function SplitLeafView(props: NodeProps) {
     <div
       ref={ref}
       class="mafw-pane-drop"
+      style={props.hidden ? { display: "none" } : undefined}
       data-path={key}
       onDragOver={props.onLeafDragOver ? (e) => props.onLeafDragOver!(props.path, e) : undefined}
       onDrop={props.onLeafDrop ? (e) => props.onLeafDrop!(props.path, e) : undefined}
+      onDblClick={(e) => {
+        // Double-click on the pane title bar (not its buttons) toggles maximize;
+        // placeholder panes maximize from anywhere.
+        const target = e.target as HTMLElement
+        const titleHit = !!target.closest(".mafw-session-titlebar-inner") && !target.closest("button")
+        if (props.onToggleMaximize && (isEmptyLeaf(props.node) || titleHit)) props.onToggleMaximize(props.path)
+      }}
     >
       {props.renderLeaf(props.node as SplitLeaf, props.path)}
       {active ? <div class={`mafw-pane-preview mafw-pane-preview-${active}`} /> : null}
@@ -364,19 +388,55 @@ function SplitLeafView(props: NodeProps) {
   )
 }
 
-/** A split branch (two cells + divider). Only ever receives split nodes. */
+/** A split branch (two cells + draggable divider). Only ever receives split nodes. */
 function SplitBranchView(props: NodeProps) {
   const { ref, size } = useObservedSize()
-  void size // container size kept for future resizable dividers
+  const [dragging, setDragging] = createSignal(false)
   const node = props.node
   if (isLeaf(node)) return <>{props.renderLeaf(node, props.path)}</>
-  const horizontal = node.dir === "h"
+  const branch = node
+  const horizontal = branch.dir === "h"
+  let drag: { axis: "x" | "y"; startClient: number; startRatio: number } | null = null
+
+  function stopDividerDrag() {
+    drag = null
+    setDragging(false)
+    document.body.style.cursor = ""
+    document.body.style.userSelect = ""
+    window.removeEventListener("mousemove", onDividerMove)
+    window.removeEventListener("mouseup", stopDividerDrag)
+  }
+  function onDividerMove(e: MouseEvent) {
+    if (!drag) return
+    const dim = drag.axis === "x" ? size().w : size().h
+    if (dim <= 0) return
+    const minR = Math.min(MIN_PX / dim, 0.45)
+    const next = clamp(drag.startRatio + ((drag.axis === "x" ? e.clientX : e.clientY) - drag.startClient) / dim, minR, 1 - minR)
+    if (Math.abs(next - branch.ratio) > 0.0005) props.onRatio(props.path, next)
+  }
+  function onDividerDown(e: MouseEvent) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const dim = horizontal ? size().w : size().h
+    if (dim <= 0) return
+    drag = { axis: horizontal ? "x" : "y", startClient: horizontal ? e.clientX : e.clientY, startRatio: branch.ratio }
+    setDragging(true)
+    document.body.style.cursor = horizontal ? "col-resize" : "row-resize"
+    document.body.style.userSelect = "none"
+    window.addEventListener("mousemove", onDividerMove)
+    window.addEventListener("mouseup", stopDividerDrag)
+  }
+  onCleanup(stopDividerDrag)
+
   return (
     <div ref={ref} class={`mafw-split${horizontal ? " mafw-split-h" : " mafw-split-v"}`}>
       <div class="mafw-split-cell" style={{ flex: `${node.ratio} 1 0`, "min-width": 0, "min-height": 0 }}>
         {props.renderChild(node.a, [...props.path, 0])}
       </div>
-      <div class={`mafw-split-divider${horizontal ? " mafw-split-divider-h" : " mafw-split-divider-v"}`} />
+      <div
+        class={`mafw-split-divider${horizontal ? " mafw-split-divider-h" : " mafw-split-divider-v"}${dragging() ? " mafw-split-divider-active" : ""}`}
+        onMouseDown={onDividerDown}
+      />
       <div class="mafw-split-cell" style={{ flex: `${1 - node.ratio} 1 0`, "min-width": 0, "min-height": 0 }}>
         {props.renderChild(node.b, [...props.path, 1])}
       </div>
@@ -385,22 +445,38 @@ function SplitBranchView(props: NodeProps) {
 }
 
 export function SplitView(props: Props) {
+  // Maximized pane is a transient view state (like VS Code group maximize):
+  // it hides sibling leaves via `hidden` (DOM kept alive) without touching the
+  // layout tree, and is never persisted.
+  const [maximized, setMaximized] = createSignal<number[] | null>(null)
+  createEffect(() => {
+    const p = maximized()
+    if (p && !leafAtPath(props.root, p)) setMaximized(null)
+  })
+  const toggleMaximize = (path: number[]) => {
+    setMaximized(prev => (prev && samePath(prev, path) ? null : path))
+  }
+
   // Dispatch by node kind at a stable location so SplitLeafView and
   // SplitBranchView each keep a stable hook call graph (they are separate
   // components; a single component switching between both shapes breaks
   // SolidJS's signal registration and leaks cleanups).
   const renderChild = (node: SplitNode, path: number[]): JSX.Element => {
+    const maxPath = maximized()
+    const hidden = !!maxPath && !samePath(maxPath, path)
     if (isLeaf(node)) {
       return (
         <SplitLeafView
           node={node}
           path={path}
+          hidden={hidden}
           renderLeaf={props.renderLeaf}
           renderChild={renderChild}
           onRatio={props.onRatio}
           onLeafDragOver={props.onLeafDragOver}
           onLeafDrop={props.onLeafDrop}
           preview={props.preview}
+          onToggleMaximize={toggleMaximize}
         />
       )
     }
@@ -414,6 +490,7 @@ export function SplitView(props: Props) {
         onLeafDragOver={props.onLeafDragOver}
         onLeafDrop={props.onLeafDrop}
         preview={props.preview}
+        onToggleMaximize={toggleMaximize}
       />
     )
   }
