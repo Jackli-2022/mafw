@@ -65,6 +65,40 @@ describe('Harmonic memory quality improvements (A1/A2/B4/B5/C)', () => {
 
   // ── B4: dedupMerge 长度上限 ──
   describe('B4: merge output length cap', () => {
+    it('merged_from is persisted into the index entry (A2 penalty must work in prod)', async () => {
+      const store = new HarmonicUnitFileStore(tmpDir);
+      const existing: HarmonicUnit = {
+        id: 'mem_src', type: 'semantic', primary_abstraction: 'JWT token auth configuration setup',
+        cue_anchors: ['jwt'], memory_value: 'v1', energy: 0.7,
+        created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z',
+      };
+      await store.write(existing);
+
+      const incoming: HarmonicUnit = {
+        id: 'mem_new', type: 'semantic',
+        primary_abstraction: 'JWT token authentication configuration setup for users',
+        cue_anchors: ['jwt', 'user-auth'], memory_value: 'v2', energy: 0.5,
+        created_at: '2025-02-01T00:00:00.000Z', updated_at: '2025-02-01T00:00:00.000Z',
+      };
+      await store.write(incoming); // 触发合并
+
+      const idx = store.indexManager_().getIndex();
+      const entry = idx.entries.find(e => e.id === 'mem_new');
+      expect(entry).toBeDefined();
+      expect(entry!.merged_from).toEqual(['mem_src']);
+      // 旧条目被标记 superseded（energy 降权），新条目是活跃合并产物
+      const oldEntry = idx.entries.find(e => e.id === 'mem_src');
+      expect(oldEntry!.superseded_by).toBe('mem_new');
+      // A2: 合并产物在检索时被降权（与同词条非合并条目相比）
+      const fresh: HarmonicUnit = {
+        id: 'mem_fresh', type: 'semantic', primary_abstraction: 'JWT token auth config quick note',
+        cue_anchors: ['jwt'], memory_value: 'v3', energy: 0.8,
+        created_at: '2025-03-01T00:00:00.000Z', updated_at: '2025-03-01T00:00:00.000Z',
+      };
+      await store.write(fresh);
+      const results = store.indexManager_().search('JWT token auth', 5, { retriever: 'bm25' });
+      expect(results[0].id).toBe('mem_fresh');
+    });
     it('does not merge when combined abstraction would exceed 500 chars', async () => {
       const merger = new MinHashMerger();
       const store = new HarmonicUnitFileStore(tmpDir);

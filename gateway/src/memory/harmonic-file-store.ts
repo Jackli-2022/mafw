@@ -66,9 +66,10 @@ export class HarmonicUnitFileStore {
         cue_anchors: targetUnit.cue_anchors,
         tier: entryTier,
         energy: targetUnit.energy,
-      salience: targetUnit.salience,
-      superseded_by: targetUnit.superseded_by,
-      // filePath must reflect the ACTUAL on-disk directory (getOKFDirectory
+        salience: targetUnit.salience,
+        superseded_by: targetUnit.superseded_by,
+        merged_from: targetUnit.merged_from,
+        // filePath must reflect the ACTUAL on-disk directory (getOKFDirectory
         // keys off unit.type), not the tier label — a tier arg such as 'tier3'
         // does not relocate the file. read() resolves via this path.
         filePath: path.join('memory', getOKFDirectory(targetUnit), fileName).replace(/\\/g, '/'),
