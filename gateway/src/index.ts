@@ -1706,6 +1706,24 @@ class MafwScheduler {
           return;
         }
 
+        // ── Mobile TTS artifact playback (GET /api/mobile/tts/artifacts/:id) ──
+        // Token-authed alternative to loopback-only /a2a/artifacts/:id so the
+        // mobile app can play synthesized TTS audio over LAN/Tailscale with
+        // just_audio + Authorization header (spec §8.3).
+        if (req.url?.startsWith('/api/mobile/tts/artifacts/')) {
+          try {
+            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
+            const { createTtsArtifactHandler } = await import('./mobile/tts-artifact.js');
+            const ttsArtifactHandler = createTtsArtifactHandler({ agent: this.mediaAgent });
+            const handled = await ttsArtifactHandler(req, res);
+            if (handled) return;
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err?.message || String(err) }));
+            return;
+          }
+        }
+
         // ── Mobile media proxy (POST /api/mobile/media/*) ──
         // Simplified endpoints for the Android app: multipart upload → A2A task,
         // and auth-proxy follow-up questions. Delegates to createMobileMediaHandler.

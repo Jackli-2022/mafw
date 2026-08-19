@@ -255,12 +255,28 @@ class _ChatPageState extends State<ChatPage> {
       _snack('正在合成语音…');
       final result = await widget.client.ttsSpeak(text);
       if (!mounted) return;
-      final url = result['url']?.toString() ?? '';
-      if (url.isNotEmpty) {
-        _snack('正在播放语音…');
-        await _audioPlayer.setUrl(url);
-        await _audioPlayer.play();
+      var artifactId = result['artifactId']?.toString() ?? '';
+      if (artifactId.isEmpty) {
+        final url = result['url']?.toString() ?? '';
+        final m = RegExp(r'/a2a/artifacts/([^/?#]+)').firstMatch(url);
+        artifactId = m?.group(1) ?? '';
       }
+      if (artifactId.isEmpty) {
+        _snack('语音合成失败: 未返回音频');
+        return;
+      }
+      final config = widget.client.config;
+      final playUrl =
+          '${config.normalizedBaseUrl}/api/mobile/tts/artifacts/$artifactId';
+      final headers = <String, String>{
+        if (config.apiToken.isNotEmpty)
+          'Authorization': 'Bearer ${config.apiToken}',
+      };
+      _snack('正在播放语音…');
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(Uri.parse(playUrl), headers: headers),
+      );
+      await _audioPlayer.play();
     } catch (e) {
       if (!mounted) return;
       _snack('语音合成失败: $e');
