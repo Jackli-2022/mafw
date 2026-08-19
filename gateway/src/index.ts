@@ -2514,7 +2514,7 @@ class MafwScheduler {
         }
 
         // POST /api/devices — register a mobile device for push notifications
-        if (req.url === '/api/devices' && req.method === 'POST') {
+        if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'POST') {
           try {
             const body = JSON.parse(await readBody(req));
             const { id, fcmToken, platform, apiTokenHash } = body;
@@ -2530,6 +2530,40 @@ class MafwScheduler {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
+          return;
+        }
+
+        // GET /api/mobile/devices — list registered devices
+        if (req.url?.match(/^\/api\/mobile\/devices(?:\?|$)/) && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ devices: this.pushGateway ? this.pushGateway.listDevices() : [] }));
+          return;
+        }
+
+        // DELETE /api/mobile/devices/:id — remove a device
+        const mobileDeviceDeleteMatch = req.url?.match(/^\/api\/mobile\/devices\/([^/]+)(?:\?|$)/);
+        if (mobileDeviceDeleteMatch && req.method === 'DELETE') {
+          const id = decodeURIComponent(mobileDeviceDeleteMatch[1]);
+          const ok = this.pushGateway ? this.pushGateway.removeDevice(id) : false;
+          res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(ok ? { ok: true } : { error: 'device not found' }));
+          return;
+        }
+
+        // GET /api/devices — legacy alias for list
+        if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'GET') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ devices: this.pushGateway ? this.pushGateway.listDevices() : [] }));
+          return;
+        }
+
+        // DELETE /api/devices/:id — legacy alias for remove
+        const legacyDeviceDeleteMatch = req.url?.match(/^\/api\/devices\/([^/]+)(?:\?|$)/);
+        if (legacyDeviceDeleteMatch && req.method === 'DELETE') {
+          const id = decodeURIComponent(legacyDeviceDeleteMatch[1]);
+          const ok = this.pushGateway ? this.pushGateway.removeDevice(id) : false;
+          res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(ok ? { ok: true } : { error: 'device not found' }));
           return;
         }
 

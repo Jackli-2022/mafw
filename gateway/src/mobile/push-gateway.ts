@@ -27,6 +27,20 @@ export class PushGateway {
     return this.store.register(input);
   }
 
+  listDevices(): DeviceEntry[] {
+    return this.store.list();
+  }
+
+  removeDevice(id: string): boolean {
+    const ok = this.store.remove(id);
+    if (ok) this.removeOnlineWs(id);
+    return ok;
+  }
+
+  getDevice(id: string): DeviceEntry | undefined {
+    return this.store.get(id);
+  }
+
   addOnlineWs(deviceId: string, ws: WebSocket): void {
     this.onlineDevices.set(deviceId, { ws, lastSeen: Date.now() });
   }
