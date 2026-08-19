@@ -176,18 +176,28 @@ class PushService {
   /// 7. WsClient event consumption for session refresh
   /// 8. WorkManager periodic health check (15 min)
   Future<void> init() async {
-    FirebaseMessaging.instance.setAutoInitEnabled(true);
+    // Guard: placeholder google-services.json must not block startup — every
+    // Firebase/WorkManager call is catchable and the app works offline via WS.
+    try {
+      FirebaseMessaging.instance.setAutoInitEnabled(true);
+    } catch (_) {}
 
     // 1. Notification channels
-    await _createNotificationChannels();
+    try {
+      await _createNotificationChannels();
+    } catch (_) {}
 
     // 2. Request notification permissions (Android 13+ POST_NOTIFICATIONS)
-    final settings = await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+    AuthorizationStatus permStatus = AuthorizationStatus.notDetermined;
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      permStatus = settings.authorizationStatus;
+    } catch (_) {}
+    if (permStatus == AuthorizationStatus.denied) {
       // Permission denied — continue without push, token will be null
     }
 
@@ -200,31 +210,41 @@ class PushService {
     );
 
     // 4. Get FCM token and register
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
-      _currentToken = token;
-      await _registerCurrentToken();
-    }
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        _currentToken = token;
+        await _registerCurrentToken();
+      }
+    } catch (_) {}
 
     // 5. Token refresh listener
-    _onTokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
-      onTokenRefresh,
-      onError: (_) {},
-    );
+    try {
+      _onTokenRefreshSub = FirebaseMessaging.instance.onTokenRefresh.listen(
+        onTokenRefresh,
+        onError: (_) {},
+      );
+    } catch (_) {}
 
     // 6. Foreground message listener
-    _onMessageSub = FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+    try {
+      _onMessageSub = FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+    } catch (_) {}
 
     // 7. Click-through: app opened via notification tap
-    _onMessageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(
-      _onMessageOpenedApp,
-    );
+    try {
+      _onMessageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(
+        _onMessageOpenedApp,
+      );
+    } catch (_) {}
 
     // 8. Click-through: app opened from terminated state via notification
-    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
-      _handleInitialMessage(initialMessage);
-    }
+    try {
+      final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+      if (initialMessage != null) {
+        _handleInitialMessage(initialMessage);
+      }
+    } catch (_) {}
 
     // 9. Periodic token refresh (every 12h)
     _tokenRefreshTimer = Timer.periodic(
@@ -236,10 +256,14 @@ class PushService {
     _subscribeToWsEvents();
 
     // 11. WorkManager background health check
-    await _registerBackgroundHealthCheck();
+    try {
+      await _registerBackgroundHealthCheck();
+    } catch (_) {}
 
     // 12. Persist config for background handler
-    await _persistConfigForBackground();
+    try {
+      await _persistConfigForBackground();
+    } catch (_) {}
   }
 
   /// Handle FCM token refresh.

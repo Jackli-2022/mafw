@@ -27,16 +27,20 @@ void _backgroundCallback() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Parallel init: config loading + Firebase concurrently to reduce startup time
-  final configFuture = ConnectionConfig.load();
-  final firebaseFuture = Firebase.initializeApp();
-  await Future.wait([configFuture, firebaseFuture]);
+  // Load config immediately so UI can render; Firebase is optional (placeholder
+  // google-services.json must not block first frame — see systematic debugging fix).
+  final cfg = await ConnectionConfig.load();
+  Firebase.initializeApp().catchError((Object e) {
+    // Placeholder FCM config: FCM unavailable, WS/local cache still works.
+    debugPrint('[MAFW] Firebase init failed (offlineable): $e');
+  });
 
-  runApp(const MafwMobileApp());
+  runApp(MafwMobileApp(initialConfig: cfg));
 }
 
 class MafwMobileApp extends StatefulWidget {
-  const MafwMobileApp({super.key});
+  final ConnectionConfig? initialConfig;
+  const MafwMobileApp({super.key, this.initialConfig});
 
   @override
   State<MafwMobileApp> createState() => _MafwMobileAppState();
@@ -58,7 +62,18 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   @override
   void initState() {
     super.initState();
-    _sessionCache.init().then((_) => _init());
+    // Prefer initial config from main(); avoid blocking first frame on Hive.
+    if (widget.initialConfig != null) {
+      _applyConfig(widget.initialConfig!);
+    }
+    // Hive cache is best-effort; don't block UI on it.
+    _sessionCache.init().catchError((Object e) { debugPrint('[MAFW] SessionCache init failed: $e'); });
+    if (widget.initialConfig == null) {
+      _init();
+    } else {
+      // Also mark connecting done early — SessionsPage renders with banner immediately.
+      Future.microtask(() { if (mounted) setState(() => _connecting = false); });
+    }
   }
 
   @override
@@ -264,39 +279,16 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         useMaterial3: true,
       ),
       themeMode: ThemeMode.system,
-      home: _connecting
-          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : SessionsPage(
-              sessions: _sessions,
-              onOpen: _openChat,
-              onCreate: _createSession,
-              onSettings: _openSettings,
-              onScan: _openScan,
-            ),
-      // Connection banner via an overlay in the sessions page would be nicer;
-      // for MVP show a thin strip above the sessions list.
-      builder: (context, child) {
-        return Column(
-          children: [
-            if (!connected)
-              Material(
-                color: Colors.red.shade700,
-                child: SafeArea(
-                  bottom: false,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    child: Text(
-                      "Gateway 未连接（${_config?.baseUrl ?? ''}）— 点右上角设置",
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
-                ),
-              ),
-            Expanded(child: child ?? const SizedBox()),
-          ],
-        );
-      },
+      home: SessionsPage(
+        sessions: _sessions,
+        onOpen: _openChat,
+        onCreate: _createSession,
+        onSettings: _openSettings,
+        onScan: _openScan,
+        isOffline: !connected,
+        baseUrl: _config?.baseUrl,
+        isConnecting: _connecting,
+      ),
     );
   }
 }
