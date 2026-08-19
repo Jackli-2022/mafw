@@ -1,7 +1,9 @@
+import { randomUUID } from 'crypto'
 import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction,
-  MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom,
+  MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
+  CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest,
   MethodNotSupportedError,
@@ -111,6 +113,16 @@ export class MafwClient implements IMafwClient {
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
 
+    trajectory: async (
+      params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } },
+    ): Promise<{ turns: any[]; events: any[] }> => {
+      const q = new URLSearchParams()
+      if (params.query?.limit) q.set('limit', String(params.query.limit))
+      if (params.query?.before_turn) q.set('before_turn', String(params.query.before_turn))
+      if (params.query?.rebuild) q.set('rebuild', '1')
+      return this.request<{ turns: any[]; events: any[] }>(`/api/sessions/${params.path.id}/trajectory?${q}`)
+    },
+
     events: async (
       params: { path: { id: string } },
     ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
@@ -124,6 +136,61 @@ export class MafwClient implements IMafwClient {
             sse.on(event, cb)
           }
         },
+      }
+    },
+
+    command: async (
+      params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } },
+    ): Promise<void> => {
+      const res = await fetch(`${this.baseUrl}/api/session/${params.path.id}/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    },
+  }
+
+  // ── Commands & skills (opencode serve, proxied by the gateway) ──
+
+  command = {
+    list: async (directory?: string): Promise<CommandInfo[]> => {
+      const query = directory ? `?directory=${encodeURIComponent(directory)}` : ''
+      const data = await this.request<CommandInfo[] | { items?: CommandInfo[]; commands?: CommandInfo[] }>(`/command${query}`)
+      if (Array.isArray(data)) return data
+      return (data as any).items || (data as any).commands || []
+    },
+  }
+
+  skill = {
+    list: async (directory?: string): Promise<SkillInfo[]> => {
+      const query = directory ? `?directory=${encodeURIComponent(directory)}` : ''
+      const data = await this.request<SkillInfo[] | { items?: SkillInfo[]; skills?: SkillInfo[] }>(`/skill${query}`)
+      if (Array.isArray(data)) return data
+      return (data as any).items || (data as any).skills || []
+    },
+  }
+
+  // ── MAFW native commands (desktop slash panel) ──
+
+  mafwCommands = {
+    run: async (params: { command: string; args?: string; sessionID?: string }): Promise<MafwCommandResult> => {
+      return this.request<MafwCommandResult>('/api/mafw-commands/run', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      })
+    },
+  }
+
+  // ── Manager session (authoritative per-project manager, from gateway DB) ──
+
+  manager = {
+    session: async (projectDir?: string): Promise<ManagerSessionInfo | null> => {
+      const q = projectDir ? `?projectDir=${encodeURIComponent(projectDir)}` : ''
+      try {
+        return await this.request<ManagerSessionInfo>(`/api/manager/session${q}`)
+      } catch {
+        return null
       }
     },
   }
@@ -274,10 +341,10 @@ export class MafwClient implements IMafwClient {
       return this.request<EnergyDistribution>('/api/memory/energy-distribution')
     },
 
-    getL5Axioms: async (topK?: number): Promise<Axiom[]> => {
+    getL5Axioms: async (topK?: number): Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }> => {
       const params = topK ? `?topK=${topK}` : ''
-      const data = await this.request<{ axioms: Axiom[] }>(`/api/l5/axioms${params}`)
-      return data.axioms || []
+      const data = await this.request<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>(`/api/l5/axioms${params}`)
+      return { axioms: data.axioms || [], heuristics: data.heuristics || [] }
     },
 
     delete: async (id: string): Promise<void> => {
@@ -391,6 +458,118 @@ export class MafwClient implements IMafwClient {
       })
       if (!res.ok) throw new Error(`Chat sendEnriched failed: ${res.status}`)
       return res.json()
+    },
+  }
+
+  // ── Media (A2A Media Agent) ──
+
+  media = {
+    createTask: async (opts: {
+      dataUrl?: string
+      artifactId?: string
+      mediaType?: string
+      question?: string
+    }): Promise<{ id: string; contextId: string; state: string }> => {
+      // Prefer the artifact reference path (media bytes uploaded separately
+      // via /api/media/upload) — the message carries only a URL part, so the
+      // JSON body stays tiny. Falls back to the raw base64 part for legacy
+      // callers that only have a data URL.
+      const parts: any[] = opts.artifactId
+        ? [{ url: `/a2a/artifacts/${opts.artifactId}`, mediaType: opts.mediaType || 'application/octet-stream', filename: 'upload.bin' }]
+        : [{ raw: opts.dataUrl?.split(',')[1] || '', mediaType: opts.mediaType || 'image/png', filename: 'paste.bin' }]
+      if (opts.question) parts.push({ text: opts.question })
+      const res = await fetch(`${this.baseUrl}/a2a`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'A2A-Version': '1.0' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'SendMessage',
+          params: {
+            message: {
+              messageId: `fe-${randomUUID()}`,
+              role: 1, // ROLE_USER
+              parts,
+            },
+          },
+        }),
+      })
+      if (!res.ok) throw new Error(`Vision createTask failed: HTTP ${res.status}`)
+      const parsed: any = await res.json()
+      if (parsed?.error) throw new Error(`Vision createTask failed: ${parsed.error?.message || JSON.stringify(parsed.error)}`)
+      const task = parsed?.result?.task
+      if (!task?.id) throw new Error('Vision createTask failed: no task returned')
+      return { id: task.id, contextId: task.contextId, state: task.status?.state || '' }
+    },
+  }
+
+  // ── TTS (MiMo-V2.5-TTS speech synthesis) ──
+
+  tts = {
+    speak: async (opts: { text: string; voice?: string; style?: string }): Promise<{
+      artifactId: string
+      voice: string
+      mime: string
+      url: string
+    }> => {
+      const res = await fetch(`${this.baseUrl}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      if (!res.ok) {
+        let detail = ''
+        try { const j: any = await res.json(); detail = j?.error || '' } catch { /* ignore */ }
+        throw new Error(`TTS failed: HTTP ${res.status}${detail ? ` (${detail})` : ''}`)
+      }
+      return res.json()
+    },
+
+    voices: async (): Promise<{
+      voices: { id: string; label: string; lang: string }[]
+      models: { id: string; description: string }[]
+      defaultVoice: string
+      defaultModel: string
+    }> => {
+      const res = await fetch(`${this.baseUrl}/api/tts/voices`)
+      if (!res.ok) throw new Error(`TTS voices failed: HTTP ${res.status}`)
+      return res.json()
+    },
+
+    /** 流式 TTS：返回 async iterable of base64 PCM16 chunks（24kHz mono）。 */
+    speakStream: (opts: { text: string; voice?: string; style?: string }): AsyncGenerator<{ data: string; voice: string }> => {
+      const base = this.baseUrl
+      return (async function* () {
+        const res = await fetch(`${base}/api/tts/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      if (!res.ok || !res.body) throw new Error(`TTS stream failed: HTTP ${res.status}`)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() || ''
+          for (const line of lines) {
+            const t = line.trim()
+            if (!t.startsWith('data:')) continue
+            try {
+              const j = JSON.parse(t.slice(5).trim())
+              if (j.data) yield { data: j.data, voice: j.voice || '' }
+              if (j.done) return
+            } catch { /* ignore */ }
+          }
+        }
+      } finally {
+        reader.releaseLock()
+      }
+      })()
     },
   }
 

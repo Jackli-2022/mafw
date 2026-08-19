@@ -97,6 +97,16 @@ export interface Axiom {
   energy: number
 }
 
+export interface L5Heuristic {
+  id: string
+  pattern: string
+  trigger_context: string[]
+  success_rate?: number
+  source_goal_ids?: string[]
+  energy: number
+  created_at?: string
+}
+
 export interface Approval {
   id: string
   goalId: string
@@ -177,6 +187,57 @@ export interface Todo {
   priority: string
 }
 
+export interface TrajectoryTokens {
+  input: number
+  output: number
+  reasoning: number
+  cache: { read: number; write: number }
+}
+
+export interface TrajectoryTurn {
+  projectID?: string
+  turnID: number
+  turnStartMs: number
+  turnEndMs: number | null
+  durationMs: number | null
+  toolCount: number
+  toolErrorCount: number
+  reasoningCount: number
+  agentSwitchCount: number
+  tokens: TrajectoryTokens
+  cost: number
+  finish: string | null
+  model: string | null
+  agent: string | null
+  userText: string
+}
+
+export interface TrajectoryEvent {
+  id?: number
+  projectID?: string
+  turnID: number
+  seq: number
+  eventType: string
+  toolName?: string
+  callID?: string
+  toolState?: 'running' | 'completed' | 'error'
+  agent?: string
+  model?: string
+  inputSummary?: string
+  outputSummary?: string
+  error?: string
+  tokens?: TrajectoryTokens
+  cost?: number
+  finish?: string
+  timeMs: number
+  durationMs?: number
+}
+
+export interface TrajectoryResponse {
+  turns: TrajectoryTurn[]
+  events: TrajectoryEvent[]
+}
+
 export interface GatewayStatus {
   state: 'stopped' | 'starting' | 'ready' | 'failed'
   port: number | null
@@ -199,7 +260,66 @@ export interface SessionNamespace {
   abort(params: { path: { id: string } }): Promise<void>
   prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
   promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
+  trajectory(params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } }): Promise<TrajectoryResponse>
   events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  command(params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
+}
+
+// ── Commands & skills (opencode serve shapes) ──
+
+export interface CommandInfo {
+  name: string
+  description?: string
+  agent?: string
+  model?: string
+  source?: "command" | "mcp" | "skill" | "builtin"
+  template?: string
+  subtask?: boolean
+  hints?: Record<string, unknown>
+}
+
+export interface SkillInfo {
+  name: string
+  description?: string
+  slash?: boolean
+  location?: string
+  content?: string
+}
+
+export interface CommandNamespace {
+  list(directory?: string): Promise<CommandInfo[]>
+}
+
+export interface SkillNamespace {
+  list(directory?: string): Promise<SkillInfo[]>
+}
+
+// ── MAFW native commands (desktop slash panel) ──
+
+export interface MafwCommandResult {
+  ok: boolean
+  message?: string
+  text?: string
+  error?: string
+  sessionID?: string
+  added?: number
+  conflicts?: number
+  skipped?: number
+  details?: unknown
+}
+
+export interface MafwCommandsNamespace {
+  run(params: { command: string; args?: string; sessionID?: string }): Promise<MafwCommandResult>
+}
+
+export interface ManagerSessionInfo {
+  projectDir: string
+  sessionId: string
+  createdAt?: string | null
+}
+
+export interface ManagerNamespace {
+  session(projectDir?: string): Promise<ManagerSessionInfo | null>
 }
 
 export interface ProjectNamespace {
@@ -253,7 +373,7 @@ export interface MemoryNamespace {
   search(opts: MemorySearchOptions): Promise<MemoryUnit[]>
   mergedSearch(opts: MergedSearchOptions): Promise<MemoryFact[]>
   getEnergyDistribution(): Promise<EnergyDistribution>
-  getL5Axioms(topK?: number): Promise<Axiom[]>
+  getL5Axioms(topK?: number): Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>
   delete(id: string): Promise<void>
 }
 
@@ -305,8 +425,49 @@ export interface MafwClient {
   agents: AgentsNamespace
   triage: TriageNamespace
   automations: AutomationsNamespace
+  media: MediaNamespace
+  tts: TtsNamespace
+  command: CommandNamespace
+  skill: SkillNamespace
+  mafwCommands: MafwCommandsNamespace
+  manager: ManagerNamespace
 }
 
 export interface MafwClientOptions {
   baseUrl?: string
+}
+
+// ============================================================
+// Media (A2A Media Agent)
+// ============================================================
+
+export interface MediaTask {
+  id: string
+  contextId: string
+  state: string
+}
+
+export interface MediaNamespace {
+  /** Create an A2A vision task from an image (data URL) + initial question. */
+  createTask: (opts: { dataUrl?: string; artifactId?: string; mediaType?: string; question?: string }) => Promise<MediaTask>
+}
+
+// ============================================================
+// TTS (MiMo-V2.5-TTS speech synthesis)
+// ============================================================
+
+export interface TtsResult {
+  artifactId: string
+  voice: string
+  mime: string
+  url: string
+}
+
+export interface TtsNamespace {
+  /** Synthesize speech from text (preset voice, wav). Returns artifact reference. */
+  speak: (opts: { text: string; voice?: string; style?: string }) => Promise<TtsResult>
+  /** Preset voice list + model info (desktop voice picker). */
+  voices: () => Promise<{ voices: { id: string; label: string; lang: string }[]; models: { id: string; description: string }[]; defaultVoice: string; defaultModel: string }>
+  /** Streaming TTS (SSE, PCM16 24kHz mono): async iterable of base64 chunks. */
+  speakStream: (opts: { text: string; voice?: string; style?: string }) => AsyncGenerator<{ data: string; voice: string }>
 }
