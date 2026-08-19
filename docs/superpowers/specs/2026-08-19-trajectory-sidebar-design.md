@@ -154,34 +154,39 @@ interface TrajectoryEvent {
 
 ### 5.1 形态
 
-- `.mafw-trajectory-dock`：`position: fixed; top: 38px; right: 0; bottom: 0; width: 320px`（默认），`border-left: 1px solid var(--border-subtle)`、`background: var(--bg-base)`、`z-index: 70`——与 `.mafw-tasklist-dock`（`mafw.css:2117`）完全同款，不挤压聊天列
-- 宽度可调：dock 左缘加 `ResizeHandle direction="horizontal" edge="start"`（**注意：宽度调整必须用 `horizontal`**——该组件 X 轴是 col-resize 宽度，`vertical` 是 Y 轴 row-resize 高度；Rail 先例 `MafwShell.tsx:1526` 即 `horizontal`），min 280 / max 420，localStorage `mafw-trajectory-width`
-- 折叠：关闭后完全隐藏（无 Rail 式 32px 抓手；通过标题栏按钮/Ctrl+T 恢复）
-- **与 TaskList dock 互斥**：任一时刻至多一个右栏 dock 可见（见 §5.2），无 stacking/z-index 协调
+- **统一右侧 dock 容器** `.mafw-right-dock`（新增，替换独立 TaskList dock 与轨迹 dock 的分裂）：`position: fixed; top: 38px; right: 0; bottom: 0; width: 320px`（默认），`border-left: 1px solid var(--border-subtle)`、`background: var(--bg-base)`、`z-index: 70`——样式延续 `.mafw-tasklist-dock`（`mafw.css:2117`），不挤压聊天列
+- dock 顶部为 **tab 栏**（`TabsV2` 或同款 tab strip）：`📋 任务` / `📊 轨迹` 两个 tab，点 tab 切换 dock 内容；**同一时刻只有一个 dock 容器，内部 tab 切换内容**（类似 chat 的 TabStrip 语义）
+- 宽度可调：dock 左缘加 `ResizeHandle direction="horizontal" edge="start"`（**注意：宽度调整必须用 `horizontal`**——该组件 X 轴是 col-resize 宽度，`vertical` 是 Y 轴 row-resize 高度；Rail 先例 `MafwShell.tsx:1526` 即 `horizontal`），min 280 / max 420，localStorage `mafw-right-dock-width`
+- 折叠：dock 整体关闭后完全隐藏（无 Rail 式 32px 抓手；通过 titlebar 按钮/Ctrl+T 恢复）；折叠时记住当前 tab，重开回到该 tab
 
 ### 5.2 切换
 
-- 每个 ChatPane titlebar（`mafw-session-titlebar-inner`，`ChatPane.tsx:1312`）新增**两个并排按钮**（`ButtonV2 ghost size=small` + `TooltipV2 openDelay={300}`），位于现有 TaskBar 之后：
-  1. `📋 任务列表` → 切换 TaskList dock：`tasksPlacement` 为 `dock` 时点回 `bar`，否则切到 `dock`（MafwShell 新增 `onToggleTaskDock` prop）
-  2. `📊 轨迹时间线` → 翻转 `trajOpen`（MafwShell 新增 `onToggleTrajectory` prop，全局同步，所有 pane 按钮控制同一个 dock）
-- **两 dock 互斥**：打开轨迹 dock 时自动把 TaskList 回 `bar`；打开 TaskList dock 时自动关闭轨迹 dock——任一时刻至多一个右栏 dock 可见，无需 stacking/z-index 协调
-- `Ctrl/Cmd+T` 快捷键 toggle 轨迹 dock（仿 Ctrl+J，`MafwShell.tsx:1398`；跳过 INPUT/TEXTAREA）
+- 每个 ChatPane titlebar（`mafw-session-titlebar-inner`，`ChatPane.tsx:1312`）新增**两个按钮**（`ButtonV2 ghost size=small` + `TooltipV2 openDelay={300}`），位于现有 TaskBar 之后：
+  1. `📋 任务` → 打开统一 dock 并切到「任务」tab（等价现有 TaskList dock）
+  2. `📊 轨迹` → 打开统一 dock 并切到「轨迹」tab
+  - 再次点击当前 tab 的按钮 → 关闭 dock；点击另一 tab 按钮 → dock 保持打开、仅切 tab
+- `Ctrl/Cmd+T` 快捷键 toggle dock（切到上次 tab，仿 Ctrl+J，`MafwShell.tsx:1398`；跳过 INPUT/TEXTAREA）
 - 窄视口（<1200px）自动降级 overlay（Esc/点外关闭，仿 TaskList dock，`MafwShell.tsx:1380`）
-- state + localStorage：`mafw-trajectory-open` / `mafw-trajectory-width`
+- state + localStorage：`mafw-right-dock-open` / `mafw-right-dock-tab` / `mafw-right-dock-width`
 
-### 5.3 内容（新组件 `TrajectoryDock.tsx`，TaskList.tsx 风格）
+### 5.3 内容
 
-- 顶部 header：`轨迹 · {sessionTitle}` + 回合数/工具总数 + 关闭 ✕（ButtonV2 ghost）
-- 主体：**回合列表**（TrajectoryTurn 数据）
-  - 每回合可展开行：`user_text 摘要` + KPI 行（工具次数、耗时、tokens、cost、finish 徽标）
-  - 展开 → 该回合**事件时间线**（TrajectoryEvent，按 seq）：
-    - tool：图标 + 工具名 + 状态（✓/✗/⟳）+ 耗时 ms + input/output_summary 可展开
-    - reasoning：🧠 推理 + 耗时 + 可展开文本
-    - model/agent 切换：`模型 → xxx` / `Agent: xxx` 分隔条
-    - step_finish：回合 tokens/cost 汇总行
-  - 当前进行中回合："运行中"脉冲点 + 实时追加
-- 空态："暂无轨迹数据" + 提示
-- 拉取失败：`无法加载轨迹` + 重试按钮（ButtonV2），不阻塞聊天区
+dock 内按当前 tab 渲染两个内容组件（新组件 `RightDock.tsx` 容器 + `TrajectoryDock.tsx` / `TaskList` 复用）：
+
+- **tab 栏**（dock 顶部）：`📋 任务` / `📊 轨迹`（`ButtonV2` 或 `TabsV2`，当前 tab 高亮）
+- **任务 tab**：复用现有 `TaskList`（`placement="dock"`，props 不变：todos/tokens/started/onClose/onPin）——**不破坏现有 TaskList dock 行为**；`tasksPlacement` 的 `"bar"`（titlebar 内联 TaskBar 进度条）保留不变，`"dock"` 语义改为"统一 dock 的 tab=任务"
+- **轨迹 tab**（`TrajectoryDock.tsx`）：
+  - header：`回合 {n} · 工具 {m}` 小统计 + 刷新按钮（ButtonV2 ghost）
+  - 主体：**回合列表**（TrajectoryTurn 数据）
+    - 每回合可展开行：`user_text 摘要` + KPI 行（工具次数、耗时、tokens、cost、finish 徽标）
+    - 展开 → 该回合**事件时间线**（TrajectoryEvent，按 seq）：
+      - tool：图标 + 工具名 + 状态（✓/✗/⟳）+ 耗时 ms + input/output_summary 可展开
+      - reasoning：🧠 推理 + 耗时 + 可展开文本
+      - model/agent 切换：`模型 → xxx` / `Agent: xxx` 分隔条
+      - step_finish：回合 tokens/cost 汇总行
+    - 当前进行中回合："运行中"脉冲点 + 实时追加
+  - 空态："暂无轨迹数据" + 提示
+  - 拉取失败：`无法加载轨迹` + 重试按钮（ButtonV2），不阻塞聊天区
 
 ### 5.4 数据接入
 
