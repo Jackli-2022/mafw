@@ -1086,6 +1086,7 @@ class MafwScheduler {
       this.automationEngine.stop();
     }
     this.pushGateway?.destroy();
+    this.pairingService?.destroy();
     // if (this.dashboard) {
     //   this.dashboard.stop();
     // }

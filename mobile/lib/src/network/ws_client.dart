@@ -88,12 +88,14 @@ class WsClient {
     _channel = null;
     _status.add(false);
     _reconnectTimer?.cancel();
-    // Exponential backoff with jitter, capped at 30s
-    final baseDelay = [1, 2, 5, 10, 20, 30][_attempts.clamp(0, 5)];
-    final jitter = Random().nextDouble() * baseDelay * 0.3;
-    final delaySec = min(baseDelay + jitter, 30).round();
+    // Exponential backoff spec §5.2 / plan Task3: [1,2,5,10,15,30] + jitter 0-500ms, capped 30s
+    // web_socket_channel 3.x removed headers param (see mem 17) — query token fallback retained
+    final baseTable = [1, 2, 5, 10, 15, 30];
+    final baseSec = baseTable[_attempts.clamp(0, 5)];
+    final jitterMs = (Random().nextDouble() * 500).round();
+    final delayMs = min(baseSec * 1000 + jitterMs, 30000);
     _attempts++;
-    _reconnectTimer = Timer(Duration(seconds: delaySec), () => connect());
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () => connect());
   }
 
   /// Send a chat message upstream. The gateway injects memory context.

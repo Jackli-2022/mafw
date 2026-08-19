@@ -25,6 +25,9 @@ class _PairingPageState extends State<PairingPage> {
   bool _processing = false;
   String? _error;
   StreamSubscription? _subscription;
+  bool _showManual = false;
+  final _manualUrlCtrl = TextEditingController();
+  final _manualTokenCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -38,6 +41,8 @@ class _PairingPageState extends State<PairingPage> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _manualUrlCtrl.dispose();
+    _manualTokenCtrl.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -81,28 +86,47 @@ class _PairingPageState extends State<PairingPage> {
   }
 
   Future<void> _verifyAndConnect(String url, String token, String nonce) async {
-    try {
-      // Verify nonce with gateway
-      final verifyUri = Uri.parse('$url/api/mobile/pairing/verify');
-      final verifyRes = await http.post(
-        verifyUri,
-        headers: {
-          'Content-Type': 'application/json',
-          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({'nonce': nonce}),
-      );
-
-      if (verifyRes.statusCode != 200) {
-        if (!mounted) return;
+    // Tailscale https/wss enforced, http only 192.168/10.x with UI warning (spec §5.3)
+    if (_isLocalHttpUrl(url)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('警告：使用局域网明文连接，仅限可信网络')),
+        );
+      }
+    } else if (url.startsWith('http://')) {
+      if (mounted) {
         setState(() {
-          _error = '配对验证失败: ${verifyRes.statusCode}';
+          _error = '非可信网络的 http 连接被拒绝，请使用 https (Tailscale)';
           _processing = false;
         });
-        return;
+      }
+      return;
+    }
+
+    try {
+      // Manual fallback skips nonce verification (no nonce to redeem)
+      if (nonce != '__manual__') {
+        final verifyUri = Uri.parse('$url/api/mobile/pairing/verify');
+        final verifyRes = await http.post(
+          verifyUri,
+          headers: {
+            'Content-Type': 'application/json',
+            if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'nonce': nonce}),
+        );
+
+        if (verifyRes.statusCode != 200) {
+          if (!mounted) return;
+          setState(() {
+            _error = '配对验证失败: ${verifyRes.statusCode}';
+            _processing = false;
+          });
+          return;
+        }
       }
 
-      // Save credentials
+      // Save credentials via SecureConfigStore (token → flutter_secure_storage)
       final config = ConnectionConfig(baseUrl: url, apiToken: token);
       await config.save();
       if (!mounted) return;
@@ -113,6 +137,39 @@ class _PairingPageState extends State<PairingPage> {
         _error = '保存配对信息失败: $e';
         _processing = false;
       });
+    }
+  }
+
+  void _onManualSubmit() {
+    final raw = _manualUrlCtrl.text.trim();
+    if (raw.isEmpty) return;
+    final result = _parsePairUrl(raw);
+    if (result != null) {
+      setState(() => _processing = true);
+      _verifyAndConnect(result.url, result.token, result.nonce);
+    } else {
+      // Raw URL/token fallback: allow plain url+token without mafw:// wrapper (manual fallback per task brief)
+      final url = _manualUrlCtrl.text.trim();
+      final token = _manualTokenCtrl.text.trim();
+      if (url.isNotEmpty) {
+        // No nonce verification needed for manual fallback; save directly
+        _verifyAndConnect(url, token, '__manual__');
+      } else {
+        setState(() => _error = '请输入配对链接或 Base URL');
+      }
+    }
+  }
+
+  bool _isLocalHttpUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      if (uri.scheme != 'http') return false;
+      final host = uri.host;
+      return host.startsWith('192.168.') ||
+          host.startsWith('10.') ||
+          host.startsWith('172.16.');
+    } catch (_) {
+      return false;
     }
   }
 
@@ -169,6 +226,64 @@ class _PairingPageState extends State<PairingPage> {
                 ),
               ),
             ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Container(
+                color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
+                padding: const EdgeInsets.all(12),
+                child: _showManual
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextField(
+                            controller: _manualUrlCtrl,
+                            decoration: const InputDecoration(
+                              labelText: '配对链接或 Base URL',
+                              hintText: 'mafw://pair?... 或 https://xxx.ts.net:3000',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _manualTokenCtrl,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Token（手动回退时可填）',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              TextButton(
+                                onPressed: () => setState(() => _showManual = false),
+                                child: const Text('返回扫码'),
+                              ),
+                              const Spacer(),
+                              FilledButton(
+                                onPressed: _onManualSubmit,
+                                child: const Text('连接'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      )
+                    : Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => setState(() => _showManual = true),
+                          icon: const Icon(Icons.keyboard, size: 18),
+                          label: const Text('手动输入'),
+                        ),
+                      ),
+              ),
+            ),
+          ),
         ],
       ),
     );

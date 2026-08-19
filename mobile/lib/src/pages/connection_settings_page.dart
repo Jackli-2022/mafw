@@ -21,6 +21,20 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
   bool _testing = false;
   String? _testResult;
 
+  bool _isLocalHttpUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      if (uri.scheme != 'http') return false;
+      final host = uri.host;
+      return host.startsWith('192.168.') ||
+          host.startsWith('10.') ||
+          host == 'localhost' ||
+          host == '127.0.0.1';
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -108,6 +122,25 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
             const SizedBox(height: 12),
             Text(_testResult!, style: const TextStyle(fontSize: 14)),
           ],
+          Builder(builder: (ctx) {
+            final url = _urlCtrl.text.trim();
+            final isLocalHttp = _isLocalHttpUrl(url);
+            final isInsecureHttp = url.startsWith('http://') && !isLocalHttp && url.isNotEmpty;
+            if (isLocalHttp) {
+              return const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('⚠ 局域网明文连接，仅限可信网络', style: TextStyle(fontSize: 12, color: Colors.orange)),
+              );
+            }
+            if (isInsecureHttp) {
+              return const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('⚠ 非可信 http 将被拒绝，请使用 https (Tailscale 优先)',
+                    style: TextStyle(fontSize: 12, color: Colors.red)),
+              );
+            }
+            return const SizedBox.shrink();
+          }),
           const SizedBox(height: 24),
           const Text(
             '提示：\n· 局域网：直接填电脑 IP:3000\n· 远程：装 Tailscale 后用 tailnet 地址，gateway 需配置 MAFW_SERVER_API_TOKEN',

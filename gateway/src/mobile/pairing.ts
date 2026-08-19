@@ -1,7 +1,12 @@
 import * as crypto from 'crypto';
 
+function hashNonce(nonce: string): string {
+  return crypto.createHash('sha256').update(nonce).digest('hex');
+}
+
 interface PairingNonce {
-  nonce: string;
+  /** sha256 hash of the raw nonce — raw value never stored (hash storage) */
+  hash: string;
   expiresAt: number;
   used: boolean;
 }
@@ -23,8 +28,8 @@ export interface PairingConfig {
 export class PairingService {
   private nonces: Map<string, PairingNonce> = new Map();
   private rateLimits: Map<string, RateLimitBucket> = new Map();
-  private readonly apiToken: string;
-  private readonly tailscaleUrl: string;
+  private apiToken: string;
+  private tailscaleUrl: string;
   private readonly ttlMs: number;
   private readonly rateLimit: number;
   private cleanupTimer: NodeJS.Timeout | null = null;
@@ -55,7 +60,7 @@ export class PairingService {
     const nonce = crypto.randomBytes(16).toString('hex');
     const exp = Date.now() + this.ttlMs;
 
-    this.nonces.set(nonce, { nonce, expiresAt: exp, used: false });
+    this.nonces.set(hashNonce(nonce), { hash: hashNonce(nonce), expiresAt: exp, used: false });
 
     const params = new URLSearchParams({
       url: this.tailscaleUrl,
@@ -69,7 +74,8 @@ export class PairingService {
   }
 
   consumeNonce(nonce: string): boolean {
-    const entry = this.nonces.get(nonce);
+    const h = hashNonce(nonce);
+    const entry = this.nonces.get(h);
     if (!entry) return false;
     if (entry.used) return false;
     if (Date.now() > entry.expiresAt) return false;
@@ -79,7 +85,7 @@ export class PairingService {
 
   /** Expire a nonce (test helper). */
   expireNonce(nonce: string): void {
-    const entry = this.nonces.get(nonce);
+    const entry = this.nonces.get(hashNonce(nonce));
     if (entry) entry.expiresAt = 0;
   }
 
@@ -108,6 +114,12 @@ export class PairingService {
         this.rateLimits.delete(ip);
       }
     }
+  }
+
+  /** Hot-update credentials after config token tailnet url change (no restart). */
+  updateConfig(opts: { apiToken?: string; tailscaleUrl?: string }): void {
+    if (opts.apiToken !== undefined) this.apiToken = opts.apiToken;
+    if (opts.tailscaleUrl !== undefined) this.tailscaleUrl = opts.tailscaleUrl;
   }
 
   destroy(): void {
