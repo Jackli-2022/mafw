@@ -238,6 +238,9 @@ class MafwScheduler {
   private pushGateway?: PushGateway;
   private pairingService?: PairingService;
   private mafwDir!: string;
+  private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
+  private trajectoryCollector: import('./trajectory/collector').TrajectoryCollector | null = null;
+
   // Manager sessions live in the gateway DB (kv_store scope=manager-session);
   // see GET /api/manager/session.
   constructor(projectDir: string = '.') {
@@ -689,6 +692,19 @@ class MafwScheduler {
       }
     }
 
+    // Path T: trajectory accumulation — writes SQLite + broadcasts trajectory.event/trajectory.turn
+    try {
+      const collector = this.trajectoryCollector;
+      if (collector) {
+        const trajEvt = collector.handleEvent(type, props, (evt as any)?.directory);
+        if (trajEvt) {
+          this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.event', properties: trajEvt, sessionID } });
+        }
+      }
+    } catch (err: any) {
+      log.warn(`[Trajectory] handle failed (non-fatal): ${err.message}`);
+    }
+
     // Path 1: settled LLM step → evaluate high-salience memory injection.
     // opencode ≥1.18 no longer publishes `session.next.step.ended` (the event
     // type remains defined but no publisher emits it). Steps now settle as
@@ -728,6 +744,16 @@ class MafwScheduler {
       // Path 1: turn fully settled → drain any queued memory injection
       // (delayed to idle so we never collide with the finishing drain).
       if (sessionID) void this.drainStepInjections(sessionID);
+      try {
+        if (this.trajectoryCollector) {
+          const turn = this.trajectoryCollector.onIdle(sessionID);
+          if (turn) {
+            this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.turn', properties: turn, sessionID } });
+          }
+        }
+      } catch (err: any) {
+        log.warn(`[Trajectory] idle aggregation failed (non-fatal): ${err.message}`);
+      }
       this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID } });
     } else if (type === 'session.error') {
       this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error } });
@@ -1187,6 +1213,18 @@ class MafwScheduler {
     this.mcpEndpoint = new McpSSEEndpoint(toolRegistry, services);
 
     log.info("[Scheduler] Services initialized (Memory + Cost + MCP SSE + Automation)");
+
+    // Trajectory tracking (agent trajectory stats + desktop sidebar)
+    try {
+      const { TrajectoryStore } = require('./trajectory/trajectory-store');
+      const { TrajectoryCollector } = require('./trajectory/collector');
+      const trajStore = new TrajectoryStore(this.getGatewayDb(), projectDir);
+      this.trajectoryStore = trajStore;
+      this.trajectoryCollector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir);
+      log.info('[Trajectory] store initialized');
+    } catch (err: any) {
+      log.warn(`[Trajectory] init failed (non-fatal): ${err.message}`);
+    }
 
     const enableLegacy = process.env[config.env.enableLegacyMcp] === "true";
     if (enableLegacy) {
@@ -3063,6 +3101,7 @@ class MafwScheduler {
           try {
             const sessionID = deleteMatch[1];
             await this.sdkSession.delete(sessionID);
+            try { this.trajectoryStore?.deleteSession(sessionID); } catch (err: any) { log.warn(`[Trajectory] delete failed: ${err.message}`); }
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {
