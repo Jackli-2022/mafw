@@ -28,7 +28,25 @@ export function createMafwApi(): MafwAPI {
       children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
       abort: (sessionID) => invoke("session", "abort", { path: { id: sessionID } }),
       delete: (id) => invoke("session", "delete", { path: { id } }),
+      trajectory: (sessionID, query?) => invoke("session", "trajectory", { path: { id: sessionID }, query: query || {} }),
       promptAsync: ({ sessionID, message, parts, agent, model }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model } }),
+      command: ({ sessionID, command, arguments: args, agent, model }) => invoke("session", "command", { path: { id: sessionID }, body: { command, arguments: args, agent, model } }),
+    },
+
+    command: {
+      list: (directory?) => invoke("command", "list", directory),
+    },
+
+    skill: {
+      list: (directory?) => invoke("skill", "list", directory),
+    },
+
+    mafwCommands: {
+      run: (opts) => invoke("mafwCommands", "run", opts),
+    },
+
+    manager: {
+      session: (projectDir?) => invoke("manager", "session", projectDir),
     },
 
     projects: {
@@ -48,6 +66,8 @@ export function createMafwApi(): MafwAPI {
       search: (opts) => invoke("memory", "search", opts),
       mergedSearch: (opts) => invoke("memory", "mergedSearch", opts),
       delete: (id) => invoke("memory", "delete", id),
+      getEnergyDistribution: () => invoke("memory", "getEnergyDistribution"),
+      getL5Axioms: (topK) => invoke("memory", "getL5Axioms", topK),
     },
 
     approvals: {
@@ -81,6 +101,15 @@ export function createMafwApi(): MafwAPI {
     chat: {
       send: (message, sessionID?) => invoke("chat", "send", message, sessionID),
       sendEnriched: (opts) => invoke("chat", "sendEnriched", opts),
+    },
+
+    media: {
+      createTask: (opts) => invoke("media", "createTask", opts),
+    },
+
+    tts: {
+      speak: (opts) => invoke("tts", "speak", opts),
+      voices: () => invoke("tts", "voices"),
     },
 
     providers: {

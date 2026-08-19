@@ -1,6 +1,7 @@
 import type {
   Session, Project, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
+  EnergyDistribution, Axiom, L5Heuristic,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
 } from "@mafw/sdk"
@@ -21,8 +22,27 @@ export type MafwAPI = {
     messages: (sessionID: string, limit?: number, before?: string) => Promise<any>
     todo: (sessionID: string) => Promise<{ data: any[] }>
     children: (sessionID: string) => Promise<any[]>
+    abort: (sessionID: string) => Promise<void>
     delete: (id: string) => Promise<void>
+    trajectory: (sessionID: string, query?: { limit?: number; before_turn?: number; rebuild?: boolean }) => Promise<{ turns: any[]; events: any[] }>
     promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
+    command: (opts: { sessionID: string; command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
+  }
+
+  command: {
+    list: (directory?: string) => Promise<any[]>
+  }
+
+  skill: {
+    list: (directory?: string) => Promise<any[]>
+  }
+
+  mafwCommands: {
+    run: (opts: { command: string; args?: string; sessionID?: string }) => Promise<{ ok: boolean; message?: string; text?: string; error?: string; sessionID?: string; added?: number; conflicts?: number; skipped?: number }>
+  }
+
+  manager: {
+    session: (projectDir?: string) => Promise<{ projectDir: string; sessionId: string; createdAt?: string | null } | null>
   }
 
   projects: {
@@ -42,6 +62,8 @@ export type MafwAPI = {
     search: (opts: MemorySearchOptions) => Promise<MemoryUnit[]>
     mergedSearch: (opts: MergedSearchOptions) => Promise<any[]>
     delete: (id: string) => Promise<void>
+    getEnergyDistribution: () => Promise<EnergyDistribution>
+    getL5Axioms: (topK?: number) => Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>
   }
 
   approvals: {
@@ -75,6 +97,15 @@ export type MafwAPI = {
   chat: {
     send: (message: string, sessionID?: string) => Promise<{ sessionID: string }>
     sendEnriched: (opts: { message: string; sessionID?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<{ sessionID: string }>
+  }
+
+  media: {
+    createTask: (opts: { dataUrl?: string; artifactId?: string; mediaType?: string; question?: string }) => Promise<{ id: string; contextId: string; state: string }>
+  }
+
+  tts: {
+    speak: (opts: { text: string; voice?: string; style?: string }) => Promise<{ artifactId: string; voice: string; mime: string; url: string }>
+    voices: () => Promise<{ voices: { id: string; label: string; lang: string }[]; models: { id: string; description: string }[]; defaultVoice: string; defaultModel: string }>
   }
 
   providers: {
