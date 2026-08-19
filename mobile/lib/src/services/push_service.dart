@@ -512,8 +512,8 @@ class PushService {
 
   Future<void> _registerBackgroundHealthCheck() async {
     await Workmanager().initialize(
-      _backgroundCallback,
-      isInDebugMode: false,
+      callbackDispatcher,
+      // isInDebugMode removed in workmanager 0.10.x
     );
     await Workmanager().registerPeriodicTask(
       _healthCheckTask,
@@ -523,7 +523,7 @@ class PushService {
         networkType: NetworkType.connected,
         requiresBatteryNotLow: true,
       ),
-      existingWorkPolicy: ExistingWorkPolicy.keep,
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
     );
   }
 
@@ -548,9 +548,11 @@ class PushService {
 /// When `lastFcmAt>24h` additionally polls `listSessions`-style endpoint
 /// (lightweight health + sessions check).
 @pragma('vm:entry-point')
-void _backgroundCallback() {
+void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    if (task != PushService._healthCheckTask) return Future.value(true);
+    if (task != PushService._healthCheckTask) {
+      return Future.value(true);
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final baseUrl = prefs.getString('mafw_bg_base_url');

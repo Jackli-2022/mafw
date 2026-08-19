@@ -46,7 +46,7 @@ dependencies:
   firebase_messaging: ^15.2.1
   flutter_local_notifications: ^18.0.1
   # Background health checks
-  workmanager: ^0.5.2
+  workmanager: ^0.10.7
   # Image compression before upload
   flutter_image_compress: ^2.3.4
   # Camera / gallery picking for media upload
