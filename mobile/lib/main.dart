@@ -58,8 +58,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   @override
   void initState() {
     super.initState();
-    _sessionCache.init();
-    _init();
+    _sessionCache.init().then((_) => _init());
   }
 
   @override
@@ -113,8 +112,11 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
       },
     );
 
-    // Start connectivity watcher for auto-reconnect
-    _connectivityWatcher = ConnectivityWatcher(onChanged: () => ws.reconnect());
+    // Start connectivity watcher for auto-reconnect (500ms debounce + health probe)
+    _connectivityWatcher = ConnectivityWatcher(
+      onChanged: () async => ws.reconnect(),
+      client: client,
+    );
     _connectivityWatcher!.start();
 
     // Connect WS lazily — don't block first frame

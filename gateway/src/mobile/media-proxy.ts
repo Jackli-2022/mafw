@@ -40,9 +40,45 @@ interface MultipartFile {
 
 /**
  * Parse a multipart/form-data body. Returns the first file part.
- * Minimal parser — sufficient for single-file uploads from the mobile app.
+ * Uses Buffer.indexOf to avoid latin1 string copy on large payloads (I7).
+ * Falls back to latin1 string split for tiny payloads.
  */
 function parseMultipartFirstFile(raw: Buffer, boundary: string): MultipartFile | null {
+  const boundaryBuf = Buffer.from(`--${boundary}`);
+  const headerSep = Buffer.from('\r\n\r\n');
+  let pos = 0;
+  // Prefer Buffer.indexOf path for large payloads to reduce intermediate string alloc
+  if (raw.length > 1024 * 1024) {
+    while (true) {
+      const bIdx = raw.indexOf(boundaryBuf, pos);
+      if (bIdx < 0) break;
+      const nextB = raw.indexOf(boundaryBuf, bIdx + boundaryBuf.length);
+      const sectionEnd = nextB < 0 ? raw.length : nextB;
+      const headerEnd = raw.indexOf(headerSep, bIdx);
+      if (headerEnd < 0 || headerEnd >= sectionEnd) {
+        pos = bIdx + boundaryBuf.length;
+        continue;
+      }
+      const headerPart = raw.subarray(bIdx, headerEnd).toString('utf8');
+      const bodyStart = headerEnd + headerSep.length;
+      let bodyEnd = sectionEnd;
+      // trim trailing \r\n
+      if (bodyEnd - 2 >= bodyStart && raw[bodyEnd - 2] === 0x0d && raw[bodyEnd - 1] === 0x0a) bodyEnd -= 2;
+      const nameMatch = headerPart.match(/name="([^"]+)"/);
+      const filenameMatch = headerPart.match(/filename="([^"]+)"/);
+      const ctMatch = headerPart.match(/Content-Type:\s*(.+)/i);
+      if (filenameMatch && nameMatch) {
+        return {
+          name: nameMatch[1],
+          filename: filenameMatch[1],
+          contentType: ctMatch?.[1]?.trim() || 'application/octet-stream',
+          data: Buffer.from(raw.subarray(bodyStart, bodyEnd)),
+        };
+      }
+      pos = bIdx + boundaryBuf.length;
+    }
+    return null;
+  }
   const sections = raw.toString('latin1').split(`--${boundary}`);
   for (const section of sections) {
     if (section.trim() === '' || section.trim() === '--') continue;
@@ -130,6 +166,12 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
       const boundary = boundaryMatch[1];
 
       try {
+        // Early header check: reject > max before buffering large body to avoid OOM
+        const clen = parseInt(String(req.headers['content-length'] || '0'), 10);
+        if (clen > 55 * 1024 * 1024) {
+          jsonResponse(res, 413, { error: 'payload too large' });
+          return true;
+        }
         const raw = await readBodyBuffer(req);
         const file = parseMultipartFirstFile(raw, boundary);
         if (!file) {

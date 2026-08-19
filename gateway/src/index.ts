@@ -1147,8 +1147,14 @@ class MafwScheduler {
     ensureMemoryPipelineRules(mafwDir);
     this.automationEngine.loadRules();
 
-    // Mobile push: device store + push gateway for WS online tracking
-    const deviceStorePath = path.join(config.resolvePath(), 'devices.json');
+    // Mobile push: device store + push gateway for WS online tracking (spec: mobile-devices.json; migrate legacy devices.json)
+    const oldDevicePath = path.join(config.resolvePath(), 'devices.json');
+    const deviceStorePath = path.join(config.resolvePath(), 'mobile-devices.json');
+    try {
+      if (fs.existsSync(oldDevicePath) && !fs.existsSync(deviceStorePath)) {
+        fs.renameSync(oldDevicePath, deviceStorePath);
+      }
+    } catch { /* ignore migration error */ }
     const deviceStore = new DeviceStore(deviceStorePath);
     this.pushGateway = new PushGateway(deviceStore);
 

@@ -34,10 +34,17 @@ export class PairingService {
     this.tailscaleUrl = config.tailscaleUrl;
     this.ttlMs = config.ttlMs ?? 5 * 60 * 1000;
     this.rateLimit = config.rateLimit ?? 5;
-    // Periodic cleanup every 60s
+    // Periodic cleanup every 60s — unref so it doesn't pin the process exit
     this.cleanupTimer = setInterval(() => this.cleanup(), 60_000);
+    // allow process to exit gracefully when this is the last handle
+    if ((this.cleanupTimer as any).unref) (this.cleanupTimer as any).unref();
   }
 
+  /**
+   * Generate a one-time pairing URL. Rate-limit applies to non-loopback only;
+   * loopback is exempt because the operator is local and trusted (spec §6.1
+   * allows local generation without throttling). Documented here for audit.
+   */
   generatePairingCode(ip: string): { url: string } {
     const isLoopback = ip === '127.0.0.1' || ip.startsWith('127.') || ip === '::1' || ip === '::ffff:127.0.0.1';
 

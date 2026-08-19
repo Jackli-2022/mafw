@@ -48,7 +48,7 @@ class SessionCache {
 
   final Duration ttl;
   final int limitPerSession;
-  Box<Map>? _box;
+  Box<dynamic>? _box;
   bool _initialized = false;
 
   SessionCache({
@@ -58,11 +58,11 @@ class SessionCache {
 
   Future<void> init() async {
     if (_initialized) return;
-    _box = await Hive.openBox<Map>(_boxName);
+    _box = await Hive.openBox<dynamic>(_boxName);
     _initialized = true;
   }
 
-  Box<Map> get _ensureBox {
+  Box<dynamic> get _ensureBox {
     if (_box == null) throw StateError('SessionCache not initialized. Call init() first.');
     return _box!;
   }
@@ -138,8 +138,11 @@ class SessionCache {
 
   List<Map<String, dynamic>> _getBySessionRaw(String sessionID) {
     final box = _ensureBox;
-    return box.values
-        .where((m) => m['sessionID'] == sessionID)
+    // snapshot values to avoid concurrent-delete mutation during eviction
+    final snapshot = box.values.toList();
+    return snapshot
+        .where((m) => (m as Map)['sessionID'] == sessionID)
+        .map((m) => Map<String, dynamic>.from(m as Map))
         .toList();
   }
 
