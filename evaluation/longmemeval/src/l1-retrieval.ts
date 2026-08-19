@@ -44,6 +44,7 @@ function parseArgs() {
     reranker: (flags.get('--reranker') ?? 'off') as 'off' | 'heuristic' | 'cross-encoder',
     recallK: parseInt(flags.get('--recallK') ?? String(config.search.recallK), 10),
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
+    graph: flags.get('--graph') === 'true',
     keep: flags.has('--keep'),
     data: flags.get('--data'),
   };
@@ -61,6 +62,7 @@ function help() {
   console.log('  --reranker off|heuristic|cross-encoder');
   console.log('  --recallK N     candidates before rerank');
   console.log('  --cutoffRatio N drop results below topScore × ratio (0 = off)');
+  console.log('  --graph true|false  enable anchor-graph multi-hop expansion (default false)');
   console.log('  --data PATH     override dataset path');
   console.log('  --keep          keep per-question tmp dirs');
 }
@@ -73,14 +75,30 @@ async function runOne(
   reranker: Reranker | undefined,
   recallK: number,
   cutoffRatio: number,
+  graphEnabled: boolean,
 ): Promise<L1QuestionResult> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `lme-l1-${question.question_id}-`));
   let store: HarmonicUnitFileStore | null = null;
+  let db: any = null;
   let result: L1QuestionResult;
   try {
-    store = new HarmonicUnitFileStore(tmpDir);
+    if (graphEnabled) {
+      const { GatewayDatabase } = require('../../../gateway/src/memory/gateway-db');
+      const { AnchorGraphStore } = require('../../../gateway/src/graph/anchor-graph-store');
+      db = new GatewayDatabase(path.join(tmpDir, 'graph.db'));
+      const graph = new AnchorGraphStore(db);
+      store = new HarmonicUnitFileStore(tmpDir, undefined, graph);
+    } else {
+      store = new HarmonicUnitFileStore(tmpDir);
+    }
     const { unitCount, sessionOfUnit } = await ingestQuestion(store, question, ingestOpts);
     const index = new HarmonicIndexManager(tmpDir);
+    if (graphEnabled && db) {
+      const { AnchorGraphStore } = require('../../../gateway/src/graph/anchor-graph-store');
+      const graph = new AnchorGraphStore(db);
+      graph.rebuild(index.getIndex());
+      index.setAnchorGraphStore(graph);
+    }
 
     let entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
     if (reranker && entries.length > 0) {
@@ -109,6 +127,7 @@ async function runOne(
       top_scores: entries.slice(0, 10).map(e => e.score),
     };
   } finally {
+    try { db?.close(); } catch { /* ignore */ }
     if (store && !keep) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } else if (store) {
@@ -157,12 +176,12 @@ async function main() {
   const runPath = path.join(resultsDir, 'l1-run.jsonl');
   const summaryPath = path.join(resultsDir, 'l1-summary.json');
 
-  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, reranker=${args.reranker}`);
+  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, reranker=${args.reranker}, graph=${args.graph}`);
   const results: L1QuestionResult[] = [];
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     process.stdout.write(`[${i + 1}/${questions.length}] ${q.question_id} ${q.question_type} ... `);
-    const res = await runOne(q, ingestOpts, args.keep, searchOptions, reranker, args.recallK, args.cutoffRatio);
+    const res = await runOne(q, ingestOpts, args.keep, searchOptions, reranker, args.recallK, args.cutoffRatio, args.graph);
     results.push(res);
     fs.appendFileSync(runPath, JSON.stringify(res) + '\n', 'utf-8');
     process.stdout.write(`R@1=${res.recall[1].toFixed(2)} R@10=${res.recall[10].toFixed(2)}\n`);
