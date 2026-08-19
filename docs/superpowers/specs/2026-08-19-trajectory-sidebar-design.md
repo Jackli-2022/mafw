@@ -157,12 +157,15 @@ interface TrajectoryEvent {
 - `.mafw-trajectory-dock`：`position: fixed; top: 38px; right: 0; bottom: 0; width: 320px`（默认），`border-left: 1px solid var(--border-subtle)`、`background: var(--bg-base)`、`z-index: 70`——与 `.mafw-tasklist-dock`（`mafw.css:2117`）完全同款，不挤压聊天列
 - 宽度可调：dock 左缘加 `ResizeHandle direction="horizontal" edge="start"`（**注意：宽度调整必须用 `horizontal`**——该组件 X 轴是 col-resize 宽度，`vertical` 是 Y 轴 row-resize 高度；Rail 先例 `MafwShell.tsx:1526` 即 `horizontal`），min 280 / max 420，localStorage `mafw-trajectory-width`
 - 折叠：关闭后完全隐藏（无 Rail 式 32px 抓手；通过标题栏按钮/Ctrl+T 恢复）
-- **与 TaskList dock 并存**：两者都是 `right: 0; z-index: 70` fixed——若同时打开，轨迹 dock 叠加在 TaskList dock 之上（TaskList 先渲染、轨迹 dock 后渲染 + 更高 z-index 71），互不遮挡关闭按钮
+- **与 TaskList dock 互斥**：任一时刻至多一个右栏 dock 可见（见 §5.2），无 stacking/z-index 协调
 
 ### 5.2 切换
 
-- 每个 ChatPane titlebar（`mafw-session-titlebar-inner`，`ChatPane.tsx:1312`）新增 `ButtonV2 ghost size=small`（📊 图标）+ `TooltipV2 "轨迹时间线" openDelay={300}` → `onToggleTrajectory` prop → MafwShell 翻转 `trajOpen`（全局同步，所有 pane 按钮控制同一个 dock）
-- `Ctrl/Cmd+T` 快捷键 toggle（仿 Ctrl+J，`MafwShell.tsx:1398`；跳过 INPUT/TEXTAREA）
+- 每个 ChatPane titlebar（`mafw-session-titlebar-inner`，`ChatPane.tsx:1312`）新增**两个并排按钮**（`ButtonV2 ghost size=small` + `TooltipV2 openDelay={300}`），位于现有 TaskBar 之后：
+  1. `📋 任务列表` → 切换 TaskList dock：`tasksPlacement` 为 `dock` 时点回 `bar`，否则切到 `dock`（MafwShell 新增 `onToggleTaskDock` prop）
+  2. `📊 轨迹时间线` → 翻转 `trajOpen`（MafwShell 新增 `onToggleTrajectory` prop，全局同步，所有 pane 按钮控制同一个 dock）
+- **两 dock 互斥**：打开轨迹 dock 时自动把 TaskList 回 `bar`；打开 TaskList dock 时自动关闭轨迹 dock——任一时刻至多一个右栏 dock 可见，无需 stacking/z-index 协调
+- `Ctrl/Cmd+T` 快捷键 toggle 轨迹 dock（仿 Ctrl+J，`MafwShell.tsx:1398`；跳过 INPUT/TEXTAREA）
 - 窄视口（<1200px）自动降级 overlay（Esc/点外关闭，仿 TaskList dock，`MafwShell.tsx:1380`）
 - state + localStorage：`mafw-trajectory-open` / `mafw-trajectory-width`
 
