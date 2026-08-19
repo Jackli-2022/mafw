@@ -1939,3 +1939,62 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-trajectory-duration { flex: none; font-size: 11px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 .mafw-trajectory-turn.open .mafw-trajectory-turn-user { white-space: normal; }
 .mafw-rightdock-btn { font-size: 13px; }
+
+/* ── Welcome home (今天要做什么？) ── */
+.mafw-welcome {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 16px; padding: 48px 24px; width: 100%; max-width: 720px; margin: 0 auto;
+  overflow-y: auto; height: 100%;
+}
+.mafw-welcome-banner {
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 8px;
+  background: rgba(232,99,107,0.08); border: 0.5px solid rgba(232,99,107,0.25); color: #e8636b; font-size: 13px;
+}
+.mafw-welcome-projects { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 100%; }
+.mafw-welcome-project {
+  padding: 4px 14px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); background: transparent; color: var(--text-base);
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.mafw-welcome-project:hover { background: var(--surface-base-hover); }
+.mafw-welcome-project[data-selected] {
+  background: var(--accent-dim, rgba(118,152,253,0.15)); color: var(--accent, #7698fd); border-color: var(--accent, #7698fd);
+}
+.mafw-welcome-projects-empty { color: var(--text-weak); font-size: 12px; padding: 4px 0; }
+.mafw-welcome-title { margin: 0; font-size: 26px; font-weight: 650; color: var(--text-strong); }
+.mafw-welcome-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.mafw-welcome-goal-input {
+  display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 420px;
+  padding: 12px; border-radius: 10px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12));
+  background: var(--surface-raised-base, var(--background-stronger));
+}
+.mafw-welcome-goal-input-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.mafw-welcome-goal-error { color: #e8636b; font-size: 12px; }
+.mafw-welcome-section { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.mafw-welcome-section-title {
+  color: var(--text-weak); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+}
+.mafw-welcome-goals { display: flex; flex-direction: column; gap: 4px; }
+.mafw-welcome-goal {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  padding: 8px 12px; border-radius: 8px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12));
+  background: transparent; color: var(--text-strong); font-size: 13px; cursor: pointer; text-align: left;
+}
+.mafw-welcome-goal:hover { background: var(--surface-base-hover); }
+.mafw-welcome-goal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-welcome-goal-meta { color: var(--text-weak); font-size: 11px; flex-shrink: 0; }
+.mafw-welcome-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.mafw-welcome-badge {
+  padding: 4px 12px; border-radius: 999px; font-size: 12px; cursor: pointer;
+  border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); background: transparent; color: var(--text-base);
+}
+.mafw-welcome-badge:hover { background: var(--surface-base-hover); }
+.mafw-welcome-badge-static { cursor: default; }
+.mafw-welcome-sessions { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+.mafw-welcome-session {
+  display: flex; align-items: center; width: 100%; padding: 6px 10px; border-radius: 6px;
+  background: transparent; border: 0; color: var(--text-base); font-size: 13px; cursor: pointer; text-align: left;
+}
+.mafw-welcome-session:hover { background: var(--surface-base-hover); color: var(--text-strong); }
+.mafw-welcome-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-welcome-empty { color: var(--text-weak); font-size: 13px; padding: 8px 0; }
