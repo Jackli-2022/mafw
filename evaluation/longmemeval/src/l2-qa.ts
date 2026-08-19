@@ -31,7 +31,7 @@ function parseArgs() {
     apiUrl: flags.get('--apiUrl') ?? 'https://openrouter.ai/api/v1/chat/completions',
     apiKeyProvider: flags.get('--apiKeyProvider') ?? 'openrouter',
     topK: parseInt(flags.get('--topK') ?? '10', 10),
-    maxTokens: parseInt(flags.get('--maxTokens') ?? '512', 10),
+    maxTokens: parseInt(flags.get('--maxTokens') ?? '1024', 10),
     order: (flags.get('--order') ?? 'date') as 'date' | 'rank',
     cot: flags.get('--cot') === 'true',
     scoreThreshold: parseFloat(flags.get('--scoreThreshold') ?? '0'),
@@ -130,11 +130,14 @@ async function judgeOne(
       { role: 'user', content: user },
     ],
     temperature: 0,
-    max_tokens: 64,
+    // mimo is a reasoning model: reasoning_content consumes tokens before the
+    // final answer. max_tokens must comfortably exceed the reasoning budget or
+    // content comes back empty (finish_reason=length). Official repo uses 10
+    // for GPT-4o which is NOT a reasoning model; for reasoning models 800.
+    max_tokens: 800,
   });
   if (!raw || !raw.trim()) {
-    // Some models (e.g. mimo) occasionally return empty for tiny max_tokens;
-    // retry once with a slightly larger budget.
+    // Retry once — some providers occasionally return empty on transient load.
     const retry = await chatCompletion({
       model: judgeModel,
       apiUrl,
@@ -144,7 +147,7 @@ async function judgeOne(
         { role: 'user', content: user },
       ],
       temperature: 0,
-      max_tokens: 128,
+      max_tokens: 800,
     });
     return parseJudgeScore(retry || '');
   }

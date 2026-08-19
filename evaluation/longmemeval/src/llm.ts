@@ -59,7 +59,14 @@ export async function chatCompletion(opts: ChatOptions): Promise<string> {
     throw new Error(`LLM request failed ${resp.status}: ${text}`);
   }
   const json = await resp.json() as any;
-  const content = json.choices?.[0]?.message?.content;
+  const message = json.choices?.[0]?.message;
+  let content = message?.content;
+  // Reasoning models (e.g. mimo) put thinking in reasoning_content; if content
+  // is empty (finish_reason=length cut reasoning off), fall back to it so the
+  // benchmark still gets a usable signal.
+  if (typeof content !== 'string' || !content.trim()) {
+    content = message?.reasoning_content;
+  }
   if (typeof content !== 'string') {
     throw new Error('LLM response missing content');
   }
