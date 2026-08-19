@@ -30,10 +30,12 @@ Future<void> main() async {
   // Load config immediately so UI can render; Firebase is optional (placeholder
   // google-services.json must not block first frame — see systematic debugging fix).
   final cfg = await ConnectionConfig.load();
-  Firebase.initializeApp().catchError((Object e) {
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
     // Placeholder FCM config: FCM unavailable, WS/local cache still works.
     debugPrint('[MAFW] Firebase init failed (offlineable): $e');
-  });
+  }
 
   runApp(MafwMobileApp(initialConfig: cfg));
 }
@@ -57,7 +59,6 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   List<MafwSession> _sessions = [];
   bool _connecting = true;
   bool _wsConnected = false;
-  bool _isInBackground = false;
   StreamSubscription? _wsStatusSub;
 
   @override
@@ -117,16 +118,12 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     });
 
     // Lifecycle manager: close WS on background, reconnect on foreground.
-    // The intentional lifecycle disconnect must NOT flip the offline banner —
-    // isInBackground gates the banner so only real failures show in foreground.
     _lifecycleManager = LifecycleWsManager(
       onConnect: () async {
-        if (mounted) setState(() => _isInBackground = false);
         if (ws.isConnected) return;
         await ws.reconnect();
       },
       onDisconnect: () async {
-        if (mounted) setState(() => _isInBackground = true);
         // Close socket but keep WsClient alive (dispose would kill stream controllers)
         ws.disconnect();
       },
@@ -277,10 +274,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
 
   @override
   Widget build(BuildContext context) {
-    // Background lifecycle disconnect must not drive the banner — otherwise
-    // the banner only flashes when switching away. In background, hold last
-    // known state; foreground offline is driven by real WS status.
-    final connected = _client != null && (_wsConnected || _isInBackground);
+    final connected = _client != null && _wsConnected;
     return MaterialApp(
       title: 'MAFW Mobile',
       theme: ThemeData(
