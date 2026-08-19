@@ -110,13 +110,21 @@ import * as path from 'path';
 import { GatewayDatabase } from '../../../gateway/src/memory/gateway-db';
 import { AnchorGraphStore } from '../../../gateway/src/graph/anchor-graph-store';
 import { HarmonicUnitFileStore } from '../../../gateway/src/memory/harmonic-file-store';
-import { handleSearchHybrid } from '../../../gateway/src/mcp/handlers/search-hybrid';
-import { encodeState, decodeState } from '../../../gateway/src/mcp/handlers/search-hybrid';
+import { handleSearchHybrid, encodeState, decodeState } from '../../../gateway/src/mcp/handlers/search-hybrid';
 
 let dir: string;
 let db: GatewayDatabase;
 let graph: AnchorGraphStore;
 let store: HarmonicUnitFileStore;
+
+const T = '2025-01-01T00:00:00.000Z';
+
+function unit(id: string, primary: string, anchors: string[]): any {
+  return {
+    id, type: 'semantic', primary_abstraction: primary, cue_anchors: anchors,
+    memory_value: 'v', energy: 0.8, created_at: T, updated_at: T,
+  };
+}
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shp-'));
@@ -125,6 +133,7 @@ beforeEach(() => {
   db = new GatewayDatabase(path.join(dir, 'gw.db'));
   graph = new AnchorGraphStore(db);
   store = new HarmonicUnitFileStore(dir, undefined, graph);
+  store.indexManager_().setAnchorGraphStore(graph);   // 关键：图必须 attach 到 index manager
 });
 
 afterEach(() => {
@@ -133,33 +142,33 @@ afterEach(() => {
 });
 
 function services() {
-  return {
-    memory: store.indexManager_() as any,
-    mafwDir: dir,
-  } as any;
+  return { memory: store.indexManager_(), mafwDir: dir } as any;
 }
 
-async function seedShared() {
-  await store.write({ id: 'pol_a', type: 'semantic', primary_abstraction: 'Dave agreed the Orion schedule', cue_anchors: ['orion-plan', 'dave'], memory_value: 'v1', energy: 0.8, created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z' } as any);
-  await store.write({ id: 'pol_b', type: 'semantic', primary_abstraction: 'Prototype pushed to April 1', cue_anchors: ['orion-plan', 'prototype'], memory_value: 'v2', energy: 0.8, created_at: '2025-01-02T00:00:00.000Z', updated_at: '2025-01-02T00:00:00.000Z' } as any);
+// A-B-C 三单元链：query 只强命中 A；B 与 A 共享锚点 orion-plan；
+// C 与 B 共享 prototype（与 query 无词重叠）→ 首轮结果 A(+B 经 searchScored 1-hop 图扩展)，frontier={C}
+async function seedChain() {
+  await store.write(unit('a', 'Dave agreed the Orion schedule', ['orion-plan', 'dave']));
+  await store.write(unit('b', 'Prototype shipped early April', ['orion-plan', 'prototype']));
+  await store.write(unit('c', 'Risks reviewed for slip', ['prototype', 'risk-review']));
 }
 
 test('encodeState/decodeState round-trips', () => {
-  const s = { seen: ['a', 'b'], frontier: ['c'], round: 1 };
+  const s = { seen: ['a'], frontier: [{ id: 'c', weight: 2 }], round: 1 };
   expect(decodeState(encodeState(s))).toEqual(s);
 });
 
 test('decodeState returns null on corrupt input', () => {
   expect(decodeState('not-json')).toBeNull();
   expect(decodeState('')).toBeNull();
+  expect(decodeState(null)).toBeNull();
 });
 
 test('first round returns results + canExpand + state', async () => {
-  await seedShared();
-  // 首轮：query 命中 pol_a（含 dave/orion），pol_b 通过共享锚点可扩展
+  await seedChain();
   const res = JSON.parse((await handleSearchHybrid({ query: 'Dave agreed Orion schedule' }, services())).content[0].text);
   expect(res.results.length).toBeGreaterThan(0);
-  expect(res.canExpand).toBe(true);
+  expect(res.canExpand).toBe(true);       // frontier = {c}
   expect(res.state).toBeTruthy();
   expect(res.round).toBe(0);
   expect(res.count).toBe(res.results.length);
@@ -167,35 +176,33 @@ test('first round returns results + canExpand + state', async () => {
 });
 
 test('iteration round returns increment (no seen) and advances state', async () => {
-  await seedShared();
+  await seedChain();
   const first = JSON.parse((await handleSearchHybrid({ query: 'Dave agreed Orion schedule' }, services())).content[0].text);
-  // 迭代：携带 state → 返回 pol_b（不在首轮 seen 中）
+  const firstIds = new Set(first.results.map((r: any) => r.id));
   const iter = JSON.parse((await handleSearchHybrid({ query: 'Dave agreed Orion schedule', state: first.state }, services())).content[0].text);
   expect(iter.round).toBe(1);
   expect(iter.results.length).toBeGreaterThan(0);
-  const firstIds = new Set(first.results.map((r: any) => r.id));
-  for (const r of iter.results) expect(firstIds.has(r.id)).toBe(false);
-  const s = decodeState(iter.state!);
-  expect(s!.seen).toContain('pol_a');
-  expect(s!.round).toBe(1);
+  for (const r of iter.results) expect(firstIds.has(r.id)).toBe(false);   // 增量：不含已见
+  expect(iter.results.map((r: any) => r.id)).toContain('c');              // 链尾经 frontier 进入
 });
 
-test('round cap: state.round=2 returns canExpand=false', async () => {
-  const s = encodeState({ seen: ['x'], frontier: ['y'], round: 2 });
-  const res = JSON.parse((await handleSearchHybrid({ query: 'anything', state: s }, services())).content[0].text);
+test('round cap: state.round=2 returns canExpand=false without iterating', async () => {
+  const s = encodeState({ seen: ['a'], frontier: [{ id: 'c', weight: 2 }], round: 2 });
+  const res = JSON.parse((await handleSearchHybrid({ query: 'Dave agreed Orion schedule', state: s }, services())).content[0].text);
   expect(res.canExpand).toBe(false);
-  expect(res.round).toBe(2);
+  expect(res.round).toBe(2);              // clamp：不递增到 3
+  expect(res.results.length).toBe(0);     // 轮次已满：不消费 frontier，query 命中已 seen → 无增量
 });
 
 test('no shared anchors -> canExpand=false', async () => {
-  await store.write({ id: 'pol_x', type: 'semantic', primary_abstraction: 'Unrelated cooking recipe', cue_anchors: ['cooking'], memory_value: 'v', energy: 0.8, created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z' } as any);
+  await store.write(unit('x', 'Unrelated cooking recipe', ['cooking']));
   const res = JSON.parse((await handleSearchHybrid({ query: 'cooking recipe' }, services())).content[0].text);
   expect(res.canExpand).toBe(false);
   expect(res.state).toBeNull();
 });
 
 test('bad state falls back to first-round behavior', async () => {
-  await seedShared();
+  await seedChain();
   const res = JSON.parse((await handleSearchHybrid({ query: 'Dave agreed Orion schedule', state: 'garbage' }, services())).content[0].text);
   expect(res.round).toBe(0);
   expect(res.results.length).toBeGreaterThan(0);
@@ -216,11 +223,8 @@ import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store";
 
-interface IterState {
-  seen: string[];
-  frontier: string[];
-  round: number;
-}
+interface FrontierItem { id: string; weight: number; }
+interface IterState { seen: string[]; frontier: FrontierItem[]; round: number; }
 
 export function encodeState(s: IterState): string {
   return Buffer.from(JSON.stringify(s), 'utf8').toString('base64url');
@@ -231,10 +235,25 @@ export function decodeState(raw: string | undefined | null): IterState | null {
   try {
     const s = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
     if (!Array.isArray(s?.seen) || !Array.isArray(s?.frontier) || typeof s?.round !== 'number') return null;
-    return { seen: s.seen, frontier: s.frontier, round: s.round };
+    return {
+      seen: s.seen.filter((x: unknown) => typeof x === 'string'),
+      frontier: s.frontier
+        .filter((x: any) => typeof x?.id === 'string')
+        .map((x: any) => ({ id: x.id, weight: Number(x.weight) || 1 })),
+      round: s.round,
+    };
   } catch {
     return null;
   }
+}
+
+// 兼容生产（MemoryService.harmonicIndex.*）与测试（裸 HarmonicIndexManager）两种访问路径
+function getGraphStore(memory: any) {
+  return memory?.harmonicIndex?.getAnchorGraphStore?.() ?? memory?.getAnchorGraphStore?.() ?? null;
+}
+
+function getIndexEntries(memory: any) {
+  return memory?.harmonicIndex?.getIndex?.()?.entries ?? memory?.getIndex?.()?.entries ?? [];
 }
 
 export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir }) => {
@@ -243,48 +262,46 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
     const topK = (args.topK as number) || config.search.defaultTopK;
     const retriever = (args.retriever as 'token' | 'bm25' | undefined) || config.search.defaultRetriever;
     const maxRounds = config.search.maxExpandRounds;
-    const graphStore = memory?.getAnchorGraphStore?.() ?? null;
+    const graphStore = getGraphStore(memory);
     const prev = decodeState(args.state as string | undefined);
 
-    // ── 首轮：现有行为原样 + 计算 frontier ──
     let scored: Array<{ entry: any; score: number; graphScore: number }>;
     let seen: string[];
-    let frontier: string[];
+    let frontier: FrontierItem[];
     let round: number;
 
     if (!prev) {
+      // ── 首轮：现有行为原样（searchScored 已含图扩展+融合）+ 计算 frontier ──
       scored = memory.search(query, topK * 2, { retriever }).map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
       seen = scored.map(s => s.entry.id);
       frontier = computeFrontier(graphStore, scored.map(s => s.entry.id), new Set(seen));
       round = 0;
+    } else if (prev.round >= maxRounds) {
+      // ── 轮次已满：不扩展、不消费 frontier，仅返回 bm25 新命中增量 ──
+      const seenSet = new Set(prev.seen);
+      scored = memory.search(query, topK * 2, { retriever })
+        .filter((e: any) => !seenSet.has(e.id))
+        .map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
+      seen = prev.seen;
+      frontier = prev.frontier;
+      round = prev.round;
     } else {
-      // ── 迭代轮：frontier 命中 + bm25 新命中 融合 ──
+      // ── 迭代轮：frontier 条目(graph-only 评分) + bm25 新命中，统一归一化融合 ──
       round = prev.round + 1;
       const seenSet = new Set(prev.seen);
-      const exclude = new Set(prev.seen);
-
-      // frontier 命中（graph-only 评分）
-      const frontierEntries: Array<{ entry: any; score: number; graphScore: number }> = [];
-      if (graphStore && prev.frontier.length > 0) {
-        const neighbors = graphStore.getNeighbors(prev.frontier, prev.frontier.length, exclude);
-        for (const [id, info] of neighbors) {
-          const entry = memory.getIndex().entries.find((e: any) => e.id === id);
-          if (!entry || entry.superseded_by) continue;
-          frontierEntries.push({
-            entry,
-            score: 0,
-            graphScore: info.weight * (entry.energy ?? 0.8) * (entry.salience ?? 1),
-          });
-        }
+      const entries = getIndexEntries(memory);
+      const frontierHits: Array<{ entry: any; score: number; graphScore: number }> = [];
+      for (const f of prev.frontier) {
+        if (seenSet.has(f.id)) continue;
+        const entry = entries.find((e: any) => e.id === f.id);
+        if (!entry || entry.superseded_by) continue;
+        frontierHits.push({ entry, score: 0, graphScore: f.weight * (entry.energy ?? 0.8) * (entry.salience ?? 1) });
       }
-
-      // bm25 新命中
       const freshHits = memory.search(query, topK * 2, { retriever })
         .filter((e: any) => !seenSet.has(e.id))
         .map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
 
-      // 融合：bm25 归一化 + graph 归一化（bm25×0.85 + graph×0.15）
-      const union = mergeById(frontierEntries, freshHits);
+      const union = mergeById(frontierHits, freshHits);
       const norm = (vals: number[]) => {
         if (vals.length === 0) return [];
         const min = Math.min(...vals), max = Math.max(...vals);
@@ -299,15 +316,17 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
 
       seen = [...prev.seen];
       for (const s of scored) if (!seen.includes(s.entry.id)) seen.push(s.entry.id);
-      frontier = computeFrontier(graphStore, scored.map(s => s.entry.id), new Set(seen));
+      // 新 frontier = 本次新结果邻居 + 剩余旧 frontier（未消费项，去重）
+      const consumed = new Set(scored.map(s => s.entry.id));
+      const remaining = prev.frontier.filter(f => !consumed.has(f.id) && !seen.includes(f.id));
+      frontier = [...computeFrontier(graphStore, scored.map(s => s.entry.id), new Set(seen)), ...remaining];
     }
 
     // memoryType 后置过滤（首轮与迭代轮一致）
-    let results = scored.filter((r: any) => !args.memoryType || r.entry.type === args.memoryType)
+    const results = scored.filter((r: any) => !args.memoryType || r.entry.type === args.memoryType)
       .slice(0, topK)
       .map(r => r.entry);
 
-    // 轮次上限
     const canExpand = frontier.length > 0 && round < maxRounds;
 
     // Enrich with full memory_value from OKF store.
@@ -334,17 +353,13 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
   }
 };
 
-function computeFrontier(
-  graphStore: any,
-  ids: string[],
-  exclude: Set<string>,
-): string[] {
+function computeFrontier(graphStore: any, ids: string[], exclude: Set<string>): FrontierItem[] {
   if (!graphStore || ids.length === 0) return [];
-  const result: string[] = [];
+  const result: FrontierItem[] = [];
   for (const id of ids) {
     const neighbors = graphStore.getNeighbors([id], 3, exclude);
-    for (const nb of neighbors.keys()) {
-      if (!result.includes(nb)) result.push(nb);
+    for (const [nbId, info] of neighbors) {
+      if (!result.some(f => f.id === nbId)) result.push({ id: nbId, weight: info.weight });
     }
     if (result.length >= 30) break;
   }
@@ -368,12 +383,11 @@ function mergeById(
 }
 ```
 
-注意：`memory` 是 `MemoryService`，需确认 `memory.search` 返回的 entry 带 `getIndex()`——`MemoryService` 有 `harmonicIndex` 公开字段，所以迭代轮用 `memory.harmonicIndex.getIndex().entries` 而非 `memory.getIndex()`。修正：`const idx = memory.harmonicIndex.getIndex()`；同时 `memory.getAnchorGraphStore` 不存在（getter 在 HarmonicIndexManager 上）——改用 `memory.harmonicIndex.getAnchorGraphStore()`。
-
-**修正后的关键访问**：
-- `const graphStore = memory?.harmonicIndex?.getAnchorGraphStore?.() ?? null;`
-- `const idx = memory?.harmonicIndex?.getIndex?.();` 后 `idx.entries.find(...)`
-- `memory.search(query, topK*2, { retriever })` 原样保留
+注意（实现要点）：
+- 生产路径 `memory` 是 `MemoryService`（`harmonicIndex` 字段）；测试路径传裸 `HarmonicIndexManager` —— `getGraphStore`/`getIndexEntries` 双路径兼容
+- 迭代轮**不**对 frontier 再调 `getNeighbors(prev.frontier)`（那会越过 frontier 跳一级）；frontier 条目本身作为候选结果，其邻居留给下一轮 newFrontier
+- `state.round >= maxRounds` 时 clamp：round 不递增、canExpand=false、不消费 frontier
+- 首轮 `memory.search(...)` 原样透传（行为不变）——`scored` 的 score/graphScore 为占位值，仅迭代轮参与融合
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -425,26 +439,25 @@ git commit -m "feat(memory): iterative multi-round search in mafw_search_hybrid 
 
 - [ ] **Step 2: add-memory.ts 传 anchorGraphStore**
 
-`gateway/src/mcp/handlers/add-memory.ts` 的 `new HarmonicUnitFileStore(...)` 调用（约 49-50 行）改为传图：
+`gateway/src/mcp/handlers/add-memory.ts` 的 `new HarmonicUnitFileStore(...)` 调用（约 49-50 行）改为传图。该 handler 签名是 `(args, { memory, mafwDir })`，sharedIndex 从 `memory.harmonicIndex` 取（与 search-hybrid 一致的双路径）：
 
 ```typescript
+    const sharedGraph = (memory as any)?.harmonicIndex?.getAnchorGraphStore?.()
+      ?? (memory as any)?.getAnchorGraphStore?.() ?? undefined;
     const store = new HarmonicUnitFileStore(resolvedDir, sharedIndex, sharedGraph);
 ```
 
-需要 `sharedGraph` 来源：查看 add-memory.ts 现有上下文（sharedIndex 怎么来的），从 `services.memory?.harmonicIndex?.getAnchorGraphStore?.()` 取：
-
-```typescript
-    const sharedGraph = (services.memory as any)?.harmonicIndex?.getAnchorGraphStore?.() ?? undefined;
-    const store = new HarmonicUnitFileStore(resolvedDir, sharedIndex, sharedGraph);
-```
+（`sharedIndex` 沿用 add-memory.ts 现有取法；若其现有代码未解构 `memory`，保持其原有访问方式，仅新增 `sharedGraph` 一行。）
 
 - [ ] **Step 3: typecheck + 回归**
 
 Run: `npx tsc --project gateway/tsconfig.json --noEmit`
 Expected: 无错误
 
-Run: `npx jest tests/unit/gateway/search-hybrid-policy.test.ts tests/unit/gateway/mcp-endpoints.test.ts --no-coverage`
-Expected: PASS（新增 7 + 现有 mcp 全过）
+Run: `npx jest tests/unit/gateway/search-hybrid-policy.test.ts tests/unit/harmonic-index.test.ts --no-coverage`
+Expected: PASS（新增 7 + 既有 harmonic-index 全过）
+
+注意：`tests/unit/gateway/mcp-endpoints.test.ts` 只测 MafwScheduler 且依赖预构建 `gateway/dist`，不覆盖 MCP 工具 handler——不做回归目标。
 
 - [ ] **Step 4: 提交**
 
@@ -507,13 +520,16 @@ git commit -m "docs: policy iterative retrieval - verification complete"
 - §6 验证（单测 6 项 + 集成 + L1 门禁）→ Task 2 测试 + Task 4
 
 **类型一致性：**
-- `encodeState(s: IterState): string` / `decodeState(raw): IterState | null` — Task 2 定义与测试一致
-- `getAnchorGraphStore(): AnchorGraphStore | null` — Task 1 定义、Task 2/3 使用
+- `encodeState(s: IterState): string` / `decodeState(raw): IterState | null`，`IterState = { seen: string[], frontier: {id, weight}[], round: number }` — Task 2 定义与测试一致
+- `getAnchorGraphStore(): AnchorGraphStore | null` — Task 1 定义；Task 2/3 经 `getGraphStore()` 双路径访问（`memory.harmonicIndex.*` 或裸 `memory.*`）
 - `config.search.maxExpandRounds: number`（默认 2）— Task 1 定义、Task 2 使用
 - handler 输出 `results/canExpand/state/round/count/hint` — Task 2 实现与测试一致
-- `memory.harmonicIndex.getAnchorGraphStore()` / `memory.harmonicIndex.getIndex()` — Task 2 Step 3 修正后一致
+- `store.indexManager_(): HarmonicIndexManager`（harmonic-file-store.ts:130）— Task 2 测试 beforeEach 使用；`setAnchorGraphStore` 必须显式调用（构造 store 传图只喂写路径，不 attach 到 index manager）
 
-**已知注意点：**
-- Task 2 Step 3 的修正：`memory` 是 MemoryService，getter/getIndex 在 `memory.harmonicIndex` 上（已在实现代码中修正，需按此执行）
-- 迭代轮 fusion 的 bm25 分：`freshHits` 从 `memory.search` 返回（分数已含 energy×salience×融合），这里 score 标记为 1 仅用于归一化——frontier 与 bm25 的相对权重由 graphScore 表达（weight×energy×salience），融合时统一归一化
-- `state` 无签名（local 场景）；若未来需要防篡改可加 HMAC（不在本次范围）
+**评审修正记录（子代理计划审查）**：
+1. 访问路径：生产 `memory` 是 `MemoryService`（`harmonicIndex` 字段），测试传裸 `HarmonicIndexManager`（无 `harmonicIndex`）→ `getGraphStore`/`getIndexEntries` 双路径兼容
+2. beforeEach 需 `store.indexManager_().setAnchorGraphStore(graph)`（否则 `getAnchorGraphStore()` 返回 null → canExpand 恒 false）
+3. 测试数据：2 单元不足以演示迭代（defaultTopK=20 + searchScored 自带 1-hop 扩展首轮全带回）→ 3 单元链 A-B-C，query 只强命中 A，C 与 query 无词重叠
+4. 轮次语义：`state.round >= maxRounds` → clamp（round 不递增、canExpand=false、不消费 frontier），测试断言 round=2 一致
+5. 迭代语义对齐 spec：frontier 条目**本身**是候选结果（graph-only 评分），不对 frontier 再 `getNeighbors` 跳一级；`state.frontier` 携带 `{id, weight}`；newFrontier = 新结果邻居 + 未消费旧 frontier
+6. Task 3 回归目标排除 mcp-endpoints.test.ts（不覆盖 MCP 工具 handler）
