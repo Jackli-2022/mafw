@@ -33,11 +33,15 @@
 输入: { query, topK?, retriever?, state? }
 输出: {
   results: MemoryUnit[],      // 本轮增量结果（已过滤 state 中已见条目）
-  canExpand: boolean,         // 锚点图前沿非空且轮次 < maxExpandRounds
+  canExpand: boolean,         // 锚点图前沿非空且轮次未达上限
   state: string | null,       // 不透明状态：seen + frontier + round（base64url(JSON)）
   round: number,              // 当前轮次（0 起）
-  hint: string                // 迭代引导文案
+  count: number,              // 保留：本轮增量条数（兼容现有消费者）
+  hint: string                // 迭代引导文案（两种触发：frontier 耗尽 / 轮次上限，文案区分）
 }
+```
+
+**注意**：`tool-registry.ts` 的 `inputSchema` 需加 `state` 字段（字符串，可选）；schema 中现有未使用的 `policy: "guided"|"oneshot"` 字段本次保留不动（不在本次范围）；`memoryType` 后置过滤（现有 handler 逻辑）对首轮与迭代轮结果**同样适用**（frontier 命中也过 memoryType 过滤）。
 ```
 
 ### 3.2 state 编码
@@ -51,27 +55,33 @@
 
 ```
 首轮（无 state）:
-  results = bm25(query, topK)                     # 现有逻辑
+  results = memory.search(query, topK*2, {retriever})   # 保持现有调用不变
+                                                        # （searchScored 已含锚点图扩展 + bm25×0.85/graph×0.15 融合）
   frontier = 锚点图邻居(results 的 id, 各 top 3) - seen(空)
   canExpand = frontier 非空 && round(0) < maxExpandRounds
 
 迭代轮（有 state）:
   decoded = decode(state)（失败 → 按首轮处理）
   frontierHits = 取 decoded.frontier 中条目（过滤 superseded / 已见）
-  bm25Hits = bm25(query, topK)（过滤已见）
-  merged = 融合排序（bm25×0.85 + graph×0.15，复用 searchScored 融合）
-  results = merged 中不在 seen 的新条目
+  bm25Hits = memory.search(query, topK*2, {retriever})（过滤已见）
+  # frontier 条目评分：graph-only（复用 AnchorGraphStore.getNeighbors 返回的 weight），
+  # 与 bm25Hits 的分数统一 min-max 归一化后按 bm25×0.85 + graph×0.15 融合
+  # （frontier 条目无本轮 bm25 分 → bm25 信号取 0，graph 信号 = weight×energy×salience）
+  merged = 融合排序（bm25Hits ∪ frontierHits）
+  results = merged 中不在 seen 的新条目（topK 截断）
   newFrontier = 新条目邻居 + 剩余旧 frontier - 全部 seen
   canExpand = newFrontier 非空 && round+1 < maxExpandRounds
   state = 编码(seen+新 results, newFrontier, round+1)
 ```
+
+**轮次语义（修正 off-by-one）**：`maxExpandRounds=2` 表示首轮 + 最多 2 次迭代扩展（共 3 次工具调用）。首轮 `round=0`；迭代轮 state.round 为 1、2 时可扩展，state.round=2 时返回 `canExpand:false`。测试 5 对应：第 1 次迭代（round=1）可扩展，第 2 次迭代（round=2）后 canExpand=false。
 
 ### 3.4 工具描述强化
 
 ```
 搜索谐波记忆。若返回 results 不足以回答问题且 canExpand=true，
 携带返回的 state 再次调用本工具继续扩展检索（共享锚点相关记忆）。
-记忆已足够时停止。最多扩展 2 轮。
+记忆已足够时停止。最多迭代扩展 2 次（共 3 次调用）。
 ```
 
 ## 4. 配置
@@ -79,10 +89,20 @@
 ```ts
 search: {
   ...,
-  maxExpandRounds: 2,   // 迭代轮次上限（state round 上限，0 起）
+  maxExpandRounds: 2,   // 迭代轮次上限（首轮 + 最多 2 次扩展）
   graph: { ... }        // 复用现有锚点图配置
 }
 ```
+
+## 4a. AnchorGraphStore 接入路径（M1 前置）
+
+`search-hybrid.ts` handler 上下文是 `Services`（`gateway/src/mcp/types.ts`），当前无 graph 字段；`HarmonicIndexManager` 的 `anchorGraphStore` 是私有字段仅 `setAnchorGraphStore()` 可写。接入方案（三选一，M1 实施时选定）：
+
+- **A（推荐）**：给 `HarmonicIndexManager` 加公开 getter `getAnchorGraphStore(): AnchorGraphStore | null`；`search-hybrid.ts` 通过 `services.memory.harmonicIndex.getAnchorGraphStore()` 访问——零 Services 改动，复用 index 已装配的 store
+- B：`Services` 加 `graph?: AnchorGraphStore` 字段，index.ts 装配时注入（需重排 init 顺序——services 构建在 index.ts:1204，锚点图初始化在 :1231）
+- C：handler 内延迟从 `GatewayDatabase` 重建（每调用一次，浪费）
+
+**同时修复写路径接线缺口**（审查发现）：`add-memory.ts:48-50` 构造 `HarmonicUnitFileStore` 未传 anchorGraphStore → agent 手写记忆运行期不进图。M1 一并给 `add-memory.ts` 传 store（与 harmonic-file-store 内部接线一致），或显式文档说明"运行期新增记忆的图边在下次启动 rebuild 后生效"。
 
 ## 5. 错误处理
 
@@ -101,8 +121,8 @@ search: {
 2. 迭代轮携带 state → 返回增量（不含已见）、frontier 推进
 3. 无共享锚点 → canExpand=false（不污染现有行为）
 4. 坏 state → 回退首轮
-5. 轮次上限 → 第 3 轮 canExpand=false
-6. 无 state 单次调用行为不变
+5. 轮次上限：round=1 时 canExpand=true，round=2 时 canExpand=false（maxExpandRounds=2，共 3 次调用）
+6. 无 state 单次调用行为与现状完全一致（`memory.search(query, topK*2, {retriever})` 原样透传）
 
 **集成测试**（memory-quality.test.ts 扩展）：
 - 带图 store：两共享锚点记忆 → 首轮 A → state 迭代后 B 出现
