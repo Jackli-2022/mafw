@@ -33,6 +33,7 @@ function parseArgs() {
     topK: parseInt(flags.get('--topK') ?? '10', 10),
     maxTokens: parseInt(flags.get('--maxTokens') ?? '512', 10),
     order: (flags.get('--order') ?? 'date') as 'date' | 'rank',
+    cot: flags.get('--cot') === 'true',
     scoreThreshold: parseFloat(flags.get('--scoreThreshold') ?? '0'),
   };
 }
@@ -48,6 +49,7 @@ function help() {
   console.log('  --topK N               number of retrieved memories fed to reader');
   console.log('  --maxTokens N          reader max_tokens');
   console.log('  --order date|rank      order of memories in reader prompt (default date)');
+  console.log('  --cot true|false       official step-by-step reasoning (default false)');
   console.log('  --scoreThreshold N     if top-1 retrieval score < N, add a low-confidence hint');
 }
 
@@ -76,19 +78,29 @@ function buildReaderMessages(
   isAbstention: boolean,
   order: 'date' | 'rank' = 'date',
   lowConfidence = false,
+  cot = false,
 ): ChatMessage[] {
   const sorted = sortContexts(contexts.slice(0, 20), order); // cap reader context
+  // Official LongMemEval reader template (run_generation.py): numbered
+  // sessions with explicit dates, then Current Date + Question.
   const ctxBlock = sorted.length
-    ? sorted.map((c, i) => `${i + 1}. ${extractSessionMarker(c) ? `[${extractSessionMarker(c)}] ` : ''}${c}`).join('\n')
-    : '(no relevant memories retrieved)';
+    ? sorted.map((c, i) => {
+        const date = c.match(/^\[(\d{4}\/\d{2}\/\d{2})\s+\(\w+\)\s+\d{2}:\d{2}\]/)?.[1] ?? '';
+        const body = c.replace(/^\[[^\]]*\]\s*/, '');
+        return `### Session ${i + 1}:\nSession Date: ${date}\nSession Content:\n${body}`;
+      }).join('\n\n')
+    : '(no relevant history chats retrieved)';
   const abstentionHint = isAbstention
-    ? 'If the memories do not contain the requested information, answer that you do not know, but you may mention any related facts that ARE in the memories.'
-    : 'If the memories do not contain the answer, say "I don\'t know".';
+    ? 'If the history chats do not contain the requested information, say that the information is incomplete, but you may mention related facts that ARE in the chats.'
+    : 'If the history chats do not contain the answer, say "I don\'t know".';
+  const cotHint = cot
+    ? 'Answer the question step by step: first extract all the relevant information, and then reason over the information to get the answer.'
+    : '';
   const confidenceHint = lowConfidence
     ? '\n\nNote: retrieval confidence is LOW. Treat the memories as uncertain and abstain if they do not clearly answer the question.'
     : '';
-  const system = `You are a helpful assistant answering a user based only on their past conversation memories. ${abstentionHint}${confidenceHint}`;
-  const user = `Memories:\n${ctxBlock}\n\nQuestion: ${question}\n\nAnswer:`;
+  const system = `You are a helpful assistant answering a user based only on their past conversation history. ${abstentionHint}${confidenceHint}`;
+  const user = `I will give you several history chats between you and a user. Please answer the question based on the relevant chat history.${cotHint ? ' ' + cotHint : ''}\n\n\nHistory Chats:\n\n${ctxBlock}\n\nCurrent Date: ${new Date().toISOString().slice(0, 10)}\nQuestion: ${question}\nAnswer:`;
   return [
     { role: 'system', content: system },
     { role: 'user', content: user },
@@ -107,6 +119,7 @@ async function judgeOne(
     item.question,
     item.answer,
     readerAnswer,
+    item.is_abstention,
   );
   const raw = await chatCompletion({
     model: judgeModel,
@@ -117,8 +130,24 @@ async function judgeOne(
       { role: 'user', content: user },
     ],
     temperature: 0,
-    max_tokens: 1024,
+    max_tokens: 64,
   });
+  if (!raw || !raw.trim()) {
+    // Some models (e.g. mimo) occasionally return empty for tiny max_tokens;
+    // retry once with a slightly larger budget.
+    const retry = await chatCompletion({
+      model: judgeModel,
+      apiUrl,
+      apiKey: loadAuthKey(apiKeyProvider),
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      temperature: 0,
+      max_tokens: 128,
+    });
+    return parseJudgeScore(retry || '');
+  }
   return parseJudgeScore(raw);
 }
 
@@ -142,7 +171,9 @@ async function main() {
   const runPath = path.join(resultsDir, 'l2-qa.jsonl');
   const summaryPath = path.join(resultsDir, 'l2-summary.json');
   const hardNegativesPath = path.join(resultsDir, 'hard-negatives.jsonl');
-  // Clear previous hard negatives for this run.
+  // Clear previous outputs for this run (idempotent re-run).
+  if (fs.existsSync(runPath)) fs.unlinkSync(runPath);
+  if (fs.existsSync(summaryPath)) fs.unlinkSync(summaryPath);
   if (fs.existsSync(hardNegativesPath)) fs.unlinkSync(hardNegativesPath);
 
   console.log(`L2 QA: ${l1Items.length} questions, topK=${args.topK}, reader=${args.readerModel}, judge=${args.judgeModel}, order=${args.order}`);
@@ -159,6 +190,7 @@ async function main() {
         item.is_abstention,
         args.order,
         lowConfidence,
+        args.cot,
       );
       const readerAnswer = await chatCompletion({
         model: args.readerModel,

@@ -1,10 +1,15 @@
 /**
- * LongMemEval-style judge prompts.
+ * LongMemEval official judge prompts — ported from the upstream repository
+ * (xiaowu0162/LongMemEval, src/evaluation/evaluate_qa.py, ICLR 2025).
  *
- * We cannot access the official repository prompts directly in this environment,
- * so these are conservative, type-aware approximations aligned with the paper's
- * evaluation criteria. When official prompts are available they should replace
- * the templates below.
+ * Key differences from the old approximation:
+ * - Output is "yes"/"no" ONLY (max_tokens≈10 in the official run), not JSON.
+ * - Per-type templates with type-specific leniency:
+ *   - temporal-reasoning: off-by-one day counts are not penalized
+ *   - knowledge-update: an updated answer alongside stale info is correct
+ *   - single-session-preference: rubric need not be fully satisfied; the
+ *     response is correct as long as it recalls/utilizes the user's info
+ *   - abstention: model must identify the question as unanswerable
  */
 
 export interface JudgePrompt {
@@ -12,54 +17,83 @@ export interface JudgePrompt {
   user: string;
 }
 
-function baseJudgePrompt(question: string, referenceAnswer: string | string[], modelAnswer: string): string {
-  const ref = Array.isArray(referenceAnswer) ? referenceAnswer.join('; ') : referenceAnswer;
-  return `Evaluate whether the model answer correctly answers the user question.
-
-Question: ${question}
-Reference Answer (may be a rubric): ${ref}
-Model Answer: ${modelAnswer}
-
-Score 1 if the model answer is factually correct, complete, and aligned with the reference. Score 0 if it is wrong, hallucinated, or unanswerable without the correct refusal.
-Output strictly as JSON: {"score": 0 or 1, "reason": "short explanation"}`;
-}
-
-const TYPE_INSTRUCTIONS: Record<string, string> = {
-  'single-session-user': 'The question asks about information the user mentioned in a single past session. The reference answer is the exact fact. The model must recall this fact from the conversation history.',
-  'single-session-assistant': 'The question asks about information the assistant provided in a single past session. The model must recall the assistant-side detail.',
-  'single-session-preference': 'The question asks about the user\'s personal preference. A correct answer should reflect the preference stated in the history; generic answers are wrong.',
-  'multi-session': 'The question requires synthesizing information across multiple sessions. The model answer must aggregate or compare information from all required sessions.',
-  'knowledge-update': 'The user\'s information changed over time. The model answer must use the latest / updated value, not an outdated one.',
-  'temporal-reasoning': 'The question involves a specific time range or temporal relation. The model answer must respect the temporal scope and not include irrelevant-time facts.',
-  'abstention': 'This question has a false premise or asks about information never mentioned in the history. A correct answer should refuse ("I don\'t know") and, if helpful, mention related facts the user DID mention.',
-};
-
 export function buildJudgePrompt(
   questionType: string,
   question: string,
   referenceAnswer: string | string[],
   modelAnswer: string,
+  abstention = false,
 ): JudgePrompt {
-  const typeHint = TYPE_INSTRUCTIONS[questionType] ?? TYPE_INSTRUCTIONS['single-session-user'];
-  const system = `You are an expert evaluator for long-term memory chat assistants. ${typeHint}
-Always output JSON: {"score": 0 or 1, "reason": "one-sentence explanation"}.`;
-  return { system, user: baseJudgePrompt(question, referenceAnswer, modelAnswer) };
+  const ref = Array.isArray(referenceAnswer) ? referenceAnswer.join('; ') : referenceAnswer;
+
+  let user: string;
+  if (abstention) {
+    user = `I will give you an unanswerable question, an explanation, and a response from a model. Please answer yes if the model correctly identifies the question as unanswerable. The model could say that the information is incomplete, or some other information is given but the asked information is not.
+
+Question: ${question}
+
+Explanation: ${ref}
+
+Model Response: ${modelAnswer}
+
+Does the model correctly identify the question as unanswerable? Answer yes or no only.`;
+  } else if (questionType === 'temporal-reasoning') {
+    user = `I will give you a question, a correct answer, and a response from a model. Please answer yes if the response contains the correct answer. Otherwise, answer no. If the response is equivalent to the correct answer or contains all the intermediate steps to get the correct answer, you should also answer yes. If the response only contains a subset of the information required by the answer, answer no. In addition, do not penalize off-by-one errors for the number of days. If the question asks for the number of days/weeks/months, etc., and the model makes off-by-one errors (e.g., predicting 19 days when the answer is 18), the model's response is still correct.
+
+Question: ${question}
+
+Correct Answer: ${ref}
+
+Model Response: ${modelAnswer}
+
+Is the model response correct? Answer yes or no only.`;
+  } else if (questionType === 'knowledge-update') {
+    user = `I will give you a question, a correct answer, and a response from a model. Please answer yes if the response contains the correct answer. Otherwise, answer no. If the response contains some previous information along with an updated answer, the response should be considered as correct as long as the updated answer is the required answer.
+
+Question: ${question}
+
+Correct Answer: ${ref}
+
+Model Response: ${modelAnswer}
+
+Is the model response correct? Answer yes or no only.`;
+  } else if (questionType === 'single-session-preference') {
+    user = `I will give you a question, a rubric for desired personalized response, and a response from a model. Please answer yes if the response satisfies the desired response. Otherwise, answer no. The model does not need to reflect all the points in the rubric. The response is correct as long as it recalls and utilizes the user's personal information correctly.
+
+Question: ${question}
+
+Rubric: ${ref}
+
+Model Response: ${modelAnswer}
+
+Is the model response correct? Answer yes or no only.`;
+  } else {
+    // single-session-user / single-session-assistant / multi-session
+    user = `I will give you a question, a correct answer, and a response from a model. Please answer yes if the response contains the correct answer. Otherwise, answer no. If the response is equivalent to the correct answer or contains all the intermediate steps to get the correct answer, you should also answer yes. If the response only contains a subset of the information required by the answer, answer no.
+
+Question: ${question}
+
+Correct Answer: ${ref}
+
+Model Response: ${modelAnswer}
+
+Is the model response correct? Answer yes or no only.`;
+  }
+
+  return { system: '', user };
 }
 
+/** Parse the official yes/no judge output. */
 export function parseJudgeScore(text: string): { score: number; reason: string } {
-  const json = (() => {
-    try {
-      const first = text.indexOf('{');
-      const last = text.lastIndexOf('}');
-      if (first !== -1 && last > first) return JSON.parse(text.slice(first, last + 1));
-    } catch {}
-    return null;
-  })();
-  if (json && typeof json.score === 'number') {
-    return { score: json.score === 1 ? 1 : 0, reason: json.reason ?? text };
+  const lower = text.toLowerCase().trim();
+  if (lower.startsWith('yes') || lower.includes(' answer yes ') || /^yes[.!]?$/.test(lower)) {
+    return { score: 1, reason: text.slice(0, 200) };
   }
-  // Fallback: look for a leading 1/0 or explicit true/false.
-  const m = text.match(/\b(?:score\s*[:=]\s*)?(1|0)\b/);
-  if (m) return { score: parseInt(m[1], 10), reason: text.slice(0, 200) };
+  if (lower.startsWith('no') || lower.includes(' answer no ') || /^no[.!]?$/.test(lower)) {
+    return { score: 0, reason: text.slice(0, 200) };
+  }
+  // Robust fallback: any "yes" (not preceded by "no") counts as yes, matching
+  // the official `'yes' in eval_response.lower()` check.
+  if (lower.includes('yes')) return { score: 1, reason: text.slice(0, 200) };
   return { score: 0, reason: `Unparseable judge output: ${text.slice(0, 200)}` };
 }
