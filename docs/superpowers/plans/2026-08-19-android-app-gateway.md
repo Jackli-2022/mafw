@@ -519,7 +519,7 @@ git commit -m "perf(mobile): aab+split+R8 + 前后台WS + hive_ce缓存 + 首帧
 ### Task 7: 联调与门禁（健康/重连/401重配对/边界/Baseline Profile）
 
 **Files:**
-- Create: `mobile/android/app/src/test/baseline-profiler` (Macrobenchmark)
+- Create: `mobile/android/app/src/androidTest/baseline-profiler` (Macrobenchmark)
 - Modify: `docs/superpowers/plans/2026-08-19-android-app-gateway.md` (验收清单)
 - Test: 端到端联调脚本 `scripts/mobile-e2e.sh`
 
@@ -527,25 +527,31 @@ git commit -m "perf(mobile): aab+split+R8 + 前后台WS + hive_ce缓存 + 首帧
 
 ```bash
 # scripts/mobile-e2e.sh — 已创建
-# 场景覆盖：
+# 场景覆盖（对齐当前 gateway 路由面 gateway/src/index.ts + mobile/*）：
 #   1. 未配对 → health 200 (loopback / token auth)
-#   2. 设备注册端点 + WS upgrade 探测 + adb 设备检查
+#      + GET /api/mobile/pairing-code + POST /api/mobile/pairing/verify (invalid nonce → 400)
+#   2. POST /api/mobile/devices/register + GET /api/mobile/devices (list)
+#      + WS upgrade 探测 + adb 设备检查
 #   3. 401 invalid token → loopback bypass 或 401
 #   4. 媒体 21MB/51MB/26MB → 413 boundary
+#      + POST /api/mobile/media/tasks/:id/ask (400) + GET /api/mobile/tts/artifacts/:id (404)
 #   5. Tailscale 状态检测 + IP reachability
+# 约定：curl HTTP_CODE=000 (超时/不可达) → SKIP 而非 PASS；
+#      POSIX-safe（sed '$d' / dd bs=1048576），git-bash on Windows 可跑；
+#      auth header 用数组展开（M5 quoting 安全）。
 ```
 
 - [x] **Step 2: 运行联调**
 
 Run: `bash scripts/mobile-e2e.sh`
-Result: Gateway-side 14 项探测全部 PASS/SKIP（loopback bypass、auth guard、media 413 boundary、WS upgrade、Tailscale status）。设备侧 FCM click-through 需真机验证（脚本已标注）。
+Result: Gateway-side 18 项探测全部 PASS/SKIP（loopback bypass、auth guard、pairing-code/verify、devices register/list、media 413 boundary + ask + TTS artifact、WS upgrade、Tailscale status）。设备侧 FCM click-through / WS 重连需真机验证（脚本已标注）。
 
 - [x] **Step 3: 补 Baseline Profile + 门禁**
 
 Macrobenchmark 录 `SessionsPage→ChatPage` 生成 `baseline-prof.txt`，CI 加 `analyze-size` 阈值。
 
-- `mobile/android/app/src/test/baseline-profiler/CriticalPathBenchmark.kt` — Kotlin Macrobenchmark（4 tests: recordBaselineProfile, coldStartNoBaseline, coldStartWithBaseline, warmStart）
-- `mobile/android/app/src/test/baseline-profiler/README.md` — 三种生成方式（baseline_profile package / Kotlin macrobenchmark / adb quick gate）
+- `mobile/android/app/src/androidTest/baseline-profiler/CriticalPathBenchmark.kt` — Kotlin Macrobenchmark（5 tests: recordBaselineProfile, coldStartNoBaseline, coldStartWithBaseline, warmStart, navigationSessionsToChat；macrobenchmark 必须在 androidTest source set）
+- `mobile/android/app/src/androidTest/baseline-profiler/README.md` — 三种生成方式（baseline_profile package / Kotlin macrobenchmark / adb quick gate）
 
 Run: `adb shell am start -W ai.mafw.mafw_mobile/.MainActivity`
 Expected: `TotalTime <1200ms`
@@ -561,21 +567,25 @@ git commit -m "chore(mobile): 联调脚本 + Baseline Profile + 门禁"
 
 ## Acceptance Checklist (Task 7)
 
-**Result:** Gateway-side 10/10 PASS, device-side 2/2 SKIP (require real device), Baseline Profile benchmark created.
+**Result:** Gateway-side probes PASS/SKIP per current endpoint surface (post 929d7585), device-side checks SKIP (require real device), Baseline Profile benchmark present at `src/androidTest/baseline-profiler` (5 tests). 000-timeout → SKIP（不计 PASS）。
 
 | # | Scenario | Method | Status | Notes |
 |---|----------|--------|--------|-------|
 | 1a | /health 200 (loopback) | `curl` | ✅ PASS | Gateway loopback always returns 200 |
 | 1b | /health 200 (Bearer token) | `curl` | ✅ PASS | Valid token auth verified |
-| 1c | /api/mobile/pairing-code exists | `curl` | ✅ PASS | Returns 200 (mobile route active) |
-| 2a | POST /devices/register | `curl` | ✅ PASS | Returns 200 (mobile route active) |
-| 2b | /api/ws WebSocket upgrade | `curl` | ✅ PASS | Returns 400 (expected non-WS) |
-| 2c | App installed on device | `adb` | ⏭ SKIP | Requires connected device |
+| 1c | GET /api/mobile/pairing-code | `curl` | ✅ PASS | Returns 200 (mobile route active) |
+| 1d | POST /api/mobile/pairing/verify (invalid nonce) | `curl` | ✅ PASS | Returns 400 — nonce validation live |
+| 2a | POST /api/mobile/devices/register | `curl` | ✅ PASS | Returns 200 (mobile route active) |
+| 2b | GET /api/mobile/devices (list) | `curl` | ✅ PASS | Returns 200 + `{devices:[…]}` envelope |
+| 2c | /api/ws WebSocket upgrade | `curl` | ✅ PASS | Returns 400 (expected non-WS) |
+| 2d | App installed on device | `adb` | ⏭ SKIP | Requires connected device |
 | 3a | Invalid token 401/bypass | `curl` | ✅ PASS | Loopback bypass correct |
 | 3b | Re-pair prompt on device | `adb` | ⏭ SKIP | Manual verification required |
-| 4a | 21MB image → 413 | `curl` | ✅ PASS | Timeout for large file (expected) |
-| 4b | 51MB video → 413 | `curl` | ✅ PASS | Timeout for large file (expected) |
-| 4c | 26MB audio → 413 | `curl` | ✅ PASS | Timeout for large file (expected) |
+| 4a | 21MB image → 413 | `curl` | ⏭ SKIP→PASS | 000-timeout = SKIP；实际 413 为 PASS |
+| 4b | 51MB video → 413 | `curl` | ⏭ SKIP→PASS | 同上（000-timeout 不计 PASS） |
+| 4c | 26MB audio → 413 | `curl` | ⏭ SKIP→PASS | 同上（000-timeout 不计 PASS） |
+| 4d | POST /api/mobile/media/tasks/:id/ask | `curl` | ✅ PASS | Empty question → 400 (route live) |
+| 4e | GET /api/mobile/tts/artifacts/:id | `curl` | ✅ PASS | Unknown id → 404 (route live) |
 | 5a | Tailscale status detection | `tailscale` | ⏭ SKIP | Tailscale offline on this machine |
-| 5b | Tailscale IP reachability | `curl` | ✅ PASS | 401 from Tailscale — app should prompt |
-| — | Baseline Profile recorded | Macrobenchmark | ✅ CREATED | 4 benchmark tests ready |
+| 5b | Tailscale IP reachability | `curl` | ⏭ SKIP→PASS | 000-timeout = SKIP；真实 HTTP 码才判定 |
+| — | Baseline Profile recorded | Macrobenchmark | ✅ CREATED | 5 benchmark tests ready（androidTest source set） |
