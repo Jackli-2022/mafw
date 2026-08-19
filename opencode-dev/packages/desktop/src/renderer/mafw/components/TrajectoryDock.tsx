@@ -63,16 +63,16 @@ export function TrajectoryDock(props: {
     const filtered = live.filter((e: any) => (e.sessionID || e.session_id) === sid)
     if (filtered.length === 0) return
     setState("events", (prev: any[]) => {
-      const seen = new Set(prev.map((e: any) => `${e.turnID ?? e.turn_id}:${e.seq}`))
+      const seen = new Set(prev.map((e: any) => `${e.turnID ?? e.turn_id ?? 0}:${e.seq}`))
       const merged = [...prev]
       for (const e of filtered) {
-        const key = `${e.turnID ?? e.turn_id ?? 0}:${e.seq ?? '?' }`
+        const key = `${e.turnID ?? e.turn_id ?? 0}:${e.seq ?? 0}`
         if (!seen.has(key)) {
           merged.push(e)
           seen.add(key)
         }
       }
-      return merged.sort((a: any, b: any) => (a.turnID ?? a.turn_id) - (b.turnID ?? b.turn_id) || (a.seq ?? 0) - (b.seq ?? 0))
+      return merged.sort((a: any, b: any) => (a.turnID ?? a.turn_id ?? 0) - (b.turnID ?? b.turn_id ?? 0) || (a.seq ?? 0) - (b.seq ?? 0))
     })
   })
 

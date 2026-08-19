@@ -976,18 +976,17 @@ export function MafwShell() {
       }
 
       if (event.type === "trajectory.event") {
+        if (!sid) return
         const props = (event as any).properties || (raw as any).data?.properties || {}
-        if (!(props.sessionID || props.session_id || (props as any).turnID !== undefined || (props as any).turn_id !== undefined)) {
-          // trajectory.event 的 properties 就是 TrajectoryEvent，sessionID 在外层 sid 也有
-        }
         const prev = trajectoryLive()[sid] || []
-        // dedup by (turnID, seq)
-        if (!prev.some((e: any) => (e.turnID ?? e.turn_id) === (props.turnID ?? props.turn_id) && e.seq === props.seq)) {
+        // dedup by (turnID, seq); seq may be number or string across sources
+        if (!prev.some((e: any) => String(e.turnID ?? e.turn_id ?? 0) === String(props.turnID ?? props.turn_id ?? 0) && String(e.seq ?? 0) === String(props.seq ?? 0))) {
           setTrajectoryLive({ ...trajectoryLive(), [sid]: [...prev, props] })
         }
         return
       }
       if (event.type === "trajectory.turn") {
+        if (!sid) return
         const props = (event as any).properties || {}
         setTrajectoryTurnLive({ ...trajectoryTurnLive(), [sid]: props })
         return
