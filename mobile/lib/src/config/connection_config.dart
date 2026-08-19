@@ -11,10 +11,9 @@ class ConnectionConfig {
 
   String get normalizedBaseUrl => baseUrl.replaceAll(RegExp(r'/+$'), '');
 
-  String get wsUrl => normalizedBaseUrl
+  String get wsUrl => '${normalizedBaseUrl
       .replaceFirst('https://', 'wss://')
-      .replaceFirst('http://', 'ws://') +
-      '/api/ws';
+      .replaceFirst('http://', 'ws://')}/api/ws';
 
   Map<String, String> get headers => {
         'Content-Type': 'application/json',
