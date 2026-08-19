@@ -186,4 +186,69 @@ describe('Harmonic memory quality improvements (A1/A2/B4/B5/C)', () => {
       expect(entry!.cue_anchors).toEqual(['route', 'regex']);
     });
   });
+
+  describe('merged_from propagation (regression)', () => {
+    it('should write merged_from to index entry after MinHash merge', async () => {
+      const store = new HarmonicUnitFileStore(tmpDir);
+      const base = 'test knowledge module about react hooks and state management';
+      const similar = 'test knowledge module about react hooks and state management patterns';
+      const anchors = ['react', 'hooks', 'state'];
+
+      // Write two similar units — second should merge first
+      await store.write(unit('mem_src', base, anchors, 0.8, 1), undefined, { skipMerge: false });
+      await store.write(unit('mem_new', similar, anchors, 0.8, 1), undefined, { skipMerge: false });
+
+      const idx = store.indexManager_().getIndex();
+      const srcEntry = idx.entries.find(e => e.id === 'mem_src');
+      const newEntry = idx.entries.find(e => e.id === 'mem_new');
+
+      // Source should be superseded
+      expect(srcEntry!.superseded_by).toBe('mem_new');
+      // New entry should have merged_from recorded in index
+      expect(newEntry!.merged_from).toBeDefined();
+      expect(newEntry!.merged_from).toContain('mem_src');
+      // A2 penalty should apply: score multiplier = 0.8 when merged_from is non-empty
+      expect(newEntry!.merged_from!.length).toBeGreaterThan(0);
+    });
+
+    it('should read merged_from from OKF and backfill to index', async () => {
+      const store = new HarmonicUnitFileStore(tmpDir);
+      const base = 'test knowledge module about react hooks and state management';
+      const similar = 'test knowledge module about react hooks and state management patterns';
+      const anchors = ['react', 'hooks', 'state'];
+
+      await store.write(unit('mem_src2', base, anchors, 0.8, 1), undefined, { skipMerge: false });
+      await store.write(unit('mem_new2', similar, anchors, 0.8, 1), undefined, { skipMerge: false });
+
+      // Simulate old index without merged_from (delete and reload from OKF)
+      const idx = store.indexManager_().getIndex();
+      const entry = idx.entries.find(e => e.id === 'mem_new2');
+      const savedMergedFrom = entry!.merged_from;
+      delete (entry as any).merged_from;
+      store.indexManager_().save();
+
+      // Reload index from disk
+      const store2 = new HarmonicUnitFileStore(tmpDir);
+      const idx2 = store2.indexManager_().getIndex();
+      const reloaded = idx2.entries.find(e => e.id === 'mem_new2');
+      // After reload, merged_from is missing (old index format)
+      expect(reloaded!.merged_from).toBeUndefined();
+
+      // Backfill: read OKF and patch index
+      const okfPath = path.join(tmpDir, (entry as any).filePath);
+      const fs = require('fs');
+      const content = fs.readFileSync(okfPath, 'utf8');
+      const match = content.match(/^merged_from:\s*\n((?:\s+-\s+.+\n?)*)/m);
+      if (match) {
+        const ids = match[1].split('\n').filter((l: string) => l.trim().startsWith('-')).map((l: string) => l.replace(/^\s*-\s+/, '').trim());
+        reloaded!.merged_from = ids;
+        store2.indexManager_().save();
+      }
+
+      const store3 = new HarmonicUnitFileStore(tmpDir);
+      const idx3 = store3.indexManager_().getIndex();
+      const final = idx3.entries.find(e => e.id === 'mem_new2');
+      expect(final!.merged_from).toEqual(savedMergedFrom);
+    });
+  });
 });
