@@ -27,12 +27,17 @@ export class HarmonicIndexManager {
   private indexPath: string;
   private index: HarmonicIndex;
   private hookManager: HookManagerLike | null;
+  private anchorGraphStore: import('../../graph/anchor-graph-store').AnchorGraphStore | null = null;
 
   constructor(baseDir: string, hookManager?: HookManagerLike | null) {
     const memoryDir = path.join(baseDir, 'memory');
     this.indexPath = path.join(memoryDir, '.harmonic_index.json');
     this.index = this.load();
     this.hookManager = hookManager || null;
+  }
+
+  setAnchorGraphStore(store: import('../../graph/anchor-graph-store').AnchorGraphStore | null): void {
+    this.anchorGraphStore = store;
   }
 
   private load(): HarmonicIndex {

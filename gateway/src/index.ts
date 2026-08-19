@@ -239,6 +239,7 @@ class MafwScheduler {
   private pairingService?: PairingService;
   private mafwDir!: string;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
+  private anchorGraphStore: import('./graph/anchor-graph-store').AnchorGraphStore | null = null;
   private trajectoryCollector: import('./trajectory/collector').TrajectoryCollector | null = null;
 
   // Manager sessions live in the gateway DB (kv_store scope=manager-session);
@@ -1224,6 +1225,19 @@ class MafwScheduler {
       log.info('[Trajectory] store initialized');
     } catch (err: any) {
       log.warn(`[Trajectory] init failed (non-fatal): ${err.message}`);
+    }
+
+    // Anchor graph for multi-hop retrieval (SQLite-backed, write-path synced).
+    try {
+      const { AnchorGraphStore } = require('./graph/anchor-graph-store');
+      const anchorStore = new AnchorGraphStore(this.getGatewayDb());
+      const index = this.memoryService?.harmonicIndex?.getIndex();
+      anchorStore.rebuild(index ?? { entries: [] });
+      this.anchorGraphStore = anchorStore;
+      this.memoryService?.harmonicIndex?.setAnchorGraphStore(anchorStore);
+      log.info('[AnchorGraph] store initialized & rebuilt');
+    } catch (err: any) {
+      log.warn(`[AnchorGraph] init failed (non-fatal): ${err.message}`);
     }
 
     const enableLegacy = process.env[config.env.enableLegacyMcp] === "true";

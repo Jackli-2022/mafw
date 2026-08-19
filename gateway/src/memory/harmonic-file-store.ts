@@ -18,14 +18,20 @@ export class HarmonicUnitFileStore {
   private writeQueue: WriteQueue;
   private anchorGraph: AnchorGraph;
   private minHashMerger: MinHashMerger;
+  private anchorGraphStore: import('../graph/anchor-graph-store').AnchorGraphStore | undefined;
 
-  constructor(private baseDir: string, indexManager?: HarmonicIndexManager) {
+  constructor(
+    private baseDir: string,
+    indexManager?: HarmonicIndexManager,
+    anchorGraphStore?: import('../graph/anchor-graph-store').AnchorGraphStore,
+  ) {
     this.indexManager = indexManager || new HarmonicIndexManager(baseDir);
     this.graphManager = new CognitiveGraphManager(baseDir);
     this.eventLog = new EventLog(baseDir);
     this.writeQueue = new WriteQueue();
     this.anchorGraph = new AnchorGraph();
     this.minHashMerger = new MinHashMerger();
+    this.anchorGraphStore = anchorGraphStore;
   }
 
   async write(unit: HarmonicUnit, tier?: string, opts?: { skipMerge?: boolean }): Promise<string> {
@@ -75,6 +81,11 @@ export class HarmonicUnitFileStore {
         filePath: path.join('memory', getOKFDirectory(targetUnit), fileName).replace(/\\/g, '/'),
         source_session_id: targetUnit.source_session_id,
       } as any, entryTier);
+
+      // 锚点图（多跳检索）增量更新——失败不影响记忆写入（降级）
+      try {
+        this.anchorGraphStore?.upsertUnit(targetUnit.id, targetUnit.cue_anchors ?? []);
+      } catch { /* non-fatal */ }
 
       const linkRegex = /\[\[([^\]]+)\]\]/g;
       let match: RegExpExecArray | null;
@@ -145,6 +156,7 @@ export class HarmonicUnitFileStore {
     entry.energy = unit.energy;
     (entry as any).superseded_by = byId;
     this.indexManager.save();
+    try { this.anchorGraphStore?.removeUnit(id); } catch { /* non-fatal */ }
     return true;
   }
 
@@ -160,6 +172,7 @@ export class HarmonicUnitFileStore {
       if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
     }
     this.indexManager.removeEntry(id);
+    try { this.anchorGraphStore?.removeUnit(id); } catch { /* non-fatal */ }
     return true;
   }
 
@@ -175,6 +188,7 @@ export class HarmonicUnitFileStore {
         if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
       }
       this.indexManager.removeEntry(id);
+      try { this.anchorGraphStore?.removeUnit(id); } catch { /* non-fatal */ }
     });
     return removed;
   }

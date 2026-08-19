@@ -252,3 +252,50 @@ describe('Harmonic memory quality improvements (A1/A2/B4/B5/C)', () => {
     });
   });
 });
+
+describe('anchor graph write-path integration', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-gw-'));
+    const memoryDir = path.join(tmpDir, 'memory');
+    fs.mkdirSync(memoryDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeStoreWithGraph(baseDir: string): { store: HarmonicUnitFileStore; graph: any; db: any } {
+    const { GatewayDatabase } = require('../../gateway/src/memory/gateway-db');
+    const { AnchorGraphStore } = require('../../gateway/src/graph/anchor-graph-store');
+    const db = new GatewayDatabase(path.join(baseDir, 'gw-graph.db'));
+    const graph = new AnchorGraphStore(db);
+    const store = new HarmonicUnitFileStore(baseDir, undefined, graph);
+    return { store, graph, db };
+  }
+
+  test('write() upserts anchor edges for the new unit', async () => {
+    const { store, db } = makeStoreWithGraph(tmpDir);
+    const u1 = { id: 'mem_g1', type: 'semantic', primary_abstraction: 'Project Orion timeline agreed by Dave', cue_anchors: ['project-orion', 'dave'], memory_value: 'v1', energy: 0.8, created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z' } as any;
+    await store.write(u1);
+    const u2 = { id: 'mem_g2', type: 'semantic', primary_abstraction: 'Dave works on prototype schedule', cue_anchors: ['project-orion', 'prototype'], memory_value: 'v2', energy: 0.8, created_at: '2025-01-02T00:00:00.000Z', updated_at: '2025-01-02T00:00:00.000Z' } as any;
+    await store.write(u2);
+    // 验证图里有边（u1↔u2 共享 project-orion）
+    const shared = (store as any).anchorGraphStore?.getSharedAnchors('mem_g1', 'mem_g2') ?? 0;
+    expect(shared).toBeGreaterThan(0);
+    db.close();
+  });
+
+  test('markSuperseded removes old unit from the graph', async () => {
+    const { store, db } = makeStoreWithGraph(tmpDir);
+    const u1 = { id: 'mem_s1', type: 'semantic', primary_abstraction: 'JWT auth config setup', cue_anchors: ['jwt'], memory_value: 'v1', energy: 0.7, created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z' } as any;
+    await store.write(u1);
+    const u2 = { id: 'mem_s2', type: 'semantic', primary_abstraction: 'JWT auth config setup updated', cue_anchors: ['jwt'], memory_value: 'v2', energy: 0.8, created_at: '2025-02-01T00:00:00.000Z', updated_at: '2025-02-01T00:00:00.000Z' } as any;
+    await store.write(u2); // 触发合并 → mem_s1 superseded + 移图
+    const idx = store.indexManager_().getIndex();
+    const oldEntry = idx.entries.find(e => e.id === 'mem_s1');
+    expect(oldEntry!.superseded_by).toBe('mem_s2');
+    db.close();
+  });
+});
