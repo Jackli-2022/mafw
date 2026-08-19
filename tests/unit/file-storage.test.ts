@@ -1,4 +1,4 @@
-import { FileStorage } from '../../src/storage/file-storage';
+import { FileStorage } from '../../gateway/src/core/storage/file-storage';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';

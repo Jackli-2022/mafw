@@ -1,4 +1,4 @@
-import { recordFeedback, ENERGY_DELTAS } from '../../src/tools/run-record-feedback';
+import { recordFeedback, ENERGY_DELTAS } from '../../gateway/src/core/tools/run-record-feedback';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';

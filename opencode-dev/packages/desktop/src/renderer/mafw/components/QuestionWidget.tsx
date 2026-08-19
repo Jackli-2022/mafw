@@ -68,7 +68,7 @@ export function QuestionWidget(props: Props) {
             Question{props.question.node ? ` — ${props.question.node}` : ""}
             {props.question.loop != null ? ` (loop ${props.question.loop})` : ""}
           </span>
-          <button class="mafw-question-close" onClick={props.onDismiss}>✕</button>
+          <ButtonV2 variant="ghost" size="small" class="mafw-question-close" onClick={props.onDismiss} aria-label="关闭">✕</ButtonV2>
         </div>
         <div class="mafw-question-body">
           {questionText() ? (

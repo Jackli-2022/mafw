@@ -1,9 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
+import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { eventBus } from "../../event-bus";
-
-const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 
 export const handleAskUser: ToolHandler = async (args) => {
   try {
@@ -13,10 +12,10 @@ export const handleAskUser: ToolHandler = async (args) => {
     const options = args.options as string[] | undefined;
     const priority = (args.priority as string) || "normal";
 
-    const questionDir = path.join(projectDir, ".mafw/user-questions", goalId);
+    const questionDir = path.join(config.resolvePath(), "user-questions");
     fs.mkdirSync(questionDir, { recursive: true });
 
-    const questionId = `${goalId}-q-${Date.now()}`;
+    const questionId = `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const questionFile = {
       id: questionId, goalId, loopNum, question, options, priority,
       status: "pending", createdAt: new Date().toISOString(),

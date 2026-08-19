@@ -719,3 +719,182 @@ git commit -m "feat(desktop): global scrollbar/selection/focus + motion + tabula
 - **Spec 覆盖**：主题机制（Task 1）、v2 作用域（Task 1 变量限定 .mafw-shell）、迁移（Task 2）、标题栏/导航（Task 3）、侧栏（Task 4）、会话 Tab/聊天/工具块（Task 5）、Tasks 悬浮 + 折叠状态 + Composer（Task 6）、全局 + nativeTheme + 双主题验收（Task 1 Step 3 + Task 7）。全部 spec 项有对应任务。✓
 - **占位符扫描**：无 TBD/TODO；工具块 DOM 选择器在 Step 4 标注"先 build 后对准真实结构"——这是实现指引而非占位（session-ui DOM 需运行时确认）。✓
 - **类型一致性**：`--accent/--on-accent/--text-1..5/--bg-*` 变量名在 Task 1 定义、Task 2-7 一致消费；`formatDuration`（TaskPanel 已有）在 Task 6 复用。✓
+
+---
+
+## 迭代补充（2026-08-03 晚，权威文档 v2 参照 `MAFW界面美化-开发文档 (1).md`）
+
+### 迭代范围决议（用户拍板，本轮收口视觉重构，功能接线让路）
+
+1. **`+` 附件 / `@` 引用 agent**：本轮**占位 toast "暂未实现"**（按钮有点击反馈，非死按钮）。下一轮单开"附件与引用"迭代：先补 attachment chip / agent 引用 chip 设计规格，再接 attachment-picker IPC。
+2. **模型选择 pill**：本轮**仅展示**，点击 toast 占位；显示**真实模型名**（从 store 推导：当前 turn 最后 assistant 消息的 `model.modelID`，回退 `agent`，再回退静态文案 "default"）——禁止写死假数据。完整选择菜单等模型列表数据源选型后另做。
+3. **Agent 头下缘**：**12px 渐变遮罩**（`linear-gradient(to bottom, var(--bg-raised), transparent)`），不用 backdrop-blur——渐变是静态图层滚动零成本；blur 在滚动时逐帧重采样是已知掉帧来源，且会让滚过的彩色元素在标题后糊成色团。backdrop-blur 留给弹层类组件。
+
+> 权威文档描述的是最终接线形态，不修改；本补充记录迭代范围决策。
+
+### Task 8: Composer 重写（§4.7 完整结构）
+
+**Files:**
+- Modify: `opencode-dev/packages/desktop/src/renderer/mafw/MafwShell.tsx`
+- Modify: `opencode-dev/packages/desktop/src/renderer/mafw/mafw.css`
+
+**Interfaces:**
+- Consumes: Task 1 变量（`--bg-float`、`--accent`、`--on-accent`、`--composer-focus/halo`、`--text-1..5`、`--hover-strong`）、`gwStatus`（MafwShell 已有）、`sending`/`interrupt`（已有）、store 消息模型名推导。
+- Produces: inputbar 容器 = textarea + 44px 底部工具条（`+`/`@` 占位、模型 pill、Send ↑ / ■ 停止）。
+
+- [ ] **Step 1: MafwShell inputbar 重构**
+
+结构（替换当前 `.mafw-inputbar` 内的 TextareaV2 + keyhint + Send 区块）：
+
+```tsx
+<div class="mafw-inputbar">
+  <TextareaV2
+    value={input()}
+    onInput={e => { setInput(e.currentTarget.value); autoGrow(e.currentTarget) }}
+    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+    placeholder={gwStatus()?.state === "ready" ? "输入消息…" : "Reconnecting…"}
+    disabled={gwStatus()?.state !== "ready"}
+    class="mafw-input"
+  />
+  <span class="mafw-keyhint">Enter 发送 · Shift+Enter 换行</span>
+  <div class="mafw-composer-toolbar">
+    <div class="mafw-composer-left">
+      <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="附件">+</ButtonV2>
+      <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })} aria-label="引用 Agent">@</ButtonV2>
+    </div>
+    <div class="mafw-composer-right">
+      <button type="button" class="mafw-model-pill" onClick={() => showToastV2({ description: "暂未实现", duration: 2000 })}>{modelName()}<span class="mafw-model-chevron">▾</span></button>
+      <Show when={sending()} fallback={
+        <button type="button" class="mafw-send" classList={{ "mafw-send-disabled": !input().trim() }} onClick={sendMessage} aria-label="发送" disabled={!input().trim()}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 11.5V2.5M3 6.5L7 2.5L11 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      }>
+        <button type="button" class="mafw-send" onClick={interrupt} aria-label="停止"><span class="mafw-stop-icon" /></button>
+      </Show>
+    </div>
+  </div>
+</div>
+```
+
+注意：`+`/`@` 用 ButtonV2 + TooltipV2（AGENTS.md §5.10），或裸 button 加 TooltipV2——本结构用裸 button 配 CSS 类（`.mafw-composer-icon`/`.mafw-model-pill`/`.mafw-send`），若 AGENTS.md 冲突则改 ButtonV2。模型名 memo：
+
+```tsx
+const modelName = createMemo(() => {
+  const sid = currentSessionID()
+  const msgs = sid ? (store.message[sid] || []) : []
+  const assistants = msgs.filter(m => m.role === "assistant")
+  const last = assistants[assistants.length - 1]
+  return last?.model?.modelID || last?.agent || "default"
+})
+```
+
+自动生长函数：
+
+```tsx
+const autoGrow = (el: HTMLTextAreaElement) => {
+  el.style.height = "auto"
+  el.style.height = Math.min(el.scrollHeight, 200) + "px"
+}
+```
+
+- [ ] **Step 2: mafw.css Composer 样式**
+
+```css
+.mafw-inputbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 16px 10px;
+  background: var(--bg-float);
+  border-top: 1px solid var(--border-subtle);
+}
+.mafw-inputbar:focus-within [data-component="textarea-v2"] {
+  outline-color: var(--composer-focus);
+  box-shadow: 0 0 0 3px var(--composer-halo);
+}
+.mafw-inputbar .mafw-input { flex: 1; width: auto; align-self: stretch; background: var(--bg-float); }
+.mafw-inputbar [data-slot="textarea-v2-textarea"] {
+  min-height: 52px; max-height: 200px;
+  font-size: 14px; line-height: 1.5; color: var(--text-1);
+  padding: 14px 16px 0; caret-color: var(--accent); outline: none; resize: none;
+}
+.mafw-composer-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 44px; padding: 0 10px 10px;
+}
+.mafw-composer-left, .mafw-composer-right { display: flex; align-items: center; gap: 8px; }
+.mafw-composer-icon {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-4); font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.mafw-composer-icon:hover { background: var(--hover-strong); color: var(--text-2); }
+.mafw-model-pill {
+  height: 28px; border-radius: 8px; padding: 0 10px;
+  background: var(--bg-overlay); border: none; cursor: pointer;
+  color: var(--text-3); font-size: 12px;
+  display: flex; align-items: center; gap: 4px;
+  transition: color 0.12s;
+}
+.mafw-model-pill:hover { color: var(--text-2); }
+.mafw-model-chevron { font-size: 9px; opacity: 0.6; }
+.mafw-send {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--accent); color: var(--on-accent);
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: filter 0.12s;
+}
+.mafw-send:hover:not(.mafw-send-disabled) { filter: brightness(1.05); }
+.mafw-send-disabled { opacity: 0.4; cursor: default; }
+.mafw-stop-icon { width: 10px; height: 10px; background: currentColor; border-radius: 2px; }
+```
+
+- [ ] **Step 3: 排队发送 + Reconnecting**
+
+- 去掉 `disabled={sending()}`（textarea 运行中不禁用，仍可输入）
+- `disabled={gwStatus()?.state !== "ready"}` + placeholder "Reconnecting…"
+- `sending()` 时 Send → ■ 停止键（保留 interrupt）
+
+- [ ] **Step 4: 构建 + Commit**
+
+Run: `cd opencode-dev/packages/desktop && npm run build`
+Expected: 通过。
+
+```bash
+git commit -am "feat(desktop): composer rewrite - toolbar, model pill, send arrow, queue-send, reconnecting"
+```
+
+### Task 9: Agent 头下缘渐变遮罩（§4.5）
+
+**Files:**
+- Modify: `opencode-dev/packages/desktop/src/renderer/mafw/mafw.css`
+
+**Interfaces:**
+- Consumes: Task 5 的 `.mafw-session-titlebar`。
+
+- [ ] **Step 1: 下缘渐变遮罩**
+
+`.mafw-session-titlebar` 的 `border-bottom: 1px solid var(--border-subtle)` 改为 12px 渐变遮罩：
+
+```css
+.mafw-session-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin: 0 -32px;
+  padding: 10px 32px 14px;
+  background: linear-gradient(to bottom, var(--bg-raised) calc(100% - 12px), transparent);
+}
+```
+
+（实底保留：`var(--bg-raised)` 占 100%-12px，底部 12px 渐变到透明，滚动时消息从下方淡入而非硬切。）
+
+- [ ] **Step 2: 构建 + Commit**
+
+Run: `cd opencode-dev/packages/desktop && npm run build`
+```bash
+git commit -am "feat(desktop): agent header bottom gradient mask"
+```

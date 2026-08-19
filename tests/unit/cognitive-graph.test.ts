@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { CognitiveGraphManager } from '../../src/memory/cognitive-graph';
+import { CognitiveGraphManager } from '../../gateway/src/core/memory/cognitive-graph';
 
 describe('CognitiveGraphManager', () => {
   let tmpDir: string;

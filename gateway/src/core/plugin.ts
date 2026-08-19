@@ -27,6 +27,13 @@ import { T1Store } from './memory/t1-store';
 import { CompressionPipeline } from './compression/compression-pipeline';
 import { T1ToT2Compressor } from './memory/t1-to-t2-compressor';
 import { ObservationService } from './memory/observation-service';
+import { renderMemoryBlocks } from '../recall/inject-format';
+import { TtlMap } from '../recall/ttl-map';
+
+// First-turn injection dedup: keyed by the first-user message ID (globally
+// unique), so each user message gets memory blocks injected exactly once —
+// tool-call rounds re-present the same firstUser and must not re-inject.
+const injectedFirstUser = new TtlMap<string, string>(24 * 60 * 60 * 1000);
 
 
 /**
@@ -535,6 +542,14 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       const firstUser = messages.find((m: any) => m.info?.role === 'user');
       if (!firstUser?.parts?.[0]?.text) return;
 
+      // First-turn-only dedup: real messages always carry info.id; without one
+      // (tests / degraded payloads) we still inject but skip dedup.
+      const firstUserId = firstUser?.info?.id as string | undefined;
+      if (firstUserId) {
+        if (injectedFirstUser.has(firstUserId)) return;
+        injectedFirstUser.set(firstUserId, '1');
+      }
+
       const text = firstUser.parts[0].text;
 
       // 瑙ｆ瀽 goalId 锟?phase
@@ -596,40 +611,27 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           episodic: hybridResults!.episodic || []
         }, 2000);
 
-        if (allocated.parametric.length > 0) {
-          parts.push('<mafw-deltas>',
-            ...allocated.parametric.map((d: any) => `[${d.type || 'constraint'}] ${d.content || d.rule || ''}`),
-            '</mafw-deltas>');
-        }
-        if (allocated.procedural.length > 0) {
-          parts.push('<mafw-patterns>',
-            ...allocated.procedural.map((p: any) => `[${((p.successRate || 0) * 100).toFixed(0)}%] ${p.pattern || ''}`),
-            '</mafw-patterns>');
-        }
-        if (allocated.semantic.length > 0) {
-          parts.push('<mafw-facts>',
-            ...allocated.semantic.map((s: any) => `锟?${(s.facts || []).join('; ')}`),
-            '</mafw-facts>');
-        }
-        if (allocated.episodic.length > 0) {
-          parts.push('<mafw-history>',
-            ...allocated.episodic.map((e: any) => `Loop ${e.loopNum || '?'}: ${e.verdict || '?'} 锟?${e.summary || e.content || ''}`),
-            '</mafw-history>');
-        }
+        const blocks = renderMemoryBlocks([
+          ...allocated.parametric.map((d: any) => ({ source: 'parametric', type: d.type || 'constraint', content: d.content || d.rule || '' })),
+          ...allocated.procedural.map((p: any) => ({ source: 'procedural', type: 'pattern', pattern: p.pattern || '', successRate: p.successRate })),
+          ...allocated.semantic.map((s: any) => ({ source: 'semantic', type: 'fact', facts: s.facts || [] })),
+          ...allocated.episodic.map((e: any) => ({ source: 'episodic', type: 'history', summary: e.summary || e.content || '', verdict: e.verdict, loopNum: e.loopNum })),
+        ]);
+        parts.push(...blocks);
       } else {
         // Fall back to v4.1 simple injection
         if (deltas.length > 0) {
-          parts.push('<mafw-deltas>',
-            ...deltas.map((d: any) => `[螖 ${d.type}] ${d.id} (energy=${d.energy || 0.5}): ${(d as any).rule || (d as any).prompt_delta || (d as any).pattern_template || ''}`),
-            '</mafw-deltas>');
+          parts.push('<deltas>',
+            ...deltas.map((d: any) => `[Δ ${d.type}] ${d.id} (energy=${d.energy || 0.5}): ${(d as any).rule || (d as any).prompt_delta || (d as any).pattern_template || ''}`),
+            '</deltas>');
         }
         if (lessons.length > 0) {
-          parts.push('<mafw-lessons>',
+          parts.push('<lessons>',
             ...lessons.map((l: any) => `[Lesson] ${typeof l === 'string' ? l : l.content || ''}`),
-            '</mafw-lessons>');
+            '</lessons>');
         }
         if (waveContext) {
-          parts.push('<mafw-context>', waveContext, '</mafw-context>');
+          parts.push('<context>', waveContext, '</context>');
         }
       }
 

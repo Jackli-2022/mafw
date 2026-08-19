@@ -1,8 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
+import { config } from "../../config";
 import { ToolHandler } from "../../types";
-
-const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 
 export const handleGetDeltas: ToolHandler = async (args) => {
   try {
@@ -10,7 +9,7 @@ export const handleGetDeltas: ToolHandler = async (args) => {
     const agentType = args.agentType as string;
     const loopNum = (args.loopNum as number) || 1;
 
-    const parametricDir = path.join(projectDir, ".mafw/parametric");
+    const parametricDir = path.join(config.resolvePath(), "parametric");
     const deltas: any[] = [];
 
     if (fs.existsSync(parametricDir)) {

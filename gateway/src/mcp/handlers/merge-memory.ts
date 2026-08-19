@@ -6,8 +6,6 @@ import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store.js";
 import { MinHashMerger } from "../../core/memory/minhash-merger";
 import { generateHarmonicId } from "../../core/memory/harmonic-types";
 
-const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
-
 type ResolveStrategy = "manual" | "higher_energy" | "newer";
 
 export const handleMergeMemory: ToolHandler = async (args, { memory }) => {
@@ -19,7 +17,7 @@ export const handleMergeMemory: ToolHandler = async (args, { memory }) => {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: "sourceWorktree is required" }) }], isError: true };
     }
 
-    const targetMafwDir = path.join(projectDir, config.paths.mafwDir);
+    const targetMafwDir = config.resolvePath();
     const sourceMafwDir = path.join(sourceWorktree, config.paths.mafwDir);
 
     const targetStore = new HarmonicUnitFileStore(targetMafwDir);

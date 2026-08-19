@@ -13,7 +13,7 @@ import { LessonCompactor } from '../../compression/lesson-compactor';
 import { RemoteCliConnector } from '../../tools/remote-cli';
 
 /**
- * mafw-review Skill Entry 鈥?Review Agent锛堢嫭绔?Session锛?
+ * mafw-review Skill Entry —Review Agent锛堢嫭绔?Session锛?
  *
  * 銆愬叧閿€戠姸鎬佹洿鏂版槸涓昏矾寰勶紝鍐欏湪鍑芥暟鏈熬
  *

@@ -29,8 +29,10 @@ const dateGroupLabel = (ts: number): string => {
 type Props = {
   activeSessionId: string | null
   sessionRefreshKey: number
+  managerSessionId?: string | null
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSettings?: () => void
+  onToggleCollapsed?: () => void
 }
 
 export function Rail(props: Props) {
@@ -76,12 +78,15 @@ export function Rail(props: Props) {
     return p ? (p.worktree?.split(/[/\\]/).pop() || p.id) : "No project"
   })
 
+  // Only the authoritative per-project manager (from the gateway DB) is shown
+  // as a Manager row; orphan/stale role=manager sessions are hidden entirely.
   const managerSessions = createMemo(() => {
     const p = currentProject()
     const target = p ? (p.worktree || p.id || "") : ""
     const norm = (d: string) => d.replace(/\\/g, "/").toLowerCase().replace(/\/+$/, "")
     return sessions().filter(s => {
       if (s.metadata?.mafw?.role !== 'manager') return false
+      if (props.managerSessionId && s.id !== props.managerSessionId) return false
       if (!target) return true
       const dir = s.directory || s.projectID || ""
       return norm(dir) === norm(target)
@@ -157,90 +162,97 @@ export function Rail(props: Props) {
 
   return (
     <div class="mafw-rail">
-      <div class="mafw-rail-section" onClick={() => setExpanded(!expanded)}>
-        <Icon name="chevron-down" size="small" style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.12s" }} />
-        <Icon name="folder" size="small" />
-        <span>History</span>
-        <span class="mafw-rail-section-count">{sessions().filter(Boolean).length}</span>
-      </div>
-      {expanded && (
-        <div class="mafw-rail-tree">
-          <div class="mafw-rail-tree-item">
-            <div class="mafw-rail-item-label" style={{ "font-weight": 500 }}>
-              <Icon name="folder" size="small" />
-              {projectName()}
-            </div>
-            <div class="mafw-rail-subtree">
-              {(!Array.isArray(sessions()) || sessions().filter(Boolean).length === 0) ? (
-                <div class="mafw-rail-item-label mafw-rail-empty" style={{ opacity: 0.4 }}>
-                  No sessions yet
-                </div>
-              ) : (
-                <>
-                  {managerSessions().filter(Boolean).map(s => renderSessionRow(s, true))}
-                  {regularDateGroups() ? (
-                    regularDateGroups()!.map(g => (
-                      <>
-                        <div class="mafw-rail-date-group">{g.label}</div>
-                        {g.items.map(s => renderSessionRow(s, false))}
-                      </>
-                    ))
-                  ) : (
-                    sortedRegularSessions().slice(0, 50).map(s => renderSessionRow(s, false))
-                  )}
-                </>
-              )}
-              <div
-                class="mafw-rail-item-label mafw-rail-add"
-                onClick={async () => {
-                  try {
-                    const project = currentProject()
-                    const dir = project?.worktree || project?.id || "."
-                    const result = await window.api.mafw.sessions.create({ directory: dir }) as any
-                    props.onSelectSession(result.id || result.sessionID)
-                  } catch (e) { console.warn("[mafw]", e) }
-                }}
-              >
-                + new session
-              </div>
-            </div>
-          </div>
-          {projects().length > 1 && (
-            <div class="mafw-rail-project-list">
-              <div class="mafw-rail-item-label" style={{ "font-size": 11, opacity: 0.5, "margin-top": 8 }}>
-                All projects
-              </div>
-              {projects().map(p => (
-                <ContextMenu>
-                  <ContextMenu.Trigger
-                    as="div"
-                    class="mafw-rail-item-label mafw-rail-project-item"
-                    classList={{ active: currentProject()?.worktree === p.worktree }}
-                    onClick={() => selectProject(p)}
-                  >
-                    <Icon name="folder" size="small" />
-                    {p.worktree?.split(/[/\\]/).pop() || p.id}
-                  </ContextMenu.Trigger>
-                  <ContextMenu.Portal>
-                    <ContextMenu.Content>
-                      <ContextMenu.Item onSelect={() => selectProject(p)}>
-                        <ContextMenu.ItemLabel>Set as current</ContextMenu.ItemLabel>
-                      </ContextMenu.Item>
-                      <ContextMenu.Item onSelect={() => copyText(p.worktree || p.id)}>
-                        <ContextMenu.ItemLabel>Copy path</ContextMenu.ItemLabel>
-                      </ContextMenu.Item>
-                    </ContextMenu.Content>
-                  </ContextMenu.Portal>
-                </ContextMenu>
-              ))}
-            </div>
-          )}
+      <div class="mafw-rail-scroll">
+        <div class="mafw-rail-section" onClick={() => setExpanded(!expanded)}>
+          <Icon name="chevron-down" size="small" style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.12s" }} />
+          <Icon name="folder" size="small" />
+          <span>History</span>
+          <span class="mafw-rail-section-count">{sessions().filter(Boolean).length}</span>
         </div>
-      )}
-      <div class="mafw-rail-spacer" />
-      <div class="mafw-rail-settings-bar" onClick={() => props.onSettings?.()}>
-        <Icon name="settings-gear" size="small" />
-        <span>Settings</span>
+        {expanded && (
+          <div class="mafw-rail-tree">
+            <div class="mafw-rail-tree-item">
+              <div class="mafw-rail-item-label" style={{ "font-weight": 500 }}>
+                <Icon name="folder" size="small" />
+                {projectName()}
+              </div>
+              <div class="mafw-rail-subtree">
+                {(!Array.isArray(sessions()) || sessions().filter(Boolean).length === 0) ? (
+                  <div class="mafw-rail-item-label mafw-rail-empty" style={{ opacity: 0.4 }}>
+                    No sessions yet
+                  </div>
+                ) : (
+                  <>
+                    {managerSessions().filter(Boolean).map(s => renderSessionRow(s, true))}
+                    {regularDateGroups() ? (
+                      regularDateGroups()!.map(g => (
+                        <>
+                          <div class="mafw-rail-date-group">{g.label}</div>
+                          {g.items.map(s => renderSessionRow(s, false))}
+                        </>
+                      ))
+                    ) : (
+                      sortedRegularSessions().slice(0, 50).map(s => renderSessionRow(s, false))
+                    )}
+                  </>
+                )}
+                <div
+                  class="mafw-rail-item-label mafw-rail-add"
+                  onClick={async () => {
+                    try {
+                      const project = currentProject()
+                      const dir = project?.worktree || project?.id || "."
+                      const result = await window.api.mafw.sessions.create({ directory: dir }) as any
+                      props.onSelectSession(result.id || result.sessionID)
+                    } catch (e) { console.warn("[mafw]", e) }
+                  }}
+                >
+                  + new session
+                </div>
+              </div>
+            </div>
+            {projects().length > 1 && (
+              <div class="mafw-rail-project-list">
+                <div class="mafw-rail-item-label" style={{ "font-size": 11, opacity: 0.5, "margin-top": 8 }}>
+                  All projects
+                </div>
+                {projects().map(p => (
+                  <ContextMenu>
+                    <ContextMenu.Trigger
+                      as="div"
+                      class="mafw-rail-item-label mafw-rail-project-item"
+                      classList={{ active: currentProject()?.worktree === p.worktree }}
+                      onClick={() => selectProject(p)}
+                    >
+                      <Icon name="folder" size="small" />
+                      {p.worktree?.split(/[/\\]/).pop() || p.id}
+                    </ContextMenu.Trigger>
+                    <ContextMenu.Portal>
+                      <ContextMenu.Content>
+                        <ContextMenu.Item onSelect={() => selectProject(p)}>
+                          <ContextMenu.ItemLabel>Set as current</ContextMenu.ItemLabel>
+                        </ContextMenu.Item>
+                        <ContextMenu.Item onSelect={() => copyText(p.worktree || p.id)}>
+                          <ContextMenu.ItemLabel>Copy path</ContextMenu.ItemLabel>
+                        </ContextMenu.Item>
+                      </ContextMenu.Content>
+                    </ContextMenu.Portal>
+                  </ContextMenu>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div class="mafw-rail-footer">
+        <div class="mafw-rail-collapse-bar" onClick={() => props.onToggleCollapsed?.()}>
+          <span>◀</span>
+          <span>折叠侧边栏</span>
+        </div>
+        <div class="mafw-rail-settings-bar" onClick={() => props.onSettings?.()}>
+          <Icon name="settings-gear" size="small" />
+          <span>Settings</span>
+        </div>
       </div>
     </div>
   )

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { WaveDigest } from '../types/compression';
 
 /**
- * Wave Executor 鈥?Wave 璋冨害 + Task 骞惰鎵ц鍣?(v2.1)
+ * Wave Executor —Wave 璋冨害 + Task 骞惰鎵ц鍣?(v2.1)
  *
  * 鎸?Goal 闅旂锛氭墍鏈?Wave/Task 鍦ㄥ悓涓€涓?Goal 鍒嗘敮涓婃墽琛屻€?
  * 涓嶅啀涓烘瘡涓?Task 鍒涘缓鐙珛鍒嗘敮銆?

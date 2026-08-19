@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { HarmonicUnitFileStore } from '../../../gateway/src/memory/harmonic-file-store';
-import { HarmonicUnit } from '../../../src/memory/harmonic-types';
+import { HarmonicUnit } from '../../../gateway/src/core/memory/harmonic-types';
 
 function makeUnit(overrides: Partial<HarmonicUnit> = {}): HarmonicUnit {
   const now = new Date().toISOString();

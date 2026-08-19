@@ -29,6 +29,9 @@ function createScheduler(): MafwSchedulerType {
     registeredAt: new Date().toISOString()
   });
   (scheduler as any).createPhaseSession = async () => {};
+  // handleValidate schedules onGoalCreated via setImmediate; stub it so the
+  // real langgraph plan never runs inside the test process.
+  (scheduler as any).onGoalCreated = async () => {};
   return scheduler;
 }
 
@@ -42,7 +45,7 @@ function writeState(goalId: string, overrides: Record<string, any> = {}): string
     currentWave: 0,
     totalWaves: null,
     sessions: {},
-    nextAction: 'CREATE_PLAN_SESSION',
+    nextAction: 'GRAPH_INVOKED',
     artifacts: {},
     updatedAt: new Date().toISOString(),
     ...overrides
@@ -54,14 +57,14 @@ function writeState(goalId: string, overrides: Record<string, any> = {}): string
 
 // ── POST /api/work/{goalId}/validate ──
 
-test('handleValidate creates state file and returns CREATE_PLAN_SESSION', async () => {
+test('handleValidate creates state file and returns GRAPH_INVOKED', async () => {
   const scheduler = createScheduler();
   const result = await (scheduler as any).handleValidate('001-auth');
 
   expect(result).toEqual({
     success: true,
     goalId: '001-auth',
-    nextAction: 'CREATE_PLAN_SESSION'
+    nextAction: 'GRAPH_INVOKED'
   });
 
   const statePath = path.join(mafwDir, 'state', '001-auth.json');
@@ -70,7 +73,7 @@ test('handleValidate creates state file and returns CREATE_PLAN_SESSION', async 
   const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
   expect(state.goalId).toBe('001-auth');
   expect(state.phase).toBe('PLANNING');
-  expect(state.nextAction).toBe('CREATE_PLAN_SESSION');
+  expect(state.nextAction).toBe('GRAPH_INVOKED');
   expect(state.loop).toBe(1);
 
   expect((scheduler as any).activeGoals.has('001-auth')).toBe(true);
@@ -98,7 +101,7 @@ test('handleValidate uses specified projectDir from body', async () => {
   const scheduler = createScheduler();
   const result = await (scheduler as any).handleValidate('001-auth', { projectDir });
 
-  expect(result.nextAction).toBe('CREATE_PLAN_SESSION');
+  expect(result.nextAction).toBe('GRAPH_INVOKED');
   const statePath = path.join(mafwDir, 'state', '001-auth.json');
   expect(fs.existsSync(statePath)).toBe(true);
 });
@@ -112,129 +115,33 @@ test('handleValidate writes atomically (no .tmp file remains)', async () => {
 });
 
 // ── POST /api/work/{goalId}/complete ──
+// handleComplete is a scheduling signal: it returns SCHEDULED and lets the
+// event-driven state machine (onEvent) drive phase transitions.
 
-test('handleComplete transitions PLANNING �?EXECUTING', async () => {
+test('handleComplete returns SCHEDULED and schedules onEvent', async () => {
   writeState('001-auth', { phase: 'PLANNING', nextAction: 'WAIT_PHASE_COMPLETE' });
   const scheduler = createScheduler();
-
+  const onEventSpy = jest.spyOn(scheduler as any, 'onEvent').mockImplementation(() => {});
   const result = await (scheduler as any).handleComplete('001-auth');
-
-  expect(result).toEqual({
-    success: true,
-    nextAction: 'CREATE_EXECUTE_SESSION',
-    phase: 'EXECUTING'
-  });
-
-  const state = JSON.parse(fs.readFileSync(path.join(mafwDir, 'state', '001-auth.json'), 'utf-8'));
-  expect(state.phase).toBe('EXECUTING');
-  expect(state.nextAction).toBe('CREATE_EXECUTE_SESSION');
+  await new Promise(r => setTimeout(r, 10)); // setImmediate dispatch
+  expect(result).toEqual({ success: true, nextAction: 'SCHEDULED' });
+  expect(onEventSpy).toHaveBeenCalledWith('001-auth');
+  onEventSpy.mockRestore();
 });
 
-test('handleComplete transitions EXECUTING �?REVIEWING', async () => {
-  writeState('001-auth', { phase: 'EXECUTING', nextAction: 'WAIT_PHASE_COMPLETE' });
-  const scheduler = createScheduler();
-
-  const result = await (scheduler as any).handleComplete('001-auth');
-
-  expect(result).toEqual({
-    success: true,
-    nextAction: 'CREATE_REVIEW_SESSION',
-    phase: 'REVIEWING'
-  });
-
-  const state = JSON.parse(fs.readFileSync(path.join(mafwDir, 'state', '001-auth.json'), 'utf-8'));
-  expect(state.phase).toBe('REVIEWING');
-  expect(state.nextAction).toBe('CREATE_REVIEW_SESSION');
-});
-
-test('handleComplete REVIEWING with score >= 85 archives the goal', async () => {
+test('handleComplete accepts optional score without side effects', async () => {
   writeState('001-auth', { phase: 'REVIEWING', nextAction: 'CHECK_VERDICT' });
   const scheduler = createScheduler();
-  (scheduler as any).loadArchiveModule = async () => ({
-    archiveWorktree: async () => {}
-  });
-
+  jest.spyOn(scheduler as any, 'onEvent').mockImplementation(() => {});
   const result = await (scheduler as any).handleComplete('001-auth', { score: 92 });
-
-  expect(result).toEqual({
-    success: true,
-    nextAction: 'COMPLETED',
-    phase: 'ARCHIVED'
-  });
-
-  const state = JSON.parse(fs.readFileSync(path.join(mafwDir, 'state', '001-auth.json'), 'utf-8'));
-  expect(state.phase).toBe('ARCHIVED');
-  expect(state.nextAction).toBe('COMPLETED');
+  expect(result).toEqual({ success: true, nextAction: 'SCHEDULED' });
 });
 
-test('handleComplete REVIEWING with score >= 60 retries EXECUTING', async () => {
-  writeState('001-auth', { phase: 'REVIEWING', nextAction: 'CHECK_VERDICT', loop: 1 });
+test('handleComplete does not modify the state file synchronously', async () => {
+  writeState('001-auth', { phase: 'PLANNING', nextAction: 'WAIT_PHASE_COMPLETE' });
   const scheduler = createScheduler();
-
-  const result = await (scheduler as any).handleComplete('001-auth', { score: 72 });
-
-  expect(result).toEqual({
-    success: true,
-    nextAction: 'CREATE_EXECUTE_SESSION',
-    phase: 'EXECUTING'
-  });
-
-  const state = JSON.parse(fs.readFileSync(path.join(mafwDir, 'state', '001-auth.json'), 'utf-8'));
-  expect(state.phase).toBe('EXECUTING');
-  expect(state.nextAction).toBe('CREATE_EXECUTE_SESSION');
-  expect(state.loop).toBe(1);
-});
-
-test('handleComplete REVIEWING with score < 60 starts new loop (PLANNING)', async () => {
-  writeState('001-auth', { phase: 'REVIEWING', nextAction: 'CHECK_VERDICT', loop: 1 });
-  const scheduler = createScheduler();
-
-  const result = await (scheduler as any).handleComplete('001-auth', { score: 45 });
-
-  expect(result).toEqual({
-    success: true,
-    nextAction: 'CREATE_PLAN_SESSION',
-    phase: 'PLANNING'
-  });
-
-  const state = JSON.parse(fs.readFileSync(path.join(mafwDir, 'state', '001-auth.json'), 'utf-8'));
-  expect(state.phase).toBe('PLANNING');
-  expect(state.nextAction).toBe('CREATE_PLAN_SESSION');
-  expect(state.loop).toBe(2);
-});
-
-test('handleComplete REVIEWING with no score defaults to new loop (PLANNING)', async () => {
-  writeState('001-auth', { phase: 'REVIEWING', nextAction: 'CHECK_VERDICT', loop: 1 });
-  const scheduler = createScheduler();
-
-  const result = await (scheduler as any).handleComplete('001-auth', {});
-
-  expect(result.phase).toBe('PLANNING');
-  expect(result.nextAction).toBe('CREATE_PLAN_SESSION');
-});
-
-test('handleComplete throws for unknown phase', async () => {
-  writeState('001-auth', { phase: 'ARCHIVED', nextAction: 'COMPLETED' });
-  const scheduler = createScheduler();
-
-  await expect(
-    (scheduler as any).handleComplete('001-auth')
-  ).rejects.toThrow('Unknown phase: ARCHIVED');
-});
-
-test('handleComplete throws for missing state file', async () => {
-  const scheduler = createScheduler();
-  await expect(
-    (scheduler as any).handleComplete('nonexistent')
-  ).rejects.toThrow('State not found for goal nonexistent');
-});
-
-test('handleComplete writes atomically (no .tmp file remains)', async () => {
-  writeState('001-auth', { phase: 'PLANNING' });
-  const scheduler = createScheduler();
-
+  jest.spyOn(scheduler as any, 'onEvent').mockImplementation(() => {});
   await (scheduler as any).handleComplete('001-auth');
-
-  const tmpPath = path.join(mafwDir, 'state', '001-auth.json.tmp');
-  expect(fs.existsSync(tmpPath)).toBe(false);
+  const state = JSON.parse(fs.readFileSync(path.join(mafwDir, 'state', '001-auth.json'), 'utf-8'));
+  expect(state.nextAction).toBe('WAIT_PHASE_COMPLETE');
 });

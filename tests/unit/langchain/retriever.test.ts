@@ -1,4 +1,4 @@
-import { MAFWRetriever, HarmonicIndexLike, HarmonicIndexEntryLike } from '../../../src/langchain/retriever';
+import { MAFWRetriever, HarmonicIndexLike, HarmonicIndexEntryLike } from '../../../gateway/src/core/langchain/retriever';
 import { Document } from '@langchain/core/documents';
 
 function makeEntry(overrides: Partial<HarmonicIndexEntryLike> = {}): HarmonicIndexEntryLike {

@@ -164,15 +164,17 @@ export function TaskBar(props: {
   })
   onCleanup(() => { if (hideTimer) clearTimeout(hideTimer) })
 
-  // No tasks → zero footprint.
-  if (total() === 0) return null
-  if (allDone() && allDoneHidden()) return null
+  // No tasks → zero footprint. NOTE: this must be REACTIVE (Show, not early
+  // return) — SolidJS component bodies run once; early returns never re-run
+  // when todos arrive later or allDoneHidden flips.
+  const visible = () => total() > 0 && !(allDone() && allDoneHidden())
 
   const current = () => running()[0] || [...props.todos].reverse().find(t => t.status === "completed")
   const elapsedMs = createMemo(() => (props.started ? Math.max(0, now() - props.started) : 0))
   const pct = () => (total() > 0 ? Math.round((done() / total()) * 100) : 0)
 
   return (
+    <Show when={visible()}>
     <button
       type="button"
       class="mafw-taskbar"
@@ -194,6 +196,7 @@ export function TaskBar(props: {
       </Show>
       <span class="mafw-taskbar-chevron" classList={{ open: props.open }}>▾</span>
     </button>
+    </Show>
   )
 }
 ```
@@ -478,6 +481,7 @@ export function TaskList(props: {
   started: number
   placement: "popover" | "dock" | "overlay"
   onClose: () => void
+  onPin: () => void
   }) {
   const total = () => props.todos.length
   const done = () => props.todos.filter(t => t.status === "completed").length

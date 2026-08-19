@@ -1,4 +1,4 @@
-import { hasKnowledgeSignal, extractPropositions, passQualityGate } from '../../src/memory/abstraction-distiller';
+import { hasKnowledgeSignal, extractPropositions, passQualityGate } from '../../gateway/src/core/memory/abstraction-distiller';
 
 test('detects pitfall signal', () => {
   expect(hasKnowledgeSignal('Error: timeout because connection pool exhausted')).toBe('pitfall');

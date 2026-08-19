@@ -19,6 +19,8 @@ export type AskCardData = {
   answers?: Record<string, string[]>
   customText?: Record<string, string>
   createdAt: number
+  /** The assistant message id whose tool call triggered this request. */
+  messageID?: string
 }
 
 const CUSTOM_ID = "__custom__"

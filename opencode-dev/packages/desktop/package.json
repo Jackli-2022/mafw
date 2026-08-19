@@ -24,6 +24,8 @@
   },
   "main": "./out/main/index.js",
   "dependencies": {
+    "@mafw/sdk": "workspace:*",
+    "@ricky0123/vad-web": "0.0.30",
     "@zip.js/zip.js": "2.7.62",
     "effect": "catalog:",
     "electron-context-menu": "4.1.2",
@@ -31,7 +33,6 @@
     "electron-store": "11.0.2",
     "electron-updater": "6.8.9",
     "electron-window-state": "^5.0.3",
-    "@mafw/sdk": "workspace:*",
     "marked": "^15"
   },
   "devDependencies": {

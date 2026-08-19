@@ -36,8 +36,8 @@ export class MemoryService {
     }
   }
 
-  search(query: string, topK?: number) {
-    return this.harmonicIndex.search(query, topK ?? config.search.defaultTopK);
+  search(query: string, topK?: number, options?: { retriever?: 'token' | 'bm25' }) {
+    return this.harmonicIndex.search(query, topK ?? config.search.defaultTopK, options);
   }
 
   /** Merged search: L3 parametric deltas + Harmonic Index, sorted by energy */

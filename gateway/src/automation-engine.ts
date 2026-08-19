@@ -55,13 +55,22 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
   const indexManager = new HarmonicIndexManager(engine.mafwDir);
   const index = indexManager.getIndex();
   const energySystem = new EnergySystem();
+  const now = Date.now();
   let decayed = 0;
   for (const entry of index.entries) {
     const salience = (entry as any).salience || 1.0;
-    const daysSinceUpdate = entry.energy > 0 ? 1 : 0;
-    const newEnergy = energySystem.calculateEnergy(entry.energy, { type: 'retrieved' }, daysSinceUpdate, salience, entry.id);
-    const diff = entry.energy - newEnergy;
-    if (diff > 0.005) { indexManager.updateEnergy(entry.id, -(diff)); decayed++; }
+    // Real elapsed days since the memory was created (entry.created_at is the
+    // best available signal; updated_at is not stored on index entries).
+    const created = new Date(entry.created_at || 0).getTime();
+    const daysSinceUpdate = created > 0 ? Math.max(0, (now - created) / (24 * 60 * 60 * 1000)) : 0;
+    // Pure time decay — no event bonus. The `retrieved` bonus belongs to real
+    // recall paths (search), not to the background decay pass.
+    const decayedEnergy = energySystem.decay(entry.energy, daysSinceUpdate, salience);
+    const diff = entry.energy - decayedEnergy;
+    if (diff > 0.005) {
+      indexManager.updateEnergy(entry.id, -(diff));
+      decayed++;
+    }
   }
   log.info(`[AutomationEngine] Energy decay applied to ${decayed} entries`);
 });
@@ -175,6 +184,17 @@ export class AutomationEngine {
     log.info(`[AutomationEngine] Loaded ${this.rules.size} automation rules`);
   }
 
+  // Hot-reload: stop() cancels future cron triggers and event listeners while
+  // in-flight handlers run to completion (Node is single-threaded), then rules
+  // are rebuilt from disk and rescheduled.
+  reloadRules(): void {
+    this.stop();
+    this.rules.clear();
+    this.loadRules();
+    this.start();
+    log.info('[AutomationEngine] Rules hot-reloaded');
+  }
+
   start(): void {
     for (const [id, rule] of this.rules) {
       // Defensive: trigger may be null despite earlier validation (fall-through)
@@ -201,12 +221,19 @@ export class AutomationEngine {
   private scheduleRule(id: string, rule: AutomationRule): void {
     try {
       const cronTrigger = rule.trigger as CronTrigger;
+      // unrefTimeout (9th arg): cron timers must not keep the process alive
+      // (tests, daemon shutdown). The gateway owns the process lifecycle; a
+      // dangling scheduled tick should never block exit.
       const job = new CronJob(
         cronTrigger.schedule,
         () => this.executeRule(id, 'cron', this._ledger),
         null,
         true,
         cronTrigger.timezone,
+        null as any,
+        undefined,
+        undefined,
+        true,
       );
       this.jobs.set(id, job);
       log.info(`[AutomationEngine] Scheduled rule ${id}: ${cronTrigger.schedule} (${cronTrigger.timezone})`);

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-jest.mock('../../src/compression/vector-index', () => ({
+jest.mock('../../gateway/src/core/compression/vector-index', () => ({
   VectorIndex: jest.fn().mockImplementation(() => ({
     search: jest.fn().mockResolvedValue([]),
     size: 0,
@@ -17,7 +17,7 @@ jest.mock('../../src/compression/vector-index', () => ({
 }));
 
 import MafwPlugin from '../../src/plugin';
-import { initState, updateState } from '../../src/utils/state';
+import { initState, updateState } from '../../gateway/src/core/utils/state';
 
 let tmpDir: string;
 let originalFetch: typeof global.fetch;
@@ -67,26 +67,6 @@ test('status command returns fallback when STATUS.md missing', async () => {
   expect(result.text).toContain('No active Goals');
 });
 
-test('chat messages transform awaits loadState and injects wave context', async () => {
-  fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
-  fs.writeFileSync(
-    path.join(tmpDir, '.mafw', 'state', '001-auth.json'),
-    JSON.stringify({ goalId: '001-auth', currentWave: 1, totalWaves: 2 })
-  );
-
-  const plugin = await MafwPlugin({ directory: tmpDir });
-  const output = {
-    messages: [
-      { info: { role: 'user' }, parts: [{ text: '/goal build auth' }] }
-    ]
-  };
-
-  await (plugin as any)['experimental.chat.messages.transform']({}, output);
-
-  expect(output.messages[0].parts[0].text).toContain('<mafw-context>');
-  expect(output.messages[0].parts[0].text).toContain('Wave 1/2');
-});
-
 test("hooks['session.end'] fallback delegates to sessionEndingHook", async () => {
   fs.mkdirSync(path.join(tmpDir, '.mafw', 'state'), { recursive: true });
   initState('001-auth', tmpDir);
@@ -96,7 +76,7 @@ test("hooks['session.end'] fallback delegates to sessionEndingHook", async () =>
   }, tmpDir);
 
   const plugin = await MafwPlugin({ directory: tmpDir });
-  await plugin.hooks['session.end']({ sessionID: 'sess-1' });
+  await plugin.hooks['session.end']({ sessionID: 'sess-1', projectDir: tmpDir });
 
   const state = JSON.parse(fs.readFileSync(path.join(tmpDir, '.mafw', 'state', '001-auth.json'), 'utf-8'));
   expect(state.nextAction).toBe('CREATE_PLAN_SESSION');

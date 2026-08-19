@@ -5,9 +5,7 @@ import { ToolHandler } from "../../types";
 import { generateHarmonicId } from "../../core/memory/harmonic-types";
 import { calculateSalience } from "../../core/memory/salience-perceptor";
 
-const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
-
-export const handleAddMemory: ToolHandler = async (args, { memory }) => {
+export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) => {
   try {
     const content = args.content as string;
     const memoryType = (args.memoryType as string) || config.memory.defaultMemoryType;
@@ -18,9 +16,9 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
     }
 
-    const mafwDir = path.join(projectDir, config.paths.mafwDir);
+    const resolvedDir = mafwDir ?? config.resolvePath();
 
-    const memoryDir = path.join(mafwDir, "memory");
+    const memoryDir = path.join(resolvedDir, "memory");
     if (!fs.existsSync(memoryDir)) {
       fs.mkdirSync(memoryDir, { recursive: true });
     }
@@ -37,13 +35,19 @@ export const handleAddMemory: ToolHandler = async (args, { memory }) => {
       memory_value: content,
       energy: memCfg.defaultEnergy,
       salience: calculateSalience(content),
-      abstraction_level: memoryType === "procedural" ? 3 : memoryType === "global" ? 4 : 2,
+      abstraction_level: memoryType === "global" ? 3 : memoryType === "episodic" ? 1 : 2,
       created_at: now,
       updated_at: now,
     };
 
     const { HarmonicUnitFileStore } = await import("../../memory/harmonic-file-store.js");
-    const store = new HarmonicUnitFileStore(mafwDir);
+    // Share the in-memory index with the rest of the gateway so that memories
+    // written via MCP are immediately visible to recall, step-injection, and
+    // subsequent searches without requiring a restart.
+    const sharedIndex = (memory as any)?.harmonicIndex;
+    const store = sharedIndex
+      ? new HarmonicUnitFileStore(resolvedDir, sharedIndex)
+      : new HarmonicUnitFileStore(resolvedDir);
     await store.write(unit as any);
 
     return { content: [{ type: "text", text: JSON.stringify({ success: true, id: unitId, tier: 'memories' }) }] };

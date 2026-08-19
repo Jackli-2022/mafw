@@ -1,6 +1,7 @@
 import { HarmonicIndexManager } from '../core/memory/harmonic-index';
 import { ParametricStore } from '../core/memory/store';
 import { DeltaInjector } from '../core/memory/injector';
+import { renderMemoryBlocks, MemoryBlockEntry } from '../recall/inject-format';
 
 export interface MemoryFact {
   source: 'parametric' | 'harmonic';
@@ -18,7 +19,7 @@ export interface InjectorOptions {
 
 /**
  * Wraps a promptAsync-style function with automatic memory injection.
- * Injects `<mafw-deltas>` and `<mafw-facts>` blocks before the user message.
+ * Injects `<deltas>` and `<facts>` blocks before the user message.
  * The wrapped function has the exact same signature as the original.
  */
 export function withMemoryInjection<T extends (sessionID: string, message: string, ...rest: any[]) => Promise<any>>(
@@ -34,22 +35,19 @@ export function withMemoryInjection<T extends (sessionID: string, message: strin
     const results = await opts.search(message, maxFacts);
     if (results.length === 0) return fn(sessionID, message, ...rest);
 
-    const deltas: string[] = [];
-    const facts: string[] = [];
+    const entries: MemoryBlockEntry[] = [];
     let totalChars = 0;
 
     for (const r of results) {
       const line = r.source === 'parametric'
         ? `[Î” ${r.type}] ${r.content}`
-        : `â€?[${r.type}] ${r.content}`;
+        : `[${r.type}] ${r.content}`;
       if (totalChars + line.length > maxTokens) break;
-      (r.source === 'parametric' ? deltas : facts).push(line);
+      entries.push({ source: r.source, type: r.type, content: r.content });
       totalChars += line.length;
     }
 
-    const chunks: string[] = [];
-    if (deltas.length) chunks.push('<mafw-deltas>\n' + deltas.join('\n') + '\n</mafw-deltas>');
-    if (facts.length) chunks.push('<mafw-facts>\n' + facts.join('\n') + '\n</mafw-facts>');
+    const chunks = renderMemoryBlocks(entries);
     if (chunks.length === 0) return fn(sessionID, message, ...rest);
 
     const augmented = chunks.join('\n\n') + '\n\n' + message;

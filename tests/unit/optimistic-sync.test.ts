@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';
-import { OptimisticStateSync } from '../../src/engine/optimistic-sync';
+import { OptimisticStateSync } from '../../gateway/src/core/engine/optimistic-sync';
 
 describe('OptimisticStateSync', () => {
   let tmpDir: string;

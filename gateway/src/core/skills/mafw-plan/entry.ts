@@ -12,7 +12,7 @@ import { DeltaInjector } from '../../memory/injector';
 import { Delta } from '../../types/parametric';
 
 /**
- * mafw-plan Skill Entry 鈥?Plan Agent锛堢嫭绔?Session锛?
+ * mafw-plan Skill Entry —Plan Agent锛堢嫭绔?Session锛?
  *
  * 銆愬叧閿€戠姸鎬佹洿鏂版槸涓昏矾寰勶紝鍐欏湪鍑芥暟鏈熬锛屼笉渚濊禆 hook
  *
@@ -144,7 +144,7 @@ function buildPlanPrompt(options: {
 }): string {
   const { goal, lessons, deltas, handoff, loopNum } = options;
 
-  let prompt = `# Plan Agent 鈥?Loop ${loopNum}\n\n`;
+  let prompt = `# Plan Agent —Loop ${loopNum}\n\n`;
   prompt += `## Goal Charter\n\n${goal}\n\n`;
 
   if (handoff) {

@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';
-import { HarmonicIndexManager } from '../../src/memory/harmonic-index';
-import { HarmonicUnit } from '../../src/memory/harmonic-types';
-import { MinHashMerger } from '../../src/memory/minhash-merger';
+import { HarmonicUnit } from '../../gateway/src/core/memory/harmonic-types';
+import { MinHashMerger } from '../../gateway/src/core/memory/minhash-merger';
+import { HarmonicUnitFileStore } from '../../gateway/src/memory/harmonic-file-store';
 
 describe('MinHashMerger', () => {
   let merger: MinHashMerger;
@@ -83,8 +83,14 @@ describe('MinHashMerger', () => {
   });
 
   describe('merge', () => {
+    function makeStore() {
+      const store = new HarmonicUnitFileStore(tmpDir);
+      return store;
+    }
+
     it('returns same unit when no similar entries exist in index', async () => {
-      const manager = new HarmonicIndexManager(tmpDir);
+      const store = makeStore();
+      const manager = store.indexManager_();
       const unit: HarmonicUnit = {
         id: 'mem_new',
         type: 'semantic',
@@ -96,14 +102,15 @@ describe('MinHashMerger', () => {
         updated_at: '2025-01-01T00:00:00.000Z'
       };
 
-      const result = await merger.merge(unit, 'tier3', manager, tmpDir);
+      const result = await merger.merge(unit, manager, store);
       expect(result.id).toBe('mem_new');
       expect(result.energy).toBe(0.5);
       expect(result.merged_from).toBeUndefined();
     });
 
     it('merges with similar existing entry from index', async () => {
-      const manager = new HarmonicIndexManager(tmpDir);
+      const store = makeStore();
+      const manager = store.indexManager_();
 
       const existing: HarmonicUnit = {
         id: 'mem_existing',
@@ -116,11 +123,7 @@ describe('MinHashMerger', () => {
         updated_at: '2025-01-01T00:00:00.000Z'
       };
 
-      const tierDir = path.join(tmpDir, 'memory', 'tier3');
-      fs.mkdirSync(tierDir, { recursive: true });
-      fs.writeFileSync(path.join(tierDir, 'mem_existing.json'), JSON.stringify(existing), 'utf-8');
-
-      manager.addEntry(existing, 'tier3');
+      await store.write(existing);
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
@@ -133,7 +136,7 @@ describe('MinHashMerger', () => {
         updated_at: '2025-02-01T00:00:00.000Z'
       };
 
-      const result = await merger.merge(incoming, 'tier3', manager, tmpDir);
+      const result = await merger.merge(incoming, manager, store);
 
       expect(result.id).toBe('mem_new');
       expect(result.merged_from).toEqual(['mem_existing']);
@@ -149,7 +152,8 @@ describe('MinHashMerger', () => {
     });
 
     it('caps energy at 1.0 after merge', async () => {
-      const manager = new HarmonicIndexManager(tmpDir);
+      const store = makeStore();
+      const manager = store.indexManager_();
 
       const existing: HarmonicUnit = {
         id: 'mem_high',
@@ -162,10 +166,7 @@ describe('MinHashMerger', () => {
         updated_at: '2025-01-01T00:00:00.000Z'
       };
 
-      const tierDir = path.join(tmpDir, 'memory', 'tier3');
-      fs.mkdirSync(tierDir, { recursive: true });
-      fs.writeFileSync(path.join(tierDir, 'mem_high.json'), JSON.stringify(existing), 'utf-8');
-      manager.addEntry(existing, 'tier3');
+      await store.write(existing);
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
@@ -178,15 +179,16 @@ describe('MinHashMerger', () => {
         updated_at: '2025-02-01T00:00:00.000Z'
       };
 
-      const result = await merger.merge(incoming, 'tier3', manager, tmpDir);
+      const result = await merger.merge(incoming, manager, store);
       expect(result.energy).toBe(1.0);
     });
 
-    it('removes old entry from index after merge', async () => {
-      const manager = new HarmonicIndexManager(tmpDir);
+    it('marks old entry as superseded instead of deleting it', async () => {
+      const store = makeStore();
+      const manager = store.indexManager_();
 
       const existing: HarmonicUnit = {
-        id: 'mem_removed',
+        id: 'mem_superseded',
         type: 'semantic',
         primary_abstraction: 'JWT token auth configuration setup',
         cue_anchors: ['jwt'],
@@ -196,10 +198,7 @@ describe('MinHashMerger', () => {
         updated_at: '2025-01-01T00:00:00.000Z'
       };
 
-      const tierDir = path.join(tmpDir, 'memory', 'tier3');
-      fs.mkdirSync(tierDir, { recursive: true });
-      fs.writeFileSync(path.join(tierDir, 'mem_removed.json'), JSON.stringify(existing), 'utf-8');
-      manager.addEntry(existing, 'tier3');
+      await store.write(existing);
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
@@ -212,14 +211,22 @@ describe('MinHashMerger', () => {
         updated_at: '2025-02-01T00:00:00.000Z'
       };
 
-      await merger.merge(incoming, 'tier3', manager, tmpDir);
+      const result = await merger.merge(incoming, manager, store);
+      manager.addEntry({ ...result, salience: 1, created_at: result.created_at, updated_at: result.updated_at }, 'semantic');
       const idx = manager.getIndex();
-      const stillThere = idx.entries.find(e => e.id === 'mem_removed');
-      expect(stillThere).toBeUndefined();
+      const oldEntry = idx.entries.find(e => e.id === 'mem_superseded');
+      expect(oldEntry).toBeDefined();
+      expect(oldEntry!.superseded_by).toBe('mem_new');
+      expect(oldEntry!.energy).toBeLessThan(0.7);
+
+      // New entry should outrank the superseded one in retrieval.
+      const results = manager.searchScored('JWT token authentication', 5, { retriever: 'bm25' });
+      expect(results[0].entry.id).toBe('mem_new');
     });
 
     it('does not merge when similarity is below threshold', async () => {
-      const manager = new HarmonicIndexManager(tmpDir);
+      const store = makeStore();
+      const manager = store.indexManager_();
 
       const existing: HarmonicUnit = {
         id: 'mem_diff',
@@ -232,10 +239,7 @@ describe('MinHashMerger', () => {
         updated_at: '2025-01-01T00:00:00.000Z'
       };
 
-      const tierDir = path.join(tmpDir, 'memory', 'tier3');
-      fs.mkdirSync(tierDir, { recursive: true });
-      fs.writeFileSync(path.join(tierDir, 'mem_diff.json'), JSON.stringify(existing), 'utf-8');
-      manager.addEntry(existing, 'tier3');
+      await store.write(existing);
 
       const incoming: HarmonicUnit = {
         id: 'mem_new',
@@ -248,7 +252,7 @@ describe('MinHashMerger', () => {
         updated_at: '2025-02-01T00:00:00.000Z'
       };
 
-      const result = await merger.merge(incoming, 'tier3', manager, tmpDir);
+      const result = await merger.merge(incoming, manager, store);
       expect(result.id).toBe('mem_new');
       expect(result.merged_from).toBeUndefined();
       expect(result.energy).toBe(0.5);

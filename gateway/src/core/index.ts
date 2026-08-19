@@ -1,6 +1,6 @@
 ﻿import { log } from './utils/logger';
 /**
- * MAFW Loop Agent 鈥?Plugin Main Entry Point (v4.1)
+ * MAFW Loop Agent —Plugin Main Entry Point (v4.1)
  *
  * Re-exports all modules for easy consumption.
  */
@@ -60,6 +60,6 @@ export * from './types/parametric';
 export * from './types/compression';
 export * from './types/state';
 
-log.info('[MAFW Plugin] v4.1 loaded 鈥?Phase Relay + TMEM + Automation');
+log.info('[MAFW Plugin] v4.1 loaded —Phase Relay + TMEM + Automation');
 
 

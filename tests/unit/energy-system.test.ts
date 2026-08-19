@@ -1,4 +1,4 @@
-import { EnergySystem, EnergyEvent } from '../../src/memory/energy-system';
+import { EnergySystem, EnergyEvent } from '../../gateway/src/core/memory/energy-system';
 
 function makeSystem(config?: { decayRatePerDay?: number; cleanupThreshold?: number; criticalThreshold?: number }) {
   return new EnergySystem(config);
@@ -95,7 +95,7 @@ describe('EnergySystem', () => {
   describe('constructor defaults', () => {
     it('uses default values when no config provided', () => {
       const es = makeSystem();
-      expect(es.calculateEnergy(0.5, { type: 'retrieved' }, 10)).toBeCloseTo(0.42, 5);
+      expect(es.calculateEnergy(0.5, { type: 'retrieved' }, 10)).toBeCloseTo(0.47, 5);
       expect(es.shouldCleanup(0.29)).toBe(true);
       expect(es.isCritical(0.81)).toBe(true);
     });

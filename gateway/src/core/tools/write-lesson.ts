@@ -1,6 +1,6 @@
 ﻿import { log } from '../utils/logger';
 /**
- * Write Lesson Tool 鈥?鍐欏叆 Lesson tool 鍑芥暟
+ * Write Lesson Tool —鍐欏叆 Lesson tool 鍑芥暟
  *
  * 鑱岃矗锛?
  *   1. 灏?Review 澶辫触缁撴灉鍐欏叆 lessons/{goalId}-loop{loop}.md
@@ -47,7 +47,7 @@ export function writeLesson(data: LessonData, projectDir: string = '.'): string 
 function formatLesson(data: LessonData): string {
   const { goalId, loop, reason, metrics, domain, task } = data;
   
-  return `# Lesson: ${goalId} 鈥?Loop ${loop}
+  return `# Lesson: ${goalId} —Loop ${loop}
 
 ## Trigger
 

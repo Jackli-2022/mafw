@@ -24,10 +24,10 @@ describe('withMemoryInjection', () => {
     });
 
     await injector('sess-1', 'implement JWT auth');
-    expect(capturedMessage).toContain('<mafw-facts>');
+    expect(capturedMessage).toContain('<facts>');
     expect(capturedMessage).toContain('JWT must use RS256');
     expect(capturedMessage).toContain('Previous review failed on RS256');
-    expect(capturedMessage).toContain('</mafw-facts>');
+    expect(capturedMessage).toContain('</facts>');
     expect(capturedMessage).toContain('implement JWT auth');
   });
 
@@ -43,9 +43,9 @@ describe('withMemoryInjection', () => {
     });
 
     await injector('sess-1', 'run tests');
-    expect(capturedMessage).toContain('<mafw-deltas>');
+    expect(capturedMessage).toContain('<deltas>');
     expect(capturedMessage).toContain('[Δ delta] loop-2: must pass tests');
-    expect(capturedMessage).toContain('<mafw-facts>');
+    expect(capturedMessage).toContain('<facts>');
     expect(capturedMessage).toContain('Test coverage target: 80%');
   });
 
@@ -57,7 +57,7 @@ describe('withMemoryInjection', () => {
 
     await injector('sess-1', 'hello');
     expect(capturedMessage).toBe('hello');
-    expect(capturedMessage).not.toContain('<mafw-facts>');
+    expect(capturedMessage).not.toContain('<facts>');
   });
 
   it('respects maxTokens truncation', async () => {
@@ -73,8 +73,8 @@ describe('withMemoryInjection', () => {
     });
 
     await injector('sess-1', 'hi');
-    // After the <mafw-facts> wrapper, only about 2 facts should fit
-    const factLines = capturedMessage.split('\n').filter(l => l.startsWith('•'));
+    // After the <facts> wrapper, only about 2 facts should fit
+    const factLines = capturedMessage.split('\n').filter(l => l.startsWith('☑'));
     expect(factLines.length).toBeGreaterThanOrEqual(1);
     expect(factLines.length).toBeLessThanOrEqual(3);
   });

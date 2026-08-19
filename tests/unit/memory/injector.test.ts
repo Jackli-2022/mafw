@@ -1,5 +1,5 @@
-import { DeltaInjector } from '../../../src/memory/injector';
-import { ConstraintDelta, PromptDelta } from '../../../src/types/parametric';
+import { DeltaInjector } from '../../../gateway/src/core/memory/injector';
+import { ConstraintDelta, PromptDelta } from '../../../gateway/src/core/types/parametric';
 
 function makeConstraint(id: string, priority: number, energy: number, rule: string): ConstraintDelta {
   return {

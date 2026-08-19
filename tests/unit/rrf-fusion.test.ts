@@ -1,4 +1,4 @@
-import { reciprocalRankFusion, diversifyByLoop, RRFResult } from '../../src/compression/rrf-fusion';
+import { reciprocalRankFusion, diversifyByLoop, RRFResult } from '../../gateway/src/core/compression/rrf-fusion';
 
 describe('reciprocalRankFusion', () => {
   test('two lists with overlap: overlapping items get higher score', () => {

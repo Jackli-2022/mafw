@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { sessionEndingHook } from '../../src/hooks/session-ending';
-import { initState, updateState } from '../../src/utils/state';
+import { initState, updateState } from '../../gateway/src/core/utils/state';
 
 let tmpDir: string;
 

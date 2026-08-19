@@ -5,7 +5,7 @@ import { initState } from '../../utils/state';
 import { StatusManager } from '../../utils/status';
 
 /**
- * mafw-goal Skill Entry 鈥?Goal Interview Agent
+ * mafw-goal Skill Entry —Goal Interview Agent
  *
  * 鑱岃矗锛?
  *   1. 鎺ユ敹鐢ㄦ埛杈撳叆鐨勭洰鏍囨弿杩?
@@ -182,7 +182,7 @@ function parseInterviewResponse(content: string, goalText: string): InterviewRes
 }
 
 function formatGoalCharter(result: InterviewResult): string {
-  return `# Goal Charter 鈥?${result.title}
+  return `# Goal Charter —${result.title}
 
 > Goal ID: ${result.goalId}
 > Created: ${new Date().toISOString()}

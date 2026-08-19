@@ -11,7 +11,7 @@ import { GitUtils } from '../../utils/git';
 import { RemoteCliConnector } from '../../tools/remote-cli';
 
 /**
- * mafw-execute Skill Entry 鈥?Execute Agent锛堢嫭绔?Session锛?
+ * mafw-execute Skill Entry —Execute Agent锛堢嫭绔?Session锛?
  *
  * 銆愬叧閿€戠姸鎬佹洿鏂版槸涓昏矾寰勶紝鍐欏湪鍑芥暟鏈熬
  *

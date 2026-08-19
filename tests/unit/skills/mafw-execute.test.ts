@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import simpleGit from 'simple-git';
-import { mafwExecuteEntry, mergeWaveToGoal } from '../../../src/skills/mafw-execute/entry';
-import { TaskBranchManager } from '../../../src/engine/task-branch-manager';
+import { mafwExecuteEntry, mergeWaveToGoal } from '../../../gateway/src/core/skills/mafw-execute/entry';
+import { TaskBranchManager } from '../../../gateway/src/core/engine/task-branch-manager';
 
 let tmpDir: string;
 let repoDir: string;
@@ -106,7 +106,7 @@ test('mafwExecuteEntry transitions to FAILED when wave merge is partial', async 
     chat: jest.fn().mockResolvedValue({ content: 'console.log("ok");' })
   };
 
-  jest.spyOn(require('../../../src/engine/task-branch-manager').TaskBranchManager.prototype, 'mergeTaskBranch')
+  jest.spyOn(require('../../../gateway/src/core/engine/task-branch-manager').TaskBranchManager.prototype, 'mergeTaskBranch')
     .mockRejectedValueOnce(new Error('merge conflict'));
 
   await mafwExecuteEntry({ message: '/skill mafw-execute 001-auth', llm: mockLlm, config: { model: 'test' }, sessionId: 's1' });

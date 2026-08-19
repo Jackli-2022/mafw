@@ -2,7 +2,7 @@
 import simpleGit from 'simple-git';
 
 /**
- * Task Branch Manager 鈥?Task 绾?Git 鍒嗘敮闅旂
+ * Task Branch Manager —Task 绾?Git 鍒嗘敮闅旂
  *
  * 鑱岃矗锛?
  *   1. 涓烘瘡涓?Task 鍒涘缓鐙珛 Git 鍒嗘敮锛坈hange/{taskId}锛?

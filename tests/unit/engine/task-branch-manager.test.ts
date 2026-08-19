@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import simpleGit from 'simple-git';
-import { TaskBranchManager } from '../../../src/engine/task-branch-manager';
+import { TaskBranchManager } from '../../../gateway/src/core/engine/task-branch-manager';
 
 let tmpDir: string;
 let repoDir: string;

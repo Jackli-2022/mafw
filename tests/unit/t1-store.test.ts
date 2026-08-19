@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { T1Store } from '../../src/memory/t1-store';
+import { T1Store } from '../../gateway/src/core/memory/t1-store';
 
 describe('T1Store', () => {
   let tmpDir: string;

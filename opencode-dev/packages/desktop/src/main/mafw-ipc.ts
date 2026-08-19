@@ -89,7 +89,11 @@ export function registerMafwIpcHandlers() {
     console.log(`[mafw] IPC invoke: ${namespace}.${method}`, args.length > 0 ? JSON.stringify(args).slice(0, 100) : '')
     if (!mafwClient) throw new Error("MAFW Gateway not ready")
     const ns = (mafwClient as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)[namespace]
-    if (!ns) throw new Error(`Unknown namespace: ${namespace}`)
+    if (!ns) {
+      const available = Object.keys(mafwClient as unknown as Record<string, unknown>).join(", ")
+      writeLog("utility", `mafw-invoke unknown namespace: ${namespace}`, { available }, "error")
+      throw new Error(`Unknown namespace: ${namespace} (available: ${available})`)
+    }
     const fn = ns[method]
     if (typeof fn !== "function") throw new Error(`Unknown method: ${namespace}.${method}`)
     return fn(...args)

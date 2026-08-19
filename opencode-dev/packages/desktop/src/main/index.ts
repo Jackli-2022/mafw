@@ -16,7 +16,7 @@ import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
 
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
-import { startMafwGw, stopMafwGw } from "./mafw-bootstrap"
+import { startMafwGw } from "./mafw-bootstrap"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
 import {
@@ -154,8 +154,9 @@ const main = Effect.gen(function* () {
       },
     },
   )
+  // The MAFW gateway daemon is a standalone always-on service; quitting the
+  // desktop keeps it running so automations and background recall continue.
   const stopSidecars = async () => {
-    stopMafwGw()
     wslServers.stopAll()
   }
   const relaunch = () => {
@@ -184,6 +185,11 @@ const main = Effect.gen(function* () {
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
   if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
+
+  // Audio: 修复渲染进程 AudioContext 无声（out-of-process 音频服务在部分 Windows 上
+  // 初始化失败导致 currentTime 推进但无物理输出）；autoplay-policy 双保险。
+  app.commandLine.appendSwitch("disable-features", "AudioServiceOutOfProcess")
+  app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required")
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()

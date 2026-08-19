@@ -58,7 +58,7 @@ const COMMANDS = [
   'sessions', 'control', 'memory-search',
   'automations', 'approvals', 'triage',
   'service-register', 'service-unregister',
-  'config', 'dashboard', 'uninstall', 'version',
+  'config', 'dashboard', 'uninstall', 'version', 'update',
 ];
 
 function httpRequest(method, urlPath, body) {
@@ -132,8 +132,14 @@ function startGateway(background) {
   writePid(child.pid);
 
   if (background) {
+    // Diagnostics: capture stderr to a file (a detached gateway that crashes
+    // silently otherwise leaves no trace). stdout is discarded; the gateway's
+    // own file logging covers normal logs.
+    const errLog = path.join(LOG_DIR, 'gateway-stderr.log');
+    try { if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+    const errStream = fs.createWriteStream(errLog, { flags: 'a' });
+    child.stderr?.pipe(errStream);
     child.stdout?.resume();
-    child.stderr?.resume();
     child.unref();
     console.log(`Gateway started in background (PID: ${child.pid})`);
     console.log(`Logs: ${LOG_FILE}`);
@@ -367,6 +373,37 @@ async function main() {
     case 'dashboard': openDashboard(); break;
     case 'uninstall': showUninstall(); break;
     case 'version': console.log(`v${pkg.version}`); break;
+    case 'update': requestUpdate(); break;
+  }
+}
+
+// `mafw update`: write the self-update token (atomic tmp+rename). The running
+// gateway watches ~/.mafw/pending-restart.json, rebuilds itself and hands off
+// to a takeover process; it then notifies the caller session.
+function requestUpdate() {
+  const pid = readPid();
+  if (!pid || !isRunning(pid)) {
+    console.error('Gateway is not running. Start it first: mafw start / mafw daemon');
+    process.exit(1);
+  }
+  ensureDirs();
+  const token = {
+    target: 'gateway',
+    action: 'update',
+    reason: 'mafw update (CLI)',
+    requestedAt: new Date().toISOString(),
+    delayMs: 3000,
+  };
+  const tmp = path.join(CONFIG_DIR, 'pending-restart.json.tmp');
+  const dst = path.join(os.homedir(), '.mafw', 'pending-restart.json');
+  try {
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(token, null, 2), 'utf-8');
+    fs.renameSync(tmp, dst);
+    console.log('Update requested: gateway will rebuild and restart itself (~3s).');
+  } catch (err) {
+    console.error(`Failed to write update token: ${err.message}`);
+    process.exit(1);
   }
 }
 

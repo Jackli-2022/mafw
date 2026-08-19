@@ -11,7 +11,17 @@ import { llmAfterHook } from './hooks/llm-after';
 import { sessionCompactingHook } from './hooks/session-compacting';
 import { handoffHook } from './hooks/handoff';
 import { sessionRecallHook } from './hooks/session-recall';
-import { sessionSystemHook } from './hooks/session-system';
+import { mediaIngestHook, ingestLargeMediaBeforeStore } from './hooks/media-ingest';
+import { pythonGuideHook } from './hooks/bash-python-guide';
+import { mediaAskTool } from './tools/media-ask';
+import { mediaUploadTool } from './tools/media-upload';
+import { mediaSpeakTool } from './tools/media-speak';
+import { pythonExecTool } from './tools/python-exec';
+import { pythonRestartTool } from './tools/python-restart';
+import { memoryGuideHook } from './hooks/memory-guide';
+import { voiceGuideMessagesHook, voiceGuideSystemHook } from './hooks/voice-guide';
+import { pushObservation, extractTextFromParts, toolFailureText } from './utils/obs-capture';
+import { addMemoryTool } from './tools/add-memory';
 
 function getGatewayUrl(mafwDir: string): string {
   const configPath = path.join(mafwDir, '..', '.config', 'mafw', 'desktop-automation.json');
@@ -155,13 +165,60 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       skills: [{ name: 'mafw-goal', enabled: false }, { name: 'mafw-plan', enabled: false },
                { name: 'mafw-execute', enabled: false }, { name: 'mafw-review', enabled: false }],
     },
-    hooks: {
-      'session.end': (ctx: any) => hookManager.execute('session.end', ctx),
-      'tool.execute.before': (ctx: any) => hookManager.execute('tool.before', ctx),
-      'tool.execute.after': (ctx: any, result: any) => hookManager.execute('tool.executed', { ...ctx, data: result }),
-      'chat.message': (ctx: any) => hookManager.execute('user.prompt', ctx),
-      'experimental.chat.messages.transform': (input: any, output: any) => sessionRecallHook(input, output),
-      'experimental.chat.system.transform': (input: any, output: any) => sessionSystemHook(input, output),
+    tool: {
+      mafw_media_ask: mediaAskTool,
+      mafw_media_upload: mediaUploadTool,
+      mafw_media_speak: mediaSpeakTool,
+      mafw_python: pythonExecTool,
+      mafw_python_restart: pythonRestartTool,
+      mafw_add_memory: addMemoryTool,
+    },
+    'session.end': (ctx: any) => hookManager.execute('session.end', ctx),
+    'tool.execute.before': (ctx: any) => hookManager.execute('tool.before', ctx),
+    // Observation capture (T1 store lives in the gateway):
+    //  - chat.message(input, output): user text lives in output.parts
+    //    (resolvedParts; the hook fires BEFORE the message is persisted, so
+    //    video/audio parts are converted to A2A text pointers here to avoid
+    //    writing large base64 into the session store)
+    'chat.message': async (input: any, output: any) => {
+      hookManager.execute('user.prompt', input);
+      const text = extractTextFromParts(output?.parts);
+      void pushObservation(input?.sessionID || '', 'user_input', text);
+      await ingestLargeMediaBeforeStore(output);
+      return output;
+    },
+    //  - tool.execute.after(input, output): tool/sessionID from input, result from output
+    'tool.execute.after': (input: any, output: any) => {
+      hookManager.execute('tool.executed', { ...input, data: output });
+      const result = [output?.title, output?.output].filter(Boolean).join('\n');
+      void pushObservation(input?.sessionID || '', 'tool_result', result);
+      return output;
+    },
+    //  - assistant reply text (text parts only; reasoning comes via event hook)
+    'experimental.text.complete': (input: any, output: any) => {
+      void pushObservation(input?.sessionID || '', 'assistant_reply', output?.text || '');
+      return output;
+    },
+    //  - thinking (reasoning.ended, full text) and tool failures (tool.failed)
+    event: ({ event }: any) => {
+      const type = event?.type;
+      const props = event?.properties || {};
+      if (type === 'session.next.reasoning.ended') {
+        void pushObservation(props?.sessionID || '', 'reasoning', props?.text || '');
+      } else if (type === 'session.next.tool.failed') {
+        void pushObservation(props?.sessionID || '', 'tool_result', toolFailureText(props), true);
+      }
+    },
+    'experimental.chat.messages.transform': async (input: any, output: any) => {
+      await mediaIngestHook(input, output);
+      await pythonGuideHook(input, output);
+      await sessionRecallHook(input, output);
+      voiceGuideMessagesHook(input, output);
+    },
+    'experimental.chat.system.transform': (input: any, output: any) => {
+      memoryGuideHook(input, output);
+      voiceGuideSystemHook(input, output);
+      return output;
     },
     command: {
       goal: {

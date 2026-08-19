@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { mafwGoalEntry } from '../../../src/skills/mafw-goal/entry';
+import { mafwGoalEntry } from '../../../gateway/src/core/skills/mafw-goal/entry';
 
 let tmpDir: string;
 let cwdSpy: jest.SpyInstance;

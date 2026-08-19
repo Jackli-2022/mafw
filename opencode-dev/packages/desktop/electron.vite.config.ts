@@ -100,6 +100,16 @@ const require = __cjs_mod__.createRequire(import.meta.url);
         input: {
           main: "src/renderer/index.html",
         },
+        output: {
+          // Silero VAD assets must keep their original names: the Emscripten
+          // glue (ort-wasm-simd-threaded.mjs) resolves its sibling wasm via a
+          // relative `new URL(...)` — a content hash in the filename would
+          // break that lookup. Everything else keeps the default hashed name.
+          assetFileNames: (info) =>
+            (info.originalFileNames ?? []).some((n) => n.includes("assets/vad/"))
+              ? "assets/vad/[name][extname]"
+              : "assets/[name]-[hash][extname]",
+        },
       },
     },
   },

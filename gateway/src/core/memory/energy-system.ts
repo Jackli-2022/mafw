@@ -39,7 +39,7 @@ export class EnergySystem {
     criticalThreshold?: number;
     hookManager?: HookManagerLike | null;
   }) {
-    this.decayRatePerDay = config?.decayRatePerDay ?? 0.01;
+    this.decayRatePerDay = config?.decayRatePerDay ?? 0.005;
     this.cleanupThreshold = config?.cleanupThreshold ?? 0.3;
     this.criticalThreshold = config?.criticalThreshold ?? 0.8;
     this.hookManager = config?.hookManager || null;
@@ -62,6 +62,15 @@ export class EnergySystem {
     }
 
     return clamped;
+  }
+
+  /**
+   * Pure time-based decay with no event bonus — used by the memory:decay
+   * automation so memories fade solely by elapsed time.
+   */
+  decay(currentEnergy: number, daysSinceLastUpdate: number, salience: number = 1.0): number {
+    const effectiveDecay = this.decayRatePerDay * (1 / Math.max(0.1, salience));
+    return Math.max(this.minEnergy, Math.min(this.maxEnergy, currentEnergy - effectiveDecay * Math.max(0, daysSinceLastUpdate)));
   }
 
   shouldCleanup(energy: number): boolean {

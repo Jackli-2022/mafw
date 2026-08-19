@@ -1,10 +1,10 @@
-import { ObservationDeduplicator } from '../../src/compression/observation-deduplicator';
-import { ObservationClassifier } from '../../src/compression/observation-classifier';
-import { ZeroTokenCompressor } from '../../src/compression/zero-token-compressor';
-import { DiffCompressor } from '../../src/compression/diff-compressor';
-import { CompressionStrategySelector } from '../../src/compression/compression-strategy-selector';
-import { CompressionPipeline } from '../../src/compression/compression-pipeline';
-import { PrivacyFilter } from '../../src/memory/privacy-filter';
+import { ObservationDeduplicator } from '../../gateway/src/core/compression/observation-deduplicator';
+import { ObservationClassifier } from '../../gateway/src/core/compression/observation-classifier';
+import { ZeroTokenCompressor } from '../../gateway/src/core/compression/zero-token-compressor';
+import { DiffCompressor } from '../../gateway/src/core/compression/diff-compressor';
+import { CompressionStrategySelector } from '../../gateway/src/core/compression/compression-strategy-selector';
+import { CompressionPipeline } from '../../gateway/src/core/compression/compression-pipeline';
+import { PrivacyFilter } from '../../gateway/src/core/memory/privacy-filter';
 
 describe('ObservationDeduplicator', () => {
   let dedup: ObservationDeduplicator;

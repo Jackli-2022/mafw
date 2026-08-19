@@ -1,4 +1,4 @@
-import { estimateTokens, estimateCost, generateCostId } from '../../src/cost/types';
+import { estimateTokens, estimateCost, generateCostId } from '../../gateway/src/core/cost/types';
 
 describe('Cost Types', () => {
   it('estimates zero tokens for file tools', () => {

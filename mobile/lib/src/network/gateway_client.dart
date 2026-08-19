@@ -1,4 +1,6 @@
-/// HTTP client for the MAFW gateway API.
+/// Minimal HTTP client for the MAFW gateway API.
+///
+/// This is a simplified version of the GatewayClient for testing purposes.
 library;
 
 import 'dart:convert';

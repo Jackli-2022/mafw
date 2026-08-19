@@ -4,7 +4,7 @@ import * as path from 'path';
 import { loadState, updateState } from '../utils/state';
 
 /**
- * session-ending Hook 鈥?寮傚父鍏滃簳
+ * session-ending Hook —寮傚父鍏滃簳
  *
  * 鑱岃矗锛?
  *   1. Session 姝ｅ父缁撴潫鏃堕亶鍘?state 鏂囦欢鍙嶆煡 sessionId

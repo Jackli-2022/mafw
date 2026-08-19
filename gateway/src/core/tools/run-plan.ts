@@ -1,6 +1,6 @@
 ﻿import { log } from '../utils/logger';
 /**
- * Run Plan Tool 鈥?Prompt 鎷兼帴 + LLM 璋冪敤
+ * Run Plan Tool —Prompt 鎷兼帴 + LLM 璋冪敤
  *
  * 鑱岃矗锛?
  *   1. 璇诲彇 Goal Charter銆丩essons銆丳arametric Deltas
@@ -32,7 +32,7 @@ export interface PlanResult {
 export function buildPlanPrompt(context: PlanContext): string {
   const { goal, lessons, deltas, handoff, loopNum } = context;
 
-  let prompt = `# Plan Agent 鈥?Loop ${loopNum}\n\n`;
+  let prompt = `# Plan Agent —Loop ${loopNum}\n\n`;
   prompt += `## Goal Charter\n\n${goal}\n\n`;
 
   if (handoff) {

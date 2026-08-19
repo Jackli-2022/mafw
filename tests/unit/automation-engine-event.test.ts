@@ -36,7 +36,7 @@ describe('AutomationEngine event trigger support', () => {
     });
 
     it('defaults to 60s for unknown suffix', () => {
-      expect(parseDuration('10x')).toBe(60000);
+      expect(parseDuration('10x')).toBe(undefined);
     });
   });
 

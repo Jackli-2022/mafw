@@ -107,9 +107,9 @@ export function TaskList(props: {
       </div>
       <div class="mafw-tasklist-body">
         <Show when={compact() && completedCount() > 0 && !completedExpanded()}>
-          <button type="button" class="mafw-tasklist-collapse" onClick={() => setCompletedExpanded(true)}>
+          <ButtonV2 variant="ghost" size="small" class="mafw-tasklist-collapse" onClick={() => setCompletedExpanded(true)}>
             ✔ {completedCount()} 个已完成
-          </button>
+          </ButtonV2>
         </Show>
         <For each={visibleRows()}>
           {(t) => (
@@ -128,9 +128,9 @@ export function TaskList(props: {
           )}
         </For>
         <Show when={compact() && pendingOverflow() > 0 && !overflowExpanded()}>
-          <button type="button" class="mafw-tasklist-collapse" onClick={() => setOverflowExpanded(true)}>
+          <ButtonV2 variant="ghost" size="small" class="mafw-tasklist-collapse" onClick={() => setOverflowExpanded(true)}>
             还有 {pendingOverflow()} 个待执行
-          </button>
+          </ButtonV2>
         </Show>
       </div>
     </div>

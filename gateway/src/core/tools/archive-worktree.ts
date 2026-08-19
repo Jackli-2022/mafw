@@ -1,6 +1,6 @@
 ﻿import { log } from '../utils/logger';
 /**
- * Archive Worktree Tool 鈥?Archive tool 鍑芥暟
+ * Archive Worktree Tool —Archive tool 鍑芥暟
  *
  * 鑱岃矗锛?
  *   1. 鍚堝苟 Goal 鍒嗘敮鍒?main
@@ -77,18 +77,26 @@ export async function mergeMemoryFromWorktree(
 ): Promise<FusionResult> {
   const sourceMafw = path.join(sourceDir, '.mafw');
   const targetMafw = path.join(targetDir, '.mafw');
-  const sourceMemPath = path.join(sourceMafw, 'memory', 'memories.json');
+  const { HarmonicUnitFileStore } = await import('../../memory/harmonic-file-store.js');
 
-  if (!fs.existsSync(sourceMemPath)) {
+  // Read the source worktree's memories via the harmonic index + OKF store
+  // (the legacy `memory/memories.json` layout was replaced by OKF + index and
+  // is deleted by the data-dir migration, so reading it would silently no-op).
+  const sourceStore = new HarmonicUnitFileStore(sourceMafw);
+  const sourceIndex = sourceStore.indexManager_().getIndex();
+  if (sourceIndex.entries.length === 0) {
     return { added: 0, conflicts: 0, fusionLog: false };
   }
 
-  const sourceUnits: any[] = JSON.parse(fs.readFileSync(sourceMemPath, 'utf-8'));
+  const sourceUnits: any[] = [];
+  for (const entry of sourceIndex.entries) {
+    const unit = await sourceStore.read(entry.id);
+    if (unit) sourceUnits.push(unit);
+  }
   if (sourceUnits.length === 0) {
     return { added: 0, conflicts: 0, fusionLog: false };
   }
 
-  const { HarmonicUnitFileStore } = await import('../../memory/harmonic-file-store.js');
   const store = new HarmonicUnitFileStore(targetMafw);
   const minhash = new MinHashMerger();
   const targetIndex = store.indexManager_().getIndex();
@@ -107,9 +115,10 @@ export async function mergeMemoryFromWorktree(
     if (bestSim > 0.6) {
       conflicts++;
     } else {
+      const origId = srcUnit.id;
       srcUnit.id = generateHarmonicId();
       srcUnit.energy = 0.4;
-      srcUnit.merged_from = [srcUnit.id];
+      srcUnit.merged_from = [origId];
       const now = new Date().toISOString();
       srcUnit.created_at = now;
       srcUnit.updated_at = now;

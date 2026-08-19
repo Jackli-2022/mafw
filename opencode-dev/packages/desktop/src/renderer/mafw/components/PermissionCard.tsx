@@ -17,6 +17,8 @@ export type PermissionCardData = {
   }
   impact?: string
   createdAt: number
+  /** The assistant message id whose tool call triggered this request. */
+  messageID?: string
 }
 
 function StatusBadge(props: { status: string }) {

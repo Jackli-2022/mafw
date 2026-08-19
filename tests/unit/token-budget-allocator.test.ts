@@ -1,4 +1,4 @@
-import { TokenBudgetAllocator, BudgetCategory } from '../../src/compression/token-budget-allocator';
+import { TokenBudgetAllocator, BudgetCategory } from '../../gateway/src/core/compression/token-budget-allocator';
 
 describe('TokenBudgetAllocator', () => {
   describe('allocate', () => {

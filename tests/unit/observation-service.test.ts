@@ -1,11 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { T1Store } from '../../src/memory/t1-store';
-import { T1ToT2Compressor } from '../../src/memory/t1-to-t2-compressor';
-import { CompressionPipeline } from '../../src/compression/compression-pipeline';
-import { HarmonicIndexManager } from '../../src/memory/harmonic-index';
-import { ObservationService, SESSION_TIMEOUT_MS } from '../../src/memory/observation-service';
+import { T1Store } from '../../gateway/src/core/memory/t1-store';
+import { T1ToT2Compressor } from '../../gateway/src/core/memory/t1-to-t2-compressor';
+import { CompressionPipeline } from '../../gateway/src/core/compression/compression-pipeline';
+import { HarmonicIndexManager } from '../../gateway/src/core/memory/harmonic-index';
+import { ObservationService, SESSION_TIMEOUT_MS } from '../../gateway/src/core/memory/observation-service';
 
 describe('ObservationService', () => {
   let tmpDir: string;
@@ -13,6 +13,7 @@ describe('ObservationService', () => {
   let service: ObservationService;
 
   beforeEach(async () => {
+        global.fetch = jest.fn(async () => { throw new Error('ECONNREFUSED (test)') }) as unknown as typeof fetch;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-svc-'));
     fs.mkdirSync(path.join(tmpDir, 'memory'), { recursive: true });
     store = new T1Store(tmpDir);

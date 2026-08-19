@@ -2,7 +2,7 @@
 import simpleGit from 'simple-git';
 
 /**
- * Goal Worktree Manager 鈥?Goal 绾?Git Worktree 闅旂
+ * Goal Worktree Manager —Goal 绾?Git Worktree 闅旂
  *
  * 鑱岃矗锛?
  *   1. 涓烘瘡涓?Goal 鍒涘缓/鍑嗗 Git 鍒嗘敮锛坓oal/{goalId}锛?

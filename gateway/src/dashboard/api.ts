@@ -530,16 +530,26 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   private recordAnswer(questionId: string, answer: string): boolean {
     const dir = path.join(this.mafwDir, 'user-questions');
+    const p = path.join(dir, `${questionId}.json`);
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      data.answered = true;
+      data.answer = answer;
+      data.answeredAt = new Date().toISOString();
+      fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+      return true;
+    }
+    // legacy: questions previously stored under user-questions/{goalId}/
     if (!fs.existsSync(dir)) return false;
     const goals = fs.readdirSync(dir);
     for (const goal of goals) {
-      const p = path.join(dir, goal, `${questionId}.json`);
-      if (fs.existsSync(p)) {
-        const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      const lp = path.join(dir, goal, `${questionId}.json`);
+      if (fs.existsSync(lp)) {
+        const data = JSON.parse(fs.readFileSync(lp, 'utf-8'));
         data.answered = true;
         data.answer = answer;
         data.answeredAt = new Date().toISOString();
-        fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf-8');
+        fs.writeFileSync(lp, JSON.stringify(data, null, 2), 'utf-8');
         return true;
       }
     }

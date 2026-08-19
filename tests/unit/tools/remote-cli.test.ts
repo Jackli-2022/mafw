@@ -1,5 +1,5 @@
 import { exec } from 'child_process';
-import { RemoteCliConnector } from '../../../src/tools/remote-cli';
+import { RemoteCliConnector } from '../../../gateway/src/core/tools/remote-cli';
 
 jest.mock('child_process', () => ({
   exec: jest.fn()

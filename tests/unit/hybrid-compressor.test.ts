@@ -1,4 +1,4 @@
-import { HybridCompressor } from '../../src/compression/hybrid-compressor';
+import { HybridCompressor } from '../../gateway/src/core/compression/hybrid-compressor';
 
 describe('HybridCompressor', () => {
   it('returns empty unit for empty observations', async () => {

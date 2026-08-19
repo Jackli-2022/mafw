@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { StateLockManager } from '../../src/engine/state-lock';
-import { WaveDependencyManager } from '../../src/engine/wave-dependency';
-import { OptimisticStateSync } from '../../src/engine/optimistic-sync';
+import { StateLockManager } from '../../gateway/src/core/engine/state-lock';
+import { WaveDependencyManager } from '../../gateway/src/core/engine/wave-dependency';
+import { OptimisticStateSync } from '../../gateway/src/core/engine/optimistic-sync';
 
 // ── StateLockManager ──────────────────────────────────────────────────────────
 

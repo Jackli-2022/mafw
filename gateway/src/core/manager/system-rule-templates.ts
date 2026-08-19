@@ -47,7 +47,7 @@ export function ensureManagerRules(mafwDir: string): void {
         const existing = JSON.parse(fs.readFileSync(rulePath, 'utf-8'));
         if (existing.enabled !== template.enabled) {
           log.info(
-            `[Scheduler] Rule ${id} exists with user override (enabled: ${existing.enabled}) 鈥?keeping user value`,
+            `[Scheduler] Rule ${id} exists with user override (enabled: ${existing.enabled}) —keeping user value`,
           );
         }
       } catch {

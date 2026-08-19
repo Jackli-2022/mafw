@@ -1,4 +1,4 @@
-import { CostEstimator } from '../../src/cost/cost-estimator';
+import { CostEstimator } from '../../gateway/src/core/cost/cost-estimator';
 
 describe('CostEstimator', () => {
   it('records a tool call and retrieves cost', () => {

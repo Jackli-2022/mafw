@@ -10,7 +10,7 @@ async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], re
   const mafwDir = engine['mafwDir'] as string;
   const managerSessionFile = path.join(mafwDir, 'manager-session.json');
   if (!fs.existsSync(managerSessionFile)) {
-    log.info('[WakeHandler] No manager session found 鈥?skipping wake injection');
+    log.info('[WakeHandler] No manager session found — skipping wake injection');
     return;
   }
   const { sessionId } = JSON.parse(fs.readFileSync(managerSessionFile, 'utf-8'));

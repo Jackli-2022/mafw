@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import os from 'os';
-import { HarmonicIndexManager } from '../../src/memory/harmonic-index';
-import { ReviewScheduler, getNextInterval } from '../../src/memory/review-scheduler';
+import { HarmonicIndexManager } from '../../gateway/src/core/memory/harmonic-index';
+import { ReviewScheduler, getNextInterval } from '../../gateway/src/core/memory/review-scheduler';
 
 describe('getNextInterval', () => {
   it('returns 1 for reviewCount 0', () => {
