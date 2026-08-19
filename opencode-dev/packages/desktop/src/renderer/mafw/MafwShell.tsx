@@ -307,7 +307,7 @@ export function MafwShell() {
       for (const sid of leafIds(rec.layout)) {
         if (sessions().some(s => s.id === sid)) continue
         const existing = store.session.find(s => s.id === sid)
-        const title = existing?.title || `Chat ${sessions().length + 1}`
+        const title = existing?.title || historySessions().find(s => s.id === sid)?.title || `Chat ${sessions().length + 1}`
         setSessions(prev => prev.some(s => s.id === sid) ? prev : [...prev, {
           id: sid, title, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false,
         }])
@@ -428,6 +428,7 @@ export function MafwShell() {
   // is [the session | empty placeholder], then switch to it.
   const splitTab = (sid: string, dir: "h" | "v", place: "before" | "after") => {
     if (!sessions().some(s => s.id === sid)) return
+    setShowWelcome(false)
     const base: SplitLeaf = { sid }
     const other: SplitLeaf = { empty: true }
     const layout: SplitNode = place === "before"
@@ -440,6 +441,7 @@ export function MafwShell() {
   // Global split (⿻ button): create a NEW split view beside the focused
   // session, with an empty placeholder on the other side.
   const splitGlobal = (dir: "h" | "v", place: "before" | "after") => {
+    setShowWelcome(false)
     const base: SplitLeaf = activeSessionId() && sessions().some(s => s.id === activeSessionId())
       ? { sid: activeSessionId()! }
       : { empty: true }
@@ -512,10 +514,40 @@ export function MafwShell() {
     }
   }
 
+  // Ensure a session has a sessionstrip tab carrying its real title (a
+  // placeholder fill can bring in a history session that is not in the tab
+  // list yet, or a tab that was auto-created with a "Chat N" placeholder name).
+  const ensureSessionTab = (sid: string) => {
+    const title = historySessions().find(s => s.id === sid)?.title
+      ?? store.session.find(s => s.id === sid)?.title
+      ?? sessions().find(s => s.id === sid)?.title
+    if (!sessions().some(s => s.id === sid)) {
+      setSessions(prev => [...prev, {
+        id: sid,
+        title: title || `Chat ${sessions().length + 1}`,
+        userMsgId: `user-${Date.now()}`,
+        assistantMsgId: null,
+        done: false,
+      }])
+      setStore(prev => {
+        if (prev.session.some(s => s.id === sid)) return prev
+        return {
+          ...prev,
+          session: [...prev.session, { id: sid, title: title || `Chat ${sessions().length + 1}`, directory: ".", time: { created: Date.now() }, projectID: "." }],
+          session_status: { ...prev.session_status, [sid]: { type: "idle" } },
+          message: { ...prev.message, [sid]: [] },
+        }
+      })
+    } else if (title && !sessions().some(s => s.id === sid && s.title === title)) {
+      setSessions(prev => prev.map(s => s.id === sid ? { ...s, title } : s))
+    }
+  }
+
   // Fill the first empty placeholder pane with a session. If no split view is
   // active, create one holding just that session.
   const fillPlaceholder = (sid: string) => {
     setShowWelcome(false)
+    ensureSessionTab(sid)
     const split = activeSplitView()
     if (!split?.layout) {
       createSplitView({ sid })
@@ -1377,17 +1409,24 @@ export function MafwShell() {
   // Anchor for the TaskList popover: the titlebar of the pane whose TaskBar the
   // user clicked (per-pane; the shared titlebarRef is unreliable in splits).
   const [taskAnchor, setTaskAnchor] = createSignal<HTMLElement | null>(null)
+  // Session whose todos the TaskList popover shows (per-pane, so a split pane's
+  // TaskBar never shows the active session's tasks).
+  const [taskListSid, setTaskListSid] = createSignal<string | null>(null)
   const [dockRef, setDockRef] = createSignal<HTMLDivElement | null>(null)
 
   // Hover-intent for the TaskList popover: opening on TaskBar hover, closing a
   // short delay after the mouse leaves (canceled while inside the popover).
   const [taskHover, setTaskHover] = createSignal(false)
   let taskHoverTimer: ReturnType<typeof setTimeout> | null = null
-  const openTasks = (el: HTMLElement | null) => { setTaskAnchor(el); setTaskListOpen(true) }
-  const openTasksHover = (el: HTMLElement | null) => {
+  const openTasks = (el: HTMLElement | null, sid?: string | null) => {
+    if (sid) setTaskListSid(sid)
+    setTaskAnchor(el)
+    setTaskListOpen(true)
+  }
+  const openTasksHover = (el: HTMLElement | null, sid?: string | null) => {
     setTaskHover(true)
     if (taskHoverTimer) { clearTimeout(taskHoverTimer); taskHoverTimer = null }
-    openTasks(el)
+    openTasks(el, sid)
   }
   const scheduleTaskClose = () => {
     if (!taskHover()) return
@@ -1407,9 +1446,10 @@ export function MafwShell() {
     if (taskHoverTimer) { clearTimeout(taskHoverTimer); taskHoverTimer = null }
     setTaskListOpen(false)
   }
-  const toggleTasks = (el: HTMLElement | null) => {
+  const toggleTasks = (el: HTMLElement | null, sid?: string | null) => {
     setTaskHover(false)
     if (taskHoverTimer) { clearTimeout(taskHoverTimer); taskHoverTimer = null }
+    if (sid) setTaskListSid(sid)
     setTaskAnchor(el)
     setTaskListOpen(o => !o)
   }
@@ -1781,8 +1821,8 @@ export function MafwShell() {
                           onTitlebarRef={(el) => setTitlebarRef(el)}
                           taskListOpen={taskListOpen()}
                           tasksPlacement={tasksPlacement()}
-                          onTaskToggle={(el) => toggleTasks(el)}
-                          onTaskHoverOpen={(el) => openTasksHover(el)}
+                          onTaskToggle={(el, sid) => toggleTasks(el, sid ?? null)}
+                          onTaskHoverOpen={(el, sid) => openTasksHover(el, sid ?? null)}
                           onTaskHoverLeave={scheduleTaskClose}
                           onFocus={() => { setShowConfig(false); setActiveTab("chat"); setActiveSessionId(leaf.sid) }}
                           onClosePane={() => closePane(leaf.sid)}
@@ -1840,7 +1880,13 @@ export function MafwShell() {
                         <div class="mafw-split-menu">
                           <For each={opts()}>
                             {(o) => (
-                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => { setSplitMenuFor(null); splitTab(m().sid, o.dir, o.place) }}>
+                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => {
+                                // Snapshot sid BEFORE clearing the menu signal:
+                                // Show's `m()` getter throws once the signal is null.
+                                const sid = m().sid
+                                setSplitMenuFor(null)
+                                splitTab(sid, o.dir, o.place)
+                              }}>
                                 <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
                               </ButtonV2>
                             )}
@@ -1906,7 +1952,11 @@ export function MafwShell() {
                         <div class="mafw-split-menu">
                           <For each={opts()}>
                             {(o) => (
-                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => { setSplitViewMenuFor(null); continueSplitIn(m().id, o.dir, o.place) }}>
+                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => {
+                                const id = m().id
+                                setSplitViewMenuFor(null)
+                                continueSplitIn(id, o.dir, o.place)
+                              }}>
                                 <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
                               </ButtonV2>
                             )}
@@ -1931,9 +1981,9 @@ export function MafwShell() {
                     width={560}
                   >
                     <TaskList
-                      todos={todos[currentSessionID()] || []}
-                      tokens={taskMetrics(currentSessionID()).tokens}
-                      started={taskMetrics(currentSessionID()).started}
+                      todos={todos[taskListSid() ?? currentSessionID()] || []}
+                      tokens={taskMetrics(taskListSid() ?? currentSessionID()).tokens}
+                      started={taskMetrics(taskListSid() ?? currentSessionID()).started}
                       placement="popover"
                       onClose={() => setTaskListOpen(false)}
                       onPin={() => { setTaskListOpen(false); applyRightDock(true, "tasks") }}
@@ -1985,14 +2035,14 @@ export function MafwShell() {
                   liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
                 />
               }>
-                <TaskList
-                  todos={todos[currentSessionID()] || []}
-                  tokens={taskMetrics(currentSessionID()).tokens}
-                  started={taskMetrics(currentSessionID()).started}
-                  placement={viewportNarrow() ? "overlay" : "dock"}
-                  onClose={() => applyRightDock(false)}
-                  onPin={() => applyRightDock(false)}
-                />
+                    <TaskList
+                      todos={todos[currentSessionID()] || []}
+                      tokens={taskMetrics(currentSessionID()).tokens}
+                      started={taskMetrics(currentSessionID()).started}
+                      placement={viewportNarrow() ? "overlay" : "dock"}
+                      onClose={() => applyRightDock(false)}
+                      onPin={() => applyRightDock(false)}
+                    />
               </Show>
             </RightDock>
             <Show when={!viewportNarrow()}>

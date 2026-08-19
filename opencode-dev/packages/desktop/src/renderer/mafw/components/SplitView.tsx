@@ -392,6 +392,10 @@ function SplitLeafView(props: NodeProps) {
 function SplitBranchView(props: NodeProps) {
   const { ref, size } = useObservedSize()
   const [dragging, setDragging] = createSignal(false)
+  // Local ratio applied during a divider drag. Committing through onRatio on
+  // every mousemove would rebuild the whole split subtree each frame (the
+  // leaf content is not keyed), which cancels the drag via onCleanup.
+  const [dragRatio, setDragRatio] = createSignal<number | null>(null)
   const node = props.node
   if (isLeaf(node)) return <>{props.renderLeaf(node, props.path)}</>
   const branch = node
@@ -399,7 +403,12 @@ function SplitBranchView(props: NodeProps) {
   let drag: { axis: "x" | "y"; startClient: number; startRatio: number } | null = null
 
   function stopDividerDrag() {
+    if (drag) {
+      const committed = dragRatio() ?? drag.startRatio
+      if (Math.abs(committed - drag.startRatio) > 0.0005) props.onRatio(props.path, committed)
+    }
     drag = null
+    setDragRatio(null)
     setDragging(false)
     document.body.style.cursor = ""
     document.body.style.userSelect = ""
@@ -411,8 +420,7 @@ function SplitBranchView(props: NodeProps) {
     const dim = drag.axis === "x" ? size().w : size().h
     if (dim <= 0) return
     const minR = Math.min(MIN_PX / dim, 0.45)
-    const next = clamp(drag.startRatio + ((drag.axis === "x" ? e.clientX : e.clientY) - drag.startClient) / dim, minR, 1 - minR)
-    if (Math.abs(next - branch.ratio) > 0.0005) props.onRatio(props.path, next)
+    setDragRatio(clamp(drag.startRatio + ((drag.axis === "x" ? e.clientX : e.clientY) - drag.startClient) / dim, minR, 1 - minR))
   }
   function onDividerDown(e: MouseEvent) {
     if (e.button !== 0) return
@@ -420,6 +428,7 @@ function SplitBranchView(props: NodeProps) {
     const dim = horizontal ? size().w : size().h
     if (dim <= 0) return
     drag = { axis: horizontal ? "x" : "y", startClient: horizontal ? e.clientX : e.clientY, startRatio: branch.ratio }
+    setDragRatio(branch.ratio)
     setDragging(true)
     document.body.style.cursor = horizontal ? "col-resize" : "row-resize"
     document.body.style.userSelect = "none"
@@ -428,16 +437,17 @@ function SplitBranchView(props: NodeProps) {
   }
   onCleanup(stopDividerDrag)
 
+  const ratio = () => dragRatio() ?? branch.ratio
   return (
     <div ref={ref} class={`mafw-split${horizontal ? " mafw-split-h" : " mafw-split-v"}`}>
-      <div class="mafw-split-cell" style={{ flex: `${node.ratio} 1 0`, "min-width": 0, "min-height": 0 }}>
+      <div class="mafw-split-cell" style={{ flex: `${ratio()} 1 0`, "min-width": 0, "min-height": 0 }}>
         {props.renderChild(node.a, [...props.path, 0])}
       </div>
       <div
         class={`mafw-split-divider${horizontal ? " mafw-split-divider-h" : " mafw-split-divider-v"}${dragging() ? " mafw-split-divider-active" : ""}`}
         onMouseDown={onDividerDown}
       />
-      <div class="mafw-split-cell" style={{ flex: `${1 - node.ratio} 1 0`, "min-width": 0, "min-height": 0 }}>
+      <div class="mafw-split-cell" style={{ flex: `${1 - ratio()} 1 0`, "min-width": 0, "min-height": 0 }}>
         {props.renderChild(node.b, [...props.path, 1])}
       </div>
     </div>
@@ -449,7 +459,18 @@ export function SplitView(props: Props) {
   // it hides sibling leaves via `hidden` (DOM kept alive) without touching the
   // layout tree, and is never persisted.
   const [maximized, setMaximized] = createSignal<number[] | null>(null)
+  // Reset the maximized pane whenever the tree's leaf set changes (split,
+  // close, or switching to a different split view). A stale maximized path
+  // would otherwise hide a pane in the new layout. Ratio-only updates (divider
+  // drags) keep the leaf set and therefore preserve the maximized state.
+  let lastLeaves = ""
   createEffect(() => {
+    const leaves = leafIds(props.root).join(",")
+    if (leaves !== lastLeaves) {
+      lastLeaves = leaves
+      setMaximized(null)
+      return
+    }
     const p = maximized()
     if (p && !leafAtPath(props.root, p)) setMaximized(null)
   })

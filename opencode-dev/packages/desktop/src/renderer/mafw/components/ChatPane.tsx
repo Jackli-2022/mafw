@@ -89,8 +89,8 @@ export type ChatPaneProps = {
   onTitlebarRef: (el: HTMLElement | null) => void
   taskListOpen: boolean
   tasksPlacement: "bar" | "dock"
-  onTaskToggle: (el: HTMLElement | null) => void
-  onTaskHoverOpen: (el: HTMLElement | null) => void
+  onTaskToggle: (el: HTMLElement | null, sid?: string | null) => void
+  onTaskHoverOpen: (el: HTMLElement | null, sid?: string | null) => void
   onTaskHoverLeave: () => void
   onFocus: () => void
   onClosePane: () => void
@@ -1324,8 +1324,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 tokens={props.taskMetrics(sidProp()).tokens}
                 started={props.taskMetrics(sidProp()).started}
                 open={props.taskListOpen && props.tasksPlacement === "bar"}
-                onToggle={() => props.onTaskToggle(titlebarEl)}
-                onHoverOpen={() => props.onTaskHoverOpen(titlebarEl)}
+                onToggle={() => props.onTaskToggle(titlebarEl, sidProp())}
+                onHoverOpen={() => props.onTaskHoverOpen(titlebarEl, sidProp())}
                 onHoverLeave={props.onTaskHoverLeave}
               />
               <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
