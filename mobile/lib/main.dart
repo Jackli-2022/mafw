@@ -203,17 +203,27 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     final c = _client;
     final ws = _ws;
     if (c == null || ws == null) return;
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ChatPage(
-        session: s,
-        client: c,
-        ws: ws,
-        cache: _sessionCache,
-        onSpeak: () async {
-          _snack('语音输入将在下一版本启用');
-        },
-      ),
-    ));
+    // Track current session for FCM foreground dedup (spec §6.2: onMessage
+    // skips notification when viewing the same session).
+    _pushService?.currentSessionID = s.id;
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => ChatPage(
+            session: s,
+            client: c,
+            ws: ws,
+            cache: _sessionCache,
+            onSpeak: () async {
+              _snack('语音输入将在下一版本启用');
+            },
+          ),
+        ))
+        .then((_) {
+      // Clear dedup when leaving ChatPage — subsequent pushes should notify.
+      if (_pushService?.currentSessionID == s.id) {
+        _pushService?.currentSessionID = null;
+      }
+    });
   }
 
   void _openSettings() {

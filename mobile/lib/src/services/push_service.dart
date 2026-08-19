@@ -61,6 +61,31 @@ class NotificationData {
   });
 }
 
+/// Builds an FCM data payload (gateway → FCM → device).
+///
+/// Spec §6.2: FCM 仅摘要（不含全文），`title≤12, summary≤80, ts`，
+/// 禁止 `text` 明文全量字段。
+Map<String, String> buildFcmData({
+  required String type,
+  required String sessionID,
+  String? title,
+  String? summary,
+  String? ts,
+}) {
+  final t = (title ?? '').length > 12 ? (title ?? '').substring(0, 12) : (title ?? '');
+  final s = (summary ?? '').length > 80 ? (summary ?? '').substring(0, 80) : (summary ?? '');
+  return {
+    'type': type,
+    'sessionID': sessionID,
+    if (t.isNotEmpty) 'title': t,
+    if (s.isNotEmpty) 'summary': s,
+    if (ts != null && ts.isNotEmpty) 'ts': ts,
+  };
+}
+
+/// SharedPreferences key for last FCM arrival timestamp (msSinceEpoch).
+const kLastFcmAtKey = 'mafw_last_fcm_at';
+
 /// Exception thrown by PushService operations.
 class PushServiceException implements Exception {
   final String message;
@@ -85,6 +110,7 @@ class PushService {
   final void Function(String sessionID)? _onNavigateToSession;
 
   String? _currentToken;
+  String? _currentSessionID;
   Timer? _retryTimer;
   Timer? _tokenRefreshTimer;
   bool _disposed = false;
@@ -131,6 +157,11 @@ class PushService {
 
   /// Get current FCM token.
   String? get currentToken => _currentToken;
+
+  /// Current session being viewed — set by ChatPage enter/exit to suppress
+  /// foreground notifications for the active session (spec §6.2).
+  String? get currentSessionID => _currentSessionID;
+  set currentSessionID(String? v) => _currentSessionID = v;
 
   /// Initialize the push service.
   ///
@@ -366,12 +397,28 @@ class PushService {
 
   // --- Private: Foreground Messages ---
 
+  Future<void> _recordFcmArrival() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(kLastFcmAtKey, DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
   void _onForegroundMessage(RemoteMessage message) {
+    // Record FCM arrival for lastFcmAt >24h gating (background frequency logic).
+    unawaited(_recordFcmArrival());
     final notification = message.notification;
     if (notification == null) return;
 
     final data = message.data;
     final parsed = parseNotificationData(data);
+
+    // Spec §6.2: 若正看该 session，仅刷新 WsClient.events，不弹本地通知。
+    if (parsed.sessionID != null && parsed.sessionID == _currentSessionID) {
+      _onRefreshSessions?.call();
+      return;
+    }
+
     final channelId = parsed.type == 'goal_update'
         ? 'mafw_goals'
         : 'mafw_messages';
@@ -409,6 +456,7 @@ class PushService {
   }
 
   void _onMessageOpenedApp(RemoteMessage message) {
+    unawaited(_recordFcmArrival());
     final data = message.data;
     final parsed = parseNotificationData(data);
     if (parsed.sessionID != null) {
@@ -417,6 +465,7 @@ class PushService {
   }
 
   void _handleInitialMessage(RemoteMessage message) {
+    unawaited(_recordFcmArrival());
     final data = message.data;
     final parsed = parseNotificationData(data);
     if (parsed.sessionID != null) {
@@ -445,6 +494,20 @@ class PushService {
     });
   }
 
+  /// Returns true when WorkManager should add frequency / poll listSessions.
+  /// Spec §6.2: `lastFcmAt>24h 加频` — no FCM for 24h → background health polling fills the gap.
+  static Future<bool> shouldIncreaseFrequency({int nowMs = -1}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final last = prefs.getInt(kLastFcmAtKey);
+      if (last == null) return true; // no FCM ever → increase polling
+      final now = nowMs < 0 ? DateTime.now().millisecondsSinceEpoch : nowMs;
+      return (now - last) > const Duration(hours: 24).inMilliseconds;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // --- Private: WorkManager Background Health Check ---
 
   Future<void> _registerBackgroundHealthCheck() async {
@@ -458,6 +521,7 @@ class PushService {
       frequency: const Duration(minutes: 15),
       constraints: Constraints(
         networkType: NetworkType.connected,
+        requiresBatteryNotLow: true,
       ),
       existingWorkPolicy: ExistingWorkPolicy.keep,
     );
@@ -479,8 +543,10 @@ class PushService {
 
 /// Top-level WorkManager background callback.
 ///
-/// Runs every 15 minutes to check gateway health. Reads config from
-/// SharedPreferences (persisted by PushService.init()).
+/// Runs every 15 minutes to check gateway health (spec §6.2).
+/// Reads config from SharedPreferences (persisted by PushService.init()).
+/// When `lastFcmAt>24h` additionally polls `listSessions`-style endpoint
+/// (lightweight health + sessions check).
 @pragma('vm:entry-point')
 void _backgroundCallback() {
   Workmanager().executeTask((task, inputData) async {
@@ -491,17 +557,37 @@ void _backgroundCallback() {
     final apiToken = prefs.getString('mafw_bg_api_token');
     if (baseUrl == null || baseUrl.isEmpty) return Future.value(true);
 
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      if (apiToken != null && apiToken.isNotEmpty)
+        'Authorization': 'Bearer $apiToken',
+    };
+
     try {
       final url = Uri.parse('$baseUrl/health');
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        if (apiToken != null && apiToken.isNotEmpty)
-          'Authorization': 'Bearer $apiToken',
-      };
-      final response = await http.get(url, headers: headers).timeout(
+      final resp = await http.get(url, headers: headers).timeout(
         const Duration(seconds: 10),
       );
-      return response.statusCode == 200;
+      if (resp.statusCode != 200) return false;
+
+      // lastFcmAt>24h → additionally verify sessions endpoint is reachable
+      // (lightweight listSessions probe; avoids hammering when FCM is healthy).
+      final last = prefs.getInt(kLastFcmAtKey);
+      final overdue = last == null ||
+          (DateTime.now().millisecondsSinceEpoch - last) >
+              const Duration(hours: 24).inMilliseconds;
+      if (overdue) {
+        try {
+          final listUrl = Uri.parse('$baseUrl/api/sessions');
+          final r2 = await http.get(listUrl, headers: headers).timeout(
+            const Duration(seconds: 10),
+          );
+          return r2.statusCode == 200;
+        } catch (_) {
+          return false;
+        }
+      }
+      return true;
     } catch (_) {
       return false;
     }

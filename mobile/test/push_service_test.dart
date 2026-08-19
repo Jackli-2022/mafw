@@ -238,5 +238,43 @@ void main() {
 
       expect(service.currentToken, 'test-token-123');
     });
+
+    test('FCM data payload caps and excludes full text', () {
+      final payload = buildFcmData(
+        type: 'message.updated',
+        sessionID: 's1',
+        title: 'Hi',
+        summary: 'first 80',
+      );
+      expect(payload.containsKey('text'), isFalse);
+      expect(payload['summary']!.length <= 80, isTrue);
+      expect(payload['title'], 'Hi');
+      expect(payload['sessionID'], 's1');
+    });
+
+    test('FCM data caps title 12 and summary 80', () {
+      final payload = buildFcmData(
+        type: 'message.updated',
+        sessionID: 's1',
+        title: '123456789012345',
+        summary: 'x' * 120,
+      );
+      expect(payload['title']!.length, 12);
+      expect(payload['summary']!.length, 80);
+      expect(payload.containsKey('text'), isFalse);
+    });
+
+    test('currentSessionID tracks foreground ChatPage', () {
+      service = PushService(config: config);
+      expect(service.currentSessionID, isNull);
+      service.currentSessionID = 'sess-active';
+      expect(service.currentSessionID, 'sess-active');
+      service.currentSessionID = null;
+      expect(service.currentSessionID, isNull);
+    });
+
+    test('kLastFcmAtKey is stable', () {
+      expect(kLastFcmAtKey, 'mafw_last_fcm_at');
+    });
   });
 }
