@@ -7,14 +7,13 @@
  *   POST /api/mobile/media/tasks/:id/ask — follow-up question (auth proxy)
  *
  * Security:
- *   - Loopback-only (same as /a2a)
+ *   - Auth handled by gateway's authorize() middleware (Bearer/x-api-token/?token=)
  *   - Reuses MediaAgent's MAX_*_BYTES limits per media type
  *   - Blocks external URLs (only artifact URLs accepted by MediaAgent)
  */
 
 import * as http from 'http';
 import { MediaAgent, MAX_VIDEO_BYTES, MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from '../media/media-agent';
-import { isLoopbackAddr } from './auth-helpers';
 
 /** Dependencies injected for testability. */
 export interface MobileMediaDeps {
@@ -141,15 +140,8 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
   const { agent } = deps;
 
   return async (req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> => {
-    const addr = req.socket?.remoteAddress || '';
-    const isLoopback = isLoopbackAddr(addr);
-
     // ── POST /api/mobile/media/tasks — multipart upload → A2A task ──
     if (req.url?.match(/^\/api\/mobile\/media\/tasks(?:\?|$)/) && req.method === 'POST') {
-      if (!isLoopback) {
-        jsonResponse(res, 403, { error: 'forbidden' });
-        return true;
-      }
 
       // Must be multipart
       const contentTypeHeader = req.headers['content-type'] || '';
@@ -241,10 +233,6 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
     // ── POST /api/mobile/media/tasks/:id/ask — follow-up question ──
     const askMatch = req.url?.match(/^\/api\/mobile\/media\/tasks\/([^/]+)\/ask(?:\?|$)/);
     if (askMatch && req.method === 'POST') {
-      if (!isLoopback) {
-        jsonResponse(res, 403, { error: 'forbidden' });
-        return true;
-      }
 
       const taskId = askMatch[1];
       try {

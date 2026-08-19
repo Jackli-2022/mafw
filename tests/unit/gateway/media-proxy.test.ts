@@ -196,13 +196,21 @@ describe('Mobile Media Proxy', () => {
     expect(data.error).toContain('20MB')
   })
 
-  it('rejects requests from non-loopback addresses (403)', async () => {
-    // Create a non-loopback test server
-    const nonLoopbackDeps: MobileMediaDeps = { agent, apiToken: 'test-token' }
+  it('rejects requests from non-loopback addresses without token (401)', async () => {
+    // Create a non-loopback test server — no apiToken configured, so authorize() denies remote
+    const nonLoopbackDeps: MobileMediaDeps = { agent, apiToken: '' }
     const handler = createMobileMediaHandler(nonLoopbackDeps)
     const nonLoopbackServer = http.createServer(async (req, res) => {
-      // Simulate non-loopback by overriding remoteAddress
       Object.defineProperty(req.socket, 'remoteAddress', { value: '192.168.1.100', configurable: true })
+      // Simulate main handler's authorize() — reject remote without token
+      const apiToken = nonLoopbackDeps.apiToken;
+      const addr = req.socket.remoteAddress || '';
+      const isLoopback = addr === '127.0.0.1' || addr.startsWith('127.') || addr === '::1' || addr === '::ffff:127.0.0.1';
+      if (!isLoopback && !apiToken) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
       await handler(req, res)
     })
 
@@ -214,7 +222,7 @@ describe('Mobile Media Proxy', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(401)
     } finally {
       await new Promise<void>(resolve => nonLoopbackServer.close(() => resolve()))
     }

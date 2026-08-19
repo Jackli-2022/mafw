@@ -1534,7 +1534,6 @@ class MafwScheduler {
 
         // GET /api/tts/voices — preset voice list + model info (desktop picker)
         if (req.url === "/api/tts/voices" && req.method === "GET") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
           try {
             const { TTS_VOICES, TTS_DEFAULT_VOICE, TTS_DEFAULT_MODEL } = await import('./media/tts-service.js');
             const ttsCfg = (config.raw as any)?.media?.tts ?? {};
@@ -1558,7 +1557,6 @@ class MafwScheduler {
 
         // POST /api/tts — MiMo-V2.5-TTS speech synthesis (preset voices, wav)
         if (req.url === "/api/tts" && req.method === "POST") {
-          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
           try {
             if (!this.ttsService || !this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'TTS not initialized' })); return; }
             const body = JSON.parse(await readBody(req));
