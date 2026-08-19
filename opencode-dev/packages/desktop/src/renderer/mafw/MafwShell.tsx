@@ -975,6 +975,24 @@ export function MafwShell() {
         return
       }
 
+      if (event.type === "trajectory.event") {
+        const props = (event as any).properties || (raw as any).data?.properties || {}
+        if (!(props.sessionID || props.session_id || (props as any).turnID !== undefined || (props as any).turn_id !== undefined)) {
+          // trajectory.event 的 properties 就是 TrajectoryEvent，sessionID 在外层 sid 也有
+        }
+        const prev = trajectoryLive()[sid] || []
+        // dedup by (turnID, seq)
+        if (!prev.some((e: any) => (e.turnID ?? e.turn_id) === (props.turnID ?? props.turn_id) && e.seq === props.seq)) {
+          setTrajectoryLive({ ...trajectoryLive(), [sid]: [...prev, props] })
+        }
+        return
+      }
+      if (event.type === "trajectory.turn") {
+        const props = (event as any).properties || {}
+        setTrajectoryTurnLive({ ...trajectoryTurnLive(), [sid]: props })
+        return
+      }
+
       if (event.type === "todo.updated") {
         const list = event.properties?.todos
         if (Array.isArray(list)) setTodos(sid, list)
