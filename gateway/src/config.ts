@@ -66,6 +66,15 @@ export interface GatewayConfig {
       energy: number;
       salience: number;
     };
+    /** Anchor-graph multi-hop expansion (Memora-style). */
+    graph: {
+      enabled: boolean;
+      maxHops: number;
+      maxNeighbors: number;
+      damping: number;
+      candidateCap: number;
+      rerankGraphWeight: number;
+    };
   };
   memory: {
     defaultEnergy: number;
@@ -214,6 +223,14 @@ function defaults(projectDir: string): GatewayConfig {
         recency: 0.2,
         energy: 0.1,
         salience: 0.1,
+      },
+      graph: {
+        enabled: true,
+        maxHops: 1,
+        maxNeighbors: 3,
+        damping: 0.6,
+        candidateCap: 50,
+        rerankGraphWeight: 0.15,
       },
     },
     memory: {

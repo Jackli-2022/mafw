@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { HarmonicUnit, HarmonicIndex, HarmonicIndexEntry } from './harmonic-types';
 import { eventBus } from '../../event-bus';
+import { config } from '../../config';
 
 import type { Reranker } from './reranker';
 
@@ -13,6 +14,11 @@ export interface SearchOptions {
   retriever?: 'token' | 'bm25';
   /** Drop results below topScore × cutoffRatio after retrieval (0 = disabled). */
   cutoffRatio?: number;
+  /** Anchor-graph multi-hop expansion (default true when a graph store is attached). */
+  graphExpand?: boolean;
+  maxHops?: number;
+  graphMaxNeighbors?: number;
+  graphDamping?: number;
 }
 
 export interface ScoredEntry {
@@ -109,11 +115,79 @@ export class HarmonicIndexManager {
   }
 
   searchScored(query: string, topK: number = 20, options: SearchOptions = {}): ScoredEntry[] {
+    const retriever = options.retriever ?? 'bm25';
+    const recallK = config.search.recallK || 50;
+    const actualRetriever = options.retriever === 'bm25' ? 'bm25' : 'token';
     let scored: ScoredEntry[];
     if (options.retriever === 'bm25') {
-      scored = this.bm25SearchScored(query, topK);
+      scored = this.bm25SearchScored(query, recallK);
     } else {
-      scored = this.tokenSearchScored(query, topK);
+      scored = this.tokenSearchScored(query, recallK);
+    }
+
+    // ── Anchor-graph multi-hop expansion (Memora-style) ──
+    const graphExpand = options.graphExpand ?? config.search.graph.enabled;
+    if (graphExpand && this.anchorGraphStore && scored.length > 0) {
+      const maxHops = options.maxHops ?? config.search.graph.maxHops;
+      const damping = options.graphDamping ?? config.search.graph.damping;
+      const maxNeighbors = options.graphMaxNeighbors ?? config.search.graph.maxNeighbors;
+      const candidateCap = config.search.graph.candidateCap;
+      const byId = new Map<string, ScoredEntry & { graphScore?: number }>(scored.map(s => [s.entry.id, s]));
+      let hop = 1;
+      while (hop <= maxHops && byId.size < candidateCap) {
+        const frontier = [...byId.keys()];
+        const exclude = new Set(byId.keys());
+        let expanded = false;
+        for (const id of frontier) {
+          const neighbors = this.anchorGraphStore.getNeighbors([id], maxNeighbors, exclude);
+          for (const [nbId, info] of neighbors) {
+            const nbEntry = this.index.entries.find(e => e.id === nbId);
+            if (!nbEntry || nbEntry.superseded_by) continue;
+            const graphScore = info.weight * (nbEntry.energy ?? 0.8) * (nbEntry.salience ?? 1) * Math.pow(damping, hop);
+            const existing = byId.get(nbId);
+            if (!existing) {
+              byId.set(nbId, { entry: nbEntry, score: graphScore, graphScore });
+              expanded = true;
+            } else if ((existing.graphScore ?? 0) < graphScore) {
+              existing.graphScore = graphScore;
+              expanded = true;
+            }
+          }
+        }
+        if (!expanded) break;
+        hop++;
+      }
+      // 融合：bm25 分归一化 + graph 分归一化加权
+      const graphWeight = config.search.graph.rerankGraphWeight;
+      const entries = [...byId.values()];
+      const norm = (vals: number[]) => {
+        const min = Math.min(...vals);
+        const max = Math.max(...vals);
+        if (max === min) return vals.map(() => 0.5);
+        return vals.map(v => (v - min) / (max - min));
+      };
+      const nb = norm(entries.map(e => e.score));
+      const ng = norm(entries.map(e => e.graphScore ?? 0));
+      scored = entries.map((e, i) => ({
+        entry: e.entry,
+        score: (1 - graphWeight) * nb[i] + graphWeight * ng[i],
+      }));
+      scored.sort((a, b) => b.score - a.score);
+    }
+
+    // 可选 heuristic reranker（config.search.reranker === 'heuristic'）
+    if (config.search.reranker === 'heuristic' && scored.length > 0) {
+      const { HeuristicReranker } = require('./reranker');
+      const reranker = new HeuristicReranker({
+        weights: config.search.rerankWeights,
+        cutoffRatio: config.search.cutoffRatio,
+      });
+      scored = reranker.rerank(query, scored, topK);
+      if (config.search.cutoffRatio > 0 && scored.length > 0) {
+        const threshold = scored[0].score * config.search.cutoffRatio;
+        scored = scored.filter(s => s.score >= threshold);
+      }
+      scored = scored.slice(0, topK);
     }
 
     const cutoffRatio = options.cutoffRatio ?? 0;
@@ -127,7 +201,7 @@ export class HarmonicIndexManager {
     this.hookManager?.execute('memory.recall', {
       query,
       resultIds: scored.map(r => r.entry.id),
-      source: options.retriever === 'bm25' ? 'HarmonicIndexManager.bm25Search' : 'HarmonicIndexManager.search'
+      source: actualRetriever === 'bm25' ? 'HarmonicIndexManager.bm25Search' : 'HarmonicIndexManager.search'
     });
 
     return scored;

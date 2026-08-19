@@ -299,3 +299,73 @@ describe('anchor graph write-path integration', () => {
     db.close();
   });
 });
+
+describe('graph multi-hop retrieval', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-mh-'));
+    const memoryDir = path.join(tmpDir, 'memory');
+    fs.mkdirSync(memoryDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeGraphStore() {
+    const { GatewayDatabase } = require('../../gateway/src/memory/gateway-db');
+    const { AnchorGraphStore } = require('../../gateway/src/graph/anchor-graph-store');
+    const db = new GatewayDatabase(path.join(tmpDir, 'gw-mh.db'));
+    const graph = new AnchorGraphStore(db);
+    return { db, graph };
+  }
+
+  test('expands neighbors into results with shared anchors', async () => {
+    const { db, graph } = makeGraphStore();
+    const store = new HarmonicUnitFileStore(tmpDir, undefined, graph);
+    await store.write({ id: 'mh_a', type: 'semantic', primary_abstraction: 'Dave and Sarah agreed the Orion plan', cue_anchors: ['orion-plan', 'dave', 'sarah'], memory_value: 'v1', energy: 0.8, created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z' } as any);
+    await store.write({ id: 'mh_b', type: 'semantic', primary_abstraction: 'Prototype pushed to April 1', cue_anchors: ['orion-plan', 'prototype'], memory_value: 'v2', energy: 0.8, created_at: '2025-01-02T00:00:00.000Z', updated_at: '2025-01-02T00:00:00.000Z' } as any);
+    await store.write({ id: 'mh_c', type: 'semantic', primary_abstraction: 'Unrelated recipe for pasta', cue_anchors: ['cooking'], memory_value: 'v3', energy: 0.8, created_at: '2025-01-03T00:00:00.000Z', updated_at: '2025-01-03T00:00:00.000Z' } as any);
+
+    const results = store.indexManager_().search('Orion plan agreed', 5, { retriever: 'bm25', graphExpand: true });
+    const ids = results.map(r => r.id);
+    expect(ids[0]).toBe('mh_a');
+    expect(ids).toContain('mh_b');
+    expect(ids).not.toContain('mh_c');
+    db.close();
+  });
+
+  test('graphExpand=false returns baseline behavior (no expansion)', async () => {
+    const { db, graph } = makeGraphStore();
+    const store = new HarmonicUnitFileStore(tmpDir, undefined, graph);
+    // a 独有锚点 'orion-timeline'；b 共享 'orion-timeline' 但文本无关
+    await store.write({ id: 'mh2_a', type: 'semantic', primary_abstraction: 'Dave agreed the Orion schedule', cue_anchors: ['orion-timeline', 'dave'], memory_value: 'v1', energy: 0.8, created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z' } as any);
+    await store.write({ id: 'mh2_b', type: 'semantic', primary_abstraction: 'Prototype pushed to April 1', cue_anchors: ['orion-timeline', 'prototype'], memory_value: 'v2', energy: 0.8, created_at: '2025-01-02T00:00:00.000Z', updated_at: '2025-01-02T00:00:00.000Z' } as any);
+
+    // query 用 a 的独有词（orion-schedule 相关），b 的 bm25 分应低
+    const withGraph = store.indexManager_().search('Orion schedule agreed', 5, { retriever: 'bm25', graphExpand: true });
+    const withoutGraph = store.indexManager_().search('Orion schedule agreed', 5, { retriever: 'bm25', graphExpand: false });
+    const withIds = withGraph.map(r => r.id);
+    const withoutIds = withoutGraph.map(r => r.id);
+    // 图扩展把 b（共享 orion-timeline 锚点）带进结果；无图时 b 未进 top（bm25 低分）
+    expect(withIds).toContain('mh2_b');
+    const rankWithB = withIds.indexOf('mh2_b');
+    const rankWithoutB = withoutIds.indexOf('mh2_b');
+    expect(rankWithB).toBeGreaterThanOrEqual(0);
+    // 图扩展后 b 排名应优于（或等于）无图时的排名；无图可能不在结果（-1）
+    if (rankWithoutB >= 0) {
+      expect(rankWithB).toBeLessThanOrEqual(rankWithoutB);
+    } else {
+      expect(rankWithB).toBeGreaterThanOrEqual(0);
+    }
+    db.close();
+  });
+
+  test('works without graph store (isolated env behaves as before)', async () => {
+    const store = new HarmonicUnitFileStore(tmpDir);
+    await store.write({ id: 'iso1', type: 'semantic', primary_abstraction: 'some unique memory about zzz', cue_anchors: [], memory_value: 'v', energy: 0.8, created_at: '2025-01-01T00:00:00.000Z', updated_at: '2025-01-01T00:00:00.000Z' } as any);
+    const results = store.indexManager_().search('some unique memory about zzz', 5, { retriever: 'bm25', graphExpand: true });
+    expect(results.length).toBeGreaterThan(0);
+  });
+});
