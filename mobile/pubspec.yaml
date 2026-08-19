@@ -49,6 +49,8 @@ dependencies:
   workmanager: ^0.5.2
   # Image compression before upload
   flutter_image_compress: ^2.3.4
+  # Camera / gallery picking for media upload
+  image_picker: ^1.1.2
   # Audio playback for TTS
   just_audio: ^0.9.43
   # Local cache for session messages (TTL + size limit)
