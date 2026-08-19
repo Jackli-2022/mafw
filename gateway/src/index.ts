@@ -3219,6 +3219,47 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/sessions/{id}/trajectory —agent trajectory timeline (task/desktop)
+        const trajectoryMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/trajectory(?:\?|$)/);
+        if (trajectoryMatch && req.method === 'GET') {
+          const id = trajectoryMatch[1];
+          try {
+            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const limit = Math.min(parseInt(parsedUrl.searchParams.get('limit') || '50', 10), 200);
+            const beforeTurn = parsedUrl.searchParams.get('before_turn') ? Number(parsedUrl.searchParams.get('before_turn')) : undefined;
+            const rebuild = parsedUrl.searchParams.get('rebuild') === '1';
+            const store = this.trajectoryStore;
+            if (!store) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ turns: [], events: [] }));
+              return;
+            }
+            if (rebuild) {
+              try {
+                const result = await this.opencodeClient?.session.messages({ path: { id }, query: { limit: 200 } });
+                const data = (result as any)?.data || result || [];
+                const messages = Array.isArray(data) ? data : [];
+                const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
+                const out = await handleTrajectoryRequest({ store, sessionID: id, opts: { limit, beforeTurn, rebuild }, messages: { data: messages }, projectID: this.projectDir || '.' });
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(out));
+                return;
+              } catch (err: any) {
+                log.warn(`[Trajectory] rebuild failed (non-fatal): ${err.message}`);
+              }
+            }
+            const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
+            const out = await handleTrajectoryRequest({ store, sessionID: id, opts: { limit, beforeTurn } });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(out));
+          } catch (err: any) {
+            log.warn(`[Trajectory] fetch failed (non-fatal): ${err.message}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ turns: [], events: [] }));
+          }
+          return;
+        }
+
         // GET /api/sessions/{id}/children —subagent sessions of this run (AgentPicker)
         const childrenMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/children(?:\?|$)/);
         if (childrenMatch && req.method === 'GET') {
