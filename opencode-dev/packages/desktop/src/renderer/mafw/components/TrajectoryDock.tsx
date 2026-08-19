@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { createEffect, createSignal, createStore, For, Show, onCleanup } from "solid-js"
+import { createEffect, createSignal, For, Show, onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 
