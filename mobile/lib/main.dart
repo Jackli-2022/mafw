@@ -241,11 +241,16 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     });
   }
 
-  void _openSettings() {
-    final cfg = _config;
-    if (cfg == null) return;
+  Future<void> _openSettings() async {
+    var cfg = _config;
+    if (cfg == null) {
+      try {
+        cfg = await ConnectionConfig.load();
+      } catch (_) {}
+    }
+    if (cfg == null || !mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ConnectionSettingsPage(initial: cfg, onSaved: _applyConfig),
+      builder: (_) => ConnectionSettingsPage(initial: cfg!, onSaved: _applyConfig),
     ));
   }
 
