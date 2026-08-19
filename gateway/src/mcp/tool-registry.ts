@@ -42,15 +42,16 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_search_hybrid",
-    description: "Search memory units using token-count or BM25 retrieval (×energy)",
+    description: "Search memory units using BM25 (×energy) with optional iterative expansion. If results are insufficient and canExpand=true, call again with the returned state to expand via shared cue anchors. Stop when memories suffice; max 2 expansion rounds (3 calls total).",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query text" },
         topK: { type: "number", description: "Maximum results", default: 20 },
         memoryType: { type: "string", enum: ["episodic", "semantic", "procedural", "global"], description: "Optional filter" },
-        policy: { type: "string", enum: ["guided", "oneshot"], default: "guided", description: "Retrieval strategy" },
+        policy: { type: "string", enum: ["guided", "oneshot"], default: "guided", description: "Retrieval strategy (reserved)" },
         retriever: { type: "string", enum: ["token", "bm25"], default: "token", description: "Retrieval scoring engine" },
+        state: { type: "string", description: "Iteration state from a previous call; pass to continue expanding" },
       },
       required: ["query"],
     },

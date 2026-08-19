@@ -45,9 +45,11 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     // written via MCP are immediately visible to recall, step-injection, and
     // subsequent searches without requiring a restart.
     const sharedIndex = (memory as any)?.harmonicIndex;
+    const sharedGraph = (memory as any)?.harmonicIndex?.getAnchorGraphStore?.()
+      ?? (memory as any)?.getAnchorGraphStore?.() ?? undefined;
     const store = sharedIndex
-      ? new HarmonicUnitFileStore(resolvedDir, sharedIndex)
-      : new HarmonicUnitFileStore(resolvedDir);
+      ? new HarmonicUnitFileStore(resolvedDir, sharedIndex, sharedGraph)
+      : new HarmonicUnitFileStore(resolvedDir, undefined, sharedGraph);
     await store.write(unit as any);
 
     return { content: [{ type: "text", text: JSON.stringify({ success: true, id: unitId, tier: 'memories' }) }] };
