@@ -51,7 +51,7 @@ Rules:
  * Standalone scan function for benchmark: calls mimo directly via chatCompletion,
  * no MemoryWorker needed. Returns full IDs resolved from the index.
  */
-async function runScan(
+export async function runScan(
   index: HarmonicIndexManager,
   query: string,
   apiUrl: string,

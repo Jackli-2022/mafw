@@ -12,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { L1QuestionResult, L2QuestionResult } from './types';
-import { chatCompletion, ChatMessage, loadAuthKey } from './llm';
+import { chatCompletion, chatCompletionFull, ChatMessage, loadAuthKey } from './llm';
 import { buildJudgePrompt, parseJudgeScore } from './judge-prompts';
 import { aggregateByType } from './metrics';
 
@@ -31,7 +31,7 @@ function parseArgs() {
     apiUrl: flags.get('--apiUrl') ?? 'https://openrouter.ai/api/v1/chat/completions',
     apiKeyProvider: flags.get('--apiKeyProvider') ?? 'openrouter',
     topK: parseInt(flags.get('--topK') ?? '10', 10),
-    maxTokens: parseInt(flags.get('--maxTokens') ?? '1024', 10),
+    maxTokens: parseInt(flags.get('--maxTokens') ?? '2048', 10),
     order: (flags.get('--order') ?? 'date') as 'date' | 'rank',
     cot: flags.get('--cot') === 'true',
     enumerate: flags.get('--enumerate') === 'true',
@@ -74,6 +74,17 @@ function sortContexts(contexts: string[], order: 'date' | 'rank'): string[] {
   return sortByDatePrefix(contexts);
 }
 
+function weeksSince(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return '';
+  const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffWeeks = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 7));
+  return diffWeeks > 0 ? ` (${diffWeeks} weeks ago)` : '';
+}
+
 function buildReaderMessages(
   question: string,
   contexts: string[],
@@ -90,7 +101,8 @@ function buildReaderMessages(
     ? sorted.map((c, i) => {
         const date = c.match(/^\[(\d{4}\/\d{2}\/\d{2})\s+\(\w+\)\s+\d{2}:\d{2}\]/)?.[1] ?? '';
         const body = c.replace(/^\[[^\]]*\]\s*/, '');
-        return `### Session ${i + 1}:\nSession Date: ${date}\nSession Content:\n${body}`;
+        const weeksAgo = weeksSince(date);
+        return `### Session ${i + 1}:\nSession Date: ${date}${weeksAgo}\nSession Content:\n${body}`;
       }).join('\n\n')
     : '(no relevant history chats retrieved)';
   const abstentionHint = isAbstention
@@ -202,7 +214,7 @@ async function main() {
         args.cot,
         args.enumerate,
       );
-      const readerAnswer = await chatCompletion({
+      const readerResult = await chatCompletionFull({
         model: args.readerModel,
         apiUrl: args.apiUrl,
         apiKey: loadAuthKey(args.apiKeyProvider),
@@ -210,6 +222,29 @@ async function main() {
         temperature: 0,
         max_tokens: args.maxTokens,
       });
+      let readerAnswer = readerResult.content;
+      // Truncation detection: if finish_reason=length, retry with continuation
+      if (readerResult.truncated) {
+        const continuationMessages: ChatMessage[] = [
+          ...readerMessages,
+          { role: 'assistant', content: readerAnswer },
+          { role: 'user', content: 'Your previous response was cut off. Please continue from where you left off.' },
+        ];
+        try {
+          const continuationResult = await chatCompletionFull({
+            model: args.readerModel,
+            apiUrl: args.apiUrl,
+            apiKey: loadAuthKey(args.apiKeyProvider),
+            messages: continuationMessages,
+            temperature: 0,
+            max_tokens: args.maxTokens,
+          });
+          readerAnswer = readerAnswer + '\n' + continuationResult.content;
+        } catch (err: any) {
+          // Continuation failed, use partial answer
+          console.error(`[truncation retry failed: ${err.message}]`);
+        }
+      }
       const { score, reason } = await judgeOne(item, readerAnswer, args.judgeModel, args.apiUrl, args.apiKeyProvider);
       if (score === 0) {
         const hardNegative = {

@@ -35,7 +35,18 @@ export interface ChatOptions {
   apiKey?: string;
 }
 
+export interface ChatResult {
+  content: string;
+  finishReason: string;
+  truncated: boolean;
+}
+
 export async function chatCompletion(opts: ChatOptions): Promise<string> {
+  const result = await chatCompletionFull(opts);
+  return result.content;
+}
+
+export async function chatCompletionFull(opts: ChatOptions): Promise<ChatResult> {
   const url = opts.apiUrl ?? 'https://opencode.ai/zen/go/v1/chat/completions';
   const key = opts.apiKey ?? loadAuthKey('opencode-go');
   const resp = await fetch(url, {
@@ -59,7 +70,9 @@ export async function chatCompletion(opts: ChatOptions): Promise<string> {
     throw new Error(`LLM request failed ${resp.status}: ${text}`);
   }
   const json = await resp.json() as any;
-  const message = json.choices?.[0]?.message;
+  const choice = json.choices?.[0];
+  const message = choice?.message;
+  const finishReason = choice?.finish_reason ?? 'unknown';
   let content = message?.content;
   // Reasoning models (e.g. mimo) put thinking in reasoning_content; if content
   // is empty (finish_reason=length cut reasoning off), fall back to it so the
@@ -70,7 +83,11 @@ export async function chatCompletion(opts: ChatOptions): Promise<string> {
   if (typeof content !== 'string') {
     throw new Error('LLM response missing content');
   }
-  return content;
+  return {
+    content,
+    finishReason,
+    truncated: finishReason === 'length',
+  };
 }
 
 /** Best-effort JSON extraction; falls back to raw string. */
