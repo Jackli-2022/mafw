@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { pipeline } from '@xenova/transformers';
+import { pipeline } from '@huggingface/transformers';
 
 export class VectorIndex {
   private embedder: any = null;

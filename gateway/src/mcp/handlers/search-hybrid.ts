@@ -1,6 +1,7 @@
 import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store";
+import { createReranker, applyReranker } from "../../core/memory/reranker";
 
 interface FrontierItem { id: string; weight: number; }
 interface IterState { seen: string[]; frontier: FrontierItem[]; round: number; }
@@ -99,6 +100,15 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
       const consumed = new Set(scored.map(s => s.entry.id));
       const remaining = prev.frontier.filter(f => !consumed.has(f.id) && !seen.includes(f.id));
       frontier = [...computeFrontier(graphStore, scored.map(s => s.entry.id), new Set(seen)), ...remaining];
+    }
+
+    // cross-encoder reranking（handler-level，不改 searchScored 同步签名）
+    if (config.search.reranker === 'cross-encoder' && scored.length > 0) {
+      const reranker = createReranker('cross-encoder');
+      if (reranker) {
+        scored = (await applyReranker(query, scored as any, reranker, topK * 2))
+          .map(s => ({ entry: s.entry, score: s.score, graphScore: 0 }));
+      }
     }
 
     // memoryType 后置过滤（首轮与迭代轮一致）

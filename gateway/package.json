@@ -11,6 +11,7 @@
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",
     "@earendil-works/pi-coding-agent": "^0.84.1",
+    "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "1.0.0",
     "@opencode-ai/sdk": "^1.17.12",
     "better-sqlite3": "^12.11.1",
@@ -19,9 +20,6 @@
     "langchain-mcp-adapters": "^0.6.0",
     "ws": "^8.21.3",
     "zeromq": "^6.1.2"
-  },
-  "optionalDependencies": {
-    "@xenova/transformers": "^2.17.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
