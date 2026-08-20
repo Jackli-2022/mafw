@@ -111,25 +111,35 @@ export class HeuristicReranker implements Reranker {
 }
 
 /**
- * Optional local cross-encoder reranker (ms-marco MiniLM via @xenova/transformers).
- * If the dependency or model is unavailable, it falls back to HeuristicReranker.
+ * Optional local semantic reranker (bi-encoder cosine via @xenova/transformers).
+ * Uses all-MiniLM-L6-v2 (feature-extraction) to score query×memory semantic
+ * similarity, fused 50/50 with BM25. Falls back to HeuristicReranker when the
+ * dependency or model is unavailable.
+ *
+ * NOTE: true cross-encoders are not usable here — ms-marco-MiniLM-L6-v2 is
+ * absent from hf-mirror, and @xenova/transformers v2's text-classification does
+ * not implement cross-encoder pair semantics (flat non-discriminative scores).
+ * Bi-encoder cosine still captures paraphrase/semantic overlap BM25 misses.
  */
 export class CrossEncoderReranker implements Reranker {
-  name = 'cross-encoder';
-  private modelName = 'Xenova/ms-marco-MiniLM-L6-v2';
-  private pipeline: any = null;
+  name = 'semantic';
+  private modelName = 'Xenova/all-MiniLM-L6-v2';
+  private extractor: any = null;
   private fallback = new HeuristicReranker();
   private loading: Promise<void> | null = null;
 
   constructor() {}
 
-  private async ensurePipeline(): Promise<void> {
-    if (this.pipeline) return;
+  private async ensureExtractor(): Promise<void> {
+    if (this.extractor) return;
     if (this.loading) return this.loading;
     this.loading = (async () => {
       try {
-        const { pipeline } = await new Function('spec', 'return import(spec)')('@xenova/transformers');
-        this.pipeline = await pipeline('text-classification', this.modelName);
+        const mod: any = await new Function('spec', 'return import(spec)')('@xenova/transformers');
+        // transformers.js v2 does not read HF_ENDPOINT; point remoteHost at the
+        // mirror explicitly so model download works on CN networks.
+        mod.env.remoteHost = process.env.HF_ENDPOINT || 'https://hf-mirror.com/';
+        this.extractor = await mod.pipeline('feature-extraction', this.modelName);
       } catch (err: any) {
         // eslint-disable-next-line no-console
         console.warn(`[CrossEncoderReranker] failed to load ${this.modelName}, falling back to heuristic: ${err.message}`);
@@ -138,25 +148,44 @@ export class CrossEncoderReranker implements Reranker {
     return this.loading;
   }
 
+  private cosine(a: Float32Array, b: Float32Array): number {
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      na += a[i] * a[i];
+      nb += b[i] * b[i];
+    }
+    if (na === 0 || nb === 0) return 0;
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  }
+
   async rerank(query: string, candidates: ScoredEntry[], topK: number): Promise<ScoredEntry[]> {
-    await this.ensurePipeline();
-    if (!this.pipeline) {
+    await this.ensureExtractor();
+    if (!this.extractor) {
       return this.fallback.rerank(query, candidates, topK);
     }
+    if (candidates.length === 0) return [];
 
-    const pairs = candidates.map(c => [query, c.entry.primary_abstraction + ' ' + c.entry.cue_anchors.join(' ')]);
-    const outputs: any[] = await this.pipeline(pairs);
-    const scored = candidates.map((c, i) => ({
-      ...c,
-      ceScore: typeof outputs[i]?.score === 'number' ? outputs[i].score : 0,
-    }));
+    const texts = [query, ...candidates.map(c => c.entry.primary_abstraction + ' ' + (c.entry.cue_anchors || []).join(' '))];
+    const out = await this.extractor(texts, { pooling: 'mean', normalize: true });
+    // v2 feature-extraction returns a single Tensor: dims=[n, dim], data flat.
+    const dim = out?.dims?.[1] ?? 0;
+    const flat = out?.data as Float32Array | undefined;
+    const vecs: Float32Array[] = [];
+    if (flat && dim > 0) {
+      for (let i = 0; i < out.dims[0]; i++) {
+        vecs.push(flat.slice(i * dim, (i + 1) * dim));
+      }
+    }
+    const qVec = vecs[0];
+    const sims = qVec ? vecs.slice(1).map(v => this.cosine(qVec, v)) : candidates.map(() => 0);
 
-    // Fuse cross-encoder score with original BM25 score (both min-max normalized).
-    const normBm25 = normalize(scored.map(c => c.score));
-    const normCe = normalize(scored.map(c => c.ceScore));
-    const fused = scored.map((c, i) => ({
+    // Fuse semantic similarity with original BM25 score (both min-max normalized).
+    const normBm25 = normalize(candidates.map(c => c.score));
+    const normSim = normalize(sims);
+    const fused = candidates.map((c, i) => ({
       ...c,
-      fusedScore: 0.5 * normBm25[i] + 0.5 * normCe[i],
+      fusedScore: 0.5 * normBm25[i] + 0.5 * normSim[i],
     }));
 
     fused.sort((a, b) => b.fusedScore - a.fusedScore);
