@@ -29,7 +29,7 @@ export interface IndexScanOptions {
   timeoutMs?: number;
   /** Minimum confidence to include scan results (default 0.3). */
   minConfidence?: number;
-  /** Max IDs to return from scan (default 5). */
+  /** Max IDs to return from scan (default 8). */
   maxIds?: number;
 }
 
@@ -42,11 +42,12 @@ Return ONLY valid JSON (no markdown):
 {"relevant_ids": ["<short_id>", ...], "reasoning": "<one sentence>", "confidence": <0.0-1.0>}
 
 Rules:
-- Select at most 5 entries that are most relevant to the query
+- Select at most 8 entries that are most relevant to the query
 - Consider semantic relevance, not just keyword matching
 - For preference queries (what does the user like/dislike), prioritize entries with "preference" type or "pref:" anchors
 - For temporal queries (when/what happened), prioritize entries with matching dates
 - For multi-session queries (what did we discuss about X), look for entries sharing topic anchors
+- If answering the question requires combining information from multiple memories (e.g., "the restaurant near the hotel I mentioned"), return ALL necessary entry IDs — err on the side of including more rather than fewer
 - confidence = how sure you are that the selected entries answer the query (0.0 = guess, 1.0 = certain)
 - If nothing is relevant, return {"relevant_ids": [], "reasoning": "no relevant memories", "confidence": 0.0}`;
 

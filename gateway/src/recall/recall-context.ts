@@ -73,7 +73,25 @@ export async function searchRecallMemories(
   // Merge scan results (skip IDs already from BM25)
   if (scanResult && scanResult.relevantIds.length > 0) {
     const indexEntries = (index as any).getIndex?.()?.entries || []
-    for (const id of scanResult.relevantIds) {
+
+    // Anchor graph 1-hop expansion: for each scan-selected ID, bring in its
+    // graph neighbors. This catches multi-session relationships that the
+    // scan alone might miss (e.g., scan picks "restaurant" but not "hotel
+    // near the restaurant" — the graph edge connects them).
+    const graphStore = (index as any).getAnchorGraphStore?.()
+    const expandedIds = new Set<string>(scanResult.relevantIds)
+    if (graphStore) {
+      for (const id of scanResult.relevantIds) {
+        try {
+          const neighbors = graphStore.getNeighbors([id], 3, new Set(scanResult.relevantIds))
+          for (const [nbId] of neighbors) {
+            expandedIds.add(nbId)
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
+
+    for (const id of expandedIds) {
       if (resultMap.has(id)) {
         // Already from BM25 — mark as 'both'
         resultMap.get(id)!.source = 'both'
@@ -82,6 +100,7 @@ export async function searchRecallMemories(
       if (pushed.has(id)) continue
       const entry = indexEntries.find((e: any) => e.id === id)
       if (!entry || entry.superseded_by) continue
+      const isDirectScan = scanResult.relevantIds.includes(id)
       resultMap.set(id, {
         id: entry.id,
         primary_abstraction: entry.primary_abstraction || '',
@@ -89,10 +108,10 @@ export async function searchRecallMemories(
         energy: entry.energy || 0,
         type: entry.type,
         created_at: entry.created_at,
-        source: 'scan',
+        source: isDirectScan ? 'scan' : 'scan+graph',
       })
     }
-    log.info(`[Recall] bm25=${bm25Results.length} scan=${scanResult.relevantIds.length} union=${resultMap.size} confidence=${scanResult.confidence}`)
+    log.info(`[Recall] bm25=${bm25Results.length} scan=${scanResult.relevantIds.length} expanded=${expandedIds.size} union=${resultMap.size} confidence=${scanResult.confidence}`)
   }
 
   // Sort by energy descending, then slice to topK
