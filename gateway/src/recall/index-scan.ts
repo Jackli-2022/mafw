@@ -137,7 +137,6 @@ export function resolveShortIds(shortIds: string[], index: HarmonicIndexManager)
 export class IndexScanService {
   private cachedIndexText: string | null = null;
   private cachedAt: number = 0;
-  private scanWorker: MemoryWorker | null = null;
   private inFlight: Promise<ScanResult | null> | null = null;
 
   constructor(
@@ -168,7 +167,7 @@ export class IndexScanService {
    * same query, returns the same promise.
    */
   async scan(query: string, options: IndexScanOptions = {}): Promise<ScanResult | null> {
-    const timeoutMs = options.timeoutMs ?? 10_000;
+    const timeoutMs = options.timeoutMs ?? 30_000;
     const minConfidence = options.minConfidence ?? 0.3;
 
     // Deduplicate concurrent scans
@@ -183,9 +182,11 @@ export class IndexScanService {
   }
 
   private async _doScan(query: string, timeoutMs: number, minConfidence: number): Promise<ScanResult | null> {
+    // Create a fresh worker for each scan (stateless) — prevents session
+    // history accumulation that causes O(n²) token growth and timeouts.
+    const worker = this.workerFactory();
     try {
       const indexText = this.getIndexText();
-      const worker = this.getWorker();
       const prompt = `${indexText}\n\n---\n\nUser query: ${query}\n\nSelect the most relevant memory entries from the index above.`;
 
       const response = await Promise.race([
@@ -212,21 +213,14 @@ export class IndexScanService {
     } catch (err: any) {
       log.warn(`[IndexScan] scan failed: ${err.message}`);
       return null;
+    } finally {
+      // Dispose the one-shot worker (frees the opencode session)
+      void worker.dispose().catch(() => {});
     }
   }
 
-  private getWorker(): MemoryWorker {
-    if (!this.scanWorker) {
-      this.scanWorker = this.workerFactory();
-    }
-    return this.scanWorker;
-  }
-
-  /** Dispose the scan worker (gateway shutdown). */
+  /** Dispose is now a no-op — each scan creates and disposes its own worker. */
   async dispose(): Promise<void> {
-    if (this.scanWorker) {
-      await this.scanWorker.dispose();
-      this.scanWorker = null;
-    }
+    // No persistent worker to dispose.
   }
 }
