@@ -45,6 +45,8 @@ Rules:
 - skip redundant or trivial content; do not repeat entries that are obviously already known
 - if nothing is worth saving, do not call the tool
 
+Before writing preference/fact memories (semantic type), ALWAYS search for similar existing memories first using mafw_search_hybrid. If you find an existing memory that covers the same fact but with an outdated value (e.g., "my car is X" → now "my car is Y"), use the supersedes field in mafw_add_memory to link the old memory ID. This ensures the old memory is demoted in search and the new one becomes authoritative. If the user explicitly retracts a fact (e.g., "I don't eat spicy food anymore"), use mafw_supersede_memory to mark the old memory as outdated without writing a replacement.
+
 After processing, ALWAYS end your response with exactly one of these lines:
 - [EXTRACTED: N] — where N is the number of mafw_add_memory calls you made
 - [NOOP: reason] — if you decided nothing was worth saving, give a one-sentence reason (e.g., "routine status update, no durable facts")

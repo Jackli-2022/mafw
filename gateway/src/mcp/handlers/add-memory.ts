@@ -11,6 +11,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     const memoryType = (args.memoryType as string) || config.memory.defaultMemoryType;
     const cueAnchors = (args.cueAnchors as string[]) || [];
     const primaryAbstraction = (args.primaryAbstraction as string) || content.slice(0, config.memory.defaultPrimaryAbstractionLength);
+    const supersedes = (args.supersedes as string[]) || [];
 
     if (!["episodic", "semantic", "procedural", "global"].includes(memoryType)) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
@@ -50,9 +51,25 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     const store = sharedIndex
       ? new HarmonicUnitFileStore(resolvedDir, sharedIndex, sharedGraph)
       : new HarmonicUnitFileStore(resolvedDir, undefined, sharedGraph);
+
+    // Mark superseded memories before writing the new one. This establishes
+    // the supersede link: old entries get energy halved + search penalty,
+    // new entry becomes the authoritative version.
+    const supersededIds: string[] = [];
+    for (const oldId of supersedes) {
+      if (store.markSuperseded(oldId, unitId)) {
+        supersededIds.push(oldId);
+      }
+    }
+
     await store.write(unit as any);
 
-    return { content: [{ type: "text", text: JSON.stringify({ success: true, id: unitId, tier: 'memories' }) }] };
+    return { content: [{ type: "text", text: JSON.stringify({
+      success: true,
+      id: unitId,
+      tier: 'memories',
+      superseded: supersededIds.length > 0 ? supersededIds : undefined,
+    }) }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
   }

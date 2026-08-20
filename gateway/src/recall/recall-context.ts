@@ -22,9 +22,11 @@ export function searchRecallMemories(
   options: SearchRecallOptions = {},
 ): RecallMemory[] {
   if (!index) return []
-  const results = index.search(query, topK, options) || []
+  const results = index.search(query, topK * 2, options) || []
   return results
     .filter((e) => !pushed.has(e.id))
+    .filter((e) => !(e as any).superseded_by)  // Gap 2: hide superseded from recall
+    .slice(0, topK)
     .map((e) => ({
       id: e.id,
       primary_abstraction: e.primary_abstraction || '',

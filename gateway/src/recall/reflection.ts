@@ -32,6 +32,7 @@ export interface ReflectionResult {
   reviewed: number;
   distilled: number;
   deduped: number;
+  superseded: number;
   failed: number;
   pendingSessions: number;
 }
@@ -124,14 +125,42 @@ export class ReflectionPipeline {
     this.store = new HarmonicUnitFileStore(opts.baseDir, opts.index);
   }
 
-  private isDuplicate(content: string): boolean {
+  /**
+   * Three-way classification for a new insight against existing memories:
+   * - 'duplicate': MinHash > 0.6 → skip (same content)
+   * - 'conflict': MinHash 0.4-0.6 + shared cue_anchors → supersede old entry
+   * - 'novel': no significant overlap → write normally
+   *
+   * The conflict band (0.4-0.6) catches "same topic, different value" cases
+   * that MinHash dedup misses — e.g., "deploy to us-east-1" vs "deploy to
+   * eu-west-1" share structure but differ in the critical detail.
+   */
+  private classifyInsight(content: string, cueAnchors: string[]): { kind: 'duplicate' | 'conflict' | 'novel'; conflictTarget?: string } {
     const sig = this.merger.generateSignature(content);
+    let bestMatch: { id: string; sim: number } | null = null;
+
     for (const entry of this.opts.index.getIndex().entries) {
       if (entry.type !== 'semantic' && entry.type !== 'procedural') continue;
+      if ((entry as any).superseded_by) continue; // skip already-superseded entries
       const other = `${entry.primary_abstraction} ${entry.cue_anchors.join(' ')}`;
-      if (this.merger.similarity(sig, this.merger.generateSignature(other)) > 0.6) return true;
+      const sim = this.merger.similarity(sig, this.merger.generateSignature(other));
+
+      if (sim > 0.6) return { kind: 'duplicate' };
+      if (sim > 0.4 && sim > (bestMatch?.sim ?? 0)) {
+        bestMatch = { id: entry.id, sim };
+      }
     }
-    return false;
+
+    // Conflict requires both MinHash in the 0.4-0.6 band AND at least one shared cue_anchor
+    if (bestMatch && bestMatch.sim > 0.4) {
+      const targetEntry = this.opts.index.getIndex().entries.find(e => e.id === bestMatch!.id);
+      const sharedAnchors = cueAnchors.filter(a => targetEntry?.cue_anchors.includes(a));
+      if (sharedAnchors.length > 0) {
+        return { kind: 'conflict', conflictTarget: bestMatch.id };
+      }
+    }
+
+    return { kind: 'novel' };
   }
 
   /**
@@ -141,7 +170,7 @@ export class ReflectionPipeline {
    * the next run).
    */
   private async reflectSession(sessionID: string, episodes: { id: string; text: string }[]): Promise<ReflectionResult> {
-    const result: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, failed: 0, pendingSessions: 0 };
+    const result: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0 };
     if (episodes.length === 0) return result;
     result.reviewed = episodes.length;
 
@@ -158,10 +187,13 @@ export class ReflectionPipeline {
 
     const maxInsights = this.opts.maxInsights ?? 10;
     for (const insight of insights.slice(0, maxInsights)) {
-      if (this.isDuplicate(insight.content)) {
+      const classification = this.classifyInsight(insight.content, insight.cue_anchors ?? []);
+
+      if (classification.kind === 'duplicate') {
         result.deduped++;
         continue;
       }
+
       const now = new Date().toISOString();
       const unit: HarmonicUnit = {
         id: generateHarmonicId(),
@@ -177,6 +209,11 @@ export class ReflectionPipeline {
         source_session_id: sessionID === ORPHAN_SESSION ? undefined : sessionID,
       };
       try {
+        // If this insight conflicts with an existing memory, supersede the old one
+        if (classification.kind === 'conflict' && classification.conflictTarget) {
+          this.store.markSuperseded(classification.conflictTarget, unit.id);
+          result.superseded++;
+        }
         await this.store.write(unit);
         result.distilled++;
       } catch {
@@ -201,7 +238,7 @@ export class ReflectionPipeline {
    * can never double-process the same episodes on the same worker.
    */
   async runAll(): Promise<ReflectionResult> {
-    const total: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, failed: 0, pendingSessions: 0 };
+    const total: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0 };
     const bySession = unreflectedBySession(
       this.opts.index,
       this.opts.cursor,
@@ -218,6 +255,7 @@ export class ReflectionPipeline {
       total.reviewed += r.reviewed;
       total.distilled += r.distilled;
       total.deduped += r.deduped;
+      total.superseded += r.superseded;
       total.failed += r.failed;
     }
     // Maintenance: drop reflected ids that no longer exist in the index so the
@@ -234,7 +272,7 @@ export class ReflectionPipeline {
       this.opts.maxEpisodicPerSession ?? 100,
     );
     const episodes = bySession.get(sessionID);
-    if (!episodes || episodes.length === 0) return { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, failed: 0, pendingSessions: 0 };
+    if (!episodes || episodes.length === 0) return { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0 };
     return this.reflectSession(sessionID, episodes);
   }
 

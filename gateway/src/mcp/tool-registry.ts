@@ -125,7 +125,7 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_add_memory",
-    description: "Save a memory unit to the harmonic memory system. Agent calls this to persist reusable experiences, solutions, patterns, and insights for future retrieval.",
+    description: "Save a memory unit to the harmonic memory system. Agent calls this to persist reusable experiences, solutions, patterns, and insights for future retrieval. Before writing preference/fact memories, search for similar existing memories first — if one already covers the same fact, use mafw_supersede_memory instead.",
     inputSchema: {
       type: "object",
       properties: {
@@ -133,8 +133,21 @@ const DEFINITIONS: ToolDefinition[] = [
         memoryType: { type: "string", enum: ["semantic", "episodic", "procedural", "global"], description: "Memory type" },
         cueAnchors: { type: "array", items: { type: "string" }, description: "Tags/keywords for retrieval (max 8)" },
         primaryAbstraction: { type: "string", description: "6-8 word summary (auto-generated from content if omitted)" },
+        supersedes: { type: "array", items: { type: "string" }, description: "IDs of existing memories this new memory replaces/updates. The old memories will be marked superseded (energy halved, search penalty applied)." },
       },
       required: ["content", "memoryType"],
+    },
+  },
+  {
+    name: "mafw_supersede_memory",
+    description: "Mark existing memories as superseded (outdated/contradicted) without writing a new replacement. Use when the user explicitly retracts a fact or preference. For the common case of 'new memory replaces old', use mafw_add_memory with the supersedes field instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "string" }, description: "Memory IDs to mark as superseded" },
+        reason: { type: "string", description: "Why these memories are superseded (for audit trail)" },
+      },
+      required: ["ids"],
     },
   },
   {
@@ -499,6 +512,7 @@ import { handleAskUser } from "./handlers/ask-user";
 import { handleRecordFeedback } from "./handlers/record-feedback";
 import { handleGetModelRoute } from "./handlers/get-model-route";
 import { handleAddMemory } from "./handlers/add-memory";
+import { handleSupersedeMemory } from "./handlers/supersede-memory";
 import { handleCommitHeuristic } from "./handlers/commit-heuristic";
 import { handleGetAxioms } from "./handlers/get-axioms";
 import { handleMergeMemory } from "./handlers/merge-memory";
@@ -539,6 +553,7 @@ export function createToolRegistry(): ToolRegistry {
       mafw_record_feedback: handleRecordFeedback,
       mafw_get_model_route: handleGetModelRoute,
       mafw_add_memory: handleAddMemory,
+      mafw_supersede_memory: handleSupersedeMemory,
       mafw_commit_heuristic: handleCommitHeuristic,
       mafw_get_axioms: handleGetAxioms,
       mafw_merge_memory: handleMergeMemory,

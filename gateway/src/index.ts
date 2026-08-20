@@ -922,7 +922,7 @@ class MafwScheduler {
           const pipeline = this.getReflectPipeline();
           const res = await pipeline.runAll();
           log.info(
-            `[Reflection] sessions=${res.sessions} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped} failed=${res.failed}`,
+            `[Reflection] sessions=${res.sessions} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped} superseded=${res.superseded} failed=${res.failed}`,
           );
         } catch (err: any) {
           log.warn(`[Reflection] run failed: ${err.message}`);
