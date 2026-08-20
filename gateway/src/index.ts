@@ -22,6 +22,7 @@ import { ReflectionPipeline } from "./recall/reflection";
 import { MemoryWorker } from "./recall/memory-worker";
 import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
+import { IndexScanService } from "./recall/index-scan";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
@@ -205,6 +206,7 @@ class MafwScheduler {
 
   // Memory pipelines (built per run so config hot-reload takes effect).
   private workerPool: SessionWorkerPool | null = null;
+  private scanService: IndexScanService | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
   // captured back into T1 (recursion guard A).
   private internalSessionIds = new Set<string>();
@@ -884,6 +886,29 @@ class MafwScheduler {
     return this.workerPool;
   }
 
+  private getScanService(): IndexScanService | null {
+    if (!this.memoryService) return null;
+    if (!this.scanService) {
+      if (!this.opencodeClient) return null;
+      this.scanService = new IndexScanService(
+        this.memoryService.harmonicIndex,
+        () => new MemoryWorker(this.opencodeClient as any, {
+          directory: this.projectDir,
+          label: 'index-scan',
+          promptTimeoutMs: 15_000,
+          compactIdleMs: config.recall.workerCompactIdleMs,
+          onSessionCreated: (sessionId) => {
+            this.internalSessionIds.add(sessionId);
+          },
+        }),
+        config.recall.workerModel,
+      );
+      // Initial cache population
+      this.scanService.refreshCache();
+    }
+    return this.scanService;
+  }
+
   /**
    * In-flight guarded pipeline action. AutomationEngine has no serialization
    * (cron fires overlapping ticks; run-automation can trigger manually), so
@@ -911,6 +936,8 @@ class MafwScheduler {
           log.info(
             `[TurnPipeline] sessions=${res.sessions} turns=${res.turns} archived=${res.archived} noops=${res.noops} failed=${res.failed}`,
           );
+          // Refresh index scan cache after compression (new memories may have been written)
+          this.scanService?.refreshCache();
         } catch (err: any) {
           log.warn(`[TurnPipeline] run failed: ${err.message}`);
         }
@@ -1090,6 +1117,7 @@ class MafwScheduler {
     void settle.then(() => {
       try { this.gatewayDbInstance?.close(); this.gatewayDbInstance = null; } catch { /* ignore */ }
       void this.workerPool?.disposeAll();
+      void this.scanService?.dispose();
     });
     if (this.serveInstance) {
       this.serveInstance.close();
@@ -3314,7 +3342,18 @@ class MafwScheduler {
               // B3: memories already actively pushed by path 1 (step injection)
               // are filtered out so boundary recall never re-exposes them.
               const pushed = this.stepInject.pushedMemoriesFor(sessionID);
-              memories = searchRecallMemories(this.memoryService.harmonicIndex, query, pushed, 3, { retriever: config.search.defaultRetriever });
+              const scanService = this.getScanService();
+              memories = await searchRecallMemories(
+                this.memoryService.harmonicIndex,
+                query,
+                pushed,
+                3,
+                {
+                  retriever: config.search.defaultRetriever,
+                  scanService: scanService || undefined,
+                  enableScan: !!scanService,
+                },
+              );
             }
             const formatted = formatRecallContext(memories);
             res.writeHead(200, { 'Content-Type': 'application/json' });
