@@ -43,7 +43,7 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
     });
   };
 
-  test('batches all completed turns of a session into ONE prompt, then deletes them', async () => {
+  test('batches all completed turns of a session into ONE prompt, then archives them', async () => {
     seedSession('s1', [
       [['assistant_reply', 'checked auth'], ['tool_result', 'tests pass']],
       [['assistant_reply', 'fixed token expiry']],
@@ -59,7 +59,7 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
 
     expect(res.sessions).toBe(1);
     expect(res.turns).toBe(2);
-    expect(res.deleted).toBe(2);
+    expect(res.archived).toBe(2);
     expect(fakeClient.session.prompt).toHaveBeenCalledTimes(1); // ONE compression for the session
     const promptArg = fakeClient.session.prompt.mock.calls[0][0].body.parts[0].text;
     expect(promptArg).toContain('[USER] user msg 1');
@@ -67,11 +67,12 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
     expect(promptArg).toContain('[TOOL] tests pass');
     // tool-instruction system prompt
     expect(fakeClient.session.prompt.mock.calls[0][0].body.system).toContain('mafw_add_memory');
-    // t1 emptied
+    // t1 emptied, archive populated
     expect(t1db.count()).toBe(0);
+    expect(t1db.archiveCount()).toBeGreaterThan(0);
   });
 
-  test('deletes turns even when the worker prompt fails (processed = done)', async () => {
+  test('archives turns even when the worker prompt fails (processed = archived)', async () => {
     seedSession('s1', [[['assistant_reply', 'x']]]);
     fakeClient.session.prompt.mockRejectedValue(new Error('serve down'));
 
@@ -79,19 +80,25 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
     const res = await pipeline.runOnce();
 
     expect(res.failed).toBe(1);
-    expect(res.deleted).toBe(1);
+    expect(res.archived).toBe(1);
     expect(t1db.count()).toBe(0);
+    expect(t1db.archiveCount()).toBeGreaterThan(0);
   });
 
-  test('deletes turns even when the agent writes nothing (empty result)', async () => {
+  test('archives turns even when the agent writes nothing (empty result)', async () => {
     seedSession('s1', [[['assistant_reply', 'nothing worth saving']]]);
-    fakeClient.session.prompt.mockResolvedValue({ data: { parts: [{ type: 'text', text: 'no memories worth saving' }] } });
+    fakeClient.session.prompt.mockResolvedValue({ data: { parts: [{ type: 'text', text: 'no memories worth saving\n[NOOP: trivial content, no durable facts]' }] } });
 
     const pipeline = new TurnPipeline({ t1db, index, workerFor: () => mkWorker(), staleMs: 30_000 });
     const res = await pipeline.runOnce();
 
-    expect(res.deleted).toBe(1);
+    expect(res.archived).toBe(1);
+    expect(res.noops).toBe(1);
     expect(t1db.count()).toBe(0);
+    expect(t1db.archiveCount()).toBeGreaterThan(0);
+    const noops = t1db.listNoops();
+    expect(noops).toHaveLength(1);
+    expect(noops[0].reason).toContain('trivial content');
   });
 
   test('pending turns (no response, not stale) stay in T1', async () => {

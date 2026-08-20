@@ -5,8 +5,10 @@
 // output or write memories — the agent decides what is worth remembering, how
 // many entries, and their types).
 //
-// Processed turns are always deleted afterwards ("processed = done", failed
-// batches are not retried — the agent already saw the material).
+// Processed turns are archived (moved to t1_archive) rather than deleted.
+// This preserves the raw observation data for future re-extraction with
+// upgraded pipelines — a "you'll want this later but can't get it back"
+// safeguard at near-zero storage cost for personal-scale usage.
 import { GatewayDatabase, T1Observation } from '../memory/gateway-db';
 import { HarmonicIndexManager } from '../core/memory/harmonic-index';
 import { MemoryWorker } from './memory-worker';
@@ -26,8 +28,9 @@ export interface TurnPipelineOptions {
 export interface TurnPipelineResult {
   sessions: number;
   turns: number;
-  deleted: number;
+  archived: number;
   failed: number;
+  noops: number;
 }
 
 const TOOL_EXTRACTION_SYSTEM = `You are a memory curator for a coding agent. Review the conversation observations of this session and record durable memories.
@@ -40,7 +43,12 @@ Rules:
 - every cue_anchors list MUST include the topic entity names (project, module, person, API, feature) so the memory can be retrieved across sessions
 - for preferences or constraints, include a machine-readable anchor like "pref:<dimension>=<value>" (e.g., "pref:ui-language=chinese") in addition to the entity
 - skip redundant or trivial content; do not repeat entries that are obviously already known
-- if nothing is worth saving, do not call the tool`;
+- if nothing is worth saving, do not call the tool
+
+After processing, ALWAYS end your response with exactly one of these lines:
+- [EXTRACTED: N] — where N is the number of mafw_add_memory calls you made
+- [NOOP: reason] — if you decided nothing was worth saving, give a one-sentence reason (e.g., "routine status update, no durable facts")
+This line MUST be the very last line of your response.`;
 
 function observationsToTranscript(obs: T1Observation[]): string {
   return obs
@@ -74,7 +82,7 @@ export class TurnPipeline {
   constructor(private opts: TurnPipelineOptions) {}
 
   async runOnce(): Promise<TurnPipelineResult> {
-    const result: TurnPipelineResult = { sessions: 0, turns: 0, deleted: 0, failed: 0 };
+    const result: TurnPipelineResult = { sessions: 0, turns: 0, archived: 0, failed: 0, noops: 0 };
     const turns = this.opts.t1db.listTurns();
     const complete = completeTurns(turns, { staleMs: this.opts.staleMs });
 
@@ -106,18 +114,26 @@ export class TurnPipeline {
           ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
           : `Observations of the last hour:\n${transcript}`;
         try {
-          await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel);
+          const reply = await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel);
+          // Parse noop indicator from the worker's response
+          const noopMatch = reply.match(/\[NOOP:\s*(.+?)\]\s*$/m);
+          if (noopMatch) {
+            for (const t of sessionTurns) {
+              this.opts.t1db.logNoop(t.session_id, t.turn_id, noopMatch[1].trim());
+              result.noops++;
+            }
+          }
         } catch {
           result.failed++;
         }
       }
 
-      // 3) processed = done — delete the session's completed turns regardless
-      // of whether the agent wrote anything (empty/failed batches are not
-      // retried; re-running them would only re-prompt the same material).
+      // 3) processed = archived — move the session's completed turns to
+      // t1_archive regardless of whether the agent wrote anything. The raw
+      // data is preserved for future re-extraction with upgraded pipelines.
       for (const t of sessionTurns) {
-        this.opts.t1db.deleteTurn(t.session_id, t.turn_id);
-        result.deleted++;
+        this.opts.t1db.archiveTurn(t.session_id, t.turn_id);
+        result.archived++;
       }
     }
 

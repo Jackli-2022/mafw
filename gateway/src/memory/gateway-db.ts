@@ -127,6 +127,28 @@ export class GatewayDatabase {
         updated_at INTEGER DEFAULT (unixepoch()),
         PRIMARY KEY (scope, key)
       );
+
+      CREATE TABLE IF NOT EXISTS t1_archive (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        turn_id INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        content TEXT NOT NULL,
+        failure INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        archived_at INTEGER DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_t1_archive_session ON t1_archive(session_id, turn_id);
+
+      CREATE TABLE IF NOT EXISTS t1_noop_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        turn_id INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        created_at INTEGER DEFAULT (unixepoch())
+      );
+      CREATE INDEX IF NOT EXISTS idx_noop_session ON t1_noop_log(session_id);
+      CREATE INDEX IF NOT EXISTS idx_noop_created ON t1_noop_log(created_at);
     `);
   }
 
@@ -197,6 +219,95 @@ export class GatewayDatabase {
       .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
       .run(session_id, turn_id);
     return result.changes;
+  }
+
+  /**
+   * Archive a processed turn: move from t1_observations to t1_archive, then
+   * delete from t1_observations. Preserves the raw observation data for future
+   * re-extraction with upgraded pipelines. Returns the number of rows archived.
+   */
+  archiveTurn(session_id: string, turn_id: number): number {
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO t1_archive (session_id, turn_id, source, content, failure, created_at)
+           SELECT session_id, turn_id, source, content, failure, created_at
+           FROM t1_observations WHERE session_id = ? AND turn_id = ?`,
+        )
+        .run(session_id, turn_id);
+      const del = this.db
+        .prepare('DELETE FROM t1_observations WHERE session_id = ? AND turn_id = ?')
+        .run(session_id, turn_id);
+      return del.changes;
+    });
+    return txn();
+  }
+
+  /** Read archived observations for a specific turn. */
+  readArchiveTurn(session_id: string, turn_id: number): T1Observation[] {
+    return this.db
+      .prepare('SELECT * FROM t1_archive WHERE session_id = ? AND turn_id = ? ORDER BY id')
+      .all(session_id, turn_id) as T1Observation[];
+  }
+
+  /** List archived turns (grouped), optionally filtered to a session. */
+  listArchiveTurns(session_id?: string): TurnSummary[] {
+    const where = session_id ? 'WHERE session_id = ?' : '';
+    return this.db
+      .prepare(
+        `SELECT session_id, turn_id,
+                COUNT(*) AS count,
+                MAX(CASE WHEN source = 'user_input' THEN 1 ELSE 0 END) AS has_user_input,
+                SUM(CASE WHEN source IN ('assistant_reply','tool_result','reasoning') AND length(trim(content)) > 0 THEN 1 ELSE 0 END) AS response_count,
+                MAX(created_at) AS last_ts
+         FROM t1_archive
+         ${where}
+         GROUP BY session_id, turn_id
+         ORDER BY session_id, turn_id`,
+      )
+      .all(...(session_id ? [session_id] : [])) as TurnSummary[];
+  }
+
+  archiveCount(): number {
+    return (this.db.prepare('SELECT COUNT(*) AS c FROM t1_archive').get() as { c: number }).c;
+  }
+
+  // ── Noop log (extraction coverage monitoring) ──────────────────────────
+
+  /**
+   * Log a turn where the extraction worker decided nothing was worth saving.
+   * Enables weekly review of what the worker skips — critical for diagnosing
+   * whether preference/temporal misses happen at extraction or retrieval.
+   */
+  logNoop(session_id: string, turn_id: number, reason: string): void {
+    this.db
+      .prepare('INSERT INTO t1_noop_log (session_id, turn_id, reason) VALUES (?, ?, ?)')
+      .run(session_id, turn_id, reason);
+  }
+
+  /** List noop log entries, optionally filtered by session and/or since timestamp. */
+  listNoops(opts?: { session_id?: string; since?: number; limit?: number }): Array<{
+    id: number;
+    session_id: string;
+    turn_id: number;
+    reason: string;
+    created_at: number;
+  }> {
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (opts?.session_id) {
+      conditions.push('session_id = ?');
+      params.push(opts.session_id);
+    }
+    if (opts?.since) {
+      conditions.push('created_at >= ?');
+      params.push(opts.since);
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = opts?.limit ?? 100;
+    return this.db
+      .prepare(`SELECT * FROM t1_noop_log ${where} ORDER BY created_at DESC LIMIT ?`)
+      .all(...params, limit) as any[];
   }
 
   deleteSession(session_id: string): number {

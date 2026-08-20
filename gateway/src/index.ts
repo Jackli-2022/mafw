@@ -909,7 +909,7 @@ class MafwScheduler {
           const pipeline = this.getTurnPipeline();
           const res = await pipeline.runOnce();
           log.info(
-            `[TurnPipeline] sessions=${res.sessions} turns=${res.turns} deleted=${res.deleted} failed=${res.failed}`,
+            `[TurnPipeline] sessions=${res.sessions} turns=${res.turns} archived=${res.archived} noops=${res.noops} failed=${res.failed}`,
           );
         } catch (err: any) {
           log.warn(`[TurnPipeline] run failed: ${err.message}`);
