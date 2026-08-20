@@ -13,6 +13,8 @@ export interface RecallMemory {
   primary_abstraction: string
   memory_value: string
   energy: number
+  /** Composite score for ranking: energy + scan boost (0.3 for scan-only entries). */
+  score: number
   type?: string
   created_at?: string
   /** Source: 'bm25', 'scan', or 'both' (appeared in both retrievers). */
@@ -64,6 +66,7 @@ export async function searchRecallMemories(
       primary_abstraction: e.primary_abstraction || '',
       memory_value: (e as any).memory_value || (e as any).content || '',
       energy: e.energy || 0,
+      score: e.energy || 0,
       type: e.type,
       created_at: e.created_at,
       source: 'bm25',
@@ -101,11 +104,13 @@ export async function searchRecallMemories(
       const entry = indexEntries.find((e: any) => e.id === id)
       if (!entry || entry.superseded_by) continue
       const isDirectScan = scanResult.relevantIds.includes(id)
+      const baseEnergy = entry.energy || 0
       resultMap.set(id, {
         id: entry.id,
         primary_abstraction: entry.primary_abstraction || '',
         memory_value: (entry as any).memory_value || (entry as any).content || '',
-        energy: entry.energy || 0,
+        energy: baseEnergy,
+        score: isDirectScan ? baseEnergy + 0.3 : baseEnergy + 0.15,
         type: entry.type,
         created_at: entry.created_at,
         source: isDirectScan ? 'scan' : 'scan+graph',
@@ -114,9 +119,9 @@ export async function searchRecallMemories(
     log.info(`[Recall] bm25=${bm25Results.length} scan=${scanResult.relevantIds.length} expanded=${expandedIds.size} union=${resultMap.size} confidence=${scanResult.confidence}`)
   }
 
-  // Sort by energy descending, then slice to topK
+  // Sort by score descending (energy + scan boost), then slice to topK
   const results = [...resultMap.values()]
-    .sort((a, b) => b.energy - a.energy)
+    .sort((a, b) => b.score - a.score)
     .slice(0, topK)
 
   return results
@@ -144,6 +149,7 @@ export function searchRecallMemoriesSync(
       primary_abstraction: e.primary_abstraction || '',
       memory_value: (e as any).memory_value || (e as any).content || '',
       energy: e.energy || 0,
+      score: e.energy || 0,
       type: e.type,
       created_at: e.created_at,
       source: 'bm25',

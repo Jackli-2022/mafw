@@ -42,12 +42,14 @@ Return ONLY valid JSON (no markdown):
 {"relevant_ids": ["<short_id>", ...], "reasoning": "<one sentence>", "confidence": <0.0-1.0>}
 
 Rules:
-- Select at most 8 entries that are most relevant to the query
-- Consider semantic relevance, not just keyword matching
+- You MUST return 5-8 entry IDs. If the index has entries at all, return at least 5.
+- Return MORE entries rather than fewer — false negatives are worse than false positives
+- Rank them by relevance (most relevant first)
+- Consider semantic relevance, not just keyword matching — look for topic overlap, related concepts, paraphrases
 - For preference queries (what does the user like/dislike), prioritize entries with "preference" type or "pref:" anchors
 - For temporal queries (when/what happened), prioritize entries with matching dates
 - For multi-session queries (what did we discuss about X), look for entries sharing topic anchors
-- If answering the question requires combining information from multiple memories (e.g., "the restaurant near the hotel I mentioned"), return ALL necessary entry IDs — err on the side of including more rather than fewer
+- If answering the question requires combining information from multiple memories, include ALL relevant entries
 - confidence = how sure you are that the selected entries answer the query (0.0 = guess, 1.0 = certain)
 - If nothing is relevant, return {"relevant_ids": [], "reasoning": "no relevant memories", "confidence": 0.0}`;
 
@@ -59,7 +61,8 @@ export function formatEntryForIndex(entry: any): string {
   const id = (entry.id || '?').slice(0, 12);
   const date = formatDateOnly(entry.created_at);
   const type = entry.type || 'unknown';
-  const summary = (entry.primary_abstraction || '').replace(/\n/g, ' ').slice(0, 80);
+  // Don't truncate abstraction — let the model see full content for better relevance judgment
+  const summary = (entry.primary_abstraction || '').replace(/\n/g, ' ');
   const anchors = (entry.cue_anchors || []).slice(0, 5).join(', ');
   const energy = typeof entry.energy === 'number' ? entry.energy.toFixed(1) : '?';
   return `- [id:${id}] (${date}) ${type} | ${summary} | anchors: ${anchors} | E:${energy}`;

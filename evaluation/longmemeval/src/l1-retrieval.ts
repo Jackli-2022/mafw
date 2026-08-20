@@ -24,8 +24,72 @@ import { loadDataset, sampleStratified, LmeQuestion } from './dataset';
 import { ingestQuestion, IngestOptions } from './ingest';
 import { recallAtK, ndcgAtK, aggregateByType, mean } from './metrics';
 import { L1QuestionResult, L1Summary } from './types';
+import { chatCompletion, loadAuthKey } from './llm';
+import { formatEntryForIndex, parseScanResponse, resolveShortIds } from '../../../gateway/src/recall/index-scan';
 
 const KS = [1, 3, 5, 10];
+
+const SCAN_SYSTEM = `You are a memory retrieval system. Given a memory index and a user query, identify the most relevant memory entries.
+
+The index lists memories in this format:
+- [id:<short_id>] (<date>) <type> | <summary> | anchors: <keywords>
+
+Return ONLY valid JSON (no markdown):
+{"relevant_ids": ["<short_id>", ...], "reasoning": "<one sentence>", "confidence": <0.0-1.0>}
+
+Rules:
+- Select at most 8 entries that are most relevant to the query
+- Consider semantic relevance, not just keyword matching
+- For preference queries (what does the user like/dislike), prioritize entries with "preference" type or "pref:" anchors
+- For temporal queries (when/what happened), prioritize entries with matching dates
+- For multi-session queries (what did we discuss about X), look for entries sharing topic anchors
+- If answering the question requires combining information from multiple memories (e.g., "the restaurant near the hotel I mentioned"), return ALL necessary entry IDs — err on the side of including more rather than fewer
+- confidence = how sure you are that the selected entries answer the query (0.0 = guess, 1.0 = certain)
+- If nothing is relevant, return {"relevant_ids": [], "reasoning": "no relevant memories", "confidence": 0.0}`;
+
+/**
+ * Standalone scan function for benchmark: calls mimo directly via chatCompletion,
+ * no MemoryWorker needed. Returns full IDs resolved from the index.
+ */
+async function runScan(
+  index: HarmonicIndexManager,
+  query: string,
+  apiUrl: string,
+  apiKeyProvider: string,
+  model: string,
+): Promise<{ ids: string[]; confidence: number }> {
+  const entries = index.getIndex().entries.filter((e: any) => !e.superseded_by);
+  const lines = entries.map(formatEntryForIndex);
+  const indexText = `# Memory Index (${entries.length} entries)\n\n${lines.join('\n')}`;
+  const prompt = `${indexText}\n\n---\n\nUser query: ${query}\n\nSelect the most relevant memory entries from the index above.`;
+
+  try {
+    const raw = await chatCompletion({
+      model,
+      apiUrl,
+      apiKey: loadAuthKey(apiKeyProvider),
+      messages: [
+        { role: 'system', content: SCAN_SYSTEM },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0,
+      max_tokens: 512,
+    });
+    const result = parseScanResponse(raw);
+    if (!result) {
+      console.error(`[scan] parse failed: ${raw.slice(0, 200)}`);
+      return { ids: [], confidence: 0 };
+    }
+    console.error(`[scan] raw response: ${raw.slice(0, 300)}`);
+    console.error(`[scan] short IDs: ${JSON.stringify(result.relevantIds)}`);
+    const fullIds = resolveShortIds(result.relevantIds, index);
+    console.error(`[scan] short=${result.relevantIds.length} resolved=${fullIds.length} conf=${result.confidence}`);
+    return { ids: fullIds, confidence: result.confidence };
+  } catch (err: any) {
+    console.error(`[scan] failed: ${err.message}`);
+    return { ids: [], confidence: 0 };
+  }
+}
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -45,6 +109,10 @@ function parseArgs() {
     recallK: parseInt(flags.get('--recallK') ?? String(config.search.recallK), 10),
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
     graph: flags.get('--graph') === 'true',
+    scan: flags.get('--scan') === 'true',
+    scanApiUrl: flags.get('--scanApiUrl') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+    scanApiKeyProvider: flags.get('--scanApiKeyProvider') ?? 'alibaba-cn',
+    scanModel: flags.get('--scanModel') ?? 'qwen3.7-max',
     keep: flags.has('--keep'),
     data: flags.get('--data'),
   };
@@ -63,6 +131,10 @@ function help() {
   console.log('  --recallK N     candidates before rerank');
   console.log('  --cutoffRatio N drop results below topScore × ratio (0 = off)');
   console.log('  --graph true|false  enable anchor-graph multi-hop expansion (default false)');
+  console.log('  --scan true|false   enable mimo index scan + graph expansion (default false)');
+  console.log('  --scanApiUrl URL    scan API endpoint (default dashscope)');
+  console.log('  --scanApiKeyProvider NAME  auth.json provider for scan (default alibaba-cn)');
+  console.log('  --scanModel MODEL   model for scan (default qwen3.7-max)');
   console.log('  --data PATH     override dataset path');
   console.log('  --keep          keep per-question tmp dirs');
 }
@@ -76,6 +148,10 @@ async function runOne(
   recallK: number,
   cutoffRatio: number,
   graphEnabled: boolean,
+  scanEnabled: boolean,
+  scanApiUrl: string,
+  scanApiKeyProvider: string,
+  scanModel: string,
 ): Promise<L1QuestionResult> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `lme-l1-${question.question_id}-`));
   let store: HarmonicUnitFileStore | null = null;
@@ -103,6 +179,43 @@ async function runOne(
     let entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
     if (reranker && entries.length > 0) {
       entries = await applyReranker(question.question, entries, reranker, Math.max(...KS), cutoffRatio);
+    }
+
+    // ── Scan + graph expansion (if enabled) ──
+    if (scanEnabled) {
+      const indexEntries = index.getIndex().entries;
+      const scanResult = await runScan(index, question.question, scanApiUrl, scanApiKeyProvider, scanModel);
+      if (scanResult.ids.length > 0) {
+        // Graph 1-hop expansion on scan-selected IDs
+        const graphStore = index.getAnchorGraphStore();
+        const expandedIds = new Set<string>(scanResult.ids);
+        if (graphStore) {
+          for (const id of scanResult.ids) {
+            try {
+              const neighbors = graphStore.getNeighbors([id], 3, new Set(scanResult.ids));
+              for (const [nbId] of neighbors) {
+                expandedIds.add(nbId);
+              }
+            } catch { /* non-fatal */ }
+          }
+        }
+
+        // Union: add scan+graph entries not already in BM25 results
+        const existingIds = new Set(entries.map(e => e.entry.id));
+        let addedCount = 0;
+        for (const id of expandedIds) {
+          if (existingIds.has(id)) continue;
+          const entry = indexEntries.find((e: any) => e.id === id);
+          if (!entry || entry.superseded_by) continue;
+          entries.push({ entry, score: entry.energy ?? 0.5 });
+          addedCount++;
+        }
+
+        console.error(`[scan] bm25=${entries.length - addedCount} scan=${scanResult.ids.length} graph=${expandedIds.size - scanResult.ids.length} added=${addedCount} total=${entries.length}`);
+
+        // Re-sort by score descending
+        entries.sort((a, b) => b.score - a.score);
+      }
     }
 
     const topSessions = entries.map(e => sessionOfUnit.get(e.entry.id)!);
@@ -165,6 +278,8 @@ async function main() {
   };
   const retriever = (args.retriever === 'bm25' ? 'bm25' : 'token') as 'token' | 'bm25';
   const reranker = await createRerankerForRun(args.reranker);
+  // Scan implies graph (needs anchor graph for 1-hop expansion on scan results)
+  const graphEnabled = args.graph || args.scan;
   const searchOptions: SearchOptions = {
     retriever,
     cutoffRatio: reranker ? 0 : args.cutoffRatio,
@@ -176,12 +291,12 @@ async function main() {
   const runPath = path.join(resultsDir, 'l1-run.jsonl');
   const summaryPath = path.join(resultsDir, 'l1-summary.json');
 
-  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, reranker=${args.reranker}, graph=${args.graph}`);
+  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, reranker=${args.reranker}, graph=${args.graph}, scan=${args.scan}`);
   const results: L1QuestionResult[] = [];
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     process.stdout.write(`[${i + 1}/${questions.length}] ${q.question_id} ${q.question_type} ... `);
-    const res = await runOne(q, ingestOpts, args.keep, searchOptions, reranker, args.recallK, args.cutoffRatio, args.graph);
+    const res = await runOne(q, ingestOpts, args.keep, searchOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel);
     results.push(res);
     fs.appendFileSync(runPath, JSON.stringify(res) + '\n', 'utf-8');
     process.stdout.write(`R@1=${res.recall[1].toFixed(2)} R@10=${res.recall[10].toFixed(2)}\n`);
