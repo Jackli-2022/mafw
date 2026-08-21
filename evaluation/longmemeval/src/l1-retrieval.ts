@@ -231,6 +231,7 @@ async function runOne(
       question_type: question.question_type,
       question: question.question,
       answer: question.answer,
+      question_date: question.question_date,
       is_abstention: question.question_id.endsWith('_abs'),
       unit_count: unitCount,
       recall,

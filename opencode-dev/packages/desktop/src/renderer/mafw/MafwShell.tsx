@@ -1044,7 +1044,15 @@ export function MafwShell() {
             const optIdx = sessionMsgs.findIndex(m => m.role === "user" && m.id.startsWith("user-"))
             if (optIdx >= 0) {
               const opt = sessionMsgs[optIdx]
-              sessionMsgs[optIdx] = { ...info, id: msgId, sessionID: sid, time: info.time || opt.time || { created: Date.now() } }
+              sessionMsgs[optIdx] = { 
+                ...info, 
+                id: msgId, 
+                sessionID: sid, 
+                time: info.time || opt.time || { created: Date.now() },
+                // Preserve voice UI fields from optimistic message
+                voiceStatus: opt.voiceStatus,
+                voiceDuration: opt.voiceDuration,
+              }
               for (const m of sessionMsgs) {
                 if (m.parentID === opt.id) m.parentID = msgId
               }
@@ -1072,6 +1080,33 @@ export function MafwShell() {
             return { ...prev, message: msgs }
           })
         }
+        return
+      }
+      // opencode ≥1.18 streams assistant text via message.part.delta
+      // ({partID, field: "text", delta}); accumulate it into the part record so
+      // the reply renders incrementally (message.part.updated only fires once).
+      if (event.type === "message.part.delta") {
+        const props = event.properties || {}
+        const msgId = props.messageID
+        const partID = props.partID
+        if (!msgId || !partID || props.field !== "text") return
+        const delta = props.delta
+        if (!delta) return
+        setStore(prev => {
+          const parts = { ...prev.part }
+          const existing = parts[msgId] || []
+          const idx = existing.findIndex(p => p.id === partID)
+          if (idx >= 0) {
+            const cur = existing[idx]
+            if (typeof cur.text !== "string") return prev
+            const text = cur.text + delta
+            if (text === cur.text) return prev
+            parts[msgId] = existing.map((p, i) => (i === idx ? { ...p, text } : p))
+            return { ...prev, part: parts }
+          }
+          parts[msgId] = [...existing, { id: partID, type: "text", text: delta, sessionID: sid, messageID: msgId }]
+          return { ...prev, part: parts }
+        })
         return
       }
       if (event.type === "message.part.updated") {
@@ -1107,7 +1142,15 @@ export function MafwShell() {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
         sendingResetters[sid]?.()
-      } else if (event.type === "message.error" || event.type === "message.aborted") {
+      } else if (event.type === "session.idle") {
+        // opencode ≥1.18 settles turns with session.idle instead of
+        // message.complete; without it the sending flag never resets and new
+        // messages are silently rejected.
+        setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
+        setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
+        sendingResetters[sid]?.()
+        expireSessionCards(sid)
+      } else if (event.type === "session.error" || event.type === "message.error" || event.type === "message.aborted") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         sendingResetters[sid]?.()
         expireSessionCards(sid)

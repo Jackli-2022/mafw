@@ -101,6 +101,8 @@ export type MafwAPI = {
 
   media: {
     createTask: (opts: { dataUrl?: string; artifactId?: string; mediaType?: string; question?: string }) => Promise<{ id: string; contextId: string; state: string }>
+    uploadBinary: (bytes: ArrayBuffer, mediaType: string) => Promise<string>
+    uploadAndCreate: (opts: { bytes: ArrayBuffer; mediaType: string; question?: string }) => Promise<{ id: string; contextId: string; state: string; artifactId: string; mediaType: string; size: number }>
   }
 
   tts: {

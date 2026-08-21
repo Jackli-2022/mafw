@@ -8,7 +8,6 @@ interface PairingNonce {
   /** sha256 hash of the raw nonce — raw value never stored (hash storage) */
   hash: string;
   expiresAt: number;
-  used: boolean;
 }
 
 interface RateLimitBucket {
@@ -60,7 +59,7 @@ export class PairingService {
     const nonce = crypto.randomBytes(16).toString('hex');
     const exp = Date.now() + this.ttlMs;
 
-    this.nonces.set(hashNonce(nonce), { hash: hashNonce(nonce), expiresAt: exp, used: false });
+    this.nonces.set(hashNonce(nonce), { hash: hashNonce(nonce), expiresAt: exp });
 
     const params = new URLSearchParams({
       url: this.tailscaleUrl,
@@ -73,20 +72,20 @@ export class PairingService {
     return { url: `mafw://pair?${params.toString()}` };
   }
 
+  /**
+   * Consume a nonce: check TTL validity and delete (single-use by deletion).
+   * Returns true if the nonce was valid and consumed.
+   */
   consumeNonce(nonce: string): boolean {
     const h = hashNonce(nonce);
     const entry = this.nonces.get(h);
     if (!entry) return false;
-    if (entry.used) return false;
-    if (Date.now() > entry.expiresAt) return false;
-    entry.used = true;
+    if (Date.now() > entry.expiresAt) {
+      this.nonces.delete(h);
+      return false;
+    }
+    this.nonces.delete(h);
     return true;
-  }
-
-  /** Expire a nonce (test helper). */
-  expireNonce(nonce: string): void {
-    const entry = this.nonces.get(hashNonce(nonce));
-    if (entry) entry.expiresAt = 0;
   }
 
   private checkRateLimit(ip: string): void {
@@ -105,7 +104,7 @@ export class PairingService {
   private cleanup(): void {
     const now = Date.now();
     for (const [nonce, entry] of this.nonces) {
-      if (entry.used || now > entry.expiresAt) {
+      if (now > entry.expiresAt) {
         this.nonces.delete(nonce);
       }
     }

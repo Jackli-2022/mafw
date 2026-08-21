@@ -107,8 +107,61 @@ describe('Mobile Media Proxy', () => {
     expect(res.status).toBe(200)
     const data = await res.json() as any
     expect(data.id).toBeDefined()
+    expect(data.contextId).toBeDefined()
     expect(data.state).toBe('TASK_STATE_COMPLETED')
     expect(data.artifactId).toBeDefined()
+  })
+
+  it('returns pointer-compatible fields (id + contextId) usable for follow-up ask', async () => {
+    const { body, contentType } = buildMultipart({
+      name: 'media',
+      filename: 'screenshot.png',
+      contentType: 'image/png',
+      data: PNG_1PX,
+    })
+
+    const createRes = await fetch(`${baseUrl}/api/mobile/media/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    })
+    const created = await createRes.json() as any
+    expect(created.id).toBeDefined()
+    expect(created.contextId).toBeDefined()
+
+    const askRes = await fetch(`${baseUrl}/api/mobile/media/tasks/${created.id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: '描述这张图片' }),
+    })
+    expect(askRes.status).toBe(200)
+    const answer = await askRes.json() as any
+    expect(answer.answer).toBeDefined()
+    expect(answer.taskId).toBeDefined()
+  })
+
+  it('POST /api/mobile/media/tasks/:id/ask rejects whitespace-only questions', async () => {
+    const { body, contentType } = buildMultipart({
+      name: 'media',
+      filename: 'pic.png',
+      contentType: 'image/png',
+      data: PNG_1PX,
+    })
+    const createRes = await fetch(`${baseUrl}/api/mobile/media/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    })
+    const created = await createRes.json() as any
+
+    const askRes = await fetch(`${baseUrl}/api/mobile/media/tasks/${created.id}/ask`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: '   ' }),
+    })
+    expect(askRes.status).toBe(400)
+    const data = await askRes.json() as any
+    expect(data.error).toContain('question')
   })
 
   it('POST /api/mobile/media/tasks/:id/ask sends a follow-up question to the task', async () => {

@@ -105,6 +105,11 @@ export function createMafwApi(): MafwAPI {
 
     media: {
       createTask: (opts) => invoke("media", "createTask", opts),
+      // Binary upload through the main process (Node network stack) — the
+      // renderer's fetch can hang on proxy interception; main goes direct.
+      uploadBinary: (bytes, mediaType) => ipcRenderer.invoke("mafw-media-upload", bytes, mediaType),
+      // Combined upload + createTask in a single IPC call (saves one round-trip).
+      uploadAndCreate: (opts) => ipcRenderer.invoke("mafw-media-upload-and-create", opts.bytes, opts.mediaType, opts.question),
     },
 
     tts: {

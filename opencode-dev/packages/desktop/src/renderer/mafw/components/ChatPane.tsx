@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For } from "solid-js"
+import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
@@ -340,20 +340,133 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
   }
 
-  // ── 语音输入（录音 + VAD 分段）：每段 wav 作为附件，随发送走 createTask 指针路径 ──
+  // ── 语音输入（录音 + VAD 分段）：乐观显示 + 后台上传 ──
   const [voiceRecording, setVoiceRecording] = createSignal(false)
   const recorder = VoiceRecorder({
-    onSegment: (dataUrl: string) => {
-      const mime = dataUrl.split(",")[0].replace("data:", "").replace(";base64", "")
-      setAttachments(prev => [...prev, {
-        name: `voice-${Date.now()}.wav`,
-        size: dataUrl.length,
-        mime,
-        dataUrl,
-      }])
+    onSegment: (wavBytes: ArrayBuffer, duration: number) => {
+      const sid = sidProp()
+      if (!sid) return
+      const tempMsgId = `temp-voice-${Date.now()}`
+
+      // 立即创建本地消息（乐观显示，voiceStatus: "uploading"）
+      props.setStore(prev => {
+        const msgs = { ...prev.message }
+        const sessionMsgs = [...(msgs[sid] || [])]
+        sessionMsgs.push({
+          id: tempMsgId,
+          sessionID: sid,
+          role: "user",
+          parentID: null,
+          time: { created: Date.now() },
+          text: "",
+          agent: "general",
+          model: { providerID: "opencode", modelID: "" },
+          voiceStatus: "uploading",
+          voiceDuration: duration,
+        })
+        msgs[sid] = sessionMsgs
+        return { ...prev, message: msgs }
+      })
+
+      // 后台上传 + 发送（一次 IPC 完成 upload + createTask）
+      const t0 = performance.now()
+      console.log("[voice][perf] onSegment start", { bytes: wavBytes.byteLength, duration })
+      void uploadAndSendVoice(tempMsgId, wavBytes, sid, duration, t0)
     },
     onStateChange: setVoiceRecording,
   })
+
+  // 后台上传语音 + 更新消息状态 + 发送（单次 IPC：upload + createTask）
+  const uploadAndSendVoice = async (tempMsgId: string, wavBytes: ArrayBuffer, sid: string, duration: number, t0: number) => {
+    try {
+      // 单次 IPC：上传 + 创建任务（Plan C）
+      const t1 = performance.now()
+      const task = await window.api.mafw.media.uploadAndCreate({
+        bytes: wavBytes,
+        mediaType: "audio/wav",
+      })
+      const t2 = performance.now()
+      console.log("[voice][perf] uploadAndCreate done", {
+        ipcMs: (t1 - t0).toFixed(1),
+        roundTripMs: (t2 - t1).toFixed(1),
+        totalMs: (t2 - t0).toFixed(1),
+        artifactId: task.artifactId.slice(0, 8),
+        taskId: task.id.slice(0, 8),
+      })
+
+      // 更新消息状态为 "analyzing"，替换临时 ID 为真实 ID
+      const realMsgId = `user-${Date.now()}`
+      const ts = Date.now()
+      const pointerText = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}（媒体: voice-${ts}.wav），这是用户发给你的语音消息——调用 mafw_media_ask 工具获取其内容后，用 mafw_media_speak 工具以语音回复用户（taskID 填 ${task.id}）]`
+
+      props.setStore(prev => {
+        const msgs = { ...prev.message }
+        const sessionMsgs = [...(msgs[sid] || [])]
+        const idx = sessionMsgs.findIndex(m => m.id === tempMsgId)
+        if (idx >= 0) {
+          sessionMsgs[idx] = {
+            ...sessionMsgs[idx],
+            id: realMsgId,
+            text: pointerText,
+            voiceStatus: "analyzing",
+          }
+        }
+        msgs[sid] = sessionMsgs
+        // 添加 part（指针文本）
+        const partId = `prt_media_${ts}_0`
+        const parts = { ...prev.part }
+        parts[realMsgId] = [{
+          type: "text",
+          id: partId,
+          text: pointerText,
+          sessionID: sid,
+          messageID: realMsgId,
+          synthetic: true,
+        }]
+        return { ...prev, message: msgs, part: parts }
+      })
+
+      props.onSetUserMsgId(sid, realMsgId)
+
+      // 发送消息（触发 AI 回复）
+      await window.api.mafw.chat.sendEnriched({
+        message: "",
+        sessionID: sid,
+        parts: [{
+          type: "text",
+          id: `prt_media_${ts}_0`,
+          text: pointerText,
+          synthetic: true,
+        }],
+      })
+
+      // 更新消息状态为 "done"（AI 开始回复）
+      props.setStore(prev => {
+        const msgs = { ...prev.message }
+        const sessionMsgs = [...(msgs[sid] || [])]
+        const idx = sessionMsgs.findIndex(m => m.id === realMsgId)
+        if (idx >= 0) {
+          sessionMsgs[idx] = { ...sessionMsgs[idx], voiceStatus: "done" }
+        }
+        msgs[sid] = sessionMsgs
+        return { ...prev, message: msgs }
+      })
+
+    } catch (err: any) {
+      console.warn("[voice] upload failed:", err)
+      // 更新消息状态为 "failed"
+      props.setStore(prev => {
+        const msgs = { ...prev.message }
+        const sessionMsgs = [...(msgs[sid] || [])]
+        const idx = sessionMsgs.findIndex(m => m.id === tempMsgId)
+        if (idx >= 0) {
+          sessionMsgs[idx] = { ...sessionMsgs[idx], voiceStatus: "failed", error: err.message || String(err) }
+        }
+        msgs[sid] = sessionMsgs
+        return { ...prev, message: msgs }
+      })
+    }
+  }
 
   // ── 播放协调：互斥 + barge-in 引用计数（recorder 就绪后才可用）──
   const beginPlayback = () => {
@@ -502,20 +615,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
   }
 
-  // Upload raw media bytes to the gateway's A2A artifact store (binary body,
-  // no base64 inflation, no IPC round-trip for the payload). Returns the
-  // artifact id the message can reference via /api/media/create-task.
+  // Upload raw media bytes to the gateway's A2A artifact store. Routed through
+  // the main process (IPC → Node network stack): the renderer's own fetch can
+  // hang on proxy interception. 15s main-side timeout, then the caller falls
+  // back to the IPC dataUrl path.
   const uploadMediaBinary = async (bytes: ArrayBuffer, mediaType: string): Promise<string> => {
-    const base = (props.gatewayUrl || "http://127.0.0.1:3000").replace(/\/+$/, "")
-    const res = await fetch(`${base}/api/media/upload?type=${encodeURIComponent(mediaType)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: bytes,
-    })
-    if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
-    const data: any = await res.json()
-    if (!data?.artifactId) throw new Error("媒体上传失败: 无 artifactId")
-    return data.artifactId
+    const artifactId = await window.api.mafw.media.uploadBinary(bytes, mediaType)
+    return artifactId
   }
 
   const addPastedFile = async (file: File) => {
@@ -641,9 +747,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const text = input()
     const atts = attachments()
     const agents = mentionedAgents()
-    if ((!text.trim() && atts.length === 0) || sending()) return
+    if (!text.trim() && atts.length === 0) return
     let sid = sidProp()
     if (!sid) { sid = await props.onCreateSession(); if (!sid) return }
+    const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
+    console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice)
+    if (sending()) {
+      // Voice messages (walkie-talkie) interrupt the in-flight reply; regular
+      // messages stay rejected while a turn is running.
+      if (!hasVoice) return
+      console.log("[mafw] sendMessage: voice interrupts in-flight turn")
+      try { await window.api.mafw.sessions.abort(sid) } catch { /* ignore */ }
+    }
 
     // ── Slash commands: dispatch before the plain-message path ──
     if (atts.length === 0 && agents.length === 0) {
@@ -694,6 +809,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const visionable = atts.filter(a => { const m = a.mime || mimeOf(a.name); return m.startsWith("image/") || m.startsWith("video/") || m.startsWith("audio/") })
     for (const a of visionable) {
       try {
+        // Pre-uploaded attachment (voice segments): reuse the A2A task pointer
+        // directly — no second upload round-trip on send.
+        if ((a as any).taskPromise) {
+          const pre = await (a as any).taskPromise
+          if (pre) {
+            visionParts.push({
+              type: "text",
+              id: `prt_media_${ts}_${visionParts.length}`,
+              text: `[媒体附件 taskID: ${pre.taskID} contextID: ${pre.contextId}（媒体: ${a.name}），这是用户发给你的媒体消息（图片/视频/音频）——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${pre.taskID}）]`,
+              synthetic: true,
+            })
+            visionThumbs.push({ name: a.name, mime: a.mime || "audio/wav", dataUrl: a.dataUrl || "" })
+            console.log("[media] reused pre-uploaded task:", pre.taskID.slice(0, 8), a.name)
+            continue
+          }
+        }
         let dataUrl = a.dataUrl
         let pickedBytes: ArrayBuffer | undefined
         if (!dataUrl && a.path) {
@@ -723,12 +854,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             bytes = await blob.arrayBuffer()
           }
           if (!bytes) throw new Error("无法读取媒体数据")
+          console.log("[media] uploading to A2A artifact:", a.name, mediaType, bytes.byteLength, "bytes @", props.gatewayUrl || "http://127.0.0.1:3000(default)")
           const artifactId = await uploadMediaBinary(bytes, mediaType)
           task = await window.api.mafw.media.createTask({
             artifactId,
             mediaType,
             question: text.trim() || undefined,
           })
+          console.log("[media] A2A uploaded:", a.name, "-> artifact", artifactId.slice(0, 8), "task", task.id.slice(0, 8))
         } catch (uploadErr: any) {
           // Fallback: legacy base64 path (kept for gateway versions without
           // the upload endpoint).
@@ -739,6 +872,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             mediaType,
             question: text.trim() || undefined,
           })
+          console.log("[media] A2A fallback(dataUrl):", a.name, "-> task", task.id.slice(0, 8))
         }
         visionParts.push({
           type: "text",
@@ -748,6 +882,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         })
         visionThumbs.push({ name: a.name, mime: mediaType, dataUrl: dataUrl || "" })
       } catch (err: any) {
+        console.warn("[media] vision attachment failed:", a.name, err?.message || String(err))
         visionFailed.push(`${a.name}: ${err?.message || String(err)}`)
       }
     }
@@ -1354,7 +1489,41 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           </div>
           <For each={userMessages()}>
             {(msg) => (
+              <ErrorBoundary
+                fallback={(err) => {
+                  console.error("[mafw] turn render error:", err)
+                  return <div class="mafw-turn-render-error">该回合渲染失败：{(err as Error)?.message || String(err)}</div>
+                }}
+              >
               <>
+                {/* 语音消息状态指示器 */}
+                <Show when={msg.voiceStatus}>
+                  <div class="mafw-voice-message" classList={{
+                    "uploading": msg.voiceStatus === "uploading",
+                    "analyzing": msg.voiceStatus === "analyzing",
+                    "done": msg.voiceStatus === "done",
+                    "failed": msg.voiceStatus === "failed",
+                  }}>
+                    <div class="mafw-voice-waveform">
+                      <svg class="mafw-voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                      </svg>
+                      <span class="mafw-voice-duration">{msg.voiceDuration?.toFixed(1) || "?"}s</span>
+                    </div>
+                    <Show when={msg.voiceStatus === "uploading"}>
+                      <span class="mafw-voice-status">上传中...</span>
+                    </Show>
+                    <Show when={msg.voiceStatus === "analyzing"}>
+                      <span class="mafw-voice-status">正在分析...</span>
+                    </Show>
+                    <Show when={msg.voiceStatus === "failed"}>
+                      <span class="mafw-voice-status error">上传失败：{msg.error || "未知错误"}</span>
+                    </Show>
+                  </div>
+                </Show>
                 <For each={voiceRepliesForTurn(msg.id)}>
                   {(vr) => (
                     <div class="mafw-turn-audio">
@@ -1364,15 +1533,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     </div>
                   )}
                 </For>
-                <SessionTurn
-                  sessionID={sidProp()}
-                  messageID={msg.id}
-                  classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
-                />
+                <Show when={!msg.voiceStatus || msg.voiceStatus === "done"}>
+                  <SessionTurn
+                    sessionID={sidProp()}
+                    messageID={msg.id}
+                    classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
+                  />
+                </Show>
                 <For each={cardsForTurn(msg.id)}>
                   {(c) => renderFlowCard(c)}
                 </For>
               </>
+              </ErrorBoundary>
             )}
           </For>
           {/* Agent switch traces (local UI only) */}

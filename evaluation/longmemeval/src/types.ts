@@ -3,6 +3,7 @@ export interface L1QuestionResult {
   question_type: string;
   question: string;
   answer: string | string[];
+  question_date: string;
   is_abstention: boolean;
   unit_count: number;
   recall: Record<number, number>;

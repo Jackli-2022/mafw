@@ -268,6 +268,108 @@ export class MediaAgent {
   }
 
   /**
+   * Create a task immediately and start analysis in the background.
+   * Returns the task ID synchronously; analysis runs asynchronously.
+   */
+  createTaskAsync(artifactId: string, mediaType: string, question?: string): { taskId: string; contextId: string } {
+    const t0 = Date.now();
+    const taskId = `mtask_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const contextId = `mctx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    
+    // Build artifact reference upfront so follow-up SendMessage (via
+    // referenceTaskIds) can find the media immediately, even before the
+    // background analysis completes.
+    const artifactUrl = `${this.options.baseUrl}${this.options.artifactPath}/${artifactId}`;
+    const artifact = {
+      artifactId,
+      name: 'upload.bin',
+      description: '原始媒体工件',
+      parts: [
+        {
+          content: { $case: 'url', value: artifactUrl },
+          mediaType,
+          filename: 'upload.bin',
+          metadata: {},
+        } as Part,
+      ],
+      metadata: {},
+      extensions: [],
+    };
+    
+    // Create task in store (state=working) with artifact already set
+    const task = {
+      id: taskId,
+      contextId,
+      status: taskStatus(TaskState.TASK_STATE_WORKING),
+      history: [],
+      artifacts: [artifact],
+      metadata: {},
+    } as unknown as Task;
+    
+    // Save task synchronously (use same context as SendMessage handler)
+    const saveContext = new ServerCallContext({
+      headers: {},
+      requestedVersion: this.options.defaultVersion || '1.0',
+      user: new UnauthenticatedUser(),
+      extensions: undefined,
+    } as any);
+    this.taskStore.save(task, saveContext).catch(err => {
+      log.error(`[MediaAgent] createTaskAsync: failed to save task ${taskId}: ${err.message}`);
+    });
+    
+    // Build message with correct A2A part format: content.$case = 'url'
+    const mediaPart: Part = {
+      content: { $case: 'url', value: artifactUrl },
+      mediaType,
+      filename: 'upload.bin',
+      metadata: {},
+    } as Part;
+    const userMessage = makeMessage(1, taskId, contextId, [
+      mediaPart,
+      ...(question ? [textPart(question)] : []),
+    ]);
+    
+    // Trigger async analysis in background
+    const requestContext = {
+      taskId,
+      contextId,
+      userMessage,
+      task,  // pass the task with its artifact so execute's working-state publish
+             // does not clobber artifacts with an empty array
+      referenceTasks: [],
+    } as unknown as RequestContext;
+    
+    // Simple event bus that updates task store (same context as the initial save)
+    const bus: ExecutionEventBus = {
+      publish: (event) => {
+        if (event.kind === 'task') {
+          this.taskStore.save(event.data, saveContext).catch(err => {
+            log.error(`[MediaAgent] createTaskAsync: failed to update task ${taskId}: ${err.message}`);
+          });
+        }
+      },
+      on: () => bus,
+      off: () => bus,
+      once: () => bus,
+      removeAllListeners: () => bus,
+      finished: () => {},
+    };
+    
+    const t1 = Date.now();
+    console.log(`[MediaAgent] createTaskAsync: prep ${t1 - t0}ms, starting background analysis for task ${taskId}`);
+    
+    // Fire-and-forget: execute analysis in background (don't wait)
+    void this.execute(requestContext, bus).then(() => {
+      const t2 = Date.now();
+      console.log(`[MediaAgent] createTaskAsync: analysis completed for task ${taskId} in ${t2 - t1}ms`);
+    }).catch(err => {
+      console.error(`[MediaAgent] createTaskAsync: analysis failed for task ${taskId}: ${err.message}`);
+    });
+    
+    return { taskId, contextId };
+  }
+
+  /**
    * Handle a JSON-RPC A2A request (POST /a2a). Returns the HTTP response.
    */
   async handleJsonRpc(body: string | Record<string, unknown>, headers: Record<string, string | undefined>): Promise<JsonRpcResult> {
@@ -314,10 +416,13 @@ export class MediaAgent {
     const taskId = requestContext.taskId;
     const contextId = requestContext.contextId;
     const userMessage = requestContext.userMessage;
+    console.log(`[MediaAgent] execute called: taskId=${taskId}, contextId=${contextId}, userMessageId=${userMessage.messageId}`);
+    log.info(`[MediaAgent] execute called: taskId=${taskId}, contextId=${contextId}, userMessageId=${userMessage.messageId}`);
 
     // Idempotency: a message already processed for this task is a replay.
     const seen = this.seenMessages.get(taskId) ?? new Set<string>();
     if (requestContext.task && seen.has(userMessage.messageId)) {
+      log.info(`[MediaAgent] execute: replay detected, returning cached task`);
       bus.publish(AgentEvent.task(requestContext.task));
       return;
     }
@@ -340,6 +445,12 @@ export class MediaAgent {
       // Resolve the media: first turn extracts it from the message parts;
       // follow-up turns reference the prior task (referenceTaskIds) and reuse
       // its artifact — the bytes are never re-uploaded.
+      log.info(`[MediaAgent] execute: taskId=${taskId}, referenceTasks=${requestContext.referenceTasks?.length ?? 0}, hasTask=${!!requestContext.task}`);
+      if (requestContext.referenceTasks && requestContext.referenceTasks.length > 0) {
+        for (const rt of requestContext.referenceTasks) {
+          log.info(`[MediaAgent] execute: refTask ${rt.id}, artifacts=${rt.artifacts?.length ?? 0}`);
+        }
+      }
       const media = await this.resolveMedia(requestContext, userMessage);
       if (!media) {
         throw new ContentTypeNotSupportedError(
@@ -431,14 +542,24 @@ export class MediaAgent {
     userMessage: Message,
   ): Promise<{ dataUrl: string; mediaType: string; artifact?: any } | undefined> {
     // Follow-up turn: reuse the media artifact of a referenced prior task.
-    for (const refTask of requestContext.referenceTasks ?? []) {
+    const refTasks = requestContext.referenceTasks ?? [];
+    log.info(`[MediaAgent] resolveMedia: referenceTasks=${refTasks.length}, hasTask=${!!requestContext.task}`);
+    for (const refTask of refTasks) {
+      log.info(`[MediaAgent] resolveMedia: checking refTask ${refTask.id}, artifacts=${refTask.artifacts?.length ?? 0}`);
       const media = this.mediaFromTask(refTask);
-      if (media) return media;
+      if (media) {
+        log.info(`[MediaAgent] resolveMedia: found media from refTask ${refTask.id}`);
+        return media;
+      }
     }
     // Or from the current task (e.g. resumed history).
     if (requestContext.task) {
+      log.info(`[MediaAgent] resolveMedia: checking current task ${requestContext.task.id}, artifacts=${requestContext.task.artifacts?.length ?? 0}`);
       const media = this.mediaFromTask(requestContext.task);
-      if (media) return media;
+      if (media) {
+        log.info(`[MediaAgent] resolveMedia: found media from current task`);
+        return media;
+      }
     }
 
     // First turn: extract from the message parts.

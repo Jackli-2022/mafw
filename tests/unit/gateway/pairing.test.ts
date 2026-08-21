@@ -60,16 +60,24 @@ describe('PairingService', () => {
       expect(second).toBe(false);
     });
 
-    it('expired nonce is rejected', () => {
-      const result = service.generatePairingCode('100.64.0.5');
+    it('expired nonce is rejected', async () => {
+      // Create service with 1ms TTL
+      const shortTtlService = new PairingService({
+        apiToken: 'test-api-token-123',
+        tailscaleUrl: 'https://my-tailnet:3000',
+        ttlMs: 1,
+      });
+
+      const result = shortTtlService.generatePairingCode('100.64.0.5');
       const parsed = new URL(result.url);
       const nonce = parsed.searchParams.get('nonce')!;
 
-      // Manually expire the nonce by advancing time
-      service.expireNonce(nonce);
+      // Wait for TTL to expire
+      await new Promise(resolve => setTimeout(resolve, 10));
 
-      const consumed = service.consumeNonce(nonce);
+      const consumed = shortTtlService.consumeNonce(nonce);
       expect(consumed).toBe(false);
+      shortTtlService.destroy();
     });
   });
 

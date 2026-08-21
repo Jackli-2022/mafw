@@ -93,6 +93,7 @@ function buildReaderMessages(
   lowConfidence = false,
   cot = false,
   enumerate = false,
+  questionDate?: string,
 ): ChatMessage[] {
   const sorted = sortContexts(contexts.slice(0, 20), order); // cap reader context
   // Official LongMemEval reader template (run_generation.py): numbered
@@ -112,13 +113,17 @@ function buildReaderMessages(
     ? 'Answer the question step by step: first extract all the relevant information, and then reason over the information to get the answer.'
     : '';
   const enumerateHint = enumerate
-    ? 'Before answering, you MUST: (1) Scan all sessions and list EVERY relevant fact with its session number, e.g. "Session 3: earned $225 from jam sales. Session 5: earned $120 from plant sales." (2) For counting/summing/comparing questions, compute the answer by explicitly iterating over your list. (3) Every conclusion must cite the session numbers that support it. (4) Only say "no record" if your enumerated list is empty.'
+    ? 'Before answering, you MUST: (1) Scan all sessions and list EVERY relevant fact with its session number, e.g. "Session 3: earned $225 from jam sales. Session 5: earned $120 from plant sales." (2) For counting/summing/comparing questions, compute the answer by explicitly iterating over your list. (3) Every conclusion must cite the session numbers that support it. (4) Only say "no record" if your enumerated list is empty. (5) For preference/suggestion questions (e.g., "Can you suggest X for Y?"), infer the user\'s preferences from past discussions of similar topics and apply them to the new context — e.g., if the user discussed Seattle hotels and expressed preferences for great views and rooftop pools, apply those same preferences when suggesting Miami hotels.'
     : '';
   const confidenceHint = lowConfidence
     ? '\n\nNote: retrieval confidence is LOW. Treat the memories as uncertain and abstain if they do not clearly answer the question.'
     : '';
   const system = `You are a helpful assistant answering a user based only on their past conversation history. ${abstentionHint}${confidenceHint}`;
-  const user = `I will give you several history chats between you and a user. Please answer the question based on the relevant chat history.${cotHint ? ' ' + cotHint : ''}${enumerateHint ? ' ' + enumerateHint : ''}\n\n\nHistory Chats:\n\n${ctxBlock}\n\nCurrent Date: ${new Date().toISOString().slice(0, 10)}\nQuestion: ${question}\nAnswer:`;
+  const questionDateStr = questionDate ? `Question Date: ${questionDate}\n` : '';
+  const temporalHint = questionDate
+    ? 'IMPORTANT: Temporal references in the question (e.g., "last month", "two weeks ago", "two months ago") should be interpreted relative to the Question Date provided below, not the current date or session dates.'
+    : 'IMPORTANT: Temporal references in the question (e.g., "last month", "two weeks ago") should be interpreted relative to the session dates, not the current date.';
+  const user = `I will give you several history chats between you and a user. Please answer the question based on the relevant chat history. ${temporalHint}${cotHint ? ' ' + cotHint : ''}${enumerateHint ? ' ' + enumerateHint : ''}\n\n\nHistory Chats:\n\n${ctxBlock}\n\n${questionDateStr}Question: ${question}\nAnswer:`;
   return [
     { role: 'system', content: system },
     { role: 'user', content: user },
@@ -213,6 +218,7 @@ async function main() {
         lowConfidence,
         args.cot,
         args.enumerate,
+        item.question_date,
       );
       const readerResult = await chatCompletionFull({
         model: args.readerModel,

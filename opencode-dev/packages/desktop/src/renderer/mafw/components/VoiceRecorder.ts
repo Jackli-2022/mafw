@@ -41,11 +41,11 @@ const PRE_SPEECH_PAD_MS = 800
 const ORT_BASE = ortWasmMjs.slice(0, ortWasmMjs.lastIndexOf("/")) + "/"
 const MODEL_BASE = "/vad/"
 interface Props {
-  onSegment: (dataUrl: string) => void
+  onSegment: (bytes: ArrayBuffer, duration: number) => void
   onStateChange?: (recording: boolean) => void
 }
 
-function encodeWav(samples: Float32Array, sampleRate: number): string {
+function encodeWavBytes(samples: Float32Array, sampleRate: number): ArrayBuffer {
   const buffer = new ArrayBuffer(44 + samples.length * 2)
   const view = new DataView(buffer)
   const writeString = (off: number, s: string) => {
@@ -70,13 +70,7 @@ function encodeWav(samples: Float32Array, sampleRate: number): string {
     view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true)
     off += 2
   }
-  const bytes = new Uint8Array(buffer)
-  let binary = ""
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK))
-  }
-  return `data:audio/wav;base64,${btoa(binary)}`
+  return buffer
 }
 
 export function VoiceRecorder(props: Props) {
@@ -135,9 +129,10 @@ export function VoiceRecorder(props: Props) {
           onSpeechEnd: (audio: Float32Array) => {
             if (mode !== "recording") return
             segmentCount++
-            const dataUrl = encodeWav(audio, SAMPLE_RATE)
-            console.log(`[voice] segment ${segmentCount} (${audio.length / SAMPLE_RATE * 1000}ms, ${dataUrl.length} b64 chars)`)
-            props.onSegment(dataUrl)
+            const wavBytes = encodeWavBytes(audio, SAMPLE_RATE)
+            const duration = audio.length / SAMPLE_RATE
+            console.log(`[voice] segment ${segmentCount} (${duration * 1000}ms, ${wavBytes.byteLength} bytes)`)
+            props.onSegment(wavBytes, duration)
           },
           onVADMisfire: () => {
             // 触发但段过短（噪声脉冲）——静默丢弃。

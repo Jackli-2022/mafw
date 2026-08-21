@@ -1692,7 +1692,8 @@ class MafwScheduler {
         // the query string. Returns an artifact reference the desktop can pass
         // to /api/media/create-task (the A2A SendMessage then carries only a
         // URL part instead of a huge base64 body).
-        if (req.url?.startsWith('/api/media/upload') && req.method === 'POST') {
+        const mediaUrlPath = req.url?.split('?')[0]
+        if (mediaUrlPath === '/api/media/upload' && req.method === 'POST') {
           if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
           try {
             if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
@@ -1779,6 +1780,68 @@ class MafwScheduler {
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ id: task.id, contextId: task.contextId, state: task.status?.state || '' }));
+          } catch (err: any) {
+            res.writeHead(502);
+            res.end(JSON.stringify({ error: err?.message || String(err) }));
+          }
+          return;
+        }
+
+        // POST /api/media/upload-and-create — combined upload + createTask in a
+        // single request. Saves one IPC round-trip from the desktop renderer.
+        // Body is raw binary (octet-stream); mediaType rides in the query string.
+        // Returns immediately with taskID (state=working), model analysis runs async.
+        if (req.url?.startsWith('/api/media/upload-and-create') && req.method === 'POST') {
+          const t0 = Date.now();
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          try {
+            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
+            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const mediaType = parsedUrl.searchParams.get('type') || 'application/octet-stream';
+            const question = parsedUrl.searchParams.get('question') || '';
+            if (!mediaType.startsWith('image/') && !mediaType.startsWith('video/') && !mediaType.startsWith('audio/')) {
+              res.writeHead(415);
+              res.end(JSON.stringify({ error: `Unsupported media type: ${mediaType}` }));
+              return;
+            }
+            const chunks: Buffer[] = [];
+            let total = 0;
+            const cap = mediaType.startsWith('video/') ? 50 * 1024 * 1024 : mediaType.startsWith('audio/') ? 25 * 1024 * 1024 : 20 * 1024 * 1024;
+            for await (const chunk of req) {
+              total += chunk.length;
+              if (total > cap) {
+                res.writeHead(413);
+                res.end(JSON.stringify({ error: `Media exceeds ${cap} byte limit` }));
+                return;
+              }
+              chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            }
+            const bytes = Buffer.concat(chunks);
+            const t1 = Date.now();
+            if (bytes.length === 0) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'empty body' }));
+              return;
+            }
+            const artifactId = this.mediaAgent.putArtifactBytes(bytes, mediaType);
+            const t2 = Date.now();
+            
+            // Create task immediately (state=working), analysis runs in background
+            const { taskId, contextId } = this.mediaAgent.createTaskAsync(artifactId, mediaType, question);
+            const t3 = Date.now();
+            
+            // Return immediately with taskID (state=working)
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              id: taskId,
+              contextId,
+              state: 'TASK_STATE_WORKING',
+              artifactId,
+              mediaType,
+              size: bytes.length,
+            }));
+            const t4 = Date.now();
+            log.info(`[upload-and-create] read=${t1-t0}ms artifact=${t2-t1}ms task=${t3-t2}ms respond=${t4-t3}ms total=${t4-t0}ms`);
           } catch (err: any) {
             res.writeHead(502);
             res.end(JSON.stringify({ error: err?.message || String(err) }));
@@ -3010,7 +3073,7 @@ class MafwScheduler {
         }
 
         // GET /api/automations/{id} 锟?single rule detail
-        const autoGetMatch = req.url?.match(/^\/api\/automations\/([^/]+)$/);
+        const autoGetMatch = req.url?.match(/^\/api\/automations\/([^/]+)(?:\?|$)/);
         if (autoGetMatch && req.method === 'GET') {
           const id = autoGetMatch[1];
           const rule = this.automationEngine?.getRule(id);
@@ -3060,7 +3123,7 @@ class MafwScheduler {
         }
 
         // GET /api/automations/{id}/history 锟?audit trail for a rule
-        const autoHistoryMatch = req.url?.match(/^\/api\/automations\/([^/]+)\/history$/);
+        const autoHistoryMatch = req.url?.match(/^\/api\/automations\/([^/]+)\/history(?:\?|$)/);
         if (autoHistoryMatch && req.method === 'GET') {
           const id = autoHistoryMatch[1];
           const limit = parseInt(new URL(req.url!, `http://${req.headers.host}`).searchParams.get('limit') || '20');
@@ -3189,7 +3252,7 @@ class MafwScheduler {
         }
 
         // GET /api/sessions/{id} —get session via SDK (with local fallback)
-        const sessionsGetMatch = req.url?.match(/^\/api\/sessions\/([^/]+)$/);
+        const sessionsGetMatch = req.url?.match(/^\/api\/sessions\/([^/]+)(?:\?|$)/);
         if (sessionsGetMatch && req.method === 'GET') {
           try {
             const id = sessionsGetMatch[1];
@@ -3240,7 +3303,7 @@ class MafwScheduler {
         }
 
         // GET /api/sessions/{id}/todo —fetch session todo list (task panel)
-        const todoMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/todo$/);
+        const todoMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/todo(?:\?|$)/);
         if (todoMatch && req.method === 'GET') {
           const id = todoMatch[1];
           try {

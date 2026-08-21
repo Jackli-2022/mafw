@@ -2189,4 +2189,71 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-python-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .mafw-python-image { border-radius: 6px; overflow: hidden; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); line-height: 0; }
 .mafw-python-image img { max-width: 180px; max-height: 140px; object-fit: contain; display: block; }
+
+/* ══ 语音消息状态指示器（乐观显示） ══ */
+.mafw-voice-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--bg-overlay);
+  max-width: 240px;
+  margin-bottom: 8px;
+  transition: opacity 0.3s ease;
+}
+
+.mafw-voice-message.uploading {
+  opacity: 0.6;
+}
+
+.mafw-voice-message.analyzing {
+  opacity: 0.85;
+}
+
+.mafw-voice-message.done {
+  opacity: 1;
+}
+
+.mafw-voice-message.failed {
+  background: rgba(229, 72, 77, 0.08);
+  border: 1px solid rgba(229, 72, 77, 0.25);
+}
+
+.mafw-voice-waveform {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mafw-voice-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.mafw-voice-message.failed .mafw-voice-icon {
+  color: var(--danger);
+}
+
+.mafw-voice-duration {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.mafw-voice-status {
+  font-size: 12px;
+  color: var(--text-3);
+  animation: mafw-voice-pulse 1.5s ease-in-out infinite;
+}
+
+.mafw-voice-status.error {
+  color: var(--danger);
+  animation: none;
+}
+
+@keyframes mafw-voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
 .mafw-python-image:hover { border-color: var(--text-interactive-base, var(--accent)); }
