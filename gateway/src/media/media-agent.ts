@@ -67,46 +67,113 @@ interface ArtifactEntry {
 // as a base64 string in memory (50MB video → ~67MB string otherwise).
 const DISK_THRESHOLD_BYTES = 5 * 1024 * 1024;
 
+/** Index entry persisted to disk so artifacts survive gateway restarts. */
+interface ArtifactIndexEntry {
+  id: string;
+  mediaType: string;
+  size: number;
+  createdAt: number;
+  filename: string;
+}
+
 class ArtifactStore {
   private map = new Map<string, ArtifactEntry>();
+  private index: Map<string, ArtifactIndexEntry> = new Map();
+  private storageDir: string;
+  private indexPath: string;
 
   constructor(
+    storageDir?: string,
     private readonly max = 500,
     private readonly ttlMs = 24 * 60 * 60 * 1000,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    this.storageDir = storageDir || path.join(os.tmpdir(), 'mafw-media');
+    this.indexPath = path.join(this.storageDir, 'artifacts.json');
+    if (!fs.existsSync(this.storageDir)) fs.mkdirSync(this.storageDir, { recursive: true });
+    this.loadIndex();
+  }
+
+  private loadIndex(): void {
+    try {
+      if (fs.existsSync(this.indexPath)) {
+        const raw = fs.readFileSync(this.indexPath, 'utf-8');
+        const entries: ArtifactIndexEntry[] = JSON.parse(raw);
+        const now = this.now();
+        for (const entry of entries) {
+          if (now - entry.createdAt > this.ttlMs) continue; // expired
+          const filePath = path.join(this.storageDir, entry.filename);
+          if (!fs.existsSync(filePath)) continue; // file missing
+          this.index.set(entry.id, entry);
+          this.map.set(entry.id, {
+            dataUrl: null,
+            bytes: null,
+            filePath,
+            mediaType: entry.mediaType,
+            size: entry.size,
+            createdAt: entry.createdAt,
+          });
+        }
+        log.info(`[ArtifactStore] loaded ${this.map.size} artifacts from disk`);
+      }
+    } catch (err: any) {
+      log.warn(`[ArtifactStore] failed to load index: ${err.message}`);
+    }
+  }
+
+  private saveIndex(): void {
+    try {
+      const entries: ArtifactIndexEntry[] = [];
+      for (const [id, entry] of this.map) {
+        if (!entry.filePath) continue; // skip in-memory-only entries
+        entries.push({
+          id,
+          mediaType: entry.mediaType,
+          size: entry.size,
+          createdAt: entry.createdAt,
+          filename: path.basename(entry.filePath),
+        });
+      }
+      fs.writeFileSync(this.indexPath, JSON.stringify(entries, null, 2));
+    } catch (err: any) {
+      log.warn(`[ArtifactStore] failed to save index: ${err.message}`);
+    }
+  }
 
   put(dataUrl: string): string {
     return this.putBytes(Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'), this.mediaTypeFromDataUrl(dataUrl));
   }
 
-  /** Store raw bytes; large payloads spill to a temp file (disk-backed). */
+  /** Store raw bytes to disk (persistent across restarts). */
   putBytes(bytes: Buffer, mediaType: string): string {
     this.prune();
     const id = randomUUID();
     const createdAt = this.now();
-    if (bytes.length > DISK_THRESHOLD_BYTES) {
-      const dir = path.join(os.tmpdir(), 'mafw-media');
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const filePath = path.join(dir, `${id}.bin`);
-      try {
-        fs.writeFileSync(filePath, bytes);
-        this.map.set(id, { dataUrl: null, bytes: null, filePath, mediaType, size: bytes.length, createdAt });
-        return id;
-      } catch {
-        // Disk write failed — fall back to memory so upload still works.
+    const ext = mediaType.split('/')[1]?.split(';')[0] || 'bin';
+    const filename = `${id}.${ext}`;
+    const filePath = path.join(this.storageDir, filename);
+    try {
+      fs.writeFileSync(filePath, bytes);
+    } catch (err: any) {
+      log.warn(`[ArtifactStore] disk write failed, using memory fallback: ${err.message}`);
+      const dataUrl = `data:${mediaType || 'application/octet-stream'};base64,${bytes.toString('base64')}`;
+      this.map.set(id, { dataUrl, bytes, filePath: null, mediaType, size: bytes.length, createdAt });
+      if (this.map.size > this.max) {
+        const oldest = this.map.keys().next().value;
+        if (oldest !== undefined) this.delete(oldest);
       }
+      return id;
     }
-    const dataUrl = `data:${mediaType || 'application/octet-stream'};base64,${bytes.toString('base64')}`;
-    this.map.set(id, { dataUrl, bytes, filePath: null, mediaType, size: bytes.length, createdAt });
+    this.map.set(id, { dataUrl: null, bytes: null, filePath, mediaType, size: bytes.length, createdAt });
     if (this.map.size > this.max) {
       const oldest = this.map.keys().next().value;
       if (oldest !== undefined) this.delete(oldest);
     }
+    this.saveIndex();
     return id;
   }
 
-  /** Return the artifact as a data URL (lazy-reads disk-backed entries). */
+  /** Return the artifact as a data URL (reads from disk). */
   get(id: string): string | undefined {
     const entry = this.map.get(id);
     if (!entry) return undefined;
@@ -140,16 +207,27 @@ class ArtifactStore {
   private delete(id: string): void {
     const entry = this.map.get(id);
     this.map.delete(id);
+    this.index.delete(id);
     if (entry?.filePath) {
       try { fs.unlinkSync(entry.filePath); } catch { /* ignore */ }
     }
+    this.saveIndex();
   }
 
   private prune(): void {
     const now = this.now();
+    let pruned = false;
     for (const [id, entry] of this.map) {
-      if (now - entry.createdAt > this.ttlMs) this.delete(id);
+      if (now - entry.createdAt > this.ttlMs) {
+        this.map.delete(id);
+        this.index.delete(id);
+        if (entry?.filePath) {
+          try { fs.unlinkSync(entry.filePath); } catch { /* ignore */ }
+        }
+        pruned = true;
+      }
     }
+    if (pruned) this.saveIndex();
   }
 
   private mediaTypeFromDataUrl(dataUrl: string): string {
@@ -199,6 +277,8 @@ export interface MediaAgentOptions {
   artifactPath: string;
   /** Optional: force the protocol version when the client sends none. */
   defaultVersion?: string;
+  /** Directory for persistent artifact storage (defaults to os.tmpdir/mafw-media). */
+  storageDir?: string;
 }
 
 export interface JsonRpcResult {
@@ -226,7 +306,7 @@ export class MediaAgent {
     private readonly media: MediaService,
     private readonly options: MediaAgentOptions,
   ) {
-    this.artifacts = new ArtifactStore();
+    this.artifacts = new ArtifactStore(options.storageDir);
     this.taskStore = new InMemoryTaskStore();
     this.agentCardData = this.buildAgentCard();
     const executor: AgentExecutor = {
@@ -265,6 +345,16 @@ export class MediaAgent {
 
   getArtifactMediaType(id: string): string | undefined {
     return this.artifacts.getMediaType(id);
+  }
+
+  async resolveTaskArtifactId(taskId: string): Promise<string | undefined> {
+    try {
+      const task = await this.taskStore.load(taskId, {} as ServerCallContext);
+      if (!task?.artifacts?.length) return undefined;
+      return task.artifacts[0]?.artifactId;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

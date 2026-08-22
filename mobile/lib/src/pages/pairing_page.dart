@@ -6,13 +6,15 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/connection_config.dart';
-import '../services/secure_config_store.dart';
+import '../services/mdns_discovery.dart';
 
 /// QR code scanner page for gateway pairing.
 ///
 /// Scans a `mafw://pair?url=...&token=...&v=1&exp=...&nonce=...` deep link,
 /// verifies the nonce with the gateway, writes credentials to SecureStorage,
 /// and returns [ConnectionConfig] on success.
+///
+/// P1: Auto-discovers gateways on LAN via mDNS before showing the scanner.
 class PairingPage extends StatefulWidget {
   const PairingPage({super.key});
 
@@ -29,12 +31,40 @@ class _PairingPageState extends State<PairingPage> {
   final _manualUrlCtrl = TextEditingController();
   final _manualTokenCtrl = TextEditingController();
 
+  // mDNS auto-discovery (P1: zero-config LAN)
+  List<DiscoveredGateway> _discovered = [];
+  bool _scanning = true;
+
   @override
   void initState() {
     super.initState();
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.normal,
       facing: CameraFacing.back,
+    );
+    _scanLan();
+  }
+
+  Future<void> _scanLan() async {
+    final discovery = MdnsDiscovery();
+    final gateways = await discovery.scan(timeout: const Duration(seconds: 4));
+    if (!mounted) return;
+    setState(() {
+      _discovered = gateways;
+      _scanning = false;
+    });
+  }
+
+  void _onDiscoverTap(DiscoveredGateway gw) {
+    // mDNS gives us URL but no token — user still needs to pair via QR
+    // to get the nonce-verified token. Pre-fill manual entry with discovered URL.
+    _manualUrlCtrl.text = gw.url;
+    setState(() => _showManual = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已发现 ${gw.name}，请输入 Token 连接'),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
@@ -180,108 +210,153 @@ class _PairingPageState extends State<PairingPage> {
         title: const Text('扫描配对码'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Stack(
-        fit: StackFit.expand,
+      body: Column(
         children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-          ),
-          // Overlay with scan area
-          CustomPaint(
-            painter: _ScanOverlay(),
-          ),
-          if (_processing)
-            const Center(
-              child: Card(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('正在连接...'),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          if (_error != null)
-            Positioned(
-              bottom: 40,
-              left: 20,
-              right: 20,
-              child: Card(
-                color: Theme.of(context).colorScheme.errorContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onErrorContainer,
+          // mDNS discovered gateways (P1: zero-config LAN)
+          if (_discovered.isNotEmpty || _scanning)
+            Container(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              padding: const EdgeInsets.all(8),
+              child: _scanning
+                  ? const Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 8),
+                        Text('正在扫描局域网...', style: TextStyle(fontSize: 13)),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '发现 ${_discovered.length} 个网关：',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        ..._discovered.map((gw) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.dns, size: 20),
+                              title: Text(gw.name, style: const TextStyle(fontSize: 14)),
+                              subtitle: Text(gw.url, style: const TextStyle(fontSize: 12)),
+                              trailing: const Icon(Icons.chevron_right, size: 18),
+                              onTap: () => _onDiscoverTap(gw),
+                            )),
+                      ],
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
             ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Container(
-                color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
-                padding: const EdgeInsets.all(12),
-                child: _showManual
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextField(
-                            controller: _manualUrlCtrl,
-                            decoration: const InputDecoration(
-                              labelText: '配对链接或 Base URL',
-                              hintText: 'mafw://pair?... 或 https://xxx.ts.net:3000',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _manualTokenCtrl,
-                            obscureText: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Token（手动回退时可填）',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              TextButton(
-                                onPressed: () => setState(() => _showManual = false),
-                                child: const Text('返回扫码'),
-                              ),
-                              const Spacer(),
-                              FilledButton(
-                                onPressed: _onManualSubmit,
-                                child: const Text('连接'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      )
-                    : Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: () => setState(() => _showManual = true),
-                          icon: const Icon(Icons.keyboard, size: 18),
-                          label: const Text('手动输入'),
+          // QR scanner (fills remaining space)
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                MobileScanner(
+                  controller: _controller,
+                  onDetect: _onDetect,
+                ),
+                // Overlay with scan area
+                CustomPaint(
+                  painter: _ScanOverlay(),
+                ),
+                if (_processing)
+                  const Center(
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('正在连接...'),
+                          ],
                         ),
                       ),
-              ),
+                    ),
+                  ),
+                if (_error != null)
+                  Positioned(
+                    bottom: 40,
+                    left: 20,
+                    right: 20,
+                    child: Card(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onErrorContainer,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    child: Container(
+                      color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
+                      padding: const EdgeInsets.all(12),
+                      child: _showManual
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                TextField(
+                                  controller: _manualUrlCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: '配对链接或 Base URL',
+                                    hintText: 'mafw://pair?... 或 https://xxx.ts.net:3000',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  controller: _manualTokenCtrl,
+                                  obscureText: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Token（手动回退时可填）',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    TextButton(
+                                      onPressed: () => setState(() => _showManual = false),
+                                      child: const Text('返回扫码'),
+                                    ),
+                                    const Spacer(),
+                                    FilledButton(
+                                      onPressed: _onManualSubmit,
+                                      child: const Text('连接'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            )
+                          : Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () => setState(() => _showManual = true),
+                                icon: const Icon(Icons.keyboard, size: 18),
+                                label: const Text('手动输入'),
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

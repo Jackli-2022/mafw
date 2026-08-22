@@ -66,6 +66,53 @@ export class HarmonicIndexManager {
     fs.renameSync(tmpPath, this.indexPath);
   }
 
+  /**
+   * Reconcile missing merged_from in index entries by reading OKF frontmatter.
+   * Older addEntry() versions omitted this field; the OKF files always had it.
+   * Idempotent — skips entries that already carry merged_from.
+   */
+  reconcileMergedFrom(): { patched: number; alreadyOk: number; missing: number } {
+    const result = { patched: 0, alreadyOk: 0, missing: 0 };
+    const baseDir = path.dirname(path.dirname(this.indexPath)); // ~/.mafw/memory/.harmonic_index.json → ~/.mafw
+    let changed = false;
+
+    for (const entry of this.index.entries) {
+      if (entry.merged_from && entry.merged_from.length > 0) {
+        result.alreadyOk++;
+        continue;
+      }
+      if (!entry.filePath) { result.missing++; continue; }
+
+      const fullPath = path.join(baseDir, entry.filePath);
+      if (!fs.existsSync(fullPath)) { result.missing++; continue; }
+
+      try {
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const match = content.match(/^merged_from:\s*\n((?:\s+-\s+.+\n?)*)/m);
+        if (!match) { result.missing++; continue; }
+
+        const ids = match[1]
+          .split('\n')
+          .filter(l => l.trim().startsWith('-'))
+          .map(l => l.replace(/^\s*-\s+/, '').trim())
+          .filter(Boolean);
+
+        if (ids.length > 0) {
+          entry.merged_from = ids;
+          result.patched++;
+          changed = true;
+        } else {
+          result.missing++;
+        }
+      } catch {
+        result.missing++;
+      }
+    }
+
+    if (changed) this.save();
+    return result;
+  }
+
   addEntry(unit: HarmonicUnit, tier: string): void {
     this.index.entries.push({
       id: unit.id,

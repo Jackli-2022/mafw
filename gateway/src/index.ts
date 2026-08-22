@@ -240,6 +240,7 @@ class MafwScheduler {
   private ledger?: SchedulerLedger;
   private pushGateway?: PushGateway;
   private pairingService?: PairingService;
+  private mdnsAdvertiser?: any; // MdnsAdvertiser
   private mafwDir!: string;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
   private anchorGraphStore: import('./graph/anchor-graph-store').AnchorGraphStore | null = null;
@@ -1156,6 +1157,7 @@ class MafwScheduler {
     }
     this.pushGateway?.destroy();
     this.pairingService?.destroy();
+    this.mdnsAdvertiser?.stop();
     // if (this.dashboard) {
     //   this.dashboard.stop();
     // }
@@ -1258,6 +1260,11 @@ class MafwScheduler {
     const envUrl = process.env.MAFW_MOBILE_TAILSCALE_URL;
     const tailscaleUrl = envUrl || `http://${detectReachableHost()}:${this.apiPort}`;
     this.pairingService = new PairingService({ apiToken, tailscaleUrl });
+
+    // Mobile mDNS discovery (P1: zero-config LAN connectivity)
+    const { MdnsAdvertiser } = require('./mobile/mdns-advertiser');
+    this.mdnsAdvertiser = new MdnsAdvertiser();
+    this.mdnsAdvertiser.start({ apiPort: this.apiPort, apiToken });
 
     actionRegistry.set('manager:report_completed', wakeCompletedHandler);
     actionRegistry.set('manager:report_failed', wakeFailedHandler);

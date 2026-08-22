@@ -55,6 +55,8 @@ dependencies:
   just_audio: ^0.9.43
   # Local cache for session messages (TTL + size limit)
   hive_ce: ^2.10.0
+  # mDNS discovery for zero-config LAN connectivity (P1)
+  multicast_dns: ^0.3.3
 
 dev_dependencies:
   flutter_test:
