@@ -8,6 +8,7 @@ import { spawn, execSync } from 'child_process';
 // import { DashboardServer } from './dashboard/server';
 import { config } from "./config";
 import { log } from './core/utils/logger';
+import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { buildExecutionGraph, FileCheckpointer, planNode, executeNode, reviewNode, syncToDashboard } from './core/langgraph';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
@@ -378,6 +379,19 @@ class MafwScheduler {
       }
     } catch (err: any) {
       log.warn(`[Scheduler] data dir migration failed (non-fatal): ${err.message}`);
+    }
+
+    // 5.0b Reconcile missing merged_from in .harmonic_index.json from OKF
+    // frontmatter. Older addEntry() versions omitted this field.
+    try {
+      const { HarmonicIndexManager } = await import('./core/memory/harmonic-index.js');
+      const idxMgr = new HarmonicIndexManager(config.resolvePath());
+      const reconcile = idxMgr.reconcileMergedFrom();
+      if (reconcile.patched > 0) {
+        log.info(`[Scheduler] merged_from reconcile: ${reconcile.patched} patched, ${reconcile.alreadyOk} ok, ${reconcile.missing} missing`);
+      }
+    } catch (err: any) {
+      log.warn(`[Scheduler] merged_from reconcile failed (non-fatal): ${err.message}`);
     }
 
     // 5.0 File → DB migration for the unified gateway database: rename legacy
@@ -1185,9 +1199,17 @@ class MafwScheduler {
       prompt: createPiPromptAdapter(),
       config: () => config.raw.media,
     });
+    // Determine workspace name: if projectDir resolves to a 'gateway' subdirectory,
+    // use the parent directory name as the workspace identifier.
+    const resolvedProjectDir = path.resolve(projectDir);
+    const workspaceName = path.basename(resolvedProjectDir) === 'gateway'
+      ? path.basename(path.dirname(resolvedProjectDir))
+      : path.basename(resolvedProjectDir);
+    
     this.mediaAgent = new MediaAgent(this.mediaService, {
       baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
       artifactPath: '/a2a/artifacts',
+      storageDir: path.join(mafwDir, 'workspace', workspaceName),
     });
     this.ttsService = createTtsService({
       config: () => config.raw,
@@ -1214,9 +1236,27 @@ class MafwScheduler {
     const deviceStore = new DeviceStore(deviceStorePath);
     this.pushGateway = new PushGateway(deviceStore);
 
-    // Mobile pairing service
+    // Mobile pairing service — auto-detect reachable IP (Tailscale > LAN > first non-loopback).
+    // `http://localhost` is useless for mobile (the phone would try to connect to itself).
     const apiToken = (config.raw as any)?.server?.apiToken || '';
-    const tailscaleUrl = process.env.MAFW_MOBILE_TAILSCALE_URL || `http://localhost:${this.apiPort}`;
+    const detectReachableHost = (): string => {
+      const ifaces = os.networkInterfaces();
+      let lan: string | null = null;
+      let tailscale: string | null = null;
+      let anyV4: string | null = null;
+      for (const [name, addrs] of Object.entries(ifaces)) {
+        if (!addrs) continue;
+        for (const a of addrs) {
+          if (a.family !== 'IPv4' || a.internal) continue;
+          if (name.toLowerCase().startsWith('tailscale') || name === 'utun') tailscale = a.address;
+          else if (!anyV4) anyV4 = a.address;
+          if (!lan && (name.toLowerCase().includes('wlan') || name.toLowerCase().includes('wi-fi') || name.toLowerCase().includes('ethernet') || name.toLowerCase().includes('eth'))) lan = a.address;
+        }
+      }
+      return tailscale || lan || anyV4 || '127.0.0.1';
+    };
+    const envUrl = process.env.MAFW_MOBILE_TAILSCALE_URL;
+    const tailscaleUrl = envUrl || `http://${detectReachableHost()}:${this.apiPort}`;
     this.pairingService = new PairingService({ apiToken, tailscaleUrl });
 
     actionRegistry.set('manager:report_completed', wakeCompletedHandler);
@@ -1533,27 +1573,13 @@ class MafwScheduler {
           return;
         }
 
-        // A2A Media Agent — loopback-only (security: the gateway API may
-        // listen on all interfaces; the A2A surface must stay local).
-        // Keep in sync with gateway/src/mobile/auth-helpers.ts:isLoopbackAddr (127.0.0.0/8).
-        const isLoopback = (() => {
-          const addr = req.socket.remoteAddress || '';
-          return addr === '127.0.0.1' || addr.startsWith('127.') || addr === '::1' || addr === '::ffff:127.0.0.1';
-        })();
+        // Loopback detection (delegated to core/auth.ts)
+        const isLoopback = isLoopbackAddr(req.socket.remoteAddress || '');
 
         // API token auth: required for non-loopback connections when a token
         // is configured (MAFW_SERVER_API_TOKEN). Loopback connections bypass.
         const apiToken = (config.raw as any)?.server?.apiToken || '';
-        const authorize = (): boolean => {
-          if (isLoopback) return true;
-          if (!apiToken) return false; // 远程必须配 token
-          const h = String(req.headers.authorization || '');
-          const bearer = h.startsWith('Bearer ') ? h.slice(7) : '';
-          const xToken = String(req.headers['x-api-token'] || '');
-          const qToken = new URL(req.url || '/', `http://${req.headers.host||'localhost'}`).searchParams.get('token') || '';
-          return bearer === apiToken || xToken === apiToken || qToken === apiToken;
-        };
-        if (!authorize()) {
+        if (!authorizeRequest({ remoteAddress: req.socket.remoteAddress || '', headers: req.headers as any, url: req.url, host: String(req.headers.host || '') }, apiToken)) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'unauthorized' }));
           return;
@@ -1605,6 +1631,22 @@ class MafwScheduler {
             const b64 = artifact.dataUrl.split(',')[1] || '';
             res.setHeader('Content-Type', artifact.mediaType);
             res.end(Buffer.from(b64, 'base64'));
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err?.message || String(err) }));
+          }
+          return;
+        }
+
+        // GET /api/media/resolve-task/<taskId> — resolve taskId to artifactId (for history)
+        const resolveTaskMatch = req.url?.match(/^\/api\/media\/resolve-task\/([^/]+)$/);
+        if (resolveTaskMatch && req.method === 'GET') {
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          try {
+            if (!this.mediaAgent) { res.writeHead(503); res.end(JSON.stringify({ error: 'MediaAgent not initialized' })); return; }
+            const artifactId = await this.mediaAgent.resolveTaskArtifactId(resolveTaskMatch[1]);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ artifactId: artifactId || null }));
           } catch (err: any) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err?.message || String(err) }));
@@ -3646,23 +3688,14 @@ class MafwScheduler {
             socket.destroy();
             return;
           }
-          // Token auth on upgrade: loopback or ?token= / Authorization header.
-          // Use req.socket.remoteAddress (authoritative for the HTTP request)
-          // and 127.0.0.0/8 consistency with auth-helpers.ts:isLoopbackAddr.
+          // Token auth on upgrade: delegated to core/auth.ts
           const rawAddr = (req.socket as any)?.remoteAddress || (socket as any).remoteAddress || '';
-          const isLocal = rawAddr === '127.0.0.1' || rawAddr.startsWith('127.') || rawAddr === '::1' || rawAddr === '::ffff:127.0.0.1';
-          const token = (config.raw as any)?.server?.apiToken || '';
-          if (!isLocal && token) {
-            const q = new URL(url, `http://${req.headers.host || 'localhost'}`);
-            const qToken = q.searchParams.get('token') || '';
-            const h = req.headers.authorization || '';
-            const bearer = h.startsWith('Bearer ') ? h.slice(7) : '';
-            const xToken = String(req.headers['x-api-token'] || '');
-            if (qToken !== token && bearer !== token && xToken !== token) {
-              socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-              socket.destroy();
-              return;
-            }
+          const wsToken = (config.raw as any)?.server?.apiToken || '';
+          const wsAuth = authorizeWsUpgrade({ remoteAddress: rawAddr, headers: req.headers as any, url, host: String(req.headers.host || '') }, wsToken);
+          if (!wsAuth.ok) {
+            socket.write(wsAuth.rejectResponse!);
+            socket.destroy();
+            return;
           }
           wss.handleUpgrade(req, socket, head, (ws) => {
             // Extract deviceId from query string for PushGateway tracking
