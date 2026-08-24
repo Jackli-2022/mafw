@@ -7,21 +7,19 @@
 
 export interface WorkerClient {
   session: {
-    create(opts: { query: { directory: string } }): Promise<{ data?: { id: string } }>;
+    create(opts: { directory: string }): Promise<{ id: string }>;
     prompt(opts: {
-      path: { id: string };
-      body: {
-        parts: Array<{ type: string; text: string }>;
-        system?: string;
-        model?: { providerID: string; modelID: string };
-      };
+      sessionID: string;
+      parts: Array<{ type: string; text: string }>;
+      system?: string;
+      model?: { providerID: string; modelID: string };
     }): Promise<any>;
     summarize(opts: {
-      path: { id: string };
-      body?: { providerID: string; modelID: string };
-      query?: { directory?: string };
+      sessionID: string;
+      providerID?: string;
+      modelID?: string;
     }): Promise<any>;
-    delete(opts: { path: { id: string } }): Promise<void>;
+    delete(opts: { sessionID: string }): Promise<void>;
   };
 }
 
@@ -51,8 +49,8 @@ export class MemoryWorker {
    *  invalidate it. Throws on failure — caller decides fallback. */
   private async ensureSession(): Promise<string> {
     if (this.sessionId) return this.sessionId;
-    const created = await this.client.session.create({ query: { directory: this.opts.directory } });
-    this.sessionId = created?.data?.id ?? null;
+    const created = await this.client.session.create({ directory: this.opts.directory });
+    this.sessionId = created?.id ?? null;
     if (!this.sessionId) throw new Error('memory worker: failed to create session');
     console.log(`[MemoryWorker] ${this.label} created session ${this.sessionId}`);
     this.opts.onSessionCreated?.(this.sessionId);
@@ -75,9 +73,8 @@ export class MemoryWorker {
     try {
       const res = await Promise.race([
         this.client.session.summarize({
-          path: { id: sessionId },
-          ...(model ? { body: model } : {}),
-          query: { directory: this.opts.directory },
+          sessionID: sessionId,
+          ...(model ? { providerID: model.providerID, modelID: model.modelID } : {}),
         }),
         new Promise<never>((_, reject) => {
           const timer = setTimeout(
@@ -87,7 +84,7 @@ export class MemoryWorker {
           timer.unref?.();
         }),
       ]);
-      const ok = res?.data ?? res;
+      const ok = res;
       if (ok === true) {
         console.log(`[MemoryWorker] ${this.label} compacted session ${sessionId}`);
       } else {
@@ -116,12 +113,10 @@ export class MemoryWorker {
     try {
       const result = await Promise.race([
         this.client.session.prompt({
-          path: { id: sessionId },
-          body: {
-            parts: [{ type: 'text', text: message }],
-            ...(system ? { system } : {}),
-            ...(model ? { model } : {}),
-          },
+          sessionID: sessionId,
+          parts: [{ type: 'text', text: message }],
+          ...(system ? { system } : {}),
+          ...(model ? { model } : {}),
         }),
         new Promise<never>((_, reject) => {
           const timer = setTimeout(
@@ -131,10 +126,9 @@ export class MemoryWorker {
           timer.unref?.(); // never keep the process alive just for the timeout
         }),
       ]);
-      const data = result?.data ?? result;
       const text =
-        (Array.isArray(data?.parts)
-          ? data.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join('\n')
+        (Array.isArray(result?.parts)
+          ? result.parts.filter((p: any) => p?.type === 'text').map((p: any) => p.text).join('\n')
           : '') || '';
       this.promptCount++;
       this.lastPromptAt = Date.now();
@@ -148,7 +142,7 @@ export class MemoryWorker {
   async dispose(): Promise<void> {
     if (this.sessionId) {
       try {
-        await this.client.session.delete({ path: { id: this.sessionId } });
+        await this.client.session.delete({ sessionID: this.sessionId });
       } catch {
         // ignore
       }

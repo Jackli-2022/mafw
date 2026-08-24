@@ -155,19 +155,17 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
       }
 
       // 1. fresh session for isolation
-      const session = await opts.opencodeClient.session.create({ query: { directory: opts.directory || '.' } });
-      sessionId = session.data?.id ?? session.id;
+      const session = await opts.opencodeClient.session.create({ directory: opts.directory || '.' });
+      sessionId = session.id;
       if (!sessionId) throw new Error('Failed to create eval session');
 
       // 2. prompt the main agent (full agent loop: ingest → tool → answer)
       try {
         await opts.opencodeClient.session.promptAsync({
-          path: { id: sessionId },
-          body: {
-            parts,
-            model: { providerID: opts.providerID, modelID: opts.modelID },
-            ...(systemHints.length ? { system: systemHints.join('\n') } : {}),
-          },
+          sessionID: sessionId,
+          parts,
+          model: { providerID: opts.providerID, modelID: opts.modelID },
+          ...(systemHints.length ? { system: systemHints.join('\n') } : {}),
         });
       } catch (err: any) {
         return { status: 502, body: { error: { message: `eval prompt failed: ${err?.message || String(err)}` } } };
@@ -183,8 +181,8 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
         await new Promise((r) => setTimeout(r, pollMs));
         let messages: Array<{ info: any; parts: any[] }> = [];
         try {
-          const res = await opts.opencodeClient.session.messages({ path: { id: sessionId } });
-          messages = res.data ?? res ?? [];
+          const res = await opts.opencodeClient.session.messages({ sessionID: sessionId });
+          messages = res.data ?? [];
         } catch {
           /* keep polling */
         }
@@ -211,7 +209,7 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
       return { status: 500, body: { error: { message: `eval chat error: ${err?.message || String(err)}` } } };
     } finally {
       if (sessionId) {
-        await opts.opencodeClient.session.delete({ path: { id: sessionId } }).catch(() => {});
+        await opts.opencodeClient.session.delete({ sessionID: sessionId }).catch(() => {});
       }
     }
   };

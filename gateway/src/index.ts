@@ -315,15 +315,22 @@ class MafwScheduler {
     await this.startApiServer();
 
     // 2. 鍒涘缓 SDK 瀹㈡埛绔紙锟?auth锛夛紝鐢ㄤ簬鍋ュ悍妫€鏌ュ拰鍚庣画閫氫俊
-    const { createOpencodeClient } = await import('@opencode-ai/sdk');
-    const sdkConfig: Record<string, any> = { baseUrl: this.serveUrl };
+    const { createOpencodeAdapter } = await import('./opencode-adapter.js');
+    const sdkConfig = { 
+      baseUrl: this.serveUrl,
+      directory: this.projectDir,
+      headers: {} as Record<string, string>,
+    };
     const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
     if (opencodePassword) {
       sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
     }
-    this.opencodeClient = createOpencodeClient(sdkConfig);
+    this.opencodeClient = await createOpencodeAdapter(sdkConfig);
     this.sdkSession.setClient(this.opencodeClient);
-    log.info('SDK client initialized');
+    if (this.trajectoryCollector) {
+      this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
+    }
+    log.info('SDK client initialized (adapter)');
 
     // 3. Background: connect to OpenCode server
     const serveUrlOverridden = !!process.env.MAFW_SERVER_SERVE_URL;
@@ -539,8 +546,8 @@ class MafwScheduler {
     for (const sid of targets) {
       try {
         await this.opencodeClient.session.promptAsync({
-          path: { id: sid },
-          body: { parts: [{ type: 'text', text: message }] },
+          sessionID: sid,
+          parts: [{ type: 'text', text: message }],
         });
         notified = true;
         log.info(`[SelfUpdate] notified session ${sid} of update completion`);
@@ -666,7 +673,7 @@ class MafwScheduler {
       // Use /global/event (GlobalEvent = { directory, payload }) so we receive
       // events from ALL workspaces — /event only delivers the current
       // request-scoped workspace, missing sessions in other project dirs.
-      const result = await this.opencodeClient.global.event({});
+      const result = await this.opencodeClient.global.event();
       // SDK SSE client returns { stream } where stream is an async generator
       const stream = result?.stream ?? result;
       if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') {
@@ -797,10 +804,10 @@ class MafwScheduler {
       // Query = last assistant text of this turn; no text → no injection
       // (empty-query search returns nothing anyway).
       const result = await this.opencodeClient.session.messages({
-        path: { id: sessionID },
-        query: { limit: 20 },
+        sessionID,
+        limit: 20,
       });
-      const rawData = result?.data || result || [];
+      const rawData = result.data || [];
       const assistantMsgs = (Array.isArray(rawData) ? rawData : []).filter(
         (m: any) => m?.info?.role === 'assistant',
       );
@@ -868,7 +875,7 @@ class MafwScheduler {
     if (!this.opencodeClient) throw new Error('opencodeClient not available');
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await this.opencodeClient.session.promptAsync({ sessionID, message });
+        await this.opencodeClient.session.promptAsync({ sessionID, parts: [{ type: 'text', text: message }] });
         return;
       } catch (err: any) {
         if (attempt === 0) {
@@ -1105,10 +1112,10 @@ class MafwScheduler {
     const promptParts: any[] = [];
     if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
     if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-    const promptBody: any = { parts: promptParts };
-    if (agent) promptBody.agent = agent;
-    if (model?.providerID && model?.modelID) promptBody.model = model;
-    const result = await this.opencodeClient.session.promptAsync({ path: { id: sessionID }, body: promptBody });
+    const promptOpts: any = { sessionID, parts: promptParts };
+    if (agent) promptOpts.agent = agent;
+    if (model?.providerID && model?.modelID) promptOpts.model = model;
+    const result = await this.opencodeClient.session.promptAsync(promptOpts);
     if (result?.error) {
       throw new Error('promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)));
     }
@@ -1472,8 +1479,8 @@ class MafwScheduler {
     const fromServe: any[] = [];
     if (this.opencodeClient) {
       try {
-        const result = await this.opencodeClient.session.list(projectID ? { query: { directory: projectID } } : undefined);
-        const sessions = Array.isArray(result) ? result : result?.data;
+        const result = await this.opencodeClient.session.list(projectID ? { directory: projectID } : undefined);
+        const sessions = Array.isArray(result) ? result : [];
         if (sessions && Array.isArray(sessions)) fromServe.push(...sessions);
       } catch {}
     }
@@ -2095,15 +2102,15 @@ class MafwScheduler {
               res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
             }
 
-            const session = await this.opencodeClient.session.create({ query: { directory: projectDir } });
-            const sessionID = session.data?.id ?? session.id;
+            const session = await this.opencodeClient.session.create({ directory: projectDir });
+            const sessionID = session.id;
             if (!sessionID) {
               res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
             }
 
             const result = await this.opencodeClient.session.promptAsync({
-              path: { id: sessionID },
-              body: { parts: [{ type: 'text', text: message }] },
+              sessionID,
+              parts: [{ type: 'text', text: message }],
             });
             if (result?.error) {
               log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
@@ -2150,7 +2157,7 @@ class MafwScheduler {
               }
             }
 
-            const sessionID = existingID || (await this.opencodeClient.session.create({ query: { directory: projectDir } })).data?.id;
+    const sessionID = existingID || (await this.opencodeClient.session.create({ directory: projectDir })).id;
             if (!sessionID) {
               res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
             }
@@ -2158,12 +2165,10 @@ class MafwScheduler {
             const promptParts: any[] = [];
             if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
             if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-            const promptBody: any = { parts: promptParts };            if (agent) promptBody.agent = agent;
-            if (model?.providerID && model?.modelID) promptBody.model = model;
-            const result = await this.opencodeClient.session.promptAsync({
-              path: { id: sessionID },
-              body: promptBody,
-            });
+            const promptOpts: any = { sessionID, parts: promptParts };
+            if (agent) promptOpts.agent = agent;
+            if (model?.providerID && model?.modelID) promptOpts.model = model;
+            const result = await this.opencodeClient.session.promptAsync(promptOpts);
             if (result?.error) {
               log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
               res.writeHead(500);
@@ -2196,12 +2201,12 @@ class MafwScheduler {
             if (cmd === "goal") {
               if (!argStr) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "goal description required" })); return; }
               const manager = await this.ensureManagerSession(projectDir, this.mafwDir).catch(() => "");
-              const target = manager || (await this.opencodeClient?.session.create({ query: { directory: projectDir } }))?.data?.id;
+              const target = manager || (await this.opencodeClient?.session.create({ directory: projectDir }))?.id;
               if (!target || !this.opencodeClient) {
                 res.writeHead(503); res.end(JSON.stringify({ ok: false, error: "LLM client not available" })); return;
               }
               const message = `创建新 Goal：${argStr}`;
-              await this.opencodeClient.session.promptAsync({ path: { id: target }, body: { parts: [{ type: "text", text: message }] } });
+              await this.opencodeClient.session.promptAsync({ sessionID: target, parts: [{ type: "text", text: message }] });
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ ok: true, message: `Goal 已提交：${argStr}`, sessionID: target }));
               return;
@@ -2968,7 +2973,7 @@ class MafwScheduler {
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const result = await this.opencodeClient.provider.list();
-            res.end(JSON.stringify({ items: result?.data ?? result ?? null }));
+            res.end(JSON.stringify({ items: result ?? null }));
           } catch (err: any) {
             log.error('[Provider] list error:', err.message);
             res.writeHead(500);
@@ -2981,8 +2986,7 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const result = await this.opencodeClient.app.agents();
-            const agents = Array.isArray(result) ? result : result?.data;
+            const agents = await this.opencodeClient.app.agents();
             res.end(JSON.stringify({ items: Array.isArray(agents) ? agents : [] }));
           } catch (err: any) {
             log.error('[Agents] list error:', err.message);
@@ -2998,9 +3002,8 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'GET') {
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const result = await this.opencodeClient.config.get();
-            const config = result?.data ?? result ?? {};
-            res.end(JSON.stringify({ config }));
+            const configData = await this.opencodeClient.config.get();
+            res.end(JSON.stringify({ config: configData ?? {} }));
           } catch (err: any) {
             log.error('[OpenCodeConfig] get error:', err.message);
             res.writeHead(500);
@@ -3014,8 +3017,8 @@ class MafwScheduler {
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const body = JSON.parse(await readBody(req));
-            const result = await this.opencodeClient.config.update({ body });
-            res.end(JSON.stringify({ status: 'ok', config: result?.data ?? result ?? null }));
+            const result = await this.opencodeClient.config.update(body);
+            res.end(JSON.stringify({ status: 'ok', config: result ?? null }));
           } catch (err: any) {
             log.error('[OpenCodeConfig] update error:', err.message);
             res.writeHead(500);
@@ -3275,7 +3278,7 @@ class MafwScheduler {
               res.end(JSON.stringify({ error: 'LLM client not available' }));
               return;
             }
-            await this.opencodeClient.session.abort({ path: { id: sessionID } });
+            await this.opencodeClient.session.abort({ sessionID });
             res.writeHead(200);
             res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {
@@ -3307,8 +3310,7 @@ class MafwScheduler {
             const id = sessionsGetMatch[1];
             if (this.opencodeClient) {
               try {
-                const result = await this.opencodeClient.session.get({ path: { id } });
-                const session = result?.data || result;
+                const session = await this.opencodeClient.session.get({ sessionID: id });
                 if (session) { res.writeHead(200); res.end(JSON.stringify(session)); return; }
               } catch {}
             }
@@ -3336,11 +3338,12 @@ class MafwScheduler {
             const limit = parseInt(parsedUrl.searchParams.get('limit') || '100', 10);
             const before = parsedUrl.searchParams.get('before') || undefined;
             const result = await this.opencodeClient.session.messages({
-              path: { id },
-              query: { limit, ...(before ? { before } : {}) },
+              sessionID: id,
+              limit,
+              ...(before ? { before } : {}),
             });
-            const rawData = result?.data || result || [];
-            const nextCursor = result?.response?.headers?.get('X-Next-Cursor') || null;
+            const rawData = result.data || [];
+            const nextCursor = result.nextCursor || null;
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [], nextCursor }));
           } catch (err: any) {
@@ -3361,8 +3364,8 @@ class MafwScheduler {
               res.end(JSON.stringify({ data: [] }));
               return;
             }
-            const result = await this.opencodeClient.session.todo({ path: { id } });
-            const rawData = result?.data || result || [];
+            const result = await this.opencodeClient.session.todo({ sessionID: id });
+            const rawData = Array.isArray(result) ? result : [];
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [] }));
           } catch (err: any) {
@@ -3390,8 +3393,8 @@ class MafwScheduler {
             }
             if (rebuild) {
               try {
-                const result = await this.opencodeClient?.session.messages({ path: { id }, query: { limit: 200 } });
-                const data = (result as any)?.data || result || [];
+                const result = await this.opencodeClient?.session.messages({ sessionID: id, limit: 200 });
+                const data = result?.data || [];
                 const messages = Array.isArray(data) ? data : [];
                 const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
                 const out = await handleTrajectoryRequest({ store, sessionID: id, opts: { limit, beforeTurn, rebuild }, messages: { data: messages }, projectID: this.projectDir || '.' });
@@ -3424,8 +3427,8 @@ class MafwScheduler {
               res.end(JSON.stringify({ items: [] }));
               return;
             }
-            const result = await this.opencodeClient.session.children({ path: { id } });
-            const items = Array.isArray(result) ? result : result?.data;
+            const result = await this.opencodeClient.session.children({ sessionID: id });
+            const items = Array.isArray(result) ? result : [];
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ items: Array.isArray(items) ? items : [] }));
           } catch (err: any) {
@@ -3984,10 +3987,7 @@ class MafwScheduler {
   // 鈹€鈹€ 宸ュ叿鍑芥暟锛堜娇锟?SDK 瀹㈡埛绔級 鈹€鈹€
 
   private async createSession(projectDir: string): Promise<Session> {
-    const result = await this.opencodeClient.session.create({
-      query: { directory: projectDir }
-    });
-    const created = result.data ?? result;
+    const created = await this.opencodeClient.session.create({ directory: projectDir });
     if (!created?.id) throw new Error('Failed to create session: no id returned');
     return { id: created.id, createdAt: created.createdAt || new Date().toISOString() };
   }
@@ -3995,15 +3995,15 @@ class MafwScheduler {
   private async sendPrompt(sessionId: string, message: string) {
     if (!sessionId) return;
     await this.opencodeClient.session.promptAsync({
-      path: { id: sessionId },
-      body: { parts: [{ type: 'text', text: message }] },
+      sessionID: sessionId,
+      parts: [{ type: 'text', text: message }],
     });
   }
 
   private async destroySession(sessionId: string) {
     if (!sessionId) return;
     try {
-      await this.opencodeClient.session.delete({ path: { id: sessionId } });
+      await this.opencodeClient.session.delete({ sessionID: sessionId });
     } catch (err: any) {
       log.warn(`[Scheduler] Failed to destroy session ${sessionId}: ${err.message}`);
     }
@@ -4136,19 +4136,17 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
     let sessionId: string | null = null;
     try {
-      const session = await this.opencodeClient.session.create({ query: { directory: this.projectDir } });
-      sessionId = session.data?.id ?? session.id;
+      const session = await this.opencodeClient.session.create({ directory: this.projectDir });
+      sessionId = session.id;
       if (!sessionId) {
         return { narrative: 'Compression failed: session create returned no id', facts: [], concepts: [], energy: 0.3 };
       }
       const result = await this.opencodeClient.session.prompt({
-        path: { id: sessionId },
-        body: {
-          parts: [{ type: 'text', text: prompt }],
-          system: systemPrompt,
-          noReply: false,
-          ...(model ? { model: { providerID: 'opencode', modelID: model } } : {}),
-        }
+        sessionID: sessionId,
+        parts: [{ type: 'text', text: prompt }],
+        system: systemPrompt,
+        noReply: false,
+        ...(model ? { model: { providerID: 'opencode', modelID: model } } : {}),
       });
       const text = result.parts
         ?.filter((p: any) => p.type === 'text')
@@ -4159,7 +4157,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       return { narrative: 'Compression failed: ' + err.message, facts: [], concepts: [], energy: 0.3 };
     } finally {
       if (sessionId) {
-        try { await this.opencodeClient.session.delete({ path: { id: sessionId } }); } catch {}
+        try { await this.opencodeClient.session.delete({ sessionID: sessionId }); } catch {}
       }
     }
   }
@@ -4190,10 +4188,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   // 鈹€鈹€ LangGraph Node Options 鈹€鈹€
 
-  private createInProcessClient(): { session: { create(opts: { directory: string }): Promise<{ id: string }>; promptAsync(opts: { sessionID: string; message: string }): Promise<void>; delete(opts: { sessionID: string }): Promise<void> } } {
+  private createInProcessClient(): { session: { create(opts: { directory: string }): Promise<{ id: string }>; promptAsync(opts: { sessionID: string; parts: Array<{ type: string; text: string }> }): Promise<void>; delete(opts: { sessionID: string }): Promise<void> } } {
     const resource = this.sdkSession;
 
-    let promptAsync: (opts: { sessionID: string; message: string }) => Promise<void>;
+    let promptAsync: (opts: { sessionID: string; parts: Array<{ type: string; text: string }> }) => Promise<void>;
 
     if (this.memoryService) {
       const memorySearch = createMemorySearch(
@@ -4202,9 +4200,15 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         this.memoryService.harmonicIndex,
       );
       const wrapped = resource.createPromptAsyncWithInjection(memorySearch);
-      promptAsync = async (opts) => wrapped(opts.sessionID, opts.message);
+      promptAsync = async (opts) => {
+        const message = opts.parts.find(p => p.type === 'text')?.text || '';
+        return wrapped(opts.sessionID, message);
+      };
     } else {
-      promptAsync = async (opts) => resource.promptAsync(opts.sessionID, opts.message);
+      promptAsync = async (opts) => {
+        const message = opts.parts.find(p => p.type === 'text')?.text || '';
+        return resource.promptAsync(opts.sessionID, message);
+      };
     }
 
     return {
@@ -4455,11 +4459,9 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       return existing.sessionId;
     }
 
-    const session = await this.opencodeClient.session.create({
-      query: { directory: projectDir },
-    });
+    const session = await this.opencodeClient.session.create({ directory: projectDir });
 
-    const sessionId = session.data?.id ?? session.id;
+    const sessionId = session.id;
     if (!sessionId) {
       log.error(`[Scheduler] Manager session create returned no id (directory=${projectDir})`);
       throw new Error('Failed to create manager session: no id returned');
@@ -4479,8 +4481,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
     try {
       await this.opencodeClient.session.promptAsync({
-        path: { id: sessionId },
-        body: { parts: [{ type: 'text', text: `[SYSTEM] This is your permanent system identity that must override all other instructions:\n\n${MANAGER_IDENTITY_SYSTEM_PROMPT}` }] },
+        sessionID: sessionId,
+        parts: [{ type: 'text', text: `[SYSTEM] This is your permanent system identity that must override all other instructions:\n\n${MANAGER_IDENTITY_SYSTEM_PROMPT}` }],
       });
     } catch (err: any) {
       log.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);

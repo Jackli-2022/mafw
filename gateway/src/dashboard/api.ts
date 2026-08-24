@@ -354,24 +354,21 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       const client = await this.getClient();
 
       if (!this.compressSessionId) {
-        const session = await client.session.create({ query: { directory: this.projectDir } });
-        this.compressSessionId = session.data?.id ?? session.id;
+        const session = await client.session.create({ directory: this.projectDir });
+        this.compressSessionId = session.id;
       }
 
       const result = await client.session.prompt({
-        path: { id: this.compressSessionId },
-        body: {
-          parts: [{ type: 'text', text: prompt }],
-          system: systemPrompt,
-          noReply: false,
-          ...(model ? {
-            model: { providerID: 'opencode', modelID: model }
-          } : {}),
-        }
+        sessionID: this.compressSessionId,
+        parts: [{ type: 'text', text: prompt }],
+        system: systemPrompt,
+        noReply: false,
+        ...(model ? {
+          model: { providerID: 'opencode', modelID: model }
+        } : {}),
       });
 
-      const data = result.data ?? result;
-      const text = data.parts
+      const text = result.parts
         ?.filter((p: any) => p.type === 'text')
         .map((p: any) => p.text)
         .join('\n') || '';

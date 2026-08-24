@@ -150,6 +150,13 @@ export class GatewayDatabase {
       CREATE INDEX IF NOT EXISTS idx_noop_session ON t1_noop_log(session_id);
       CREATE INDEX IF NOT EXISTS idx_noop_created ON t1_noop_log(created_at);
     `);
+
+    // Migration: add assistant_text column to trajectory_turns if not exists
+    try {
+      this.db.exec(`ALTER TABLE trajectory_turns ADD COLUMN assistant_text TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
   }
 
   // ── T1 observations ─────────────────────────────────────────────────────

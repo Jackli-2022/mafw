@@ -31,11 +31,11 @@ async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], re
 
   log.info(`[WakeHandler] Injecting wake prompt into session ${sessionId}: ${reason}`);
   try {
-    const { createOpencodeClient } = await import('@opencode-ai/sdk');
-    const client = createOpencodeClient({ baseUrl: process.env.MAFW_SERVE_URL || 'http://127.0.0.1:4096' });
+    const { createOpencodeAdapter } = await import('../../opencode-adapter.js');
+    const client = await createOpencodeAdapter({ baseUrl: process.env.MAFW_SERVE_URL || 'http://127.0.0.1:4096' });
     await client.session.promptAsync({
-      path: { id: sessionId },
-      body: { parts: [{ type: 'text', text: wakePrompt }] },
+      sessionID: sessionId,
+      parts: [{ type: 'text', text: wakePrompt }],
     });
   } catch (err: any) {
     log.warn(`[WakeHandler] Failed to inject wake prompt: ${err.message}`);

@@ -1380,9 +1380,7 @@ export function MafwShell() {
           const recent: string[] = JSON.parse(localStorage.getItem("mafw-recent-models") || "[]")
           const first = recent[0]
           if (first) {
-            const connected = new Set(p?.connected || [])
             const findModel = (prov: any, mid: string) => {
-              if (!connected.has(prov.id)) return null
               const m: any = prov.models?.[mid]
               return m ? { providerID: prov.id, modelID: mid, label: m.name || mid } : null
             }
@@ -1395,7 +1393,7 @@ export function MafwShell() {
               const prov = (p?.all || []).find((x: any) => x.id === pid)
               found = prov ? findModel(prov, mid) : null
             } else {
-              // Legacy plain id: match the first connected provider that has it
+              // Legacy plain id: match the first provider that has it
               for (const prov of p?.all || []) {
                 found = findModel(prov, first)
                 if (found) break
@@ -1420,8 +1418,8 @@ export function MafwShell() {
 
   const modelGroups = createMemo(() => {
     const p = providersData()
-    const connected = new Set(p?.connected || [])
     const all = p?.all || []
+    const connected = new Set(p?.connected || [])
     const groups: { provider: string; providerID: string; models: ModelEntry[] }[] = []
     for (const prov of all) {
       if (!connected.has(prov.id)) continue
@@ -2071,13 +2069,7 @@ export function MafwShell() {
               onClose={() => applyRightDock(false)}
               onTab={(t) => applyRightDock(true, t)}
             >
-              <Show when={rightDockTab() === "tasks"} fallback={
-                <TrajectoryDock
-                  sessionID={currentSessionID()}
-                  liveEvents={trajectoryLive()[currentSessionID()] || []}
-                  liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
-                />
-              }>
+              <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
                     <TaskList
                       todos={todos[currentSessionID()] || []}
                       tokens={taskMetrics(currentSessionID()).tokens}
@@ -2086,7 +2078,14 @@ export function MafwShell() {
                       onClose={() => applyRightDock(false)}
                       onPin={() => applyRightDock(false)}
                     />
-              </Show>
+              </div>
+              <div style={{ display: rightDockTab() === "trajectory" ? "contents" : "none" }}>
+                <TrajectoryDock
+                  sessionID={currentSessionID()}
+                  liveEvents={trajectoryLive()[currentSessionID()] || []}
+                  liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
+                />
+              </div>
             </RightDock>
             <Show when={!viewportNarrow()}>
               <ResizeHandle

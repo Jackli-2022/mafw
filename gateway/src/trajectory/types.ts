@@ -61,4 +61,5 @@ export interface TrajectoryTurn {
   model: string | null;
   agent: string | null;
   userText: string;
+  assistantText?: string;
 }

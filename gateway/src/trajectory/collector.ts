@@ -1,6 +1,7 @@
 import { GatewayDatabase } from '../memory/gateway-db';
 import { TrajectoryStore } from './trajectory-store';
 import { TrajectoryEvent, TrajectoryTurn, TokenCounts, TrajectoryEventType } from './types';
+import { log } from '../core/utils/logger';
 
 const SUMMARY_MAX = 500;
 const USER_TEXT_MAX = 300;
@@ -24,15 +25,20 @@ interface TurnState {
   agent: string | null;
   userText: string;
   userMessageID: string | null;
+  assistantText: string;
+  assistantMessageID: string | null;
   stepFinishMessageIDs: Set<string>;
   toolCallIDs: Set<string>;
   reasoningPartIDs: Set<string>;
   lastModel: string | null;
+  projectID: string;
 }
 
 export class TrajectoryCollector {
   private turns = new Map<string, TurnState>();
   private seqCounters = new Map<string, number>();
+  private seenUserMessageIDs = new Set<string>();
+  private opencodeClient: any;
 
   constructor(
     private store: TrajectoryStore,
@@ -40,17 +46,21 @@ export class TrajectoryCollector {
     private projectID: string,
   ) {}
 
+  setOpencodeClient(client: any): void {
+    this.opencodeClient = client;
+  }
+
   private seq(sessionID: string): number {
     const n = (this.seqCounters.get(sessionID) || 0) + 1;
     this.seqCounters.set(sessionID, n);
     return n;
   }
 
-  private stateFor(sessionID: string, turnID?: number): TurnState {
+  private stateFor(sessionID: string, turnID?: number, projectID?: string): TurnState {
     let s = this.turns.get(sessionID);
     if (!s) {
       s = {
-        turnID: turnID ?? (this.db.currentTurnId(sessionID) || 1),
+        turnID: turnID ?? (this.store.currentTurnId(sessionID) || 1),
         turnStartMs: Date.now(),
         toolCount: 0,
         toolErrorCount: 0,
@@ -63,19 +73,22 @@ export class TrajectoryCollector {
         agent: null,
         userText: '',
         userMessageID: null,
+        assistantText: '',
+        assistantMessageID: null,
         stepFinishMessageIDs: new Set(),
         toolCallIDs: new Set(),
         reasoningPartIDs: new Set(),
         lastModel: null,
+        projectID: projectID || this.projectID,
       };
       this.turns.set(sessionID, s);
     }
     return s;
   }
 
-  private emit(sessionID: string, s: TurnState, eventType: TrajectoryEventType, extra: Partial<TrajectoryEvent> = {}): TrajectoryEvent {
+  private emit(sessionID: string, s: TurnState, eventType: TrajectoryEventType, extra: Partial<TrajectoryEvent> = {}, projectID?: string): TrajectoryEvent {
     const evt: Omit<TrajectoryEvent, 'id'> = {
-      projectID: this.projectID,
+      projectID: projectID || this.projectID,
       sessionID,
       turnID: s.turnID,
       seq: this.seq(sessionID),
@@ -90,7 +103,6 @@ export class TrajectoryCollector {
 
   handleEvent(type: string, props: any, directory?: string): TrajectoryEvent | null {
     const projectID = directory || this.projectID;
-    if (projectID !== this.projectID && directory) return null;
 
     const sessionID = props?.info?.sessionID || props?.part?.sessionID || props?.sessionID;
     if (!sessionID) return null;
@@ -98,19 +110,31 @@ export class TrajectoryCollector {
     if (type === 'message.updated') {
       const info = props?.info;
       if (!info) return null;
+      log.info(`[Trajectory] message.updated: sessionID=${sessionID}, role=${info.role}, id=${info.id}, projectID=${projectID}`);
       if (info.role === 'user') {
-        const s = this.stateFor(sessionID, this.db.nextTurnId(sessionID));
+        if (info.id && this.seenUserMessageIDs.has(info.id)) {
+          log.info(`[Trajectory] user message duplicate: sessionID=${sessionID}, id=${info.id}, skipping`);
+          return null;
+        }
+        if (info.id) this.seenUserMessageIDs.add(info.id);
+        const nextId = this.store.nextTurnId(sessionID);
+        const s = this.stateFor(sessionID, nextId, projectID);
         s.turnStartMs = info?.time?.created || Date.now();
-        s.turnID = this.db.nextTurnId(sessionID);
+        s.turnID = nextId;
         s.userMessageID = info.id ?? null;
-        s.userText = truncate(info?.summary?.body || '', USER_TEXT_MAX) || '';
-        return this.emit(sessionID, s, 'turn_start');
+        const summaryBody = info?.summary?.body || '';
+        s.userText = truncate(summaryBody, USER_TEXT_MAX) || '';
+        log.info(`[Trajectory] user message: sessionID=${sessionID}, id=${info.id}, summaryBody.len=${summaryBody.length}`);
+        if (!s.userText && info.id && this.opencodeClient) {
+          void this.fetchUserText(sessionID, info.id, s);
+        }
+        return this.emit(sessionID, s, 'turn_start', {}, projectID);
       }
       if (info.role === 'assistant') {
-        const s = this.stateFor(sessionID);
+        const s = this.stateFor(sessionID, undefined, projectID);
         if (info.modelID && s.lastModel && info.modelID !== s.lastModel) {
           s.agentSwitchCount++;
-          const evt = this.emit(sessionID, s, 'model_switch', { model: info.modelID });
+          const evt = this.emit(sessionID, s, 'model_switch', { model: info.modelID }, projectID);
           s.lastModel = info.modelID;
           return evt;
         }
@@ -126,7 +150,7 @@ export class TrajectoryCollector {
             tokens: info.tokens,
             cost: info.cost,
             finish: info.finish,
-          });
+          }, projectID);
           return evt;
         }
         return null;
@@ -137,11 +161,18 @@ export class TrajectoryCollector {
     if (type === 'message.part.updated') {
       const part = props?.part;
       if (!part) return null;
-      const s = this.stateFor(sessionID);
+      const s = this.stateFor(sessionID, undefined, projectID);
 
-      if (part.type === 'text' && part.text && s.userMessageID === part.messageID) {
-        if (!s.userText) {
+      if (part.type === 'text') {
+        const textLen = typeof part.text === 'string' ? part.text.length : 0;
+        log.info(`[Trajectory] text part: sessionID=${sessionID}, messageID=${part.messageID}, userMessageID=${s.userMessageID}, userText.len=${s.userText.length}, part.text.len=${textLen}`);
+        if (textLen > 0 && !s.userText && (!s.userMessageID || s.userMessageID === part.messageID)) {
           s.userText = truncate(part.text, USER_TEXT_MAX) || '';
+          log.info(`[Trajectory] captured userText from part: sessionID=${sessionID}, len=${textLen}`);
+        } else if (textLen > 0 && s.userMessageID && s.userMessageID !== part.messageID) {
+          s.assistantText = truncate(part.text, SUMMARY_MAX) || '';
+          s.assistantMessageID = part.messageID;
+          log.info(`[Trajectory] captured assistantText from part: sessionID=${sessionID}, len=${textLen}`);
         }
         return null;
       }
@@ -156,7 +187,7 @@ export class TrajectoryCollector {
             toolName: part.tool,
             callID: part.callID,
             inputSummary: truncate(summarizeInput(st.input), SUMMARY_MAX),
-          });
+          }, projectID);
           return evt;
         }
         if (st.status === 'completed' || st.status === 'error') {
@@ -170,7 +201,7 @@ export class TrajectoryCollector {
             outputSummary: truncate(st.output || st.error, SUMMARY_MAX),
             error: st.status === 'error' ? truncate(st.error, SUMMARY_MAX) : undefined,
             durationMs: duration,
-          });
+          }, projectID);
           return evt;
         }
         return null;
@@ -186,7 +217,7 @@ export class TrajectoryCollector {
           tokens: part.tokens,
           cost: part.cost,
           finish: part.reason,
-        });
+        }, projectID);
         return evt;
       }
 
@@ -194,18 +225,18 @@ export class TrajectoryCollector {
         if (!s.reasoningPartIDs.has(part.id)) {
           s.reasoningPartIDs.add(part.id);
           s.reasoningCount++;
-          const evt = this.emit(sessionID, s, 'reasoning_start');
+          const evt = this.emit(sessionID, s, 'reasoning_start', {}, projectID);
           if (part.time?.end) {
             const end = this.emit(sessionID, s, 'reasoning_end', {
               durationMs: part.time.end - (part.time.start || part.time.end),
-            });
+            }, projectID);
             return end;
           }
           return evt;
         } else {
           const evt = this.emit(sessionID, s, 'reasoning_end', {
             durationMs: part.time?.end ? part.time.end - (part.time.start || part.time.end) : undefined,
-          });
+          }, projectID);
           return evt;
         }
       }
@@ -218,10 +249,11 @@ export class TrajectoryCollector {
 
   onIdle(sessionID: string): TrajectoryTurn | null {
     const s = this.turns.get(sessionID);
+    log.info(`[Trajectory] onIdle: sessionID=${sessionID}, hasState=${!!s}`);
     if (!s) return null;
     s.finish = s.finish || 'idle';
     const turn: TrajectoryTurn = {
-      projectID: this.projectID,
+      projectID: s.projectID,
       sessionID,
       turnID: s.turnID,
       turnStartMs: s.turnStartMs,
@@ -237,11 +269,54 @@ export class TrajectoryCollector {
       model: s.model,
       agent: s.agent,
       userText: s.userText,
+      assistantText: s.assistantText,
     };
     this.store.upsertTurn(turn);
-    this.emit(sessionID, s, 'turn_end');
+    this.emit(sessionID, s, 'turn_end', {}, s.projectID);
     this.turns.delete(sessionID);
     return turn;
+  }
+
+  private async fetchUserText(sessionID: string, messageID: string, s: TurnState): Promise<void> {
+    try {
+      const result = await this.opencodeClient.session.messages({
+        sessionID,
+        limit: 50,
+      });
+      const data = result?.data || [];
+      const messages = Array.isArray(data) ? data : [];
+      const msg = messages.find((m: any) => {
+        const info = m.info || m;
+        return info.id === messageID;
+      });
+      if (!msg) return;
+      const parts = (msg.parts || msg?.info?.parts || []) as any[];
+      const textPart = parts.find((p: any) => p.type === 'text' && typeof p.text === 'string');
+      if (textPart && !s.userText) {
+        s.userText = truncate(textPart.text, USER_TEXT_MAX) || '';
+        log.info(`[Trajectory] fetched userText via API: sessionID=${sessionID}, len=${textPart.text.length}`);
+        this.store.upsertTurn({
+          projectID: s.projectID,
+          sessionID,
+          turnID: s.turnID,
+          turnStartMs: s.turnStartMs,
+          turnEndMs: null,
+          durationMs: null,
+          toolCount: s.toolCount,
+          toolErrorCount: s.toolErrorCount,
+          reasoningCount: s.reasoningCount,
+          agentSwitchCount: s.agentSwitchCount,
+          tokens: s.tokens,
+          cost: s.cost,
+          finish: s.finish,
+          model: s.model,
+          agent: s.agent,
+          userText: s.userText,
+        });
+      }
+    } catch (err: any) {
+      log.warn(`[Trajectory] fetchUserText failed: ${err.message}`);
+    }
   }
 }
 

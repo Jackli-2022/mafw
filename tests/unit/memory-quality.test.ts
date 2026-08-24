@@ -250,6 +250,35 @@ describe('Harmonic memory quality improvements (A1/A2/B4/B5/C)', () => {
       const final = idx3.entries.find(e => e.id === 'mem_new2');
       expect(final!.merged_from).toEqual(savedMergedFrom);
     });
+
+    it('reconcileMergedFrom() patches entries missing merged_from at startup', async () => {
+      const store = new HarmonicUnitFileStore(tmpDir);
+      const base = 'test knowledge module about react hooks and state management';
+      const similar = 'test knowledge module about react hooks and state management patterns';
+      const anchors = ['react', 'hooks', 'state'];
+
+      await store.write(unit('mem_src3', base, anchors, 0.8, 1), undefined, { skipMerge: false });
+      await store.write(unit('mem_new3', similar, anchors, 0.8, 1), undefined, { skipMerge: false });
+
+      const idx = store.indexManager_().getIndex();
+      const entry = idx.entries.find(e => e.id === 'mem_new3');
+      const savedMergedFrom = entry!.merged_from;
+      expect(savedMergedFrom).toBeDefined();
+
+      // Simulate old index: delete merged_from
+      delete (entry as any).merged_from;
+      store.indexManager_().save();
+
+      // Create a fresh manager (simulates gateway restart) and run reconcile
+      const manager2 = new HarmonicIndexManager(tmpDir);
+      const result = manager2.reconcileMergedFrom();
+      expect(result.patched).toBeGreaterThanOrEqual(1);
+
+      // Verify the entry is restored
+      const idx2 = manager2.getIndex();
+      const restored = idx2.entries.find(e => e.id === 'mem_new3');
+      expect(restored!.merged_from).toEqual(savedMergedFrom);
+    });
   });
 });
 

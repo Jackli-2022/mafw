@@ -61,10 +61,9 @@ export class SdkSessionResource {
     let title: string;
     if (this.opencodeClient) {
       try {
-        const result = await this.opencodeClient.session.create({
-          query: { directory: directory || '.' },
+        const created = await this.opencodeClient.session.create({
+          directory: directory || '.',
         });
-        const created = result.data ?? result;
         id = created.id;
         projectID = created.projectID || '';
         title = created.title || '';
@@ -118,13 +117,10 @@ export class SdkSessionResource {
     const promptParts: Array<{ type: string; [key: string]: any }> = [];
     if (message) promptParts.push({ type: 'text', text: message });
     if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
-    const body: any = { parts: promptParts };
-    if (agent) body.agent = agent;
-    if (model?.providerID && model?.modelID) body.model = model;
-    await this.opencodeClient.session.promptAsync({
-      path: { id: sessionID },
-      body,
-    });
+    const promptOpts: any = { sessionID, parts: promptParts };
+    if (agent) promptOpts.agent = agent;
+    if (model?.providerID && model?.modelID) promptOpts.model = model;
+    await this.opencodeClient.session.promptAsync(promptOpts);
   }
 
   private async _rawPrompt(
@@ -137,12 +133,12 @@ export class SdkSessionResource {
       return { parts: [] };
     }
     const result = await this.opencodeClient.session.prompt({
-      path: { id: sessionID },
-      body: { parts, system },
+      sessionID,
+      parts,
+      system,
     });
 
-    const data = result.data ?? result;
-    const responseText = data.parts
+    const responseText = result.parts
       ?.filter((p: any) => p.type === 'text')
       .map((p: any) => p.text)
       .join('\n') || '';
@@ -154,7 +150,7 @@ export class SdkSessionResource {
 
   async delete(sessionID: string): Promise<void> {
     if (this.opencodeClient && sessionID) {
-      await this.opencodeClient.session.delete({ path: { id: sessionID } }).catch(() => {});
+      await this.opencodeClient.session.delete({ sessionID }).catch(() => {});
     }
     this.sessions.delete(sessionID);
     if (this.sessionsDir) {

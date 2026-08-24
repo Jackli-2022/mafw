@@ -7,7 +7,7 @@ export interface AgentServices {
   client: {
     session: {
       create(opts: { directory: string }): Promise<{ id: string }>;
-      promptAsync(opts: { sessionID: string; message: string }): Promise<void>;
+      promptAsync(opts: { sessionID: string; parts: Array<{ type: string; text: string }> }): Promise<void>;
       delete(opts: { sessionID: string }): Promise<void>;
     };
   };
@@ -108,7 +108,7 @@ export function createAgentNode(type: 'plan' | 'execute' | 'review') {
     // Memory injection is handled by the `withMemoryInjection` interceptor
     // applied in createInProcessClient(). No inline memory injection needed here.
 
-    await client.session.promptAsync({ sessionID: sessionId, message: prompt });
+    await client.session.promptAsync({ sessionID: sessionId, parts: [{ type: 'text', text: prompt }] });
 
     interrupt(config.interruptLabel);
 

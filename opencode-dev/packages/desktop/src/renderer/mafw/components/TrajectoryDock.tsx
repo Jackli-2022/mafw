@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createEffect, createSignal, For, Show, onCleanup } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -22,33 +22,32 @@ export function TrajectoryDock(props: {
   liveEvents?: any[]
   liveTurn?: any | null
 }) {
-  const [state, setState] = createStore<{
-    turns: any[]
-    events: any[]
-    expanded: Record<number, boolean>
-    error: string | null
-    loading: boolean
-  }>({ turns: [], events: [], expanded: {}, error: null, loading: false })
+  const [apiEvents, setApiEvents] = createSignal<any[]>([])
+  const [apiTurns, setApiTurns] = createSignal<any[]>([])
+  const [error, setError] = createSignal<string | null>(null)
+  const [loading, setLoading] = createSignal(false)
+  const [expanded, setExpanded] = createStore<Record<number, boolean>>({})
 
   let loadedFor = ""
 
   const load = async (rebuild?: boolean) => {
     if (!props.sessionID) return
-    setState("loading", true)
+    setLoading(true)
     try {
       const r = await window.api.mafw.sessions.trajectory(props.sessionID, { limit: 50, rebuild })
-      setState("turns", r.turns || [])
-      setState("events", r.events || [])
-      setState("error", null)
+      setApiEvents(r.events || [])
+      setApiTurns(r.turns || [])
+      setError(null)
     } catch (e: any) {
-      setState("error", e?.message || "\u52a0\u8f7d\u5931\u8d25")
+      setError(e?.message || "\u52a0\u8f7d\u5931\u8d25")
     } finally {
-      setState("loading", false)
+      setLoading(false)
     }
   }
 
   createEffect(() => {
     const sid = props.sessionID
+    console.log("[TrajectoryDock] sessionID changed:", sid, "loadedFor:", loadedFor)
     if (!sid) return
     if (loadedFor !== sid) {
       loadedFor = sid
@@ -57,103 +56,126 @@ export function TrajectoryDock(props: {
   })
 
   createEffect(() => {
-    const live = props.liveEvents
-    if (!live || live.length === 0) return
-    const sid = props.sessionID
-    const filtered = live.filter((e: any) => (e.sessionID || e.session_id) === sid)
-    if (filtered.length === 0) return
-    setState("events", (prev: any[]) => {
-      const seen = new Set(prev.map((e: any) => `${e.turnID ?? e.turn_id ?? 0}:${e.seq}`))
-      const merged = [...prev]
-      for (const e of filtered) {
-        const key = `${e.turnID ?? e.turn_id ?? 0}:${e.seq ?? 0}`
-        if (!seen.has(key)) {
-          merged.push(e)
-          seen.add(key)
-        }
-      }
-      return merged.sort((a: any, b: any) => (a.turnID ?? a.turn_id ?? 0) - (b.turnID ?? b.turn_id ?? 0) || (a.seq ?? 0) - (b.seq ?? 0))
-    })
+    const live = props.liveEvents || []
+    console.log("[TrajectoryDock] liveEvents updated:", live.length, "events for session:", props.sessionID)
   })
 
   createEffect(() => {
     const t = props.liveTurn
-    if (!t) return
-    const sid = props.sessionID
-    if ((t.sessionID || t.session_id) !== sid) return
-    const tid = t.turnID ?? t.turn_id
-    setState("turns", (prev: any[]) => {
-      const idx = prev.findIndex((x: any) => (x.turnID ?? x.turn_id) === tid)
-      if (idx >= 0) return [...prev.slice(0, idx), t, ...prev.slice(idx + 1)]
-      return [...prev, t].sort((a: any, b: any) => (b.turnID ?? b.turn_id) - (a.turnID ?? a.turn_id))
-    })
+    console.log("[TrajectoryDock] liveTurn updated:", t ? `turnID=${t.turnID ?? t.turn_id}` : "null")
   })
 
-  const toggleTurn = (id: number) => setState("expanded", id, (v: boolean) => !v)
+  const displayedEvents = createMemo(() => {
+    const api = apiEvents()
+    const live = props.liveEvents || []
+    const sid = props.sessionID
+    const filtered = live.filter((e: any) => (e.sessionID || e.session_id) === sid)
+    if (filtered.length === 0) return api
+    const seen = new Set(api.map((e: any) => `${e.turnID ?? e.turn_id ?? 0}:${e.seq}`))
+    const merged = [...api]
+    for (const e of filtered) {
+      const key = `${e.turnID ?? e.turn_id ?? 0}:${e.seq ?? 0}`
+      if (!seen.has(key)) {
+        merged.push(e)
+        seen.add(key)
+      }
+    }
+    return merged.sort((a: any, b: any) => (a.turnID ?? a.turn_id ?? 0) - (b.turnID ?? b.turn_id ?? 0) || (a.seq ?? 0) - (b.seq ?? 0))
+  })
 
-  const eventsForTurn = (turnID: number) => state.events.filter((e: any) => (e.turnID ?? e.turn_id) === turnID)
+  const displayedTurns = createMemo(() => {
+    const api = apiTurns()
+    const live = props.liveTurn
+    if (!live) return api
+    const sid = props.sessionID
+    if ((live.sessionID || live.session_id) !== sid) return api
+    const tid = live.turnID ?? live.turn_id
+    const idx = api.findIndex((x: any) => (x.turnID ?? x.turn_id) === tid)
+    if (idx >= 0) return [...api.slice(0, idx), live, ...api.slice(idx + 1)]
+    return [...api, live].sort((a: any, b: any) => (b.turnID ?? b.turn_id) - (a.turnID ?? a.turn_id))
+  })
 
-  const totalTools = () => state.turns.reduce((a: number, t: any) => a + (t.toolCount ?? t.tool_count ?? 0), 0)
-  const totalCost = () => state.turns.reduce((a: number, t: any) => a + (t.cost || 0), 0)
+  const toggleTurn = (id: number) => setExpanded(id, (v: boolean) => !v)
+
+  const eventsForTurn = (turnID: number) => displayedEvents().filter((e: any) => (e.turnID ?? e.turn_id) === turnID)
+
+  const totalTools = () => displayedTurns().reduce((a: number, t: any) => a + (t.toolCount ?? t.tool_count ?? 0), 0)
+  const totalCost = () => displayedTurns().reduce((a: number, t: any) => a + (t.cost || 0), 0)
   const tid = (t: any) => t.turnID ?? t.turn_id ?? 0
+
+  const sortedTurns = createMemo(() =>
+    [...displayedTurns()].sort((a: any, b: any) => (b.turnID ?? b.turn_id) - (a.turnID ?? a.turn_id))
+  )
 
   return (
     <div class="mafw-trajectory-dock">
       <div class="mafw-trajectory-summary">
-        <span>\u56de\u5408 {state.turns.length}</span>
-        <span>\u5de5\u5177 {totalTools()}</span>
-        <span>\u6210\u672c {fmtCost(totalCost())}</span>
-        <TooltipV2 value="\u5237\u65b0" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" class="mafw-trajectory-refresh" onClick={() => void load(true)} aria-label="\u5237\u65b0">
+        <span class="mafw-trajectory-kpi">
+          <span class="mafw-trajectory-kpi-icon">↻</span>
+          <span class="mafw-trajectory-kpi-value">{displayedTurns().length}</span>
+          <span>回合</span>
+        </span>
+        <span class="mafw-trajectory-kpi">
+          <span class="mafw-trajectory-kpi-icon">⚙</span>
+          <span class="mafw-trajectory-kpi-value">{totalTools()}</span>
+          <span>工具</span>
+        </span>
+        <span class="mafw-trajectory-kpi">
+          <span class="mafw-trajectory-kpi-icon">$</span>
+          <span class="mafw-trajectory-kpi-value">{fmtCost(totalCost())}</span>
+        </span>
+        <TooltipV2 value="刷新" openDelay={300}>
+          <ButtonV2 variant="ghost" size="small" class="mafw-trajectory-refresh" onClick={() => void load(true)} aria-label="刷新">
             ⟳
           </ButtonV2>
         </TooltipV2>
       </div>
-      <Show when={state.error}>
-        <div class="mafw-trajectory-error">{state.error}</div>
+      <Show when={error()}>
+        <div class="mafw-trajectory-error">{error()}</div>
         <ButtonV2 variant="outline" size="small" onClick={() => void load()}>
-          \u91cd\u8bd5
+          重试
         </ButtonV2>
       </Show>
-      <Show when={!state.error && state.turns.length === 0 && !state.loading}>
+      <Show when={!error() && displayedTurns().length === 0 && !loading()}>
         <div class="mafw-trajectory-empty">
-          \u6682\u65e0\u8f68\u8ff9\u6570\u636e
-          <br />
-          \u53d1\u9001\u6d88\u606f\u540e\u6b64\u5904\u663e\u793a agent \u8f68\u8ff9
+          <div class="mafw-trajectory-empty-icon">📊</div>
+          <div class="mafw-trajectory-empty-text">暂无轨迹数据</div>
+          <div class="mafw-trajectory-empty-hint">发送消息后此处显示 agent 执行轨迹</div>
         </div>
       </Show>
       <div class="mafw-trajectory-list">
-        <For each={[...state.turns].sort((a: any, b: any) => (b.turnID ?? b.turn_id) - (a.turnID ?? a.turn_id))}>
+        <For each={sortedTurns()}>
           {(t) => (
-            <div class="mafw-trajectory-turn" classList={{ open: !!state.expanded[tid(t)] }}>
+            <div class="mafw-trajectory-turn" classList={{ open: !!expanded[tid(t)] }}>
               <button type="button" class="mafw-trajectory-turn-head" onClick={() => toggleTurn(tid(t))}>
-                <span class="mafw-trajectory-turn-user">{(t.userText ?? t.user_text) || `\u56de\u5408 ${tid(t)}`}</span>
+                <span class="mafw-trajectory-turn-user">{(t.userText ?? t.user_text) || `回合 ${tid(t)}`}</span>
+                <Show when={t.assistantText ?? t.assistant_text}>
+                  <span class="mafw-trajectory-turn-assistant">{t.assistantText ?? t.assistant_text}</span>
+                </Show>
                 <span class="mafw-trajectory-turn-kpis">
-                  <span>{(t.toolCount ?? t.tool_count ?? 0)} \u5de5\u5177</span>
-                  <span>{fmtDur(t.durationMs ?? t.duration_ms)}</span>
-                  <span>
-                    {fmtTokens((t.tokens?.input || 0) + (t.tokens?.output || 0))} tok
-                  </span>
-                  <span>{fmtCost(t.cost || 0)}</span>
+                  <span>⚙ {(t.toolCount ?? t.tool_count ?? 0)}</span>
+                  <span>⏱ {fmtDur(t.durationMs ?? t.duration_ms)}</span>
+                  <span>📝 {fmtTokens((t.tokens?.input || 0) + (t.tokens?.output || 0))} tok</span>
+                  <span>💰 {fmtCost(t.cost || 0)}</span>
                 </span>
                 <Show when={t.finish === "tool-calls" || t.finish === "length"}>
                   <span class="mafw-trajectory-finish-badge">{t.finish}</span>
                 </Show>
               </button>
-              <Show when={state.expanded[tid(t)]}>
+              <Show when={expanded[tid(t)]}>
                 <div class="mafw-trajectory-events">
                   <For each={eventsForTurn(tid(t))}>
                     {(e) => (
-                      <div class={`mafw-trajectory-event mafw-trajectory-${e.eventType ?? e.event_type}`}>
+                      <div class={`mafw-trajectory-event mafw-trajectory-${e.eventType ?? e.event_type}${e.toolState === "error" ? " mafw-trajectory-error" : ""}`}>
                         <span class="mafw-trajectory-event-icon">
-                          {e.eventType === "tool_start" && "\u27f3"}
-                          {e.eventType === "tool_end" && (e.toolState === "error" ? "\u2717" : "\u2713")}
-                          {(e.eventType === "reasoning_start" || e.eventType === "reasoning_end") && "\uD83E\uDDE0"}
-                          {e.eventType === "model_switch" && "\u21C4"}
-                          {e.eventType === "agent_switch" && "\u21C4"}
-                          {e.eventType === "step_finish" && "\u2211"}
-                          {e.eventType === "turn_start" && "\u25B6"}
-                          {e.eventType === "turn_end" && "\u25A0"}
+                          {e.eventType === "tool_start" && "⟳"}
+                          {e.eventType === "tool_end" && (e.toolState === "error" ? "✗" : "✓")}
+                          {(e.eventType === "reasoning_start" || e.eventType === "reasoning_end") && "🧠"}
+                          {e.eventType === "model_switch" && "⇄"}
+                          {e.eventType === "agent_switch" && "⇄"}
+                          {e.eventType === "step_finish" && "∑"}
+                          {e.eventType === "turn_start" && "▶"}
+                          {e.eventType === "turn_end" && "■"}
                         </span>
                         <span class="mafw-trajectory-event-main">
                           <Show when={e.toolName || e.tool_name}>
@@ -171,7 +193,7 @@ export function TrajectoryDock(props: {
                           <Show when={e.cost !== undefined || e.tokens}>
                             <span class="mafw-trajectory-tokens">
                               {fmtTokens(e.tokens?.input || 0)}/{fmtTokens(e.tokens?.output || 0)} tok
-                              <Show when={e.cost !== undefined}>{" \u00b7 "}{fmtCost(e.cost || 0)}</Show>
+                              <Show when={e.cost !== undefined}>{" · "}{fmtCost(e.cost || 0)}</Show>
                             </span>
                           </Show>
                         </span>

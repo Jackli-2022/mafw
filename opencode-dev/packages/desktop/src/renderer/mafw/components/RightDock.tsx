@@ -2,6 +2,7 @@
 import { Show } from "solid-js"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
 
 export function RightDock(props: {
   open: boolean
@@ -15,24 +16,12 @@ export function RightDock(props: {
     <Show when={props.open}>
       <div class="mafw-right-dock" style={{ width: `${props.width}px` }}>
         <div class="mafw-right-dock-tabs">
-          <ButtonV2
-            variant={props.tab === "tasks" ? "contrast" : "ghost"}
-            size="small"
-            class="mafw-right-dock-tab"
-            onClick={() => props.onTab("tasks")}
-            aria-label="任务列表"
-          >
-            📋 任务
-          </ButtonV2>
-          <ButtonV2
-            variant={props.tab === "trajectory" ? "contrast" : "ghost"}
-            size="small"
-            class="mafw-right-dock-tab"
-            onClick={() => props.onTab("trajectory")}
-            aria-label="轨迹时间线"
-          >
-            📊 轨迹
-          </ButtonV2>
+          <TabsV2 value={props.tab} onChange={props.onTab} variant="pill">
+            <TabsV2.List class="mafw-right-dock-tab-list">
+              <TabsV2.Trigger value="tasks">📋 任务</TabsV2.Trigger>
+              <TabsV2.Trigger value="trajectory">📊 轨迹</TabsV2.Trigger>
+            </TabsV2.List>
+          </TabsV2>
           <div class="mafw-right-dock-spacer" />
           <TooltipV2 value="关闭面板" openDelay={300}>
             <ButtonV2 variant="ghost" size="small" class="mafw-right-dock-close" onClick={props.onClose} aria-label="关闭面板">

@@ -35,6 +35,9 @@ const hashText = (s: string): string => {
 // [语音回复 art:<id> 音色:<voice> h:<hash>]
 const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+?))?(?:\s+h:([a-f0-9]{8}))?\]/g
 
+// [媒体附件 taskID: <id> contextID: <id> artifactId: <id>（媒体: <name>）...]
+const MEDIA_POINTER_RE = /\[媒体附件\s+taskID:\s*([^\s]+)\s+contextID:\s*([^\s]+)(?:\s+artifactId:\s*([a-zA-Z0-9-]+))?（媒体:\s*([^）]+)）[^\]]*\]/g
+
 // Local-only parts (prt_local_ thumbnails) must survive server-side history
 // rewrites: history reloads replace parts wholesale, so re-merge the local
 // set from the previous store snapshot.
@@ -397,7 +400,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       // 更新消息状态为 "analyzing"，替换临时 ID 为真实 ID
       const realMsgId = `user-${Date.now()}`
       const ts = Date.now()
-      const pointerText = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}（媒体: voice-${ts}.wav），这是用户发给你的语音消息——调用 mafw_media_ask 工具获取其内容后，用 mafw_media_speak 工具以语音回复用户（taskID 填 ${task.id}）]`
+      const pointerText = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId} artifactId: ${task.artifactId}（媒体: voice-${ts}.wav），这是用户发给你的语音消息——调用 mafw_media_ask 工具获取其内容后，用 mafw_media_speak 工具以语音回复用户（taskID 填 ${task.id}）]`
 
       props.setStore(prev => {
         const msgs = { ...prev.message }
@@ -814,10 +817,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         if ((a as any).taskPromise) {
           const pre = await (a as any).taskPromise
           if (pre) {
+            const artifactIdPart = pre.artifactId ? ` artifactId: ${pre.artifactId}` : ""
             visionParts.push({
               type: "text",
               id: `prt_media_${ts}_${visionParts.length}`,
-              text: `[媒体附件 taskID: ${pre.taskID} contextID: ${pre.contextId}（媒体: ${a.name}），这是用户发给你的媒体消息（图片/视频/音频）——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${pre.taskID}）]`,
+              text: `[媒体附件 taskID: ${pre.taskID} contextID: ${pre.contextId}${artifactIdPart}（媒体: ${a.name}），这是用户发给你的媒体消息（图片/视频/音频）——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${pre.taskID}）]`,
               synthetic: true,
             })
             visionThumbs.push({ name: a.name, mime: a.mime || "audio/wav", dataUrl: a.dataUrl || "" })
@@ -845,6 +849,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         // Upload bytes to the A2A artifact store (binary, no base64 JSON body);
         // the message references the artifact via a tiny URL part.
         let task: { id: string; contextId: string; state: string }
+        let artifactId: string | undefined
         try {
           let bytes: ArrayBuffer | undefined = pickedBytes
           if (!bytes && dataUrl) {
@@ -855,7 +860,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           }
           if (!bytes) throw new Error("无法读取媒体数据")
           console.log("[media] uploading to A2A artifact:", a.name, mediaType, bytes.byteLength, "bytes @", props.gatewayUrl || "http://127.0.0.1:3000(default)")
-          const artifactId = await uploadMediaBinary(bytes, mediaType)
+          artifactId = await uploadMediaBinary(bytes, mediaType)
           task = await window.api.mafw.media.createTask({
             artifactId,
             mediaType,
@@ -874,10 +879,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           })
           console.log("[media] A2A fallback(dataUrl):", a.name, "-> task", task.id.slice(0, 8))
         }
+        const artifactIdPart = artifactId ? ` artifactId: ${artifactId}` : ""
         visionParts.push({
           type: "text",
           id: `prt_media_${ts}_${visionParts.length}`,
-          text: `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}（媒体: ${a.name}），这是用户发给你的媒体消息（图片/视频/音频）——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.id}）]`,
+          text: `[媒体附件 taskID: ${task.id} contextID: ${task.contextId}${artifactIdPart}（媒体: ${a.name}），这是用户发给你的媒体消息（图片/视频/音频）——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.id}）]`,
           synthetic: true,
         })
         visionThumbs.push({ name: a.name, mime: mediaType, dataUrl: dataUrl || "" })
@@ -1193,6 +1199,32 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return out
   }
 
+  // 媒体附件：扫描用户消息的 text parts，提取 [媒体附件 ... artifactId: <id>（媒体: <name>）]
+  // 标记，供历史消息渲染（图片/音频/视频播放器）。
+  const mediaRefsForTurn = (userMsgId: string) => {
+    const sid = sidProp()
+    if (!sid || !props.gatewayUrl) return []
+    const parts = props.store.part[userMsgId] || []
+    const texts: string[] = []
+    for (const p of parts) {
+      if (p?.type === "text" && typeof p.text === "string") texts.push(p.text)
+    }
+    const joined = texts.join("\n")
+    const out: Array<{ artifactId: string; name: string; mediaType: string }> = []
+    for (const m of joined.matchAll(MEDIA_POINTER_RE)) {
+      const artifactId = m[3]
+      if (!artifactId) continue
+      const name = m[4]?.trim() || "media"
+      const ext = name.split(".").pop()?.toLowerCase() || ""
+      let mediaType = "application/octet-stream"
+      if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) mediaType = "image/" + (ext === "jpg" ? "jpeg" : ext === "svg" ? "svg+xml" : ext)
+      else if (["mp4", "webm", "mov", "mkv", "ogg"].includes(ext)) mediaType = "video/" + ext
+      else if (["mp3", "wav", "m4a", "flac", "aac", "opus"].includes(ext)) mediaType = "audio/" + (ext === "m4a" ? "mp4" : ext)
+      out.push({ artifactId, name, mediaType })
+    }
+    return out
+  }
+
   // mafw_media_speak 自动播放：回复文本出现新的 [语音回复 art:...] → 自动播 artifact。
   // 去重：playedVoiceArtifacts（历史重载不重播）；标记 h 匹配"已流式播放"→ 跳过（防双播）。
   createEffect(() => {
@@ -1411,24 +1443,47 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const turnOfMessage = (messageID: string): string | null => {
     const sid = sidProp()
-    const msg = (props.store.message[sid] || []).find(m => m.id === messageID)
+    const msgs = props.store.message[sid] || []
+    const msg = msgs.find(m => m.id === messageID)
     if (!msg) return null
     if (msg.role === "user") return msg.id
-    return msg.parentID || null
+    if (msg.parentID) return msg.parentID
+    const sorted = [...msgs].sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
+    const idx = sorted.findIndex(m => m.id === messageID)
+    if (idx > 0) {
+      for (let i = idx - 1; i >= 0; i--) {
+        if (sorted[i].role === "user") return sorted[i].id
+      }
+    }
+    return null
   }
 
   // Cards belonging to the user turn `userMsgId` (direct or via the assistant
   // message's parentID), in creation order.
-  const cardsForTurn = (userMsgId: string): FlowCardRecord[] =>
-    props.sessionCards(sidProp()).visible
-      .filter(c => c.data.messageID && turnOfMessage(c.data.messageID) === userMsgId)
+  const cardsForTurn = (userMsgId: string): FlowCardRecord[] => {
+    const sid = sidProp()
+    const users = userMessages()
+    const isLast = users.length > 0 && users[users.length - 1].id === userMsgId
+    return props.sessionCards(sid).visible
+      .filter(c => {
+        // Card explicitly belongs to this turn
+        if (c.data.messageID && turnOfMessage(c.data.messageID) === userMsgId) return true
+        // Unplaced cards (no messageID or can't resolve) attach to the last turn
+        if (isLast && !turnOfMessage(c.data.messageID || '')) return true
+        return false
+      })
       .sort((a, b) => a.data.createdAt - b.data.createdAt)
+  }
 
   // Cards that could not be placed into any turn (no/unknown message link).
-  const unplacedCards = (): FlowCardRecord[] =>
-    props.sessionCards(sidProp()).visible
+  // These are now attached to the last user turn via cardsForTurn, so this
+  // returns empty when there are user messages.
+  const unplacedCards = (): FlowCardRecord[] => {
+    if (userMessages().length > 0) return []
+    return props.sessionCards(sidProp()).visible
       .filter(c => !c.data.messageID || !turnOfMessage(c.data.messageID))
       .sort((a, b) => a.data.createdAt - b.data.createdAt)
+  }
 
   const agentSelName = () => props.agentSel()?.name || "manager"
 
@@ -1442,6 +1497,39 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   })
 
   const currentModelLabel = createMemo(() => props.model()?.label || modelName())
+
+  // Context usage: last assistant message's input tokens vs model context window
+  const contextUsage = createMemo(() => {
+    const sid = sidProp()
+    if (!sid) return { used: 0, total: 0, percent: 0 }
+    const msgs = props.store.message[sid] || []
+    const assistants = msgs.filter(m => m.role === "assistant")
+    const last = assistants[assistants.length - 1]
+    let used = 0
+    if (last?.tokens) {
+      const t = last.tokens
+      used = t.total || t.input || (t.output || 0) + (t.cache?.read || 0) || 0
+    }
+    const m = props.model()
+    let total = 0
+    if (m) {
+      for (const g of props.modelGroups()) {
+        if (g.providerID === m.providerID) {
+          const entry = g.models.find((em: any) => em.id === m.modelID)
+          if (entry?.contextK) total = entry.contextK * 1000
+          break
+        }
+      }
+    }
+    if (total === 0) return { used, total: 0, percent: 0 }
+    return { used, total, percent: Math.round((used / total) * 100) }
+  })
+
+  const fmtCtx = (n: number): string => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+    if (n >= 1000) return `${Math.round(n / 1000)}k`
+    return String(n)
+  }
 
   return (
     <div class="mafw-pane" onClick={props.onFocus}>
@@ -1496,33 +1584,59 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 }}
               >
               <>
-                {/* 语音消息状态指示器 */}
-                <Show when={msg.voiceStatus}>
-                  <div class="mafw-voice-message" classList={{
-                    "uploading": msg.voiceStatus === "uploading",
-                    "analyzing": msg.voiceStatus === "analyzing",
-                    "done": msg.voiceStatus === "done",
-                    "failed": msg.voiceStatus === "failed",
-                  }}>
-                    <div class="mafw-voice-waveform">
-                      <svg class="mafw-voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                        <line x1="12" y1="19" x2="12" y2="23"/>
-                        <line x1="8" y1="23" x2="16" y2="23"/>
-                      </svg>
-                      <span class="mafw-voice-duration">{msg.voiceDuration?.toFixed(1) || "?"}s</span>
+                {/* Voice message: show status inline within user message position */}
+                <Show when={msg.voiceStatus && msg.voiceStatus !== "done"}>
+                  <div class="mafw-voice-turn">
+                    <div class="mafw-voice-message" classList={{
+                      "uploading": msg.voiceStatus === "uploading",
+                      "analyzing": msg.voiceStatus === "analyzing",
+                      "failed": msg.voiceStatus === "failed",
+                    }}>
+                      <div class="mafw-voice-waveform">
+                        <svg class="mafw-voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                          <line x1="12" y1="19" x2="12" y2="23"/>
+                          <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                        <span class="mafw-voice-duration">{msg.voiceDuration?.toFixed(1) || "?"}s</span>
+                      </div>
+                      <Show when={msg.voiceStatus === "uploading"}>
+                        <span class="mafw-voice-status">上传中...</span>
+                      </Show>
+                      <Show when={msg.voiceStatus === "analyzing"}>
+                        <span class="mafw-voice-status">正在分析...</span>
+                      </Show>
+                      <Show when={msg.voiceStatus === "failed"}>
+                        <span class="mafw-voice-status error">上传失败：{msg.error || "未知错误"}</span>
+                      </Show>
                     </div>
-                    <Show when={msg.voiceStatus === "uploading"}>
-                      <span class="mafw-voice-status">上传中...</span>
-                    </Show>
-                    <Show when={msg.voiceStatus === "analyzing"}>
-                      <span class="mafw-voice-status">正在分析...</span>
-                    </Show>
-                    <Show when={msg.voiceStatus === "failed"}>
-                      <span class="mafw-voice-status error">上传失败：{msg.error || "未知错误"}</span>
-                    </Show>
                   </div>
+                </Show>
+                {/* Media attachments from history: render image/audio/video players */}
+                <Show when={msg.role === "user" && (!msg.voiceStatus || msg.voiceStatus === "done")}>
+                  <For each={mediaRefsForTurn(msg.id)}>
+                    {(ref) => {
+                      const url = `${props.gatewayUrl.replace(/\/+$/, "")}/a2a/artifacts/${ref.artifactId}`
+                      return (
+                        <div class="mafw-media-history">
+                          <Show when={ref.mediaType.startsWith("image/")}>
+                            <img src={url} alt={ref.name} class="mafw-media-image" />
+                          </Show>
+                          <Show when={ref.mediaType.startsWith("audio/")}>
+                            <audio controls preload="metadata" src={url}>
+                              您的浏览器不支持音频播放。
+                            </audio>
+                          </Show>
+                          <Show when={ref.mediaType.startsWith("video/")}>
+                            <video controls preload="metadata" src={url} class="mafw-media-video">
+                              您的浏览器不支持视频播放。
+                            </video>
+                          </Show>
+                        </div>
+                      )
+                    }}
+                  </For>
                 </Show>
                 <For each={voiceRepliesForTurn(msg.id)}>
                   {(vr) => (
@@ -1641,21 +1755,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <TooltipV2 value="命令 (/)" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>/</ButtonV2>
               </TooltipV2>
-              <TooltipV2 value="语音音色" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音音色" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>🎙</ButtonV2>
+              <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>🗣</ButtonV2>
               </TooltipV2>
               <TooltipV2 value="附件" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">+</ButtonV2>
-              </TooltipV2>
-              <TooltipV2 value="语音回复（播报最后一条 AI 回复）" openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-composer-icon"
-                  aria-label="语音回复"
-                  disabled={ttsSpeaking()}
-                  onClick={() => { console.log("[voice] speak button"); void speakText() }}
-                >{ttsSpeaking() ? "…" : "🔊"}</ButtonV2>
               </TooltipV2>
 
               <TooltipV2 value={voiceRecording() ? "停止录音" : "语音输入（录音，静音自动分段）"} openDelay={300}>
@@ -1710,6 +1814,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   {currentModelLabel()}<span class="mafw-model-chevron">▾</span>
                 </ButtonV2>
               </TooltipV2>
+              <Show when={contextUsage()}>
+                {(ctx) => (
+                  <TooltipV2 value={ctx().total > 0 ? `上下文 ${fmtCtx(ctx().used)} / ${fmtCtx(ctx().total)}` : `上下文 ${fmtCtx(ctx().used)}`} openDelay={300}>
+                    <span class="mafw-context-pill" classList={{
+                      "mafw-context-warn": ctx().percent >= 70,
+                      "mafw-context-danger": ctx().percent >= 90,
+                    }}>
+                      {ctx().total > 0 ? `${ctx().percent}%` : fmtCtx(ctx().used)}
+                    </span>
+                  </TooltipV2>
+                )}
+              </Show>
               <Show when={sending()} fallback={
                 <ButtonV2
                   variant="contrast"
@@ -1778,6 +1894,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         />
         <PopoverShell open={pickerOpen() === "tts"} trigger={pickerTrigger()} anchor="below-center" width={340} onClose={() => setPickerOpen(p => p === "tts" ? null : p)}>
           <div class="mafw-tts-picker">
+            <div class="mafw-tts-speak-section">
+              <span class="mafw-tts-speak-label">播报最后一条回复</span>
+              <ButtonV2
+                variant="contrast"
+                size="small"
+                class="mafw-tts-speak-btn"
+                disabled={ttsSpeaking()}
+                onClick={() => { console.log("[voice] speak from picker"); void speakText() }}
+              >{ttsSpeaking() ? "播报中…" : "🔊 播报"}</ButtonV2>
+            </div>
             <div class="mafw-picker-title">语音音色</div>
             <Show when={ttsVoices().length > 0} fallback={<div class="mafw-picker-empty">正在加载音色…</div>}>
               <div class="mafw-tts-list">
@@ -1807,6 +1933,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </For>
               </div>
             </Show>
+            <div class="mafw-tts-divider" />
             <div class="mafw-picker-group-label">默认风格（可选）</div>
             <div class="mafw-picker-search mafw-tts-style">
               <span class="mafw-picker-search-icon">✨</span>

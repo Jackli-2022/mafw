@@ -7,7 +7,7 @@ export interface AgentServices {
   client: {
     session: {
       create(opts: { directory: string }): Promise<{ id: string }>;
-      promptAsync(opts: { sessionID: string; message: string }): Promise<void>;
+      promptAsync(opts: { sessionID: string; parts: Array<{ type: string; text: string }> }): Promise<void>;
       delete(opts: { sessionID: string }): Promise<void>;
     };
   };
@@ -43,7 +43,7 @@ export async function reviewNode(
 
   const session = await client.session.create({ directory: projectDir! });
   const sessionId = session.id;
-  await client.session.promptAsync({ sessionID: sessionId, message: `/skill mafw-review ${goalId}` });
+  await client.session.promptAsync({ sessionID: sessionId, parts: [{ type: 'text', text: `/skill mafw-review ${goalId}` }] });
 
   const reviewPath = path.join(state.mafwDir!, 'reviews', `${state.goalId!}-loop${state.round}.md`);
   if (!fs.existsSync(reviewPath)) {

@@ -46,7 +46,7 @@ export class CodeAgentAdapter extends BaseSingleActionAgent {
   ): Promise<AgentAction | AgentFinish> {
     const session = await this.services.client.session.create({ directory: this.instruction });
     try {
-      await this.services.client.session.promptAsync({ sessionID: session.id, message: this.instruction });
+      await this.services.client.session.promptAsync({ sessionID: session.id, parts: [{ type: 'text', text: this.instruction }] });
       return {
         returnValues: { output: 'delegated_to_opencode' },
         log: `Delegated to OpenCode SDK: ${this.instruction}`,

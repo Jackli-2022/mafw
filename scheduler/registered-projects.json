@@ -4,7 +4,7 @@
     {
       "projectDir": "C:\\work\\work-loop\\opencode-plugin-mafw",
       "mafwDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\.mafw",
-      "registeredAt": "2026-08-21T01:40:31.053Z"
+      "registeredAt": "2026-08-22T06:21:29.397Z"
     }
   ],
   [
@@ -12,7 +12,7 @@
     {
       "projectDir": "C:\\work\\test_project",
       "mafwDir": "C:\\work\\test_project\\.mafw",
-      "registeredAt": "2026-08-12T15:01:43.344Z"
+      "registeredAt": "2026-08-23T16:32:43.186Z"
     }
   ],
   [
@@ -20,7 +20,7 @@
     {
       "projectDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\opencode-dev\\packages\\desktop",
       "mafwDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\opencode-dev\\packages\\desktop\\.mafw",
-      "registeredAt": "2026-08-13T14:27:59.275Z"
+      "registeredAt": "2026-08-23T16:32:44.282Z"
     }
   ],
   [
@@ -28,7 +28,7 @@
     {
       "projectDir": "C:\\work\\work-loop",
       "mafwDir": "C:\\work\\work-loop\\.mafw",
-      "registeredAt": "2026-08-13T14:27:58.811Z"
+      "registeredAt": "2026-08-23T16:32:44.917Z"
     }
   ],
   [
@@ -36,7 +36,7 @@
     {
       "projectDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\gateway",
       "mafwDir": "C:\\work\\work-loop\\opencode-plugin-mafw\\gateway\\.mafw",
-      "registeredAt": "2026-08-18T18:40:24.580Z"
+      "registeredAt": "2026-08-23T16:32:45.879Z"
     }
   ]
 ]

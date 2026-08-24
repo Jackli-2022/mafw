@@ -37,7 +37,7 @@ export async function planNode(
 
   const session = await client.session.create({ directory: projectDir! });
   const sessionId = session.id;
-  await client.session.promptAsync({ sessionID: sessionId, message: `/skill mafw-plan ${goalId}` });
+  await client.session.promptAsync({ sessionID: sessionId, parts: [{ type: 'text', text: `/skill mafw-plan ${goalId}` }] });
 
   const wavePlanPath = path.join(state.mafwDir!, 'waves.json');
   if (!fs.existsSync(wavePlanPath)) {
