@@ -289,7 +289,7 @@ function defaults(projectDir: string): GatewayConfig {
       sessionWorkerTtlMs: 24 * 60 * 60 * 1000,
       reflectThresholdEpisodic: 3,
       maxEpisodicPerReflect: 100,
-      workerModel: { providerID: 'xiaomi', modelID: 'mimo-v2.5' },
+      workerModel: { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
       workerCompactIdleMs: 8 * 60 * 60 * 1000,
     },
     media: {

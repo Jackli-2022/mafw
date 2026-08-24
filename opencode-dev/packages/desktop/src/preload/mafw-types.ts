@@ -25,6 +25,17 @@ export type MafwAPI = {
     abort: (sessionID: string) => Promise<void>
     delete: (id: string) => Promise<void>
     trajectory: (sessionID: string, query?: { limit?: number; before_turn?: number; rebuild?: boolean }) => Promise<{ turns: any[]; events: any[] }>
+    tokenSummary: (sessionID: string) => Promise<{
+      totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+      totalCost: number
+      turnCount: number
+      avgTokensPerTurn: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+    }>
+    usageSummary: (sessionID?: string, projectID?: string) => Promise<{
+      session: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; avgTokensPerTurn: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } } | null
+      project: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; sessionCount: number } | null
+      global: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; sessionCount: number } | null
+    }>
     promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
     command: (opts: { sessionID: string; command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
   }

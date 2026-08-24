@@ -123,6 +123,30 @@ export class MafwClient implements IMafwClient {
       return this.request<{ turns: any[]; events: any[] }>(`/api/sessions/${params.path.id}/trajectory?${q}`)
     },
 
+    tokenSummary: async (
+      params: { path: { id: string } },
+    ): Promise<{
+      totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } };
+      totalCost: number;
+      turnCount: number;
+      avgTokensPerTurn: { input: number; output: number; reasoning: number; cache: { read: number; write: number } };
+    }> => {
+      return this.request(`/api/sessions/${params.path.id}/token-summary`)
+    },
+
+    usageSummary: async (
+      params: { query?: { sessionID?: string; projectID?: string } },
+    ): Promise<{
+      session: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; avgTokensPerTurn: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } } | null;
+      project: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; sessionCount: number } | null;
+      global: { totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }; totalCost: number; turnCount: number; sessionCount: number } | null;
+    }> => {
+      const q = new URLSearchParams()
+      if (params.query?.sessionID) q.set('sessionID', params.query.sessionID)
+      if (params.query?.projectID) q.set('projectID', params.query.projectID)
+      return this.request(`/api/usage/summary?${q}`)
+    },
+
     events: async (
       params: { path: { id: string } },
     ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {

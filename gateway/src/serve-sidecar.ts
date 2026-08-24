@@ -38,7 +38,6 @@ export function startServeSidecar(opts: ServeSidecarOptions): Promise<ServeSidec
         hostname: opts.host,
         port: opts.port,
         timeout: opts.timeoutMs ?? 30_000,
-        config: {},
       }),
     )
     .then(({ url, close }: { url: string; close: () => void }) => ({ url, close }));

@@ -1525,6 +1525,26 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return { used, total, percent: Math.round((used / total) * 100) }
   })
 
+  // Cumulative session tokens + cost (from trajectory data in store)
+  const sessionTokenSummary = createMemo(() => {
+    const sid = sidProp()
+    if (!sid) return { input: 0, output: 0, reasoning: 0, cacheRead: 0, total: 0, cost: 0, turns: 0 }
+    const msgs = props.store.message[sid] || []
+    let input = 0, output = 0, reasoning = 0, cacheRead = 0, cost = 0, turns = 0
+    for (const m of msgs) {
+      if (m.role === "assistant" && m.tokens) {
+        const t = m.tokens
+        input += t.input || 0
+        output += t.output || 0
+        reasoning += t.reasoning || 0
+        cacheRead += t.cache?.read || 0
+        cost += m.cost || 0
+        turns++
+      }
+    }
+    return { input, output, reasoning, cacheRead, total: input + output + reasoning + cacheRead, cost, turns }
+  })
+
   const fmtCtx = (n: number): string => {
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
     if (n >= 1000) return `${Math.round(n / 1000)}k`
@@ -1539,6 +1559,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
               <span class="mafw-agent-avatar">{title().charAt(0)}</span>
               <span class="mafw-session-titlebar-text">{title()}</span>
+              <Show when={sessionTokenSummary().turns > 0}>
+                {(s) => (
+                  <TooltipV2 value={`${fmtCtx(s().total)} tokens · ${s().turns} 回合${s().cost > 0 ? ` · $${s().cost.toFixed(4)}` : ''}`} openDelay={300}>
+                    <span class="mafw-session-token-badge">
+                      {fmtCtx(s().total)}
+                      <Show when={s().cost > 0}>
+                        <span class="mafw-session-token-cost"> · ${s().cost.toFixed(2)}</span>
+                      </Show>
+                    </span>
+                  </TooltipV2>
+                )}
+              </Show>
               <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
                 <span class="mafw-chat-header-divider" />
               </Show>
@@ -1815,16 +1847,38 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </ButtonV2>
               </TooltipV2>
               <Show when={contextUsage()}>
-                {(ctx) => (
-                  <TooltipV2 value={ctx().total > 0 ? `上下文 ${fmtCtx(ctx().used)} / ${fmtCtx(ctx().total)}` : `上下文 ${fmtCtx(ctx().used)}`} openDelay={300}>
-                    <span class="mafw-context-pill" classList={{
-                      "mafw-context-warn": ctx().percent >= 70,
-                      "mafw-context-danger": ctx().percent >= 90,
-                    }}>
-                      {ctx().total > 0 ? `${ctx().percent}%` : fmtCtx(ctx().used)}
-                    </span>
-                  </TooltipV2>
-                )}
+                {(ctx) => {
+                  const summary = sessionTokenSummary()
+                  const tooltipParts: string[] = []
+                  if (ctx().total > 0) {
+                    tooltipParts.push(`上下文: ${fmtCtx(ctx().used)} / ${fmtCtx(ctx().total)} (${ctx().percent}%)`)
+                  } else if (ctx().used > 0) {
+                    tooltipParts.push(`上下文: ${fmtCtx(ctx().used)}`)
+                  }
+                  if (summary.turns > 0) {
+                    tooltipParts.push(`会话累计: ${fmtCtx(summary.total)} tokens`)
+                    tooltipParts.push(`输入 ${fmtCtx(summary.input)} · 输出 ${fmtCtx(summary.output)}`)
+                    if (summary.reasoning > 0) tooltipParts.push(`推理 ${fmtCtx(summary.reasoning)}`)
+                    if (summary.cacheRead > 0) tooltipParts.push(`缓存命中 ${fmtCtx(summary.cacheRead)}`)
+                    if (summary.cost > 0) tooltipParts.push(`费用: $${summary.cost.toFixed(4)}`)
+                    tooltipParts.push(`回合: ${summary.turns}`)
+                  }
+                  return (
+                    <TooltipV2 value={tooltipParts.join(" · ")} openDelay={300}>
+                      <span class="mafw-context-pill" classList={{
+                        "mafw-context-warn": ctx().percent >= 70,
+                        "mafw-context-danger": ctx().percent >= 90,
+                      }}>
+                        <span class="mafw-context-main">
+                          {ctx().total > 0 ? `${ctx().percent}%` : fmtCtx(ctx().used)}
+                        </span>
+                        <Show when={summary.cost > 0}>
+                          <span class="mafw-context-cost">${summary.cost.toFixed(2)}</span>
+                        </Show>
+                      </span>
+                    </TooltipV2>
+                  )
+                }}
               </Show>
               <Show when={sending()} fallback={
                 <ButtonV2

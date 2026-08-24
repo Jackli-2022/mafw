@@ -672,6 +672,25 @@ html[data-theme="light"] .mafw-shell {
   white-space: nowrap;
   min-width: 0;
 }
+.mafw-session-token-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  background: var(--bg-overlay);
+  white-space: nowrap;
+  cursor: default;
+  flex-shrink: 0;
+}
+.mafw-session-token-cost {
+  opacity: 0.7;
+  font-size: 10px;
+}
 .mafw-session-status {
   margin-left: auto;
   display: flex;
@@ -869,6 +888,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-context-pill {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   height: 22px;
   padding: 0 8px;
   border-radius: 6px;
@@ -879,6 +899,15 @@ html[data-theme="light"] .mafw-shell {
   background: var(--bg-overlay);
   white-space: nowrap;
   cursor: default;
+}
+.mafw-context-main {
+  font-weight: 500;
+}
+.mafw-context-cost {
+  font-size: 10px;
+  opacity: 0.7;
+  padding-left: 4px;
+  border-left: 1px solid currentColor;
 }
 .mafw-context-pill.mafw-context-warn {
   color: var(--warning);
@@ -2521,4 +2550,146 @@ html[data-theme="light"] .mafw-picker-pop {
   max-width: 320px;
   height: 36px;
   border-radius: 18px;
+}
+
+/* ══ UsageDock ══ */
+.mafw-usage-dock {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.mafw-usage-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 16px;
+  text-align: center;
+}
+.mafw-usage-empty-icon { font-size: 28px; opacity: 0.4; }
+.mafw-usage-empty-text { font-size: 13px; font-weight: 500; color: var(--text-3); }
+.mafw-usage-empty-hint { font-size: 11px; color: var(--text-4); }
+
+.mafw-usage-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mafw-usage-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-4);
+}
+
+.mafw-usage-ctx-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mafw-usage-ctx-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.mafw-usage-ctx-label {
+  font-size: 11px;
+  color: var(--text-4);
+}
+
+.mafw-usage-ctx-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mafw-usage-ctx-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-overlay);
+  overflow: hidden;
+}
+.mafw-usage-ctx-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.mafw-usage-ctx-fill.mafw-usage-ctx-warn { background: var(--warning); }
+.mafw-usage-ctx-fill.mafw-usage-ctx-danger { background: var(--danger-text); }
+.mafw-usage-ctx-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.mafw-usage-ctx-pct {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.mafw-usage-ctx-detail {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-4);
+}
+
+.mafw-usage-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mafw-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.mafw-usage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mafw-usage-dot-input { background: #3b82f6; }
+.mafw-usage-dot-output { background: #10b981; }
+.mafw-usage-dot-reasoning { background: #8b5cf6; }
+.mafw-usage-dot-cache-read { background: #f59e0b; }
+.mafw-usage-dot-cache-write { background: #ef4444; }
+.mafw-usage-label {
+  flex: 1;
+  color: var(--text-3);
+}
+.mafw-usage-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text-1);
+}
+.mafw-usage-cost { color: var(--warning); }
+
+.mafw-usage-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--v2-border-border-base, var(--border-subtle));
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.mafw-usage-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
 }

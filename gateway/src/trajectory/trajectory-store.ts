@@ -192,4 +192,99 @@ export class TrajectoryStore {
     this.rawDb.prepare('DELETE FROM trajectory_events WHERE created_at < ?').run(cutoff);
     this.rawDb.prepare('DELETE FROM trajectory_turns WHERE created_at < ?').run(cutoff);
   }
+
+  getSessionTokenSummary(sessionID: string): {
+    totalTokens: TokenCounts;
+    totalCost: number;
+    turnCount: number;
+    avgTokensPerTurn: TokenCounts;
+  } {
+    const turns = this.rawDb
+      .prepare('SELECT tokens, cost FROM trajectory_turns WHERE session_id = ?')
+      .all(sessionID) as any[];
+
+    const total: TokenCounts = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
+    let totalCost = 0;
+
+    for (const row of turns) {
+      const t = row.tokens ? JSON.parse(row.tokens) : EMPTY_TOKENS;
+      total.input += t.input || 0;
+      total.output += t.output || 0;
+      total.reasoning += t.reasoning || 0;
+      total.cache.read += t.cache?.read || 0;
+      total.cache.write += t.cache?.write || 0;
+      totalCost += row.cost || 0;
+    }
+
+    const count = turns.length;
+    const avg: TokenCounts = count > 0
+      ? {
+          input: Math.round(total.input / count),
+          output: Math.round(total.output / count),
+          reasoning: Math.round(total.reasoning / count),
+          cache: {
+            read: Math.round(total.cache.read / count),
+            write: Math.round(total.cache.write / count),
+          },
+        }
+      : { ...EMPTY_TOKENS };
+
+    return { totalTokens: total, totalCost, turnCount: count, avgTokensPerTurn: avg };
+  }
+
+  getProjectTokenSummary(projectID: string): {
+    totalTokens: TokenCounts;
+    totalCost: number;
+    turnCount: number;
+    sessionCount: number;
+  } {
+    const rows = this.rawDb
+      .prepare('SELECT tokens, cost, session_id FROM trajectory_turns WHERE project_id = ?')
+      .all(projectID) as any[];
+
+    const total: TokenCounts = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
+    let totalCost = 0;
+    const sessions = new Set<string>();
+
+    for (const row of rows) {
+      const t = row.tokens ? JSON.parse(row.tokens) : EMPTY_TOKENS;
+      total.input += t.input || 0;
+      total.output += t.output || 0;
+      total.reasoning += t.reasoning || 0;
+      total.cache.read += t.cache?.read || 0;
+      total.cache.write += t.cache?.write || 0;
+      totalCost += row.cost || 0;
+      sessions.add(row.session_id);
+    }
+
+    return { totalTokens: total, totalCost, turnCount: rows.length, sessionCount: sessions.size };
+  }
+
+  getGlobalTokenSummary(): {
+    totalTokens: TokenCounts;
+    totalCost: number;
+    turnCount: number;
+    sessionCount: number;
+  } {
+    const rows = this.rawDb
+      .prepare('SELECT tokens, cost, session_id FROM trajectory_turns')
+      .all() as any[];
+
+    const total: TokenCounts = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
+    let totalCost = 0;
+    const sessions = new Set<string>();
+
+    for (const row of rows) {
+      const t = row.tokens ? JSON.parse(row.tokens) : EMPTY_TOKENS;
+      total.input += t.input || 0;
+      total.output += t.output || 0;
+      total.reasoning += t.reasoning || 0;
+      total.cache.read += t.cache?.read || 0;
+      total.cache.write += t.cache?.write || 0;
+      totalCost += row.cost || 0;
+      sessions.add(row.session_id);
+    }
+
+    return { totalTokens: total, totalCost, turnCount: rows.length, sessionCount: sessions.size };
+  }
 }

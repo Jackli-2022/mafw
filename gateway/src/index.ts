@@ -1107,7 +1107,7 @@ class MafwScheduler {
       }
     }
 
-    const sessionID = existingID || (await this.opencodeClient.session.create({ query: { directory: projectDir } })).data?.id;
+    const sessionID = existingID || (await this.opencodeClient.session.create({ directory: projectDir })).id;
     if (!sessionID) throw new Error('Failed to create session');
     const promptParts: any[] = [];
     if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
@@ -3417,6 +3417,52 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/sessions/{id}/token-summary — per-session token/cost totals
+        const tokenSummaryMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/token-summary(?:\?|$)/);
+        if (tokenSummaryMatch && req.method === 'GET') {
+          const id = tokenSummaryMatch[1];
+          try {
+            const store = this.trajectoryStore;
+            if (!store) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }));
+              return;
+            }
+            const summary = store.getSessionTokenSummary(id);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(summary));
+          } catch (err: any) {
+            log.warn(`[TokenSummary] fetch failed: ${err.message}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }));
+          }
+          return;
+        }
+
+        // GET /api/usage/summary?sessionID=xxx&projectID=xxx — combined session + project + global stats
+        if (req.url?.match(/^\/api\/usage\/summary(?:\?|$)/) && req.method === 'GET') {
+          try {
+            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+            const projectID = parsedUrl.searchParams.get('projectID') || '';
+            const store = this.trajectoryStore;
+            const empty = { totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, sessionCount: 0 };
+            const result: any = { session: { ...empty, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, project: { ...empty }, global: { ...empty } };
+            if (store) {
+              if (sessionID) result.session = store.getSessionTokenSummary(sessionID);
+              if (projectID) result.project = store.getProjectTokenSummary(projectID);
+              result.global = store.getGlobalTokenSummary();
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            log.warn(`[UsageSummary] failed: ${err.message}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ session: null, project: null, global: null }));
+          }
+          return;
+        }
+
         // GET /api/sessions/{id}/children —subagent sessions of this run (AgentPicker)
         const childrenMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/children(?:\?|$)/);
         if (childrenMatch && req.method === 'GET') {
@@ -4371,12 +4417,22 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       };
     }
     if (req.url?.startsWith("/api/stats")) {
-      return {
+      const base = {
         activeGoals: this.activeGoals.size,
         registeredProjects: this.registeredProjects.size,
         sseClients: this.sseClients.size,
         serveRunning: this.serveRunning,
       };
+      try {
+        const store = this.trajectoryStore;
+        if (store) {
+          const global = store.getGlobalTokenSummary();
+          return { ...base, tokens: global };
+        }
+      } catch (err: any) {
+        log.warn(`[Stats] token summary failed: ${err.message}`);
+      }
+      return base;
     }
     if (req.url === '/api/memory/add' && req.method === 'POST') {
       const body = await new Promise<string>((resolve) => {
@@ -4455,6 +4511,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       await this.sdkSession.registerExternal(existing.sessionId, projectDir, {
         mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
       }).catch(() => {});
+      this.internalSessionIds.add(existing.sessionId);
       log.info(`[Scheduler] Manager session already exists: ${existing.sessionId}`);
       return existing.sessionId;
     }
@@ -4469,6 +4526,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const createdAt = new Date().toISOString();
 
     this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt });
+    this.internalSessionIds.add(sessionId);
 
     try {
       await this.sdkSession.registerExternal(sessionId, projectDir, {

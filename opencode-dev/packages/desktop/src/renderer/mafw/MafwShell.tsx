@@ -21,6 +21,7 @@ import { SplitPlaceholder } from "./components/SplitPlaceholder"
 import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
 import { TrajectoryDock } from "./components/TrajectoryDock"
+import { UsageDock } from "./components/UsageDock"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { TabStrip, type Tab } from "./components/TabStrip"
 import { registerMafwToolCards } from "./components/MafwToolCards"
@@ -1497,12 +1498,12 @@ export function MafwShell() {
 
   // ── Unified right dock (tasks / trajectory tabs) ──
   const [rightDockOpen, setRightDockOpen] = createSignal(localStorage.getItem("mafw-right-dock-open") === "1")
-  const [rightDockTab, setRightDockTab] = createSignal<"tasks" | "trajectory">(
-    (localStorage.getItem("mafw-right-dock-tab") as "tasks" | "trajectory") || "tasks"
+  const [rightDockTab, setRightDockTab] = createSignal<"tasks" | "trajectory" | "usage">(
+    (localStorage.getItem("mafw-right-dock-tab") as "tasks" | "trajectory" | "usage") || "tasks"
   )
   const [rightDockWidth, setRightDockWidth] = createSignal(Number(localStorage.getItem("mafw-right-dock-width")) || 320)
 
-  const applyRightDock = (open: boolean, tab?: "tasks" | "trajectory") => {
+  const applyRightDock = (open: boolean, tab?: "tasks" | "trajectory" | "usage") => {
     setRightDockOpen(open)
     if (tab !== undefined) setRightDockTab(tab)
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch {}
@@ -2084,6 +2085,15 @@ export function MafwShell() {
                   sessionID={currentSessionID()}
                   liveEvents={trajectoryLive()[currentSessionID()] || []}
                   liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
+                />
+              </div>
+              <div style={{ display: rightDockTab() === "usage" ? "contents" : "none" }}>
+                <UsageDock
+                  sessionID={currentSessionID()}
+                  projectID={currentProject()}
+                  store={store}
+                  model={modelSel}
+                  modelGroups={modelGroups}
                 />
               </div>
             </RightDock>
