@@ -92,6 +92,7 @@ export class GatewayDatabase {
         cost REAL DEFAULT 0,
         finish TEXT,
         model TEXT,
+        provider TEXT,
         agent TEXT,
         user_text TEXT,
         created_at INTEGER DEFAULT (unixepoch()),
@@ -154,6 +155,13 @@ export class GatewayDatabase {
     // Migration: add assistant_text column to trajectory_turns if not exists
     try {
       this.db.exec(`ALTER TABLE trajectory_turns ADD COLUMN assistant_text TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
+
+    // Migration: add provider column to trajectory_turns if not exists
+    try {
+      this.db.exec(`ALTER TABLE trajectory_turns ADD COLUMN provider TEXT`);
     } catch {
       // Column already exists, ignore
     }

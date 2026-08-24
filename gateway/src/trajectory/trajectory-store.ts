@@ -43,6 +43,7 @@ function rowToTurn(row: any): TrajectoryTurn {
     cost: row.cost,
     finish: row.finish,
     model: row.model,
+    provider: row.provider ?? null,
     agent: row.agent,
     userText: row.user_text,
     assistantText: row.assistant_text ?? undefined,
@@ -95,8 +96,8 @@ export class TrajectoryStore {
         `INSERT INTO trajectory_turns
          (project_id, session_id, turn_id, turn_start_ms, turn_end_ms, duration_ms,
           tool_count, tool_error_count, reasoning_count, agent_switch_count,
-          tokens, cost, finish, model, agent, user_text, assistant_text)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          tokens, cost, finish, model, provider, agent, user_text, assistant_text)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(session_id, turn_id) DO UPDATE SET
            turn_end_ms = excluded.turn_end_ms,
            duration_ms = excluded.duration_ms,
@@ -108,6 +109,7 @@ export class TrajectoryStore {
            cost = excluded.cost,
            finish = excluded.finish,
            model = excluded.model,
+           provider = excluded.provider,
            agent = excluded.agent,
            user_text = excluded.user_text,
            assistant_text = excluded.assistant_text`,
@@ -127,6 +129,7 @@ export class TrajectoryStore {
         turn.cost,
         turn.finish,
         turn.model,
+        turn.provider ?? null,
         turn.agent,
         turn.userText,
         turn.assistantText ?? null,

@@ -59,6 +59,7 @@ export interface TrajectoryTurn {
   cost: number;
   finish: string | null;
   model: string | null;
+  provider: string | null;
   agent: string | null;
   userText: string;
   assistantText?: string;

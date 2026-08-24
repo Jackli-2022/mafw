@@ -150,6 +150,7 @@ function rebuildFromMessages(
       cost,
       finish: finish || 'unknown',
       model: model || baseModel,
+      provider: null,
       agent,
       userText,
     });

@@ -22,6 +22,7 @@ interface TurnState {
   cost: number;
   finish: string | null;
   model: string | null;
+  provider: string | null;
   agent: string | null;
   userText: string;
   userMessageID: string | null;
@@ -70,6 +71,7 @@ export class TrajectoryCollector {
         cost: 0,
         finish: null,
         model: null,
+        provider: null,
         agent: null,
         userText: '',
         userMessageID: null,
@@ -140,6 +142,7 @@ export class TrajectoryCollector {
         }
         s.lastModel = info.modelID || s.lastModel;
         s.model = info.modelID || s.model;
+        s.provider = info.providerID || s.provider;
         if (!s.stepFinishMessageIDs.has(info.id) && info.finish && info.tokens) {
           s.stepFinishMessageIDs.add(info.id);
           s.tokens = addTokens(s.tokens, info.tokens);
@@ -267,6 +270,7 @@ export class TrajectoryCollector {
       cost: s.cost,
       finish: s.finish,
       model: s.model,
+      provider: s.provider,
       agent: s.agent,
       userText: s.userText,
       assistantText: s.assistantText,
@@ -310,6 +314,7 @@ export class TrajectoryCollector {
           cost: s.cost,
           finish: s.finish,
           model: s.model,
+          provider: s.provider,
           agent: s.agent,
           userText: s.userText,
         });

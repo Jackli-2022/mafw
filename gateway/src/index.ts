@@ -1304,6 +1304,8 @@ class MafwScheduler {
       const trajStore = new TrajectoryStore(this.getGatewayDb(), projectDir);
       this.trajectoryStore = trajStore;
       this.trajectoryCollector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir);
+      const { backfillProviderColumn } = require('./trajectory/backfill-provider');
+      backfillProviderColumn(this.getGatewayDb());
       log.info('[Trajectory] store initialized');
     } catch (err: any) {
       log.warn(`[Trajectory] init failed (non-fatal): ${err.message}`);
