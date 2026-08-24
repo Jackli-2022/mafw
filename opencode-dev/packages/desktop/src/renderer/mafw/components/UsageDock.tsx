@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createSignal, createEffect, createMemo, Show, onCleanup } from "solid-js"
+import { createSignal, createEffect, createMemo, Show, For, onCleanup } from "solid-js"
 
 const fmt = (n: number): string => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
@@ -11,6 +11,35 @@ const fmtCost = (c: number): string => {
   if (c >= 1) return `$${c.toFixed(2)}`
   if (c >= 0.01) return `$${c.toFixed(3)}`
   return `$${c.toFixed(4)}`
+}
+
+const asciiBar = (pct: number, width = 20): string => {
+  const filled = Math.round((Math.min(pct, 100) / 100) * width)
+  return '\u2588'.repeat(filled) + '\u2591'.repeat(width - filled)
+}
+
+const fmtTime = (ms: number): string => {
+  if (ms <= 0) return '<1h'
+  const hours = Math.floor(ms / 3600000)
+  const minutes = Math.floor((ms % 3600000) / 60000)
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24)
+    return `${days}d${hours % 24}h`
+  }
+  return hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`
+}
+
+const pacingIcon = (pacing?: string): string => {
+  if (pacing === 'ahead') return '\u2191'
+  if (pacing === 'under') return '\u2193'
+  return '\u2192'
+}
+
+const severityClass = (severity: string): string => {
+  if (severity === 'critical') return 'mafw-usage-severity-critical'
+  if (severity === 'high') return 'mafw-usage-severity-high'
+  if (severity === 'mid') return 'mafw-usage-severity-mid'
+  return 'mafw-usage-severity-low'
 }
 
 type TokenSummary = {
@@ -71,6 +100,38 @@ function TokenGrid(props: { data: TokenSummary; showSessions?: boolean }) {
   )
 }
 
+function ProviderSection(props: { provider: any }) {
+  const p = () => props.provider
+  return (
+    <div class={`mafw-usage-provider ${severityClass(p().severity)}`}>
+      <div class="mafw-usage-provider-header">
+        <span class="mafw-usage-provider-name">{p().name}</span>
+        <Show when={p().plan}>
+          <span class="mafw-usage-provider-plan">({p().plan})</span>
+        </Show>
+      </div>
+      <For each={p().windows}>
+        {(w: any) => (
+          <div class="mafw-usage-window">
+            <span class="mafw-usage-window-label">{w.window}</span>
+            <span class="mafw-usage-window-bar">{asciiBar(w.pct)}</span>
+            <span class="mafw-usage-window-pct">{w.pct}%</span>
+            <span class="mafw-usage-window-detail">
+              {w.unit === '$' ? `$${w.used}/${w.limit}` : `${w.used}/${w.limit}`}
+            </span>
+            <Show when={w.resetAt}>
+              <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>
+            </Show>
+            <Show when={w.pacing}>
+              <span class="mafw-usage-window-pacing">{pacingIcon(w.pacing)}</span>
+            </Show>
+          </div>
+        )}
+      </For>
+    </div>
+  )
+}
+
 export function UsageDock(props: {
   sessionID: string
   projectID?: string | null
@@ -78,7 +139,11 @@ export function UsageDock(props: {
   model: () => { providerID: string; modelID: string } | null
   modelGroups: () => { provider: string; providerID: string; models: { id: string; contextK?: number }[] }[]
 }) {
-  const [apiData, setApiData] = createSignal<{ session: TokenSummary | null; project: TokenSummary | null; global: TokenSummary | null } | null>(null)
+  const [apiData, setApiData] = createSignal<{
+    summary: { session: TokenSummary | null; project: TokenSummary | null; global: TokenSummary | null }
+    providers: any[]
+    updatedAt: number
+  } | null>(null)
   const [loading, setLoading] = createSignal(false)
 
   const fetchSummary = async () => {
@@ -86,7 +151,7 @@ export function UsageDock(props: {
     if (!sid) return
     setLoading(true)
     try {
-      const r = await window.api.mafw.sessions.usageSummary(sid, props.projectID || undefined)
+      const r = await window.api.mafw.sessions.usage(sid, props.projectID || undefined)
       setApiData(r)
     } catch (e: any) {
       console.warn("[UsageDock] fetch failed:", e?.message)
@@ -100,8 +165,8 @@ export function UsageDock(props: {
     if (sid) fetchSummary()
   })
 
-  const timer = setInterval(fetchSummary, 15000)
-  onCleanup(() => clearInterval(timer))
+  const summaryTimer = setInterval(fetchSummary, 15000)
+  onCleanup(() => clearInterval(summaryTimer))
 
   const contextInfo = createMemo(() => {
     const sid = props.sessionID
@@ -129,7 +194,9 @@ export function UsageDock(props: {
 
   const hasData = () => {
     const d = apiData()
-    return d && (d.session?.turnCount || d.project?.turnCount || d.global?.turnCount)
+    if (!d) return false
+    if (d.providers && d.providers.length > 0) return true
+    return d.summary?.session?.turnCount || d.summary?.project?.turnCount || d.summary?.global?.turnCount
   }
 
   return (
@@ -172,24 +239,33 @@ export function UsageDock(props: {
           )}
         </Show>
 
-        <Show when={apiData()?.session?.turnCount}>
+        <Show when={apiData()?.providers && apiData()!.providers.length > 0}>
+          <div class="mafw-usage-section">
+            <div class="mafw-usage-section-title">配额窗口</div>
+            <For each={apiData()!.providers}>
+              {(provider: any) => <ProviderSection provider={provider} />}
+            </For>
+          </div>
+        </Show>
+
+        <Show when={apiData()?.summary?.session?.turnCount}>
           <div class="mafw-usage-section">
             <div class="mafw-usage-section-title">当前会话</div>
-            <TokenGrid data={apiData()!.session!} />
+            <TokenGrid data={apiData()!.summary!.session!} />
           </div>
         </Show>
 
-        <Show when={apiData()?.project?.turnCount}>
+        <Show when={apiData()?.summary?.project?.turnCount}>
           <div class="mafw-usage-section">
             <div class="mafw-usage-section-title">当前项目</div>
-            <TokenGrid data={apiData()!.project!} showSessions />
+            <TokenGrid data={apiData()!.summary!.project!} showSessions />
           </div>
         </Show>
 
-        <Show when={apiData()?.global?.turnCount}>
+        <Show when={apiData()?.summary?.global?.turnCount}>
           <div class="mafw-usage-section">
             <div class="mafw-usage-section-title">系统总计</div>
-            <TokenGrid data={apiData()!.global!} showSessions />
+            <TokenGrid data={apiData()!.summary!.global!} showSessions />
           </div>
         </Show>
       </Show>
