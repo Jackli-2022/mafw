@@ -11,6 +11,7 @@ export interface UsageWindow {
   pct: number;
   pacing?: Pacing;
   projected?: number;
+  remaining?: number;
 }
 
 export interface UsageProvider {

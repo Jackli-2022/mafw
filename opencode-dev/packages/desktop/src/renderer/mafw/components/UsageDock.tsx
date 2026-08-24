@@ -1,5 +1,9 @@
 // @ts-nocheck
 import { createSignal, createEffect, createMemo, Show, For, onCleanup } from "solid-js"
+import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
+import { Icon } from "@opencode-ai/ui/icon"
+import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 
 const fmt = (n: number): string => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
@@ -115,8 +119,15 @@ function ProviderSection(props: { provider: any }) {
           <Show when={w.limit > 0} fallback={
             <div class="mafw-usage-window mafw-usage-window-no-limit">
               <span class="mafw-usage-window-label">{w.window}</span>
-              <span class="mafw-usage-window-spent">${w.used}</span>
-              <span class="mafw-usage-window-hint">spent</span>
+              <Show when={w.remaining !== undefined} fallback={
+                <>
+                  <span class="mafw-usage-window-spent">${w.used}</span>
+                  <span class="mafw-usage-window-hint">spent</span>
+                </>
+              }>
+                <span class="mafw-usage-window-spent">${w.remaining}</span>
+                <span class="mafw-usage-window-hint">余额</span>
+              </Show>
             </div>
           }>
             <div class="mafw-usage-window">
@@ -126,6 +137,9 @@ function ProviderSection(props: { provider: any }) {
               <span class="mafw-usage-window-detail">
                 {w.unit === '$' ? `$${w.used}/${w.limit}` : `${w.used}/${w.limit}`}
               </span>
+              <Show when={w.remaining !== undefined}>
+                <span class="mafw-usage-window-remaining">剩${w.remaining}</span>
+              </Show>
               <Show when={w.resetAt}>
                 <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>
               </Show>
@@ -139,6 +153,137 @@ function ProviderSection(props: { provider: any }) {
           </Show>
         )}
       </For>
+    </div>
+  )
+}
+
+function UsageConfigEditor(props: { onSaved: () => void }) {
+  const [config, setConfig] = createSignal<any>(null)
+  const [loading, setLoading] = createSignal(true)
+  const [saving, setSaving] = createSignal(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const c = await window.api.mafw.config.get("usage")
+      setConfig(c || { limits: {}, budgets: {} })
+    } catch (e: any) {
+      console.warn("[UsageConfig] load failed:", e?.message)
+      setConfig({ limits: {}, budgets: {} })
+    }
+    setLoading(false)
+  }
+
+  createEffect(() => { load() })
+
+  const limits = () => config()?.limits || {}
+  const budgets = () => config()?.budgets || {}
+
+  const setLimitWindow = (provider: string, window: string, v: string) => {
+    setConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      next.limits = next.limits || {}
+      next.limits[provider] = next.limits[provider] || {}
+      next.limits[provider][window] = v === "" ? 0 : parseFloat(v) || 0
+      return next
+    })
+  }
+
+  const setBudget = (provider: string, v: string) => {
+    setConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      next.budgets = next.budgets || {}
+      if (v === "") delete next.budgets[provider]
+      else next.budgets[provider] = parseFloat(v) || 0
+      return next
+    })
+  }
+
+  const addBudget = () => {
+    const name = prompt("Provider 名称 (如 xiaomi):")
+    if (!name || !name.trim()) return
+    setConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      next.budgets = next.budgets || {}
+      if (next.budgets[name.trim()] === undefined) next.budgets[name.trim()] = 0
+      return next
+    })
+  }
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const c = config()
+      const clean = {
+        limits: c.limits || {},
+        budgets: c.budgets || {},
+      }
+      await window.api.mafw.config.set("usage", clean)
+      showToastV2({ description: "用量配置已保存", duration: 2000 })
+      props.onSaved()
+    } catch (e: any) {
+      showToastV2({ description: `保存失败: ${e.message}`, duration: 3000 })
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div class="mafw-usage-config">
+      {loading() ? (
+        <div class="mafw-usage-config-hint">加载中...</div>
+      ) : (
+        <>
+          <div class="mafw-usage-config-title">Token Plan 限额 (5h/7d/month)</div>
+          <For each={Object.keys(limits())}>
+            {(provider: string) => (
+              <div class="mafw-usage-config-row">
+                <span class="mafw-usage-config-name">{provider}</span>
+                <For each={Object.keys(limits()[provider] || {})}>
+                  {(window: string) => (
+                    <div class="mafw-usage-config-field">
+                      <label>{window}</label>
+                      <TextInputV2
+                        type="number"
+                        value={String(limits()[provider][window] ?? 0)}
+                        onInput={e => setLimitWindow(provider, window, e.currentTarget.value)}
+                        style={{ width: 60 }}
+                      />
+                    </div>
+                  )}
+                </For>
+              </div>
+            )}
+          </For>
+          <Show when={Object.keys(limits()).length === 0}>
+            <div class="mafw-usage-config-hint">无 token plan 配置</div>
+          </Show>
+
+          <div class="mafw-usage-config-title">API 余额预算 (budget)</div>
+          <For each={Object.keys(budgets())}>
+            {(provider: string) => (
+              <div class="mafw-usage-config-row">
+                <span class="mafw-usage-config-name">{provider}</span>
+                <TextInputV2
+                  type="number"
+                  value={String(budgets()[provider] ?? "")}
+                  onInput={e => setBudget(provider, e.currentTarget.value)}
+                  style={{ width: 80 }}
+                  placeholder="留空删除"
+                />
+              </div>
+            )}
+          </For>
+          <div class="mafw-usage-config-row">
+            <ButtonV2 variant="ghost" size="small" onClick={addBudget}>+ 添加 provider 预算</ButtonV2>
+          </div>
+
+          <div class="mafw-usage-config-actions">
+            <ButtonV2 variant="contrast" size="small" onClick={save} disabled={saving()}>
+              {saving() ? "保存中..." : "保存配置"}
+            </ButtonV2>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -210,8 +355,26 @@ export function UsageDock(props: {
     return d.summary?.session?.turnCount || d.summary?.project?.turnCount || d.summary?.global?.turnCount
   }
 
+  const [showConfig, setShowConfig] = createSignal(false)
+
   return (
     <div class="mafw-usage-dock">
+      <div class="mafw-usage-dock-toolbar">
+        <span class="mafw-usage-dock-title">用量</span>
+        <ButtonV2
+          variant={showConfig() ? "contrast" : "ghost"}
+          size="small"
+          onClick={() => setShowConfig(!showConfig())}
+        >
+          <Icon name="settings-gear" size="small" />
+          配置
+        </ButtonV2>
+      </div>
+
+      <Show when={showConfig()}>
+        <UsageConfigEditor onSaved={() => fetchSummary()} />
+      </Show>
+
       <Show when={hasData()} fallback={
         <div class="mafw-usage-empty">
           <div class="mafw-usage-empty-icon">📈</div>

@@ -1308,7 +1308,7 @@ class MafwScheduler {
       const { backfillProviderColumn } = require('./trajectory/backfill-provider');
       backfillProviderColumn(this.getGatewayDb());
       const { UsagePoller } = require('./usage/usage-poller');
-      this.usagePoller = new UsagePoller(trajStore, config.usage.limits, config.usage.budgets);
+      this.usagePoller = new UsagePoller(trajStore, () => config.usage.limits, () => config.usage.budgets);
       log.info('[Trajectory] store initialized');
     } catch (err: any) {
       log.warn(`[Trajectory] init failed (non-fatal): ${err.message}`);

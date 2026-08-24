@@ -1,6 +1,6 @@
 import { TrajectoryStore } from '../trajectory/trajectory-store';
 import { UsageProvider, UsageResponse, UsageWindow, QuotaLimits, Severity, Pacing, WindowType } from './types';
-import { ExternalAdapter, DeepSeekAdapter, OpenRouterAdapter } from './external-adapters';
+import { ExternalAdapter, DeepSeekAdapter, KimiAdapter, OpenRouterAdapter } from './external-adapters';
 
 const WINDOW_MS: Record<string, number> = {
   '5h': 5 * 60 * 60 * 1000,
@@ -14,14 +14,18 @@ export class UsagePoller {
 
   constructor(
     private store: TrajectoryStore,
-    private limits: QuotaLimits,
-    private budgets: Record<string, number> = {},
+    private limitsGetter: () => QuotaLimits,
+    private budgetsGetter: () => Record<string, number> = () => ({}),
   ) {
     this.externalAdapters = [
       new DeepSeekAdapter(),
+      new KimiAdapter(),
       new OpenRouterAdapter(),
     ];
   }
+
+  private get limits(): QuotaLimits { return this.limitsGetter(); }
+  private get budgets(): Record<string, number> { return this.budgetsGetter(); }
 
   async poll(): Promise<UsageResponse> {
     try {
@@ -79,7 +83,33 @@ export class UsagePoller {
       );
       for (const result of externalResults) {
         if (result.status === 'fulfilled' && result.value) {
-          providerMap.set(result.value.name, result.value);
+          const name = result.value.name;
+          const budget = this.budgets[name];
+          // If a budget is configured for this provider, use it as the limit
+          // (remaining from the balance API gives us used = budget - remaining).
+          if (budget && budget > 0) {
+            const balWindow = result.value.windows.find(w => w.window === 'balance');
+            const remaining = balWindow?.remaining;
+            const used = remaining !== undefined
+              ? Math.max(0, budget - remaining)
+              : this.store.getProviderTotalCost(name);
+            const pct = Math.round((used / budget) * 100);
+            providerMap.set(name, {
+              ...result.value,
+              plan: 'budget',
+              windows: [{
+                window: 'balance',
+                used: Math.round(used * 100) / 100,
+                limit: budget,
+                unit: '$',
+                pct,
+                remaining: remaining !== undefined ? Math.round(remaining * 100) / 100 : undefined,
+              }],
+              severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',
+            });
+          } else {
+            providerMap.set(result.value.name, result.value);
+          }
         }
       }
 

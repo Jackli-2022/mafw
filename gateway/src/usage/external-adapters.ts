@@ -1,4 +1,4 @@
-import { UsageProvider, UsageWindow } from './types';
+import { UsageProvider, UsageWindow, Severity } from './types';
 import { readOpencodeAuth } from '../media/auth-util';
 import { log } from '../core/utils/logger';
 
@@ -7,6 +7,26 @@ export interface ExternalAdapter {
   fetch(): Promise<UsageProvider | null>;
 }
 
+function makeBalanceWindow(used: number, limit: number, remaining?: number): UsageWindow {
+  const pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
+  return {
+    window: 'balance',
+    used: Math.round(used * 100) / 100,
+    limit: Math.round(limit * 100) / 100,
+    unit: '$',
+    pct,
+    remaining: remaining !== undefined ? Math.round(remaining * 100) / 100 : undefined,
+  };
+}
+
+function severity(pct: number): Severity {
+  if (pct >= 90) return 'critical';
+  if (pct >= 75) return 'high';
+  if (pct >= 50) return 'mid';
+  return 'low';
+}
+
+/** DeepSeek — official: GET /user/balance (CNY). */
 export class DeepSeekAdapter implements ExternalAdapter {
   name = 'deepseek';
 
@@ -35,8 +55,7 @@ export class DeepSeekAdapter implements ExternalAdapter {
         const bal = parseFloat(info.total_balance) || 0;
         const granted = parseFloat(info.granted_balance) || 0;
         const toppedUp = parseFloat(info.topped_up_balance) || 0;
-        const isCNY = info.currency === 'CNY';
-        const rate = isCNY ? CNY_TO_USD : 1;
+        const rate = info.currency === 'CNY' ? CNY_TO_USD : 1;
         remaining += bal * rate;
         totalEver += (granted + toppedUp) * rate;
       }
@@ -45,21 +64,13 @@ export class DeepSeekAdapter implements ExternalAdapter {
 
       const used = Math.max(0, totalEver - remaining);
       const limit = totalEver > 0 ? totalEver : 0;
-      const pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
-
-      const windows: UsageWindow[] = [{
-        window: 'balance',
-        used: Math.round(used * 100) / 100,
-        limit: Math.round(limit * 100) / 100,
-        unit: '$',
-        pct,
-      }];
+      const windows: UsageWindow[] = [makeBalanceWindow(used, limit, remaining)];
 
       return {
         name: 'deepseek',
         plan: 'prepaid',
         windows,
-        severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',
+        severity: severity(windows[0].pct),
       };
     } catch (err: any) {
       log.warn(`[DeepSeekAdapter] fetch failed: ${err.message}`);
@@ -68,6 +79,52 @@ export class DeepSeekAdapter implements ExternalAdapter {
   }
 }
 
+/** Kimi / Moonshot — official: GET /v1/users/me/balance. */
+export class KimiAdapter implements ExternalAdapter {
+  name = 'kimi';
+
+  async fetch(): Promise<UsageProvider | null> {
+    const auth = readOpencodeAuth();
+    const key = auth['kimi']?.key || auth['moonshot']?.key;
+    if (!key) return null;
+
+    try {
+      const res = await fetch('https://api.moonshot.cn/v1/users/me/balance', {
+        headers: { 'Authorization': `Bearer ${key}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        log.warn(`[KimiAdapter] HTTP ${res.status}`);
+        return null;
+      }
+      const data = await res.json() as any;
+      const d = data?.data;
+      if (!d) return null;
+
+      const available = parseFloat(d.available_balance) || 0;
+      const voucher = parseFloat(d.voucher_balance) || 0;
+      const cash = parseFloat(d.cash_balance) || 0;
+
+      if (available <= 0) return null;
+
+      // Kimi has no "total ever" from the API — only remaining balance.
+      // Show as balance-only (no limit) unless user configures a budget.
+      const windows: UsageWindow[] = [makeBalanceWindow(0, 0, available)];
+
+      return {
+        name: 'kimi',
+        plan: 'prepaid',
+        windows,
+        severity: 'low',
+      };
+    } catch (err: any) {
+      log.warn(`[KimiAdapter] fetch failed: ${err.message}`);
+      return null;
+    }
+  }
+}
+
+/** OpenRouter — official: GET /api/v1/key (usage + limit). */
 export class OpenRouterAdapter implements ExternalAdapter {
   name = 'openrouter';
 
@@ -97,13 +154,7 @@ export class OpenRouterAdapter implements ExternalAdapter {
         return {
           name: 'openrouter',
           plan: 'prepaid',
-          windows: [{
-            window: 'balance',
-            used: Math.round(usage * 100) / 100,
-            limit: 0,
-            unit: '$',
-            pct: 0,
-          }],
+          windows: [makeBalanceWindow(usage, 0, limitRemaining)],
           severity: 'low',
         };
       }
@@ -111,21 +162,13 @@ export class OpenRouterAdapter implements ExternalAdapter {
       const remaining = limitRemaining ?? 0;
       const totalLimit = limit ?? (remaining + usage);
       const used = totalLimit - remaining;
-      const pct = totalLimit > 0 ? Math.round((used / totalLimit) * 100) : 0;
-
-      const windows: UsageWindow[] = [{
-        window: 'balance',
-        used: Math.round(used * 100) / 100,
-        limit: Math.round(totalLimit * 100) / 100,
-        unit: '$',
-        pct,
-      }];
+      const windows: UsageWindow[] = [makeBalanceWindow(used, totalLimit, remaining)];
 
       return {
         name: 'openrouter',
         plan: 'prepaid',
         windows,
-        severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',
+        severity: severity(windows[0].pct),
       };
     } catch (err: any) {
       log.warn(`[OpenRouterAdapter] fetch failed: ${err.message}`);
