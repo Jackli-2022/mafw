@@ -1,5 +1,6 @@
 import { TrajectoryStore } from '../trajectory/trajectory-store';
 import { UsageProvider, UsageResponse, UsageWindow, QuotaLimits, Severity, Pacing, WindowType } from './types';
+import { ExternalAdapter, DeepSeekAdapter, OpenRouterAdapter } from './external-adapters';
 
 const WINDOW_MS: Record<string, number> = {
   '5h': 5 * 60 * 60 * 1000,
@@ -9,11 +10,17 @@ const WINDOW_MS: Record<string, number> = {
 
 export class UsagePoller {
   private lastGood: UsageResponse | null = null;
+  private externalAdapters: ExternalAdapter[];
 
   constructor(
     private store: TrajectoryStore,
     private limits: QuotaLimits,
-  ) {}
+  ) {
+    this.externalAdapters = [
+      new DeepSeekAdapter(),
+      new OpenRouterAdapter(),
+    ];
+  }
 
   async poll(): Promise<UsageResponse> {
     try {
@@ -24,6 +31,15 @@ export class UsagePoller {
 
       const zen = this.aggregateProvider('zen', this.limits.zen);
       if (zen.windows.length > 0) providers.push(zen);
+
+      const externalResults = await Promise.allSettled(
+        this.externalAdapters.map(a => a.fetch()),
+      );
+      for (const result of externalResults) {
+        if (result.status === 'fulfilled' && result.value) {
+          providers.push(result.value);
+        }
+      }
 
       const result: UsageResponse = { providers, updatedAt: Date.now() };
       this.lastGood = result;
