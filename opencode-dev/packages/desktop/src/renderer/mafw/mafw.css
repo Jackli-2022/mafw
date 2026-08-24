@@ -2771,3 +2771,55 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-usage-severity-mid .mafw-usage-window-bar { color: var(--warning); }
 .mafw-usage-severity-high .mafw-usage-window-bar { color: #d19a66; }
 .mafw-usage-severity-critical .mafw-usage-window-bar { color: var(--danger); }
+
+/* ══ UsagePill (Rail 底部紧凑行) ══ */
+.mafw-usage-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin: 0 8px 6px;
+  border-radius: 4px;
+  background: var(--bg-overlay);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  transition: background 0.15s;
+}
+.mafw-usage-pill:hover {
+  background: var(--bg-float);
+}
+
+.mafw-usage-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mafw-usage-pill-provider {
+  color: var(--text-2);
+  font-weight: 500;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mafw-usage-pill-window {
+  color: var(--text-4);
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.mafw-usage-pill-pct {
+  color: var(--text-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mafw-usage-pill-reset {
+  color: var(--text-4);
+  font-size: 10px;
+  margin-left: auto;
+}

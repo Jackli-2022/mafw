@@ -1711,7 +1711,7 @@ export function MafwShell() {
               }
               setActiveSessionId(id)
               setActiveViewId(id)
-            }} onSettings={() => setShowConfig(true)} onToggleCollapsed={() => applyRailCollapsed(true)} />
+            }} onSettings={() => setShowConfig(true)} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "usage")} />
             <ResizeHandle
               direction="horizontal"
               edge="end"

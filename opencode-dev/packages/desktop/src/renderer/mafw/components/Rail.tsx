@@ -4,6 +4,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
+import { UsagePill } from "./UsagePill"
 
 const copyText = async (text: string) => {
   try {
@@ -33,6 +34,7 @@ type Props = {
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSettings?: () => void
   onToggleCollapsed?: () => void
+  onOpenUsage?: () => void
 }
 
 export function Rail(props: Props) {
@@ -245,6 +247,7 @@ export function Rail(props: Props) {
         )}
       </div>
       <div class="mafw-rail-footer">
+        <UsagePill onClick={() => props.onOpenUsage?.()} />
         <div class="mafw-rail-collapse-bar" onClick={() => props.onToggleCollapsed?.()}>
           <span>◀</span>
           <span>折叠侧边栏</span>
