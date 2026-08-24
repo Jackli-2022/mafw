@@ -82,6 +82,7 @@ export class UsagePoller {
         const earliest = this.store.getProviderEarliestTurnInWindow(name, cutoff);
         const resetAt = earliest ? earliest + windowMs : now + windowMs;
         const pacing = this.calculatePacing(pct, cutoff, now, windowMs);
+        const projected = this.calculateProjected(pct, cutoff, now, windowMs);
 
         windows.push({
           window: windowType,
@@ -91,6 +92,7 @@ export class UsagePoller {
           resetAt,
           pct,
           pacing,
+          projected,
         });
       }
     }
@@ -107,6 +109,14 @@ export class UsagePoller {
     if (diff > 10) return 'ahead';
     if (diff < -10) return 'under';
     return 'on-track';
+  }
+
+  private calculateProjected(pctUsed: number, cutoff: number, now: number, windowMs: number): number {
+    const elapsed = now - cutoff;
+    if (elapsed <= 0) return pctUsed;
+    const rate = pctUsed / elapsed;
+    const projected = Math.round(rate * windowMs);
+    return Math.min(projected, 999);
   }
 
   private calculateSeverity(windows: UsageWindow[]): Severity {

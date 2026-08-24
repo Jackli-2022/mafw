@@ -125,6 +125,9 @@ function ProviderSection(props: { provider: any }) {
             <Show when={w.pacing}>
               <span class="mafw-usage-window-pacing">{pacingIcon(w.pacing)}</span>
             </Show>
+            <Show when={w.projected !== undefined && w.projected > w.pct}>
+              <span class="mafw-usage-window-projected">→{w.projected}%</span>
+            </Show>
           </div>
         )}
       </For>

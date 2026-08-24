@@ -10,6 +10,7 @@ export interface UsageWindow {
   resetAt?: number;
   pct: number;
   pacing?: Pacing;
+  projected?: number;
 }
 
 export interface UsageProvider {
