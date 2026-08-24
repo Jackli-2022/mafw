@@ -15,6 +15,7 @@ export class UsagePoller {
   constructor(
     private store: TrajectoryStore,
     private limits: QuotaLimits,
+    private budgets: Record<string, number> = {},
   ) {
     this.externalAdapters = [
       new DeepSeekAdapter(),
@@ -42,17 +43,35 @@ export class UsagePoller {
         if (seen.has(name)) continue;
         const totalCost = this.store.getProviderTotalCost(name);
         if (totalCost <= 0) continue;
-        providerMap.set(name, {
-          name,
-          windows: [{
-            window: 'balance',
-            used: Math.round(totalCost * 100) / 100,
-            limit: 0,
-            unit: '$',
-            pct: 0,
-          }],
-          severity: 'low',
-        });
+        const budget = this.budgets[name];
+        const used = Math.round(totalCost * 100) / 100;
+        if (budget && budget > 0) {
+          const pct = Math.round((used / budget) * 100);
+          providerMap.set(name, {
+            name,
+            plan: 'budget',
+            windows: [{
+              window: 'balance',
+              used,
+              limit: budget,
+              unit: '$',
+              pct,
+            }],
+            severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',
+          });
+        } else {
+          providerMap.set(name, {
+            name,
+            windows: [{
+              window: 'balance',
+              used,
+              limit: 0,
+              unit: '$',
+              pct: 0,
+            }],
+            severity: 'low',
+          });
+        }
       }
 
       const externalResults = await Promise.allSettled(

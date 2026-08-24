@@ -112,31 +112,31 @@ function ProviderSection(props: { provider: any }) {
       </div>
       <For each={p().windows}>
         {(w: any) => (
-          <div class="mafw-usage-window">
-            <span class="mafw-usage-window-label">{w.window}</span>
-            <Show when={w.limit > 0} fallback={
-              <span class="mafw-usage-window-bar mafw-usage-window-no-limit">{asciiBar(0)}</span>
-            }>
+          <Show when={w.limit > 0} fallback={
+            <div class="mafw-usage-window mafw-usage-window-no-limit">
+              <span class="mafw-usage-window-label">{w.window}</span>
+              <span class="mafw-usage-window-spent">${w.used}</span>
+              <span class="mafw-usage-window-hint">spent</span>
+            </div>
+          }>
+            <div class="mafw-usage-window">
+              <span class="mafw-usage-window-label">{w.window}</span>
               <span class="mafw-usage-window-bar">{asciiBar(w.pct)}</span>
-            </Show>
-            <Show when={w.limit > 0} fallback={
-              <span class="mafw-usage-window-pct">—</span>
-            }>
               <span class="mafw-usage-window-pct">{w.pct}%</span>
-            </Show>
-            <span class="mafw-usage-window-detail">
-              {w.unit === '$' ? `$${w.used}${w.limit > 0 ? `/${w.limit}` : ''}` : `${w.used}${w.limit > 0 ? `/${w.limit}` : ''}`}
-            </span>
-            <Show when={w.resetAt}>
-              <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>
-            </Show>
-            <Show when={w.pacing}>
-              <span class="mafw-usage-window-pacing">{pacingIcon(w.pacing)}</span>
-            </Show>
-            <Show when={w.projected !== undefined && w.projected > w.pct}>
-              <span class="mafw-usage-window-projected">→{w.projected}%</span>
-            </Show>
-          </div>
+              <span class="mafw-usage-window-detail">
+                {w.unit === '$' ? `$${w.used}/${w.limit}` : `${w.used}/${w.limit}`}
+              </span>
+              <Show when={w.resetAt}>
+                <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>
+              </Show>
+              <Show when={w.pacing}>
+                <span class="mafw-usage-window-pacing">{pacingIcon(w.pacing)}</span>
+              </Show>
+              <Show when={w.projected !== undefined && w.projected > w.pct}>
+                <span class="mafw-usage-window-projected">→{w.projected}%</span>
+              </Show>
+            </div>
+          </Show>
         )}
       </For>
     </div>

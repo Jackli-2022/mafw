@@ -137,6 +137,7 @@ export interface GatewayConfig {
       'opencode-go': { '5h': number; '7d': number; month: number };
       zen: { balance: number };
     };
+    budgets: Record<string, number>;
   };
   media: {
     /** opencode provider that owns the credentials (must be connected in opencode). */
@@ -303,6 +304,7 @@ function defaults(projectDir: string): GatewayConfig {
         'opencode-go': { '5h': 12, '7d': 30, month: 60 },
         zen: { balance: 100 },
       },
+      budgets: {},
     },
     media: {
       provider: 'xiaomi',
