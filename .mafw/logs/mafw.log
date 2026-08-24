@@ -178,3 +178,5 @@
 [2026-08-23T16:32:44.924Z] [INFO] [MAFW] Plugin activated. All hooks registered.
 [2026-08-23T16:32:45.870Z] [INFO] [MAFW] File logging enabled: C:\work\work-loop\opencode-plugin-mafw\gateway\.mafw/logs/mafw.log
 [2026-08-23T16:32:45.876Z] [INFO] [MAFW] Plugin activated. All hooks registered.
+[2026-08-24T08:00:00.535Z] [INFO] [MAFW] File logging enabled: C:\work\work-loop\opencode-plugin-mafw\.mafw/logs/mafw.log
+[2026-08-24T08:00:00.539Z] [INFO] [MAFW] Plugin activated. All hooks registered.

@@ -311,4 +311,11 @@ export class TrajectoryStore {
       .get(provider, cutoffMs) as { earliest: number | null };
     return row?.earliest || null;
   }
+
+  getDistinctProviders(): string[] {
+    const rows = this.rawDb
+      .prepare('SELECT DISTINCT provider FROM trajectory_turns WHERE provider IS NOT NULL')
+      .all() as { provider: string }[];
+    return rows.map(r => r.provider);
+  }
 }

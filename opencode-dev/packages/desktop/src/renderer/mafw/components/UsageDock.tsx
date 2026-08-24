@@ -114,10 +114,18 @@ function ProviderSection(props: { provider: any }) {
         {(w: any) => (
           <div class="mafw-usage-window">
             <span class="mafw-usage-window-label">{w.window}</span>
-            <span class="mafw-usage-window-bar">{asciiBar(w.pct)}</span>
-            <span class="mafw-usage-window-pct">{w.pct}%</span>
+            <Show when={w.limit > 0} fallback={
+              <span class="mafw-usage-window-bar mafw-usage-window-no-limit">{asciiBar(0)}</span>
+            }>
+              <span class="mafw-usage-window-bar">{asciiBar(w.pct)}</span>
+            </Show>
+            <Show when={w.limit > 0} fallback={
+              <span class="mafw-usage-window-pct">—</span>
+            }>
+              <span class="mafw-usage-window-pct">{w.pct}%</span>
+            </Show>
             <span class="mafw-usage-window-detail">
-              {w.unit === '$' ? `$${w.used}/${w.limit}` : `${w.used}/${w.limit}`}
+              {w.unit === '$' ? `$${w.used}${w.limit > 0 ? `/${w.limit}` : ''}` : `${w.used}${w.limit > 0 ? `/${w.limit}` : ''}`}
             </span>
             <Show when={w.resetAt}>
               <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>

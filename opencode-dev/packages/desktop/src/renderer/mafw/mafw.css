@@ -2778,6 +2778,7 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-usage-severity-mid .mafw-usage-window-bar { color: var(--warning); }
 .mafw-usage-severity-high .mafw-usage-window-bar { color: #d19a66; }
 .mafw-usage-severity-critical .mafw-usage-window-bar { color: var(--danger); }
+.mafw-usage-window-no-limit { color: var(--text-4); opacity: 0.3; }
 
 /* ══ UsagePill (Rail 底部紧凑行) ══ */
 .mafw-usage-pill {

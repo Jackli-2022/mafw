@@ -25,19 +25,46 @@ export class UsagePoller {
   async poll(): Promise<UsageResponse> {
     try {
       const providers: UsageProvider[] = [];
+      const seen = new Set<string>();
 
-      const opencodeGo = this.aggregateProvider('opencode-go', this.limits['opencode-go']);
-      if (opencodeGo.windows.length > 0) providers.push(opencodeGo);
+      const configuredProviders = Object.keys(this.limits) as Array<keyof typeof this.limits>;
+      for (const name of configuredProviders) {
+        const p = this.aggregateProvider(name, this.limits[name] as Record<string, number>);
+        if (p.windows.length > 0) {
+          providers.push(p);
+          seen.add(name);
+        }
+      }
 
-      const zen = this.aggregateProvider('zen', this.limits.zen);
-      if (zen.windows.length > 0) providers.push(zen);
+      const dbProviders = this.store.getDistinctProviders();
+      for (const name of dbProviders) {
+        if (seen.has(name)) continue;
+        const totalCost = this.store.getProviderTotalCost(name);
+        if (totalCost <= 0) continue;
+        providers.push({
+          name,
+          windows: [{
+            window: 'balance',
+            used: Math.round(totalCost * 100) / 100,
+            limit: 0,
+            unit: '$',
+            pct: 0,
+          }],
+          severity: 'low',
+        });
+      }
 
       const externalResults = await Promise.allSettled(
         this.externalAdapters.map(a => a.fetch()),
       );
       for (const result of externalResults) {
         if (result.status === 'fulfilled' && result.value) {
-          providers.push(result.value);
+          const existing = providers.findIndex(p => p.name === result.value!.name);
+          if (existing >= 0) {
+            providers[existing] = result.value!;
+          } else {
+            providers.push(result.value!);
+          }
         }
       }
 
