@@ -37,11 +37,12 @@ export class UsagePoller {
       }
 
       const dbProviders = this.store.getDistinctProviders();
+      const providerMap = new Map<string, UsageProvider>();
       for (const name of dbProviders) {
         if (seen.has(name)) continue;
         const totalCost = this.store.getProviderTotalCost(name);
         if (totalCost <= 0) continue;
-        providers.push({
+        providerMap.set(name, {
           name,
           windows: [{
             window: 'balance',
@@ -59,14 +60,11 @@ export class UsagePoller {
       );
       for (const result of externalResults) {
         if (result.status === 'fulfilled' && result.value) {
-          const existing = providers.findIndex(p => p.name === result.value!.name);
-          if (existing >= 0) {
-            providers[existing] = result.value!;
-          } else {
-            providers.push(result.value!);
-          }
+          providerMap.set(result.value.name, result.value);
         }
       }
+
+      providers.push(...providerMap.values());
 
       const result: UsageResponse = { providers, updatedAt: Date.now() };
       this.lastGood = result;
