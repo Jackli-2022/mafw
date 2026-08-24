@@ -6,7 +6,7 @@ export interface UsageWindow {
   window: WindowType;
   used: number;
   limit: number;
-  unit: '$' | 'tokens' | 'requests';
+  unit: '$' | 'tokens' | 'requests' | 'pct';
   resetAt?: number;
   pct: number;
   pacing?: Pacing;

@@ -134,9 +134,13 @@ function ProviderSection(props: { provider: any }) {
               <span class="mafw-usage-window-label">{w.window}</span>
               <span class="mafw-usage-window-bar">{asciiBar(w.pct)}</span>
               <span class="mafw-usage-window-pct">{w.pct}%</span>
-              <span class="mafw-usage-window-detail">
-                {w.unit === '$' ? `$${w.used}/${w.limit}` : `${w.used}/${w.limit}`}
-              </span>
+              <Show when={w.unit === 'pct'} fallback={
+                <span class="mafw-usage-window-detail">
+                  {w.unit === '$' ? `$${w.used}/${w.limit}` : `${w.used}/${w.limit}`}
+                </span>
+              }>
+                <span class="mafw-usage-window-detail">已用 {w.pct}%</span>
+              </Show>
               <Show when={w.remaining !== undefined}>
                 <span class="mafw-usage-window-remaining">剩${w.remaining}</span>
               </Show>

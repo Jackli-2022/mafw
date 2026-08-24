@@ -1,6 +1,16 @@
 import { TrajectoryStore } from '../trajectory/trajectory-store';
 import { UsageProvider, UsageResponse, UsageWindow, QuotaLimits, Severity, Pacing, WindowType } from './types';
-import { ExternalAdapter, DeepSeekAdapter, KimiAdapter, OpenRouterAdapter } from './external-adapters';
+import {
+  ExternalAdapter,
+  DeepSeekAdapter,
+  KimiAdapter,
+  OpenRouterAdapter,
+  OpencodeGoAdapter,
+  ZhipuCodingPlanAdapter,
+  KimiCodingPlanAdapter,
+  SiliconFlowAdapter,
+  ClaudeOAuthAdapter,
+} from './external-adapters';
 
 const WINDOW_MS: Record<string, number> = {
   '5h': 5 * 60 * 60 * 1000,
@@ -18,9 +28,14 @@ export class UsagePoller {
     private budgetsGetter: () => Record<string, number> = () => ({}),
   ) {
     this.externalAdapters = [
+      new OpencodeGoAdapter(),
+      new ZhipuCodingPlanAdapter(),
+      new KimiCodingPlanAdapter(),
+      new ClaudeOAuthAdapter(),
       new DeepSeekAdapter(),
       new KimiAdapter(),
       new OpenRouterAdapter(),
+      new SiliconFlowAdapter(),
     ];
   }
 

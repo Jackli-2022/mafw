@@ -64,7 +64,8 @@ export function UsagePill(props: Props) {
       lines.push(`${p.name}${p.plan ? ` (${p.plan})` : ""}`)
       for (const w of p.windows) {
         const reset = w.resetAt ? ` · ${fmtTime(w.resetAt - Date.now())}` : ""
-        lines.push(`  ${w.window}: ${w.pct}% · $${w.used}/${w.limit}${reset}`)
+        const detail = w.unit === 'pct' ? `${w.pct}%` : `$${w.used}/${w.limit}`
+        lines.push(`  ${w.window}: ${w.pct}% · ${detail}${reset}`)
       }
     }
     return lines.join("\n")
