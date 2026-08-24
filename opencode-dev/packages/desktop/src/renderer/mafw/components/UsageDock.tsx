@@ -212,34 +212,32 @@ export function UsageDock(props: {
         </div>
       }>
         <Show when={contextInfo() && contextInfo()!.lastInput > 0}>
-          {(ctx) => (
-            <div class="mafw-usage-section">
-              <div class="mafw-usage-section-title">上下文窗口</div>
-              <Show when={ctx().contextWindow > 0} fallback={
-                <div class="mafw-usage-ctx-fallback">
-                  <span class="mafw-usage-ctx-value">{fmt(ctx().lastInput)}</span>
-                  <span class="mafw-usage-ctx-label">当前上下文 tokens</span>
+          <div class="mafw-usage-section">
+            <div class="mafw-usage-section-title">上下文窗口</div>
+            <Show when={contextInfo()!.contextWindow > 0} fallback={
+              <div class="mafw-usage-ctx-fallback">
+                <span class="mafw-usage-ctx-value">{fmt(contextInfo()!.lastInput || 0)}</span>
+                <span class="mafw-usage-ctx-label">当前上下文 tokens</span>
+              </div>
+            }>
+              <div class="mafw-usage-ctx-bar-wrap">
+                <div class="mafw-usage-ctx-bar">
+                  <div
+                    class="mafw-usage-ctx-fill"
+                    classList={{
+                      "mafw-usage-ctx-warn": contextInfo()!.pct >= 70,
+                      "mafw-usage-ctx-danger": contextInfo()!.pct >= 90,
+                    }}
+                    style={{ width: `${Math.min(contextInfo()!.pct, 100)}%` }}
+                  />
                 </div>
-              }>
-                <div class="mafw-usage-ctx-bar-wrap">
-                  <div class="mafw-usage-ctx-bar">
-                    <div
-                      class="mafw-usage-ctx-fill"
-                      classList={{
-                        "mafw-usage-ctx-warn": ctx().pct >= 70,
-                        "mafw-usage-ctx-danger": ctx().pct >= 90,
-                      }}
-                      style={{ width: `${Math.min(ctx().pct, 100)}%` }}
-                    />
-                  </div>
-                  <div class="mafw-usage-ctx-labels">
-                    <span class="mafw-usage-ctx-pct">{ctx().pct}%</span>
-                    <span class="mafw-usage-ctx-detail">{fmt(ctx().lastInput)} / {fmt(ctx().contextWindow)}</span>
-                  </div>
+                <div class="mafw-usage-ctx-labels">
+                  <span class="mafw-usage-ctx-pct">{contextInfo()!.pct}%</span>
+                  <span class="mafw-usage-ctx-detail">{fmt(contextInfo()!.lastInput || 0)} / {fmt(contextInfo()!.contextWindow)}</span>
                 </div>
-              </Show>
-            </div>
-          )}
+              </div>
+            </Show>
+          </div>
         </Show>
 
         <Show when={apiData()?.providers && apiData()!.providers.length > 0}>
