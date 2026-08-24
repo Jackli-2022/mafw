@@ -290,4 +290,25 @@ export class TrajectoryStore {
 
     return { totalTokens: total, totalCost, turnCount: rows.length, sessionCount: sessions.size };
   }
+
+  getProviderCostInWindow(provider: string, cutoffMs: number): number {
+    const row = this.rawDb
+      .prepare('SELECT SUM(cost) as total FROM trajectory_turns WHERE provider = ? AND turn_start_ms >= ?')
+      .get(provider, cutoffMs) as { total: number | null };
+    return row?.total || 0;
+  }
+
+  getProviderTotalCost(provider: string): number {
+    const row = this.rawDb
+      .prepare('SELECT SUM(cost) as total FROM trajectory_turns WHERE provider = ?')
+      .get(provider) as { total: number | null };
+    return row?.total || 0;
+  }
+
+  getProviderEarliestTurnInWindow(provider: string, cutoffMs: number): number | null {
+    const row = this.rawDb
+      .prepare('SELECT MIN(turn_start_ms) as earliest FROM trajectory_turns WHERE provider = ? AND turn_start_ms >= ?')
+      .get(provider, cutoffMs) as { earliest: number | null };
+    return row?.earliest || null;
+  }
 }
