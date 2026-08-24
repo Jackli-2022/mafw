@@ -128,10 +128,15 @@ export interface GatewayConfig {
     sessionWorkerTtlMs: number;
     reflectThresholdEpisodic: number;
     maxEpisodicPerReflect: number;
-    /** Model pinned to background compress/reflect worker prompts. */
     workerModel: { providerID: string; modelID: string };
-    /** Summarize worker session after this much idle time to cap token growth. */
     workerCompactIdleMs: number;
+  };
+  usage: {
+    pollIntervalMs: number;
+    limits: {
+      'opencode-go': { '5h': number; '7d': number; month: number };
+      zen: { balance: number };
+    };
   };
   media: {
     /** opencode provider that owns the credentials (must be connected in opencode). */
@@ -292,6 +297,13 @@ function defaults(projectDir: string): GatewayConfig {
       workerModel: { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
       workerCompactIdleMs: 8 * 60 * 60 * 1000,
     },
+    usage: {
+      pollIntervalMs: 60000,
+      limits: {
+        'opencode-go': { '5h': 12, '7d': 30, month: 60 },
+        zen: { balance: 100 },
+      },
+    },
     media: {
       provider: 'xiaomi',
       model: 'mimo-v2.5',
@@ -413,6 +425,7 @@ export class Config {
   get env() { return this.data.env; }
   get manager() { return this.data.manager; }
   get recall() { return this.data.recall; }
+  get usage() { return this.data.usage; }
 
   /**
    * MAFW data root — pinned to the gateway package's own .mafw directory so

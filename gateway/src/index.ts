@@ -245,6 +245,7 @@ class MafwScheduler {
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
   private anchorGraphStore: import('./graph/anchor-graph-store').AnchorGraphStore | null = null;
   private trajectoryCollector: import('./trajectory/collector').TrajectoryCollector | null = null;
+  private usagePoller: import('./usage/usage-poller').UsagePoller | null = null;
 
   // Manager sessions live in the gateway DB (kv_store scope=manager-session);
   // see GET /api/manager/session.
@@ -1306,6 +1307,8 @@ class MafwScheduler {
       this.trajectoryCollector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir);
       const { backfillProviderColumn } = require('./trajectory/backfill-provider');
       backfillProviderColumn(this.getGatewayDb());
+      const { UsagePoller } = require('./usage/usage-poller');
+      this.usagePoller = new UsagePoller(trajStore, config.usage.limits);
       log.info('[Trajectory] store initialized');
     } catch (err: any) {
       log.warn(`[Trajectory] init failed (non-fatal): ${err.message}`);
@@ -3441,7 +3444,32 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/usage/summary?sessionID=xxx&projectID=xxx — combined session + project + global stats
+        // GET /api/usage?sessionID=xxx&projectID=xxx — consolidated usage (summary + providers)
+        if (req.url?.match(/^\/api\/usage(?:\?|$)/) && req.method === 'GET') {
+          try {
+            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+            const projectID = parsedUrl.searchParams.get('projectID') || '';
+            const store = this.trajectoryStore;
+            const empty = { totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, sessionCount: 0 };
+            const summary: any = { session: { ...empty, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, project: { ...empty }, global: { ...empty } };
+            if (store) {
+              if (sessionID) summary.session = store.getSessionTokenSummary(sessionID);
+              if (projectID) summary.project = store.getProjectTokenSummary(projectID);
+              summary.global = store.getGlobalTokenSummary();
+            }
+            const providerData = this.usagePoller ? await this.usagePoller.poll() : { providers: [], updatedAt: Date.now() };
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ summary, ...providerData }));
+          } catch (err: any) {
+            log.warn(`[Usage] failed: ${err.message}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ summary: null, providers: [], updatedAt: Date.now() }));
+          }
+          return;
+        }
+
+        // GET /api/usage/summary — backward compat alias
         if (req.url?.match(/^\/api\/usage\/summary(?:\?|$)/) && req.method === 'GET') {
           try {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);

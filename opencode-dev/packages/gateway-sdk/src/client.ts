@@ -147,6 +147,16 @@ export class MafwClient implements IMafwClient {
       return this.request(`/api/usage/summary?${q}`)
     },
 
+    usage: async (
+      params?: { sessionID?: string; projectID?: string },
+    ): Promise<any> => {
+      const q = new URLSearchParams()
+      if (params?.sessionID) q.set('sessionID', params.sessionID)
+      if (params?.projectID) q.set('projectID', params.projectID)
+      const qs = q.toString()
+      return this.request(`/api/usage${qs ? '?' + qs : ''}`)
+    },
+
     events: async (
       params: { path: { id: string } },
     ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
