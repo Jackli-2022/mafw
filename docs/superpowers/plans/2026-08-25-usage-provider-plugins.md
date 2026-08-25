@@ -48,48 +48,23 @@
 
 **Files:**
 - Create: `gateway/src/usage/plugin-loader.ts`
-- Create: `gateway/src/usage/auth-helpers.ts`
+- Modify: `gateway/src/usage/external-adapters.ts` (update readProviderKey import)
 - Test: `tests/unit/gateway/plugin-loader.test.ts`
 
 **Interfaces:**
 - Produces: `PluginLoader` class with `init()`, `getAdapters()`, `getState()`, `reload()`, `stop()`
 - Produces: `PluginState` interface: `{ file, name?, status: 'ok'|'error', error?, overridden: boolean, adapter?: ExternalAdapter }`
-- Produces: `readProviderKey(name)` function (extracted from external-adapters)
+- Reuses: `getProviderApiKey(name)` from `gateway/src/media/auth-util.ts` (already exists)
 
-- [ ] **Step 1: Extract readProviderKey to auth-helpers.ts**
+- [ ] **Step 1: Update external-adapters.ts to use shared auth helper**
 
-Create `gateway/src/usage/auth-helpers.ts`:
-
-```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-
-export function readProviderKey(providerName: string): string | null {
-  try {
-    const authPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json');
-    const raw = fs.readFileSync(authPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    const entry = parsed?.[providerName];
-    if (typeof entry?.key === 'string' && entry.key.trim()) {
-      return entry.key.trim();
-    }
-  } catch {
-    /* missing/corrupt */
-  }
-  return null;
-}
-```
-
-- [ ] **Step 2: Update external-adapters.ts to import readProviderKey**
-
-In `gateway/src/usage/external-adapters.ts`, replace all local `readProviderKey` calls with:
+In `gateway/src/usage/external-adapters.ts`, replace local `readProviderKey` calls with:
 
 ```typescript
-import { readProviderKey } from './auth-helpers';
+import { getProviderApiKey } from '../media/auth-util';
 ```
 
-Remove the local `readProviderKey` function definition.
+Remove the local `readProviderKey` function definition. Update all calls from `readProviderKey(name)` to `getProviderApiKey(name) ?? null`.
 
 - [ ] **Step 3: Write failing test for PluginLoader.scan()**
 
@@ -198,7 +173,7 @@ Create `gateway/src/usage/plugin-loader.ts`:
 import * as fs from 'fs';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
-import { ExternalAdapter } from './types';
+import { ExternalAdapter } from './external-adapters';
 import { makeAdapter } from './plugin-context';
 
 export interface PluginState {
@@ -312,9 +287,17 @@ export class PluginLoader {
   private startWatch(): void {
     if (!fs.existsSync(this.pluginsDir)) return;
     try {
-      this.watcher = fs.watch(this.pluginsDir, () => {
+      this.watcher = fs.watch(this.pluginsDir, (eventType, filename) => {
         if (this.debounceTimer) clearTimeout(this.debounceTimer);
-        this.debounceTimer = setTimeout(() => this.scan(), 300);
+        this.debounceTimer = setTimeout(async () => {
+          if (!fs.existsSync(this.pluginsDir)) {
+            log.warn(`[PluginLoader] plugins dir deleted, stopping watch`);
+            this.watcher?.close();
+            this.watcher = undefined;
+            return;
+          }
+          await this.scan();
+        }, 300);
       });
     } catch (err: any) {
       log.warn(`[PluginLoader] watch failed: ${err.message}`);
@@ -397,18 +380,34 @@ git commit -m "feat(usage): add PluginLoader core (scan, load, state, fail-open)
 
 **Files:**
 - Create: `gateway/src/usage/plugin-context.ts`
+- Modify: `gateway/src/usage/types.ts` (make severity optional)
 - Modify: `gateway/src/usage/plugin-loader.ts` (import makeAdapter)
 
 **Interfaces:**
-- Consumes: `readProviderKey` from auth-helpers
+- Consumes: `getProviderApiKey` from `../media/auth-util`
 - Produces: `createPluginContext(name)` and `makeAdapter(mod, file)`
 
-- [ ] **Step 1: Implement plugin-context.ts**
+- [ ] **Step 1: Make UsageProvider.severity optional**
+
+In `gateway/src/usage/types.ts`, change:
+
+```typescript
+export interface UsageProvider {
+  name: string;
+  plan?: string;
+  windows: UsageWindow[];
+  severity?: Severity;  // Changed from required to optional
+}
+```
+
+This allows plugins to omit severity; the poller will compute it from `max(windows[].pct)`.
+
+- [ ] **Step 2: Implement plugin-context.ts**
 
 ```typescript
 import { config } from '../config';
 import { log } from '../core/utils/logger';
-import { readProviderKey } from './auth-helpers';
+import { getProviderApiKey } from '../media/auth-util';
 import { ExternalAdapter, UsageProvider } from './types';
 
 export interface PluginContext {
@@ -421,13 +420,15 @@ export interface PluginContext {
 
 export function createPluginContext(pluginName: string): PluginContext {
   return {
-    apiKey: (name: string) => readProviderKey(name),
+    apiKey: (name: string) => getProviderApiKey(name) ?? null,
     cookie: (name: string) => {
       const c = config.usage?.cookies?.[name];
       return typeof c === 'string' && c.trim() ? c.trim() : null;
     },
-    fetch: (url: string, opts?: RequestInit) =>
-      fetch(url, { ...opts, signal: opts?.signal ?? AbortSignal.timeout(10_000) }),
+    fetch: (url: string, opts?: RequestInit) => {
+      const signal = opts?.signal ?? AbortSignal.timeout(10_000);
+      return fetch(url, { ...opts, signal });
+    },
     pluginConfig: (name: string) => config.usage?.pluginConfig?.[name] ?? null,
     log,
   };
@@ -512,6 +513,116 @@ git commit -m "test(usage): add hot reload tests for PluginLoader"
 
 ---
 
+### Task 3b: End-to-End Integration Test (PluginLoader + UsagePoller)
+
+**Files:**
+- Test: `tests/unit/gateway/plugin-poller-e2e.test.ts`
+
+- [ ] **Step 1: Write e2e test**
+
+Create `tests/unit/gateway/plugin-poller-e2e.test.ts`:
+
+```typescript
+import { PluginLoader } from '../../../gateway/src/usage/plugin-loader';
+import { UsagePoller } from '../../../gateway/src/usage/usage-poller';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
+describe('PluginLoader + UsagePoller e2e', () => {
+  let tmpDir: string;
+  let loader: PluginLoader;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plugin-e2e-'));
+    loader = new PluginLoader(tmpDir, ['builtin1']);
+  });
+
+  afterEach(() => {
+    loader.stop();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('plugin provider appears in poller results', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'test.js'), `
+      module.exports = {
+        name: 'test-plugin',
+        plan: 'Test',
+        async fetch(ctx) {
+          return {
+            name: 'test-plugin',
+            plan: 'Test',
+            windows: [{ window: '5h', used: 5, limit: 10, unit: '$', pct: 50 }],
+          };
+        },
+      };
+    `);
+    await loader.init();
+
+    // Mock store with no trajectory data
+    const mockStore = { query: () => [] } as any;
+    const poller = new UsagePoller(
+      mockStore,
+      () => ({ 'opencode-go': { '5h': 12, '7d': 30, month: 60 }, zen: { balance: 100 } }),
+      () => ({}),
+      loader,
+    );
+
+    const result = await poller.poll('test-session', 'test-project');
+    const pluginProvider = result.providers.find(p => p.name === 'test-plugin');
+    expect(pluginProvider).toBeDefined();
+    expect(pluginProvider?.plan).toBe('Test');
+    expect(pluginProvider?.windows).toHaveLength(1);
+    expect(pluginProvider?.windows[0].pct).toBe(50);
+    expect(pluginProvider?.severity).toBe('ok'); // computed by poller
+  });
+
+  test('plugin overrides builtin adapter', async () => {
+    fs.writeFileSync(path.join(tmpDir, 'override.js'), `
+      module.exports = {
+        name: 'builtin1',
+        plan: 'Override',
+        async fetch(ctx) {
+          return {
+            name: 'builtin1',
+            plan: 'Override',
+            windows: [{ window: '5h', used: 1, limit: 10, unit: '$', pct: 10 }],
+          };
+        },
+      };
+    `);
+    await loader.init();
+
+    const mockStore = { query: () => [] } as any;
+    const poller = new UsagePoller(
+      mockStore,
+      () => ({ 'opencode-go': { '5h': 12, '7d': 30, month: 60 }, zen: { balance: 100 } }),
+      () => ({}),
+      loader,
+    );
+
+    const result = await poller.poll('test-session', 'test-project');
+    const provider = result.providers.find(p => p.name === 'builtin1');
+    expect(provider?.plan).toBe('Override');
+  });
+});
+```
+
+- [ ] **Step 2: Run test**
+
+Run: `npx jest tests/unit/gateway/plugin-poller-e2e.test.ts --runInBand`
+
+Expected: PASS (2 tests)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/unit/gateway/plugin-poller-e2e.test.ts
+git commit -m "test(usage): add PluginLoader + UsagePoller e2e integration test"
+```
+
+---
+
 ### Task 4: UsagePoller Integration
 
 **Files:**
@@ -523,7 +634,7 @@ git commit -m "test(usage): add hot reload tests for PluginLoader"
 
 - [ ] **Step 1: Add pluginLoader parameter to UsagePoller constructor**
 
-In `gateway/src/usage/usage-poller.ts`:
+In `gateway/src/usage/usage-poller.ts`, extend the constructor (keep existing params):
 
 ```typescript
 import { PluginLoader } from './plugin-loader';
@@ -532,7 +643,12 @@ export class UsagePoller {
   private pluginLoader?: PluginLoader;
   private externalAdapters: ExternalAdapter[];
 
-  constructor(pluginLoader?: PluginLoader) {
+  constructor(
+    private store: TrajectoryStore,
+    private limitsGetter: () => QuotaLimits,
+    private budgetsGetter: () => Record<string, number> = () => ({}),
+    pluginLoader?: PluginLoader,
+  ) {
     this.pluginLoader = pluginLoader;
     this.externalAdapters = [
       new OpencodeGoAdapter(),
@@ -553,6 +669,27 @@ const builtins = this.externalAdapters.filter(a => !pluginNames.has(a.name));
 const allExternal = [...pluginAdapters, ...builtins];
 
 // Use allExternal instead of this.externalAdapters in the loop below
+```
+
+- [ ] **Step 3: Compute severity for plugin results**
+
+In the poll() method, when processing external adapter results, ensure severity is set:
+
+```typescript
+for (const adapter of allExternal) {
+  try {
+    const result = await adapter.fetch();
+    if (!result) continue;
+    // Compute severity if plugin didn't set it
+    if (result.severity === undefined) {
+      const maxPct = Math.max(...result.windows.map(w => w.pct ?? 0));
+      result.severity = maxPct >= 90 ? 'critical' : maxPct >= 70 ? 'warning' : 'ok';
+    }
+    providerMap.set(result.name, result);
+  } catch (err: any) {
+    log.warn(`[UsagePoller] ${adapter.name} fetch failed: ${err.message}`);
+  }
+}
 ```
 
 - [ ] **Step 3: Commit**
@@ -604,15 +741,21 @@ if (req.url?.match(/^\/api\/usage\/plugins\/reload$/) && req.method === 'POST') 
 
 - [ ] **Step 3: Init PluginLoader in start()**
 
-In the `start()` function, after `initServices()`:
+In the `start()` function, after `initServices()` and where UsagePoller is created:
 
 ```typescript
 const pluginsDir = path.join(os.homedir(), '.mafw', 'usage-plugins');
-const builtinNames = ['opencode-go', 'zhipuai-coding-plan', 'kimi-for-coding', 'commandcode', 'deepseek', 'kimi', 'openrouter', 'siliconflow-cn'];
-const pluginLoader = new PluginLoader(pluginsDir, builtinNames);
+const pluginLoader = new PluginLoader(pluginsDir, BUILTIN_ADAPTER_NAMES);
 await pluginLoader.init();
 
-const usagePoller = new UsagePoller(pluginLoader);
+// Pass pluginLoader to existing UsagePoller constructor
+const usagePoller = new UsagePoller(store, () => config.usage.limits, () => config.usage.budgets, pluginLoader);
+```
+
+Add the constant near the top of index.ts:
+
+```typescript
+const BUILTIN_ADAPTER_NAMES = ['opencode-go', 'zhipuai-coding-plan', 'kimi-for-coding', 'commandcode', 'deepseek', 'kimi', 'openrouter', 'siliconflow-cn'];
 ```
 
 - [ ] **Step 4: Commit**
@@ -740,7 +883,12 @@ const reloadPlugins = async () => {
   setReloading(false)
 }
 
-createEffect(() => { loadPlugins() })
+// Load plugins on mount AND refresh with each usage poll (tied to existing polling cycle)
+createEffect(() => {
+  // Re-run whenever apiData updates (which happens on each usage poll)
+  apiData()
+  loadPlugins()
+})
 ```
 
 - [ ] **Step 6: Build SDK + Desktop**
