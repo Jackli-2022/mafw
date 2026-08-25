@@ -60,3 +60,56 @@ test('prompt division: extract focuses on facts, reflect on cross-episode patter
   expect(REFLECT_SYSTEM).toContain('single-point facts');
 });
 
+test('reflectSession runs question to evidence to distillation', async () => {
+  await store.write(epUnit('ep1', 'deployed service crashed', ['deploy'], 'Service crashed due to missing timeout.'));
+  const calls: { p: string; sys: string }[] = [];
+  const searchCalls: string[] = [];
+  const mockIndex = Object.create(store.indexManager_());
+  mockIndex.searchScored = (q: string) => {
+    searchCalls.push(q);
+    return [{ entry: { id: 'ev1', primary_abstraction: 'timeout lessons' }, score: 1 }] as any;
+  };
+  const pipeline = new ReflectionPipeline({
+    index: mockIndex,
+    baseDir: dir,
+    workerFor: () => ({
+      prompt: async (p: string, sys: string) => {
+        calls.push({ p, sys });
+        if (sys.includes('questions')) return '{"questions":["What caused the crash?"]}';
+        return '{"insights":[{"category":"failure","content":"Deployments need timeout configuration before release","cue_anchors":["deploy"]}]}';
+      },
+    }) as any,
+    cursor: new ReflectCursor(db),
+    workerModel: { providerID: 'x', modelID: 'y' },
+  });
+  const result = await (pipeline as any).reflectSession('sess-1', [{ id: 'ep1', text: 'deployed service crashed deploy' }]);
+  expect(calls.length).toBe(2);
+  expect(searchCalls).toContain('What caused the crash?');
+  expect(calls[1].p).toContain('### Related Historical Memories');
+  expect(calls[1].p).toContain('[ev1] timeout lessons');
+  expect(result.distilled).toBe(1);
+});
+
+test('reflectSession falls back to direct distillation when questions unparseable', async () => {
+  await store.write(epUnit('ep1', 'deployed service crashed', ['deploy'], 'Service crashed.'));
+  const calls: string[] = [];
+  const searchCalls: string[] = [];
+  const mockIndex = Object.create(store.indexManager_());
+  mockIndex.searchScored = (q: string) => { searchCalls.push(q); return []; };
+  const pipeline = new ReflectionPipeline({
+    index: mockIndex,
+    baseDir: dir,
+    workerFor: () => ({
+      prompt: async (p: string, sys: string) => {
+        calls.push(sys);
+        if (sys.includes('questions')) return 'not json at all';
+        return '{"insights":[{"category":"insight","content":"lesson","cue_anchors":["x"]}]}';
+      },
+    }) as any,
+    cursor: new ReflectCursor(db),
+    workerModel: { providerID: 'x', modelID: 'y' },
+  });
+  await (pipeline as any).reflectSession('sess-1', [{ id: 'ep1', text: 'deployed service crashed deploy' }]);
+  expect(calls.length).toBe(2);
+  expect(searchCalls.length).toBe(0);
+});

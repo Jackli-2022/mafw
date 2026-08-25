@@ -54,6 +54,23 @@ Rules:
 - prefer insights that hold across multiple episodes of this conversation
 Division of labor: focus on CROSS-EPISODE high-level patterns — recurring failure root causes, lessons that generalize to future tasks, user behavior patterns. Do NOT re-record single-point facts already present in the episodic memories (the hourly extract pipeline already saved those).`;
 
+export const QUESTIONS_SYSTEM = `You are a reflection system for a coding agent's long-term memory. Review the episodic memories of one conversation and generate the 2-3 most salient high-level questions about this session — questions whose answers would reveal durable patterns, recurring root causes, or generalizable lessons. Return ONLY valid JSON, no markdown:
+{"questions":["<question>","<question>"]}
+Rules:
+- questions must be answerable from past conversations (not speculation)
+- prefer questions that span multiple episodes`;
+
+export function parseQuestions(text: string): string[] {
+  try {
+    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
+    const items = parsed?.questions ?? parsed;
+    if (!Array.isArray(items)) return [];
+    return items.filter((q: any) => typeof q === 'string' && q.trim()).slice(0, 3).map(String);
+  } catch {
+    return [];
+  }
+}
+
 const CATEGORY_TO_TYPE: Record<InsightCategory, HarmonicUnit['type']> = {
   failure: 'semantic',
   correction: 'semantic',
@@ -189,7 +206,23 @@ export class ReflectionPipeline {
     const worker = this.opts.workerFor(sessionID);
     let insights: Insight[] = [];
     try {
-      const text = await worker.prompt(prompt, REFLECT_SYSTEM, this.opts.workerModel);
+      // Step 1: generate salient questions
+      const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel);
+      const questions = parseQuestions(qText);
+      // Step 2: retrieve evidence per question (bm25, no graph expansion)
+      const evidence: string[] = [];
+      if (questions.length > 0) {
+        for (const q of questions) {
+          const hits = this.opts.index.searchScored(q, 5, { retriever: 'bm25', graphExpand: false });
+          for (const hit of hits) {
+            const line = `- [${hit.entry.id}] ${hit.entry.primary_abstraction}`;
+            if (!evidence.includes(line)) evidence.push(line);
+          }
+        }
+      }
+      // Step 3: distill insights with evidence context
+      const evidenceBlock = evidence.length > 0 ? `\n\n### Related Historical Memories\n${evidence.join('\n')}` : '';
+      const text = await worker.prompt(prompt + evidenceBlock, REFLECT_SYSTEM, this.opts.workerModel);
       insights = parseInsights(text);
     } catch {
       result.failed++;
