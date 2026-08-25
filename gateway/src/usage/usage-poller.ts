@@ -9,7 +9,7 @@ import {
   ZhipuCodingPlanAdapter,
   KimiCodingPlanAdapter,
   SiliconFlowAdapter,
-  ClaudeOAuthAdapter,
+  CommandCodeAdapter,
 } from './external-adapters';
 
 const WINDOW_MS: Record<string, number> = {
@@ -31,7 +31,7 @@ export class UsagePoller {
       new OpencodeGoAdapter(),
       new ZhipuCodingPlanAdapter(),
       new KimiCodingPlanAdapter(),
-      new ClaudeOAuthAdapter(),
+      new CommandCodeAdapter(),
       new DeepSeekAdapter(),
       new KimiAdapter(),
       new OpenRouterAdapter(),

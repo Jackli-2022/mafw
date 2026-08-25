@@ -378,75 +378,60 @@ export class SiliconFlowAdapter implements ExternalAdapter {
   }
 }
 
-/** Claude (commandcode) — OAuth usage: GET https://api.anthropic.com/api/oauth/usage.
- *  Auth is the Claude Code OAuth access token from ~/.claude/.credentials.json
- *  (sk-ant- format), NOT the plugin-registered commandcode provider key. */
-export class ClaudeOAuthAdapter implements ExternalAdapter {
+/** Command Code GOAT — session cookie → GET https://api.commandcode.ai/internal/billing/credits
+ *  (5h / weekly $ windows). Cookie comes from usage.cookies.commandcode in config.
+ *  No cookie → returns null → poller falls back to local trajectory cost. */
+export class CommandCodeAdapter implements ExternalAdapter {
   name = 'commandcode';
 
   async fetch(): Promise<UsageProvider | null> {
-    const token = readClaudeOAuthAccessToken();
-    if (!token) return null;
+    const cookie = getUsageCookie('commandcode');
+    if (!cookie) return null;
 
     try {
-      const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'anthropic-beta': 'oauth-2025-04-20',
-        },
+      const res = await fetch('https://api.commandcode.ai/internal/billing/credits', {
+        headers: { 'Cookie': cookie },
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
-        log.warn(`[ClaudeAdapter] HTTP ${res.status}`);
+        log.warn(`[CommandCodeAdapter] HTTP ${res.status}`);
         return null;
       }
-      const data = await res.json() as any;
-      const root = data?.usage ?? data;
+      const body = await res.json() as any;
+      const windowLimits = body?.credits?.windowLimits;
+      if (!windowLimits) return null;
 
       const windows: UsageWindow[] = [];
-      const fiveHour = root?.five_hour ?? root?.fiveHour;
-      if (fiveHour) {
-        const pct = Math.round(num(fiveHour.utilization) ?? num(fiveHour.used_percentage) ?? 0);
-        const resetMs = fiveHour.resets_at ? Date.parse(fiveHour.resets_at) : undefined;
-        windows.push({ window: '5h', used: pct, limit: 100, unit: 'pct', pct, resetAt: Number.isFinite(resetMs as number) ? resetMs as number : undefined });
-      }
-      const sevenDay = root?.seven_day ?? root?.sevenDay;
-      if (sevenDay) {
-        const pct = Math.round(num(sevenDay.utilization) ?? num(sevenDay.used_percentage) ?? 0);
-        const resetMs = sevenDay.resets_at ? Date.parse(sevenDay.resets_at) : undefined;
-        windows.push({ window: '7d', used: pct, limit: 100, unit: 'pct', pct, resetAt: Number.isFinite(resetMs as number) ? resetMs as number : undefined });
+      for (const [key, label] of [['fiveHour', '5h'], ['weekly', '7d']] as const) {
+        const w = windowLimits[key];
+        const cap = num(w?.cap);
+        if (cap === undefined || cap <= 0) continue;
+        const used = num(w?.used) ?? 0;
+        const pct = Math.round((used / cap) * 100);
+        const resetMs = w?.resetAt ? Date.parse(w.resetAt) : undefined;
+        windows.push({
+          window: label,
+          used: Math.round(used * 100) / 100,
+          limit: Math.round(cap * 100) / 100,
+          unit: '$',
+          pct,
+          resetAt: Number.isFinite(resetMs as number) ? (resetMs as number) : undefined,
+        });
       }
 
       if (windows.length === 0) return null;
 
       return {
         name: 'commandcode',
-        plan: 'Claude',
+        plan: 'GOAT',
         windows,
         severity: severity(Math.max(...windows.map(w => w.pct))),
       };
     } catch (err: any) {
-      log.warn(`[ClaudeAdapter] fetch failed: ${err.message}`);
+      log.warn(`[CommandCodeAdapter] fetch failed: ${err.message}`);
       return null;
     }
   }
-}
-
-/** Read the Claude Code OAuth access token (sk-ant-...) from ~/.claude/.credentials.json. */
-function readClaudeOAuthAccessToken(): string | null {
-  try {
-    const raw = require('fs').readFileSync(require('path').join(require('os').homedir(), '.claude', '.credentials.json'), 'utf8');
-    const parsed = JSON.parse(raw);
-    const candidate = parsed?.claudeAiOauth ?? parsed?.oauth ?? parsed;
-    for (const key of ['accessToken', 'access_token', 'token']) {
-      if (typeof candidate?.[key] === 'string' && candidate[key].trim()) {
-        return candidate[key].trim();
-      }
-    }
-  } catch {
-    /* missing/corrupt → null */
-  }
-  return null;
 }
 
 function num(v: any): number | undefined {
@@ -456,6 +441,16 @@ function num(v: any): number | undefined {
     if (Number.isFinite(n)) return n;
   }
   return undefined;
+}
+
+function getUsageCookie(name: string): string | null {
+  try {
+    const { config } = require('../config');
+    const cookie = config.usage?.cookies?.[name];
+    return typeof cookie === 'string' && cookie.trim() ? cookie.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseResetMs(detail: any): number | undefined {

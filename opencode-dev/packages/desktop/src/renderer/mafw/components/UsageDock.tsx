@@ -182,6 +182,28 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
 
   const limits = () => config()?.limits || {}
   const budgets = () => config()?.budgets || {}
+  const cookies = () => config()?.cookies || {}
+
+  const setCookie = (name: string, v: string) => {
+    setConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      next.cookies = next.cookies || {}
+      if (v === "") delete next.cookies[name]
+      else next.cookies[name] = v
+      return next
+    })
+  }
+
+  const addCookie = () => {
+    const name = prompt("Cookie 名称 (如 commandcode):")
+    if (!name || !name.trim()) return
+    setConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      next.cookies = next.cookies || {}
+      if (next.cookies[name.trim()] === undefined) next.cookies[name.trim()] = ""
+      return next
+    })
+  }
 
   const setLimitWindow = (provider: string, window: string, v: string) => {
     setConfig(prev => {
@@ -221,6 +243,7 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
       const clean = {
         limits: c.limits || {},
         budgets: c.budgets || {},
+        cookies: c.cookies || {},
       }
       await window.api.mafw.config.set("usage", clean)
       showToastV2({ description: "用量配置已保存", duration: 2000 })
@@ -279,6 +302,35 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
           </For>
           <div class="mafw-usage-config-row">
             <ButtonV2 variant="ghost" size="small" onClick={addBudget}>+ 添加 provider 预算</ButtonV2>
+          </div>
+
+          <div class="mafw-usage-config-title">平台 Cookie (用量查询)</div>
+          <Show when={cookies()['commandcode'] !== undefined}>
+            <div class="mafw-usage-config-row">
+              <span class="mafw-usage-config-name">commandcode</span>
+              <TextInputV2
+                value={cookies()['commandcode'] ?? ""}
+                onInput={e => setCookie('commandcode', e.currentTarget.value)}
+                style={{ width: "100%" }}
+                placeholder="commandcode.ai 登录后的 session cookie，留空删除"
+              />
+            </div>
+          </Show>
+          <For each={Object.keys(cookies()).filter(k => k !== 'commandcode')}>
+            {(name: string) => (
+              <div class="mafw-usage-config-row">
+                <span class="mafw-usage-config-name">{name}</span>
+                <TextInputV2
+                  value={cookies()[name] ?? ""}
+                  onInput={e => setCookie(name, e.currentTarget.value)}
+                  style={{ width: "100%" }}
+                  placeholder="session cookie，留空删除"
+                />
+              </div>
+            )}
+          </For>
+          <div class="mafw-usage-config-row">
+            <ButtonV2 variant="ghost" size="small" onClick={addCookie}>+ 添加平台 cookie</ButtonV2>
           </div>
 
           <div class="mafw-usage-config-actions">

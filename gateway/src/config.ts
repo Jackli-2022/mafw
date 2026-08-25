@@ -138,6 +138,7 @@ export interface GatewayConfig {
       zen: { balance: number };
     };
     budgets: Record<string, number>;
+    cookies: Record<string, string>;
   };
   media: {
     /** opencode provider that owns the credentials (must be connected in opencode). */
@@ -305,6 +306,7 @@ function defaults(projectDir: string): GatewayConfig {
         zen: { balance: 100 },
       },
       budgets: {},
+      cookies: {},
     },
     media: {
       provider: 'xiaomi',
