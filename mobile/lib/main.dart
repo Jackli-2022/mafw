@@ -17,6 +17,7 @@ import 'src/pages/sessions_page.dart';
 import 'src/services/connectivity_watcher.dart';
 import 'src/services/lifecycle_ws.dart';
 import 'src/services/push_service.dart';
+import 'src/theme.dart';
 
 /// Top-level handler for WorkManager background callbacks.
 /// Must be a top-level function (not a closure) for Android background execution.
@@ -291,14 +292,8 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: 'MAFW Mobile',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo, brightness: Brightness.dark),
-        useMaterial3: true,
-      ),
+      theme: mafwLightTheme(),
+      darkTheme: mafwDarkTheme(),
       themeMode: ThemeMode.system,
       home: SessionsPage(
         sessions: _sessions,
@@ -309,6 +304,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         isOffline: !connected,
         baseUrl: _config?.baseUrl,
         isConnecting: _connecting,
+        client: _client,
       ),
     );
   }

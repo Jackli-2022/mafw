@@ -12,6 +12,7 @@ import '../cache/session_cache.dart';
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
 import '../network/ws_client.dart';
+import '../theme.dart';
 
 /// Chat view for one session: message list (live via WS events) + composer.
 class ChatPage extends StatefulWidget {
@@ -181,6 +182,14 @@ class _ChatPageState extends State<ChatPage> {
       _snack('发送失败: $e');
     }
     setState(() => _sending = false);
+  }
+
+  /// 停止当前生成（UI 层：复位发送态并刷新历史；服务端中止为后续迭代）。
+  void _stop() {
+    if (!mounted) return;
+    setState(() => _sending = false);
+    _refreshDebounce?.cancel();
+    _loadHistory();
   }
 
   Future<void> _pickAndUploadMedia() async {
@@ -401,8 +410,13 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.send),
-              onPressed: _sending ? null : _send,
+              icon: _sending ? const Icon(Icons.stop_rounded) : const Icon(Icons.arrow_upward_rounded),
+              tooltip: _sending ? '停止' : '发送',
+              style: IconButton.styleFrom(
+                backgroundColor: kMafwPrimary,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _sending ? _stop : _send,
             ),
           ],
         ),
@@ -419,22 +433,37 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isUser = msg.role == 'user';
     final text = msg.text ?? '';
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
-        decoration: BoxDecoration(
-          color: isUser ? Colors.blue.shade600 : Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: SelectableText(
-          text,
-          style: TextStyle(
-            color: isUser ? Colors.white : Theme.of(context).colorScheme.onSurface,
-            fontSize: 14,
+    final scheme = Theme.of(context).colorScheme;
+
+    if (isUser) {
+      // 用户消息：AI 紫 pill（Claude 式角色差异）
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
+          decoration: BoxDecoration(
+            color: kMafwPrimary,
+            borderRadius: BorderRadius.circular(18),
           ),
+          child: SelectableText(
+            text,
+            style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
+          ),
+        ),
+      );
+    }
+
+    // AI 消息：全宽文档感（无气泡，行高 1.5，Claude 式排版）
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: SelectableText(
+        text,
+        style: TextStyle(
+          color: scheme.onSurface,
+          fontSize: 15,
+          height: 1.55,
         ),
       ),
     );
