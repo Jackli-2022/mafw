@@ -398,7 +398,7 @@ export class CommandCodeAdapter implements ExternalAdapter {
         return null;
       }
       const body = await res.json() as any;
-      const windowLimits = body?.credits?.windowLimits;
+      const windowLimits = body?.windowLimits ?? body?.credits?.windowLimits;
       if (!windowLimits) return null;
 
       const windows: UsageWindow[] = [];

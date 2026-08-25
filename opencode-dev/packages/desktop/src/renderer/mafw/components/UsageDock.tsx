@@ -293,6 +293,15 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
     })
   }
 
+  const setRemoveCookie = (name: string) => {
+    setConfig(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      next.cookies = next.cookies || {}
+      delete next.cookies[name]
+      return next
+    })
+  }
+
   const [addKind, setAddKind] = createSignal<'cookie' | 'budget' | null>(null)
   const [addName, setAddName] = createSignal('')
 
@@ -452,18 +461,7 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
           </div>
 
           <div class="mafw-usage-config-title">平台 Cookie (用量查询)</div>
-          <Show when={cookies()['commandcode'] !== undefined}>
-            <div class="mafw-usage-config-row">
-              <span class="mafw-usage-config-name">commandcode</span>
-              <TextInputV2
-                value={cookies()['commandcode'] ?? ""}
-                onInput={e => setCookie('commandcode', e.currentTarget.value)}
-                style={{ width: "100%" }}
-                placeholder="commandcode.ai 登录后的 session cookie，留空删除"
-              />
-            </div>
-          </Show>
-          <For each={Object.keys(cookies()).filter(k => k !== 'commandcode')}>
+          <For each={Object.keys(cookies())}>
             {(name: string) => (
               <div class="mafw-usage-config-row">
                 <span class="mafw-usage-config-name">{name}</span>
@@ -471,11 +469,15 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
                   value={cookies()[name] ?? ""}
                   onInput={e => setCookie(name, e.currentTarget.value)}
                   style={{ width: "100%" }}
-                  placeholder="session cookie，留空删除"
+                  placeholder={`${name} 平台登录后的 session cookie，留空删除`}
                 />
+                <ButtonV2 variant="ghost" size="small" onClick={() => setRemoveCookie(name)} aria-label="删除 cookie">✕</ButtonV2>
               </div>
             )}
           </For>
+          <Show when={Object.keys(cookies()).length === 0}>
+            <div class="mafw-usage-config-hint">无平台 cookie，可点击下方添加（如 commandcode）</div>
+          </Show>
           <div class="mafw-usage-config-row">
             <Show when={addKind() !== 'cookie'} fallback={
               <>
