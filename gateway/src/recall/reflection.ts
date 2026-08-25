@@ -130,7 +130,7 @@ export function unreflectedBySession(
       bySession.set(session, list);
     }
     if (list.length >= maxPerSession) continue;
-    list.push({ id: entry.id, text: `${entry.primary_abstraction} ${entry.cue_anchors.join(' ')}` });
+    list.push({ id: entry.id, text: `${entry.primary_abstraction} ${(entry.cue_anchors ?? []).join(' ')}` });
   }
   return bySession;
 }
@@ -160,7 +160,7 @@ export class ReflectionPipeline {
     for (const entry of this.opts.index.getIndex().entries) {
       if (entry.type !== 'semantic' && entry.type !== 'procedural') continue;
       if ((entry as any).superseded_by) continue; // skip already-superseded entries
-      const other = `${entry.primary_abstraction} ${entry.cue_anchors.join(' ')}`;
+      const other = `${entry.primary_abstraction} ${(entry.cue_anchors ?? []).join(' ')}`;
       const sim = this.merger.similarity(sig, this.merger.generateSignature(other));
 
       if (sim > 0.6) return { kind: 'duplicate' };
@@ -172,7 +172,8 @@ export class ReflectionPipeline {
     // Conflict requires both MinHash in the 0.4-0.6 band AND at least one shared cue_anchor
     if (bestMatch && bestMatch.sim > 0.4) {
       const targetEntry = this.opts.index.getIndex().entries.find(e => e.id === bestMatch!.id);
-      const sharedAnchors = cueAnchors.filter(a => targetEntry?.cue_anchors.includes(a));
+      const targetAnchors = targetEntry?.cue_anchors ?? [];
+      const sharedAnchors = cueAnchors.filter(a => targetAnchors.includes(a));
       if (sharedAnchors.length > 0) {
         return { kind: 'conflict', conflictTarget: bestMatch.id };
       }

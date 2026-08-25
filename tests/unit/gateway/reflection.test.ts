@@ -67,7 +67,7 @@ test('reflectSession runs question to evidence to distillation', async () => {
   const mockIndex = Object.create(store.indexManager_());
   mockIndex.searchScored = (q: string) => {
     searchCalls.push(q);
-    return [{ entry: { id: 'ev1', primary_abstraction: 'timeout lessons' }, score: 1 }] as any;
+    return [{ entry: { id: 'ev1', primary_abstraction: 'timeout lessons', cue_anchors: [] }, score: 1 }] as any;
   };
   const pipeline = new ReflectionPipeline({
     index: mockIndex,
