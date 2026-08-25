@@ -140,6 +140,7 @@ export interface GatewayConfig {
     budgets: Record<string, number>;
     cookies: Record<string, string>;
     pluginConfig: Record<string, any>;
+    disabledPlugins?: string[];
   };
   media: {
     /** opencode provider that owns the credentials (must be connected in opencode). */

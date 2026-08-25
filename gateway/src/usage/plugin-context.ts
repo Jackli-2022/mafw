@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { log } from '../core/utils/logger';
 import { getProviderApiKey } from './auth-helpers';
-import { ExternalAdapter } from './external-adapters';
+import { ExternalAdapter } from './types';
 import { UsageProvider, Severity } from './types';
 
 export interface PluginContext {
@@ -36,6 +36,7 @@ function severityFromPct(pct: number): Severity {
 export function makeAdapter(mod: any, file: string): ExternalAdapter {
   return {
     name: mod.name,
+    type: mod.type === 'token-plan' ? 'token-plan' : 'api',
     async fetch(): Promise<UsageProvider | null> {
       const ctx = createPluginContext(mod.name);
       try {
@@ -48,6 +49,7 @@ export function makeAdapter(mod: any, file: string): ExternalAdapter {
         const maxPct = result.windows.length > 0 ? Math.max(...result.windows.map((w: any) => w.pct ?? 0)) : 0;
         return {
           ...result,
+          type: result.type ?? (mod.type === 'token-plan' ? 'token-plan' : 'api'),
           severity: result.severity ?? severityFromPct(maxPct),
         };
       } catch (err: any) {

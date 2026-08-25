@@ -1350,8 +1350,9 @@ class MafwScheduler {
       backfillProviderColumn(this.getGatewayDb());
       const { PluginLoader } = require('./usage/plugin-loader');
       const pluginsDir = path.join(os.homedir(), '.mafw', 'usage-plugins');
-      const builtinNames = ['opencode-go', 'zhipuai-coding-plan', 'kimi-for-coding', 'commandcode', 'deepseek', 'kimi', 'openrouter', 'siliconflow-cn'];
-      const pluginLoader = new PluginLoader(pluginsDir, builtinNames);
+      const builtinPluginsDir = path.join(__dirname, 'usage', 'builtin-plugins');
+      const disabledPlugins = Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : [];
+      const pluginLoader = new PluginLoader(pluginsDir, [], { builtinPluginsDir, disabledPlugins });
       await pluginLoader.init();
       this.pluginLoader = pluginLoader;
       const { UsagePoller } = require('./usage/usage-poller');

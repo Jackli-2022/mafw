@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
-import { ExternalAdapter } from './external-adapters';
+import { ExternalAdapter } from './types';
 import { makeAdapter } from './plugin-context';
 
 export interface PluginState {
@@ -10,19 +10,35 @@ export interface PluginState {
   status: 'ok' | 'error';
   error?: string;
   overridden: boolean;
+  builtin: boolean;
   adapter?: ExternalAdapter;
+}
+
+export interface PluginLoaderOptions {
+  builtinPluginsDir?: string;
+  disabledPlugins?: string[];
+}
+
+interface PluginFile {
+  fullPath: string;
+  file: string;
+  builtin: boolean;
 }
 
 export class PluginLoader {
   private pluginsDir: string;
+  private builtinPluginsDir?: string;
+  private disabledPlugins: Set<string>;
   private state = new Map<string, PluginState>();
   private watcher?: fs.FSWatcher;
   private debounceTimer?: NodeJS.Timeout;
   private builtinNames: Set<string>;
 
-  constructor(pluginsDir: string, builtinNames: string[]) {
+  constructor(pluginsDir: string, builtinNames: string[], opts?: PluginLoaderOptions) {
     this.pluginsDir = pluginsDir;
     this.builtinNames = new Set(builtinNames);
+    this.builtinPluginsDir = opts?.builtinPluginsDir;
+    this.disabledPlugins = new Set(opts?.disabledPlugins ?? []);
   }
 
   async init(): Promise<void> {
@@ -40,59 +56,85 @@ export class PluginLoader {
     }
   }
 
-  private async scan(): Promise<void> {
-    if (!fs.existsSync(this.pluginsDir)) return;
-    const files = fs.readdirSync(this.pluginsDir).filter(f => f.endsWith('.js'));
-    const seen = new Set<string>();
-    const loadedNames = new Set<string>();
-    for (const file of files.sort()) {
-      await this.loadFile(file, loadedNames);
-      seen.add(file);
+  private collectFiles(): PluginFile[] {
+    const files: PluginFile[] = [];
+    if (this.builtinPluginsDir && fs.existsSync(this.builtinPluginsDir)) {
+      for (const f of fs.readdirSync(this.builtinPluginsDir).filter(f => f.endsWith('.js')).sort()) {
+        files.push({ fullPath: path.join(this.builtinPluginsDir, f), file: f, builtin: true });
+      }
     }
-    for (const [file] of this.state) {
-      if (!seen.has(file)) this.state.delete(file);
+    if (fs.existsSync(this.pluginsDir)) {
+      for (const f of fs.readdirSync(this.pluginsDir).filter(f => f.endsWith('.js')).sort()) {
+        files.push({ fullPath: path.join(this.pluginsDir, f), file: f, builtin: false });
+      }
     }
+    return files;
   }
 
-  private async loadFile(file: string, loadedNames: Set<string>): Promise<void> {
-    const fullPath = path.join(this.pluginsDir, file);
-    try {
-      const cacheKey = require.resolve(fullPath);
-      delete require.cache[cacheKey];
-    } catch { /* first load */ }
+  private async scan(): Promise<void> {
+    const files = this.collectFiles();
+    const builtinNameSet = new Set(this.builtinNames);
 
-    try {
-      const mod = require(fullPath);
-      const name = mod?.name;
-      if (!name || typeof name !== 'string') {
-        this.state.set(file, { file, status: 'error', error: 'missing name', overridden: false });
-        return;
+    interface LoadedEntry {
+      file: string;
+      builtin: boolean;
+      mod: any;
+    }
+    const byName = new Map<string, LoadedEntry>();
+    const errors: Array<{ file: string; builtin: boolean; error: string }> = [];
+
+    for (const { fullPath, file, builtin } of files) {
+      try {
+        const cacheKey = require.resolve(fullPath);
+        delete require.cache[cacheKey];
+      } catch { /* first load */ }
+
+      try {
+        const mod = require(fullPath);
+        const name = mod?.name;
+        if (!name || typeof name !== 'string') {
+          errors.push({ file, builtin, error: 'missing name' });
+          continue;
+        }
+        if (typeof mod.fetch !== 'function') {
+          errors.push({ file, builtin, error: 'missing fetch()' });
+          continue;
+        }
+        if (this.disabledPlugins.has(name)) continue;
+        if (builtin) builtinNameSet.add(name);
+
+        const existing = byName.get(name);
+        if (existing) {
+          if (builtin) {
+            // builtin duplicates another loaded name (builtin or user) → error
+            errors.push({ file, builtin, error: 'duplicate name' });
+            continue;
+          }
+          if (!existing.builtin) {
+            // two user files with same name → error on second
+            errors.push({ file, builtin, error: 'duplicate name' });
+            continue;
+          }
+          // user file overrides builtin
+          byName.set(name, { file, builtin, mod });
+          continue;
+        }
+        byName.set(name, { file, builtin, mod });
+      } catch (err: any) {
+        errors.push({ file, builtin, error: err.message });
       }
-      if (typeof mod.fetch !== 'function') {
-        this.state.set(file, { file, name, status: 'error', error: 'missing fetch()', overridden: false });
-        return;
-      }
-      if (loadedNames.has(name)) {
-        this.state.set(file, { file, name, status: 'error', error: 'duplicate name', overridden: false });
-        log.warn(`[PluginLoader] ${file}: duplicate name '${name}', skipping`);
-        return;
-      }
-      loadedNames.add(name);
-      const overridden = this.builtinNames.has(name);
-      const adapter = makeAdapter(mod, file);
-      this.state.set(file, { file, name, status: 'ok', overridden, adapter });
-      log.info(`[PluginLoader] Loaded ${file} (${name})${overridden ? ' [overrides builtin]' : ''}`);
-    } catch (err: any) {
-      const prev = this.state.get(file);
-      this.state.set(file, {
-        file,
-        name: prev?.name,
-        status: 'error',
-        error: err.message,
-        overridden: false,
-        adapter: prev?.adapter,
-      });
-      log.warn(`[PluginLoader] ${file} load error: ${err.message}`);
+    }
+
+    this.state.clear();
+    for (const [name, entry] of byName) {
+      const overridden = !entry.builtin && builtinNameSet.has(name);
+      const adapter = makeAdapter(entry.mod, entry.file);
+      this.state.set(entry.file, { file: entry.file, name, status: 'ok', overridden, builtin: entry.builtin, adapter });
+      log.info(`[PluginLoader] Loaded ${entry.file} (${name})${entry.builtin ? ' [builtin]' : ''}${overridden ? ' [overrides builtin]' : ''}`);
+    }
+    for (const e of errors) {
+      this.state.set(e.file, { file: e.file, status: 'error', error: e.error, overridden: false, builtin: e.builtin });
+      log.warn(`[PluginLoader] ${e.file} load error: ${e.error}`);
     }
   }
 
@@ -145,6 +187,7 @@ Place \`.js\` files here to add custom usage providers. Each file exports:
 \`\`\`js
 module.exports = {
   name: "my-provider",
+  type: "api",             // "api" (balance/limit) or "token-plan" (5h/7d/month windows)
   plan: "My Plan",
   async fetch(ctx) {
     const key = ctx.apiKey("my-provider");
@@ -155,9 +198,10 @@ module.exports = {
     const data = await res.json();
     return {
       name: "my-provider",
+      type: "api",
       plan: "My Plan",
       windows: [{
-        window: "5h",
+        window: "balance",
         used: data.used,
         limit: data.limit,
         unit: "$",
@@ -168,6 +212,10 @@ module.exports = {
 };
 \`\`\`
 
+**Types:**
+- \`api\` — credit/balance style (balance window)
+- \`token-plan\` — quota windows (5h / 7d / month)
+
 **ctx methods:**
 - \`ctx.apiKey(name)\` — read provider key from opencode auth.json
 - \`ctx.cookie(name)\` — read usage.cookies[name] from config
@@ -175,12 +223,15 @@ module.exports = {
 - \`ctx.pluginConfig(name)\` — read usage.pluginConfig[name] from config
 - \`ctx.log\` — gateway logger
 
-Return \`null\` to hide provider (falls back to local trajectory cost).
+Return \`null\` to hide provider. Builtin plugins live in the package
+\`dist/usage/builtin-plugins/\`; drop a file with the same \`name\` here to override,
+or add the name to \`usage.disabledPlugins\` in config to disable.
 `;
 
 const EXAMPLE_CONTENT = `// Rename to example.js to activate
 module.exports = {
   name: "example",
+  type: "api",
   plan: "Example Plan",
   async fetch(ctx) {
     return null; // Hide provider

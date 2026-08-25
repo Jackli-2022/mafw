@@ -1,16 +1,5 @@
 import { TrajectoryStore } from '../trajectory/trajectory-store';
 import { UsageProvider, UsageResponse, UsageWindow, QuotaLimits, Severity, Pacing, WindowType } from './types';
-import {
-  ExternalAdapter,
-  DeepSeekAdapter,
-  KimiAdapter,
-  OpenRouterAdapter,
-  OpencodeGoAdapter,
-  ZhipuCodingPlanAdapter,
-  KimiCodingPlanAdapter,
-  SiliconFlowAdapter,
-  CommandCodeAdapter,
-} from './external-adapters';
 import { PluginLoader } from './plugin-loader';
 
 const WINDOW_MS: Record<string, number> = {
@@ -21,7 +10,6 @@ const WINDOW_MS: Record<string, number> = {
 
 export class UsagePoller {
   private lastGood: UsageResponse | null = null;
-  private externalAdapters: ExternalAdapter[];
   private pluginLoader?: PluginLoader;
 
   constructor(
@@ -31,16 +19,6 @@ export class UsagePoller {
     pluginLoader?: PluginLoader,
   ) {
     this.pluginLoader = pluginLoader;
-    this.externalAdapters = [
-      new OpencodeGoAdapter(),
-      new ZhipuCodingPlanAdapter(),
-      new KimiCodingPlanAdapter(),
-      new CommandCodeAdapter(),
-      new DeepSeekAdapter(),
-      new KimiAdapter(),
-      new OpenRouterAdapter(),
-      new SiliconFlowAdapter(),
-    ];
   }
 
   private get limits(): QuotaLimits { return this.limitsGetter(); }
@@ -103,9 +81,7 @@ export class UsagePoller {
       }
 
       const pluginAdapters = this.pluginLoader?.getAdapters() ?? [];
-      const pluginNames = new Set(pluginAdapters.map(a => a.name));
-      const builtins = this.externalAdapters.filter(a => !pluginNames.has(a.name));
-      const allExternal = [...pluginAdapters, ...builtins];
+      const allExternal = pluginAdapters;
 
       const externalResults = await Promise.allSettled(
         allExternal.map(a => a.fetch()),

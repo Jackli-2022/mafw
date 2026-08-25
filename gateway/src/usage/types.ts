@@ -1,6 +1,7 @@
 export type WindowType = '5h' | '7d' | 'month' | 'balance';
 export type Severity = 'low' | 'mid' | 'high' | 'critical';
 export type Pacing = 'ahead' | 'on-track' | 'under';
+export type UsageProviderType = 'api' | 'token-plan';
 
 export interface UsageWindow {
   window: WindowType;
@@ -19,8 +20,15 @@ export interface UsageWindow {
 export interface UsageProvider {
   name: string;
   plan?: string;
+  type?: UsageProviderType;
   windows: UsageWindow[];
   severity: Severity;
+}
+
+export interface ExternalAdapter {
+  name: string;
+  type?: UsageProviderType;
+  fetch(): Promise<UsageProvider | null>;
 }
 
 export interface UsageResponse {

@@ -1,5 +1,5 @@
 import { UsagePoller } from '../../../gateway/src/usage/usage-poller';
-import { ExternalAdapter } from '../../../gateway/src/usage/external-adapters';
+import { ExternalAdapter } from '../../../gateway/src/usage/types';
 import { UsageProvider } from '../../../gateway/src/usage/types';
 
 class MockPluginLoader {
@@ -18,6 +18,7 @@ describe('PluginLoader + UsagePoller e2e', () => {
   const mockStore = {
     getDistinctProviders: () => [],
     getProviderTotalCost: () => 0,
+    getProviderTotalTokens: () => ({ input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }),
   } as any;
 
   const emptyLimits = () => ({} as any);

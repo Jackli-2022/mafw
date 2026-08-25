@@ -4,7 +4,7 @@
   "description": "MAFW Gateway v5.0 — SSE Event-Driven Scheduler",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const cp=(s,d)=>{if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});console.log('[copy] '+d)}else{console.log('[skip] '+s)};};cp(p.join(__dirname,'src','dashboard','public'),p.join(__dirname,'dist','dashboard','public'));cp(p.join(__dirname,'src','tray','tray.ps1'),p.join(__dirname,'dist','tray','tray.ps1'));\"",
+    "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const cp=(s,d)=>{if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});console.log('[copy] '+d)}else{console.log('[skip] '+s)};};cp(p.join(__dirname,'src','dashboard','public'),p.join(__dirname,'dist','dashboard','public'));cp(p.join(__dirname,'src','tray','tray.ps1'),p.join(__dirname,'dist','tray','tray.ps1'));cp(p.join(__dirname,'src','usage','builtin-plugins'),p.join(__dirname,'dist','usage','builtin-plugins'));\"",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "jest --runInBand"
