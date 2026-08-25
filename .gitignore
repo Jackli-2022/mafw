@@ -21,3 +21,6 @@ ScreenShot*.png
 
 # Screenshots (dev artifacts)
 OpenCode *.png
+
+__pycache__/
+*.pyc
