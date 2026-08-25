@@ -274,8 +274,7 @@ export function MafwShell() {
 
   const [splitViews, setSplitViews] = createSignal<SplitViewRec[]>(loadSplitViews())
   const [activeViewId, setActiveViewId] = createSignal<string | null>(null)
-  const [renamingView, setRenamingView] = createSignal<string | null>(null)
-  const [renameDraft, setRenameDraft] = createSignal('')
+  const [renamingViewId, setRenamingViewId] = createSignal<string | null>(null)
 
   // Current split view record (when the active view is a split), else null.
   const activeSplitView = createMemo<SplitViewRec | null>(() => {
@@ -1750,7 +1749,36 @@ export function MafwShell() {
                         onClick={() => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(s.id); setActiveViewId(s.id); ensureSessionVisible(s.id) }}
                       >
                         <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
-                        <span class="mafw-session-title">{s.title}</span>
+                        <span
+                          class="mafw-session-title"
+                          title="双击重命名"
+                          onDblClick={e => {
+                            e.stopPropagation()
+                            setRenamingId(s.id)
+                            setRenameDraft(s.title || "")
+                          }}
+                        >
+                          <Show when={renamingId() !== s.id} fallback={
+                            <TextInputV2
+                              value={renameDraft()}
+                              onInput={e => setRenameDraft(e.currentTarget.value)}
+                              onKeyDown={e => {
+                                e.stopPropagation()
+                                if (e.key === 'Enter') {
+                                  const next = renameDraft().trim()
+                                  if (next && next !== s.title) {
+                                    setSessions(prev => prev.map(x => x.id === s.id ? { ...x, title: next } : x))
+                                    setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === s.id ? { ...x, title: next } : x) }))
+                                  }
+                                  setRenamingId(null)
+                                }
+                                if (e.key === 'Escape') setRenamingId(null)
+                              }}
+                              onBlur={() => setRenamingId(null)}
+                              style={{ width: 120, height: 22, fontSize: 12 }}
+                            />
+                          }>{s.title}</Show>
+                        </span>
                         <TooltipV2 value="分屏" openDelay={300}>
                           <ButtonV2 variant="ghost" size="small" class="mafw-session-split" onClick={e => {
                             e.stopPropagation()
@@ -1797,11 +1825,11 @@ export function MafwShell() {
                         title="双击重命名"
                         onDblClick={e => {
                           e.stopPropagation()
-                          setRenamingView(v.id)
+                          setRenamingViewId(v.id)
                           setRenameDraft(v.title)
                         }}
                       >
-                        <Show when={renamingView() !== v.id} fallback={
+                        <Show when={renamingViewId() !== v.id} fallback={
                           <TextInputV2
                             value={renameDraft()}
                             onInput={e => setRenameDraft(e.currentTarget.value)}
@@ -1810,11 +1838,11 @@ export function MafwShell() {
                               if (e.key === 'Enter') {
                                 const next = renameDraft().trim()
                                 if (next) renameSplitView(v.id, next)
-                                setRenamingView(null)
+                                setRenamingViewId(null)
                               }
-                              if (e.key === 'Escape') setRenamingView(null)
+                              if (e.key === 'Escape') setRenamingViewId(null)
                             }}
-                            onBlur={() => setRenamingView(null)}
+                            onBlur={() => setRenamingViewId(null)}
                             style={{ width: 120, height: 22, fontSize: 12 }}
                           />
                         }>{v.title}</Show>
