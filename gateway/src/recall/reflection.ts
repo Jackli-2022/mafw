@@ -45,13 +45,14 @@ export interface Insight {
   cue_anchors?: string[];
 }
 
-const REFLECT_SYSTEM = `You are a reflection system for a coding agent's long-term memory. Review the episodic memories of one conversation and distill durable, reusable insights. Return ONLY valid JSON, no markdown:
+export const REFLECT_SYSTEM = `You are a reflection system for a coding agent's long-term memory. Review the episodic memories of one conversation and distill durable, reusable insights. Return ONLY valid JSON, no markdown:
 {"insights":[{"category":"failure|correction|insight|preference|convention|tool-quirk","content":"<one sentence>","cue_anchors":["<keyword>"]}]}
 Rules:
 - no redundant insights; each insight must be a durable lesson, preference, failure, convention, or tool quirk
 - every cue_anchors list MUST include the topic entity names (project, module, API, person, feature) so the insight can be found across sessions
 - for category "preference", include a machine-readable anchor like "pref:<dimension>=<value>" (e.g., "pref:output-language=chinese" or "pref:spicy=false")
-- prefer insights that hold across multiple episodes of this conversation`;
+- prefer insights that hold across multiple episodes of this conversation
+Division of labor: focus on CROSS-EPISODE high-level patterns — recurring failure root causes, lessons that generalize to future tasks, user behavior patterns. Do NOT re-record single-point facts already present in the episodic memories (the hourly extract pipeline already saved those).`;
 
 const CATEGORY_TO_TYPE: Record<InsightCategory, HarmonicUnit['type']> = {
   failure: 'semantic',

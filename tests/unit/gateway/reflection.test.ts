@@ -3,8 +3,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { GatewayDatabase } from '../../../gateway/src/memory/gateway-db';
 import { HarmonicUnitFileStore } from '../../../gateway/src/memory/harmonic-file-store';
-import { ReflectionPipeline } from '../../../gateway/src/recall/reflection';
+import { ReflectionPipeline, REFLECT_SYSTEM } from '../../../gateway/src/recall/reflection';
 import { ReflectCursor } from '../../../gateway/src/recall/reflect-cursor';
+import { TOOL_EXTRACTION_SYSTEM } from '../../../gateway/src/recall/turn-pipeline';
 
 let dir: string;
 let db: GatewayDatabase;
@@ -51,3 +52,11 @@ test('reflectSession prompt includes full memory_value', async () => {
   expect(prompts[0]).toContain('Full narrative of the deployment');
   expect(prompts[0]).not.toContain('deployed service deploy');
 });
+
+test('prompt division: extract focuses on facts, reflect on cross-episode patterns', () => {
+  expect(TOOL_EXTRACTION_SYSTEM).toContain('FACT LAYER');
+  expect(TOOL_EXTRACTION_SYSTEM).toContain('cross-session pattern generalization');
+  expect(REFLECT_SYSTEM).toContain('CROSS-EPISODE');
+  expect(REFLECT_SYSTEM).toContain('single-point facts');
+});
+
