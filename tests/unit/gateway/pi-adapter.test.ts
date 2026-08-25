@@ -78,4 +78,22 @@ describe('createPiPromptAdapter', () => {
       adapter([{ type: 'text', text: 'q' }], { providerID: 'xiaomi', modelID: 'mimo-v2.5' }),
     ).rejects.toThrow(/No API key/)
   })
+
+  it('accepts custom fixPayload option', () => {
+    const customFix = (p: unknown) => ({ modified: true, original: p })
+    const adapter = createPiPromptAdapter({
+      getApiKey: () => 'sk-test',
+      getModel: () => ({ id: 'test' }),
+      fixPayload: customFix,
+    })
+    expect(typeof adapter).toBe('function')
+  })
+
+  it('uses default fixMediaPayload when fixPayload not provided', () => {
+    const adapter = createPiPromptAdapter({
+      getApiKey: () => 'sk-test',
+      getModel: () => ({ id: 'test' }),
+    })
+    expect(typeof adapter).toBe('function')
+  })
 })

@@ -146,11 +146,15 @@ export interface GatewayConfig {
     provider: string;
     /** default model ID for every modality. */
     model: string;
-    /** per-modality overrides: { provider?, model } — provider falls back to `provider`. */
-    image?: { provider?: string; model: string };
-    video?: { provider?: string; model: string };
-    audio?: { provider?: string; model: string };
+    /** default engine name (default: 'pi'). */
+    engine?: string;
+    /** per-modality overrides: { provider?, model, engine? } — provider/engine fall back to defaults. */
+    image?: { provider?: string; model: string; engine?: string };
+    video?: { provider?: string; model: string; engine?: string };
+    audio?: { provider?: string; model: string; engine?: string };
     lang?: string;
+    /** Plugin-specific configuration. */
+    pluginConfig?: Record<string, any>;
     /** TTS (text-to-speech) configuration — MiMo-V2.5-TTS family. */
     tts?: {
       /** OpenAI-compatible endpoint (sk- billing: https://api.xiaomimimo.com/v1). */

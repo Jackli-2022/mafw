@@ -67,6 +67,8 @@ export interface PiAdapterDeps {
   /** Model registry hook (tests) — default uses ModelRuntime. */
   getModel?: (provider: string, model: string) => unknown | undefined;
   timeoutMs?: number;
+  /** Custom wire format fixer (default: fixMediaPayload for Xiaomi). */
+  fixPayload?: (payload: unknown) => unknown;
 }
 
 export function createPiPromptAdapter(deps: PiAdapterDeps = {}): PromptFn {
@@ -150,7 +152,7 @@ export function createPiPromptAdapter(deps: PiAdapterDeps = {}): PromptFn {
       },
       {
         apiKey,
-        onPayload: fixMediaPayload,
+        onPayload: deps.fixPayload ?? fixMediaPayload,
         signal: AbortSignal.timeout(timeoutMs),
       },
     );

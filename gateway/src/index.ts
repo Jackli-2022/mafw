@@ -30,6 +30,7 @@ import { CostService } from "./cost/service";
 import { MediaService } from "./media/media-service";
 import { MediaAgent } from "./media/media-agent";
 import { createPiPromptAdapter } from "./media/pi-adapter";
+import { MediaPluginLoader } from "./media/media-plugin-loader";
 import { createTtsService } from "./media/tts-service";
 import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
@@ -234,6 +235,7 @@ class MafwScheduler {
   private memoryService?: MemoryService;
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
+  private mediaPluginLoader?: MediaPluginLoader;
   private ttsService?: ReturnType<typeof createTtsService>;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
@@ -1165,6 +1167,7 @@ class MafwScheduler {
       this.automationEngine.stop();
     }
     this.pluginLoader?.stop();
+    this.mediaPluginLoader?.stop();
     this.pushGateway?.destroy();
     this.pairingService?.destroy();
     this.mdnsAdvertiser?.stop();
@@ -1207,9 +1210,28 @@ class MafwScheduler {
 
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
     this.memoryService = new MemoryService(mafwDir);
+
+    this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'));
+    await this.mediaPluginLoader.init();
+
     this.mediaService = new MediaService({
       prompt: createPiPromptAdapter(),
       config: () => config.raw.media,
+      resolvePrompt: (kind, cfg) => {
+        const engineName = cfg[kind]?.engine ?? cfg.engine ?? 'pi';
+        if (engineName === 'pi') return undefined;
+        const engines = this.mediaPluginLoader?.getEngines();
+        const engine = engines?.get(engineName);
+        if (!engine) {
+          log.warn(`[MediaService] engine '${engineName}' not found, falling back to pi`);
+          return undefined;
+        }
+        if (!engine.modalities.includes(kind)) {
+          log.warn(`[MediaService] engine '${engineName}' does not support modality '${kind}', falling back to pi`);
+          return undefined;
+        }
+        return engine.prompt;
+      },
     });
     // Determine workspace name: if projectDir resolves to a 'gateway' subdirectory,
     // use the parent directory name as the workspace identifier.
@@ -3475,6 +3497,35 @@ class MafwScheduler {
             status: s.status,
             error: s.error,
             overridden: s.overridden,
+          }));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, plugins }));
+          return;
+        }
+
+        // GET /api/media/plugins — media engine plugin state list
+        if (req.url?.match(/^\/api\/media\/plugins(?:\?|$)/) && req.method === 'GET') {
+          const plugins = (this.mediaPluginLoader?.getState() ?? []).map(s => ({
+            file: s.file,
+            name: s.name,
+            status: s.status,
+            error: s.error,
+            modalities: s.modalities,
+          }));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ plugins }));
+          return;
+        }
+
+        // POST /api/media/plugins/reload — manual reload
+        if (req.url?.match(/^\/api\/media\/plugins\/reload$/) && req.method === 'POST') {
+          await this.mediaPluginLoader?.reload();
+          const plugins = (this.mediaPluginLoader?.getState() ?? []).map(s => ({
+            file: s.file,
+            name: s.name,
+            status: s.status,
+            error: s.error,
+            modalities: s.modalities,
           }));
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, plugins }));

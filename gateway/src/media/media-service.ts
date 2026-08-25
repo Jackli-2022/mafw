@@ -33,11 +33,15 @@ export interface MediaModelRef {
   provider?: string;
   /** Model ID as configured in opencode (e.g. mimo-v2.5). */
   model: string;
+  /** Engine name override (falls back to MediaConfig.engine, then 'pi'). */
+  engine?: string;
 }
 
 export interface MediaConfig {
   provider: string;
   model: string;
+  /** Default engine name (default: 'pi'). */
+  engine?: string;
   image?: MediaModelRef;
   video?: MediaModelRef;
   audio?: MediaModelRef;
@@ -105,6 +109,8 @@ export interface MediaServiceDeps {
   prompt: PromptFn;
   /** Optional live config reader (gateway config.raw.media); defaults apply. */
   config?: () => Partial<MediaConfig>;
+  /** Optional engine resolver per modality (plugin system). */
+  resolvePrompt?: (kind: MediaKind, cfg: MediaConfig) => PromptFn | undefined;
 }
 
 export class MediaService {
@@ -134,9 +140,11 @@ export class MediaService {
     };
   }
 
-  cacheKey(kind: MediaKind, providerID: string, modelID: string, mediaUrl: string, prompt: string): string {
+  cacheKey(kind: MediaKind, engine: string, providerID: string, modelID: string, mediaUrl: string, prompt: string): string {
     return createHash('sha256')
       .update(kind)
+      .update('\x00')
+      .update(engine)
       .update('\x00')
       .update(providerID)
       .update('\x00')
@@ -157,7 +165,9 @@ export class MediaService {
     const kind = input.kind || kindFromMediaType(input.mediaType);
     const cfg = this.loadConfig();
     const { providerID, modelID } = this.modelFor(cfg, kind);
-    const cacheKey = this.cacheKey(kind, providerID, modelID, input.dataUrl, promptText);
+    const engineName = cfg[kind]?.engine ?? cfg.engine ?? 'pi';
+    const promptFn = this.deps.resolvePrompt?.(kind, cfg) ?? this.deps.prompt;
+    const cacheKey = this.cacheKey(kind, engineName, providerID, modelID, input.dataUrl, promptText);
     const cached = this.cache.get(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -177,7 +187,7 @@ export class MediaService {
 
     let result: string;
     try {
-      result = await this.deps.prompt(parts, { providerID, modelID });
+      result = await promptFn(parts, { providerID, modelID });
     } catch (err) {
       throw new MediaError(`Media API request failed: ${(err as Error).message}`);
     }
@@ -205,8 +215,10 @@ export class MediaService {
   async analyzeAudioStructured(input: MediaInput, promptText?: string): Promise<string> {
     const cfg = this.loadConfig();
     const { providerID, modelID } = this.modelFor(cfg, 'audio');
+    const engineName = cfg.audio?.engine ?? cfg.engine ?? 'pi';
+    const promptFn = this.deps.resolvePrompt?.('audio', cfg) ?? this.deps.prompt;
     const prompt = `${AUDIO_STRUCTURED_PROMPT}\n\n${promptText || ''}`.trim();
-    const cacheKey = this.cacheKey('audio', providerID, modelID, input.dataUrl, prompt);
+    const cacheKey = this.cacheKey('audio', engineName, providerID, modelID, input.dataUrl, prompt);
     const cached = this.cache.get(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -218,7 +230,7 @@ export class MediaService {
 
     let result: string;
     try {
-      result = await this.deps.prompt(parts, { providerID, modelID });
+      result = await promptFn(parts, { providerID, modelID });
     } catch (err) {
       throw new MediaError(`Media API request failed: ${(err as Error).message}`);
     }

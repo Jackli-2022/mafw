@@ -171,4 +171,60 @@ describe('MediaService', () => {
       expect(calls.length).toBe(1)
     })
   })
+
+  describe('resolvePrompt routing', () => {
+    it('uses resolvePrompt when provided', async () => {
+      const customPrompt: PromptFn = async () => 'custom engine result'
+      const defaultPrompt: PromptFn = async () => 'default result'
+      const svc = new MediaService({
+        prompt: defaultPrompt,
+        config: () => ({ provider: 'xiaomi', model: 'mimo-v2.5', engine: 'custom' }),
+        resolvePrompt: () => customPrompt,
+      })
+      const result = await svc.analyze({ kind: 'image', dataUrl: 'data:image/png;base64,AAAA', mediaType: 'image/png' }, 'q')
+      expect(result).toBe('custom engine result')
+    })
+
+    it('falls back to default prompt when resolvePrompt returns undefined', async () => {
+      const defaultPrompt: PromptFn = async () => 'default result'
+      const svc = new MediaService({
+        prompt: defaultPrompt,
+        config: () => ({ provider: 'xiaomi', model: 'mimo-v2.5' }),
+        resolvePrompt: () => undefined,
+      })
+      const result = await svc.analyze({ kind: 'image', dataUrl: 'data:image/png;base64,AAAA', mediaType: 'image/png' }, 'q')
+      expect(result).toBe('default result')
+    })
+
+    it('caches separately per engine name', async () => {
+      const calls: string[] = []
+      const promptA: PromptFn = async () => { calls.push('A'); return 'result A' }
+      const promptB: PromptFn = async () => { calls.push('B'); return 'result B' }
+      let engine = 'pi'
+      const svc = new MediaService({
+        prompt: promptA,
+        config: () => ({ provider: 'xiaomi', model: 'mimo-v2.5', engine }),
+        resolvePrompt: (_kind, cfg) => cfg.engine === 'custom' ? promptB : undefined,
+      })
+      const input = { kind: 'image' as const, dataUrl: 'data:image/png;base64,AAAA', mediaType: 'image/png' }
+      await svc.analyze(input, 'q')
+      engine = 'custom'
+      await svc.analyze(input, 'q')
+      expect(calls).toEqual(['A', 'B'])
+    })
+
+    it('passes kind and cfg to resolvePrompt', async () => {
+      const resolveCalls: Array<{ kind: string; engine?: string }> = []
+      const svc = new MediaService({
+        prompt: async () => 'x',
+        config: () => ({ provider: 'xiaomi', model: 'mimo-v2.5', video: { model: 'v2', engine: 'video-engine' } }),
+        resolvePrompt: (kind, cfg) => {
+          resolveCalls.push({ kind, engine: cfg[kind]?.engine })
+          return undefined
+        },
+      })
+      await svc.analyze({ kind: 'video', dataUrl: 'data:video/mp4;base64,AAAA', mediaType: 'video/mp4' }, 'q')
+      expect(resolveCalls[0]).toEqual({ kind: 'video', engine: 'video-engine' })
+    })
+  })
 })

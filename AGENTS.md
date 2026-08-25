@@ -368,6 +368,52 @@ opencode LLM（推理 Agent）                       └─ MediaService → pi 
   （追问，返回回答 + 新 taskID）；旧名 `mafw_vision_upload`/`mafw_vision_ask` 已移除
 - 测试：`tests/unit/gateway/pi-adapter.test.ts`（fixMediaPayload 单测 + adapter 边界）、
   `media-service.test.ts`（PromptFn 抽象隔离）、`media-agent.test.ts`（A2A 四模态）
+
+#### 5.14a Media Engine 插件系统
+
+媒体分析引擎可插拔：用户往 `~/.mafw/media-plugins/` 丢 `.js` 文件即可替换/新增某模态的分析引擎。
+`MediaPluginLoader`（`gateway/src/media/media-plugin-loader.ts`）扫描/热加载/fail-open，
+`MediaService.resolvePrompt(kind, cfg)` 按模态路由到插件引擎或默认 pi。
+
+**两种插件形态**（CJS `module.exports`）：
+
+```js
+// 形态 A：完全自定义引擎（不经 pi，直接 HTTP 调用）
+module.exports = {
+  name: "gemini-vision",
+  modalities: ["image", "video"],
+  async createPrompt(ctx) {
+    return async (parts, opts) => { /* 返回分析文本 */ };
+  },
+};
+
+// 形态 B：复用 pi 运行时，只换 wire 格式修复器
+module.exports = {
+  name: "qwen-vl",
+  modalities: ["image", "video"],
+  engine: "pi",
+  fixPayload(payload) { /* 自定义改写，返回 undefined 表示不修改 */ },
+};
+```
+
+**ctx**（`gateway/src/media/plugin-context.ts`）：`apiKey(name)` / `fetch(url, opts)`（60s timeout）/
+`pluginConfig(name)`（读 `config.media.pluginConfig`）/ `log`。
+
+**config 路由**（per-modality 覆盖全局）：
+```yaml
+media:
+  engine: pi              # 默认引擎
+  video:
+    engine: qwen-vl       # video 模态走插件
+  pluginConfig: {}        # 插件自定义配置
+```
+
+**HTTP API**：`GET /api/media/plugins`（状态列表）、`POST /api/media/plugins/reload`（手动重载）。
+校验失败 fail-open（状态记 error，不影响其他插件与默认 pi）。
+`pi-adapter` 的 `fixPayload` 现为可选 dep（默认 `fixMediaPayload` 小米格式），插件可覆盖。
+缓存 key 含 engineName 防同模型不同引擎串缓存。
+测试：`tests/unit/gateway/media-plugin-loader.test.ts`（11 例）、`media-service.test.ts` resolvePrompt 路由（4 例）。
+
 ### 5.15 OpenCode Serve Sidecar（自监管）
 
 opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
