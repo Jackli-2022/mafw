@@ -158,4 +158,12 @@ export function registerMafwIpcHandlers() {
     console.log(`[mafw][perf] upload-and-create: prep=${t1 - t0}ms http=${t2 - t1}ms parse=${t3 - t2}ms total=${t3 - t0}ms (${buf.byteLength} bytes)`)
     return { id: data.id, contextId: data.contextId, state: data.state, artifactId: data.artifactId, mediaType: data.mediaType, size: data.size }
   })
+
+  ipcMain.handle("mafw-openUsagePluginsDir", async () => {
+    const { shell } = require("electron")
+    const path = require("path")
+    const os = require("os")
+    const dir = path.join(os.homedir(), ".mafw", "usage-plugins")
+    await shell.openPath(dir)
+  })
 }

@@ -246,6 +246,7 @@ class MafwScheduler {
   private anchorGraphStore: import('./graph/anchor-graph-store').AnchorGraphStore | null = null;
   private trajectoryCollector: import('./trajectory/collector').TrajectoryCollector | null = null;
   private usagePoller: import('./usage/usage-poller').UsagePoller | null = null;
+  private pluginLoader: import('./usage/plugin-loader').PluginLoader | null = null;
 
   // Manager sessions live in the gateway DB (kv_store scope=manager-session);
   // see GET /api/manager/session.
@@ -1163,6 +1164,7 @@ class MafwScheduler {
     if (this.automationEngine) {
       this.automationEngine.stop();
     }
+    this.pluginLoader?.stop();
     this.pushGateway?.destroy();
     this.pairingService?.destroy();
     this.mdnsAdvertiser?.stop();
@@ -1307,8 +1309,14 @@ class MafwScheduler {
       this.trajectoryCollector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir);
       const { backfillProviderColumn } = require('./trajectory/backfill-provider');
       backfillProviderColumn(this.getGatewayDb());
+      const { PluginLoader } = require('./usage/plugin-loader');
+      const pluginsDir = path.join(os.homedir(), '.mafw', 'usage-plugins');
+      const builtinNames = ['opencode-go', 'zhipuai-coding-plan', 'kimi-for-coding', 'commandcode', 'deepseek', 'kimi', 'openrouter', 'siliconflow-cn'];
+      const pluginLoader = new PluginLoader(pluginsDir, builtinNames);
+      await pluginLoader.init();
+      this.pluginLoader = pluginLoader;
       const { UsagePoller } = require('./usage/usage-poller');
-      this.usagePoller = new UsagePoller(trajStore, () => config.usage.limits, () => config.usage.budgets);
+      this.usagePoller = new UsagePoller(trajStore, () => config.usage.limits, () => config.usage.budgets, pluginLoader);
       log.info('[Trajectory] store initialized');
     } catch (err: any) {
       log.warn(`[Trajectory] init failed (non-fatal): ${err.message}`);
@@ -3441,6 +3449,35 @@ class MafwScheduler {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ totalTokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, totalCost: 0, turnCount: 0, avgTokensPerTurn: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }));
           }
+          return;
+        }
+
+        // GET /api/usage/plugins — plugin state list
+        if (req.url?.match(/^\/api\/usage\/plugins(?:\?|$)/) && req.method === 'GET') {
+          const plugins = (this.pluginLoader?.getState() ?? []).map(s => ({
+            file: s.file,
+            name: s.name,
+            status: s.status,
+            error: s.error,
+            overridden: s.overridden,
+          }));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ plugins }));
+          return;
+        }
+
+        // POST /api/usage/plugins/reload — manual reload
+        if (req.url?.match(/^\/api\/usage\/plugins\/reload$/) && req.method === 'POST') {
+          await this.pluginLoader?.reload();
+          const plugins = (this.pluginLoader?.getState() ?? []).map(s => ({
+            file: s.file,
+            name: s.name,
+            status: s.status,
+            error: s.error,
+            overridden: s.overridden,
+          }));
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, plugins }));
           return;
         }
 

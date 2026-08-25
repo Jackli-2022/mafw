@@ -205,6 +205,33 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
     })
   }
 
+  const [pluginState, setPluginState] = createSignal<any[]>([])
+  const [reloading, setReloading] = createSignal(false)
+
+  const loadPlugins = async () => {
+    try {
+      const res = await window.api.mafw.sessions.usagePlugins()
+      setPluginState(res.plugins)
+    } catch (e: any) {
+      console.warn('[UsageConfig] loadPlugins failed:', e?.message)
+    }
+  }
+
+  const reloadPlugins = async () => {
+    setReloading(true)
+    try {
+      const res = await window.api.mafw.sessions.usagePluginsReload()
+      setPluginState(res.plugins)
+      showToastV2({ description: '插件已重载', duration: 2000 })
+      props.onSaved()
+    } catch (e: any) {
+      showToastV2({ description: `重载失败: ${e.message}`, duration: 3000 })
+    }
+    setReloading(false)
+  }
+
+  createEffect(() => { loadPlugins() })
+
   const setLimitWindow = (provider: string, window: string, v: string) => {
     setConfig(prev => {
       const next = JSON.parse(JSON.stringify(prev))
@@ -244,6 +271,7 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
         limits: c.limits || {},
         budgets: c.budgets || {},
         cookies: c.cookies || {},
+        pluginConfig: c.pluginConfig || {},
       }
       await window.api.mafw.config.set("usage", clean)
       showToastV2({ description: "用量配置已保存", duration: 2000 })
@@ -331,6 +359,35 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
           </For>
           <div class="mafw-usage-config-row">
             <ButtonV2 variant="ghost" size="small" onClick={addCookie}>+ 添加平台 cookie</ButtonV2>
+          </div>
+
+          <div class="mafw-usage-config-title">平台插件</div>
+          <Show when={pluginState().length > 0}>
+            <For each={pluginState()}>
+              {(p: any) => (
+                <div class="mafw-usage-config-row">
+                  <span class="mafw-usage-config-name">
+                    {p.status === 'ok' ? '\u2705' : '\u274c'} {p.file}
+                    {p.name && <span class="mafw-usage-config-hint"> ({p.name})</span>}
+                    {p.overridden && <span class="mafw-usage-config-hint"> [\u8986\u76d6\u5185\u7f6e]</span>}
+                  </span>
+                  <Show when={p.error}>
+                    <span class="mafw-usage-config-error">{p.error}</span>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </Show>
+          <Show when={pluginState().length === 0}>
+            <div class="mafw-usage-config-hint">{"\u65e0\u63d2\u4ef6"}</div>
+          </Show>
+          <div class="mafw-usage-config-row">
+            <ButtonV2 variant="ghost" size="small" onClick={() => window.api.mafw.sessions.openUsagePluginsDir()}>
+              {"\ud83d\udcc2 \u6253\u5f00\u63d2\u4ef6\u76ee\u5f55"}
+            </ButtonV2>
+            <ButtonV2 variant="ghost" size="small" onClick={reloadPlugins} disabled={reloading()}>
+              {reloading() ? '\u91cd\u8f7d\u4e2d...' : '\ud83d\udd04 \u91cd\u65b0\u52a0\u8f7d'}
+            </ButtonV2>
           </div>
 
           <div class="mafw-usage-config-actions">

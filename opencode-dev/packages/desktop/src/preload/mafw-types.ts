@@ -41,6 +41,9 @@ export type MafwAPI = {
       providers: any[]
       updatedAt: number
     }>
+    usagePlugins: () => Promise<{ plugins: { file: string; name?: string; status: string; error?: string; overridden: boolean }[] }>
+    usagePluginsReload: () => Promise<{ ok: boolean; plugins: any[] }>
+    openUsagePluginsDir: () => Promise<void>
     promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
     command: (opts: { sessionID: string; command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
   }

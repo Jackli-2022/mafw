@@ -2004,7 +2004,7 @@ html[data-theme="light"] .mafw-picker-pop {
   border: none;
   background: transparent;
 }
-.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"] [data-slot="tabs-v2-trigger-wrapper"] {
+.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
   height: 28px;
   border-radius: 6px;
   font-size: 12px;
@@ -2013,12 +2013,12 @@ html[data-theme="light"] .mafw-picker-pop {
   border: 0.5px solid transparent;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"] [data-slot="tabs-v2-trigger-wrapper"]:hover:not(:disabled):not(:has([data-selected])) {
+.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"]:hover:not(:disabled):not(:has([data-selected])) {
   background: var(--hover);
   color: var(--text-1);
   border-color: var(--border-subtle);
 }
-.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"] [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
   background: var(--accent-dim);
   color: var(--accent-text);
   border-color: color-mix(in srgb, var(--accent) 25%, transparent);

@@ -157,6 +157,14 @@ export class MafwClient implements IMafwClient {
       return this.request(`/api/usage${qs ? '?' + qs : ''}`)
     },
 
+    usagePlugins: async (): Promise<{ plugins: { file: string; name?: string; status: string; error?: string; overridden: boolean }[] }> => {
+      return this.request('/api/usage/plugins')
+    },
+
+    usagePluginsReload: async (): Promise<{ ok: boolean; plugins: any[] }> => {
+      return this.request('/api/usage/plugins/reload', { method: 'POST' })
+    },
+
     events: async (
       params: { path: { id: string } },
     ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {

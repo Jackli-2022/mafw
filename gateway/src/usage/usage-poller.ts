@@ -11,6 +11,7 @@ import {
   SiliconFlowAdapter,
   CommandCodeAdapter,
 } from './external-adapters';
+import { PluginLoader } from './plugin-loader';
 
 const WINDOW_MS: Record<string, number> = {
   '5h': 5 * 60 * 60 * 1000,
@@ -21,12 +22,15 @@ const WINDOW_MS: Record<string, number> = {
 export class UsagePoller {
   private lastGood: UsageResponse | null = null;
   private externalAdapters: ExternalAdapter[];
+  private pluginLoader?: PluginLoader;
 
   constructor(
     private store: TrajectoryStore,
     private limitsGetter: () => QuotaLimits,
     private budgetsGetter: () => Record<string, number> = () => ({}),
+    pluginLoader?: PluginLoader,
   ) {
+    this.pluginLoader = pluginLoader;
     this.externalAdapters = [
       new OpencodeGoAdapter(),
       new ZhipuCodingPlanAdapter(),
@@ -93,8 +97,13 @@ export class UsagePoller {
         }
       }
 
+      const pluginAdapters = this.pluginLoader?.getAdapters() ?? [];
+      const pluginNames = new Set(pluginAdapters.map(a => a.name));
+      const builtins = this.externalAdapters.filter(a => !pluginNames.has(a.name));
+      const allExternal = [...pluginAdapters, ...builtins];
+
       const externalResults = await Promise.allSettled(
-        this.externalAdapters.map(a => a.fetch()),
+        allExternal.map(a => a.fetch()),
       );
       for (const result of externalResults) {
         if (result.status === 'fulfilled' && result.value) {
