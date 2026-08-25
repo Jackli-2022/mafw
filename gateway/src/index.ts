@@ -4587,9 +4587,12 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         if (!this.memoryService) return { success: false, error: 'memoryService not ready' };
         const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
         const { generateHarmonicId } = require('./core/memory/harmonic-types.js');
-        const { calculateSalience } = require('./core/memory/salience-perceptor.js');
+        const { calculateSalience, importanceToSalience } = require('./core/memory/salience-perceptor.js');
         const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
         const now = new Date().toISOString();
+        const salience = typeof data?.importance === 'number' && Number.isFinite(data.importance)
+          ? importanceToSalience(data.importance)
+          : calculateSalience(content);
         const unit = {
           id: generateHarmonicId(),
           type: memoryType,
@@ -4597,7 +4600,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           cue_anchors: Array.isArray(data?.cueAnchors) ? data.cueAnchors.slice(0, 8).map(String) : [],
           memory_value: content.slice(0, 4000),
           energy: 0.8,
-          salience: calculateSalience(content),
+          salience,
           abstraction_level: memoryType === 'global' ? 3 : memoryType === 'episodic' ? 1 : 2,
           created_at: now,
           updated_at: now,

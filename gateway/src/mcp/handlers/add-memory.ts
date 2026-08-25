@@ -3,7 +3,7 @@ import * as path from "path";
 import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { generateHarmonicId } from "../../core/memory/harmonic-types";
-import { calculateSalience } from "../../core/memory/salience-perceptor";
+import { calculateSalience, importanceToSalience } from "../../core/memory/salience-perceptor";
 
 export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) => {
   try {
@@ -28,6 +28,10 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     const unitId = generateHarmonicId();
 
     const memCfg = config.memory;
+    const importance = (args.importance as number | undefined);
+    const salience = importance !== undefined
+      ? importanceToSalience(importance)
+      : calculateSalience(content);
     const unit = {
       id: unitId,
       type: memoryType,
@@ -35,7 +39,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       cue_anchors: cueAnchors.slice(0, memCfg.maxCueAnchors),
       memory_value: content,
       energy: memCfg.defaultEnergy,
-      salience: calculateSalience(content),
+      salience,
       abstraction_level: memoryType === "global" ? 3 : memoryType === "episodic" ? 1 : 2,
       created_at: now,
       updated_at: now,

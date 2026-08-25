@@ -18,6 +18,7 @@ export interface AddMemoryTool {
       memoryType?: 'semantic' | 'episodic' | 'procedural' | 'global';
       cueAnchors?: string[];
       primaryAbstraction?: string;
+      importance?: number;
     },
     ctx: { sessionID: string; abort: AbortSignal },
   ) => Promise<unknown>;
@@ -35,6 +36,7 @@ export const addMemoryTool: AddMemoryTool = {
       .describe('semantic=事实/偏好/约束，episodic=叙事，procedural=教训/模式，global=跨项目'),
     cueAnchors: z.array(z.string()).max(8).optional().describe('检索关键词'),
     primaryAbstraction: z.string().optional().describe('6-8 词摘要（缺省自动生成）'),
+    importance: z.number().int().min(1).max(10).optional().describe('重要性打分 1-10：1=琐碎日常，5=普通事实，9-10=架构级决定/严重事故。缺省自动判定'),
   },
   async execute(args, ctx) {
     try {
@@ -48,6 +50,7 @@ export const addMemoryTool: AddMemoryTool = {
           memoryType: args.memoryType || 'semantic',
           cueAnchors: args.cueAnchors || [],
           primaryAbstraction: args.primaryAbstraction,
+          importance: args.importance,
           sessionID: ctx?.sessionID,
         }),
         signal: controller.signal,
