@@ -7,8 +7,8 @@ describe('SessionWorkerPool', () => {
   beforeEach(() => {
     fakeClient = {
       session: {
-        create: jest.fn().mockImplementation(async () => ({ data: { id: 'w' } })),
-        prompt: jest.fn().mockResolvedValue({ data: { parts: [{ type: 'text', text: 'ok' }] } }),
+        create: jest.fn().mockImplementation(async () => ({ id: 'w' })),
+        prompt: jest.fn().mockResolvedValue({ parts: [{ type: 'text', text: 'ok' }] }),
         delete: jest.fn().mockResolvedValue(undefined),
       },
     };
@@ -100,7 +100,7 @@ describe('SessionWorkerPool', () => {
     await capped.getWorker('s2', 'extract').prompt('x');
     // s1's worker is mid-flight → not evictable
     const hold = new Promise<void>((resolve) => {
-      fakeClient.session.prompt.mockImplementationOnce(() => new Promise((r) => setTimeout(() => { resolve(); r({ data: { parts: [] } }); }, 30)));
+      fakeClient.session.prompt.mockImplementationOnce(() => new Promise((r) => setTimeout(() => { resolve(); r({ parts: [] }); }, 30)));
     });
     const inFlight = capped.runExclusive('s1', 'extract', async () => {
       await capped.getWorker('s1', 'extract').prompt('hold');

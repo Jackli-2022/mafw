@@ -4,6 +4,7 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
+import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 
 const fmt = (n: number): string => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
@@ -30,9 +31,44 @@ const fmtRoleTokens = (t: { input: number; output: number; reasoning: number; ca
   return fmt(total)
 }
 
-const asciiBar = (pct: number, width = 20): string => {
-  const filled = Math.round((Math.min(pct, 100) / 100) * width)
-  return '\u2588'.repeat(filled) + '\u2591'.repeat(width - filled)
+const roleColors: Record<string, string> = {
+  'turn-compress': '#8b5cf6',
+  'index-scan': '#06b6d4',
+  'manager': '#f59e0b',
+  'reflect': '#ec4899',
+}
+
+const tokenColors = {
+  input: '#3b82f6',
+  output: '#10b981',
+  reasoning: '#8b5cf6',
+  cacheRead: '#f59e0b',
+  cacheWrite: '#ef4444',
+} as const
+
+function TokenStackBar(props: { data: TokenSummary['totalTokens'] }) {
+  const t = () => props.data
+  const total = () => t().input + t().output + t().reasoning + t().cache.read + t().cache.write
+  const pct = (v: number) => total() > 0 ? (v / total()) * 100 : 0
+  return (
+    <div class="mafw-usage-stack-bar">
+      <Show when={pct(t().input) > 0}>
+        <div class="mafw-usage-stack-seg" style={{ width: `${pct(t().input)}%`, background: tokenColors.input }} />
+      </Show>
+      <Show when={pct(t().output) > 0}>
+        <div class="mafw-usage-stack-seg" style={{ width: `${pct(t().output)}%`, background: tokenColors.output }} />
+      </Show>
+      <Show when={pct(t().reasoning) > 0}>
+        <div class="mafw-usage-stack-seg" style={{ width: `${pct(t().reasoning)}%`, background: tokenColors.reasoning }} />
+      </Show>
+      <Show when={pct(t().cache.read) > 0}>
+        <div class="mafw-usage-stack-seg" style={{ width: `${pct(t().cache.read)}%`, background: tokenColors.cacheRead }} />
+      </Show>
+      <Show when={pct(t().cache.write) > 0}>
+        <div class="mafw-usage-stack-seg" style={{ width: `${pct(t().cache.write)}%`, background: tokenColors.cacheWrite }} />
+      </Show>
+    </div>
+  )
 }
 
 const fmtTime = (ms: number): string => {
@@ -69,37 +105,44 @@ type TokenSummary = {
 
 type StoreShape = { message: Record<string, any[]> }
 
-function TokenGrid(props: { data: TokenSummary; showSessions?: boolean }) {
+function TokenGrid(props: { data: TokenSummary }) {
   const t = () => props.data.totalTokens
   const total = () => t().input + t().output + t().reasoning + t().cache.read + t().cache.write
+  const pctOf = (v: number) => total() > 0 ? Math.round((v / total()) * 100) : 0
   return (
     <div class="mafw-usage-grid">
+      <TokenStackBar data={t()} />
       <div class="mafw-usage-row">
         <span class="mafw-usage-dot mafw-usage-dot-input" />
         <span class="mafw-usage-label">输入</span>
+        <span class="mafw-usage-pct">{pctOf(t().input)}%</span>
         <span class="mafw-usage-value">{fmt(t().input)}</span>
       </div>
       <div class="mafw-usage-row">
         <span class="mafw-usage-dot mafw-usage-dot-output" />
         <span class="mafw-usage-label">输出</span>
+        <span class="mafw-usage-pct">{pctOf(t().output)}%</span>
         <span class="mafw-usage-value">{fmt(t().output)}</span>
       </div>
       <Show when={t().reasoning > 0}>
         <div class="mafw-usage-row">
           <span class="mafw-usage-dot mafw-usage-dot-reasoning" />
           <span class="mafw-usage-label">推理</span>
+          <span class="mafw-usage-pct">{pctOf(t().reasoning)}%</span>
           <span class="mafw-usage-value">{fmt(t().reasoning)}</span>
         </div>
       </Show>
       <div class="mafw-usage-row">
         <span class="mafw-usage-dot mafw-usage-dot-cache-read" />
         <span class="mafw-usage-label">缓存读取</span>
+        <span class="mafw-usage-pct">{pctOf(t().cache.read)}%</span>
         <span class="mafw-usage-value">{fmt(t().cache.read)}</span>
       </div>
       <Show when={t().cache.write > 0}>
         <div class="mafw-usage-row">
           <span class="mafw-usage-dot mafw-usage-dot-cache-write" />
           <span class="mafw-usage-label">缓存写入</span>
+          <span class="mafw-usage-pct">{pctOf(t().cache.write)}%</span>
           <span class="mafw-usage-value">{fmt(t().cache.write)}</span>
         </div>
       </Show>
@@ -107,18 +150,52 @@ function TokenGrid(props: { data: TokenSummary; showSessions?: boolean }) {
         <span>总计</span>
         <span>{fmt(total())}</span>
       </div>
-      <div class="mafw-usage-meta">
-        <span>{props.data.turnCount} 回合{props.showSessions && props.data.sessionCount ? ` · ${props.data.sessionCount} 会话` : ''}</span>
+    </div>
+  )
+}
+
+// 紧凑统计行：label + 总 token + 成本 + 回合，点击展开详情
+function TokenStatRow(props: {
+  label: string
+  color: string
+  data: TokenSummary
+  showSessions?: boolean
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const t = () => props.data.totalTokens
+  const total = () => t().input + t().output + t().reasoning + t().cache.read + t().cache.write
+  return (
+    <div class="mafw-usage-stat">
+      <div class="mafw-usage-stat-row" onClick={props.onToggle}>
+        <span class="mafw-usage-dot" style={{ background: props.color }} />
+        <span class="mafw-usage-stat-label">{props.label}</span>
+        <span class="mafw-usage-stat-value">{fmt(total())}</span>
         <Show when={props.data.totalCost > 0}>
           <span class="mafw-usage-cost">{fmtCost(props.data.totalCost)}</span>
         </Show>
+        <span class="mafw-usage-stat-meta">
+          {props.data.turnCount} 回合{props.showSessions && props.data.sessionCount ? ` · ${props.data.sessionCount} 会话` : ''}
+        </span>
+        <span class={`mafw-usage-stat-chevron ${props.expanded ? 'mafw-usage-stat-chevron-open' : ''}`}>▸</span>
       </div>
+      <Show when={props.expanded}>
+        <div class="mafw-usage-stat-detail">
+          <TokenGrid data={props.data} />
+        </div>
+      </Show>
     </div>
   )
 }
 
 function ProviderSection(props: { provider: any }) {
   const p = () => props.provider
+  const barColor = (severity: string) => {
+    if (severity === 'critical') return 'var(--danger)'
+    if (severity === 'high') return '#d19a66'
+    if (severity === 'mid') return 'var(--warning)'
+    return 'var(--accent)'
+  }
   return (
     <div class={`mafw-usage-provider ${severityClass(p().severity)}`}>
       <div class="mafw-usage-provider-header">
@@ -143,30 +220,34 @@ function ProviderSection(props: { provider: any }) {
               </Show>
             </div>
           }>
-            <div class="mafw-usage-window">
-              <span class="mafw-usage-window-label">{w.window}</span>
-              <span class="mafw-usage-window-bar">{asciiBar(w.pct)}</span>
-              <span class="mafw-usage-window-pct">{w.pct}%</span>
-              <Show when={w.unit === 'pct'} fallback={
-                <span class="mafw-usage-window-detail">
-                  {w.unit === '$' ? `$${w.used}/${w.limit}` : `${w.used}/${w.limit}`}
-                </span>
-              }>
-                <span class="mafw-usage-window-detail">已用 {w.pct}%</span>
-              </Show>
-              <Show when={w.remaining !== undefined}>
-                <span class="mafw-usage-window-remaining">剩${w.remaining}</span>
-              </Show>
-              <Show when={w.resetAt}>
-                <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>
-              </Show>
-              <Show when={w.pacing}>
-                <span class="mafw-usage-window-pacing">{pacingIcon(w.pacing)}</span>
-              </Show>
-              <Show when={w.projected !== undefined && w.projected > w.pct}>
-                <span class="mafw-usage-window-projected">→{w.projected}%</span>
-              </Show>
-            </div>
+            {(() => {
+              const tooltip = () => {
+                const parts = [
+                  w.unit === '$' ? `已用 $${w.used} / $${w.limit}` : w.unit === 'pct' ? `已用 ${w.pct}%` : `已用 ${w.used} / ${w.limit}`,
+                ]
+                if (w.remaining !== undefined) parts.push(`剩余 $${w.remaining}`)
+                if (w.resetAt) parts.push(`重置 ${fmtTime(w.resetAt - Date.now())}`)
+                if (w.projected !== undefined && w.projected > w.pct) parts.push(`预计 ${w.projected}%`)
+                return parts.join(' · ')
+              }
+              return (
+                <TooltipV2 value={tooltip()} openDelay={300}>
+                  <div class="mafw-usage-window">
+                    <span class="mafw-usage-window-label">{w.window}</span>
+                    <div class="mafw-usage-window-progress">
+                      <div class="mafw-usage-window-progress-fill" style={{ width: `${Math.min(w.pct, 100)}%`, background: barColor(p().severity) }} />
+                    </div>
+                    <span class="mafw-usage-window-pct">{w.pct}%</span>
+                    <Show when={w.resetAt}>
+                      <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>
+                    </Show>
+                    <Show when={w.pacing}>
+                      <span class="mafw-usage-window-pacing">{pacingIcon(w.pacing)}</span>
+                    </Show>
+                  </div>
+                </TooltipV2>
+              )
+            })()}
           </Show>
         )}
       </For>
@@ -484,6 +565,9 @@ export function UsageDock(props: {
   }
 
   const [showConfig, setShowConfig] = createSignal(false)
+  const [expandedStat, setExpandedStat] = createSignal<'session' | 'project' | 'memory' | null>(null)
+  const toggleStat = (key: 'session' | 'project' | 'memory') =>
+    setExpandedStat(prev => (prev === key ? null : key))
 
   return (
     <div class="mafw-usage-dock">
@@ -539,49 +623,86 @@ export function UsageDock(props: {
           </div>
         </Show>
 
+        <Show when={
+          apiData()?.summary?.session?.turnCount ||
+          apiData()?.summary?.project?.turnCount ||
+          apiData()?.memory?.turnCount
+        }>
+          <div class="mafw-usage-section">
+            <div class="mafw-usage-section-title">Token 统计</div>
+            <Show when={apiData()?.summary?.session?.turnCount}>
+              <TokenStatRow
+                label="当前会话"
+                color={tokenColors.input}
+                data={apiData()!.summary!.session!}
+                expanded={expandedStat() === 'session'}
+                onToggle={() => toggleStat('session')}
+              />
+            </Show>
+            <Show when={apiData()?.summary?.project?.turnCount}>
+              <TokenStatRow
+                label="当前项目"
+                color={tokenColors.output}
+                data={apiData()!.summary!.project!}
+                showSessions
+                expanded={expandedStat() === 'project'}
+                onToggle={() => toggleStat('project')}
+              />
+            </Show>
+            <Show when={apiData()?.memory?.turnCount}>
+              <TokenStatRow
+                label="记忆系统"
+                color={tokenColors.reasoning}
+                data={apiData()!.memory!}
+                showSessions
+                expanded={expandedStat() === 'memory'}
+                onToggle={() => toggleStat('memory')}
+              />
+              <Show when={expandedStat() === 'memory' && apiData()!.memory!.byRole && Object.keys(apiData()!.memory!.byRole).length > 0}>
+                <div class="mafw-usage-memory-roles">
+                  <For each={Object.entries(apiData()!.memory!.byRole)}>
+                    {([role, data]: [string, any]) => {
+                      const memTotal = () => {
+                        const t = apiData()!.memory!.totalTokens
+                        return t.input + t.output + t.reasoning + t.cache.read + t.cache.write
+                      }
+                      const roleTotal = () => {
+                        const t = data.totalTokens
+                        return t.input + t.output + t.reasoning + t.cache.read + t.cache.write
+                      }
+                      const share = () => memTotal() > 0 ? (roleTotal() / memTotal()) * 100 : 0
+                      const color = () => roleColors[role] || 'var(--text-4)'
+                      return (
+                        <div class="mafw-usage-memory-role">
+                          <div class="mafw-usage-memory-role-info">
+                            <span class="mafw-usage-memory-role-name">{roleLabel(role)}</span>
+                            <div class="mafw-usage-memory-role-nums">
+                              <span class="mafw-usage-memory-role-tokens">{fmtRoleTokens(data.totalTokens)}</span>
+                              <Show when={data.totalCost > 0}>
+                                <span class="mafw-usage-memory-role-cost">{fmtCost(data.totalCost)}</span>
+                              </Show>
+                              <span class="mafw-usage-memory-role-turns">{data.turnCount} 回合</span>
+                            </div>
+                          </div>
+                          <div class="mafw-usage-memory-role-bar">
+                            <div class="mafw-usage-memory-role-fill" style={{ width: `${share()}%`, background: color() }} />
+                          </div>
+                        </div>
+                      )
+                    }}
+                  </For>
+                </div>
+              </Show>
+            </Show>
+          </div>
+        </Show>
+
         <Show when={apiData()?.providers && apiData()!.providers.length > 0}>
           <div class="mafw-usage-section">
             <div class="mafw-usage-section-title">配额窗口</div>
             <For each={apiData()!.providers}>
               {(provider: any) => <ProviderSection provider={provider} />}
             </For>
-          </div>
-        </Show>
-
-        <Show when={apiData()?.summary?.session?.turnCount}>
-          <div class="mafw-usage-section">
-            <div class="mafw-usage-section-title">当前会话</div>
-            <TokenGrid data={apiData()!.summary!.session!} />
-          </div>
-        </Show>
-
-        <Show when={apiData()?.summary?.project?.turnCount}>
-          <div class="mafw-usage-section">
-            <div class="mafw-usage-section-title">当前项目</div>
-            <TokenGrid data={apiData()!.summary!.project!} showSessions />
-          </div>
-        </Show>
-
-        <Show when={apiData()?.memory?.turnCount}>
-          <div class="mafw-usage-section">
-            <div class="mafw-usage-section-title">记忆系统</div>
-            <TokenGrid data={apiData()!.memory!} showSessions />
-            <Show when={apiData()!.memory!.byRole && Object.keys(apiData()!.memory!.byRole).length > 0}>
-              <div class="mafw-usage-memory-roles">
-                <For each={Object.entries(apiData()!.memory!.byRole)}>
-                  {([role, data]: [string, any]) => (
-                    <div class="mafw-usage-memory-role">
-                      <span class="mafw-usage-memory-role-name">{roleLabel(role)}</span>
-                      <span class="mafw-usage-memory-role-tokens">{fmtRoleTokens(data.totalTokens)}</span>
-                      <Show when={data.totalCost > 0}>
-                        <span class="mafw-usage-memory-role-cost">{fmtCost(data.totalCost)}</span>
-                      </Show>
-                      <span class="mafw-usage-memory-role-turns">{data.turnCount} 回合</span>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
           </div>
         </Show>
       </Show>

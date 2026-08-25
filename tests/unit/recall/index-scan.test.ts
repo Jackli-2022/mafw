@@ -21,7 +21,6 @@ describe('formatEntryForIndex', () => {
     expect(line).toContain('semantic');
     expect(line).toContain('serve sidecar health polling');
     expect(line).toContain('serve, sidecar, watchdog');
-    expect(line).toContain('E:0.8');
   });
 
   test('handles missing fields gracefully', () => {
@@ -31,22 +30,22 @@ describe('formatEntryForIndex', () => {
     expect(line).toContain('unknown');
   });
 
-  test('truncates long summaries', () => {
+  test('preserves full abstraction for model relevance', () => {
+    const long = 'a'.repeat(400);
     const entry = {
       id: 'mem_123',
-      primary_abstraction: 'a'.repeat(200),
+      primary_abstraction: long,
       cue_anchors: [],
       energy: 0.5,
       created_at: '2026-01-01T00:00:00Z',
     };
     const line = formatEntryForIndex(entry);
-    // Summary should be truncated to 80 chars
-    expect(line.length).toBeLessThan(200);
+    expect(line).toContain(long);
   });
 });
 
 describe('formatIndexForScan', () => {
-  test('formats index entries sorted by date descending', () => {
+  test('formats index entries sorted by date ascending (append-only)', () => {
     const index: any = {
       getIndex: () => ({
         entries: [
@@ -56,11 +55,11 @@ describe('formatIndexForScan', () => {
       }),
     };
     const text = formatIndexForScan(index);
-    expect(text).toContain('# Memory Index (2 entries)');
-    // New entry should appear before old entry
-    const newIdx = text.indexOf('new entry');
+    expect(text).toContain('# Memory Index');
+    // Old entry should appear before new entry (append-only order)
     const oldIdx = text.indexOf('old entry');
-    expect(newIdx).toBeLessThan(oldIdx);
+    const newIdx = text.indexOf('new entry');
+    expect(oldIdx).toBeLessThan(newIdx);
   });
 
   test('excludes superseded entries', () => {
@@ -73,8 +72,34 @@ describe('formatIndexForScan', () => {
       }),
     };
     const text = formatIndexForScan(index);
-    expect(text).toContain('# Memory Index (1 entries)');
+    expect(text).toContain('# Memory Index');
     expect(text).not.toContain('superseded');
+  });
+
+  test('append-only: adding entries preserves the existing text as a prefix', () => {
+    const base = [
+      { id: 'e1', type: 'semantic', primary_abstraction: 'first', cue_anchors: [], created_at: '2026-01-01T00:00:00Z' },
+      { id: 'e2', type: 'semantic', primary_abstraction: 'second', cue_anchors: [], created_at: '2026-02-01T00:00:00Z' },
+    ];
+    const before = formatIndexForScan({ getIndex: () => ({ entries: base }) } as any);
+    const after = formatIndexForScan({
+      getIndex: () => ({
+        entries: [...base, { id: 'e3', type: 'semantic', primary_abstraction: 'third', cue_anchors: [], created_at: '2026-03-01T00:00:00Z' }],
+      }),
+    } as any);
+    // The whole point of the cache-first design: after new writes, the
+    // refreshed text shares the entire previous text as a prefix, so the
+    // provider prompt cache keeps hitting after hourly refreshes.
+    expect(after.startsWith(before)).toBe(true);
+  });
+
+  test('no volatile fields: same entries with different energy produce identical text', () => {
+    const mk = (energy: number) => ({
+      getIndex: () => ({
+        entries: [{ id: 'e1', type: 'semantic', primary_abstraction: 'x', cue_anchors: [], energy, created_at: '2026-01-01T00:00:00Z' }],
+      }),
+    });
+    expect(formatIndexForScan(mk(0.9) as any)).toBe(formatIndexForScan(mk(0.3) as any));
   });
 });
 

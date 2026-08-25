@@ -11,6 +11,17 @@
 //   3. mimo returns JSON with relevant IDs + confidence.
 //   4. Results are unioned with BM25 results, deduped, superseded filtered.
 //
+// Cache-first design (the dominant cost lever is prompt-cache hit rate):
+//   - Static header with NO entry count (a count changes on every write and
+//     invalidates the provider cache from byte 0).
+//   - Entries sorted oldest-first (append-only): refresh after new writes
+//     only appends a tail, so the entire existing prefix stays byte-identical
+//     and keeps hitting the provider prompt cache.
+//   - No volatile fields in lines: energy decays daily and would invalidate
+//     every line on each decay pass, so it is omitted (scan rules rank by
+//     semantics; energy-based ranking stays with BM25).
+//   - The query is always the final suffix — dynamic content last.
+//
 // The index text is ~10-15k tokens for 300+ entries — well within mimo's
 // 1M context window and prompt cache sweet spot.
 
@@ -55,7 +66,9 @@ Rules:
 
 /**
  * Format a single harmonic index entry into a compact index line.
- * Three fields: absolute date, type, anchors — all critical for scan quality.
+ * Only immutable fields are included (date, type, summary, anchors) —
+ * volatile fields like energy would invalidate the provider prompt cache
+ * on every decay pass.
  */
 export function formatEntryForIndex(entry: any): string {
   const id = (entry.id || '?').slice(0, 12);
@@ -64,8 +77,7 @@ export function formatEntryForIndex(entry: any): string {
   // Don't truncate abstraction — let the model see full content for better relevance judgment
   const summary = (entry.primary_abstraction || '').replace(/\n/g, ' ');
   const anchors = (entry.cue_anchors || []).slice(0, 5).join(', ');
-  const energy = typeof entry.energy === 'number' ? entry.energy.toFixed(1) : '?';
-  return `- [id:${id}] (${date}) ${type} | ${summary} | anchors: ${anchors} | E:${energy}`;
+  return `- [id:${id}] (${date}) ${type} | ${summary} | anchors: ${anchors}`;
 }
 
 function formatDateOnly(iso?: string): string {
@@ -84,7 +96,11 @@ function formatDateOnly(iso?: string): string {
 
 /**
  * Format the full harmonic index into a compact text block for mimo scanning.
- * Excludes superseded entries. Sorted by created_at descending (newest first).
+ * Excludes superseded entries. Sorted by created_at ASCENDING (oldest first)
+ * so the text is append-only: after new writes the refreshed text keeps the
+ * entire previous prefix byte-identical, preserving provider prompt-cache
+ * hits across hourly refreshes. Header is static (no entry count) for the
+ * same reason.
  */
 export function formatIndexForScan(index: HarmonicIndexManager): string {
   const entries = index.getIndex().entries
@@ -92,11 +108,11 @@ export function formatIndexForScan(index: HarmonicIndexManager): string {
     .sort((a: any, b: any) => {
       const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
       const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return tb - ta; // newest first
+      return ta - tb; // oldest first — append-only order
     });
 
   const lines = entries.map(formatEntryForIndex);
-  return `# Memory Index (${entries.length} entries)\n\n${lines.join('\n')}`;
+  return `# Memory Index\n\n${lines.join('\n')}`;
 }
 
 /**

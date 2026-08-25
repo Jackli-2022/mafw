@@ -20,7 +20,7 @@ describe('ReflectionPipeline (reflection → distilled memory)', () => {
     cursor = new ReflectCursor(new GatewayDatabase(':memory:'));
     fakeClient = {
       session: {
-        create: jest.fn().mockImplementation(async () => ({ data: { id: 'reflect-1' } })),
+        create: jest.fn().mockImplementation(async () => ({ id: 'reflect-1' })),
         prompt: jest.fn(),
         delete: jest.fn().mockResolvedValue(undefined),
       },
@@ -56,7 +56,7 @@ describe('ReflectionPipeline (reflection → distilled memory)', () => {
     });
 
   const mockInsights = (text: string) => {
-    fakeClient.session.prompt.mockResolvedValue({ data: { parts: [{ type: 'text', text }] } });
+    fakeClient.session.prompt.mockResolvedValue({ parts: [{ type: 'text', text }] });
   };
 
   test('distills insights from unreflected episodic memories per session', async () => {

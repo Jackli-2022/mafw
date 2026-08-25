@@ -19,8 +19,8 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
     index = new HarmonicIndexManager(tmpDir);
     fakeClient = {
       session: {
-        create: jest.fn().mockImplementation(async () => ({ data: { id: `worker-${Math.random().toString(36).slice(2, 8)}` } })),
-        prompt: jest.fn().mockResolvedValue({ data: { parts: [{ type: 'text', text: 'done' }] } }),
+        create: jest.fn().mockImplementation(async () => ({ id: `worker-${Math.random().toString(36).slice(2, 8)}` })),
+        prompt: jest.fn().mockResolvedValue({ parts: [{ type: 'text', text: 'done' }] }),
         delete: jest.fn().mockResolvedValue(undefined),
       },
     };
@@ -61,12 +61,12 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
     expect(res.turns).toBe(2);
     expect(res.archived).toBe(2);
     expect(fakeClient.session.prompt).toHaveBeenCalledTimes(1); // ONE compression for the session
-    const promptArg = fakeClient.session.prompt.mock.calls[0][0].body.parts[0].text;
+    const promptArg = fakeClient.session.prompt.mock.calls[0][0].parts[0].text;
     expect(promptArg).toContain('[USER] user msg 1');
     expect(promptArg).toContain('[USER] user msg 2');
     expect(promptArg).toContain('[TOOL] tests pass');
     // tool-instruction system prompt
-    expect(fakeClient.session.prompt.mock.calls[0][0].body.system).toContain('mafw_add_memory');
+    expect(fakeClient.session.prompt.mock.calls[0][0].system).toContain('mafw_add_memory');
     // t1 emptied, archive populated
     expect(t1db.count()).toBe(0);
     expect(t1db.archiveCount()).toBeGreaterThan(0);
@@ -87,7 +87,7 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
 
   test('archives turns even when the agent writes nothing (empty result)', async () => {
     seedSession('s1', [[['assistant_reply', 'nothing worth saving']]]);
-    fakeClient.session.prompt.mockResolvedValue({ data: { parts: [{ type: 'text', text: 'no memories worth saving\n[NOOP: trivial content, no durable facts]' }] } });
+    fakeClient.session.prompt.mockResolvedValue({ parts: [{ type: 'text', text: 'no memories worth saving\n[NOOP: trivial content, no durable facts]' }] });
 
     const pipeline = new TurnPipeline({ t1db, index, workerFor: () => mkWorker(), staleMs: 30_000 });
     const res = await pipeline.runOnce();
@@ -135,7 +135,7 @@ describe('TurnPipeline (hourly batch compression → agent writes memories)', ()
     seedSession('s1', [[['assistant_reply', 'x']]]);
     const pipeline = new TurnPipeline({ t1db, index, workerFor: () => mkWorker(), staleMs: 30_000 });
     await pipeline.runOnce();
-    const promptArg = fakeClient.session.prompt.mock.calls[0][0].body.parts[0].text;
+    const promptArg = fakeClient.session.prompt.mock.calls[0][0].parts[0].text;
     expect(promptArg).toContain('previous hour: auth setup');
   });
 });
