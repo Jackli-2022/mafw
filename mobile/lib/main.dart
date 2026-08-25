@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'src/cache/session_cache.dart';
 import 'src/config/connection_config.dart';
@@ -35,6 +37,13 @@ Future<void> main() async {
   } catch (e) {
     // Placeholder FCM config: FCM unavailable, WS/local cache still works.
     debugPrint('[MAFW] Firebase init failed (offlineable): $e');
+  }
+  // Hive must be initialized once before any box opens (SessionCache uses hive_ce).
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    Hive.init(dir.path);
+  } catch (e) {
+    debugPrint('[MAFW] Hive init failed (offlineable): $e');
   }
 
   runApp(MafwMobileApp(initialConfig: cfg));
