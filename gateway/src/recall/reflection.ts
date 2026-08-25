@@ -174,7 +174,17 @@ export class ReflectionPipeline {
     if (episodes.length === 0) return result;
     result.reviewed = episodes.length;
 
-    const prompt = episodes.map((e, i) => `${i + 1}. ${e.text}`).join('\n');
+    const promptLines: string[] = [];
+    for (let i = 0; i < episodes.length; i++) {
+      const ep = episodes[i];
+      let text = ep.text;
+      try {
+        const unit = await this.store.read(ep.id);
+        if (unit?.memory_value) text = unit.memory_value.slice(0, 2000);
+      } catch { /* fall back to summary line */ }
+      promptLines.push(`${i + 1}. ${text}`);
+    }
+    const prompt = promptLines.join('\n');
     const worker = this.opts.workerFor(sessionID);
     let insights: Insight[] = [];
     try {
