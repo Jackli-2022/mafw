@@ -40,6 +40,7 @@ export class TrajectoryCollector {
   private seqCounters = new Map<string, number>();
   private seenUserMessageIDs = new Set<string>();
   private opencodeClient: any;
+  private _roleFor?: (sessionID: string) => string | null;
 
   constructor(
     private store: TrajectoryStore,
@@ -49,6 +50,10 @@ export class TrajectoryCollector {
 
   setOpencodeClient(client: any): void {
     this.opencodeClient = client;
+  }
+
+  setRoleFor(fn: (sessionID: string) => string | null): void {
+    this._roleFor = fn;
   }
 
   private seq(sessionID: string): number {
@@ -255,6 +260,7 @@ export class TrajectoryCollector {
     log.info(`[Trajectory] onIdle: sessionID=${sessionID}, hasState=${!!s}`);
     if (!s) return null;
     s.finish = s.finish || 'idle';
+    const workerRole = this._roleFor?.(sessionID) ?? undefined;
     const turn: TrajectoryTurn = {
       projectID: s.projectID,
       sessionID,
@@ -274,6 +280,7 @@ export class TrajectoryCollector {
       agent: s.agent,
       userText: s.userText,
       assistantText: s.assistantText,
+      workerRole,
     };
     this.store.upsertTurn(turn);
     this.emit(sessionID, s, 'turn_end', {}, s.projectID);
@@ -299,6 +306,7 @@ export class TrajectoryCollector {
       if (textPart && !s.userText) {
         s.userText = truncate(textPart.text, USER_TEXT_MAX) || '';
         log.info(`[Trajectory] fetched userText via API: sessionID=${sessionID}, len=${textPart.text.length}`);
+        const workerRole = this._roleFor?.(sessionID) ?? undefined;
         this.store.upsertTurn({
           projectID: s.projectID,
           sessionID,
@@ -317,6 +325,7 @@ export class TrajectoryCollector {
           provider: s.provider,
           agent: s.agent,
           userText: s.userText,
+          workerRole,
         });
       }
     } catch (err: any) {

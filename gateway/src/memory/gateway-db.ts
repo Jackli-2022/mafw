@@ -165,6 +165,13 @@ export class GatewayDatabase {
     } catch {
       // Column already exists, ignore
     }
+
+    // Migration: add worker_role column to trajectory_turns if not exists
+    try {
+      this.db.exec(`ALTER TABLE trajectory_turns ADD COLUMN worker_role TEXT`);
+    } catch {
+      // Column already exists, ignore
+    }
   }
 
   // ── T1 observations ─────────────────────────────────────────────────────

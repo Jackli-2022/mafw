@@ -47,6 +47,7 @@ function rowToTurn(row: any): TrajectoryTurn {
     agent: row.agent,
     userText: row.user_text,
     assistantText: row.assistant_text ?? undefined,
+    workerRole: row.worker_role ?? undefined,
   };
 }
 
@@ -96,8 +97,8 @@ export class TrajectoryStore {
         `INSERT INTO trajectory_turns
          (project_id, session_id, turn_id, turn_start_ms, turn_end_ms, duration_ms,
           tool_count, tool_error_count, reasoning_count, agent_switch_count,
-          tokens, cost, finish, model, provider, agent, user_text, assistant_text)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          tokens, cost, finish, model, provider, agent, user_text, assistant_text, worker_role)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(session_id, turn_id) DO UPDATE SET
            turn_end_ms = excluded.turn_end_ms,
            duration_ms = excluded.duration_ms,
@@ -112,7 +113,8 @@ export class TrajectoryStore {
            provider = excluded.provider,
            agent = excluded.agent,
            user_text = excluded.user_text,
-           assistant_text = excluded.assistant_text`,
+           assistant_text = excluded.assistant_text,
+           worker_role = COALESCE(excluded.worker_role, trajectory_turns.worker_role)`,
       )
       .run(
         turn.projectID,
@@ -133,6 +135,7 @@ export class TrajectoryStore {
         turn.agent,
         turn.userText,
         turn.assistantText ?? null,
+        turn.workerRole ?? null,
       );
   }
 
@@ -289,6 +292,65 @@ export class TrajectoryStore {
     }
 
     return { totalTokens: total, totalCost, turnCount: rows.length, sessionCount: sessions.size };
+  }
+
+  getMemoryTokenSummary(): {
+    totalTokens: TokenCounts;
+    totalCost: number;
+    turnCount: number;
+    sessionCount: number;
+    byRole: Record<string, { totalTokens: TokenCounts; totalCost: number; turnCount: number; sessionCount: number }>;
+  } {
+    const rows = this.rawDb
+      .prepare('SELECT tokens, cost, session_id, worker_role FROM trajectory_turns WHERE worker_role IS NOT NULL')
+      .all() as any[];
+
+    const total: TokenCounts = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
+    let totalCost = 0;
+    const sessions = new Set<string>();
+    const byRole: Record<string, { tokens: TokenCounts; cost: number; turns: number; sessions: Set<string> }> = {};
+
+    for (const row of rows) {
+      const t = row.tokens ? JSON.parse(row.tokens) : EMPTY_TOKENS;
+      total.input += t.input || 0;
+      total.output += t.output || 0;
+      total.reasoning += t.reasoning || 0;
+      total.cache.read += t.cache?.read || 0;
+      total.cache.write += t.cache?.write || 0;
+      totalCost += row.cost || 0;
+      sessions.add(row.session_id);
+
+      const role = row.worker_role || 'unknown';
+      if (!byRole[role]) {
+        byRole[role] = {
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          cost: 0,
+          turns: 0,
+          sessions: new Set(),
+        };
+      }
+      const r = byRole[role];
+      r.tokens.input += t.input || 0;
+      r.tokens.output += t.output || 0;
+      r.tokens.reasoning += t.reasoning || 0;
+      r.tokens.cache.read += t.cache?.read || 0;
+      r.tokens.cache.write += t.cache?.write || 0;
+      r.cost += row.cost || 0;
+      r.turns++;
+      r.sessions.add(row.session_id);
+    }
+
+    const byRoleResult: Record<string, { totalTokens: TokenCounts; totalCost: number; turnCount: number; sessionCount: number }> = {};
+    for (const [role, data] of Object.entries(byRole)) {
+      byRoleResult[role] = {
+        totalTokens: data.tokens,
+        totalCost: data.cost,
+        turnCount: data.turns,
+        sessionCount: data.sessions.size,
+      };
+    }
+
+    return { totalTokens: total, totalCost, turnCount: rows.length, sessionCount: sessions.size, byRole: byRoleResult };
   }
 
   getProviderCostInWindow(provider: string, cutoffMs: number): number {

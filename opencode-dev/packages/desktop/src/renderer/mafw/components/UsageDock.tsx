@@ -17,6 +17,19 @@ const fmtCost = (c: number): string => {
   return `$${c.toFixed(4)}`
 }
 
+const roleLabels: Record<string, string> = {
+  'turn-compress': '回合压缩',
+  'index-scan': '索引扫描',
+  'manager': '管理器',
+  'reflect': '反思',
+}
+const roleLabel = (role: string): string => roleLabels[role] || role
+
+const fmtRoleTokens = (t: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }): string => {
+  const total = t.input + t.output + t.reasoning + t.cache.read + t.cache.write
+  return fmt(total)
+}
+
 const asciiBar = (pct: number, width = 20): string => {
   const filled = Math.round((Math.min(pct, 100) / 100) * width)
   return '\u2588'.repeat(filled) + '\u2591'.repeat(width - filled)
@@ -410,6 +423,7 @@ export function UsageDock(props: {
 }) {
   const [apiData, setApiData] = createSignal<{
     summary: { session: TokenSummary | null; project: TokenSummary | null; global: TokenSummary | null }
+    memory: { totalTokens: TokenSummary['totalTokens']; totalCost: number; turnCount: number; sessionCount: number; byRole: Record<string, { totalTokens: TokenSummary['totalTokens']; totalCost: number; turnCount: number; sessionCount: number }> } | null
     providers: any[]
     updatedAt: number
   } | null>(null)
@@ -465,6 +479,7 @@ export function UsageDock(props: {
     const d = apiData()
     if (!d) return false
     if (d.providers && d.providers.length > 0) return true
+    if (d.memory?.turnCount) return true
     return d.summary?.session?.turnCount || d.summary?.project?.turnCount || d.summary?.global?.turnCount
   }
 
@@ -547,10 +562,26 @@ export function UsageDock(props: {
           </div>
         </Show>
 
-        <Show when={apiData()?.summary?.global?.turnCount}>
+        <Show when={apiData()?.memory?.turnCount}>
           <div class="mafw-usage-section">
-            <div class="mafw-usage-section-title">系统总计</div>
-            <TokenGrid data={apiData()!.summary!.global!} showSessions />
+            <div class="mafw-usage-section-title">记忆系统</div>
+            <TokenGrid data={apiData()!.memory!} showSessions />
+            <Show when={apiData()!.memory!.byRole && Object.keys(apiData()!.memory!.byRole).length > 0}>
+              <div class="mafw-usage-memory-roles">
+                <For each={Object.entries(apiData()!.memory!.byRole)}>
+                  {([role, data]: [string, any]) => (
+                    <div class="mafw-usage-memory-role">
+                      <span class="mafw-usage-memory-role-name">{roleLabel(role)}</span>
+                      <span class="mafw-usage-memory-role-tokens">{fmtRoleTokens(data.totalTokens)}</span>
+                      <Show when={data.totalCost > 0}>
+                        <span class="mafw-usage-memory-role-cost">{fmtCost(data.totalCost)}</span>
+                      </Show>
+                      <span class="mafw-usage-memory-role-turns">{data.turnCount} 回合</span>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
           </div>
         </Show>
       </Show>

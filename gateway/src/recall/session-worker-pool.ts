@@ -23,8 +23,9 @@ export interface SessionWorkerPoolOptions {
   /** Summarize (compact) a worker session after this many ms of idle time. */
   compactIdleMs?: number;
   /** Called whenever an internal worker session is created (used to exclude
-   *  internal sessions from observation capture — recursion guard). */
-  onSessionCreated?: (sessionId: string) => void;
+   *  internal sessions from observation capture — recursion guard). The role
+   *  parameter is the worker kind ('extract' | 'reflect'). */
+  onSessionCreated?: (sessionId: string, role: string) => void;
 }
 
 export class SessionWorkerPool {
@@ -67,13 +68,17 @@ export class SessionWorkerPool {
           directory: this.opts.directory,
           label: `${label}:extract`,
           compactIdleMs: this.opts.compactIdleMs,
-          onSessionCreated: this.opts.onSessionCreated,
+          onSessionCreated: this.opts.onSessionCreated
+            ? (sid) => this.opts.onSessionCreated!(sid, 'extract')
+            : undefined,
         }),
         reflect: new MemoryWorker(this.opts.client, {
           directory: this.opts.directory,
           label: `${label}:reflect`,
           compactIdleMs: this.opts.compactIdleMs,
-          onSessionCreated: this.opts.onSessionCreated,
+          onSessionCreated: this.opts.onSessionCreated
+            ? (sid) => this.opts.onSessionCreated!(sid, 'reflect')
+            : undefined,
         }),
         label,
       };

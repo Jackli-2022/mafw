@@ -210,8 +210,9 @@ class MafwScheduler {
   private workerPool: SessionWorkerPool | null = null;
   private scanService: IndexScanService | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
-  // captured back into T1 (recursion guard A).
-  private internalSessionIds = new Set<string>();
+  // captured back into T1 (recursion guard A). Maps sessionID → worker role
+  // (manager, turn-compress, index-scan, reflect) for token usage tracking.
+  private internalSessionRoles = new Map<string, string>();
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
@@ -894,6 +895,11 @@ class MafwScheduler {
 
   // ── Memory pipelines (turn compress / reflection) ───────────────────────
 
+  private registerInternalSession(sessionId: string, role: string): void {
+    this.internalSessionRoles.set(sessionId, role);
+    this.getGatewayDb().kvSet('internal-session', sessionId, { role, at: new Date().toISOString() });
+  }
+
   private getPool(): SessionWorkerPool {
     if (!this.workerPool) {
       if (!this.opencodeClient) throw new Error('opencodeClient not available');
@@ -904,8 +910,8 @@ class MafwScheduler {
         compactIdleMs: config.recall.workerCompactIdleMs,
         // Recursion guard (A): internal worker sessions are registered so
         // /api/obs/capture never records their output as observations.
-        onSessionCreated: (sessionId) => {
-          this.internalSessionIds.add(sessionId);
+        onSessionCreated: (sessionId, role) => {
+          this.registerInternalSession(sessionId, role);
         },
       });
     }
@@ -924,7 +930,7 @@ class MafwScheduler {
           promptTimeoutMs: 15_000,
           compactIdleMs: config.recall.workerCompactIdleMs,
           onSessionCreated: (sessionId) => {
-            this.internalSessionIds.add(sessionId);
+            this.registerInternalSession(sessionId, 'index-scan');
           },
         }),
         config.recall.workerModel,
@@ -1328,7 +1334,18 @@ class MafwScheduler {
       const { TrajectoryCollector } = require('./trajectory/collector');
       const trajStore = new TrajectoryStore(this.getGatewayDb(), projectDir);
       this.trajectoryStore = trajStore;
-      this.trajectoryCollector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir);
+      const collector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir);
+      collector.setRoleFor((sid: string) => this.internalSessionRoles.get(sid) ?? null);
+      this.trajectoryCollector = collector;
+      const restored = this.getGatewayDb().kvAll<{ role: string }>('internal-session');
+      for (const { key: sid, value } of restored) {
+        if (value?.role && !this.internalSessionRoles.has(sid)) {
+          this.internalSessionRoles.set(sid, value.role);
+        }
+      }
+      if (restored.length > 0) {
+        log.info(`[Scheduler] Restored ${restored.length} internal session role(s) from kv_store`);
+      }
       const { backfillProviderColumn } = require('./trajectory/backfill-provider');
       backfillProviderColumn(this.getGatewayDb());
       const { PluginLoader } = require('./usage/plugin-loader');
@@ -3546,9 +3563,10 @@ class MafwScheduler {
               if (projectID) summary.project = store.getProjectTokenSummary(projectID);
               summary.global = store.getGlobalTokenSummary();
             }
+            const memory = store ? store.getMemoryTokenSummary() : null;
             const providerData = this.usagePoller ? await this.usagePoller.poll() : { providers: [], updatedAt: Date.now() };
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ summary, ...providerData }));
+            res.end(JSON.stringify({ summary, memory, ...providerData }));
           } catch (err: any) {
             log.warn(`[Usage] failed: ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3571,8 +3589,9 @@ class MafwScheduler {
               if (projectID) result.project = store.getProjectTokenSummary(projectID);
               result.global = store.getGlobalTokenSummary();
             }
+            const memory = store ? store.getMemoryTokenSummary() : null;
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(result));
+            res.end(JSON.stringify({ ...result, memory }));
           } catch (err: any) {
             log.warn(`[UsageSummary] failed: ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3679,7 +3698,7 @@ class MafwScheduler {
               }
               // Recursion guard (A): internal pipeline sessions must never feed
               // their own output back into T1 as observations.
-              if (this.internalSessionIds.has(sessionID)) {
+              if (this.internalSessionRoles.has(sessionID)) {
                 res.writeHead(200);
                 res.end(JSON.stringify({ ok: true, id: null, deduped: true, turnId: 0, internal: true }));
                 return;
@@ -4629,7 +4648,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       await this.sdkSession.registerExternal(existing.sessionId, projectDir, {
         mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
       }).catch(() => {});
-      this.internalSessionIds.add(existing.sessionId);
+      this.registerInternalSession(existing.sessionId, 'manager');
       log.info(`[Scheduler] Manager session already exists: ${existing.sessionId}`);
       return existing.sessionId;
     }
@@ -4644,7 +4663,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const createdAt = new Date().toISOString();
 
     this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt });
-    this.internalSessionIds.add(sessionId);
+    this.registerInternalSession(sessionId, 'manager');
 
     try {
       await this.sdkSession.registerExternal(sessionId, projectDir, {
