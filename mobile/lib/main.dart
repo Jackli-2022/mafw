@@ -49,6 +49,9 @@ class MafwMobileApp extends StatefulWidget {
 }
 
 class _MafwMobileAppState extends State<MafwMobileApp> {
+  // Navigator must be reached via key — the State's own context sits ABOVE
+  // MaterialApp's Navigator, so Navigator.of(context) throws here.
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   ConnectionConfig? _config;
   GatewayClient? _client;
   WsClient? _ws;
@@ -223,8 +226,8 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
     // Track current session for FCM foreground dedup (spec §6.2: onMessage
     // skips notification when viewing the same session).
     _pushService?.currentSessionID = s.id;
-    Navigator.of(context)
-        .push(MaterialPageRoute(
+    _navigatorKey.currentState
+        ?.push(MaterialPageRoute(
           builder: (_) => ChatPage(
             session: s,
             client: c,
@@ -251,13 +254,13 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
       } catch (_) {}
     }
     if (cfg == null || !mounted) return;
-    Navigator.of(context).push(MaterialPageRoute(
+    _navigatorKey.currentState?.push(MaterialPageRoute(
       builder: (_) => ConnectionSettingsPage(initial: cfg!, onSaved: _applyConfig),
     ));
   }
 
   Future<void> _openScan() async {
-    final result = await Navigator.of(context).push<ConnectionConfig>(
+    final result = await _navigatorKey.currentState?.push<ConnectionConfig>(
       MaterialPageRoute(builder: (_) => const PairingPage()),
     );
     if (result != null && mounted) {
@@ -266,9 +269,10 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   }
 
   void _snack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
+    // ScaffoldMessenger also lives under MaterialApp — use root messenger via key.
+    final messenger = _navigatorKey.currentState?.context.findAncestorStateOfType<ScaffoldMessengerState>();
+    messenger
+      ?..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 
@@ -276,6 +280,7 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
   Widget build(BuildContext context) {
     final connected = _client != null && _wsConnected;
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'MAFW Mobile',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
