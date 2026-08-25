@@ -508,7 +508,7 @@ class PushService {
     if (ws == null) return;
 
     _wsEventSub = ws.events.listen((event) {
-      final propsType = event.properties?['type'] ?? '';
+      final propsType = event.innerType;
       if (event.type == 'opencode_event' &&
           (propsType == 'session.created' ||
               propsType == 'message.updated' ||

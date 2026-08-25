@@ -131,6 +131,19 @@ class MafwEvent {
 
   MafwEvent({required this.type, this.data = const {}, this.properties, this.sessionID});
 
+  /// 内层事件类型：网关帧为 `{type:'opencode_event', data:{type:'message.part.delta', properties, sessionID}}`，
+  /// 真正的 subtype（message.part.delta / message.complete / session.idle 等）在 data.type 里。
+  String get innerType {
+    final inner = data['data'];
+    if (inner is Map<String, dynamic>) {
+      final t = inner['type'];
+      if (t is String && t.isNotEmpty) return t;
+    }
+    final direct = data['type'];
+    if (direct is String && direct != 'opencode_event') return direct;
+    return '';
+  }
+
   factory MafwEvent.fromJson(Map<String, dynamic> j) {
     final data = j['data'];
     Map<String, dynamic>? inner;

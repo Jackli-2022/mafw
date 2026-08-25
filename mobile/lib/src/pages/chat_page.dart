@@ -14,6 +14,8 @@ import '../network/gateway_client.dart';
 import '../network/ws_client.dart';
 import '../theme.dart';
 
+enum _GenPhase { idle, searching, writing }
+
 /// Chat view for one session: message list (live via WS events) + composer.
 class ChatPage extends StatefulWidget {
   final MafwSession session;
@@ -44,6 +46,10 @@ class _ChatPageState extends State<ChatPage> {
   bool _loading = true;
   bool _sending = false;
   bool _sticky = true;
+
+  /// Perplexity 式流式阶段：idle → searching → writing →（done 隐藏）。
+  /// searching = 已发送待处理；writing = 收到 part 增量（生成中）。
+  _GenPhase _phase = _GenPhase.idle;
   StreamSubscription<MafwEvent>? _sub;
   Timer? _refreshDebounce;
 
@@ -52,13 +58,23 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     _loadHistory();
     _sub = widget.ws.events.listen(_onEvent);
-    _scrollCtrl.addListener(() {
-      if (_scrollCtrl.hasClients) {
-        final atBottom = _scrollCtrl.position.pixels >=
-            _scrollCtrl.position.maxScrollExtent - 60;
-        if (atBottom != _sticky) setState(() => _sticky = atBottom);
-      }
-    });
+    _scrollCtrl.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final pos = _scrollCtrl.position;
+    final atBottom = pos.pixels >= pos.maxScrollExtent - 60;
+    if (atBottom != _sticky) setState(() => _sticky = atBottom);
+    // 智能吸附：靠近底部（<120px）时吸到精确底部，消除空白回弹
+    if (_sticky && pos.pixels < pos.maxScrollExtent - 120 &&
+        pos.maxScrollExtent - pos.pixels < 120) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollCtrl.hasClients && _sticky) {
+          _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
+        }
+      });
+    }
   }
 
   @override
@@ -143,12 +159,32 @@ class _ChatPageState extends State<ChatPage> {
   void _onEvent(MafwEvent ev) {
     // Refresh this session's messages when its activity events arrive.
     final isSessionEvent = ev.sessionID == null || ev.sessionID == widget.session.id;
+    final propsType = ev.innerType;
     final interesting = ev.type == 'opencode_event' &&
-        (ev.properties?['type'] == 'message.updated' ||
-            ev.properties?['type'] == 'message.part.updated' ||
-            ev.properties?['type'] == 'message.complete' ||
-            ev.properties?['type'] == 'message.error' ||
-            ev.properties?['type'] == 'session.idle');
+        (propsType == 'message.updated' ||
+            propsType == 'message.part.updated' ||
+            propsType == 'message.part.delta' ||
+            propsType == 'message.complete' ||
+            propsType == 'message.error' ||
+            propsType == 'session.idle');
+
+    // Perplexity 式阶段驱动：part 增量 → writing；complete/idle → 完成
+    if (isSessionEvent && _sending) {
+      debugPrint('[MAFW] phase ev: $propsType session=${ev.sessionID} sending=$_sending phase=$_phase');
+      if ((propsType == 'message.part.updated' ||
+              propsType == 'message.part.delta') &&
+          _phase != _GenPhase.writing) {
+        setState(() => _phase = _GenPhase.writing);
+      } else if ((propsType == 'message.complete' ||
+          propsType == 'message.error' ||
+          propsType == 'session.idle')) {
+        setState(() {
+          _phase = _GenPhase.idle;
+          _sending = false;
+        });
+      }
+    }
+
     if (isSessionEvent && (interesting || ev.type == 'send_ack')) {
       _refreshDebounce?.cancel();
       _refreshDebounce = Timer(const Duration(milliseconds: 250), _loadHistory);
@@ -158,7 +194,10 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _send() async {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty || _sending) return;
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _phase = _GenPhase.searching;
+    });
     _inputCtrl.clear();
     // Optimistic append of the user message.
     setState(() {
@@ -174,20 +213,34 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final sid = await widget.client.sendEnriched(text, sessionID: widget.session.id);
       if (!mounted) return;
+      debugPrint('[MAFW] sendEnriched sid=$sid (page session=${widget.session.id})');
       if (sid.isNotEmpty && sid != widget.session.id) {
+        // 回复被重定向到新会话（Manager 派发）—— 阶段条立即复位，
+        // 否则新会话事件被 sessionID 过滤，_sending 永远卡住。
+        setState(() {
+          _sending = false;
+          _phase = _GenPhase.idle;
+        });
         _snack('已在新会话回复: $sid');
       }
     } catch (e) {
       if (!mounted) return;
       _snack('发送失败: $e');
+      // 发送失败才复位；成功则保持 searching，等 WS 事件驱动 writing/done
+      setState(() {
+        _sending = false;
+        _phase = _GenPhase.idle;
+      });
     }
-    setState(() => _sending = false);
   }
 
   /// 停止当前生成（UI 层：复位发送态并刷新历史；服务端中止为后续迭代）。
   void _stop() {
     if (!mounted) return;
-    setState(() => _sending = false);
+    setState(() {
+      _sending = false;
+      _phase = _GenPhase.idle;
+    });
     _refreshDebounce?.cancel();
     _loadHistory();
   }
@@ -294,12 +347,12 @@ class _ChatPageState extends State<ChatPage> {
 
   void _jumpToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients && _sticky) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOut,
-        );
+      if (!_scrollCtrl.hasClients || !_sticky) return;
+      final pos = _scrollCtrl.position;
+      final atMax = (pos.maxScrollExtent - pos.pixels).abs() < 120;
+      if (atMax || _sticky) {
+        // 流式跟随用 jumpTo（无动画防卡顿）；用户主动跳底用 animateTo
+        _scrollCtrl.jumpTo(pos.maxScrollExtent);
       }
     });
   }
@@ -324,7 +377,7 @@ class _ChatPageState extends State<ChatPage> {
           ],
         ),
       ),
-      body: Column(
+body: Column(
         children: [
           Expanded(
             child: _loading
@@ -341,6 +394,7 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       ),
           ),
+          if (_phase != _GenPhase.idle) _GenPhaseIndicator(phase: _phase),
           _composer(),
         ],
       ),
@@ -465,6 +519,52 @@ class _MessageBubble extends StatelessWidget {
           fontSize: 15,
           height: 1.55,
         ),
+      ),
+    );
+  }
+}
+
+/// Perplexity 式阶段指示条（searching→writing 逐级点亮）。
+class _GenPhaseIndicator extends StatelessWidget {
+  final _GenPhase phase;
+  const _GenPhaseIndicator({required this.phase});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final writing = phase == _GenPhase.writing;
+    final label = writing ? '正在生成…' : '正在处理…';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: writing
+            ? kMafwPrimary.withValues(alpha: 0.12)
+            : kMafwGoalActive.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: writing ? kMafwPrimary : kMafwGoalActive,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: writing ? kMafwPrimary : kMafwGoalActive,
+            ),
+          ),
+        ],
       ),
     );
   }
