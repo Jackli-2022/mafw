@@ -209,14 +209,19 @@ function ProviderSection(props: { provider: any }) {
           <Show when={w.limit > 0} fallback={
             <div class="mafw-usage-window mafw-usage-window-no-limit">
               <span class="mafw-usage-window-label">{w.window}</span>
-              <Show when={w.remaining !== undefined} fallback={
-                <>
-                  <span class="mafw-usage-window-spent">${w.used}</span>
-                  <span class="mafw-usage-window-hint">spent</span>
-                </>
+              <Show when={w.tokens !== undefined && w.tokens > 0} fallback={
+                <Show when={w.remaining !== undefined} fallback={
+                  <>
+                    <span class="mafw-usage-window-spent">${w.used}</span>
+                    <span class="mafw-usage-window-hint">spent</span>
+                  </>
+                }>
+                  <span class="mafw-usage-window-spent">${w.remaining}</span>
+                  <span class="mafw-usage-window-hint">余额</span>
+                </Show>
               }>
-                <span class="mafw-usage-window-spent">${w.remaining}</span>
-                <span class="mafw-usage-window-hint">余额</span>
+                <span class="mafw-usage-window-spent">{fmt(w.tokens)}</span>
+                <span class="mafw-usage-window-hint">tokens · 预计 ${w.projectedCost !== undefined ? w.projectedCost.toFixed(2) : w.used.toFixed(2)}</span>
               </Show>
             </div>
           }>

@@ -13,6 +13,12 @@ const fmtTime = (ms: number): string => {
   return hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`
 }
 
+const fmtTokens = (n: number): string => {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
+  if (n >= 1000) return `${Math.round(n / 1000)}k`
+  return String(n)
+}
+
 const severityColor = (severity: string): string => {
   if (severity === "critical") return "var(--danger)"
   if (severity === "high") return "#d19a66"
@@ -64,7 +70,14 @@ export function UsagePill(props: Props) {
       lines.push(`${p.name}${p.plan ? ` (${p.plan})` : ""}`)
       for (const w of p.windows) {
         const reset = w.resetAt ? ` · ${fmtTime(w.resetAt - Date.now())}` : ""
-        const detail = w.unit === 'pct' ? `${w.pct}%` : `$${w.used}/${w.limit}`
+        let detail: string
+        if (w.limit > 0) {
+          detail = w.unit === 'pct' ? `${w.pct}%` : `$${w.used}/${w.limit}`
+        } else if (w.tokens !== undefined && w.tokens > 0) {
+          detail = `${fmtTokens(w.tokens)} tokens · $${(w.projectedCost ?? w.used).toFixed(2)}`
+        } else {
+          detail = `$${w.used}`
+        }
         lines.push(`  ${w.window}: ${w.pct}% · ${detail}${reset}`)
       }
     }

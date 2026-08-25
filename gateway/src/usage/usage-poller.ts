@@ -65,7 +65,9 @@ export class UsagePoller {
       for (const name of dbProviders) {
         if (seen.has(name)) continue;
         const totalCost = this.store.getProviderTotalCost(name);
-        if (totalCost <= 0) continue;
+        const totalTokens = this.store.getProviderTotalTokens(name);
+        const tokenTotal = totalTokens.input + totalTokens.output + totalTokens.reasoning + totalTokens.cache.read + totalTokens.cache.write;
+        if (totalCost <= 0 && tokenTotal <= 0) continue;
         const budget = this.budgets[name];
         const used = Math.round(totalCost * 100) / 100;
         if (budget && budget > 0) {
@@ -79,6 +81,7 @@ export class UsagePoller {
               limit: budget,
               unit: '$',
               pct,
+              tokens: tokenTotal,
             }],
             severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',
           });
@@ -91,6 +94,8 @@ export class UsagePoller {
               limit: 0,
               unit: '$',
               pct: 0,
+              tokens: tokenTotal,
+              projectedCost: used,
             }],
             severity: 'low',
           });
@@ -132,7 +137,14 @@ export class UsagePoller {
               severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',
             });
           } else {
-            providerMap.set(result.value.name, result.value);
+            const tokens = this.store.getProviderTotalTokens(name);
+            const tokenTotal = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write;
+            const windows = result.value.windows.map(w =>
+              w.limit === 0
+                ? { ...w, tokens: tokenTotal, projectedCost: w.used }
+                : w,
+            );
+            providerMap.set(result.value.name, { ...result.value, windows });
           }
         }
       }

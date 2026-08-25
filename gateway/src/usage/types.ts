@@ -12,6 +12,8 @@ export interface UsageWindow {
   pacing?: Pacing;
   projected?: number;
   remaining?: number;
+  tokens?: number;
+  projectedCost?: number;
 }
 
 export interface UsageProvider {

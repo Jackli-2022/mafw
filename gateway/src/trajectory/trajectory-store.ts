@@ -367,6 +367,33 @@ export class TrajectoryStore {
     return row?.total || 0;
   }
 
+  getProviderTokensInWindow(provider: string, cutoffMs: number): TokenCounts {
+    const rows = this.rawDb
+      .prepare('SELECT tokens FROM trajectory_turns WHERE provider = ? AND turn_start_ms >= ?')
+      .all(provider, cutoffMs) as any[];
+    return this.aggregateTokens(rows);
+  }
+
+  getProviderTotalTokens(provider: string): TokenCounts {
+    const rows = this.rawDb
+      .prepare('SELECT tokens FROM trajectory_turns WHERE provider = ?')
+      .all(provider) as any[];
+    return this.aggregateTokens(rows);
+  }
+
+  private aggregateTokens(rows: any[]): TokenCounts {
+    const total: TokenCounts = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
+    for (const row of rows) {
+      const t = row.tokens ? JSON.parse(row.tokens) : EMPTY_TOKENS;
+      total.input += t.input || 0;
+      total.output += t.output || 0;
+      total.reasoning += t.reasoning || 0;
+      total.cache.read += t.cache?.read || 0;
+      total.cache.write += t.cache?.write || 0;
+    }
+    return total;
+  }
+
   getProviderEarliestTurnInWindow(provider: string, cutoffMs: number): number | null {
     const row = this.rawDb
       .prepare('SELECT MIN(turn_start_ms) as earliest FROM trajectory_turns WHERE provider = ? AND turn_start_ms >= ?')
