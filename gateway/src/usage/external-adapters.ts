@@ -305,7 +305,9 @@ export class KimiCodingPlanAdapter implements ExternalAdapter {
       const root = payload?.data ?? payload;
 
       const windows: UsageWindow[] = [];
+      const durationToWindow: Record<number, WindowType> = { 300: '5h', 10080: '7d', 43200: 'month' };
       const limits: any[] = root?.limits ?? [];
+      let hasMonthly = false;
       for (const item of limits) {
         const detail = item?.detail ?? item;
         const win = item?.window ?? {};
@@ -314,14 +316,33 @@ export class KimiCodingPlanAdapter implements ExternalAdapter {
         const usedVal = num(detail.used) ?? (num(detail.remaining) !== undefined && num(detail.limit) !== undefined ? num(detail.limit)! - num(detail.remaining)! : 0);
         const pct = Math.round((usedVal / limitVal) * 100);
         const resetMs = parseResetMs(detail);
+        const durationMin = num(win.duration);
+        const windowType = (durationMin !== undefined ? durationToWindow[durationMin] : undefined) ?? '5h';
+        if (windowType === 'month') hasMonthly = true;
         windows.push({
-          window: '5h',
+          window: windowType,
           used: Math.round(usedVal * 100) / 100,
           limit: limitVal,
           unit: 'pct',
           pct,
           resetAt: resetMs,
         });
+      }
+
+      if (!hasMonthly) {
+        const usageLimit = num(root?.usage?.limit);
+        const usageUsed = num(root?.usage?.used);
+        if (usageLimit !== undefined && usageLimit > 0) {
+          const pct = Math.round(((usageUsed ?? 0) / usageLimit) * 100);
+          windows.push({
+            window: 'month',
+            used: Math.round((usageUsed ?? 0) * 100) / 100,
+            limit: usageLimit,
+            unit: 'pct',
+            pct,
+            resetAt: parseResetMs(root?.usage),
+          });
+        }
       }
 
       if (windows.length === 0) return null;
@@ -416,6 +437,19 @@ export class CommandCodeAdapter implements ExternalAdapter {
           unit: '$',
           pct,
           resetAt: Number.isFinite(resetMs as number) ? (resetMs as number) : undefined,
+        });
+      }
+
+      // Monthly: API exposes remaining monthly credits (no hard cap window),
+      // surface it as an unlimited-style balance row (pct 0 → plain display).
+      const monthlyCredits = num(body?.credits?.monthlyCredits);
+      if (monthlyCredits !== undefined) {
+        windows.push({
+          window: 'month',
+          used: monthlyCredits,
+          limit: 0,
+          unit: '$',
+          pct: 0,
         });
       }
 
