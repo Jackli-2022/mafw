@@ -288,15 +288,29 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
     })
   }
 
-  const addCookie = () => {
-    const name = prompt("Cookie 名称 (如 commandcode):")
-    if (!name || !name.trim()) return
-    setConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev))
-      next.cookies = next.cookies || {}
-      if (next.cookies[name.trim()] === undefined) next.cookies[name.trim()] = ""
-      return next
-    })
+  const [addKind, setAddKind] = createSignal<'cookie' | 'budget' | null>(null)
+  const [addName, setAddName] = createSignal('')
+
+  const commitAdd = () => {
+    const name = addName().trim()
+    if (!name) return
+    if (addKind() === 'cookie') {
+      setConfig(prev => {
+        const next = JSON.parse(JSON.stringify(prev))
+        next.cookies = next.cookies || {}
+        if (next.cookies[name] === undefined) next.cookies[name] = ""
+        return next
+      })
+    } else if (addKind() === 'budget') {
+      setConfig(prev => {
+        const next = JSON.parse(JSON.stringify(prev))
+        next.budgets = next.budgets || {}
+        if (next.budgets[name] === undefined) next.budgets[name] = 0
+        return next
+      })
+    }
+    setAddKind(null)
+    setAddName('')
   }
 
   const [pluginState, setPluginState] = createSignal<any[]>([])
@@ -342,17 +356,6 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
       next.budgets = next.budgets || {}
       if (v === "") delete next.budgets[provider]
       else next.budgets[provider] = parseFloat(v) || 0
-      return next
-    })
-  }
-
-  const addBudget = () => {
-    const name = prompt("Provider 名称 (如 xiaomi):")
-    if (!name || !name.trim()) return
-    setConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev))
-      next.budgets = next.budgets || {}
-      if (next.budgets[name.trim()] === undefined) next.budgets[name.trim()] = 0
       return next
     })
   }
@@ -423,7 +426,24 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
             )}
           </For>
           <div class="mafw-usage-config-row">
-            <ButtonV2 variant="ghost" size="small" onClick={addBudget}>+ 添加 provider 预算</ButtonV2>
+            <Show when={addKind() !== 'budget'} fallback={
+              <>
+                <TextInputV2
+                  value={addName()}
+                  onInput={e => setAddName(e.currentTarget.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitAdd()
+                    if (e.key === 'Escape') { setAddKind(null); setAddName('') }
+                  }}
+                  style={{ width: 160 }}
+                  placeholder="provider 名称"
+                />
+                <ButtonV2 variant="contrast" size="small" onClick={commitAdd}>确定</ButtonV2>
+                <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind(null); setAddName('') }}>取消</ButtonV2>
+              </>
+            }>
+              <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind('budget'); setAddName('') }}>+ 添加 provider 预算</ButtonV2>
+            </Show>
           </div>
 
           <div class="mafw-usage-config-title">平台 Cookie (用量查询)</div>
@@ -452,7 +472,24 @@ function UsageConfigEditor(props: { onSaved: () => void }) {
             )}
           </For>
           <div class="mafw-usage-config-row">
-            <ButtonV2 variant="ghost" size="small" onClick={addCookie}>+ 添加平台 cookie</ButtonV2>
+            <Show when={addKind() !== 'cookie'} fallback={
+              <>
+                <TextInputV2
+                  value={addName()}
+                  onInput={e => setAddName(e.currentTarget.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitAdd()
+                    if (e.key === 'Escape') { setAddKind(null); setAddName('') }
+                  }}
+                  style={{ width: 160 }}
+                  placeholder="cookie 名称"
+                />
+                <ButtonV2 variant="contrast" size="small" onClick={commitAdd}>确定</ButtonV2>
+                <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind(null); setAddName('') }}>取消</ButtonV2>
+              </>
+            }>
+              <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind('cookie'); setAddName('') }}>+ 添加平台 cookie</ButtonV2>
+            </Show>
           </div>
 
           <div class="mafw-usage-config-title">平台插件</div>

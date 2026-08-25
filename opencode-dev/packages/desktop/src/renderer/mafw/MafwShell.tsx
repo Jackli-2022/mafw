@@ -6,6 +6,7 @@ import { createStore } from "solid-js/store"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { ToastV2, showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
@@ -74,6 +75,8 @@ export function MafwShell() {
   const [sessions, setSessions] = createSignal<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null)
   const [sessionRefreshKey, setSessionRefreshKey] = createSignal(0)
+  const [renamingId, setRenamingId] = createSignal<string | null>(null)
+  const [renameDraft, setRenameDraft] = createSignal("")
 
   // Subagent navigation: childID → parentID. Entering a subagent session only
   // switches the content pane (no tab change); this map powers the back button.
@@ -271,6 +274,8 @@ export function MafwShell() {
 
   const [splitViews, setSplitViews] = createSignal<SplitViewRec[]>(loadSplitViews())
   const [activeViewId, setActiveViewId] = createSignal<string | null>(null)
+  const [renamingView, setRenamingView] = createSignal<string | null>(null)
+  const [renameDraft, setRenameDraft] = createSignal('')
 
   // Current split view record (when the active view is a split), else null.
   const activeSplitView = createMemo<SplitViewRec | null>(() => {
@@ -1792,10 +1797,28 @@ export function MafwShell() {
                         title="双击重命名"
                         onDblClick={e => {
                           e.stopPropagation()
-                          const next = prompt("重命名分屏", v.title)
-                          if (next?.trim()) renameSplitView(v.id, next.trim())
+                          setRenamingView(v.id)
+                          setRenameDraft(v.title)
                         }}
-                      >{v.title}</span>
+                      >
+                        <Show when={renamingView() !== v.id} fallback={
+                          <TextInputV2
+                            value={renameDraft()}
+                            onInput={e => setRenameDraft(e.currentTarget.value)}
+                            onKeyDown={e => {
+                              e.stopPropagation()
+                              if (e.key === 'Enter') {
+                                const next = renameDraft().trim()
+                                if (next) renameSplitView(v.id, next)
+                                setRenamingView(null)
+                              }
+                              if (e.key === 'Escape') setRenamingView(null)
+                            }}
+                            onBlur={() => setRenamingView(null)}
+                            style={{ width: 120, height: 22, fontSize: 12 }}
+                          />
+                        }>{v.title}</Show>
+                      </span>
                       <TooltipV2 value="在此分屏中继续分屏" openDelay={300}>
                         <ButtonV2 variant="ghost" size="small" class="mafw-session-split" onClick={e => {
                           e.stopPropagation()
