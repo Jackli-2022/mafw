@@ -596,14 +596,14 @@ export function UsageDock(props: {
       }>
         <Show when={contextInfo() && contextInfo()!.lastInput > 0}>
           <div class="mafw-usage-section">
-            <div class="mafw-usage-section-title">上下文窗口</div>
-            <Show when={contextInfo()!.contextWindow > 0} fallback={
-              <div class="mafw-usage-ctx-fallback">
-                <span class="mafw-usage-ctx-value">{fmt(contextInfo()!.lastInput || 0)}</span>
-                <span class="mafw-usage-ctx-label">当前上下文 tokens</span>
-              </div>
-            }>
-              <div class="mafw-usage-ctx-bar-wrap">
+            <TooltipV2
+              value={contextInfo()!.contextWindow > 0
+                ? `${fmt(contextInfo()!.lastInput || 0)} / ${fmt(contextInfo()!.contextWindow)} tokens`
+                : `${fmt(contextInfo()!.lastInput || 0)} tokens（窗口大小未知）`}
+              openDelay={300}
+            >
+              <div class="mafw-usage-ctx-row">
+                <span class="mafw-usage-section-title">上下文</span>
                 <div class="mafw-usage-ctx-bar">
                   <div
                     class="mafw-usage-ctx-fill"
@@ -614,12 +614,11 @@ export function UsageDock(props: {
                     style={{ width: `${Math.min(contextInfo()!.pct, 100)}%` }}
                   />
                 </div>
-                <div class="mafw-usage-ctx-labels">
-                  <span class="mafw-usage-ctx-pct">{contextInfo()!.pct}%</span>
-                  <span class="mafw-usage-ctx-detail">{fmt(contextInfo()!.lastInput || 0)} / {fmt(contextInfo()!.contextWindow)}</span>
-                </div>
+                <span class="mafw-usage-ctx-pct-inline">
+                  {contextInfo()!.contextWindow > 0 ? `${contextInfo()!.pct}%` : fmt(contextInfo()!.lastInput || 0)}
+                </span>
               </div>
-            </Show>
+            </TooltipV2>
           </div>
         </Show>
 

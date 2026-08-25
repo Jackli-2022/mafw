@@ -2592,26 +2592,28 @@ html[data-theme="light"] .mafw-picker-pop {
   color: var(--text-4);
 }
 
-.mafw-usage-ctx-fallback {
+.mafw-usage-ctx-row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
 }
-.mafw-usage-ctx-value {
-  font-size: 20px;
-  font-weight: 700;
+.mafw-usage-ctx-row .mafw-usage-section-title {
+  flex-shrink: 0;
+}
+.mafw-usage-ctx-row .mafw-usage-ctx-bar {
+  flex: 1;
+  min-width: 40px;
+}
+.mafw-usage-ctx-pct-inline {
+  font-size: 12px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-1);
-}
-.mafw-usage-ctx-label {
-  font-size: 11px;
-  color: var(--text-4);
-}
-
-.mafw-usage-ctx-bar-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  min-width: 30px;
+  text-align: right;
+  flex-shrink: 0;
 }
 .mafw-usage-ctx-bar {
   height: 8px;
@@ -2632,22 +2634,6 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-usage-ctx-fill.mafw-usage-ctx-danger {
   background: linear-gradient(90deg, var(--danger-text), #f87171);
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
-}
-.mafw-usage-ctx-labels {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.mafw-usage-ctx-pct {
-  font-size: 18px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-1);
-}
-.mafw-usage-ctx-detail {
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-4);
 }
 
 .mafw-usage-stack-bar {
