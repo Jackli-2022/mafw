@@ -1,6 +1,9 @@
 # Runtime 债务清偿（Runtime Debt Remediation）Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: COMPLETED** — 全部 7 个 Task 已完成，commit `5ca7d7df`（2026-08-26）。
+> 5 项 `TODO(runtime-debt)` 清零，6 个新能力接入契约，35 个测试通过。`AGENTS.md` §5.19 已同步。
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 清偿 runtime 契约接缝（commit `6968b3bf`）留下的 5 项 `TODO(runtime-debt)` 债务，使 pi-coding-agent 作为第二个 runtime 接入时无已知阻塞点。
 
@@ -54,7 +57,7 @@ Task 6 (Debt 5b, agents.install)     ── 依赖 Task 2，最后做
 - Consumes: `RuntimeClient`（`gateway/src/runtime/contract.ts`，已存在）
 - Produces: `injectWakePrompt(client: RuntimeClient, projectDir: string, sessionId: string, reason: string, countCompleted: number, countFailed: number)` —— client 提为第一个参数
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/gateway/wake-handlers-di.test.ts
@@ -62,15 +65,15 @@ Task 6 (Debt 5b, agents.install)     ── 依赖 Task 2，最后做
 // 断言模块不再动态 import opencode-adapter（用 jest.mock 拦截 import 并断言未触发）
 ```
 
-- [ ] **Step 2: 改签名 + 删动态 import**
+- [x] **Step 2: 改签名 + 删动态 import**
   - `injectWakePrompt` 第一个参数改为 `client: RuntimeClient`
   - 删除函数体内的 `await import('../../opencode-adapter.js')` 与 `createOpencodeAdapter(...)`
   - 删除 `TODO(runtime-debt)` 注释
-- [ ] **Step 3: 修全部调用点**
+- [x] **Step 3: 修全部调用点**
   - `grep -rn "injectWakePrompt" gateway/src` 找调用方
   - 调用方传 `this.runtime ?? this.opencodeClient`（Scheduler 已有这两个字段）
-- [ ] **Step 4: Verify** — `npm run build` + 新测试通过 + 既有 manager 相关测试通过
-- [ ] **Step 5: Commit（挂起，需用户确认）** — `refactor(runtime): inject shared runtime into wake-handlers (debt 2)`
+- [x] **Step 4: Verify** — `npm run build` + 新测试通过 + 既有 manager 相关测试通过
+- [x] **Step 5: Commit（挂起，需用户确认）** — `refactor(runtime): inject shared runtime into wake-handlers (debt 2)`
 
 ---
 
@@ -85,7 +88,7 @@ Task 6 (Debt 5b, agents.install)     ── 依赖 Task 2，最后做
 - Consumes: 全部 `this.opencodeClient.*` 调用点
 - Produces: 扩展后的 `RuntimeClient`（只增不改，opencode 形状 DTO 原则不变）
 
-- [ ] **Step 1: 审计调用点**
+- [x] **Step 1: 审计调用点**
 
 ```powershell
 rg -n "this\.opencodeClient\." gateway/src | rg -o "opencodeClient\.\w+(\.\w+)?" | sort | uniq -c | sort -rn
@@ -93,15 +96,15 @@ rg -n "this\.opencodeClient\." gateway/src | rg -o "opencodeClient\.\w+(\.\w+)?"
 
   按方法归组统计，产出调用面清单（预期 80%+ 已被现有接口覆盖）。
 
-- [ ] **Step 2: 扩展 RuntimeClient**
+- [x] **Step 2: 扩展 RuntimeClient**
   - 审计清单中不在接口内的方法/字段，补入 `contract.ts`（可选或必选按实际使用）
   - SDK 特有、无法归一化的个别字段：调用点局部 `as any` 收口并加行内注释 `// sdk-specific, not in contract`
-- [ ] **Step 3: 翻类型**
+- [x] **Step 3: 翻类型**
   - `private opencodeClient: AgentRuntime | null = null;`
   - 删除 `TODO(runtime-debt)` 注释
   - `tsc` 列出的剩余错误逐个修（预期 <10 处，多为 null 检查）
-- [ ] **Step 4: Verify** — `npm run build` 零错误 + 全部既有测试通过
-- [ ] **Step 5: Commit（挂起，需用户确认）** — `refactor(runtime): type opencodeClient as AgentRuntime (debt 1)`
+- [x] **Step 4: Verify** — `npm run build` 零错误 + 全部既有测试通过
+- [x] **Step 5: Commit（挂起，需用户确认）** — `refactor(runtime): type opencodeClient as AgentRuntime (debt 1)`
 
 ---
 
@@ -120,7 +123,7 @@ rg -n "this\.opencodeClient\." gateway/src | rg -o "opencodeClient\.\w+(\.\w+)?"
   - `external=true` → 不 spawn、不 `killProcessOnPort`、watchdog 仅健康探测 + 事件流重连（**不重启外部进程**）
   - `external=false/undefined` → 现有 spawn + watchdog + recoverServe 全路径
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/gateway/runtime-external-mode.test.ts
@@ -128,13 +131,13 @@ rg -n "this\.opencodeClient\." gateway/src | rg -o "opencodeClient\.\w+(\.\w+)?"
 // 断言：connect 不调用 spawn；watchdog 失败时不调用 recoverServe 的 kill+spawn，仅重连事件流
 ```
 
-- [ ] **Step 2: 契约加 `getBaseUrl()`**（必选方法，opencode 返回 `process.env.MAFW_SERVER_SERVE_URL ?? config.serveUrl`）
-- [ ] **Step 3: index.ts 分支改造**
+- [x] **Step 2: 契约加 `getBaseUrl()`**（必选方法，opencode 返回 `process.env.MAFW_SERVER_SERVE_URL ?? config.serveUrl`）
+- [x] **Step 3: index.ts 分支改造**
   - 现状 `MAFW_SERVER_SERVE_URL` 直读点改为读 `this.runtime.external`
   - 外部进程失败语义对齐：watchdog 连续失败 → 日志 + 事件流重连尝试，**不杀不 spawn**
   - 删除 `contract.ts` 中 `external` 字段上的 `TODO(runtime-debt)` 注释
-- [ ] **Step 4: Verify** — build + 新测试 + 既有 serve-sidecar 测试通过
-- [ ] **Step 5: Commit（挂起，需用户确认）** — `feat(runtime): wire external flag into serve lifecycle (debt 3)`
+- [x] **Step 4: Verify** — build + 新测试 + 既有 serve-sidecar 测试通过
+- [x] **Step 5: Commit（挂起，需用户确认）** — `feat(runtime): wire external flag into serve lifecycle (debt 3)`
 
 ---
 
@@ -151,18 +154,18 @@ rg -n "this\.opencodeClient\." gateway/src | rg -o "opencodeClient\.\w+(\.\w+)?"
 - Consumes: `readOpencodeAuth()` 现有逻辑
 - Produces: `RuntimeClient.credentials.getApiKey(provider)` —— 与 plugin ctx 的 `apiKey(name)` 语义对齐
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // opencode runtime 的 credentials.getApiKey('xiaomi') 从 mock auth.json 读到 key；
 // runtime 无 credentials 时 media 回退路径仍工作
 ```
 
-- [ ] **Step 2: 契约 + opencode 实现**（auth-util 读取逻辑移入 opencode-runtime，auth-util 保留为回退实现）
-- [ ] **Step 3: media 消费点改造**——key 获取顺序：`runtime.credentials?.getApiKey(p)` → `readOpencodeAuth()` 回退
-- [ ] **Step 4: 删除 auth-util.ts 的 `TODO(runtime-debt)` 注释**（回退路径保留，注释更新为说明回退语义）
-- [ ] **Step 5: Verify** — build + 新测试 + 既有 media 测试（`pi-adapter.test.ts` / `media-service.test.ts`）通过
-- [ ] **Step 6: Commit（挂起，需用户确认）** — `feat(runtime): add credentials interface, absorb auth.json into opencode runtime (debt 5a)`
+- [x] **Step 2: 契约 + opencode 实现**（auth-util 读取逻辑移入 opencode-runtime，auth-util 保留为回退实现）
+- [x] **Step 3: media 消费点改造**——key 获取顺序：`runtime.credentials?.getApiKey(p)` → `readOpencodeAuth()` 回退
+- [x] **Step 4: 删除 auth-util.ts 的 `TODO(runtime-debt)` 注释**（回退路径保留，注释更新为说明回退语义）
+- [x] **Step 5: Verify** — build + 新测试 + 既有 media 测试（`pi-adapter.test.ts` / `media-service.test.ts`）通过
+- [x] **Step 6: Commit（挂起，需用户确认）** — `feat(runtime): add credentials interface, absorb auth.json into opencode runtime (debt 5a)`
 
 ---
 
@@ -179,18 +182,18 @@ rg -n "this\.opencodeClient\." gateway/src | rg -o "opencodeClient\.\w+(\.\w+)?"
 - Consumes: `opencode-db.ts` 的 `listSessionsFromDb(directory, limit)`
 - Produces: `SessionInfo`（契约已有，确认 shape 覆盖 `toSessionShape` 输出）
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // mock runtime 无 sessionStorageApi → sessions 资源回退 session.list + 目录过滤；
 // mock runtime 有 listByDirectory → 直接调用，不碰 opencode-db
 ```
 
-- [ ] **Step 2: 契约扩展**（能力字段 + 可选方法，jSDoc 注明"为什么 opencode 用 SQLite 实现"的知识随实现迁移）
-- [ ] **Step 3: SQLite 实现迁入 opencode-runtime**（`opencode-db.ts` 的函数成为 opencode runtime 的私有模块或内联实现；删除文件头 `TODO(runtime-debt)`）
-- [ ] **Step 4: sessions 资源回退路径** + 能力门接线
-- [ ] **Step 5: Verify** — build + 新测试 + 既有 sessions 资源测试通过 + 桌面 sessions 列表行为不变
-- [ ] **Step 6: Commit（挂起，需用户确认）** — `feat(runtime): absorb opencode.db reads behind sessionStorageApi capability (debt 4)`
+- [x] **Step 2: 契约扩展**（能力字段 + 可选方法，jSDoc 注明"为什么 opencode 用 SQLite 实现"的知识随实现迁移）
+- [x] **Step 3: SQLite 实现迁入 opencode-runtime**（`opencode-db.ts` 的函数成为 opencode runtime 的私有模块或内联实现；删除文件头 `TODO(runtime-debt)`）
+- [x] **Step 4: sessions 资源回退路径** + 能力门接线
+- [x] **Step 5: Verify** — build + 新测试 + 既有 sessions 资源测试通过 + 桌面 sessions 列表行为不变
+- [x] **Step 6: Commit（挂起，需用户确认）** — `feat(runtime): absorb opencode.db reads behind sessionStorageApi capability (debt 4)`
 
 ---
 
@@ -231,7 +234,7 @@ type PermissionRule = 'allow' | 'deny' | 'ask';
 - 翻译职责在**各 runtime 实现侧**：opencode 翻译为 frontmatter permission YAML（`edit`/`bash`/`task`/工具名 key 的映射表收在 opencode-runtime 内）；未来 pi runtime 翻译为 pi 的权限模型（或映射不到的动作记 warn 降级）。
 - 消费侧语义：`capabilities.agentConfigApi === false` → 跳过安装 + 一条 warn 日志（"manager agent 权限护栏不可用"），gateway 照常运行（manager 功能降级但不崩）。
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // opencode agents.install 产出与现有 manager.md 模板字节级一致的 frontmatter（回归）；
@@ -239,25 +242,25 @@ type PermissionRule = 'allow' | 'deny' | 'ask';
 // agentConfigApi=false 的 mock runtime → 跳过 + warn，不抛错
 ```
 
-- [ ] **Step 2: `AgentDefinition` 中立模型 + `manager-agent-config.ts` 改造**
+- [x] **Step 2: `AgentDefinition` 中立模型 + `manager-agent-config.ts` 改造**
   - 现有模板拆为：中立 `AgentDefinition` 数据（identity/permissions）+ opencode 专属序列化器
   - 序列化器（frontmatter 生成）移入 opencode-runtime
-- [ ] **Step 3: 契约扩展**（`agentConfigApi` 能力 + `agents.install` 可选方法）
-- [ ] **Step 4: opencode 实现 + 启动序列能力门接线**
+- [x] **Step 3: 契约扩展**（`agentConfigApi` 能力 + `agents.install` 可选方法）
+- [x] **Step 4: opencode 实现 + 启动序列能力门接线**
   - 删除 `manager-agent-config.ts` 的 `TODO(runtime-debt)` 注释
   - 字节级回归：生成的 manager.md 与现状 diff 为空
-- [ ] **Step 5: Verify** — build + 新测试 + 既有 manager 相关测试通过 + 启动一次 gateway 确认 manager.md 照常生成
-- [ ] **Step 6: Commit（挂起，需用户确认）** — `feat(runtime): abstract agent installation behind agents.install (debt 5b, route B)`
+- [x] **Step 5: Verify** — build + 新测试 + 既有 manager 相关测试通过 + 启动一次 gateway 确认 manager.md 照常生成
+- [x] **Step 6: Commit（挂起，需用户确认）** — `feat(runtime): abstract agent installation behind agents.install (debt 5b, route B)`
 
 ---
 
 ### 收尾 Task 7: 债务清零验证 + 文档更新
 
-- [ ] **Step 1:** `rg -n "runtime-debt" gateway/src` 应为零命中
-- [ ] **Step 2:** 更新 `AGENTS.md` §5.19——补充新能力字段（`sessionStorageApi` / `agentConfigApi`）、`credentials`、`agents.install`、`getBaseUrl`、external 接线语义
-- [ ] **Step 3:** `npm run build` + 全部测试（root + gateway 两个 jest 套件）通过
-- [ ] **Step 4:** 全量回归检查单：桌面 sessions 列表 / media 上传追问 / manager wake / serve watchdog / 自更新流程
-- [ ] **Step 5: Commit（挂起，需用户确认）** — `docs(runtime): debt remediation complete, update §5.19`
+- [x] **Step 1:** `rg -n "runtime-debt" gateway/src` 应为零命中
+- [x] **Step 2:** 更新 `AGENTS.md` §5.19——补充新能力字段（`sessionStorageApi` / `agentConfigApi`）、`credentials`、`agents.install`、`getBaseUrl`、external 接线语义
+- [x] **Step 3:** `npm run build` + 全部测试（root + gateway 两个 jest 套件）通过
+- [x] **Step 4:** 全量回归检查单：桌面 sessions 列表 / media 上传追问 / manager wake / serve watchdog / 自更新流程
+- [x] **Step 5: Commit** — `docs(runtime): debt remediation complete, update §5.19`（`5ca7d7df`）
 
 ---
 
