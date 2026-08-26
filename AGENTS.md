@@ -223,7 +223,7 @@ opencode server 进程                    Gateway 进程
 | 环节 | 时机 | 实现 |
 |------|------|------|
 | ① 观察捕获 | 用户消息 / 工具执行后 / text.complete / reasoning.ended / tool.failed | 插件 hooks（`src/plugin.ts`）→ `POST /api/obs/capture` 写 t1_observations |
-| ② 边界 recall | 用户消息到达（messages.transform） | 插件调 `GET /api/recall/context` → `<recall>` 指针块 |
+| ② 边界 recall | **每次 LLM 调用前**（messages.transform 在 agentic 循环内；增量游标使同 turn 后续 step 近似幂等） | 插件调 `GET /api/recall/context` → `<recall>` 指针块 |
 | ③ 步进注入 | `message.part.updated` 中 `part.type === 'step-finish'` + `session.idle` 事件 | daemon（gateway `index.ts` StepInject）→ 高价值记忆注入 |
 | ④ 聚合压缩 | cron 每小时（turn-compress 规则） | turnCompress pipeline → per-session worker → `mafw_add_memory` |
 
@@ -505,6 +505,31 @@ manager agent 定义在 `~/.config/opencode/agent/manager.md`（`ensureManagerAg
 - 机制依据：opencode `permission/index.ts` 的 `disabled()`——仅 `edit/write/apply_patch` 映射到
   `edit` key，其余工具用工具名作 permission key
 - 自更新影响：manager 不能 edit 文件 → SKILL.md 要求自更新全流程用 bash 命令执行（bash 默认允许）
+
+### 5.19 Runtime 能力契约（多 runtime 接缝）
+
+gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runtime/`）：
+
+- `contract.ts` — `RuntimeCapabilities`（sessionApi/promptWhileBusy/eventStream/
+  nativeApprovals/providerConfigApi/perLlmCallTransform）+ `RuntimeClient` 接口面
+  + `AgentRuntime`。能力分级：Tier 0（协作协议 + per-turn 记忆）→ Tier 1（+ 自治执行
+  + per-step 记忆）→ Tier 2（+ 桌面完整，opencode 形状 DTO 归一化输出）
+- `normalize.ts` — runtime 原生事件 → `EventFacets`（正交切面：step/chatSignal/
+  broadcast/toolCommand）；opencode 版本知识（≥1.18 step-finish part 结算）只存在于
+  本文件和 step-inject.ts 的两个 helper
+- `opencode-runtime.ts` — 内置恒等实现（全能力，`external` 跟随 MAFW_SERVER_SERVE_URL）
+- `loader.ts` — `~/.mafw/runtime-plugins/*.js` 插件加载（CJS `module.exports =
+  { name, capabilities, createRuntime(ctx) }`，fail-open，无热加载；能力声明覆盖在
+  Tier-0 基线之上）
+
+激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
+未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
+runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应端点 503、
+事件订阅跳过，不崩溃。
+
+宿主插件侧（runtime 进程内的 transform/工具注册）是每个 runtime 单独交付物，
+不在本契约内；gateway 侧 HTTP（/api/obs/capture、/api/recall/context、/a2a）
+对宿主插件保持 runtime 中立。
 
 ## 6. Gateway 运维
 
