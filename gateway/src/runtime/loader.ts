@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
 import { config } from '../config';
-import { AgentRuntime, RuntimeCapabilities, minimalCapabilities } from './contract';
+import { AgentRuntime, RuntimeCapabilities, RuntimeCredentials, minimalCapabilities } from './contract';
 
 export interface RuntimePluginContext {
   /** fetch with 60s default timeout */
@@ -17,6 +17,8 @@ export interface RuntimePluginContext {
   log: typeof log;
   /** 读 config.yaml 的 runtime.pluginConfig[name] */
   pluginConfig(name: string): Record<string, any>;
+  /** runtime 凭据（media/pi 认证链优先走这里） */
+  credentials?: RuntimeCredentials;
 }
 
 export type RuntimeFactory = (ctx: RuntimePluginContext) => Promise<AgentRuntime>;
@@ -33,8 +35,14 @@ export class RuntimePluginLoader {
   private factories = new Map<string, RuntimeFactory>();
   private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean }>();
   private state = new Map<string, RuntimePluginState>();
+  private builtins = new Map<string, { factory: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean }>();
 
   constructor(private pluginsDir: string) {}
+
+  /** 注册内置插件（优先级低于文件插件）。 */
+  registerBuiltin(name: string, factory: RuntimeFactory, capabilities: RuntimeCapabilities, external: boolean): void {
+    this.builtins.set(name, { factory, capabilities, external });
+  }
 
   async init(): Promise<void> {
     this.ensureDir();
@@ -110,25 +118,31 @@ export class RuntimePluginLoader {
     }
   }
 
-  /** 插件不存在或未通过校验时返回 undefined（调用方回退内置 opencode）。 */
+  /** 插件不存在或未通过校验时返回 undefined（调用方回退内置 opencode）。文件插件优先于内置。 */
   get(name: string): { createRuntime: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean } | undefined {
     const createRuntime = this.factories.get(name);
     const meta = this.meta.get(name);
-    if (!createRuntime || !meta) return undefined;
-    return { createRuntime, ...meta };
+    if (createRuntime && meta) return { createRuntime, ...meta };
+    const builtin = this.builtins.get(name);
+    if (builtin) return { createRuntime: builtin.factory, ...builtin };
+    return undefined;
   }
 
   getState(): RuntimePluginState[] {
+    for (const [name, b] of this.builtins) {
+      this.state.set(`builtin:${name}`, { file: `builtin:${name}`, name, status: 'ok', capabilities: b.capabilities });
+    }
     return [...this.state.values()];
   }
 }
 
-export function createRuntimePluginContext(): RuntimePluginContext {
+export function createRuntimePluginContext(credentials?: RuntimeCredentials): RuntimePluginContext {
   return {
     fetch: (url: string, opts?: any) =>
       fetch(url, { ...opts, signal: opts?.signal ?? AbortSignal.timeout(60000) }),
     log,
     pluginConfig: (name: string) => (config.raw as any)?.runtime?.pluginConfig?.[name] ?? {},
+    credentials,
   };
 }
 

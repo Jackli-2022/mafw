@@ -61,8 +61,9 @@ import {
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent } from './runtime/normalize';
-import { RuntimeCapabilities, fullCapabilities, AgentRuntime } from './runtime/contract';
+import { RuntimeCapabilities, fullCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
+import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -326,6 +327,8 @@ class MafwScheduler {
     // 2. 初始化 runtime 插件加载器
     this.runtimeLoader = new RuntimePluginLoader(config.resolvePath('runtime-plugins'));
     await this.runtimeLoader.init();
+    // 内置插件注册：pi-coding-agent runtime（进程内 SDK 嵌入）
+    this.runtimeLoader.registerBuiltin('pi', createPiRuntime, PI_CAPABILITIES, true);
 
     // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
     const sdkConfig = {
@@ -379,6 +382,9 @@ class MafwScheduler {
       // For owned sidecars this starts the health-poll watchdog; for adopted
       // sidecars it is already running and the guard is a no-op.
       this.startServeWatchdog();
+    }
+    // 外部 runtime（如 pi）声明 eventStream 时，事件订阅不等 opencode serve 就绪
+    if (serveReady || (this.runtimeCaps.eventStream && isExternal)) {
       this.subscribeToEvents();
     }
 
@@ -817,7 +823,8 @@ class MafwScheduler {
       const plugin = this.runtimeLoader?.get(pluginName);
       if (plugin) {
         try {
-          const rt = await plugin.createRuntime(createRuntimePluginContext());
+          const creds = await this.runtimeCredentialsForPlugin();
+          const rt = await plugin.createRuntime(createRuntimePluginContext(creds));
           log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
           return rt;
         } catch (err: any) {
@@ -829,6 +836,12 @@ class MafwScheduler {
     }
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
     return createOpencodeRuntime(sdkConfig);
+  }
+
+  /** 插件 ctx 的凭据来源：当前 opencode runtime 的 credentials（若实现），否则 undefined。 */
+  private async runtimeCredentialsForPlugin(): Promise<RuntimeCredentials | undefined> {
+    if (this.opencodeClient?.credentials) return this.opencodeClient.credentials;
+    return undefined;
   }
 
   // ── Path 1: step-ended memory injection ────────────────────────────────
@@ -1214,6 +1227,11 @@ class MafwScheduler {
     }
     this.pluginLoader?.stop();
     this.mediaPluginLoader?.stop();
+    if (this.opencodeClient && typeof (this.opencodeClient as any).dispose === 'function') {
+      void (this.opencodeClient as any).dispose().catch((err: any) => {
+        log.warn(`[Scheduler] runtime dispose error: ${err?.message ?? String(err)}`);
+      });
+    }
     this.pushGateway?.destroy();
     this.pairingService?.destroy();
     this.mdnsAdvertiser?.stop();

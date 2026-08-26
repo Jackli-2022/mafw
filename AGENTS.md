@@ -545,6 +545,15 @@ runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应
 不在本契约内；gateway 侧 HTTP（/api/obs/capture、/api/recall/context、/a2a）
 对宿主插件保持 runtime 中立。
 
+**内置插件：pi-coding-agent runtime（`gateway/src/runtime/plugins/pi-runtime.ts`）**
+- `config.runtime.plugin: pi` 激活；进程内 SDK 嵌入（ESM 桥 `new Function('spec','return import(spec)')`）
+- 能力：sessionApi/promptWhileBusy/eventStream/providerConfigApi true；nativeApprovals/sessionStorageApi/agentConfigApi false（Phase 3 待办）
+- 认证链：`ctx.credentials.getApiKey` → auth.json 回退 → ModelRuntime.setRuntimeApiKey（单例共享）
+- 会话：`PiSessionRegistry`（Map<sessionID, AgentSession>，忙时 followUp 队列）
+- 事件：`PiEventStream`（subscribe → RawRuntimeEvent → normalize.ts 四信号 session.idle/session.error/message.part.updated/message.updated）
+- external=true：gateway 不 spawn；外部 runtime 的事件订阅与 serveReady 解耦（不等 opencode serve）
+- 媒体 agent 消费 AgentRuntime（Phase 2，见 `docs/superpowers/specs/2026-08-27-pi-runtime-design.md`）
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令
