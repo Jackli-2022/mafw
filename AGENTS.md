@@ -366,8 +366,14 @@ opencode LLM（推理 Agent）                       └─ MediaService → pi 
   图片走 canvas 下采样，视频/音频直读 dataUrl
 - 工具清单：`mafw_media_upload`（建任务，返回指针 + taskID）、`mafw_media_ask`
   （追问，返回回答 + 新 taskID）；旧名 `mafw_vision_upload`/`mafw_vision_ask` 已移除
+- **MediaRuntimeExecutor**（`gateway/src/media/media-runtime-executor.ts`）：媒体 agent 的
+  AgentRuntime 后端——pi runtime 激活时 `resolvePrompt` 的 `engine='pi'` 分支返回 executor 的
+  PromptFn；图片追问在同一 AgentSession 内连续 prompt（真多轮记忆，同一 dataUrl + provider/model
+  复用会话，追问轮自动回退到最近会话）；视频/音频保持 ModelRuntime.complete + fixMediaPayload
+  单次路径；超时 180s + abort；A2A cancelTask → cancelHook → cancelInflight 中止进行中会话
 - 测试：`tests/unit/gateway/pi-adapter.test.ts`（fixMediaPayload 单测 + adapter 边界）、
-  `media-service.test.ts`（PromptFn 抽象隔离）、`media-agent.test.ts`（A2A 四模态）
+  `media-service.test.ts`（PromptFn 抽象隔离）、`media-agent.test.ts`（A2A 四模态）、
+  `media-runtime-executor.test.ts`（会话复用/超时/cancel）
 
 #### 5.14a Media Engine 插件系统
 

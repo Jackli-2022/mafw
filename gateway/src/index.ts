@@ -30,6 +30,7 @@ import { CostService } from "./cost/service";
 import { MediaService } from "./media/media-service";
 import { MediaAgent } from "./media/media-agent";
 import { createPiPromptAdapter } from "./media/pi-adapter";
+import { createMediaRuntimeExecutor, MediaRuntimeExecutor } from "./media/media-runtime-executor";
 import { MediaPluginLoader } from "./media/media-plugin-loader";
 import { createTtsService } from "./media/tts-service";
 import { handleEvalChatCompletion } from "./eval-endpoint";
@@ -242,6 +243,7 @@ class MafwScheduler {
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
   private mediaPluginLoader?: MediaPluginLoader;
+  private mediaRuntimeExecutor?: MediaRuntimeExecutor;
   private ttsService?: ReturnType<typeof createTtsService>;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
@@ -1289,6 +1291,14 @@ class MafwScheduler {
       config: () => config.raw.media,
       resolvePrompt: (kind, cfg) => {
         const engineName = cfg[kind]?.engine ?? cfg.engine ?? 'pi';
+        // pi runtime 激活时：图片走 AgentRuntime 会话（MediaRuntimeExecutor），
+        // video/audio 由 executor 内部回退到 complete 路径
+        if (engineName === 'pi' && this.opencodeClient?.name === 'pi') {
+          if (!this.mediaRuntimeExecutor) {
+            this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.opencodeClient);
+          }
+          return this.mediaRuntimeExecutor.prompt;
+        }
         if (engineName === 'pi') return undefined;
         const engines = this.mediaPluginLoader?.getEngines();
         const engine = engines?.get(engineName);
@@ -1314,6 +1324,9 @@ class MafwScheduler {
       baseUrl: `http://127.0.0.1:${config.server.apiPort}`,
       artifactPath: '/a2a/artifacts',
       storageDir: path.join(mafwDir, 'workspace', workspaceName),
+      cancelHook: async () => {
+        await this.mediaRuntimeExecutor?.cancelInflight();
+      },
     });
     const self = this;
     this.ttsService = createTtsService({

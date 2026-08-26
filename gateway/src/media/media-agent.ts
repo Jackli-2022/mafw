@@ -279,6 +279,8 @@ export interface MediaAgentOptions {
   defaultVersion?: string;
   /** Directory for persistent artifact storage (defaults to os.tmpdir/mafw-media). */
   storageDir?: string;
+  /** A2A 取消钩子（cancelTask 时调用，中止进行中的媒体分析；fail-open）。 */
+  cancelHook?: (taskId: string) => Promise<void>;
 }
 
 export interface JsonRpcResult {
@@ -622,6 +624,8 @@ export class MediaAgent {
       status: taskStatus(TaskState.TASK_STATE_CANCELED),
     } as Task;
     bus.publish(AgentEvent.task(canceled));
+    // fail-open：中止进行中的媒体分析（executor.cancelInflight）
+    try { await this.options.cancelHook?.(taskId); } catch { /* ignore */ }
   }
 
   // -------------------------------------------------------------------------
