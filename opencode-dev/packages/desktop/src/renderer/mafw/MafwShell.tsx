@@ -269,6 +269,7 @@ export function MafwShell() {
   // to clear a pane's "stop" button state.
   const anchorRegistry: Record<string, () => void> = {}
   const sendingResetters: Record<string, () => void> = {}
+  const phaseUpdaters: Record<string, (p: 'idle' | 'searching' | 'writing') => void> = {}
   // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
   const mediaSpeakHandlers: Record<string, (text: string, voice?: string) => void> = {}
 
@@ -1097,6 +1098,7 @@ export function MafwShell() {
         if (!msgId || !partID || props.field !== "text") return
         const delta = props.delta
         if (!delta) return
+        phaseUpdaters[sid]?.('writing')
         setStore(prev => {
           const parts = { ...prev.part }
           const existing = parts[msgId] || []
@@ -1120,6 +1122,7 @@ export function MafwShell() {
         const msgId = part.messageID
         if (!msgId) return
         console.log("[mafw] SSE part:", part.type, "partId:", part.id, "msgId:", msgId, "len:", (part.text || "").length, (part.text || "").slice(0, 60))
+        phaseUpdaters[sid]?.('writing')
 
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "busy" } } }))
 
@@ -1925,6 +1928,8 @@ export function MafwShell() {
                           onUnregisterAnchor={(s) => { delete anchorRegistry[s] }}
                           onRegisterResetSending={(s, fn) => { sendingResetters[s] = fn }}
                           onUnregisterResetSending={(s) => { delete sendingResetters[s] }}
+                          onRegisterPhaseUpdater={(s, fn) => { phaseUpdaters[s] = fn }}
+                          onUnregisterPhaseUpdater={(s) => { delete phaseUpdaters[s] }}
                           onRegisterMediaSpeak={(s, fn) => { mediaSpeakHandlers[s] = fn }}
                           onUnregisterMediaSpeak={(s) => { delete mediaSpeakHandlers[s] }}
                           pageState={pageState}

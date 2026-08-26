@@ -52,6 +52,7 @@ export class UsagePoller {
           const pct = Math.round((used / budget) * 100);
           providerMap.set(name, {
             name,
+            type: 'api',
             plan: 'budget',
             windows: [{
               window: 'balance',
@@ -66,6 +67,7 @@ export class UsagePoller {
         } else {
           providerMap.set(name, {
             name,
+            type: 'api',
             windows: [{
               window: 'balance',
               used,

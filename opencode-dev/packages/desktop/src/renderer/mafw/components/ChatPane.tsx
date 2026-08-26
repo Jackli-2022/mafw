@@ -15,6 +15,7 @@ import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply } from "./AudioReply"
 import { VoiceRecorder } from "./VoiceRecorder"
+import { scrollPinDecision } from "./ChatPaneScroll"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -103,6 +104,8 @@ export type ChatPaneProps = {
   onUnregisterAnchor: (sid: string) => void
   onRegisterResetSending: (sid: string, fn: () => void) => void
   onUnregisterResetSending: (sid: string) => void
+  onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
+  onUnregisterPhaseUpdater?: (sid: string) => void
   onRegisterMediaSpeak?: (sid: string, fn: (text: string, voice?: string) => void) => void
   onUnregisterMediaSpeak?: (sid: string) => void
   pageState: Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>
@@ -125,6 +128,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // ── Composer state (per pane) ──
   const [input, setInput] = createSignal("")
   const [sending, setSending] = createSignal(false)
+  const [phase, setPhase] = createSignal<'idle' | 'searching' | 'writing'>('idle')
   const [attachments, setAttachments] = createSignal<Attachment[]>([])
   const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
   const [dragging, setDragging] = createSignal(false)
@@ -530,12 +534,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   onMount(() => {
     if (sidProp()) props.onRegisterAnchor(sidProp(), forceAnchor)
-    props.onRegisterResetSending(sidProp(), () => setSending(false))
+    props.onRegisterResetSending(sidProp(), () => { setSending(false); setPhase('idle') })
+    props.onRegisterPhaseUpdater?.(sidProp(), setPhase)
   })
   onCleanup(() => {
     props.onTitlebarRef(null)
     if (sidProp()) props.onUnregisterAnchor(sidProp())
     props.onUnregisterResetSending(sidProp())
+    props.onUnregisterPhaseUpdater?.(sidProp())
   })
 
   const addAttachments = async () => {
@@ -769,6 +775,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       if (cmd) {
         const rest = text.trim().replace(/^\/\S+/, "").trim()
         setSending(true)
+        setPhase('searching')
         setInput("")
         try {
           if (cmd.group === "mafw") {
@@ -786,11 +793,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           showToastV2({ description: `/${cmd.name} 执行失败: ${e?.message || String(e)}`, duration: 4000 })
         }
         setSending(false)
+        setPhase('idle')
         return
       }
     }
 
     setSending(true)
+    setPhase('searching')
     setInput("")
     setAttachments([])
     setMentionedAgents([])
@@ -948,10 +957,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         console.warn("[mafw] sendEnriched failed:", errMsg)
         showToastV2({ description: `Chat failed: ${errMsg}`, duration: 5000 })
         setSending(false)
+        setPhase('idle')
       }
     } catch (err: any) {
       console.warn("[mafw] sendEnriched error:", err.message)
       setSending(false)
+      setPhase('idle')
       showToastV2({ description: `Chat failed: ${err.message}`, duration: 5000 })
     }
   }
@@ -966,6 +977,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       console.warn("[mafw] interrupt failed", e)
     }
     setSending(false)
+    setPhase('idle')
   }
 
   // ESC / Ctrl+C interrupts this pane only when it is focused and sending.
@@ -1295,41 +1307,53 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // Scroll container: the outer .mafw-session-turn-container is the single
   // scroller (each SessionTurn's internal content is forced overflow-visible).
-  const stickToBottom = (el: HTMLDivElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  const SNAP_THRESHOLD = 120
+  // Pinned = locked to the bottom: content growth follows the viewport.
+  // Released by any upward user scroll (handleScroll never re-asserts it —
+  // that would fight the user and make scrolling up impossible).
+  const [pinned, setPinned] = createSignal(true)
+  // scrollTop of the last scroll event / last programmatic pin write; the
+  // comparison baseline that tells user intent apart from our own writes.
+  let lastScrollTop = 0
   const updateJump = (el: HTMLDivElement) => {
-    setJumpVisible(el.scrollHeight - el.scrollTop - el.clientHeight > 120)
+    setJumpVisible(el.scrollHeight - el.scrollTop - el.clientHeight > SNAP_THRESHOLD)
   }
   const forceAnchor = () => {
     const el = containerRef()
-    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      lastScrollTop = el.scrollTop
+    }
+    setPinned(true)
     setJumpVisible(false)
   }
   const jumpToLatest = () => {
     const el = containerRef()
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      lastScrollTop = el.scrollTop
+    }
+    setPinned(true)
     setJumpVisible(false)
   }
 
-  // Follow streaming only when already pinned to the bottom (don't steal the
-  // scrollbar while the user is reading older content). Track a content
-  // fingerprint (part count + total text length) rather than just part count:
-  // streaming updates replace the same text part in place, so its length never
-  // changes and a count-only dependency would never re-run.
+  // Smart sticky scroll: follow the bottom only while pinned; a released pin
+  // leaves the viewport alone during streaming (jump pill signals new content).
   createEffect(() => {
     const el = containerRef()
     const sid = sidProp()
     if (!el || !sid) return
     const msgs = props.store.message[sid]
-    const partCount = (msgs || []).reduce(
+    void (msgs || []).reduce(
       (n, m) => n + (props.store.part[m.id] || []).reduce(
         (t, p) => t + (p.text?.length || 0),
         props.store.part[m.id]?.length || 0,
       ),
       0,
     )
-    void partCount
-    if (stickToBottom(el)) {
+    if (pinned()) {
       el.scrollTop = el.scrollHeight
+      lastScrollTop = el.scrollTop
       setJumpVisible(false)
     } else {
       updateJump(el)
@@ -1349,7 +1373,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const pending = cards.filter(c => c.data.status === "pending").length
     void pending
     const el = containerRef()
-    if (el && stickToBottom(el)) forceAnchor()
+    if (el && pinned()) forceAnchor()
   })
 
   // Lazy load older messages when scrolled near the top.
@@ -1392,6 +1416,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           if (el) {
             requestAnimationFrame(() => {
               el.scrollTop += el.scrollHeight - prevHeight
+              lastScrollTop = el.scrollTop
             })
           }
         }
@@ -1407,6 +1432,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const el = containerRef()
     const sid = sidProp()
     if (!el || !sid) return
+    const prev = lastScrollTop
+    lastScrollTop = el.scrollTop
+    setPinned(scrollPinDecision({
+      prevScrollTop: prev,
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      snapThreshold: SNAP_THRESHOLD,
+    }))
     updateJump(el)
     if (el.scrollTop < 100) void loadOlder(sid)
   }
@@ -1717,6 +1751,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           </ButtonV2>
         </Show>
       </div>
+      {/* Phase indicator bar (Perplexity-style) */}
+      <Show when={phase() !== 'idle'}>
+        <div class={`mafw-phase-bar mafw-phase-${phase()}`}>
+          <span class="mafw-phase-dot" />
+          <span class="mafw-phase-text">
+            {phase() === 'searching' ? '正在处理…' : '正在生成…'}
+          </span>
+        </div>
+      </Show>
       {/* InputArea — 760px centered wrapper: composer box (§4.7). Hidden for
           read-only (subagent) sessions: subagents are not user-facing chats. */}
       <Show when={!props.readOnly}>

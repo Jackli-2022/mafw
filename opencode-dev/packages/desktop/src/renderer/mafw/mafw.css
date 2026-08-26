@@ -783,6 +783,54 @@ html[data-theme="light"] .mafw-shell {
   font-size: 13px;
 }
 
+/* ── Phase indicator bar (Perplexity-style) ── */
+@keyframes mafw-phase-sweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes mafw-phase-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.mafw-phase-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 16px;
+  width: min(var(--msg-col-width), calc(100% - 64px));
+  margin-inline: auto;
+  font-size: 12px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  animation: mafw-enter 0.15s ease-out;
+}
+.mafw-phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mafw-phase-searching .mafw-phase-dot {
+  background: var(--accent, #6366f1);
+  animation: mafw-phase-pulse 1.2s ease-in-out infinite;
+}
+.mafw-phase-searching .mafw-phase-text {
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-1) 50%, var(--text-3) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: mafw-phase-sweep 2s linear infinite;
+}
+.mafw-phase-writing .mafw-phase-dot {
+  background: var(--accent-success, #22c55e);
+  animation: mafw-phase-pulse 0.8s ease-in-out infinite;
+}
+.mafw-phase-writing .mafw-phase-text {
+  color: var(--text-2);
+}
+
 /* ── Pending-cards pill (above the composer) ── */
 .mafw-pending-pill {
   display: flex;
