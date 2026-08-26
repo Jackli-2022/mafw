@@ -62,6 +62,7 @@ import {
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent } from './runtime/normalize';
 import { RuntimeCapabilities, fullCapabilities } from './runtime/contract';
+import { RuntimePluginLoader } from './runtime/loader';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -230,6 +231,7 @@ class MafwScheduler {
   private opencodeClient: any = null;
   private runtimeCaps: RuntimeCapabilities = fullCapabilities();
   private runtimeName = 'opencode';
+  private runtimeLoader?: RuntimePluginLoader;
   private sseClients: Set<http.ServerResponse> = new Set();
   /** WebSocket clients (mobile app): same events as SSE, JSON frames. */
   private wsClients: Set<WebSocket> = new Set();
@@ -3015,6 +3017,15 @@ class MafwScheduler {
         }
 
         // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
+
+        // GET /api/runtime — active runtime identity + capabilities + plugin scan state
+        if (req.url?.match(/^\/api\/runtime(?:\?|$)/) && req.method === 'GET') {
+          res.end(JSON.stringify({
+            active: { name: this.runtimeName, capabilities: this.runtimeCaps },
+            plugins: this.runtimeLoader?.getState() ?? [],
+          }));
+          return;
+        }
 
         // GET /api/provider 鈹€ list providers + models (legacy /provider)
         if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
