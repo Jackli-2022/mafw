@@ -55,13 +55,13 @@ import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-
 import {
   StepInjectState,
   shouldConsiderStep,
-  stepPropsFromPartUpdated,
-  stepPropsFromMessageUpdated,
   selectMemories,
   memoryFingerprint,
   defaultStepInjectOptions,
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
+import { normalizeOpencodeEvent } from './runtime/normalize';
+import { RuntimeCapabilities, fullCapabilities } from './runtime/contract';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -228,6 +228,8 @@ class MafwScheduler {
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
   private opencodeClient: any = null;
+  private runtimeCaps: RuntimeCapabilities = fullCapabilities();
+  private runtimeName = 'opencode';
   private sseClients: Set<http.ServerResponse> = new Set();
   /** WebSocket clients (mobile app): same events as SSE, JSON frames. */
   private wsClients: Set<WebSocket> = new Set();
@@ -674,6 +676,10 @@ class MafwScheduler {
   }
 
   private async subscribeToEvents() {
+    if (!this.runtimeCaps.eventStream) {
+      log.info(`[Scheduler] runtime '${this.runtimeName}' declares no event stream; skipping subscription`);
+      return;
+    }
     try {
       // Use /global/event (GlobalEvent = { directory, payload }) so we receive
       // events from ALL workspaces — /event only delivers the current
@@ -699,26 +705,20 @@ class MafwScheduler {
   }
 
   private handleOpencodeEvent(evt: any): void {
-    // GlobalEvent shape: { directory, payload: { id, type, properties } }
-    const payload = evt?.payload || {};
-    const type = payload?.type || evt?.type;
-    const props = payload?.properties || evt?.properties || {};
-    const sessionID = props?.sessionID || props?.part?.sessionID || props?.info?.sessionID || payload?.sessionID || evt?.sessionID;
-    log.info(`[SSE] opencode event: ${type} sessionID=${sessionID}`);
+    const f = normalizeOpencodeEvent(evt);
+    const { type, properties: props, sessionID } = f;
+    log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}`);
 
     // Caller-location bookkeeping for self-update: every event refreshes the
     // session's last-active stamp; tool events carrying a shell command that
     // touches the restart token file pin the exact session that wrote it.
     if (sessionID) {
       this.lastActiveBySession.set(sessionID, Date.now());
-      const toolName = props?.tool || props?.info?.tool || payload?.tool;
-      const toolArgs = props?.args || props?.info?.args || payload?.args;
-      const command = typeof toolArgs?.command === 'string' ? toolArgs.command : '';
-      if (command && (type.includes('tool') || type.includes('session.next.tool'))) {
-        if (/pending-restart/i.test(command)) {
+      if (f.toolCommand) {
+        if (/pending-restart/i.test(f.toolCommand)) {
           this.tokenWriterSession = { sessionID, at: Date.now() };
         }
-        this.lastWriteBySession.set(sessionID, { at: Date.now(), command });
+        this.lastWriteBySession.set(sessionID, { at: Date.now(), command: f.toolCommand });
       }
     }
 
@@ -726,7 +726,7 @@ class MafwScheduler {
     try {
       const collector = this.trajectoryCollector;
       if (collector) {
-        const trajEvt = collector.handleEvent(type, props, (evt as any)?.directory);
+        const trajEvt = collector.handleEvent(type, props, f.directory);
         if (trajEvt) {
           this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.event', properties: trajEvt, sessionID } });
         }
@@ -736,46 +736,29 @@ class MafwScheduler {
     }
 
     // Path 1: settled LLM step → evaluate high-salience memory injection.
-    // opencode ≥1.18 no longer publishes `session.next.step.ended` (the event
-    // type remains defined but no publisher emits it). Steps now settle as
-    // `step-finish` parts carried by `message.part.updated`. The legacy branch
-    // is kept as a fallback in case an older/custom serve still emits it.
-    const stepProps = (() => {
-      if (type === 'session.next.step.ended' && sessionID) {
-        return { sessionID, assistantMessageID: props?.assistantMessageID, finish: props?.finish };
-      }
-      if (type === 'message.part.updated') {
-        return stepPropsFromPartUpdated(props);
-      }
-      if (type === 'message.updated') {
-        return stepPropsFromMessageUpdated(props);
-      }
-      return null;
-    })();
-    if (stepProps && shouldConsiderStep(stepProps) && this.stepInject.markStepSeen(stepProps.sessionID, stepProps.assistantMessageID)) {
-      void this.evaluateStepInjection(stepProps.sessionID, stepProps.assistantMessageID)
+    if (f.step && f.step.sessionID && f.step.assistantMessageID && shouldConsiderStep(f.step) && this.stepInject.markStepSeen(f.step.sessionID, f.step.assistantMessageID)) {
+      void this.evaluateStepInjection(f.step.sessionID, f.step.assistantMessageID)
     }
 
     // Per-session SSE (Mode B) forwarding
     if (sessionID && this.chatSessions.hasListeners(sessionID)) {
-      if (type === 'message.part.updated') {
-        const text = props?.part?.text || props?.delta || '';
-        if (text) this.chatSessions.pushDelta(sessionID, text);
-      } else if (type === 'session.idle' || type === 'message.updated') {
+      if (f.chatSignal === 'delta' && f.deltaText) {
+        this.chatSessions.pushDelta(sessionID, f.deltaText);
+      } else if (f.chatSignal === 'complete') {
         this.chatSessions.pushComplete(sessionID);
-      } else if (type === 'session.error' || type === 'message.error') {
-        this.chatSessions.pushError(sessionID, props?.error || 'Unknown error');
+      } else if (f.chatSignal === 'error') {
+        this.chatSessions.pushError(sessionID, String(f.chatError || 'Unknown error'));
       }
     }
 
     // Global broadcast (Mode A — used by the desktop renderer).
     // Normalize to the renderer's contract: { type, properties, sessionID }.
-    if (type === 'session.idle') {
+    if (f.broadcast === 'idle') {
       // Path 1: turn fully settled → drain any queued memory injection
       // (delayed to idle so we never collide with the finishing drain).
       if (sessionID) void this.drainStepInjections(sessionID);
       try {
-        if (this.trajectoryCollector) {
+        if (this.trajectoryCollector && sessionID) {
           const turn = this.trajectoryCollector.onIdle(sessionID);
           if (turn) {
             this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.turn', properties: turn, sessionID } });
@@ -785,11 +768,19 @@ class MafwScheduler {
         log.warn(`[Trajectory] idle aggregation failed (non-fatal): ${err.message}`);
       }
       this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID } });
-    } else if (type === 'session.error') {
+    } else if (f.broadcast === 'error') {
       this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error } });
     } else {
       this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID } });
     }
+  }
+
+  /** 能力门：runtime 未声明该能力时以 503 显式拒绝（fail-open 的声明式降级）。 */
+  private capGuard(res: http.ServerResponse, cap: keyof RuntimeCapabilities): boolean {
+    if (this.runtimeCaps[cap]) return false;
+    res.writeHead(503);
+    res.end(JSON.stringify({ error: `capability '${String(cap)}' not available on runtime '${this.runtimeName}'` }));
+    return true;
   }
 
   // ── Path 1: step-ended memory injection ────────────────────────────────
@@ -2948,6 +2939,7 @@ class MafwScheduler {
 
         // GET /api/questions 鈹€ list pending questions
         if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
+          if (this.capGuard(res, 'nativeApprovals')) return;
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
             const r = await fetch(`${this.serveUrl}/question?directory=${encodeURIComponent(dir)}`, {
@@ -2965,6 +2957,7 @@ class MafwScheduler {
         // POST /api/questions/{id}/reply 鈹€ { answers: string[][] }
         const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
         if (qReplyMatch && req.method === 'POST') {
+          if (this.capGuard(res, 'nativeApprovals')) return;
           try {
             const body = JSON.parse(await readBody(req));
             const r = await this.proxyNativeWorkspaces(`/question/${qReplyMatch[1]}/reply`, 'POST', { answers: body.answers });
@@ -2985,6 +2978,7 @@ class MafwScheduler {
         // POST /api/questions/{id}/reject
         const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
         if (qRejectMatch && req.method === 'POST') {
+          if (this.capGuard(res, 'nativeApprovals')) return;
           try {
             const r = await this.proxyNativeWorkspaces(`/question/${qRejectMatch[1]}/reject`, 'POST');
             if (!r.ok) {
@@ -3005,6 +2999,7 @@ class MafwScheduler {
 
         // GET /api/permissions 鈹€ list pending permission requests
         if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
+          if (this.capGuard(res, 'nativeApprovals')) return;
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
             const r = await fetch(`${this.serveUrl}/permission?directory=${encodeURIComponent(dir)}`, {
@@ -3023,6 +3018,7 @@ class MafwScheduler {
 
         // GET /api/provider 鈹€ list providers + models (legacy /provider)
         if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
+          if (this.capGuard(res, 'providerConfigApi')) return;
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const result = await this.opencodeClient.provider.list();
@@ -3037,6 +3033,7 @@ class MafwScheduler {
 
         // GET /api/agents 鈹€ list available agents (legacy /agent)
         if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
+          if (this.capGuard(res, 'providerConfigApi')) return;
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const agents = await this.opencodeClient.app.agents();
@@ -3053,6 +3050,7 @@ class MafwScheduler {
 
         // GET /api/opencode-config 鈹€ return the effective opencode Config
         if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'GET') {
+          if (this.capGuard(res, 'providerConfigApi')) return;
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const configData = await this.opencodeClient.config.get();
@@ -3067,6 +3065,7 @@ class MafwScheduler {
 
         // PATCH /api/opencode-config 鈹€ merge-update the opencode Config (native merge semantics)
         if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'PATCH') {
+          if (this.capGuard(res, 'providerConfigApi')) return;
           try {
             if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const body = JSON.parse(await readBody(req));
@@ -3083,6 +3082,7 @@ class MafwScheduler {
         // POST /api/permissions/{id}/reply 鈹€ { reply: 'once'|'always'|'reject', message?: string }
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {
+          if (this.capGuard(res, 'nativeApprovals')) return;
           try {
             const body = JSON.parse(await readBody(req));
             const payload: any = { reply: body.reply };
