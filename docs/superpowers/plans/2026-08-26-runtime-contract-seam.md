@@ -1,6 +1,10 @@
 # Runtime 能力契约接缝（AgentRuntime Contract Seam）Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: COMPLETED** — 全部 7 个 Task 已完成（commits `e4af31b6`..`edc6acab`，2026-08-26）。
+> 已知债务 1-4 已在 `2026-08-26-runtime-debt-remediation.md`（commit `5ca7d7df`）中清偿。
+> 债务 5（pi-coding-agent runtime 插件）仍待实现。
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把 gateway 与 agent runtime 之间定义成"能力自声明契约 + 事件归一化层"，opencode 作为契约的恒等实现接进来——不接第二个 runtime，但所有接缝就位、行为完全不变。
 
@@ -1296,13 +1300,13 @@ git commit -m "docs: document runtime capability contract (§5.19)"
 
 ---
 
-## 已知债务（本期不做，执行者不要顺手改）
+## 已知债务
 
-1. `index.ts:230` 的 `private opencodeClient: any` 未改为 `AgentRuntime`——改动会暴露 40+ 调用点的类型问题，留给二期单独任务做（先跑 `npm run build` 收集错误清单）。
-2. `core/manager/wake-handlers.ts:34-35` 每次调用重新 `createOpencodeAdapter`（绕过主 runtime）——二期改为注入共享 runtime。
-3. `AgentRuntime.external` 仅为信息性字段，未接入 serve-sidecar 逻辑（现状靠 `MAFW_SERVER_SERVE_URL` 环境变量判断，行为已正确）。
-4. `resources/opencode-db.ts` 直读 opencode.db、`media/auth-util.ts` 直读 auth.json、`manager-agent-config.ts` 直写 agent 定义——文件系统级耦合，二期以"凭据/存储 provider"抽象处理。
-5. pi-coding-agent runtime 插件（Tier 0/1）——契约验证样本，二期实现。
+1. ~~`index.ts:230` 的 `private opencodeClient: any` 未改为 `AgentRuntime`~~ — **已解决**（commit `5ca7d7df`，Debt 1）
+2. ~~`core/manager/wake-handlers.ts:34-35` 每次调用重新 `createOpencodeAdapter`~~ — **已解决**（commit `5ca7d7df`，Debt 2）
+3. ~~`AgentRuntime.external` 仅为信息性字段，未接入 serve-sidecar 逻辑~~ — **已解决**（commit `5ca7d7df`，Debt 3）
+4. ~~`resources/opencode-db.ts` 直读 opencode.db、`media/auth-util.ts` 直读 auth.json、`manager-agent-config.ts` 直写 agent 定义~~ — **已解决**（commit `5ca7d7df`，Debt 4/5a/5b：`sessionStorageApi` + `credentials` + `agents.install` 抽象接口）
+5. pi-coding-agent runtime 插件（Tier 0/1）——契约验证样本，**待实现**。
 
 ## 验收标准
 

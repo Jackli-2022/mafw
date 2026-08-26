@@ -7,6 +7,16 @@
  *   Tier 1（+ eventStream）→ 自治执行（Goal plan/execute/review）+ per-step 记忆
  *   Tier 2（+ opencode 形状 DTO 归一化输出）→ 桌面聊天面完整
  * 降级是声明式的：缺能力的 runtime 只影响功能丰富度，永不阻塞 agent 基本工作。
+ *
+ * 可选能力（不在 Tier 分级内，按需声明）：
+ *   sessionStorageApi — 直读 runtime 私有存储列出会话（opencode 用 SQLite）
+ *   agentConfigApi    — agent 定义安装（opencode 写 frontmatter markdown）
+ *
+ * 可选接口扩展（RuntimeClient 上的可选字段）：
+ *   credentials  — { getApiKey(provider) } 凭据获取
+ *   agents       — { install(name, definition) } agent 定义安装
+ *   session.listByDirectory — 按目录列出会话
+ *   external + getBaseUrl() — runtime 声明托管模式
  */
 import type { AgentDefinition } from './agent-definition';
 

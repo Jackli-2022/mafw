@@ -157,10 +157,13 @@ module.exports = {
     nativeApprovals: false,
     providerConfigApi: false,
     perLlmCallTransform: false,
+    // optional (not in tier hierarchy):
+    sessionStorageApi: false,  // direct session storage access
+    agentConfigApi: false,     // agent definition installation
   },
   external: true,             // gateway never spawns plugin runtime processes
   async createRuntime(ctx) {
-    // ctx.fetch / ctx.log / ctx.pluginConfig(name)
+    // ctx.fetch / ctx.log / ctx.pluginConfig(name) / ctx.apiKey(name)
     return {
       name: "my-runtime",
       capabilities: { /* same object as above */ },
@@ -176,6 +179,8 @@ module.exports = {
         async todo({ sessionID }) { return []; },
         async children({ sessionID }) { return []; },
         async summarize(opts) {},
+        // optional (requires sessionStorageApi capability):
+        // async listByDirectory(directory, limit) { return []; },
       },
       global: { async event() { /* → {stream: AsyncIterable} */ } },
       provider: { async list() { return { all: [], connected: [], default: {} }; } },
@@ -183,6 +188,9 @@ module.exports = {
       config: { async get() { return {}; }, async update(c) { return c; } },
       getBaseUrl() { return "http://127.0.0.1:4096"; },
       async healthCheck() { return true; },
+      // optional:
+      // credentials: { getApiKey(provider) { return null; } },
+      // agents: { async install(name, definition) {}, async remove(name) {} },
     };
   },
 };
