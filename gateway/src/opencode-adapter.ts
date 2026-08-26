@@ -8,63 +8,24 @@
  * 4. 统一接口：消除 v1 嵌套 vs langgraph 扁平两种风格
  */
 
-// ─── 接口定义 ───────────────────────────────────────────────
+// ─── 接口定义（单源在 runtime/contract.ts，此处仅转发保持兼容） ─────────────
 
-export interface SessionCreateOpts {
-  directory?: string;
-}
+import type {
+  RuntimeClient,
+  SessionCreateOpts,
+  SessionPromptOpts,
+  SessionMessagesOpts,
+  SessionSummarizeOpts,
+} from './runtime/contract';
+export type {
+  SessionCreateOpts,
+  SessionPromptOpts,
+  SessionMessagesOpts,
+  SessionSummarizeOpts,
+} from './runtime/contract';
 
-export interface SessionPromptOpts {
-  sessionID: string;
-  parts?: Array<{ type: string; text: string; [k: string]: any }>;
-  message?: string;  // 便捷参数，自动转为 parts
-  agent?: string;
-  model?: { providerID: string; modelID: string };
-  variant?: string;
-  system?: string;
-  noReply?: boolean;
-}
-
-export interface SessionMessagesOpts {
-  sessionID: string;
-  limit?: number;
-  before?: string;
-}
-
-export interface SessionSummarizeOpts {
-  sessionID: string;
-  providerID?: string;
-  modelID?: string;
-}
-
-export interface OpencodeAdapter {
-  session: {
-    create(opts: SessionCreateOpts): Promise<{ id: string; [k: string]: any }>;
-    promptAsync(opts: SessionPromptOpts): Promise<void>;
-    prompt(opts: SessionPromptOpts): Promise<{ parts: any[]; [k: string]: any }>;
-    messages(opts: SessionMessagesOpts): Promise<{ data: any[]; nextCursor?: string }>;
-    get(opts: { sessionID: string }): Promise<any>;
-    delete(opts: { sessionID: string }): Promise<void>;
-    abort(opts: { sessionID: string }): Promise<void>;
-    list(opts?: { directory?: string }): Promise<any[]>;
-    todo(opts: { sessionID: string }): Promise<any[]>;
-    children(opts: { sessionID: string }): Promise<any[]>;
-    summarize(opts: SessionSummarizeOpts): Promise<any>;
-  };
-    global: {
-      event(): Promise<any>;
-    };
-  provider: {
-    list(): Promise<{ all: any[]; connected: string[]; default: Record<string, string> }>;
-  };
-  app: {
-    agents(): Promise<any[]>;
-  };
-  config: {
-    get(): Promise<any>;
-    update(config: any): Promise<any>;
-  };
-}
+/** @deprecated 等价于 RuntimeClient；保留别名避免下游改动。 */
+export type OpencodeAdapter = RuntimeClient;
 
 // ─── 工具函数 ───────────────────────────────────────────────
 
