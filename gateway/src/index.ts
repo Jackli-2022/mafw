@@ -61,8 +61,8 @@ import {
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent } from './runtime/normalize';
-import { RuntimeCapabilities, fullCapabilities } from './runtime/contract';
-import { RuntimePluginLoader } from './runtime/loader';
+import { RuntimeCapabilities, fullCapabilities, AgentRuntime } from './runtime/contract';
+import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -323,9 +323,12 @@ class MafwScheduler {
     // 1. Start HTTP API immediately (health check endpoint, MCP, etc.)
     await this.startApiServer();
 
-    // 2. 鍒涘缓 SDK 瀹㈡埛绔紙锟?auth锛夛紝鐢ㄤ簬鍋ュ悍妫€鏌ュ拰鍚庣画閫氫俊
-    const { createOpencodeAdapter } = await import('./opencode-adapter.js');
-    const sdkConfig = { 
+    // 2. 初始化 runtime 插件加载器
+    this.runtimeLoader = new RuntimePluginLoader(config.resolvePath('runtime-plugins'));
+    await this.runtimeLoader.init();
+
+    // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
+    const sdkConfig = {
       baseUrl: this.serveUrl,
       directory: this.projectDir,
       headers: {} as Record<string, string>,
@@ -334,12 +337,15 @@ class MafwScheduler {
     if (opencodePassword) {
       sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
     }
-    this.opencodeClient = await createOpencodeAdapter(sdkConfig);
+    const runtime = await this.createRuntime(sdkConfig);
+    this.opencodeClient = runtime;
+    this.runtimeCaps = runtime.capabilities;
+    this.runtimeName = runtime.name;
     this.sdkSession.setClient(this.opencodeClient);
     if (this.trajectoryCollector) {
       this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
     }
-    log.info('SDK client initialized (adapter)');
+    log.info(`Runtime initialized: ${runtime.name} (capabilities: ${JSON.stringify(runtime.capabilities)})`);
 
     // 3. Background: connect to OpenCode server
     const serveUrlOverridden = !!process.env.MAFW_SERVER_SERVE_URL;
@@ -783,6 +789,30 @@ class MafwScheduler {
     res.writeHead(503);
     res.end(JSON.stringify({ error: `capability '${String(cap)}' not available on runtime '${this.runtimeName}'` }));
     return true;
+  }
+
+  /**
+   * Runtime 选择：config.runtime.plugin 指定 ~/.mafw/runtime-plugins/ 中的插件；
+   * 未配置/找不到/加载失败一律回退内置 opencode（fail-open，行为与现状一致）。
+   */
+  private async createRuntime(sdkConfig: { baseUrl: string; directory?: string; headers: Record<string, string> }): Promise<AgentRuntime> {
+    const pluginName = config.runtime?.plugin;
+    if (pluginName) {
+      const plugin = this.runtimeLoader?.get(pluginName);
+      if (plugin) {
+        try {
+          const rt = await plugin.createRuntime(createRuntimePluginContext());
+          log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
+          return rt;
+        } catch (err: any) {
+          log.warn(`[Runtime] plugin '${pluginName}' createRuntime failed: ${err.message} — falling back to opencode`);
+        }
+      } else {
+        log.warn(`[Runtime] plugin '${pluginName}' not found — falling back to opencode`);
+      }
+    }
+    const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
+    return createOpencodeRuntime(sdkConfig);
   }
 
   // ── Path 1: step-ended memory injection ────────────────────────────────

@@ -168,6 +168,12 @@ export interface GatewayConfig {
       voices?: string[];
     };
   };
+  runtime: {
+    /** 激活的 runtime 插件名（~/.mafw/runtime-plugins/*.js 的 module.exports.name）；空 = 内置 opencode。 */
+    plugin?: string;
+    /** 插件自定义配置，按插件名索引（ctx.pluginConfig(name) 读取）。 */
+    pluginConfig?: Record<string, any>;
+  };
   alignment: {
     userWeightsFile: string;
   };
@@ -333,6 +339,11 @@ function defaults(projectDir: string): GatewayConfig {
         voices: ['冰糖', '茉莉', '苏打', '白桦', 'Mia', 'Chloe', 'Milo', 'Dean'],
       },
     },
+    runtime: {
+      // 空串默认值让 MAFW_RUNTIME_PLUGIN 环境变量覆盖生效
+      // （applyEnvOverrides 只遍历 defaults 里存在的 key）。
+      plugin: '',
+    },
     env: {
       mafwOpencodePath: 'MAFW_OPENCODE_PATH',
       enableLegacyMcp: 'ENABLE_LEGACY_MCP',
@@ -437,6 +448,7 @@ export class Config {
   get manager() { return this.data.manager; }
   get recall() { return this.data.recall; }
   get usage() { return this.data.usage; }
+  get runtime() { return this.data.runtime; }
 
   /**
    * MAFW data root — pinned to the gateway package's own .mafw directory so
