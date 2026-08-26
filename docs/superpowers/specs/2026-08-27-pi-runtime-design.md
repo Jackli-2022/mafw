@@ -70,6 +70,21 @@ config.runtime.plugin: pi
 
 loader 改造：`RuntimePluginLoader` 加 `registerBuiltin(name, factory, capabilities, external)` 方法，`get()` 先查内置再查文件。内置注册在 `index.ts` 启动序列里调用（`registerBuiltin('pi', createPiRuntime, ...)`）。
 
+### 4.2a 事件订阅与 serve 就绪解耦（外部 runtime 前置条件）
+
+**现状问题**：`index.ts:354-383` 中 `external:true` 分支走 `waitForServeReady()` 探测 opencode serve(4096)，不通则 `serveReady=false` → `subscribeToEvents()` 在 `if (serveReady)` 门内永不执行。纯 pi 环境（无 opencode serve）下 pi 声明 `eventStream: true` 但步进注入/自动化/桌面 SSE 全部静默失效，且日志误报 "MCP-only mode"。
+
+**改动**：外部 runtime 的事件订阅与 opencode serve 就绪**解耦**——`subscribeToEvents()` 移出 `serveReady` 门；`external=true` 且 runtime 声明 `eventStream: true` 时，事件订阅基于 `runtime.global.event()`（不依赖 serve 探测）。opencode（非 external）路径行为不变。此改动属于 Phase 1 范围（不是 Phase 3 待办），验收需覆盖纯 pi 环境下事件流实际工作。
+
+### 4.2b shutdown 语义
+
+gateway `stop()` 时：
+- 遍历 `PiSessionRegistry` 全部 `AgentSession.dispose()`
+- 事件订阅的 AsyncIterable 迭代器 `return()`（终止消费循环，触发退订）
+- `ModelRuntime` 单例不销毁（gateway 进程退出即回收）
+
+契约无 runtime 级 dispose 钩子——由 `createRuntime(ctx)` 返回的 AgentRuntime 上以自定义可选字段约定（如 `dispose?(): Promise<void>`），gateway stop 序列调用（存在则调）。Phase 1 实现。`PiSessionRegistry` 提供 `disposeAll()`。
+
 ### 4.3 pi 能力面（探索确认）
 
 | pi API | 用途 |
@@ -105,6 +120,18 @@ capabilities: {
 external: true                // 进程内嵌入，gateway 不 spawn
 ```
 
+**AgentRuntime 必选/可选成员补齐：**
+- `getBaseUrl(): string` — **必选**（contract.ts 强制，TS 编译即失败）。pi 无 serve 进程，返回 gateway 自身 HTTP base URL（`http://127.0.0.1:<apiPort>`，供桌面/健康面展示）。
+- `healthCheck?(): Promise<boolean>` — 可选但 watchdog 依赖。实现为 `ModelRuntime` 单例存活探测（`mr` 存在即 true），不触发网络调用。
+- `dispose?(): Promise<void>` — 自定义可选字段（§4.2b），gateway stop 时遍历会话 dispose + 终止事件流。
+- `global.event()` — 见 §7 生命周期。
+
+### 5.1 ModelRuntime 单例所有权（认证链接线）
+
+**关键约束**：`createAgentSession` 缺省会自建自己的 ModelRuntime（sdk.d.ts），不传 `modelRuntime` 则 `setRuntimeApiKey` 注入到别的实例、会话请求认证静默失败。
+
+**规定**：`createPiRuntime(ctx)` 创建**单例 ModelRuntime**（pi-adapter 同款：`ModelRuntime.create({ signal: AbortSignal.timeout(30_000) })`），并传入**每个** `createAgentSession({ modelRuntime, model: mr.getModel(provider, modelID) })`。认证链：`ctx.credentials?.getApiKey(provider)` → `readOpencodeAuth()` 回退 → `mr.setRuntimeApiKey(provider, key)`（写入单例，所有会话共享）。
+
 ## 6. 会话模型（单例 Map）
 
 ```ts
@@ -116,9 +143,12 @@ class PiSessionRegistry {
 
   async promptAsync(id: string, text: string): Promise<void>
     // session.prompt(text) + await waitForIdle()
+    // 忙时语义：AgentSession 同一时刻只有一个 agent run（isStreaming）。
+    // 忙时新 prompt 走 followUp 队列：sendUserMessage(content, { deliverAs: 'followUp' })
+    // （或 prompt({ streamingBehavior: 'followUp' })），与 pi 交互模式一致
 
   async prompt(id: string, text: string): Promise<{ parts: any[] }>
-    // prompt + waitForIdle + 取最新 assistant 消息翻译
+    // 同上发消息 + waitForIdle + 取最新 assistant 消息翻译（pi-messages.ts）
 
   async messages(id: string, opts?): Promise<{ data: any[] }>
     // AgentSession.messages → opencode 形状（pi-messages.ts）
@@ -133,7 +163,9 @@ class PiSessionRegistry {
 }
 ```
 
-**未实现映射（返回空/降级）：** `todo` → []、`children` → []、`get` → 元数据形状（id/directory/title）。
+**未实现映射（返回空/降级）：** `todo` → []、`children` → []、`get` → 元数据形状（id/directory/title）、`summarize` → `session.compact()`（映射到 pi 原生压缩）。
+
+**并发约束（风险 5 修正）**：`createAgentSession` 每次调用建新 session（`SessionManager.create(cwd)` 默认每会话一个），Map<sessionID, AgentSession> 无同 cwd 冲突。真实约束是**每个 AgentSession 同时只有一个 agent run**（`isStreaming`）——用 followUp/steer 队列处理忙时新消息（见 promptAsync）。
 
 ## 7. 事件流翻译（pi-events.ts）
 
@@ -145,15 +177,25 @@ AgentSession.subscribe(event)
   → 现有 normalize.ts 消费（EventFacets）
 ```
 
-| pi 事件 | opencode 形状 |
-|---|---|
-| `agent_start` | session.updated（started） |
-| `message_start` / `message_update` / `message_end` | message.part.updated（delta / text） |
-| `tool_call` / `tool_result` | message.part.updated（tool-call / tool-result） |
-| `turn_start` / `turn_end` | message.part.updated（step-start / step-finish） |
-| `agent_end` / `agent_settled` | session.updated（idle / complete） |
+**翻译目标（以 normalize.ts 实际消费面为准，normalize.ts:60-90）：**
 
-翻译目标以 normalize.ts 消费的形状为准（step-finish / session.updated / message.part.updated）；精确映射表实现期按 normalize.ts 的 `normalizeOpencodeEvent` 输入面确定。sessionID 从注册表逆查（event 不带 sessionID，按 AgentSession 实例对应）。
+| pi 事件 | opencode 形状（翻译目标） | normalize 产出 |
+|---|---|---|
+| `agent_start` | session.updated（passthrough） | 死事件，仅保留 sessionID |
+| `message_start` / `message_update` | message.part.updated（part.text/delta） | chatSignal=delta |
+| `message_end` | message.updated | chatSignal=complete |
+| `tool_call` / `tool_result` | message.part.updated（tool-call / tool-result） | step 提取 |
+| `turn_start` | message.part.updated（step-start） | step 提取 |
+| `turn_end` | message.part.updated（step-finish） | step 提取（step-inject 消费） |
+| `agent_end` / `agent_settled` | **session.idle**（不是 session.updated） | broadcast=idle / chatSignal=complete |
+| 错误（error 事件） | **session.error** | broadcast=error / chatSignal=error |
+
+> 注意：`session.updated` 是 normalize 的 passthrough 死事件（normalize.ts:80-81 只认 session.idle/session.error）。完成信号必须映射到 **session.idle**，否则 step-inject 与桌面 SSE 漏掉完成。
+
+**生命周期（§4.2b 配套）：**
+- `subscribeToEvents()` 可能多次调用（启动 + recoverServe）：每次调用 `global.event()` 建新 AsyncIterable；**重复订阅复用同一底层流**（单例订阅，内部引用计数；消费循环结束/出错时迭代器 `return()` 触发退订 `listener.unsubscribe()`）
+- 实现：`PiEventStream` 单例持有 AgentSession 订阅；多个 AsyncIterable 消费者共享一个底层 listener（fan-out）
+- sessionID 从注册表逆查（AgentSession 实例 ↔ sessionID 双向 Map）
 
 ## 8. 配置与认证
 
@@ -186,9 +228,18 @@ media:
 - 视频/音频：`sendUserMessage([{type:'image', data, mimeType: video/mp4}])` → `before_provider_request` 挂 `fixMediaPayload`
 - 媒体 agent 可配置用不同 runtime：`media.engine` 从 media-plugin 引擎扩展为"runtime 名或插件引擎名"
 
+**MediaRuntimeExecutor 必须覆盖的执行器面（媒体 agent 现有 executor 能力）：**
+- `execute(ctx, bus)` — 首轮：媒体 FilePart 作为首条消息（`sendUserMessage([{type:'image', data, mimeType}])`）→ prompt；追问：同 session 内 `promptAsync(text)`。返回文本 + 新 taskID（复用现有 A2A task 链，task 仍是每次 execute 一个，但底层是同一 pi session）
+- `cancelTask(taskId, bus)` — A2A 取消 → `session.abort()`
+- **音频首轮叙事路径**：`analyzeAudioNarrative`（media-agent.ts:561）现为独立入口——executor 必须支持音频首轮走同一会话序列（音频转写 + 叙事分析一次 prompt 完成）
+- **超时语义**：`AgentSession.prompt` 无超时参数（pi-adapter 原 180s `AbortSignal.timeout` 不适用）。executor 侧用 `Promise.race` 包超时（默认 180s，pluginConfig 可配），超时 → `session.abort()` + A2A 任务标记失败
+- **映射键**：taskID/contextId → pi session 的映射与 GC（task 完成或取消后，对应 session 保留 TTL 供追问，如 24h 后 dispose）
+
+**Phase 2 验收补充：** A2A 首轮/追问/取消/音频四路径全部走 `MediaRuntimeExecutor`；`media.engine` 支持 `pi`（runtime 名）与插件引擎名（media-plugin 系统）双路由。
+
 ## 10. 分期
 
-- **Phase 1**：pi-runtime 插件本体（Tier 2 部分能力：session/eventStream/provider；nativeApprovals/sessionStorageApi/agentConfigApi false）。媒体不动。
+- **Phase 1**：pi-runtime 插件本体（Tier 2 部分能力：session/eventStream/provider；nativeApprovals/sessionStorageApi/agentConfigApi false）+ §4.2a 事件订阅与 serve 解耦 + §4.2b shutdown。媒体不动。
 - **Phase 2**：媒体 agent 改消费 AgentRuntime + MediaRuntimeExecutor + `media.engine` 路由扩展。
 - **Phase 3**（后续待办）：nativeApprovals 翻译层、sessionStorageApi（listByDirectory）、agentConfigApi。
 
@@ -214,13 +265,16 @@ media:
 | pi 事件不带 sessionID | 注册表逆查（AgentSession 实例 ↔ sessionID 双向 Map） |
 | pi 消息形状翻译差异 | pi-messages.ts 隔离翻译层，单测覆盖映射表 |
 | ESM 桥在 jest 环境不可用 | 测试全部 mock pi 模块；真实加载只一个冒烟测试 |
-| AgentSession 单例限制（一个 cwd 一个 session） | 注册表按 sessionID 管理；并发 prompt 用 pi 内部队列语义（steering/followUp） |
+| 每个 AgentSession 同时只有一个 agent run（isStreaming） | 忙时新 prompt 走 followUp 队列（§6 promptAsync 忙时语义）；不涉及同 cwd 冲突（createAgentSession 每次建新 session） |
+| external=true 时事件订阅被 serveReady 门挡住（纯 pi 环境静默失效） | §4.2a 解耦改动（Phase 1 范围，非待办） |
+| `AgentSession.prompt` 无超时参数 | executor 侧 `Promise.race` 包超时（默认 180s）+ `session.abort()`（§9） |
 
 ## 13. 验收标准
 
 1. `npm run build` exit 0
 2. `runtime.plugin: pi` 启动 → `/api/runtime` 返回 pi 能力集（8 项声明如 §5）
 3. pi 会话：create → promptAsync → messages 全链路工作（冒烟，真模型或 mock）
-4. 媒体 agent（Phase 2）：图片/视频/音频追问在同一会话内保持上下文
-5. opencode 路径全程行为不变（回归全绿）
-6. `rg -n "TODO" gateway/src/runtime/pi/` 仅 Phase 3 待办标记
+4. **纯 pi 环境（无 opencode serve）事件流实际工作**：`subscribeToEvents()` 不被 serveReady 门挡住（§4.2a），步进注入/自动化触发器收到完成信号（session.idle）
+5. 媒体 agent（Phase 2）：图片/视频/音频追问在同一会话内保持上下文；取消（cancelTask）→ abort；超时 → 失败标记
+6. opencode 路径全程行为不变（回归全绿）
+7. `rg -n "TODO" gateway/src/runtime/pi/` 仅 Phase 3 待办标记
