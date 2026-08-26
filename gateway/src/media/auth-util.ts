@@ -2,7 +2,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-/** opencode auth.json 默认路径（Windows: ~/.local/share/opencode/auth.json）。 */
+/**
+ * opencode auth.json 默认路径（Windows: ~/.local/share/opencode/auth.json）。
+ *
+ * TODO(runtime-debt): this is a filesystem-level coupling to opencode's private
+ * credential store. When supporting other runtimes, abstract behind a
+ * "credential provider" interface (e.g., runtime.getCredential(providerName)).
+ */
 export const DEFAULT_AUTH_PATH = (): string =>
   path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json');
 

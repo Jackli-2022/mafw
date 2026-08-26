@@ -44,6 +44,12 @@ ${permissionYaml()}
 ${MANAGER_IDENTITY_SYSTEM_PROMPT}
 `;
 
+/**
+ * TODO(runtime-debt): this writes directly to opencode's agent config directory
+ * (~/.config/opencode/agent/manager.md) using opencode's frontmatter permission
+ * syntax. When supporting other runtimes, abstract behind a "agent definition
+ * provider" interface. Other runtimes have different permission models.
+ */
 export function ensureManagerAgentConfig(): string | null {
   try {
     const dir = path.join(os.homedir(), '.config', 'opencode', 'agent');

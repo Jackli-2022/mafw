@@ -108,7 +108,11 @@ export interface AgentRuntime extends RuntimeClient {
   /** runtime 标识，如 'opencode' */
   readonly name: string;
   readonly capabilities: RuntimeCapabilities;
-  /** true = 外部托管（gateway 不 spawn/监管 serve 进程）。信息性字段，一期不接线。 */
+  /**
+   * true = 外部托管（gateway 不 spawn/监管 serve 进程）。信息性字段，一期不接线。
+   * TODO(runtime-debt): wire into serve-sidecar logic — when external=true, skip
+   * spawn/watchdog/recoverServe. Currently MAFW_SERVER_SERVE_URL env var handles this.
+   */
   readonly external?: boolean;
   /** 健康探测（watchdog / adopt 判定用）；缺省时由调用方自管。 */
   healthCheck?(): Promise<boolean>;

@@ -31,6 +31,8 @@ async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], re
 
   log.info(`[WakeHandler] Injecting wake prompt into session ${sessionId}: ${reason}`);
   try {
+    // TODO(runtime-debt): inject shared AgentRuntime instead of creating a new adapter
+    // per call. This bypasses the runtime contract seam (plugin runtimes won't work here).
     const { createOpencodeAdapter } = await import('../../opencode-adapter.js');
     const client = await createOpencodeAdapter({ baseUrl: process.env.MAFW_SERVE_URL || 'http://127.0.0.1:4096' });
     await client.session.promptAsync({

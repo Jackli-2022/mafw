@@ -228,6 +228,8 @@ class MafwScheduler {
   private running = true;
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
+  // TODO(runtime-debt): change type from `any` to `AgentRuntime | null` — currently blocked
+  // by 40+ call sites that would surface type errors. Fix in a dedicated task.
   private opencodeClient: any = null;
   private runtimeCaps: RuntimeCapabilities = fullCapabilities();
   private runtimeName = 'opencode';

@@ -5,6 +5,10 @@ import * as path from 'path';
 /**
  * Minimal read-only access to the opencode server database (`opencode.db`).
  *
+ * TODO(runtime-debt): this is a filesystem-level coupling to opencode's private
+ * storage. When supporting other runtimes, abstract this behind a "session
+ * storage provider" interface. Other runtimes won't have opencode.db.
+ *
  * The opencode serve instance resolves the current project to `project_id =
  * "global"` on this machine, which makes its `session.list` return only global
  * sessions and hide the sessions that actually belong to the project (keyed by
