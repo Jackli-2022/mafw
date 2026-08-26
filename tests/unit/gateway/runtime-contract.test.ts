@@ -9,6 +9,8 @@ describe('runtime contract capabilities', () => {
       nativeApprovals: true,
       providerConfigApi: true,
       perLlmCallTransform: true,
+      sessionStorageApi: true,
+      agentConfigApi: true,
     });
   });
 
@@ -20,6 +22,8 @@ describe('runtime contract capabilities', () => {
       nativeApprovals: false,
       providerConfigApi: false,
       perLlmCallTransform: false,
+      sessionStorageApi: false,
+      agentConfigApi: false,
     });
   });
 });

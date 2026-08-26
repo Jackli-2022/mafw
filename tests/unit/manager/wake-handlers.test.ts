@@ -22,6 +22,25 @@ describe('wake-handlers', () => {
     stateDir = path.join(tmpDir, 'state');
     fs.mkdirSync(stateDir, { recursive: true });
     engine = new AutomationEngine(tmpDir);
+    engine.setRuntimeClient({
+      session: {
+        create: jest.fn().mockResolvedValue({ id: 'mock' }),
+        promptAsync: jest.fn().mockResolvedValue(undefined),
+        prompt: jest.fn().mockResolvedValue({ parts: [] }),
+        messages: jest.fn().mockResolvedValue({ data: [] }),
+        get: jest.fn().mockResolvedValue({}),
+        delete: jest.fn().mockResolvedValue(undefined),
+        abort: jest.fn().mockResolvedValue(undefined),
+        list: jest.fn().mockResolvedValue([]),
+        todo: jest.fn().mockResolvedValue([]),
+        children: jest.fn().mockResolvedValue([]),
+        summarize: jest.fn().mockResolvedValue({}),
+      },
+      global: { event: jest.fn().mockResolvedValue({}) },
+      provider: { list: jest.fn().mockResolvedValue({ all: [], connected: [], default: {} }) },
+      app: { agents: jest.fn().mockResolvedValue([]) },
+      config: { get: jest.fn().mockResolvedValue({}), update: jest.fn().mockResolvedValue({}) },
+    });
   });
 
   afterEach(() => {

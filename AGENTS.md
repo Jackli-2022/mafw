@@ -511,16 +511,30 @@ manager agent 定义在 `~/.config/opencode/agent/manager.md`（`ensureManagerAg
 gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runtime/`）：
 
 - `contract.ts` — `RuntimeCapabilities`（sessionApi/promptWhileBusy/eventStream/
-  nativeApprovals/providerConfigApi/perLlmCallTransform）+ `RuntimeClient` 接口面
-  + `AgentRuntime`。能力分级：Tier 0（协作协议 + per-turn 记忆）→ Tier 1（+ 自治执行
-  + per-step 记忆）→ Tier 2（+ 桌面完整，opencode 形状 DTO 归一化输出）
+  nativeApprovals/providerConfigApi/perLlmCallTransform/sessionStorageApi/agentConfigApi）
+  + `RuntimeClient` 接口面 + `AgentRuntime`。能力分级：Tier 0（协作协议 + per-turn 记忆）
+  → Tier 1（+ 自治执行 + per-step 记忆）→ Tier 2（+ 桌面完整，opencode 形状 DTO 归一化输出）
 - `normalize.ts` — runtime 原生事件 → `EventFacets`（正交切面：step/chatSignal/
   broadcast/toolCommand）；opencode 版本知识（≥1.18 step-finish part 结算）只存在于
   本文件和 step-inject.ts 的两个 helper
-- `opencode-runtime.ts` — 内置恒等实现（全能力，`external` 跟随 MAFW_SERVER_SERVE_URL）
+- `opencode-runtime.ts` — 内置恒等实现（全能力，`external` 跟随 MAFW_SERVER_SERVE_URL）；
+  内含 opencode 专属实现：SQLite session 存储（`sessionStorageApi`）、auth.json 凭据
+  （`credentials`）、agent frontmatter 序列化（`agents.install`）
+- `agent-definition.ts` — 运行时中立的 `AgentDefinition` 模型（description/mode/model/
+  systemPrompt/permissions），各 runtime 翻译为自己的配置格式
 - `loader.ts` — `~/.mafw/runtime-plugins/*.js` 插件加载（CJS `module.exports =
   { name, capabilities, createRuntime(ctx) }`，fail-open，无热加载；能力声明覆盖在
   Tier-0 基线之上）
+
+**可选能力与接口扩展：**
+- `external?: boolean` + `getBaseUrl(): string` — runtime 声明托管模式；`external=true`
+  时 gateway 不 spawn/不 kill，watchdog 仅健康探测 + 事件流重连
+- `credentials?: { getApiKey(provider): string | null }` — 凭据获取；media 服务优先走
+  runtime credentials，回退直读 auth.json
+- `sessionStorageApi?: boolean` + `session.listByDirectory?(dir, limit)` — 直读 runtime
+  私有存储列出会话；缺失时回退 `session.list` + 客户端目录过滤
+- `agentConfigApi?: boolean` + `agents?: { install(name, definition); remove?(name) }` —
+  agent 定义安装；缺失时跳过 + warn 日志（manager 功能降级但不崩）
 
 激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前

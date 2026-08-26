@@ -1,14 +1,6 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { AgentDefinition } from '../runtime/agent-definition';
 import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './manager-identity';
-import { log } from '../core/utils/logger';
 
-// The `manager` primary agent definition, installed into the global opencode
-// config on gateway start so every registered project can switch to / mention
-// the MAFW manager agent. Permission profile aligns with the built-in `plan`
-// agent (no direct edits, no opencode task dispatch) plus an explicit allowlist
-// for the gateway MCP tools (mafw_*), which the manager orchestrates through.
 const MAFW_TOOL_ALLOWLIST = [
   'mafw_create_goal', 'mafw_update_state', 'mafw_search_hybrid', 'mafw_get_deltas',
   'mafw_load_state', 'mafw_ask_user', 'mafw_record_feedback', 'mafw_get_model_route',
@@ -22,47 +14,23 @@ const MAFW_TOOL_ALLOWLIST = [
   'mafw_desktop_click', 'mafw_desktop_type', 'mafw_desktop_scroll',
 ] as const;
 
-function permissionYaml(): string {
-  const tools = MAFW_TOOL_ALLOWLIST.map((t) => `  ${t}: allow`).join('\n');
-  return `permission:
-  question: allow
-  plan_exit: allow
-  task:
-    general: deny
-  edit:
-    "*": deny
-${tools}`;
-}
-
-const MANAGER_AGENT_TEMPLATE = `---
-mode: primary
-description: 编排 · 分解任务与调度
-color: "#46DC82"
-${permissionYaml()}
----
-
-${MANAGER_IDENTITY_SYSTEM_PROMPT}
-`;
-
-/**
- * TODO(runtime-debt): this writes directly to opencode's agent config directory
- * (~/.config/opencode/agent/manager.md) using opencode's frontmatter permission
- * syntax. When supporting other runtimes, abstract behind a "agent definition
- * provider" interface. Other runtimes have different permission models.
- */
-export function ensureManagerAgentConfig(): string | null {
-  try {
-    const dir = path.join(os.homedir(), '.config', 'opencode', 'agent');
-    const file = path.join(dir, 'manager.md');
-    // Always (re)write the template so permission changes propagate to
-    // existing installs; the file is generated content, not user-owned.
-    fs.mkdirSync(dir, { recursive: true });
-    const existed = fs.existsSync(file);
-    fs.writeFileSync(file, MANAGER_AGENT_TEMPLATE, 'utf-8');
-    log.info(`[ManagerAgent] ${existed ? 'updated' : 'wrote'} ${file}`);
-    return file;
-  } catch (err: any) {
-    log.error(`[ManagerAgent] failed to write config: ${err.message}`);
-    return null;
+export function getManagerAgentDefinition(): AgentDefinition {
+  const tools: Record<string, 'allow'> = {
+    question: 'allow',
+    plan_exit: 'allow',
+  };
+  for (const t of MAFW_TOOL_ALLOWLIST) {
+    tools[t] = 'allow';
   }
+  return {
+    description: '编排 · 分解任务与调度',
+    mode: 'primary',
+    color: '#46DC82',
+    systemPrompt: MANAGER_IDENTITY_SYSTEM_PROMPT,
+    permissions: {
+      edit: 'deny',
+      task: { general: 'deny' },
+      tools,
+    },
+  };
 }

@@ -8,14 +8,20 @@ export interface Intent {
 import { config } from '../config';
 
 export class IntentClassifier {
+  private readonly executeKw: string[];
+  private readonly searchKw: string[];
+
+  constructor(executeKw?: string[], searchKw?: string[]) {
+    this.executeKw = executeKw ?? config.chat.executeGraphKeywords;
+    this.searchKw = searchKw ?? config.chat.searchMemoryKeywords;
+  }
+
   classify(message: string): Intent {
     const lower = message.toLowerCase();
-    const executeKw = config.chat.executeGraphKeywords;
-    if (executeKw.some(kw => lower.includes(kw))) {
+    if (this.executeKw.some(kw => lower.includes(kw))) {
       return { action: 'EXECUTE_GRAPH', entities: {} };
     }
-    const searchKw = config.chat.searchMemoryKeywords;
-    if (searchKw.some(kw => lower.includes(kw))) {
+    if (this.searchKw.some(kw => lower.includes(kw))) {
       return { action: 'SEARCH_MEMORY', entities: {} };
     }
     return { action: 'RAG_ONLY', entities: {} };

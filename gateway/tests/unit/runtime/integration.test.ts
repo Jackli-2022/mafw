@@ -23,7 +23,25 @@ jest.mock('../../../src/config', () => ({
 }));
 
 jest.mock('../../../src/opencode-adapter', () => ({
-  createOpencodeAdapter: jest.fn(async () => ({ __mockClient: true })),
+  createOpencodeAdapter: jest.fn(async () => ({
+    session: {
+      create: jest.fn(),
+      promptAsync: jest.fn(),
+      prompt: jest.fn(),
+      messages: jest.fn(),
+      get: jest.fn(),
+      delete: jest.fn(),
+      abort: jest.fn(),
+      list: jest.fn(),
+      todo: jest.fn(),
+      children: jest.fn(),
+      summarize: jest.fn(),
+    },
+    global: { event: jest.fn() },
+    provider: { list: jest.fn() },
+    app: { agents: jest.fn() },
+    config: { get: jest.fn(), update: jest.fn() },
+  })),
 }));
 
 // Simulate capGuard logic from index.ts (extracted for testability)

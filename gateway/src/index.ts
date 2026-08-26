@@ -43,7 +43,7 @@ import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
 import { wakeCompletedHandler, wakeFailedHandler, wakeQuestionHandler } from './core/manager/wake-handlers';
 import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
-import { ensureManagerAgentConfig } from './skills/manager-agent-config';
+import { getManagerAgentDefinition } from './skills/manager-agent-config';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
@@ -228,9 +228,7 @@ class MafwScheduler {
   private running = true;
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
-  // TODO(runtime-debt): change type from `any` to `AgentRuntime | null` — currently blocked
-  // by 40+ call sites that would surface type errors. Fix in a dedicated task.
-  private opencodeClient: any = null;
+  private opencodeClient: AgentRuntime | null = null;
   private runtimeCaps: RuntimeCapabilities = fullCapabilities();
   private runtimeName = 'opencode';
   private runtimeLoader?: RuntimePluginLoader;
@@ -347,13 +345,16 @@ class MafwScheduler {
     if (this.trajectoryCollector) {
       this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
     }
+    if (this.automationEngine) {
+      this.automationEngine.setRuntimeClient(runtime);
+    }
     log.info(`Runtime initialized: ${runtime.name} (capabilities: ${JSON.stringify(runtime.capabilities)})`);
 
     // 3. Background: connect to OpenCode server
-    const serveUrlOverridden = !!process.env.MAFW_SERVER_SERVE_URL;
+    const isExternal = !!runtime.external;
     let serveReady = false;
-    if (serveUrlOverridden) {
-      log.info(`[Scheduler] Using external OpenCode Serve at ${this.serveUrl}`);
+    if (isExternal) {
+      log.info(`[Scheduler] Using external OpenCode Serve at ${this.serveUrl} (runtime.external=true)`);
       try { await this.waitForServeReady(); serveReady = true; }
       catch { log.warn('External OpenCode Serve not available 锟?MCP-only mode'); }
     } else {
@@ -469,8 +470,16 @@ class MafwScheduler {
       log.warn(`[Scheduler] legacy T1 archival failed (non-fatal): ${err.message}`);
     }
 
-    // 5.1 Install the global `manager` primary agent (opencode config) if missing
-    ensureManagerAgentConfig();
+    // 5.1 Install the global `manager` primary agent (runtime-neutral definition)
+    if (this.runtimeCaps.agentConfigApi && this.opencodeClient?.agents) {
+      try {
+        await this.opencodeClient.agents.install('manager', getManagerAgentDefinition());
+      } catch (err: any) {
+        log.warn(`[ManagerAgent] install failed (non-fatal): ${err.message}`);
+      }
+    } else {
+      log.warn('[ManagerAgent] agentConfigApi not available — manager agent permission guardrails unavailable');
+    }
 
     // 6. 鎭㈠娲昏穬 Goal
     await this.recoverState();
@@ -559,6 +568,7 @@ class MafwScheduler {
       } catch { /* skip */ }
     }
 
+    if (!this.opencodeClient) return;
     let notified = false;
     for (const sid of targets) {
       try {
@@ -688,6 +698,10 @@ class MafwScheduler {
   private async subscribeToEvents() {
     if (!this.runtimeCaps.eventStream) {
       log.info(`[Scheduler] runtime '${this.runtimeName}' declares no event stream; skipping subscription`);
+      return;
+    }
+    if (!this.opencodeClient) {
+      log.warn('[Scheduler] opencodeClient not available; skipping event subscription');
       return;
     }
     try {
@@ -929,7 +943,7 @@ class MafwScheduler {
     if (!this.workerPool) {
       if (!this.opencodeClient) throw new Error('opencodeClient not available');
       this.workerPool = new SessionWorkerPool({
-        client: this.opencodeClient as any,
+        client: this.opencodeClient,
         directory: this.projectDir,
         ttlMs: config.recall.sessionWorkerTtlMs,
         compactIdleMs: config.recall.workerCompactIdleMs,
@@ -947,9 +961,10 @@ class MafwScheduler {
     if (!this.memoryService) return null;
     if (!this.scanService) {
       if (!this.opencodeClient) return null;
+      const client = this.opencodeClient;
       this.scanService = new IndexScanService(
         this.memoryService.harmonicIndex,
-        () => new MemoryWorker(this.opencodeClient as any, {
+        () => new MemoryWorker(client, {
           directory: this.projectDir,
           label: 'index-scan',
           promptTimeoutMs: 15_000,
@@ -1242,11 +1257,17 @@ class MafwScheduler {
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
     this.memoryService = new MemoryService(mafwDir);
 
-    this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'));
+    this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
+      getCredentials: () => this.opencodeClient?.credentials ?? undefined,
+    });
     await this.mediaPluginLoader.init();
 
     this.mediaService = new MediaService({
-      prompt: createPiPromptAdapter(),
+      prompt: createPiPromptAdapter({
+        getApiKey: (provider) => {
+          return this.opencodeClient?.credentials?.getApiKey(provider) ?? undefined;
+        },
+      }),
       config: () => config.raw.media,
       resolvePrompt: (kind, cfg) => {
         const engineName = cfg[kind]?.engine ?? cfg.engine ?? 'pi';
@@ -1276,8 +1297,10 @@ class MafwScheduler {
       artifactPath: '/a2a/artifacts',
       storageDir: path.join(mafwDir, 'workspace', workspaceName),
     });
+    const self = this;
     this.ttsService = createTtsService({
       config: () => config.raw,
+      get credentials() { return self.opencodeClient?.credentials; },
     });
     const pyBin = process.env.MAFW_PYTHON_BIN
       || path.join(os.homedir(), 'AppData', 'Local', 'agent-vision-toolkit', '.venv-pykernel', 'Scripts', 'python.exe');
@@ -1524,6 +1547,7 @@ class MafwScheduler {
   // Health-poll watchdog covers both adopted and owned serves. SDK
   // `createOpencodeServer` does not expose an exit callback, and even owned
   // sidecars can die silently (network stack torn down without process exit).
+  // External runtimes: probe-only — never kill or respawn the external process.
   private startServeWatchdog() {
     if (this.serveWatchdogTimer) return;
     let failures = 0;
@@ -1537,6 +1561,13 @@ class MafwScheduler {
       log.warn(`[Scheduler] Serve unhealthy (${failures}/${this.serveWatchdogFailures})`);
       if (failures >= this.serveWatchdogFailures) {
         failures = 0;
+        if (this.opencodeClient?.external) {
+          log.warn('[Scheduler] External serve unreachable; reconnecting event stream only (not killing external process)');
+          try { await this.subscribeToEvents(); } catch (err: any) {
+            log.warn(`[Scheduler] External event reconnect failed: ${err.message}`);
+          }
+          return;
+        }
         // Drop the stale handle so /health stops claiming serveRunning:true.
         this.serveInstance = undefined;
         await this.recoverServe();
@@ -1574,9 +1605,19 @@ class MafwScheduler {
       if (s?.id) seen.add(s.id);
     }
     try {
-      const { listSessionsFromDb } = await import('./resources/opencode-db.js');
-      if (projectID) {
-        for (const s of listSessionsFromDb(projectID)) {
+      if (projectID && this.opencodeClient) {
+        let dbSessions: any[] = [];
+        if (this.runtimeCaps.sessionStorageApi && this.opencodeClient.session.listByDirectory) {
+          dbSessions = await this.opencodeClient.session.listByDirectory(projectID);
+        } else {
+          const all = await this.opencodeClient.session.list();
+          const target = normalizeDir(projectID);
+          dbSessions = (Array.isArray(all) ? all : []).filter((s: any) => {
+            const d = normalizeDir(s.directory || '');
+            return d === target || d.startsWith(target + '/');
+          });
+        }
+        for (const s of dbSessions) {
           if (!seen.has(s.id)) {
             merged.push(s);
             seen.add(s.id);
@@ -4214,6 +4255,7 @@ class MafwScheduler {
   // 鈹€鈹€ 宸ュ叿鍑芥暟锛堜娇锟?SDK 瀹㈡埛绔級 鈹€鈹€
 
   private async createSession(projectDir: string): Promise<Session> {
+    if (!this.opencodeClient) throw new Error('opencodeClient not available');
     const created = await this.opencodeClient.session.create({ directory: projectDir });
     if (!created?.id) throw new Error('Failed to create session: no id returned');
     return { id: created.id, createdAt: created.createdAt || new Date().toISOString() };
@@ -4221,6 +4263,7 @@ class MafwScheduler {
 
   private async sendPrompt(sessionId: string, message: string) {
     if (!sessionId) return;
+    if (!this.opencodeClient) return;
     await this.opencodeClient.session.promptAsync({
       sessionID: sessionId,
       parts: [{ type: 'text', text: message }],
@@ -4229,6 +4272,7 @@ class MafwScheduler {
 
   private async destroySession(sessionId: string) {
     if (!sessionId) return;
+    if (!this.opencodeClient) return;
     try {
       await this.opencodeClient.session.delete({ sessionID: sessionId });
     } catch (err: any) {
@@ -4685,6 +4729,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   private async createManagerSession(projectDir: string, mafwDir: string): Promise<string> {
+    if (!this.opencodeClient) throw new Error('opencodeClient not available');
     // Manager identity lives in the gateway DB (kv_store), so it survives
     // project-directory churn and never gets orphaned by directory moves.
     const existing = this.getGatewayDb().kvGet<{ sessionId: string; createdAt?: string | null }>(

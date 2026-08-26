@@ -3,6 +3,7 @@ import { log } from '../core/utils/logger';
 import { getProviderApiKey } from './auth-helpers';
 import { ExternalAdapter } from './types';
 import { UsageProvider, Severity } from './types';
+import type { RuntimeCredentials } from '../runtime/contract';
 
 export interface PluginContext {
   apiKey: (name: string) => string | null;
@@ -12,9 +13,12 @@ export interface PluginContext {
   log: typeof log;
 }
 
-export function createPluginContext(pluginName: string): PluginContext {
+export function createPluginContext(
+  pluginName: string,
+  credentials?: RuntimeCredentials,
+): PluginContext {
   return {
-    apiKey: (name: string) => getProviderApiKey(name) ?? null,
+    apiKey: (name: string) => getProviderApiKey(name, undefined, credentials) ?? null,
     cookie: (name: string) => {
       const c = config.usage?.cookies?.[name];
       return typeof c === 'string' && c.trim() ? c.trim() : null;

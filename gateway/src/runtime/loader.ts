@@ -181,6 +181,7 @@ module.exports = {
       provider: { async list() { return { all: [], connected: [], default: {} }; } },
       app: { async agents() { return []; } },
       config: { async get() { return {}; }, async update(c) { return c; } },
+      getBaseUrl() { return "http://127.0.0.1:4096"; },
       async healthCheck() { return true; },
     };
   },

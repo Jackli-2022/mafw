@@ -1,23 +1,57 @@
 ﻿import { log } from '../utils/logger';
 import { AutomationRule, AutomationEngine } from '../../automation-engine';
+import { RuntimeClient } from '../../runtime/contract';
 import * as fs from 'fs';
 import * as path from 'path';
 import { QuestionLedger } from './question-ledger';
 
 const reportedQuestions: Set<string> = new Set();
 
-async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], reason: string): Promise<void> {
-  const mafwDir = engine['mafwDir'] as string;
+export async function injectWakePrompt(
+  client: RuntimeClient,
+  _projectDir: string,
+  sessionId: string,
+  reason: string,
+  countCompleted: number,
+  countFailed: number,
+): Promise<void> {
+  const wakePrompt = `[MANAGER SYSTEM WAKE] Goals updated. Active: ${countCompleted} completed, ${countFailed} failed.\nUse mafw_get_goal_status for details. Do NOT fabricate results.`;
+
+  log.info(`[WakeHandler] Injecting wake prompt into session ${sessionId}: ${reason}`);
+  try {
+    await client.session.promptAsync({
+      sessionID: sessionId,
+      parts: [{ type: 'text', text: wakePrompt }],
+    });
+  } catch (err: any) {
+    log.warn(`[WakeHandler] Failed to inject wake prompt: ${err.message}`);
+  }
+}
+
+async function resolveManagerSession(mafwDir: string): Promise<string | null> {
   const managerSessionFile = path.join(mafwDir, 'manager-session.json');
   if (!fs.existsSync(managerSessionFile)) {
     log.info('[WakeHandler] No manager session found — skipping wake injection');
-    return;
+    return null;
   }
   const { sessionId } = JSON.parse(fs.readFileSync(managerSessionFile, 'utf-8'));
   if (!sessionId) {
     log.warn('[WakeHandler] Manager session id missing — skipping wake injection');
+    return null;
+  }
+  return sessionId;
+}
+
+async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], reason: string): Promise<void> {
+  const client = engine.runtimeClient;
+  if (!client) {
+    log.warn('[WakeHandler] No runtime client available — skipping wake injection');
     return;
   }
+
+  const mafwDir = engine['mafwDir'] as string;
+  const sessionId = await resolveManagerSession(mafwDir);
+  if (!sessionId) return;
 
   const countCompleted = goalIds.filter(gid => {
     const sf = path.join(mafwDir, 'state', `${gid}.json`);
@@ -27,21 +61,7 @@ async function injectWakeMessage(engine: AutomationEngine, goalIds: string[], re
   }).length;
 
   const countFailed = goalIds.length - countCompleted;
-  const wakePrompt = `[MANAGER SYSTEM WAKE] Goals updated. Active: ${countCompleted} completed, ${countFailed} failed.\nUse mafw_get_goal_status for details. Do NOT fabricate results.`;
-
-  log.info(`[WakeHandler] Injecting wake prompt into session ${sessionId}: ${reason}`);
-  try {
-    // TODO(runtime-debt): inject shared AgentRuntime instead of creating a new adapter
-    // per call. This bypasses the runtime contract seam (plugin runtimes won't work here).
-    const { createOpencodeAdapter } = await import('../../opencode-adapter.js');
-    const client = await createOpencodeAdapter({ baseUrl: process.env.MAFW_SERVE_URL || 'http://127.0.0.1:4096' });
-    await client.session.promptAsync({
-      sessionID: sessionId,
-      parts: [{ type: 'text', text: wakePrompt }],
-    });
-  } catch (err: any) {
-    log.warn(`[WakeHandler] Failed to inject wake prompt: ${err.message}`);
-  }
+  await injectWakePrompt(client, mafwDir, sessionId, reason, countCompleted, countFailed);
 }
 
 export async function wakeCompletedHandler(rule: AutomationRule, engine: AutomationEngine): Promise<void> {

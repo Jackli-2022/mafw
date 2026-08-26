@@ -64,6 +64,8 @@ export interface PiAdapterDeps {
   authPath?: string;
   /** Overrides auth.json lookup (tests). */
   getApiKey?: (provider: string) => string | undefined;
+  /** Runtime credentials (preferred over auth.json when provided). */
+  credentials?: { getApiKey(provider: string): string | null };
   /** Model registry hook (tests) — default uses ModelRuntime. */
   getModel?: (provider: string, model: string) => unknown | undefined;
   timeoutMs?: number;
@@ -108,7 +110,8 @@ export function createPiPromptAdapter(deps: PiAdapterDeps = {}): PromptFn {
   return async function piPrompt(parts: PromptPart[], opts: { providerID: string; modelID: string }): Promise<string> {
     const apiKey = deps.getApiKey
       ? deps.getApiKey(opts.providerID)
-      : readOpencodeAuth(authPath)[opts.providerID]?.key;
+      : deps.credentials?.getApiKey(opts.providerID)
+        ?? readOpencodeAuth(authPath)[opts.providerID]?.key;
     if (!apiKey) {
       throw new Error(`No API key for provider "${opts.providerID}" — connect it in opencode first (auth.json)`);
     }

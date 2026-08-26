@@ -4,6 +4,7 @@ import { log } from '../core/utils/logger';
 import { PromptFn } from './media-service';
 import { createPiPromptAdapter } from './pi-adapter';
 import { createMediaPluginContext } from './plugin-context';
+import type { RuntimeCredentials } from '../runtime/contract';
 
 export interface MediaEngine {
   prompt: PromptFn;
@@ -20,15 +21,22 @@ export interface MediaPluginState {
 
 const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
 
+export interface MediaPluginLoaderOpts {
+  /** Lazy credentials getter (resolved at plugin-load time, not construction time). */
+  getCredentials?: () => RuntimeCredentials | undefined;
+}
+
 export class MediaPluginLoader {
   private pluginsDir: string;
   private state = new Map<string, MediaPluginState>();
   private engines = new Map<string, MediaEngine>();
   private watcher?: fs.FSWatcher;
   private debounceTimer?: NodeJS.Timeout;
+  private getCredentials?: () => RuntimeCredentials | undefined;
 
-  constructor(pluginsDir: string) {
+  constructor(pluginsDir: string, opts?: MediaPluginLoaderOpts) {
     this.pluginsDir = pluginsDir;
+    this.getCredentials = opts?.getCredentials;
   }
 
   async init(): Promise<void> {
@@ -100,8 +108,9 @@ export class MediaPluginLoader {
       }
 
       let prompt: PromptFn;
+      const creds = this.getCredentials?.();
       if (hasCreatePrompt) {
-        const ctx = createMediaPluginContext(name);
+        const ctx = createMediaPluginContext(name, creds);
         prompt = await mod.createPrompt(ctx);
         if (typeof prompt !== 'function') {
           this.state.set(file, { file, name, status: 'error', error: 'createPrompt did not return a function' });
@@ -109,7 +118,7 @@ export class MediaPluginLoader {
         }
       } else {
         const fixPayload = typeof mod.fixPayload === 'function' ? mod.fixPayload : undefined;
-        prompt = createPiPromptAdapter({ fixPayload });
+        prompt = createPiPromptAdapter({ fixPayload, credentials: creds });
       }
 
       loadedNames.add(name);

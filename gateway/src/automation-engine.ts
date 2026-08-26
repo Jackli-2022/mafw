@@ -152,6 +152,7 @@ export class AutomationEngine {
   private jobs: Map<string, CronJob> = new Map();
   readonly mafwDir: string;
   private _ledger?: SchedulerLedger;
+  private _runtimeClient?: import('./runtime/contract').RuntimeClient;
   private eventListeners: Map<string, Set<string>> = new Map();
   private lastFireTimes: Map<string, number> = new Map();
   private reportedPairs: Set<string> = new Set();
@@ -163,6 +164,14 @@ export class AutomationEngine {
 
   setLedger(ledger: SchedulerLedger): void {
     this._ledger = ledger;
+  }
+
+  setRuntimeClient(client: import('./runtime/contract').RuntimeClient): void {
+    this._runtimeClient = client;
+  }
+
+  get runtimeClient(): import('./runtime/contract').RuntimeClient | undefined {
+    return this._runtimeClient;
   }
 
   loadRules(): void {

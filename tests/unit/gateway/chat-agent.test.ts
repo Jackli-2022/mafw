@@ -1,7 +1,10 @@
 import { IntentClassifier } from '../../../gateway/src/chat/intent-classifier';
 
 describe('IntentClassifier', () => {
-  const classifier = new IntentClassifier();
+  const classifier = new IntentClassifier(
+    ['开始', '规划', '执行', 'run'],
+    ['搜索', '查找', '记忆', 'search'],
+  );
 
   it('classifies EXECUTE_GRAPH for 开始', () => {
     expect(classifier.classify('开始规划 goal-001').action).toBe('EXECUTE_GRAPH');
