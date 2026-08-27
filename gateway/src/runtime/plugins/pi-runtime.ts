@@ -7,6 +7,7 @@ import { translateProviders, translateAgents, translateConfigGet, translateConfi
 import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../../media/auth-util';
 import { config } from '../../config';
 import { listByDirectory } from '../pi/pi-session-storage';
+import * as piAgentConfig from '../pi/pi-agent-config';
 
 export const PI_CAPABILITIES: RuntimeCapabilities = {
   sessionApi: true,
@@ -16,7 +17,7 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   providerConfigApi: true,
   perLlmCallTransform: true,
   sessionStorageApi: true,
-  agentConfigApi: false,
+  agentConfigApi: true,
 };
 
 export interface PiRuntimeDeps {
@@ -107,6 +108,20 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     app: { agents: () => translateAgents() },
     config: { get: () => translateConfigGet(), update: (c: any) => translateConfigUpdate(c) },
     credentials: { getApiKey: (p: string) => ctx.credentials?.getApiKey?.(p) ?? readOpencodeAuth(authPath)[p]?.key ?? null },
+    agents: {
+      install: async (name: string, definition: any) => {
+        await piAgentConfig.install(name, definition);
+      },
+      remove: async (name: string) => {
+        await piAgentConfig.remove(name);
+      },
+      list: async () => {
+        return piAgentConfig.list();
+      },
+      get: async (name: string) => {
+        return piAgentConfig.get(name);
+      },
+    },
     registry,
     getBaseUrl: () => `http://127.0.0.1:${config.server.apiPort ?? 3000}`,
     healthCheck: async () => { try { await modelRuntime(); return true; } catch { return false; } },
