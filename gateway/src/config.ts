@@ -433,6 +433,33 @@ export class Config {
     return { changed, restartRequired };
   }
 
+  /**
+   * Persist top-level config overrides (merged into current values, nested
+   * objects shallow-merged per top-level key) to the data-root config.yaml,
+   * then hot-reload. Returns the reload result so callers can surface
+   * restart-required sections.
+   */
+  persistOverrides(overrides: Record<string, any>): { changed: string[]; restartRequired: string[] } {
+    const merged: Record<string, any> = { ...this.data };
+    for (const key of Object.keys(overrides)) {
+      const val = overrides[key];
+      const cur = (this.data as any)[key];
+      if (val && typeof val === 'object' && !Array.isArray(val) && cur && typeof cur === 'object') {
+        merged[key] = { ...cur, ...val };
+      } else {
+        merged[key] = val;
+      }
+    }
+    const mafwDir = this.resolvePath();
+    if (!fs.existsSync(mafwDir)) fs.mkdirSync(mafwDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(mafwDir, 'config.yaml'),
+      yaml.dump(merged, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: true }),
+      'utf-8',
+    );
+    return this.reload();
+  }
+
   get server() { return this.data.server; }
   get paths() { return this.data.paths; }
   get timeouts() { return this.data.timeouts; }
@@ -449,6 +476,38 @@ export class Config {
   get recall() { return this.data.recall; }
   get usage() { return this.data.usage; }
   get runtime() { return this.data.runtime; }
+
+  /**
+   * Persist partial config overrides to the project-level config.yaml.
+   * Merges overrides into the current in-memory config and writes the
+   * entire config to disk so the override survives restarts.
+   *
+   * @returns An object with `changed`: list of top-level section keys that
+   *          were actually modified (compared to the previous in-memory state).
+   */
+  persistOverrides(overrides: Partial<GatewayConfig>): { changed: string[] } {
+    const changed: string[] = [];
+    for (const key of Object.keys(overrides)) {
+      const prev = JSON.stringify((this.data as any)[key]);
+      const next = JSON.stringify((overrides as any)[key]);
+      if (prev !== next) {
+        changed.push(key);
+      }
+    }
+
+    // Deep-merge overrides into current config
+    this.deepMerge(this.data, overrides);
+
+    // Write to the data-dir config.yaml (project-level overrides)
+    const filePath = path.join(this.dataDirValue, 'config.yaml');
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, yaml.dump(this.data, { indent: 2 }), 'utf-8');
+
+    return { changed };
+  }
 
   /**
    * MAFW data root — pinned to the gateway package's own .mafw directory so
