@@ -95,6 +95,7 @@ interface StateFile {
   metrics?: Record<string, number>;
   error?: string;
   updatedAt: string;
+  policySnapshot?: { version: string; proposalId: string | null };
 }
 
 interface SessionInfo {
@@ -4239,7 +4240,7 @@ class MafwScheduler {
           error: 'archive_failed'
         });
         if (outcome) {
-          const { recordGoalOutcome } = await import('./orchestration/outcome-recorder');
+          const { recordGoalOutcome } = await import('./orchestration/outcome-recorder.js');
           recordGoalOutcome(this.getGatewayDb(), {
             goalId,
             verdict: outcome.verdict,
@@ -4261,7 +4262,7 @@ class MafwScheduler {
     });
 
     if (outcome && projectDir) {
-      const { recordGoalOutcome } = await import('./orchestration/outcome-recorder');
+      const { recordGoalOutcome } = await import('./orchestration/outcome-recorder.js');
       recordGoalOutcome(this.getGatewayDb(), {
         goalId,
         verdict: outcome.verdict,
