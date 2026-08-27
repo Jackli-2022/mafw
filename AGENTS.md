@@ -573,6 +573,26 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 
 默认策略：read/grep/ls/find/glob 自动放行，其余需审批。
 
+### 5.20 Goal 编排 RSI — Phase 1 观测层
+
+**数据模型**（gateway.db）：
+- `goal_outcomes`：每个 goal 归档时写一行（verdict、轮数、成本、thumbs、policy_version、failure_kind/signature）
+- `goal_sessions`：goal 生命周期内所有 session 的追加映射（豁免 trajectory 14 天 prune）
+- `evolution_proposals`：演化提议表（Phase 2 使用，Phase 1 仅建表）
+
+**写入点：**
+- 三个 session 创建节点（plan/execute/review）调用 `onSessionCreated` 追加 goal_sessions
+- archiveGoal 成功后调用 `recordGoalOutcome` 聚合 trajectory + feedback 写入 outcome
+- ABORT（HTTP + control file）调用 archiveGoal(verdict='CANCELLED')
+- onGoalCreated 时 `policySnapshot` 写入 state.json
+
+**查询：**
+- `GET /api/orchestration/outcomes?policy=&verdict=&project=&limit=`
+
+**组件注册表：**
+- `gateway/src/orchestration/registry.ts` 声明可演化组件（Phase 1 只读）
+- `gateway/src/orchestration/policy.ts` 读 `~/.mafw/orchestration/active.json` 回退 builtin-v1
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令
