@@ -1,4 +1,7 @@
 import { randomUUID } from 'crypto';
+import { ApprovalBridge } from './pi-approval-bridge';
+import { createMafwApprovalExtension } from './pi-approval-extension';
+import type { RawRuntimeEvent } from '../normalize';
 
 export interface PiSessionDeps {
   /** 注入 createAgentSession（ESM 桥在 pi-runtime.ts 传入） */
@@ -13,12 +16,24 @@ export class PiSessionRegistry {
   private sessions = new Map<string, any>();
   private bySession = new Map<any, string>();
   private lastUsed = new Map<string, number>();
+  private approvalBridges = new Map<string, ApprovalBridge>();
+  private emitEvent: (event: RawRuntimeEvent) => void;
 
-  constructor(private deps: PiSessionDeps, private opts: PiSessionRegistryOptions = {}) {}
+  constructor(
+    private deps: PiSessionDeps,
+    private opts: PiSessionRegistryOptions = {},
+    emitEvent?: (event: RawRuntimeEvent) => void,
+  ) {
+    this.emitEvent = emitEvent ?? (() => {});
+  }
 
   async create(cwd: string, createOpts: any): Promise<{ id: string }> {
-    const { session } = await this.deps.createSession({ cwd, ...createOpts });
     const id = `pi_${randomUUID().slice(0, 8)}`;
+    const bridge = new ApprovalBridge();
+    this.approvalBridges.set(id, bridge);
+
+    const extension = createMafwApprovalExtension(bridge, this.emitEvent);
+    const { session } = await this.deps.createSession({ cwd, ...createOpts, extensions: [extension] });
     this.sessions.set(id, session);
     this.bySession.set(session, id);
     this.lastUsed.set(id, Date.now());
@@ -58,11 +73,22 @@ export class PiSessionRegistry {
   }
 
   async delete(id: string): Promise<void> {
+    const bridge = this.approvalBridges.get(id);
+    if (bridge) {
+      bridge.dispose();
+      this.approvalBridges.delete(id);
+    }
     const s = this.sessions.get(id);
     if (s) { try { await s.dispose(); } catch { /* ignore */ } }
     this.sessions.delete(id);
     this.bySession.delete(s);
     this.lastUsed.delete(id);
+  }
+
+  async permissionReply(sessionID: string, requestId: string, approved: boolean): Promise<boolean> {
+    const bridge = this.approvalBridges.get(sessionID);
+    if (!bridge) return false;
+    return bridge.reply(requestId, approved);
   }
 
   async abort(id: string): Promise<void> {
@@ -89,6 +115,10 @@ export class PiSessionRegistry {
   }
 
   async disposeAll(): Promise<void> {
+    for (const bridge of this.approvalBridges.values()) {
+      bridge.dispose();
+    }
+    this.approvalBridges.clear();
     for (const s of this.sessions.values()) {
       try { await s.dispose(); } catch { /* ignore */ }
     }

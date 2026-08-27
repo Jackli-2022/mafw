@@ -67,3 +67,48 @@ describe('PiSessionRegistry', () => {
     expect(await registry.children(id)).toEqual([]);
   });
 });
+
+describe('approval integration', () => {
+  const makeDeps = (session?: any) => ({
+    createSession: async () => ({ session: session ?? fakeSession() }),
+  });
+
+  it('should create ApprovalBridge per session', async () => {
+    const registry = new PiSessionRegistry(makeDeps());
+    const { id } = await registry.create('/tmp', {} as any);
+
+    expect(registry['approvalBridges'].has(id)).toBe(true);
+  });
+
+  it('should dispose ApprovalBridge when session is deleted', async () => {
+    const registry = new PiSessionRegistry(makeDeps());
+    const { id } = await registry.create('/tmp', {} as any);
+    const bridge = registry['approvalBridges'].get(id);
+    const disposeSpy = jest.spyOn(bridge!, 'dispose');
+
+    await registry.delete(id);
+
+    expect(disposeSpy).toHaveBeenCalled();
+    expect(registry['approvalBridges'].has(id)).toBe(false);
+  });
+
+  it('should forward permissionReply to bridge', async () => {
+    const registry = new PiSessionRegistry(makeDeps());
+    const { id } = await registry.create('/tmp', {} as any);
+    const bridge = registry['approvalBridges'].get(id);
+    const replySpy = jest.spyOn(bridge!, 'reply');
+
+    const requestPromise = bridge!.request('req-1');
+    const result = await registry.permissionReply(id, 'req-1', true);
+
+    expect(replySpy).toHaveBeenCalledWith('req-1', true);
+    expect(result).toBe(true);
+    expect(await requestPromise).toBe(true);
+  });
+
+  it('should return false when permissionReply called for unknown session', async () => {
+    const registry = new PiSessionRegistry(makeDeps());
+    const result = await registry.permissionReply('unknown', 'req-1', true);
+    expect(result).toBe(false);
+  });
+});
