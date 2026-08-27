@@ -499,8 +499,9 @@ opencode LLM                              Gateway（3000）                  .ve
 
 ### 5.18 Manager Agent 权限（对齐 plan + gateway MCP 白名单）
 
-manager agent 定义在 `~/.config/opencode/agent/manager.md`（`ensureManagerAgentConfig` 每次启动
-覆盖写入，模板见 `gateway/src/skills/manager-agent-config.ts`）：
+manager agent 通过 `agents.install('manager', getManagerAgentDefinition())` 安装
+（定义见 `gateway/src/skills/manager-agent-config.ts`）；系统规则由 `ensureManagerRules()`
+（`gateway/src/core/manager/system-rule-templates.ts`）每次启动写入 `~/.mafw/`：
 
 - **`edit: {"*": "deny"}`**：禁用 edit/write/apply_patch（不能直接改文件/代码）——与内置 plan 对齐
 - **`task: {"general": "deny"}`**：不派发 opencode 子任务（委派走 `mafw_set_goal` MCP 工具）

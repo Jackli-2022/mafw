@@ -1,77 +1,139 @@
-### Task 1: PopoverShell 扩展 below-center 锚定
+### Task 1: ApprovalBridge Core
 
 **Files:**
-- Modify: `opencode-dev/packages/desktop/src/renderer/mafw/components/pickers/PopoverShell.tsx`
+- Create: `gateway/src/runtime/pi/pi-approval-bridge.ts`
+- Create: `gateway/tests/unit/runtime/pi-approval-bridge.test.ts`
 
 **Interfaces:**
-- Consumes: 现有 PopoverShell（`anchor: "tr" | "bl"`，fixed 定位、视口翻转、外部点击/Esc 关闭、Portal 到 body、自带主题变量）
-- Produces: `anchor: "tr" | "bl" | "below-center"` —— below-center = 触发器下方 2px、水平居中；下方空间不足翻到上方
+- Consumes: None (standalone utility)
+- Produces: `ApprovalBridge` class with `request(requestId: string): Promise<boolean>`, `reply(requestId: string, approved: boolean): boolean`, `dispose(): void`
 
-- [ ] **Step 1: 扩展 anchor 类型与 compute() 定位分支**
+- [ ] **Step 1: Write the failing test**
 
-在 `PopoverShell.tsx` 中：
+```typescript
+// gateway/tests/unit/runtime/pi-approval-bridge.test.ts
+import { ApprovalBridge } from '../../../src/runtime/pi/pi-approval-bridge';
 
-```tsx
-export function PopoverShell(props: {
-  open: boolean
-  trigger: HTMLElement | null
-  anchor: "tr" | "bl" | "below-center"
-  onClose: () => void
-  children: JSX.Element
-  class?: string
-}) {
+describe('ApprovalBridge', () => {
+  let bridge: ApprovalBridge;
+
+  beforeEach(() => {
+    bridge = new ApprovalBridge();
+  });
+
+  afterEach(() => {
+    bridge.dispose();
+  });
+
+  it('should resolve request when reply is called with true', async () => {
+    const promise = bridge.request('req-1');
+    const result = bridge.reply('req-1', true);
+    expect(result).toBe(true);
+    await expect(promise).resolves.toBe(true);
+  });
+
+  it('should resolve request when reply is called with false', async () => {
+    const promise = bridge.request('req-2');
+    bridge.reply('req-2', false);
+    await expect(promise).resolves.toBe(false);
+  });
+
+  it('should return false when reply is called for unknown requestId', () => {
+    const result = bridge.reply('unknown', true);
+    expect(result).toBe(false);
+  });
+
+  it('should auto-reject on timeout', async () => {
+    jest.useFakeTimers();
+    const promise = bridge.request('req-3');
+    jest.advanceTimersByTime(300_000);
+    await expect(promise).resolves.toBe(false);
+    jest.useRealTimers();
+  });
+
+  it('should reject all pending requests on dispose', async () => {
+    const p1 = bridge.request('req-4');
+    const p2 = bridge.request('req-5');
+    bridge.dispose();
+    await expect(p1).resolves.toBe(false);
+    await expect(p2).resolves.toBe(false);
+  });
+
+  it('should handle multiple concurrent requests', async () => {
+    const p1 = bridge.request('req-6');
+    const p2 = bridge.request('req-7');
+    bridge.reply('req-6', true);
+    bridge.reply('req-7', false);
+    await expect(p1).resolves.toBe(true);
+    await expect(p2).resolves.toBe(false);
+  });
+});
 ```
 
-`compute()` 内 `let top`/`let left` 逻辑改为（在既有 spaceAbove/spaceBelow 计算后）：
+- [ ] **Step 2: Run test to verify it fails**
 
-```tsx
-    const rect = t.getBoundingClientRect()
-    const W = 288
-    const GAP = 8
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-    const h = Math.min(selfRef()?.offsetHeight || 320, 380)
-    const spaceAbove = rect.top - GAP
-    const spaceBelow = vh - rect.bottom - GAP
-    let top: number
-    let left: number
-    if (props.anchor === "below-center") {
-      // Below the trigger, centered; flip above when not enough room below.
-      if (spaceBelow >= h) {
-        top = rect.bottom + 2
-      } else {
-        top = Math.max(8, rect.top - GAP - h)
-      }
-      left = rect.left + rect.width / 2 - W / 2
-    } else {
-      // Three-state placement: fully above → fully below → clamp on the larger side.
-      if (spaceAbove >= h) {
-        top = rect.top - GAP - h
-      } else if (spaceBelow >= h) {
-        top = rect.bottom + GAP
-      } else if (spaceAbove >= spaceBelow) {
-        top = Math.max(8, rect.top - GAP - h)
-      } else {
-        top = Math.min(vh - 8 - h, rect.bottom + GAP)
-      }
-      left = props.anchor === "tr" ? rect.right - W : rect.left
+Run: `cd gateway && npx jest tests/unit/runtime/pi-approval-bridge.test.ts`
+Expected: FAIL with "Cannot find module"
+
+- [ ] **Step 3: Implement ApprovalBridge**
+
+```typescript
+// gateway/src/runtime/pi/pi-approval-bridge.ts
+interface PendingRequest {
+  resolve: (approved: boolean) => void;
+  timeout: NodeJS.Timeout;
+}
+
+export class ApprovalBridge {
+  private pending = new Map<string, PendingRequest>();
+  private timeoutMs: number;
+
+  constructor(timeoutMs: number = 300_000) {
+    this.timeoutMs = timeoutMs;
+  }
+
+  request(requestId: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(requestId);
+        resolve(false);
+      }, this.timeoutMs);
+
+      this.pending.set(requestId, { resolve, timeout });
+    });
+  }
+
+  reply(requestId: string, approved: boolean): boolean {
+    const req = this.pending.get(requestId);
+    if (!req) return false;
+
+    clearTimeout(req.timeout);
+    this.pending.delete(requestId);
+    req.resolve(approved);
+    return true;
+  }
+
+  dispose(): void {
+    for (const { resolve, timeout } of this.pending.values()) {
+      clearTimeout(timeout);
+      resolve(false);
     }
-    if (left < 8) left = 8
-    if (left + W > vw - 8) left = vw - 8 - W
-    setPos({ top, left })
+    this.pending.clear();
+  }
+}
 ```
 
-- [ ] **Step 2: 构建验证**
+- [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd opencode-dev/packages/desktop && npm run build`
-Expected: `✓ built in ...`（无 error）
+Run: `cd gateway && npx jest tests/unit/runtime/pi-approval-bridge.test.ts`
+Expected: PASS (6 tests)
 
-- [ ] **Step 3: 提交**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add opencode-dev/packages/desktop/src/renderer/mafw/components/pickers/PopoverShell.tsx
-git commit -m "feat(desktop): PopoverShell below-center anchor"
+cd gateway && git add src/runtime/pi/pi-approval-bridge.ts tests/unit/runtime/pi-approval-bridge.test.ts
+git commit -m "feat(pi): add ApprovalBridge for nativeApprovals
+
+Shared Promise map coordinating between pi extension and gateway HTTP API.
+5-minute timeout, auto-reject on timeout, per-session lifecycle."
 ```
-
----
-

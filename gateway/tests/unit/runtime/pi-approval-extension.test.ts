@@ -5,14 +5,9 @@ import type { RawRuntimeEvent } from '../../../src/runtime/normalize';
 describe('MafwApprovalExtension', () => {
   let bridge: ApprovalBridge;
   let emittedEvents: RawRuntimeEvent[];
-  let extension: any;
-  let handler: (event: any, ctx: any) => Promise<any>;
-
-  function extractHandler(ext: any) {
-    const mockOn = jest.fn();
-    ext.on({ on: mockOn });
-    return mockOn.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
-  }
+  let extension: ReturnType<typeof createMafwApprovalExtension>;
+  let mockEmitter: { on: jest.Mock };
+  let toolCallHandler: (event: any, ctx: any) => Promise<any>;
 
   beforeEach(() => {
     bridge = new ApprovalBridge();
@@ -21,7 +16,10 @@ describe('MafwApprovalExtension', () => {
       bridge,
       (event) => emittedEvents.push(event),
     );
-    handler = extractHandler(extension);
+    mockEmitter = { on: jest.fn() };
+    extension.on(mockEmitter);
+    const call = mockEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call');
+    toolCallHandler = call![1];
   });
 
   afterEach(() => {
@@ -32,19 +30,22 @@ describe('MafwApprovalExtension', () => {
     const event = { toolName: 'read', input: { path: '/tmp/file' } };
     const ctx = { sessionId: 'session-1' };
 
-    const result = await handler(event, ctx);
+    const result = await toolCallHandler(event, ctx);
 
     expect(result).toBeUndefined();
     expect(emittedEvents).toHaveLength(0);
   });
 
   it('should auto-deny tools in autoDeny list', async () => {
-    extension = createMafwApprovalExtension(
+    const customExtension = createMafwApprovalExtension(
       bridge,
       (event) => emittedEvents.push(event),
       { autoApprove: [], autoDeny: ['bash'] },
     );
-    handler = extractHandler(extension);
+    const customEmitter = { on: jest.fn() };
+    customExtension.on(customEmitter);
+    const handler = customEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
+
     const event = { toolName: 'bash', input: { command: 'rm -rf /' } };
     const ctx = { sessionId: 'session-1' };
 
@@ -57,7 +58,7 @@ describe('MafwApprovalExtension', () => {
     const event = { toolName: 'bash', input: { command: 'ls' } };
     const ctx = { sessionId: 'session-1' };
 
-    const promise = handler(event, ctx);
+    const promise = toolCallHandler(event, ctx);
 
     expect(emittedEvents).toHaveLength(1);
     expect(emittedEvents[0].payload!.type).toBe('permission.asked');
@@ -78,7 +79,7 @@ describe('MafwApprovalExtension', () => {
     const event = { toolName: 'write', input: { path: '/tmp/file', content: 'data' } };
     const ctx = { sessionId: 'session-1' };
 
-    const promise = handler(event, ctx);
+    const promise = toolCallHandler(event, ctx);
     const requestId = emittedEvents[0].payload!.properties.requestId;
     bridge.reply(requestId, false);
 
