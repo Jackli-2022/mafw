@@ -6,6 +6,7 @@ import { PiEventStream } from '../pi/pi-events';
 import { translateProviders, translateAgents, translateConfigGet, translateConfigUpdate } from '../pi/pi-provider';
 import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../../media/auth-util';
 import { config } from '../../config';
+import { listByDirectory } from '../pi/pi-session-storage';
 
 export const PI_CAPABILITIES: RuntimeCapabilities = {
   sessionApi: true,
@@ -14,7 +15,7 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   nativeApprovals: true,
   providerConfigApi: true,
   perLlmCallTransform: true,
-  sessionStorageApi: false,
+  sessionStorageApi: true,
   agentConfigApi: false,
 };
 
@@ -89,6 +90,9 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     todo: async () => registry.todo(),
     children: async () => registry.children(),
     summarize: async (opts: { sessionID: string }) => registry.summarize(opts.sessionID),
+    listByDirectory: async (directory: string, limit?: number) => {
+      return listByDirectory(directory, limit);
+    },
     permissionReply: (sessionID: string, requestId: string, approved: boolean) =>
       registry.permissionReply(sessionID, requestId, approved),
   };

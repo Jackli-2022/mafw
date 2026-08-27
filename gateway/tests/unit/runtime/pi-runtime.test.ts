@@ -11,6 +11,20 @@ jest.mock('../../../src/media/auth-util', () => ({
   readOpencodeAuth: () => ({}),
 }));
 
+const fakeSessionList = [
+  {
+    id: 'pi-sess-1',
+    cwd: '/tmp/proj',
+    name: 'Test session',
+    firstMessage: 'hello',
+    created: new Date('2026-01-01T00:00:00Z'),
+    modified: new Date('2026-01-01T01:00:00Z'),
+    messageCount: 5,
+    path: '/tmp/sessions/pi-sess-1.jsonl',
+    allMessagesText: '',
+  },
+];
+
 const fakePi = {
   ModelRuntime: {
     create: async () => ({
@@ -33,6 +47,9 @@ const fakePi = {
       messages: [],
     },
   }),
+  SessionManager: {
+    list: async (_cwd: string) => fakeSessionList,
+  },
 };
 
 describe('pi-runtime', () => {
@@ -40,7 +57,7 @@ describe('pi-runtime', () => {
     expect(PI_CAPABILITIES).toMatchObject({
       sessionApi: true, promptWhileBusy: true, eventStream: true,
       nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
-      sessionStorageApi: false, agentConfigApi: false,
+      sessionStorageApi: true, agentConfigApi: false,
     });
   });
 
