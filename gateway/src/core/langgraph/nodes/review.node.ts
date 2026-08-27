@@ -12,6 +12,7 @@ export interface AgentServices {
     };
   };
   syncToFile: (state: Partial<LoopStateType>) => void;
+  onSessionCreated?: (info: { goalId: string; sessionId: string; phase: string; loop: number }) => void;
 }
 
 function generateQuestionId(): string {
@@ -43,6 +44,7 @@ export async function reviewNode(
 
   const session = await client.session.create({ directory: projectDir! });
   const sessionId = session.id;
+  services.onSessionCreated?.({ goalId: goalId!, sessionId, phase: 'review', loop: state.round });
   await client.session.promptAsync({ sessionID: sessionId, parts: [{ type: 'text', text: `/skill mafw-review ${goalId}` }] });
 
   const reviewPath = path.join(state.mafwDir!, 'reviews', `${state.goalId!}-loop${state.round}.md`);

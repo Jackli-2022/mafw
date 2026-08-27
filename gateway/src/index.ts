@@ -4544,10 +4544,21 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       }
     };
     const client = this.createInProcessClient();
+    const onSessionCreated = (info: { goalId: string; sessionId: string; phase: string; loop: number }) => {
+      try {
+        this.getGatewayDb().addGoalSession({
+          goal_id: info.goalId,
+          session_id: info.sessionId,
+          phase: info.phase,
+          loop: info.loop,
+        });
+      } catch { /* fail-open */ }
+    };
     return {
       plan: async (s: any) => planNode(s, {
         client,
         syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
+        onSessionCreated,
       }),
       askUser: async (s: any) => {
         syncToFile({ ...s, pendingQuestion: null, phase: 'ASKING_USER', mafwDir });
@@ -4563,10 +4574,12 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       execute: async (s: any) => executeNode(s, {
         client,
         syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
+        onSessionCreated,
       }),
       review: async (s: any) => reviewNode(s, {
         client,
         syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
+        onSessionCreated,
       }),
       archiveSuccess: async (s: any) => {
         log.info(`[Scheduler] Goal ${s.goalId} PASSED`);

@@ -37,6 +37,7 @@ export async function planNode(
 
   const session = await client.session.create({ directory: projectDir! });
   const sessionId = session.id;
+  services.onSessionCreated?.({ goalId: goalId!, sessionId, phase: 'plan', loop: state.round });
   await client.session.promptAsync({ sessionID: sessionId, parts: [{ type: 'text', text: `/skill mafw-plan ${goalId}` }] });
 
   const wavePlanPath = path.join(state.mafwDir!, 'waves.json');

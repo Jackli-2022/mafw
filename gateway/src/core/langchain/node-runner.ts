@@ -12,6 +12,7 @@ export interface AgentServices {
     };
   };
   syncToFile: (state: Partial<LoopStateType>) => void;
+  onSessionCreated?: (info: { goalId: string; sessionId: string; phase: string; loop: number }) => void;
 }
 
 export interface NodeConfig {
@@ -102,6 +103,8 @@ export function createAgentNode(type: 'plan' | 'execute' | 'review') {
 
     const session = await client.session.create({ directory: projectDir! });
     const sessionId = session.id;
+
+    options.onSessionCreated?.({ goalId: goalId!, sessionId, phase: type, loop: state.round });
 
     const prompt = `${config.skillCommand} ${goalId}`;
 
