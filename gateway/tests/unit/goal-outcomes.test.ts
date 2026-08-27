@@ -43,6 +43,7 @@ describe('Goal outcomes', () => {
     expect(rows[0].goal_id).toBe('g1');
     expect(rows[0].verdict).toBe('PASS');
 
+    // Upsert updates
     db.upsertGoalOutcome({ ...outcome, verdict: 'FAIL', rounds: 3 });
     const rows2 = db.listGoalOutcomes({});
     expect(rows2).toHaveLength(1);
@@ -77,6 +78,7 @@ describe('Goal outcomes', () => {
     expect(sessions).toHaveLength(2);
     expect(sessions.map(s => s.session_id).sort()).toEqual(['s1', 's2']);
 
+    // Duplicate insert ignored
     db.addGoalSession({ goal_id: 'g1', session_id: 's1', phase: 'plan', loop: 1 });
     expect(db.listGoalSessions('g1')).toHaveLength(2);
   });
