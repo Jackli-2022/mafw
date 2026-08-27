@@ -36,7 +36,7 @@ export function ConfigPage(props: { onBack?: () => void }) {
     setLoading(false)
   }
 
-  onMount(() => { loadConfig(); loadOpenCodeConfig() })
+  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState() })
 
   function toggleSection(key: string) {
     setSections(prev => prev.map(s => s.key === key ? { ...s, expanded: !s.expanded } : s))
@@ -106,6 +106,77 @@ export function ConfigPage(props: { onBack?: () => void }) {
       showToastV2({ description: `重启失败: ${err.message}`, duration: 3000 })
     }
     setRestarting(false)
+  }
+
+  // ── Plugin Switcher (Runtime + Media) ──
+  const [rtInfo, setRtInfo] = createSignal<any>(null)
+  const [rtPlugins, setRtPlugins] = createSignal<any[]>([])
+  const [rtSwitching, setRtSwitching] = createSignal(false)
+  const [rtEnvOverride, setRtEnvOverride] = createSignal(false)
+
+  const [mediaPlugins, setMediaPlugins] = createSignal<any[]>([])
+  const [mediaEngine, setMediaEngine] = createSignal("")
+  const [mediaImage, setMediaImage] = createSignal("")
+  const [mediaVideo, setMediaVideo] = createSignal("")
+  const [mediaAudio, setMediaAudio] = createSignal("")
+  const [mediaSwitching, setMediaSwitching] = createSignal(false)
+
+  async function loadPluginState() {
+    try {
+      const rt = await window.api.mafw.runtime.get()
+      setRtInfo(rt)
+      setRtPlugins(rt?.plugins ?? [])
+      setRtEnvOverride(rt?.active?.envOverride ?? false)
+    } catch { /* ignore */ }
+    try {
+      const mp = await window.api.mafw.media.plugins()
+      setMediaPlugins(mp?.plugins ?? [])
+    } catch { /* ignore */ }
+  }
+
+  // Runtime switch
+  async function switchRuntime(plugin: string) {
+    if (!confirm(`切换 Runtime 到 "${plugin || 'opencode'}"？\n\n需要等待 Gateway 重新连接。`)) return
+    setRtSwitching(true)
+    try {
+      const res = await window.api.mafw.runtime.switch(plugin)
+      showToastV2({ description: `Runtime 已切换到 ${res.active.name}`, duration: 3000 })
+      setRtInfo(prev => ({ ...prev, active: res.active }))
+    } catch (err: any) {
+      showToastV2({ description: `切换失败: ${err.message}`, duration: 4000 })
+    }
+    setRtSwitching(false)
+  }
+
+  // Media engine switch
+  async function switchMediaEngine(kind: string, value: string) {
+    setMediaSwitching(true)
+    try {
+      const opts = kind === 'engine' ? { engine: value } : { [kind]: { engine: value } }
+      const res = await window.api.mafw.media.switch(opts)
+      if (kind === 'engine') setMediaEngine(value)
+      else if (kind === 'image') setMediaImage(value)
+      else if (kind === 'video') setMediaVideo(value)
+      else if (kind === 'audio') setMediaAudio(value)
+      showToastV2({ description: `Media ${kind} 已切换`, duration: 2000 })
+    } catch (err: any) {
+      showToastV2({ description: `Media 切换失败: ${err.message}`, duration: 3000 })
+    }
+    setMediaSwitching(false)
+  }
+
+  // Available runtime plugin names (status=ok + opencode)
+  const runtimeOptions = () => {
+    const ok = rtPlugins().filter(p => p.status === 'ok').map(p => p.name).filter(Boolean)
+    if (!ok.includes('opencode')) ok.unshift('opencode')
+    return ok
+  }
+
+  // Available media engine names
+  const mediaOptions = () => {
+    const ok = mediaPlugins().filter(p => p.status === 'ok').map(p => p.name).filter(Boolean)
+    if (!ok.includes('pi')) ok.push('pi')
+    return ok
   }
 
   // ── OpenCode config (native opencode /config) ──
@@ -201,6 +272,97 @@ export function ConfigPage(props: { onBack?: () => void }) {
           </ButtonV2>
         </div>
       </div>
+
+      {/* Plugin Switcher */}
+      <div class="mafw-config-ops" style={{ "margin-bottom": 16 }}>
+        <div class="mafw-config-ops-title">插件 Plugins</div>
+
+        {rtEnvOverride() && (
+          <div style={{
+            "background": "var(--color-warning-subtle, #fef3cd)",
+            "border": "1px solid var(--color-warning-border, #ffc107)",
+            "border-radius": 6,
+            "padding": "6px 10px",
+            "font-size": 12,
+            "margin-bottom": 8,
+            color: "var(--color-warning-text, #856404)",
+          }}>
+            ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置，下方 Runtime 下拉仅展示当前状态。
+          </div>
+        )}
+
+        {/* Runtime */}
+        <div style={{ "margin-bottom": 12 }}>
+          <label style={{ display: "block", "font-size": 12, "font-weight": 500, "margin-bottom": 4 }}>
+            Runtime（{rtInfo()?.active?.name ?? 'opencode'}）
+          </label>
+          <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
+            <select
+              value={rtInfo()?.active?.name ?? 'opencode'}
+              disabled={rtSwitching()}
+              style={{
+                "flex": 1,
+                "padding": "4px 8px",
+                "border-radius": 4,
+                "border": "1px solid var(--border-base)",
+                "background": "var(--bg-base)",
+                "font-size": 13,
+              }}
+              onChange={(e) => switchRuntime(e.currentTarget.value)}
+            >
+              {runtimeOptions().map(name => (
+                <option value={name} selected={name === (rtInfo()?.active?.name ?? 'opencode')}>
+                  {name}{name === 'opencode' ? ' (默认)' : ''}
+                </option>
+              ))}
+            </select>
+            {rtSwitching() && <LoaderV2 width={14} height={14} />}
+          </div>
+        </div>
+
+        {/* Media Engine */}
+        <div>
+          <label style={{ display: "block", "font-size": 12, "font-weight": 500, "margin-bottom": 4 }}>
+            Media Engine
+          </label>
+          {[
+            { kind: 'engine', label: 'Default', value: mediaEngine() },
+            { kind: 'image', label: 'Image', value: mediaImage() },
+            { kind: 'video', label: 'Video', value: mediaVideo() },
+            { kind: 'audio', label: 'Audio', value: mediaAudio() },
+          ].map(({ kind, label, value }) => (
+            <div style={{ display: "flex", gap: 8, "align-items": "center", "margin-bottom": 4 }}>
+              <span style={{ "font-size": 12, width: 56, "text-align": "right", color: "var(--text-base)" }}>{label}</span>
+              <select
+                value={value || 'pi'}
+                disabled={mediaSwitching()}
+                style={{
+                  "flex": 1,
+                  "padding": "4px 8px",
+                  "border-radius": 4,
+                  "border": "1px solid var(--border-base)",
+                  "background": "var(--bg-base)",
+                  "font-size": 13,
+                }}
+                onChange={(e) => switchMediaEngine(kind, e.currentTarget.value)}
+              >
+                {mediaOptions().map(name => (
+                  <option value={name} selected={name === (value || 'pi')}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+          {mediaSwitching() && (
+            <div style={{ display: "flex", "align-items": "center", gap: 4, "margin-top": 4 }}>
+              <LoaderV2 width={12} height={12} />
+              <span style={{ "font-size": 11, color: "var(--text-base)" }}>切换中…</span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* OpenCode config */}
       <div class="mafw-config-ops" style={{ "margin-bottom": 16 }}>
         <div class="mafw-config-ops-title">opencode 配置</div>
