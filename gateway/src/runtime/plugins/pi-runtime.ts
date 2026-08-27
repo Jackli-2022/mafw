@@ -63,7 +63,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       eventStream.trackSession(session);
       return { session };
     },
-  }, { sessionTtlMs: cfg.sessionTtlMs });
+  }, { sessionTtlMs: cfg.sessionTtlMs }, undefined, cfg.approvalPolicy);
 
   const sessionAPI = {
     create: async (opts: { directory?: string }) => {

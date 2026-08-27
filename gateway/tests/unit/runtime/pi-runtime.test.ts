@@ -100,3 +100,37 @@ describe('permissionReply', () => {
   });
 });
 
+describe('approval policy configuration', () => {
+  it('should use default policy when not configured', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    const registry = (rt as any).registry;
+    expect(registry).toBeDefined();
+    expect(registry['policy']).toBeUndefined();
+  });
+
+  it('should use custom policy from pluginConfig', async () => {
+    const rt = await createPiRuntime(
+      {
+        fetch,
+        log: console,
+        pluginConfig: () => ({
+          approvalPolicy: {
+            autoApprove: ['read', 'grep'],
+            autoDeny: ['bash'],
+          },
+        }),
+      } as any,
+      { loadPi: async () => fakePi },
+    );
+    const registry = (rt as any).registry;
+    expect(registry).toBeDefined();
+    expect(registry['policy']).toEqual({
+      autoApprove: ['read', 'grep'],
+      autoDeny: ['bash'],
+    });
+  });
+});
+

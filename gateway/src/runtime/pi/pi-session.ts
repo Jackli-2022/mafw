@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { ApprovalBridge } from './pi-approval-bridge';
-import { createMafwApprovalExtension } from './pi-approval-extension';
+import { createMafwApprovalExtension, type ApprovalPolicy } from './pi-approval-extension';
 import type { RawRuntimeEvent } from '../normalize';
 
 export interface PiSessionDeps {
@@ -18,13 +18,16 @@ export class PiSessionRegistry {
   private lastUsed = new Map<string, number>();
   private approvalBridges = new Map<string, ApprovalBridge>();
   private emitEvent: (event: RawRuntimeEvent) => void;
+  private policy?: ApprovalPolicy;
 
   constructor(
     private deps: PiSessionDeps,
     private opts: PiSessionRegistryOptions = {},
     emitEvent?: (event: RawRuntimeEvent) => void,
+    policy?: ApprovalPolicy,
   ) {
     this.emitEvent = emitEvent ?? (() => {});
+    this.policy = policy;
   }
 
   async create(cwd: string, createOpts: any): Promise<{ id: string }> {
@@ -32,7 +35,7 @@ export class PiSessionRegistry {
     const bridge = new ApprovalBridge();
     this.approvalBridges.set(id, bridge);
 
-    const extension = createMafwApprovalExtension(bridge, this.emitEvent);
+    const extension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
     try {
       const { session } = await this.deps.createSession({ cwd, ...createOpts, extensions: [extension] });
       this.sessions.set(id, session);
