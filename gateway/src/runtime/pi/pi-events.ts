@@ -1,7 +1,7 @@
 import type { RawRuntimeEvent } from '../normalize';
 
 export function translatePiEvent(event: any, sessionID: string): RawRuntimeEvent | null {
-  const t = event?.type;
+  const t = event?.type ?? event?.payload?.type;
   const prop = (extra: any = {}) => ({ payload: { type: 'message.part.updated', properties: { part: { sessionID, ...extra } } } });
   switch (t) {
     case 'agent_start':
@@ -22,6 +22,30 @@ export function translatePiEvent(event: any, sessionID: string): RawRuntimeEvent
     case 'agent_end':
     case 'agent_settled':
       return { payload: { type: 'session.idle', properties: { sessionID } } };
+    case 'permission.asked':
+      return {
+        payload: {
+          type: 'permission.asked',
+          properties: {
+            sessionID: event.payload.properties.sessionID,
+            requestId: event.payload.properties.requestId,
+            toolName: event.payload.properties.toolName,
+            args: event.payload.properties.args,
+            risk: event.payload.properties.risk,
+          },
+        },
+      };
+    case 'permission.replied':
+      return {
+        payload: {
+          type: 'permission.replied',
+          properties: {
+            sessionID: event.payload.properties.sessionID,
+            requestId: event.payload.properties.requestId,
+            approved: event.payload.properties.approved,
+          },
+        },
+      };
     default:
       return null;
   }
