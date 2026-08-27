@@ -2735,6 +2735,11 @@ class MafwScheduler {
                   if (control.goalId) {
                     await this.destroyAllSessions(control.goalId);
                     await this.patchState(control.goalId, { nextAction: 'FAILED' });
+                    const state = this.activeGoals.get(control.goalId);
+                    await this.archiveGoal(control.goalId, {
+                      verdict: 'CANCELLED',
+                      rounds: state?.loop ?? 0,
+                    });
                   }
                   break;
                 case 'FORCE_PHASE':
@@ -4189,7 +4194,12 @@ class MafwScheduler {
     return await import(modulePath) as { archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> };
   }
 
-  private async archiveGoal(goalId: string) {
+  private async archiveGoal(goalId: string, outcome?: {
+    verdict: 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
+    rounds: number;
+    lastError?: string | null;
+    reviewFeedback?: string | null;
+  }) {
     log.info(`[Scheduler] Archiving goal ${goalId}`);
     await this.destroyAllSessions(goalId);
 
@@ -4214,6 +4224,19 @@ class MafwScheduler {
           phase: 'ARCHIVED',
           error: 'archive_failed'
         });
+        if (outcome) {
+          const { recordGoalOutcome } = await import('./orchestration/outcome-recorder');
+          recordGoalOutcome(this.getGatewayDb(), {
+            goalId,
+            verdict: outcome.verdict,
+            rounds: outcome.rounds,
+            lastError: `archive_failed: ${err.message}`,
+            reviewFeedback: outcome.reviewFeedback,
+            projectDir: projectDir!,
+            mafwDir: path.join(projectDir!, '.mafw'),
+            projectId: projectDir!,
+          });
+        }
         return;
       }
     }
@@ -4222,6 +4245,20 @@ class MafwScheduler {
       nextAction: 'COMPLETED',
       phase: 'ARCHIVED'
     });
+
+    if (outcome && projectDir) {
+      const { recordGoalOutcome } = await import('./orchestration/outcome-recorder');
+      recordGoalOutcome(this.getGatewayDb(), {
+        goalId,
+        verdict: outcome.verdict,
+        rounds: outcome.rounds,
+        lastError: outcome.lastError,
+        reviewFeedback: outcome.reviewFeedback,
+        projectDir,
+        mafwDir: path.join(projectDir, '.mafw'),
+        projectId: projectDir,
+      });
+    }
 
     log.info(`[Scheduler] Goal ${goalId} archived`);
   }
@@ -4270,6 +4307,11 @@ class MafwScheduler {
             if (control.goalId) {
               await this.destroyAllSessions(control.goalId);
               await this.patchState(control.goalId, { nextAction: 'FAILED' });
+              const state2 = this.activeGoals.get(control.goalId);
+              await this.archiveGoal(control.goalId, {
+                verdict: 'CANCELLED',
+                rounds: state2?.loop ?? 0,
+              });
             }
             break;
           case 'FORCE_PHASE':
@@ -4586,19 +4628,19 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       archiveSuccess: async (s: any) => {
         log.info(`[Scheduler] Goal ${s.goalId} PASSED`);
         syncToFile({ ...s, phase: 'ARCHIVED' });
-        await this.archiveGoal(s.goalId);
+        await this.archiveGoal(s.goalId, { verdict: 'PASS', rounds: s.round, reviewFeedback: s.reviewFeedback });
         return {};
       },
       archiveFail: async (s: any) => {
         log.error(`[Scheduler] Goal ${s.goalId} FAILED: ${s.lastError}`);
         syncToFile({ ...s, phase: 'FAILED' });
-        await this.archiveGoal(s.goalId);
+        await this.archiveGoal(s.goalId, { verdict: 'FAIL', rounds: s.round, lastError: s.lastError, reviewFeedback: s.reviewFeedback });
         return {};
       },
       archiveMaxRetries: async (s: any) => {
         log.error(`[Scheduler] Goal ${s.goalId} max retries`);
         syncToFile({ ...s, phase: 'FAILED' });
-        await this.archiveGoal(s.goalId);
+        await this.archiveGoal(s.goalId, { verdict: 'MAX_RETRIES', rounds: s.round, lastError: s.lastError });
         return {};
       },
     };
