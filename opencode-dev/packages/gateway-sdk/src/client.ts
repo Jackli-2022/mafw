@@ -291,6 +291,39 @@ export class MafwClient implements IMafwClient {
     },
   }
 
+  // ── Runtime ──
+
+  runtime = {
+    /** Get active runtime identity, capabilities, and plugin scan state. */
+    get: async (): Promise<{
+      active: { name: string; capabilities: Record<string, boolean> };
+      plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[];
+    }> => {
+      return this.request('/api/runtime')
+    },
+
+    /**
+     * Switch active runtime plugin.
+     * @param plugin - Plugin name (empty string switches to builtin opencode).
+     * @returns The new active runtime state.
+     */
+    switch: async (plugin: string): Promise<{
+      success: boolean;
+      active: { name: string; capabilities: Record<string, boolean> };
+    }> => {
+      const res = await fetch(`${this.baseUrl}/api/runtime/switch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plugin }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Runtime switch failed: ${res.status}`)
+      }
+      return res.json()
+    },
+  }
+
   // ── Config ──
 
   config = {
@@ -506,6 +539,43 @@ export class MafwClient implements IMafwClient {
   // ── Media (A2A Media Agent) ──
 
   media = {
+    /** List media engine plugins (status + modalities). */
+    plugins: async (): Promise<{
+      plugins: { file: string; name?: string; status: string; error?: string; modalities?: string[] }[]
+    }> => {
+      return this.request('/api/media/plugins')
+    },
+    /**
+     * Switch media engine per modality.
+     * @param opts - Engine overrides (top-level engine and/or per-modality).
+     * @returns The new media engine configuration.
+     */
+    switch: async (opts: {
+      engine?: string
+      image?: { engine?: string }
+      video?: { engine?: string }
+      audio?: { engine?: string }
+    }): Promise<{
+      success: boolean
+      media: {
+        engine?: string
+        image?: { engine?: string; model?: string }
+        video?: { engine?: string; model?: string }
+        audio?: { engine?: string; model?: string }
+      }
+    }> => {
+      const res = await fetch(`${this.baseUrl}/api/media/switch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Media switch failed: ${res.status}`)
+      }
+      return res.json()
+    },
+
     createTask: async (opts: {
       dataUrl?: string
       artifactId?: string

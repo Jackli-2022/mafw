@@ -466,3 +466,44 @@ test("event.subscribeToSession connects SSE with sessionID", async () => {
     SSEConnection.prototype.connectToSession = orig
   }
 })
+
+// ── Runtime & Media switch ──
+
+test("runtime.get + runtime.switch hit their routes", async () => {
+  fetchMock.mockResolvedValue(okJson({ active: { name: "opencode", capabilities: {} }, plugins: [] }))
+  const c = new MafwClient()
+  const r = await c.runtime.get()
+  expect((fetchMock as any).mock.calls[0][0]).toContain("/api/runtime")
+  expect(r.active.name).toBe("opencode")
+
+  fetchMock.mockResolvedValue(okJson({ success: true, active: { name: "pi", capabilities: {} }, envOverride: false }))
+  await c.runtime.switch("pi")
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/runtime/switch",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[1][1].body)
+  expect(body).toEqual({ plugin: "pi" })
+})
+
+test("runtime.switch surfaces API error", async () => {
+  fetchMock.mockResolvedValue({
+    ok: false, status: 400, statusText: "Bad Request",
+    json: () => Promise.resolve({ error: "Runtime plugin 'nope' not found" }),
+  } as Response)
+  const c = new MafwClient()
+  await expect(c.runtime.switch("nope")).rejects.toThrow("Runtime plugin 'nope' not found")
+})
+
+test("media.plugins + media.switch hit their routes", async () => {
+  fetchMock.mockResolvedValue(okJson({ plugins: [{ file: "x.js", name: "qwen-vl", status: "ok", modalities: ["image", "video"] }] }))
+  const c = new MafwClient()
+  const p = await c.media.plugins()
+  expect((fetchMock as any).mock.calls[0][0]).toContain("/api/media/plugins")
+  expect(p.plugins).toHaveLength(1)
+
+  fetchMock.mockResolvedValue(okJson({ success: true, media: { video: { engine: "qwen-vl" } } }))
+  await c.media.switch({ video: { engine: "qwen-vl" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/media/switch",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[1][1].body)
+  expect(body).toEqual({ video: { engine: "qwen-vl" } })
+})

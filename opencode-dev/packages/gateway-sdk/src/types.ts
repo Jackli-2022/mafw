@@ -333,6 +333,23 @@ export interface EventNamespace {
   subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
 }
 
+export interface RuntimeNamespace {
+  /** Get active runtime identity, capabilities, and plugin scan state. */
+  get(): Promise<{
+    active: { name: string; capabilities: Record<string, boolean> }
+    plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[]
+  }>
+  /**
+   * Switch active runtime plugin.
+   * @param plugin - Plugin name (empty string switches to builtin opencode).
+   */
+  switch(plugin: string): Promise<{
+    success: boolean
+    active: { name: string; capabilities: Record<string, boolean> }
+    envOverride: boolean
+  }>
+}
+
 export interface ConfigNamespace {
   get(key?: string): Promise<any>
   set(key: string, value: any): Promise<void>
@@ -413,6 +430,7 @@ export interface MafwClient {
   session: SessionNamespace
   project: ProjectNamespace
   event: EventNamespace
+  runtime: RuntimeNamespace
   config: ConfigNamespace
   opencodeConfig: OpenCodeConfigNamespace
   chat: ChatNamespace
@@ -447,7 +465,35 @@ export interface MediaTask {
   state: string
 }
 
+export interface MediaPluginState {
+  file: string
+  name?: string
+  status: 'ok' | 'error'
+  error?: string
+  modalities?: string[]
+}
+
 export interface MediaNamespace {
+  /** List media engine plugins (status + modalities). */
+  plugins(): Promise<{ plugins: MediaPluginState[] }>
+  /**
+   * Switch media engine per modality.
+   * @param opts - Engine overrides (top-level engine and/or per-modality).
+   */
+  switch(opts: {
+    engine?: string
+    image?: { engine?: string }
+    video?: { engine?: string }
+    audio?: { engine?: string }
+  }): Promise<{
+    success: boolean
+    media: {
+      engine?: string
+      image?: { engine?: string; model?: string }
+      video?: { engine?: string; model?: string }
+      audio?: { engine?: string; model?: string }
+    }
+  }>
   /** Create an A2A vision task from an image (data URL) + initial question. */
   createTask: (opts: { dataUrl?: string; artifactId?: string; mediaType?: string; question?: string }) => Promise<MediaTask>
 }

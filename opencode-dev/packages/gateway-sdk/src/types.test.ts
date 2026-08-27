@@ -97,6 +97,10 @@ test("all MAFW namespaces exist on MafwClient", () => {
   expect(typeof c.triage.reject).toBe("function")
   expect(typeof c.automations.list).toBe("function")
   expect(typeof c.automations.toggle).toBe("function")
+  expect(typeof c.runtime.get).toBe("function")
+  expect(typeof c.runtime.switch).toBe("function")
+  expect(typeof c.media.plugins).toBe("function")
+  expect(typeof c.media.switch).toBe("function")
 })
 
 test("SSEConnection has all SSE methods", () => {
