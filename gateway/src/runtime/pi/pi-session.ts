@@ -33,10 +33,15 @@ export class PiSessionRegistry {
     this.approvalBridges.set(id, bridge);
 
     const extension = createMafwApprovalExtension(bridge, this.emitEvent);
-    const { session } = await this.deps.createSession({ cwd, ...createOpts, extensions: [extension] });
-    this.sessions.set(id, session);
-    this.bySession.set(session, id);
-    this.lastUsed.set(id, Date.now());
+    try {
+      const { session } = await this.deps.createSession({ cwd, ...createOpts, extensions: [extension] });
+      this.sessions.set(id, session);
+      this.bySession.set(session, id);
+      this.lastUsed.set(id, Date.now());
+    } catch (err) {
+      this.approvalBridges.delete(id);
+      throw err;
+    }
     return { id };
   }
 

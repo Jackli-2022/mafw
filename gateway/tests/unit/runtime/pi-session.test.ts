@@ -106,6 +106,30 @@ describe('approval integration', () => {
     expect(await requestPromise).toBe(true);
   });
 
+  it('should dispose all ApprovalBridges on disposeAll', async () => {
+    const registry = new PiSessionRegistry(makeDeps());
+    const { id: id1 } = await registry.create('/tmp', {} as any);
+    const { id: id2 } = await registry.create('/tmp', {} as any);
+    const bridge1 = registry['approvalBridges'].get(id1)!;
+    const bridge2 = registry['approvalBridges'].get(id2)!;
+    const spy1 = jest.spyOn(bridge1, 'dispose');
+    const spy2 = jest.spyOn(bridge2, 'dispose');
+
+    await registry.disposeAll();
+
+    expect(spy1).toHaveBeenCalled();
+    expect(spy2).toHaveBeenCalled();
+    expect(registry['approvalBridges'].size).toBe(0);
+  });
+
+  it('should clean up bridge when createSession fails', async () => {
+    const registry = new PiSessionRegistry({
+      createSession: async () => { throw new Error('boom'); },
+    });
+    await expect(registry.create('/tmp', {} as any)).rejects.toThrow('boom');
+    expect(registry['approvalBridges'].size).toBe(0);
+  });
+
   it('should return false when permissionReply called for unknown session', async () => {
     const registry = new PiSessionRegistry(makeDeps());
     const result = await registry.permissionReply('unknown', 'req-1', true);
