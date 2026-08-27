@@ -39,7 +39,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       mrPromise = (async () => {
         const { ModelRuntime } = await imp('@earendil-works/pi-coding-agent');
         const mr = await ModelRuntime.create({ signal: AbortSignal.timeout(30_000) });
-        const key = (ctx as any).credentials?.getApiKey?.(provider) ?? readOpencodeAuth(authPath)[provider]?.key;
+        const key = ctx.credentials?.getApiKey?.(provider) ?? readOpencodeAuth(authPath)[provider]?.key;
         if (key) await mr.setRuntimeApiKey(provider, key);
         return mr;
       })();
@@ -89,6 +89,8 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     todo: async () => registry.todo(),
     children: async () => registry.children(),
     summarize: async (opts: { sessionID: string }) => registry.summarize(opts.sessionID),
+    permissionReply: (sessionID: string, requestId: string, approved: boolean) =>
+      registry.permissionReply(sessionID, requestId, approved),
   };
 
   return {
@@ -100,7 +102,8 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     provider: { list: () => modelRuntime().then((mr) => translateProviders(mr)) },
     app: { agents: () => translateAgents() },
     config: { get: () => translateConfigGet(), update: (c: any) => translateConfigUpdate(c) },
-    credentials: { getApiKey: (p: string) => (ctx as any).credentials?.getApiKey?.(p) ?? readOpencodeAuth(authPath)[p]?.key ?? null },
+    credentials: { getApiKey: (p: string) => ctx.credentials?.getApiKey?.(p) ?? readOpencodeAuth(authPath)[p]?.key ?? null },
+    registry,
     getBaseUrl: () => `http://127.0.0.1:${config.server.apiPort ?? 3000}`,
     healthCheck: async () => { try { await modelRuntime(); return true; } catch { return false; } },
     dispose: async () => {

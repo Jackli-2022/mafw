@@ -73,7 +73,7 @@ export interface SessionCreateOpts {
 
 export interface SessionPromptOpts {
   sessionID: string;
-  parts?: Array<{ type: string; text: string; [k: string]: any }>;
+  parts?: Array<{ type: string; text?: string; [k: string]: any }>;
   message?: string;
   agent?: string;
   model?: { providerID: string; modelID: string };
@@ -121,6 +121,7 @@ export interface RuntimeClient {
     todo(opts: { sessionID: string }): Promise<any[]>;
     children(opts: { sessionID: string }): Promise<any[]>;
     summarize(opts: SessionSummarizeOpts): Promise<any>;
+    permissionReply?(sessionID: string, requestId: string, approved: boolean): Promise<boolean>;
   };
   global: {
     event(): Promise<any>;

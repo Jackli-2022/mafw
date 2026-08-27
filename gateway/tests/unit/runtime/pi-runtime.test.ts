@@ -75,3 +75,28 @@ describe('pi-runtime', () => {
     expect(msgCount).toBe(0);
   });
 });
+
+describe('permissionReply', () => {
+  it('should expose permissionReply on session API', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    expect(rt.session.permissionReply).toBeDefined();
+  });
+
+  it('should forward permissionReply to registry', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    const { id } = await rt.session.create({ directory: '/tmp' });
+    const registry = (rt as any).registry;
+    const replySpy = jest.spyOn(registry, 'permissionReply');
+
+    await rt.session.permissionReply!(id, 'req-1', true);
+
+    expect(replySpy).toHaveBeenCalledWith(id, 'req-1', true);
+  });
+});
+
