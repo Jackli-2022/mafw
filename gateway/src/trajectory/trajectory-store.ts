@@ -195,8 +195,14 @@ export class TrajectoryStore {
 
   pruneOlderThan(days: number): void {
     const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
-    this.rawDb.prepare('DELETE FROM trajectory_events WHERE created_at < ?').run(cutoff);
-    this.rawDb.prepare('DELETE FROM trajectory_turns WHERE created_at < ?').run(cutoff);
+    this.rawDb.prepare(`
+      DELETE FROM trajectory_events WHERE created_at < ?
+      AND session_id NOT IN (SELECT session_id FROM goal_sessions)
+    `).run(cutoff);
+    this.rawDb.prepare(`
+      DELETE FROM trajectory_turns WHERE created_at < ?
+      AND session_id NOT IN (SELECT session_id FROM goal_sessions)
+    `).run(cutoff);
   }
 
   getSessionTokenSummary(sessionID: string): {
