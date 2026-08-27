@@ -5,7 +5,7 @@ import {
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
-  QuestionRequest, PermissionRequest,
+  QuestionRequest, PermissionRequest, MediaPluginState,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -542,7 +542,7 @@ export class MafwClient implements IMafwClient {
   media = {
     /** List media engine plugins (status + modalities). */
     plugins: async (): Promise<{
-      plugins: { file: string; name?: string; status: string; error?: string; modalities?: string[] }[]
+      plugins: MediaPluginState[]
     }> => {
       return this.request('/api/media/plugins')
     },
