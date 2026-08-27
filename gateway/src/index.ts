@@ -67,6 +67,8 @@ import { RuntimeCapabilities, fullCapabilities, AgentRuntime, RuntimeCredentials
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
+import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
+import { handleMediaSwitch } from './routes/media-switch';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -237,6 +239,9 @@ class MafwScheduler {
   private runtimeCaps: RuntimeCapabilities = fullCapabilities();
   private runtimeName = 'opencode';
   private runtimeLoader?: RuntimePluginLoader;
+  /** Abort controller for the active event stream subscription. Cancelled
+   *  before re-subscribing to prevent orphaned async iterator loops. */
+  private eventStreamAbort: AbortController | null = null;
   private sseClients: Set<http.ServerResponse> = new Set();
   /** WebSocket clients (mobile app): same events as SSE, JSON frames. */
   private wsClients: Set<WebSocket> = new Set();
@@ -603,10 +608,41 @@ class MafwScheduler {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const reload = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
+      timer = setTimeout(async () => {
+        const prevPlugin = config.runtime?.plugin;
         const { changed, restartRequired } = config.reload();
         if (changed.length > 0) log.info(`[Scheduler] Config hot-reloaded: ${changed.join(', ')}`);
         if (restartRequired.length > 0) log.warn(`[Scheduler] Config changes need restart: ${restartRequired.join(', ')}`);
+        // If the runtime plugin section changed, recreate runtime and
+        // re-subscribe the event stream (hot-switch, no restart needed).
+        if (changed.includes('runtime')) {
+          const newPlugin = config.runtime?.plugin;
+          if (newPlugin !== prevPlugin) {
+            log.info(`[Scheduler] Runtime plugin changed: '${prevPlugin ?? 'builtin'}' → '${newPlugin ?? 'builtin'}'; hot-switching...`);
+            try {
+              const sdkConfig = {
+                baseUrl: this.serveUrl,
+                directory: this.projectDir,
+                headers: {} as Record<string, string>,
+              };
+              const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
+              if (opencodePassword) {
+                sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
+              }
+              const runtime = await this.createRuntime(sdkConfig);
+              this.opencodeClient = runtime;
+              this.runtimeCaps = runtime.capabilities;
+              this.runtimeName = runtime.name;
+              this.sdkSession.setClient(this.opencodeClient);
+              if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
+              if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
+              await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
+              log.info(`[Scheduler] Runtime hot-switched to '${runtime.name}'`);
+            } catch (err: any) {
+              log.warn(`[Scheduler] Runtime hot-switch failed (non-fatal): ${err.message}`);
+            }
+          }
+        }
       }, 300);
     };
     for (const file of files) {
@@ -715,6 +751,13 @@ class MafwScheduler {
       log.warn('[Scheduler] opencodeClient not available; skipping event subscription');
       return;
     }
+    // Cancel any existing subscription to prevent orphaned async iterators.
+    if (this.eventStreamAbort) {
+      this.eventStreamAbort.abort();
+      this.eventStreamAbort = null;
+    }
+    const controller = new AbortController();
+    this.eventStreamAbort = controller;
     try {
       // Use /global/event (GlobalEvent = { directory, payload }) so we receive
       // events from ALL workspaces — /event only delivers the current
@@ -726,17 +769,32 @@ class MafwScheduler {
         log.warn('[Scheduler] SDK event subscribe returned no async stream');
         return;
       }
-      log.info('[Scheduler] Subscribed to OpenCode events');
+      log.info(`[Scheduler] Subscribed to OpenCode events (runtime=${this.runtimeName})`);
+      const signal = controller.signal;
       void (async () => {
         try {
-          for await (const evt of stream) this.handleOpencodeEvent(evt);
+          for await (const evt of stream) {
+            if (signal.aborted) break;
+            this.handleOpencodeEvent(evt);
+          }
+          if (!signal.aborted) log.info('[Scheduler] OpenCode event stream ended gracefully');
         } catch (err: any) {
+          if (signal.aborted) return; // Expected during hot-switch
           log.warn(`[Scheduler] OpenCode event stream ended: ${err.message}`);
         }
       })();
     } catch (err: any) {
-      log.warn(`[Scheduler] SDK event subscribe failed (non-fatal): ${err.message}`);
+      if (!controller.signal.aborted) {
+        log.warn(`[Scheduler] SDK event subscribe failed (non-fatal): ${err.message}`);
+      }
     }
+  }
+
+  /** Cancel existing event stream subscription and re-subscribe with the
+   *  current runtime. Used by runtime switch and config hot-reload. */
+  private async resubscribeEvents(reason: string) {
+    log.info(`[Scheduler] Re-subscribing events: ${reason}`);
+    await this.subscribeToEvents();
   }
 
   private handleOpencodeEvent(evt: any): void {
@@ -1215,6 +1273,11 @@ class MafwScheduler {
     }
     this.serveOwned = false;
     this.stopServeWatchdog();
+    // Cancel the active event stream subscription to break the async iterator loop.
+    if (this.eventStreamAbort) {
+      this.eventStreamAbort.abort();
+      this.eventStreamAbort = null;
+    }
     if (this.stopTokenWatcher) {
       this.stopTokenWatcher();
       this.stopTokenWatcher = null;
@@ -3130,12 +3193,54 @@ class MafwScheduler {
 
         // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
 
-        // GET /api/runtime — active runtime identity + capabilities + plugin scan state
-        if (req.url?.match(/^\/api\/runtime(?:\?|$)/) && req.method === 'GET') {
-          res.end(JSON.stringify({
-            active: { name: this.runtimeName, capabilities: this.runtimeCaps },
-            plugins: this.runtimeLoader?.getState() ?? [],
-          }));
+        // ── /api/runtime routes (thin wiring → routes/runtime-switch.ts) ──
+        if (req.url?.match(/^\/api\/runtime(?:\/|$)/)) {
+          const runtimeDeps = {
+            loader: this.runtimeLoader,
+            persist: (o: Record<string, any>) => config.persistOverrides(o),
+            getCurrent: () => this.opencodeClient,
+            runtimeName: () => this.runtimeName,
+            runtimeCaps: () => this.runtimeCaps,
+            envOverride: () => !!process.env.MAFW_RUNTIME_PLUGIN,
+            createRuntime: async () => {
+              const sdkConfig = {
+                baseUrl: this.serveUrl,
+                directory: this.projectDir,
+                headers: {} as Record<string, string>,
+              };
+              const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
+              if (opencodePassword) {
+                sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
+              }
+              return this.createRuntime(sdkConfig);
+            },
+            onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
+              this.opencodeClient = rt;
+              this.runtimeCaps = rt.capabilities;
+              this.runtimeName = rt.name;
+              this.sdkSession.setClient(this.opencodeClient);
+              if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
+              if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
+              await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
+              if (prev && (prev as any).dispose) {
+                try { await (prev as any).dispose(); }
+                catch (err: any) { log.warn(`[Runtime] dispose old runtime failed: ${err.message}`); }
+              }
+            },
+          };
+
+          if (req.method === 'GET' && req.url?.match(/^\/api\/runtime(?:\?|$)/)) {
+            await handleRuntimeGet(req, res, runtimeDeps);
+            return;
+          }
+          if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/switch(?:\?|$)/)) {
+            await handleRuntimeSwitch(req, res, runtimeDeps);
+            return;
+          }
+          if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/reload(?:\?|$)/)) {
+            await handleRuntimeReload(req, res, runtimeDeps);
+            return;
+          }
           return;
         }
 
@@ -3691,6 +3796,22 @@ class MafwScheduler {
           }));
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, plugins }));
+          return;
+        }
+
+        // POST /api/media/switch — switch media engine per modality
+        if (req.url?.match(/^\/api\/media\/switch(?:\?|$)/) && req.method === 'POST') {
+          await handleMediaSwitch(req, res, {
+            persist: (o) => config.persistOverrides(o),
+            reloadPlugins: async () => { await this.mediaPluginLoader?.reload(); },
+            availableEngines: () => (this.mediaPluginLoader?.getState().map(s => s.name).filter((n): n is string => !!n) ?? []),
+            currentMedia: () => ({
+              engine: config.raw.media.engine,
+              image: config.raw.media.image,
+              video: config.raw.media.video,
+              audio: config.raw.media.audio,
+            }),
+          });
           return;
         }
 

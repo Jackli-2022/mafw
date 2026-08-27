@@ -433,33 +433,6 @@ export class Config {
     return { changed, restartRequired };
   }
 
-  /**
-   * Persist top-level config overrides (merged into current values, nested
-   * objects shallow-merged per top-level key) to the data-root config.yaml,
-   * then hot-reload. Returns the reload result so callers can surface
-   * restart-required sections.
-   */
-  persistOverrides(overrides: Record<string, any>): { changed: string[]; restartRequired: string[] } {
-    const merged: Record<string, any> = { ...this.data };
-    for (const key of Object.keys(overrides)) {
-      const val = overrides[key];
-      const cur = (this.data as any)[key];
-      if (val && typeof val === 'object' && !Array.isArray(val) && cur && typeof cur === 'object') {
-        merged[key] = { ...cur, ...val };
-      } else {
-        merged[key] = val;
-      }
-    }
-    const mafwDir = this.resolvePath();
-    if (!fs.existsSync(mafwDir)) fs.mkdirSync(mafwDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(mafwDir, 'config.yaml'),
-      yaml.dump(merged, { indent: 2, lineWidth: 120, noRefs: true, sortKeys: true }),
-      'utf-8',
-    );
-    return this.reload();
-  }
-
   get server() { return this.data.server; }
   get paths() { return this.data.paths; }
   get timeouts() { return this.data.timeouts; }
