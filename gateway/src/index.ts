@@ -3138,7 +3138,21 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/provider 鈹€ list providers + models (legacy /provider)
+        // GET /api/orchestration/outcomes — goal outcome query
+        if (req.url?.match(/^\/api\/orchestration\/outcomes(?:\?|$)/) && req.method === 'GET') {
+          const u = new URL(req.url, 'http://localhost');
+          const rows = this.getGatewayDb().listGoalOutcomes({
+            policy: u.searchParams.get('policy') || undefined,
+            verdict: u.searchParams.get('verdict') || undefined,
+            project: u.searchParams.get('project') || undefined,
+            limit: parseInt(u.searchParams.get('limit') || '100', 10),
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ outcomes: rows }));
+          return;
+        }
+
+        // GET /api/provider – list providers + models (legacy /provider)
         if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
