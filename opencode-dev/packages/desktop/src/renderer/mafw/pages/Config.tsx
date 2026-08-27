@@ -3,6 +3,7 @@ import { createSignal, createEffect, onCleanup, onMount } from "solid-js"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 
@@ -131,6 +132,13 @@ export function ConfigPage(props: { onBack?: () => void }) {
     try {
       const mp = await window.api.mafw.media.plugins()
       setMediaPlugins(mp?.plugins ?? [])
+    } catch { /* ignore */ }
+    try {
+      const mc = await window.api.mafw.config.get("media")
+      setMediaEngine(mc?.engine ?? "")
+      setMediaImage(mc?.image?.engine ?? "")
+      setMediaVideo(mc?.video?.engine ?? "")
+      setMediaAudio(mc?.audio?.engine ?? "")
     } catch { /* ignore */ }
   }
 
@@ -297,25 +305,17 @@ export function ConfigPage(props: { onBack?: () => void }) {
             Runtime（{rtInfo()?.active?.name ?? 'opencode'}）
           </label>
           <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
-            <select
-              value={rtInfo()?.active?.name ?? 'opencode'}
-              disabled={rtSwitching()}
-              style={{
-                "flex": 1,
-                "padding": "4px 8px",
-                "border-radius": 4,
-                "border": "1px solid var(--border-base)",
-                "background": "var(--bg-base)",
-                "font-size": 13,
-              }}
-              onChange={(e) => switchRuntime(e.currentTarget.value)}
-            >
-              {runtimeOptions().map(name => (
-                <option value={name} selected={name === (rtInfo()?.active?.name ?? 'opencode')}>
-                  {name}{name === 'opencode' ? ' (默认)' : ''}
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 220 }}>
+              <SelectV2
+                options={runtimeOptions()}
+                current={rtInfo()?.active?.name ?? 'opencode'}
+                value={(x: string) => x}
+                label={(x: string) => (x === 'opencode' ? 'opencode（默认）' : x)}
+                onSelect={(v) => { if (v && v !== (rtInfo()?.active?.name ?? 'opencode')) switchRuntime(v) }}
+                disabled={rtSwitching()}
+                placeholder="选择 runtime"
+              />
+            </div>
             {rtSwitching() && <LoaderV2 width={14} height={14} />}
           </div>
         </div>
@@ -331,27 +331,18 @@ export function ConfigPage(props: { onBack?: () => void }) {
             { kind: 'video', label: 'Video', value: mediaVideo() },
             { kind: 'audio', label: 'Audio', value: mediaAudio() },
           ].map(({ kind, label, value }) => (
-            <div style={{ display: "flex", gap: 8, "align-items": "center", "margin-bottom": 4 }}>
-              <span style={{ "font-size": 12, width: 56, "text-align": "right", color: "var(--text-base)" }}>{label}</span>
-              <select
-                value={value || 'pi'}
-                disabled={mediaSwitching()}
-                style={{
-                  "flex": 1,
-                  "padding": "4px 8px",
-                  "border-radius": 4,
-                  "border": "1px solid var(--border-base)",
-                  "background": "var(--bg-base)",
-                  "font-size": 13,
-                }}
-                onChange={(e) => switchMediaEngine(kind, e.currentTarget.value)}
-              >
-                {mediaOptions().map(name => (
-                  <option value={name} selected={name === (value || 'pi')}>
-                    {name}
-                  </option>
-                ))}
-              </select>
+            <div class="mafw-plugin-row">
+              <span class="mafw-plugin-row-label">{label}</span>
+              <div style={{ width: 220 }}>
+                <SelectV2
+                  options={mediaOptions()}
+                  current={value || 'pi'}
+                  value={(x: string) => x}
+                  onSelect={(v) => { if (v != null && v !== (value || 'pi')) switchMediaEngine(kind, v) }}
+                  disabled={mediaSwitching()}
+                  placeholder="选择引擎"
+                />
+              </div>
             </div>
           ))}
           {mediaSwitching() && (

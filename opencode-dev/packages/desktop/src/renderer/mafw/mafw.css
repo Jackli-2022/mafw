@@ -1358,6 +1358,19 @@ html[data-theme="light"] .mafw-picker-pop {
   gap: 8px;
   flex-wrap: wrap;
 }
+.mafw-plugin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.mafw-plugin-row-label {
+  width: 56px;
+  font-size: 12px;
+  color: var(--text-2);
+  flex-shrink: 0;
+  text-align: right;
+}
 .mafw-empty {
   color: var(--text-base);
   padding: 20px 0;
