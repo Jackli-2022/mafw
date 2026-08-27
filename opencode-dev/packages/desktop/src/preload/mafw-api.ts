@@ -116,6 +116,8 @@ export function createMafwApi(): MafwAPI {
       uploadBinary: (bytes, mediaType) => ipcRenderer.invoke("mafw-media-upload", bytes, mediaType),
       // Combined upload + createTask in a single IPC call (saves one round-trip).
       uploadAndCreate: (opts) => ipcRenderer.invoke("mafw-media-upload-and-create", opts.bytes, opts.mediaType, opts.question),
+      plugins: () => invoke("media", "plugins"),
+      switch: (opts) => invoke("media", "switch", opts),
     },
 
     tts: {
@@ -134,6 +136,11 @@ export function createMafwApi(): MafwAPI {
     config: {
       get: (key?) => invoke("config", "get", key),
       set: (key, value) => invoke("config", "set", key, value),
+    },
+
+    runtime: {
+      get: () => invoke("runtime", "get"),
+      switch: (plugin: string) => invoke("runtime", "switch", plugin),
     },
 
     opencodeConfig: {

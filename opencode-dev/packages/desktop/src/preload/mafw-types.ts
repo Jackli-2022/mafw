@@ -122,6 +122,8 @@ export type MafwAPI = {
     createTask: (opts: { dataUrl?: string; artifactId?: string; mediaType?: string; question?: string }) => Promise<{ id: string; contextId: string; state: string }>
     uploadBinary: (bytes: ArrayBuffer, mediaType: string) => Promise<string>
     uploadAndCreate: (opts: { bytes: ArrayBuffer; mediaType: string; question?: string }) => Promise<{ id: string; contextId: string; state: string; artifactId: string; mediaType: string; size: number }>
+    plugins: () => Promise<{ plugins: { file: string; name?: string; status: string; error?: string; modalities?: string[] }[] }>
+    switch: (opts: { engine?: string; image?: { engine?: string }; video?: { engine?: string }; audio?: { engine?: string } }) => Promise<{ success: boolean; media: { engine?: string; image?: { engine?: string; model?: string }; video?: { engine?: string; model?: string }; audio?: { engine?: string; model?: string } } }>
   }
 
   tts: {
@@ -140,6 +142,11 @@ export type MafwAPI = {
   config: {
     get: (key?: string) => Promise<any>
     set: (key: string, value: any) => Promise<void>
+  }
+
+  runtime: {
+    get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean> }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
+    switch: (plugin: string) => Promise<{ success: boolean; active: { name: string; capabilities: Record<string, boolean> }; envOverride: boolean }>
   }
 
   opencodeConfig: {
