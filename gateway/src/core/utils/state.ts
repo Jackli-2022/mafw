@@ -33,6 +33,7 @@ export interface StateFile {
   metrics?: Record<string, number>;
   error?: string;
   updatedAt: string;
+  policySnapshot?: { version: string; proposalId: string | null };
 }
 
 export interface SessionInfo {

@@ -10,6 +10,7 @@ import { config } from "./config";
 import { log } from './core/utils/logger';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { buildExecutionGraph, FileCheckpointer, planNode, executeNode, reviewNode, syncToDashboard } from './core/langgraph';
+import { getActivePolicy } from './orchestration/policy';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { ChatSessionManager } from "./chat/chat-sessions";
@@ -4402,7 +4403,8 @@ class MafwScheduler {
       version: '2', goalId, loop: 1, phase: 'PLANNING',
       lastPhase: null, currentWave: 0, totalWaves: null,
       sessions: {}, nextAction: 'GRAPH_INVOKED', artifacts: {},
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      policySnapshot: (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
     };
 
     const tmpPath = `${statePath}.tmp`;
