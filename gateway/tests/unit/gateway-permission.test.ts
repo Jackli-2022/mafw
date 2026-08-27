@@ -91,6 +91,19 @@ describe('POST /api/sessions/:sessionID/permissions/:requestId', () => {
     expect(res.body).toEqual({ error: 'Runtime does not support permissionReply' });
   });
 
+  it('should return 400 when approved is not a boolean', async () => {
+    const permissionReply = jest.fn().mockResolvedValue(true);
+    const runtime = { session: { permissionReply } };
+    server = createServer(runtime);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+
+    const res = await postJson(server, '/api/sessions/session-1/permissions/req-1', { approved: 'yes' });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'approved must be a boolean' });
+    expect(permissionReply).not.toHaveBeenCalled();
+  });
+
   it('should return 500 when permissionReply throws', async () => {
     const permissionReply = jest.fn().mockRejectedValue(new Error('internal failure'));
     const runtime = { session: { permissionReply } };

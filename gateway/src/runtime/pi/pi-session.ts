@@ -10,6 +10,8 @@ export interface PiSessionDeps {
 
 export interface PiSessionRegistryOptions {
   sessionTtlMs?: number;   // 默认 24h
+  emitEvent?: (event: RawRuntimeEvent) => void;
+  policy?: ApprovalPolicy;
 }
 
 export class PiSessionRegistry {
@@ -23,11 +25,9 @@ export class PiSessionRegistry {
   constructor(
     private deps: PiSessionDeps,
     private opts: PiSessionRegistryOptions = {},
-    emitEvent?: (event: RawRuntimeEvent) => void,
-    policy?: ApprovalPolicy,
   ) {
-    this.emitEvent = emitEvent ?? (() => {});
-    this.policy = policy;
+    this.emitEvent = opts.emitEvent ?? (() => {});
+    this.policy = opts.policy;
   }
 
   async create(cwd: string, createOpts: any): Promise<{ id: string }> {

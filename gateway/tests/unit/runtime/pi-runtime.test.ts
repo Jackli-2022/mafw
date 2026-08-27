@@ -39,7 +39,7 @@ describe('pi-runtime', () => {
   it('declares Tier-2-partial capabilities', () => {
     expect(PI_CAPABILITIES).toMatchObject({
       sessionApi: true, promptWhileBusy: true, eventStream: true,
-      nativeApprovals: false, providerConfigApi: true, perLlmCallTransform: true,
+      nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
       sessionStorageApi: false, agentConfigApi: false,
     });
   });

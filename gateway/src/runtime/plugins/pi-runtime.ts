@@ -11,7 +11,7 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   sessionApi: true,
   promptWhileBusy: true,
   eventStream: true,
-  nativeApprovals: false,
+  nativeApprovals: true,
   providerConfigApi: true,
   perLlmCallTransform: true,
   sessionStorageApi: false,
@@ -63,7 +63,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       eventStream.trackSession(session);
       return { session };
     },
-  }, { sessionTtlMs: cfg.sessionTtlMs }, undefined, cfg.approvalPolicy);
+  }, { sessionTtlMs: cfg.sessionTtlMs, emitEvent: (evt) => eventStream.push(evt), policy: cfg.approvalPolicy });
 
   const sessionAPI = {
     create: async (opts: { directory?: string }) => {

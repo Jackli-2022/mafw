@@ -102,6 +102,10 @@ export class PiEventStream {
     };
   }
 
+  push(event: RawRuntimeEvent): void {
+    for (const l of this.listeners) l(event);
+  }
+
   async dispose(): Promise<void> {
     this.listeners.clear();
     this.subscribed = false;
