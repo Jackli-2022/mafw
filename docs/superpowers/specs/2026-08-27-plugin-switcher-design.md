@@ -36,8 +36,10 @@ Config 页（桌面）
   └─ 选 Media  ──▶ POST /api/media/switch ──▶ 热生效（无重启）
 
 gateway 进程
-  ├─ runtime/switch  → 校验 runtimeLoader.get(name) → 持久化 config.yaml → 返回 restartRequired
-  └─ media/switch    → 持久化 media 引擎配置 → mediaPluginLoader.reload() → 返回 success
+  ├─ runtime/switch  → 校验 runtimeLoader.get(name) → 合并写入 config.raw（整对象）→ 返回 restartRequired
+  │       └─ env MAFW_RUNTIME_PLUGIN 优先级高于 config.yaml（文档限制，不阻断）
+  └─ media/switch    → 合并写入 media 配置（整对象）→ mediaPluginLoader.reload() → 返回 resolved
+          └─ 未知引擎 fail-open，不校验 400
 ```
 
 ## 组件设计
@@ -53,22 +55,27 @@ if (plugin && plugin !== 'opencode') {
   const found = this.runtimeLoader?.get(plugin);   // 校验插件存在
   if (!found) { 400: { error: `runtime plugin '${plugin}' not found` } }
 }
-// 持久化 config.yaml（复用 PUT /api/config 的写入 + config.reload()）
-// 返回 { success: true, restartRequired: true, target: plugin || 'opencode' }
+// 持久化 config.yaml：读 config.raw → 合并 runtime.plugin → 整对象写入
+// （复用 PUT /api/config 的写入路径；务必合并而非只写子段，否则清掉其他配置节）
+// 返回 { success: true, restartRequired: true, target: plugin || 'opencode',
+//        envOverride: !!process.env.MAFW_RUNTIME_PLUGIN }
 // （target 为已写入的配置目标；当前 active 仍为旧 runtime，需重启后生效）
 ```
 
 - **不自动重启**：重启由前端协调，避免与桌面 sidecar 的 `stopGateway/startGateway` 生命周期管理冲突
 - `opencode` 与空串等价（内置默认，`createRuntime` 回退路径），不需要 loader 校验
+- **env 优先级注意**：`MAFW_RUNTIME_PLUGIN` 环境变量优先级高于 config.yaml——若用户设置了该环境变量，持久化的 `runtime.plugin` 重启后不会生效。端点检测到 env 存在时返回 `envOverride: true`，UI 据此显示警告条「MAFW_RUNTIME_PLUGIN 环境变量将覆盖此设置」；不阻断切换
 
 **`POST /api/media/switch`**
 
 ```typescript
 // Body: { engine?, image?, video?, audio? }   // partial，undefined 保留原值
-// 持久化 media.engine / media.{kind}.engine（复用 PUT /api/config 写入）
+// 持久化 media.engine / media.{kind}.engine（读 config.raw → 合并 → 整对象写入）
 // await this.mediaPluginLoader.reload()   // 热加载插件文件
-// 返回 { success: true, restartRequired: false }
+// 返回 { success: true, restartRequired: false, resolved: { engine, image, video, audio } }
 ```
+
+- **校验不对称（有意为之）**：未知 media 引擎不校验——与 fail-open 哲学一致，未知引擎持久化后静默回退默认 pi（`resolvePrompt` 的 `?? cfg.engine ?? 'pi'` 兜底）。返回 `resolved`（实际生效的每模态引擎名）供 UI 提示，不做 400 拒绝
 
 ### 2. SDK / preload 层
 
@@ -102,11 +109,12 @@ media: { plugins: () => invoke("media", "plugins"), switch: (opts) => invoke("me
 - 下拉列出可用 runtime：`opencode`（默认，标注） + `pi`（内置） + 用户 runtime-plugins（`GET /api/runtime` 中 `status === 'ok'` 的插件）
 - 当前 `active.name` 高亮/置顶
 - 选择非当前项 → `POST /api/runtime/switch` → 弹确认框「切换 runtime 将重启 Gateway，确定？」→ 确认 → `window.api.mafw.gateway.restart()` → 监听 `gateway.onStateChange` 恢复 ready 后重新拉取 runtime 状态 + toast「已切换到 {name}」
+- 若响应 `envOverride: true`，显示警告条「MAFW_RUNTIME_PLUGIN 环境变量将覆盖此设置」
 
 **Media 段**
 - 每模态一行：默认 / image / video / audio，各自下拉
 - 选项来自 `GET /api/media/plugins`（含内置 pi），显示状态（ok/error）
-- 选择 → `POST /api/media/switch`（只提交变更的字段）→ toast「已生效」（无需重启）
+- 选择 → `POST /api/media/switch`（只提交变更的字段）→ toast「已生效」（无需重启）；若 `resolved` 与所选不一致（引擎缺失回退 pi），提示「{engine} 不存在，已回退默认引擎」
 
 ### 4. 测试策略
 
@@ -124,6 +132,11 @@ media: { plugins: () => invoke("media", "plugins"), switch: (opts) => invoke("me
 5. `POST /api/media/switch { video: 'qwen-vl' }` 后 video 模态走新引擎，热生效无需重启
 6. Media 下拉显示各引擎状态，切换后 toast「已生效」
 7. 未配置 runtime.plugin 时回退 opencode 的行为不变
+8. 设置 `MAFW_RUNTIME_PLUGIN` 时切换返回 `envOverride: true`，UI 显示警告
+9. `POST /api/media/switch { engine: '不存在的引擎' }` 不报错，`resolved` 显示回退 pi，UI 提示
+8. switch 端点持久化 config.yaml 时必须整对象合并写入，不丢失其他配置节
+9. 设置 `MAFW_RUNTIME_PLUGIN` 环境变量后，config.yaml 中的 `runtime.plugin` 不生效（文档限制）
+10. `POST /api/media/switch { image: 'unknown-engine' }` 不返回 400，返回 `resolved.image` 显示实际回退引擎名
 
 ## 风险与缓解
 
@@ -132,7 +145,10 @@ media: { plugins: () => invoke("media", "plugins"), switch: (opts) => invoke("me
 | 切换 runtime 后 gateway 重启失败 | 复用现有 sidecar 重启机制 + 健康轮询；UI 显示 Reconnecting/失败状态 |
 | 重启导致进行中的会话中断 | 明确文案「切换 runtime 将重启 Gateway」；与现有 Restart 按钮行为一致 |
 | 并发写 config.yaml | switch 端点复用 PUT /api/config 的原子写入路径，无额外风险 |
-| 未知插件误配置 | 端点先 `runtimeLoader.get` 校验，未知返回 400，不落盘 |
+| 未知 runtime 插件误配置 | 端点先 `runtimeLoader.get` 校验，未知返回 400，不落盘 |
+| 持久化 config.yaml 丢失其他配置节 | 端点读 config.raw → 合并目标字段 → 整对象写入（非子段覆写） |
+| `MAFW_RUNTIME_PLUGIN` env 覆盖 config | 文档记录限制，端点不阻断；UI 提示该场景 |
+| 未知 media 引擎静默回退 | fail-open 哲学，返回 `resolved` 让 UI 显示实际生效引擎，不 400 |
 
 ## 后续扩展
 
