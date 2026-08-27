@@ -132,11 +132,10 @@ media: { plugins: () => invoke("media", "plugins"), switch: (opts) => invoke("me
 5. `POST /api/media/switch { video: 'qwen-vl' }` 后 video 模态走新引擎，热生效无需重启
 6. Media 下拉显示各引擎状态，切换后 toast「已生效」
 7. 未配置 runtime.plugin 时回退 opencode 的行为不变
-8. 设置 `MAFW_RUNTIME_PLUGIN` 时切换返回 `envOverride: true`，UI 显示警告
-9. `POST /api/media/switch { engine: '不存在的引擎' }` 不报错，`resolved` 显示回退 pi，UI 提示
 8. switch 端点持久化 config.yaml 时必须整对象合并写入，不丢失其他配置节
 9. 设置 `MAFW_RUNTIME_PLUGIN` 环境变量后，config.yaml 中的 `runtime.plugin` 不生效（文档限制）
 10. `POST /api/media/switch { image: 'unknown-engine' }` 不返回 400，返回 `resolved.image` 显示实际回退引擎名
+11. 设置 `MAFW_RUNTIME_PLUGIN` 时切换返回 `envOverride: true`，UI 显示警告条
 
 ## 风险与缓解
 

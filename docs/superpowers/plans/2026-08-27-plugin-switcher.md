@@ -453,6 +453,10 @@ function postJson(server: http.Server, path: string, body: any): Promise<{ statu
  * Models the gateway Config state: persist merges overrides into `cur`,
  * and the handler reads `cur` back (via currentMedia) AFTER persist —
  * the same ordering as real wiring (persistOverrides → reload → config.raw.media).
+ *
+ * IMPORTANT: `currentMedia` is returned as part of the tuple so tests
+ * must wire it explicitly — never use a static fallback that ignores
+ * post-persist state.
  */
 function makeMediaState() {
   const cur: any = {
@@ -469,17 +473,19 @@ function makeMediaState() {
     }
     return { changed: ['media'], restartRequired: [] };
   });
-  return { cur, persist };
+  /** Reads the *latest* `cur` — critical: persist mutates cur, then handler
+   *  calls currentMedia() to build `resolved`. Returning `cur` directly
+   *  (not a snapshot) ensures the resolved block reflects the persist. */
+  const currentMedia = () => cur;
+  return { cur, persist, currentMedia };
 }
 
-function createServer(deps: { persist?: any; reloadPlugins?: any; currentMedia?: any }): http.Server {
-  const persist = deps.persist ?? jest.fn().mockReturnValue({ changed: ['media'], restartRequired: [] });
+function createServer(deps: { persist: any; reloadPlugins?: any; currentMedia: any }): http.Server {
   const reloadPlugins = deps.reloadPlugins ?? jest.fn().mockResolvedValue(undefined);
-  const currentMedia = deps.currentMedia ?? (() => ({ engine: undefined, image: { engine: undefined }, video: { engine: undefined }, audio: { engine: undefined } }));
   return http.createServer(async (req, res) => {
     const match = req.url?.match(/^\/api\/media\/switch(?:\?|$)/);
     if (match && req.method === 'POST') {
-      await handleMediaSwitch(req, res, { persist, reloadPlugins, currentMedia });
+      await handleMediaSwitch(req, res, { persist: deps.persist, reloadPlugins, currentMedia: deps.currentMedia });
       return;
     }
     res.writeHead(404);
@@ -498,7 +504,7 @@ describe('POST /api/media/switch', () => {
   it('persists a partial override and hot-reloads plugins', async () => {
     const state = makeMediaState();
     const reloadPlugins = jest.fn().mockResolvedValue(undefined);
-    server = createServer({ persist: state.persist, reloadPlugins, currentMedia: () => state.cur });
+    server = createServer({ persist: state.persist, reloadPlugins, currentMedia: state.currentMedia });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await postJson(server, '/api/media/switch', { video: 'qwen-vl' });
@@ -515,7 +521,7 @@ describe('POST /api/media/switch', () => {
 
   it('unknown engine is accepted (fail-open) and reflected in resolved', async () => {
     const state = makeMediaState();
-    server = createServer({ persist: state.persist, currentMedia: () => state.cur });
+    server = createServer({ persist: state.persist, currentMedia: state.currentMedia });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await postJson(server, '/api/media/switch', { engine: 'no-such-engine' });
@@ -526,7 +532,7 @@ describe('POST /api/media/switch', () => {
 
   it('empty string resets the per-kind override to follow the global engine', async () => {
     const state = makeMediaState();
-    server = createServer({ persist: state.persist, currentMedia: () => state.cur });
+    server = createServer({ persist: state.persist, currentMedia: state.currentMedia });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await postJson(server, '/api/media/switch', { image: '' });
@@ -538,7 +544,7 @@ describe('POST /api/media/switch', () => {
   it('resolved uses current global engine when only a kind is overridden', async () => {
     const state = makeMediaState();
     state.cur.engine = 'custom-global';
-    server = createServer({ persist: state.persist, currentMedia: () => state.cur });
+    server = createServer({ persist: state.persist, currentMedia: state.currentMedia });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await postJson(server, '/api/media/switch', { audio: 'custom-audio' });

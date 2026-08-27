@@ -296,7 +296,7 @@ export class MafwClient implements IMafwClient {
   runtime = {
     /** Get active runtime identity, capabilities, and plugin scan state. */
     get: async (): Promise<{
-      active: { name: string; capabilities: Record<string, boolean> };
+      active: { name: string; capabilities: Record<string, boolean>; envOverride?: boolean };
       plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[];
     }> => {
       return this.request('/api/runtime')
@@ -310,6 +310,7 @@ export class MafwClient implements IMafwClient {
     switch: async (plugin: string): Promise<{
       success: boolean;
       active: { name: string; capabilities: Record<string, boolean> };
+      envOverride: boolean;
     }> => {
       const res = await fetch(`${this.baseUrl}/api/runtime/switch`, {
         method: 'POST',
