@@ -1,5 +1,13 @@
 # Runtime / Media 插件切换器设计规格
 
+> **实现变更（2026-08-27 执行期，用户批准「采用热切换方案并修复」）**：
+> - `POST /api/runtime/switch` 由「写配置 + 重启生效」改为**进程内热切换**：持久化 → `createRuntime` 重建 → 接线 client/consumers → **`resubscribeEvents` 重订阅事件流**（AbortController 取消旧订阅）→ dispose 旧 runtime。响应 `{ success, active, envOverride }`，无 `restartRequired`（不再需要）
+> - 新增 `GET /api/runtime` 扩展（active 含 `envOverride`）与 `POST /api/runtime/reload`
+> - `POST /api/media/switch` body 改为嵌套 `{ image?: { engine } }`；未知引擎返回 **400**（非 fail-open）；响应 `{ success, media: {...} }`（非 `resolved`）
+> - 配置持久化收敛为 `Config.persistOverrides()`（`config.ts`，deepMerge + 整对象写 config.yaml）
+> - 桌面 Config 页最终实现：Runtime 下拉（`SelectV2` + `confirm()` 二次确认 + envOverride 警告条）+ Media 每模态下拉，**无重启流程**
+> - 本规格其余章节保留原批准设计供追溯，以本文档与 AGENTS.md §5.19「插件切换端点」为准
+
 ## 概述
 
 在 gateway 后端提供插件切换端点，在桌面 Config 页提供配套 UI，让用户以语义化方式切换 **Agent Runtime 插件**（opencode / pi / 用户 runtime-plugins）与 **Media 引擎插件**（默认 pi / 用户 media-plugins），取代目前手改 `config.yaml` 裸字段的低效体验。

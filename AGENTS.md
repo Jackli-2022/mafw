@@ -574,6 +574,13 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 
 默认策略：read/grep/ls/find/glob 自动放行，其余需审批。
 
+#### 插件切换端点（runtime / media，桌面 Config 页「插件 Plugins」卡片）
+
+- `GET /api/runtime` — active runtime（name/capabilities/**envOverride**）+ 插件扫描状态；`POST /api/runtime/switch { plugin }` — **热切换**（进程内重建 runtime，无需重启）：校验插件存在（未知 400 + available）→ `config.persistOverrides` 持久化 → `createRuntime` 重建 → 接线 client/consumers → **`resubscribeEvents` 重订阅事件流**（AbortController 取消旧订阅，防孤儿迭代）→ dispose 旧 runtime（pi 的 registry + event stream）；`envOverride` 指示 `MAFW_RUNTIME_PLUGIN` 环境变量覆盖；`POST /api/runtime/reload` 重扫插件文件
+- `POST /api/media/switch { engine?, image?: {engine?}, video?: {engine?}, audio?: {engine?} }` — 校验引擎名（未知 400 + available；pi 恒可用）→ 持久化 + `mediaPluginLoader.reload()` **热生效**；返回 `{ success, media: {engine, image, video, audio} }`
+- 切换逻辑在 `gateway/src/routes/{runtime-switch,media-switch}.ts`（deps 注入，可单测），index.ts 仅薄接线
+- 桌面 Config 页：Runtime 下拉（`SelectV2`，选择后 `confirm()` 二次确认 → switch → toast；`envOverride` 显示警告条）+ Media 每模态下拉（热生效）；SDK `MafwClient.runtime/media` 命名空间 + preload 对应方法
+
 ### 5.20 Goal 编排 RSI — Phase 1 观测层
 
 **数据模型**（gateway.db）：
