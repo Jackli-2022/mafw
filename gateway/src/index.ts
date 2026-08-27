@@ -65,6 +65,7 @@ import { normalizeOpencodeEvent } from './runtime/normalize';
 import { RuntimeCapabilities, fullCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
+import { handlePermissionReply } from './routes/permission';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -3468,6 +3469,13 @@ class MafwScheduler {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
+          return;
+        }
+
+        // POST /api/sessions/{id}/permissions/{requestId} — forward permission reply to runtime
+        const permMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permissions\/([^/]+)(?:\?|$)/);
+        if (permMatch && req.method === 'POST') {
+          await handlePermissionReply(this.opencodeClient, req, res, permMatch[1], permMatch[2]);
           return;
         }
 
