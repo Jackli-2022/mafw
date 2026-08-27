@@ -31,6 +31,26 @@ export interface TurnSummary {
   last_ts: number;
 }
 
+export interface GoalOutcome {
+  goal_id: string;
+  project_id: string | null;
+  verdict: string;
+  rounds: number;
+  duration_ms: number | null;
+  tokens_input: number | null;
+  tokens_output: number | null;
+  total_cost: number | null;
+  tool_error_count: number | null;
+  thumbs_up: number;
+  thumbs_down: number;
+  policy_version: string;
+  evolution_proposal_id: string | null;
+  failure_kind: string | null;
+  failure_signature: string | null;
+  created_at: string | null;
+  archived_at: string;
+}
+
 export class GatewayDatabase {
   private db: Database.Database;
 
@@ -150,6 +170,50 @@ export class GatewayDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_noop_session ON t1_noop_log(session_id);
       CREATE INDEX IF NOT EXISTS idx_noop_created ON t1_noop_log(created_at);
+
+      CREATE TABLE IF NOT EXISTS goal_outcomes (
+        goal_id TEXT PRIMARY KEY,
+        project_id TEXT,
+        verdict TEXT NOT NULL,
+        rounds INTEGER DEFAULT 0,
+        duration_ms INTEGER,
+        tokens_input INTEGER,
+        tokens_output INTEGER,
+        total_cost REAL,
+        tool_error_count INTEGER,
+        thumbs_up INTEGER DEFAULT 0,
+        thumbs_down INTEGER DEFAULT 0,
+        policy_version TEXT NOT NULL DEFAULT 'builtin-v1',
+        evolution_proposal_id TEXT,
+        failure_kind TEXT,
+        failure_signature TEXT,
+        created_at TEXT,
+        archived_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_goal_outcomes_policy ON goal_outcomes(policy_version, verdict);
+      CREATE INDEX IF NOT EXISTS idx_goal_outcomes_project ON goal_outcomes(project_id, policy_version);
+
+      CREATE TABLE IF NOT EXISTS goal_sessions (
+        goal_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        loop INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (goal_id, session_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_goal_sessions_session ON goal_sessions(session_id);
+
+      CREATE TABLE IF NOT EXISTS evolution_proposals (
+        id TEXT PRIMARY KEY,
+        requires TEXT NOT NULL DEFAULT 'policy',
+        component_diffs TEXT NOT NULL,
+        declared_prediction TEXT,
+        rationale TEXT,
+        status TEXT NOT NULL DEFAULT 'proposed',
+        validation_result TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
     // Migration: add assistant_text column to trajectory_turns if not exists
@@ -379,6 +443,51 @@ export class GatewayDatabase {
         return { key: r.key, value: r.value as unknown as T };
       }
     });
+  }
+
+  // ── Goal outcomes (RSI Phase 1) ─────────────────────────────────────────
+
+  upsertGoalOutcome(o: GoalOutcome): void {
+    this.db.prepare(`
+      INSERT INTO goal_outcomes (goal_id, project_id, verdict, rounds, duration_ms,
+        tokens_input, tokens_output, total_cost, tool_error_count, thumbs_up, thumbs_down,
+        policy_version, evolution_proposal_id, failure_kind, failure_signature, created_at, archived_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(goal_id) DO UPDATE SET
+        verdict=excluded.verdict, rounds=excluded.rounds, duration_ms=excluded.duration_ms,
+        tokens_input=excluded.tokens_input, tokens_output=excluded.tokens_output, total_cost=excluded.total_cost,
+        tool_error_count=excluded.tool_error_count, thumbs_up=excluded.thumbs_up, thumbs_down=excluded.thumbs_down,
+        policy_version=excluded.policy_version, evolution_proposal_id=excluded.evolution_proposal_id,
+        failure_kind=excluded.failure_kind, failure_signature=excluded.failure_signature,
+        created_at=excluded.created_at, archived_at=excluded.archived_at
+    `).run(
+      o.goal_id, o.project_id, o.verdict, o.rounds, o.duration_ms,
+      o.tokens_input, o.tokens_output, o.total_cost, o.tool_error_count,
+      o.thumbs_up, o.thumbs_down, o.policy_version, o.evolution_proposal_id,
+      o.failure_kind, o.failure_signature, o.created_at, o.archived_at
+    );
+  }
+
+  listGoalOutcomes(filter?: { policy?: string; verdict?: string; project?: string; limit?: number }): GoalOutcome[] {
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (filter?.policy) { conditions.push('policy_version = ?'); params.push(filter.policy); }
+    if (filter?.verdict) { conditions.push('verdict = ?'); params.push(filter.verdict); }
+    if (filter?.project) { conditions.push('project_id = ?'); params.push(filter.project); }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = filter?.limit ?? 100;
+    return this.db.prepare(`SELECT * FROM goal_outcomes ${where} ORDER BY archived_at DESC LIMIT ?`).all(...params, limit) as GoalOutcome[];
+  }
+
+  addGoalSession(s: { goal_id: string; session_id: string; phase: string; loop: number }): void {
+    this.db.prepare(`
+      INSERT OR IGNORE INTO goal_sessions (goal_id, session_id, phase, loop, created_at)
+      VALUES (?,?,?,?,datetime('now'))
+    `).run(s.goal_id, s.session_id, s.phase, s.loop);
+  }
+
+  listGoalSessions(goalId: string): Array<{ session_id: string; phase: string; loop: number }> {
+    return this.db.prepare('SELECT session_id, phase, loop FROM goal_sessions WHERE goal_id = ?').all(goalId) as any[];
   }
 
   close(): void {
