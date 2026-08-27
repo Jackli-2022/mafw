@@ -90,8 +90,8 @@ gateway `stop()` 时：
 | pi API | 用途 |
 |---|---|
 | `createAgentSession({cwd, model, sessionManager, ...})` | 会话创建（进程内） |
-| `AgentSession.prompt(text, options?)` / `steer` / `sendUserMessage` | 发消息 |
-| `AgentSession.waitForIdle()` / `abort()` / `dispose()` | 生命周期 |
+| `AgentSession.prompt(text, options?)` / `followUp(text)` / `steer(text)` | 发消息（prompt 返回 void；isStreaming 时必须指定 streamingBehavior 或用 followUp/steer） |
+| `AgentSession.isStreaming` / `isIdle` / `waitForIdle()` / `abort()` / `dispose()` | 状态与生命周期 |
 | `AgentSession.messages` / `sessionId` / `sessionFile` | 消息与身份 |
 | `AgentSession.subscribe(listener)` | 事件流（Tier 1） |
 | `AgentSession.compact()` | 压缩 |
@@ -109,7 +109,7 @@ gateway `stop()` 时：
 ```ts
 capabilities: {
   sessionApi: true,           // Map<sessionID, AgentSession> 映射
-  promptWhileBusy: true,      // waitForIdle 语义
+  promptWhileBusy: true,      // isStreaming 时自动路由到 followUp()（§6）
   eventStream: true,          // subscribe → opencode 形状翻译
   nativeApprovals: false,     // pi 无原生 question/permission API（Phase 3 待办）
   providerConfigApi: true,    // ModelRuntime.getProviders() 真实；app.agents → []
@@ -140,32 +140,59 @@ class PiSessionRegistry {
 
   async create(cwd: string): Promise<{ id: string }>
     // createAgentSession({ cwd, model, sessionManager }) + 登记
+    // 返回 { id: session.sessionId }
 
   async promptAsync(id: string, text: string): Promise<void>
-    // session.prompt(text) + await waitForIdle()
-    // 忙时语义：AgentSession 同一时刻只有一个 agent run（isStreaming）。
-    // 忙时新 prompt 走 followUp 队列：sendUserMessage(content, { deliverAs: 'followUp' })
-    // （或 prompt({ streamingBehavior: 'followUp' })），与 pi 交互模式一致
+    // 忙时语义（pi API 验证）：
+    //   session.prompt(text) 在 isStreaming 时抛异常（缺省无 streamingBehavior）。
+    //   必须先检查 session.isStreaming：
+    //     idle  → session.prompt(text) → await session.waitForIdle()
+    //     busy  → session.followUp(text) → await session.waitForIdle()
+    //   followUp 语义：排队等 agent 无 tool calls/steering 后投递（用户追问）。
+    //   steer 语义：tool calls 结束后、下次 LLM 调用前插队（干预/纠偏）。
+    //   gateway promptWhileBusy 走 followUp（与 pi 用户追问一致）。
 
-  async prompt(id: string, text: string): Promise<{ parts: any[] }>
-    // 同上发消息 + waitForIdle + 取最新 assistant 消息翻译（pi-messages.ts）
+  async prompt(id: string, text: string): Promise<{ parts: Part[] }>
+    // 同 promptAsync 发 followUp/prompt + waitForIdle
+    // prompt() 返回 void（pi 设计），响应从事件流/messages 取。
+    // 取最新 assistant 消息：
+    //   session.messages 是 getter → AgentMessage[]
+    //   倒序找最后一条 role=assistant → pi-messages.ts 翻译成 opencode 形状 Part[]
+    //   返回 { parts: translatedParts }
 
-  async messages(id: string, opts?): Promise<{ data: any[] }>
-    // AgentSession.messages → opencode 形状（pi-messages.ts）
+  async messages(id: string, opts?): Promise<{ data: SessionMessage[] }>
+    // session.messages（getter, AgentMessage[]）→ pi-messages.ts 翻译成 opencode 形状
 
-  async delete(id: string): Promise<void>   // dispose + 移除
-  async abort(id: string): Promise<void>    // session.abort()
-  async list(): Promise<any[]>              // SessionManager 枚举
+  async delete(id: string): Promise<void>   // session.dispose() + Map 移除
+  async abort(id: string): Promise<void>    // session.abort()（Promise<void>）
+  async list(): Promise<SessionInfo[]>      // SessionManager.list(cwd) 静态方法
   async todo(id: string): Promise<any[]>    // []（pi 无 todo 概念）
   async children(id: string): Promise<any[]> // []（pi 无子会话概念）
-  async get(id: string): Promise<any>       // 会话元数据
-  async summarize(id: string): Promise<any> // session.compact()
+  async get(id: string): Promise<any>       // 元数据 { id, directory, title }
+  async summarize(id: string): Promise<any> // session.compact(customInstructions?)
 }
 ```
 
-**未实现映射（返回空/降级）：** `todo` → []、`children` → []、`get` → 元数据形状（id/directory/title）、`summarize` → `session.compact()`（映射到 pi 原生压缩）。
+**关键 API 事实（pi-coding-agent v0.84.1 类型验证）：**
 
-**并发约束（风险 5 修正）**：`createAgentSession` 每次调用建新 session（`SessionManager.create(cwd)` 默认每会话一个），Map<sessionID, AgentSession> 无同 cwd 冲突。真实约束是**每个 AgentSession 同时只有一个 agent run**（`isStreaming`）——用 followUp/steer 队列处理忙时新消息（见 promptAsync）。
+| pi API | 签名 | 说明 |
+|---|---|---|
+| `session.prompt(text, opts?)` | `Promise<void>` | 返回 void；opts 缺 streamingBehavior 时 isStreaming 抛异常 |
+| `session.followUp(text, images?)` | `Promise<void>` | 排队：agent 空闲后投递 |
+| `session.steer(text, images?)` | `Promise<void>` | 排队：tool calls 结束后、下次 LLM 调用前插队 |
+| `session.isStreaming` | `boolean` getter | 正在 agent run 或 post-run continuation |
+| `session.isIdle` | `boolean` getter | 无 run/retry/compaction/queued continuation |
+| `session.waitForIdle()` | `Promise<void>` | 等到 idle（含 auto-compaction/retry 结束） |
+| `session.messages` | `AgentMessage[]` getter | 全量消息含 custom types |
+| `session.abort()` | `Promise<void>` | 中止当前 run |
+| `session.dispose()` | `void`（同步） | 释放资源 |
+| `session.compact(instructions?)` | `Promise<CompactionResult>` | 压缩上下文 |
+| `PromptOptions.streamingBehavior` | `"steer" \| "followUp"` | isStreaming 时必传，否则抛 |
+| `sendUserMessage(content, opts?)` | `Promise<void>` | opts.deliverAs: `"steer" \| "followUp"` |
+
+**未实现映射（返回空/降级）：** `todo` → []、`children` → []、`get` → 元数据形状（id/directory/title）、`summarize` → `session.compact()`（映射到 pi 原生压缩，返回 `CompactionResult`）。
+
+**并发约束（风险 5 修正）**：`createAgentSession` 每次调用建新 session（`SessionManager.create(cwd)` 默认每会话一个），Map<sessionID, AgentSession> 无同 cwd 冲突。真实约束是**每个 AgentSession 同时只有一个 agent run**（`isStreaming`）——`promptAsync` 必须先查 `isStreaming` 再决定走 `prompt()` 还是 `followUp()`。队列模式：`followUpMode: "all"`（缺省）排空全部排队消息；可切 `"one-at-a-time"` 每次只投递最旧一条。
 
 ## 7. 事件流翻译（pi-events.ts）
 
@@ -248,7 +275,7 @@ media:
 | 测试 | 内容 |
 |---|---|
 | `gateway/tests/unit/runtime/pi-runtime.test.ts` | 能力声明、createRuntime 返回形状（mock pi 模块） |
-| `gateway/tests/unit/runtime/pi-session.test.ts` | Map 生命周期、promptAsync 等待 idle（mock AgentSession） |
+| `gateway/tests/unit/runtime/pi-session.test.ts` | Map 生命周期、promptAsync idle→prompt/busy→followUp 路由、waitForIdle 等待（mock AgentSession） |
 | `gateway/tests/unit/runtime/pi-events.test.ts` | pi 事件 → opencode 形状翻译映射表 |
 | `gateway/tests/unit/runtime/pi-provider.test.ts` | getProviders → provider.list 形状 |
 | `gateway/tests/unit/runtime/pi-integration.test.ts` | 全链路（mock ModelRuntime 单例，无网络） |

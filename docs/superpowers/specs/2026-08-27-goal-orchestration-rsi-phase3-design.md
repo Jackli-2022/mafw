@@ -1,6 +1,6 @@
 # Goal 编排 RSI — Phase 3：源码结构进化设计
 
-日期：2026-08-27
+日期：2026-08-27（v2，按子代理评审修正）
 状态：待审阅
 依赖：Phase 2 已运转（策略层演化闭环稳定，declared_prediction 验证机制可信）
 
@@ -8,126 +8,107 @@
 
 编排的**结构**（LangGraph 图的节点/边、波次划分逻辑、归档/恢复流程）进入可演化范围：变更以源码 diff 表达，在隔离 worktree 中修改，经分层门禁验证，triage 人确认后由 self-update 接力重启生效。
 
-与 Phase 2 的边界：Phase 2 改"注册表内的参数与 prompt"（数据层，即时生效）；Phase 3 改"图结构与执行逻辑"（源码层，重启生效）。**注册表、evolver 校验器、triage 流、auth/权限、self-update 本体永不在演化范围内。**
+与 Phase 2 的边界：Phase 2 改"注册表内的参数与 prompt"（数据层，即时生效）；Phase 3 改"图结构与执行逻辑"（源码层，重启生效）。
 
-## 2. 分层验证门禁（self-update 门禁升级）
+## 2. 前提条件（评审核实后新增）
 
-结构变更的验证按成本从低到高分四层，任一失败即终止：
+- **仅限源码安装形态**：结构演化要求 gateway 以源码 checkout 运行（`gateway/src` 存在——self-update.ts 现有同款判断）。npm 全局安装形态下无 git 仓库可 worktree，结构演化功能显式禁用（API 返回明确错误，不静默降级）
+- **主分支名自适应**：本仓库主分支是 `master` 而非 main（现有 GoalWorktreeManager 硬编码 `checkout('main')`，连现有 goal 归档都会失败——见 §3.1 泛化要求）
 
-| 层 | 内容 | 现状 |
+## 3. 分层验证门禁（self-update 门禁升级）
+
+| 层 | 内容 | 现状/细节 |
 |---|---|---|
 | L0 | `npm run build` 编译通过 + dist 校验 | ✅ self-update 已有（5min 超时） |
-| L1 | `npm test`（tests/unit/gateway 全量） | ✅ 套件存在，**需接入 self-update 流程** |
-| L2 | smoke goal：合成最小 goal 端到端跑通 plan→execute→review→archive，断言 outcome 行落库 | ❌ 新建 |
-| L3 | goal 回放 benchmark（历史 goal 场景重放对比） | ❌ 远期，见 §5 |
+| L1 | `npm test` 全量 | ✅ 套件存在，**接入 self-update**：命令 `npm test -- --runInBand --forceExit`（kernel 集成套件需要），超时预算 10min；build 过但 test 失败 → 不重启，pending-restart 令牌标记失败原因供调用者续跑诊断 |
+| L2 | smoke goal：合成最小 goal 端到端跑通 plan→execute→review→archive，断言 outcome 行落库 | ❌ 新建，在**提议阶段**于 worktree 内执行（不进 self-update 关键路径，避免拉长重启窗口） |
+| L3 | goal 回放 benchmark | ❌ 远期，见 §6 |
 
-self-update.ts 变更：`action: update` 流程在 build 后插入 L1（`npm test`，exit≠0 则不重启）；L2 由结构演化流程在**提议阶段**于 worktree 内执行（见 §3），不进 self-update 关键路径（避免重启窗口被拉长）。
+## 4. 结构演化流程
 
-### 2.1 L1 接入细节
+### 4.1 worktree 管理器泛化（评审 M7：现有 GoalWorktreeManager 不能直接用）
 
-- **超时预算**：`npm test` 超时 10min（现有 build 5min + test 10min = 15min 总预算；policy.yaml `selfUpdate.testTimeout` 可调）
-- **kernel 测试特殊处理**：`tests/unit/gateway/kernel*.test.ts` 需 `--runInBand --forceExit`（真实 ipykernel + zeromq handle 残留），单独 spawn 一次 `jest --runInBand --forceExit --testPathPattern=kernel`
-- **中间态语义**：build 通过但 test 失败 → 不重启，proposal.validation_result 记录 `{ stage: 'L1', error: 'test failed', exitCode }`，分支保留不删；build 失败 → 不进入 L1，直接记录 L0 失败
+`goal-worktree-manager.ts` 需先泛化才能复用：
+- 分支名参数化（现状硬编码 `goal/{goalId}` → 支持 `evolve/{proposal-id}`）
+- mergeBase/checkout 目标参数化（现状硬编码 `main` → 探测实际默认分支，master/main 自适应）
+- 清理策略参数化：现状 archive 成功即删分支；结构演化要求**失败分支保留**（见 §4.2）
 
-## 3. 结构演化流程
-
-### 3.1 前提约束
-
-**仅源码安装形态可用**：gateway 以 npm 全局安装运行时没有 git 仓库可 worktree（`self-update.ts:122-123` 以 `gateway/src` 存在与否判断源码 checkout）。结构演化流程在检测到非源码安装时直接跳过并记录 warn。
-
-### 3.2 Worktree 编排（泛化 goal-worktree-manager）
-
-现有 `goal-worktree-manager` 硬编码了 `goal/{goalId}` 分支名和 `checkout('main')` 归档（本仓库主分支是 master），不满足演化需求。新建 `evolution-worktree-manager`：
-
-- **参数化**：`branchPrefix`（默认 `evolve/`）、`mergeBase`（默认 `master`，自动检测）、`cleanupOnSuccess`（默认 true）、`cleanupOnFailure`（默认 false——保留 stepping stones）
-- **archive 泛化**：成功时 merge + delete branch（可配置）；失败时仅保留分支不操作
-- **复用策略**：不直接复用 goal-worktree-manager，而是抽取公共 worktree 操作到 `worktree-utils.ts`，两者各自调用
+### 4.2 流程
 
 ```
 触发（两个来源）
-  ├─ evolver 识别到注册表内无法表达的改进（如"需要新增节点"）→ proposal 标记 requires: 'structural'
+  ├─ evolver 识别到注册表内无法表达的改进 → proposal（requires='structural'）
   └─ 人/agent 直接发起
         │
         ▼
-worktree 变体（evolution-worktree-manager）
-  ├─ 从 master 切分支 evolve/<proposal-id>
+worktree 变体（泛化后的 GoalWorktreeManager）
+  ├─ 从默认分支切 evolve/<proposal-id>
   ├─ agent 在 worktree 内修改源码
+  ├─ diff 路径保护检查（§5）→ 触碰保护清单即终止
   ├─ 门禁 L0+L1+L2 在 worktree 内执行
-  │     └─ 失败 → 分支保留（不删），失败原因写入 proposal.validation_result
+  │     └─ 失败 → 分支保留（不删），失败原因写 proposal.validation_result
   ▼
-triage 确认（人审源码 diff + 门禁报告）
+triage 确认（evolution 类 item，人审源码 diff + 门禁报告）
   ├─ 拒绝 → 分支保留，proposal → rejected
-  └─ 确认 → merge 到 master
+  └─ 确认 → merge 到默认分支
         │
         ▼
-self-update 接力重启（现有机制，复用 pending-restart.json）
-  ├─ commit 字段记录 proposal-id
-  └─ 重启后向发起会话注入完成通知（现有）
+self-update 接力重启（现有机制，pending-restart.json 的 commit 字段记 proposal-id）
         │
         ▼
-记忆融合（复用 mafw_merge_memory）
-  └─ worktree 内产生的教训/决策融合回主记忆库（现有 archive-worktree 流程）
+记忆融合（复用 mafw_merge_memory / archive-worktree）
+  └─ worktree 内的教训/决策融合回主记忆库——失败分支的知识也带回（"此路不通及原因"）
 ```
 
-### 3.3 关键设计
+关键设计：
 
-- **失败分支保留不删**：DGM 式 stepping stones——失败的结构变体是后续演化的知识（"此路不通及原因"），由记忆融合带回
-- **结构变更的 declared_prediction 对照沿用 Phase 2 机制**（同一 evolution_proposals 表，`requires: 'structural'` 标记区分）
-- **回滚**：`git revert <merge-commit>` + 再走一遍 self-update 接力（重启 ~2-3s，已有机制）
+- **失败分支保留不删**：DGM 式 stepping stones；分支命名规范 `evolve/<proposal-id>` 使档案可枚举
+- **declared_prediction 对照沿用 Phase 2 机制**（同一 evolution_proposals 表，`requires='structural'`，Phase 1 建表已预留该列）
+- **回滚**：`git revert <merge-commit>` + 再走一遍 self-update 接力（重启 ~2-3s）
+- **归档接线点**：真实公共漏斗是 index.ts 的 archiveGoal（内联 lambda 注入节点），`archive.node.ts` 仅 re-export；`chat/graph-runner.ts` 的 stub buildNodeOptions 不在演化面内（评审 m10）
 
-## 4. 保护约束（循环外清单）
+## 5. 保护清单（循环外，diff 路径检查物理执行，glob 级枚举）
 
-源码级硬编码保护，演化提议触碰以下路径即物理拒绝（在门禁 L2 前做 diff 路径检查）：
+触碰以下任一路径的提议在门禁 L2 前直接拒绝：
 
-**精确文件列表**：
 - `gateway/src/orchestration/registry.ts`（注册表本体）
-- `gateway/src/orchestration/validator.ts`（验证逻辑）
-- `gateway/src/orchestration/evolver.ts`（校验逻辑部分）
-- `gateway/src/orchestration/triage-evolution.ts`（triage confirm handler）
-- `gateway/src/self-update.ts`
-- `gateway/src/core/auth.ts`
+- `gateway/src/orchestration/validator.ts`、`evolver.ts`（校验与提议逻辑）
+- `gateway/src/self-update.ts`、`gateway/src/core/auth.ts`
+- `gateway/src/mcp/handlers/**` 中 triage 相关 handler、`index.ts` 内联 triage 路由（按函数级注释锚点识别，文件级过粗时以 glob + 人工复核兜底）
+- `package.json`、`gateway/package.json`（依赖声明变更只能人工）
 
-**glob 模式**：
-- `gateway/src/mcp/handlers/*triage*`（triage 相关 handler）
-- `gateway/src/index.ts` 中 triage confirm 路由（内联，需 grep `triage.*confirm` 定位）
+## 6. L3 回放 benchmark（远期，本期不实施）
 
-**额外约束**：
-- `package.json` 的依赖声明（防止引入未审查依赖；如需依赖变更只能人工）
-- `gateway/src/config.ts` 的保护清单配置本身（防演化扩大自己的可写范围）
+形态参考 LoopsBench（arXiv:2608.00267）与 LongMemEval runner 模式：
 
-## 5. L3 回放 benchmark（远期，本期不实施）
-
-形态参考 LoopsBench（arXiv:2608.00267）与 LongMemEval 的 runner 模式：
-
-- 从 goal_outcomes + 归档 goal charter 抽取 N 个代表性场景（含成功/失败各半），冻结为用例集 `evaluation/goal-replay/`
-- 回放内容限定为**确定性可比的切片**：plan 节点输出质量（waves 划分的依赖正确性）、review 节点判定与人工标注的一致性
-- 不回放 execute（副作用大、环境不可复现）；execute 的质量由 L2 smoke goal + 在线 outcome 信号覆盖
+- 从 goal_outcomes + 归档 goal charter 抽 N 个代表性场景（成功/失败各半）冻结为用例集 `evaluation/goal-replay/`
+- 回放限定**确定性可比切片**：plan 输出的 waves 依赖正确性、review 判定与人工标注一致性
+- 不回放 execute（副作用大、环境不可复现）；execute 质量由 L2 smoke goal + 在线 outcome 覆盖
 - runner 直接 import gateway 类 + 临时目录隔离（同 LongMemEval），不污染真实数据
 
-## 6. 测试
+## 7. 测试
 
-- diff 路径保护：触碰保护清单的提议被门禁拒绝
-- worktree 门禁：L0/L1/L2 各失败分支的行为（分支保留、validation_result 记录）
-- self-update L1 接入：test 失败不重启
+- diff 路径保护：触碰保护清单任一 glob 的提议被拒绝
+- worktree 泛化：master/main 自适应、evolve/* 分支命名、失败保留/成功清理两种策略
+- self-update L1：test 失败不重启 + 令牌失败原因记录；超时预算生效
 - smoke goal：合成 goal 全链路断言（waves.json 生成、review 报告、outcome 落库）
-- 回滚流程：revert + 接力重启的编排正确性
+- 回滚：revert + 接力重启编排正确性
+- 前提检查：npm 全局安装形态下结构演化 API 显式报错
 
-## 7. 改动清单
+## 8. 改动清单
 
 | 文件 | 改动 |
 |---|---|
-| `gateway/src/self-update.ts` | update 流程接入 L1（npm test 门禁 + kernel 特殊处理 + 超时预算） |
-| `gateway/src/orchestration/evolution-worktree-manager.ts` | 新建：泛化 worktree 编排（参数化 branch/merge/cleanup）~120 行 |
-| `gateway/src/orchestration/worktree-utils.ts` | 新建：公共 worktree 操作（供 goal-worktree-manager 和 evolution-worktree-manager 复用）~80 行 |
-| `gateway/src/orchestration/structural.ts` | 新建：diff 路径保护 + 门禁执行 ~150 行 |
+| `gateway/src/self-update.ts` | update 流程接 L1（npm test，10min 预算，失败不重启+原因记录） |
+| `gateway/src/core/engine/goal-worktree-manager.ts` | 泛化：分支名/mergeBase/清理策略参数化，master/main 自适应 |
+| `gateway/src/orchestration/structural.ts` | 新建：worktree 变体编排 + diff 路径保护 + 门禁执行 ~220 行 |
 | `gateway/src/orchestration/smoke-goal.ts` | 新建：L2 合成 goal 端到端断言 ~150 行 |
-| `gateway/src/orchestration/evolver.ts` | 结构类提议出口（requires: 'structural'） |
-| `gateway/src/orchestration/registry.ts` | 增补保护清单 glob 模式 |
-| `tests/unit/gateway/` | +4 个测试文件（含 worktree manager） |
-| `evaluation/goal-replay/` | 远期，本期仅占位 README 说明形态 |
-| `AGENTS.md` | 增补结构演化流程与保护清单（精确文件 + glob） |
+| `gateway/src/orchestration/evolver.ts` | 结构类提议出口（requires='structural'） |
+| `tests/unit/gateway/` | +4 个测试文件 |
+| `evaluation/goal-replay/` | 远期占位 README |
+| `AGENTS.md` | 增补结构演化流程与保护清单 |
 
-## 8. Phase 3 退出标准
+## 9. Phase 3 退出标准
 
-- 一次完整的结构演化走通：提议 → worktree 修改 → 门禁 → triage → merge → 接力重启 → 后续 outcome 对照 declared_prediction
-- 一次被拒/失败变体的分支与知识保留可查证（fusion-log 有记录）
+- 一次完整结构演化走通：提议 → worktree 修改 → 路径保护 + 门禁 → triage → merge → 接力重启 → 后续 outcome 对照 declared_prediction
+- 一次被拒/失败变体的分支与知识保留可查证（分支在、fusion-log 有记录）
