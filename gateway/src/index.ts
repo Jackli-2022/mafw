@@ -3930,6 +3930,32 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/recall/pinned — disclosure layer for system prompt injection.
+        // Pinned memories appear every turn regardless of retrieval; fail-open.
+        if (req.url?.startsWith('/api/recall/pinned') && req.method === 'GET') {
+          try {
+            if (!this.memoryService) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } }));
+              return;
+            }
+            const { handleRecallPinned } = require('./routes/pinned-recall');
+            const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
+            const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
+            const result = await handleRecallPinned({
+              getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
+              readUnit: (id: string) => store.read(id),
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            log.error('[Scheduler] recall/pinned error:', err.message);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ profile: null, entries: [], budget: { max: 20, maxChars: 2000, used: 0 } }));
+          }
+          return;
+        }
+
         // POST /api/obs/capture — observation intake from the opencode plugin.
         // The gateway owns the T1 store (SQLite) and assigns turn IDs, so
         // plugin/serve restarts can never renumber turns or duplicate writes
@@ -4924,12 +4950,45 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           abstraction_level: memoryType === 'global' ? 3 : memoryType === 'episodic' ? 1 : 2,
           created_at: now,
           updated_at: now,
+          pinned: data?.pinned === true || undefined,
           source_session_id: data?.sessionID ? String(data.sessionID) : undefined,
         };
+        let supersedesTarget: any = null;
+        if (data?.supersedes) {
+          const sid = String(data.supersedes);
+          supersedesTarget = this.memoryService.harmonicIndex.getIndex().entries.find((e: any) => e.id === sid);
+          if (!supersedesTarget) return { success: false, error: `supersedes target not found: ${sid}` };
+          unit.energy = Math.max(unit.energy, supersedesTarget.energy ?? 0);
+        }
         await store.write(unit);
+        if (supersedesTarget && !supersedesTarget.superseded_by) {
+          store.markSuperseded(supersedesTarget.id, unit.id);
+        }
         return { success: true, id: unit.id };
       } catch (err: any) {
         log.warn(`[Scheduler] /api/memory/add failed: ${err.message}`);
+        return { success: false, error: err.message };
+      }
+    }
+    if (req.url === '/api/memory/pin' && req.method === 'POST') {
+      const body = await new Promise<string>((resolve) => {
+        let b = '';
+        req.on('data', (c: Buffer) => (b += c.toString('utf-8')));
+        req.on('end', () => resolve(b));
+      });
+      try {
+        const data = JSON.parse(body);
+        const id = String(data?.id || '');
+        if (!id) return { success: false, error: 'id required' };
+        if (!this.memoryService) return { success: false, error: 'memoryService not ready' };
+        const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
+        const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
+        const pinned = data?.pinned === true;
+        const ok = store.setPinned(id, pinned);
+        if (!ok) return { success: false, error: `memory not found: ${id}` };
+        return { success: true, id, pinned };
+      } catch (err: any) {
+        log.warn(`[Scheduler] /api/memory/pin failed: ${err.message}`);
         return { success: false, error: err.message };
       }
     }
