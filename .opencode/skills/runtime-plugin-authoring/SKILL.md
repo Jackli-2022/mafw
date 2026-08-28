@@ -12,7 +12,7 @@ MAFW Gateway 通过**能力契约**（Runtime Capability Contract）与 agent ru
 **核心原则：**
 - **能力自声明**：插件声明能力，gateway 按能力降级（缺能力 → 503 或跳过，永不崩溃）
 - **Fail-open**：插件加载/运行失败 → 自动回退到内置 opencode runtime
-- **无热加载**：runtime 是 gateway 的基础设施层（事件流/sidecar 建立其上），修改后需重启 gateway
+- **运行时热切换**：`POST /api/runtime/switch` 可在进程内热切换 runtime（无需重启）；插件文件修改后需 `POST /api/runtime/reload` 重扫或重启 gateway
 
 ## 第一步：理解能力分级
 
@@ -500,9 +500,15 @@ session: {
 
 ## 常见陷阱
 
-### 1. 忘记重启 gateway
-插件无热加载。修改 `.js` 文件后必须重启：
+### 1. 忘记刷新插件
+修改 `.js` 文件后需要重扫或重启 gateway：
 ```bash
+# 方式 A：热重扫（推荐，不中断服务）
+curl -X POST http://localhost:3000/api/runtime/reload
+# 然后切换到新插件
+curl -X POST http://localhost:3000/api/runtime/switch -H 'Content-Type: application/json' -d '{"plugin":"my-runtime"}'
+
+# 方式 B：重启 gateway
 mafw restart
 ```
 
@@ -773,12 +779,12 @@ curl http://localhost:3000/api/runtime
 1. **理解能力分级**（Tier 0/1/2），选择需要的能力
 2. **编写 CJS 插件**（`module.exports`），声明能力 + 实现 `createRuntime(ctx)`
 3. **处理事件归一化**（优先兼容 opencode 事件形状）
-4. **激活与测试**（config.yaml 或环境变量，重启 gateway，检查 `/api/runtime`）
+4. **激活与测试**（config.yaml 或环境变量，热切换或重启 gateway，检查 `/api/runtime`）
 5. **参考内置实现**（`opencode-runtime.ts` 是完整的 Tier 2 参考）
 
 **关键原则：**
 - 能力自声明 + fail-open 降级
-- 无热加载，修改后需重启
+- 插件文件修改后需 `POST /api/runtime/reload` 重扫或重启 gateway；运行时切换可热切换
 - 插件失败自动回退 opencode
 - 事件形状尽量兼容 opencode 归一化器
 

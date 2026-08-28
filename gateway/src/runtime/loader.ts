@@ -2,8 +2,9 @@
  * Runtime 插件加载器 —— 扫描 ~/.mafw/runtime-plugins/*.js，校验契约形状，
  * fail-open（单个文件失败不影响其他插件与内置 opencode）。
  *
- * 模板复用 MediaPluginLoader，但刻意去掉热加载：runtime 热切换危险
- * （事件流/sidecar 建立在 runtime 之上），重启生效即可。
+ * 模板复用 MediaPluginLoader。支持 POST /api/runtime/reload 重扫插件文件
+ * （清 require.cache 后重新 require）。运行时热切换由 runtime-switch.ts
+ * 的 POST /api/runtime/switch 处理（进程内重建 + 事件流重订阅，无需重启）。
  */
 import * as fs from 'fs';
 import * as path from 'path';
