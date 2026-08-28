@@ -69,6 +69,7 @@ import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
 import { handleMediaSwitch } from './routes/media-switch';
+import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -1031,6 +1032,34 @@ class MafwScheduler {
       });
     }
     return this.workerPool;
+  }
+
+  private modelConfigDeps(): ModelConfigDeps {
+    return {
+      persist: (o) => config.persistOverrides(o),
+      listProviders: async () => {
+        if (!this.opencodeClient) return null;
+        const result: any = await this.opencodeClient.provider.list();
+        const all = result?.all;
+        if (!Array.isArray(all)) return null;
+        return all.map((p: any) => ({
+          providerID: p.id,
+          providerName: p.name ?? p.id,
+          models: Object.entries(p.models ?? {}).map(([id, m]: [string, any]) => ({ id, name: m?.name ?? id })),
+        }));
+      },
+      currentConfig: () => ({
+        recall: { workerModel: config.raw.recall.workerModel },
+        media: {
+          provider: config.raw.media.provider,
+          model: config.raw.media.model,
+          image: config.raw.media.image,
+          video: config.raw.media.video,
+          audio: config.raw.media.audio,
+        },
+      }),
+      invalidateScanService: () => { this.scanService = null; },
+    };
   }
 
   private getScanService(): IndexScanService | null {
@@ -3812,6 +3841,16 @@ class MafwScheduler {
               audio: config.raw.media.audio,
             }),
           });
+          return;
+        }
+
+        // GET/POST /api/model-config — recall worker model + media models (hot-apply)
+        if (req.url?.match(/^\/api\/model-config(?:\?|$)/) && req.method === 'GET') {
+          await handleModelConfigGet(req, res, this.modelConfigDeps());
+          return;
+        }
+        if (req.url?.match(/^\/api\/model-config(?:\?|$)/) && req.method === 'POST') {
+          await handleModelConfigUpdate(req, res, this.modelConfigDeps());
           return;
         }
 
