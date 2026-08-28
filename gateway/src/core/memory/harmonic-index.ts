@@ -359,4 +359,26 @@ export class HarmonicIndexManager {
   getIndex(): HarmonicIndex {
     return { ...this.index, entries: [...this.index.entries] };
   }
+
+  /**
+   * One-time migration to incremental decay (index v1 → v2): stamps
+   * last_decay_at = nowIso on all entries WITHOUT applying decay, bumps
+   * version. Pre-fix passes over-decayed quadratically (full-age from
+   * created_at on every run), so the past is forgiven. No-op when already v2+.
+   */
+  migrateDecayBaseline(nowIso: string = new Date().toISOString()): number {
+    if ((this.index.version || 1) >= 2) return 0;
+    for (const entry of this.index.entries) {
+      entry.last_decay_at = nowIso;
+    }
+    this.index.version = 2;
+    this.save();
+    return this.index.entries.length;
+  }
+
+  /** Stamp the decay baseline for an entry (caller saves). */
+  stampDecay(id: string, nowIso: string = new Date().toISOString()): void {
+    const entry = this.index.entries.find(e => e.id === id);
+    if (entry) entry.last_decay_at = nowIso;
+  }
 }

@@ -43,6 +43,10 @@ export interface HarmonicIndexEntry {
   superseded_by?: string;
   merged_from?: string[];
   pinned?: boolean;
+  /** Baseline for incremental energy decay (index v2+). Stamped when a decay
+   *  pass actually applies, or by the v1→v2 migration (forgives the past).
+   *  Entries without it fall back to created_at. */
+  last_decay_at?: string;
 }
 
 export function generateHarmonicId(): string {

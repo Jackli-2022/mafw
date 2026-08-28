@@ -56,22 +56,39 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
   const index = indexManager.getIndex();
   const energySystem = new EnergySystem();
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  // One-time migration (index v1 → v2): stamp last_decay_at = now WITHOUT
+  // applying decay. Pre-fix passes computed full-age decay from created_at
+  // on every run, accumulating r·n(n+1)/2 (quadratic) loss — entries are
+  // already over-decayed, so the past is forgiven and incremental decay
+  // starts from this baseline.
+  if ((index.version || 1) < 2) {
+    const migrated = indexManager.migrateDecayBaseline(nowIso);
+    log.info(`[AutomationEngine] Migrated ${migrated} entries to incremental decay baseline (v2)`);
+    return;
+  }
   let decayed = 0;
   for (const entry of index.entries) {
     const salience = (entry as any).salience || 1.0;
-    // Real elapsed days since the memory was created (entry.created_at is the
-    // best available signal; updated_at is not stored on index entries).
-    const created = new Date(entry.created_at || 0).getTime();
-    const daysSinceUpdate = created > 0 ? Math.max(0, (now - created) / (24 * 60 * 60 * 1000)) : 0;
+    // Incremental decay: days since the last APPLIED decay (entries created
+    // after the migration have no last_decay_at yet → fall back to created_at).
+    const base = new Date(entry.last_decay_at || entry.created_at || 0).getTime();
+    const daysSinceDecay = base > 0 ? Math.max(0, (now - base) / DAY_MS) : 0;
     // Pure time decay — no event bonus. The `retrieved` bonus belongs to real
     // recall paths (search), not to the background decay pass.
-    const decayedEnergy = energySystem.decay(entry.energy, daysSinceUpdate, salience);
+    const decayedEnergy = energySystem.decay(entry.energy, daysSinceDecay, salience);
     const diff = entry.energy - decayedEnergy;
     if (diff > 0.005) {
       indexManager.updateEnergy(entry.id, -(diff));
+      // Stamp only when decay is actually applied — otherwise days keep
+      // accumulating until the diff crosses the write threshold (prevents
+      // starvation of low-salience / low-rate entries).
+      indexManager.stampDecay(entry.id, nowIso);
       decayed++;
     }
   }
+  indexManager.save();
   log.info(`[AutomationEngine] Energy decay applied to ${decayed} entries`);
 });
 actionRegistry.set('memory:review', async (_rule, engine) => {

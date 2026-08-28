@@ -56,24 +56,27 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 
 ### 3.4 能量衰减
 
-- 基础衰减率 **0.005/天**（`EnergySystem.decayRatePerDay`，salience 越高衰减越慢——`HarmonicIndexEntry` 现在携带 `salience`，衰减 pass 已可读取）
-- 默认自动化规则 `memory-decay`（每日 UTC 3:30，`recall/pipeline-rules.ts` 供给）：按 entry `created_at` 计算真实流逝天数做纯时间衰减（无事件加成）
+- 基础衰减率 **0.005/天**（`EnergySystem.decayRatePerDay`，salience 越高衰减越慢——`HarmonicIndexEntry` 携带 `salience`，衰减 pass 读取）
+- 默认自动化规则 `memory-decay`（每日 UTC 3:30，`recall/pipeline-rules.ts` 供给）：**增量衰减**——按 entry `last_decay_at`（缺失回退 `created_at`）计算流逝天数做纯时间衰减（无事件加成）；`last_decay_at` 仅在实际写入衰减时盖章（低于 0.005 写入阈值时天数继续累积，防低 salience 条目饥饿）
+- index v1→v2 一次性迁移：全部 entry 盖 `last_decay_at`=迁移时刻、**不补扣历史衰减**（旧实现按 `created_at` 每次运行重复扣全龄衰减，累计 r·n(n+1)/2 平方损失，历史已过度衰减故豁免）；迁移由 `HarmonicIndexManager.migrateDecayBaseline()` 执行
 - 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
 - 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
 
-## 4. Tools 清单（v6.8 总共 36 个）
+## 4. Tools 清单（v6.8 总共 40 个）
+
+### 4.1 Gateway MCP 工具（36 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
-| `mafw_search_hybrid` | 谐波记忆检索（token 计数×energy 默认；`retriever:'bm25'` 用 BM25×energy） |
+| `mafw_search_hybrid` | 谐波记忆检索（BM25×energy×salience 默认；`retriever:'token'` 回退子串计数；支持迭代图扩展） |
 | `mafw_get_deltas` | 获取参数化约束（L3） |
 | `mafw_update_state` | 更新状态文件 |
 | `mafw_load_state` | 读取状态文件 |
 | `mafw_ask_user` | 非阻塞向用户提问 |
 | `mafw_record_feedback` | 记录用户点赞/点踩 |
 | `mafw_get_model_route` | 动态模型选择（基于预算） |
-| `mafw_add_memory` | 写入记忆单元（支持 `pinned` 披露 / `supersedes` 显式取代） |
-| `mafw_pin_memory` | pin/unpin 已有记忆（披露层纠错正门） |
+| `mafw_add_memory` | 写入记忆单元（`supersedes` 显式取代旧条目；`pinned` 披露层；`cueAnchors` 多跳线索） |
+| `mafw_supersede_memory` | 标记已有记忆为 superseded（不写新条目，仅降能+惩罚检索排序） |
 | `mafw_commit_heuristic` | 提交 L5 启发式 |
 | `mafw_get_axioms` | 获取 L5 公理 |
 | `mafw_merge_memory` | ★ 跨 worktree 记忆融合 |
@@ -101,6 +104,15 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_desktop_click` | 桌面点击 |
 | `mafw_desktop_type` | 桌面输入 |
 | `mafw_desktop_scroll` | 桌面滚动 |
+
+### 4.2 插件侧工具（4 个，`src/tools/`）
+
+| Tool | 用途 |
+|---|---|
+| `mafw_media_ask` | 分析/追问图片/视频/音频（经 Media Agent A2A；支持 taskID 多轮追问或 mediaPath 自动上传） |
+| `mafw_media_upload` | 上传本地媒体文件到 Media Agent 并返回引用指针 |
+| `mafw_python` | 持久 Python 内核执行（变量/导入跨调用保持；matplotlib 图表返回图片附件） |
+| `mafw_python_restart` | 重启 Python 内核（内核崩溃或内存泄漏时调用） |
 
 ## 5. v6.8 新增系统
 
