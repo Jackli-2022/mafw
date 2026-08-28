@@ -116,3 +116,30 @@ export function formatRecallContext(memories: MemoryUnit[]): RecallFormat {
 
   return { pointers }
 }
+
+// ---- Pinned disclosure profile rendering (GET /api/recall/pinned) ----
+
+export const PINNED_BUDGET = { max: 20, maxChars: 2000 } as const;
+
+const PROFILE_TAG = '<user-profile>';
+const PROFILE_END_TAG = '</user-profile>';
+
+/**
+ * Renders pinned memories into the <user-profile> disclosure block.
+ * Enforces the hard budget (max entries / max chars); entries beyond the
+ * budget are dropped (caller logs the overflow count). Returns null profile
+ * for an empty set — callers must not inject an empty block.
+ */
+export function formatPinnedProfile(entries: MemoryUnit[]): { profile: string | null; used: number } {
+  const lines: string[] = [];
+  let chars = 0;
+  for (const m of entries.slice(0, PINNED_BUDGET.max)) {
+    const text = (m.memory_value || m.primary_abstraction || '?').replace(/\n/g, ' ');
+    const line = `- ${text}`;
+    if (chars + line.length > PINNED_BUDGET.maxChars) break;
+    lines.push(line);
+    chars += line.length;
+  }
+  if (lines.length === 0) return { profile: null, used: 0 };
+  return { profile: `${PROFILE_TAG}\n${lines.join('\n')}\n${PROFILE_END_TAG}`, used: lines.length };
+}
