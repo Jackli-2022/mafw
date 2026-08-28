@@ -20,6 +20,8 @@ interface HarmonicUnit {
   last_reviewed?: string;         // 休眠：同上
   top_associations?: string[];    // 未实现：类型声明，全仓库零读写（联想预取不存在）
   merged_from?: string[];         // MinHash 合并来源 id（写路径 merge 时填充）
+  superseded_by?: string;         // soft-supersede：指向取代本条的新 id（披露注入与检索排序排除）
+  pinned?: boolean;               // 披露层：每轮注入 <user-profile>（superseded 后失效）；与 type 正交
   created_at: string;
   updated_at: string;
 }
@@ -59,7 +61,7 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 - 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
 - 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
 
-## 4. Tools 清单（v6.8 总共 35 个）
+## 4. Tools 清单（v6.8 总共 36 个）
 
 | Tool | 用途 |
 |---|---|
@@ -70,7 +72,8 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_ask_user` | 非阻塞向用户提问 |
 | `mafw_record_feedback` | 记录用户点赞/点踩 |
 | `mafw_get_model_route` | 动态模型选择（基于预算） |
-| `mafw_add_memory` | 写入记忆单元 |
+| `mafw_add_memory` | 写入记忆单元（支持 `pinned` 披露 / `supersedes` 显式取代） |
+| `mafw_pin_memory` | pin/unpin 已有记忆（披露层纠错正门） |
 | `mafw_commit_heuristic` | 提交 L5 启发式 |
 | `mafw_get_axioms` | 获取 L5 公理 |
 | `mafw_merge_memory` | ★ 跨 worktree 记忆融合 |
@@ -271,6 +274,18 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
 - 实现：`src/hooks/memory-guide.ts`，经 `experimental.chat.system.transform` 每轮注入（常驻）
 - 被动注入（chat 开头 recall / tool-calls 增量 / step-ended 注入）保留，与主动引导互补：被动 = 系统帮你想起，主动 = agent 自己管理
 - 旧 `.mafw/constraints.json`（pinned 约束独立通道）已废弃：启动时自动迁移为谐波记忆（semantic、energy 0.9）并改名 `constraints.migrated.json` 备份（幂等，`gateway/src/recall/constraints-migrate.ts`）
+
+#### Pinned 披露层（2026-08-28）
+
+`pinned` 是 HarmonicUnit 一等标志（与 type 正交）：pinned 且未 superseded 的记忆经
+`GET /api/recall/pinned` 渲染为 `<user-profile>` 块，由插件 system.transform 每轮注入
+（`<memory-guide>` 之后，半稳定内容靠后保前缀缓存；fail-open 150ms 超时）。预算
+20 条/2000 字符，按 energy×salience 截断（salience 缺失按 1），溢出记
+`[Recall] pinned overflow` 日志。知识更新：`mafw_add_memory { supersedes: 旧id }` 显式取代
+（复用 MinHash soft-supersede 链，新条目 energy 继承 max(0.8, 旧条目) 且 pinned 不继承）；
+纠错正门 `mafw_pin_memory`。渲染收敛在 `inject-format.ts:formatPinnedProfile()`，
+路由逻辑在 `routes/pinned-recall.ts`（deps 注入可单测）。
+不加独立 update/delete 工具（业界实践：记忆变异属后台管线——下期 turnCompress 矛盾检测）。
 
 ### 5.13a 数据目录与统一数据库
 
@@ -530,8 +545,8 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
 - `agent-definition.ts` — 运行时中立的 `AgentDefinition` 模型（description/mode/model/
   systemPrompt/permissions），各 runtime 翻译为自己的配置格式
 - `loader.ts` — `~/.mafw/runtime-plugins/*.js` 插件加载（CJS `module.exports =
-  { name, capabilities, createRuntime(ctx) }`，fail-open，无热加载；能力声明覆盖在
-  Tier-0 基线之上）
+  { name, capabilities, createRuntime(ctx) }`，fail-open，`POST /api/runtime/reload`
+  可热重扫插件文件；能力声明覆盖在 Tier-0 基线之上）
 
 **可选能力与接口扩展：**
 - `external?: boolean` + `getBaseUrl(): string` — runtime 声明托管模式；`external=true`
@@ -547,6 +562,25 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
 runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应端点 503、
 事件订阅跳过，不崩溃。
+
+#### Runtime 热切换（无需重启）
+
+运行时切换有两种触发路径，均**不重启 gateway 进程**：
+
+| 触发方式 | 入口 | 流程 |
+|----------|------|------|
+| **HTTP API** | `POST /api/runtime/switch { plugin }` | 校验插件存在（未知 400 + available 列表）→ `config.persistOverrides` 持久化到 `~/.mafw/config.yaml` → `createRuntime()` 重建 → 接线 client/consumers → `resubscribeEvents` 重订阅事件流（AbortController 取消旧订阅，防孤儿迭代）→ dispose 旧 runtime |
+| **Config hot-reload** | `config.yaml` 文件变更 watcher（2s 防抖） | `config.reload()` 检测 `runtime` 段变更 → 自动执行同上 createRuntime + resubscribe 流程；`envOverride` 指示 `MAFW_RUNTIME_PLUGIN` 环境变量覆盖 |
+
+辅助端点：
+- `GET /api/runtime` — 当前 runtime name/capabilities + envOverride + 插件扫描状态
+- `POST /api/runtime/reload` — 重扫 `~/.mafw/runtime-plugins/*.js`（清 `require.cache` 后重新 require），不切换，仅刷新插件列表
+
+热切换安全约束：
+- `server`/`paths` 配置段变更仍需重启（`config.reload()` 返回 `restartRequired`）
+- `apiToken` 变更即时生效，无需重启
+- 插件 `createRuntime()` 抛异常 → 回退内置 opencode，不崩 gateway
+- 旧 runtime dispose 由 `onSwitched` 回调统一处理（pi: registry 清空 + event stream 终止）
 
 宿主插件侧（runtime 进程内的 transform/工具注册）是每个 runtime 单独交付物，
 不在本契约内；gateway 侧 HTTP（/api/obs/capture、/api/recall/context、/a2a）
