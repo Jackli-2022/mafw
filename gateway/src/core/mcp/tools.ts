@@ -163,8 +163,22 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           memoryType: { type: 'string', enum: ['semantic', 'episodic', 'procedural', 'global'], description: 'Memory type. semantic=fact, episodic=narrative, procedural=pattern, global=cross-project' },
           cueAnchors: { type: 'array', items: { type: 'string' }, description: 'Tags/keywords for retrieval (max 8)' },
           primaryAbstraction: { type: 'string', description: '6-8 word summary (auto-generated from content if omitted)' },
+          pinned: { type: 'boolean', description: 'Pin to disclosure layer: injected into system prompt every turn. ONLY for user identity/profile and long-term preferences/constraints. Never for task-specific or volatile content.' },
+          supersedes: { type: 'string', description: 'ID of an existing memory this one replaces (e.g. a preference changed). The old memory is marked superseded automatically; its history is preserved.' },
         },
         required: ['content', 'memoryType'],
+      },
+    },
+    {
+      name: 'mafw_pin_memory',
+      description: 'Pin or unpin an existing memory to/from the disclosure layer. Pinned memories are injected into the system prompt every turn. Unpin is the correction path when a pinned preference becomes stale.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Memory unit id (mem_...)' },
+          pinned: { type: 'boolean', description: 'true to pin, false to unpin' },
+        },
+        required: ['id', 'pinned'],
       },
     },
     {
@@ -451,15 +465,47 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           abstraction_level: memoryType === 'procedural' ? 3 : memoryType === 'global' ? 4 : 2,
           created_at: now,
           updated_at: now,
+          pinned: args.pinned === true || undefined,
         };
 
         const { HarmonicUnitFileStore } = await import('../../memory/harmonic-file-store.js');
         const store = new HarmonicUnitFileStore(mafwDir);
+        let supersedesTarget: any = null;
+        if (args.supersedes) {
+          const sid = String(args.supersedes);
+          supersedesTarget = store.indexManager_().getIndex().entries.find((e: any) => e.id === sid);
+          if (!supersedesTarget) {
+            return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `supersedes target not found: ${sid}` }) }], isError: true };
+          }
+          unit.energy = Math.max(unit.energy, supersedesTarget.energy ?? 0);
+        }
         await store.write(unit);
+        if (supersedesTarget && !supersedesTarget.superseded_by) {
+          store.markSuperseded(supersedesTarget.id, unit.id);
+        }
 
         return {
           content: [{ type: 'text', text: JSON.stringify({ success: true, id: unit.id }) }],
         };
+      } catch (err: any) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
+      }
+    },
+
+    mafw_pin_memory: async (args) => {
+      try {
+        const id = String(args.id || '');
+        if (!id) {
+          return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'id required' }) }], isError: true };
+        }
+        const { HarmonicUnitFileStore } = await import('../../memory/harmonic-file-store.js');
+        const store = new HarmonicUnitFileStore(mafwDir);
+        const pinned = args.pinned === true;
+        const ok = store.setPinned(id, pinned);
+        if (!ok) {
+          return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `memory not found: ${id}` }) }], isError: true };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify({ success: true, id, pinned }) }] };
       } catch (err: any) {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
       }
