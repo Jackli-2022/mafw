@@ -110,11 +110,17 @@ handleModelConfigUpdate(req, res, deps): Promise<void>
    - 拉得到 → **严格校验**：每个被修改的 `{provider, model}`（media）/
      `{providerID, modelID}`（recall）必须在列表中（provider 存在且 model
      属于该 provider）；不匹配 → `400 { error, available }`
+     - **例外**：空字符串值（清空 per-modality、回退默认模型的"（跟随默认）"
+       路径）跳过严格校验，直接放行
    - 拉不到 → **fail-open 放行**（文本输入兜底场景）
 2. `deps.persist({ recall: { workerModel }, media: {...} })` —— 只含被修改字段；
-   `config.persistOverrides` 深合并进内存并全量写 `~/.mafw/config.yaml`
+   未变更字段一并发送亦可（`persistOverrides` 深合并幂等，前端实现可每次
+   整行提交全量 media 对象）；`config.persistOverrides` 深合并进内存并全量写
+   `~/.mafw/config.yaml`
 3. 仅当 `recall` 被修改时调用 `deps.invalidateScanService()`
-4. `200 { success: true, recall, media }`（persist 后读 `currentConfig()`）
+4. `200 { success: true, recall, media }`（persist 后读 `currentConfig()`）；
+   注意响应形状与请求不同——`recall` 回显为 `{ workerModel: ModelRef }`
+   包装形状（与 GET 一致），非请求的扁平 `{ providerID, modelID }`
 
 ### index.ts 接线
 
@@ -179,6 +185,7 @@ null → 文本输入模式（`TextInputV2` 两枚：providerID / modelID，附�
 
 - `tests/unit/gateway/model-config.test.ts`：
   GET 形状；POST 空请求体 400；POST 校验通过与 400；provider 列表 null 时 fail-open；
+  清空路径（空字符串值）通过校验；
   persist 载荷正确（recall 与 media 分字段、只含被改字段）；
   `invalidateScanService` 仅在 recall 变更时调用
 - `gateway-sdk`：`client.test.ts` 加 `models.get/update` 路由断言；
