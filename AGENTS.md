@@ -243,7 +243,7 @@ opencode server 进程                    Gateway 进程
 | ④ 聚合压缩 | cron 每小时（turn-compress 规则） | turnCompress pipeline → per-session worker → `mafw_add_memory` |
 
 **职责分工：** Plugin = 两个 transform 注射口。Daemon = gateway 事件流订阅四拍信号。
-聚合压缩/反思 worker 的 LLM 模型由 `config.recall.workerModel` 固定（默认 `xiaomi/mimo-v2.5`），per-message 传入；已存在的 worker session 下一次 prompt 即生效，无需重建。
+聚合压缩/反思 worker 的 LLM 模型由 `config.recall.workerModel` 固定（代码默认 `alibaba-cn/qwen3.7-max`，Config 页可改），per-message 传入；已存在的 worker session 下一次 prompt 即生效，无需重建。
 - 为复用前缀缓存、降低 token 成本，worker session 在 idle 达到 `config.recall.workerCompactIdleMs`（默认 8h）后，下一次 prompt 会先调 opencode 的 `session.summarize` 做 compaction；summarize 失败则直接 dispose 轮换（下次 prompt 重建新会话）。
 - xiaomi provider 可在 opencode 配置里开 `options.setCacheKey: true`，让请求带上 `promptCacheKey` 以便命中缓存（对端点是否生效取决于小米 API）。
 
@@ -624,8 +624,9 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 
 - `GET /api/runtime` — active runtime（name/capabilities/**envOverride**）+ 插件扫描状态；`POST /api/runtime/switch { plugin }` — **热切换**（进程内重建 runtime，无需重启）：校验插件存在（未知 400 + available）→ `config.persistOverrides` 持久化 → `createRuntime` 重建 → 接线 client/consumers → **`resubscribeEvents` 重订阅事件流**（AbortController 取消旧订阅，防孤儿迭代）→ dispose 旧 runtime（pi 的 registry + event stream）；`envOverride` 指示 `MAFW_RUNTIME_PLUGIN` 环境变量覆盖；`POST /api/runtime/reload` 重扫插件文件
 - `POST /api/media/switch { engine?, image?: {engine?}, video?: {engine?}, audio?: {engine?} }` — 校验引擎名（未知 400 + available；pi 恒可用）→ 持久化 + `mediaPluginLoader.reload()` **热生效**；返回 `{ success, media: {engine, image, video, audio} }`
-- 切换逻辑在 `gateway/src/routes/{runtime-switch,media-switch}.ts`（deps 注入，可单测），index.ts 仅薄接线
-- 桌面 Config 页：Runtime 下拉（`SelectV2`，选择后 `confirm()` 二次确认 → switch → toast；`envOverride` 显示警告条）+ Media 每模态下拉（热生效）；SDK `MafwClient.runtime/media` 命名空间 + preload 对应方法
+- `GET /api/model-config` / `POST /api/model-config` — 记忆 worker 模型 + 媒体每模态模型（`recall.workerModel`、`media.provider/model`、`media.{image,video,audio}`）：provider 列表来自 `GET /api/provider`（不可用 fail-open）；POST 严格校验（空字符串=清空回退，跳过校验）→ `config.persistOverrides` 落盘 → 仅 recall 变更时置空 `scanService` 单例（TurnPipeline/ReflectionPipeline 每次新建本就热生效；媒体 per-request 读 config 天然实时）；路由 `routes/model-config.ts`，deps 注入可单测；SDK `models` 命名空间 + 桌面 Config 页「模型 Models」卡片
+- 切换逻辑在 `gateway/src/routes/{runtime-switch,media-switch,model-config}.ts`（deps 注入，可单测），index.ts 仅薄接线
+- 桌面 Config 页：Runtime 下拉（`SelectV2`，选择后 `confirm()` 二次确认 → switch → toast；`envOverride` 显示警告条）+ Media 每模态下拉（热生效）+ 模型 Models 卡片（级联双 `SelectV2`，provider 变更时重置 model 下拉并过滤）；SDK `MafwClient.runtime/media/models` 命名空间 + preload 对应方法
 
 ### 5.20 Goal 编排 RSI — Phase 1 观测层
 
