@@ -75,6 +75,7 @@ output.system = [
 - 硬 cap：**最多 20 条、总计 ≤2000 字符**，按 energy × salience 截断
 - 溢出记日志：`[Recall] pinned overflow: N entries dropped`
 - pinned 条目正常参与能量衰减（0.005/天）：长期不复习的旧画像自然沉底让位，但**不因衰减而消失**（pin 语义是"保证注入"，衰减只影响块内排序与截断优先级）
+- 被预算截断的条目仍保持 pinned 留在索引中——高优先级条目 unpin 后可重新进入披露块
 
 ## 7. 用户审阅
 
@@ -89,10 +90,10 @@ Phase 1 最小面：
 | 端点/工具 | 变更 |
 |---|---|
 | `mafw_add_memory` | 加可选参数 `pinned` |
-| `mafw_pin_memory` | 新增 `{ id, pinned }` |
+| `mafw_pin_memory` | 新增 `{ id, pinned }` → 返回 `{ success, id, pinned }` |
 | `POST /api/memory/add` | body 透传 `pinned` |
-| `POST /api/memory/pin` | 新增 `{ id, pinned }` |
-| `GET /api/recall/pinned` | 新增，返回 `{ profile: string \| null, entries: HarmonicUnit[] }`（entries 供审阅，profile 为渲染块） |
+| `POST /api/memory/pin` | 新增 `{ id, pinned }` → `{ success, id, pinned }`；id 不存在 404 |
+| `GET /api/recall/pinned` | 新增，返回 `{ profile: string \| null, entries: HarmonicUnit[], budget: { max: 20, maxChars: 2000, used: number } }`（profile 为渲染块供插件直注，entries+budget 供审阅/调试） |
 | `experimental.chat.system.transform` | 在 memory-guide 后追加 `<user-profile>` |
 
 ## 9. 测试
@@ -108,7 +109,13 @@ Phase 1 最小面：
 - LongMemEval 摄入基准不受影响（pinned 可选、缺省 false）
 - 全量 gateway jest + plugin 测试
 
-## 10. 验收标准
+## 10. 范围外（本期不做）
+
+- 桌面 UI 管理 pinned 记忆（Config 页"用户画像"卡片 + pin 开关 + 编辑）——后续跟进
+- 自动 pin 启发式（是否 pin 完全由 agent 在 `mafw_add_memory` 时决定，配合 memory-guide 纪律）
+- pinned 的 per-project vs global 区分（当前全部全局；如需再加 `scope` 字段）
+
+## 11. 验收标准
 
 1. `mafw_add_memory { pinned: true }` 写入后，下一轮 LLM 调用的 system prompt 含 `<user-profile>` 且含该条 memory_value
 2. 会话压缩（summarize）后，披露块仍在（system transform 每轮重建）
