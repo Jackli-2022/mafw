@@ -20,6 +20,11 @@ const GUIDE_BODY = `## 记忆
 ### 需要旧记忆：主动检索
 - 新任务开始、或不确定此事是否已知 → 调用 mafw_search_hybrid 检索
 
+### 披露层（pinned）
+- 用户身份/画像、长期偏好与约束 → mafw_add_memory 时 pinned: true（每轮保证注入）；任务相关、易变内容不要 pin
+- 偏好/事实变了 → 新写一条并带 supersedes: 旧id（旧版自动失效，历史保留）
+- 需要 pin/unpin 已有记忆 → mafw_pin_memory
+
 ### 子代理
 子代理不得调用 mafw_add_memory / mafw_search_hybrid（防止重复写入），由父会话统一管理`
 
