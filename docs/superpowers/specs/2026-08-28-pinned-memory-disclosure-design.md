@@ -175,4 +175,6 @@ Phase 1 最小面：
 3. gateway 停止时，system transform 不报错、不注入空块
 4. 21 条 pinned 时只注入 20 条，日志有 overflow 记录
 5. superseded 的 pinned 记忆不出现在披露块
-6. `mafw_pin_memory { id, pinned: false }` 后披露块不再含该条
+6. `mafw_update_memory { id, pinned: false }` 后披露块不再含该条
+7. `mafw_delete_memory { id }` 后，该条不出现在检索结果和披露块中（墓碑排除）
+8. 对已软删 id 重复 `mafw_delete_memory` 返回成功（幂等）
