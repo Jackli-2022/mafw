@@ -138,6 +138,11 @@ export function createMafwApi(): MafwAPI {
       set: (key, value) => invoke("config", "set", key, value),
     },
 
+    models: {
+      get: () => invoke("models", "get"),
+      update: (opts) => invoke("models", "update", opts),
+    },
+
     runtime: {
       get: () => invoke("runtime", "get"),
       switch: (plugin: string) => invoke("runtime", "switch", plugin),

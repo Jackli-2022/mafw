@@ -4,6 +4,7 @@ import type {
   EnergyDistribution, Axiom, L5Heuristic,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
+  ModelConfigState, ModelConfigUpdate,
 } from "@mafw/sdk"
 
 export type MafwAPI = {
@@ -142,6 +143,11 @@ export type MafwAPI = {
   config: {
     get: (key?: string) => Promise<any>
     set: (key: string, value: any) => Promise<void>
+  }
+
+  models: {
+    get: () => Promise<ModelConfigState>
+    update: (opts: ModelConfigUpdate) => Promise<{ success: boolean; recall: ModelConfigState['recall']; media: ModelConfigState['media'] }>
   }
 
   runtime: {
