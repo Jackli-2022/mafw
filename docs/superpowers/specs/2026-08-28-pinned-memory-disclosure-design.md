@@ -30,58 +30,57 @@ pinned?: boolean   // 缺省 = false；披露层标志，与 type 正交
 - 被 soft-supersede 的旧条目**不参与**披露注入（防同一偏好新旧两版同时出现）
 - 检索路径行为不变：pinned 条目照常参与 BM25 排序，**不加分**（披露是注入策略，不扭曲检索排序）
 
-## 4. 记忆 CRUD 四操作
+## 4. 写入工具变更
 
-| 操作 | 工具 | 变化 |
-|---|---|---|
-| **C**reate | `mafw_add_memory` | 已有，加 `pinned` 参数 |
-| **R**ead | `mafw_search_hybrid` | 已有，不变 |
-| **U**pdate | `mafw_update_memory` | 新增：`{ id, memory_value?, primary_abstraction?, cue_anchors?, pinned? }` |
-| **D**elete | `mafw_delete_memory` | 新增：`{ id }`，墓碑式软删 |
+本期不新增独立的 update/delete 工具。业界最佳实践（Mem0、Graphiti）将记忆变异（矛盾检测→失效/supersede）放在后台管线而非 agent 工具面。MAFW 的 turnCompress worker 是对应基础设施，下期在此实现自动矛盾检测与 supersede。
 
-### 4a. Create（`mafw_add_memory`）
-
-- 加可选参数 `pinned?: boolean`（MCP schema + `POST /api/memory/add` 透传）
-- 其余行为不变
-
-### 4b. Update（`mafw_update_memory`）
+### 4a. `mafw_add_memory` — 新增两个可选参数
 
 ```typescript
-{ id: string,
-  memory_value?: string,
-  primary_abstraction?: string,
-  cue_anchors?: string[],
-  pinned?: boolean }
-→ { success: boolean, id: string, entry: HarmonicIndexEntry }
+{
+  content: string,
+  memoryType: 'semantic' | 'episodic' | 'procedural' | 'global',
+  cueAnchors?: string[],
+  pinned?: boolean,    // 新增：写入时直接 pin（用户画像/长期偏好场景）
+  supersedes?: string  // 新增：显式取代指定 id 的旧记忆（"偏好变了"场景）
+}
 ```
 
-- 只更新传入字段（undefined 字段不动）
-- `memory_value` 变化时重走 MinHash 合并检查（复用 write 路径的 supersede 链）
-- `salience` 重算；`updated_at` 刷新
-- `pinned` 字段可单独修改：pin/unpin 已有记忆（"把刚才说的偏好固定下来" / "那个偏好变了"）
+**`pinned` 语义**：写入时标记为 pinned，直接进入披露注入候选池。
+
+**`supersedes` 语义**：
+- 目标记忆标记 `superseded_by = 新 id`（或新的 MinHash 合并产物 id）
+- 走已有 write 路径：MinHash 合并 → supersede 链 → energy 继承
+- 目标记忆自动退出检索和披露注入（与现有 soft-supersede 逻辑统一）
+- 用于"偏好变了"场景：新偏好以 `pinned: true` + `supersedes: 旧 id` 写入，旧偏好自动失效
+- 目标 id 不存在时返回显式错误（不静默忽略）
+
+### 4b. `mafw_pin_memory` — 新工具
+
+```typescript
+{ id: string, pinned: boolean }
+→ { success: boolean, id: string, pinned: boolean }
+```
+
+对已有记忆 pin/unpin，不修改内容：
+- **pin**："把刚才说的偏好固定下来"（add_memory 时忘了 pinned=true）
+- **unpin**："那个偏好变了，别再每轮注入"（披露块纠错的正门）
 - id 不存在返回 404
 
-### 4c. Delete（`mafw_delete_memory`）
+### 4c. 为什么不加独立 update/delete
 
-```typescript
-{ id: string }
-→ { success: boolean, id: string }
-```
+| 需求 | 本期方案 | 下期（turnCompress worker） |
+|---|---|---|
+| 偏好变了 | `add_memory` + `supersedes: 旧id` + `pinned: true` | worker 自动检测矛盾 → supersede |
+| 画像过时 | `pin_memory { id, pinned: false }` | worker 检测 stale → unpin |
+| 内容有误 | 写入正确版本 + `supersedes: 错误id` | worker 检测矛盾 → supersede |
+| 彻底清除 | 不支持（留到下期 `mafw_purge_memory`） | 物理删除 + purging |
 
-- **墓碑式软删**：设置 `deleted_at` 时间戳，不物理删除
-- 检索/披露/衰减路径全部排除 `deleted_at` 非空条目
-- MinHash 合并：被软删的条目不参与合并（如同 supersede）
-- 幂等：对已软删 id 重复调用返回成功（不报错）
-- 设计理由：agent 有删除权就有误删，软删可恢复；物理删除留到后续 `mafw_purge_memory(hard: true)` 按需加
-
-### 4d. Read（`mafw_search_hybrid`）
-
-不变。检索结果自动排除 `deleted_at` 非空条目（与现有 superseded 排除逻辑统一）。
-
-### 4e. memory-guide 纪律更新
+### 4d. memory-guide 纪律更新
 
 > 用户身份/画像、长期偏好与约束 → 写入时 `pinned: true`（每轮保证注入）；任务相关、易变内容**不要 pin**
-> 偏好变了用 `mafw_update_memory`（保住 id 和历史），确实错误/过时用 `mafw_delete_memory`；不要 delete+re-add（丢历史换新 id）
+> 偏好变了 → 写入新版本 + `supersedes: 旧id`（自动取代，旧版失效）
+> 不要 delete+re-add（丢历史，新 id 断裂 supersede 链）
 
 ## 5. 注入路径
 
@@ -133,17 +132,15 @@ Phase 1 最小面：
 
 ## 8. 接口汇总
 
-| 端点/工具 | 方法 | 变更 |
-|---|---|---|
-| `mafw_add_memory` | C | 加可选参数 `pinned` |
-| `mafw_update_memory` | U | **新增** `{ id, memory_value?, primary_abstraction?, cue_anchors?, pinned? }` → `{ success, id, entry }` |
-| `mafw_delete_memory` | D | **新增** `{ id }` → `{ success, id }`（墓碑软删） |
-| `mafw_search_hybrid` | R | 不变（自动排除 deleted_at 非空条目） |
-| `POST /api/memory/add` | C | body 透传 `pinned` |
-| `POST /api/memory/update` | U | **新增** `{ id, ...fields }` → `{ success, id, entry }`；id 不存在 404 |
-| `POST /api/memory/delete` | D | **新增** `{ id }` → `{ success, id }`；幂等 |
-| `GET /api/recall/pinned` | R | **新增**，返回 `{ profile: string \| null, entries: HarmonicUnit[], budget: { max: 20, maxChars: 2000, used: number } }` |
-| `experimental.chat.system.transform` | — | 在 memory-guide 后追加 `<user-profile>` |
+| 端点/工具 | 变更 |
+|---|---|
+| `mafw_add_memory` | 加可选参数 `pinned?: boolean` + `supersedes?: string` |
+| `mafw_pin_memory` | **新增** `{ id, pinned }` → `{ success, id, pinned }`；id 不存在 404 |
+| `mafw_search_hybrid` | 不变（superseded 条目自动排除） |
+| `POST /api/memory/add` | body 透传 `pinned` + `supersedes` |
+| `POST /api/memory/pin` | **新增** `{ id, pinned }` → `{ success, id, pinned }`；id 不存在 404 |
+| `GET /api/recall/pinned` | **新增**，返回 `{ profile: string \| null, entries: HarmonicUnit[], budget: { max: 20, maxChars: 2000, used: number } }` |
+| `experimental.chat.system.transform` | 在 memory-guide 后追加 `<user-profile>` |
 
 ## 9. 测试
 
@@ -153,13 +150,14 @@ Phase 1 最小面：
 - endpoint：排序（energy×salience）、20 条/2000 字符截断、空集返回 `profile: null`
 - 插件 transform：gateway 不可达 → 无块、不抛异常、不阻塞；有 pinned → 块在 memory-guide 之后
 
-**CRUD 测试：**
-- `mafw_update_memory`：只更新传入字段；memory_value 变化重走 MinHash 合并；pinned 单独修改（pin/unpin）；id 不存在 404
-- `mafw_delete_memory`：软删后检索不返回；幂等（重复删除成功）；已软删 id 不参与合并
-- `GET /api/recall/pinned`：排除 deleted_at 非空条目
+**工具测试：**
+- `mafw_add_memory` + `supersedes`：目标记忆标记 superseded_by；新记忆继承 energy；目标 id 不存在报错
+- `mafw_add_memory` + `pinned`：写入后索引条目 pinned=true
+- `mafw_pin_memory`：pin/unpin 往返；不存在 id 404
+- `GET /api/recall/pinned`：superseded 的 pinned 条目不出现
 
 **回归：**
-- LongMemEval 摄入基准不受影响（pinned 可选、缺省 false）
+- LongMemEval 摄入基准不受影响（pinned/supersedes 可选、缺省 false）
 - 全量 gateway jest + plugin 测试
 
 ## 10. 范围外（本期不做）
@@ -174,7 +172,5 @@ Phase 1 最小面：
 2. 会话压缩（summarize）后，披露块仍在（system transform 每轮重建）
 3. gateway 停止时，system transform 不报错、不注入空块
 4. 21 条 pinned 时只注入 20 条，日志有 overflow 记录
-5. superseded 的 pinned 记忆不出现在披露块
-6. `mafw_update_memory { id, pinned: false }` 后披露块不再含该条
-7. `mafw_delete_memory { id }` 后，该条不出现在检索结果和披露块中（墓碑排除）
-8. 对已软删 id 重复 `mafw_delete_memory` 返回成功（幂等）
+5. `mafw_add_memory { supersedes: '旧id' }` 后，旧记忆不出现在检索和披露块
+6. `mafw_pin_memory { id, pinned: false }` 后披露块不再含该条
