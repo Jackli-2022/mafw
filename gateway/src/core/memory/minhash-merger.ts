@@ -77,6 +77,7 @@ export class MinHashMerger {
       if (sim > this.threshold) {
         const existingUnit = await store.read(entry.id);
         if (!existingUnit) continue;
+        if (existingUnit.pinned) result.pinned = true;
 
         // B4: don't grow beyond the length cap — a mega blob pollutes retrieval.
         const combinedLen =

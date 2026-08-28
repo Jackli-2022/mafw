@@ -17,6 +17,8 @@ export interface HarmonicUnit {
   top_associations?: string[];
   /** If set, this memory has been superseded by the referenced newer unit; retrieval should penalize it. */
   superseded_by?: string;
+  /** Disclosure layer: injected into the system prompt every turn (excluded when superseded). */
+  pinned?: boolean;
   /** Origin session for pipeline-written memories (per-session worker bookkeeping). */
   source_session_id?: string;
 }
@@ -40,6 +42,7 @@ export interface HarmonicIndexEntry {
   source_session_id?: string;
   superseded_by?: string;
   merged_from?: string[];
+  pinned?: boolean;
 }
 
 export function generateHarmonicId(): string {

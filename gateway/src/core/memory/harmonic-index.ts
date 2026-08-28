@@ -123,6 +123,7 @@ export class HarmonicIndexManager {
       energy: unit.energy,
       salience: unit.salience,
       superseded_by: unit.superseded_by,
+      pinned: unit.pinned,
       merged_from: unit.merged_from,
       filePath: (unit as any).filePath,
       created_at: unit.created_at,

@@ -18,6 +18,7 @@ export function buildOKF(unit: HarmonicUnit): string {
   if (unit.abstraction_level !== undefined) frontmatter.abstraction_level = unit.abstraction_level;
   if (unit.merged_from?.length) frontmatter.merged_from = unit.merged_from;
   if (unit.superseded_by) frontmatter.superseded_by = unit.superseded_by;
+  if (unit.pinned !== undefined) frontmatter.pinned = unit.pinned;
   if (unit.source_session_id) frontmatter.source_session_id = unit.source_session_id;
 
   const yamlStr = yaml.dump(frontmatter, { lineWidth: -1, quotingType: '"' });
