@@ -37,7 +37,7 @@ export function ConfigPage(props: { onBack?: () => void }) {
     setLoading(false)
   }
 
-  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState() })
+  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState() })
 
   function toggleSection(key: string) {
     setSections(prev => prev.map(s => s.key === key ? { ...s, expanded: !s.expanded } : s))
@@ -134,11 +134,12 @@ export function ConfigPage(props: { onBack?: () => void }) {
       setMediaPlugins(mp?.plugins ?? [])
     } catch { /* ignore */ }
     try {
-      const mc = await window.api.mafw.config.get("media")
-      setMediaEngine(mc?.engine ?? "")
-      setMediaImage(mc?.image?.engine ?? "")
-      setMediaVideo(mc?.video?.engine ?? "")
-      setMediaAudio(mc?.audio?.engine ?? "")
+      const fullCfg = await window.api.mafw.config.get()
+      const mc = fullCfg?.media ?? {}
+      setMediaEngine(mc.engine ?? "")
+      setMediaImage(mc.image?.engine ?? "")
+      setMediaVideo(mc.video?.engine ?? "")
+      setMediaAudio(mc.audio?.engine ?? "")
     } catch { /* ignore */ }
   }
 
@@ -185,6 +186,50 @@ export function ConfigPage(props: { onBack?: () => void }) {
     const ok = mediaPlugins().filter(p => p.status === 'ok').map(p => p.name).filter(Boolean)
     if (!ok.includes('pi')) ok.push('pi')
     return ok
+  }
+
+  // ── Models (recall worker + media models) ──
+  const [modelState, setModelState] = createSignal<any>(null)
+  const [modelAvailable, setModelAvailable] = createSignal<any[] | null>(null)
+  const [modelError, setModelError] = createSignal("")
+  const [modelSaving, setModelSaving] = createSignal<Record<string, boolean>>({})
+
+  async function loadModelState() {
+    setModelError("")
+    try {
+      const st = await window.api.mafw.models.get()
+      setModelState(st)
+      setModelAvailable(Array.isArray(st?.available) && st.available.length > 0 ? st.available : null)
+    } catch (err: any) {
+      setModelError(err.message)
+    }
+  }
+
+  async function saveRecallModel(provider: string, model: string) {
+    setModelSaving(prev => ({ ...prev, recall: true }))
+    try {
+      const res = await window.api.mafw.models.update({ recall: { providerID: provider, modelID: model } })
+      setModelState(res)
+      showToastV2({ description: `\u8bb0\u5fc6 worker \u6a21\u578b\u5df2\u5207\u6362\u5230 ${provider}/${model}`, duration: 2500 })
+    } catch (err: any) {
+      showToastV2({ description: `\u4fdd\u5b58\u5931\u8d25: ${err.message}`, duration: 4000 })
+      await loadModelState()
+    }
+    setModelSaving(prev => ({ ...prev, recall: false }))
+  }
+
+  async function saveMediaModel(kind: "default" | "image" | "video" | "audio", provider: string, model: string) {
+    setModelSaving(prev => ({ ...prev, [kind]: true }))
+    try {
+      const mediaUpdate = kind === "default" ? { provider, model } : { [kind]: { provider, model } }
+      const res = await window.api.mafw.models.update({ media: mediaUpdate })
+      setModelState(res)
+      showToastV2({ description: `Media ${kind} \u6a21\u578b\u5df2\u4fdd\u5b58`, duration: 2000 })
+    } catch (err: any) {
+      showToastV2({ description: `\u4fdd\u5b58\u5931\u8d25: ${err.message}`, duration: 4000 })
+      await loadModelState()
+    }
+    setModelSaving(prev => ({ ...prev, [kind]: false }))
   }
 
   // ── OpenCode config (native opencode /config) ──
@@ -354,6 +399,64 @@ export function ConfigPage(props: { onBack?: () => void }) {
         </div>
       </div>
 
+      {/* Models */}
+      <div class="mafw-config-ops" style={{ "margin-bottom": 16 }}>
+        <div class="mafw-config-ops-title">\u6a21\u578b Models</div>
+        {modelError() ? (
+          <div>
+            <div style={{ "font-size": 12, color: "var(--color-warning-text, #856404)", "margin-bottom": 8 }}>
+              \u52a0\u8f7d\u5931\u8d25: {modelError()}
+            </div>
+            <ButtonV2 variant="outline" size="small" onClick={loadModelState}>\u91cd\u8bd5</ButtonV2>
+          </div>
+        ) : !modelState() ? (
+          <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "8px 0" }}>
+            <LoaderV2 width={14} height={14} />
+            <span style={{ "font-size": 12 }}>\u52a0\u8f7d\u4e2d\u2026</span>
+          </div>
+        ) : (
+          <div>
+            {!modelAvailable() && (
+              <div style={{ "font-size": 11, color: "var(--text-base)", "margin-bottom": 8 }}>
+                provider \u5217\u8868\u4e0d\u53ef\u7528\uff0c\u8bf7\u624b\u52a8\u8f93\u5165 providerID / modelID
+              </div>
+            )}
+            {modelAvailable() ? (
+              <ModelSelectRow
+                label="\u8bb0\u5fc6 worker"
+                current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
+                providers={modelAvailable() ?? []}
+                saving={!!modelSaving().recall}
+                onSave={(p, m) => saveRecallModel(p, m)}
+              />
+            ) : (
+              <ModelTextRow
+                label="\u8bb0\u5fc6 worker"
+                current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
+                saving={!!modelSaving().recall}
+                onSave={(p, m) => saveRecallModel(p, m)}
+              />
+            )}
+            {([
+              { kind: "default", label: "\u5a92\u4f53\u9ed8\u8ba4" },
+              { kind: "image", label: "\u5a92\u4f53 image" },
+              { kind: "video", label: "\u5a92\u4f53 video" },
+              { kind: "audio", label: "\u5a92\u4f53 audio" },
+            ] as const).map(({ kind, label }) => {
+              const cur = kind === "default"
+                ? { provider: modelState()?.media?.provider ?? "", model: modelState()?.media?.model ?? "" }
+                : { provider: modelState()?.media?.[kind]?.provider ?? "", model: modelState()?.media?.[kind]?.model ?? "" }
+              const save = (p: string, m: string) => saveMediaModel(kind, p, m)
+              return modelAvailable() ? (
+                <ModelSelectRow label={label} allowClear={kind !== "default"} current={cur} providers={modelAvailable() ?? []} saving={!!modelSaving()[kind]} onSave={save} />
+              ) : (
+                <ModelTextRow label={label} current={cur} saving={!!modelSaving()[kind]} onSave={save} />
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {/* OpenCode config */}
       <div class="mafw-config-ops" style={{ "margin-bottom": 16 }}>
         <div class="mafw-config-ops-title">opencode 配置</div>
@@ -436,6 +539,74 @@ export function ConfigPage(props: { onBack?: () => void }) {
         ))
       )}
       {message() && <div style={{ "font-size": 11, "margin-top": 8, color: "var(--text-interactive-base)" }}>{message()}</div>}
+    </div>
+  )
+}
+
+function ModelSelectRow(props: {
+  label: string
+  allowClear?: boolean
+  current: { provider: string; model: string }
+  providers: any[]
+  saving: boolean
+  onSave: (provider: string, model: string) => void
+}) {
+  const [pendingProvider, setPendingProvider] = createSignal(props.current.provider)
+  const modelsFor = (pid: string) => (props.providers ?? []).find(p => p.providerID === pid)?.models ?? []
+  const modelLabel = (id: string) => modelsFor(pendingProvider()).find(m => m.id === id)?.name ?? id
+  return (
+    <div class="mafw-plugin-row">
+      <span class="mafw-plugin-row-label">{props.label}</span>
+      <div style={{ display: "flex", gap: 6, "align-items": "center" }}>
+        <div style={{ width: 130 }}>
+          <SelectV2
+            options={(props.providers ?? []).map(p => p.providerID)}
+            current={pendingProvider()}
+            value={(x: string) => x}
+            onSelect={(v) => { if (v != null) setPendingProvider(v) }}
+            disabled={props.saving}
+            placeholder="provider"
+          />
+        </div>
+        <div style={{ width: 160 }}>
+          <SelectV2
+            options={props.allowClear ? ["", ...modelsFor(pendingProvider()).map(m => m.id)] : modelsFor(pendingProvider()).map(m => m.id)}
+            current={props.current.model}
+            value={(x: string) => x}
+            label={(x: string) => (x === "" ? "\uff08\u8ddf\u9ed8\u8ba4\uff09" : modelLabel(x))}
+            onSelect={(v) => { if (v != null && v !== props.current.model) props.onSave(pendingProvider(), v) }}
+            disabled={props.saving || !pendingProvider()}
+            placeholder={props.allowClear ? "\uff08\u8ddf\u9ed8\u8ba4\uff09" : "model"}
+          />
+        </div>
+        {props.saving && <LoaderV2 width={14} height={14} />}
+      </div>
+    </div>
+  )
+}
+
+function ModelTextRow(props: {
+  label: string
+  current: { provider: string; model: string }
+  saving: boolean
+  onSave: (provider: string, model: string) => void
+}) {
+  const [prov, setProv] = createSignal(props.current.provider)
+  const [model, setModel] = createSignal(props.current.model)
+  return (
+    <div class="mafw-plugin-row">
+      <span class="mafw-plugin-row-label">{props.label}</span>
+      <div style={{ display: "flex", gap: 6, "align-items": "center" }}>
+        <div style={{ width: 120 }}>
+          <TextInputV2 value={prov()} onInput={e => setProv(e.currentTarget.value)} placeholder="providerID" disabled={props.saving} />
+        </div>
+        <div style={{ width: 150 }}>
+          <TextInputV2 value={model()} onInput={e => setModel(e.currentTarget.value)} placeholder="modelID" disabled={props.saving} />
+        </div>
+        <ButtonV2 variant="outline" size="small" disabled={props.saving || !prov() || !model()} onClick={() => props.onSave(prov(), model())}>
+          {props.saving ? "\u2026" : "\u4fdd\u5b58"}
+        </ButtonV2>
+      </div>
     </div>
   )
 }
