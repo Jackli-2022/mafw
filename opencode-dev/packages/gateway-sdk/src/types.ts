@@ -360,6 +360,56 @@ export interface OpenCodeConfigNamespace {
   update(config: Record<string, unknown>): Promise<any>
 }
 
+export interface ModelRef {
+  providerID: string
+  modelID: string
+}
+
+export interface MediaModelRef {
+  provider?: string
+  model?: string
+}
+
+export interface AvailableModel {
+  id: string
+  name: string
+}
+
+export interface AvailableProvider {
+  providerID: string
+  providerName: string
+  models: AvailableModel[]
+}
+
+export interface ModelConfigState {
+  recall: { workerModel: ModelRef }
+  media: {
+    provider?: string
+    model?: string
+    image?: MediaModelRef
+    video?: MediaModelRef
+    audio?: MediaModelRef
+  }
+  /** null → provider 列表不可用（前端回退文本输入）。 */
+  available: AvailableProvider[] | null
+}
+
+export interface ModelConfigUpdate {
+  recall?: ModelRef
+  media?: {
+    provider?: string
+    model?: string
+    image?: MediaModelRef
+    video?: MediaModelRef
+    audio?: MediaModelRef
+  }
+}
+
+export interface ModelConfigNamespace {
+  get(): Promise<ModelConfigState>
+  update(opts: ModelConfigUpdate): Promise<{ success: boolean; recall: ModelConfigState['recall']; media: ModelConfigState['media'] }>
+}
+
 export interface ChatNamespace {
   send(message: string, sessionID?: string): Promise<{ sessionID: string }>
   sendEnriched(opts: { message: string; sessionID?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }): Promise<{ sessionID: string }>
@@ -433,6 +483,7 @@ export interface MafwClient {
   runtime: RuntimeNamespace
   config: ConfigNamespace
   opencodeConfig: OpenCodeConfigNamespace
+  models: ModelConfigNamespace
   chat: ChatNamespace
   goals: GoalsNamespace
   memory: MemoryNamespace

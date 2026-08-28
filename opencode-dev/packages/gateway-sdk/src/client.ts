@@ -702,6 +702,27 @@ export class MafwClient implements IMafwClient {
     },
   }
 
+  // ── Model config (recall worker + media models) ──
+
+  models = {
+    get: async (): Promise<import('./types').ModelConfigState> => {
+      return this.request<import('./types').ModelConfigState>('/api/model-config')
+    },
+
+    update: async (opts: import('./types').ModelConfigUpdate): Promise<{ success: boolean; recall: import('./types').ModelConfigState['recall']; media: import('./types').ModelConfigState['media'] }> => {
+      const res = await fetch(`${this.baseUrl}/api/model-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Model config update failed: ${res.status}`)
+      }
+      return res.json()
+    },
+  }
+
   // ── Automations ──
 
   automations = {

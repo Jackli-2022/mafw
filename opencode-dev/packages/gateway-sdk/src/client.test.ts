@@ -507,3 +507,32 @@ test("media.plugins + media.switch hit their routes", async () => {
   const body = JSON.parse((fetchMock as any).mock.calls[1][1].body)
   expect(body).toEqual({ video: { engine: "qwen-vl" } })
 })
+
+test("models.get + models.update hit their routes", async () => {
+  const state = {
+    recall: { workerModel: { providerID: "alibaba-cn", modelID: "qwen3.7-max" } },
+    media: { provider: "xiaomi", model: "mimo-v2.5" },
+    available: [{ providerID: "xiaomi", providerName: "xiaomi", models: [{ id: "mimo-v2.5", name: "MiMo V2.5" }] }],
+  }
+  fetchMock.mockResolvedValue(okJson(state))
+  const c = new MafwClient()
+  const st = await c.models.get()
+  expect((fetchMock as any).mock.calls[0][0]).toContain("/api/model-config")
+  expect(st.recall.workerModel.modelID).toBe("qwen3.7-max")
+
+  fetchMock.mockResolvedValue(okJson({ success: true, recall: state.recall, media: state.media }))
+  await c.models.update({ recall: { providerID: "xiaomi", modelID: "mimo-v2.5" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/model-config",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[1][1].body)
+  expect(body).toEqual({ recall: { providerID: "xiaomi", modelID: "mimo-v2.5" } })
+})
+
+test("models.update surfaces API error", async () => {
+  fetchMock.mockResolvedValue({
+    ok: false, status: 400, statusText: "Bad Request",
+    json: () => Promise.resolve({ error: "Model 'x' not found under provider 'y'" }),
+  } as Response)
+  const c = new MafwClient()
+  await expect(c.models.update({ recall: { providerID: "y", modelID: "x" } })).rejects.toThrow("not found")
+})
