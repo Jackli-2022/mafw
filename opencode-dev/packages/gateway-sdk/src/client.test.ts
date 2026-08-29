@@ -536,3 +536,15 @@ test("models.update surfaces API error", async () => {
   const c = new MafwClient()
   await expect(c.models.update({ recall: { providerID: "y", modelID: "x" } })).rejects.toThrow("not found")
 })
+
+test("request throws clean error on HTML response (gateway older than SDK)", async () => {
+  // Regression: an old gateway's SPA fallback returns 200 + text/html for unknown
+  // routes; res.json() then blows up with a useless SyntaxError inside IPC.
+  fetchMock.mockResolvedValue({
+    ok: true, status: 200, statusText: "OK",
+    headers: new Map([["content-type", "text/html"]]),
+    json: () => Promise.reject(new Error("Unexpected token '<'")),
+  } as unknown as Response)
+  const c = new MafwClient()
+  await expect(c.models.get()).rejects.toThrow(/HTML instead of JSON.*gateway.*older/s)
+})

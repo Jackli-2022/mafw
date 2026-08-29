@@ -27,6 +27,12 @@ export class MafwClient implements IMafwClient {
       ...init,
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    // Old gateways serve dashboard HTML for unknown routes (SPA fallback).
+    // Surface a clean, actionable error instead of a JSON parse SyntaxError.
+    const ct = (res.headers as any)?.get?.('content-type') ?? ''
+    if (ct.includes('text/html')) {
+      throw new Error(`Received HTML instead of JSON from ${path} — gateway is older than the SDK (route missing). Update/restart the gateway.`)
+    }
     return res.json()
   }
 
