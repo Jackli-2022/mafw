@@ -210,9 +210,9 @@ export function ConfigPage(props: { onBack?: () => void }) {
     try {
       const res = await window.api.mafw.models.update({ recall: { providerID: provider, modelID: model } })
       setModelState(res)
-      showToastV2({ description: `\u8bb0\u5fc6 worker \u6a21\u578b\u5df2\u5207\u6362\u5230 ${provider}/${model}`, duration: 2500 })
+      showToastV2({ description: `记忆 worker 模型已切换到 ${provider}/${model}`, duration: 2500 })
     } catch (err: any) {
-      showToastV2({ description: `\u4fdd\u5b58\u5931\u8d25: ${err.message}`, duration: 4000 })
+      showToastV2({ description: `保存失败: ${err.message}`, duration: 4000 })
       await loadModelState()
     }
     setModelSaving(prev => ({ ...prev, recall: false }))
@@ -224,9 +224,9 @@ export function ConfigPage(props: { onBack?: () => void }) {
       const mediaUpdate = kind === "default" ? { provider, model } : { [kind]: { provider, model } }
       const res = await window.api.mafw.models.update({ media: mediaUpdate })
       setModelState(res)
-      showToastV2({ description: `Media ${kind} \u6a21\u578b\u5df2\u4fdd\u5b58`, duration: 2000 })
+      showToastV2({ description: `Media ${kind} 模型已保存`, duration: 2000 })
     } catch (err: any) {
-      showToastV2({ description: `\u4fdd\u5b58\u5931\u8d25: ${err.message}`, duration: 4000 })
+      showToastV2({ description: `保存失败: ${err.message}`, duration: 4000 })
       await loadModelState()
     }
     setModelSaving(prev => ({ ...prev, [kind]: false }))
@@ -401,29 +401,29 @@ export function ConfigPage(props: { onBack?: () => void }) {
 
       {/* Models */}
       <div class="mafw-config-ops" style={{ "margin-bottom": 16 }}>
-        <div class="mafw-config-ops-title">\u6a21\u578b Models</div>
+        <div class="mafw-config-ops-title">模型 Models</div>
         {modelError() ? (
           <div>
             <div style={{ "font-size": 12, color: "var(--color-warning-text, #856404)", "margin-bottom": 8 }}>
-              \u52a0\u8f7d\u5931\u8d25: {modelError()}
+              加载失败: {modelError()}
             </div>
-            <ButtonV2 variant="outline" size="small" onClick={loadModelState}>\u91cd\u8bd5</ButtonV2>
+            <ButtonV2 variant="outline" size="small" onClick={loadModelState}>重试</ButtonV2>
           </div>
         ) : !modelState() ? (
           <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "8px 0" }}>
             <LoaderV2 width={14} height={14} />
-            <span style={{ "font-size": 12 }}>\u52a0\u8f7d\u4e2d\u2026</span>
+            <span style={{ "font-size": 12 }}>加载中…</span>
           </div>
         ) : (
           <div>
             {!modelAvailable() && (
               <div style={{ "font-size": 11, color: "var(--text-base)", "margin-bottom": 8 }}>
-                provider \u5217\u8868\u4e0d\u53ef\u7528\uff0c\u8bf7\u624b\u52a8\u8f93\u5165 providerID / modelID
+                provider 列表不可用，请手动输入 providerID / modelID
               </div>
             )}
             {modelAvailable() ? (
               <ModelSelectRow
-                label="\u8bb0\u5fc6 worker"
+                label="记忆 worker"
                 current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
                 providers={modelAvailable() ?? []}
                 saving={!!modelSaving().recall}
@@ -431,17 +431,17 @@ export function ConfigPage(props: { onBack?: () => void }) {
               />
             ) : (
               <ModelTextRow
-                label="\u8bb0\u5fc6 worker"
+                label="记忆 worker"
                 current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
                 saving={!!modelSaving().recall}
                 onSave={(p, m) => saveRecallModel(p, m)}
               />
             )}
             {([
-              { kind: "default", label: "\u5a92\u4f53\u9ed8\u8ba4" },
-              { kind: "image", label: "\u5a92\u4f53 image" },
-              { kind: "video", label: "\u5a92\u4f53 video" },
-              { kind: "audio", label: "\u5a92\u4f53 audio" },
+              { kind: "default", label: "媒体默认" },
+              { kind: "image", label: "媒体 image" },
+              { kind: "video", label: "媒体 video" },
+              { kind: "audio", label: "媒体 audio" },
             ] as const).map(({ kind, label }) => {
               const cur = kind === "default"
                 ? { provider: modelState()?.media?.provider ?? "", model: modelState()?.media?.model ?? "" }
@@ -573,10 +573,10 @@ function ModelSelectRow(props: {
             options={props.allowClear ? ["", ...modelsFor(pendingProvider()).map(m => m.id)] : modelsFor(pendingProvider()).map(m => m.id)}
             current={props.current.model}
             value={(x: string) => x}
-            label={(x: string) => (x === "" ? "\uff08\u8ddf\u9ed8\u8ba4\uff09" : modelLabel(x))}
+            label={(x: string) => (x === "" ? "（跟随默认）" : modelLabel(x))}
             onSelect={(v) => { if (v != null && v !== props.current.model) props.onSave(pendingProvider(), v) }}
             disabled={props.saving || !pendingProvider()}
-            placeholder={props.allowClear ? "\uff08\u8ddf\u9ed8\u8ba4\uff09" : "model"}
+            placeholder={props.allowClear ? "（跟随默认）" : "model"}
           />
         </div>
         {props.saving && <LoaderV2 width={14} height={14} />}
@@ -604,7 +604,7 @@ function ModelTextRow(props: {
           <TextInputV2 value={model()} onInput={e => setModel(e.currentTarget.value)} placeholder="modelID" disabled={props.saving} />
         </div>
         <ButtonV2 variant="outline" size="small" disabled={props.saving || !prov() || !model()} onClick={() => props.onSave(prov(), model())}>
-          {props.saving ? "\u2026" : "\u4fdd\u5b58"}
+          {props.saving ? "…" : "保存"}
         </ButtonV2>
       </div>
     </div>
