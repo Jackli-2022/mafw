@@ -1,7 +1,28 @@
 # Goal 编排 RSI — Phase 1：Goal Outcome 观测层设计
 
 日期：2026-08-27（v2，按子代理评审修正）
-状态：待审阅
+状态：🔴 架构评审未通过（2026-08-26）— 2 blockers + 5 majors，需修订后重新评审
+
+## 架构评审结论（2026-08-26）
+
+**结论：未达到可进入实现计划的程度。** 架构方向（观测先行、字段级 diff、declared_prediction、循环外保护清单）是扎实的，问题集中在与代码现实的对接精度。
+
+### Blockers（必须修复）
+
+| ID | 问题 | 详情 |
+|----|------|------|
+| B1 | `mafw_cancel_goal` 取消路径不走归档节点 | `recordOutcome(verdict=CANCELLED)` 无的放矢——取消路径当前完全不到达归档逻辑，§3.2 的接线设计需要确认 index.ts 中 ABORT 分支的真实执行路径 |
+| B2 | LangGraph LoopStateType 无 sessions 字段 | `StateFile.sessions` 每 loop 清空，成本聚合不可能正确——§2.2 的 `goal_sessions` 追加式表设计方向正确，但需要核实 `recordSession()` 的实际写入点（phase-orchestrator.ts 是否有真实调用入口） |
+
+### Major 问题
+
+| ID | 问题 |
+|----|------|
+| M1 | prompt 现值来源指错文件：`core/tools/run-plan.ts` / `run-review.ts` 的 `buildPlanPrompt`/`buildReviewPrompt` 是无人调用的漂移副本，§2.4 注册表首期最小集已修正为 entry.ts 本地函数，但需确认当前描述是否准确 |
+| M2 | `policy_version` 打标应在 goal 创建时而非归档时——§3.1 已修正（`onGoalCreated` 写快照），但需确认 `requests/{goalId}.json` 的写入时机 |
+| M3 | trajectory 14 天 TTL 与成本字段冲突——§3.2 已提出豁免方案（goal_sessions 登记的 session 豁免 prune），需确认 `trajectory-store.ts` 的 prune 逻辑是否支持按 sessionID 白名单豁免 |
+| M4 | `failure_signature` 无实现基础——签名生成器 `{failure_kind}:{首个错误工具名}:{模板化错误摘要}` 需要 trajectory 数据支撑，但 trajectory 有 14 天 TTL，需确认归档时 trajectory 是否仍可访问 |
+| M5 | `recordOutcome` 挂在 `archiveGoal` 之前导致 archive 失败语义扭曲——§3.2 描述为 "archiveGoal 成功后 → recordOutcome(...)"，但评审发现实际执行顺序可能相反，需确认代码路径 |
 路线：Phase 1（观测层）→ Phase 2（策略包演化闭环）→ Phase 3（源码结构进化）→ Phase 4（远期，optimizer code，仅记录不承诺）
 
 ## 1. 背景与目标

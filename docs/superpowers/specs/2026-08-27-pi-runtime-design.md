@@ -21,7 +21,7 @@
 |---|---|---|
 | 嵌入形态 | 进程内 SDK vs 远程 RPC | **进程内 SDK**（复用媒体适配器 ESM 桥模式） |
 | 能力分级 | Tier 0/1/2 | **Tier 2**（部分能力） |
-| nativeApprovals | 声明 false vs 翻译层 | **声明 false + 后续待办**（pi 无原生审批 API） |
+| nativeApprovals | 声明 false vs 翻译层 | **翻译层实现**（ApprovalBridge + MafwApprovalExtension + HTTP API） |
 | providerConfigApi/agentConfigApi | 部分实现 vs 全 false | **部分实现**（provider.list 真实；app.agents → []；config 尽力而为；agentConfigApi false） |
 | 会话模型 | 单例 Map vs 无状态重建 vs SessionManager 直连 | **单例 Map 映射**（Map<sessionID, AgentSession>） |
 | 事件流映射 | 翻译成 opencode 形状 vs 独立 normalize | **翻译成 opencode 形状**（喂现有 normalize.ts） |
@@ -70,6 +70,8 @@ config.runtime.plugin: pi
 
 loader 改造：`RuntimePluginLoader` 加 `registerBuiltin(name, factory, capabilities, external)` 方法，`get()` 先查内置再查文件。内置注册在 `index.ts` 启动序列里调用（`registerBuiltin('pi', createPiRuntime, ...)`）。
 
+`RuntimePluginContext` 接口新增 `credentials?: RuntimeCredentials` 字段（`loader.ts`），由 `createRuntimePluginContext(credentials?)` 注入。pi-runtime 通过 `ctx.credentials?.getApiKey(provider)` 获取运行时凭据，回退到 `readOpencodeAuth()`。认证链实参见 `pi-adapter.ts:68`（`PiAdapterDeps.credentials` 模式）和 `pi-runtime.ts:44`（消费侧）。
+
 ### 4.2a 事件订阅与 serve 就绪解耦（外部 runtime 前置条件）
 
 **现状问题**：`index.ts:354-383` 中 `external:true` 分支走 `waitForServeReady()` 探测 opencode serve(4096)，不通则 `serveReady=false` → `subscribeToEvents()` 在 `if (serveReady)` 门内永不执行。纯 pi 环境（无 opencode serve）下 pi 声明 `eventStream: true` 但步进注入/自动化/桌面 SSE 全部静默失效，且日志误报 "MCP-only mode"。
@@ -111,7 +113,7 @@ capabilities: {
   sessionApi: true,           // Map<sessionID, AgentSession> 映射
   promptWhileBusy: true,      // isStreaming 时自动路由到 followUp()（§6）
   eventStream: true,          // subscribe → opencode 形状翻译
-  nativeApprovals: false,     // pi 无原生 question/permission API（Phase 3 待办）
+  nativeApprovals: true,      // 翻译层已实现（ApprovalBridge + MafwApprovalExtension）
   providerConfigApi: true,    // ModelRuntime.getProviders() 真实；app.agents → []
   perLlmCallTransform: true,  // 信息性声明
   sessionStorageApi: false,   // pi 无 listByDirectory 直读（Phase 3 待办）
@@ -171,6 +173,14 @@ class PiSessionRegistry {
   async get(id: string): Promise<any>       // 元数据 { id, directory, title }
   async summarize(id: string): Promise<any> // session.compact(customInstructions?)
 }
+
+// AgentRuntime 上的 config/app/provider stubs（pi-runtime.ts 返回对象上）
+// provider.list  — ModelRuntime.getProviders() 翻译（真实数据）
+// app.agents     — 始终返回 []（pi 无 agent 定义概念）
+// config.get     — 翻译 pi pluginConfig 为 opencode 形状（尽力而为）
+// config.update  — 写回 pluginConfig（尽力而为）
+// credentials    — getApiKey(provider) → ctx.credentials → auth.json 回退
+// registry       — 暴露 PiSessionRegistry 实例（自定义字段，非契约标准）
 ```
 
 **关键 API 事实（pi-coding-agent v0.84.1 类型验证）：**
@@ -251,6 +261,7 @@ media:
 
 - `MediaService` 保留为分析引擎抽象（media-plugin 系统仍在，作为"自定义引擎"选项）
 - `MediaRuntimeExecutor`：A2A execute → `runtime.session.create() + promptAsync()` 序列
+- **共存路由**：`media.engine` 配置值决定路由——匹配已注册 runtime 名（如 `pi`）时走 `MediaRuntimeExecutor`（agent 会话路径），匹配 media-plugin 名时走现有 `MediaService.analyze()`（PromptFn 单次路径）。两条路径共享 A2A task 生命周期，但会话管理不同：executor 侧有 session 映射与 TTL GC，`MediaService` 侧无状态。`MediaRuntimeExecutor` 作为 `MediaService` 的委托实现注入（`media-agent.ts` 构造时传入），不替换 `MediaService` 本身——`analyze()` 内部按 engine 路由。
 - 追问不建新 task 链，同一 session 内连续 prompt（真实多轮记忆）
 - 视频/音频：`sendUserMessage([{type:'image', data, mimeType: video/mp4}])` → `before_provider_request` 挂 `fixMediaPayload`
 - 媒体 agent 可配置用不同 runtime：`media.engine` 从 media-plugin 引擎扩展为"runtime 名或插件引擎名"
@@ -262,13 +273,16 @@ media:
 - **超时语义**：`AgentSession.prompt` 无超时参数（pi-adapter 原 180s `AbortSignal.timeout` 不适用）。executor 侧用 `Promise.race` 包超时（默认 180s，pluginConfig 可配），超时 → `session.abort()` + A2A 任务标记失败
 - **映射键**：taskID/contextId → pi session 的映射与 GC（task 完成或取消后，对应 session 保留 TTL 供追问，如 24h 后 dispose）
 
+**ESM 桥参考**：pi-coding-agent 是 ESM-only（`"type":"module"`），gateway 编译为 CJS。所有加载点（`pi-adapter.ts:88`、`pi-runtime.ts:41`）统一使用 `new Function('spec', 'return import(spec)')` 运行时动态导入，tsc 不会将此降级为 `require()`。`RawRuntimeEvent` 接口定义见 `normalize.ts:19-25`（directory/payload/type/properties/sessionID 五字段，是 runtime 事件归一化的输入形状）。
+
 **Phase 2 验收补充：** A2A 首轮/追问/取消/音频四路径全部走 `MediaRuntimeExecutor`；`media.engine` 支持 `pi`（runtime 名）与插件引擎名（media-plugin 系统）双路由。
 
 ## 10. 分期
 
 - **Phase 1**：pi-runtime 插件本体（Tier 2 部分能力：session/eventStream/provider；nativeApprovals/sessionStorageApi/agentConfigApi false）+ §4.2a 事件订阅与 serve 解耦 + §4.2b shutdown。媒体不动。
 - **Phase 2**：媒体 agent 改消费 AgentRuntime + MediaRuntimeExecutor + `media.engine` 路由扩展。
-- **Phase 3**（后续待办）：nativeApprovals 翻译层、sessionStorageApi（listByDirectory）、agentConfigApi。
+- **Phase 3**（已完成 2026-08-27）：nativeApprovals 翻译层（ApprovalBridge + MafwApprovalExtension + pi-events permission translation + PiSessionRegistry integration + HTTP API）。
+- **Phase 4**（后续待办）：sessionStorageApi（listByDirectory）、agentConfigApi。
 
 ## 11. 测试策略
 
@@ -279,6 +293,9 @@ media:
 | `gateway/tests/unit/runtime/pi-events.test.ts` | pi 事件 → opencode 形状翻译映射表 |
 | `gateway/tests/unit/runtime/pi-provider.test.ts` | getProviders → provider.list 形状 |
 | `gateway/tests/unit/runtime/pi-integration.test.ts` | 全链路（mock ModelRuntime 单例，无网络） |
+| `gateway/tests/unit/runtime/pi-approval-bridge.test.ts` | ApprovalBridge 生命周期（request/reply/timeout/dispose） |
+| `gateway/tests/unit/runtime/pi-approval-extension.test.ts` | MafwApprovalExtension 策略（auto-approve/auto-deny/pending） |
+| `gateway/tests/integration/pi-native-approvals.test.ts` | 全链路 nativeApprovals（bridge + extension + events + HTTP API） |
 | `tests/unit/gateway/media-runtime-executor.test.ts` | A2A execute → runtime session 调用序列（Phase 2） |
 | 既有回归 | runtime 契约 35 测试 + media 测试全部保持绿 |
 

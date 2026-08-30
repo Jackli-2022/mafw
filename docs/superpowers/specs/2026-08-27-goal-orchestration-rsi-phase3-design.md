@@ -1,8 +1,21 @@
 # Goal 编排 RSI — Phase 3：源码结构进化设计
 
 日期：2026-08-27（v2，按子代理评审修正）
-状态：待审阅
+状态：🔴 架构评审未通过（2026-08-26）— 依存 Phase 1/2 blocker 未解 + 本身 majors，需修订后重新评审
 依赖：Phase 2 已运转（策略层演化闭环稳定，declared_prediction 验证机制可信）
+
+## 架构评审结论（2026-08-26）
+
+**结论：未达到可进入实现计划的程度。** Phase 3 本身无独立 blocker，但依存 Phase 1（B1/B2）和 Phase 2（B3）的 blocker 未解，且存在以下 majors：
+
+### Major 问题
+
+| ID | 问题 |
+|----|------|
+| M12 | `GoalWorktreeManager` 硬编码 `goal/{goalId}` 且 `checkout('main')` 但仓库主分支是 `master`——§4.1 已提出泛化要求（分支名参数化、mergeBase/checkout 目标参数化、master/main 自适应），需确认 `goal-worktree-manager.ts` 的实际代码 |
+| M13 | 保护清单 glob 级枚举的函数级注释锚点识别不可靠——§5 描述 "按函数级注释锚点识别，文件级过粗时以 glob + 人工复核兜底"，但注释锚点易漂移，建议改为导出函数名白名单 |
+| M14 | L2 smoke goal 在提议阶段于 worktree 内执行，但 worktree 可能无完整依赖——§4.2 未说明 worktree 的 `npm install` 依赖处理 |
+| M15 | `recordOutcome` 挂在 `archiveGoal` 之前导致 archive 失败语义扭曲——继承 Phase 1 M5，影响 Phase 3 的归档接线点设计 |
 
 ## 1. 目标
 

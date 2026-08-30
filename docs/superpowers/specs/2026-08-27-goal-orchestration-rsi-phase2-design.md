@@ -1,8 +1,29 @@
 # Goal 编排 RSI — Phase 2：策略包演化闭环设计
 
 日期：2026-08-27（v2，按子代理评审修正）
-状态：待审阅
+状态：🔴 架构评审未通过（2026-08-26）— 1 blocker + 6 majors，需修订后重新评审
 依赖：Phase 1（`2026-08-27-goal-orchestration-rsi-phase1-design.md`）已落地，goal_outcomes 有 baseline 数据
+
+## 架构评审结论（2026-08-26）
+
+**结论：未达到可进入实现计划的程度。**
+
+### Blockers（必须修复）
+
+| ID | 问题 | 详情 |
+|----|------|------|
+| B3 | `mafw_propose_triage_decision` 只挂建议不执行确认 | 激活链路语义用错——§4.1 描述 "POST /api/triage/{id}/confirm 增加按 type 分发"，但 `mafw_propose_triage_decision` 的现有语义是 "仅挂建议"，需要新增 triage item `type: 'evolution'` 的确认执行逻辑，而非复用现有 propose 路径 |
+
+### Major 问题
+
+| ID | 问题 |
+|----|------|
+| M6 | `evolution_proposals` 表缺 `requires` 字段——§2.3 已添加（`requires TEXT DEFAULT 'policy'`），但需确认 Phase 1 建表语句是否包含此字段 |
+| M7 | `GoalWorktreeManager` 硬编码 `goal/{goalId}` 且 `checkout('main')` 但仓库主分支是 `master`——Phase 3 §4.1 已提出泛化要求，但 Phase 2 的 policy 数据化不涉及 worktree，需确认是否有隐式依赖 |
+| M8 | 验证窗口 n=20 统计功效不足——§4.3 已修正为 "变体臂与对照臂各自 ≥ 最小样本（默认 10）才下结论" + "占比类预测要求效应量门槛（变化 ≥10pp）"，需确认统计功效分析是否充分 |
+| M9 | evolver cron 可被全局单飞守卫静默跳过——§3.1 已修正为 "per-action 独立 guard" + "skip 后延迟 30min 重试一次"，需确认 `runPipelineGuarded` 的现有实现是否支持独立锁 |
+| M10 | 验证窗口内 policy 再切换状态机未闭合——§4.3 已添加 superseded 机制（新 proposal 激活时旧 active → superseded），但需确认 superseded 后的 outcome 归属逻辑 |
+| M11 | `failure_signature` 无实现基础——继承 Phase 1 M4 问题，需确认 Phase 2 evolver 的归因推理是否依赖 failure_signature 的实际生成 |
 
 ## 1. 目标
 
