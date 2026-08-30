@@ -1,5 +1,5 @@
 ﻿// @ts-nocheck
-import { createSignal, createEffect, onCleanup, onMount } from "solid-js"
+import { createSignal, createEffect, onCleanup, onMount, ErrorBoundary } from "solid-js"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
@@ -287,6 +287,13 @@ export function ConfigPage(props: { onBack?: () => void }) {
   }
 
   return (
+    <ErrorBoundary fallback={(err, reset) => (
+      <div style={{ padding: 16, "font-size": 13 }}>
+        <div style={{ color: "#b91c1c", "margin-bottom": 8 }}>Config 页渲染错误: {String(err?.message ?? err)}</div>
+        <pre style={{ "white-space": "pre-wrap", "font-size": 11, color: "var(--text-base)", "max-height": 200, overflow: "auto" }}>{String(err?.stack ?? "")}</pre>
+        <ButtonV2 variant="outline" size="small" onClick={reset}>重试渲染</ButtonV2>
+      </div>
+    )}>
     <div>
       <div class="mafw-config-head">
         {props.onBack && (
@@ -540,6 +547,7 @@ export function ConfigPage(props: { onBack?: () => void }) {
       )}
       {message() && <div style={{ "font-size": 11, "margin-top": 8, color: "var(--text-interactive-base)" }}>{message()}</div>}
     </div>
+    </ErrorBoundary>
   )
 }
 

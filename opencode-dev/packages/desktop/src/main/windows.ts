@@ -382,6 +382,29 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     failed("did-fail-load", errorCode, errorDescription, validatedURL, isMainFrame)
   })
+  // Electron ≥32 console-message: numeric severity derived from the string level.
+  function severityLevel(level: unknown): number {
+    switch (level) {
+      case "verbose": return 0
+      case "info": return 1
+      case "warning": return 2
+      case "error": return 3
+      default: return typeof level === "number" ? level : 1
+    }
+  }
+  // Forward renderer console (errors/warnings) to the main log — packaged apps
+  // have no DevTools by default, so render crashes would otherwise be invisible.
+  // Electron ≥32 hands details over as properties of the event object.
+  win.webContents.on("console-message" as never, (...args: unknown[]) => {
+    const ev = args[0] as { level?: unknown; message?: unknown; lineNumber?: unknown; sourceId?: unknown }
+    const legacy = typeof args[1] === "number"
+    const level = legacy ? (args[1] as number) : severityLevel(ev?.level)
+    const message = legacy ? (args[2] as string) : String(ev?.message ?? "")
+    const line = legacy ? (args[3] as number) : Number(ev?.lineNumber ?? 0)
+    const sourceId = legacy ? (args[4] as string) : String(ev?.sourceId ?? "")
+    if (level < 2) return
+    writeLog("renderer-console", message, { source: sourceId, line, level }, level >= 3 ? "error" : "warn")
+  })
   win.webContents.on("did-fail-provisional-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     failed("did-fail-provisional-load", errorCode, errorDescription, validatedURL, isMainFrame)
   })
