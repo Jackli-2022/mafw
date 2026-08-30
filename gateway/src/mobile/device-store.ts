@@ -77,4 +77,26 @@ export class DeviceStore {
     if (existed) this.save();
     return existed;
   }
+
+  /** Update lastSeen timestamp for an existing device (WS connect / heartbeat). */
+  touch(id: string): boolean {
+    const entry = this.devices.get(id);
+    if (!entry) return false;
+    entry.lastSeen = new Date().toISOString();
+    this.save();
+    return true;
+  }
+
+  /** Remove devices not seen since cutoff (ISO string). Returns removed IDs. */
+  pruneStale(cutoffIso: string): string[] {
+    const removed: string[] = [];
+    for (const [id, entry] of this.devices) {
+      if (entry.lastSeen < cutoffIso) {
+        this.devices.delete(id);
+        removed.push(id);
+      }
+    }
+    if (removed.length > 0) this.save();
+    return removed;
+  }
 }

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../models/mafw_models.dart';
 import '../network/gateway_client.dart';
 import '../theme.dart';
+import 'goal_detail_page.dart';
+import 'triage_page.dart';
 
 /// 底部 Tab 导航页（方案 C：AI 紫品牌风，对标豆包 5 Tab）。
 /// Tab：会话 / Goal / 记忆 / 我的。
@@ -14,6 +16,7 @@ class SessionsPage extends StatefulWidget {
   final Future<void> Function() onCreate;
   final void Function() onSettings;
   final Future<void> Function()? onScan;
+  final void Function()? onTriage;
   final bool isOffline;
   final String? baseUrl;
   final bool isConnecting;
@@ -26,6 +29,7 @@ class SessionsPage extends StatefulWidget {
     required this.onCreate,
     required this.onSettings,
     this.onScan,
+    this.onTriage,
     this.isOffline = false,
     this.baseUrl,
     this.isConnecting = false,
@@ -249,26 +253,57 @@ class _SessionsPageState extends State<SessionsPage> {
         subtitle: widget.client == null ? '先连接 Gateway' : '创建 Goal 后在这里跟踪',
       );
     }
-    return ListView.builder(
-      itemCount: _goals.length,
-      itemBuilder: (ctx, i) {
-        final g = _goals[i];
-        final title = (g['title'] ?? g['name'] ?? g['id'] ?? '').toString();
-        final status = (g['status'] ?? g['state'] ?? '').toString();
-        final active = status == 'active' || status == 'in_progress' || status == 'running';
-        return ListTile(
-          leading: CircleAvatar(
-            radius: 14,
-            backgroundColor: active ? kMafwGoalActive.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.15),
-            child: Icon(Icons.flag, size: 16, color: active ? kMafwGoalActive : Colors.grey),
+    return Column(
+      children: [
+        // Triage quick access
+        if (widget.onTriage != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Card(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: ListTile(
+                leading: const Icon(Icons.pending_actions, size: 20, color: kMafwGoalActive),
+                title: const Text('Triage 待决项', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                trailing: Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                onTap: widget.onTriage,
+              ),
+            ),
           ),
-          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: active
-              ? const _StatusChip(text: '进行中', color: kMafwGoalActive)
-              : _StatusChip(text: status.isEmpty ? 'idle' : status, color: Colors.grey),
-        );
-      },
+        Expanded(
+          child: ListView.builder(
+            itemCount: _goals.length,
+            itemBuilder: (ctx, i) {
+              final g = _goals[i];
+              final title = (g['title'] ?? g['name'] ?? g['id'] ?? '').toString();
+              final status = (g['status'] ?? g['state'] ?? '').toString();
+              final goalId = (g['id'] ?? '').toString();
+              final active = status == 'active' || status == 'in_progress' || status == 'running';
+              return ListTile(
+                leading: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: active ? kMafwGoalActive.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.15),
+                  child: Icon(Icons.flag, size: 16, color: active ? kMafwGoalActive : Colors.grey),
+                ),
+                title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: active
+                    ? const _StatusChip(text: '进行中', color: kMafwGoalActive)
+                    : _StatusChip(text: status.isEmpty ? 'idle' : status, color: Colors.grey),
+                onTap: goalId.isNotEmpty
+                    ? () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => GoalDetailPage(
+                            client: widget.client,
+                            goalId: goalId,
+                            goalTitle: title,
+                            goalStatus: status,
+                          ),
+                        ))
+                    : null,
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

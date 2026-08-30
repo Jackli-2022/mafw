@@ -13,6 +13,7 @@
  */
 
 import * as http from 'http';
+// Reuse size limits from media-agent to stay in sync (single source of truth).
 import { MediaAgent, MAX_VIDEO_BYTES, MAX_AUDIO_BYTES, MAX_IMAGE_BYTES } from '../media/media-agent';
 
 /** Dependencies injected for testability. */
@@ -133,6 +134,31 @@ function jsonResponse(res: http.ServerResponse, status: number, data: Record<str
 }
 
 /**
+ * Server-side image compression safety net.
+ * Resizes images larger than maxDim pixels on the longest side to JPEG quality 85.
+ * Falls back to original buffer if sharp is not available or compression fails.
+ */
+async function compressImageIfLarger(data: Buffer, maxDim: number): Promise<Buffer> {
+  try {
+    // Dynamic import — sharp is an optional peer dependency.
+    // If not installed, skip compression silently (client-side compression is primary).
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sharpFn = require('sharp') as (input: Buffer) => any;
+    const meta = await sharpFn(data).metadata();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+    if (Math.max(w, h) <= maxDim) return data;
+    return await sharpFn(data)
+      .resize({ width: maxDim, height: maxDim, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+  } catch {
+    // sharp not installed or processing error — pass through original
+    return data;
+  }
+}
+
+/**
  * Creates a request handler for the mobile media proxy routes.
  * Returns true if the request was handled, false if not matched.
  */
@@ -186,8 +212,14 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
           return true;
         }
 
+        // Compress images > 1280px as server-side safety net (client may also compress)
+        let uploadData = file.data;
+        if (file.contentType.startsWith('image/') && !file.contentType.includes('svg')) {
+          uploadData = await compressImageIfLarger(uploadData, 1280);
+        }
+
         // Store artifact
-        const artifactId = agent.putArtifactBytes(file.data, file.contentType);
+        const artifactId = agent.putArtifactBytes(uploadData, file.contentType);
         const port = (req.socket?.localPort as number) || 3000;
         const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -244,7 +276,10 @@ export function createMobileMediaHandler(deps: MobileMediaDeps) {
         }
 
         // Block external URLs in question text (defense-in-depth SSRF protection).
-        if (/https?:\/\//i.test(question)) {
+        // Catches: http(s), ftp, file protocol handlers, IP literals, localhost, encoded variants.
+        if (/https?:\/\//i.test(question) || /file:\/\//i.test(question) || /ftp:\/\//i.test(question) ||
+            /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(question) ||
+            /localhost/i.test(question) || /\[::1\]/i.test(question)) {
           jsonResponse(res, 400, { error: 'external URLs are not allowed in questions' });
           return true;
         }

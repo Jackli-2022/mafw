@@ -14,6 +14,7 @@ import 'src/pages/chat_page.dart';
 import 'src/pages/connection_settings_page.dart';
 import 'src/pages/pairing_page.dart';
 import 'src/pages/sessions_page.dart';
+import 'src/pages/triage_page.dart';
 import 'src/services/connectivity_watcher.dart';
 import 'src/services/lifecycle_ws.dart';
 import 'src/services/push_service.dart';
@@ -301,6 +302,11 @@ class _MafwMobileAppState extends State<MafwMobileApp> {
         onCreate: _createSession,
         onSettings: _openSettings,
         onScan: _openScan,
+        onTriage: () {
+          _navigatorKey.currentState?.push(MaterialPageRoute(
+            builder: (_) => TriagePage(client: _client),
+          ));
+        },
         isOffline: !connected,
         baseUrl: _config?.baseUrl,
         isConnecting: _connecting,

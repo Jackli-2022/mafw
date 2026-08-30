@@ -18,7 +18,7 @@ class SecureConfigStore {
 
   Future<ConnectionConfig> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final url = prefs.getString(_kUrl) ?? 'http://192.168.1.100:3000';
+    final url = prefs.getString(_kUrl) ?? 'http://127.0.0.1:3000';
     String? token = await _sec.read(key: _kToken);
     if (token == null) {
       final legacy = prefs.getString(_kTokenLegacy);

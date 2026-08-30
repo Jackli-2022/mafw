@@ -15,8 +15,8 @@ export class PushGateway {
   private store: DeviceStore;
   private onlineDevices: Map<string, OnlineDevice> = new Map();
   private lastGlobalSend: number = 0;
-  private readonly msgPerSecLimit = 1000; // 1 msg/s global
-  private readonly perDeviceLimit = 1000; // 1 msg/s per device
+  private readonly globalMinIntervalMs = 1000; // 1 msg/s global rate limit
+  private readonly perDeviceMinIntervalMs = 1000; // 1 msg/s per-device rate limit
   private deviceLastSend: Map<string, number> = new Map();
 
   constructor(store: DeviceStore) {
@@ -43,6 +43,8 @@ export class PushGateway {
 
   addOnlineWs(deviceId: string, ws: WebSocket): void {
     this.onlineDevices.set(deviceId, { ws, lastSeen: Date.now() });
+    // Sync persisted lastSeen so DeviceStore.pruneStale() doesn't evict active devices.
+    this.store.touch(deviceId);
   }
 
   removeOnlineWs(deviceId: string): void {
@@ -63,15 +65,27 @@ export class PushGateway {
     for (const [id, entry] of this.onlineDevices) {
       if (now - entry.lastSeen > thresholdMs) {
         this.onlineDevices.delete(id);
+        this.deviceLastSend.delete(id);
       }
     }
+  }
+
+  /** Prune registered devices in DeviceStore that haven't been seen since cutoff. */
+  pruneDeviceStore(cutoffIso: string): string[] {
+    const removed = this.store.pruneStale(cutoffIso);
+    // Also clean up any online state for pruned devices.
+    for (const id of removed) {
+      this.onlineDevices.delete(id);
+      this.deviceLastSend.delete(id);
+    }
+    return removed;
   }
 
   async onBroadcast(event: BroadcastEvent): Promise<void> {
     const now = Date.now();
 
     // Global leaky bucket: block entire broadcast if last send was <1s ago
-    if (now - this.lastGlobalSend < this.msgPerSecLimit) {
+    if (now - this.lastGlobalSend < this.globalMinIntervalMs) {
       return;
     }
 
@@ -81,7 +95,7 @@ export class PushGateway {
     for (const [deviceId, entry] of this.onlineDevices) {
       // Per-device rate limit
       const lastSend = this.deviceLastSend.get(deviceId) || 0;
-      if (now - lastSend < this.perDeviceLimit) {
+      if (now - lastSend < this.perDeviceMinIntervalMs) {
         continue;
       }
 
