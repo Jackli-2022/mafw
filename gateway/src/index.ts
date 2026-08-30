@@ -830,8 +830,12 @@ class MafwScheduler {
     }
 
     // Path 1: settled LLM step → evaluate high-salience memory injection.
-    if (f.step && f.step.sessionID && f.step.assistantMessageID && shouldConsiderStep(f.step) && this.stepInject.markStepSeen(f.step.sessionID, f.step.assistantMessageID)) {
-      void this.evaluateStepInjection(f.step.sessionID, f.step.assistantMessageID)
+    // shouldConsiderStep validates sessionID/assistantMessageID exist and finish is not excluded.
+    if (f.step && shouldConsiderStep(f.step)) {
+      const { sessionID: sid, assistantMessageID: mid } = f.step;
+      if (sid && mid && this.stepInject.markStepSeen(sid, mid)) {
+        void this.evaluateStepInjection(sid, mid);
+      }
     }
 
     // Per-session SSE (Mode B) forwarding
@@ -841,7 +845,7 @@ class MafwScheduler {
       } else if (f.chatSignal === 'complete') {
         this.chatSessions.pushComplete(sessionID);
       } else if (f.chatSignal === 'error') {
-        this.chatSessions.pushError(sessionID, String(f.chatError || 'Unknown error'));
+        this.chatSessions.pushError(sessionID, `${f.chatError || 'Unknown error'}`);
       }
     }
 
@@ -4206,6 +4210,20 @@ class MafwScheduler {
         }, 30_000);
         // Allow the process to exit without waiting for the ping timer.
         if (wsPingInterval.unref) wsPingInterval.unref();
+
+        // Periodic PushGateway maintenance: prune stale online WS + expired device registrations.
+        const deviceCleanupInterval = setInterval(() => {
+          // 1. Remove WS entries with no activity for 2 minutes.
+          this.pushGateway?.cleanupStale(120_000);
+          // 2. Prune device-store entries not seen for 7 days (FCM token expiry hygiene).
+          const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          const pruned = this.pushGateway?.pruneDeviceStore(cutoff);
+          if (pruned && pruned.length > 0) {
+            log.info(`[PushGateway] pruned ${pruned.length} stale device(s) from store`);
+          }
+        }, 60_000);
+        if (deviceCleanupInterval.unref) deviceCleanupInterval.unref();
+
         server.on('upgrade', (req, socket, head) => {
           const url = req.url || '';
           if (!url.startsWith('/api/ws')) {
