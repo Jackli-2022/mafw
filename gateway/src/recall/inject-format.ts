@@ -109,11 +109,42 @@ const POINTER_HEADER = `[联想线索 · 依据前请用工具验证]`
 const TAG = `<recall>`
 const END_TAG = `</recall>`
 
-export function formatRecallContext(memories: MemoryUnit[]): RecallFormat {
-  const pointers = memories.length > 0
-    ? `${TAG}\n${POINTER_HEADER}\n${memories.slice(0, 3).map(pointerLine).join('\n')}\n${END_TAG}`
-    : null
+/**
+ * Group memories by type for better cross-session visibility.
+ * Multi-session queries benefit from seeing memories organized by topic.
+ */
+function groupMemoriesByType(memories: MemoryUnit[]): Map<string, MemoryUnit[]> {
+  const groups = new Map<string, MemoryUnit[]>();
+  for (const m of memories) {
+    const type = m.type || 'other';
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type)!.push(m);
+  }
+  return groups;
+}
 
+export function formatRecallContext(memories: MemoryUnit[]): RecallFormat {
+  if (memories.length === 0) return { pointers: null }
+
+  // For multi-type results, group by type for better readability
+  const groups = groupMemoriesByType(memories)
+  const lines: string[] = []
+  
+  // If all same type, flat list (backward compatible)
+  if (groups.size <= 1) {
+    lines.push(...memories.slice(0, 3).map(pointerLine))
+  } else {
+    // Multi-type: group with headers
+    for (const [type, mems] of groups) {
+      if (mems.length === 0) continue;
+      lines.push(`[${type}]`)
+      for (const m of mems.slice(0, 2)) {
+        lines.push(`  ${pointerLine(m)}`)
+      }
+    }
+  }
+
+  const pointers = `${TAG}\n${POINTER_HEADER}\n${lines.slice(0, 5).join('\n')}\n${END_TAG}`
   return { pointers }
 }
 

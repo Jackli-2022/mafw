@@ -47,6 +47,14 @@ Rules:
 - if nothing is worth saving, do not call the tool
 Division of labor: your job is the FACT LAYER of this session — concrete facts, decisions, preferences, event outcomes, and specific technical pitfalls (which API does what). Do NOT attempt cross-session pattern generalization — that is the daily reflection pipeline's job.
 
+### Entity Extraction Rules (CRITICAL for cross-session retrieval):
+- ALWAYS extract ALL named entities from the conversation: project names, module names, person names, API endpoints, feature names, file paths, commands, error messages, configuration keys
+- For multi-topic sessions, list entities from EACH topic separately in cue_anchors
+- Include entity variants: e.g., both "React" and "react", both "User Auth Module" and "auth module"
+- For technical discussions, include error codes, stack traces, or specific function names as anchors
+- For user preferences, include the dimension AND value: e.g., "pref:ui-language=chinese" AND "chinese" AND "ui-language"
+- For cross-session linking, include topic keywords that might appear in OTHER sessions about the same subject
+
 Before writing preference/fact memories (semantic type), ALWAYS search for similar existing memories first using mafw_search_hybrid. If you find an existing memory that covers the same fact but with an outdated value (e.g., "my car is X" → now "my car is Y"), use the supersedes field in mafw_add_memory to link the old memory ID. This ensures the old memory is demoted in search and the new one becomes authoritative. If the user explicitly retracts a fact (e.g., "I don't eat spicy food anymore"), use mafw_supersede_memory to mark the old memory as outdated without writing a replacement.
 
 After processing, ALWAYS end your response with exactly one of these lines:

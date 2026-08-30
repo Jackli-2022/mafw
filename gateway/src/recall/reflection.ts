@@ -52,13 +52,24 @@ Rules:
 - every cue_anchors list MUST include the topic entity names (project, module, API, person, feature) so the insight can be found across sessions
 - for category "preference", include a machine-readable anchor like "pref:<dimension>=<value>" (e.g., "pref:output-language=chinese" or "pref:spicy=false")
 - prefer insights that hold across multiple episodes of this conversation
-Division of labor: focus on CROSS-EPISODE high-level patterns — recurring failure root causes, lessons that generalize to future tasks, user behavior patterns. Do NOT re-record single-point facts already present in the episodic memories (the hourly extract pipeline already saved those).`;
+Division of labor: focus on CROSS-EPISODE high-level patterns — recurring failure root causes, lessons that generalize to future tasks, user behavior patterns. Do NOT re-record single-point facts already present in the episodic memories (the hourly extract pipeline already saved those).
+
+### Cross-Session Entity Linking (CRITICAL):
+- Extract ALL named entities from the episodes: project names, module names, person names, API endpoints, feature names, file paths, commands, error messages, configuration keys
+- For each insight, include entities that would help find this insight in OTHER sessions about the same topic
+- Include entity variants: e.g., both "React" and "react", both "User Auth Module" and "auth module"
+- For technical discussions, include error codes, stack traces, or specific function names as anchors
+- For user preferences, include the dimension AND value: e.g., "pref:ui-language=chinese" AND "chinese" AND "ui-language"
+- Think: "If someone asked about this topic in a different session, what keywords would they search for?"`;
 
 export const QUESTIONS_SYSTEM = `You are a reflection system for a coding agent's long-term memory. Review the episodic memories of one conversation and generate the 2-3 most salient high-level questions about this session — questions whose answers would reveal durable patterns, recurring root causes, or generalizable lessons. Return ONLY valid JSON, no markdown:
 {"questions":["<question>","<question>"]}
 Rules:
 - questions must be answerable from past conversations (not speculation)
-- prefer questions that span multiple episodes`;
+- prefer questions that span multiple episodes
+- questions should be specific enough to retrieve relevant memories (include entity names like project, module, API, feature)
+- for multi-topic sessions, generate questions for each topic separately
+- for user preferences, ask about the preference itself (e.g., "What UI language does the user prefer?") rather than the context where it was mentioned`;
 
 export function parseQuestions(text: string): string[] {
   try {
@@ -223,7 +234,24 @@ export class ReflectionPipeline {
       }
       // Step 3: distill insights with evidence context
       const evidenceBlock = evidence.length > 0 ? `\n\n### Related Historical Memories\n${evidence.join('\n')}` : '';
-      const text = await worker.prompt(prompt + evidenceBlock, REFLECT_SYSTEM, this.opts.workerModel);
+      // Step 3.5: Extract entities from episodes for cross-session linking
+      const episodeEntities = new Set<string>();
+      for (const ep of episodes) {
+        // Extract camelCase/PascalCase identifiers
+        const camelPascal = ep.text.match(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b/g);
+        if (camelPascal) camelPascal.forEach(e => episodeEntities.add(e));
+        // Extract ALL_CAPS words
+        const allCaps = ep.text.match(/\b[A-Z]{2,}\b/g);
+        if (allCaps) allCaps.forEach(e => { if (e.length >= 3) episodeEntities.add(e); });
+        // Extract quoted strings
+        const quoted = ep.text.match(/['"]([^'"]+)['"]/g);
+        if (quoted) quoted.forEach(q => episodeEntities.add(q.slice(1, -1).trim()));
+      }
+      // Inject entity context into evidence block for cross-session linking
+      const entityBlock = episodeEntities.size > 0
+        ? `\n\n### Session Entities (for cross-session linking)\n${[...episodeEntities].slice(0, 20).join(', ')}`
+        : '';
+      const text = await worker.prompt(prompt + evidenceBlock + entityBlock, REFLECT_SYSTEM, this.opts.workerModel);
       insights = parseInsights(text);
     } catch {
       result.failed++;
