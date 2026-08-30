@@ -50,7 +50,7 @@ const DEFINITIONS: ToolDefinition[] = [
         topK: { type: "number", description: "Maximum results", default: 20 },
         memoryType: { type: "string", enum: ["episodic", "semantic", "procedural", "global"], description: "Optional filter" },
         policy: { type: "string", enum: ["guided", "oneshot"], default: "guided", description: "Retrieval strategy (reserved)" },
-        retriever: { type: "string", enum: ["token", "bm25"], default: "token", description: "Retrieval scoring engine" },
+        retriever: { type: "string", enum: ["token", "bm25", "guided"], default: "token", description: "Retrieval scoring engine (guided = multi-hop query expansion with BM25)" },
         state: { type: "string", description: "Iteration state from a previous call; pass to continue expanding" },
       },
       required: ["query"],
