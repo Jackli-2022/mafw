@@ -9,6 +9,7 @@ import { KpiCards } from '../dashboard/KpiCards';
 import { GoalList } from '../dashboard/GoalList';
 import { GoalDetail } from '../dashboard/GoalDetail';
 import { MemorySearch } from '../dashboard/MemorySearch';
+import { ConfigPage } from '../config/ConfigPage';
 
 function DashboardView() {
   const { goals } = useGoals();
@@ -42,7 +43,7 @@ export function MainArea() {
           {activeTab === 'chat' && <ChatPanel />}
           {activeTab === 'dashboard' && <DashboardView />}
           {activeTab === 'graph' && <LangGraphCanvas />}
-          {activeTab === 'config' && <div className="text-gray-400">Config (coming soon)</div>}
+          {activeTab === 'config' && <ConfigPage />}
         </main>
       </div>
     </div>
