@@ -11,7 +11,7 @@ interface HookManagerLike {
 }
 
 export interface SearchOptions {
-  retriever?: 'token' | 'bm25';
+  retriever?: 'token' | 'bm25' | 'guided';
   /** Drop results below topScore × cutoffRatio after retrieval (0 = disabled). */
   cutoffRatio?: number;
   /** Anchor-graph multi-hop expansion (default true when a graph store is attached). */
@@ -169,9 +169,19 @@ export class HarmonicIndexManager {
   searchScored(query: string, topK: number = 20, options: SearchOptions = {}): ScoredEntry[] {
     const retriever = options.retriever ?? 'bm25';
     const recallK = config.search.recallK || 50;
-    const actualRetriever = options.retriever === 'bm25' ? 'bm25' : 'token';
+    const actualRetriever = options.retriever === 'bm25' ? 'bm25' : options.retriever === 'guided' ? 'guided' : 'token';
     let scored: ScoredEntry[];
-    if (options.retriever === 'bm25') {
+    if (options.retriever === 'guided') {
+      // GuidedRetriever: multi-hop query expansion with proper BM25 scoring.
+      // Lazy-import to avoid circular dependency (GuidedRetriever imports this module).
+      const { GuidedRetriever } = require('../../retrieval/guided-retriever');
+      const guided = new GuidedRetriever(this);
+      const guidedResults = guided.search(query, { policy: 'guided', maxRounds: 3 });
+      scored = guidedResults.map((r: any) => ({
+        entry: this.index.entries.find((e: HarmonicIndexEntry) => e.id === r.id)!,
+        score: r.score,
+      })).filter((s: ScoredEntry) => s.entry);
+    } else if (options.retriever === 'bm25') {
       scored = this.bm25SearchScored(query, recallK);
     } else {
       scored = this.tokenSearchScored(query, recallK);

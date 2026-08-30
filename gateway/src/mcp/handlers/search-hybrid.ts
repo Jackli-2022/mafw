@@ -40,7 +40,7 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
   try {
     const query = args.query as string;
     const topK = (args.topK as number) || config.search.defaultTopK;
-    const retriever = (args.retriever as 'token' | 'bm25' | undefined) || config.search.defaultRetriever;
+    const retriever = (args.retriever as 'token' | 'bm25' | 'guided' | undefined) || config.search.defaultRetriever;
     const maxRounds = config.search.maxExpandRounds;
     const graphStore = getGraphStore(memory);
     const prev = decodeState(args.state as string | undefined);
@@ -146,7 +146,7 @@ function computeFrontier(graphStore: any, ids: string[], exclude: Set<string>): 
   if (!graphStore || ids.length === 0) return [];
   const result: FrontierItem[] = [];
   for (const id of ids) {
-    const neighbors = graphStore.getNeighbors([id], 3, exclude);
+    const neighbors = graphStore.getNeighbors([id], config.search.graph.maxNeighbors, exclude);
     for (const [nbId, info] of neighbors) {
       if (!result.some(f => f.id === nbId)) result.push({ id: nbId, weight: info.weight });
     }
