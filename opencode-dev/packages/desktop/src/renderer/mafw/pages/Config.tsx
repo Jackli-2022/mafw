@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
@@ -14,28 +14,25 @@ interface ConfigSection {
   fields: [string, any][]
 }
 
-type NavKey = "gateway" | "plugins" | "models" | "usage" | "opencode" | "mafw"
+export type NavKey = "gateway" | "plugins" | "models" | "usage" | "opencode" | "mafw"
+
+export function isNavKey(v: unknown): v is NavKey {
+  return NAV_ITEMS.some(n => n.key === v)
+}
 
 const NAV_ITEMS: { key: NavKey; icon: string; label: string; desc: string }[] = [
-  { key: "gateway",  icon: "鈿?, label: "Gateway",  desc: "杩愯鐘舵€併€侀噸鍚笌鏃ュ織" },
-  { key: "plugins",  icon: "馃З", label: "Plugins",  desc: "Runtime 涓庡獟浣撳紩鎿庡垏鎹? },
-  { key: "models",   icon: "馃", label: "Models",   desc: "璁板繂 worker 涓庡獟浣撴瘡妯℃€佹ā鍨? },
-  { key: "usage",    icon: "馃搳", label: "Usage",    desc: "Token Plan 闄愰銆佷綑棰濋绠椼€佸钩鍙?Cookie" },
-  { key: "opencode", icon: "鈿欙笍", label: "opencode", desc: "opencode 閰嶇疆缂栬緫鍣? },
-  { key: "mafw",     icon: "馃敡", label: "MAFW",     desc: "MAFW 鍘熷閰嶇疆锛堥珮绾э級" },
+  { key: "gateway",  icon: "⚡", label: "Gateway",  desc: "运行状态、重启与日志" },
+  { key: "plugins",  icon: "🧩", label: "Plugins",  desc: "Runtime 与媒体引擎切换" },
+  { key: "models",   icon: "🤖", label: "Models",   desc: "记忆 worker 与媒体每模态模型" },
+  { key: "usage",    icon: "📊", label: "Usage",    desc: "Token Plan 限额、余额预算、平台 Cookie" },
+  { key: "opencode", icon: "⚙️", label: "opencode", desc: "opencode 配置编辑器" },
+  { key: "mafw",     icon: "🔧", label: "MAFW",     desc: "MAFW 原始配置（高级）" },
 ]
 
 export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey }) {
-  const [activeNav, setActiveNav] = createSignal<NavKey>(props.initialSection || "gateway")
-  // Config page stays mounted while the right dock is visible 鈥?sync external
-  // navigation requests ("mafw:open-config" 鈫?MafwShell configSection signal)
-  // instead of reading initialSection once at mount.
-  createEffect(() => {
-    const s = props.initialSection
-    if (s) setActiveNav(s)
-  })
+  const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
 
-  // 鈹€鈹€ MAFW raw config 鈹€鈹€
+  // ── MAFW raw config ──
   const [sections, setSections] = createSignal<ConfigSection[]>([])
   const [loading, setLoading] = createSignal(true)
   const [saving, setSaving] = createSignal(false)
@@ -60,6 +57,17 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadUsageConfig(); loadUsagePlugins() })
+
+  // Dock "配置" requests arrive as window events; the config page can already be
+  // mounted when one fires, so listen here instead of relying on mount-time props.
+  onMount(() => {
+    const handler = (e: Event) => {
+      const section = (e as CustomEvent).detail
+      if (isNavKey(section)) setActiveNav(section)
+    }
+    window.addEventListener('mafw:open-config', handler)
+    onCleanup(() => window.removeEventListener('mafw:open-config', handler))
+  })
 
   function toggleSection(key: string) {
     setSections(prev => prev.map(s => s.key === key ? { ...s, expanded: !s.expanded } : s))
@@ -91,7 +99,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setSaving(false)
   }
 
-  // 鈹€鈹€ Gateway ops 鈹€鈹€
+  // ── Gateway ops ──
   const [gwStatus, setGwStatus] = createSignal<any>(null)
   const [restarting, setRestarting] = createSignal(false)
 
@@ -105,8 +113,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     const s = gwStatus()
     if (!s) return "unknown"
     if (s.state === "ready") return `connected :${s.port ?? 3000}`
-    if (s.state === "starting" || s.state === "stopped") return "Reconnecting鈥?
-    if (s.state === "failed") return "杩炴帴澶辫触"
+    if (s.state === "starting" || s.state === "stopped") return "Reconnecting…"
+    if (s.state === "failed") return "连接失败"
     return s.state
   }
 
@@ -119,7 +127,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   const copyText = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      showToastV2({ description: `${label} 宸插鍒禶, duration: 2000 })
+      showToastV2({ description: `${label} 已复制`, duration: 2000 })
     } catch { /* ignore */ }
   }
 
@@ -127,14 +135,14 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setRestarting(true)
     try {
       await window.api.mafw.gateway.restart()
-      showToastV2({ description: "Gateway 閲嶅惎涓€?, duration: 2000 })
+      showToastV2({ description: "Gateway 重启中…", duration: 2000 })
     } catch (err: any) {
-      showToastV2({ description: `閲嶅惎澶辫触: ${err.message}`, duration: 3000 })
+      showToastV2({ description: `重启失败: ${err.message}`, duration: 3000 })
     }
     setRestarting(false)
   }
 
-  // 鈹€鈹€ Plugin Switcher 鈹€鈹€
+  // ── Plugin Switcher ──
   const [rtInfo, setRtInfo] = createSignal<any>(null)
   const [rtPlugins, setRtPlugins] = createSignal<any[]>([])
   const [rtSwitching, setRtSwitching] = createSignal(false)
@@ -169,14 +177,14 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   async function switchRuntime(plugin: string) {
-    if (!confirm(`鍒囨崲 Runtime 鍒?"${plugin || 'opencode'}"锛焅n\n闇€瑕佺瓑寰?Gateway 閲嶆柊杩炴帴銆俙)) return
+    if (!confirm(`切换 Runtime 到 "${plugin || 'opencode'}"？\n\n需要等待 Gateway 重新连接。`)) return
     setRtSwitching(true)
     try {
       const res = await window.api.mafw.runtime.switch(plugin)
-      showToastV2({ description: `Runtime 宸插垏鎹㈠埌 ${res.active.name}`, duration: 3000 })
+      showToastV2({ description: `Runtime 已切换到 ${res.active.name}`, duration: 3000 })
       setRtInfo(prev => ({ ...prev, active: res.active }))
     } catch (err: any) {
-      showToastV2({ description: `鍒囨崲澶辫触: ${err.message}`, duration: 4000 })
+      showToastV2({ description: `切换失败: ${err.message}`, duration: 4000 })
     }
     setRtSwitching(false)
   }
@@ -190,9 +198,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       else if (kind === 'image') setMediaImage(value)
       else if (kind === 'video') setMediaVideo(value)
       else if (kind === 'audio') setMediaAudio(value)
-      showToastV2({ description: `Media ${kind} 宸插垏鎹, duration: 2000 })
+      showToastV2({ description: `Media ${kind} 已切换`, duration: 2000 })
     } catch (err: any) {
-      showToastV2({ description: `Media 鍒囨崲澶辫触: ${err.message}`, duration: 3000 })
+      showToastV2({ description: `Media 切换失败: ${err.message}`, duration: 3000 })
     }
     setMediaSwitching(false)
   }
@@ -209,7 +217,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     return ok
   }
 
-  // 鈹€鈹€ Models 鈹€鈹€
+  // ── Models ──
   const [modelState, setModelState] = createSignal<any>(null)
   const [modelAvailable, setModelAvailable] = createSignal<any[] | null>(null)
   const [modelError, setModelError] = createSignal("")
@@ -231,9 +239,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     try {
       const res = await window.api.mafw.models.update({ recall: { providerID: provider, modelID: model } })
       setModelState(res)
-      showToastV2({ description: `璁板繂 worker 妯″瀷宸插垏鎹㈠埌 ${provider}/${model}`, duration: 2500 })
+      showToastV2({ description: `记忆 worker 模型已切换到 ${provider}/${model}`, duration: 2500 })
     } catch (err: any) {
-      showToastV2({ description: `淇濆瓨澶辫触: ${err.message}`, duration: 4000 })
+      showToastV2({ description: `保存失败: ${err.message}`, duration: 4000 })
       await loadModelState()
     }
     setModelSaving(prev => ({ ...prev, recall: false }))
@@ -245,15 +253,15 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       const mediaUpdate = kind === "default" ? { provider, model } : { [kind]: { provider, model } }
       const res = await window.api.mafw.models.update({ media: mediaUpdate })
       setModelState(res)
-      showToastV2({ description: `Media ${kind} 妯″瀷宸蹭繚瀛榒, duration: 2000 })
+      showToastV2({ description: `Media ${kind} 模型已保存`, duration: 2000 })
     } catch (err: any) {
-      showToastV2({ description: `淇濆瓨澶辫触: ${err.message}`, duration: 4000 })
+      showToastV2({ description: `保存失败: ${err.message}`, duration: 4000 })
       await loadModelState()
     }
     setModelSaving(prev => ({ ...prev, [kind]: false }))
   }
 
-  // 鈹€鈹€ Usage Config 鈹€鈹€
+  // ── Usage Config ──
   const [usageConfig, setUsageConfig] = createSignal<any>(null)
   const [usageLoading, setUsageLoading] = createSignal(true)
   const [usageSaving, setUsageSaving] = createSignal(false)
@@ -356,9 +364,11 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
         pluginConfig: c.pluginConfig || {},
       }
       await window.api.mafw.config.set("usage", clean)
-      showToastV2({ description: "鐢ㄩ噺閰嶇疆宸蹭繚瀛?, duration: 2000 })
+      // The right dock's usage summary listens for this to refresh its numbers.
+      window.dispatchEvent(new CustomEvent('mafw:usage-config-saved'))
+      showToastV2({ description: "用量配置已保存", duration: 2000 })
     } catch (err: any) {
-      showToastV2({ description: `淇濆瓨澶辫触: ${err.message}`, duration: 3000 })
+      showToastV2({ description: `保存失败: ${err.message}`, duration: 3000 })
     }
     setUsageSaving(false)
   }
@@ -368,14 +378,14 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     try {
       const res = await window.api.mafw.sessions.usagePluginsReload()
       setUsagePluginState(res?.plugins ?? [])
-      showToastV2({ description: '鎻掍欢宸查噸杞?, duration: 2000 })
+      showToastV2({ description: '插件已重载', duration: 2000 })
     } catch (err: any) {
-      showToastV2({ description: `閲嶈浇澶辫触: ${err.message}`, duration: 3000 })
+      showToastV2({ description: `重载失败: ${err.message}`, duration: 3000 })
     }
     setUsageReloading(false)
   }
 
-  // 鈹€鈹€ OpenCode config 鈹€鈹€
+  // ── OpenCode config ──
   const [ocSections, setOcSections] = createSignal<ConfigSection[]>([])
   const [ocLoading, setOcLoading] = createSignal(true)
   const [ocSaving, setOcSaving] = createSignal(false)
@@ -394,7 +404,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       }))
       setOcSections(secs)
     } catch (err: any) {
-      setOcMessage(`鍔犺浇澶辫触: ${err.message}`)
+      setOcMessage(`加载失败: ${err.message}`)
       setOcSections([])
     }
     setOcLoading(false)
@@ -422,7 +432,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
         try { obj[k] = JSON.parse(v) } catch { obj[k] = v }
       }
       await window.api.mafw.opencodeConfig.update({ [sectionKey]: obj })
-      setOcMessage(`Section "${sectionKey}" saved锛堝彲鑳介渶瑕侀噸鍚?Gateway 鐢熸晥锛塦)
+      setOcMessage(`Section "${sectionKey}" saved（可能需要重启 Gateway 生效）`)
     } catch (err: any) {
       setOcMessage(`Error: ${err.message}`)
     }
@@ -434,38 +444,41 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   return (
     <ErrorBoundary fallback={(err, reset) => (
       <div style={{ padding: 16, "font-size": 13 }}>
-        <div style={{ color: "#b91c1c", "margin-bottom": 8 }}>Config 椤垫覆鏌撻敊璇? {String(err?.message ?? err)}</div>
+        <div style={{ color: "#b91c1c", "margin-bottom": 8 }}>Config 页渲染错误: {String(err?.message ?? err)}</div>
         <pre style={{ "white-space": "pre-wrap", "font-size": 11, color: "var(--text-base)", "max-height": 200, overflow: "auto" }}>{String(err?.stack ?? "")}</pre>
-        <ButtonV2 variant="outline" size="small" onClick={reset}>閲嶈瘯娓叉煋</ButtonV2>
+        <ButtonV2 variant="outline" size="small" onClick={reset}>重试渲染</ButtonV2>
       </div>
     )}>
     <div class="mafw-config-layout">
-      {/* 鈹€鈹€ Left Nav 鈹€鈹€ */}
+      {/* ── Left Nav ── */}
       <nav class="mafw-config-nav">
         <div class="mafw-config-nav-head">
           {props.onBack && (
-            <ButtonV2 variant="ghost" size="small" onClick={() => props.onBack?.()}>鈫?杩斿洖</ButtonV2>
+            <ButtonV2 variant="ghost" size="small" onClick={() => props.onBack?.()}>← 返回</ButtonV2>
           )}
           <span class="mafw-config-nav-title">Settings</span>
         </div>
         <div class="mafw-config-nav-list">
           <For each={NAV_ITEMS}>
             {(item) => (
-              <button
+              <ButtonV2
+                variant="ghost"
+                size="small"
                 class="mafw-config-nav-item"
                 classList={{ "mafw-config-nav-item--active": activeNav() === item.key }}
+                aria-current={activeNav() === item.key ? "page" : undefined}
                 onClick={() => setActiveNav(item.key)}
               >
                 <span class="mafw-config-nav-icon">{item.icon}</span>
                 <span class="mafw-config-nav-label">{item.label}</span>
                 {activeNav() === item.key && <span class="mafw-config-nav-indicator" />}
-              </button>
+              </ButtonV2>
             )}
           </For>
         </div>
       </nav>
 
-      {/* 鈹€鈹€ Content Panel 鈹€鈹€ */}
+      {/* ── Content Panel ── */}
       <main class="mafw-config-panel">
         <div class="mafw-config-panel-head">
           <h2 class="mafw-config-panel-title">
@@ -476,12 +489,12 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
         </div>
         <div class="mafw-config-panel-body">
 
-          {/* 鈺愨晲鈺?Gateway 鈺愨晲鈺?*/}
+          {/* ═══ Gateway ═══*/}
           <Show when={activeNav() === "gateway"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">鈿?/span>
-                <span class="mafw-config-section-title">Gateway 杩愮淮</span>
+                <span class="mafw-config-section-icon">⚡</span>
+                <span class="mafw-config-section-title">Gateway 运维</span>
                 <span class={`mafw-config-status-badge mafw-config-status-${gwStateClass()}`}>
                   <span class="mafw-config-status-dot" />
                   {gwStateText()}
@@ -490,13 +503,13 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               <div class="mafw-config-section-body">
                 <div class="mafw-config-actions-row">
                   <ButtonV2 variant="outline" size="small" onClick={restartGateway} disabled={restarting()}>
-                    {restarting() ? "閲嶅惎涓€? : "Restart Gateway"}
+                    {restarting() ? "重启中…" : "Restart Gateway"}
                   </ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={() => gwStatus()?.url && copyText(gwStatus().url, "URL")} disabled={!gwStatus()?.url}>
                     Copy URL
                   </ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={async () => {
-                    try { const p = await window.api.mafw.gateway.logsPath(); copyText(p, "鏃ュ織璺緞") } catch {}
+                    try { const p = await window.api.mafw.gateway.logsPath(); copyText(p, "日志路径") } catch {}
                   }}>
                     Copy logs path
                   </ButtonV2>
@@ -505,17 +518,17 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
             </div>
           </Show>
 
-          {/* 鈺愨晲鈺?Plugins 鈺愨晲鈺?*/}
+          {/* ═══ Plugins ═══*/}
           <Show when={activeNav() === "plugins"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">馃З</span>
+                <span class="mafw-config-section-icon">🧩</span>
                 <span class="mafw-config-section-title">Runtime &amp; Media</span>
               </div>
               <div class="mafw-config-section-body">
                 {rtEnvOverride() && (
                   <div class="mafw-config-env-warning">
-                    鈿狅笍 鐜鍙橀噺 MAFW_RUNTIME_PLUGIN 宸茶鐩?config.yaml 璁剧疆
+                    ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置
                   </div>
                 )}
                 <div class="mafw-config-field-group">
@@ -526,14 +539,14 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         options={runtimeOptions()}
                         current={rtInfo()?.active?.name ?? 'opencode'}
                         value={(x: string) => x}
-                        label={(x: string) => (x === 'opencode' ? 'opencode锛堥粯璁わ級' : x)}
+                        label={(x: string) => (x === 'opencode' ? 'opencode（默认）' : x)}
                         onSelect={(v) => { if (v && v !== (rtInfo()?.active?.name ?? 'opencode')) switchRuntime(v) }}
                         disabled={rtSwitching()}
-                        placeholder="閫夋嫨 runtime"
+                        placeholder="选择 runtime"
                       />
                     </div>
                     {rtSwitching() && <LoaderV2 width={14} height={14} />}
-                    <span class="mafw-config-hint">褰撳墠: {rtInfo()?.active?.name ?? 'opencode'}</span>
+                    <span class="mafw-config-hint">当前: {rtInfo()?.active?.name ?? 'opencode'}</span>
                   </div>
                 </div>
                 <div class="mafw-config-field-group">
@@ -554,7 +567,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                             value={(x: string) => x}
                             onSelect={(v) => { if (v != null && v !== (value || 'pi')) switchMediaEngine(kind, v) }}
                             disabled={mediaSwitching()}
-                            placeholder="閫夋嫨寮曟搸"
+                            placeholder="选择引擎"
                           />
                         </div>
                       </div>
@@ -562,37 +575,37 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   </div>
                   {mediaSwitching() && (
                     <div class="mafw-config-inline-loading">
-                      <LoaderV2 width={12} height={12} /> 鍒囨崲涓€?                    </div>
+                      <LoaderV2 width={12} height={12} /> 切换中…                    </div>
                   )}
                 </div>
               </div>
             </div>
           </Show>
 
-          {/* 鈺愨晲鈺?Models 鈺愨晲鈺?*/}
+          {/* ═══ Models ═══*/}
           <Show when={activeNav() === "models"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">馃</span>
-                <span class="mafw-config-section-title">妯″瀷閰嶇疆</span>
+                <span class="mafw-config-section-icon">🤖</span>
+                <span class="mafw-config-section-title">模型配置</span>
               </div>
               <div class="mafw-config-section-body">
                 {modelError() ? (
                   <div class="mafw-config-error-row">
-                    <span>鍔犺浇澶辫触: {modelError()}</span>
-                    <ButtonV2 variant="outline" size="small" onClick={loadModelState}>閲嶈瘯</ButtonV2>
+                    <span>加载失败: {modelError()}</span>
+                    <ButtonV2 variant="outline" size="small" onClick={loadModelState}>重试</ButtonV2>
                   </div>
                 ) : !modelState() ? (
                   <div class="mafw-config-inline-loading">
-                    <LoaderV2 width={14} height={14} /> 鍔犺浇涓€?                  </div>
+                    <LoaderV2 width={14} height={14} /> 加载中…                  </div>
                 ) : (
                   <div class="mafw-config-models-grid">
                     {!modelAvailable() && (
-                      <div class="mafw-config-hint">provider 鍒楄〃涓嶅彲鐢紝璇锋墜鍔ㄨ緭鍏?providerID / modelID</div>
+                      <div class="mafw-config-hint">provider 列表不可用，请手动输入 providerID / modelID</div>
                     )}
                     {modelAvailable() ? (
                       <ModelSelectRow
-                        label="璁板繂 worker"
+                        label="记忆 worker"
                         current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
                         providers={modelAvailable() ?? []}
                         saving={!!modelSaving().recall}
@@ -600,17 +613,17 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       />
                     ) : (
                       <ModelTextRow
-                        label="璁板繂 worker"
+                        label="记忆 worker"
                         current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
                         saving={!!modelSaving().recall}
                         onSave={(p, m) => saveRecallModel(p, m)}
                       />
                     )}
                     {([
-                      { kind: "default", label: "濯掍綋榛樿" },
-                      { kind: "image", label: "濯掍綋 image" },
-                      { kind: "video", label: "濯掍綋 video" },
-                      { kind: "audio", label: "濯掍綋 audio" },
+                      { kind: "default", label: "媒体默认" },
+                      { kind: "image", label: "媒体 image" },
+                      { kind: "video", label: "媒体 video" },
+                      { kind: "audio", label: "媒体 audio" },
                     ] as const).map(({ kind, label }) => {
                       const cur = kind === "default"
                         ? { provider: modelState()?.media?.provider ?? "", model: modelState()?.media?.model ?? "" }
@@ -628,25 +641,25 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
             </div>
           </Show>
 
-          {/* 鈺愨晲鈺?Usage 鈺愨晲鈺?*/}
+          {/* ═══ Usage ═══*/}
           <Show when={activeNav() === "usage"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">馃搳</span>
-                <span class="mafw-config-section-title">鐢ㄩ噺閰嶇疆</span>
+                <span class="mafw-config-section-icon">📊</span>
+                <span class="mafw-config-section-title">用量配置</span>
               </div>
               <div class="mafw-config-section-body">
                 {usageLoading() ? (
                   <div class="mafw-config-inline-loading">
-                    <LoaderV2 width={14} height={14} /> 鍔犺浇涓€?                  </div>
+                    <LoaderV2 width={14} height={14} /> 加载中…                  </div>
                 ) : (
                   <div class="mafw-usage-config-grid">
-                    {/* Token Plan 闄愰 */}
+                    {/* Token Plan 限额 */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">Token Plan 闄愰 (5h/7d/month)</label>
+                      <label class="mafw-config-label">Token Plan 限额 (5h/7d/month)</label>
                       <div class="mafw-config-usage-rows">
                         <Show when={Object.keys(usageLimits()).length > 0} fallback={
-                          <div class="mafw-config-hint">鏃?token plan 閰嶇疆</div>
+                          <div class="mafw-config-hint">无 token plan 配置</div>
                         }>
                           <For each={Object.keys(usageLimits())}>
                             {(provider: string) => (
@@ -674,9 +687,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       </div>
                     </div>
 
-                    {/* API 浣欓棰勭畻 */}
+                    {/* API 余额预算 */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">API 浣欓棰勭畻 (budget)</label>
+                      <label class="mafw-config-label">API 余额预算 (budget)</label>
                       <div class="mafw-config-usage-rows">
                         <For each={Object.keys(usageBudgets())}>
                           {(provider: string) => (
@@ -687,7 +700,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                                 value={String(usageBudgets()[provider] ?? "")}
                                 onInput={e => setUsageBudget(provider, e.currentTarget.value)}
                                 style={{ width: 80 }}
-                                placeholder="鐣欑┖鍒犻櫎"
+                                placeholder="留空删除"
                               />
                             </div>
                           )}
@@ -700,24 +713,24 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                                 onInput={e => setUsageAddName(e.currentTarget.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') commitUsageAdd(); if (e.key === 'Escape') { setUsageAddKind(null); setUsageAddName('') } }}
                                 style={{ width: 140 }}
-                                placeholder="provider 鍚嶇О"
+                                placeholder="provider 名称"
                               />
-                              <ButtonV2 variant="contrast" size="small" onClick={commitUsageAdd}>纭畾</ButtonV2>
-                              <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind(null); setUsageAddName('') }}>鍙栨秷</ButtonV2>
+                              <ButtonV2 variant="contrast" size="small" onClick={commitUsageAdd}>确定</ButtonV2>
+                              <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind(null); setUsageAddName('') }}>取消</ButtonV2>
                             </div>
                           }>
-                            <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind('budget'); setUsageAddName('') }}>+ 娣诲姞 provider 棰勭畻</ButtonV2>
+                            <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind('budget'); setUsageAddName('') }}>+ 添加 provider 预算</ButtonV2>
                           </Show>
                         </div>
                       </div>
                     </div>
 
-                    {/* 骞冲彴 Cookie */}
+                    {/* 平台 Cookie */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">骞冲彴 Cookie (鐢ㄩ噺鏌ヨ)</label>
+                      <label class="mafw-config-label">平台 Cookie (用量查询)</label>
                       <div class="mafw-config-usage-rows">
                         <Show when={Object.keys(usageCookies()).length > 0} fallback={
-                          <div class="mafw-config-hint">鏃犲钩鍙?cookie锛屽彲鐐瑰嚮涓嬫柟娣诲姞锛堝 commandcode锛?/div>
+                          <div class="mafw-config-hint">无平台 cookie，可点击下方添加（如 commandcode）</div>
                         }>
                           <For each={Object.keys(usageCookies())}>
                             {(name: string) => (
@@ -727,9 +740,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                                   value={usageCookies()[name] ?? ""}
                                   onInput={e => setUsageCookie(name, e.currentTarget.value)}
                                   style={{ flex: 1, minWidth: 0 }}
-                                  placeholder={`${name} 骞冲彴鐧诲綍鍚庣殑 session cookie`}
+                                  placeholder={`${name} 平台登录后的 session cookie`}
                                 />
-                                <ButtonV2 variant="ghost" size="small" onClick={() => removeUsageCookie(name)} aria-label="鍒犻櫎 cookie">鉁?/ButtonV2>
+                                <ButtonV2 variant="ghost" size="small" onClick={() => removeUsageCookie(name)} aria-label="删除 cookie">✕</ButtonV2>
                               </div>
                             )}
                           </For>
@@ -742,32 +755,32 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                                 onInput={e => setUsageAddName(e.currentTarget.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') commitUsageAdd(); if (e.key === 'Escape') { setUsageAddKind(null); setUsageAddName('') } }}
                                 style={{ width: 140 }}
-                                placeholder="cookie 鍚嶇О"
+                                placeholder="cookie 名称"
                               />
-                              <ButtonV2 variant="contrast" size="small" onClick={commitUsageAdd}>纭畾</ButtonV2>
-                              <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind(null); setUsageAddName('') }}>鍙栨秷</ButtonV2>
+                              <ButtonV2 variant="contrast" size="small" onClick={commitUsageAdd}>确定</ButtonV2>
+                              <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind(null); setUsageAddName('') }}>取消</ButtonV2>
                             </div>
                           }>
-                            <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind('cookie'); setUsageAddName('') }}>+ 娣诲姞骞冲彴 cookie</ButtonV2>
+                            <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind('cookie'); setUsageAddName('') }}>+ 添加平台 cookie</ButtonV2>
                           </Show>
                         </div>
                       </div>
                     </div>
 
-                    {/* 骞冲彴鎻掍欢 */}
+                    {/* 平台插件 */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">骞冲彴鎻掍欢</label>
+                      <label class="mafw-config-label">平台插件</label>
                       <div class="mafw-config-usage-rows">
                         <Show when={usagePluginState().length > 0} fallback={
-                          <div class="mafw-config-hint">鏃犳彃浠?/div>
+                          <div class="mafw-config-hint">无插件</div>
                         }>
                           <For each={usagePluginState()}>
                             {(p: any) => (
                               <div class="mafw-config-usage-provider-row">
                                 <span class="mafw-config-usage-provider-name">
-                                  {p.status === 'ok' ? '鉁? : '鉂?} {p.file}
+                                  {p.status === 'ok' ? '✅' : '❌'} {p.file}
                                   {p.name && <span class="mafw-config-hint"> ({p.name})</span>}
-                                  {p.overridden && <span class="mafw-config-hint"> [瑕嗙洊鍐呯疆]</span>}
+                                  {p.overridden && <span class="mafw-config-hint"> [覆盖内置]</span>}
                                 </span>
                                 <Show when={p.error}>
                                   <span class="mafw-config-usage-error">{p.error}</span>
@@ -778,19 +791,19 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         </Show>
                         <div class="mafw-config-usage-add-row">
                           <ButtonV2 variant="ghost" size="small" onClick={() => window.api.mafw.sessions.openUsagePluginsDir()}>
-                            馃搨 鎵撳紑鎻掍欢鐩綍
+                            📂 打开插件目录
                           </ButtonV2>
                           <ButtonV2 variant="ghost" size="small" onClick={reloadUsagePlugins} disabled={usageReloading()}>
-                            {usageReloading() ? '閲嶈浇涓?..' : '馃攧 閲嶆柊鍔犺浇'}
+                            {usageReloading() ? '重载中…' : '🔄 重新加载'}
                           </ButtonV2>
                         </div>
                       </div>
                     </div>
 
-                    {/* 淇濆瓨鎸夐挳 */}
+                    {/* 保存按钮 */}
                     <div class="mafw-config-actions-row" style={{ "margin-top": 8 }}>
                       <ButtonV2 variant="contrast" size="small" onClick={saveUsageConfig} disabled={usageSaving()}>
-                        {usageSaving() ? "淇濆瓨涓?.." : "淇濆瓨鐢ㄩ噺閰嶇疆"}
+                        {usageSaving() ? "保存中…" : "保存用量配置"}
                       </ButtonV2>
                     </div>
                   </div>
@@ -799,12 +812,12 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
             </div>
           </Show>
 
-          {/* 鈺愨晲鈺?OpenCode Config 鈺愨晲鈺?*/}
+          {/* ═══ OpenCode Config ═══*/}
           <Show when={activeNav() === "opencode"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">鈿欙笍</span>
-                <span class="mafw-config-section-title">opencode 閰嶇疆</span>
+                <span class="mafw-config-section-icon">⚙️</span>
+                <span class="mafw-config-section-title">opencode 配置</span>
               </div>
               <div class="mafw-config-section-body">
                 {ocLoading() ? (
@@ -850,12 +863,12 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
             </div>
           </Show>
 
-          {/* 鈺愨晲鈺?MAFW Raw Config 鈺愨晲鈺?*/}
+          {/* ═══ MAFW Raw Config ═══*/}
           <Show when={activeNav() === "mafw"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">馃敡</span>
-                <span class="mafw-config-section-title">MAFW 鍘熷閰嶇疆</span>
+                <span class="mafw-config-section-icon">🔧</span>
+                <span class="mafw-config-section-title">MAFW 原始配置</span>
               </div>
               <div class="mafw-config-section-body">
                 {loading() ? (
@@ -938,10 +951,10 @@ function ModelSelectRow(props: {
             options={props.allowClear ? ["", ...modelsFor(pendingProvider()).map(m => m.id)] : modelsFor(pendingProvider()).map(m => m.id)}
             current={props.current.model}
             value={(x: string) => x}
-            label={(x: string) => (x === "" ? "锛堣窡闅忛粯璁わ級" : modelLabel(x))}
+            label={(x: string) => (x === "" ? "（跟随默认）" : modelLabel(x))}
             onSelect={(v) => { if (v != null && v !== props.current.model) props.onSave(pendingProvider(), v) }}
             disabled={props.saving || !pendingProvider()}
-            placeholder={props.allowClear ? "锛堣窡闅忛粯璁わ級" : "model"}
+            placeholder={props.allowClear ? "（跟随默认）" : "model"}
           />
         </div>
         {props.saving && <LoaderV2 width={14} height={14} />}
@@ -969,7 +982,7 @@ function ModelTextRow(props: {
           <TextInputV2 value={model()} onInput={e => setModel(e.currentTarget.value)} placeholder="modelID" disabled={props.saving} />
         </div>
         <ButtonV2 variant="outline" size="small" disabled={props.saving || !prov() || !model()} onClick={() => props.onSave(prov(), model())}>
-          {props.saving ? "鈥? : "淇濆瓨"}
+          {props.saving ? "…" : "保存"}
         </ButtonV2>
       </div>
     </div>
