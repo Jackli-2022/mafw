@@ -382,10 +382,10 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     failed("did-fail-load", errorCode, errorDescription, validatedURL, isMainFrame)
   })
-  // Electron ≥32 console-message: numeric severity derived from the string level.
+  // Electron ≥42 console-message: numeric severity derived from the string level.
   function severityLevel(level: unknown): number {
     switch (level) {
-      case "verbose": return 0
+      case "debug": return 0
       case "info": return 1
       case "warning": return 2
       case "error": return 3
@@ -394,14 +394,13 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   }
   // Forward renderer console (errors/warnings) to the main log — packaged apps
   // have no DevTools by default, so render crashes would otherwise be invisible.
-  // Electron ≥32 hands details over as properties of the event object.
-  win.webContents.on("console-message" as never, (...args: unknown[]) => {
-    const ev = args[0] as { level?: unknown; message?: unknown; lineNumber?: unknown; sourceId?: unknown }
-    const legacy = typeof args[1] === "number"
-    const level = legacy ? (args[1] as number) : severityLevel(ev?.level)
-    const message = legacy ? (args[2] as string) : String(ev?.message ?? "")
-    const line = legacy ? (args[3] as number) : Number(ev?.lineNumber ?? 0)
-    const sourceId = legacy ? (args[4] as string) : String(ev?.sourceId ?? "")
+  // Electron ≥42 puts details on the Event object; level is a string enum.
+  win.webContents.on("console-message", (details) => {
+    const ev = (details as unknown as { level?: unknown; message?: unknown; lineNumber?: unknown; sourceId?: unknown })
+    const level = severityLevel(ev?.level)
+    const message = String(ev?.message ?? "")
+    const line = Number(ev?.lineNumber ?? 0)
+    const sourceId = String(ev?.sourceId ?? "")
     if (level < 2) return
     writeLog("renderer-console", message, { source: sourceId, line, level }, level >= 3 ? "error" : "warn")
   })
@@ -431,7 +430,13 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     writeLog("window", "renderer responsive", { window: name, currentURL: win.webContents.getURL() }, "error")
     sampler.stopAndFlush()
   })
-  win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+  // Electron ≥42: details are on the Event object, level is a string enum.
+  win.webContents.on("console-message", (details) => {
+    const ev = (details as unknown as { level?: unknown; message?: unknown; lineNumber?: unknown; sourceId?: unknown })
+    const level = severityLevel(ev?.level)
+    const message = String(ev?.message ?? "")
+    const line = Number(ev?.lineNumber ?? 0)
+    const sourceId = String(ev?.sourceId ?? "")
     if (message.toLowerCase().includes("terminal") || sourceId.toLowerCase().includes("terminal")) {
       writeLog("pty", "console", { window: name, level, message, line, sourceId })
     }

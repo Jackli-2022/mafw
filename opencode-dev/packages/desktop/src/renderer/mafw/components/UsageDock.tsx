@@ -1,9 +1,7 @@
 // @ts-nocheck
 import { createSignal, createEffect, createMemo, Show, For, onCleanup } from "solid-js"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { Icon } from "@opencode-ai/ui/icon"
-import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 
 const fmt = (n: number): string => {
@@ -260,284 +258,7 @@ function ProviderSection(props: { provider: any }) {
   )
 }
 
-function UsageConfigEditor(props: { onSaved: () => void }) {
-  const [config, setConfig] = createSignal<any>(null)
-  const [loading, setLoading] = createSignal(true)
-  const [saving, setSaving] = createSignal(false)
-
-  const load = async () => {
-    setLoading(true)
-    try {
-      const c = await window.api.mafw.config.get("usage")
-      setConfig(c || { limits: {}, budgets: {} })
-    } catch (e: any) {
-      console.warn("[UsageConfig] load failed:", e?.message)
-      setConfig({ limits: {}, budgets: {} })
-    }
-    setLoading(false)
-  }
-
-  createEffect(() => { load() })
-
-  const limits = () => config()?.limits || {}
-  const budgets = () => config()?.budgets || {}
-  const cookies = () => config()?.cookies || {}
-
-  const setCookie = (name: string, v: string) => {
-    setConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev))
-      next.cookies = next.cookies || {}
-      if (v === "") delete next.cookies[name]
-      else next.cookies[name] = v
-      return next
-    })
-  }
-
-  const setRemoveCookie = (name: string) => {
-    setConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev))
-      next.cookies = next.cookies || {}
-      delete next.cookies[name]
-      return next
-    })
-  }
-
-  const [addKind, setAddKind] = createSignal<'cookie' | 'budget' | null>(null)
-  const [addName, setAddName] = createSignal('')
-
-  const commitAdd = () => {
-    const name = addName().trim()
-    if (!name) return
-    if (addKind() === 'cookie') {
-      setConfig(prev => {
-        const next = JSON.parse(JSON.stringify(prev))
-        next.cookies = next.cookies || {}
-        if (next.cookies[name] === undefined) next.cookies[name] = ""
-        return next
-      })
-    } else if (addKind() === 'budget') {
-      setConfig(prev => {
-        const next = JSON.parse(JSON.stringify(prev))
-        next.budgets = next.budgets || {}
-        if (next.budgets[name] === undefined) next.budgets[name] = 0
-        return next
-      })
-    }
-    setAddKind(null)
-    setAddName('')
-  }
-
-  const [pluginState, setPluginState] = createSignal<any[]>([])
-  const [reloading, setReloading] = createSignal(false)
-
-  const loadPlugins = async () => {
-    try {
-      const res = await window.api.mafw.sessions.usagePlugins()
-      setPluginState(res.plugins)
-    } catch (e: any) {
-      console.warn('[UsageConfig] loadPlugins failed:', e?.message)
-    }
-  }
-
-  const reloadPlugins = async () => {
-    setReloading(true)
-    try {
-      const res = await window.api.mafw.sessions.usagePluginsReload()
-      setPluginState(res.plugins)
-      showToastV2({ description: '插件已重载', duration: 2000 })
-      props.onSaved()
-    } catch (e: any) {
-      showToastV2({ description: `重载失败: ${e.message}`, duration: 3000 })
-    }
-    setReloading(false)
-  }
-
-  createEffect(() => { loadPlugins() })
-
-  const setLimitWindow = (provider: string, window: string, v: string) => {
-    setConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev))
-      next.limits = next.limits || {}
-      next.limits[provider] = next.limits[provider] || {}
-      next.limits[provider][window] = v === "" ? 0 : parseFloat(v) || 0
-      return next
-    })
-  }
-
-  const setBudget = (provider: string, v: string) => {
-    setConfig(prev => {
-      const next = JSON.parse(JSON.stringify(prev))
-      next.budgets = next.budgets || {}
-      if (v === "") delete next.budgets[provider]
-      else next.budgets[provider] = parseFloat(v) || 0
-      return next
-    })
-  }
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      const c = config()
-      const clean = {
-        limits: c.limits || {},
-        budgets: c.budgets || {},
-        cookies: c.cookies || {},
-        pluginConfig: c.pluginConfig || {},
-      }
-      await window.api.mafw.config.set("usage", clean)
-      showToastV2({ description: "用量配置已保存", duration: 2000 })
-      props.onSaved()
-    } catch (e: any) {
-      showToastV2({ description: `保存失败: ${e.message}`, duration: 3000 })
-    }
-    setSaving(false)
-  }
-
-  return (
-    <div class="mafw-usage-config">
-      {loading() ? (
-        <div class="mafw-usage-config-hint">加载中...</div>
-      ) : (
-        <>
-          <div class="mafw-usage-config-title">Token Plan 限额 (5h/7d/month)</div>
-          <For each={Object.keys(limits())}>
-            {(provider: string) => (
-              <div class="mafw-usage-config-row">
-                <span class="mafw-usage-config-name">{provider}</span>
-                <For each={Object.keys(limits()[provider] || {})}>
-                  {(window: string) => (
-                    <div class="mafw-usage-config-field">
-                      <label>{window}</label>
-                      <TextInputV2
-                        type="number"
-                        value={String(limits()[provider][window] ?? 0)}
-                        onInput={e => setLimitWindow(provider, window, e.currentTarget.value)}
-                        style={{ width: 60 }}
-                      />
-                    </div>
-                  )}
-                </For>
-              </div>
-            )}
-          </For>
-          <Show when={Object.keys(limits()).length === 0}>
-            <div class="mafw-usage-config-hint">无 token plan 配置</div>
-          </Show>
-
-          <div class="mafw-usage-config-title">API 余额预算 (budget)</div>
-          <For each={Object.keys(budgets())}>
-            {(provider: string) => (
-              <div class="mafw-usage-config-row">
-                <span class="mafw-usage-config-name">{provider}</span>
-                <TextInputV2
-                  type="number"
-                  value={String(budgets()[provider] ?? "")}
-                  onInput={e => setBudget(provider, e.currentTarget.value)}
-                  style={{ width: 80 }}
-                  placeholder="留空删除"
-                />
-              </div>
-            )}
-          </For>
-          <div class="mafw-usage-config-row">
-            <Show when={addKind() !== 'budget'} fallback={
-              <>
-                <TextInputV2
-                  value={addName()}
-                  onInput={e => setAddName(e.currentTarget.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') commitAdd()
-                    if (e.key === 'Escape') { setAddKind(null); setAddName('') }
-                  }}
-                  style={{ width: 160 }}
-                  placeholder="provider 名称"
-                />
-                <ButtonV2 variant="contrast" size="small" onClick={commitAdd}>确定</ButtonV2>
-                <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind(null); setAddName('') }}>取消</ButtonV2>
-              </>
-            }>
-              <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind('budget'); setAddName('') }}>+ 添加 provider 预算</ButtonV2>
-            </Show>
-          </div>
-
-          <div class="mafw-usage-config-title">平台 Cookie (用量查询)</div>
-          <For each={Object.keys(cookies())}>
-            {(name: string) => (
-              <div class="mafw-usage-config-row">
-                <span class="mafw-usage-config-name">{name}</span>
-                <TextInputV2
-                  value={cookies()[name] ?? ""}
-                  onInput={e => setCookie(name, e.currentTarget.value)}
-                  style={{ width: "100%" }}
-                  placeholder={`${name} 平台登录后的 session cookie，留空删除`}
-                />
-                <ButtonV2 variant="ghost" size="small" onClick={() => setRemoveCookie(name)} aria-label="删除 cookie">✕</ButtonV2>
-              </div>
-            )}
-          </For>
-          <Show when={Object.keys(cookies()).length === 0}>
-            <div class="mafw-usage-config-hint">无平台 cookie，可点击下方添加（如 commandcode）</div>
-          </Show>
-          <div class="mafw-usage-config-row">
-            <Show when={addKind() !== 'cookie'} fallback={
-              <>
-                <TextInputV2
-                  value={addName()}
-                  onInput={e => setAddName(e.currentTarget.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') commitAdd()
-                    if (e.key === 'Escape') { setAddKind(null); setAddName('') }
-                  }}
-                  style={{ width: 160 }}
-                  placeholder="cookie 名称"
-                />
-                <ButtonV2 variant="contrast" size="small" onClick={commitAdd}>确定</ButtonV2>
-                <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind(null); setAddName('') }}>取消</ButtonV2>
-              </>
-            }>
-              <ButtonV2 variant="ghost" size="small" onClick={() => { setAddKind('cookie'); setAddName('') }}>+ 添加平台 cookie</ButtonV2>
-            </Show>
-          </div>
-
-          <div class="mafw-usage-config-title">平台插件</div>
-          <Show when={pluginState().length > 0}>
-            <For each={pluginState()}>
-              {(p: any) => (
-                <div class="mafw-usage-config-row">
-                  <span class="mafw-usage-config-name">
-                    {p.status === 'ok' ? '\u2705' : '\u274c'} {p.file}
-                    {p.name && <span class="mafw-usage-config-hint"> ({p.name})</span>}
-                    {p.overridden && <span class="mafw-usage-config-hint"> [\u8986\u76d6\u5185\u7f6e]</span>}
-                  </span>
-                  <Show when={p.error}>
-                    <span class="mafw-usage-config-error">{p.error}</span>
-                  </Show>
-                </div>
-              )}
-            </For>
-          </Show>
-          <Show when={pluginState().length === 0}>
-            <div class="mafw-usage-config-hint">{"\u65e0\u63d2\u4ef6"}</div>
-          </Show>
-          <div class="mafw-usage-config-row">
-            <ButtonV2 variant="ghost" size="small" onClick={() => window.api.mafw.sessions.openUsagePluginsDir()}>
-              {"\ud83d\udcc2 \u6253\u5f00\u63d2\u4ef6\u76ee\u5f55"}
-            </ButtonV2>
-            <ButtonV2 variant="ghost" size="small" onClick={reloadPlugins} disabled={reloading()}>
-              {reloading() ? '\u91cd\u8f7d\u4e2d...' : '\ud83d\udd04 \u91cd\u65b0\u52a0\u8f7d'}
-            </ButtonV2>
-          </div>
-
-          <div class="mafw-usage-config-actions">
-            <ButtonV2 variant="contrast" size="small" onClick={save} disabled={saving()}>
-              {saving() ? "保存中..." : "保存配置"}
-            </ButtonV2>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
+// UsageConfigEditor removed — moved to Config page (left-nav > Usage)
 
 export function UsageDock(props: {
   sessionID: string
@@ -608,7 +329,6 @@ export function UsageDock(props: {
     return d.summary?.session?.turnCount || d.summary?.project?.turnCount || d.summary?.global?.turnCount
   }
 
-  const [showConfig, setShowConfig] = createSignal(false)
   const [expandedStat, setExpandedStat] = createSignal<'session' | 'project' | 'memory' | null>(null)
   const toggleStat = (key: 'session' | 'project' | 'memory') =>
     setExpandedStat(prev => (prev === key ? null : key))
@@ -618,18 +338,16 @@ export function UsageDock(props: {
       <div class="mafw-usage-dock-toolbar">
         <span class="mafw-usage-dock-title">用量</span>
         <ButtonV2
-          variant={showConfig() ? "contrast" : "ghost"}
+          variant="ghost"
           size="small"
-          onClick={() => setShowConfig(!showConfig())}
+          onClick={() => {
+            window.dispatchEvent(new CustomEvent('mafw:open-config', { detail: 'usage' }))
+          }}
         >
           <Icon name="settings-gear" size="small" />
           配置
         </ButtonV2>
       </div>
-
-      <Show when={showConfig()}>
-        <UsageConfigEditor onSaved={() => fetchSummary()} />
-      </Show>
 
       <Show when={hasData()} fallback={
         <div class="mafw-usage-empty">

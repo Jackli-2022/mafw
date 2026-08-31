@@ -52,6 +52,7 @@ interface ChatSession {
 export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<Tab>("chat")
   const [showConfig, setShowConfig] = createSignal(false)
+  const [configSection, setConfigSection] = createSignal<"gateway" | "plugins" | "models" | "usage" | "opencode" | "mafw" | undefined>(undefined)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
 
@@ -905,6 +906,17 @@ export function MafwShell() {
     document.body.setAttribute("data-new-layout", "")
   })
 
+  // Listen for UsageDock "go to Config > Usage" link
+  onMount(() => {
+    const handler = (e: Event) => {
+      const section = (e as CustomEvent).detail as "gateway" | "plugins" | "models" | "usage" | "opencode" | "mafw" | undefined
+      setConfigSection(section)
+      setShowConfig(true)
+    }
+    window.addEventListener('mafw:open-config', handler)
+    onCleanup(() => window.removeEventListener('mafw:open-config', handler))
+  })
+
   // Theme: MafwShell owns documentElement.dataset.theme (the theme preload
   // unconditionally sets "oc-2", which would otherwise dead-code the CSS
   // follow-system media block). A saved 'light'/'dark' override wins; otherwise
@@ -1735,7 +1747,7 @@ export function MafwShell() {
           {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} trajectoryActive={rightDockOpen() && rightDockTab() === "trajectory"} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             {showConfig() ? (
-              <ConfigPage onBack={() => setShowConfig(false)} />
+              <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} />
             ) : activeTab() === "chat" ? (
               <div class="mafw-chat">
                 {/* SessionStrip */}
