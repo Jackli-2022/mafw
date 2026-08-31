@@ -6,6 +6,15 @@ function invoke<T = unknown>(namespace: string, method: string, ...args: unknown
 }
 
 export function createMafwApi(): MafwAPI {
+  // Gateway state is multiplexed over ONE ipc listener: renderer components
+  // (MafwShell/Rail/Config + HMR remounts) subscribe freely without piling
+  // ipcRenderer listeners up against the default 10-listener warning limit.
+  const stateCallbacks = new Set<(status: any) => void>()
+  let stateChannelActive = false
+  const stateRelay = (_event: any, status: any) => {
+    for (const cb of stateCallbacks) cb(status)
+  }
+
   return {
     gateway: {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
@@ -13,9 +22,18 @@ export function createMafwApi(): MafwAPI {
       restart: () => ipcRenderer.invoke("mafw-gateway-restart"),
       logsPath: () => ipcRenderer.invoke("mafw-gateway-logs-path"),
       onStateChange: (cb) => {
-        const handler = (_event: any, status: any) => cb(status)
-        ipcRenderer.on("mafw-gateway-state", handler)
-        return () => ipcRenderer.removeListener("mafw-gateway-state", handler)
+        stateCallbacks.add(cb)
+        if (!stateChannelActive) {
+          ipcRenderer.on("mafw-gateway-state", stateRelay)
+          stateChannelActive = true
+        }
+        return () => {
+          stateCallbacks.delete(cb)
+          if (stateCallbacks.size === 0 && stateChannelActive) {
+            ipcRenderer.removeListener("mafw-gateway-state", stateRelay)
+            stateChannelActive = false
+          }
+        }
       },
     },
 
