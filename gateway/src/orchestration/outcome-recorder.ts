@@ -30,16 +30,55 @@ export function inferFailureKind(input: { verdict: string; lastError?: string | 
   return 'exec_error';
 }
 
-export function buildFailureSignature(kind: string | null, text?: string | null): string | null {
+export interface FailureSignatureInput {
+  kind: string | null;
+  errorText?: string | null;
+  firstErrorTool?: string | null;
+}
+
+export function buildFailureSignature(input: FailureSignatureInput): string | null;
+export function buildFailureSignature(kind: string | null, text?: string | null): string | null;
+export function buildFailureSignature(
+  inputOrKind: FailureSignatureInput | string | null,
+  text?: string | null
+): string | null {
+  let kind: string | null;
+  let errorText: string | null;
+  let firstErrorTool: string | null;
+
+  if (typeof inputOrKind === 'object' && inputOrKind !== null) {
+    kind = inputOrKind.kind;
+    errorText = inputOrKind.errorText ?? null;
+    firstErrorTool = inputOrKind.firstErrorTool ?? null;
+  } else {
+    kind = inputOrKind;
+    errorText = text ?? null;
+    firstErrorTool = null;
+  }
+
   if (!kind) return null;
-  const norm = (text || '')
+  const raw = errorText || '';
+  const norm = raw
     .replace(/[0-9a-f]{8,}/gi, '#')
     .replace(/\d+/g, 'N')
     .replace(/[^\p{L}\p{N} ]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80);
-  return norm ? `${kind}:${norm}` : kind;
+  
+  // Extract tool name from error text when not explicitly provided
+  let tool = firstErrorTool;
+  if (!tool) {
+    // Try to extract tool name from common error patterns
+    const m = raw.match(/(?:tool\s+(\w+)|(?:error|failed|exception)\s+(?:in\s+)?(\w+)|(mafw_\w+)|\bexcept(?:ion)?\s+(?:in\s+)?(\w+))/i);
+    const candidate = m ? (m[1] || m[2] || m[3] || m[4]).toLowerCase() : null;
+    // Filter out common prepositions and articles
+    const stopwords = new Set(['in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'a', 'an', 'the', 'and', 'but', 'or', 'nor', 'not', 'so', 'yet', 'both', 'either', 'neither', 'each', 'every', 'all', 'any', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'only', 'own', 'same', 'than', 'too', 'very', 'just', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should', 'now']);
+    tool = candidate && !stopwords.has(candidate) ? candidate : 'unknown';
+  }
+  const textPart = norm || 'no_details';
+  
+  return `${kind}:${tool}:${textPart}`;
 }
 
 function aggregateTrajectory(db: GatewayDatabase, sessionIds: string[]) {
@@ -101,6 +140,18 @@ function readStateFile(mafwDir: string, goalId: string): any {
   } catch { return null; }
 }
 
+function getFirstErrorTool(db: GatewayDatabase, sessionIds: string[]): string | null {
+  if (sessionIds.length === 0) return null;
+  const rawDb = (db as any).db;
+  const placeholders = sessionIds.map(() => '?').join(',');
+  const row = rawDb.prepare(
+    `SELECT tool_name FROM trajectory_events 
+     WHERE session_id IN (${placeholders}) AND error IS NOT NULL 
+     ORDER BY turn_id ASC, seq ASC LIMIT 1`
+  ).get(...sessionIds) as any;
+  return row?.tool_name ?? null;
+}
+
 export function recordGoalOutcome(db: GatewayDatabase, input: OutcomeInput): void {
   try {
     const state = readStateFile(input.mafwDir, input.goalId);
@@ -110,9 +161,11 @@ export function recordGoalOutcome(db: GatewayDatabase, input: OutcomeInput): voi
     const createdAt = req.createdAt ?? null;
     const durationMs = createdAt ? Date.now() - new Date(createdAt).getTime() : null;
     const sessions = db.listGoalSessions(input.goalId);
-    const traj = aggregateTrajectory(db, sessions.map(s => s.session_id));
+    const sessionIds = sessions.map(s => s.session_id);
+    const traj = aggregateTrajectory(db, sessionIds);
     const fb = aggregateFeedback(input.projectDir, input.goalId);
     const kind = inferFailureKind(input);
+    const firstErrorTool = getFirstErrorTool(db, sessionIds);
     db.upsertGoalOutcome({
       goal_id: input.goalId,
       project_id: input.projectId,
@@ -128,7 +181,11 @@ export function recordGoalOutcome(db: GatewayDatabase, input: OutcomeInput): voi
       policy_version: policy.version,
       evolution_proposal_id: policy.proposalId,
       failure_kind: kind,
-      failure_signature: buildFailureSignature(kind, input.lastError ?? input.reviewFeedback),
+      failure_signature: buildFailureSignature({
+        kind,
+        errorText: input.lastError ?? input.reviewFeedback,
+        firstErrorTool,
+      }),
       created_at: createdAt,
       archived_at: new Date().toISOString(),
     });

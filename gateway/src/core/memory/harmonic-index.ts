@@ -187,6 +187,25 @@ export class HarmonicIndexManager {
       scored = this.tokenSearchScored(query, recallK);
     }
 
+    // ── Multi-hop query expansion for comparison/aggregation questions ──
+    // Detects questions like "How much older am I than X?" and searches for
+    // sub-queries to bridge cross-session gaps that single-query BM25 misses.
+    if (options.retriever !== 'guided' && scored.length > 0) {
+      const expanded = this.expandMultiHopQuery(query, scored, recallK);
+      if (expanded.length > 0) {
+        // Merge: direct hits keep their score, expansion hits get 0.4× weight
+        const seenIds = new Set(scored.map(s => s.entry.id));
+        for (const e of expanded) {
+          if (!seenIds.has(e.entry.id)) {
+            scored.push({ entry: e.entry, score: e.score * 0.4 });
+            seenIds.add(e.entry.id);
+          }
+        }
+        scored.sort((a, b) => b.score - a.score);
+        scored = scored.slice(0, recallK);
+      }
+    }
+
     // ── Anchor-graph multi-hop expansion (Memora-style) ──
     const graphExpand = options.graphExpand ?? config.search.graph.enabled;
     if (graphExpand && this.anchorGraphStore && scored.length > 0) {
@@ -286,6 +305,73 @@ export class HarmonicIndexManager {
 
     return scored
       .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+  }
+
+  /**
+   * Detect multi-hop/comparison questions and search for sub-queries.
+   * For questions like "How much older am I than X?", this searches for
+   * "user age" and "X" separately to bridge cross-session gaps.
+   */
+  private expandMultiHopQuery(
+    query: string,
+    directResults: ScoredEntry[],
+    topK: number,
+  ): ScoredEntry[] {
+    const lower = query.toLowerCase();
+
+    // Detect comparison/multi-hop patterns
+    const isComparison = /\b(how much|what is the|difference between|compare|vs\.?|older|younger|more|less|bigger|smaller|higher|lower|faster|slower|better|worse)\b/i.test(query);
+    const hasAggregation = /\b(average|total|sum|count|how many|how often|when did|what time|which)\b/i.test(query);
+
+    if (!isComparison && !hasAggregation) return [];
+
+    // Extract noun phrases (non-question words)
+    const questionWords = new Set([
+      'how', 'what', 'when', 'where', 'why', 'which', 'who', 'whom', 'whose',
+      'is', 'are', 'was', 'were', 'do', 'does', 'did', 'have', 'has', 'had',
+      'can', 'could', 'will', 'would', 'should', 'may', 'might', 'shall',
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+      'of', 'with', 'by', 'from', 'as', 'into', 'than', 'that', 'this',
+      'these', 'those', 'it', 'its', 'my', 'your', 'our', 'their', 'his',
+      'her', 'i', 'me', 'we', 'you', 'they', 'he', 'she',
+    ]);
+    const words = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(
+      (w) => w.length >= 2 && !questionWords.has(w),
+    );
+    if (words.length < 2) return [];
+
+    // Build sub-queries: user-related terms, entity terms, and the full noun phrase
+    const userTerms = words.filter((w) =>
+      /\b(age|birthday|born|live|work|job|salary|income|family|married|single|children|kid|pet|car|house|home|school|college|university|degree|major|hobby|interest|preference|like|dislike|favorite|eat|drink|travel|visit|read|watch|listen)\b/.test(w),
+    );
+    const entityTerms = words.filter((w) => !userTerms.includes(w));
+
+    const subQueries: string[] = [];
+    if (userTerms.length > 0) subQueries.push('user ' + userTerms.join(' '));
+    if (entityTerms.length > 0) subQueries.push(entityTerms.join(' '));
+    if (words.length >= 3) subQueries.push(words.join(' '));
+
+    if (subQueries.length === 0) return [];
+
+    // Search each sub-query and collect non-duplicate results
+    const directIds = new Set(directResults.map((s) => s.entry.id));
+    const expansionScores = new Map<string, ScoredEntry>();
+
+    for (const sq of subQueries) {
+      const hits = this.bm25SearchScored(sq, Math.min(topK, 10));
+      for (const hit of hits) {
+        if (directIds.has(hit.entry.id)) continue;
+        if (hit.entry.superseded_by) continue;
+        const existing = expansionScores.get(hit.entry.id);
+        if (!existing || hit.score > existing.score) {
+          expansionScores.set(hit.entry.id, hit);
+        }
+      }
+    }
+
+    return [...expansionScores.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
   }

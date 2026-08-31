@@ -49,9 +49,9 @@ export { toolExecutedHook } from './hooks/tool-executed';
 
 // 鈹€鈹€ Tools 鈹€鈹€
 export { RemoteCliConnector } from './tools/remote-cli';
-export { buildPlanPrompt, parsePlanResponse, formatTaskMarkdown } from './tools/run-plan';
 export { buildTaskPrompt } from './tools/run-execute-wave';
-export { buildReviewPrompt, parseReviewResponse, formatReview, formatLesson } from './tools/run-review';
+export { buildPlanPrompt } from './tools/run-plan';
+export { buildReviewPrompt } from './tools/run-review';
 export { writeLesson } from './tools/write-lesson';
 export { archiveWorktree } from './tools/archive-worktree';
 

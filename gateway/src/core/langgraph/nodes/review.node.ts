@@ -3,6 +3,9 @@ import { matchesSignature } from '../signature-detector';
 import * as path from 'path';
 import * as fs from 'fs';
 
+/** Maximum number of times the same signature question can be asked before forcing a decision */
+const MAX_SAME_SIG_QUESTIONS = 3;
+
 export interface AgentServices {
   client: {
     session: {
@@ -59,7 +62,7 @@ export async function reviewNode(
     reviewVerdict: verdict.verdict,
     reviewReportPath: reviewPath,
     reviewFeedback: verdict.feedback,
-    round: state.round,
+    round: state.round + 1,
     stateVersion: (state.stateVersion ?? 0) + 1,
   };
 
@@ -67,8 +70,10 @@ export async function reviewNode(
     const prevFeedback = state.reviewFeedback;
     const sameSignature = prevFeedback && matchesSignature(prevFeedback, verdict.feedback);
     const sameSigCount = state.sameSigCount;
+    const newSameSigCount = sameSignature ? sameSigCount + 1 : 1;
 
-    if (sameSignature && sameSigCount + 1 >= 2) {
+    // Only ask user if we haven't exceeded the cap
+    if (sameSignature && newSameSigCount >= 2 && newSameSigCount <= MAX_SAME_SIG_QUESTIONS) {
       result.pendingQuestion = {
         questionId: generateQuestionId(),
         node: 'review',
@@ -76,10 +81,9 @@ export async function reviewNode(
         questions: [`Review keeps failing with same issue: ${verdict.feedback}. Continue retrying?`],
         askedAt: new Date().toISOString(),
       };
-      result.sameSigCount = sameSigCount + 1;
-    } else {
-      result.sameSigCount = sameSignature ? sameSigCount + 1 : 1;
     }
+    
+    result.sameSigCount = newSameSigCount;
   }
 
   await client.session.delete({ sessionID: sessionId });

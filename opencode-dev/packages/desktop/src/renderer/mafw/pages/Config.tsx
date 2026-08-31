@@ -21,12 +21,12 @@ export function isNavKey(v: unknown): v is NavKey {
 }
 
 const NAV_ITEMS: { key: NavKey; icon: string; label: string; desc: string }[] = [
-  { key: "gateway",  icon: "⚡", label: "Gateway",  desc: "运行状态、重启与日志" },
-  { key: "plugins",  icon: "🧩", label: "Plugins",  desc: "Runtime 与媒体引擎切换" },
-  { key: "models",   icon: "🤖", label: "Models",   desc: "记忆 worker 与媒体每模态模型" },
-  { key: "usage",    icon: "📊", label: "Usage",    desc: "Token Plan 限额、余额预算、平台 Cookie" },
-  { key: "opencode", icon: "⚙️", label: "opencode", desc: "opencode 配置编辑器" },
-  { key: "mafw",     icon: "🔧", label: "MAFW",     desc: "MAFW 原始配置（高级）" },
+  { key: "gateway",  icon: "⚡", label: "Gateway",  desc: "管理 Gateway 进程状态、重启服务和查看日志" },
+  { key: "plugins",  icon: "🧩", label: "Plugins",  desc: "切换 Runtime 引擎和媒体分析引擎" },
+  { key: "models",   icon: "🤖", label: "Models",   desc: "配置记忆 worker 和媒体分析使用的 AI 模型" },
+  { key: "usage",    icon: "📊", label: "Usage",    desc: "设置 token 限额、余额预算和平台 cookie" },
+  { key: "opencode", icon: "⚙️", label: "opencode", desc: "编辑 opencode 原生配置文件" },
+  { key: "mafw",     icon: "🔧", label: "MAFW",     desc: "MAFW 原始配置文件（高级用户）" },
 ]
 
 export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey }) {
@@ -147,6 +147,19 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       showToastV2({ description: `重启失败: ${err.message}`, duration: 3000 })
     }
     setRestarting(false)
+  }
+
+  const [restartingAgent, setRestartingAgent] = createSignal(false)
+
+  const restartAgentRuntime = async () => {
+    setRestartingAgent(true)
+    try {
+      await window.api.mafw.runtime.restartAgent()
+      showToastV2({ description: "Agent 运行时重启中…", duration: 2000 })
+    } catch (err: any) {
+      showToastV2({ description: `Agent 重启失败: ${err.message}`, duration: 3000 })
+    }
+    setRestartingAgent(false)
   }
 
   // ── Plugin Switcher ──
@@ -465,6 +478,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
           )}
           <span class="mafw-config-nav-title">Settings</span>
         </div>
+        <div class="mafw-config-nav-desc" style={{ "padding": "0 16px 12px", "font-size": 11, "color": "var(--text-4)", "line-height": 1.4 }}>
+          配置 Gateway、插件、模型和用量
+        </div>
         <div class="mafw-config-nav-list">
           <For each={NAV_ITEMS}>
             {(item) => (
@@ -507,10 +523,16 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   {gwStateText()}
                 </span>
               </div>
-              <div class="mafw-config-section-body">
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  Gateway 进程管理。查看连接状态、重启服务、获取日志路径。
+                </div>
                 <div class="mafw-config-actions-row">
                   <ButtonV2 variant="outline" size="small" onClick={restartGateway} disabled={restarting()}>
                     {restarting() ? "重启中…" : "Restart Gateway"}
+                  </ButtonV2>
+                  <ButtonV2 variant="outline" size="small" onClick={restartAgentRuntime} disabled={restartingAgent()}>
+                    {restartingAgent() ? "重启中…" : "重启 Agent 运行时"}
                   </ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={() => gwStatus()?.url && copyText(gwStatus().url, "URL")} disabled={!gwStatus()?.url}>
                     Copy URL
@@ -532,7 +554,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🧩</span>
                 <span class="mafw-config-section-title">Runtime &amp; Media</span>
               </div>
-              <div class="mafw-config-section-body">
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  切换运行时引擎和媒体分析引擎。Runtime 控制 AI 模型调用方式，Media 控制图片/视频/音频分析引擎。
+                </div>
                 {rtEnvOverride() && (
                   <div class="mafw-config-env-warning">
                     ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置
@@ -596,7 +621,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🤖</span>
                 <span class="mafw-config-section-title">模型配置</span>
               </div>
-              <div class="mafw-config-section-body">
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  配置记忆 worker 和媒体分析使用的 AI 模型。记忆 worker 负责压缩和反思，媒体模型负责多模态分析。
+                </div>
                 {modelError() ? (
                   <div class="mafw-config-error-row">
                     <span>加载失败: {modelError()}</span>
@@ -655,6 +683,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">📊</span>
                 <span class="mafw-config-section-title">用量配置</span>
               </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  配置 token 限额、余额预算和平台 cookie，用于追踪和管理 AI 用量。
+                </div>
               <div class="mafw-config-section-body">
                 {usageLoading() ? (
                   <div class="mafw-config-inline-loading">
@@ -663,7 +695,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   <div class="mafw-usage-config-grid">
                     {/* Token Plan 限额 */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">Token Plan 限额 (5h/7d/month)</label>
+                      <label class="mafw-config-label">Token Plan 限额</label>
+                      <span class="mafw-config-hint">设置各平台的 token 使用限额（5小时/7天/月）</span>
                       <div class="mafw-config-usage-rows">
                         <Show when={Object.keys(usageLimits()).length > 0} fallback={
                           <div class="mafw-config-hint">无 token plan 配置</div>
@@ -696,7 +729,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
                     {/* API 余额预算 */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">API 余额预算 (budget)</label>
+                      <label class="mafw-config-label">API 余额预算</label>
+                      <span class="mafw-config-hint">设置各平台的余额预算阈值，低于阈值时会收到提醒</span>
                       <div class="mafw-config-usage-rows">
                         <For each={Object.keys(usageBudgets())}>
                           {(provider: string) => (
@@ -734,7 +768,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
                     {/* 平台 Cookie */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">平台 Cookie (用量查询)</label>
+                      <label class="mafw-config-label">平台 Cookie</label>
+                      <span class="mafw-config-hint">登录各平台后获取的 session cookie，用于查询用量数据</span>
                       <div class="mafw-config-usage-rows">
                         <Show when={Object.keys(usageCookies()).length > 0} fallback={
                           <div class="mafw-config-hint">无平台 cookie，可点击下方添加（如 commandcode）</div>
@@ -776,7 +811,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
                     {/* 平台插件 */}
                     <div class="mafw-config-field-group">
-                      <label class="mafw-config-label">平台插件</label>
+                      <label class="mafw-config-label">用量插件</label>
+                      <span class="mafw-config-hint">自定义用量查询插件，放置在插件目录中</span>
                       <div class="mafw-config-usage-rows">
                         <Show when={usagePluginState().length > 0} fallback={
                           <div class="mafw-config-hint">无插件</div>
@@ -826,7 +862,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">⚙️</span>
                 <span class="mafw-config-section-title">opencode 配置</span>
               </div>
-              <div class="mafw-config-section-body">
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  opencode 原生配置编辑器。修改后可能需要重启 Gateway 生效。
+                </div>
                 {ocLoading() ? (
                   <div class="mafw-config-inline-loading">
                     <LoaderV2 width={16} height={16} /> Loading...
@@ -877,7 +916,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <span class="mafw-config-section-icon">🔧</span>
                 <span class="mafw-config-section-title">MAFW 原始配置</span>
               </div>
-              <div class="mafw-config-section-body">
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  MAFW 原始配置文件编辑。高级用户使用，修改前请了解配置项含义。
+                </div>
                 {loading() ? (
                   <div class="mafw-config-inline-loading">
                     <LoaderV2 width={16} height={16} /> Loading...

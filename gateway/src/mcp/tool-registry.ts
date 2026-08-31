@@ -501,6 +501,14 @@ const DEFINITIONS: ToolDefinition[] = [
       required: ["direction"],
     },
   },
+  {
+    name: "mafw_restart_agent",
+    description: "Restart the agent runtime (opencode serve). This will interrupt any in-flight prompts. Only works when the runtime supports agent process management (agentProcessApi=true).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
 ];
 
 import { handleCreateGoal } from "./handlers/create-goal";
@@ -532,6 +540,7 @@ import { handleDesktopGetState } from "./handlers/desktop-get-state";
 import { handleDesktopClick } from "./handlers/desktop-click";
 import { handleDesktopType } from "./handlers/desktop-type";
 import { handleDesktopScroll } from "./handlers/desktop-scroll";
+import { handleRestartAgent } from "./handlers/restart-agent";
 import { handleManagerSetGoal } from "./handlers/manager-set-goal";
 import { handleManagerGetGoalStatus } from "./handlers/manager-get-goal-status";
 import { handleManagerListGoals } from "./handlers/manager-list-goals";
@@ -573,6 +582,7 @@ export function createToolRegistry(): ToolRegistry {
       mafw_desktop_click: handleDesktopClick,
       mafw_desktop_type: handleDesktopType,
       mafw_desktop_scroll: handleDesktopScroll,
+      mafw_restart_agent: handleRestartAgent,
       mafw_set_goal: handleManagerSetGoal,
       mafw_get_goal_status: handleManagerGetGoalStatus,
       mafw_list_goals: handleManagerListGoals,

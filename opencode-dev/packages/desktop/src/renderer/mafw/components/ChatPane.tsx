@@ -1707,9 +1707,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <For each={voiceRepliesForTurn(msg.id)}>
                   {(vr) => (
                     <div class="mafw-turn-audio">
-                      <audio controls preload="auto" src={`${props.gatewayUrl.replace(/\/+$/, "")}/a2a/artifacts/${vr.artifactId}`}>
-                        您的浏览器不支持音频播放。
-                      </audio>
+                      <AudioReply
+                        text={`[语音回复 art:${vr.artifactId}${vr.voice ? ` 音色:${vr.voice}` : ''}]`}
+                        gatewayUrl={props.gatewayUrl || 'http://127.0.0.1:3000'}
+                      />
                     </div>
                   )}
                 </For>

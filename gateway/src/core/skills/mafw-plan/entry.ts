@@ -10,6 +10,7 @@ import { MemoryIndexManager } from '../../compression/memory-index';
 import { ParametricStore } from '../../memory/store';
 import { DeltaInjector } from '../../memory/injector';
 import { Delta } from '../../types/parametric';
+import { buildPlanPrompt } from '../../tools/run-plan';
 
 /**
  * mafw-plan Skill Entry —Plan Agent锛堢嫭绔?Session锛?
@@ -133,53 +134,7 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   // hook 'session-ending' 浼氬仛鍏滃簳妫€鏌ワ紝浣嗘甯告儏鍐典笅 state 宸叉洿鏂?
 }
 
-// 鈹€鈹€ 杈呭姪鍑芥暟 鈹€鈹€
 
-function buildPlanPrompt(options: {
-  goal: string;
-  lessons: any[];
-  deltas: Delta[];
-  handoff: any | null;
-  loopNum: number;
-}): string {
-  const { goal, lessons, deltas, handoff, loopNum } = options;
-
-  let prompt = `# Plan Agent —Loop ${loopNum}\n\n`;
-  prompt += `## Goal Charter\n\n${goal}\n\n`;
-
-  if (handoff) {
-    prompt += `## Handoff from Loop ${loopNum - 1}\n\n${handoff.summary}\n\n`;
-  }
-
-  if (lessons.length > 0) {
-    prompt += `## Lessons Learned (L2)\n\n`;
-    for (const lesson of lessons) {
-      prompt += `- ${lesson}\n`;
-    }
-    prompt += '\n';
-  }
-
-  if (deltas.length > 0) {
-    prompt += `## Parametric Constraints (L3)\n\n`;
-    for (const delta of deltas) {
-      if (delta.type === 'constraint') {
-        prompt += `- ${delta.type}: ${(delta as any).rule}\n`;
-      } else if (delta.type === 'prompt') {
-        prompt += `- ${delta.type}: ${(delta as any).prompt_delta}\n`;
-      } else if (delta.type === 'pattern') {
-        prompt += `- ${delta.type}: ${(delta as any).pattern_template}\n`;
-      }
-    }
-    prompt += '\n';
-  }
-
-  prompt += `## Instructions\n\n`;
-  prompt += `Generate a detailed execution plan with waves and tasks.\n`;
-  prompt += `Output format: JSON with "waves" and "tasks" arrays.\n`;
-  prompt += `Each task must have: id, description, affected_files, acceptance_criteria.\n`;
-
-  return prompt;
-}
 
 function parsePlanResponse(content: string): { waves: any[]; tasks: any[] } {
   try {

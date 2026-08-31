@@ -2,12 +2,32 @@
 import { config } from '../config';
 import { buildExecutionGraph, FileCheckpointer } from '../core/langgraph';
 import { LoopStateType } from '../core/langgraph/loop-state';
+import { LoopMonitor } from '../loop-monitor';
 
 export class GraphRunner {
+  private loopMonitor: LoopMonitor | null = null;
+
   constructor(
     private projectDir: string,
     private mafwDir: string,
-  ) {}
+  ) {
+    // Initialize loop monitor for stuck loop detection
+    const statusPath = require('path').join(mafwDir, 'status.md');
+    this.loopMonitor = new LoopMonitor(statusPath);
+  }
+
+  /**
+   * Check if the loop is stuck (no updates for stuckLoopTimeout ms).
+   * Returns true if stuck and should be intervened.
+   */
+  isLoopStuck(): boolean {
+    if (!this.loopMonitor) return false;
+    try {
+      return this.loopMonitor.isStuck(config.timeouts.stuckLoopTimeout);
+    } catch {
+      return false;
+    }
+  }
 
   async run(
     goalId: string,
@@ -36,6 +56,12 @@ export class GraphRunner {
     });
 
     for await (const event of stream as any) {
+      // Check for stuck loop before processing event
+      if (this.isLoopStuck()) {
+        log.warn(`[GraphRunner] Loop ${goalId} appears stuck (no updates for ${config.timeouts.stuckLoopTimeout}ms)`);
+        // Continue processing but log warning - actual intervention is done by caller
+      }
+
       const nodeName = event.name || event.metadata?.name;
       const nodeOutput = event.data?.output || event;
       if (nodeName && nodeOutput?.phase) {

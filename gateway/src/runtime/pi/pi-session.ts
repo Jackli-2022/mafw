@@ -30,14 +30,21 @@ export class PiSessionRegistry {
     this.policy = opts.policy;
   }
 
-  async create(cwd: string, createOpts: any): Promise<{ id: string }> {
+  async create(cwd: string, createOpts: any, agentExtensions: Array<{ name: string; factory: (pi: any) => void }> = []): Promise<{ id: string }> {
     const id = `pi_${randomUUID().slice(0, 8)}`;
     const bridge = new ApprovalBridge();
     this.approvalBridges.set(id, bridge);
 
-    const extension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
+    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
+    // Combine approval extension with agent-specific extensions
+    // These will be passed to createAgentSession via extensionFactories
+    const allExtensions = [
+      { name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) },
+      ...agentExtensions,
+    ];
+
     try {
-      const { session } = await this.deps.createSession({ cwd, ...createOpts, extensions: [extension] });
+      const { session } = await this.deps.createSession({ cwd, ...createOpts, extensionFactories: allExtensions });
       this.sessions.set(id, session);
       this.bySession.set(session, id);
       this.lastUsed.set(id, Date.now());

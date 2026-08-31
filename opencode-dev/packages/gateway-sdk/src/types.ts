@@ -348,6 +348,8 @@ export interface RuntimeNamespace {
     active: { name: string; capabilities: Record<string, boolean> }
     envOverride: boolean
   }>
+  /** Restart the agent runtime (opencode serve). Interrupts in-flight prompts. */
+  restartAgent(): Promise<{ success: boolean; mode: string }>
 }
 
 export interface ConfigNamespace {

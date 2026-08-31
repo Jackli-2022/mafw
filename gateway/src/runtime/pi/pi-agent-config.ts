@@ -1,25 +1,39 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import type { AgentDefinition } from '../agent-definition';
+import type { AgentDefinition, AgentPermissions } from '../agent-definition';
 
 /**
  * pi agent configuration module
- * 
+ *
  * Translates gateway AgentDefinition into pi's format:
  * - System prompt → ~/.pi/agent/prompts/<name>.md
- * - Permissions → extension that intercepts tool_call events
+ * - Permissions → extension that intercepts tool_call events (pi ExtensionAPI format)
+ * - Metadata → ~/.pi/agent/metadata/<name>.json (for reliable round-trip)
+ *
+ * Extensions are loaded at session creation time via `loadAgentExtensions()` and
+ * passed to `createAgentSession()` via `resourceLoader.extensionFactories`.
  */
 
 export interface PiAgentConfig {
   agentDir?: string; // defaults to ~/.pi/agent/
 }
 
+/** Stored metadata for round-trip fidelity */
+interface AgentMetadata {
+  description: string;
+  mode?: string;
+  model?: string;
+  temperature?: number;
+  color?: string;
+  permissions: AgentPermissions;
+}
+
 /**
  * Get the pi agent directory
  */
-function getAgentDir(config?: PiAgentConfig): string {
+export function getAgentDir(config?: PiAgentConfig): string {
   if (config?.agentDir) return config.agentDir;
-  
+
   // Try to import pi's getAgentDir, fallback to default
   try {
     const piConfig = require('@earendil-works/pi-coding-agent/dist/config');
@@ -32,15 +46,22 @@ function getAgentDir(config?: PiAgentConfig): string {
 /**
  * Get the prompts directory
  */
-function getPromptsDir(config?: PiAgentConfig): string {
+export function getPromptsDir(config?: PiAgentConfig): string {
   return path.join(getAgentDir(config), 'prompts');
 }
 
 /**
  * Get the extensions directory
  */
-function getExtensionsDir(config?: PiAgentConfig): string {
+export function getExtensionsDir(config?: PiAgentConfig): string {
   return path.join(getAgentDir(config), 'extensions');
+}
+
+/**
+ * Get the metadata directory
+ */
+function getMetadataDir(config?: PiAgentConfig): string {
+  return path.join(getAgentDir(config), 'metadata');
 }
 
 /**
@@ -49,19 +70,33 @@ function getExtensionsDir(config?: PiAgentConfig): string {
 export async function install(name: string, definition: AgentDefinition, config?: PiAgentConfig): Promise<void> {
   const promptsDir = getPromptsDir(config);
   const extensionsDir = getExtensionsDir(config);
-  
+  const metadataDir = getMetadataDir(config);
+
   // Ensure directories exist
   fs.mkdirSync(promptsDir, { recursive: true });
   fs.mkdirSync(extensionsDir, { recursive: true });
-  
+  fs.mkdirSync(metadataDir, { recursive: true });
+
   // Write system prompt
   const promptPath = path.join(promptsDir, `${name}.md`);
   fs.writeFileSync(promptPath, definition.systemPrompt, 'utf-8');
-  
-  // Write permissions extension
+
+  // Write permissions extension (pi ExtensionAPI format)
   const extensionPath = path.join(extensionsDir, `${name}-permissions.js`);
   const extensionCode = generatePermissionsExtension(name, definition.permissions);
   fs.writeFileSync(extensionPath, extensionCode, 'utf-8');
+
+  // Write metadata for reliable round-trip
+  const metadataPath = path.join(metadataDir, `${name}.json`);
+  const metadata: AgentMetadata = {
+    description: definition.description,
+    mode: definition.mode,
+    model: definition.model,
+    temperature: definition.temperature,
+    color: definition.color,
+    permissions: definition.permissions,
+  };
+  fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
 }
 
 /**
@@ -70,86 +105,146 @@ export async function install(name: string, definition: AgentDefinition, config?
 export async function remove(name: string, config?: PiAgentConfig): Promise<void> {
   const promptsDir = getPromptsDir(config);
   const extensionsDir = getExtensionsDir(config);
-  
+  const metadataDir = getMetadataDir(config);
+
   const promptPath = path.join(promptsDir, `${name}.md`);
   const extensionPath = path.join(extensionsDir, `${name}-permissions.js`);
-  
+  const metadataPath = path.join(metadataDir, `${name}.json`);
+
   if (fs.existsSync(promptPath)) {
     fs.unlinkSync(promptPath);
   }
-  
+
   if (fs.existsSync(extensionPath)) {
     fs.unlinkSync(extensionPath);
+  }
+
+  if (fs.existsSync(metadataPath)) {
+    fs.unlinkSync(metadataPath);
   }
 }
 
 /**
- * Generate a pi extension that enforces permissions
+ * Sanitize a name for use as a JavaScript function name
  */
-function generatePermissionsExtension(name: string, permissions: AgentDefinition['permissions']): string {
+function sanitizeFunctionName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+/**
+ * Generate a pi extension that enforces permissions.
+ *
+ * Format: `export default function(pi) { pi.on('tool_call', handler) }`
+ * This matches pi's ExtensionFactory type: (pi: ExtensionAPI) => void | Promise<void>
+ */
+function generatePermissionsExtension(name: string, permissions: AgentPermissions): string {
   const editRule = permissions.edit || 'allow';
   const bashRule = permissions.bash || 'allow';
-  
-  // Build tool rules map
+
+  // Build tool rules map (specific tool overrides)
   const toolRules: Record<string, string> = {};
   if (permissions.tools) {
     Object.assign(toolRules, permissions.tools);
   }
-  if (permissions.task) {
-    // task permissions are for subagents, not tools
-    // We'll handle them separately if needed
-  }
-  
-  return `// Auto-generated permissions extension for agent: ${name}
-// Generated by MAFW gateway
 
-export default {
-  name: '${name}-permissions',
-  
-  onToolCall(event, ctx) {
-    const toolName = event.toolName;
-    const toolRules = ${JSON.stringify(toolRules, null, 2)};
-    
-    // Check specific tool rules first
-    if (toolRules[toolName]) {
-      const rule = toolRules[toolName];
-      if (rule === 'deny') {
-        return { block: true, reason: 'denied by agent permissions' };
-      }
-      if (rule === 'ask') {
-        // For 'ask', we'd need to prompt the user
-        // For now, treat as deny
-        return { block: true, reason: 'requires approval (not implemented)' };
-      }
-      // 'allow' - continue
-    }
-    
-    // Check category rules
-    if (toolName === 'edit' || toolName === 'write') {
-      const rule = '${editRule}';
-      if (rule === 'deny') {
-        return { block: true, reason: 'edit/write denied by agent permissions' };
-      }
-      if (rule === 'ask') {
-        return { block: true, reason: 'edit/write requires approval (not implemented)' };
-      }
-    }
-    
-    if (toolName === 'bash') {
-      const rule = '${bashRule}';
-      if (rule === 'deny') {
-        return { block: true, reason: 'bash denied by agent permissions' };
-      }
-      if (rule === 'ask') {
-        return { block: true, reason: 'bash requires approval (not implemented)' };
-      }
-    }
-    
-    // Default: allow
-    return { block: false };
+  const funcName = sanitizeFunctionName(name);
+  const toolRulesJson = JSON.stringify(toolRules, null, 2);
+  const editRuleJson = JSON.stringify(editRule);
+  const bashRuleJson = JSON.stringify(bashRule);
+
+  const lines: string[] = [
+    `// Auto-generated permissions extension for agent: ${name}`,
+    `// Generated by MAFW gateway — pi ExtensionAPI format`,
+    `// ExtensionFactory: (pi: ExtensionAPI) => void`,
+    ``,
+    `export default function ${funcName}_permissions(pi) {`,
+    `  const toolRules = ${toolRulesJson};`,
+    ``,
+    `  pi.on('tool_call', async (event, ctx) => {`,
+    `    const toolName = event.toolName;`,
+    ``,
+    `    // Check specific tool rules first`,
+    `    if (toolRules[toolName]) {`,
+    `      const rule = toolRules[toolName];`,
+    `      if (rule === 'deny') {`,
+    `        return { block: true, reason: 'denied by agent permissions' };`,
+    `      }`,
+    `      if (rule === 'ask') {`,
+    `        return { block: true, reason: 'requires approval (not implemented)' };`,
+    `      }`,
+    `      // 'allow' — fall through to category checks`,
+    `    }`,
+    ``,
+    `    // Check category rules`,
+    `    if (toolName === 'edit' || toolName === 'write') {`,
+    `      const rule = ${editRuleJson};`,
+    `      if (rule === 'deny') {`,
+    `        return { block: true, reason: 'edit/write denied by agent permissions' };`,
+    `      }`,
+    `      if (rule === 'ask') {`,
+    `        return { block: true, reason: 'edit/write requires approval (not implemented)' };`,
+    `      }`,
+    `    }`,
+    ``,
+    `    if (toolName === 'bash') {`,
+    `      const rule = ${bashRuleJson};`,
+    `      if (rule === 'deny') {`,
+    `        return { block: true, reason: 'bash denied by agent permissions' };`,
+    `      }`,
+    `      if (rule === 'ask') {`,
+    `        return { block: true, reason: 'bash requires approval (not implemented)' };`,
+    `      }`,
+    `    }`,
+    ``,
+    `    // Default: allow`,
+    `    return { block: false };`,
+    `  });`,
+    `}`,
+    ``,
+  ];
+
+  return lines.join('\n');
+}
+
+/**
+ * Load agent-specific permission extensions from disk.
+ * Returns pi InlineExtension objects suitable for `resourceLoader.extensionFactories`.
+ *
+ * @param agentName - Agent name (e.g., 'manager')
+ * @param config - Optional pi agent config
+ * @returns Array of InlineExtension objects for createAgentSession
+ */
+export async function loadAgentExtensions(
+  agentName: string,
+  config?: PiAgentConfig,
+): Promise<Array<{ name: string; factory: (pi: any) => void }>> {
+  const extensionsDir = getExtensionsDir(config);
+  const extensionPath = path.join(extensionsDir, `${agentName}-permissions.js`);
+
+  if (!fs.existsSync(extensionPath)) {
+    return [];
   }
-};
-`;
+
+  try {
+    // Dynamic import for ESM extension file
+    // Use file:// URL for Windows compatibility
+    const fileUrl = `file:///${extensionPath.replace(/\\/g, '/')}`;
+    const mod = await import(fileUrl);
+    const factory = mod.default;
+
+    if (typeof factory !== 'function') {
+      console.warn(`[PiAgentConfig] Extension ${agentName} does not export a default function`);
+      return [];
+    }
+
+    return [{
+      name: `${agentName}-permissions`,
+      factory,
+    }];
+  } catch (err: any) {
+    console.warn(`[PiAgentConfig] Failed to load extension ${agentName}: ${err.message}`);
+    return [];
+  }
 }
 
 /**
@@ -157,11 +252,11 @@ export default {
  */
 export async function list(config?: PiAgentConfig): Promise<string[]> {
   const promptsDir = getPromptsDir(config);
-  
+
   if (!fs.existsSync(promptsDir)) {
     return [];
   }
-  
+
   const files = fs.readdirSync(promptsDir);
   return files
     .filter(f => f.endsWith('.md'))
@@ -169,61 +264,49 @@ export async function list(config?: PiAgentConfig): Promise<string[]> {
 }
 
 /**
- * Get an agent definition
+ * Get an agent definition (reads from metadata + prompt files for reliable round-trip)
  */
 export async function get(name: string, config?: PiAgentConfig): Promise<AgentDefinition | null> {
   const promptsDir = getPromptsDir(config);
   const promptPath = path.join(promptsDir, `${name}.md`);
-  
+
   if (!fs.existsSync(promptPath)) {
     return null;
   }
-  
+
   const systemPrompt = fs.readFileSync(promptPath, 'utf-8');
-  
-  // Try to load permissions from extension
-  const extensionsDir = getExtensionsDir(config);
-  const extensionPath = path.join(extensionsDir, `${name}-permissions.js`);
-  
-  let permissions: AgentDefinition['permissions'] = {
-    edit: 'allow',
-    bash: 'allow',
-    tools: {},
-    task: {}
-  };
-  
-  if (fs.existsSync(extensionPath)) {
-    // Parse the extension to extract permissions
-    // This is a simplified parser - in production, we'd want to be more robust
-    const extensionCode = fs.readFileSync(extensionPath, 'utf-8');
-    
-    // Extract edit rule
-    const editMatch = extensionCode.match(/const rule = '([^']+)';\s+if \(rule === 'deny'\) \{\s+return \{ block: true, reason: 'edit\/write denied/);
-    if (editMatch) {
-      permissions.edit = editMatch[1] as any;
-    }
-    
-    // Extract bash rule
-    const bashMatch = extensionCode.match(/const rule = '([^']+)';\s+if \(rule === 'deny'\) \{\s+return \{ block: true, reason: 'bash denied/);
-    if (bashMatch) {
-      permissions.bash = bashMatch[1] as any;
-    }
-    
-    // Extract tool rules
-    const toolRulesMatch = extensionCode.match(/const toolRules = ({[^}]+});/);
-    if (toolRulesMatch) {
-      try {
-        permissions.tools = JSON.parse(toolRulesMatch[1]);
-      } catch {
-        // Ignore parse errors
-      }
+
+  // Read metadata for round-trip fidelity
+  const metadataDir = getMetadataDir(config);
+  const metadataPath = path.join(metadataDir, `${name}.json`);
+
+  if (fs.existsSync(metadataPath)) {
+    try {
+      const metadata: AgentMetadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
+      return {
+        description: metadata.description,
+        mode: (metadata.mode as any) || 'all',
+        model: metadata.model,
+        temperature: metadata.temperature,
+        color: metadata.color,
+        systemPrompt,
+        permissions: metadata.permissions,
+      };
+    } catch (err: any) {
+      console.warn(`[PiAgentConfig] Failed to parse metadata for ${name}: ${err.message}`);
     }
   }
-  
+
+  // Fallback: return basic definition without metadata
   return {
     description: `Agent: ${name}`,
     mode: 'all',
     systemPrompt,
-    permissions
+    permissions: {
+      edit: 'allow',
+      bash: 'allow',
+      tools: {},
+      task: {},
+    },
   };
 }

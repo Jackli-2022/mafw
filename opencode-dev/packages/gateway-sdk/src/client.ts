@@ -329,6 +329,19 @@ export class MafwClient implements IMafwClient {
       }
       return res.json()
     },
+
+    /** Restart the agent runtime (opencode serve). */
+    restartAgent: async (): Promise<{ success: boolean; mode: string }> => {
+      const res = await fetch(`${this.baseUrl}/api/runtime/restart-agent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Agent restart failed: ${res.status}`)
+      }
+      return res.json()
+    },
   }
 
   // ── Config ──

@@ -60,17 +60,20 @@ RSI 设计规格文档（Phase 1/2/3）**设计质量良好但未达实施就绪
 ### ✅ 已正确实现
 1. `goal_outcomes` 表结构（gateway-db.ts:174）
 2. `goal_sessions` 表结构（gateway-db.ts:196）
-3. `evolution_proposals` 表结构（gateway-db.ts:206，但缺 `requires` 字段）
+3. `evolution_proposals` 表结构（gateway-db.ts:206，含 `requires` 字段）
 4. `recordGoalOutcome` 聚合逻辑（outcome-recorder.ts:82）
 5. `getActivePolicy` 读取逻辑（policy.ts:16）
 6. 注册表基础结构（registry.ts）
+7. **取消路径 outcome 接线**（已修复 - 2026-08-30）
+8. **policySnapshot 快照时机**（已修复 - 2026-08-30）
+9. **failure_signature 工具名**（已修复 - 2026-08-30）
+10. **trajectory prune 豁免**（已实现）
 
-### ❌ 需修正
-1. **取消路径**：`POST /control` ABORT 分支未调用 `recordGoalOutcome`
-2. **快照时机**：`onGoalCreated` 未写入 `policySnapshot` 到 StateFile
-3. **签名格式**：`buildFailureSignature` 缺少工具名参数
-4. **字段缺失**：`evolution_proposals` 表无 `requires` 列
-5. **调用时机**：`recordGoalOutcome` 在 `archiveGoal` 内部调用
+### ❌ 需修正（Phase 2）
+1. **GoalWorktreeManager 泛化**：支持 `evolve/{proposalId}` 分支
+2. **验证窗口统计方法**：定义具体统计检验方法
+3. **evolver cron guard 隔离**：实现 per-action 独立锁
+4. **回滚状态机**：实现完整回滚流程
 
 ---
 

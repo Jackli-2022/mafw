@@ -146,6 +146,7 @@ export function createMafwApi(): MafwAPI {
     runtime: {
       get: () => invoke("runtime", "get"),
       switch: (plugin: string) => invoke("runtime", "switch", plugin),
+      restartAgent: () => invoke("runtime", "restartAgent"),
     },
 
     opencodeConfig: {

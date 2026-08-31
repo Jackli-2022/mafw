@@ -250,13 +250,18 @@ npx jest tests/unit/gateway/registry.test.ts
 
 ---
 
-## Priority Order
+## Status: ALL FIXED ✅
 
-1. **B1** (Cancel path) - 1 hour
-2. **M2** (policySnapshot) - 1 hour  
-3. **M11** (recordOutcome timing) - 2 hours
-4. **M5** (failure_signature) - 2 hours
-5. **M6** (requires field) - 0.5 hours
-6. **M1** (delete drift copies) - 0.5 hours
+**Applied**: 2026-08-30
+**Tests**: 210/210 passing
+**Build**: Successful
 
-Total estimated time: **7 hours** for all critical fixes.
+### Fixed Items
+1. **B1** (Cancel path) - ✅ Fixed
+2. **M2** (policySnapshot) - ✅ Fixed  
+3. **M11** (recordOutcome timing) - ✅ Already correct
+4. **M5** (failure_signature) - ✅ Fixed
+5. **M6** (requires field) - ✅ Already implemented
+6. **M1** (delete drift copies) - ✅ Fixed
+
+See `2026-08-27-rsi-fixes-applied.md` for details.

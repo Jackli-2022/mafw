@@ -11,6 +11,7 @@ import { log } from './core/utils/logger';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { buildExecutionGraph, FileCheckpointer, planNode, executeNode, reviewNode, syncToDashboard } from './core/langgraph';
 import { getActivePolicy } from './orchestration/policy';
+import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { ChatSessionManager } from "./chat/chat-sessions";
@@ -281,6 +282,20 @@ class MafwScheduler {
 
   get serveRunning(): boolean {
     return !!this.serveInstance;
+  }
+
+  /** Check actual serve health via TCP connection, not just object existence. */
+  private async checkServeActualHealth(): Promise<boolean> {
+    try {
+      const url = `${this.serveUrl}/global/health`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(2000),
+        headers: { 'User-Agent': 'MAFW-Gateway-HealthCheck' }
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   async start() {
@@ -903,7 +918,17 @@ class MafwScheduler {
       }
     }
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
-    return createOpencodeRuntime(sdkConfig);
+    return createOpencodeRuntime({
+      ...sdkConfig,
+      restartServe: async () => {
+        killProcessOnPort(config.server.servePort);
+        if (this.serveInstance) {
+          this.serveInstance.close();
+          this.serveInstance = undefined;
+        }
+        await this.startServe();
+      },
+    });
   }
 
   /** 插件 ctx 的凭据来源：当前 opencode runtime 的 credentials（若实现），否则 undefined。 */
@@ -1499,6 +1524,11 @@ class MafwScheduler {
       ledger: this.ledger,
       mafwDir,
       desktop: desktopClient || undefined,
+      restartAgent: async () => {
+        if (this.serveRecovering) throw new Error('Agent restart already in progress');
+        await this.recoverServe();
+        return { success: true, mode: 'owned-respawn' };
+      },
     };
 
     const toolRegistry = createToolRegistry();
@@ -1643,17 +1673,24 @@ class MafwScheduler {
   }
 
   // Shared recovery for owned (exit-event) and adopted (watchdog) paths.
+  // Delegates process restart to runtime.agentProcess.restart() when available,
+  // falls back to the built-in kill+respawn for backward compat.
   private async recoverServe() {
     if (this.serveRecovering || !this.running) return;
     this.serveRecovering = true;
     try {
       log.info('[Scheduler] Recovering OpenCode Serve...');
-      killProcessOnPort(config.server.servePort);
-      if (this.serveInstance) {
-        this.serveInstance.close();
-        this.serveInstance = undefined;
+      if (this.opencodeClient?.agentProcess) {
+        await this.opencodeClient.agentProcess.restart();
+      } else {
+        // Fallback for runtimes without agentProcess (legacy plugins, old config)
+        killProcessOnPort(config.server.servePort);
+        if (this.serveInstance) {
+          this.serveInstance.close();
+          this.serveInstance = undefined;
+        }
+        await this.startServe();
       }
-      await this.startServe();
       await this.subscribeToEvents();
       // Ensure the health-poll watchdog is running after a manual recovery;
       // the guard is a no-op if it was already active.
@@ -2833,9 +2870,31 @@ class MafwScheduler {
                     await this.destroyAllSessions(control.goalId);
                     await this.patchState(control.goalId, { nextAction: 'FAILED' });
                     const state = this.activeGoals.get(control.goalId);
+                    // Find projectDir for this goal
+                    let projectDir: string | null = null;
+                    for (const [pDir, info] of this.registeredProjects) {
+                      if (fs.existsSync(path.join(info.mafwDir, 'state', `${control.goalId}.json`))) {
+                        projectDir = pDir;
+                        break;
+                      }
+                    }
+                    if (projectDir) {
+                      const { recordGoalOutcome } = await import('./orchestration/outcome-recorder.js');
+                      recordGoalOutcome(this.getGatewayDb(), {
+                        goalId: control.goalId,
+                        verdict: 'CANCELLED',
+                        rounds: state?.loop ?? 0,
+                        lastError: 'User cancelled',
+                        reviewFeedback: null,
+                        projectDir,
+                        mafwDir: path.join(projectDir, '.mafw'),
+                        projectId: projectDir,
+                      });
+                    }
                     await this.archiveGoal(control.goalId, {
                       verdict: 'CANCELLED',
                       rounds: state?.loop ?? 0,
+                      lastError: 'User cancelled',
                     });
                   }
                   break;
@@ -2985,12 +3044,15 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/devices(?:\?|$)/) && req.method === 'POST') {
           try {
             const body = JSON.parse(await readBody(req));
-            const { id, fcmToken, platform, apiTokenHash } = body;
-            if (!id || !fcmToken || !platform || !apiTokenHash) {
+            const { id, fcmToken, platform, token } = body;
+            if (!id || !fcmToken || !platform || !token) {
               res.writeHead(400);
-              res.end(JSON.stringify({ error: 'id, fcmToken, platform, apiTokenHash required' }));
+              res.end(JSON.stringify({ error: 'id, fcmToken, platform, token required' }));
               return;
             }
+            // SECURITY: Compute apiTokenHash server-side from the token
+            const { createHash } = require('crypto');
+            const apiTokenHash = createHash('sha256').update(token).digest('hex').slice(0, 16);
             const entry = this.pushGateway?.registerDevice({ id, fcmToken, platform, apiTokenHash });
             res.writeHead(200);
             res.end(JSON.stringify({ ok: true, device: entry }));
@@ -3267,11 +3329,38 @@ class MafwScheduler {
             return;
           }
           if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/switch(?:\?|$)/)) {
+            if (this.serveRecovering) {
+              res.writeHead(409, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Cannot switch runtime during agent restart' }));
+              return;
+            }
             await handleRuntimeSwitch(req, res, runtimeDeps);
             return;
           }
           if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/reload(?:\?|$)/)) {
             await handleRuntimeReload(req, res, runtimeDeps);
+            return;
+          }
+          if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/restart-agent(?:\?|$)/)) {
+            const caps = this.runtimeCaps;
+            if (!caps.agentProcessApi) {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: `Runtime '${this.runtimeName}' does not support agent process restart (agentProcessApi=false)` }));
+              return;
+            }
+            if (this.serveRecovering) {
+              res.writeHead(409, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Agent restart already in progress' }));
+              return;
+            }
+            try {
+              await this.recoverServe();
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, mode: 'owned-respawn' }));
+            } catch (err: any) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
             return;
           }
           return;
@@ -4211,11 +4300,15 @@ class MafwScheduler {
         // Allow the process to exit without waiting for the ping timer.
         if (wsPingInterval.unref) wsPingInterval.unref();
 
-        // Periodic PushGateway maintenance: prune stale online WS + expired device registrations.
+        // Periodic PushGateway maintenance: sync lastSeen, prune stale online WS + expired device registrations.
         const deviceCleanupInterval = setInterval(() => {
           // 1. Remove WS entries with no activity for 2 minutes.
           this.pushGateway?.cleanupStale(120_000);
-          // 2. Prune device-store entries not seen for 7 days (FCM token expiry hygiene).
+          // 2. Sync in-memory lastSeen to DeviceStore so active devices aren't pruned.
+          //    This bridges the gap between WS heartbeat (updates in-memory only)
+          //    and pruneDeviceStore (checks persisted lastSeen).
+          this.pushGateway?.syncLastSeenToDeviceStore();
+          // 3. Prune device-store entries not seen for 7 days (FCM token expiry hygiene).
           const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
           const pruned = this.pushGateway?.pruneDeviceStore(cutoff);
           if (pruned && pruned.length > 0) {
@@ -4808,14 +4901,12 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     };
     const client = this.createInProcessClient();
     const onSessionCreated = (info: { goalId: string; sessionId: string; phase: string; loop: number }) => {
-      try {
-        this.getGatewayDb().addGoalSession({
-          goal_id: info.goalId,
-          session_id: info.sessionId,
-          phase: info.phase,
-          loop: info.loop,
-        });
-      } catch { /* fail-open */ }
+      recordSessionInDb(this.getGatewayDb(), {
+        goalId: info.goalId,
+        sessionId: info.sessionId,
+        phase: info.phase,
+        loop: info.loop,
+      });
     };
     return {
       plan: async (s: any) => planNode(s, {
@@ -4886,6 +4977,24 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const cp = new FileCheckpointer(mafwDir);
     const graph = buildExecutionGraph(this.buildNodeOptions(mafwDir));
     graph.checkpointer = cp;
+    
+    // Write policy snapshot to state file
+    try {
+      const { getActivePolicy } = await import('./orchestration/policy.js');
+      const policy = getActivePolicy(mafwDir);
+      const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
+      if (fs.existsSync(statePath)) {
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        state.policySnapshot = {
+          version: policy.version,
+          proposalId: policy.proposalId,
+        };
+        fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
+      }
+    } catch (err: any) {
+      log.warn(`[Scheduler] Failed to write policySnapshot for ${goalId}: ${err.message}`);
+    }
+    
     const initialState: any = {
       goalId, projectDir, mafwDir,
       round: config.loop.initialRound, maxRounds: config.loop.maxRounds,

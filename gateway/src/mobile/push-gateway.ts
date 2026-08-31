@@ -81,6 +81,17 @@ export class PushGateway {
     return removed;
   }
 
+  /**
+   * Sync in-memory lastSeen to DeviceStore for all active devices.
+   * Call periodically (e.g., every 60s) to prevent pruneDeviceStore()
+   * from evicting devices that are actively connected via WS heartbeat.
+   */
+  syncLastSeenToDeviceStore(): void {
+    for (const [id] of this.onlineDevices) {
+      this.store.touch(id);
+    }
+  }
+
   async onBroadcast(event: BroadcastEvent): Promise<void> {
     const now = Date.now();
 

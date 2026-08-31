@@ -237,6 +237,11 @@ export interface OpencodeRuntimeConfig {
   baseUrl: string;
   directory?: string;
   headers?: Record<string, string>;
+  /**
+   * Gateway-provided callback to kill the serve process on port and respawn it.
+   * Used by agentProcess.restart() — only available for owned serves.
+   */
+  restartServe?: () => Promise<void>;
 }
 
 export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Promise<AgentRuntime> {
@@ -276,5 +281,16 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
       log.info(`[ManagerAgent] ${existed ? 'updated' : 'wrote'} ${filePath}`);
     },
   };
+
+  // agentProcess.restart(): only for non-external owned runtimes with the callback.
+  if (config.restartServe && !rt.external) {
+    rt.agentProcess = {
+      async restart(): Promise<void> {
+        log.info('[Runtime] agentProcess.restart() — killing and respawning serve');
+        await config.restartServe!();
+      },
+    };
+  }
+
   return rt;
 }

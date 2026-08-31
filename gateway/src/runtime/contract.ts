@@ -37,6 +37,8 @@ export interface RuntimeCapabilities {
   sessionStorageApi?: boolean;
   /** runtime 提供 agent 定义安装（permission guardrails 等；缺省时跳过安装 + warn） */
   agentConfigApi?: boolean;
+  /** runtime 拥有 agent 进程生命周期（Tier 1+），可提供 agentProcess.restart() 原语 */
+  agentProcessApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -49,6 +51,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     perLlmCallTransform: true,
     sessionStorageApi: true,
     agentConfigApi: true,
+    agentProcessApi: true,
   };
 }
 
@@ -157,4 +160,11 @@ export interface AgentRuntime extends RuntimeClient {
   getBaseUrl(): string;
   /** 健康探测（watchdog / adopt 判定用）；缺省时由调用方自管。 */
   healthCheck?(): Promise<boolean>;
+  /**
+   * Agent 进程重启原语（只有 runtime 自己知道如何重启自己的进程）。
+   * 不负责事件流重订——由 gateway recoverServe 编排。
+   */
+  agentProcess?: {
+    restart(): Promise<void>;
+  };
 }

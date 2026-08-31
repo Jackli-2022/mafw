@@ -153,6 +153,7 @@ export type MafwAPI = {
   runtime: {
     get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean> }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
     switch: (plugin: string) => Promise<{ success: boolean; active: { name: string; capabilities: Record<string, boolean> }; envOverride: boolean }>
+    restartAgent: () => Promise<{ success: boolean; mode: string }>
   }
 
   opencodeConfig: {

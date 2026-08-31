@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { loadState, updateState, StateFile } from '../utils/state';
+import { log } from '../utils/logger';
 
 /**
  * Simplified Phase Orchestrator — no state machine logic.
@@ -16,6 +17,14 @@ export interface PhaseTransition {
   artifacts?: Record<string, string>;
   metrics?: Record<string, number>;
   error?: string;
+}
+
+/** Info needed to record a goal-session mapping in gateway.db */
+export interface GoalSessionInfo {
+  goalId: string;
+  sessionId: string;
+  phase: string;
+  loop: number;
 }
 
 export async function transitionPhase(
@@ -64,6 +73,27 @@ export async function recordSession(
     active: true
   };
   return updateState(goalId, { sessions }, projectDir);
+}
+
+/**
+ * Record session in gateway.db goal_sessions table.
+ * Called by index.ts orchestrator bridge after recordSession writes state file.
+ * Separated to keep phase-orchestrator free of GatewayDatabase import.
+ */
+export function recordSessionInDb(
+  db: { addGoalSession(s: { goal_id: string; session_id: string; phase: string; loop: number }): void },
+  info: GoalSessionInfo
+): void {
+  try {
+    db.addGoalSession({
+      goal_id: info.goalId,
+      session_id: info.sessionId,
+      phase: info.phase,
+      loop: info.loop,
+    });
+  } catch (err: any) {
+    log.warn(`[Orchestrator] recordSessionInDb failed (non-fatal): ${err.message}`);
+  }
 }
 
 export async function updateWaveProgress(

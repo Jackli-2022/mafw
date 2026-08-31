@@ -54,6 +54,8 @@ Division of labor: your job is the FACT LAYER of this session — concrete facts
 - For technical discussions, include error codes, stack traces, or specific function names as anchors
 - For user preferences, include the dimension AND value: e.g., "pref:ui-language=chinese" AND "chinese" AND "ui-language"
 - For cross-session linking, include topic keywords that might appear in OTHER sessions about the same subject
+- For personal information the user reveals about themselves (age, location, occupation, preferences, family, habits, salary, department size), create anchors with format "user:<category>=<value>" (e.g., "user:age=27", "user:occupation=engineer", "user:dept-avg-age=29.5") — these cross-session personal anchors are critical for multi-hop comparison questions
+- When recording facts that relate to other facts (e.g., comparing values, time-based reasoning), include both the entity AND the related value in cue_anchors (e.g., cue_anchors=["user:age=27", "department", "age-comparison"]) so the memory links to related queries
 
 Before writing preference/fact memories (semantic type), ALWAYS search for similar existing memories first using mafw_search_hybrid. If you find an existing memory that covers the same fact but with an outdated value (e.g., "my car is X" → now "my car is Y"), use the supersedes field in mafw_add_memory to link the old memory ID. This ensures the old memory is demoted in search and the new one becomes authoritative. If the user explicitly retracts a fact (e.g., "I don't eat spicy food anymore"), use mafw_supersede_memory to mark the old memory as outdated without writing a replacement.
 

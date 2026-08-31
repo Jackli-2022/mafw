@@ -27,6 +27,8 @@ export interface Services {
   ledger?: SchedulerLedger;
   mafwDir?: string;
   desktop?: DesktopClient;
+  /** Gateway-provided callback for agent process restart (MCP tool). */
+  restartAgent?: () => Promise<{ success: boolean; mode: string }>;
 }
 
 export type ToolHandler = (

@@ -10,9 +10,51 @@ import { config } from '../config'
 import { log } from '../core/utils/logger'
 
 /**
+ * Detect multi-hop/comparison questions that need facts from multiple sessions.
+ * Returns sub-queries that decompose the question into independent searches.
+ */
+function decomposeMultiHopQuery(query: string): string[] {
+  const lower = query.toLowerCase();
+  const subQueries: string[] = [];
+
+  // Comparison patterns: "how much older/younger", "difference between", "compare", "vs"
+  const isComparison = /\b(how much|what is the|difference between|compare|vs\.?|older|younger|more|less|bigger|smaller|higher|lower|faster|slower|better|worse)\b/i.test(query);
+  
+  // Temporal/aggregation: "average", "total", "sum", "count", "when did"
+  const hasAggregation = /\b(average|total|sum|count|how many|how often|when did|what time|which)\b/i.test(query);
+
+  if (isComparison || hasAggregation) {
+    // Extract noun phrases as entity candidates
+    // Simple heuristic: words that are not common question words
+    const questionWords = new Set(['how', 'what', 'when', 'where', 'why', 'which', 'who', 'whom', 'whose', 'is', 'are', 'was', 'were', 'do', 'does', 'did', 'have', 'has', 'had', 'can', 'could', 'will', 'would', 'should', 'may', 'might', 'shall', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'into', 'than', 'that', 'this', 'these', 'those', 'it', 'its', 'my', 'your', 'our', 'their', 'his', 'her', 'i', 'me', 'we', 'you', 'they', 'he', 'she']);
+    
+    const words = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 2 && !questionWords.has(w));
+    
+    // Sub-query 1: personal/user info patterns
+    const userPatterns = words.filter(w => /\b(age|birthday|born|live|work|job|salary|income|family|married|single|children|kid|pet|car|house|home|school|college|university|degree|major|hobby|interest|preference|like|dislike|favorite|eat|drink|travel|visit|read|watch|listen)\b/.test(w));
+    if (userPatterns.length > 0) {
+      subQueries.push('user ' + userPatterns.join(' '));
+    }
+    
+    // Sub-query 2: entity/topic patterns  
+    const entityWords = words.filter(w => !userPatterns.includes(w));
+    if (entityWords.length > 0) {
+      subQueries.push(entityWords.join(' '));
+    }
+    
+    // Sub-query 3: the full noun phrase (without question words)
+    if (words.length >= 2) {
+      subQueries.push(words.join(' '));
+    }
+  }
+  
+  return subQueries.slice(0, 4); // Cap at 4 sub-queries
+}
+
+/**
  * Extract key entities from a query for cross-session topic linking.
  * Looks for quoted strings, camelCase/PascalCase identifiers, ALL_CAPS words,
- * and common technical terms.
+ * common technical terms, and natural language entity nouns.
  */
 function extractQueryEntities(query: string): string[] {
   const entities: string[] = [];
@@ -47,12 +89,14 @@ function extractQueryEntities(query: string): string[] {
     }
   }
   
-  // Common technical terms (lowercase, multi-char)
-  const techTerms = query.match(/\b(?:api|sdk|plugin|module|function|method|class|interface|type|enum|config|settings|database|server|client|endpoint|route|handler|middleware|service|worker|queue|cache|token|session|user|admin|deploy|build|test|debug|error|exception|warning|log|logger|monitor|metric|alert|notification|webhook|callback|promise|async|await|stream|buffer|payload|header|body|request|response|auth|oauth|jwt|csrf|xss|sql|nosql|mongodb|postgres|mysql|redis|docker|kubernetes|k8s|aws|gcp|azure|lambda|sqs|sns|dynamodb|s3|ec2|iam|vpc|cdn|dns|ssl|tls|ssh|ftp|smtp|imap|pop3|grpc|rest|graphql|websocket|http|https|tcp|udp|ip|url|uri|urn|uuid|id|key|secret|password|token|hash|encrypt|decrypt|sign|verify|compress|decompress|encode|decode|parse|serialize|deserialize|validate|sanitize|transform|filter|map|reduce|sort|group|merge|split|join|concat|append|prepend|insert|delete|update|create|read|write|open|close|start|stop|pause|resume|retry|timeout|delay|schedule|cron|timer|interval|debounce|throttle|batch|queue|stack|heap|tree|graph|node|edge|vertex|link|pointer|reference|value|object|array|list|set|map|dict|tuple|struct|record|schema|model|entity|resource|collection|document|file|directory|folder|path|url|link|bookmark|tag|label|category|group|role|permission|access|scope|context|state|session|cookie|storage|cache|buffer|pool|factory|builder|adapter|proxy|decorator|facade|bridge|composite|flyweight|mediator|observer|strategy|template|command|iterator|mediator|memento|visitor|chain|state|specification|criteria|predicate|function|handler|listener|callback|hook|middleware|interceptor|filter|transform|mapper|serializer|deserializer|validator|sanitizer|formatter|parser|compiler|interpreter|transpiler|minifier|bundler|linter|formatter|test|mock|stub|spy|fixture|factory|builder|helper|util|utility|tool|kit|library|framework|package|module|component|plugin|extension|addon|theme|template|pattern|convention|standard|specification|protocol|interface|api|sdk|cli|gui|tui|web|mobile|desktop|server|client|peer|master|slave|leader|follower|primary|secondary|replica|shard|partition|segment|chunk|block|page|frame|slot|portal|modal|dialog|popup|tooltip|alert|toast|notification|message|event|signal|trigger|action|dispatch|emit|publish|subscribe|broadcast|unicast|multicast|anycast|loopback|localhost|127\.0\.0\.1|0\.0\.0\.0|::1|::0)\b/gi);
-  if (techTerms) {
-    for (const t of techTerms) {
-      const lower = t.toLowerCase();
-      if (!entities.includes(lower)) entities.push(lower);
+  // Natural language entity nouns (common content words that appear in memories)
+  const lower = query.toLowerCase();
+  const nlEntities = lower.match(/\b(?:age|birthday|salary|income|department|employee|manager|team|company|project|product|feature|service|server|database|api|endpoint|config|setting|preference|language|framework|library|tool|plugin|extension|theme|template|pattern|convention|standard|protocol|interface|model|schema|type|class|function|method|module|package|library|framework|component|file|directory|path|url|link|user|admin|role|permission|access|session|token|auth|oauth|jwt|deploy|build|test|debug|error|exception|log|monitor|metric|alert|notification|webhook|cron|schedule|timer|cache|queue|stack|tree|graph|node|edge|list|map|set|dict|array|string|number|boolean|null|undefined|true|false|yes|no|ok|done|failed|success|pending|active|inactive|enabled|disabled|public|private|internal|external|local|remote|global|shared|custom|default|primary|secondary|main|sub|child|parent|root|head|tail|first|last|next|prev|current|old|new|temporary|permanent)\b/g);
+  if (nlEntities) {
+    for (const e of nlEntities) {
+      if (e.length >= 3 && !entities.includes(e)) {
+        entities.push(e);
+      }
     }
   }
   
@@ -71,7 +115,8 @@ function extractQueryEntities(query: string): string[] {
 
 /**
  * Expand a query by searching for entity-related memories.
- * This catches cross-session topic links that BM25 might miss.
+ * Uses both entity extraction and multi-hop decomposition to catch
+ * cross-session topic links that BM25 might miss.
  */
 function expandQuery(
   index: Pick<HarmonicIndexManager, 'search'>,
@@ -79,19 +124,30 @@ function expandQuery(
   pushed: Set<string>,
   topK: number = 3,
 ): { id: string; score: number }[] {
-  const entities = extractQueryEntities(query);
-  if (entities.length === 0) return [];
-  
   const expandedScores = new Map<string, number>();
   
-  // Search for each entity
+  // Strategy 1: entity-based expansion (individual entity searches)
+  const entities = extractQueryEntities(query);
   for (const entity of entities) {
     const hits = (index.search(entity, topK, {}) || []) as any[];
     for (const hit of hits) {
       if (pushed.has(hit.id)) continue;
       if ((hit as any).superseded_by) continue;
       const existing = expandedScores.get(hit.id) || 0;
-      expandedScores.set(hit.id, existing + (hit.energy || 0) * 0.5); // 0.5 weight for expansion
+      expandedScores.set(hit.id, existing + (hit.energy || 0) * 0.5);
+    }
+  }
+  
+  // Strategy 2: multi-hop decomposition (sub-query searches)
+  const subQueries = decomposeMultiHopQuery(query);
+  for (const sq of subQueries) {
+    const hits = (index.search(sq, topK, {}) || []) as any[];
+    for (const hit of hits) {
+      if (pushed.has(hit.id)) continue;
+      if ((hit as any).superseded_by) continue;
+      const existing = expandedScores.get(hit.id) || 0;
+      // Sub-query hits get a slightly lower weight than entity hits
+      expandedScores.set(hit.id, existing + (hit.energy || 0) * 0.35);
     }
   }
   

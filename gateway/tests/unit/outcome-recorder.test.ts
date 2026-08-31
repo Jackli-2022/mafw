@@ -35,7 +35,16 @@ describe('outcome-recorder', () => {
 
   test('buildFailureSignature normalizes text', () => {
     const sig = buildFailureSignature('exec_error', 'Error at /path/to/file.ts:123 with id abc12345');
-    expect(sig).toBe('exec_error:Error at path to file ts N with id');
+    expect(sig).toBe('exec_error:unknown:Error at path to file ts N with id');
+  });
+
+  test('buildFailureSignature with tool name', () => {
+    const sig = buildFailureSignature({
+      kind: 'exec_error',
+      errorText: 'Error at /path/to/file.ts:123',
+      firstErrorTool: 'bash',
+    });
+    expect(sig).toBe('exec_error:bash:Error at path to file ts N');
   });
 
   test('recordGoalOutcome aggregates trajectory and feedback', () => {

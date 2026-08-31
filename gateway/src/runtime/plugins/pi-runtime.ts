@@ -53,15 +53,33 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
   const eventStream = new PiEventStream((session: any) => undefined);
   const registry = new PiSessionRegistry({
     createSession: async (opts: any) => {
-      const { createAgentSession } = await imp('@earendil-works/pi-coding-agent');
+      const pi = await imp('@earendil-works/pi-coding-agent');
+      const { createAgentSession } = pi;
+      const DefaultResourceLoader = pi.DefaultResourceLoader;
       const mr = await modelRuntime();
       const model = mr.getModel(opts.model?.provider ?? provider, opts.model?.modelID ?? modelID);
-      const { session } = await createAgentSession({
+
+      // Build session options
+      const sessionOpts: any = {
         cwd: opts.cwd,
         modelRuntime: mr,
         model,
         thinkingLevel,
-      });
+      };
+
+      // If DefaultResourceLoader is available and we have extensions, create a resource loader
+      const extensionFactories = opts.extensionFactories ?? [];
+      if (DefaultResourceLoader && extensionFactories.length > 0) {
+        const resourceLoader = new DefaultResourceLoader({
+          cwd: opts.cwd,
+          agentDir: piAgentConfig.getAgentDir(),
+          extensionFactories,
+        });
+        await resourceLoader.reload();
+        sessionOpts.resourceLoader = resourceLoader;
+      }
+
+      const { session } = await createAgentSession(sessionOpts);
       eventStream.trackSession(session);
       return { session };
     },
