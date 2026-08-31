@@ -28,6 +28,7 @@
 import type { HarmonicIndexManager } from '../core/memory/harmonic-index';
 import type { MemoryWorker } from './memory-worker';
 import { log } from '../core/utils/logger';
+import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 
 export interface ScanResult {
   relevantIds: string[];
@@ -62,7 +63,8 @@ Rules:
 - For multi-session queries (what did we discuss about X), look for entries sharing topic anchors
 - If answering the question requires combining information from multiple memories, include ALL relevant entries
 - confidence = how sure you are that the selected entries answer the query (0.0 = guess, 1.0 = certain)
-- If nothing is relevant, return {"relevant_ids": [], "reasoning": "no relevant memories", "confidence": 0.0}`;
+- If nothing is relevant, return {"relevant_ids": [], "reasoning": "no relevant memories", "confidence": 0.0}
+${HARD_BOUNDARIES}`;
 
 /**
  * Format a single harmonic index entry into a compact index line.
@@ -210,7 +212,7 @@ export class IndexScanService {
       const prompt = `${indexText}\n\n---\n\nUser query: ${query}\n\nSelect the most relevant memory entries from the index above.`;
 
       const response = await Promise.race([
-        worker.prompt(prompt, SCAN_SYSTEM, this.workerModel),
+        worker.prompt(prompt, SCAN_SYSTEM, this.workerModel, 'memory-curator'),
         new Promise<string>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('scan timeout')), timeoutMs);
           timer.unref?.();

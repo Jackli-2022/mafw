@@ -10,6 +10,7 @@ import { MinHashMerger } from '../core/memory/minhash-merger';
 import { ReflectCursor } from './reflect-cursor';
 import { generateHarmonicId, HarmonicUnit } from '../core/memory/harmonic-types';
 import { calculateSalience } from '../core/memory/salience-perceptor';
+import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 
 /** Session key for episodic memories with no source_session_id (legacy data). */
 export const ORPHAN_SESSION = '__orphan__';
@@ -60,7 +61,8 @@ Division of labor: focus on CROSS-EPISODE high-level patterns — recurring fail
 - Include entity variants: e.g., both "React" and "react", both "User Auth Module" and "auth module"
 - For technical discussions, include error codes, stack traces, or specific function names as anchors
 - For user preferences, include the dimension AND value: e.g., "pref:ui-language=chinese" AND "chinese" AND "ui-language"
-- Think: "If someone asked about this topic in a different session, what keywords would they search for?"`;
+- Think: "If someone asked about this topic in a different session, what keywords would they search for?"
+${HARD_BOUNDARIES}`;
 
 export const QUESTIONS_SYSTEM = `You are a reflection system for a coding agent's long-term memory. Review the episodic memories of one conversation and generate the 2-3 most salient high-level questions about this session — questions whose answers would reveal durable patterns, recurring root causes, or generalizable lessons. Return ONLY valid JSON, no markdown:
 {"questions":["<question>","<question>"]}
@@ -69,7 +71,8 @@ Rules:
 - prefer questions that span multiple episodes
 - questions should be specific enough to retrieve relevant memories (include entity names like project, module, API, feature)
 - for multi-topic sessions, generate questions for each topic separately
-- for user preferences, ask about the preference itself (e.g., "What UI language does the user prefer?") rather than the context where it was mentioned`;
+- for user preferences, ask about the preference itself (e.g., "What UI language does the user prefer?") rather than the context where it was mentioned
+${HARD_BOUNDARIES}`;
 
 export function parseQuestions(text: string): string[] {
   try {
@@ -219,7 +222,7 @@ export class ReflectionPipeline {
     let insights: Insight[] = [];
     try {
       // Step 1: generate salient questions
-      const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel);
+      const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel, 'memory-curator');
       const questions = parseQuestions(qText);
       // Step 2: retrieve evidence per question (bm25, no graph expansion)
       const evidence: string[] = [];
@@ -251,7 +254,7 @@ export class ReflectionPipeline {
       const entityBlock = episodeEntities.size > 0
         ? `\n\n### Session Entities (for cross-session linking)\n${[...episodeEntities].slice(0, 20).join(', ')}`
         : '';
-      const text = await worker.prompt(prompt + evidenceBlock + entityBlock, REFLECT_SYSTEM, this.opts.workerModel);
+      const text = await worker.prompt(prompt + evidenceBlock + entityBlock, REFLECT_SYSTEM, this.opts.workerModel, 'memory-curator');
       insights = parseInsights(text);
     } catch {
       result.failed++;

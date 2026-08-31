@@ -151,6 +151,18 @@ const DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "mafw_pin_memory",
+    description: "Pin or unpin an existing memory to/from the disclosure layer. Pinned memories are injected into the system prompt every turn as <user-profile>. Use for user identity/profile and long-term preferences; unpin when a pinned preference becomes stale.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Memory unit id (mem_...)" },
+        pinned: { type: "boolean", description: "true to pin, false to unpin" },
+      },
+      required: ["id", "pinned"],
+    },
+  },
+  {
     name: "mafw_commit_heuristic",
     description: "Commit a new L5 heuristic (global, cross-project)",
     inputSchema: {
@@ -521,6 +533,7 @@ import { handleRecordFeedback } from "./handlers/record-feedback";
 import { handleGetModelRoute } from "./handlers/get-model-route";
 import { handleAddMemory } from "./handlers/add-memory";
 import { handleSupersedeMemory } from "./handlers/supersede-memory";
+import { handlePinMemory } from "./handlers/pin-memory";
 import { handleCommitHeuristic } from "./handlers/commit-heuristic";
 import { handleGetAxioms } from "./handlers/get-axioms";
 import { handleMergeMemory } from "./handlers/merge-memory";
@@ -563,6 +576,7 @@ export function createToolRegistry(): ToolRegistry {
       mafw_get_model_route: handleGetModelRoute,
       mafw_add_memory: handleAddMemory,
       mafw_supersede_memory: handleSupersedeMemory,
+      mafw_pin_memory: handlePinMemory,
       mafw_commit_heuristic: handleCommitHeuristic,
       mafw_get_axioms: handleGetAxioms,
       mafw_merge_memory: handleMergeMemory,

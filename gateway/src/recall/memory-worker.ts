@@ -13,6 +13,7 @@ export interface WorkerClient {
       parts: Array<{ type: string; text: string }>;
       system?: string;
       model?: { providerID: string; modelID: string };
+      agent?: string;
     }): Promise<any>;
     summarize(opts: {
       sessionID: string;
@@ -105,7 +106,7 @@ export class MemoryWorker {
    * lock the whole pipeline (the action-level guard is skip-once semantics).
    * Any failure invalidates the cached session and rethrows.
    */
-  async prompt(message: string, system?: string, model?: { providerID: string; modelID: string }): Promise<string> {
+  async prompt(message: string, system?: string, model?: { providerID: string; modelID: string }, agent?: string): Promise<string> {
     const sessionId = await this.ensureSession();
     await this.maybeCompact(sessionId, model);
 
@@ -117,6 +118,7 @@ export class MemoryWorker {
           parts: [{ type: 'text', text: message }],
           ...(system ? { system } : {}),
           ...(model ? { model } : {}),
+          ...(agent ? { agent } : {}),
         }),
         new Promise<never>((_, reject) => {
           const timer = setTimeout(

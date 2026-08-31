@@ -99,6 +99,27 @@ describe('runtime-agents-install', () => {
       expect(result).not.toContain('temperature:');
       expect(result).not.toContain('edit:');
       expect(result).not.toContain('bash:');
+      expect(result).not.toContain('tools:');
+    });
+
+    it('serializes tools field with wildcard and boolean values', () => {
+      const def: AgentDefinition = {
+        description: 'Tools test agent',
+        mode: 'subagent',
+        systemPrompt: 'Test',
+        permissions: { edit: 'deny', bash: 'deny' },
+        tools: {
+          '*': false,
+          'mafw_add_memory': true,
+          'mafw_search_hybrid': true,
+        },
+      };
+      const result = serializeAgentToFrontmatter(def);
+
+      expect(result).toContain('tools:');
+      expect(result).toContain("'*': false");
+      expect(result).toContain("'mafw_add_memory': true");
+      expect(result).toContain("'mafw_search_hybrid': true");
     });
 
     it('handles permission tool ordering correctly', () => {

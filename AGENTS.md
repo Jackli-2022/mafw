@@ -62,9 +62,9 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 - 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
 - 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
 
-## 4. Tools 清单（v6.8 总共 40 个）
+## 4. Tools 清单（v6.8 总共 43 个）
 
-### 4.1 Gateway MCP 工具（37 个，`gateway/src/mcp/tool-registry.ts`）
+### 4.1 Gateway MCP 工具（39 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
@@ -77,6 +77,7 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_get_model_route` | 动态模型选择（基于预算） |
 | `mafw_add_memory` | 写入记忆单元（`supersedes` 显式取代旧条目；`pinned` 披露层；`cueAnchors` 多跳线索） |
 | `mafw_supersede_memory` | 标记已有记忆为 superseded（不写新条目，仅降能+惩罚检索排序） |
+| `mafw_pin_memory` | pin/unpin 已有记忆到披露层（`<user-profile>` 每轮注入） |
 | `mafw_commit_heuristic` | 提交 L5 启发式 |
 | `mafw_get_axioms` | 获取 L5 公理 |
 | `mafw_merge_memory` | ★ 跨 worktree 记忆融合 |
@@ -536,7 +537,7 @@ manager agent 通过 `agents.install('manager', getManagerAgentDefinition())` �
 - **`edit: {"*": "deny"}`**：禁用 edit/write/apply_patch（不能直接改文件/代码）——与内置 plan 对齐
 - **`task: {"general": "deny"}`**：不派发 opencode 子任务（委派走 `mafw_set_goal` MCP 工具）
 - **bash 默认 allow**：执行命令不受限（自更新等流程经 bash 通道；与 plan 同级）
-- **gateway MCP 工具显式 allow**：36 个 `mafw_*` 工具白名单（`mafw_set_goal`/`mafw_update_state`/
+- **gateway MCP 工具显式 allow**：38 个 `mafw_*` 工具白名单（`mafw_set_goal`/`mafw_update_state`/
   `mafw_ask_user`/记忆/自动化/桌面控制等）——opencode 权限按工具名匹配，`edit` deny 不影响
   MCP 工具；显式 allow 防未来 defaults 收紧（如 `"*": "ask"`）时误伤
 - 机制依据：opencode `permission/index.ts` 的 `disabled()`——仅 `edit/write/apply_patch` 映射到

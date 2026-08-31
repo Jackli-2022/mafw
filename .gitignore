@@ -24,3 +24,11 @@ OpenCode *.png
 
 __pycache__/
 *.pyc
+
+# Worker-committed junk (2026-08-31 incident)
+.claude/
+.memory/
+mem_index/
+.tmp/
+nul
+selection.json
