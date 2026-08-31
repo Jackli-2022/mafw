@@ -3554,7 +3554,8 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 
 /* ─── SearchSelect (config model rows) ─── */
-.mafw-search-select { position: relative; }
+.mafw-search-select { position: relative; min-width: 0; }
+.mafw-search-select [data-component="text-input-v2"] { width: 100%; }
 .mafw-search-select-list {
   position: absolute;
   top: calc(100% + 2px);
