@@ -15,4 +15,6 @@ export interface AgentDefinition {
   color?: string;
   systemPrompt: string;
   permissions: AgentPermissions;
+  /** opencode 原生 agent tools 开关（支持 '*' 通配 false）—— 与 permissions 互补的硬禁用面 */
+  tools?: Record<string, boolean>;
 }

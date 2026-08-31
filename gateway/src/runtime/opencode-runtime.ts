@@ -209,6 +209,13 @@ export function serializeAgentToFrontmatter(def: AgentDefinition): string {
     permLines.push(`  ${key}: ${rule}`);
   }
 
+  if (def.tools) {
+    lines.push('tools:');
+    for (const [tool, enabled] of Object.entries(def.tools)) {
+      lines.push(`  '${tool}': ${enabled}`);
+    }
+  }
+
   if (permLines.length > 0) {
     lines.push('permission:');
     lines.push(...permLines);
