@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createSignal, createEffect, createMemo, Show, For, onCleanup } from "solid-js"
+import { createSignal, createEffect, createMemo, onMount, Show, For, onCleanup } from "solid-js"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -296,6 +296,13 @@ export function UsageDock(props: {
 
   const summaryTimer = setInterval(fetchSummary, 15000)
   onCleanup(() => clearInterval(summaryTimer))
+
+  // Refresh immediately when usage config is saved from Config page.
+  onMount(() => {
+    const handler = () => fetchSummary()
+    window.addEventListener('mafw:usage-config-saved', handler)
+    onCleanup(() => window.removeEventListener('mafw:usage-config-saved', handler))
+  })
 
   const contextInfo = createMemo(() => {
     const sid = props.sessionID

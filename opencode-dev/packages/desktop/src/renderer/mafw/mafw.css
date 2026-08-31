@@ -420,7 +420,8 @@ html[data-theme="light"] .mafw-shell {
 }
 
 /* ── Content ── */
-.mafw-content { grid-row: 1 / -1; overflow: auto; padding: 16px; }
+.mafw-content { grid-row: 2; overflow: auto; padding: 16px; }
+.mafw-content:only-child { grid-row: 1 / -1; }
 .mafw-chat-content { overflow: hidden; padding: 0; }
 
 /* ── Chat Layout ── */
@@ -3009,7 +3010,6 @@ html[data-theme="light"] .mafw-picker-pop {
   color: var(--text-2);
 }
 
-.mafw-usage-config {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3018,46 +3018,6 @@ html[data-theme="light"] .mafw-picker-pop {
   background: var(--bg-overlay);
   margin-bottom: 8px;
 }
-.mafw-usage-config-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-4);
-  margin-top: 4px;
-}
-.mafw-usage-config-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.mafw-usage-config-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-1);
-  min-width: 80px;
-}
-.mafw-usage-config-field {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.mafw-usage-config-field label {
-  font-size: 10px;
-  color: var(--text-4);
-  text-transform: uppercase;
-}
-.mafw-usage-config-hint {
-  font-size: 11px;
-  color: var(--text-4);
-}
-.mafw-usage-config-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-
 /* ══ UsagePill (Rail 底部紧凑行) ══ */
 .mafw-usage-pill {
   display: flex;
@@ -3237,7 +3197,7 @@ html[data-theme="light"] .mafw-picker-pop {
   transition: border-color 0.12s;
 }
 .mafw-config-section:hover {
-  border-color: rgba(255,255,255,0.10);
+  border-color: color-mix(in srgb, var(--text-1) 10%, transparent);
 }
 .mafw-config-section-header {
   display: flex;
@@ -3462,7 +3422,7 @@ html[data-theme="light"] .mafw-picker-pop {
   transition: border-color 0.12s;
 }
 .mafw-config-oc-card:hover {
-  border-color: rgba(255,255,255,0.10);
+  border-color: color-mix(in srgb, var(--text-1) 10%, transparent);
 }
 .mafw-config-oc-header {
   display: flex;

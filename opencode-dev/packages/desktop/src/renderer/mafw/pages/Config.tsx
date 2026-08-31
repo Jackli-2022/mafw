@@ -69,6 +69,13 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     onCleanup(() => window.removeEventListener('mafw:open-config', handler))
   })
 
+  // Sync activeNav when initialSection prop changes (e.g., Rail settings opens config with default section).
+  createEffect(() => {
+    const section = props.initialSection
+    if (isNavKey(section)) setActiveNav(section)
+    else setActiveNav("gateway")
+  })
+
   function toggleSection(key: string) {
     setSections(prev => prev.map(s => s.key === key ? { ...s, expanded: !s.expanded } : s))
   }

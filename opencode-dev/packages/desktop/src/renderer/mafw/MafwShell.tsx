@@ -32,7 +32,7 @@ import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
 import { AutomationsPage } from "./pages/Automations"
-import { ConfigPage } from "./pages/Config"
+import { ConfigPage, isNavKey, type NavKey } from "./pages/Config"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
@@ -52,7 +52,7 @@ interface ChatSession {
 export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<Tab>("chat")
   const [showConfig, setShowConfig] = createSignal(false)
-  const [configSection, setConfigSection] = createSignal<"gateway" | "plugins" | "models" | "usage" | "opencode" | "mafw" | undefined>(undefined)
+  const [configSection, setConfigSection] = createSignal<NavKey | undefined>(undefined)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
 
@@ -906,15 +906,23 @@ export function MafwShell() {
     document.body.setAttribute("data-new-layout", "")
   })
 
-  // Listen for UsageDock "go to Config > Usage" link
+  // Listen for UsageDock "go to Config > Usage" link. ConfigPage also listens
+  // for this event to switch sections while already mounted; MafwShell only
+  // opens the page and records the initial section for the closed→open flow.
   onMount(() => {
     const handler = (e: Event) => {
-      const section = (e as CustomEvent).detail as "gateway" | "plugins" | "models" | "usage" | "opencode" | "mafw" | undefined
-      setConfigSection(section)
+      const section = (e as CustomEvent).detail
+      setConfigSection(isNavKey(section) ? section : undefined)
       setShowConfig(true)
     }
     window.addEventListener('mafw:open-config', handler)
     onCleanup(() => window.removeEventListener('mafw:open-config', handler))
+  })
+
+  // Reset configSection when config page closes to prevent stale section leaking
+  // to other entry points (Rail settings, TabStrip, etc.).
+  createEffect(() => {
+    if (!showConfig()) setConfigSection(undefined)
   })
 
   // Theme: MafwShell owns documentElement.dataset.theme (the theme preload
@@ -1730,7 +1738,7 @@ export function MafwShell() {
               }
               setActiveSessionId(id)
               setActiveViewId(id)
-            }} onSettings={() => setShowConfig(true)} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "usage")} />
+            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "usage")} />
             <ResizeHandle
               direction="horizontal"
               edge="end"
@@ -1744,7 +1752,7 @@ export function MafwShell() {
           </div>
         )}
         <div class="mafw-main">
-          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} trajectoryActive={rightDockOpen() && rightDockTab() === "trajectory"} />}
+          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setConfigSection(undefined); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} trajectoryActive={rightDockOpen() && rightDockTab() === "trajectory"} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             {showConfig() ? (
               <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} />
@@ -1920,7 +1928,7 @@ export function MafwShell() {
                           currentProject={currentProject()}
                           onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
                           onToggleTheme={toggleTheme}
-                          onOpenSettings={() => setShowConfig(true)}
+                          onOpenSettings={() => { setConfigSection(undefined); setShowConfig(true) }}
                           onModelSelect={onModelSelect}
                           onApplyAgentSwitch={applyAgentSwitch}
                           onPermReply={permReply}
