@@ -850,11 +850,13 @@ class MafwScheduler {
     const f = normalizeOpencodeEvent(evt);
     const { type, properties: props, sessionID } = f;
     // Internal pipeline sessions (index-scan / turnCompress / reflection workers)
-    // stream message.part.delta per token — broadcast + log + trajectory for them
-    // flooded the desktop SSE and froze the renderer. Their output never flows
-    // back into user-facing surfaces, so drop their events entirely.
-    if (sessionID && this.internalSessionRoles.has(sessionID)) return;
-    log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}`);
+    // stream message.part.delta per token — passing those through flooded the
+    // desktop renderer (per-delta store writes + re-render storms froze the UI).
+    // Tiered policy: token-level noise is dropped; lifecycle events (idle/error)
+    // still broadcast, tagged `internal`, so the UI can surface pipeline status.
+    const internal = !!(sessionID && this.internalSessionRoles.has(sessionID));
+    if (internal && type !== 'message.complete' && type !== 'session.idle' && type !== 'message.error' && type !== 'message.aborted' && f.broadcast !== 'error') return;
+    log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}${internal ? ' (internal)' : ''}`);
 
     // Caller-location bookkeeping for self-update: every event refreshes the
     // session's last-active stamp; tool events carrying a shell command that
@@ -871,11 +873,13 @@ class MafwScheduler {
 
     // Path T: trajectory accumulation — writes SQLite + broadcasts trajectory.event/trajectory.turn
     try {
-      const collector = this.trajectoryCollector;
-      if (collector) {
-        const trajEvt = collector.handleEvent(type, props, f.directory);
-        if (trajEvt) {
-          this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.event', properties: trajEvt, sessionID } });
+      if (!internal) {
+        const collector = this.trajectoryCollector;
+        if (collector) {
+          const trajEvt = collector.handleEvent(type, props, f.directory);
+          if (trajEvt) {
+            this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.event', properties: trajEvt, sessionID } });
+          }
         }
       }
     } catch (err: any) {
@@ -918,11 +922,11 @@ class MafwScheduler {
       } catch (err: any) {
         log.warn(`[Trajectory] idle aggregation failed (non-fatal): ${err.message}`);
       }
-      this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID } });
+      this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID, ...(internal ? { internal: true } : {}) } });
     } else if (f.broadcast === 'error') {
-      this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error') } });
+      this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error'), ...(internal ? { internal: true } : {}) } });
     } else {
-      this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID } });
+      this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID, ...(internal ? { internal: true } : {}) } });
     }
   }
 
