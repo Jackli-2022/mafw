@@ -3414,7 +3414,6 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-config-model-label {
   width: 96px;
   flex-shrink: 0;
-  width: 150px;
   font-size: 13px;
   color: var(--text-2);
   text-align: right;
