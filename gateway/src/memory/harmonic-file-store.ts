@@ -11,6 +11,8 @@ import { AnchorGraph } from '../graph/anchor-graph';
 import { tokenize, extractDerivedTerms } from './derived-terms';
 import { MinHashMerger } from '../core/memory/minhash-merger';
 
+const globalWriteQueues = new Map<string, WriteQueue>();
+
 export class HarmonicUnitFileStore {
   private indexManager: HarmonicIndexManager;
   private graphManager: CognitiveGraphManager;
@@ -28,7 +30,13 @@ export class HarmonicUnitFileStore {
     this.indexManager = indexManager || new HarmonicIndexManager(baseDir);
     this.graphManager = new CognitiveGraphManager(baseDir);
     this.eventLog = new EventLog(baseDir);
-    this.writeQueue = new WriteQueue();
+    const normalizedDir = path.resolve(baseDir);
+    let queue = globalWriteQueues.get(normalizedDir);
+    if (!queue) {
+      queue = new WriteQueue();
+      globalWriteQueues.set(normalizedDir, queue);
+    }
+    this.writeQueue = queue;
     this.anchorGraph = new AnchorGraph();
     this.minHashMerger = new MinHashMerger();
     this.anchorGraphStore = anchorGraphStore;

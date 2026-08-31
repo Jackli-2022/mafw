@@ -240,7 +240,6 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   // ── Models ──
   const [modelState, setModelState] = createSignal<any>(null)
   const [modelAvailable, setModelAvailable] = createSignal<any[] | null>(null)
-  const [modelFilter, setModelFilter] = createSignal("")
   const [modelError, setModelError] = createSignal("")
   const [modelSaving, setModelSaving] = createSignal<Record<string, boolean>>({})
 
@@ -639,18 +638,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     {!modelAvailable() && (
                       <div class="mafw-config-hint">provider 列表不可用，请手动输入 providerID / modelID</div>
                     )}
-                    {modelAvailable() && (
-                      <TextInputV2
-                        value={modelFilter()}
-                        onInput={e => setModelFilter(e.currentTarget.value)}
-                        placeholder={`搜索 provider（共 ${modelAvailable().length} 个，显示中文名）…`}
-                        style={{ width: "100%", "margin-bottom": "8px" }}
-                      />
-                    )}
                     {modelAvailable() ? (
                       <ModelSelectRow
                         label="记忆 worker"
-                        filter={modelFilter()}
                         current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
                         providers={modelAvailable() ?? []}
                         saving={!!modelSaving().recall}
@@ -675,7 +665,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         : { provider: modelState()?.media?.[kind]?.provider ?? "", model: modelState()?.media?.[kind]?.model ?? "" }
                       const save = (p: string, m: string) => saveMediaModel(kind, p, m)
                       return modelAvailable() ? (
-                        <ModelSelectRow label={label} filter={modelFilter()} allowClear={kind !== "default"} current={cur} providers={modelAvailable() ?? []} saving={!!modelSaving()[kind]} onSave={save} />
+                        <ModelSelectRow label={label} allowClear={kind !== "default"} current={cur} providers={modelAvailable() ?? []} saving={!!modelSaving()[kind]} onSave={save} />
                       ) : (
                         <ModelTextRow label={label} current={cur} saving={!!modelSaving()[kind]} onSave={save} />
                       )
@@ -981,12 +971,67 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   )
 }
 
+function SearchSelect(props: {
+  options: { id: string; label: string }[]
+  current: { id: string; label: string } | undefined
+  disabled?: boolean
+  placeholder?: string
+  width?: number
+  onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = createSignal(false)
+  const [query, setQuery] = createSignal("")
+  const [hi, setHi] = createSignal(0)
+  const filtered = () => {
+    const q = query().trim().toLowerCase()
+    if (!q) return props.options
+    return props.options.filter(o => o.label.toLowerCase().includes(q) || o.id.toLowerCase().includes(q))
+  }
+  const display = () => (open() ? query() : (props.current?.label || props.current?.id || ""))
+  const pick = (id: string) => { props.onSelect(id); setOpen(false); setQuery("") }
+  return (
+    <div class="mafw-search-select" style={props.width ? { width: props.width + "px" } : undefined}>
+      <TextInputV2
+        value={display()}
+        onInput={e => { setQuery(e.currentTarget.value); setOpen(true); setHi(0) }}
+        onFocus={() => { setOpen(true); setQuery(""); setHi(0) }}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={e => {
+          const list = filtered()
+          if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setHi(h => Math.min(h + 1, list.length - 1)) }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
+          else if (e.key === "Enter") { e.preventDefault(); const o = list[hi()]; if (o) pick(o.id) }
+          else if (e.key === "Escape") { setOpen(false); setQuery("") }
+        }}
+        disabled={props.disabled}
+        placeholder={props.placeholder}
+      />
+      <Show when={open() && filtered().length > 0}>
+        <div class="mafw-search-select-list">
+          <For each={filtered()}>
+            {(o, i) => (
+              <div
+                class="mafw-search-select-item"
+                classList={{ hi: i() === hi(), current: props.current?.id === o.id }}
+                onMouseDown={e => { e.preventDefault(); pick(o.id) }}
+                onMouseEnter={() => setHi(i())}
+              >
+                {o.label}
+                {props.current?.id === o.id && <span class="mafw-search-select-check">✓</span>}
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 function ModelSelectRow(props: {
   label: string
   allowClear?: boolean
   current: { provider: string; model: string }
   providers: any[]
-  filter: string
   saving: boolean
   onSave: (provider: string, model: string) => void
 }) {
@@ -998,44 +1043,33 @@ function ModelSelectRow(props: {
   })
   const providerOptions = () => (props.providers ?? [])
     .map(p => ({ id: p.providerID, label: p.providerName || p.providerID }))
-    .filter(o => !props.filter || o.label.toLowerCase().includes(props.filter.toLowerCase()) || o.id.toLowerCase().includes(props.filter.toLowerCase()))
     .sort((a, b) => a.label.localeCompare(b.label, 'zh'))
   const modelsFor = (pid: string) => (props.providers ?? []).find(p => p.providerID === pid)?.models ?? []
-  // SelectV2 options are objects — `current` must be the matching OPTION OBJECT,
-  // not the raw id string (Kobalte matches by option identity, so a string
-  // current would never resolve and the saved selection would not display).
   const currentProviderOption = () => providerOptions().find(o => o.id === pendingProvider())
-    ?? providerOptions().find(o => o.id === props.current.provider)
-  const currentModelOption = () => {
-    const opts = props.allowClear ? [{ id: "", label: "（跟随默认）" }, ...modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))] : modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))
-    return opts.find(o => o.id === props.current.model)
-  }
+  const modelOptions = () => props.allowClear
+    ? [{ id: "", label: "（跟随默认）" }, ...modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))]
+    : modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))
+  const currentModelOption = () => modelOptions().find(o => o.id === props.current.model)
   return (
     <div class="mafw-config-model-row">
       <span class="mafw-config-model-label">{props.label}</span>
       <div style={{ display: "flex", gap: 6, "align-items": "center" }}>
-        <div style={{ width: 150 }}>
-          <SelectV2
-            options={providerOptions()}
-            current={currentProviderOption()}
-            value={(x: any) => x.id}
-            label={(x: any) => x.label}
-            onSelect={(v) => { if (v != null) setPendingProvider(v.id) }}
-            disabled={props.saving}
-            placeholder="provider"
-          />
-        </div>
-        <div style={{ width: 160 }}>
-          <SelectV2
-            options={props.allowClear ? [{ id: "", label: "（跟随默认）" }, ...modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))] : modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))}
-            current={currentModelOption()}
-            value={(x: any) => x.id}
-            label={(x: any) => x.label}
-            onSelect={(v) => { if (v != null && v.id !== props.current.model) props.onSave(pendingProvider(), v.id) }}
-            disabled={props.saving || !pendingProvider()}
-            placeholder={props.allowClear ? "（跟随默认）" : "model"}
-          />
-        </div>
+        <SearchSelect
+          options={providerOptions()}
+          current={currentProviderOption()}
+          width={180}
+          onSelect={id => setPendingProvider(id)}
+          disabled={props.saving}
+          placeholder="provider"
+        />
+        <SearchSelect
+          options={modelOptions()}
+          current={currentModelOption()}
+          width={190}
+          onSelect={id => { if (id !== props.current.model) props.onSave(pendingProvider(), id) }}
+          disabled={props.saving || !pendingProvider()}
+          placeholder={props.allowClear ? "（跟随默认）" : "model"}
+        />
         {props.saving && <LoaderV2 width={14} height={14} />}
       </div>
     </div>

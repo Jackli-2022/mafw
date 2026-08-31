@@ -34,7 +34,7 @@ export function getOKFFilename(unit: HarmonicUnit): string {
     : 'semantic';
   const slug = unit.primary_abstraction
     .toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-  return `${typeLabel}-${unit.id.slice(0, 12)}-${slug}.md`;
+  return `${typeLabel}-${unit.id}-${slug}.md`;
 }
 
 export function getOKFDirectory(unit: HarmonicUnit): string {

@@ -2,20 +2,26 @@ import { HarmonicUnit } from './harmonic-types';
 import { HarmonicIndexManager } from './harmonic-index';
 
 export class MinHashMerger {
-  private signatureSize: number = 4;
-  private threshold: number = 0.75;
-  /** Max chars of a merged primary_abstraction; longer combinations are skipped. */
+  private signatureSize: number = 8;
+  private threshold: number = 0.625;
   private maxMergeChars: number = 500;
-  /** Entries already merged this many times are no longer merge targets. */
-  private maxMergeDepth: number = 3;
+  private maxMergeDepth: number = 10;
+
+  static normalizeForDedup(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
   generateSignature(text: string): number[] {
-    const lowercase = text.toLowerCase();
+    const normalized = MinHashMerger.normalizeForDedup(text);
     const shingles: string[] = [];
-    for (let i = 0; i + 3 <= lowercase.length; i++) {
-      shingles.push(lowercase.slice(i, i + 3));
+    for (let i = 0; i + 3 <= normalized.length; i++) {
+      shingles.push(normalized.slice(i, i + 3));
     }
-    const seeds = [0, 1, 2, 3];
+    const seeds = [0, 1, 2, 3, 4, 5, 6, 7];
     return seeds.map(seed => {
       let minHash = Infinity;
       for (const shingle of shingles) {
@@ -63,17 +69,24 @@ export class MinHashMerger {
   ): Promise<HarmonicUnit> {
     if (unit.merged_from?.length) return unit;
 
+    const normalizedNew = MinHashMerger.normalizeForDedup(unit.primary_abstraction);
+    if (normalizedNew.length < 3) return unit;
     const sig = this.generateSignature(unit.primary_abstraction);
     const index = indexManager.getIndex();
     const mergedFrom: string[] = [];
     let result = { ...unit };
 
     for (const entry of index.entries) {
-      if (entry.id === unit.id) continue; // don't self-merge
-      if (entry.superseded_by) continue; // already superseded entries are not merge targets
-      if ((entry.merged_from?.length ?? 0) >= this.maxMergeDepth) continue; // deeply merged: stop growing
-      const entrySig = this.generateSignature(entry.primary_abstraction);
-      const sim = this.similarity(sig, entrySig);
+      if (entry.id === unit.id) continue;
+      if (entry.superseded_by) continue;
+      if ((entry.merged_from?.length ?? 0) >= this.maxMergeDepth) continue;
+
+      const normalizedExisting = MinHashMerger.normalizeForDedup(entry.primary_abstraction);
+      const exactMatch = normalizedNew.length > 0
+        && normalizedNew.length === normalizedExisting.length
+        && normalizedNew === normalizedExisting;
+
+      const sim = exactMatch ? 1.0 : this.similarity(sig, this.generateSignature(entry.primary_abstraction));
       if (sim > this.threshold) {
         const existingUnit = await store.read(entry.id);
         if (!existingUnit) continue;
@@ -96,6 +109,11 @@ export class MinHashMerger {
         result.memory_value = this.mergeValues(result.memory_value, existingUnit.memory_value, result.updated_at);
         result.energy = Math.min(1.0, result.energy + 0.15);
         mergedFrom.push(existingUnit.id);
+        if (existingUnit.merged_from?.length) {
+          for (const ancestorId of existingUnit.merged_from) {
+            if (!mergedFrom.includes(ancestorId)) mergedFrom.push(ancestorId);
+          }
+        }
 
         if (store.markSuperseded) {
           store.markSuperseded(existingUnit.id, unit.id);
@@ -117,13 +135,16 @@ export class MinHashMerger {
   }
 
   private mergeValues(newerValue: string, olderValue: string, updatedAt?: string): string {
+    if (newerValue === olderValue) return newerValue;
     const header = updatedAt ? `[Updated ${updatedAt}] ` : '[Updated] ';
     return `${newerValue}\n---\n${header}${olderValue}`;
   }
 
   private dedupMerge(a: string, b: string): string {
-    const parts = [a, b];
-    return parts.join(' | ');
+    const normA = MinHashMerger.normalizeForDedup(a);
+    const normB = MinHashMerger.normalizeForDedup(b);
+    if (normA === normB) return a;
+    return `${a} | ${b}`;
   }
 
   private dedupAnchors(anchors: string[]): string[] {
