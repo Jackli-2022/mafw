@@ -3176,7 +3176,8 @@ html[data-theme="light"] .mafw-picker-pop {
   background: var(--bg-base);
 }
 .mafw-config-panel-head {
-  padding: 24px 32px 16px;
+  /* Fill the panel width (no 800px cap) — the right dock already narrows the column */
+  padding: 24px 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -3203,12 +3204,12 @@ html[data-theme="light"] .mafw-picker-pop {
   margin-top: 2px;
 }
 .mafw-config-panel-body {
-  padding: 24px 32px 64px;
+  /* Fill the panel width — cards stretch edge to edge */
+  padding: 24px 24px 64px;
   display: flex;
   flex-direction: column;
   gap: 0;
   flex: 1;
-  max-width: 800px;
 }
 /* Section card */
 .mafw-config-section {
