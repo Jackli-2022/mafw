@@ -963,6 +963,8 @@ export function MafwShell() {
 
   // Direct EventSource SSE connection (renderer has native EventSource)
   onMount(async () => {
+    let es: EventSource | null = null
+    onCleanup(() => { if (es) { console.log("[mafw] SSE closing"); es.close() } })
     const info = await window.api.mafw.gateway.info()
     if (!info?.url) {
       console.log("[mafw] SSE: no gateway URL yet")
@@ -970,7 +972,7 @@ export function MafwShell() {
     }
     console.log("[mafw] SSE connecting to", info.url)
     setGatewayUrl(info.url)
-    const es = new EventSource(`${info.url}/api/events`)
+    es = new EventSource(`${info.url}/api/events`)
     es.onopen = () => console.log("[mafw] SSE connected")
     // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
     window.api.mafw.permissions.list().then((items: any[]) => {
@@ -1224,7 +1226,6 @@ export function MafwShell() {
       }
     }
     es.onerror = () => { console.log("[mafw] SSE error (will auto-reconnect)") }
-    onCleanup(() => { console.log("[mafw] SSE closing"); es.close() })
   })
 
   // Load history when active session changes (skip if already loaded)
@@ -1670,9 +1671,8 @@ export function MafwShell() {
   }
 
   // Gateway status
-  onMount(async () => {
-    const info = await window.api.mafw.gateway.info()
-    setGwStatus(info)
+  onMount(() => {
+    window.api.mafw.gateway.info().then(setGwStatus)
     const unsub = window.api.mafw.gateway.onStateChange(s => setGwStatus(s))
     onCleanup(unsub)
     // Global drag guard: dropping a file anywhere must not navigate the window.
@@ -1984,7 +1984,7 @@ export function MafwShell() {
                   />
                 </Show>
                 {/* Split direction menus */}
-                <Show keyed when={splitMenuFor()}>
+                <Show when={splitMenuFor()}>
                   {(m) => {
                     const opts = () => directionOptionsFor(m().sid)
                     return (
@@ -2017,7 +2017,7 @@ export function MafwShell() {
                     )
                   }}
                 </Show>
-                <Show keyed when={globalSplitMenu()}>
+                <Show when={globalSplitMenu()}>
                   {(m) => {
                     // Global split always creates a NEW split view with a free
                     // four-way direction choice (not constrained by the
@@ -2048,7 +2048,7 @@ export function MafwShell() {
                   }}
                 </Show>
                 {/* Continue-split menu inside a split view tab */}
-                <Show keyed when={splitViewMenuFor()}>
+                <Show when={splitViewMenuFor()}>
                   {(m) => {
                     const opts = () => {
                       const rec = splitViews().find(v => v.id === m().id)
@@ -2188,7 +2188,7 @@ export function MafwShell() {
           </Show>
         </div>
       </div>
-      <Show keyed when={activeQuestion()}>
+      <Show when={activeQuestion()}>
         <QuestionWidget
           question={activeQuestion()!}
           gatewayUrl={gatewayUrl()}

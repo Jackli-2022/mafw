@@ -101,7 +101,7 @@ export function QuestionWidget(props: Props) {
               </ButtonV2>
             </div>
           </Show>
-          <Show keyed when={result()}>
+          <Show when={result()}>
             <p class="mafw-question-result">{result() === "accepted" ? "Submitted" : "Error submitting"}</p>
           </Show>
         </div>

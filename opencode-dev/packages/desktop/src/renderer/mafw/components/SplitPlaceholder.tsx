@@ -47,7 +47,7 @@ export function SplitPlaceholder(props: {
           <span class="mafw-agent-avatar">＋</span>
           <span class="mafw-session-titlebar-text">选择会话</span>
           <span style={{ flex: 1 }} />
-          <Show keyed when={props.canClosePane && props.onClose}>
+          <Show when={props.canClosePane && props.onClose}>
             <TooltipV2 value="关闭分屏" openDelay={300}>
               <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClose!() }} aria-label="关闭分屏">✕</ButtonV2>
             </TooltipV2>

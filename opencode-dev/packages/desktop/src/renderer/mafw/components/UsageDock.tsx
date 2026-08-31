@@ -363,7 +363,7 @@ export function UsageDock(props: {
           <div class="mafw-usage-empty-hint">发送消息后此处显示 token 用量</div>
         </div>
       }>
-        <Show keyed when={contextInfo() && contextInfo()!.lastInput > 0}>
+        <Show when={contextInfo() && contextInfo()!.lastInput > 0}>
           <div class="mafw-usage-section">
             <TooltipV2
               value={contextInfo()!.contextWindow > 0
