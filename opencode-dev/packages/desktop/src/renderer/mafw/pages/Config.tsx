@@ -287,7 +287,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   const [usageSaving, setUsageSaving] = createSignal(false)
   const [usagePluginState, setUsagePluginState] = createSignal<any[]>([])
   const [usageReloading, setUsageReloading] = createSignal(false)
-  const [usageAddKind, setUsageAddKind] = createSignal<'cookie' | 'budget' | null>(null)
+  const [usageAddKind, setUsageAddKind] = createSignal<'cookie' | 'budget' | 'limit' | null>(null)
   const [usageAddName, setUsageAddName] = createSignal('')
 
   async function loadUsageConfig() {
@@ -311,6 +311,13 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   const usageLimits = () => usageConfig()?.limits || {}
   const usageBudgets = () => usageConfig()?.budgets || {}
   const usageCookies = () => usageConfig()?.cookies || {}
+
+  // Linkage with the Models card: usage provider rows show the same display
+  // names as the model selection dropdowns.
+  const providerNameOf = (id: string) => {
+    const p = (modelAvailable() ?? []).find(p => p.providerID === id)
+    return p?.providerName || id
+  }
 
   const setUsageLimitWindow = (provider: string, window: string, v: string) => {
     setUsageConfig(prev => {
@@ -366,6 +373,13 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
         const next = JSON.parse(JSON.stringify(prev))
         next.budgets = next.budgets || {}
         if (next.budgets[name] === undefined) next.budgets[name] = 0
+        return next
+      })
+    } else if (usageAddKind() === 'limit') {
+      setUsageConfig(prev => {
+        const next = JSON.parse(JSON.stringify(prev))
+        next.limits = next.limits || {}
+        if (next.limits[name] === undefined) next.limits[name] = { '5h': 0, '7d': 0, month: 0 }
         return next
       })
     }
@@ -705,7 +719,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                           <For each={Object.keys(usageLimits())}>
                             {(provider: string) => (
                               <div class="mafw-config-usage-provider-row">
-                                <span class="mafw-config-usage-provider-name">{provider}</span>
+                                <span class="mafw-config-usage-provider-name">{providerNameOf(provider)}</span>
                                 <div class="mafw-config-usage-fields">
                                   <For each={Object.keys(usageLimits()[provider] || {})}>
                                     {(window: string) => (
@@ -725,6 +739,24 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                             )}
                           </For>
                         </Show>
+                        <div class="mafw-config-usage-add-row">
+                          <Show when={usageAddKind() !== 'limit'} fallback={
+                            <div class="mafw-config-usage-add-inline">
+                              <SearchSelect
+                                options={(modelAvailable() ?? []).map(p => ({ id: p.providerID, label: p.providerName || p.providerID }))}
+                                current={undefined}
+                                allowFree
+                                width={180}
+                                placeholder="选择或输入 provider"
+                                onSelect={id => setUsageAddName(id)}
+                              />
+                              <ButtonV2 variant="contrast" size="small" onClick={commitUsageAdd}>确定</ButtonV2>
+                              <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind(null); setUsageAddName('') }}>取消</ButtonV2>
+                            </div>
+                          }>
+                            <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind('limit'); setUsageAddName('') }}>+ 添加 provider 限额</ButtonV2>
+                          </Show>
+                        </div>
                       </div>
                     </div>
 
@@ -736,7 +768,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         <For each={Object.keys(usageBudgets())}>
                           {(provider: string) => (
                             <div class="mafw-config-usage-provider-row">
-                              <span class="mafw-config-usage-provider-name">{provider}</span>
+                              <span class="mafw-config-usage-provider-name">{providerNameOf(provider)}</span>
                               <TextInputV2
                                 type="number"
                                 value={String(usageBudgets()[provider] ?? "")}
@@ -750,12 +782,13 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         <div class="mafw-config-usage-add-row">
                           <Show when={usageAddKind() !== 'budget'} fallback={
                             <div class="mafw-config-usage-add-inline">
-                              <TextInputV2
-                                value={usageAddName()}
-                                onInput={e => setUsageAddName(e.currentTarget.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') commitUsageAdd(); if (e.key === 'Escape') { setUsageAddKind(null); setUsageAddName('') } }}
-                                style={{ width: 140 }}
-                                placeholder="provider 名称"
+                              <SearchSelect
+                                options={(modelAvailable() ?? []).map(p => ({ id: p.providerID, label: p.providerName || p.providerID }))}
+                                current={undefined}
+                                allowFree
+                                width={180}
+                                placeholder="选择或输入 provider"
+                                onSelect={id => setUsageAddName(id)}
                               />
                               <ButtonV2 variant="contrast" size="small" onClick={commitUsageAdd}>确定</ButtonV2>
                               <ButtonV2 variant="ghost" size="small" onClick={() => { setUsageAddKind(null); setUsageAddName('') }}>取消</ButtonV2>
@@ -977,6 +1010,8 @@ function SearchSelect(props: {
   disabled?: boolean
   placeholder?: string
   width?: number
+  /** Enter with typed text picks it verbatim when no exact option matches (free-form ids). */
+  allowFree?: boolean
   onSelect: (id: string) => void
 }) {
   const [open, setOpen] = createSignal(false)
@@ -1000,7 +1035,14 @@ function SearchSelect(props: {
           const list = filtered()
           if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setHi(h => Math.min(h + 1, list.length - 1)) }
           else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
-          else if (e.key === "Enter") { e.preventDefault(); const o = list[hi()]; if (o) pick(o.id) }
+          else if (e.key === "Enter") {
+            e.preventDefault()
+            const typed = query().trim()
+            const exact = list.find(o => o.id === typed || o.label === typed)
+            if (exact) pick(exact.id)
+            else if (props.allowFree && typed) pick(typed)
+            else if (list[hi()]) pick(list[hi()].id)
+          }
           else if (e.key === "Escape") { setOpen(false); setQuery("") }
         }}
         disabled={props.disabled}
