@@ -90,7 +90,7 @@ describe('runtime-agents-install', () => {
         description: 'Minimal agent',
         mode: 'primary',
         systemPrompt: 'Minimal prompt',
-        permissions: { edit: 'deny', tools: {} },
+        permissions: { tools: {} },
       };
       const result = serializeAgentToFrontmatter(def);
 
@@ -163,7 +163,7 @@ describe('runtime-agents-install', () => {
       const filePath = installAgentFile('nested-agent', def, nestedDir);
 
       expect(fs.existsSync(filePath)).toBe(true);
-      expect(filePath).toContain('deep/nested/dir/nested-agent.md');
+      expect(filePath).toContain(path.join('deep', 'nested', 'dir', 'nested-agent.md'));
     });
 
     it('overwrites existing agent file', () => {
