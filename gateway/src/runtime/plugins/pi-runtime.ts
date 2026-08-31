@@ -90,13 +90,13 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       const { id } = await registry.create(opts?.directory ?? config.raw.paths.projectDir, { model: { provider, modelID } });
       return { id };
     },
-    promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[] }) => {
+    promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean }) => {
       const text = opts.message ?? (opts.parts || []).map((p: any) => p.text || '').join('\n');
-      await registry.promptAsync(opts.sessionID, text);
+      await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply });
     },
-    prompt: async (opts: { sessionID: string; message?: string; parts?: any[] }) => {
+    prompt: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean }) => {
       const text = opts.message ?? (opts.parts || []).map((p: any) => p.text || '').join('\n');
-      return registry.prompt(opts.sessionID, text);
+      return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply });
     },
     messages: async (opts: { sessionID: string }) => {
       const { data } = await registry.messages(opts.sessionID);

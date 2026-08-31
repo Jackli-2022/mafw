@@ -240,6 +240,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   // ── Models ──
   const [modelState, setModelState] = createSignal<any>(null)
   const [modelAvailable, setModelAvailable] = createSignal<any[] | null>(null)
+  const [modelFilter, setModelFilter] = createSignal("")
   const [modelError, setModelError] = createSignal("")
   const [modelSaving, setModelSaving] = createSignal<Record<string, boolean>>({})
 
@@ -638,9 +639,18 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     {!modelAvailable() && (
                       <div class="mafw-config-hint">provider 列表不可用，请手动输入 providerID / modelID</div>
                     )}
+                    {modelAvailable() && (
+                      <TextInputV2
+                        value={modelFilter()}
+                        onInput={e => setModelFilter(e.currentTarget.value)}
+                        placeholder={`搜索 provider（共 ${modelAvailable().length} 个，显示中文名）…`}
+                        style={{ width: "100%", "margin-bottom": "8px" }}
+                      />
+                    )}
                     {modelAvailable() ? (
                       <ModelSelectRow
                         label="记忆 worker"
+                        filter={modelFilter()}
                         current={{ provider: modelState()?.recall?.workerModel?.providerID ?? "", model: modelState()?.recall?.workerModel?.modelID ?? "" }}
                         providers={modelAvailable() ?? []}
                         saving={!!modelSaving().recall}
@@ -665,7 +675,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         : { provider: modelState()?.media?.[kind]?.provider ?? "", model: modelState()?.media?.[kind]?.model ?? "" }
                       const save = (p: string, m: string) => saveMediaModel(kind, p, m)
                       return modelAvailable() ? (
-                        <ModelSelectRow label={label} allowClear={kind !== "default"} current={cur} providers={modelAvailable() ?? []} saving={!!modelSaving()[kind]} onSave={save} />
+                        <ModelSelectRow label={label} filter={modelFilter()} allowClear={kind !== "default"} current={cur} providers={modelAvailable() ?? []} saving={!!modelSaving()[kind]} onSave={save} />
                       ) : (
                         <ModelTextRow label={label} current={cur} saving={!!modelSaving()[kind]} onSave={save} />
                       )
@@ -976,33 +986,39 @@ function ModelSelectRow(props: {
   allowClear?: boolean
   current: { provider: string; model: string }
   providers: any[]
+  filter: string
   saving: boolean
   onSave: (provider: string, model: string) => void
 }) {
   const [pendingProvider, setPendingProvider] = createSignal(props.current.provider)
+  const providerOptions = () => (props.providers ?? [])
+    .map(p => ({ id: p.providerID, label: p.providerName || p.providerID }))
+    .filter(o => !props.filter || o.label.toLowerCase().includes(props.filter.toLowerCase()) || o.id.toLowerCase().includes(props.filter.toLowerCase()))
+    .sort((a, b) => a.label.localeCompare(b.label, 'zh'))
   const modelsFor = (pid: string) => (props.providers ?? []).find(p => p.providerID === pid)?.models ?? []
   const modelLabel = (id: string) => modelsFor(pendingProvider()).find(m => m.id === id)?.name ?? id
   return (
     <div class="mafw-config-model-row">
       <span class="mafw-config-model-label">{props.label}</span>
       <div style={{ display: "flex", gap: 6, "align-items": "center" }}>
-        <div style={{ width: 130 }}>
+        <div style={{ width: 150 }}>
           <SelectV2
-            options={(props.providers ?? []).map(p => p.providerID)}
+            options={providerOptions()}
             current={pendingProvider()}
-            value={(x: string) => x}
-            onSelect={(v) => { if (v != null) setPendingProvider(v) }}
+            value={(x: any) => x.id}
+            label={(x: any) => x.label}
+            onSelect={(v) => { if (v != null) setPendingProvider(v.id) }}
             disabled={props.saving}
             placeholder="provider"
           />
         </div>
         <div style={{ width: 160 }}>
           <SelectV2
-            options={props.allowClear ? ["", ...modelsFor(pendingProvider()).map(m => m.id)] : modelsFor(pendingProvider()).map(m => m.id)}
+            options={props.allowClear ? [{ id: "", label: "（跟随默认）" }, ...modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))] : modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))}
             current={props.current.model}
-            value={(x: string) => x}
-            label={(x: string) => (x === "" ? "（跟随默认）" : modelLabel(x))}
-            onSelect={(v) => { if (v != null && v !== props.current.model) props.onSave(pendingProvider(), v) }}
+            value={(x: any) => x.id}
+            label={(x: any) => x.label}
+            onSelect={(v) => { if (v != null && v.id !== props.current.model) props.onSave(pendingProvider(), v.id) }}
             disabled={props.saving || !pendingProvider()}
             placeholder={props.allowClear ? "（跟随默认）" : "model"}
           />

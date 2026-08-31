@@ -59,26 +59,37 @@ export class PiSessionRegistry {
 
   sessionIdFor(session: any): string | undefined { return this.bySession.get(session); }
 
-  async promptAsync(id: string, text: string): Promise<void> {
+  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean }): Promise<void> {
     const s = this.requireSession(id);
     this.touch(id);
+    const piOpts = this.buildPiPromptOpts(opts);
     if (s.isStreaming) {
       await s.sendUserMessage(text, { deliverAs: 'followUp' });
     } else {
-      await s.prompt(text, {});
+      await s.prompt(text, piOpts);
       await s.waitForIdle();
     }
   }
 
-  async prompt(id: string, text: string): Promise<{ parts: any[] }> {
+  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean }): Promise<{ parts: any[] }> {
     const s = this.requireSession(id);
     this.touch(id);
+    const piOpts = this.buildPiPromptOpts(opts);
     const before = (s.messages || []).length;
-    await s.prompt(text, {});
+    await s.prompt(text, piOpts);
     await s.waitForIdle();
     const after = s.messages || [];
     const assistant = after.slice(before).filter((m: any) => m?.role === 'assistant');
     return { parts: (assistant[assistant.length - 1]?.content || []).map((c: any) => ({ type: 'text', text: c?.text || '' })) };
+  }
+
+  private buildPiPromptOpts(opts?: { system?: string; agent?: string; noReply?: boolean }): Record<string, any> {
+    if (!opts) return {};
+    const piOpts: Record<string, any> = {};
+    if (opts.system) piOpts.system = opts.system;
+    if (opts.agent) piOpts.agent = opts.agent;
+    if (opts.noReply) piOpts.noReply = opts.noReply;
+    return piOpts;
   }
 
   async messages(id: string): Promise<{ data: any[] }> {
