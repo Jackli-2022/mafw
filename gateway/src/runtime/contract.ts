@@ -65,6 +65,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     perLlmCallTransform: false,
     sessionStorageApi: false,
     agentConfigApi: false,
+    agentProcessApi: false,
   };
 }
 

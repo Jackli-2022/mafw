@@ -2930,6 +2930,18 @@ html[data-theme="light"] .mafw-picker-pop {
   border-top: 1px solid var(--v2-border-border-base, var(--border-subtle));
 }
 
+/* Fix: TooltipV2 trigger sets display:flex on its wrapper div, which turns
+   block-level children into flex items defaulting to flex:0 1 auto (shrink to
+   content width). Without this rule the progress bar collapses left with blank
+   space on the right.  width:100% alone sets the flex-basis but doesn't force
+   the trigger to grow; flex:1 1 0% + min-width:0 makes it fill available space.
+   Scoped to .mafw-shell to avoid side effects on other TooltipV2 consumers. */
+.mafw-shell [data-component="tooltip-v2-trigger"] > .mafw-usage-window,
+.mafw-shell [data-component="tooltip-v2-trigger"] > .mafw-usage-ctx-row {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
 .mafw-usage-window-label {
   color: var(--text-4);
   text-transform: uppercase;
