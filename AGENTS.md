@@ -64,7 +64,7 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 
 ## 4. Tools 清单（v6.8 总共 40 个）
 
-### 4.1 Gateway MCP 工具（36 个，`gateway/src/mcp/tool-registry.ts`）
+### 4.1 Gateway MCP 工具（37 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
@@ -104,6 +104,7 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_desktop_click` | 桌面点击 |
 | `mafw_desktop_type` | 桌面输入 |
 | `mafw_desktop_scroll` | 桌面滚动 |
+| `mafw_restart_agent` | 重启 gateway 拥有的 agent 进程（opencode serve sidecar）；external/进程内 runtime 不可用 |
 
 ### 4.2 插件侧工具（4 个，`src/tools/`）
 
@@ -463,6 +464,8 @@ opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
 - **adopted 场景**：gateway 崩溃后孤儿 serve 存活，新 gateway 启动时
   `isServeHealthy()` 探到则**收养**（不重新 spawn），watchdog 同上
 - **恢复动作收敛**：共用 `recoverServe()` = `killProcessOnPort(4096)` + `startServe()` + `subscribeToEvents()`
+- **手动恢复入口**：`POST /api/runtime/restart-agent`（SDK `runtime.restartAgent()` / Config 页按钮 /
+  MCP `mafw_restart_agent`）触发与 watchdog 相同的编排（kill+respawn+事件流重订）；external 模式 503
 - 外部 serve 模式（`MAFW_SERVER_SERVE_URL`）不监管（用户管理的进程）
 - serve 的 stdout/stderr **不被 SDK 暴露**，因此**不写入** `[Serve]` 前缀日志；诊断依赖 watchdog 的 "Serve unhealthy" / recovery 日志
 - 经验：子进程型依赖必须配监督（检测点不能在启动时一次完事）；恢复动作必须完整
@@ -533,7 +536,7 @@ manager agent 通过 `agents.install('manager', getManagerAgentDefinition())` �
 - **`edit: {"*": "deny"}`**：禁用 edit/write/apply_patch（不能直接改文件/代码）——与内置 plan 对齐
 - **`task: {"general": "deny"}`**：不派发 opencode 子任务（委派走 `mafw_set_goal` MCP 工具）
 - **bash 默认 allow**：执行命令不受限（自更新等流程经 bash 通道；与 plan 同级）
-- **gateway MCP 工具显式 allow**：35 个 `mafw_*` 工具白名单（`mafw_set_goal`/`mafw_update_state`/
+- **gateway MCP 工具显式 allow**：36 个 `mafw_*` 工具白名单（`mafw_set_goal`/`mafw_update_state`/
   `mafw_ask_user`/记忆/自动化/桌面控制等）——opencode 权限按工具名匹配，`edit` deny 不影响
   MCP 工具；显式 allow 防未来 defaults 收紧（如 `"*": "ask"`）时误伤
 - 机制依据：opencode `permission/index.ts` 的 `disabled()`——仅 `edit/write/apply_patch` 映射到
@@ -545,7 +548,8 @@ manager agent 通过 `agents.install('manager', getManagerAgentDefinition())` �
 gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runtime/`）：
 
 - `contract.ts` — `RuntimeCapabilities`（sessionApi/promptWhileBusy/eventStream/
-  nativeApprovals/providerConfigApi/perLlmCallTransform/sessionStorageApi/agentConfigApi）
+  nativeApprovals/providerConfigApi/perLlmCallTransform/sessionStorageApi/agentConfigApi/
+  agentProcessApi）
   + `RuntimeClient` 接口面 + `AgentRuntime`。能力分级：Tier 0（协作协议 + per-turn 记忆）
   → Tier 1（+ 自治执行 + per-step 记忆）→ Tier 2（+ 桌面完整，opencode 形状 DTO 归一化输出）
 - `normalize.ts` — runtime 原生事件 → `EventFacets`（正交切面：step/chatSignal/
@@ -569,6 +573,8 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   私有存储列出会话；缺失时回退 `session.list` + 客户端目录过滤
 - `agentConfigApi?: boolean` + `agents?: { install(name, definition); remove?(name) }` —
   agent 定义安装；缺失时跳过 + warn 日志（manager 功能降级但不崩）
+- `agentProcessApi?: boolean` + `agentProcess?: { restart() }` — agent 进程生命周期管理；
+  opencode owned runtime 为 true（kill+respawn serve sidecar）；external/pi 为 false
 
 激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
@@ -755,4 +761,83 @@ npx ts-node --project evaluation/longmemeval/tsconfig.json \
   --judge meta-llama/llama-3.1-70b-instruct \
   --apiUrl https://openrouter.ai/api/v1/chat/completions \
   --apiKeyProvider openrouter
+```
+
+## 8. Usage Provider Plugin System
+
+### 8.1 架构概述
+
+所有 8 个内置适配器已重构为 JS 插件（commit c2faeef4），采用双目录加载机制：
+- **内置插件**：`dist/usage/builtin-plugins/`（随包分发）
+- **用户插件**：`~/.mafw/usage-plugins/`（用户同名文件覆盖内置）
+
+Gateway 仅提供 PluginLoader + ctx + UsagePoller；UI 保持通用。
+
+### 8.2 插件类型
+
+| 类型 | 适配器 | 窗口类型 |
+|------|--------|----------|
+| `api` | deepseek, kimi, openrouter, siliconflow-cn | balance（余额/限额）|
+| `token-plan` | opencode-go, zhipuai-coding-plan, kimi-for-coding, commandcode | 5h / 7d / month |
+
+### 8.3 插件接口
+
+```javascript
+module.exports = {
+  name: 'my-provider',
+  type: 'api' | 'token-plan',
+  plan: 'Plan Name',
+  async fetch(ctx) {
+    // ctx.apiKey(name) - 读取 auth.json 中的 provider key
+    // ctx.cookie(name) - 读取 config.usage.cookies[name]
+    // ctx.fetch(url, opts) - 带 10s 超时的 fetch
+    // ctx.pluginConfig(name) - 读取 config.usage.pluginConfig[name]
+    // ctx.log - gateway logger
+    return {
+      name: 'my-provider',
+      type: 'api',
+      plan: 'Plan Name',
+      windows: [{ window: 'balance', used, limit, unit: '$', pct }],
+    };
+  },
+};
+```
+
+### 8.4 特定适配器实现细节
+
+#### KimiCodingPlanAdapter（kimi-for-coding）
+
+**Bug 修复**（commit 69bfebf6）：
+- 旧实现：所有 limit items 硬编码 `window:'5h'`
+- 新实现：映射 `window.duration`（分钟）→ 窗口类型
+  ```javascript
+  const durationToWindow = { 300: '5h', 10080: '7d', 43200: 'month' };
+  ```
+- 回退：未匹配的 duration 默认 `'5h'`
+- 月度窗口：当 `limits[]` 中无月度限制时，从 `root.usage.{limit,used}` 添加月度窗口
+
+#### CommandCodeAdapter（commandcode）
+
+**API 结构**（https://api.commandcode.ai/internal/billing/credits）：
+- `body.windowLimits`（顶层，非 `body.credits.windowLimits`）：`fiveHour`/`weekly` 含 `cap`+`used`+`resetAt`
+- `body.credits.monthlyCredits`：月度剩余（无硬性上限）
+
+**月度窗口实现**：
+```javascript
+windows.push({
+  window: 'month',
+  used: monthlyCredits,
+  limit: 0,      // 无硬性上限
+  unit: '$',
+  pct: 0,        // 显示为无限样式
+});
+```
+
+### 8.5 配置
+
+```yaml
+usage:
+  disabledPlugins: []  # 禁用的插件名称列表
+  cookies: {}          # session cookies（如 commandcode）
+  pluginConfig: {}     # 插件自定义配置
 ```

@@ -687,6 +687,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <div class="mafw-config-section-desc">
                   配置 token 限额、余额预算和平台 cookie，用于追踪和管理 AI 用量。
                 </div>
+              </div>
               <div class="mafw-config-section-body">
                 {usageLoading() ? (
                   <div class="mafw-config-inline-loading">
