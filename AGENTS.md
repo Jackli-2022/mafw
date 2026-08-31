@@ -667,6 +667,7 @@ mafw start             # 前台启动
 mafw daemon            # 后台启动
 mafw stop              # 停止
 mafw restart           # 重启前台（stop + 1s + start）
+mafw restart-agent     # 重启 agent serve sidecar（POST /api/runtime/restart-agent；external/进程内 runtime 返回 503）
 
 # 日志和诊断
 mafw logs              # 看最后 50 行

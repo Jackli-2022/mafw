@@ -31,6 +31,7 @@ Process Commands:
 API Commands:
   health             Gateway health check (GET /health)
   stats              Gateway statistics (GET /api/stats)
+  restart-agent      Restart the agent serve process (POST /api/runtime/restart-agent)
   projects           List registered projects (GET /api/projects)
   goals              List active goals (GET /api/goals)
   register <dir>     Register a project (POST /register)
@@ -54,9 +55,9 @@ Utility Commands:
 
 const COMMANDS = [
   'start', 'daemon', 'stop', 'status', 'restart', 'logs',
-  'health', 'stats', 'projects', 'goals', 'register',
-  'sessions', 'control', 'memory-search',
-  'automations', 'approvals', 'triage',
+    'health', 'stats', 'projects', 'goals', 'register',
+    'sessions', 'control', 'memory-search',
+    'automations', 'approvals', 'triage', 'restart-agent',
   'service-register', 'service-unregister',
   'config', 'dashboard', 'uninstall', 'version', 'update',
 ];
@@ -339,6 +340,7 @@ async function main() {
     case 'logs': showLogs(); break;
 
     case 'health': await callApi('health', 'GET', '/health'); break;
+    case 'restart-agent': await callApi('restart-agent', 'POST', '/api/runtime/restart-agent'); break;
     case 'stats': await callApi('stats', 'GET', '/api/stats'); break;
     case 'projects': await callApi('projects', 'GET', '/api/projects'); break;
     case 'goals': await callApi('goals', 'GET', '/api/goals'); break;
