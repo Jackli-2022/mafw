@@ -61,6 +61,8 @@ export class ParametricStore {
 
   /**
    * 保存一个 Δ。如果已存在且内容相同，跳过写入。
+   * 能量按增量衰减结算：自 last_energy_at（缺失回退 created_at）起算流逝天数，
+   * 结算后盖章 last_energy_at —— 重复保存不会重复扣全龄衰减。
    */
   save(delta: Delta): void {
     const p = this.deltaPath(delta.id, delta.type);
@@ -69,19 +71,25 @@ export class ParametricStore {
       const existing = fs.readFileSync(p, 'utf-8');
       if (existing === data) return; // 无变化，跳过
     }
-    const daysSinceCreated = Math.max(0, (Date.now() - new Date(delta.created_at).getTime()) / 86_400_000);
-    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, { type: 'retrieved' }, daysSinceCreated, 1.0, delta.id);
+    const now = Date.now();
+    const base = new Date(delta.last_energy_at || delta.created_at || 0).getTime();
+    const daysSinceEnergy = base > 0 ? Math.max(0, (now - base) / 86_400_000) : 0;
+    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, { type: 'retrieved' }, daysSinceEnergy, 1.0, delta.id);
+    delta.last_energy_at = new Date(now).toISOString();
     fs.writeFileSync(p, yaml.dump(delta, { lineWidth: -1 }), 'utf-8');
   }
 
   /**
-   * 更新 Δ 的能量值（基于事件和时间的衰减/奖励）
+   * 更新 Δ 的能量值（基于事件和时间的增量衰减/奖励），结算后盖章 last_energy_at。
    */
   updateEnergy(id: string, type: DeltaType, event: EnergyEvent): void {
     const delta = this.load(id, type);
     if (!delta) return;
-    const daysSinceCreated = Math.max(0, (Date.now() - new Date(delta.created_at).getTime()) / 86_400_000);
-    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, event, daysSinceCreated, 1.0, delta.id);
+    const now = Date.now();
+    const base = new Date(delta.last_energy_at || delta.created_at || 0).getTime();
+    const daysSinceEnergy = base > 0 ? Math.max(0, (now - base) / 86_400_000) : 0;
+    delta.energy_score = this.energySystem.calculateEnergy(delta.energy_score, event, daysSinceEnergy, 1.0, delta.id);
+    delta.last_energy_at = new Date(now).toISOString();
     fs.writeFileSync(this.deltaPath(id, type), yaml.dump(delta, { lineWidth: -1 }), 'utf-8');
   }
 
@@ -244,5 +252,24 @@ export class ParametricStore {
    */
   updateManifest(manifest: BaseSkillManifest): void {
     fs.writeFileSync(this.config.manifestFile, yaml.dump(manifest), 'utf-8');
+  }
+
+  /**
+   * 清理能量低于阈值的 Δ（归档到 banned/）
+   * 返回被归档的 delta ID 列表
+   */
+  cleanup(): string[] {
+    const archived: string[] = [];
+    const deltas = this.loadAll();
+    for (const d of deltas) {
+      if (this.energySystem.shouldCleanup(d.energy_score)) {
+        this.ban(d.id, {
+          reason: `energy below cleanup threshold (${d.energy_score})`,
+          suggestion: 'archived due to low energy score'
+        });
+        archived.push(d.id);
+      }
+    }
+    return archived;
   }
 }

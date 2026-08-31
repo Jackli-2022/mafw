@@ -265,27 +265,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     priority: 100
   });
 
-  hookManager.register({
-    name: 'memory-contradiction-handler',
-    event: 'memory.contradiction',
-    handler: async (ctx) => {
-      const { existingId, newId, field, existingValue, newValue } = ctx.data || ctx;
-
-    },
-    priority: 100
-  });
-
-  hookManager.register({
-    name: 'memory-decay-handler',
-    event: 'memory.decay',
-    handler: async (ctx) => {
-      const { oldEnergy, newEnergy, reason, unitId } = ctx.data || ctx;
-      if (newEnergy < 0.3) {
-      }
-    },
-    priority: 100
-  });
-
   // 鈹€鈹€ Wave 2: Session Start 鈹€鈹€
   hookManager.register({
     name: 'session-start',

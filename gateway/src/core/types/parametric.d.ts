@@ -29,6 +29,7 @@ export interface BaseDelta {
 
   created_at: string; // ISO 8601
   energy_score: number;  // 0.0 ~ 1.0，越高越可靠
+  last_energy_at?: string; // 能量最后结算时刻（增量衰减基线，缺失回退 created_at）
   verified: boolean;       // 是否经过 Archive 阶段验证
   priority: number;      // 1-10，注入截断时按 priority DESC 排序
 }
