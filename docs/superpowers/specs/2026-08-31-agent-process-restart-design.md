@@ -39,15 +39,15 @@ RuntimeCapabilities {
 }
 
 AgentRuntime {
-  ...,                      // 现有成员不变
+  ...,                      // 现有成员不变（含既有 healthCheck?()）
   agentProcess?: {
     restart(): Promise<void>      // 原语：杀 + 重新拉起 agent 进程（不负责事件流）
-    health(): Promise<boolean>
   }
 }
 ```
 
 - `fullCapabilities()` 增加 `agentProcessApi: true`（内置 opencode runtime 全能力）
+- **不新增 `agentProcess.health()`** —— 复用既有 `healthCheck?()`（contract.ts:159），避免两套健康探针
 - **external 语义升级**：`external=true` 时 `capabilities.agentProcessApi=false`（声明依据仍是
   `MAFW_SERVER_SERVE_URL` 环境变量，但表达方式从环境变量直读升级为契约声明）
 
@@ -55,9 +55,13 @@ AgentRuntime {
 
 - **动作（runtime 拥有）**：opencode 内置 runtime 实现 `agentProcess.restart()` =
   现 `recoverServe()` 的动作段下沉（kill 4096 + respawn serve + 就绪等待）；
-  `health()` = 现 `isServeHealthy()`
+  健康探测复用既有 `healthCheck()`
+- **句柄簿记**：runtime 重启后 gateway 仍需刷新 `serveInstance`/`serveUrl`
+  （端口固定 4096 使 URL 确定性成立；startServe 现有簿记逻辑保留）
 - **编排（gateway 拥有）**：`recoverServe()` 重构为：
-  1. `runtime.agentProcess?.restart()`（能力缺失 → 回退现有内建 kill+respawn 代码，向后兼容旧插件）
+  1. `runtime.agentProcess?.restart()`（**触发条件**：能力位为 true 但 `agentProcess`
+     对象缺失的插件走不到这里 —— 编排回退仅服务于"声明 true 但漏实现对象"的插件；
+     能力位 undefined/false 的旧插件直接被 HTTP 503 拒绝，见 §3）
   2. 统一 `await this.subscribeToEvents()`
   3. `startServeWatchdog()` + 退避计数（现有逻辑不变）
 - 看门狗 owned 分支与手动触发共用同一编排路径；`serveRecovering` 互斥门保留
@@ -84,7 +88,9 @@ AgentRuntime {
 ## §5 边界与非目标
 
 - restart 会中断 in-flight prompts（与 watchdog 行为一致；MCP 工具描述注明）
-- restart-agent 与 runtime 热切换互斥：编排期 `serveRecovering` 门已有；runtime-switch 期间到达的请求走同一互斥
+- restart-agent 与 runtime 热切换互斥：`serveRecovering` 门已存在于 recoverServe/watchdog；
+  **runtime-switch 路由当前无此守卫 —— 需要新增**（restart 期间到达 switch → 409，反之亦然），
+  并补路由测试覆盖两个方向
 - 非目标：external 进程的优雅停止（用户管理的进程用户自己管）；pi 的会话注册表清理式重启；`mafw restart-agent` CLI 子命令（HTTP 已覆盖，后续需要再加）
 
 ## §6 改动文件
@@ -95,10 +101,10 @@ AgentRuntime {
 | gateway/src/runtime/opencode-runtime.ts | `agentProcess` 实现（动作段下沉） |
 | gateway/src/index.ts | recoverServe 拆分编排/动作 + `POST /api/runtime/restart-agent` 接线 |
 | gateway/src/mcp/tool-registry.ts | `mafw_restart_agent` 工具 |
-| gateway/tests/unit/runtime/ | 契约/路由单测（仿 runtime-switch.test.ts 风格） |
+| gateway/tests/unit/ | 契约/路由单测（与既有 runtime-switch.test.ts 同目录；仿其真实 http server 风格） |
 | opencode-dev/packages/gateway-sdk/src/{types,client}.ts + 测试 | `restartAgent` |
 | opencode-dev/packages/desktop/src/{preload,renderer/mafw/pages/Config.tsx} | 桥接 + 按钮 |
-| AGENTS.md | §5.15（自更新补充手动重启）、§5.18（白名单 36）、§5.19（能力矩阵）更新 |
+| AGENTS.md | §4.1（工具表 +1：gateway 36→37，总计 40→41）、§5.15（自更新补充手动重启）、§5.18（白名单 36→37）、§5.19（能力矩阵）更新 |
 
 ## §7 测试与验证
 
