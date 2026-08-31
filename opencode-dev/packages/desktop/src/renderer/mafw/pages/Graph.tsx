@@ -32,7 +32,12 @@ export function GraphPage() {
 
   onMount(async () => {
     let alive = true
-    onCleanup(() => { alive = false })
+    let eventUnsub: (() => void) | null = null
+    onCleanup(() => {
+      alive = false
+      if (eventUnsub) eventUnsub()
+      window.api.mafw.event.unsubscribe().catch((e: any) => console.warn("[mafw]", e))
+    })
     let attempts = 0
     const maxAttempts = 10
     let subscribed = false
@@ -51,7 +56,7 @@ export function GraphPage() {
       }
     }
     if (subscribed) {
-      const unsub = window.api.mafw.event.onEvent((data: any) => {
+      eventUnsub = window.api.mafw.event.onEvent((data: any) => {
         if (data?.phase) setCurrentPhase(data.phase)
         if (data?.nodeId) setActiveNodeId(data.nodeId)
         if (data?.type === "phaseChange" && data.nodeId) {
@@ -64,10 +69,6 @@ export function GraphPage() {
           setStatuses(next)
         }
         setLastMessage(JSON.stringify(data).slice(0, 80))
-      })
-      onCleanup(() => {
-        unsub()
-        window.api.mafw.event.unsubscribe().catch((e: any) => console.warn("[mafw]", e))
       })
     }
   })

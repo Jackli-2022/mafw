@@ -6,6 +6,11 @@ function invoke<T = unknown>(namespace: string, method: string, ...args: unknown
 }
 
 export function createMafwApi(): MafwAPI {
+  // Clean up orphaned listeners from previous preload executions.
+  // ipcRenderer listeners survive page reloads (win.reload(), Vite full-reload)
+  // but the old stateCallbacks/stateRelay are garbage-collected without cleanup.
+  ipcRenderer.removeAllListeners("mafw-gateway-state")
+
   // Gateway state is multiplexed over ONE ipc listener: renderer components
   // (MafwShell/Rail/Config + HMR remounts) subscribe freely without piling
   // ipcRenderer listeners up against the default 10-listener warning limit.

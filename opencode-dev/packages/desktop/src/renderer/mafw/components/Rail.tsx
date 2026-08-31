@@ -46,9 +46,8 @@ export function Rail(props: Props) {
 
   const gwReady = createMemo(() => gwStatus()?.state === "ready")
 
-  onMount(async () => {
-    const status = await window.api.mafw.gateway.info()
-    setGwStatus(status)
+  onMount(() => {
+    window.api.mafw.gateway.info().then(setGwStatus)
     onCleanup(window.api.mafw.gateway.onStateChange((s) => setGwStatus(s)))
   })
 
