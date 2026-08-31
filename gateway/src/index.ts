@@ -47,6 +47,7 @@ import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
 import { wakeCompletedHandler, wakeFailedHandler, wakeQuestionHandler } from './core/manager/wake-handlers';
 import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
 import { getManagerAgentDefinition } from './skills/manager-agent-config';
+import { ensureMemoryCuratorAgent } from './skills/memory-curator-agent';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
@@ -532,6 +533,14 @@ class MafwScheduler {
         await this.opencodeClient.agents.install('manager', getManagerAgentDefinition());
       } catch (err: any) {
         log.warn(`[ManagerAgent] install failed (non-fatal): ${err.message}`);
+      }
+      // 5.1b Install the `memory-curator` agent for memory pipeline workers
+      // (tool-restricted: memory tools only — hard guard against the
+      // 2026-08-31 worker-implemented-plans incident)
+      try {
+        await ensureMemoryCuratorAgent(this.opencodeClient);
+      } catch (err: any) {
+        log.warn(`[MemoryCurator] install failed (non-fatal): ${err.message}`);
       }
     } else {
       log.warn('[ManagerAgent] agentConfigApi not available — manager agent permission guardrails unavailable');
