@@ -849,14 +849,17 @@ class MafwScheduler {
   private handleOpencodeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
     const { type, properties: props, sessionID } = f;
-    // Internal pipeline sessions (index-scan / turnCompress / reflection workers)
-    // stream message.part.delta per token — passing those through flooded the
-    // desktop renderer (per-delta store writes + re-render storms froze the UI).
-    // Tiered policy: token-level noise is dropped; lifecycle events (idle/error)
-    // still broadcast, tagged `internal`, so the UI can surface pipeline status.
-    const internal = !!(sessionID && this.internalSessionRoles.has(sessionID));
-    if (internal && type !== 'message.complete' && type !== 'session.idle' && type !== 'message.error' && type !== 'message.aborted' && f.broadcast !== 'error') return;
-    log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}${internal ? ' (internal)' : ''}`);
+    // Only memory-system sessions (index-scan / extract / reflect workers) are
+    // internal: their token-level deltas flooded the desktop renderer (per-delta
+    // store writes + re-render storms froze the UI). Tiered policy for them:
+    // token noise dropped; lifecycle events (idle/error) still broadcast, tagged
+    // `internal`, so the UI can surface pipeline status. Every other session —
+    // user chats AND manager goal sessions — passes through untouched.
+    const role = sessionID ? this.internalSessionRoles.get(sessionID) : undefined;
+    const memoryWorker = !!role && (role === 'index-scan' || role === 'extract' || role === 'reflect');
+    if (memoryWorker && type !== 'message.complete' && type !== 'session.idle' && type !== 'message.error' && type !== 'message.aborted' && f.broadcast !== 'error') return;
+    // deltas are never logged for any session (per-token lines churned the 5MB log)
+    if (type !== 'message.part.delta') log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}`);
 
     // Caller-location bookkeeping for self-update: every event refreshes the
     // session's last-active stamp; tool events carrying a shell command that
@@ -873,7 +876,7 @@ class MafwScheduler {
 
     // Path T: trajectory accumulation — writes SQLite + broadcasts trajectory.event/trajectory.turn
     try {
-      if (!internal) {
+      if (!memoryWorker) {
         const collector = this.trajectoryCollector;
         if (collector) {
           const trajEvt = collector.handleEvent(type, props, f.directory);
@@ -922,11 +925,11 @@ class MafwScheduler {
       } catch (err: any) {
         log.warn(`[Trajectory] idle aggregation failed (non-fatal): ${err.message}`);
       }
-      this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID, ...(internal ? { internal: true } : {}) } });
+      this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID, ...(memoryWorker ? { internal: true } : {}) } });
     } else if (f.broadcast === 'error') {
-      this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error'), ...(internal ? { internal: true } : {}) } });
+      this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error'), ...(memoryWorker ? { internal: true } : {}) } });
     } else {
-      this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID, ...(internal ? { internal: true } : {}) } });
+      this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID, ...(memoryWorker ? { internal: true } : {}) } });
     }
   }
 
