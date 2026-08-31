@@ -18,8 +18,12 @@ import { AgentRuntime, SessionInfo, fullCapabilities } from './contract';
 import { AgentDefinition } from './agent-definition';
 import { createOpencodeAdapter } from '../opencode-adapter';
 import { config as gatewayConfig } from '../config';
-import { getProviderApiKey } from '../media/auth-util';
+import { getProviderApiKey } from './auth';
 import { log } from '../core/utils/logger';
+
+// Re-export auth utilities for consumers (single implementation source)
+export { DEFAULT_AUTH_PATH, readOpencodeAuth, getProviderApiKey } from './auth';
+export type { ProviderCredential } from './auth';
 
 // ─── SQLite 直读层（opencode.db） ────────────────────────────────────────────
 

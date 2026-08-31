@@ -26,8 +26,10 @@ jest.mock('../../../src/core/utils/logger', () => ({
 jest.mock('../../../src/config', () => ({
   config: { server: { serveUrl: 'http://127.0.0.1:4096' } },
 }));
-jest.mock('../../../src/media/auth-util', () => ({
+jest.mock('../../../src/runtime/auth', () => ({
   getProviderApiKey: () => null,
+  readOpencodeAuth: () => ({}),
+  DEFAULT_AUTH_PATH: () => '/tmp/fake-auth.json',
 }));
 
 import { createOpencodeRuntime } from '../../../src/runtime/opencode-runtime';

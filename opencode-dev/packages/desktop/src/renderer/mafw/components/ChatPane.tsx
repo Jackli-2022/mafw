@@ -1634,7 +1634,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏">✕</ButtonV2>
                 </TooltipV2>
               </Show>
-              <Show when={props.parentID && props.onBackToParent}>
+              <Show keyed when={props.parentID && props.onBackToParent}>
                 <TooltipV2 value="返回父会话" openDelay={300}>
                   <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={e => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话">← 返回</ButtonV2>
                 </TooltipV2>
@@ -2049,7 +2049,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           </div>
         </PopoverShell>
         {/* Switch-agent confirm (running) */}
-        <Show when={switchConfirm()}>
+        <Show keyed when={switchConfirm()}>
           <div class="mafw-confirm-backdrop">
             <div class="mafw-confirm">
               <div class="mafw-confirm-title">切换将中断当前任务</div>

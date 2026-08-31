@@ -1984,7 +1984,7 @@ export function MafwShell() {
                   />
                 </Show>
                 {/* Split direction menus */}
-                <Show when={splitMenuFor()}>
+                <Show keyed when={splitMenuFor()}>
                   {(m) => {
                     const opts = () => directionOptionsFor(m().sid)
                     return (
@@ -2017,7 +2017,7 @@ export function MafwShell() {
                     )
                   }}
                 </Show>
-                <Show when={globalSplitMenu()}>
+                <Show keyed when={globalSplitMenu()}>
                   {(m) => {
                     // Global split always creates a NEW split view with a free
                     // four-way direction choice (not constrained by the
@@ -2048,7 +2048,7 @@ export function MafwShell() {
                   }}
                 </Show>
                 {/* Continue-split menu inside a split view tab */}
-                <Show when={splitViewMenuFor()}>
+                <Show keyed when={splitViewMenuFor()}>
                   {(m) => {
                     const opts = () => {
                       const rec = splitViews().find(v => v.id === m().id)
@@ -2188,7 +2188,7 @@ export function MafwShell() {
           </Show>
         </div>
       </div>
-      <Show when={activeQuestion()}>
+      <Show keyed when={activeQuestion()}>
         <QuestionWidget
           question={activeQuestion()!}
           gatewayUrl={gatewayUrl()}

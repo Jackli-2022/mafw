@@ -1,4 +1,4 @@
-import { DEFAULT_AUTH_PATH, readOpencodeAuth } from './auth-util';
+import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../runtime/auth';
 import type { PromptFn, PromptPart } from './media-service';
 
 /**

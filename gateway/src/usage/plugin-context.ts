@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { log } from '../core/utils/logger';
-import { getProviderApiKey } from './auth-helpers';
+import { getProviderApiKey } from '../runtime/auth';
 import { ExternalAdapter } from './types';
 import { UsageProvider, Severity } from './types';
 import type { RuntimeCredentials } from '../runtime/contract';

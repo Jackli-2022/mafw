@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import type { PromptFn, PromptPart, PromptOptions } from './media-service';
 import type { AgentRuntime } from '../runtime/contract';
 import { fixMediaPayload } from './pi-adapter';
-import { DEFAULT_AUTH_PATH } from './auth-util';
+import { DEFAULT_AUTH_PATH } from '../runtime/auth';
 import { log } from '../core/utils/logger';
 
 export interface MediaRuntimeExecutorOptions {

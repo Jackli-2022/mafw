@@ -130,7 +130,7 @@ export function TrajectoryDock(props: {
           </ButtonV2>
         </TooltipV2>
       </div>
-      <Show when={error()}>
+      <Show keyed when={error()}>
         <div class="mafw-trajectory-error">{error()}</div>
         <ButtonV2 variant="outline" size="small" onClick={() => void load()}>
           重试

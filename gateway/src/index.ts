@@ -884,7 +884,7 @@ class MafwScheduler {
       } else if (f.chatSignal === 'complete') {
         this.chatSessions.pushComplete(sessionID);
       } else if (f.chatSignal === 'error') {
-        this.chatSessions.pushError(sessionID, `${f.chatError || 'Unknown error'}`);
+        this.chatSessions.pushError(sessionID, String(f.chatError || 'Unknown error'));
       }
     }
 
@@ -906,7 +906,7 @@ class MafwScheduler {
       }
       this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID } });
     } else if (f.broadcast === 'error') {
-      this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error } });
+      this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error') } });
     } else {
       this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID } });
     }

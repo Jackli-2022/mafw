@@ -1,4 +1,4 @@
-import { getProviderApiKey } from './auth-util';
+import { getProviderApiKey } from '../runtime/auth';
 import type { RuntimeCredentials } from '../runtime/contract';
 
 /**

@@ -493,6 +493,24 @@ test("runtime.switch surfaces API error", async () => {
   await expect(c.runtime.switch("nope")).rejects.toThrow("Runtime plugin 'nope' not found")
 })
 
+test("runtime.restartAgent hits its route", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: true, mode: "owned-respawn" }))
+  const c = new MafwClient()
+  const r = await c.runtime.restartAgent()
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/runtime/restart-agent",
+    expect.objectContaining({ method: "POST" }))
+  expect(r.mode).toBe("owned-respawn")
+})
+
+test("runtime.restartAgent surfaces 503/409 errors", async () => {
+  fetchMock.mockResolvedValue({
+    ok: false, status: 503, statusText: "Service Unavailable",
+    json: () => Promise.resolve({ error: "runtime does not own the agent process" }),
+  } as Response)
+  const c = new MafwClient()
+  await expect(c.runtime.restartAgent()).rejects.toThrow("does not own the agent process")
+})
+
 test("media.plugins + media.switch hit their routes", async () => {
   fetchMock.mockResolvedValue(okJson({ plugins: [{ file: "x.js", name: "qwen-vl", status: "ok", modalities: ["image", "video"] }] }))
   const c = new MafwClient()

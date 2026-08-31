@@ -4,7 +4,7 @@ import { PiSessionRegistry } from '../pi/pi-session';
 import { translatePiMessages } from '../pi/pi-messages';
 import { PiEventStream } from '../pi/pi-events';
 import { translateProviders, translateAgents, translateConfigGet, translateConfigUpdate } from '../pi/pi-provider';
-import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../../media/auth-util';
+import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../auth';
 import { config } from '../../config';
 import { listByDirectory } from '../pi/pi-session-storage';
 import * as piAgentConfig from '../pi/pi-agent-config';

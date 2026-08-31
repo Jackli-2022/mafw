@@ -85,7 +85,7 @@ export function UsagePill(props: Props) {
   })
 
   return (
-    <Show when={hottest()}>
+    <Show keyed when={hottest()}>
       {(h) => (
         <TooltipV2 value={tooltipContent()} openDelay={300}>
           <div class="mafw-usage-pill" onClick={() => props.onClick?.()}>

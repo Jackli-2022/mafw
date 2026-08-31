@@ -132,7 +132,7 @@ export function PopoverShell(props: {
 
   return (
     <Portal>
-      <Show when={props.open && pos()}>
+      <Show keyed when={props.open && pos()}>
         {(p) => (
           <div
             ref={setSelfRef}

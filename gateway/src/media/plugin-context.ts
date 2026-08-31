@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { log } from '../core/utils/logger';
-import { getProviderApiKey } from '../usage/auth-helpers';
+import { getProviderApiKey } from '../runtime/auth';
 import type { RuntimeCredentials } from '../runtime/contract';
 
 export interface MediaPluginContext {
