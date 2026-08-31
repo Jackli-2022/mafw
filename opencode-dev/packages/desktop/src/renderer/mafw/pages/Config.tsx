@@ -991,12 +991,25 @@ function ModelSelectRow(props: {
   onSave: (provider: string, model: string) => void
 }) {
   const [pendingProvider, setPendingProvider] = createSignal(props.current.provider)
+  // props.current arrives async (models.get resolves after mount) — keep the
+  // local pending selection in sync with the saved value.
+  createEffect(() => {
+    if (props.current.provider) setPendingProvider(props.current.provider)
+  })
   const providerOptions = () => (props.providers ?? [])
     .map(p => ({ id: p.providerID, label: p.providerName || p.providerID }))
     .filter(o => !props.filter || o.label.toLowerCase().includes(props.filter.toLowerCase()) || o.id.toLowerCase().includes(props.filter.toLowerCase()))
     .sort((a, b) => a.label.localeCompare(b.label, 'zh'))
   const modelsFor = (pid: string) => (props.providers ?? []).find(p => p.providerID === pid)?.models ?? []
-  const modelLabel = (id: string) => modelsFor(pendingProvider()).find(m => m.id === id)?.name ?? id
+  // SelectV2 options are objects — `current` must be the matching OPTION OBJECT,
+  // not the raw id string (Kobalte matches by option identity, so a string
+  // current would never resolve and the saved selection would not display).
+  const currentProviderOption = () => providerOptions().find(o => o.id === pendingProvider())
+    ?? providerOptions().find(o => o.id === props.current.provider)
+  const currentModelOption = () => {
+    const opts = props.allowClear ? [{ id: "", label: "（跟随默认）" }, ...modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))] : modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))
+    return opts.find(o => o.id === props.current.model)
+  }
   return (
     <div class="mafw-config-model-row">
       <span class="mafw-config-model-label">{props.label}</span>
@@ -1004,7 +1017,7 @@ function ModelSelectRow(props: {
         <div style={{ width: 150 }}>
           <SelectV2
             options={providerOptions()}
-            current={pendingProvider()}
+            current={currentProviderOption()}
             value={(x: any) => x.id}
             label={(x: any) => x.label}
             onSelect={(v) => { if (v != null) setPendingProvider(v.id) }}
@@ -1015,7 +1028,7 @@ function ModelSelectRow(props: {
         <div style={{ width: 160 }}>
           <SelectV2
             options={props.allowClear ? [{ id: "", label: "（跟随默认）" }, ...modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))] : modelsFor(pendingProvider()).map(m => ({ id: m.id, label: m.name || m.id }))}
-            current={props.current.model}
+            current={currentModelOption()}
             value={(x: any) => x.id}
             label={(x: any) => x.label}
             onSelect={(v) => { if (v != null && v.id !== props.current.model) props.onSave(pendingProvider(), v.id) }}
