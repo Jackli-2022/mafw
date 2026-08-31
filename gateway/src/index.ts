@@ -849,6 +849,11 @@ class MafwScheduler {
   private handleOpencodeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
     const { type, properties: props, sessionID } = f;
+    // Internal pipeline sessions (index-scan / turnCompress / reflection workers)
+    // stream message.part.delta per token — broadcast + log + trajectory for them
+    // flooded the desktop SSE and froze the renderer. Their output never flows
+    // back into user-facing surfaces, so drop their events entirely.
+    if (sessionID && this.internalSessionRoles.has(sessionID)) return;
     log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}`);
 
     // Caller-location bookkeeping for self-update: every event refreshes the
