@@ -1,175 +1,186 @@
-# Goal 工作状态层（Working State Layer）设计
+# Goal 工作状态层（Working State Layer）设计 v2
 
-- 日期：2026-08-31
-- 状态：草案 v1
+- 日期：2026-08-31（v2 评审修订）
+- 状态：草案 v2（评审后：3 BLOCKER + 7 MAJOR + 6 minor 全部修正）
 - 上游调研：Recuris (2608.24876)、SKILL.state (2608.26263)、GCPC (2608.27487)、LoopArena (2608.28281)、Repair-or-Resample (2608.25920)
-- 关联 spec：2026-08-27-goal-loop-rsi-design.md（Phase 2.5/3.5）、2026-08-27-memory-skill-rsi-design.md
+- 关联 spec：2026-08-27-goal-loop-rsi-design.md、2026-08-27-memory-skill-rsi-design.md
+
+## v1 → v2 修订说明
+
+v1 在 **legacy 代码地图**上做的设计，评审发现三个地基性错误：
+
+1. **活跃编排面是 LangGraph nodes，不是 skill entry**：`core/skills/mafw-*/entry.ts` 在
+   gateway/src 内零调用方；活跃链路是 `index.ts` → `plan.node.ts` / `node-runner.ts`
+   创建 opencode 会话并 prompt `/skill mafw-{plan,execute,review}`，真正执行的是
+   `.opencode/skills/mafw-*/SKILL.md` 驱动的 agentic 会话
+2. **state.json 的真实写主是 sync.node**：`syncToDashboard`（sync.node.ts:23-44）用
+   固定字段集整体覆盖写盘，每个 node 进出时调用——v1 新增的 workItems/checklist
+   会在第一个 phase 转换就被静默抹掉（今天它已经在丢弃 sessions/artifacts/metrics）
+3. **"文本含 pass 即 PASS"在活跃路径 100% 命中**：活跃 review agent 写自由 markdown，
+   `parseReviewVerdict` 的 JSON.parse 必败 → 每个 verdict 都走文本 fallback
+   （review.node.ts:33-35 + node-runner.ts 重复一份），且 "did not pass" 也误判 PASS。
+   这不是边缘 fallback，是生产环境当前的真实正确性 bug
+
+v2 全部机制重新锚定到 LangGraph nodes + SKILL.md + 活跃 MCP handler。
 
 ## 0. 问题陈述
 
-当前 goal 状态（`.mafw/state/{goalId}.json`）只有**编排进度**（phase/nextAction/loop/wave），
-没有**经验证的工作状态**。三个具体缺陷（代码实证）：
+1. **覆盖式更新**：活跃 MCP handler（handlers/update-state.ts:15）`{...state, ...patch}`
+   全值浅合并、接受任意 key——SKILL.state 实测 68% 状态错误来自此类更新
+2. **模型自述即完成（活跃 bug）**：review verdict 由"review 文件文本含 pass/通过"判定
+   （review.node.ts:34），"did not pass" 同样命中；requests.metrics 在活跃路径
+   **从不参与判定**（比"缺指标跳过"更糟——指标零检查）
+3. **verdict 二值化**：无 partial_credit——GCPC 实测二值不变的匹配对中 20.9% 实质
+   提升、18.7% 实质回退，RSI 演化信号从根上漏 40%
 
-1. **覆盖式更新**：`updateState` 是 `{...current, ...patch}` 全值浅合并（state.ts:86-90），
-   模型直写、无校验——SKILL.state 实测小模型 68% 的状态错误是覆盖式更新，我们同构
-2. **模型自述即完成**：review verdict 的 fallback 是"文本含 pass 即 PASS"（mafw-review/entry.ts:211）；
-   `checkMetrics` 指标缺失直接跳过（entry.ts:189 `if (actual === undefined) continue` → 缺指标=通过）
-3. **verdict 二值化**：PASS/FAIL 无部分信用——GCPC 实测 879 对二值不变的匹配对中
-   20.9% 实质提升、18.7% 实质回退，RSI 演化信号从根上漏 40%
+核心论据不变：**收益来自"知道当前处于什么已验证状态"的工作记忆层**
+（Recuris WM-only +23.9 vs EM-only +2.0）。
 
-调研的核心收敛结论：**长期记忆（EM）几乎不单独产生收益，收益来自"知道当前处于什么
-已验证状态"的工作记忆层**（Recuris 消融 WM-only +23.9 vs EM-only +2.0）。
-MAFW 的 EM 半边（谐波记忆）已是强项，本 spec 补 WM 半边。
+## 1. 架构落点（v2 全部修正）
 
-## 1. 设计原则
+```
+活跃编排：index.ts scheduler → LangGraph nodes（plan.node / execute via node-runner / review.node）
+                                    │  每个 node 进出时 syncToFile → syncToDashboard 写 state.json
+真实执行：opencode agentic 会话（SKILL.md 驱动，full 权限，可调 MCP/bash/edit）
+控制接口：mafw_update_state MCP handler（handlers/update-state.ts）
+观测：gateway.db（goal_outcomes / goal_sessions / t1_observations）
+```
 
-1. **提议-提交分离**：模型产出状态补丁提议，gateway 确定性校验后才提交（SKILL.state 纪律）
-2. **证据门控**：状态迁移到 `done` 必须挂可解析的证据引用（工具回执/git commit/工件文件），
-   模型自述不算数（Recuris checker 纪律）
-3. **checklist 冻结先于执行**：验收项在 plan 阶段冻结并 grounding 到 goal 原文，
-   防轨迹自适应（GCPC 纪律）
-4. **弃权是合法答案**：证据不足判 Abstain 并从分母剔除，不把"不知道"当失败（GCPC 纪律）
-5. **加一层不重写**：保留 nextAction 文件轮询协议、原子写、现有 skill entry 流程
+工作状态层的写入必须贯穿全部三条路径（MCP 校验门、node 边界 reconcile、
+syncToDashboard 保留字段），单一防线必然被绕过。
 
 ## 2. 数据模型
 
-### 2.1 WorkItem（per-subgoal 工作状态条目）
+### 2.1 WorkItem / Checklist（state.json 扩展字段）
 
 ```typescript
-// state.ts 扩展
 export type WorkItemStatus = 'pending' | 'done' | 'blocked';
 
 export interface EvidenceRef {
-  kind: 'receipt' | 'commit' | 'artifact' | 'observation';
-  ref: string;              // receipt 文件路径 / commit hash / 工件路径 / t1_observations turnID
-  note?: string;            // 一句话说明该证据支持什么
+  kind: 'commit' | 'observation' | 'receipt';
+  ref: string;    // commit: hash；observation: "sessionID:turnID" 复合引用；
+                  // receipt: receipts 目录下文件名（仅 wave 末/会话末可验，见 §3.3）
+  note?: string;
 }
 
 export interface WorkItem {
-  id: string;               // 来自 plan 阶段 waves.json 的 task id
-  content: string;          // 该子目标要做什么（plan 冻结）
+  id: string;               // 来自本 loop waves.json 的 task id
+  content: string;
   status: WorkItemStatus;
-  evidence: EvidenceRef[];  // status=done 时必填且须可解析（见 §3.3）
-  blocker?: string;         // status=blocked 时必填
+  evidence: EvidenceRef[];  // status=done 必填且可解析
+  blocker?: string;         // status=blocked 必填
   updatedAt: string;
-}
-
-export interface StateFile {
-  // ... 现有字段不变 ...
-  workItems?: Record<string, WorkItem>;   // 新增；缺失视为"未启用工作状态层"（向后兼容）
-  checklist?: ChecklistItem[];            // 新增，见 §4.1
 }
 
 export interface ChecklistItem {
   id: string;
-  requirement: string;      // 验收要求
-  quote: string;            // goal charter 原文逐字引用（grounding，机械校验）
-  route: 'assertion' | 'generated' | 'judge';  // 验证路由（GCPC 三分）
+  requirement: string;
+  quote: string;            // goal charter 原文逐字引用（机械校验 grounding）
+  route: 'assertion' | 'generated' | 'judge';
 }
+
+// state.json 新增顶层字段（syncToDashboard 必须保留，见 §3.1）：
+//   workItems?: Record<string, WorkItem>
+//   checklist?: ChecklistItem[]
+//   reviewPartialCredit?: number | null   （review.node 写入，供 outcome 透传，见 §5）
 ```
 
-初始化时机：**plan skill entry** 在写完 waves.json 后，把全部 task 转为
-`workItems`（status=pending）+ 按 goal charter 生成 `checklist`（见 §4.1），
-一次 `updateState` 提交。此后 checklist 冻结（gateway 拒绝运行时修改，见 §3.2）。
+**Loop 生命周期语义（v2 新增，修 M4）**：
+- workItems 是 **per-loop** 的；plan.node 每轮重新生成 waves → 全新 task id 集合
+- **plan-init 是豁免 R2 的 replace-set 原语**（§3.2 R0b）：仅 plan.node 边界允许
+  整表替换 workItems + checklist；旧集合不保留在 state.json（历史在 reviews/
+  receipts 工件中可溯），但替换时把上一轮 done 计数写入 `metrics.workDoneHistory[]`
+- **删除 v1 的 R7 reopen**：现有架构 FAIL 后整轮重新 plan，reopen 永不触发；
+  旧 workItems 作为 re-plan 的输入上下文（done 的不重做）由 SKILL.md 提示词承载
 
 ### 2.2 与既有层的关系（不重叠）
 
 | 层 | 管什么 | 载体 |
 |---|---|---|
-| **工作状态层（本 spec）** | 现在进行到哪、什么被证据证实 | state.json `workItems` |
-| 编排控制 | 下一步建什么 session | state.json `nextAction`（不动） |
-| 谐波记忆（EM） | 过去学到什么、跨 goal 复用 | tier 文件 + index（不动） |
-| 观测层 | 失败归因、RSI 信号 | gateway.db `goal_outcomes`（§4.3 扩展字段） |
+| 工作状态层（本 spec） | 本 loop 进行到哪、什么被证据证实 | state.json workItems |
+| 编排控制 | 下一步建什么 session | LoopState + syncToDashboard（不动协议） |
+| 谐波记忆（EM） | 跨 goal 学到的长期经验 | tier 文件（不动） |
+| 观测层 | 失败归因、RSI 信号 | gateway.db（§5 扩展） |
 
-goal 归档时 workItems 随 state.json 一并归档，不进谐波记忆（值得长期记忆的教训
-仍走 review → mafw_add_memory 既有路径）。
+## 3. 三条写路径的防线
 
-## 3. 补丁语义与校验门
+### 3.1 防线一：syncToDashboard 保留字段（修 B1，前置一切）
 
-### 3.1 新的写路径：`updateStatePatch()`
+sync.node.ts 改为 **load-modify-write**：
 
 ```typescript
-// state.ts 新增；旧 updateState() 保留给编排字段（phase/nextAction/sessions），
-// 但 workItems/checklist 只允许走本函数
-export interface StatePatch {
-  workItems?: Record<string, WorkItemPatch | null>;  // null = 删除该条目
-  // WorkItemPatch = Partial<WorkItem>，item 级合并，禁止整表替换
-}
-
-export interface PatchResult {
-  ok: boolean;
-  state?: StateFile;
-  errors?: PatchError[];      // 拒绝时返回全部错误（供模型 retry）
-}
-export interface PatchError {
-  itemId: string;
-  rule: string;               // 触发的校验规则名
-  message: string;
-}
+const existing = fs.existsSync(statePath)
+  ? JSON.parse(fs.readFileSync(statePath, 'utf-8')) : {};
+const dashboardState = {
+  ...existing,              // 保留 workItems/checklist/metrics/sessions 等未知字段
+  version: '2', goalId: state.goalId, loop: state.round, /* ...受控字段覆盖... */
+  updatedAt: new Date().toISOString(),
+};
 ```
 
-- **item 级合并**：`workItems: { "task-3": { status: "done", evidence: [...] } }`
-  只改 task-3，其他条目不动——杜绝覆盖式整表替换
-- **null 删除**：`{ "task-3": null }` 显式删除（SKILL.state 的 null-deletion 语义）
-- **原子提交**：全部校验通过才写盘（tmp+rename 沿用）；任一校验失败 → 整个 patch
-  拒绝、state 不变、返回 errors——模型收到结构化错误后修正重提（rollback-retry）
+同时把 `reviewPartialCredit`（LoopState 新字段）纳入受控字段集。
+**这是整个 spec 的前置修复**——不做它，其余全部白做。
+顺带修复存量 bug：sessions/artifacts/metrics 今天就在被抹掉（评审 minor 5）。
 
-### 3.2 确定性校验规则（gateway 侧，无 LLM）
+### 3.2 防线二：MCP handler 校验门（修 M1/M2）
 
-| 规则 | 内容 | 拒绝示例 |
-|---|---|---|
-| R1 schema | 字段名/类型合法，未知 key 拒绝 | `{ stats: "done" }` 拼写错误 |
-| R2 未知条目 | patch 引用的 itemId 必须已存在（plan 初始化集合之外不允许自创） | 执行中凭空新增 task |
-| R3 done 需证据 | `status→done` 时 evidence 非空 | 自称完成无证据 |
-| R4 证据可解析 | 每条 EvidenceRef 按 kind 确定性解析（见 §3.3） | 伪造 commit hash |
-| R5 blocked 需理由 | `status→blocked` 时 blocker 非空 | 无说明的停滞 |
-| R6 checklist 冻结 | plan 完成后 checklist 任何字段不可变 | 执行中降低验收标准 |
-| R7 状态单调（软） | done → pending/blocked 允许但记录 `reopen` 事件到 metrics | review 打回重开 |
+handler（handlers/update-state.ts）改为调用共享模块
+`gateway/src/core/state/work-state.ts`（新文件，node reconcile 复用同一实现）：
 
-### 3.3 证据解析器（checker，确定性）
+```
+mafw_update_state { goalId, patch?, workItemPatch? }
+```
 
-| kind | 解析方式 |
+| 规则 | 内容 |
 |---|---|
-| `receipt` | `.mafw/receipts/{goalId}/` 下文件存在且 JSON 可解析 |
-| `commit` | `git cat-file -t <hash>` 在 goal worktree 存在（execute 完成后校验） |
-| `artifact` | 工件路径存在且 mtime ≥ workItem 进入执行的时间 |
-| `observation` | turnID 存在于 gateway.db `t1_observations`（工具真实执行过的回执） |
+| **R0** | `patch` 顶层出现 `workItems`/`checklist` 键 → **硬拒绝**（修 M2：不只是工具描述劝退） |
+| **R0b** | workItems 整表替换（replace-set）仅当调用上下文为 plan-init（handler 参数 `planInit: true`，仅 plan SKILL 被告知可用） |
+| R1 | workItemPatch 字段名/类型合法，未知 key 拒绝 |
+| R2 | 非 plan-init 时 itemId 必须已存在 |
+| R3 | status→done 时 evidence 非空 |
+| R4 | 每条 EvidenceRef 按 kind 确定性解析（§3.3） |
+| R5 | status→blocked 时 blocker 非空 |
+| R6 | checklist 在 plan-init 之后任何字段不可变 |
 
-校验失败即 R4 拒绝。** checker 只看环境/工具事实，不看模型文本**（Recuris：
-"调了技能、发了工具调用都不算完成证据；观测不支持 → 保持 pending"）。
+全过才原子提交（tmp+rename）；任一失败 → 整批拒绝，ToolResult 携带全部
+PatchError（itemId/rule/message）供模型修正重提。
 
-### 3.4 MCP 工具面变更
+### 3.3 证据解析器（修 B3：按写回时序分层）
 
-`mafw_update_state` schema 扩展（向后兼容）：
+| kind | 解析方式 | 可用时机 |
+|---|---|---|
+| `commit` | `git cat-file -t <hash>`（goal worktree 内） | task 级回写立即可用（execute agent 先 commit 再回写） |
+| `observation` | `sessionID:turnID` 复合引用，gateway.db t1_observations 存在该工具回执（修 minor 3：turnID per-session 自增，必须复合） | task 级回写立即可用 |
+| `receipt` | `.mafw/receipts/{goalId}/` 文件存在且可解析 | **仅 wave 末/会话末**（writeReceipts 在全部 wave 完成后才执行——per-task done 挂 receipt 必被 R4 卡死，v1 自相矛盾点） |
 
-```
-{ goalId, patch: { ...编排字段 }, workItemPatch?: Record<string, WorkItemPatch|null> }
-```
+**不变式**（修 minor 4）：证据校验发生在 worktree 存续期（execute 会话内 +
+review 会话内，归档之前）；归档后 workItems 随 state.json 冻结，不再重验。
+SKILL.md（mafw-execute）相应修改：每 task 完成 = git commit → workItemPatch
+（commit/observation 证据）；receipt 证据只允许在会话末批量补验时使用。
 
-- `workItemPatch` 走 §3.1–3.3 校验门，拒绝时 ToolResult 携带全部 PatchError
-- 旧 `patch` 字段行为不变（编排字段仍由 skill entry 全值更新——这些字段是
-  gateway 自己写的，非模型自由文本，风险低）
-- 工具描述强化：**禁止**在 patch 里传 workItems 整表
+### 3.4 防线三：node 边界 reconcile（修 M3，承认门非密闭）
+
+agent 会话是 full 权限 opencode session，可用 bash/edit 直写 state.json 绕过 MCP
+（SKILL.md 今天就在指示"显式更新 state.json"）。校验门无法密闭，因此：
+
+- plan.node / review.node **进入时**调用 work-state.ts 的 `reconcileWorkItems()`：
+  重跑 R1–R6 只读校验；非法条目**隔离**（移入 `state.quarantinedWorkItems` +
+  log.warn + 记 metrics.reconcileViolations），不阻断编排
+- SKILL.md 三个技能文件改为统一指示："经 `mafw_update_state` 的 workItemPatch
+  更新工作状态；**禁止**直接编辑 state.json"
+- reconcile 违规率是新观测指标——高违规率说明 SKILL.md 引导失效或模型不守约
 
 ## 4. Verdict 证据化与部分信用
 
-### 4.1 Checklist 生成（plan 阶段，一次冻结）
+### 4.1 Review 报告文件格式 v2（修 M6：改的是文件格式，不是 LLM 响应）
 
-plan skill entry 增加一步：按 goal charter + requests/{goalId}.json 的
-metrics/boundaries 生成 checklist（每 goal 4–15 项，GCPC 实测中位 8）：
+活跃解析链读的是 `reviews/{goalId}-loop{n}.md` 的**文件内容**。v2 规定
+SKILL.md（mafw-review）产出格式：
 
-1. LLM 生成候选项，每项必须携带 charter **逐字引用**（quote）+ 验证路由
-2. **机械校验**（无 LLM）：quote 必须逐字出现在 charter 原文中；
-   route=assertion 的项必须指向 requests.metrics 中真实存在的指标
-3. 校验不过的项丢弃（不降级为自由文本项）；全部不过 → checklist 为空，
-   该 goal 退回旧二值 verdict（fail-open，不阻塞主流程）
-4. 写入 state.json 后冻结（R6）
+````markdown
+# Review Report — loop {n}
 
-### 4.2 Review 评分（逐项 + 弃权）
-
-review skill entry 的 LLM 调用改为两段式输出：
-
-```json
+```mafw-review
 {
   "items": [
     { "id": "c1", "verdict": "yes" },
@@ -178,90 +189,128 @@ review skill entry 的 LLM 调用改为两段式输出：
   ],
   "verdict": "FAIL",
   "reason": "...",
-  "metrics": {...}
+  "metrics": { "tests_pass": 1 }
 }
 ```
 
-评分纪律（写进 review prompt 且 gateway 侧复核）：
-- **只认执行日志/工件证据**：receipts、git diff、远程测试结果；agent 在
-  review 文本里的声称不算证据（GCPC 核心规则，防 reward hacking）
-- **Abstain 从分母剔除**：证据不足不算失败
-- `partial_credit = yes数 / (yes+no数)`；checklist 为空时 partial_credit 缺省
+（自由文本理由附后，供人读）
+````
 
-### 4.3 落库与硬门槛
+- **解析器共享**：`parseReviewVerdict` 当前在 review.node.ts:25-37 和
+  node-runner.ts:41 **重复两份**——抽取为 `core/langgraph/review-parser.ts` 单一实现，
+  两处改 import（顺带消灭重复）
+- **解析规则 v2**：提取 ```` ```mafw-review ```` 围栏块 → JSON.parse → 逐项校验
+  （item id 必须属于冻结 checklist、verdict ∈ yes/no/abstain）；
+  **围栏块缺失/非法 → verdict: 'ERROR'**（复用现有 ERROR 型）
+- **废除文本 fallback**：删除 "含 pass/通过 → PASS" 分支（两处）。这是活跃正确性
+  bug，按 §7 单独紧急合入，不等全链路
+- ERROR 的编排语义：等同 FAIL 处理（触发重试/计数），连续 2 次 ERROR →
+  pendingQuestion 问用户（复用 sameSig 提问通道）
 
-- `goal_outcomes` 表加列：`partial_credit REAL NULL`、`evidence_coverage REAL NULL`
-  （可判定项比例 `|yes+no| / |checklist|`——低覆盖说明观测捕获有盲区，
-  反馈给 /api/obs/capture 机制）
-- **PASS 硬门槛不变**：`verdict==='PASS' && metricsOk && perfect`（无 no 项）才算
-  PASS；partial_credit 是软信号，供 RSI Phase 2 演化提议排序，不放宽完成定义
-- **废除两个 fallback**：
-  - `parseReviewResponse` 文本含 "pass" 即 PASS → 改为解析失败记 `verdict: 'ERROR'`
-    （重试一次 review，再失败按 FAIL 处理，永不默认 PASS）
-  - `checkMetrics` 指标缺失跳过 → 缺失即 `metricsOk=false`（fail-closed）
-    （注：review 未返回某指标与指标不达标同等对待；charter 写明的指标必须被测量）
+### 4.2 Checklist 生成与冻结（plan 阶段）
 
-## 5. 实施分阶段
+plan.node 完成后（waves 入库、workItems 初始化的同一 plan-init 原语内）：
 
-### Phase A：补丁语义 + 校验门（纯 gateway，无行为变化）
+1. plan SKILL.md 指示 agent 按 charter + requests metrics/boundaries 生成
+   4–15 项 checklist（GCPC 中位 8），每项带 quote + route
+2. gateway 机械校验（plan.node 边界，确定性）：quote 逐字出现在 charter 原文；
+   route=assertion 的项指向 requests.metrics 真实存在的指标
+3. 校验不过的项丢弃；全废 → checklist 为空，该 goal 退回二值 verdict（fail-open）
+4. 提交后冻结（R6）
 
-- state.ts：`updateStatePatch()` + R1–R7 校验 + 证据解析器框架
-- `mafw_update_state` 加 `workItemPatch` 通道
-- 单测：覆盖式更新被拒、拼写错误被拒、非法 EvidenceRef 被拒、null 删除、
-  部分拒绝整批回滚
-- **门禁**：新测试全绿 + 既有 43 套件无回归 + tsc
+### 4.3 评分纪律与 fail-closed
 
-### Phase B：workItems 初始化与执行回写
+- **assertion 项由 gateway 确定性判定**：review.node 解析 metrics JSON 块，
+  对 route=assertion 项直接比对 requests.metrics target；**指标缺失 = no**
+  （fail-closed，修"指标从不参与判定"的活跃缺陷）
+- generated/judge 项取 agent 逐项判定，但 prompt 纪律：**只认 receipts/diff/
+  测试结果等日志证据，agent 自述不算**；Abstain 从分母剔除
+- `partial_credit = yes / (yes + no)`；checklist 为空时缺省
+- `evidence_coverage = (yes + no) / |checklist|`——低覆盖说明观测捕获有盲区
+- **PASS 硬门槛**：`verdict==='PASS'` 且无 no 项（Perfect 伴随指标）；
+  partial_credit 是 RSI 软信号，不放宽完成定义
 
-- plan entry：waves → workItems 初始化（status=pending）
-- execute entry：每个 task 完成/失败后回写 workItemPatch（done 挂 commit+receipt 证据；
-  failed → blocked + blocker）
-- review 打回时 R7 reopen（done → pending 记录 metrics.reopen 计数）
-- 单测：plan→execute→review 全链状态机；证据解析器三种 kind
-- 旧 state.json 无 workItems 字段 → 跳过工作状态层（向后兼容，新 goal 才启用）
+## 5. 写入链（修 M5：加了列也要有数据流）
 
-### Phase C：verdict 证据化 + partial_credit
+```
+review.node 计算 partial_credit + evidence_coverage
+  → LoopState.reviewPartialCredit（新字段）
+  → syncToDashboard 受控字段集（§3.1 保留）
+  → archiveGoal 时 outcome-recorder.ts 从 state.json 读取
+  → upsertGoalOutcome 显式列清单 + ON CONFLICT 同步扩展（gateway-db.ts:450-469）
+  → goal_outcomes 加列：partial_credit REAL NULL、evidence_coverage REAL NULL
+    （ALTER TABLE 幂等迁移，gateway-db.ts:219-238 有先例）
+```
 
-- checklist 生成 + 机械校验（plan entry）
-- review 两段式输出 + 逐项评分 + Abstain
-- 废除两个 fallback（改默认 PASS 为默认 ERROR/FAIL）——**这是行为变更**，
-  需在 AGENTS.md 与 review prompt 同步声明
-- gateway.db 迁移：goal_outcomes 加两列（ALTER TABLE，幂等）
-- 单测：checklist 机械校验（伪造 quote 拒收）、partial_credit 计算、
-  Abstain 剔出分母、缺失指标 fail-closed、解析失败不默认 PASS
+**per-round 观测（修 M7）**：新建 `goal_rounds` 表
+（goal_id, loop, verdict, partial_credit, evidence_coverage, same_sig, created_at，
+PK(goal_id, loop)），review.node 每轮写入——goal_outcomes 每 goal 仅一行
+（archive 时写），per-loop 失败今天无任何记录（handleLoopEvent 是 stub），
+没有 goal_rounds 则 §6 验证口径无数据源。
 
-### 依赖与排序理由
+## 6. 实施分阶段
 
-A 先行（校验门是 B/C 的基础设施）；B 独立于 C 可并行；C 依赖 A 的校验框架
-做 checklist 机械校验复用。**C 的 fallback 废除可单独拆出紧急合入**——
-"文本含 pass 即 PASS"是现存正确性 bug，不必等全链路。
+### Phase 0（紧急，独立小 PR）：废除文本 fallback
 
-## 6. 验证口径（沿用 RSI 纪律）
+- 抽取 review-parser.ts 单一实现；删除两处 "含 pass → PASS"；
+  无 JSON → verdict ERROR（ERROR 语义已存在于 graph 条件边，行为变化最小化：
+  ERROR 按 FAIL 路径走，不新增分支）
+- 单测："did not pass" → 不再判 PASS；空文件 → ERROR；合法 JSON → 正常
+- **理由**：这是生产环境当前 100% 命中的误判源，不应等全链路
 
-1. **事前 declared_prediction**：Phase B 上线前声明预期——
-   "execute→review 间因状态不明导致的 review 打回率下降 ≥20%"
-2. **对照**：同项目分层，新旧 goal 各 n≥10（新 goal 启用 workItems，
-   旧 goal 为对照臂——天然成立，因为旧 state.json 无该字段）
-3. **预算匹配**：对比时必须控制模型/预算相同（SKILL.state 同预算对照纪律——
-   证明收益来自状态层而非 context 更短）
-4. **失败归因**：review 打回的 case 记录是"证据不足被拒"（校验门拦住）
-   还是"真实未完成"——前者多说明证据解析器太严，需调 kind 白名单
+### Phase A：写路径三防线
 
-## 7. 非目标（本期不做）
+- syncToDashboard 改 load-modify-write（含 sessions/metrics 存量抹除的顺带修复）
+- work-state.ts 共享模块（R0–R6 + 证据解析器 + reconcile）
+- handler 接线 + R0 硬拒绝；SKILL.md 三技能改"禁止直写 state.json"
+- 单测：覆盖式更新被拒、plan-init 豁免、非法证据被拒、reconcile 隔离
+- 门禁：新测试全绿 + 既有 43 套件无回归 + tsc
 
-- 不改 nextAction 文件轮询协议与 scheduler（编排控制面不动）
-- 不做 live steering（PILOT 式执行中介入）——独立 spec
-- 不做失败锚点重放（Repair-or-Resample）——独立 spec，但 R7 reopen 事件
-  为其预留了定位锚点（workItem 级）
-- 不做 call-time recall（Recuris ρ）——属记忆检索侧，memory-skill spec 范畴
-- workItems 不进谐波记忆、不参与 BM25 索引（WM 与 EM 分层，防角色混淆）
+### Phase B：workItems 全链路
 
-## 8. 风险与缓解
+- plan.node 边界：waves → workItems 初始化（plan-init 原语，含 workDoneHistory 滚动）
+- mafw-execute SKILL.md：每 task commit 后 workItemPatch 回写
+- plan.node/review.node 进入时 reconcile
+- 单测：plan→execute→review→FAIL→re-plan 全链状态机；loop 边界 replace-set
+- 旧 state.json 无 workItems → 跳过工作状态层（向后兼容，仅新 goal 启用）
+
+### Phase C：verdict 证据化 + 观测埋点
+
+- review 文件格式 v2 + SKILL.md 改造 + checklist 生成/机械校验
+- goal_rounds 表 + goal_outcomes 加列 + 写入链全通
+- 单测：quote 伪造拒收、assertion 项指标缺失判 no、Abstain 剔出分母、
+  partial_credit 计算、ERROR 连续 2 次触发 pendingQuestion
+
+依赖：Phase 0 独立；A 是 B/C 的前置；B、C 可并行。
+
+## 7. 验证口径（修 M7：指标可测量化）
+
+1. **declared_prediction**（Phase B 上线前声明）：
+   "启用 workItems 的 goal，每 goal 平均 rounds 数下降 ≥15%，
+   且 per-round FAIL 率（goal_rounds 表）下降 ≥20%"
+2. **对照口径声明**：新旧 goal 分层非同任务随机分组，存在选择偏差——
+   结论表述为分层观测而非因果；若信号模糊，升级为同任务对（workItems 开/关）
+3. **预算匹配**：对比控制模型/maxRounds 相同（SKILL.state 同预算纪律）
+4. **归因分流**：review FAIL 记录是 reconcile 违规（门拦住非法状态）还是真实
+   未完成——前者多说明证据解析器太严，调 kind 白名单
+
+## 8. 非目标（本期不做）
+
+- 不改 LoopState/graph 边/nextAction 轮询协议
+- 不做 live steering、失败锚点重放（独立 spec；workItems 为其预留 item 级定位粒度）
+- 不做 call-time recall（memory-skill spec 范畴）
+- legacy skill entry（core/skills/mafw-*/entry.ts）不改造不删除——另行决定
+  （评审 minor 6 顺带发现 mafw-plan/entry.ts:100 `(loadState as any)?.loop` 恒
+  undefined → reflection 注入从未生效，legacy 描述与实际不符，记录备查）
+- workItems 不进谐波记忆、不参与 BM25 索引
+
+## 9. 风险与缓解
 
 | 风险 | 缓解 |
 |---|---|
-| 弱模型写不出合法 patch（LoopArena 实测 10% 结构化输出打满上限） | PatchResult 返回全部错误供重试；统计 patch 拒绝率作为 manager 协议失败率新指标；拒绝率 >30% 时降级回旧路径并告警 |
-| 证据解析器太严导致 done 永远提交不了 | R4 失败的 errors 明确写出解析方式；observation kind 兜底（t1_observations 全量捕获） |
-| checklist 生成质量差 | 机械校验兜底（quote 逐字匹配）；全废则 fail-open 回旧 verdict |
-| 废除 fallback 后 FAIL 率虚升 | 视为修正而非回退——此前部分 PASS 本就是假的；验证口径 §6.1 的预测应声明此效应 |
-| workItems 与 receipts 双写不一致 | workItems 只存状态+引用，内容仍在 receipts（单一内容源，状态层只是索引） |
+| 弱模型写不出合法 patch/review JSON（LoopArena 实测 10% 输出打满上限） | patch 拒绝返回全部错误供重试；patch 拒绝率、review ERROR 率作为新观测指标；拒绝率 >30% 降级回旧路径并告警 |
+| 防线非密闭（agent bash 直写） | 承认 advisory 本质；node reconcile 隔离+违规率观测；SKILL.md 统一引导 |
+| 证据解析器太严 done 提交不了 | commit/observation 双 kind 兜底（commit 在 execute 内立即可用）；R4 错误信息写明解析方式 |
+| Phase 0 后 FAIL/ERROR 率虚升 | 视为修正——此前部分 PASS 是误判（"did not pass"→PASS 反向 bug 同时消除，FAIL 率升降皆有可能，以 ERROR 率单独观测解析失败） |
+| workItems 与 receipts 双写不一致 | workItems 只存状态+引用，内容仍在 receipts（单一内容源） |
+| plan-init 被滥用绕过 R2 | `planInit: true` 仅写入 plan SKILL.md，不进通用工具描述；reconcile 对非 plan 边界的整表替换记违规 |

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
+import { createPortal } from "solid-js/web"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
@@ -1017,6 +1018,8 @@ function SearchSelect(props: {
   const [open, setOpen] = createSignal(false)
   const [query, setQuery] = createSignal("")
   const [hi, setHi] = createSignal(0)
+  const [listPos, setListPos] = createSignal<{ top: number; left: number; width: number } | null>(null)
+  let wrapRef: HTMLDivElement | undefined
   const filtered = () => {
     const q = query().trim().toLowerCase()
     if (!q) return props.options
@@ -1024,16 +1027,29 @@ function SearchSelect(props: {
   }
   const display = () => (open() ? query() : (props.current?.label || props.current?.id || ""))
   const pick = (id: string) => { props.onSelect(id); setOpen(false); setQuery("") }
+  // The list is portaled to <body> with fixed positioning: card-level
+  // overflow:hidden would otherwise clip it for rows near the section bottom.
+  const openList = () => {
+    const el = wrapRef
+    if (el) {
+      const r = el.getBoundingClientRect()
+      setListPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    }
+    setOpen(true)
+    setHi(0)
+  }
+  const closeList = () => { setOpen(false); setQuery("") }
+  onCleanup(() => window.removeEventListener("scroll", closeList, true))
   return (
-    <div class="mafw-search-select" style={props.width ? { width: props.width + "px" } : undefined}>
+    <div class="mafw-search-select" ref={wrapRef} style={props.width ? { width: props.width + "px" } : undefined}>
       <TextInputV2
         value={display()}
-        onInput={e => { setQuery(e.currentTarget.value); setOpen(true); setHi(0) }}
-        onFocus={() => { setOpen(true); setQuery(""); setHi(0) }}
+        onInput={e => { setQuery(e.currentTarget.value); openList() }}
+        onFocus={() => openList()}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
         onKeyDown={e => {
           const list = filtered()
-          if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setHi(h => Math.min(h + 1, list.length - 1)) }
+          if (e.key === "ArrowDown") { e.preventDefault(); openList(); setHi(h => Math.min(h + 1, list.length - 1)) }
           else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
           else if (e.key === "Enter") {
             e.preventDefault()
@@ -1043,27 +1059,39 @@ function SearchSelect(props: {
             else if (props.allowFree && typed) pick(typed)
             else if (list[hi()]) pick(list[hi()].id)
           }
-          else if (e.key === "Escape") { setOpen(false); setQuery("") }
+          else if (e.key === "Escape") closeList()
         }}
         disabled={props.disabled}
         placeholder={props.placeholder}
       />
-      <Show when={open() && filtered().length > 0}>
-        <div class="mafw-search-select-list">
-          <For each={filtered()}>
-            {(o, i) => (
-              <div
-                class="mafw-search-select-item"
-                classList={{ hi: i() === hi(), current: props.current?.id === o.id }}
-                onMouseDown={e => { e.preventDefault(); pick(o.id) }}
-                onMouseEnter={() => setHi(i())}
-              >
-                {o.label}
-                {props.current?.id === o.id && <span class="mafw-search-select-check">✓</span>}
-              </div>
-            )}
-          </For>
-        </div>
+      <Show when={open() && listPos() && filtered().length > 0}>
+        {createPortal(
+          <div
+            class="mafw-search-select-list"
+            style={{
+              position: "fixed",
+              top: listPos()!.top + "px",
+              left: listPos()!.left + "px",
+              width: listPos()!.width + "px",
+            }}
+            onMouseDown={e => e.preventDefault()}
+          >
+            <For each={filtered()}>
+              {(o, i) => (
+                <div
+                  class="mafw-search-select-item"
+                  classList={{ hi: i() === hi(), current: props.current?.id === o.id }}
+                  onMouseDown={e => { e.preventDefault(); pick(o.id) }}
+                  onMouseEnter={() => setHi(i())}
+                >
+                  {o.label}
+                  {props.current?.id === o.id && <span class="mafw-search-select-check">✓</span>}
+                </div>
+              )}
+            </For>
+          </div>,
+          document.body,
+        )}
       </Show>
     </div>
   )
