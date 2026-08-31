@@ -64,11 +64,13 @@ import {
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent } from './runtime/normalize';
-import { RuntimeCapabilities, fullCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
+import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
+import { handleRestartAgent } from './routes/restart-agent';
+import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { handleMediaSwitch } from './routes/media-switch';
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
 
@@ -238,9 +240,11 @@ class MafwScheduler {
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
   private opencodeClient: AgentRuntime | null = null;
-  private runtimeCaps: RuntimeCapabilities = fullCapabilities();
+  private runtimeCaps: RuntimeCapabilities = minimalCapabilities();
   private runtimeName = 'opencode';
   private runtimeLoader?: RuntimePluginLoader;
+  private serveSupervisor: ServeSupervisor;
+  private switchingRuntime = false;
   /** Abort controller for the active event stream subscription. Cancelled
    *  before re-subscribing to prevent orphaned async iterator loops. */
   private eventStreamAbort: AbortController | null = null;
@@ -278,6 +282,26 @@ class MafwScheduler {
     this.configPath = config.paths.globalConfig;
     this.registryPath = config.paths.registryFile;
     this.chatSessions = new ChatSessionManager();
+    this.serveSupervisor = createServeSupervisor({
+      port: config.server.servePort,
+      external: !!process.env.MAFW_SERVER_SERVE_URL,
+      killPort: (port) => killProcessOnPort(port),
+      spawn: async (opts) => {
+        const sidecar = await startServeSidecar({
+          host: opts.host,
+          port: opts.port,
+          timeoutMs: opts.timeoutMs,
+          onOutput: opts.onOutput,
+        });
+        return { url: sidecar.url, close: () => sidecar.close() };
+      },
+      probe: async (url: string) => {
+        try {
+          const res = await fetch(`${url}/global/health`, { signal: AbortSignal.timeout(3000) } as any);
+          return res.ok;
+        } catch { return false; }
+      },
+    });
   }
 
   get serveRunning(): boolean {
@@ -921,12 +945,7 @@ class MafwScheduler {
     return createOpencodeRuntime({
       ...sdkConfig,
       restartServe: async () => {
-        killProcessOnPort(config.server.servePort);
-        if (this.serveInstance) {
-          this.serveInstance.close();
-          this.serveInstance = undefined;
-        }
-        await this.startServe();
+        await this.serveSupervisor.restart();
       },
     });
   }
@@ -1525,6 +1544,9 @@ class MafwScheduler {
       mafwDir,
       desktop: desktopClient || undefined,
       restartAgent: async () => {
+        if (!this.runtimeCaps.agentProcessApi) {
+          throw new Error(`Runtime '${this.runtimeName}' does not support agent process restart (agentProcessApi=false)`);
+        }
         if (this.serveRecovering) throw new Error('Agent restart already in progress');
         await this.recoverServe();
         return { success: true, mode: 'owned-respawn' };
@@ -1672,29 +1694,28 @@ class MafwScheduler {
     this.serveRetryTimer = setTimeout(() => void this.recoverServe(), delay);
   }
 
+  // Pure orchestration: kill + respawn + re-subscribe events + start watchdog.
+  // No backoff/retry — callers that need retry wrap this themselves.
+  private async restartAgentOrchestrated(): Promise<{ mode: string }> {
+    const rt = this.opencodeClient;
+    if (rt?.agentProcess) {
+      await rt.agentProcess.restart();
+    } else {
+      await this.serveSupervisor.restart();
+    }
+    await this.subscribeToEvents();
+    this.startServeWatchdog();
+    return { mode: 'owned-respawn' };
+  }
+
   // Shared recovery for owned (exit-event) and adopted (watchdog) paths.
-  // Delegates process restart to runtime.agentProcess.restart() when available,
-  // falls back to the built-in kill+respawn for backward compat.
+  // Wraps restartAgentOrchestrated() with backoff/retry logic.
   private async recoverServe() {
     if (this.serveRecovering || !this.running) return;
     this.serveRecovering = true;
     try {
       log.info('[Scheduler] Recovering OpenCode Serve...');
-      if (this.opencodeClient?.agentProcess) {
-        await this.opencodeClient.agentProcess.restart();
-      } else {
-        // Fallback for runtimes without agentProcess (legacy plugins, old config)
-        killProcessOnPort(config.server.servePort);
-        if (this.serveInstance) {
-          this.serveInstance.close();
-          this.serveInstance = undefined;
-        }
-        await this.startServe();
-      }
-      await this.subscribeToEvents();
-      // Ensure the health-poll watchdog is running after a manual recovery;
-      // the guard is a no-op if it was already active.
-      this.startServeWatchdog();
+      await this.restartAgentOrchestrated();
       log.info('[Scheduler] OpenCode Serve recovered');
       if (this.serveStableTimer) clearTimeout(this.serveStableTimer);
       this.serveStableTimer = setTimeout(() => {
@@ -3329,12 +3350,17 @@ class MafwScheduler {
             return;
           }
           if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/switch(?:\?|$)/)) {
-            if (this.serveRecovering) {
+            if (this.serveRecovering || this.switchingRuntime) {
               res.writeHead(409, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ error: 'Cannot switch runtime during agent restart' }));
               return;
             }
-            await handleRuntimeSwitch(req, res, runtimeDeps);
+            this.switchingRuntime = true;
+            try {
+              await handleRuntimeSwitch(req, res, runtimeDeps);
+            } finally {
+              this.switchingRuntime = false;
+            }
             return;
           }
           if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/reload(?:\?|$)/)) {
@@ -3342,25 +3368,14 @@ class MafwScheduler {
             return;
           }
           if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/restart-agent(?:\?|$)/)) {
-            const caps = this.runtimeCaps;
-            if (!caps.agentProcessApi) {
-              res.writeHead(503, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: `Runtime '${this.runtimeName}' does not support agent process restart (agentProcessApi=false)` }));
-              return;
-            }
-            if (this.serveRecovering) {
-              res.writeHead(409, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'Agent restart already in progress' }));
-              return;
-            }
-            try {
-              await this.recoverServe();
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: true, mode: 'owned-respawn' }));
-            } catch (err: any) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
+            await handleRestartAgent(req, res, {
+              capabilities: () => this.runtimeCaps,
+              isRecovering: () => this.serveRecovering,
+              isSwitching: () => this.switchingRuntime,
+              begin: () => { this.serveRecovering = true; },
+              end: () => { this.serveRecovering = false; },
+              restartAgent: () => this.restartAgentOrchestrated(),
+            });
             return;
           }
           return;
