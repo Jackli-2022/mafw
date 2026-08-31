@@ -59,6 +59,15 @@ describe('createOpencodeRuntime', () => {
     expect(rt.external).toBe(true);
   });
 
+  it('gates agentProcessApi capability when external', async () => {
+    process.env.MAFW_SERVER_SERVE_URL = 'http://127.0.0.1:9999';
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:9999' });
+    expect(rt.capabilities.agentProcessApi).toBe(false);
+    // Other Tier-2 capabilities remain
+    expect(rt.capabilities.sessionApi).toBe(true);
+    expect(rt.capabilities.eventStream).toBe(true);
+  });
+
   it('healthCheck resolves false when serve is unreachable', async () => {
     delete process.env.MAFW_SERVER_SERVE_URL;
     const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:1' });
@@ -75,11 +84,12 @@ describe('createOpencodeRuntime', () => {
     expect(restartFn).toHaveBeenCalledTimes(1);
   });
 
-  it('does not provide agentProcess when external', async () => {
+  it('does not provide agentProcess or agentProcessApi when external', async () => {
     process.env.MAFW_SERVER_SERVE_URL = 'http://127.0.0.1:9999';
     const restartFn = jest.fn();
     const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:9999', restartServe: restartFn });
     expect(rt.agentProcess).toBeUndefined();
+    expect(rt.capabilities.agentProcessApi).toBe(false);
   });
 
   it('does not provide agentProcess when no restartServe callback', async () => {

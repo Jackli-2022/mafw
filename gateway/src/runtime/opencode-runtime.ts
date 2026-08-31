@@ -246,10 +246,16 @@ export interface OpencodeRuntimeConfig {
 
 export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Promise<AgentRuntime> {
   const client = await createOpencodeAdapter(config);
+  const isExternal = !!process.env.MAFW_SERVER_SERVE_URL;
+  const caps = fullCapabilities();
+  if (isExternal) {
+    // External runtimes only probe; they don't manage the serve process.
+    caps.agentProcessApi = false;
+  }
   const rt: AgentRuntime = Object.assign(client, {
     name: 'opencode' as const,
-    capabilities: fullCapabilities(),
-    external: !!process.env.MAFW_SERVER_SERVE_URL,
+    capabilities: caps,
+    external: isExternal,
     credentials: {
       getApiKey(provider: string): string | null {
         return getProviderApiKey(provider) ?? null;
