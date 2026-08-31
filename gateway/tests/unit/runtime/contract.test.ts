@@ -25,6 +25,7 @@ describe('runtime contract capabilities', () => {
       perLlmCallTransform: false,
       sessionStorageApi: false,
       agentConfigApi: false,
+      agentProcessApi: false,
     });
   });
 });
