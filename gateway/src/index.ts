@@ -2731,7 +2731,7 @@ class MafwScheduler {
             const index = store.indexManager_();
             let entries;
             if (query && retrieverParam === 'hybrid') {
-              const dense = await computeDenseScores(query, topK);
+              const dense = await computeDenseScores(query, topK, index);
               entries = index.search(query, topK, dense ? { retriever: 'bm25', denseScores: dense } : { retriever: 'bm25' });
             } else if (query) {
               const retriever = retrieverParam === 'bm25' ? 'bm25' : 'token';

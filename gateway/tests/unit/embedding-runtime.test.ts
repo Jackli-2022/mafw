@@ -65,4 +65,43 @@ describe('embedding-runtime', () => {
       setEmbeddingRuntime(null);
     }
   });
+
+  test('near-duplicate suppression: older of a ≥0.92-cosine pair is dropped', async () => {
+    const vectors = new MemoryVectorStore('/tmp/nd.json', 2);
+    // v_new and v_old are near-identical (cos ≈ 0.995); v_other is unrelated.
+    vectors.upsert('new-fact', [1, 0]);
+    vectors.upsert('old-fact', [0.999, 0.045]);
+    vectors.upsert('other', [0, 1]);
+    const entries = [
+      { id: 'old-fact', created_at: '2023-01-01T00:00:00Z' },
+      { id: 'new-fact', created_at: '2024-06-01T00:00:00Z' },
+      { id: 'other', created_at: '2024-01-01T00:00:00Z' },
+    ];
+    const index = { getIndex: () => ({ entries }) };
+    const rt = { provider: stubRuntime({}), vectors, indexer: {} as any, scheduleFlush: () => {} };
+    setEmbeddingRuntime(rt as any);
+    try {
+      const scores = await computeDenseScores('q', 5, index as any);
+      expect(scores!.has('old-fact')).toBe(false);   // suppressed
+      expect(scores!.has('new-fact')).toBe(true);    // newer survives
+      expect(scores!.has('other')).toBe(true);       // unrelated untouched
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+  });
+
+  test('near-duplicate suppression keeps both when creation dates are equal/missing', async () => {
+    const vectors = new MemoryVectorStore('/tmp/nd2.json', 2);
+    vectors.upsert('a', [1, 0]);
+    vectors.upsert('b', [0.999, 0.045]);
+    const entries = [{ id: 'a', created_at: '2024-01-01T00:00:00Z' }, { id: 'b' }];
+    const rt = { provider: stubRuntime({}), vectors, indexer: {} as any, scheduleFlush: () => {} };
+    setEmbeddingRuntime(rt as any);
+    try {
+      const scores = await computeDenseScores('q', 5, { getIndex: () => ({ entries }) } as any);
+      expect(scores!.size).toBe(2); // cannot determine older → keep both
+    } finally {
+      setEmbeddingRuntime(null);
+    }
+  });
 });

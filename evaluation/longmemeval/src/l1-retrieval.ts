@@ -111,6 +111,7 @@ function parseArgs() {
     reranker: (flags.get('--reranker') ?? 'off') as 'off' | 'heuristic' | 'cross-encoder',
     recallK: parseInt(flags.get('--recallK') ?? String(config.search.recallK), 10),
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
+    fusionSparseWeight: parseFloat(flags.get('--fusionSparseWeight') ?? '0.65'),
     graph: flags.get('--graph') === 'true',
     scan: flags.get('--scan') === 'true',
     scanApiUrl: flags.get('--scanApiUrl') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
@@ -202,9 +203,29 @@ async function runOne(
       const [queryVector] = await embeddingProvider.embed([question.question], 'query');
       if (queryVector && vectors.size() > 0) {
         const hits = vectors.searchByCosine(queryVector, recallK);
-        searchOptions.denseScores = new Map(hits.map(h => [h.id, h.cosine]));
+        const denseMap = new Map(hits.map(h => [h.id, h.cosine]));
+        // Near-duplicate suppression needs entry dates — apply via the shared
+        // runtime helper by inlining the same filter (eval has no runtime).
+        const createdAt = new Map(index.getIndex().entries.map(e => [e.id as string, (e as any).created_at as string | undefined]));
+        const suppressed = new Set<string>();
+        for (let i = 0; i < hits.length; i++) {
+          for (let j = i + 1; j < hits.length; j++) {
+            const a = hits[i], b = hits[j];
+            if (suppressed.has(a.id) || suppressed.has(b.id)) continue;
+            const va = vectors.get(a.id), vb = vectors.get(b.id);
+            if (!va || !vb || va.length !== vb.length) continue;
+            let dot = 0, na = 0, nb = 0;
+            for (let k = 0; k < va.length; k++) { dot += va[k] * vb[k]; na += va[k] * va[k]; nb += vb[k] * vb[k]; }
+            if (na === 0 || nb === 0 || dot / Math.sqrt(na * nb) < 0.92) continue;
+            const ta = Date.parse(createdAt.get(a.id) ?? ''), tb = Date.parse(createdAt.get(b.id) ?? '');
+            if (Number.isNaN(ta) || Number.isNaN(tb)) continue;
+            suppressed.add(ta < tb ? a.id : b.id);
+          }
+        }
+        for (const id of suppressed) denseMap.delete(id);
+        searchOptions.denseScores = denseMap;
         entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
-        console.error(`[hybrid] indexed=${backfill.indexed} denseHits=${hits.length}`);
+        console.error(`[hybrid] indexed=${backfill.indexed} denseHits=${hits.length} suppressed=${suppressed.size}`);
       }
     }
     if (reranker && entries.length > 0) {
@@ -325,6 +346,7 @@ async function main() {
   const searchOptions: SearchOptions = {
     retriever: retriever === 'hybrid' ? 'bm25' : retriever,
     cutoffRatio: reranker ? 0 : args.cutoffRatio,
+    fusionSparseWeight: args.fusionSparseWeight,
   };
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');

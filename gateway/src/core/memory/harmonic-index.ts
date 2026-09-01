@@ -28,6 +28,8 @@ export interface SearchOptions {
   denseScores?: Map<string, number>;
   /** RRF constant k (default 60). */
   fusionK?: number;
+  /** Sparse-channel weight in weighted RRF (default 0.5 = unweighted; >0.5 favors BM25 order). */
+  fusionSparseWeight?: number;
   /**
    * "Now" for time-expression anchoring (P3a). Defaults to wall clock;
    * the eval harness passes the question date for reproducibility.
@@ -44,28 +46,34 @@ const BM25_K1 = 1.2;
 const BM25_B = 0.75;
 
 /**
- * Reciprocal Rank Fusion (Cormack et al., SIGIR 2009): score(d) = Σ 1/(k + rank).
- * Robust fusion of unbounded sparse scores with bounded cosine — only ranks are
- * consumed, so no score normalization is needed. Entries missing from one list
- * keep their single-list contribution.
+ * Weighted Reciprocal Rank Fusion (Cormack et al., SIGIR 2009; weighting per
+ * Bruch et al. TOT 2023): score(d) = w_s/(k+rank_s) + (1-w_s)/(k+rank_d).
+ * Only ranks are consumed — no score normalization needed. sparseWeight < 0.5
+ * biases toward dense; > 0.5 restores BM25's discrimination among semantically
+ * near-duplicate candidates (knowledge-update pattern), which rank-only RRF
+ * compresses away. Entries missing from one list keep their single-list
+ * contribution.
  */
 export function rrfFuse(
   primary: ScoredEntry[],
   secondary: ScoredEntry[],
   k: number = 60,
   recallK: number = 50,
+  sparseWeight: number = 0.5,
 ): ScoredEntry[] {
+  const wS = Math.min(1, Math.max(0, sparseWeight));
+  const wD = 1 - wS;
   const fused = new Map<string, { entry: HarmonicIndexEntry; score: number }>();
-  const addList = (list: ScoredEntry[]) => {
+  const addList = (list: ScoredEntry[], weight: number) => {
     list.forEach((s, i) => {
-      const contribution = 1 / (k + i + 1);
+      const contribution = weight / (k + i + 1);
       const existing = fused.get(s.entry.id);
       if (existing) existing.score += contribution;
       else fused.set(s.entry.id, { entry: s.entry, score: contribution });
     });
   };
-  addList(primary);
-  addList(secondary);
+  addList(primary, wS);
+  addList(secondary, wD);
   return [...fused.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, recallK);
@@ -262,7 +270,7 @@ export class HarmonicIndexManager {
         });
       }
       denseScored.sort((a, b) => b.score - a.score);
-      scored = rrfFuse(scored, denseScored.slice(0, recallK), options.fusionK ?? 60, recallK);
+      scored = rrfFuse(scored, denseScored.slice(0, recallK), options.fusionK ?? 60, recallK, options.fusionSparseWeight ?? config.search.fusionSparseWeight);
     }
 
     // ── Anchor-graph multi-hop expansion (Memora-style) ──

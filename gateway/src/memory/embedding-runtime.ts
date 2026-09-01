@@ -90,16 +90,67 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
  * callers pass the map into searchScored({ denseScores }) or fall back to
  * plain BM25.
  */
-export async function computeDenseScores(query: string, topK: number): Promise<Map<string, number> | null> {
+/**
+ * Two dense hits with self-cosine ≥ this are treated as the same fact's
+ * old/new versions (knowledge-update pattern): semantic similarity is blind
+ * to WHICH version is current, so keep the newer and suppress the older —
+ * the BM25 channel still sees it (exact keywords on the updated value).
+ */
+const NEAR_DUP_COSINE = 0.92;
+
+export async function computeDenseScores(
+  query: string,
+  topK: number,
+  index?: { getIndex(): { entries: Array<{ id: string; created_at?: string }> } },
+): Promise<Map<string, number> | null> {
   const rt = runtime;
   if (!rt) return null;
   try {
     const [queryVector] = await rt.provider.embed([query], 'query');
     if (!queryVector) return null;
-    const hits = rt.vectors.searchByCosine(queryVector, topK);
+    let hits = rt.vectors.searchByCosine(queryVector, topK);
+    if (index && hits.length > 1) {
+      hits = suppressNearDuplicates(hits, rt.vectors, index.getIndex().entries);
+    }
     return new Map(hits.map(h => [h.id, h.cosine]));
   } catch (err: any) {
     log.warn(`[Embedding] dense scores unavailable (BM25 fallback): ${err?.message || err}`);
     return null;
   }
+}
+
+function suppressNearDuplicates(
+  hits: Array<{ id: string; cosine: number }>,
+  vectors: MemoryVectorStore,
+  entries: Array<{ id: string; created_at?: string }>,
+): Array<{ id: string; cosine: number }> {
+  const createdAt = new Map(entries.map(e => [e.id, e.created_at]));
+  const vecOf = (id: string) => vectors.get(id);
+  const suppressed = new Set<string>();
+  for (let i = 0; i < hits.length; i++) {
+    for (let j = i + 1; j < hits.length; j++) {
+      const a = hits[i];
+      const b = hits[j];
+      if (suppressed.has(a.id) || suppressed.has(b.id)) continue;
+      const va = vecOf(a.id);
+      const vb = vecOf(b.id);
+      if (!va || !vb || va.length !== vb.length) continue;
+      let dot = 0;
+      let na = 0;
+      let nb = 0;
+      for (let k = 0; k < va.length; k++) {
+        dot += va[k] * vb[k];
+        na += va[k] * va[k];
+        nb += vb[k] * vb[k];
+      }
+      if (na === 0 || nb === 0) continue;
+      if (dot / Math.sqrt(na * nb) < NEAR_DUP_COSINE) continue;
+      const ta = Date.parse(createdAt.get(a.id) ?? '');
+      const tb = Date.parse(createdAt.get(b.id) ?? '');
+      if (Number.isNaN(ta) || Number.isNaN(tb)) continue; // can't order → keep both
+      suppressed.add(ta < tb ? a.id : b.id);
+    }
+  }
+  if (suppressed.size === 0) return hits;
+  return hits.filter(h => !suppressed.has(h.id));
 }

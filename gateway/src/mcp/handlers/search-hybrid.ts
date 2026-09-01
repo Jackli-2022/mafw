@@ -47,7 +47,7 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
       retriever: retrieverArg === 'hybrid' ? 'bm25' : (retrieverArg as 'token' | 'bm25' | 'guided'),
     };
     if (retrieverArg === 'hybrid') {
-      const dense = await computeDenseScores(query, topK * 4);
+      const dense = await computeDenseScores(query, topK * 4, memory?.harmonicIndex);
       if (dense) searchOpts.denseScores = dense;
     }
     const maxRounds = config.search.maxExpandRounds;

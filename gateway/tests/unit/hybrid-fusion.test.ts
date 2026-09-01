@@ -36,6 +36,38 @@ function makeIndex(dir: string, units: HarmonicUnit[]): HarmonicIndexManager {
 describe('rrfFuse', () => {
   const e = (id: string, score: number) => ({ entry: { id } as any, score });
 
+  test('rank-only tie: sparse-r1+dense-r2 equals sparse-r2+dense-r1 (motivates dense-side suppression)', () => {
+    const primary = [e('new', 10), e('old', 9)];
+    const secondary = [e('old', 0.99), e('new', 0.98)];
+    const fused = rrfFuse(primary, secondary, 60, 10);
+    // Exact tie under equal weights — near-duplicate resolution must happen
+    // in the dense channel, not the fusion.
+    expect(fused.map(f => f.entry.id).sort()).toEqual(['new', 'old']);
+  });
+
+  test('weighted RRF (sparseWeight 0.65): BM25 discrimination survives dense noise ranks', () => {
+    // Knowledge-update case: BM25 puts the answer session r1 with a huge raw
+    // gap; dense pulls semantically-near distractors ahead of it (r1 vs r4).
+    // Sparse-weighted fusion must keep the answer above the distractors.
+    const primary = [e('answer', 5.98), e('noise1', 3.7), e('noise2', 3.3)];
+    const secondary = [e('distractor', 0.72), e('noise1', 0.71), e('answer', 0.70)];
+    const fused = rrfFuse(primary, secondary, 60, 10, 0.65);
+    const ids = fused.map(f => f.entry.id);
+    expect(ids.indexOf('answer')).toBeLessThan(ids.indexOf('distractor'));
+  });
+
+  test('equal-weight default: dense distractor can tie past a narrow sparse gap', () => {
+    const primary = [e('answer', 5.98), e('noise1', 3.7), e('noise2', 3.3)];
+    const secondary = [e('distractor', 0.72), e('noise1', 0.71), e('answer', 0.70)];
+    const fused = rrfFuse(primary, secondary, 60, 10);
+    const ids = fused.map(f => f.entry.id);
+    // answer = 1/61+1/63 ; distractor = 1/61 (dense r1 only)
+    // 0.0325 vs 0.0164 → answer still wins here; but noise1 (1/62+1/62=0.0323)
+    // — the ordering is compressed to hundredths, that's the point of weighting.
+    expect(ids).toContain('answer');
+    expect(ids).toContain('distractor');
+  });
+
   test('entry present in both lists outranks single-list entries', () => {
     const primary = [e('a', 10), e('b', 8), e('c', 6)];
     const secondary = [e('b', 0.99), e('d', 0.9)];

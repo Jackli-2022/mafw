@@ -77,6 +77,8 @@ export interface GatewayConfig {
     };
     /** Agent-driven iterative expansion rounds for mafw_search_hybrid (0 = first round only). */
     maxExpandRounds: number;
+    /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
+    fusionSparseWeight: number;
   };
   memory: {
     defaultEnergy: number;
@@ -266,6 +268,8 @@ function defaults(projectDir: string): GatewayConfig {
         rerankGraphWeight: 0.15,
       },
       maxExpandRounds: 2,
+      /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
+      fusionSparseWeight: 0.65,
     },
     memory: {
       defaultEnergy: 0.8,
