@@ -1,7 +1,7 @@
 # Rail 重设计（ChatGPT 式对话列表）— 设计文档
 
 日期：2026-09-01
-状态：已与用户确认方向（方案 A + 三处迭代：折叠箭头右置图标化、Manager 沉底固定区、ASCII 定稿）
+状态：已实施（2026-09-01，gateway DELETE/PATCH 真转发 + SDK rename + session-store + Rail 重写 + CSS 全部落地，gateway 347 测试全绿，E2E 真删/改名验证通过）
 
 ## 背景与问题
 
