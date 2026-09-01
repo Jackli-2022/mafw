@@ -38,11 +38,14 @@ interface HarmonicUnit {
      → 按 energy × 检索得分排序
      → 按需从 tier 文件加载完整 memory_value
 ```
-两种检索器（`gateway/src/core/memory/harmonic-index.ts`）：
+三种检索器（`gateway/src/core/memory/harmonic-index.ts`）：
 - **bm25（默认）**：query 分词做 BM25（k1=1.2, b=0.75）× energy × salience，tokenize 为小写单词（len≥2）+ CJK unigram；查询时现算，不持久化索引文件
+- **hybrid**：bm25 + dense embedding 经 RRF(k=60) 融合（`searchScored` 的 `denseScores` 选项；异步嵌入由调用方完成，searchScored 保持同步）；embedding 走 `memory.embedding` 配置（local ONNX Qwen3-Embedding-0.6B / dashscope compatible-mode，默认 off）
 - **token**：子串计数 × energy × salience，可通过 `mafw_search_hybrid` 的 `retriever:'token'` 或 `/api/memory/search?retriever=token` 显式回退
 
-LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6/6 类提升；1000 entries 搜索 ~2-3ms）。`searchScored()` 同时返回原始 BM25/token 分数，供下游精排、截断与置信度展示使用。
+**显式时间锚定**（`gateway/src/recall/time-anchor.ts`）：查询含时间表达（昨天/last week/N月/recent 等）时，created_at 落入对应窗口的条目 ×1.5 软提升（不硬过滤，E.4 陷阱）；`options.now` 供评测传 question_date。
+
+LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6/6 类提升；1000 entries 搜索 ~2-3ms）。`searchScored()` 同时返回原始分数，供下游精排、截断与置信度展示使用。heuristic reranker 在 session 粒度经 realistic-energy 消融证实零增益（rerankWeights 全部信号在候选集内无区分度）。
 
 ### 3.3 压缩
 
@@ -51,8 +54,17 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 2. 写入对应 tier 文件（`concepts/{semantic|episodic|procedural|global|knowledge}/`）
 3. 更新 `.harmonic_index.json`
 4. 触发 MinHash 跨层合并检查（`MinHashMerger.merge()`，阈值 0.6、4 签名、3-gram shingle；合并产物带 `merged_from` 防递归；`skipMerge` 选项供 LongMemEval 基准等确定性摄入场景关闭）
+5. 触发静态 `onMemoryWritten` 监听器（dense 嵌入索引 + LLM 合并裁判，见 §3.5）
 
 > 注：`HybridCompressor`（会话压缩管线）只挂在 deprecated legacy 插件路径，当前 gateway 运行时写路径是 `/api/memory/add` + MCP handler + turnCompress worker，均经 `HarmonicUnitFileStore.write()`。
+
+### 3.5 Dense 混合检索与语义合并（P1/P2，opt-in）
+
+`memory.embedding.provider`（默认 `off`；`local` = ONNX Qwen3-Embedding-0.6B / `dashscope` = text-embedding-v4 compatible-mode）：
+
+- **EmbeddingRuntime**（`gateway/src/memory/embedding-runtime.ts`）：进程单例（provider + `MemoryVectorStore` + `EmbeddingIndexer`）。向量文件 `~/.mafw/memory/vectors-<model>.json`；写路径 fire-and-forget 嵌入（2s 防抖批量 flush，失败丢弃不阻塞）
+- **检索**：`computeDenseScores(query)` → `searchScored({denseScores})` → RRF 融合；`mafw_search_hybrid` 的 `retriever:'hybrid'` 与 `/api/memory/search?retriever=hybrid` 已接线；boundary recall 同步路径**不**嵌查询（100ms 契约）
+- **ConsolidationService**（`gateway/src/memory/consolidation-service.ts`）：写入后 cosine≥0.8 候选召回 → worker 模型 LLM 判 UPDATE/CREATE（Memora 式）；UPDATE 合入新条目 + soft-supersede 旧条目 + 删除旧向量；裁判不可达时 skip（fail-open）；`GET /api/memory/stats` 暴露 update ratio（健康区间 ~16-22%）
 
 ### 3.4 能量衰减
 
