@@ -33,6 +33,9 @@ export interface ChatOptions {
   max_tokens?: number;
   apiUrl?: string;
   apiKey?: string;
+  /** Abort the request after this many ms (default 90s) — a hung request
+   *  must never stall the whole benchmark run. */
+  timeoutMs?: number;
 }
 
 export interface ChatResult {
@@ -49,22 +52,30 @@ export async function chatCompletion(opts: ChatOptions): Promise<string> {
 export async function chatCompletionFull(opts: ChatOptions): Promise<ChatResult> {
   const url = opts.apiUrl ?? 'https://opencode.ai/zen/go/v1/chat/completions';
   const key = opts.apiKey ?? loadAuthKey('opencode-go');
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-      // OpenRouter rankings reward identification; harmless on other providers.
-      'HTTP-Referer': 'https://opencode.ai',
-      'X-Title': 'MAFW LongMemEval benchmark',
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      messages: opts.messages,
-      temperature: opts.temperature ?? 0.0,
-      max_tokens: opts.max_tokens ?? 512,
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 90_000);
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`,
+        // OpenRouter rankings reward identification; harmless on other providers.
+        'HTTP-Referer': 'https://opencode.ai',
+        'X-Title': 'MAFW LongMemEval benchmark',
+      },
+      body: JSON.stringify({
+        model: opts.model,
+        messages: opts.messages,
+        temperature: opts.temperature ?? 0.0,
+        max_tokens: opts.max_tokens ?? 512,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
     throw new Error(`LLM request failed ${resp.status}: ${text}`);
