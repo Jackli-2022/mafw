@@ -1745,7 +1745,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             )}
           </For>
           {/* DeepSeek-style user-turn node navigation */}
-          <MessageNav container={containerRef} turns={navTurns()} />
+          <MessageNav container={containerRef} turns={navTurns} />
           {/* Agent switch traces (local UI only) */}
           <For each={props.switchLogs()[sidProp()] || []}>
             {(t) => <div class="mafw-switch-trace">{t}</div>}
