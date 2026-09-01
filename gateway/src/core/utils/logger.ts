@@ -3,7 +3,9 @@ import * as path from 'path';
 import * as os from 'os';
 import { redactLog } from '../auth';
 
-const LOG_DIR = path.join(os.homedir(), '.mafw', 'logs');
+// Log directory: ~/.mafw/logs by default; MAFW_LOG_DIR overrides (used by
+// the jest setupFiles to keep test output out of the production log file).
+const LOG_DIR = process.env.MAFW_LOG_DIR || path.join(os.homedir(), '.mafw', 'logs');
 const LOG_PATH = path.join(LOG_DIR, 'mafw.log');
 const MAX_SIZE = 5 * 1024 * 1024;
 
