@@ -35,6 +35,7 @@ function parseArgs() {
     order: (flags.get('--order') ?? 'date') as 'date' | 'rank',
     cot: flags.get('--cot') === 'true',
     enumerate: flags.get('--enumerate') === 'true',
+    readerMode: (flags.get('--readerMode') ?? 'plain') as 'plain' | 'chain-of-note',
     scoreThreshold: parseFloat(flags.get('--scoreThreshold') ?? '0'),
   };
 }
@@ -85,7 +86,7 @@ function weeksSince(dateStr: string): string {
   return diffWeeks > 0 ? ` (${diffWeeks} weeks ago)` : '';
 }
 
-function buildReaderMessages(
+export function buildReaderMessages(
   question: string,
   contexts: string[],
   isAbstention: boolean,
@@ -94,6 +95,7 @@ function buildReaderMessages(
   cot = false,
   enumerate = false,
   questionDate?: string,
+  readerMode: 'plain' | 'chain-of-note' = 'plain',
 ): ChatMessage[] {
   const sorted = sortContexts(contexts.slice(0, 20), order); // cap reader context
   // Official LongMemEval reader template (run_generation.py): numbered
@@ -118,12 +120,18 @@ function buildReaderMessages(
   const confidenceHint = lowConfidence
     ? '\n\nNote: retrieval confidence is LOW. Treat the memories as uncertain and abstain if they do not clearly answer the question.'
     : '';
+  // Chain-of-Note (arXiv:2311.04889): per-session relevance notes + facts, then
+  // answer strictly from the notes. Official error analysis: 15-19% of failures
+  // are "retrieved right, read wrong" — notes force evidence extraction.
+  const chainOfNoteHint = readerMode === 'chain-of-note'
+    ? 'Before answering, write a note for EVERY session above, in this exact format:\nNote S# (relevant: yes/no): <one or two facts the session states that bear on the question, quoting specifics; if not relevant, write "no bearing".>\nThen give "Answer:" using ONLY what your notes established. If your notes contain no relevant fact, say you don\'t know.'
+    : '';
   const system = `You are a helpful assistant answering a user based only on their past conversation history. ${abstentionHint}${confidenceHint}`;
   const questionDateStr = questionDate ? `Question Date: ${questionDate}\n` : '';
   const temporalHint = questionDate
     ? 'IMPORTANT: Temporal references in the question (e.g., "last month", "two weeks ago", "two months ago") should be interpreted relative to the Question Date provided below, not the current date or session dates.'
     : 'IMPORTANT: Temporal references in the question (e.g., "last month", "two weeks ago") should be interpreted relative to the session dates, not the current date.';
-  const user = `I will give you several history chats between you and a user. Please answer the question based on the relevant chat history. ${temporalHint}${cotHint ? ' ' + cotHint : ''}${enumerateHint ? ' ' + enumerateHint : ''}\n\n\nHistory Chats:\n\n${ctxBlock}\n\n${questionDateStr}Question: ${question}\nAnswer:`;
+  const user = `I will give you several history chats between you and a user. Please answer the question based on the relevant chat history. ${temporalHint}${cotHint ? ' ' + cotHint : ''}${enumerateHint ? ' ' + enumerateHint : ''}${chainOfNoteHint ? '\n\n' + chainOfNoteHint : ''}\n\n\nHistory Chats:\n\n${ctxBlock}\n\n${questionDateStr}Question: ${question}\nAnswer:`;
   return [
     { role: 'system', content: system },
     { role: 'user', content: user },
@@ -219,6 +227,7 @@ async function main() {
         args.cot,
         args.enumerate,
         item.question_date,
+        args.readerMode,
       );
       const readerResult = await chatCompletionFull({
         model: args.readerModel,

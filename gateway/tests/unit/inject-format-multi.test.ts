@@ -91,4 +91,41 @@ describe('formatRecallContext multi-session', () => {
     const lines = result.pointers!.split('\n').filter((l) => l.startsWith('-') || l.startsWith('  -'));
     expect(lines.length).toBeLessThanOrEqual(5);
   });
+
+  it('should group memories sharing a source session (episodic grouping)', () => {
+    const memories = [
+      {
+        id: 'aaa111',
+        primary_abstraction: 'Deploy fix commit 65161976',
+        energy: 0.8,
+        type: 'episodic',
+        created_at: '2026-09-01T07:00:00Z',
+        source_session_id: 'ses_fa4122b37ffe1BlhT9O7EHpWbn',
+      },
+      {
+        id: 'bbb222',
+        primary_abstraction: 'Prefetch chain verified 70ms',
+        energy: 0.8,
+        type: 'episodic',
+        created_at: '2026-09-01T08:00:00Z',
+        source_session_id: 'ses_fa4122b37ffe1BlhT9O7EHpWbn',
+      },
+      {
+        id: 'ccc333',
+        primary_abstraction: 'User prefers terse Chinese replies',
+        energy: 0.9,
+        type: 'semantic',
+        created_at: '2026-08-30T10:00:00Z',
+        source_session_id: 'ses_other',
+      },
+    ];
+
+    const result = formatRecallContext(memories);
+    expect(result.pointers).toContain('[session ses_fa4');
+    // Both same-session entries rendered under the session header (indented)
+    expect(result.pointers).toContain('  - #mem-aaa111');
+    expect(result.pointers).toContain('  - #mem-bbb222');
+    // Session header includes the date range of the group
+    expect(result.pointers).toMatch(/\[session ses_fa4[^\]]*2026-09-01/);
+  });
 });

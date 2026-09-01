@@ -8,6 +8,8 @@ export interface OpencodeAuth {
 }
 
 export function loadAuthKey(provider = 'opencode-go'): string {
+  // Direct key override (e.g. unified gateway keys that live outside auth.json).
+  if (process.env.MAFW_EVAL_API_KEY) return process.env.MAFW_EVAL_API_KEY;
   const base = os.platform() === 'win32'
     ? process.env.USERPROFILE ?? process.env.HOME
     : process.env.HOME;

@@ -26,6 +26,8 @@ import { recallAtK, ndcgAtK, aggregateByType, mean } from './metrics';
 import { L1QuestionResult, L1Summary } from './types';
 import { chatCompletion, loadAuthKey } from './llm';
 import { formatEntryForIndex, parseScanResponse, resolveShortIds } from '../../../gateway/src/recall/index-scan';
+import { createEmbeddingProvider, EmbeddingProvider } from '../../../gateway/src/memory/embedding-provider';
+import { MemoryVectorStore, EmbeddingIndexer } from '../../../gateway/src/memory/vector-store';
 
 const KS = [1, 3, 5, 10];
 
@@ -105,6 +107,7 @@ function parseArgs() {
     granularity: flags.get('--granularity') ?? 'round',
     energyMode: flags.get('--energyMode') ?? 'frozen',
     retriever: flags.get('--retriever') ?? 'token',
+    embeddingProvider: (flags.get('--embeddingProvider') ?? 'off') as 'off' | 'local' | 'dashscope',
     reranker: (flags.get('--reranker') ?? 'off') as 'off' | 'heuristic' | 'cross-encoder',
     recallK: parseInt(flags.get('--recallK') ?? String(config.search.recallK), 10),
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
@@ -126,7 +129,8 @@ function help() {
   console.log('  --seed N        deterministic seed (default 42)');
   console.log('  --granularity round|session');
   console.log('  --energyMode frozen|realistic');
-  console.log('  --retriever token|bm25');
+  console.log('  --retriever token|bm25|hybrid');
+  console.log('  --embeddingProvider off|local|dashscope  (hybrid mode; default dashscope)');
   console.log('  --reranker off|heuristic|cross-encoder');
   console.log('  --recallK N     candidates before rerank');
   console.log('  --cutoffRatio N drop results below topScore × ratio (0 = off)');
@@ -152,6 +156,7 @@ async function runOne(
   scanApiUrl: string,
   scanApiKeyProvider: string,
   scanModel: string,
+  embeddingProvider?: EmbeddingProvider | null,
 ): Promise<L1QuestionResult> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `lme-l1-${question.question_id}-`));
   let store: HarmonicUnitFileStore | null = null;
@@ -177,6 +182,25 @@ async function runOne(
     }
 
     let entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
+    if (embeddingProvider) {
+      // Hybrid: build the dense channel over this question's haystack, then
+      // re-run searchScored with fused dense scores.
+      const vectors = new MemoryVectorStore(path.join(tmpDir, 'memory', 'vectors-eval.json'), 1024, 'eval');
+      const getTextForId = async (id: string) => {
+        const entry = index.getIndex().entries.find(e => e.id === id);
+        return entry ? entry.primary_abstraction.slice(0, 4000) : null;
+      };
+      const indexer = new EmbeddingIndexer({ vectors, provider: embeddingProvider, getTextForId, valueCap: 0 });
+      const ids = index.getIndex().entries.map(e => e.id);
+      const backfill = await indexer.backfill(ids);
+      const [queryVector] = await embeddingProvider.embed([question.question], 'query');
+      if (queryVector && vectors.size() > 0) {
+        const hits = vectors.searchByCosine(queryVector, recallK);
+        searchOptions.denseScores = new Map(hits.map(h => [h.id, h.cosine]));
+        entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
+        console.error(`[hybrid] indexed=${backfill.indexed} denseHits=${hits.length}`);
+      }
+    }
     if (reranker && entries.length > 0) {
       entries = await applyReranker(question.question, entries, reranker, Math.max(...KS), cutoffRatio);
     }
@@ -277,12 +301,23 @@ async function main() {
     granularity: args.granularity as 'round' | 'session',
     energyMode: args.energyMode as 'frozen' | 'realistic',
   };
-  const retriever = (args.retriever === 'bm25' ? 'bm25' : 'token') as 'token' | 'bm25';
+  const retriever = args.retriever as 'token' | 'bm25' | 'hybrid';
+  const embeddingProvider: EmbeddingProvider | null = retriever === 'hybrid'
+    ? createEmbeddingProvider({
+        provider: args.embeddingProvider === 'off' ? 'dashscope' : args.embeddingProvider,
+        model: args.embeddingProvider === 'local' ? 'onnx-community/Qwen3-Embedding-0.6B-ONNX' : 'text-embedding-v4',
+        dimensions: 1024,
+      })
+    : null;
+  if (retriever === 'hybrid' && !embeddingProvider) {
+    console.error('hybrid retriever requires an embedding provider (--embeddingProvider dashscope|local)');
+    process.exit(1);
+  }
   const reranker = await createRerankerForRun(args.reranker);
   // Scan implies graph (needs anchor graph for 1-hop expansion on scan results)
   const graphEnabled = args.graph || args.scan;
   const searchOptions: SearchOptions = {
-    retriever,
+    retriever: retriever === 'hybrid' ? 'bm25' : retriever,
     cutoffRatio: reranker ? 0 : args.cutoffRatio,
   };
 
@@ -292,12 +327,14 @@ async function main() {
   const runPath = path.join(resultsDir, 'l1-run.jsonl');
   const summaryPath = path.join(resultsDir, 'l1-summary.json');
 
-  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, reranker=${args.reranker}, graph=${args.graph}, scan=${args.scan}`);
+  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, embedding=${embeddingProvider?.name ?? 'n/a'}, reranker=${args.reranker}, graph=${args.graph}, scan=${args.scan}, timeAnchor=true`);
   const results: L1QuestionResult[] = [];
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     process.stdout.write(`[${i + 1}/${questions.length}] ${q.question_id} ${q.question_type} ... `);
-    const res = await runOne(q, ingestOpts, args.keep, searchOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel);
+    // Per-question options: time anchoring is relative to the question date.
+    const perQuestionOptions: SearchOptions = { ...searchOptions, now: q.question_date };
+    const res = await runOne(q, ingestOpts, args.keep, perQuestionOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel, embeddingProvider);
     results.push(res);
     fs.appendFileSync(runPath, JSON.stringify(res) + '\n', 'utf-8');
     process.stdout.write(`R@1=${res.recall[1].toFixed(2)} R@10=${res.recall[10].toFixed(2)}\n`);

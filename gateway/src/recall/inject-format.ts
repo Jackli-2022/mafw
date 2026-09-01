@@ -6,6 +6,7 @@
   energy?: number
   type?: string
   created_at?: string
+  source_session_id?: string
 }
 
 export interface RecallFormat {
@@ -126,17 +127,46 @@ function groupMemoriesByType(memories: MemoryUnit[]): Map<string, MemoryUnit[]> 
 export function formatRecallContext(memories: MemoryUnit[]): RecallFormat {
   if (memories.length === 0) return { pointers: null }
 
-  // For multi-type results, group by type for better readability
+  // Episodic grouping: memories sharing a source session render under one
+  // session header with a date range (Memora-style narrative recovery —
+  // multi-session questions need to see that two hits came from one episode).
+  const sessionGroups = new Map<string, MemoryUnit[]>()
+  for (const m of memories) {
+    if (!m.source_session_id) continue
+    if (!sessionGroups.has(m.source_session_id)) sessionGroups.set(m.source_session_id, [])
+    sessionGroups.get(m.source_session_id)!.push(m)
+  }
+  const groupedIds = new Set<string>()
+  for (const mems of sessionGroups.values()) {
+    if (mems.length < 2) continue
+    for (const m of mems) groupedIds.add(m.id!)
+  }
+
   const groups = groupMemoriesByType(memories)
   const lines: string[] = []
-  
-  // If all same type, flat list (backward compatible)
-  if (groups.size <= 1) {
-    lines.push(...memories.slice(0, 3).map(pointerLine))
-  } else {
-    // Multi-type: group with headers
-    for (const [type, mems] of groups) {
-      if (mems.length === 0) continue;
+  let sessionHeaders = 0
+
+  for (const [sessionId, mems] of sessionGroups) {
+    if (mems.length < 2) continue
+    const dates = mems.map(m => formatDate(m.created_at)).filter(Boolean).sort()
+    const range = dates.length >= 2 && dates[0] !== dates[dates.length - 1]
+      ? `${dates[0]}~${dates[dates.length - 1]}`
+      : dates[0] ?? ''
+    lines.push(`[session ${sessionId.slice(0, 8)}${range ? ' · ' + range : ''}]`)
+    for (const m of mems) {
+      lines.push(`  ${pointerLine(m)}`)
+    }
+    sessionHeaders++
+  }
+
+  // Everything else (ungrouped or singletons) renders as before.
+  const rest = memories.filter(m => !groupedIds.has(m.id!))
+  const restGroups = groupMemoriesByType(rest)
+  if (restGroups.size <= 1 && sessionHeaders === 0) {
+    lines.push(...rest.slice(0, 3).map(pointerLine))
+  } else if (rest.length > 0) {
+    for (const [type, mems] of restGroups) {
+      if (mems.length === 0) continue
       lines.push(`[${type}]`)
       for (const m of mems.slice(0, 2)) {
         lines.push(`  ${pointerLine(m)}`)
