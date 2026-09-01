@@ -1825,7 +1825,10 @@ class MafwScheduler {
       if (projectID && this.opencodeClient) {
         let dbSessions: any[] = [];
         if (this.runtimeCaps.sessionStorageApi && this.opencodeClient.session.listByDirectory) {
-          dbSessions = await this.opencodeClient.session.listByDirectory(projectID);
+          // Large window: the recent head of the list is flooded by short-lived
+          // memory-worker sessions (index-scan retries etc.); after filtering
+          // them out the real history must still fit in the window.
+          dbSessions = await this.opencodeClient.session.listByDirectory(projectID, 2000);
         } else {
           const all = await this.opencodeClient.session.list();
           const target = normalizeDir(projectID);

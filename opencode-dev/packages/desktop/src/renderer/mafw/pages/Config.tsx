@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
-import { createPortal } from "solid-js/web"
+import { Portal } from "solid-js/web"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
@@ -1065,7 +1065,7 @@ function SearchSelect(props: {
         placeholder={props.placeholder}
       />
       <Show when={open() && listPos() && filtered().length > 0}>
-        {createPortal(
+        <Portal>
           <div
             class="mafw-search-select-list"
             style={{
@@ -1089,9 +1089,8 @@ function SearchSelect(props: {
                 </div>
               )}
             </For>
-          </div>,
-          document.body,
-        )}
+          </div>
+        </Portal>
       </Show>
     </div>
   )
