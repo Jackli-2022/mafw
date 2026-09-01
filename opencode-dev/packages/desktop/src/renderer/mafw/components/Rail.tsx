@@ -35,6 +35,15 @@ const groupLabel = (ts: number): string => {
   return y === nowY ? `${d.getMonth() + 1}月` : `${y}年${d.getMonth() + 1}月`
 }
 
+// Ellipsis as a real SVG icon (the icon set has none); three current-color dots.
+const EllipsisIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <circle cx="3" cy="8" r="1.4" />
+    <circle cx="8" cy="8" r="1.4" />
+    <circle cx="13" cy="8" r="1.4" />
+  </svg>
+)
+
 const PAGE = 100
 const SEARCH_CAP = 200
 
@@ -221,7 +230,7 @@ export function Rail(props: Props) {
           <TooltipV2 value={new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
             <span class="mafw-rail-session-title">{sessionName(s)}</span>
           </TooltipV2>
-          <span class="mafw-rail-row-dots" onClick={e => e.stopPropagation()}>⋯</span>
+          <span class="mafw-rail-row-dots" onClick={e => e.stopPropagation()}><EllipsisIcon /></span>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content>
@@ -249,7 +258,7 @@ export function Rail(props: Props) {
       <div class="mafw-rail-head">
         <DropdownMenu placement="bottom-start">
           <DropdownMenu.Trigger as="div" class="mafw-rail-switcher">
-            <span class="mafw-rail-switcher-caret">▾</span>
+            <Icon name="chevron-down" size="small" class="mafw-rail-switcher-caret" />
             <span class="mafw-rail-switcher-name">{currentProject()?.worktree?.split(/[/\\]/).pop() || "No project"}</span>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
@@ -258,7 +267,7 @@ export function Rail(props: Props) {
                 {(p) => (
                   <DropdownMenu.Item onSelect={() => selectProject(p)}>
                     <DropdownMenu.ItemLabel>{p.worktree?.split(/[/\\]/).pop() || p.id}</DropdownMenu.ItemLabel>
-                    {currentProject()?.worktree === p.worktree && <span class="mafw-rail-check">✓</span>}
+                    {currentProject()?.worktree === p.worktree && <Icon name="check-small" size="small" class="mafw-rail-check" />}
                   </DropdownMenu.Item>
                 )}
               </For>
@@ -268,11 +277,16 @@ export function Rail(props: Props) {
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu>
-        <button class="mafw-rail-collapse" onClick={() => props.onToggleCollapsed?.()} aria-label="折叠侧边栏">◀</button>
+        <button class="mafw-rail-collapse" onClick={() => props.onToggleCollapsed?.()} aria-label="折叠侧边栏">
+          <Icon name="chevron-left" size="small" />
+        </button>
       </div>
 
       <div class="mafw-rail-new">
-        <button class="mafw-rail-new-btn" onClick={newSession}>+ New session</button>
+        <button class="mafw-rail-new-btn" onClick={newSession}>
+          <Icon name="plus-small" size="small" />
+          <span>New session</span>
+        </button>
       </div>
 
       <div class="mafw-rail-search" ref={searchRef}>
@@ -298,7 +312,10 @@ export function Rail(props: Props) {
         <For each={groups()}>
           {(g) => (
             <>
-              <div class="mafw-rail-date-group">{g.label}</div>
+              <div class="mafw-rail-date-group">
+                <span>{g.label}</span>
+                <span class="mafw-rail-date-count">{g.items.length}</span>
+              </div>
               <For each={g.items}>{(s) => renderSessionRow(s)}</For>
             </>
           )}
@@ -319,7 +336,6 @@ export function Rail(props: Props) {
             classList={{ active: props.activeSessionId === managerRow()!.id }}
             onClick={() => props.onSelectSession(managerRow()!.id, "Manager", true)}
           >
-            <span class="mafw-rail-manager-glyph">◆</span>
             <span class="mafw-rail-session-title">Manager</span>
             <span class="mafw-rail-manager-dot" />
           </div>

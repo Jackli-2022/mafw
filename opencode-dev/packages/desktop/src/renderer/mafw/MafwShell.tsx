@@ -1722,7 +1722,7 @@ export function MafwShell() {
         {railCollapsed() ? (
           <div class="mafw-rail-collapsed">
             <ButtonV2 variant="ghost" size="small" class="mafw-rail-expand" onClick={() => applyRailCollapsed(false)} aria-label="展开侧边栏">
-              <span>▶</span>
+              <Icon name="chevron-right" size="small" />
             </ButtonV2>
           </div>
         ) : (
