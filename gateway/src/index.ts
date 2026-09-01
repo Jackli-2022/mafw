@@ -1827,10 +1827,11 @@ class MafwScheduler {
       if (projectID && this.opencodeClient) {
         let dbSessions: any[] = [];
         if (this.runtimeCaps.sessionStorageApi && this.opencodeClient.session.listByDirectory) {
-          // Large window: the recent head of the list is flooded by short-lived
-          // memory-worker sessions (index-scan retries etc.); after filtering
-          // them out the real history must still fit in the window.
-          dbSessions = await this.opencodeClient.session.listByDirectory(projectID, 2000);
+          // Effectively unbounded window: memory-worker sessions (index-scan
+          // retries etc.) flood the recent head of the table, so any small
+          // window filters down to almost nothing. Read the whole project and
+          // let the client cap what it renders.
+          dbSessions = await this.opencodeClient.session.listByDirectory(projectID, 20000);
         } else {
           const all = await this.opencodeClient.session.list();
           const target = normalizeDir(projectID);
