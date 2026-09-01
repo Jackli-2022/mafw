@@ -26,7 +26,16 @@
 
 **目标**：ChatGPT 式扁平对话历史列表；统一数据层；按最后活跃排序；固定日期分组；搜索；加载更多；hover 行内操作；项目 switcher；折叠箭头右置图标化；Manager 沉底固定区。
 
-**非目标**：虚拟滚动库引入（客户端分页足够）；Cmd+K 命令面板；会话置顶/文件夹；gateway 侧过滤逻辑变更（已完成：worker/子代理已在 `/api/sessions` 隐藏）。
+## 非目标
+
+虚拟滚动库引入（客户端分页足够）；Cmd+K 命令面板；会话置顶/文件夹（业界有 Starred/Pinned/Projects 区，属增量功能，列 backlog）；gateway 侧过滤逻辑变更（已完成：worker/子代理已在 `/api/sessions` 隐藏）。
+
+## 业界共识对照（2026-09 调研）
+
+调研对象：ChatGPT、Claude、Kimi、Cursor、Linear、Slack、Open WebUI/LibreChat。
+共识采纳：扁平无树、updated 倒序、固定日期分组、New 置顶、顶部搜索+键盘导航、hover ⋯、背景高亮、空标题兜底、图标化收起（右置，Claude/Kimi 式）、行内无时间戳、无计数徽章、无限滚动。
+分歧自选：项目切换采用 **Claude 式顶部下拉**（MAFW 的项目=工作区，Slack workspace 模式也收敛于此）；分组头 sticky 保留为增强。
+Backlog：Pinned/Starred 区、Cmd+K 全局面板、manager busy 状态点。
 
 ## 布局定稿（ASCII）
 
@@ -87,10 +96,11 @@ export const sessionStore = {
 
 ## 分组 / 搜索 / 分页规则
 
-1. **分组固定出现**（不再依赖数量）：今天 / 昨天 / 过去 7 天 / 按月；跨年月份带年份（如 `2025年12月`）。分组头 sticky。
-2. **分页**：默认渲染最近 100 条；滚到底部点"加载更多"每次 +200。分组按当前已渲染集合计算。
-3. **搜索**：客户端 `title.toLowerCase().includes(q)`，作用于全量数据（1996 条内存过滤 <5ms）。搜索激活时忽略分页上限，结果显示最多 200 行 + 尾部提示"仅显示前 200 条结果"；无结果空态 "No chats found"。搜索词非空时不显示"加载更多"。
+1. **分组固定出现**（不再依赖数量）：今天 / 昨天 / 过去 7 天 / 按月；跨年月份带年份（如 `2025年12月`）。分组头 sticky（业界多为非 sticky，此项为无害增强）。
+2. **分页**：默认渲染最近 100 条；**滚动到底自动加载**（IntersectionObserver 触发，每次 +200；业界主流为无限滚动），"加载更多"手动按钮保留为兜底。分组按当前已渲染集合计算。
+3. **搜索**：客户端 `title.toLowerCase().includes(q)`，作用于全量数据（1996 条内存过滤 <5ms）。搜索激活时忽略分页上限，结果显示最多 200 行 + 尾部提示"仅显示前 200 条结果"；无结果空态 "No chats found"。搜索词非空时不显示"加载更多"。**键盘导航**：↑↓ 在结果间移动高亮、Enter 打开、Esc 清空并退出搜索；`Ctrl+K`（Cmd+K）聚焦搜索框。
 4. **Manager 与孤儿 manager**：永不进入 History 列表（`metadata.mafw.role === 'manager'` 一律排除）。
+5. **行内不渲染时间戳**（业界共识：hover TooltipV2 提供完整时间即可）。
 
 ## 行设计
 
@@ -131,6 +141,8 @@ export const sessionStore = {
 
 ## 样式约定
 
+- 侧栏宽度 200 → **240px**（业界共识 240-260px；可折叠行为不变）
+- 行字号 12 → **13px**（行高 32px 保持；业界 13-14px/28-36px）
 - `mafw.css` rail 段重写：删除 `.mafw-rail-tree` / `.mafw-agent-icon` / `.mafw-rail-manager-label` / `.mafw-rail-collapse-bar` / `.mafw-rail-project-list`；新增 switcher 行、搜索框、加载更多、固定区样式
 - 遵守 §5.10：TextInputV2（搜索）、ContextMenu/DropdownMenu（菜单）、TooltipV2（`openDelay: 300`）、禁裸 `<button>`/`<input>`
 
