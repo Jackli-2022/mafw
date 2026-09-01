@@ -101,9 +101,23 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
       },
 
       async delete(opts: { sessionID: string }) {
-        await client.session.delete({
+        const result = await client.session.delete({
           sessionID: opts.sessionID,
         });
+        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+          throw new Error(String((result as any).error));
+        }
+      },
+
+      async update(opts: { sessionID: string; title: string }) {
+        // v2 SDK signature is flat: { sessionID, title }
+        const result = await client.session.update({
+          sessionID: opts.sessionID,
+          title: opts.title,
+        });
+        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+          throw new Error(String((result as any).error));
+        }
       },
 
       async abort(opts: { sessionID: string }) {

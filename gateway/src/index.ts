@@ -71,6 +71,7 @@ import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
 import { handleRestartAgent } from './routes/restart-agent';
+import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { handleMediaSwitch } from './routes/media-switch';
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
@@ -3764,6 +3765,14 @@ class MafwScheduler {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
+          return;
+        }
+
+        // DELETE/PATCH /api/sessions/:id — true forwards (rename / delete)
+        if (await handleSessionMutations(req, res, {
+          getCapabilities: () => this.runtimeCaps,
+          getClient: () => (this.opencodeClient ?? null) as any,
+        })) {
           return;
         }
 

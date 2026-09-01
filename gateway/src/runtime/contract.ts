@@ -121,6 +121,8 @@ export interface RuntimeClient {
     messages(opts: SessionMessagesOpts): Promise<{ data: any[]; nextCursor?: string }>;
     get(opts: { sessionID: string }): Promise<any>;
     delete(opts: { sessionID: string }): Promise<void>;
+    /** Rename a session (flat { sessionID, title }); optional — opencode/pi implement it. */
+    update?(opts: { sessionID: string; title: string }): Promise<any>;
     abort(opts: { sessionID: string }): Promise<void>;
     list(opts?: { directory?: string }): Promise<any[]>;
     listByDirectory?(directory: string, limit?: number): Promise<SessionInfo[]>;
