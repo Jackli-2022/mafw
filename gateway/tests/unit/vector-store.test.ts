@@ -86,7 +86,7 @@ describe('MemoryVectorStore', () => {
 });
 
 describe('EmbeddingIndexer', () => {
-  test('flushQueue embeds document text (abstraction + value) and upserts vectors', async () => {
+  test('flushQueue embeds retrieval-domain text (abstraction + anchors, not full value)', async () => {
     const dir = tmpDir();
     const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
     const embedded: string[] = [];
@@ -101,16 +101,18 @@ describe('EmbeddingIndexer', () => {
     };
     const indexer = new EmbeddingIndexer({ vectors, provider });
 
-    indexer.onUnitWritten({ id: 'u1', primary_abstraction: 'Abs A', memory_value: 'value one' } as any);
+    indexer.onUnitWritten({ id: 'u1', primary_abstraction: 'Abs A', cue_anchors: ['k8s', 'setup'], memory_value: 'value one' } as any);
     indexer.onUnitWritten({ id: 'u2', primary_abstraction: 'Abs B', memory_value: 'value two' } as any);
     await indexer.flushQueue();
 
-    expect(embedded).toEqual(['Abs A\nvalue one', 'Abs B\nvalue two']);
+    // Same domain BM25 indexes: abstraction + cue_anchors. memory_value stays out
+    // (short inputs → tiny ONNX attention cost, RRF channels aligned).
+    expect(embedded).toEqual(['Abs A k8s setup', 'Abs B']);
     expect(vectors.get('u1')).toEqual([0, 1]);
     expect(vectors.get('u2')).toEqual([1, 1]);
   });
 
-  test('document text is capped to avoid pathological values', async () => {
+  test('document text is capped to avoid pathological abstractions', async () => {
     const dir = tmpDir();
     const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
     const embedded: string[] = [];
@@ -124,7 +126,7 @@ describe('EmbeddingIndexer', () => {
     };
     const indexer = new EmbeddingIndexer({ vectors, provider });
 
-    indexer.onUnitWritten({ id: 'u1', primary_abstraction: 'A', memory_value: 'x'.repeat(10000) } as any);
+    indexer.onUnitWritten({ id: 'u1', primary_abstraction: 'A'.repeat(10000), memory_value: 'x'.repeat(10000) } as any);
     await indexer.flushQueue();
 
     expect(embedded[0].length).toBeLessThanOrEqual(2100);
@@ -162,7 +164,6 @@ describe('EmbeddingIndexer', () => {
       provider,
       getTextForId: async (id) => id === 'e1' ? 'abs old\nold value' : id === 'e2' ? 'abs new\nnew value' : null,
     });
-
     vectors.upsert('e2', [0, 1]); // e2 already indexed
 
     const result = await indexer.backfill(['e1', 'e2', 'e3']);

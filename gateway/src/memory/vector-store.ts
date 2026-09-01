@@ -110,8 +110,6 @@ export interface EmbeddingIndexerDeps {
   provider: EmbeddingProvider;
   /** Optional resolver for backfill (defaults to unit text passed to onUnitWritten). */
   getTextForId?: (id: string) => Promise<string | null>;
-  /** Cap for memory_value portion (default 2000 chars). */
-  valueCap?: number;
   /**
    * Embed batch size (default 16). CPU ONNX attention intermediates scale with
    * batch × seq² — large batches transiently allocate GBs. 4 keeps the
@@ -130,29 +128,35 @@ export class EmbeddingIndexer {
   private vectors: MemoryVectorStore;
   private provider: EmbeddingProvider;
   private getTextForId?: (id: string) => Promise<string | null>;
-  private valueCap: number;
   private batchSize: number;
 
   constructor(deps: EmbeddingIndexerDeps) {
     this.vectors = deps.vectors;
     this.provider = deps.provider;
     this.getTextForId = deps.getTextForId;
-    this.valueCap = deps.valueCap ?? 2000;
     this.batchSize = deps.batchSize ?? 16;
   }
 
-  /** Document text: primary abstraction + memory value (capped). */
-  static documentText(unit: { primary_abstraction?: string; memory_value?: string }, valueCap = 2000): string {
+  /**
+   * Embeddable text = the retrieval domain: primary_abstraction + cue_anchors.
+   * Deliberately NOT memory_value — (a) RRF channels stay aligned with BM25,
+   * which indexes the same domain; (b) abstract-level inputs are short
+   * (<50 tokens), keeping CPU ONNX attention cost trivial and the memory
+   * arena flat. Anchors carry the entity names, so specifics still reach
+   * the dense channel.
+   */
+  static documentText(unit: { primary_abstraction?: string; cue_anchors?: string[] }, textCap = 2000): string {
     const abs = (unit.primary_abstraction || '').trim();
-    const value = (unit.memory_value || '').slice(0, valueCap);
-    return (abs + (value ? '\n' + value : '')).trim();
+    const anchors = (unit.cue_anchors || []).join(' ').trim();
+    const text = (abs + (anchors ? ' ' + anchors : '')).trim();
+    return text.slice(0, textCap);
   }
 
-  onUnitWritten(unit: { id: string; primary_abstraction?: string; memory_value?: string }): void {
+  onUnitWritten(unit: { id: string; primary_abstraction?: string; cue_anchors?: string[] }): void {
     if (!unit?.id) return;
     this.queue.set(unit.id, {
       id: unit.id,
-      text: EmbeddingIndexer.documentText(unit, this.valueCap),
+      text: EmbeddingIndexer.documentText(unit),
     });
   }
 

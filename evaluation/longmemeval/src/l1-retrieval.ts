@@ -194,7 +194,7 @@ async function runOne(
         // BM25 retains full-text recall coverage.
         return entry ? entry.primary_abstraction.slice(0, 1200) : null;
       };
-      const indexer = new EmbeddingIndexer({ vectors, provider: embeddingProvider, getTextForId, valueCap: 0, batchSize: 4 });
+      const indexer = new EmbeddingIndexer({ vectors, provider: embeddingProvider, getTextForId, batchSize: 4 });
       const ids = index.getIndex().entries.map(e => e.id);
       const backfill = await indexer.backfill(ids);
       const [queryVector] = await embeddingProvider.embed([question.question], 'query');
