@@ -51,6 +51,7 @@ export function createMafwApi(): MafwAPI {
       children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
       abort: (sessionID) => invoke("session", "abort", { path: { id: sessionID } }),
       delete: (id) => invoke("session", "delete", { path: { id } }),
+      rename: (id, title) => invoke("session", "rename", { path: { id }, body: { title } }),
       trajectory: (sessionID, query?) => invoke("session", "trajectory", { path: { id: sessionID }, query: query || {} }),
       tokenSummary: (sessionID) => invoke("session", "tokenSummary", { path: { id: sessionID } }),
       usageSummary: (sessionID?, projectID?) => invoke("session", "usageSummary", { query: { sessionID, projectID } }),

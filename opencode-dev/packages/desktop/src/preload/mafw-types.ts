@@ -25,6 +25,7 @@ export type MafwAPI = {
     children: (sessionID: string) => Promise<any[]>
     abort: (sessionID: string) => Promise<void>
     delete: (id: string) => Promise<void>
+    rename: (id: string, title: string) => Promise<void>
     trajectory: (sessionID: string, query?: { limit?: number; before_turn?: number; rebuild?: boolean }) => Promise<{ turns: any[]; events: any[] }>
     tokenSummary: (sessionID: string) => Promise<{
       totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
