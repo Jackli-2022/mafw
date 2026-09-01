@@ -254,6 +254,7 @@ export interface SessionNamespace {
   get(params: { path: { id: string } }): Promise<Session>
   list(params?: { query?: { projectID?: string } }): Promise<Session[]>
   delete(params: { path: { id: string } }): Promise<void>
+  rename(params: { path: { id: string }; body: { title: string } }): Promise<void>
   messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }>
   todo(params: { path: { id: string } }): Promise<{ data: Todo[] }>
   children(params: { path: { id: string } }): Promise<any[]>

@@ -71,11 +71,24 @@ test("session.list with projectID sends ?projectID= param", async () => {
   expect(url).toContain("?projectID=proj-1")
 })
 
-test("session.delete sends DELETE /api/session/:id", async () => {
+test("session.delete sends DELETE /api/sessions/:id", async () => {
   fetchMock.mockResolvedValue(okJson({}))
   const c = new MafwClient("http://gw:3000")
   await c.session.delete({ path: { id: "s1" } })
-  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/session/s1", expect.objectContaining({ method: "DELETE" }))
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1", expect.objectContaining({ method: "DELETE" }))
+})
+
+test("session.rename sends PATCH /api/sessions/:id with title body", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.rename({ path: { id: "s1" }, body: { title: "新名字" } })
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://gw:3000/api/sessions/s1",
+    expect.objectContaining({
+      method: "PATCH",
+      body: JSON.stringify({ title: "新名字" }),
+    }),
+  )
 })
 
 test("session.messages sends GET with query params", async () => {

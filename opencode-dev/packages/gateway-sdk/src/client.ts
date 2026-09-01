@@ -63,10 +63,17 @@ export class MafwClient implements IMafwClient {
     },
 
     delete: async (params: { path: { id: string } }): Promise<void> => {
-      const res = await fetch(`${this.baseUrl}/api/session/${params.path.id}`, {
-        method: 'DELETE',
+      // True delete: /api/sessions/:id forwards to serve's native DELETE
+      // (the legacy /api/session/:id path is an SPA fallback, not a real route).
+      await this.request(`/api/sessions/${params.path.id}`, { method: 'DELETE' })
+    },
+
+    rename: async (params: { path: { id: string }; body: { title: string } }): Promise<void> => {
+      await this.request(`/api/sessions/${params.path.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: params.body.title }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
 
     messages: async (
