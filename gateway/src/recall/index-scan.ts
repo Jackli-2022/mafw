@@ -1,34 +1,30 @@
-// Index scan: mimo reads the full harmonic index (formatted as compact text)
-// and picks relevant memory IDs for a given query. This catches the semantic
-// gap that BM25 misses — preference queries, paraphrase, cross-session
-// aggregation. Runs in parallel with BM25 at boundary recall time.
+// Index scan: a cheap worker-model call reads the full harmonic index
+// (formatted as compact text) and picks relevant memory IDs for a given query.
+// This catches the semantic gap that BM25 misses — preference queries,
+// paraphrase, cross-session aggregation.
 //
-// Architecture:
-//   1. Index text is formatted once from .harmonic_index.json and cached
-//      in memory. Refreshed hourly (piggybacks on turn-compress cron).
-//   2. At recall time, the cached index text is sent as a prefix (prompt
-//      cache friendly) with the user query as suffix.
-//   3. mimo returns JSON with relevant IDs + confidence.
-//   4. Results are unioned with BM25 results, deduped, superseded filtered.
+// Transport: direct OpenAI-compatible HTTP chat completion (NOT an opencode
+// session). The scan is a stateless classification call — a session adds
+// create/prompt/delete churn and a per-session prompt-cache key for zero
+// benefit, and one-shot sessions flooded the session registry.
 //
-// Cache-first design (the dominant cost lever is prompt-cache hit rate):
-//   - Static header with NO entry count (a count changes on every write and
-//     invalidates the provider cache from byte 0).
-//   - Entries sorted oldest-first (append-only): refresh after new writes
-//     only appends a tail, so the entire existing prefix stays byte-identical
-//     and keeps hitting the provider prompt cache.
-//   - No volatile fields in lines: energy decays daily and would invalidate
-//     every line on each decay pass, so it is omitted (scan rules rank by
-//     semantics; energy-based ranking stays with BM25).
+// Cache-first design (the dominant cost lever is provider prompt-cache hits):
+//   - The index text is a cacheable prefix: static header (no entry count),
+//     entries sorted oldest-first (append-only), no volatile fields (energy
+//     omitted), and an explicit `cache_control: ephemeral` marker on the
+//     index block → deterministic DashScope explicit-cache hits (10% input
+//     billing, 5-min TTL reset on hit) instead of best-effort implicit cache.
 //   - The query is always the final suffix — dynamic content last.
 //
-// The index text is ~10-15k tokens for 300+ entries — well within mimo's
-// 1M context window and prompt cache sweet spot.
+// The index text is ~25-30k tokens for 690 entries — well within the model's
+// context window. Scan latency with a warm cache is a few seconds; results
+// are consumed via async prefetch snapshots, never on the sync recall path
+// (the plugin client aborts recall requests after 100ms).
 
 import type { HarmonicIndexManager } from '../core/memory/harmonic-index';
-import type { MemoryWorker } from './memory-worker';
 import { log } from '../core/utils/logger';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
+import { getProviderApiKey } from '../runtime/auth';
 
 export interface ScanResult {
   relevantIds: string[];
@@ -37,12 +33,37 @@ export interface ScanResult {
 }
 
 export interface IndexScanOptions {
-  /** Timeout for the mimo scan call (default 10s). */
+  /** Timeout for the scan HTTP call (default 30s). */
   timeoutMs?: number;
   /** Minimum confidence to include scan results (default 0.3). */
   minConfidence?: number;
-  /** Max IDs to return from scan (default 8). */
-  maxIds?: number;
+}
+
+/** Injectable dependencies for the scan HTTP transport (tests override). */
+export interface ScanHttpDeps {
+  fetchFn?: typeof fetch;
+  /** Explicit endpoint override (default: resolveScanBaseUrl(providerID)). */
+  baseUrl?: string;
+  /** Explicit API key (default: getProviderApiKey(providerID) via runtime auth). */
+  apiKey?: string;
+  authPath?: string;
+  credentials?: { getApiKey(provider: string): string | null };
+  /** Default timeout for scan() when options.timeoutMs is omitted. */
+  timeoutMs?: number;
+}
+
+/**
+ * Map a provider id to its OpenAI-compatible chat-completions endpoint.
+ * Returns undefined for providers without a known direct endpoint — the scan
+ * then no-ops (the caller falls back to BM25-only recall).
+ */
+export function resolveScanBaseUrl(providerID?: string): string | undefined {
+  if (!providerID) return undefined;
+  const p = providerID.toLowerCase();
+  if (p.includes('alibaba') || p.includes('dashscope') || p.includes('qwen')) {
+    return 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+  }
+  return undefined;
 }
 
 const SCAN_SYSTEM = `You are a memory retrieval system. Given a memory index and a user query, identify the most relevant memory entries.
@@ -97,7 +118,7 @@ function formatDateOnly(iso?: string): string {
 }
 
 /**
- * Format the full harmonic index into a compact text block for mimo scanning.
+ * Format the full harmonic index into a compact text block for scanning.
  * Excludes superseded entries. Sorted by created_at ASCENDING (oldest first)
  * so the text is append-only: after new writes the refreshed text keeps the
  * entire previous prefix byte-identical, preserving provider prompt-cache
@@ -118,7 +139,7 @@ export function formatIndexForScan(index: HarmonicIndexManager): string {
 }
 
 /**
- * Parse mimo's scan response into structured result.
+ * Parse the scan response into structured result.
  * Tolerant of markdown fences and extra text around JSON.
  */
 export function parseScanResponse(text: string): ScanResult | null {
@@ -153,25 +174,28 @@ export function resolveShortIds(shortIds: string[], index: HarmonicIndexManager)
 }
 
 /**
- * IndexScanService manages the scan worker and cached index text.
- * Created once by the gateway, reused across all recall calls.
+ * IndexScanService runs scan queries over direct HTTP and caches the index
+ * text. Created once by the gateway, reused across all scan calls.
  */
 export class IndexScanService {
   private cachedIndexText: string | null = null;
   private cachedAt: number = 0;
   private inFlight: Promise<ScanResult | null> | null = null;
   // Failure cooldown state: a slow or broken worker model must not burn a
-  // disposable session on every recall call. Exponential backoff (1/2/4 min,
-  // capped); a healthy scan resets the streak. Low-confidence results are
-  // healthy "no match" answers and do NOT arm the cooldown.
+  // request on every recall call. Exponential backoff (1/2/4 min, capped);
+  // a healthy scan resets the streak. Low-confidence results are healthy
+  // "no match" answers and do NOT arm the cooldown.
   private lastFailAt = 0;
   private consecutiveFails = 0;
   private lastAttemptFailed = false;
+  // Warn-once flag for unresolvable endpoint/key so a misconfiguration
+  // doesn't spam the log on every scan attempt.
+  private warnedUnresolvable = false;
 
   constructor(
     private index: HarmonicIndexManager,
-    private workerFactory: () => MemoryWorker,
     private workerModel?: { providerID: string; modelID: string },
+    private deps: ScanHttpDeps = {},
   ) {}
 
   /** Refresh the cached index text. Called hourly by turn-compress cron. */
@@ -190,13 +214,13 @@ export class IndexScanService {
   }
 
   /**
-   * Run a scan: send cached index + query to mimo, parse response.
-   * Returns null on failure (fail-open: caller falls back to BM25 only).
-   * Deduplicates concurrent calls — if a scan is already in-flight for the
-   * same query, returns the same promise.
+   * Run a scan: send cached index + query to the worker model over direct
+   * HTTP, parse the response. Returns null on failure (fail-open: callers
+   * fall back to BM25 only). Deduplicates concurrent calls — if a scan is
+   * already in-flight, returns the same promise.
    */
   async scan(query: string, options: IndexScanOptions = {}): Promise<ScanResult | null> {
-    const timeoutMs = options.timeoutMs ?? 30_000;
+    const timeoutMs = options.timeoutMs ?? this.deps.timeoutMs ?? 30_000;
     const minConfidence = options.minConfidence ?? 0.3;
 
     // Failure cooldown (exponential backoff: 1/2/4 min, capped)
@@ -224,46 +248,101 @@ export class IndexScanService {
   }
 
   private async _doScan(query: string, timeoutMs: number, minConfidence: number): Promise<ScanResult | null> {
-    // Create a fresh worker for each scan (stateless) — prevents session
-    // history accumulation that causes O(n²) token growth and timeouts.
-    const worker = this.workerFactory();
+    const providerID = this.workerModel?.providerID;
+    const modelID = this.workerModel?.modelID;
+    const baseUrl = this.deps.baseUrl ?? resolveScanBaseUrl(providerID);
+    const apiKey = this.deps.apiKey ?? getProviderApiKey(providerID ?? '', this.deps.authPath, this.deps.credentials);
+    if (!baseUrl || !apiKey) {
+      if (!this.warnedUnresolvable) {
+        log.warn(`[IndexScan] no endpoint or API key for provider "${providerID ?? '?'}" — scan disabled`);
+        this.warnedUnresolvable = true;
+      }
+      this.lastAttemptFailed = true;
+      return null;
+    }
+
+    const startedAt = Date.now();
+    const fetchFn = this.deps.fetchFn ?? globalThis.fetch.bind(globalThis);
     try {
       const indexText = this.getIndexText();
-      const prompt = `${indexText}\n\n---\n\nUser query: ${query}\n\nSelect the most relevant memory entries from the index above.`;
+      const body = {
+        model: modelID,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              { type: 'text', text: SCAN_SYSTEM },
+              // Explicit cache marker: DashScope caches the block from the
+              // start of the messages up to here (SCAN_SYSTEM + index) for
+              // 5 minutes, reset on every hit → deterministic ~10% input cost.
+              { type: 'text', text: indexText, cache_control: { type: 'ephemeral' } },
+            ],
+          },
+          {
+            role: 'user',
+            content: `User query: ${query}\n\nSelect the most relevant memory entries from the index above.`,
+          },
+        ],
+        temperature: 0,
+        max_tokens: 512,
+      };
 
-      const response = await Promise.race([
-        worker.prompt(prompt, SCAN_SYSTEM, this.workerModel, 'memory-curator'),
-        new Promise<string>((_, reject) => {
+      const resp = await Promise.race([
+        fetchFn(baseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(body),
+        }),
+        new Promise<never>((_, reject) => {
           const timer = setTimeout(() => reject(new Error('scan timeout')), timeoutMs);
           timer.unref?.();
         }),
-      ]);
+      ]) as any;
 
-      const result = parseScanResponse(response);
+      if (!resp?.ok) {
+        const text = await resp?.text?.().catch(() => '') ?? '';
+        log.warn(`[IndexScan] scan failed: HTTP ${resp?.status}: ${String(text).slice(0, 200)}`);
+        this.lastAttemptFailed = true;
+        return null;
+      }
+
+      const json = await resp.json();
+      const message = json?.choices?.[0]?.message;
+      let content = typeof message?.content === 'string' ? message.content : '';
+      // Reasoning models may put the answer in reasoning_content when content
+      // is empty (e.g. max_tokens cut reasoning short).
+      if (!content.trim() && typeof message?.reasoning_content === 'string') {
+        content = message.reasoning_content;
+      }
+      const cachedTokens = json?.usage?.prompt_tokens_details?.cached_tokens;
+
+      const result = parseScanResponse(content);
       if (!result) {
         this.lastAttemptFailed = true; // unparsable output — model likely broken
+        log.warn(`[IndexScan] scan failed: unparsable response (${Date.now() - startedAt}ms)`);
         return null;
       }
 
       // Resolve short IDs to full IDs
       result.relevantIds = resolveShortIds(result.relevantIds, this.index);
 
-      // Filter by confidence threshold
+      const elapsed = Date.now() - startedAt;
       if (result.confidence < minConfidence) {
-        log.info(`[IndexScan] low confidence ${result.confidence} < ${minConfidence}, discarding`);
+        log.info(`[IndexScan] ok: low confidence ${result.confidence} < ${minConfidence}, discarding (${elapsed}ms${cachedTokens != null ? `, cachedTokens=${cachedTokens}` : ''})`);
         this.lastAttemptFailed = false; // healthy "no match"
         return null;
       }
 
       this.lastAttemptFailed = false;
+      log.info(`[IndexScan] ok: ids=${result.relevantIds.length} confidence=${result.confidence} (${elapsed}ms${cachedTokens != null ? `, cachedTokens=${cachedTokens}` : ''})`);
       return result;
     } catch (err: any) {
       log.warn(`[IndexScan] scan failed: ${err.message}`);
       this.lastAttemptFailed = true;
       return null;
-    } finally {
-      // Dispose the one-shot worker (frees the opencode session)
-      void worker.dispose().catch(() => {});
     }
   }
 
@@ -276,8 +355,6 @@ export class IndexScanService {
     return null;
   }
 
-  /** Dispose is now a no-op — each scan creates and disposes its own worker. */
-  async dispose(): Promise<void> {
-    // No persistent worker to dispose.
-  }
+  /** No long-lived resources to dispose (direct HTTP, no sessions). */
+  async dispose(): Promise<void> {}
 }

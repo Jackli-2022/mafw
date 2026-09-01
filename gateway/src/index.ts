@@ -1135,20 +1135,18 @@ class MafwScheduler {
   private getScanService(): IndexScanService | null {
     if (!this.memoryService) return null;
     if (!this.scanService) {
-      if (!this.opencodeClient) return null;
-      const client = this.opencodeClient;
+      // Scan is a stateless classification call — direct OpenAI-compatible
+      // HTTP to the worker model (no opencode session churn). Credentials
+      // resolve via runtime credentials → opencode auth.json fallback.
       this.scanService = new IndexScanService(
         this.memoryService.harmonicIndex,
-        () => new MemoryWorker(client, {
-          directory: this.projectDir,
-          label: 'index-scan',
-          promptTimeoutMs: 30_000,
-          compactIdleMs: config.recall.workerCompactIdleMs,
-          onSessionCreated: (sessionId) => {
-            this.registerInternalSession(sessionId, 'index-scan');
-          },
-        }),
         config.recall.workerModel,
+        {
+          credentials: this.opencodeClient?.credentials
+            ? { getApiKey: (p) => this.opencodeClient!.credentials!.getApiKey(p) }
+            : undefined,
+          baseUrl: (config.recall as any).scanApiUrl || undefined,
+        },
       );
       // Initial cache population
       this.scanService.refreshCache();
