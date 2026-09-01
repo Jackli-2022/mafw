@@ -1,10 +1,12 @@
 ﻿// @ts-nocheck
-import { createSignal, createEffect, createMemo, onMount, onCleanup } from "solid-js"
+import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
-import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 import { UsagePill } from "./UsagePill"
+import { sessionStore } from "../session-store"
 
 const copyText = async (text: string) => {
   try {
@@ -15,36 +17,54 @@ const copyText = async (text: string) => {
   }
 }
 
+const DAY = 86400000
 const dayStart = (ts: number) => {
   const d = new Date(ts)
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
 
-const dateGroupLabel = (ts: number): string => {
-  const diff = dayStart(Date.now()) - dayStart(ts)
-  if (diff <= 0) return "今天"
-  if (diff === 86400000) return "昨天"
-  return `${new Date(ts).getMonth() + 1}月`
+// Fixed date groups (industry consensus): 今天 / 昨天 / 过去 7 天 / 按月（跨年带年份）
+const groupLabel = (ts: number): string => {
+  const diffDays = Math.round((dayStart(Date.now()) - dayStart(ts)) / DAY)
+  if (diffDays <= 0) return "今天"
+  if (diffDays === 1) return "昨天"
+  if (diffDays < 7) return "过去 7 天"
+  const d = new Date(ts)
+  const y = d.getFullYear()
+  const nowY = new Date().getFullYear()
+  return y === nowY ? `${d.getMonth() + 1}月` : `${y}年${d.getMonth() + 1}月`
 }
+
+const PAGE = 100
+const SEARCH_CAP = 200
 
 type Props = {
   activeSessionId: string | null
-  sessionRefreshKey: number
   managerSessionId?: string | null
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
+  onSessionDeleted?: (id: string) => void
   onSettings?: () => void
   onToggleCollapsed?: () => void
   onOpenUsage?: () => void
 }
 
 export function Rail(props: Props) {
-  const [expanded, setExpanded] = createSignal(true)
   const [projects, setProjects] = createSignal<any[]>([])
   const [currentProject, setCurrentProject] = createSignal<any>(null)
-  const [sessions, setSessions] = createSignal<any[]>([])
   const [gwStatus, setGwStatus] = createSignal<any>(null)
+  const [query, setQuery] = createSignal("")
+  const [limit, setLimit] = createSignal(PAGE)
+  const [hi, setHi] = createSignal(-1)
+  const [renamingId, setRenamingId] = createSignal<string | null>(null)
+  const [renameDraft, setRenameDraft] = createSignal("")
+  let searchRef: HTMLDivElement | undefined
+  let scrollRef: HTMLDivElement | undefined
 
   const gwReady = createMemo(() => gwStatus()?.state === "ready")
+  const projectID = createMemo(() => {
+    const p = currentProject()
+    return p ? (p.worktree || p.id || null) : null
+  })
 
   onMount(() => {
     window.api.mafw.gateway.info().then(setGwStatus)
@@ -53,207 +73,263 @@ export function Rail(props: Props) {
 
   createEffect(() => {
     if (!gwReady()) return
-    console.log("[mafw] Rail gwReady, fetching projects")
-    window.api.mafw.projects.list().then(list => {
-      setProjects(list as any[])
-    }).catch(e => console.warn("[mafw] projects.list error:", e))
-    window.api.mafw.projects.current().then((res: any) => {
-      if (res) setCurrentProject(res)
-    }).catch(e => console.warn("[mafw] projects.current error:", e))
+    window.api.mafw.projects.list().then(setProjects).catch(e => console.warn("[mafw] projects.list error:", e))
+    window.api.mafw.projects.current().then((res: any) => { if (res) setCurrentProject(res) }).catch(e => console.warn("[mafw] projects.current error:", e))
   })
 
-  createEffect(() => {
-    props.sessionRefreshKey
-    if (!gwReady()) return
-    const project = currentProject()
-    const projectID = project ? (project.id || project.worktree) : undefined
-    console.log("[mafw] Rail fetching sessions projectID:", projectID)
-    window.api.mafw.sessions.list(projectID).then((list: any) => {
-      console.log("[mafw] sessions.list result count:", Array.isArray(list) ? list.length : typeof list)
-      setSessions(Array.isArray(list) ? list : [])
-    }).catch(e => { console.warn("[mafw] sessions.list error:", e); setSessions([]) })
+  // Store read: refetches on first access, reactive to invalidate().
+  const allSessions = createMemo(() => sessionStore.sessionsFor(projectID()))
+  const offline = createMemo(() => sessionStore.isOffline(projectID()))
+
+  const managerRow = createMemo(() => {
+    const id = props.managerSessionId
+    if (!id) return null
+    return allSessions().find(s => s.id === id && s.metadata?.mafw?.role === 'manager') || null
   })
 
-  const projectName = createMemo(() => {
-    const p = currentProject()
-    return p ? (p.worktree?.split(/[/\\]/).pop() || p.id) : "No project"
+  // History = everything except manager sessions.
+  const history = createMemo(() => allSessions().filter(s => s.metadata?.mafw?.role !== 'manager'))
+
+  const searching = createMemo(() => query().trim().length > 0)
+  const filtered = createMemo(() => {
+    const q = query().trim().toLowerCase()
+    if (!q) return history()
+    return history().filter(s => (s.title || '').toLowerCase().includes(q))
   })
 
-  // Only the authoritative per-project manager (from the gateway DB) is shown
-  // as a Manager row; orphan/stale role=manager sessions are hidden entirely.
-  const managerSessions = createMemo(() => {
-    const p = currentProject()
-    const target = p ? (p.worktree || p.id || "") : ""
-    const norm = (d: string) => d.replace(/\\/g, "/").toLowerCase().replace(/\/+$/, "")
-    return sessions().filter(s => {
-      if (s.metadata?.mafw?.role !== 'manager') return false
-      if (props.managerSessionId && s.id !== props.managerSessionId) return false
-      if (!target) return true
-      const dir = s.directory || s.projectID || ""
-      return norm(dir) === norm(target)
-    })
-  })
-  const regularSessions = createMemo(() =>
-    sessions().filter(s => s.metadata?.mafw?.role !== 'manager')
-  )
-
-  const sortedRegularSessions = createMemo(() =>
-    regularSessions().filter(Boolean).sort((a, b) => (b.time?.created || 0) - (a.time?.created || 0))
-  )
-
-  const regularDateGroups = createMemo(() => {
-    const list = sortedRegularSessions().slice(0, 50)
-    if (list.length <= 20) return null
-    const groups: { label: string; items: any[] }[] = []
-    for (const s of list) {
-      const label = dateGroupLabel(s.time?.created || Date.now())
-      const last = groups[groups.length - 1]
+  // Date groups over the rendered slice.
+  const groups = createMemo(() => {
+    const slice = filtered().slice(0, searching() ? SEARCH_CAP : limit())
+    const out: { label: string; items: any[] }[] = []
+    for (const s of slice) {
+      const label = groupLabel(s.time?.updated || s.time?.created || Date.now())
+      const last = out[out.length - 1]
       if (last && last.label === label) last.items.push(s)
-      else groups.push({ label, items: [s] })
+      else out.push({ label, items: [s] })
     }
-    return groups
+    return out
   })
 
-  const sessionName = (s: any): string =>
-    s.metadata?.mafw?.role === 'manager' ? 'Manager' : (s.title || (s.id || '').slice(0, 12))
+  const flatResults = createMemo(() => groups().flatMap(g => g.items))
 
-  const agentGlyph = (s: any): string => {
-    const name = sessionName(s).trim()
-    return name ? [...name][0].toUpperCase() : "⋮"
+  // Search keyboard navigation: ↑↓ move highlight, Enter opens, Esc clears.
+  const onSearchKeyDown = (e: KeyboardEvent) => {
+    const list = flatResults()
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, list.length - 1)) }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
+    else if (e.key === "Enter") {
+      const s = list[hi()]
+      if (s) { props.onSelectSession(s.id, s.title, false); setQuery(""); setHi(-1) }
+    } else if (e.key === "Escape") { setQuery(""); setHi(-1) }
+  }
+
+  // Ctrl/Cmd+K focuses search.
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        searchRef?.querySelector("input")?.focus()
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
+  // Infinite scroll: near-bottom → grow the rendered window.
+  createEffect(() => {
+    const el = scrollRef
+    if (!el) return
+    const onScroll = () => {
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+        setLimit(l => (l < filtered().length ? l + PAGE : l))
+      }
+    }
+    el.addEventListener("scroll", onScroll, { passive: true })
+    onCleanup(() => el.removeEventListener("scroll", onScroll))
+  })
+
+  // Inline rename (Electron has no window.prompt): row swaps to a TextInputV2.
+  const startRename = (s: any) => { setRenamingId(s.id); setRenameDraft(sessionName(s)) }
+  const commitRename = async (id: string) => {
+    const title = renameDraft().trim()
+    setRenamingId(null)
+    if (!title) return
+    try {
+      await window.api.mafw.sessions.rename(id, title)
+      sessionStore.invalidate(projectID())
+    } catch (e: any) {
+      showToastV2({ description: `重命名失败: ${e?.message || e}`, duration: 3000 })
+    }
+  }
+
+  const deleteSession = async (id: string) => {
+    try {
+      if (!window.confirm("删除该会话？此操作不可恢复。")) return
+      await window.api.mafw.sessions.remove(id)
+      if (props.activeSessionId === id) props.onSessionDeleted?.(id)
+      sessionStore.invalidate(projectID())
+      showToastV2({ description: "已删除", duration: 2000 })
+    } catch (e: any) {
+      showToastV2({ description: `删除失败: ${e?.message || e}`, duration: 3000 })
+    }
+  }
+
+  const newSession = async () => {
+    try {
+      const dir = projectID() || "."
+      const result = await window.api.mafw.sessions.create({ directory: dir }) as any
+      props.onSelectSession(result.id || result.sessionID)
+      sessionStore.invalidate(projectID())
+    } catch (e) { console.warn("[mafw]", e) }
   }
 
   const selectProject = (p: any) => {
     setCurrentProject(p)
     try { window.api.mafw.projects.setCurrent(p.worktree) } catch (e) { console.warn("[mafw]", e) }
+    // Cached projects can be stale — refetch on switch (per spec).
+    sessionStore.invalidate(p.worktree || p.id || null)
+    setLimit(PAGE)
   }
 
-  const renderSessionRow = (s: any, manager: boolean) => (
-    <ContextMenu>
-      <ContextMenu.Trigger
-        as="div"
-        class={`mafw-rail-item-label mafw-rail-session${manager ? " mafw-rail-manager-session" : ""}`}
-        classList={{ active: props.activeSessionId === s.id }}
-        onClick={() => props.onSelectSession(s.id, sessionName(s), manager)}
-      >
-        <TooltipV2 value={new Date(s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
-          <span style={{ display: "flex", "align-items": "center", gap: 6, width: "100%" }}>
-            <span class="mafw-agent-icon">{agentGlyph(s)}</span>
+  const sessionName = (s: any): string => s.title || (s.id || "").slice(0, 12)
+
+  const renderSessionRow = (s: any) => (
+    <Show
+      when={renamingId() !== s.id}
+      fallback={
+        <div class="mafw-rail-session renaming">
+          <TextInputV2
+            value={renameDraft()}
+            onInput={e => setRenameDraft(e.currentTarget.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") { e.preventDefault(); commitRename(s.id) }
+              else if (e.key === "Escape") setRenamingId(null)
+            }}
+            autoFocus
+          />
+        </div>
+      }
+    >
+      <DropdownMenu placement="right">
+        <DropdownMenu.Trigger
+          as="div"
+          class="mafw-rail-session"
+          classList={{ active: props.activeSessionId === s.id }}
+          data-hi={flatResults().indexOf(s) === hi() ? "1" : undefined}
+          onClick={() => { props.onSelectSession(s.id, sessionName(s), false); setHi(-1) }}
+        >
+          <TooltipV2 value={new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
             <span class="mafw-rail-session-title">{sessionName(s)}</span>
-            {manager && <span class="mafw-rail-manager-label">Manager</span>}
-            {!manager && (
-              <span class="mafw-rail-session-time">
-                {s.time?.created ? new Date(s.time.created).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}
-              </span>
-            )}
-          </span>
-        </TooltipV2>
-      </ContextMenu.Trigger>
-      <ContextMenu.Portal>
-        <ContextMenu.Content>
-          <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), manager)}>
-            <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-          <ContextMenu.Item onSelect={() => copyText(s.id)}>
-            <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
-          </ContextMenu.Item>
-        </ContextMenu.Content>
-      </ContextMenu.Portal>
-    </ContextMenu>
+          </TooltipV2>
+          <span class="mafw-rail-row-dots" onClick={e => e.stopPropagation()}>⋯</span>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content>
+            <DropdownMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), false)}>
+              <DropdownMenu.ItemLabel>Open</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => startRename(s)}>
+              <DropdownMenu.ItemLabel>Rename</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => deleteSession(s.id)}>
+              <DropdownMenu.ItemLabel>Delete</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => copyText(s.id)}>
+              <DropdownMenu.ItemLabel>Copy session ID</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
+    </Show>
   )
 
   return (
     <div class="mafw-rail">
-      <div class="mafw-rail-scroll">
-        <div class="mafw-rail-section" onClick={() => setExpanded(!expanded)}>
-          <Icon name="chevron-down" size="small" style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.12s" }} />
-          <Icon name="folder" size="small" />
-          <span>History</span>
-          <span class="mafw-rail-section-count">{sessions().filter(Boolean).length}</span>
-        </div>
-        {expanded && (
-          <div class="mafw-rail-tree">
-            <div class="mafw-rail-tree-item">
-              <div class="mafw-rail-item-label" style={{ "font-weight": 500 }}>
-                <Icon name="folder" size="small" />
-                {projectName()}
-              </div>
-              <div class="mafw-rail-subtree">
-                {(!Array.isArray(sessions()) || sessions().filter(Boolean).length === 0) ? (
-                  <div class="mafw-rail-item-label mafw-rail-empty" style={{ opacity: 0.4 }}>
-                    No sessions yet
-                  </div>
-                ) : (
-                  <>
-                    {managerSessions().filter(Boolean).map(s => renderSessionRow(s, true))}
-                    {regularDateGroups() ? (
-                      regularDateGroups()!.map(g => (
-                        <>
-                          <div class="mafw-rail-date-group">{g.label}</div>
-                          {g.items.map(s => renderSessionRow(s, false))}
-                        </>
-                      ))
-                    ) : (
-                      sortedRegularSessions().slice(0, 50).map(s => renderSessionRow(s, false))
-                    )}
-                  </>
+      {/* Header: project switcher (left) + collapse arrow (right) */}
+      <div class="mafw-rail-head">
+        <DropdownMenu placement="bottom-start">
+          <DropdownMenu.Trigger as="div" class="mafw-rail-switcher">
+            <span class="mafw-rail-switcher-caret">▾</span>
+            <span class="mafw-rail-switcher-name">{currentProject()?.worktree?.split(/[/\\]/).pop() || "No project"}</span>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content class="mafw-rail-switcher-menu">
+              <For each={projects()}>
+                {(p) => (
+                  <DropdownMenu.Item onSelect={() => selectProject(p)}>
+                    <DropdownMenu.ItemLabel>{p.worktree?.split(/[/\\]/).pop() || p.id}</DropdownMenu.ItemLabel>
+                    {currentProject()?.worktree === p.worktree && <span class="mafw-rail-check">✓</span>}
+                  </DropdownMenu.Item>
                 )}
-                <div
-                  class="mafw-rail-item-label mafw-rail-add"
-                  onClick={async () => {
-                    try {
-                      const project = currentProject()
-                      const dir = project?.worktree || project?.id || "."
-                      const result = await window.api.mafw.sessions.create({ directory: dir }) as any
-                      props.onSelectSession(result.id || result.sessionID)
-                    } catch (e) { console.warn("[mafw]", e) }
-                  }}
-                >
-                  + new session
-                </div>
-              </div>
-            </div>
-            {projects().length > 1 && (
-              <div class="mafw-rail-project-list">
-                <div class="mafw-rail-item-label" style={{ "font-size": 11, opacity: 0.5, "margin-top": 8 }}>
-                  All projects
-                </div>
-                {projects().map(p => (
-                  <ContextMenu>
-                    <ContextMenu.Trigger
-                      as="div"
-                      class="mafw-rail-item-label mafw-rail-project-item"
-                      classList={{ active: currentProject()?.worktree === p.worktree }}
-                      onClick={() => selectProject(p)}
-                    >
-                      <Icon name="folder" size="small" />
-                      {p.worktree?.split(/[/\\]/).pop() || p.id}
-                    </ContextMenu.Trigger>
-                    <ContextMenu.Portal>
-                      <ContextMenu.Content>
-                        <ContextMenu.Item onSelect={() => selectProject(p)}>
-                          <ContextMenu.ItemLabel>Set as current</ContextMenu.ItemLabel>
-                        </ContextMenu.Item>
-                        <ContextMenu.Item onSelect={() => copyText(p.worktree || p.id)}>
-                          <ContextMenu.ItemLabel>Copy path</ContextMenu.ItemLabel>
-                        </ContextMenu.Item>
-                      </ContextMenu.Content>
-                    </ContextMenu.Portal>
-                  </ContextMenu>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+              </For>
+              <DropdownMenu.Item onSelect={() => copyText(projectID() || "")}>
+                <DropdownMenu.ItemLabel>Copy path</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu>
+        <button class="mafw-rail-collapse" onClick={() => props.onToggleCollapsed?.()} aria-label="折叠侧边栏">◀</button>
       </div>
-      <div class="mafw-rail-footer">
-        <UsagePill onClick={() => props.onOpenUsage?.()} />
-        <div class="mafw-rail-collapse-bar" onClick={() => props.onToggleCollapsed?.()}>
-          <span>◀</span>
-          <span>折叠侧边栏</span>
-        </div>
-        <div class="mafw-rail-settings-bar" onClick={() => props.onSettings?.()}>
-          <Icon name="settings-gear" size="small" />
-          <span>Settings</span>
+
+      <div class="mafw-rail-new">
+        <button class="mafw-rail-new-btn" onClick={newSession}>+ New session</button>
+      </div>
+
+      <div class="mafw-rail-search" ref={searchRef}>
+        <TextInputV2
+          value={query()}
+          onInput={e => { setQuery(e.currentTarget.value); setHi(-1) }}
+          onKeyDown={onSearchKeyDown}
+          placeholder="Search chats…"
+        />
+      </div>
+
+      {/* Scroll area: fixed date groups, infinite scroll, search results */}
+      <div class="mafw-rail-scroll" ref={scrollRef}>
+        <Show when={offline()}>
+          <div class="mafw-rail-empty">Gateway offline</div>
+        </Show>
+        <Show when={!offline() && !searching() && allSessions().length === 0 && !sessionStore.isLoading()}>
+          <div class="mafw-rail-empty">No sessions yet</div>
+        </Show>
+        <Show when={searching() && filtered().length === 0}>
+          <div class="mafw-rail-empty">No chats found</div>
+        </Show>
+        <For each={groups()}>
+          {(g) => (
+            <>
+              <div class="mafw-rail-date-group">{g.label}</div>
+              <For each={g.items}>{(s) => renderSessionRow(s)}</For>
+            </>
+          )}
+        </For>
+        <Show when={!searching() && filtered().length > limit()}>
+          <div class="mafw-rail-load-more" onClick={() => setLimit(l => l + PAGE)}>加载更多</div>
+        </Show>
+        <Show when={searching() && filtered().length > SEARCH_CAP}>
+          <div class="mafw-rail-load-more">仅显示前 {SEARCH_CAP} 条结果</div>
+        </Show>
+      </div>
+
+      {/* Pinned bottom area — never scrolls with the list */}
+      <div class="mafw-rail-fixed">
+        <Show when={managerRow()}>
+          <div
+            class="mafw-rail-manager-row"
+            classList={{ active: props.activeSessionId === managerRow()!.id }}
+            onClick={() => props.onSelectSession(managerRow()!.id, "Manager", true)}
+          >
+            <span class="mafw-rail-manager-glyph">◆</span>
+            <span class="mafw-rail-session-title">Manager</span>
+            <span class="mafw-rail-manager-dot" />
+          </div>
+        </Show>
+        <div class="mafw-rail-footer">
+          <UsagePill onClick={() => props.onOpenUsage?.()} />
+          <div class="mafw-rail-settings-bar" onClick={() => props.onSettings?.()}>
+            <Icon name="settings-gear" size="small" />
+            <span>Settings</span>
+          </div>
         </div>
       </div>
     </div>
