@@ -128,6 +128,7 @@ export function MafwShell() {
   // the gateway is ready; the Rail refreshes its own copy on sessionRefreshKey.
   const [historySessions, setHistorySessions] = createSignal<{ id: string; title?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]>([])
   createEffect(() => {
+    sessionRefreshKey()
     if (gwStatus()?.state !== "ready") return
     let cancelled = false
     window.api.mafw.sessions.list(currentProject() ?? undefined).then((list: any) => {
@@ -973,7 +974,10 @@ export function MafwShell() {
     console.log("[mafw] SSE connecting to", info.url)
     setGatewayUrl(info.url)
     es = new EventSource(`${info.url}/api/events`)
-    es.onopen = () => console.log("[mafw] SSE connected")
+    // onopen fires on initial connect AND after every EventSource auto-reconnect:
+    // a gateway restart breaks SSE but keeps the same port, so the reconnect is
+    // the only reliable signal that in-memory lists (session history) are stale.
+    es.onopen = () => { console.log("[mafw] SSE connected"); setSessionRefreshKey(k => k + 1) }
     // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
     window.api.mafw.permissions.list().then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
