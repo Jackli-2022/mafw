@@ -16,6 +16,7 @@ import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply } from "./AudioReply"
 import { VoiceRecorder } from "./VoiceRecorder"
 import { scrollPinDecision } from "./ChatPaneScroll"
+import { MessageNav } from "./MessageNav"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -1187,6 +1188,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       .sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
   }
 
+  // DeepSeek-style node nav: one node per user turn, preview from text parts.
+  const navTurns = createMemo(() =>
+    userMessages().map(m => {
+      const parts = props.store.part[m.id] || []
+      const text = parts
+        .filter(p => p?.type === "text" && typeof p.text === "string")
+        .map(p => p.text)
+        .join(" ")
+        .trim()
+      return { id: m.id, text }
+    }),
+  )
+
   // 语音回复：扫描本会话所有 assistant 消息的 text parts，提取 [语音回复 art:<id>]
   // 标记，供 AudioReply 渲染（挂在该 turn 的 SessionTurn 上方）。
   const voiceRepliesForTurn = (userMsgId: string) => {
@@ -1643,6 +1657,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           </div>
           <For each={userMessages()}>
             {(msg) => (
+              <div class="mafw-turn-anchor" data-turn-id={msg.id}>
               <ErrorBoundary
                 fallback={(err) => {
                   console.error("[mafw] turn render error:", err)
@@ -1726,8 +1741,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </For>
               </>
               </ErrorBoundary>
+              </div>
             )}
           </For>
+          {/* DeepSeek-style user-turn node navigation */}
+          <MessageNav container={containerRef} turns={navTurns()} />
           {/* Agent switch traces (local UI only) */}
           <For each={props.switchLogs()[sidProp()] || []}>
             {(t) => <div class="mafw-switch-trace">{t}</div>}
