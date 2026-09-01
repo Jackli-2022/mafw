@@ -1793,6 +1793,13 @@ class MafwScheduler {
   }
 
   private async listSessions(projectID: string | null): Promise<any[]> {
+    // Memory-system worker sessions (index-scan / extract / reflect) are
+    // infrastructure — never shown in the desktop session list.
+    const isMemoryWorkerSession = (sid: string): boolean => {
+      const role = this.internalSessionRoles.get(sid);
+      return role === 'index-scan' || role === 'extract' || role === 'reflect';
+    };
+
     // Try SDK first (opencode server), fall back to local store
     const fromServe: any[] = [];
     if (this.opencodeClient) {
@@ -1810,6 +1817,7 @@ class MafwScheduler {
     const merged: any[] = [];
     const seen = new Set<string>();
     for (const s of fromServe) {
+      if (s?.id && isMemoryWorkerSession(s.id)) continue;
       merged.push(s);
       if (s?.id) seen.add(s.id);
     }
@@ -1828,6 +1836,7 @@ class MafwScheduler {
         }
         for (const s of dbSessions) {
           if (!seen.has(s.id)) {
+            if (s?.id && isMemoryWorkerSession(s.id)) continue;
             merged.push(s);
             seen.add(s.id);
           }
