@@ -1795,9 +1795,14 @@ class MafwScheduler {
   private async listSessions(projectID: string | null): Promise<any[]> {
     // Sessions that are infrastructure, never shown in the desktop session
     // list: memory-system workers (index-scan / extract / reflect) and
-    // Task-tool subagent children (they have a parent session).
+    // Task-tool subagent children (they have a parent session). The role
+    // registry covers workers created after its introduction; title patterns
+    // catch the pre-registry stragglers (their titles are the first line of
+    // the pipeline prompt, e.g. "# Memory Index..." / '{"relevant_ids":...').
     const isHiddenSession = (s: any): boolean => {
       if (s?.parentID) return true;
+      const title: string = s?.title || '';
+      if (title.startsWith('# Memory Index') || title.startsWith('{"relevant_ids"')) return true;
       const role = s?.id ? this.internalSessionRoles.get(s.id) : undefined;
       return role === 'index-scan' || role === 'extract' || role === 'reflect';
     };
