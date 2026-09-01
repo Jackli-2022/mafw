@@ -232,6 +232,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-rail-search { padding: 8px 8px 8px; flex-shrink: 0; }
 /* Swiss search: flat surface, single bottom hairline; accent line on focus. */
 .mafw-rail-search div[data-component="text-input-v2"] {
+  width: 100%;
   background: transparent;
   box-shadow: none;
   outline: none;
