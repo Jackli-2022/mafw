@@ -1142,7 +1142,7 @@ class MafwScheduler {
         () => new MemoryWorker(client, {
           directory: this.projectDir,
           label: 'index-scan',
-          promptTimeoutMs: 15_000,
+          promptTimeoutMs: 30_000,
           compactIdleMs: config.recall.workerCompactIdleMs,
           onSessionCreated: (sessionId) => {
             this.registerInternalSession(sessionId, 'index-scan');

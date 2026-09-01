@@ -160,6 +160,13 @@ export class IndexScanService {
   private cachedIndexText: string | null = null;
   private cachedAt: number = 0;
   private inFlight: Promise<ScanResult | null> | null = null;
+  // Failure cooldown state: a slow or broken worker model must not burn a
+  // disposable session on every recall call. Exponential backoff (1/2/4 min,
+  // capped); a healthy scan resets the streak. Low-confidence results are
+  // healthy "no match" answers and do NOT arm the cooldown.
+  private lastFailAt = 0;
+  private consecutiveFails = 0;
+  private lastAttemptFailed = false;
 
   constructor(
     private index: HarmonicIndexManager,
@@ -192,12 +199,25 @@ export class IndexScanService {
     const timeoutMs = options.timeoutMs ?? 30_000;
     const minConfidence = options.minConfidence ?? 0.3;
 
+    // Failure cooldown (exponential backoff: 1/2/4 min, capped)
+    if (this.consecutiveFails > 0) {
+      const cooldown = Math.min(60_000 * 2 ** (this.consecutiveFails - 1), 240_000);
+      if (Date.now() - this.lastFailAt < cooldown) return null;
+    }
+
     // Deduplicate concurrent scans
     if (this.inFlight) return this.inFlight;
 
     this.inFlight = this._doScan(query, timeoutMs, minConfidence);
     try {
-      return await this.inFlight;
+      const result = await this.inFlight;
+      if (this.lastAttemptFailed) {
+        this.consecutiveFails++;
+        this.lastFailAt = Date.now();
+      } else {
+        this.consecutiveFails = 0;
+      }
+      return result;
     } finally {
       this.inFlight = null;
     }
@@ -220,7 +240,10 @@ export class IndexScanService {
       ]);
 
       const result = parseScanResponse(response);
-      if (!result) return null;
+      if (!result) {
+        this.lastAttemptFailed = true; // unparsable output — model likely broken
+        return null;
+      }
 
       // Resolve short IDs to full IDs
       result.relevantIds = resolveShortIds(result.relevantIds, this.index);
@@ -228,12 +251,15 @@ export class IndexScanService {
       // Filter by confidence threshold
       if (result.confidence < minConfidence) {
         log.info(`[IndexScan] low confidence ${result.confidence} < ${minConfidence}, discarding`);
+        this.lastAttemptFailed = false; // healthy "no match"
         return null;
       }
 
+      this.lastAttemptFailed = false;
       return result;
     } catch (err: any) {
       log.warn(`[IndexScan] scan failed: ${err.message}`);
+      this.lastAttemptFailed = true;
       return null;
     } finally {
       // Dispose the one-shot worker (frees the opencode session)
