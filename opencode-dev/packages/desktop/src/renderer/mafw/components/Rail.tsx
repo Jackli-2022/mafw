@@ -294,6 +294,9 @@ export function Rail(props: Props) {
           value={query()}
           onInput={e => { setQuery(e.currentTarget.value); setHi(-1) }}
           onKeyDown={onSearchKeyDown}
+          onClearClick={() => { setQuery(""); setHi(-1) }}
+          leadingIcon={<Icon name="magnifying-glass" size="small" />}
+          showClearButton={query().length > 0}
           placeholder="Search chats…"
         />
       </div>
