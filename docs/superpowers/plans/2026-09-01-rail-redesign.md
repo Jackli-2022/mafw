@@ -14,7 +14,7 @@
 
 - 遵守 `opencode-dev/packages/desktop/AGENTS.md` §5.10：禁裸 `<button>`/`<input>`/裸 `title`；用 `ButtonV2`/`TextInputV2`/`TooltipV2`（`openDelay: 300`）/`ToastV2`
 - gateway 路由正则必须带 `(?:\?|$)` 锚定（§6.5）
-- gateway 测试基线 **340 全绿**；SDK 测试基线 **81 全绿**
+- gateway 测试基线 **340 全绿**（本计划新增 7 例 → 347）；SDK 测试基线 **81 全绿**（新增 1 → 82）
 - 行内不渲染时间戳；时间走 TooltipV2
 - Manager（`metadata.mafw.role === 'manager'`）永不进 History 列表
 - 中文 UI 文案与现有一致（今天/昨天/过去 7 天/N月）
@@ -52,8 +52,8 @@ opencode-dev/packages/desktop/src/renderer/mafw/mafw.css             # 改：rai
 - Modify: `gateway/src/index.ts`（GET /api/sessions 块之前，约 :3754；顶部 import 区）
 
 **Interfaces:**
-- Produces: `handleSessionMutations(req: http.IncomingMessage, res: http.ServerResponse, deps: { getClient(): SessionClientLike | null }): Promise<boolean>` — 命中路由返回 true（已写响应），未命中返回 false；`SessionClientLike = { session: { delete(o:{sessionID:string}):Promise<void>; update(o:{sessionID:string; body:{title:string}}):Promise<any> } }`
-- Produces: adapter `session.update(opts: { sessionID: string; title: string })`；contract `session.update?`
+- Produces: `handleSessionMutations(req: http.IncomingMessage, res: http.ServerResponse, deps: { getCapabilities(): { sessionApi?: boolean }; getClient(): SessionClientLike | null }): Promise<boolean>` — 命中路由返回 true（已写响应），未命中返回 false；`SessionClientLike = { session: { delete(o:{sessionID:string}):Promise<void>; update(o:{sessionID:string; title:string}):Promise<any> } }`（**扁平签名**：v2 SDK `session.update({ sessionID, title })` 无 `body` 包装）
+- Produces: adapter `session.update(opts: { sessionID: string; title: string })`（unwrap serve 错误并 throw）；contract `session.update?`
 
 - [ ] **Step 1: 写失败的路由测试**
 
@@ -63,9 +63,12 @@ opencode-dev/packages/desktop/src/renderer/mafw/mafw.css             # 改：rai
 import * as http from 'http';
 import { handleSessionMutations } from '../../src/routes/session-mutations';
 
-function createServer(deps: { getClient: jest.Mock }): http.Server {
+function createServer(deps: { getCapabilities: jest.Mock; getClient: jest.Mock }): http.Server {
   return http.createServer(async (req, res) => {
-    const handled = await handleSessionMutations(req, res, { getClient: deps.getClient });
+    const handled = await handleSessionMutations(req, res, {
+      getCapabilities: deps.getCapabilities,
+      getClient: deps.getClient,
+    });
     if (!handled) {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'not found' }));
@@ -100,6 +103,11 @@ function send(server: http.Server, method: string, path: string, body?: object):
 describe('handleSessionMutations', () => {
   let server: http.Server;
 
+  const okDeps = () => ({
+    getCapabilities: jest.fn().mockReturnValue({ sessionApi: true }),
+    getClient: jest.fn().mockReturnValue({ session: { delete: jest.fn(), update: jest.fn() } }),
+  });
+
   afterEach((done) => {
     if (server?.listening) server.close(done);
     else done();
@@ -107,7 +115,9 @@ describe('handleSessionMutations', () => {
 
   it('DELETE /api/sessions/:id calls session.delete and returns 200', async () => {
     const del = jest.fn().mockResolvedValue(undefined);
-    server = createServer({ getClient: jest.fn().mockReturnValue({ session: { delete: del, update: jest.fn() } }) });
+    const deps = okDeps();
+    deps.getClient.mockReturnValue({ session: { delete: del, update: jest.fn() } });
+    server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'DELETE', '/api/sessions/ses_1?x=1');
@@ -116,20 +126,24 @@ describe('handleSessionMutations', () => {
     expect(del).toHaveBeenCalledWith({ sessionID: 'ses_1' });
   });
 
-  it('PATCH /api/sessions/:id with title calls session.update and returns 200', async () => {
+  it('PATCH /api/sessions/:id with title calls session.update with flat args and returns 200', async () => {
     const update = jest.fn().mockResolvedValue({});
-    server = createServer({ getClient: jest.fn().mockReturnValue({ session: { delete: jest.fn(), update } }) });
+    const deps = okDeps();
+    deps.getClient.mockReturnValue({ session: { delete: jest.fn(), update } });
+    server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'PATCH', '/api/sessions/ses_1', { title: '  新标题  ' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(update).toHaveBeenCalledWith({ sessionID: 'ses_1', body: { title: '新标题' } });
+    expect(update).toHaveBeenCalledWith({ sessionID: 'ses_1', title: '新标题' });
   });
 
   it('PATCH with empty/missing title returns 400', async () => {
     const update = jest.fn();
-    server = createServer({ getClient: jest.fn().mockReturnValue({ session: { delete: jest.fn(), update } }) });
+    const deps = okDeps();
+    deps.getClient.mockReturnValue({ session: { delete: jest.fn(), update } });
+    server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'PATCH', '/api/sessions/ses_1', {});
@@ -137,8 +151,16 @@ describe('handleSessionMutations', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('returns 503 when sessionApi capability is missing', async () => {
+    server = createServer({ getCapabilities: jest.fn().mockReturnValue({ sessionApi: false }), getClient: jest.fn() });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+
+    const res = await send(server, 'DELETE', '/api/sessions/ses_1');
+    expect(res.status).toBe(503);
+  });
+
   it('returns 503 when client is unavailable', async () => {
-    server = createServer({ getClient: jest.fn().mockReturnValue(null) });
+    server = createServer({ getCapabilities: jest.fn().mockReturnValue({ sessionApi: true }), getClient: jest.fn().mockReturnValue(null) });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'DELETE', '/api/sessions/ses_1');
@@ -147,6 +169,7 @@ describe('handleSessionMutations', () => {
 
   it('returns 500 when serve call rejects', async () => {
     server = createServer({
+      getCapabilities: jest.fn().mockReturnValue({ sessionApi: true }),
       getClient: jest.fn().mockReturnValue({
         session: { delete: jest.fn().mockRejectedValue(new Error('not found')), update: jest.fn() },
       }),
@@ -159,7 +182,7 @@ describe('handleSessionMutations', () => {
   });
 
   it('returns false for unrelated routes', async () => {
-    server = createServer({ getClient: jest.fn() });
+    server = createServer({ getCapabilities: jest.fn(), getClient: jest.fn() });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 
     const res = await send(server, 'GET', '/api/sessions');
@@ -181,11 +204,13 @@ import * as http from 'http';
 export interface SessionClientLike {
   session: {
     delete(opts: { sessionID: string }): Promise<void>;
-    update(opts: { sessionID: string; body: { title: string } }): Promise<any>;
+    // Flat signature — the v2 opencode SDK takes { sessionID, title }, no body wrapper.
+    update(opts: { sessionID: string; title: string }): Promise<any>;
   };
 }
 
 export interface SessionMutationDeps {
+  getCapabilities: () => { sessionApi?: boolean };
   getClient: () => SessionClientLike | null;
 }
 
@@ -210,6 +235,10 @@ export async function handleSessionMutations(
     res.end(JSON.stringify(body));
   };
   const sessionID = (isDelete || isPatch)![1];
+  if (deps.getCapabilities().sessionApi !== true) {
+    json(503, { error: 'runtime does not expose the session API (sessionStorageApi/sessionApi=false)' });
+    return true;
+  }
   const client = deps.getClient();
   if (!client) {
     json(503, { error: 'LLM client not available' });
@@ -224,6 +253,7 @@ export async function handleSessionMutations(
     const raw = await new Promise<string>((resolve) => {
       let chunks = '';
       req.on('data', (c) => chunks += c);
+      req.on('error', () => resolve(''));
       req.on('end', () => resolve(chunks));
     });
     let title = '';
@@ -232,7 +262,7 @@ export async function handleSessionMutations(
       json(400, { error: 'title is required' });
       return true;
     }
-    await client.session.update({ sessionID, body: { title: title.trim() } });
+    await client.session.update({ sessionID, title: title.trim() });
     json(200, { ok: true });
   } catch (err: any) {
     json(500, { error: err.message });
@@ -244,25 +274,33 @@ export async function handleSessionMutations(
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `cd gateway && npx jest tests/unit/session-mutations-route.test.ts`
-Expected: PASS（6 个用例）
+Expected: PASS（7 个用例）
 
-- [ ] **Step 5: adapter 加 update 透传 + contract 加可选方法**
+- [ ] **Step 5: adapter 加 update 透传（unwrap 错误）+ contract 加可选方法**
 
-`gateway/src/opencode-adapter.ts` — 在 `async delete(opts: { sessionID: string }) {...}` 方法块（约 :2800）之后插入：
+`gateway/src/opencode-adapter.ts` 是 ~180 行的文件，`async delete(opts: { sessionID: string })` 在 **:103-107**。将 delete 改为 unwrap + 在其后插入 update（v2 SDK 不 throw，错误以 `{error}` 返回，必须显式抛出才能让路由给出 500）：
 
 ```typescript
+      async delete(opts: { sessionID: string }) {
+        const result = await client.session.delete({ sessionID: opts.sessionID });
+        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+          throw new Error(String((result as any).error));
+        }
+      },
+
       async update(opts: { sessionID: string; title: string }) {
-        await client.session.update({
-          sessionID: opts.sessionID,
-          body: { title: opts.title },
-        });
+        // v2 SDK signature is flat: { sessionID, title }
+        const result = await client.session.update({ sessionID: opts.sessionID, title: opts.title });
+        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+          throw new Error(String((result as any).error));
+        }
       },
 ```
 
 `gateway/src/runtime/contract.ts` :123 `delete(...)` 行之后插入：
 
 ```typescript
-    /** PATCH session properties (title rename); optional — opencode/pi implement it. */
+    /** Rename a session (flat { sessionID, title }); optional — opencode/pi implement it. */
     update?(opts: { sessionID: string; title: string }): Promise<any>;
 ```
 
@@ -274,11 +312,14 @@ Expected: PASS（6 个用例）
 import { handleSessionMutations } from './routes/session-mutations';
 ```
 
-在 `// GET /api/sessions 锟?list sessions` 注释块（约 :3753）**之前**插入：
+在 `GET /api/sessions` 注释块（**:3770** 附近，`// GET /api/sessions ... (optional ?projectID=xxx)`）**之前**插入：
 
 ```typescript
         // DELETE/PATCH /api/sessions/:id — true forwards (rename / delete)
-        if (await handleSessionMutations(req, res, { getClient: () => (this.opencodeClient ?? null) as any })) {
+        if (await handleSessionMutations(req, res, {
+          getCapabilities: () => this.runtimeCaps,
+          getClient: () => (this.opencodeClient ?? null) as any,
+        })) {
           return;
         }
 ```
@@ -286,7 +327,7 @@ import { handleSessionMutations } from './routes/session-mutations';
 - [ ] **Step 7: 全量构建 + 测试**
 
 Run: `cd gateway && npm run build && npm test`
-Expected: build 0，**Tests: 346 passed, 346 total**（340 + 新增 6）
+Expected: build 0，**Tests: 347 passed, 347 total**（340 + 新增 7）
 
 - [ ] **Step 8: Commit**
 
@@ -432,15 +473,16 @@ git commit -m "feat(desktop): expose sessions.remove/rename over preload IPC"
 - Produces（Task 5/6 依赖，签名必须一字不差）:
   - `sessionStore.sessionsFor(projectID: string | null): any[]`（响应式读取；首次调用触发拉取）
   - `sessionStore.isLoading(): boolean`
-  - `sessionStore.invalidate(projectID?: string | null): void` — 失效并重拉（无参 = 当前全部缓存失效）
+  - `sessionStore.isOffline(projectID: string | null): boolean`（最近一次拉取失败 → true，Rail 据此渲染 "Gateway offline"）
+  - `sessionStore.invalidate(projectID?: string | null): void` — 失效并重拉（无参 = 全部缓存失效）
 
-- [ ] **Step 1: 创建完整文件**
+- [ ] **Step 1: 创建完整文件（最终版，一步到位）**
 
 ```typescript
 // Singleton session data layer shared by Rail and MafwShell. The gateway
 // already hides memory-worker/subagent sessions; this store adds caching,
-// unified ordering (last-activity desc) and title fallback.
-import { createSignal, forEach } from "solid-js"
+// unified ordering (last-activity desc), title fallback and offline tracking.
+import { createSignal } from "solid-js"
 
 type SessionInfo = {
   id: string
@@ -452,7 +494,7 @@ type SessionInfo = {
   parentID?: string
 }
 
-const cache = new Map<string, { list: SessionInfo[]; fetchedAt: number }>()
+const cache = new Map<string, { list: SessionInfo[]; fetchedAt: number; failed: boolean }>()
 const inflight = new Map<string, Promise<SessionInfo[]>>()
 const [loading, setLoading] = createSignal(false)
 // Bumped on every successful fetch so reactive readers re-evaluate.
@@ -479,12 +521,12 @@ async function fetchFor(projectID: string | null): Promise<SessionInfo[]> {
     try {
       const list = await window.api.mafw.sessions.list(projectID ?? undefined)
       const sorted = sortSessions((Array.isArray(list) ? list : []) as SessionInfo[]).map(withFallbackTitle)
-      cache.set(key, { list: sorted, fetchedAt: Date.now() })
+      cache.set(key, { list: sorted, fetchedAt: Date.now(), failed: false })
       setVersion(v => v + 1)
       return sorted
     } catch (e) {
       console.warn("[mafw] session-store fetch failed", e)
-      cache.set(key, { list: [], fetchedAt: Date.now() })
+      cache.set(key, { list: [], fetchedAt: Date.now(), failed: true })
       setVersion(v => v + 1)
       return []
     } finally {
@@ -511,26 +553,13 @@ export const sessionStore = {
 
   isLoading,
 
-  /** Drop cache (optionally for one project) and refetch. */
-  invalidate(projectID?: string | null): void {
-    if (projectID === undefined || projectID === null) {
-      cache.clear()
-      // Refetch everything the readers currently observe is not trackable
-      // cheaply; bumping version makes readers fall back to empty until they
-      // re-request — so instead refetch known keys.
-      for (const key of Array.from(cache.keys())) void fetchFor(key === "__all__" ? null : key)
-      setVersion(v => v + 1)
-      return
-    }
-    cache.delete(keyOf(projectID))
-    void fetchFor(projectID)
+  /** Reactive: last fetch for this project failed (gateway unreachable). */
+  isOffline(projectID: string | null): boolean {
+    version()
+    return cache.get(keyOf(projectID))?.failed === true
   },
-}
-```
 
-注意：`forEach` 不要导入（上面模板如带未用 import 删除之，只导入 `createSignal`）。**invalidate 无参分支**修正为：
-
-```typescript
+  /** Drop cache (optionally for one project) and refetch. */
   invalidate(projectID?: string | null): void {
     if (projectID === undefined || projectID === null) {
       const keys = Array.from(cache.keys())
@@ -542,6 +571,7 @@ export const sessionStore = {
     cache.delete(keyOf(projectID))
     void fetchFor(projectID)
   },
+}
 ```
 
 - [ ] **Step 2: typecheck**
@@ -567,11 +597,11 @@ git commit -m "feat(desktop): singleton session store with cache, ordering and i
 - Consumes: `sessionStore`（Task 4 签名）、`window.api.mafw.sessions.remove/rename`（Task 3）、`window.api.mafw.projects.*`、`DropdownMenu`（`@opencode-ai/ui/dropdown-menu`）、`TextInputV2`（`@opencode-ai/ui/v2/text-input-v2`）、`TooltipV2`、`UsagePill`、`Icon`
 - Produces: Props `{ activeSessionId: string | null; managerSessionId?: string | null; onSelectSession: (id: string, title?: string, manager?: boolean) => void; onSessionDeleted?: (id: string) => void; onSettings?: () => void; onToggleCollapsed?: () => void; onOpenUsage?: () => void }`（**移除** `sessionRefreshKey`）
 
-- [ ] **Step 1: 整文件重写**
+- [ ] **Step 1: 整文件重写（最终版，含评审修订：Electron 无 window.prompt → 行内重命名；onMount 导入；Kobalte placement=bottom-start；离线态）**
 
 ```tsx
 // @ts-nocheck
-import { createSignal, createEffect, createMemo, For, Show, onCleanup } from "solid-js"
+import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
@@ -627,6 +657,8 @@ export function Rail(props: Props) {
   const [query, setQuery] = createSignal("")
   const [limit, setLimit] = createSignal(PAGE)
   const [hi, setHi] = createSignal(-1)
+  const [renamingId, setRenamingId] = createSignal<string | null>(null)
+  const [renameDraft, setRenameDraft] = createSignal("")
   let searchRef: HTMLDivElement | undefined
   let scrollRef: HTMLDivElement | undefined
 
@@ -639,17 +671,6 @@ export function Rail(props: Props) {
   onMount(() => {
     window.api.mafw.gateway.info().then(setGwStatus)
     onCleanup(window.api.mafw.gateway.onStateChange((s) => setGwStatus(s)))
-    // Auto-load more when the list is scrolled to the bottom (industry consensus:
-    // infinite scroll); a "load more" button remains as fallback.
-    const el = scrollRef
-    if (el) {
-      const io = new IntersectionObserver((entries) => {
-        if (entries.some(e => e.isIntersecting)) setLimit(l => l + PAGE)
-      }, { root: el, rootMargin: "200px" })
-      // Sentinel element is rendered at the list end; observe via effect below.
-      onCleanup(() => io.disconnect())
-      ;(Rail as any)._io = io
-    }
   })
 
   createEffect(() => {
@@ -660,6 +681,7 @@ export function Rail(props: Props) {
 
   // Store read: refetches on first access, reactive to invalidate().
   const allSessions = createMemo(() => sessionStore.sessionsFor(projectID()))
+  const offline = createMemo(() => sessionStore.isOffline(projectID()))
 
   const managerRow = createMemo(() => {
     const id = props.managerSessionId
@@ -715,12 +737,27 @@ export function Rail(props: Props) {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  const renameSession = async (id: string, current: string) => {
+  // Infinite scroll: near-bottom → grow the rendered window.
+  createEffect(() => {
+    const el = scrollRef
+    if (!el) return
+    const onScroll = () => {
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+        setLimit(l => (l < filtered().length ? l + PAGE : l))
+      }
+    }
+    el.addEventListener("scroll", onScroll, { passive: true })
+    onCleanup(() => el.removeEventListener("scroll", onScroll))
+  })
+
+  // Inline rename (Electron has no window.prompt): row swaps to a TextInputV2.
+  const startRename = (s: any) => { setRenamingId(s.id); setRenameDraft(sessionName(s)) }
+  const commitRename = async (id: string) => {
+    const title = renameDraft().trim()
+    setRenamingId(null)
+    if (!title) return
     try {
-      const title = window.prompt("重命名会话", current || "")
-      if (title === null) return
-      if (!title.trim()) return
-      await window.api.mafw.sessions.rename(id, title.trim())
+      await window.api.mafw.sessions.rename(id, title)
       sessionStore.invalidate(projectID())
     } catch (e: any) {
       showToastV2({ description: `重命名失败: ${e?.message || e}`, duration: 3000 })
@@ -751,55 +788,74 @@ export function Rail(props: Props) {
   const selectProject = (p: any) => {
     setCurrentProject(p)
     try { window.api.mafw.projects.setCurrent(p.worktree) } catch (e) { console.warn("[mafw]", e) }
+    // Cached projects can be stale — refetch per spec (切换即失效重拉).
+    sessionStore.invalidate(p.worktree || p.id || null)
     setLimit(PAGE)
   }
 
   const sessionName = (s: any): string => s.title || (s.id || "").slice(0, 12)
 
   const renderSessionRow = (s: any) => (
-    <DropdownMenu placement="right">
-      <DropdownMenu.Trigger
-        as="div"
-        class="mafw-rail-session"
-        classList={{ active: props.activeSessionId === s.id, hi: false }}
-        data-hi={flatResults().indexOf(s) === hi() ? "1" : undefined}
-        onClick={() => { props.onSelectSession(s.id, sessionName(s), false); setHi(-1) }}
-      >
-        <TooltipV2 value={new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
-          <span class="mafw-rail-session-title">{sessionName(s)}</span>
-        </TooltipV2>
-        <span class="mafw-rail-row-dots" onClick={e => e.stopPropagation()}>⋯</span>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content>
-          <DropdownMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), false)}>
-            <DropdownMenu.ItemLabel>Open</DropdownMenu.ItemLabel>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item onSelect={() => renameSession(s.id, sessionName(s))}>
-            <DropdownMenu.ItemLabel>Rename</DropdownMenu.ItemLabel>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item onSelect={() => deleteSession(s.id)}>
-            <DropdownMenu.ItemLabel>Delete</DropdownMenu.ItemLabel>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item onSelect={() => copyText(s.id)}>
-            <DropdownMenu.ItemLabel>Copy session ID</DropdownMenu.ItemLabel>
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu>
+    <Show
+      when={renamingId() !== s.id}
+      fallback={
+        <div class="mafw-rail-session renaming">
+          <TextInputV2
+            value={renameDraft()}
+            onInput={e => setRenameDraft(e.currentTarget.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") { e.preventDefault(); commitRename(s.id) }
+              else if (e.key === "Escape") setRenamingId(null)
+            }}
+            autoFocus
+          />
+        </div>
+      }
+    >
+      <DropdownMenu placement="right">
+        <DropdownMenu.Trigger
+          as="div"
+          class="mafw-rail-session"
+          classList={{ active: props.activeSessionId === s.id }}
+          data-hi={flatResults().indexOf(s) === hi() ? "1" : undefined}
+          onClick={() => { props.onSelectSession(s.id, sessionName(s), false); setHi(-1) }}
+        >
+          <TooltipV2 value={new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
+            <span class="mafw-rail-session-title">{sessionName(s)}</span>
+          </TooltipV2>
+          <span class="mafw-rail-row-dots" onClick={e => e.stopPropagation()}>⋯</span>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content>
+            <DropdownMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), false)}>
+              <DropdownMenu.ItemLabel>Open</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => startRename(s)}>
+              <DropdownMenu.ItemLabel>Rename</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => deleteSession(s.id)}>
+              <DropdownMenu.ItemLabel>Delete</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => copyText(s.id)}>
+              <DropdownMenu.ItemLabel>Copy session ID</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
+    </Show>
   )
 
   return (
     <div class="mafw-rail">
       {/* Header: project switcher (left) + collapse arrow (right) */}
       <div class="mafw-rail-head">
-        <DropdownMenu placement="bottom-left">
+        <DropdownMenu placement="bottom-start">
           <DropdownMenu.Trigger as="div" class="mafw-rail-switcher">
             <span class="mafw-rail-switcher-caret">▾</span>
             <span class="mafw-rail-switcher-name">{currentProject()?.worktree?.split(/[/\\]/).pop() || "No project"}</span>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
-            <DropdownMenu.Content>
+            <DropdownMenu.Content class="mafw-rail-switcher-menu">
               <For each={projects()}>
                 {(p) => (
                   <DropdownMenu.Item onSelect={() => selectProject(p)}>
@@ -808,6 +864,9 @@ export function Rail(props: Props) {
                   </DropdownMenu.Item>
                 )}
               </For>
+              <DropdownMenu.Item onSelect={() => copyText(projectID() || "")}>
+                <DropdownMenu.ItemLabel>Copy path</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu>
@@ -829,7 +888,10 @@ export function Rail(props: Props) {
 
       {/* Scroll area: fixed date groups, infinite scroll, search results */}
       <div class="mafw-rail-scroll" ref={scrollRef}>
-        <Show when={!searching() && allSessions().length === 0 && !sessionStore.isLoading()}>
+        <Show when={offline()}>
+          <div class="mafw-rail-empty">Gateway offline</div>
+        </Show>
+        <Show when={!offline() && !searching() && allSessions().length === 0 && !sessionStore.isLoading()}>
           <div class="mafw-rail-empty">No sessions yet</div>
         </Show>
         <Show when={searching() && filtered().length === 0}>
@@ -876,30 +938,6 @@ export function Rail(props: Props) {
   )
 }
 ```
-
-注：`onMount` 里的 IntersectionObserver 半成品代码删除（`Rail._io` 属占位残留）——**最终版本中 onMount 只保留 gateway.info/onStateChange 监听**；自动加载由 scroll 监听实现，替换为：
-
-```tsx
-  onMount(() => {
-    window.api.mafw.gateway.info().then(setGwStatus)
-    onCleanup(window.api.mafw.gateway.onStateChange((s) => setGwStatus(s)))
-  })
-
-  // Infinite scroll: near-bottom → grow the rendered window.
-  createEffect(() => {
-    const el = scrollRef
-    if (!el) return
-    const onScroll = () => {
-      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
-        setLimit(l => (l < filtered().length ? l + PAGE : l))
-      }
-    }
-    el.addEventListener("scroll", onScroll, { passive: true })
-    onCleanup(() => el.removeEventListener("scroll", onScroll))
-  })
-```
-
-（Step 1 模板里含 IntersectionObserver 的 onMount 用上面两段替换，`hi` 高亮行样式 `data-hi` 保留，search 导航用它。）
 
 - [ ] **Step 2: typecheck**
 
@@ -970,9 +1008,14 @@ import { sessionStore } from "./session-store"
 
 （onSelectSession/onSettings/onToggleCollapsed/onOpenUsage 保持原样。）
 
-- [ ] **Step 5: 清理 sessionRefreshKey**
+- [ ] **Step 5: 清理 sessionRefreshKey（全部 5 处调用点）**
 
-删除 :78 的 `const [sessionRefreshKey, setSessionRefreshKey] = createSignal(0)` 声明；grep 全文件确认无其他引用（Rail prop 已移除、onopen 已改）。
+删除 :78 的 `const [sessionRefreshKey, setSessionRefreshKey] = createSignal(0)` 声明；**除 SSE onopen 外还有 4 处调用必须一并替换为 `sessionStore.invalidate()`**（新建/关闭会话后共享 store 必须刷新，否则 typecheck 也会失败）：
+
+- :1346 与 :1356（`createSession` 流程内）→ `sessionStore.invalidate()`
+- :1378 与 :1389（`closeSession` 流程内）→ `sessionStore.invalidate()`
+
+执行时以 `grep -n "setSessionRefreshKey" MafwShell.tsx` 确认清零。
 
 Run: `cd opencode-dev/packages/desktop && npm run typecheck`
 Expected: 0 errors
@@ -1031,13 +1074,18 @@ git commit -m "refactor(desktop): wire Rail and history to the shared session st
 .mafw-rail-manager-row.active { background: var(--hover); color: var(--text-1); }
 .mafw-rail-manager-glyph { color: var(--text-4); font-size: 11px; }
 .mafw-rail-manager-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--text-6, var(--text-5)); margin-left: auto; }
+.mafw-rail-settings-bar { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font-size: 13px; color: var(--text-3); border-top: 1px solid var(--border-subtle); background: var(--bg-base); cursor: pointer; flex-shrink: 0; transition: color .12s, background .12s; }
+.mafw-rail-settings-bar:hover { color: var(--text-1); background: var(--bg-overlay); }
 .mafw-rail-footer { display: flex; flex-direction: column; }
-.mafw-rail-footer .mafw-rail-settings-bar { position: static; }
 .mafw-rail-scroll::-webkit-scrollbar { width: 8px; }
 .mafw-rail-scroll::-webkit-scrollbar-thumb { background: var(--bg-overlay); border-radius: 4px; }
 ```
 
-保留 :2350-2365 的 wrap/collapsed/expand 样式，但删除 `.mafw-rail-collapse-bar` 相关三条（:2353-2358）。
+保留 :2350-2365 的 wrap/collapsed/expand 样式，但删除 `.mafw-rail-collapse-bar` 相关三条（:2353-2358）；**同时删除 :2351 的 `.mafw-rail-scroll` 定义**（新块中已有，避免重复定义）。另外在 `.mafw-rail-switcher-menu`（下拉内容）加滚动上限：
+
+```css
+.mafw-rail-switcher-menu { max-height: 320px; overflow-y: auto; }
+```
 
 - [ ] **Step 2: typecheck**
 
@@ -1058,7 +1106,7 @@ git commit -m "feat(desktop): rail styles for flat grouped session list"
 - [ ] **Step 1: gateway 构建测试**
 
 Run: `cd gateway && npm run build && npm test`
-Expected: 346 passed
+Expected: 347 passed
 
 - [ ] **Step 2: desktop typecheck**
 
@@ -1082,9 +1130,11 @@ node C:\home\ubuntu\.npm-global\node_modules\opencode-plugin-mafw\gateway\dist\i
 - [ ] Rail：分组"今天/昨天/过去 7 天/N月"固定出现，updated 倒序（刚活跃的旧会话在最前）
 - [ ] 滚到底自动加载；"加载更多"按钮兜底
 - [ ] 搜索过滤、↑↓/Enter/Esc、Ctrl+K 聚焦、无结果空态、200 条上限提示
-- [ ] Rename：菜单改标题 → 列表即时更新；Delete：二次确认 → 真删（serve 列表确认）→ active 会话被删时回 welcome
+- [ ] Rename：菜单 → 行内编辑（无 window.prompt）→ Enter 提交 → 列表即时更新；Esc 取消
+- [ ] Delete：二次确认 → 真删（serve 列表确认）→ active 会话被删时回 welcome
 - [ ] Manager 沉底固定行，列表再长也不滚动；点击进入 manager 会话
-- [ ] 项目 switcher 切换 → 列表随动
+- [ ] 项目 switcher 切换 → 列表随动；下拉有 Copy path
+- [ ] 断开 gateway（taskkill 3000）→ Rail 显示 "Gateway offline"；重启 gateway + SSE 重连 → 自动恢复列表
 - [ ] 折叠箭头右置生效；折叠后 ▶ 浮标恢复
 - [ ] worker/子代理会话不出现（1996 条口径不变）
 
@@ -1101,5 +1151,6 @@ Spec 头部状态行改为：`状态：已实施（2026-09-01）`，一并提交
 
 - Spec 覆盖：store（T4）、布局/行/分组/搜索/无限滚动（T5/T7）、Manager 沉底（T5/T7）、switcher+折叠（T5/T7）、gateway DELETE/PATCH（T1）、SDK/preload（T2/T3）、MafwShell 接线（T6）、验证（T8）——无缺口
 - 宽度项：spec"200→240"修正为"默认 264 已达标，不改"（Global Constraints 已注明）
-- 类型一致性：`sessionStore.sessionsFor/invalidate`、`sessions.remove/rename`、Rail Props 在 T3/T4/T5/T6 间逐字核对一致
-- 占位符：T5 模板中 IntersectionObserver 残留已在步骤内给出替换代码；T1 测试残缺 `request` stub 已删除（send 为唯一 HTTP helper）
+- 类型一致性：`sessionStore.sessionsFor/isOffline/invalidate`、`sessions.remove/rename`、Rail Props 在 T3/T4/T5/T6 间逐字核对一致
+- 占位符：T5 为单份最终代码（无"替换为"式二次修正）；T1 测试残缺 `request` stub 已删除（send 为唯一 HTTP helper）
+- **子代理评审（ses_fa4fd23f7ffeU7ihNE46JkJR61，FIX-FIRST）已全部落实**：B1 `window.prompt`→行内 TextInputV2 重命名；B2 `onMount` 导入；B3 `session.update` 扁平签名统一（路由/adapter/contract/测试）；B4 `setSessionRefreshKey` 全部 5 处调用点迁移（T6）；M5 placement `bottom-start`；M6 settings-bar 基础样式保留；M7 离线态（`isOffline` + "Gateway offline"）；M8 `sessionApi` 能力门 503；M9 switcher max-height 320 + Copy path；M10 adapter delete/update unwrap throw；M11 行号锚点修正（adapter :103-107、index :3770）；M12 spec 改为本次删除 refreshKey；N13 store 单份最终版；N14 `.mafw-rail-scroll` 重复定义删除；N15 `selectProject` 加 invalidate；N16 PATCH body promise 加 `req.on('error')`

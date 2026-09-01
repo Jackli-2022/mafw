@@ -91,7 +91,7 @@ export const sessionStore = {
 - 拉取 = `window.api.mafw.sessions.list(projectID)`（gateway 已过滤 worker/子代理，store 不再做业务过滤）
 - 排序统一在 store：`time.updated || time.created` 倒序
 - 空标题在 store 层补 `"New conversation"`（消费端无需各自兜底）
-- MafwShell 的 SSE `onopen` 从 `setSessionRefreshKey(k => k+1)` 改为 `sessionStore.invalidate()`；`sessionRefreshKey` prop 本版本保留但 Rail 不再使用，下版本删除
+- MafwShell 的 SSE `onopen` 从 `setSessionRefreshKey(k => k+1)` 改为 `sessionStore.invalidate()`；`sessionRefreshKey` 信号**本次直接删除**（评审确认全部 5 处调用点一并迁移：onopen + createSession×2 + closeSession×2）
 - `gateway.info()`/`onStateChange` ready 时自动失效重拉（Rail 现有逻辑迁入 store）
 
 ## 分组 / 搜索 / 分页规则
@@ -141,10 +141,11 @@ export const sessionStore = {
 
 ## 样式约定
 
-- 侧栏宽度 200 → **240px**（业界共识 240-260px；可折叠行为不变）
+- 侧栏宽度：现默认 **264px**（`MafwShell.tsx:1554`，用户可拖拽）已处共识 240-260 区间，**不改**（修订：原"200→240"基于 AGENTS.md 过时描述）
 - 行字号 12 → **13px**（行高 32px 保持；业界 13-14px/28-36px）
-- `mafw.css` rail 段重写：删除 `.mafw-rail-tree` / `.mafw-agent-icon` / `.mafw-rail-manager-label` / `.mafw-rail-collapse-bar` / `.mafw-rail-project-list`；新增 switcher 行、搜索框、加载更多、固定区样式
-- 遵守 §5.10：TextInputV2（搜索）、ContextMenu/DropdownMenu（菜单）、TooltipV2（`openDelay: 300`）、禁裸 `<button>`/`<input>`
+- `mafw.css` rail 段重写：删除 `.mafw-rail-tree` / `.mafw-agent-icon` / `.mafw-rail-manager-label` / `.mafw-rail-collapse-bar` / `.mafw-rail-project-list`；新增 switcher 行、搜索框、加载更多、固定区样式；**保留 `.mafw-rail-settings-bar` 基础样式**（sticky 改 static）；删除 :2351 重复的 `.mafw-rail-scroll` 定义
+- 遵守 §5.10：TextInputV2（搜索/行内重命名）、ContextMenu/DropdownMenu（菜单）、TooltipV2（`openDelay: 300`）、禁裸 `<button>`/`<input>`
+- **Electron 无 `window.prompt`**：重命名用行内 TextInputV2 编辑行实现（`window.confirm` 可用于删除确认）
 
 ## 验证清单（手动 + 自动）
 
