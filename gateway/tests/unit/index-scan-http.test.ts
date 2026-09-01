@@ -124,3 +124,67 @@ describe('IndexScanService direct-HTTP scan', () => {
     expect(resolveScanBaseUrl(undefined)).toBeUndefined();
   });
 });
+
+describe('IndexScanService async prefetch snapshots', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function makePrefetchSvc(fetchFn: FetchStub) {
+    return new IndexScanService(
+      fakeIndex,
+      { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
+      { fetchFn: fetchFn as any, apiKey: 'sk-test' },
+    );
+  }
+
+  it('stores a successful scan result as a per-session snapshot', async () => {
+    const svc = makePrefetchSvc(() => okScanBody());
+    svc.prefetch('sess-1', 'what does the user prefer');
+    await new Promise((r) => setTimeout(r, 20));
+    const snap = svc.getSnapshot('sess-1');
+    expect(snap?.relevantIds).toEqual([fullId]);
+    expect(svc.getSnapshot('sess-other')).toBeNull();
+  });
+
+  it('keeps the previous snapshot when a later scan fails', async () => {
+    let fail = false;
+    const svc = makePrefetchSvc(() => (fail ? Promise.reject(new Error('boom')) : okScanBody()));
+    svc.prefetch('sess-1', 'q1');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(svc.getSnapshot('sess-1')).not.toBeNull();
+    fail = true;
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 10 * 60_000); // cooldown expired
+    svc.prefetch('sess-1', 'q2');
+    await new Promise((r) => setTimeout(r, 20));
+    spy.mockRestore();
+    expect(svc.getSnapshot('sess-1')?.relevantIds).toEqual([fullId]); // old snapshot survives
+  });
+
+  it('expires snapshots after the TTL', async () => {
+    const svc = makePrefetchSvc(() => okScanBody());
+    svc.prefetch('sess-1', 'q');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(svc.getSnapshot('sess-1')).not.toBeNull();
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 20 * 60_000);
+    expect(svc.getSnapshot('sess-1')).toBeNull();
+    spy.mockRestore();
+  });
+
+  it('throttles prefetch for the same session within 60s', async () => {
+    const calls = { n: 0 };
+    const svc = new IndexScanService(
+      fakeIndex,
+      { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
+      {
+        fetchFn: (async () => { calls.n++; return okScanBody(); }) as any,
+        apiKey: 'sk-test',
+      },
+    );
+    svc.prefetch('sess-1', 'q1');
+    await new Promise((r) => setTimeout(r, 20));
+    svc.prefetch('sess-1', 'q2'); // throttled — no second HTTP call
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.n).toBe(1);
+  });
+});

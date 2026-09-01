@@ -4213,6 +4213,11 @@ class MafwScheduler {
                 content: content.slice(0, 100_000),
                 failure,
               });
+              // Async scan prefetch: precompute semantic recall for this turn
+              // so the next boundary recall can merge it without waiting.
+              if (source === 'user_input') {
+                this.getScanService()?.prefetch(sessionID, content.slice(0, 500));
+              }
               res.writeHead(200);
               res.end(JSON.stringify({ ok: true, id, turnId, deduped: id === null }));
             } catch (err: any) {

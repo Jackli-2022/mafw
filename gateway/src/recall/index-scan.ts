@@ -191,6 +191,13 @@ export class IndexScanService {
   // Warn-once flag for unresolvable endpoint/key so a misconfiguration
   // doesn't spam the log on every scan attempt.
   private warnedUnresolvable = false;
+  // Async prefetch snapshots: scan results precomputed when a user message
+  // arrives, consumed later by the sync recall path (never awaited there).
+  private snapshots = new Map<string, { result: ScanResult; at: number }>();
+  private lastPrefetchAt = new Map<string, number>();
+  private static readonly SNAPSHOT_TTL_MS = 10 * 60_000;
+  private static readonly SNAPSHOT_CAP = 64;
+  private static readonly PREFETCH_THROTTLE_MS = 60_000;
 
   constructor(
     private index: HarmonicIndexManager,
@@ -347,12 +354,52 @@ export class IndexScanService {
   }
 
   /**
-   * Latest precomputed scan snapshot for a session (async prefetch). Returns
-   * null until the prefetch pipeline populates it — the sync recall path
-   * merges this in-memory and never awaits a scan.
+   * Fire-and-forget prefetch: scan the query now and store the result as a
+   * per-session snapshot for later sync-path consumption. Throttled per
+   * session (60s); scan-internal dedup/cooldown still apply.
    */
-  getSnapshot(_sessionID: string): ScanResult | null {
-    return null;
+  prefetch(sessionID: string, query: string): void {
+    if (!sessionID || !query.trim()) return;
+    const now = Date.now();
+    const last = this.lastPrefetchAt.get(sessionID) ?? 0;
+    if (now - last < IndexScanService.PREFETCH_THROTTLE_MS) return;
+    this.lastPrefetchAt.set(sessionID, now);
+    void this.scan(query)
+      .then((result) => {
+        if (result) this.setSnapshot(sessionID, result);
+      })
+      .catch(() => {});
+  }
+
+  private setSnapshot(sessionID: string, result: ScanResult): void {
+    if (this.snapshots.size >= IndexScanService.SNAPSHOT_CAP && !this.snapshots.has(sessionID)) {
+      // Evict the oldest snapshot when at capacity.
+      let oldestKey = '';
+      let oldestAt = Infinity;
+      for (const [k, v] of this.snapshots) {
+        if (v.at < oldestAt) {
+          oldestAt = v.at;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) this.snapshots.delete(oldestKey);
+    }
+    this.snapshots.set(sessionID, { result, at: Date.now() });
+  }
+
+  /**
+   * Latest precomputed scan snapshot for a session. The sync recall path
+   * merges this in-memory and never awaits a scan. Snapshots expire after
+   * 10 minutes.
+   */
+  getSnapshot(sessionID: string): ScanResult | null {
+    const snap = this.snapshots.get(sessionID);
+    if (!snap) return null;
+    if (Date.now() - snap.at > IndexScanService.SNAPSHOT_TTL_MS) {
+      this.snapshots.delete(sessionID);
+      return null;
+    }
+    return snap.result;
   }
 
   /** No long-lived resources to dispose (direct HTTP, no sessions). */
