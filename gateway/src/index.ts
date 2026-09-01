@@ -4109,7 +4109,9 @@ class MafwScheduler {
               // B3: memories already actively pushed by path 1 (step injection)
               // are filtered out so boundary recall never re-exposes them.
               const pushed = this.stepInject.pushedMemoriesFor(sessionID);
-              const scanService = this.getScanService();
+              // Sync path is BM25-only (<50ms): the plugin client aborts after
+              // 100ms. Scan results arrive via async prefetch snapshot (C).
+              const snapshot = this.getScanService()?.getSnapshot(sessionID) ?? null;
               memories = await searchRecallMemories(
                 this.memoryService.harmonicIndex,
                 query,
@@ -4117,8 +4119,7 @@ class MafwScheduler {
                 3,
                 {
                   retriever: config.search.defaultRetriever,
-                  scanService: scanService || undefined,
-                  enableScan: !!scanService,
+                  scanSnapshot: snapshot,
                 },
               );
             }

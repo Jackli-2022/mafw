@@ -267,6 +267,15 @@ export class IndexScanService {
     }
   }
 
+  /**
+   * Latest precomputed scan snapshot for a session (async prefetch). Returns
+   * null until the prefetch pipeline populates it — the sync recall path
+   * merges this in-memory and never awaits a scan.
+   */
+  getSnapshot(_sessionID: string): ScanResult | null {
+    return null;
+  }
+
   /** Dispose is now a no-op — each scan creates and disposes its own worker. */
   async dispose(): Promise<void> {
     // No persistent worker to dispose.
