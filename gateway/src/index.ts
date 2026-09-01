@@ -19,13 +19,18 @@ import { SdkSessionResource } from "./resources/sdk-session";
 import { createMemorySearch } from "./interceptors/memory-injector";
 import { createToolRegistry } from "./mcp/tool-registry";
 import { MemoryService } from "./memory/service";
+import { initEmbeddingRuntime, computeDenseScores, getEmbeddingRuntime } from "./memory/embedding-runtime";
+import { EmbeddingIndexer } from "./memory/vector-store";
+import { onMemoryWritten } from "./memory/harmonic-file-store";
 import { GatewayDatabase } from "./memory/gateway-db";
 import { TurnPipeline } from "./recall/turn-pipeline";
 import { ReflectionPipeline } from "./recall/reflection";
 import { MemoryWorker } from "./recall/memory-worker";
 import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
-import { IndexScanService } from "./recall/index-scan";
+import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
+import { ConsolidationService } from "./memory/consolidation-service";
+import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
 import { CostService } from "./cost/service";
@@ -223,6 +228,7 @@ class MafwScheduler {
   // Memory pipelines (built per run so config hot-reload takes effect).
   private workerPool: SessionWorkerPool | null = null;
   private scanService: IndexScanService | null = null;
+  private consolidationService: ConsolidationService | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
   // captured back into T1 (recursion guard A). Maps sessionID → worker role
   // (manager, turn-compress, index-scan, reflect) for token usage tracking.
@@ -1440,6 +1446,46 @@ class MafwScheduler {
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
     this.memoryService = new MemoryService(mafwDir);
 
+    // P1: dense embedding runtime (opt-in via memory.embedding.provider).
+    // Fires on every memory write (static listener) — BM25 stays instant,
+    // vectors converge asynchronously; all failures degrade to BM25-only.
+    const embeddingRuntime = initEmbeddingRuntime({
+      baseDir: mafwDir,
+      getTextForId: async (id) => {
+        try {
+          const u = await new HarmonicUnitFileStore(mafwDir).read(id);
+          return u ? EmbeddingIndexer.documentText(u) : null;
+        } catch { return null; }
+      },
+    });
+    if (embeddingRuntime) {
+      onMemoryWritten(u => {
+        embeddingRuntime.indexer.onUnitWritten(u);
+        embeddingRuntime.scheduleFlush();
+      });
+
+      // P2: Memora-style consolidation (embedding recall + LLM UPDATE/CREATE).
+      // Judge reuses the worker-model transport; unresolvable → skip path.
+      if (config.memory.embedding.consolidation) {
+        const providerID = config.recall.workerModel?.providerID;
+        const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
+        const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+        this.consolidationService = new ConsolidationService({
+          store: new HarmonicUnitFileStore(mafwDir),
+          vectors: embeddingRuntime.vectors,
+          provider: embeddingRuntime.provider,
+          llm: judgeBaseUrl && judgeApiKey
+            ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: config.recall.workerModel.modelID }
+            : undefined,
+          minCosine: config.memory.embedding.minCosine,
+        });
+        onMemoryWritten(u => {
+          this.consolidationService?.enqueue(u);
+        });
+        log.info(`[Consolidation] enabled (judge: ${judgeBaseUrl && judgeApiKey ? providerID : 'unavailable → skip'})`);
+      }
+    }
+
     this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
       getCredentials: () => this.opencodeClient?.credentials ?? undefined,
     });
@@ -2646,6 +2692,31 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/memory/stats — consolidation health + vector coverage (P2)
+        if (req.url?.match(/^\/api\/memory\/stats(?:\?|$)/) && req.method === 'GET') {
+          try {
+            const embeddingRuntime = getEmbeddingRuntime();
+            const consolidation = this.consolidationService?.getStats() ?? null;
+            const indexEntries = this.memoryService?.harmonicIndex.getIndex().entries ?? [];
+            const indexed = embeddingRuntime ? embeddingRuntime.vectors.size() : 0;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              embedding: {
+                provider: config.memory.embedding.provider,
+                model: config.memory.embedding.model,
+                vectors: indexed,
+                indexEntries: indexEntries.length,
+                coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
+              },
+              consolidation,
+            }));
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // GET /api/memory/search — harmonic index search; empty query lists all entries
         if (req.url?.match(/^\/api\/memory\/search(?:\?|$)/) && req.method === 'GET') {
           try {
@@ -2655,14 +2726,21 @@ class MafwScheduler {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const query = parsedUrl.searchParams.get('query') || '';
             const topK = parseInt(parsedUrl.searchParams.get('topK') || '50', 10);
-            const retriever = parsedUrl.searchParams.get('retriever') === 'bm25' ? 'bm25' : 'token';
+            const retrieverParam = parsedUrl.searchParams.get('retriever');
             const store = new HarmonicUnitFileStore(this.mafwDir);
             const index = store.indexManager_();
-            const entries = query
-              ? index.search(query, topK, { retriever })
-              : [...index.getIndex().entries]
+            let entries;
+            if (query && retrieverParam === 'hybrid') {
+              const dense = await computeDenseScores(query, topK);
+              entries = index.search(query, topK, dense ? { retriever: 'bm25', denseScores: dense } : { retriever: 'bm25' });
+            } else if (query) {
+              const retriever = retrieverParam === 'bm25' ? 'bm25' : 'token';
+              entries = index.search(query, topK, { retriever });
+            } else {
+              entries = [...index.getIndex().entries]
                   .sort((a, b) => b.energy - a.energy)
                   .slice(0, topK);
+            }
             const results: any[] = [];
             for (const entry of entries) {
               const unit = await store.read(entry.id);
