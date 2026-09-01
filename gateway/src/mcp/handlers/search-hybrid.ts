@@ -2,6 +2,7 @@ import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store";
 import { createReranker, applyReranker } from "../../core/memory/reranker";
+import { computeDenseScores } from "../../memory/embedding-runtime";
 
 interface FrontierItem { id: string; weight: number; }
 interface IterState { seen: string[]; frontier: FrontierItem[]; round: number; }
@@ -40,7 +41,15 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
   try {
     const query = args.query as string;
     const topK = (args.topK as number) || config.search.defaultTopK;
-    const retriever = (args.retriever as 'token' | 'bm25' | 'guided' | undefined) || config.search.defaultRetriever;
+    const retrieverArg = (args.retriever as string) || config.search.defaultRetriever;
+    // 'hybrid' = BM25 + dense (embedding) fused via RRF inside searchScored.
+    const searchOpts: { retriever: 'token' | 'bm25' | 'guided'; denseScores?: Map<string, number> } = {
+      retriever: retrieverArg === 'hybrid' ? 'bm25' : (retrieverArg as 'token' | 'bm25' | 'guided'),
+    };
+    if (retrieverArg === 'hybrid') {
+      const dense = await computeDenseScores(query, topK * 4);
+      if (dense) searchOpts.denseScores = dense;
+    }
     const maxRounds = config.search.maxExpandRounds;
     const graphStore = getGraphStore(memory);
     const prev = decodeState(args.state as string | undefined);
@@ -52,14 +61,14 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
 
     if (!prev) {
       // ── 首轮：现有行为原样（searchScored 已含图扩展+融合）+ 计算 frontier ──
-      scored = memory.search(query, topK * 2, { retriever }).map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
+      scored = memory.search(query, topK * 2, searchOpts).map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
       seen = scored.map(s => s.entry.id);
       frontier = computeFrontier(graphStore, scored.map(s => s.entry.id), new Set(seen));
       round = 0;
     } else if (prev.round >= maxRounds) {
       // ── 轮次已满：不扩展、不消费 frontier，仅返回 bm25 新命中增量 ──
       const seenSet = new Set(prev.seen);
-      scored = memory.search(query, topK * 2, { retriever })
+      scored = memory.search(query, topK * 2, searchOpts)
         .filter((e: any) => !seenSet.has(e.id))
         .map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
       seen = prev.seen;
@@ -77,7 +86,7 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
         if (!entry || entry.superseded_by) continue;
         frontierHits.push({ entry, score: 0, graphScore: f.weight * (entry.energy ?? 0.8) * (entry.salience ?? 1) });
       }
-      const freshHits = memory.search(query, topK * 2, { retriever })
+      const freshHits = memory.search(query, topK * 2, searchOpts)
         .filter((e: any) => !seenSet.has(e.id))
         .map((e: any) => ({ entry: e, score: 1, graphScore: 0 }));
 

@@ -36,7 +36,7 @@ export class MemoryService {
     }
   }
 
-  search(query: string, topK?: number, options?: { retriever?: 'token' | 'bm25' | 'guided' }) {
+  search(query: string, topK?: number, options?: import("../core/memory/harmonic-index").SearchOptions) {
     return this.harmonicIndex.search(query, topK ?? config.search.defaultTopK, options);
   }
 

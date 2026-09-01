@@ -5,6 +5,7 @@ import { eventBus } from '../../event-bus';
 import { config } from '../../config';
 
 import type { Reranker } from './reranker';
+import { detectTimeWindow, applyTimeBoost } from '../../recall/time-anchor';
 
 interface HookManagerLike {
   execute(event: string, context: any): Promise<void>;
@@ -19,6 +20,19 @@ export interface SearchOptions {
   maxHops?: number;
   graphMaxNeighbors?: number;
   graphDamping?: number;
+  /**
+   * Dense-channel cosine scores (id → cosine similarity) from an embedding
+   * provider. When present, fused with the sparse ranking via RRF (P1 hybrid).
+   * The caller owns the async embedding work — searchScored stays synchronous.
+   */
+  denseScores?: Map<string, number>;
+  /** RRF constant k (default 60). */
+  fusionK?: number;
+  /**
+   * "Now" for time-expression anchoring (P3a). Defaults to wall clock;
+   * the eval harness passes the question date for reproducibility.
+   */
+  now?: string;
 }
 
 export interface ScoredEntry {
@@ -28,6 +42,34 @@ export interface ScoredEntry {
 
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
+
+/**
+ * Reciprocal Rank Fusion (Cormack et al., SIGIR 2009): score(d) = Σ 1/(k + rank).
+ * Robust fusion of unbounded sparse scores with bounded cosine — only ranks are
+ * consumed, so no score normalization is needed. Entries missing from one list
+ * keep their single-list contribution.
+ */
+export function rrfFuse(
+  primary: ScoredEntry[],
+  secondary: ScoredEntry[],
+  k: number = 60,
+  recallK: number = 50,
+): ScoredEntry[] {
+  const fused = new Map<string, { entry: HarmonicIndexEntry; score: number }>();
+  const addList = (list: ScoredEntry[]) => {
+    list.forEach((s, i) => {
+      const contribution = 1 / (k + i + 1);
+      const existing = fused.get(s.entry.id);
+      if (existing) existing.score += contribution;
+      else fused.set(s.entry.id, { entry: s.entry, score: contribution });
+    });
+  };
+  addList(primary);
+  addList(secondary);
+  return [...fused.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, recallK);
+}
 
 export class HarmonicIndexManager {
   private indexPath: string;
@@ -206,6 +248,23 @@ export class HarmonicIndexManager {
       }
     }
 
+    // ── Dense (embedding) channel fusion via RRF ──
+    // Placed AFTER multi-hop expansion so sub-query hits (raw bm25 scale) compete
+    // within their own channel before ranks are fused with cosine ranks.
+    if (options.denseScores && options.denseScores.size > 0 && options.retriever !== 'guided') {
+      const denseScored: ScoredEntry[] = [];
+      for (const [id, cosine] of options.denseScores) {
+        const entry = this.index.entries.find(e => e.id === id);
+        if (!entry || entry.superseded_by) continue;
+        denseScored.push({
+          entry,
+          score: cosine * entry.energy * (entry.salience ?? 1) * (entry.superseded_by ? 0.5 : 1) * ((entry.merged_from?.length ?? 0) > 0 ? 0.8 : 1),
+        });
+      }
+      denseScored.sort((a, b) => b.score - a.score);
+      scored = rrfFuse(scored, denseScored.slice(0, recallK), options.fusionK ?? 60, recallK);
+    }
+
     // ── Anchor-graph multi-hop expansion (Memora-style) ──
     const graphExpand = options.graphExpand ?? config.search.graph.enabled;
     if (graphExpand && this.anchorGraphStore && scored.length > 0) {
@@ -254,6 +313,17 @@ export class HarmonicIndexManager {
         score: (1 - graphWeight) * nb[i] + graphWeight * ng[i],
       }));
       scored.sort((a, b) => b.score - a.score);
+    }
+
+    // ── Explicit time anchoring (P3a): soft boost, never hard filter ──
+    // "What did I do last week" / "in July 2023" → boost entries whose
+    // created_at falls in the detected window (LongMemEval §5.4 technique).
+    {
+      const timeWin = detectTimeWindow(query, options.now ? new Date(options.now) : new Date());
+      if (timeWin && scored.length > 0) {
+        scored = applyTimeBoost(scored, timeWin);
+        scored.sort((a, b) => b.score - a.score);
+      }
     }
 
     // 可选 heuristic reranker（config.search.reranker === 'heuristic'）

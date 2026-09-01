@@ -13,6 +13,13 @@ import { MinHashMerger } from '../core/memory/minhash-merger';
 
 const globalWriteQueues = new Map<string, WriteQueue>();
 
+/** Post-write listeners (static — every store instance fires them). */
+export type MemoryWriteListener = (unit: HarmonicUnit) => void;
+const writeListeners: MemoryWriteListener[] = [];
+export function onMemoryWritten(cb: MemoryWriteListener): void {
+  writeListeners.push(cb);
+}
+
 export class HarmonicUnitFileStore {
   private indexManager: HarmonicIndexManager;
   private graphManager: CognitiveGraphManager;
@@ -44,6 +51,7 @@ export class HarmonicUnitFileStore {
 
   async write(unit: HarmonicUnit, tier?: string, opts?: { skipMerge?: boolean }): Promise<string> {
     let fileName = '';
+    let writtenUnit: HarmonicUnit = unit;
     // C: auto-fill missing cue_anchors from the abstraction so every memory
     // has retrievable anchors (only 13% of entries had them previously).
     if (!unit.cue_anchors || unit.cue_anchors.length === 0) {
@@ -64,6 +72,7 @@ export class HarmonicUnitFileStore {
         });
         targetUnit = merged.merged_from?.length ? merged : unit;
       }
+      writtenUnit = targetUnit;
 
       fileName = writeOKFFile(this.baseDir, targetUnit);
 
@@ -116,6 +125,11 @@ export class HarmonicUnitFileStore {
       terms: tokenize(unit.primary_abstraction + ' ' + unit.cue_anchors.join(' ')),
       derived: derivedTerms,
     });
+
+    // Static post-write listeners (dense embedding indexing, consolidation).
+    for (const cb of writeListeners) {
+      try { cb(writtenUnit); } catch { /* non-fatal */ }
+    }
 
     return fileName;
   }

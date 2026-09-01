@@ -85,6 +85,18 @@ export interface GatewayConfig {
     abstractionMaxLength: number;
     defaultPrimaryAbstractionLength: number;
     defaultSalience: number;
+    embedding: {
+      /** 'off' (default — opt-in) | 'local' (ONNX Qwen3-Embedding) | 'dashscope' (API). */
+      provider: 'off' | 'local' | 'dashscope';
+      model: string;
+      dimensions: number;
+      /** Endpoint override for the dashscope transport. */
+      baseUrl: string;
+      /** Cosine threshold for consolidation candidate recall (P2). */
+      minCosine: number;
+      /** Enable LLM UPDATE/CREATE consolidation judge (P2). */
+      consolidation: boolean;
+    };
   };
   llm: {
     defaultProvider: string;
@@ -262,6 +274,14 @@ function defaults(projectDir: string): GatewayConfig {
       abstractionMaxLength: 200,
       defaultPrimaryAbstractionLength: 80,
       defaultSalience: 1.0,
+      embedding: {
+        provider: 'off',
+        model: 'onnx-community/Qwen3-Embedding-0.6B-ONNX',
+        dimensions: 1024,
+        baseUrl: '',
+        minCosine: 0.8,
+        consolidation: true,
+      },
     },
     llm: {
       defaultProvider: 'anthropic',
