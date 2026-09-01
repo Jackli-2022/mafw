@@ -70,7 +70,7 @@ export const sessionStore = {
     return entry.list
   },
 
-  isLoading,
+  isLoading: loading,
 
   /** Reactive: last fetch for this project failed (gateway unreachable). */
   isOffline(projectID: string | null): boolean {
