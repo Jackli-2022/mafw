@@ -213,8 +213,8 @@ html[data-theme="light"] .mafw-shell {
   background: var(--bg-base);
   border-right: 1px solid var(--border-subtle);
 }
-/* ── Header: project switcher (left) + collapse arrow (right) — hairline base ── */
-.mafw-rail-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 6px; flex-shrink: 0; border-bottom: 1px solid var(--border-subtle); }
+/* ── Header: project switcher (left) + collapse arrow (right) ── */
+.mafw-rail-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 2px; flex-shrink: 0; }
 .mafw-rail-switcher { flex: 1; display: flex; align-items: center; gap: 5px; min-width: 0; height: 28px; padding: 0 6px; border-radius: 4px; cursor: pointer; color: var(--text-2); font-size: 13px; font-weight: 500; }
 .mafw-rail-switcher:hover { background: var(--hover); color: var(--text-1); }
 .mafw-rail-switcher-caret { flex-shrink: 0; opacity: .55; }
@@ -264,8 +264,8 @@ html[data-theme="light"] .mafw-shell {
 .mafw-rail-row-dots { opacity: 0; flex-shrink: 0; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; color: var(--text-4); border-radius: 4px; }
 .mafw-rail-session:hover .mafw-rail-row-dots { opacity: 1; }
 .mafw-rail-row-dots:hover { opacity: 1 !important; color: var(--text-1); background: var(--bg-overlay); }
-.mafw-rail-load-more { margin: 10px auto 4px; width: fit-content; padding: 2px 4px; color: var(--text-4); font-size: 12px; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border-subtle); }
-.mafw-rail-load-more:hover { color: var(--text-1); border-bottom-color: var(--text-4); }
+.mafw-rail-load-more { margin: 10px auto 4px; width: fit-content; padding: 2px 6px; color: var(--text-4); font-size: 12px; cursor: pointer; user-select: none; border-radius: 4px; }
+.mafw-rail-load-more:hover { color: var(--text-1); background: var(--hover); }
 .mafw-rail-empty { padding: 16px 12px; color: var(--text-5); font-size: 13px; }
 /* ── Pinned bottom area: Manager + footer, never scrolls ── */
 .mafw-rail-fixed { flex-shrink: 0; background: var(--bg-base); border-top: 1px solid var(--border-subtle); }
@@ -274,7 +274,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-rail-manager-row.active { background: var(--hover); color: var(--text-1); box-shadow: inset 2px 0 0 var(--accent); }
 .mafw-rail-manager-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--text-6, var(--text-5)); margin-left: auto; }
 .mafw-rail-footer { display: flex; flex-direction: column; }
-.mafw-rail-settings-bar { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font-size: 13px; color: var(--text-3); border-top: 1px solid var(--border-subtle); background: var(--bg-base); cursor: pointer; flex-shrink: 0; transition: color .12s, background .12s; }
+.mafw-rail-settings-bar { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font-size: 13px; color: var(--text-3); background: var(--bg-base); cursor: pointer; flex-shrink: 0; transition: color .12s, background .12s; }
 .mafw-rail-settings-bar:hover { color: var(--text-1); background: var(--bg-overlay); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
