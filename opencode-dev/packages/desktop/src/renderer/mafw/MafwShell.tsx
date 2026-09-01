@@ -16,6 +16,7 @@ import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { FileSSR } from "@opencode-ai/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
+import { sessionStore } from "./session-store"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { SplitView, leafIds, leafCount, fillEmpty, removeLeaf, setRatio, splitLeaf, splitAtPath, replaceAtPath, removeSid, isSidLeaf, firstLeafPath, findSidPath, parentDirOf, splitWithTarget, zoneForPoint, zoneToDir, type SplitNode, type SplitLeaf, type DropZone } from "./components/SplitView"
 import { SplitPlaceholder } from "./components/SplitPlaceholder"
@@ -75,7 +76,8 @@ export function MafwShell() {
   // Chat sessions (tabs)
   const [sessions, setSessions] = createSignal<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null)
-  const [sessionRefreshKey, setSessionRefreshKey] = createSignal(0)
+  // Session list refresh: shared sessionStore.invalidate() (see SSE onopen and
+  // session create/close flows). The old sessionRefreshKey signal is removed.
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
 
@@ -124,18 +126,13 @@ export function MafwShell() {
   // picks a session, creates one, or navigates into the chat.
   const [showWelcome, setShowWelcome] = createSignal(true)
 
-  // All project sessions (for the split placeholder picker). Loaded once when
-  // the gateway is ready; the Rail refreshes its own copy on sessionRefreshKey.
+  // All project sessions (for the split placeholder picker). Served by the
+  // shared session store (cached, invalidated on SSE reconnect / mutations).
   const [historySessions, setHistorySessions] = createSignal<{ id: string; title?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]>([])
   createEffect(() => {
-    sessionRefreshKey()
+    const pd = currentProject()
     if (gwStatus()?.state !== "ready") return
-    let cancelled = false
-    window.api.mafw.sessions.list(currentProject() ?? undefined).then((list: any) => {
-      if (cancelled) return
-      setHistorySessions(Array.isArray(list) ? list : [])
-    }).catch(() => { if (!cancelled) setHistorySessions([]) })
-    onCleanup(() => { cancelled = true })
+    setHistorySessions(sessionStore.sessionsFor(pd) as any)
   })
 
   // Registered projects + current selection (welcome pane project switcher).
@@ -977,7 +974,12 @@ export function MafwShell() {
     // onopen fires on initial connect AND after every EventSource auto-reconnect:
     // a gateway restart breaks SSE but keeps the same port, so the reconnect is
     // the only reliable signal that in-memory lists (session history) are stale.
-    es.onopen = () => { console.log("[mafw] SSE connected"); setSessionRefreshKey(k => k + 1) }
+    es.onopen = () => {
+      console.log("[mafw] SSE connected")
+      // Gateway restarts keep the same port; reconnect is the only reliable
+      // signal that the cached session list is stale.
+      sessionStore.invalidate()
+    }
     // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
     window.api.mafw.permissions.list().then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
@@ -1343,7 +1345,7 @@ export function MafwShell() {
         session_status: { ...prev.session_status, [id]: { type: "idle" } },
         message: { ...prev.message, [id]: [] },
       }))
-      setSessionRefreshKey(k => k + 1)
+      sessionStore.invalidate()
       if (!opts?.noReveal) {
         setActiveViewId(id)
         ensureSessionVisible(id)
@@ -1353,7 +1355,7 @@ export function MafwShell() {
       const id = `local-${Date.now()}`
       setSessions(prev => [...prev, { id, title: `Chat ${sessions().length + 1}`, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false }])
       setActiveSessionId(id)
-      setSessionRefreshKey(k => k + 1)
+      sessionStore.invalidate()
       if (!opts?.noReveal) {
         setActiveViewId(id)
         ensureSessionVisible(id)
@@ -1375,7 +1377,7 @@ export function MafwShell() {
       return { ...v, layout: next }
     }))
     if (changed) {
-      setSessionRefreshKey(k => k + 1)
+      sessionStore.invalidate()
     }
     if (wasActiveView) {
       // The active view was that session → fall back to another session or a split.
@@ -1386,7 +1388,7 @@ export function MafwShell() {
       const remaining = sessions().filter(s => s.id !== id)
       setActiveSessionId(remaining.length > 0 ? remaining[remaining.length - 1].id : null)
     }
-    setSessionRefreshKey(k => k + 1)
+    sessionStore.invalidate()
   }
 
   // Interrupt the in-flight conversation (ESC / Ctrl+C / stop button) lives in
@@ -1725,7 +1727,7 @@ export function MafwShell() {
           </div>
         ) : (
           <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
-            <Rail activeSessionId={activeSessionId()} sessionRefreshKey={sessionRefreshKey()} managerSessionId={managerSessionId()} onSelectSession={(id, title, manager) => {
+            <Rail activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSelectSession={(id, title, manager) => {
               setShowConfig(false)
               setActiveTab("chat")
               setShowWelcome(false)
