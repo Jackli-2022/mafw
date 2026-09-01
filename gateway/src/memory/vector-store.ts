@@ -112,6 +112,12 @@ export interface EmbeddingIndexerDeps {
   getTextForId?: (id: string) => Promise<string | null>;
   /** Cap for memory_value portion (default 2000 chars). */
   valueCap?: number;
+  /**
+   * Embed batch size (default 16). CPU ONNX attention intermediates scale with
+   * batch × seq² — large batches transiently allocate GBs. 4 keeps the
+   * arena peak ~0.5GB for ~1K-token inputs.
+   */
+  batchSize?: number;
 }
 
 interface QueueItem {
@@ -125,12 +131,14 @@ export class EmbeddingIndexer {
   private provider: EmbeddingProvider;
   private getTextForId?: (id: string) => Promise<string | null>;
   private valueCap: number;
+  private batchSize: number;
 
   constructor(deps: EmbeddingIndexerDeps) {
     this.vectors = deps.vectors;
     this.provider = deps.provider;
     this.getTextForId = deps.getTextForId;
     this.valueCap = deps.valueCap ?? 2000;
+    this.batchSize = deps.batchSize ?? 16;
   }
 
   /** Document text: primary abstraction + memory value (capped). */
@@ -165,9 +173,8 @@ export class EmbeddingIndexer {
 
     let indexed = 0;
     let failed = 0;
-    const BATCH = 16;
-    for (let i = 0; i < items.length; i += BATCH) {
-      const batch = items.slice(i, i + BATCH);
+    for (let i = 0; i < items.length; i += this.batchSize) {
+      const batch = items.slice(i, i + this.batchSize);
       try {
         const vectors = await this.provider.embed(batch.map(b => b.text), 'document');
         for (let j = 0; j < batch.length; j++) {

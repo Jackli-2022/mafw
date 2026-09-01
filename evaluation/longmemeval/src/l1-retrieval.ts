@@ -188,9 +188,13 @@ async function runOne(
       const vectors = new MemoryVectorStore(path.join(tmpDir, 'memory', 'vectors-eval.json'), 1024, 'eval');
       const getTextForId = async (id: string) => {
         const entry = index.getIndex().entries.find(e => e.id === id);
-        return entry ? entry.primary_abstraction.slice(0, 4000) : null;
+        // Dense channel needs the semantic gist, not the full haystack —
+        // CPU attention is O(L²), embedding full sessions (~8K tokens) costs
+        // minutes per question. 1200 chars keeps embedding ~1s/entry while
+        // BM25 retains full-text recall coverage.
+        return entry ? entry.primary_abstraction.slice(0, 1200) : null;
       };
-      const indexer = new EmbeddingIndexer({ vectors, provider: embeddingProvider, getTextForId, valueCap: 0 });
+      const indexer = new EmbeddingIndexer({ vectors, provider: embeddingProvider, getTextForId, valueCap: 0, batchSize: 4 });
       const ids = index.getIndex().entries.map(e => e.id);
       const backfill = await indexer.backfill(ids);
       const [queryVector] = await embeddingProvider.embed([question.question], 'query');

@@ -171,6 +171,26 @@ describe('EmbeddingIndexer', () => {
     expect(vectors.get('e1')).toEqual([1, 0]);
   });
 
+  test('batchSize option splits embed calls (default 16)', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    const callSizes: number[] = [];
+    const provider: EmbeddingProvider = {
+      name: 'stub',
+      dims: 2,
+      embed: async (texts) => {
+        callSizes.push(texts.length);
+        return texts.map(() => [1, 0]);
+      },
+    };
+    const indexer = new EmbeddingIndexer({ vectors, provider, batchSize: 2 });
+    for (let i = 0; i < 5; i++) {
+      indexer.onUnitWritten({ id: 'u' + i, primary_abstraction: 'A' + i, memory_value: 'v' } as any);
+    }
+    await indexer.flushQueue();
+    expect(callSizes).toEqual([2, 2, 1]);
+  });
+
   test('removeUnit drops the vector', async () => {
     const dir = tmpDir();
     const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
