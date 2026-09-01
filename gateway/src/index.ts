@@ -1793,10 +1793,12 @@ class MafwScheduler {
   }
 
   private async listSessions(projectID: string | null): Promise<any[]> {
-    // Memory-system worker sessions (index-scan / extract / reflect) are
-    // infrastructure — never shown in the desktop session list.
-    const isMemoryWorkerSession = (sid: string): boolean => {
-      const role = this.internalSessionRoles.get(sid);
+    // Sessions that are infrastructure, never shown in the desktop session
+    // list: memory-system workers (index-scan / extract / reflect) and
+    // Task-tool subagent children (they have a parent session).
+    const isHiddenSession = (s: any): boolean => {
+      if (s?.parentID) return true;
+      const role = s?.id ? this.internalSessionRoles.get(s.id) : undefined;
       return role === 'index-scan' || role === 'extract' || role === 'reflect';
     };
 
@@ -1810,17 +1812,17 @@ class MafwScheduler {
       } catch {}
     }
 
+    // The serve API's session shape omits parentID, so subagent children that
+    // appear in BOTH sources would leak through the serve copy. Collect child
+    // ids from the SQLite window first and filter both merge loops by them.
+    const childSessionIds = new Set<string>();
+
     // Merge server-known sessions with the opencode database so sessions that
     // belong to this project but are hidden by serve's project resolution
     // (serve resolves the project to `global` and lists only those) still show
     // up. Server entries win on id collision (fresher in-memory state).
     const merged: any[] = [];
     const seen = new Set<string>();
-    for (const s of fromServe) {
-      if (s?.id && isMemoryWorkerSession(s.id)) continue;
-      merged.push(s);
-      if (s?.id) seen.add(s.id);
-    }
     try {
       if (projectID && this.opencodeClient) {
         let dbSessions: any[] = [];
@@ -1838,14 +1840,20 @@ class MafwScheduler {
           });
         }
         for (const s of dbSessions) {
+          if (s?.parentID) childSessionIds.add(s.id);
           if (!seen.has(s.id)) {
-            if (s?.id && isMemoryWorkerSession(s.id)) continue;
+            if (isHiddenSession(s)) continue;
             merged.push(s);
             seen.add(s.id);
           }
         }
       }
     } catch {}
+    for (const s of fromServe) {
+      if (isHiddenSession(s) || (s?.id && childSessionIds.has(s.id))) continue;
+      merged.push(s);
+      if (s?.id) seen.add(s.id);
+    }
 
     if (merged.length > 0) {
       // Enrich sessions with local metadata (manager session markers, etc.).

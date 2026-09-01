@@ -226,3 +226,13 @@
 [2026-08-31T16:22:49.461Z] [INFO] [MAFW] Plugin activated. All hooks registered.
 [2026-09-01T01:07:24.317Z] [INFO] [MAFW] File logging enabled: C:\work\work-loop\opencode-plugin-mafw\.mafw/logs/mafw.log
 [2026-09-01T01:07:24.461Z] [INFO] [MAFW] Plugin activated. All hooks registered.
+[2026-09-01T02:03:54.985Z] [INFO] [MAFW] File logging enabled: C:\work\test_project\.mafw/logs/mafw.log
+[2026-09-01T02:03:55.097Z] [INFO] [MAFW] Plugin activated. All hooks registered.
+[2026-09-01T02:03:57.433Z] [INFO] [MAFW] File logging enabled: C:\work\work-loop\opencode-plugin-mafw\opencode-dev\packages\desktop\.mafw/logs/mafw.log
+[2026-09-01T02:03:57.496Z] [INFO] [MAFW] Plugin activated. All hooks registered.
+[2026-09-01T02:03:59.144Z] [INFO] [MAFW] File logging enabled: C:\work\work-loop\.mafw/logs/mafw.log
+[2026-09-01T02:03:59.220Z] [INFO] [MAFW] Plugin activated. All hooks registered.
+[2026-09-01T02:04:01.869Z] [INFO] [MAFW] File logging enabled: C:\work\work-loop\opencode-plugin-mafw\gateway\.mafw/logs/mafw.log
+[2026-09-01T02:04:02.112Z] [INFO] [MAFW] Plugin activated. All hooks registered.
+[2026-09-01T02:04:05.552Z] [INFO] [MAFW] File logging enabled: C:\work\work-loop\opencode-plugin-mafw\gateway\9d993d7046aee6d0b68967f66976e61d5ca39684\.mafw/logs/mafw.log
+[2026-09-01T02:04:05.826Z] [INFO] [MAFW] Plugin activated. All hooks registered.

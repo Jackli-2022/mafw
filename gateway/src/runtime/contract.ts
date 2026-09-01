@@ -103,6 +103,8 @@ export interface SessionInfo {
   projectID: string;
   directory: string;
   title: string;
+  /** Present on subagent/child sessions (Task tool dispatches); absent for top-level sessions. */
+  parentID?: string;
   metadata?: Record<string, unknown>;
   time: { created: number; updated: number };
 }

@@ -40,6 +40,7 @@ const { DatabaseSync } = require('node:sqlite') as {
 interface DbSessionRow {
   id: string;
   project_id: string;
+  parent_id: string | null;
   directory: string;
   title: string;
   metadata: Record<string, unknown> | null;
@@ -62,6 +63,7 @@ function toSessionShape(row: DbSessionRow): SessionInfo {
     projectID: row.project_id,
     directory: row.directory,
     title: row.title,
+    parentID: row.parent_id ?? undefined,
     metadata: row.metadata ?? undefined,
     time: { created: row.time_created, updated: row.time_updated },
   };
@@ -104,7 +106,7 @@ function sessionsUnderDirectory(
 ): DbSessionRow[] {
   const target = normalizeDir(directory);
   const rows = db.prepare(
-    `SELECT id, project_id, directory, title, metadata, time_created, time_updated
+    `SELECT id, project_id, parent_id, directory, title, metadata, time_created, time_updated
      FROM session
      ORDER BY time_updated DESC
      LIMIT 5000`,
@@ -145,7 +147,7 @@ function listSessionsFromDb(directory: string, limit = 200): SessionInfo[] {
     if (projectIds.length > 0) {
       const placeholders = projectIds.map(() => '?').join(', ');
       const rows = db.prepare(
-        `SELECT id, project_id, directory, title, metadata, time_created, time_updated
+        `SELECT id, project_id, parent_id, directory, title, metadata, time_created, time_updated
          FROM session
          WHERE project_id IN (${placeholders})
          ORDER BY time_updated DESC
