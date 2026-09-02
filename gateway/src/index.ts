@@ -1973,6 +1973,12 @@ class MafwScheduler {
     } catch {}
     for (const s of fromServe) {
       if (isHiddenSession(s) || (s?.id && childSessionIds.has(s.id))) continue;
+      if (s?.id && seen.has(s.id)) {
+        // Server state is fresher — replace the SQLite copy in place.
+        const idx = merged.findIndex(m => m.id === s.id);
+        if (idx >= 0) merged[idx] = s;
+        continue;
+      }
       merged.push(s);
       if (s?.id) seen.add(s.id);
     }
