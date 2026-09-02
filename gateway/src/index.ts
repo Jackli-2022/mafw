@@ -19,7 +19,7 @@ import { SdkSessionResource } from "./resources/sdk-session";
 import { createMemorySearch } from "./interceptors/memory-injector";
 import { createToolRegistry } from "./mcp/tool-registry";
 import { MemoryService } from "./memory/service";
-import { initEmbeddingRuntime, computeDenseScores, getEmbeddingRuntime } from "./memory/embedding-runtime";
+import { initEmbeddingRuntime, computeDenseScores, getEmbeddingRuntime, setEmbeddingRuntime } from "./memory/embedding-runtime";
 import { EmbeddingIndexer } from "./memory/vector-store";
 import { onMemoryWritten } from "./memory/harmonic-file-store";
 import { GatewayDatabase } from "./memory/gateway-db";
@@ -80,6 +80,7 @@ import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { handleMediaSwitch } from './routes/media-switch';
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
+import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
 
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
@@ -1110,6 +1111,102 @@ class MafwScheduler {
     return this.workerPool;
   }
 
+  /** (Re)build the embedding runtime + consolidation service from current
+   *  config. Re-entrant: kills the old llama-server sidecar and drops the old
+   *  provider before rebuilding, so /api/memory/embedding-config can hot-swap
+   *  engines without a gateway restart. */
+  private initEmbeddingServices(mafwDir: string): void {
+    const old = getEmbeddingRuntime();
+    if (old && typeof (old.provider as any).killServer === 'function') {
+      try { (old.provider as any).killServer(); } catch { /* best effort */ }
+    }
+    setEmbeddingRuntime(null);
+    this.consolidationService = null;
+
+    // P1: dense embedding runtime (opt-in via memory.embedding.provider).
+    // Fires on every memory write (static listener) — BM25 stays instant,
+    // vectors converge asynchronously; all failures degrade to BM25-only.
+    const embeddingRuntime = initEmbeddingRuntime({
+      baseDir: mafwDir,
+      getTextForId: async (id) => {
+        try {
+          const u = await new HarmonicUnitFileStore(mafwDir).read(id);
+          return u ? EmbeddingIndexer.documentText(u) : null;
+        } catch { return null; }
+      },
+    });
+    if (!embeddingRuntime) return;
+
+    // P2: Memora-style consolidation (embedding recall + LLM UPDATE/CREATE).
+    // Judge reuses the worker-model transport; unresolvable → skip path.
+    if (config.memory.embedding.consolidation) {
+      const providerID = config.recall.workerModel?.providerID;
+      const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
+      const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+      this.consolidationService = new ConsolidationService({
+        store: new HarmonicUnitFileStore(mafwDir),
+        vectors: embeddingRuntime.vectors,
+        provider: embeddingRuntime.provider,
+        llm: judgeBaseUrl && judgeApiKey
+          ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: config.recall.workerModel.modelID }
+          : undefined,
+        minCosine: config.memory.embedding.minCosine,
+      });
+      log.info(`[Consolidation] enabled (judge: ${judgeBaseUrl && judgeApiKey ? providerID : 'unavailable → skip'})`);
+    }
+  }
+
+  /** Shared core of POST /api/memory/embeddings/backfill. */
+  private async backfillEmbeddings(limit?: number): Promise<any> {
+    const rt = getEmbeddingRuntime();
+    if (!rt) return null;
+    const entries = this.memoryService?.harmonicIndex.getIndex().entries ?? [];
+    let ids = entries.map(e => e.id);
+    if (limit && limit > 0) ids = ids.slice(0, limit);
+    const result = await rt.indexer.backfill(ids);
+    return { ...result, vectors: rt.vectors.size(), indexEntries: entries.length };
+  }
+
+  private embeddingConfigDeps(): EmbeddingConfigDeps {
+    return {
+      currentConfig: () => {
+        const e = config.raw.memory.embedding;
+        return {
+          provider: e.provider,
+          engine: e.engine ?? 'onnx',
+          model: e.model,
+          dimensions: e.dimensions,
+          threads: e.threads,
+          llamacpp: {
+            gpu: e.llamacpp?.gpu ?? 'cpu',
+            threads: e.llamacpp?.threads ?? e.threads,
+            contextSize: e.llamacpp?.contextSize ?? 2048,
+          },
+        };
+      },
+      persist: (o) => config.persistOverrides(o),
+      reinit: () => {
+        this.initEmbeddingServices(config.resolvePath());
+        return { active: getEmbeddingRuntime()?.provider.name ?? null };
+      },
+      runtimeState: () => {
+        const rt = getEmbeddingRuntime();
+        const indexEntries = this.memoryService?.harmonicIndex.getIndex().entries.length ?? 0;
+        const vectors = rt?.vectors.size() ?? 0;
+        return {
+          active: rt?.provider.name ?? null,
+          vectors,
+          indexEntries,
+          coverage: indexEntries > 0 ? vectors / indexEntries : 1,
+        };
+      },
+      scheduleBackfill: () => {
+        this.backfillEmbeddings().catch((err: any) =>
+          log.warn(`[Embedding] post-switch backfill failed: ${err?.message || err}`));
+      },
+    };
+  }
+
   private modelConfigDeps(): ModelConfigDeps {
     return {
       persist: (o) => config.persistOverrides(o),
@@ -1446,45 +1543,19 @@ class MafwScheduler {
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
     this.memoryService = new MemoryService(mafwDir);
 
-    // P1: dense embedding runtime (opt-in via memory.embedding.provider).
-    // Fires on every memory write (static listener) — BM25 stays instant,
-    // vectors converge asynchronously; all failures degrade to BM25-only.
-    const embeddingRuntime = initEmbeddingRuntime({
-      baseDir: mafwDir,
-      getTextForId: async (id) => {
-        try {
-          const u = await new HarmonicUnitFileStore(mafwDir).read(id);
-          return u ? EmbeddingIndexer.documentText(u) : null;
-        } catch { return null; }
-      },
-    });
-    if (embeddingRuntime) {
-      onMemoryWritten(u => {
-        embeddingRuntime.indexer.onUnitWritten(u);
-        embeddingRuntime.scheduleFlush();
-      });
-
-      // P2: Memora-style consolidation (embedding recall + LLM UPDATE/CREATE).
-      // Judge reuses the worker-model transport; unresolvable → skip path.
-      if (config.memory.embedding.consolidation) {
-        const providerID = config.recall.workerModel?.providerID;
-        const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
-        const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
-        this.consolidationService = new ConsolidationService({
-          store: new HarmonicUnitFileStore(mafwDir),
-          vectors: embeddingRuntime.vectors,
-          provider: embeddingRuntime.provider,
-          llm: judgeBaseUrl && judgeApiKey
-            ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: config.recall.workerModel.modelID }
-            : undefined,
-          minCosine: config.memory.embedding.minCosine,
-        });
-        onMemoryWritten(u => {
-          this.consolidationService?.enqueue(u);
-        });
-        log.info(`[Consolidation] enabled (judge: ${judgeBaseUrl && judgeApiKey ? providerID : 'unavailable → skip'})`);
+    // P1/P2: dense embedding runtime + consolidation. initEmbeddingServices is
+    // re-entrant — /api/memory/embedding-config hot-swaps the engine without a
+    // gateway restart. The write-path listener resolves the runtime lazily so
+    // a swap never leaves a stale provider wired to writes.
+    this.initEmbeddingServices(mafwDir);
+    onMemoryWritten(u => {
+      const rt = getEmbeddingRuntime();
+      if (rt) {
+        rt.indexer.onUnitWritten(u);
+        rt.scheduleFlush();
       }
-    }
+      this.consolidationService?.enqueue(u);
+    });
 
     this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
       getCredentials: () => this.opencodeClient?.credentials ?? undefined,
@@ -2696,18 +2767,14 @@ class MafwScheduler {
         // Optional ?limit=N to batch (full store ≈ 12s for short abstractions).
         if (req.url?.match(/^\/api\/memory\/embeddings\/backfill(?:\?|$)/) && req.method === 'POST') {
           try {
-            const rt = getEmbeddingRuntime();
-            if (!rt) {
-              res.writeHead(400); res.end(JSON.stringify({ error: 'embedding provider off (memory.embedding.provider)' })); return;
-            }
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const limit = parseInt(parsedUrl.searchParams.get('limit') || '', 10);
-            const entries = this.memoryService?.harmonicIndex.getIndex().entries ?? [];
-            let ids = entries.map(e => e.id);
-            if (!Number.isNaN(limit) && limit > 0) ids = ids.slice(0, limit);
-            const result = await rt.indexer.backfill(ids);
+            const result = await this.backfillEmbeddings(!Number.isNaN(limit) && limit > 0 ? limit : undefined);
+            if (!result) {
+              res.writeHead(400); res.end(JSON.stringify({ error: 'embedding provider off (memory.embedding.provider)' })); return;
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ...result, vectors: rt.vectors.size(), indexEntries: entries.length }));
+            res.end(JSON.stringify(result));
           } catch (err: any) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
@@ -4114,6 +4181,17 @@ class MafwScheduler {
         }
         if (req.url?.match(/^\/api\/model-config(?:\?|$)/) && req.method === 'POST') {
           await handleModelConfigUpdate(req, res, this.modelConfigDeps());
+          return;
+        }
+
+        // GET/POST /api/memory/embedding-config — memory embedding engine
+        // settings (hot-swap: rebuild runtime + background backfill)
+        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'GET') {
+          await handleEmbeddingConfigGet(req, res, this.embeddingConfigDeps());
+          return;
+        }
+        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'POST') {
+          await handleEmbeddingConfigUpdate(req, res, this.embeddingConfigDeps());
           return;
         }
 

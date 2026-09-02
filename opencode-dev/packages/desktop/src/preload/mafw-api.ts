@@ -167,6 +167,11 @@ export function createMafwApi(): MafwAPI {
       update: (opts) => invoke("models", "update", opts),
     },
 
+    embedding: {
+      get: () => invoke("embedding", "get"),
+      update: (opts) => invoke("embedding", "update", opts),
+    },
+
     runtime: {
       get: () => invoke("runtime", "get"),
       switch: (plugin: string) => invoke("runtime", "switch", plugin),

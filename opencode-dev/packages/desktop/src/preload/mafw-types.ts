@@ -5,6 +5,7 @@ import type {
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
   ModelConfigState, ModelConfigUpdate,
+  EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
 } from "@mafw/sdk"
 
 export type MafwAPI = {
@@ -151,6 +152,10 @@ export type MafwAPI = {
     update: (opts: ModelConfigUpdate) => Promise<{ success: boolean; recall: ModelConfigState['recall']; media: ModelConfigState['media'] }>
   }
 
+  embedding: {
+    get: () => Promise<EmbeddingConfigGetResponse>
+    update: (opts: EmbeddingConfigUpdate) => Promise<{ success: boolean; current: EmbeddingConfigState; runtime: EmbeddingRuntimeState; note?: string }>
+  }
   runtime: {
     get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean> }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
     switch: (plugin: string) => Promise<{ success: boolean; active: { name: string; capabilities: Record<string, boolean> }; envOverride: boolean }>

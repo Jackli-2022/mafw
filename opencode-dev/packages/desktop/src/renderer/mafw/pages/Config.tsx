@@ -15,7 +15,7 @@ interface ConfigSection {
   fields: [string, any][]
 }
 
-export type NavKey = "gateway" | "plugins" | "models" | "usage" | "opencode" | "mafw"
+export type NavKey = "gateway" | "plugins" | "models" | "memory" | "usage" | "opencode" | "mafw"
 
 export function isNavKey(v: unknown): v is NavKey {
   return NAV_ITEMS.some(n => n.key === v)
@@ -25,6 +25,7 @@ const NAV_ITEMS: { key: NavKey; icon: string; label: string; desc: string }[] = 
   { key: "gateway",  icon: "⚡", label: "Gateway",  desc: "管理 Gateway 进程状态、重启服务和查看日志" },
   { key: "plugins",  icon: "🧩", label: "Plugins",  desc: "切换 Runtime 引擎和媒体分析引擎" },
   { key: "models",   icon: "🤖", label: "Models",   desc: "配置记忆 worker 和媒体分析使用的 AI 模型" },
+  { key: "memory",   icon: "🧠", label: "Memory",   desc: "记忆系统嵌入引擎（ONNX / llama.cpp / GPU 卸载）与向量索引" },
   { key: "usage",    icon: "📊", label: "Usage",    desc: "设置 token 限额、余额预算和平台 cookie" },
   { key: "opencode", icon: "⚙️", label: "opencode", desc: "编辑 opencode 原生配置文件" },
   { key: "mafw",     icon: "🔧", label: "MAFW",     desc: "MAFW 原始配置文件（高级用户）" },
@@ -57,7 +58,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setLoading(false)
   }
 
-  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadUsageConfig(); loadUsagePlugins() })
+  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadUsageConfig(); loadUsagePlugins(); loadEmbeddingConfig() })
 
   // Dock "配置" requests arrive as window events; the config page can already be
   // mounted when one fires, so listen here instead of relying on mount-time props.
@@ -281,6 +282,64 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     }
     setModelSaving(prev => ({ ...prev, [kind]: false }))
   }
+
+  // ── Memory embedding ──
+  const [embState, setEmbState] = createSignal<any>(null)
+  const [embError, setEmbError] = createSignal("")
+  const [embSaving, setEmbSaving] = createSignal(false)
+  const [embDraft, setEmbDraft] = createSignal<any>(null)
+
+  async function loadEmbeddingConfig() {
+    setEmbError("")
+    try {
+      const st = await window.api.mafw.embedding.get()
+      setEmbState(st)
+      setEmbDraft({
+        provider: st?.current?.provider ?? "off",
+        engine: st?.current?.engine ?? "onnx",
+        gpu: st?.current?.llamacpp?.gpu ?? "cpu",
+        threads: st?.current?.threads ?? 2,
+        contextSize: st?.current?.llamacpp?.contextSize ?? 2048,
+      })
+    } catch (err: any) {
+      setEmbError(err.message)
+    }
+  }
+
+  function embDirty() {
+    const d = embDraft()
+    const c = embState()?.current
+    if (!d || !c) return false
+    return d.provider !== c.provider
+      || d.engine !== c.engine
+      || d.gpu !== (c.llamacpp?.gpu ?? "cpu")
+      || Number(d.threads) !== c.threads
+      || Number(d.contextSize) !== (c.llamacpp?.contextSize ?? 2048)
+  }
+
+  async function saveEmbeddingConfig() {
+    const d = embDraft()
+    if (!d) return
+    setEmbSaving(true)
+    try {
+      const res = await window.api.mafw.embedding.update({
+        provider: d.provider,
+        engine: d.engine,
+        threads: Number(d.threads),
+        llamacpp: { gpu: d.gpu, contextSize: Number(d.contextSize) },
+      })
+      setEmbState((prev: any) => ({ ...(prev ?? {}), current: res.current, runtime: res.runtime }))
+      showToastV2({ description: res.note ? `已保存：${res.note}` : "嵌入配置已保存", duration: 4000 })
+      // 后台回填进行中，稍后再拉一次覆盖率
+      setTimeout(() => { loadEmbeddingConfig() }, 15000)
+    } catch (err: any) {
+      showToastV2({ description: `保存失败: ${err.message}`, duration: 4000 })
+      await loadEmbeddingConfig()
+    }
+    setEmbSaving(false)
+  }
+
+  const embDirtyMemo = () => embDirty()
 
   // ── Usage Config ──
   const [usageConfig, setUsageConfig] = createSignal<any>(null)
@@ -685,6 +744,109 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         <ModelTextRow label={label} current={cur} saving={!!modelSaving()[kind]} onSave={save} />
                       )
                     })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Show>
+
+          {/* ═══ Memory ═══*/}
+          <Show when={activeNav() === "memory"}>
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">🧠</span>
+                <span class="mafw-config-section-title">记忆系统</span>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  配置长期记忆的嵌入引擎（dense 检索通道）。切换引擎会热重建运行时并后台回填向量索引，无需重启 Gateway。
+                </div>
+                {embError() ? (
+                  <div class="mafw-config-error-row">
+                    <span>加载失败: {embError()}</span>
+                    <ButtonV2 variant="outline" size="small" onClick={loadEmbeddingConfig}>重试</ButtonV2>
+                  </div>
+                ) : !embState() || !embDraft() ? (
+                  <div class="mafw-config-inline-loading">
+                    <LoaderV2 width={14} height={14} /> 加载中…
+                  </div>
+                ) : (
+                  <div class="mafw-config-models-grid">
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">嵌入提供方</label>
+                      <span class="mafw-config-hint">off = 仅 BM25 检索；local = 本地模型；dashscope = 云端 API</span>
+                      <SelectV2
+                        options={embState()?.available?.providers ?? ["off", "local", "dashscope"]}
+                        current={embDraft().provider}
+                        value={(x: string) => x}
+                        label={(x: string) => x === "off" ? "off（关闭 dense 通道）" : x === "local" ? "local（本地嵌入）" : "dashscope（云端 API）"}
+                        onSelect={(v) => v && setEmbDraft((p: any) => ({ ...p, provider: v }))}
+                        disabled={embSaving()}
+                      />
+                    </div>
+                    <Show when={embDraft().provider === "local"}>
+                      <div class="mafw-config-field-group">
+                        <label class="mafw-config-label">本地引擎</label>
+                        <span class="mafw-config-hint">onnx = 进程内 transformers.js；llamacpp = llama-server 子进程（内存更低，支持 GPU）</span>
+                        <SelectV2
+                          options={embState()?.available?.engines ?? ["onnx", "llamacpp"]}
+                          current={embDraft().engine}
+                          value={(x: string) => x}
+                          label={(x: string) => x === "onnx" ? "onnx（进程内）" : "llamacpp（sidecar，支持 GPU）"}
+                          onSelect={(v) => v && setEmbDraft((p: any) => ({ ...p, engine: v }))}
+                          disabled={embSaving()}
+                        />
+                      </div>
+                    </Show>
+                    <Show when={embDraft().provider === "local" && embDraft().engine === "llamacpp"}>
+                      <div class="mafw-config-field-group">
+                        <label class="mafw-config-label">运行设备</label>
+                        <span class="mafw-config-hint">vulkan / cuda 会自动下载对应二进制变体（cuda 含 cudart 约 615MB）</span>
+                        <SelectV2
+                          options={embState()?.available?.gpus ?? ["cpu", "vulkan", "cuda"]}
+                          current={embDraft().gpu}
+                          value={(x: string) => x}
+                          label={(x: string) => x}
+                          onSelect={(v) => v && setEmbDraft((p: any) => ({ ...p, gpu: v }))}
+                          disabled={embSaving()}
+                        />
+                      </div>
+                      <div class="mafw-config-field-group">
+                        <label class="mafw-config-label">上下文窗口（token）</label>
+                        <span class="mafw-config-hint">需 ≥ 嵌入文本上限；过大会涨内存（KV/计算缓冲随其线性增长）</span>
+                        <TextInputV2
+                          type="number"
+                          value={String(embDraft().contextSize)}
+                          onInput={e => setEmbDraft((p: any) => ({ ...p, contextSize: e.currentTarget.value }))}
+                          style={{ width: 100 }}
+                        />
+                      </div>
+                    </Show>
+                    <Show when={embDraft().provider === "local" && embDraft().engine === "onnx"}>
+                      <div class="mafw-config-field-group">
+                        <label class="mafw-config-label">CPU 线程帽</label>
+                        <span class="mafw-config-hint">ONNX 默认占满全核；2 是后台服务的推荐值</span>
+                        <TextInputV2
+                          type="number"
+                          value={String(embDraft().threads)}
+                          onInput={e => setEmbDraft((p: any) => ({ ...p, threads: e.currentTarget.value }))}
+                          style={{ width: 80 }}
+                        />
+                      </div>
+                    </Show>
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">运行时状态</label>
+                      <span class="mafw-config-hint">
+                        {embState()?.runtime?.active
+                          ? `${embState().runtime.active} · 向量 ${embState().runtime.vectors}/${embState().runtime.indexEntries}（覆盖 ${(embState().runtime.coverage * 100).toFixed(0)}%）`
+                          : "dense 通道未启用"}
+                      </span>
+                    </div>
+                    <div style={{ "margin-top": 8 }}>
+                      <ButtonV2 variant="contrast" size="small" onClick={saveEmbeddingConfig} disabled={embSaving() || !embDirtyMemo()}>
+                        {embSaving() ? "保存中…" : "应用"}
+                      </ButtonV2>
+                    </div>
                   </div>
                 )}
               </div>

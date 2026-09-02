@@ -413,6 +413,41 @@ export interface ModelConfigNamespace {
   update(opts: ModelConfigUpdate): Promise<{ success: boolean; recall: ModelConfigState['recall']; media: ModelConfigState['media'] }>
 }
 
+export interface EmbeddingConfigState {
+  provider: 'off' | 'local' | 'dashscope'
+  engine: 'onnx' | 'llamacpp'
+  model: string
+  dimensions: number
+  threads: number
+  llamacpp: { gpu: string; threads: number; contextSize: number }
+}
+
+export interface EmbeddingRuntimeState {
+  active: string | null
+  vectors: number
+  indexEntries: number
+  coverage: number
+}
+
+export interface EmbeddingConfigGetResponse {
+  current: EmbeddingConfigState
+  runtime: EmbeddingRuntimeState
+  available: { providers: string[]; engines: string[]; gpus: string[] }
+}
+
+export interface EmbeddingConfigUpdate {
+  provider?: 'off' | 'local' | 'dashscope'
+  engine?: 'onnx' | 'llamacpp'
+  model?: string
+  threads?: number
+  llamacpp?: { gpu?: string; threads?: number; contextSize?: number }
+}
+
+export interface EmbeddingConfigNamespace {
+  get(): Promise<EmbeddingConfigGetResponse>
+  update(opts: EmbeddingConfigUpdate): Promise<{ success: boolean; current: EmbeddingConfigState; runtime: EmbeddingRuntimeState; note?: string }>
+}
+
 export interface ChatNamespace {
   send(message: string, sessionID?: string): Promise<{ sessionID: string }>
   sendEnriched(opts: { message: string; sessionID?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }): Promise<{ sessionID: string }>
@@ -487,6 +522,7 @@ export interface MafwClient {
   config: ConfigNamespace
   opencodeConfig: OpenCodeConfigNamespace
   models: ModelConfigNamespace
+  embedding: EmbeddingConfigNamespace
   chat: ChatNamespace
   goals: GoalsNamespace
   memory: MemoryNamespace

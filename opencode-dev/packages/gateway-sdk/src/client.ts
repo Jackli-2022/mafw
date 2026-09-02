@@ -749,6 +749,27 @@ export class MafwClient implements IMafwClient {
     },
   }
 
+  // ── Memory embedding config (hot-swap engine, no restart) ──
+
+  embedding = {
+    get: async (): Promise<import('./types').EmbeddingConfigGetResponse> => {
+      return this.request<import('./types').EmbeddingConfigGetResponse>('/api/memory/embedding-config')
+    },
+
+    update: async (opts: import('./types').EmbeddingConfigUpdate): Promise<{ success: boolean; current: import('./types').EmbeddingConfigState; runtime: import('./types').EmbeddingRuntimeState; note?: string }> => {
+      const res = await fetch(`${this.baseUrl}/api/memory/embedding-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Embedding config update failed: ${res.status}`)
+      }
+      return res.json()
+    },
+  }
+
   // ── Automations ──
 
   automations = {
