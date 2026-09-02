@@ -2692,6 +2692,29 @@ class MafwScheduler {
           return;
         }
 
+        // POST /api/memory/embeddings/backfill — index entries missing vectors.
+        // Optional ?limit=N to batch (full store ≈ 12s for short abstractions).
+        if (req.url?.match(/^\/api\/memory\/embeddings\/backfill(?:\?|$)/) && req.method === 'POST') {
+          try {
+            const rt = getEmbeddingRuntime();
+            if (!rt) {
+              res.writeHead(400); res.end(JSON.stringify({ error: 'embedding provider off (memory.embedding.provider)' })); return;
+            }
+            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const limit = parseInt(parsedUrl.searchParams.get('limit') || '', 10);
+            const entries = this.memoryService?.harmonicIndex.getIndex().entries ?? [];
+            let ids = entries.map(e => e.id);
+            if (!Number.isNaN(limit) && limit > 0) ids = ids.slice(0, limit);
+            const result = await rt.indexer.backfill(ids);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ...result, vectors: rt.vectors.size(), indexEntries: entries.length }));
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // GET /api/memory/stats — consolidation health + vector coverage (P2)
         if (req.url?.match(/^\/api\/memory\/stats(?:\?|$)/) && req.method === 'GET') {
           try {

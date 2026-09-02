@@ -17,10 +17,10 @@ import { log } from '../core/utils/logger';
 import { getProviderApiKey } from '../runtime/auth';
 
 // Mirror + cache home for local ONNX model downloads (same policy as reranker).
+import * as path from 'path';
+import * as os from 'os';
 if (typeof process !== 'undefined') {
   process.env.HF_ENDPOINT = process.env.HF_ENDPOINT || 'https://hf-mirror.com';
-  const path = require('path') as typeof import('path');
-  const os = require('os') as typeof import('os');
   process.env.HF_HOME = process.env.HF_HOME || path.join(os.homedir(), '.mafw', 'models', 'huggingface');
 }
 
@@ -214,6 +214,9 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
       }
       const mod: any = await new Function('spec', 'return import(spec)')('@huggingface/transformers');
       mod.env.remoteHost = process.env.HF_ENDPOINT || 'https://hf-mirror.com/';
+      // Persist the model cache under the MAFW data root — the transformers.js
+      // default (<package>/.cache) is wiped on every `npm install -g` upgrade.
+      mod.env.cacheDir = path.join(os.homedir(), '.mafw', 'models', 'huggingface');
       const tokenizer = await mod.AutoTokenizer.from_pretrained(this.modelId);
       const model = await mod.AutoModel.from_pretrained(this.modelId, { dtype: 'q8' });
       this.handle = { tokenizer, model };
