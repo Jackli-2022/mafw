@@ -2782,6 +2782,18 @@ class MafwScheduler {
           return;
         }
 
+        // GET/POST /api/memory/embedding-config — memory embedding engine
+        // settings (hot-swap: rebuild runtime + background backfill). MUST
+        // stay above the /api/memory/* dashboard delegation below.
+        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'GET') {
+          await handleEmbeddingConfigGet(req, res, this.embeddingConfigDeps());
+          return;
+        }
+        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'POST') {
+          await handleEmbeddingConfigUpdate(req, res, this.embeddingConfigDeps());
+          return;
+        }
+
         // GET /api/memory/stats — consolidation health + vector coverage (P2)
         if (req.url?.match(/^\/api\/memory\/stats(?:\?|$)/) && req.method === 'GET') {
           try {
@@ -4181,17 +4193,6 @@ class MafwScheduler {
         }
         if (req.url?.match(/^\/api\/model-config(?:\?|$)/) && req.method === 'POST') {
           await handleModelConfigUpdate(req, res, this.modelConfigDeps());
-          return;
-        }
-
-        // GET/POST /api/memory/embedding-config — memory embedding engine
-        // settings (hot-swap: rebuild runtime + background backfill)
-        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'GET') {
-          await handleEmbeddingConfigGet(req, res, this.embeddingConfigDeps());
-          return;
-        }
-        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'POST') {
-          await handleEmbeddingConfigUpdate(req, res, this.embeddingConfigDeps());
           return;
         }
 
