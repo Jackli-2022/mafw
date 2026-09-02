@@ -2,6 +2,7 @@
 import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
@@ -219,8 +220,8 @@ export function Rail(props: Props) {
         </div>
       }
     >
-      <DropdownMenu placement="right">
-        <DropdownMenu.Trigger
+      <ContextMenu>
+        <ContextMenu.Trigger
           as="div"
           class="mafw-rail-session"
           classList={{ active: props.activeSessionId === s.id }}
@@ -230,25 +231,28 @@ export function Rail(props: Props) {
           <TooltipV2 value={new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
             <span class="mafw-rail-session-title">{sessionName(s)}</span>
           </TooltipV2>
-          <span class="mafw-rail-row-dots" onClick={e => e.stopPropagation()}><EllipsisIcon /></span>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content>
-            <DropdownMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), false)}>
-              <DropdownMenu.ItemLabel>Open</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => startRename(s)}>
-              <DropdownMenu.ItemLabel>Rename</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => deleteSession(s.id)}>
-              <DropdownMenu.ItemLabel>Delete</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => copyText(s.id)}>
-              <DropdownMenu.ItemLabel>Copy session ID</DropdownMenu.ItemLabel>
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
+          <span
+            class="mafw-rail-row-dots"
+            onClick={e => { e.stopPropagation(); e.currentTarget.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })) }}
+          ><EllipsisIcon /></span>
+        </ContextMenu.Trigger>
+        <ContextMenu.Portal>
+          <ContextMenu.Content>
+            <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), false)}>
+              <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Item onSelect={() => startRename(s)}>
+              <ContextMenu.ItemLabel>Rename</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Item onSelect={() => deleteSession(s.id)}>
+              <ContextMenu.ItemLabel>Delete</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <ContextMenu.Item onSelect={() => copyText(s.id)}>
+              <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      </ContextMenu>
     </Show>
   )
 
