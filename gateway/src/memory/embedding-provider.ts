@@ -84,7 +84,12 @@ export function createEmbeddingProvider(cfg: EmbeddingProviderConfig): Embedding
       // the ONNX path.
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { LlamaCppServerProvider } = require('./llamacpp-provider');
-      return new LlamaCppServerProvider({ model: cfg.model, dimensions: cfg.dimensions, llamacpp: cfg.llamacpp });
+      return new LlamaCppServerProvider({
+        model: cfg.model,
+        dimensions: cfg.dimensions,
+        // threads lives at top level in EmbeddingProviderConfig; llamacpp.threads wins.
+        llamacpp: { ...(cfg.llamacpp ?? {}), threads: cfg.llamacpp?.threads ?? cfg.threads },
+      });
     }
     return new LocalEmbeddingProvider(cfg);
   }

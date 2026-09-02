@@ -28,7 +28,12 @@ export interface LlamaCppConfig {
   port?: number;
   /** llama-server -t (default 2: background service must not hog cores). */
   threads?: number;
-  /** -c context size; small on purpose (default 2048 caused 4.2GB RSS in tests). */
+  /** -c context size (default 2048). llama-server REJECTS (HTTP 400) any
+   *  single input longer than the context — EmbeddingIndexer.documentText
+   *  caps at 2000 chars (~1200 tokens worst-case CJK), so 512 silently
+   *  drops long memories from the dense channel. 2048 covers the cap with
+   *  margin; larger values inflate RSS (KV + compute buffers scale with it).
+   *  The 400-retry truncation in embed() is the final safety net. */
   contextSize?: number;
   /** 'cpu' (default) | 'vulkan' — selects the binary variant to download/run. */
   gpu?: string;
@@ -185,14 +190,23 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
       const model = await this.ensureModel();
       const port = this.cfg.port && this.cfg.port > 0 ? this.cfg.port : await pickFreePort();
       const threads = Math.max(1, this.cfg.threads ?? 2);
-      const ctxSize = Math.max(256, this.cfg.contextSize ?? 512);
+      const ctxSize = Math.max(256, this.cfg.contextSize ?? 2048);
       const spawnFn = this.cfg.deps?.spawnFn ?? spawn;
       this.child = spawnFn(exe, [
         '-m', model,
         '--port', String(port),
         '--host', '127.0.0.1',
         '-c', String(ctxSize),
+        // Physical batch must cover one full sequence (embeddings mode splits
+        // nothing across ubatches); keep batch == ctx so the 400 limit above
+        // is the only gate.
+        '-b', String(ctxSize),
+        '-ub', String(ctxSize),
         '-t', String(threads),
+        // Flash attention: mandatory for embedding mode. Without it the
+        // non-causal attention materializes an L×L matrix per head
+        // (4096-ctx RSS ~3GB); with it RSS stays ~880MB at ctx 2048.
+        '-fa', 'on',
         // Embeddings-only server: the prompt cache is write-only for embedding
         // tasks and grows unbounded to --cache-ram (8GB default) — llama.cpp
         // issue #26293. -cram 0 disables it; repeats are our LRU's job.
@@ -246,6 +260,23 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     } catch { /* best effort */ }
   }
 
+  private async postEmbeddings(fetchFn: typeof fetch, baseUrl: string, inputs: string[]): Promise<any> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const resp = await fetchFn(`${baseUrl}/v1/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: inputs }),
+        signal: controller.signal,
+      } as any);
+      if (!resp.ok) throw new Error(`llama-server embeddings HTTP ${resp.status}`);
+      return await resp.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // ── EmbeddingProvider ────────────────────────────────────────────────────
 
   async embed(texts: string[], kind: EmbeddingKind): Promise<number[][]> {
@@ -257,21 +288,15 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     const baseUrl = await this.ensureServer();
     const inputs = texts.map(t => (kind === 'query' ? buildQueryInput(t) : t));
     const fetchFn = this.cfg.deps?.fetchFn ?? globalThis.fetch.bind(globalThis);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    let data: any;
-    try {
-      const resp = await fetchFn(`${baseUrl}/v1/embeddings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: inputs }),
-        signal: controller.signal,
-      } as any);
-      if (!resp.ok) throw new Error(`llama-server embeddings HTTP ${resp.status}`);
-      data = await resp.json();
-    } finally {
-      clearTimeout(timer);
-    }
+    const data = await this.postEmbeddings(fetchFn, baseUrl, inputs)
+      // llama-server 400s when a single input exceeds -c. Truncate to a safe
+      // budget (~2 chars/token worst case) and retry once rather than dropping
+      // the batch from the dense channel entirely.
+      .catch(async (err: any) => {
+        if (!/HTTP 400/.test(err?.message || '')) throw err;
+        log.warn('[LlamaCpp] input rejected (too long) — retrying with 1500-char truncation');
+        return this.postEmbeddings(fetchFn, baseUrl, inputs.map(t => t.slice(0, 1500)));
+      });
     const rows: Array<{ index: number; embedding: number[] }> = data?.data || [];
     const byIndex = new Map<number, number[]>();
     for (const r of rows) byIndex.set(r.index, r.embedding);
