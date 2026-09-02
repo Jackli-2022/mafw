@@ -305,7 +305,7 @@ function defaults(projectDir: string): GatewayConfig {
         llamacpp: {
           port: 0,
           threads: 2,
-          contextSize: 512,
+          contextSize: 2048,
           gpu: 'cpu',
           modelFile: '',
           binaryVersion: 'b10752',
