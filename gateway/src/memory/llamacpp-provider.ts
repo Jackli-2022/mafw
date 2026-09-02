@@ -35,7 +35,9 @@ export interface LlamaCppConfig {
    *  margin; larger values inflate RSS (KV + compute buffers scale with it).
    *  The 400-retry truncation in embed() is the final safety net. */
   contextSize?: number;
-  /** 'cpu' (default) | 'vulkan' — selects the binary variant to download/run. */
+  /** 'cpu' (default) | 'vulkan' | 'cuda' — selects the binary variant.
+   *  GPU variants get -ngl 99 (full layer offload). cuda needs an NVIDIA GPU
+   *  and downloads the cudart companion zip (~615MB total on win-x64). */
   gpu?: string;
   /** GGUF path, or 'hf:<repo>:<filename>' (downloaded from HF_ENDPOINT mirror). */
   modelFile?: string;
@@ -61,18 +63,33 @@ function platformKey(): string {
   return 'linux';
 }
 
-function assetName(variant: 'cpu' | 'vulkan', version: string): { file: string; exe: string } | null {
+export type LlamaCppVariant = 'cpu' | 'vulkan' | 'cuda';
+
+/** Assets to download per variant (cuda needs the cudart companion zip). */
+function assetNames(variant: LlamaCppVariant, version: string): { files: string[]; exe: string } | null {
   const p = platformKey();
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
   if (p === 'win') {
+    if (arch !== 'x64' && variant !== 'cpu') return null; // GPU variants: x64 only
+    if (variant === 'cuda') {
+      return {
+        files: [
+          `llama-${version}-bin-win-cuda-12.4-x64.zip`,
+          `cudart-llama-bin-win-cuda-12.4-x64.zip`,
+        ],
+        exe: 'llama-server.exe',
+      };
+    }
     const v = variant === 'vulkan' ? 'vulkan-x64' : arch === 'arm64' ? 'cpu-arm64' : 'cpu-x64';
-    return { file: `llama-${version}-bin-win-${v}.zip`, exe: 'llama-server.exe' };
+    return { files: [`llama-${version}-bin-win-${v}.zip`], exe: 'llama-server.exe' };
   }
   if (p === 'mac') {
-    return { file: `llama-${version}-bin-macos-arm64.zip`, exe: 'llama-server' };
+    // Metal is built into the macOS binary — no separate variant needed.
+    return { files: [`llama-${version}-bin-macos-arm64.zip`], exe: 'llama-server' };
   }
   if (p === 'linux') {
-    return { file: `llama-${version}-bin-ubuntu-x64.zip`, exe: 'llama-server' };
+    if (variant === 'vulkan') return { files: [`llama-${version}-bin-ubuntu-vulkan-x64.zip`], exe: 'llama-server' };
+    return { files: [`llama-${version}-bin-ubuntu-x64.zip`], exe: 'llama-server' };
   }
   return null;
 }
@@ -116,49 +133,55 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
     return this.cfg.deps?.modelDir ?? path.join(os.homedir(), '.mafw', 'models', 'gguf');
   }
 
-  private variant(): 'cpu' | 'vulkan' {
-    return this.cfg.gpu === 'vulkan' ? 'vulkan' : 'cpu';
+  private variant(): LlamaCppVariant {
+    if (this.cfg.gpu === 'vulkan') return 'vulkan';
+    if (this.cfg.gpu === 'cuda') return 'cuda';
+    return 'cpu';
   }
 
   private async ensureBinary(): Promise<string> {
     const version = this.cfg.binaryVersion || DEFAULT_BINARY_VERSION;
-    const asset = assetName(this.variant(), version);
-    if (!asset) throw new Error(`llama.cpp binary: unsupported platform ${process.platform}`);
+    const asset = assetNames(this.variant(), version);
+    if (!asset) throw new Error(`llama.cpp binary: unsupported platform ${process.platform}/${process.arch}/${this.variant()}`);
     const dir = path.join(this.binDir(), version, this.variant());
     const exe = path.join(dir, asset.exe);
     if (fs.existsSync(exe)) return exe;
 
     fs.mkdirSync(dir, { recursive: true });
-    const zipPath = path.join(dir, asset.file);
-    const rel = `ggml-org/llama.cpp/releases/download/${version}/${asset.file}`;
-    const mirrors = [
-      `https://github.com/${rel}`,
-      `https://ghfast.top/https://github.com/${rel}`,
-      `https://gh-proxy.com/https://github.com/${rel}`,
-    ];
     const fetchFn = this.cfg.deps?.fetchFn ?? globalThis.fetch.bind(globalThis);
-    let lastErr: any = null;
-    for (const url of mirrors) {
-      try {
-        log.info(`[LlamaCpp] downloading binary: ${url}`);
-        const resp = await fetchFn(url, { redirect: 'follow' } as any);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        fs.writeFileSync(zipPath, Buffer.from(await resp.arrayBuffer()));
-        // tar.exe (bsdtar) ships with Windows 10+ and handles zip; tar on unix too.
-        await new Promise<void>((resolve, reject) => {
-          const tar = spawn('tar', ['-xf', zipPath, '-C', dir], { windowsHide: true });
-          tar.on('exit', code => (code === 0 ? resolve() : reject(new Error(`tar exit ${code}`))));
-          tar.on('error', reject);
-        });
-        fs.rmSync(zipPath, { force: true });
-        if (!fs.existsSync(exe)) throw new Error(`binary missing after extract: ${exe}`);
-        return exe;
-      } catch (err: any) {
-        lastErr = err;
-        log.warn(`[LlamaCpp] binary download failed via ${url}: ${err?.message || err}`);
+    for (const file of asset.files) {
+      const zipPath = path.join(dir, file);
+      const rel = `ggml-org/llama.cpp/releases/download/${version}/${file}`;
+      const mirrors = [
+        `https://github.com/${rel}`,
+        `https://ghfast.top/https://github.com/${rel}`,
+        `https://gh-proxy.com/https://github.com/${rel}`,
+      ];
+      let lastErr: any = null;
+      for (const url of mirrors) {
+        try {
+          log.info(`[LlamaCpp] downloading binary: ${url}`);
+          const resp = await fetchFn(url, { redirect: 'follow' } as any);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          fs.writeFileSync(zipPath, Buffer.from(await resp.arrayBuffer()));
+          // tar.exe (bsdtar) ships with Windows 10+ and handles zip; tar on unix too.
+          await new Promise<void>((resolve, reject) => {
+            const tar = spawn('tar', ['-xf', zipPath, '-C', dir], { windowsHide: true });
+            tar.on('exit', code => (code === 0 ? resolve() : reject(new Error(`tar exit ${code}`))));
+            tar.on('error', reject);
+          });
+          fs.rmSync(zipPath, { force: true });
+          lastErr = null;
+          break;
+        } catch (err: any) {
+          lastErr = err;
+          log.warn(`[LlamaCpp] binary download failed via ${url}: ${err?.message || err}`);
+        }
       }
+      if (lastErr) throw lastErr;
     }
-    throw lastErr ?? new Error('llama.cpp binary download failed on all mirrors');
+    if (!fs.existsSync(exe)) throw new Error(`binary missing after extract: ${exe}`);
+    return exe;
   }
 
   private async ensureModel(): Promise<string> {
@@ -203,10 +226,10 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         '-b', String(ctxSize),
         '-ub', String(ctxSize),
         '-t', String(threads),
-        // GPU variant (vulkan): offload all layers — without -ngl the vulkan
-        // binary still runs everything on CPU. Measured 12ms/embed vs 65ms
-        // CPU, with ~zero CPU usage.
-        ...(this.variant() === 'vulkan' ? ['-ngl', '99'] : []),
+        // GPU variants (vulkan/cuda): offload all layers — without -ngl the
+        // GPU binary still runs everything on CPU. Measured on RTX 4090
+        // Laptop: vulkan 12ms/embed vs 65ms CPU, ~zero CPU usage.
+        ...(this.variant() === 'cpu' ? [] : ['-ngl', '99']),
         // Flash attention: mandatory for embedding mode. Without it the
         // non-causal attention materializes an L×L matrix per head
         // (4096-ctx RSS ~3GB); with it RSS stays ~880MB at ctx 2048.
