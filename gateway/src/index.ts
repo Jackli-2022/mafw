@@ -1918,7 +1918,10 @@ class MafwScheduler {
     const isHiddenSession = (s: any): boolean => {
       if (s?.parentID) return true;
       const title: string = s?.title || '';
-      if (title.startsWith('# Memory Index') || title.startsWith('{"relevant_ids"')) return true;
+      if (title.startsWith('# Memory Index')) return true;
+      // Worker prompts open with raw JSON / fenced JSON / a "标题：" header —
+      // their session titles are that first line. Hide the whole family.
+      if (title.startsWith('{') || title.startsWith('```') || title.startsWith('标题：')) return true;
       const role = s?.id ? this.internalSessionRoles.get(s.id) : undefined;
       return role === 'index-scan' || role === 'extract' || role === 'reflect';
     };
