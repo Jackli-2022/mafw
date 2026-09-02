@@ -111,6 +111,7 @@ function parseArgs() {
     embeddingModel: flags.get('--embeddingModel'),
     embeddingEngine: flags.get('--embeddingEngine') as 'onnx' | 'llamacpp' | undefined,
     embeddingThreads: flags.get('--embeddingThreads') ? parseInt(flags.get('--embeddingThreads')!, 10) : undefined,
+    embeddingGpu: flags.get('--embeddingGpu'),
     reranker: (flags.get('--reranker') ?? 'off') as 'off' | 'heuristic' | 'cross-encoder',
     recallK: parseInt(flags.get('--recallK') ?? String(config.search.recallK), 10),
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
@@ -340,6 +341,7 @@ async function main() {
         dimensions: args.embeddingProvider === 'local' ? undefined : 1024,
         engine: args.embeddingEngine,
         threads: args.embeddingThreads,
+        llamacpp: args.embeddingGpu ? { gpu: args.embeddingGpu } : undefined,
       })
     : null;
   if (retriever === 'hybrid' && !embeddingProvider) {

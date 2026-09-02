@@ -203,6 +203,10 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         '-b', String(ctxSize),
         '-ub', String(ctxSize),
         '-t', String(threads),
+        // GPU variant (vulkan): offload all layers — without -ngl the vulkan
+        // binary still runs everything on CPU. Measured 12ms/embed vs 65ms
+        // CPU, with ~zero CPU usage.
+        ...(this.variant() === 'vulkan' ? ['-ngl', '99'] : []),
         // Flash attention: mandatory for embedding mode. Without it the
         // non-causal attention materializes an L×L matrix per head
         // (4096-ctx RSS ~3GB); with it RSS stays ~880MB at ctx 2048.
