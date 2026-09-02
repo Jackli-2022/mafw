@@ -42,6 +42,8 @@ export interface EmbeddingProviderConfig {
   authPath?: string;
   credentials?: { getApiKey(provider: string): string | null };
   fetchFn?: typeof fetch;
+  /** Local ONNX intra-op thread cap (default 2). ORT defaults to all cores. */
+  threads?: number;
   /** Test seam: inject a model factory for the local provider (no download). */
   localDeps?: { modelFactory?: (model: string) => Promise<any> };
 }
@@ -218,6 +220,8 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
   dims: number;
   private modelId: string;
   private profile: LocalModelProfile;
+  private threads: number;
+  private queryCache = new Map<string, number[][]>();
   private localDeps?: { modelFactory?: (model: string) => Promise<LocalModelHandle> };
   private handle: LocalModelHandle | null = null;
   private loading: Promise<LocalModelHandle> | null = null;
@@ -227,6 +231,7 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
     this.profile = resolveLocalModelProfile(this.modelId);
     this.name = `local:${this.modelId}`;
     this.dims = cfg.dimensions || this.profile.dims;
+    this.threads = Math.max(1, cfg.threads ?? 2);
     this.localDeps = cfg.localDeps as any;
   }
 
@@ -244,7 +249,14 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
       // default (<package>/.cache) is wiped on every `npm install -g` upgrade.
       mod.env.cacheDir = path.join(os.homedir(), '.mafw', 'models', 'huggingface');
       const tokenizer = await mod.AutoTokenizer.from_pretrained(this.modelId);
-      const model = await mod.AutoModel.from_pretrained(this.modelId, { dtype: 'q8' });
+      // Cap ORT parallelism: onnxruntime-node defaults intraOpNumThreads=0
+      // (all cores) → every 42ms embed spikes CPU to 100%. Document embeds are
+      // fire-and-forget background work, so a 2-core cap trades latency for a
+      // flat CPU profile; search-path queries hit the LRU cache on repeats.
+      const model = await mod.AutoModel.from_pretrained(this.modelId, {
+        dtype: 'q8',
+        session_options: { intraOpNumThreads: this.threads, interOpNumThreads: 1 },
+      });
       this.handle = { tokenizer, model };
       return this.handle;
     })().catch((err: any) => {
@@ -257,6 +269,10 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
 
   async embed(texts: string[], kind: EmbeddingKind): Promise<number[][]> {
     if (texts.length === 0) return [];
+    if (kind === 'query' && texts.length === 1) {
+      const cached = this.queryCache.get(texts[0]);
+      if (cached) return cached;
+    }
     const { tokenizer, model } = await this.ensureHandle();
     const useInstruct = kind === 'query' && this.profile.queryInstruction;
     const inputs = texts.map(t => buildQueryInput(t, { asDocument: !useInstruct }));
@@ -295,6 +311,13 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
       }
       const nrm = Math.sqrt(row.reduce((s, x) => s + x * x, 0)) || 1;
       out.push(row.map(x => x / nrm));
+    }
+    if (kind === 'query' && texts.length === 1) {
+      if (this.queryCache.size >= 256) {
+        const first = this.queryCache.keys().next().value;
+        if (first !== undefined) this.queryCache.delete(first);
+      }
+      this.queryCache.set(texts[0], out);
     }
     return out;
   }

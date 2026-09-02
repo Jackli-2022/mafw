@@ -98,6 +98,9 @@ export interface GatewayConfig {
       minCosine: number;
       /** Enable LLM UPDATE/CREATE consolidation judge (P2). */
       consolidation: boolean;
+      /** ONNX intra-op thread cap for the local provider (default 2 — ORT
+       *  otherwise uses every core, spiking CPU to 100% per embed call). */
+      threads: number;
     };
   };
   llm: {
@@ -285,6 +288,7 @@ function defaults(projectDir: string): GatewayConfig {
         baseUrl: '',
         minCosine: 0.8,
         consolidation: true,
+        threads: 2,
       },
     },
     llm: {

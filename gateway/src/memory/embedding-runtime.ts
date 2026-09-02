@@ -37,7 +37,7 @@ export interface InitEmbeddingRuntimeOptions {
   /** Resolve the embeddable text for an entry id (startup backfill). */
   getTextForId?: (id: string) => Promise<string | null>;
   /** Config override for tests (defaults to config.memory.embedding). */
-  cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string };
+  cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string; threads?: number };
 }
 
 export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): EmbeddingRuntime | null {
@@ -49,6 +49,7 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
       model: cfg.model,
       dimensions: cfg.dimensions,
       baseUrl: cfg.baseUrl || undefined,
+      threads: (cfg as any).threads,
     });
     if (!provider) return null;
 

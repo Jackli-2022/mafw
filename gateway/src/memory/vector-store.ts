@@ -129,6 +129,9 @@ export class EmbeddingIndexer {
   private provider: EmbeddingProvider;
   private getTextForId?: (id: string) => Promise<string | null>;
   private batchSize: number;
+  /** Re-entry guard: backfill and scheduled flushes must not run concurrently
+   *  (two ORT batches at once double the CPU spike the thread cap limits). */
+  private flushing: Promise<{ indexed: number; failed: number }> | null = null;
 
   constructor(deps: EmbeddingIndexerDeps) {
     this.vectors = deps.vectors;
@@ -171,6 +174,12 @@ export class EmbeddingIndexer {
    * channel converges on a later flush/backfill instead of blocking writes.
    */
   async flushQueue(): Promise<{ indexed: number; failed: number }> {
+    if (this.flushing) return this.flushing;
+    this.flushing = this.flushQueueInner().finally(() => { this.flushing = null; });
+    return this.flushing;
+  }
+
+  private async flushQueueInner(): Promise<{ indexed: number; failed: number }> {
     if (this.queue.size === 0) return { indexed: 0, failed: 0 };
     const items = [...this.queue.values()];
     this.queue.clear();

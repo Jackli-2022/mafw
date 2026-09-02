@@ -241,4 +241,58 @@ describe('LocalEmbeddingProvider (no model download in tests)', () => {
     const len = Math.sqrt(vectors[0].reduce((s: number, x: number) => s + x * x, 0));
     expect(len).toBeCloseTo(1, 5);
   });
+
+  test('granite profile: masked mean pooling, no Instruct prefix, dims 384', async () => {
+    const tokenizerInputs: any[] = [];
+    const H = 2;
+    // B=1, L=3; last token padded → mean over tokens 0..1.
+    const mask = [1n, 1n, 0n];
+    const hidden = new Float32Array([1, 3, 5, 7, 99, 99]);
+    const modelFactory = async (_model: string) => ({
+      tokenizer: async (texts: string[]) => {
+        tokenizerInputs.push(texts);
+        return { attention_mask: { dims: [1, 3], data: mask } };
+      },
+      model: async () => ({ last_hidden_state: { dims: [1, 3, H], data: hidden } }),
+    });
+
+    const provider = createEmbeddingProvider({
+      provider: 'local',
+      model: 'onnx-community/granite-embedding-97m-multilingual-r2-ONNX',
+      localDeps: { modelFactory },
+    }) as EmbeddingProvider;
+
+    expect(provider.dims).toBe(384);
+    const vectors = await provider.embed(['some query'], 'query');
+    // No Instruct prefix for granite.
+    expect(tokenizerInputs[0][0]).toBe('some query');
+    // Mean of [1,3] and [5,7] = [3,5], L2-normalized.
+    const nrm = Math.sqrt(3 * 3 + 5 * 5);
+    expect(vectors[0][0]).toBeCloseTo(3 / nrm, 5);
+    expect(vectors[0][1]).toBeCloseTo(5 / nrm, 5);
+  });
+
+  test('local provider caches identical query embeddings', async () => {
+    let modelCalls = 0;
+    const H = 2;
+    const modelFactory = async (_model: string) => ({
+      tokenizer: async () => ({ attention_mask: { dims: [1, 1], data: [1n] } }),
+      model: async () => {
+        modelCalls++;
+        return { last_hidden_state: { dims: [1, 1, H], data: new Float32Array([1, 0]) } };
+      },
+    });
+    const provider = createEmbeddingProvider({
+      provider: 'local',
+      model: 'onnx-community/Qwen3-Embedding-0.6B-ONNX',
+      localDeps: { modelFactory },
+    }) as EmbeddingProvider;
+
+    await provider.embed(['repeat me'], 'query');
+    await provider.embed(['repeat me'], 'query');
+    expect(modelCalls).toBe(1);
+    // Document kind is never served from the query cache.
+    await provider.embed(['repeat me'], 'document');
+    expect(modelCalls).toBe(2);
+  });
 });
