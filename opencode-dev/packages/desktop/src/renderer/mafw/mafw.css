@@ -223,6 +223,9 @@ html[data-theme="light"] .mafw-shell {
 .mafw-rail-switcher-menu { max-height: 320px; overflow-y: auto; }
 .mafw-rail-collapse { width: 24px; height: 24px; flex-shrink: 0; border: none; background: transparent; color: var(--text-3); border-radius: 4px; cursor: pointer; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center; }
 .mafw-rail-collapse:hover { background: var(--hover); color: var(--text-1); }
+.mafw-rail-search-toggle { flex-shrink: 0; opacity: .75; }
+.mafw-rail-search-toggle:hover { opacity: 1; }
+.mafw-rail-search-toggle[data-size="small"] { min-height: 24px; height: 24px; padding: 0; }
 /* ── New session + search ── */
 .mafw-rail-new { padding: 8px 8px 0; flex-shrink: 0; }
 .mafw-rail-new-btn { width: 100%; height: 28px; display: flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 0 9px; border: 1px solid var(--border-subtle); background: transparent; color: var(--text-2); border-radius: 4px; font-size: 13px; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }

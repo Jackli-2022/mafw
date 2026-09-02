@@ -3,6 +3,7 @@ import { createSignal, createEffect, createMemo, For, Show, onMount, onCleanup }
 import { Icon } from "@opencode-ai/ui/icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
@@ -63,6 +64,7 @@ export function Rail(props: Props) {
   const [currentProject, setCurrentProject] = createSignal<any>(null)
   const [gwStatus, setGwStatus] = createSignal<any>(null)
   const [query, setQuery] = createSignal("")
+  const [searchOpen, setSearchOpen] = createSignal(false)
   const [limit, setLimit] = createSignal(PAGE)
   const [hi, setHi] = createSignal(-1)
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
@@ -130,7 +132,7 @@ export function Rail(props: Props) {
     else if (e.key === "Enter") {
       const s = list[hi()]
       if (s) { props.onSelectSession(s.id, s.title, false); setQuery(""); setHi(-1) }
-    } else if (e.key === "Escape") { setQuery(""); setHi(-1) }
+    } else if (e.key === "Escape") { setQuery(""); setHi(-1); setSearchOpen(false) }
   }
 
   // Ctrl/Cmd+K focuses search.
@@ -138,7 +140,8 @@ export function Rail(props: Props) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
-        searchRef?.querySelector("input")?.focus()
+        setSearchOpen(true)
+        setTimeout(() => searchRef?.querySelector("input")?.focus(), 0)
       }
     }
     window.addEventListener("keydown", onKey)
@@ -281,28 +284,42 @@ export function Rail(props: Props) {
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu>
+        <TooltipV2 value="Search  Ctrl+K" openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            icon="magnifying-glass"
+            aria-label="搜索会话"
+            onClick={() => setSearchOpen(v => !v)}
+            class="mafw-rail-search-toggle"
+          />
+        </TooltipV2>
         <button class="mafw-rail-collapse" onClick={() => props.onToggleCollapsed?.()} aria-label="折叠侧边栏">
           <Icon name="chevron-left" size="small" />
         </button>
       </div>
+
+      <Show when={searchOpen()}>
+        <div class="mafw-rail-search" ref={searchRef}>
+          <TextInputV2
+            value={query()}
+            onInput={e => { setQuery(e.currentTarget.value); setHi(-1) }}
+            onKeyDown={onSearchKeyDown}
+            onBlur={e => { if (!query().trim()) setSearchOpen(false) }}
+            onClearClick={() => { setQuery(""); setHi(-1) }}
+            leadingIcon={<Icon name="magnifying-glass" size="small" />}
+            showClearButton={query().length > 0}
+            placeholder="Search chats…"
+            autoFocus
+          />
+        </div>
+      </Show>
 
       <div class="mafw-rail-new">
         <button class="mafw-rail-new-btn" onClick={newSession}>
           <Icon name="plus-small" size="small" />
           <span>New session</span>
         </button>
-      </div>
-
-      <div class="mafw-rail-search" ref={searchRef}>
-        <TextInputV2
-          value={query()}
-          onInput={e => { setQuery(e.currentTarget.value); setHi(-1) }}
-          onKeyDown={onSearchKeyDown}
-          onClearClick={() => { setQuery(""); setHi(-1) }}
-          leadingIcon={<Icon name="magnifying-glass" size="small" />}
-          showClearButton={query().length > 0}
-          placeholder="Search chats…"
-        />
       </div>
 
       {/* Scroll area: fixed date groups, infinite scroll, search results */}
