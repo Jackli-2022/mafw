@@ -182,7 +182,31 @@ function apiKeyOf(key: string | null): string {
   return key ?? '';
 }
 
-// ── Local ONNX (Qwen3-Embedding via @huggingface/transformers) ──────────────
+// ── Local ONNX (@huggingface/transformers) ──────────────────────────────────
+
+// Per-model inference recipe. Pooling and query-prefix conventions differ per
+// model family: Qwen3-Embedding uses last-token pooling + an Instruct prefix,
+// IBM granite uses mean pooling with no prefix, E5 needs query:/passage:.
+export interface LocalModelProfile {
+  pooling: 'last-token' | 'mean';
+  dims: number;
+  /** Prepend the Qwen3-style Instruct task prefix to query inputs. */
+  queryInstruction: boolean;
+}
+
+const LOCAL_MODEL_PROFILES: Array<{ match: string; profile: LocalModelProfile }> = [
+  { match: 'granite-embedding', profile: { pooling: 'mean', dims: 384, queryInstruction: false } },
+  { match: 'Qwen3-Embedding-0.6B', profile: { pooling: 'last-token', dims: 1024, queryInstruction: true } },
+];
+
+const DEFAULT_LOCAL_PROFILE: LocalModelProfile = { pooling: 'last-token', dims: 1024, queryInstruction: true };
+
+export function resolveLocalModelProfile(modelId: string): LocalModelProfile {
+  for (const { match, profile } of LOCAL_MODEL_PROFILES) {
+    if (modelId.includes(match)) return profile;
+  }
+  return DEFAULT_LOCAL_PROFILE;
+}
 
 export interface LocalModelHandle {
   tokenizer: (texts: string[], opts?: any) => Promise<any> | any;
@@ -193,14 +217,16 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
   name: string;
   dims: number;
   private modelId: string;
+  private profile: LocalModelProfile;
   private localDeps?: { modelFactory?: (model: string) => Promise<LocalModelHandle> };
   private handle: LocalModelHandle | null = null;
   private loading: Promise<LocalModelHandle> | null = null;
 
   constructor(cfg: EmbeddingProviderConfig) {
-    this.name = `local:${cfg.model || 'onnx-community/Qwen3-Embedding-0.6B-ONNX'}`;
-    this.dims = cfg.dimensions || 1024;
     this.modelId = cfg.model || 'onnx-community/Qwen3-Embedding-0.6B-ONNX';
+    this.profile = resolveLocalModelProfile(this.modelId);
+    this.name = `local:${this.modelId}`;
+    this.dims = cfg.dimensions || this.profile.dims;
     this.localDeps = cfg.localDeps as any;
   }
 
@@ -232,7 +258,8 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
   async embed(texts: string[], kind: EmbeddingKind): Promise<number[][]> {
     if (texts.length === 0) return [];
     const { tokenizer, model } = await this.ensureHandle();
-    const inputs = texts.map(t => (kind === 'query' ? buildQueryInput(t) : buildQueryInput(t, { asDocument: true })));
+    const useInstruct = kind === 'query' && this.profile.queryInstruction;
+    const inputs = texts.map(t => buildQueryInput(t, { asDocument: !useInstruct }));
     const tokenized = await tokenizer(inputs, { padding: true, truncation: true });
     const output = await model(tokenized);
     const lhs = output.last_hidden_state;
@@ -243,16 +270,29 @@ class LocalEmbeddingProvider implements EmbeddingProvider {
     const mask: ArrayLike<bigint | number> = tokenized.attention_mask?.data ?? [];
     const out: number[][] = [];
     for (let b = 0; b < B; b++) {
-      // Last non-pad token (Qwen3-Embedding uses last-token pooling).
-      let lastIdx = L - 1;
-      if (mask.length >= (b + 1) * L) {
-        lastIdx = 0;
+      const row = new Array<number>(H).fill(0);
+      if (this.profile.pooling === 'mean' && mask.length >= (b + 1) * L) {
+        // Masked mean pooling (granite/E5 family).
+        let count = 0;
         for (let t = 0; t < L; t++) {
-          if (Number(mask[b * L + t]) === 1) lastIdx = t;
+          if (Number(mask[b * L + t]) !== 1) continue;
+          const offset = (b * L + t) * H;
+          for (let h = 0; h < H; h++) row[h] += Number(lhs.data[offset + h]);
+          count++;
         }
+        if (count > 0) for (let h = 0; h < H; h++) row[h] /= count;
+      } else {
+        // Last non-pad token (Qwen3-Embedding uses last-token pooling).
+        let lastIdx = L - 1;
+        if (mask.length >= (b + 1) * L) {
+          lastIdx = 0;
+          for (let t = 0; t < L; t++) {
+            if (Number(mask[b * L + t]) === 1) lastIdx = t;
+          }
+        }
+        const offset = (b * L + lastIdx) * H;
+        for (let h = 0; h < H; h++) row[h] = Number(lhs.data[offset + h]);
       }
-      const offset = (b * L + lastIdx) * H;
-      const row = Array.from(lhs.data.subarray(offset, offset + H) as Float32Array);
       const nrm = Math.sqrt(row.reduce((s, x) => s + x * x, 0)) || 1;
       out.push(row.map(x => x / nrm));
     }
