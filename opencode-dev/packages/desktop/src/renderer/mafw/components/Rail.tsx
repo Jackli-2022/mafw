@@ -8,6 +8,7 @@ import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
 import { UsagePill } from "./UsagePill"
+import { ManagerCard } from "./ManagerCard"
 import { sessionStore } from "../session-store"
 
 const copyText = async (text: string) => {
@@ -315,6 +316,13 @@ export function Rail(props: Props) {
         </div>
       </Show>
 
+      <ManagerCard
+        managerSessionId={props.managerSessionId ?? null}
+        managerUpdatedAt={managerRow()?.time?.updated}
+        online={gwReady()}
+        onSelectSession={props.onSelectSession}
+      />
+
       <div class="mafw-rail-new">
         <button class="mafw-rail-new-btn" onClick={newSession}>
           <Icon name="plus-small" size="small" />
@@ -354,16 +362,6 @@ export function Rail(props: Props) {
 
       {/* Pinned bottom area — never scrolls with the list */}
       <div class="mafw-rail-fixed">
-        <Show when={managerRow()}>
-          <div
-            class="mafw-rail-manager-row"
-            classList={{ active: props.activeSessionId === managerRow()!.id }}
-            onClick={() => props.onSelectSession(managerRow()!.id, "Manager", true)}
-          >
-            <span class="mafw-rail-session-title">Manager</span>
-            <span class="mafw-rail-manager-dot" />
-          </div>
-        </Show>
         <div class="mafw-rail-footer">
           <UsagePill onClick={() => props.onOpenUsage?.()} />
           <div class="mafw-rail-settings-bar" onClick={() => props.onSettings?.()}>
