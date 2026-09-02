@@ -101,6 +101,18 @@ export interface GatewayConfig {
       /** ONNX intra-op thread cap for the local provider (default 2 — ORT
        *  otherwise uses every core, spiking CPU to 100% per embed call). */
       threads: number;
+      /** Local engine: 'onnx' (transformers.js in-process) | 'llamacpp'
+       *  (llama-server sidecar; lower RSS, native speed, GPU-switchable). */
+      engine: 'onnx' | 'llamacpp';
+      /** llama-server sidecar options (engine='llamacpp'). */
+      llamacpp: {
+        port: number;
+        threads: number;
+        contextSize: number;
+        gpu: string;
+        modelFile: string;
+        binaryVersion: string;
+      };
     };
   };
   llm: {
@@ -289,6 +301,15 @@ function defaults(projectDir: string): GatewayConfig {
         minCosine: 0.8,
         consolidation: true,
         threads: 2,
+        engine: 'onnx',
+        llamacpp: {
+          port: 0,
+          threads: 2,
+          contextSize: 512,
+          gpu: 'cpu',
+          modelFile: '',
+          binaryVersion: 'b10752',
+        },
       },
     },
     llm: {

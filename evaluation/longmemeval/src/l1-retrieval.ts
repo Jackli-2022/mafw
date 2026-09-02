@@ -109,6 +109,7 @@ function parseArgs() {
     retriever: flags.get('--retriever') ?? 'token',
     embeddingProvider: (flags.get('--embeddingProvider') ?? 'off') as 'off' | 'local' | 'dashscope',
     embeddingModel: flags.get('--embeddingModel'),
+    embeddingEngine: flags.get('--embeddingEngine') as 'onnx' | 'llamacpp' | undefined,
     reranker: (flags.get('--reranker') ?? 'off') as 'off' | 'heuristic' | 'cross-encoder',
     recallK: parseInt(flags.get('--recallK') ?? String(config.search.recallK), 10),
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
@@ -336,6 +337,7 @@ async function main() {
         model: args.embeddingModel
           ?? (args.embeddingProvider === 'local' ? 'onnx-community/Qwen3-Embedding-0.6B-ONNX' : 'text-embedding-v4'),
         dimensions: args.embeddingProvider === 'local' ? undefined : 1024,
+        engine: args.embeddingEngine,
       })
     : null;
   if (retriever === 'hybrid' && !embeddingProvider) {

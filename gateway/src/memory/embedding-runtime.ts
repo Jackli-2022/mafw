@@ -37,7 +37,7 @@ export interface InitEmbeddingRuntimeOptions {
   /** Resolve the embeddable text for an entry id (startup backfill). */
   getTextForId?: (id: string) => Promise<string | null>;
   /** Config override for tests (defaults to config.memory.embedding). */
-  cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string; threads?: number };
+  cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string; threads?: number; engine?: 'onnx' | 'llamacpp'; llamacpp?: any };
 }
 
 export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): EmbeddingRuntime | null {
@@ -50,13 +50,18 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
       dimensions: cfg.dimensions,
       baseUrl: cfg.baseUrl || undefined,
       threads: (cfg as any).threads,
+      engine: (cfg as any).engine,
+      llamacpp: (cfg as any).llamacpp,
     });
     if (!provider) return null;
 
-    const modelTag = (cfg.model || 'default').replace(/[^a-zA-Z0-9._-]/g, '_');
+    // Tag the vector file by provider identity (engine + model), not just the
+    // config model id: ONNX-q8 and GGUF-Q4 embeddings of the same model are
+    // numerically different and must not share a vector store.
+    const modelTag = provider.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const vectors = new MemoryVectorStore(
       path.join(opts.baseDir, 'memory', `vectors-${modelTag}.json`),
-      cfg.dimensions || 1024,
+      cfg.dimensions || provider.dims,
       cfg.model,
     );
 

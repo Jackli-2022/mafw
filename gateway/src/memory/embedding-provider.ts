@@ -44,6 +44,10 @@ export interface EmbeddingProviderConfig {
   fetchFn?: typeof fetch;
   /** Local ONNX intra-op thread cap (default 2). ORT defaults to all cores. */
   threads?: number;
+  /** Local engine: 'onnx' (transformers.js, default) | 'llamacpp' (llama-server sidecar). */
+  engine?: 'onnx' | 'llamacpp';
+  /** llama-server sidecar options (engine='llamacpp'). */
+  llamacpp?: import('./llamacpp-provider').LlamaCppConfig;
   /** Test seam: inject a model factory for the local provider (no download). */
   localDeps?: { modelFactory?: (model: string) => Promise<any> };
 }
@@ -74,6 +78,14 @@ export function createEmbeddingProvider(cfg: EmbeddingProviderConfig): Embedding
     return new DashScopeEmbeddingProvider(cfg);
   }
   if (cfg.provider === 'local') {
+    if (cfg.engine === 'llamacpp') {
+      // Runtime import: breaks the module cycle (llamacpp-provider imports
+      // buildQueryInput from this module) and keeps the sidecar code out of
+      // the ONNX path.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { LlamaCppServerProvider } = require('./llamacpp-provider');
+      return new LlamaCppServerProvider({ model: cfg.model, dimensions: cfg.dimensions, llamacpp: cfg.llamacpp });
+    }
     return new LocalEmbeddingProvider(cfg);
   }
   return null;
