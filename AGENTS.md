@@ -62,7 +62,8 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 
 `memory.embedding.provider`（默认 `off`；`local` = ONNX Qwen3-Embedding-0.6B / `dashscope` = text-embedding-v4 compatible-mode）：
 
-- **EmbeddingRuntime**（`gateway/src/memory/embedding-runtime.ts`）：进程单例（provider + `MemoryVectorStore` + `EmbeddingIndexer`）。向量文件 `~/.mafw/memory/vectors-<model>.json`；写路径 fire-and-forget 嵌入（2s 防抖批量 flush，失败丢弃不阻塞）
+- **EmbeddingRuntime**（`gateway/src/memory/embedding-runtime.ts`）：进程单例（provider + `MemoryVectorStore` + `EmbeddingIndexer`）。向量文件 `~/.mafw/memory/vectors-<model>.json`（按 provider.name 打标签，GGUF 与 ONNX 嵌入不共享）；写路径 fire-and-forget 嵌入（2s 防抖批量 flush，失败丢弃不阻塞）
+- **本地引擎双实现**（`memory.embedding.engine`）：`onnx`（transformers.js 进程内，`threads` 线程帽默认 2）/ `llamacpp`（`llamacpp-provider.ts`：llama-server sidecar 子进程，官方二进制自动下载含 ghfast.top 镜像回退，`gpu: cpu|vulkan|cuda` 变体切换、GPU 变体自动 `-ngl 99`）。**llama-server embedding 必备旗标**（踩坑实证）：`-fa on`（否则非因果注意力物化 L² 矩阵，ctx4096 时 RSS 3GB）、`-np 1 --no-warmup`（否则 np=auto 多槽 KV + warmup 全量缓冲 → 2.8GB）、`-cram 0`（prompt cache 对 embedding 任务只写不读涨到 8GB 上限，llama.cpp #26293）、`-c/-b/-ub ≥ 文本 token 上限`（超长输入 HTTP 400 被静默丢弃会拖垮 dense 通道，provider 有 400→截断重试兜底）
 - **检索**：`computeDenseScores(query)` → `searchScored({denseScores})` → RRF 融合；`mafw_search_hybrid` 的 `retriever:'hybrid'` 与 `/api/memory/search?retriever=hybrid` 已接线；boundary recall 同步路径**不**嵌查询（100ms 契约）
 - **ConsolidationService**（`gateway/src/memory/consolidation-service.ts`）：写入后 cosine≥0.8 候选召回 → worker 模型 LLM 判 UPDATE/CREATE（Memora 式）；UPDATE 合入新条目 + soft-supersede 旧条目 + 删除旧向量；裁判不可达时 skip（fail-open）；`GET /api/memory/stats` 暴露 update ratio（健康区间 ~16-22%）
 
