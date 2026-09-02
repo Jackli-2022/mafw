@@ -207,6 +207,11 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         // non-causal attention materializes an L×L matrix per head
         // (4096-ctx RSS ~3GB); with it RSS stays ~880MB at ctx 2048.
         '-fa', 'on',
+        // One slot: this is a single-client background service. np=auto and
+        // the default warmup each allocate per-slot KV + max-size compute
+        // buffers (observed 2.8GB); np 1 + no-warmup holds load RSS ~925MB.
+        '-np', '1',
+        '--no-warmup',
         // Embeddings-only server: the prompt cache is write-only for embedding
         // tasks and grows unbounded to --cache-ram (8GB default) — llama.cpp
         // issue #26293. -cram 0 disables it; repeats are our LRU's job.
