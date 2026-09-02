@@ -193,6 +193,10 @@ export class LlamaCppServerProvider implements EmbeddingProvider {
         '--host', '127.0.0.1',
         '-c', String(ctxSize),
         '-t', String(threads),
+        // Embeddings-only server: the prompt cache is write-only for embedding
+        // tasks and grows unbounded to --cache-ram (8GB default) — llama.cpp
+        // issue #26293. -cram 0 disables it; repeats are our LRU's job.
+        '-cram', '0',
         '--embeddings',
         '--log-disable',
       ], { windowsHide: true, stdio: 'ignore' });
