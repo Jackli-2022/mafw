@@ -1,6 +1,6 @@
-// /api/recall/context search + filter. The sync path is BM25 + expansion only
+﻿// /api/recall/context search + filter. The sync path is BM25 + expansion only
 // (<50ms). Index-scan results join via *precomputed snapshots* (async prefetch)
-// merged by mergeScanResults() — never awaited inline.
+// merged by mergeScanResults() 鈥?never awaited inline.
 import type { HarmonicIndexManager } from '../core/memory/harmonic-index'
 import type { ScanResult } from './index-scan'
 import { config } from '../config'
@@ -116,38 +116,35 @@ function extractQueryEntities(query: string): string[] {
  * cross-session topic links that BM25 might miss.
  */
 function expandQuery(
-  index: Pick<HarmonicIndexManager, 'search'>,
+  index: any,
   query: string,
   pushed: Set<string>,
   topK: number = 3,
 ): { id: string; score: number }[] {
   const expandedScores = new Map<string, number>();
-  
+  const accumulate = (hits: Array<{ entry: any; score: number }>, weight: number) => {
+    const norms = maxNormalize(hits.map(h => h.score));
+    hits.forEach((h, i) => {
+      if (pushed.has(h.entry.id) || h.entry.superseded_by) return;
+      const existing = expandedScores.get(h.entry.id) || 0;
+      expandedScores.set(h.entry.id, existing + norms[i] * weight);
+    });
+  };
+
   // Strategy 1: entity-based expansion (individual entity searches)
   const entities = extractQueryEntities(query);
   for (const entity of entities) {
-    const hits = (index.search(entity, topK, {}) || []) as any[];
-    for (const hit of hits) {
-      if (pushed.has(hit.id)) continue;
-      if ((hit as any).superseded_by) continue;
-      const existing = expandedScores.get(hit.id) || 0;
-      expandedScores.set(hit.id, existing + (hit.energy || 0) * 0.5);
-    }
+    const hits = fetchScored(index, entity, topK, {});
+    accumulate(hits, 0.4);
   }
-  
+
   // Strategy 2: multi-hop decomposition (sub-query searches)
   const subQueries = decomposeMultiHopQuery(query);
   for (const sq of subQueries) {
-    const hits = (index.search(sq, topK, {}) || []) as any[];
-    for (const hit of hits) {
-      if (pushed.has(hit.id)) continue;
-      if ((hit as any).superseded_by) continue;
-      const existing = expandedScores.get(hit.id) || 0;
-      // Sub-query hits get a slightly lower weight than entity hits
-      expandedScores.set(hit.id, existing + (hit.energy || 0) * 0.35);
-    }
+    const hits = fetchScored(index, sq, topK, {});
+    accumulate(hits, 0.35);
   }
-  
+
   // Sort by accumulated score
   return [...expandedScores.entries()]
     .map(([id, score]) => ({ id, score }))
@@ -160,11 +157,15 @@ export interface RecallMemory {
   primary_abstraction: string
   memory_value: string
   energy: number
-  /** Composite score for ranking: energy + scan boost (0.3 for scan-only entries). */
+  /**
+   * Composite ranking score: normalized BM25 (candidate-set min-max) 脳 blob
+   * penalty, plus fixed boosts for scan/graph/expansion evidence. energy is
+   * NOT a base 鈥?it already multiplies inside searchScored.
+   */
   score: number
   type?: string
   created_at?: string
-  /** Source: 'bm25', 'scan', or 'both' (appeared in both retrievers). */
+  /** Source: 'bm25', 'expansion', 'scan', 'scan+graph', or 'both'. */
   source?: string
 }
 
@@ -174,14 +175,44 @@ export interface SearchRecallOptions {
   scanSnapshot?: ScanResult | null
 }
 
+/** Multi-topic blob abstraction (chained MinHash merges) 鈥?dilutes precision. */
+export function blobPenalty(abstraction: string | undefined): number {
+  const segs = (abstraction || '').split('|').map(s => s.trim()).filter(Boolean).length
+  return segs >= 4 ? 0.5 : 1
+}
+
+/**
+ * Max-normalize scores to [0,1] (score/max). Deliberately NOT min-max: min-max
+ * stretches the weakest candidate to 0, which makes any multiplicative penalty
+ * unable to flip order among few candidates and exaggerates raw-score gaps.
+ */
+function maxNormalize(values: number[]): number[] {
+  if (values.length === 0) return []
+  const max = Math.max(...values)
+  if (max <= 0) return values.map(() => 0)
+  return values.map(v => v / max)
+}
+
+/** Fetch scored candidates preferring searchScored (raw scores) with a legacy search() fallback. */
+function fetchScored(index: any, query: string, topK: number, options: SearchRecallOptions): Array<{ entry: any; score: number }> {
+  if (typeof index.searchScored === 'function') {
+    return index.searchScored(query, topK, { retriever: options.retriever ?? 'bm25' }) || []
+  }
+  return (index.search(query, topK, options) || []).map((e: any) => ({ entry: e, score: 0.5 }))
+}
+
 /**
  * Search recall memories using BM25 + query expansion. This is the *sync*
  * recall path (<50ms): the plugin-side client aborts after 100ms, so the
- * index scan must never be awaited here — its results arrive via async
+ * index scan must never be awaited here 鈥?its results arrive via async
  * prefetch snapshots merged by mergeScanResults() instead.
+ *
+ * Scoring: candidate-set-normalized BM25 脳 blob penalty as the base; expansion
+ * hits add norm 脳 0.4 per entity; scan direct/graph hits get fixed boosts
+ * (0.35 / 0.2). energy no longer doubles as the score.
  */
 export async function searchRecallMemories(
-  index: Pick<HarmonicIndexManager, 'search'> | undefined,
+  index: any,
   query: string,
   pushed: Set<string>,
   topK: number = 3,
@@ -189,52 +220,53 @@ export async function searchRecallMemories(
 ): Promise<RecallMemory[]> {
   if (!index) return []
 
-  const bm25Results = (index.search(query, topK * 2, options) || [])
-    .filter((e: any) => !pushed.has(e.id))
-    .filter((e: any) => !e.superseded_by)
+  const scored = fetchScored(index, query, topK * 2, options)
+    .filter((s: any) => s.entry && !pushed.has(s.entry.id) && !s.entry.superseded_by)
+  const norms = maxNormalize(scored.map((s: any) => s.score))
 
-  // Build result map (BM25 first — they win on conflict)
   const resultMap = new Map<string, RecallMemory>()
-  for (const e of bm25Results) {
-    resultMap.set(e.id, {
-      id: e.id,
-      primary_abstraction: e.primary_abstraction || '',
-      memory_value: (e as any).memory_value || (e as any).content || '',
-      energy: e.energy || 0,
-      score: e.energy || 0,
-      type: e.type,
-      created_at: e.created_at,
+  scored.forEach((s: any, i: number) => {
+    resultMap.set(s.entry.id, {
+      id: s.entry.id,
+      primary_abstraction: s.entry.primary_abstraction || '',
+      memory_value: s.entry.memory_value || s.entry.content || '',
+      energy: s.entry.energy || 0,
+      score: norms[i] * blobPenalty(s.entry.primary_abstraction),
+      type: s.entry.type,
+      created_at: s.entry.created_at,
       source: 'bm25',
     })
-  }
+  })
 
-  // Query expansion: search for entity-related memories (cross-session linking)
+  // Query expansion: entity / sub-query hits join with a RELATIVE weight
+  // (norm 脳 0.4, capped) instead of flat energy 鈥?wide blobs no longer rack
+  // up multiples of a constant.
   const expandedResults = expandQuery(index, query, pushed, topK)
   for (const exp of expandedResults) {
-    if (resultMap.has(exp.id)) continue; // Already from BM25 — don't override
+    if (resultMap.has(exp.id)) continue; // Already from BM25 鈥?don't override
     const entry = (index as any).getIndex?.()?.entries?.find((e: any) => e.id === exp.id)
     if (!entry || (entry as any).superseded_by) continue
     resultMap.set(exp.id, {
       id: exp.id,
       primary_abstraction: entry.primary_abstraction || '',
-      memory_value: (entry as any).memory_value || (entry as any).content || '',
+      memory_value: entry.memory_value || entry.content || '',
       energy: entry.energy || 0,
-      score: exp.score,
+      score: exp.score * blobPenalty(entry.primary_abstraction),
       type: entry.type,
       created_at: entry.created_at,
       source: 'expansion',
     })
   }
 
-  // Merge scan results if a prefetch snapshot is provided (never awaited —
+  // Merge scan results if a prefetch snapshot is provided (never awaited 鈥?
   // snapshots are precomputed, so this is a pure in-memory operation).
   const scanSnapshot = options.scanSnapshot
   if (scanSnapshot && scanSnapshot.relevantIds.length > 0) {
     const expanded = mergeScanResults(resultMap, scanSnapshot, index, pushed)
-    log.info(`[Recall] bm25=${bm25Results.length} scan=${scanSnapshot.relevantIds.length} expanded=${expanded} union=${resultMap.size} confidence=${scanSnapshot.confidence}`)
+    log.info(`[Recall] bm25=${scored.length} scan=${scanSnapshot.relevantIds.length} expanded=${expanded} union=${resultMap.size} confidence=${scanSnapshot.confidence}`)
   }
 
-  // Sort by score descending (energy + scan boost), then slice to topK
+  // Sort by score descending, then slice to topK
   const results = [...resultMap.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
@@ -245,7 +277,7 @@ export async function searchRecallMemories(
 /**
  * Merge precomputed scan results into a recall result map: anchor-graph 1-hop
  * expansion, dedup against BM25 (BM25 wins, direct scan hits get a +0.3 boost,
- * graph neighbors +0.15). Pure function over in-memory data — safe to call on
+ * graph neighbors +0.15). Pure function over in-memory data 鈥?safe to call on
  * the sync recall path with a prefetch snapshot.
  */
 export function mergeScanResults(
@@ -259,7 +291,7 @@ export function mergeScanResults(
   // Anchor graph 1-hop expansion: for each scan-selected ID, bring in its
   // graph neighbors. This catches multi-session relationships that the
   // scan alone might miss (e.g., scan picks "restaurant" but not "hotel
-  // near the restaurant" — the graph edge connects them).
+  // near the restaurant" 鈥?the graph edge connects them).
   const graphStore = index?.getAnchorGraphStore?.()
   const expandedIds = new Set<string>(scanResult.relevantIds)
   if (graphStore) {
@@ -276,7 +308,7 @@ export function mergeScanResults(
   let expandedCount = 0
   for (const id of expandedIds) {
     if (resultMap.has(id)) {
-      // Already from BM25 — mark as 'both'
+      // Already from BM25 鈥?mark as 'both'
       resultMap.get(id)!.source = 'both'
       continue
     }
@@ -285,13 +317,13 @@ export function mergeScanResults(
     if (!entry || entry.superseded_by) continue
     expandedCount++
     const isDirectScan = scanResult.relevantIds.includes(id)
-    const baseEnergy = entry.energy || 0
+    const boost = isDirectScan ? 0.35 : 0.2
     resultMap.set(id, {
       id: entry.id,
       primary_abstraction: entry.primary_abstraction || '',
       memory_value: (entry as any).memory_value || (entry as any).content || '',
-      energy: baseEnergy,
-      score: isDirectScan ? baseEnergy + 0.3 : baseEnergy + 0.15,
+      energy: entry.energy || 0,
+      score: boost * blobPenalty(entry.primary_abstraction),
       type: entry.type,
       created_at: entry.created_at,
       source: isDirectScan ? 'scan' : 'scan+graph',
@@ -303,28 +335,28 @@ export function mergeScanResults(
 /**
  * Synchronous BM25-only search (backward compatible).
  * Used by step injection and other latency-sensitive paths.
+ * Shares the normalized scoring with the async variant.
  */
 export function searchRecallMemoriesSync(
-  index: Pick<HarmonicIndexManager, 'search'> | undefined,
+  index: any,
   query: string,
   pushed: Set<string>,
   topK: number = 3,
   options: SearchRecallOptions = {},
 ): RecallMemory[] {
   if (!index) return []
-  const results = index.search(query, topK * 2, options) || []
-  return results
-    .filter((e: any) => !pushed.has(e.id))
-    .filter((e: any) => !e.superseded_by)
+  const scored = fetchScored(index, query, topK * 2, options)
+    .filter((s: any) => s.entry && !pushed.has(s.entry.id) && !s.entry.superseded_by)
     .slice(0, topK)
-    .map((e) => ({
-      id: e.id,
-      primary_abstraction: e.primary_abstraction || '',
-      memory_value: (e as any).memory_value || (e as any).content || '',
-      energy: e.energy || 0,
-      score: e.energy || 0,
-      type: e.type,
-      created_at: e.created_at,
-      source: 'bm25',
-    }))
+  const norms = maxNormalize(scored.map((s: any) => s.score))
+  return scored.map((s: any, i: number) => ({
+    id: s.entry.id,
+    primary_abstraction: s.entry.primary_abstraction || '',
+    memory_value: s.entry.memory_value || s.entry.content || '',
+    energy: s.entry.energy || 0,
+    score: norms[i] * blobPenalty(s.entry.primary_abstraction),
+    type: s.entry.type,
+    created_at: s.entry.created_at,
+    source: 'bm25' as const,
+  })).sort((a, b) => b.score - a.score)
 }

@@ -34,8 +34,8 @@ describe('formatRecallContext multi-session', () => {
     const result = formatRecallContext(memories);
     expect(result.pointers).toContain('<recall>');
     expect(result.pointers).toContain('</recall>');
-    // IDs are truncated to 6 chars in pointerLine
-    expect(result.pointers).toContain('mem-00');
+    // IDs show the last 6 chars in pointerLine (mem-001 → 'em-001')
+    expect(result.pointers).toContain('em-001');
     // Should NOT contain type headers for single-type
     expect(result.pointers).not.toContain('[semantic]');
   });

@@ -35,7 +35,9 @@ function pointerLine(m: MemoryUnit): string {
   const tagStr = tags.length > 0 ? `[${tags.join(' ')}] ` : ''
   const text = (m.primary_abstraction || m.memory_value || '?').replace(/\n/g, ' ')
   const energy = typeof m.energy === 'number' ? m.energy.toFixed(1) : '?'
-  return `- #mem-${(m.id || '?').slice(0, 6)} ${tagStr}"${text}" (E:${energy})`
+  // ids are `mem_<timestamp>_<rand>` — the FIRST 6 chars are constant across
+  // every memory; use the tail so pointers stay unique and verifiable.
+  return `- #mem-${(m.id || '?').slice(-6)} ${tagStr}"${text}" (E:${energy})`
 }
 
 // ---- Memory block rendering (shared by all full-content injection paths) ----
