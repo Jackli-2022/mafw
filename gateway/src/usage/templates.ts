@@ -24,7 +24,7 @@ export type RenderResult =
   | { ok: false; error: string };
 
 const AUTH_FIELDS: TemplateField[] = [
-  { key: 'authMode', label: '认证方式', type: 'select', required: true, options: ['none', 'authKey', 'cookie', 'header'], hint: 'authKey=opencode 登录凭据；cookie=用量 cookies；header=自定义头（值存 pluginConfig.headerValue）' },
+  { key: 'authMode', label: '认证方式', type: 'select', options: ['none', 'authKey', 'cookie', 'header'], hint: 'authKey=opencode 登录凭据；cookie=用量 cookies；header=自定义头（值存 pluginConfig.headerValue）' },
   { key: 'authName', label: '认证名（auth provider 或 cookie 名）', type: 'string' },
   { key: 'headerName', label: '自定义 header 名', type: 'string', hint: '仅 authMode=header 时使用' },
 ];
