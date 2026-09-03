@@ -11,31 +11,24 @@ export interface SystemRuleTemplate {
   action: { type: `manager:${string}` };
 }
 
-export const MANAGER_RULE_TEMPLATES: Record<string, SystemRuleTemplate> = {
-  'manager-report-completed': {
-    id: 'manager-report-completed',
-    enabled: true,
-    trigger: { type: 'cron', schedule: '*/5 * * * *', timezone: 'UTC' },
-    action: { type: 'manager:report_completed' },
-  },
-  'manager-report-failed': {
-    id: 'manager-report-failed',
-    enabled: true,
-    trigger: { type: 'event', on: ['goal.failed'], perGoalCooldown: '60s' },
-    action: { type: 'manager:report_failed' },
-  },
-  'manager-report-question': {
-    id: 'manager-report-question',
-    enabled: false,
-    trigger: { type: 'event', on: ['goal.awaiting_user'], perGoalCooldown: '60s' },
-    action: { type: 'manager:report_question' },
-  },
-};
+// Manager milestone notifications moved to MilestonePushNotifier
+// (core/manager/milestone-push.ts) — the cron/event wake rules were dead code
+// (legacy manager-session.json path, un-emitted events, unwritten reportedAt).
+export const MANAGER_RULE_TEMPLATES: Record<string, SystemRuleTemplate> = {};
+
+export const RETIRED_RULE_IDS = ['manager-report-completed', 'manager-report-failed', 'manager-report-question'];
 
 export function ensureManagerRules(mafwDir: string): void {
   const autoDir = path.join(mafwDir, 'automations');
   if (!fs.existsSync(autoDir)) {
     fs.mkdirSync(autoDir, { recursive: true });
+  }
+  for (const id of RETIRED_RULE_IDS) {
+    const rulePath = path.join(autoDir, `${id}.json`);
+    if (fs.existsSync(rulePath)) {
+      fs.rmSync(rulePath);
+      log.info(`[Scheduler] Retired dead rule: ${id}`);
+    }
   }
   for (const [id, template] of Object.entries(MANAGER_RULE_TEMPLATES)) {
     const rulePath = path.join(autoDir, `${id}.json`);

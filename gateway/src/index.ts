@@ -49,7 +49,7 @@ import { DesktopClient } from "./desktop-client";
 import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
-import { wakeCompletedHandler, wakeFailedHandler, wakeQuestionHandler } from './core/manager/wake-handlers';
+import { MilestonePushNotifier } from './core/manager/milestone-push';
 import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
 import { buildGoalSnapshot } from './core/manager/goal-snapshot';
 import { getManagerAgentDefinition } from './skills/manager-agent-config';
@@ -633,13 +633,10 @@ class MafwScheduler {
 
     const targets = new Set<string>();
     if (info.sessionID) targets.add(info.sessionID);
-    for (const [, proj] of this.registeredProjects) {
+    for (const [pDir] of this.registeredProjects) {
       try {
-        const f = path.join(proj.mafwDir, 'manager-session.json');
-        if (fs.existsSync(f)) {
-          const data = JSON.parse(fs.readFileSync(f, 'utf-8'));
-          if (data?.sessionId) targets.add(data.sessionId);
-        }
+        const ms = this.getGatewayDb().kvGet<{ sessionId: string }>('manager-session', pDir);
+        if (ms?.sessionId) targets.add(ms.sessionId);
       } catch { /* skip */ }
     }
 
@@ -1453,6 +1450,7 @@ class MafwScheduler {
   stop() {
     this.running = false;
     this.kernels?.disposeAll();
+    this.milestonePush?.dispose();
     // Give an in-flight pipeline a short window to settle before closing the
     // T1 store (closing mid-run would leave turns un-deleted → duplicate
     // extraction on next start), then dispose workers best-effort.
@@ -1665,9 +1663,6 @@ class MafwScheduler {
     this.mdnsAdvertiser = new MdnsAdvertiser();
     this.mdnsAdvertiser.start({ apiPort: this.apiPort, apiToken });
 
-    actionRegistry.set('manager:report_completed', wakeCompletedHandler);
-    actionRegistry.set('manager:report_failed', wakeFailedHandler);
-    actionRegistry.set('manager:report_question', wakeQuestionHandler);
     this.registerMemoryPipelineActions();
 
     const desktopClient = DesktopClient.tryLoad();
@@ -1772,6 +1767,7 @@ class MafwScheduler {
     });
     eventBus.on("phase_transition", (data: any) => {
       this.broadcast({ type: "phase_transition", ...data });
+      this.getMilestonePush()?.onPhaseTransition(data);
     });
     eventBus.on("memory_written", (data: any) => {
       this.broadcast({ type: "memory_written", ...data });
@@ -4838,6 +4834,7 @@ class MafwScheduler {
             projectId: projectDir!,
           });
         }
+        if (projectDir) this.getMilestonePush()?.onArchived(goalId, projectDir, outcome?.verdict ?? 'CANCELLED');
         return;
       }
     }
@@ -4860,6 +4857,8 @@ class MafwScheduler {
         projectId: projectDir,
       });
     }
+
+    if (projectDir) this.getMilestonePush()?.onArchived(goalId, projectDir, outcome?.verdict ?? 'CANCELLED');
 
     log.info(`[Scheduler] Goal ${goalId} archived`);
   }
@@ -5572,6 +5571,31 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   rotateManagerSessionFor(projectDir: string): Promise<ManagerRotateResult> {
     return runManagerRotate(projectDir, this.rotateDeps());
+  }
+
+  private milestonePush?: MilestonePushNotifier;
+
+  private getMilestonePush(): MilestonePushNotifier | undefined {
+    if (!this.opencodeClient) return undefined;
+    if (!this.milestonePush) {
+      this.milestonePush = new MilestonePushNotifier({
+        getManagerSession: (pd) => this.getGatewayDb().kvGet('manager-session', pd),
+        wasNotified: (key) => !!this.getGatewayDb().kvGet('milestone-notified', key),
+        markNotified: (key) => this.getGatewayDb().kvSet('milestone-notified', key, { at: new Date().toISOString() }),
+        readGoalState: (goalId, pd) => {
+          try {
+            const p = path.join(this.mafwDirFor(pd), 'state', `${goalId}.json`);
+            if (!fs.existsSync(p)) return null;
+            return JSON.parse(fs.readFileSync(p, 'utf-8'));
+          } catch { return null; }
+        },
+        // Hard no-reply: message lands in session history, no LLM run.
+        promptNoReply: async (sid, text) => {
+          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], noReply: true });
+        },
+      });
+    }
+    return this.milestonePush;
   }
 
   private async rotateCreateManagerSession(projectDir: string): Promise<string> {
