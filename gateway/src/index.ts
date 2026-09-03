@@ -51,6 +51,7 @@ import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
 import { wakeCompletedHandler, wakeFailedHandler, wakeQuestionHandler } from './core/manager/wake-handlers';
 import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
+import { buildGoalSnapshot } from './core/manager/goal-snapshot';
 import { getManagerAgentDefinition } from './skills/manager-agent-config';
 import { ensureMemoryCuratorAgent } from './skills/memory-curator-agent';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
@@ -4284,9 +4285,22 @@ class MafwScheduler {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const query = parsedUrl.searchParams.get('query') || '';
             const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+            // Goal snapshot: injected every turn for the ACTIVE manager session
+            // only (kv compare). Compaction-proof goal awareness (spec §3.4①).
+            let goalSnap: string | null = null;
+            if (sessionID) {
+              const ms = this.getGatewayDb()
+                .kvAll<{ sessionId: string }>('manager-session')
+                .find(e => e.value.sessionId === sessionID);
+              if (ms) {
+                const info = this.registeredProjects.get(ms.key);
+                const mafwDir = info?.mafwDir ?? path.join(ms.key, '.mafw');
+                try { goalSnap = buildGoalSnapshot(mafwDir); } catch { /* fail-open */ }
+              }
+            }
             if (!query.trim()) {
               res.writeHead(200);
-              res.end(JSON.stringify({ pointers: null }));
+              res.end(JSON.stringify({ pointers: goalSnap }));
               return;
             }
             const { formatRecallContext } = require('./recall/inject-format');
@@ -4298,7 +4312,7 @@ class MafwScheduler {
               const pushed = this.stepInject.pushedMemoriesFor(sessionID);
               // Sync path is BM25-only (<50ms): the plugin client aborts after
               // 100ms. Scan results arrive via async prefetch snapshot (C).
-              const snapshot = this.getScanService()?.getSnapshot(sessionID) ?? null;
+              const scanSnapshot = this.getScanService()?.getSnapshot(sessionID) ?? null;
               memories = await searchRecallMemories(
                 this.memoryService.harmonicIndex,
                 query,
@@ -4306,13 +4320,16 @@ class MafwScheduler {
                 3,
                 {
                   retriever: config.search.defaultRetriever,
-                  scanSnapshot: snapshot,
+                  scanSnapshot,
                 },
               );
             }
             const formatted = formatRecallContext(memories);
+            const pointers = goalSnap
+              ? (formatted.pointers ? `${formatted.pointers}\n\n${goalSnap}` : goalSnap)
+              : formatted.pointers;
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(formatted));
+            res.end(JSON.stringify({ pointers }));
           } catch (err: any) {
             log.error('[Scheduler] recall/context error:', err.message);
             res.writeHead(200);
