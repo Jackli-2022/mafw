@@ -1685,6 +1685,34 @@ class MafwScheduler {
         await this.recoverServe();
         return { success: true, mode: 'owned-respawn' };
       },
+      rotateManagerSession: async (reason?: string) => {
+        const projectDir = path.resolve(mafwDir, '..');
+        log.info(`[Scheduler] manager rotate requested via MCP (reason: ${reason ?? '-'})`);
+        return this.rotateManagerSessionFor(projectDir);
+      },
+      btwAsk: async (question: string) => {
+        if (!this.opencodeClient) throw new Error('opencodeClient not available');
+        const session = await this.opencodeClient.session.create({ directory: this.projectDir });
+        const sessionId = session.id;
+        if (!sessionId) throw new Error('Failed to create btw session: no id returned');
+        this.registerInternalSession(sessionId, 'btw');
+        try {
+          const result = await this.opencodeClient.session.prompt({
+            sessionID: sessionId,
+            parts: [{ type: 'text', text: `[BTW 支线问答] ${question}\n\n（这是一次性支线问答，回答简洁直接，不涉及 goal 编排；答完即弃）` }],
+            system: '你是 MAFW 项目的临时助理，回答用户的一个支线问题。简洁、直接、不啰嗦。',
+          });
+          const answer = (result.parts || [])
+            .filter((p: any) => p.type === 'text')
+            .map((p: any) => p.text)
+            .join('\n') || '';
+          return { answer };
+        } finally {
+          await this.opencodeClient.session.delete({ sessionID: sessionId }).catch(() => {});
+          this.internalSessionRoles.delete(sessionId);
+          this.getGatewayDb().kvDelete('internal-session', sessionId);
+        }
+      },
     };
 
     const toolRegistry = createToolRegistry();
