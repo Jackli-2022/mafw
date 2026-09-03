@@ -75,9 +75,9 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 - 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
 - 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
 
-## 4. Tools 清单（v6.8 总共 43 个）
+## 4. Tools 清单（v6.9 总共 45 个）
 
-### 4.1 Gateway MCP 工具（39 个，`gateway/src/mcp/tool-registry.ts`）
+### 4.1 Gateway MCP 工具（41 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
@@ -119,6 +119,8 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_desktop_type` | 桌面输入 |
 | `mafw_desktop_scroll` | 桌面滚动 |
 | `mafw_restart_agent` | 重启 gateway 拥有的 agent 进程（opencode serve sidecar）；external/进程内 runtime 不可用 |
+| `mafw_new_topic` | 开新话题：创建新 manager session 替换活跃 id，旧会话归档（仅用户明确要求时调用） |
+| `mafw_btw` | 一次性支线问答（spawn 即弃 session，答案不回主线；是否入记忆由 manager 自主判断） |
 
 ### 4.2 插件侧工具（4 个，`src/tools/`）
 
@@ -326,6 +328,13 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
   - `registry/snapshot`（注册表快照，权威仍在 `scheduler/registered-projects.json`）
 - 旧 t1.db / manager-session.json / recall-reflect-cursor.json 启动时自动回填并入库后删除（`gateway/src/recall/gateway-db-migrate.ts`，幂等）
 - `GET /api/manager/session` 返回全部项目的 manager session 列表（`?projectDir=` 过滤单条）
+- `POST /api/manager/session/rotate`（`{projectDir, reason?}`，`routes/manager-rotate.ts`）：**开新话题**——旧 session metadata 降级 `role: 'manager-archived'`（去 pinned/exempt，回归普通生命周期，自动出现在桌面历史列表），强创建新 session 替换 kv 并重跑身份注入；与 `ensureManagerSession` 经 `managerSessionInflight` 互斥。MCP `mafw_new_topic` 复用同一 flow
+
+**Manager 常驻目标感知（2026-09-03）**：
+- **每轮 goal 快照**：`GET /api/recall/context` 识别活跃 manager session（kv sessionId 比对）后在 recall 块尾部追加 `<goal-snapshot>`（`core/manager/goal-snapshot.ts` 确定性聚合，≤10 条/500 字符，compaction 免疫）；非 manager session 不受影响
+- **里程碑推送**：`core/manager/milestone-push.ts` 挂 `eventBus("phase_transition")`（PLANNING_COMPLETE/REVIEWING_COMPLETE/ASKING_USER）+ `archiveGoal()`（completed/failed/cancelled），per-project 合并队列（5s），持久化去重键 `milestone-notified/{goalId}:{phase}:{stateVersion}`，`promptAsync(noReply: true)` 硬免回复（消息落历史不触发 LLM；pi runtime busy 分支会丢 noReply 语义——已知限制）
+- **/btw 支线问答**：MCP `mafw_btw` spawn 一次性 session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`mafw_btw`/`mafw_new_topic` 在 manager 工具白名单
+- 旧三条 `manager-report-*` 自动化规则已退役（wake 链路读已删除的 legacy 文件 + 事件无人 emit，整链死代码），`ensureManagerRules` 启动时清理规则文件
 
 **聚合压缩（memory:turnCompress，每小时）**：每活跃 session 将本小时所有完成回合合并为一份 batch transcript，交给该 session 的**持久 worker 会话**，由 agent **自主调用 `mafw_add_memory`** 记录值得长期记忆的条目（类型按内容自选）。处理过的回合**一律删除**（空/失败不重试）。内部 worker 会话经 `/api/obs/capture` 的会话白名单过滤——**输出永不回流 T1**（防递归）。
 
