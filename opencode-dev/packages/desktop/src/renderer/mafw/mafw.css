@@ -447,6 +447,67 @@ html[data-theme="light"] .mafw-shell {
 .mafw-session-new { background: none; border: none; cursor: pointer; color: var(--text-interactive-base); padding: 4px 8px; flex-shrink: 0; font-size: 14px; }
 .mafw-session-new:hover { color: var(--text-strong); }
 
+/* Non-scrolling positioned wrapper: overlays pinned to the chat area (msgnav rail)
+   must anchor here, not inside the scroll container — absolute inside it scrolls with content */
+.mafw-chat-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* ── Usage workbench: provider cards + drawer + wizard ── */
+.mafw-usage-wb-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.mafw-usage-wb-card {
+  border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px;
+  cursor: pointer; transition: border-color .12s, background .12s; background: transparent;
+}
+.mafw-usage-wb-card:hover { border-color: var(--border-strong, var(--text-5)); background: var(--hover); }
+.mafw-usage-wb-card.selected { border-color: var(--accent); }
+.mafw-usage-wb-card.disabled { opacity: .55; }
+.mafw-usage-wb-card.add { border-style: dashed; display: flex; flex-direction: column; justify-content: center; }
+.mafw-usage-wb-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mafw-usage-wb-card-name { font-weight: 600; font-size: 13px; color: var(--text-1); }
+.mafw-usage-wb-card-sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.mafw-usage-wb-badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  background: var(--accent-dim, var(--hover)); color: var(--text-2); white-space: nowrap;
+}
+.mafw-usage-wb-dot { font-size: 11px; white-space: nowrap; }
+.mafw-usage-wb-dot.error { color: var(--danger); }
+.mafw-usage-wb-dot.disabled { color: var(--text-4); }
+.mafw-usage-wb-summary { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-usage-wb-drawer {
+  margin-top: 12px; border: 1px solid var(--accent); border-radius: 12px;
+  padding: 14px; background: var(--bg-raised); display: flex; flex-direction: column; gap: 10px;
+}
+.mafw-usage-wb-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.mafw-usage-wb-section {
+  border-top: 1px solid var(--border-subtle); padding-top: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mafw-usage-wb-row { display: flex; flex-direction: column; gap: 4px; }
+.mafw-usage-wb-row label, .mafw-usage-wb-row > .mafw-config-label { font-size: 11px; color: var(--text-3); }
+.mafw-usage-wb-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mafw-usage-wb-btnrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mafw-usage-wb-error {
+  border: 1px solid var(--danger); border-radius: 8px; padding: 8px 10px;
+  font-size: 12px; color: var(--danger); white-space: pre-wrap; word-break: break-all;
+}
+.mafw-usage-wb-test {
+  margin: 0; padding: 10px; border-radius: 8px; background: var(--hover);
+  font-family: var(--font-mono, monospace); font-size: 11px; line-height: 1.5;
+  max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-all;
+}
+.mafw-usage-wb-code { font-family: var(--font-mono, monospace); font-size: 11px; line-height: 1.5; }
+.mafw-usage-wb-wizard { margin-top: 12px; border: 1px solid var(--border-strong, var(--text-5)); border-radius: 12px; padding: 14px; }
+.mafw-usage-wb-wizard-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 13px; }
+.mafw-usage-wb-wizard-body { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.mafw-usage-wb-tpl { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+.mafw-usage-wb-tpl:hover { border-color: var(--accent); background: var(--hover); }
+.mafw-usage-wb-req { color: var(--danger); }
+
 /* ── SessionTurn Container (§4.5: 760px 列) ── */
 .mafw-session-turn-container {
   flex: 1;
