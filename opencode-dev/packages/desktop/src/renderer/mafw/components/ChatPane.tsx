@@ -1043,6 +1043,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       { id: "mafw-goal", trigger: "/goal", title: "新建 Goal", description: "提交 Goal 给 Manager", group: "mafw" },
       { id: "mafw-status", trigger: "/status", title: "MAFW 状态", description: "查看当前状态", group: "mafw" },
       { id: "mafw-merge", trigger: "/merge-memory", title: "记忆融合", description: "合并 worktree 记忆", group: "mafw" },
+      { id: "mafw-new-topic", trigger: "/new-topic", title: "新话题", description: "开新话题（当前 Manager 会话归档）", group: "mafw" },
+      { id: "mafw-btw", trigger: "/btw", title: "支线问答", description: "一次性会话回答支线问题，不污染主线", group: "mafw" },
     ]
     const custom: CommandItem[] = cmdCustom().map(c => ({
       id: `custom-${c.source}-${c.name}`,
@@ -1091,7 +1093,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const m = text.match(/^\/(\S+)(?:\s+(.*))?$/)
     if (!m) return null
     const name = m[1].toLowerCase()
-    if (name === "goal" || name === "status" || name === "merge-memory") return { name, group: "mafw" }
+    if (name === "goal" || name === "status" || name === "merge-memory" || name === "new-topic" || name === "btw") return { name, group: "mafw" }
     if (cmdCustom().some(c => c.name === name)) return { name, group: "custom" }
     return null
   }

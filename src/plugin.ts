@@ -262,6 +262,35 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           } catch (err: any) { return { text: `Error: ${err.message}` }; }
         }
       },
+      'new-topic': {
+        description: 'Start a new MAFW manager topic (archives the current session to history)',
+        async execute(_args: string, _context: any) {
+          try {
+            const res = await fetch(`${gatewayUrl}/api/mafw-commands/run`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: 'new-topic' }),
+              signal: AbortSignal.timeout(60000),
+            });
+            const result: any = await res.json();
+            return { text: result.message || JSON.stringify(result) };
+          } catch (err: any) { return { text: `Error: ${err.message}` }; }
+        }
+      },
+      'btw': {
+        description: 'One-off side-question session: answer in a throwaway session, keep the main thread clean',
+        async execute(args: string, _context: any) {
+          if (!args.trim()) return { text: 'Usage: /btw <question>' };
+          try {
+            const res = await fetch(`${gatewayUrl}/api/mafw-commands/run`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: 'btw', args }),
+              signal: AbortSignal.timeout(180000),
+            });
+            const result: any = await res.json();
+            return { text: result.text || result.message || JSON.stringify(result) };
+          } catch (err: any) { return { text: `Error: ${err.message}` }; }
+        }
+      },
     },
   };
 }

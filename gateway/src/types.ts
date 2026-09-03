@@ -29,10 +29,6 @@ export interface Services {
   desktop?: DesktopClient;
   /** Gateway-provided callback for agent process restart (MCP tool). */
   restartAgent?: () => Promise<{ success: boolean; mode: string }>;
-  /** Gateway-provided callback: start a new manager topic (rotate session). */
-  rotateManagerSession?: (reason?: string) => Promise<{ sessionId: string; previousSessionId?: string; created: 'initial' | 'rotated' }>;
-  /** Gateway-provided callback: one-off side-question session (create→prompt→discard). */
-  btwAsk?: (question: string) => Promise<{ answer: string }>;
 }
 
 export type ToolHandler = (

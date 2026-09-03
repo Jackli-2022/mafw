@@ -75,9 +75,9 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 - 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
 - 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
 
-## 4. Tools 清单（v6.9 总共 45 个）
+## 4. Tools 清单（v6.9 总共 43 个）
 
-### 4.1 Gateway MCP 工具（41 个，`gateway/src/mcp/tool-registry.ts`）
+### 4.1 Gateway MCP 工具（39 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
@@ -119,8 +119,6 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_desktop_type` | 桌面输入 |
 | `mafw_desktop_scroll` | 桌面滚动 |
 | `mafw_restart_agent` | 重启 gateway 拥有的 agent 进程（opencode serve sidecar）；external/进程内 runtime 不可用 |
-| `mafw_new_topic` | 开新话题：创建新 manager session 替换活跃 id，旧会话归档（仅用户明确要求时调用） |
-| `mafw_btw` | 一次性支线问答（spawn 即弃 session，答案不回主线；是否入记忆由 manager 自主判断） |
 
 ### 4.2 插件侧工具（4 个，`src/tools/`）
 
@@ -333,7 +331,7 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
 **Manager 常驻目标感知（2026-09-03）**：
 - **每轮 goal 快照**：`GET /api/recall/context` 识别活跃 manager session（kv sessionId 比对）后在 recall 块尾部追加 `<goal-snapshot>`（`core/manager/goal-snapshot.ts` 确定性聚合，≤10 条/500 字符，compaction 免疫）；非 manager session 不受影响
 - **里程碑推送**：`core/manager/milestone-push.ts` 挂 `eventBus("phase_transition")`（PLANNING_COMPLETE/REVIEWING_COMPLETE/ASKING_USER）+ `archiveGoal()`（completed/failed/cancelled），per-project 合并队列（5s），持久化去重键 `milestone-notified/{goalId}:{phase}:{stateVersion}`，`promptAsync(noReply: true)` 硬免回复（消息落历史不触发 LLM；pi runtime busy 分支会丢 noReply 语义——已知限制）
-- **/btw 支线问答**：MCP `mafw_btw` spawn 一次性 session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`mafw_btw`/`mafw_new_topic` 在 manager 工具白名单
+- **/btw 支线问答**：用户直发指令（桌面 `/btw` slash 命令 / 插件 `/btw` command → `/api/mafw-commands/run`），spawn 一次性 session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`new-topic`/`btw` 均为**用户指令驱动**（UI-driven, not LLM-driven），刻意不暴露 MCP 工具给 agent
 - 旧三条 `manager-report-*` 自动化规则已退役（wake 链路读已删除的 legacy 文件 + 事件无人 emit，整链死代码），`ensureManagerRules` 启动时清理规则文件
 
 **聚合压缩（memory:turnCompress，每小时）**：每活跃 session 将本小时所有完成回合合并为一份 batch transcript，交给该 session 的**持久 worker 会话**，由 agent **自主调用 `mafw_add_memory`** 记录值得长期记忆的条目（类型按内容自选）。处理过的回合**一律删除**（空/失败不重试）。内部 worker 会话经 `/api/obs/capture` 的会话白名单过滤——**输出永不回流 T1**（防递归）。

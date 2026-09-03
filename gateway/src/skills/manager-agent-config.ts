@@ -12,7 +12,7 @@ const MAFW_TOOL_ALLOWLIST = [
   'mafw_validate_rule', 'mafw_propose_triage_decision', 'mafw_draft_automation_rule',
   'mafw_desktop_screenshot', 'mafw_desktop_navigate', 'mafw_desktop_get_ui_state',
   'mafw_desktop_click', 'mafw_desktop_type', 'mafw_desktop_scroll',
-  'mafw_restart_agent', 'mafw_new_topic', 'mafw_btw',
+  'mafw_restart_agent',
 ] as const;
 
 export function getManagerAgentDefinition(): AgentDefinition {

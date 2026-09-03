@@ -521,23 +521,6 @@ const DEFINITIONS: ToolDefinition[] = [
       properties: {},
     },
   },
-  {
-    name: "mafw_new_topic",
-    description: "Start a new manager topic: create a fresh manager session; the current conversation is archived to history (still searchable via memory). ONLY call when the user explicitly asks to start a new topic (e.g. 另开话题/开个新话题). Never propose or trigger it on your own.",
-    inputSchema: {
-      type: "object",
-      properties: { reason: { type: "string", description: "Optional reason for starting the new topic" } },
-    },
-  },
-  {
-    name: "mafw_btw",
-    description: "Answer a one-off side question in a throwaway session (by the way). Use when the user asks a tangent unrelated to the current goal work and answering inline would pollute the main thread. Returns the answer text; the side session is discarded afterwards.",
-    inputSchema: {
-      type: "object",
-      properties: { question: { type: "string", description: "The side question to answer" } },
-      required: ["question"],
-    },
-  },
 ];
 
 import { handleCreateGoal } from "./handlers/create-goal";
@@ -571,8 +554,6 @@ import { handleDesktopClick } from "./handlers/desktop-click";
 import { handleDesktopType } from "./handlers/desktop-type";
 import { handleDesktopScroll } from "./handlers/desktop-scroll";
 import { handleRestartAgent } from "./handlers/restart-agent";
-import { handleNewTopic } from "./handlers/new-topic";
-import { handleBtw } from "./handlers/btw";
 import { handleManagerSetGoal } from "./handlers/manager-set-goal";
 import { handleManagerGetGoalStatus } from "./handlers/manager-get-goal-status";
 import { handleManagerListGoals } from "./handlers/manager-list-goals";
@@ -616,8 +597,6 @@ export function createToolRegistry(): ToolRegistry {
       mafw_desktop_type: handleDesktopType,
       mafw_desktop_scroll: handleDesktopScroll,
       mafw_restart_agent: handleRestartAgent,
-      mafw_new_topic: handleNewTopic,
-      mafw_btw: handleBtw,
       mafw_set_goal: handleManagerSetGoal,
       mafw_get_goal_status: handleManagerGetGoalStatus,
       mafw_list_goals: handleManagerListGoals,
