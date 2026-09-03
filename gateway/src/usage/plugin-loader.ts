@@ -41,6 +41,7 @@ export interface PluginState {
   builtin: boolean;
   adapter?: ExternalAdapter;
   configSchema?: ConfigSchemaField[];
+  disabled: boolean;
 }
 
 export interface PluginLoaderOptions {
@@ -129,7 +130,6 @@ export class PluginLoader {
           errors.push({ file, builtin, error: 'missing fetch()' });
           continue;
         }
-        if (this.disabledPlugins.has(name)) continue;
         if (builtin) builtinNameSet.add(name);
 
         const existing = byName.get(name);
@@ -159,11 +159,12 @@ export class PluginLoader {
       const overridden = !entry.builtin && builtinNameSet.has(name);
       const adapter = makeAdapter(entry.mod, entry.file);
       const configSchema = validateConfigSchema((entry.mod as any).configSchema);
-      this.state.set(entry.file, { file: entry.file, name, status: 'ok', overridden, builtin: entry.builtin, adapter, configSchema });
-      log.info(`[PluginLoader] Loaded ${entry.file} (${name})${entry.builtin ? ' [builtin]' : ''}${overridden ? ' [overrides builtin]' : ''}`);
+      const disabled = this.disabledPlugins.has(name);
+      this.state.set(entry.file, { file: entry.file, name, status: 'ok', overridden, builtin: entry.builtin, adapter, configSchema, disabled });
+      log.info(`[PluginLoader] Loaded ${entry.file} (${name})${entry.builtin ? ' [builtin]' : ''}${overridden ? ' [overrides builtin]' : ''}${disabled ? ' [disabled]' : ''}`);
     }
     for (const e of errors) {
-      this.state.set(e.file, { file: e.file, status: 'error', error: e.error, overridden: false, builtin: e.builtin });
+      this.state.set(e.file, { file: e.file, status: 'error', error: e.error, overridden: false, builtin: e.builtin, disabled: false });
       log.warn(`[PluginLoader] ${e.file} load error: ${e.error}`);
     }
   }
@@ -171,9 +172,13 @@ export class PluginLoader {
   getAdapters(): ExternalAdapter[] {
     const adapters: ExternalAdapter[] = [];
     for (const s of this.state.values()) {
-      if (s.status === 'ok' && s.adapter) adapters.push(s.adapter);
+      if (s.status === 'ok' && s.adapter && !s.disabled) adapters.push(s.adapter);
     }
     return adapters;
+  }
+
+  isBuiltinName(name: string): boolean {
+    return this.builtinNames.has(name);
   }
 
   getState(): PluginState[] {
