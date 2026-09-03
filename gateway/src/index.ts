@@ -80,9 +80,10 @@ import { handleRestartAgent } from './routes/restart-agent';
 import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { handleMediaSwitch } from './routes/media-switch';
+
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
-
+import { handleManagerRotate, runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
  * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
  *
@@ -3213,6 +3214,13 @@ class MafwScheduler {
           return;
         }
 
+        // POST /api/manager/session/rotate — start a new manager topic
+        // (thin wiring → routes/manager-rotate.ts).
+        if (req.method === 'POST' && req.url?.match(/^\/api\/manager\/session\/rotate(?:\?|$)/)) {
+          await handleManagerRotate(req, res, this.rotateDeps());
+          return;
+        }
+
         // GET /api/manager/session — return manager session info (per-project,
         // read from the gateway DB). ?projectDir= filters a single project.
         if (req.url && req.url.startsWith('/api/manager/session') && req.method === 'GET') {
@@ -5451,11 +5459,11 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   // Concurrent calls for the same projectDir (start() loop + /register
   // handler) must create exactly one manager session — join the in-flight run.
-  private managerSessionInflight = new Map<string, Promise<string>>();
+  private managerSessionInflight = new Map<string, Promise<unknown>>();
 
   private ensureManagerSession(projectDir: string, mafwDir: string): Promise<string> {
     const inFlight = this.managerSessionInflight.get(projectDir);
-    if (inFlight) return inFlight;
+    if (inFlight) return inFlight as Promise<string>;
     const run = this.createManagerSession(projectDir, mafwDir);
     this.managerSessionInflight.set(projectDir, run);
     run
@@ -5464,6 +5472,29 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         if (this.managerSessionInflight.get(projectDir) === run) this.managerSessionInflight.delete(projectDir);
       });
     return run;
+  }
+
+  // Serialized rotate: joins any in-flight ensure/create for the same project
+  // so rotate and lazy-init never double-create (spec §4).
+  private async runManagerExclusive<T>(projectDir: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.managerSessionInflight.get(projectDir);
+    const run = (async () => {
+      if (prev) { try { await prev; } catch { /* prior failure does not block */ } }
+      return fn();
+    })();
+    // The inflight map is shared with ensureManagerSession, whose joiners
+    // expect the promise to resolve to a session id string — map the rotate
+    // result onto the resulting kv entry.
+    const mapped = run.then(
+      () => this.getGatewayDb().kvGet<{ sessionId?: string }>('manager-session', projectDir)?.sessionId ?? '',
+      () => '',
+    );
+    this.managerSessionInflight.set(projectDir, mapped);
+    try {
+      return await run;
+    } finally {
+      if (this.managerSessionInflight.get(projectDir) === mapped) this.managerSessionInflight.delete(projectDir);
+    }
   }
 
   private async createManagerSession(projectDir: string, mafwDir: string): Promise<string> {
@@ -5504,6 +5535,13 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
     log.info(`[Scheduler] Manager session created: ${sessionId}`);
 
+    await this.injectManagerIdentity(sessionId);
+
+    return sessionId;
+  }
+
+  private async injectManagerIdentity(sessionId: string): Promise<void> {
+    if (!this.opencodeClient) return;
     try {
       await this.opencodeClient.session.promptAsync({
         sessionID: sessionId,
@@ -5512,7 +5550,41 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     } catch (err: any) {
       log.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);
     }
+  }
 
+  private mafwDirFor(projectDir: string): string {
+    return this.registeredProjects.get(projectDir)?.mafwDir ?? path.join(projectDir, '.mafw');
+  }
+
+  private rotateDeps(): ManagerRotateDeps {
+    return {
+      getManagerSession: (pd) => this.getGatewayDb().kvGet('manager-session', pd),
+      lock: <T,>(pd: string, fn: () => Promise<T>) => this.runManagerExclusive(pd, fn),
+      ensure: (pd) => this.ensureManagerSession(pd, this.mafwDirFor(pd)),
+      downgrade: async (sid) => {
+        // Replacing the whole mafw object drops pinned/exempt* flags too —
+        // the archived session returns to the normal session lifecycle.
+        await this.sdkSession.updateMetadata(sid, { mafw: { role: 'manager-archived' } });
+      },
+      create: (pd) => this.rotateCreateManagerSession(pd),
+    };
+  }
+
+  rotateManagerSessionFor(projectDir: string): Promise<ManagerRotateResult> {
+    return runManagerRotate(projectDir, this.rotateDeps());
+  }
+
+  private async rotateCreateManagerSession(projectDir: string): Promise<string> {
+    if (!this.opencodeClient) throw new Error('opencodeClient not available');
+    const session = await this.opencodeClient.session.create({ directory: projectDir });
+    const sessionId = session.id;
+    if (!sessionId) throw new Error('Failed to create manager session: no id returned');
+    this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt: new Date().toISOString() });
+    this.registerInternalSession(sessionId, 'manager');
+    await this.sdkSession.registerExternal(sessionId, projectDir, {
+      mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
+    }).catch(() => {});
+    await this.injectManagerIdentity(sessionId);
     return sessionId;
   }
 }
