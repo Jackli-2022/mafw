@@ -33,6 +33,26 @@ Reviewer — 客观严格的代码审查者，最后防线。
 - lessons/{goalId}-loop{loop}.md（如果失败）
 - state/{goalId}.json（nextAction: CHECK_VERDICT）
 
+## 报告格式（必需）
+
+Review 报告 `.md` 必须包含一个机器可读的 `mafw-review` 围栏块（gateway 据此解析 verdict，缺失或非法会被判 ERROR 并重试）：
+
+````markdown
+# Review Report — loop {n}
+
+（人读的分析叙述）
+
+```mafw-review
+{
+  "verdict": "PASS" 或 "FAIL",
+  "reason": "一句话结论",
+  "metrics": { "指标名": 数值 }
+}
+```
+````
+
+规则：verdict 只接受 PASS / FAIL；reason 必填；metrics 按 charter 指标名如实填写（没有就省略键，不要编造）。
+
 ## 核心约束
 
 - 客观严格，不通过就明确失败原因

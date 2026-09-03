@@ -1,5 +1,6 @@
 import { LoopStateType } from '../loop-state';
 import { matchesSignature } from '../signature-detector';
+import { parseReviewVerdict } from '../review-parser';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -20,20 +21,6 @@ export interface AgentServices {
 
 function generateQuestionId(): string {
   return `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function parseReviewVerdict(content: string): { verdict: 'PASS' | 'FAIL' | 'ERROR'; feedback: string } {
-  if (!content || content.trim().length === 0) {
-    return { verdict: 'ERROR', feedback: 'Review response is empty' };
-  }
-  try {
-    const data = JSON.parse(content);
-    return { verdict: data.verdict === 'PASS' ? 'PASS' : 'FAIL', feedback: data.reason || data.feedback || JSON.stringify(data.metrics || {}) };
-  } catch {
-    const lower = content.toLowerCase();
-    if (lower.includes('pass') || lower.includes('通过')) return { verdict: 'PASS', feedback: content.slice(0, 200) };
-    return { verdict: 'FAIL', feedback: content.slice(0, 200) };
-  }
 }
 
 export async function reviewNode(

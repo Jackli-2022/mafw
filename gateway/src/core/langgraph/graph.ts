@@ -2,7 +2,7 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { LoopState } from "./loop-state";
 
 export function routeAfterReview(state: typeof LoopState.State): string {
-  if (state.reviewVerdict === "ERROR" || state.lastError) return "archive_fail";
+  if (state.lastError) return "archive_fail";
   if (state.reviewVerdict === "PASS") return "archive_success";
   if (state.round >= state.maxRounds) return "archive_max_retries";
   if (state.pendingQuestion) return "askUser";
