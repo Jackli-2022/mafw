@@ -78,6 +78,7 @@ export type ChatPaneProps = {
   subagentAgents: () => any[]
   subagentRunning: (id: string) => boolean
   isManager: boolean
+  onNewTopic?: () => void
   readOnly?: boolean
   parentID?: string | null
   onBackToParent?: () => void
@@ -1642,6 +1643,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <span class="mafw-session-status-dot" />
                   Running
                 </span>
+              </Show>
+              <Show when={props.isManager && props.onNewTopic}>
+                <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
+                  <ButtonV2 variant="ghost" size="small" onClick={e => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
+                </TooltipV2>
               </Show>
               <Show when={props.canClosePane}>
                 <TooltipV2 value="关闭分屏" openDelay={300}>

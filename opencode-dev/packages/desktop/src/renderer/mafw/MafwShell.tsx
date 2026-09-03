@@ -200,13 +200,16 @@ export function MafwShell() {
     setActiveViewId(sid)
   }
 
-  // "Manager 会话": jump straight into the manager session. Prefers the
-  // authoritative manager (gateway DB) and falls back to any role=manager
-  // session in history.
-  const handleOpenManager = async (): Promise<boolean> => {
+  // Single resolution path for the manager session: authoritative gateway DB
+  // id first, role fallback only when the authoritative id is missing.
+  const resolveManager = () => {
     const authId = managerSessionId()
-    const manager = (authId && historySessions().find(s => s.id === authId))
+    return (authId && historySessions().find(s => s.id === authId))
       || historySessions().find((s: any) => s?.metadata?.mafw?.role === "manager")
+  }
+
+  const handleOpenManager = async (): Promise<boolean> => {
+    const manager = resolveManager()
     if (!manager) {
       setActiveTab("goals")
       return false
@@ -217,7 +220,7 @@ export function MafwShell() {
   // "新建 Goal": jump to the manager session and send a create-goal message.
   const handleNewGoal = async (description: string): Promise<boolean> => {
     if (!await handleOpenManager()) return false
-    const manager = historySessions().find((s: any) => s?.metadata?.mafw?.role === "manager")
+    const manager = resolveManager()
     if (!manager) return false
     const message = `创建新 Goal：${description}`
     // Optimistic insert (matches sendMessage's store pattern).
@@ -237,6 +240,22 @@ export function MafwShell() {
     } catch (e) {
       console.warn("[mafw] send goal message failed:", e)
       return true
+    }
+  }
+
+  // "新话题": rotate the manager session (old one sinks into history).
+  const handleNewTopic = async (): Promise<void> => {
+    const pd = currentProject()
+    if (!pd) return
+    if (!window.confirm("开新话题？当前 manager 会话将归档为历史会话，新会话成为活跃 manager。")) return
+    try {
+      const res = await window.api.mafw.manager.rotate(pd)
+      setManagerSessionId(res.sessionId)
+      const list = await window.api.mafw.sessions.list(pd).catch(() => [])
+      setHistorySessions(Array.isArray(list) ? list : [])
+      showToastV2({ description: "已开启新话题", duration: 3000 })
+    } catch (e: any) {
+      showToastV2({ description: `新话题开启失败: ${e?.message || e}`, duration: 4000 })
     }
   }
 
@@ -1927,6 +1946,7 @@ export function MafwShell() {
                           subagentAgents={subagentAgents}
                           subagentRunning={subagentRunning}
                           isManager={isManagerSession()}
+                          onNewTopic={() => void handleNewTopic()}
                           readOnly={!!store.session.find((s: any) => s.id === leaf.sid)?.parentID}
                           parentID={store.session.find((s: any) => s.id === leaf.sid)?.parentID ?? null}
                           onBackToParent={() => backToParent(leaf.sid)}
