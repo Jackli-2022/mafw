@@ -319,8 +319,16 @@ export interface ManagerSessionInfo {
   createdAt?: string | null
 }
 
+export interface ManagerRotateResult {
+  success: boolean
+  sessionId: string
+  previousSessionId?: string
+  created: 'initial' | 'rotated'
+}
+
 export interface ManagerNamespace {
   session(projectDir?: string): Promise<ManagerSessionInfo | null>
+  rotate(projectDir: string, reason?: string): Promise<ManagerRotateResult>
 }
 
 export interface ProjectNamespace {

@@ -3,7 +3,7 @@ import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
-  CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo,
+  CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState,
   MethodNotSupportedError,
@@ -247,6 +247,13 @@ export class MafwClient implements IMafwClient {
       } catch {
         return null
       }
+    },
+    rotate: async (projectDir: string, reason?: string): Promise<ManagerRotateResult> => {
+      return await this.request<ManagerRotateResult>('/api/manager/session/rotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir, reason }),
+      })
     },
   }
 

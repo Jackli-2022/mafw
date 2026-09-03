@@ -77,6 +77,7 @@ export function createMafwApi(): MafwAPI {
 
     manager: {
       session: (projectDir?) => invoke("manager", "session", projectDir),
+      rotate: (projectDir, reason?) => invoke("manager", "rotate", projectDir, reason),
     },
 
     projects: {

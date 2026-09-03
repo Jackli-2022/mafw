@@ -65,6 +65,7 @@ export type MafwAPI = {
 
   manager: {
     session: (projectDir?: string) => Promise<{ projectDir: string; sessionId: string; createdAt?: string | null } | null>
+    rotate: (projectDir: string, reason?: string) => Promise<{ success: boolean; sessionId: string; previousSessionId?: string; created: 'initial' | 'rotated' }>
   }
 
   projects: {
