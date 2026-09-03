@@ -327,6 +327,7 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
 
   return (
     <div class="mafw-usage-wb">
+      <div class="mafw-usage-wb-main">
       <div class="mafw-config-section-desc">
         每个 provider 一张卡片：点开配置预算 / 限额 / Cookie；用量插件支持模板生成与在线编辑。
       </div>
@@ -408,10 +409,10 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
         </div>
       </Show>
 
+      </div>
+
       <Show when={selectedCard()}>
         {(card) => (
-          <>
-          <div class="mafw-usage-wb-backdrop" onClick={() => setSelected(null)} />
           <div class="mafw-usage-wb-drawer">
             <div class="mafw-usage-wb-drawer-head">
               <div>
@@ -533,7 +534,6 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
               </Show>
             </Show>
           </div>
-          </>
         )}
       </Show>
     </div>
