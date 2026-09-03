@@ -105,6 +105,16 @@ export class SdkSessionResource {
     return record;
   }
 
+  /** Replace (not merge) a session's metadata and persist. Returns null if unknown. */
+  async updateMetadata(id: string, metadata: Record<string, unknown>): Promise<SessionRecord | null> {
+    const record = this.sessions.get(id);
+    if (!record) return null;
+    record.metadata = metadata;
+    record.time.updated = Date.now();
+    this.saveToDisk(record);
+    return record;
+  }
+
   private async _rawPromptAsync(
     sessionID: string,
     message: string,
