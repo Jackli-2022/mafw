@@ -46,6 +46,11 @@ export type MafwAPI = {
     }>
     usagePlugins: () => Promise<{ plugins: { file: string; name?: string; status: string; error?: string; overridden: boolean }[] }>
     usagePluginsReload: () => Promise<{ ok: boolean; plugins: any[] }>
+    usagePluginsCreate: (body: { template?: string; values?: Record<string, any>; name?: string; source?: string }) => Promise<{ ok: boolean; name?: string; error?: string; plugins?: any[] }>
+    usagePluginSource: (name: string) => Promise<{ source?: string; origin?: string; builtin?: boolean; error?: string }>
+    usagePluginSourceSave: (name: string, source: string) => Promise<{ ok: boolean; error?: string }>
+    usagePluginDelete: (name: string) => Promise<{ ok: boolean; error?: string }>
+    usagePluginTest: (name: string) => Promise<{ ok: boolean; result?: any; error?: string }>
     openUsagePluginsDir: () => Promise<void>
     promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
     command: (opts: { sessionID: string; command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>

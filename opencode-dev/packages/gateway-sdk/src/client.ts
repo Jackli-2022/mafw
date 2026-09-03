@@ -178,6 +178,26 @@ export class MafwClient implements IMafwClient {
       return this.request('/api/usage/plugins/reload', { method: 'POST' })
     },
 
+    usagePluginsCreate: async (body: { template?: string; values?: Record<string, any>; name?: string; source?: string }): Promise<{ ok: boolean; name?: string; error?: string; plugins?: any[] }> => {
+      return this.request('/api/usage/plugins/create', { method: 'POST', body: JSON.stringify(body) })
+    },
+
+    usagePluginSource: async (name: string): Promise<{ source?: string; origin?: string; builtin?: boolean; error?: string }> => {
+      return this.request(`/api/usage/plugins/${encodeURIComponent(name)}/source`)
+    },
+
+    usagePluginSourceSave: async (name: string, source: string): Promise<{ ok: boolean; error?: string }> => {
+      return this.request(`/api/usage/plugins/${encodeURIComponent(name)}/source`, { method: 'PUT', body: JSON.stringify({ source }) })
+    },
+
+    usagePluginDelete: async (name: string): Promise<{ ok: boolean; error?: string }> => {
+      return this.request(`/api/usage/plugins/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    },
+
+    usagePluginTest: async (name: string): Promise<{ ok: boolean; result?: any; error?: string }> => {
+      return this.request(`/api/usage/plugins/${encodeURIComponent(name)}/test`, { method: 'POST' })
+    },
+
     events: async (
       params: { path: { id: string } },
     ): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
