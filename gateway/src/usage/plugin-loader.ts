@@ -4,6 +4,34 @@ import { log } from '../core/utils/logger';
 import { ExternalAdapter } from './types';
 import { makeAdapter } from './plugin-context';
 
+export interface ConfigSchemaField {
+  key: string;
+  label: string;
+  type: 'number' | 'string' | 'boolean' | 'select';
+  options?: string[];
+  default?: string | number | boolean;
+}
+
+const SCHEMA_TYPES = new Set(['number', 'string', 'boolean', 'select']);
+
+/** Fail-open: anything malformed → undefined (plugin still loads, no form UI). */
+export function validateConfigSchema(raw: unknown): ConfigSchemaField[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const out: ConfigSchemaField[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return undefined;
+    const f = item as Record<string, unknown>;
+    if (typeof f.key !== 'string' || !/^[a-zA-Z0-9_]+$/.test(f.key)) return undefined;
+    if (typeof f.label !== 'string' || typeof f.type !== 'string' || !SCHEMA_TYPES.has(f.type)) return undefined;
+    if (f.type === 'select' && (!Array.isArray(f.options) || f.options.length === 0 || f.options.some(o => typeof o !== 'string'))) return undefined;
+    const field: ConfigSchemaField = { key: f.key, label: f.label, type: f.type as ConfigSchemaField['type'] };
+    if (Array.isArray(f.options)) field.options = f.options as string[];
+    if (f.default !== undefined) field.default = f.default as string | number | boolean;
+    out.push(field);
+  }
+  return out;
+}
+
 export interface PluginState {
   file: string;
   name?: string;
@@ -12,6 +40,7 @@ export interface PluginState {
   overridden: boolean;
   builtin: boolean;
   adapter?: ExternalAdapter;
+  configSchema?: ConfigSchemaField[];
 }
 
 export interface PluginLoaderOptions {
@@ -129,7 +158,8 @@ export class PluginLoader {
     for (const [name, entry] of byName) {
       const overridden = !entry.builtin && builtinNameSet.has(name);
       const adapter = makeAdapter(entry.mod, entry.file);
-      this.state.set(entry.file, { file: entry.file, name, status: 'ok', overridden, builtin: entry.builtin, adapter });
+      const configSchema = validateConfigSchema((entry.mod as any).configSchema);
+      this.state.set(entry.file, { file: entry.file, name, status: 'ok', overridden, builtin: entry.builtin, adapter, configSchema });
       log.info(`[PluginLoader] Loaded ${entry.file} (${name})${entry.builtin ? ' [builtin]' : ''}${overridden ? ' [overrides builtin]' : ''}`);
     }
     for (const e of errors) {
