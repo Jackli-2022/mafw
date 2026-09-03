@@ -80,6 +80,7 @@ import { handleRestartAgent } from './routes/restart-agent';
 import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { handleMediaSwitch } from './routes/media-switch';
+import { handleUsagePluginCreate, handleUsagePluginDelete, handleUsagePluginsList, handleUsagePluginSourceGet, handleUsagePluginSourcePut, handleUsagePluginTest, UsagePluginsDeps } from './routes/usage-plugins';
 
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
@@ -1231,6 +1232,29 @@ class MafwScheduler {
         },
       }),
       invalidateScanService: () => { this.scanService = null; },
+    };
+  }
+
+  private usagePluginsDeps(): UsagePluginsDeps {
+    const builtinDir = path.join(__dirname, 'usage', 'builtin-plugins');
+    const readBuiltinSource = (name: string): string | null => {
+      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(name)) return null;
+      try { return fs.readFileSync(path.join(builtinDir, name + '.js'), 'utf8'); } catch { return null; }
+    };
+    return {
+      loader: this.pluginLoader!,
+      pluginsDir: path.join(os.homedir(), '.mafw', 'usage-plugins'),
+      getDisabled: () => (Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : []),
+      getPluginConfig: (name) => config.usage?.pluginConfig?.[name] ?? null,
+      readBuiltinSource,
+      runAdapter: async (name) => {
+        const adapter = this.pluginLoader?.getAdapters().find(a => a.name === name);
+        if (!adapter) return { ok: false, error: 'plugin not found or disabled' };
+        try { return { ok: true, result: await adapter.fetch() }; } catch (err: any) { return { ok: false, error: err.message }; }
+      },
+      builtinNames: () => {
+        try { return fs.readdirSync(builtinDir).filter(f => f.endsWith('.js')).map(f => f.replace(/\.js$/, '')); } catch { return []; }
+      },
     };
   }
 
@@ -4141,32 +4165,47 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/usage/plugins — plugin state list
+        // GET /api/usage/plugins — plugin state list (+templates for the wizard)
         if (req.url?.match(/^\/api\/usage\/plugins(?:\?|$)/) && req.method === 'GET') {
-          const plugins = (this.pluginLoader?.getState() ?? []).map(s => ({
-            file: s.file,
-            name: s.name,
-            status: s.status,
-            error: s.error,
-            overridden: s.overridden,
-          }));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ plugins }));
+          await handleUsagePluginsList(req, res, this.usagePluginsDeps());
+          return;
+        }
+
+        // POST /api/usage/plugins/create — template wizard or raw source
+        if (req.url?.match(/^\/api\/usage\/plugins\/create$/) && req.method === 'POST') {
+          await handleUsagePluginCreate(req, res, this.usagePluginsDeps());
+          return;
+        }
+
+        // GET/PUT /api/usage/plugins/:name/source — user plugin code editor
+        const mSource = req.url?.match(/^\/api\/usage\/plugins\/([^/]+)\/source$/);
+        if (mSource && req.method === 'GET') {
+          await handleUsagePluginSourceGet(req, res, this.usagePluginsDeps(), decodeURIComponent(mSource[1]));
+          return;
+        }
+        if (mSource && req.method === 'PUT') {
+          await handleUsagePluginSourcePut(req, res, this.usagePluginsDeps(), decodeURIComponent(mSource[1]));
+          return;
+        }
+
+        // POST /api/usage/plugins/:name/test — one-shot adapter fetch
+        const mTest = req.url?.match(/^\/api\/usage\/plugins\/([^/]+)\/test$/);
+        if (mTest && req.method === 'POST') {
+          await handleUsagePluginTest(req, res, this.usagePluginsDeps(), decodeURIComponent(mTest[1]));
+          return;
+        }
+
+        // DELETE /api/usage/plugins/:name — remove user plugin file
+        const mDel = req.url?.match(/^\/api\/usage\/plugins\/([^/]+)$/);
+        if (mDel && req.method === 'DELETE') {
+          await handleUsagePluginDelete(req, res, this.usagePluginsDeps(), decodeURIComponent(mDel[1]));
           return;
         }
 
         // POST /api/usage/plugins/reload — manual reload
         if (req.url?.match(/^\/api\/usage\/plugins\/reload$/) && req.method === 'POST') {
           await this.pluginLoader?.reload();
-          const plugins = (this.pluginLoader?.getState() ?? []).map(s => ({
-            file: s.file,
-            name: s.name,
-            status: s.status,
-            error: s.error,
-            overridden: s.overridden,
-          }));
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, plugins }));
+          await handleUsagePluginsList(req, res, this.usagePluginsDeps());
           return;
         }
 
