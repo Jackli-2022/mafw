@@ -478,9 +478,18 @@ html[data-theme="light"] .mafw-shell {
 .mafw-usage-wb-dot.error { color: var(--danger); }
 .mafw-usage-wb-dot.disabled { color: var(--text-4); }
 .mafw-usage-wb-summary { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-usage-wb-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / .35); z-index: 990; }
 .mafw-usage-wb-drawer {
-  margin-top: 12px; border: 1px solid var(--accent); border-radius: 12px;
-  padding: 14px; background: var(--bg-raised); display: flex; flex-direction: column; gap: 10px;
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 92vw);
+  z-index: 991; overflow-y: auto; padding: 14px; gap: 10px;
+  background: var(--bg-raised); border-left: 1px solid var(--border-strong, var(--text-5));
+  box-shadow: -8px 0 24px rgb(0 0 0 / .18);
+  display: flex; flex-direction: column;
+  animation: mafw-usage-wb-slide .16s ease-out;
+}
+@keyframes mafw-usage-wb-slide {
+  from { transform: translateX(32px); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }
 .mafw-usage-wb-drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .mafw-usage-wb-section {

@@ -410,6 +410,8 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
 
       <Show when={selectedCard()}>
         {(card) => (
+          <>
+          <div class="mafw-usage-wb-backdrop" onClick={() => setSelected(null)} />
           <div class="mafw-usage-wb-drawer">
             <div class="mafw-usage-wb-drawer-head">
               <div>
@@ -531,6 +533,7 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
               </Show>
             </Show>
           </div>
+          </>
         )}
       </Show>
     </div>
