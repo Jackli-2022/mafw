@@ -3,9 +3,19 @@ import { USAGE_TEMPLATES, renderTemplate } from '../../src/usage/templates';
 const ctx = { readBuiltinSource: () => null };
 
 describe('usage templates', () => {
-  it('lists four templates with unique ids', () => {
+  it('lists five templates with unique ids', () => {
     const ids = USAGE_TEMPLATES.map(t => t.id);
-    expect(ids).toEqual(['balance-api', 'token-plan', 'clone-builtin', 'blank']);
+    expect(ids).toEqual(['balance-api', 'token-plan', 'local-stats', 'clone-builtin', 'blank']);
+  });
+
+  it('local-stats renders null-returning placeholder with local type', () => {
+    const r = renderTemplate('local-stats', { name: 'gateway', displayName: '蓝区统一网关' }, ctx);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(() => new Function(r.content)).not.toThrow();
+      expect(r.content).toContain("type: 'local'");
+      expect(r.content).toContain('return null');
+    }
   });
 
   it('balance-api renders syntactic js embedding values', () => {

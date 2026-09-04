@@ -68,6 +68,7 @@ function pluginSummary(deps: UsagePluginsDeps): any[] {
     error: s.error,
     disabled: s.disabled,
     origin: originOf(deps, s),
+    pluginType: s.pluginType,
     configSchema: s.configSchema,
     config: s.name ? deps.getPluginConfig(s.name) : null,
   }));

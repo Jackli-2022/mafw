@@ -42,6 +42,8 @@ export interface PluginState {
   adapter?: ExternalAdapter;
   configSchema?: ConfigSchemaField[];
   disabled: boolean;
+  /** Raw mod.type passthrough ('api' | 'token-plan' | 'local' | ...), uncoerced. */
+  pluginType?: string;
 }
 
 export interface PluginLoaderOptions {
@@ -160,13 +162,17 @@ export class PluginLoader {
       const adapter = makeAdapter(entry.mod, entry.file);
       const configSchema = validateConfigSchema((entry.mod as any).configSchema);
       const disabled = this.disabledPlugins.has(name);
-      this.state.set(entry.file, { file: entry.file, name, status: 'ok', overridden, builtin: entry.builtin, adapter, configSchema, disabled });
+      const pluginType = typeof (entry.mod as any).type === 'string' ? (entry.mod as any).type : undefined;
+      this.state.set(entry.file, { file: entry.file, name, status: 'ok', overridden, builtin: entry.builtin, adapter, configSchema, disabled, pluginType });
       log.info(`[PluginLoader] Loaded ${entry.file} (${name})${entry.builtin ? ' [builtin]' : ''}${overridden ? ' [overrides builtin]' : ''}${disabled ? ' [disabled]' : ''}`);
     }
     for (const e of errors) {
       this.state.set(e.file, { file: e.file, status: 'error', error: e.error, overridden: false, builtin: e.builtin, disabled: false });
       log.warn(`[PluginLoader] ${e.file} load error: ${e.error}`);
     }
+    // Persist discovered builtin names so isBuiltinName reflects directory
+    // findings even when production wiring declares none (index.ts passes []).
+    this.builtinNames = builtinNameSet;
   }
 
   getAdapters(): ExternalAdapter[] {

@@ -92,8 +92,9 @@ describe('usage plugins routes', () => {
     const entry = list.body.plugins.find((p: any) => p.name === 'my-gw');
     expect(entry.origin).toBe('user');
     expect(entry.configSchema).toHaveLength(4);
+    expect(entry.pluginType).toBe('api');
     expect(entry.config).toBeNull();
-    expect(list.body.templates).toHaveLength(4);
+    expect(list.body.templates).toHaveLength(5);
     expect(list.body.builtins).toContain('deepseek');
   });
 
