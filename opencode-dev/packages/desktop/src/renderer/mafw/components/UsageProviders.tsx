@@ -42,6 +42,38 @@ const fmtReset = (ms: number): string => {
   return h > 0 ? `${h}h${m}m` : `${m}m`
 }
 
+// Per-kind overview rendering. A balance plugin without a budget must NOT
+// degrade into local-stats-shaped tokens — platform money data leads, local
+// tokens are demoted to meta.
+function windowView(card: Card, w: any, budget: number | undefined): { label: string; value: string; bar?: number; meta: string[] } {
+  if (card.kind === "balance") {
+    if (w.limit > 0) {
+      return { label: "余额", value: `$${w.used ?? 0} / $${w.limit}`, bar: w.pct ?? 0, meta: w.remaining !== undefined ? [`剩余 $${w.remaining}`] : [] }
+    }
+    if (w.remaining !== undefined && w.remaining > 0) {
+      return { label: "余额", value: `$${w.remaining}`, meta: w.tokens > 0 ? [`本机累计 ${fmt(w.tokens)} tok`] : [] }
+    }
+    return {
+      label: "已花费",
+      value: `$${w.used ?? 0}`,
+      meta: [w.tokens > 0 ? `本机累计 ${fmt(w.tokens)} tok` : "", w.projectedCost > 0 ? `预计 $${w.projectedCost}` : ""].filter(Boolean),
+    }
+  }
+  if (card.kind === "plan") {
+    return {
+      label: w.window,
+      value: w.limit > 0 ? `${w.pct ?? 0}% · $${w.used ?? 0}/$${w.limit}` : `${w.pct ?? 0}%`,
+      bar: w.pct ?? 0,
+      meta: w.resetAt ? [`${fmtReset(w.resetAt - Date.now())}后重置`] : [],
+    }
+  }
+  const used = w.used ?? 0
+  if (budget && budget > 0) {
+    return { label: "预算", value: `$${used} / $${budget}`, bar: Math.min(100, Math.round((used / budget) * 100)), meta: w.tokens > 0 ? [`${fmt(w.tokens)} tok`] : [] }
+  }
+  return { label: "累计", value: w.tokens > 0 ? `${fmt(w.tokens)} tok` : `$${used}`, meta: w.projectedCost > 0 ? [`预计 $${w.projectedCost}`] : [] }
+}
+
 function summaryOf(provider: any): string | undefined {
   const w = provider?.windows?.[0]
   if (!w) return undefined
@@ -450,32 +482,24 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
                   {card().kind === "plan" ? "窗口用量" : card().kind === "balance" ? "余额用量" : "用量概览"}
                 </span>
                 <For each={card().windows}>
-                  {(w: any) => (
+                  {(w: any) => { const v = windowView(card(), w, cfg().budgets?.[card().name]); return (
                     <div class="mafw-usage-wb-ovw">
                       <div class="mafw-usage-wb-ovw-head">
-                        <span class="mafw-usage-wb-ovw-label">{w.window}</span>
-                        <span class="mafw-usage-wb-ovw-val">
-                          {w.limit > 0
-                            ? `$${w.used ?? 0} / $${w.limit}`
-                            : w.unit === "pct"
-                              ? `${w.pct ?? 0}%`
-                              : w.tokens !== undefined && w.tokens > 0
-                                ? `${fmt(w.tokens)} tok`
-                                : `$${w.used ?? 0}`}
-                        </span>
+                        <span class="mafw-usage-wb-ovw-label">{v.label}</span>
+                        <span class="mafw-usage-wb-ovw-val">{v.value}</span>
                       </div>
-                      <div class="mafw-usage-wb-ovw-bar">
-                        <div class="mafw-usage-wb-ovw-fill" style={{ width: `${Math.min(w.pct ?? 0, 100)}%` }} />
-                      </div>
-                      <div class="mafw-usage-wb-ovw-meta">
-                        <Show when={w.remaining !== undefined}><span>剩余 ${w.remaining}</span></Show>
-                        <Show when={w.resetAt}><span>{fmtReset(w.resetAt - Date.now())}后重置</span></Show>
-                        <Show when={w.limit === 0 && w.tokens !== undefined && w.projectedCost !== undefined && w.projectedCost > 0}>
-                          <span>预计 ${w.projectedCost}</span>
-                        </Show>
-                      </div>
+                      <Show when={v.bar !== undefined}>
+                        <div class="mafw-usage-wb-ovw-bar">
+                          <div class="mafw-usage-wb-ovw-fill" style={{ width: `${Math.min(v.bar!, 100)}%` }} />
+                        </div>
+                      </Show>
+                      <Show when={v.meta.length > 0}>
+                        <div class="mafw-usage-wb-ovw-meta">
+                          <For each={v.meta}>{(m) => <span>{m}</span>}</For>
+                        </div>
+                      </Show>
                     </div>
-                  )}
+                  )}}
                 </For>
               </div>
             </Show>
