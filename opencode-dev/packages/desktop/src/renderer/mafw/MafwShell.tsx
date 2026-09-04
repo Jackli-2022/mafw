@@ -833,6 +833,49 @@ export function MafwShell() {
     }
   }
 
+  // Reconcile flow cards against server truth. Pending cards the server no
+  // longer knows about were resolved elsewhere (approval-bridge timeout,
+  // session end) while an SSE gap swallowed the reply event — without this,
+  // ghost pending cards inflate the approvals badge forever.
+  const reconcileFlowCards = () => {
+    window.api.mafw.permissions.list().then((items: any[]) => {
+      const live = new Set<string>((items || []).map((r: any) => String(r.id)))
+      for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
+      setFlowCards(prev => {
+        let changed = false
+        const next: Record<string, FlowCardRecord[]> = {}
+        for (const [sid, list] of Object.entries(prev)) {
+          next[sid] = list.map(c => {
+            if (c.kind === "permission" && c.data.status === "pending" && !live.has(String(c.data.id))) {
+              changed = true
+              return { ...c, data: { ...c.data, status: "expired" } }
+            }
+            return c
+          })
+        }
+        return changed ? next : prev
+      })
+    }).catch(e => console.warn("[mafw] permissions reconcile:", e))
+    window.api.mafw.questions.list().then((items: any[]) => {
+      const live = new Set<string>((items || []).map((r: any) => String(r.id)))
+      for (const req of items || []) upsertCard(req.sessionID, { kind: "ask", data: mapAskCard(req, Date.now()) })
+      setFlowCards(prev => {
+        let changed = false
+        const next: Record<string, FlowCardRecord[]> = {}
+        for (const [sid, list] of Object.entries(prev)) {
+          next[sid] = list.map(c => {
+            if (c.kind === "ask" && c.data.status === "pending" && !live.has(String(c.data.id))) {
+              changed = true
+              return { ...c, data: { ...c.data, status: "expired" } }
+            }
+            return c
+          })
+        }
+        return changed ? next : prev
+      })
+    }).catch(e => console.warn("[mafw] questions reconcile:", e))
+  }
+
   const answersToRecord = (answers: string[][], sid: string, cardId: string): Record<string, string[]> => {
     const rec: Record<string, string[]> = {}
     const card = flowCards()[sid]?.find(c => c.data.id === cardId)
@@ -989,7 +1032,11 @@ export function MafwShell() {
   // Direct EventSource SSE connection (renderer has native EventSource)
   onMount(async () => {
     let es: EventSource | null = null
-    onCleanup(() => { if (es) { console.log("[mafw] SSE closing"); es.close() } })
+    const reconcileTimer = setInterval(reconcileFlowCards, 60000)
+    onCleanup(() => {
+      clearInterval(reconcileTimer)
+      if (es) { console.log("[mafw] SSE closing"); es.close() }
+    })
     const info = await window.api.mafw.gateway.info()
     if (!info?.url) {
       console.log("[mafw] SSE: no gateway URL yet")
@@ -1006,6 +1053,7 @@ export function MafwShell() {
       // Gateway restarts keep the same port; reconnect is the only reliable
       // signal that the cached session list is stale.
       sessionStore.invalidate()
+      reconcileFlowCards()
     }
     // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
     window.api.mafw.permissions.list().then((items: any[]) => {
