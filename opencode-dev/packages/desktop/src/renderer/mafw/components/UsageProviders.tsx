@@ -20,6 +20,7 @@ type Card = {
   displayName: string
   origin: "user" | "builtin" | "override" | "local"
   kind: "local" | "balance" | "plan"
+  implicit?: boolean
   badge: string
   status: "ok" | "error" | "disabled"
   error?: string
@@ -98,14 +99,14 @@ function mergeCards(
     if (p.name) seen.add(p.name)
     const usage = usageProviders.find((u: any) => u.name === p.name)
     const status: Card["status"] = p.status === "error" ? "error" : p.disabled ? "disabled" : "ok"
-    const kind: Card["kind"] = usage?.type === "token-plan" ? "plan" : "balance"
+    const kind: Card["kind"] = p.pluginType === "local" ? "local" : usage?.type === "token-plan" ? "plan" : "balance"
     cards.push({
       key: p.file || name,
       name: p.name || name,
       displayName: nameOf(p.name || name),
       origin: p.origin || "user",
       kind,
-      badge: `插件 · ${kind === "plan" ? "token-plan" : "balance"}`,
+      badge: kind === "local" ? "本地统计" : `插件 · ${kind === "plan" ? "token-plan" : "balance"}`,
       status,
       error: p.error,
       summary: summaryOf(usage),
@@ -123,6 +124,7 @@ function mergeCards(
       displayName: nameOf(u.name),
       origin: "local",
       kind: "local",
+      implicit: true,
       badge: "本地统计",
       status: "ok",
       summary: summaryOf(u),
@@ -132,7 +134,7 @@ function mergeCards(
   for (const name of Object.keys({ ...limits, ...budgets })) {
     if (seen.has(name)) continue
     seen.add(name)
-    cards.push({ key: name, name, displayName: nameOf(name), origin: "local", kind: "local", badge: "本地统计", status: "ok" })
+    cards.push({ key: name, name, displayName: nameOf(name), origin: "local", kind: "local", implicit: true, badge: "本地统计", status: "ok" })
   }
   return cards
 }
@@ -335,6 +337,20 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
     }
   }
 
+  const createLocalPlugin = async (name: string, displayName: string) => {
+    try {
+      const r = await window.api.mafw.sessions.usagePluginsCreate({ template: "local-stats", values: { name, displayName } })
+      if (r?.ok) {
+        showToastV2({ description: `已创建本地统计插件 ${name}`, duration: 2500 })
+        await refreshAll()
+      } else {
+        showToastV2({ description: r?.error || "创建失败", duration: 3000 })
+      }
+    } catch (e: any) {
+      showToastV2({ description: `创建失败: ${e.message}`, duration: 3000 })
+    }
+  }
+
   const startWizard = () => {
     setWizardStep("pick")
     setWizardTemplate(null)
@@ -501,6 +517,18 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
                     </div>
                   )}}
                 </For>
+              </div>
+            </Show>
+
+            <Show when={card().implicit}>
+              <div class="mafw-usage-wb-section">
+                <span class="mafw-usage-wb-sec-title">创建插件</span>
+                <div class="mafw-config-hint">
+                  此 provider 尚无插件文件。自动创建本地统计占位插件后即可统一管理（启用/禁用、源码升级为余额查询）。
+                </div>
+                <div class="mafw-usage-wb-btnrow">
+                  <ButtonV2 variant="contrast" size="small" onClick={() => createLocalPlugin(card().name, card().displayName)}>自动创建本地统计插件</ButtonV2>
+                </div>
               </div>
             </Show>
 
