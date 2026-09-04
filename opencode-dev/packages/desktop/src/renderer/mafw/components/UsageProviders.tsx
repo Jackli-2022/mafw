@@ -419,7 +419,7 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
                 <div class="mafw-usage-wb-card-name">{card().displayName}</div>
                 <div class="mafw-usage-wb-card-sub">
                   <span class="mafw-usage-wb-badge">{card().badge}</span>
-                  <span class="mafw-usage-wb-badge">{badgeText(card()) || '运行中'}</span>
+                  <span class="mafw-usage-wb-badge" classList={{ ok: card().status === 'ok', error: card().status === 'error', disabled: card().status === 'disabled' }}>{badgeText(card()) || '运行中'}</span>
                   <span class="mafw-config-hint">{card().name}</span>
                 </div>
               </div>
@@ -431,32 +431,39 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
             </Show>
 
             <div class="mafw-usage-wb-section">
-              <label class="mafw-config-label">预算（$，留空取消）</label>
-              <TextInputV2
-                type="number"
-                value={cfg().budgets?.[card().name] !== undefined ? String(cfg().budgets[card().name]) : ""}
-                onInput={e => setBudget(card().name, e.currentTarget.value)}
-                placeholder="留空删除"
-              />
-              <label class="mafw-config-label" style={{ "margin-top": "8px" }}>Token 限额（$）</label>
-              <div class="mafw-usage-wb-row3">
-                <For each={["5h", "7d", "month"]}>
-                  {(win) => (
-                    <TextInputV2
-                      type="number"
-                      value={cfg().limits?.[card().name]?.[win] !== undefined ? String(cfg().limits[card().name][win]) : ""}
-                      onInput={e => setLimit(card().name, win, e.currentTarget.value)}
-                      placeholder={win}
-                    />
-                  )}
-                </For>
+              <span class="mafw-usage-wb-sec-title">配额配置</span>
+              <div class="mafw-usage-wb-field">
+                <label class="mafw-config-label">预算（$，留空取消）</label>
+                <TextInputV2
+                  type="number"
+                  value={cfg().budgets?.[card().name] !== undefined ? String(cfg().budgets[card().name]) : ""}
+                  onInput={e => setBudget(card().name, e.currentTarget.value)}
+                  placeholder="留空删除"
+                />
               </div>
-              <label class="mafw-config-label" style={{ "margin-top": "8px" }}>Cookie（{card().name}）</label>
-              <TextInputV2
-                value={cfg().cookies?.[card().name] ?? ""}
-                onInput={e => setCookie(card().name, e.currentTarget.value)}
-                placeholder="平台 session cookie（可选）"
-              />
+              <div class="mafw-usage-wb-field">
+                <label class="mafw-config-label">Token 限额（$）</label>
+                <div class="mafw-usage-wb-row3">
+                  <For each={["5h", "7d", "month"]}>
+                    {(win) => (
+                      <TextInputV2
+                        type="number"
+                        value={cfg().limits?.[card().name]?.[win] !== undefined ? String(cfg().limits[card().name][win]) : ""}
+                        onInput={e => setLimit(card().name, win, e.currentTarget.value)}
+                        placeholder={win}
+                      />
+                    )}
+                  </For>
+                </div>
+              </div>
+              <div class="mafw-usage-wb-field">
+                <label class="mafw-config-label">Cookie（{card().name}）</label>
+                <TextInputV2
+                  value={cfg().cookies?.[card().name] ?? ""}
+                  onInput={e => setCookie(card().name, e.currentTarget.value)}
+                  placeholder="平台 session cookie（可选）"
+                />
+              </div>
               <div class="mafw-usage-wb-btnrow">
                 <ButtonV2 variant="contrast" size="small" onClick={() => saveCfg(cfg())} disabled={saving()}>
                   {saving() ? "保存中…" : "保存配置"}
@@ -466,6 +473,7 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
 
             <Show when={card().origin !== "local"}>
               <div class="mafw-usage-wb-section">
+                <span class="mafw-usage-wb-sec-title">插件操作</span>
                 <div class="mafw-usage-wb-row">
                   <SwitchV2 checked={card().status !== "disabled"} onChange={v => toggleDisabled(card().name, v)}>启用</SwitchV2>
                   <ButtonV2 variant="ghost" size="small" onClick={() => runTest(card().name)}>▶ 测试运行</ButtonV2>
@@ -487,7 +495,7 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
               </div>
 
               <div class="mafw-usage-wb-section">
-                <label class="mafw-config-label">源码</label>
+                <span class="mafw-usage-wb-sec-title">源码</span>
                 <Show when={sourceLoading()} fallback={
                   <Show when={source() !== null} fallback={
                     <div class="mafw-config-hint">内置插件源码只读。克隆到用户目录后可编辑。</div>
@@ -514,7 +522,7 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
 
               <Show when={card().configSchema && card().configSchema!.length > 0}>
                 <div class="mafw-usage-wb-section">
-                  <label class="mafw-config-label">插件参数（pluginConfig）</label>
+                  <span class="mafw-usage-wb-sec-title">插件参数（pluginConfig）</span>
                   <For each={card().configSchema}>
                     {(f) => (
                       <div class="mafw-usage-wb-row">
