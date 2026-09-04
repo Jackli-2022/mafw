@@ -517,6 +517,13 @@ html[data-theme="light"] .mafw-shell {
   color: var(--text-4);
 }
 .mafw-usage-wb-field { display: flex; flex-direction: column; gap: 4px; }
+.mafw-usage-wb-ovw { display: flex; flex-direction: column; gap: 4px; }
+.mafw-usage-wb-ovw-head { display: flex; justify-content: space-between; align-items: baseline; }
+.mafw-usage-wb-ovw-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.mafw-usage-wb-ovw-val { font-size: 12px; color: var(--text-1); font-family: var(--font-mono, ui-monospace, monospace); }
+.mafw-usage-wb-ovw-bar { height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; }
+.mafw-usage-wb-ovw-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .2s; }
+.mafw-usage-wb-ovw-meta { display: flex; gap: 12px; font-size: 11px; color: var(--text-4); }
 .mafw-usage-wb-row { display: flex; flex-direction: column; gap: 4px; }
 .mafw-usage-wb-row label, .mafw-usage-wb-row > .mafw-config-label { font-size: 11px; color: var(--text-3); }
 .mafw-usage-wb-row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }

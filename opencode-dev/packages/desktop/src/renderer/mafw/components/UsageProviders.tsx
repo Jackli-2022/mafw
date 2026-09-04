@@ -19,17 +19,27 @@ type Card = {
   name: string
   displayName: string
   origin: "user" | "builtin" | "override" | "local"
+  kind: "local" | "balance" | "plan"
   badge: string
   status: "ok" | "error" | "disabled"
   error?: string
   summary?: string
   configSchema?: SchemaField[]
+  windows?: any[]
 }
 
 const fmt = (n: number): string => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
   if (n >= 1000) return `${Math.round(n / 1000)}k`
   return String(n)
+}
+
+const fmtReset = (ms: number): string => {
+  if (ms <= 0) return '<1h'
+  const h = Math.floor(ms / 3600000)
+  const m = Math.floor((ms % 3600000) / 60000)
+  if (h >= 24) return `${Math.floor(h / 24)}d${h % 24}h`
+  return h > 0 ? `${h}h${m}m` : `${m}m`
 }
 
 function summaryOf(provider: any): string | undefined {
@@ -56,17 +66,19 @@ function mergeCards(
     if (p.name) seen.add(p.name)
     const usage = usageProviders.find((u: any) => u.name === p.name)
     const status: Card["status"] = p.status === "error" ? "error" : p.disabled ? "disabled" : "ok"
-    const type = (usage?.type || "api") === "token-plan" ? "token-plan" : "balance"
+    const kind: Card["kind"] = usage?.type === "token-plan" ? "plan" : "balance"
     cards.push({
       key: p.file || name,
       name: p.name || name,
       displayName: nameOf(p.name || name),
       origin: p.origin || "user",
-      badge: `插件 · ${type}`,
+      kind,
+      badge: `插件 · ${kind === "plan" ? "token-plan" : "balance"}`,
       status,
       error: p.error,
       summary: summaryOf(usage),
       configSchema: p.configSchema,
+      windows: usage?.windows,
     })
   }
   for (const u of usageProviders) {
@@ -78,15 +90,17 @@ function mergeCards(
       name: u.name,
       displayName: nameOf(u.name),
       origin: "local",
+      kind: "local",
       badge: "本地统计",
       status: "ok",
       summary: summaryOf(u),
+      windows: u.windows,
     })
   }
   for (const name of Object.keys({ ...limits, ...budgets })) {
     if (seen.has(name)) continue
     seen.add(name)
-    cards.push({ key: name, name, displayName: nameOf(name), origin: "local", badge: "本地统计", status: "ok" })
+    cards.push({ key: name, name, displayName: nameOf(name), origin: "local", kind: "local", badge: "本地统计", status: "ok" })
   }
   return cards
 }
@@ -428,6 +442,42 @@ export function UsageProviders(props: { modelAvailable: () => any[] | null }) {
 
             <Show when={card().error}>
               <div class="mafw-usage-wb-error">{card().error}</div>
+            </Show>
+
+            <Show when={card().windows && card().windows!.length > 0}>
+              <div class="mafw-usage-wb-section">
+                <span class="mafw-usage-wb-sec-title">
+                  {card().kind === "plan" ? "窗口用量" : card().kind === "balance" ? "余额用量" : "用量概览"}
+                </span>
+                <For each={card().windows}>
+                  {(w: any) => (
+                    <div class="mafw-usage-wb-ovw">
+                      <div class="mafw-usage-wb-ovw-head">
+                        <span class="mafw-usage-wb-ovw-label">{w.window}</span>
+                        <span class="mafw-usage-wb-ovw-val">
+                          {w.limit > 0
+                            ? `$${w.used ?? 0} / $${w.limit}`
+                            : w.unit === "pct"
+                              ? `${w.pct ?? 0}%`
+                              : w.tokens !== undefined && w.tokens > 0
+                                ? `${fmt(w.tokens)} tok`
+                                : `$${w.used ?? 0}`}
+                        </span>
+                      </div>
+                      <div class="mafw-usage-wb-ovw-bar">
+                        <div class="mafw-usage-wb-ovw-fill" style={{ width: `${Math.min(w.pct ?? 0, 100)}%` }} />
+                      </div>
+                      <div class="mafw-usage-wb-ovw-meta">
+                        <Show when={w.remaining !== undefined}><span>剩余 ${w.remaining}</span></Show>
+                        <Show when={w.resetAt}><span>{fmtReset(w.resetAt - Date.now())}后重置</span></Show>
+                        <Show when={w.limit === 0 && w.tokens !== undefined && w.projectedCost !== undefined && w.projectedCost > 0}>
+                          <span>预计 ${w.projectedCost}</span>
+                        </Show>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
             </Show>
 
             <div class="mafw-usage-wb-section">
