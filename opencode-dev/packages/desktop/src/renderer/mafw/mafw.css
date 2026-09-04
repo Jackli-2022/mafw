@@ -458,6 +458,7 @@ html[data-theme="light"] .mafw-shell {
   flex-direction: column;
 }
 /* ── Usage workbench: two-column (cards left, drawer right, in-section) ── */
+.mafw-approvals-group-title { font-size: 12px; font-weight: 700; color: var(--text-2); margin: 16px 0 8px; }
 .mafw-usage-wb { display: flex; gap: 14px; align-items: flex-start; }
 .mafw-usage-wb-main { flex: 1 1 auto; min-width: 0; }
 .mafw-usage-wb-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }

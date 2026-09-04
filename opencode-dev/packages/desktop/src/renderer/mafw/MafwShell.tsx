@@ -903,6 +903,14 @@ export function MafwShell() {
     return n
   })
 
+  const pendingPermissionCards = createMemo(() => {
+    const out: any[] = []
+    for (const list of Object.values(flowCards())) {
+      for (const c of list) if (c.kind === "permission" && c.data.status === "pending") out.push(c.data)
+    }
+    return out.sort((a, b) => a.createdAt - b.createdAt)
+  })
+
   const sessionPending = (sid: string) => {
     const list = flowCards()[sid] || []
     return list.filter(c => c.data.status === "pending").length
@@ -2153,7 +2161,7 @@ export function MafwShell() {
             ) : activeTab() === "memory" ? (
               <MemoryPage />
             ) : activeTab() === "approvals" ? (
-              <ApprovalsPage />
+              <ApprovalsPage permissionCards={pendingPermissionCards} onPermissionReply={permReply} />
             ) : activeTab() === "triage" ? (
               <TriagePage />
             ) : activeTab() === "automation" ? (
