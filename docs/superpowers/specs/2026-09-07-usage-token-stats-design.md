@@ -28,7 +28,7 @@ UsageDock（桌面右栏 usage tab）目前只有会话/项目/记忆三个维�
 **trajectory-store.ts**：
 
 - prune 逻辑从硬编码 14 天改读 `trajectory.retentionDays`（`0` 时跳过 turns 的 prune；goal_sessions 豁免规则保留；`trajectory_events` 的 prune 不在本次范围内，保持现状）
-- 新增索引：`CREATE INDEX IF NOT EXISTS idx_traj_turn_created ON trajectory_turns(created_at);`
+- 窗口查询走已有索引 `idx_traj_turn_ttl(created_at)`（`gateway/src/memory/gateway-db.ts:121`，无需新建）
 - 新增聚合方法：
 
 ```ts

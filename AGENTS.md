@@ -179,6 +179,12 @@ onMount → gateway.info() 等 ready
 所有 data fetching 在组件内 inline 使用 `createEffect`，无独立 hook。
 轮询间隔：Dashboard 15s / Approvals 10s / Triage 10s / Automations 10s。
 
+### 5.9a RightDock 用量/配额拆分（2026-09-07）
+- RightDock tabs：`tasks | trajectory | usage | quota | notes`
+- **UsageDock（用量）**：上下文条 + Token 统计（会话/项目/记忆三行 + **分模型统计**：今日/7天/30天/全部窗口切换、KPI 行 [总 tokens/估算成本/缓存命中率]、Top3+其他聚合、TooltipV2 五类明细）；数据 `GET /api/usage` 的 `modelStats.windows`，15s 轮询
+- **QuotaDock（配额）**：ProviderSection 配额窗口（从 UsageDock 迁出）；UsagePill 点击开 quota tab；15s 轮询同一端点
+- 分模型统计查询现算：`TrajectoryStore.getModelUsageStats()` GROUP BY provider+model（索引 `idx_traj_turn_ttl`），成本经 `usage/model-prices.ts` 价目表估算（无价目模型 `estimatedCost: null` 显示 `—`）
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）
@@ -687,7 +693,7 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 
 **数据模型**（gateway.db）：
 - `goal_outcomes`：每个 goal 归档时写一行（verdict、轮数、成本、thumbs、policy_version、failure_kind/signature）
-- `goal_sessions`：goal 生命周期内所有 session 的追加映射（豁免 trajectory 14 天 prune）
+- `goal_sessions`：goal 生命周期内所有 session 的追加映射（豁免 trajectory prune——保留期 `trajectory.retentionDays`，默认 365 天，0=永久）
 - `evolution_proposals`：演化提议表（Phase 2 使用，Phase 1 仅建表）
 
 **写入点：**
