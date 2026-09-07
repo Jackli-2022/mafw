@@ -94,6 +94,21 @@ export interface StickyNoteBudget {
   used: number
 }
 
+export interface ModelUsageStat {
+  provider: string | null
+  model: string
+  turns: number
+  tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+  estimatedCost: number | null
+}
+
+export interface ModelUsageWindows {
+  today: ModelUsageStat[]
+  '7d': ModelUsageStat[]
+  '30d': ModelUsageStat[]
+  all: ModelUsageStat[]
+}
+
 export interface MergedSearchOptions {
   query: string
   maxFacts?: number

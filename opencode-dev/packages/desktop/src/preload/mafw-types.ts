@@ -1,7 +1,7 @@
 import type {
   Session, Project, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
-  EnergyDistribution, Axiom, L5Heuristic, StickyNote,
+  EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
   ModelConfigState, ModelConfigUpdate,
@@ -42,6 +42,7 @@ export type MafwAPI = {
     usage: (sessionID?: string, projectID?: string) => Promise<{
       summary: { session: any; project: any; global: any }
       providers: any[]
+      modelStats?: ModelUsageWindows
       updatedAt: number
     }>
     usagePlugins: () => Promise<{ plugins: { file: string; name?: string; status: string; error?: string; overridden: boolean }[] }>

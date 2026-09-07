@@ -81,6 +81,7 @@ import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { handleMediaSwitch } from './routes/media-switch';
 import { handleUsagePluginCreate, handleUsagePluginDelete, handleUsagePluginsList, handleUsagePluginSourceGet, handleUsagePluginSourcePut, handleUsagePluginTest, UsagePluginsDeps } from './routes/usage-plugins';
+import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
@@ -4319,9 +4320,17 @@ class MafwScheduler {
               summary.global = store.getGlobalTokenSummary();
             }
             const memory = store ? store.getMemoryTokenSummary() : null;
+            let modelStats: ModelUsageWindows = { today: [], '7d': [], '30d': [], all: [] };
+            if (store) {
+              try {
+                modelStats = buildModelStats(store);
+              } catch (err: any) {
+                log.warn(`[Usage] modelStats failed: ${err.message}`);
+              }
+            }
             const providerData = this.usagePoller ? await this.usagePoller.poll() : { providers: [], updatedAt: Date.now() };
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ summary, memory, ...providerData }));
+            res.end(JSON.stringify({ summary, memory, modelStats, ...providerData }));
           } catch (err: any) {
             log.warn(`[Usage] failed: ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });

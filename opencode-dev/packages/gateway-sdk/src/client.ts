@@ -3,7 +3,7 @@ import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
-  StickyNote, StickyNoteBudget,
+  StickyNote, StickyNoteBudget, ModelUsageWindows,
   CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState,
@@ -163,7 +163,13 @@ export class MafwClient implements IMafwClient {
 
     usage: async (
       params?: { sessionID?: string; projectID?: string },
-    ): Promise<any> => {
+    ): Promise<{
+      summary: any
+      memory: any
+      providers: any[]
+      modelStats?: ModelUsageWindows
+      updatedAt: number
+    }> => {
       const q = new URLSearchParams()
       if (params?.sessionID) q.set('sessionID', params.sessionID)
       if (params?.projectID) q.set('projectID', params.projectID)
