@@ -133,4 +133,33 @@ describe('MinHash dedup regression fixes', () => {
       expect(active.length).toBeLessThanOrEqual(2);
     });
   });
+
+  describe('merge behavior caps', () => {
+    test('merge does NOT boost energy (no snowball feedback)', async () => {
+      const store = new HarmonicUnitFileStore(dir);
+      await store.write(makeUnit({ id: 'mem_e1', primary_abstraction: 'energy cap test fact alpha', memory_value: 'v1', energy: 0.8 }));
+      await store.write(makeUnit({ id: 'mem_e2', primary_abstraction: 'energy cap test fact alpha', memory_value: 'v2', energy: 0.8 }));
+      const active = store.indexManager_().getIndex().entries.filter((e: any) => !e.superseded_by);
+      expect(active.length).toBe(1);
+      expect(active[0].energy).toBe(0.8); // 旧实现会变成 0.95
+    });
+
+    test('mergeValues caps total length at 2000 chars, keeping newest content intact', () => {
+      const merger = new MinHashMerger();
+      const newer = 'N'.repeat(1500);
+      const section = (tag: string) => `${tag}${'x'.repeat(300)}`;
+      const older = `${section('A')}\n---\n[Updated 2026-01-01] ${section('B')}\n---\n[Updated 2026-01-02] ${section('C')}`;
+      const result = (merger as any).mergeValues(newer, older, '2026-09-04T00:00:00.000Z');
+      expect(result.length).toBeLessThanOrEqual(2000);
+      expect(result.startsWith(newer)).toBe(true);
+      expect(result).toContain('[Updated 2026-09-04T00:00:00.000Z]');
+      expect(result).toContain('A' + 'x'.repeat(300)); // 最新旧段完整保留
+    });
+
+    test('mergeValues keeps full older value when under cap', () => {
+      const merger = new MinHashMerger();
+      const result = (merger as any).mergeValues('new', 'old', '2026-09-04T00:00:00.000Z');
+      expect(result).toBe('new\n---\n[Updated 2026-09-04T00:00:00.000Z] old');
+    });
+  });
 });

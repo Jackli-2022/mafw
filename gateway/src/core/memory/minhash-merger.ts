@@ -6,6 +6,7 @@ export class MinHashMerger {
   private threshold: number = 0.7;
   private maxMergeChars: number = 500;
   private maxMergeDepth: number = 10;
+  private maxMergedValueChars: number = 2000;
 
   static normalizeForDedup(text: string): string {
     return text
@@ -149,7 +150,6 @@ export class MinHashMerger {
           ...existingUnit.cue_anchors,
         ]);
         result.memory_value = this.mergeValues(result.memory_value, existingUnit.memory_value, result.updated_at);
-        result.energy = Math.min(1.0, result.energy + 0.15);
         mergedFrom.push(existingUnit.id);
         if (existingUnit.merged_from?.length) {
           for (const ancestorId of existingUnit.merged_from) {
@@ -179,7 +179,16 @@ export class MinHashMerger {
   private mergeValues(newerValue: string, olderValue: string, updatedAt?: string): string {
     if (newerValue === olderValue) return newerValue;
     const header = updatedAt ? `[Updated ${updatedAt}] ` : '[Updated] ';
-    return `${newerValue}\n---\n${header}${olderValue}`;
+    const sep = `\n---\n${header}`;
+    const budget = this.maxMergedValueChars - newerValue.length - sep.length;
+    if (budget <= 0) return newerValue;
+    let kept = olderValue.length <= budget ? olderValue : olderValue.slice(0, budget);
+    if (kept.length < olderValue.length) {
+      // Cut at the last section boundary so we never leave a truncated section.
+      const lastBoundary = kept.lastIndexOf('\n---\n');
+      if (lastBoundary > 0) kept = kept.slice(0, lastBoundary);
+    }
+    return `${newerValue}${sep}${kept}`;
   }
 
   private dedupMerge(a: string, b: string): string {
