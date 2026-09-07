@@ -30,9 +30,9 @@ describe('MinHashMerger', () => {
   });
 
   describe('generateSignature', () => {
-    test('produces 8-element signature', () => {
+    test('produces 32-element signature', () => {
       const sig = merger.generateSignature('memory-curator agent definition');
-      expect(sig).toHaveLength(8);
+      expect(sig).toHaveLength(32);
     });
 
     test('identical normalized texts produce identical signatures', () => {
@@ -268,14 +268,39 @@ describe('MinHashMerger', () => {
       expect(result.merged_from).toEqual(['some_prev_id']);
     });
 
-    test('near-variant texts caught by MinHash with 8 seeds', async () => {
+    test('duplicate of one segment of a merged blob still matches (anti-dilution)', async () => {
+      const index = makeMockIndex([{
+        id: 'blob_1',
+        pa: 'alpha unique fact about zebra crossings | memory-curator agent definition',
+      }]);
+      const store = {
+        read: async (id: string) => ({
+          id, type: 'semantic' as const,
+          primary_abstraction: 'alpha unique fact about zebra crossings | memory-curator agent definition',
+          cue_anchors: [], memory_value: 'blob content', energy: 0.8,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }),
+        deleteSync: () => true,
+        markSuperseded: () => true,
+      };
+      const unit = {
+        id: 'new_dup', type: 'semantic' as const,
+        primary_abstraction: 'memory-curator agent definition',
+        cue_anchors: [], memory_value: 'content', energy: 0.8,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      };
+      const result = await merger.merge(unit as any, index as any, store);
+      expect(result.merged_from).toContain('blob_1');
+    });
+
+    test('near-variant texts caught by MinHash', async () => {
       const text1 = 'memory-curator agent definition with restricted tool whitelist and security guardrails';
       const text2 = 'memory-curator agent definition with restricted tool whitelist and security guardrails enabled';
 
       const sig1 = merger.generateSignature(text1);
       const sig2 = merger.generateSignature(text2);
       const sim = merger.similarity(sig1, sig2);
-      expect(sim).toBeGreaterThan(0.625);
+      expect(sim).toBeGreaterThan(0.7); // 实测 0.969
     });
 
     test('dissimilar texts not caught by MinHash', async () => {
@@ -285,7 +310,20 @@ describe('MinHashMerger', () => {
       const sig1 = merger.generateSignature(text1);
       const sig2 = merger.generateSignature(text2);
       const sim = merger.similarity(sig1, sig2);
-      expect(sim).toBeLessThanOrEqual(0.625);
+      expect(sim).toBeLessThan(0.3); // 实测 0.063
+    });
+
+    test('shared English token alone does NOT cause high similarity (blob regression)', () => {
+      // 线上事故：这两条曾因共享 "gateway" 被判定 sim=1.0 而误合并
+      const a = 'gateway 部署流程需要全局安装';
+      const b = 'gateway 的媒体插件热加载机制';
+      expect(merger.similarity(merger.generateSignature(a), merger.generateSignature(b))).toBeLessThan(0.5); // 实测 0.313
+    });
+
+    test('CJK texts sharing only project name do NOT merge', () => {
+      const a = 'mafw 记忆系统检索排序';
+      const b = 'mafw 桌面端截图功能';
+      expect(merger.similarity(merger.generateSignature(a), merger.generateSignature(b))).toBeLessThan(0.3); // 实测 0.063
     });
   });
 });

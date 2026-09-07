@@ -2,8 +2,8 @@ import { HarmonicUnit } from './harmonic-types';
 import { HarmonicIndexManager } from './harmonic-index';
 
 export class MinHashMerger {
-  private signatureSize: number = 8;
-  private threshold: number = 0.625;
+  private signatureSize: number = 32;
+  private threshold: number = 0.7;
   private maxMergeChars: number = 500;
   private maxMergeDepth: number = 10;
 
@@ -15,27 +15,55 @@ export class MinHashMerger {
       .trim();
   }
 
+  /** Split a (possibly merged) abstraction into its ' | ' segments. */
+  static segmentsOf(text: string): string[] {
+    return text.split(' | ');
+  }
+
+  /** FNV-1a 32-bit. */
+  private static hashForward(s: string): number {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
+
+  /** FNV-1a over the reversed string, forced odd (second independent hash). */
+  private static hashReverse(s: string): number {
+    let h = 0x811c9dc5;
+    for (let i = s.length - 1; i >= 0; i--) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return (h | 1) >>> 0;
+  }
+
+  /**
+   * MinHash signature via double hashing (Kirsch–Mitzenmacher): two
+   * independent FNV-1a hashes per shingle generate signatureSize values
+   * h_k = (h1 + k*h2) mod 2^32. Replaces the old `hash*31 + charCode + seed`
+   * scheme whose in-loop seed was negligible next to char codepoints — all
+   * "independent" hashes degenerated to picking the same lowest-codepoint
+   * shingle, so any two memories sharing one English token (e.g. "gateway")
+   * scored similarity 1.0 and were wrongly merged.
+   */
   generateSignature(text: string): number[] {
     const normalized = MinHashMerger.normalizeForDedup(text);
-    const shingles: string[] = [];
+    const sig = new Array<number>(this.signatureSize).fill(Number.MAX_SAFE_INTEGER);
+    let found = false;
     for (let i = 0; i + 3 <= normalized.length; i++) {
-      shingles.push(normalized.slice(i, i + 3));
-    }
-    const seeds = [0, 1, 2, 3, 4, 5, 6, 7];
-    return seeds.map(seed => {
-      let minHash = Infinity;
-      for (const shingle of shingles) {
-        let hash = 0;
-        for (let j = 0; j < shingle.length; j++) {
-          hash = hash * 31 + shingle.charCodeAt(j) + seed;
-        }
-        hash = hash >>> 0;
-        if (hash < minHash) {
-          minHash = hash;
-        }
+      const shingle = normalized.slice(i, i + 3);
+      const h1 = MinHashMerger.hashForward(shingle);
+      const h2 = MinHashMerger.hashReverse(shingle);
+      found = true;
+      for (let k = 0; k < this.signatureSize; k++) {
+        const hk = (h1 + Math.imul(k, h2)) >>> 0;
+        if (hk < sig[k]) sig[k] = hk;
       }
-      return minHash === Infinity ? 0 : minHash;
-    });
+    }
+    return found ? sig : sig.fill(0);
   }
 
   similarity(sigA: number[], sigB: number[]): number {
@@ -46,6 +74,21 @@ export class MinHashMerger {
       }
     }
     return matches / this.signatureSize;
+  }
+
+  /**
+   * Max similarity of a signature against each ' | ' segment of a (possibly
+   * merged) text. Merged blobs concatenate segments, which dilutes whole-text
+   * Jaccard (a true duplicate of one segment scores ~1/segments against the
+   * blob); taking the per-segment max preserves duplicate detection.
+   */
+  maxSimilarityToText(sig: number[], text: string): number {
+    let best = 0;
+    for (const seg of MinHashMerger.segmentsOf(text)) {
+      const s = this.similarity(sig, this.generateSignature(seg));
+      if (s > best) best = s;
+    }
+    return best;
   }
 
   /**
@@ -81,12 +124,11 @@ export class MinHashMerger {
       if (entry.superseded_by) continue;
       if ((entry.merged_from?.length ?? 0) >= this.maxMergeDepth) continue;
 
-      const normalizedExisting = MinHashMerger.normalizeForDedup(entry.primary_abstraction);
       const exactMatch = normalizedNew.length > 0
-        && normalizedNew.length === normalizedExisting.length
-        && normalizedNew === normalizedExisting;
+        && MinHashMerger.segmentsOf(entry.primary_abstraction)
+          .some(seg => MinHashMerger.normalizeForDedup(seg) === normalizedNew);
 
-      const sim = exactMatch ? 1.0 : this.similarity(sig, this.generateSignature(entry.primary_abstraction));
+      const sim = exactMatch ? 1.0 : this.maxSimilarityToText(sig, entry.primary_abstraction);
       if (sim > this.threshold) {
         const existingUnit = await store.read(entry.id);
         if (!existingUnit) continue;
@@ -144,6 +186,11 @@ export class MinHashMerger {
     const normA = MinHashMerger.normalizeForDedup(a);
     const normB = MinHashMerger.normalizeForDedup(b);
     if (normA === normB) return a;
+    // If a is already one of b's segments, keep b unchanged (prevents
+    // identical-duplicate writes from growing the blob with repeat segments).
+    for (const seg of MinHashMerger.segmentsOf(b)) {
+      if (MinHashMerger.normalizeForDedup(seg) === normA) return b;
+    }
     return `${a} | ${b}`;
   }
 
