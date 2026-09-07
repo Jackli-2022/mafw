@@ -174,8 +174,14 @@ export class ReflectionPipeline {
     for (const entry of this.opts.index.getIndex().entries) {
       if (entry.type !== 'semantic' && entry.type !== 'procedural') continue;
       if ((entry as any).superseded_by) continue; // skip already-superseded entries
-      const other = `${entry.primary_abstraction} ${(entry.cue_anchors ?? []).join(' ')}`;
-      const sim = this.merger.similarity(sig, this.merger.generateSignature(other));
+      // Merged blobs concatenate segments with ' | ' — compare per segment
+      // so a true duplicate of one segment is not diluted by the rest.
+      let sim = 0;
+      for (const seg of MinHashMerger.segmentsOf(entry.primary_abstraction)) {
+        const other = `${seg} ${(entry.cue_anchors ?? []).join(' ')}`;
+        const s = this.merger.similarity(sig, this.merger.generateSignature(other));
+        if (s > sim) sim = s;
+      }
 
       if (sim > 0.6) return { kind: 'duplicate' };
       if (sim > 0.4 && sim > (bestMatch?.sim ?? 0)) {
