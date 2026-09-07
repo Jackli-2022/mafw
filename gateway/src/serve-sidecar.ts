@@ -1,24 +1,27 @@
 /**
- * Runs `opencode serve` as a supervised sidecar. The actual spawn / readiness
- * detection / process-tree teardown is delegated to the opencode SDK's
- * `createOpencodeServer` (official, cross-platform verified) instead of a
- * hand-rolled spawn — our previous custom spawn (cross-spawn + windowsHide)
- * was flaky under the detached daemon environment.
+ * Runs `opencode serve` as a supervised sidecar.
  *
- * The gateway's `startServeWatchdog` performs periodic health polling and
- * recovery regardless of whether the serve was spawned by us or adopted. The
- * SDK does not expose the child process or an exit callback; all crash
- * detection therefore goes through the health-poll path.
+ * Spawn options matter on Windows: the gateway usually runs detached (mafw
+ * daemon / self-update takeover spawn it without a console). Spawning serve
+ * without `windowsHide: true` makes each serve process create a NEW VISIBLE
+ * console window — the user closes it, killing serve, and the watchdog
+ * respawn pops the window again (the 2026-09-07 "black window" flapping
+ * loop). The SDK's createOpencodeServer does not pass windowsHide, so we
+ * hand-roll the spawn with the exact SDK contract: `opencode serve
+ * --hostname=<host> --port=<port>`, env OPENCODE_CONFIG_CONTENT, readiness
+ * on the stdout line "opencode server listening on <url>", timeout → tree
+ * kill (taskkill /F /T — the cmd shim wrapper and opencode.exe form a tree).
  */
+import * as childProcess from 'child_process';
 
 export interface ServeSidecarOptions {
   host: string;
   port: number;
   /** How long to wait for the `opencode server listening` line. */
   timeoutMs?: number;
-  /** Forwarded serve stdout/stderr chunks (kept for interface compat). */
+  /** Forwarded serve stdout/stderr chunks (restores [Serve] diagnostics). */
   onOutput?: (chunk: string) => void;
-  /** Fired when the serve process exits after startup completed (kept for interface compat). */
+  /** Fired when the serve process exits after startup completed. */
   onExit?: (code: number | null) => void;
 }
 
@@ -27,18 +30,98 @@ export interface ServeSidecar {
   close: () => void;
 }
 
-// Runtime dynamic import: this gateway compiles to CJS while the SDK ships ESM
-// (exports.import only), and tsc rewrites a plain import() into require().
-const loadSdk = new Function('spec', 'return import(spec)') as (s: string) => Promise<any>;
+// cross-spawn resolves npm .cmd shims on Windows (plain child_process.spawn
+// throws EINVAL for .cmd targets on Node >= 18.20). Shipped as an
+// @opencode-ai/sdk dependency (hoisted); no direct type declarations needed.
+const crossSpawn = require('cross-spawn') as (
+  cmd: string,
+  args: string[],
+  opts: Record<string, unknown>,
+) => any;
+
+const isWindows = process.platform === 'win32';
+
+/** Kill the whole process tree (cmd shim wrapper + opencode.exe). */
+function treeKill(pid: number | undefined, child: any): void {
+  try {
+    if (isWindows && pid) {
+      childProcess.execSync(`taskkill /F /T /PID ${pid}`, { windowsHide: true, stdio: 'ignore' });
+    } else {
+      child.kill('SIGKILL');
+    }
+  } catch { /* already gone */ }
+}
 
 export function startServeSidecar(opts: ServeSidecarOptions): Promise<ServeSidecar> {
-  return loadSdk('@opencode-ai/sdk/server')
-    .then(({ createOpencodeServer }) =>
-      createOpencodeServer({
-        hostname: opts.host,
-        port: opts.port,
-        timeout: opts.timeoutMs ?? 30_000,
-      }),
-    )
-    .then(({ url, close }: { url: string; close: () => void }) => ({ url, close }));
+  return new Promise((resolve, reject) => {
+    const child = crossSpawn('opencode', ['serve', `--hostname=${opts.host}`, `--port=${opts.port}`], {
+      env: { ...process.env, OPENCODE_CONFIG_CONTENT: '{}' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    let settled = false;
+    let output = '';
+    let url: string | null = null;
+
+    const finish = (err: Error | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) {
+        treeKill(child.pid, child);
+        reject(err);
+      } else {
+        resolve({
+          url: url!,
+          close: () => {
+            treeKill(child.pid, child);
+            try { child.kill(); } catch { /* already gone */ }
+          },
+        });
+      }
+    };
+
+    const timer = setTimeout(() => {
+      finish(new Error(`Timeout waiting for opencode serve to start after ${opts.timeoutMs ?? 30_000}ms`));
+    }, opts.timeoutMs ?? 30_000);
+    (timer as any).unref?.();
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      output += text;
+      opts.onOutput?.(text);
+      if (settled) return;
+      for (const line of output.split('\n')) {
+        if (line.startsWith('opencode server listening')) {
+          const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
+          if (match) {
+            url = match[1];
+            finish(null);
+            return;
+          }
+        }
+      }
+    });
+
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString();
+      output += text;
+      opts.onOutput?.(text);
+    });
+
+    child.on('exit', (code: number | null) => {
+      if (!settled) {
+        finish(new Error(
+          `opencode serve exited with code ${code} before becoming ready`
+          + (output.trim() ? `\nServer output: ${output}` : ''),
+        ));
+      }
+      opts.onExit?.(code);
+    });
+
+    child.on('error', (err: Error) => {
+      finish(err);
+    });
+  });
 }
