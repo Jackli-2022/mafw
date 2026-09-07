@@ -171,6 +171,9 @@ export interface GatewayConfig {
     pluginConfig: Record<string, any>;
     disabledPlugins?: string[];
   };
+  trajectory: {
+    retentionDays: number;
+  };
   media: {
     /** opencode provider that owns the credentials (must be connected in opencode). */
     provider: string;
@@ -370,6 +373,9 @@ function defaults(projectDir: string): GatewayConfig {
       cookies: {},
       pluginConfig: {},
     },
+    trajectory: {
+      retentionDays: 365,
+    },
     media: {
       provider: 'xiaomi',
       model: 'mimo-v2.5',
@@ -497,6 +503,7 @@ export class Config {
   get manager() { return this.data.manager; }
   get recall() { return this.data.recall; }
   get usage() { return this.data.usage; }
+  get trajectory() { return this.data.trajectory; }
   get runtime() { return this.data.runtime; }
 
   /**

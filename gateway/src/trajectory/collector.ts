@@ -11,6 +11,11 @@ function truncate(s: string | undefined, n: number): string | undefined {
   return s.length > n ? s.slice(0, n) + '\u2026' : s;
 }
 
+export function resolveRetentionDays(v: number | undefined): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return 365;
+  return Math.floor(v);
+}
+
 interface TurnState {
   turnID: number;
   turnStartMs: number;
@@ -46,6 +51,7 @@ export class TrajectoryCollector {
     private store: TrajectoryStore,
     private db: GatewayDatabase,
     private projectID: string,
+    private getRetentionDays: () => number = () => 14,
   ) {}
 
   setOpencodeClient(client: any): void {
@@ -104,7 +110,8 @@ export class TrajectoryCollector {
       ...extra,
     };
     this.store.recordEvent(evt);
-    this.store.pruneOlderThan(14);
+    const days = resolveRetentionDays(this.getRetentionDays());
+    if (days > 0) this.store.pruneOlderThan(days);
     return evt as TrajectoryEvent;
   }
 

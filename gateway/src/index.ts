@@ -1704,7 +1704,7 @@ class MafwScheduler {
       const { TrajectoryCollector } = require('./trajectory/collector');
       const trajStore = new TrajectoryStore(this.getGatewayDb(), projectDir);
       this.trajectoryStore = trajStore;
-      const collector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir);
+      const collector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir, () => config.trajectory.retentionDays);
       collector.setRoleFor((sid: string) => this.internalSessionRoles.get(sid) ?? null);
       this.trajectoryCollector = collector;
       const restored = this.getGatewayDb().kvAll<{ role: string }>('internal-session');
