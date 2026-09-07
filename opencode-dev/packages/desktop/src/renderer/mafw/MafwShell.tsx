@@ -25,6 +25,7 @@ import { RightDock } from "./components/RightDock"
 import { NotesDock } from "./components/NotesDock"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
+import { QuotaDock } from "./components/QuotaDock"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { TabStrip, type Tab } from "./components/TabStrip"
 import { registerMafwToolCards } from "./components/MafwToolCards"
@@ -1608,12 +1609,12 @@ export function MafwShell() {
 
   // ── Unified right dock (tasks / trajectory tabs) ──
   const [rightDockOpen, setRightDockOpen] = createSignal(localStorage.getItem("mafw-right-dock-open") === "1")
-  const [rightDockTab, setRightDockTab] = createSignal<"tasks" | "trajectory" | "usage" | "notes">(
-    (localStorage.getItem("mafw-right-dock-tab") as "tasks" | "trajectory" | "usage" | "notes") || "tasks"
+  const [rightDockTab, setRightDockTab] = createSignal<"tasks" | "trajectory" | "usage" | "quota" | "notes">(
+    (localStorage.getItem("mafw-right-dock-tab") as "tasks" | "trajectory" | "usage" | "quota" | "notes") || "tasks"
   )
   const [rightDockWidth, setRightDockWidth] = createSignal(Number(localStorage.getItem("mafw-right-dock-width")) || 320)
 
-  const applyRightDock = (open: boolean, tab?: "tasks" | "trajectory" | "usage" | "notes") => {
+  const applyRightDock = (open: boolean, tab?: "tasks" | "trajectory" | "usage" | "quota" | "notes") => {
     setRightDockOpen(open)
     if (tab !== undefined) setRightDockTab(tab)
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch {}
@@ -1820,7 +1821,7 @@ export function MafwShell() {
               }
               setActiveSessionId(id)
               setActiveViewId(id)
-            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "usage")} />
+            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "quota")} />
             <ResizeHandle
               direction="horizontal"
               edge="end"
@@ -2254,6 +2255,9 @@ export function MafwShell() {
                   model={modelSel}
                   modelGroups={modelGroups}
                 />
+              </div>
+              <div style={{ display: rightDockTab() === "quota" ? "contents" : "none" }}>
+                <QuotaDock modelGroups={modelGroups} />
               </div>
               <div style={{ display: rightDockTab() === "notes" ? "contents" : "none" }}>
                 <NotesDock />

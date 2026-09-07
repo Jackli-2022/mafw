@@ -69,30 +69,6 @@ function TokenStackBar(props: { data: TokenSummary['totalTokens'] }) {
   )
 }
 
-const fmtTime = (ms: number): string => {
-  if (ms <= 0) return '<1h'
-  const hours = Math.floor(ms / 3600000)
-  const minutes = Math.floor((ms % 3600000) / 60000)
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24)
-    return `${days}d${hours % 24}h`
-  }
-  return hours > 0 ? `${hours}h${minutes}m` : `${minutes}m`
-}
-
-const pacingIcon = (pacing?: string): string => {
-  if (pacing === 'ahead') return '\u2191'
-  if (pacing === 'under') return '\u2193'
-  return '\u2192'
-}
-
-const severityClass = (severity: string): string => {
-  if (severity === 'critical') return 'mafw-usage-severity-critical'
-  if (severity === 'high') return 'mafw-usage-severity-high'
-  if (severity === 'mid') return 'mafw-usage-severity-mid'
-  return 'mafw-usage-severity-low'
-}
-
 type TokenSummary = {
   totalTokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
   totalCost: number
@@ -186,80 +162,8 @@ function TokenStatRow(props: {
   )
 }
 
-function ProviderSection(props: { provider: any; displayName?: string }) {
-  const p = () => props.provider
-  const barColor = (severity: string) => {
-    if (severity === 'critical') return 'var(--danger)'
-    if (severity === 'high') return '#d19a66'
-    if (severity === 'mid') return 'var(--warning)'
-    return 'var(--accent)'
-  }
-  return (
-    <div class={`mafw-usage-provider ${severityClass(p().severity)}`}>
-      <div class="mafw-usage-provider-header">
-        <span class="mafw-usage-provider-name">{props.displayName || p().name}</span>
-        <Show when={p().plan}>
-          <span class="mafw-usage-provider-plan">({p().plan})</span>
-        </Show>
-      </div>
-      <For each={p().windows}>
-        {(w: any) => (
-          <Show when={w.limit > 0} fallback={
-            <div class="mafw-usage-window mafw-usage-window-no-limit">
-              <span class="mafw-usage-window-label">{w.window}</span>
-              <Show when={w.tokens !== undefined && w.tokens > 0} fallback={
-                <Show when={w.remaining !== undefined} fallback={
-                  <>
-                    <span class="mafw-usage-window-spent">${w.used}</span>
-                    <span class="mafw-usage-window-hint">spent</span>
-                  </>
-                }>
-                  <span class="mafw-usage-window-spent">${w.remaining}</span>
-                  <span class="mafw-usage-window-hint">余额</span>
-                </Show>
-              }>
-                <span class="mafw-usage-window-spent">{fmt(w.tokens)}</span>
-                <span class="mafw-usage-window-hint">tokens · 预计 ${w.projectedCost !== undefined ? w.projectedCost.toFixed(2) : w.used.toFixed(2)}</span>
-              </Show>
-            </div>
-          }>
-            {(() => {
-              const tooltip = () => {
-                const parts = [
-                  w.unit === '$' ? `已用 $${w.used} / $${w.limit}` : w.unit === 'pct' ? `已用 ${w.pct}%` : `已用 ${w.used} / ${w.limit}`,
-                ]
-                if (w.tokens) parts.push(`${fmt(w.tokens)} tokens`)
-                if (w.remaining !== undefined) parts.push(`剩余 $${w.remaining}`)
-                if (w.resetAt) parts.push(`重置 ${fmtTime(w.resetAt - Date.now())}`)
-                if (w.projected !== undefined && w.projected > w.pct) parts.push(`预计 ${w.projected}%`)
-                return parts.join(' · ')
-              }
-              return (
-                <TooltipV2 value={tooltip()} openDelay={300}>
-                  <div class="mafw-usage-window">
-                    <span class="mafw-usage-window-label">{w.window}</span>
-                    <div class="mafw-usage-window-progress">
-                      <div class="mafw-usage-window-progress-fill" style={{ width: `${Math.min(w.pct, 100)}%`, background: barColor(p().severity) }} />
-                    </div>
-                    <span class="mafw-usage-window-pct">{w.pct}%</span>
-                    <Show when={w.resetAt}>
-                      <span class="mafw-usage-window-reset">{fmtTime(w.resetAt - Date.now())}</span>
-                    </Show>
-                    <Show when={w.pacing}>
-                      <span class="mafw-usage-window-pacing">{pacingIcon(w.pacing)}</span>
-                    </Show>
-                  </div>
-                </TooltipV2>
-              )
-            })()}
-          </Show>
-        )}
-      </For>
-    </div>
-  )
-}
-
 // UsageConfigEditor removed — moved to Config page (left-nav > Usage)
+// ProviderSection removed — moved to QuotaDock.tsx (RightDock "quota" tab)
 
 export function UsageDock(props: {
   sessionID: string
@@ -305,16 +209,6 @@ export function UsageDock(props: {
     onCleanup(() => window.removeEventListener('mafw:usage-config-saved', handler))
   })
 
-  // providerID → display name from the opencode provider list; usage rows are
-  // keyed by providerID (e.g. "gateway") but users know the display name (e.g. 蓝区统一网关)
-  const providerNames = createMemo(() => {
-    const m = new Map<string, string>()
-    for (const g of props.modelGroups()) {
-      if (g.provider && g.provider !== g.providerID) m.set(g.providerID, g.provider)
-    }
-    return m
-  })
-
   const contextInfo = createMemo(() => {
     const sid = props.sessionID
     if (!sid) return null
@@ -342,7 +236,6 @@ export function UsageDock(props: {
   const hasData = () => {
     const d = apiData()
     if (!d) return false
-    if (d.providers && d.providers.length > 0) return true
     if (d.memory?.turnCount) return true
     return d.summary?.session?.turnCount || d.summary?.project?.turnCount || d.summary?.global?.turnCount
   }
@@ -473,15 +366,6 @@ export function UsageDock(props: {
                 </div>
               </Show>
             </Show>
-          </div>
-        </Show>
-
-        <Show when={apiData()?.providers && apiData()!.providers.length > 0}>
-          <div class="mafw-usage-section">
-            <div class="mafw-usage-section-title">配额窗口</div>
-            <For each={apiData()!.providers}>
-              {(provider: any) => <ProviderSection provider={provider} displayName={providerNames().get(provider.name)} />}
-            </For>
           </div>
         </Show>
       </Show>

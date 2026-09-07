@@ -6,10 +6,10 @@ import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
 
 export function RightDock(props: {
   open: boolean
-  tab: "tasks" | "trajectory" | "usage" | "notes"
+  tab: "tasks" | "trajectory" | "usage" | "quota"
   width: number
   onClose: () => void
-  onTab: (tab: "tasks" | "trajectory" | "usage" | "notes") => void
+  onTab: (tab: "tasks" | "trajectory" | "usage" | "quota") => void
   children: any
 }) {
   return (
@@ -21,6 +21,7 @@ export function RightDock(props: {
               <TabsV2.Trigger value="tasks">📋 任务</TabsV2.Trigger>
               <TabsV2.Trigger value="trajectory">📊 轨迹</TabsV2.Trigger>
               <TabsV2.Trigger value="usage">📈 用量</TabsV2.Trigger>
+              <TabsV2.Trigger value="quota">⏳ 配额</TabsV2.Trigger>
               <TabsV2.Trigger value="notes">📝 便签</TabsV2.Trigger>
             </TabsV2.List>
           </TabsV2>
