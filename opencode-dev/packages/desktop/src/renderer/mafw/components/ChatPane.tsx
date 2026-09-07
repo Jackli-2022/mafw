@@ -1604,166 +1604,171 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   return (
     <div class="mafw-pane" onClick={props.onFocus}>
-      <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll}>
-        <Show when={sidProp()}>
-          <div class="mafw-session-titlebar">
-            <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
-              <span class="mafw-agent-avatar">{title().charAt(0)}</span>
-              <span class="mafw-session-titlebar-text">{title()}</span>
-              <Show when={sessionTokenSummary().turns > 0}>
-                {(s) => (
-                  <TooltipV2 value={`${fmtCtx(s().total)} tokens · ${s().turns} 回合${s().cost > 0 ? ` · $${s().cost.toFixed(4)}` : ''}`} openDelay={300}>
-                    <span class="mafw-session-token-badge">
-                      {fmtCtx(s().total)}
-                      <Show when={s().cost > 0}>
-                        <span class="mafw-session-token-cost"> · ${s().cost.toFixed(2)}</span>
-                      </Show>
-                    </span>
-                  </TooltipV2>
-                )}
-              </Show>
-              <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
-                <span class="mafw-chat-header-divider" />
-              </Show>
-              <TaskBar
-                todos={props.todos[sidProp()] || []}
-                tokens={props.taskMetrics(sidProp()).tokens}
-                started={props.taskMetrics(sidProp()).started}
-                open={props.taskListOpen && props.tasksPlacement === "bar"}
-                onToggle={() => props.onTaskToggle(titlebarEl, sidProp())}
-                onHoverOpen={() => props.onTaskHoverOpen(titlebarEl, sidProp())}
-                onHoverLeave={props.onTaskHoverLeave}
-              />
-              <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
-                <span class="mafw-chat-header-done">
-                  {(props.todos[sidProp()] || []).filter(t => t.status === "completed").length}/
-                  {(props.todos[sidProp()] || []).length}
-                </span>
-              </Show>
-              <Show when={props.store.session_status[sidProp()]?.type === "busy"}>
-                <span class="mafw-session-status">
-                  <span class="mafw-session-status-dot" />
-                  Running
-                </span>
-              </Show>
-              <Show when={props.isManager && props.onNewTopic}>
-                <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
-                  <ButtonV2 variant="ghost" size="small" onClick={e => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
-                </TooltipV2>
-              </Show>
-              <Show when={props.canClosePane}>
-                <TooltipV2 value="关闭分屏" openDelay={300}>
-                  <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏">✕</ButtonV2>
-                </TooltipV2>
-              </Show>
-              <Show when={props.parentID && props.onBackToParent}>
-                <TooltipV2 value="返回父会话" openDelay={300}>
-                  <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={e => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话">← 返回</ButtonV2>
-                </TooltipV2>
-              </Show>
-            </div>
-          </div>
-          <For each={userMessages()}>
-            {(msg) => (
-              <div class="mafw-turn-anchor" data-turn-id={msg.id}>
-              <ErrorBoundary
-                fallback={(err) => {
-                  console.error("[mafw] turn render error:", err)
-                  return <div class="mafw-turn-render-error">该回合渲染失败：{(err as Error)?.message || String(err)}</div>
-                }}
-              >
-              <>
-                {/* Voice message: show status inline within user message position */}
-                <Show when={msg.voiceStatus && msg.voiceStatus !== "done"}>
-                  <div class="mafw-voice-turn">
-                    <div class="mafw-voice-message" classList={{
-                      "uploading": msg.voiceStatus === "uploading",
-                      "analyzing": msg.voiceStatus === "analyzing",
-                      "failed": msg.voiceStatus === "failed",
-                    }}>
-                      <div class="mafw-voice-waveform">
-                        <svg class="mafw-voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                          <line x1="12" y1="19" x2="12" y2="23"/>
-                          <line x1="8" y1="23" x2="16" y2="23"/>
-                        </svg>
-                        <span class="mafw-voice-duration">{msg.voiceDuration?.toFixed(1) || "?"}s</span>
-                      </div>
-                      <Show when={msg.voiceStatus === "uploading"}>
-                        <span class="mafw-voice-status">上传中...</span>
-                      </Show>
-                      <Show when={msg.voiceStatus === "analyzing"}>
-                        <span class="mafw-voice-status">正在分析...</span>
-                      </Show>
-                      <Show when={msg.voiceStatus === "failed"}>
-                        <span class="mafw-voice-status error">上传失败：{msg.error || "未知错误"}</span>
-                      </Show>
-                    </div>
-                  </div>
-                </Show>
-                {/* Media attachments from history: render image/audio/video players */}
-                <Show when={msg.role === "user" && (!msg.voiceStatus || msg.voiceStatus === "done")}>
-                  <For each={mediaRefsForTurn(msg.id)}>
-                    {(ref) => {
-                      const url = `${props.gatewayUrl.replace(/\/+$/, "")}/a2a/artifacts/${ref.artifactId}`
-                      return (
-                        <div class="mafw-media-history">
-                          <Show when={ref.mediaType.startsWith("image/")}>
-                            <img src={url} alt={ref.name} class="mafw-media-image" />
-                          </Show>
-                          <Show when={ref.mediaType.startsWith("audio/")}>
-                            <audio controls preload="metadata" src={url}>
-                              您的浏览器不支持音频播放。
-                            </audio>
-                          </Show>
-                          <Show when={ref.mediaType.startsWith("video/")}>
-                            <video controls preload="metadata" src={url} class="mafw-media-video">
-                              您的浏览器不支持视频播放。
-                            </video>
-                          </Show>
-                        </div>
-                      )
-                    }}
-                  </For>
-                </Show>
-                <For each={voiceRepliesForTurn(msg.id)}>
-                  {(vr) => (
-                    <div class="mafw-turn-audio">
-                      <AudioReply
-                        text={`[语音回复 art:${vr.artifactId}${vr.voice ? ` 音色:${vr.voice}` : ''}]`}
-                        gatewayUrl={props.gatewayUrl || 'http://127.0.0.1:3000'}
-                      />
-                    </div>
-                  )}
-                </For>
-                <Show when={!msg.voiceStatus || msg.voiceStatus === "done"}>
-                  <SessionTurn
-                    sessionID={sidProp()}
-                    messageID={msg.id}
-                    classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
-                  />
-                </Show>
-                <For each={cardsForTurn(msg.id)}>
-                  {(c) => renderFlowCard(c)}
-                </For>
-              </>
-              </ErrorBoundary>
-              </div>
-            )}
-          </For>
-          {/* DeepSeek-style user-turn node navigation */}
-          <MessageNav container={containerRef} turns={navTurns} />
-          {/* Agent switch traces (local UI only) */}
-          <For each={props.switchLogs()[sidProp()] || []}>
-            {(t) => <div class="mafw-switch-trace">{t}</div>}
-          </For>
-          {/* Flow cards without a resolvable turn link stay at the bottom */}
+      <div class="mafw-chat-scroll-wrap">
+        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll}>
           <Show when={sidProp()}>
-            <For each={unplacedCards()}>
-              {(c) => renderFlowCard(c)}
+            <div class="mafw-session-titlebar">
+              <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
+                <span class="mafw-agent-avatar">{title().charAt(0)}</span>
+                <span class="mafw-session-titlebar-text">{title()}</span>
+                <Show when={sessionTokenSummary().turns > 0}>
+                  {(s) => (
+                    <TooltipV2 value={`${fmtCtx(s().total)} tokens · ${s().turns} 回合${s().cost > 0 ? ` · $${s().cost.toFixed(4)}` : ''}`} openDelay={300}>
+                      <span class="mafw-session-token-badge">
+                        {fmtCtx(s().total)}
+                        <Show when={s().cost > 0}>
+                          <span class="mafw-session-token-cost"> · ${s().cost.toFixed(2)}</span>
+                        </Show>
+                      </span>
+                    </TooltipV2>
+                  )}
+                </Show>
+                <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
+                  <span class="mafw-chat-header-divider" />
+                </Show>
+                <TaskBar
+                  todos={props.todos[sidProp()] || []}
+                  tokens={props.taskMetrics(sidProp()).tokens}
+                  started={props.taskMetrics(sidProp()).started}
+                  open={props.taskListOpen && props.tasksPlacement === "bar"}
+                  onToggle={() => props.onTaskToggle(titlebarEl, sidProp())}
+                  onHoverOpen={() => props.onTaskHoverOpen(titlebarEl, sidProp())}
+                  onHoverLeave={props.onTaskHoverLeave}
+                />
+                <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
+                  <span class="mafw-chat-header-done">
+                    {(props.todos[sidProp()] || []).filter(t => t.status === "completed").length}/
+                    {(props.todos[sidProp()] || []).length}
+                  </span>
+                </Show>
+                <Show when={props.store.session_status[sidProp()]?.type === "busy"}>
+                  <span class="mafw-session-status">
+                    <span class="mafw-session-status-dot" />
+                    Running
+                  </span>
+                </Show>
+                <Show when={props.isManager && props.onNewTopic}>
+                  <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
+                    <ButtonV2 variant="ghost" size="small" onClick={e => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
+                  </TooltipV2>
+                </Show>
+                <Show when={props.canClosePane}>
+                  <TooltipV2 value="关闭分屏" openDelay={300}>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏">✕</ButtonV2>
+                  </TooltipV2>
+                </Show>
+                <Show when={props.parentID && props.onBackToParent}>
+                  <TooltipV2 value="返回父会话" openDelay={300}>
+                    <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={e => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话">← 返回</ButtonV2>
+                  </TooltipV2>
+                </Show>
+              </div>
+            </div>
+            <For each={userMessages()}>
+              {(msg) => (
+                <div class="mafw-turn-anchor" data-turn-id={msg.id}>
+                <ErrorBoundary
+                  fallback={(err) => {
+                    console.error("[mafw] turn render error:", err)
+                    return <div class="mafw-turn-render-error">该回合渲染失败：{(err as Error)?.message || String(err)}</div>
+                  }}
+                >
+                <>
+                  {/* Voice message: show status inline within user message position */}
+                  <Show when={msg.voiceStatus && msg.voiceStatus !== "done"}>
+                    <div class="mafw-voice-turn">
+                      <div class="mafw-voice-message" classList={{
+                        "uploading": msg.voiceStatus === "uploading",
+                        "analyzing": msg.voiceStatus === "analyzing",
+                        "failed": msg.voiceStatus === "failed",
+                      }}>
+                        <div class="mafw-voice-waveform">
+                          <svg class="mafw-voice-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                          </svg>
+                          <span class="mafw-voice-duration">{msg.voiceDuration?.toFixed(1) || "?"}s</span>
+                        </div>
+                        <Show when={msg.voiceStatus === "uploading"}>
+                          <span class="mafw-voice-status">上传中...</span>
+                        </Show>
+                        <Show when={msg.voiceStatus === "analyzing"}>
+                          <span class="mafw-voice-status">正在分析...</span>
+                        </Show>
+                        <Show when={msg.voiceStatus === "failed"}>
+                          <span class="mafw-voice-status error">上传失败：{msg.error || "未知错误"}</span>
+                        </Show>
+                      </div>
+                    </div>
+                  </Show>
+                  {/* Media attachments from history: render image/audio/video players */}
+                  <Show when={msg.role === "user" && (!msg.voiceStatus || msg.voiceStatus === "done")}>
+                    <For each={mediaRefsForTurn(msg.id)}>
+                      {(ref) => {
+                        const url = `${props.gatewayUrl.replace(/\/+$/, "")}/a2a/artifacts/${ref.artifactId}`
+                        return (
+                          <div class="mafw-media-history">
+                            <Show when={ref.mediaType.startsWith("image/")}>
+                              <img src={url} alt={ref.name} class="mafw-media-image" />
+                            </Show>
+                            <Show when={ref.mediaType.startsWith("audio/")}>
+                              <audio controls preload="metadata" src={url}>
+                                您的浏览器不支持音频播放。
+                              </audio>
+                            </Show>
+                            <Show when={ref.mediaType.startsWith("video/")}>
+                              <video controls preload="metadata" src={url} class="mafw-media-video">
+                                您的浏览器不支持视频播放。
+                              </video>
+                            </Show>
+                          </div>
+                        )
+                      }}
+                    </For>
+                  </Show>
+                  <For each={voiceRepliesForTurn(msg.id)}>
+                    {(vr) => (
+                      <div class="mafw-turn-audio">
+                        <AudioReply
+                          text={`[语音回复 art:${vr.artifactId}${vr.voice ? ` 音色:${vr.voice}` : ''}]`}
+                          gatewayUrl={props.gatewayUrl || 'http://127.0.0.1:3000'}
+                        />
+                      </div>
+                    )}
+                  </For>
+                  <Show when={!msg.voiceStatus || msg.voiceStatus === "done"}>
+                    <SessionTurn
+                      sessionID={sidProp()}
+                      messageID={msg.id}
+                      classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
+                    />
+                  </Show>
+                  <For each={cardsForTurn(msg.id)}>
+                    {(c) => renderFlowCard(c)}
+                  </For>
+                </>
+                </ErrorBoundary>
+                </div>
+              )}
             </For>
+            {/* Agent switch traces (local UI only) */}
+            <For each={props.switchLogs()[sidProp()] || []}>
+              {(t) => <div class="mafw-switch-trace">{t}</div>}
+            </For>
+            {/* Flow cards without a resolvable turn link stay at the bottom */}
+            <Show when={sidProp()}>
+              <For each={unplacedCards()}>
+                {(c) => renderFlowCard(c)}
+              </For>
+            </Show>
           </Show>
+        </div>
+        {/* DeepSeek-style user-turn node navigation - sibling of the scroll container: absolute inside it would scroll with content */}
+        <MessageNav container={containerRef} turns={navTurns} />
+        {/* Jump-to-latest: sibling of the scroll container so bottom anchors to the visible area, not content end */}
+        <Show when={sidProp()}>
           <ButtonV2
             variant="ghost"
             size="small"

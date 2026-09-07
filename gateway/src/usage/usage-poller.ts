@@ -100,6 +100,8 @@ export class UsagePoller {
             const used = remaining !== undefined
               ? Math.max(0, budget - remaining)
               : this.store.getProviderTotalCost(name);
+            const tokens = this.store.getProviderTotalTokens(name);
+            const tokenTotal = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write;
             const pct = Math.round((used / budget) * 100);
             providerMap.set(name, {
               ...result.value,
@@ -110,6 +112,7 @@ export class UsagePoller {
                 limit: budget,
                 unit: '$',
                 pct,
+                tokens: tokenTotal,
                 remaining: remaining !== undefined ? Math.round(remaining * 100) / 100 : undefined,
               }],
               severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',

@@ -186,7 +186,7 @@ function TokenStatRow(props: {
   )
 }
 
-function ProviderSection(props: { provider: any }) {
+function ProviderSection(props: { provider: any; displayName?: string }) {
   const p = () => props.provider
   const barColor = (severity: string) => {
     if (severity === 'critical') return 'var(--danger)'
@@ -197,7 +197,7 @@ function ProviderSection(props: { provider: any }) {
   return (
     <div class={`mafw-usage-provider ${severityClass(p().severity)}`}>
       <div class="mafw-usage-provider-header">
-        <span class="mafw-usage-provider-name">{p().name}</span>
+        <span class="mafw-usage-provider-name">{props.displayName || p().name}</span>
         <Show when={p().plan}>
           <span class="mafw-usage-provider-plan">({p().plan})</span>
         </Show>
@@ -228,6 +228,7 @@ function ProviderSection(props: { provider: any }) {
                 const parts = [
                   w.unit === '$' ? `已用 $${w.used} / $${w.limit}` : w.unit === 'pct' ? `已用 ${w.pct}%` : `已用 ${w.used} / ${w.limit}`,
                 ]
+                if (w.tokens) parts.push(`${fmt(w.tokens)} tokens`)
                 if (w.remaining !== undefined) parts.push(`剩余 $${w.remaining}`)
                 if (w.resetAt) parts.push(`重置 ${fmtTime(w.resetAt - Date.now())}`)
                 if (w.projected !== undefined && w.projected > w.pct) parts.push(`预计 ${w.projected}%`)
@@ -302,6 +303,16 @@ export function UsageDock(props: {
     const handler = () => fetchSummary()
     window.addEventListener('mafw:usage-config-saved', handler)
     onCleanup(() => window.removeEventListener('mafw:usage-config-saved', handler))
+  })
+
+  // providerID → display name from the opencode provider list; usage rows are
+  // keyed by providerID (e.g. "gateway") but users know the display name (e.g. 蓝区统一网关)
+  const providerNames = createMemo(() => {
+    const m = new Map<string, string>()
+    for (const g of props.modelGroups()) {
+      if (g.provider && g.provider !== g.providerID) m.set(g.providerID, g.provider)
+    }
+    return m
   })
 
   const contextInfo = createMemo(() => {
@@ -469,7 +480,7 @@ export function UsageDock(props: {
           <div class="mafw-usage-section">
             <div class="mafw-usage-section-title">配额窗口</div>
             <For each={apiData()!.providers}>
-              {(provider: any) => <ProviderSection provider={provider} />}
+              {(provider: any) => <ProviderSection provider={provider} displayName={providerNames().get(provider.name)} />}
             </For>
           </div>
         </Show>
