@@ -174,6 +174,7 @@ export class HarmonicIndexManager {
       salience: unit.salience,
       superseded_by: unit.superseded_by,
       pinned: unit.pinned,
+      sticky_until: (unit as any).sticky_until,
       merged_from: unit.merged_from,
       filePath: (unit as any).filePath,
       created_at: unit.created_at,

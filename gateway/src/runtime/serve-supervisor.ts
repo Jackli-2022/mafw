@@ -1,7 +1,8 @@
 /**
  * Serve 进程唯一所有者：kill / spawn / 就绪等待 / 健康探测。
- * 从 index.ts 下沉（原 killProcessOnPort + startServe + isServeHealthy 的动作段），
- * opencode runtime 的 agentProcess.restart() 与 gateway 编排共用此模块。
+ * 从 index.ts 下沉（原 killProcessOnPort + startServe + isServeHealthy 的动作段）。
+ * kill 与 spawn 都是 runtime 契约原语（killServePort / agentProcess.spawnServe），
+ * 本模块只做通用编排；gateway 编排层（recoverServe/watchdog）在其上叠加事件流重订。
  * deps 全部注入以便单测；生产装配见 index.ts。
  */
 

@@ -1,4 +1,4 @@
-﻿import * as fs from 'fs';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
@@ -60,7 +60,7 @@ import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { startTray, stopTray } from './tray';
-import { startServeSidecar } from './serve-sidecar';
+import { killServePort } from './runtime/serve-sidecar';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
 import {
   StepInjectState,
@@ -146,26 +146,6 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 // (Windows drives/case differences must not split sessions across projects).
 function normalizeDir(dir: string): string {
   return dir.replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
-}
-
-// Kill whatever is listening on `port`. windowsHide is mandatory: execSync
-// defaults to a visible console window, so every call here would flash a cmd
-// popup (notably during serve crash-recovery). SIGTERM is NOT used: on Windows
-// libuv maps SIGTERM to a console CTRL_C broadcast, which makes a process exit
-// with 0xC000013A and can trigger recovery loops; hard-kill instead.
-function killProcessOnPort(port: number): void {
-  try {
-    if (process.platform === 'win32') {
-      const out = execSync(`netstat -ano | findstr :${port}`, { windowsHide: true }).toString();
-      const match = out.match(/LISTENING\s+(\d+)/);
-      const pid = match ? Number(match[1]) : null;
-      if (pid) process.kill(pid);
-    } else {
-      const out = execSync(`lsof -ti:${port}`, { windowsHide: true }).toString().trim();
-      const pid = Number(out) || null;
-      if (pid) process.kill(pid);
-    }
-  } catch { /* port is free */ }
 }
 
 async function isPortHealthy(port: number): Promise<boolean> {
@@ -297,13 +277,18 @@ class MafwScheduler {
     this.serveSupervisor = createServeSupervisor({
       port: config.server.servePort,
       external: !!process.env.MAFW_SERVER_SERVE_URL,
-      killPort: (port) => killProcessOnPort(port),
+      killPort: (port) => killServePort(port),
+      // Spawn 原语来自活跃 runtime 的契约（agentProcess.spawnServe）——
+      // gateway 核心不硬编码任何具体 agent 的 server 拉起细节。
       spawn: async (opts) => {
-        const sidecar = await startServeSidecar({
+        const spawnServe = this.opencodeClient?.agentProcess?.spawnServe;
+        if (!spawnServe) {
+          throw new Error('active runtime does not own a server process (agentProcess.spawnServe missing)');
+        }
+        const sidecar = await spawnServe({
           host: opts.host,
           port: opts.port,
           timeoutMs: opts.timeoutMs,
-          onOutput: opts.onOutput,
         });
         return { url: sidecar.url, close: () => sidecar.close() };
       },
@@ -430,7 +415,7 @@ class MafwScheduler {
         this.startServeWatchdog();
       } else {
         log.info('OpenCode Serve not reachable, checking for stale process...');
-        killProcessOnPort(config.server.servePort);
+        killServePort(config.server.servePort);
         try {
           await this.startServe();
           serveReady = !!this.serveInstance;
@@ -973,9 +958,6 @@ class MafwScheduler {
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
     return createOpencodeRuntime({
       ...sdkConfig,
-      restartServe: async () => {
-        await this.serveSupervisor.restart();
-      },
     });
   }
 
@@ -1811,11 +1793,18 @@ class MafwScheduler {
   }
 
   private async startServe() {
+    // Serve 拉起原语在 runtime 契约上（agentProcess.spawnServe）——gateway
+    // 只做 bookkeeping（serveInstance/owned/exit 退避），不硬编码 spawn 细节。
+    const spawnServe = this.opencodeClient?.agentProcess?.spawnServe;
+    if (!spawnServe) {
+      log.warn('[Scheduler] active runtime does not own a server process — skipping serve spawn');
+      return;
+    }
     log.info('Starting OpenCode Serve sidecar...');
     const port = config.server.servePort;
     const host = config.server.serveHost;
     try {
-      const sidecar = await startServeSidecar({
+      const sidecar = await spawnServe({
         host,
         port,
         onOutput: (chunk) => log.debug(`[Serve] ${chunk.trimEnd()}`),
@@ -1855,10 +1844,14 @@ class MafwScheduler {
 
   // Pure orchestration: kill + respawn + re-subscribe events + start watchdog.
   // No backoff/retry — callers that need retry wrap this themselves.
+  // Kill/spawn primitives live on the runtime contract (agentProcess.restart /
+  // agentProcess.spawnServe via supervisor.ensureStarted); the gateway only
+  // orchestrates and re-subscribes the event stream.
   private async restartAgentOrchestrated(): Promise<{ mode: string }> {
     const rt = this.opencodeClient;
-    if (rt?.agentProcess) {
+    if (rt?.agentProcess?.spawnServe) {
       await rt.agentProcess.restart();
+      await this.serveSupervisor.ensureStarted();
     } else {
       await this.serveSupervisor.restart();
     }
@@ -2861,6 +2854,27 @@ class MafwScheduler {
           } catch (err: any) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
+        // GET /api/memory/get?id=... — fetch one memory's full content by id
+        // (or 6-char pointer tail). Mirrors the mafw_get_memory MCP tool.
+        if (req.url?.match(/^\/api\/memory\/get(?:\?|$)/) && req.method === 'GET') {
+          try {
+            const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
+            const id = parsedUrl.searchParams.get('id') || '';
+            const { handleGetMemory } = require('./mcp/handlers/get-memory');
+            const result = await handleGetMemory({ id }, {
+              memory: this.memoryService,
+              mafwDir: this.mafwDir,
+            } as any);
+            const body = JSON.parse(result.content[0].text);
+            res.writeHead(result.isError ? 404 : 200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(body));
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
           }
           return;
         }
@@ -4356,9 +4370,27 @@ class MafwScheduler {
                 try { goalSnap = buildGoalSnapshot(mafwDir); } catch { /* fail-open */ }
               }
             }
+            // Sticky note board: user-commissioned reminders with guaranteed
+            // per-turn visibility until sticky_until passes (board-level
+            // expiry only). Deterministic filter, fail-open like pinned;
+            // injected even when the recall query is empty.
+            let noteBoard: string | null = null;
+            if (this.memoryService) {
+              try {
+                const { handleNoteBoard } = require('./routes/note-board');
+                const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
+                const store = new HarmonicUnitFileStore(this.mafwDir, this.memoryService.harmonicIndex);
+                const nb = await handleNoteBoard({
+                  getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
+                  readUnit: (id: string) => store.read(id),
+                });
+                noteBoard = nb.board;
+              } catch { /* fail-open */ }
+            }
             if (!query.trim()) {
+              const only = [noteBoard, goalSnap].filter(Boolean);
               res.writeHead(200);
-              res.end(JSON.stringify({ pointers: goalSnap }));
+              res.end(JSON.stringify({ pointers: only.length > 0 ? only.join('\n\n') : null }));
               return;
             }
             const { formatRecallContext } = require('./recall/inject-format');
@@ -4383,9 +4415,8 @@ class MafwScheduler {
               );
             }
             const formatted = formatRecallContext(memories);
-            const pointers = goalSnap
-              ? (formatted.pointers ? `${formatted.pointers}\n\n${goalSnap}` : goalSnap)
-              : formatted.pointers;
+            const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
+            const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ pointers }));
           } catch (err: any) {
@@ -5459,6 +5490,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           created_at: now,
           updated_at: now,
           pinned: data?.pinned === true || undefined,
+          // Sticky note board parity with the MCP mafw_add_memory handler.
+          ...(data?.sticky === true ? {
+            sticky_until: new Date(Date.now() + (typeof data?.stickyDays === 'number' && data.stickyDays > 0 ? data.stickyDays : 7) * 86400e3).toISOString(),
+          } : {}),
           source_session_id: data?.sessionID ? String(data.sessionID) : undefined,
         };
         let supersedesTarget: any = null;
@@ -5472,7 +5507,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         if (supersedesTarget && !supersedesTarget.superseded_by) {
           store.markSuperseded(supersedesTarget.id, unit.id);
         }
-        return { success: true, id: unit.id };
+        return { success: true, id: unit.id, sticky_until: (unit as any).sticky_until };
       } catch (err: any) {
         log.warn(`[Scheduler] /api/memory/add failed: ${err.message}`);
         return { success: false, error: err.message };
@@ -5492,6 +5527,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
         const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
         const pinned = data?.pinned === true;
+        const hasSticky = typeof data?.sticky === 'boolean';
+        if (hasSticky) {
+          const days = typeof data?.stickyDays === 'number' && data.stickyDays > 0 ? data.stickyDays : 7;
+          const until = data.sticky === true ? new Date(Date.now() + days * 86400e3).toISOString() : null;
+          const ok = store.setSticky(id, until);
+          if (!ok) return { success: false, error: `memory not found: ${id}` };
+          return { success: true, id, sticky: data.sticky === true, sticky_until: until ?? undefined };
+        }
         const ok = store.setPinned(id, pinned);
         if (!ok) return { success: false, error: `memory not found: ${id}` };
         return { success: true, id, pinned };

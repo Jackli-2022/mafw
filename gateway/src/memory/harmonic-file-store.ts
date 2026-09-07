@@ -92,6 +92,7 @@ export class HarmonicUnitFileStore {
         salience: targetUnit.salience,
         superseded_by: targetUnit.superseded_by,
         pinned: targetUnit.pinned,
+        sticky_until: targetUnit.sticky_until,
         merged_from: targetUnit.merged_from,
         // filePath must reflect the ACTUAL on-disk directory (getOKFDirectory
         // keys off unit.type), not the tier label — a tier arg such as 'tier3'
@@ -203,6 +204,36 @@ export class HarmonicUnitFileStore {
     fs.renameSync(tmpPath, fullPath);
 
     entry.pinned = pinned;
+    this.indexManager.save();
+    return true;
+  }
+
+  /**
+   * Stick/unstick an existing memory on the note board. Rewrites the OKF
+   * frontmatter and updates the index entry. `until === null` removes the
+   * sticky marker (memory itself is untouched). Returns false when id is
+   * unknown. */
+  setSticky(id: string, until: string | null): boolean {
+    const entry = this.indexManager.getIndex().entries.find(e => e.id === id);
+    if (!entry || !(entry as any).filePath) return false;
+    const fullPath = path.join(this.baseDir, (entry as any).filePath);
+    if (!fs.existsSync(fullPath)) return false;
+
+    const { unit, body } = readOKFFile(fullPath);
+    if (until === null) {
+      delete unit.sticky_until;
+      delete (entry as any).sticky_until;
+    } else {
+      unit.sticky_until = until;
+      (entry as any).sticky_until = until;
+    }
+    unit.updated_at = new Date().toISOString();
+    const yaml = require('js-yaml');
+    const yamlStr = yaml.dump(unit, { lineWidth: -1, quotingType: '"' });
+    const tmpPath = fullPath + '.tmp';
+    fs.writeFileSync(tmpPath, `---\n${yamlStr}---\n${body}\n`, 'utf-8');
+    fs.renameSync(tmpPath, fullPath);
+
     this.indexManager.save();
     return true;
   }

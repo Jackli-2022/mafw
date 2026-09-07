@@ -24,7 +24,7 @@ jest.mock('../../../src/core/utils/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 jest.mock('../../../src/config', () => ({
-  config: { server: { serveUrl: 'http://127.0.0.1:4096' } },
+  config: { server: { serveUrl: 'http://127.0.0.1:4096', servePort: 4096 } },
 }));
 jest.mock('../../../src/runtime/auth', () => ({
   getProviderApiKey: () => null,
@@ -76,27 +76,20 @@ describe('createOpencodeRuntime', () => {
     await expect(rt.healthCheck!()).resolves.toBe(false);
   });
 
-  it('provides agentProcess.restart() when restartServe callback is given (non-external)', async () => {
+  it('provides agentProcess with spawnServe + restart primitives (non-external)', async () => {
     delete process.env.MAFW_SERVER_SERVE_URL;
-    const restartFn = jest.fn().mockResolvedValue(undefined);
-    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096', restartServe: restartFn });
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
     expect(rt.agentProcess).toBeDefined();
     expect(typeof rt.agentProcess!.restart).toBe('function');
-    await rt.agentProcess!.restart();
-    expect(restartFn).toHaveBeenCalledTimes(1);
+    expect(typeof rt.agentProcess!.spawnServe).toBe('function');
+    // restart is the kill primitive — must resolve without a gateway callback
+    await expect(rt.agentProcess!.restart()).resolves.toBeUndefined();
   });
 
   it('does not provide agentProcess or agentProcessApi when external', async () => {
     process.env.MAFW_SERVER_SERVE_URL = 'http://127.0.0.1:9999';
-    const restartFn = jest.fn();
-    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:9999', restartServe: restartFn });
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:9999' });
     expect(rt.agentProcess).toBeUndefined();
     expect(rt.capabilities.agentProcessApi).toBe(false);
-  });
-
-  it('does not provide agentProcess when no restartServe callback', async () => {
-    delete process.env.MAFW_SERVER_SERVE_URL;
-    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
-    expect(rt.agentProcess).toBeUndefined();
   });
 });

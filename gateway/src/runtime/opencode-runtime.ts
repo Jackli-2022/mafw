@@ -16,6 +16,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { AgentRuntime, SessionInfo, fullCapabilities } from './contract';
 import { AgentDefinition } from './agent-definition';
+import { startServeSidecar, killServePort } from './serve-sidecar';
 import { createOpencodeAdapter } from '../opencode-adapter';
 import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
@@ -250,11 +251,6 @@ export interface OpencodeRuntimeConfig {
   baseUrl: string;
   directory?: string;
   headers?: Record<string, string>;
-  /**
-   * Gateway-provided callback to kill the serve process on port and respawn it.
-   * Used by agentProcess.restart() — only available for owned serves.
-   */
-  restartServe?: () => Promise<void>;
 }
 
 export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Promise<AgentRuntime> {
@@ -301,12 +297,16 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
     },
   };
 
-  // agentProcess.restart(): only for non-external owned runtimes with the callback.
-  if (config.restartServe && !rt.external) {
+  // agentProcess: owned runtimes provide BOTH primitives themselves —
+  // spawnServe (windowsHide-safe `opencode serve` sidecar) and restart (kill
+  // the serve port; gateway orchestrates the respawn + event resubscribe).
+  // Gateway core never hardcodes agent-specific spawn details.
+  if (!rt.external) {
     rt.agentProcess = {
+      spawnServe: (opts) => startServeSidecar(opts),
       async restart(): Promise<void> {
-        log.info('[Runtime] agentProcess.restart() — killing and respawning serve');
-        await config.restartServe!();
+        log.info('[Runtime] agentProcess.restart() — killing serve (gateway orchestrates respawn)');
+        killServePort(gatewayConfig.server.servePort);
       },
     };
   }

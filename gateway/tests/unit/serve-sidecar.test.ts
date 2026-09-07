@@ -23,7 +23,7 @@ describe('serve-sidecar spawn options', () => {
     jest.resetModules();
     crossSpawnMock = require('cross-spawn');
     if (crossSpawnMock.__reset) crossSpawnMock.__reset();
-    startServeSidecar = require('../../src/serve-sidecar').startServeSidecar;
+    startServeSidecar = require('../../src/runtime/serve-sidecar').startServeSidecar;
   });
 
   test('spawns opencode serve with windowsHide (no black console window)', async () => {

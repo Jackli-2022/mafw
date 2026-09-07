@@ -134,6 +134,8 @@ const DEFINITIONS: ToolDefinition[] = [
         cueAnchors: { type: "array", items: { type: "string" }, description: "Tags/keywords for retrieval (max 8)" },
         primaryAbstraction: { type: "string", description: "6-8 word summary (auto-generated from content if omitted)" },
         supersedes: { type: "array", items: { type: "string" }, description: "IDs of existing memories this new memory replaces/updates. The old memories will be marked superseded (energy halved, search penalty applied)." },
+        sticky: { type: "boolean", description: "Put this memory on the note board: injected into every turn's recall context until it expires (default 7 days). Use when the user explicitly says 'remember this / 记下来 / 别忘了'. Expiry only removes it from the board; the memory stays searchable." },
+        stickyDays: { type: "number", description: "Note-board TTL in days (default 7, only with sticky: true)" },
       },
       required: ["content", "memoryType"],
     },
@@ -152,14 +154,27 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_pin_memory",
-    description: "Pin or unpin an existing memory to/from the disclosure layer. Pinned memories are injected into the system prompt every turn as <user-profile>. Use for user identity/profile and long-term preferences; unpin when a pinned preference becomes stale.",
+    description: "Pin/unpin a memory to/from the disclosure layer (<user-profile>, permanent, for identity & long-term preferences), or stick/unstick it on the note board (<note-board>, time-limited, for user-commissioned reminders). Provide at least one of pinned / sticky.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "Memory unit id (mem_...)" },
         pinned: { type: "boolean", description: "true to pin, false to unpin" },
+        sticky: { type: "boolean", description: "true to stick/renew on the note board, false to remove from the board" },
+        stickyDays: { type: "number", description: "Note-board TTL in days when sticky: true (default 7)" },
       },
-      required: ["id", "pinned"],
+      required: ["id"],
+    },
+  },
+  {
+    name: "mafw_get_memory",
+    description: "Fetch a memory's full content by id. Accepts the full id (mem_...) or the 6-char pointer tail shown in <recall> blocks (#mem-xxxxxx). Superseded memories include the supersede chain with the latest version attached. Use this to expand a recall pointer into the full note before relying on it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Full memory id (mem_...) or 6-char pointer tail from a <recall> block" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -534,6 +549,7 @@ import { handleGetModelRoute } from "./handlers/get-model-route";
 import { handleAddMemory } from "./handlers/add-memory";
 import { handleSupersedeMemory } from "./handlers/supersede-memory";
 import { handlePinMemory } from "./handlers/pin-memory";
+import { handleGetMemory } from "./handlers/get-memory";
 import { handleCommitHeuristic } from "./handlers/commit-heuristic";
 import { handleGetAxioms } from "./handlers/get-axioms";
 import { handleMergeMemory } from "./handlers/merge-memory";
@@ -577,6 +593,7 @@ export function createToolRegistry(): ToolRegistry {
       mafw_add_memory: handleAddMemory,
       mafw_supersede_memory: handleSupersedeMemory,
       mafw_pin_memory: handlePinMemory,
+      mafw_get_memory: handleGetMemory,
       mafw_commit_heuristic: handleCommitHeuristic,
       mafw_get_axioms: handleGetAxioms,
       mafw_merge_memory: handleMergeMemory,

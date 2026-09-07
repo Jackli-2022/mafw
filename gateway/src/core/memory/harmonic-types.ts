@@ -19,6 +19,10 @@ export interface HarmonicUnit {
   superseded_by?: string;
   /** Disclosure layer: injected into the system prompt every turn (excluded when superseded). */
   pinned?: boolean;
+  /** Sticky note board: injected into every recall context until this ISO date
+   *  passes (board-level expiry only — the memory itself is never deleted).
+   *  Malformed dates fail open (treated as still active, mirroring mem0). */
+  sticky_until?: string;
   /** Origin session for pipeline-written memories (per-session worker bookkeeping). */
   source_session_id?: string;
 }
@@ -43,6 +47,7 @@ export interface HarmonicIndexEntry {
   superseded_by?: string;
   merged_from?: string[];
   pinned?: boolean;
+  sticky_until?: string;
   /** Baseline for incremental energy decay (index v2+). Stamped when a decay
    *  pass actually applies, or by the v1→v2 migration (forgives the past).
    *  Entries without it fall back to created_at. */

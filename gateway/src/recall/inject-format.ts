@@ -107,7 +107,7 @@ export function renderMemoryBlocks(entries: MemoryBlockEntry[]): string[] {
 
 // ---- Pointer rendering (boundary recall) ----
 
-const POINTER_HEADER = `[联想线索 · 依据前请用工具验证]`
+const POINTER_HEADER = `[联想线索 · 依据前请验证：取全文 → mafw_get_memory("#mem-后6位")；检索更多 → mafw_search_hybrid]`
 
 const TAG = `<recall>`
 const END_TAG = `</recall>`
@@ -205,4 +205,43 @@ export function formatPinnedProfile(entries: MemoryUnit[]): { profile: string | 
   }
   if (lines.length === 0) return { profile: null, used: 0 };
   return { profile: `${PROFILE_TAG}\n${lines.join('\n')}\n${PROFILE_END_TAG}`, used: lines.length };
+}
+
+// ---- Sticky note board rendering (appended to /api/recall/context) ----
+
+export const NOTE_BOARD_BUDGET = { max: 10, maxChars: 800 } as const;
+
+const BOARD_TAG = '<note-board>';
+const BOARD_END_TAG = '</note-board>';
+
+export interface NoteBoardEntry extends MemoryUnit {
+  sticky_until?: string;
+}
+
+/**
+ * Renders sticky notes into the <note-board> block: guaranteed per-turn
+ * visibility for user-commissioned memories until their sticky_until passes.
+ * Board-level expiry only — the memory itself is never deleted or hidden
+ * from search. Enforces a hard budget; returns null board for an empty set.
+ * `now` is injectable for deterministic tests.
+ */
+export function formatNoteBoard(entries: NoteBoardEntry[], now: Date = new Date()): { board: string | null; used: number } {
+  const lines: string[] = [];
+  let chars = 0;
+  for (const m of entries.slice(0, NOTE_BOARD_BUDGET.max)) {
+    const text = (m.memory_value || m.primary_abstraction || '?').replace(/\n/g, ' ');
+    const until = m.sticky_until ? new Date(m.sticky_until) : null;
+    const valid = until && !Number.isNaN(until.getTime());
+    const daysLeft = valid ? Math.max(0, Math.ceil((until!.getTime() - now.getTime()) / 86400e3)) : null;
+    const date = valid ? formatDate(m.sticky_until) : '';
+    const line = `- ${date ? `[${date.slice(5)}] ` : ''}${text}${daysLeft !== null ? `（剩 ${daysLeft} 天）` : ''}`;
+    if (chars + line.length > NOTE_BOARD_BUDGET.maxChars) break;
+    lines.push(line);
+    chars += line.length;
+  }
+  if (lines.length === 0) return { board: null, used: 0 };
+  return {
+    board: `${BOARD_TAG}\n[用户叮嘱 · 到期自动下架，记忆本体保留]\n${lines.join('\n')}\n${BOARD_END_TAG}`,
+    used: lines.length,
+  };
 }

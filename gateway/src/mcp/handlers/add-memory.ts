@@ -12,6 +12,8 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     const cueAnchors = (args.cueAnchors as string[]) || [];
     const primaryAbstraction = (args.primaryAbstraction as string) || content.slice(0, config.memory.defaultPrimaryAbstractionLength);
     const supersedes = (args.supersedes as string[]) || [];
+    const sticky = args.sticky === true;
+    const stickyDays = typeof args.stickyDays === 'number' && args.stickyDays > 0 ? args.stickyDays : 7;
 
     if (!["episodic", "semantic", "procedural", "global"].includes(memoryType)) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
@@ -43,6 +45,9 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       abstraction_level: memoryType === "global" ? 3 : memoryType === "episodic" ? 1 : 2,
       created_at: now,
       updated_at: now,
+      // Sticky note board: guaranteed per-turn visibility until the date
+      // passes; expiry only removes it from the board, never deletes the memory.
+      ...(sticky ? { sticky_until: new Date(Date.now() + stickyDays * 86400e3).toISOString() } : {}),
     };
 
     const { HarmonicUnitFileStore } = await import("../../memory/harmonic-file-store.js");
@@ -72,6 +77,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       success: true,
       id: unitId,
       tier: 'memories',
+      sticky_until: (unit as any).sticky_until,
       superseded: supersededIds.length > 0 ? supersededIds : undefined,
     }) }] };
   } catch (err: any) {

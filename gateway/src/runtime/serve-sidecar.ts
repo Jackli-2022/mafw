@@ -14,6 +14,28 @@
  */
 import * as childProcess from 'child_process';
 
+// Kill whatever is listening on the serve port. windowsHide is mandatory:
+// execSync defaults to a visible console window, so every call here would
+// flash a cmd popup (notably during serve crash-recovery). SIGTERM is NOT
+// used: on Windows libuv maps SIGTERM to a console CTRL_C broadcast, which
+// makes a process exit with 0xC000013A and can trigger recovery loops;
+// hard-kill instead. Lives here (not gateway core) because the serve port is
+// an opencode-runtime implementation detail.
+export function killServePort(port: number): void {
+  try {
+    if (process.platform === 'win32') {
+      const out = childProcess.execSync(`netstat -ano | findstr :${port}`, { windowsHide: true }).toString();
+      const match = out.match(/LISTENING\s+(\d+)/);
+      const pid = match ? Number(match[1]) : null;
+      if (pid) process.kill(pid);
+    } else {
+      const out = childProcess.execSync(`lsof -ti:${port}`, { windowsHide: true }).toString().trim();
+      const pid = Number(out) || null;
+      if (pid) process.kill(pid);
+    }
+  } catch { /* port is free */ }
+}
+
 export interface ServeSidecarOptions {
   host: string;
   port: number;

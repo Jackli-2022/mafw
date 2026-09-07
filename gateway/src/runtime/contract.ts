@@ -170,6 +170,27 @@ export interface AgentRuntime extends RuntimeClient {
    * 不负责事件流重订——由 gateway recoverServe 编排。
    */
   agentProcess?: {
+    /** 杀掉 runtime 自带的 server 进程（opencode: kill serve 端口）。
+     *  重生（respawn）由 gateway 编排：supervisor 经 spawnServe 原语重新拉起。 */
     restart(): Promise<void>;
+    /** 拉起 runtime 自带的 server 进程（opencode: `opencode serve` sidecar，
+     *  含 windowsHide）。进程内 runtime（pi）不提供——gateway 据此跳过 serve
+     *  拉起（MCP-only 降级），不再硬编码任何具体 agent 的 spawn 细节。 */
+    spawnServe?(opts: ServeSpawnOpts): Promise<ServeSpawnResult>;
   };
+}
+
+/** 拉起 runtime 自带 server 进程的选项。 */
+export interface ServeSpawnOpts {
+  host: string;
+  port: number;
+  timeoutMs?: number;
+  onOutput?: (chunk: string) => void;
+  onExit?: (code: number | null) => void;
+}
+
+/** startServe 的产物：url + 关闭原语。 */
+export interface ServeSpawnResult {
+  url: string;
+  close(): void;
 }
