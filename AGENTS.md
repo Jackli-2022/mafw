@@ -320,7 +320,7 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
 
 #### Sticky 便签板（2026-09-07）
 
-`sticky_until` 是 HarmonicUnit 一等字段（ISO 日期）：未过期且未 superseded 的记忆经
+`sticky_until` 是 HarmonicUnit 一等字段（ISO 日期；OKF frontmatter 白名单需显式携带，index entry 为板成员资格权威来源、渲染时回退）：未过期且未 superseded 的记忆经
 `/api/recall/context` 尾部渲染为 `<note-board>` 块（`routes/note-board.ts`，deps 注入可单测；
 渲染 `inject-format.ts:formatNoteBoard()`），解决"用户说'记下来'但只有 BM25 词面匹配才能想起"
 的缺口——检索条件化之外的有保质期保证送达层。语义对齐业界调研（mem0 expiration/

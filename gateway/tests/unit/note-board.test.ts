@@ -65,6 +65,14 @@ describe('handleNoteBoard', () => {
     expect(result.budget.used).toBeGreaterThan(0);
   });
 
+  test('unit read back without sticky_until → falls back to index entry date', async () => {
+    const result = await handleNoteBoard({
+      getIndex: () => ({ entries: [entry({ id: 'mem_x', sticky_until: inDays(4) })] }),
+      readUnit: async () => ({ id: 'mem_x', type: 'semantic', primary_abstraction: 'x', memory_value: '无字段正文', energy: 0.8, created_at: '2026-09-01T00:00:00Z' } as any),
+    }, NOW);
+    expect(result.board).toContain('剩 4 天');
+  });
+
   test('empty set → board null, used 0', async () => {
     const result = await handleNoteBoard(deps([]), NOW);
     expect(result.board).toBeNull();

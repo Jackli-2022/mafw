@@ -36,7 +36,9 @@ export async function handleNoteBoard(deps: NoteBoardDeps, now: Date = new Date(
   const units: HarmonicUnit[] = [];
   for (const { entry } of active) {
     const u = await deps.readUnit(entry.id);
-    if (u) units.push(u);
+    // The index entry is authoritative for board membership; fall back to its
+    // sticky_until when the OKF frontmatter predates the field.
+    if (u) units.push(u.sticky_until ? u : { ...u, sticky_until: entry.sticky_until });
   }
 
   const { board, used } = formatNoteBoard(units, now);

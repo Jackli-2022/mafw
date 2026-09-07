@@ -43,6 +43,14 @@ describe('sticky memory store', () => {
     expect(entry.sticky_until).toBeFalsy();
   });
 
+  test('write with sticky_until → OKF round-trip preserves it on read', async () => {
+    const until = new Date(Date.now() + 7 * 86400e3).toISOString();
+    const u = makeUnit({ sticky_until: until });
+    await store.write(u);
+    const reread = await store.read(u.id);
+    expect((reread as any).sticky_until).toBe(until);
+  });
+
   test('setSticky round-trip updates index and OKF; null clears', async () => {
     const u = makeUnit();
     await store.write(u);
