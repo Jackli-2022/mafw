@@ -3,6 +3,7 @@ import { createSignal, createEffect, createMemo, onMount, Show, For, onCleanup }
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
 
 const fmt = (n: number): string => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`
@@ -43,6 +44,117 @@ const tokenColors = {
   cacheRead: '#f59e0b',
   cacheWrite: '#ef4444',
 } as const
+
+type ModelWindow = 'today' | '7d' | '30d' | 'all'
+type ModelStatRow = {
+  provider: string | null
+  model: string
+  turns: number
+  tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+  estimatedCost: number | null
+}
+
+const modelTotal = (r: ModelStatRow): number =>
+  r.tokens.input + r.tokens.output + r.tokens.reasoning + r.tokens.cache.read + r.tokens.cache.write
+
+const modelCacheHit = (r: ModelStatRow): number => {
+  const denom = r.tokens.input + r.tokens.cache.read
+  return denom > 0 ? Math.round((r.tokens.cache.read / denom) * 100) : 0
+}
+
+function ModelStatsSection(props: { windows: Record<ModelWindow, ModelStatRow[]> | undefined }) {
+  const [win, setWin] = createSignal<ModelWindow>('7d')
+  const rows = createMemo<ModelStatRow[]>(() => props.windows?.[win()] || [])
+
+  const kpi = createMemo(() => {
+    let tokens = 0, cost = 0, cacheRead = 0, inputAll = 0
+    for (const r of rows()) {
+      tokens += modelTotal(r)
+      cost += r.estimatedCost ?? 0
+      cacheRead += r.tokens.cache.read
+      inputAll += r.tokens.input + r.tokens.cache.read
+    }
+    return { tokens, cost, cacheHit: inputAll > 0 ? Math.round((cacheRead / inputAll) * 100) : 0 }
+  })
+
+  const items = createMemo(() => {
+    const rs = rows()
+    const grand = rs.reduce((s, r) => s + modelTotal(r), 0)
+    const toItem = (name: string, tooltip: string, tokens: number, cost: number | null) => ({
+      name, tooltip, tokens, cost,
+      pct: grand > 0 ? (tokens / grand) * 100 : 0,
+    })
+    const top = rs.slice(0, 3).map((r) =>
+      toItem(
+        r.model,
+        [
+          r.provider ? `${r.provider}/${r.model}` : r.model,
+          `输入 ${fmt(r.tokens.input)} · 输出 ${fmt(r.tokens.output)}` + (r.tokens.reasoning > 0 ? ` · 推理 ${fmt(r.tokens.reasoning)}` : ''),
+          `缓存读 ${fmt(r.tokens.cache.read)} · 缓存写 ${fmt(r.tokens.cache.write)} · 命中率 ${modelCacheHit(r)}%`,
+          `${r.turns} 回合`,
+        ].join('\n'),
+        modelTotal(r),
+        r.estimatedCost,
+      ),
+    )
+    const rest = rs.slice(3)
+    if (rest.length === 0) return top
+    const restTokens = rest.reduce((s, r) => s + modelTotal(r), 0)
+    const restCost = rest.reduce((s, r) => s + (r.estimatedCost ?? 0), 0)
+    const restCostKnown = rest.some((r) => r.estimatedCost !== null)
+    top.push(toItem(`其他 ${rest.length} 个模型`, rest.map((r) => r.model).join('\n'), restTokens, restCostKnown ? restCost : null))
+    return top
+  })
+
+  return (
+    <Show when={rows().length > 0}>
+      <div class="mafw-usage-models">
+        <div class="mafw-usage-models-head">
+          <span class="mafw-usage-models-title">按模型</span>
+          <TabsV2 value={win()} onChange={(v: string) => setWin(v as ModelWindow)} variant="pill">
+            <TabsV2.List class="mafw-usage-models-tabs">
+              <TabsV2.Trigger value="today">今日</TabsV2.Trigger>
+              <TabsV2.Trigger value="7d">7天</TabsV2.Trigger>
+              <TabsV2.Trigger value="30d">30天</TabsV2.Trigger>
+              <TabsV2.Trigger value="all">全部</TabsV2.Trigger>
+            </TabsV2.List>
+          </TabsV2>
+        </div>
+        <div class="mafw-usage-kpis">
+          <div class="mafw-usage-kpi">
+            <div class="mafw-usage-kpi-value">{fmt(kpi().tokens)}</div>
+            <div class="mafw-usage-kpi-label">tokens</div>
+          </div>
+          <div class="mafw-usage-kpi">
+            <div class="mafw-usage-kpi-value">{fmtCost(kpi().cost)}</div>
+            <div class="mafw-usage-kpi-label">估算成本</div>
+          </div>
+          <div class="mafw-usage-kpi">
+            <div class="mafw-usage-kpi-value">{kpi().cacheHit}%</div>
+            <div class="mafw-usage-kpi-label">缓存命中</div>
+          </div>
+        </div>
+        <For each={items()}>
+          {(item) => (
+            <TooltipV2 value={item.tooltip} openDelay={300}>
+              <div class="mafw-usage-model">
+                <div class="mafw-usage-model-head">
+                  <span class="mafw-usage-model-name">{item.name}</span>
+                  <span class="mafw-usage-model-tokens">{fmt(item.tokens)}</span>
+                  <span class="mafw-usage-model-cost">{item.cost !== null ? fmtCost(item.cost) : '—'}</span>
+                </div>
+                <div class="mafw-usage-model-bar">
+                  <div class="mafw-usage-model-bar-fill" style={{ width: `${item.pct}%` }} />
+                </div>
+                <span class="mafw-usage-model-pct">{Math.round(item.pct)}%</span>
+              </div>
+            </TooltipV2>
+          )}
+        </For>
+      </div>
+    </Show>
+  )
+}
 
 function TokenStackBar(props: { data: TokenSummary['totalTokens'] }) {
   const t = () => props.data
@@ -176,6 +288,7 @@ export function UsageDock(props: {
     summary: { session: TokenSummary | null; project: TokenSummary | null; global: TokenSummary | null }
     memory: { totalTokens: TokenSummary['totalTokens']; totalCost: number; turnCount: number; sessionCount: number; byRole: Record<string, { totalTokens: TokenSummary['totalTokens']; totalCost: number; turnCount: number; sessionCount: number }> } | null
     providers: any[]
+    modelStats?: { windows: Record<'today' | '7d' | '30d' | 'all', ModelStatRow[]> }
     updatedAt: number
   } | null>(null)
   const [loading, setLoading] = createSignal(false)
@@ -366,6 +479,7 @@ export function UsageDock(props: {
                 </div>
               </Show>
             </Show>
+            <ModelStatsSection windows={apiData()?.modelStats?.windows} />
           </div>
         </Show>
       </Show>
