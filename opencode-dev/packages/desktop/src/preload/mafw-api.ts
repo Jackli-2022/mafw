@@ -104,6 +104,8 @@ export function createMafwApi(): MafwAPI {
       delete: (id) => invoke("memory", "delete", id),
       getEnergyDistribution: () => invoke("memory", "getEnergyDistribution"),
       getL5Axioms: (topK) => invoke("memory", "getL5Axioms", topK),
+      listSticky: () => invoke("memory", "listSticky"),
+      setSticky: (id, sticky, stickyDays?) => invoke("memory", "setSticky", { id, sticky, stickyDays }),
     },
 
     approvals: {

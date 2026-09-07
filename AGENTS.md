@@ -330,7 +330,9 @@ Graphiti invalidation）：**板级过期 ≠ 记忆删除**，到期仅下架�
 （默认 7 天）；管理：`mafw_pin_memory { id, sticky, stickyDays? }` 上板/续期/下架。
 `mafw_get_memory` 补齐指针兑现：按全 id 或 `<recall>` 尾 6 位取全文，superseded 自动沿链附最新版；
 HTTP 等价 `GET /api/memory/get?id=`。业界三层映射：pinned=Letta core blocks（永久可见）、
-sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。
+sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面呈现：`GET /api/memory/sticky`
+（结构化 entries+budget，fail-open）→ SDK `memory.listSticky/setSticky` → 右侧 Dock「📝 便签」tab
+（NotesDock：倒计时 ≤1 天红色高亮、续期/下架/删除、预算徽标、15s 轮询）。
 
 ### 5.13a 数据目录与统一数据库
 

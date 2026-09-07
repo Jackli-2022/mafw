@@ -319,6 +319,30 @@ test("memory.delete sends DELETE", async () => {
     expect.objectContaining({ method: "DELETE" }))
 })
 
+test("memory.listSticky returns entries and budget", async () => {
+  fetchMock.mockResolvedValue(okJson({
+    entries: [{ id: "mem-1", memory_value: "记得交方案", sticky_until: "2026-09-10T00:00:00Z" }],
+    budget: { max: 10, maxChars: 800, used: 1 },
+  }))
+  const c = new MafwClient()
+  const r = await c.memory.listSticky()
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/memory/sticky", expect.anything())
+  expect(r.entries).toHaveLength(1)
+  expect(r.entries[0].sticky_until).toBe("2026-09-10T00:00:00Z")
+  expect(r.budget.used).toBe(1)
+})
+
+test("memory.setSticky sends POST /api/memory/pin with sticky body", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: true, id: "mem-1", sticky: true }))
+  const c = new MafwClient()
+  await c.memory.setSticky("mem-1", true, 14)
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/memory/pin",
+    expect.objectContaining({
+      method: "POST",
+      body: expect.stringContaining('"stickyDays":14'),
+    }))
+})
+
 // ── Approvals ──
 
 test("approvals.list returns approvals", async () => {

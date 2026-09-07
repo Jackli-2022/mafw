@@ -2858,6 +2858,32 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/memory/sticky — structured note-board list for desktop UI.
+        // Same deps as the agent-facing recall/context block, JSON shape.
+        if (req.url?.match(/^\/api\/memory\/sticky(?:\?|$)/) && req.method === 'GET') {
+          try {
+            if (!this.memoryService) {
+              res.writeHead(503, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ entries: [], budget: { max: 10, maxChars: 800, used: 0 } }));
+              return;
+            }
+            const { handleNoteBoard } = require('./routes/note-board');
+            const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
+            const store = new HarmonicUnitFileStore(this.mafwDir, this.memoryService.harmonicIndex);
+            const nb = await handleNoteBoard({
+              getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
+              readUnit: (id: string) => store.read(id),
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ entries: nb.entries, budget: nb.budget }));
+          } catch (err: any) {
+            log.warn(`[Scheduler] /api/memory/sticky failed: ${err.message}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ entries: [], budget: { max: 10, maxChars: 800, used: 0 } }));
+          }
+          return;
+        }
+
         // GET /api/memory/get?id=... — fetch one memory's full content by id
         // (or 6-char pointer tail). Mirrors the mafw_get_memory MCP tool.
         if (req.url?.match(/^\/api\/memory\/get(?:\?|$)/) && req.method === 'GET') {

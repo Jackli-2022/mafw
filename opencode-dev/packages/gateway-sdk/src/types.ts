@@ -78,6 +78,22 @@ export interface MemoryFact {
   energy: number
 }
 
+export interface StickyNote {
+  id: string
+  type: string
+  primary_abstraction: string
+  memory_value: string
+  energy: number
+  created_at?: string
+  sticky_until?: string
+}
+
+export interface StickyNoteBudget {
+  max: number
+  maxChars: number
+  used: number
+}
+
 export interface MergedSearchOptions {
   query: string
   maxFacts?: number
@@ -488,6 +504,8 @@ export interface MemoryNamespace {
   getEnergyDistribution(): Promise<EnergyDistribution>
   getL5Axioms(topK?: number): Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>
   delete(id: string): Promise<void>
+  listSticky(): Promise<{ entries: StickyNote[]; budget: StickyNoteBudget }>
+  setSticky(id: string, sticky: boolean, stickyDays?: number): Promise<void>
 }
 
 export interface ApprovalsNamespace {

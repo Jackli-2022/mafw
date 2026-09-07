@@ -3,6 +3,7 @@ import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
+  StickyNote, StickyNoteBudget,
   CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState,
@@ -478,6 +479,19 @@ export class MafwClient implements IMafwClient {
 
     delete: async (id: string): Promise<void> => {
       await this.request(`/api/memory/${id}`, { method: 'DELETE' })
+    },
+
+    listSticky: async (): Promise<{ entries: StickyNote[]; budget: StickyNoteBudget }> => {
+      const data = await this.request<{ entries: StickyNote[]; budget: StickyNoteBudget }>('/api/memory/sticky')
+      return { entries: data.entries || [], budget: data.budget || { max: 10, maxChars: 800, used: 0 } }
+    },
+
+    setSticky: async (id: string, sticky: boolean, stickyDays?: number): Promise<void> => {
+      await this.request('/api/memory/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, sticky, stickyDays }),
+      })
     },
   }
 

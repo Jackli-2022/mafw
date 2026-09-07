@@ -1,7 +1,7 @@
 import type {
   Session, Project, Goal, GoalCreateInput, GoalControlAction,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
-  EnergyDistribution, Axiom, L5Heuristic,
+  EnergyDistribution, Axiom, L5Heuristic, StickyNote,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
   ModelConfigState, ModelConfigUpdate,
@@ -92,6 +92,8 @@ export type MafwAPI = {
     delete: (id: string) => Promise<void>
     getEnergyDistribution: () => Promise<EnergyDistribution>
     getL5Axioms: (topK?: number) => Promise<{ axioms: Axiom[]; heuristics: L5Heuristic[] }>
+    listSticky: () => Promise<{ entries: StickyNote[]; budget: { max: number; maxChars: number; used: number } }>
+    setSticky: (id: string, sticky: boolean, stickyDays?: number) => Promise<void>
   }
 
   approvals: {

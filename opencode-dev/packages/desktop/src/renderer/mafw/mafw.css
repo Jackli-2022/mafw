@@ -3174,6 +3174,88 @@ html[data-theme="light"] .mafw-picker-pop {
   margin-left: auto;
 }
 
+/* ══ Notes Dock（便签板）══ */
+.mafw-notes-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  overflow-y: auto;
+}
+.mafw-notes-dock-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 0;
+}
+.mafw-notes-dock-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.mafw-notes-dock-budget {
+  font-size: 10px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-overlay);
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+.mafw-notes-dock-hint {
+  font-size: 10px;
+  color: var(--text-4);
+  line-height: 1.5;
+  padding-bottom: 2px;
+}
+.mafw-notes-dock-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px 12px;
+  color: var(--text-4);
+}
+.mafw-notes-dock-empty-icon { font-size: 28px; }
+.mafw-notes-dock-empty-text { font-size: 12px; color: var(--text-3); }
+.mafw-notes-dock-empty-hint { font-size: 10px; }
+.mafw-notes-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-overlay, transparent);
+}
+.mafw-notes-card.urgent {
+  border-left-color: var(--red-9, #e5484d);
+}
+.mafw-notes-card-text {
+  font-size: 12px;
+  color: var(--text-1);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.mafw-notes-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-4);
+  flex-wrap: wrap;
+}
+.mafw-notes-card-type { text-transform: uppercase; }
+.mafw-notes-card-left { font-variant-numeric: tabular-nums; }
+.mafw-notes-card-left.urgent { color: var(--red-9, #e5484d); font-weight: 600; }
+.mafw-notes-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
 /* ══ Config Page v2 — left-nav layout ══ */
 .mafw-config-layout {
   display: flex;
