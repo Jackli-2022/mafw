@@ -4,14 +4,14 @@ import * as path from 'path';
 import { WaveDigest } from '../types/compression';
 
 /**
- * Wave Executor —Wave 璋冨害 + Task 骞惰鎵ц鍣?(v2.1)
+ * Wave Executor — Wave 调度 + Task 并行执行器 (v2.1)
  *
- * 鎸?Goal 闅旂锛氭墍鏈?Wave/Task 鍦ㄥ悓涓€涓?Goal 鍒嗘敮涓婃墽琛屻€?
- * 涓嶅啀涓烘瘡涓?Task 鍒涘缓鐙珛鍒嗘敮銆?
+ * 按 Goal 隔离：所有 Wave/Task 在同一个 Goal 分支上执行。
+ * 不再为每个 Task 创建独立分支。
  *
  * 鑱岃矗锛?
- *   1. 涓茶鎵ц Wave锛圵ave 闂存湁渚濊禆锛?
- *   2. 姣忎釜 Wave 鍐呭苟琛屾墽琛?Task锛堝叡浜悓涓€涓?Goal 鍒嗘敮锛?
+ *   1. 串行执行 Wave（Wave 间有依赖）
+ *   2. 每个 Wave 内并行执行 Task（共享同一个 Goal 分支）
  *   3. 宸ュ叿杈撳嚭 > 1000 tokens 鏃舵埅鏂?
  */
 export class WaveExecutor {
@@ -29,15 +29,15 @@ export class WaveExecutor {
       const wave = waves[i];
       log.info(`  [WaveExecutor] Wave ${i + 1}/${waves.length}: ${wave.name}`);
 
-      // Wave 鍐?Task 骞惰锛堝湪鍚屼釜 Goal 鍒嗘敮涓婏級
+      // Wave 内 Task 并行（在同个 Goal 分支上）
       const waveResult = await this.executeWave(wave, goalId, loopCount);
       results.push(waveResult);
 
-      // 鐢熸垚 Wave 鎽樿
+      // 生成 Wave 摘要
       const digest = this.createDigest(wave, waveResult, i + 1);
       digests.push(digest);
 
-      // 宸ュ叿杈撳嚭鎴柇
+      // 工具输出截断
       this.truncateToolOutputs(waveResult);
     }
 
@@ -63,7 +63,7 @@ export class WaveExecutor {
   private async executeTask(task: any, goalId: string, loopCount: number): Promise<any> {
     log.info(`    [Task] ${task.id} (goal ${goalId}): ${task.description}`);
 
-    // 妯℃嫙鎵ц
+    // 模拟执行
     const result = {
       taskId: task.id,
       status: 'completed',
@@ -120,7 +120,7 @@ export class WaveExecutor {
   }
 
   /**
-   * Goal 瀹屾垚鍚庡悎骞跺埌 main
+   * Goal 完成后合并到 main
    */
   async mergeToMain(goalId: string): Promise<void> {
     log.info(`[WaveExecutor] Goal ${goalId} completed, merging to main`);

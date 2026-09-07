@@ -4,12 +4,12 @@
  *
  * 鑱岃矗锛?
  *   1. 鍚堝苟 Goal 鍒嗘敮鍒?main
- *   2. 浠?worktree 鎻愬彇鐙湁璁板繂鍒颁富椤圭洰
- *   3. 鐢熸垚鎶ュ憡
- *   4. 鏇存柊 STATUS.md
- *   5. 娓呯悊涓存椂璧勬簮
+ *   2. 从 worktree 提取独有记忆到主项目
+ *   3. 生成报告
+ *   4. 更新 STATUS.md
+ *   5. 清理临时资源
  *
- * 琚?Scheduler 鍦?ARCHIVE 闃舵璋冪敤銆?
+ * 被 Scheduler 在 ARCHIVE 阶段调用。
  */
 
 import * as fs from 'fs';
@@ -31,7 +31,7 @@ export interface FusionResult {
 }
 
 /**
- * 鎵ц Archive 娴佺▼
+ * 执行 Archive 流程
  */
 export async function archiveWorktree(context: ArchiveContext): Promise<void> {
   const { goalId, projectDir, loopCount } = context;
@@ -41,7 +41,7 @@ export async function archiveWorktree(context: ArchiveContext): Promise<void> {
   const worktreeManager = new GoalWorktreeManager(projectDir);
   const info = await worktreeManager.getCurrentInfo(goalId);
 
-  // 1. 鍦?git 鍚堝苟鍓嶏紝浠?worktree 鎻愬彇鐙湁璁板繂
+  // 1. 在 git 合并前，从 worktree 提取独有记忆
   let fusionResult: FusionResult | null = null;
   if (info.worktreeDir !== projectDir) {
     fusionResult = await mergeMemoryFromWorktree(info.worktreeDir, projectDir);
@@ -59,17 +59,17 @@ export async function archiveWorktree(context: ArchiveContext): Promise<void> {
     throw err;
   }
 
-  // 3. 鐢熸垚鎶ュ憡
+  // 3. 生成报告
   await generateReport(goalId, projectDir, loopCount, fusionResult);
 
-  // 4. 鏇存柊 STATUS.md
+  // 4. 更新 STATUS.md
   updateStatusArchive(goalId, projectDir);
 
   log.info(`[archive-worktree] Goal ${goalId} archived successfully`);
 }
 
 /**
- * 浠?worktree 鎻愬彇鐙湁璁板繂鍒颁富椤圭洰
+ * 从 worktree 提取独有记忆到主项目
  */
 export async function mergeMemoryFromWorktree(
   sourceDir: string,

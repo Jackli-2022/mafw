@@ -2,19 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 涓?gateway 鐨?Goal 缂栨帓寤虹珛瑙傛祴灞傦細姣忎釜 goal 褰掓。鏃惰惤涓€琛岀粨鏋勫寲 outcome锛屾墦閫氭垚鏈?鍙嶉鑱氬悎锛屽煁鍏ョ瓥鐣ョ増鏈挬瀛愪笌缁勪欢娉ㄥ唽琛ㄣ€?
-**Architecture:** 鍦?GatewayDatabase 鏂板涓夊紶琛紙goal_outcomes銆乬oal_sessions銆乪volution_proposals锛夛紝鍦ㄤ笁涓?session 鍒涘缓鐐癸紙plan/execute/review 鑺傜偣锛夎拷鍔?goal_sessions 璁板綍锛屽湪褰掓。鑺傜偣鑱氬悎 trajectory + feedback 鍐欏叆 outcome锛屽湪 goal 鍒涘缓鏃跺揩鐓х瓥鐣ョ増鏈€傛墍鏈夊啓鍏?fail-open锛屼笉褰卞搷涓绘祦绋嬨€?
+**Goal:** 为 gateway 的 Goal 编排建立观测层：每个 goal 归档时落一行结构化 outcome，打通成本/反馈聚合，嵌入策略版本快照与组件注册表。
+**Architecture:** 在 GatewayDatabase 新增三张表（goal_outcomes、goal_sessions、evolution_proposals），在三个 session 创建点（plan/execute/review 节点）追加 goal_sessions 记录，在归档节点聚合 trajectory + feedback 写入 outcome，在 goal 创建时快照策略版本。所有写入 fail-open，不影响主流程。
 **Tech Stack:** TypeScript, better-sqlite3, Jest (ts-jest), Node.js
 
 ## Global Constraints
 
-- 鎵€鏈?outcome 鍐欏叆 fail-open锛氬紓甯稿彧璁版棩蹇楋紝缁濅笉褰卞搷褰掓。涓绘祦绋?- API 璺敱姝ｅ垯閬靛惊 `(?:\?|$)` 妯″紡锛圓GENTS.md 搂6.5锛?- 鎻愪氦鏃跺彧 `git add` 鏈换鍔℃秹鍙婄殑鍏蜂綋鏂囦欢锛堜粨搴撴湁骞惰 agent 浼氳瘽锛岀洰褰曠骇 add 浼氭贩鍏ヤ粬浜烘敼鍔級
+- 所有 outcome 写入 fail-open：异常只记日志，绝不影响归档主流程
+- API 路由正则遵循 `(?:\?|$)` 模式（AGENTS.md §6.5）
+- 提交时只 `git add` 本任务涉及的具体文件（仓库有并行 agent 会话，目录级 add 会混入他人改动）
 - upsert 骞傜瓑锛歡oal_id 涓婚敭锛岄噸澶嶅綊妗ｆ洿鏂拌€岄潪鎶ラ敊
 - 涓夊紶琛ㄥ湪 GatewayDatabase 鏋勯€犲嚱鏁扮殑 CREATE TABLE IF NOT EXISTS 鍧椾腑鍒涘缓
 
 ---
 
-### Task 1: GatewayDatabase 涓夎〃 + CRUD
+### Task 1: GatewayDatabase 三表 + CRUD
 
 **Files:**
 - Modify: `gateway/src/memory/gateway-db.ts`
@@ -461,7 +463,7 @@ git commit -m "feat(gateway): add orchestration/registry.ts component registry"
 
 ---
 
-### Task 4: trajectory-store prune 璞佸厤
+### Task 4: trajectory-store prune 豁免
 
 **Files:**
 - Modify: `gateway/src/trajectory/trajectory-store.ts:196-200`
@@ -845,7 +847,7 @@ git commit -m "feat(gateway): add orchestration/outcome-recorder.ts"
 
 ---
 
-### Task 6: goal_sessions 鎺ョ嚎
+### Task 6: goal_sessions 接线
 
 **Files:**
 - Modify: `gateway/src/core/langgraph/nodes/plan.node.ts:38-42`
@@ -947,7 +949,7 @@ git commit -m "feat(gateway): wire onSessionCreated callback for goal_sessions"
 
 ---
 
-### Task 7: 绛栫暐蹇収
+### Task 7: 策略快照
 
 **Files:**
 - Modify: `gateway/src/core/utils/state.ts:22-36` (StateFile interface)
@@ -1010,7 +1012,7 @@ git commit -m "feat(gateway): add policySnapshot to StateFile and patch in onGoa
 
 ---
 
-### Task 8: archiveGoal outcome 璁板綍 + ABORT 鎺ョ嚎
+### Task 8: archiveGoal outcome 记录 + ABORT 接线
 
 **Files:**
 - Modify: `gateway/src/index.ts:4183-4218` (archiveGoal)
@@ -1130,7 +1132,7 @@ git commit -m "feat(gateway): record outcome on archive and abort"
 
 ---
 
-### Task 9: API 璺敱
+### Task 9: API 路由
 
 **Files:**
 - Modify: `gateway/src/index.ts` (API server section)
@@ -1172,7 +1174,7 @@ git commit -m "feat(gateway): add GET /api/orchestration/outcomes endpoint"
 
 ---
 
-### Task 10: AGENTS.md 鏇存柊
+### Task 10: AGENTS.md 更新
 
 **Files:**
 - Modify: `AGENTS.md`
@@ -1183,19 +1185,27 @@ In `AGENTS.md`, add a new section (e.g., after 搂5.19):
 
 ```markdown
 ### 5.20 Goal 缂栨帓 RSI 鈥?Phase 1 瑙傛祴灞?
-**鏁版嵁妯″瀷**锛坓ateway.db锛夛細
-- `goal_outcomes`锛氭瘡涓?goal 褰掓。鏃跺啓涓€琛岋紙verdict銆佽疆鏁般€佹垚鏈€乼humbs銆乸olicy_version銆乫ailure_kind/signature锛?- `goal_sessions`锛歡oal 鐢熷懡鍛ㄦ湡鍐呮墍鏈?session 鐨勮拷鍔犳槧灏勶紙璞佸厤 trajectory 14 澶?prune锛?- `evolution_proposals`锛氭紨鍖栨彁璁〃锛圥hase 2 浣跨敤锛孭hase 1 浠呭缓琛級
+**数据模型**（gateway.db）：
+- `goal_outcomes`：每个 goal 归档时写一行（verdict、轮数、成本、thumbs、policy_version、failure_kind/signature）
+- `goal_sessions`：goal 生命周期内所有 session 的追加映射（豁免 trajectory 14 天 prune）
+- `evolution_proposals`：演化提议表（Phase 2 使用，Phase 1 仅建表）
 
 **鍐欏叆鐐?*锛?- 涓変釜 session 鍒涘缓鑺傜偣锛坧lan/execute/review锛夎皟鐢?`onSessionCreated` 杩藉姞 goal_sessions
 - archiveGoal 鎴愬姛鍚庤皟鐢?`recordGoalOutcome` 鑱氬悎 trajectory + feedback 鍐欏叆 outcome
 - ABORT锛圚TTP + control file锛夎皟鐢?archiveGoal(verdict='CANCELLED')
 - onGoalCreated 鍐?`policySnapshot` 鍒?state.json
 
-**鏌ヨ**锛?- `GET /api/orchestration/outcomes?policy=&verdict=&project=&limit=`
+**查询**：
+- `GET /api/orchestration/outcomes?policy=&verdict=&project=&limit=`
 
-**缁勪欢娉ㄥ唽琛?*锛?- `gateway/src/orchestration/registry.ts` 澹版槑鍙紨鍖栫粍浠讹紙Phase 1 鍙锛?- `gateway/src/orchestration/policy.ts` 璇?`~/.mafw/orchestration/active.json` 鍥為€€ builtin-v1
+**组件注册表**：
+- `gateway/src/orchestration/registry.ts` 声明可演化组件（Phase 1 只读）
+- `gateway/src/orchestration/policy.ts` 读 `~/.mafw/orchestration/active.json` 回退 builtin-v1
 
-**璁捐鍘熷垯**锛?- 鎵€鏈夊啓鍏?fail-open锛屼笉褰卞搷涓绘祦绋?- upsert 骞傜瓑锛岄噸澶嶅綊妗ｆ洿鏂?- trajectory prune 璞佸厤宸茬櫥璁?session
+**设计原则**：
+- 所有写入 fail-open，不影响主流程
+- upsert 幂等，重复归档更新
+- trajectory prune 豁免已登记 session
 ```
 
 - [ ] **Step 2: Commit**

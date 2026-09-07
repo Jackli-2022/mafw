@@ -8,14 +8,14 @@ import { loadState, updateState } from '../utils/state';
  *
  * 鑱岃矗锛?
  *   1. Session 姝ｅ父缁撴潫鏃堕亶鍘?state 鏂囦欢鍙嶆煡 sessionId
- *   2. 妫€鏌?state 鏄惁宸叉洿鏂帮紙nextAction !== WAIT_PHASE_COMPLETE锛?
+ *   2. 检查 state 是否已更新（nextAction !== WAIT_PHASE_COMPLETE）
  *   3. 濡傛灉 Skill Entry 鍥犱负寮傚父娌℃潵寰楀強鏇存柊 state锛屽啓鍏ュ紓甯哥姸鎬?
- *   4. Scheduler 涓嬩竴杞?poll 浼氳鍙栨柊 nextAction锛岄噸寤?Session
+ *   4. Scheduler 下一轮 poll 会读取新 nextAction，重建 Session
  *
- * 璁捐鍘熷垯锛?
- *   - 鍙厹搴曪紝涓嶆壙杞戒富璺緞鐘舵€佹洿鏂?
- *   - 閬嶅巻鎵€鏈?state 鏂囦欢锛屼笉鍋囪 sessionId 鏍煎紡鍖呭惈 goalId
- *   - 濡傛灉 state 宸叉甯告洿鏂帮紝鏃犳搷浣?
+ * 设计原则：
+ *   - 只兜底，不承载主路径状态更新
+ *   - 遍历所有 state 文件，不假设 sessionId 格式包含 goalId
+ *   - 如果 state 已正常更新，无操作
  */
 
 export interface HookContext {
@@ -48,7 +48,7 @@ export async function sessionEndingHook(hookContext: HookContext): Promise<void>
     }
   } catch { /* ignore parametric errors */ }
 
-  // 1. 閬嶅巻鎵€鏈?state 鏂囦欢锛屾壘鍒板寘鍚 sessionId 鐨?goal
+  // 1. 遍历所有 state 文件，找到包含该 sessionId 的 goal
   if (!fs.existsSync(stateDir)) {
     log.warn(`[hook:session-ending] State directory not found: ${stateDir}`);
     return;

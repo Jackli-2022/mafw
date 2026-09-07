@@ -231,7 +231,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
             const requestsDir = path.join(mafwDir, 'requests');
             if (!fs.existsSync(requestsDir)) fs.mkdirSync(requestsDir, { recursive: true });
             fs.writeFileSync(path.join(requestsDir, `${result.goalId}.json`), JSON.stringify(result, null, 2));
-            return { type: 'goal_submitted', goalId: result.goalId, message: `�?Goal "${result.title}" submitted` };
+            return { type: 'goal_submitted', goalId: result.goalId, message: `✅ Goal "${result.title}" submitted` };
           }
         }
       },

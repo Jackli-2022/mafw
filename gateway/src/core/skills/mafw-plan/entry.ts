@@ -15,16 +15,16 @@ import { buildPlanPrompt } from '../../tools/run-plan';
 /**
  * mafw-plan Skill Entry —Plan Agent锛堢嫭绔?Session锛?
  *
- * 銆愬叧閿€戠姸鎬佹洿鏂版槸涓昏矾寰勶紝鍐欏湪鍑芥暟鏈熬锛屼笉渚濊禆 hook
+ * 【关键】状态更新是主路径，写在函数末尾，不依赖 hook
  *
  * 鑱岃矗锛?
- *   1. 璇诲彇 Goal Charter (L1)
+ *   1. 读取 Goal Charter (L1)
  *   2. 璇诲彇鐩稿叧 Lessons (L2 妫€绱?
- *   3. 鍔犺浇 Parametric 螖 (L3 娉ㄥ叆)
- *   4. 鎷兼帴瀹屾暣 Prompt
- *   5. 璋冪敤 LLM
- *   6. 瑙ｆ瀽鍥炲涓?waves.json
- *   7. 鍐欏叆 tasks/{id}.md
+ *   3. 加载 Parametric Δ (L3 注入)
+ *   4. 拼接完整 Prompt
+ *   5. 调用 LLM
+ *   6. 解析回复为 waves.json
+ *   7. 写入 tasks/{id}.md
  *   8. 銆愭樉寮忋€戞洿鏂?state.json 鈫?nextAction: CREATE_EXECUTE_SESSION
  *
  * 璋冪敤鏂瑰紡锛歋cheduler 鍒涘缓 Plan Session 鈫?鍙戦€?/skill mafw-plan {goalId}
@@ -42,18 +42,18 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   // 2. 璁板綍 Session锛堢敤浜?hook 鍏滃簳鍙嶆煡锛?
   await recordSession(goalId, 'plan', context.sessionId, projectDir);
 
-  // 3. 璇诲彇 L1: Goal Charter
+  // 3. 读取 L1: Goal Charter
   const goal = await loadGoal(goalId, projectDir);
   log.info(`[mafw-plan] Loaded Goal Charter (${goal.length} chars)`);
 
-  // 4. 璇诲彇 L2: 鐩稿叧 Lessons
+  // 4. 读取 L2: 相关 Lessons
   const index = new MemoryIndexManager(path.join(projectDir, '.mafw/memory-index.json'));
   const keywords = extractKeywords(goal);
   const domain = extractDomain(goal);
   const relevantLessons = index.search(keywords, domain, 3);
   log.info(`[mafw-plan] L2: ${relevantLessons.length} lessons loaded`);
 
-  // 5. 璇诲彇 L3: Parametric Deltas
+  // 5. 读取 L3: Parametric Deltas
   const store = new ParametricStore({
     baseDir: path.join(projectDir, '.mafw/parametric'),
     bannedDir: path.join(projectDir, '.mafw/parametric/banned'),
@@ -69,10 +69,10 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   const injection = injector.inject(matchedDeltas);
   log.info(`[mafw-plan] L3: ${injection.injected.length} deltas injected (${injection.totalTokens} tokens)`);
 
-  // 6. 鎷兼帴 Prompt
+  // 6. 拼接 Prompt
   const prompt = buildPlanPrompt({ goal, lessons: relevantLessons, deltas: injection.injected, handoff: null, loopNum: state.loop });
 
-  // 7. 璋冪敤 LLM
+  // 7. 调用 LLM
   log.info(`[mafw-plan] Calling LLM...`);
   const response = await context.llm.chat({
     model: context.config.model,
@@ -82,12 +82,12 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   // 8. 瑙ｆ瀽骞跺啓鍏ヤ骇鍑?
   const plan = parsePlanResponse(response.content);
 
-  // 鍐欏叆 waves.json
+  // 写入 waves.json
   const wavesPath = path.join(projectDir, '.mafw/waves.json');
   fs.writeFileSync(wavesPath, JSON.stringify({ waves: plan.waves }, null, 2), 'utf-8');
   log.info(`[mafw-plan] Written waves.json (${plan.waves.length} waves)`);
 
-  // 鍐欏叆 tasks/
+  // 写入 tasks/
   const tasksDir = path.join(projectDir, '.mafw/tasks');
   if (!fs.existsSync(tasksDir)) fs.mkdirSync(tasksDir, { recursive: true });
   for (const task of plan.tasks) {
@@ -131,14 +131,14 @@ export async function mafwPlanEntry(context: SkillContext): Promise<void> {
   log.info(`[mafw-plan] Plan complete. State updated 鈫?CREATE_EXECUTE_SESSION`);
 
   // 10. 鍑芥暟杩斿洖 鈫?OpenCode 鍏抽棴 Session
-  // hook 'session-ending' 浼氬仛鍏滃簳妫€鏌ワ紝浣嗘甯告儏鍐典笅 state 宸叉洿鏂?
+  // hook 'session-ending' 会做兜底检查，但正常情况下 state 已更新
 }
 
 
 
 function parsePlanResponse(content: string): { waves: any[]; tasks: any[] } {
   try {
-    // 灏濊瘯鐩存帴瑙ｆ瀽 JSON
+    // 尝试直接解析 JSON
     return JSON.parse(content);
   } catch {
     // 灏濊瘯浠?markdown 浠ｇ爜鍧椾腑鎻愬彇

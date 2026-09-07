@@ -5,11 +5,12 @@ import * as path from 'path';
 const MAFW_DIR = '.mafw';
 
 /**
- * Recovery 锟?宕╂簝鎭㈠锟? *
- * Scheduler 閲嶅惎鍚庯細
- *   1. 璇诲彇 STATUS.md锛屾壘鍒版墍锟?RUNNING 鐘舵€佺殑 Goal
+ * Recovery — 崩溃恢复
+ *
+ * Scheduler 重启后：
+ *   1. 读取 STATUS.md，找到所有 RUNNING 状态的 Goal
  *   2. 灏濊瘯鎵惧埌鏈€杩戠殑 Checkpoint
- *   3. 閲嶆柊鍒涘缓 session 骞跺惎锟?Loop
+ *   3. 重新创建 session 并启动 Loop
  */
 
 export class RecoveryManager {
@@ -42,7 +43,7 @@ export class RecoveryManager {
   }
 
   /**
-   * 淇濆瓨 Checkpoint
+   * 保存 Checkpoint
    */
   saveCheckpoint(goalId: string, loop: number, data: any, waveNum?: number): void {
     const checkpointsDir = path.join(this.mafwDir, 'checkpoints', goalId);
@@ -61,7 +62,7 @@ export class RecoveryManager {
   }
 
   /**
-   * 鍔犺浇 Checkpoint
+   * 加载 Checkpoint
    */
   loadCheckpoint(checkpointPath: string): any {
     if (!fs.existsSync(checkpointPath)) return null;
@@ -104,7 +105,7 @@ export class RecoveryManager {
   }
 
   /**
-   * 鎭㈠鎵€鏈夐渶瑕侀噸鍚殑 Goal
+   * 恢复所有需要重启的 Goal
    */
   async recoverAll(callback: (goalId: string, checkpoint: string | null) => Promise<void>): Promise<void> {
     const statusPath = path.join(this.mafwDir, 'STATUS.md');

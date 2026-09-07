@@ -17,7 +17,7 @@ export function renderIndexMd(baseDir: string, indexManager: HarmonicIndexManage
     lines.push(`## ${tier}`, '');
     for (const e of entries) {
       const pathStr = (e as any).filePath || '';
-      lines.push(`- **${e.primary_abstraction}** (energy: ${e.energy}) â€?\`${pathStr}\``);
+      lines.push(`- **${e.primary_abstraction}** (energy: ${e.energy}) â€”\`${pathStr}\``);
     }
     lines.push('');
   }

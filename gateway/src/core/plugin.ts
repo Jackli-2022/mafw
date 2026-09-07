@@ -37,7 +37,7 @@ const injectedFirstUser = new TtlMap<string, string>(24 * 60 * 60 * 1000);
 
 
 /**
- * MAFW Plugin 锟?OpenCode Official Format v5.0
+ * MAFW Plugin — OpenCode Official Format v5.0
  *
  * Architecture: 搂8.1
  * Returns an object with config, command, tool, hooks.
@@ -55,22 +55,22 @@ interface HybridSearchResult {
 export default async function MafwPlugin({ directory }: { directory: string }) {
   const mafwDir = path.join(directory, '.mafw');
 
-  // 0. 鍒濆锟?MAFW 鐩綍缁撴瀯锛堟彃浠惰繍琛屾椂鍒涘缓锟?
+  // 0. 初始化 MAFW 目录结构（插件运行时创建）
   await ensureMafwDirectories(mafwDir);
 
-  // 0a. 锟?console.log/warn/error 鍚屾椂鍐欏叆鏂囦欢 .mafw/logs/mafw.log
+  // 0a. 劫持 console.log/warn/error 同时写入文件 .mafw/logs/mafw.log
   const { log } = require('./utils/logger');
   log.info('Plugin activated');
 
   // 0b. Load configuration
   const config = ConfigLoader.getInstance(directory).getAll();
 
-  // 1. 锟?Gateway 娉ㄥ唽椤圭洰锛堟帰娴嬬锟?3000-3010锟?
+  // 1. 向 Gateway 注册项目（探测端口 3000-3010）
   await registerWithGateway(directory, mafwDir);
 
   log.info('[MAFW] Plugin activated. All skills loaded. All commands registered.');
 
-  // 2. 鍒濆鍖栬蹇嗗眰
+  // 2. 初始化记忆层
   const parametricStore = new ParametricStore({
     baseDir: path.join(mafwDir, 'parametric'),
     bannedDir: path.join(mafwDir, 'parametric', 'banned'),
@@ -515,7 +515,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       };
     },
 
-    // 鈹€鈹€ V5 鍥涘眰璁板繂鑷姩娉ㄥ叆 User Message锛圚ybrid Search + 鍚戝悗鍏煎锛夆攢鈹€
+    // ── V5 四层记忆自动注入 User Message（Hybrid Search + 向后兼容）──
     'experimental.chat.messages.transform': async (input: any, output: any) => {
       const messages = output.messages || [];
       const firstUser = messages.find((m: any) => m.info?.role === 'user');
@@ -531,7 +531,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
 
       const text = firstUser.parts[0].text;
 
-      // 瑙ｆ瀽 goalId 锟?phase
+      // 解析 goalId 和 phase
       let goalId: string | null = null;
       let phase: string | null = null;
 
@@ -551,7 +551,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       let hybridResults: HybridSearchResult | null = null;
       try { hybridResults = await executeHybridSearch({ query: text, maxResults: 10, tokenBudget: 2000 }); } catch { /* ignore search failures */ }
 
-      // 2. 璇诲彇璁板繂锛堜笉锟?goal 缁戝畾锟?
+      // 2. 读取记忆（不与 goal 绑定）
       let deltas: any[] = [];
       let lessons: any[] = [];
       let state: any = null;
@@ -618,7 +618,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       firstUser.parts[0].text = parts.join('\n\n');
     },
 
-    // 鈹€鈹€ 鑷畾涔夊懡锟?鈹€鈹€
+    // ── 自定义命令 ──
     command: {
       goal: {
         description: 'Submit a new Goal to MAFW',
@@ -629,7 +629,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
             return {
               type: 'goal_submitted',
               goalId: result.goalId,
-              message: `锟?Goal "${result.title}" confirmed\n馃搧 requests/${result.goalId}.json\n馃搳 state/${result.goalId}.json\n锟?Gateway will auto-schedule...\n\n馃挕 Tip: TUI can be closed, Goal runs in background.`
+              message: `✅ Goal "${result.title}" confirmed\n📁 requests/${result.goalId}.json\n📊 state/${result.goalId}.json\n⏳ Gateway will auto-schedule...\n\n💡 Tip: TUI can be closed, Goal runs in background.`
             };
           }
         }
@@ -808,7 +808,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       },
     },
 
-    // 鈹€鈹€ Session 鍘嬬缉鍓嶏細淇濆瓨鐘舵€佸揩锟?鈹€鈹€
+    // ── 事件钩子：Session 生命周期兜底 ──
     'experimental.session.compacting': async ({ sessionID }: any, { snapshot }: any) => {
       await hookManager.execute('session.compacting', { sessionID, projectDir: directory });
     },
@@ -923,7 +923,7 @@ async function writeGoalRequest(result: any, directory: string) {
 }
 
 function formatGoalCharter(result: any): string {
-  return `# Goal Charter 锟?${result.title}\n\n> Goal ID: ${result.goalId}\n> Created: ${new Date().toISOString()}\n> Priority: ${result.priority || 'normal'}\n> Max Loops: ${result.maxLoops || 5}\n\n## Objective\n\n${result.title}\n\n## Metrics\n\n${Object.entries(result.metrics || {}).map(([k, v]: [string, any]) => `- ${k}: ${v.target}${v.unit}`).join('\n')}\n\n## Boundaries\n\n${(result.boundaries || []).map((b: string) => `- [ ] ${b}`).join('\n')}\n`;
+  return `# Goal Charter — ${result.title}\n\n> Goal ID: ${result.goalId}\n> Created: ${new Date().toISOString()}\n> Priority: ${result.priority || 'normal'}\n> Max Loops: ${result.maxLoops || 5}\n\n## Objective\n\n${result.title}\n\n## Metrics\n\n${Object.entries(result.metrics || {}).map(([k, v]: [string, any]) => `- ${k}: ${v.target}${v.unit}`).join('\n')}\n\n## Boundaries\n\n${(result.boundaries || []).map((b: string) => `- [ ] ${b}`).join('\n')}\n`;
 }
 
 

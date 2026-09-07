@@ -24,7 +24,8 @@ export class HeartbeatMonitor {
   }
 
   /**
-   * 检查所有活�?Goal 的心�?   */
+   * 检查所有活跃 Goal 的心跳
+   */
   check(): { healthy: HeartbeatStatus[]; stuck: HeartbeatStatus[] } {
     const all = this.loadAll();
     const running = all.filter(g => g.state === 'RUNNING');
@@ -46,7 +47,8 @@ export class HeartbeatMonitor {
   }
 
   /**
-   * 加载所�?Goal 状�?   */
+   * 加载所有 Goal 状态
+   */
   loadAll(): HeartbeatStatus[] {
     if (!fs.existsSync(this.statusPath)) return [];
     const content = fs.readFileSync(this.statusPath, 'utf-8');
@@ -54,7 +56,7 @@ export class HeartbeatMonitor {
   }
 
   /**
-   * 解析�?Goal STATUS.md 格式
+   * 解析多 Goal STATUS.md 格式
    */
   private parse(content: string): HeartbeatStatus[] {
     const blocks = content.split('---').filter(b => b.trim());

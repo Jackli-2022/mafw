@@ -17,7 +17,7 @@ const FORCE = process.argv.includes('--force');
 const MEM_DIR = path.join(os.homedir(), '.mafw', 'memory');
 const INDEX_PATH = path.join(MEM_DIR, '.harmonic_index.json');
 // Index entry filePath values are relative to the gateway data root
-// (~/.mafw) â€?e.g. 'memory/concepts/semantic/<file>.md' â€?NOT to MEM_DIR.
+// (~/.mafw) â€”e.g. 'memory/concepts/semantic/<file>.md' â€”NOT to MEM_DIR.
 const FILE_ROOT = path.join(os.homedir(), '.mafw');
 const CONCEPTS_DIR = path.join(FILE_ROOT, 'concepts');
 

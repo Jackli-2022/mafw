@@ -50,14 +50,14 @@ export class DashboardAPI {
         return;
       }
 
-      // GET /api/config �?return effective config
+      // GET /api/config — return effective config
       if (pathname === '/api/config' && method === 'GET') {
         res.writeHead(200);
         res.end(JSON.stringify(gatewayConfig.raw));
         return;
       }
 
-      // PUT /api/config �?persist config overrides
+      // PUT /api/config — persist config overrides
       if (pathname === '/api/config' && method === 'PUT') {
         const body = await this.readBody(req);
         const overrides = JSON.parse(body);
@@ -198,7 +198,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/pause �?pause a goal
+      // POST /api/gateway/pause — pause a goal
       if (pathname === '/api/gateway/pause' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -208,7 +208,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/resume �?resume a goal
+      // POST /api/gateway/resume — resume a goal
       if (pathname === '/api/gateway/resume' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -218,7 +218,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/cancel �?cancel a goal
+      // POST /api/gateway/cancel — cancel a goal
       if (pathname === '/api/gateway/cancel' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -228,7 +228,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/checkpoint �?save checkpoint for all running goals
+      // POST /api/gateway/checkpoint — save checkpoint for all running goals
       if (pathname === '/api/gateway/checkpoint' && method === 'POST') {
         const result = await this.gatewayControl('checkpoint');
         res.writeHead(200);
@@ -236,7 +236,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/gateway/rollback �?rollback to last checkpoint
+      // POST /api/gateway/rollback — rollback to last checkpoint
       if (pathname === '/api/gateway/rollback' && method === 'POST') {
         const body = await this.readBody(req);
         const { goalId } = JSON.parse(body);
@@ -255,7 +255,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/feedback �?record user feedback
+      // POST /api/feedback — record user feedback
       if (pathname === '/api/feedback' && method === 'POST') {
         const body = await this.readBody(req);
         const input = JSON.parse(body);
@@ -265,7 +265,7 @@ export class DashboardAPI {
         return;
       }
 
-      // GET /api/feedback �?list all feedback for timeline
+      // GET /api/feedback — list all feedback for timeline
       if (pathname === '/api/feedback' && method === 'GET') {
         const result = await this.listFeedback();
         res.writeHead(200);
@@ -285,7 +285,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/alignment �?save user weight preferences
+      // POST /api/alignment — save user weight preferences
       if (pathname === '/api/alignment' && method === 'POST') {
         const body = await this.readBody(req);
         const weights = JSON.parse(body);
@@ -296,7 +296,7 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/llm/compress �?LLM compression proxy
+      // POST /api/llm/compress — LLM compression proxy
       if (pathname === '/api/llm/compress' && method === 'POST') {
         const body = await this.readBody(req);
         const { observations, model } = JSON.parse(body);

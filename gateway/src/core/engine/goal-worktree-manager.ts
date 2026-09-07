@@ -2,26 +2,26 @@
 import simpleGit from 'simple-git';
 
 /**
- * Goal Worktree Manager —Goal 绾?Git Worktree 闅旂
+ * Goal Worktree Manager — Goal 级 Git Worktree 隔离
  *
  * 鑱岃矗锛?
- *   1. 涓烘瘡涓?Goal 鍒涘缓/鍑嗗 Git 鍒嗘敮锛坓oal/{goalId}锛?
- *   2. 鏀寔涓ょ妯″紡锛?
+ *   1. 为每个 Goal 创建/准备 Git 分支（goal/{goalId}）
+ *   2. 支持两种模式：
  *      - 闈炲苟琛岋細鍦ㄥ綋鍓嶇洰褰曞垏鎹㈠垎鏀?
- *      - 骞惰锛氬垱寤虹嫭绔?worktree 鐩綍
- *   3. Goal 瀹屾垚鍚庡悎骞跺埌 main
- *   4. 娓呯悊鐙珛 worktree
+ *      - 并行：创建独立 worktree 目录
+ *   3. Goal 完成后合并到 main
+ *   4. 清理独立 worktree
  *
- * 璁捐鍘熷垯锛?
- *   - Goal 闅旂鍦ㄥ垎鏀骇鍒?
- *   - Task 闅旂鍦ㄥ垎鏀唴缁х画鐢?change/{taskId} 鍒嗘敮
- *   - 榛樿闈炲苟琛屾ā寮忥紙绠€鍗曪紝鑺傜渷绌洪棿锛?
+ * 设计原则：
+ *   - Goal 隔离在分支级别
+ *   - Task 隔离在分支内继续用 change/{taskId} 分支
+ *   - 默认非并行模式（简单，节省空间）
  */
 
 export interface WorktreeInfo {
-  worktreeDir: string;    // 瀹為檯宸ヤ綔鐩綍
+  worktreeDir: string;    // 实际工作目录
   branch: string;         // 鍒嗘敮鍚?
-  isIsolated: boolean;    // 鏄惁鐙珛 worktree
+  isIsolated: boolean;    // 是否独立 worktree
 }
 
 export class GoalWorktreeManager {
@@ -34,7 +34,7 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 鍑嗗 Goal 鐨?Worktree
+   * 准备 Goal 的 Worktree
    */
   async prepare(config: { projectDir: string; goalId: string; parallel: boolean }): Promise<WorktreeInfo> {
     const { projectDir, goalId, parallel } = config;
@@ -50,7 +50,7 @@ export class GoalWorktreeManager {
       return { worktreeDir: projectDir, branch, isIsolated: false };
     }
 
-    // 骞惰妯″紡锛氬垱寤虹嫭绔?worktree
+    // 并行模式：创建独立 worktree
     const worktreeDir = `${projectDir}-goal-${goalId}`;
     const branch = `goal/${goalId}`;
 
@@ -59,12 +59,12 @@ export class GoalWorktreeManager {
       await this.git.checkoutLocalBranch(branch);
     }
 
-    // 鍒涘缓 worktree
+    // 创建 worktree
     try {
       await this.git.raw(['worktree', 'add', worktreeDir, branch]);
       log.info(`[GoalWorktree] Created worktree ${worktreeDir} for branch ${branch}`);
     } catch (err: any) {
-      // 濡傛灉 worktree 宸插瓨鍦紝鐩存帴杩斿洖
+      // 如果 worktree 已存在，直接返回
       log.info(`[GoalWorktree] Worktree ${worktreeDir} already exists`);
     }
 
@@ -95,7 +95,7 @@ export class GoalWorktreeManager {
       log.info(`[GoalWorktree] Squash merged ${info.branch} into main`);
     }
 
-    // 娓呯悊鐙珛 worktree
+    // 清理独立 worktree
     if (info.isIsolated) {
       try {
         await this.git.raw(['worktree', 'remove', info.worktreeDir]);
@@ -108,7 +108,7 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 鑾峰彇褰撳墠 Goal 鍒嗘敮淇℃伅
+   * 获取当前 Goal 分支信息
    */
   async getCurrentInfo(goalId: string): Promise<WorktreeInfo> {
     const branch = `goal/${goalId}`;
@@ -121,7 +121,7 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 妫€鏌ュ垎鏀槸鍚﹀瓨鍦?
+   * 检查分支是否存在
    */
   async branchExists(branch: string): Promise<boolean> {
     const branches = await this.git.branchLocal();
@@ -145,7 +145,7 @@ export class GoalWorktreeManager {
   }
 
   /**
-   * 娓呯悊宸插垹闄ょ殑 worktree 璁板綍
+   * 清理已删除的 worktree 记录
    */
   async prune(): Promise<void> {
     try {

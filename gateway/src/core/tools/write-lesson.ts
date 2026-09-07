@@ -22,7 +22,7 @@ export interface LessonData {
 }
 
 /**
- * 鍐欏叆 Lesson 鏂囦欢
+ * 写入 Lesson 文件
  */
 export function writeLesson(data: LessonData, projectDir: string = '.'): string {
   const { goalId, loop, reason, metrics, domain = 'general', task = 'unknown' } = data;
@@ -42,7 +42,7 @@ export function writeLesson(data: LessonData, projectDir: string = '.'): string 
 }
 
 /**
- * 鏍煎紡鍖?Lesson 鍐呭
+ * 格式化 Lesson 内容
  */
 function formatLesson(data: LessonData): string {
   const { goalId, loop, reason, metrics, domain, task } = data;

@@ -16,20 +16,20 @@ import { buildReviewPrompt } from '../../tools/run-review';
 /**
  * mafw-review Skill Entry —Review Agent锛堢嫭绔?Session锛?
  *
- * 銆愬叧閿€戠姸鎬佹洿鏂版槸涓昏矾寰勶紝鍐欏湪鍑芥暟鏈熬
+ * 【关键】状态更新是主路径，写在函数末尾
  *
  * 鑱岃矗锛?
- *   1. 璇诲彇 Goal Charter 鎸囨爣
- *   2. 璇诲彇 receipts/{goalId}/
- *   3. 璇诲彇 git diff
- *   4. 璇诲彇杩滅▼ CLI 娴嬭瘯缁撴灉锛堝鏋滈厤缃級
- *   5. 鎷兼帴 Review Prompt
- *   6. 璋冪敤 LLM 瀹℃煡
- *   7. 杩斿洖 verdict
- *   8. 鍐欏叆 reviews/{goalId}-loop{loop}.md
+ *   1. 读取 Goal Charter 指标
+ *   2. 读取 receipts/{goalId}/
+ *   3. 读取 git diff
+ *   4. 读取远程 CLI 测试结果（如果配置）
+ *   5. 拼接 Review Prompt
+ *   6. 调用 LLM 审查
+ *   7. 返回 verdict
+ *   8. 写入 reviews/{goalId}-loop{loop}.md
  *   9. 濡傛灉澶辫触锛屽啓鍏?lessons/{goalId}-loop{loop}.md
  *   10. LessonCompactor 鍘嬬缉涓?YAML (L2)
- *   11. MemoryExtractor 鎻愬彇 螖 (L3)
+ *   11. MemoryExtractor 提取 Δ (L3)
  *   12. 銆愭樉寮忋€戞洿鏂?state.json 鈫?nextAction: CHECK_VERDICT
  *
  * 璋冪敤鏂瑰紡锛歋cheduler 鍒涘缓 Review Session 鈫?鍙戦€?/skill mafw-review {goalId}
@@ -54,7 +54,7 @@ export async function mafwReviewEntry(context: ReviewSkillContext): Promise<void
   const state = await loadState(goalId, projectDir);
   const req = await loadRequest(goalId, projectDir);
 
-  // 2. 璁板綍 Session
+  // 2. 记录 Session
   await recordSession(goalId, 'review', context.sessionId, projectDir);
 
   // 3. 璇诲彇 Execute 浜у嚭锛圧eceipts + Diff锛?
@@ -62,7 +62,7 @@ export async function mafwReviewEntry(context: ReviewSkillContext): Promise<void
   const diff = await gitDiffGoal(goalId, projectDir);
   log.info(`[mafw-review] Loaded ${receipts.length} receipts, diff: ${diff.length} chars`);
 
-  // 4. 璇诲彇杩滅▼ CLI 娴嬭瘯缁撴灉锛堝鏋滈厤缃級
+  // 4. 读取远程 CLI 测试结果（如果配置）
   let remoteResults: any = null;
   if (req.remoteCli?.testCommand) {
     const remoteCli = new RemoteCliConnector();
@@ -75,26 +75,26 @@ export async function mafwReviewEntry(context: ReviewSkillContext): Promise<void
     log.info(`[mafw-review] Remote test result: ${remoteResults.success ? 'PASS' : 'FAIL'}`);
   }
 
-  // 5. 璇诲彇楠屾敹鏍囧噯
+  // 5. 读取验收标准
   const metrics = req.metrics;
   const boundaries = req.boundaries;
   const goal = await loadGoal(goalId, projectDir);
 
-  // 6. 鎷兼帴 Review Prompt
+  // 6. 拼接 Review Prompt
   const prompt = buildReviewPrompt({ receipts, diff, metrics, boundaries, remoteResults, goal });
 
-  // 7. 璋冪敤 LLM 瀹℃煡
+  // 7. 调用 LLM 审查
   log.info(`[mafw-review] Calling LLM...`);
   const response = await context.llm.chat({
     model: context.config.model,
     messages: [{ role: 'user', content: prompt }]
   });
 
-  // 8. 瑙ｆ瀽 Review 缁撴灉
+  // 8. 解析 Review 结果
   const review = parseReviewResponse(response.content);
   log.info(`[mafw-review] Verdict: ${review.verdict}`);
 
-  // 9. 鍐欏叆 review 鏂囦欢
+  // 9. 写入 review 文件
   const reviewsDir = path.join(projectDir, '.mafw/reviews');
   if (!fs.existsSync(reviewsDir)) fs.mkdirSync(reviewsDir, { recursive: true });
   const reviewPath = path.join(reviewsDir, `${goalId}-loop${state.loop}.md`);
@@ -207,8 +207,8 @@ function parseReviewResponse(content: string): {
       metrics: data.metrics || {}
     };
   } catch {
-    // Fallback: 瑙ｆ瀽鏂囨湰
-    const pass = content.toLowerCase().includes('pass') || content.toLowerCase().includes('閫氳繃');
+    // Fallback: 解析文本
+    const pass = content.toLowerCase().includes('pass') || content.toLowerCase().includes('通过');
     return {
       verdict: pass ? 'PASS' : 'FAIL',
       reason: content.slice(0, 200),

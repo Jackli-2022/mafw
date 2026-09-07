@@ -86,15 +86,15 @@ import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from '
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
 import { handleManagerRotate, runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
- * MAFW Scheduler 锟?v5.0 SDK 缂栨帓锟?
+ * MAFW Scheduler — v5.0 SDK 编排器
  *
- * 鏍稿績璁捐鍘熷垯锟?
- *   - 浣跨敤 @opencode-ai/sdk 绠＄悊 Serve 杩涚▼锟?Session 鐢熷懡鍛ㄦ湡
- *   - 鏃犵姸鎬佷笟鍔″垽锟? 涓嶈锟?waves.json銆佷笉瑙ｆ瀽 review銆佷笉璁＄畻 loop
- *   - 鏂囦欢椹卞姩: 鍙鍙栧凡娉ㄥ唽椤圭洰锟?state/{goalId}.json 锟?nextAction 瀛楁
- *   - 娉ㄥ唽琛ㄦ寔涔呭寲: 鎻掍欢娉ㄥ唽淇℃伅鍐欏叆纾佺洏锛屽穿婧冨悗鍙仮锟?
- *   - 鍐欓槦鍒楅槻骞跺彂: 澶氫釜 /register 鍚屾椂鍒拌揪鏃讹紝鍐欑鐩樹覆琛屽寲
- *   - 鍙仮锟? 宕╂簝閲嶅惎鍚庝粠 state/ 鏂囦欢 + 娉ㄥ唽琛ㄦ仮澶嶆墍鏈夋椿锟?Goal
+ * 核心设计原则：
+ *   - 使用 @opencode-ai/sdk 管理 Serve 进程和 Session 生命周期
+ *   - 无状态业务判断：不读 waves.json、不解析 review、不计算 loop
+ *   - 文件驱动: 只读取已注册项目的 state/{goalId}.json 的 nextAction 字段
+ *   - 注册表持久化: 插件注册信息写入磁盘，崩溃后可恢复
+ *   - 写队列防并发: 多个 /register 同时到达时，写磁盘串行化
+ *   - 可恢复：崩溃重启后从 state/ 文件 + 注册表恢复所有活跃 Goal
  */
 
 
@@ -406,7 +406,7 @@ class MafwScheduler {
     if (isExternal) {
       log.info(`[Scheduler] Using external OpenCode Serve at ${this.serveUrl} (runtime.external=true)`);
       try { await this.waitForServeReady(); serveReady = true; }
-      catch { log.warn('External OpenCode Serve not available 锟?MCP-only mode'); }
+      catch { log.warn('External OpenCode Serve not available — MCP-only mode'); }
     } else {
       if (await this.isServeHealthy()) {
         log.info('OpenCode Serve already running (adopted; health-poll watchdog)');
@@ -439,7 +439,7 @@ class MafwScheduler {
     // this.dashboard = new DashboardServer(3001, this.projectDir, this);
     // this.dashboard.start();
 
-    // 5. 鎭㈠閰嶇疆鍜屾敞鍐岃〃
+    // 5. 恢复配置和注册表
     await this.recoverConfig();
     await this.recoverRegistry();
 
@@ -542,10 +542,10 @@ class MafwScheduler {
       log.warn('[ManagerAgent] agentConfigApi not available — manager agent permission guardrails unavailable');
     }
 
-    // 6. 鎭㈠娲昏穬 Goal
+    // 6. 恢复活跃 Goal
     await this.recoverState();
 
-    // 7. 涓烘墍鏈夊凡娉ㄥ唽椤圭洰鍒濆鍖?Manager session锛堜笉瀛樺湪鍒欒嚜鍔ㄥ垱寤猴級
+    // 7. 为所有已注册项目初始化 Manager session（不存在则自动创建）
     for (const [projectDir, info] of this.registeredProjects) {
       try {
         await this.ensureManagerSession(projectDir, info.mafwDir);
@@ -554,7 +554,7 @@ class MafwScheduler {
       }
     }
 
-    // 8. 鍚姩鑷姩鍖栧紩锟?
+    // 8. 启动自动化引擎
     if (this.automationEngine) {
       this.automationEngine.start();
       log.info('[Scheduler] Automation engine started');
@@ -564,12 +564,12 @@ class MafwScheduler {
     // episodes while their workers were evicted (fire-and-forget).
     setTimeout(() => this.restoreWorkerState(), 3000);
 
-    // 8. 寮€濮嬭疆璇紙闄嶇骇鍏滃簳锟?
+    // 8. 开始轮询（降级兜底）
     const pollInterval = config.timeouts.backupPollInterval;
     log.info(`[Scheduler] Starting backup polling loop (${pollInterval / 1000}s)...`);
     this.startBackupPolling();
 
-    // 9. 鐩戝惉 events 鐩綍 (鏇夸唬 HTTP POST /api/events)
+    // 9. 监听 events 目录 (替代 HTTP POST /api/events)
     this.watchEventsDir();
     // 10. 鐩戝惉 registry 鐩綍 (鏇夸唬 HTTP POST /register)
     this.watchRegistryDir();
@@ -1747,7 +1747,7 @@ class MafwScheduler {
 
     const enableLegacy = process.env[config.env.enableLegacyMcp] === "true";
     if (enableLegacy) {
-      log.info("[Scheduler] Legacy MCP mode enabled 锟?spawning old MCP Server");
+      log.info("[Scheduler] Legacy MCP mode enabled — spawning old MCP Server");
       const { spawn } = require("child_process");
       spawn("node", [path.join(__dirname, "./core/mcp-server.js")], {
         cwd: this.projectDir,
@@ -2582,7 +2582,7 @@ class MafwScheduler {
           return;
         }
 
-        // Chat API 锟?fire-and-forget promptAsync, returns sessionID for SSE streaming
+        // Chat API — fire-and-forget promptAsync, returns sessionID for SSE streaming
         if (req.url === "/api/chat" && req.method === "POST") {
           try {
             const body = await readBody(req);
@@ -2623,7 +2623,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/chat/enriched 锟?chat with memory context injection
+        // POST /api/chat/enriched — chat with memory context injection
         if (req.url === "/api/chat/enriched" && req.method === "POST") {
           try {
             const body = await readBody(req);
@@ -2783,7 +2783,7 @@ class MafwScheduler {
           return;
         }
 
-// GET /api/memory/merged-search 锟?expose memory context injection results
+// GET /api/memory/merged-search — expose memory context injection results
         if (req.url === "/api/memory/merged-search" && req.method === "GET") {
           try {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
@@ -3103,7 +3103,7 @@ class MafwScheduler {
           return;
         }
 
-        // 鎻掍欢娉ㄥ唽锛氬繀椤讳紶锟?projectDir + mafwDir
+        // 插件注册：必须传递 projectDir + mafwDir
         if (req.url === '/register' && req.method === 'POST') {
           let body = '';
           req.on('data', chunk => body += chunk);
@@ -3135,7 +3135,7 @@ class MafwScheduler {
                 registeredAt: new Date().toISOString()
               });
 
-              // 鎸佷箙鍖栧埌纾佺洏锛堝啓闃熷垪闃插苟鍙戣鐩栵級
+              // 持久化到磁盘（写队列防并发覆盖）
               await this.persistRegistry();
               await this.persistConfig();
 
@@ -3158,7 +3158,7 @@ class MafwScheduler {
           return;
         }
 
-        // 鎺у埗鎸囦护
+        // 控制指令
         if (req.url === '/control' && req.method === 'POST') {
           let body = '';
           req.on('data', chunk => body += chunk);
@@ -3167,7 +3167,7 @@ class MafwScheduler {
               const control = JSON.parse(body);
               log.info(`[Scheduler] HTTP control: ${control.action} ${control.goalId || ''}`);
 
-              // 鐩存帴澶勭悊鎺у埗鎸囦护锛堝悓 processControlFile 閫昏緫锟?
+              // 直接处理控制指令（同 processControlFile 逻辑）
               switch (control.action) {
                 case 'PAUSE':
                   if (control.goalId) await this.patchState(control.goalId, { nextAction: 'PAUSED' });
@@ -3228,7 +3228,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/work/{goalId}/validate 锟?MCP calls when agent completes goal creation
+        // POST /api/work/{goalId}/validate — MCP calls when agent completes goal creation
         const validateMatch = req.url?.match(/^\/api\/work\/([^/]+)\/validate$/);
         if (validateMatch && req.method === 'POST') {
           try {
@@ -3246,7 +3246,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/work/{goalId}/complete 锟?MCP calls when agent completes a phase
+        // POST /api/work/{goalId}/complete — MCP calls when agent completes a phase
         const completeMatch = req.url?.match(/^\/api\/work\/([^/]+)\/complete$/);
         if (completeMatch && req.method === 'POST') {
           try {
@@ -3317,7 +3317,7 @@ class MafwScheduler {
           return;
         }
 
-        // 鍋ュ悍妫€锟?
+        // 健康检查
         if (req.url === '/health' && req.method === 'GET') {
           res.writeHead(200);
           res.end(JSON.stringify({
@@ -3330,7 +3330,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/projects 锟?list registered projects
+        // GET /api/projects — list registered projects
         if (req.url === '/api/projects' && req.method === 'GET') {
           const projects = Array.from(this.registeredProjects.values()).map(p => ({
             id: p.projectDir,
@@ -3340,7 +3340,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/projects/current 锟?current/active project
+        // GET /api/projects/current — current/active project
         if (req.url === '/api/projects/current' && req.method === 'GET') {
           const entries = Array.from(this.registeredProjects.entries());
           if (entries.length === 0) {
@@ -3514,7 +3514,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/approvals/{id}/respond 锟?respond to an approval
+        // POST /api/approvals/{id}/respond — respond to an approval
         const approveMatch = req.url?.match(/^\/api\/approvals\/([^/]+)\/respond$/);
         if (approveMatch && req.method === 'POST') {
           res.end(JSON.stringify({ status: 'ok' }));
@@ -3774,16 +3774,16 @@ class MafwScheduler {
           return;
         }
 
-        // 鈹€鈹€ Triage endpoints (Tier 4 锟?user only, not MCP) 鈹€鈹€
+        // ── Triage endpoints (Tier 4 — user only, not MCP) ──
 
-        // GET /api/triage 锟?list triage items (with llmSuggestions)
+        // GET /api/triage — list triage items (with llmSuggestions)
         if (req.url === '/api/triage' && req.method === 'GET') {
           const items = this.automationEngine?.getTriageItems() || [];
           res.end(JSON.stringify({ items }));
           return;
         }
 
-        // POST /api/triage/{id}/confirm 锟?user confirms triage 锟?creates goal
+        // POST /api/triage/{id}/confirm — user confirms triage — creates goal
         const triageConfirmMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/confirm$/);
         if (triageConfirmMatch && req.method === 'POST') {
           const triageId = triageConfirmMatch[1];
@@ -3819,7 +3819,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/triage/{id}/reject 锟?user rejects triage
+        // POST /api/triage/{id}/reject — user rejects triage
         const triageRejectMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/reject$/);
         if (triageRejectMatch && req.method === 'POST') {
           const triageId = triageRejectMatch[1];
@@ -3835,9 +3835,9 @@ class MafwScheduler {
           return;
         }
 
-        // 鈹€鈹€ Automation endpoints (Tier 4 锟?user only) 鈹€鈹€
+        // ── Automation endpoints (Tier 4 — user only) ──
 
-        // GET /api/automations 锟?list automation rules with next trigger + recent history
+        // GET /api/automations — list automation rules with next trigger + recent history
         if (req.url === '/api/automations' && req.method === 'GET') {
           const rules = this.automationEngine?.getRules() || [];
           const enriched = rules.map(r => ({
@@ -3849,7 +3849,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/automations/{id} 锟?single rule detail
+        // GET /api/automations/{id} — single rule detail
         const autoGetMatch = req.url?.match(/^\/api\/automations\/([^/]+)(?:\?|$)/);
         if (autoGetMatch && req.method === 'GET') {
           const id = autoGetMatch[1];
@@ -3863,7 +3863,7 @@ class MafwScheduler {
           return;
         }
 
-        // PUT /api/automations/{id} 锟?toggle an automation rule (enabled/disabled)
+        // PUT /api/automations/{id} — toggle an automation rule (enabled/disabled)
         if (autoGetMatch && req.method === 'PUT') {
           try {
             const id = autoGetMatch[1];
@@ -3884,7 +3884,7 @@ class MafwScheduler {
           return;
         }
 
-        // DELETE /api/automations/{id} 锟?delete an automation rule
+        // DELETE /api/automations/{id} — delete an automation rule
         if (autoGetMatch && req.method === 'DELETE') {
           const id = autoGetMatch[1];
           const ok = this.automationEngine?.deleteRule(id);
@@ -3899,7 +3899,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/automations/{id}/history 锟?audit trail for a rule
+        // GET /api/automations/{id}/history — audit trail for a rule
         const autoHistoryMatch = req.url?.match(/^\/api\/automations\/([^/]+)\/history(?:\?|$)/);
         if (autoHistoryMatch && req.method === 'GET') {
           const id = autoHistoryMatch[1];
@@ -3909,7 +3909,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/llm/compress 锟?LLM compression proxy (via SDK)
+        // POST /api/llm/compress — LLM compression proxy (via SDK)
         if (req.url === '/api/llm/compress' && req.method === 'POST') {
           try {
             const body = await readBody(req);
@@ -3927,7 +3927,7 @@ class MafwScheduler {
 
         // 鈹€鈹€ SdkSessionResource REST endpoints 鈹€鈹€
 
-        // POST /api/session 锟?create a session
+        // POST /api/session — create a session
         if (req.url === '/api/session' && req.method === 'POST') {
           try {
             const body = await readBody(req);
@@ -3942,7 +3942,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/session/{id}/promptAsync 锟?fire-and-forget prompt
+        // POST /api/session/{id}/promptAsync — fire-and-forget prompt
         const promptAsyncMatch = req.url?.match(/^\/api\/session\/([^/]+)\/promptAsync(?:\?|$)/);
         if (promptAsyncMatch && req.method === 'POST') {
           try {
@@ -3960,7 +3960,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/session/{id}/prompt 锟?synchronous prompt
+        // POST /api/session/{id}/prompt — synchronous prompt
         const promptMatch = req.url?.match(/^\/api\/session\/([^/]+)\/prompt$/);
         if (promptMatch && req.method === 'POST') {
           try {
@@ -3977,7 +3977,7 @@ class MafwScheduler {
           return;
         }
 
-        // DELETE /api/session/{id} 锟?delete a session
+        // DELETE /api/session/{id} — delete a session
         const deleteMatch = req.url?.match(/^\/api\/session\/([^/]+)$/);
         if (deleteMatch && req.method === 'DELETE') {
           try {
@@ -4021,7 +4021,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/sessions 锟?list sessions (optional ?projectID=xxx)
+        // GET /api/sessions — list sessions (optional ?projectID=xxx)
         if (req.url?.match(/^\/api\/sessions(?:\?|$)/) && req.method === 'GET') {
           try {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
@@ -4064,7 +4064,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/sessions/{id}/messages 锟?fetch session message history via SDK
+        // GET /api/sessions/{id}/messages — fetch session message history via SDK
         const messagesMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/);
         if (messagesMatch && req.method === 'GET') {
           try {
@@ -4525,7 +4525,7 @@ class MafwScheduler {
           return;
         }
 
-        // SSE 浜嬩欢锟?(锟?Dashboard / Chat)
+        // SSE 事件（→ Dashboard / Chat）
         if (req.url && req.url.startsWith('/api/events') && req.method === 'GET') {
           const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
           const sessionID = parsedUrl.searchParams.get('sessionID');
@@ -4548,7 +4548,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /health 锟?standalone health endpoint (not proxied)
+        // GET /health — standalone health endpoint (not proxied)
         if (req.url === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok' }));
@@ -4813,7 +4813,7 @@ class MafwScheduler {
     }
   }
 
-  // 鈹€鈹€ 4. 杞锛堥檷绾у厹锟?+ autoresume锟?鈹€鈹€
+  // ── 4. 轮询（降级兜底 + autoresume） ──
 
   private startBackupPolling() {
     const interval = config.timeouts.backupPollInterval;
@@ -4830,10 +4830,10 @@ class MafwScheduler {
     setTimeout(poll, interval);
   }
 
-  // 杞宸叉敞鍐岄」鐩殑 state/ 鐩綍
+  // 轮询已注册项目的 state/ 目录
   private async discoverNewGoals() {
     for (const [projectDir, info] of this.registeredProjects) {
-      // 娓呯悊 stale entry锛堥」鐩洰褰曞凡鍒犻櫎锟?
+      // 清理 stale entry（项目目录已删除）
       if (!fs.existsSync(info.mafwDir)) {
         log.warn(`[Scheduler] Project ${projectDir} no longer exists, removing from registry`);
         this.registeredProjects.delete(projectDir);
@@ -4856,7 +4856,7 @@ class MafwScheduler {
             this.activeGoals.set(state.goalId, state);
             log.info(`[Scheduler] Discovered new goal ${state.goalId} at ${state.phase}`);
           } else if (this.activeGoals.has(state.goalId)) {
-            // 鏇存柊缂撳瓨涓殑鐘讹拷?
+            // 更新缓存中的状态
             this.activeGoals.set(state.goalId, state);
           }
         } catch (err: any) {
@@ -4948,7 +4948,7 @@ class MafwScheduler {
     log.info(`[Scheduler] Goal ${goalId} archived`);
   }
 
-  // 鈹€鈹€ 9. 鎭㈠ 鈹€鈹€
+  // ── 9. 恢复 ──
 
   private async recoverState() {
     for (const [projectDir, info] of this.registeredProjects) {
@@ -5019,7 +5019,7 @@ class MafwScheduler {
     }
   }
 
-  // 鈹€鈹€ 宸ュ叿鍑芥暟锛堜娇锟?SDK 瀹㈡埛绔級 鈹€鈹€
+  // ── 工具函数（使用 SDK 客户端） ──
 
   private async createSession(projectDir: string): Promise<Session> {
     if (!this.opencodeClient) throw new Error('opencodeClient not available');
@@ -5058,7 +5058,7 @@ class MafwScheduler {
   }
 
   private async patchState(goalId: string, patch: Partial<StateFile>) {
-    // 鎵惧埌 state 鏂囦欢璺緞
+    // 找到 state 文件路径
     let statePath: string | null = null;
     for (const [, info] of this.registeredProjects) {
       const p = path.join(info.mafwDir, 'state', `${goalId}.json`);
@@ -5076,15 +5076,15 @@ class MafwScheduler {
     const current: StateFile = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
     const updated: StateFile = { ...current, ...patch, updatedAt: new Date().toISOString() };
 
-    // 鍘熷瓙鍐欏叆
+    // 原子写入
     const tmpPath = `${statePath}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(updated, null, 2), 'utf-8');
     fs.renameSync(tmpPath, statePath);
 
-    // 鏇存柊鍐呭瓨缂撳瓨
+    // 更新内存缓存
     this.activeGoals.set(goalId, updated);
 
-    // 骞挎挱 state_change 浜嬩欢锟?Dashboard
+    // 广播 state_change 事件到 Dashboard
     this.broadcast({
       type: 'state_change',
       timestamp: new Date().toISOString(),
@@ -5140,7 +5140,7 @@ class MafwScheduler {
 
     this.activeGoals.set(goalId, state);
 
-    // 绔嬪嵆瑙﹀彂 graph invoke锛堜簨浠堕┍鍔級
+    // 立即触发 graph invoke（事件驱动）
     setImmediate(() => this.onGoalCreated(goalId, projectDir, mafwDir));
 
     return { success: true, goalId, nextAction: 'GRAPH_INVOKED' };

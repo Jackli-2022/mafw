@@ -373,7 +373,7 @@ export class AutomationEngine {
     }
 
     if (!rule.onResult || !rule.skill) {
-      log.info(`[AutomationEngine] Rule ${id} has no action, skill, or onResult 锟?skipping`);
+      log.info(`[AutomationEngine] Rule ${id} has no action, skill, or onResult — skipping`);
       return;
     }
 
@@ -543,7 +543,7 @@ export class AutomationEngine {
     if (!rule) throw new Error(`Rule not found: ${id}`);
 
     if (!rule.action && !rule.skill) {
-      throw new Error(`Rule ${id} has no action or skill 锟?nothing to run`);
+      throw new Error(`Rule ${id} has no action or skill — nothing to run`);
     }
 
     log.info(`[AutomationEngine] LLM triggered rule ${id}`);
@@ -569,7 +569,7 @@ export class AutomationEngine {
       reason: `scan:${rule.skill}`,
       details: { triageId, autoConfirmForced: true },
     });
-    return { triageId, message: `Scan complete 锟?triage item ${triageId} created (pending your confirmation)` };
+    return { triageId, message: `Scan complete — triage item ${triageId} created (pending your confirmation)` };
   }
 
   validateRule(rule: AutomationRule): ValidationResult {
@@ -697,7 +697,7 @@ export class AutomationEngine {
     if (fs.existsSync(existingPath)) {
       const existing: AutomationRule = JSON.parse(fs.readFileSync(existingPath, 'utf-8'));
       if (existing.enabled) {
-        return { id: rule.id, valid: false, errors: [`Rule "${rule.id}" is already enabled 锟?cannot overwrite. Disable it first or use a different id`] };
+        return { id: rule.id, valid: false, errors: [`Rule "${rule.id}" is already enabled — cannot overwrite. Disable it first or use a different id`] };
       }
     }
 
