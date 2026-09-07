@@ -22,6 +22,13 @@ export interface TokenCounts {
   cache: { read: number; write: number };
 }
 
+export interface ModelUsageRow {
+  provider: string | null;
+  model: string;
+  turns: number;
+  tokens: TokenCounts;
+}
+
 export interface TrajectoryEvent {
   id?: number;
   projectID: string;

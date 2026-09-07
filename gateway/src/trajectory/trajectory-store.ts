@@ -1,5 +1,5 @@
 import { GatewayDatabase } from '../memory/gateway-db';
-import { TrajectoryEvent, TrajectoryTurn, TokenCounts } from './types';
+import { TrajectoryEvent, TrajectoryTurn, TokenCounts, ModelUsageRow } from './types';
 
 const EMPTY_TOKENS: TokenCounts = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } };
 
@@ -412,5 +412,33 @@ export class TrajectoryStore {
       .prepare('SELECT DISTINCT provider FROM trajectory_turns WHERE provider IS NOT NULL')
       .all() as { provider: string }[];
     return rows.map(r => r.provider);
+  }
+
+  getModelUsageStats(sinceEpochSec: number | null): ModelUsageRow[] {
+    const rows = this.rawDb
+      .prepare(
+        `SELECT provider, model, COUNT(*) AS turns,
+                SUM(CAST(json_extract(tokens,'$.input') AS INTEGER)) AS input,
+                SUM(CAST(json_extract(tokens,'$.output') AS INTEGER)) AS output,
+                SUM(CAST(json_extract(tokens,'$.reasoning') AS INTEGER)) AS reasoning,
+                SUM(CAST(json_extract(tokens,'$.cache.read') AS INTEGER)) AS cache_read,
+                SUM(CAST(json_extract(tokens,'$.cache.write') AS INTEGER)) AS cache_write
+         FROM trajectory_turns
+         WHERE model IS NOT NULL${sinceEpochSec !== null ? ' AND created_at >= ?' : ''}
+         GROUP BY provider, model
+         ORDER BY (COALESCE(input,0)+COALESCE(output,0)+COALESCE(reasoning,0)+COALESCE(cache_read,0)+COALESCE(cache_write,0)) DESC`,
+      )
+      .all(...(sinceEpochSec !== null ? [sinceEpochSec] : [])) as any[];
+    return rows.map((r) => ({
+      provider: r.provider ?? null,
+      model: r.model,
+      turns: r.turns,
+      tokens: {
+        input: r.input || 0,
+        output: r.output || 0,
+        reasoning: r.reasoning || 0,
+        cache: { read: r.cache_read || 0, write: r.cache_write || 0 },
+      },
+    }));
   }
 }
