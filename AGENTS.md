@@ -27,6 +27,8 @@ interface HarmonicUnit {
 }
 ```
 
+> 存量合体清理：`cd gateway; npx ts-node scripts/unmerge-blobs.ts`（dry-run 默认，`--apply` 执行并自动备份；需先 `mafw stop`；索引 filePath 相对 `~/.mafw` 解析）
+
 > 注：`goal_id` 为历史兼容字段，当前写路径不填充。
 > MinHash 合并采用 **soft supersede**：相似旧条目标记 `superseded_by` 并降低 energy（×0.5），不物理删除，便于 knowledge-update 场景保留历史版本；检索排序时 superseded 条目再 ×0.5 惩罚。
 
@@ -53,7 +55,7 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 1. 计算显著度
 2. 写入对应 tier 文件（`concepts/{semantic|episodic|procedural|global|knowledge}/`）
 3. 更新 `.harmonic_index.json`
-4. 触发 MinHash 跨层合并检查（`MinHashMerger.merge()`，阈值 0.6、4 签名、3-gram shingle；合并产物带 `merged_from` 防递归；`skipMerge` 选项供 LongMemEval 基准等确定性摄入场景关闭）
+4. 触发 MinHash 跨层合并检查（`MinHashMerger.merge()`，阈值 0.7、32 签名、3-gram shingle、FNV-1a 双哈希 Kirsch–Mitzenmacher；段级匹配——合体按 ` | ` 切段取 max sim 防稀释；合并不加 energy；`memory_value` 合并上限 2000 字符截断于段边界；合并产物带 `merged_from` 防递归；`skipMerge` 选项供 LongMemEval 基准等确定性摄入场景关闭）
 5. 触发静态 `onMemoryWritten` 监听器（dense 嵌入索引 + LLM 合并裁判，见 §3.5）
 
 > 注：`HybridCompressor`（会话压缩管线）只挂在 deprecated legacy 插件路径，当前 gateway 运行时写路径是 `/api/memory/add` + MCP handler + turnCompress worker，均经 `HarmonicUnitFileStore.write()`。
