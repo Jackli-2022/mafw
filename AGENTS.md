@@ -22,6 +22,7 @@ interface HarmonicUnit {
   merged_from?: string[];         // MinHash 合并来源 id（写路径 merge 时填充）
   superseded_by?: string;         // soft-supersede：指向取代本条的新 id（披露注入与检索排序排除）
   pinned?: boolean;               // 披露层：每轮注入 <user-profile>（superseded 后失效）；与 type 正交
+  sticky_until?: string;          // 便签板：每轮注入 <note-board> 直到该 ISO 日期（板级过期，记忆本体保留；坏日期 fail-open 在板）
   created_at: string;
   updated_at: string;
 }
@@ -77,9 +78,9 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 - 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
 - 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
 
-## 4. Tools 清单（v6.9 总共 43 个）
+## 4. Tools 清单（v6.9 总共 44 个）
 
-### 4.1 Gateway MCP 工具（39 个，`gateway/src/mcp/tool-registry.ts`）
+### 4.1 Gateway MCP 工具（40 个，`gateway/src/mcp/tool-registry.ts`）
 
 | Tool | 用途 |
 |---|---|
@@ -90,9 +91,10 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_ask_user` | 非阻塞向用户提问 |
 | `mafw_record_feedback` | 记录用户点赞/点踩 |
 | `mafw_get_model_route` | 动态模型选择（基于预算） |
-| `mafw_add_memory` | 写入记忆单元（`supersedes` 显式取代旧条目；`pinned` 披露层；`cueAnchors` 多跳线索） |
+| `mafw_add_memory` | 写入记忆单元（`supersedes` 显式取代旧条目；`pinned` 披露层；`sticky`/`stickyDays` 便签板；`cueAnchors` 多跳线索） |
+| `mafw_get_memory` | 按 id 取记忆全文（支持 `<recall>` 指针尾 6 位；superseded 自动附 supersede 链最新版） |
 | `mafw_supersede_memory` | 标记已有记忆为 superseded（不写新条目，仅降能+惩罚检索排序） |
-| `mafw_pin_memory` | pin/unpin 已有记忆到披露层（`<user-profile>` 每轮注入） |
+| `mafw_pin_memory` | pin/unpin 披露层（`<user-profile>` 每轮注入）；`sticky`/`stickyDays` 上板/续期/下架便签板 |
 | `mafw_commit_heuristic` | 提交 L5 启发式 |
 | `mafw_get_axioms` | 获取 L5 公理 |
 | `mafw_merge_memory` | ★ 跨 worktree 记忆融合 |
@@ -316,6 +318,20 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
 路由逻辑在 `routes/pinned-recall.ts`（deps 注入可单测）。
 不加独立 update/delete 工具（业界实践：记忆变异属后台管线——下期 turnCompress 矛盾检测）。
 
+#### Sticky 便签板（2026-09-07）
+
+`sticky_until` 是 HarmonicUnit 一等字段（ISO 日期）：未过期且未 superseded 的记忆经
+`/api/recall/context` 尾部渲染为 `<note-board>` 块（`routes/note-board.ts`，deps 注入可单测；
+渲染 `inject-format.ts:formatNoteBoard()`），解决"用户说'记下来'但只有 BM25 词面匹配才能想起"
+的缺口——检索条件化之外的有保质期保证送达层。语义对齐业界调研（mem0 expiration/
+Graphiti invalidation）：**板级过期 ≠ 记忆删除**，到期仅下架，本体照常可被 BM25 检索；
+坏日期 fail-open 留在板上并排最后；排序按到期近者优先（紧急提醒前置）。预算 10 条/800 字符，
+溢出记 `[Recall] note-board overflow` 日志。写入：`mafw_add_memory { sticky: true, stickyDays? }`
+（默认 7 天）；管理：`mafw_pin_memory { id, sticky, stickyDays? }` 上板/续期/下架。
+`mafw_get_memory` 补齐指针兑现：按全 id 或 `<recall>` 尾 6 位取全文，superseded 自动沿链附最新版；
+HTTP 等价 `GET /api/memory/get?id=`。业界三层映射：pinned=Letta core blocks（永久可见）、
+sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。
+
 ### 5.13a 数据目录与统一数据库
 
 **MAFW 数据根固定为 `os.homedir()/.mafw`**（`config.resolvePath()`，与启动 cwd / MAFW_PROJECT_DIR 完全解耦；`paths.mafwDir` 配置覆盖失效）。启动时自动迁移 gateway 包目录旁的旧数据（`gateway/src/recall/data-dir-migrate.ts`，幂等，删除旧位置）——注意迁移源是 `<gateway包>/../.mafw`，**不是** project-relative `.mafw`；插件侧仍会在项目目录重建 `.mafw/`（日志与请求文件等）。
@@ -482,6 +498,11 @@ opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
 - **健康轮询监督**：SDK 不暴露子进程/exit 回调，**owned 与 adopted serve 都走 watchdog**：
   每 30s 探测 `/global/health`，连续 3 次失败 → `recoverServe()` 重启并**重订阅事件流**
   （SSE 建立在 serve 之上，进程重启后必须重连，否则自动化触发器和桌面 SSE 转发全部静默失效）
+- **windowsHide 必须显式传**（2026-09-07 黑窗事故）：gateway 以 detached（无控制台）运行时，
+  无 `windowsHide: true` 的 spawn 每次都会创建**可见控制台窗口**——用户关窗 = 杀掉 serve，
+  watchdog 重启又弹新窗，形成"黑色弹窗关掉还会弹"的循环。SDK `createOpencodeServer` 不传
+  windowsHide，故 `serve-sidecar.ts` 已改回**手写 spawn**（保留 SDK 契约：参数、
+  `OPENCODE_CONFIG_CONTENT`、ready 行解析、taskkill /F /T 树杀）
 - **退避策略**：连续崩溃 streak 1/2/3 次 → 0/5s/15s 快速重试；≥4 次 → 5min 间隔；
   streak 仅在 serve 稳定运行 60s 后清零（防 flapping 热重启）
 - **adopted 场景**：gateway 崩溃后孤儿 serve 存活，新 gateway 启动时
@@ -490,9 +511,11 @@ opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
 - **手动恢复入口**：`POST /api/runtime/restart-agent`（SDK `runtime.restartAgent()` / Config 页按钮 /
   MCP `mafw_restart_agent`）触发与 watchdog 相同的编排（kill+respawn+事件流重订）；external 模式 503
 - 外部 serve 模式（`MAFW_SERVER_SERVE_URL`）不监管（用户管理的进程）
-- serve 的 stdout/stderr **不被 SDK 暴露**，因此**不写入** `[Serve]` 前缀日志；诊断依赖 watchdog 的 "Serve unhealthy" / recovery 日志
+- serve 的 stdout/stderr 由手写 spawn 经 `onOutput` 转发（index.ts 以 `[Serve]` debug 日志记录），
+  serve 崩溃原因不再静默；诊断同时依赖 watchdog 的 "Serve unhealthy" / recovery 日志
 - 经验：子进程型依赖必须配监督（检测点不能在启动时一次完事）；恢复动作必须完整
-  （重启进程 ≠ 恢复连接，事件订阅要一并重连）
+  （重启进程 ≠ 恢复连接，事件订阅要一并重连）；
+  **detached 环境下所有子进程 spawn 必须带 `windowsHide: true`**（python kernel / llamacpp / tray 均已带）
 
 ### 5.16 自更新（Self-Update，不依赖 desktop）
 
