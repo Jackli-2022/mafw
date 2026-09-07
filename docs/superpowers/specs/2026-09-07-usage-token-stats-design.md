@@ -79,24 +79,35 @@ modelStats: {
 
 ### UsageDock（usage tab）：合并的「Token 统计」区块
 
-现有三行（当前会话/当前项目/记忆系统，含 byRole 展开）保留原样，下方追加分模型区，同一可展开区块内：
+现有三行（当前会话/当前项目/记忆系统，含 byRole 展开）保留原样，下方追加分模型区，同一可展开区块内。视觉设计对齐业界调研（ccusage / Claude Code `/usage` / OpenRouter Activity / Cursor 仪表盘）：
 
 ```
-▼ Token 统计
-  当前会话     12.3k tokens   $0.02
-  当前项目     456k tokens    $0.83
-  记忆系统     89k  tokens    $0.15   ▸ byRole
-  ─────────────────────────────
-  按模型   (今日 | 7天 | 30天 | 全部)
-  mimo-v2.5      ▓▓▓▓▓▓▓░░  45%   320k   $0.12
-  qwen3.7-max    ▓▓▓▓░░░░░  30%   210k   $0.08
-  gpt-4o         ▓▓░░░░░░░  15%   105k   —
+│ Token 统计                          │
+│ ▸ 当前会话    12.3k tok    $0.02    │
+│ ▸ 当前项目    456k  tok    $0.83    │
+│ ▸ 记忆系统    89k   tok    $0.15    │
+│ ────────────────────────────────── │
+│ 按模型        ┌今日┐ 7天  30天  全部 │
+│ ┌─────────┬─────────┬─────────┐   │
+│ │  2.1M   │  $1.47  │   62%   │   │
+│ │ tokens  │ 估算成本 │ 缓存命中 │   │
+│ └─────────┴─────────┴─────────┘   │
+│ mimo-v2.5          320k    $0.12   │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░  45%  │
+│ qwen3.7-max        210k    $0.08   │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░  30%  │
+│ gpt-4o             105k       —    │
+│ ▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░  15%  │
+│ 其他 2 个模型        28k    $0.01   │
+│ ▓░░░░░░░░░░░░░░░░░░░░░░░░░░   4%  │
 ```
 
-- 每行：模型名 + 占比条 + token 百分比 + token 总量 + 估算成本
-- hover（TooltipV2，`openDelay: 300`）显示五类 token 明细（input/output/reasoning/cacheRead/cacheWrite）与模型全名（含 provider 前缀）
-- 模型名显示去掉 provider 前缀（`alibaba-cn/qwen3.7-max` → `qwen3.7-max`）
-- 窗口切换 chip 为纯前端状态，默认「7天」
+- **窗口切换**：segmented control（今日/7天/30天/全部），纯前端状态，默认「7天」，选中态实底高亮
+- **KPI 行**：总 tokens / 估算成本合计 / 缓存命中率（`ΣcacheRead / Σ(input + cacheRead)`，业界一等指标）——由前端从当前窗口的 rows 现算，API 不额外返回 totals
+- **模型行**：按 token 总量降序；两行式——第一行模型名（去 provider 前缀）+ 右对齐 tokens + 估算成本，第二行单行细占比条（accent 单色低饱和，不用五色）+ 百分比
+- **Top 3 + 「其他 N 个模型」聚合行**（窄栏防列表过长）
+- **hover（TooltipV2，`openDelay: 300`）**：模型全名（含 provider）、五类 token 明细（input/output/reasoning/cacheRead/cacheWrite）、该模型缓存命中率、回合数
+- 价格表未命中的模型成本显示 `—`（不计入 KPI 成本合计）
 - 空态：显示「暂无用量数据」
 - 遵守 §5.10 组件约定（TooltipV2 等，无裸 `<button>`/`title`）
 
