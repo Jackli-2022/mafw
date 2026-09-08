@@ -542,8 +542,9 @@ gateway 可自行构建新代码并**子进程接力重启**（`gateway/src/self
 - **调用者定位**：事件流中 bash 工具命令含 `pending-restart` 的会话 = 写令牌者
   （确定性）；兜底最近活跃会话
 - **完成通知**：新 gateway 启动完成 + recoverState 后，向调用者会话 `promptAsync`
-  注入 `[MAFW SYSTEM] 自更新已完成...`（同会话自动续跑）；兜底通知各项目
-  manager session；失败 → `notified:false` + 被动续跑（agent 读 last-restart.json）
+  注入 `[MAFW SYSTEM] 自更新已完成...`（同会话自动续跑）；调用者未知时兜底通知
+  **主项目** manager session（不做全项目广播——其他项目 manager 收到只烧 token，
+  2026-09-08 修复）；失败 → `notified:false` + 被动续跑（agent 读 last-restart.json）
 - **记录**：`~/.mafw/last-restart.json`（reason/commit/requestedAt/sessionID/notified）
 - 等价入口：`mafw update` CLI（写同一令牌；无会话上下文 → manager 兜底通知）
 - 非目标：git 远端拉取（无 remote）、定时自动更新、进程内热替换（重启 ~2-3s，

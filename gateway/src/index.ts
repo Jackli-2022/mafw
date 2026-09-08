@@ -610,8 +610,10 @@ class MafwScheduler {
   }
 
   // After a self-restart, tell the agent that the update finished: notify the
-  // recorded caller session first, then every registered project's manager
-  // session as fallback. Failures degrade to the passive resume protocol.
+  // recorded caller session only. Goal-state resume semantics belong to the
+  // caller; cross-project managers gain nothing from this notice (they would
+  // just burn a round of LLM tokens). If the caller is unknown, fall back to
+  // the primary project's manager. Failures degrade to the passive protocol.
   private async notifyUpdateComplete(): Promise<void> {
     const info = readRestartInfo();
     if (!info || info.notified) return;
@@ -619,10 +621,11 @@ class MafwScheduler {
     const message = `[MAFW SYSTEM] Gateway \u81ea\u66f4\u65b0\u5df2\u5b8c\u6210\uff08reason: ${info.reason || '-'}${info.commit ? `, commit: ${info.commit}` : ''}${elapsed !== undefined ? `, \u8017\u65f6 ${elapsed}s` : ''}\uff09\u3002goal \u6267\u884c\u72b6\u6001\u5df2\u6301\u4e45\u5316\uff0c\u8bf7\u8bfb\u53d6 goal state \u7684 nextAction \u5e76\u7ee7\u7eed\u6267\u884c\uff1b\u82e5\u65e0\u672a\u5b8c\u6210\u4efb\u52a1\u5219\u65e0\u9700\u989d\u5916\u52a8\u4f5c\u3002`;
 
     const targets = new Set<string>();
-    if (info.sessionID) targets.add(info.sessionID);
-    for (const [pDir] of this.registeredProjects) {
+    if (info.sessionID) {
+      targets.add(info.sessionID);
+    } else {
       try {
-        const ms = this.getGatewayDb().kvGet<{ sessionId: string }>('manager-session', pDir);
+        const ms = this.getGatewayDb().kvGet<{ sessionId: string }>('manager-session', this.projectDir);
         if (ms?.sessionId) targets.add(ms.sessionId);
       } catch { /* skip */ }
     }
