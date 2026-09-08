@@ -59,11 +59,30 @@ refresh p50 = 27 分钟。tombstone 修复方案随之取消。
 | 措施 | 状态 |
 |---|---|
 | tombstone 修 prefix | **取消**（无证据） |
-| 索引文本瘦身（65K→~35K） | **候选**，等新路径真实数据再决定；质量验证可走 LongMemEval L1 scan 集成（`ef28fe5b`）A/B |
+| 索引文本瘦身（65K→~35K） | **已否决**（2026-09-08 A/B，见下节） |
 | 查询门控/降频 | **降级**——新路径已节流 |
-| 观察新路径 | **当前最优行动**：新路径日志已含 cachedTokens+延迟，积累一次真实使用后复查命中率 |
-| worker 模型换低价 provider | 若账单证实 $455 口径则是最大成本杠杆（deepseek-flash 隐含 $0.025/M vs qwen3.7-max $0.73/M） |
+| 观察新路径 | **已失效被取代**——scan 通道一度 disabled（workerModel=gateway 无 direct endpoint），2026-09-08 端点泛化后恢复，改看 trajectory 自埋点数据 |
+| worker 模型换低价 provider | **已完成**——workerModel 已切 gateway/glm-5.3-flash（免费），dollar 成本归零 |
+
+## Step 4 A/B 实测（2026-09-08）：瘦身否决
+
+工具：`evaluation/longmemeval/src/scan-ab.ts`（三臂 paired，24 题 × 3 扫描，qwen3.7-max，
+指标=gold-session recall）。Control 采用生产形态（abstraction 截 200 = 写路径现状 p99）：
+
+| 臂 | 截断 | session-recall | avg prompt |
+|---|---|---|---|
+| A-prod200 | abs 200 + 5 anchors | **73.9%** | 14.4K chars (~5.8K tok) |
+| B-slim60 | abs 60 + 2 anchors | **65.2%**（-8.7pp，未过非劣门槛 5pp） | 7.7K chars (~3.1K tok) |
+| C-slim40 | abs 40 + 1 anchor | **39.1%**（剂量反应单调崩塌） | 5.5K chars (~2.2K tok) |
+
+结论：
+1. **截断单调杀 scan 召回**，B 未过预注册的非劣门槛 → 不合入生产默认
+2. 全文对照（3 题 smoke）recall=100% vs prod200 80% → **写路径 200 截断本身已是 scan 质量上限的约束**——若未来要提升 scan 质量，方向是写路径保留更多判别信号（与瘦身相反）
+3. 瘦身的 dollar 动机已被免费 workerModel 归零，不再值得冒险
+4. 附带修复（本过程中发现）：scan short-id 从头部 12 位改**尾部 10 位 + endsWith**——头部前缀在同毫秒批量写时碰撞（eval 实测 53 条全同前缀），生产批量写同样存在隐患（`9d06b0da`）
+5. `formatEntryForIndex` 截断 opts 与 `formatIndexForScanSlim` 保留为已测试的基础设施，供未来按需实验
 
 复盘教训：分析（2026-09-08 早前会话）曾凭 DB 聚合数据推断"supersede 断 prefix 贡献 58% input"，
 未做相关性验证；实际两个分组冷扫率几乎相同。教训：**冷/热归因必须对齐事件流做相关性，
-不能只看聚合比例**。
+不能只看聚合比例**。Step 4 补充教训：**A/B 的 control 必须先锚定生产形态**（第一版用
+eval 全文当 control 得出"100%→40% 崩塌"的误导性对比；换成生产形态 control 后数字才有意义）。
