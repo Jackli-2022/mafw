@@ -162,10 +162,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   });
 
   return {
-    config: {
-      skills: [{ name: 'mafw-goal', enabled: false }, { name: 'mafw-plan', enabled: false },
-               { name: 'mafw-execute', enabled: false }, { name: 'mafw-review', enabled: false }],
-    },
     tool: {
       mafw_media_ask: mediaAskTool,
       mafw_media_upload: mediaUploadTool,
