@@ -40,6 +40,8 @@ describe('IndexScanService direct-HTTP scan', () => {
     expect(calls[0].url).toContain('dashscope.aliyuncs.com/compatible-mode');
     const body = JSON.parse(calls[0].init.body);
     expect(body.model).toBe('qwen3.7-max');
+    // Reasoning models need headroom — 512 truncated the JSON on real indexes
+    expect(body.max_tokens).toBe(4096);
     const system = body.messages[0];
     expect(system.role).toBe('system');
     expect(Array.isArray(system.content)).toBe(true);

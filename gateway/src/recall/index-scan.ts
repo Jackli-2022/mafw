@@ -336,7 +336,11 @@ export class IndexScanService {
           },
         ],
         temperature: 0,
-        max_tokens: 512,
+        // Reasoning models (glm-5.3-flash always thinks, ~300-1500 reasoning
+        // tokens) need headroom or the JSON gets truncated mid-stream
+        // (finish_reason=length → unparsable → cooldown). The JSON itself is
+        // ~100 tokens; 4096 covers the reasoning budget with margin.
+        max_tokens: 4096,
       };
 
       const resp = await Promise.race([
@@ -392,7 +396,8 @@ export class IndexScanService {
 
       if (!result) {
         this.lastAttemptFailed = true; // unparsable output — model likely broken
-        log.warn(`[IndexScan] scan failed: unparsable response (${Date.now() - startedAt}ms)`);
+        const finish = json?.choices?.[0]?.finish_reason;
+        log.warn(`[IndexScan] scan failed: unparsable response (finish=${finish ?? '?'}, ${Date.now() - startedAt}ms)`);
         return null;
       }
 
