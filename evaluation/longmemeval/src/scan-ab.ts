@@ -42,7 +42,10 @@ Rules:
 - If nothing is relevant, return {"relevant_ids": [], "reasoning": "no relevant memories", "confidence": 0.0}`;
 
 const ARMS = [
-  { name: 'A-control', opts: undefined as undefined | { absCap: number; anchorCap: number } },
+  // Production-morphology control: the gateway write path already caps
+  // abstraction at 200 chars (p99=200 in the live index) — this arm mirrors
+  // what production scan actually sees, not the raw full-text haystack.
+  { name: 'A-prod200', opts: { absCap: 200, anchorCap: 5 } as { absCap: number; anchorCap: number } },
   { name: 'B-slim60', opts: { absCap: 60, anchorCap: 2 } },
   { name: 'C-slim40', opts: { absCap: 40, anchorCap: 1 } },
 ];
@@ -146,7 +149,7 @@ async function main() {
           if (res.parseFail) t.parseFail++;
           const hitSessions = new Set<string>();
           for (const sid of res.ids) {
-            const entry = entries.find((e: any) => e.id.startsWith(sid));
+            const entry = entries.find((e: any) => e.id.endsWith(sid));
             if (!entry) continue;
             for (const a of entry.cue_anchors || []) {
               if (typeof a === 'string' && a.startsWith('lmesid:')) hitSessions.add(a.slice(7));
