@@ -95,8 +95,35 @@ function gatewayPackageRoot(): string {
   return path.dirname(path.dirname(__filename));
 }
 
-export function buildGateway(): { ok: boolean; error?: string } {
-  const pkgRoot = gatewayPackageRoot();
+export function buildGateway(): { ok: boolean; error?: string; skipped?: boolean } {
+  return buildGatewayAt(gatewayPackageRoot());
+}
+
+/**
+ * Build the gateway package at the given root. Global-install form (npm files
+ * whitelist excludes src/ and tsconfig.json) cannot build in place — the
+ * installed dist IS the newest artifact shipped by `install -g`, so degrade
+ * `update` to a plain restart instead of aborting (historical bug: tsc failed
+ * on .opencode/plugins/mafw-plugin.ts → ../src/plugin and the whole update
+ * aborted, never restarting).
+ */
+export function buildGatewayAt(
+  pkgRoot: string,
+  runBuild: (pkgRoot: string) => { ok: boolean; error?: string } = runNpmBuild,
+): { ok: boolean; error?: string; skipped?: boolean } {
+  if (!fs.existsSync(path.join(pkgRoot, 'src'))) {
+    log.info('[SelfUpdate] global install detected (no src/) — skip build, restart with installed dist');
+    return { ok: true, skipped: true };
+  }
+  const r = runBuild(pkgRoot);
+  if (!r.ok) return { ok: false, error: r.error };
+  if (!fs.existsSync(path.join(pkgRoot, 'dist', 'index.js'))) {
+    return { ok: false, error: 'dist/index.js missing after build' };
+  }
+  return { ok: true };
+}
+
+function runNpmBuild(pkgRoot: string): { ok: boolean; error?: string } {
   const r = spawnSync('npm', ['run', 'build'], {
     cwd: pkgRoot,
     shell: process.platform === 'win32',
@@ -106,9 +133,6 @@ export function buildGateway(): { ok: boolean; error?: string } {
   });
   if (r.status !== 0) {
     return { ok: false, error: (r.stderr || r.stdout || '').trim().slice(-800) };
-  }
-  if (!fs.existsSync(path.join(pkgRoot, 'dist', 'index.js'))) {
-    return { ok: false, error: 'dist/index.js missing after build' };
   }
   return { ok: true };
 }
@@ -231,7 +255,10 @@ export function startTokenWatcher(deps: SelfUpdateDeps): () => void {
         deps.onError(`[SelfUpdate] build failed; update aborted, continuing with current build: ${build.error}`);
         return;
       }
-      repackageGlobal();
+      // Global-install form: nothing to repackage (the installed dist is the
+      // artifact being restarted). repackageGlobal also self-guards, but the
+      // explicit skip keeps intent clear.
+      if (!build.skipped) repackageGlobal();
     }
 
     const delay = Math.max(0, token.delayMs ?? 5000);
