@@ -3159,6 +3159,13 @@ html[data-theme="light"] .mafw-picker-pop {
   margin-top: 2px;
 }
 
+/* TooltipV2 的 trigger 包裹层是 display:flex（flex item 宽度收缩为内容宽），
+   必须恢复块级占满整行，否则每行 grid 宽度随模型名变化、占比条长短不一 */
+.mafw-usage-models [data-component="tooltip-v2-trigger"] {
+  display: block;
+  width: 100%;
+}
+
 .mafw-usage-model {
   display: grid;
   grid-template-columns: 1fr 28px;
@@ -3169,6 +3176,7 @@ html[data-theme="light"] .mafw-picker-pop {
   column-gap: 6px;
   row-gap: 2px;
   padding: 3px 0;
+  width: 100%;
 }
 
 .mafw-usage-model-head {
@@ -3192,12 +3200,14 @@ html[data-theme="light"] .mafw-picker-pop {
   font-size: 11px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .mafw-usage-model-cost {
   font-size: 11px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .mafw-usage-model-bar {
