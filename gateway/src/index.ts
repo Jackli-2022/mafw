@@ -4330,7 +4330,7 @@ class MafwScheduler {
             }
             const providerData = this.usagePoller ? await this.usagePoller.poll() : { providers: [], updatedAt: Date.now() };
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ summary, memory, modelStats, ...providerData }));
+            res.end(JSON.stringify({ summary, memory, modelStats: { windows: modelStats }, ...providerData }));
           } catch (err: any) {
             log.warn(`[Usage] failed: ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });

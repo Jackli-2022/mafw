@@ -167,7 +167,7 @@ export class MafwClient implements IMafwClient {
       summary: any
       memory: any
       providers: any[]
-      modelStats?: ModelUsageWindows
+      modelStats?: { windows: ModelUsageWindows }
       updatedAt: number
     }> => {
       const q = new URLSearchParams()
