@@ -1,4 +1,4 @@
-import { IndexScanService, resolveScanBaseUrl } from '../../src/recall/index-scan';
+import { IndexScanService, hashText, resolveScanBaseUrl } from '../../src/recall/index-scan';
 
 const fullId = 'aaaaaaaaaaaaaaaaaaaa';
 const fakeIndex: any = {
@@ -122,6 +122,73 @@ describe('IndexScanService direct-HTTP scan', () => {
     expect(resolveScanBaseUrl('dashscope')).toContain('dashscope.aliyuncs.com');
     expect(resolveScanBaseUrl('xiaomi')).toBeUndefined();
     expect(resolveScanBaseUrl(undefined)).toBeUndefined();
+  });
+
+  it('scanEndpoints map wins over the hardcoded table', () => {
+    expect(resolveScanBaseUrl('gateway', { gateway: 'https://gw.example/v1/chat/completions' })).toBe('https://gw.example/v1/chat/completions');
+    expect(resolveScanBaseUrl('alibaba-cn', { gateway: 'https://gw.example/v1/chat/completions' })).toContain('dashscope.aliyuncs.com');
+  });
+
+  it('records scan usage through the injected sink', async () => {
+    const recorded: any[] = [];
+    const svc = new IndexScanService(
+      fakeIndex,
+      { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
+      {
+        fetchFn: (async () => okScanBody()) as any,
+        apiKey: 'sk-test',
+        recordUsage: (u) => recorded.push(u),
+      },
+    );
+    await svc.scan('q');
+    expect(recorded.length).toBe(1);
+    expect(recorded[0].providerID).toBe('alibaba-cn');
+    expect(recorded[0].modelID).toBe('qwen3.7-max');
+    expect(recorded[0].input).toBe(1000); // prompt 25000 − cached 24000
+    expect(recorded[0].cached).toBe(24000);
+    expect(recorded[0].ok).toBe(true);
+    expect(recorded[0].indexHash).toMatch(/^[0-9a-f]{8}$/);
+    expect(recorded[0].latencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('resolves endpoint and key via injected async hooks (opencode provider config path)', async () => {
+    const calls: string[] = [];
+    const svc = new IndexScanService(
+      fakeIndex,
+      { providerID: 'gateway', modelID: 'glm-5.3-flash' },
+      {
+        fetchFn: (async (url: string) => { calls.push(url); return okScanBody(); }) as any,
+        resolveEndpoint: async () => 'https://gw.example/v1/chat/completions',
+        resolveApiKey: async () => 'sk-inline',
+        authPath: 'Z:/nonexistent/auth.json',
+      },
+    );
+    const res = await svc.scan('q');
+    expect(res?.relevantIds).toEqual([fullId]);
+    expect(calls).toEqual(['https://gw.example/v1/chat/completions']);
+  });
+
+  it('resolveEndpoint losing to explicit baseUrl, resolveApiKey losing to explicit apiKey', async () => {
+    const calls: string[] = [];
+    const svc = new IndexScanService(
+      fakeIndex,
+      { providerID: 'gateway', modelID: 'm' },
+      {
+        fetchFn: (async (url: string) => { calls.push(url); return okScanBody(); }) as any,
+        baseUrl: 'https://explicit.example/v1/chat/completions',
+        apiKey: 'sk-explicit',
+        resolveEndpoint: async () => 'https://should-not-be-used/v1/chat/completions',
+        resolveApiKey: async () => 'sk-should-not-be-used',
+      },
+    );
+    await svc.scan('q');
+    expect(calls).toEqual(['https://explicit.example/v1/chat/completions']);
+  });
+
+  it('hashText is stable, 8-hex, and input-sensitive', () => {
+    expect(hashText('abc')).toMatch(/^[0-9a-f]{8}$/);
+    expect(hashText('abc')).toBe(hashText('abc'));
+    expect(hashText('abc')).not.toBe(hashText('abd'));
   });
 });
 

@@ -1258,6 +1258,55 @@ class MafwScheduler {
             ? { getApiKey: (p) => this.opencodeClient!.credentials!.getApiKey(p) }
             : undefined,
           baseUrl: (config.recall as any).scanApiUrl || undefined,
+          scanEndpoints: (config.recall as any).scanEndpoints || undefined,
+          // Any openai-compatible provider works out of the box: URL and key
+          // come from the opencode provider config (inline-defined providers
+          // like "gateway" keep their credentials in opencode.jsonc options).
+          resolveEndpoint: async (providerID) => {
+            try {
+              const cfg: any = await this.opencodeClient?.config.get();
+              const base = cfg?.provider?.[providerID]?.options?.baseURL;
+              if (typeof base === 'string' && base) return `${base.replace(/\/+$/, '')}/chat/completions`;
+            } catch { /* fail-open to the next resolution step */ }
+            return null;
+          },
+          resolveApiKey: async (providerID) => {
+            try {
+              const viaCreds = this.opencodeClient?.credentials?.getApiKey(providerID);
+              if (viaCreds) return viaCreds;
+              const cfg: any = await this.opencodeClient?.config.get();
+              const key = cfg?.provider?.[providerID]?.options?.apiKey;
+              if (typeof key === 'string' && key) return key;
+            } catch { /* fail-open to the next resolution step */ }
+            return null;
+          },
+          recordUsage: (u) => {
+            try {
+              const store = this.trajectoryStore;
+              if (!store) return;
+              const now = Date.now();
+              store.upsertTurn({
+                projectID: this.projectDir,
+                sessionID: 'index-scan-direct',
+                turnID: now,
+                turnStartMs: now - u.latencyMs,
+                turnEndMs: now,
+                durationMs: u.latencyMs,
+                toolCount: 0,
+                toolErrorCount: 0,
+                reasoningCount: 0,
+                agentSwitchCount: 0,
+                tokens: { input: u.input, output: u.output, reasoning: 0, cache: { read: u.cached, write: 0 } },
+                cost: 0,
+                finish: u.ok ? 'stop' : 'error',
+                model: u.modelID ?? null,
+                provider: u.providerID ?? null,
+                agent: null,
+                userText: '',
+                workerRole: 'index-scan',
+              });
+            } catch { /* never block the scan path */ }
+          },
         },
       );
       // Initial cache population

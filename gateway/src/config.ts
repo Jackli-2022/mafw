@@ -159,6 +159,8 @@ export interface GatewayConfig {
     maxEpisodicPerReflect: number;
     workerModel: { providerID: string; modelID: string };
     workerCompactIdleMs: number;
+    /** providerID → OpenAI-compatible chat-completions URL overrides for the direct-HTTP index scan. */
+    scanEndpoints?: Record<string, string>;
   };
   usage: {
     pollIntervalMs: number;

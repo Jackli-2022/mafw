@@ -50,20 +50,56 @@ export interface ScanHttpDeps {
   credentials?: { getApiKey(provider: string): string | null };
   /** Default timeout for scan() when options.timeoutMs is omitted. */
   timeoutMs?: number;
+  /** providerID → chat-completions URL (config recall.scanEndpoints). */
+  scanEndpoints?: Record<string, string>;
+  /** Async endpoint resolution (e.g. opencode provider config baseURL); wins over scanEndpoints, loses to baseUrl. */
+  resolveEndpoint?: (providerID: string) => Promise<string | null>;
+  /** Async API-key resolution (e.g. opencode provider config options.apiKey); wins over auth.json fallback. */
+  resolveApiKey?: (providerID: string) => Promise<string | null>;
+  /** Usage sink — direct-HTTP scans produce no opencode events, so the gateway injects a trajectory recorder here. */
+  recordUsage?: (u: ScanUsageRecord) => void;
 }
 
 /**
  * Map a provider id to its OpenAI-compatible chat-completions endpoint.
- * Returns undefined for providers without a known direct endpoint — the scan
- * then no-ops (the caller falls back to BM25-only recall).
+ * `endpoints` (config `recall.scanEndpoints`) wins over the hardcoded table;
+ * unknown providers resolve to undefined — the caller may still inject an
+ * endpoint via ScanHttpDeps.resolveEndpoint (e.g. derived from the opencode
+ * provider config) or fall back to BM25-only recall.
  */
-export function resolveScanBaseUrl(providerID?: string): string | undefined {
+export function resolveScanBaseUrl(providerID?: string, endpoints?: Record<string, string>): string | undefined {
   if (!providerID) return undefined;
+  const mapped = endpoints?.[providerID];
+  if (mapped) return mapped;
   const p = providerID.toLowerCase();
   if (p.includes('alibaba') || p.includes('dashscope') || p.includes('qwen')) {
     return 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
   }
   return undefined;
+}
+
+/** FNV-1a (32-bit) — cheap byte-stability fingerprint for the index text. */
+export function hashText(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+export interface ScanUsageRecord {
+  providerID?: string;
+  modelID?: string;
+  /** Uncached prompt tokens (prompt_tokens − cached_tokens). */
+  input: number;
+  cached: number;
+  output: number;
+  latencyMs: number;
+  /** false when the response arrived but was unparsable/low-confidence. */
+  ok: boolean;
+  /** Fingerprint of the index text used — attributes cold scans to text changes vs TTL. */
+  indexHash: string;
 }
 
 const SCAN_SYSTEM = `You are a memory retrieval system. Given a memory index and a user query, identify the most relevant memory entries.
@@ -180,6 +216,7 @@ export function resolveShortIds(shortIds: string[], index: HarmonicIndexManager)
 export class IndexScanService {
   private cachedIndexText: string | null = null;
   private cachedAt: number = 0;
+  private lastIndexHash: string | null = null;
   private inFlight: Promise<ScanResult | null> | null = null;
   // Failure cooldown state: a slow or broken worker model must not burn a
   // request on every recall call. Exponential backoff (1/2/4 min, capped);
@@ -207,9 +244,13 @@ export class IndexScanService {
 
   /** Refresh the cached index text. Called hourly by turn-compress cron. */
   refreshCache(): void {
-    this.cachedIndexText = formatIndexForScan(this.index);
+    const text = formatIndexForScan(this.index);
+    const hash = hashText(text);
+    const changed = this.lastIndexHash !== null && this.lastIndexHash !== hash;
+    log.info(`[IndexScan] cache refreshed: ${text.split('\n').length - 2} entries, ${text.length} chars, hash=${hash}${this.lastIndexHash !== null ? `, changed=${changed}` : ''}`);
+    this.cachedIndexText = text;
+    this.lastIndexHash = hash;
     this.cachedAt = Date.now();
-    log.info(`[IndexScan] cache refreshed: ${this.cachedIndexText.split('\n').length - 2} entries`);
   }
 
   /** Get the cached index text, refreshing if needed. */
@@ -257,8 +298,12 @@ export class IndexScanService {
   private async _doScan(query: string, timeoutMs: number, minConfidence: number): Promise<ScanResult | null> {
     const providerID = this.workerModel?.providerID;
     const modelID = this.workerModel?.modelID;
-    const baseUrl = this.deps.baseUrl ?? resolveScanBaseUrl(providerID);
-    const apiKey = this.deps.apiKey ?? getProviderApiKey(providerID ?? '', this.deps.authPath, this.deps.credentials);
+    const baseUrl = this.deps.baseUrl
+      ?? (await this.deps.resolveEndpoint?.(providerID ?? '') ?? undefined)
+      ?? resolveScanBaseUrl(providerID, this.deps.scanEndpoints);
+    const apiKey = this.deps.apiKey
+      ?? (await this.deps.resolveApiKey?.(providerID ?? '') ?? undefined)
+      ?? getProviderApiKey(providerID ?? '', this.deps.authPath, this.deps.credentials);
     if (!baseUrl || !apiKey) {
       if (!this.warnedUnresolvable) {
         log.warn(`[IndexScan] no endpoint or API key for provider "${providerID ?? '?'}" — scan disabled`);
@@ -324,9 +369,27 @@ export class IndexScanService {
       if (!content.trim() && typeof message?.reasoning_content === 'string') {
         content = message.reasoning_content;
       }
-      const cachedTokens = json?.usage?.prompt_tokens_details?.cached_tokens;
-
+      const usage = json?.usage;
+      const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
       const result = parseScanResponse(content);
+
+      // Self-record usage: direct-HTTP scans bypass opencode, so without this
+      // sink the memory-system token stats silently lose the scan's share.
+      if (this.deps.recordUsage && usage) {
+        try {
+          this.deps.recordUsage({
+            providerID,
+            modelID,
+            input: Math.max(0, (usage.prompt_tokens || 0) - (cachedTokens || 0)),
+            cached: cachedTokens || 0,
+            output: usage.completion_tokens || 0,
+            latencyMs: Date.now() - startedAt,
+            ok: result != null,
+            indexHash: hashText(this.getIndexText()),
+          });
+        } catch { /* never block the scan path on recorder errors */ }
+      }
+
       if (!result) {
         this.lastAttemptFailed = true; // unparsable output — model likely broken
         log.warn(`[IndexScan] scan failed: unparsable response (${Date.now() - startedAt}ms)`);
