@@ -1,6 +1,6 @@
 import { IndexScanService, hashText, resolveScanBaseUrl } from '../../src/recall/index-scan';
 
-const fullId = 'aaaaaaaaaaaaaaaaaaaa';
+const fullId = 'mem_1111111111_abc12345'; // tail-10 short id = '1_abc12345'
 const fakeIndex: any = {
   getIndex: () => ({
     entries: [
@@ -14,7 +14,7 @@ function okScanBody(overrides: any = {}) {
     ok: true,
     status: 200,
     json: async () => ({
-      choices: [{ message: { content: '{"relevant_ids":["aaaaaaaaaaaa"],"confidence":0.9}' }, finish_reason: 'stop' }],
+      choices: [{ message: { content: '{"relevant_ids":["1_abc12345"],"confidence":0.9}' }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 25000, prompt_tokens_details: { cached_tokens: 24000 } },
       ...overrides,
     }),
@@ -71,7 +71,7 @@ describe('IndexScanService direct-HTTP scan', () => {
       { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
       {
         fetchFn: (async () => okScanBody({
-          choices: [{ message: { content: '', reasoning_content: '{"relevant_ids":["aaaaaaaaaaaa"],"confidence":0.8}' } }],
+          choices: [{ message: { content: '', reasoning_content: '{"relevant_ids":["1_abc12345"],"confidence":0.8}' } }],
         })) as any,
         apiKey: 'sk-test',
       },

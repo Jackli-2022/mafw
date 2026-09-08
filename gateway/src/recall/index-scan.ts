@@ -128,14 +128,28 @@ ${HARD_BOUNDARIES}`;
  * Only immutable fields are included (date, type, summary, anchors) —
  * volatile fields like energy would invalidate the provider prompt cache
  * on every decay pass.
+ *
+ * Truncation opts (Step 4 slimming): absCap/anchorCap shorten the line for
+ * scan-prompt size; caps are caller-fixed constants so the rendered text
+ * stays byte-stable across refreshes (cache-safe). Truncation slices at
+ * UTF-16 code-unit boundaries — fine for CJK BMP text, only cosmetic for
+ * the rare astral char.
  */
-export function formatEntryForIndex(entry: any): string {
-  const id = (entry.id || '?').slice(0, 12);
+export function formatEntryForIndex(
+  entry: any,
+  opts?: { absCap?: number; anchorCap?: number },
+): string {
+  // Tail-10 short id: harmonic ids are mem_<millis>_<rand>, so a head prefix
+  // collides for same-millisecond writes (batch ingests share one prefix —
+  // "unique 12-char prefixes: 1/53" in the LongMemEval harness). The tail
+  // (rand + ts suffix) is unique per entry; resolveShortIds matches endsWith.
+  const id = (entry.id || '?').slice(-10);
   const date = formatDateOnly(entry.created_at);
   const type = entry.type || 'unknown';
   // Don't truncate abstraction — let the model see full content for better relevance judgment
-  const summary = (entry.primary_abstraction || '').replace(/\n/g, ' ');
-  const anchors = (entry.cue_anchors || []).slice(0, 5).join(', ');
+  let summary = (entry.primary_abstraction || '').replace(/\n/g, ' ');
+  if (opts?.absCap && summary.length > opts.absCap) summary = summary.slice(0, opts.absCap) + '…';
+  const anchors = (entry.cue_anchors || []).slice(0, opts?.anchorCap ?? 5).join(', ');
   return `- [id:${id}] (${date}) ${type} | ${summary} | anchors: ${anchors}`;
 }
 
@@ -170,7 +184,24 @@ export function formatIndexForScan(index: HarmonicIndexManager): string {
       return ta - tb; // oldest first — append-only order
     });
 
-  const lines = entries.map(formatEntryForIndex);
+  const lines = entries.map((e: any) => formatEntryForIndex(e));
+  return `# Memory Index\n\n${lines.join('\n')}`;
+}
+
+/** Slimming variant — same ordering/filtering, truncated lines (Step 4 A/B). */
+export function formatIndexForScanSlim(
+  index: HarmonicIndexManager,
+  opts: { absCap: number; anchorCap: number },
+): string {
+  const entries = index.getIndex().entries
+    .filter((e: any) => !e.superseded_by)
+    .sort((a: any, b: any) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return ta - tb;
+    });
+
+  const lines = entries.map((e: any) => formatEntryForIndex(e, opts));
   return `# Memory Index\n\n${lines.join('\n')}`;
 }
 
@@ -197,13 +228,15 @@ export function parseScanResponse(text: string): ScanResult | null {
 
 /**
  * Resolve short IDs from scan response to full harmonic index entry IDs.
- * The index uses 12-char prefixes; this maps them back to full IDs.
+ * The index shows tail-10 short ids (see formatEntryForIndex); this maps
+ * them back with endsWith. Ambiguous tails resolve to the first match —
+ * tail collisions are ~0 for 10 chars over ~1k entries.
  */
 export function resolveShortIds(shortIds: string[], index: HarmonicIndexManager): string[] {
   const entries = index.getIndex().entries;
   const resolved: string[] = [];
   for (const shortId of shortIds) {
-    const match = entries.find((e: any) => e.id.startsWith(shortId));
+    const match = entries.find((e: any) => e.id.endsWith(shortId));
     if (match) resolved.push(match.id);
   }
   return resolved;
