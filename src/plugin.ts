@@ -23,6 +23,7 @@ import { userProfileSystemHook } from './hooks/user-profile';
 import { voiceGuideMessagesHook, voiceGuideSystemHook } from './hooks/voice-guide';
 import { pushObservation, extractTextFromParts, toolFailureText } from './utils/obs-capture';
 import { addMemoryTool } from './tools/add-memory';
+import { ensureMcpWiring, resolveGatewayApiUrl } from './utils/self-wiring';
 
 function getGatewayUrl(mafwDir: string): string {
   const configPath = path.join(mafwDir, '..', '.config', 'mafw', 'desktop-automation.json');
@@ -75,6 +76,14 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
 
   ConfigLoader.getInstance(directory).getAll();
   await registerWithGateway(directory, mafwDir);
+  // Self-wire gateway MCP into the global opencode config so mafw_* tools are
+  // mounted in every session (plugin config hook cannot inject mcp). Fail-open.
+  try {
+    const wiring = ensureMcpWiring(resolveGatewayApiUrl());
+    if (wiring === 'wired') {
+      console.log('[MAFW] Self-wired mcp.mafw into global opencode config (restart sessions to load tools)');
+    }
+  } catch {}
   console.log('[MAFW] Plugin activated. All hooks registered.');
 
   const hookManager = new HookManager({ failBehavior: 'continue', timeout: 30000 });
