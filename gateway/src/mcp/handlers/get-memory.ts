@@ -10,7 +10,7 @@ import { HarmonicUnit } from "../../core/memory/harmonic-types";
  */
 export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir }) => {
   try {
-    const id = String(args.id || '').trim().replace(/^#?mem-/, '');
+    const id = String(args.id || '').trim().replace(/^#?(?:mem-)?/, '');
     if (!id) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: 'id required' }) }], isError: true };
     }

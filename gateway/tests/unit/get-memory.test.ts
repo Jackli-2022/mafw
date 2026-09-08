@@ -40,6 +40,13 @@ describe('mafw_get_memory', () => {
     expect(body.memory.id).toBe('mem_1111111111_abc123');
   });
 
+  test('bare-# pointer (#abc123) resolves like #mem-abc123', async () => {
+    const res = await handleGetMemory({ id: '#abc123' }, { mafwDir: dir } as any);
+    const body = JSON.parse(res.content[0].text);
+    expect(body.success).toBe(true);
+    expect(body.memory.id).toBe('mem_1111111111_abc123');
+  });
+
   test('superseded memory → response follows the chain to the latest', async () => {
     store.markSuperseded('mem_1111111111_abc123', 'mem_2222222222_def456');
     const res = await handleGetMemory({ id: 'mem_1111111111_abc123' }, { mafwDir: dir } as any);
