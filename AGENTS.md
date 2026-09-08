@@ -124,6 +124,8 @@ LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6
 | `mafw_desktop_scroll` | 桌面滚动 |
 | `mafw_restart_agent` | 重启 gateway 拥有的 agent 进程（opencode serve sidecar）；external/进程内 runtime 不可用 |
 
+> **接线要求（2026-09-08 修复）**：以上 39 个工具经 gateway legacy SSE MCP 暴露（`http://127.0.0.1:3000/mcp`），opencode 侧需在配置中有 `"mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true, "oauth": false } }` 才可用。接线有两条路径：①插件**激活时自接线**（`src/utils/self-wiring.ts` 的 `ensureMcpWiring()`——检测全局 `~/.config/opencode/opencode.jsonc` 缺 `"mcp"` 段则幂等补写，带 `.bak-mafw-<ts>` 备份，fail-open）；②手动写全局或项目级 opencode 配置。**排错关键**：旧键 `mcpServers`（v4.1 时代 `opencode.json.example`）已被 opencode 1.x 废弃并**静默忽略**，接线缺失无任何报错、工具直接消失；验证用 `opencode mcp list` 应显示 `mafw connected`。插件原生工具（6 个，§4.2）不经 MCP，独立可用。
+
 ### 4.2 插件侧工具（4 个，`src/tools/`）
 
 | Tool | 用途 |
