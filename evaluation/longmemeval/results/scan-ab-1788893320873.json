@@ -1,0 +1,535 @@
+{
+  "generatedAt": "2026-09-08T18:48:40.873Z",
+  "model": "qwen3.7-max",
+  "provider": "alibaba-cn",
+  "sample": 24,
+  "totals": {
+    "A-prod200": {
+      "goldHit": 34,
+      "goldTotal": 46,
+      "chars": 345854,
+      "scans": 24,
+      "parseFail": 0
+    },
+    "B-slim60": {
+      "goldHit": 30,
+      "goldTotal": 46,
+      "chars": 183633,
+      "scans": 24,
+      "parseFail": 0
+    },
+    "C-slim40": {
+      "goldHit": 18,
+      "goldTotal": 46,
+      "chars": 132461,
+      "scans": 24,
+      "parseFail": 0
+    }
+  },
+  "perQuestion": [
+    {
+      "qid": "e47becba",
+      "type": "single-session-user",
+      "arms": {
+        "A-prod200": {
+          "recall": 0,
+          "chars": 15760,
+          "ids": 0
+        },
+        "B-slim60": {
+          "recall": 0,
+          "chars": 8375,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 6043,
+          "ids": 5
+        }
+      }
+    },
+    {
+      "qid": "c8c3f81d",
+      "type": "single-session-user",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 15499,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 8219,
+          "ids": 7
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5931,
+          "ids": 7
+        }
+      }
+    },
+    {
+      "qid": "15745da0",
+      "type": "single-session-user",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 13869,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 0,
+          "chars": 7408,
+          "ids": 0
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5340,
+          "ids": 7
+        }
+      }
+    },
+    {
+      "qid": "c14c00dd",
+      "type": "single-session-user",
+      "arms": {
+        "A-prod200": {
+          "recall": 0,
+          "chars": 15206,
+          "ids": 0
+        },
+        "B-slim60": {
+          "recall": 0,
+          "chars": 8066,
+          "ids": 0
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5822,
+          "ids": 0
+        }
+      }
+    },
+    {
+      "qid": "c4a1ceb8",
+      "type": "multi-session",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14588,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 7728,
+          "ids": 6
+        },
+        "C-slim40": {
+          "recall": 0.75,
+          "chars": 5572,
+          "ids": 8
+        }
+      }
+    },
+    {
+      "qid": "00ca467f",
+      "type": "multi-session",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 13989,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 7409,
+          "ids": 7
+        },
+        "C-slim40": {
+          "recall": 0.6666666666666666,
+          "chars": 5341,
+          "ids": 5
+        }
+      }
+    },
+    {
+      "qid": "1a8a66a6",
+      "type": "multi-session",
+      "arms": {
+        "A-prod200": {
+          "recall": 0,
+          "chars": 15096,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 0,
+          "chars": 8078,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0.75,
+          "chars": 5834,
+          "ids": 5
+        }
+      }
+    },
+    {
+      "qid": "caf03d32",
+      "type": "single-session-preference",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 15060,
+          "ids": 6
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 8042,
+          "ids": 6
+        },
+        "C-slim40": {
+          "recall": 1,
+          "chars": 5798,
+          "ids": 7
+        }
+      }
+    },
+    {
+      "qid": "1c0ddc50",
+      "type": "single-session-preference",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 15197,
+          "ids": 6
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 8057,
+          "ids": 8
+        },
+        "C-slim40": {
+          "recall": 1,
+          "chars": 5813,
+          "ids": 8
+        }
+      }
+    },
+    {
+      "qid": "e25c3b8d",
+      "type": "multi-session",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14313,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 7593,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0.5,
+          "chars": 5481,
+          "ids": 5
+        }
+      }
+    },
+    {
+      "qid": "0ea62687",
+      "type": "multi-session",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 12789,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 6769,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 4877,
+          "ids": 0
+        }
+      }
+    },
+    {
+      "qid": "a346bb18",
+      "type": "multi-session",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14564,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 0.5,
+          "chars": 7704,
+          "ids": 6
+        },
+        "C-slim40": {
+          "recall": 1,
+          "chars": 5548,
+          "ids": 7
+        }
+      }
+    },
+    {
+      "qid": "gpt4_4929293a",
+      "type": "temporal-reasoning",
+      "arms": {
+        "A-prod200": {
+          "recall": 0,
+          "chars": 13101,
+          "ids": 0
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 6941,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5005,
+          "ids": 5
+        }
+      }
+    },
+    {
+      "qid": "gpt4_45189cb4",
+      "type": "temporal-reasoning",
+      "arms": {
+        "A-prod200": {
+          "recall": 0.6666666666666666,
+          "chars": 13389,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 0.3333333333333333,
+          "chars": 7089,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0.6666666666666666,
+          "chars": 5109,
+          "ids": 8
+        }
+      }
+    },
+    {
+      "qid": "gpt4_85da3956",
+      "type": "temporal-reasoning",
+      "arms": {
+        "A-prod200": {
+          "recall": 0,
+          "chars": 15838,
+          "ids": 0
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 8418,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 1,
+          "chars": 6086,
+          "ids": 8
+        }
+      }
+    },
+    {
+      "qid": "4dfccbf8",
+      "type": "temporal-reasoning",
+      "arms": {
+        "A-prod200": {
+          "recall": 0,
+          "chars": 12683,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 0.5,
+          "chars": 6783,
+          "ids": 8
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 4891,
+          "ids": 8
+        }
+      }
+    },
+    {
+      "qid": "gpt4_70e84552",
+      "type": "temporal-reasoning",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14198,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 0,
+          "chars": 7559,
+          "ids": 0
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5447,
+          "ids": 6
+        }
+      }
+    },
+    {
+      "qid": "d01c6aa8",
+      "type": "temporal-reasoning",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 12471,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 6591,
+          "ids": 6
+        },
+        "C-slim40": {
+          "recall": 1,
+          "chars": 4743,
+          "ids": 6
+        }
+      }
+    },
+    {
+      "qid": "gpt4_70e84552_abs",
+      "type": "temporal-reasoning",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14926,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 7926,
+          "ids": 7
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5726,
+          "ids": 7
+        }
+      }
+    },
+    {
+      "qid": "4d6b87c8",
+      "type": "knowledge-update",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 15500,
+          "ids": 6
+        },
+        "B-slim60": {
+          "recall": 0.5,
+          "chars": 8220,
+          "ids": 6
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5932,
+          "ids": 8
+        }
+      }
+    },
+    {
+      "qid": "e61a7584",
+      "type": "knowledge-update",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14883,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 7883,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5683,
+          "ids": 5
+        }
+      }
+    },
+    {
+      "qid": "69fee5aa",
+      "type": "knowledge-update",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14607,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 7747,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5591,
+          "ids": 0
+        }
+      }
+    },
+    {
+      "qid": "0ddfec37_abs",
+      "type": "knowledge-update",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 13398,
+          "ids": 5
+        },
+        "B-slim60": {
+          "recall": 0,
+          "chars": 7098,
+          "ids": 0
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5118,
+          "ids": 5
+        }
+      }
+    },
+    {
+      "qid": "58470ed2",
+      "type": "single-session-assistant",
+      "arms": {
+        "A-prod200": {
+          "recall": 1,
+          "chars": 14930,
+          "ids": 6
+        },
+        "B-slim60": {
+          "recall": 1,
+          "chars": 7930,
+          "ids": 5
+        },
+        "C-slim40": {
+          "recall": 0,
+          "chars": 5730,
+          "ids": 6
+        }
+      }
+    }
+  ]
+}
