@@ -93,4 +93,38 @@ describe('createOpencodeRuntime', () => {
     expect(rt.agentProcess).toBeUndefined();
     expect(rt.capabilities.agentProcessApi).toBe(false);
   });
+
+  it('declares completionApi and exposes completion.complete', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    expect(rt.capabilities.completionApi).toBe(true);
+    expect(typeof rt.completion?.complete).toBe('function');
+  });
+
+  it('complete resolves endpoint from opencode provider config baseURL', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    const { createOpencodeAdapter } = require('../../../src/opencode-adapter') as any;
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    const lastResult = (createOpencodeAdapter as jest.Mock).mock.results[(createOpencodeAdapter as jest.Mock).mock.results.length - 1];
+    const adapter = await lastResult.value;
+    adapter.config.get.mockResolvedValue({
+      provider: { 'my-prov': { options: { baseURL: 'https://p.example/v1', apiKey: 'sk-x' } } },
+    });
+    const calls: Array<{ url: string }> = [];
+    const savedFetch = globalThis.fetch;
+    (globalThis as any).fetch = (async (url: string) => {
+      calls.push({ url });
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+    }) as any;
+    try {
+      const res = await rt.completion!.complete({
+        model: { providerID: 'my-prov', modelID: 'm1' },
+        user: [{ type: 'text', text: 'q' }],
+      });
+      expect(res.text).toBe('ok');
+      expect(calls[0].url).toBe('https://p.example/v1/chat/completions');
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
 });

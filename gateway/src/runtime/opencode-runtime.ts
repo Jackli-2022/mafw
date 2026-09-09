@@ -14,12 +14,13 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { AgentRuntime, SessionInfo, fullCapabilities } from './contract';
+import { AgentRuntime, SessionInfo, fullCapabilities, CompletionRequest, CompletionResult } from './contract';
 import { AgentDefinition } from './agent-definition';
 import { startServeSidecar, killServePort } from './serve-sidecar';
 import { createOpencodeAdapter } from '../opencode-adapter';
 import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
+import { httpComplete } from './completion-http';
 import { log } from '../core/utils/logger';
 
 // Re-export auth utilities for consumers (single implementation source)
@@ -294,6 +295,36 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
       const existed = fs.existsSync(path.join(dir, `${name}.md`));
       const filePath = installAgentFile(name, definition, dir);
       log.info(`[ManagerAgent] ${existed ? 'updated' : 'wrote'} ${filePath}`);
+    },
+  };
+
+  // completionApi: stateless single-shot completion over the shared direct-HTTP
+  // transport. Endpoint/key resolution mirrors index-scan's chain (opencode
+  // provider config options → auth.json), so any OpenAI-compatible provider
+  // connected in opencode works out of the box.
+  rt.completion = {
+    async complete(req: CompletionRequest): Promise<CompletionResult> {
+      return httpComplete(req, {
+        scanEndpoints: (gatewayConfig as any).recall?.scanEndpoints || undefined,
+        resolveEndpoint: async (providerID) => {
+          try {
+            const cfg: any = await client.config.get();
+            const base = cfg?.provider?.[providerID]?.options?.baseURL;
+            if (typeof base === 'string' && base) return `${base.replace(/\/+$/, '')}/chat/completions`;
+          } catch { /* fail-open to the next resolution step */ }
+          return null;
+        },
+        resolveApiKey: async (providerID) => {
+          try {
+            const viaAuth = getProviderApiKey(providerID);
+            if (viaAuth) return viaAuth;
+            const cfg: any = await client.config.get();
+            const key = cfg?.provider?.[providerID]?.options?.apiKey;
+            if (typeof key === 'string' && key) return key;
+          } catch { /* fail-open to the next resolution step */ }
+          return null;
+        },
+      });
     },
   };
 
