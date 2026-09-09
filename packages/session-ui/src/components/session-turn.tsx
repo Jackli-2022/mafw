@@ -1,4 +1,4 @@
-import {
+﻿import {
   AssistantMessage,
   type SnapshotFileDiff,
   Message as MessageType,
@@ -6,24 +6,24 @@ import {
 } from "@opencode-ai/sdk/v2/client"
 import type { SessionStatus } from "@opencode-ai/sdk/v2"
 import { useData } from "../context"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
+import { useFileComponent } from "@mafw/ui/context/file"
 
-import { Binary } from "@opencode-ai/core/util/binary"
-import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+import { Binary } from "../util/binary"
+import { getDirectory, getFilename } from "../util/path"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions } from "./message-part"
-import { Card } from "@opencode-ai/ui/card"
-import { Accordion } from "@opencode-ai/ui/accordion"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { Icon } from "@opencode-ai/ui/icon"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { Card } from "@mafw/ui/card"
+import { Accordion } from "@mafw/ui/accordion"
+import { StickyAccordionHeader } from "@mafw/ui/sticky-accordion-header"
+import { DiffChanges } from "@mafw/ui/diff-changes"
+import { Icon } from "@mafw/ui/icon"
+import { TextShimmer } from "@mafw/ui/text-shimmer"
 import { SessionRetry } from "./session-retry"
-import { TextReveal } from "@opencode-ai/ui/text-reveal"
-import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { TextReveal } from "@mafw/ui/text-reveal"
+import { createAutoScroll } from "@mafw/ui/hooks"
+import { useI18n } from "@mafw/ui/context/i18n"
 import { normalize } from "./session-diff"
 
 function record(value: unknown): value is Record<string, unknown> {

@@ -1,8 +1,8 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 
 const fmtDur = (ms?: number | null): string => {
   if (ms === null || ms === undefined || ms < 0) return "\u2014"

@@ -1,7 +1,7 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, For, Show, onCleanup } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 

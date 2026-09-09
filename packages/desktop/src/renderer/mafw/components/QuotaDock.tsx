@@ -1,8 +1,8 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { Icon } from "@opencode-ai/ui/icon"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { Icon } from "@mafw/ui/icon"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 
 const fmt = (n: number): string => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`

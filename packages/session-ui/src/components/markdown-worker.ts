@@ -1,5 +1,5 @@
-import MarkdownShikiWorkerUrl from "./markdown-shiki.worker.ts?worker&url"
-import { OpenCodeTheme } from "@opencode-ai/ui/context/marked"
+﻿import MarkdownShikiWorkerUrl from "./markdown-shiki.worker.ts?worker&url"
+import { OpenCodeTheme } from "@mafw/ui/context/marked"
 import {
   applyMarkdownWorkerResponse,
   shouldReleaseMarkdownWorkerState,

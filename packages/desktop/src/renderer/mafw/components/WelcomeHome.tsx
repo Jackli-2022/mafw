@@ -1,9 +1,9 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createMemo, createSignal, Show, For, createEffect, onCleanup } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { Icon as IconV2 } from "@mafw/ui/v2/icon"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 
 /**
  * Startup welcome pane ("今天要做什么？"). Rendered when the app launches

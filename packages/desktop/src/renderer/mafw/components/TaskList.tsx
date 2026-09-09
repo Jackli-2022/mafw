@@ -1,6 +1,6 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 
 const formatDuration = (ms: number): string => {
   if (!ms || ms < 0) return "0s"

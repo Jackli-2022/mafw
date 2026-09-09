@@ -1,7 +1,7 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, Show, For } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 
 export type PermissionCardData = {
   id: string

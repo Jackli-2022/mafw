@@ -1,5 +1,5 @@
-import { createMemo } from "solid-js"
-import { AnimatedNumber } from "@opencode-ai/ui/animated-number"
+﻿import { createMemo } from "solid-js"
+import { AnimatedNumber } from "@mafw/ui/animated-number"
 
 function split(text: string) {
   const match = /{{\s*count\s*}}/.exec(text)

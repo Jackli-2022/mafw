@@ -1,9 +1,11 @@
 import { sentryVitePlugin } from "@sentry/vite-plugin"
 import { defineConfig } from "electron-vite"
-import appPlugin from "@opencode-ai/app/vite"
-import * as fs from "node:fs/promises"
+import solidPlugin from "vite-plugin-solid"
+import tailwindcss from "@tailwindcss/vite"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 
-const OPENCODE_SERVER_DIST = "../opencode/dist/node"
+const theme = fileURLToPath(new URL("./public/oc-theme-preload.js", import.meta.url))
 
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
@@ -13,6 +15,35 @@ const channel = (() => {
 })()
 
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
+
+// Renderer plugin set previously provided by @opencode-ai/app/vite (inlined
+// when the desktop package was decoupled from the opencode monorepo).
+const mafwRendererPlugin = [
+  {
+    name: "mafw-desktop:config",
+    config() {
+      return {
+        define: {
+          "import.meta.env.VITE_OPENCODE_CHANNEL": JSON.stringify(channel),
+        },
+        worker: {
+          format: "es",
+        },
+      }
+    },
+  },
+  {
+    name: "mafw-desktop:theme-preload",
+    transformIndexHtml(html) {
+      return html.replace(
+        '<script id="oc-theme-preload-script" src="/oc-theme-preload.js"></script>',
+        `<script id="oc-theme-preload-script">${readFileSync(theme, "utf8")}</script>`,
+      )
+    },
+  },
+  tailwindcss(),
+  solidPlugin(),
+]
 
 const sentry =
   process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
@@ -38,7 +69,7 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
+        input: { index: "src/main/index.ts" },
         // Keep this identical to electron-vite's Node 20.11+ shim. Its regex insertion can
         // corrupt bundled TypeScript, while a Rollup banner places the shim safely.
         output: {
@@ -55,26 +86,10 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     },
     plugins: [
       {
-        name: "opencode:node-pty-narrower",
+        name: "mafw:node-pty-narrower",
         enforce: "pre",
         resolveId(s) {
           if (s === "@lydell/node-pty") return nodePtyPkg
-        },
-      },
-      {
-        name: "opencode:virtual-server-module",
-        enforce: "pre",
-        resolveId(id) {
-          if (id === "virtual:opencode-server") return this.resolve(`${OPENCODE_SERVER_DIST}/node.js`)
-        },
-      },
-      {
-        name: "opencode:copy-server-assets",
-        async writeBundle() {
-          for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
-            if (!l.endsWith(".wasm")) continue
-            await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
-          }
         },
       },
     ],
@@ -91,8 +106,8 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     },
   },
   renderer: {
-    plugins: [appPlugin, sentry],
-    publicDir: "../../../app/public",
+    plugins: [mafwRendererPlugin, sentry],
+    publicDir: "public",
     root: "src/renderer",
     build: {
       sourcemap: true,

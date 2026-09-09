@@ -1,14 +1,14 @@
-// Usage provider workbench: one card per provider (JS usage plugin or local-stats
+﻿// Usage provider workbench: one card per provider (JS usage plugin or local-stats
 // provider), config lives inside the per-card drawer — no flat lists. Templates
 // generate plugin files server-side; custom plugins edit via the built-in code editor.
 import { createSignal, createEffect, For, Show, onMount } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
-import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
-import { Switch as SwitchV2 } from "@opencode-ai/ui/v2/switch-v2"
-import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
-import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
-import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
+import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
+import { SelectV2 } from "@mafw/ui/v2/select-v2"
+import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 
 type SchemaField = { key: string; label: string; type: string; options?: string[]; default?: string | number | boolean }
 type TemplateField = { key: string; label: string; type: string; required?: boolean; options?: string[]; placeholder?: string; hint?: string; default?: string | number | boolean }

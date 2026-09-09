@@ -1,6 +1,6 @@
-import type { UpdaterState } from "@opencode-ai/app/updater"
+﻿import type { UpdaterState } from "../types/updater"
 
-export type { UpdaterState } from "@opencode-ai/app/updater"
+export type { UpdaterState } from "../types/updater"
 
 export type UpdaterReadyRecord = { version: string }
 

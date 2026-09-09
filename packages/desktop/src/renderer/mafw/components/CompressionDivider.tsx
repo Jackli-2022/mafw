@@ -1,6 +1,6 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createSignal } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@mafw/ui/icon"
 
 type Props = {
   summary?: string

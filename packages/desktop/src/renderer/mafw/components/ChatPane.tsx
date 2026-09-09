@@ -1,11 +1,11 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
-import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
-import { SessionTurn } from "@opencode-ai/session-ui/session-turn"
+import { Icon } from "@mafw/ui/icon"
+import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { SessionTurn } from "@mafw/session-ui/session-turn"
 import { TaskBar } from "./TaskBar"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"

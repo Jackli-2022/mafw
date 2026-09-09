@@ -1,8 +1,8 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createMemo, createSignal, Show, For } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 
 /**
  * Chat placeholder pane. Rendered in a `{ empty: true }` split leaf: it takes

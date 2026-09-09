@@ -1,11 +1,11 @@
-import { BrowserWindow, Menu, shell } from "electron"
+﻿import { BrowserWindow, Menu, shell } from "electron"
 import type { MenuItemConstructorOptions } from "electron"
 import {
   DESKTOP_MENU,
   desktopMenuVisible,
   type DesktopMenuEntry,
   type DesktopMenuRole,
-} from "@opencode-ai/app/desktop-menu"
+} from "../types/desktop-menu"
 
 import { UPDATER_ENABLED } from "./constants"
 import { runDesktopMenuAction } from "./desktop-menu-actions"

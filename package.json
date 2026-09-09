@@ -1,62 +1,65 @@
 {
-  "name": "opencode-plugin-mafw",
-  "version": "4.1.0",
-  "description": "MAFW Loop Agent Plugin for OpenCode — Phase Relay + TMEM + Dynamic Compression",
-  "main": "dist/plugin.js",
-  "opencode": {
-    "plugin": "dist/plugin.js"
-  },
-  "bin": {
-    "mafw": "./bin/mafw.js"
-  },
-  "scripts": {
-    "build": "tsc && cd gateway && npm run build",
-    "postinstall": "node -e \"var p=require('path'),f=require('fs'),d=p.join(__dirname,'gateway');if(f.existsSync(d)){require('child_process').execSync('npm install --omit=dev --no-audit --no-fund --loglevel=error',{cwd:d,stdio:'inherit'})}\"",
-    "prepare": "npm run build",
-    "pack:install": "npm run build && npm pack && npm install -g opencode-plugin-mafw-*.tgz && mafw version",
-    "test": "jest",
-    "test:unit": "jest tests/unit"
-  },
-  "files": [
-    "dist/",
-    "gateway/dist/",
-    "gateway/package.json",
-    ".opencode/",
-    "bin/",
-    "README.md"
-  ],
-  "dependencies": {
-    "@a2a-js/sdk": "^1.0.1",
-    "@huggingface/transformers": "^4.2.0",
-    "@langchain/core": "^1.1.48",
-    "@langchain/langgraph": "^1.4.7",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opencode-ai/sdk": "^1.17.12",
-    "axios": "^1.6.0",
-    "better-sqlite3": "^12.11.1",
-    "bonjour-service": "^1.4.4",
-    "cron": "^3.1.7",
-    "js-yaml": "^4.1.0",
-    "langchain-mcp-adapters": "^0.6.0",
-    "opencode-ai": "^1.0.0",
-    "simple-git": "^3.20.0",
-    "ws": "^8.21.3",
-    "zeromq": "^6.1.2",
-    "zod": "^3.25.32"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/jest": "^29.5.0",
-    "@types/js-yaml": "^4.0.5",
-    "@types/node": "^20.0.0",
-    "@types/ws": "^8.18.1",
-    "eslint": "^8.54.0",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.4.11",
-    "ts-node": "^10.9.0",
-    "typescript": "^5.3.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+    "name":  "opencode-plugin-mafw",
+    "version":  "4.1.0",
+    "description":  "MAFW Loop Agent Plugin for OpenCode 鈥?Phase Relay + TMEM + Dynamic Compression",
+    "main":  "dist/plugin.js",
+    "opencode":  {
+                     "plugin":  "dist/plugin.js"
+                 },
+    "bin":  {
+                "mafw":  "./bin/mafw.js"
+            },
+    "scripts":  {
+                    "build":  "tsc \u0026\u0026 cd gateway \u0026\u0026 npm run build",
+                    "postinstall":  "node -e \"var p=require(\u0027path\u0027),f=require(\u0027fs\u0027),d=p.join(__dirname,\u0027gateway\u0027),ts=p.join(d,\u0027node_modules\u0027,\u0027typescript\u0027,\u0027bin\u0027,\u0027tsc\u0027);if(f.existsSync(d)){if(f.existsSync(ts)){console.log(\u0027[mafw] gateway dev deps present, skip prod install\u0027)}else{require(\u0027child_process\u0027).execSync(\u0027npm install --omit=dev --no-audit --no-fund --loglevel=error\u0027,{cwd:d,stdio:\u0027inherit\u0027})}}\"",
+                    "prepare":  "npm run build",
+                    "pack:install":  "npm run build \u0026\u0026 npm pack \u0026\u0026 npm install -g opencode-plugin-mafw-*.tgz \u0026\u0026 mafw version",
+                    "test":  "jest",
+                    "test:unit":  "jest tests/unit"
+                },
+    "files":  [
+                  "dist/",
+                  "gateway/dist/",
+                  "gateway/package.json",
+                  ".opencode/",
+                  "bin/",
+                  "README.md"
+              ],
+    "dependencies":  {
+                         "@a2a-js/sdk":  "^1.0.1",
+                         "@huggingface/transformers":  "^4.2.0",
+                         "@langchain/core":  "^1.1.48",
+                         "@langchain/langgraph":  "^1.4.7",
+                         "@modelcontextprotocol/sdk":  "^1.29.0",
+                         "@opencode-ai/sdk":  "^1.17.12",
+                         "axios":  "^1.6.0",
+                         "better-sqlite3":  "^12.11.1",
+                         "bonjour-service":  "^1.4.4",
+                         "cron":  "^3.1.7",
+                         "js-yaml":  "^4.1.0",
+                         "langchain-mcp-adapters":  "^0.6.0",
+                         "opencode-ai":  "^1.0.0",
+                         "simple-git":  "^3.20.0",
+                         "ws":  "^8.21.3",
+                         "zeromq":  "^6.1.2",
+                         "zod":  "^3.25.32"
+                     },
+    "devDependencies":  {
+                            "@types/better-sqlite3":  "^7.6.13",
+                            "@types/jest":  "^29.5.0",
+                            "@types/js-yaml":  "^4.0.5",
+                            "@types/node":  "^20.0.0",
+                            "@types/ws":  "^8.18.1",
+                            "eslint":  "^8.54.0",
+                            "jest":  "^29.7.0",
+                            "ts-jest":  "^29.4.11",
+                            "ts-node":  "^10.9.0",
+                            "typescript":  "^5.3.0"
+                        },
+    "engines":  {
+                    "node":  "\u003e=18.0.0"
+                },
+    "workspaces":  [
+                       "packages/*"
+                   ]
 }

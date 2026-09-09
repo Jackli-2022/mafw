@@ -1,4 +1,4 @@
-import {
+﻿import {
   Component,
   createEffect,
   createMemo,
@@ -32,32 +32,32 @@ import {
   QuestionInfo,
 } from "@opencode-ai/sdk/v2"
 import { useData } from "../context"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
+import { useFileComponent } from "@mafw/ui/context/file"
+import { useDialog } from "@mafw/ui/context/dialog"
+import { type UiI18n, useI18n } from "@mafw/ui/context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
-import { Accordion } from "@opencode-ai/ui/accordion"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Accordion } from "@mafw/ui/accordion"
+import { StickyAccordionHeader } from "@mafw/ui/sticky-accordion-header"
+import { Collapsible } from "@mafw/ui/collapsible"
+import { FileIcon } from "@mafw/ui/file-icon"
+import { Icon } from "@mafw/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
-import { DiffChanges } from "@opencode-ai/ui/diff-changes"
+import { Checkbox } from "@mafw/ui/checkbox"
+import { DiffChanges } from "@mafw/ui/diff-changes"
 import { Markdown } from "./markdown"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
-import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
+import { ImagePreview } from "@mafw/ui/image-preview"
+import { getDirectory as _getDirectory, getFilename } from "../util/path"
 import { AttachmentCardV2 } from "../v2/components/attachment-card-v2"
 import { CommentCardV2 } from "../v2/components/comment-card-v2"
-import { checksum } from "@opencode-ai/core/util/encode"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import { checksum } from "../util/encode"
+import { Tooltip } from "@mafw/ui/tooltip"
+import { IconButton } from "@mafw/ui/icon-button"
+import { Icon as IconV2 } from "@mafw/ui/v2/icon"
+import { IconButtonV2 } from "@mafw/ui/v2/icon-button-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { Spinner } from "@mafw/ui/spinner"
+import { TextShimmer } from "@mafw/ui/text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
@@ -364,7 +364,7 @@ function getDirectory(path: string | undefined) {
   return relativizeProjectPath(_getDirectory(path), data.directory)
 }
 
-import type { IconProps } from "@opencode-ai/ui/icon"
+import type { IconProps } from "@mafw/ui/icon"
 import { normalize, resolveFileDiff } from "./session-diff"
 
 export type ToolInfo = {

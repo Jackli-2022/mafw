@@ -1,6 +1,6 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { Show, For, createSignal, onCleanup } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@mafw/ui/icon"
 
 /**
  * AudioReply — 渲染 assistant 消息中的语音回复标记。

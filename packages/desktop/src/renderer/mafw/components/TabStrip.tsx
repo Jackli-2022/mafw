@@ -1,7 +1,7 @@
-// @ts-nocheck
-import { Icon } from "@opencode-ai/ui/icon"
-import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+﻿// @ts-nocheck
+import { Icon } from "@mafw/ui/icon"
+import { TabsV2 } from "@mafw/ui/v2/tabs-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { Show } from "solid-js"
 
 export type Tab = "chat" | "goals" | "memory" | "approvals" | "triage" | "automation"

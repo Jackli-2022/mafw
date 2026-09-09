@@ -1,5 +1,5 @@
-// @ts-nocheck
-import { ContextMenu } from "@opencode-ai/ui/context-menu"
+﻿// @ts-nocheck
+import { ContextMenu } from "@mafw/ui/context-menu"
 import type { ParentProps } from "solid-js"
 
 export type ContextMenuItem = {

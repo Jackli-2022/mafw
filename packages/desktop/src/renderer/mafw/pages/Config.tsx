@@ -1,13 +1,13 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { Portal } from "solid-js/web"
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
-import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
-import { Icon } from "@opencode-ai/ui/icon"
-import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { SelectV2 } from "@mafw/ui/v2/select-v2"
+import { Icon } from "@mafw/ui/icon"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { UsageProviders } from "../components/UsageProviders"
 
 interface ConfigSection {

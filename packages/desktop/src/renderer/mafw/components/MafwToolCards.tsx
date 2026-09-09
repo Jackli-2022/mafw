@@ -1,8 +1,8 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { For, Show } from "solid-js"
-import { ToolRegistry, type ToolProps } from "@opencode-ai/session-ui/message-part"
-import { BasicTool } from "@opencode-ai/session-ui/basic-tool"
-import { Icon } from "@opencode-ai/ui/icon"
+import { ToolRegistry, type ToolProps } from "@mafw/session-ui/message-part"
+import { BasicTool } from "@mafw/session-ui/basic-tool"
+import { Icon } from "@mafw/ui/icon"
 
 function safeJson(text: string): any {
   try { return JSON.parse(text) } catch (e) { console.warn("[mafw]", e); return [] }

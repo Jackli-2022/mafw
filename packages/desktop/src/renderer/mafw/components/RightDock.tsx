@@ -1,8 +1,8 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 import { Show } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { TabsV2 } from "@opencode-ai/ui/v2/tabs-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { TabsV2 } from "@mafw/ui/v2/tabs-v2"
 
 export function RightDock(props: {
   open: boolean

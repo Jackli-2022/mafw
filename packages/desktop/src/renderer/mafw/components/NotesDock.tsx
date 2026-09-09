@@ -1,13 +1,13 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 // Sticky note board dock: mirrors the <note-board> block injected into the
 // agent's recall context, so the user can see (and manage) what the agent is
 // reminded of every turn. Board-level expiry only — removing a note never
 // deletes the underlying memory unless the user explicitly presses 删除.
 import { createSignal, onCleanup, onMount, For, Show } from "solid-js"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { LoaderV2 } from "@opencode-ai/ui/v2/loader-v2"
-import { showToastV2 } from "@opencode-ai/ui/v2/toast-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 
 interface StickyNote {
   id: string
