@@ -1,0 +1,185 @@
+﻿bun.exe : $ bun ./scripts/prebuild.ts
+所在位置 C:\home\ubuntu\.npm-global\bun.ps1:14 字符: 3
++   & "$basedir/node_modules/bun/bin/bun.exe"   $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ bun ./scripts/prebuild.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Copied dev icons from ./icons/dev to resources/icons
+Generated metainfo for dev at resources/ai.opencode.desktop.dev.metainfo.xml
+opencode script {
+  "channel": "master",
+  "version": "0.0.0-master-202607261448",
+  "preview": true,
+  "release": false,
+  "team": [
+    "adamdotdevin",
+    "arvsrn",
+    "Brendonovich",
+    "fwang",
+    "Hona",
+    "iamdavidhill",
+    "jayair",
+    "jlongster",
+    "kitlangton",
+    "kommander",
+    "ludvigrask",
+    "MrMushrooooom",
+    "nexxeln",
+    "R44VC0RP",
+    "rekram1-node",
+    "thdxr",
+    "simonklee",
+    "Slickstef11",
+    "usrnk1",
+    "vimtor",
+    "StarpTech",
+    "actions-user",
+    "opencode",
+    "opencode-agent[bot]"
+  ]
+}
+Loaded models.dev snapshot
+Build complete
+$ electron-vite build
+[36mvite v7.1.4 [32mbuilding SSR bundle for production...[36m[39m
+transforming...
+[33m"execFileSync" is imported from external module "node:child_process" but never used in "../opencode/dist/node/node
+.js".[39m
+[32m鉁?[39m 47 modules transformed.
+[33m../opencode/dist/node/node.js (91762:15): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged a
+s it poses security risks and may cause issues with minification.[39m
+[33m../opencode/dist/node/node.js (461603:34): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged 
+as it poses security risks and may cause issues with minification.[39m
+[33m../opencode/dist/node/node.js (461626:36): Use of eval in "../opencode/dist/node/node.js" is strongly discouraged 
+as it poses security risks and may cause issues with minification.[39m
+rendering chunks...
+[2mout/main/[22m[36msidecar.js               [39m[1m[2m     3.38 kB[22m[1m[22m
+[2mout/main/[22m[36mindex.js                 [39m[1m[2m   147.94 kB[22m[1m[22m
+[2mout/main/[22m[36mchunks/node-BROMoxfg.js  [39m[1m[33m31,414.48 kB[39m[22m
+[32m鉁?built in 16.30s[39m
+[36mvite v7.1.4 [32mbuilding SSR bundle for production...[36m[39m
+transforming...
+[32m鉁?[39m 2 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m8.75 kB[22m[1m[22m
+[32m鉁?built in 24ms[39m
+[36mvite v7.1.4 [32mbuilding for production...[36m[39m
+<script src="./oc-theme-preload.js"> in "/index.html" can't be bundled without type="module" attribute
+transforming...
+[32m鉁?[39m 310 modules transformed.
+[31m鉁?[39m Build failed in 956ms
+[31merror during build:
+[31m[solid] C:\work\work-loop\opencode-plugin-mafw\opencode-dev\packages\desktop\src\renderer\mafw\pages\Automations.t
+sx: Missing semicolon. (76:9)
+
+[0m [90m 74 |[31m           [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 75 |[31m           [33m<[31m[33m/[31m[33mMafwContextMenu[31m[33m>[31m
+[31m[1m>[22m[31m[90m 76 |[31m         ))
+ [90m    |[31m          [31m[1m^[22m[31m
+ [90m 77 |[31m       )}
+ [90m 78 |[31m     [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 79 |[31m   )[0m[31m
+file: [36mC:/work/work-loop/opencode-plugin-mafw/opencode-dev/packages/desktop/src/renderer/mafw/pages/Automations.tsx
+:76:9[31m
+    at constructor (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+parser@7.29.7\node_mod
+ules\@babel\parser\lib\index.js:365:19)
+    at TypeScriptParserMixin.raise (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+parser
+@7.29.7\node_modules\@babel\parser\lib\index.js:6616:19)
+    at TypeScriptParserMixin.semicolon (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+pa
+rser@7.29.7\node_modules\@babel\parser\lib\index.js:6912:10)
+    at TypeScriptParserMixin.parseReturnStatement (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bu
+n\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:13160:12)
+    at TypeScriptParserMixin.parseStatementContent (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.b
+un\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12815:21)
+    at TypeScriptParserMixin.parseStatementContent (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.b
+un\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:9525:18)
+    at TypeScriptParserMixin.parseStatementLike (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\
+@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12784:17)
+    at TypeScriptParserMixin.parseStatementListItem (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.
+bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12764:17)
+    at TypeScriptParserMixin.parseBlockOrModuleBlockBody (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modu
+les\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:13333:61)
+    at TypeScriptParserMixin.parseBlockBody (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@bab
+el+parser@7.29.7\node_modules\@babel\parser\lib\index.js:13326:10)
+    at TypeScriptParserMixin.parseBlock (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+p
+arser@7.29.7\node_modules\@babel\parser\lib\index.js:13314:10)
+    at TypeScriptParserMixin.parseFunctionBody (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@
+babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12117:24)
+    at TypeScriptParserMixin.parseArrowExpression (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bu
+n\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12092:10)
+    at TypeScriptParserMixin.parseExprAtom (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babe
+l+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11455:25)
+    at TypeScriptParserMixin.parseExprAtom (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babe
+l+parser@7.29.7\node_modules\@babel\parser\lib\index.js:4776:20)
+    at TypeScriptParserMixin.parseExprSubscripts (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun
+\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11098:23)
+    at TypeScriptParserMixin.parseUpdate (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+
+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11083:21)
+    at TypeScriptParserMixin.parseMaybeUnary (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@ba
+bel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11063:23)
+    at TypeScriptParserMixin.parseMaybeUnary (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@ba
+bel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:9854:18)
+    at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules
+\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10916:61)
+    at TypeScriptParserMixin.parseExprOps (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel
++parser@7.29.7\node_modules\@babel\parser\lib\index.js:10921:23)
+    at TypeScriptParserMixin.parseMaybeConditional (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.b
+un\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10898:23)
+    at TypeScriptParserMixin.parseMaybeAssign (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@b
+abel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10848:21)
+    at TypeScriptParserMixin.parseMaybeAssign (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@b
+abel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:9803:20)
+    at C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+parser@7.29.7\node_modules\@babel\p
+arser\lib\index.js:10817:39
+    at TypeScriptParserMixin.allowInAnd (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+p
+arser@7.29.7\node_modules\@babel\parser\lib\index.js:12443:12)
+    at TypeScriptParserMixin.parseMaybeAssignAllowIn (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\
+.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10817:17)
+    at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\
+node_modules\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12510:17)
+    at TypeScriptParserMixin.parseExprListItem (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@
+babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12192:18)
+    at TypeScriptParserMixin.parseCallExpressionArguments (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_mod
+ules\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11269:22)
+    at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_
+modules\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11203:29)
+    at TypeScriptParserMixin.parseSubscript (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@bab
+el+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11137:19)
+    at TypeScriptParserMixin.parseSubscript (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@bab
+el+parser@7.29.7\node_modules\@babel\parser\lib\index.js:9289:18)
+    at TypeScriptParserMixin.parseSubscripts (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@ba
+bel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11111:19)
+    at TypeScriptParserMixin.parseExprSubscripts (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun
+\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11102:17)
+    at TypeScriptParserMixin.parseUpdate (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+
+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11083:21)
+    at TypeScriptParserMixin.parseMaybeUnary (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@ba
+bel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11063:23)
+    at TypeScriptParserMixin.parseMaybeUnary (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@ba
+bel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:9854:18)
+    at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules
+\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10916:61)
+    at TypeScriptParserMixin.parseExprOps (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel
++parser@7.29.7\node_modules\@babel\parser\lib\index.js:10921:23)
+    at TypeScriptParserMixin.parseMaybeConditional (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.b
+un\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10898:23)
+    at TypeScriptParserMixin.parseMaybeAssign (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@b
+abel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10848:21)
+    at TypeScriptParserMixin.parseMaybeAssign (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@b
+abel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:9803:20)
+    at C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+parser@7.29.7\node_modules\@babel\p
+arser\lib\index.js:10817:39
+    at TypeScriptParserMixin.allowInAnd (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babel+p
+arser@7.29.7\node_modules\@babel\parser\lib\index.js:12443:12)
+    at TypeScriptParserMixin.parseMaybeAssignAllowIn (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\
+.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:10817:17)
+    at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\
+node_modules\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:12510:17)
+    at TypeScriptParserMixin.parseParenAndDistinguishExpression (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\no
+de_modules\.bun\@babel+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11692:28)
+    at TypeScriptParserMixin.parseExprAtom (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babe
+l+parser@7.29.7\node_modules\@babel\parser\lib\index.js:11348:23)
+    at TypeScriptParserMixin.parseExprAtom (C:\work\work-loop\opencode-plugin-mafw\opencode-dev\node_modules\.bun\@babe
+l+parser@7.29.7\node_modules\@babel\parser\lib\index.js:4776:20)[39m
+error: script "build" exited with code 1
