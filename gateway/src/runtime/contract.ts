@@ -39,6 +39,8 @@ export interface RuntimeCapabilities {
   agentConfigApi?: boolean;
   /** runtime 拥有 agent 进程生命周期（Tier 1+），可提供 agentProcess.restart() 原语 */
   agentProcessApi?: boolean;
+  /** runtime 提供无状态单次补全（completion.complete），供 scan/media 等无状态通道使用 */
+  completionApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -52,6 +54,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     sessionStorageApi: true,
     agentConfigApi: true,
     agentProcessApi: true,
+    completionApi: true,
   };
 }
 
@@ -113,6 +116,34 @@ export interface RuntimeCredentials {
   getApiKey(provider: string): string | null;
 }
 
+// ─── 无状态补全通道（completionApi 能力） ──────────────────────────────────
+// 契约语义：无状态——请求不携带 sessionID，实现方不得跨调用保留对话状态。
+// cacheable 是提示非承诺：实现方映射到 provider 的 prompt-cache 机制
+// （如 DashScope cache_control），映射不了则忽略（fail-open）。
+// 媒体只有 image carrier；wire 格式改写（video_url/input_audio）是实现方内部细节。
+
+export interface CompletionRequest {
+  model: { providerID: string; modelID: string };
+  system?: Array<{ text: string; cacheable?: boolean }>;
+  user: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image'; data: string; mimeType: string }   // data = base64（无 data: 前缀）
+  >;
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+}
+
+export interface CompletionResult {
+  text: string;
+  /** undefined = provider 未回传 usage；消费方据此跳过记账 */
+  usage?: { input: number; cached: number; output: number };
+}
+
+export interface CompletionChannel {
+  complete(req: CompletionRequest): Promise<CompletionResult>;
+}
+
 export interface RuntimeClient {
   session: {
     create(opts: SessionCreateOpts): Promise<{ id: string; [k: string]: any }>;
@@ -144,6 +175,8 @@ export interface RuntimeClient {
     get(): Promise<any>;
     update(config: any): Promise<any>;
   };
+  /** 无状态补全通道（capabilities.completionApi = true 时必须提供） */
+  completion?: CompletionChannel;
   credentials?: RuntimeCredentials;
   agents?: {
     install(name: string, definition: AgentDefinition): Promise<void>;
