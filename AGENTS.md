@@ -503,6 +503,18 @@ media:
 缓存 key 含 engineName 防同模型不同引擎串缓存。
 测试：`tests/unit/gateway/media-plugin-loader.test.ts`（11 例）、`media-service.test.ts` resolvePrompt 路由（4 例）。
 
+#### 5.14b UI 工具卡插件系统（desktop）
+
+`~/.mafw/ui-plugins/*.js`（CJS `module.exports = { name, tools }`）自定义桌面 ChatView
+工具执行卡。main 进程执行插件 `render(ctx)` 返回声明式 Widget 树（8 种：text/code/kv/
+tags/list/row/image/link），经 IPC 交 renderer 内置解释器渲染；sandboxed renderer
+不执行用户代码。优先级：无注册卡直接生效，覆盖 MafwToolCards/session-ui 内置卡需显式
+`override: true`；pending/running 走默认链，completed/error 才渲染用户卡（防流式 output
+O(n²) 传输）。启动扫描 + fs.watch 热重载，fail-open（坏插件跳过、render 抛错回退默认卡）。
+实现：`desktop/src/main/ui-plugins.ts`（加载器）、`shared/ui-plugins.ts`（类型+校验）、
+`renderer/mafw/components/UserPluginCards.tsx`（代理+解释器）。示例：
+`docs/examples/ui-plugins/example-tool-cards.js`。
+
 ### 5.15 OpenCode Serve Sidecar（自监管）
 
 opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
