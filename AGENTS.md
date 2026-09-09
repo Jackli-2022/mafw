@@ -126,7 +126,9 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 | `mafw_desktop_scroll` | 桌面滚动 |
 | `mafw_restart_agent` | 重启 gateway 拥有的 agent 进程（opencode serve sidecar）；external/进程内 runtime 不可用 |
 
-> **接线要求（2026-09-08 修复）**：以上 39 个工具经 gateway legacy SSE MCP 暴露（`http://127.0.0.1:3000/mcp`），opencode 侧需在配置中有 `"mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true, "oauth": false } }` 才可用。接线有两条路径：①插件**激活时自接线**（`src/utils/self-wiring.ts` 的 `ensureMcpWiring()`——检测全局 `~/.config/opencode/opencode.jsonc` 缺 `"mcp"` 段则幂等补写，带 `.bak-mafw-<ts>` 备份，fail-open）；②手动写全局或项目级 opencode 配置。**排错关键**：旧键 `mcpServers`（v4.1 时代 `opencode.json.example`）已被 opencode 1.x 废弃并**静默忽略**，接线缺失无任何报错、工具直接消失；验证用 `opencode mcp list` 应显示 `mafw connected`。插件原生工具（6 个，§4.2）不经 MCP，独立可用。
+> **接线要求（2026-09-08 修复）**：以上 39 个工具经 gateway MCP 暴露（`http://127.0.0.1:3000/mcp`），opencode 侧需在配置中有 `"mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true, "oauth": false } }` 才可用。接线有两条路径：①插件**激活时自接线**（`src/utils/self-wiring.ts` 的 `ensureMcpWiring()`——检测全局 `~/.config/opencode/opencode.jsonc` 缺 `"mcp"` 段则幂等补写，带 `.bak-mafw-<ts>` 备份，fail-open）；②手动写全局或项目级 opencode 配置。**排错关键**：旧键 `mcpServers`（v4.1 时代 `opencode.json.example`）已被 opencode 1.x 废弃并**静默忽略**，接线缺失无任何报错、工具直接消失；验证用 `opencode mcp list` 应显示 `mafw connected`。插件原生工具（6 个，§4.2）不经 MCP，独立可用。
+>
+> **双传输端点（2026-09-09，commit 1fa8c304）**：`/mcp` 同时承载两种传输，客户端按形态自动分流——`POST /mcp`（无 sessionId）→ **无状态 StreamableHTTP**（官方 transport，`sessionIdGenerator: undefined` + `enableJsonResponse`，响应随 POST 内联返回；opencode 客户端优先此路径）；`POST /mcp?sessionId=` → legacy SSE 消息通道；`GET /mcp`（带 `mcp-protocol-version` 头）→ 405（无独立流，StreamableHTTP 客户端视为预期）；`GET /mcp`（无该头）→ legacy SSE 会话建立。**每条 SSE 连接独立 `Server` 实例**（SDK Protocol 单传输，共享会导致响应路由到"最后连接"的客户端——2026-09-09 间歇性 -32001 超时事故根因，回归测试 `gateway/tests/unit/mcp-sse-multi-client.test.ts`）+ 15s `: ping` 心跳（防 ~305s 客户端 idle-abort 重连轮转）+ 会话生命周期日志（`[MCP]` 前缀）。SDK `@modelcontextprotocol/sdk@^1.30`。
 
 ### 4.2 插件侧工具（4 个，`src/tools/`）
 
@@ -164,10 +166,12 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - 格式：`[ISO时间戳] [LEVEL] 原始消息`
 - 5MB 自动轮转
 
-### 5.5 Desktop 前端（opencode-dev/packages/desktop/）
-- Electron + SolidJS + `@opencode-ai/ui`
+### 5.5 Desktop 前端（packages/desktop/，2026-09-09 起脱离 opencode-dev）
+- Electron + SolidJS + `@mafw/ui`（fork 自 @opencode-ai/ui，含 MAFW v2 组件）+ `@mafw/session-ui` + `@mafw/sdk`（packages/gateway-sdk）
 - utilityProcess 侧车运行 Gateway
 - 主 UI：左侧 Rail(200px) + 上部 TabStrip + 内容区
+- 构建：`cd packages/desktop && npx electron-vite build`（main/preload/renderer 三段）；dev 用 bun 脚本（predev 仅拷图标，不再构建 opencode CLI）
+- 根 npm workspaces：`packages/*`；opencode-dev/ 目录仅作历史参照，不再是构建依赖
 
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类型 API 获取数据：

@@ -109,6 +109,12 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     plugins: [mafwRendererPlugin, sentry],
     publicDir: "public",
     root: "src/renderer",
+    resolve: {
+      // Solid's context/owner state is runtime-global: two physical copies of
+      // solid-js (e.g. version-skewed npm hoisting across workspace packages)
+      // silently break every useContext lookup. Force single instances.
+      dedupe: ["solid-js", "solid-js/web", "solid-js/store", "@solidjs/router", "@solidjs/meta"],
+    },
     build: {
       sourcemap: true,
       rollupOptions: {
