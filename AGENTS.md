@@ -50,6 +50,8 @@ interface HarmonicUnit {
 
 LongMemEval 基准（session 粒度 R@10）：token 0.474 → **bm25 0.949**（6/6 类提升；1000 entries 搜索 ~2-3ms）。`searchScored()` 同时返回原始分数，供下游精排、截断与置信度展示使用。heuristic reranker 在 session 粒度经 realistic-energy 消融证实零增益（rerankWeights 全部信号在候选集内无区分度）。
 
+Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `completion.complete()`（`completionApi` 能力，thunk 现读热切换安全），缺能力/失败时回退直连 HTTP（`runtime/completion-http.ts` 共享实现，`cacheable` 块映射 DashScope `cache_control: ephemeral`）。
+
 ### 3.3 压缩
 
 `HarmonicUnitFileStore.write()` 输出 `HarmonicUnit` 并自动：
@@ -632,6 +634,11 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   agent 定义安装；缺失时跳过 + warn 日志（manager 功能降级但不崩）
 - `agentProcessApi?: boolean` + `agentProcess?: { restart() }` — agent 进程生命周期管理；
   opencode owned runtime 为 true（kill+respawn serve sidecar）；external/pi 为 false
+- `completionApi?: boolean` + `completion?: { complete(req) }` — 无状态单次补全通道
+  （index-scan 与 media 无状态路径优先走契约，fail-open 回退直连 HTTP，
+  共享实现在 `runtime/completion-http.ts`）；`cacheable` 是 prompt-cache 提示非承诺
+  （直连传输映射为 DashScope `cache_control: ephemeral`，其他 runtime 可忽略）；
+  usage 由消费侧记账，runtime 只负责返回
 
 激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
