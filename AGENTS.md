@@ -171,7 +171,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - utilityProcess 侧车运行 Gateway
 - 主 UI：左侧 Rail(200px) + 上部 TabStrip + 内容区
 - 构建：`cd packages/desktop && npx electron-vite build`（main/preload/renderer 三段）；dev 用 bun 脚本（predev 仅拷图标，不再构建 opencode CLI）
-- 根 npm workspaces：`packages/*`；opencode-dev/ 目录仅作历史参照，不再是构建依赖
+- 根 npm workspaces：`packages/*`；opencode-dev/ 已移除（2026-09-09），全部源码以 packages/ 为准
 
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类型 API 获取数据：
@@ -243,7 +243,7 @@ window.api.mafw.{sessions}.{list}()
 Renderer 调用静态类型 API（`window.api.mafw.sessions.list()`），不再用 `invoke(ns, m, args)` 字符串派发。
 SSE 事件直接从前端 EventSource 连 gateway，不走 IPC。
 
-`@mafw/sdk` 包通过 workspace 解析到 `opencode-dev/packages/gateway-sdk/`，提供 `MafwClient` 类 + 全部 DTO 类型。
+`@mafw/sdk` 包位于 `packages/gateway-sdk/`，提供 `MafwClient` 类 + 全部 DTO 类型。
 
 ### 5.11 后台记忆召回（Background Recall）
 
@@ -786,7 +786,7 @@ npm install -g opencode-plugin-mafw-*.tgz     # 覆盖旧版本
 - 安装后 `mafw` 命令在 PATH 中，如果 shell 找不到请刷新 PATH（新开终端或重启 shell）
 - `.npm-global` 路径下的文件名为 `mafw`（无后缀）、`mafw.cmd`、`mafw.ps1`，对应不同 shell
 
-Desktop 构建需要先 `cd opencode-dev/packages/desktop && npm install`（workspace 解析 `@mafw/sdk` 到 `packages/gateway-sdk/`）。
+Desktop 构建：根 `npm install` 后 `cd packages/desktop && npx electron-vite build`（`@mafw/sdk` 经 workspaces 解析到 `packages/gateway-sdk/`）。
 
 ### 6.5 HTTP 路由注意事项
 Gateway API 路由使用正则匹配，query string 会导致 `$` 锚定不匹配：
