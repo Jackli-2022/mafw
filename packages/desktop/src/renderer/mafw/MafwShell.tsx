@@ -29,6 +29,7 @@ import { QuotaDock } from "./components/QuotaDock"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { TabStrip, type Tab } from "./components/TabStrip"
 import { registerMafwToolCards } from "./components/MafwToolCards"
+import { registerUserPluginCards } from "./components/UserPluginCards"
 import { WelcomeHome } from "./components/WelcomeHome"
 import { DashboardPage } from "./pages/Dashboard"
 import { MemoryPage } from "./pages/Memory"
@@ -972,6 +973,7 @@ export function MafwShell() {
 
   onMount(() => {
     registerMafwToolCards()
+    registerUserPluginCards() // 必须在 registerMafwToolCards 之后（捕获 original）
     // Use the modern session-ui rendering branch (rounded bubbles, v2 tokens).
     document.body.setAttribute("data-new-layout", "")
   })
