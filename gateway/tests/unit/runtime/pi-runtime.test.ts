@@ -28,11 +28,19 @@ const fakeSessionList = [
 const fakePi = {
   ModelRuntime: {
     create: async () => ({
-      getModel: (p: string, m: string) => ({ id: `${p}/${m}`, baseUrl: 'http://fake' }),
+      getModel: (p: string, m: string) => (p === 'xiaomi' ? { id: `${p}/${m}`, baseUrl: 'http://fake' } : undefined),
       getProviders: () => [{ id: 'xiaomi', name: 'Xiaomi' }],
       getModels: () => [{ id: 'mimo-v2.5' }],
       hasConfiguredAuth: () => true,
       setRuntimeApiKey: async () => {},
+      complete: async (model: any, ctx: any, opts: any) => {
+        (globalThis as any).__piCompleteCalls = [...((globalThis as any).__piCompleteCalls || []), { model, ctx, opts }];
+        return {
+          stopReason: 'stop',
+          content: [{ type: 'text', text: 'pi says hi' }],
+          usage: { promptTokens: 10, completionTokens: 2 },
+        };
+      },
     }),
   },
   createAgentSession: async () => ({
@@ -90,6 +98,71 @@ describe('pi-runtime', () => {
     const { data } = await rt.session.messages({ sessionID: id });
     expect(Array.isArray(data)).toBe(true);
     expect(msgCount).toBe(0);
+  });
+});
+
+describe('completion channel', () => {
+  afterEach(() => {
+    delete (globalThis as any).__piCompleteCalls;
+  });
+
+  it('declares completionApi and complete() routes through ModelRuntime.complete', async () => {
+    (globalThis as any).__piCompleteCalls = [];
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}), credentials: { getApiKey: () => 'sk-test' } } as any,
+      { loadPi: async () => fakePi },
+    );
+    expect(rt.capabilities.completionApi).toBe(true);
+    const res = await rt.completion!.complete({
+      model: { providerID: 'xiaomi', modelID: 'mimo-v2.5' },
+      system: [{ text: 'sys' }],
+      user: [
+        { type: 'text', text: 'describe' },
+        { type: 'image', data: 'aGVsbG8=', mimeType: 'video/mp4' },
+      ],
+    });
+    expect(res.text).toBe('pi says hi');
+    expect(res.usage).toEqual({ input: 10, cached: 0, output: 2 });
+    const call = (globalThis as any).__piCompleteCalls[0];
+    expect(call.ctx.systemPrompt).toBe('sys');
+    expect(call.ctx.messages[0].content).toEqual([
+      { type: 'text', text: 'describe' },
+      { type: 'image', data: 'aGVsbG8=', mimeType: 'video/mp4' },
+    ]);
+    expect(typeof call.opts.onPayload).toBe('function');
+  });
+
+  it('complete() returns usage undefined when pi omits it', async () => {
+    const noUsagePi = {
+      ...fakePi,
+      ModelRuntime: {
+        create: async () => ({
+          getModel: () => ({ id: 'm' }),
+          setRuntimeApiKey: async () => {},
+          complete: async () => ({ stopReason: 'stop', content: [{ type: 'text', text: 'x' }] }),
+        }),
+      },
+    };
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}), credentials: { getApiKey: () => 'sk-test' } } as any,
+      { loadPi: async () => noUsagePi },
+    );
+    const res = await rt.completion!.complete({
+      model: { providerID: 'xiaomi', modelID: 'mimo-v2.5' },
+      user: [{ type: 'text', text: 'q' }],
+    });
+    expect(res.usage).toBeUndefined();
+  });
+
+  it('complete() throws when model is not in the pi registry', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    await expect(rt.completion!.complete({
+      model: { providerID: 'nope', modelID: 'nope' },
+      user: [{ type: 'text', text: 'q' }],
+    })).rejects.toThrow('not found');
   });
 });
 

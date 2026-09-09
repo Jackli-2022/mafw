@@ -1,4 +1,4 @@
-import type { AgentRuntime, RuntimeCapabilities } from '../contract';
+import type { AgentRuntime, RuntimeCapabilities, CompletionRequest, CompletionResult } from '../contract';
 import type { RuntimePluginContext } from '../loader';
 import { PiSessionRegistry } from '../pi/pi-session';
 import { translatePiMessages } from '../pi/pi-messages';
@@ -7,6 +7,7 @@ import { translateProviders, translateAgents, translateConfigGet, translateConfi
 import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../auth';
 import { config } from '../../config';
 import { listByDirectory } from '../pi/pi-session-storage';
+import { fixMediaPayload } from '../../media/pi-adapter';
 import * as piAgentConfig from '../pi/pi-agent-config';
 
 export const PI_CAPABILITIES: RuntimeCapabilities = {
@@ -18,6 +19,7 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   perLlmCallTransform: true,
   sessionStorageApi: true,
   agentConfigApi: true,
+  completionApi: true,
 };
 
 export interface PiRuntimeDeps {
@@ -126,6 +128,54 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     app: { agents: () => translateAgents() },
     config: { get: () => translateConfigGet(), update: (c: any) => translateConfigUpdate(c) },
     credentials: { getApiKey: (p: string) => ctx.credentials?.getApiKey?.(p) ?? readOpencodeAuth(authPath)[p]?.key ?? null },
+    completion: {
+      async complete(req: CompletionRequest): Promise<CompletionResult> {
+        const mr = await modelRuntime();
+        const model = mr.getModel(req.model.providerID, req.model.modelID);
+        if (!model) throw new Error(`Model ${req.model.providerID}/${req.model.modelID} not found in pi registry`);
+        const apiKey = ctx.credentials?.getApiKey?.(req.model.providerID)
+          ?? readOpencodeAuth(authPath)[req.model.providerID]?.key;
+        if (!apiKey) throw new Error(`No API key for provider "${req.model.providerID}"`);
+        await mr.setRuntimeApiKey(req.model.providerID, apiKey);
+
+        const content: any[] = [];
+        for (const p of req.user) {
+          if (p.type === 'text' && p.text.trim()) content.push({ type: 'text', text: p.text });
+          if (p.type === 'image') content.push({ type: 'image', data: p.data, mimeType: p.mimeType });
+        }
+        const response = await mr.complete(
+          model,
+          {
+            systemPrompt: (req.system ?? []).map((b) => b.text).join('\n\n'),
+            messages: [{ role: 'user', content, timestamp: Date.now() }],
+          },
+          {
+            apiKey,
+            onPayload: fixMediaPayload,
+            signal: AbortSignal.timeout(req.timeoutMs ?? 180_000),
+          },
+        );
+        if (response.stopReason === 'error' || response.stopReason === 'aborted') {
+          throw new Error(response.errorMessage || `completion failed (${response.stopReason})`);
+        }
+        const text = (response.content || [])
+          .filter((c: any) => c.type === 'text' && typeof c.text === 'string')
+          .map((c: any) => c.text)
+          .join('\n')
+          .trim();
+        // Tolerant usage mapping — pi field names vary across versions.
+        const u = response.usage;
+        const input = u?.promptTokens ?? u?.prompt_tokens ?? u?.input;
+        const output = u?.completionTokens ?? u?.completion_tokens ?? u?.output;
+        const cached = u?.cachedTokens ?? u?.cached_tokens ?? 0;
+        return {
+          text,
+          usage: typeof input === 'number' || typeof output === 'number'
+            ? { input: input ?? 0, cached: cached ?? 0, output: output ?? 0 }
+            : undefined,
+        };
+      },
+    },
     agents: {
       install: async (name: string, definition: any) => {
         await piAgentConfig.install(name, definition);
