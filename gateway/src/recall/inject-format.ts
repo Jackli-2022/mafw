@@ -209,7 +209,10 @@ export function formatPinnedProfile(entries: MemoryUnit[]): { profile: string | 
 
 // ---- Sticky note board rendering (appended to /api/recall/context) ----
 
-export const NOTE_BOARD_BUDGET = { max: 10, maxChars: 800 } as const;
+// maxChars 1600 ≈ 800-1200 tok/turn（中文 ≈1 字/token），低于 pinned 的 2000
+// 保持"pinned=长期身份 > sticky=近期提醒"的层级。perNoteCap 是防饿死关键：
+// 无上限时一条超长便签吃光总预算，后续条目全部被 break 丢弃（实证 bug）。
+export const NOTE_BOARD_BUDGET = { max: 10, maxChars: 1600, perNoteCap: 240 } as const;
 
 const BOARD_TAG = '<note-board>';
 const BOARD_END_TAG = '</note-board>';
@@ -229,7 +232,11 @@ export function formatNoteBoard(entries: NoteBoardEntry[], now: Date = new Date(
   const lines: string[] = [];
   let chars = 0;
   for (const m of entries.slice(0, NOTE_BOARD_BUDGET.max)) {
-    const text = (m.memory_value || m.primary_abstraction || '?').replace(/\n/g, ' ');
+    let text = (m.memory_value || m.primary_abstraction || '?').replace(/\n/g, ' ');
+    if (text.length > NOTE_BOARD_BUDGET.perNoteCap) {
+      // 单条截断防饿死：板上只留前 240 字；完整内容 NotesDock/get_memory 可看
+      text = `${text.slice(0, NOTE_BOARD_BUDGET.perNoteCap)}…`;
+    }
     const until = m.sticky_until ? new Date(m.sticky_until) : null;
     const valid = until && !Number.isNaN(until.getTime());
     const daysLeft = valid ? Math.max(0, Math.ceil((until!.getTime() - now.getTime()) / 86400e3)) : null;

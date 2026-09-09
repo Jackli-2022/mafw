@@ -95,4 +95,31 @@ describe('formatNoteBoard', () => {
   test('empty entries → null board', () => {
     expect(formatNoteBoard([], NOW).board).toBeNull();
   });
+
+  test('per-note cap truncates oversized notes with ellipsis (suffix preserved)', () => {
+    const longText = '长'.repeat(693);
+    const { board, used } = formatNoteBoard([
+      { id: 'mem_long', memory_value: longText, sticky_until: inDays(14) } as any,
+    ], NOW);
+    expect(used).toBe(1);
+    expect(board).toContain('…');
+    expect(board).toContain('剩 14 天'); // days-left suffix survives truncation
+    // 每行 = 前缀(~10) + 240 cap + … + （剩 N 天）(7) ≈ 260 < perNoteCap + 30
+    const line = board!.split('\n').find((l) => l.startsWith('- '))!;
+    expect(line.length).toBeLessThanOrEqual(NOTE_BOARD_BUDGET.perNoteCap + 30);
+  });
+
+  test('per-note cap prevents starvation: multiple oversized notes all fit', () => {
+    const longText = '长'.repeat(693);
+    const entries = Array.from({ length: 4 }, (_, i) => ({
+      id: `mem_${i}`, memory_value: longText, sticky_until: inDays(i + 1),
+    } as any));
+    const { board, used } = formatNoteBoard(entries, NOW);
+    expect(used).toBe(4); // 旧预算 800 下第 2 条起全部被 break 丢弃
+    expect(board!.split('\n').filter((l) => l.startsWith('- ')).length).toBe(4); // 每条都有自己的日期行
+  });
+
+  test('budget exposes perNoteCap: 1600 total / 240 per note', () => {
+    expect(NOTE_BOARD_BUDGET).toEqual({ max: 10, maxChars: 1600, perNoteCap: 240 });
+  });
 });

@@ -56,5 +56,5 @@ export async function handleNoteBoard(deps: NoteBoardDeps, now: Date = new Date(
     sticky_until: u.sticky_until,
   }));
 
-  return { board, entries, budget: { max: NOTE_BOARD_BUDGET.max, maxChars: NOTE_BOARD_BUDGET.maxChars, used } };
+  return { board, entries, budget: { ...NOTE_BOARD_BUDGET, used } };
 }
