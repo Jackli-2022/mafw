@@ -257,3 +257,87 @@ describe('IndexScanService async prefetch snapshots', () => {
     expect(calls.n).toBe(1);
   });
 });
+
+describe('IndexScanService completion channel', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const fakeIndex2: any = {
+    getIndex: () => ({
+      entries: [{ id: fullId, created_at: '2026-01-01', type: 'semantic', primary_abstraction: 'x', cue_anchors: [] }],
+    }),
+  };
+
+  it('prefers the runtime completion channel over direct HTTP', async () => {
+    let httpCalled = false;
+    const svc = new IndexScanService(
+      fakeIndex2,
+      { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
+      {
+        fetchFn: (async () => { httpCalled = true; return okScanBody(); }) as any,
+        apiKey: 'sk-test',
+        completion: () => ({
+          complete: async (req: any) => {
+            expect(req.system?.some((b: any) => b.cacheable)).toBe(true);
+            expect(req.user).toEqual([{ type: 'text', text: expect.stringContaining('find my preference') }]);
+            return {
+              text: '{"relevant_ids":["1_abc12345"],"confidence":0.9}',
+              usage: { input: 100, cached: 24000, output: 5 },
+            };
+          },
+        }),
+      },
+    );
+    const res = await svc.scan('find my preference');
+    expect(res?.relevantIds).toEqual([fullId]);
+    expect(httpCalled).toBe(false);
+  });
+
+  it('falls back to direct HTTP when the completion channel throws', async () => {
+    let httpCalled = false;
+    const svc = new IndexScanService(
+      fakeIndex2,
+      { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
+      {
+        fetchFn: (async () => { httpCalled = true; return okScanBody(); }) as any,
+        apiKey: 'sk-test',
+        completion: () => ({ complete: async () => { throw new Error('contract broken'); } }),
+      },
+    );
+    const res = await svc.scan('q');
+    expect(res?.relevantIds).toEqual([fullId]);
+    expect(httpCalled).toBe(true);
+  });
+
+  it('records usage from the completion channel when present', async () => {
+    const usageRecords: any[] = [];
+    const svc = new IndexScanService(
+      fakeIndex2,
+      { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
+      {
+        apiKey: 'sk-test',
+        recordUsage: (u) => { usageRecords.push(u); },
+        completion: () => ({
+          complete: async () => ({
+            text: '{"relevant_ids":["1_abc12345"],"confidence":0.9}',
+            usage: { input: 100, cached: 24000, output: 5 },
+          }),
+        }),
+      },
+    );
+    await svc.scan('q');
+    expect(usageRecords.length).toBe(1);
+    expect(usageRecords[0]).toMatchObject({ input: 100, cached: 24000, output: 5 });
+  });
+
+  it('skips with a null result when no channel and no endpoint resolve', async () => {
+    const svc = new IndexScanService(
+      fakeIndex2,
+      { providerID: 'unknown-provider', modelID: 'm' },
+      { apiKey: 'sk-test' }, // no fetchFn — must never be reached
+    );
+    const res = await svc.scan('q');
+    expect(res).toBeNull();
+  });
+});

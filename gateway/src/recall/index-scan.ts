@@ -24,7 +24,8 @@
 import type { HarmonicIndexManager } from '../core/memory/harmonic-index';
 import { log } from '../core/utils/logger';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
-import { getProviderApiKey } from '../runtime/auth';
+import type { CompletionChannel, CompletionRequest, CompletionResult } from '../runtime/contract';
+import { httpComplete } from '../runtime/completion-http';
 
 export interface ScanResult {
   relevantIds: string[];
@@ -56,6 +57,8 @@ export interface ScanHttpDeps {
   resolveEndpoint?: (providerID: string) => Promise<string | null>;
   /** Async API-key resolution (e.g. opencode provider config options.apiKey); wins over auth.json fallback. */
   resolveApiKey?: (providerID: string) => Promise<string | null>;
+  /** Runtime 契约的无状态补全通道（thunk 现读，热切换安全）。提供时优先于直连 HTTP。 */
+  completion?: () => CompletionChannel | undefined;
   /** Usage sink — direct-HTTP scans produce no opencode events, so the gateway injects a trajectory recorder here. */
   recordUsage?: (u: ScanUsageRecord) => void;
 }
@@ -331,83 +334,62 @@ export class IndexScanService {
   private async _doScan(query: string, timeoutMs: number, minConfidence: number): Promise<ScanResult | null> {
     const providerID = this.workerModel?.providerID;
     const modelID = this.workerModel?.modelID;
-    const baseUrl = this.deps.baseUrl
-      ?? (await this.deps.resolveEndpoint?.(providerID ?? '') ?? undefined)
-      ?? resolveScanBaseUrl(providerID, this.deps.scanEndpoints);
-    const apiKey = this.deps.apiKey
-      ?? (await this.deps.resolveApiKey?.(providerID ?? '') ?? undefined)
-      ?? getProviderApiKey(providerID ?? '', this.deps.authPath, this.deps.credentials);
-    if (!baseUrl || !apiKey) {
-      if (!this.warnedUnresolvable) {
-        log.warn(`[IndexScan] no endpoint or API key for provider "${providerID ?? '?'}" — scan disabled`);
-        this.warnedUnresolvable = true;
-      }
-      this.lastAttemptFailed = true;
-      return null;
-    }
-
     const startedAt = Date.now();
-    const fetchFn = this.deps.fetchFn ?? globalThis.fetch.bind(globalThis);
     try {
       const indexText = this.getIndexText();
-      const body = {
-        model: modelID,
-        messages: [
-          {
-            role: 'system',
-            content: [
-              { type: 'text', text: SCAN_SYSTEM },
-              // Explicit cache marker: DashScope caches the block from the
-              // start of the messages up to here (SCAN_SYSTEM + index) for
-              // 5 minutes, reset on every hit → deterministic ~10% input cost.
-              { type: 'text', text: indexText, cache_control: { type: 'ephemeral' } },
-            ],
-          },
-          {
-            role: 'user',
-            content: `User query: ${query}\n\nSelect the most relevant memory entries from the index above.`,
-          },
+      const req: CompletionRequest = {
+        model: { providerID: providerID ?? '', modelID: modelID ?? '' },
+        system: [
+          { text: SCAN_SYSTEM },
+          // Cacheable-prefix hint: DashScope caches the block from the start
+          // of the messages up to here (SCAN_SYSTEM + index) for 5 minutes,
+          // reset on every hit → deterministic ~10% input cost. Mapped to
+          // `cache_control: ephemeral` by the direct-HTTP transport; other
+          // runtimes may ignore it (fail-open).
+          { text: indexText, cacheable: true },
         ],
+        user: [{ type: 'text', text: `User query: ${query}\n\nSelect the most relevant memory entries from the index above.` }],
         temperature: 0,
         // Reasoning models (glm-5.3-flash always thinks, ~300-1500 reasoning
         // tokens) need headroom or the JSON gets truncated mid-stream
         // (finish_reason=length → unparsable → cooldown). The JSON itself is
         // ~100 tokens; 4096 covers the reasoning budget with margin.
-        max_tokens: 4096,
+        maxTokens: 4096,
+        timeoutMs,
       };
 
-      const resp = await Promise.race([
-        fetchFn(baseUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(body),
-        }),
-        new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => reject(new Error('scan timeout')), timeoutMs);
-          timer.unref?.();
-        }),
-      ]) as any;
-
-      if (!resp?.ok) {
-        const text = await resp?.text?.().catch(() => '') ?? '';
-        log.warn(`[IndexScan] scan failed: HTTP ${resp?.status}: ${String(text).slice(0, 200)}`);
-        this.lastAttemptFailed = true;
-        return null;
+      let content: string;
+      let usage: CompletionResult['usage'];
+      const channel = this.deps.completion?.();
+      try {
+        if (!channel) throw new Error('no completion channel');
+        const res = await channel.complete(req);
+        content = res.text;
+        usage = res.usage;
+      } catch (contractErr: any) {
+        if (channel) {
+          log.warn(`[IndexScan] completion channel failed (${contractErr.message}), falling back to direct HTTP`);
+        }
+        let res: CompletionResult;
+        try {
+          res = await httpComplete(req, this.deps);
+        } catch (httpErr: any) {
+          if (/no endpoint or API key/.test(httpErr.message)) {
+            if (!this.warnedUnresolvable) {
+              log.warn(`[IndexScan] no endpoint or API key for provider "${providerID ?? '?'}" — scan disabled`);
+              this.warnedUnresolvable = true;
+            }
+            this.lastAttemptFailed = true;
+            return null;
+          }
+          log.warn(`[IndexScan] scan failed: ${httpErr.message}`);
+          this.lastAttemptFailed = true;
+          return null;
+        }
+        content = res.text;
+        usage = res.usage;
       }
 
-      const json = await resp.json();
-      const message = json?.choices?.[0]?.message;
-      let content = typeof message?.content === 'string' ? message.content : '';
-      // Reasoning models may put the answer in reasoning_content when content
-      // is empty (e.g. max_tokens cut reasoning short).
-      if (!content.trim() && typeof message?.reasoning_content === 'string') {
-        content = message.reasoning_content;
-      }
-      const usage = json?.usage;
-      const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
       const result = parseScanResponse(content);
 
       // Self-record usage: direct-HTTP scans bypass opencode, so without this
@@ -417,9 +399,9 @@ export class IndexScanService {
           this.deps.recordUsage({
             providerID,
             modelID,
-            input: Math.max(0, (usage.prompt_tokens || 0) - (cachedTokens || 0)),
-            cached: cachedTokens || 0,
-            output: usage.completion_tokens || 0,
+            input: usage.input,
+            cached: usage.cached,
+            output: usage.output,
             latencyMs: Date.now() - startedAt,
             ok: result != null,
             indexHash: hashText(this.getIndexText()),
@@ -429,8 +411,7 @@ export class IndexScanService {
 
       if (!result) {
         this.lastAttemptFailed = true; // unparsable output — model likely broken
-        const finish = json?.choices?.[0]?.finish_reason;
-        log.warn(`[IndexScan] scan failed: unparsable response (finish=${finish ?? '?'}, ${Date.now() - startedAt}ms)`);
+        log.warn(`[IndexScan] scan failed: unparsable response (${Date.now() - startedAt}ms)`);
         return null;
       }
 
@@ -439,13 +420,13 @@ export class IndexScanService {
 
       const elapsed = Date.now() - startedAt;
       if (result.confidence < minConfidence) {
-        log.info(`[IndexScan] ok: low confidence ${result.confidence} < ${minConfidence}, discarding (${elapsed}ms${cachedTokens != null ? `, cachedTokens=${cachedTokens}` : ''})`);
+        log.info(`[IndexScan] ok: low confidence ${result.confidence} < ${minConfidence}, discarding (${elapsed}ms${usage?.cached != null ? `, cachedTokens=${usage.cached}` : ''})`);
         this.lastAttemptFailed = false; // healthy "no match"
         return null;
       }
 
       this.lastAttemptFailed = false;
-      log.info(`[IndexScan] ok: ids=${result.relevantIds.length} confidence=${result.confidence} (${elapsed}ms${cachedTokens != null ? `, cachedTokens=${cachedTokens}` : ''})`);
+      log.info(`[IndexScan] ok: ids=${result.relevantIds.length} confidence=${result.confidence} (${elapsed}ms${usage?.cached != null ? `, cachedTokens=${usage.cached}` : ''})`);
       return result;
     } catch (err: any) {
       log.warn(`[IndexScan] scan failed: ${err.message}`);
