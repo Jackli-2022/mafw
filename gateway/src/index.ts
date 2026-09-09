@@ -14,6 +14,7 @@ import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
 import { McpSSEEndpoint } from "./mcp/sse-transport";
+import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
 import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
 import { createMemorySearch } from "./interceptors/memory-injector";
@@ -232,6 +233,7 @@ class MafwScheduler {
   private running = true;
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
+  private mcpStreamableEndpoint?: McpStreamableEndpoint;
   private opencodeClient: AgentRuntime | null = null;
   private runtimeCaps: RuntimeCapabilities = minimalCapabilities();
   private runtimeName = 'opencode';
@@ -1756,8 +1758,9 @@ class MafwScheduler {
 
     const toolRegistry = createToolRegistry();
     this.mcpEndpoint = new McpSSEEndpoint(toolRegistry, services);
+    this.mcpStreamableEndpoint = new McpStreamableEndpoint(toolRegistry, services);
 
-    log.info("[Scheduler] Services initialized (Memory + Cost + MCP SSE + Automation)");
+    log.info("[Scheduler] Services initialized (Memory + Cost + MCP SSE/StreamableHTTP + Automation)");
 
     // Trajectory tracking (agent trajectory stats + desktop sidebar)
     try {
@@ -2587,12 +2590,27 @@ class MafwScheduler {
           return;
         }
 
-        // MCP SSE session establishment
-        if (req.url === "/mcp" && req.method === "GET") {
+        // MCP endpoints on /mcp — dual transport:
+        //   POST with ?sessionId=... → legacy SSE message channel
+        //   POST without sessionId   → stateless StreamableHTTP (MCP 2025-03-26)
+        //   GET with mcp-protocol-version header → StreamableHTTP standalone
+        //     stream request → 405 (we serve no standalone stream; the
+        //     StreamableHTTP client treats 405 as expected and stays in
+        //     JSON-response mode)
+        //   GET without it → legacy SSE session establishment (old clients)
+        if (req.url?.startsWith("/mcp") && req.method === "POST") {
+          const isLegacySsePost = new URL(req.url, "http://localhost").searchParams.has("sessionId");
           try {
-            await this.mcpEndpoint!.handleSSE(req, res);
+            if (isLegacySsePost) {
+              await this.mcpEndpoint!.handleMessage(req, res);
+            } else if (this.mcpStreamableEndpoint) {
+              await this.mcpStreamableEndpoint.handleRequest(req, res);
+            } else {
+              res.writeHead(503);
+              res.end(JSON.stringify({ error: "StreamableHTTP endpoint unavailable" }));
+            }
           } catch (err: any) {
-            log.error("[MCP SSE] Error:", err.message);
+            log.error("[MCP Message] Error:", err.message);
             if (!res.headersSent) {
               res.writeHead(500);
               res.end(JSON.stringify({ error: err.message }));
@@ -2601,12 +2619,18 @@ class MafwScheduler {
           return;
         }
 
-        // MCP client messages
-        if (req.url?.startsWith("/mcp") && req.method === "POST") {
+        if (req.url === "/mcp" && req.method === "GET") {
+          if (req.headers["mcp-protocol-version"]) {
+            // StreamableHTTP client asking for a standalone SSE stream — we
+            // run stateless JSON mode only, so decline per spec.
+            res.writeHead(405, { Allow: "POST" });
+            res.end();
+            return;
+          }
           try {
-            await this.mcpEndpoint!.handleMessage(req, res);
+            await this.mcpEndpoint!.handleSSE(req, res);
           } catch (err: any) {
-            log.error("[MCP Message] Error:", err.message);
+            log.error("[MCP SSE] Error:", err.message);
             if (!res.headersSent) {
               res.writeHead(500);
               res.end(JSON.stringify({ error: err.message }));
@@ -4704,8 +4728,8 @@ class MafwScheduler {
         log.info(`[Scheduler]  - POST /register  { projectDir, mafwDir }`);
         log.info(`[Scheduler]  - POST /control  { action, goalId, ... }`);
         log.info(`[Scheduler]  - GET  /health`);
-        log.info(`[Scheduler]  - GET  /mcp           (MCP SSE)`);
-        log.info(`[Scheduler]  - POST /mcp           (MCP messages)`);
+        log.info(`[Scheduler]  - GET  /mcp           (MCP legacy SSE / StreamableHTTP 405)`);
+        log.info(`[Scheduler]  - POST /mcp           (MCP StreamableHTTP stateless + legacy SSE messages)`);
         log.info(`[Scheduler]  - POST /api/llm/compress (LLM compression)`);
         log.info(`[Scheduler]  - POST /a2a            (A2A Media Agent JSON-RPC)`);
         log.info(`[Scheduler]  - GET  /.well-known/agent-card.json (A2A agent card)`);
