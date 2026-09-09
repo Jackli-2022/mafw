@@ -251,6 +251,7 @@ class MafwScheduler {
   private mediaAgent?: MediaAgent;
   private mediaPluginLoader?: MediaPluginLoader;
   private mediaRuntimeExecutor?: MediaRuntimeExecutor;
+  private mediaRuntimeExecutorRt?: unknown;
   private ttsService?: ReturnType<typeof createTtsService>;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
@@ -1259,6 +1260,9 @@ class MafwScheduler {
             : undefined,
           baseUrl: (config.recall as any).scanApiUrl || undefined,
           scanEndpoints: (config.recall as any).scanEndpoints || undefined,
+          // Runtime 契约的无状态补全通道（thunk 现读，热切换安全）——
+          // 提供时 scan 优先走 completion.complete，直连 HTTP 降为回退。
+          completion: () => (this.opencodeClient?.capabilities?.completionApi ? this.opencodeClient.completion : undefined),
           // Any openai-compatible provider works out of the box: URL and key
           // come from the opencode provider config (inline-defined providers
           // like "gateway" keep their credentials in opencode.jsonc options).
@@ -1633,8 +1637,12 @@ class MafwScheduler {
         // pi runtime 激活时：图片走 AgentRuntime 会话（MediaRuntimeExecutor），
         // video/audio 由 executor 内部回退到 complete 路径
         if (engineName === 'pi' && this.opencodeClient?.name === 'pi') {
-          if (!this.mediaRuntimeExecutor) {
+          // runtime 热切换后 opencodeClient 实例更换——旧 executor 持有 stale
+          // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
+          if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.opencodeClient) {
+            void this.mediaRuntimeExecutor?.dispose().catch(() => {});
             this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.opencodeClient);
+            this.mediaRuntimeExecutorRt = this.opencodeClient;
           }
           return this.mediaRuntimeExecutor.prompt;
         }
