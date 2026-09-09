@@ -9,6 +9,8 @@ import {
   startGateway,
   stopGateway,
 } from "./mafw-sidecar"
+import { UiPluginManager } from "./ui-plugins"
+import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
 
 let mafwClient: import("@mafw/sdk").MafwClient | null = null
@@ -166,4 +168,19 @@ export function registerMafwIpcHandlers() {
     const dir = path.join(os.homedir(), ".mafw", "usage-plugins")
     await shell.openPath(dir)
   })
+
+  // User tool-card plugins: main-local service (fs + require), NOT part of the
+  // gateway SDK namespaces — dedicated channels, sandboxed renderer receives
+  // declarative widget trees only.
+  const uiPluginManager = new UiPluginManager()
+  uiPluginManager.loadAll()
+  uiPluginManager.setOnChange(() => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("mafw-ui-plugins-changed")
+    }
+  })
+  uiPluginManager.watch()
+
+  ipcMain.handle("mafw-ui-plugins-list", () => uiPluginManager.list())
+  ipcMain.handle("mafw-ui-plugins-render", (_event: IpcMainInvokeEvent, req: RenderRequest) => uiPluginManager.render(req))
 }

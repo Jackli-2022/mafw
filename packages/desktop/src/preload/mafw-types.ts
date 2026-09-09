@@ -7,6 +7,7 @@ import type {
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
 } from "@mafw/sdk"
+import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 
 export type MafwAPI = {
   gateway: {
@@ -169,6 +170,12 @@ export type MafwAPI = {
     get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean> }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
     switch: (plugin: string) => Promise<{ success: boolean; active: { name: string; capabilities: Record<string, boolean> }; envOverride: boolean }>
     restartAgent: () => Promise<{ success: boolean; mode: string }>
+  }
+
+  uiPlugins: {
+    list(): Promise<PluginEntry[]>
+    render(req: RenderRequest): Promise<RenderResponse>
+    onChange(cb: () => void): () => void
   }
 
   opencodeConfig: {

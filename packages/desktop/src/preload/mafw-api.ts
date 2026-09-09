@@ -1,5 +1,6 @@
 import { ipcRenderer } from "electron"
 import type { MafwAPI } from "./mafw-types"
+import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 
 function invoke<T = unknown>(namespace: string, method: string, ...args: unknown[]): Promise<T> {
   return ipcRenderer.invoke("mafw-invoke", namespace, method, ...args) as Promise<T>
@@ -189,6 +190,16 @@ export function createMafwApi(): MafwAPI {
     opencodeConfig: {
       get: () => invoke("opencodeConfig", "get"),
       update: (config) => invoke("opencodeConfig", "update", config),
+    },
+
+    uiPlugins: {
+      list: () => ipcRenderer.invoke("mafw-ui-plugins-list") as Promise<PluginEntry[]>,
+      render: (req: RenderRequest) => ipcRenderer.invoke("mafw-ui-plugins-render", req) as Promise<RenderResponse>,
+      onChange: (cb: () => void) => {
+        const handler = () => cb()
+        ipcRenderer.on("mafw-ui-plugins-changed", handler)
+        return () => ipcRenderer.removeListener("mafw-ui-plugins-changed", handler)
+      },
     },
 
     invoke: (namespace, method, ...args) => invoke(namespace, method, ...args),
