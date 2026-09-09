@@ -192,10 +192,43 @@ export function createMediaRuntimeExecutor(
   opts: MediaRuntimeExecutorOptions = {},
 ): MediaRuntimeExecutor {
   const authPath = opts.authPath ?? DEFAULT_AUTH_PATH();
-  const completeFn = opts.completeFn ?? (async (parts: PromptPart[], po: PromptOptions) => {
+  // Contract path: stateless single-shot completion over rt.completion
+  // (completionApi capability). Media parts ride the contract's image carrier;
+  // wire-format rewriting (video_url/input_audio) is the implementing
+  // runtime's internal concern (pi: fixMediaPayload via onPayload).
+  const contractComplete = async (parts: PromptPart[], po: PromptOptions): Promise<string> => {
+    const channel = rt.capabilities?.completionApi ? rt.completion : undefined;
+    if (!channel) throw new Error('no completion channel');
+    const filePart = parts.find((p) => p.type === 'file');
+    const textPart = parts.find((p) => p.type === 'text');
+    const dataUrl = String(filePart?.url ?? '');
+    const mime = (filePart?.mime as string) || dataUrl.match(/^data:([^;]+);/)?.[1] || 'image/png';
+    const data = dataUrl.includes(',') ? dataUrl.split(',')[1] || '' : '';
+    const user: any[] = [];
+    if (textPart && String(textPart.text ?? '').trim()) user.push({ type: 'text', text: String(textPart.text) });
+    if (filePart && data) user.push({ type: 'image', data, mimeType: mime });
+    const res = await channel.complete({
+      model: { providerID: po.providerID, modelID: po.modelID },
+      system: [{ text: 'You are a precise media analysis assistant. Answer the user\'s question about the attached media concisely and factually.' }],
+      user,
+      timeoutMs: 180_000,
+    });
+    return res.text;
+  };
+  const legacyComplete = opts.completeFn ?? (async (parts: PromptPart[], po: PromptOptions) => {
     const { createPiPromptAdapter } = await import('./pi-adapter.js');
     const adapter = createPiPromptAdapter({ fixPayload: fixMediaPayload, authPath });
     return adapter(parts, po);
+  });
+  // Explicit opts.completeFn wins outright (tests / custom engines); the
+  // default path prefers the runtime contract and falls back to the pi
+  // adapter on absence or failure.
+  const completeFn = opts.completeFn ?? (async (parts: PromptPart[], po: PromptOptions) => {
+    try {
+      return await contractComplete(parts, po);
+    } catch {
+      return legacyComplete(parts, po);
+    }
   });
   return new MediaRuntimeExecutor(rt, opts, completeFn);
 }
