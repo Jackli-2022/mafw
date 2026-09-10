@@ -32,3 +32,14 @@ mem_index/
 .tmp/
 nul
 selection.json
+
+# tsc in-place compile 事故产物（types/ 下手写声明文件经 negation 保留）
+gateway/src/**/*.d.ts
+!gateway/src/**/types/*.d.ts
+gateway/src/**/*.d.ts.map
+gateway/src/**/*.js.map
+gateway/src/src/
+
+# 运行时数据
+scheduler/
+*.db
