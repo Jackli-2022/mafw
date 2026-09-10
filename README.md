@@ -194,6 +194,13 @@ opencode
 | v6.4 认知深化 | `docs/superpowers/specs/2026-07-02-v6.4-cognitive-deepening.md` |
 | Gateway 架构 | `docs/architecture/gateway.md` |
 | Plugin 架构 | `docs/architecture/plugin.md` |
+| Desktop 图标设计（茉芙/Mafu） | `docs/superpowers/specs/2026-09-10-desktop-icon-design.md` |
+
+## 声明
+
+MAFW Desktop 应用图标「茉芙 / Mafu」由 AI 辅助生成（智谱 CogView-4）并经人工后处理。
+依据《人工智能生成合成内容标识办法》方案 A 执行：PNG 图标内嵌 `AI-Generated`
+隐式元数据（见 `packages/desktop/icons/README.md`）。
 
 ## 许可
 
