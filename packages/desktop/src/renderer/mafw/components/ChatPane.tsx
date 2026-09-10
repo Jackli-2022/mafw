@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
@@ -1459,10 +1459,24 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       snapThreshold: SNAP_THRESHOLD,
     }))
     updateJump(el)
-    if (el.scrollTop < 100) void loadOlder(sid)
+    if (el.scrollTop < 100) { if (hiddenTurnCount() > 0) { expandRendered() } else { void loadOlder(sid) } }
   }
 
   const title = () => props.store.session.find(s => s.id === sidProp())?.title || "Chat"
+
+  // Render window: mount only the newest N turns; scrolling up expands locally
+  // first (no network) and falls through to cursor pagination once the
+  // loaded pages are exhausted. Bounds long-session DOM cost.
+  const [renderLimit, setRenderLimit] = createSignal(10)
+  const allTurns = () => userMessages()
+  const visibleTurns = () => { const all = allTurns(); return all.slice(Math.max(0, all.length - renderLimit())) }
+  const hiddenTurnCount = () => Math.max(0, allTurns().length - renderLimit())
+  const expandRendered = () => {
+    const el = containerRef()
+    const prevHeight = el?.scrollHeight || 0
+    setRenderLimit(l => l + 10)
+    if (el) requestAnimationFrame(() => { el.scrollTop += el.scrollHeight - prevHeight; lastScrollTop = el.scrollTop })
+  }
 
   // ── Flow card placement ──
   // Cards carry the assistant message id of the tool call that triggered them
@@ -1664,7 +1678,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </Show>
               </div>
             </div>
-            <For each={userMessages()}>
+            <Show when={hiddenTurnCount() > 0 || props.pageState[sidProp()]?.hasMore}>
+              <div class="mafw-load-earlier" style="display:flex;justify-content:center;padding:8px 0;">
+                <ButtonV2 variant="ghost" size="small" onClick={() => { if (hiddenTurnCount() > 0) { expandRendered() } else { const el2 = containerRef(); const ph = el2?.scrollHeight || 0; void loadOlder(sidProp()).then(() => { setRenderLimit(l => l + 10); if (el2) requestAnimationFrame(() => { el2.scrollTop += el2.scrollHeight - ph; lastScrollTop = el2.scrollTop }) }) } }}>{hiddenTurnCount() > 0 ? `加载更早（还有 ${hiddenTurnCount()} 轮）` : "加载更早的历史"}</ButtonV2>
+              </div>
+            </Show>
+            <For each={visibleTurns()}>
               {(msg) => (
                 <div class="mafw-turn-anchor" data-turn-id={msg.id}>
                 <ErrorBoundary
