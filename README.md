@@ -202,6 +202,16 @@ MAFW Desktop 应用图标「茉芙 / Mafu」由 AI 辅助生成（智谱 CogView
 依据《人工智能生成合成内容标识办法》方案 A 执行：PNG 图标内嵌 `AI-Generated`
 隐式元数据（见 `packages/desktop/icons/README.md`）。
 
+## 参考与致谢
+
+MAFW 的设计站在这些项目与研究的肩膀上：
+
+| 参考 | 与 MAFW 的关系 |
+|---|---|
+| [opencode](https://github.com/sst/opencode) | 插件宿主平台；Desktop 端（`packages/desktop`）源自其桌面架构并深度改造（MAFW Rail/Tabs/Config、gateway sidecar 等） |
+| [Memora](https://arxiv.org/abs/2602.03315)（Microsoft M365 Research, ICML 2026） | 谐波记忆系统的架构参照：`primary_abstraction` / `cue_anchors` / `memory_value` 三元数据模型与其同构；embedding 相似度合并 + LLM UPDATE/CREATE 裁判（ConsolidationService）采用其方案；其 LongMemEval-S 87.4% SOTA 是本项目记忆管线设计的方向验证 |
+| OKF（Open Knowledge Format） | 记忆存储层：Markdown + frontmatter、每记忆一文件，索引视为纯可推导产物；设计见 `docs/superpowers/specs/2026-07-16-okf-migration-design.md` |
+
 ## 许可
 
 MIT
