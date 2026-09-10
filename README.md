@@ -1,200 +1,160 @@
-# MAFW (Memory-Augmented Framework for Work) — OpenCode Plugin v6.4
+<div align="center">
 
-> v6.4 Cognitive Deepening: Memory that actively grows — deepens, connects, crystallizes.
+<img src="packages/desktop/icons/master/app-icon-1024.png" width="120" alt="MAFW — Mafu">
 
-## 安装
+# MAFW
 
-```bash
-# 全局安装（推荐，多项目复用）
-npm install -g opencode-plugin-mafw
+**Memory-Augmented Framework for Work**
 
-# 本地安装（单项目）
-npm install --save-dev opencode-plugin-mafw
+会话结束、上下文压缩、模型更替之后——记忆依然存续的 AI Agent 工作平台
 
-# 启动 Gateway
-npx mafw-gateway start
-```
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/opencode-plugin-mafw.svg)](https://www.npmjs.com/package/opencode-plugin-mafw)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/Jackli-2022/mafw)
 
-## 配置
+</div>
 
-编辑 `opencode.json`，在 `plugin` 数组中添加 `"opencode-plugin-mafw"`：
+---
 
-```json
-{
-  "plugin": [
-    "superpowers@latest",
-    "opencode-plugin-mafw"
-  ]
-}
-```
+## 这是什么
 
-## 版本特性
+MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工作平台。
+它不再只是某个编辑器的插件，而是由四个部分组成的完整系统：
 
-| 版本 | 核心主题 | 状态 |
+| 组件 | 形态 | 作用 |
 |---|---|---|
-| **v6.0** | 基础韧性 + 效率引擎 + 产品化（Cost/Cognitive Router/User Feedback） | ✅ |
-| **v6.1-v6.2** | 记忆系统数据契约固化 + 存查解耦 | ✅ |
-| **v6.3 谐波记忆** | 统一五层HarmonicUnit模型、谐波索引、跨层MinHash合并、BM25纯索引检索 | ✅ |
-| **v6.4 认知深化** | 显著度感知、联想网络、间隔复习、抽象蒸馏 | ✅ |
+| **Gateway** | 常驻进程（HTTP API :3000 + 事件流） | 记忆存取、Goal 编排、自动化引擎、全部业务中枢 |
+| **Desktop** | Electron 应用 | 对话、Goal 管理、记忆看板、审批与自动化配置的完整 GUI |
+| **CLI** | `mafw` 命令 | Gateway 的启动、守护、诊断与运维 |
+| **opencode 插件** | 可选接入 | 在 opencode 内获得记忆注入与 `mafw_*` 工具（其一入口，非必需） |
 
-### v6.3 谐波记忆系统
+核心命题：**让 Agent 跨会话、跨上下文压缩、跨模型更替地记住你的偏好、决策与踩过的坑。**
 
-五层记忆统一为单一 `HarmonicUnit` 数据模型，层级降级为标签：
+## 核心特性
 
-```
-.mafw/memory/
-├── .harmonic_index.json    # 统一 BM25 倒排索引（无视层级）
-├── tier2/{goalId}.json     # episodic（情景记忆）
-├── tier3/{goalId}.json     # semantic（语义记忆）
-├── tier4/{goalId}.json     # procedural（过程记忆）
-└── l5/                      # global（预留）
-```
+### 🧠 谐波记忆
 
-- 检索完全无视 `memory_type`，只认 `primary_abstraction` + `cue_anchors`
-- 混合压缩器直接输出 `HarmonicUnit` + 持久化到 tier 文件 + 更新索引
-- MinHash 跨层自动合并（Jaccard > 0.6）
-- 不需要向量数据库，不需要 LLM
+- **统一 HarmonicUnit 模型**：episodic / semantic / procedural / global 四类，层级只是标签，检索无视类型
+- **OKF 存储**（Open Knowledge Format）：每条记忆一个 Markdown 文件（frontmatter + 正文），人可直接阅读编辑；索引是纯可推导产物，丢了可重建
+- **BM25 检索**：`primary_abstraction` + `cue_anchors` 上的倒排检索 × 能量 × 显著度，1000 条记忆 ~2-3ms
+- **能量系统**：检索/反馈加成、按天衰减（显著度越高衰减越慢），重要的事自然浮起，琐碎的事自然沉底
+- **MinHash 合并**：跨层相似记忆自动 soft-supersede 合并，历史版本可追溯
+- **Pinned 披露层 + Sticky 便签板**：身份画像每轮必见，"记下来"类提醒限时必达
+- **主动记忆引导**（OptMem 式）：Agent 自主决定何时写入、何时检索，而非被动灌注
 
-### v6.4 认知深化架构
+### 🤖 Goal 编排
 
-| 引擎 | 机制 | 效果 |
+- **Manager Agent**：拆解目标 → plan / execute / review 循环，里程碑自动推送
+- **每轮目标快照**注入，compaction 免疫；`/btw` 支线问答不污染主线
+- **演化观测**（RSI Phase 1）：goal 结果、会话映射、失败签名全量落库，为策略演化铺路
+
+### 🖥️ Desktop 应用
+
+Rail 侧边栏 + TabStrip 布局：`chat / goals / memory / approvals / triage / automation / notes` 全功能 GUI，
+右 Dock 内置上下文用量、分模型成本统计与配额窗口，15s 轮询实时刷新。
+
+### 🎬 媒体理解
+
+图片 / 视频 / 音频经 A2A 协议接入 Media Agent，主模型原生多模态分析（非文本描述转述），
+每模态可独立配置引擎与模型，支持插件扩展。
+
+### 🐍 持久 Python 内核
+
+会话级 Jupyter kernel（ZeroMQ wire 协议），变量与导入跨工具调用保持，matplotlib 出图直接回传。
+
+### ⚙️ 自动化引擎
+
+Cron 规则驱动：记忆衰减、回合聚合压缩（每小时）、反思管线；triage 队列让关键决定仍由你确认。
+
+### 🔌 Runtime 能力契约
+
+Gateway 与 Agent runtime 之间是能力自声明契约（Tier 0-2）：内置 opencode runtime、pi runtime 插件、
+external 托管模式可热切换，无需重启。
+
+## 基准
+
+LongMemEval-S（session 粒度，谐波记忆管线）：
+
+| 指标 | 早期 | 当前 |
 |---|---|---|
-| **显著度感知** | 正则识别故障/常规内容 | 踩坑经验衰减慢 3 倍，常规日志快 2 倍 |
-| **联想网络** | 检索时自动连接共现记忆 | 查"支付超时"自动预取"网关配置" |
-| **间隔复习** | 艾宾浩斯曲线调度 (1→2→4→8→16 天) | 主动提取练习，Energy +0.05/次 |
-| **抽象蒸馏** | 3 条叙事→1 条事实，5 次流程→1 条公理 | 细节褪去，原则浮现 |
+| L1 检索 Recall@10 | 47.4% | **94.9%** |
+| L1 Recall@1 | 5.8% | **58.6%** |
+| L2 端到端 QA 准确率 | 16.7% | **66.7%** |
 
-### 认知路由 (Cognitive Router)
-
-Agent 级别动态模型选择，基于剩余 Token 预算自动降级：
-
-```
-Budget > 80% → Execute Agent 自动切换 Haiku
-Budget 健康 → 使用配置的默认模型（Sonnet）
-```
-
-配置 `.mafw/router.json`：
-
-```json
-{
-  "agents": {
-    "plan": { "model": "claude-sonnet-4-20250514", "priority": "quality" },
-    "execute": { "model": "claude-sonnet-4-20250514", "priority": "quality" },
-    "review": { "model": "claude-haiku-3-5-20241022", "priority": "cost" }
-  }
-}
-```
-
-### 成本追踪 (Cost Telemetry)
-
-每次 Tool 调用的 Token/成本估算，存储在 SQLite `cost_logs` 表和 JSON 文件。
-
-### 用户反馈 (User Feedback)
-
-Dashboard 内置 👍/👎 反馈系统，改变记忆能量值。
-
-## 启动 Gateway
-
-```bash
-# 前台启动
-npx mafw-gateway start
-
-# 后台守护模式
-npx mafw-gateway daemon
-
-# 注册系统服务（开机自启）
-npx mafw-gateway service-register
-
-# 查看状态
-npx mafw-gateway status
-
-# 查看日志
-npx mafw-gateway logs
-
-# 打开 Dashboard
-npx mafw-gateway dashboard
-```
-
-## 使用
-
-```bash
-# 启动 OpenCode TUI
-opencode
-
-# 提交 Goal
-/goal design a login system
-
-# 查看状态
-/status
-
-# TUI 可以关闭，Goal 在后台自动运行
-```
+评测代码：`evaluation/longmemeval/`（数据隔离，不污染真实记忆库）。
 
 ## 架构
 
 ```
-┌─ v6.4 认知深化 ──────────────────────────────────┐
-│ 显著度感知 · 联想网络 · 间隔复习 · 抽象蒸馏     │
-├─ v6.3 谐波记忆 ──────────────────────────────────┤
-│ HarmonicUnit · 谐波索引 · MinHash 合并            │
-├─ v6.0 基础层 ─────────────────────────────────────┤
-│ Wave Checkpoint · Cognitive Router · Cost Telemetry│
-│ mafw_ask_user · mafw_record_feedback · SCORE      │
-├─ v5.0 核心层 ─────────────────────────────────────┤
-│ BM25+Vector+RRF · 知识图谱 · LoopStateMachine     │
-│ SQLite+File · SSE · EnergySystem · HookManager     │
-└────────────────────────────────────────────────────┘
+ Desktop (Electron)      CLI (mafw)      opencode 插件
+        │                     │                │
+        └───────────── HTTP :3000 / SSE ───────┘
+                          │
+                   ┌──────┴───────┐
+                   │    Gateway   │
+                   └──────┬───────┘
+        ┌──────────┬──────┴──────┬───────────┐
+   谐波记忆系统   Goal 编排引擎   自动化引擎   媒体/内核/用量
+   OKF + 索引    manager/plan/  cron 规则    A2A · Jupyter
+   能量·合并     execute/review 衰减·压缩    provider 插件
 ```
 
-### 组件
+数据根目录 `~/.mafw/`：记忆 OKF 文件、统一数据库、日志、配置覆盖。
 
-| 组件 | 职责 |
-|---|---|
-| **Plugin** (`src/`) | OpenCode 插件，注册 Tools/Skills/Hooks，管理记忆与上下文注入 |
-| **Gateway** (`gateway/`) | 常驻进程，Phase 调度、Session 管理、Dashboard 服务、SSE 事件 |
-| **Dashboard** (`gateway/src/dashboard/`) | 多 Goal SPA（Overview/Goals/Loops/Sessions/Memory/Cost/Analytics/Timeline/Alignment） |
-| **Storage** (`src/memory/`) | 5 层谐波记忆 + HarmonicIndex + EnergySystem |
-| **Compression** (`src/compression/`) | HybridCompressor + 动态水位 Token 分配 |
-| **Cognitive** (`src/memory/`) | CognitiveGraph + ReviewScheduler + SaliencePerceptor + Distiller |
-| **Search** (`src/`) | 谐波 BM25 检索 + RRF 融合 + 联想预取 |
+## 快速开始
 
-## Dashboard
+### 1. 启动 Gateway
 
-访问 `http://localhost:3001/`，8 个视图：
+```bash
+npm install -g opencode-plugin-mafw
 
-| 视图 | 内容 |
-|---|---|
-| Overview | 所有 Goal 聚合 KPI + 列表 |
-| Goals | 选中 Goal 详情 + 控制（Pause/Stop） |
-| Loops | Loop 时间线 |
-| Sessions | 活跃 Session 列表 |
-| Memory | 5 层记忆分布（T1-L5） |
-| Cost | 成本火焰图（By Wave / By Tool） |
-| Analytics | 成功率 + Cost 趋势 |
-| Timeline | 干预时间线 |
+mafw start          # 前台启动
+mafw daemon         # 后台守护
+mafw status         # 查看状态
+mafw dashboard      # 打开 Web Dashboard
+```
 
-## 关键决策
+### 2. 桌面应用（源码构建）
 
-| # | 决策 | 说明 |
-|---|---|---|
-| 1 | 保持 Loop/Wave 命名，不做 Spiral 重命名 | ~50 文件改造，无行为收益 |
-| 2 | SCORE 0-100 仅显示，状态机仍用 PASS/FAIL/PARTIAL | 避免 ~15 文件状态机重构 |
-| 3 | 向量时钟 → OptimisticSync 因果上下文 | 当前 Wave 隔离架构无并发写冲突 |
-| 4 | JSON Checkpoint + 文件清单，不做 tar.gz | Windows 兼容性 |
-| 5 | 记忆系统统一为 HarmonicUnit 模型 | 存查解耦，层级降级为标签 |
-| 6 | 认知深化纯规则驱动，零 LLM 依赖 | 所有引擎正则 + MinHash + 简单算法 |
+```bash
+git clone https://github.com/Jackli-2022/mafw
+cd mafw && npm install          # npm workspaces
+cd packages/desktop
+npx electron-vite build
+```
+
+### 3. opencode 接入（可选）
+
+```json
+{
+  "plugin": ["opencode-plugin-mafw"],
+  "mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true } }
+}
+```
+
+插件激活时自动补写缺失的 MCP 接线并备份原配置（fail-open）。
+
+## 仓库结构
+
+```
+packages/desktop/        Electron 桌面应用（main / preload / renderer）
+gateway/                 Gateway 核心（HTTP API、记忆、编排、自动化、媒体、内核）
+src/                     opencode 插件（hooks / tools / MCP 自接线）
+evaluation/longmemeval/  LongMemEval 记忆基准
+docs/                    设计文档与实施计划
+```
 
 ## 文档
 
 | 文档 | 位置 |
 |---|---|
-| v6.0 设计 | `docs/superpowers/specs/2026-07-02-v6.0-design.md` |
-| v6.3 谐波记忆 M1-M3 | `docs/superpowers/specs/2026-07-02-v6.3-harmonic-memory-m1-m3.md` |
-| v6.3 谐波记忆 M4-M6 | `docs/superpowers/specs/2026-07-02-v6.3-harmonic-memory-m4-m6.md` |
-| v6.4 认知深化 | `docs/superpowers/specs/2026-07-02-v6.4-cognitive-deepening.md` |
+| 架构总览（AGENTS.md） | `AGENTS.md` |
 | Gateway 架构 | `docs/architecture/gateway.md` |
 | Plugin 架构 | `docs/architecture/plugin.md` |
-| Desktop 图标设计（茉芙/Mafu） | `docs/superpowers/specs/2026-09-10-desktop-icon-design.md` |
+| 谐波记忆 v6.3 | `docs/superpowers/specs/2026-07-02-v6.3-harmonic-memory-m1-m3.md` |
+| OKF 存储迁移 v6.8 | `docs/superpowers/specs/2026-07-16-okf-migration-design.md` |
+| Desktop 图标（茉芙/Mafu） | `docs/superpowers/specs/2026-09-10-desktop-icon-design.md` |
+| 记忆基准 | `evaluation/README.md` |
 
 ## 声明
 
