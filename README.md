@@ -159,8 +159,6 @@ docs/                    设计文档与实施计划
 ## 声明
 
 MAFW Desktop 应用图标「茉芙 / Mafu」由 AI 辅助生成（智谱 CogView-4）并经人工后处理。
-依据《人工智能生成合成内容标识办法》方案 A 执行：PNG 图标内嵌 `AI-Generated`
-隐式元数据（见 `packages/desktop/icons/README.md`）。
 
 ## 参考与致谢
 
