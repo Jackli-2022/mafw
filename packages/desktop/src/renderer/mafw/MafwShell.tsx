@@ -1326,7 +1326,7 @@ export function MafwShell() {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const [data, sessionData] = await Promise.all([
-        window.api.mafw.sessions.messages(sessionID, 20) as any, // [perf] initial paint: last 20 only; scroll-up loads older via pageState.cursor
+        window.api.mafw.sessions.messages(sessionID, 100) as any, // [perf] initial paint: last 20 only; scroll-up loads older via pageState.cursor
         window.api.mafw.sessions.get(sessionID).catch(() => null),
       ]) as [any, any]
       // Fetch the todo list for the TaskList (also updated live via SSE)
@@ -2293,3 +2293,4 @@ export function MafwShell() {
       </DialogProvider>
   )
 }
+
