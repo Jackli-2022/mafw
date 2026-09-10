@@ -1,4 +1,4 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For } from "solid-js"
 import { createStore } from "solid-js/store"
 
@@ -1326,7 +1326,7 @@ export function MafwShell() {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const [data, sessionData] = await Promise.all([
-        window.api.mafw.sessions.messages(sessionID, 100) as any,
+        window.api.mafw.sessions.messages(sessionID, 20) as any, // [perf] initial paint: last 20 only; scroll-up loads older via pageState.cursor
         window.api.mafw.sessions.get(sessionID).catch(() => null),
       ]) as [any, any]
       // Fetch the todo list for the TaskList (also updated live via SSE)
@@ -1336,7 +1336,6 @@ export function MafwShell() {
       }).catch(() => {})
       const rawItems = Array.isArray(data) ? data : data?.data
       const nextCursor = data?.nextCursor ?? null
-      console.log("[mafw] loadSessionHistory result:", rawItems?.length ? `${rawItems.length} messages` : 'no data')
       if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
         setPageState(sessionID, { cursor: nextCursor, hasMore: !!nextCursor, loading: false })
         return
@@ -1384,7 +1383,7 @@ export function MafwShell() {
           session_status: { ...prev.session_status, [sessionID]: { type: "idle" } },
         }))
         // Set userMsgId to the first user message
-        const userMsg = msgs.find(m => m.role === "user")
+        const userMsg = msgs.findLast(m => m.role === "user") // [perf] windowed: anchor live messages to the newest user turn
         if (userMsg) {
           setSessions(prev => prev.map(s => s.id === sessionID ? { ...s, userMsgId: userMsg.id } : s))
           console.log("[mafw] set userMsgId:", userMsg.id, "found in msgs:", msgs.some(m => m.id === userMsg.id))
