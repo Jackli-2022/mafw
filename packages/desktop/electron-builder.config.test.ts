@@ -27,6 +27,14 @@ for (const channel of channels) {
   })
 }
 
+test("ships the staged gateway bundle as an extra resource", async () => {
+  const module = await import("./electron-builder.config.ts?gateway-bundle=1")
+  const config = module.default as Configuration
+
+  const resources = (config.extraResources ?? []) as Array<{ from: string; to: string }>
+  expect(resources).toContainEqual({ from: "gateway-bundle/", to: "gateway/" })
+})
+
 test("keeps a hidden prod launcher for old Linux pins", async () => {
   const previous = process.env.OPENCODE_CHANNEL
   process.env.OPENCODE_CHANNEL = "prod"

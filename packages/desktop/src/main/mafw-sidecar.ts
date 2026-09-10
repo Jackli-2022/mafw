@@ -1,6 +1,10 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
+import { app } from "electron"
 import { MafwClient } from "@mafw/sdk"
 import { write as writeLog } from "./logging"
+import { planGatewayStart } from "./mafw-gateway-plan"
 
 export type GatewayState = "stopped" | "starting" | "ready" | "failed"
 
@@ -28,6 +32,8 @@ let state: GatewayState = "stopped"
 let port: number | null = null
 let healthInterval: ReturnType<typeof setInterval> | null = null
 let spawnedByUs = false
+let bundledChild: ChildProcess | null = null
+let quitHookInstalled = false
 
 function notifyState(s: GatewayState) {
   writeLog("utility", `mafw gateway state -> ${s}`, { port, previousState: state }, "info")
@@ -67,26 +73,65 @@ async function probeExistingGateway(): Promise<string | null> {
   return null
 }
 
-export async function startGateway(): Promise<void> {
-  if (state !== "stopped") return
+/** Packaged apps ship the gateway under resources/gateway (see stage-gateway.ts). */
+function resolveBundledEntry(): string | null {
+  if (!app.isPackaged) return null
+  const entry = join(process.resourcesPath, "gateway", "dist", "index.js")
+  return existsSync(entry) ? entry : null
+}
 
-  // Try connecting to an already-running gateway before spawning a new one
-  const existingUrl = await probeExistingGateway()
-  if (existingUrl) {
-    port = Number(new URL(existingUrl).port)
-    spawnedByUs = false
-    writeLog("utility", "mafw gateway found running", { url: existingUrl }, "info")
-    notifyState("ready")
-    return
-  }
+function installQuitHook() {
+  if (quitHookInstalled) return
+  quitHookInstalled = true
+  app.on("will-quit", () => {
+    // Only the bundled child is desktop-owned; CLI daemons and adopted
+    // gateways outlive the desktop by design.
+    killBundledChild()
+  })
+}
 
-  notifyState("starting")
-  port = 3000
-  spawnedByUs = true
+function killBundledChild() {
+  const child = bundledChild
+  bundledChild = null
+  if (!child || child.killed) return
+  try {
+    if (process.platform === "win32" && child.pid) {
+      // cmd-less tree kill: SIGKILL is a no-op on Windows.
+      execFile("taskkill", ["/F", "/T", "/PID", String(child.pid)], { windowsHide: true }, () => {})
+    } else {
+      child.kill("SIGTERM")
+    }
+  } catch {}
+}
 
+function spawnBundledGateway(entry: string): void {
+  installQuitHook()
+  // ELECTRON_RUN_AS_NODE turns the app binary into plain Node.js; the staged
+  // bundle's native modules are rebuilt for this runtime by stage-gateway.ts.
+  const child = spawn(process.execPath, [entry], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  })
+  bundledChild = child
+  child.stdout?.on("data", (chunk) => writeLog("utility", `[gateway] ${String(chunk).trimEnd()}`, undefined, "info"))
+  child.stderr?.on("data", (chunk) => writeLog("utility", `[gateway] ${String(chunk).trimEnd()}`, undefined, "warn"))
+  child.on("error", (err) => {
+    writeLog("utility", "bundled gateway spawn error", { error: err.message }, "error")
+    bundledChild = null
+    notifyState("failed")
+  })
+  child.on("exit", (code) => {
+    writeLog("utility", "bundled gateway exited", { code }, code === 0 ? "info" : "warn")
+    bundledChild = null
+    if (state === "starting") notifyState("failed")
+  })
+}
+
+function spawnCliDaemon(): boolean {
   try {
     writeLog("utility", "mafw starting gateway via CLI", { port }, "info")
-      execFile("mafw", ["daemon"], { shell: true, windowsHide: true }, (err, stdout, stderr) => {
+    execFile("mafw", ["daemon"], { shell: true, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
         writeLog("utility", "mafw CLI daemon failed", { error: err.message, stderr: stderr?.trim() }, "error")
         notifyState("failed")
@@ -94,13 +139,15 @@ export async function startGateway(): Promise<void> {
       }
       writeLog("utility", "mafw CLI daemon output", { stdout: stdout?.trim() }, "info")
     })
+    return true
   } catch (err: any) {
     writeLog("utility", "mafw CLI exec failed", { error: err.message }, "error")
     notifyState("failed")
-    return
+    return false
   }
+}
 
-  const url = `http://127.0.0.1:${port}`
+function pollUntilReady(url: string): void {
   let attempts = 0
   const maxAttempts = 30
 
@@ -121,10 +168,57 @@ export async function startGateway(): Promise<void> {
   }, 1000)
 }
 
+export async function startGateway(): Promise<void> {
+  if (state !== "stopped") return
+
+  // Try connecting to an already-running gateway before spawning a new one
+  const existingUrl = await probeExistingGateway()
+  // cliAvailable is optimistic: a missing CLI surfaces as an execFile error,
+  // which drives the same "failed" state as the plan's explicit branch.
+  const plan = planGatewayStart({
+    adoptUrl: existingUrl,
+    bundledEntry: resolveBundledEntry(),
+    cliAvailable: true,
+  })
+  writeLog("utility", "mafw gateway start plan", { mode: plan.mode }, "info")
+
+  if (plan.mode === "adopt") {
+    port = Number(new URL(plan.url).port)
+    spawnedByUs = false
+    writeLog("utility", "mafw gateway found running", { url: plan.url }, "info")
+    notifyState("ready")
+    return
+  }
+
+  if (plan.mode === "failed") {
+    writeLog("utility", "mafw gateway start failed", { reason: plan.reason }, "error")
+    notifyState("failed")
+    return
+  }
+
+  notifyState("starting")
+  port = 3000
+  spawnedByUs = true
+
+  if (plan.mode === "bundle") {
+    writeLog("utility", "mafw starting bundled gateway", { entry: plan.entry }, "info")
+    spawnBundledGateway(plan.entry)
+  } else if (!spawnCliDaemon()) {
+    return
+  }
+
+  pollUntilReady(`http://127.0.0.1:${port}`)
+}
+
 export function stopGateway(): void {
-  try {
-    execFile("mafw", ["stop"], { shell: true, windowsHide: true })
-  } catch {}
+  if (bundledChild) {
+    killBundledChild()
+  } else if (spawnedByUs) {
+    // CLI daemon we started; adopted gateways (spawnedByUs=false) are left alone.
+    try {
+      execFile("mafw", ["stop"], { shell: true, windowsHide: true })
+    } catch {}
+  }
   if (healthInterval) {
     clearInterval(healthInterval)
     healthInterval = null

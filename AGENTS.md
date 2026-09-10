@@ -168,7 +168,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 
 ### 5.5 Desktop 前端（packages/desktop/，2026-09-09 起脱离 opencode-dev）
 - Electron + SolidJS + `@mafw/ui`（fork 自 @opencode-ai/ui，含 MAFW v2 组件）+ `@mafw/session-ui` + `@mafw/sdk`（packages/gateway-sdk）
-- utilityProcess 侧车运行 Gateway
+- **Gateway 捆绑（模式 A，2026-09-10）**：desktop 安装包自带 gateway——`scripts/stage-gateway.ts` 把 `gateway/dist` + 生产依赖 stage 到 `gateway-bundle/`（better-sqlite3 重构建为 Electron ABI：先试 `prebuild-install -r electron`，失败回退 node-gyp 按 Electron headers 源码编译；zeromq 是 Node-API 免重构建），electron-builder `extraResources` 打进 `resources/gateway/`。`package*` 四条 npm script 已串 staging；`gateway-bundle/` 已 gitignore。启动决策收敛在纯函数 `src/main/mafw-gateway-plan.ts`：adopt（探测已有）→ bundle（`ELECTRON_RUN_AS_NODE` spawn 自带副本，desktop 退出时树杀）→ cli（dev 回退 `mafw daemon`）→ failed；`stopGateway` 只杀自己 spawn 的（收养的不再误杀）
 - 主 UI：左侧 Rail(200px) + 上部 TabStrip + 内容区
 - 构建：`cd packages/desktop && npx electron-vite build`（main/preload/renderer 三段）；dev 用 bun 脚本（predev 仅拷图标，不再构建 opencode CLI）
 - 根 npm workspaces：`packages/*`；opencode-dev/ 已移除（2026-09-09），全部源码以 packages/ 为准
@@ -220,13 +220,14 @@ start()
 Server 启动失败不崩溃，优雅降级到 MCP-only 模式。
 
 ### 5.8 Desktop → Gateway 探测连接
-`mafw-sidecar.ts:startGateway()` 优先探测已有 gateway：
+`mafw-sidecar.ts:startGateway()` 按 `mafw-gateway-plan.ts` 的优先级决策：
 ```
-probeExistingGateway()
-  → 探测顺序：MAFW_SERVER_API_PORT → MAFW_GATEWAY_PORT → 3000
-  → 调用 GET /health 确认
-  → 通 → 直接设置 state="ready"，不 spawn
-  → 不通 → 走 resolve → findFreePort → utilityProcess.fork
+probeExistingGateway()（MAFW_SERVER_API_PORT → MAFW_GATEWAY_PORT → 3000，GET /health 确认）
+  → 通 → adopt：state="ready"，不 spawn
+  → 不通 → packaged 且 resources/gateway/dist/index.js 存在
+  │     → bundle：spawn(process.execPath, [entry], ELECTRON_RUN_AS_NODE=1, windowsHide)
+  │     → will-quit 时 taskkill /F /T 树杀（Windows）
+  → 否则 → cli：execFile("mafw", ["daemon"])（dev 回退，CLI 缺失则 failed）
 ```
 运行时健康检查每 30s 一次，连续 5 次失败后自动 restart。
 

@@ -63,6 +63,14 @@ const getBase = (appId: string): Configuration => ({
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
     },
+    // Self-sufficient gateway (mode A): staged by scripts/stage-gateway.ts —
+    // dist + production node_modules, with native modules rebuilt for the
+    // Electron runtime. Spawned via ELECTRON_RUN_AS_NODE when no gateway is
+    // already running (see src/main/mafw-sidecar.ts).
+    {
+      from: "gateway-bundle/",
+      to: "gateway/",
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",
