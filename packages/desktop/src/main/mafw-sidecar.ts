@@ -4,7 +4,9 @@ import { join } from "node:path"
 import { app } from "electron"
 import { MafwClient } from "@mafw/sdk"
 import { write as writeLog } from "./logging"
+import { probeMafwCli } from "./mafw-cli-probe"
 import { planGatewayStart } from "./mafw-gateway-plan"
+import { clearGatewayPidFile, writeGatewayPidFile } from "./mafw-pid-file"
 
 export type GatewayState = "stopped" | "starting" | "ready" | "failed"
 
@@ -101,10 +103,11 @@ function killBundledChild() {
     } else {
       child.kill("SIGTERM")
     }
+    if (child.pid) void clearGatewayPidFile(child.pid)
   } catch {}
 }
 
-function spawnBundledGateway(entry: string): void {
+function spawnBundledGateway(entry: string): ChildProcess {
   installQuitHook()
   // ELECTRON_RUN_AS_NODE turns the app binary into plain Node.js; the staged
   // bundle's native modules are rebuilt for this runtime by stage-gateway.ts.
@@ -114,6 +117,9 @@ function spawnBundledGateway(entry: string): void {
     windowsHide: true,
   })
   bundledChild = child
+  // Register the bundled instance in the mafw CLI's pid file so `mafw
+  // status`/`mafw stop` see it; cleared again on exit (crash or desktop quit).
+  if (child.pid) void writeGatewayPidFile(child.pid)
   child.stdout?.on("data", (chunk) => writeLog("utility", `[gateway] ${String(chunk).trimEnd()}`, undefined, "info"))
   child.stderr?.on("data", (chunk) => writeLog("utility", `[gateway] ${String(chunk).trimEnd()}`, undefined, "warn"))
   child.on("error", (err) => {
@@ -124,8 +130,10 @@ function spawnBundledGateway(entry: string): void {
   child.on("exit", (code) => {
     writeLog("utility", "bundled gateway exited", { code }, code === 0 ? "info" : "warn")
     bundledChild = null
+    if (child.pid) void clearGatewayPidFile(child.pid)
     if (state === "starting") notifyState("failed")
   })
+  return child
 }
 
 function spawnCliDaemon(): boolean {
@@ -173,14 +181,23 @@ export async function startGateway(): Promise<void> {
 
   // Try connecting to an already-running gateway before spawning a new one
   const existingUrl = await probeExistingGateway()
-  // cliAvailable is optimistic: a missing CLI surfaces as an execFile error,
-  // which drives the same "failed" state as the plan's explicit branch.
+  // Hermes-style ladder: the user's own `mafw` install wins over the bundled
+  // copy — probed (`mafw version`) before use, never trusted blindly.
+  const cliProbe = await probeMafwCli()
   const plan = planGatewayStart({
     adoptUrl: existingUrl,
+    cliProbe,
     bundledEntry: resolveBundledEntry(),
-    cliAvailable: true,
   })
-  writeLog("utility", "mafw gateway start plan", { mode: plan.mode }, "info")
+  writeLog(
+    "utility",
+    "mafw gateway start plan",
+    {
+      mode: plan.mode,
+      cli: cliProbe.available ? cliProbe.version : cliProbe.reason,
+    },
+    "info",
+  )
 
   if (plan.mode === "adopt") {
     port = Number(new URL(plan.url).port)
