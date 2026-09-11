@@ -10,6 +10,7 @@ import { AppModel } from './app-model.ts'
 import { ConnectionStore, type ConnState } from '../store/connection.ts'
 import { ChatStore } from '../store/chat-store.ts'
 import { ChatTab } from './chat-tab.ts'
+import { showPermissionOverlay } from './overlays.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -139,8 +140,15 @@ export async function runApp(opts: AppOptions): Promise<void> {
   }
   void ctx
 
-  // ── 连接监督（T7 在 onEvent 里挂 overlay 分发）──
-  const onEvent = (_type: string, _data: any) => { /* T7: permission.asked overlay */ }
+  // ── 连接监督 + SSE 事件分发 ──
+  const onEvent = (type: string, data: any) => {
+    if (type === 'permission.asked') {
+      const req: any = data?.properties ?? data
+      if (req?.id) {
+        showPermissionOverlay(tui, req, (r) => client.permissions.reply(req.id, r))
+      }
+    }
+  }
   if (managerSessionID) {
     const conn = new ConnectionStore({
       sessionID: managerSessionID,

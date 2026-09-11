@@ -11,7 +11,7 @@ export function parseSlash(text: string): { cmd: string; args: string } | null {
   return m ? { cmd: m[1], args: m[2] ?? '' } : null
 }
 
-const selectListTheme: SelectListTheme = {
+export const selectListTheme: SelectListTheme = {
   selectedPrefix: (t) => theme.accent(t),
   selectedText: (t) => theme.accent(t),
   description: (t) => theme.dim(t),
