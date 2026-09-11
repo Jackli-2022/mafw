@@ -49,6 +49,7 @@ Service Commands:
 Utility Commands:
   config             Show gateway config
   dashboard          Open Dashboard in browser
+  tui                Open terminal UI (chat + goals/memory/triage)
   uninstall          Uninstall instructions
   version            Show version
 `;
@@ -59,7 +60,7 @@ const COMMANDS = [
     'sessions', 'control', 'memory-search',
     'automations', 'approvals', 'triage', 'restart-agent',
   'service-register', 'service-unregister',
-  'config', 'dashboard', 'uninstall', 'version', 'update',
+  'config', 'dashboard', 'uninstall', 'version', 'update', 'tui',
 ];
 
 function httpRequest(method, urlPath, body) {
@@ -376,6 +377,7 @@ async function main() {
     case 'uninstall': showUninstall(); break;
     case 'version': console.log(`v${pkg.version}`); break;
     case 'update': requestUpdate(); break;
+    case 'tui': launchTui(); break;
   }
 }
 
@@ -407,6 +409,22 @@ function requestUpdate() {
     console.error(`Failed to write update token: ${err.message}`);
     process.exit(1);
   }
+}
+
+// `mafw tui`: launch the terminal UI (packages/tui). stdio inherit so the TUI
+// owns the console; windowsHide:false because a TUI needs a visible console
+// (unlike gateway sidecar spawns, which must set it true).
+function launchTui() {
+  const tuiScript = path.resolve(__dirname, '..', 'packages', 'tui', 'dist', 'cli.js');
+  if (!fs.existsSync(tuiScript)) {
+    console.error('TUI not built. Run: npm run build');
+    process.exit(1);
+  }
+  const child = spawn(process.execPath, [tuiScript, ...process.argv.slice(3)], {
+    stdio: 'inherit',
+    windowsHide: false,
+  });
+  child.on('exit', (code) => process.exit(code ?? 0));
 }
 
 main().catch(err => { console.error(err.message); process.exit(1); });

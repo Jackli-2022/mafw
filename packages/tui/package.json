@@ -1,0 +1,19 @@
+{
+  "name": "@mafw/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "mafw-tui": "dist/cli.js" },
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": { "node": ">=22.19.0" },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.84.1",
+    "@mafw/sdk": "*",
+    "chalk": "^5.6.2"
+  },
+  "devDependencies": { "typescript": "^5.3.0" }
+}
