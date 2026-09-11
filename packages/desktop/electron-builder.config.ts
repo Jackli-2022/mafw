@@ -49,6 +49,13 @@ const getBase = (appId: string): Configuration => ({
       from: "gateway-bundle/",
       to: "gateway/",
     },
+    // electron-builder's copy filter hard-excludes a root-level `node_modules`
+    // directory (app-builder-lib util/filter.js), so copy it as its own entry —
+    // then `node_modules` never appears as the relative path of a copy root.
+    {
+      from: "gateway-bundle/node_modules/",
+      to: "gateway/node_modules/",
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",
