@@ -180,10 +180,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     const conn = new ConnectionStore({
       sessionID: managerSessionID,
       subscribe: (sid) => client.event.subscribeToSession(sid),
-      isConnected: () => {
-        const ev = (client.event as any)
-        return typeof ev.connected === 'function' ? ev.connected() : true
-      },
+      isConnected: () => client.event.connected(),
       onEvent,
       onState: (s) => {
         setStatus({ conn: s })

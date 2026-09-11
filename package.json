@@ -10,12 +10,13 @@
                 "mafw":  "./bin/mafw.js"
             },
     "scripts":  {
-                    "build":  "tsc \u0026\u0026 cd gateway \u0026\u0026 npm run build",
+                    "build":  "tsc \u0026\u0026 cd gateway \u0026\u0026 npm run build \u0026\u0026 npm run build -w @mafw/tui",
                     "postinstall":  "node -e \"var p=require(\u0027path\u0027),f=require(\u0027fs\u0027),d=p.join(__dirname,\u0027gateway\u0027),ts=p.join(d,\u0027node_modules\u0027,\u0027typescript\u0027,\u0027bin\u0027,\u0027tsc\u0027);if(f.existsSync(d)){if(f.existsSync(ts)){console.log(\u0027[mafw] gateway dev deps present, skip prod install\u0027)}else{require(\u0027child_process\u0027).execSync(\u0027npm install --omit=dev --no-audit --no-fund --loglevel=error\u0027,{cwd:d,stdio:\u0027inherit\u0027})}}\"",
                     "prepare":  "npm run build",
                     "pack:install":  "npm run build \u0026\u0026 npm pack \u0026\u0026 npm install -g opencode-plugin-mafw-*.tgz \u0026\u0026 mafw version",
-                    "test":  "jest",
-                    "test:unit":  "jest tests/unit"
+                    "test":  "npm test --prefix gateway",
+                    "test:unit":  "npm test --prefix gateway",
+                    "test:tui":  "node --test packages/tui/tests/*.test.ts"
                 },
     "files":  [
                   "dist/",
@@ -23,10 +24,12 @@
                   "gateway/package.json",
                   ".opencode/",
                   "bin/",
+                  "packages/tui/dist/",
                   "README.md"
               ],
     "dependencies":  {
                          "@a2a-js/sdk":  "^1.0.1",
+                         "@earendil-works/pi-tui":  "^0.84.1",
                          "@huggingface/transformers":  "^4.2.0",
                          "@langchain/core":  "^1.1.48",
                          "@langchain/langgraph":  "^1.4.7",
@@ -35,6 +38,7 @@
                          "axios":  "^1.6.0",
                          "better-sqlite3":  "^12.11.1",
                          "bonjour-service":  "^1.4.4",
+                         "chalk":  "^5.6.2",
                          "cron":  "^3.1.7",
                          "js-yaml":  "^4.1.0",
                          "langchain-mcp-adapters":  "^0.6.0",

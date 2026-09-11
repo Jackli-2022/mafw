@@ -336,6 +336,9 @@ export class MafwClient implements IMafwClient {
         },
       }
     },
+
+    /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
+    connected: (): boolean => this._sse.connected,
   }
 
   // ── Runtime ──

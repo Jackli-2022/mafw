@@ -371,6 +371,8 @@ export interface ProjectNamespace {
 export interface EventNamespace {
   subscribe(): Promise<{ on(event: string, cb: (data: any) => void): void }>
   subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
+  /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
+  connected(): boolean
 }
 
 export interface RuntimeNamespace {

@@ -193,6 +193,14 @@ onMount → gateway.info() 等 ready
 - **QuotaDock（配额）**：ProviderSection 配额窗口（从 UsageDock 迁出）；UsagePill 点击开 quota tab；15s 轮询同一端点
 - 分模型统计查询现算：`TrajectoryStore.getModelUsageStats()` GROUP BY provider+model（索引 `idx_traj_turn_ttl`），成本经 `usage/model-prices.ts` 价目表估算（无价目模型 `estimatedCost: null` 显示 `—`）
 
+### 5.9b TUI（packages/tui/，2026-09-11）
+- `mafw tui` 子命令启动（bin/mafw.js spawn `packages/tui/dist/cli.js`，stdio inherit + `windowsHide: false`——TUI 需要可见控制台）；CLI 先探测 gateway `/health`（`MAFW_SERVER_API_PORT → MAFW_GATEWAY_PORT → 3000`，`MAFW_TUI_PORTS` 覆盖钩子供测试隔离），不通提示 `mafw daemon` 并退出
+- 纯 HTTP/SSE 客户端：pi-tui（ESM-only，engines ≥22.19，TuiAltScreen + setLayoutRoot(VStack)：TabStrip / 内容区 grow:1 / StatusBar）+ `@mafw/sdk`，gateway 零改动。四 tab：Chat（promptAsync + SSE 流式累积、/new /btw /older /help、Esc 中止）、Goals（10s 轮询 + 详情/取消/问答 overlay）、Memory（BM25 检索 + 便签板 `u` 下架）、Triage（approvals 区块 + c/r/d）；SSE `permission.asked` → once/always/reject overlay
+- 分层：`src/store/`（状态机，不依赖 pi-tui）→ `src/ui/`（组件）；AppModel（tab 切换/quit）与各 store 均纯 TS 可测；ConnectionStore 监督 SSE（1/2/5/15s 退避重订阅）
+- 测试：`node --test tests/*.test.ts`（Node 22+ 类型剥离）；**源码禁用 TS parameter properties**（strip-only 不支持）；相对 import 用 `.ts` 后缀 + tsconfig `rewriteRelativeImportExtensions`（tsc 编译时改写为 .js）；UI 组件直接 `render(width)`/`handleTabKey` 断言（pi-tui **不导出 VirtualTerminal**）；冒烟测 cli 退出码（`MAFW_TUI_SMOKE=1` 启用）；冒烟与轮询注意 interval cleanup（store.stop() 必须清 schedule handle，否则 node 进程挂住）
+- 发布注意：`@earendil-works/pi-tui` + `chalk` 在 **root dependencies**（发布后全局解析），root `files` 含 `packages/tui/dist/`；SDK `event.connected()` 为 TUI 监督器新增
+- 已知类型缺口：SDK `TriageItem` 缺 `id` 字段（wire 实际有，TUI 用 `TriageItem & { id: string }`）；`--hybrid` 检索 flag 待 SDK `memory.search` 加 retriever 参数后接（v1 固定 bm25）
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）
