@@ -135,4 +135,25 @@ describe('approval integration', () => {
     const result = await registry.permissionReply('unknown', 'req-1', true);
     expect(result).toBe(false);
   });
+  it('promptAsync forwards images to session.prompt options', async () => {
+    const s = fakeSession();
+    const registry = new PiSessionRegistry({ createSession: async () => ({ session: s }) });
+    const { id } = await registry.create('/tmp', {} as any);
+    await registry.promptAsync(id, 'describe', { images: [{ data: 'QUJD', mimeType: 'image/png' }] });
+    expect(s.prompt).toHaveBeenCalledWith('describe', expect.objectContaining({ images: [{ data: 'QUJD', mimeType: 'image/png' }] }));
+  });
+
+  it('promptAsync with images while streaming sends content array via followUp', async () => {
+    const s = fakeSession({ streaming: true });
+    const registry = new PiSessionRegistry({ createSession: async () => ({ session: s }) });
+    const { id } = await registry.create('/tmp', {} as any);
+    await registry.promptAsync(id, 'describe', { images: [{ data: 'QUJD', mimeType: 'image/png' }] });
+    expect(s.sendUserMessage).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'text', text: 'describe' }),
+        expect.objectContaining({ type: 'image', data: 'QUJD', mimeType: 'image/png' }),
+      ]),
+      expect.objectContaining({ deliverAs: 'followUp' }),
+    );
+  });
 });

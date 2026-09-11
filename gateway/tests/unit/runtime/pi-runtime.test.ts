@@ -1,4 +1,4 @@
-import { PI_CAPABILITIES, createPiRuntime } from '../../../src/runtime/plugins/pi-runtime';
+import { PI_CAPABILITIES, createPiRuntime, partsToPromptInput } from '../../../src/runtime/plugins/pi-runtime';
 
 jest.mock('../../../src/core/utils/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -221,6 +221,28 @@ describe('approval policy configuration', () => {
       autoApprove: ['read', 'grep'],
       autoDeny: ['bash'],
     });
+  });
+  it('partsToPromptInput converts image data URLs to ImageContent', () => {
+    const out = partsToPromptInput([
+      { type: 'file', url: 'data:image/png;base64,QUJD', mime: 'image/png', text: '' },
+      { type: 'text', text: 'describe this' },
+    ]);
+    expect(out.images).toEqual([{ type: 'image', mimeType: 'image/png', data: 'QUJD' }]);
+    expect(out.text).toBe('describe this');
+  });
+
+  it('partsToPromptInput drops non-image media and keeps raw base64 with mime', () => {
+    const out = partsToPromptInput([
+      { type: 'file', url: 'data:video/mp4;base64,AAAA' },
+      { type: 'file', url: 'QUJD', mime: 'image/jpeg' },
+    ]);
+    expect(out.images).toEqual([{ type: 'image', mimeType: 'image/jpeg', data: 'QUJD' }]);
+    expect(out.text).toBeUndefined();
+  });
+
+  it('partsToPromptInput handles empty parts', () => {
+    expect(partsToPromptInput(undefined)).toEqual({});
+    expect(partsToPromptInput([])).toEqual({});
   });
 });
 

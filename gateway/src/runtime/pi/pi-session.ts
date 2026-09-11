@@ -59,19 +59,30 @@ export class PiSessionRegistry {
 
   sessionIdFor(session: any): string | undefined { return this.bySession.get(session); }
 
-  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean }): Promise<void> {
+  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {
     const s = this.requireSession(id);
     this.touch(id);
     const piOpts = this.buildPiPromptOpts(opts);
     if (s.isStreaming) {
-      await s.sendUserMessage(text, { deliverAs: 'followUp' });
+      const images = opts?.images ?? [];
+      if (images.length > 0) {
+        // sendUserMessage accepts a TextContent|ImageContent array; a bare
+        // string would drop the attachments.
+        const content = [
+          { type: 'text', text },
+          ...images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType })),
+        ];
+        await s.sendUserMessage(content, { deliverAs: 'followUp' });
+      } else {
+        await s.sendUserMessage(text, { deliverAs: 'followUp' });
+      }
     } else {
       await s.prompt(text, piOpts);
       await s.waitForIdle();
     }
   }
 
-  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean }): Promise<{ parts: any[] }> {
+  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[] }> {
     const s = this.requireSession(id);
     this.touch(id);
     const piOpts = this.buildPiPromptOpts(opts);
@@ -83,12 +94,13 @@ export class PiSessionRegistry {
     return { parts: (assistant[assistant.length - 1]?.content || []).map((c: any) => ({ type: 'text', text: c?.text || '' })) };
   }
 
-  private buildPiPromptOpts(opts?: { system?: string; agent?: string; noReply?: boolean }): Record<string, any> {
+  private buildPiPromptOpts(opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Record<string, any> {
     if (!opts) return {};
     const piOpts: Record<string, any> = {};
     if (opts.system) piOpts.system = opts.system;
     if (opts.agent) piOpts.agent = opts.agent;
     if (opts.noReply) piOpts.noReply = opts.noReply;
+    if (opts.images?.length) piOpts.images = opts.images;
     return piOpts;
   }
 

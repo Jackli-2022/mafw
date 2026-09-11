@@ -22,6 +22,33 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   completionApi: true,
 };
 
+/**
+ * Convert runtime prompt parts into pi prompt input. File parts carrying
+ * image data URLs (or raw base64 with a mime) become ImageContent
+ * attachments; text parts join into the prompt text. Non-image media
+ * (video/audio) is intentionally not converted — the session path is
+ * image-only; video/audio go through the single-shot complete path where
+ * fixMediaPayload rewrites the wire format.
+ */
+export function partsToPromptInput(parts?: any[]): { text?: string; images?: Array<{ type: 'image'; data: string; mimeType: string }> } {
+  if (!parts?.length) return {};
+  const images: Array<{ type: 'image'; data: string; mimeType: string }> = [];
+  const texts: string[] = [];
+  for (const p of parts) {
+    if (p?.type === 'file' && typeof p.url === 'string' && p.url) {
+      const m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(p.url);
+      if (m) {
+        const mime = m[1] || p.mime || 'image/png';
+        if (mime.startsWith('image/')) images.push({ type: 'image', mimeType: mime, data: m[3] });
+      } else if (typeof p.mime === 'string' && p.mime.startsWith('image/')) {
+        images.push({ type: 'image', mimeType: p.mime, data: p.url });
+      }
+    } else if (typeof p?.text === 'string' && p.text) {
+      texts.push(p.text);
+    }
+  }
+  return { text: texts.length ? texts.join('\n') : undefined, images: images.length ? images : undefined };
+}
 export interface PiRuntimeDeps {
   loadPi?: () => Promise<any>;
   authPath?: string;
@@ -93,12 +120,14 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       return { id };
     },
     promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean }) => {
-      const text = opts.message ?? (opts.parts || []).map((p: any) => p.text || '').join('\n');
-      await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply });
+      const converted = partsToPromptInput(opts.parts);
+      const text = opts.message ?? converted.text ?? '';
+      await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, images: converted.images });
     },
     prompt: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean }) => {
-      const text = opts.message ?? (opts.parts || []).map((p: any) => p.text || '').join('\n');
-      return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply });
+      const converted = partsToPromptInput(opts.parts);
+      const text = opts.message ?? converted.text ?? '';
+      return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, images: converted.images });
     },
     messages: async (opts: { sessionID: string }) => {
       const { data } = await registry.messages(opts.sessionID);
