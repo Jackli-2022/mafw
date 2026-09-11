@@ -2,7 +2,8 @@ export type ConnState = 'ok' | 'reconnecting' | 'down'
 
 export interface ConnectionDeps {
   sessionID: string
-  subscribe: (sid: string) => Promise<{ on(e: string, cb: (d: any) => void): () => void }>
+  /** on 可返回 unsubscribe（SDK SSEConnection 实际行为）或 void（EventNamespace 类型标注）。 */
+  subscribe: (sid: string) => Promise<{ on(e: string, cb: (d: any) => void): void | (() => void) }>
   isConnected: () => boolean
   onEvent: (type: string, data: any) => void
   onState: (s: ConnState) => void
@@ -52,8 +53,9 @@ export class ConnectionStore {
     try {
       const sub = await this.deps.subscribe(this.deps.sessionID)
       const unsubs: (() => void)[] = []
-      for (const e of KNOWN_EVENTS) unsubs.push(sub.on(e, (d) => this.deps.onEvent(e, d)))
-      unsubs.push(sub.on('*', (d) => {
+      const track = (u: void | (() => void)) => { if (typeof u === 'function') unsubs.push(u) }
+      for (const e of KNOWN_EVENTS) track(sub.on(e, (d) => this.deps.onEvent(e, d)))
+      track(sub.on('*', (d) => {
         if (d?.type && !KNOWN_EVENTS.includes(d.type)) this.deps.onEvent(d.type, d)
       }))
       this.unsubs = unsubs
