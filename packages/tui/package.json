@@ -3,17 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "mafw-tui": "dist/cli.js" },
+  "bin": {
+    "mafw-tui": "dist/cli.js"
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && esbuild src/cli.ts --bundle --platform=node --format=esm --outfile=dist/cli.js --external:@earendil-works/pi-tui --external:chalk",
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
-  "engines": { "node": ">=22.19.0" },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "dependencies": {
     "@earendil-works/pi-tui": "^0.84.1",
     "@mafw/sdk": "*",
     "chalk": "^5.6.2"
   },
-  "devDependencies": { "typescript": "^5.7.0" }
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "typescript": "^5.7.0"
+  }
 }
