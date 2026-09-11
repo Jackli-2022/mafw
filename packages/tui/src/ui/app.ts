@@ -11,6 +11,8 @@ import { ConnectionStore, type ConnState } from '../store/connection.ts'
 import { ChatStore } from '../store/chat-store.ts'
 import { ChatTab } from './chat-tab.ts'
 import { showPermissionOverlay } from './overlays.ts'
+import { GoalsStore } from '../store/goals-store.ts'
+import { GoalsTab } from './goals-tab.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -70,6 +72,15 @@ export async function runApp(opts: AppOptions): Promise<void> {
   })
   const chatTab = new ChatTab({ tui, store: chatStore, onSlash: (cmd, args) => handleSlash(cmd, args), onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }) })
 
+  // ── Goals tab ──
+  const goalsStore = new GoalsStore({
+    goals: client.goals,
+    questions: client.questions,
+    onChange: () => tui.requestRender(),
+  })
+  const goalsTab = new GoalsTab({ tui, store: goalsStore, client, setStatus })
+  goalsStore.start()
+
   // ── 帮助 overlay ──
   let helpHandle: OverlayHandle | null = null
   function toggleHelp(): void {
@@ -121,7 +132,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
   }
   const bodies = new Map<TabId, Component>([
     ['chat', chatTab],
-    ['goals', placeholder('Goals tab: T8 接入')],
+    ['goals', goalsTab],
     ['memory', placeholder('Memory tab: T9 接入')],
     ['triage', placeholder('Triage tab: T10 接入')],
   ])
@@ -191,6 +202,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     const r = model.handleKey(data)
     if (r === 'quit') {
       clearInterval(topTimer)
+      goalsStore.stop()
       tui.stop()
       process.exit(0)
     }
@@ -198,6 +210,11 @@ export async function runApp(opts: AppOptions): Promise<void> {
       if (helpHandle && !model.helpVisible) { helpHandle.hide(); helpHandle = null }
       applyTab()
       return { consume: true }
+    }
+    // 非 chat tab 的 tab 级按键（上下/Enter/x）
+    if (!model.editing && !tui.hasOverlay() && model.active !== 'chat') {
+      const tab = currentBody as { handleTabKey?: (d: string) => boolean }
+      if (typeof tab.handleTabKey === 'function' && tab.handleTabKey(data)) return { consume: true }
     }
     return undefined
   })
