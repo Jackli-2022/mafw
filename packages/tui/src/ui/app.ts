@@ -13,6 +13,8 @@ import { ChatTab } from './chat-tab.ts'
 import { showPermissionOverlay } from './overlays.ts'
 import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
+import { MemoryStore } from '../store/memory-store.ts'
+import { MemoryTab } from './memory-tab.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -81,6 +83,14 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const goalsTab = new GoalsTab({ tui, store: goalsStore, client, setStatus })
   goalsStore.start()
 
+  // ── Memory tab ──
+  const memoryStore = new MemoryStore({
+    memory: client.memory,
+    onChange: () => memoryTab.refresh(),
+    onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }),
+  })
+  const memoryTab = new MemoryTab({ tui, store: memoryStore, client, setStatus, setEditing: (v) => { model.editing = v } })
+
   // ── 帮助 overlay ──
   let helpHandle: OverlayHandle | null = null
   function toggleHelp(): void {
@@ -133,7 +143,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const bodies = new Map<TabId, Component>([
     ['chat', chatTab],
     ['goals', goalsTab],
-    ['memory', placeholder('Memory tab: T9 接入')],
+    ['memory', memoryTab],
     ['triage', placeholder('Triage tab: T10 接入')],
   ])
   let currentBody: Component = bodies.get(model.active)!
@@ -182,6 +192,16 @@ export async function runApp(opts: AppOptions): Promise<void> {
     currentBody = bodies.get(model.active)!
     contentHost.addChild(currentBody, { basis: 0, grow: 1, minSize: 1 })
     model.editing = model.active === 'chat' && !model.helpVisible
+    // 焦点切换：chat 聚焦编辑器链，memory 由其搜索框态决定，其余清焦
+    if (model.active === 'chat') {
+      tui.setFocus(chatTab)
+      memoryTab.blurSearch()
+    } else if (model.active === 'memory') {
+      if (!memoryTab.inputFocused) tui.setFocus(null)
+    } else {
+      tui.setFocus(null)
+      memoryTab.blurSearch()
+    }
     tabStrip.setActive(model.active)
     tui.requestRender()
   }
@@ -211,10 +231,15 @@ export async function runApp(opts: AppOptions): Promise<void> {
       applyTab()
       return { consume: true }
     }
-    // 非 chat tab 的 tab 级按键（上下/Enter/x）
+    // 非 chat tab 的 tab 级按键（上下/Enter/x/u/i）
     if (!model.editing && !tui.hasOverlay() && model.active !== 'chat') {
       const tab = currentBody as { handleTabKey?: (d: string) => boolean }
       if (typeof tab.handleTabKey === 'function' && tab.handleTabKey(data)) return { consume: true }
+    }
+    // Esc：memory 搜索框失焦回列表
+    if (matchesKey(data, Key.escape) && model.active === 'memory' && memoryTab.inputFocused) {
+      memoryTab.blurSearch()
+      return { consume: true }
     }
     return undefined
   })
