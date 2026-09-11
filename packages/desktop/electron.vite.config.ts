@@ -35,8 +35,10 @@ const mafwRendererPlugin = [
   {
     name: "mafw-desktop:theme-preload",
     transformIndexHtml(html) {
+      // index.html references the script with a relative src; inline it so the
+      // built/dev page never depends on publicDir resolution for first paint.
       return html.replace(
-        '<script id="oc-theme-preload-script" src="/oc-theme-preload.js"></script>',
+        /<script id="oc-theme-preload-script"[^>]*><\/script>/,
         `<script id="oc-theme-preload-script">${readFileSync(theme, "utf8")}</script>`,
       )
     },
@@ -107,7 +109,9 @@ const require = __cjs_mod__.createRequire(import.meta.url);
   },
   renderer: {
     plugins: [mafwRendererPlugin, sentry],
-    publicDir: "public",
+    // Vite resolves publicDir relative to `root`, not the config file —
+    // "../../public" from src/renderer lands on packages/desktop/public.
+    publicDir: "../../public",
     root: "src/renderer",
     resolve: {
       // Solid's context/owner state is runtime-global: two physical copies of

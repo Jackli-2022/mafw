@@ -67,7 +67,9 @@ export function validateWidget(w: unknown): Widget | null {
       return {
         type: "list",
         items: Array.isArray(o.items)
-          ? o.items.flatMap((i) => (typeof i === "string" ? [i] : validateWidget(i) ? [validateWidget(i)!] : []))
+          ? o.items.flatMap((i): Array<string | Widget> =>
+              typeof i === "string" ? [i] : validateWidget(i) ? [validateWidget(i)!] : [],
+            )
           : [],
       }
     case "row":

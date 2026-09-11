@@ -34,16 +34,18 @@ export function resolveGatewayEntry(): string | null {
     )
   }
 
-  // Development: check relative to the module (works for both bun test and electron bundle)
+  // Development: check relative to the module (works for both bun test and electron bundle).
+  // Four levels up from src/main (or out/main) lands on the repo root, which
+  // contains gateway/dist.
   try {
     const dir = fileURLToPath(new URL(".", import.meta.url))
-    candidates.push(join(dir, "..", "..", "..", "..", "..", "gateway", "dist", "gateway", "src", "index.js"))
-    candidates.push(join(dir, "..", "..", "..", "..", "..", "gateway", "dist", "index.js"))
+    candidates.push(join(dir, "..", "..", "..", "..", "gateway", "dist", "gateway", "src", "index.js"))
+    candidates.push(join(dir, "..", "..", "..", "..", "gateway", "dist", "index.js"))
   } catch {}
 
-  // Fallback: check relative to cwd (development from repo)
+  // Fallback: check relative to cwd (development from packages/desktop)
   try {
-    candidates.push(join(process.cwd(), "..", "..", "..", "gateway", "dist", "index.js"))
+    candidates.push(join(process.cwd(), "..", "..", "gateway", "dist", "index.js"))
   } catch {}
 
   for (const candidate of candidates) {
