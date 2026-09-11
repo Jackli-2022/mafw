@@ -10,7 +10,7 @@
                 "mafw":  "./bin/mafw.js"
             },
     "scripts":  {
-                    "build":  "tsc \u0026\u0026 cd gateway \u0026\u0026 npm run build \u0026\u0026 npm run build -w @mafw/tui",
+                    "build":  "tsc \u0026\u0026 cd gateway \u0026\u0026 npm run build \u0026\u0026 cd .. \u0026\u0026 npm run build -w @mafw/tui",
                     "postinstall":  "node -e \"var p=require(\u0027path\u0027),f=require(\u0027fs\u0027),d=p.join(__dirname,\u0027gateway\u0027),ts=p.join(d,\u0027node_modules\u0027,\u0027typescript\u0027,\u0027bin\u0027,\u0027tsc\u0027);if(f.existsSync(d)){if(f.existsSync(ts)){console.log(\u0027[mafw] gateway dev deps present, skip prod install\u0027)}else{require(\u0027child_process\u0027).execSync(\u0027npm install --omit=dev --no-audit --no-fund --loglevel=error\u0027,{cwd:d,stdio:\u0027inherit\u0027})}}\"",
                     "prepare":  "npm run build",
                     "pack:install":  "npm run build \u0026\u0026 npm pack \u0026\u0026 npm install -g opencode-plugin-mafw-*.tgz \u0026\u0026 mafw version",
