@@ -15,6 +15,8 @@ import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
 import { MemoryStore } from '../store/memory-store.ts'
 import { MemoryTab } from './memory-tab.ts'
+import { TriageStore } from '../store/triage-store.ts'
+import { TriageTab } from './triage-tab.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -91,6 +93,15 @@ export async function runApp(opts: AppOptions): Promise<void> {
   })
   const memoryTab = new MemoryTab({ tui, store: memoryStore, client, setStatus, setEditing: (v) => { model.editing = v } })
 
+  // ── Triage tab ──
+  const triageStore = new TriageStore({
+    approvals: client.approvals,
+    triage: client.triage,
+    onChange: () => tui.requestRender(),
+  })
+  const triageTab = new TriageTab({ tui, store: triageStore, client, setStatus })
+  triageStore.start()
+
   // ── 帮助 overlay ──
   let helpHandle: OverlayHandle | null = null
   function toggleHelp(): void {
@@ -135,16 +146,11 @@ export async function runApp(opts: AppOptions): Promise<void> {
   }
 
   // ── 布局：TabStrip / 内容区(grow) / StatusBar ──
-  const placeholder = (label: string) => {
-    const c = new Container()
-    c.addChild(new Text(theme.dim(label), 1, 0))
-    return c
-  }
   const bodies = new Map<TabId, Component>([
     ['chat', chatTab],
     ['goals', goalsTab],
     ['memory', memoryTab],
-    ['triage', placeholder('Triage tab: T10 接入')],
+    ['triage', triageTab],
   ])
   let currentBody: Component = bodies.get(model.active)!
   const contentHost = new VStack([])
@@ -223,6 +229,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     if (r === 'quit') {
       clearInterval(topTimer)
       goalsStore.stop()
+      triageStore.stop()
       tui.stop()
       process.exit(0)
     }

@@ -9,6 +9,7 @@ export class GoalsStore {
   readonly rows: GoalRow[] = []
   readonly questions: QuestionRequest[] = []
   private stopped = false
+  private cleanup?: () => void
   private schedule: (fn: () => void, ms: number) => () => void
   private deps: {
     goals: { list(): Promise<Goal[]> }
@@ -32,10 +33,13 @@ export class GoalsStore {
   start(): void {
     this.stopped = false
     void this.poll()
-    this.schedule(() => { if (!this.stopped) void this.poll() }, 10_000)
+    this.cleanup = this.schedule(() => { if (!this.stopped) void this.poll() }, 10_000)
   }
 
-  stop(): void { this.stopped = true }
+  stop(): void {
+    this.stopped = true
+    this.cleanup?.()
+  }
 
   async poll(): Promise<void> {
     try {
