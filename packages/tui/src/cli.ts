@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { probeGateway } from './probe.js'
+import { probeGateway } from './probe.ts'
 
 async function main() {
   const baseUrl = await probeGateway()
@@ -7,7 +7,7 @@ async function main() {
     console.error('[mafw tui] gateway 未运行（/health 探测失败）。请先启动：mafw daemon')
     process.exit(1)
   }
-  const { runApp } = await import('./ui/app.js')
+  const { runApp } = await import('./ui/app.ts')
   await runApp({ baseUrl, retriever: process.argv.includes('--hybrid') ? 'hybrid' : 'bm25' })
 }
 
