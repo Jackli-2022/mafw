@@ -1,31 +1,9 @@
-import { execFile } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { promisify } from "node:util"
 
 import type { Configuration } from "electron-builder"
 
-const execFileAsync = promisify(execFile)
 const packageDir = path.dirname(fileURLToPath(import.meta.url))
-const rootDir = path.resolve(packageDir, "../..")
-const signScript = path.join(rootDir, "script", "sign-windows.ps1")
-// The Electron 42 packaging update briefly installed Linux launchers/icons under
-// "opencode-desktop". Keep that hidden desktop entry around so existing GNOME/KDE
-// pins still resolve after the app identity moved to ai.mafw.desktop (MAFW).
-const legacyDesktopEntry = path.join(packageDir, "resources", "linux", "opencode-desktop.desktop")
-const legacyDesktopEntryFpm = `${legacyDesktopEntry}=/usr/share/applications/opencode-desktop.desktop`
-
-async function signWindows(configuration: { path: string }) {
-  if (process.platform !== "win32") return
-  if (process.env.GITHUB_ACTIONS !== "true") return
-
-  await execFileAsync(
-    "pwsh",
-    ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", signScript, configuration.path],
-    { cwd: rootDir },
-  )
-}
-
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
   if (raw === "dev" || raw === "beta" || raw === "prod") return raw
@@ -91,9 +69,6 @@ const getBase = (appId: string): Configuration => ({
   },
   win: {
     icon: `resources/icons/icon.ico`,
-    signtoolOptions: {
-      sign: signWindows,
-    },
     target: ["nsis"],
     verifyUpdateCodeSignature: false,
   },
@@ -137,7 +112,7 @@ function getConfig() {
         appId,
         productName: "MAFW Beta",
         protocols: { name: "MAFW Beta", schemes: ["mafw"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        publish: { provider: "github", owner: "Jackli-2022", repo: "mafw", channel: "beta" },
         rpm: { packageName: "mafw-beta" },
       }
     }
@@ -147,9 +122,8 @@ function getConfig() {
         appId,
         productName: "MAFW",
         protocols: { name: "MAFW", schemes: ["mafw"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
-        deb: { fpm: [legacyDesktopEntryFpm] },
-        rpm: { packageName: "mafw", fpm: [legacyDesktopEntryFpm] },
+        publish: { provider: "github", owner: "Jackli-2022", repo: "mafw", channel: "latest" },
+        rpm: { packageName: "mafw" },
       }
     }
   }
