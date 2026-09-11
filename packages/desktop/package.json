@@ -6,8 +6,7 @@
     "license":  "MIT",
     "homepage":  "https://opencode.ai",
     "author":  {
-                   "name":  "OpenCode",
-                   "email":  "hello@opencode.ai"
+                   "name":  "MAFW"
                },
     "scripts":  {
                     "typecheck":  "tsgo -b",
