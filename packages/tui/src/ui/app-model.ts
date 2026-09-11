@@ -15,9 +15,15 @@ export class AppModel {
     this.helpVisible = !this.helpVisible
   }
 
-  /** 返回 'quit' 表示退出；编辑态只放行 ctrl+c。 */
+  /** 返回 'quit' 表示退出；编辑态只放行 ctrl+c 与 Alt+数字 切 tab。 */
   handleKey(data: string): 'quit' | null {
     if (matchesKey(data, Key.ctrl('c'))) return 'quit'
+    // Alt+数字：编辑态也能切 tab
+    const altIdx = ALT_DIGITS.findIndex((k) => matchesKey(data, k))
+    if (altIdx >= 0) {
+      this.switchTab(TABS[altIdx].id)
+      return null
+    }
     if (this.editing) return null
     if (matchesKey(data, 'q')) return 'quit'
     if (data === '?') {
@@ -29,3 +35,7 @@ export class AppModel {
     return null
   }
 }
+
+const ALT_DIGITS = [
+  Key.alt('1'), Key.alt('2'), Key.alt('3'), Key.alt('4'),
+]

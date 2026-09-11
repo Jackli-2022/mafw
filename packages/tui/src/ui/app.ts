@@ -1,5 +1,6 @@
 import {
-  ProcessTerminal, TuiAltScreen, VStack, Container, Text, type Component, type OverlayHandle, type TUI,
+  ProcessTerminal, TuiAltScreen, VStack, Container, Text, matchesKey, Key,
+  type Component, type OverlayHandle, type TUI,
 } from '@earendil-works/pi-tui'
 import { MafwClient } from '@mafw/sdk'
 import { basename } from 'node:path'
@@ -7,6 +8,8 @@ import { TabStrip, TABS, type TabId } from './tab-strip.ts'
 import { StatusBar, type StatusState } from './status-bar.ts'
 import { AppModel } from './app-model.ts'
 import { ConnectionStore, type ConnState } from '../store/connection.ts'
+import { ChatStore } from '../store/chat-store.ts'
+import { ChatTab } from './chat-tab.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -25,7 +28,6 @@ export interface AppContext {
   opts: AppOptions
   setStatus: (patch: Partial<StatusState>) => void
   showHelp: () => void
-  setEditing: (editing: boolean) => void
 }
 
 export async function runApp(opts: AppOptions): Promise<void> {
@@ -44,7 +46,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     : null
   const managerSessionID = mgr?.sessionId ?? null
 
-  // ── 状态条（单一可变状态源，避免部分更新时重置其他字段）──
+  // ── 状态条（单一可变状态源）──
   const status: StatusState = {
     project: projectDir ? basename(projectDir) : undefined,
     session: managerSessionID ?? undefined,
@@ -58,23 +60,14 @@ export async function runApp(opts: AppOptions): Promise<void> {
   statusBar.setState(status)
   tabStrip.setConnected(true)
 
-  // 内容区：每 tab 一个 Container；各面板由后续 task 接管
-  const bodies = new Map<TabId, Container>()
-  for (const t of TABS) bodies.set(t.id, new Container())
-  bodies.get('chat')!.addChild(new Text(theme.dim('Chat tab: T6 接入'), 1, 0))
-  bodies.get('goals')!.addChild(new Text(theme.dim('Goals tab: T8 接入'), 1, 0))
-  bodies.get('memory')!.addChild(new Text(theme.dim('Memory tab: T9 接入'), 1, 0))
-  bodies.get('triage')!.addChild(new Text(theme.dim('Triage tab: T10 接入'), 1, 0))
-
-  let currentBody: Component = bodies.get(model.active)!
-  const contentHost = new Container()
-  contentHost.addChild(currentBody)
-
-  tui.setLayoutRoot(new VStack([
-    { component: tabStrip, basis: 'auto', minSize: 1 },
-    { component: contentHost, basis: 0, grow: 1, minSize: 1 },
-    { component: statusBar, basis: 'auto', minSize: 1 },
-  ]))
+  // ── Chat tab ──
+  const chatStore = new ChatStore({
+    session: client.session,
+    sessionID: managerSessionID ?? 'none',
+    onChange: () => tui.requestRender(),
+    onError: (message) => setStatus({ hint: theme.err(`⚠ ${message.slice(0, 60)}`) }),
+  })
+  const chatTab = new ChatTab({ tui, store: chatStore, onSlash: (cmd, args) => handleSlash(cmd, args), onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }) })
 
   // ── 帮助 overlay ──
   let helpHandle: OverlayHandle | null = null
@@ -87,25 +80,64 @@ export async function runApp(opts: AppOptions): Promise<void> {
     const help = new Text([
       '快捷键',
       '',
-      '  1-4      切换 Chat / Goals / Memory / Triage',
-      '  q        退出（非输入态）',
-      '  Ctrl+C   强制退出',
-      '  Esc      流式期间中止回合 / 关闭弹窗',
+      '  1-4 / Alt+1-4   切换 Chat / Goals / Memory / Triage',
+      '  q               退出（非输入态）',
+      '  Ctrl+C          强制退出',
+      '  Esc             流式期间中止回合',
       '',
       'Chat slash 命令',
-      '  /new     新话题（rotate manager session）',
-      '  /btw <问题>  支线问答',
-      '  /older   加载更早历史',
-      '  /help    本帮助',
+      '  /new            新话题（rotate manager session）',
+      '  /btw <问题>     支线问答',
+      '  /older          加载更早历史',
+      '  /help           本帮助',
     ].join('\n'), 1, 1)
-    helpHandle = tui.showOverlay(help, { width: 56, maxHeight: 15, anchor: 'center' })
+    helpHandle = tui.showOverlay(help, { width: 58, maxHeight: 16, anchor: 'center' })
   }
 
-  const ctx: AppContext = {
-    client, tui, model, managerSessionID, projectDir, opts, setStatus,
-    showHelp: () => toggleHelp(),
-    setEditing: (editing) => { model.editing = editing },
+  async function handleSlash(cmd: string, args: string): Promise<string | null> {
+    if (cmd === 'help') { toggleHelp(); return null }
+    if (cmd === 'older') { await chatTab.loadOlder(); return null }
+    if (cmd === 'new') {
+      if (!projectDir) return '当前无项目上下文，无法 rotate'
+      const r = await client.manager.rotate(projectDir, 'tui /new').catch((e: any) => ({ error: e.message }))
+      if ('error' in (r as any)) return `rotate 失败: ${(r as any).error}`
+      return '已开新话题（manager session 已轮换，重开 /new 后的对话走新会话）'
+    }
+    if (cmd === 'btw') {
+      if (!args.trim()) return '用法: /btw <问题>'
+      const r = await client.mafwCommands.run({ command: 'btw', args }).catch((e: any) => ({ error: e.message }))
+      if ('error' in (r as any)) return `btw 失败: ${(r as any).error}`
+      return null
+    }
+    return `未知命令 /${cmd}（可用: /new /btw /older /help）`
   }
+
+  // ── 布局：TabStrip / 内容区(grow) / StatusBar ──
+  const placeholder = (label: string) => {
+    const c = new Container()
+    c.addChild(new Text(theme.dim(label), 1, 0))
+    return c
+  }
+  const bodies = new Map<TabId, Component>([
+    ['chat', chatTab],
+    ['goals', placeholder('Goals tab: T8 接入')],
+    ['memory', placeholder('Memory tab: T9 接入')],
+    ['triage', placeholder('Triage tab: T10 接入')],
+  ])
+  let currentBody: Component = bodies.get(model.active)!
+  const contentHost = new VStack([])
+  contentHost.addChild(currentBody, { basis: 0, grow: 1, minSize: 1 })
+
+  tui.setLayoutRoot(new VStack([
+    { component: tabStrip, basis: 'auto', minSize: 1 },
+    { component: contentHost, basis: 0, grow: 1, minSize: 1 },
+    { component: statusBar, basis: 'auto', minSize: 1 },
+  ]))
+
+  const ctx: AppContext = {
+    client, tui, model, managerSessionID, projectDir, opts, setStatus, showHelp: () => toggleHelp(),
+  }
+  void ctx
 
   // ── 连接监督（T7 在 onEvent 里挂 overlay 分发）──
   const onEvent = (_type: string, _data: any) => { /* T7: permission.asked overlay */ }
@@ -129,21 +161,36 @@ export async function runApp(opts: AppOptions): Promise<void> {
   function applyTab(): void {
     contentHost.removeChild(currentBody)
     currentBody = bodies.get(model.active)!
-    contentHost.addChild(currentBody)
+    contentHost.addChild(currentBody, { basis: 0, grow: 1, minSize: 1 })
+    model.editing = model.active === 'chat' && !model.helpVisible
     tabStrip.setActive(model.active)
     tui.requestRender()
   }
 
+  // 滚动到顶自动加载更早历史（1s 轮询；chat tab 激活时）
+  const topTimer = setInterval(() => {
+    if (model.active === 'chat' && chatTab.atTop) void chatTab.loadOlder()
+  }, 1000)
+
   tui.addInputListener((data) => {
+    // Esc：流式中止回合（优先于焦点组件）
+    if (matchesKey(data, Key.escape) && chatStore.streaming && !tui.hasOverlay()) {
+      void chatStore.abort()
+      return { consume: true }
+    }
     const prevTab = model.active
     const prevHelp = model.helpVisible
     const r = model.handleKey(data)
     if (r === 'quit') {
+      clearInterval(topTimer)
       tui.stop()
       process.exit(0)
     }
-    // 只消费本层真正处理的键（tab 切换 / help），其余放行给焦点组件（Editor 等）
-    if (model.active !== prevTab || model.helpVisible !== prevHelp) return { consume: true }
+    if (model.active !== prevTab || model.helpVisible !== prevHelp) {
+      if (helpHandle && !model.helpVisible) { helpHandle.hide(); helpHandle = null }
+      applyTab()
+      return { consume: true }
+    }
     return undefined
   })
 
