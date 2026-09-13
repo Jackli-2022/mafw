@@ -14,16 +14,18 @@ import { SSEConnection } from './sse'
 export class MafwClient implements IMafwClient {
   private baseUrl: string
   private _sse: SSEConnection
+  private fetchImpl: typeof fetch
 
   constructor(opts?: string | MafwClientOptions) {
     this.baseUrl = typeof opts === 'string'
       ? opts
       : opts?.baseUrl || 'http://localhost:3000'
+    this.fetchImpl = (typeof opts === 'object' && opts?.fetchImpl) ? opts.fetchImpl : fetch.bind(globalThis)
     this._sse = new SSEConnection()
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       headers: { 'Content-Type': 'application/json' },
       ...init,
     })
@@ -383,6 +385,66 @@ export class MafwClient implements IMafwClient {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `Agent restart failed: ${res.status}`)
+      }
+      return res.json()
+    },
+  }
+
+  // ── Plugins Hub ──
+
+  plugins = {
+    list: async (): Promise<{
+      plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string }[];
+    }> => this.request('/api/plugins'),
+
+    install: async (input: { type: 'runtime' | 'media' | 'usage' | 'ui'; filename: string; contentBase64: string; overwrite?: boolean }): Promise<any> => {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/install`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, overwrite: !!input.overwrite }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Plugin install failed: ${res.status}`)
+      }
+      return res.json()
+    },
+
+    enable: async (type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any> => {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/enable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, filename }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Plugin enable failed: ${res.status}`)
+      }
+      return res.json()
+    },
+
+    disable: async (type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any> => {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/disable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, filename }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Plugin disable failed: ${res.status}`)
+      }
+      return res.json()
+    },
+
+    delete: async (type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<{ ok: true }> => {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, filename }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Plugin delete failed: ${res.status}`)
       }
       return res.json()
     },

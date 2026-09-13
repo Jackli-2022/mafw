@@ -586,6 +586,8 @@ export interface MafwClient {
 
 export interface MafwClientOptions {
   baseUrl?: string
+  /** Injectable fetch for tests / custom transports (defaults to global fetch). */
+  fetchImpl?: typeof fetch
 }
 
 // ============================================================
