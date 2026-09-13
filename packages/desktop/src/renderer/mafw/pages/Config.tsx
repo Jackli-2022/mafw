@@ -8,6 +8,8 @@ import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { SwitchV2 } from "@mafw/ui/v2/switch-v2"
+import { sortEntries, statusLabel, installableTypes, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
 
 interface ConfigSection {
@@ -238,6 +240,83 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     const ok = mediaPlugins().filter(p => p.status === 'ok').map(p => p.name).filter(Boolean)
     if (!ok.includes('pi')) ok.push('pi')
     return ok
+  }
+
+  // ── 插件中心（Plugin Hub）──
+  const [hubEntries, setHubEntries] = createSignal<HubEntry[]>([])
+  const [hubLoading, setHubLoading] = createSignal(false)
+  const [installOpen, setInstallOpen] = createSignal(false)
+  const [installType, setInstallType] = createSignal<string>("runtime")
+  const [installFile, setInstallFile] = createSignal<{ name: string; contentBase64: string; size: number } | null>(null)
+  const [installBusy, setInstallBusy] = createSignal(false)
+  let fileInputRef: HTMLInputElement | undefined
+
+  const loadPluginHub = async () => {
+    setHubLoading(true)
+    try {
+      const res = await window.api.mafw.plugins.list()
+      setHubEntries(res?.plugins ?? [])
+    } catch (err: any) {
+      showToastV2({ description: `插件列表失败: ${err.message}`, duration: 3000 })
+    } finally { setHubLoading(false) }
+  }
+  onMount(() => { loadPluginHub() })
+
+  const pickInstallFile = () => fileInputRef?.click()
+  const onInstallFileChosen = async (e: Event) => {
+    const input = e.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    if (!file.name.endsWith(".js")) {
+      showToastV2({ description: "仅支持 .js 插件文件", duration: 3000 })
+      input.value = ""
+      return
+    }
+    const buf = await file.arrayBuffer()
+    let binary = ""
+    const bytes = new Uint8Array(buf)
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+    setInstallFile({ name: file.name, contentBase64: btoa(binary), size: bytes.length })
+    input.value = ""
+  }
+
+  const doInstall = async () => {
+    const f = installFile()
+    if (!f) return
+    setInstallBusy(true)
+    try {
+      await window.api.mafw.plugins.install({ type: installType() as any, filename: f.name, contentBase64: f.contentBase64 })
+      showToastV2({ description: `已安装 ${f.name}`, duration: 3000 })
+      setInstallFile(null); setInstallOpen(false)
+      await loadPluginHub()
+    } catch (err: any) {
+      showToastV2({ description: `安装失败: ${err.message}`, duration: 4000 })
+    } finally { setInstallBusy(false) }
+  }
+
+  const togglePlugin = async (e: HubEntry) => {
+    try {
+      if (e.status === "enabled") await window.api.mafw.plugins.disable(e.type, e.file)
+      else if (e.status === "disabled") await window.api.mafw.plugins.enable(e.type, e.file)
+      else {
+        showToastV2({ description: e.status === "config-disabled" ? "config 禁用项请在 usage 配置中处理" : "错误条目不可切换，请删除后重装", duration: 3000 })
+        return
+      }
+      await loadPluginHub()
+    } catch (err: any) {
+      showToastV2({ description: `操作失败: ${err.message}`, duration: 3000 })
+    }
+  }
+
+  const removePlugin = async (e: HubEntry) => {
+    if (!confirm(`删除插件 ${e.type}/${e.file}？此操作不可恢复。`)) return
+    try {
+      await window.api.mafw.plugins.delete(e.type, e.file)
+      showToastV2({ description: `已删除 ${e.file}`, duration: 3000 })
+      await loadPluginHub()
+    } catch (err: any) {
+      showToastV2({ description: `删除失败: ${err.message}`, duration: 3000 })
+    }
   }
 
   // ── Models ──
@@ -489,7 +568,69 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
           <Show when={activeNav() === "plugins"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">🧩</span>
+                <span class="mafw-config-section-icon">??</span>
+                <span class="mafw-config-section-title">插件中心（全部插件）</span>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div style={{ display: "flex", "justify-content": "flex-end", gap: 8, "margin-bottom": 12 }}>
+                  <ButtonV2 variant="outline" size="small" onClick={loadPluginHub} disabled={hubLoading()}>刷新</ButtonV2>
+                  <ButtonV2 variant="contrast" size="small" onClick={() => setInstallOpen(!installOpen())}>安装插件</ButtonV2>
+                </div>
+
+                <Show when={installOpen()}>
+                  <div style={{ border: "1px solid var(--border, #333)", "border-radius": 8, padding: 12, "margin-bottom": 12 }}>
+                    <div style={{ display: "flex", gap: 8, "align-items": "center", "margin-bottom": 8 }}>
+                      <div style={{ width: 180 }}>
+                        <SelectV2
+                          options={installableTypes().map((t) => ({ value: t, label: t }))}
+                          current={installType()}
+                          value={(x: string) => x}
+                          label={(x: string) => x}
+                          onSelect={(v) => { if (v) setInstallType(v) }}
+                          placeholder="插件类型"
+                        />
+                      </div>
+                      <input ref={fileInputRef} type="file" accept=".js" class="hidden" onChange={onInstallFileChosen} />
+                      <ButtonV2 variant="outline" size="small" onClick={pickInstallFile}>选择 .js 文件</ButtonV2>
+                      <Show when={installFile()}>
+                        <span style={{ "font-size": 12 }}>{installFile()!.name}（{installFile()!.size} bytes）</span>
+                      </Show>
+                    </div>
+                    <div style={{ "font-size": 12, color: "var(--text-muted, #888)", "margin-bottom": 8 }}>
+                      ⚠ 安装的插件是任意本地代码，加载后即以当前应用权限执行。仅安装你信任来源的插件。
+                    </div>
+                    <ButtonV2 variant="contrast" size="small" onClick={doInstall} disabled={!installFile() || installBusy()}>
+                      {installBusy() ? "安装中…" : "安装"}
+                    </ButtonV2>
+                  </div>
+                </Show>
+
+                <For each={sortEntries(hubEntries())}>
+                  {(e) => (
+                    <div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", padding: "8px 0", "border-bottom": "1px solid var(--border, #222)" }}>
+                      <div>
+                        <span style={{ "font-weight": 500 }}>{e.type}/{e.name}</span>
+                        <span style={{ "font-size": 12, "margin-left": 8, color: "var(--text-muted, #888)" }}>{statusLabel(e)}</span>
+                        <span style={{ "font-size": 12, "margin-left": 8, color: "var(--text-muted, #888)" }}>{e.size} B · {new Date(e.mtime).toLocaleString()}</span>
+                        <Show when={e.error}>
+                          <span style={{ "font-size": 12, "margin-left": 8, color: "var(--danger, #e55)" }}>{e.error}</span>
+                        </Show>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
+                        <SwitchV2 checked={e.status === "enabled"} onChange={() => togglePlugin(e)} hideLabel />
+                        <ButtonV2 variant="ghost" size="small" onClick={() => removePlugin(e)}>删除</ButtonV2>
+                      </div>
+                    </div>
+                  )}
+                </For>
+                <Show when={!hubLoading() && hubEntries().length === 0}>
+                  <div style={{ "font-size": 13, color: "var(--text-muted, #888)" }}>暂无插件。点击「安装插件」从本地 .js 文件安装。</div>
+                </Show>
+              </div>
+            </div>
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">??</span>
                 <span class="mafw-config-section-title">Runtime &amp; Media</span>
               </div>
               <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
