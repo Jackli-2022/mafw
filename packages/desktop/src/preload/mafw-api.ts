@@ -187,6 +187,14 @@ export function createMafwApi(): MafwAPI {
       restartAgent: () => invoke("runtime", "restartAgent"),
     },
 
+    plugins: {
+      list: () => invoke("plugins", "list"),
+      install: (input) => invoke("plugins", "install", input),
+      enable: (type, filename) => invoke("plugins", "enable", type, filename),
+      disable: (type, filename) => invoke("plugins", "disable", type, filename),
+      delete: (type, filename) => invoke("plugins", "delete", type, filename),
+    },
+
     opencodeConfig: {
       get: () => invoke("opencodeConfig", "get"),
       update: (config) => invoke("opencodeConfig", "update", config),

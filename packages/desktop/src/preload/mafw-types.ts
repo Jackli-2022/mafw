@@ -172,6 +172,14 @@ export type MafwAPI = {
     restartAgent: () => Promise<{ success: boolean; mode: string }>
   }
 
+  plugins: {
+    list(): Promise<{ plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string }[] }>
+    install(input: { type: 'runtime' | 'media' | 'usage' | 'ui'; filename: string; contentBase64: string; overwrite?: boolean }): Promise<any>
+    enable(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any>
+    disable(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any>
+    delete(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<{ ok: true }>
+  }
+
   uiPlugins: {
     list(): Promise<PluginEntry[]>
     render(req: RenderRequest): Promise<RenderResponse>
