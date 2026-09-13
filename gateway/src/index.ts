@@ -77,6 +77,7 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
+import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './routes/plugins';
 import { handleRestartAgent } from './routes/restart-agent';
 import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
@@ -3782,6 +3783,54 @@ class MafwScheduler {
             });
             return;
           }
+          return;
+        }
+
+        // ── Plugin Hub (all four plugin types) ──
+        const pluginHubDeps = {
+          hub: {
+            dirs: {
+              runtime: config.resolvePath('runtime-plugins'),
+              media: config.resolvePath('media-plugins'),
+              usage: config.resolvePath('usage-plugins'),
+              ui: process.env.MAFW_UI_PLUGINS_DIR || path.join(os.homedir(), '.mafw', 'ui-plugins'),
+            },
+            getErrors: (type: string): Record<string, string> => {
+              const stateOf = (loader: any): any[] => (loader && typeof loader.getState === 'function' ? loader.getState() : []);
+              const source = type === 'runtime' ? this.runtimeLoader : type === 'media' ? this.mediaPluginLoader : type === 'usage' ? this.pluginLoader : null;
+              const out: Record<string, string> = {};
+              for (const p of stateOf(source)) {
+                if (p && p.error) out[p.name || p.file] = p.error;
+              }
+              return out;
+            },
+            configDisabledUsage: () => new Set<string>(Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : []),
+            reload: async (type: string): Promise<void> => {
+              if (type === 'runtime') await this.runtimeLoader?.scan();
+              else if (type === 'media') await this.mediaPluginLoader?.reload();
+              else if (type === 'usage') await this.pluginLoader?.reload();
+              // ui: desktop main fs.watch picks it up automatically
+            },
+          } as any,
+        };
+        if (req.method === 'GET' && req.url?.match(/^\/api\/plugins(?:\?|$)/)) {
+          await handlePluginsList(req, res, pluginHubDeps);
+          return;
+        }
+        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/install(?:\?|$)/)) {
+          await handlePluginsInstall(req, res, pluginHubDeps);
+          return;
+        }
+        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/enable(?:\?|$)/)) {
+          await handlePluginsEnable(req, res, pluginHubDeps);
+          return;
+        }
+        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/disable(?:\?|$)/)) {
+          await handlePluginsDisable(req, res, pluginHubDeps);
+          return;
+        }
+        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/delete(?:\?|$)/)) {
+          await handlePluginsDelete(req, res, pluginHubDeps);
           return;
         }
 
