@@ -81,7 +81,10 @@ export class ChatStore {
           map.set(mid, t)
           older.push(t)
         }
-        for (const p of item.parts ?? []) t.parts.push(historyPart(p))
+        for (const p of item.parts ?? []) {
+          const hp = historyPart(p)
+          if (hp) t.parts.push(hp)
+        }
       }
       this.turns.unshift(...older)
       for (const t of older) this.byMessage.set(t.messageID, t)
@@ -143,13 +146,14 @@ export class ChatStore {
   }
 
   private applyPart(part: any): void {
+    const cp = livePart(part)
+    if (!cp) return
     let turn = this.byMessage.get(part.messageID)
     if (!turn) {
       turn = { messageID: part.messageID, role: 'assistant', parts: [], done: false }
       this.byMessage.set(part.messageID, turn)
       this.turns.push(turn)
     }
-    const cp = livePart(part)
     const idx = turn.parts.findIndex((p) => p.id === cp.id)
     if (idx >= 0) turn.parts[idx] = cp
     else turn.parts.push(cp)
@@ -158,10 +162,13 @@ export class ChatStore {
   private appendHistoryItem(item: HistoryItem): void {
     const info = item.info ?? item
     const mid = info.id ?? `hist-${this.turns.length}`
+    const parts = (item.parts ?? [])
+      .map(historyPart)
+      .filter((p): p is ChatPart => p !== null)
     const turn: ChatTurn = {
       messageID: mid,
       role: info.role === 'user' ? 'user' : 'assistant',
-      parts: (item.parts ?? []).map(historyPart),
+      parts,
       done: true,
     }
     this.turns.push(turn)
@@ -169,7 +176,14 @@ export class ChatStore {
   }
 }
 
-function historyPart(p: any): ChatPart {
+/** 系统注入块（boundary recall / 便签板 / goal 快照等）会在 manager 会话历史里持久化，渲染时过滤。 */
+const INJECTION_TAGS = ['<recall>', '<note-board>', '<goal-snapshot>', '<user-profile>', '<memory-guide>']
+function isInjectionBlock(text: string): boolean {
+  const t = text.trimStart()
+  return INJECTION_TAGS.some((tag) => t.startsWith(tag))
+}
+
+function historyPart(p: any): ChatPart | null {
   if (p.type === 'tool') {
     const st = p.state?.status
     const cmd = String(p.state?.input?.command ?? p.state?.input?.description ?? p.tool ?? '')
@@ -182,10 +196,12 @@ function historyPart(p: any): ChatPart {
       text: out ? `${cmd}\n${out}` : cmd,
     }
   }
-  return { id: p.id, type: p.type ?? 'text', text: String(p.text ?? ''), state: 'completed' }
+  const text = String(p.text ?? '')
+  if (isInjectionBlock(text)) return null
+  return { id: p.id, type: p.type ?? 'text', text, state: 'completed' }
 }
 
-function livePart(part: any): ChatPart {
+function livePart(part: any): ChatPart | null {
   if (part.type === 'tool') {
     const st = part.state?.status
     const cmd = String(part.state?.input?.command ?? part.state?.input?.description ?? part.tool ?? '')
@@ -198,5 +214,7 @@ function livePart(part: any): ChatPart {
       text: out ? `${cmd}\n${out}` : cmd,
     }
   }
-  return { id: part.id, type: part.type ?? 'text', text: String(part.text ?? '') }
+  const text = String(part.text ?? '')
+  if (isInjectionBlock(text)) return null
+  return { id: part.id, type: part.type ?? 'text', text }
 }

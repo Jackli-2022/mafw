@@ -140,6 +140,29 @@ test('loadHistory failure reports error and keeps empty turns', async () => {
   assert.ok(errors[0].includes('boom'))
 })
 
+test('loadHistory filters injected blocks (recall/note-board/goal-snapshot)', async () => {
+  const fx = fakeSession({
+    async messages() {
+      return {
+        data: [
+          historyItem('m1', 'assistant', [
+            { id: 'p1', messageID: 'm1', type: 'text', text: '正常回复' },
+            { id: 'p2', messageID: 'm1', type: 'text', text: '<recall>\n[联想线索]\n  - #mem-xxx [semantic] ...' },
+            { id: 'p3', messageID: 'm1', type: 'text', text: '<note-board>\n[用户叮嘱 · 到期自动下架]' },
+            { id: 'p4', messageID: 'm1', type: 'text', text: '<goal-snapshot>\n<goal id="g1">...' },
+          ]),
+        ],
+        nextCursor: null,
+      }
+    },
+  })
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.loadHistory()
+  assert.equal(s.turns.length, 1)
+  assert.equal(s.turns[0].parts.length, 1, '注入块被过滤')
+  assert.equal(s.turns[0].parts[0].text, '正常回复')
+})
+
 test('concurrent sends are ignored while streaming', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
