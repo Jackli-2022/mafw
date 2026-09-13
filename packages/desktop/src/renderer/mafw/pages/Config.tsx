@@ -9,7 +9,7 @@ import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { SwitchV2 } from "@mafw/ui/v2/switch-v2"
-import { sortEntries, statusLabel, installableTypes, type HubEntry } from "./plugin-hub"
+import { sortEntries, statusLabel, installableTypes, runtimeActivatable, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
 
 interface ConfigSection {
@@ -617,6 +617,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         </Show>
                       </div>
                       <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
+                        <Show when={runtimeActivatable(e, rtInfo()?.active?.name)}>
+                          <ButtonV2 variant="outline" size="small" onClick={() => switchRuntime(e.name)}>激活</ButtonV2>
+                        </Show>
                         <SwitchV2 checked={e.status === "enabled"} onChange={() => togglePlugin(e)} hideLabel />
                         <ButtonV2 variant="ghost" size="small" onClick={() => removePlugin(e)}>删除</ButtonV2>
                       </div>

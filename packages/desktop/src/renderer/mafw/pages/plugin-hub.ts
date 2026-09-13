@@ -35,3 +35,9 @@ export function sortEntries(entries: HubEntry[]): HubEntry[] {
     return a.name.localeCompare(b.name)
   })
 }
+
+/** A runtime hub entry can be activated via /api/runtime/switch when it is an
+ * enabled plugin file that is not already the active runtime. */
+export function runtimeActivatable(entry: HubEntry, activeName: string | null | undefined): boolean {
+  return entry.type === "runtime" && entry.status === "enabled" && entry.name !== (activeName ?? "opencode")
+}

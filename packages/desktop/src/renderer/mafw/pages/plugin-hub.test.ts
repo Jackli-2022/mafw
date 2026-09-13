@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { sortEntries, statusLabel, installableTypes, type HubEntry } from "./plugin-hub"
+import { sortEntries, statusLabel, installableTypes, runtimeActivatable, type HubEntry } from "./plugin-hub"
 
 const entry = (over: Partial<HubEntry>): HubEntry => ({
   type: "runtime", name: "foo", file: "foo.js", status: "enabled", size: 1, mtime: "2026-09-11T00:00:00Z", ...over,
@@ -26,5 +26,14 @@ describe("plugin-hub pure helpers", () => {
 
   test("installableTypes exposes the four fixed types", () => {
     expect(installableTypes()).toEqual(["runtime", "media", "usage", "ui"])
+  })
+
+  test("runtimeActivatable: only enabled runtime entries not already active", () => {
+    expect(runtimeActivatable(entry({ type: "runtime", status: "enabled" }), "pi")).toBe(true)
+    expect(runtimeActivatable(entry({ type: "runtime", status: "enabled" }), "foo")).toBe(false)
+    expect(runtimeActivatable(entry({ type: "runtime", status: "disabled" }), "pi")).toBe(false)
+    expect(runtimeActivatable(entry({ type: "runtime", status: "error" }), "pi")).toBe(false)
+    expect(runtimeActivatable(entry({ type: "media", status: "enabled" }), "pi")).toBe(false)
+    expect(runtimeActivatable(entry({ type: "runtime", status: "enabled" }), null)).toBe(true)
   })
 })
