@@ -680,10 +680,15 @@ class MafwScheduler {
               if (opencodePassword) {
                 sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
               }
-              const runtime = await this.createRuntime(sdkConfig, { ensureServe: true });
+              const runtime = await this.createRuntime(sdkConfig);
               this.opencodeClient = runtime;
               this.runtimeCaps = runtime.capabilities;
               this.runtimeName = runtime.name;
+              // Same serve-ensure rationale as runtimeDeps.onSwitched: the config
+              // hot-reload path can switch onto opencode from a serve-less start.
+              if ((runtime as any).agentProcess?.spawnServe) {
+                await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
+              }
               this.sdkSession.setClient(this.opencodeClient);
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
@@ -947,7 +952,7 @@ class MafwScheduler {
    * Runtime 选择：config.runtime.plugin 指定 ~/.mafw/runtime-plugins/ 中的插件；
    * 未配置/找不到/加载失败一律回退内置 opencode（fail-open，行为与现状一致）。
    */
-  private async createRuntime(sdkConfig: { baseUrl: string; directory?: string; headers: Record<string, string> }, opts?: { ensureServe?: boolean }): Promise<AgentRuntime> {
+  private async createRuntime(sdkConfig: { baseUrl: string; directory?: string; headers: Record<string, string> }): Promise<AgentRuntime> {
     const pluginName = config.runtime?.plugin;
     if (pluginName) {
       const plugin = this.runtimeLoader?.get(pluginName);
@@ -965,13 +970,6 @@ class MafwScheduler {
       }
     }
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
-    // Hot-switch into the builtin opencode runtime may happen on a gateway that
-    // started under an external runtime (pi) — serve was never spawned then.
-    // Only the hot-switch paths pass ensureServe; the startup sequence manages
-    // serve itself (adopt/spawn + owned bookkeeping) right after this call.
-    if (opts?.ensureServe) {
-      await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
-    }
     return createOpencodeRuntime({
       ...sdkConfig,
     });
@@ -3741,12 +3739,20 @@ class MafwScheduler {
               if (opencodePassword) {
                 sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
               }
-              return this.createRuntime(sdkConfig, { ensureServe: true });
+              return this.createRuntime(sdkConfig);
             },
             onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
               this.opencodeClient = rt;
               this.runtimeCaps = rt.capabilities;
               this.runtimeName = rt.name;
+              // Switching onto a runtime that owns serve (builtin opencode) must
+              // ensure the sidecar exists — the gateway may have started under an
+              // external runtime (pi) that never spawned one. Must run AFTER the
+              // assignment above: the supervisor's spawn closure reads
+              // this.opencodeClient to find agentProcess.spawnServe.
+              if ((rt as any).agentProcess?.spawnServe) {
+                await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
+              }
               this.sdkSession.setClient(this.opencodeClient);
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
