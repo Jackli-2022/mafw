@@ -137,11 +137,16 @@ function startGateway(background) {
     // Diagnostics: capture stderr to a file (a detached gateway that crashes
     // silently otherwise leaves no trace). stdout is discarded; the gateway's
     // own file logging covers normal logs.
+    // NOTE: use a raw fd + writeSync — a fs.WriteStream here never ends, which
+    // keeps the parent's event loop alive so `mafw daemon` hangs (and any
+    // tree-kill then takes the detached gateway down with it).
     const errLog = path.join(LOG_DIR, 'gateway-stderr.log');
     try { if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
-    const errStream = fs.createWriteStream(errLog, { flags: 'a' });
-    child.stderr?.pipe(errStream);
-    child.stdout?.resume();
+    const errFd = fs.openSync(errLog, 'a');
+    if (child.stderr) {
+      child.stderr.on('data', (chunk) => { try { fs.writeSync(errFd, chunk); } catch {} });
+    }
+    if (child.stdout) child.stdout.destroy();
     child.unref();
     console.log(`Gateway started in background (PID: ${child.pid})`);
     console.log(`Logs: ${LOG_FILE}`);
