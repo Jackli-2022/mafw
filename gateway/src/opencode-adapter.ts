@@ -64,7 +64,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
           model: opts.model,
           variant: opts.variant,
           system: opts.system,
-          noReply: opts.noReply,
+          noReply: opts.noReply ?? (opts.expectReply === false ? true : undefined),
         });
       },
 

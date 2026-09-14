@@ -19,6 +19,7 @@ export class PiSessionRegistry {
   private bySession = new Map<any, string>();
   private lastUsed = new Map<string, number>();
   private approvalBridges = new Map<string, ApprovalBridge>();
+  private warnedNoReply = new Set<string>();
   private emitEvent: (event: RawRuntimeEvent) => void;
   private policy?: ApprovalPolicy;
 
@@ -73,12 +74,14 @@ export class PiSessionRegistry {
 
   sessionIdFor(session: any): string | undefined { return this.bySession.get(session); }
 
-  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {
+  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {
     const s = this.requireSession(id);
     this.touch(id);
+    this.warnNoReplyOnce(id, opts);
     const piOpts = this.buildPiPromptOpts(opts);
     if (s.isStreaming) {
       const images = opts?.images ?? [];
+      const deliverAs = this.resolveDelivery(opts);
       if (images.length > 0) {
         // sendUserMessage accepts a TextContent|ImageContent array; a bare
         // string would drop the attachments.
@@ -86,9 +89,9 @@ export class PiSessionRegistry {
           { type: 'text', text },
           ...images.map((i) => ({ type: 'image', data: i.data, mimeType: i.mimeType })),
         ];
-        await s.sendUserMessage(content, { deliverAs: 'followUp' });
+        await s.sendUserMessage(content, { deliverAs });
       } else {
-        await s.sendUserMessage(text, { deliverAs: 'followUp' });
+        await s.sendUserMessage(text, { deliverAs });
       }
     } else {
       await s.prompt(text, piOpts);
@@ -96,10 +99,12 @@ export class PiSessionRegistry {
     }
   }
 
-  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[]; finish?: string; usage?: { input: number; output: number; cached?: number; reasoning?: number; costUsd?: number } }> {
+  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[]; finish?: string; usage?: { input: number; output: number; cached?: number; reasoning?: number; costUsd?: number } }> {
     const s = this.requireSession(id);
     this.touch(id);
+    this.warnNoReplyOnce(id, opts);
     const piOpts = this.buildPiPromptOpts(opts);
+    piOpts.streamingBehavior = this.resolveDelivery(opts);
     const before = (s.messages || []).length;
     await s.prompt(text, piOpts);
     await s.waitForIdle();
@@ -132,6 +137,19 @@ export class PiSessionRegistry {
     return piOpts;
   }
 
+  /** delivery → pi 原生投递时机（busy 时 sendUserMessage/prompt 消费）。 */
+  private resolveDelivery(opts?: { delivery?: 'steer' | 'followup' }): 'steer' | 'followUp' {
+    return opts?.delivery === 'steer' ? 'steer' : 'followUp';
+  }
+
+  /** pi 无原生 noReply：expectReply=false 全路径降级为普通消息，每会话 warn 一次（已拍板）。 */
+  private warnNoReplyOnce(id: string, opts?: { noReply?: boolean; expectReply?: boolean; logWarn?: (m: string) => void }): void {
+    if (opts?.expectReply !== false && !opts?.noReply) return;
+    if (this.warnedNoReply.has(id)) return;
+    this.warnedNoReply.add(id);
+    (opts?.logWarn ?? ((m: string) => {}))(`[PiRuntime] expectReply=false has no native pi equivalent — message delivered as normal (session ${id}, warned once)`);
+  }
+
   async messages(id: string): Promise<{ data: any[] }> {
     const s = this.requireSession(id);
     this.touch(id);
@@ -149,6 +167,7 @@ export class PiSessionRegistry {
     this.sessions.delete(id);
     this.bySession.delete(s);
     this.lastUsed.delete(id);
+    this.warnedNoReply.delete(id);
   }
 
   async permissionReply(
@@ -257,6 +276,7 @@ export class PiSessionRegistry {
     this.sessions.clear();
     this.bySession.clear();
     this.lastUsed.clear();
+    this.warnedNoReply.clear();
   }
 
   private requireSession(id: string): any {

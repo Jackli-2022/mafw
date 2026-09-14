@@ -82,4 +82,12 @@ describe('opencode adapter branch + envelope', () => {
     await client.session.question!.reject({ requestID: 'q1' });
     expect(mockClient.session.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
   });
+
+  it('promptAsync maps expectReply=false to noReply', async () => {
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    await client.session.promptAsync({ sessionID: 's1', message: 'hi', expectReply: false });
+    expect(mockClient.session.promptAsync).toHaveBeenCalledWith(expect.objectContaining({ noReply: true }));
+    await client.session.promptAsync({ sessionID: 's1', message: 'hi', expectReply: true });
+    expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({ noReply: undefined }));
+  });
 });

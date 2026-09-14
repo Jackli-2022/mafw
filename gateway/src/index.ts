@@ -1403,7 +1403,7 @@ class MafwScheduler {
         getCostUsd: (sid) => this.trajectoryStore?.getSessionTokenSummary(sid).totalCost ?? 0,
         abort: (sid) => this.opencodeClient!.session.abort({ sessionID: sid }),
         notify: async (sid, text) => {
-          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], noReply: true });
+          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
         },
         log: (msg) => log.info(msg),
       }));
@@ -6019,7 +6019,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         },
         // Hard no-reply: message lands in session history, no LLM run.
         promptNoReply: async (sid, text) => {
-          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], noReply: true });
+          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
         },
       });
     }

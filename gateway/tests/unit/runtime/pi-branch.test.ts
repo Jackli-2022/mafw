@@ -101,4 +101,28 @@ describe('PiSessionRegistry branch primitives', () => {
       { payload: { type: 'session.compacted', properties: { sessionID: id } } },
     ]);
   });
+
+  it('busy promptAsync maps delivery and warns noReply once per session', async () => {
+    const calls: any[] = [];
+    const warns: string[] = [];
+    const src = fakeSession({
+      isStreaming: true,
+      sendUserMessage: jest.fn(async (_content: any, o: any) => { calls.push(o); }),
+    });
+    const registry = makeRegistry(async () => ({ session: src }));
+    const { id } = await registry.create('/cwd', {});
+    await registry.promptAsync(id, 'hello', { delivery: 'steer', expectReply: false, logWarn: (m: string) => warns.push(m) });
+    expect(calls[0]).toEqual({ deliverAs: 'steer' });
+    await registry.promptAsync(id, 'again', { expectReply: false, logWarn: (m: string) => warns.push(m) });
+    expect(calls[1]).toEqual({ deliverAs: 'followUp' });
+    expect(warns).toHaveLength(1); // 每会话仅一次
+  });
+
+  it('non-busy prompt passes streamingBehavior to pi prompt opts', async () => {
+    const src = fakeSession();
+    const registry = makeRegistry(async () => ({ session: src }));
+    const { id } = await registry.create('/cwd', {});
+    await registry.prompt(id, 'q', { delivery: 'steer' });
+    expect(src.prompt).toHaveBeenCalledWith('q', expect.objectContaining({ streamingBehavior: 'steer' }));
+  });
 });

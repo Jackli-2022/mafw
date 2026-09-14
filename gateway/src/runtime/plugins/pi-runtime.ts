@@ -127,15 +127,15 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       const { id } = await registry.create(opts?.directory ?? config.raw.paths.projectDir, { model: { provider, modelID } });
       return { id };
     },
-    promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean }) => {
+    promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
       const converted = partsToPromptInput(opts.parts);
       const text = opts.message ?? converted.text ?? '';
-      await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, images: converted.images });
+      await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
     },
-    prompt: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean }) => {
+    prompt: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
       const converted = partsToPromptInput(opts.parts);
       const text = opts.message ?? converted.text ?? '';
-      return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, images: converted.images });
+      return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
     },
     messages: async (opts: { sessionID: string }) => {
       const { data } = await registry.messages(opts.sessionID);
