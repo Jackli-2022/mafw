@@ -25,7 +25,7 @@ export const markdownTheme: MarkdownTheme = {
 }
 
 /** diff 风格行着色：+ 绿、- 红、@@ 青；其余 dim。 */
-function colorDiffLine(l: string): string {
+export function colorDiffLine(l: string): string {
   if (l.startsWith('+++') || l.startsWith('---')) return theme.dim(l)
   if (l.startsWith('+')) return theme.ok(l)
   if (l.startsWith('-')) return theme.err(l)
