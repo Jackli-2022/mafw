@@ -63,6 +63,11 @@
     "engines":  {
                     "node":  "\u003e=18.0.0"
                 },
+    "overrides":  {
+                      "electron-builder":  {
+                          "chalk":  "4.1.2"
+                      }
+                  },
     "workspaces":  [
                        "packages/*"
                    ]
