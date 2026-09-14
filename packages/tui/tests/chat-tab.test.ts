@@ -59,6 +59,14 @@ test('getEditorText/setEditorText pass through to the editor', () => {
   assert.equal(tab.getEditorText(), 'draft text')
 })
 
+test('submit records input history for up/down recall', async () => {
+  const { tab } = makeTab()
+  await tab.submit('first message')
+  await tab.submit('second message')
+  const history = (tab as any).editor.history as string[]
+  assert.deepEqual(history, ['second message', 'first message'], '最新在前')
+})
+
 test('rebuild resets transcript from store turns and keeps local blocks', async () => {
   const { tab, store } = makeTab()
   ;(store as any).turns = [

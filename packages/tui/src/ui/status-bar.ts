@@ -14,6 +14,8 @@ export interface StatusState {
   conn: 'ok' | 'reconnecting' | 'down'
   hint?: string
   usage?: UsageState
+  /** agent 流式中（交互状态机 busy 态） */
+  busy?: boolean
 }
 
 /** token 数紧凑化：1234 → 1.2K、1250000 → 1.3M。 */
@@ -41,6 +43,7 @@ export class StatusBar implements Component {
     const conn = s.conn === 'ok' ? theme.ok('connected')
       : s.conn === 'reconnecting' ? theme.warn('reconnecting') : theme.err('disconnected')
     const parts: string[] = [s.project ?? '-', s.session ? s.session.slice(0, 12) : '-', conn]
+    if (s.busy) parts.push(theme.warn('busy'))
     const u = s.usage
     if (u) {
       const usageBits: string[] = []

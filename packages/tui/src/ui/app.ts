@@ -14,6 +14,9 @@ import { createSlashHandler } from './slash-commands.ts'
 import { defaultEditorCommand, editInExternalEditor } from '../external-editor.ts'
 import { enableClickDispatch } from './clickable-tui.ts'
 import { ClickableSelectList } from './clickable-select-list.ts'
+import { dispatchKey, type KeyDispatchContext } from './keymap.ts'
+import { InteractionStateMachine } from './interaction-state.ts'
+import { helpLines } from './command-registry.ts'
 import { showPermissionOverlay } from './overlays.ts'
 import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
@@ -76,10 +79,11 @@ export async function runApp(opts: AppOptions): Promise<void> {
   }).catch(() => {})
 
   // ── Chat tab ──
+  const interaction = new InteractionStateMachine()
   const chatStore = new ChatStore({
     session: client.session,
     sessionID: managerSessionID ?? 'none',
-    onChange: () => tui.requestRender(),
+    onChange: () => { tui.requestRender(); syncInteraction() },
     onError: (message) => setStatus({ hint: theme.err(`⚠ ${message.slice(0, 60)}`) }),
     getModel: () => modelSelection,
   })
@@ -115,39 +119,35 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const triageTab = new TriageTab({ tui, store: triageStore, client, setStatus })
   triageStore.start()
 
-  // ── 帮助 overlay ──
+  // ── 帮助 overlay（命令区由 COMMAND_REGISTRY 驱动；键位区静态）──
   let helpHandle: OverlayHandle | null = null
   function toggleHelp(): void {
     if (helpHandle) {
       helpHandle.hide()
       helpHandle = null
+      model.helpVisible = false
+      applyTab()
       return
     }
-    const help = new Text([
+    const body = [
       '快捷键',
       '',
       '  1-4 / Alt+1-4   切换 Chat / Goals / Memory / Triage',
-      '  q               退出（非输入态）',
-      '  Ctrl+C          强制退出',
-      '  Esc             流式期间中止回合',
+      '  q / Ctrl+C      退出（输入态归编辑器）',
+      '  Esc             busy 时中止回合 / 关闭 overlay',
       '  Ctrl+G          外部编辑器编辑输入（$EDITOR）',
+      '  ↑ / ↓           输入历史（提交过才有）',
       '',
       'Chat 输入',
       '  ! <command>     本地 shell（零成本，不进对话）',
       '  @路径 / /命令   编辑器补全',
       '',
-      'Chat slash 命令',
-      '  /new            新话题（rotate manager session）',
-      '  /sessions       会话列表/切换（/resume /switch）',
-      '  /model          选择模型（作用于后续消息）',
-      '  /compact        压缩当前会话上下文',
-      '  /undo /redo     回退/恢复最后一轮',
-      '  /btw <问题>     支线问答',
-      '  /older          加载更早历史',
-      '  /editor         外部编辑器（同 Ctrl+G）',
-      '  /help           本帮助',
-    ].join('\n'), 1, 1)
-    helpHandle = tui.showOverlay(help, { width: 58, maxHeight: 28, anchor: 'center' })
+      ...helpLines(),
+      theme.dim('⚠ = 破坏性操作'),
+    ].join('\n')
+    model.helpVisible = true
+    applyTab()
+    helpHandle = tui.showOverlay(new Text(body, 1, 1), { width: 62, maxHeight: 32, anchor: 'center' })
   }
 
   // ── 会话切换（/sessions）──
@@ -369,46 +369,52 @@ export async function runApp(opts: AppOptions): Promise<void> {
     applyTab()
   }
 
-  // 滚动到顶自动加载更早历史（1s 轮询；chat tab 激活时）
+  // 滚动到顶自动加载更早历史（1s 轮询；chat tab 激活时）+ 交互状态同步（overlay 无事件钩子，轮询兜底）
   const topTimer = setInterval(() => {
+    syncInteraction()
     if (model.active === 'chat' && chatTab.atTop) void chatTab.loadOlder()
   }, 1000)
 
+  function syncInteraction(): void {
+    interaction.update({ overlayOpen: tui.hasOverlay(), streaming: chatStore.streaming })
+    setStatus({ busy: interaction.is('busy') })
+  }
+
+  function quitApp(): void {
+    clearInterval(topTimer)
+    goalsStore.stop()
+    triageStore.stop()
+    tui.stop()
+    process.exit(0)
+  }
+
+  // ── 声明式键位派发（keymap.ts 单表；动作在此注入实现）──
+  const keyCtx: KeyDispatchContext = {
+    model,
+    interaction,
+    actions: {
+      quit: quitApp,
+      switchTab: (id) => { model.switchTab(id); applyTab() },
+      toggleHelp: () => toggleHelp(),
+      abortTurn: () => { void chatStore.abort() },
+      openExternalEditor: () => { void openInExternalEditor() },
+      blurMemorySearch: () => memoryTab.blurSearch(),
+    },
+    queries: {
+      activeTab: () => model.active,
+      editing: () => model.editing,
+      overlayOpen: () => tui.hasOverlay(),
+      streaming: () => chatStore.streaming,
+      memoryInputFocused: () => memoryTab.inputFocused,
+    },
+  }
+
   tui.addInputListener((data) => {
-    // Esc：流式中止回合（优先于焦点组件）
-    if (matchesKey(data, Key.escape) && chatStore.streaming && !tui.hasOverlay()) {
-      void chatStore.abort()
-      return { consume: true }
-    }
-    // Ctrl+G：外部编辑器（chat 输入态）
-    if (matchesKey(data, Key.ctrl('g')) && model.active === 'chat' && model.editing && !tui.hasOverlay()) {
-      void openInExternalEditor()
-      return { consume: true }
-    }
-    const prevTab = model.active
-    const prevHelp = model.helpVisible
-    const r = model.handleKey(data)
-    if (r === 'quit') {
-      clearInterval(topTimer)
-      goalsStore.stop()
-      triageStore.stop()
-      tui.stop()
-      process.exit(0)
-    }
-    if (model.active !== prevTab || model.helpVisible !== prevHelp) {
-      if (helpHandle && !model.helpVisible) { helpHandle.hide(); helpHandle = null }
-      applyTab()
-      return { consume: true }
-    }
+    if (dispatchKey(data, keyCtx)) return { consume: true }
     // 非 chat tab 的 tab 级按键（上下/Enter/x/u/i）
     if (!model.editing && !tui.hasOverlay() && model.active !== 'chat') {
       const tab = currentBody as { handleTabKey?: (d: string) => boolean }
       if (typeof tab.handleTabKey === 'function' && tab.handleTabKey(data)) return { consume: true }
-    }
-    // Esc：memory 搜索框失焦回列表
-    if (matchesKey(data, Key.escape) && model.active === 'memory' && memoryTab.inputFocused) {
-      memoryTab.blurSearch()
-      return { consume: true }
     }
     return undefined
   })

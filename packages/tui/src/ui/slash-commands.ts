@@ -1,4 +1,9 @@
-/** Chat slash 命令表与派发（app.ts 注入实现，此处纯逻辑可单测）。 */
+/** Chat slash 命令派发（app.ts 注入实现，此处纯逻辑可单测）。
+ * 命令表与别名解析收敛在 command-registry.ts（COMMAND_REGISTRY 单表驱动补全/help/派发）。 */
+import { COMMAND_REGISTRY, resolveCommand } from './command-registry.ts'
+
+/** 兼容导出：命令表真源在 command-registry.ts。 */
+export const SLASH_COMMANDS = COMMAND_REGISTRY
 
 export interface SlashDeps {
   loadOlder(): Promise<void>
@@ -21,24 +26,10 @@ export interface SlashDeps {
   openExternalEditor(): Promise<void>
 }
 
-export const SLASH_COMMANDS: { name: string; description: string }[] = [
-  { name: 'new', description: '新话题（rotate manager session）' },
-  { name: 'btw', description: '支线问答：/btw <问题>' },
-  { name: 'older', description: '加载更早历史' },
-  { name: 'sessions', description: '会话列表/切换（别名 /resume /switch）' },
-  { name: 'model', description: '选择模型（作用于后续消息）' },
-  { name: 'compact', description: '压缩当前会话上下文' },
-  { name: 'undo', description: '回退最后一轮对话' },
-  { name: 'redo', description: '恢复上一次回退' },
-  { name: 'editor', description: '外部编辑器编辑输入（同 Ctrl+G）' },
-  { name: 'help', description: '快捷键帮助' },
-]
-
-const ALIASES: Record<string, string> = { resume: 'sessions', switch: 'sessions', clear: 'new' }
 
 export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string) => Promise<string | null> {
   return async (rawCmd: string, args: string): Promise<string | null> => {
-    const cmd = ALIASES[rawCmd] ?? rawCmd
+    const cmd = resolveCommand(rawCmd) ?? rawCmd
     switch (cmd) {
       case 'help':
         deps.toggleHelp()
@@ -66,7 +57,7 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
         await deps.openExternalEditor()
         return null
       default:
-        return `未知命令 /${rawCmd}（可用: ${SLASH_COMMANDS.map((c) => `/${c.name}`).join(' ')}）`
+        return `未知命令 /${rawCmd}（可用: ${COMMAND_REGISTRY.map((c) => `/${c.name}`).join(' ')}）`
     }
   }
 }

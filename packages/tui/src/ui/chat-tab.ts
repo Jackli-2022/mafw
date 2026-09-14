@@ -5,7 +5,7 @@ import {
 import type { ChatStore, ChatTurn } from '../store/chat-store.ts'
 import { turnToLines } from './message-blocks.ts'
 import { isShellCommand, parseShellCommand, runShell, shellResultToLines } from '../shell-mode.ts'
-import { SLASH_COMMANDS } from './slash-commands.ts'
+import { autocompleteItems } from './command-registry.ts'
 import { theme } from '../theme.ts'
 
 export function parseSlash(text: string): { cmd: string; args: string } | null {
@@ -91,7 +91,7 @@ export class ChatTab extends VStack implements Focusable {
     this.scrollView = new ScrollView(this.transcript, { follow: 'end', primary: true })
     this.editor = new Editor(deps.tui, editorTheme)
     this.editor.setAutocompleteProvider(new CombinedAutocompleteProvider(
-      SLASH_COMMANDS.map((c) => ({ name: c.name, description: c.description })),
+      autocompleteItems(),
       process.cwd(),
     ))
     this.editor.onSubmit = (text) => { void this.submit(text) }
@@ -129,6 +129,8 @@ export class ChatTab extends VStack implements Focusable {
   async submit(text: string): Promise<void> {
     const trimmed = text.trim()
     if (!trimmed) return
+    // 输入历史（pi-tui Editor 内建 up/down 导航；claude code 同款 per-session 历史）
+    this.editor.addToHistory(trimmed)
     if (trimmed === '!') {
       this.addLocalLines([theme.dim('用法: ! <command>（本地执行，不进对话）')])
       return
