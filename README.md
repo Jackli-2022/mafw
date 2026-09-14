@@ -41,6 +41,8 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
 - **MinHash 合并**：跨层相似记忆自动 soft-supersede 合并，历史版本可追溯
 - **Pinned 披露层 + Sticky 便签板**：身份画像每轮必见，"记下来"类提醒限时必达
 - **主动记忆引导**（OptMem 式）：Agent 自主决定何时写入、何时检索，而非被动灌注
+- **环境探测式维护**：记忆 curator 写入前用只读工具验证候选记忆（propose–probe–commit），
+  每周自动重验高价值记忆、被环境证伪的走 supersedes 链更新——能量衰减管"淡忘"，探测验证管"内容有效性"
 
 ### 🤖 Goal 编排
 
@@ -64,7 +66,7 @@ Rail 侧边栏 + TabStrip 布局：`chat / goals / memory / approvals / triage /
 
 ### ⚙️ 自动化引擎
 
-Cron 规则驱动：记忆衰减、回合聚合压缩（每小时）、反思管线；triage 队列让关键决定仍由你确认。
+Cron 规则驱动：记忆衰减、回合聚合压缩（每小时）、反思管线、stale 记忆重验（每周）；triage 队列让关键决定仍由你确认。
 
 ### 🔌 Runtime 能力契约
 
@@ -168,6 +170,7 @@ MAFW 的设计站在这些项目与研究的肩膀上：
 |---|---|
 | [opencode](https://github.com/sst/opencode) | 插件宿主平台；Desktop 端（`packages/desktop`）源自其桌面架构并深度改造（MAFW Rail/Tabs/Config、gateway sidecar 等） |
 | [Memora](https://arxiv.org/abs/2602.03315)（Microsoft M365 Research, ICML 2026） | 谐波记忆系统的架构参照：`primary_abstraction` / `cue_anchors` / `memory_value` 三元数据模型与其同构；embedding 相似度合并 + LLM UPDATE/CREATE 裁判（ConsolidationService）采用其方案；其 LongMemEval-S 87.4% SOTA 是本项目记忆管线设计的方向验证 |
+| [Grounding Agent Memory](https://arxiv.org/abs/2609.11060)（Microsoft, 2026） | 环境探测式记忆维护（Environment-Probing Curation）的方案来源：post-task curator 以最小权限只读工具在写入前验证候选记忆（propose–probe–commit）、定期重验并刷新 stale 条目；其 CLBench/APEX 实验证明该机制同时提升正确率并降低 task-agent 成本 |
 | OKF（Open Knowledge Format） | 记忆存储层：Markdown + frontmatter、每记忆一文件，索引视为纯可推导产物；设计见 `docs/superpowers/specs/2026-07-16-okf-migration-design.md` |
 
 ## 许可
