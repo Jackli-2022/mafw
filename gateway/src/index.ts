@@ -26,6 +26,7 @@ import { onMemoryWritten } from "./memory/harmonic-file-store";
 import { GatewayDatabase } from "./memory/gateway-db";
 import { TurnPipeline } from "./recall/turn-pipeline";
 import { ReflectionPipeline } from "./recall/reflection";
+import { StaleVerifyPipeline } from "./recall/stale-verify";
 import { MemoryWorker } from "./recall/memory-worker";
 import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
@@ -1375,6 +1376,38 @@ class MafwScheduler {
         }
       });
     });
+    // memory:review — overrides the module-level stub (which only logged the
+    // dormant review queue). Now runs stale-memory verification: the curator
+    // worker re-checks high-value procedural/semantic memories against the
+    // live environment with read-only tools and supersedes contradicted ones
+    // (environment-probing curation, arXiv:2609.11060).
+    actionRegistry.set('memory:review', async () => {
+      await this.runPipelineGuarded('memory:review', async () => {
+        try {
+          const pipeline = this.getStaleVerifyPipeline();
+          const res = await pipeline.runOnce();
+          log.info(
+            `[StaleVerify] candidates=${res.candidates} checked=${res.checked} superseded=${res.superseded} failed=${res.failed}`,
+          );
+        } catch (err: any) {
+          log.warn(`[StaleVerify] run failed: ${err.message}`);
+        }
+      });
+    });
+  }
+
+  private getStaleVerifyPipeline(): StaleVerifyPipeline {
+    if (!this.memoryService) throw new Error('memoryService not ready');
+    const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
+    return new StaleVerifyPipeline({
+      index: this.memoryService.harmonicIndex,
+      readMemory: async (id) => {
+        const unit = await store.read(id);
+        return unit ? { id: unit.id, memory_value: unit.memory_value } : null;
+      },
+      worker: this.getPool().getWorker('stale-verify', 'reflect'),
+      workerModel: config.recall.workerModel,
+    });
   }
 
   private getTurnPipeline(): TurnPipeline {
@@ -1385,6 +1418,22 @@ class MafwScheduler {
       workerFor: (sessionID) => this.getPool().getWorker(sessionID, 'extract'),
       staleMs: config.recall.turnStaleMs,
       workerModel: config.recall.workerModel,
+      // Outcome-feedback signal (env-probing curation, grade gi): lets the
+      // curator calibrate trust in the trajectory — a failed goal means its
+      // "lessons" need verification before they become memories.
+      gradeFor: (sessionID) => {
+        try {
+          const o = this.getGatewayDb().getOutcomeForSession(sessionID);
+          if (!o) return null;
+          return (
+            `Goal ${o.goal_id} archived with verdict=${o.verdict} ` +
+            `(thumbs_up=${o.thumbs_up}, thumbs_down=${o.thumbs_down})` +
+            (o.failure_kind ? `, failure_kind=${o.failure_kind}` : '')
+          );
+        } catch {
+          return null;
+        }
+      },
     });
   }
 

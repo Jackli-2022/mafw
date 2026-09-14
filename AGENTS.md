@@ -379,6 +379,17 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 
 **聚合压缩（memory:turnCompress，每小时）**：每活跃 session 将本小时所有完成回合合并为一份 batch transcript，交给该 session 的**持久 worker 会话**，由 agent **自主调用 `mafw_add_memory`** 记录值得长期记忆的条目（类型按内容自选）。处理过的回合**一律删除**（空/失败不重试）。内部 worker 会话经 `/api/obs/capture` 的会话白名单过滤——**输出永不回流 T1**（防递归）。
 
+#### 5.13b 环境探测式记忆维护（Environment-Probing Curation，2026-09-14，arXiv:2609.11060）
+
+post-task curator 只看轨迹会记下错误答案/过度泛化/过期知识（"回顾性证据边界"）。落地为四点（A/B/C/D）：
+
+- **A. curator 只读探测面**：`memory-curator` agent 工具白名单在三个记忆工具之外放开 `read/grep/glob/ls`（`skills/memory-curator-agent.ts`）；**edit/bash/webfetch 仍 deny**——2026-08-31 transcript 执行事故的硬防线（mutation 禁止）不变，只读工具不破坏该不变量。`HARD_BOUNDARIES` 改写为"只读验证允许、任何写/执行绝对禁止"。`TOOL_EXTRACTION_SYSTEM` 加 propose–probe–commit 段：项目相关 procedural/semantic 记忆写入前先探测验证（每条候选 ≤3 次 probe）；transcript 与环境矛盾时以环境为准并 supersedes；只记可复用过程不记实例答案。
+- **B. stale 刷新（memory:review 每周日 UTC 4:00）**：`StaleVerifyPipeline`（`recall/stale-verify.ts`）取 top-10 energy×salience 的 procedural/semantic 记忆（>14 天、未 superseded），交 `stale-verify` worker 用只读工具重验，失真走 supersedes 链。**语义升级**：index.ts `registerMemoryPipelineActions` 覆盖了 automation-engine 模块级的 memory:review 桩（原只打印 ReviewScheduler 队列，review_count 无消费者）；规则由 `pipeline-rules.ts` 供给。能量衰减管"淡忘"，本管线管"内容有效性"。
+- **C. 验证置信度约定**：探测验证过的记忆 cue_anchors 带 `verified:YYYY-MM-DD` 锚点（prompt 约定，不动 schema），检索时可区分"环境验证过"vs"trajectory-only"。
+- **D. 成败信号喂给 curator**：`TurnPipelineOptions.gradeFor` —— `GatewayDatabase.getOutcomeForSession()`（goal_sessions ⋈ goal_outcomes 取最近 archived）拼入 worker prompt；prompt 明确"passing grade 不证明中间假设正确，失败轨迹的经验须先验证"。
+
+限制：bash 不开（opencode 权限 per-tool，无法过滤只读命令），"命令还能不能跑"类验证不在覆盖范围；plan B（gateway 侧确定性路径探测）记录在案未实施。
+
 ### api/recall/context endpoint
 
 ```

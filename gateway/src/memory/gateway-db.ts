@@ -490,6 +490,19 @@ export class GatewayDatabase {
     return this.db.prepare('SELECT session_id, phase, loop FROM goal_sessions WHERE goal_id = ?').all(goalId) as any[];
   }
 
+  /** Most recent archived outcome among the goals a session participated in
+   *  (goal_sessions → goal_outcomes join). Powers the turn-compress curator's
+   *  outcome-feedback signal (env-probing curation, grade gi). */
+  getOutcomeForSession(sessionId: string): GoalOutcome | null {
+    const row = this.db.prepare(`
+      SELECT o.* FROM goal_outcomes o
+      JOIN goal_sessions s ON s.goal_id = o.goal_id
+      WHERE s.session_id = ?
+      ORDER BY o.archived_at DESC LIMIT 1
+    `).get(sessionId) as GoalOutcome | undefined;
+    return row ?? null;
+  }
+
   close(): void {
     this.db.close();
   }

@@ -24,6 +24,10 @@ export interface TurnPipelineOptions {
   contextEpisodes?: number; // prior-turn context lines injected into the prompt
   /** Pin a model for each worker prompt. */
   workerModel?: { providerID: string; modelID: string };
+  /** Optional outcome-feedback signal for a session (goal verdict / thumbs),
+   *  appended to the worker prompt so the curator can calibrate trust in the
+   *  trajectory (env-probing curation, signal D). */
+  gradeFor?: (sessionID: string) => string | null;
 }
 
 export interface TurnPipelineResult {
@@ -60,6 +64,13 @@ Division of labor: your job is the FACT LAYER of this session — concrete facts
 - Time anchoring: convert relative times to ABSOLUTE dates (e.g. "yesterday" → the actual date, "next Monday" → the date) in the memory_value; when the memory is tied to a specific date/period, add a machine-readable anchor "date:YYYY-MM" (e.g. "date:2026-09") to cue_anchors — this enables explicit date-filtered retrieval later
 
 Before writing preference/fact memories (semantic type), ALWAYS search for similar existing memories first using mafw_search_hybrid. If you find an existing memory that covers the same fact but with an outdated value (e.g., "my car is X" → now "my car is Y"), use the supersedes field in mafw_add_memory to link the old memory ID. This ensures the old memory is demoted in search and the new one becomes authoritative. If the user explicitly retracts a fact (e.g., "I don't eat spicy food anymore"), use mafw_supersede_memory to mark the old memory as outdated without writing a replacement.
+
+### Propose–Probe–Commit (environment verification):
+- Before writing a procedural or semantic memory about THIS PROJECT (paths, commands, APIs, symbols, config keys), verify it against the environment using read/grep/glob/ls: does the path exist? is the symbol still named this? Spend at most 3 probes per candidate memory; skip verification for user preferences or purely conversational facts that have no environment footprint.
+- If the transcript contradicts the environment, the environment wins — write what is currently true, and supersede the outdated memory.
+- Record reusable procedures (how to do X), never instance answers (the result of doing X once). Incidental values are not memories.
+- For every memory you verified via probing, add a "verified:YYYY-MM-DD" anchor (today's date) to cue_anchors so future agents can distinguish environment-verified memories from trajectory-only ones.
+- Outcome feedback (when present in the input): a passing grade or verdict does NOT validate every intermediate assumption in the trajectory; a failed outcome means treat that trajectory's "lessons" with suspicion and verify before writing.
 ${HARD_BOUNDARIES}
 
 After processing, ALWAYS end your response with exactly one of these lines:
@@ -128,9 +139,13 @@ export class TurnPipeline {
       // 2) ask the session's persistent worker agent to save memories itself
       if (transcript.trim()) {
         const context = sessionContext(this.opts.index, sessionID, this.opts.contextEpisodes ?? 10);
-        const prompt = context
+        const base = context
           ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
           : `Observations of the last hour:\n${transcript}`;
+        const grade = this.opts.gradeFor?.(sessionID);
+        const prompt = grade
+          ? `${base}\n\nOutcome feedback for this session's recent work (a signal about trajectory reliability, not proof of correctness):\n${grade}`
+          : base;
         try {
           const reply = await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel, 'memory-curator');
           // Parse noop indicator from the worker's response

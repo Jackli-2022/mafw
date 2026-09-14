@@ -10,6 +10,10 @@ const RULES: Array<{ id: string; schedule: string; timezone: string; action: str
   { id: 'memory-reflect', schedule: '0 3 * * *', timezone: 'UTC', action: 'memory:reflect' },
   // Daily energy decay — memories fade by elapsed time (0.005/day base rate).
   { id: 'memory-decay', schedule: '30 3 * * *', timezone: 'UTC', action: 'memory:decay' },
+  // Weekly stale-memory verification — the curator re-checks high-value
+  // procedural/semantic memories against the live environment (read-only
+  // probes) and supersedes contradicted ones (env-probing curation).
+  { id: 'memory-review', schedule: '0 4 * * 0', timezone: 'UTC', action: 'memory:review' },
 ];
 
 export function ensureMemoryPipelineRules(mafwDir: string): void {
