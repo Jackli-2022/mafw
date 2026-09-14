@@ -6,6 +6,7 @@ import type { ChatStore, ChatTurn } from '../store/chat-store.ts'
 import { turnToLines } from './message-blocks.ts'
 import { isShellCommand, parseShellCommand, runShell, shellResultToLines } from '../shell-mode.ts'
 import { autocompleteItems } from './command-registry.ts'
+import { PromptStash } from './prompt-stash.ts'
 import { theme } from '../theme.ts'
 
 export function parseSlash(text: string): { cmd: string; args: string } | null {
@@ -64,6 +65,7 @@ export class ChatTab extends VStack implements Focusable {
   private scrollView: ScrollView
   private turnLines: TurnLines[] = []
   private localBlocks: RawLines[] = []
+  private stash = new PromptStash()
   private _focused = false
   private deps: ChatTabDeps
 
@@ -71,10 +73,37 @@ export class ChatTab extends VStack implements Focusable {
   set focused(v: boolean) { this._focused = v; this.editor.focused = v } // IME 传播
 
   /** 焦点组件输入路由：TUI 只调 focusedComponent.handleInput，VStack 无此方法——
-   *  必须显式转发给 Editor，否则按键被静默丢弃（"tui 没法输入"根因之二）。 */
+   *  必须显式转发给 Editor，否则按键被静默丢弃（"tui 没法输入"根因之二）。
+   *  转发前拦截三个 app 级输入交互：Up 收回排队（Claude）、Ctrl+S 草稿栈（Hermes）。 */
   handleInput(data: string): void {
+    if (data === '\x1b[A') {
+      // Up + 输入为空 + 有排队 → 收回全部排队消息进编辑框（一行一条）
+      if (this.deps.store.queuedCount > 0 && this.getEditorText().trim() === '') {
+        const texts = this.deps.store.takeBackAll()
+        if (texts.length > 0) {
+          this.setEditorText(texts.join('\n'))
+          return
+        }
+      }
+    }
+    if (data === '\x13') {
+      // Ctrl+S：有文本入栈清空；空输入恢复最新（LIFO）
+      const text = this.getEditorText()
+      if (text.trim() !== '') {
+        this.stash.push(text)
+        this.setEditorText('')
+        this.deps.tui.requestRender()
+        return
+      }
+      const restored = this.stash.pop()
+      if (restored !== null) this.setEditorText(restored)
+      return
+    }
     this.editor.handleInput(data)
   }
+
+  /** stash 深度（状态栏 📌N 徽标用）。 */
+  get stashCount(): number { return this.stash.size }
 
   /** 鼠标点击：未聚焦时点击即聚焦；已聚焦时放行（保留 pi-tui 拖选复制）。 */
   handleMouseClick(_col: number, _row: number): boolean {

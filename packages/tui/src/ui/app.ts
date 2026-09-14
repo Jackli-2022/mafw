@@ -17,6 +17,7 @@ import { ClickableSelectList } from './clickable-select-list.ts'
 import { dispatchKey, type KeyDispatchContext } from './keymap.ts'
 import { InteractionStateMachine } from './interaction-state.ts'
 import { helpLines } from './command-registry.ts'
+import { QueueOverlay } from './queue-overlay.ts'
 import { showPermissionOverlay } from './overlays.ts'
 import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
@@ -245,6 +246,8 @@ export async function runApp(opts: AppOptions): Promise<void> {
   }
 
   // ── 用量轮询（模型/token/成本/时长 → 状态栏）──
+  let promptStart: number | null = null
+  let lastPromptMs = 0
   async function refreshUsage(): Promise<void> {
     const sid = chatStore.sessionID
     if (!sid || sid === 'none') return
@@ -256,6 +259,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
           model: modelSelection?.modelID ?? defaultModelLabel,
           tokens: total,
           costUsd: t.totalCost ?? null,
+          promptMs: promptStart !== null ? Date.now() - promptStart : lastPromptMs,
           durationMs: Date.now() - appStart,
         },
       })
@@ -277,6 +281,23 @@ export async function runApp(opts: AppOptions): Promise<void> {
     }
   }
 
+  // ── /queue 排队消息管理 ──
+  function showQueueManager(): Promise<void> {
+    const overlay = new QueueOverlay({
+      getItems: () => chatStore.queuedTexts,
+      onTakeBack: (i) => {
+        const text = chatStore.dropQueuedAt(i)
+        if (text !== null) chatTab.setEditorText(text)
+      },
+      onDrop: (i) => { chatStore.dropQueuedAt(i) },
+      onClose: () => { handle.hide(); syncInteraction() },
+      requestRender: () => tui.requestRender(),
+    })
+    const handle = tui.showOverlay(overlay, { width: '60%', maxHeight: 14, anchor: 'center' })
+    syncInteraction()
+    return Promise.resolve()
+  }
+
   // ── slash 命令派发 ──
   const slashHandler = createSlashHandler({
     loadOlder: () => chatTab.loadOlder(),
@@ -296,6 +317,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       return null
     },
     showSessionPicker,
+    showQueueManager,
     showModelPicker,
     compact: async () => {
       const sid = chatStore.sessionID
@@ -376,8 +398,17 @@ export async function runApp(opts: AppOptions): Promise<void> {
   }, 1000)
 
   function syncInteraction(): void {
+    const wasStreaming = chatStore.streaming
     interaction.update({ overlayOpen: tui.hasOverlay(), streaming: chatStore.streaming })
-    setStatus({ busy: interaction.is('busy') })
+    setStatus({ busy: interaction.is('busy'), queued: chatStore.queuedCount, stashed: chatTab.stashCount })
+    // 回合边界：⏱ 计时 + 完成响铃（MAFW_TUI_BELL=0 可关）
+    if (chatStore.streaming && promptStart === null) promptStart = Date.now()
+    if (!chatStore.streaming && promptStart !== null) {
+      lastPromptMs = Date.now() - promptStart
+      promptStart = null
+      if (process.env.MAFW_TUI_BELL !== '0') tui.terminal.write('\x07')
+    }
+    void wasStreaming
   }
 
   function quitApp(): void {

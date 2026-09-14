@@ -10,6 +10,7 @@ function harness(over: Partial<Record<string, any>> = {}) {
     rotateTopic: async () => { calls.push('new'); return null },
     btw: async (args: string) => { calls.push(`btw:${args}`); return null },
     showSessionPicker: async () => { calls.push('sessions') },
+    showQueueManager: async () => { calls.push('queue') },
     showModelPicker: async () => { calls.push('model') },
     compact: async () => { calls.push('compact'); return null },
     undo: async () => { calls.push('undo'); return null },
@@ -47,6 +48,14 @@ test('model/compact/undo/redo/editor dispatch to their deps', async () => {
   assert.deepEqual(h.calls, ['model', 'compact', 'undo', 'redo', 'editor'])
 })
 
+test('queue command and /q alias open the queue manager', async () => {
+  const a = harness()
+  assert.equal(await a.handler('queue', ''), null)
+  const b = harness()
+  assert.equal(await b.handler('q', ''), null)
+  assert.deepEqual(b.calls, ['queue'])
+})
+
 test('compact/undo/redo surface dep error messages', async () => {
   const h = harness({ compact: async () => 'compact 失败: gateway down' })
   assert.equal(await h.handler('compact', ''), 'compact 失败: gateway down')
@@ -61,5 +70,5 @@ test('unknown command lists available commands', async () => {
 
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'editor', 'help', 'model', 'new', 'older', 'redo', 'sessions', 'undo'])
+  assert.deepEqual(names, ['btw', 'compact', 'editor', 'help', 'model', 'new', 'older', 'queue', 'redo', 'sessions', 'undo'])
 })

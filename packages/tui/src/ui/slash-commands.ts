@@ -14,6 +14,8 @@ export interface SlashDeps {
   btw(args: string): Promise<string | null>
   /** /sessions（别名 /resume /switch）：会话列表切换 picker。 */
   showSessionPicker(): Promise<void>
+  /** /queue（别名 /q）：排队消息管理 overlay。 */
+  showQueueManager(): Promise<void>
   /** /model：模型选择 picker（选择后作用于后续 promptAsync）。 */
   showModelPicker(): Promise<void>
   /** /compact：压缩当前会话；返回错误文本或 null。 */
@@ -43,6 +45,9 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
         return deps.btw(args)
       case 'sessions':
         await deps.showSessionPicker()
+        return null
+      case 'queue':
+        await deps.showQueueManager()
         return null
       case 'model':
         await deps.showModelPicker()

@@ -178,6 +178,35 @@ export class ChatStore {
     void this.deliver(next.parts[0]?.text ?? '', next)
   }
 
+  /** 排队中的消息数。 */
+  get queuedCount(): number { return this.queuedTurns.length }
+
+  /** 排队消息文本（/queue overlay 渲染用）。 */
+  get queuedTexts(): string[] { return this.queuedTurns.map((t) => t.parts[0]?.text ?? '') }
+
+  /** 收回全部排队消息（Claude Up-take-back 语义）：返回文本数组并从 turns 一并移除。 */
+  takeBackAll(): string[] {
+    const texts = this.queuedTurns.map((t) => t.parts[0]?.text ?? '')
+    for (const t of this.queuedTurns) {
+      const idx = this.turns.indexOf(t)
+      if (idx >= 0) this.turns.splice(idx, 1)
+    }
+    this.queuedTurns = []
+    this.deps.onChange()
+    return texts
+  }
+
+  /** 丢弃第 i 条排队消息（0 = 最早）；返回其文本，越界返回 null。 */
+  dropQueuedAt(i: number): string | null {
+    const t = this.queuedTurns[i]
+    if (!t) return null
+    this.queuedTurns.splice(i, 1)
+    const idx = this.turns.indexOf(t)
+    if (idx >= 0) this.turns.splice(idx, 1)
+    this.deps.onChange()
+    return t.parts[0]?.text ?? ''
+  }
+
   async abort(): Promise<void> {
     try {
       await this.deps.session.abort({ path: { id: this._sessionID } })

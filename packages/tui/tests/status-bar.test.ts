@@ -53,3 +53,17 @@ test('status bar truncates to narrow width without error', () => {
   assert.equal(lines.length, 1)
   assert.ok(visibleWidth(lines[0]) <= 40)
 })
+
+test('status bar shows queued count, stash badge, and per-prompt timer', () => {
+  const bar = new StatusBar()
+  bar.setState({
+    project: 'demo', session: 's', conn: 'ok', busy: true, queued: 2, stashed: 3,
+    usage: { model: 'm', tokens: 1000, costUsd: 0.01, durationMs: 930_000, promptMs: 12_000 },
+  })
+  const clean = bar.render(120)[0].replace(/\x1b\[[0-9;]*m/g, '')
+  assert.ok(clean.includes('busy'))
+  assert.ok(clean.includes('queued 2'), '排队计数')
+  assert.ok(clean.includes('📌3'), 'stash 徽标')
+  assert.ok(clean.includes('12s'), 'per-prompt 计时')
+  assert.ok(clean.includes('15m 30s'), '会话总时长')
+})

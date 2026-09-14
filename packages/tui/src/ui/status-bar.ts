@@ -6,6 +6,8 @@ export interface UsageState {
   tokens?: number
   costUsd?: number | null
   durationMs?: number
+  /** 本回合耗时（Hermes ⏱ 语义：流式中实时跳动，idle 冻结） */
+  promptMs?: number
 }
 
 export interface StatusState {
@@ -16,6 +18,10 @@ export interface StatusState {
   usage?: UsageState
   /** agent 流式中（交互状态机 busy 态） */
   busy?: boolean
+  /** busy 期间排队的消息数 */
+  queued?: number
+  /** prompt stash 深度（📌 徽标） */
+  stashed?: number
 }
 
 /** token 数紧凑化：1234 → 1.2K、1250000 → 1.3M。 */
@@ -44,12 +50,15 @@ export class StatusBar implements Component {
       : s.conn === 'reconnecting' ? theme.warn('reconnecting') : theme.err('disconnected')
     const parts: string[] = [s.project ?? '-', s.session ? s.session.slice(0, 12) : '-', conn]
     if (s.busy) parts.push(theme.warn('busy'))
+    if (typeof s.queued === 'number' && s.queued > 0) parts.push(theme.warn(`queued ${s.queued}`))
+    if (typeof s.stashed === 'number' && s.stashed > 0) parts.push(theme.dim(`📌${s.stashed}`))
     const u = s.usage
     if (u) {
       const usageBits: string[] = []
       if (u.model) usageBits.push(u.model)
       if (typeof u.tokens === 'number') usageBits.push(`${formatTokens(u.tokens)} tok`)
       if (typeof u.costUsd === 'number' && u.costUsd > 0) usageBits.push(`$${u.costUsd < 0.01 ? u.costUsd.toFixed(3) : u.costUsd.toFixed(2)}`)
+      if (typeof u.promptMs === 'number') usageBits.push(theme.accent(`⏱ ${formatDuration(u.promptMs)}`))
       if (typeof u.durationMs === 'number') usageBits.push(formatDuration(u.durationMs))
       if (usageBits.length > 0) parts.push(usageBits.join(' '))
     }

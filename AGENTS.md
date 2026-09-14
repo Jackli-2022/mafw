@@ -220,6 +220,23 @@ onMount → gateway.info() 等 ready
 
 **测试坑**：pi-tui 布局引擎（layout.js `layoutComponent`）需要 viewport 高度上下文，手动 `tab.render(80)` 会把 ScrollView 裁到 1 行——ChatTab 级测试断言 `(tab as any).transcript.render(80)` 而非全栈 render；chalk 非 TTY 环境自动关色，断言 ANSI 需先 `chalk.level = 3`
 
+#### 5.9b.3 TUI 交互重构 P1+P2（2026-09-14，四家交互模型调研落地）
+
+**P1 交互地基**（commit 825bf0d4）：
+- **InteractionStateMachine**（`ui/interaction-state.ts`）：`prompt|busy|overlay|transcript(P3 预留)` 单一模式替代散落的 editing/streaming/hasOverlay 三布尔；overlay > busy > prompt 优先级；dispatchKey 时从活查询刷新（overlay 开关无事件钩子）
+- **COMMAND_REGISTRY**（`ui/command-registry.ts`）：单表驱动 slash 补全（autocompleteItems）、/help 分组渲染（helpLines，破坏性 ⚠）、别名解析（resolveCommand，Hermes COMMAND_REGISTRY 模式）；带 category/destructive/immediate 元数据（immediate=busy 立即执行不排队，Claude 语义）
+- **声明式 keymap**（`ui/keymap.ts`）：app 级键位收敛为 binding 表（quit/abort/memory-blur/editor-open/tab/q/help），动作名对齐 opencode 词汇；AppModel 瘦身为纯状态持有（键测试迁 keymap.test.ts）
+- **Editor history**：submit → `editor.addToHistory`（pi-tui 内建 up/down 导航，此前从未接线）
+
+**P2 输入/反馈回路**：
+- **Up 收回排队**（Claude 语义）：输入为空 + queued>0 时 Up 把全部排队消息收回编辑框（一行一条）；`ChatTab.handleInput` 转发前拦截
+- **Ctrl+S prompt stash**（Hermes 栈式）：有文本=入栈清空、空输入=LIFO 恢复（toggle 语义：恢复后再按=重新入栈）；`PromptStash` 只存内存不落盘；状态栏 📌N 徽标
+- **/queue 管理**（别名 /q）：QueueOverlay——j/k/↑↓ 选择、Enter 收回该条进编辑框、d 丢弃、Esc 关；ChatStore 增 queuedCount/queuedTexts/takeBackAll/dropQueuedAt
+- **状态栏增强**：busy 位 + queued N + 📌N + ⏱ per-prompt 计时（流式实时跳、idle 冻结，Hermes ⏱12s/15m 30s 语义）+ 会话总时长
+- **完成响铃**：回合结束 `\x07`（MAFW_TUI_BELL=0 关）
+
+测试 136（135 过/1 冒烟跳过）。坑：测试里闭包计数器经解构/直接返回都是快照值，必须用 getter 包装
+
 #### 5.9b.2 TUI 鼠标点击（2026-09-14，对标 opencode "click accepts"）
 
 - **分层**：滚轮滚动/滚动条拖拽/拖选复制（OSC52）/URL 点击为 pi-tui TuiAltScreen **内建**（`mouse` 选项默认开，SGR 1000/1002/1006 + tmux/screen 自动降级 button-motion）；组件级点击派发是自建层 `ui/clickable-tui.ts` 的 `enableClickDispatch(tui)`——**实例补丁** `handleSelectionMouseEvent`（TS-private，子类重写会撞私有冲突；版本锁定 ^0.84.1 + typeof 门控 fail-open）：左键按下（非拖动）→ overlay 模态命中（`resolveOverlayLayout` 运行时穿透算 rect）→ 布局树 `currentLayout.root` 由深到浅命中 → 未命中回落选区逻辑。overlay 打开时外部点击吞掉（模态语义，不落底不触发选区）

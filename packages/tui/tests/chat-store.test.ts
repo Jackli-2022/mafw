@@ -234,3 +234,22 @@ test('undo reverts to last user message and reloads; redo calls unrevert', async
   await s.redo()
   assert.equal(calls[1][0], 'unrevert')
 })
+
+test('queue management: queuedCount / takeBackAll / dropQueuedAt', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.send('first')
+  await s.send('q2')
+  await s.send('q3')
+  assert.equal(s.queuedCount, 2)
+  // drop 中间一条
+  assert.equal(s.dropQueuedAt(0), 'q2', '按排队顺序丢弃（0 = 最早）')
+  assert.equal(s.queuedCount, 1)
+  // takeBackAll 取回全部剩余
+  assert.deepEqual(s.takeBackAll(), ['q3'])
+  assert.equal(s.queuedCount, 0)
+  assert.equal(s.turns.filter(t => t.queued).length, 0, 'turns 里的排队项一并移除')
+  // 空队列
+  assert.deepEqual(s.takeBackAll(), [])
+  assert.equal(s.dropQueuedAt(0), null)
+})
