@@ -2232,7 +2232,7 @@ export function MafwShell() {
                 </Show>
               </div>
             ) : activeTab() === "goals" ? (
-              <DashboardPage />
+              <DashboardPage onOpenSession={openSessionTab} />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
             ) : activeTab() === "approvals" ? (

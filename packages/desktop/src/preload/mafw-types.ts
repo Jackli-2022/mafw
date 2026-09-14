@@ -1,5 +1,5 @@
 import type {
-  Session, Project, Goal, GoalCreateInput, GoalControlAction,
+  Session, Project, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions,
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows,
   Approval, TriageItem, AutomationRule, GatewayStatus,
@@ -91,6 +91,7 @@ export type MafwAPI = {
     get: (id: string) => Promise<Goal | null>
     validate: (input: GoalCreateInput) => Promise<{ goalId: string }>
     control: (action: GoalControlAction) => Promise<void>
+    sessions: (id: string) => Promise<GoalSessionInfo[]>
   }
 
   memory: {

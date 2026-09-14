@@ -3,10 +3,12 @@ import { createSignal, createEffect, onCleanup } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
+import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
 
-export function DashboardPage() {
+export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) {
   const [goals, setGoals] = createSignal<any[]>([])
   const [loading, setLoading] = createSignal(true)
+  const [detailGoalId, setDetailGoalId] = createSignal<string | null>(null)
 
   async function fetchGoals() {
     setLoading(true)
@@ -26,7 +28,7 @@ export function DashboardPage() {
   function goalMenu(g: any): ContextMenuItem[] {
     const isRunning = g.phase !== "COMPLETED" && g.phase !== "FAILED" && g.phase !== "ARCHIVED"
     return [
-      { label: "View Details", onSelect: () => window.api.mafw.goals.get(g.goalId).catch((e: any) => console.warn("[mafw]", e)) },
+      { label: "View Details", onSelect: () => setDetailGoalId(g.goalId) },
       { separator: true },
       ...(isRunning
         ? [{ label: "Pause", onSelect: () => window.api.mafw.goals.control({ goalId: g.goalId, action: "PAUSE" }).catch((e: any) => console.warn("[mafw]", e)) }]
@@ -81,6 +83,11 @@ export function DashboardPage() {
           ))
         )}
       </div>
+      <GoalDetailOverlay
+        goalId={detailGoalId()}
+        onClose={() => setDetailGoalId(null)}
+        onOpenSession={(sid) => { setDetailGoalId(null); props.onOpenSession?.(sid) }}
+      />
     </div>
   )
 }

@@ -102,6 +102,7 @@ export function createMafwApi(): MafwAPI {
       get: (id) => invoke("goals", "get", id),
       validate: (input) => invoke("goals", "validate", input),
       control: (action) => invoke("goals", "control", action),
+      sessions: (id) => invoke("goals", "sessions", id),
     },
 
     memory: {

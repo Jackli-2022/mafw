@@ -3916,3 +3916,14 @@ html[data-theme="light"] .mafw-picker-pop {
 /* Busy-turn queue bar (composer above-row, P0-1) */
 .mafw-queue-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; margin-bottom: 6px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 10px; background: var(--surface-base-hover); }
 .mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; }
+
+/* Goal detail overlay (P0-3) */
+.mafw-goal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; }
+.mafw-goal-panel { width: min(640px, 90vw); max-height: 80vh; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 16px; }
+.mafw-goal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mafw-goal-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.mafw-goal-charter { font-size: 12px; color: var(--text-base); white-space: pre-wrap; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; padding: 10px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
+.mafw-goal-sec-title { font-size: 11px; color: var(--text-base); margin-bottom: 6px; }
+.mafw-goal-session { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.mafw-goal-session:hover { background: var(--surface-base-hover); }
+.mafw-goal-session-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
