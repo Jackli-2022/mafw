@@ -23,6 +23,7 @@ import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
 import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
 import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
+import { CompressionDivider } from "./CompressionDivider"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -117,6 +118,7 @@ export type ChatPaneProps = {
   onUnregisterPhaseUpdater?: (sid: string) => void
   onRegisterQueueFlush?: (sid: string, fn: () => void) => void
   onUnregisterQueueFlush?: (sid: string) => void
+  compactionMark?: { at: number; summary?: string } | null
   onRegisterMediaSpeak?: (sid: string, fn: (text: string, voice?: string) => void) => void
   onUnregisterMediaSpeak?: (sid: string) => void
   pageState: Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>
@@ -1860,6 +1862,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <div class="mafw-load-earlier" style="display:flex;justify-content:center;padding:8px 0;">
                 <ButtonV2 variant="ghost" size="small" onClick={() => { if (hiddenTurnCount() > 0) { expandRendered() } else { const el2 = containerRef(); const ph = el2?.scrollHeight || 0; void loadOlder(sidProp()).then(() => { setRenderLimit(l => l + 10); if (el2) requestAnimationFrame(() => { el2.scrollTop += el2.scrollHeight - ph; lastScrollTop = el2.scrollTop }) }) } }}>{hiddenTurnCount() > 0 ? `加载更早（还有 ${hiddenTurnCount()} 轮）` : "加载更早的历史"}</ButtonV2>
               </div>
+            </Show>
+            <Show when={props.compactionMark}>
+              <CompressionDivider
+                summary={props.compactionMark!.summary || `此分界线之前的上下文已于 ${new Date(props.compactionMark!.at).toLocaleTimeString()} 被压缩进摘要`}
+              />
             </Show>
             <For each={visibleTurns()}>
               {(msg) => (

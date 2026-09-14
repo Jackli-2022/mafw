@@ -299,6 +299,10 @@ export function MafwShell() {
     void window.api.mafw.notify?.({ title, body }).catch(() => { /* fail-open */ })
   }
   const lastIdleNotify: Record<string, number> = {}
+
+  // Compaction boundary marks per session (session.compacted SSE events) —
+  // rendered by ChatPane as a divider above the surviving context.
+  const [compactionMarks, setCompactionMarks] = createSignal<Record<string, { at: number; summary?: string }>>({})
   const phaseUpdaters: Record<string, (p: 'idle' | 'searching' | 'writing') => void> = {}
   // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
   const mediaSpeakHandlers: Record<string, (text: string, voice?: string) => void> = {}
@@ -1107,6 +1111,12 @@ export function MafwShell() {
         console.log("[mafw] SSE permission.asked", sid, event.properties?.id, event.properties?.permission)
         upsertCard(sid, { kind: "permission", data: mapPermissionCard(event.properties || {}, Date.now()) })
         notifyIfHidden("MAFW：需要权限审批", String(event.properties?.permission?.tool || "工具调用").slice(0, 80))
+        return
+      }
+      if (event.type === "session.compacted") {
+        console.log("[mafw] SSE session.compacted", sid)
+        const summary = event.properties?.summary || event.properties?.part?.text || undefined
+        setCompactionMarks(prev => ({ ...prev, [sid]: { at: Date.now(), summary } }))
         return
       }
       if (event.type === "question.replied") {
@@ -2061,6 +2071,7 @@ export function MafwShell() {
                           onUnregisterMediaSpeak={(s) => { delete mediaSpeakHandlers[s] }}
                           onRegisterQueueFlush={(s, fn) => { queueFlushers[s] = fn }}
                           onUnregisterQueueFlush={(s) => { delete queueFlushers[s] }}
+                          compactionMark={compactionMarks()[s.id] || null}
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />
