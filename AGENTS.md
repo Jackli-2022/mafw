@@ -919,6 +919,15 @@ Gateway API 路由使用正则匹配，query string 会导致 `$` 锚定不匹�
 - 正确：`req.url?.match(/^\/api\/sessions\/([^/]+)\/messages(?:\?|$)/)`
 - 错误：`req.url?.match(/^\/api\/sessions\/([^/]+)\/messages$/)`（不匹配 `?limit=100`）
 
+### 6.6 GitHub Actions CI（2026-09-14）
+
+三个独立 workflow（`.github/workflows/`）：
+- `ci.yml`：push(main)/PR → 双 OS（ubuntu/windows）× Node 22 验证——root+gateway 两段 `npm ci`、root build、gateway jest、TUI node --test；concurrency 按 ref 取消旧跑
+- `desktop-release.yml`：tag `v*` → Win(nsis)+Linux(AppImage/deb/rpm) 打包（bun stage-gateway + electron-builder `--publish never`，`OPENCODE_CHANNEL=prod` 走 env 块）→ release job 汇总挂 **draft release**（softprops）；workflow_dispatch = 构建-only 干跑；electron 缓存按 OS 分路径
+- `npm-publish.yml`：仅手动 dispatch；`NPM_TOKEN` 缺失时绿 skip，配置后 `npm publish --provenance`
+
+注意：desktop `electron-builder.config.ts` 的 `native/` extraResource 有 `existsSync` 守卫（仓库不携带该目录）；`electron-builder.config.test.ts` 的 legacy launcher 测试已知坏（引用不存在的 `resources/linux/opencode-desktop.desktop`），desktop 无 test script、不在 CI 内。
+
 ## 7. LongMemEval 记忆基准（evaluation/longmemeval/）
 
 基于 LongMemEval (arXiv:2410.10813, ICLR 2025) S 集（500 题，6 类，~50 haystack sessions/题）的谐波记忆质量评测。TS runner 直接 import gateway 类，`fs.mkdtempSync` 隔离 HarmonicUnitFileStore，**不污染**真实 `~/.mafw`，不需启动 gateway 实例。
