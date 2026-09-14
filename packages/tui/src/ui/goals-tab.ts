@@ -8,6 +8,7 @@ import { historyItemsToTurns } from '../store/chat-store.ts'
 import { turnToLines } from './message-blocks.ts'
 import { theme } from '../theme.ts'
 import { selectListTheme } from './chat-tab.ts'
+import { ClickableSelectList } from './clickable-select-list.ts'
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
@@ -64,6 +65,25 @@ export class GoalsTab implements Component {
       })
     }
     return lines
+  }
+
+  /** 鼠标点击行选中（Enter 仍负责激活；行映射与 render 同构：header/空行/header 不可点）。 */
+  handleMouseClick(_col: number, row: number): boolean {
+    const goalsRows = this.rowCount
+    if (goalsRows > 0 && row >= 1 && row <= goalsRows) {
+      this.selected = row - 1
+      this.deps.tui.requestRender()
+      return true
+    }
+    if (this.questionCount > 0) {
+      const qStart = 1 + Math.max(goalsRows, 1) + 2 // header + (goals|占位) + 空行 + 问头
+      if (row >= qStart && row < qStart + this.questionCount) {
+        this.selected = goalsRows + (row - qStart)
+        this.deps.tui.requestRender()
+        return true
+      }
+    }
+    return false
   }
 
   /** 返回 true 表示按键已消费（app 层据此不再转发）。 */
@@ -143,7 +163,7 @@ export class GoalsTab implements Component {
       })),
       Math.min(sessions.length, 8), selectListTheme,
     )
-    const handle = this.deps.tui.showOverlay(list, { width: '70%', maxHeight: 12, anchor: 'center' })
+    const handle = this.deps.tui.showOverlay(new ClickableSelectList(list), { width: '70%', maxHeight: 12, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = escCloser(this.deps.tui, close)
     list.onSelect = (item) => { close(); void this.openTranscript(String(item.value)) }
@@ -176,7 +196,7 @@ export class GoalsTab implements Component {
       [{ value: 'yes', label: '确认取消', description: goalId }, { value: 'no', label: '返回' }],
       2, selectListTheme,
     )
-    const handle = this.deps.tui.showOverlay(list, { width: 44, maxHeight: 6, anchor: 'center' })
+    const handle = this.deps.tui.showOverlay(new ClickableSelectList(list), { width: 44, maxHeight: 6, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = escCloser(this.deps.tui, close)
     list.onSelect = (item) => {
@@ -212,7 +232,7 @@ export class GoalsTab implements Component {
         first.options.map((o) => ({ value: o.label, label: o.label, description: o.description })),
         Math.min(first.options.length, 6), selectListTheme,
       )
-      const handle = this.deps.tui.showOverlay(list, { width: '70%', maxHeight: 12, anchor: 'center' })
+      const handle = this.deps.tui.showOverlay(new ClickableSelectList(list), { width: '70%', maxHeight: 12, anchor: 'center' })
       const close = () => { off(); handle.hide() }
       const off = escCloser(this.deps.tui, close)
       list.onSelect = (item) => { close(); finish([[item.value]]) }

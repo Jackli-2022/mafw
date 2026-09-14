@@ -71,6 +71,26 @@ export class MemoryTab extends Container implements Focusable {
     this.deps.tui.requestRender()
   }
 
+  /** 鼠标点击行选中（Enter 仍负责看全文 / u 下架；行映射与 refresh() 同构）。 */
+  handleMouseClick(_col: number, row: number): boolean {
+    const rc = this.resultCount
+    if (rc > 0 && row >= 2 && row < 2 + rc) { // 提示行 + 结果 header 之后
+      this.selected = row - 2
+      this.refresh()
+      return true
+    }
+    const sc = this.stickyCount
+    if (sc > 0) {
+      const stickyStart = 2 + Math.max(rc, 1) + 2 // (结果区|占位) + 空行 + 便签头
+      if (row >= stickyStart && row < stickyStart + sc) {
+        this.selected = rc + (row - stickyStart)
+        this.refresh()
+        return true
+      }
+    }
+    return false
+  }
+
   /** 列表态按键（Input 聚焦时返回 false 让输入框处理）。 */
   handleTabKey(data: string): boolean {
     if (this._focused) return false

@@ -12,6 +12,8 @@ import { ChatStore } from '../store/chat-store.ts'
 import { ChatTab, selectListTheme } from './chat-tab.ts'
 import { createSlashHandler } from './slash-commands.ts'
 import { defaultEditorCommand, editInExternalEditor } from '../external-editor.ts'
+import { enableClickDispatch } from './clickable-tui.ts'
+import { ClickableSelectList } from './clickable-select-list.ts'
 import { showPermissionOverlay } from './overlays.ts'
 import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
@@ -33,6 +35,8 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const model = new AppModel()
   const terminal = new ProcessTerminal()
   const tui = new TuiAltScreen(terminal)
+  // 组件级鼠标点击派发（tab 切换 / picker 行 / 列表行 / 编辑器聚焦；滚轮与拖选为 pi-tui 内建）
+  enableClickDispatch(tui)
   const tabStrip = new TabStrip()
   const statusBar = new StatusBar()
   const appStart = Date.now()
@@ -193,7 +197,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       description: s.time?.updated ? new Date(s.time.updated).toLocaleString() : '',
     }))
     const list = new SelectList(items, Math.min(items.length, 10), selectListTheme)
-    const handle = tui.showOverlay(list, { width: '70%', maxHeight: 16, anchor: 'center' })
+    const handle = tui.showOverlay(new ClickableSelectList(list), { width: '70%', maxHeight: 16, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
@@ -220,7 +224,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       return
     }
     const list = new SelectList(items, 10, selectListTheme)
-    const handle = tui.showOverlay(list, { width: '60%', maxHeight: 16, anchor: 'center' })
+    const handle = tui.showOverlay(new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
@@ -357,6 +361,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
     }
     tabStrip.setActive(model.active)
     tui.requestRender()
+  }
+
+  // 鼠标点击 tab 切换（与键盘 1-4 / Alt+数字 同一条 applyTab 路径）
+  tabStrip.onTabClick = (id) => {
+    model.switchTab(id)
+    applyTab()
   }
 
   // 滚动到顶自动加载更早历史（1s 轮询；chat tab 激活时）

@@ -54,6 +54,25 @@ export class TriageTab implements Component {
     return lines
   }
 
+  /** 鼠标点击行选中（a/r/c/d/Enter 仍负责动作；行映射与 render 同构、占位行不可点）。 */
+  handleMouseClick(_col: number, row: number): boolean {
+    if (this.approvalCount > 0 && row >= 1 && row <= this.approvalCount) {
+      this.selected = row - 1
+      this.deps.tui.requestRender()
+      return true
+    }
+    const itemCount = this.itemCount
+    if (itemCount > 0) {
+      const itemsStart = 1 + Math.max(this.approvalCount, 1) + 2 // header + (approvals|占位) + 空行 + header
+      if (row >= itemsStart && row < itemsStart + itemCount) {
+        this.selected = this.approvalCount + (row - itemsStart)
+        this.deps.tui.requestRender()
+        return true
+      }
+    }
+    return false
+  }
+
   handleTabKey(data: string): boolean {
     if (matchesKey(data, Key.up)) {
       this.selected = Math.max(0, this.selected - 1)

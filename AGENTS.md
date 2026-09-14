@@ -220,6 +220,13 @@ onMount → gateway.info() 等 ready
 
 **测试坑**：pi-tui 布局引擎（layout.js `layoutComponent`）需要 viewport 高度上下文，手动 `tab.render(80)` 会把 ScrollView 裁到 1 行——ChatTab 级测试断言 `(tab as any).transcript.render(80)` 而非全栈 render；chalk 非 TTY 环境自动关色，断言 ANSI 需先 `chalk.level = 3`
 
+#### 5.9b.2 TUI 鼠标点击（2026-09-14，对标 opencode "click accepts"）
+
+- **分层**：滚轮滚动/滚动条拖拽/拖选复制（OSC52）/URL 点击为 pi-tui TuiAltScreen **内建**（`mouse` 选项默认开，SGR 1000/1002/1006 + tmux/screen 自动降级 button-motion）；组件级点击派发是自建层 `ui/clickable-tui.ts` 的 `enableClickDispatch(tui)`——**实例补丁** `handleSelectionMouseEvent`（TS-private，子类重写会撞私有冲突；版本锁定 ^0.84.1 + typeof 门控 fail-open）：左键按下（非拖动）→ overlay 模态命中（`resolveOverlayLayout` 运行时穿透算 rect）→ 布局树 `currentLayout.root` 由深到浅命中 → 未命中回落选区逻辑。overlay 打开时外部点击吞掉（模态语义，不落底不触发选区）
+- **命中契约**：组件实现可选 `handleMouseClick(col, row)`（相对组件左上角，返回 true = 消费）：TabStrip（clickAt 列 → tab，onTabClick 回调接 app 的 applyTab 同路径）、ChatTab（未聚焦点击聚焦/已聚焦放行保拖选）、Goals/Memory/Triage（行点击 = 选中，Enter 仍负责动作——triage 破坏性操作不一点触发）、picker 全部走 `ClickableSelectList`（点击行 = 选中+onSelect，opencode click-accepts；含 HeaderSelectOverlay 带 header 变体，permission overlay 用）
+- **SelectList 穿透**：`filteredItems/selectedIndex/maxVisible` TS-private 运行时公有，`as any` + 版本锁定；可见窗口计算与 `SelectList.render` 同式（scroll-info 行不可点）
+- 测试 `tests/mouse.test.ts` 12 例（FakeTerminal + 真实 SGR 输入管线 + renderNow 建 currentLayout）；总计 TUI 104（103 过/1 冒烟跳过）
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）

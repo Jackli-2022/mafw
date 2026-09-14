@@ -76,6 +76,15 @@ export class ChatTab extends VStack implements Focusable {
     this.editor.handleInput(data)
   }
 
+  /** 鼠标点击：未聚焦时点击即聚焦；已聚焦时放行（保留 pi-tui 拖选复制）。 */
+  handleMouseClick(_col: number, _row: number): boolean {
+    if (!this._focused) {
+      this.deps.tui.setFocus(this)
+      return true
+    }
+    return false
+  }
+
   constructor(deps: ChatTabDeps) {
     super([])
     this.deps = deps
