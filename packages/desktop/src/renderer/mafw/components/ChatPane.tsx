@@ -17,6 +17,7 @@ import { AudioReply } from "./AudioReply"
 import { VoiceRecorder } from "./VoiceRecorder"
 import { scrollPinDecision } from "./ChatPaneScroll"
 import { MessageNav } from "./MessageNav"
+import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -109,6 +110,8 @@ export type ChatPaneProps = {
   onUnregisterResetSending: (sid: string) => void
   onRegisterPhaseUpdater?: (sid: string, fn: (p: 'idle' | 'searching' | 'writing') => void) => void
   onUnregisterPhaseUpdater?: (sid: string) => void
+  onRegisterQueueFlush?: (sid: string, fn: () => void) => void
+  onUnregisterQueueFlush?: (sid: string) => void
   onRegisterMediaSpeak?: (sid: string, fn: (text: string, voice?: string) => void) => void
   onUnregisterMediaSpeak?: (sid: string) => void
   pageState: Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>
@@ -145,6 +148,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
   const [canUnrevert, setCanUnrevert] = createSignal(false)
+
+  // Busy-turn queue: regular messages sent while a turn is running are held
+  // here and dispatched on the next idle boundary (steering without abort).
+  const [queuedItems, setQueuedItems] = createSignal<QueuedTurn[]>([])
 
   // 会话 reverted 态探测（session info 的 revert 字段，opencode 专属；pi 无）
   onMount(async () => {
@@ -826,8 +833,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice)
     if (sending()) {
       // Voice messages (walkie-talkie) interrupt the in-flight reply; regular
-      // messages stay rejected while a turn is running.
-      if (!hasVoice) return
+      // messages queue for the next idle boundary instead of being dropped.
+      if (!hasVoice) {
+        setQueuedItems(prev => enqueueTurn(prev, { text, atts, agents }))
+        setInput("")
+        setAttachments([])
+        setMentionedAgents([])
+        const ta = textareaEl()
+        if (ta) ta.style.height = "auto"
+        return
+      }
       console.log("[mafw] sendMessage: voice interrupts in-flight turn")
       try { await window.api.mafw.sessions.abort(sid) } catch { /* ignore */ }
     }
@@ -1043,8 +1058,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setPhase('idle')
   }
 
+  // Dispatch the next queued turn (called from MafwShell on session idle).
+  // Restores the turn into the composer signals, then reuses sendMessage().
+  const flushQueue = () => {
+    if (sending()) return
+    const { first, rest } = takeFirstTurn(queuedItems())
+    if (!first) return
+    setQueuedItems(rest)
+    setInput(first.text)
+    setAttachments(first.atts as Attachment[])
+    setMentionedAgents(first.agents)
+    void sendMessage()
+  }
+
   // ESC / Ctrl+C interrupts this pane only when it is focused and sending.
   onMount(() => {
+    props.onRegisterQueueFlush?.(sidProp(), flushQueue)
+    onCleanup(() => props.onUnregisterQueueFlush?.(sidProp()))
     const onKey = (e: KeyboardEvent) => {
       if (!props.focused || !sending()) return
       const isEsc = e.key === "Escape"
@@ -1882,6 +1912,20 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <span class="mafw-flow-pulse" />
             有 {props.sessionPending(sidProp())} 个待回答 ↓
           </ButtonV2>
+        </Show>
+        <Show when={queuedItems().length > 0}>
+          <div class="mafw-queue-bar">
+            <span class="mafw-queue-count">⏳ {queuedItems().length} 条排队 · 回合结束后自动发送</span>
+            <For each={queuedItems()}>
+              {(q, i) => (
+                <span class="mafw-chip">
+                  <span class="mafw-chip-label">{q.text.trim().slice(0, 40) || `(${q.atts.length} 个附件)`}</span>
+                  <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setQueuedItems(removeTurnAt(queuedItems(), i()))} aria-label="移除排队消息">✕</ButtonV2>
+                </span>
+              )}
+            </For>
+            <ButtonV2 variant="ghost" size="small" onClick={() => setQueuedItems([])}>清空</ButtonV2>
+          </div>
         </Show>
         <div
           class="mafw-composer"

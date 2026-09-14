@@ -3912,3 +3912,7 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 .mafw-search-select-item.current { color: var(--accent); }
 .mafw-search-select-check { margin-left: 8px; color: var(--accent); }
+
+/* Busy-turn queue bar (composer above-row, P0-1) */
+.mafw-queue-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; margin-bottom: 6px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 10px; background: var(--surface-base-hover); }
+.mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; }

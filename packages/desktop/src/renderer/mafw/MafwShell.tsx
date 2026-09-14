@@ -290,6 +290,7 @@ export function MafwShell() {
   // to clear a pane's "stop" button state.
   const anchorRegistry: Record<string, () => void> = {}
   const sendingResetters: Record<string, () => void> = {}
+  const queueFlushers: Record<string, () => void> = {}
   const phaseUpdaters: Record<string, (p: 'idle' | 'searching' | 'writing') => void> = {}
   // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
   const mediaSpeakHandlers: Record<string, (text: string, voice?: string) => void> = {}
@@ -1253,10 +1254,12 @@ export function MafwShell() {
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
         sendingResetters[sid]?.()
         expireSessionCards(sid)
+        queueFlushers[sid]?.()
       } else if (event.type === "message.part.complete") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
         sendingResetters[sid]?.()
+        queueFlushers[sid]?.()
       } else if (event.type === "session.idle") {
         // opencode ≥1.18 settles turns with session.idle instead of
         // message.complete; without it the sending flag never resets and new
@@ -1265,10 +1268,12 @@ export function MafwShell() {
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
         sendingResetters[sid]?.()
         expireSessionCards(sid)
+        queueFlushers[sid]?.()
       } else if (event.type === "session.error" || event.type === "message.error" || event.type === "message.aborted") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         sendingResetters[sid]?.()
         expireSessionCards(sid)
+        queueFlushers[sid]?.()
       }
 
       if (event.type?.startsWith("session.next.tool.") && event.assistantMessageID) {
@@ -2038,6 +2043,8 @@ export function MafwShell() {
                           onUnregisterPhaseUpdater={(s) => { delete phaseUpdaters[s] }}
                           onRegisterMediaSpeak={(s, fn) => { mediaSpeakHandlers[s] = fn }}
                           onUnregisterMediaSpeak={(s) => { delete mediaSpeakHandlers[s] }}
+                          onRegisterQueueFlush={(s, fn) => { queueFlushers[s] = fn }}
+                          onUnregisterQueueFlush={(s) => { delete queueFlushers[s] }}
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />
