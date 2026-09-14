@@ -151,8 +151,9 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     listByDirectory: async (directory: string, limit?: number) => {
       return listByDirectory(directory, limit);
     },
-    permissionReply: (sessionID: string, requestId: string, approved: boolean) =>
-      registry.permissionReply(sessionID, requestId, approved),
+    permissionReply: (sessionID: string, requestId: string, reply: 'once' | 'always' | 'reject', message?: string) =>
+      // 最小适配（Task 2 换真实现）：once/always 放行，reject 拒绝；message 暂不透传
+      registry.permissionReply(sessionID, requestId, reply !== 'reject'),
     fork: async (opts: { sessionID: string; messageID?: string }) => registry.fork(opts.sessionID, opts.messageID),
     revert: async (opts: { sessionID: string; messageID: string; partID?: string }) => registry.revert(opts.sessionID, opts.messageID),
   };

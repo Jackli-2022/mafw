@@ -45,6 +45,8 @@ export interface RuntimeCapabilities {
   sessionBranchApi?: boolean;
   /** runtime 原生强制执行 SessionPromptOpts.maxTurns/maxCostUsd（声明后 gateway 不再挂 BudgetGuard） */
   turnBudgetApi?: boolean;
+  /** runtime 提供原生 question API（question.list/reply/reject） */
+  questionApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -61,6 +63,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     completionApi: true,
     sessionBranchApi: true,
     turnBudgetApi: true,
+    questionApi: true,
   };
 }
 
@@ -77,6 +80,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     agentProcessApi: false,
     sessionBranchApi: false,
     turnBudgetApi: false,
+    questionApi: false,
   };
 }
 
@@ -88,12 +92,22 @@ export interface SessionCreateOpts {
 
 export interface SessionPromptOpts {
   sessionID: string;
+  /** 消息部件。{type:'file', url, mime?, filename?} 为一等媒体附件载体（dataURL 或
+   *  工件引用），mime 决定模态（image/video/audio）——runtime 必须作为多模态输入
+   *  递给模型，不得文本拍平丢弃。 */
   parts?: Array<{ type: string; text?: string; [k: string]: any }>;
   message?: string;
   agent?: string;
   model?: { providerID: string; modelID: string };
   variant?: string;
   system?: string;
+  /** busy 会话的消息投递时机：'steer'=当前工具批后送达（纠偏），'followup'=全部完成后。
+   *  opencode 无原生概念（忽略声明）；pi 映射 streamingBehavior（busy 时生效）。 */
+  delivery?: 'steer' | 'followup';
+  /** 期望本条消息触发 LLM 回复。false = 落历史免回复（opencode noReply 语义）。
+   *  pi 无原生等价——全路径降级为普通消息（busy 时 followUp），每会话 warn 一次。 */
+  expectReply?: boolean;
+  /** @deprecated 用 expectReply: false 替代；消费方迁移完成后删除 */
   noReply?: boolean;
   /** 回合数上限（一次 prompt 内 agentic loop 步数）；超出即中止。原生支持见 turnBudgetApi。 */
   maxTurns?: number;
@@ -163,6 +177,14 @@ export interface CompletionRequest {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  /** 约束输出为 JSON Schema。实现方映射到自己 provider 的机制（OpenAI response_format）；
+   *  映射不了则忽略（fail-open）——结果仍可能非 JSON，消费方自解析兜底。 */
+  responseFormat?: {
+    type: 'json_schema';
+    name: string;
+    schema: Record<string, unknown>;
+    strict?: boolean;
+  };
 }
 
 export interface CompletionResult {
@@ -191,7 +213,21 @@ export interface RuntimeClient {
     todo(opts: { sessionID: string }): Promise<any[]>;
     children(opts: { sessionID: string }): Promise<any[]>;
     summarize(opts: SessionSummarizeOpts): Promise<any>;
-    permissionReply?(sessionID: string, requestId: string, approved: boolean): Promise<boolean>;
+    /** 回复权限请求。'once'=仅本次放行；'always'=放行并持久化规则（opencode 原生规则 /
+     *  pi session 级动态 allowlist）；'reject'=拒绝。message 为给 agent 的可选说明。
+     *  签名为 P1 破坏性变更（原 boolean approved）；方法可选性仅约束未实现审批的 runtime。 */
+    permissionReply?(
+      sessionID: string,
+      requestId: string,
+      reply: 'once' | 'always' | 'reject',
+      message?: string,
+    ): Promise<boolean>;
+    /** 原生 question 通道（questionApi 能力）。opencode 实现；pi 无 question API 不实现。 */
+    question?: {
+      list(opts?: { directory?: string }): Promise<any[]>;
+      reply(opts: { requestID: string; answers: Array<Record<string, unknown>> }): Promise<void>;
+      reject(opts: { requestID: string }): Promise<void>;
+    };
     /**
      * 分叉为新会话：原会话不动，新会话携带截至 messageID（缺省=当前末尾）的历史。
      * pi 实现经 SessionManager.createBranchedSession + 新 AgentSession。

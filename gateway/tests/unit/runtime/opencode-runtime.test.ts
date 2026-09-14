@@ -49,7 +49,7 @@ describe('createOpencodeRuntime', () => {
       sessionApi: true, promptWhileBusy: true, eventStream: true,
       nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
       sessionStorageApi: true, agentConfigApi: true, agentProcessApi: true,
-      completionApi: true, sessionBranchApi: true, turnBudgetApi: true,
+      completionApi: true, sessionBranchApi: true, turnBudgetApi: true, questionApi: true,
     });
     expect(rt.external).toBe(false);
     // 装饰不覆盖 adapter 返回的 client 方法面

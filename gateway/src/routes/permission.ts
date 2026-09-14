@@ -31,7 +31,7 @@ export async function handlePermissionReply(
       res.end(JSON.stringify({ error: 'approved must be a boolean' }));
       return;
     }
-    const result = await runtime.session.permissionReply(sessionID, requestId, approved);
+    const result = await runtime.session.permissionReply!(sessionID, requestId, approved ? 'once' : 'reject');
 
     if (!result) {
       res.writeHead(404, { 'Content-Type': 'application/json' });

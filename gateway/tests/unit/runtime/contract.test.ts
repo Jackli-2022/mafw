@@ -1,4 +1,4 @@
-import { fullCapabilities, minimalCapabilities, RuntimeCapabilities, CompletionRequest, CompletionResult } from '../../../src/runtime/contract';
+import { fullCapabilities, minimalCapabilities, RuntimeCapabilities, CompletionRequest, CompletionResult, SessionPromptOpts } from '../../../src/runtime/contract';
 
 describe('runtime contract capabilities', () => {
   it('fullCapabilities enables every tier (opencode = Tier 2)', () => {
@@ -15,6 +15,7 @@ describe('runtime contract capabilities', () => {
       completionApi: true,
       sessionBranchApi: true,
       turnBudgetApi: true,
+      questionApi: true,
     });
   });
 
@@ -31,7 +32,27 @@ describe('runtime contract capabilities', () => {
       agentProcessApi: false,
       sessionBranchApi: false,
       turnBudgetApi: false,
+      questionApi: false,
     });
+  });
+
+  it('SessionPromptOpts supports delivery and expectReply', () => {
+    const opts: SessionPromptOpts = {
+      sessionID: 's1',
+      delivery: 'steer',
+      expectReply: false,
+    };
+    expect(opts.delivery).toBe('steer');
+    expect(opts.expectReply).toBe(false);
+  });
+
+  it('CompletionRequest supports responseFormat json_schema', () => {
+    const req: CompletionRequest = {
+      model: { providerID: 'p', modelID: 'm' },
+      user: [{ type: 'text', text: 'q' }],
+      responseFormat: { type: 'json_schema', name: 'verdict', schema: { type: 'object' }, strict: true },
+    };
+    expect(req.responseFormat?.type).toBe('json_schema');
   });
 
   it('RuntimeCapabilities supports optional sessionBranchApi/turnBudgetApi flags', () => {
