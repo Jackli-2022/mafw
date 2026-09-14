@@ -892,7 +892,7 @@ Gateway 的 console.log/warn/error 自动写入文件：
 ### 6.4 构建、安装与发布
 
 ```bash
-npm run build                 # 构建 plugin + gateway
+npm run build                 # 构建 plugin + gateway + @mafw/sdk + tui（sdk 必须先于 tui——tui esbuild 依赖 @mafw/sdk/dist）
 npm pack                      # 打包为 .tgz（324 kB）
 npm install -g opencode-plugin-mafw-4.1.0.tgz    # 全局安装
 mafw version                  # 验证安装
@@ -908,6 +908,7 @@ npm install -g opencode-plugin-mafw-*.tgz     # 覆盖旧版本
 ```
 
 **注意事项：**
+- `prepare` 有 fail-open 守卫（2026-09-14）：gateway devDeps（gateway/node_modules/typescript）缺席时跳过 build——干净 `npm ci` 时 postinstall 只装 gateway prod deps，若此时强行 build 会静默借用 root 的 TS 5.6.3 编 gateway（module:nodenext 的 ESM 导入全报 TS1479；TS 5.8+ 才有 require(esm) 宽容）。CI/publish 流程的 build 由显式步骤在 gateway `npm ci` 之后执行
 - 全局安装路径可通过 `npm config get prefix` 查看
 - 安装后 `mafw` 命令在 PATH 中，如果 shell 找不到请刷新 PATH（新开终端或重启 shell）
 - `.npm-global` 路径下的文件名为 `mafw`（无后缀）、`mafw.cmd`、`mafw.ps1`，对应不同 shell
