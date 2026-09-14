@@ -897,6 +897,23 @@ class MafwScheduler {
       log.warn(`[Trajectory] handle failed (non-fatal): ${err.message}`);
     }
 
+    // Compaction flush: 会话压缩发生时把该 session 的 pending T1 回合立即喂给
+    // turnCompress（fail-open；hourly cron 在飞则跳过本轮）。
+    if (f.compaction && sessionID && !memoryWorker) {
+      void this.runPipelineGuarded(`memory:turnCompress(compact-flush:${sessionID})`, async () => {
+        try {
+          const pipeline = this.getTurnPipeline();
+          const res = await pipeline.runSession(sessionID);
+          if (res.turns > 0) {
+            log.info(`[TurnPipeline] compaction flush session=${sessionID} turns=${res.turns} archived=${res.archived}`);
+            this.scanService?.refreshCache();
+          }
+        } catch (err: any) {
+          log.warn(`[TurnPipeline] compaction flush failed (non-fatal): ${err.message}`);
+        }
+      });
+    }
+
     // Path 1: settled LLM step → evaluate high-salience memory injection.
     // shouldConsiderStep validates sessionID/assistantMessageID exist and finish is not excluded.
     if (f.step && shouldConsiderStep(f.step)) {

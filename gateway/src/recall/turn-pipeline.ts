@@ -123,51 +123,71 @@ export class TurnPipeline {
       else bySession.set(t.session_id, [t]);
     }
 
-    for (const [sessionID, sessionTurns] of bySession) {
+    for (const [sessionID] of bySession) {
       result.sessions++;
-      result.turns += sessionTurns.length;
+      const r = await this.runSession(sessionID);
+      result.turns += r.turns;
+      result.archived += r.archived;
+      result.noops += r.noops;
+      result.failed += r.failed;
+    }
 
-      // 1) merge all observations of the session's completed turns
-      const observations: T1Observation[] = [];
-      for (const t of sessionTurns) {
-        observations.push(...this.opts.t1db.readTurn(t.session_id, t.turn_id));
-      }
-      const transcript = observationsToTranscript(
-        observations.slice(0, this.opts.maxObservationsPerSession ?? 200),
-      );
+    return result;
+  }
 
-      // 2) ask the session's persistent worker agent to save memories itself
-      if (transcript.trim()) {
-        const context = sessionContext(this.opts.index, sessionID, this.opts.contextEpisodes ?? 10);
-        const base = context
-          ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
-          : `Observations of the last hour:\n${transcript}`;
-        const grade = this.opts.gradeFor?.(sessionID);
-        const prompt = grade
-          ? `${base}\n\nOutcome feedback for this session's recent work (a signal about trajectory reliability, not proof of correctness):\n${grade}`
-          : base;
-        try {
-          const reply = await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel, 'memory-curator');
-          // Parse noop indicator from the worker's response
-          const noopMatch = reply.match(/\[NOOP:\s*(.+?)\]\s*$/m);
-          if (noopMatch) {
-            for (const t of sessionTurns) {
-              this.opts.t1db.logNoop(t.session_id, t.turn_id, noopMatch[1].trim());
-              result.noops++;
-            }
+  /**
+   * Process one session's completed turns (merge observations → worker prompt
+   * → archive). Shared by the hourly runOnce() batch and the compaction
+   * flush (compaction facet consumption).
+   */
+  async runSession(sessionID: string): Promise<{ turns: number; archived: number; noops: number; failed: number }> {
+    const result = { turns: 0, archived: 0, noops: 0, failed: 0 };
+    const turns = this.opts.t1db.listTurns();
+    const sessionTurns = completeTurns(turns, { staleMs: this.opts.staleMs })
+      .filter((t) => t.session_id === sessionID);
+    if (sessionTurns.length === 0) return result;
+    result.turns = sessionTurns.length;
+
+    // 1) merge all observations of the session's completed turns
+    const observations: T1Observation[] = [];
+    for (const t of sessionTurns) {
+      observations.push(...this.opts.t1db.readTurn(t.session_id, t.turn_id));
+    }
+    const transcript = observationsToTranscript(
+      observations.slice(0, this.opts.maxObservationsPerSession ?? 200),
+    );
+
+    // 2) ask the session's persistent worker agent to save memories itself
+    if (transcript.trim()) {
+      const context = sessionContext(this.opts.index, sessionID, this.opts.contextEpisodes ?? 10);
+      const base = context
+        ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
+        : `Observations of the last hour:\n${transcript}`;
+      const grade = this.opts.gradeFor?.(sessionID);
+      const prompt = grade
+        ? `${base}\n\nOutcome feedback for this session's recent work (a signal about trajectory reliability, not proof of correctness):\n${grade}`
+        : base;
+      try {
+        const reply = await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel, 'memory-curator');
+        // Parse noop indicator from the worker's response
+        const noopMatch = reply.match(/\[NOOP:\s*(.+?)\]\s*$/m);
+        if (noopMatch) {
+          for (const t of sessionTurns) {
+            this.opts.t1db.logNoop(t.session_id, t.turn_id, noopMatch[1].trim());
+            result.noops++;
           }
-        } catch {
-          result.failed++;
         }
+      } catch {
+        result.failed++;
       }
+    }
 
-      // 3) processed = archived — move the session's completed turns to
-      // t1_archive regardless of whether the agent wrote anything. The raw
-      // data is preserved for future re-extraction with upgraded pipelines.
-      for (const t of sessionTurns) {
-        this.opts.t1db.archiveTurn(t.session_id, t.turn_id);
-        result.archived++;
-      }
+    // 3) processed = archived — move the session's completed turns to
+    // t1_archive regardless of whether the agent wrote anything. The raw
+    // data is preserved for future re-extraction with upgraded pipelines.
+    for (const t of sessionTurns) {
+      this.opts.t1db.archiveTurn(t.session_id, t.turn_id);
+      result.archived++;
     }
 
     return result;
