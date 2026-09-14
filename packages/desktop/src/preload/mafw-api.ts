@@ -22,6 +22,8 @@ export function createMafwApi(): MafwAPI {
   }
 
   return {
+    notify: (opts: { title: string; body: string }) => ipcRenderer.invoke("mafw-notify", opts) as Promise<boolean>,
+
     gateway: {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
       start: () => ipcRenderer.invoke("mafw-gateway-start"),

@@ -1,5 +1,5 @@
 import { MafwClient } from "@mafw/sdk"
-import { BrowserWindow, app, ipcMain } from "electron"
+import { BrowserWindow, Notification, app, ipcMain } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
 import { join } from "path"
 import {
@@ -9,6 +9,7 @@ import {
   startGateway,
   stopGateway,
 } from "./mafw-sidecar"
+import { getLastFocusedWindow, trayIconPath } from "./windows"
 import { UiPluginManager } from "./ui-plugins"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
@@ -69,6 +70,20 @@ export function registerMafwIpcHandlers() {
   })
 
   ipcMain.handle("mafw-gateway-info", () => getGatewayStatus())
+
+  // OS-level notification for away-from-window moments (close-to-tray).
+  // The renderer decides relevance (document.hidden) and throttling.
+  ipcMain.handle("mafw-notify", (_event: IpcMainInvokeEvent, opts: { title: string; body: string }) => {
+    if (!Notification.isSupported()) return false
+    try {
+      const n = new Notification({ title: opts.title, body: opts.body, icon: trayIconPath() })
+      n.on("click", () => { const win = getLastFocusedWindow(); if (win) { win.show(); win.focus() } })
+      n.show()
+      return true
+    } catch {
+      return false
+    }
+  })
 
   ipcMain.handle("mafw-gateway-logs-path", () => {
     return join(app.getPath("home"), ".mafw", "logs", "mafw.log")

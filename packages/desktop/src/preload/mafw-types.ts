@@ -10,6 +10,8 @@ import type {
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 
 export type MafwAPI = {
+  notify: (opts: { title: string; body: string }) => Promise<boolean>
+
   gateway: {
     info: () => Promise<GatewayStatus>
     start: () => Promise<GatewayStatus>

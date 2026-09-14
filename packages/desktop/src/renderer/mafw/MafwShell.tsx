@@ -291,6 +291,14 @@ export function MafwShell() {
   const anchorRegistry: Record<string, () => void> = {}
   const sendingResetters: Record<string, () => void> = {}
   const queueFlushers: Record<string, () => void> = {}
+
+  // OS notification only when the window is hidden (tray/minimized); the
+  // in-app toasts remain the primary feedback while the window is visible.
+  const notifyIfHidden = (title: string, body: string) => {
+    if (!document.hidden) return
+    void window.api.mafw.notify?.({ title, body }).catch(() => { /* fail-open */ })
+  }
+  const lastIdleNotify: Record<string, number> = {}
   const phaseUpdaters: Record<string, (p: 'idle' | 'searching' | 'writing') => void> = {}
   // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
   const mediaSpeakHandlers: Record<string, (text: string, voice?: string) => void> = {}
@@ -1076,6 +1084,7 @@ export function MafwShell() {
       if (event.type === "user_question") {
         console.log("[mafw] SSE user_question", event.goalId, event.questionId)
         setActiveQuestion(event as QuestionData)
+        notifyIfHidden("MAFW：Agent 需要你的回答", String(event.question || "").slice(0, 80))
         return
       }
 
@@ -1091,11 +1100,13 @@ export function MafwShell() {
       if (event.type === "question.asked") {
         console.log("[mafw] SSE question.asked", sid, event.properties?.id)
         upsertCard(sid, { kind: "ask", data: mapAskCard(event.properties || {}, Date.now()) })
+        notifyIfHidden("MAFW：Agent 提问", String(event.properties?.question || "").slice(0, 80))
         return
       }
       if (event.type === "permission.asked") {
         console.log("[mafw] SSE permission.asked", sid, event.properties?.id, event.properties?.permission)
         upsertCard(sid, { kind: "permission", data: mapPermissionCard(event.properties || {}, Date.now()) })
+        notifyIfHidden("MAFW：需要权限审批", String(event.properties?.permission?.tool || "工具调用").slice(0, 80))
         return
       }
       if (event.type === "question.replied") {
@@ -1269,6 +1280,11 @@ export function MafwShell() {
         sendingResetters[sid]?.()
         expireSessionCards(sid)
         queueFlushers[sid]?.()
+        if (document.hidden && Date.now() - (lastIdleNotify[sid] || 0) > 60_000) {
+          lastIdleNotify[sid] = Date.now()
+          const title = sessions().find(s => s.id === sid)?.title || "会话"
+          notifyIfHidden("MAFW：回合完成", `「${title}」已回复`)
+        }
       } else if (event.type === "session.error" || event.type === "message.error" || event.type === "message.aborted") {
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         sendingResetters[sid]?.()
