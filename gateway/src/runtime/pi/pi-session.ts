@@ -36,10 +36,24 @@ export class PiSessionRegistry {
     this.approvalBridges.set(id, bridge);
 
     const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
+    // Compaction listener: pi fires session_before_compact / session_compact to
+    // extensions; re-emit as normalized runtime events (compaction facet).
+    const compactionExtension = {
+      name: 'mafw-compaction',
+      factory: (pi: any) => {
+        pi.on('session_before_compact', () => {
+          this.emitEvent({ payload: { type: 'session.compacting', properties: { sessionID: id } } });
+        });
+        pi.on('session_compact', () => {
+          this.emitEvent({ payload: { type: 'session.compacted', properties: { sessionID: id } } });
+        });
+      },
+    };
     // Combine approval extension with agent-specific extensions
     // These will be passed to createAgentSession via extensionFactories
     const allExtensions = [
       { name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) },
+      compactionExtension,
       ...agentExtensions,
     ];
 
@@ -164,11 +178,25 @@ export class PiSessionRegistry {
     const bridge = new ApprovalBridge();
     const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
     const newId = `pi_${randomUUID().slice(0, 8)}`;
+    const compactionExtension = {
+      name: 'mafw-compaction',
+      factory: (pi: any) => {
+        pi.on('session_before_compact', () => {
+          this.emitEvent({ payload: { type: 'session.compacting', properties: { sessionID: newId } } });
+        });
+        pi.on('session_compact', () => {
+          this.emitEvent({ payload: { type: 'session.compacted', properties: { sessionID: newId } } });
+        });
+      },
+    };
     try {
       const { session } = await this.deps.createSession({
         cwd: sm.getCwd?.() ?? undefined,
         fromFile: file,
-        extensionFactories: [{ name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) }],
+        extensionFactories: [
+          { name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) },
+          compactionExtension,
+        ],
       });
       this.sessions.set(newId, session);
       this.bySession.set(session, newId);

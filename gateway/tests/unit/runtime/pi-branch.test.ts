@@ -75,4 +75,30 @@ describe('PiSessionRegistry branch primitives', () => {
     expect(res.finish).toBe('stop');
     expect(res.usage).toEqual({ input: 10, output: 5, cached: 3, reasoning: undefined, costUsd: 0.001 });
   });
+
+  it('registers a compaction extension that emits normalized events', async () => {
+    const handlers: Record<string, Function> = {};
+    const emitted: any[] = [];
+    const fakePi = { on: (name: string, fn: Function) => { handlers[name] = fn; } };
+    let capturedFactories: any[] = [];
+    const registry = new PiSessionRegistry(
+      {
+        createSession: async (opts: any) => {
+          capturedFactories = opts.extensionFactories ?? [];
+          return { session: fakeSession() };
+        },
+      },
+      { emitEvent: (e) => emitted.push(e) },
+    );
+    const { id } = await registry.create('/cwd', {});
+    const ext = capturedFactories.find((f) => f.name === 'mafw-compaction');
+    expect(ext).toBeDefined();
+    ext.factory(fakePi);
+    handlers['session_before_compact']();
+    handlers['session_compact']();
+    expect(emitted).toEqual([
+      { payload: { type: 'session.compacting', properties: { sessionID: id } } },
+      { payload: { type: 'session.compacted', properties: { sessionID: id } } },
+    ]);
+  });
 });
