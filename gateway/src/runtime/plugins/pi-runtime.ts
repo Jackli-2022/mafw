@@ -20,6 +20,7 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   sessionStorageApi: true,
   agentConfigApi: true,
   completionApi: true,
+  sessionBranchApi: true,
 };
 
 /**
@@ -96,6 +97,13 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
         thinkingLevel,
       };
 
+      // fromFile: registry.fork() passes a branched session file — load it as
+      // the session's SessionManager so the new AgentSession carries the
+      // forked history (SessionManager.open reads the JSONL tree).
+      if (opts.fromFile && pi.SessionManager) {
+        sessionOpts.sessionManager = pi.SessionManager.open(opts.fromFile, undefined, opts.cwd);
+      }
+
       // If DefaultResourceLoader is available and we have extensions, create a resource loader
       const extensionFactories = opts.extensionFactories ?? [];
       if (DefaultResourceLoader && extensionFactories.length > 0) {
@@ -145,6 +153,8 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     },
     permissionReply: (sessionID: string, requestId: string, approved: boolean) =>
       registry.permissionReply(sessionID, requestId, approved),
+    fork: async (opts: { sessionID: string; messageID?: string }) => registry.fork(opts.sessionID, opts.messageID),
+    revert: async (opts: { sessionID: string; messageID: string; partID?: string }) => registry.revert(opts.sessionID, opts.messageID),
   };
 
   return {

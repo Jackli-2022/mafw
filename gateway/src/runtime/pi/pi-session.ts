@@ -82,7 +82,7 @@ export class PiSessionRegistry {
     }
   }
 
-  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[] }> {
+  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[]; finish?: string; usage?: { input: number; output: number; cached?: number; reasoning?: number; costUsd?: number } }> {
     const s = this.requireSession(id);
     this.touch(id);
     const piOpts = this.buildPiPromptOpts(opts);
@@ -91,7 +91,21 @@ export class PiSessionRegistry {
     await s.waitForIdle();
     const after = s.messages || [];
     const assistant = after.slice(before).filter((m: any) => m?.role === 'assistant');
-    return { parts: (assistant[assistant.length - 1]?.content || []).map((c: any) => ({ type: 'text', text: c?.text || '' })) };
+    const last = assistant[assistant.length - 1];
+    const u = last?.usage;
+    return {
+      parts: (last?.content || []).map((c: any) => ({ type: 'text', text: c?.text || '' })),
+      finish: last?.stopReason,
+      usage: u
+        ? {
+            input: u.input ?? u.promptTokens ?? 0,
+            output: u.output ?? u.completionTokens ?? 0,
+            cached: u.cacheRead ?? u.cachedTokens ?? 0,
+            reasoning: u.reasoning,
+            costUsd: typeof u.totalCost === 'number' ? u.totalCost : undefined,
+          }
+        : undefined,
+    };
   }
 
   private buildPiPromptOpts(opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Record<string, any> {
@@ -132,6 +146,53 @@ export class PiSessionRegistry {
   async abort(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (s) { try { await s.abort(); } catch { /* ignore */ } }
+  }
+
+  /**
+   * 分叉为新会话：SessionManager.createBranchedSession 写出截至 leaf 的新
+   * 会话文件，再经 deps.createSession({ fromFile }) 加载为独立 AgentSession。
+   * 原会话不动。busy 也允许（fork 只读文件，不动 live session）。
+   */
+  async fork(id: string, messageID?: string): Promise<{ id: string }> {
+    const s = this.requireSession(id);
+    const sm = s.sessionManager;
+    if (!sm?.createBranchedSession) throw new Error('pi session does not expose sessionManager');
+    const leafId = messageID ?? sm.getLeafId?.();
+    if (!leafId) throw new Error(`pi fork failed: no leaf for session ${id}`);
+    const file = sm.createBranchedSession(leafId);
+    if (!file) throw new Error(`pi fork failed: createBranchedSession returned nothing for leaf ${leafId}`);
+    const bridge = new ApprovalBridge();
+    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
+    const newId = `pi_${randomUUID().slice(0, 8)}`;
+    try {
+      const { session } = await this.deps.createSession({
+        cwd: sm.getCwd?.() ?? undefined,
+        fromFile: file,
+        extensionFactories: [{ name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) }],
+      });
+      this.sessions.set(newId, session);
+      this.bySession.set(session, newId);
+      this.lastUsed.set(newId, Date.now());
+      this.approvalBridges.set(newId, bridge);
+    } catch (err) {
+      bridge.dispose();
+      throw err;
+    }
+    return { id: newId };
+  }
+
+  /**
+   * 消息级回退 = SessionManager.branch(branchFromId) 原地移动 leaf。
+   * 不回滚文件、不可逆（entry 保留在文件，可凭 id 再 branch 回去）。
+   * streaming 中拒绝——branch 移动 leaf 会与进行中的写入竞争。
+   */
+  async revert(id: string, messageID: string): Promise<void> {
+    const s = this.requireSession(id);
+    if (s.isStreaming) throw new Error(`pi session ${id} is busy (streaming) — abort before revert`);
+    const sm = s.sessionManager;
+    if (!sm?.branch) throw new Error('pi session does not expose sessionManager');
+    sm.branch(messageID);
+    this.touch(id);
   }
 
   async list(): Promise<any[]> {
