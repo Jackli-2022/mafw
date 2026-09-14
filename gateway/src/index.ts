@@ -74,6 +74,7 @@ import {
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent } from './runtime/normalize';
 import { BudgetGuard } from './core/budget-guard';
+import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
@@ -90,6 +91,8 @@ import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
 import { handleSessionBranch } from './routes/session-branch';
+import { handleSessionSummarize } from './routes/session-summarize';
+import { handleGoalSessions } from './routes/goal-sessions';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
 import { handleManagerRotate, runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
@@ -3274,6 +3277,16 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/goals/:id/sessions — goal session 映射（编排可视化下钻）。
+        // 必须挂在 Dashboard API 的 /api/goals* 兜底之前（AGENTS.md §6.5 路由顺序教训）。
+        if (req.url?.match(/^\/api\/goals\/[^/]+\/sessions(?:\?|$)/) && req.method === 'GET') {
+          const handled = await handleGoalSessions(req, res, req.url, {
+            listGoalSessions: (goalId) => this.getGatewayDb().listGoalSessions(goalId),
+            getSession: (sessionID) => this.opencodeClient?.session.get({ sessionID }).catch(() => null),
+          });
+          if (handled) return;
+        }
+
         // Dashboard API
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
           res.setHeader("Content-Type", "application/json");
@@ -4575,6 +4588,12 @@ class MafwScheduler {
           if (handled) return;
         }
 
+        // POST /api/session/:id/summarize — 手动压缩会话（TUI /compact；runtime 薄代理）
+        if (req.url?.match(/^\/api\/session\/[^/]+\/summarize(?:\?|$)/) && req.method === 'POST') {
+          const handled = await handleSessionSummarize(req, res, req.url, { getRuntime: () => this.opencodeClient ?? null });
+          if (handled) return;
+        }
+
         // GET /api/usage?sessionID=xxx&projectID=xxx — consolidated usage (summary + providers)
         if (req.url?.match(/^\/api\/usage(?:\?|$)/) && req.method === 'GET') {
           try {
@@ -5436,7 +5455,10 @@ class MafwScheduler {
       lastPhase: null, currentWave: 0, totalWaves: null,
       sessions: {}, nextAction: 'GRAPH_INVOKED', artifacts: {},
       updatedAt: new Date().toISOString(),
-      policySnapshot: (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
+      policySnapshot: mergeBudgetIntoSnapshot(
+        (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
+        path.join(mafwDir, 'requests', `${goalId}.json`),
+      ),
     };
 
     const tmpPath = `${statePath}.tmp`;
@@ -5664,10 +5686,13 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
       if (fs.existsSync(statePath)) {
         const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-        state.policySnapshot = {
-          version: policy.version,
-          proposalId: policy.proposalId,
-        };
+        state.policySnapshot = mergeBudgetIntoSnapshot(
+          {
+            version: policy.version,
+            proposalId: policy.proposalId,
+          },
+          path.join(mafwDir, 'requests', `${goalId}.json`),
+        );
         fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
       }
     } catch (err: any) {
