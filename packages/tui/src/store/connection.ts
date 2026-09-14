@@ -42,6 +42,13 @@ export class ConnectionStore {
     this.schedule(() => this.healthTick(), HEALTH_TICK_MS)
   }
 
+  /** 切换订阅目标会话（/sessions 切换后重订事件流）。 */
+  setSession(sessionID: string): void {
+    if (this.stopped || sessionID === this.deps.sessionID) return
+    this.deps.sessionID = sessionID
+    void this.resubscribe()
+  }
+
   stop(): void {
     this.stopped = true
     for (const u of this.unsubs) u()

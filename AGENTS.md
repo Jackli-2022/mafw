@@ -201,6 +201,25 @@ onMount → gateway.info() 等 ready
 - 发布注意：`@earendil-works/pi-tui` + `chalk` 在 **root dependencies**（发布后全局解析），root `files` 含 `packages/tui/dist/`；SDK `event.connected()` 为 TUI 监督器新增
 - 已知类型缺口：SDK `TriageItem` 缺 `id` 字段（wire 实际有，TUI 用 `TriageItem & { id: string }`）；`--hybrid` 检索 flag 待 SDK `memory.search` 加 retriever 参数后接（v1 固定 bm25）
 
+#### 5.9b.1 TUI v2 能力批（2026-09-14，对标 Claude Code/Codex/opencode/Hermes 调研缺口）
+
+**Chat 本体**：
+- **Markdown 渲染**：assistant 文本走 pi-tui `Markdown` 组件（`message-blocks.ts` 的 `markdownTheme`，标题/列表/代码块/表格；无 cli-highlight 依赖，代码块不着色）；user 文本保持纯文本 `>` 前缀
+- **busy 消息排队**：`ChatStore.send()` streaming 时入 `queuedTurns`（turn 标 `queued`，渲染 `⏳` dim），`session.idle` 后 `flushQueue()` 每次续发一条（复用 turn 不重复）
+- **`!` shell 模式**（`src/shell-mode.ts`）：`! <cmd>` 本地 exec（30s 超时、128KB buffer、输出截 50 行），渲染进 transcript 本地块（`RawLines`，跨 rebuild 保留），**不进模型上下文**（Hermes 同款零成本语义）
+- **外部编辑器**（`src/external-editor.ts`）：Ctrl+G / `/editor` → `tui.stop()` → `$VISUAL/$EDITOR`（win 默认 notepad）编辑临时文件 → `tui.start()`（pi coding agent 同款模式；Windows 禁 spawnSync 防输入缓冲争抢）
+- **会话切换**：`/sessions`（别名 `/resume` `/switch`）→ SelectList picker（★manager 标记）→ `ChatStore.switchSession()` + `ConnectionStore.setSession()` 重订 SSE + `chatTab.rebuild()`（localBlocks 保留——loadHistory 与本地块的竞态曾清空 shell 结果，测试抓出）
+- **/model**：providers.list 展平（connected 过滤）→ 选中存 `modelSelection` → 后续 `promptAsync` 带 `body.model`；状态栏显示
+- **/compact**：`POST /api/session/:id/summarize`（gateway `routes/session-summarize.ts` 薄代理 runtime `session.summarize`）→ 重载历史
+- **/undo /redo**：revert 到最后一条**已持久化** user 消息（`local-`/`queued-` 前缀跳过）+ unrevert；pi runtime 无 unrevert → 方法缺席报错
+- **状态栏用量**：`session.tokenSummary` 15s 轮询 + idle 触发 → model/tokens(`formatTokens` 1.2K/1.3M)/cost($0.06)/duration(`15m 30s`)；slash 命令表收敛在 `slash-commands.ts`（`SLASH_COMMANDS` + `createSlashHandler`，app.ts 注入实现）
+
+**Goals 编排下钻**：goal 详情 overlay 按 `s` → `GET /api/goals/:id/sessions`（gateway `routes/goal-sessions.ts`，goal_sessions 表 + runtime session.get 富化 title，**必须挂在 `/api/goals*` dashboard 兜底之前**）→ SelectList（phase/loop）→ Enter 只读 transcript overlay（`historyItemsToTurns` 复用渲染管线，最近 50 条）
+
+**SDK 新增**：`session.summarize`、`goals.sessions(goalId)`（`GoalSessionInfo`）；测试 TUI 90（89 过/1 冒烟跳过）+ gateway 路由 17 + SDK 71
+
+**测试坑**：pi-tui 布局引擎（layout.js `layoutComponent`）需要 viewport 高度上下文，手动 `tab.render(80)` 会把 ScrollView 裁到 1 行——ChatTab 级测试断言 `(tab as any).transcript.render(80)` 而非全栈 render；chalk 非 TTY 环境自动关色，断言 ANSI 需先 `chalk.level = 3`
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）

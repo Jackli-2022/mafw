@@ -114,3 +114,37 @@ test('subscribe rejection reports down state', async () => {
   assert.ok(states.includes('down'))
   store.stop()
 })
+
+test('setSession re-subscribes to the new session and keeps forwarding events', async () => {
+  let current = 'ses_1'
+  let listeners = new Map<string, (d: any) => void>()
+  const subscribedIds: string[] = []
+  const received: { e: string; data: any }[] = []
+  const store = new ConnectionStore({
+    sessionID: 'ses_1',
+    subscribe: async (sid) => {
+      subscribedIds.push(sid)
+      assert.equal(sid, current, '订阅目标与 setSession 一致')
+      listeners = new Map()
+      return {
+        on: (e: string, cb: (d: any) => void) => {
+          listeners.set(e, cb)
+          return () => { listeners.delete(e) }
+        },
+      }
+    },
+    isConnected: () => true,
+    onEvent: (e, data) => received.push({ e, data }),
+    onState: () => {},
+    schedule: () => {},
+  })
+  store.start()
+  await settle()
+  current = 'ses_2'
+  store.setSession('ses_2')
+  await settle()
+  assert.deepEqual(subscribedIds, ['ses_1', 'ses_2'])
+  listeners.get('message.part.updated')?.({ part: { sessionID: 'ses_2' } })
+  assert.equal(received.length, 1, '新会话事件继续转发')
+  store.stop()
+})

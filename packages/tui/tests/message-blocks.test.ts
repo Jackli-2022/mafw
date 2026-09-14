@@ -1,8 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import chalk from 'chalk'
 import { visibleWidth } from '@earendil-works/pi-tui'
 import { turnToLines } from '../src/ui/message-blocks.ts'
 import type { ChatTurn } from '../src/store/chat-store.ts'
+
+// 非 TTY 测试环境 chalk 自动降级关色；强制开色以断言 ANSI 样式
+chalk.level = 3
 
 test('user turn renders with > prefix and text', () => {
   const turn: ChatTurn = { messageID: 'm1', role: 'user', parts: [{ id: 'p', type: 'text', text: 'hello' }], done: true }
@@ -64,4 +68,53 @@ test('multi-line user text wraps and prefixes first line only', () => {
   const lines = turnToLines(turn, 80).map(l => l.replace(/\x1b\[[0-9;]*m/g, ''))
   assert.ok(lines[0].includes('> line1'))
   assert.ok(lines.some(l => l.includes('line2') && !l.includes('>')))
+})
+
+test('assistant markdown text renders via Markdown (bold markers stripped, code fenced)', () => {
+  const turn: ChatTurn = {
+    messageID: 'm7', role: 'assistant', done: true,
+    parts: [{ id: 'p', type: 'text', text: '看这个 **重点**：\n\n```ts\nconst x = 1\n```' }],
+  }
+  const lines = turnToLines(turn, 80)
+  const clean = lines.map(l => l.replace(/\x1b\[[0-9;]*m/g, '')).join('\n')
+  assert.ok(clean.includes('重点'), '粗体文本保留')
+  assert.ok(!clean.includes('**重点**'), 'markdown 标记被消费而非原样输出')
+  assert.ok(clean.includes('const x = 1'), '代码块内容保留')
+})
+
+test('assistant heading renders without leading #', () => {
+  const turn: ChatTurn = {
+    messageID: 'm8', role: 'assistant', done: true,
+    parts: [{ id: 'p', type: 'text', text: '# 标题' }],
+  }
+  const clean = turnToLines(turn, 80).map(l => l.replace(/\x1b\[[0-9;]*m/g, '')).join('\n')
+  assert.ok(clean.includes('标题'))
+  assert.ok(!clean.includes('# 标题'), 'heading 标记被消费')
+})
+
+test('queued user turn renders with pending marker and dim', () => {
+  const turn: ChatTurn = {
+    messageID: 'q1', role: 'user', done: true, queued: true,
+    parts: [{ id: 'p', type: 'text', text: '排队消息' }],
+  }
+  const lines = turnToLines(turn, 80)
+  const raw = lines.join('\n')
+  const clean = lines.map(l => l.replace(/\x1b\[[0-9;]*m/g, '')).join('\n')
+  assert.ok(clean.includes('排队消息'))
+  assert.ok(clean.includes('⏳'), '排队标记')
+  assert.ok(raw.includes('\x1b[90m'), 'dim 样式')
+})
+
+test('diff-style tool output colors +/- lines', () => {
+  const turn: ChatTurn = {
+    messageID: 'm9', role: 'assistant', done: true,
+    parts: [{ id: 'pt', type: 'tool', toolName: 'edit', state: 'completed', text: 'file.ts\n+added line\n-removed line\n@@ hunk @@' }],
+  }
+  const lines = turnToLines(turn, 80)
+  const raw = lines.join('\n')
+  const clean = lines.map(l => l.replace(/\x1b\[[0-9;]*m/g, '')).join('\n')
+  assert.ok(clean.includes('+added line'))
+  assert.ok(clean.includes('-removed line'))
+  assert.ok(raw.includes('\x1b[32m+added'), 'added 行绿色')
+  assert.ok(raw.includes('\x1b[31m-removed'), 'removed 行红色')
 })

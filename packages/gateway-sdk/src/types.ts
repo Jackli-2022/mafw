@@ -295,6 +295,11 @@ export interface SessionNamespace {
   trajectory(params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } }): Promise<TrajectoryResponse>
   events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
   command(params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
+  fork(params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ session: Session }>
+  revert(params: { path: { id: string }; body: { messageID: string; partID?: string } }): Promise<void>
+  unrevert(params: { path: { id: string } }): Promise<void>
+  /** 手动压缩会话（TUI /compact；runtime summarize 薄代理）。 */
+  summarize(params: { path: { id: string }; body?: { providerID?: string; modelID?: string } }): Promise<void>
 }
 
 // ── Commands & skills (opencode serve shapes) ──
@@ -502,11 +507,21 @@ export interface AgentsNamespace {
   list(): Promise<any[]>
 }
 
+export interface GoalSessionInfo {
+  sessionID: string
+  phase: string
+  loop: number
+  title?: string
+  time?: { created?: number; updated?: number }
+}
+
 export interface GoalsNamespace {
   list(): Promise<Goal[]>
   get(id: string): Promise<Goal | null>
   validate(input: GoalCreateInput): Promise<{ goalId: string }>
   control(action: GoalControlAction): Promise<void>
+  /** goal → sessions 映射（编排可视化下钻）。 */
+  sessions(goalId: string): Promise<GoalSessionInfo[]>
 }
 
 export interface MemorySearchOptions {

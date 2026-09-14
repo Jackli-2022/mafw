@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import {
   MafwClient as IMafwClient, MafwClientOptions,
-  Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction,
+  Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows,
   CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo, ManagerRotateResult,
@@ -119,6 +119,15 @@ export class MafwClient implements IMafwClient {
 
     unrevert: async (params: { path: { id: string } }): Promise<void> => {
       await this.request(`/api/sessions/${params.path.id}/unrevert`, { method: 'POST' })
+    },
+
+    summarize: async (
+      params: { path: { id: string }; body?: { providerID?: string; modelID?: string } },
+    ): Promise<void> => {
+      await this.request(`/api/session/${params.path.id}/summarize`, {
+        method: 'POST',
+        body: JSON.stringify(params.body ?? {}),
+      })
     },
 
     prompt: async (
@@ -523,6 +532,11 @@ export class MafwClient implements IMafwClient {
         if (e.message?.includes('HTTP 404')) return null
         throw e
       }
+    },
+
+    sessions: async (goalId: string): Promise<GoalSessionInfo[]> => {
+      const data = await this.request<{ sessions: GoalSessionInfo[] }>(`/api/goals/${encodeURIComponent(goalId)}/sessions`)
+      return data?.sessions ?? []
     },
 
     validate: async (input: GoalCreateInput): Promise<{ goalId: string }> => {

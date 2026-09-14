@@ -9,10 +9,11 @@ function historyItem(id: string, role: 'user' | 'assistant', parts: any[]) {
 }
 
 function fakeSession(over: Record<string, any> = {}) {
-  const calls: Record<string, any> = { promptAsync: [], abort: 0 }
+  const calls: Record<string, any> = { promptAsync: [], abort: 0, messages: [] }
   return {
     calls,
-    async messages(_p: any) {
+    async messages(p: any) {
+      calls.messages.push(p)
       return {
         data: [
           historyItem('m1', 'user', [{ id: 'p1', messageID: 'm1', type: 'text', text: '你好' }]),
@@ -163,10 +164,73 @@ test('loadHistory filters injected blocks (recall/note-board/goal-snapshot)', as
   assert.equal(s.turns[0].parts[0].text, '正常回复')
 })
 
-test('concurrent sends are ignored while streaming', async () => {
+test('busy sends are queued (turn flagged queued) and flushed on idle in order', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
   await s.send('first')
   await s.send('second')
-  assert.equal(fx.calls.promptAsync.length, 1, 'streaming 期间忽略第二次 send')
+  await s.send('third')
+  assert.equal(fx.calls.promptAsync.length, 1, 'streaming 期间不立即发送')
+  const queuedTurns = s.turns.filter(t => t.queued)
+  assert.equal(queuedTurns.length, 2, '两条排队 turn')
+  assert.deepEqual(queuedTurns.map(t => t.parts[0].text), ['second', 'third'])
+  s.applyEvent('session.idle', { type: 'session.idle' })
+  await settle()
+  assert.equal(fx.calls.promptAsync.length, 2, 'idle 后自动发一条')
+  assert.deepEqual(fx.calls.promptAsync[1].body.parts, [{ type: 'text', text: 'second' }])
+  assert.equal(s.turns.filter(t => t.queued).length, 1, '还剩一条排队')
+  s.applyEvent('session.idle', { type: 'session.idle' })
+  await settle()
+  assert.equal(fx.calls.promptAsync.length, 3)
+  assert.deepEqual(fx.calls.promptAsync[2].body.parts, [{ type: 'text', text: 'third' }])
+  assert.equal(s.turns.filter(t => t.queued).length, 0)
+})
+
+test('flushed queued turn is re-used (no duplicate user turn)', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.send('first')
+  const before = s.turns.length
+  await s.send('second')
+  s.applyEvent('session.idle', { type: 'session.idle' })
+  await settle()
+  assert.equal(s.turns.length, before + 1, '排队 turn 转正而非新增')
+  assert.equal(s.turns.at(-1)!.parts[0].text, 'second')
+  assert.equal(s.turns.at(-1)!.queued, undefined)
+})
+
+test('send passes selected model to promptAsync when getModel is set', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({
+    session: fx as any, sessionID: 's', onChange: () => {},
+    getModel: () => ({ providerID: 'xiaomi', modelID: 'mimo-v2.5' }),
+  })
+  await s.send('q')
+  assert.deepEqual(fx.calls.promptAsync[0].body.model, { providerID: 'xiaomi', modelID: 'mimo-v2.5' })
+})
+
+test('switchSession reloads history for the new session id', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({ session: fx as any, sessionID: 's1', onChange: () => {} })
+  await s.loadHistory()
+  assert.equal(s.sessionID, 's1')
+  await s.switchSession('s2')
+  assert.equal(s.sessionID, 's2')
+  assert.deepEqual(fx.calls.messages.at(-1).path, { id: 's2' })
+})
+
+test('undo reverts to last user message and reloads; redo calls unrevert', async () => {
+  const calls: any[] = []
+  const fx = fakeSession({
+    async revert(p: any) { calls.push(['revert', p]) },
+    async unrevert(_p: any) { calls.push(['unrevert']) },
+  })
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.loadHistory() // m1(user 你好) m2(assistant)
+  await s.undo()
+  assert.equal(calls[0][0], 'revert')
+  assert.equal(calls[0][1].body.messageID, 'm1', 'revert 到最后一条 user 消息')
+  assert.deepEqual(fx.calls.messages.at(-1).path, { id: 's' }, 'undo 后重载历史')
+  await s.redo()
+  assert.equal(calls[1][0], 'unrevert')
 })

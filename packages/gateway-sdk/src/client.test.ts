@@ -630,3 +630,40 @@ test("request throws clean error on HTML response (gateway older than SDK)", asy
   const c = new MafwClient()
   await expect(c.models.get()).rejects.toThrow(/HTML instead of JSON.*gateway.*older/s)
 })
+
+// ── TUI 三路线新增：summarize / goal sessions ──
+
+test("session.summarize sends POST /api/session/:id/summarize", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.summarize({ path: { id: "s1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/session/s1/summarize",
+    expect.objectContaining({ method: "POST" }))
+})
+
+test("session.summarize passes model options in body", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.summarize({ path: { id: "s1" }, body: { providerID: "xiaomi", modelID: "mimo-v2.5" } })
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toEqual({ providerID: "xiaomi", modelID: "mimo-v2.5" })
+})
+
+test("goals.sessions sends GET /api/goals/:id/sessions and unwraps", async () => {
+  fetchMock.mockResolvedValue(okJson({
+    sessions: [{ sessionID: "s1", phase: "PLANNING", loop: 1, title: "plan worker" }],
+  }))
+  const c = new MafwClient("http://gw:3000")
+  const result = await c.goals.sessions("g1")
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/goals/g1/sessions", expect.anything())
+  expect(result).toHaveLength(1)
+  expect(result[0].sessionID).toBe("s1")
+  expect(result[0].title).toBe("plan worker")
+})
+
+test("goals.sessions empty response returns []", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  const result = await c.goals.sessions("g-none")
+  expect(result).toEqual([])
+})

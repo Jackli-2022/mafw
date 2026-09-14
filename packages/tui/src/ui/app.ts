@@ -1,6 +1,6 @@
 import {
-  ProcessTerminal, TuiAltScreen, VStack, Container, Text, matchesKey, Key,
-  type Component, type OverlayHandle, type TUI,
+  ProcessTerminal, TuiAltScreen, VStack, Container, Text, SelectList, matchesKey, Key,
+  type Component, type OverlayHandle, type TUI, type SelectItem,
 } from '@earendil-works/pi-tui'
 import { MafwClient } from '@mafw/sdk'
 import { basename } from 'node:path'
@@ -9,7 +9,9 @@ import { StatusBar, type StatusState } from './status-bar.ts'
 import { AppModel } from './app-model.ts'
 import { ConnectionStore, type ConnState } from '../store/connection.ts'
 import { ChatStore } from '../store/chat-store.ts'
-import { ChatTab } from './chat-tab.ts'
+import { ChatTab, selectListTheme } from './chat-tab.ts'
+import { createSlashHandler } from './slash-commands.ts'
+import { defaultEditorCommand, editInExternalEditor } from '../external-editor.ts'
 import { showPermissionOverlay } from './overlays.ts'
 import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
@@ -26,17 +28,6 @@ export interface AppOptions {
   retriever: Retriever
 }
 
-export interface AppContext {
-  client: MafwClient
-  tui: TUI
-  model: AppModel
-  managerSessionID: string | null
-  projectDir: string | null
-  opts: AppOptions
-  setStatus: (patch: Partial<StatusState>) => void
-  showHelp: () => void
-}
-
 export async function runApp(opts: AppOptions): Promise<void> {
   const client = new MafwClient(opts.baseUrl)
   const model = new AppModel()
@@ -44,10 +35,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const tui = new TuiAltScreen(terminal)
   const tabStrip = new TabStrip()
   const statusBar = new StatusBar()
+  const appStart = Date.now()
 
   // manager session 定位（当前项目；拿不到时 chat tab 显示提示）
   const project = await client.project.current().catch(() => null)
   const projectDir = project?.worktree ?? null
+  const projectID = project?.id ?? null
   const mgr = projectDir
     ? await client.manager.session(projectDir).catch(() => null)
     : null
@@ -67,14 +60,30 @@ export async function runApp(opts: AppOptions): Promise<void> {
   statusBar.setState(status)
   tabStrip.setConnected(true)
 
+  // ── 模型选择（/model；null = 会话默认）──
+  let modelSelection: { providerID: string; modelID: string } | null = null
+  let defaultModelLabel = ''
+  void client.providers.list().then((p) => {
+    const d: any = (p as any)?.default
+    if (d?.modelID) {
+      defaultModelLabel = String(d.modelID)
+      setStatus({ usage: { ...(status.usage ?? {}), model: defaultModelLabel } })
+    }
+  }).catch(() => {})
+
   // ── Chat tab ──
   const chatStore = new ChatStore({
     session: client.session,
     sessionID: managerSessionID ?? 'none',
     onChange: () => tui.requestRender(),
     onError: (message) => setStatus({ hint: theme.err(`⚠ ${message.slice(0, 60)}`) }),
+    getModel: () => modelSelection,
   })
-  const chatTab = new ChatTab({ tui, store: chatStore, onSlash: (cmd, args) => handleSlash(cmd, args), onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }) })
+  const chatTab = new ChatTab({
+    tui, store: chatStore,
+    onSlash: (cmd, args) => slashHandler(cmd, args),
+    onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }),
+  })
 
   // ── Goals tab ──
   const goalsStore = new GoalsStore({
@@ -117,33 +126,189 @@ export async function runApp(opts: AppOptions): Promise<void> {
       '  q               退出（非输入态）',
       '  Ctrl+C          强制退出',
       '  Esc             流式期间中止回合',
+      '  Ctrl+G          外部编辑器编辑输入（$EDITOR）',
+      '',
+      'Chat 输入',
+      '  ! <command>     本地 shell（零成本，不进对话）',
+      '  @路径 / /命令   编辑器补全',
       '',
       'Chat slash 命令',
       '  /new            新话题（rotate manager session）',
+      '  /sessions       会话列表/切换（/resume /switch）',
+      '  /model          选择模型（作用于后续消息）',
+      '  /compact        压缩当前会话上下文',
+      '  /undo /redo     回退/恢复最后一轮',
       '  /btw <问题>     支线问答',
       '  /older          加载更早历史',
+      '  /editor         外部编辑器（同 Ctrl+G）',
       '  /help           本帮助',
     ].join('\n'), 1, 1)
-    helpHandle = tui.showOverlay(help, { width: 58, maxHeight: 16, anchor: 'center' })
+    helpHandle = tui.showOverlay(help, { width: 58, maxHeight: 28, anchor: 'center' })
   }
 
-  async function handleSlash(cmd: string, args: string): Promise<string | null> {
-    if (cmd === 'help') { toggleHelp(); return null }
-    if (cmd === 'older') { await chatTab.loadOlder(); return null }
-    if (cmd === 'new') {
+  // ── 会话切换（/sessions）──
+  let conn: ConnectionStore | null = null
+  function ensureConn(sessionID: string): ConnectionStore {
+    if (conn) {
+      conn.setSession(sessionID)
+      return conn
+    }
+    conn = new ConnectionStore({
+      sessionID,
+      subscribe: (sid) => client.event.subscribeToSession(sid),
+      isConnected: () => client.event.connected(),
+      onEvent,
+      onState: (s) => {
+        setStatus({ conn: s })
+        tabStrip.setConnected(s === 'ok')
+      },
+    })
+    conn.start()
+    return conn
+  }
+
+  async function switchToSession(sessionID: string): Promise<void> {
+    await chatStore.switchSession(sessionID)
+    chatTab.rebuild()
+    ensureConn(sessionID)
+    setStatus({ session: sessionID })
+    void refreshUsage()
+  }
+
+  async function showSessionPicker(): Promise<void> {
+    let sessions: any[]
+    try {
+      sessions = await client.session.list(projectID ? { query: { projectID } } : undefined)
+    } catch (e: any) {
+      setStatus({ hint: theme.err(`会话列表失败: ${String(e?.message ?? e).slice(0, 50)}`) })
+      return
+    }
+    if (!sessions || sessions.length === 0) {
+      setStatus({ hint: theme.dim('（当前项目无会话）') })
+      return
+    }
+    const items: SelectItem[] = sessions.map((s: any) => ({
+      value: s.id,
+      label: `${s.title || String(s.id).slice(0, 20)}${s.id === managerSessionID ? theme.ok(' ★manager') : ''}`,
+      description: s.time?.updated ? new Date(s.time.updated).toLocaleString() : '',
+    }))
+    const list = new SelectList(items, Math.min(items.length, 10), selectListTheme)
+    const handle = tui.showOverlay(list, { width: '70%', maxHeight: 16, anchor: 'center' })
+    const close = () => { off(); handle.hide() }
+    const off = tui.addInputListener((data) => {
+      if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
+      return undefined
+    })
+    list.onSelect = (item) => { close(); void switchToSession(String(item.value)) }
+    list.onCancel = close
+  }
+
+  // ── 模型选择（/model）──
+  async function showModelPicker(): Promise<void> {
+    const p = await client.providers.list().catch(() => null)
+    const all: any[] = p?.all ?? []
+    const connected = new Set<string>(p?.connected ?? [])
+    const items: SelectItem[] = []
+    for (const prov of all) {
+      if (connected.size > 0 && !connected.has(prov.id)) continue
+      for (const [mid, m] of Object.entries<any>(prov.models ?? {})) {
+        items.push({ value: `${prov.id}/${mid}`, label: m?.name || mid, description: prov.id })
+      }
+    }
+    if (items.length === 0) {
+      setStatus({ hint: theme.dim('（无可用模型——检查 provider 连接）') })
+      return
+    }
+    const list = new SelectList(items, 10, selectListTheme)
+    const handle = tui.showOverlay(list, { width: '60%', maxHeight: 16, anchor: 'center' })
+    const close = () => { off(); handle.hide() }
+    const off = tui.addInputListener((data) => {
+      if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
+      return undefined
+    })
+    list.onSelect = (item) => {
+      close()
+      const slash = String(item.value).indexOf('/')
+      if (slash <= 0) return
+      modelSelection = {
+        providerID: String(item.value).slice(0, slash),
+        modelID: String(item.value).slice(slash + 1),
+      }
+      setStatus({ usage: { ...(status.usage ?? {}), model: modelSelection.modelID } })
+      setStatus({ hint: theme.ok(`模型: ${modelSelection.providerID}/${modelSelection.modelID}`) })
+    }
+    list.onCancel = close
+  }
+
+  // ── 用量轮询（模型/token/成本/时长 → 状态栏）──
+  async function refreshUsage(): Promise<void> {
+    const sid = chatStore.sessionID
+    if (!sid || sid === 'none') return
+    try {
+      const t = await client.session.tokenSummary({ path: { id: sid } })
+      const total = t.totalTokens.input + t.totalTokens.output + t.totalTokens.reasoning
+      setStatus({
+        usage: {
+          model: modelSelection?.modelID ?? defaultModelLabel,
+          tokens: total,
+          costUsd: t.totalCost ?? null,
+          durationMs: Date.now() - appStart,
+        },
+      })
+    } catch { /* fail-open */ }
+  }
+  setInterval(() => { if (model.active === 'chat') void refreshUsage() }, 15_000)
+  void refreshUsage()
+
+  // ── 外部编辑器（Ctrl+G / /editor）──
+  async function openInExternalEditor(): Promise<void> {
+    const command = defaultEditorCommand()
+    tui.stop()
+    try {
+      const result = await editInExternalEditor({ command, content: chatTab.getEditorText() })
+      if (result.status === 'complete' && result.content !== undefined) chatTab.setEditorText(result.content)
+    } finally {
+      tui.start()
+      tui.requestRender(true)
+    }
+  }
+
+  // ── slash 命令派发 ──
+  const slashHandler = createSlashHandler({
+    loadOlder: () => chatTab.loadOlder(),
+    toggleHelp,
+    rotateTopic: async () => {
       if (!projectDir) return '当前无项目上下文，无法 rotate'
       const r = await client.manager.rotate(projectDir, 'tui /new').catch((e: any) => ({ error: e.message }))
       if ('error' in (r as any)) return `rotate 失败: ${(r as any).error}`
-      return '已开新话题（manager session 已轮换，重开 /new 后的对话走新会话）'
-    }
-    if (cmd === 'btw') {
+      const next = await client.manager.session(projectDir).catch(() => null)
+      if (next?.sessionId) await switchToSession(next.sessionId)
+      return '已开新话题（manager session 已轮换并切换）'
+    },
+    btw: async (args) => {
       if (!args.trim()) return '用法: /btw <问题>'
       const r = await client.mafwCommands.run({ command: 'btw', args }).catch((e: any) => ({ error: e.message }))
       if ('error' in (r as any)) return `btw 失败: ${(r as any).error}`
       return null
-    }
-    return `未知命令 /${cmd}（可用: /new /btw /older /help）`
-  }
+    },
+    showSessionPicker,
+    showModelPicker,
+    compact: async () => {
+      const sid = chatStore.sessionID
+      if (!sid || sid === 'none') return '当前无会话'
+      try {
+        await client.session.summarize({ path: { id: sid } })
+        await chatStore.loadHistory()
+        chatTab.rebuild()
+        return null
+      } catch (e: any) {
+        return `compact 失败: ${String(e?.message ?? e).slice(0, 80)}`
+      }
+    },
+    undo: () => chatStore.undo(),
+    redo: () => chatStore.redo(),
+    openExternalEditor: openInExternalEditor,
+  })
 
   // ── 布局：TabStrip / 内容区(grow) / StatusBar ──
   const bodies = new Map<TabId, Component>([
@@ -162,11 +327,6 @@ export async function runApp(opts: AppOptions): Promise<void> {
     { component: statusBar, basis: 'auto', minSize: 1 },
   ]))
 
-  const ctx: AppContext = {
-    client, tui, model, managerSessionID, projectDir, opts, setStatus, showHelp: () => toggleHelp(),
-  }
-  void ctx
-
   // ── 连接监督 + SSE 事件分发 ──
   const onEvent = (type: string, data: any) => {
     if (type === 'permission.asked') {
@@ -174,21 +334,11 @@ export async function runApp(opts: AppOptions): Promise<void> {
       if (req?.id) {
         showPermissionOverlay(tui, req, (r) => client.permissions.reply(req.id, r))
       }
+    } else if (type === 'session.idle') {
+      void refreshUsage()
     }
   }
-  if (managerSessionID) {
-    const conn = new ConnectionStore({
-      sessionID: managerSessionID,
-      subscribe: (sid) => client.event.subscribeToSession(sid),
-      isConnected: () => client.event.connected(),
-      onEvent,
-      onState: (s) => {
-        setStatus({ conn: s })
-        tabStrip.setConnected(s === 'ok')
-      },
-    })
-    conn.start()
-  }
+  if (managerSessionID) ensureConn(managerSessionID)
 
   function applyTab(): void {
     contentHost.removeChild(currentBody)
@@ -218,6 +368,11 @@ export async function runApp(opts: AppOptions): Promise<void> {
     // Esc：流式中止回合（优先于焦点组件）
     if (matchesKey(data, Key.escape) && chatStore.streaming && !tui.hasOverlay()) {
       void chatStore.abort()
+      return { consume: true }
+    }
+    // Ctrl+G：外部编辑器（chat 输入态）
+    if (matchesKey(data, Key.ctrl('g')) && model.active === 'chat' && model.editing && !tui.hasOverlay()) {
+      void openInExternalEditor()
       return { consume: true }
     }
     const prevTab = model.active

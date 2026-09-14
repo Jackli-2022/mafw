@@ -4,6 +4,8 @@ import {
 } from '@earendil-works/pi-tui'
 import type { ChatStore, ChatTurn } from '../store/chat-store.ts'
 import { turnToLines } from './message-blocks.ts'
+import { isShellCommand, parseShellCommand, runShell, shellResultToLines } from '../shell-mode.ts'
+import { SLASH_COMMANDS } from './slash-commands.ts'
 import { theme } from '../theme.ts'
 
 export function parseSlash(text: string): { cmd: string; args: string } | null {
@@ -39,6 +41,15 @@ class TurnLines implements Component {
   }
 }
 
+/** 预渲染行块（shell 结果 / 用法提示等本地块，宽度自适应重渲染）。 */
+class RawLines implements Component {
+  private lines: string[]
+  private maxWidth = 80
+  constructor(lines: string[], maxWidth = 80) { this.lines = lines; this.maxWidth = maxWidth }
+  invalidate() { /* 无缓存 */ }
+  render(_width: number): string[] { return this.lines }
+}
+
 export interface ChatTabDeps {
   tui: TUI
   store: ChatStore
@@ -52,6 +63,7 @@ export class ChatTab extends VStack implements Focusable {
   private transcript = new Container()
   private scrollView: ScrollView
   private turnLines: TurnLines[] = []
+  private localBlocks: RawLines[] = []
   private _focused = false
   private deps: ChatTabDeps
 
@@ -64,18 +76,13 @@ export class ChatTab extends VStack implements Focusable {
     this.scrollView = new ScrollView(this.transcript, { follow: 'end', primary: true })
     this.editor = new Editor(deps.tui, editorTheme)
     this.editor.setAutocompleteProvider(new CombinedAutocompleteProvider(
-      [
-        { name: 'new', description: '新话题（rotate manager session）' },
-        { name: 'btw', description: '支线问答：/btw <问题>' },
-        { name: 'older', description: '加载更早历史' },
-        { name: 'help', description: '快捷键帮助' },
-      ],
+      SLASH_COMMANDS.map((c) => ({ name: c.name, description: c.description })),
       process.cwd(),
     ))
     this.editor.onSubmit = (text) => { void this.submit(text) }
     this.addChild(this.scrollView, { basis: 0, grow: 1, minSize: 1 })
     this.addChild(this.editor, { basis: 'auto', shrink: 1, minSize: 1 })
-    deps.store.loadHistory().then(() => this.refreshTranscript())
+    deps.store.loadHistory().then(() => this.rebuild())
   }
 
   /** 顶部（用户上翻到头）→ 自动 loadOlder。由 app 轮询调用。 */
@@ -87,13 +94,38 @@ export class ChatTab extends VStack implements Focusable {
     const n = await this.deps.store.loadOlder()
     if (n > 0) {
       // 前插后保持视口：renderedTurns 全量重建（loadOlder 低频，可接受）
-      this.rebuildTranscript()
+      this.rebuild()
     }
+  }
+
+  /** 编辑器文本透传（Ctrl+G 外部编辑器用）。 */
+  getEditorText(): string { return this.editor.getText() }
+  setEditorText(text: string): void { this.editor.setText(text); this.deps.tui.requestRender() }
+
+  /** 会话切换后全量重建 transcript（本地块如 shell 结果跨重建保留）。 */
+  rebuild(): void {
+    this.transcript.clear()
+    this.turnLines = this.deps.store.turns.map((t) => new TurnLines(t))
+    for (const l of this.turnLines) this.transcript.addChild(l)
+    for (const b of this.localBlocks) this.transcript.addChild(b)
+    this.deps.tui.requestRender()
   }
 
   async submit(text: string): Promise<void> {
     const trimmed = text.trim()
     if (!trimmed) return
+    if (trimmed === '!') {
+      this.addLocalLines([theme.dim('用法: ! <command>（本地执行，不进对话）')])
+      return
+    }
+    if (isShellCommand(trimmed)) {
+      const cmd = parseShellCommand(trimmed)
+      this.addLocalLines([`${theme.accent('!')} ${theme.dim(cmd)} ${theme.warn('running…')}`])
+      const width = this.deps.tui.terminal?.columns ?? 80
+      const result = await runShell(cmd)
+      this.addLocalLines(shellResultToLines(result, width))
+      return
+    }
     const slash = parseSlash(trimmed)
     if (slash) {
       const reply = await this.deps.onSlash(slash.cmd, slash.args)
@@ -110,6 +142,13 @@ export class ChatTab extends VStack implements Focusable {
     this.refreshTranscript()
   }
 
+  private addLocalLines(lines: string[]): void {
+    const block = new RawLines(lines)
+    this.localBlocks.push(block)
+    this.transcript.addChild(block)
+    this.deps.tui.requestRender()
+  }
+
   /** store.onChange 回调：增量挂新 turn；流式 turn 失效重绘。 */
   refreshTranscript(): void {
     const turns = this.deps.store.turns
@@ -124,13 +163,6 @@ export class ChatTab extends VStack implements Focusable {
     if (last && last.role === 'assistant' && !last.done) {
       this.turnLines.at(-1)?.invalidate()
     }
-    this.deps.tui.requestRender()
-  }
-
-  private rebuildTranscript(): void {
-    this.transcript.clear()
-    this.turnLines = this.deps.store.turns.map((t) => new TurnLines(t))
-    for (const l of this.turnLines) this.transcript.addChild(l)
     this.deps.tui.requestRender()
   }
 }

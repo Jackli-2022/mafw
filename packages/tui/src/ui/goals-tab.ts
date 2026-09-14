@@ -2,12 +2,21 @@ import {
   Container, Text, SelectList, matchesKey, Key, truncateToWidth,
   type Component, type TUI, type OverlayHandle,
 } from '@earendil-works/pi-tui'
-import type { MafwClient } from '@mafw/sdk'
+import type { MafwClient, GoalSessionInfo } from '@mafw/sdk'
 import { GoalsStore } from '../store/goals-store.ts'
+import { historyItemsToTurns } from '../store/chat-store.ts'
+import { turnToLines } from './message-blocks.ts'
 import { theme } from '../theme.ts'
 import { selectListTheme } from './chat-tab.ts'
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
+
+/** goal sessions 区块渲染行（纯函数，供测试）。 */
+export function formatGoalSessions(sessions: GoalSessionInfo[]): string[] {
+  if (sessions.length === 0) return [theme.dim('  （无 session 记录）')]
+  return sessions.map((s) =>
+    `${theme.accent('›')} ${s.phase} · loop ${s.loop}${s.title ? theme.dim(` · ${s.title}`) : ''} ${theme.dim(s.sessionID)}`)
+}
 
 /** Goals 面板：goal 列表 + 待决问答区块（selection 跨两区）。 */
 export class GoalsTab implements Component {
@@ -91,11 +100,75 @@ export class GoalsTab implements Component {
         `wave:   ${g.currentWave}/${g.totalWaves}`,
         g.nextAction ? `next:   ${g.nextAction}` : '',
         g.updatedAt ? `更新:   ${g.updatedAt}` : '',
+        '',
+        theme.dim('s: 查看 session 列表 · Esc: 关闭'),
       ].filter(Boolean).join('\n')
-      const overlay = this.deps.tui.showOverlay(new Text(body, 1, 1), { width: 64, maxHeight: 14, anchor: 'center' })
+      const overlay = this.deps.tui.showOverlay(new Text(body, 1, 1), { width: 64, maxHeight: 16, anchor: 'center' })
+      const close = () => { offKey(); offEsc(); overlay.hide() }
+      const offEsc = escCloser(this.deps.tui, close)
+      const offKey = this.deps.tui.addInputListener((data) => {
+        if (data === 's') {
+          close()
+          void this.openGoalSessions(goalId)
+          return { consume: true }
+        }
+        return undefined
+      })
+    })
+  }
+
+  /** goal → sessions 下钻（编排可视化：plan/execute/review 会话列表）。 */
+  async openGoalSessions(goalId: string): Promise<void> {
+    let sessions: GoalSessionInfo[]
+    try {
+      sessions = await this.deps.client.goals.sessions(goalId)
+    } catch (e: any) {
+      this.deps.setStatus({ hint: theme.err(`sessions 获取失败: ${String(e?.message ?? e).slice(0, 60)}`) })
+      return
+    }
+    if (sessions.length === 0) {
+      const overlay = this.deps.tui.showOverlay(
+        new Text(`goal ${goalId}\n${formatGoalSessions(sessions).join('\n')}`, 1, 1),
+        { width: 56, maxHeight: 6, anchor: 'center' },
+      )
       const close = () => { off(); overlay.hide() }
       const off = escCloser(this.deps.tui, close)
-    })
+      return
+    }
+    const list = new SelectList(
+      sessions.map((s) => ({
+        value: s.sessionID,
+        label: `${s.phase} · loop ${s.loop}`,
+        description: s.title ?? s.sessionID,
+      })),
+      Math.min(sessions.length, 8), selectListTheme,
+    )
+    const handle = this.deps.tui.showOverlay(list, { width: '70%', maxHeight: 12, anchor: 'center' })
+    const close = () => { off(); handle.hide() }
+    const off = escCloser(this.deps.tui, close)
+    list.onSelect = (item) => { close(); void this.openTranscript(String(item.value)) }
+    list.onCancel = close
+  }
+
+  /** 只读 transcript overlay（最近 50 条消息）。 */
+  async openTranscript(sessionID: string): Promise<void> {
+    let messages: any[]
+    try {
+      const res = await this.deps.client.session.messages({ path: { id: sessionID }, query: { limit: 50 } })
+      messages = res.data ?? []
+    } catch (e: any) {
+      this.deps.setStatus({ hint: theme.err(`transcript 获取失败: ${String(e?.message ?? e).slice(0, 60)}`) })
+      return
+    }
+    const turns = historyItemsToTurns(messages)
+    const lines = turns.flatMap((t) => turnToLines(t, 76))
+    const body = lines.length > 0 ? lines.join('\n') : theme.dim('（空会话）')
+    const overlay = this.deps.tui.showOverlay(
+      new Text(`${theme.accent('transcript')} ${theme.dim(sessionID)}\n\n${body}`, 1, 1),
+      { width: '80%', maxHeight: '70%', anchor: 'center' },
+    )
+    const close = () => { off(); overlay.hide() }
+    const off = escCloser(this.deps.tui, close)
   }
 
   private confirmAbort(goalId: string): void {
