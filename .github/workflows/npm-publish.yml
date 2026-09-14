@@ -1,0 +1,55 @@
+name: npm publish
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: publish opencode-plugin-mafw
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check NPM_TOKEN
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "SKIP=true" >> "$GITHUB_ENV"
+            echo "npm publish skipped: NPM_TOKEN not configured"
+          fi
+
+      - uses: actions/checkout@v4
+        if: env.SKIP != 'true'
+
+      - uses: actions/setup-node@v4
+        if: env.SKIP != 'true'
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            gateway/package-lock.json
+
+      - name: Install root deps
+        if: env.SKIP != 'true'
+        run: npm ci
+
+      - name: Install gateway deps
+        if: env.SKIP != 'true'
+        working-directory: gateway
+        run: npm ci
+
+      - name: Build
+        if: env.SKIP != 'true'
+        run: npm run build
+
+      - name: Publish
+        if: env.SKIP != 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
