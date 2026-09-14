@@ -3933,3 +3933,14 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-file-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
 .mafw-file-row.sel, .mafw-file-row:hover { background: var(--surface-base-hover); }
 .mafw-file-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+
+/* Transcript search overlay (P1). Anchors inside the scroll container:
+   keep position:relative there so the overlay floats with the pane. */
+.mafw-session-turn-container { position: relative; }
+.mafw-tsearch { position: sticky; top: 8px; z-index: 60; width: min(380px, 80%); margin-left: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 8px; }
+.mafw-tsearch-count { font-size: 10px; color: var(--text-base); padding-left: 4px; }
+.mafw-tsearch-hits { max-height: 260px; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
+.mafw-tsearch-hit { display: flex; gap: 8px; padding: 6px 10px; cursor: pointer; font-size: 11px; align-items: baseline; }
+.mafw-tsearch-hit.sel, .mafw-tsearch-hit:hover { background: var(--surface-base-hover); }
+.mafw-tsearch-role { flex-shrink: 0; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--surface-base-active); }
+.mafw-tsearch-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

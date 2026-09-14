@@ -22,6 +22,7 @@ import { createInputHistory } from "./input-history"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
 import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
+import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -162,6 +163,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [mentionedFiles, setMentionedFiles] = createSignal<{ rel: string }[]>([])
   const [projectFiles, setProjectFiles] = createSignal<string[]>([])
   const [fileHi, setFileHi] = createSignal(0)
+  const [searchOpen, setSearchOpen] = createSignal(false)
 
   // Trailing "@query" token before the caret (used by both onInput trigger
   // and the picker's live filter).
@@ -1152,8 +1154,21 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       e.preventDefault()
       void interrupt()
     }
+    // Ctrl+F toggles the in-session transcript search (browser find is
+    // replaced; only while this pane is focused and no picker is open).
+    const onSearchKey = (e: KeyboardEvent) => {
+      if (!props.focused || pickerOpen()) return
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault()
+        setSearchOpen(o => !o)
+      }
+    }
     window.addEventListener("keydown", onKey)
-    onCleanup(() => window.removeEventListener("keydown", onKey))
+    window.addEventListener("keydown", onSearchKey)
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKey)
+      window.removeEventListener("keydown", onSearchKey)
+    })
   })
 
   const refreshSubagents = async () => {
@@ -1625,6 +1640,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [renderLimit, setRenderLimit] = createSignal(10)
   const allTurns = () => userMessages()
   const visibleTurns = () => { const all = allTurns(); return all.slice(Math.max(0, all.length - renderLimit())) }
+
+  // Transcript search source: every visible turn (user + assistant) with
+  // its full text (message.text + text parts) flattened for matching.
+  const searchableTurns = createMemo(() => visibleTurns().map((m: any) => ({
+    id: m.id,
+    role: m.role || "user",
+    text: [m.text, ...(props.store.part[m.id] || []).map((p: any) => (typeof p.text === "string" ? p.text : ""))].join(" "),
+  })))
   const hiddenTurnCount = () => Math.max(0, allTurns().length - renderLimit())
   const expandRendered = () => {
     const el = containerRef()
@@ -1942,6 +1965,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         </div>
         {/* DeepSeek-style user-turn node navigation - sibling of the scroll container: absolute inside it would scroll with content */}
         <MessageNav container={containerRef} turns={navTurns} />
+        <TranscriptSearchOverlay
+          open={searchOpen()}
+          turns={searchableTurns}
+          container={containerRef}
+          onClose={() => setSearchOpen(false)}
+        />
         {/* Jump-to-latest: sibling of the scroll container so bottom anchors to the visible area, not content end */}
         <Show when={sidProp()}>
           <ButtonV2
