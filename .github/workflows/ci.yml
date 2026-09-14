@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            gateway/package-lock.json
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install gateway deps
+        working-directory: gateway
+        run: npm ci
+
+      - name: Build (plugin + gateway + tui)
+        run: npm run build
+
+      - name: Test gateway
+        run: npm test
+
+      - name: Test TUI
+        run: npm run test:tui
