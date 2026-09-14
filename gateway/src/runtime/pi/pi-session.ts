@@ -8,6 +8,13 @@ export interface PiSessionDeps {
   createSession: (opts: any) => Promise<{ session: any }>;
 }
 
+export interface PiMediaAttachment {
+  type: 'video' | 'audio';
+  url: string;
+  mime: string;
+  filename?: string;
+}
+
 export interface PiSessionRegistryOptions {
   sessionTtlMs?: number;   // 默认 24h
   emitEvent?: (event: RawRuntimeEvent) => void;
@@ -20,6 +27,7 @@ export class PiSessionRegistry {
   private lastUsed = new Map<string, number>();
   private approvalBridges = new Map<string, ApprovalBridge>();
   private warnedNoReply = new Set<string>();
+  private pendingMedia = new Map<string, PiMediaAttachment[]>();
   private emitEvent: (event: RawRuntimeEvent) => void;
   private policy?: ApprovalPolicy;
 
@@ -39,22 +47,18 @@ export class PiSessionRegistry {
     const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
     // Compaction listener: pi fires session_before_compact / session_compact to
     // extensions; re-emit as normalized runtime events (compaction facet).
-    const compactionExtension = {
-      name: 'mafw-compaction',
-      factory: (pi: any) => {
-        pi.on('session_before_compact', () => {
-          this.emitEvent({ payload: { type: 'session.compacting', properties: { sessionID: id } } });
-        });
-        pi.on('session_compact', () => {
-          this.emitEvent({ payload: { type: 'session.compacted', properties: { sessionID: id } } });
-        });
-      },
-    };
+    const compactionExtension = this.makeCompactionExtension(id);
+    // Media injector: partsToPromptInput 收集的 video/audio（dataURL）经
+    // before_provider_request 注入 provider payload 的最后一条 user message
+    // （小米 wire 格式），随后清空 pending——pi 内容层不认识这两种类型，只能在
+    // 出 wire 前合并。
+    const mediaExtension = this.makeMediaExtension(id);
     // Combine approval extension with agent-specific extensions
     // These will be passed to createAgentSession via extensionFactories
     const allExtensions = [
       { name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) },
       compactionExtension,
+      mediaExtension,
       ...agentExtensions,
     ];
 
@@ -150,6 +154,61 @@ export class PiSessionRegistry {
     (opts?.logWarn ?? ((m: string) => {}))(`[PiRuntime] expectReply=false has no native pi equivalent — message delivered as normal (session ${id}, warned once)`);
   }
 
+  /** 暂存 video/audio 附件（mafw-media extension 在 before_provider_request 时消费）。 */
+  attachMedia(id: string, media: PiMediaAttachment[]): void {
+    if (!media?.length) return;
+    const list = this.pendingMedia.get(id) ?? [];
+    list.push(...media);
+    this.pendingMedia.set(id, list);
+  }
+
+  private takePendingMedia(id: string): PiMediaAttachment[] {
+    const list = this.pendingMedia.get(id);
+    this.pendingMedia.delete(id);
+    return list ?? [];
+  }
+
+  private makeCompactionExtension(id: string) {
+    return {
+      name: 'mafw-compaction',
+      factory: (pi: any) => {
+        pi.on('session_before_compact', () => {
+          this.emitEvent({ payload: { type: 'session.compacting', properties: { sessionID: id } } });
+        });
+        pi.on('session_compact', () => {
+          this.emitEvent({ payload: { type: 'session.compacted', properties: { sessionID: id } } });
+        });
+      },
+    };
+  }
+
+  private makeMediaExtension(id: string) {
+    return {
+      name: 'mafw-media',
+      factory: (pi: any) => {
+        pi.on('before_provider_request', (event: any) => {
+          const media = this.takePendingMedia(id);
+          if (media.length === 0) return undefined;
+          const payload: any = event?.payload;
+          if (!payload || !Array.isArray(payload.messages)) return undefined;
+          const lastUser = [...payload.messages].reverse().find((m: any) => m?.role === 'user');
+          if (!lastUser) return undefined;
+          const content = Array.isArray(lastUser.content)
+            ? lastUser.content
+            : (lastUser.content = [{ type: 'text', text: String(lastUser.content ?? '') }]);
+          for (const m of media) {
+            content.push(
+              m.type === 'video'
+                ? { type: 'video_url', video_url: { url: m.url } }
+                : { type: 'input_audio', input_audio: { data: m.url } },
+            );
+          }
+          return payload;
+        });
+      },
+    };
+  }
+
   async messages(id: string): Promise<{ data: any[] }> {
     const s = this.requireSession(id);
     this.touch(id);
@@ -168,6 +227,7 @@ export class PiSessionRegistry {
     this.bySession.delete(s);
     this.lastUsed.delete(id);
     this.warnedNoReply.delete(id);
+    this.pendingMedia.delete(id);
   }
 
   async permissionReply(
@@ -202,17 +262,8 @@ export class PiSessionRegistry {
     const bridge = new ApprovalBridge();
     const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
     const newId = `pi_${randomUUID().slice(0, 8)}`;
-    const compactionExtension = {
-      name: 'mafw-compaction',
-      factory: (pi: any) => {
-        pi.on('session_before_compact', () => {
-          this.emitEvent({ payload: { type: 'session.compacting', properties: { sessionID: newId } } });
-        });
-        pi.on('session_compact', () => {
-          this.emitEvent({ payload: { type: 'session.compacted', properties: { sessionID: newId } } });
-        });
-      },
-    };
+    const compactionExtension = this.makeCompactionExtension(newId);
+    const mediaExtension = this.makeMediaExtension(newId);
     try {
       const { session } = await this.deps.createSession({
         cwd: sm.getCwd?.() ?? undefined,
@@ -220,6 +271,7 @@ export class PiSessionRegistry {
         extensionFactories: [
           { name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) },
           compactionExtension,
+          mediaExtension,
         ],
       });
       this.sessions.set(newId, session);
@@ -277,6 +329,7 @@ export class PiSessionRegistry {
     this.bySession.clear();
     this.lastUsed.clear();
     this.warnedNoReply.clear();
+    this.pendingMedia.clear();
   }
 
   private requireSession(id: string): any {

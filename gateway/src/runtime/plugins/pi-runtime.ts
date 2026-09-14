@@ -26,21 +26,34 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
 /**
  * Convert runtime prompt parts into pi prompt input. File parts carrying
  * image data URLs (or raw base64 with a mime) become ImageContent
- * attachments; text parts join into the prompt text. Non-image media
- * (video/audio) is intentionally not converted — the session path is
- * image-only; video/audio go through the single-shot complete path where
- * fixMediaPayload rewrites the wire format.
+ * attachments; text parts join into the prompt text.
+ *
+ * Video/audio file parts are NOT dropped: they are collected as `media`
+ * (dataURL carrier) and the caller feeds registry.attachMedia — the
+ * mafw-media extension injects them into the provider request payload
+ * (before_provider_request) in the xiaomi wire format. (Probe 2026-09-14:
+ * the earlier "promptAsync flattens parts and loses images" report no
+ * longer matches the code — image conversion happens here since the fix;
+ * only video/audio was silently dropped, which this return value adds.)
  */
-export function partsToPromptInput(parts?: any[]): { text?: string; images?: Array<{ type: 'image'; data: string; mimeType: string }> } {
+export function partsToPromptInput(parts?: any[]): {
+  text?: string;
+  images?: Array<{ type: 'image'; data: string; mimeType: string }>;
+  media?: Array<{ type: 'video' | 'audio'; url: string; mime: string; filename?: string }>;
+} {
   if (!parts?.length) return {};
   const images: Array<{ type: 'image'; data: string; mimeType: string }> = [];
+  const media: Array<{ type: 'video' | 'audio'; url: string; mime: string; filename?: string }> = [];
   const texts: string[] = [];
   for (const p of parts) {
     if (p?.type === 'file' && typeof p.url === 'string' && p.url) {
       const m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(p.url);
-      if (m) {
-        const mime = m[1] || p.mime || 'image/png';
-        if (mime.startsWith('image/')) images.push({ type: 'image', mimeType: mime, data: m[3] });
+      const mime = m?.[1] || p.mime || '';
+      const data = m?.[3];
+      if (mime.startsWith('image/') && data) {
+        images.push({ type: 'image', mimeType: mime, data });
+      } else if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+        media.push({ type: mime.startsWith('video/') ? 'video' : 'audio', url: p.url, mime, filename: p.filename });
       } else if (typeof p.mime === 'string' && p.mime.startsWith('image/')) {
         images.push({ type: 'image', mimeType: p.mime, data: p.url });
       }
@@ -48,7 +61,11 @@ export function partsToPromptInput(parts?: any[]): { text?: string; images?: Arr
       texts.push(p.text);
     }
   }
-  return { text: texts.length ? texts.join('\n') : undefined, images: images.length ? images : undefined };
+  return {
+    text: texts.length ? texts.join('\n') : undefined,
+    images: images.length ? images : undefined,
+    media: media.length ? media : undefined,
+  };
 }
 export interface PiRuntimeDeps {
   loadPi?: () => Promise<any>;
@@ -130,11 +147,13 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
       const converted = partsToPromptInput(opts.parts);
       const text = opts.message ?? converted.text ?? '';
+      if (converted.media?.length) registry.attachMedia(opts.sessionID, converted.media);
       await registry.promptAsync(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
     },
     prompt: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
       const converted = partsToPromptInput(opts.parts);
       const text = opts.message ?? converted.text ?? '';
+      if (converted.media?.length) registry.attachMedia(opts.sessionID, converted.media);
       return registry.prompt(opts.sessionID, text, { system: opts.system, agent: opts.agent, noReply: opts.noReply, expectReply: opts.expectReply, delivery: opts.delivery, images: converted.images });
     },
     messages: async (opts: { sessionID: string }) => {
