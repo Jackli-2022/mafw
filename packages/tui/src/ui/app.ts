@@ -18,6 +18,9 @@ import { dispatchKey, type KeyDispatchContext } from './keymap.ts'
 import { InteractionStateMachine } from './interaction-state.ts'
 import { helpLines } from './command-registry.ts'
 import { QueueOverlay } from './queue-overlay.ts'
+import { TranscriptSearchOverlay } from './transcript-search.ts'
+import { colorDiffLine } from './message-blocks.ts'
+import { runShell } from '../shell-mode.ts'
 import { showPermissionOverlay } from './overlays.ts'
 import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
@@ -298,6 +301,44 @@ export async function runApp(opts: AppOptions): Promise<void> {
     return Promise.resolve()
   }
 
+  // ── Ctrl+O 会话内搜索（跳转滚动）──
+  function openTranscriptSearch(): void {
+    const overlay = new TranscriptSearchOverlay({
+      getTurns: () => chatStore.turns,
+      onJump: (turnIndex) => {
+        const t = chatStore.turns[turnIndex]
+        if (t) chatTab.scrollToTurn(t.messageID)
+      },
+      onClose: () => handle.hide(),
+      requestRender: () => tui.requestRender(),
+    })
+    const handle = tui.showOverlay(overlay, { width: '70%', maxHeight: 14, anchor: 'center' })
+  }
+
+  // ── /diff git 变更视图 ──
+  async function showDiff(scope: string): Promise<string | null> {
+    const arg = scope === 'staged' ? ' --staged' : scope === 'all' ? ' HEAD' : ''
+    const r = await runShell(`git diff${arg}`, { timeoutMs: 15_000 })
+    if (r.exitCode !== 0 && r.stderr) return `git diff 失败: ${r.stderr.split('\n')[0].slice(0, 80)}`
+    const raw = (r.stdout || '').split('\n')
+    if (raw.length <= 1 && !r.stdout) { showDiffOverlay(['（无未提交变更）'], scope); return null }
+    const MAX_DIFF_LINES = 150
+    const lines = raw.slice(0, MAX_DIFF_LINES).map((l) => colorDiffLine(l))
+    if (raw.length > MAX_DIFF_LINES) lines.push(theme.dim(`… 截断（共 ${raw.length} 行）`))
+    showDiffOverlay(lines, scope)
+    return null
+  }
+
+  function showDiffOverlay(lines: string[], scope: string): void {
+    const title = theme.accent(`git diff${scope ? ` (${scope})` : ''}`) + theme.dim(' · Esc 关闭')
+    const overlay = tui.showOverlay(new Text([title, '', ...lines].join('\n'), 1, 1), { width: '90%', maxHeight: '70%', anchor: 'center' })
+    const close = () => { off(); overlay.hide() }
+    const off = tui.addInputListener((data) => {
+      if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
+      return undefined
+    })
+  }
+
   // ── slash 命令派发 ──
   const slashHandler = createSlashHandler({
     loadOlder: () => chatTab.loadOlder(),
@@ -319,6 +360,9 @@ export async function runApp(opts: AppOptions): Promise<void> {
     showSessionPicker,
     showQueueManager,
     showModelPicker,
+    cycleVerbosity: () => { const v = chatTab.cycleVerbosity(); setStatus({ focus: chatTab.display.focus }); return v },
+    toggleFocus: () => { const f = chatTab.toggleFocus(); setStatus({ focus: f }); return f },
+    showDiff,
     compact: async () => {
       const sid = chatStore.sessionID
       if (!sid || sid === 'none') return '当前无会话'
@@ -430,6 +474,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       abortTurn: () => { void chatStore.abort() },
       openExternalEditor: () => { void openInExternalEditor() },
       blurMemorySearch: () => memoryTab.blurSearch(),
+      openTranscriptSearch: () => openTranscriptSearch(),
     },
     queries: {
       activeTab: () => model.active,

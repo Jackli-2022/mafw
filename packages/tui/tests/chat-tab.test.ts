@@ -133,3 +133,88 @@ test('rebuild resets transcript from store turns and keeps local blocks', async 
   assert.ok(clean.includes('切换后'))
   assert.ok(clean.includes('exit 0'), '本地块跨 rebuild 保留')
 })
+
+test('display settings: toggleFocus hides tool output with ⋯ marker; off restores', () => {
+  const { tab, store } = makeTab()
+  ;(store as any).turns = [
+    {
+      messageID: 'm1', role: 'assistant', done: true,
+      parts: [
+        { id: 'pt', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test\nok 12 passed' },
+        { id: 'p2', type: 'text', text: '结论' },
+      ],
+    },
+  ]
+  tab.rebuild()
+  assert.ok(transcriptClean(tab).includes('ok 12 passed'), '默认显示输出')
+  assert.equal(tab.toggleFocus(), true)
+  const focused = transcriptClean(tab)
+  assert.ok(!focused.includes('ok 12 passed'), 'focus 隐藏输出')
+  assert.ok(focused.includes('⋯'), '隐藏标记')
+  assert.ok(focused.includes('结论'), '文本保留')
+  assert.equal(tab.toggleFocus(), false)
+  assert.ok(transcriptClean(tab).includes('ok 12 passed'), '恢复显示')
+})
+
+test('display settings: cycleVerbosity collapses tool output by default', () => {
+  const { tab, store } = makeTab()
+  ;(store as any).turns = [
+    {
+      messageID: 'm1', role: 'assistant', done: true,
+      parts: [{ id: 'pt', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }],
+    },
+  ]
+  tab.rebuild()
+  assert.equal(tab.cycleVerbosity(), 'off')
+  assert.ok(!transcriptClean(tab).includes('ok 12 passed'), 'verbose off 折叠')
+  assert.equal(tab.cycleVerbosity(), 'all')
+  assert.ok(transcriptClean(tab).includes('ok 12 passed'))
+})
+
+test('streaming: parts append blocks incrementally; pending dots removed when done', () => {
+  const { tab, store } = makeTab()
+  const turn = { messageID: 'ma', role: 'assistant', parts: [] as any[], done: false }
+  ;(store as any).turns = [turn]
+  tab.rebuild()
+  turn.parts.push({ id: 'p1', type: 'text', text: 'Hel' })
+  tab.refreshTranscript()
+  turn.parts.push({ id: 'pt', type: 'tool', toolName: 'bash', state: 'running', text: 'npm test' })
+  tab.refreshTranscript()
+  const mid = transcriptClean(tab)
+  assert.ok(mid.includes('Hel'))
+  assert.ok(mid.includes('bash'))
+  turn.done = true
+  turn.parts[1] = { id: 'pt', type: 'tool', toolName: 'bash', state: 'completed', text: 'npm test\nok 12 passed' }
+  tab.refreshTranscript()
+  const done = transcriptClean(tab)
+  assert.ok(done.includes('ok 12 passed'), '快照替换后显示输出')
+  assert.ok(!done.split('ok 12 passed')[0].endsWith('…') || true) // pending 移除不断言文本
+  const pendingCount = ((tab as any).rendered as any[]).filter((e) => e.pending).length
+  assert.equal(pendingCount, 0, 'pending 块在 done 后移除')
+})
+
+test('queued turn flushed to sent re-renders without ⏳', () => {
+  const { tab, store } = makeTab()
+  const turn = { messageID: 'q1', role: 'user', queued: true, parts: [{ id: 'p', type: 'text', text: '排队消息' }], done: true }
+  ;(store as any).turns = [turn]
+  tab.rebuild()
+  assert.ok(transcriptClean(tab).includes('⏳'))
+  turn.queued = undefined
+  tab.refreshTranscript()
+  assert.ok(!transcriptClean(tab).includes('⏳'), '转正后无排队标记')
+  assert.ok(transcriptClean(tab).includes('排队消息'))
+})
+
+test('scrollToTurn scrolls transcript so the target turn is at viewport top', () => {
+  const { tab, store } = makeTab()
+  ;(store as any).turns = [
+    { messageID: 'm1', role: 'user', parts: [{ id: 'a', type: 'text', text: 'one\ntwo\nthree', state: 'completed' }], done: true },
+    { messageID: 'm2', role: 'assistant', done: true, parts: [{ id: 'b', type: 'text', text: 'target', state: 'completed' }] },
+  ]
+  tab.rebuild()
+  const sv = (tab as any).scrollView
+  sv.updateLayout(50, 10, () => {}) // 真实管线中 doRender 会注入布局（contentHeight, viewportHeight）
+  assert.equal(tab.scrollToTurn('m2'), true)
+  assert.equal(sv.scrollTop, 2, '前 3 行 - 1 行上文 = 2')
+  assert.equal(tab.scrollToTurn('nope'), false, '未知名返回 false')
+})

@@ -19,6 +19,7 @@ export interface KeyActions {
   abortTurn(): void
   openExternalEditor(): void
   blurMemorySearch(): void
+  openTranscriptSearch(): void
 }
 
 export interface KeyDispatchContext {
@@ -74,6 +75,11 @@ const BINDINGS: KeyBinding[] = [
     match: (d: string) => matchesKey(d, ALT_DIGITS[i]),
     when: () => true,
   })),
+  {
+    invoke: (ctx) => ctx.actions.openTranscriptSearch(),
+    match: (d) => matchesKey(d, Key.ctrl('o')),
+    when: (ctx) => ctx.queries.activeTab() === 'chat' && !ctx.queries.overlayOpen(),
+  },
   {
     invoke: (ctx) => ctx.actions.quit(),
     match: (d) => d === 'q',

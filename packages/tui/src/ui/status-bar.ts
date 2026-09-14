@@ -22,6 +22,8 @@ export interface StatusState {
   queued?: number
   /** prompt stash 深度（📌 徽标） */
   stashed?: number
+  /** /focus 静视图开启（◉ 徽标） */
+  focus?: boolean
 }
 
 /** token 数紧凑化：1234 → 1.2K、1250000 → 1.3M。 */
@@ -52,6 +54,7 @@ export class StatusBar implements Component {
     if (s.busy) parts.push(theme.warn('busy'))
     if (typeof s.queued === 'number' && s.queued > 0) parts.push(theme.warn(`queued ${s.queued}`))
     if (typeof s.stashed === 'number' && s.stashed > 0) parts.push(theme.dim(`📌${s.stashed}`))
+    if (s.focus) parts.push(theme.accent('◉ focus'))
     const u = s.usage
     if (u) {
       const usageBits: string[] = []

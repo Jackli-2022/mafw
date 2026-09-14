@@ -26,6 +26,12 @@ export interface SlashDeps {
   redo(): Promise<string | null>
   /** /editor（Ctrl+G 同款）：外部编辑器编辑当前输入。 */
   openExternalEditor(): Promise<void>
+  /** /verbose：工具输出展开/折叠循环；返回新状态。 */
+  cycleVerbosity(): 'all' | 'off'
+  /** /focus：静视图开关；返回新状态。 */
+  toggleFocus(): boolean
+  /** /diff [staged|all]：git 变更视图；返回错误文本或 null。 */
+  showDiff(scope: string): Promise<string | null>
 }
 
 
@@ -39,6 +45,12 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
       case 'older':
         await deps.loadOlder()
         return null
+      case 'verbose':
+        return `工具输出: ${deps.cycleVerbosity() === 'all' ? '展开' : '折叠'}（单击 tool 块可单独切换）`
+      case 'focus':
+        return deps.toggleFocus() ? '静视图已开启（/focus off 恢复）' : '静视图已关闭'
+      case 'diff':
+        return deps.showDiff(args.trim())
       case 'new':
         return deps.rotateTopic()
       case 'btw':

@@ -3,7 +3,10 @@ import {
   type Component, type Focusable, type TUI, type EditorTheme, type SelectListTheme,
 } from '@earendil-works/pi-tui'
 import type { ChatStore, ChatTurn } from '../store/chat-store.ts'
-import { turnToLines } from './message-blocks.ts'
+import {
+  buildBlock, PendingBlock,
+  type DisplaySettings, type UpdatableBlock,
+} from './blocks.ts'
 import { isShellCommand, parseShellCommand, runShell, shellResultToLines } from '../shell-mode.ts'
 import { autocompleteItems } from './command-registry.ts'
 import { PromptStash } from './prompt-stash.ts'
@@ -27,28 +30,20 @@ export const editorTheme: EditorTheme = {
   selectList: selectListTheme,
 }
 
-/** 纯文本行组件（按 turn 渲染，可失效重绘——流式 turn 用）。 */
-class TurnLines implements Component {
-  private cachedWidth?: number
-  private cached?: string[]
-  private turn: ChatTurn
-  constructor(turn: ChatTurn) { this.turn = turn }
-  invalidate() { this.cachedWidth = undefined; this.cached = undefined }
-  render(width: number): string[] {
-    if (this.cached && this.cachedWidth === width) return this.cached
-    this.cached = turnToLines(this.turn, width)
-    this.cachedWidth = width
-    return this.cached
-  }
-}
-
-/** 预渲染行块（shell 结果 / 用法提示等本地块，宽度自适应重渲染）。 */
+/** 预渲染行块（shell 结果 / 用法提示等本地块，跨 rebuild 保留）。 */
 class RawLines implements Component {
   private lines: string[]
-  private maxWidth = 80
-  constructor(lines: string[], maxWidth = 80) { this.lines = lines; this.maxWidth = maxWidth }
+  constructor(lines: string[]) { this.lines = lines }
   invalidate() { /* 无缓存 */ }
   render(_width: number): string[] { return this.lines }
+}
+
+/** 每 turn 的渲染块组（含 pending 省略块与转正重建标记）。 */
+interface RenderedTurn {
+  messageID: string
+  blocks: UpdatableBlock[]
+  pending?: PendingBlock
+  queued?: boolean
 }
 
 export interface ChatTabDeps {
@@ -58,14 +53,17 @@ export interface ChatTabDeps {
   onError: (message: string) => void
 }
 
-/** Chat 面板：ScrollView(transcript, follow:end) + Editor(底部)。 */
+/** Chat 面板：ScrollView(transcript, follow:end) + Editor(底部)。transcript 为块组件树。 */
 export class ChatTab extends VStack implements Focusable {
   private editor: Editor
   private transcript = new Container()
   private scrollView: ScrollView
-  private turnLines: TurnLines[] = []
+  private rendered: RenderedTurn[] = []
   private localBlocks: RawLines[] = []
   private stash = new PromptStash()
+  /** 阅读模式设置（/focus /verbose 驱动，块渲染时读取）。 */
+  readonly display: DisplaySettings = { focus: false, toolVerbosity: 'all' }
+  private savedVerbosity: 'all' | 'off' = 'all'
   private _focused = false
   private deps: ChatTabDeps
 
@@ -149,8 +147,8 @@ export class ChatTab extends VStack implements Focusable {
   /** 会话切换后全量重建 transcript（本地块如 shell 结果跨重建保留）。 */
   rebuild(): void {
     this.transcript.clear()
-    this.turnLines = this.deps.store.turns.map((t) => new TurnLines(t))
-    for (const l of this.turnLines) this.transcript.addChild(l)
+    this.rendered = []
+    this.refreshTranscript()
     for (const b of this.localBlocks) this.transcript.addChild(b)
     this.deps.tui.requestRender()
   }
@@ -176,10 +174,11 @@ export class ChatTab extends VStack implements Focusable {
     if (slash) {
       const reply = await this.deps.onSlash(slash.cmd, slash.args)
       if (reply) {
-        this.transcript.addChild(new TurnLines({
+        const turn: ChatTurn = {
           messageID: `slash-${Date.now()}`, role: 'assistant', done: true,
           parts: [{ id: `${Date.now()}`, type: 'text', text: reply }],
-        }))
+        }
+        for (const p of turn.parts) this.transcript.addChild(buildBlock(p, turn, this.display, () => this.deps.tui.requestRender()))
         this.deps.tui.requestRender()
       }
       return
@@ -195,20 +194,86 @@ export class ChatTab extends VStack implements Focusable {
     this.deps.tui.requestRender()
   }
 
-  /** store.onChange 回调：增量挂新 turn；流式 turn 失效重绘。 */
+  /** store.onChange 回调：增量挂新 turn/新 part；流式快照替换；pending 移除。 */
   refreshTranscript(): void {
     const turns = this.deps.store.turns
-    while (this.turnLines.length < turns.length) {
-      const t = turns[this.turnLines.length]
-      const lines = new TurnLines(t)
-      this.turnLines.push(lines)
-      this.transcript.addChild(lines)
+    // queued→delivered 转正（罕见路径）：全量重建
+    for (let i = 0; i < this.rendered.length && i < turns.length; i++) {
+      const r = this.rendered[i]
+      if (r.queued && !turns[i].queued) { this.rebuild(); return }
     }
-    // 流式中最后一条 assistant turn：失效让其重渲染
+    // 新 turn 追加
+    while (this.rendered.length < turns.length) {
+      const t = turns[this.rendered.length]
+      const entry: RenderedTurn = { messageID: t.messageID, blocks: [], queued: t.queued }
+      for (const p of t.parts) entry.blocks.push(this.mkBlock(p, t))
+      if (t.role === 'assistant' && !t.done) entry.pending = new PendingBlock()
+      for (const b of entry.blocks) this.transcript.addChild(b)
+      if (entry.pending) this.transcript.addChild(entry.pending)
+      this.rendered.push(entry)
+    }
+    // 最后一 turn 流式增量：新 part 追加（pending 之前）、既有块快照替换、done 移除 pending
     const last = turns.at(-1)
-    if (last && last.role === 'assistant' && !last.done) {
-      this.turnLines.at(-1)?.invalidate()
+    const entry = this.rendered.at(-1)
+    if (!last || !entry || entry.messageID !== last.messageID) { this.deps.tui.requestRender(); return }
+    while (entry.blocks.length < last.parts.length) {
+      const p = last.parts[entry.blocks.length]
+      const b = this.mkBlock(p, last)
+      entry.blocks.push(b)
+      if (entry.pending) this.transcript.removeChild(entry.pending)
+      this.transcript.addChild(b)
+      if (entry.pending) this.transcript.addChild(entry.pending)
     }
+    for (let j = 0; j < entry.blocks.length; j++) entry.blocks[j].update(last.parts[j])
+    if (entry.pending && last.done) {
+      this.transcript.removeChild(entry.pending)
+      entry.pending = undefined
+    }
+    this.deps.tui.requestRender()
+  }
+
+  /** 滚动 transcript 使目标 turn 位于视口顶部（搜索跳转用）。 */
+  scrollToTurn(messageID: string): boolean {
+    const entry = this.rendered.find((e) => e.messageID === messageID)
+    if (!entry || entry.blocks.length === 0) return false
+    const first = entry.blocks[0]
+    const idx = this.transcript.children.indexOf(first)
+    if (idx < 0) return false
+    const width = this.deps.tui.terminal?.columns ?? 80
+    let lines = 0
+    for (let i = 0; i < idx; i++) lines += this.transcript.children[i].render(width).length
+    this.scrollView.scrollTo(Math.max(0, lines - 1))
+    return true
+  }
+
+  private mkBlock(p: ChatTurn['parts'][number], t: ChatTurn): UpdatableBlock {
+    return buildBlock(p, t, this.display, () => this.deps.tui.requestRender()) as UpdatableBlock
+  }
+
+  /** /verbose 循环：all（默认展开）↔ off（默认折叠，单击仍可展开）。 */
+  cycleVerbosity(): 'all' | 'off' {
+    this.display.toolVerbosity = this.display.toolVerbosity === 'all' ? 'off' : 'all'
+    if (!this.display.focus) this.savedVerbosity = this.display.toolVerbosity
+    this.invalidateAll()
+    return this.display.toolVerbosity
+  }
+
+  /** /focus 静视图（Hermes 语义：开时收起 tool 输出并记住，关时恢复）。 */
+  toggleFocus(): boolean {
+    if (this.display.focus) {
+      this.display.focus = false
+      this.display.toolVerbosity = this.savedVerbosity
+    } else {
+      this.display.focus = true
+      this.savedVerbosity = this.display.toolVerbosity
+      this.display.toolVerbosity = 'off'
+    }
+    this.invalidateAll()
+    return this.display.focus
+  }
+
+  private invalidateAll(): void {
+    for (const e of this.rendered) for (const b of e.blocks) b.invalidate()
     this.deps.tui.requestRender()
   }
 }

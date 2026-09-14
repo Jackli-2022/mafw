@@ -244,6 +244,16 @@ onMount → gateway.info() 等 ready
 
 测试 136（135 过/1 冒烟跳过）。坑：测试里闭包计数器经解构/直接返回都是快照值，必须用 getter 包装
 
+#### 5.9b.4 TUI 阅读回路重构 P3（2026-09-14）
+
+- **消息块组件树**（`ui/blocks.ts`，commit 4e61332a）：ChatTab transcript 从"一 turn 一纯文本组件"改为 per-part 块树——UserTextBlock（queued ⏳ dim）/ AssistantMarkdownBlock / ReasoningBlock / **ToolBlock（可折叠）**/ PendingBlock；`UpdatableBlock` 契约承接流式快照替换（update(part) 清缓存）
+- **ToolBlock 交互**：单击切换展开/折叠（Claude click-to-expand，`userExpanded` 覆盖全局默认）；全局 `/verbose` 循环 all↔off；`/focus` 静视图（Hermes 语义：开=收起+记住、关=恢复，tool 块渲染单行 `⋯` 隐藏标记，display-only 不改历史）；`DisplaySettings` 共享对象，块渲染时读取，切换后 invalidateAll 全量失效
+- **ChatTab 块协调**：refreshTranscript 增量挂新 turn/新 part（pending 之前插入）、快照替换、done 移除 pending；queued→delivered 转正走全量 rebuild（罕见路径）；`scrollToTurn(messageID)` 按块渲染高度累计滚动（scrollTo 前需 updateLayout 钳制——测试要手动喂）
+- **Ctrl+O 会话内搜索**（`ui/transcript-search.ts`）：TranscriptSearchOverlay——输入即过滤（大小写不敏感，前 8 条命中带角色标记 + 片段），↑/↓ 选择，Enter 跳转 scrollToTurn，Esc 关；keymap 加 openTranscriptSearch（chat tab + 无 overlay 时）
+- **/diff [staged|all]**：runShell git diff → colorDiffLine 着色 overlay（150 行截断）
+- turnToLines 保留（goal transcript overlay 复用）；状态栏 `◉ focus` 徽标
+- 测试 158（157 过/1 冒烟跳过）：blocks 10、transcript-search 5、chat-tab 块协调/scrollToTurn/显示设置 8、keymap Ctrl+O、registry/slash 面更新
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）

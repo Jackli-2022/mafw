@@ -16,6 +16,9 @@ function harness(over: Partial<Record<string, any>> = {}) {
     undo: async () => { calls.push('undo'); return null },
     redo: async () => { calls.push('redo'); return null },
     openExternalEditor: async () => { calls.push('editor') },
+    cycleVerbosity: () => { calls.push('verbose'); return 'off' },
+    toggleFocus: () => { calls.push('focus'); return true },
+    showDiff: async (scope: string) => { calls.push(`diff:${scope}`); return null },
     ...over,
   }
   return { calls, deps, handler: createSlashHandler(deps as any) }
@@ -56,6 +59,16 @@ test('queue command and /q alias open the queue manager', async () => {
   assert.deepEqual(b.calls, ['queue'])
 })
 
+test('verbose/focus/diff dispatch and return status messages', async () => {
+  const h = harness()
+  const v = await h.handler('verbose', '')
+  assert.ok(v!.includes('折叠'))
+  const f = await h.handler('focus', '')
+  assert.ok(f!.includes('开启'))
+  assert.equal(await h.handler('diff', 'staged'), null)
+  assert.deepEqual(h.calls, ['verbose', 'focus', 'diff:staged'])
+})
+
 test('compact/undo/redo surface dep error messages', async () => {
   const h = harness({ compact: async () => 'compact 失败: gateway down' })
   assert.equal(await h.handler('compact', ''), 'compact 失败: gateway down')
@@ -70,5 +83,5 @@ test('unknown command lists available commands', async () => {
 
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'editor', 'help', 'model', 'new', 'older', 'queue', 'redo', 'sessions', 'undo'])
+  assert.deepEqual(names, ['btw', 'compact', 'diff', 'editor', 'focus', 'help', 'model', 'new', 'older', 'queue', 'redo', 'sessions', 'undo', 'verbose'])
 })

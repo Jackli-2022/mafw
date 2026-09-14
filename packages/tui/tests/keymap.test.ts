@@ -18,6 +18,7 @@ function makeCtx(over: Partial<{ active: TabId; editing: boolean; overlayOpen: b
     abortTurn: () => calls.push('abort'),
     openExternalEditor: () => calls.push('editor'),
     blurMemorySearch: () => calls.push('memory-blur'),
+    openTranscriptSearch: () => calls.push('transcript-search'),
   }
   const ctx: KeyDispatchContext = {
     model,
@@ -107,6 +108,16 @@ test('unmatched keys fall through (false)', () => {
   const { ctx } = makeCtx({ editing: true })
   assert.equal(dispatchKey('x', ctx), false)
   assert.equal(dispatchKey('\x1b[A', ctx), false)
+})
+
+test('ctrl+o opens transcript search in chat tab without overlay', () => {
+  const ok = makeCtx({ active: 'chat' })
+  assert.equal(dispatchKey('\x0f', ok.ctx), true)
+  assert.deepEqual(ok.calls, ['transcript-search'])
+  const otherTab = makeCtx({ active: 'goals' })
+  assert.equal(dispatchKey('\x0f', otherTab.ctx), false, '非 chat tab 不触发')
+  const overlay = makeCtx({ active: 'chat', overlayOpen: true })
+  assert.equal(dispatchKey('\x0f', overlay.ctx), false, 'overlay 打开时不触发')
 })
 
 test('dispatch refreshes interaction state from live queries', () => {
