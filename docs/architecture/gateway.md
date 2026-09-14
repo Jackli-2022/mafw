@@ -1,19 +1,22 @@
 # MAFW Gateway 架构
 
-> 常驻进程，负责事件驱动调度、LangGraph 循环编排、Session 管理、Dashboard 服务、SSE 推送。
+> 常驻进程：Goal 编排（LangGraph 循环）+ 谐波记忆 + 自动化引擎 + HTTP API（:3000）/ MCP / 事件流；并监管 opencode serve sidecar。
+>
+> 时效：2026-09-14 对照 `gateway@5.0.0` 源码重写。更细的子系统说明以根 `AGENTS.md` 为准（本文与其同源，取面向架构读者的视角）。
 
 ## 目录
 
 - [代码位置](#代码位置)
-- [生命周期](#生命周期)
-- [CLI 二进制设计](#cli-二进制设计)
-- [核心架构：事件驱动 + LangGraph](#核心架构事件驱动--langgraph)
-- [MafwScheduler 详细设计](#mafwscheduler-详细设计)
-- [DashboardServer 详细设计](#dashboardserver-详细设计)
-- [DashboardAPI 详细设计](#dashboardapi-详细设计)
-- [API 端点完整列表](#api-端点完整列表)
+- [进程生命周期](#进程生命周期)
+- [CLI（bin/mafw.js）](#clibinmafwjs)
+- [Goal 编排：事件驱动 + LangGraph](#goal-编排事件驱动--langgraph)
+- [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
+- [API 端点](#api-端点)
+- [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
-- [配置与命令行](#配置与命令行)
+- [文件系统布局](#文件系统布局)
+- [记忆维护管线（当前态）](#记忆维护管线当前态2026-09-14)
+- [配置与环境变量](#配置与环境变量)
 
 ---
 
@@ -22,238 +25,124 @@
 ```
 gateway/
 ├── bin/
-│   └── mafw-gateway.js          # CLI 入口（进程管理）
+│   └── mafw.js                   # CLI 入口（进程管理、诊断、TUI）
 ├── src/
-│   ├── index.ts                 # MafwScheduler — 主调度器 (~900 行)
+│   ├── index.ts                  # MafwScheduler — 主调度器（~6000 行）
+│   ├── config.ts                 # 统一配置（三层优先级，MAFW_* 环境变量）
+│   ├── automation-engine.ts      # cron/事件自动化引擎 + action 注册表
 │   │
-│   ├── dashboard/
-│   │   ├── server.ts            # HTTP + SSE 服务器 (~140 行)
-│   │   ├── api.ts               # REST API 处理器 (~1100 行)
-│   │   ├── types.ts             # SchedulerState 接口
-│   │   └── public/
-│   │       ├── index.html       # SPA 入口
-│   │       └── app.js           # SPA 逻辑
+│   ├── core/
+│   │   ├── langgraph/            # Goal 循环编排（现行）
+│   │   │   ├── graph.ts          # StateGraph 定义 + routeAfterPlan/routeAfterReview
+│   │   │   ├── loop-state.ts     # LoopState 元数据模型
+│   │   │   ├── checkpointer.ts   # FileCheckpointer（BaseCheckpointSaver）
+│   │   │   ├── review-parser.ts  # verdict 机器可读解析（```mafw-review 围栏 JSON）
+│   │   │   ├── signature-detector.ts
+│   │   │   └── nodes/            # plan / execute / review / archive_* + syncToDashboard
+│   │   ├── manager/              # manager session、goal 快照、里程碑推送、/btw、new-topic
+│   │   ├── memory/               # harmonic-index、energy-system、minhash-merger、review-scheduler…
+│   │   ├── plugin.ts             # legacy 插件内记忆路径（废弃，仅兼容保留）
+│   │   └── tools/                # record-feedback 等核心工具
 │   │
-│   ├── dist/
-│   ├── package.json
-│   └── tsconfig.json
-│
-src/langgraph/                    ← LangGraph 编排层（Plugin 源码目录）
-├── graph.ts                     # StateGraph 定义 + retryPolicy
-├── loop-state.ts                # LoopState 元数据模型
-├── nodes/
-│   ├── plan.node.ts             # Plan Agent 节点（interrupt）
-│   ├── execute.node.ts          # Execute Agent 节点（interrupt）
-│   ├── review.node.ts           # Review Agent 节点（interrupt）
-│   └── archive.node.ts          # 归档节点
-├── checkpointer.ts              # FileCheckpointer（文件持久化 Checkpointer）
-└── index.ts
+│   ├── memory/                   # HarmonicUnitFileStore（OKF 读写）、GatewayDatabase、MemoryService、嵌入运行时
+│   ├── recall/                   # 后台记忆召回与管线：
+│   │   ├── turn-pipeline.ts      #   turnCompress（每小时）
+│   │   ├── reflection.ts         #   reflection（每日）
+│   │   ├── stale-verify.ts       #   stale 重验（每周）
+│   │   ├── session-worker-pool.ts / memory-worker.ts   # curator worker 会话池
+│   │   ├── index-scan.ts / recall-context.ts / time-anchor.ts / inject-format.ts
+│   │   └── pipeline-rules.ts     #   管线 cron 规则幂等供给
+│   ├── mcp/                      # MCP 工具注册表（40 工具）+ handlers（/mcp 双传输）
+│   ├── runtime/                  # Runtime 能力契约、opencode 内置 runtime、pi 插件、热切换
+│   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
+│   ├── python/                   # 持久 Python 内核（Jupyter wire 协议 + ZeroMQ）
+│   ├── routes/                   # 独立路由模块（runtime-switch、model-config、embedding-config…）
+│   ├── skills/                   # memory-curator agent 定义、manager agent 配置
+│   ├── usage/                    # 用量 provider 插件系统
+│   ├── orchestration/            # RSI Phase 1 观测层（registry / policy）
+│   ├── retrieval/  graph/        # guided retriever、锚点图谱
+│   └── dashboard/api.ts          # 部分遗留 dashboard 端点（挂在 3000）
 ```
 
 ---
 
-## 生命周期
-
-### Gateway 进程生命周期
+## 进程生命周期
 
 ```
-npx mafw-gateway start
+mafw start / daemon / desktop adopt
     │
     ▼
-1. CLI (bin/mafw-gateway.js)
-    spawn(gateway/dist/index.js)
-    │
-    ▼
-2. MafwScheduler.start()
-    ├── startServe()
-    │     spawn(opencode serve --port 4096)
-    │
-    ├── initClient()
-    │     const client = createOpencodeClient({ port: 4096 })
-    │
-    ├── subscribeToEvents()
-    │     client.event.subscribe() → SSE 广播（仅 Dashboard 展示）
-    │
-    ├── startApiServer()
-    │     HTTP API on port 3000
-    │
-    ├── dashboard.start()
-    │     Dashboard HTTP + SSE on port 3001
-    │
-    ├── recoverState()
-    │     读 state/{goalId}.json → activeGoals Map
-    │
-    └── startBackupPolling()
-          30s 间隔 → discoverNewGoals() + resumeStaleThreads()
+MafwScheduler.start()
+    ├── installFileLogging()            → ~/.mafw/logs/mafw.log
+    ├── initServices()                  → Memory + Cost + MCP + Automation
+    ├── startApiServer()                → HTTP API :3000（含 /mcp、SSE）
+    ├── init SDK client                 → @opencode-ai/sdk
+    ├── probe isServeHealthy()
+    │     ├─ 通  → 收养已有 opencode serve（:4096）
+    │     └─ 不通 → serve sidecar spawn（手写 spawn，windowsHide）
+    │               就绪信号/健康轮询 watchdog（30s ×3 失败 → recoverServe：
+    │               kill + respawn + 事件流重订阅；退避 0/5s/15s，≥4 次 → 5min）
+    ├── recoverConfig / recoverRegistry → 恢复注册表
+    ├── recoverState()                  → 恢复活跃 Goal（activeGoals + checkpoint）
+    ├── automationEngine.start()        → cron 轮询 + 事件监控
+    └── 自更新轮询                      → ~/.mafw/pending-restart.json（2s，子进程接力重启）
 ```
 
-### Loop 生命周期（LangGraph 编排）
-
-```
-POST /api/work/{goalId}/validate
-  → handleValidate()
-    → 写入 state/{goalId}.json (nextAction: 'GRAPH_INVOKED')
-    → onGoalCreated(goalId, projectDir, mafwDir)
-      → buildExecutionGraph()
-      → FileCheckpointer(mafwDir)
-      → graph.invoke(initialState, { thread_id: goalId, checkpointer })
-
-LangGraph 内部:
-  start → plan_node
-    ├── syncToFile({ phase: 'PLANNING' })
-    ├── session = createSession(projectDir)
-    ├── sendPrompt(session.id, '/skill mafw-plan {goalId}')
-    ├── interrupt('awaiting_plan')           ← Plugin 异步执行
-    │     Gateway 收到 POST /api/events
-    │     → onEvent(goalId)
-    │       → graph.invoke(new Command({}))
-    │       → interrupt 恢复 → 继续
-    ├── check waves.json
-    ├── destroySession(session.id)
-    └── syncToFile({ phase: 'PLANNING_COMPLETE' })
-    │
-    ├── execute_node (同上模式)
-    ├── review_node (同上模式)
-    │
-    └── routeAfterReview(state)
-          ├── PASS            → archive_success → END
-          ├── ERROR           → archive_fail    → END
-          ├── FAIL + 未超限   → plan_node       → 重试 Loop
-          └── FAIL + 已超限   → archive_max_retries → END
-```
+Server 启动失败不崩溃——优雅降级到 MCP-only 模式。serve 崩溃/重启由 watchdog 全程监管
+（owned 与 adopted 一视同仁）；外部托管模式（`MAFW_SERVER_SERVE_URL`）不监管。
 
 ---
 
-## CLI 二进制设计
-
-**文件**：`bin/mafw-gateway.js`（~300 行）
+## CLI（bin/mafw.js）
 
 | 命令 | 描述 |
 |---|---|
-| `start` | 前台启动 |
-| `daemon` | 后台守护 |
-| `stop` | kill PID |
-| `status` | 检查 PID 存活 |
-| `restart` | 重启 |
-| `dashboard` | 打开浏览器 |
-| `logs` | tail 日志 |
-| `config` | 显示配置 |
-| `service-register` | 系统服务注册 |
-| `service-unregister` | 系统服务卸载 |
+| `mafw start` / `daemon` / `stop` / `restart` | 前台 / 后台启动、停止、重启 |
+| `mafw status` / `health` / `stats` | 运行状态、HTTP 健康检查、统计 |
+| `mafw logs` | 最后 50 行日志 |
+| `mafw projects` / `register <dir>` / `goals` | 项目注册表与活跃 Goal |
+| `mafw restart-agent` | 重启 agent serve sidecar（POST /api/runtime/restart-agent） |
+| `mafw config` / `dashboard` / `version` | 配置、打开 Web Dashboard、版本 |
+| `mafw tui` | 终端 UI（pi-tui，四 tab：Chat/Goals/Memory/Triage） |
+| `mafw update` | 写自更新令牌（等价 pending-restart.json 路径） |
 
 ---
 
-## 核心架构：事件驱动 + LangGraph
+## Goal 编排：事件驱动 + LangGraph
 
 ### 设计原则
 
-Gateway 不做「业务判断」——所有路由决策委托给 LangGraph 的 `routeAfterReview()` 纯函数。
+Gateway 不做「业务判断」——路由决策委托给 LangGraph 的 `routeAfterPlan()` /
+`routeAfterReview()` 纯函数。LangGraph 编排**至今是 Goal 循环的现行实现**
+（`gateway/src/core/langgraph/`，非历史遗留）。
 
 ```
-Plugin 写完 state.json
-  → POST /api/events → onEvent(goalId)
-    → FileCheckpointer 读取最新 checkpoint
-    → graph.invoke(new Command({}), { thread_id: goalId, checkpointer })
-      （LangGraph 从 interrupt 点恢复，自动决定下一步）
-    → syncFromCheckpoint() 写回 state.json（Dashboard 兼容）
+manager agent → mafw_set_goal (MCP)
+  → POST /api/work/{goalId}/validate → handleValidate()
+    → state/{goalId}.json (nextAction: GRAPH_INVOKED)
+    → onGoalCreated(goalId, projectDir, mafwDir)
+      → buildExecutionGraph() + FileCheckpointer(<project>/.mafw/checkpoints/)
+      → graph.invoke(initialState, { thread_id: goalId, checkpointer })
 ```
 
-### 与旧架构的关键区别
-
-| 方面 | 旧架构 | 当前架构 |
-|------|--------|---------|
-| **调度方式** | 5s 轮询 state.json + switch-case | 事件驱动 POST /api/events |
-| **状态管理** | 手写 `dispatchSession`/`routeNextStep` | LangGraph `routeAfterReview` 纯函数 |
-| **等待机制** | `WAIT_PHASE_COMPLETE` + `startSessionMonitor` | `interrupt()` + LangGraph 原生挂起 |
-| **超时控制** | `setTimeout(10min)` 手动 destroySession | `retryPolicy: { maxAttempts: 2 }` |
-| **并行 Wave** | 手写 wave 并行逻辑 | Pregel 自动 fan-out |
-| **持久化** | `state.json` | `state.json`（视图）+ `FileCheckpointer`（checkpoint） |
-| **崩溃恢复** | `recoverState()` + 轮询 | `recoverState()` + `resumeStaleThreads()` |
-
----
-
-## MafwScheduler 详细设计
-
-**文件**：`gateway/src/index.ts`（~900 行）
-
-### 类结构
-
-```typescript
-class MafwScheduler {
-  private serveProcess?: ChildProcess;
-  private opencodeClient: any;             // @opencode-ai/sdk 客户端
-  activeGoals = new Map<string, StateFile>();
-  registeredProjects = new Map<string, RegisteredProject>();
-  private sseClients: Set<http.ServerResponse>;
-}
-```
-
-### 启动流程
-
-```
-start()
-├── startServe()
-│     spawn(opencode serve --port 4096)
-│
-├── initClient()
-│     import { createOpencodeClient } from '@opencode-ai/sdk'
-│
-├── subscribeToEvents()
-│     client.event.subscribe({}) → 转发到 SSE（仅展示）
-│
-├── startApiServer()
-│     HTTP 端口 3000
-│     ├── POST /register          → 项目注册
-│     ├── POST /control           → PAUSE/ABORT/FORCE_PHASE
-│     ├── POST /api/work/{id}/validate  → handleValidate → onGoalCreated
-│     ├── POST /api/work/{id}/complete  → handleComplete → onEvent
-│     ├── GET  /health            → 健康检查
-│     ├── POST /api/events        → 状态变更回调 → onEvent
-│     └── GET  /api/events        → SSE 流
-│
-├── dashboard.start()
-│     Dashboard 端口 3001
-│
-├── recoverState()
-│     扫描 state/{goalId}.json → activeGoals
-│
-└── startBackupPolling()
-      30s → discoverNewGoals() + resumeStaleThreads()
-```
-
-### 核心方法
-
-| 方法 | 行数 | 作用 |
-|------|------|------|
-| `onGoalCreated(goalId, projectDir, mafwDir)` | ~15 | `graph.invoke(initialState)` 启动新 goal 的 LangGraph |
-| `onEvent(goalId)` | ~15 | `graph.invoke(new Command({}))` 恢复中断的节点 |
-| `buildNodeOptions(mafwDir)` | ~60 | 包装 SDK 工具函数传入 LangGraph 节点 |
-| `syncFromCheckpoint(goalId, cp)` | ~10 | 读 checkpoint → 写 state.json |
-| `resumeStaleThreads()` | ~20 | 遍历 checkpoint 目录恢复卡死线程 |
-| `createSession(projectDir)` | ~10 | SDK session.create() |
-| `sendPrompt(sessionId, message)` | ~5 | SDK session.promptAsync() |
-| `destroySession(sessionId)` | ~10 | SDK session.delete() |
-| `archiveGoal(goalId)` | ~35 | Git tag 归档 + 状态更新 |
-| `patchState(goalId, patch)` | ~35 | 原子写入 state.json + SSE 广播 |
-| `handleValidate(goalId, data)` | ~45 | 初始化 state + 触发 onGoalCreated |
-| `handleComplete(goalId, data)` | ~5 | 触发 onEvent |
-
-### LangGraph 图结构
+### 图结构（现行）
 
 ```typescript
 const workflow = new StateGraph(LoopState)
-  .addNode("plan", planFn, { retryPolicy: { maxAttempts: 2 } })
-  .addNode("execute", executeFn, { retryPolicy: { maxAttempts: 2 } })
-  .addNode("review", reviewFn, { retryPolicy: { maxAttempts: 2 } })
-  .addNode("archive_success", archiveSuccessFn)
-  .addNode("archive_fail", archiveFailFn)
-  .addNode("archive_max_retries", archiveMaxRetriesFn)
+  .addNode("plan", options.plan, { retryPolicy: { maxAttempts: 2 } })
+  .addNode("askUser", options.askUser)          // need_clarification 分支
+  .addNode("execute", options.execute, { retryPolicy: { maxAttempts: 2 } })
+  .addNode("review", options.review, { retryPolicy: { maxAttempts: 2 } })
+  .addNode("archive_success", options.archiveSuccess)
+  .addNode("archive_fail", options.archiveFail)
+  .addNode("archive_max_retries", options.archiveMaxRetries)
 
   .addEdge("__start__", "plan")
-  .addEdge("plan", "execute")
+  .addConditionalEdges("plan", routeAfterPlan, { /* execute | askUser | … */ })
+  .addEdge("askUser", "plan")
   .addEdge("execute", "review")
   .addConditionalEdges("review", routeAfterReview, {
-    plan: "plan",
+    plan: "plan",                    // FAIL 未超限 → 重试 Loop
     archive_success: "archive_success",
     archive_fail: "archive_fail",
     archive_max_retries: "archive_max_retries",
@@ -265,121 +154,97 @@ const workflow = new StateGraph(LoopState)
 
 ### 节点模式（interrupt）
 
-每个 Agent 节点遵循相同模式：
+每个 Agent 节点遵循同一模式（`nodes/plan.node.ts` 为例）：
 
 ```typescript
 async function planNode(state, options) {
-  syncToFile({ phase: 'PLANNING' });
-
-  const session = await createSession(projectDir);
-  await sendPrompt(session.id, `/skill mafw-plan ${goalId}`);
-
-  interrupt('awaiting_plan');       // 挂起，等待 Plugin 完成
-
-  // Gateway 收到事件 → onEvent → graph.resume → 从这里继续
-  if (!fs.existsSync(wavesPath)) {
-    return { lastError: 'waves.json not found', reviewVerdict: 'ERROR' };
-  }
-  await destroySession(session.id);
-  syncToFile({ phase: 'PLANNING_COMPLETE' });
-  return { wavePlanPath: wavesPath };
+  syncToDashboard({ phase: 'PLANNING' });            // 写 state/{goalId}.json 视图
+  const session = await client.session.create({ directory: projectDir });
+  await client.session.promptAsync({ sessionID, parts: [{ type: 'text',
+    text: `/skill mafw-plan ${goalId}` }] });
+  interrupt('awaiting_plan');                        // 挂起，等 Plugin/agent 完成后事件恢复
+  // resume 后：校验 waves.json（JSON.parse + 结构校验）
+  // need_clarification → routeAfterPlan 进 askUser 节点
+  return { wavePlanPath, ... };
 }
 ```
 
-### FileCheckpointer
+review 节点的 verdict 解析统一走共享模块 `review-parser.ts` 的**机器可读契约**
+（` ```mafw-review ` 围栏 JSON v2 格式，兼容纯 JSON；**无文本 fallback**——缺失机器可读块
+即 verdict ERROR）。自由文本解析曾因 "did not pass" 含 "pass" 误判 PASS
+（教训：解析契约与 agent SKILL.md 必须同批部署）。
 
-LangGraph 要求持久化 Checkpointer 来支持 interrupt/resume。
+### FileCheckpointer 与崩溃恢复
 
 ```
-.opencode/mafw/checkpoints/{goalId}/
+<project>/.mafw/checkpoints/{goalId}/
 ├── step_0000001.json       ← 节点执行后 checkpoint
 ├── step_0000002.json       ← interrupt 点
-└── metadata.json           ← 当前 step/retries/error
+└── metadata.json           ← 当前 step / retries / error
 ```
 
-实现继承 `BaseCheckpointSaver`，提供 `get()`, `put()`, `list()` 方法。
-
-### 崩溃恢复（resumeStaleThreads）
-
-```
-Gateway 重启
-  → recoverState() 加载 activeGoals
-  → startBackupPolling() 30s 后
-    → resumeStaleThreads()
-      → 遍历 .opencode/mafw/checkpoints/{threadId}/
-      → 若 activeGoals 中没有 → onEvent(threadId) 恢复执行
-```
+`FileCheckpointer` 继承 LangGraph `BaseCheckpointSaver`。Gateway 重启后
+`recoverState()` 重建 activeGoals，`resumeStaleThreads()` 遍历 checkpoints 目录
+恢复孤儿线程。
 
 ---
 
-## DashboardServer 详细设计
+## MafwScheduler 关键子系统
 
-**文件**：`gateway/src/dashboard/server.ts`（~140 行）
+**文件**：`gateway/src/index.ts`（`class MafwScheduler`，~6000 行）。
+除 LangGraph 编排外，主要子系统（细节见 AGENTS.md 对应章节）：
 
-### 路由
+| 子系统 | 位置 | 说明 |
+|---|---|---|
+| serve sidecar 监管 | index.ts + 契约 | spawn/收养、watchdog、recoverServe、事件流重订阅 |
+| Runtime 能力契约 | `runtime/` | Tier 0-2 能力自声明；opencode 内置 / pi 插件 / 热切换 |
+| 谐波记忆 | `memory/` + `recall/` | OKF 存储、BM25/hybrid 检索、能量、MinHash 合并、ConsolidationService |
+| 记忆管线 | `recall/` | turnCompress / reflection / stale 重验（见下文专节） |
+| MCP 服务 | `mcp/` | 40 工具；/mcp 双传输（无状态 StreamableHTTP + legacy SSE） |
+| 自动化引擎 | `automation-engine.ts` | cron/事件触发、triage 队列、action 注册表 |
+| Manager 会话 | `core/manager/` | per-project manager、goal 快照、里程碑推送、/btw、new-topic |
+| Media Agent | `media/` | A2A 协议、四模态、每模态可插拔引擎 |
+| Python 内核 | `python/` | Jupyter wire 协议（ZeroMQ）、Mutex 队列、TTL 回收 |
+| 用量插件 | `usage/` | 8 内置 provider 适配器 + 用户插件目录 |
+| 自更新 | self-update | pending-restart 令牌 → build → 子进程接力重启 |
+| RSI 观测层 | `orchestration/` | goal_outcomes / goal_sessions / evolution_proposals（gateway.db） |
 
-```
-/api/events?stream=true   GET     SSE 事件流（EventSource 连接）
-/api/*                    ALL    DashboardAPI 处理
-/ 或静态文件               GET    SPA 或静态资源
-```
-
-### SSE 广播
-
-```typescript
-broadcast(event): void {
-  const data = `data: ${JSON.stringify(event)}\n\n`;
-  for (const client of this.sseClients) {
-    try { client.write(data); } catch { this.sseClients.delete(client); }
-  }
-}
-```
-
----
-
-## DashboardAPI 详细设计
-
-**文件**：`gateway/src/dashboard/api.ts`（~1100 行）
-
-### 双路径模式
-
-| 路径 | 数据源 | 场景 |
-|------|--------|------|
-| 运行时 | `scheduler.activeGoals` Map | 快速、API 端口 3000 |
-| 文件系统 | `.opencode/mafw/` 目录 JSON | 完整、Dashboard 端口 3001 |
-
-### 关键端点
-
-| 端点 | 说明 |
-|------|------|
-| `GET /api/goals` | 所有 goal 状态 |
-| `GET /api/goals/:id` | 单 goal 详情 |
-| `GET /api/goals/:id/loops` | Loop 历史 |
-| `GET /api/stats` | 聚合统计 |
-| `GET /api/memory/:goalId` | 谐波记忆读取 |
-| `POST /api/llm/compress` | LLM 压缩代理 |
-| `POST /api/gateway/pause` | 暂停 Goal |
-| `POST /api/gateway/resume` | 恢复 Goal |
+核心方法（与 LangGraph 衔接）：`handleValidate()` → `onGoalCreated()` →
+`graph.invoke()`；`onEvent(goalId)` → `graph.invoke(new Command({}))` 恢复中断；
+`patchState()` 原子写 state.json + SSE 广播；`archiveGoal()` 归档 + 记 outcome。
 
 ---
 
-## API 端点完整列表
+## API 端点
 
-### Gateway HTTP API（端口 3000）
+全部挂在 **:3000**（单端口；桌面/TUI/插件同源）。按组列举（完整清单见 AGENTS.md §5）：
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/register` | POST | 项目注册 |
-| `/control` | POST | PAUSE/ABORT/FORCE_PHASE |
-| `/api/work/{goalId}/validate` | POST | 创建 goal → 启动 LangGraph |
-| `/api/work/{goalId}/complete` | POST | 通知 phase 完成 → onEvent |
-| `/health` | GET | 健康检查 |
-| `/api/events` | POST | 状态变更回调 → onEvent |
-| `/api/events` | GET | SSE 流（Dashboard） |
+| 组 | 代表端点 |
+|---|---|
+| 健康/事件 | `GET /health`、`GET /api/events`（SSE）、`POST /api/events` |
+| 项目/会话 | `POST /register`、`GET /api/projects`、`GET /api/sessions`、`GET /api/manager/session` |
+| Goal 编排 | `POST /api/work/{goalId}/validate`、`POST /api/work/{goalId}/complete`、`POST /control`（PAUSE/ABORT） |
+| 记忆 | `GET /api/recall/context`、`GET /api/recall/pinned`、`POST /api/obs/capture`、`POST /api/memory/add`、`GET /api/memory/search`、`GET /api/memory/stats` |
+| MCP | `POST/GET /mcp`（双传输） |
+| 运行时 | `GET /api/runtime`、`POST /api/runtime/switch`、`POST /api/runtime/restart-agent` |
+| 媒体 | `POST /a2a`、`GET /a2a/artifacts/:id`、`GET /api/media/plugins` |
+| Python | `POST /api/python/execute`、`POST /api/python/restart` |
+| 用量/配置 | `GET /api/usage`、`GET/POST /api/model-config`、`GET/POST /api/memory/embedding-config` |
+| 命令/融合 | `POST /api/mafw-commands/run`（/btw、new-topic）、`POST /api/merge-memory` |
+| 观测 | `GET /api/orchestration/outcomes` |
 
-### Dashboard API（端口 3001）
+> 历史注：曾有的独立 Web Dashboard（端口 3001/3111）已退役——`dashboard/server.ts`
+> 启动代码已注释，UI 职责由 Desktop（Electron）与 `mafw tui` 承担。
 
-（同上表，详见 dashboard/api.ts）
+---
+
+## UI 服务
+
+- **Desktop（packages/desktop，Electron）**：主 UI。Rail + TabStrip；经 `@mafw/sdk`
+  走 `window.api.mafw.*` IPC → HTTP :3000；SSE 直连 gateway；自带 gateway bundle
+  （adopt → bundle → cli 三级决策，见 AGENTS.md §5.5）
+- **TUI（mafw tui）**：pi-tui 四 tab，纯 HTTP/SSE 客户端
+- **Web Dashboard**：退役（见上注）
 
 ---
 
@@ -388,135 +253,74 @@ broadcast(event): void {
 ### Goal 从创建到完成
 
 ```
-用户 /goal "设计登录系统"
+用户 /goal（或 manager mafw_set_goal）
+  → POST /api/work/{id}/validate → handleValidate()
+  → onGoalCreated → graph.invoke
   │
   ▼
-Plugin mafw-goal → 写入 state/{id}.json
-  → POST /api/work/{id}/validate
-  │
+LangGraph: plan ⟶ (askUser) ⟶ execute ⟶ review ⟶ routeAfterReview
+  │  各节点：createSession → promptAsync('/skill mafw-*') → interrupt
+  │  完成 → 事件 → onEvent → graph.invoke(new Command({})) 恢复
   ▼
-Gateway handleValidate()
-  → 写入 state.json (nextAction: GRAPH_INVOKED)
-  → onGoalCreated(id, projectDir, mafwDir)
-    → graph.invoke(initialState, { thread_id: id, checkpointer })
-  │
-  ▼
-LangGraph: plan ⟶ execute ⟶ review ⟶ (条件路由)
-  │ 各节点内: createSession → sendPrompt → interrupt
-  │  Plugin 完成 → POST /api/events → onEvent → graph.invoke(new Command({}))
-  │
-  ▼
-routeAfterReview → PASS? archive_success → END
-                 → FAIL? 未超限? plan → 重试
-                 → FAIL? 超限? archive_fail → END
+PASS  → archive_success → END（记录 goal_outcomes）
+FAIL  → 未超限 → plan 重试 / 超限 → archive_fail → END
 ```
 
-### 事件驱动流
+### 记忆事件流（两条正交通道）
 
 ```
-Plugin updateState() / transitionPhase()
-  ├── 原子写入 state/{id}.json
-  └── POST /api/events → Gateway
-                           ├── broadcast() → Dashboard SSE
-                           └── onEvent(goalId)
-                               → graph.invoke(new Command({}))
-                               → syncFromCheckpoint() → state.json 更新
-```
+观察捕获：插件 hooks（用户消息/工具后/text.complete…）
+    → POST /api/obs/capture → gateway.db t1_observations
+    → turnCompress（每小时）→ curator worker → mafw_add_memory
 
-### 文件系统布局
-
-```
-.opencode/mafw/
-├── state/{goalId}.json              ← 状态（Dashboard 只读视图）
-├── memory/
-│   ├── tier2.json                   ← Episodic 记忆
-│   ├── tier3.json                   ← Semantic 记忆
-│   ├── tier4.json                   ← Procedural 记忆
-│   ├── .harmonic_index.json         ← 检索索引
-│   └── .cognitive_graph.json        ← 联想图谱
-├── checkpoints/{goalId}/
-│   ├── step_0000001.json            ← LangGraph checkpoint
-│   └── metadata.json
-├── goals/{goalId}.md                ← Goal Charter
-├── requests/{goalId}.json           ← 请求配置
-├── waves.json                       ← Wave 计划
-├── tasks/{taskId}.md                ← Task 定义
-├── receipts/{goalId}/               ← 执行收据
-├── reviews/{goalId}-loop{N}.md      ← Review 报告
-├── cost/{goalId}.json               ← 成本记录
-└── user-questions/{goalId}/         ← 用户问题
-```
-
-### LangGraph 节点详细流
-
-```
-plan_node:
-  syncToFile({ phase: 'PLANNING' })
-  session = createSession(projectDir)
-  sendPrompt(session.id, '/skill mafw-plan {goalId}')
-  interrupt('awaiting_plan')
-  // Gateway 收到事件 → resume
-  read waves.json → 验证 JSON
-  destroySession(session.id)
-  syncToFile({ phase: 'PLANNING_COMPLETE', wavePlanPath })
-
-execute_node:
-  syncToFile({ phase: 'EXECUTING' })
-  session = createSession(projectDir)
-  sendPrompt(session.id, '/skill mafw-execute {goalId}')
-  interrupt('awaiting_execution')
-  // Gateway 收到事件 → resume
-  read receipts/{goalId}/loop-receipt.json
-  destroySession(session.id)
-  syncToFile({ phase: 'EXECUTING_COMPLETE', receiptPath })
-
-review_node:
-  syncToFile({ phase: 'REVIEWING' })
-  session = createSession(projectDir)
-  sendPrompt(session.id, '/skill mafw-review {goalId}')
-  interrupt('awaiting_review')
-  // Gateway 收到事件 → resume
-  read reviews/{goalId}-loop{N}.md → parse verdict
-  destroySession(session.id)
-  syncToFile({ phase: 'REVIEWING_COMPLETE', verdict })
+边界 recall：messages.transform（每次 LLM 调用前）
+    → GET /api/recall/context → <recall> 指针块注入
 ```
 
 ---
 
-## 配置与命令行
+## 文件系统布局
 
-### 环境变量
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `MAFW_GATEWAY_URL` | `http://127.0.0.1:3000` | Gateway API 地址 |
-| `MAFW_LLM_API_KEY` | — | LLM 压缩 API Key |
-| `PORT` | 3000 | HTTP API 端口 |
-| `DASHBOARD_PORT` | 3001 | Dashboard 端口 |
-
-### 目录结构
+两级数据根（goal 面在项目，记忆面在全局）：
 
 ```
+<project>/.mafw/                     # per-project（Goal 与请求面）
+├── state/{goalId}.json              # goal 状态视图（syncToDashboard 写）
+├── checkpoints/{goalId}/            # LangGraph FileCheckpointer
+├── waves.json                       # wave 计划（plan 节点校验）
+├── tasks/  receipts/  reviews/      # execute/review 工件
+├── requests/                        # 请求配置
+├── logs/mafw.log                    # 插件侧文件日志
+├── user-feedback/                   # thumbs 反馈 JSON
+└── user-questions/                  # ask_user 记录
+
+~/.mafw/                             # 全局数据根（config.resolvePath()）
+├── memory/
+│   ├── concepts/{semantic|episodic|procedural|global|knowledge}/
+│   │                                # OKF 记忆（每条一个 Markdown：frontmatter+正文）
+│   ├── .harmonic_index.json         # 检索索引（纯可推导产物）
+│   ├── vectors-<model>.json         # dense 嵌入（opt-in，按 provider 打标）
+│   └── gateway.db                   # 统一数据库：t1_observations、kv_store、
+│                                    #   goal_outcomes、goal_sessions、evolution_proposals
+├── automations/*.json               # 自动化规则（turn-compress / memory-reflect /
+│                                    #   memory-decay / memory-review…）
+├── logs/mafw.log                    # gateway 文件日志（5MB 轮转）
+├── runtime-plugins/  usage-plugins/  media-plugins/  ui-plugins/
+├── pending-restart.json  last-restart.json   # 自更新控制面
+└── fusion-log.jsonl                 # 跨 worktree 记忆融合记录
+
 ~/.config/mafw/
-├── gateway.pid
-├── logs/
-│   └── gateway.log
-├── config.json
-└── projects.json
+├── config.yaml                      # 配置（中间层，persistOverrides 落这里）
+└── gateway.pid                      # CLI status/stop 依据
 ```
 
-### 跨平台服务注册
+> 历史注：早期 `.opencode/mafw/` 目录与 `memory/tier2.json / tier3.json / tier4.json`
+> 分层布局已废弃——记忆现为 OKF（`concepts/{type}/`）+ 纯可推导索引，Goal 数据在
+> `<project>/.mafw/`。
 
-| 平台 | 机制 | 文件位置 |
-|---|---|---|
-| Windows | schtasks | 任务计划程序 |
-| macOS | LaunchAgent | `~/Library/LaunchAgents/` |
-| Linux | systemd | `~/.config/systemd/user/` |
+---
 
 ## 记忆维护管线（当前态，2026-09-14）
-
-> 本节为当前实现。上文 tier2/tier3 JSON 布局、LangGraph 等早期章节属历史版本；
-> 记忆系统以本节与根 `AGENTS.md`（§3 谐波记忆、§5.13 后台记忆召回）为准。
 
 ### 管线与自动化规则
 
@@ -527,7 +331,9 @@ review_node:
 | 能量衰减 | `memory-decay`（每日 3:30） | 增量时间衰减——管"淡忘" |
 | stale 重验 | `memory-review`（每周日 4:00） | `StaleVerifyPipeline` 重验高价值记忆——管"内容有效性" |
 
-规则由 `gateway/src/recall/pipeline-rules.ts` 幂等供给；action handler 在 `index.ts registerMemoryPipelineActions()`（`memory:review` 覆盖 automation-engine 模块级的打日志桩）。
+规则由 `gateway/src/recall/pipeline-rules.ts` 幂等供给；action handler 在
+`index.ts registerMemoryPipelineActions()`（`memory:review` 覆盖 automation-engine
+模块级的打日志桩）。
 
 ### 环境探测式记忆维护（Environment-Probing Curation，arXiv:2609.11060）
 
@@ -542,3 +348,24 @@ post-task curator 只看轨迹存在"回顾性证据边界"（错误答案、过
 ### Worker 会话治理（session 风暴防线）
 
 `SessionWorkerPool`（`gateway/src/recall/session-worker-pool.ts`）：lazy 创建（仅本小时有完成回合的 session）、pipeline 互斥（skip-once）、`runExclusive` per (session,kind) 防并发、TTL 24h 驱逐时 `session.delete` 物理删除、硬帽 64、idle 8h summarize 控 token；`internalSessionRoles` + 标题前缀过滤对 UI 隐藏；`/api/obs/capture` 白名单防 worker 输出回流 T1（递归风暴）。2026-09-14 已物理清理 2923 条历史垃圾 worker 会话（serve API 级联删除，验证后批量执行）。
+
+---
+
+## 配置与环境变量
+
+三层优先级：**环境变量 > `<project>/.mafw/config.yaml` > `~/.config/mafw/config.yaml` > 默认值**。
+所有端口/URL/超时/路径集中在 `gateway/src/config.ts`；环境变量以 `MAFW_` 为前缀，
+路径用 `_` 分隔（如 `MAFW_SERVER_API_PORT`）。
+
+| 变量 | 作用 |
+|---|---|
+| `MAFW_SERVER_API_PORT` / `MAFW_GATEWAY_PORT` | API 端口（默认 3000 / 探测链） |
+| `MAFW_SERVER_SERVE_URL` | 外部托管 opencode serve（不 spawn、不监管） |
+| `MAFW_RUNTIME_PLUGIN` | 激活 runtime 插件（如 `pi`；覆盖 config.runtime.plugin） |
+| `MAFW_SEARCH_RETRIEVER` | 检索器回退（`token`；默认 bm25） |
+| `MAFW_PYTHON_BIN` | 覆盖 Python 内核解释器 |
+| `MAFW_TAKEOVER` | 自更新接力分支（跳过单例守卫，等端口释放） |
+| `MAFW_TUI_PORTS` | TUI 探测端口覆盖（测试隔离） |
+
+热生效边界：`config.yaml` 变更 watcher 2s 防抖自动 reload，`runtime` 段变更触发热切换；
+`server`/`paths` 段变更需重启。
