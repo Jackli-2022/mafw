@@ -703,6 +703,8 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
 - session 媒体附件：file part（image/video/audio）一等载体语义（契约 `SessionPromptOpts.parts` 注释）；
   pi image 经 `partsToPromptInput` → ImageContent（既有）；pi video/audio 经 `mafw-media` extension 在
   `before_provider_request` 注入小米 wire 格式（registry pendingMedia 队列，注入即清空）
+- Goal 预算面：`mafw_create_goal`/`mafw_set_goal` 接受 `budget.{maxTurns,maxCostUsd}` → request.json →
+  policySnapshot（`core/goal-budget.ts` `mergeBudgetIntoSnapshot`，fail-open）→ BudgetGuard 硬停闭环
 
 激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
