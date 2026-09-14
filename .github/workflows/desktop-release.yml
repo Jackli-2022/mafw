@@ -1,0 +1,126 @@
+name: Desktop Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            gateway/package-lock.json
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Cache electron binaries (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-linux-${{ hashFiles('packages/desktop/package.json') }}
+
+      - name: Cache electron-builder (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron-builder
+          key: electron-builder-linux-${{ hashFiles('packages/desktop/package.json') }}
+
+      - name: Cache electron binaries (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron/Cache
+          key: electron-win-${{ hashFiles('packages/desktop/package.json') }}
+
+      - name: Cache electron-builder (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron-builder/Cache
+          key: electron-builder-win-${{ hashFiles('packages/desktop/package.json') }}
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install gateway deps
+        working-directory: gateway
+        run: npm ci
+
+      - name: Build root (plugin + gateway + tui)
+        run: npm run build
+
+      - name: Build desktop (electron-vite)
+        working-directory: packages/desktop
+        run: npm run build
+
+      - name: Package desktop (windows)
+        if: runner.os == 'Windows'
+        working-directory: packages/desktop
+        env:
+          OPENCODE_CHANNEL: prod
+        run: npm run package:win -- --publish never
+
+      - name: Package desktop (linux)
+        if: runner.os == 'Linux'
+        working-directory: packages/desktop
+        env:
+          OPENCODE_CHANNEL: prod
+        run: npm run package:linux -- --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          path: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.blockmap
+            packages/desktop/dist/*.AppImage
+            packages/desktop/dist/*.deb
+            packages/desktop/dist/*.rpm
+            packages/desktop/dist/latest*.yml
+          if-no-files-found: error
+
+  release:
+    name: attach artifacts to draft release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/latest*.yml
