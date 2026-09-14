@@ -8,7 +8,7 @@ import { SelectV2 } from "@mafw/ui/v2/select-v2"
 import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { SwitchV2 } from "@mafw/ui/v2/switch-v2"
+import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { sortEntries, statusLabel, installableTypes, runtimeActivatable, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
 
