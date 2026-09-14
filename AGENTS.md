@@ -675,6 +675,20 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   共享实现在 `runtime/completion-http.ts`）；`cacheable` 是 prompt-cache 提示非承诺
   （直连传输映射为 DashScope `cache_control: ephemeral`，其他 runtime 可忽略）；
   usage 由消费侧记账，runtime 只负责返回
+- `sessionBranchApi?: boolean` + `session.fork/revert/unrevert` — 会话分支原语（fork=新会话携带历史副本；
+  revert=消息级回退）。pi 不实现 unrevert（HTTP 404），且 pi revert 不回滚文件（SessionManager.branch
+  原地移 leaf、不可逆——语义弱于 opencode，契约注释为准）；HTTP 薄代理 `routes/session-branch.ts`
+  （能力门 503），SDK `session.fork/revert/unrevert`
+- `turnBudgetApi?: boolean` + `SessionPromptOpts.maxTurns/maxCostUsd` — 回合预算；两个内置 runtime 均无
+  原生强制，gateway 侧 `BudgetGuard`（`core/budget-guard.ts`）兜底：按 step 切面计数 + TrajectoryStore
+  成本，超限 abort + noReply 通知；goal 会话经 `onSessionCreated` 挂载，预算读 goal state
+  `policySnapshot.{maxTurns,maxCostUsd}`（缺省不启用）
+- `PromptResultEnvelope` — `session.prompt()` 返回超集：`parts` + `finish/usage{input,output,cached,
+  reasoning,costUsd}/error`（字段缺失 = undefined 非错误；opencode 从 AssistantMessage.cost/tokens 映射）
+- EventFacets 新增 `compaction: 'start'|'end'|null` — opencode `session.compacted` → end；pi 经注入的
+  `mafw-compaction` extension 上报 `session_before_compact`/`session_compact`（翻译为
+  `session.compacting`/`session.compacted`）。gateway 收到后对该会话触发 turnCompress flush
+  （`TurnPipeline.runSession`，fail-open，与 hourly cron 互斥）
 
 激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
