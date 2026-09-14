@@ -3,10 +3,10 @@ import * as path from "path";
 import { ToolHandler } from "../../types";
 import { eventBus } from "../../event-bus";
 
-const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
-
 export const handleCreateGoal: ToolHandler = async (args) => {
   try {
+    // 调用时读取（非模块顶层）：测试需要按用例隔离 MAFW_PROJECT_DIR
+    const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
     const goalId = args.goalId as string;
     const title = args.title as string;
     const charter = args.charter as string;
