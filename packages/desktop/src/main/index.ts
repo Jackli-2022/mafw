@@ -40,6 +40,7 @@ import {
   setDockIcon,
   restoreMainWindows,
 } from "./windows"
+import { createTray } from "./tray"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
@@ -267,6 +268,7 @@ const main = Effect.gen(function* () {
   app.setAsDefaultProtocolClient("mafw")
   registerRendererProtocol()
   setDockIcon()
+  createTray()
   const updater = setupAutoUpdater(stopSidecars)
   registerIpcHandlers({
     killSidecar: () => {},
