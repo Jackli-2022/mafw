@@ -3927,3 +3927,9 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-goal-session { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
 .mafw-goal-session:hover { background: var(--surface-base-hover); }
 .mafw-goal-session-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* File mention picker + chips (P1) */
+.mafw-file-picker { max-height: 320px; overflow-y: auto; }
+.mafw-file-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.mafw-file-row.sel, .mafw-file-row:hover { background: var(--surface-base-hover); }
+.mafw-file-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }

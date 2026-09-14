@@ -18,6 +18,10 @@ import { VoiceRecorder } from "./VoiceRecorder"
 import { scrollPinDecision } from "./ChatPaneScroll"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
+import { createInputHistory } from "./input-history"
+import { getDraft, setDraft, clearDraft } from "./session-drafts"
+import { fuzzyMatchFiles } from "./file-fuzzy"
+import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -138,7 +142,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [attachments, setAttachments] = createSignal<Attachment[]>([])
   const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
   const [dragging, setDragging] = createSignal(false)
-  const [pickerOpen, setPickerOpen] = createSignal<"model" | "agent-switch" | "agent-mention" | "command" | "tts" | null>(null)
+  const [pickerOpen, setPickerOpen] = createSignal<"model" | "agent-switch" | "agent-mention" | "command" | "tts" | "file" | null>(null)
   // TTS voice picker: preset voices + default style, persisted to gateway
   // config (media.tts) so /api/tts without an explicit voice uses it.
   const [ttsVoices, setTtsVoices] = createSignal<{ id: string; label: string; lang: string }[]>([])
@@ -152,6 +156,57 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // Busy-turn queue: regular messages sent while a turn is running are held
   // here and dispatched on the next idle boundary (steering without abort).
   const [queuedItems, setQueuedItems] = createSignal<QueuedTurn[]>([])
+
+  // Composer input loop: ↑/↓ history, per-session draft, @file mentions.
+  const history = createInputHistory(50)
+  const [mentionedFiles, setMentionedFiles] = createSignal<{ rel: string }[]>([])
+  const [projectFiles, setProjectFiles] = createSignal<string[]>([])
+  const [fileHi, setFileHi] = createSignal(0)
+
+  // Trailing "@query" token before the caret (used by both onInput trigger
+  // and the picker's live filter).
+  const AT_MENTION_RE = /(?:^|\s)@(\S*)$/
+  const atMentionQuery = () => {
+    const v = input()
+    const ta = textareaEl()
+    const sel = ta?.selectionStart ?? v.length
+    const m = AT_MENTION_RE.exec(v.slice(0, sel))
+    return m ? m[1] : null
+  }
+
+  const filePickerItems = createMemo(() => {
+    const q = atMentionQuery() ?? ""
+    const agents = (props.primaryAgents() || [])
+      .filter((a: any) => !q || a.name.toLowerCase().includes(q.toLowerCase()))
+      .slice(0, 5)
+      .map((a: any) => ({ kind: "agent" as const, label: a.name, value: a.name }))
+    const files = fuzzyMatchFiles(projectFiles(), q, 12).map(f => ({ kind: "file" as const, label: f, value: f }))
+    return [...agents, ...files]
+  })
+
+  const addFileMention = (rel: string) => {
+    setMentionedFiles(prev => prev.some(f => f.rel === rel) ? prev : [...prev, { rel }])
+    // strip the trailing "@query" token from the input
+    const ta = textareaEl()
+    const v = input()
+    const sel = ta?.selectionStart ?? v.length
+    const before = v.slice(0, sel).replace(/@(\S*)$/, " ")
+    const after = v.slice(sel)
+    const next = before + after
+    setInput(next)
+    setDraft(sidProp(), next)
+    setPickerOpen(p => p === "file" ? null : p)
+  }
+
+  // Draft restore: keyed Show destroys the pane on tab switch; the draft
+  // survives in the module-level store.
+  onMount(() => {
+    const d = getDraft(sidProp())
+    if (d) {
+      setInput(d)
+      queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) })
+    }
+  })
 
   // 会话 reverted 态探测（session info 的 revert 字段，opencode 专属；pi 无）
   onMount(async () => {
@@ -848,13 +903,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
 
     // ── Slash commands: dispatch before the plain-message path ──
-    if (atts.length === 0 && agents.length === 0) {
+    const fileMentions = mentionedFiles()
+    if (atts.length === 0 && agents.length === 0 && fileMentions.length === 0) {
       const cmd = matchCommand(text.trim())
       if (cmd) {
         const rest = text.trim().replace(/^\/\S+/, "").trim()
         setSending(true)
         setPhase('searching')
         setInput("")
+        history.push(text)
+        clearDraft(sidProp())
         try {
           if (cmd.group === "mafw") {
             const result = await window.api.mafw.mafwCommands.run({ command: cmd.name, args: rest, sessionID: sid })
@@ -878,9 +936,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
     setSending(true)
     setPhase('searching')
+    history.push(text)
+    clearDraft(sidProp())
     setInput("")
     setAttachments([])
     setMentionedAgents([])
+    setMentionedFiles([])
+    // @file mentions ride as text references — the model reads them with its
+    // own read tool (Claude Code semantics, no file part expansion).
+    const filePrefix = fileMentions.map(f => "@" + f.rel).join(" ")
     // Collapse the textarea back to single line after the message is queued
     const ta = textareaEl()
     if (ta) ta.style.height = "auto"
@@ -993,7 +1057,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     // empty user message. Pointers still reach the server via `parts` only.
     const pointerTexts = visionParts.map(p => p.text)
     const failureNote = visionFailed.length > 0 ? `[媒体附件未送达 Media Agent] ${visionFailed.join("; ")}` : ""
-    const bodyMessage = [text.trim(), ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
+    const bodyMessage = [filePrefix, text.trim(), ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
     const optimisticParts: any[] = []
     if (bodyMessage) {
       optimisticParts.push({ type: "text", text: bodyMessage, id: `${userMsgId}-text`, sessionID: sid, messageID: userMsgId })
@@ -1022,7 +1086,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     console.log("[mafw] sendMessage", sid)
     try {
       const result = await window.api.mafw.chat.sendEnriched({
-        message: text.trim() || failureNote,
+        message: [filePrefix, text.trim() || failureNote].filter(Boolean).join("\n"),
         sessionID: sid,
         parts: visionParts.length || fileParts.length || agentParts.length ? [...visionParts, ...fileParts, ...agentParts] : undefined,
         agent: props.agentSel()?.name === "manager" ? undefined : props.agentSel()?.name,
@@ -1957,6 +2021,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   </span>
                 )}
               </For>
+              <For each={mentionedFiles()}>
+                {(f) => (
+                  <span class="mafw-chip">
+                    <Icon name="file" size="small" />
+                    <span class="mafw-chip-label" title={f.rel}>{f.rel}</span>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setMentionedFiles(prev => prev.filter(x => x.rel !== f.rel))} aria-label="移除文件引用">✕</ButtonV2>
+                  </span>
+                )}
+              </For>
             </div>
           </Show>
           <TextareaV2
@@ -1965,11 +2038,47 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               const v = e.currentTarget.value
               setInput(v)
               autoGrow(e.currentTarget)
+              setDraft(sidProp(), v)
               if (/^\/(\S*)$/.test(v) && pickerOpen() !== "command") openCommandPicker()
               else if (!v.startsWith("/") && pickerOpen() === "command") closeCommandPicker()
+              // "@query" at the caret opens the file/agent mention picker.
+              if (AT_MENTION_RE.test(v.slice(0, e.currentTarget.selectionStart || v.length))) {
+                if (pickerOpen() !== "file") {
+                  setPickerTrigger(e.currentTarget)
+                  setPickerOpen("file")
+                  setFileHi(0)
+                  if (projectFiles().length === 0) {
+                    void window.api.mafw.files.list().then(setProjectFiles).catch(() => {})
+                  }
+                }
+              } else if (pickerOpen() === "file") setPickerOpen(p => p === "file" ? null : p)
             }}
             onKeyDown={e => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } sendMessage() }
+              if (pickerOpen() === "file" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault()
+                const n = filePickerItems().length
+                setFileHi(h => e.key === "ArrowDown" ? Math.min(h + 1, n - 1) : Math.max(h - 1, 0))
+              }
+              else if (pickerOpen() === "file" && e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault()
+                const item: FilePickerItem | undefined = filePickerItems()[fileHi()]
+                if (!item) return
+                if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
+                else addFileMention(item.value)
+              }
+              else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } sendMessage() }
+              else if (e.key === "ArrowUp" && !e.currentTarget.value) {
+                const prev = history.up(input())
+                if (prev !== null) { e.preventDefault(); setInput(prev); queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) }) }
+              }
+              else if (e.key === "ArrowDown" && !e.currentTarget.value) {
+                const next = history.down()
+                if (next !== null) { e.preventDefault(); setInput(next); queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) }) }
+              }
+              else if (e.key === "Backspace" && !e.currentTarget.value && mentionedFiles().length > 0 && mentionedAgents().length === 0) {
+                e.preventDefault()
+                setMentionedFiles(prev => prev.slice(0, -1))
+              }
               else if (e.key === "Backspace" && !e.currentTarget.value && mentionedAgents().length > 0) {
                 e.preventDefault()
                 setMentionedAgents(prev => prev.slice(0, -1))
@@ -1981,7 +2090,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             disabled={!props.gwReady}
             class="mafw-input"
           />
-          <span class="mafw-keyhint">Enter 发送 · Shift+Enter 换行</span>
+          <span class="mafw-keyhint">↑ 历史 · Enter 发送 · Shift+Enter 换行 · @ 引用文件</span>
           <div class="mafw-composer-toolbar">
             <div class="mafw-composer-left">
               <TooltipV2 value="命令 (/)" openDelay={300}>
@@ -2145,6 +2254,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           items={cmdItems()}
           onSelect={onCommandSelect}
           onClose={() => setPickerOpen(p => p === "command" ? null : p)}
+        />
+        <FilePicker
+          open={pickerOpen() === "file"}
+          trigger={pickerTrigger()}
+          items={filePickerItems()}
+          hi={fileHi()}
+          onSelect={(item) => {
+            if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
+            else addFileMention(item.value)
+          }}
+          onClose={() => setPickerOpen(p => p === "file" ? null : p)}
         />
         <PopoverShell open={pickerOpen() === "tts"} trigger={pickerTrigger()} anchor="below-center" width={340} onClose={() => setPickerOpen(p => p === "tts" ? null : p)}>
           <div class="mafw-tts-picker">
