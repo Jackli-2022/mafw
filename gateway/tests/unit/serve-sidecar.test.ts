@@ -64,7 +64,7 @@ describe('serve-sidecar spawn options', () => {
     expect(chunks.join('')).toContain('opencode server listening');
   });
 
-  test('tree-kills the child on close (cmd wrapper + opencode.exe)', async () => {
+  test('tree-kills the child on close (taskkill on win32, SIGKILL elsewhere)', async () => {
     const execSyncSpy = jest.spyOn(require('child_process'), 'execSync').mockReturnValue(Buffer.from(''));
     const pending = startServeSidecar({ host: '127.0.0.1', port: 4096, timeoutMs: 5000 });
     const child = crossSpawnMock.__lastChild();
@@ -72,10 +72,15 @@ describe('serve-sidecar spawn options', () => {
     stdoutHandler(Buffer.from('opencode server listening on http://127.0.0.1:4096\n'));
     const result = await pending;
     result.close();
-    expect(execSyncSpy).toHaveBeenCalledWith(
-      expect.stringContaining('taskkill /F /T /PID 4321'),
-      expect.objectContaining({ windowsHide: true }),
-    );
+    if (process.platform === 'win32') {
+      expect(execSyncSpy).toHaveBeenCalledWith(
+        expect.stringContaining('taskkill /F /T /PID 4321'),
+        expect.objectContaining({ windowsHide: true }),
+      );
+    } else {
+      expect(execSyncSpy).not.toHaveBeenCalled();
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    }
     execSyncSpy.mockRestore();
   });
 
@@ -83,13 +88,19 @@ describe('serve-sidecar spawn options', () => {
     jest.useFakeTimers();
     const execSyncSpy = jest.spyOn(require('child_process'), 'execSync').mockReturnValue(Buffer.from(''));
     const pending = startServeSidecar({ host: '127.0.0.1', port: 4096, timeoutMs: 50 });
+    const child = crossSpawnMock.__lastChild();
     const assertion = expect(pending).rejects.toThrow(/Timeout waiting for opencode serve/);
     jest.advanceTimersByTime(60);
     await assertion;
-    expect(execSyncSpy).toHaveBeenCalledWith(
-      expect.stringContaining('taskkill /F /T /PID 4321'),
-      expect.anything(),
-    );
+    if (process.platform === 'win32') {
+      expect(execSyncSpy).toHaveBeenCalledWith(
+        expect.stringContaining('taskkill /F /T /PID 4321'),
+        expect.anything(),
+      );
+    } else {
+      expect(execSyncSpy).not.toHaveBeenCalled();
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    }
     execSyncSpy.mockRestore();
     jest.useRealTimers();
   });
