@@ -15,6 +15,8 @@ const HEALTH_TICK_MS = 1000
 const KNOWN_EVENTS = [
   'message.part.updated',
   'session.idle',
+  'message.complete',
+  'message.error',
   'session.error',
   'permission.asked',
   'question.asked',

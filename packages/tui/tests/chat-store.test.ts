@@ -186,6 +186,31 @@ test('busy sends are queued (turn flagged queued) and flushed on idle in order',
   assert.equal(s.turns.filter(t => t.queued).length, 0)
 })
 
+test('message.complete (gateway 对 session.idle 的翻译名) finalizes turn and flushes queue', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.send('q')
+  await s.send('queued-msg')
+  s.applyEvent('message.part.updated', { type: 'message.part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hi' } } })
+  assert.equal(s.streaming, true)
+  // Mode A 广播的回合结束事件：{ type: 'message.complete', sessionID }
+  s.applyEvent('message.complete', { type: 'message.complete', sessionID: 's' })
+  await settle()
+  assert.equal(fx.calls.promptAsync.length, 2, 'message.complete 视同 idle → flush 排队')
+  assert.equal(s.turns.filter(t => t.queued).length, 0, '排队转正')
+  assert.equal(s.turns.filter(t => t.parts[0]?.text === 'queued-msg').length, 1)
+})
+
+test('message.complete from another session is ignored', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
+  await s.send('q')
+  s.applyEvent('message.complete', { type: 'message.complete', sessionID: 'other' })
+  await settle()
+  assert.equal(s.streaming, true, '他session的complete不影响')
+  assert.equal(fx.calls.promptAsync.length, 1)
+})
+
 test('flushed queued turn is re-used (no duplicate user turn)', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })

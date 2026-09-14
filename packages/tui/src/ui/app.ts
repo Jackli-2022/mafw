@@ -162,14 +162,14 @@ export async function runApp(opts: AppOptions): Promise<void> {
 
   // ── 会话切换（/sessions）──
   let conn: ConnectionStore | null = null
-  function ensureConn(sessionID: string): ConnectionStore {
+  function ensureConn(_sessionID: string): ConnectionStore {
     if (conn) {
-      conn.setSession(sessionID)
+      // Mode A 全局流无 per-session 维度（事件按 part.sessionID / message.complete.sessionID 客户端过滤）
       return conn
     }
     conn = new ConnectionStore({
-      sessionID,
-      subscribe: (sid) => client.event.subscribeToSession(sid),
+      sessionID: 'global',
+      subscribe: () => client.event.subscribe(),
       isConnected: () => client.event.connected(),
       onEvent,
       onState: (s) => {

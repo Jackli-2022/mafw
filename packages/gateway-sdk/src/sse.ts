@@ -33,7 +33,12 @@ export class SSEConnection {
     if (!this.eventSource) return
     this.eventSource.onmessage = (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data)
+        let data = JSON.parse(e.data)
+        // gateway Mode A 全局流 wire 格式：{ type: 'opencode_event', data: { type, properties, sessionID } }
+        // 剥壳后统一为 { type, properties, sessionID }（desktop 直连不走 SDK，不受影响）
+        if (data && data.type === 'opencode_event' && data.data && typeof data.data === 'object') {
+          data = data.data
+        }
         const type = data.type || 'message'
         const set = this.listeners.get(type)
         if (set) for (const cb of set) cb(data)

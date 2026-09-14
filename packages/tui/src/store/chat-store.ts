@@ -252,12 +252,20 @@ export class ChatStore {
       this.applyPart(part)
       this.deps.onChange()
     } else if (type === 'session.idle') {
-      this.streaming = false
-      const last = this.turns.at(-1)
-      if (last && last.role === 'assistant') last.done = true
-      this.deps.onChange()
-      this.flushQueue()
+      this.finalizeTurn()
+    } else if (type === 'message.complete') {
+      // gateway Mode A 广播把 session.idle 翻译成 message.complete（带顶层 sessionID）
+      const sid = data?.sessionID
+      if (!sid || sid === this._sessionID) this.finalizeTurn()
     }
+  }
+
+  private finalizeTurn(): void {
+    this.streaming = false
+    const last = this.turns.at(-1)
+    if (last && last.role === 'assistant') last.done = true
+    this.deps.onChange()
+    this.flushQueue()
   }
 
   private applyPart(part: any): void {
