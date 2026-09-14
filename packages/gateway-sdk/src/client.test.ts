@@ -109,6 +109,33 @@ test("session.messages omits optional query params when absent", async () => {
   expect(url).toBe("http://gw:3000/api/sessions/s1/messages?")
 })
 
+test("session.fork sends POST /api/sessions/:id/fork with messageID", async () => {
+  fetchMock.mockResolvedValue(okJson({ session: { id: "s_forked" } }))
+  const c = new MafwClient("http://gw:3000")
+  const result = await c.session.fork({ path: { id: "s1" }, body: { messageID: "m9" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/fork",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toEqual({ messageID: "m9" })
+  expect(result.session.id).toBe("s_forked")
+})
+
+test("session.revert sends POST /api/sessions/:id/revert", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.revert({ path: { id: "s1" }, body: { messageID: "m1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/revert",
+    expect.objectContaining({ method: "POST" }))
+})
+
+test("session.unrevert sends POST /api/sessions/:id/unrevert", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.unrevert({ path: { id: "s1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/unrevert",
+    expect.objectContaining({ method: "POST" }))
+})
+
 test("session.prompt sends POST /api/session/:id/prompt", async () => {
   fetchMock.mockResolvedValue(okJson({ parts: [] }))
   const c = new MafwClient("http://gw:3000")

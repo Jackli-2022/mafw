@@ -89,6 +89,7 @@ import { handleUsagePluginCreate, handleUsagePluginDelete, handleUsagePluginsLis
 import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
 import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
+import { handleSessionBranch } from './routes/session-branch';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
 import { handleManagerRotate, runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
@@ -4557,6 +4558,13 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/model-config(?:\?|$)/) && req.method === 'POST') {
           await handleModelConfigUpdate(req, res, this.modelConfigDeps());
           return;
+        }
+
+        // POST /api/sessions/:id/fork|revert|unrevert — session branch primitives
+        // (capability-gated: sessionBranchApi; unrevert is opencode-only → 404 on pi)
+        if (req.url?.match(/^\/api\/sessions\/[^/]+\/(fork|revert|unrevert)(?:\?|$)/) && req.method === 'POST') {
+          const handled = await handleSessionBranch(req, res, req.url, { getRuntime: () => this.opencodeClient ?? null });
+          if (handled) return;
         }
 
         // GET /api/usage?sessionID=xxx&projectID=xxx — consolidated usage (summary + providers)

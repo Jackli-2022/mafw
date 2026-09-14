@@ -101,6 +101,26 @@ export class MafwClient implements IMafwClient {
       await this.request(`/api/session/${params.path.id}/abort`, { method: 'POST' })
     },
 
+    fork: async (params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ session: Session }> => {
+      return this.request<{ session: Session }>(`/api/sessions/${params.path.id}/fork`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body ?? {}),
+      })
+    },
+
+    revert: async (params: { path: { id: string }; body: { messageID: string; partID?: string } }): Promise<void> => {
+      await this.request(`/api/sessions/${params.path.id}/revert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
+      })
+    },
+
+    unrevert: async (params: { path: { id: string } }): Promise<void> => {
+      await this.request(`/api/sessions/${params.path.id}/unrevert`, { method: 'POST' })
+    },
+
     prompt: async (
       params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } },
     ): Promise<{ parts: TextPart[] }> => {
