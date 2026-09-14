@@ -13,6 +13,8 @@ describe('runtime contract capabilities', () => {
       agentConfigApi: true,
       agentProcessApi: true,
       completionApi: true,
+      sessionBranchApi: true,
+      turnBudgetApi: true,
     });
   });
 
@@ -27,7 +29,22 @@ describe('runtime contract capabilities', () => {
       sessionStorageApi: false,
       agentConfigApi: false,
       agentProcessApi: false,
+      sessionBranchApi: false,
+      turnBudgetApi: false,
     });
+  });
+
+  it('RuntimeCapabilities supports optional sessionBranchApi/turnBudgetApi flags', () => {
+    const caps: RuntimeCapabilities = {
+      sessionApi: true, promptWhileBusy: true, eventStream: false,
+      nativeApprovals: false, providerConfigApi: false, perLlmCallTransform: false,
+    };
+    expect(caps.sessionBranchApi).toBeUndefined();
+    expect(caps.turnBudgetApi).toBeUndefined();
+    caps.sessionBranchApi = true;
+    caps.turnBudgetApi = true;
+    expect(caps.sessionBranchApi).toBe(true);
+    expect(caps.turnBudgetApi).toBe(true);
   });
 
   it('RuntimeCapabilities supports optional completionApi flag', () => {

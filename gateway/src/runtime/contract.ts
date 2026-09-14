@@ -41,6 +41,10 @@ export interface RuntimeCapabilities {
   agentProcessApi?: boolean;
   /** runtime 提供无状态单次补全（completion.complete），供 scan/media 等无状态通道使用 */
   completionApi?: boolean;
+  /** runtime 提供会话分支原语（fork/revert；unrevert 视实现可选——pi 不提供） */
+  sessionBranchApi?: boolean;
+  /** runtime 原生强制执行 SessionPromptOpts.maxTurns/maxCostUsd（声明后 gateway 不再挂 BudgetGuard） */
+  turnBudgetApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -55,6 +59,8 @@ export function fullCapabilities(): RuntimeCapabilities {
     agentConfigApi: true,
     agentProcessApi: true,
     completionApi: true,
+    sessionBranchApi: true,
+    turnBudgetApi: true,
   };
 }
 
@@ -69,6 +75,8 @@ export function minimalCapabilities(): RuntimeCapabilities {
     sessionStorageApi: false,
     agentConfigApi: false,
     agentProcessApi: false,
+    sessionBranchApi: false,
+    turnBudgetApi: false,
   };
 }
 
@@ -87,6 +95,29 @@ export interface SessionPromptOpts {
   variant?: string;
   system?: string;
   noReply?: boolean;
+  /** 回合数上限（一次 prompt 内 agentic loop 步数）；超出即中止。原生支持见 turnBudgetApi。 */
+  maxTurns?: number;
+  /** 本次 prompt 的美元成本上限；超出即中止。原生支持见 turnBudgetApi。 */
+  maxCostUsd?: number;
+}
+
+/**
+ * 回合结果信封——session.prompt() 的返回超集。字段取不到 = undefined
+ * （不是错误）；error 存在时 parts 原样返回（不抛异常，与现状一致）。
+ */
+export interface PromptResultEnvelope {
+  parts: any[];
+  /** runtime 原生 finish reason（opencode AssistantMessage.finish） */
+  finish?: string;
+  /** undefined = runtime 未回传；消费方据此跳过记账 */
+  usage?: {
+    input: number;
+    output: number;
+    cached?: number;
+    reasoning?: number;
+    costUsd?: number;
+  };
+  error?: { name: string; message: string };
 }
 
 export interface SessionMessagesOpts {
@@ -148,7 +179,7 @@ export interface RuntimeClient {
   session: {
     create(opts: SessionCreateOpts): Promise<{ id: string; [k: string]: any }>;
     promptAsync(opts: SessionPromptOpts): Promise<{ error?: any; response?: any } | void>;
-    prompt(opts: SessionPromptOpts): Promise<{ parts: any[]; [k: string]: any }>;
+    prompt(opts: SessionPromptOpts): Promise<PromptResultEnvelope & { [k: string]: any }>;
     messages(opts: SessionMessagesOpts): Promise<{ data: any[]; nextCursor?: string }>;
     get(opts: { sessionID: string }): Promise<any>;
     delete(opts: { sessionID: string }): Promise<void>;
@@ -161,6 +192,19 @@ export interface RuntimeClient {
     children(opts: { sessionID: string }): Promise<any[]>;
     summarize(opts: SessionSummarizeOpts): Promise<any>;
     permissionReply?(sessionID: string, requestId: string, approved: boolean): Promise<boolean>;
+    /**
+     * 分叉为新会话：原会话不动，新会话携带截至 messageID（缺省=当前末尾）的历史。
+     * pi 实现经 SessionManager.createBranchedSession + 新 AgentSession。
+     */
+    fork?(opts: { sessionID: string; messageID?: string }): Promise<{ id: string }>;
+    /**
+     * 消息级回退。opencode：撤回该点之后的消息并回滚文件改动（可 unrevert 恢复）；
+     * pi：映射为 SessionManager.branch() 原地移动 leaf——不回滚文件、不可逆，
+     * 语义弱于 opencode，调用方不得假设文件回滚。
+     */
+    revert?(opts: { sessionID: string; messageID: string; partID?: string }): Promise<void>;
+    /** 撤销 revert（仅 opencode；pi 不实现——方法缺席即能力缺失） */
+    unrevert?(opts: { sessionID: string }): Promise<void>;
   };
   global: {
     event(): Promise<any>;
