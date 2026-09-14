@@ -724,6 +724,10 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   `before_provider_request` 注入小米 wire 格式（registry pendingMedia 队列，注入即清空）
 - Goal 预算面：`mafw_create_goal`/`mafw_set_goal` 接受 `budget.{maxTurns,maxCostUsd}` → request.json →
   policySnapshot（`core/goal-budget.ts` `mergeBudgetIntoSnapshot`，fail-open）→ BudgetGuard 硬停闭环
+- 桌面 ChatView fork/revert：ChatPane 经 `window.api.mafw.sessions.fork/revert/unrevert`（preload →
+  通用 IPC 派发 → SDK）接 session-ui `SessionTurn` actions 位；revert 内联确认 + 清 store 触发重拉
+  （MafwShell 空消息 effect 自动 loadSessionHistory）；fork 成功 toast + `onOpenForkedSession`
+  （openSessionTab）打开新 tab；unrevert 按 session.revert 态显示
 
 激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
