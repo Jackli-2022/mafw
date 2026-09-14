@@ -93,4 +93,26 @@ describe('normalizeOpencodeEvent', () => {
     });
     expect(viaInfo.sessionID).toBe('via-info');
   });
+
+  it('maps session.compacted to compaction end facet', () => {
+    const f = normalizeOpencodeEvent({
+      payload: { type: 'session.compacted', properties: { sessionID: 's1' } },
+    });
+    expect(f.compaction).toBe('end');
+    expect(f.sessionID).toBe('s1');
+  });
+
+  it('maps session.compacting to compaction start facet', () => {
+    const f = normalizeOpencodeEvent({
+      payload: { type: 'session.compacting', properties: { sessionID: 's1' } },
+    });
+    expect(f.compaction).toBe('start');
+  });
+
+  it('unrelated events have null compaction facet', () => {
+    const f = normalizeOpencodeEvent({
+      payload: { type: 'session.idle', properties: { sessionID: 's1' } },
+    });
+    expect(f.compaction).toBeNull();
+  });
 });

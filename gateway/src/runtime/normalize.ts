@@ -39,6 +39,8 @@ export interface EventFacets {
   chatError?: unknown;
   /** 全局广播形态（Mode A，桌面 renderer） */
   broadcast: 'idle' | 'error' | 'passthrough';
+  /** 会话压缩信号：'start'=压缩前（仅 pi 有），'end'=压缩完成；无事件恒 null */
+  compaction: 'start' | 'end' | null;
   /** 工具事件携带的 shell command（自更新调用者定位用） */
   toolCommand?: string;
 }
@@ -87,5 +89,8 @@ export function normalizeOpencodeEvent(evt: RawRuntimeEvent): EventFacets {
   const command = typeof toolArgs?.command === 'string' ? toolArgs.command : '';
   const toolCommand = command && type.includes('tool') ? command : undefined;
 
-  return { type, properties: props, sessionID, directory: evt?.directory, step, chatSignal, deltaText, chatError, broadcast, toolCommand };
+  const compaction: EventFacets['compaction'] =
+    type === 'session.compacting' ? 'start' : type === 'session.compacted' ? 'end' : null;
+
+  return { type, properties: props, sessionID, directory: evt?.directory, step, chatSignal, deltaText, chatError, broadcast, compaction, toolCommand };
 }
