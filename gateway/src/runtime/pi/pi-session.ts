@@ -151,10 +151,15 @@ export class PiSessionRegistry {
     this.lastUsed.delete(id);
   }
 
-  async permissionReply(sessionID: string, requestId: string, approved: boolean): Promise<boolean> {
+  async permissionReply(
+    sessionID: string,
+    requestId: string,
+    reply: 'once' | 'always' | 'reject' | boolean,
+    message?: string,
+  ): Promise<boolean> {
     const bridge = this.approvalBridges.get(sessionID);
     if (!bridge) return false;
-    return bridge.reply(requestId, approved);
+    return bridge.reply(requestId, reply as any, message);
   }
 
   async abort(id: string): Promise<void> {

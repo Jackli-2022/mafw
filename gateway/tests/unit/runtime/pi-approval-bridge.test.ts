@@ -53,4 +53,32 @@ describe('ApprovalBridge', () => {
     await expect(p1).resolves.toBe(true);
     await expect(p2).resolves.toBe(false);
   });
+
+  it('reply stores decision + message for always/reject', () => {
+    const p1 = bridge.request('req-8');
+    expect(bridge.reply('req-8', 'always')).toBe(true);
+    expect(bridge.lastDecision('req-8')).toEqual({ decision: 'always', message: undefined });
+
+    const p2 = bridge.request('req-9');
+    bridge.reply('req-9', 'reject', 'too risky');
+    expect(bridge.lastDecision('req-9')).toEqual({ decision: 'reject', message: 'too risky' });
+    expect(p1).resolves.toBe(true);
+    expect(p2).resolves.toBe(false);
+  });
+
+  it('bool-style reply normalizes to once/reject decisions', () => {
+    const p1 = bridge.request('req-10');
+    bridge.reply('req-10', true as any);
+    expect(bridge.lastDecision('req-10')?.decision).toBe('once');
+
+    const p2 = bridge.request('req-11');
+    bridge.reply('req-11', false as any);
+    expect(bridge.lastDecision('req-11')?.decision).toBe('reject');
+    expect(p1).resolves.toBe(true);
+    expect(p2).resolves.toBe(false);
+  });
+
+  it('lastDecision returns null for unknown id', () => {
+    expect(bridge.lastDecision('nobody')).toBeNull();
+  });
 });

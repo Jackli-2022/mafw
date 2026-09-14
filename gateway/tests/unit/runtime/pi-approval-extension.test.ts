@@ -86,4 +86,70 @@ describe('MafwApprovalExtension', () => {
     const result = await promise;
     expect(result).toEqual({ block: true, reason: 'rejected by user' });
   });
+
+  it('always decision pushes tool into policy.autoApprove (session-level allowlist)', async () => {
+    const policy = { autoApprove: ['read'], autoDeny: [] };
+    const customBridge = new ApprovalBridge();
+    const customExtension = createMafwApprovalExtension(
+      customBridge,
+      (event) => emittedEvents.push(event),
+      policy,
+    );
+    const customEmitter = { on: jest.fn() };
+    customExtension.on(customEmitter);
+    const handler = customEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
+
+    const promise = handler({ toolName: 'bash', input: { command: 'ls' } }, { sessionId: 'session-1' });
+    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    customBridge.reply(requestId, 'always');
+    const result = await promise;
+    expect(result).toBeUndefined();
+    expect(policy.autoApprove).toContain('bash');
+
+    // 第二次调用免审：不再 emit permission.asked
+    const before = emittedEvents.length;
+    await handler({ toolName: 'bash', input: { command: 'pwd' } }, { sessionId: 'session-1' });
+    expect(emittedEvents.length).toBe(before);
+    customBridge.dispose();
+  });
+
+  it('reject decision blocks with message as reason', async () => {
+    const customBridge = new ApprovalBridge();
+    const customExtension = createMafwApprovalExtension(
+      customBridge,
+      (event) => emittedEvents.push(event),
+      { autoApprove: [], autoDeny: [] },
+    );
+    const customEmitter = { on: jest.fn() };
+    customExtension.on(customEmitter);
+    const handler = customEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
+
+    const promise = handler({ toolName: 'bash', input: { command: 'rm -rf /' } }, { sessionId: 'session-1' });
+    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    customBridge.reply(requestId, 'reject', '危险命令');
+    const result = await promise;
+    expect(result).toEqual({ block: true, reason: '危险命令' });
+    customBridge.dispose();
+  });
+
+  it('permission.replied event carries decision field for non-once', async () => {
+    const customBridge = new ApprovalBridge();
+    const customExtension = createMafwApprovalExtension(
+      customBridge,
+      (event) => emittedEvents.push(event),
+      { autoApprove: [], autoDeny: [] },
+    );
+    const customEmitter = { on: jest.fn() };
+    customExtension.on(customEmitter);
+    const handler = customEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
+
+    const promise = handler({ toolName: 'bash', input: {} }, { sessionId: 'session-1' });
+    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    customBridge.reply(requestId, 'always');
+    await promise;
+    const replied = emittedEvents.find((e) => e.payload!.type === 'permission.replied');
+    expect(replied!.payload!.properties.approved).toBe(true);
+    expect(replied!.payload!.properties.decision).toBe('always');
+    customBridge.dispose();
+  });
 });

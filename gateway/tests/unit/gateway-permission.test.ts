@@ -36,7 +36,7 @@ describe('handlePermissionReply', () => {
 
     expect(res._status).toBe(200);
     expect(JSON.parse(res._body)).toEqual({ success: true });
-    expect(permissionReply).toHaveBeenCalledWith('session-1', 'req-1', true);
+    expect(permissionReply).toHaveBeenCalledWith('session-1', 'req-1', 'once');
   });
 
   it('should return 404 when permissionReply returns false', async () => {

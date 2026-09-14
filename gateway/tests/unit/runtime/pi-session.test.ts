@@ -101,7 +101,7 @@ describe('approval integration', () => {
     const requestPromise = bridge!.request('req-1');
     const result = await registry.permissionReply(id, 'req-1', true);
 
-    expect(replySpy).toHaveBeenCalledWith('req-1', true);
+    expect(replySpy).toHaveBeenCalledWith('req-1', true, undefined);
     expect(result).toBe(true);
     expect(await requestPromise).toBe(true);
   });

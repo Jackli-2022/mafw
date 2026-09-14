@@ -184,9 +184,9 @@ describe('permissionReply', () => {
     const registry = (rt as any).registry;
     const replySpy = jest.spyOn(registry, 'permissionReply');
 
-    await rt.session.permissionReply!(id, 'req-1', true);
+    await rt.session.permissionReply!(id, 'req-1', true as any);
 
-    expect(replySpy).toHaveBeenCalledWith(id, 'req-1', true);
+    expect(replySpy).toHaveBeenCalledWith(id, 'req-1', true, undefined);
   });
 });
 

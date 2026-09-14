@@ -48,6 +48,9 @@ export function createMafwApprovalExtension(
         });
 
         const approved = await bridge.request(requestId);
+        const record = bridge.lastDecision(requestId);
+        const decision = record?.decision ?? (approved ? 'once' : 'reject');
+        const message = record?.message;
 
         emitEvent({
           payload: {
@@ -56,12 +59,19 @@ export function createMafwApprovalExtension(
               sessionID,
               requestId,
               approved,
+              ...(decision !== 'once' ? { decision, ...(message ? { message } : {}) } : {}),
             },
           },
         });
 
+        if (decision === 'always') {
+          // session 级动态 allowlist：policy 是构造时共享引用，后续 tool_call 即时免审
+          if (!policy.autoApprove.includes(toolName)) policy.autoApprove.push(toolName);
+          return;
+        }
+
         if (!approved) {
-          return { block: true, reason: 'rejected by user' };
+          return { block: true, reason: message || 'rejected by user' };
         }
       });
     },
