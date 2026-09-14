@@ -2,6 +2,7 @@ import { MafwClient } from "@mafw/sdk"
 import { BrowserWindow, Notification, app, ipcMain } from "electron"
 import type { IpcMainInvokeEvent } from "electron"
 import { join } from "path"
+import { readdir } from "node:fs/promises"
 import {
   getGatewayStatus,
   getGatewayPort,
@@ -10,6 +11,7 @@ import {
   stopGateway,
 } from "./mafw-sidecar"
 import { getLastFocusedWindow, trayIconPath } from "./windows"
+import { walkProjectFiles } from "./file-listing"
 import { UiPluginManager } from "./ui-plugins"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
@@ -82,6 +84,31 @@ export function registerMafwIpcHandlers() {
       return true
     } catch {
       return false
+    }
+  })
+
+  // Project file listing for the @file mention picker. 30s cache per root.
+  let fileListCache: { at: number; root: string; files: string[] } | null = null
+  ipcMain.handle("mafw-list-files", async () => {
+    try {
+      if (!mafwClient) return []
+      const project = await mafwClient.project.current()
+      const root = project?.worktree
+      if (!root) return []
+      if (fileListCache && fileListCache.root === root && Date.now() - fileListCache.at < 30_000) {
+        return fileListCache.files
+      }
+      const io = async (dir: string) => {
+        const dirents = await readdir(dir, { withFileTypes: true })
+        return dirents.map(d => ({ name: d.name, isDirectory: () => d.isDirectory() }))
+      }
+      const files = await walkProjectFiles(root, io)
+      fileListCache = { at: Date.now(), root, files }
+      writeLog("utility", "mafw-list-files ok", { root, count: files.length })
+      return files
+    } catch (err) {
+      writeLog("utility", "mafw-list-files failed", { err: String(err) }, "warn")
+      return []
     }
   })
 

@@ -45,6 +45,10 @@ export function createMafwApi(): MafwAPI {
       },
     },
 
+    files: {
+      list: () => ipcRenderer.invoke("mafw-list-files") as Promise<string[]>,
+    },
+
     sessions: {
       list: (projectID?) => invoke("session", "list", projectID ? { query: { projectID } } : {}),
       create: (opts?) => invoke("session", "create", opts || {}),

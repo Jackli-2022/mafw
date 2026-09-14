@@ -20,6 +20,10 @@ export type MafwAPI = {
     onStateChange: (cb: (status: GatewayStatus) => void) => () => void
   }
 
+  files: {
+    list: () => Promise<string[]>
+  }
+
   sessions: {
     list: (projectID?: string) => Promise<Session[]>
     create: (opts?: { directory?: string; metadata?: Record<string, unknown> }) => Promise<Session>
