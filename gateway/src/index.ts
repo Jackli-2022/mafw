@@ -73,6 +73,7 @@ import {
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent } from './runtime/normalize';
+import { BudgetGuard } from './core/budget-guard';
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
@@ -226,6 +227,7 @@ class MafwScheduler {
     return new ReflectCursor(this.getGatewayDb());
   }
   private pipelineRunning = false; // action-level in-flight guard (cron + manual triggers)
+  private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
 
   activeGoals = new Map<string, StateFile>();
   registeredProjects = new Map<string, RegisteredProject>();
@@ -923,6 +925,16 @@ class MafwScheduler {
       }
     }
 
+    // BudgetGuard: goal-session turn/cost hard stop (turnBudgetApi-lacking
+    // runtimes). Guard auto-detonates once → detach.
+    if (f.step && sessionID) {
+      const guard = this.budgetGuards.get(sessionID);
+      if (guard) {
+        guard.onStep();
+        if (guard.triggered) this.budgetGuards.delete(sessionID);
+      }
+    }
+
     // Per-session SSE (Mode B) forwarding
     if (sessionID && this.chatSessions.hasListeners(sessionID)) {
       if (f.chatSignal === 'delta' && f.deltaText) {
@@ -1364,6 +1376,34 @@ class MafwScheduler {
     }
   }
 
+  /** Goal 会话预算挂载：读 state/<goalId>.json 的 policySnapshot.{maxTurns,maxCostUsd}；
+   *  两者都缺或 runtime 原生支持 turnBudgetApi 时不挂。 */
+  private attachBudgetGuardForGoal(goalId: string, sessionID: string, mafwDir: string): void {
+    try {
+      if (!this.opencodeClient || this.runtimeCaps.turnBudgetApi) return;
+      const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
+      if (!fs.existsSync(statePath)) return;
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+      const maxTurns = state?.policySnapshot?.maxTurns;
+      const maxCostUsd = state?.policySnapshot?.maxCostUsd;
+      if (typeof maxTurns !== 'number' && typeof maxCostUsd !== 'number') return;
+      this.budgetGuards.set(sessionID, new BudgetGuard({
+        sessionID,
+        maxTurns,
+        maxCostUsd,
+        getCostUsd: (sid) => this.trajectoryStore?.getSessionTokenSummary(sid).totalCost ?? 0,
+        abort: (sid) => this.opencodeClient!.session.abort({ sessionID: sid }),
+        notify: async (sid, text) => {
+          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], noReply: true });
+        },
+        log: (msg) => log.info(msg),
+      }));
+      log.info(`[BudgetGuard] attached for goal ${goalId} session=${sessionID} (maxTurns=${maxTurns ?? '-'} maxCostUsd=${maxCostUsd ?? '-'})`);
+    } catch (err: any) {
+      log.warn(`[BudgetGuard] attach failed for ${sessionID} (non-fatal): ${err.message}`);
+    }
+  }
+
   private registerMemoryPipelineActions(): void {
     actionRegistry.set('memory:turnCompress', async () => {
       await this.runPipelineGuarded('memory:turnCompress', async () => {
@@ -1589,6 +1629,7 @@ class MafwScheduler {
     this.running = false;
     this.kernels?.disposeAll();
     this.milestonePush?.dispose();
+    this.budgetGuards.clear();
     // Give an in-flight pipeline a short window to settle before closing the
     // T1 store (closing mid-run would leave turns un-deleted → duplicate
     // extraction on next start), then dispose workers best-effort.
@@ -5528,6 +5569,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         phase: info.phase,
         loop: info.loop,
       });
+      this.attachBudgetGuardForGoal(info.goalId, info.sessionId, mafwDir);
     };
     return {
       plan: async (s: any) => planNode(s, {
