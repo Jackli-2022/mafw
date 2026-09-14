@@ -689,6 +689,20 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   `mafw-compaction` extension 上报 `session_before_compact`/`session_compact`（翻译为
   `session.compacting`/`session.compacted`）。gateway 收到后对该会话触发 turnCompress flush
   （`TurnPipeline.runSession`，fail-open，与 hourly cron 互斥）
+- `permissionReply(sessionID, requestId, 'once'|'always'|'reject', message?)` — 三值签名（P1 破坏性变更，
+  原 boolean approved）；pi `'always'` = session 级动态 allowlist（运行时 push `policy.autoApprove`，
+  不落盘）；`/api/sessions/:id/permissions/:requestId` body 接受 `{reply, message?}` 兼容旧 `{approved}`
+- `questionApi?: boolean` + `session.question.{list,reply,reject}` — 原生 question 通道（opencode v2 SDK
+  `session.question.*` 直连；pi 无 question API 不实现）；`/api/questions*` 能力门按
+  `questionApi ?? nativeApprovals` 向后兼容
+- `SessionPromptOpts.delivery/expectReply` — busy 投递时机（pi 映射 `streamingBehavior`；opencode 忽略）
+  与免回复（opencode `noReply` 等价；**pi 无原生等价——全路径降级为普通消息 + 每会话 warn 一次**）；
+  `noReply` 已 @deprecated（gateway 内部消费方已迁移，字段保留一个清理周期）
+- `CompletionRequest.responseFormat` — json_schema 约束输出（opencode 直连传输映射 OpenAI
+  `response_format.json_schema`；pi 无顶层支持，fail-open 忽略）
+- session 媒体附件：file part（image/video/audio）一等载体语义（契约 `SessionPromptOpts.parts` 注释）；
+  pi image 经 `partsToPromptInput` → ImageContent（既有）；pi video/audio 经 `mafw-media` extension 在
+  `before_provider_request` 注入小米 wire 格式（registry pendingMedia 队列，注入即清空）
 
 激活插件：`config.yaml` 的 `runtime.plugin: <name>`（或 `MAFW_RUNTIME_PLUGIN`）；
 未配置/加载失败一律回退内置 opencode。可观测：`GET /api/runtime` 返回当前
