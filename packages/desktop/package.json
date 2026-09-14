@@ -6,8 +6,9 @@
     "license":  "MIT",
     "homepage":  "https://opencode.ai",
     "author":  {
-                   "name":  "MAFW"
-               },
+                    "name":  "MAFW",
+                    "email":  "Jackli-2022@users.noreply.github.com"
+                },
     "scripts":  {
                     "typecheck":  "tsgo -b",
                     "predev":  "bun ./scripts/predev.ts",
