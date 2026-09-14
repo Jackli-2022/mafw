@@ -2027,6 +2027,7 @@ export function MafwShell() {
                           onTaskHoverLeave={scheduleTaskClose}
                           onFocus={() => { setShowConfig(false); setActiveTab("chat"); setActiveSessionId(leaf.sid) }}
                           onClosePane={() => closePane(leaf.sid)}
+                          onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
                           onCreateSession={createSession}
                           onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
                           onRegisterAnchor={(s, fn) => { anchorRegistry[s] = fn }}

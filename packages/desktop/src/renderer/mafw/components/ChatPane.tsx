@@ -100,6 +100,7 @@ export type ChatPaneProps = {
   onTaskHoverLeave: () => void
   onFocus: () => void
   onClosePane: () => void
+  onOpenForkedSession?: (sid: string) => void
   onCreateSession: () => Promise<string | null>
   onSetUserMsgId: (sid: string, userMsgId: string) => void
   onRegisterAnchor: (sid: string, fn: () => void) => void
@@ -142,6 +143,66 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [ttsStyle, setTtsStyle] = createSignal("")
   const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
+  const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
+  const [canUnrevert, setCanUnrevert] = createSignal(false)
+
+  // 会话 reverted 态探测（session info 的 revert 字段，opencode 专属；pi 无）
+  onMount(async () => {
+    if (!sidProp()) return
+    try {
+      const info: any = await window.api.mafw.sessions.get(sidProp())
+      setCanUnrevert(!!info?.revert)
+    } catch { /* fail-open */ }
+  })
+
+  const refreshAfterRevert = () => {
+    props.setStore(prev => ({
+      ...prev,
+      message: { ...prev.message, [sidProp()]: [] },
+      part: { ...prev.part, [sidProp()]: [] },
+    }))
+    props.setPageState(sidProp(), { cursor: null, hasMore: true, loading: false })
+  }
+
+  const userActions = () => ({
+    fork: async ({ sessionID, messageID }: { sessionID: string; messageID: string }) => {
+      try {
+        const out: any = await window.api.mafw.sessions.fork(sessionID, messageID)
+        showToastV2({ title: "已分叉", description: `新会话 ${out?.session?.id ?? ""} 已创建`, variant: "success" } as any)
+        if (out?.session?.id) props.onOpenForkedSession?.(out.session.id)
+      } catch (e: any) {
+        showToastV2({ title: "分叉失败", description: String(e?.message || e), variant: "error" } as any)
+      }
+    },
+    revert: async ({ messageID }: { sessionID: string; messageID: string }) => {
+      setRevertConfirm({ messageID })
+    },
+  })
+
+  const doRevert = async () => {
+    const target = revertConfirm()
+    if (!target) return
+    setRevertConfirm(null)
+    try {
+      await window.api.mafw.sessions.revert(sidProp(), target.messageID)
+      setCanUnrevert(true)
+      refreshAfterRevert()
+      showToastV2({ title: "已回滚", description: "该消息之后的历史已撤回", variant: "success" } as any)
+    } catch (e: any) {
+      showToastV2({ title: "回滚失败", description: String(e?.message || e), variant: "error" } as any)
+    }
+  }
+
+  const doUnrevert = async () => {
+    try {
+      await window.api.mafw.sessions.unrevert(sidProp())
+      setCanUnrevert(false)
+      refreshAfterRevert()
+      showToastV2({ title: "已撤销回滚", variant: "success" } as any)
+    } catch (e: any) {
+      showToastV2({ title: "撤销失败", description: String(e?.message || e), variant: "error" } as any)
+    }
+  }
   const [subagents, setSubagents] = createSignal<{ id: string; title: string }[]>([])
   const [cmdItems, setCmdItems] = createSignal<CommandItem[]>([])
   const [cmdLoading, setCmdLoading] = createSignal(false)
@@ -1761,6 +1822,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <SessionTurn
                       sessionID={sidProp()}
                       messageID={msg.id}
+                      actions={userActions()}
                       classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
                     />
                   </Show>
@@ -2098,6 +2160,30 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <div class="mafw-picker-hint">点击选择 · ▶ 试听 · Esc 关闭</div>
           </div>
         </PopoverShell>
+        {/* Revert confirm */}
+        <Show when={revertConfirm()}>
+          <div class="mafw-confirm-backdrop">
+            <div class="mafw-confirm">
+              <div class="mafw-confirm-title">回滚到这条消息之前？</div>
+              <div class="mafw-confirm-text">该消息之后的历史将撤回，且文件改动回滚到该时点（opencode runtime 语义）。此操作可通过"撤销回滚"恢复对话内容。</div>
+              <div class="mafw-confirm-actions">
+                <ButtonV2 variant="ghost" size="small" onClick={() => setRevertConfirm(null)}>取消</ButtonV2>
+                <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" onClick={doRevert}>确认回滚</ButtonV2>
+              </div>
+            </div>
+          </div>
+        </Show>
+        {/* Unrevert entry (session in reverted state) */}
+        <Show when={canUnrevert() && !revertConfirm()}>
+          <div class="mafw-confirm-backdrop" style={{ "pointer-events": "none", background: "transparent", position: "relative" }}>
+            <div class="mafw-confirm" style={{ position: "relative", "max-width": "420px", margin: "0 auto" }}>
+              <div class="mafw-confirm-text">会话处于回滚状态。</div>
+              <div class="mafw-confirm-actions">
+                <ButtonV2 variant="outline" size="small" onClick={doUnrevert}>撤销回滚（unrevert）</ButtonV2>
+              </div>
+            </div>
+          </div>
+        </Show>
         {/* Switch-agent confirm (running) */}
         <Show when={switchConfirm()}>
           <div class="mafw-confirm-backdrop">
