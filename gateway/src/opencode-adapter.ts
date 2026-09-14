@@ -79,7 +79,29 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
           system: opts.system,
           noReply: opts.noReply,
         });
-        return unwrap(result);
+        const data = unwrap<any>(result);
+        const info = data?.info;
+        const t = info?.tokens;
+        return {
+          ...data,
+          parts: data?.parts ?? [],
+          finish: info?.finish,
+          usage: t
+            ? {
+                input: t.input ?? 0,
+                output: t.output ?? 0,
+                cached: t.cache?.read ?? 0,
+                reasoning: t.reasoning ?? 0,
+                costUsd: typeof info?.cost === 'number' ? info.cost : undefined,
+              }
+            : undefined,
+          error: info?.error
+            ? {
+                name: info.error.name ?? info.error.type ?? 'Error',
+                message: info.error.data?.message ?? info.error.message ?? String(info.error),
+              }
+            : undefined,
+        };
       },
 
       async messages(opts: SessionMessagesOpts) {
@@ -154,6 +176,35 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
           modelID: opts.modelID,
         });
         return unwrap(result);
+      },
+
+      async fork(opts: { sessionID: string; messageID?: string }) {
+        const result = await client.session.fork({
+          sessionID: opts.sessionID,
+          messageID: opts.messageID,
+        });
+        const session = unwrap<any>(result);
+        return { id: session?.id };
+      },
+
+      async revert(opts: { sessionID: string; messageID: string; partID?: string }) {
+        const result = await client.session.revert({
+          sessionID: opts.sessionID,
+          messageID: opts.messageID,
+          partID: opts.partID,
+        });
+        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+          throw new Error(String((result as any).error));
+        }
+      },
+
+      async unrevert(opts: { sessionID: string }) {
+        const result = await client.session.unrevert({
+          sessionID: opts.sessionID,
+        });
+        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+          throw new Error(String((result as any).error));
+        }
       },
     },
 

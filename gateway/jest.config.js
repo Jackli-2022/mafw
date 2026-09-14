@@ -17,5 +17,8 @@ module.exports = {
   ],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    // @opencode-ai/sdk ships the /v2 subpath as ESM-only ("import" condition);
+    // map to a CJS-friendly stub so jest can resolve it (tests jest.mock it).
+    '^@opencode-ai/sdk/v2$': '<rootDir>/tests/mocks/opencode-sdk-v2-stub.ts',
   },
 };
