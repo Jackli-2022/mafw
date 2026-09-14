@@ -24,6 +24,11 @@ const DEFINITIONS: ToolDefinition[] = [
         boundaries: { type: "array", items: { type: "string" }, description: "Boundary constraints" },
         priority: { type: "string", enum: ["low", "medium", "high", "critical"], description: "Goal priority", default: "medium" },
         maxLoops: { type: "number", description: "Maximum loop iterations", default: 5 },
+        budget: {
+          type: "object",
+          description: "Turn/cost budget for the goal session (BudgetGuard hard-stop)",
+          properties: { maxTurns: { type: "number" }, maxCostUsd: { type: "number" } },
+        },
       },
       required: ["goalId", "title", "charter"],
     },
@@ -239,6 +244,11 @@ const DEFINITIONS: ToolDefinition[] = [
         boundaries: { type: "array", items: { type: "string" } },
         priority: { type: "string", enum: ["low", "medium", "high", "critical"], default: "medium" },
         maxLoops: { type: "number", default: 5 },
+        budget: {
+          type: "object",
+          description: "Turn/cost budget for the goal session (BudgetGuard hard-stop)",
+          properties: { maxTurns: { type: "number" }, maxCostUsd: { type: "number" } },
+        },
       },
       required: ["goalId", "title", "charter"],
     },

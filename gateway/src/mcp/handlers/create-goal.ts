@@ -15,6 +15,8 @@ export const handleCreateGoal: ToolHandler = async (args) => {
     const boundaries = (args.boundaries as string[]) || [];
     const priority = (args.priority as string) || "medium";
     const maxLoops = (args.maxLoops as number) || 5;
+    const budget = (args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined);
+    const hasBudget = !!budget && (typeof budget.maxTurns === 'number' || typeof budget.maxCostUsd === 'number');
 
     const mafwDir = path.join(projectDir, ".mafw");
     const goalsDir = path.join(mafwDir, "goals");
@@ -35,6 +37,7 @@ export const handleCreateGoal: ToolHandler = async (args) => {
       source, projectDir, mafwDir, goalCharter: charterPath,
       metrics, boundaries, priority, maxLoops, parallel: false,
       degradeOnLoop: Math.ceil(maxLoops * 0.6),
+      ...(hasBudget ? { budget } : {}),
     };
 
     const requestPath = path.join(requestsDir, `${goalId}.json`);

@@ -13,6 +13,8 @@ export const handleManagerSetGoal: ToolHandler = async (args, services) => {
     const boundaries = (args.boundaries as string[]) || [];
     const priority = (args.priority as string) || 'medium';
     const maxLoops = (args.maxLoops as number) || 5;
+    const budget = (args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined);
+    const hasBudget = !!budget && (typeof budget.maxTurns === 'number' || typeof budget.maxCostUsd === 'number');
 
     const mafwDir = services.mafwDir ?? (process.env.MAFW_PROJECT_DIR ? path.join(process.env.MAFW_PROJECT_DIR, '.mafw') : undefined) ?? path.join(process.cwd(), '.mafw');
     const projectDir = path.resolve(mafwDir, '..');
@@ -33,6 +35,7 @@ export const handleManagerSetGoal: ToolHandler = async (args, services) => {
       createdAt: new Date().toISOString(), confirmedAt: new Date().toISOString(),
       source, projectDir, mafwDir, goalCharter: charterPath,
       metrics, boundaries, priority, maxLoops, parallel: false,
+      ...(hasBudget ? { budget } : {}),
     };
     fs.writeFileSync(path.join(requestsDir, `${goalId}.json`), JSON.stringify(request, null, 2), 'utf-8');
 
