@@ -104,4 +104,33 @@ describe('httpComplete', () => {
       {},
     )).rejects.toThrow('no endpoint or API key');
   });
+
+  it('maps responseFormat to OpenAI response_format json_schema', async () => {
+    const calls: Array<{ init: any }> = [];
+    const fetchFn = (async (_url: string, init?: any) => { calls.push({ init }); return okBody(); }) as any;
+    await httpComplete(
+      {
+        model: { providerID: 'alibaba-cn', modelID: 'm' },
+        user: [{ type: 'text', text: 'q' }],
+        responseFormat: { type: 'json_schema', name: 'verdict', schema: { type: 'object' }, strict: true },
+      },
+      { fetchFn, apiKey: 'sk-test' },
+    );
+    const body = JSON.parse(calls[0].init.body);
+    expect(body.response_format).toEqual({
+      type: 'json_schema',
+      json_schema: { name: 'verdict', schema: { type: 'object' }, strict: true },
+    });
+  });
+
+  it('omits response_format when responseFormat absent', async () => {
+    const calls: Array<{ init: any }> = [];
+    const fetchFn = (async (_url: string, init?: any) => { calls.push({ init }); return okBody(); }) as any;
+    await httpComplete(
+      { model: { providerID: 'alibaba-cn', modelID: 'm' }, user: [{ type: 'text', text: 'q' }] },
+      { fetchFn, apiKey: 'sk-test' },
+    );
+    const body = JSON.parse(calls[0].init.body);
+    expect(body.response_format).toBeUndefined();
+  });
 });

@@ -69,6 +69,18 @@ export async function httpComplete(req: CompletionRequest, deps: HttpCompletionD
         messages,
         temperature: req.temperature ?? 0,
         max_tokens: req.maxTokens ?? 4096,
+        ...(req.responseFormat
+          ? {
+              response_format: {
+                type: 'json_schema',
+                json_schema: {
+                  name: req.responseFormat.name,
+                  schema: req.responseFormat.schema,
+                  ...(req.responseFormat.strict !== undefined ? { strict: req.responseFormat.strict } : {}),
+                },
+              },
+            }
+          : {}),
       }),
     }),
     new Promise<never>((_, reject) => {
