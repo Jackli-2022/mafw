@@ -24,14 +24,18 @@ export async function handlePermissionReply(
   }
 
   try {
-    const body = await readBody(req);
-    const { approved } = JSON.parse(body);
-    if (typeof approved !== 'boolean') {
+    const body = JSON.parse(await readBody(req) || '{}');
+    let reply: 'once' | 'always' | 'reject' | undefined = body.reply;
+    let message: string | undefined = body.message;
+    if (typeof body.approved === 'boolean' && !reply) {
+      reply = body.approved ? 'once' : 'reject'; // legacy bool callers
+    }
+    if (reply !== 'once' && reply !== 'always' && reply !== 'reject') {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'approved must be a boolean' }));
+      res.end(JSON.stringify({ error: "reply must be 'once'|'always'|'reject'" }));
       return;
     }
-    const result = await runtime.session.permissionReply!(sessionID, requestId, approved ? 'once' : 'reject');
+    const result = await runtime.session.permissionReply!(sessionID, requestId, reply, message);
 
     if (!result) {
       res.writeHead(404, { 'Content-Type': 'application/json' });

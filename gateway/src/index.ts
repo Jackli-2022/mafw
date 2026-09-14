@@ -979,6 +979,14 @@ class MafwScheduler {
     return true;
   }
 
+  /** Question 通道能力门：优先 questionApi，向后兼容仅声明 nativeApprovals 的 runtime。 */
+  private capGuardQuestion(res: http.ServerResponse): boolean {
+    if (this.runtimeCaps.questionApi ?? this.runtimeCaps.nativeApprovals) return false;
+    res.writeHead(503);
+    res.end(JSON.stringify({ error: `capability 'questionApi' not available on runtime '${this.runtimeName}'` }));
+    return true;
+  }
+
   /**
    * Runtime 选择：config.runtime.plugin 指定 ~/.mafw/runtime-plugins/ 中的插件；
    * 未配置/找不到/加载失败一律回退内置 opencode（fail-open，行为与现状一致）。
@@ -3751,7 +3759,7 @@ class MafwScheduler {
 
         // GET /api/questions 鈹€ list pending questions
         if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
-          if (this.capGuard(res, 'nativeApprovals')) return;
+          if (this.capGuardQuestion(res)) return;
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
             const r = await fetch(`${this.serveUrl}/question?directory=${encodeURIComponent(dir)}`, {
@@ -3769,7 +3777,7 @@ class MafwScheduler {
         // POST /api/questions/{id}/reply 鈹€ { answers: string[][] }
         const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
         if (qReplyMatch && req.method === 'POST') {
-          if (this.capGuard(res, 'nativeApprovals')) return;
+          if (this.capGuardQuestion(res)) return;
           try {
             const body = JSON.parse(await readBody(req));
             const r = await this.proxyNativeWorkspaces(`/question/${qReplyMatch[1]}/reply`, 'POST', { answers: body.answers });
@@ -3790,7 +3798,7 @@ class MafwScheduler {
         // POST /api/questions/{id}/reject
         const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
         if (qRejectMatch && req.method === 'POST') {
-          if (this.capGuard(res, 'nativeApprovals')) return;
+          if (this.capGuardQuestion(res)) return;
           try {
             const r = await this.proxyNativeWorkspaces(`/question/${qRejectMatch[1]}/reject`, 'POST');
             if (!r.ok) {

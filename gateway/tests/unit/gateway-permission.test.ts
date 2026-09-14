@@ -36,7 +36,7 @@ describe('handlePermissionReply', () => {
 
     expect(res._status).toBe(200);
     expect(JSON.parse(res._body)).toEqual({ success: true });
-    expect(permissionReply).toHaveBeenCalledWith('session-1', 'req-1', 'once');
+    expect(permissionReply).toHaveBeenCalledWith('session-1', 'req-1', 'once', undefined);
   });
 
   it('should return 404 when permissionReply returns false', async () => {
@@ -81,7 +81,7 @@ describe('handlePermissionReply', () => {
     await handlePermissionReply(runtime, req, res, 'session-1', 'req-1');
 
     expect(res._status).toBe(400);
-    expect(JSON.parse(res._body)).toEqual({ error: 'approved must be a boolean' });
+    expect(JSON.parse(res._body)).toEqual({ error: "reply must be 'once'|'always'|'reject'" });
     expect(permissionReply).not.toHaveBeenCalled();
   });
 
