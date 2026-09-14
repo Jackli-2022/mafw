@@ -222,10 +222,11 @@ export interface RuntimeClient {
       reply: 'once' | 'always' | 'reject',
       message?: string,
     ): Promise<boolean>;
-    /** 原生 question 通道（questionApi 能力）。opencode 实现；pi 无 question API 不实现。 */
+    /** 原生 question 通道（questionApi 能力）。opencode 实现；pi 无 question API 不实现。
+     *  answers 为 string[][]——每个问题一组答案选项（与 opencode QuestionAnswer 对齐）。 */
     question?: {
       list(opts?: { directory?: string }): Promise<any[]>;
-      reply(opts: { requestID: string; answers: Array<Record<string, unknown>> }): Promise<void>;
+      reply(opts: { requestID: string; answers: string[][] }): Promise<void>;
       reject(opts: { requestID: string }): Promise<void>;
     };
     /**

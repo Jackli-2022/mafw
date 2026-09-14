@@ -12,6 +12,15 @@ const mockClient = {
       },
       parts: [{ type: 'text', text: 'done' }],
     })),
+    promptAsync: jest.fn(async () => ({})),
+    permission: {
+      reply: jest.fn(async () => ({})),
+    },
+    question: {
+      list: jest.fn(async () => ({ items: [{ id: 'q1' }] })),
+      reply: jest.fn(async () => ({})),
+      reject: jest.fn(async () => ({})),
+    },
   },
 };
 
@@ -53,5 +62,24 @@ describe('opencode adapter branch + envelope', () => {
     const res: any = await client.session.prompt({ sessionID: 'ses_1', message: 'hi' });
     expect(res.error).toEqual({ name: 'MessageAbortedError', message: 'aborted' });
     expect(res.usage).toBeUndefined();
+  });
+
+  it('permissionReply maps tri-state to SDK', async () => {
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    const ok = await client.session.permissionReply!('ses_1', 'req_1', 'always', 'ok for session');
+    expect(mockClient.session.permission.reply).toHaveBeenCalledWith({
+      sessionID: 'ses_1', requestID: 'req_1', reply: 'always', message: 'ok for session',
+    });
+    expect(ok).toBe(true);
+  });
+
+  it('question list/reply/reject pass through', async () => {
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    const items = await client.session.question!.list();
+    expect(items).toEqual([{ id: 'q1' }]);
+    await client.session.question!.reply({ requestID: 'q1', answers: [['a', 'b']] });
+    expect(mockClient.session.question.reply).toHaveBeenCalledWith({ requestID: 'q1', answers: [['a', 'b']] });
+    await client.session.question!.reject({ requestID: 'q1' });
+    expect(mockClient.session.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
   });
 });

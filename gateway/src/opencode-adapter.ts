@@ -206,6 +206,49 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
           throw new Error(String((result as any).error));
         }
       },
+
+      async permissionReply(
+        sessionID: string,
+        requestId: string,
+        reply: 'once' | 'always' | 'reject',
+        message?: string,
+      ): Promise<boolean> {
+        const result = await (client.session as any).permission.reply({
+          sessionID,
+          requestID: requestId,
+          reply,
+          ...(message ? { message } : {}),
+        });
+        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+          throw new Error(String((result as any).error));
+        }
+        return true;
+      },
+
+      question: {
+        async list(opts?: { directory?: string }) {
+          const result = await (client.session as any).question.list(
+            opts?.directory ? { directory: opts.directory } : undefined,
+          );
+          const data = unwrap<any>(result);
+          return Array.isArray(data) ? data : data?.items ?? [];
+        },
+        async reply(opts: { requestID: string; answers: string[][] }) {
+          const result = await (client.session as any).question.reply({
+            requestID: opts.requestID,
+            answers: opts.answers,
+          });
+          if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+            throw new Error(String((result as any).error));
+          }
+        },
+        async reject(opts: { requestID: string }) {
+          const result = await (client.session as any).question.reject({ requestID: opts.requestID });
+          if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
+            throw new Error(String((result as any).error));
+          }
+        },
+      },
     },
 
     global: {
