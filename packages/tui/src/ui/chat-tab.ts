@@ -70,6 +70,12 @@ export class ChatTab extends VStack implements Focusable {
   get focused() { return this._focused }
   set focused(v: boolean) { this._focused = v; this.editor.focused = v } // IME 传播
 
+  /** 焦点组件输入路由：TUI 只调 focusedComponent.handleInput，VStack 无此方法——
+   *  必须显式转发给 Editor，否则按键被静默丢弃（"tui 没法输入"根因之二）。 */
+  handleInput(data: string): void {
+    this.editor.handleInput(data)
+  }
+
   constructor(deps: ChatTabDeps) {
     super([])
     this.deps = deps

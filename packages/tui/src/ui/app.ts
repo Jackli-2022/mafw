@@ -403,5 +403,9 @@ export async function runApp(opts: AppOptions): Promise<void> {
     return undefined
   })
 
+  // 初始焦点：启动即 applyTab（聚焦 chat 编辑器链）。
+  // pi-tui 无自动聚焦——focusedComponent 初始为 null，按键会无处去（"tui 没法输入"根因之一）。
+  applyTab()
+
   tui.start()
 }
