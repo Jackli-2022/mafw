@@ -13,6 +13,8 @@ import { getStore, removeStoreFile } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowRegistry } from "./window-registry"
+import { windowCloseAction } from "./close-decision"
+import { isCloseToTrayEnabled } from "./tray-prefs"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -90,6 +92,10 @@ function iconsDir() {
 function iconPath() {
   const ext = process.platform === "win32" ? "ico" : "png"
   return join(iconsDir(), `icon.${ext}`)
+}
+
+export function trayIconPath() {
+  return join(iconsDir(), "icon.png")
 }
 
 function tone() {
@@ -234,6 +240,18 @@ function registerWindow(win: BrowserWindow, id: string) {
   registry.register(id, win)
 
   win.on("focus", () => registry.focused(id))
+  // Close-to-tray: hide instead of destroying while the app keeps running
+  // (the MAFW gateway daemon is independent and keeps working).
+  win.on("close", (event) => {
+    const action = windowCloseAction({
+      isQuitting: registry.isQuitting(),
+      closeToTray: isCloseToTrayEnabled(),
+    })
+    if (action === "hide-to-tray") {
+      event.preventDefault()
+      win.hide()
+    }
+  })
   // Windows never emits before-quit on OS shutdown/logoff, but each window
   // gets session-end before it closes; flag the quit so ids stay persisted.
   win.on("session-end", () => registry.setQuitting())
