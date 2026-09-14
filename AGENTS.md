@@ -254,6 +254,13 @@ onMount → gateway.info() 等 ready
 - turnToLines 保留（goal transcript overlay 复用）；状态栏 `◉ focus` 徽标
 - 测试 158（157 过/1 冒烟跳过）：blocks 10、transcript-search 5、chat-tab 块协调/scrollToTurn/显示设置 8、keymap Ctrl+O、registry/slash 面更新
 
+#### 5.9b.5 TUI 会话安全 P4（2026-09-14，交互重构收尾）
+
+- **破坏性命令确认**（`ui/confirm-overlay.ts`，Hermes 三选）：COMMAND_REGISTRY destructive 标记（new/compact/undo/redo）执行前弹 ConfirmOverlay——本次执行 / 本会话总是执行 / 取消（Enter/l/d/Esc）；inline skip `now|--yes|-y`（`handleSlashWithConfirm` 包装层，always 结果进 `sessionApproved` Set）
+- **/rename <标题>**：SDK session.rename；**/fork**：SDK session.fork → switchToSession 切到新会话；**/status**：`computeRecap`（`ui/session-recap.ts`）本地计算——轮次/工具调用计数/top 工具/最近交互快照，零 LLM 零缓存影响（Hermes 语义），recapLines 渲染 overlay
+- **`mafw tui --session <id>`**：cli.ts parseArgs 显式连接指定会话（fork 后跳转、调试用）；**入口守卫**——cli.ts 顶层 main() 改为 `import.meta.url === pathToFileURL(process.argv[1]).href` 才执行（测试 import 解析参数不再触发网络探测，曾导致测试套 180s 挂死）
+- 测试 167（166 过/1 冒烟条件跳过，MAFW_TUI_SMOKE=1 时真跑）
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）

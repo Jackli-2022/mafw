@@ -32,6 +32,12 @@ export interface SlashDeps {
   toggleFocus(): boolean
   /** /diff [staged|all]：git 变更视图；返回错误文本或 null。 */
   showDiff(scope: string): Promise<string | null>
+  /** /rename <标题>：会话命名；返回提示文本或 null。 */
+  rename(args: string): Promise<string | null>
+  /** /fork：分叉当前会话并切换；返回提示文本或 null。 */
+  fork(): Promise<string | null>
+  /** /status：本地会话回顾 overlay。 */
+  showStatusRecap(): void
 }
 
 
@@ -57,6 +63,13 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
         return deps.btw(args)
       case 'sessions':
         await deps.showSessionPicker()
+        return null
+      case 'rename':
+        return deps.rename(args)
+      case 'fork':
+        return deps.fork()
+      case 'status':
+        deps.showStatusRecap()
         return null
       case 'queue':
         await deps.showQueueManager()

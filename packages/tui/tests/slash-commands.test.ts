@@ -19,6 +19,9 @@ function harness(over: Partial<Record<string, any>> = {}) {
     cycleVerbosity: () => { calls.push('verbose'); return 'off' },
     toggleFocus: () => { calls.push('focus'); return true },
     showDiff: async (scope: string) => { calls.push(`diff:${scope}`); return null },
+    rename: async (args: string) => { calls.push(`rename:${args}`); return null },
+    fork: async () => { calls.push('fork'); return null },
+    showStatusRecap: () => { calls.push('status') },
     ...over,
   }
   return { calls, deps, handler: createSlashHandler(deps as any) }
@@ -69,6 +72,14 @@ test('verbose/focus/diff dispatch and return status messages', async () => {
   assert.deepEqual(h.calls, ['verbose', 'focus', 'diff:staged'])
 })
 
+test('rename/fork/status dispatch to their deps', async () => {
+  const h = harness()
+  await h.handler('rename', '我的实验')
+  await h.handler('fork', '')
+  await h.handler('status', '')
+  assert.deepEqual(h.calls, ['rename:我的实验', 'fork', 'status'])
+})
+
 test('compact/undo/redo surface dep error messages', async () => {
   const h = harness({ compact: async () => 'compact 失败: gateway down' })
   assert.equal(await h.handler('compact', ''), 'compact 失败: gateway down')
@@ -83,5 +94,5 @@ test('unknown command lists available commands', async () => {
 
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'diff', 'editor', 'focus', 'help', 'model', 'new', 'older', 'queue', 'redo', 'sessions', 'undo', 'verbose'])
+  assert.deepEqual(names, ['btw', 'compact', 'diff', 'editor', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'verbose'])
 })

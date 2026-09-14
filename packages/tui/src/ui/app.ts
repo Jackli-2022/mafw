@@ -17,8 +17,11 @@ import { ClickableSelectList } from './clickable-select-list.ts'
 import { dispatchKey, type KeyDispatchContext } from './keymap.ts'
 import { InteractionStateMachine } from './interaction-state.ts'
 import { helpLines } from './command-registry.ts'
+import { COMMAND_REGISTRY, resolveCommand } from './command-registry.ts'
 import { QueueOverlay } from './queue-overlay.ts'
 import { TranscriptSearchOverlay } from './transcript-search.ts'
+import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
+import { computeRecap, recapLines } from './session-recap.ts'
 import { colorDiffLine } from './message-blocks.ts'
 import { runShell } from '../shell-mode.ts'
 import { showPermissionOverlay } from './overlays.ts'
@@ -35,6 +38,8 @@ export type Retriever = 'bm25' | 'hybrid'
 export interface AppOptions {
   baseUrl: string
   retriever: Retriever
+  /** 启动即连接的会话（`mafw tui --session <id>`）；缺省 = 当前项目 manager session。 */
+  sessionID?: string
 }
 
 export async function runApp(opts: AppOptions): Promise<void> {
@@ -48,14 +53,15 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const statusBar = new StatusBar()
   const appStart = Date.now()
 
-  // manager session 定位（当前项目；拿不到时 chat tab 显示提示）
+  // manager session 定位（当前项目；拿不到时 chat tab 显示提示）。
+  // --session <id> 显式指定时直接连接该会话。
   const project = await client.project.current().catch(() => null)
   const projectDir = project?.worktree ?? null
   const projectID = project?.id ?? null
-  const mgr = projectDir
+  const mgr = !opts.sessionID && projectDir
     ? await client.manager.session(projectDir).catch(() => null)
     : null
-  const managerSessionID = mgr?.sessionId ?? null
+  const managerSessionID = opts.sessionID ?? mgr?.sessionId ?? null
 
   // ── 状态条（单一可变状态源）──
   const status: StatusState = {
@@ -93,7 +99,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
   })
   const chatTab = new ChatTab({
     tui, store: chatStore,
-    onSlash: (cmd, args) => slashHandler(cmd, args),
+    onSlash: (cmd, args) => handleSlashWithConfirm(cmd, args),
     onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }),
   })
 
@@ -339,6 +345,31 @@ export async function runApp(opts: AppOptions): Promise<void> {
     })
   }
 
+  // ── 破坏性命令确认（Hermes 三选 + inline skip）──
+  const sessionApproved = new Set<string>()
+  function showConfirm(title: string, description?: string): Promise<ConfirmAnswer> {
+    return new Promise((resolve) => {
+      const overlay = new ConfirmOverlay({
+        title, description,
+        onAnswer: (mode) => { handle.hide(); resolve(mode) },
+        requestRender: () => tui.requestRender(),
+      })
+      const handle = tui.showOverlay(overlay, { width: 52, maxHeight: 12, anchor: 'center' })
+    })
+  }
+
+  async function handleSlashWithConfirm(rawCmd: string, args: string): Promise<string | null> {
+    const name = resolveCommand(rawCmd)
+    const def = COMMAND_REGISTRY.find((c) => c.name === name)
+    const inlineSkip = /^(now|--yes|-y)(\s|$)/i.test(args.trim())
+    if (def?.destructive && !inlineSkip && !sessionApproved.has(def.name)) {
+      const answer = await showConfirm(`确认执行 /${def.name}？`, def.description)
+      if (answer === 'cancel') return '已取消'
+      if (answer === 'always') sessionApproved.add(def.name)
+    }
+    return slashHandler(rawCmd, inlineSkip ? args.trim().replace(/^(now|--yes|-y)\s+/i, '') : args)
+  }
+
   // ── slash 命令派发 ──
   const slashHandler = createSlashHandler({
     loadOlder: () => chatTab.loadOlder(),
@@ -363,6 +394,40 @@ export async function runApp(opts: AppOptions): Promise<void> {
     cycleVerbosity: () => { const v = chatTab.cycleVerbosity(); setStatus({ focus: chatTab.display.focus }); return v },
     toggleFocus: () => { const f = chatTab.toggleFocus(); setStatus({ focus: f }); return f },
     showDiff,
+    rename: async (args) => {
+      const title = args.trim()
+      if (!title) return '用法: /rename <标题>'
+      try {
+        await client.session.rename({ path: { id: chatStore.sessionID }, body: { title } })
+        return `已命名: ${title}`
+      } catch (e: any) {
+        return `rename 失败: ${String(e?.message ?? e).slice(0, 80)}`
+      }
+    },
+    fork: async () => {
+      try {
+        const r = await client.session.fork({ path: { id: chatStore.sessionID } })
+        const newId = (r as any)?.session?.id
+        if (!newId) return 'fork 失败: 无新会话返回'
+        await switchToSession(String(newId))
+        return `已分叉 → ${String(newId).slice(0, 16)}`
+      } catch (e: any) {
+        return `fork 失败: ${String(e?.message ?? e).slice(0, 80)}`
+      }
+    },
+    showStatusRecap: () => {
+      const body = recapLines(
+        computeRecap(chatStore.turns),
+        chatStore.sessionID,
+        status.project ?? '-',
+      ).join('\n')
+      const overlay = tui.showOverlay(new Text(body, 1, 1), { width: '70%', maxHeight: 20, anchor: 'center' })
+      const close = () => { off(); overlay.hide() }
+      const off = tui.addInputListener((data) => {
+        if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) { close(); return { consume: true } }
+        return undefined
+      })
+    },
     compact: async () => {
       const sid = chatStore.sessionID
       if (!sid || sid === 'none') return '当前无会话'

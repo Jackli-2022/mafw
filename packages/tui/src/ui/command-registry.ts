@@ -24,6 +24,9 @@ export interface CommandDef {
 export const COMMAND_REGISTRY: CommandDef[] = [
   { name: 'new', description: '新话题（rotate manager session）', category: '会话', aliases: ['clear'], destructive: true },
   { name: 'sessions', description: '会话列表/切换（/resume /switch）', category: '会话', aliases: ['resume', 'switch'], immediate: true },
+  { name: 'rename', description: '会话命名：/rename <标题>', category: '会话', immediate: true },
+  { name: 'fork', description: '分叉当前会话（历史副本）', category: '会话', immediate: true },
+  { name: 'status', description: '会话状态回顾（本地计算）', category: '会话', immediate: true },
   { name: 'queue', description: '排队消息管理（收回/丢弃）', category: '会话', aliases: ['q'], immediate: true },
   { name: 'btw', description: '支线问答：/btw <问题>', category: '会话' },
   { name: 'compact', description: '压缩当前会话上下文', category: '上下文', destructive: true, immediate: true },

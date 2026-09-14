@@ -15,7 +15,7 @@ test('registry has unique names, every command has description + category', () =
 
 test('current command surface is fully covered', () => {
   const names = COMMAND_REGISTRY.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'diff', 'editor', 'focus', 'help', 'model', 'new', 'older', 'queue', 'redo', 'sessions', 'undo', 'verbose'])
+  assert.deepEqual(names, ['btw', 'compact', 'diff', 'editor', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'verbose'])
 })
 
 test('resolveCommand resolves aliases and exact names; unknown → null', () => {
@@ -55,5 +55,5 @@ test('helpLines groups by category and covers every command', () => {
 
 test('immediate commands (busy 时不排队立即执行) are flagged', () => {
   const immediate = COMMAND_REGISTRY.filter((c) => c.immediate).map((c) => c.name).sort()
-  assert.deepEqual(immediate, ['compact', 'diff', 'editor', 'focus', 'help', 'model', 'older', 'queue', 'sessions', 'verbose'])
+  assert.deepEqual(immediate, ['compact', 'diff', 'editor', 'focus', 'fork', 'help', 'model', 'older', 'queue', 'rename', 'sessions', 'status', 'verbose'])
 })
