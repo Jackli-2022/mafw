@@ -2,6 +2,12 @@
 
 > OpenCode 插件，注册 Tools/Skills/Hooks，管理谐波记忆、检索、压缩、认知深化。
 
+> ⚠️ **时效说明（2026-09-14）**：本文的记忆/压缩章节描述的是 legacy 插件内路径（v6.x，已废弃）。
+> 当前记忆写路径与维护管线（turnCompress / reflection / stale 重验、memory-curator worker、
+> 环境探测式维护）都在 gateway 侧——见 `docs/architecture/gateway.md`「记忆维护管线（当前态）」
+> 与根 `AGENTS.md` §3/§5.13。插件侧现状为：两个 transform 注入口（memory-guide + recall 指针）、
+> 观察捕获 hooks（`/api/obs/capture`）、4 个原生工具（media ×2、python ×2）与 MCP 自接线。
+
 ## 目录
 
 - [代码位置](#代码位置)

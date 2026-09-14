@@ -512,3 +512,33 @@ review_node:
 | Windows | schtasks | 任务计划程序 |
 | macOS | LaunchAgent | `~/Library/LaunchAgents/` |
 | Linux | systemd | `~/.config/systemd/user/` |
+
+## 记忆维护管线（当前态，2026-09-14）
+
+> 本节为当前实现。上文 tier2/tier3 JSON 布局、LangGraph 等早期章节属历史版本；
+> 记忆系统以本节与根 `AGENTS.md`（§3 谐波记忆、§5.13 后台记忆召回）为准。
+
+### 管线与自动化规则
+
+| 管线 | 规则（cron，UTC） | 职责 |
+|---|---|---|
+| turnCompress | `turn-compress`（每小时） | per-session 完成回合合并为 batch transcript → 持久 worker 会话自主 `mafw_add_memory` |
+| reflection | `memory-reflect`（每日 3:00） | 跨回合高阶模式蒸馏（semantic/procedural） |
+| 能量衰减 | `memory-decay`（每日 3:30） | 增量时间衰减——管"淡忘" |
+| stale 重验 | `memory-review`（每周日 4:00） | `StaleVerifyPipeline` 重验高价值记忆——管"内容有效性" |
+
+规则由 `gateway/src/recall/pipeline-rules.ts` 幂等供给；action handler 在 `index.ts registerMemoryPipelineActions()`（`memory:review` 覆盖 automation-engine 模块级的打日志桩）。
+
+### 环境探测式记忆维护（Environment-Probing Curation，arXiv:2609.11060）
+
+post-task curator 只看轨迹存在"回顾性证据边界"（错误答案、过度泛化、stale 知识）。落地四点：
+
+- **只读探测面**：curator 即 `memory-curator` agent（持久 worker 会话）。工具白名单 = 三个记忆工具 + `read/grep/glob/ls`；`edit/bash/webfetch` 保持 deny——2026-08-31 transcript 执行事故的 mutation 防线不变
+- **propose–probe–commit**：项目相关 procedural/semantic 记忆写入前 ≤3 次探测验证；transcript 与环境矛盾时以环境为准并 supersedes；只记可复用过程、不记实例答案
+- **置信度约定**：探测验证过的记忆 cue_anchors 带 `verified:YYYY-MM-DD`（prompt 约定，零 schema 改动）
+- **成败信号**：`TurnPipelineOptions.gradeFor` 经 `GatewayDatabase.getOutcomeForSession()`（goal_sessions ⋈ goal_outcomes 取最近 archived）把 goal verdict/thumbs 拼入 worker prompt
+- **stale 刷新**：`StaleVerifyPipeline`（`gateway/src/recall/stale-verify.ts`）取 top-10 energy×salience 的 procedural/semantic（>14 天、未 superseded）交 `stale-verify` worker 只读重验，失真走 supersedes 链
+
+### Worker 会话治理（session 风暴防线）
+
+`SessionWorkerPool`（`gateway/src/recall/session-worker-pool.ts`）：lazy 创建（仅本小时有完成回合的 session）、pipeline 互斥（skip-once）、`runExclusive` per (session,kind) 防并发、TTL 24h 驱逐时 `session.delete` 物理删除、硬帽 64、idle 8h summarize 控 token；`internalSessionRoles` + 标题前缀过滤对 UI 隐藏；`/api/obs/capture` 白名单防 worker 输出回流 T1（递归风暴）。2026-09-14 已物理清理 2923 条历史垃圾 worker 会话（serve API 级联删除，验证后批量执行）。
