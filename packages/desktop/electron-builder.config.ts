@@ -1,4 +1,5 @@
 import path from "node:path"
+import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import type { Configuration } from "electron-builder"
@@ -15,6 +16,34 @@ const APP_IDS = {
   beta: "ai.mafw.desktop.beta",
   prod: "ai.mafw.desktop",
 } as const
+
+// The native macOS helper module is optional (inherited from the opencode
+// fork; not shipped in this repo). Only include it when the directory exists
+// so packaging on machines without it doesn't fail on a missing copy source.
+const extraResources: Array<{ from: string; to: string; filter?: string[] }> = [
+  // Self-sufficient gateway (mode A): staged by scripts/stage-gateway.ts —
+  // dist + production node_modules, with native modules rebuilt for the
+  // Electron runtime. Spawned via ELECTRON_RUN_AS_NODE when no gateway is
+  // already running (see src/main/mafw-sidecar.ts).
+  {
+    from: "gateway-bundle/",
+    to: "gateway/",
+  },
+  // electron-builder's copy filter hard-excludes a root-level `node_modules`
+  // directory (app-builder-lib util/filter.js), so copy it as its own entry —
+  // then `node_modules` never appears as the relative path of a copy root.
+  {
+    from: "gateway-bundle/node_modules/",
+    to: "gateway/node_modules/",
+  },
+]
+if (existsSync(path.join(packageDir, "native"))) {
+  extraResources.unshift({
+    from: "native/",
+    to: "native/",
+    filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
+  })
+}
 
 const getBase = (appId: string): Configuration => ({
   artifactName: "mafw-desktop-${os}-${arch}.${ext}",
@@ -35,28 +64,7 @@ const getBase = (appId: string): Configuration => ({
   // for the renderer — they cannot live inside asar (fetch can't resolve the
   // virtual path), so unpack them next to the app.
   asarUnpack: ["**/*.onnx", "**/*.wasm"],
-  extraResources: [
-    {
-      from: "native/",
-      to: "native/",
-      filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
-    },
-    // Self-sufficient gateway (mode A): staged by scripts/stage-gateway.ts —
-    // dist + production node_modules, with native modules rebuilt for the
-    // Electron runtime. Spawned via ELECTRON_RUN_AS_NODE when no gateway is
-    // already running (see src/main/mafw-sidecar.ts).
-    {
-      from: "gateway-bundle/",
-      to: "gateway/",
-    },
-    // electron-builder's copy filter hard-excludes a root-level `node_modules`
-    // directory (app-builder-lib util/filter.js), so copy it as its own entry —
-    // then `node_modules` never appears as the relative path of a copy root.
-    {
-      from: "gateway-bundle/node_modules/",
-      to: "gateway/node_modules/",
-    },
-  ],
+  extraResources,
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
