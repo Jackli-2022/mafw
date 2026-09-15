@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { log } from '../core/utils/logger';
 
 export type PluginType = 'runtime' | 'media' | 'usage' | 'ui';
 export type PluginStatus = 'enabled' | 'disabled' | 'error' | 'config-disabled';
@@ -162,7 +163,17 @@ export async function installPlugin(
   const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
   if (!Buffer.isBuffer(input.bytes) || input.bytes.length === 0) throw new HubError(400, 'empty content');
   if (input.bytes.length > maxBytes) throw new HubError(413, `content exceeds ${maxBytes} bytes`);
-  const type = input.type ? parseType(input.type) : sniffPluginType(filename, input.bytes);
+  const explicitType = input.type ? parseType(input.type) : undefined;
+  const { matches, mod } = inspectPlugin(filename, input.bytes);
+  validateName(mod, filename);
+  let type: PluginType;
+  if (explicitType) {
+    type = explicitType;
+  } else {
+    if (matches.length === 0) throw new HubError(400, 'unrecognized plugin interface: export createRuntime / createPrompt / fetch / tools');
+    if (matches.length > 1) throw new HubError(400, `ambiguous plugin interface: ${matches.join('/')}`);
+    type = matches[0];
+  }
   const dir = deps.dirs[type];
   fs.mkdirSync(dir, { recursive: true });
   const target = resolveInDir(dir, filename);
@@ -178,25 +189,48 @@ export async function installPlugin(
   return statEntry(type, dir, filename);
 }
 
-function sniffPluginType(filename: string, bytes: Buffer): PluginType {
+const MATCH_IFACE: Record<PluginType, string> = {
+  runtime: 'createRuntime',
+  media: 'createPrompt',
+  usage: 'fetch',
+  ui: 'tools',
+};
+
+function computeMatches(mod: Record<string, unknown> | undefined): PluginType[] {
+  const matches: PluginType[] = [];
+  if (typeof mod?.createRuntime === 'function') matches.push('runtime');
+  if (typeof mod?.createPrompt === 'function' || typeof mod?.fixPayload === 'function'
+      || typeof mod?.engine === 'string' || Array.isArray(mod?.modalities)) matches.push('media');
+  if (typeof mod?.fetch === 'function'
+      && (mod.type === undefined || mod.type === 'api' || mod.type === 'token-plan' || mod.type === 'local')) matches.push('usage');
+  if (mod?.tools && typeof mod.tools === 'object' && Object.keys(mod.tools as object).length > 0) matches.push('ui');
+  return matches;
+}
+
+function inspectPlugin(filename: string, bytes: Buffer): { matches: PluginType[]; mod: Record<string, unknown> } {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-hub-sniff-'));
   const tmpFile = path.join(tmpDir, filename);
   try {
     fs.writeFileSync(tmpFile, bytes);
     try { delete require.cache[require.resolve(tmpFile)]; } catch { /* first load */ }
-    const mod = require(tmpFile) as Record<string, unknown>;
-    const matches: PluginType[] = [];
-    if (typeof mod?.createRuntime === 'function') matches.push('runtime');
-    if (typeof mod?.createPrompt === 'function' || typeof mod?.fixPayload === 'function'
-        || typeof mod?.engine === 'string' || Array.isArray(mod?.modalities)) matches.push('media');
-    if (typeof mod?.fetch === 'function'
-        && (mod.type === undefined || mod.type === 'api' || mod.type === 'token-plan' || mod.type === 'local')) matches.push('usage');
-    if (mod?.tools && typeof mod.tools === 'object' && Object.keys(mod.tools as object).length > 0) matches.push('ui');
-    if (matches.length === 0) throw new HubError(400, 'unrecognized plugin interface: export createRuntime / createPrompt / fetch / tools');
-    if (matches.length > 1) throw new HubError(400, `ambiguous plugin interface: ${matches.join('/')}`);
-    return matches[0];
+    let mod: Record<string, unknown>;
+    try {
+      mod = require(tmpFile) as Record<string, unknown>;
+    } catch (err: any) {
+      throw new HubError(400, `plugin failed to load: ${err.message}`);
+    }
+    return { matches: computeMatches(mod), mod };
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
+
+function validateName(mod: Record<string, unknown> | undefined, filename: string): void {
+  const name = mod?.name;
+  if (typeof name !== 'string' || name.length === 0) throw new HubError(400, 'missing plugin name');
+  const stem = baseName(filename);
+  if (name !== stem) {
+    throw new HubError(400, `plugin name mismatch: exports '${name}', filename '${filename}' (must match)`);
   }
 }
 

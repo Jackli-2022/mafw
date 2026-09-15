@@ -4,12 +4,12 @@ import * as path from 'path';
 import { listPlugins, installPlugin, setPluginEnabled, deletePlugin, cleanupExamples, HubError } from '../../src/plugins/hub';
 
 const mod = (body: string) => Buffer.from(body, 'utf-8');
-const PLAIN = mod('module.exports = { name: "foo" };');
-const RUNTIME_MOD = mod('module.exports = { name: "my-rt", createRuntime: async () => ({}) };');
-const MEDIA_MOD = mod('module.exports = { name: "my-media", createPrompt: async () => async () => "" };');
-const USAGE_MOD = mod('module.exports = { name: "my-usage", type: "api", fetch: async () => null };');
-const UI_MOD = mod('module.exports = { name: "my-ui", tools: { t: { render: () => [] } } };');
-const AMBIGUOUS_MOD = mod('module.exports = { name: "both", createPrompt: async () => async () => "", fetch: async () => null };');
+const PLAIN = mod('module.exports = { name: "foo", createRuntime: async () => ({}) };');
+const RUNTIME_MOD = mod('module.exports = { name: "rt", createRuntime: async () => ({}) };');
+const MEDIA_MOD = mod('module.exports = { name: "m1", createPrompt: async () => async () => "" };');
+const USAGE_MOD = mod('module.exports = { name: "u1", type: "api", fetch: async () => null };');
+const UI_MOD = mod('module.exports = { name: "ui", tools: { t: { render: () => [] } } };');
+const AMBIGUOUS_MOD = mod('module.exports = { name: "x", createPrompt: async () => async () => "", fetch: async () => null };');
 
 function makeDeps(overrides: Record<string, any> = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-hub-'));
@@ -173,9 +173,9 @@ describe('installPlugin', () => {
     const deps = makeDeps();
     const e1 = await installPlugin(deps, { filename: 'm1.js', bytes: MEDIA_MOD });
     expect(e1.type).toBe('media');
-    const e2 = await installPlugin(deps, { filename: 'm2.js', bytes: mod('module.exports = { engine: "pi" };') });
+    const e2 = await installPlugin(deps, { filename: 'm2.js', bytes: mod('module.exports = { name: "m2", engine: "pi" };') });
     expect(e2.type).toBe('media');
-    const e3 = await installPlugin(deps, { filename: 'm3.js', bytes: mod('module.exports = { modalities: ["image"] };') });
+    const e3 = await installPlugin(deps, { filename: 'm3.js', bytes: mod('module.exports = { name: "m3", modalities: ["image"] };') });
     expect(e3.type).toBe('media');
   });
 
@@ -183,7 +183,7 @@ describe('installPlugin', () => {
     const deps = makeDeps();
     const e1 = await installPlugin(deps, { filename: 'u1.js', bytes: USAGE_MOD });
     expect(e1.type).toBe('usage');
-    const e2 = await installPlugin(deps, { filename: 'u2.js', bytes: mod('module.exports = { fetch: async () => null };') });
+    const e2 = await installPlugin(deps, { filename: 'u2.js', bytes: mod('module.exports = { name: "u2", fetch: async () => null };') });
     expect(e2.type).toBe('usage');
   });
 
@@ -251,6 +251,33 @@ describe('installPlugin', () => {
     const deps = makeDeps();
     await expect(installPlugin(deps, { type: 'runtime', filename: 'a.js', bytes: Buffer.alloc(0) }))
       .rejects.toMatchObject({ status: 400 });
+  });
+
+  describe('install precheck: load & name', () => {
+    test('syntax error → 400 plugin failed to load, no file left behind', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { type: 'runtime', filename: 'broken.js', bytes: mod('module.exports = { name: "broken"') }))
+        .rejects.toMatchObject({ status: 400, message: expect.stringContaining('plugin failed to load') });
+      expect(fs.existsSync(path.join(deps.dirs.runtime, 'broken.js'))).toBe(false);
+    });
+
+    test('top-level throw → 400 plugin failed to load', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { type: 'runtime', filename: 'boom.js', bytes: mod('module.exports = (() => { throw new Error("boom-at-load"); })();') }))
+        .rejects.toMatchObject({ status: 400, message: expect.stringContaining('boom-at-load') });
+    });
+
+    test('missing name → 400 missing plugin name', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { type: 'runtime', filename: 'a.js', bytes: mod('module.exports = { createRuntime: async () => ({}) };') }))
+        .rejects.toMatchObject({ status: 400, message: 'missing plugin name' });
+    });
+
+    test('name mismatch with filename stem → 400', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { type: 'runtime', filename: 'bar.js', bytes: RUNTIME_MOD }))
+        .rejects.toMatchObject({ status: 400, message: "plugin name mismatch: exports 'rt', filename 'bar.js' (must match)" });
+    });
   });
 });
 
