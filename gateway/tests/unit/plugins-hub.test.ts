@@ -208,11 +208,36 @@ describe('installPlugin', () => {
       .rejects.toMatchObject({ status: 400, message: 'ambiguous plugin interface: media/usage' });
   });
 
-  test('explicit type skips sniffing', async () => {
+  test('explicit type within matched interfaces installs', async () => {
     const deps = makeDeps();
-    const entry = await installPlugin(deps, { type: 'ui', filename: 'weird.js', bytes: mod('module.exports = { name: "weird" };') });
-    expect(fs.existsSync(path.join(deps.dirs.ui, 'weird.js'))).toBe(true);
-    expect(entry.type).toBe('ui');
+    const entry = await installPlugin(deps, { type: 'runtime', filename: 'rt.js', bytes: RUNTIME_MOD });
+    expect(entry.type).toBe('runtime');
+  });
+
+  test('ambiguous file + explicit type from matched set installs (escape hatch)', async () => {
+    const deps = makeDeps();
+    const entry = await installPlugin(deps, { type: 'usage', filename: 'x.js', bytes: AMBIGUOUS_MOD });
+    expect(entry.type).toBe('usage');
+    expect(fs.existsSync(path.join(deps.dirs.usage, 'x.js'))).toBe(true);
+  });
+
+  test('explicit type outside matched set → 400 mismatch listing actual exports', async () => {
+    const deps = makeDeps();
+    await expect(installPlugin(deps, { type: 'usage', filename: 'rt.js', bytes: RUNTIME_MOD }))
+      .rejects.toMatchObject({ status: 400, message: 'plugin interface mismatch: selected usage, exports runtime (createRuntime)' });
+  });
+
+  test('explicit type + no known interfaces → 400 unrecognized', async () => {
+    const deps = makeDeps();
+    await expect(installPlugin(deps, { type: 'ui', filename: 'x.js', bytes: mod('module.exports = { name: "x" };') }))
+      .rejects.toMatchObject({ status: 400, message: expect.stringContaining('unrecognized plugin interface') });
+    expect(fs.existsSync(path.join(deps.dirs.ui, 'x.js'))).toBe(false);
+  });
+
+  test('explicit type + syntax error → 400 failed to load', async () => {
+    const deps = makeDeps();
+    await expect(installPlugin(deps, { type: 'media', filename: 'bad.js', bytes: mod('module.exports = { name: "bad", createPrompt:') }))
+      .rejects.toMatchObject({ status: 400, message: expect.stringContaining('plugin failed to load') });
   });
 
   test('duplicate name (enabled or disabled variant) → HubError 409', async () => {

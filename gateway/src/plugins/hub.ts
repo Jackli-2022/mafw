@@ -167,10 +167,14 @@ export async function installPlugin(
   const { matches, mod } = inspectPlugin(filename, input.bytes);
   validateName(mod, filename);
   let type: PluginType;
+  if (matches.length === 0) throw new HubError(400, 'unrecognized plugin interface: export createRuntime / createPrompt / fetch / tools');
   if (explicitType) {
+    if (!matches.includes(explicitType)) {
+      const listing = matches.map((m) => `${m} (${MATCH_IFACE[m]})`).join('/');
+      throw new HubError(400, `plugin interface mismatch: selected ${explicitType}, exports ${listing}`);
+    }
     type = explicitType;
   } else {
-    if (matches.length === 0) throw new HubError(400, 'unrecognized plugin interface: export createRuntime / createPrompt / fetch / tools');
     if (matches.length > 1) throw new HubError(400, `ambiguous plugin interface: ${matches.join('/')}`);
     type = matches[0];
   }
