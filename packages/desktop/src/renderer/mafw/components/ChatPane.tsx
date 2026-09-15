@@ -119,6 +119,8 @@ export type ChatPaneProps = {
   onRegisterQueueFlush?: (sid: string, fn: () => void) => void
   onUnregisterQueueFlush?: (sid: string) => void
   compactionMark?: { at: number; summary?: string } | null
+  permissionMode?: "manual" | "auto"
+  onTogglePermissionMode?: () => void
   onRegisterMediaSpeak?: (sid: string, fn: (text: string, voice?: string) => void) => void
   onUnregisterMediaSpeak?: (sid: string) => void
   pageState: Record<string, { cursor: string | null; hasMore: boolean; loading: boolean }>
@@ -2131,6 +2133,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <div class="mafw-composer-left">
               <TooltipV2 value="命令 (/)" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>/</ButtonV2>
+              </TooltipV2>
+              <TooltipV2 value={(props.permissionMode ?? "manual") === "auto" ? "审批模式：自动 — 安全命令免审，高危仍需确认。点击切回手动" : "审批模式：手动 — 每次审批。点击切换自动（安全命令免审）"} openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-composer-icon"
+                  classList={{ "mafw-perm-mode-auto": (props.permissionMode ?? "manual") === "auto" }}
+                  aria-label="审批模式"
+                  onClick={() => props.onTogglePermissionMode?.()}
+                >{(props.permissionMode ?? "manual") === "auto" ? "🛡auto" : "🛡"}</ButtonV2>
               </TooltipV2>
               <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>🗣</ButtonV2>

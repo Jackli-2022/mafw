@@ -35,6 +35,7 @@ import { DashboardPage } from "./pages/Dashboard"
 import { parseDeepLink } from "./deep-link"
 import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
+import { shouldAutoApprove, nextPermissionMode } from "./components/permission-mode"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
@@ -308,6 +309,12 @@ export function MafwShell() {
     void window.api.mafw.notify?.({ title, body }).catch(() => { /* fail-open */ })
   }
   const lastIdleNotify: Record<string, number> = {}
+
+  // Per-session approval mode (Manual/Auto-lite): auto mode auto-replies
+  // "once" to SAFE commands only, with a hard consecutive budget; dangerous
+  // commands always require the double-click arm flow.
+  const [permissionModes, setPermissionModes] = createStore<Record<string, "manual" | "auto">>({})
+  const autoApprovalCounts: Record<string, number> = {}
 
   // Shared destructive confirmation request (ConfirmOverlay) — replaces the
   // blocking window.confirm for in-shell actions.
@@ -1210,8 +1217,17 @@ export function MafwShell() {
       }
       if (event.type === "permission.asked") {
         console.log("[mafw] SSE permission.asked", sid, event.properties?.id, event.properties?.permission)
-        upsertCard(sid, { kind: "permission", data: mapPermissionCard(event.properties || {}, Date.now()) })
+        const card = mapPermissionCard(event.properties || {}, Date.now())
+        upsertCard(sid, { kind: "permission", data: card })
         notifyIfHidden("MAFW：需要权限审批", String(event.properties?.permission?.tool || "工具调用").slice(0, 80))
+        // Auto mode: safe commands get an automatic "once" (budget-capped);
+        // high-risk cards still wait for the human double-click arm flow.
+        const mode = permissionModes[sid] || "manual"
+        if (shouldAutoApprove({ mode, isDangerous: card.risk === "high", autoApprovals: autoApprovalCounts[sid] || 0 })) {
+          autoApprovalCounts[sid] = (autoApprovalCounts[sid] || 0) + 1
+          console.log("[mafw] auto-approve (session mode=auto)", sid.slice(-8), "count", autoApprovalCounts[sid])
+          void permReply(card, "once")
+        }
         return
       }
       if (event.type === "session.compacted") {
@@ -2186,6 +2202,8 @@ export function MafwShell() {
                           onRegisterQueueFlush={(s, fn) => { queueFlushers[s] = fn }}
                           onUnregisterQueueFlush={(s) => { delete queueFlushers[s] }}
                           compactionMark={compactionMarks()[s.id] || null}
+                          permissionMode={permissionModes[s.id] || "manual"}
+                          onTogglePermissionMode={() => setPermissionModes(s.id, nextPermissionMode(permissionModes[s.id] || "manual"))}
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />

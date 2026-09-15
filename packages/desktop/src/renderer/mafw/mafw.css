@@ -3953,3 +3953,6 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-palette-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
 .mafw-palette-row.sel, .mafw-palette-row:hover { background: var(--surface-base-hover); }
 .mafw-palette-hint { font-size: 10px; color: var(--text-4); flex-shrink: 0; }
+
+/* Permission mode toggle (P1 batch 2) */
+.mafw-perm-mode-auto { color: var(--accent-text, #7aa2f7); background: var(--surface-base-active); }
