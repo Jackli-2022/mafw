@@ -54,7 +54,6 @@ export class RuntimePluginLoader {
     if (!fs.existsSync(this.pluginsDir)) {
       fs.mkdirSync(this.pluginsDir, { recursive: true });
       fs.writeFileSync(path.join(this.pluginsDir, 'README.md'), README_CONTENT);
-      fs.writeFileSync(path.join(this.pluginsDir, 'example.js.disabled'), EXAMPLE_CONTENT);
       log.info(`[RuntimePluginLoader] Created ${this.pluginsDir}`);
     }
   }
@@ -127,6 +126,11 @@ export class RuntimePluginLoader {
     const builtin = this.builtins.get(name);
     if (builtin) return { createRuntime: builtin.factory, ...builtin };
     return undefined;
+  }
+
+  /** 已注册内置件名（builtin 文件件不在其中，opencode 为恒等默认由 index.ts 注入 hub）。 */
+  getBuiltinNames(): string[] {
+    return [...this.builtins.keys()];
   }
 
   getState(): RuntimePluginState[] {
@@ -214,15 +218,4 @@ module.exports = {
 Capabilities declared here gate gateway features declaratively: missing
 capabilities disable the corresponding features (503 on gated endpoints,
 skipped event subscription) — they never crash.
-`;
-
-const EXAMPLE_CONTENT = `// Rename to example.js to activate
-module.exports = {
-  name: "example",
-  capabilities: { eventStream: false },
-  async createRuntime(ctx) {
-    ctx.log.info("[example-runtime] created");
-    throw new Error("example plugin: implement createRuntime before activating");
-  },
-};
 `;
