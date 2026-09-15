@@ -9,6 +9,9 @@ export interface HubEntry {
   error?: string
   size: number
   mtime: string
+  builtin?: boolean
+  overridden?: boolean
+  pluginType?: string
 }
 
 const TYPE_ORDER: PluginType[] = ["runtime", "media", "usage", "ui"]
@@ -26,6 +29,35 @@ export function statusLabel(entry: HubEntry): string {
 
 export function installableTypes(): PluginType[] {
   return [...TYPE_ORDER]
+}
+
+const TYPE_META: Record<PluginType, { label: string; icon: string }> = {
+  runtime: { label: "Runtime", icon: "⚙️" },
+  media: { label: "Media", icon: "🎬" },
+  usage: { label: "Usage", icon: "📊" },
+  ui: { label: "UI", icon: "🎨" },
+}
+
+export function typeMeta(type: PluginType): { label: string; icon: string } {
+  return TYPE_META[type]
+}
+
+export interface HubGroup {
+  type: PluginType
+  entries: HubEntry[]
+}
+
+/** Groups entries by type in the fixed TYPE_ORDER, entries sorted by name
+ * within each group; empty types are omitted. Input is not mutated. */
+export function groupEntries(entries: HubEntry[]): HubGroup[] {
+  const sorted = sortEntries(entries)
+  const groups: HubGroup[] = []
+  for (const e of sorted) {
+    const last = groups[groups.length - 1]
+    if (last && last.type === e.type) last.entries.push(e)
+    else groups.push({ type: e.type, entries: [e] })
+  }
+  return groups
 }
 
 export function sortEntries(entries: HubEntry[]): HubEntry[] {
@@ -49,6 +81,12 @@ export function parseAmbiguousCandidates(message: string): string[] | null {
   const rest = message.slice(prefix.length).trim()
   const candidates = rest.split("/").map((s) => s.trim()).filter(Boolean)
   return candidates.length > 0 ? candidates : null
+}
+
+/** Human-readable plugin file size ("512 B" / "1.5 KB"). */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  return `${(bytes / 1024).toFixed(1)} KB`
 }
 
 /** Badge text for builtin hub entries ("" for user file entries). */

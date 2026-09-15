@@ -3557,6 +3557,176 @@ html[data-theme="light"] .mafw-picker-pop {
   flex-direction: column;
   gap: 16px;
 }
+/* ── Plugin hub (插件中心) ── */
+.mafw-hub-group {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.mafw-hub-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-overlay);
+}
+.mafw-hub-group-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+.mafw-hub-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex: 1;
+}
+.mafw-hub-group-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  background: var(--bg-float);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.mafw-hub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  transition: background 0.15s ease;
+}
+.mafw-hub-row:hover {
+  background: color-mix(in srgb, var(--text-1) 3%, transparent);
+}
+.mafw-hub-row + .mafw-hub-row {
+  border-top: 1px solid var(--border-subtle);
+}
+.mafw-hub-row-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mafw-hub-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mafw-hub-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.mafw-hub-tag {
+  font-size: 11px;
+  color: var(--accent-text);
+  background: var(--accent-dim);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 999px;
+  padding: 0 8px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.mafw-hub-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 0 9px;
+  line-height: 18px;
+  white-space: nowrap;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-3);
+  background: var(--bg-float);
+}
+.mafw-hub-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.mafw-hub-pill-enabled {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--accent-dim);
+}
+.mafw-hub-pill-enabled .mafw-hub-pill-dot {
+  box-shadow: 0 0 6px var(--accent);
+}
+.mafw-hub-pill-error {
+  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: var(--danger-dim);
+}
+.mafw-hub-pill-config-disabled {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.mafw-hub-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.mafw-hub-file {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  color: var(--text-2);
+}
+.mafw-hub-error-text {
+  color: var(--danger-text);
+  word-break: break-all;
+}
+.mafw-hub-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.mafw-hub-install {
+  border: 1px dashed color-mix(in srgb, var(--text-1) 18%, transparent);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-raised);
+}
+.mafw-hub-install-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mafw-hub-install-file {
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.mafw-hub-install-hint {
+  font-size: 12px;
+  color: var(--warning);
+}
+.mafw-hub-empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+  border: 1px dashed var(--border-subtle);
+  border-radius: 10px;
+}
 /* Status badge */
 .mafw-config-status-badge {
   display: inline-flex;

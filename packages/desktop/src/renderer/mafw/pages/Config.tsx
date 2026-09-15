@@ -9,7 +9,7 @@ import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
-import { sortEntries, statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, type HubEntry } from "./plugin-hub"
+import { statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, groupEntries, typeMeta, formatSize, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 
@@ -707,21 +707,20 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
                 <span class="mafw-config-section-icon">🧩</span>
-                <span class="mafw-config-section-title">插件中心（全部插件）</span>
-              </div>              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <span class="mafw-config-section-title">插件中心</span>
+                <ButtonV2 variant="outline" size="small" onClick={loadPluginHub} disabled={hubLoading()}>刷新</ButtonV2>
+                <ButtonV2 variant="contrast" size="small" onClick={() => setInstallOpen(!installOpen())}>安装插件</ButtonV2>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
                 {rtEnvOverride() && (
                   <div class="mafw-config-env-warning">
                     ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置
                   </div>
                 )}
-                <div style={{ display: "flex", "justify-content": "flex-end", gap: 8, "margin-bottom": 12 }}>
-                  <ButtonV2 variant="outline" size="small" onClick={loadPluginHub} disabled={hubLoading()}>刷新</ButtonV2>
-                  <ButtonV2 variant="contrast" size="small" onClick={() => setInstallOpen(!installOpen())}>安装插件</ButtonV2>
-                </div>
 
                 <Show when={installOpen()}>
-                  <div style={{ border: "1px solid var(--border, #333)", "border-radius": 8, padding: 12, "margin-bottom": 12 }}>
-                    <div style={{ display: "flex", gap: 8, "align-items": "center", "margin-bottom": 8 }}>
+                  <div class="mafw-hub-install">
+                    <div class="mafw-hub-install-row">
                       <Show when={installCandidates()}>
                         <div style={{ width: 180 }}>
                           <SelectV2
@@ -737,10 +736,10 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       <input ref={fileInputRef} type="file" accept=".js" class="hidden" onChange={onInstallFileChosen} />
                       <ButtonV2 variant="outline" size="small" onClick={pickInstallFile}>选择 .js 文件</ButtonV2>
                       <Show when={installFile()}>
-                        <span style={{ "font-size": 12 }}>{installFile()!.name}（{installFile()!.size} bytes）</span>
+                        <span class="mafw-hub-install-file">{installFile()!.name}（{formatSize(installFile()!.size)}）</span>
                       </Show>
                     </div>
-                    <div style={{ "font-size": 12, color: "var(--text-muted, #888)", "margin-bottom": 8 }}>
+                    <div class="mafw-hub-install-hint">
                       ⚠ 安装的插件是任意本地代码，加载后即以当前应用权限执行。仅安装你信任来源的插件。
                     </div>
                     <ButtonV2 variant="contrast" size="small" onClick={doInstall} disabled={!installFile() || installBusy()}>
@@ -749,38 +748,61 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   </div>
                 </Show>
 
-                <For each={sortEntries(hubEntries())}>
-                  {(e) => (
-                    <div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", padding: "8px 0", "border-bottom": "1px solid var(--border, #222)" }}>
-                      <div>
-                        <span style={{ "font-weight": 500 }}>{e.type}/{e.name}</span>
-                        <span style={{ "font-size": 12, "margin-left": 8, color: "var(--text-muted, #888)" }}>{statusLabel(e)}</span>
-                        <Show
-                          when={e.builtin}
-                          fallback={<span style={{ "font-size": 12, "margin-left": 8, color: "var(--text-muted, #888)" }}>{e.size} B · {new Date(e.mtime).toLocaleString()}</span>}
-                        >
-                          <span style={{ "font-size": 12, "margin-left": 8, color: "var(--brand, #7c8)" }}>{builtinMeta(e)}</span>
-                        </Show>
-                        <Show when={e.error}>
-                          <span style={{ "font-size": 12, "margin-left": 8, color: "var(--danger, #e55)" }}>{e.error}</span>
-                        </Show>
+                <For each={groupEntries(hubEntries())}>
+                  {(g) => (
+                    <div class="mafw-hub-group">
+                      <div class="mafw-hub-group-header">
+                        <span class="mafw-hub-group-icon">{typeMeta(g.type).icon}</span>
+                        <span class="mafw-hub-group-title">{typeMeta(g.type).label}</span>
+                        <span class="mafw-hub-group-count">{g.entries.length}</span>
                       </div>
-                      <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
-                        <Show when={runtimeActivatable(e, rtInfo()?.active?.name)}>
-                          <ButtonV2 variant="outline" size="small" onClick={() => switchRuntime(e.name)}>激活</ButtonV2>
-                        </Show>
-                        <Show when={e.type === "usage" && e.builtin && !e.overridden}>
-                          <ButtonV2 variant="outline" size="small" onClick={() => cloneBuiltin(e)}>克隆</ButtonV2>
-                        </Show>
-                        <Show when={!e.builtin}>
-                          <SwitchV2 checked={e.status === "enabled"} onChange={() => togglePlugin(e)} hideLabel />
-                          <ButtonV2 variant="ghost" size="small" onClick={() => removePlugin(e)}>删除</ButtonV2>
-                        </Show>
-                      </div>
+                      <For each={g.entries}>
+                        {(e) => (
+                          <div class="mafw-hub-row">
+                            <div class="mafw-hub-row-main">
+                              <div class="mafw-hub-row-top">
+                                <span class="mafw-hub-name">{e.name}</span>
+                                <Show when={e.builtin}>
+                                  <span class="mafw-hub-tag">{builtinMeta(e)}</span>
+                                </Show>
+                                <span class={`mafw-hub-pill mafw-hub-pill-${e.status}`}>
+                                  <span class="mafw-hub-pill-dot" />
+                                  {statusLabel(e)}
+                                </span>
+                              </div>
+                              <div class="mafw-hub-meta">
+                                <span class="mafw-hub-file">{e.file}</span>
+                                <Show when={!e.builtin}>
+                                  <span>{formatSize(e.size)} · {new Date(e.mtime).toLocaleString()}</span>
+                                </Show>
+                                <Show when={e.error}>
+                                  <span class="mafw-hub-error-text">{e.error}</span>
+                                </Show>
+                              </div>
+                            </div>
+                            <div class="mafw-hub-actions">
+                              <Show when={runtimeActivatable(e, rtInfo()?.active?.name)}>
+                                <ButtonV2 variant="outline" size="small" onClick={() => switchRuntime(e.name)}>激活</ButtonV2>
+                              </Show>
+                              <Show when={e.type === "usage" && e.builtin && !e.overridden}>
+                                <ButtonV2 variant="outline" size="small" onClick={() => cloneBuiltin(e)}>克隆</ButtonV2>
+                              </Show>
+                              <Show when={!e.builtin}>
+                                <SwitchV2 checked={e.status === "enabled"} onChange={() => togglePlugin(e)} hideLabel />
+                                <ButtonV2 variant="ghost" size="small" onClick={() => removePlugin(e)}>删除</ButtonV2>
+                              </Show>
+                            </div>
+                          </div>
+                        )}
+                      </For>
                     </div>
                   )}
                 </For>
-                <div class="mafw-config-field-group" style={{ "margin-top": 16 }}>
+                <Show when={!hubLoading() && hubEntries().length === 0}>
+                  <div class="mafw-hub-empty">暂无插件。点击「安装插件」从本地 .js 文件安装。</div>
+                </Show>
+
+                <div class="mafw-config-field-group" style={{ "margin-top": 4 }}>
                   <label class="mafw-config-label">Media 引擎</label>
                   <div class="mafw-config-grid">
                     {[
@@ -810,9 +832,6 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     </div>
                   )}
                 </div>
-                <Show when={!hubLoading() && hubEntries().length === 0}>
-                  <div style={{ "font-size": 13, color: "var(--text-muted, #888)" }}>暂无插件。点击「安装插件」从本地 .js 文件安装。</div>
-                </Show>
               </div>
             </div>
           </Show>
