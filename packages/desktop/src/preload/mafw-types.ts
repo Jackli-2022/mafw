@@ -202,6 +202,8 @@ export type MafwAPI = {
   uiPlugins: {
     list(): Promise<PluginEntry[]>
     render(req: RenderRequest): Promise<RenderResponse>
+    status(): Promise<{ entries: PluginEntry[]; dir?: string; lastLoad: { loaded: string[]; failed: Record<string, string> } }>
+    reload(): Promise<{ loaded: string[]; failed: Record<string, string> }>
     onChange(cb: () => void): () => void
   }
 

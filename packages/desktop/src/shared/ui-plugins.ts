@@ -10,6 +10,8 @@ export type Widget =
   | { type: "row"; children: Widget[] }
   | { type: "image"; dataUrl: string }
   | { type: "link"; text: string; href: string }
+  | { type: "markdown"; text: string }
+  | { type: "progress"; value: number; label?: string }
 
 export interface UserCard {
   title?: string
@@ -78,6 +80,17 @@ export function validateWidget(w: unknown): Widget | null {
       return typeof o.dataUrl === "string" ? { type: "image", dataUrl: o.dataUrl } : null
     case "link":
       return typeof o.href === "string" && typeof o.text === "string" ? { type: "link", text: o.text, href: o.href } : null
+    case "markdown":
+      // Markdown widget: the renderer escapes raw HTML BEFORE parsing, so
+      // plugin/tool output can never inject markup — only md syntax applies.
+      return { type: "markdown", text: typeof o.text === "string" ? o.text : safeStringify(o.text) }
+    case "progress": {
+      const raw = typeof o.value === "number" ? o.value : Number(o.value)
+      const value = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0
+      const out: Extract<Widget, { type: "progress" }> = { type: "progress", value }
+      if (typeof o.label === "string") out.label = o.label
+      return out
+    }
     default:
       return { type: "text", text: safeStringify(o) }
   }

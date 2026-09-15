@@ -286,4 +286,14 @@ export function registerMafwIpcHandlers() {
 
   ipcMain.handle("mafw-ui-plugins-list", () => uiPluginManager.list())
   ipcMain.handle("mafw-ui-plugins-render", (_event: IpcMainInvokeEvent, req: RenderRequest) => uiPluginManager.render(req))
+
+  // Plugin management card (Config page): status + manual reload.
+  ipcMain.handle("mafw-ui-plugins-status", () => {
+    return {
+      entries: uiPluginManager.list(),
+      dir: process.env.MAFW_UI_PLUGINS_DIR || undefined,
+      lastLoad: uiPluginManager.lastLoad,
+    }
+  })
+  ipcMain.handle("mafw-ui-plugins-reload", () => uiPluginManager.reload())
 }

@@ -222,6 +222,8 @@ export function createMafwApi(): MafwAPI {
     uiPlugins: {
       list: () => ipcRenderer.invoke("mafw-ui-plugins-list") as Promise<PluginEntry[]>,
       render: (req: RenderRequest) => ipcRenderer.invoke("mafw-ui-plugins-render", req) as Promise<RenderResponse>,
+      status: () => ipcRenderer.invoke("mafw-ui-plugins-status") as Promise<{ entries: PluginEntry[]; dir?: string; lastLoad: { loaded: string[]; failed: Record<string, string> } }>,
+      reload: () => ipcRenderer.invoke("mafw-ui-plugins-reload") as Promise<{ loaded: string[]; failed: Record<string, string> }>,
       onChange: (cb: () => void) => {
         const handler = () => cb()
         ipcRenderer.on("mafw-ui-plugins-changed", handler)

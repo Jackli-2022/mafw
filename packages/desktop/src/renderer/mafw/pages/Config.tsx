@@ -161,6 +161,32 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
   const [confirmReq, setConfirmReq] = createSignal<{ title: string; message?: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null>(null)
 
+  // ── UI tool-card plugins (~/.mafw/ui-plugins) ──
+  const [uiPluginStatus, setUiPluginStatus] = createSignal<{ entries: { tool: string; override: boolean }[]; dir?: string; lastLoad: { loaded: string[]; failed: Record<string, string> } } | null>(null)
+  const [uiReloading, setUiReloading] = createSignal(false)
+
+  const refreshUiPlugins = async () => {
+    try { setUiPluginStatus(await window.api.mafw.uiPlugins.status()) } catch { /* fail-open */ }
+  }
+
+  const reloadUiPlugins = async () => {
+    setUiReloading(true)
+    try {
+      const res = await window.api.mafw.uiPlugins.reload()
+      const okCount = res?.loaded?.length || 0
+      const failCount = Object.keys(res?.failed || {}).length
+      showToastV2({ description: `插件重载：${okCount} 成功${failCount ? ` · ${failCount} 失败` : ""}`, duration: 3000 })
+      await refreshUiPlugins()
+    } catch (e: any) {
+      showToastV2({ description: `重载失败: ${e?.message || e}`, duration: 3000 })
+    }
+    setUiReloading(false)
+  }
+
+  createEffect(() => {
+    if (activeNav() === "gateway") void refreshUiPlugins()
+  })
+
   const updateGateway = async () => {
     setConfirmReq({
       title: "触发 Gateway 自更新？",
@@ -620,6 +646,45 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     Copy logs path
                   </ButtonV2>
                 </div>
+              </div>
+
+              {/* ── UI 工具卡插件（用户本地 ~/.mafw/ui-plugins）── */}
+              <div class="mafw-config-section-header" style={{ "margin-top": 20 }}>
+                <span class="mafw-config-section-icon">🧩</span>
+                <span class="mafw-config-section-title">UI 工具卡插件</span>
+                <ButtonV2 variant="ghost" size="small" onClick={() => void refreshUiPlugins()}>刷新</ButtonV2>
+                <ButtonV2 variant="outline" size="small" onClick={() => void reloadUiPlugins()} disabled={uiReloading()}>
+                  {uiReloading() ? "重载中…" : "手动重载"}
+                </ButtonV2>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  本地工具卡插件（{uiPluginStatus()?.dir || "~/.mafw/ui-plugins"}）：按工具名接管渲染，声明式 Widget 树（v2 支持 markdown/progress，插件可声明 requires 依赖）。
+                </div>
+                <Show when={uiPluginStatus()?.entries?.length} fallback={<div class="mafw-empty" style={{ padding: "8px 0" }}>暂无已加载的工具卡插件</div>}>
+                  <For each={uiPluginStatus()?.entries}>
+                    {(e) => (
+                      <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                        <div style={{ flex: 1 }}>
+                          <span class="mafw-tool-chip" style={{ "font-family": "var(--font-mono, monospace)" }}>{e.tool}</span>
+                          <Show when={e.override}><span class="mafw-badge" style={{ "margin-left": 6 }}>override</span></Show>
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </Show>
+                <Show when={Object.keys(uiPluginStatus()?.lastLoad?.failed || {}).length > 0}>
+                  <div style={{ "margin-top": 8 }}>
+                    <For each={Object.entries(uiPluginStatus()!.lastLoad.failed)}>
+                      {([file, err]) => (
+                        <div class="mafw-card" style={{ "margin-bottom": 4, border: "0.5px solid rgba(232,99,107,0.4)" }}>
+                          <span style={{ "font-size": 11 }}>⚠ {file}</span>
+                          <span class="mafw-card-meta"> — {err}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </div>
             </div>
           </Show>

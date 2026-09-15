@@ -1,9 +1,10 @@
 // 用户工具卡代理：把 ToolRegistry 中"用户插件可接管"的工具替换为代理卡。
-// pending/running → 委托原注册卡（或 GenericTool）；completed/error → 经 IPC
-// 请求 main 执行插件 render，用内置解释器渲染声明式 Widget 树；失败 fail-open。
+// running → 每 500ms 节流快照执行插件 render（流式）；completed/error → 最终
+// 渲染一次；失败 fail-open 回落默认链。
 // 优先级语义见 docs/superpowers/specs/2026-09-09-ui-plugins-tool-cards-design.md §3。
-import { For, Show, createResource } from "solid-js"
+import { For, Show, createResource, createEffect, onCleanup, createSignal } from "solid-js"
 import type { JSX } from "solid-js"
+import { marked } from "marked"
 import { ToolRegistry, type ToolProps, type ToolComponent } from "@mafw/session-ui/message-part"
 import { BasicTool, GenericTool } from "@mafw/session-ui/basic-tool"
 import type { Widget } from "../../../shared/ui-plugins"
@@ -13,15 +14,34 @@ const proxied = new Map<string, ToolComponent | undefined>()
 
 function UserPluginProxy(props: ToolProps & { pluginTool: string; original?: ToolComponent }) {
   const settled = () => props.status === "completed" || props.status === "error"
-  const [result] = createResource(
-    () => (settled() ? { tool: props.pluginTool, input: props.input, output: props.output, metadata: props.metadata, status: props.status ?? "completed" } : null),
-    (req) => window.api.mafw.uiPlugins.render(req),
-  )
+  const buildReq = () => ({
+    tool: props.pluginTool,
+    input: props.input,
+    output: props.output,
+    metadata: props.metadata,
+    status: props.status ?? "completed",
+  })
+
+  // Streaming: while running, snapshot the request every 500ms (tool output
+  // grows continuously — unthrottled re-renders would thrash the IPC); the
+  // settled state renders once, immediately.
+  const [liveReq, setLiveReq] = createSignal<ReturnType<typeof buildReq> | null>(null)
+  createEffect(() => {
+    if (props.status !== "running") return
+    setLiveReq(buildReq())
+    const t = setInterval(() => setLiveReq(buildReq()), 500)
+    onCleanup(() => clearInterval(t))
+  })
+  createEffect(() => {
+    if (settled()) setLiveReq(buildReq())
+  })
+
+  const [result] = createResource(liveReq, (req) => window.api.mafw.uiPlugins.render(req))
   const card = () => (result()?.ok ? result()?.card : undefined)
 
   return (
     <Show
-      when={settled() ? card() : undefined}
+      when={card()}
       fallback={props.original ? props.original(props) : <GenericTool {...props} />}
     >
       {(c) => (
@@ -83,6 +103,20 @@ function WidgetNode(props: { widget: Widget }): JSX.Element {
       )
     case "link":
       return <a class="mafw-tool-link" href={w.href} target="_blank" rel="noreferrer">{w.text}</a>
+    case "markdown": {
+      // Escape raw HTML first (validateWidget guarantees a string), then let
+      // marked apply md syntax — no injection surface from plugin output.
+      const escaped = w.text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string))
+      const html = marked.parse(escaped, { async: false }) as string
+      return <div class="mafw-plugin-markdown" innerHTML={html} />
+    }
+    case "progress":
+      return (
+        <div class="mafw-plugin-progress">
+          <div class="mafw-plugin-progress-track"><div class="mafw-plugin-progress-fill" style={{ width: `${w.value}%` }} /></div>
+          <span class="mafw-plugin-progress-label">{w.label || `${Math.round(w.value)}%`}</span>
+        </div>
+      )
     default:
       return <pre class="mafw-tool-output">{JSON.stringify(w)}</pre>
   }

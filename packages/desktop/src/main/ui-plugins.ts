@@ -35,6 +35,8 @@ export class UiPluginManager {
   private warned = new Map<string, Set<string>>()
   private watcher: fs.FSWatcher | null = null
   private onChangeCb: (() => void) | null = null
+  /** Last loadAll/reload outcome (Config 管理卡展示用). */
+  lastLoad: { loaded: string[]; failed: Record<string, string> } = { loaded: [], failed: {} }
 
   list(): PluginEntry[] {
     return [...this.tools.entries()].map(([tool, t]) => ({ tool, override: t.override }))
@@ -63,7 +65,9 @@ export class UiPluginManager {
   }
 
   loadAll(): { loaded: string[]; failed: Record<string, string> } {
-    return this.loadDir(uiPluginsDir())
+    const out = this.loadDir(uiPluginsDir())
+    this.lastLoad = out
+    return out
   }
 
   reload(): { loaded: string[]; failed: Record<string, string> } {
@@ -81,24 +85,58 @@ export class UiPluginManager {
       return { loaded, failed } // 目录不存在 → 空清单
     }
     const stale = new Set([...this.tools.values()].map((t) => t.plugin))
+
+    // Phase 1: parse every file (no registration yet — deps may arrive in
+    // any file order).
+    type Parsed = { file: string; full: string; name: string; requires: string[]; tools: Record<string, { override: boolean; render?: (ctx: RenderContext) => unknown }> }
+    const parsed: Parsed[] = []
     for (const file of files) {
       const full = path.join(dir, file)
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         delete require.cache[require.resolve(full)]
         const mod = loadModule(full)
-        const parsed = this.parsePlugin(mod)
-        if (!parsed) throw new Error("module.exports must be { name, tools }")
-        // 清掉该插件旧条目（重载后工具集可能变化）
-        for (const [tool, t] of this.tools) if (t.plugin === full) this.tools.delete(tool)
-        stale.delete(full)
-        for (const [tool, entry] of Object.entries(parsed.tools)) this.tools.set(tool, { plugin: full, ...entry })
-        loaded.push(file)
+        const p = this.parsePlugin(mod)
+        if (!p) throw new Error("module.exports must be { name, tools }")
+        parsed.push({ file, full, ...p })
       } catch (err) {
         failed[file] = err instanceof Error ? err.message : String(err)
         this.warnOnce(full, failed[file]!)
         stale.delete(full) // 加载失败时保留旧版本条目（fail-open）
       }
+    }
+
+    // Phase 2: dependency resolution. Build the satisfied set FORWARD from
+    // empty (repeatedly add plugins whose requires are all satisfied) —
+    // this drops cycles and chains rooted at missing deps. An unsatisfied
+    // plugin is treated as failed; its previous tools stay (fail-open).
+    const ok = new Set<string>()
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const p of parsed) {
+        if (ok.has(p.name)) continue
+        if (p.requires.every((r) => ok.has(r))) {
+          ok.add(p.name)
+          changed = true
+        }
+      }
+    }
+    for (const p of parsed) {
+      if (ok.has(p.name)) continue
+      const missing = p.requires.filter((r) => !ok.has(r))
+      failed[p.file] = `missing dependency: ${missing.join(", ")}`
+      this.warnOnce(p.full, failed[p.file]!)
+    }
+
+    // Phase 3: register tools of satisfied plugins.
+    for (const p of parsed) {
+      if (!ok.has(p.name)) continue
+      // 清掉该插件旧条目（重载后工具集可能变化）
+      for (const [tool, t] of this.tools) if (t.plugin === p.full) this.tools.delete(tool)
+      stale.delete(p.full)
+      for (const [tool, entry] of Object.entries(p.tools)) this.tools.set(tool, { plugin: p.full, ...entry })
+      loaded.push(p.file)
     }
     // 文件被删除 → 清除其条目
     for (const removed of stale) for (const [tool, t] of this.tools) if (t.plugin === removed) this.tools.delete(tool)
@@ -106,7 +144,7 @@ export class UiPluginManager {
     return { loaded, failed }
   }
 
-  private parsePlugin(mod: unknown): { name: string; tools: Record<string, { override: boolean; render?: (ctx: RenderContext) => unknown }> } | null {
+  private parsePlugin(mod: unknown): { name: string; requires: string[]; tools: Record<string, { override: boolean; render?: (ctx: RenderContext) => unknown }> } | null {
     if (!mod || typeof mod !== "object") return null
     const m = mod as Record<string, unknown>
     if (typeof m.name !== "string" || !m.name) return null
@@ -120,7 +158,10 @@ export class UiPluginManager {
         render: typeof d.render === "function" ? (d.render as ToolEntry["render"]) : undefined,
       }
     }
-    return { name: m.name, tools }
+    const requires = Array.isArray(m.requires)
+      ? m.requires.filter((r): r is string => typeof r === "string" && r.length > 0)
+      : []
+    return { name: m.name, requires, tools }
   }
 
   private warnOnce(key: string, message: string) {

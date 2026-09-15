@@ -3959,3 +3959,16 @@ html[data-theme="light"] .mafw-picker-pop {
 
 /* Goal plan-review toggle (P1 batch 2) */
 .mafw-welcome-plan-review { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+/* Plugin widget vocabulary v2: markdown + progress (P3 batch) */
+.mafw-plugin-markdown { font-size: 12px; line-height: 1.6; }
+.mafw-plugin-markdown :is(h1, h2, h3) { font-size: 13px; margin: 8px 0 4px; }
+.mafw-plugin-markdown p { margin: 4px 0; }
+.mafw-plugin-markdown pre { background: var(--surface-base-hover); border-radius: 6px; padding: 8px; overflow-x: auto; font-size: 11px; }
+.mafw-plugin-markdown code { font-family: var(--font-mono, monospace); font-size: 11px; }
+.mafw-plugin-markdown ul, .mafw-plugin-markdown ol { padding-left: 18px; margin: 4px 0; }
+.mafw-plugin-markdown a { color: var(--accent-text, #7aa2f7); }
+.mafw-plugin-progress { display: flex; align-items: center; gap: 8px; }
+.mafw-plugin-progress-track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-base-hover); overflow: hidden; }
+.mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text, #7aa2f7); transition: width .3s ease; }
+.mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }

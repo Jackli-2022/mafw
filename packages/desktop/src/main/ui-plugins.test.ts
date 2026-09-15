@@ -120,3 +120,41 @@ test("missing directory → empty list, no throw", () => {
   expect(m2.list()).toEqual([])
   m2.dispose()
 })
+
+// ── Plugin dependencies (requires) ──
+
+test("dependent plugin loads when its dependency is present (any file order)", () => {
+  fs.writeFileSync(path.join(dir, "z-dependent.js"), `
+    module.exports = { name: "dep-user", requires: ["dep-base"], tools: { dep_tool: { render: () => ({ title: "D", body: [] }) } } }
+  `)
+  fs.writeFileSync(path.join(dir, "a-base.js"), `
+    module.exports = { name: "dep-base", tools: { base_tool: { render: () => ({ title: "B", body: [] }) } } }
+  `)
+  const res = mgr.loadAll()
+  expect(res.loaded.sort()).toEqual(["a-base.js", "z-dependent.js"])
+  expect(mgr.list().some((e) => e.tool === "dep_tool")).toBe(true)
+})
+
+test("dependent plugin fails when the dependency is missing", () => {
+  fs.writeFileSync(path.join(dir, "z-dependent.js"), `
+    module.exports = { name: "dep-user", requires: ["dep-base"], tools: { dep_tool: { render: () => ({ title: "D", body: [] }) } } }
+  `)
+  const res = mgr.loadAll()
+  expect(res.loaded).toEqual([])
+  expect(res.failed["z-dependent.js"]).toContain("missing dependency: dep-base")
+  expect(mgr.list().some((e) => e.tool === "dep_tool")).toBe(false)
+})
+
+test("dependency cycles drop every plugin in the cycle", () => {
+  fs.writeFileSync(path.join(dir, "p1.js"), `
+    module.exports = { name: "p1", requires: ["p2"], tools: { t1: { render: () => ({ title: "1", body: [] }) } } }
+  `)
+  fs.writeFileSync(path.join(dir, "p2.js"), `
+    module.exports = { name: "p2", requires: ["p1"], tools: { t2: { render: () => ({ title: "2", body: [] }) } } }
+  `)
+  const res = mgr.loadAll()
+  expect(res.loaded).toEqual([])
+  expect(res.failed["p1.js"]).toContain("missing dependency: p2")
+  expect(res.failed["p2.js"]).toContain("missing dependency: p1")
+  expect(mgr.list()).toEqual([])
+})
