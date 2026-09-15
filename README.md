@@ -10,6 +10,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/mafw.svg)](https://www.npmjs.com/package/mafw)
+[![CI](https://github.com/Jackli-2022/mafw/actions/workflows/ci.yml/badge.svg)](https://github.com/Jackli-2022/mafw/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/Jackli-2022/mafw)
 
 </div>
@@ -25,6 +26,7 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
 |---|---|---|
 | **Gateway** | 常驻进程（HTTP API :3000 + 事件流） | 记忆存取、Goal 编排、自动化引擎、全部业务中枢 |
 | **Desktop** | Electron 应用 | 对话、Goal 管理、记忆看板、审批与自动化配置的完整 GUI |
+| **TUI** | `mafw tui` 命令 | 终端全功能界面：Chat / Goals / Memory / Triage（markdown 渲染、鼠标点选） |
 | **CLI** | `mafw` 命令 | Gateway 的启动、守护、诊断与运维 |
 | **opencode 插件** | 可选接入 | 在 opencode 内获得记忆注入与 `mafw_*` 工具（其一入口，非必需） |
 
@@ -46,7 +48,8 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
 
 ### 🤖 Goal 编排
 
-- **Manager Agent**：拆解目标 → plan / execute / review 循环，里程碑自动推送
+- **Manager Agent**：拆解目标 → plan / execute / review 循环，里程碑自动推送；创建即计划评审门（review-then-run）
+- **回合预算**：goal 可设 `maxTurns` / `maxCostUsd`，超限自动硬停（BudgetGuard）
 - **每轮目标快照**注入，compaction 免疫；`/btw` 支线问答不污染主线
 - **演化观测**（RSI Phase 1）：goal 结果、会话映射、失败签名全量落库，为策略演化铺路
 
@@ -54,6 +57,10 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
 
 Rail 侧边栏 + TabStrip 布局：`chat / goals / memory / approvals / triage / automation / notes` 全功能 GUI，
 右 Dock 内置上下文用量、分模型成本统计与配额窗口，15s 轮询实时刷新。
+
+v1.20 交互面：**steering**（忙碌回合排队续发）、会话分支（fork / revert / unrevert）、全局命令面板（Ctrl+P）、
+每会话审批模式（manual / auto + 预算上限）、系统托盘与 OS 通知、会话导出 Markdown、@file 文件提及、
+transcript 搜索（Ctrl+F）；UI 工具卡插件系统支持 `.js` 文件自定义工具执行卡（v2：依赖声明 + 流式渲染）。
 
 ### 🎬 媒体理解
 
@@ -71,7 +78,8 @@ Cron 规则驱动：记忆衰减、回合聚合压缩（每小时）、反思管
 ### 🔌 Runtime 能力契约
 
 Gateway 与 Agent runtime 之间是能力自声明契约（Tier 0-2）：内置 opencode runtime、pi runtime 插件、
-external 托管模式可热切换，无需重启。
+external 托管模式可热切换，无需重启。契约能力面覆盖会话分支（fork / revert）、回合预算、
+结果信封（usage / finish）、三值审批回复（once / always / reject）、原生 question 通道等。
 
 ## 基准
 
@@ -113,10 +121,21 @@ npm install -g mafw
 mafw start          # 前台启动
 mafw daemon         # 后台守护
 mafw status         # 查看状态
+mafw tui            # 终端界面（Chat / Goals / Memory / Triage）
 mafw dashboard      # 打开 Web Dashboard
 ```
 
-### 2. 桌面应用（源码构建）
+### 2. 桌面应用
+
+安装包内置 Gateway，开箱即用（无需先装 npm 包）。下载：
+[GitHub Releases 最新版](https://github.com/Jackli-2022/mafw/releases/latest)
+
+| 平台 | 安装包 |
+|---|---|
+| Windows | `mafw-desktop-win-x64.exe`（nsis，未签名） |
+| Linux | `AppImage`（需 `chmod +x`）/ `.deb` / `.rpm` |
+
+或从源码构建：
 
 ```bash
 git clone https://github.com/Jackli-2022/mafw
@@ -140,8 +159,10 @@ npx electron-vite build
 
 ```
 packages/desktop/        Electron 桌面应用（main / preload / renderer）
+packages/tui/            终端界面（pi-tui）
 gateway/                 Gateway 核心（HTTP API、记忆、编排、自动化、媒体、内核）
 src/                     opencode 插件（hooks / tools / MCP 自接线）
+.github/workflows/       CI：双 OS 验证；tag v* 自动出桌面安装包（draft release）
 evaluation/longmemeval/  LongMemEval 记忆基准
 docs/                    设计文档与实施计划
 ```
