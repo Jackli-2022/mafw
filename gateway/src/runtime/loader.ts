@@ -30,6 +30,8 @@ export interface RuntimePluginState {
   status: 'ok' | 'error';
   error?: string;
   capabilities?: RuntimeCapabilities;
+  /** filename-stem alias key registered for hub "激活" (absent when stem === name). */
+  alias?: string;
 }
 
 export class RuntimePluginLoader {
@@ -74,6 +76,10 @@ export class RuntimePluginLoader {
           this.factories.delete(prev.name);
           this.meta.delete(prev.name);
         }
+        if (prev?.alias) {
+          this.factories.delete(prev.alias);
+          this.meta.delete(prev.alias);
+        }
         this.state.delete(file);
       }
     }
@@ -108,9 +114,22 @@ export class RuntimePluginLoader {
       const external = mod.external !== false;
       this.factories.set(name, mod.createRuntime);
       this.meta.set(name, { capabilities, external });
-      this.state.set(file, { file, name, status: 'ok', capabilities });
       loadedNames.add(name);
-      log.info(`[RuntimePluginLoader] Loaded ${file} (${name})`);
+      // Filename-stem alias: the plugin hub addresses runtime plugins by
+      // filename stem (statEntry baseName) while switch/createRuntime
+      // validate by module.exports.name — register both so hub "激活" works
+      // regardless of the declared name. The real module name always wins
+      // (unconditional set above overwrites an earlier stem alias), and an
+      // alias never shadows a builtin.
+      const stem = file.replace(/\.js$/, '');
+      let alias: string | undefined;
+      if (stem !== name && !this.factories.has(stem) && !this.builtins.has(stem)) {
+        this.factories.set(stem, mod.createRuntime);
+        this.meta.set(stem, { capabilities, external });
+        alias = stem;
+      }
+      this.state.set(file, { file, name, status: 'ok', capabilities, alias });
+      log.info(`[RuntimePluginLoader] Loaded ${file} (${name})${alias ? ` [alias: ${alias}]` : ''}`);
     } catch (err: any) {
       const prev = this.state.get(file);
       this.state.set(file, { file, name: prev?.name, status: 'error', error: err.message });
