@@ -259,7 +259,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   async function switchRuntime(plugin: string) {
     setConfirmReq({
       title: `切换 Runtime 到 "${plugin || 'opencode'}"？`,
-      message: "需要等待 Gateway 重新连接。",
+      message: "进程内热切换，Gateway 不重启；耗时数秒（可能拉起/停止 serve），期间进行中的会话可能短暂中断。",
       confirmLabel: "切换",
       onConfirm: () => void doSwitchRuntime(plugin),
     })
