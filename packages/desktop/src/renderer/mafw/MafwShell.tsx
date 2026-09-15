@@ -32,6 +32,7 @@ import { registerMafwToolCards } from "./components/MafwToolCards"
 import { registerUserPluginCards } from "./components/UserPluginCards"
 import { WelcomeHome } from "./components/WelcomeHome"
 import { DashboardPage } from "./pages/Dashboard"
+import { parseDeepLink } from "./deep-link"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
@@ -117,8 +118,6 @@ export function MafwShell() {
   // Return from a subagent session to its parent (content pane only).
   const backToParent = (childID: string) => {
     const parentID = subagentStack[childID] || store.session.find((s: any) => s.id === childID)?.parentID
-    console.log("[mafw] backToParent", childID, "->", parentID, "stack:", subagentStack[childID], "storeRec:", store.session.find((s: any) => s.id === childID))
-    showToastV2({ description: `backToParent ${childID.slice(-8)} -> ${parentID ? parentID.slice(-8) : "NULL"}`, duration: 3000 })
     if (parentID) {
       setSubagentStack(childID, undefined as any)
       setActiveSessionId(parentID)
@@ -299,6 +298,43 @@ export function MafwShell() {
     void window.api.mafw.notify?.({ title, body }).catch(() => { /* fail-open */ })
   }
   const lastIdleNotify: Record<string, number> = {}
+
+  // Deep link routing (mafw://session/<id>, mafw://tab/<name>) — main
+  // registers the protocol and forwards URLs here.
+  onMount(() => {
+    const off = (window.api as any).onDeepLink?.((urls: string[]) => {
+      for (const u of urls || []) {
+        const link = parseDeepLink(u)
+        if (!link) continue
+        if (link.kind === "session") {
+          setShowConfig(false)
+          setActiveTab("chat")
+          setShowWelcome(false)
+          openSessionTab(link.id)
+        } else if (link.kind === "tab") {
+          setShowConfig(false)
+          setShowWelcome(false)
+          setActiveTab(link.id as any)
+        }
+      }
+    })
+    if (typeof off === "function") onCleanup(() => off())
+  })
+
+  // Quick entry (global Ctrl+Shift+M): main shows+focuses the window and
+  // pings us — jump to the chat tab and focus the composer.
+  onMount(() => {
+    const off = (window.api as any).onQuickEntry?.(() => {
+      setShowConfig(false)
+      setShowWelcome(false)
+      setActiveTab("chat")
+      queueMicrotask(() => {
+        const ta = document.querySelector(".mafw-input") as HTMLTextAreaElement | null
+        ta?.focus()
+      })
+    })
+    if (typeof off === "function") onCleanup(() => off())
+  })
 
   // Compaction boundary marks per session (session.compacted SSE events) —
   // rendered by ChatPane as a divider above the surviving context.

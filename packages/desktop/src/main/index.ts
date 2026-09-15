@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, nativeTheme } from "electron"
+import { app, globalShortcut, nativeTheme } from "electron"
 
 import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
@@ -269,6 +269,23 @@ const main = Effect.gen(function* () {
   registerRendererProtocol()
   setDockIcon()
   createTray()
+
+  // Quick entry: global hotkey shows the window and focuses the composer.
+  // Takes over the accelerator the dead mafw-menu once reserved.
+  const QUICK_ENTRY_ACCELERATOR = "Ctrl+Shift+M"
+  try {
+    globalShortcut.register(QUICK_ENTRY_ACCELERATOR, () => {
+      const win = getLastFocusedWindow()
+      if (win) {
+        win.show()
+        win.focus()
+        win.webContents.send("mafw-quick-entry")
+      }
+    })
+  } catch (error) {
+    logger.warn("failed to register quick entry hotkey", { error: String(error) })
+  }
+  app.on("will-quit", () => globalShortcut.unregister(QUICK_ENTRY_ACCELERATOR))
   const updater = setupAutoUpdater(stopSidecars)
   registerIpcHandlers({
     killSidecar: () => {},

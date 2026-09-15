@@ -91,6 +91,11 @@ const api: ElectronAPI = {
     ipcRenderer.on("deep-link", handler)
     return () => ipcRenderer.removeListener("deep-link", handler)
   },
+  onQuickEntry: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on("mafw-quick-entry", handler)
+    return () => ipcRenderer.removeListener("mafw-quick-entry", handler)
+  },
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   openFilePicker: (opts) => ipcRenderer.invoke("open-file-picker", opts),
