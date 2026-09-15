@@ -74,16 +74,19 @@ function ProviderSection(props: { provider: any; displayName?: string }) {
             {(() => {
               const tooltip = () => {
                 const parts = [
-                  w.unit === '$' ? `已用 $${w.used} / $${w.limit}` : w.unit === 'pct' ? `已用 ${w.pct}%` : `已用 ${w.used} / ${w.limit}`,
+                  w.unit === '$' ? `已用 $${w.used} / $${w.limit}` : w.unit === 'pct' ? `已用 ${w.pct}%` : w.unit === 'credit' ? `已用 ${w.used} / ${w.limit} credits` : `已用 ${w.used} / ${w.limit}`,
                 ]
                 if (w.tokens) parts.push(`${fmt(w.tokens)} tokens`)
-                if (w.remaining !== undefined) parts.push(`剩余 $${w.remaining}`)
+                if (w.remaining !== undefined) parts.push(w.unit === 'credit' ? `剩余 ${w.remaining} credits` : `剩余 $${w.remaining}`)
                 if (w.resetAt) parts.push(`重置 ${fmtTime(w.resetAt - Date.now())}`)
                 if (w.projected !== undefined && w.projected > w.pct) parts.push(`预计 ${w.projected}%`)
-                return parts.join(' · ')
+                const base = parts.join(' · ')
+                return Array.isArray(w.detailLines) && w.detailLines.length > 0
+                  ? base + '\n' + w.detailLines.join('\n')
+                  : base
               }
               return (
-                <TooltipV2 value={tooltip()} openDelay={300}>
+                <TooltipV2 value={tooltip()} contentStyle={{ "white-space": "pre-line" }} openDelay={300}>
                   <div class="mafw-usage-window">
                     <span class="mafw-usage-window-label">{w.window}</span>
                     <div class="mafw-usage-window-progress">
