@@ -36,6 +36,7 @@ import { parseDeepLink } from "./deep-link"
 import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { shouldAutoApprove, nextPermissionMode } from "./components/permission-mode"
+import { saveLayout, loadLayout, pruneMissing } from "./layout-persist"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
@@ -427,6 +428,45 @@ export function MafwShell() {
     const id = activeViewId()
     if (!id || !id.startsWith("split-")) return null
     return splitViews().find(v => v.id === id) ?? null
+  })
+
+  // ── Layout persistence: session tabs + active view survive restarts ──
+  // Split-view trees are intentionally NOT persisted (they reference pane
+  // paths); only the flat tab list does, pruned against live sessions.
+  const layoutIO = { getItem: (k: string) => localStorage.getItem(k), setItem: (k: string, v: string) => localStorage.setItem(k, v), removeItem: (k: string) => localStorage.removeItem(k) }
+  let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
+  createEffect(() => {
+    sessions()
+    activeViewId()
+    if (layoutSaveTimer) clearTimeout(layoutSaveTimer)
+    layoutSaveTimer = setTimeout(() => {
+      saveLayout(layoutIO, {
+        tabs: sessions().map(s => ({ id: s.id, title: s.title })),
+        activeViewId: activeViewId(),
+      })
+    }, 500)
+  })
+
+  // Restore once the history list is loaded (prune tabs whose sessions died).
+  const [layoutRestored, setLayoutRestored] = createSignal(false)
+  createEffect(() => {
+    if (layoutRestored()) return
+    if (gwStatus()?.state !== "ready") return
+    const hist = historySessions()
+    if (!hist || hist.length === 0) return
+    setLayoutRestored(true)
+    const snap = loadLayout(layoutIO)
+    if (!snap) return
+    const existing = new Set(hist.map(s => s.id))
+    const pruned = pruneMissing(snap, existing)
+    if (!pruned) return
+    for (const t of pruned.tabs) openSessionTab(t.id, t.title)
+    if (pruned.activeViewId) {
+      setShowWelcome(false)
+      setActiveSessionId(pruned.activeViewId)
+      setActiveViewId(pruned.activeViewId)
+    }
+    console.log("[mafw] layout restored:", pruned.tabs.length, "tabs")
   })
 
   const persistSplitViews = (recs: SplitViewRec[]) => {
