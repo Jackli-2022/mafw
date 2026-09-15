@@ -986,6 +986,8 @@ Gateway 仅提供 PluginLoader + ctx + UsagePoller；UI 保持通用。
 | `api` | deepseek, kimi, openrouter, siliconflow-cn | balance（余额/限额）|
 | `token-plan` | opencode-go, zhipuai-coding-plan, kimi-for-coding, commandcode | 5h / 7d / month |
 
+**内置插件 `gateway`（蓝区统一网关）**：credit 总量 + day/7d/month 滚动窗口；限额经 Config 页插件参数表单手配（`usage.pluginConfig.gateway: { credit, day, week, month, baseURL? }`），消耗 = 本地 trajectory tokens × `GET {baseURL}/models` 的 per-model credit 价格（5min 缓存）。注意：`usage.budgets.gateway > 0` 仅在插件结果为纯 balance 窗口时才折叠（含 day/7d/month 窗口时跳过并 warn）。
+
 ### 8.3 插件接口
 
 ```javascript
@@ -996,6 +998,8 @@ module.exports = {
   async fetch(ctx) {
     // ctx.apiKey(name) - 读取 auth.json 中的 provider key
     // ctx.cookie(name) - 读取 config.usage.cookies[name]
+    // ctx.pluginConfig(name) - 读取 config.usage.pluginConfig[name]
+    // ctx.usage.modelStats({ sinceMs?, provider? }) - 本地 trajectory 分模型 token 统计（滚动窗；缺省返回 []）
     // ctx.fetch(url, opts) - 带 10s 超时的 fetch
     // ctx.pluginConfig(name) - 读取 config.usage.pluginConfig[name]
     // ctx.log - gateway logger
