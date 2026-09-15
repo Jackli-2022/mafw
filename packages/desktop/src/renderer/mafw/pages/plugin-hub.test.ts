@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { sortEntries, statusLabel, installableTypes, runtimeActivatable, type HubEntry } from "./plugin-hub"
+import { sortEntries, statusLabel, installableTypes, runtimeActivatable, parseAmbiguousCandidates, type HubEntry } from "./plugin-hub"
 
 const entry = (over: Partial<HubEntry>): HubEntry => ({
   type: "runtime", name: "foo", file: "foo.js", status: "enabled", size: 1, mtime: "2026-09-11T00:00:00Z", ...over,
@@ -35,5 +35,15 @@ describe("plugin-hub pure helpers", () => {
     expect(runtimeActivatable(entry({ type: "runtime", status: "error" }), "pi")).toBe(false)
     expect(runtimeActivatable(entry({ type: "media", status: "enabled" }), "pi")).toBe(false)
     expect(runtimeActivatable(entry({ type: "runtime", status: "enabled" }), null)).toBe(true)
+  })
+})
+
+describe("parseAmbiguousCandidates", () => {
+  test("parses candidate list from gateway error message", () => {
+    expect(parseAmbiguousCandidates("ambiguous plugin interface: media/usage")).toEqual(["media", "usage"])
+  })
+  test("returns null for other errors", () => {
+    expect(parseAmbiguousCandidates("plugin already exists: foo.js")).toBeNull()
+    expect(parseAmbiguousCandidates("ambiguous plugin interface: ")).toBeNull()
   })
 })

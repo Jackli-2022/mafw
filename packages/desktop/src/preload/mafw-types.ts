@@ -19,6 +19,7 @@ export type MafwAPI = {
     update: () => Promise<{ ok: boolean; error?: string }>
     logsPath: () => Promise<string>
     onStateChange: (cb: (status: GatewayStatus) => void) => () => void
+    onHealthChange: (cb: (health: { healthy: boolean; failures: number }) => void) => () => void
   }
 
   files: {
@@ -192,8 +193,8 @@ export type MafwAPI = {
   }
 
   plugins: {
-    list(): Promise<{ plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string }[] }>
-    install(input: { type: 'runtime' | 'media' | 'usage' | 'ui'; filename: string; contentBase64: string; overwrite?: boolean }): Promise<any>
+    list(): Promise<{ plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string; builtin?: boolean; overridden?: boolean; pluginType?: string }[] }>
+    install(input: { filename: string; type?: 'runtime' | 'media' | 'usage' | 'ui'; bytes: Uint8Array; overwrite?: boolean }): Promise<any>
     enable(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any>
     disable(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any>
     delete(type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<{ ok: true }>

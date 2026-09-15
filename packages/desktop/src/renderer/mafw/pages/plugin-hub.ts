@@ -41,3 +41,12 @@ export function sortEntries(entries: HubEntry[]): HubEntry[] {
 export function runtimeActivatable(entry: HubEntry, activeName: string | null | undefined): boolean {
   return entry.type === "runtime" && entry.status === "enabled" && entry.name !== (activeName ?? "opencode")
 }
+
+/** Extracts the candidate type list from a gateway `ambiguous plugin interface` install error. */
+export function parseAmbiguousCandidates(message: string): string[] | null {
+  const prefix = "ambiguous plugin interface: "
+  if (!message.startsWith(prefix)) return null
+  const rest = message.slice(prefix.length).trim()
+  const candidates = rest.split("/").map((s) => s.trim()).filter(Boolean)
+  return candidates.length > 0 ? candidates : null
+}

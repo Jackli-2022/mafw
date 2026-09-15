@@ -9,7 +9,7 @@ import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
-import { sortEntries, statusLabel, installableTypes, runtimeActivatable, type HubEntry } from "./plugin-hub"
+import { sortEntries, statusLabel, installableTypes, runtimeActivatable, parseAmbiguousCandidates, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 
@@ -309,8 +309,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   const [hubEntries, setHubEntries] = createSignal<HubEntry[]>([])
   const [hubLoading, setHubLoading] = createSignal(false)
   const [installOpen, setInstallOpen] = createSignal(false)
-  const [installType, setInstallType] = createSignal<string>("runtime")
-  const [installFile, setInstallFile] = createSignal<{ name: string; contentBase64: string; size: number } | null>(null)
+  const [installType, setInstallType] = createSignal<string | null>(null)
+  const [installFile, setInstallFile] = createSignal<{ name: string; bytes: Uint8Array; size: number } | null>(null)
+  const [installCandidates, setInstallCandidates] = createSignal<string[] | null>(null)
   const [installBusy, setInstallBusy] = createSignal(false)
   let fileInputRef: HTMLInputElement | undefined
 
@@ -336,10 +337,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       return
     }
     const buf = await file.arrayBuffer()
-    let binary = ""
-    const bytes = new Uint8Array(buf)
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-    setInstallFile({ name: file.name, contentBase64: btoa(binary), size: bytes.length })
+    setInstallFile({ name: file.name, bytes: new Uint8Array(buf), size: buf.byteLength })
+    setInstallCandidates(null)
     input.value = ""
   }
 
@@ -348,12 +347,22 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     if (!f) return
     setInstallBusy(true)
     try {
-      await window.api.mafw.plugins.install({ type: installType() as any, filename: f.name, contentBase64: f.contentBase64 })
+      await window.api.mafw.plugins.install({
+        filename: f.name,
+        bytes: f.bytes,
+        ...(installType() ? { type: installType() as any } : {}),
+      })
       showToastV2({ description: `已安装 ${f.name}`, duration: 3000 })
-      setInstallFile(null); setInstallOpen(false)
+      setInstallFile(null); setInstallType(null); setInstallCandidates(null); setInstallOpen(false)
       await loadPluginHub()
     } catch (err: any) {
-      showToastV2({ description: `安装失败: ${err.message}`, duration: 4000 })
+      const candidates = parseAmbiguousCandidates(String(err.message ?? err))
+      if (candidates) {
+        setInstallCandidates(candidates)
+        showToastV2({ description: `无法唯一识别插件类型（${candidates.join("/")}），请选择`, duration: 4000 })
+      } else {
+        showToastV2({ description: `安装失败: ${err.message}`, duration: 4000 })
+      }
     } finally { setInstallBusy(false) }
   }
 
@@ -705,16 +714,18 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <Show when={installOpen()}>
                   <div style={{ border: "1px solid var(--border, #333)", "border-radius": 8, padding: 12, "margin-bottom": 12 }}>
                     <div style={{ display: "flex", gap: 8, "align-items": "center", "margin-bottom": 8 }}>
-                      <div style={{ width: 180 }}>
-                        <SelectV2
-                          options={installableTypes().map((t) => ({ value: t, label: t }))}
-                          current={installType()}
-                          value={(x: string) => x}
-                          label={(x: string) => x}
-                          onSelect={(v) => { if (v) setInstallType(v) }}
-                          placeholder="插件类型"
-                        />
-                      </div>
+                      <Show when={installCandidates()}>
+                        <div style={{ width: 180 }}>
+                          <SelectV2
+                            options={(installCandidates() ?? []).map((t) => ({ value: t, label: t }))}
+                            current={installType() ?? ""}
+                            value={(x: string) => x}
+                            label={(x: string) => x}
+                            onSelect={(v) => { if (v) setInstallType(v) }}
+                            placeholder="插件类型"
+                          />
+                        </div>
+                      </Show>
                       <input ref={fileInputRef} type="file" accept=".js" class="hidden" onChange={onInstallFileChosen} />
                       <ButtonV2 variant="outline" size="small" onClick={pickInstallFile}>选择 .js 文件</ButtonV2>
                       <Show when={installFile()}>
