@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { log } from '../core/utils/logger';
-import { HubDeps, HubError, listPlugins, installPlugin, setPluginEnabled, deletePlugin } from '../plugins/hub';
+import { HubDeps, HubError, PluginType, listPlugins, installPlugin, setPluginEnabled, deletePlugin } from '../plugins/hub';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -53,7 +53,7 @@ export async function handlePluginsInstall(req: http.IncomingMessage, res: http.
   await guarded(res, async () => {
     const url = new URL(req.url || '/', 'http://localhost');
     const filename = url.searchParams.get('filename') || '';
-    const type = url.searchParams.get('type') || undefined;
+    const type = (url.searchParams.get('type') || undefined) as PluginType | undefined;
     const overwrite = url.searchParams.get('overwrite') === '1' || url.searchParams.get('overwrite') === 'true';
     const bytes = await readBodyBuffer(req);
     const entry = await installPlugin(deps.hub, { filename, type, bytes, overwrite });
