@@ -423,14 +423,17 @@ export class MafwClient implements IMafwClient {
 
   plugins = {
     list: async (): Promise<{
-      plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string }[];
+      plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string; builtin?: boolean; overridden?: boolean; pluginType?: string }[];
     }> => this.request('/api/plugins'),
 
-    install: async (input: { type: 'runtime' | 'media' | 'usage' | 'ui'; filename: string; contentBase64: string; overwrite?: boolean }): Promise<any> => {
-      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/install`, {
+    install: async (input: { filename: string; type?: 'runtime' | 'media' | 'usage' | 'ui'; bytes: Uint8Array; overwrite?: boolean }): Promise<any> => {
+      const params = new URLSearchParams({ filename: input.filename });
+      if (input.type) params.set('type', input.type);
+      if (input.overwrite) params.set('overwrite', '1');
+      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/install?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, overwrite: !!input.overwrite }),
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: input.bytes as unknown as BodyInit,
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
