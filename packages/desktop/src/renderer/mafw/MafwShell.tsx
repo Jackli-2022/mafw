@@ -1752,8 +1752,12 @@ export function MafwShell() {
   const gwReadyForMenus = createMemo(() => gwStatus()?.state === "ready")
   const [agentsData, setAgentsData] = createSignal<any[]>([])
   const [providersData, setProvidersData] = createSignal<any>(null)
+  const [providersRetry, setProvidersRetry] = createSignal(0)
+  let providersRetryTimer: ReturnType<typeof setTimeout> | null = null
+  onCleanup(() => { if (providersRetryTimer) clearTimeout(providersRetryTimer) })
   createEffect(() => {
     if (!gwReadyForMenus()) return
+    providersRetry() // re-run when a failed providers fetch schedules a retry
     window.api.mafw.agents.list().then((list: any[]) => {
       setAgentsData(Array.isArray(list) ? list : [])
     }).catch(e => console.warn("[mafw] agents.list:", e))
@@ -1789,7 +1793,18 @@ export function MafwShell() {
           }
         } catch { /* ignore */ }
       }
-    }).catch(e => console.warn("[mafw] providers.list:", e))
+    }).catch(e => {
+      // Serve/gateway may still be starting (or briefly down): retry with a
+      // bounded schedule instead of leaving an empty model picker forever.
+      console.warn("[mafw] providers.list:", e)
+      const attempt = providersRetry() + 1
+      if (attempt <= 12 && providersRetryTimer === null) {
+        providersRetryTimer = setTimeout(() => {
+          providersRetryTimer = null
+          setProvidersRetry(attempt)
+        }, 10_000)
+      }
+    })
   })
 
   // Primary agents (switchable driver) vs subagent agents (mentionable too).
