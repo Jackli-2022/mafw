@@ -706,7 +706,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
           <Show when={activeNav() === "plugins"}>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">??</span>
+                <span class="mafw-config-section-icon">🧩</span>
                 <span class="mafw-config-section-title">插件中心（全部插件）</span>
               </div>              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
                 {rtEnvOverride() && (
