@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createSignal, createEffect, Show, For, onMount, onCleanup } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 
 // Goal drill-down: metadata (goals.get) + orchestration session list
 // (goals.sessions, gateway /api/goals/:id/sessions). Clicking a session opens
@@ -42,7 +43,7 @@ export function GoalDetailOverlay(props: { goalId: string | null; onClose: () =>
               <div class="mafw-card-title">{goal()?.goalId || props.goalId}</div>
               <div class="mafw-card-meta">{goal()?.title || ""}</div>
             </div>
-            <button class="mafw-btn" onClick={props.onClose} aria-label="关闭详情">✕</button>
+            <ButtonV2 variant="ghost" size="small" onClick={props.onClose} aria-label="关闭详情">✕</ButtonV2>
           </div>
           <Show when={!loading()} fallback={
             <div style={{ display: "flex", gap: 8, padding: "32px 0", "justify-content": "center" }}>

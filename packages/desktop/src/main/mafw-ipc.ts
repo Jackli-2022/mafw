@@ -10,7 +10,7 @@ import {
   startGateway,
   stopGateway,
 } from "./mafw-sidecar"
-import { getLastFocusedWindow, trayIconPath } from "./windows"
+import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
 import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
 import { UiPluginManager } from "./ui-plugins"
@@ -73,6 +73,17 @@ export function registerMafwIpcHandlers() {
   })
 
   ipcMain.handle("mafw-gateway-info", () => getGatewayStatus())
+
+  // Open an additional main window (window-registry already persists ids).
+  ipcMain.handle("mafw-new-window", () => {
+    try {
+      createMainWindow()
+      return { ok: true }
+    } catch (err) {
+      writeLog("utility", "mafw-new-window failed", { err: String(err) }, "warn")
+      return { ok: false, error: String(err) }
+    }
+  })
 
   // OS-level notification for away-from-window moments (close-to-tray).
   // The renderer decides relevance (document.hidden) and throttling.

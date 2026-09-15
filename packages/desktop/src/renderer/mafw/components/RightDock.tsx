@@ -4,12 +4,14 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { TabsV2 } from "@mafw/ui/v2/tabs-v2"
 
+type DockTab = "tasks" | "trajectory" | "usage" | "quota" | "notes"
+
 export function RightDock(props: {
   open: boolean
-  tab: "tasks" | "trajectory" | "usage" | "quota"
+  tab: DockTab
   width: number
   onClose: () => void
-  onTab: (tab: "tasks" | "trajectory" | "usage" | "quota") => void
+  onTab: (tab: DockTab) => void
   children: any
 }) {
   return (

@@ -117,14 +117,15 @@ export function WelcomeHome(props: {
           <For each={props.projects}>
             {(p) => (
               <TooltipV2 placement="bottom" value={p.worktree}>
-                <button
-                  type="button"
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
                   class="mafw-welcome-project"
                   data-selected={props.currentProject === p.worktree ? "" : undefined}
                   onClick={() => props.onSelectProject(p.worktree)}
                 >
                   {projectName(p)}
-                </button>
+                </ButtonV2>
               </TooltipV2>
             )}
           </For>

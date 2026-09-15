@@ -296,9 +296,9 @@ export function Rail(props: Props) {
             class="mafw-rail-search-toggle"
           />
         </TooltipV2>
-        <button class="mafw-rail-collapse" onClick={() => props.onToggleCollapsed?.()} aria-label="折叠侧边栏">
+        <ButtonV2 variant="ghost" size="small" class="mafw-rail-collapse" onClick={() => props.onToggleCollapsed?.()} aria-label="折叠侧边栏">
           <Icon name="chevron-left" size="small" />
-        </button>
+        </ButtonV2>
       </div>
 
       <Show when={searchOpen()}>
@@ -325,10 +325,10 @@ export function Rail(props: Props) {
       />
 
       <div class="mafw-rail-new">
-        <button class="mafw-rail-new-btn" onClick={newSession}>
+        <ButtonV2 variant="outline" size="small" class="mafw-rail-new-btn" onClick={() => void newSession()}>
           <Icon name="plus-small" size="small" />
           <span>New session</span>
-        </button>
+        </ButtonV2>
       </div>
 
       {/* Scroll area: fixed date groups, infinite scroll, search results */}

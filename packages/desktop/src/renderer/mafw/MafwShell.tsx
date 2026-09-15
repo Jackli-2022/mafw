@@ -34,6 +34,7 @@ import { WelcomeHome } from "./components/WelcomeHome"
 import { DashboardPage } from "./pages/Dashboard"
 import { parseDeepLink } from "./deep-link"
 import { ConfirmOverlay } from "./components/ConfirmOverlay"
+import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
@@ -311,6 +312,54 @@ export function MafwShell() {
   // Shared destructive confirmation request (ConfirmOverlay) — replaces the
   // blocking window.confirm for in-shell actions.
   const [confirmReq, setConfirmReq] = createSignal<{ title: string; message?: string; confirmLabel?: string; onConfirm: () => void } | null>(null)
+
+  // Global command palette (Ctrl+P).
+  const [paletteOpen, setPaletteOpen] = createSignal(false)
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
+        e.preventDefault()
+        setPaletteOpen(o => !o)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
+  const paletteItems = (): PaletteItem[] => {
+    const nav = (id: Tab, label: string, hint: string): PaletteItem => ({
+      id: `tab-${id}`, label, hint, group: "导航",
+      run: () => { setShowConfig(false); setShowWelcome(false); setActiveTab(id) },
+    })
+    return [
+      nav("chat", "聊天", "Chat"),
+      nav("goals", "Goals", "编排总览"),
+      nav("memory", "记忆", "Memory"),
+      nav("approvals", "审批", "Approvals"),
+      nav("triage", "分诊", "Triage"),
+      nav("automation", "自动化", "Automations"),
+      {
+        id: "new-session", label: "新建会话", hint: "New session", group: "会话",
+        run: () => { setShowConfig(false); void createSession().then(sid => { if (sid) openSessionTab(sid) }) },
+      },
+      {
+        id: "new-window", label: "新建窗口", hint: "New window", group: "会话",
+        run: () => { void window.api.mafw.windows.create().catch(e => showToastV2({ description: `新建窗口失败: ${e?.message || e}`, duration: 3000 })) },
+      },
+      {
+        id: "open-settings", label: "打开设置", hint: "Settings", group: "导航",
+        run: () => setShowConfig(true),
+      },
+      {
+        id: "toggle-rightdock", label: "切换右侧面板", hint: "RightDock (Ctrl+T)", group: "导航",
+        run: () => applyRightDock(!rightDockOpen(), rightDockTab()),
+      },
+      {
+        id: "toggle-theme", label: "切换主题", hint: "Theme", group: "导航",
+        run: () => toggleTheme(),
+      },
+    ]
+  }
 
   // Deep link routing (mafw://session/<id>, mafw://tab/<name>) — main
   // registers the protocol and forwards URLs here.
@@ -1008,6 +1057,9 @@ export function MafwShell() {
     for (const list of Object.values(flowCards())) {
       for (const c of list) if (c.kind === "permission" && c.data.status === "pending") n++
     }
+    // Goal-level user questions (QuestionWidget) count toward the approvals
+    // badge too — they need an answer just as urgently.
+    if (activeQuestion()) n++
     return n
   })
 
@@ -1856,6 +1908,11 @@ export function MafwShell() {
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
               <div class="mafw-shell">
       <ToastV2.Region />
+      <CommandPalette
+        open={paletteOpen()}
+        items={paletteItems()}
+        onClose={() => setPaletteOpen(false)}
+      />
       <ConfirmOverlay
         open={confirmReq() !== null}
         title={confirmReq()?.title || ""}

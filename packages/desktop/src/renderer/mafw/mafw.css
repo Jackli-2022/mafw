@@ -3944,3 +3944,12 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-tsearch-hit.sel, .mafw-tsearch-hit:hover { background: var(--surface-base-hover); }
 .mafw-tsearch-role { flex-shrink: 0; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--surface-base-active); }
 .mafw-tsearch-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Global command palette (Ctrl+P, P2 batch) */
+.mafw-palette-backdrop { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.mafw-palette-list { max-height: 380px; overflow-y: auto; }
+.mafw-palette-group { font-size: 10px; color: var(--text-4); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .05em; }
+.mafw-palette-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.mafw-palette-row.sel, .mafw-palette-row:hover { background: var(--surface-base-hover); }
+.mafw-palette-hint { font-size: 10px; color: var(--text-4); flex-shrink: 0; }
