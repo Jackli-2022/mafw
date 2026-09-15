@@ -28,7 +28,8 @@ jobs:
       - uses: actions/setup-node@v4
         if: env.SKIP != 'true'
         with:
-          node-version: 22
+          # npm stage 命令需要 npm CLI >= 11.15（node 24 自带）；node 22 的 npm 10 没有
+          node-version: 24
           registry-url: https://registry.npmjs.org
           cache: npm
           cache-dependency-path: |
@@ -48,8 +49,13 @@ jobs:
         if: env.SKIP != 'true'
         run: npm run build
 
-      - name: Publish
+      # Stage-only 发布流（token 为 stage-only granular token）：
+      # CI 把版本送进 staging 区，维护者（2FA）在 npmjs.com「Staged Packages」
+      # tab 或 CLI `npm stage approve` 审批后才真正上线。
+      # 注意：stage 不能用于全新包首发 —— mafw 的首个版本需本地直接
+      # `npm publish --registry=https://registry.npmjs.org`（输 OTP）。
+      - name: Stage publish
         if: env.SKIP != 'true'
-        run: npm publish --provenance --access public
+        run: npm stage publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
