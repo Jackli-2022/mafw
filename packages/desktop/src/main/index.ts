@@ -365,18 +365,21 @@ const main = Effect.gen(function* () {
   // Start Automation Server for agent GUI control
   const screenshotsDir = join(homedir(), ".mafw", "screenshots")
   const configDir = join(homedir(), ".config", "mafw")
-  const autoHandle = startAutomationServer(screenshotsDir, () => getLastFocusedWindow())
-  try {
-    mkdirSync(configDir, { recursive: true })
-    writeFileSync(
-      join(configDir, "desktop-automation.json"),
-      JSON.stringify({ port: autoHandle.port, secret: autoHandle.secret }, null, 2),
-      "utf-8",
-    )
-    logger.log("automation server started", { port: autoHandle.port })
-  } catch (err) {
-    logger.warn("failed to write desktop-automation.json", err)
-  }
+  startAutomationServer(screenshotsDir, () => getLastFocusedWindow(), (info) => {
+    // Written from the listening callback: the port is only known once the
+    // server has actually bound (see automation-server.ts).
+    try {
+      mkdirSync(configDir, { recursive: true })
+      writeFileSync(
+        join(configDir, "desktop-automation.json"),
+        JSON.stringify(info, null, 2),
+        "utf-8",
+      )
+      logger.log("automation server started", info)
+    } catch (err) {
+      logger.warn("failed to write desktop-automation.json", err)
+    }
+  })
 })
 
 Effect.runFork(main)

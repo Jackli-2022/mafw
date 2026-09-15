@@ -25,6 +25,7 @@ export interface AutomationHandle {
 export function startAutomationServer(
   screenshotsDir: string,
   getWindow: () => BrowserWindow | null,
+  onReady: (info: { port: number; secret: string }) => void,
 ): AutomationHandle {
   const secret = randomBytes(32).toString("hex")
   const server = http.createServer()
@@ -61,6 +62,10 @@ export function startAutomationServer(
     const addr = server.address()
     if (addr && typeof addr === "object") {
       writeLog("automation", "server started", { port: addr.port }, "info")
+      // server.listen is async: address() is only valid inside the listening
+      // callback. Writing earlier raced into desktop-automation.json with
+      // port 0, which DesktopClient.tryLoad() treats as "not connected".
+      onReady({ port: addr.port, secret })
     }
   })
 
