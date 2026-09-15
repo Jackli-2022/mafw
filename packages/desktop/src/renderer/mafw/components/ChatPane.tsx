@@ -169,6 +169,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [fileHi, setFileHi] = createSignal(0)
   const [searchOpen, setSearchOpen] = createSignal(false)
 
+  const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | null>(null)
+
   // Trailing "@query" token before the caret (used by both onInput trigger
   // and the picker's live filter).
   const AT_MENTION_RE = /(?:^|\s)@(\S*)$/
@@ -275,7 +277,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [cmdItems, setCmdItems] = createSignal<CommandItem[]>([])
   const [cmdLoading, setCmdLoading] = createSignal(false)
   const [cmdCustom, setCmdCustom] = createSignal<{ name: string; source: string }[]>([])
-  const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | null>(null)
 
   // ── TTS state（统一音色入口：picker 选择 + 试听 + 选中即保存）──
   const VOICE_GRADIENTS = [
