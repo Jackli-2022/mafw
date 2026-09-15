@@ -29,6 +29,7 @@ import { UsageDock } from "./components/UsageDock"
 import { QuotaDock } from "./components/QuotaDock"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { TabStrip, type Tab } from "./components/TabStrip"
+import { WindowControls } from "./components/WindowControls"
 import { registerMafwToolCards } from "./components/MafwToolCards"
 import { registerUserPluginCards } from "./components/UserPluginCards"
 import { WelcomeHome } from "./components/WelcomeHome"
@@ -1832,6 +1833,13 @@ export function MafwShell() {
   )
   const [viewportNarrow, setViewportNarrow] = createSignal(window.innerWidth < 1200)
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
+  const [winMaximized, setWinMaximized] = createSignal(false)
+  onMount(() => {
+    if (window.api.platform !== "win32") return
+    void window.api.windowControls.isMaximized().then(setWinMaximized)
+    const unsub = window.api.windowControls.onMaximizedChange(setWinMaximized)
+    onCleanup(unsub)
+  })
   // Anchor for the TaskList popover: the titlebar of the pane whose TaskBar the
   // user clicked (per-pane; the shared titlebarRef is unreliable in splits).
   const [taskAnchor, setTaskAnchor] = createSignal<HTMLElement | null>(null)
@@ -2062,7 +2070,7 @@ export function MafwShell() {
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
-              <div class="mafw-shell">
+              <div class="mafw-shell" classList={{ maximized: winMaximized() }}>
       <ToastV2.Region />
       <CommandPalette
         open={paletteOpen()}
@@ -2077,15 +2085,32 @@ export function MafwShell() {
         onConfirm={() => { const req = confirmReq(); setConfirmReq(null); req?.onConfirm() }}
         onCancel={() => setConfirmReq(null)}
       />
-      <div class="mafw-titlebar">
+      <div
+        class="mafw-titlebar"
+        onDblClick={(e) => {
+          if (window.api.platform !== "win32") return
+          if ((e.target as HTMLElement).closest("button")) return
+          void window.api.windowControls.toggleMaximize()
+        }}
+      >
         <Icon name="logo" size="small" />
         <span style={{ "font-size": 13, "font-weight": 600, color: "var(--text-2)" }}>MAFW</span>
-        <div class="mafw-titlebar-dot" classList={{
-          ready: gwStatus()?.state === "ready",
-          starting: gwStatus()?.state === "starting",
-          failed: gwStatus()?.state === "failed",
-          stopped: !gwStatus() || gwStatus()?.state === "stopped",
-        }} style={{ "margin-left": 4 }} />
+        <TooltipV2
+          value={
+            gwStatus()?.state === "ready" ? "Gateway 已连接" :
+            gwStatus()?.state === "starting" ? "Gateway 启动中" :
+            gwStatus()?.state === "failed" ? "Gateway 启动失败" :
+            "Gateway 已停止"
+          }
+          openDelay={300}
+        >
+          <div class="mafw-titlebar-dot" classList={{
+            ready: gwStatus()?.state === "ready",
+            starting: gwStatus()?.state === "starting",
+            failed: gwStatus()?.state === "failed",
+            stopped: !gwStatus() || gwStatus()?.state === "stopped",
+          }} style={{ "margin-left": 4 }} />
+        </TooltipV2>
         <TooltipV2 value="切换主题" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" class="mafw-theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
             {theme() === 'light' ? '☀' : (
@@ -2096,6 +2121,7 @@ export function MafwShell() {
           </ButtonV2>
         </TooltipV2>
         <div style={{ flex: 1 }} />
+        <WindowControls />
       </div>
       <div class="mafw-body" style={{ "grid-template-columns": `${railCollapsed() ? 32 : railWidth()}px 1fr ${rightDockOpen() && !viewportNarrow() ? `${rightDockWidth()}px` : "0px"}` }}>
         {railCollapsed() ? (

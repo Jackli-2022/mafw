@@ -174,13 +174,36 @@ html[data-theme="light"] .mafw-shell {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
+  padding: 0 0 0 12px;
   height: 38px;
   background: var(--bg-base);
+  border-bottom: 1px solid var(--border-subtle);
   -webkit-app-region: drag;
   user-select: none;
 }
 .mafw-titlebar button, .mafw-titlebar .mafw-theme-toggle { -webkit-app-region: no-drag; }
+
+/* ── Window controls (win32 自绘 caption 按钮, Win11 Fluent) ── */
+.mafw-window-controls { display: flex; align-self: stretch; flex-shrink: 0; -webkit-app-region: no-drag; }
+.mafw-wc-btn {
+  width: 46px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background .1s, color .1s;
+}
+.mafw-wc-btn:hover { background: var(--hover); color: var(--text-1); }
+.mafw-wc-btn:active { background: var(--hover-strong); }
+.mafw-wc-close:hover { background: #E81123; color: #fff; }
+.mafw-wc-close:active { background: #C50F1F; color: #fff; }
+
+/* frameless 窗口最大化时内容会溢进屏幕外阴影区，补偿内边距 */
+.mafw-shell.maximized { padding: 8px; }
 
 .mafw-theme-toggle {
   background: none;
