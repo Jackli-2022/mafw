@@ -1,4 +1,4 @@
-export type WindowType = '5h' | '7d' | 'month' | 'balance';
+export type WindowType = '5h' | 'day' | '7d' | 'month' | 'balance';
 export type Severity = 'low' | 'mid' | 'high' | 'critical';
 export type Pacing = 'ahead' | 'on-track' | 'under';
 export type UsageProviderType = 'api' | 'token-plan';
@@ -7,7 +7,7 @@ export interface UsageWindow {
   window: WindowType;
   used: number;
   limit: number;
-  unit: '$' | 'tokens' | 'requests' | 'pct';
+  unit: '$' | 'tokens' | 'requests' | 'pct' | 'credit';
   resetAt?: number;
   pct: number;
   pacing?: Pacing;
@@ -15,6 +15,8 @@ export interface UsageWindow {
   remaining?: number;
   tokens?: number;
   projectedCost?: number;
+  /** 附加明细行（如分模型消耗），UI tooltip 逐行展示。 */
+  detailLines?: string[];
 }
 
 export interface UsageProvider {
