@@ -1913,7 +1913,20 @@ class MafwScheduler {
       const pluginsDir = path.join(os.homedir(), '.mafw', 'usage-plugins');
       const builtinPluginsDir = path.join(__dirname, 'usage', 'builtin-plugins');
       const disabledPlugins = Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : [];
-      const pluginLoader = new PluginLoader(pluginsDir, [], { builtinPluginsDir, disabledPlugins, usageStats: createUsageStatsProvider(trajStore) });
+      const pluginLoader = new PluginLoader(pluginsDir, [], {
+        builtinPluginsDir,
+        disabledPlugins,
+        usageStats: createUsageStatsProvider(trajStore),
+        // inline provider key 兜底（auth.json 无条目的自建 provider，如 gateway）——
+        // thunk 惰性求值，opencodeClient 此时尚未初始化也不影响。
+        resolveInlineApiKey: async (providerID) => {
+          try {
+            const cfg: any = await this.opencodeClient?.config.get();
+            const key = cfg?.provider?.[providerID]?.options?.apiKey;
+            return typeof key === 'string' && key ? key : null;
+          } catch { return null; }
+        },
+      });
       await pluginLoader.init();
       this.pluginLoader = pluginLoader;
       const { UsagePoller } = require('./usage/usage-poller');

@@ -41,4 +41,16 @@ describe('ctx.usage (UsageStatsProvider)', () => {
     const result: any = await adapter.fetch();
     expect(result.rows).toEqual([]);
   });
+
+  it('falls back to inline provider apiKey (opencode.jsonc options) via resolveInlineApiKey', async () => {
+    const adapter = makeAdapter(
+      { name: 'p1', type: 'api', fetch: async (ctx: any) => ({ name: 'p1', windows: [], key: ctx.apiKey('p1'), other: ctx.apiKey('other') }) },
+      'p1.js',
+      undefined,
+      async (id: string) => (id === 'p1' ? 'inline-key' : null),
+    );
+    const result: any = await adapter.fetch();
+    expect(result.key).toBe('inline-key'); // 本插件名命中 inline key
+    expect(result.other).toBeNull(); // 其他名不误用
+  });
 });

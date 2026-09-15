@@ -44,9 +44,12 @@ export function createPluginContext(
   pluginName: string,
   credentials?: RuntimeCredentials,
   usageStats?: UsageStatsProvider,
+  inlineApiKey?: string,
 ): PluginContext {
   return {
-    apiKey: (name: string) => getProviderApiKey(name, undefined, credentials) ?? null,
+    apiKey: (name: string) =>
+      getProviderApiKey(name, undefined, credentials)
+      ?? (inlineApiKey != null && name === pluginName ? inlineApiKey : null),
     cookie: (name: string) => {
       const c = config.usage?.cookies?.[name];
       return typeof c === 'string' && c.trim() ? c.trim() : null;
@@ -66,12 +69,23 @@ function severityFromPct(pct: number): Severity {
   return 'low';
 }
 
-export function makeAdapter(mod: any, file: string, usageStats?: UsageStatsProvider): ExternalAdapter {
+export function makeAdapter(
+  mod: any,
+  file: string,
+  usageStats?: UsageStatsProvider,
+  resolveInlineApiKey?: (providerID: string) => Promise<string | null>,
+): ExternalAdapter {
   return {
     name: mod.name,
     type: mod.type === 'token-plan' ? 'token-plan' : 'api',
     async fetch(): Promise<UsageProvider | null> {
-      const ctx = createPluginContext(mod.name, undefined, usageStats);
+      // inline provider key（opencode.jsonc provider.<id>.options.apiKey）兜底——
+      // auth.json 没有条目的自建 provider（如蓝区统一网关）靠这个拿到 key。
+      let inlineApiKey: string | undefined;
+      if (resolveInlineApiKey) {
+        try { inlineApiKey = (await resolveInlineApiKey(mod.name)) ?? undefined; } catch { /* fail-open */ }
+      }
+      const ctx = createPluginContext(mod.name, undefined, usageStats, inlineApiKey);
       try {
         const result = await mod.fetch(ctx);
         if (result === null) return null;

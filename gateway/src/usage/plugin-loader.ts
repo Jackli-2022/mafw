@@ -50,6 +50,8 @@ export interface PluginLoaderOptions {
   builtinPluginsDir?: string;
   disabledPlugins?: string[];
   usageStats?: UsageStatsProvider;
+  /** inline provider key 兜底（opencode.jsonc provider.<id>.options.apiKey），auth.json 缺条目时用。 */
+  resolveInlineApiKey?: (providerID: string) => Promise<string | null>;
 }
 
 interface PluginFile {
@@ -67,6 +69,7 @@ export class PluginLoader {
   private debounceTimer?: NodeJS.Timeout;
   private builtinNames: Set<string>;
   private usageStats?: UsageStatsProvider;
+  private resolveInlineApiKey?: (providerID: string) => Promise<string | null>;
 
   constructor(pluginsDir: string, builtinNames: string[], opts?: PluginLoaderOptions) {
     this.pluginsDir = pluginsDir;
@@ -74,6 +77,7 @@ export class PluginLoader {
     this.builtinPluginsDir = opts?.builtinPluginsDir;
     this.disabledPlugins = new Set(opts?.disabledPlugins ?? []);
     this.usageStats = opts?.usageStats;
+    this.resolveInlineApiKey = opts?.resolveInlineApiKey;
   }
 
   async init(): Promise<void> {
@@ -162,7 +166,7 @@ export class PluginLoader {
     this.state.clear();
     for (const [name, entry] of byName) {
       const overridden = !entry.builtin && builtinNameSet.has(name);
-      const adapter = makeAdapter(entry.mod, entry.file, this.usageStats);
+      const adapter = makeAdapter(entry.mod, entry.file, this.usageStats, this.resolveInlineApiKey);
       const configSchema = validateConfigSchema((entry.mod as any).configSchema);
       const disabled = this.disabledPlugins.has(name);
       const pluginType = typeof (entry.mod as any).type === 'string' ? (entry.mod as any).type : undefined;
