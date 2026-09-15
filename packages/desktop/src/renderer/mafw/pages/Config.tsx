@@ -11,6 +11,7 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { sortEntries, statusLabel, installableTypes, runtimeActivatable, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
+import { ConfirmOverlay } from "../components/ConfirmOverlay"
 
 interface ConfigSection {
   key: string
@@ -158,8 +159,18 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
   const [updating, setUpdating] = createSignal(false)
 
+  const [confirmReq, setConfirmReq] = createSignal<{ title: string; message?: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void } | null>(null)
+
   const updateGateway = async () => {
-    if (!confirm("触发 Gateway 自更新？（将拉取当前代码构建并接力重启，约需 1-2 分钟，期间服务短暂中断）")) return
+    setConfirmReq({
+      title: "触发 Gateway 自更新？",
+      message: "将拉取当前代码构建并接力重启，约需 1-2 分钟，期间服务短暂中断。",
+      confirmLabel: "开始更新",
+      onConfirm: () => void doUpdateGateway(),
+    })
+  }
+
+  const doUpdateGateway = async () => {
     setUpdating(true)
     try {
       const res = await window.api.mafw.gateway.update()
@@ -220,7 +231,15 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   async function switchRuntime(plugin: string) {
-    if (!confirm(`切换 Runtime 到 "${plugin || 'opencode'}"？\n\n需要等待 Gateway 重新连接。`)) return
+    setConfirmReq({
+      title: `切换 Runtime 到 "${plugin || 'opencode'}"？`,
+      message: "需要等待 Gateway 重新连接。",
+      confirmLabel: "切换",
+      onConfirm: () => void doSwitchRuntime(plugin),
+    })
+  }
+
+  async function doSwitchRuntime(plugin: string) {
     setRtSwitching(true)
     try {
       const res = await window.api.mafw.runtime.switch(plugin)
@@ -327,7 +346,16 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   }
 
   const removePlugin = async (e: HubEntry) => {
-    if (!confirm(`删除插件 ${e.type}/${e.file}？此操作不可恢复。`)) return
+    setConfirmReq({
+      title: `删除插件 ${e.type}/${e.file}？`,
+      message: "此操作不可恢复。",
+      confirmLabel: "删除",
+      danger: true,
+      onConfirm: () => void doRemovePlugin(e),
+    })
+  }
+
+  const doRemovePlugin = async (e: HubEntry) => {
     try {
       await window.api.mafw.plugins.delete(e.type, e.file)
       showToastV2({ description: `已删除 ${e.file}`, duration: 3000 })
@@ -504,6 +532,17 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
         <ButtonV2 variant="outline" size="small" onClick={reset}>重试渲染</ButtonV2>
       </div>
     )}>
+    <Portal>
+      <ConfirmOverlay
+        open={confirmReq() !== null}
+        title={confirmReq()?.title || ""}
+        message={confirmReq()?.message}
+        confirmLabel={confirmReq()?.confirmLabel}
+        danger={confirmReq()?.danger}
+        onConfirm={() => { const req = confirmReq(); setConfirmReq(null); req?.onConfirm() }}
+        onCancel={() => setConfirmReq(null)}
+      />
+    </Portal>
     <div class="mafw-config-layout">
       {/* ── Left Nav ── */}
       <nav class="mafw-config-nav">

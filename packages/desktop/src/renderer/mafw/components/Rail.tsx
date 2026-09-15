@@ -9,6 +9,7 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { UsagePill } from "./UsagePill"
 import { ManagerCard } from "./ManagerCard"
+import { ConfirmOverlay } from "./ConfirmOverlay"
 import { sessionStore } from "../session-store"
 
 const copyText = async (text: string) => {
@@ -70,6 +71,7 @@ export function Rail(props: Props) {
   const [hi, setHi] = createSignal(-1)
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
+  const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
   let searchRef: HTMLDivElement | undefined
   let scrollRef: HTMLDivElement | undefined
 
@@ -178,7 +180,6 @@ export function Rail(props: Props) {
 
   const deleteSession = async (id: string) => {
     try {
-      if (!window.confirm("删除该会话？此操作不可恢复。")) return
       await window.api.mafw.sessions.remove(id)
       if (props.activeSessionId === id) props.onSessionDeleted?.(id)
       sessionStore.invalidate(projectID())
@@ -248,7 +249,7 @@ export function Rail(props: Props) {
             <ContextMenu.Item onSelect={() => startRename(s)}>
               <ContextMenu.ItemLabel>Rename</ContextMenu.ItemLabel>
             </ContextMenu.Item>
-            <ContextMenu.Item onSelect={() => deleteSession(s.id)}>
+            <ContextMenu.Item onSelect={() => setDeleteConfirmId(s.id)}>
               <ContextMenu.ItemLabel>Delete</ContextMenu.ItemLabel>
             </ContextMenu.Item>
             <ContextMenu.Item onSelect={() => copyText(s.id)}>
@@ -370,6 +371,16 @@ export function Rail(props: Props) {
           </div>
         </div>
       </div>
+
+      <ConfirmOverlay
+        open={deleteConfirmId() !== null}
+        title="删除该会话？"
+        message="此操作不可恢复。"
+        confirmLabel="删除"
+        danger
+        onConfirm={() => { const id = deleteConfirmId(); setDeleteConfirmId(null); if (id) void deleteSession(id) }}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   )
 }

@@ -33,6 +33,7 @@ import { registerUserPluginCards } from "./components/UserPluginCards"
 import { WelcomeHome } from "./components/WelcomeHome"
 import { DashboardPage } from "./pages/Dashboard"
 import { parseDeepLink } from "./deep-link"
+import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
@@ -249,7 +250,15 @@ export function MafwShell() {
   const handleNewTopic = async (): Promise<void> => {
     const pd = currentProject()
     if (!pd) return
-    if (!window.confirm("开新话题？当前 manager 会话将归档为历史会话，新会话成为活跃 manager。")) return
+    setConfirmReq({
+      title: "开新话题？",
+      message: "当前 manager 会话将归档为历史会话，新会话成为活跃 manager。",
+      confirmLabel: "开新话题",
+      onConfirm: () => void doRotateTopic(pd),
+    })
+  }
+
+  const doRotateTopic = async (pd: string): Promise<void> => {
     try {
       const res = await window.api.mafw.manager.rotate(pd)
       setManagerSessionId(res.sessionId)
@@ -298,6 +307,10 @@ export function MafwShell() {
     void window.api.mafw.notify?.({ title, body }).catch(() => { /* fail-open */ })
   }
   const lastIdleNotify: Record<string, number> = {}
+
+  // Shared destructive confirmation request (ConfirmOverlay) — replaces the
+  // blocking window.confirm for in-shell actions.
+  const [confirmReq, setConfirmReq] = createSignal<{ title: string; message?: string; confirmLabel?: string; onConfirm: () => void } | null>(null)
 
   // Deep link routing (mafw://session/<id>, mafw://tab/<name>) — main
   // registers the protocol and forwards URLs here.
@@ -1843,6 +1856,14 @@ export function MafwShell() {
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
               <div class="mafw-shell">
       <ToastV2.Region />
+      <ConfirmOverlay
+        open={confirmReq() !== null}
+        title={confirmReq()?.title || ""}
+        message={confirmReq()?.message}
+        confirmLabel={confirmReq()?.confirmLabel}
+        onConfirm={() => { const req = confirmReq(); setConfirmReq(null); req?.onConfirm() }}
+        onCancel={() => setConfirmReq(null)}
+      />
       <div class="mafw-titlebar">
         <Icon name="logo" size="small" />
         <span style={{ "font-size": 13, "font-weight": 600, color: "var(--text-2)" }}>MAFW</span>
