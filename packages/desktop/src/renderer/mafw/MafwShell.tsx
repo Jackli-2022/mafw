@@ -37,6 +37,7 @@ import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { shouldAutoApprove, nextPermissionMode } from "./components/permission-mode"
 import { saveLayout, loadLayout, pruneMissing } from "./layout-persist"
+import { buildSessionMarkdown } from "./export-markdown"
 import { MemoryPage } from "./pages/Memory"
 import { ApprovalsPage } from "./pages/ApprovalsPage"
 import { TriagePage } from "./pages/TriagePage"
@@ -361,6 +362,10 @@ export function MafwShell() {
         run: () => { void window.api.mafw.windows.create().catch(e => showToastV2({ description: `新建窗口失败: ${e?.message || e}`, duration: 3000 })) },
       },
       {
+        id: "export-session", label: "导出当前会话为 Markdown", hint: "Export", group: "会话",
+        run: () => { const sid = activeSessionId(); if (sid) void exportSession(sid) },
+      },
+      {
         id: "open-settings", label: "打开设置", hint: "Settings", group: "导航",
         run: () => setShowConfig(true),
       },
@@ -373,6 +378,26 @@ export function MafwShell() {
         run: () => toggleTheme(),
       },
     ]
+  }
+
+  // Export a session to Markdown via the OS save dialog (main process).
+  const exportSession = async (sid: string) => {
+    const msgs = store.message[sid] || []
+    const turns = msgs.map((m: any) => ({
+      role: m.role || "user",
+      text: [m.text, ...(store.part[m.id] || []).map((p: any) => (typeof p.text === "string" ? p.text : ""))].join(" "),
+      time: m.time?.created,
+    }))
+    const title = sessions().find(s => s.id === sid)?.title || sid
+    const markdown = buildSessionMarkdown({ title, turns })
+    try {
+      const res = await window.api.mafw.exportSession({ filename: title, markdown })
+      if (res?.ok) showToastV2({ description: `已导出到 ${res.path}`, duration: 4000 })
+      else if (res?.canceled) { /* user canceled */ }
+      else showToastV2({ description: `导出失败: ${res?.error || "unknown"}`, duration: 3000 })
+    } catch (e: any) {
+      showToastV2({ description: `导出失败: ${e?.message || e}`, duration: 3000 })
+    }
   }
 
   // Deep link routing (mafw://session/<id>, mafw://tab/<name>) — main
@@ -2118,6 +2143,9 @@ export function MafwShell() {
                           </Show>
                           <ContextMenu.Item onSelect={() => closeSession(s.id)}>
                             <ContextMenu.ItemLabel>Close</ContextMenu.ItemLabel>
+                          </ContextMenu.Item>
+                          <ContextMenu.Item onSelect={() => void exportSession(s.id)}>
+                            <ContextMenu.ItemLabel>导出 Markdown…</ContextMenu.ItemLabel>
                           </ContextMenu.Item>
                           <ContextMenu.Item onSelect={() => copyText(s.id)}>
                             <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>

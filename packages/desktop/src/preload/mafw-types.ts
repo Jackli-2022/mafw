@@ -29,6 +29,8 @@ export type MafwAPI = {
     create: () => Promise<{ ok: boolean; error?: string }>
   }
 
+  exportSession: (opts: { filename: string; markdown: string }) => Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }>
+
   sessions: {
     list: (projectID?: string) => Promise<Session[]>
     create: (opts?: { directory?: string; metadata?: Record<string, unknown> }) => Promise<Session>

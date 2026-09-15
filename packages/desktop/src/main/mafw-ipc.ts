@@ -13,6 +13,7 @@ import {
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
 import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
+import { writeFile } from "node:fs/promises"
 import { UiPluginManager } from "./ui-plugins"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
@@ -81,6 +82,28 @@ export function registerMafwIpcHandlers() {
       return { ok: true }
     } catch (err) {
       writeLog("utility", "mafw-new-window failed", { err: String(err) }, "warn")
+      return { ok: false, error: String(err) }
+    }
+  })
+
+  // Export a session as Markdown: renderer builds the content (pure fn),
+  // main owns the save dialog + file write (renderer is sandboxed).
+  ipcMain.handle("mafw-export-session", async (event: IpcMainInvokeEvent, opts: { filename: string; markdown: string }) => {
+    try {
+      const { BrowserWindow: BW, dialog } = await import("electron")
+      const win = BW.fromWebContents(event.sender)
+      const safeName = (opts.filename || "session").replace(/[\\/:*?"<>|]/g, "_")
+      const res = await dialog.showSaveDialog(win, {
+        title: "导出会话为 Markdown",
+        defaultPath: `${safeName}.md`,
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      })
+      if (res.canceled || !res.filePath) return { ok: false, canceled: true }
+      await writeFile(res.filePath, opts.markdown, "utf8")
+      writeLog("utility", "mafw-export-session saved", { path: res.filePath, bytes: opts.markdown.length })
+      return { ok: true, path: res.filePath }
+    } catch (err) {
+      writeLog("utility", "mafw-export-session failed", { err: String(err) }, "warn")
       return { ok: false, error: String(err) }
     }
   })
