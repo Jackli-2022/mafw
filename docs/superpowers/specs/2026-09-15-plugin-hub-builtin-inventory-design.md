@@ -52,13 +52,15 @@ SDK（`packages/gateway-sdk/src/client.ts` `plugins.list` 返回类型 + `types.
 
 ## 4. Gateway hub 组装
 
-`pluginHubDeps`（`gateway/src/index.ts` ~L3947）新增三个注入源：
+`pluginHubDeps`（`gateway/src/index.ts` ~L3947）新增单一注入源（hub 侧统一标记 `builtin/overridden/config-disabled`）：
 
 ```ts
-builtinRuntimes: () => HubEntry[]   // 恒等返回 opencode + pi（status:'enabled', file:'(builtin)'）
-builtinMedia:    () => HubEntry[]   // 恒等返回 pi
-usageBuiltinEntries: () => HubEntry[]  // usage loader getState() 过滤 builtin:true 映射
+builtinEntries: () => HubEntry[]  // 显示顺序：runtime(opencode, pi) → media(pi) → usage(全部内置适配器，pluginType 随附)
 ```
+
+- runtime：`opencode` 恒等注入；`pi` 来自 `runtimeLoader.getBuiltinNames()`（新增方法）
+- media：`pi` 恒等注入（引擎隐式可用，与 `media-switch` 路由语义一致）
+- usage：`usage loader getState()` 过滤 `builtin:true && status==='ok'` 映射
 
 `listPlugins` 修改：
 
@@ -88,7 +90,7 @@ usageBuiltinEntries: () => HubEntry[]  // usage loader getState() 过滤 builtin
    - 未提供 → 落盘到 `<dir>.tmp` 后 **require 并检查 `module.exports` 形状**（清 require.cache 后加载）：
      - `createRuntime` 函数 → `runtime`
      - `createPrompt` 函数 / `engine` 字符串 / `fixPayload` 函数 / `modalities` 数组 → `media`
-     - `fetch` 函数（且 `type: 'api'|'token-plan'`）→ `usage`
+     - `fetch` 函数（`type` 缺省或为 `api`/`token-plan`/`local`）→ `usage`（缺省视为 usage，防误报 unrecognized）
      - `tools` 对象（含 render 函数或纯静态字段）→ `ui`
    - 恰一个命中 → 以该类型定目录、原子 rename 完成。零命中 → 400 `unrecognized plugin interface`；多命中 → 400 `ambiguous plugin interface: <candidates>`（响应带候选列表，前端展示兜底下拉让用户选定后带 type 重试）。
    - 判定失败时删除 `.tmp`（不留垃圾文件）。
