@@ -1,6 +1,6 @@
 {
     "name":  "@mafw/session-ui",
-    "version":  "1.18.1",
+    "version": "4.7.1",
     "private":  true,
     "type":  "module",
     "license":  "MIT",
