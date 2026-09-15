@@ -90,4 +90,32 @@ export const sessionStore = {
     cache.delete(keyOf(projectID))
     void fetchFor(projectID)
   },
+
+  /**
+   * Merge a partial update into a cached session (every bucket containing it),
+   * keeping ordering and title fallback intact. Returns true when found.
+   */
+  patch(id: string, partial: Partial<SessionInfo>): boolean {
+    let found = false
+    for (const [key, entry] of cache) {
+      if (!entry.list.some(s => s.id === id)) continue
+      found = true
+      const merged = entry.list.map(s => (s.id === id ? { ...s, ...partial } : s))
+      cache.set(key, { ...entry, list: sortSessions(merged).map(withFallbackTitle) })
+    }
+    if (found) setVersion(v => v + 1)
+    return found
+  },
+
+  /** Remove a session from every cache bucket. Returns true when found. */
+  remove(id: string): boolean {
+    let found = false
+    for (const [key, entry] of cache) {
+      if (!entry.list.some(s => s.id === id)) continue
+      found = true
+      cache.set(key, { ...entry, list: entry.list.filter(s => s.id !== id) })
+    }
+    if (found) setVersion(v => v + 1)
+    return found
+  },
 }
