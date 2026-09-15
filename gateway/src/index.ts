@@ -3901,6 +3901,9 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
               await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
+              // Desktop hint: a runtime switch swaps the session storage backend
+              // (opencode SQLite vs pi), so cached session lists are stale.
+              this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
               if (prev && (prev as any).dispose) {
                 try { await (prev as any).dispose(); }
                 catch (err: any) { log.warn(`[Runtime] dispose old runtime failed: ${err.message}`); }
