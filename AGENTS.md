@@ -187,6 +187,18 @@ onMount → gateway.info() 等 ready
 所有 data fetching 在组件内 inline 使用 `createEffect`，无独立 hook。
 轮询间隔：Dashboard 15s / Approvals 10s / Triage 10s / Automations 10s。
 
+#### Rail 全事件驱动互动（2026-09-15，commits dda276c8..9007c220，v4.7.0）
+
+会话列表对**任意客户端**（TUI/CLI/另一窗口）的增/删/改名即时同步，不再依赖"本地写后 invalidate"：
+
+- **sessionStore 局部变更**（`session-store.ts`）：`patch(id, partial)` / `remove(id)`（跨缓存桶、保排序与兜底标题、bump version signal）
+- **事件规划器**（`session-events.ts`，纯函数可测）：`planSessionEvent()` 把 SSE 生命周期事件映射为 patch/remove/invalidate/none——隐藏口径对齐 gateway `isHiddenSession`（parentID / legacy worker 标题前缀 / `internal` 标记）；patch 走字段白名单（title/time/directory/projectID），**绝不 spread info**（SSE info 无 `metadata.mafw.role`，防止抹掉本地 manager 标记）；pi 的 `session.updated` 空壳（agent_start，无 info）忽略，防每回合 invalidate 风暴
+- **MafwShell onmessage 三分支**：`created`→invalidate；`updated`→patch + tab 标题双写（`sessions()` + `store.session`）；`deleted`→remove + `closeSession`（外部删除已打开 tab 自动关闭，split view/active 回退复用）
+- **gateway 配套**（`runtime/event-broadcast.ts` 纯函数 + jest）：Mode A 广播封装收敛 `opencodeBroadcast()`，passthrough 事件透传 `directory`（normalize 已提取）；两个项目注册点（HTTP `/register` + registry 目录 watcher）广播 `project_registered`，desktop `projectsRev` 信号触发 Rail/MafwShell 项目列表重拉
+- **wire 契约**：gateway 顶层广播（非 `opencode_event` 类型）必须**扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`；形状由 `event-broadcast.test.ts` 固化
+- **顺手修复**：Rail 删除调用 `sessions.remove`（不存在）→ `delete`（原删除必弹失败 toast）；Rail 删除后 tab 残留（`onSessionDeleted` 接 `closeSession`）；tab 双击改名纯本地 → 接 gateway rename
+- **pi runtime 固有降级**：pi 无 created/deleted/标题事件（SessionManager 无 hook），invalidate 兜底；测试 desktop +23 / gateway +6
+
 ### 5.9a RightDock 用量/配额拆分（2026-09-07）
 - RightDock tabs：`tasks | trajectory | usage | quota | notes`
 - **UsageDock（用量）**：上下文条 + Token 统计（会话/项目/记忆三行 + **分模型统计**：今日/7天/30天/全部窗口切换、KPI 行 [总 tokens/估算成本/缓存命中率]、Top3+其他聚合、TooltipV2 五类明细）；数据 `GET /api/usage` 的 `modelStats.windows`，15s 轮询
