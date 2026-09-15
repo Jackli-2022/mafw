@@ -93,11 +93,12 @@ export function registerMafwIpcHandlers() {
       const { BrowserWindow: BW, dialog } = await import("electron")
       const win = BW.fromWebContents(event.sender)
       const safeName = (opts.filename || "session").replace(/[\\/:*?"<>|]/g, "_")
-      const res = await dialog.showSaveDialog(win ?? undefined, {
+      const dialogOpts = {
         title: "导出会话为 Markdown",
         defaultPath: `${safeName}.md`,
         filters: [{ name: "Markdown", extensions: ["md"] }],
-      })
+      }
+      const res = win ? await dialog.showSaveDialog(win, dialogOpts) : await dialog.showSaveDialog(dialogOpts)
       if (res.canceled || !res.filePath) return { ok: false, canceled: true }
       await writeFile(res.filePath, opts.markdown, "utf8")
       writeLog("utility", "mafw-export-session saved", { path: res.filePath, bytes: opts.markdown.length })
