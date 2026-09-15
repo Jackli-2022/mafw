@@ -178,6 +178,7 @@ export async function installPlugin(
     if (matches.length > 1) throw new HubError(400, `ambiguous plugin interface: ${matches.join('/')}`);
     type = matches[0];
   }
+  if (type === 'media') await validateMediaActivation(mod);
   const dir = deps.dirs[type];
   fs.mkdirSync(dir, { recursive: true });
   const target = resolveInDir(dir, filename);
@@ -235,6 +236,31 @@ function validateName(mod: Record<string, unknown> | undefined, filename: string
   const stem = baseName(filename);
   if (name !== stem) {
     throw new HubError(400, `plugin name mismatch: exports '${name}', filename '${filename}' (must match)`);
+  }
+}
+
+const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
+
+const STUB_MEDIA_CTX = {
+  apiKey: () => null,
+  fetch: (url: string, opts?: RequestInit) => fetch(url, opts),
+  pluginConfig: () => null,
+  log,
+};
+
+async function validateMediaActivation(mod: Record<string, unknown> | undefined): Promise<void> {
+  const modalities = mod?.modalities;
+  if (!Array.isArray(modalities) || modalities.length === 0
+      || !modalities.every((m: string) => VALID_MODALITIES.has(m))) {
+    throw new HubError(400, 'invalid modalities');
+  }
+  const hasCreatePrompt = typeof mod?.createPrompt === 'function';
+  const hasPiEngine = mod?.engine === 'pi';
+  if (!hasCreatePrompt && !hasPiEngine) throw new HubError(400, 'missing createPrompt() or engine:"pi"');
+  if (hasCreatePrompt && hasPiEngine) throw new HubError(400, 'createPrompt and engine:"pi" are mutually exclusive');
+  if (hasCreatePrompt) {
+    const fn = await (mod.createPrompt as (ctx: unknown) => unknown)(STUB_MEDIA_CTX);
+    if (typeof fn !== 'function') throw new HubError(400, 'createPrompt did not return a function');
   }
 }
 

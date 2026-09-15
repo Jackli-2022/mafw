@@ -6,7 +6,7 @@ import { listPlugins, installPlugin, setPluginEnabled, deletePlugin, cleanupExam
 const mod = (body: string) => Buffer.from(body, 'utf-8');
 const PLAIN = mod('module.exports = { name: "foo", createRuntime: async () => ({}) };');
 const RUNTIME_MOD = mod('module.exports = { name: "rt", createRuntime: async () => ({}) };');
-const MEDIA_MOD = mod('module.exports = { name: "m1", createPrompt: async () => async () => "" };');
+const MEDIA_MOD = mod('module.exports = { name: "m1", modalities: ["image"], createPrompt: async () => async () => "" };');
 const USAGE_MOD = mod('module.exports = { name: "u1", type: "api", fetch: async () => null };');
 const UI_MOD = mod('module.exports = { name: "ui", tools: { t: { render: () => [] } } };');
 const AMBIGUOUS_MOD = mod('module.exports = { name: "x", createPrompt: async () => async () => "", fetch: async () => null };');
@@ -173,9 +173,9 @@ describe('installPlugin', () => {
     const deps = makeDeps();
     const e1 = await installPlugin(deps, { filename: 'm1.js', bytes: MEDIA_MOD });
     expect(e1.type).toBe('media');
-    const e2 = await installPlugin(deps, { filename: 'm2.js', bytes: mod('module.exports = { name: "m2", engine: "pi" };') });
+    const e2 = await installPlugin(deps, { filename: 'm2.js', bytes: mod('module.exports = { name: "m2", modalities: ["video"], engine: "pi" };') });
     expect(e2.type).toBe('media');
-    const e3 = await installPlugin(deps, { filename: 'm3.js', bytes: mod('module.exports = { name: "m3", modalities: ["image"] };') });
+    const e3 = await installPlugin(deps, { filename: 'm3.js', bytes: mod('module.exports = { name: "m3", modalities: ["image"], engine: "pi" };') });
     expect(e3.type).toBe('media');
   });
 
@@ -302,6 +302,47 @@ describe('installPlugin', () => {
       const deps = makeDeps();
       await expect(installPlugin(deps, { type: 'runtime', filename: 'bar.js', bytes: RUNTIME_MOD }))
         .rejects.toMatchObject({ status: 400, message: "plugin name mismatch: exports 'rt', filename 'bar.js' (must match)" });
+    });
+  });
+
+  describe('install precheck: media activation', () => {
+    const MEDIA_HEAD = 'module.exports = { name: "mm", ';
+
+    test('empty modalities → 400 invalid modalities', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { filename: 'mm.js', bytes: mod(`${MEDIA_HEAD} modalities: [], createPrompt: async () => async () => "" };`) }))
+        .rejects.toMatchObject({ status: 400, message: 'invalid modalities' });
+    });
+
+    test('invalid modality value → 400 invalid modalities', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { filename: 'mm.js', bytes: mod(`${MEDIA_HEAD} modalities: ["hologram"], createPrompt: async () => async () => "" };`) }))
+        .rejects.toMatchObject({ status: 400, message: 'invalid modalities' });
+    });
+
+    test('modalities only (no createPrompt / engine) → 400 missing createPrompt() or engine:"pi"', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { filename: 'mm.js', bytes: mod(`${MEDIA_HEAD} modalities: ["image"] };`) }))
+        .rejects.toMatchObject({ status: 400, message: 'missing createPrompt() or engine:"pi"' });
+    });
+
+    test('createPrompt + engine:"pi" → 400 mutually exclusive', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { filename: 'mm.js', bytes: mod(`${MEDIA_HEAD} modalities: ["image"], engine: "pi", createPrompt: async () => async () => "" };`) }))
+        .rejects.toMatchObject({ status: 400, message: 'createPrompt and engine:"pi" are mutually exclusive' });
+    });
+
+    test('createPrompt returns non-function → 400', async () => {
+      const deps = makeDeps();
+      await expect(installPlugin(deps, { filename: 'mm.js', bytes: mod(`${MEDIA_HEAD} modalities: ["image"], createPrompt: async () => 42 };`) }))
+        .rejects.toMatchObject({ status: 400, message: 'createPrompt did not return a function' });
+    });
+
+    test('valid media plugin (createPrompt returns fn) installs', async () => {
+      const deps = makeDeps();
+      const entry = await installPlugin(deps, { type: 'media', filename: 'mm.js', bytes: mod(`${MEDIA_HEAD} modalities: ["image", "audio"], createPrompt: async () => async () => "" };`) });
+      expect(entry.type).toBe('media');
+      expect(deps.reload).toHaveBeenCalledWith('media');
     });
   });
 });
