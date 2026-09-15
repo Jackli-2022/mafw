@@ -12,6 +12,9 @@ export interface PluginEntry {
   error?: string;
   size: number;
   mtime: string;
+  builtin?: boolean;
+  overridden?: boolean;
+  pluginType?: string;
 }
 
 export interface HubDeps {
@@ -23,6 +26,8 @@ export interface HubDeps {
   /** called after a successful mutation so the caller triggers the type's reload. */
   reload?: (type: PluginType) => void | Promise<void>;
   maxBytes?: number;
+  /** builtin inventory entries in display order; hub stamps builtin/overridden/config-disabled. */
+  builtinEntries?: () => PluginEntry[];
 }
 
 export class HubError extends Error {
@@ -76,6 +81,18 @@ function statEntry(type: PluginType, dir: string, file: string): PluginEntry {
 }
 
 export function listPlugins(deps: HubDeps): PluginEntry[] {
+  const userEntries = collectUserEntries(deps);
+  const builtins = (deps.builtinEntries?.() ?? []).map((e) => ({ ...e, builtin: true }));
+  const userKeys = new Set(userEntries.map((e) => `${e.type}/${e.name}`));
+  const configDisabled = deps.configDisabledUsage?.() ?? new Set<string>();
+  for (const b of builtins) {
+    if (userKeys.has(`${b.type}/${b.name}`)) b.overridden = true;
+    if (b.type === 'usage' && configDisabled.has(b.name) && b.status === 'enabled') b.status = 'config-disabled';
+  }
+  return [...builtins, ...userEntries];
+}
+
+function collectUserEntries(deps: HubDeps): PluginEntry[] {
   const entries: PluginEntry[] = [];
   for (const type of PLUGIN_TYPES) {
     const dir = deps.dirs[type];

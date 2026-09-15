@@ -70,6 +70,52 @@ describe('listPlugins', () => {
     expect(entries[0]).toEqual(expect.objectContaining({ status: 'enabled' }));
     expect(entries[0].error).toContain('foo.js.disabled');
   });
+
+  test('builtin entries are listed first with builtin flag', () => {
+    const deps = makeDeps({
+      builtinEntries: () => [
+        { type: 'runtime', name: 'opencode', file: '(builtin)', status: 'enabled', size: 0, mtime: '' },
+        { type: 'runtime', name: 'pi', file: '(builtin)', status: 'enabled', size: 0, mtime: '' },
+        { type: 'media', name: 'pi', file: '(builtin)', status: 'enabled', size: 0, mtime: '' },
+        { type: 'usage', name: 'deepseek', file: 'deepseek.js', status: 'enabled', size: 0, mtime: '', pluginType: 'api' },
+      ],
+    });
+    fs.writeFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'x');
+    const entries = listPlugins(deps);
+    expect(entries.map((e) => `${e.type}/${e.name}`)).toEqual([
+      'runtime/opencode', 'runtime/pi', 'media/pi', 'usage/deepseek', 'runtime/foo',
+    ]);
+    expect(entries[0]).toEqual(expect.objectContaining({ builtin: true, size: 0, mtime: '' }));
+  });
+
+  test('user file with same name marks builtin overridden', () => {
+    const deps = makeDeps({
+      builtinEntries: () => [
+        { type: 'usage', name: 'deepseek', file: 'deepseek.js', status: 'enabled', size: 0, mtime: '', pluginType: 'api' },
+      ],
+    });
+    fs.writeFileSync(path.join(deps.dirs.usage, 'deepseek.js'), 'user copy');
+    const entries = listPlugins(deps);
+    const builtin = entries.find((e) => e.builtin)!;
+    expect(builtin.overridden).toBe(true);
+    const user = entries.find((e) => !e.builtin)!;
+    expect(user).toEqual(expect.objectContaining({ name: 'deepseek', status: 'enabled' }));
+  });
+
+  test('usage builtin in config disabledPlugins shows config-disabled', () => {
+    const deps = makeDeps({
+      builtinEntries: () => [
+        { type: 'usage', name: 'deepseek', file: 'deepseek.js', status: 'enabled', size: 0, mtime: '' },
+      ],
+      configDisabledUsage: () => new Set(['deepseek']),
+    });
+    const [builtin] = listPlugins(deps);
+    expect(builtin).toEqual(expect.objectContaining({ status: 'config-disabled', builtin: true }));
+  });
+
+  test('no builtinEntries dep → unchanged behavior', () => {
+    expect(listPlugins(makeDeps())).toEqual([]);
+  });
 });
 
 describe('installPlugin', () => {
