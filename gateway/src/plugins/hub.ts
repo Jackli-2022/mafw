@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 export type PluginType = 'runtime' | 'media' | 'usage' | 'ui';
@@ -145,23 +146,23 @@ export function cleanupExamples(deps: HubDeps): { removed: string[]; failed: str
   return { removed, failed };
 }
 
-function decodeContent(contentBase64: string, maxBytes: number): Buffer {
-  if (typeof contentBase64 !== 'string' || contentBase64.length === 0) throw new HubError(400, 'empty content');
-  const buf = Buffer.from(contentBase64, 'base64');
-  if (buf.length === 0) throw new HubError(400, 'empty content');
-  // round-trip check rejects non-base64 garbage
-  if (buf.toString('base64') !== contentBase64) throw new HubError(400, 'content is not valid base64');
-  if (buf.length > maxBytes) throw new HubError(413, `content exceeds ${maxBytes} bytes`);
-  return buf;
+export interface InstallInput {
+  type?: PluginType;
+  filename: string;
+  bytes: Buffer;
+  overwrite?: boolean;
 }
 
 export async function installPlugin(
   deps: HubDeps,
-  input: { type: PluginType; filename: string; contentBase64: string; overwrite?: boolean },
+  input: InstallInput,
 ): Promise<PluginEntry> {
-  const type = parseType(input.type);
   const filename = validateFilename(input.filename);
   if (!filename.endsWith('.js')) throw new HubError(400, `install filename must end with .js: ${filename}`);
+  const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
+  if (!Buffer.isBuffer(input.bytes) || input.bytes.length === 0) throw new HubError(400, 'empty content');
+  if (input.bytes.length > maxBytes) throw new HubError(413, `content exceeds ${maxBytes} bytes`);
+  const type = input.type ? parseType(input.type) : sniffPluginType(filename, input.bytes);
   const dir = deps.dirs[type];
   fs.mkdirSync(dir, { recursive: true });
   const target = resolveInDir(dir, filename);
@@ -170,12 +171,33 @@ export async function installPlugin(
   if (!input.overwrite && (fs.existsSync(dup) || fs.existsSync(dupDisabled))) {
     throw new HubError(409, `plugin already exists: ${filename}`);
   }
-  const buf = decodeContent(input.contentBase64, deps.maxBytes ?? DEFAULT_MAX_BYTES);
   const tmp = `${target}.tmp`;
-  fs.writeFileSync(tmp, buf);
+  fs.writeFileSync(tmp, input.bytes);
   fs.renameSync(tmp, target);
   await deps.reload?.(type);
   return statEntry(type, dir, filename);
+}
+
+function sniffPluginType(filename: string, bytes: Buffer): PluginType {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-hub-sniff-'));
+  const tmpFile = path.join(tmpDir, filename);
+  try {
+    fs.writeFileSync(tmpFile, bytes);
+    try { delete require.cache[require.resolve(tmpFile)]; } catch { /* first load */ }
+    const mod = require(tmpFile) as Record<string, unknown>;
+    const matches: PluginType[] = [];
+    if (typeof mod?.createRuntime === 'function') matches.push('runtime');
+    if (typeof mod?.createPrompt === 'function' || typeof mod?.fixPayload === 'function'
+        || typeof mod?.engine === 'string' || Array.isArray(mod?.modalities)) matches.push('media');
+    if (typeof mod?.fetch === 'function'
+        && (mod.type === undefined || mod.type === 'api' || mod.type === 'token-plan' || mod.type === 'local')) matches.push('usage');
+    if (mod?.tools && typeof mod.tools === 'object' && Object.keys(mod.tools as object).length > 0) matches.push('ui');
+    if (matches.length === 0) throw new HubError(400, 'unrecognized plugin interface: export createRuntime / createPrompt / fetch / tools');
+    if (matches.length > 1) throw new HubError(400, `ambiguous plugin interface: ${matches.join('/')}`);
+    return matches[0];
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
 }
 
 export async function setPluginEnabled(

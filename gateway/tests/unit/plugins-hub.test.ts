@@ -3,7 +3,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { listPlugins, installPlugin, setPluginEnabled, deletePlugin, cleanupExamples, HubError } from '../../src/plugins/hub';
 
-const B64 = Buffer.from('module.exports = { name: "foo" };').toString('base64');
+const mod = (body: string) => Buffer.from(body, 'utf-8');
+const PLAIN = mod('module.exports = { name: "foo" };');
+const RUNTIME_MOD = mod('module.exports = { name: "my-rt", createRuntime: async () => ({}) };');
+const MEDIA_MOD = mod('module.exports = { name: "my-media", createPrompt: async () => async () => "" };');
+const USAGE_MOD = mod('module.exports = { name: "my-usage", type: "api", fetch: async () => null };');
+const UI_MOD = mod('module.exports = { name: "my-ui", tools: { t: { render: () => [] } } };');
+const AMBIGUOUS_MOD = mod('module.exports = { name: "both", createPrompt: async () => async () => "", fetch: async () => null };');
 
 function makeDeps(overrides: Record<string, any> = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-hub-'));
@@ -147,49 +153,103 @@ describe('cleanupExamples', () => {
 });
 
 describe('installPlugin', () => {
-  test('writes file, triggers reload, returns enabled entry', async () => {
+  test('writes raw bytes, triggers reload, returns enabled entry', async () => {
     const deps = makeDeps();
-    const entry = await installPlugin(deps, { type: 'runtime', filename: 'foo.js', contentBase64: B64 });
+    const entry = await installPlugin(deps, { type: 'runtime', filename: 'foo.js', bytes: PLAIN });
     expect(fs.readFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'utf-8')).toContain('name: "foo"');
     expect(deps.reload).toHaveBeenCalledWith('runtime');
     expect(entry).toEqual(expect.objectContaining({ name: 'foo', status: 'enabled' }));
   });
 
+  test('sniffs runtime interface', async () => {
+    const deps = makeDeps();
+    const entry = await installPlugin(deps, { filename: 'rt.js', bytes: RUNTIME_MOD });
+    expect(fs.existsSync(path.join(deps.dirs.runtime, 'rt.js'))).toBe(true);
+    expect(entry.type).toBe('runtime');
+    expect(deps.reload).toHaveBeenCalledWith('runtime');
+  });
+
+  test('sniffs media interface (createPrompt / engine / modalities)', async () => {
+    const deps = makeDeps();
+    const e1 = await installPlugin(deps, { filename: 'm1.js', bytes: MEDIA_MOD });
+    expect(e1.type).toBe('media');
+    const e2 = await installPlugin(deps, { filename: 'm2.js', bytes: mod('module.exports = { engine: "pi" };') });
+    expect(e2.type).toBe('media');
+    const e3 = await installPlugin(deps, { filename: 'm3.js', bytes: mod('module.exports = { modalities: ["image"] };') });
+    expect(e3.type).toBe('media');
+  });
+
+  test('sniffs usage interface (fetch; type optional)', async () => {
+    const deps = makeDeps();
+    const e1 = await installPlugin(deps, { filename: 'u1.js', bytes: USAGE_MOD });
+    expect(e1.type).toBe('usage');
+    const e2 = await installPlugin(deps, { filename: 'u2.js', bytes: mod('module.exports = { fetch: async () => null };') });
+    expect(e2.type).toBe('usage');
+  });
+
+  test('sniffs ui interface (tools object)', async () => {
+    const deps = makeDeps();
+    const entry = await installPlugin(deps, { filename: 'ui.js', bytes: UI_MOD });
+    expect(entry.type).toBe('ui');
+  });
+
+  test('unrecognized interface → 400 and no file left behind', async () => {
+    const deps = makeDeps();
+    await expect(installPlugin(deps, { filename: 'x.js', bytes: mod('module.exports = { name: "x" };') }))
+      .rejects.toMatchObject({ status: 400, message: expect.stringContaining('unrecognized plugin interface') });
+    for (const d of Object.values(deps.dirs)) {
+      expect(fs.readdirSync(d).filter((f) => f.endsWith('.js') || f.endsWith('.tmp'))).toEqual([]);
+    }
+  });
+
+  test('ambiguous interface → 400 with candidates', async () => {
+    const deps = makeDeps();
+    await expect(installPlugin(deps, { filename: 'x.js', bytes: AMBIGUOUS_MOD }))
+      .rejects.toMatchObject({ status: 400, message: 'ambiguous plugin interface: media/usage' });
+  });
+
+  test('explicit type skips sniffing', async () => {
+    const deps = makeDeps();
+    const entry = await installPlugin(deps, { type: 'ui', filename: 'weird.js', bytes: mod('module.exports = { name: "weird" };') });
+    expect(fs.existsSync(path.join(deps.dirs.ui, 'weird.js'))).toBe(true);
+    expect(entry.type).toBe('ui');
+  });
+
   test('duplicate name (enabled or disabled variant) → HubError 409', async () => {
     const deps = makeDeps();
     fs.writeFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'old');
-    await expect(installPlugin(deps, { type: 'runtime', filename: 'foo.js', contentBase64: B64 }))
+    await expect(installPlugin(deps, { type: 'runtime', filename: 'foo.js', bytes: PLAIN }))
       .rejects.toMatchObject({ status: 409 });
   });
 
   test('overwrite: true replaces existing file', async () => {
     const deps = makeDeps();
     fs.writeFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'old');
-    await installPlugin(deps, { type: 'runtime', filename: 'foo.js', contentBase64: B64, overwrite: true });
+    await installPlugin(deps, { type: 'runtime', filename: 'foo.js', bytes: PLAIN, overwrite: true });
     expect(fs.readFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'utf-8')).toContain('name: "foo"');
   });
 
   test('path traversal rejected', async () => {
     const deps = makeDeps();
-    await expect(installPlugin(deps, { type: 'runtime', filename: '../evil.js', contentBase64: B64 }))
+    await expect(installPlugin(deps, { type: 'runtime', filename: '../evil.js', bytes: PLAIN }))
       .rejects.toMatchObject({ status: 400 });
   });
 
   test('invalid type rejected', async () => {
     const deps = makeDeps();
-    await expect(installPlugin(deps, { type: 'nope' as any, filename: 'a.js', contentBase64: B64 }))
+    await expect(installPlugin(deps, { type: 'nope' as any, filename: 'a.js', bytes: PLAIN }))
       .rejects.toMatchObject({ status: 400 });
   });
 
-  test('oversized content rejected', async () => {
+  test('oversized content rejected (raw bytes)', async () => {
     const deps = makeDeps({ maxBytes: 4 });
-    await expect(installPlugin(deps, { type: 'runtime', filename: 'a.js', contentBase64: B64 }))
+    await expect(installPlugin(deps, { type: 'runtime', filename: 'a.js', bytes: PLAIN }))
       .rejects.toMatchObject({ status: 413 });
   });
 
-  test('invalid base64 rejected', async () => {
+  test('empty bytes rejected', async () => {
     const deps = makeDeps();
-    await expect(installPlugin(deps, { type: 'runtime', filename: 'a.js', contentBase64: '!!!not-base64!!!' }))
+    await expect(installPlugin(deps, { type: 'runtime', filename: 'a.js', bytes: Buffer.alloc(0) }))
       .rejects.toMatchObject({ status: 400 });
   });
 });

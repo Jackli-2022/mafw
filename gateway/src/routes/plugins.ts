@@ -11,6 +11,15 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+function readBodyBuffer(req: http.IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 async function readJsonBody(req: http.IncomingMessage): Promise<any> {
   const raw = await readBody(req);
   try { return JSON.parse(raw); } catch (err: any) {
@@ -42,11 +51,13 @@ export async function handlePluginsList(_req: http.IncomingMessage, res: http.Se
 
 export async function handlePluginsInstall(req: http.IncomingMessage, res: http.ServerResponse, deps: PluginsRouteDeps): Promise<void> {
   await guarded(res, async () => {
-    const body = await readJsonBody(req);
-    const entry = await installPlugin(deps.hub, {
-      type: body.type, filename: body.filename, contentBase64: body.contentBase64, overwrite: !!body.overwrite,
-    });
-    log.info(`[PluginsHub] installed ${body.type}/${body.filename}`);
+    const url = new URL(req.url || '/', 'http://localhost');
+    const filename = url.searchParams.get('filename') || '';
+    const type = url.searchParams.get('type') || undefined;
+    const overwrite = url.searchParams.get('overwrite') === '1' || url.searchParams.get('overwrite') === 'true';
+    const bytes = await readBodyBuffer(req);
+    const entry = await installPlugin(deps.hub, { filename, type, bytes, overwrite });
+    log.info(`[PluginsHub] installed ${entry.type}/${filename}`);
     return entry;
   });
 }
