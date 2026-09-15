@@ -93,7 +93,7 @@ export function registerMafwIpcHandlers() {
       const { BrowserWindow: BW, dialog } = await import("electron")
       const win = BW.fromWebContents(event.sender)
       const safeName = (opts.filename || "session").replace(/[\\/:*?"<>|]/g, "_")
-      const res = await dialog.showSaveDialog(win, {
+      const res = await dialog.showSaveDialog(win ?? undefined, {
         title: "导出会话为 Markdown",
         defaultPath: `${safeName}.md`,
         filters: [{ name: "Markdown", extensions: ["md"] }],
