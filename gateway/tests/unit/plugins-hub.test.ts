@@ -281,6 +281,45 @@ describe('setPluginEnabled / deletePlugin', () => {
       .rejects.toMatchObject({ status: 404 });
   });
 
+  // ── stale client snapshot: toggle double-click / unrefreshed list sends the
+  // opposite-state filename; server must resolve the on-disk variant instead
+  // of 404ing (this is the "激活 not found" bug).
+  describe('idempotency against stale filenames', () => {
+    test('enable with plain name resolves .js.disabled variant on disk', async () => {
+      const deps = makeDeps();
+      fs.writeFileSync(path.join(deps.dirs.runtime, 'foo.js.disabled'), 'x');
+      const entry = await setPluginEnabled(deps, { type: 'runtime', filename: 'foo.js', enabled: true });
+      expect(fs.existsSync(path.join(deps.dirs.runtime, 'foo.js'))).toBe(true);
+      expect(fs.existsSync(path.join(deps.dirs.runtime, 'foo.js.disabled'))).toBe(false);
+      expect(entry.status).toBe('enabled');
+    });
+
+    test('disable with .disabled name resolves plain .js variant on disk', async () => {
+      const deps = makeDeps();
+      fs.writeFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'x');
+      const entry = await setPluginEnabled(deps, { type: 'runtime', filename: 'foo.js.disabled', enabled: false });
+      expect(fs.existsSync(path.join(deps.dirs.runtime, 'foo.js.disabled'))).toBe(true);
+      expect(fs.existsSync(path.join(deps.dirs.runtime, 'foo.js'))).toBe(false);
+      expect(entry.status).toBe('disabled');
+    });
+
+    test('rapid double toggle with same stale name still lands disabled', async () => {
+      const deps = makeDeps();
+      fs.writeFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'x');
+      // Two clicks before the list refreshes: both carry foo.js (enabled snapshot).
+      await setPluginEnabled(deps, { type: 'runtime', filename: 'foo.js', enabled: false });
+      const entry = await setPluginEnabled(deps, { type: 'runtime', filename: 'foo.js', enabled: false });
+      expect(entry.status).toBe('disabled');
+      expect(fs.existsSync(path.join(deps.dirs.runtime, 'foo.js.disabled'))).toBe(true);
+    });
+
+    test('still 404 when neither variant exists', async () => {
+      const deps = makeDeps();
+      await expect(setPluginEnabled(deps, { type: 'runtime', filename: 'nope.js', enabled: true }))
+        .rejects.toMatchObject({ status: 404 });
+    });
+  });
+
   test('delete removes the file and triggers reload', async () => {
     const deps = makeDeps();
     fs.writeFileSync(path.join(deps.dirs.runtime, 'foo.js'), 'x');

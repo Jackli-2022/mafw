@@ -207,11 +207,22 @@ export async function setPluginEnabled(
   const type = parseType(input.type);
   const filename = validateFilename(input.filename);
   const dir = deps.dirs[type];
-  const current = resolveInDir(dir, filename);
-  if (!fs.existsSync(current)) throw new HubError(404, `plugin file not found: ${filename}`);
-  const nextName = input.enabled ? filename.replace(/\.js\.disabled$/, '.js') : filename.replace(/\.js$/, '.js.disabled');
+  // Accept either on-disk state: a stale client snapshot (double-toggled
+  // switch, unrefreshed list) sends the opposite-state filename, which must
+  // resolve idempotently instead of 404ing ("激活 not found").
+  const primary = resolveInDir(dir, filename);
+  const variant = /\.js\.disabled$/.test(filename)
+    ? filename.replace(/\.js\.disabled$/, '.js')
+    : filename.replace(/\.js$/, '.js.disabled');
+  const variantPath = resolveInDir(dir, variant);
+  const current = fs.existsSync(primary) ? primary : fs.existsSync(variantPath) ? variantPath : null;
+  if (!current) throw new HubError(404, `plugin file not found: ${filename}`);
+  const currentName = path.basename(current);
+  const nextName = input.enabled
+    ? currentName.replace(/\.js\.disabled$/, '.js')
+    : currentName.replace(/\.js$/, '.js.disabled');
   const next = resolveInDir(dir, nextName);
-  fs.renameSync(current, next);
+  if (next !== current) fs.renameSync(current, next);
   await deps.reload?.(type);
   return statEntry(type, dir, nextName);
 }
