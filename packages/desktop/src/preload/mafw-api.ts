@@ -28,6 +28,7 @@ export function createMafwApi(): MafwAPI {
       info: () => ipcRenderer.invoke("mafw-gateway-info"),
       start: () => ipcRenderer.invoke("mafw-gateway-start"),
       restart: () => ipcRenderer.invoke("mafw-gateway-restart"),
+      update: () => ipcRenderer.invoke("mafw-gateway-update") as Promise<{ ok: boolean; error?: string }>,
       logsPath: () => ipcRenderer.invoke("mafw-gateway-logs-path"),
       onStateChange: (cb) => {
         stateCallbacks.add(cb)

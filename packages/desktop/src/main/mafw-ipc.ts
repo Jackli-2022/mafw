@@ -12,6 +12,7 @@ import {
 } from "./mafw-sidecar"
 import { getLastFocusedWindow, trayIconPath } from "./windows"
 import { walkProjectFiles } from "./file-listing"
+import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
 import { UiPluginManager } from "./ui-plugins"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
@@ -127,6 +128,31 @@ export function registerMafwIpcHandlers() {
     mafwClient = null
     await startGateway()
     return getGatewayStatus()
+  })
+
+  // Desktop trigger for the gateway self-update flow: writes the
+  // pending-restart.json token consumed by gateway's 2s poller.
+  ipcMain.handle("mafw-gateway-update", async () => {
+    const path = pendingRestartPath()
+    const io = {
+      writeFile: async (p: string, data: string) => {
+        const fs = await import("node:fs/promises")
+        await fs.mkdir(join(p, ".."), { recursive: true })
+        await fs.writeFile(p, data, "utf8")
+      },
+      rename: async (from: string, to: string) => {
+        const fs = await import("node:fs/promises")
+        await fs.rename(from, to)
+      },
+    }
+    try {
+      await atomicWriteToken(path, buildUpdateToken("desktop 更新按钮", app.getVersion()), io)
+      writeLog("utility", "mafw-gateway-update token written", { path })
+      return { ok: true }
+    } catch (err) {
+      writeLog("utility", "mafw-gateway-update failed", { err: String(err) }, "error")
+      return { ok: false, error: String(err) }
+    }
   })
 
   ipcMain.handle("mafw-invoke", async (_event: IpcMainInvokeEvent, namespace: string, method: string, ...args: unknown[]) => {

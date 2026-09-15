@@ -156,6 +156,24 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
   const [restartingAgent, setRestartingAgent] = createSignal(false)
 
+  const [updating, setUpdating] = createSignal(false)
+
+  const updateGateway = async () => {
+    if (!confirm("触发 Gateway 自更新？（将拉取当前代码构建并接力重启，约需 1-2 分钟，期间服务短暂中断）")) return
+    setUpdating(true)
+    try {
+      const res = await window.api.mafw.gateway.update()
+      if (res?.ok) {
+        showToastV2({ description: "更新令牌已提交，Gateway 将自动构建并接力重启（完成后通知活跃会话）", duration: 5000 })
+      } else {
+        showToastV2({ description: `更新请求失败: ${res?.error || "unknown"}`, duration: 4000 })
+      }
+    } catch (err: any) {
+      showToastV2({ description: `更新请求失败: ${err.message}`, duration: 4000 })
+    }
+    setUpdating(false)
+  }
+
   const restartAgentRuntime = async () => {
     setRestartingAgent(true)
     try {
@@ -547,6 +565,9 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 <div class="mafw-config-actions-row">
                   <ButtonV2 variant="outline" size="small" onClick={restartGateway} disabled={restarting()}>
                     {restarting() ? "重启中…" : "Restart Gateway"}
+                  </ButtonV2>
+                  <ButtonV2 variant="outline" size="small" onClick={updateGateway} disabled={updating()}>
+                    {updating() ? "请求已提交…" : "更新 Gateway（自更新）"}
                   </ButtonV2>
                   <ButtonV2 variant="outline" size="small" onClick={restartAgentRuntime} disabled={restartingAgent()}>
                     {restartingAgent() ? "重启中…" : "重启 Agent 运行时"}

@@ -16,6 +16,7 @@ export type MafwAPI = {
     info: () => Promise<GatewayStatus>
     start: () => Promise<GatewayStatus>
     restart: () => Promise<GatewayStatus>
+    update: () => Promise<{ ok: boolean; error?: string }>
     logsPath: () => Promise<string>
     onStateChange: (cb: (status: GatewayStatus) => void) => () => void
   }
