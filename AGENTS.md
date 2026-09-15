@@ -893,18 +893,18 @@ Gateway 的 console.log/warn/error 自动写入文件：
 
 ```bash
 npm run build                 # 构建 plugin + gateway + @mafw/sdk + tui（sdk 必须先于 tui——tui esbuild 依赖 @mafw/sdk/dist）
-npm pack                      # 打包为 .tgz（mafw-<version>.tgz）
-npm install -g mafw-4.5.1.tgz    # 全局安装
+npm pack                      # 打包为 .tgz（jack200714-mafw-<version>.tgz）
+npm install -g @jack200714/mafw    # 全局安装（bin 命令为 mafw）
 mafw version                  # 验证安装
 ```
 
-发布后用户只需 `npm install -g mafw` 即可使用 `mafw` CLI（包名 2026-09-15 起从 `opencode-plugin-mafw` 改为 `mafw`，旧名从未发布到 npm，零迁移）。
+发布后用户只需 `npm install -g @jack200714/mafw` 即可使用 `mafw` CLI（包名变迁：`opencode-plugin-mafw` → `mafw`（2026-09-15）→ `@jack200714/mafw`（2026-09-15，因 npm typosquatting 相似度规则拦截无 scope 短名，scoped 包豁免；bin 命令始终为 `mafw`）。旧名均从未发布到 npm，零迁移）。
 
 **完整重装流程（清旧 + 构建 + 安装）：**
 ```bash
 npm run build
 npm pack
-npm install -g mafw-*.tgz     # 覆盖旧版本
+npm install -g jack200714-mafw-*.tgz     # 覆盖旧版本（Windows cmd 下通配符不展开，需显式文件名）
 ```
 
 **注意事项：**

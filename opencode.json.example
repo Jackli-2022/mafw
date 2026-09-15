@@ -1,7 +1,7 @@
 {
   "plugin": [
     "superpowers@latest",
-    "mafw"
+    "@jack200714/mafw"
   ],
   "mcpServers": {
     "mafw": {

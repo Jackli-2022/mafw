@@ -6,16 +6,16 @@
 
 console.log('');
 console.log('╔════════════════════════════════════════════════════════════╗');
-console.log('║  mafw installed                                          ║');
+console.log('║  @jack200714/mafw installed                              ║');
 console.log('╚════════════════════════════════════════════════════════════╝');
 console.log('');
 console.log('Next steps:');
 console.log('');
-console.log('  1. Edit your opencode.json, add "mafw" to the plugin array:');
+console.log('  1. Edit your opencode.json, add "@jack200714/mafw" to the plugin array:');
 console.log('     {');
 console.log('       "plugin": [');
 console.log('         "superpowers@latest",');
-console.log('         "mafw"');
+console.log('         "@jack200714/mafw"');
 console.log('       ]');
 console.log('     }');
 console.log('');
