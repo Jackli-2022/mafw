@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { listPlugins, installPlugin, setPluginEnabled, deletePlugin, HubError } from '../../src/plugins/hub';
+import { listPlugins, installPlugin, setPluginEnabled, deletePlugin, cleanupExamples, HubError } from '../../src/plugins/hub';
 
 const B64 = Buffer.from('module.exports = { name: "foo" };').toString('base64');
 
@@ -115,6 +115,34 @@ describe('listPlugins', () => {
 
   test('no builtinEntries dep → unchanged behavior', () => {
     expect(listPlugins(makeDeps())).toEqual([]);
+  });
+});
+
+describe('cleanupExamples', () => {
+  test('removes example.js.disabled in all four dirs', () => {
+    const deps = makeDeps();
+    for (const d of Object.values(deps.dirs)) fs.writeFileSync(path.join(d, 'example.js.disabled'), 'x');
+    const out = cleanupExamples(deps);
+    expect(out.removed).toHaveLength(4);
+    expect(out.failed).toEqual([]);
+    for (const d of Object.values(deps.dirs)) expect(fs.existsSync(path.join(d, 'example.js.disabled'))).toBe(false);
+  });
+
+  test('idempotent on missing files/dirs and keeps other files', () => {
+    const deps = makeDeps();
+    fs.writeFileSync(path.join(deps.dirs.runtime, 'README.md'), 'keep');
+    const out = cleanupExamples(deps);
+    expect(out.removed).toEqual([]);
+    expect(fs.existsSync(path.join(deps.dirs.runtime, 'README.md'))).toBe(true);
+  });
+
+  test('failed unlink is reported not thrown', () => {
+    const deps = makeDeps();
+    // directory named example.js.disabled → unlinkSync throws (EPERM/EISDIR) on all platforms
+    fs.mkdirSync(path.join(deps.dirs.ui, 'example.js.disabled'));
+    const out = cleanupExamples(deps);
+    expect(out.failed).toHaveLength(1);
+    expect(out.removed).toHaveLength(0);
   });
 });
 

@@ -133,6 +133,18 @@ function collectUserEntries(deps: HubDeps): PluginEntry[] {
   return entries;
 }
 
+export function cleanupExamples(deps: HubDeps): { removed: string[]; failed: string[] } {
+  const removed: string[] = [];
+  const failed: string[] = [];
+  for (const dir of Object.values(deps.dirs)) {
+    const target = path.join(dir, 'example.js.disabled');
+    try {
+      if (fs.existsSync(target)) { fs.unlinkSync(target); removed.push(target); }
+    } catch { failed.push(target); }
+  }
+  return { removed, failed };
+}
+
 function decodeContent(contentBase64: string, maxBytes: number): Buffer {
   if (typeof contentBase64 !== 'string' || contentBase64.length === 0) throw new HubError(400, 'empty content');
   const buf = Buffer.from(contentBase64, 'base64');
