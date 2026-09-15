@@ -134,11 +134,13 @@ export type MafwAPI = {
     dismiss: (id: string) => Promise<void>
     confirm: (id: string) => Promise<void>
     reject: (id: string) => Promise<void>
+    propose: (id: string, suggestion: 'confirm' | 'reject', reason: string, priority?: 'high' | 'medium' | 'low') => Promise<{ success: boolean; message?: string }>
   }
 
   automations: {
     list: () => Promise<AutomationRule[]>
     toggle: (id: string, enabled: boolean) => Promise<void>
+    draft: (input: { id: string; trigger: { schedule: string; timezone?: string }; skill?: string; action?: { type: 'triage' | 'goal'; template?: string; auto_confirm?: boolean }; goal_defaults?: { maxLoops?: number } }) => Promise<{ id: string; valid: boolean; errors?: string[] }>
   }
 
   chat: {

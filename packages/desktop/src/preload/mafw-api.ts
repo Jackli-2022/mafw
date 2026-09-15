@@ -145,11 +145,13 @@ export function createMafwApi(): MafwAPI {
       dismiss: (id) => invoke("triage", "dismiss", id),
       confirm: (id) => invoke("triage", "confirm", id),
       reject: (id) => invoke("triage", "reject", id),
+      propose: (id, suggestion, reason, priority?) => invoke("triage", "propose", id, suggestion, reason, priority),
     },
 
     automations: {
       list: () => invoke("automations", "list"),
       toggle: (id, enabled) => invoke("automations", "toggle", id, enabled),
+      draft: (input) => invoke("automations", "draft", input),
     },
 
     chat: {

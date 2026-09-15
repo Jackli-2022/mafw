@@ -4138,7 +4138,71 @@ class MafwScheduler {
           return;
         }
 
+        // POST /api/triage/{id}/propose — user proposes a decision suggestion
+        // (same flow as the MCP mafw_propose_triage_decision tool)
+        const triageProposeMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/propose$/);
+        if (triageProposeMatch && req.method === 'POST') {
+          try {
+            const triageId = triageProposeMatch[1];
+            const body = JSON.parse(await readBody(req));
+            const suggestion = body.suggestion as 'confirm' | 'reject';
+            if (!['confirm', 'reject'].includes(suggestion)) {
+              res.writeHead(400); res.end(JSON.stringify({ error: 'suggestion must be "confirm" or "reject"' })); return;
+            }
+            const reason = String(body.reason || '');
+            const priority = (body.priority as string) || 'medium';
+            const result = this.automationEngine?.proposeTriageDecision(triageId, suggestion, reason, priority);
+            if (!result) { res.writeHead(404); res.end(JSON.stringify({ error: 'Triage item not found' })); return; }
+            this.ledger?.append({
+              timestamp: new Date().toISOString(),
+              event: 'AUTOMATION_TRIGGERED',
+              source: 'user',
+              reason: `proposed_${suggestion}_for_${triageId}`,
+              details: { triageId, suggestion, priority },
+            });
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
+
         // ── Automation endpoints (Tier 4 — user only) ──
+
+        // POST /api/automations/draft — create a draft rule (disabled).
+        // MUST be registered before the /api/automations/{id} matcher.
+        if (req.url === '/api/automations/draft' && req.method === 'POST') {
+          try {
+            const body = JSON.parse(await readBody(req));
+            const trigger = body.trigger || {};
+            const rule = {
+              id: body.id as string,
+              enabled: false,
+              trigger: {
+                type: 'cron' as const,
+                schedule: trigger.schedule || '',
+                timezone: trigger.timezone || 'UTC',
+              },
+              skill: body.skill as string | undefined,
+              action: body.action as any,
+              onResult: body.onResult as any,
+              goal_defaults: body.goal_defaults as any,
+            };
+            const result = this.automationEngine?.draftRule(rule);
+            if (!result) { res.writeHead(503); res.end(JSON.stringify({ error: 'Automation engine not available' })); return; }
+            this.ledger?.append({
+              timestamp: new Date().toISOString(),
+              event: 'AUTOMATION_TRIGGERED',
+              ruleId: result.id,
+              source: 'user',
+              reason: 'rule_drafted',
+            });
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+          }
+          return;
+        }
 
         // GET /api/automations — list automation rules with next trigger + recent history
         if (req.url === '/api/automations' && req.method === 'GET') {

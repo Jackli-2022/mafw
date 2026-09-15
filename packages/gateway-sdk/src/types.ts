@@ -552,11 +552,22 @@ export interface TriageNamespace {
   dismiss(id: string): Promise<void>
   confirm(id: string): Promise<void>
   reject(id: string): Promise<void>
+  propose(id: string, suggestion: 'confirm' | 'reject', reason: string, priority?: 'high' | 'medium' | 'low'): Promise<{ success: boolean; message?: string }>
+}
+
+export interface AutomationDraftInput {
+  id: string
+  trigger: { schedule: string; timezone?: string }
+  skill?: string
+  action?: { type: 'triage' | 'goal'; template?: string; auto_confirm?: boolean }
+  goal_defaults?: { maxLoops?: number }
 }
 
 export interface AutomationsNamespace {
   list(): Promise<AutomationRule[]>
   toggle(id: string, enabled: boolean): Promise<void>
+  /** 起草规则（enabled=false 落盘，需手动启用） */
+  draft(input: AutomationDraftInput): Promise<{ id: string; valid: boolean; errors?: string[] }>
 }
 
 export interface QuestionsNamespace {

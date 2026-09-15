@@ -636,6 +636,13 @@ export class MafwClient implements IMafwClient {
     reject: async (id: string): Promise<void> => {
       await this.request(`/api/triage/${id}/reject`, { method: 'POST' })
     },
+
+    propose: async (id: string, suggestion: 'confirm' | 'reject', reason: string, priority: 'high' | 'medium' | 'low' = 'medium'): Promise<{ success: boolean; message?: string }> => {
+      return this.request(`/api/triage/${id}/propose`, {
+        method: 'POST',
+        body: JSON.stringify({ suggestion, reason, priority }),
+      })
+    },
   }
 
   // ── Questions (AskCard — proxies the native opencode Question API) ──
@@ -929,6 +936,20 @@ export class MafwClient implements IMafwClient {
       await this.request(`/api/automations/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ enabled }),
+      })
+    },
+
+    /** 起草规则（enabled=false 落盘，需手动启用）。返回校验结果。 */
+    draft: async (input: {
+      id: string
+      trigger: { schedule: string; timezone?: string }
+      skill?: string
+      action?: { type: 'triage' | 'goal'; template?: string; auto_confirm?: boolean }
+      goal_defaults?: { maxLoops?: number }
+    }): Promise<{ id: string; valid: boolean; errors?: string[] }> => {
+      return this.request('/api/automations/draft', {
+        method: 'POST',
+        body: JSON.stringify(input),
       })
     },
   }
