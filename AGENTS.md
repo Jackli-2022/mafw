@@ -544,6 +544,8 @@ opencode LLM（推理 Agent）                       └─ MediaService → pi 
 `MediaPluginLoader`（`gateway/src/media/media-plugin-loader.ts`）扫描/热加载/fail-open，
 `MediaService.resolvePrompt(kind, cfg)` 按模态路由到插件引擎或默认 pi。
 
+> **插件中心全量清单（2026-09-15）**：三个 loader 不再生成 `example.js.disabled` 模板（启动时 `cleanupExamples()` 幂等清理存量）；`GET /api/plugins`（插件中心）含内置条目——runtime: `opencode`/`pi`、media: `pi`、usage: 全部内置适配器（`builtin`/`overridden`/`pluginType` 字段，同名用户文件 → 内置件标 `overridden`）；安装为 **raw octet-stream**（`POST /api/plugins/install?filename=&type=`，`type` 可缺省——gateway 落 tmp-require 嗅探 `module.exports` 接口（`createRuntime`→runtime / `createPrompt`+`fixPayload`+`engine`+`modalities`→media / `fetch`→usage / `tools`→ui；多命中 400 `ambiguous plugin interface: <a/b>`，前端出兜底下拉）。桌面 Config→Plugins：「Runtime & Media」卡已删，runtime 切换=hub 行「激活」、media 每模态下拉并入 hub、usage 内置行只读+「克隆」（复用 clone-builtin 模板端点）。
+
 **两种插件形态**（CJS `module.exports`）：
 
 ```js
