@@ -59,8 +59,18 @@ function creditsInWindow(rows, prices) {
 const ROLLING_WINDOWS = [
   ['day', 'day', 24 * 3600e3],
   ['week', '7d', 7 * 24 * 3600e3],
-  ['month', 'month', 30 * 24 * 3600e3],
 ];
+
+// 月度刷新 = 自然月（每月 1 号 00:00 本地时区重置），非滚动 30 天。
+function calendarMonthStart(now) {
+  const d = new Date(now);
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+}
+
+function calendarMonthEnd(now) {
+  const d = new Date(now);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+}
 
 module.exports = {
   name: 'gateway',
@@ -104,7 +114,7 @@ module.exports = {
         used,
         limit: lim.credit,
         unit: 'credit',
-        pct: Math.round((used / lim.credit) * 100),
+        pct: Math.round((used / lim.credit) * 10000) / 100,
         remaining: Math.max(0, Math.round((lim.credit - used) * 100) / 100),
         detailLines,
       });
@@ -118,7 +128,19 @@ module.exports = {
         used,
         limit: lim[cfgKey],
         unit: 'credit',
-        pct: Math.round((used / lim[cfgKey]) * 100),
+        pct: Math.round((used / lim[cfgKey]) * 10000) / 100,
+      });
+    }
+    if (lim.month > 0) {
+      const { credits } = creditsInWindow(stats({ provider: 'gateway', sinceMs: calendarMonthStart(Date.now()) }), prices);
+      const used = Math.round(credits * 100) / 100;
+      windows.push({
+        window: 'month',
+        used,
+        limit: lim.month,
+        unit: 'credit',
+        pct: Math.round((used / lim.month) * 10000) / 100,
+        resetAt: calendarMonthEnd(Date.now()),
       });
     }
     if (windows.length === 0) return null;
