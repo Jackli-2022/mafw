@@ -223,11 +223,17 @@ export function MafwShell() {
     return true
   }
   // "新建 Goal": jump to the manager session and send a create-goal message.
-  const handleNewGoal = async (description: string): Promise<boolean> => {
+  // planReview (default on) asks the manager to pause after planning and
+  // confirm the approach via mafw_ask_user before executing (Cowork-style
+  // review-then-run); the question surfaces in the QuestionWidget overlay.
+  const handleNewGoal = async (description: string, opts?: { planReview?: boolean }): Promise<boolean> => {
     if (!await handleOpenManager()) return false
     const manager = resolveManager()
     if (!manager) return false
-    const message = `创建新 Goal：${description}`
+    const planReview = opts?.planReview !== false
+    const message = planReview
+      ? `创建新 Goal：${description}\n\n（流程要求：完成规划（PLANNING_COMPLETE）后，先用 mafw_ask_user 工具把方案要点（目标、步骤、风险）发给我确认，得到我的确认答复后再开始执行。）`
+      : `创建新 Goal：${description}`
     // Optimistic insert (matches sendMessage's store pattern).
     const userMsgId = `user-${Date.now()}`
     const ts = Date.now()

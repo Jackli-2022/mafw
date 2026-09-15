@@ -4,6 +4,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 
 /**
  * Startup welcome pane ("今天要做什么？"). Rendered when the app launches
@@ -22,7 +23,7 @@ export function WelcomeHome(props: {
   onSelect: (sid: string) => void
   onCreate: () => void
   onNavigate: (tab: "chat" | "goals" | "memory" | "approvals" | "triage" | "automation") => void
-  onNewGoal: (description: string) => Promise<boolean>
+  onNewGoal: (description: string, opts?: { planReview?: boolean }) => Promise<boolean>
   onOpenManager: () => Promise<boolean>
 }) {
   const [goals, setGoals] = createSignal<any[]>([])
@@ -35,6 +36,7 @@ export function WelcomeHome(props: {
   const [goalInputOpen, setGoalInputOpen] = createSignal(false)
   const [goalSubmitting, setGoalSubmitting] = createSignal(false)
   const [goalError, setGoalError] = createSignal("")
+  const [planReview, setPlanReview] = createSignal(true)
 
   async function fetchAll() {
     try {
@@ -91,7 +93,7 @@ export function WelcomeHome(props: {
     if (!desc || goalSubmitting()) return
     setGoalSubmitting(true)
     setGoalError("")
-    const ok = await props.onNewGoal(desc)
+    const ok = await props.onNewGoal(desc, { planReview: planReview() })
     if (!ok) setGoalError("未找到 Manager 会话，已跳转到 Goals 页；可稍后手动创建。")
     setGoalSubmitting(false)
   }
@@ -155,6 +157,11 @@ export function WelcomeHome(props: {
             onKeyDown={(e) => { if (e.key === "Enter") void submitGoal() }}
           />
           <div class="mafw-welcome-goal-input-actions">
+            <span class="mafw-welcome-plan-review" title="规划完成后 manager 会先用 mafw_ask_user 把方案发给你确认，经确认后才开始执行（Cowork 式 review-then-run）">
+              <SwitchV2 checked={planReview()} onChange={(v: boolean) => setPlanReview(v)} size="small" />
+              <span style={{ "font-size": 11, color: "var(--text-base)" }}>规划完成后先经我确认再执行</span>
+            </span>
+            <span style={{ flex: 1 }} />
             <ButtonV2 variant="contrast" size="small" disabled={goalSubmitting() || !goalDraft().trim()} onClick={() => void submitGoal()}>
               {goalSubmitting() ? "提交中…" : "提交"}
             </ButtonV2>
