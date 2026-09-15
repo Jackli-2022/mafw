@@ -50,3 +50,12 @@ export function parseAmbiguousCandidates(message: string): string[] | null {
   const candidates = rest.split("/").map((s) => s.trim()).filter(Boolean)
   return candidates.length > 0 ? candidates : null
 }
+
+/** Badge text for builtin hub entries ("" for user file entries). */
+export function builtinMeta(e: HubEntry): string {
+  if (!e.builtin) return ""
+  const parts = ["内置"]
+  if (e.type === "usage" && e.pluginType) parts.push(e.pluginType)
+  if (e.overridden) parts.push("被覆盖")
+  return parts.join(" · ")
+}

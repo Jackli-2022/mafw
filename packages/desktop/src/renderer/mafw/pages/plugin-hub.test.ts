@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { sortEntries, statusLabel, installableTypes, runtimeActivatable, parseAmbiguousCandidates, type HubEntry } from "./plugin-hub"
+import { sortEntries, statusLabel, installableTypes, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, type HubEntry } from "./plugin-hub"
 
 const entry = (over: Partial<HubEntry>): HubEntry => ({
   type: "runtime", name: "foo", file: "foo.js", status: "enabled", size: 1, mtime: "2026-09-11T00:00:00Z", ...over,
@@ -45,5 +45,20 @@ describe("parseAmbiguousCandidates", () => {
   test("returns null for other errors", () => {
     expect(parseAmbiguousCandidates("plugin already exists: foo.js")).toBeNull()
     expect(parseAmbiguousCandidates("ambiguous plugin interface: ")).toBeNull()
+  })
+})
+
+describe("builtinMeta", () => {
+  test("runtime builtin", () => {
+    expect(builtinMeta(entry({ builtin: true, file: "(builtin)", size: 0, mtime: "" }))).toBe("内置")
+  })
+  test("usage builtin carries pluginType", () => {
+    expect(builtinMeta(entry({ type: "usage", builtin: true, pluginType: "api" }))).toBe("内置 · api")
+  })
+  test("overridden builtin marked", () => {
+    expect(builtinMeta(entry({ type: "usage", builtin: true, overridden: true, pluginType: "api" }))).toBe("内置 · api · 被覆盖")
+  })
+  test("non-builtin entries empty", () => {
+    expect(builtinMeta(entry({}))).toBe("")
   })
 })

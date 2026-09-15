@@ -9,7 +9,7 @@ import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
-import { sortEntries, statusLabel, installableTypes, runtimeActivatable, parseAmbiguousCandidates, type HubEntry } from "./plugin-hub"
+import { sortEntries, statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 
@@ -293,12 +293,6 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setMediaSwitching(false)
   }
 
-  const runtimeOptions = () => {
-    const ok = rtPlugins().filter(p => p.status === 'ok').map(p => p.name).filter(Boolean)
-    if (!ok.includes('opencode')) ok.unshift('opencode')
-    return ok
-  }
-
   const mediaOptions = () => {
     const ok = mediaPlugins().filter(p => p.status === 'ok').map(p => p.name).filter(Boolean)
     if (!ok.includes('pi')) ok.push('pi')
@@ -314,6 +308,16 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
   const [installCandidates, setInstallCandidates] = createSignal<string[] | null>(null)
   const [installBusy, setInstallBusy] = createSignal(false)
   let fileInputRef: HTMLInputElement | undefined
+
+  const cloneBuiltin = async (e: HubEntry) => {
+    try {
+      await window.api.mafw.usagePluginsCreate({ template: "clone-builtin", values: { sourceName: e.name } })
+      showToastV2({ description: `已克隆 ${e.name} 到 usage-plugins，可编辑后启用`, duration: 4000 })
+      await loadPluginHub()
+    } catch (err: any) {
+      showToastV2({ description: `克隆失败: ${err.message}`, duration: 4000 })
+    }
+  }
 
   const loadPluginHub = async () => {
     setHubLoading(true)
@@ -704,8 +708,12 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               <div class="mafw-config-section-header">
                 <span class="mafw-config-section-icon">??</span>
                 <span class="mafw-config-section-title">插件中心（全部插件）</span>
-              </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+              </div>              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                {rtEnvOverride() && (
+                  <div class="mafw-config-env-warning">
+                    ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置
+                  </div>
+                )}
                 <div style={{ display: "flex", "justify-content": "flex-end", gap: 8, "margin-bottom": 12 }}>
                   <ButtonV2 variant="outline" size="small" onClick={loadPluginHub} disabled={hubLoading()}>刷新</ButtonV2>
                   <ButtonV2 variant="contrast" size="small" onClick={() => setInstallOpen(!installOpen())}>安装插件</ButtonV2>
@@ -747,7 +755,12 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       <div>
                         <span style={{ "font-weight": 500 }}>{e.type}/{e.name}</span>
                         <span style={{ "font-size": 12, "margin-left": 8, color: "var(--text-muted, #888)" }}>{statusLabel(e)}</span>
-                        <span style={{ "font-size": 12, "margin-left": 8, color: "var(--text-muted, #888)" }}>{e.size} B · {new Date(e.mtime).toLocaleString()}</span>
+                        <Show
+                          when={e.builtin}
+                          fallback={<span style={{ "font-size": 12, "margin-left": 8, color: "var(--text-muted, #888)" }}>{e.size} B · {new Date(e.mtime).toLocaleString()}</span>}
+                        >
+                          <span style={{ "font-size": 12, "margin-left": 8, color: "var(--brand, #7c8)" }}>{builtinMeta(e)}</span>
+                        </Show>
                         <Show when={e.error}>
                           <span style={{ "font-size": 12, "margin-left": 8, color: "var(--danger, #e55)" }}>{e.error}</span>
                         </Show>
@@ -756,51 +769,19 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         <Show when={runtimeActivatable(e, rtInfo()?.active?.name)}>
                           <ButtonV2 variant="outline" size="small" onClick={() => switchRuntime(e.name)}>激活</ButtonV2>
                         </Show>
-                        <SwitchV2 checked={e.status === "enabled"} onChange={() => togglePlugin(e)} hideLabel />
-                        <ButtonV2 variant="ghost" size="small" onClick={() => removePlugin(e)}>删除</ButtonV2>
+                        <Show when={e.type === "usage" && e.builtin && !e.overridden}>
+                          <ButtonV2 variant="outline" size="small" onClick={() => cloneBuiltin(e)}>克隆</ButtonV2>
+                        </Show>
+                        <Show when={!e.builtin}>
+                          <SwitchV2 checked={e.status === "enabled"} onChange={() => togglePlugin(e)} hideLabel />
+                          <ButtonV2 variant="ghost" size="small" onClick={() => removePlugin(e)}>删除</ButtonV2>
+                        </Show>
                       </div>
                     </div>
                   )}
                 </For>
-                <Show when={!hubLoading() && hubEntries().length === 0}>
-                  <div style={{ "font-size": 13, color: "var(--text-muted, #888)" }}>暂无插件。点击「安装插件」从本地 .js 文件安装。</div>
-                </Show>
-              </div>
-            </div>
-            <div class="mafw-config-section">
-              <div class="mafw-config-section-header">
-                <span class="mafw-config-section-icon">??</span>
-                <span class="mafw-config-section-title">Runtime &amp; Media</span>
-              </div>
-              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
-                <div class="mafw-config-section-desc">
-                  切换运行时引擎和媒体分析引擎。Runtime 控制 AI 模型调用方式，Media 控制图片/视频/音频分析引擎。
-                </div>
-                {rtEnvOverride() && (
-                  <div class="mafw-config-env-warning">
-                    ⚠️ 环境变量 MAFW_RUNTIME_PLUGIN 已覆盖 config.yaml 设置
-                  </div>
-                )}
-                <div class="mafw-config-field-group">
-                  <label class="mafw-config-label">Runtime</label>
-                  <div class="mafw-config-field-row">
-                    <div style={{ width: 220 }}>
-                      <SelectV2
-                        options={runtimeOptions()}
-                        current={rtInfo()?.active?.name ?? 'opencode'}
-                        value={(x: string) => x}
-                        label={(x: string) => (x === 'opencode' ? 'opencode（默认）' : x)}
-                        onSelect={(v) => { if (v && v !== (rtInfo()?.active?.name ?? 'opencode')) switchRuntime(v) }}
-                        disabled={rtSwitching()}
-                        placeholder="选择 runtime"
-                      />
-                    </div>
-                    {rtSwitching() && <LoaderV2 width={14} height={14} />}
-                    <span class="mafw-config-hint">当前: {rtInfo()?.active?.name ?? 'opencode'}</span>
-                  </div>
-                </div>
-                <div class="mafw-config-field-group">
-                  <label class="mafw-config-label">Media Engine</label>
+                <div class="mafw-config-field-group" style={{ "margin-top": 16 }}>
+                  <label class="mafw-config-label">Media 引擎</label>
                   <div class="mafw-config-grid">
                     {[
                       { kind: 'engine', label: 'Default', value: mediaEngine() },
@@ -825,9 +806,13 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   </div>
                   {mediaSwitching() && (
                     <div class="mafw-config-inline-loading">
-                      <LoaderV2 width={12} height={12} /> 切换中…                    </div>
+                      <LoaderV2 width={12} height={12} /> 切换中…
+                    </div>
                   )}
                 </div>
+                <Show when={!hubLoading() && hubEntries().length === 0}>
+                  <div style={{ "font-size": 13, color: "var(--text-muted, #888)" }}>暂无插件。点击「安装插件」从本地 .js 文件安装。</div>
+                </Show>
               </div>
             </div>
           </Show>
