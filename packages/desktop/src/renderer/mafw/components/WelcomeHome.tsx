@@ -1,5 +1,6 @@
 ﻿// @ts-nocheck
 import { createMemo, createSignal, Show, For, createEffect, onCleanup } from "solid-js"
+import { allWithFailureFlag } from "../connection-state"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
@@ -39,21 +40,24 @@ export function WelcomeHome(props: {
   const [planReview, setPlanReview] = createSignal(true)
 
   async function fetchAll() {
-    try {
-      const [g, a, t, auto] = await Promise.all([
-        window.api.mafw.goals.list().catch(() => []),
-        window.api.mafw.approvals.list().catch(() => []),
-        window.api.mafw.triage.list().catch(() => []),
-        window.api.mafw.automations.list().catch(() => []),
-      ])
-      setGoals(Array.isArray(g) ? g : [])
-      setApprovals(Array.isArray(a) ? a : [])
-      setTriage(Array.isArray(t) ? t : [])
-      setAutomations(Array.isArray(auto) ? auto : [])
-      setConnected(true)
-    } catch {
-      setConnected(false)
-    }
+    // Per-item .catch(() => []) made the outer catch unreachable — the
+    // "Gateway 服务未连接" banner below could never show. Track failures
+    // explicitly instead (allWithFailureFlag).
+    const { values, failed } = await allWithFailureFlag(
+      [
+        () => window.api.mafw.goals.list(),
+        () => window.api.mafw.approvals.list(),
+        () => window.api.mafw.triage.list(),
+        () => window.api.mafw.automations.list(),
+      ],
+      [] as any[],
+    )
+    const [g, a, t, auto] = values
+    setGoals(Array.isArray(g) ? g : [])
+    setApprovals(Array.isArray(a) ? a : [])
+    setTriage(Array.isArray(t) ? t : [])
+    setAutomations(Array.isArray(auto) ? auto : [])
+    setConnected(!failed)
     setLoading(false)
   }
 

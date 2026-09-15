@@ -17,43 +17,72 @@ import { writeFile } from "node:fs/promises"
 import { UiPluginManager } from "./ui-plugins"
 import type { RenderRequest } from "../shared/ui-plugins"
 import { write as writeLog } from "./logging"
+import { createGatewayHealthMonitor, createRestartScheduler } from "./gateway-health"
 
 let mafwClient: import("@mafw/sdk").MafwClient | null = null
 
-// ── Health Monitor ──
+// ── Health Monitor + auto-restart ──
 const HEALTH_INTERVAL_MS = 30_000
 const MAX_CONSECUTIVE_FAILURES = 5
+const RESTART_DELAY_MS = 3_000
+const RESTART_MAX_ATTEMPTS = 3
 
-let healthTimer: ReturnType<typeof setInterval> | null = null
-let consecutiveFailures = 0
+let health: ReturnType<typeof createGatewayHealthMonitor> | null = null
+
+// Bounded auto-restart after an announced failure (unexpected gateway exit or
+// failed start). Reset on "ready". Keeps the desktop self-healing without an
+// unbounded crash loop.
+const restartScheduler = createRestartScheduler({
+  delayMs: RESTART_DELAY_MS,
+  maxAttempts: RESTART_MAX_ATTEMPTS,
+  run: () => {
+    writeLog("utility", "gateway auto-restart triggered", { attempt: restartScheduler.attempts }, "info")
+    stopGateway()
+    void startGateway()
+  },
+  onExhausted: (attempts) => {
+    writeLog("utility", "gateway auto-restart exhausted — manual restart required", { attempts }, "error")
+  },
+})
+
+function pushHealthEvent(healthy: boolean, failures: number) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send("mafw-gateway-health", { healthy, failures })
+  }
+}
 
 function stopHealthMonitor() {
-  if (healthTimer) { clearInterval(healthTimer); healthTimer = null }
-  consecutiveFailures = 0
+  health?.stop()
+  health = null
 }
 
 function startHealthMonitor() {
   stopHealthMonitor()
-  consecutiveFailures = 0
-
-  healthTimer = setInterval(async () => {
-    if (!mafwClient) { consecutiveFailures++; return }
-    try {
-      await mafwClient.project.current()
-      consecutiveFailures = 0
-    } catch {
-      consecutiveFailures++
-      writeLog("utility", "mafw gateway health check failed", { attempt: consecutiveFailures }, "warn")
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        writeLog("utility", "mafw gateway health check failed — restarting", { consecutiveFailures }, "warn")
+  health = createGatewayHealthMonitor(
+    {
+      probe: async () => {
+        if (!mafwClient) throw new Error("gateway client unavailable")
+        await mafwClient.project.current()
+      },
+      onFirstFailure: () => {
+        writeLog("utility", "mafw gateway health check failed", undefined, "warn")
+        pushHealthEvent(false, 1)
+      },
+      onAttemptFail: (n) => {
+        writeLog("utility", "mafw gateway health check failed", { attempt: n }, "warn")
+        pushHealthEvent(false, n)
+      },
+      onRecovery: () => pushHealthEvent(true, 0),
+      onGiveUp: (n) => {
+        writeLog("utility", "mafw gateway health check failed — restarting", { consecutiveFailures: n }, "warn")
         mafwClient = null
-        stopHealthMonitor()
         stopGateway()
         void startGateway()
-      }
-    }
-  }, HEALTH_INTERVAL_MS)
-  healthTimer.unref()
+      },
+    },
+    { intervalMs: HEALTH_INTERVAL_MS, maxFailures: MAX_CONSECUTIVE_FAILURES },
+  )
+  health.start()
 }
 
 // ── IPC Handlers ──
@@ -61,12 +90,15 @@ function startHealthMonitor() {
 export function registerMafwIpcHandlers() {
   onGatewayStateChange((state) => {
     if (state === "ready") {
+      restartScheduler.reset()
       const port = getGatewayPort()
       if (port) mafwClient = new MafwClient(`http://127.0.0.1:${port}`)
       startHealthMonitor()
     } else {
       mafwClient = null
       stopHealthMonitor()
+      // Unexpected exit / failed start: schedule a bounded auto-restart.
+      if (state === "failed") restartScheduler.request()
     }
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("mafw-gateway-state", getGatewayStatus())
@@ -158,6 +190,7 @@ export function registerMafwIpcHandlers() {
   })
 
   ipcMain.handle("mafw-gateway-restart", async () => {
+    restartScheduler.cancel()
     stopHealthMonitor()
     stopGateway()
     mafwClient = null

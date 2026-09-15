@@ -21,6 +21,12 @@ export function createMafwApi(): MafwAPI {
     for (const cb of stateCallbacks) cb(status)
   }
 
+  const healthCallbacks = new Set<(health: { healthy: boolean; failures: number }) => void>()
+  let healthChannelActive = false
+  const healthRelay = (_event: any, health: { healthy: boolean; failures: number }) => {
+    for (const cb of healthCallbacks) cb(health)
+  }
+
   return {
     notify: (opts: { title: string; body: string }) => ipcRenderer.invoke("mafw-notify", opts) as Promise<boolean>,
 
@@ -41,6 +47,20 @@ export function createMafwApi(): MafwAPI {
           if (stateCallbacks.size === 0 && stateChannelActive) {
             ipcRenderer.removeListener("mafw-gateway-state", stateRelay)
             stateChannelActive = false
+          }
+        }
+      },
+      onHealthChange: (cb) => {
+        healthCallbacks.add(cb)
+        if (!healthChannelActive) {
+          ipcRenderer.on("mafw-gateway-health", healthRelay)
+          healthChannelActive = true
+        }
+        return () => {
+          healthCallbacks.delete(cb)
+          if (healthCallbacks.size === 0 && healthChannelActive) {
+            ipcRenderer.removeListener("mafw-gateway-health", healthRelay)
+            healthChannelActive = false
           }
         }
       },

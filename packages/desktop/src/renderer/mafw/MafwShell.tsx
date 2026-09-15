@@ -17,6 +17,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { sessionStore } from "./session-store"
+import { createConnectionState } from "./connection-state"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { SplitView, leafIds, leafCount, fillEmpty, removeLeaf, setRatio, splitLeaf, splitAtPath, replaceAtPath, removeSid, isSidLeaf, firstLeafPath, findSidPath, parentDirOf, splitWithTarget, zoneForPoint, zoneToDir, type SplitNode, type SplitLeaf, type DropZone } from "./components/SplitView"
 import { SplitPlaceholder } from "./components/SplitPlaceholder"
@@ -1225,31 +1226,64 @@ export function MafwShell() {
     setTheme(next)
   }
 
-  // Direct EventSource SSE connection (renderer has native EventSource)
-  onMount(async () => {
-    let es: EventSource | null = null
-    const reconcileTimer = setInterval(reconcileFlowCards, 60000)
-    onCleanup(() => {
-      clearInterval(reconcileTimer)
-      if (es) { console.log("[mafw] SSE closing"); es.close() }
+  // ── Gateway connection awareness ──
+  // SSE (renderer, immediate) + main-process state pushes (process-level) are
+  // folded into one phase machine; transitions drive the reconnect/recovery
+  // toasts below. Without this, a gateway restart was completely silent.
+  const conn = createConnectionState()
+  let es: EventSource | null = null
+  let esRetry: ReturnType<typeof setTimeout> | null = null
+  const scheduleEsRetry = (delayMs = 5000) => {
+    if (esRetry) return
+    esRetry = setTimeout(() => { esRetry = null; void connectSse() }, delayMs)
+  }
+
+  onMount(() => {
+    const unsubConn = conn.subscribe((ev) => {
+      if (ev.phase === "reconnecting" && ev.prev === "connected") {
+        showToastV2({ description: "Gateway 连接中断，正在重连…", duration: 3000 })
+      } else if (ev.phase === "down") {
+        showToastV2({ description: "Gateway 已断开，正在自动重启…", duration: 4000 })
+      } else if (ev.phase === "connected" && ev.recovered) {
+        showToastV2({ description: "Gateway 已恢复", duration: 2500 })
+      }
     })
+    onCleanup(unsubConn)
+  })
+
+  async function connectSse() {
+    if (es) return
     const info = await window.api.mafw.gateway.info()
     if (!info?.url) {
-      console.log("[mafw] SSE: no gateway URL yet")
+      console.log("[mafw] SSE: no gateway URL yet, will retry")
+      scheduleEsRetry()
       return
     }
     console.log("[mafw] SSE connecting to", info.url)
     setGatewayUrl(info.url)
-    es = new EventSource(`${info.url}/api/events`)
+    const source = new EventSource(`${info.url}/api/events`)
+    es = source
     // onopen fires on initial connect AND after every EventSource auto-reconnect:
     // a gateway restart breaks SSE but keeps the same port, so the reconnect is
     // the only reliable signal that in-memory lists (session history) are stale.
-    es.onopen = () => {
+    source.onopen = () => {
       console.log("[mafw] SSE connected")
+      conn.report("sse-open")
       // Gateway restarts keep the same port; reconnect is the only reliable
       // signal that the cached session list is stale.
       sessionStore.invalidate()
       reconcileFlowCards()
+    }
+    source.onerror = () => {
+      console.log("[mafw] SSE error (will auto-reconnect)")
+      conn.report("sse-error")
+      if (source.readyState === EventSource.CLOSED) {
+        // Fatal close (server gone / non-SSE response): EventSource won't
+        // retry on its own — recreate on a short delay.
+        es = null
+        source.close()
+        scheduleEsRetry()
+      }
     }
     // Seed flow cards that arrived before the SSE connection (native APIs return pending only).
     window.api.mafw.permissions.list().then((items: any[]) => {
@@ -1537,7 +1571,18 @@ export function MafwShell() {
         if (text) mediaSpeakHandlers[sid]?.(text, voice)
       }
     }
-    es.onerror = () => { console.log("[mafw] SSE error (will auto-reconnect)") }
+  }
+
+  // SSE lifecycle: connect now, close on unmount, reconnect if the gateway
+  // only becomes available after this window loaded.
+  onMount(() => {
+    const reconcileTimer = setInterval(reconcileFlowCards, 60000)
+    onCleanup(() => {
+      clearInterval(reconcileTimer)
+      if (esRetry) { clearTimeout(esRetry); esRetry = null }
+      if (es) { console.log("[mafw] SSE closing"); es.close(); es = null }
+    })
+    void connectSse()
   })
 
   // Load history when active session changes (skip if already loaded)
@@ -1984,8 +2029,24 @@ export function MafwShell() {
   // Gateway status
   onMount(() => {
     window.api.mafw.gateway.info().then(setGwStatus)
-    const unsub = window.api.mafw.gateway.onStateChange(s => setGwStatus(s))
+    const unsub = window.api.mafw.gateway.onStateChange(s => {
+      setGwStatus(s)
+      // Fold process-level transitions into the connection phase machine and
+      // (re)establish SSE when the gateway (re)appears after this window
+      // loaded — e.g. self-update relay restarts.
+      if (s?.state === "failed") conn.report("gateway-failed")
+      else if (s?.state === "ready") conn.report("gateway-ready")
+      if (s?.state === "ready" && !es) void connectSse()
+    })
     onCleanup(unsub)
+    // Optional chain: a stale preload (renderer HMR outpaces preload rebuild)
+    // must degrade to "no health toasts", not crash the whole shell.
+    const unsubHealth = window.api.mafw.gateway.onHealthChange?.((h: { healthy: boolean }) => {
+      if (!h.healthy && conn.phase === "initial") {
+        showToastV2({ description: "Gateway 健康检查失败，后台将自动重试", duration: 3000 })
+      }
+    })
+    if (unsubHealth) onCleanup(unsubHealth)
     // Global drag guard: dropping a file anywhere must not navigate the window.
     const preventGlobal = (e: DragEvent) => e.preventDefault()
     document.addEventListener("dragover", preventGlobal)
@@ -2283,9 +2344,9 @@ export function MafwShell() {
                           onUnregisterMediaSpeak={(s) => { delete mediaSpeakHandlers[s] }}
                           onRegisterQueueFlush={(s, fn) => { queueFlushers[s] = fn }}
                           onUnregisterQueueFlush={(s) => { delete queueFlushers[s] }}
-                          compactionMark={compactionMarks()[s.id] || null}
-                          permissionMode={permissionModes[s.id] || "manual"}
-                          onTogglePermissionMode={() => setPermissionModes(s.id, nextPermissionMode(permissionModes[s.id] || "manual"))}
+                          compactionMark={compactionMarks()[leaf.sid] || null}
+                          permissionMode={permissionModes[leaf.sid] || "manual"}
+                          onTogglePermissionMode={() => setPermissionModes(leaf.sid, nextPermissionMode(permissionModes[leaf.sid] || "manual"))}
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />

@@ -7,6 +7,7 @@ import { write as writeLog } from "./logging"
 import { probeMafwCli } from "./mafw-cli-probe"
 import { planGatewayStart } from "./mafw-gateway-plan"
 import { clearGatewayPidFile, writeGatewayPidFile } from "./mafw-pid-file"
+import { exitNotification } from "./gateway-health"
 
 export type GatewayState = "stopped" | "starting" | "ready" | "failed"
 
@@ -36,6 +37,10 @@ let healthInterval: ReturnType<typeof setInterval> | null = null
 let spawnedByUs = false
 let bundledChild: ChildProcess | null = null
 let quitHookInstalled = false
+// Set by killBundledChild() so the async "exit" event can tell an intentional
+// shutdown (already announced as "stopped") from a crash / self-update relay
+// exit while we believed the gateway was ready.
+let expectedExit = false
 
 function notifyState(s: GatewayState) {
   writeLog("utility", `mafw gateway state -> ${s}`, { port, previousState: state }, "info")
@@ -96,6 +101,7 @@ function killBundledChild() {
   const child = bundledChild
   bundledChild = null
   if (!child || child.killed) return
+  expectedExit = true
   try {
     if (process.platform === "win32" && child.pid) {
       // cmd-less tree kill: SIGKILL is a no-op on Windows.
@@ -117,6 +123,7 @@ function spawnBundledGateway(entry: string): ChildProcess {
     windowsHide: true,
   })
   bundledChild = child
+  expectedExit = false
   // Register the bundled instance in the mafw CLI's pid file so `mafw
   // status`/`mafw stop` see it; cleared again on exit (crash or desktop quit).
   if (child.pid) void writeGatewayPidFile(child.pid)
@@ -128,10 +135,15 @@ function spawnBundledGateway(entry: string): ChildProcess {
     notifyState("failed")
   })
   child.on("exit", (code) => {
-    writeLog("utility", "bundled gateway exited", { code }, code === 0 ? "info" : "warn")
+    writeLog("utility", "bundled gateway exited", { code, expectedExit }, code === 0 ? "info" : "warn")
     bundledChild = null
     if (child.pid) void clearGatewayPidFile(child.pid)
-    if (state === "starting") notifyState("failed")
+    // Unexpected exit while "ready" (crash or self-update relay) must be
+    // announced so the renderer + auto-restart can react — silently staying
+    // "ready" is what made gateway restarts invisible before.
+    const notify = exitNotification(state, expectedExit)
+    expectedExit = false
+    if (notify) notifyState(notify)
   })
   return child
 }
