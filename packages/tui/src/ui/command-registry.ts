@@ -29,6 +29,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
   { name: 'status', description: '会话状态回顾（本地计算）', category: '会话', immediate: true },
   { name: 'queue', description: '排队消息管理（收回/丢弃）', category: '会话', aliases: ['q'], immediate: true },
   { name: 'btw', description: '支线问答：/btw <问题>', category: '会话' },
+  { name: 'waitwhat', description: '没听懂：用简明语言+项目术语重述上一条回复', category: '会话', immediate: true },
   { name: 'compact', description: '压缩当前会话上下文', category: '上下文', destructive: true, immediate: true },
   { name: 'undo', description: '回退最后一轮对话', category: '上下文', destructive: true },
   { name: 'redo', description: '恢复上一次回退', category: '上下文', destructive: true },

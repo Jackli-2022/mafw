@@ -31,6 +31,8 @@ import { MemoryWorker } from "./recall/memory-worker";
 import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
 import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
+import { redactSecrets } from "./recall/redact";
+import { runWaitwhat } from "./routes/waitwhat-command";
 import { ConsolidationService } from "./memory/consolidation-service";
 import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
@@ -2958,6 +2960,25 @@ class MafwScheduler {
               return;
             }
 
+            if (cmd === "waitwhat") {
+              if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "sessionID required" })); return; }
+              if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: "LLM client not available" })); return; }
+              const result = await runWaitwhat(String(sessionID), {
+                listMessages: async (sid) => {
+                  const r = await this.opencodeClient!.session.messages({ sessionID: sid, limit: 50 });
+                  return (r?.data || []) as any;
+                },
+                promptAsync: async (sid, text) => {
+                  await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: "text", text }] });
+                },
+              });
+              res.writeHead(result.ok ? 200 : 400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result.ok
+                ? { ok: true, message: '重述请求已发送到当前会话' }
+                : { ok: false, error: result.error }));
+              return;
+            }
+
             if (cmd === "status") {
               const statusPath = path.join(this.mafwDir, 'STATUS.md');
               const text = fs.existsSync(statusPath) ? fs.readFileSync(statusPath, 'utf-8') : 'No active Goals. Use /goal to create one.';
@@ -4945,7 +4966,10 @@ class MafwScheduler {
                 session_id: sessionID,
                 turn_id: turnId,
                 source: source as any,
-                content: content.slice(0, 100_000),
+                // Redact secrets once at capture so every downstream consumer
+                // (turnCompress transcripts, worker prompts, archive) only
+                // ever sees redacted content.
+                content: redactSecrets(content).slice(0, 100_000),
                 failure,
               });
               // Async scan prefetch: precompute semantic recall for this turn

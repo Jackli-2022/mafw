@@ -1,5 +1,7 @@
 # MAFW Gateway & Plugin 架构
 
+> **术语表**：`CONTEXT.md` 是项目共享语言（ubiquitous language）——说话/命名/写码用它的词；`/waitwhat` 命令与 manager 重述依赖它。
+
 ## 1. 谐波记忆系统
 
 ### 3.1 数据模型
@@ -387,6 +389,8 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
 ### 工作中：主动写入（必做）
 - 学到新知识、用户明确陈述的偏好与约束、完成的重要工作、踩过的坑
   → 调用 mafw_add_memory（选择 semantic/episodic/procedural，附 cueAnchors）
+- 内容已被 repo 文件承载 → 记指针（路径+一句话 gist），不复述全文
+- procedural 记忆结尾带"→ 下次用：<skill/工具>"（记忆即路标）
 - 不写冗余记忆
 
 ### 需要旧记忆：主动检索
@@ -434,7 +438,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 **MAFW 数据根固定为 `os.homedir()/.mafw`**（`config.resolvePath()`，与启动 cwd / MAFW_PROJECT_DIR 完全解耦；`paths.mafwDir` 配置覆盖失效）。启动时自动迁移 gateway 包目录旁的旧数据（`gateway/src/recall/data-dir-migrate.ts`，幂等，删除旧位置）——注意迁移源是 `<gateway包>/../.mafw`，**不是** project-relative `.mafw`；插件侧仍会在项目目录重建 `.mafw/`（日志与请求文件等）。
 
 **统一数据库 `~/.mafw/memory/gateway.db`**（`GatewayDatabase`，`gateway/src/memory/gateway-db.ts`）：
-- `t1_observations`：回合观察（插件经 `/api/obs/capture` 写入，turnID 网关分配，UNIQUE 去重）
+- `t1_observations`：回合观察（插件经 `/api/obs/capture` 写入，turnID 网关分配，UNIQUE 去重；**入库前经 `redactSecrets()` 脱敏**（`gateway/src/recall/redact.ts`，sk-/ghp_/Bearer/JWT/key=value 等格式 → `[REDACTED]`），下游 turnCompress/worker prompt/archive 只读脱敏内容——存量历史行不回溯）
 - `kv_store`：易失关键小状态——
   - `manager-session`（key=projectDir，**per-project manager session**，替代旧 manager-session.json）
   - `reflect-cursor`（key=sessionID，反思增量游标）
@@ -444,9 +448,11 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - `POST /api/manager/session/rotate`（`{projectDir, reason?}`，`routes/manager-rotate.ts`）：**开新话题**——旧 session metadata 降级 `role: 'manager-archived'`（去 pinned/exempt，回归普通生命周期，自动出现在桌面历史列表），强创建新 session 替换 kv 并重跑身份注入；与 `ensureManagerSession` 经 `managerSessionInflight` 互斥。MCP `mafw_new_topic` 复用同一 flow
 
 **Manager 常驻目标感知（2026-09-03）**：
-- **每轮 goal 快照**：`GET /api/recall/context` 识别活跃 manager session（kv sessionId 比对）后在 recall 块尾部追加 `<goal-snapshot>`（`core/manager/goal-snapshot.ts` 确定性聚合，≤10 条/500 字符，compaction 免疫）；非 manager session 不受影响
+- **每轮 goal 快照**：`GET /api/recall/context` 识别活跃 manager session（kv sessionId 比对）后在 recall 块尾部追加 `<goal-snapshot>`（`core/manager/goal-snapshot.ts` 确定性聚合，≤10 条/500 字符，compaction 免疫）；非 manager session 不受影响。**按名引用渲染**（2026-09-15，wayfinder 约定）：`标题 (goalId) [phase=…]`——标题在前、id 在括号里，不用裸 id 刷屏
+- **Charter 决策地图五段约定**（2026-09-15，借鉴 mattpocock wayfinder，`skills/manager-identity.ts` 系统提示）：Destination / Plan / Decisions so far（决策索引：一行 gist + 记忆 id，不复制详情）/ Not yet specified（fog，已知的未知，frontier 推进后毕业）/ Out of scope（排除项）；决策本体用 `mafw_add_memory`（semantic，cueAnchors 带 goalId）记录，charter 与 state 只存指针——记忆可跨会话检索，state 只是索引
 - **里程碑推送**：`core/manager/milestone-push.ts` 挂 `eventBus("phase_transition")`（PLANNING_COMPLETE/REVIEWING_COMPLETE/ASKING_USER）+ `archiveGoal()`（completed/failed/cancelled），per-project 合并队列（5s），持久化去重键 `milestone-notified/{goalId}:{phase}:{stateVersion}`，`promptAsync(noReply: true)` 硬免回复（消息落历史不触发 LLM；pi runtime busy 分支会丢 noReply 语义——已知限制）
 - **/btw 支线问答**：用户直发指令（桌面 `/btw` slash 命令 / 插件 `/btw` command → `/api/mafw-commands/run`），spawn 一次性 session（registerInternal 'btw'，不回流 T1），prompt 一次拿回答即删；`new-topic`/`btw` 均为**用户指令驱动**（UI-driven, not LLM-driven），刻意不暴露 MCP 工具给 agent
+- **/waitwhat 重述**（2026-09-15，借鉴 mattpocock wait-what）：用户发"没听懂"→ gateway 取当前会话最后一条 assistant 文本，promptAsync 回同一会话要求"简明语言（STE100 风格）+ CONTEXT.md 术语重述，不新增内容"（`routes/waitwhat-command.ts`，deps 注入可单测；回答经 SSE 三端同见）；接线：桌面 ChatPane mafw 命令组 + 插件 `waitwhat` command + TUI `/waitwhat`（immediate）
 - 旧三条 `manager-report-*` 自动化规则已退役（wake 链路读已删除的 legacy 文件 + 事件无人 emit，整链死代码），`ensureManagerRules` 启动时清理规则文件
 
 **聚合压缩（memory:turnCompress，每小时）**：每活跃 session 将本小时所有完成回合合并为一份 batch transcript，交给该 session 的**持久 worker 会话**，由 agent **自主调用 `mafw_add_memory`** 记录值得长期记忆的条目（类型按内容自选）。处理过的回合**一律删除**（空/失败不重试）。内部 worker 会话经 `/api/obs/capture` 的会话白名单过滤——**输出永不回流 T1**（防递归）。
@@ -455,7 +461,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 
 post-task curator 只看轨迹会记下错误答案/过度泛化/过期知识（"回顾性证据边界"）。落地为四点（A/B/C/D）：
 
-- **A. curator 只读探测面**：`memory-curator` agent 工具白名单在三个记忆工具之外放开 `read/grep/glob/ls`（`skills/memory-curator-agent.ts`）；**edit/bash/webfetch 仍 deny**——2026-08-31 transcript 执行事故的硬防线（mutation 禁止）不变，只读工具不破坏该不变量。`HARD_BOUNDARIES` 改写为"只读验证允许、任何写/执行绝对禁止"。`TOOL_EXTRACTION_SYSTEM` 加 propose–probe–commit 段：项目相关 procedural/semantic 记忆写入前先探测验证（每条候选 ≤3 次 probe）；transcript 与环境矛盾时以环境为准并 supersedes；只记可复用过程不记实例答案。
+- **A. curator 只读探测面**：`memory-curator` agent 工具白名单在三个记忆工具之外放开 `read/grep/glob/ls`（`skills/memory-curator-agent.ts`）；**edit/bash/webfetch 仍 deny**——2026-08-31 transcript 执行事故的硬防线（mutation 禁止）不变，只读工具不破坏该不变量。`HARD_BOUNDARIES` 改写为"只读验证允许、任何写/执行绝对禁止"。`TOOL_EXTRACTION_SYSTEM` 加 propose–probe–commit 段：项目相关 procedural/semantic 记忆写入前先探测验证（每条候选 ≤3 次 probe）；transcript 与环境矛盾时以环境为准并 supersedes；只记可复用过程不记实例答案。另有**指针优于全文**（内容已被 repo artifact 承载时记"路径+一句话 gist"，文件是真相源记忆是索引）与 **next-time 路标**（procedural 记忆结尾带"→ next time: 用哪个 skill/工具"）两条约定（2026-09-15，借鉴 mattpocock handoff）。
 - **B. stale 刷新（memory:review 每周日 UTC 4:00）**：`StaleVerifyPipeline`（`recall/stale-verify.ts`）取 top-10 energy×salience 的 procedural/semantic 记忆（>14 天、未 superseded），交 `stale-verify` worker 用只读工具重验，失真走 supersedes 链。**语义升级**：index.ts `registerMemoryPipelineActions` 覆盖了 automation-engine 模块级的 memory:review 桩（原只打印 ReviewScheduler 队列，review_count 无消费者）；规则由 `pipeline-rules.ts` 供给。能量衰减管"淡忘"，本管线管"内容有效性"。
 - **C. 验证置信度约定**：探测验证过的记忆 cue_anchors 带 `verified:YYYY-MM-DD` 锚点（prompt 约定，不动 schema），检索时可区分"环境验证过"vs"trajectory-only"。
 - **D. 成败信号喂给 curator**：`TurnPipelineOptions.gradeFor` —— `GatewayDatabase.getOutcomeForSession()`（goal_sessions ⋈ goal_outcomes 取最近 archived）拼入 worker prompt；prompt 明确"passing grade 不证明中间假设正确，失败轨迹的经验须先验证"。

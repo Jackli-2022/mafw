@@ -15,6 +15,8 @@ const GUIDE_BODY = `## 记忆
 ### 工作中：主动写入（必做）
 - 学到新知识、用户明确陈述的偏好与约束、完成的重要工作、踩过的坑
   → 调用 mafw_add_memory（按内容选择 semantic / episodic / procedural，附 cueAnchors 关键词，每条一句话）
+- 内容已被 repo 文件承载（代码/文档/ADR/issue）→ 记指针（路径 + 一句话 gist），不复述全文：文件是真相源，记忆只是索引
+- procedural 记忆结尾带"→ 下次用：<skill/工具/命令>"：记忆即路标，不只存档
 - 不写冗余记忆
 
 ### 需要旧记忆：主动检索与取回

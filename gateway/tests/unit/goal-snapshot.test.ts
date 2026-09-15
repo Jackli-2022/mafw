@@ -27,7 +27,9 @@ describe('buildGoalSnapshot', () => {
     writeState(mafwDir, 'g2', { goalId: 'g2', title: 'T2', phase: 'ARCHIVED', round: 5, nextAction: 'COMPLETED' });
     const snap = buildGoalSnapshot(mafwDir)!;
     expect(snap).toContain('<goal-snapshot>');
-    expect(snap).toContain('g1: T1 [phase=EXECUTING round=2]');
+    // Refer by name: the title leads, the id rides inside parentheses —
+    // a wall of bare ids is illegible (wayfinder convention).
+    expect(snap).toContain('T1 (g1) [phase=EXECUTING round=2]');
     expect(snap).not.toContain('g2');
     expect(snap).toContain('</goal-snapshot>');
   });

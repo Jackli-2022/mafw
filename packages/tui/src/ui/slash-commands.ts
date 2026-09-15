@@ -38,6 +38,8 @@ export interface SlashDeps {
   fork(): Promise<string | null>
   /** /status：本地会话回顾 overlay。 */
   showStatusRecap(): void
+  /** /waitwhat：简明重述上一条回复；返回错误文本或 null（重述经 SSE 送达）。 */
+  waitwhat(): Promise<string | null>
 }
 
 
@@ -71,6 +73,8 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
       case 'status':
         deps.showStatusRecap()
         return null
+      case 'waitwhat':
+        return deps.waitwhat()
       case 'queue':
         await deps.showQueueManager()
         return null

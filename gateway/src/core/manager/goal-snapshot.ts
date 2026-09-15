@@ -39,7 +39,7 @@ export function buildGoalSnapshot(mafwDir: string, opts?: { maxGoals?: number })
   const goals = collectActiveGoals(mafwDir);
   if (goals.length === 0) return null;
   const lines = goals.slice(0, maxGoals).map(g =>
-    `- ${g.goalId}: ${g.title} [phase=${g.phase} round=${g.round}${g.pendingQuestions > 0 ? ` pendingQ=${g.pendingQuestions}` : ''}]`,
+    `- ${g.title} (${g.goalId}) [phase=${g.phase} round=${g.round}${g.pendingQuestions > 0 ? ` pendingQ=${g.pendingQuestions}` : ''}]`,
   );
   return `<goal-snapshot>\n${lines.join('\n')}\n</goal-snapshot>`;
 }

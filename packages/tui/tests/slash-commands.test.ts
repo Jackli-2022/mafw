@@ -22,6 +22,7 @@ function harness(over: Partial<Record<string, any>> = {}) {
     rename: async (args: string) => { calls.push(`rename:${args}`); return null },
     fork: async () => { calls.push('fork'); return null },
     showStatusRecap: () => { calls.push('status') },
+    waitwhat: async () => { calls.push('waitwhat'); return null },
     ...over,
   }
   return { calls, deps, handler: createSlashHandler(deps as any) }
@@ -80,6 +81,14 @@ test('rename/fork/status dispatch to their deps', async () => {
   assert.deepEqual(h.calls, ['rename:我的实验', 'fork', 'status'])
 })
 
+test('waitwhat dispatches to its dep and surfaces error messages', async () => {
+  const h = harness()
+  assert.equal(await h.handler('waitwhat', ''), null)
+  assert.deepEqual(h.calls, ['waitwhat'])
+  const e = harness({ waitwhat: async () => 'waitwhat 失败: gateway down' })
+  assert.equal(await e.handler('waitwhat', ''), 'waitwhat 失败: gateway down')
+})
+
 test('compact/undo/redo surface dep error messages', async () => {
   const h = harness({ compact: async () => 'compact 失败: gateway down' })
   assert.equal(await h.handler('compact', ''), 'compact 失败: gateway down')
@@ -94,5 +103,5 @@ test('unknown command lists available commands', async () => {
 
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'diff', 'editor', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'verbose'])
+  assert.deepEqual(names, ['btw', 'compact', 'diff', 'editor', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'verbose', 'waitwhat'])
 })

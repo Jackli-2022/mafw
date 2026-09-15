@@ -26,6 +26,16 @@ describe('TOOL_EXTRACTION_SYSTEM (propose–probe–commit)', () => {
   it('warns that a passing grade does not validate intermediate assumptions', () => {
     expect(TOOL_EXTRACTION_SYSTEM).toMatch(/grade|verdict|outcome/i);
   });
+
+  it('instructs pointer-over-fulltext when a repo artifact already carries the content', () => {
+    expect(TOOL_EXTRACTION_SYSTEM).toMatch(/pointer/i);
+    expect(TOOL_EXTRACTION_SYSTEM).toMatch(/artifact|source of truth/i);
+  });
+
+  it('establishes the next-time pointer convention for procedural memories', () => {
+    expect(TOOL_EXTRACTION_SYSTEM).toMatch(/next time/i);
+    expect(TOOL_EXTRACTION_SYSTEM).toMatch(/procedural/i);
+  });
 });
 
 describe('TurnPipeline grade signal (D)', () => {

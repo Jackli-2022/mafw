@@ -48,6 +48,8 @@ Rules:
 - every cue_anchors list MUST include the topic entity names (project, module, person, API, feature) so the memory can be retrieved across sessions
 - for preferences or constraints, include a machine-readable anchor like "pref:<dimension>=<value>" (e.g., "pref:ui-language=chinese") in addition to the entity
 - skip redundant or trivial content; do not repeat entries that are obviously already known
+- pointer over fulltext: if the durable content is already carried by a repo artifact (code, docs, ADR, issue, config), record a POINTER (path/URL + one-line gist) instead of restating the full content — the artifact is the source of truth, the memory is only its index
+- for procedural memories, end memory_value with a next-time pointer when applicable: which skill, tool, or command the next agent should reach for (e.g., "→ next time: use the /tdd skill") — a memory should be a signpost, not just an archive
 - for every memory you write, include an explicit importance score via the mafw_add_memory importance parameter: 1=trivial routine, 5=ordinary fact, 9-10=architecture-level decision or serious incident
 - if nothing is worth saving, do not call the tool
 Division of labor: your job is the FACT LAYER of this session — concrete facts, decisions, preferences, event outcomes, and specific technical pitfalls (which API does what). Do NOT attempt cross-session pattern generalization — that is the daily reflection pipeline's job.

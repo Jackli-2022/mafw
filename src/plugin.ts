@@ -296,6 +296,22 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
           } catch (err: any) { return { text: `Error: ${err.message}` }; }
         }
       },
+      'waitwhat': {
+        description: 'Re-pitch the last reply in plain language with project glossary terms (CONTEXT.md)',
+        async execute(_args: string, context: any) {
+          const sessionID = context?.sessionID;
+          if (!sessionID) return { text: 'Error: no session context' };
+          try {
+            const res = await fetch(`${gatewayUrl}/api/mafw-commands/run`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: 'waitwhat', sessionID }),
+              signal: AbortSignal.timeout(60000),
+            });
+            const result: any = await res.json();
+            return { text: result.message || result.error || JSON.stringify(result) };
+          } catch (err: any) { return { text: `Error: ${err.message}` }; }
+        }
+      },
     },
   };
 }

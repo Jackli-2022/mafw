@@ -388,6 +388,14 @@ export async function runApp(opts: AppOptions): Promise<void> {
       if ('error' in (r as any)) return `btw 失败: ${(r as any).error}`
       return null
     },
+    waitwhat: async () => {
+      const sid = chatStore.sessionID
+      if (!sid) return '当前无会话'
+      const r = await client.mafwCommands.run({ command: 'waitwhat', sessionID: sid }).catch((e: any) => ({ error: e.message }))
+      if ('error' in (r as any)) return `waitwhat 失败: ${(r as any).error}`
+      if ((r as any).ok === false) return `waitwhat: ${(r as any).error ?? '没有可重述的回复'}`
+      return null
+    },
     showSessionPicker,
     showQueueManager,
     showModelPicker,
