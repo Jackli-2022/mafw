@@ -90,7 +90,6 @@ export class PluginLoader {
     if (!fs.existsSync(this.pluginsDir)) {
       fs.mkdirSync(this.pluginsDir, { recursive: true });
       fs.writeFileSync(path.join(this.pluginsDir, 'README.md'), README_CONTENT);
-      fs.writeFileSync(path.join(this.pluginsDir, 'example.js.disabled'), EXAMPLE_CONTENT);
       log.info(`[PluginLoader] Created ${this.pluginsDir}`);
     }
   }
@@ -278,13 +277,3 @@ Return \`null\` to hide provider. Builtin plugins live in the package
 or add the name to \`usage.disabledPlugins\` in config to disable.
 `;
 
-const EXAMPLE_CONTENT = `// Rename to example.js to activate
-module.exports = {
-  name: "example",
-  type: "api",
-  plan: "Example Plan",
-  async fetch(ctx) {
-    return null; // Hide provider
-  },
-};
-`;

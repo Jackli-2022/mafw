@@ -49,7 +49,6 @@ export class MediaPluginLoader {
     if (!fs.existsSync(this.pluginsDir)) {
       fs.mkdirSync(this.pluginsDir, { recursive: true });
       fs.writeFileSync(path.join(this.pluginsDir, 'README.md'), README_CONTENT);
-      fs.writeFileSync(path.join(this.pluginsDir, 'example.js.disabled'), EXAMPLE_CONTENT);
       log.info(`[MediaPluginLoader] Created ${this.pluginsDir}`);
     }
   }
@@ -232,14 +231,3 @@ media:
 \`\`\`
 `;
 
-const EXAMPLE_CONTENT = `// Rename to example.js to activate
-module.exports = {
-  name: "example",
-  modalities: ["image"],
-  async createPrompt(ctx) {
-    return async (parts, opts) => {
-      return "Example analysis result";
-    };
-  },
-};
-`;
