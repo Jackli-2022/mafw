@@ -184,6 +184,10 @@ class MafwScheduler {
   private serveOwned = false;
   private serveExitStreak = 0;
   private serveRecovering = false;
+  // External runtimes (pi) do not own serve: the watchdog can only warn and
+  // reconnect the event stream. Flag keeps that warning a one-shot ERROR per
+  // outage instead of an unbounded WARN loop.
+  private serveExternalDownNotified = false;
   private serveWatchdogTimer: ReturnType<typeof setInterval> | null = null;
   private serveRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private serveStableTimer: ReturnType<typeof setTimeout> | null = null;
@@ -238,8 +242,6 @@ class MafwScheduler {
   registeredProjects = new Map<string, RegisteredProject>();
   private registryPath: string;
   private registryWriteQueue: Promise<void> = Promise.resolve();
-  private configPath: string;
-  private configWriteQueue: Promise<void> = Promise.resolve();
   private running = true;
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
@@ -285,7 +287,6 @@ class MafwScheduler {
     this.serveUrl = config.server.serveUrl;
     this.apiPort = config.server.apiPort;
     this.pollInterval = config.timeouts.backupPollInterval;
-    this.configPath = config.paths.globalConfig;
     this.registryPath = config.paths.registryFile;
     this.chatSessions = new ChatSessionManager();
     this.serveSupervisor = createServeSupervisor({
@@ -453,8 +454,7 @@ class MafwScheduler {
     // this.dashboard = new DashboardServer(3001, this.projectDir, this);
     // this.dashboard.start();
 
-    // 5. 恢复配置和注册表
-    await this.recoverConfig();
+    // 5. 恢复注册表（权威源：gateway DB kv_store + legacy 文件兜底）
     await this.recoverRegistry();
 
     // 5.0 Data-directory migration: move memory store + pipeline files from
@@ -794,7 +794,6 @@ class MafwScheduler {
             registeredAt: new Date().toISOString()
           });
           this.persistRegistry();
-          this.persistConfig();
           log.info(`[Scheduler] Project registered via filesystem: ${projectDir}`);
         } catch {
           // non-fatal
@@ -2099,6 +2098,10 @@ class MafwScheduler {
     this.serveWatchdogTimer = setInterval(async () => {
       if (!this.running || this.serveRecovering) return;
       if (await this.isServeHealthy()) {
+        if (failures > 0 || this.serveExternalDownNotified) {
+          log.info('[Scheduler] Serve back online');
+        }
+        this.serveExternalDownNotified = false;
         failures = 0;
         return;
       }
@@ -2107,7 +2110,10 @@ class MafwScheduler {
       if (failures >= this.serveWatchdogFailures) {
         failures = 0;
         if (this.opencodeClient?.external) {
-          log.warn('[Scheduler] External serve unreachable; reconnecting event stream only (not killing external process)');
+          if (!this.serveExternalDownNotified) {
+            this.serveExternalDownNotified = true;
+            log.error('[Scheduler] External serve unreachable — the active runtime does not own the serve process, so it will NOT be respawned. Serve-dependent features (provider list, sessions, approvals) are degraded.');
+          }
           try { await this.subscribeToEvents(); } catch (err: any) {
             log.warn(`[Scheduler] External event reconnect failed: ${err.message}`);
           }
@@ -3399,7 +3405,6 @@ class MafwScheduler {
 
               // 持久化到磁盘（写队列防并发覆盖）
               await this.persistRegistry();
-              await this.persistConfig();
 
               if (this.opencodeClient) {
                 try {
@@ -5210,33 +5215,6 @@ class MafwScheduler {
       const filtered = entries.filter(([dir]) => !this.isUserDataDir(dir));
       this.registeredProjects = new Map(filtered);
       log.info(`[Scheduler] Recovered ${filtered.length} registered projects`);
-    }
-  }
-
-  private async persistConfig() {
-    this.configWriteQueue = this.configWriteQueue.then(async () => {
-      const dir = path.dirname(this.configPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      let config: any = {};
-      if (fs.existsSync(this.configPath)) {
-        config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
-      }
-      config.projects = Object.fromEntries(this.registeredProjects);
-      fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
-    });
-    await this.configWriteQueue;
-  }
-
-  private async recoverConfig() {
-    if (fs.existsSync(this.configPath)) {
-      try {
-        const config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
-        const entries = Object.entries((config.projects || {}) as Record<string, any>)
-          .filter(([dir]) => !this.isUserDataDir(dir));
-        this.registeredProjects = new Map(entries);
-      } catch (err: any) {
-        log.error(`[Scheduler] Failed to recover config: ${err.message}`);
-      }
     }
   }
 
