@@ -126,7 +126,12 @@ function startGateway(background) {
   }
 
   const child = spawn(process.execPath, [GATEWAY_SCRIPT], {
-    stdio: background ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    // Background mode: stdout must be 'ignore' (devnull), NOT a pipe.
+    // A pipe's write end breaks once this short-lived CLI exits, and any
+    // later console.log in the gateway (e.g. mdns-advertiser) then crashes
+    // the whole gateway with an unhandled EPIPE. stderr stays piped so
+    // crashes leave a trace in logs/gateway-stderr.log.
+    stdio: background ? ['ignore', 'ignore', 'pipe'] : 'inherit',
     detached: background,
     windowsHide: true,
   });
@@ -146,7 +151,6 @@ function startGateway(background) {
     if (child.stderr) {
       child.stderr.on('data', (chunk) => { try { fs.writeSync(errFd, chunk); } catch {} });
     }
-    if (child.stdout) child.stdout.destroy();
     child.unref();
     console.log(`Gateway started in background (PID: ${child.pid})`);
     console.log(`Logs: ${LOG_FILE}`);
