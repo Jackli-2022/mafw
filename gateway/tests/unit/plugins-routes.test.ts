@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { handlePluginsList, handlePluginsInstall, handlePluginsDisable, handlePluginsDelete } from '../../src/routes/plugins';
 
-const MOD = Buffer.from('module.exports = { name: "foo" };', 'utf-8');
+const MOD = Buffer.from('module.exports = { name: "foo", createRuntime: async () => ({}), fetch: async () => null };', 'utf-8');
 
 function postJson(server: http.Server, p: string, body: any): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
