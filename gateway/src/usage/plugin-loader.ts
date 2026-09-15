@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
 import { ExternalAdapter } from './types';
-import { makeAdapter } from './plugin-context';
+import { makeAdapter, UsageStatsProvider } from './plugin-context';
 
 export interface ConfigSchemaField {
   key: string;
@@ -49,6 +49,7 @@ export interface PluginState {
 export interface PluginLoaderOptions {
   builtinPluginsDir?: string;
   disabledPlugins?: string[];
+  usageStats?: UsageStatsProvider;
 }
 
 interface PluginFile {
@@ -65,12 +66,14 @@ export class PluginLoader {
   private watcher?: fs.FSWatcher;
   private debounceTimer?: NodeJS.Timeout;
   private builtinNames: Set<string>;
+  private usageStats?: UsageStatsProvider;
 
   constructor(pluginsDir: string, builtinNames: string[], opts?: PluginLoaderOptions) {
     this.pluginsDir = pluginsDir;
     this.builtinNames = new Set(builtinNames);
     this.builtinPluginsDir = opts?.builtinPluginsDir;
     this.disabledPlugins = new Set(opts?.disabledPlugins ?? []);
+    this.usageStats = opts?.usageStats;
   }
 
   async init(): Promise<void> {
@@ -159,7 +162,7 @@ export class PluginLoader {
     this.state.clear();
     for (const [name, entry] of byName) {
       const overridden = !entry.builtin && builtinNameSet.has(name);
-      const adapter = makeAdapter(entry.mod, entry.file);
+      const adapter = makeAdapter(entry.mod, entry.file, this.usageStats);
       const configSchema = validateConfigSchema((entry.mod as any).configSchema);
       const disabled = this.disabledPlugins.has(name);
       const pluginType = typeof (entry.mod as any).type === 'string' ? (entry.mod as any).type : undefined;
@@ -262,6 +265,8 @@ module.exports = {
 - \`ctx.cookie(name)\` — read usage.cookies[name] from config
 - \`ctx.fetch(url, opts)\` — fetch with 10s timeout
 - \`ctx.pluginConfig(name)\` — read usage.pluginConfig[name] from config
+- \`ctx.usage.modelStats({ sinceMs?, provider? })\` — local trajectory per-model token stats
+  (rolling window; filter by providerID; returns [])
 - \`ctx.log\` — gateway logger
 
 Return \`null\` to hide provider. Builtin plugins live in the package

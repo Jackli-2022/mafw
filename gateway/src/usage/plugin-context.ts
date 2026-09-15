@@ -4,6 +4,32 @@ import { getProviderApiKey } from '../runtime/auth';
 import { ExternalAdapter } from './types';
 import { UsageProvider, Severity } from './types';
 import type { RuntimeCredentials } from '../runtime/contract';
+import type { ModelUsageRow } from '../trajectory/types';
+import type { TrajectoryStore } from '../trajectory/trajectory-store';
+
+export interface UsageStatsQuery {
+  sinceMs?: number;
+  provider?: string;
+}
+
+export interface UsageStatsProvider {
+  modelStats(opts?: UsageStatsQuery): ModelUsageRow[];
+}
+
+const EMPTY_USAGE_STATS: UsageStatsProvider = { modelStats: () => [] };
+
+/** TrajectoryStore → 插件 ctx.usage 薄封装（sinceMs→epoch 秒换算 + provider 过滤）。 */
+export function createUsageStatsProvider(
+  store: Pick<TrajectoryStore, 'getModelUsageStats'>,
+): UsageStatsProvider {
+  return {
+    modelStats(opts?: UsageStatsQuery): ModelUsageRow[] {
+      const sinceSec = opts?.sinceMs != null ? Math.floor(opts.sinceMs / 1000) : null;
+      const rows = store.getModelUsageStats(sinceSec);
+      return opts?.provider ? rows.filter(r => r.provider === opts.provider) : rows;
+    },
+  };
+}
 
 export interface PluginContext {
   apiKey: (name: string) => string | null;
@@ -11,11 +37,13 @@ export interface PluginContext {
   fetch: (url: string, opts?: RequestInit) => Promise<Response>;
   pluginConfig: (name: string) => any;
   log: typeof log;
+  usage: UsageStatsProvider;
 }
 
 export function createPluginContext(
   pluginName: string,
   credentials?: RuntimeCredentials,
+  usageStats?: UsageStatsProvider,
 ): PluginContext {
   return {
     apiKey: (name: string) => getProviderApiKey(name, undefined, credentials) ?? null,
@@ -27,6 +55,7 @@ export function createPluginContext(
       fetch(url, { ...opts, signal: opts?.signal ?? AbortSignal.timeout(10_000) }),
     pluginConfig: (name: string) => config.usage?.pluginConfig?.[name] ?? null,
     log,
+    usage: usageStats ?? EMPTY_USAGE_STATS,
   };
 }
 
@@ -37,12 +66,12 @@ function severityFromPct(pct: number): Severity {
   return 'low';
 }
 
-export function makeAdapter(mod: any, file: string): ExternalAdapter {
+export function makeAdapter(mod: any, file: string, usageStats?: UsageStatsProvider): ExternalAdapter {
   return {
     name: mod.name,
     type: mod.type === 'token-plan' ? 'token-plan' : 'api',
     async fetch(): Promise<UsageProvider | null> {
-      const ctx = createPluginContext(mod.name);
+      const ctx = createPluginContext(mod.name, undefined, usageStats);
       try {
         const result = await mod.fetch(ctx);
         if (result === null) return null;

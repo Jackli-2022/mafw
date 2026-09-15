@@ -1909,10 +1909,11 @@ class MafwScheduler {
       const { backfillProviderColumn } = require('./trajectory/backfill-provider');
       backfillProviderColumn(this.getGatewayDb());
       const { PluginLoader } = require('./usage/plugin-loader');
+      const { createUsageStatsProvider } = require('./usage/plugin-context');
       const pluginsDir = path.join(os.homedir(), '.mafw', 'usage-plugins');
       const builtinPluginsDir = path.join(__dirname, 'usage', 'builtin-plugins');
       const disabledPlugins = Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : [];
-      const pluginLoader = new PluginLoader(pluginsDir, [], { builtinPluginsDir, disabledPlugins });
+      const pluginLoader = new PluginLoader(pluginsDir, [], { builtinPluginsDir, disabledPlugins, usageStats: createUsageStatsProvider(trajStore) });
       await pluginLoader.init();
       this.pluginLoader = pluginLoader;
       const { UsagePoller } = require('./usage/usage-poller');
