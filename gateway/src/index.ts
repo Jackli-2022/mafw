@@ -1919,7 +1919,7 @@ class MafwScheduler {
         usageStats: createUsageStatsProvider(trajStore),
         // inline provider key 兜底（auth.json 无条目的自建 provider，如 gateway）——
         // thunk 惰性求值，opencodeClient 此时尚未初始化也不影响。
-        resolveInlineApiKey: async (providerID) => {
+        resolveInlineApiKey: async (providerID: string) => {
           try {
             const cfg: any = await this.opencodeClient?.config.get();
             const key = cfg?.provider?.[providerID]?.options?.apiKey;
