@@ -17,6 +17,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { sessionStore } from "./session-store"
+import { planSessionEvent, type RawSessionEvent } from "./session-events"
 import { createConnectionState } from "./connection-state"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { SplitView, leafIds, leafCount, fillEmpty, removeLeaf, setRatio, splitLeaf, splitAtPath, replaceAtPath, removeSid, isSidLeaf, firstLeafPath, findSidPath, parentDirOf, splitWithTarget, zoneForPoint, zoneToDir, type SplitNode, type SplitLeaf, type DropZone } from "./components/SplitView"
@@ -1314,6 +1315,32 @@ export function MafwShell() {
         return
       }
 
+      // Session list lifecycle (Rail interactivity): created/updated/deleted
+      // from ANY client (TUI, CLI, another window) sync the local caches via
+      // the session-events planner (hidden-session parity + field whitelist,
+      // so the local metadata.mafw.role marker survives info that lacks it).
+      if (event.type === "session.created" || event.type === "session.updated" || event.type === "session.deleted") {
+        const action = planSessionEvent(event as RawSessionEvent)
+        if (action.kind === "invalidate") {
+          // Broadcast carries no project mapping — refetch the cached buckets.
+          sessionStore.invalidate()
+        } else if (action.kind === "patch") {
+          sessionStore.patch(action.id, action.patch)
+          const title = action.patch.title
+          if (typeof title === "string") {
+            // Tab strip + ChatPane keep their own title copies — patch both.
+            setSessions(prev => prev.map(s => s.id === action.id ? { ...s, title } : s))
+            setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === action.id ? { ...x, title } : x) }))
+          }
+        } else if (action.kind === "remove") {
+          sessionStore.remove(action.id)
+          // External delete of an open tab: closeSession handles the active
+          // fallback, split-view leaf removal and layout state.
+          if (sessions().some(s => s.id === action.id)) closeSession(action.id)
+        }
+        return
+      }
+
       // sessionID may be top-level (gateway-normalized) or nested in opencode event properties
       const sid = event?.sessionID
         || event?.properties?.sessionID
@@ -1513,9 +1540,10 @@ export function MafwShell() {
         sendingResetters[sid]?.()
         queueFlushers[sid]?.()
       } else if (event.type === "session.idle") {
-        // opencode ≥1.18 settles turns with session.idle instead of
-        // message.complete; without it the sending flag never resets and new
-        // messages are silently rejected.
+        // Defensive fallback: the gateway rewrites session.idle into
+        // message.complete before broadcasting (index.ts broadcast facet), so
+        // this branch is unreachable in Mode A — it only guards against
+        // future/direct senders. Without it the sending flag would never reset.
         setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
         setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
         sendingResetters[sid]?.()
@@ -2147,7 +2175,7 @@ export function MafwShell() {
           </div>
         ) : (
           <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
-            <Rail activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSelectSession={(id, title, manager) => {
+            <Rail activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSessionDeleted={closeSession} onSelectSession={(id, title, manager) => {
               setShowConfig(false)
               setActiveTab("chat")
               setShowWelcome(false)
@@ -2218,6 +2246,11 @@ export function MafwShell() {
                                   if (next && next !== s.title) {
                                     setSessions(prev => prev.map(x => x.id === s.id ? { ...x, title: next } : x))
                                     setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === s.id ? { ...x, title: next } : x) }))
+                                    // Persist to the runtime too (same path as
+                                    // Rail rename) so the title survives and the
+                                    // session.updated broadcast syncs other views.
+                                    window.api.mafw.sessions.rename(s.id, next)
+                                      .catch((err: any) => showToastV2({ description: `重命名失败: ${err?.message || err}`, duration: 3000 }))
                                   }
                                   setRenamingId(null)
                                 }

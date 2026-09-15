@@ -180,8 +180,11 @@ export function Rail(props: Props) {
 
   const deleteSession = async (id: string) => {
     try {
-      await window.api.mafw.sessions.remove(id)
-      if (props.activeSessionId === id) props.onSessionDeleted?.(id)
+      // Preload exposes sessions.delete (there is no `remove` alias).
+      await window.api.mafw.sessions.delete(id)
+      // Close any open tab of the deleted session (MafwShell wires this to
+      // closeSession; a safe no-op when the session is not open).
+      props.onSessionDeleted?.(id)
       sessionStore.invalidate(projectID())
       showToastV2({ description: "已删除", duration: 2000 })
     } catch (e: any) {
