@@ -1,7 +1,7 @@
 {
   "plugin": [
     "superpowers@latest",
-    "opencode-plugin-mafw"
+    "mafw"
   ],
   "mcpServers": {
     "mafw": {

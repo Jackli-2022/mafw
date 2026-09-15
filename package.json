@@ -1,8 +1,12 @@
 {
-  "name": "opencode-plugin-mafw",
+  "name": "mafw",
   "version": "4.5.1",
   "description": "MAFW Loop Agent Plugin for OpenCode - Phase Relay + TMEM + Dynamic Compression",
   "main": "dist/plugin.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jackli-2022/mafw.git"
+  },
   "opencode": {
     "plugin": "dist/plugin.js"
   },
@@ -13,7 +17,7 @@
     "build": "tsc && cd gateway && npm run build && cd .. && npm run build -w @mafw/sdk && npm run build -w @mafw/tui",
     "postinstall": "node -e \"var p=require('path'),f=require('fs'),d=p.join(__dirname,'gateway'),ts=p.join(d,'node_modules','typescript','bin','tsc');if(f.existsSync(d)){if(f.existsSync(ts)){console.log('[mafw] gateway dev deps present, skip prod install')}else{require('child_process').execSync('npm install --omit=dev --no-audit --no-fund --loglevel=error',{cwd:d,stdio:'inherit'})}}\"",
     "prepare": "node -e \"var p=require('path'),f=require('fs'),ts=p.join(__dirname,'gateway','node_modules','typescript','bin','tsc');if(!f.existsSync(ts)){console.log('[mafw] gateway dev deps missing, skip prepare build (fresh CI install)');process.exit(0)}require('child_process').execSync('npm run build',{cwd:__dirname,stdio:'inherit'})\"",
-    "pack:install": "npm run build && npm pack && npm install -g opencode-plugin-mafw-*.tgz && mafw version",
+    "pack:install": "npm run build && npm pack && npm install -g mafw-*.tgz && mafw version",
     "test": "npm test --prefix gateway",
     "test:unit": "npm test --prefix gateway",
     "test:tui": "node --test packages/tui/tests/*.test.ts"

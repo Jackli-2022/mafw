@@ -4,7 +4,7 @@
     "type":  "module",
     "license":  "MIT",
     "repository":  {
-                       "url":  "git+https://github.com/opencode-plugin-mafw/opencode-plugin-mafw.git",
+                       "url":  "git+https://github.com/Jackli-2022/mafw.git",
                        "directory":  "packages/ui",
                        "type":  "git"
                    },

@@ -310,14 +310,14 @@ MAFW Uninstall
 
 1. Remove plugin from opencode.json:
    - Edit ~/.config/opencode/config.json
-   - Remove "opencode-plugin-mafw" from plugins array
+   - Remove "mafw" from plugins array
 
 2. Delete plugin data:
    rm -rf ~/.config/mafw
    rm -rf ~/.mafw
 
 3. Uninstall npm package:
-   npm uninstall -g opencode-plugin-mafw
+   npm uninstall -g mafw
 
 4. Stop Gateway:
    mafw stop

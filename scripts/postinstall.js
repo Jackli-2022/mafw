@@ -6,22 +6,22 @@
 
 console.log('');
 console.log('╔════════════════════════════════════════════════════════════╗');
-console.log('║  opencode-plugin-mafw installed                          ║');
+console.log('║  mafw installed                                          ║');
 console.log('╚════════════════════════════════════════════════════════════╝');
 console.log('');
 console.log('Next steps:');
 console.log('');
-console.log('  1. Edit your opencode.json, add "opencode-plugin-mafw" to the plugin array:');
+console.log('  1. Edit your opencode.json, add "mafw" to the plugin array:');
 console.log('     {');
 console.log('       "plugin": [');
 console.log('         "superpowers@latest",');
-console.log('         "opencode-plugin-mafw"');
+console.log('         "mafw"');
 console.log('       ]');
 console.log('     }');
 console.log('');
-console.log('  2. Start the Gateway:');
-console.log('     npx mafw-gateway start');
-console.log('     Or register as system service: npx mafw-gateway service-register');
+console.log('  2. Start the Gateway daemon:');
+console.log('     mafw daemon        (background)');
+console.log('     mafw status        (health check)');
 console.log('');
 console.log('  3. Launch OpenCode: opencode');
 console.log('');

@@ -9,7 +9,7 @@
 会话结束、上下文压缩、模型更替之后——记忆依然存续的 AI Agent 工作平台
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![npm version](https://img.shields.io/npm/v/opencode-plugin-mafw.svg)](https://www.npmjs.com/package/opencode-plugin-mafw)
+[![npm version](https://img.shields.io/npm/v/mafw.svg)](https://www.npmjs.com/package/mafw)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/Jackli-2022/mafw)
 
 </div>
@@ -108,7 +108,7 @@ LongMemEval-S（session 粒度，谐波记忆管线）：
 ### 1. 启动 Gateway
 
 ```bash
-npm install -g opencode-plugin-mafw
+npm install -g mafw
 
 mafw start          # 前台启动
 mafw daemon         # 后台守护
@@ -129,7 +129,7 @@ npx electron-vite build
 
 ```json
 {
-  "plugin": ["opencode-plugin-mafw"],
+  "plugin": ["mafw"],
   "mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true } }
 }
 ```
