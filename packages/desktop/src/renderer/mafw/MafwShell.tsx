@@ -1271,6 +1271,14 @@ export function MafwShell() {
         return
       }
 
+      if (event.type === "runtime_switched") {
+        console.log("[mafw] SSE runtime_switched", event.runtime)
+        // Runtime switch swaps the session storage backend (opencode SQLite vs
+        // pi) — the cached Rail list belongs to the previous runtime. Drop it.
+        sessionStore.invalidate()
+        return
+      }
+
       // sessionID may be top-level (gateway-normalized) or nested in opencode event properties
       const sid = event?.sessionID
         || event?.properties?.sessionID
