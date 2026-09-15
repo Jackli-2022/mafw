@@ -105,6 +105,14 @@ export type ElectronAPI = {
   setPinchZoomEnabled: (enabled: boolean) => Promise<void>
   onPinchZoomEnabledChanged: (cb: (enabled: boolean) => void) => () => void
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
+  platform: string
+  windowControls: {
+    minimize: () => Promise<void>
+    toggleMaximize: () => Promise<void>
+    close: () => Promise<void>
+    isMaximized: () => Promise<boolean>
+    onMaximizedChange: (cb: (maximized: boolean) => void) => () => void
+  }
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
   runDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>
   setBackgroundColor: (color: string) => Promise<void>
