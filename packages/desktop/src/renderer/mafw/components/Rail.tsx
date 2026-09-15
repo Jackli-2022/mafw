@@ -54,6 +54,7 @@ const SEARCH_CAP = 200
 type Props = {
   activeSessionId: string | null
   managerSessionId?: string | null
+  projectsRev?: () => number
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSessionDeleted?: (id: string) => void
   onSettings?: () => void
@@ -88,6 +89,9 @@ export function Rail(props: Props) {
 
   createEffect(() => {
     if (!gwReady()) return
+    // Bumped when the gateway broadcasts project_registered (CLI register /
+    // registry watcher) — the list is otherwise pulled once on ready.
+    props.projectsRev?.()
     window.api.mafw.projects.list().then(setProjects).catch(e => console.warn("[mafw] projects.list error:", e))
     window.api.mafw.projects.current().then((res: any) => { if (res) setCurrentProject(res) }).catch(e => console.warn("[mafw] projects.current error:", e))
   })

@@ -148,6 +148,9 @@ export function MafwShell() {
   // Registered projects + current selection (welcome pane project switcher).
   const [projects, setProjects] = createSignal<{ id: string; worktree: string }[]>([])
   const [currentProject, setCurrentProject] = createSignal<string | null>(null)
+  // Bumped by gateway project_registered broadcasts so once-only project
+  // fetches (here + Rail) refetch when a new project registers.
+  const [projectsRev, setProjectsRev] = createSignal(0)
 
   // Authoritative per-project manager session (from the gateway DB kv store).
   // Orphan/stale role=manager sessions from the pre-fix era are ignored.
@@ -163,6 +166,7 @@ export function MafwShell() {
   })
   createEffect(() => {
     if (gwStatus()?.state !== "ready") return
+    projectsRev() // gateway announces project_registered → refetch the list
     let cancelled = false
     const load = async () => {
       try {
@@ -1307,6 +1311,14 @@ export function MafwShell() {
         return
       }
 
+      if (event.type === "project_registered") {
+        // Flat top-level broadcast (no data envelope): raw.data is absent so
+        // the fields live directly on the event.
+        console.log("[mafw] SSE project_registered", event.projectDir)
+        setProjectsRev(v => v + 1)
+        return
+      }
+
       if (event.type === "runtime_switched") {
         console.log("[mafw] SSE runtime_switched", event.runtime)
         // Runtime switch swaps the session storage backend (opencode SQLite vs
@@ -2175,7 +2187,7 @@ export function MafwShell() {
           </div>
         ) : (
           <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
-            <Rail activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSessionDeleted={closeSession} onSelectSession={(id, title, manager) => {
+            <Rail activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSessionDeleted={closeSession} projectsRev={projectsRev} onSelectSession={(id, title, manager) => {
               setShowConfig(false)
               setActiveTab("chat")
               setShowWelcome(false)

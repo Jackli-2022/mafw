@@ -73,6 +73,7 @@ import {
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent } from './runtime/normalize';
+import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
@@ -794,6 +795,8 @@ class MafwScheduler {
             registeredAt: new Date().toISOString()
           });
           this.persistRegistry();
+          // 桌面 renderer 依此事件刷新 Rail 项目列表（否则只在 gateway ready 时拉一次）。
+          this.broadcast(projectRegisteredEvent(projectDir));
           log.info(`[Scheduler] Project registered via filesystem: ${projectDir}`);
         } catch {
           // non-fatal
@@ -966,11 +969,13 @@ class MafwScheduler {
       } catch (err: any) {
         log.warn(`[Trajectory] idle aggregation failed (non-fatal): ${err.message}`);
       }
-      this.broadcast({ type: 'opencode_event', data: { type: 'message.complete', sessionID, ...(memoryWorker ? { internal: true } : {}) } });
+      this.broadcast(opencodeBroadcast({ type: 'message.complete', sessionID }, memoryWorker));
     } else if (f.broadcast === 'error') {
-      this.broadcast({ type: 'opencode_event', data: { type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error'), ...(memoryWorker ? { internal: true } : {}) } });
+      this.broadcast(opencodeBroadcast({ type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error') }, memoryWorker));
     } else {
-      this.broadcast({ type: 'opencode_event', data: { type, properties: props, sessionID, ...(memoryWorker ? { internal: true } : {}) } });
+      // directory 透传：session.created/updated/deleted 的消费方（桌面 Rail）
+      // 据此定位所属项目做定向刷新（normalize 已从 GlobalEvent 信封提取）。
+      this.broadcast(opencodeBroadcast({ type, properties: props, sessionID, directory: f.directory }, memoryWorker));
     }
   }
 
@@ -3405,6 +3410,9 @@ class MafwScheduler {
 
               // 持久化到磁盘（写队列防并发覆盖）
               await this.persistRegistry();
+
+              // 桌面 renderer 依此事件刷新 Rail 项目列表（否则只在 gateway ready 时拉一次）。
+              this.broadcast(projectRegisteredEvent(projectDir));
 
               if (this.opencodeClient) {
                 try {
