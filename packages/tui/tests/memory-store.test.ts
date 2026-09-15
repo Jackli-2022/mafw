@@ -19,7 +19,14 @@ test('search stores results and records query', async () => {
   const s = new MemoryStore({ memory: fakeMem(calls) as any, onChange: () => {} })
   await s.search('偏好')
   assert.equal(s.results.length, 1)
-  assert.deepEqual(calls[0], ['search', { query: '偏好', topK: 20 }])
+  assert.deepEqual(calls[0], ['search', { query: '偏好', topK: 20, retriever: 'bm25' }])
+})
+
+test('search passes the configured retriever through', async () => {
+  const calls: any[] = []
+  const s = new MemoryStore({ memory: fakeMem(calls) as any, onChange: () => {} }, 'hybrid')
+  await s.search('语义改写')
+  assert.deepEqual(calls[0], ['search', { query: '语义改写', topK: 20, retriever: 'hybrid' }])
 })
 
 test('search failure clears nothing and reports error', async () => {

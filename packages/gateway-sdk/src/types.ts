@@ -528,6 +528,8 @@ export interface MemorySearchOptions {
   query: string
   topK?: number
   goalId?: string
+  /** 检索器：默认 bm25；'token' 子串回退；'hybrid' BM25+dense RRF（需 embedding 开启） */
+  retriever?: 'bm25' | 'token' | 'hybrid'
 }
 
 export interface MemoryNamespace {

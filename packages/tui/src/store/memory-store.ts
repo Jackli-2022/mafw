@@ -2,7 +2,7 @@ import type { MemoryUnit, StickyNote, StickyNoteBudget } from '@mafw/sdk'
 
 export interface MemoryStoreDeps {
   memory: {
-    search(o: { query: string; topK?: number }): Promise<MemoryUnit[]>
+    search(o: { query: string; topK?: number; retriever?: 'bm25' | 'token' | 'hybrid' }): Promise<MemoryUnit[]>
     listSticky(): Promise<{ entries: StickyNote[]; budget: StickyNoteBudget }>
     setSticky(id: string, sticky: boolean, days?: number): Promise<void>
   }
@@ -10,20 +10,22 @@ export interface MemoryStoreDeps {
   onError?: (message: string) => void
 }
 
-/** Memory 面板数据：BM25 检索 + 便签板（--hybrid 待 SDK search 加 retriever 参数后接）。 */
+/** Memory 面板数据：检索（--hybrid 走 dense+BM25 RRF）+ 便签板。 */
 export class MemoryStore {
   readonly results: MemoryUnit[] = []
   readonly sticky: StickyNote[] = []
   budget?: StickyNoteBudget
   private deps: MemoryStoreDeps
+  private retriever: 'bm25' | 'token' | 'hybrid'
 
-  constructor(deps: MemoryStoreDeps) {
+  constructor(deps: MemoryStoreDeps, retriever: 'bm25' | 'token' | 'hybrid' = 'bm25') {
     this.deps = deps
+    this.retriever = retriever
   }
 
   async search(query: string): Promise<void> {
     try {
-      const r = await this.deps.memory.search({ query, topK: 20 })
+      const r = await this.deps.memory.search({ query, topK: 20, retriever: this.retriever })
       this.results.length = 0
       this.results.push(...r)
       this.deps.onChange()

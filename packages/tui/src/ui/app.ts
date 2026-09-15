@@ -117,7 +117,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     memory: client.memory,
     onChange: () => memoryTab.refresh(),
     onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }),
-  })
+  }, opts.retriever)
   const memoryTab = new MemoryTab({ tui, store: memoryStore, client, setStatus, setEditing: (v) => { model.editing = v } })
 
   // ── Triage tab ──

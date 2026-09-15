@@ -561,6 +561,7 @@ export class MafwClient implements IMafwClient {
       const params = new URLSearchParams({ query: opts.query })
       if (opts.topK) params.set('topK', String(opts.topK))
       if (opts.goalId) params.set('goalId', opts.goalId)
+      if (opts.retriever) params.set('retriever', opts.retriever)
       const data = await this.request<{ results: MemoryUnit[] }>(`/api/memory/search?${params}`)
       return data.results || []
     },
