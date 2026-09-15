@@ -146,14 +146,17 @@ npx electron-vite build
 
 ### 3. opencode 接入（可选）
 
+> npm 包仅含 **Gateway + TUI**（`bin: mafw`）。opencode 插件入口（`dist/plugin.js`）不在
+> npm 包内——插件方式接入请从源码构建（`npm run build` 后本地安装 tgz），或仅用下方
+> MCP remote 接线（无需插件）。
+
 ```json
 {
-  "plugin": ["@jack200714/mafw"],
   "mcp": { "mafw": { "type": "remote", "url": "http://127.0.0.1:3000/mcp", "enabled": true } }
 }
 ```
 
-插件激活时自动补写缺失的 MCP 接线并备份原配置（fail-open）。
+源码构建后插件激活时会自动补写缺失的 MCP 接线并备份原配置（fail-open）。
 
 ## 仓库结构
 
