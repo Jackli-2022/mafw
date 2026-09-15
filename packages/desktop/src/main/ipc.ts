@@ -10,7 +10,7 @@ import { registerMafwIpcHandlers } from "./mafw-ipc"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
-import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
+import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 
@@ -234,6 +234,25 @@ export function registerIpcHandlers(deps: Deps) {
     win?.show()
   })
 
+  ipcMain.handle("window-minimize", (event: IpcMainInvokeEvent) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize()
+  })
+
+  ipcMain.handle("window-toggle-maximize", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  })
+
+  ipcMain.handle("window-close", (event: IpcMainInvokeEvent) => {
+    BrowserWindow.fromWebContents(event.sender)?.close()
+  })
+
+  ipcMain.handle("window-is-maximized", (event: IpcMainInvokeEvent) => {
+    return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false
+  })
+
   ipcMain.on("relaunch", () => {
     deps.relaunch()
   })
@@ -241,9 +260,6 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("get-zoom-factor", (event: IpcMainInvokeEvent) => event.sender.getZoomFactor())
   ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: number) => {
     event.sender.setZoomFactor(factor)
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win) return
-    updateTitlebar(win)
   })
   ipcMain.handle("get-pinch-zoom-enabled", () => getPinchZoomEnabled())
   ipcMain.handle("set-pinch-zoom-enabled", (_event: IpcMainInvokeEvent, enabled: boolean) => {

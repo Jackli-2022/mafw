@@ -50,7 +50,6 @@ let relaunchHandler = () => {
   app.relaunch()
   app.exit(0)
 }
-const titlebarThemes = new WeakMap<BrowserWindow, Partial<TitlebarTheme>>()
 const pinchZoomEnabled = new WeakMap<BrowserWindow, boolean>()
 const windowIDs = new WeakMap<BrowserWindow, string>()
 const registry = createWindowRegistry<BrowserWindow>({
@@ -61,7 +60,6 @@ const registry = createWindowRegistry<BrowserWindow>({
     removeStoreFile(windowDataFile(id))
   },
 })
-const titlebarHeight = 40
 const maxZoomLevel = 10
 const minZoomLevel = 0.2
 
@@ -106,17 +104,7 @@ function defaultBackgroundColor() {
   return oc2Background[tone()]
 }
 
-function overlay(theme: Partial<TitlebarTheme> = {}, zoom = 1) {
-  const mode = theme.mode ?? tone()
-  return {
-    color: "#00000000",
-    symbolColor: mode === "dark" ? "white" : "black",
-    height: Math.max(titlebarHeight, Math.round(titlebarHeight * zoom)),
-  }
-}
-
-export function setTitlebar(win: BrowserWindow, theme: Partial<TitlebarTheme> = {}) {
-  titlebarThemes.set(win, theme)
+export function setTitlebar(_win: BrowserWindow, theme: Partial<TitlebarTheme> = {}) {
   // macOS draws the window frame hairline and shadow using the NSWindow
   // appearance, which follows nativeTheme rather than the rendered content.
   // Align it with the app theme so a light app on a dark system does not get
@@ -124,12 +112,6 @@ export function setTitlebar(win: BrowserWindow, theme: Partial<TitlebarTheme> = 
   // "system" (not the resolved mode) or prefers-color-scheme stops tracking
   // OS appearance changes in the renderer.
   if (process.platform === "darwin") nativeTheme.themeSource = theme.scheme ?? theme.mode ?? "system"
-  updateTitlebar(win)
-}
-
-export function updateTitlebar(win: BrowserWindow) {
-  if (process.platform !== "win32") return
-  win.setTitleBarOverlay(overlay(titlebarThemes.get(win), win.webContents.getZoomFactor()))
 }
 
 export function setPinchZoomEnabled(enabled: boolean) {
@@ -176,7 +158,6 @@ export function createMainWindow(id: string = randomUUID()) {
     defaultHeight: 800,
   })
 
-  const mode = tone()
   const win = new BrowserWindow({
     x: state.x,
     y: state.y,
@@ -197,7 +178,6 @@ export function createMainWindow(id: string = randomUUID()) {
       ? {
           frame: false,
           titleBarStyle: "hidden" as const,
-          titleBarOverlay: overlay({ mode }),
         }
       : {}),
     webPreferences: {
@@ -252,6 +232,12 @@ function registerWindow(win: BrowserWindow, id: string) {
       win.hide()
     }
   })
+  const notifyMaximized = () => {
+    if (!win.isDestroyed()) win.webContents.send("window-maximized-changed", win.isMaximized())
+  }
+  win.on("maximize", notifyMaximized)
+  win.on("unmaximize", notifyMaximized)
+  win.on("restore", notifyMaximized)
   // Windows never emits before-quit on OS shutdown/logoff, but each window
   // gets session-end before it closes; flag the quit so ids stay persisted.
   win.on("session-end", () => registry.setQuitting())
@@ -528,7 +514,6 @@ function clampZoom(value: number) {
 }
 
 function updateZoom(win: BrowserWindow) {
-  updateTitlebar(win)
   win.webContents.send("zoom-factor-changed", win.webContents.getZoomFactor())
 }
 

@@ -1,6 +1,6 @@
 ﻿import { BrowserWindow } from "electron"
 import type { DesktopMenuAction } from "../types/desktop-menu"
-import { createMainWindow, updateTitlebar } from "./windows"
+import { createMainWindow } from "./windows"
 
 export type DesktopMenuActionHandlers = Partial<{
   checkForUpdates: () => void
@@ -80,5 +80,4 @@ export function runDesktopMenuAction(
 function setZoom(win: BrowserWindow | null, value: number) {
   if (!win) return
   win.webContents.setZoomFactor(Math.min(Math.max(value, 0.2), 10))
-  updateTitlebar(win)
 }
