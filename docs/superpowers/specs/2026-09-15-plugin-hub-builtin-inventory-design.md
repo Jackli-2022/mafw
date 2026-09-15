@@ -21,6 +21,7 @@
 | usage 内置适配器交互 | 只读 + 「克隆为自定义副本」按钮（复用 clone-builtin 模板端点）；禁用仍走 Usage 配置页 `usage.disabledPlugins` |
 | example.js.disabled | 删除三个 loader 的生成代码；启动时幂等清理磁盘存量 |
 | 安装时类型判定 | **接口自动推导**（业界一致模式：opencode/VS Code/Grafana/Obsidian/Chrome/Raycast 安装器均不让用户选类型）；类型下拉仅作歧义兜底 |
+| 安装传输 | **raw octet-stream**（弃 base64-in-JSON——业界反模式：Docker Registry/S3/tus 均为 raw 二进制，GitHub Contents API 的 base64 有 ~1MB 上限；仓库内 media 上传已是 octet-stream 先例） |
 
 ### 2.1 业界调研依据（2026-09-15）
 
@@ -68,11 +69,20 @@ usageBuiltinEntries: () => HubEntry[]  // usage loader getState() 过滤 builtin
 
 `RuntimePluginLoader` 补 `getBuiltinNames(): string[]`（返回 `['pi']`；opencode 是恒等默认，由 index.ts 恒等注入，不进 loader）。
 
-## 5. 安装类型自动判定（接口推导）
+## 5. 安装传输与类型判定
+
+### 5.1 传输：raw octet-stream
+
+- 端点：`POST /api/plugins/install?filename=<x.js>&type=<runtime|media|usage|ui 可选>`，body = 原始文件字节（`Content-Type: application/octet-stream`）。
+- gateway：`routes/plugins.ts` 读 raw body 为 Buffer（不再 JSON.parse），filename 校验与 2MB 上限（按 raw 字节计）照旧走 hub。
+- 链路：renderer `file.arrayBuffer()` → IPC（structured clone 原生支持 TypedArray，零编码）→ main SDK `plugins.install({filename, type?, bytes})` → Node fetch POST raw（与 `mafw-media-upload` 同款网络栈，规避 Chromium 代理挂起）。**删除 Config.tsx 逐字节 base64 编码循环与 btoa。**
+- SDK/`types.ts`：`install` 入参 `contentBase64` → `bytes: Uint8Array`。
+
+### 5.2 类型判定：接口推导
 
 `installPlugin` 流程修订（`gateway/src/plugins/hub.ts`）：
 
-1. base64 解码、重名检查、原子写入照旧（现有 install 流程不变）。
+1. 重名检查、原子写入照旧（写入内容改为 raw Buffer，不再 base64 解码）。
 2. **类型判定**（在写入前）：
    - 请求体 `type` 显式提供 → 直接采用（跳过判定，向后兼容 TUI/脚本调用）。
    - 未提供 → 落盘到 `<dir>.tmp` 后 **require 并检查 `module.exports` 形状**（清 require.cache 后加载）：
@@ -95,7 +105,7 @@ usageBuiltinEntries: () => HubEntry[]  // usage loader getState() 过滤 builtin
 
 ### 7.1 安装面板
 
-- 移除默认显示的类型 `SelectV2`——选文件后直接安装（类型由 gateway 接口推导）。
+- 移除默认显示的类型 `SelectV2` 与 base64 编码——选文件后 `arrayBuffer()` 直传 IPC 安装（类型由 gateway 接口推导）。
 - 收到 400 `ambiguous plugin interface` 时，面板内动态出现类型下拉（选项 = 响应候选列表），用户选定后带 `type` 重试。
 - 风险提示文案保留。
 
@@ -129,6 +139,7 @@ media 条目列表下方渲染 image/video/audio 三个 `SelectV2`（现「Runti
 |---|---|
 | `gateway/tests/unit/plugins-hub.test.ts`（现有 hub 测试扩展） | builtin 前置插入（runtime/media/usage）；usage config-disabled 映射；同名用户副本 → `overridden:true`；`cleanupExamples` 幂等（无目录/无文件/有文件） |
 | 接口判定（hub sniff） | 四类样板模块各命中一次；显式 `type` 跳过判定；零命中 400 unrecognized + 无 `.tmp` 残留；多命中 400 ambiguous 带候选列表 |
+| 安装传输 | raw octet-stream 端到端：query 传 filename、超限 413、非法 filename 400、安装后文件字节与上传一致（不再有 base64 round-trip 用例） |
 | runtime loader 测试 | `getBuiltinNames()` 返回 `['pi']`；建目录不再生成 `example.js.disabled` |
 | media/usage loader 测试 | 不再生成 example |
 | `packages/desktop/.../plugin-hub.test.ts`（renderer） | 内置行徽标/无开关无删除；runtime 激活按钮条件；usage 克隆按钮条件（overridden 隐藏）；`statusLabel` 对内置条目 |
@@ -145,7 +156,7 @@ media 条目列表下方渲染 image/video/audio 三个 `SelectV2`（现「Runti
 
 ## 11. 影响面
 
-- gateway：`plugins/hub.ts`（builtin 合成 + cleanup + install 接口判定）、`routes/plugins.ts`（install 的 type 改可选，透传）、`index.ts`（pluginHubDeps + cleanup 调用）、`runtime/loader.ts`、`media/media-plugin-loader.ts`、`usage/plugin-loader.ts`
-- desktop：`pages/Config.tsx`（Plugins 区重构）、`pages/plugin-hub.ts`（类型+helper）
-- SDK：`client.ts` plugins.list 类型、`types.ts`
+- gateway：`plugins/hub.ts`（builtin 合成 + cleanup + raw Buffer install + 接口判定）、`routes/plugins.ts`（raw body 读取 + query 参数 + type 改可选）、`index.ts`（pluginHubDeps + cleanup 调用）、`runtime/loader.ts`、`media/media-plugin-loader.ts`、`usage/plugin-loader.ts`
+- desktop：`pages/Config.tsx`（Plugins 区重构 + 安装直传字节）、`pages/plugin-hub.ts`（类型+helper）
+- SDK：`client.ts` plugins.list 类型 + plugins.install 入参改 bytes、`types.ts`
 - AGENTS.md：§插件中心相关描述更新（hub 显示内置件、示例不再生成）
