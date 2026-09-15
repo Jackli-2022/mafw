@@ -94,7 +94,7 @@ export type ChatPaneProps = {
   onNavigateTab?: (tab: string) => void
   onToggleTheme?: () => void
   onOpenSettings?: () => void
-  onModelSelect: (m: ModelEntry) => void
+  onModelSelect: (m: ModelEntry, sid?: string) => void
   onApplyAgentSwitch: (a: AgentEntry) => void
   onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string) => void
   onAskSubmit: (card: AskCardData, answers: Record<string, string[]>, custom: Record<string, string>) => void
@@ -1220,6 +1220,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       { id: "mafw-merge", trigger: "/merge-memory", title: "记忆融合", description: "合并 worktree 记忆", group: "mafw" },
       { id: "mafw-new-topic", trigger: "/new-topic", title: "新话题", description: "开新话题（当前 Manager 会话归档）", group: "mafw" },
       { id: "mafw-btw", trigger: "/btw", title: "支线问答", description: "一次性会话回答支线问题，不污染主线", group: "mafw" },
+      { id: "mafw-waitwhat", trigger: "/waitwhat", title: "没听懂，重述", description: "用简明语言+项目术语重述上一条回复", group: "mafw" },
     ]
     const custom: CommandItem[] = cmdCustom().map(c => ({
       id: `custom-${c.source}-${c.name}`,
@@ -1268,7 +1269,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const m = text.match(/^\/(\S+)(?:\s+(.*))?$/)
     if (!m) return null
     const name = m[1].toLowerCase()
-    if (name === "goal" || name === "status" || name === "merge-memory" || name === "new-topic" || name === "btw") return { name, group: "mafw" }
+    if (name === "goal" || name === "status" || name === "merge-memory" || name === "new-topic" || name === "btw" || name === "waitwhat") return { name, group: "mafw" }
     if (cmdCustom().some(c => c.name === name)) return { name, group: "custom" }
     return null
   }
@@ -1482,7 +1483,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   })
 
   const onModelSelectWrap = (m: ModelEntry) => {
-    props.onModelSelect(m)
+    props.onModelSelect(m, sidProp())
     setPickerOpen(null)
   }
 
