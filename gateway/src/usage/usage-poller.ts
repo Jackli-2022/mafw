@@ -1,6 +1,7 @@
 import { TrajectoryStore } from '../trajectory/trajectory-store';
 import { UsageProvider, UsageResponse, UsageWindow, QuotaLimits, Severity, Pacing, WindowType } from './types';
 import { PluginLoader } from './plugin-loader';
+import { log } from '../core/utils/logger';
 
 const WINDOW_MS: Record<string, number> = {
   '5h': 5 * 60 * 60 * 1000,
@@ -92,9 +93,10 @@ export class UsagePoller {
         if (result.status === 'fulfilled' && result.value) {
           const name = result.value.name;
           const budget = this.budgets[name];
-          // If a budget is configured for this provider, use it as the limit
-          // (remaining from the balance API gives us used = budget - remaining).
-          if (budget && budget > 0) {
+          // Budget 折叠只适用于纯 balance 插件；含 day/7d/month 等窗口的插件
+          // 折叠会静默吞掉窗口，故跳过并 warn。
+          const allBalance = result.value.windows.every(w => w.window === 'balance');
+          if (budget && budget > 0 && allBalance) {
             const balWindow = result.value.windows.find(w => w.window === 'balance');
             const remaining = balWindow?.remaining;
             const used = remaining !== undefined
@@ -118,6 +120,9 @@ export class UsagePoller {
               severity: pct >= 90 ? 'critical' : pct >= 75 ? 'high' : pct >= 50 ? 'mid' : 'low',
             });
           } else {
+            if (budget && budget > 0 && !allBalance) {
+              log.warn(`[UsagePoller] budgets.${name} configured but plugin has non-balance windows; skipping budget collapse`);
+            }
             const tokens = this.store.getProviderTotalTokens(name);
             const tokenTotal = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write;
             const windows = result.value.windows.map(w =>
