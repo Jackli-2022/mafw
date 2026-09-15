@@ -125,13 +125,23 @@ function startGateway(background) {
     process.exit(1);
   }
 
+  // Background mode stdio: stdin/stdout 'ignore' (devnull), stderr redirected
+  // straight to a file fd. All three must avoid live pipes: a pipe's write end
+  // breaks once this short-lived CLI exits, and any later console.log in the
+  // gateway (e.g. mdns-advertiser) then crashes it with an unhandled EPIPE; a
+  // piped stderr would also keep THIS CLI's event loop alive and make
+  // `mafw daemon` hang. File fd = crash traces persist with zero plumbing.
+  let stdio = background ? ['ignore', 'ignore', 'ignore'] : 'inherit';
+  if (background) {
+    try {
+      const errLog = path.join(LOG_DIR, 'gateway-stderr.log');
+      try { if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+      stdio = ['ignore', 'ignore', fs.openSync(errLog, 'a')];
+    } catch { /* fall back to full ignore */ }
+  }
+
   const child = spawn(process.execPath, [GATEWAY_SCRIPT], {
-    // Background mode: stdout must be 'ignore' (devnull), NOT a pipe.
-    // A pipe's write end breaks once this short-lived CLI exits, and any
-    // later console.log in the gateway (e.g. mdns-advertiser) then crashes
-    // the whole gateway with an unhandled EPIPE. stderr stays piped so
-    // crashes leave a trace in logs/gateway-stderr.log.
-    stdio: background ? ['ignore', 'ignore', 'pipe'] : 'inherit',
+    stdio,
     detached: background,
     windowsHide: true,
   });
@@ -139,18 +149,6 @@ function startGateway(background) {
   writePid(child.pid);
 
   if (background) {
-    // Diagnostics: capture stderr to a file (a detached gateway that crashes
-    // silently otherwise leaves no trace). stdout is discarded; the gateway's
-    // own file logging covers normal logs.
-    // NOTE: use a raw fd + writeSync — a fs.WriteStream here never ends, which
-    // keeps the parent's event loop alive so `mafw daemon` hangs (and any
-    // tree-kill then takes the detached gateway down with it).
-    const errLog = path.join(LOG_DIR, 'gateway-stderr.log');
-    try { if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
-    const errFd = fs.openSync(errLog, 'a');
-    if (child.stderr) {
-      child.stderr.on('data', (chunk) => { try { fs.writeSync(errFd, chunk); } catch {} });
-    }
     child.unref();
     console.log(`Gateway started in background (PID: ${child.pid})`);
     console.log(`Logs: ${LOG_FILE}`);
