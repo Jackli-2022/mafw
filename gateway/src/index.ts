@@ -81,6 +81,7 @@ import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
 import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './routes/plugins';
+import { cleanupExamples } from './plugins/hub';
 import { handleRestartAgent } from './routes/restart-agent';
 import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
@@ -3952,6 +3953,20 @@ class MafwScheduler {
               usage: config.resolvePath('usage-plugins'),
               ui: process.env.MAFW_UI_PLUGINS_DIR || path.join(os.homedir(), '.mafw', 'ui-plugins'),
             },
+            builtinEntries: (): any[] => {
+              const entries: any[] = [];
+              const rt = (name: string) => ({ type: 'runtime', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
+              entries.push(rt('opencode'));
+              for (const name of this.runtimeLoader?.getBuiltinNames?.() ?? []) entries.push(rt(name));
+              entries.push({ type: 'media', name: 'pi', file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
+              const usageState: any[] = this.pluginLoader?.getState?.() ?? [];
+              for (const s of usageState) {
+                if (s.builtin && s.status === 'ok' && s.name) {
+                  entries.push({ type: 'usage', name: s.name, file: s.file, status: 'enabled', size: 0, mtime: '', pluginType: s.pluginType });
+                }
+              }
+              return entries;
+            },
             getErrors: (type: string): Record<string, string> => {
               const stateOf = (loader: any): any[] => (loader && typeof loader.getState === 'function' ? loader.getState() : []);
               const source = type === 'runtime' ? this.runtimeLoader : type === 'media' ? this.mediaPluginLoader : type === 'usage' ? this.pluginLoader : null;
@@ -3970,6 +3985,13 @@ class MafwScheduler {
             },
           } as any,
         };
+        try {
+          const cleaned = cleanupExamples(pluginHubDeps.hub);
+          if (cleaned.removed.length) log.info(`[PluginsHub] removed stale examples: ${cleaned.removed.length}`);
+          if (cleaned.failed.length) log.warn(`[PluginsHub] cleanupExamples failed: ${cleaned.failed.join(', ')}`);
+        } catch (err: any) {
+          log.warn(`[PluginsHub] cleanupExamples error: ${err.message}`);
+        }
         if (req.method === 'GET' && req.url?.match(/^\/api\/plugins(?:\?|$)/)) {
           await handlePluginsList(req, res, pluginHubDeps);
           return;

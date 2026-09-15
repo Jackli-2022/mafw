@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { handlePluginsList, handlePluginsInstall, handlePluginsDisable, handlePluginsDelete } from '../../src/routes/plugins';
 
-const B64 = Buffer.from('module.exports = { name: "foo" };').toString('base64');
+const MOD = Buffer.from('module.exports = { name: "foo" };', 'utf-8');
 
 function postJson(server: http.Server, p: string, body: any): Promise<{ status: number; body: any }> {
   return new Promise((resolve, reject) => {
@@ -23,6 +23,26 @@ function postJson(server: http.Server, p: string, body: any): Promise<{ status: 
     });
     req.on('error', reject);
     req.write(data);
+    req.end();
+  });
+}
+
+function postRaw(server: http.Server, p: string, bytes: Buffer): Promise<{ status: number; body: any }> {
+  return new Promise((resolve, reject) => {
+    const addr = server.address() as { port: number };
+    const req = http.request({
+      hostname: '127.0.0.1', port: addr.port, path: p, method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length },
+    }, (res) => {
+      let chunks = '';
+      res.on('data', (c) => chunks += c);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode!, body: JSON.parse(chunks) }); }
+        catch { resolve({ status: res.statusCode!, body: chunks }); }
+      });
+    });
+    req.on('error', reject);
+    req.write(bytes);
     req.end();
   });
 }
@@ -67,7 +87,7 @@ describe('plugins routes', () => {
   afterEach((done) => { server.close(() => done()); });
 
   test('install then list shows the plugin', async () => {
-    const inst = await postJson(server, '/api/plugins/install', { type: 'runtime', filename: 'foo.js', contentBase64: B64 });
+    const inst = await postRaw(server, '/api/plugins/install?filename=foo.js&type=runtime', MOD);
     expect(inst.status).toBe(200);
     expect(inst.body).toEqual(expect.objectContaining({ name: 'foo', status: 'enabled' }));
     const list = await new Promise<{ status: number; body: any }>((resolve, reject) => {
@@ -82,13 +102,13 @@ describe('plugins routes', () => {
   });
 
   test('install validation failure → 400 with error body', async () => {
-    const res = await postJson(server, '/api/plugins/install', { type: 'runtime', filename: '../x.js', contentBase64: B64 });
+    const res = await postRaw(server, '/api/plugins/install?filename=..%2Fx.js&type=runtime', MOD);
     expect(res.status).toBe(400);
     expect(res.body.error).toBeDefined();
   });
 
   test('disable then delete round-trip', async () => {
-    await postJson(server, '/api/plugins/install', { type: 'usage', filename: 'foo.js', contentBase64: B64 });
+    await postRaw(server, '/api/plugins/install?filename=foo.js&type=usage', MOD);
     const dis = await postJson(server, '/api/plugins/disable', { type: 'usage', filename: 'foo.js' });
     expect(dis.status).toBe(200);
     expect(dis.body.status).toBe('disabled');
@@ -97,11 +117,11 @@ describe('plugins routes', () => {
     expect(del.body).toEqual({ ok: true });
   });
 
-  test('malformed JSON body → 400', async () => {
+  test('install without filename → 400', async () => {
     const addr = server.address() as { port: number };
     const status: number = await new Promise((resolve) => {
       const req = http.request({ hostname: '127.0.0.1', port: addr.port, path: '/api/plugins/install', method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': 7 } }, (res) => {
+        headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': 7 } }, (res) => {
         res.resume(); res.on('end', () => resolve(res.statusCode!));
       });
       req.end('{broken');

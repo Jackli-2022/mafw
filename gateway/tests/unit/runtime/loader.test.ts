@@ -58,7 +58,7 @@ describe('RuntimePluginLoader', () => {
     await loader.init();
     expect(fs.existsSync(freshDir)).toBe(true);
     expect(fs.existsSync(path.join(freshDir, 'README.md'))).toBe(true);
-    expect(fs.existsSync(path.join(freshDir, 'example.js.disabled'))).toBe(true);
+    expect(fs.existsSync(path.join(freshDir, 'example.js.disabled'))).toBe(false);
   });
 
   it('loads a valid plugin and returns it via get()', async () => {
