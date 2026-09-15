@@ -25,6 +25,10 @@ OpenCode *.png
 __pycache__/
 *.pyc
 
+# Python venv（evaluation/.venv 曾被 4ef8e811 批量提交，2026-09-15 清理；Scripts/ 无 site-packages 自带 * 忽略保护）
+.venv/
+.venv-pykernel/
+
 # Worker-committed junk (2026-08-31 incident)
 .claude/
 .memory/
