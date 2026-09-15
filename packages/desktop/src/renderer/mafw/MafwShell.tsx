@@ -50,6 +50,8 @@ import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
 import type { ModelEntry } from "./components/pickers/ModelPicker"
+
+type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
 import "./mafw.css"
 
@@ -69,8 +71,10 @@ export function MafwShell() {
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
   const [theme, setTheme] = createSignal<string | null>(null)
 
-  // Model selection (shared across panes; recent-models persistence below)
-  const [modelSel, setModelSel] = createSignal<{ providerID: string; modelID: string; label: string } | null>(null)
+  // Model selection is per-session: user picks live in modelPicks (in-memory),
+  // resolution order in sessionModel() below is pick → session history → recent default.
+  const [modelPicks, setModelPicks] = createSignal<Record<string, ModelSel>>({})
+  const [defaultModel, setDefaultModel] = createSignal<ModelSel | null>(null)
 
   // Reactive data store for SessionTurn (SolidJS store Proxy for fine-grained tracking)
   const [store, setStore] = createStore({
@@ -1805,7 +1809,7 @@ export function MafwShell() {
       setProvidersData(p)
       // Default the model pill to the most recently used model (first entry of
       // localStorage mafw-recent-models) — only when the user hasn't picked one.
-      if (modelSel() === null) {
+      if (defaultModel() === null) {
         try {
           const recent: string[] = JSON.parse(localStorage.getItem("mafw-recent-models") || "[]")
           const first = recent[0]
@@ -1829,7 +1833,7 @@ export function MafwShell() {
                 if (found) break
               }
             }
-            if (found) setModelSel(found)
+            if (found) setDefaultModel(found)
           }
         } catch { /* ignore */ }
       }
@@ -1878,6 +1882,23 @@ export function MafwShell() {
     }
     return groups
   })
+
+  // Per-session model resolution: user pick → session's last assistant message
+  // model → global recent default. All reads are reactive sources, so memo/JSX
+  // consumers re-evaluate on history or pick changes.
+  const sessionModel = (sid: string): ModelSel | null => {
+    const pick = modelPicks()[sid]
+    if (pick) return pick
+    const msgs = sid ? (store.message[sid] || []) : []
+    const last = [...msgs].reverse().find((m: any) => m.role === "assistant")
+    const m = last?.model
+    if (m?.providerID && m?.modelID) {
+      const group = modelGroups().find((g) => g.providerID === m.providerID)
+      const entry = group?.models.find((em) => em.id === m.modelID)
+      return { providerID: m.providerID, modelID: m.modelID, label: entry?.name || m.modelID }
+    }
+    return defaultModel()
+  }
 
   // ── Pickers: agent selection (shared), per-pane picker state lives in ChatPane ──
   const [agentSel, setAgentSel] = createSignal<AgentEntry | null>(null)
@@ -2054,8 +2075,10 @@ export function MafwShell() {
 
   const subagentRunning = (id: string) => store.session_status[id]?.type === "busy"
 
-  const onModelSelect = (m: ModelEntry) => {
-    setModelSel({ providerID: m.providerID, modelID: m.id, label: m.name })
+  const onModelSelect = (m: ModelEntry, sid?: string) => {
+    const target = sid || currentSessionID()
+    if (!target) return
+    setModelPicks({ ...modelPicks(), [target]: { providerID: m.providerID, modelID: m.id, label: m.name } })
   }
 
   // Manager sessions are locked to the manager agent — switching to another
@@ -2389,7 +2412,7 @@ export function MafwShell() {
                           tasksAllDone={tasksAllDone}
                           gwReady={gwStatus()?.state === "ready"}
                           agentSel={agentSel}
-                          model={modelSel}
+                          model={() => sessionModel(leaf.sid)}
                           modelGroups={modelGroups}
                           primaryAgents={primaryAgents}
                           subagentAgents={subagentAgents}
@@ -2649,7 +2672,7 @@ export function MafwShell() {
                   sessionID={currentSessionID()}
                   projectID={currentProject()}
                   store={store}
-                  model={modelSel}
+                  model={() => sessionModel(currentSessionID())}
                   modelGroups={modelGroups}
                 />
               </div>
