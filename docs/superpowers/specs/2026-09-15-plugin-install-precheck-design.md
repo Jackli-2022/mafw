@@ -76,7 +76,7 @@
 13. runtime 合法（name === stem）→ 安装成功
 14. usage 合法 → 安装成功
 
-**回归保护**：usage clone-builtin 模板流程（`usage/templates.ts`）经过同一安装门时 filename=name 天然一致，不破——补断言验证。
+**回归保护（勘误 2026-09-15）**：usage 模板/克隆流程直写文件（`routes/usage-plugins.ts` 的 `fs.writeFileSync`，不经 `installPlugin`），不受本安装门影响；模板渲染的 `filename = name + '.js'` 天然满足名称统一规则。
 
 ## 交付汇报
 
