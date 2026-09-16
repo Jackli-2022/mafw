@@ -80,6 +80,7 @@ import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broad
 import { BudgetGuard } from './core/budget-guard';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
+import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
@@ -1060,6 +1061,13 @@ class MafwScheduler {
             projectDir: this.projectDir,
             gatewayPort: config.server.apiPort,
           }));
+          // 声明 vs 实现一致性校验：错位插件在切换/启动期给出字段级诊断并回退，
+          // 而不是运行时深处才炸。
+          const issues = validateRuntimeShape(rt, pluginName);
+          if (issues.length > 0) {
+            for (const issue of issues) log.error(`[Runtime] shape violation: ${issue}`);
+            throw new Error(`runtime '${rt.name}' failed shape validation (${issues.length} issue(s)) — see logs`);
+          }
           log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
           return rt;
         } catch (err: any) {
