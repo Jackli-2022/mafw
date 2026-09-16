@@ -126,6 +126,7 @@ export function createMafwApi(): MafwAPI {
       list: () => invoke("project", "list"),
       current: () => invoke("project", "current"),
       setCurrent: (path) => invoke("project", "setCurrent", path),
+      openDirectory: () => ipcRenderer.invoke("mafw-open-directory") as Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>,
     },
 
     goals: {

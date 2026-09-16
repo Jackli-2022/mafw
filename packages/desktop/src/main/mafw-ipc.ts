@@ -141,6 +141,24 @@ export function registerMafwIpcHandlers() {
     }
   })
 
+  // Open-project entry (Rail switcher): main owns the native directory picker
+  // (renderer is sandboxed). Returns { ok, path } or { ok:false, canceled }.
+  ipcMain.handle("mafw-open-directory", async (event: IpcMainInvokeEvent) => {
+    try {
+      const { BrowserWindow: BW, dialog } = await import("electron")
+      const win = BW.fromWebContents(event.sender)
+      const res = win
+        ? await dialog.showOpenDialog(win, { title: "打开项目文件夹", properties: ["openDirectory"] })
+        : await dialog.showOpenDialog({ title: "打开项目文件夹", properties: ["openDirectory"] })
+      if (res.canceled || !res.filePaths?.[0]) return { ok: false, canceled: true }
+      writeLog("utility", "mafw-open-directory", { path: res.filePaths[0] })
+      return { ok: true, path: res.filePaths[0] }
+    } catch (err) {
+      writeLog("utility", "mafw-open-directory failed", { err: String(err) }, "warn")
+      return { ok: false, error: String(err) }
+    }
+  })
+
   // OS-level notification for away-from-window moments (close-to-tray).
   // The renderer decides relevance (document.hidden) and throttling.
   ipcMain.handle("mafw-notify", (_event: IpcMainInvokeEvent, opts: { title: string; body: string }) => {

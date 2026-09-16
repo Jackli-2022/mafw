@@ -96,6 +96,7 @@ export type MafwAPI = {
     list: () => Promise<Project[]>
     current: () => Promise<Project | null>
     setCurrent: (path: string) => Promise<void>
+    openDirectory: () => Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
   }
 
   goals: {
