@@ -42,6 +42,7 @@ import { MediaService } from "./media/media-service";
 import { MediaAgent } from "./media/media-agent";
 import { createPiPromptAdapter } from "./media/pi-adapter";
 import { createMediaRuntimeExecutor, MediaRuntimeExecutor } from "./media/media-runtime-executor";
+import { resolveMediaPrompt } from './media/resolve-prompt';
 import { MediaPluginLoader } from "./media/media-plugin-loader";
 import { createTtsService } from "./media/tts-service";
 import { handleEvalChatCompletion } from "./eval-endpoint";
@@ -1805,6 +1806,8 @@ class MafwScheduler {
     });
     await this.mediaPluginLoader.init();
     this.pluginHost?.bindMedia((entries) => this.mediaPluginLoader?.setPackageEntries(entries));
+    // 内置 pi 引擎登记（可被用户同名包/文件覆盖——resolveMediaPrompt 语义）
+    this.mediaPluginLoader.registerBuiltinEngine('pi', ['image', 'video', 'audio']);
 
     this.mediaService = new MediaService({
       prompt: createPiPromptAdapter({
@@ -1815,30 +1818,24 @@ class MafwScheduler {
       config: () => config.raw.media,
       resolvePrompt: (kind, cfg) => {
         const engineName = cfg[kind]?.engine ?? cfg.engine ?? 'pi';
-        // pi runtime 激活时：图片走 AgentRuntime 会话（MediaRuntimeExecutor），
-        // video/audio 由 executor 内部回退到 complete 路径
-        if (engineName === 'pi' && this.opencodeClient?.name === 'pi') {
-          // runtime 热切换后 opencodeClient 实例更换——旧 executor 持有 stale
-          // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
-          if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.opencodeClient) {
-            void this.mediaRuntimeExecutor?.dispose().catch(() => {});
-            this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.opencodeClient);
-            this.mediaRuntimeExecutorRt = this.opencodeClient;
-          }
-          return this.mediaRuntimeExecutor.prompt;
-        }
-        if (engineName === 'pi') return undefined;
-        const engines = this.mediaPluginLoader?.getEngines();
-        const engine = engines?.get(engineName);
-        if (!engine) {
-          log.warn(`[MediaService] engine '${engineName}' not found, falling back to pi`);
-          return undefined;
-        }
-        if (!engine.modalities.includes(kind)) {
-          log.warn(`[MediaService] engine '${engineName}' does not support modality '${kind}', falling back to pi`);
-          return undefined;
-        }
-        return engine.prompt;
+        return resolveMediaPrompt(engineName, kind, {
+          engines: this.mediaPluginLoader?.getEngines() ?? new Map(),
+          builtinPi: () => {
+            // pi runtime 激活时：图片走 AgentRuntime 会话（MediaRuntimeExecutor），
+            // video/audio 由 executor 内部回退到 complete 路径
+            if (this.opencodeClient?.name === 'pi') {
+              // runtime 热切换后 opencodeClient 实例更换——旧 executor 持有 stale
+              // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
+              if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.opencodeClient) {
+                void this.mediaRuntimeExecutor?.dispose().catch(() => {});
+                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.opencodeClient);
+                this.mediaRuntimeExecutorRt = this.opencodeClient;
+              }
+              return this.mediaRuntimeExecutor.prompt;
+            }
+            return undefined;
+          },
+        });
       },
     });
     // Determine workspace name: if projectDir resolves to a 'gateway' subdirectory,
@@ -4052,7 +4049,9 @@ class MafwScheduler {
               const rt = (name: string) => ({ type: 'runtime', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
               // opencode 经 registerBuiltin 注册，getBuiltinNames 已含——不再手工 push（防重复）
               for (const name of this.runtimeLoader?.getBuiltinNames?.() ?? []) entries.push(rt(name));
-              entries.push({ type: 'media', name: 'pi', file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
+              for (const name of this.mediaPluginLoader?.getBuiltinEngineNames?.() ?? []) {
+                entries.push({ type: 'media', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
+              }
               const usageState: any[] = this.pluginLoader?.getState?.() ?? [];
               for (const s of usageState) {
                 if (s.builtin && s.status === 'ok' && s.name) {
