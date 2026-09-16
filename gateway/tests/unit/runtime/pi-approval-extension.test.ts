@@ -152,4 +152,33 @@ describe('MafwApprovalExtension', () => {
     expect(replied!.payload!.properties.decision).toBe('always');
     customBridge.dispose();
   });
+
+  it('bridge.request carries permissionList metadata (sessionID/tool/args)', async () => {
+    const metaBridge = new ApprovalBridge();
+    const metaExtension = createMafwApprovalExtension(
+      metaBridge,
+      (event) => emittedEvents.push(event),
+      { autoApprove: [], autoDeny: [] },
+      'gw-ses-1',
+    );
+    const metaEmitter = { on: jest.fn() };
+    metaExtension.on(metaEmitter);
+    const handler = metaEmitter.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
+
+    const promise = handler({ toolName: 'bash', input: { command: 'ls' } }, { sessionId: 'pi-native' });
+    const requestId = emittedEvents[emittedEvents.length - 1].payload!.properties.requestId;
+    const pending = metaBridge.listPending();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      id: requestId,
+      sessionID: 'gw-ses-1',
+      permission: 'bash',
+      patterns: [],
+    });
+    expect((pending[0].metadata as any).args).toEqual({ command: 'ls' });
+    metaBridge.reply(requestId, true);
+    await promise;
+    expect(metaBridge.listPending()).toHaveLength(0);
+    metaBridge.dispose();
+  });
 });

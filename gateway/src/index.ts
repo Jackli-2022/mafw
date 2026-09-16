@@ -1764,30 +1764,6 @@ class MafwScheduler {
     log.info('[Scheduler] Stopping...');
   }
 
-  // Proxy a native opencode request by trying every registered workspace.
-  // Native reply/reject routes are workspace-scoped (WorkspaceRoutingMiddleware),
-  // but the gateway's own projectDir is its cwd — the request may belong to any
-  // registered project. GET list endpoints are cross-workspace and unaffected.
-  private async proxyNativeWorkspaces(path: string, method: string, body?: any): Promise<{ ok: boolean; status: number }> {
-    const dirs = new Set<string>([this.projectDir || '.']);
-    for (const key of this.registeredProjects.keys()) dirs.add(key);
-    let lastStatus = 502;
-    for (const dir of dirs) {
-      try {
-        const r = await fetch(`${this.serveUrl}${path}?directory=${encodeURIComponent(dir)}`, {
-          method,
-          headers: { 'content-type': 'application/json', 'x-opencode-directory': encodeURIComponent(dir) },
-          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-        });
-        if (r.ok) return { ok: true, status: r.status };
-        lastStatus = r.status;
-      } catch (e: any) {
-        log.error(`[Native proxy] ${path} failed for ${dir}: ${e.message}`);
-      }
-    }
-    return { ok: false, status: lastStatus };
-  }
-
   // 鈹€鈹€ Services & Event Bus 鈹€鈹€
 
   private async initServices() {
@@ -3896,16 +3872,14 @@ class MafwScheduler {
 
         // 鈹€鈹€ Question endpoints (AskCard 鈹€ proxy to native opencode Question API) 鈹€鈹€
 
-        // GET /api/questions 鈹€ list pending questions
+        // GET /api/questions ── list pending questions（契约：session.question.list）
         if (req.url?.match(/^\/api\/questions(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuardQuestion(res)) return;
           try {
-            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
-            const r = await fetch(`${this.serveUrl}/question?directory=${encodeURIComponent(dir)}`, {
-              headers: { 'x-opencode-directory': encodeURIComponent(dir) },
-            });
-            const items = await r.json();
-            res.end(JSON.stringify({ items }));
+            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
+            const question = this.opencodeClient?.session?.question;
+            const items = question ? await question.list(dir ? { directory: dir } : undefined) : [];
+            res.end(JSON.stringify({ items: items ?? [] }));
           } catch (err: any) {
             log.error('[Question] list error:', err.message);
             res.end(JSON.stringify({ items: [] }));
@@ -3913,19 +3887,28 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/questions/{id}/reply 鈹€ { answers: string[][] }
+        // POST /api/questions/{id}/reply ── { answers: string[][] }（契约 + workspace 重试）
         const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
         if (qReplyMatch && req.method === 'POST') {
           if (this.capGuardQuestion(res)) return;
+          const question = this.opencodeClient?.session?.question;
+          if (!question) {
+            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
+          }
           try {
             const body = JSON.parse(await readBody(req));
-            const r = await this.proxyNativeWorkspaces(`/question/${qReplyMatch[1]}/reply`, 'POST', { answers: body.answers });
-            if (!r.ok) {
-              res.writeHead(r.status);
-              res.end(JSON.stringify({ status: 'error', code: r.status }));
-              return;
+            // workspace 路由：默认（SDK 自带 projectDir）→ 各注册项目逐试
+            const dirs: Array<string | undefined> = [undefined, this.projectDir, ...this.registeredProjects.keys()];
+            let lastErr: any = null;
+            for (const dir of [...new Set(dirs)]) {
+              try {
+                await question.reply({ requestID: qReplyMatch[1], answers: body.answers, ...(dir ? { directory: dir } : {}) });
+                res.end(JSON.stringify({ status: 'ok' }));
+                return;
+              } catch (err: any) { lastErr = err; }
             }
-            res.end(JSON.stringify({ status: 'ok' }));
+            res.writeHead(400);
+            res.end(JSON.stringify({ status: 'error', error: lastErr?.message ?? 'question reply failed on all workspaces' }));
           } catch (err: any) {
             log.error('[Question] reply error:', err.message);
             res.writeHead(400);
@@ -3934,18 +3917,26 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/questions/{id}/reject
+        // POST /api/questions/{id}/reject（契约 + workspace 重试）
         const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
         if (qRejectMatch && req.method === 'POST') {
           if (this.capGuardQuestion(res)) return;
+          const question = this.opencodeClient?.session?.question;
+          if (!question) {
+            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
+          }
           try {
-            const r = await this.proxyNativeWorkspaces(`/question/${qRejectMatch[1]}/reject`, 'POST');
-            if (!r.ok) {
-              res.writeHead(r.status);
-              res.end(JSON.stringify({ status: 'error', code: r.status }));
-              return;
+            const dirs: Array<string | undefined> = [undefined, this.projectDir, ...this.registeredProjects.keys()];
+            let lastErr: any = null;
+            for (const dir of [...new Set(dirs)]) {
+              try {
+                await question.reject({ requestID: qRejectMatch[1], ...(dir ? { directory: dir } : {}) });
+                res.end(JSON.stringify({ status: 'ok' }));
+                return;
+              } catch (err: any) { lastErr = err; }
             }
-            res.end(JSON.stringify({ status: 'ok' }));
+            res.writeHead(400);
+            res.end(JSON.stringify({ status: 'error', error: lastErr?.message ?? 'question reject failed on all workspaces' }));
           } catch (err: any) {
             log.error('[Question] reject error:', err.message);
             res.writeHead(400);
@@ -3956,16 +3947,15 @@ class MafwScheduler {
 
         // 鈹€鈹€ Permission endpoints (PermissionCard 鈹€ proxy to native opencode Permission API) 鈹€鈹€
 
-        // GET /api/permissions 鈹€ list pending permission requests
+        // GET /api/permissions ── list pending permission requests（契约：session.permissionList）
         if (req.url?.match(/^\/api\/permissions(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'nativeApprovals')) return;
           try {
-            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || '.';
-            const r = await fetch(`${this.serveUrl}/permission?directory=${encodeURIComponent(dir)}`, {
-              headers: { 'x-opencode-directory': encodeURIComponent(dir) },
-            });
-            const items = await r.json();
-            res.end(JSON.stringify({ items }));
+            const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
+            const items = this.opencodeClient?.session?.permissionList
+              ? await this.opencodeClient.session.permissionList(dir ? { directory: dir } : undefined)
+              : [];
+            res.end(JSON.stringify({ items: items ?? [] }));
           } catch (err: any) {
             log.error('[Permission] list error:', err.message);
             res.end(JSON.stringify({ items: [] }));
@@ -4207,19 +4197,29 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/permissions/{id}/reply 鈹€ { reply: 'once'|'always'|'reject', message?: string }
+        // POST /api/permissions/{id}/reply ── { reply, message? }（契约：列表反查 sessionID → permissionReply）
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {
           if (this.capGuard(res, 'nativeApprovals')) return;
+          const runtime = this.opencodeClient;
+          if (!runtime?.session?.permissionList || !runtime?.session?.permissionReply) {
+            res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'permission API not available on this runtime' })); return;
+          }
           try {
             const body = JSON.parse(await readBody(req));
-            const payload: any = { reply: body.reply };
-            if (body.message) payload.message = body.message;
-            const r = await this.proxyNativeWorkspaces(`/permission/${pReplyMatch[1]}/reply`, 'POST', payload);
-            if (!r.ok) {
-              res.writeHead(r.status);
-              res.end(JSON.stringify({ status: 'error', code: r.status }));
-              return;
+            const reply = body.reply;
+            if (reply !== 'once' && reply !== 'always' && reply !== 'reject') {
+              res.writeHead(400); res.end(JSON.stringify({ status: 'error', error: "reply must be 'once'|'always'|'reject'" })); return;
+            }
+            // 反查 sessionID：pending 列表项携带（跨 runtime 形状一致）
+            const pending = await runtime.session.permissionList!();
+            const found = (Array.isArray(pending) ? pending : []).find((p: any) => p?.id === pReplyMatch[1]);
+            if (!found?.sessionID) {
+              res.writeHead(404); res.end(JSON.stringify({ status: 'error', error: 'permission request not found' })); return;
+            }
+            const ok = await runtime.session.permissionReply!(found.sessionID, pReplyMatch[1], reply, body.message);
+            if (!ok) {
+              res.writeHead(404); res.end(JSON.stringify({ status: 'error', error: 'permission request not found' })); return;
             }
             res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {

@@ -81,4 +81,27 @@ describe('ApprovalBridge', () => {
   it('lastDecision returns null for unknown id', () => {
     expect(bridge.lastDecision('nobody')).toBeNull();
   });
+
+  describe('listPending (permissionList backing)', () => {
+    it('returns pending requests with metadata; replied ones drop out', () => {
+      bridge.request('p1', { sessionID: 's1', permission: 'bash', patterns: [], metadata: { args: { cmd: 'ls' } } });
+      bridge.request('p2', { sessionID: 's2', permission: 'edit' });
+      bridge.reply('p2', true);
+      const items = bridge.listPending();
+      expect(items).toHaveLength(1);
+      expect(items[0]).toEqual({
+        id: 'p1', sessionID: 's1', permission: 'bash',
+        patterns: [], metadata: { args: { cmd: 'ls' } },
+      });
+    });
+
+    it('no metadata → shape intact with undefined fields', () => {
+      bridge.request('p3');
+      const items = bridge.listPending();
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe('p3');
+      expect(items[0].sessionID).toBeUndefined();
+      expect(items[0].permission).toBeUndefined();
+    });
+  });
 });

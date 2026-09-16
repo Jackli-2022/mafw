@@ -225,12 +225,17 @@ export interface RuntimeClient {
       reply: 'once' | 'always' | 'reject',
       message?: string,
     ): Promise<boolean>;
+    /** 待审批权限请求列表（ApprovalCard 轮询用）。opencode：serve /permission 列表；
+     *  pi：ApprovalBridge pending map。返回形状与 gateway-sdk PermissionRequest 对齐
+     *  （{id, sessionID, permission, patterns, metadata?, tool?}）。未实现 → 调用方 fail-open 空列表。 */
+    permissionList?(opts?: { directory?: string }): Promise<any[]>;
     /** 原生 question 通道（questionApi 能力）。opencode 实现；pi 无 question API 不实现。
-     *  answers 为 string[][]——每个问题一组答案选项（与 opencode QuestionAnswer 对齐）。 */
+     *  answers 为 string[][]——每个问题一组答案选项（与 opencode QuestionAnswer 对齐）。
+     *  directory：opencode serve 的 workspace 路由用（V1 原生路由 workspace-scoped）。 */
     question?: {
       list(opts?: { directory?: string }): Promise<any[]>;
-      reply(opts: { requestID: string; answers: string[][] }): Promise<void>;
-      reject(opts: { requestID: string }): Promise<void>;
+      reply(opts: { requestID: string; answers: string[][]; directory?: string }): Promise<void>;
+      reject(opts: { requestID: string; directory?: string }): Promise<void>;
     };
     /**
      * 分叉为新会话：原会话不动，新会话携带截至 messageID（缺省=当前末尾）的历史。

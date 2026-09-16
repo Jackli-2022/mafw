@@ -1,6 +1,15 @@
 interface PendingRequest {
   resolve: (approved: boolean) => void;
   timeout: NodeJS.Timeout;
+  /** permissionList 元数据（extension 发起时携带） */
+  meta?: PendingMeta;
+}
+
+export interface PendingMeta {
+  sessionID?: string;
+  permission?: string;
+  patterns?: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export type ApprovalDecision = 'once' | 'always' | 'reject';
@@ -19,15 +28,26 @@ export class ApprovalBridge {
     this.timeoutMs = timeoutMs;
   }
 
-  request(requestId: string): Promise<boolean> {
+  request(requestId: string, meta?: PendingMeta): Promise<boolean> {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         this.pending.delete(requestId);
         resolve(false);
       }, this.timeoutMs);
 
-      this.pending.set(requestId, { resolve, timeout });
+      this.pending.set(requestId, { resolve, timeout, meta });
     });
+  }
+
+  /** 待审批请求列表（gateway session.permissionList 契约的 pi 实现）。 */
+  listPending(): Array<{ id: string; sessionID?: string; permission?: string; patterns?: string[]; metadata?: Record<string, unknown> }> {
+    return [...this.pending.entries()].map(([id, req]) => ({
+      id,
+      sessionID: req.meta?.sessionID,
+      permission: req.meta?.permission,
+      patterns: req.meta?.patterns,
+      metadata: req.meta?.metadata,
+    }));
   }
 
   /** 三值回复；兼容旧 boolean 调用（true→once / false→reject）。 */

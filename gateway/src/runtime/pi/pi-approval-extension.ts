@@ -50,7 +50,13 @@ export function createMafwApprovalExtension(
           },
         });
 
-        const approved = await bridge.request(requestId);
+        // permissionList 元数据：PendingMeta 与 permission.asked 事件同源
+        const approved = await bridge.request(requestId, {
+          sessionID,
+          permission: toolName,
+          patterns: [],
+          metadata: { args: event.input, risk: 'medium' },
+        });
         const record = bridge.lastDecision(requestId);
         const decision = record?.decision ?? (approved ? 'once' : 'reject');
         const message = record?.message;

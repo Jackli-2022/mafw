@@ -174,6 +174,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     },
     permissionReply: (sessionID: string, requestId: string, reply: 'once' | 'always' | 'reject', message?: string) =>
       registry.permissionReply(sessionID, requestId, reply, message),
+    permissionList: async () => registry.listPendingPermissions(),
     fork: async (opts: { sessionID: string; messageID?: string }) => registry.fork(opts.sessionID, opts.messageID),
     revert: async (opts: { sessionID: string; messageID: string; partID?: string }) => registry.revert(opts.sessionID, opts.messageID),
   };

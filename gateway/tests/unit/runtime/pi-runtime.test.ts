@@ -188,6 +188,24 @@ describe('permissionReply', () => {
 
     expect(replySpy).toHaveBeenCalledWith(id, 'req-1', true, undefined);
   });
+
+  it('permissionList aggregates pending approvals across sessions (contract)', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    expect(rt.session.permissionList).toBeDefined();
+    const { id } = await rt.session.create({ directory: '/tmp' });
+    const registry = (rt as any).registry;
+    // 直接向 registry 的 approvalBridge 注册一个 pending（模拟 extension tool_call）
+    const bridge = (registry as any).approvalBridges.get(id);
+    bridge.request('req-9', { sessionID: id, permission: 'bash', patterns: [], metadata: { args: { cmd: 'ls' } } });
+    const items = await rt.session.permissionList!();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: 'req-9', sessionID: id, permission: 'bash' });
+    bridge.reply('req-9', true);
+    expect(await rt.session.permissionList!()).toHaveLength(0);
+  });
 });
 
 describe('approval policy configuration', () => {

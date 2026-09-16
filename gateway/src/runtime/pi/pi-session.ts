@@ -246,6 +246,17 @@ export class PiSessionRegistry {
     return bridge.reply(requestId, reply as any, message);
   }
 
+  /** 全部 session 的待审批请求（ApprovalBridge pending map 汇总）。 */
+  listPendingPermissions(): Array<{ id: string; sessionID?: string; permission?: string; patterns?: string[]; metadata?: Record<string, unknown> }> {
+    const out: Array<{ id: string; sessionID?: string; permission?: string; patterns?: string[]; metadata?: Record<string, unknown> }> = [];
+    for (const [sessionID, bridge] of this.approvalBridges) {
+      for (const item of bridge.listPending()) {
+        out.push({ ...item, sessionID: item.sessionID ?? sessionID });
+      }
+    }
+    return out;
+  }
+
   async abort(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (s) { try { await s.abort(); } catch { /* ignore */ } }

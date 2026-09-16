@@ -42,9 +42,31 @@ function messageToParts(message?: string, parts?: any[]): any[] {
 
 // ─── 适配层实现 ─────────────────────────────────────────────
 
-export async function createOpencodeAdapter(config: { baseUrl: string; directory?: string }): Promise<OpencodeAdapter> {
+export async function createOpencodeAdapter(config: { baseUrl: string; directory?: string; headers?: Record<string, string> }): Promise<OpencodeAdapter> {
   const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
   const client = createOpencodeClient(config);
+
+  // opencode 原生 V1 路由的 workspace 路由细节收敛在 adapter 内（契约保持
+  // runtime 中立）——带 directory 的调用直连 fetch（V2 SDK 调用不带 workspace 语义）。
+  const directNative = async (
+    path: string,
+    method: string,
+    body?: any,
+    directory?: string,
+  ): Promise<any> => {
+    const url = `${config.baseUrl}${path}${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`;
+    const res = await fetch(url, {
+      method,
+      headers: {
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...(directory ? { 'x-opencode-directory': encodeURIComponent(directory) } : {}),
+        ...(config.headers ?? {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    } as any);
+    if (!res.ok) throw new Error(`opencode native ${path} failed: ${res.status}`);
+    try { return await res.json(); } catch { return null; }
+  };
 
   return {
     session: {
@@ -233,7 +255,11 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
           const data = unwrap<any>(result);
           return Array.isArray(data) ? data : data?.items ?? [];
         },
-        async reply(opts: { requestID: string; answers: string[][] }) {
+        async reply(opts: { requestID: string; answers: string[][]; directory?: string }) {
+          if (opts.directory) {
+            await directNative(`/question/${opts.requestID}/reply`, 'POST', { answers: opts.answers }, opts.directory);
+            return;
+          }
           const result = await (client.session as any).question.reply({
             requestID: opts.requestID,
             answers: opts.answers,
@@ -242,12 +268,21 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
             throw new Error(String((result as any).error));
           }
         },
-        async reject(opts: { requestID: string }) {
+        async reject(opts: { requestID: string; directory?: string }) {
+          if (opts.directory) {
+            await directNative(`/question/${opts.requestID}/reject`, 'POST', undefined, opts.directory);
+            return;
+          }
           const result = await (client.session as any).question.reject({ requestID: opts.requestID });
           if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
             throw new Error(String((result as any).error));
           }
         },
+      },
+
+      async permissionList(opts?: { directory?: string }) {
+        const data = await directNative('/permission', 'GET', undefined, opts?.directory);
+        return Array.isArray(data) ? data : data?.items ?? [];
       },
     },
 
