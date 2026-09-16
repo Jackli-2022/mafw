@@ -3,6 +3,7 @@
 // state pushes (process-level, authoritative) — are folded into ONE phase
 // machine so UI feedback (toasts) fires exactly once per transition, no
 // matter which signal noticed first.
+import { createSignal, type Accessor } from "solid-js"
 //
 //   initial      never connected (startup); sse-error here is NOT surfaced
 //                as a disconnection (no false alarm before first success)
@@ -94,4 +95,19 @@ export async function allWithFailureFlag<T>(
     gets.map((g) => g().catch(() => { failed = true; return fallback })),
   )
   return { values, failed }
+}
+
+// Module-level singleton: one phase machine per renderer. Consumers import
+// `conn` (to report) or `useConnPhase()` (to read reactively) — a module
+// singleton avoids Solid Context chain issues entirely (first-party source,
+// single bundle, no duplicate-instance risk).
+export const conn = createConnectionState()
+
+/** Reactive phase accessor for components. Subscriptions live for the page
+ *  lifetime — consumers are app-lifetime components (Rail/titlebar/Docks), so
+ *  no per-component cleanup is needed. */
+export function useConnPhase(): Accessor<ConnPhase> {
+  const [phase, setPhase] = createSignal<ConnPhase>(conn.phase)
+  conn.subscribe((ev) => setPhase(ev.phase))
+  return phase
 }

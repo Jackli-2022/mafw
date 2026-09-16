@@ -11,6 +11,8 @@ import { UsagePill } from "./UsagePill"
 import { ManagerCard } from "./ManagerCard"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { sessionStore } from "../session-store"
+import { useConnPhase } from "../connection-state"
+import { ConnBanner } from "./ConnBanner"
 
 const copyText = async (text: string) => {
   try {
@@ -77,6 +79,7 @@ export function Rail(props: Props) {
   let scrollRef: HTMLDivElement | undefined
 
   const gwReady = createMemo(() => gwStatus()?.state === "ready")
+  const connPhase = useConnPhase()
   const projectID = createMemo(() => {
     const p = currentProject()
     return p ? (p.worktree || p.id || null) : null
@@ -98,7 +101,7 @@ export function Rail(props: Props) {
 
   // Store read: refetches on first access, reactive to invalidate().
   const allSessions = createMemo(() => sessionStore.sessionsFor(projectID()))
-  const offline = createMemo(() => sessionStore.isOffline(projectID()))
+  const offline = createMemo(() => sessionStore.isOffline(projectID()) || connPhase() === "down")
 
   const managerRow = createMemo(() => {
     const id = props.managerSessionId
@@ -355,6 +358,7 @@ export function Rail(props: Props) {
       </div>
 
       {/* Scroll area: fixed date groups, infinite scroll, search results */}
+      <Show when={connPhase() === "down"}><ConnBanner /></Show>
       <div class="mafw-rail-scroll" ref={scrollRef}>
         <Show when={offline()}>
           <div class="mafw-rail-empty">Gateway offline</div>

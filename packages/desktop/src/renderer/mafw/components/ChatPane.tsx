@@ -11,6 +11,7 @@ import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
 import { messageModel } from "../message-model"
+import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
@@ -140,6 +141,7 @@ export function ChatPane(props: ChatPaneProps) {
 
 function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sidProp = () => props.sid
+  const connPhase = useConnPhase()
 
   // ── Composer state (per pane) ──
   const [input, setInput] = createSignal("")
@@ -2253,10 +2255,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   variant="contrast"
                   size="small"
                   onClick={sendMessage}
-                  disabled={!input().trim() && attachments().length === 0}
+                  disabled={connPhase() === "down" || (!input().trim() && attachments().length === 0)}
                   class="mafw-send"
                   classList={{ "mafw-send-disabled": !input().trim() && attachments().length === 0 }}
-                  aria-label="发送"
+                  aria-label={connPhase() === "down" ? "Gateway 已断开" : "发送"}
                 >
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                     <path d="M7 11.5V2.5M3 6.5L7 2.5L11 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />

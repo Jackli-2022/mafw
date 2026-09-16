@@ -18,7 +18,8 @@ import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { sessionStore } from "./session-store"
 import { planSessionEvent, type RawSessionEvent } from "./session-events"
-import { createConnectionState } from "./connection-state"
+import { conn, useConnPhase } from "./connection-state"
+import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { SplitView, leafIds, leafCount, fillEmpty, removeLeaf, setRatio, splitLeaf, splitAtPath, replaceAtPath, removeSid, isSidLeaf, firstLeafPath, findSidPath, parentDirOf, splitWithTarget, zoneForPoint, zoneToDir, type SplitNode, type SplitLeaf, type DropZone } from "./components/SplitView"
 import { SplitPlaceholder } from "./components/SplitPlaceholder"
@@ -1250,7 +1251,10 @@ export function MafwShell() {
   // SSE (renderer, immediate) + main-process state pushes (process-level) are
   // folded into one phase machine; transitions drive the reconnect/recovery
   // toasts below. Without this, a gateway restart was completely silent.
-  const conn = createConnectionState()
+  // `conn` is the module-level singleton (connection-state.ts); components
+  // read the same phase via useConnPhase().
+  const connPhase = useConnPhase()
+  const connDown = () => connPhase() === "down"
   let es: EventSource | null = null
   let esRetry: ReturnType<typeof setTimeout> | null = null
   const scheduleEsRetry = (delayMs = 5000) => {
@@ -2225,18 +2229,22 @@ export function MafwShell() {
         <span style={{ "font-size": 13, "font-weight": 600, color: "var(--text-2)" }}>MAFW</span>
         <TooltipV2
           value={
-            gwStatus()?.state === "ready" ? "Gateway 已连接" :
+            connPhase() === "down" ? "Gateway 已断开，正在自动重启…" :
+            connPhase() === "reconnecting" ? `Gateway 正在重连（第 ${conn.attempts()} 次尝试）` :
+            connPhase() === "connected" ? "Gateway 已连接" :
             gwStatus()?.state === "starting" ? "Gateway 启动中" :
             gwStatus()?.state === "failed" ? "Gateway 启动失败" :
-            "Gateway 已停止"
+            gwStatus()?.state === "stopped" ? "Gateway 已停止" :
+            "Gateway 启动中"
           }
           openDelay={300}
         >
           <div class="mafw-titlebar-dot" classList={{
-            ready: gwStatus()?.state === "ready",
-            starting: gwStatus()?.state === "starting",
-            failed: gwStatus()?.state === "failed",
-            stopped: !gwStatus() || gwStatus()?.state === "stopped",
+            ready: connPhase() === "connected" && gwStatus()?.state !== "starting",
+            reconnecting: connPhase() === "reconnecting",
+            failed: connPhase() === "down" || gwStatus()?.state === "failed",
+            starting: connPhase() === "initial" || gwStatus()?.state === "starting",
+            stopped: connPhase() !== "down" && connPhase() !== "reconnecting" && connPhase() !== "connected" && gwStatus()?.state === "stopped",
           }} style={{ "margin-left": 4 }} />
         </TooltipV2>
         <TooltipV2 value="切换主题" openDelay={300}>
@@ -2293,8 +2301,11 @@ export function MafwShell() {
         <div class="mafw-main">
           {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setConfigSection(undefined); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} trajectoryActive={rightDockOpen() && rightDockTab() === "trajectory"} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
+            <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (
               <ConfigPage onBack={() => { setShowConfig(false); setConfigSection(undefined) }} initialSection={configSection()} />
+            ) : connDown() && activeTab() !== "chat" ? (
+              <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (
               <div class="mafw-chat">
                 {/* SessionStrip */}
@@ -2693,6 +2704,10 @@ export function MafwShell() {
             viewports (third grid column), overlay on narrow (<1200px) */}
         <div class="mafw-dock-slot" classList={{ overlay: viewportNarrow() }} ref={setDockRef}>
           <Show when={rightDockOpen()}>
+            <Show when={connDown()}><ConnBanner /></Show>
+            {connDown() ? (
+              <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
+            ) : (
             <RightDock
               open={rightDockOpen()}
               tab={rightDockTab()}
@@ -2733,6 +2748,7 @@ export function MafwShell() {
                 <NotesDock />
               </div>
             </RightDock>
+            )}
             <Show when={!viewportNarrow()}>
               <ResizeHandle
                 direction="horizontal"
