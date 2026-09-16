@@ -173,6 +173,8 @@ async function isPortHealthy(port: number): Promise<boolean> {
   }
 }
 
+const INTERNAL_SESSION_TTL_DAYS = 7;
+
 class MafwScheduler {
   private serveInstance?: { url: string; close: () => void };
   private serveUrl: string;
@@ -704,7 +706,7 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
               await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
-              this.invalidateManagerSessions();
+              this.invalidateRuntimeScopedKv();
               // Same desktop hint as the route path: hand-edited config.yaml
               // switches must also refresh the renderer (menus/tabs/manager kv).
               this.broadcast({ type: 'runtime_switched', runtime: runtime.name, previous: prevPlugin ?? null });
@@ -1908,6 +1910,8 @@ class MafwScheduler {
       const collector = new TrajectoryCollector(trajStore, this.getGatewayDb(), projectDir, () => config.trajectory.retentionDays);
       collector.setRoleFor((sid: string) => this.internalSessionRoles.get(sid) ?? null);
       this.trajectoryCollector = collector;
+      const pruned = this.getGatewayDb().kvPruneOlderThan('internal-session', INTERNAL_SESSION_TTL_DAYS);
+      if (pruned > 0) log.info(`[Scheduler] pruned ${pruned} stale internal-session kv entries (> ${INTERNAL_SESSION_TTL_DAYS}d)`);
       const restored = this.getGatewayDb().kvAll<{ role: string }>('internal-session');
       for (const { key: sid, value } of restored) {
         if (value?.role && !this.internalSessionRoles.has(sid)) {
@@ -3939,7 +3943,7 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
               await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
-              this.invalidateManagerSessions();
+              this.invalidateRuntimeScopedKv();
               // Desktop hint: a runtime switch swaps the session storage backend
               // (opencode SQLite vs pi), so cached session lists are stale.
               this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
@@ -6019,21 +6023,21 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     return run;
   }
 
-  // Manager-session kv entries reference session ids in the ACTIVE runtime's
+  // Runtime-scoped kv entries reference session ids in the ACTIVE runtime's
   // storage (opencode SQLite vs pi SessionManager). A runtime hot-switch
   // invalidates them: the ids do not exist under the new backend ("Pi session
-  // not found"). Drop all entries so the next manager touch re-ensures a
-  // session in the new runtime. Called from BOTH switch paths (route
-  // onSwitched + config hot-reload watcher).
-  private invalidateManagerSessions(): void {
+  // not found"). Drop all three scopes so the next touch re-ensures sessions
+  // in the new runtime. Called from BOTH switch paths (route onSwitched +
+  // config hot-reload watcher). Scope classification: see gateway-db.ts kv API.
+  private invalidateRuntimeScopedKv(): void {
     try {
       const db = this.getGatewayDb();
-      for (const entry of db.kvAll<{ sessionId: string }>('manager-session')) {
-        db.kvDelete('manager-session', entry.key);
-      }
-      log.info('[Scheduler] manager-session kv invalidated (runtime switch)');
+      const cleared = ['manager-session', 'internal-session', 'reflect-cursor']
+        .map((scope) => `${scope}=${db.kvClearScope(scope)}`);
+      this.internalSessionRoles.clear();
+      log.info(`[Scheduler] runtime-scoped kv invalidated (runtime switch): ${cleared.join(', ')}`);
     } catch (err: any) {
-      log.warn(`[Scheduler] manager-session invalidation failed (non-fatal): ${err.message}`);
+      log.warn(`[Scheduler] runtime-scoped kv invalidation failed (non-fatal): ${err.message}`);
     }
   }
 

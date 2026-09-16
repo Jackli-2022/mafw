@@ -92,9 +92,12 @@ export function migrateGatewayDb(
       }
     }
 
-    // ④ registry snapshot (refreshed every start)
+    // ④ registry snapshot (refreshed every start) — scope/key aligned with the
+    // live read/write path (index.ts 'registry/snapshot'/'default'); the legacy
+    // 'registry' scope is removed idempotently.
     if (registrySnapshot !== null) {
-      db.kvSet('registry', 'snapshot', registrySnapshot);
+      db.kvSet('registry/snapshot', 'default', registrySnapshot);
+      db.kvDelete('registry', 'snapshot');
       result.registrySnapshot = true;
     }
 
