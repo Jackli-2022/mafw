@@ -213,6 +213,19 @@ export function Rail(props: Props) {
     setLimit(PAGE)
   }
 
+  const openProjectFolder = async () => {
+    try {
+      const res = await window.api.mafw.projects.openDirectory()
+      if (!res?.ok || !res.path) return // canceled or picker failure (logged in main)
+      await window.api.mafw.projects.setCurrent(res.path) // throws on 400 (home dir etc.)
+      setCurrentProject({ worktree: res.path, id: res.path }) // optimistic highlight
+      sessionStore.invalidate(res.path)
+      showToastV2({ description: "项目已打开", duration: 2000 })
+    } catch (e: any) {
+      showToastV2({ description: `打开失败: ${e?.message || e}`, duration: 4000 })
+    }
+  }
+
   const sessionName = (s: any): string => s.title || (s.id || "").slice(0, 12)
 
   const renderSessionRow = (s: any) => (
@@ -287,6 +300,9 @@ export function Rail(props: Props) {
                   </DropdownMenu.Item>
                 )}
               </For>
+              <DropdownMenu.Item onSelect={() => void openProjectFolder()}>
+                <DropdownMenu.ItemLabel>＋ 打开项目文件夹…</DropdownMenu.ItemLabel>
+              </DropdownMenu.Item>
               <DropdownMenu.Item onSelect={() => copyText(projectID() || "")}>
                 <DropdownMenu.ItemLabel>Copy path</DropdownMenu.ItemLabel>
               </DropdownMenu.Item>
