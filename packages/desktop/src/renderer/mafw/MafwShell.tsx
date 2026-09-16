@@ -1327,8 +1327,12 @@ export function MafwShell() {
       if (event.type === "runtime_switched") {
         console.log("[mafw] SSE runtime_switched", event.runtime)
         // Runtime switch swaps the session storage backend (opencode SQLite vs
-        // pi) — the cached Rail list belongs to the previous runtime. Drop it.
+        // pi) — cached session lists, model/agent menus, and open tabs belong
+        // to the previous runtime. Refetch menus and reset the chat workspace
+        // to the fresh-launch state (welcome page).
         sessionStore.invalidate()
+        void refreshMenus()
+        resetChatWorkspace()
         return
       }
 
@@ -1855,6 +1859,27 @@ export function MafwShell() {
     providersRetry() // re-run when a failed providers fetch schedules a retry
     refreshMenus()
   })
+
+  // Runtime switch swaps the storage backend: open tabs reference sessions
+  // that do not exist under the new runtime (sending would 404, SSE delivers
+  // no events for them). Reset to the fresh-launch state — welcome page,
+  // empty caches. createStore fields MUST clear via reconcile (object args
+  // deep-merge, {} would be a silent no-op).
+  const resetChatWorkspace = () => {
+    setShowWelcome(true)
+    setSessions([])
+    setSplitViews([])
+    setActiveViewId(null)
+    setActiveSessionId(null)
+    setSubagentStack(reconcile({}))
+    setTodos(reconcile({}))
+    setModelPicks({})
+    setDefaultModel(null)
+    setStore("message", reconcile({}))
+    setStore("part", reconcile({}))
+    setStore("session_status", reconcile({}))
+    setStore("session_diff", reconcile({}))
+  }
 
   // Primary agents (switchable driver) vs subagent agents (mentionable too).
   // The `manager` primary agent ships with the gateway install (global opencode
