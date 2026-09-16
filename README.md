@@ -81,6 +81,29 @@ Gateway 与 Agent runtime 之间是能力自声明契约（Tier 0-2）：内置 
 external 托管模式可热切换，无需重启。契约能力面覆盖会话分支（fork / revert）、回合预算、
 结果信封（usage / finish）、三值审批回复（once / always / reject）、原生 question 通道等。
 
+### 🧩 统一插件包
+
+`~/.mafw/plugins/` 下**一个插件包可同时贡献多种能力**——usage 配额、media 引擎、agent runtime、
+UI 工具卡——不必按类型拆成多个文件丢进多个目录：
+
+```js
+// ~/.mafw/plugins/my-vendor.js —— 一个文件，一个厂商全家桶
+module.exports = {
+  name: "my-vendor",
+  usage:   { name: "my-vendor", type: "api", plan: "Pro", async fetch(ctx) { /* 余额/限额 */ } },
+  media:   { modalities: ["image"], engine: "pi", fixPayload(p) { /* 自定义 wire 格式 */ } },
+  runtime: { capabilities: { eventStream: true }, async createRuntime(ctx) { /* 接入自有 runtime */ } },
+  // 或 async activate(ctx) 拿统一 ctx 后返回贡献
+};
+```
+
+- **统一上下文**：`apiKey` / `fetch` / `pluginConfig` / `projectDir` / `gatewayPort` / `usage.modelStats`——
+  三类插件 ctx 的超集，配置收敛在 `plugins.<name>.config`
+- **内置件同接口**：opencode runtime 与 media `pi` 引擎就是注册进同一体系的内置插件，
+  用户同名文件/包可直接覆盖
+- **优先级**：包 > legacy 目录文件 > 内置；旧 `usage-plugins/` 等四目录继续可用
+- **热重载**：改动即生效（顶层 + 每包子目录双 watcher），插件中心（Desktop Config→Plugins）可见全部包状态
+
 ## 基准
 
 LongMemEval-S（session 粒度，谐波记忆管线）：
@@ -106,7 +129,7 @@ LongMemEval-S（session 粒度，谐波记忆管线）：
         ┌──────────┬──────┴──────┬───────────┐
    谐波记忆系统   Goal 编排引擎   自动化引擎   媒体/内核/用量
    OKF + 索引    manager/plan/  cron 规则    A2A · Jupyter
-   能量·合并     execute/review 衰减·压缩    provider 插件
+   能量·合并     execute/review 衰减·压缩    统一插件包
 ```
 
 数据根目录 `~/.mafw/`：记忆 OKF 文件、统一数据库、日志、配置覆盖。
