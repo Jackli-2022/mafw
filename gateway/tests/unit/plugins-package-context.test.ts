@@ -40,4 +40,21 @@ describe('createPluginPackageContext', () => {
     });
     expect(ctx.usage.modelStats()).toHaveLength(1);
   });
+
+  it('emit 缺省 no-op（不炸）', () => {
+    (config as any).data = {};
+    const ctx = createPluginPackageContext('foo', { projectDir: '/p', gatewayPort: 3000 });
+    expect(() => ctx.emit({ type: 'plugin:foo:x' })).not.toThrow();
+  });
+
+  it('emit 经 deps.thunk 透传到 gateway 广播', () => {
+    (config as any).data = {};
+    const seen: any[] = [];
+    const ctx = createPluginPackageContext('foo', {
+      projectDir: '/p', gatewayPort: 3000,
+      emit: (e) => seen.push(e),
+    });
+    ctx.emit({ type: 'plugin:foo:x', level: 'warn' });
+    expect(seen).toEqual([{ type: 'plugin:foo:x', level: 'warn' }]);
+  });
 });

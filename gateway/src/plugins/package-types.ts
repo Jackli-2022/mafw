@@ -16,6 +16,9 @@ export interface PluginPackageContext {
   projectDir: string;
   gatewayPort: number;
   usage: UsageStatsProvider;
+  /** 向全部 UI 通道（SSE/WS/推送）广播自定义事件。type 建议命名空间
+   *  'plugin:<name>:<event>'；消费方对未知 type 忽略（SSE 通知语义，无注册制）。 */
+  emit: (event: { type: string; [key: string]: any }) => void;
 }
 
 export interface MediaContributionSpec {

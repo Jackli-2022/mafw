@@ -417,6 +417,7 @@ class MafwScheduler {
         usageStats: () => this.usageStatsProvider,
         projectDir: this.projectDir,
         gatewayPort: config.server.apiPort,
+        emit: (event) => this.broadcast(event),
       }),
     );
     this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));

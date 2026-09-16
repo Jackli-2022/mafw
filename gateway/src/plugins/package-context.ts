@@ -11,6 +11,8 @@ export interface PackageContextDeps {
   usageStats?: () => UsageStatsProvider | undefined;
   projectDir: string;
   gatewayPort: number;
+  /** gateway 全通道广播（缺省 no-op——测试/独立宿主场景） */
+  emit?: (event: { type: string; [key: string]: any }) => void;
 }
 
 const EMPTY_USAGE: UsageStatsProvider = { modelStats: () => [] };
@@ -30,5 +32,6 @@ export function createPluginPackageContext(name: string, deps: PackageContextDep
     projectDir: deps.projectDir,
     gatewayPort: deps.gatewayPort,
     usage: deps.usageStats?.() ?? EMPTY_USAGE,
+    emit: (event) => deps.emit?.(event),
   };
 }
