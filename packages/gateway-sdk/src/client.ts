@@ -370,6 +370,15 @@ export class MafwClient implements IMafwClient {
 
     /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
     connected: (): boolean => this._sse.connected,
+
+    /** 发布自定义事件到全部 UI 通道（SSE/WS/推送）。type 建议命名空间
+     *  'plugin:<name>:<event>'；消费方对未知 type 忽略（SSE 通知语义，无注册制）。 */
+    publish: async (event: { type: string; [key: string]: any }): Promise<{ ok: true }> =>
+      this.request<{ ok: true }>("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(event),
+      }),
   }
 
   // ── Runtime ──

@@ -667,3 +667,25 @@ test("goals.sessions empty response returns []", async () => {
   const result = await c.goals.sessions("g-none")
   expect(result).toEqual([])
 })
+
+// ── Events publish ──
+
+test("event.publish sends POST /api/events with body", async () => {
+  fetchMock.mockResolvedValue(okJson({ ok: true }))
+  const c = new MafwClient("http://gw:3000")
+  const result = await c.event.publish({ type: "plugin:acme:quota", level: "warn" })
+  expect(result).toEqual({ ok: true })
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe("http://gw:3000/api/events")
+  expect((init as any).method).toBe("POST")
+  expect(JSON.parse((init as any).body)).toEqual({ type: "plugin:acme:quota", level: "warn" })
+})
+
+test("event.publish passes opencode_event envelope through", async () => {
+  fetchMock.mockResolvedValue(okJson({ ok: true }))
+  const c = new MafwClient()
+  const envelope = { type: "opencode_event", data: { type: "session.idle", sessionID: "s1" } }
+  await c.event.publish(envelope)
+  const [, init] = fetchMock.mock.calls[0]
+  expect(JSON.parse((init as any).body)).toEqual(envelope)
+})
