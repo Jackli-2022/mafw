@@ -160,14 +160,23 @@ export function MafwShell() {
   // Authoritative per-project manager session (from the gateway DB kv store).
   // Orphan/stale role=manager sessions from the pre-fix era are ignored.
   const [managerSessionId, setManagerSessionId] = createSignal<string | null>(null)
+  // Re-fetchable: the kv entry is invalidated by the gateway on runtime
+  // switch (session ids belong to the active runtime's storage), so the SSE
+  // runtime_switched handler re-runs this to drop the stale id immediately.
+  // Monotonic token: latest call wins (rapid project switches / SSE refetch
+  // must not be overwritten by an older in-flight response).
+  let managerSessionFetchId = 0
+  const reloadManagerSession = (pd: string): void => {
+    if (!pd) { setManagerSessionId(null); return }
+    const fetchId = ++managerSessionFetchId
+    window.api.mafw.manager.session(pd).then((info: any) => {
+      if (fetchId === managerSessionFetchId) setManagerSessionId(info?.sessionId || null)
+    }).catch(() => { if (fetchId === managerSessionFetchId) setManagerSessionId(null) })
+  }
   createEffect(() => {
     const pd = currentProject()
     if (!pd) { setManagerSessionId(null); return }
-    let cancelled = false
-    window.api.mafw.manager.session(pd).then((info: any) => {
-      if (!cancelled) setManagerSessionId(info?.sessionId || null)
-    }).catch(() => { if (!cancelled) setManagerSessionId(null) })
-    onCleanup(() => { cancelled = true })
+    reloadManagerSession(pd)
   })
   createEffect(() => {
     if (gwStatus()?.state !== "ready") return
@@ -1333,6 +1342,7 @@ export function MafwShell() {
         sessionStore.invalidate()
         void refreshMenus()
         resetChatWorkspace()
+        if (currentProject()) reloadManagerSession(currentProject()!)
         return
       }
 

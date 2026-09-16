@@ -704,6 +704,7 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
               await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
+              this.invalidateManagerSessions();
               log.info(`[Scheduler] Runtime hot-switched to '${runtime.name}'`);
             } catch (err: any) {
               log.warn(`[Scheduler] Runtime hot-switch failed (non-fatal): ${err.message}`);
@@ -3935,6 +3936,7 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
               await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
+              this.invalidateManagerSessions();
               // Desktop hint: a runtime switch swaps the session storage backend
               // (opencode SQLite vs pi), so cached session lists are stale.
               this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
@@ -6012,6 +6014,24 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         if (this.managerSessionInflight.get(projectDir) === run) this.managerSessionInflight.delete(projectDir);
       });
     return run;
+  }
+
+  // Manager-session kv entries reference session ids in the ACTIVE runtime's
+  // storage (opencode SQLite vs pi SessionManager). A runtime hot-switch
+  // invalidates them: the ids do not exist under the new backend ("Pi session
+  // not found"). Drop all entries so the next manager touch re-ensures a
+  // session in the new runtime. Called from BOTH switch paths (route
+  // onSwitched + config hot-reload watcher).
+  private invalidateManagerSessions(): void {
+    try {
+      const db = this.getGatewayDb();
+      for (const entry of db.kvAll<{ sessionId: string }>('manager-session')) {
+        db.kvDelete('manager-session', entry.key);
+      }
+      log.info('[Scheduler] manager-session kv invalidated (runtime switch)');
+    } catch (err: any) {
+      log.warn(`[Scheduler] manager-session invalidation failed (non-fatal): ${err.message}`);
+    }
   }
 
   // Serialized rotate: joins any in-flight ensure/create for the same project
