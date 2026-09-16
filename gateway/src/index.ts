@@ -84,6 +84,7 @@ import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
+import { handleEventPublish } from './routes/event-publish';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
 import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './routes/plugins';
 import { PluginHost } from './plugins/package-host';
@@ -5088,6 +5089,12 @@ class MafwScheduler {
               res.end(JSON.stringify({ ok: false, error: err.message }));
             }
           });
+          return;
+        }
+
+        // POST /api/events —— 事件发布（插件/外部程序 → 全 UI 通道；契约见 routes/event-publish.ts）
+        if (req.url && req.url.startsWith('/api/events') && req.method === 'POST') {
+          await handleEventPublish({ broadcast: (e) => this.broadcast(e) }, req, res);
           return;
         }
 
