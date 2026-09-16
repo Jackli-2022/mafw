@@ -11,6 +11,7 @@ import * as path from 'path';
 import { log } from '../core/utils/logger';
 import { config } from '../config';
 import { AgentRuntime, RuntimeCapabilities, RuntimeCredentials, minimalCapabilities } from './contract';
+import type { RuntimePackageEntry } from '../plugins/package-types';
 
 export interface RuntimePluginContext {
   /** fetch with 60s default timeout */
@@ -39,6 +40,7 @@ export class RuntimePluginLoader {
   private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean }>();
   private state = new Map<string, RuntimePluginState>();
   private builtins = new Map<string, { factory: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean }>();
+  private packageEntries = new Map<string, RuntimePackageEntry>();
 
   constructor(private pluginsDir: string) {}
 
@@ -137,11 +139,24 @@ export class RuntimePluginLoader {
     }
   }
 
+  /** PluginHost 推送的包贡献。查找顺序：legacy 文件 > 包 > 内置。scan() 不影响。 */
+  setPackageEntries(entries: RuntimePackageEntry[]): void {
+    this.packageEntries = new Map(entries.map((e) => [e.name, e]));
+  }
+
   /** 插件不存在或未通过校验时返回 undefined（调用方回退内置 opencode）。文件插件优先于内置。 */
   get(name: string): { createRuntime: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean } | undefined {
     const createRuntime = this.factories.get(name);
     const meta = this.meta.get(name);
     if (createRuntime && meta) return { createRuntime, ...meta };
+    const pkg = this.packageEntries.get(name);
+    if (pkg) {
+      return {
+        createRuntime: pkg.createRuntime,
+        capabilities: { ...minimalCapabilities(), ...pkg.capabilities },
+        external: pkg.external,
+      };
+    }
     const builtin = this.builtins.get(name);
     if (builtin) return { createRuntime: builtin.factory, ...builtin };
     return undefined;
@@ -155,6 +170,12 @@ export class RuntimePluginLoader {
   getState(): RuntimePluginState[] {
     for (const [name, b] of this.builtins) {
       this.state.set(`builtin:${name}`, { file: `builtin:${name}`, name, status: 'ok', capabilities: b.capabilities });
+    }
+    for (const [name, p] of this.packageEntries) {
+      this.state.set(`package:${name}`, {
+        file: `package:${name}`, name, status: 'ok',
+        capabilities: { ...minimalCapabilities(), ...p.capabilities },
+      });
     }
     return [...this.state.values()];
   }
