@@ -562,7 +562,21 @@ opencode LLM（推理 Agent）                       └─ MediaService → pi 
 `MediaPluginLoader`（`gateway/src/media/media-plugin-loader.ts`）扫描/热加载/fail-open，
 `MediaService.resolvePrompt(kind, cfg)` 按模态路由到插件引擎或默认 pi。
 
-> **插件中心全量清单（2026-09-15）**：三个 loader 不再生成 `example.js.disabled` 模板（启动时 `cleanupExamples()` 幂等清理存量）；`GET /api/plugins`（插件中心）含内置条目——runtime: `opencode`/`pi`、media: `pi`、usage: 全部内置适配器（`builtin`/`overridden`/`pluginType` 字段，同名用户文件 → 内置件标 `overridden`）；安装为 **raw octet-stream**（`POST /api/plugins/install?filename=&type=`，`type` 可缺省——gateway 落 tmp-require 嗅探 `module.exports` 接口（`createRuntime`→runtime / `createPrompt`+`fixPayload`+`engine`+`modalities`→media / `fetch`→usage / `tools`→ui；多命中 400 `ambiguous plugin interface: <a/b>`，前端出兜底下拉）。桌面 Config→Plugins：「Runtime & Media」卡已删，runtime 切换=hub 行「激活」、media 每模态下拉并入 hub、usage 内置行只读+「克隆」（复用 clone-builtin 模板端点）。
+> **插件中心全量清单（2026-09-15）**：三个 loader 不再生成 `example.js.disabled` 模板（启动时 `cleanupExamples()` 幂等清理存量）；`GET /api/plugins`（插件中心）含内置条目——runtime: `opencode`/`pi`、media: `pi`、usage: 全部内置适配器（`builtin`/`overridden`/`pluginType` 字段，同名用户文件 → 内置件标 `overridden`）；安装为 **raw octet-stream**（`POST /api/plugins/install?filename=&type=`，`type` 可缺省——gateway 落 tmp-require 嗅探 `module.exports` 接口（`createRuntime`→runtime / `createPrompt`+`fixPayload`+`engine`+`modalities`→media / `fetch`→usage / `tools`→ui；多命中 400 `ambiguous plugin interface: <a/b>`，前端出兜底下拉）。桌面 Config→Plugins：「Runtime & Media」卡已删，runtime 切换=hub 行「激活」、media 每模态下拉并入 hub、usage 内置行只读+「克隆」（复用 clone-builtin 模板端点）。响应另含 `packages` 键（统一插件包状态，2026-09-16）。
+
+#### 5.14b 统一插件包（Unified Plugin Packages，2026-09-16）
+
+`~/.mafw/plugins/` 一个插件包可同时贡献多种能力（usage 配额 / media 引擎 / runtime；uiTools v1 仅登记展示，桌面侧加载仍走 `~/.mafw/ui-plugins/`）：
+
+- 单文件包 `name.js` 或目录包 `name/plugin.json`（`{name, version?, main?}`，main 缺省 index.js）
+- 模块形状：声明式 `{ name, usage?, media?, runtime?, uiTools? }` 或 `async activate(ctx) → contributions`
+- 统一 ctx = 三个 legacy ctx 超集：apiKey/fetch(60s)/log/pluginConfig（读 `plugins.<name>.config`，回退 legacy 三段）/projectDir/gatewayPort/usage.modelStats（`gateway/src/plugins/package-context.ts`）
+- **优先级（同名）：包 > legacy 目录文件 > 内置**；legacy 四目录行为不变
+- PluginHost（`gateway/src/plugins/package-host.ts`）：扫描/激活/跨面原子 reload（先全部激活再一次性推各 loader 的 `setPackageEntries`）+ 顶层与每包子目录双 watcher
+- 内置件与用户插件同一接口（dogfood）：opencode 经 `registerBuiltin('opencode', …)` 注册（index.ts，可被同名文件/包覆盖）；media `pi` 经 `registerBuiltinEngine('pi', …)` 注册，`resolveMediaPrompt`（`media/resolve-prompt.ts`）先查 engines map，非 builtin 同名直接生效
+- hub：`GET /api/plugins` 响应含 `packages` 键（PackageState[]）
+- 环境变量 `MAFW_PLUGINS_DIR` 覆盖包目录（测试用）
+- 限制：reload 只清主文件 require.cache（改包内 lib/ 需 `mafw restart`）
 
 **两种插件形态**（CJS `module.exports`）：
 
@@ -737,7 +751,9 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   systemPrompt/permissions），各 runtime 翻译为自己的配置格式
 - `loader.ts` — `~/.mafw/runtime-plugins/*.js` 插件加载（CJS `module.exports =
   { name, capabilities, createRuntime(ctx) }`，fail-open，`POST /api/runtime/reload`
-  可热重扫插件文件；能力声明覆盖在 Tier-0 基线之上）
+  可热重扫插件文件；能力声明覆盖在 Tier-0 基线之上；`RuntimePluginContext` 携带
+  `projectDir?`/`gatewayPort?`（2026-09-16，pi 消费，config 兜底）；包贡献经
+  `setPackageEntries()` 注入，查找顺序 legacy 文件 > 包 > 内置）
 
 **可选能力与接口扩展：**
 - `external?: boolean` + `getBaseUrl(): string` — runtime 声明托管模式；`external=true`
