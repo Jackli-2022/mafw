@@ -2,7 +2,8 @@
 
 > 常驻进程：Goal 编排（LangGraph 循环）+ 谐波记忆 + 自动化引擎 + HTTP API（:3000）/ MCP / 事件流；并监管 opencode serve sidecar。
 >
-> 时效：2026-09-14 对照 `gateway@5.0.0` 源码重写。更细的子系统说明以根 `AGENTS.md` 为准（本文与其同源，取面向架构读者的视角）。
+> 时效：2026-09-14 对照 `gateway@5.0.0` 源码重写；2026-09-16 增补统一插件包（§插件系统）。
+> 更细的子系统说明以根 `AGENTS.md` 为准（本文与其同源，取面向架构读者的视角）。
 
 ## 目录
 
@@ -11,6 +12,7 @@
 - [CLI（bin/mafw.js）](#clibinmafwjs)
 - [Goal 编排：事件驱动 + LangGraph](#goal-编排事件驱动--langgraph)
 - [MafwScheduler 关键子系统](#mafwscheduler-关键子系统)
+- [插件系统（四类型 loader + 统一包宿主）](#插件系统四类型-loader--统一包宿主)
 - [API 端点](#api-端点)
 - [UI 服务](#ui-服务)
 - [数据流全景](#数据流全景)
@@ -57,8 +59,9 @@ gateway/
 │   ├── media/                    # A2A Media Agent、pi-adapter、插件引擎加载器
 │   ├── python/                   # 持久 Python 内核（Jupyter wire 协议 + ZeroMQ）
 │   ├── routes/                   # 独立路由模块（runtime-switch、model-config、embedding-config…）
+│   ├── plugins/                  # 统一插件包宿主（package-host/context/types）+ hub（list/install）
 │   ├── skills/                   # memory-curator agent 定义、manager agent 配置
-│   ├── usage/                    # 用量 provider 插件系统
+│   ├── usage/                    # 用量 provider 插件系统（内置适配器 = 同接口 JS 文件）
 │   ├── orchestration/            # RSI Phase 1 观测层（registry / policy）
 │   ├── retrieval/  graph/        # guided retriever、锚点图谱
 │   └── dashboard/api.ts          # 部分遗留 dashboard 端点（挂在 3000）
@@ -206,12 +209,52 @@ review 节点的 verdict 解析统一走共享模块 `review-parser.ts` 的**机
 | Media Agent | `media/` | A2A 协议、四模态、每模态可插拔引擎 |
 | Python 内核 | `python/` | Jupyter wire 协议（ZeroMQ）、Mutex 队列、TTL 回收 |
 | 用量插件 | `usage/` | 8 内置 provider 适配器 + 用户插件目录 |
+| 统一插件包 | `plugins/` | PluginHost：一包多贡献（usage/media/runtime/uiTools），见下节 |
 | 自更新 | self-update | pending-restart 令牌 → build → 子进程接力重启 |
 | RSI 观测层 | `orchestration/` | goal_outcomes / goal_sessions / evolution_proposals（gateway.db） |
 
 核心方法（与 LangGraph 衔接）：`handleValidate()` → `onGoalCreated()` →
 `graph.invoke()`；`onEvent(goalId)` → `graph.invoke(new Command({}))` 恢复中断；
 `patchState()` 原子写 state.json + SSE 广播；`archiveGoal()` 归档 + 记 outcome。
+
+---
+
+## 插件系统（四类型 loader + 统一包宿主）
+
+Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy 面，行为不变**），
+2026-09-16 起由统一包宿主 **PluginHost** 收敛为"一包多贡献"：
+
+```
+~/.mafw/plugins/                     ~/.mafw/{usage,media,runtime}-plugins/     内置件
+  my-vendor.js / my-vendor/            （legacy 目录，各 loader 自扫自 watch）    opencode / pi
+  └─ activate(ctx) → 贡献                     │                                      │
+        │                                     │                                      │
+        ▼                                     ▼                                      ▼
+  ┌───────────────── PluginHost ────────────────────┐   ┌──────── loader 内置注册 ────────┐
+  │ 扫描 → 激活 → setPackageEntries() 推送 ──────────┼──▶│ RuntimePluginLoader / PluginLoader │
+  │ 顶层 + 每包子目录双 watcher（跨面原子 reload）    │   │ / MediaPluginLoader                │
+  └──────────────────────────────────────────────────┘   └────────────────────────────────────┘
+```
+
+| 优先级（同名） | 说明 |
+|---|---|
+| **包**（`~/.mafw/plugins/`） | PluginHost 推送（`setPackageEntries`），最高 |
+| **legacy 目录文件** | 各 loader 自扫，用户同名文件覆盖内置（原有语义） |
+| **内置** | usage：`dist/usage/builtin-plugins/*.js`（纯 JS 同接口）；runtime：`registerBuiltin('opencode'/'pi')`；media：`registerBuiltinEngine('pi')` |
+
+- **包形态**：单文件 `name.js` 或目录 `name/plugin.json`（`{name, version?, main?}`）；
+  模块形状为声明式 `{ name, usage?, media?, runtime?, uiTools? }` 或
+  `async activate(ctx) → contributions`（`gateway/src/plugins/package-host.ts`）
+- **统一 ctx**（`plugins/package-context.ts`）：三 legacy ctx 超集——`apiKey` / `fetch`(60s) /
+  `log` / `pluginConfig`（读 `plugins.<name>.config`，回退 legacy 三段）/ `projectDir` /
+  `gatewayPort` / `usage.modelStats`；`RuntimePluginContext` 亦补 `projectDir?`/`gatewayPort?`（pi 消费）
+- **内置件 dogfood**：opencode 经 `registerBuiltin('opencode', …)` 注册（可被同名文件/包覆盖，
+  `createRuntime` fallback 改走 loader）；media `pi` 经 `registerBuiltinEngine('pi', …)` 登记，
+  `resolveMediaPrompt`（`media/resolve-prompt.ts`）先查 engines map——非 builtin 同名直接生效
+- **hub**：`GET /api/plugins` 响应 `{ plugins, packages }`；`packages` 即 PluginHost `PackageState[]`
+- **uiTools**：v1 仅登记展示（桌面侧工具卡加载仍在 desktop main 进程，`~/.mafw/ui-plugins/`）
+- 限制：包 reload 只清主文件 `require.cache`（改包内 `lib/` 需 `mafw restart`）；
+  env `MAFW_PLUGINS_DIR` 覆盖包目录（测试）
 
 ---
 
@@ -230,6 +273,7 @@ review 节点的 verdict 解析统一走共享模块 `review-parser.ts` 的**机
 | 媒体 | `POST /a2a`、`GET /a2a/artifacts/:id`、`GET /api/media/plugins` |
 | Python | `POST /api/python/execute`、`POST /api/python/restart` |
 | 用量/配置 | `GET /api/usage`、`GET/POST /api/model-config`、`GET/POST /api/memory/embedding-config` |
+| 插件中心 | `GET /api/plugins`（含 `packages`）、`POST /api/plugins/install|enable|disable|delete` |
 | 命令/融合 | `POST /api/mafw-commands/run`（/btw、new-topic）、`POST /api/merge-memory` |
 | 观测 | `GET /api/orchestration/outcomes` |
 
@@ -305,7 +349,9 @@ FAIL  → 未超限 → plan 重试 / 超限 → archive_fail → END
 ├── automations/*.json               # 自动化规则（turn-compress / memory-reflect /
 │                                    #   memory-decay / memory-review…）
 ├── logs/mafw.log                    # gateway 文件日志（5MB 轮转）
+├── plugins/                         # 统一插件包（一包多贡献；PluginHost 扫描/watch）
 ├── runtime-plugins/  usage-plugins/  media-plugins/  ui-plugins/
+│                                    # legacy 四目录（行为不变，优先级低于包）
 ├── pending-restart.json  last-restart.json   # 自更新控制面
 └── fusion-log.jsonl                 # 跨 worktree 记忆融合记录
 
@@ -362,6 +408,7 @@ post-task curator 只看轨迹存在"回顾性证据边界"（错误答案、过
 | `MAFW_SERVER_API_PORT` / `MAFW_GATEWAY_PORT` | API 端口（默认 3000 / 探测链） |
 | `MAFW_SERVER_SERVE_URL` | 外部托管 opencode serve（不 spawn、不监管） |
 | `MAFW_RUNTIME_PLUGIN` | 激活 runtime 插件（如 `pi`；覆盖 config.runtime.plugin） |
+| `MAFW_PLUGINS_DIR` | 覆盖统一插件包目录（默认 `~/.mafw/plugins/`；测试隔离） |
 | `MAFW_SEARCH_RETRIEVER` | 检索器回退（`token`；默认 bm25） |
 | `MAFW_PYTHON_BIN` | 覆盖 Python 内核解释器 |
 | `MAFW_TAKEOVER` | 自更新接力分支（跳过单例守卫，等端口释放） |
