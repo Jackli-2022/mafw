@@ -173,6 +173,8 @@ async function isPortHealthy(port: number): Promise<boolean> {
   }
 }
 
+import { isManagerEntryStale } from './core/manager/manager-session-runtime';
+
 const INTERNAL_SESSION_TTL_DAYS = 7;
 
 class MafwScheduler {
@@ -643,7 +645,7 @@ class MafwScheduler {
       targets.add(info.sessionID);
     } else {
       try {
-        const ms = this.getGatewayDb().kvGet<{ sessionId: string }>('manager-session', this.projectDir);
+        const ms = this.getValidManagerSessionEntry(this.projectDir);
         if (ms?.sessionId) targets.add(ms.sessionId);
       } catch { /* skip */ }
     }
@@ -3580,9 +3582,15 @@ class MafwScheduler {
           const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
           const filter = parsedUrl.searchParams.get('projectDir') || '';
           try {
-            const all = this.getGatewayDb().kvAll<{ sessionId: string; createdAt?: string | null }>('manager-session');
+            const all = this.getGatewayDb().kvAll<{ sessionId: string; createdAt?: string | null; runtime?: string }>('manager-session');
+            // Self-healing read: drop entries written under another runtime.
+            const live = all.filter((e) => {
+              if (!isManagerEntryStale(e.value, this.runtimeName)) return true;
+              this.getGatewayDb().kvDelete('manager-session', e.key);
+              return false;
+            });
             if (filter) {
-              const found = all.find((e) => e.key === filter);
+              const found = live.find((e) => e.key === filter);
               if (!found) {
                 res.writeHead(404);
                 res.end(JSON.stringify({ error: 'No manager session for project' }));
@@ -3598,7 +3606,7 @@ class MafwScheduler {
               );
               return;
             }
-            if (all.length === 0) {
+            if (live.length === 0) {
               res.writeHead(404);
               res.end(JSON.stringify({ error: 'No manager session' }));
               return;
@@ -3606,7 +3614,7 @@ class MafwScheduler {
             res.writeHead(200);
             res.end(
               JSON.stringify(
-                all.map((e) => ({
+                live.map((e) => ({
                   projectDir: e.key,
                   sessionId: e.value.sessionId,
                   createdAt: e.value.createdAt || null,
@@ -6041,6 +6049,22 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
   }
 
+  // Validated read of a manager-session kv entry: entries written under a
+  // DIFFERENT runtime than the active one are dead (their session ids do not
+  // exist here) and are dropped on access — the next ensure re-creates the
+  // session in the active runtime. Legacy entries without a `runtime` tag are
+  // inferred from the session id prefix (see manager-session-runtime.ts).
+  private getValidManagerSessionEntry(projectDir: string): { sessionId: string; createdAt?: string | null; runtime?: string } | null {
+    const value = this.getGatewayDb().kvGet<{ sessionId: string; createdAt?: string | null; runtime?: string }>('manager-session', projectDir);
+    if (!value) return null;
+    if (isManagerEntryStale(value, this.runtimeName)) {
+      this.getGatewayDb().kvDelete('manager-session', projectDir);
+      log.info(`[Scheduler] dropped stale manager-session entry for ${projectDir} (entry runtime '${value.runtime ?? 'legacy-inferred'}' ≠ active '${this.runtimeName}')`);
+      return null;
+    }
+    return value;
+  }
+
   // Serialized rotate: joins any in-flight ensure/create for the same project
   // so rotate and lazy-init never double-create (spec §4).
   private async runManagerExclusive<T>(projectDir: string, fn: () => Promise<T>): Promise<T> {
@@ -6053,7 +6077,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     // expect the promise to resolve to a session id string — map the rotate
     // result onto the resulting kv entry.
     const mapped = run.then(
-      () => this.getGatewayDb().kvGet<{ sessionId?: string }>('manager-session', projectDir)?.sessionId ?? '',
+      () => this.getValidManagerSessionEntry(projectDir)?.sessionId ?? '',
       () => '',
     );
     this.managerSessionInflight.set(projectDir, mapped);
@@ -6068,10 +6092,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     if (!this.opencodeClient) throw new Error('opencodeClient not available');
     // Manager identity lives in the gateway DB (kv_store), so it survives
     // project-directory churn and never gets orphaned by directory moves.
-    const existing = this.getGatewayDb().kvGet<{ sessionId: string; createdAt?: string | null }>(
-      'manager-session',
-      projectDir,
-    );
+    const existing = this.getValidManagerSessionEntry(projectDir);
     if (existing?.sessionId) {
       await this.sdkSession.registerExternal(existing.sessionId, projectDir, {
         mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
@@ -6090,7 +6111,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
     const createdAt = new Date().toISOString();
 
-    this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt });
+    this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt, runtime: this.runtimeName });
     this.registerInternalSession(sessionId, 'manager');
 
     try {
@@ -6125,7 +6146,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   private rotateDeps(): ManagerRotateDeps {
     return {
-      getManagerSession: (pd) => this.getGatewayDb().kvGet('manager-session', pd),
+      getManagerSession: (pd) => this.getValidManagerSessionEntry(pd),
       lock: <T,>(pd: string, fn: () => Promise<T>) => this.runManagerExclusive(pd, fn),
       ensure: (pd) => this.ensureManagerSession(pd, this.mafwDirFor(pd)),
       downgrade: async (sid) => {
@@ -6172,7 +6193,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     if (!this.opencodeClient) return undefined;
     if (!this.milestonePush) {
       this.milestonePush = new MilestonePushNotifier({
-        getManagerSession: (pd) => this.getGatewayDb().kvGet('manager-session', pd),
+        getManagerSession: (pd) => this.getValidManagerSessionEntry(pd),
         wasNotified: (key) => !!this.getGatewayDb().kvGet('milestone-notified', key),
         markNotified: (key) => this.getGatewayDb().kvSet('milestone-notified', key, { at: new Date().toISOString() }),
         readGoalState: (goalId, pd) => {
@@ -6196,7 +6217,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const session = await this.opencodeClient.session.create({ directory: projectDir });
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create manager session: no id returned');
-    this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt: new Date().toISOString() });
+    this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt: new Date().toISOString(), runtime: this.runtimeName });
     this.registerInternalSession(sessionId, 'manager');
     await this.sdkSession.registerExternal(sessionId, projectDir, {
       mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
