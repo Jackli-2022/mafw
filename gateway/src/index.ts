@@ -1044,7 +1044,10 @@ class MafwScheduler {
       if (plugin) {
         try {
           const creds = await this.runtimeCredentialsForPlugin();
-          const rt = await plugin.createRuntime(createRuntimePluginContext(creds));
+          const rt = await plugin.createRuntime(createRuntimePluginContext(creds, {
+            projectDir: this.projectDir,
+            gatewayPort: config.server.apiPort,
+          }));
           log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
           return rt;
         } catch (err: any) {

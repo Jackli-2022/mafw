@@ -21,6 +21,10 @@ export interface RuntimePluginContext {
   pluginConfig(name: string): Record<string, any>;
   /** runtime 凭据（media/pi 认证链优先走这里） */
   credentials?: RuntimeCredentials;
+  /** 当前项目目录（pi 等内置件此前直读 config.raw.paths.projectDir） */
+  projectDir?: string;
+  /** gateway API 端口（pi getBaseUrl 此前直读 config.server.apiPort） */
+  gatewayPort?: number;
 }
 
 export type RuntimeFactory = (ctx: RuntimePluginContext) => Promise<AgentRuntime>;
@@ -181,13 +185,18 @@ export class RuntimePluginLoader {
   }
 }
 
-export function createRuntimePluginContext(credentials?: RuntimeCredentials): RuntimePluginContext {
+export function createRuntimePluginContext(
+  credentials?: RuntimeCredentials,
+  extra?: { projectDir?: string; gatewayPort?: number },
+): RuntimePluginContext {
   return {
     fetch: (url: string, opts?: any) =>
       fetch(url, { ...opts, signal: opts?.signal ?? AbortSignal.timeout(60000) }),
     log,
     pluginConfig: (name: string) => (config.raw as any)?.runtime?.pluginConfig?.[name] ?? {},
     credentials,
+    projectDir: extra?.projectDir,
+    gatewayPort: extra?.gatewayPort,
   };
 }
 

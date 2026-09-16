@@ -141,7 +141,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
 
   const sessionAPI = {
     create: async (opts: { directory?: string }) => {
-      const { id } = await registry.create(opts?.directory ?? config.raw.paths.projectDir, { model: { provider, modelID } });
+      const { id } = await registry.create(opts?.directory ?? ctx.projectDir ?? config.raw.paths.projectDir, { model: { provider, modelID } });
       return { id };
     },
     promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
@@ -249,7 +249,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       },
     },
     registry,
-    getBaseUrl: () => `http://127.0.0.1:${config.server.apiPort ?? 3000}`,
+    getBaseUrl: () => `http://127.0.0.1:${ctx.gatewayPort ?? config.server.apiPort ?? 3000}`,
     healthCheck: async () => { try { await modelRuntime(); return true; } catch { return false; } },
     dispose: async () => {
       await registry.disposeAll();
