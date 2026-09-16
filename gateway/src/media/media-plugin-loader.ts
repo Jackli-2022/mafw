@@ -5,10 +5,14 @@ import { PromptFn } from './media-service';
 import { createPiPromptAdapter } from './pi-adapter';
 import { createMediaPluginContext } from './plugin-context';
 import type { RuntimeCredentials } from '../runtime/contract';
+import type { MediaPackageEntry } from '../plugins/package-types';
 
 export interface MediaEngine {
   prompt: PromptFn;
   modalities: string[];
+  builtin?: boolean;
+  /** 贡献来源（包条目填充；legacy/内置缺省） */
+  source?: string;
 }
 
 export interface MediaPluginState {
@@ -30,6 +34,8 @@ export class MediaPluginLoader {
   private pluginsDir: string;
   private state = new Map<string, MediaPluginState>();
   private engines = new Map<string, MediaEngine>();
+  private builtinEngines = new Map<string, MediaEngine>();
+  private packageEngines = new Map<string, MediaPackageEntry>();
   private watcher?: fs.FSWatcher;
   private debounceTimer?: NodeJS.Timeout;
   private getCredentials?: () => RuntimeCredentials | undefined;
@@ -136,8 +142,32 @@ export class MediaPluginLoader {
     }
   }
 
+  /** 内置引擎登记（如 pi）。prompt 是占位——真正的内置路径由 resolveMediaPrompt 在调用点解析。 */
+  registerBuiltinEngine(name: string, modalities: string[]): void {
+    this.builtinEngines.set(name, {
+      prompt: (async () => { throw new Error('builtin engine prompt is resolved at call site'); }) as PromptFn,
+      modalities,
+      builtin: true,
+    });
+  }
+
+  getBuiltinEngineNames(): string[] {
+    return [...this.builtinEngines.keys()];
+  }
+
+  /** PluginHost 推送的包贡献。同名覆盖 legacy 与内置。 */
+  setPackageEntries(entries: MediaPackageEntry[]): void {
+    this.packageEngines = new Map(entries.map((e) => [e.name, e]));
+  }
+
   getEngines(): Map<string, MediaEngine> {
-    return this.engines;
+    // 合并顺序：内置 → legacy 文件 → 包（后者覆盖前者同名）
+    const merged = new Map<string, MediaEngine>(this.builtinEngines);
+    for (const [name, e] of this.engines) merged.set(name, e);
+    for (const [name, e] of this.packageEngines) {
+      merged.set(name, { prompt: e.prompt, modalities: e.modalities, source: e.source });
+    }
+    return merged;
   }
 
   getState(): MediaPluginState[] {
