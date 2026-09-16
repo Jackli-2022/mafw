@@ -1790,10 +1790,14 @@ export function MafwShell() {
       sessionStore.invalidate()
     }
     if (wasActiveView) {
-      // The active view was that session → fall back to another session or a split.
+      // The active view was that session — fall back to another session or a split.
       const firstSplit = splitViews()[0]
       const firstSession = sessions()[0]
       setActiveViewId(firstSplit?.id ?? firstSession?.id ?? null)
+      // sessions() is already filtered above: when the closed tab was ALSO the
+      // active session (single-tab case activeSessionId === activeViewId),
+      // leaving it set renders a zombie pane for the dead session.
+      if (wasActive) setActiveSessionId(firstSession?.id ?? null)
     } else if (wasActive) {
       const remaining = sessions().filter(s => s.id !== id)
       setActiveSessionId(remaining.length > 0 ? remaining[remaining.length - 1].id : null)
@@ -1889,6 +1893,12 @@ export function MafwShell() {
     setStore("part", reconcile({}))
     setStore("session_status", reconcile({}))
     setStore("session_diff", reconcile({}))
+    // Pending approvals/asks belong to dead old-runtime sessions — without
+    // clearing, the Approvals badge stays lit on unresolvable cards.
+    setFlowCards({})
+    setPageState(reconcile({}))
+    setCompactionMarks({})
+    setAgentSel(null)
   }
 
   // Primary agents (switchable driver) vs subagent agents (mentionable too).

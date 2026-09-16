@@ -902,6 +902,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         setInput("")
         setAttachments([])
         setMentionedAgents([])
+        // The queued turn carries its own @file references inside `text` —
+        // leaving mentionedFiles set would re-prepend them on flush AND leak
+        // the stale chip onto the next manual message.
+        setMentionedFiles([])
+        clearDraft(sidProp())
         const ta = textareaEl()
         if (ta) ta.style.height = "auto"
         return
@@ -1472,14 +1477,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   })
 
   // Composite key (providerID/modelID) so same-id models under different
-  // providers stay distinct.
+  // providers stay distinct. props.model() already encodes the per-session
+  // resolution order (user pick → history → default) — check it FIRST, then
+  // fall back to raw history.
   const pickerCurrentKey = createMemo(() => {
+    const picked = props.model()
+    if (picked) return `${picked.providerID}/${picked.modelID}`
     const sid = sidProp()
     const msgs = sid ? (props.store.message[sid] || []) : []
     const last = [...msgs].reverse().find(m => m.role === "assistant")
     const m = messageModel(last)
     if (m) return `${m.providerID}/${m.modelID}`
-    if (props.model()) return `${props.model()!.providerID}/${props.model()!.modelID}`
     return undefined
   })
 
