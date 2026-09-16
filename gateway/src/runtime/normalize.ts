@@ -24,6 +24,18 @@ export interface RawRuntimeEvent {
   sessionID?: string;
 }
 
+/**
+ * 畸形事件判定：类型与属性全空 = 归一化后无任何可消费信息。
+ * handleOpencodeEvent 入口据此做限频 warn——runtime 插件发坏事件时
+ * 给出可定位诊断，而不是静默穿过下发到桌面/TUI。
+ */
+export function isMalformedEvent(evt: RawRuntimeEvent | null | undefined): boolean {
+  if (!evt || typeof evt !== 'object') return true;
+  const type = evt.payload?.type || evt.type;
+  const props = evt.payload?.properties || evt.properties;
+  return !type && (!props || (typeof props === 'object' && Object.keys(props).length === 0));
+}
+
 export interface EventFacets {
   /** 原始 runtime 事件类型（透传，用于 trajectory/broadcast） */
   type: string;

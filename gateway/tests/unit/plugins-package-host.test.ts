@@ -96,6 +96,26 @@ module.exports = { name: 'good', usage: { name: 'good', type: 'api', plan: 'P', 
     expect(host.getState()[0].error).toMatch(/no contributions/);
   });
 
+  it('uiTools 值非对象 → 字段级报错', async () => {
+    fs.writeFileSync(path.join(dir, 'badui.js'), `
+module.exports = { name: 'badui', uiTools: { bash: 'not-an-object' } };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const st = host.getState().find((s) => s.name === 'badui');
+    expect(st?.status).toBe('error');
+    expect(st?.error).toMatch(/uiTools\.bash/);
+  });
+
+  it('uiTools 合法（对象值 + 可选 render 函数）→ 贡献登记', async () => {
+    fs.writeFileSync(path.join(dir, 'ui.js'), `
+module.exports = { name: 'ui', uiTools: { bash: { override: false, render: () => ({}) } } };
+`);
+    host = mkHost(dir);
+    await host.init();
+    expect(host.getState().find((s) => s.name === 'ui')).toMatchObject({ status: 'ok', contributions: ['uiTools'] });
+  });
+
   it('bind 晚于 init 时回放当前条目', async () => {
     fs.writeFileSync(path.join(dir, 'acme.js'), `
 module.exports = { name: 'acme', usage: { name: 'acme', type: 'api', plan: 'P', async fetch() { return null; } } };

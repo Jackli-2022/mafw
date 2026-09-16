@@ -75,7 +75,7 @@ import {
   defaultStepInjectOptions,
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
-import { normalizeOpencodeEvent } from './runtime/normalize';
+import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
@@ -213,6 +213,8 @@ class MafwScheduler {
   private lastActiveBySession = new Map<string, number>();
   private lastWriteBySession = new Map<string, { at: number; command: string }>();
   private tokenWriterSession: { sessionID: string; at: number } | null = null;
+  /** 畸形事件 warn 限频（每 runtime 30s 一次） */
+  private malformedEventWarnAt = new Map<string, number>();
   private stopTokenWatcher: (() => void) | null = null;
 
   // Path 1 step-injection state (mark-before-async + dedup + queue). All
@@ -916,6 +918,18 @@ class MafwScheduler {
 
   private handleOpencodeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
+    // 畸形事件诊断（限频）：runtime 插件发来的事件 type/properties 全空时
+    // 静默穿过会污染 trajectory 与桌面 SSE——这里给可定位诊断。
+    if (isMalformedEvent(evt)) {
+      const now = Date.now();
+      const last = this.malformedEventWarnAt.get(this.runtimeName) ?? 0;
+      if (now - last > 30_000) {
+        this.malformedEventWarnAt.set(this.runtimeName, now);
+        let summary: string;
+        try { summary = JSON.stringify(evt)?.slice(0, 200) ?? '(unserializable)'; } catch { summary = '(unserializable)'; }
+        log.warn(`[SSE] malformed event from runtime '${this.runtimeName}' (no type/properties) — dropped consumers may misbehave; payload: ${summary}`);
+      }
+    }
     const { type, properties: props, sessionID } = f;
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta

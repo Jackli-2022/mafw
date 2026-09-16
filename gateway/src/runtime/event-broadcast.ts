@@ -29,6 +29,16 @@ export interface BroadcastEventData {
 }
 
 export function opencodeBroadcast(data: BroadcastEventData, internal?: boolean): OpencodeEventBroadcast {
+  if (typeof data?.type !== 'string' || !data.type) {
+    // 形状守卫（fail-open）：信封照常返回，但给出可定位诊断——畸形事件
+    // 在桌面/TUI 是"静默忽略"，没有这行日志时插件作者无从排查。
+    // eslint-disable-next-line no-console
+    console.error(
+      `[EventBroadcast] malformed opencode_event data: 'type' must be a non-empty string ` +
+      `(got ${JSON.stringify(data?.type)}); payload keys: ${data ? Object.keys(data).join(',') : '(null)'} ` +
+      `— downstream (desktop/TUI) will ignore this event`,
+    );
+  }
   return {
     type: 'opencode_event',
     data: {

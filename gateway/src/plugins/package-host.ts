@@ -198,7 +198,18 @@ export class PluginHost {
       };
       kinds.push('runtime');
     }
-    if (contribs.uiTools) kinds.push('uiTools');
+    if (contribs.uiTools) {
+      // 声明期字段级校验：桌面 validateCard 是运行时兜底，形状错位应在激活期暴露
+      if (typeof contribs.uiTools !== 'object' || Array.isArray(contribs.uiTools)) {
+        throw new Error(`uiTools must be an object (got ${typeof contribs.uiTools})`);
+      }
+      for (const [tool, def] of Object.entries(contribs.uiTools)) {
+        if (!def || typeof def !== 'object' || Array.isArray(def)) {
+          throw new Error(`uiTools.${tool} must be an object (got ${Array.isArray(def) ? 'array' : typeof def})`);
+        }
+      }
+      kinds.push('uiTools');
+    }
     if (kinds.length === 0) throw new Error('no contributions (usage/media/runtime/uiTools)');
     return { contributions: kinds, runtime, media, usage };
   }
