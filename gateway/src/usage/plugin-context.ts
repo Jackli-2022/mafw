@@ -69,6 +69,33 @@ function severityFromPct(pct: number): Severity {
   return 'low';
 }
 
+/** 字段级 windows 校验（插件作者可定位：windows[i].<key> must be <type> (got <got>)）。 */
+function typeName(v: unknown): string {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  return typeof v;
+}
+
+function validateWindowsShape(windows: any[]): string | null {
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i];
+    const at = `windows[${i}]`;
+    if (!w || typeof w !== 'object' || Array.isArray(w)) {
+      return `${at} must be an object (got ${typeName(w)})`;
+    }
+    if (typeof w.window !== 'string') return `${at}.window must be string (got ${typeName(w.window)})`;
+    for (const key of ['used', 'limit'] as const) {
+      if (typeof w[key] !== 'number') return `${at}.${key} must be number (got ${typeName(w[key])})`;
+    }
+    for (const key of ['pct', 'unit', 'label'] as const) {
+      if (w[key] === undefined) continue;
+      const expected = key === 'pct' ? 'number' : 'string';
+      if (typeof w[key] !== expected) return `${at}.${key} must be ${expected} (got ${typeName(w[key])})`;
+    }
+  }
+  return null;
+}
+
 export function makeAdapter(
   mod: any,
   file: string,
@@ -89,8 +116,17 @@ export function makeAdapter(
       try {
         const result = await mod.fetch(ctx);
         if (result === null) return null;
-        if (!result.name || !Array.isArray(result.windows)) {
-          log.warn(`[PluginLoader] ${file}: invalid return structure`);
+        if (!result.name) {
+          log.warn(`[PluginLoader] ${file}: result.name must be string (got ${typeName(result.name)})`);
+          return null;
+        }
+        if (!Array.isArray(result.windows)) {
+          log.warn(`[PluginLoader] ${file}: result.windows must be array (got ${typeName(result.windows)})`);
+          return null;
+        }
+        const shapeErr = validateWindowsShape(result.windows);
+        if (shapeErr) {
+          log.warn(`[PluginLoader] ${file}: ${shapeErr}`);
           return null;
         }
         const maxPct = result.windows.length > 0 ? Math.max(...result.windows.map((w: any) => w.pct ?? 0)) : 0;
