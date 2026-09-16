@@ -1,9 +1,35 @@
-# kv_store runtime 归属规范化设计（失效 + TTL 卫生）
+# kv_store runtime 归属规范化设计（槽位共存 + TTL 卫生）
 
 日期：2026-09-16
-状态：已批准（对话中用户确认：方案 C——runtime-scoped kv 统一失效 + TTL 清理 + registry 孤儿对齐；排除 per-runtime 命名空间方案）
+状态：已批准（初版失效式 → 修订为槽位式，见下方「修订 2026-09-16」；对话中用户确认：manager 按 runtime 分槽、切回即恢复之前的 manager；internal-session/reflect-cursor 撤销切换失效）
 
-## 背景：现状盘点（live DB 实测，2026-09-16）
+## 修订 2026-09-16：槽位式取代失效式
+
+初版的"切换统一失效"被用户质询推翻（"清空了我回到 opencode 还是之前的 manager 吗"）——失效有两个真实代价：①manager 话题切回后指针丢失、ensure 重开会话；②internal-session 清空后切回，旧 worker 角色映射丢失 → `isHiddenSession` 失效 → 垃圾会话在 Rail 重新可见（#mem-j1c03v 治理成果倒退）。
+
+**修正：per-runtime 槽位共存，切换零失效。**
+
+- **manager-session 值结构 v2**（key 不变 = projectDir，value 内分槽）：
+
+```typescript
+// v1（旧）：{ sessionId: string; createdAt?: string | null; runtime?: string }
+// v2（新）：{ byRuntime: { [runtimeName: string]: { sessionId: string; createdAt: string } } }
+```
+
+  - **读**：`readManagerSlot(value, currentRuntime)`——v2 取 `byRuntime[currentRuntime]`；v1 旧格式按 `ses_*`/`pi_*` 前缀推断归属，匹配当前 runtime 才返回（**不删除**，切回后仍可恢复）
+  - **写**：`writeManagerSlot(existing, currentRuntime, slot)`——v2 保留其余槽只写当前槽；v1 先迁移（旧条目进其前缀推断的槽）再写当前槽
+  - rotate = writeManagerSlot 的当前槽替换语义（只动当前 runtime 的话题）
+  - **不再有任何删除路径**（异 runtime 条目从"死数据"变为"休眠槽位"）
+- **撤销切换失效**：`invalidateRuntimeScopedKv` 方法与两处调用移除（含 `internalSessionRoles.clear()`）——`internal-session`/`reflect-cursor` 的 key（会话 id）跨 runtime 天然唯一，两套共存互不冲突
+- **保留**：启动 TTL=7d prune（internal-session 膨胀治理）、registry 孤儿对齐（已完成）、durable scope 不变、桌面端切换刷新不变
+- **runtime 划分终表**：manager-session = 槽位式（指针类）；internal-session / reflect-cursor = 共存（key 自带 runtime 命名空间，附属数据类）；registry/snapshot、milestone-notified = durable（事实性/gateway 自有状态）；`gateway.db` 整体不做 per-runtime 划分（会话本体在各 runtime 自己的后端，kv 只存指针与元数据）
+- 边界：runtime 插件卸载/改名后槽位残留，上界 = 用过的 runtime 数（2-3 个），无清理（YAGNI）
+
+以下初版内容中与修订冲突的部分（invalidateRuntimeScopedKv、校验删除式读取）以上述修订为准。
+
+---
+
+## 初版：背景与问题
 
 | scope | 条数 | key → value | 语义 | runtime 归属 |
 |---|---|---|---|---|
