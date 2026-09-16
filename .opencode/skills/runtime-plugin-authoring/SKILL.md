@@ -228,56 +228,114 @@ module.exports = {
 };
 ```
 
-## 第三步：事件归一化
+## 第三步：SSE 事件——产出契约与三方消费
 
-### 事件形状
+> 事件链路全景：
+>
+> ```
+> runtime 插件（global.event() 流）
+>   → RawRuntimeEvent → normalizeOpencodeEvent() → EventFacets
+>     ├─ isMalformedEvent 限频 warn（畸形防护）
+>     ├─ gateway 内部消费（trajectory / step-inject 记忆注入 / BudgetGuard / turnCompress flush / 自更新定位）
+>     ├─ Mode B：per-session chat 流（delta/complete/error → ChatPane/TUI Chat）
+>     └─ Mode A：全局广播 opencode_event 信封 → desktop renderer / TUI
+> ```
 
-Gateway 的事件归一化器 `normalizeOpencodeEvent()` 接受两种形状：
+### 3.1 什么格式的事件被接受（输入契约）
 
-```typescript
-// 信封形状（GlobalEvent wrapper）
-{ payload: { type: "string", properties: {...}, sessionID: "..." } }
-
-// 扁平形状
-{ type: "string", properties: {...}, sessionID: "..." }
-```
-
-**推荐：** 让你的 runtime 事件尽可能接近 opencode 事件形状，这样 `normalizeOpencodeEvent()` 可直接使用，无需写新归一化器。
-
-### 关键事件类型（opencode 参考）
-
-| 事件类型 | EventFacets 映射 | 说明 |
-|----------|-----------------|------|
-| `message.part.updated` | `step`（settled step）+ `chatSignal: 'delta'` | 流式文本输出 |
-| `message.updated` | `step`（completed message）+ `chatSignal: 'complete'` | 消息完成 |
-| `session.idle` | `chatSignal: 'complete'` + `broadcast: 'idle'` | 会话空闲 |
-| `session.error` | `chatSignal: 'error'` + `broadcast: 'error'` | 会话错误 |
-| `session.next.step.ended` | `step`（legacy 兜底） | 步骤结束（旧版） |
-
-### EventFacets 正交切面
+`normalizeOpencodeEvent()` 接受两种信封形状（字段提取按序回退）：
 
 ```typescript
-interface EventFacets {
-  type: string;           // 原始类型（透传）
-  properties: any;        // 原始属性（透传）
-  sessionID?: string;
-  directory?: string;
-  step: StepEndedProps | null;  // 已结算的 LLM step
-  chatSignal: 'delta' | 'complete' | 'error' | null;  // chat 信号
-  deltaText?: string;
-  chatError?: unknown;
-  broadcast: 'idle' | 'error' | 'passthrough';  // 全局广播
-  toolCommand?: string;   // shell 命令（自更新定位用）
-}
+// 形状 A：GlobalEvent 信封（推荐——pi 的 PiEventStream 与 opencode 均此形状）
+{ payload: { type: "string", properties: { sessionID, ...props }, sessionID? } }
+
+// 形状 B：扁平
+{ type: "string", properties: {...}, sessionID?, directory? }
 ```
 
-### 自定义事件流
+**sessionID 提取优先级**：`properties.sessionID → properties.part.sessionID → properties.info.sessionID → payload.sessionID → 顶层 sessionID`。`directory` 只从信封顶层取（GlobalEvent wrapper 携带，session.created/updated/deleted 的消费方靠它定位项目）。
 
-若你的 runtime 事件形状与 opencode 差异大，需要：
-1. 写新归一化函数（如 `normalizeMyRuntimeEvent(evt): EventFacets`）
-2. 修改 `gateway/src/index.ts` 的事件分发逻辑，根据 `runtimeName` 选择归一化器
+**畸形判定 `isMalformedEvent`**：type 与 properties **全空**的事件视为畸形——gateway 入口限频 warn（每 runtime 30s 一次，带原始载荷 200 字符摘要）后照常走 passthrough（fail-open）。**至少带一个真实 `type`** 是唯一的硬要求。
 
-**简单路径：** 让你的 runtime 发出 opencode 兼容事件，无需改 gateway 代码。
+**接受的事件类型契约**（type → normalize 提取的必需字段）：
+
+| type | 必需 properties | 提取结果 | 缺字段后果 |
+|---|---|---|---|
+| `message.part.updated` | `part.{sessionID,type:'text',text}` 或 `delta` | step（step-finish part 结算）+ chatSignal:'delta' + deltaText | 无 delta 文本则仅 step 判定 |
+| `message.updated` | `info.{sessionID,role:'assistant',...完成消息}` | step（completed message）+ chatSignal:'complete' | 缺 info → 无 step |
+| `session.idle` | `sessionID` | chatSignal:'complete' + broadcast:'idle' | 缺 sessionID → 不触发记忆注入 drain |
+| `session.error` / `message.error` | `error`（可序列化） | chatSignal:'error' + broadcast:'error' | error 缺省为 'Unknown error' |
+| `session.next.step.ended`（legacy 兜底） | `sessionID, assistantMessageID, finish` | step（旧版 opencode step 结算） | 仅做 step 判定，无 chatSignal |
+| `session.created` / `session.updated` / `session.deleted` | `info.{id,title?,directory?,projectID?,parentID?,time.updated?}`（created/updated）| 直接 passthrough（desktop 靠它刷新 Rail） | 缺 info → desktop 判 none 忽略 |
+| `session.compacting` / `session.compacted` | `sessionID` | compaction:'start'/'end' → 触发 turnCompress flush | — |
+| `*tool*`（类型名含 "tool"） | `args.command`（string） | toolCommand → 自更新调用者定位 | 仅记账，无副作用 |
+| `permission.asked` / `replied`、`question.asked` | `sessionID, requestId, toolName, args`（asked） | passthrough → desktop FlowCard | — |
+| 任意其他 type | 无要求 | passthrough → Mode A 原样广播 | 未知 type 消费方忽略（合法） |
+
+### 3.2 gateway 如何消费（内部矩阵）
+
+| Facets 切面 | 消费者 | 行为 |
+|---|---|---|
+| 畸形（type+props 全空） | `isMalformedEvent` | 限频 warn（诊断），不阻断 |
+| `internal` 会话（memory worker 角色） | internalSessionRoles 过滤 | token 级噪音丢弃；idle/error 仍广播并打 `internal:true` 标 |
+| 任意 type+props+directory | TrajectoryCollector | 累积 SQLite；产出 `trajectory.event` / `trajectory.turn` 广播 |
+| `step` 切面 | step-inject | 已结算 step → 高显著度记忆注入（markStepSeen 去重） |
+| `step` + sessionID | BudgetGuard | goal 会话回合/成本计数，超限 abort |
+| `compaction` 切面 | TurnPipeline | 压缩发生 → 该 session pending T1 回合立即 flush |
+| `chatSignal` | Mode B chatSessions | delta/complete/error 推给订阅该 session 的 SSE 客户端 |
+| `broadcast` 切面 | Mode A sseClients + wsClients + 移动端推送 | idle→`message.complete`、error→`message.error`、其余→`opencode_event` 信封原样 |
+| `toolCommand` | 自更新定位 | 含 `pending-restart` 的命令钉住写令牌的会话 |
+
+### 3.3 Mode A wire 契约（→ desktop / TUI）
+
+广播信封（`event-broadcast.ts` 固化）：
+
+```json
+{ "type": "opencode_event", "data": { "type": "...", "properties": {...}, "sessionID": "...", "directory": "...", "internal": true? } }
+```
+
+- **可选字段缺失时不得出现在 data 上**（key 稳定性——消费方用 `'x' in data` 判定）
+- 顶层非 `opencode_event` 广播（如 `runtime_switched`、`project_registered`、`user_question`、插件自定义事件）**必须扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`
+- 信封出口有形状守卫：`data.type` 非字符串 → console.error 诊断（fail-open 照发）
+- 插件包 / 外部程序发布：`ctx.emit(event)` 或 `POST /api/events`（顶层扁平或信封二选一）
+
+### 3.4 desktop 如何消费
+
+`MafwShell.tsx` 的 `es.onmessage`（**未用 `event:` 字段**——全部事件走默认 message 通道）：
+
+1. `JSON.parse(e.data)`，失败静默丢弃
+2. 剥壳：`event = raw?.data || raw`
+3. 特判分发（其余未知 type **静默忽略——SSE 规范行为**，发送方随时可加新类型）：
+
+| type | 消费行为 | 依赖字段 |
+|---|---|---|
+| `user_question` | AskCard 弹卡 + 通知 | goalId, questionId, question |
+| `project_registered` | Rail 项目列表刷新 | projectDir |
+| `runtime_switched` | invalidate 会话缓存 + 刷新菜单 + 重置工作区 | runtime |
+| `session.created`/`updated`/`deleted` | `planSessionEvent` → Rail 缓存 invalidate/patch/remove | `properties.info`（见 3.1 契约表；`parentID` 或 legacy worker 标题前缀 → 隐藏会话判 none） |
+| `question.asked` / `permission.asked` | FlowCard（AskCard/PermissionCard） | requestId, toolName, args |
+| `question.replied`/`rejected`、`permission.replied` | FlowCard 收卡 | requestId, decision |
+| `session.compacted` | 触发历史重拉 | sessionID |
+| `trajectory.event` / `trajectory.turn` | RightDock 任务/轨迹 | (turnID, seq) 去重 |
+| `message.complete` / `message.error` | ChatPane 回合收尾 | sessionID, error? |
+| `todo.updated` | TaskList 实时刷新 | sessionID, todo |
+
+### 3.5 TUI 如何消费
+
+TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`）：`message.part.updated`、`session.idle`、`message.complete`、`message.error`、`session.error`、`permission.asked`、`question.asked`——白名单外的 type 不注册监听器（SSE 规范：无监听器即丢弃）。ChatStore 把 gateway 广播的 `message.complete` 与原生 `session.idle` 同等处理（回合收尾）。断线由 ConnectionStore 监督（BACKOFF 1/2/5/15s 阶梯重订阅）。
+
+### 3.6 自定义事件（两条合法路径）
+
+1. **runtime 内部事件**：直接向 `global.event()` 流里发任意 type——normalize 后走 passthrough 进 Mode A。想要 desktop 有反应就复用 3.4 的契约 type；全新 type 桌面会忽略（合法，但等于没发）
+2. **插件包 / 外部程序**：`ctx.emit({ type: 'plugin:<name>:<event>', ... })` 或 `POST /api/events`（SDK `event.publish()`）——发布到全部 UI 通道，无需 runtime 参与通知类信息
+
+### 3.7 事件发布检查清单
+
+- [ ] 信封形状 A 或 B 之一；至少有非空 `type`
+- [ ] 需要 desktop 有反应 → 对照 3.4 契约表选 type 并给全必需字段（尤其 `sessionID` 与 `properties.info`）
+- [ ] 需要 ChatPane/TUI 跟随流式输出 → 必须产出 opencode 兼容的 `message.part.updated`（`part.text`）与 `session.idle`
+- [ ] 新 type 用 `plugin:<name>:<event>` 命名空间；消费端（你自己的 renderer 逻辑）负责分发
+- [ ] 不要依赖事件顺序（SSE 无序保证）；不要在事件里放大数据载荷（走 API 拉取）
 
 ## 第四步：激活与测试
 
@@ -518,11 +576,12 @@ mafw restart
 **规则：** 声明的能力必须有对应实现；未实现的能力声明为 `false`。
 
 ### 3. 事件形状不兼容
-自定义事件形状与 `normalizeOpencodeEvent()` 不兼容 → 归一化失败。
+自定义事件形状与 `normalizeOpencodeEvent()` 不兼容 → 归一化产出空 facets（畸形限频 warn）或字段提取失败（desktop/TUI 静默忽略）。
 
 **解决：** 
-- 优先让事件形状接近 opencode（见"事件归一化"章节）
-- 或写新归一化器并修改 `index.ts` 的事件分发
+- 优先让事件形状接近 opencode（见"第三步：SSE 事件"的输入契约表 3.1）
+- 逐 type 核对必需字段（sessionID / properties.info / part.text）——缺字段不报错，只是对应消费方无反应
+- desktop/TUI 对未知 type 静默忽略是 SSE 规范行为；自写新 type 需配套自己的消费端
 
 ### 4. 忽略 external 字段
 `external: true`（默认）→ gateway 不 spawn 进程，仅做健康探测。
