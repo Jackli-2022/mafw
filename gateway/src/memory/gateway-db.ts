@@ -405,6 +405,12 @@ export class GatewayDatabase {
   }
 
   // ── KV store (small critical state) ─────────────────────────────────────
+  // Scope 归属规范（新增 scope 必须声明一类）：
+  // - runtime-scoped：生命周期绑定当前 agent runtime（会话 id 属于 runtime 存储），
+  //   切换时由 Scheduler.invalidateRuntimeScopedKv 统一失效——
+  //   manager-session / internal-session / reflect-cursor
+  // - durable：跨 runtime 有效——registry/snapshot / milestone-notified
+  // runtime-scoped 条目的 value 必须携带 `at`（ISO 日期）供 TTL/审计。
 
   kvGet<T = string>(scope: string, key: string): T | null {
     const row = this.db.prepare('SELECT value FROM kv_store WHERE scope = ? AND key = ?').get(scope, key) as
@@ -443,6 +449,25 @@ export class GatewayDatabase {
         return { key: r.key, value: r.value as unknown as T };
       }
     });
+  }
+
+  kvClearScope(scope: string): number {
+    const info = this.db.prepare('DELETE FROM kv_store WHERE scope = ?').run(scope);
+    return info.changes;
+  }
+
+  kvPruneOlderThan(scope: string, ttlDays: number): number {
+    const now = Date.now();
+    let removed = 0;
+    for (const { key, value } of this.kvAll<Record<string, unknown>>(scope)) {
+      const at = value && typeof value === 'object' ? (value as Record<string, unknown>).at : undefined;
+      const ts = typeof at === 'string' ? Date.parse(at) : NaN;
+      if (!isNaN(ts) && now - ts > ttlDays * 86_400_000) {
+        this.kvDelete(scope, key);
+        removed++;
+      }
+    }
+    return removed;
   }
 
   // ── Goal outcomes (RSI Phase 1) ─────────────────────────────────────────
