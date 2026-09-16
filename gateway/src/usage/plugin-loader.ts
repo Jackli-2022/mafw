@@ -3,6 +3,7 @@ import * as path from 'path';
 import { log } from '../core/utils/logger';
 import { ExternalAdapter } from './types';
 import { makeAdapter, UsageStatsProvider } from './plugin-context';
+import type { UsagePackageEntry } from '../plugins/package-types';
 
 export interface ConfigSchemaField {
   key: string;
@@ -70,6 +71,7 @@ export class PluginLoader {
   private builtinNames: Set<string>;
   private usageStats?: UsageStatsProvider;
   private resolveInlineApiKey?: (providerID: string) => Promise<string | null>;
+  private packageEntries: UsagePackageEntry[] = [];
 
   constructor(pluginsDir: string, builtinNames: string[], opts?: PluginLoaderOptions) {
     this.pluginsDir = pluginsDir;
@@ -182,9 +184,14 @@ export class PluginLoader {
   }
 
   getAdapters(): ExternalAdapter[] {
+    const packageNames = new Set(this.packageEntries.map((e) => e.mod.name));
     const adapters: ExternalAdapter[] = [];
     for (const s of this.state.values()) {
-      if (s.status === 'ok' && s.adapter && !s.disabled) adapters.push(s.adapter);
+      if (s.status === 'ok' && s.adapter && !s.disabled && !packageNames.has(s.name)) adapters.push(s.adapter);
+    }
+    for (const e of this.packageEntries) {
+      if (this.disabledPlugins.has(e.mod.name)) continue;
+      adapters.push(makeAdapter(e.mod, e.source, this.usageStats, this.resolveInlineApiKey));
     }
     return adapters;
   }
@@ -194,7 +201,30 @@ export class PluginLoader {
   }
 
   getState(): PluginState[] {
-    return [...this.state.values()];
+    const out = [...this.state.values()].map((s) => ({ ...s }));
+    const packageNames = new Set(this.packageEntries.map((e) => e.mod.name));
+    for (const s of out) {
+      if (s.name && packageNames.has(s.name)) s.overridden = true;
+    }
+    for (const e of this.packageEntries) {
+      out.push({
+        file: e.source,
+        name: e.mod.name,
+        status: 'ok',
+        overridden: false,
+        builtin: false,
+        adapter: undefined,
+        configSchema: validateConfigSchema(e.mod.configSchema),
+        disabled: this.disabledPlugins.has(e.mod.name),
+        pluginType: typeof e.mod.type === 'string' ? e.mod.type : undefined,
+      });
+    }
+    return out;
+  }
+
+  /** PluginHost 推送的包贡献。同名包覆盖 legacy 文件与内置；disabledPlugins 同样生效。 */
+  setPackageEntries(entries: UsagePackageEntry[]): void {
+    this.packageEntries = entries ?? [];
   }
 
   async reload(): Promise<void> {
