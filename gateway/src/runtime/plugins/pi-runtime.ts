@@ -97,7 +97,9 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     return mrPromise;
   }
 
-  const eventStream = new PiEventStream((session: any) => undefined);
+  // Resolver maps a live pi AgentSession to its registry id — without it the
+  // event stream drops EVERY pi event (no session.idle / step-finish / deltas).
+  const eventStream = new PiEventStream((session: any) => registry.sessionIdFor(session));
   const registry = new PiSessionRegistry({
     createSession: async (opts: any) => {
       const pi = await imp('@earendil-works/pi-coding-agent');

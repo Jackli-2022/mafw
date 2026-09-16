@@ -28,7 +28,7 @@ export function milestoneDedupeKey(goalId: string, phase: string, stateVersion?:
 }
 
 export class MilestonePushNotifier {
-  private queues = new Map<string, string[]>();
+  private queues = new Map<string, Array<{ key: string; line: string }>>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
@@ -41,22 +41,20 @@ export class MilestonePushNotifier {
     const state = this.deps.readGoalState(data.goalId, data.projectDir);
     const key = milestoneDedupeKey(data.goalId, data.phase, state?.stateVersion ?? data.loop);
     if (this.deps.wasNotified(key)) return;
-    this.deps.markNotified(key);
-    this.enqueue(data.projectDir, formatMilestoneLine(data.goalId, state?.title || data.goalId, data.phase, state?.reviewVerdict));
+    this.enqueue(data.projectDir, { key, line: formatMilestoneLine(data.goalId, state?.title || data.goalId, data.phase, state?.reviewVerdict) });
   }
 
   onArchived(goalId: string, projectDir: string, verdict: string): void {
     const state = this.deps.readGoalState(goalId, projectDir);
     const key = milestoneDedupeKey(goalId, `ARCHIVED:${verdict}`, state?.stateVersion);
     if (this.deps.wasNotified(key)) return;
-    this.deps.markNotified(key);
-    this.enqueue(projectDir, formatMilestoneLine(goalId, state?.title || goalId, `ARCHIVED(${verdict})`));
+    this.enqueue(projectDir, { key, line: formatMilestoneLine(goalId, state?.title || goalId, `ARCHIVED(${verdict})`) });
   }
 
   // Per-project coalescing: bursts of transitions collapse into one message.
-  private enqueue(projectDir: string, line: string): void {
+  private enqueue(projectDir: string, item: { key: string; line: string }): void {
     const q = this.queues.get(projectDir) || [];
-    q.push(line);
+    q.push(item);
     this.queues.set(projectDir, q);
     if (this.timers.has(projectDir)) return;
     this.timers.set(projectDir, setTimeout(() => { void this.flush(projectDir); }, this.flushDelayMs));
@@ -64,17 +62,34 @@ export class MilestonePushNotifier {
 
   private async flush(projectDir: string): Promise<void> {
     this.timers.delete(projectDir);
-    const lines = this.queues.get(projectDir) || [];
+    const items = this.queues.get(projectDir) || [];
     this.queues.delete(projectDir);
-    if (lines.length === 0) return;
+    if (items.length === 0) return;
     const session = this.deps.getManagerSession(projectDir);
-    if (!session?.sessionId) return;
-    const text = `[MAFW GOAL 里程碑]\n${lines.join('\n')}\n(系统通知)`;
+    if (!session?.sessionId) {
+      // Manager slot not ready yet (e.g. right after a runtime switch): retry
+      // with a slower cadence instead of silently dropping the milestone
+      // (marking before delivery would lose it permanently).
+      this.requeue(projectDir, items);
+      return;
+    }
+    const text = `[MAFW GOAL 里程碑]\n${items.map((i) => i.line).join('\n')}\n(系统通知)`;
     try {
       await this.deps.promptNoReply(session.sessionId, text);
+      for (const item of items) this.deps.markNotified(item.key);
     } catch (err: any) {
       log.warn(`[MilestonePush] push failed (fail-open): ${err.message}`);
+      this.requeue(projectDir, items);
     }
+  }
+
+  // Slower retry cadence than the coalescing flush — bounded noise while the
+  // manager session is being (re-)ensured on the active runtime.
+  private requeue(projectDir: string, items: Array<{ key: string; line: string }>): void {
+    const q = (this.queues.get(projectDir) || []).concat(items);
+    this.queues.set(projectDir, q);
+    if (this.timers.has(projectDir)) return;
+    this.timers.set(projectDir, setTimeout(() => { void this.flush(projectDir); }, 60_000));
   }
 
   dispose(): void {

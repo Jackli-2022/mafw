@@ -16,6 +16,7 @@ export function createMafwApprovalExtension(
   bridge: ApprovalBridge,
   emitEvent: (event: RawRuntimeEvent) => void,
   policy: ApprovalPolicy = DEFAULT_POLICY,
+  gatewaySessionId: string,
 ) {
   return {
     name: 'mafw-approval',
@@ -32,7 +33,9 @@ export function createMafwApprovalExtension(
         }
 
         const requestId = randomUUID();
-        const sessionID = ctx.sessionId;
+        // pi 原生 ctx.sessionId 与 gateway 生成的 pi_* 注册 id 不同——事件
+        // 必须携带 gateway id，否则 permissionReply 按 id 查 bridge 404。
+        const sessionID = gatewaySessionId;
 
         emitEvent({
           payload: {

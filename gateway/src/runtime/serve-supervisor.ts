@@ -50,6 +50,17 @@ export function createServeSupervisor(deps: ServeSupervisorDeps): ServeSuperviso
     async ensureStarted(): Promise<string> {
       if (deps.external) throw refused();
       if (instance && await deps.probe(instance.url)) return instance.url;
+      // Adopt: gateway startup may have adopted a healthy serve, or a
+      // user-managed opencode may already listen here — never killPort a
+      // healthy listener on this port (that would drop every SSE/desktop/TUI
+      // connection on a pi→opencode switch).
+      const candidateUrl = `http://${host}:${deps.port}`;
+      try {
+        if (await deps.probe(candidateUrl)) {
+          instance = { url: candidateUrl, close: () => {} };
+          return candidateUrl;
+        }
+      } catch { /* not healthy → spawn below */ }
       if (starting) return starting;
       starting = (async () => {
         try {

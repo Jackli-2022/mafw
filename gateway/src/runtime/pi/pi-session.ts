@@ -44,7 +44,12 @@ export class PiSessionRegistry {
     const bridge = new ApprovalBridge();
     this.approvalBridges.set(id, bridge);
 
-    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
+    // 'always' allowlist 必须是会话私有副本：共享引用会把一次 "always" 扩散到
+    // 全部 pi 会话（契约语义是 session 级动态 allowlist）。
+    const sessionPolicy: ApprovalPolicy | undefined = this.policy
+      ? { autoApprove: [...(this.policy.autoApprove ?? [])], autoDeny: [...(this.policy.autoDeny ?? [])] }
+      : undefined;
+    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, sessionPolicy as any, id);
     // Compaction listener: pi fires session_before_compact / session_compact to
     // extensions; re-emit as normalized runtime events (compaction facet).
     const compactionExtension = this.makeCompactionExtension(id);
@@ -259,9 +264,12 @@ export class PiSessionRegistry {
     if (!leafId) throw new Error(`pi fork failed: no leaf for session ${id}`);
     const file = sm.createBranchedSession(leafId);
     if (!file) throw new Error(`pi fork failed: createBranchedSession returned nothing for leaf ${leafId}`);
-    const bridge = new ApprovalBridge();
-    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, this.policy);
     const newId = `pi_${randomUUID().slice(0, 8)}`;
+    const bridge = new ApprovalBridge();
+    const forkPolicy: ApprovalPolicy | undefined = this.policy
+      ? { autoApprove: [...(this.policy.autoApprove ?? [])], autoDeny: [...(this.policy.autoDeny ?? [])] }
+      : undefined;
+    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, forkPolicy as any, newId);
     const compactionExtension = this.makeCompactionExtension(newId);
     const mediaExtension = this.makeMediaExtension(newId);
     try {

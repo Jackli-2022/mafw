@@ -25,7 +25,10 @@ export function killServePort(port: number): void {
   try {
     if (process.platform === 'win32') {
       const out = childProcess.execSync(`netstat -ano | findstr :${port}`, { windowsHide: true }).toString();
-      const match = out.match(/LISTENING\s+(\d+)/);
+      // findstr ":4096" also matches ":40960" etc. — require the exact local
+      // port followed by whitespace on a LISTENING line before trusting the PID.
+      const line = out.split(/\r?\n/).find((l) => new RegExp(`:${port}\\s`).test(l) && /LISTENING/i.test(l));
+      const match = line ? line.match(/LISTENING\s+(\d+)/) : null;
       const pid = match ? Number(match[1]) : null;
       if (pid) process.kill(pid);
     } else {

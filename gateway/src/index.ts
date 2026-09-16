@@ -713,18 +713,20 @@ class MafwScheduler {
         // re-subscribe the event stream (hot-switch, no restart needed).
         if (changed.includes('runtime')) {
           const newPlugin = config.runtime?.plugin;
-          if (newPlugin !== prevPlugin && !this.switchingRuntime && !this.serveRecovering) {
+        if (newPlugin !== prevPlugin && !this.switchingRuntime && !this.serveRecovering) {
+          this.switchingRuntime = true;
+          const prev = this.opencodeClient;
+          try {
             log.info(`[Scheduler] Runtime plugin changed: '${prevPlugin ?? 'builtin'}' → '${newPlugin ?? 'builtin'}'; hot-switching...`);
-            try {
-              const sdkConfig = {
-                baseUrl: this.serveUrl,
-                directory: this.projectDir,
-                headers: {} as Record<string, string>,
-              };
-              const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
-              if (opencodePassword) {
-                sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
-              }
+            const sdkConfig = {
+              baseUrl: this.serveUrl,
+              directory: this.projectDir,
+              headers: {} as Record<string, string>,
+            };
+            const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
+            if (opencodePassword) {
+              sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
+            }
               const runtime = await this.createRuntime(sdkConfig);
               this.opencodeClient = runtime;
               this.runtimeCaps = runtime.capabilities;
@@ -741,9 +743,18 @@ class MafwScheduler {
               // Same desktop hint as the route path: hand-edited config.yaml
               // switches must also refresh the renderer (menus/tabs/manager kv).
               this.broadcast({ type: 'runtime_switched', runtime: runtime.name, previous: prevPlugin ?? null });
+              // Dispose the previous runtime AFTER the new one is fully wired
+              // (mirror of the route path) — without this, switching away from
+              // pi leaks its AgentSessions/ApprovalBridges/event stream.
+              if (prev && (prev as any).dispose) {
+                try { await (prev as any).dispose(); }
+                catch (err: any) { log.warn(`[Scheduler] dispose previous runtime failed: ${err.message}`); }
+              }
               log.info(`[Scheduler] Runtime hot-switched to '${runtime.name}'`);
             } catch (err: any) {
               log.warn(`[Scheduler] Runtime hot-switch failed (non-fatal): ${err.message}`);
+            } finally {
+              this.switchingRuntime = false;
             }
           }
         }
@@ -2087,6 +2098,18 @@ class MafwScheduler {
   // flapping serve escalates to the slow backoff instead of hot-restarting.
   private handleServeExit(code: number | null) {
     if (!this.serveOwned || this.serveRecovering) return;
+    // After a hot-switch to an in-process/external runtime, the (still owned)
+    // opencode serve is no longer the active backend: its exit must NOT trigger
+    // recovery — pi has no spawnServe, so the orchestrator would fall into the
+    // supervisor's kill+spawn path and retry forever (killing whatever listens
+    // on the serve port each cycle). A later switch back re-ensures via
+    // ensureServeForBuiltinRuntime (probe → adopt or spawn).
+    const rt = this.opencodeClient;
+    if (rt?.external || !rt?.agentProcess?.spawnServe) {
+      this.serveOwned = false;
+      log.info('[Scheduler] owned serve exited after runtime switch; recovery skipped (active runtime does not own serve)');
+      return;
+    }
     this.serveInstance = undefined;
     if (this.serveStableTimer) {
       clearTimeout(this.serveStableTimer);

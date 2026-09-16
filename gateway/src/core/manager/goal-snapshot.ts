@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const TERMINAL_ACTIONS = new Set(['COMPLETED', 'FAILED']);
+const TERMINAL_ACTIONS = new Set(['COMPLETED', 'FAILED', 'CANCELLED']);
 
 export interface GoalSnapshotEntry {
   goalId: string;
