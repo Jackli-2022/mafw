@@ -49,7 +49,8 @@ describe('createOpencodeRuntime', () => {
       sessionApi: true, promptWhileBusy: true, eventStream: true,
       nativeApprovals: true, providerConfigApi: true, perLlmCallTransform: true,
       sessionStorageApi: true, agentConfigApi: true, agentProcessApi: true,
-      completionApi: true, sessionBranchApi: true, turnBudgetApi: true, questionApi: true,
+      // turnBudgetApi false：预算由 gateway 侧 BudgetGuard 承担（adapter 无 maxTurns 字段）
+      completionApi: true, sessionBranchApi: true, turnBudgetApi: false, questionApi: true,
     });
     expect(rt.external).toBe(false);
     // 装饰不覆盖 adapter 返回的 client 方法面

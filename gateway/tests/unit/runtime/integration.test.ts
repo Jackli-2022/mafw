@@ -119,8 +119,13 @@ describe('Runtime contract integration', () => {
     expect(rt.name).toBe('opencode');
     expect(rt.capabilities).toEqual(fullCapabilities());
 
-    // All gates open
+    // All gates open — except turnBudgetApi（预算由 gateway 侧 BudgetGuard 承担，
+    // opencode adapter 无 maxTurns 字段，声明 true 会让 goal 预算守卫失效）
     for (const cap of Object.keys(rt.capabilities) as (keyof RuntimeCapabilities)[]) {
+      if (cap === 'turnBudgetApi') {
+        expect(capGuard(rt.capabilities, cap)).toBe(true);
+        continue;
+      }
       expect(capGuard(rt.capabilities, cap)).toBe(false);
     }
   });

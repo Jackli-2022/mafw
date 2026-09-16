@@ -1,7 +1,10 @@
 import { fullCapabilities, minimalCapabilities, RuntimeCapabilities, CompletionRequest, CompletionResult, SessionPromptOpts } from '../../../src/runtime/contract';
 
 describe('runtime contract capabilities', () => {
-  it('fullCapabilities enables every tier (opencode = Tier 2)', () => {
+  it('fullCapabilities enables every tier except turnBudgetApi (opencode = Tier 2)', () => {
+    // turnBudgetApi 例外：opencode 适配器不转发 maxTurns/maxCostUsd（SDK 无对应字段），
+    // 预算由 gateway 侧 BudgetGuard 承担——声明 true 会让 attachBudgetGuardForGoal
+    // 跳过挂载，goal 预算在默认 runtime 上完全失效。
     expect(fullCapabilities()).toEqual({
       sessionApi: true,
       promptWhileBusy: true,
@@ -14,7 +17,7 @@ describe('runtime contract capabilities', () => {
       agentProcessApi: true,
       completionApi: true,
       sessionBranchApi: true,
-      turnBudgetApi: true,
+      turnBudgetApi: false,
       questionApi: true,
     });
   });
