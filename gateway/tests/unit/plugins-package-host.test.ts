@@ -106,4 +106,41 @@ module.exports = { name: 'acme', usage: { name: 'acme', type: 'api', plan: 'P', 
     host.bindUsage((e) => { usage.length = 0; usage.push(...e); });
     expect(usage).toHaveLength(1);
   });
+
+  // 注：不断言重读后的模块内容——jest 环境的 require.cache 删除不驱逐
+  // （生产 Node 正常，纯 node 探针已证）。这里只验证 watch→debounce→reload 管道。
+  it('修改包文件触发热重载（watch→debounce→reload 管道）', async () => {
+    const file = path.join(dir, 'acme.js');
+    fs.writeFileSync(file, `
+module.exports = { name: 'acme', usage: { name: 'acme', type: 'api', plan: 'v1', async fetch() { return null; } } };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const realReload = host.reload.bind(host);
+    const reloadSpy = jest.fn(() => realReload());
+    (host as any).reload = reloadSpy;
+    fs.writeFileSync(file, `
+module.exports = { name: 'acme', usage: { name: 'acme', type: 'api', plan: 'v2', async fetch() { return null; } } };
+`);
+    await new Promise((resolve) => setTimeout(resolve, 800)); // debounce 300ms + margin
+    expect(reloadSpy).toHaveBeenCalled();
+  }, 10000);
+
+  it('目录包主文件变更触发重载（子目录 watcher）', async () => {
+    const pkg = path.join(dir, 'big');
+    fs.mkdirSync(pkg);
+    fs.writeFileSync(path.join(pkg, 'index.js'), `
+module.exports = { name: 'big', usage: { name: 'big', type: 'api', plan: 'v1', async fetch() { return null; } } };
+`);
+    host = mkHost(dir);
+    await host.init();
+    const realReload = host.reload.bind(host);
+    const reloadSpy = jest.fn(() => realReload());
+    (host as any).reload = reloadSpy;
+    fs.writeFileSync(path.join(pkg, 'index.js'), `
+module.exports = { name: 'big', usage: { name: 'big', type: 'api', plan: 'v2', async fetch() { return null; } } };
+`);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(reloadSpy).toHaveBeenCalled();
+  }, 10000);
 });

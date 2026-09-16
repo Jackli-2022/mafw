@@ -17,7 +17,10 @@ const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
 export class PluginHost {
   private state = new Map<string, PackageState>();
   private watcher?: fs.FSWatcher;
+  private dirWatchers = new Map<string, fs.FSWatcher>();
   private debounce?: NodeJS.Timeout;
+  /** 当前目录包的子目录绝对路径（refreshDirWatchers 用） */
+  private pkgDirs: string[] = [];
   private runtimeCb?: (entries: RuntimePackageEntry[]) => void;
   private mediaCb?: (entries: MediaPackageEntry[]) => void;
   private usageCb?: (entries: UsagePackageEntry[]) => void;
@@ -46,6 +49,8 @@ export class PluginHost {
 
   stop(): void {
     this.watcher?.close();
+    for (const w of this.dirWatchers.values()) w.close();
+    this.dirWatchers.clear();
     if (this.debounce) clearTimeout(this.debounce);
   }
 
@@ -63,7 +68,9 @@ export class PluginHost {
     const runtime: RuntimePackageEntry[] = [];
     const media: MediaPackageEntry[] = [];
     const usage: UsagePackageEntry[] = [];
+    const pkgDirs: string[] = [];
     for (const desc of this.scanDescriptors(next)) {
+      if (desc.pkgDir) pkgDirs.push(desc.pkgDir);
       try {
         const c = await this.activate(desc);
         if (c.runtime) runtime.push(c.runtime);
@@ -79,12 +86,35 @@ export class PluginHost {
       }
     }
     this.state = next;
+    this.pkgDirs = pkgDirs;
     this.lastRuntime = runtime;
     this.lastMedia = media;
     this.lastUsage = usage;
     this.runtimeCb?.(runtime);
     this.mediaCb?.(media);
     this.usageCb?.(usage);
+    this.refreshDirWatchers();
+  }
+
+  /** 每个目录包一个 watcher（跨平台——不用 recursive）。reload 后按当前包集合增删。 */
+  private refreshDirWatchers(): void {
+    if (!this.watcher) return; // 顶层 watch 未建立（init 前手动 reload）则不建
+    const wanted = new Set(this.pkgDirs);
+    for (const [dir, w] of this.dirWatchers) {
+      if (!wanted.has(dir)) { w.close(); this.dirWatchers.delete(dir); }
+    }
+    for (const dir of wanted) {
+      if (this.dirWatchers.has(dir)) continue;
+      try {
+        const w = fs.watch(dir, () => {
+          if (this.debounce) clearTimeout(this.debounce);
+          this.debounce = setTimeout(() => {
+            void this.reload().catch((err) => log.warn(`[PluginHost] reload error: ${err.message}`));
+          }, 300);
+        });
+        this.dirWatchers.set(dir, w);
+      } catch { /* 单个目录不可 watch → 跳过，fail-open */ }
+    }
   }
 
   /** 枚举候选包；逐条错误记入 errorStates（不抛出）。 */
@@ -183,6 +213,9 @@ export class PluginHost {
           void this.reload().catch((err) => log.warn(`[PluginHost] reload error: ${err.message}`));
         }, 300);
       });
+      // init 的 reload 跑在本方法之前（当时 watcher 未建，refreshDirWatchers 早退）
+      // ——这里补建目录包子目录的 watcher。
+      this.refreshDirWatchers();
     } catch (err: any) {
       log.warn(`[PluginHost] watch failed: ${err.message}`);
     }
