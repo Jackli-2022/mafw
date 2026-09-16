@@ -84,6 +84,9 @@ import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
 import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './routes/plugins';
+import { PluginHost } from './plugins/package-host';
+import { createPluginPackageContext } from './plugins/package-context';
+import type { UsageStatsProvider } from './usage/plugin-context';
 import { cleanupExamples } from './plugins/hub';
 import { handleRestartAgent } from './routes/restart-agent';
 import { handleSessionMutations } from './routes/session-mutations';
@@ -173,7 +176,7 @@ async function isPortHealthy(port: number): Promise<boolean> {
   }
 }
 
-import { isManagerEntryStale } from './core/manager/manager-session-runtime';
+import { readManagerSlot, writeManagerSlot } from './core/manager/manager-session-runtime';
 
 const INTERNAL_SESSION_TTL_DAYS = 7;
 
@@ -273,6 +276,8 @@ class MafwScheduler {
   private mediaPluginLoader?: MediaPluginLoader;
   private mediaRuntimeExecutor?: MediaRuntimeExecutor;
   private mediaRuntimeExecutorRt?: unknown;
+  private pluginHost?: PluginHost;
+  private usageStatsProvider?: UsageStatsProvider;
   private ttsService?: ReturnType<typeof createTtsService>;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
@@ -398,6 +403,19 @@ class MafwScheduler {
     await this.runtimeLoader.init();
     // 内置插件注册：pi-coding-agent runtime（进程内 SDK 嵌入）
     this.runtimeLoader.registerBuiltin('pi', createPiRuntime, PI_CAPABILITIES, true);
+
+    // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
+    this.pluginHost = new PluginHost(
+      process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins'),
+      (name) => createPluginPackageContext(name, {
+        getCredentials: () => this.opencodeClient?.credentials ?? undefined,
+        usageStats: () => this.usageStatsProvider,
+        projectDir: this.projectDir,
+        gatewayPort: config.server.apiPort,
+      }),
+    );
+    this.pluginHost.bindRuntime((entries) => this.runtimeLoader?.setPackageEntries(entries));
+    await this.pluginHost.init();
 
     // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
     const sdkConfig = {
@@ -645,7 +663,7 @@ class MafwScheduler {
       targets.add(info.sessionID);
     } else {
       try {
-        const ms = this.getValidManagerSessionEntry(this.projectDir);
+        const ms = this.readManagerSessionEntry(this.projectDir);
         if (ms?.sessionId) targets.add(ms.sessionId);
       } catch { /* skip */ }
     }
@@ -708,7 +726,6 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
               await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
-              this.invalidateRuntimeScopedKv();
               // Same desktop hint as the route path: hand-edited config.yaml
               // switches must also refresh the renderer (menus/tabs/manager kv).
               this.broadcast({ type: 'runtime_switched', runtime: runtime.name, previous: prevPlugin ?? null });
@@ -1701,6 +1718,7 @@ class MafwScheduler {
     }
     this.pluginLoader?.stop();
     this.mediaPluginLoader?.stop();
+  this.pluginHost?.stop();
     if (this.opencodeClient && typeof (this.opencodeClient as any).dispose === 'function') {
       void (this.opencodeClient as any).dispose().catch((err: any) => {
         log.warn(`[Scheduler] runtime dispose error: ${err?.message ?? String(err)}`);
@@ -1767,6 +1785,7 @@ class MafwScheduler {
       getCredentials: () => this.opencodeClient?.credentials ?? undefined,
     });
     await this.mediaPluginLoader.init();
+    this.pluginHost?.bindMedia((entries) => this.mediaPluginLoader?.setPackageEntries(entries));
 
     this.mediaService = new MediaService({
       prompt: createPiPromptAdapter({
@@ -1930,10 +1949,12 @@ class MafwScheduler {
       const pluginsDir = path.join(os.homedir(), '.mafw', 'usage-plugins');
       const builtinPluginsDir = path.join(__dirname, 'usage', 'builtin-plugins');
       const disabledPlugins = Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : [];
+      const statsProvider = createUsageStatsProvider(trajStore);
+      this.usageStatsProvider = statsProvider;
       const pluginLoader = new PluginLoader(pluginsDir, [], {
         builtinPluginsDir,
         disabledPlugins,
-        usageStats: createUsageStatsProvider(trajStore),
+        usageStats: statsProvider,
         // inline provider key 兜底（auth.json 无条目的自建 provider，如 gateway）——
         // thunk 惰性求值，opencodeClient 此时尚未初始化也不影响。
         resolveInlineApiKey: async (providerID: string) => {
@@ -1946,6 +1967,7 @@ class MafwScheduler {
       });
       await pluginLoader.init();
       this.pluginLoader = pluginLoader;
+      this.pluginHost?.bindUsage((entries) => pluginLoader.setPackageEntries(entries));
       const { UsagePoller } = require('./usage/usage-poller');
       this.usagePoller = new UsagePoller(trajStore, () => config.usage.limits, () => config.usage.budgets, pluginLoader);
       log.info('[Trajectory] store initialized');
@@ -3582,13 +3604,13 @@ class MafwScheduler {
           const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
           const filter = parsedUrl.searchParams.get('projectDir') || '';
           try {
-            const all = this.getGatewayDb().kvAll<{ sessionId: string; createdAt?: string | null; runtime?: string }>('manager-session');
-            // Self-healing read: drop entries written under another runtime.
-            const live = all.filter((e) => {
-              if (!isManagerEntryStale(e.value, this.runtimeName)) return true;
-              this.getGatewayDb().kvDelete('manager-session', e.key);
-              return false;
-            });
+            const all = this.getGatewayDb().kvAll('manager-session');
+            // Per-runtime slots: surface only the ACTIVE runtime's manager
+            // slot per project. Other runtimes' slots stay dormant (resumed
+            // when switching back) — nothing is deleted here.
+            const live = all
+              .map((e) => ({ key: e.key, value: readManagerSlot(e.value, this.runtimeName) }))
+              .filter((e): e is { key: string; value: { sessionId: string; createdAt?: string | null } } => e.value !== null);
             if (filter) {
               const found = live.find((e) => e.key === filter);
               if (!found) {
@@ -3951,7 +3973,6 @@ class MafwScheduler {
               if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
               await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
-              this.invalidateRuntimeScopedKv();
               // Desktop hint: a runtime switch swaps the session storage backend
               // (opencode SQLite vs pi), so cached session lists are stale.
               this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
@@ -4037,6 +4058,7 @@ class MafwScheduler {
               else if (type === 'usage') await this.pluginLoader?.reload();
               // ui: desktop main fs.watch picks it up automatically
             },
+            getPackages: () => this.pluginHost?.getState() ?? [],
           } as any,
         };
         try {
@@ -6031,38 +6053,13 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     return run;
   }
 
-  // Runtime-scoped kv entries reference session ids in the ACTIVE runtime's
-  // storage (opencode SQLite vs pi SessionManager). A runtime hot-switch
-  // invalidates them: the ids do not exist under the new backend ("Pi session
-  // not found"). Drop all three scopes so the next touch re-ensures sessions
-  // in the new runtime. Called from BOTH switch paths (route onSwitched +
-  // config hot-reload watcher). Scope classification: see gateway-db.ts kv API.
-  private invalidateRuntimeScopedKv(): void {
-    try {
-      const db = this.getGatewayDb();
-      const cleared = ['manager-session', 'internal-session', 'reflect-cursor']
-        .map((scope) => `${scope}=${db.kvClearScope(scope)}`);
-      this.internalSessionRoles.clear();
-      log.info(`[Scheduler] runtime-scoped kv invalidated (runtime switch): ${cleared.join(', ')}`);
-    } catch (err: any) {
-      log.warn(`[Scheduler] runtime-scoped kv invalidation failed (non-fatal): ${err.message}`);
-    }
-  }
-
-  // Validated read of a manager-session kv entry: entries written under a
-  // DIFFERENT runtime than the active one are dead (their session ids do not
-  // exist here) and are dropped on access — the next ensure re-creates the
-  // session in the active runtime. Legacy entries without a `runtime` tag are
-  // inferred from the session id prefix (see manager-session-runtime.ts).
-  private getValidManagerSessionEntry(projectDir: string): { sessionId: string; createdAt?: string | null; runtime?: string } | null {
-    const value = this.getGatewayDb().kvGet<{ sessionId: string; createdAt?: string | null; runtime?: string }>('manager-session', projectDir);
-    if (!value) return null;
-    if (isManagerEntryStale(value, this.runtimeName)) {
-      this.getGatewayDb().kvDelete('manager-session', projectDir);
-      log.info(`[Scheduler] dropped stale manager-session entry for ${projectDir} (entry runtime '${value.runtime ?? 'legacy-inferred'}' ≠ active '${this.runtimeName}')`);
-      return null;
-    }
-    return value;
+  // Slot-based read of a manager-session kv entry: each runtime owns a slot
+  // in the value (byRuntime), so switching runtimes never drops a topic —
+  // switching back resumes the previous manager. Legacy v1 entries are
+  // inferred by session id prefix and only surface under their own runtime.
+  // See manager-session-runtime.ts.
+  private readManagerSessionEntry(projectDir: string): { sessionId: string; createdAt?: string | null } | null {
+    return readManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName);
   }
 
   // Serialized rotate: joins any in-flight ensure/create for the same project
@@ -6077,7 +6074,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     // expect the promise to resolve to a session id string — map the rotate
     // result onto the resulting kv entry.
     const mapped = run.then(
-      () => this.getValidManagerSessionEntry(projectDir)?.sessionId ?? '',
+      () => this.readManagerSessionEntry(projectDir)?.sessionId ?? '',
       () => '',
     );
     this.managerSessionInflight.set(projectDir, mapped);
@@ -6092,7 +6089,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     if (!this.opencodeClient) throw new Error('opencodeClient not available');
     // Manager identity lives in the gateway DB (kv_store), so it survives
     // project-directory churn and never gets orphaned by directory moves.
-    const existing = this.getValidManagerSessionEntry(projectDir);
+    const existing = this.readManagerSessionEntry(projectDir);
     if (existing?.sessionId) {
       await this.sdkSession.registerExternal(existing.sessionId, projectDir, {
         mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
@@ -6111,7 +6108,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
     const createdAt = new Date().toISOString();
 
-    this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt, runtime: this.runtimeName });
+    this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt }));
     this.registerInternalSession(sessionId, 'manager');
 
     try {
@@ -6146,7 +6143,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   private rotateDeps(): ManagerRotateDeps {
     return {
-      getManagerSession: (pd) => this.getValidManagerSessionEntry(pd),
+      getManagerSession: (pd) => this.readManagerSessionEntry(pd),
       lock: <T,>(pd: string, fn: () => Promise<T>) => this.runManagerExclusive(pd, fn),
       ensure: (pd) => this.ensureManagerSession(pd, this.mafwDirFor(pd)),
       downgrade: async (sid) => {
@@ -6193,7 +6190,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     if (!this.opencodeClient) return undefined;
     if (!this.milestonePush) {
       this.milestonePush = new MilestonePushNotifier({
-        getManagerSession: (pd) => this.getValidManagerSessionEntry(pd),
+        getManagerSession: (pd) => this.readManagerSessionEntry(pd),
         wasNotified: (key) => !!this.getGatewayDb().kvGet('milestone-notified', key),
         markNotified: (key) => this.getGatewayDb().kvSet('milestone-notified', key, { at: new Date().toISOString() }),
         readGoalState: (goalId, pd) => {
@@ -6217,7 +6214,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const session = await this.opencodeClient.session.create({ directory: projectDir });
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create manager session: no id returned');
-    this.getGatewayDb().kvSet('manager-session', projectDir, { sessionId, createdAt: new Date().toISOString(), runtime: this.runtimeName });
+    this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
     this.registerInternalSession(sessionId, 'manager');
     await this.sdkSession.registerExternal(sessionId, projectDir, {
       mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
