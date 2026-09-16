@@ -26,12 +26,14 @@ export function useConnPhase(): Accessor<ConnPhase> { … 组件内 createSignal
 - 选择单例而非 Context：规避 context 断链/双实例类问题（第一方源码单 bundle 无副本风险，2026-09-09 排查法记录的教训）
 - 现有 `connection-state.test.ts` 用自建实例，不受影响
 
-**2. 指示灯（Rail 常驻）**——新组件 `components/ConnDot.tsx`
+**2. 指示灯升级（titlebar 既有圆点，非新增）**
 
-- 位置：Rail 顶部项目切换器行（搜索按钮旁）
-- 三态：connected=绿点 / reconnecting=黄点脉动 / down=红点（CSS 动画，连接态无动效）
-- Tooltip（openDelay 300）："Gateway 已连接" / "Gateway 正在重连（第 N 次尝试）" / "Gateway 已断开，正在自动重启…"
-- initial 相位不渲染（避免启动期误报）
+titlebar 已有 gateway 圆点（MafwShell.tsx titlebar，`mafw-titlebar-dot`，数据源 = main 健康推送的 `gwStatus`：ready/starting/failed/stopped 进程态）——**gateway 活着但 SSE 断开时它仍显示"已连接"（accent 呼吸），这正是"不真实"的一部分**。修订：升级为融合态，Rail 不另加圆点：
+
+- 数据源融合：`conn.phase`（数据流相位）为主，`gwStatus.state`（进程态）兜底
+- 判定优先级：`conn.down` 或 `gwStatus failed` → 红（`failed` 类）；`conn.reconnecting` → 红 + 呼吸动画（新 CSS 类 `reconnecting`——沿用 failed 的红色语义，动画表达"正在恢复"，不引入约定外新色）；`gwStatus starting` 或 `conn.initial` → 黄灰呼吸（`starting` 类）；`conn.connected` → accent 呼吸（ready）；`gwStatus stopped` 且无 conn 信号 → 灰（stopped）
+- Tooltip 融合文案："Gateway 已连接" / "Gateway 正在重连（第 N 次尝试）" / "Gateway 启动中" / "Gateway 启动失败" / "Gateway 已断开，正在自动重启…" / "Gateway 已停止"
+- 色彩遵循既有约定（accent 运行 / 红 错误 / 灰 失联，#mem-anzdzf），新增 CSS 仅 `.mafw-titlebar-dot.reconnecting`
 
 **3. 横幅 + 数据区占位（down 相位）**——新组件 `components/ConnBanner.tsx`
 
@@ -55,10 +57,10 @@ export function useConnPhase(): Accessor<ConnPhase> { … 组件内 createSignal
 | 文件 | 改动 |
 |---|---|
 | `renderer/mafw/connection-state.ts` | 导出模块级单例 `conn` + `useConnPhase()` helper |
-| `renderer/mafw/components/ConnDot.tsx` | 新建：三态圆点 + tooltip |
+| `renderer/mafw/MafwShell.tsx` | 改用单例 conn（删局部实例）；titlebar 圆点升级为融合态（tooltip/类名）；Goals/Usage/Quota/Triage tab 内容挂 ConnBanner + down 占位 |
+| `renderer/mafw/mafw.css` | 新增 `.mafw-titlebar-dot.reconnecting`（红 + 呼吸） |
 | `renderer/mafw/components/ConnBanner.tsx` | 新建：down 横幅 |
-| `renderer/mafw/components/Rail.tsx` | 切换器行挂 ConnDot；会话列表顶部挂 ConnBanner + down 占位 |
-| `renderer/mafw/MafwShell.tsx` | 改用单例 conn（删局部实例）；Goals/Usage/Quota/Triage tab 内容挂 ConnBanner + down 占位 |
+| `renderer/mafw/components/Rail.tsx` | 会话列表顶部挂 ConnBanner + down 占位 |
 | `renderer/mafw/components/ChatPane.tsx` | down 相位禁用发送按钮 |
 
 ## 验证
