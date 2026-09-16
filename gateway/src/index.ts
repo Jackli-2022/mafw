@@ -705,6 +705,9 @@ class MafwScheduler {
               if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
               await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
               this.invalidateManagerSessions();
+              // Same desktop hint as the route path: hand-edited config.yaml
+              // switches must also refresh the renderer (menus/tabs/manager kv).
+              this.broadcast({ type: 'runtime_switched', runtime: runtime.name, previous: prevPlugin ?? null });
               log.info(`[Scheduler] Runtime hot-switched to '${runtime.name}'`);
             } catch (err: any) {
               log.warn(`[Scheduler] Runtime hot-switch failed (non-fatal): ${err.message}`);
