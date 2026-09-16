@@ -10,6 +10,7 @@ import { TaskBar } from "./TaskBar"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
+import { messageModel } from "../message-model"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
@@ -1476,8 +1477,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const sid = sidProp()
     const msgs = sid ? (props.store.message[sid] || []) : []
     const last = [...msgs].reverse().find(m => m.role === "assistant")
-    const m = last?.model
-    if (m?.providerID && m?.modelID) return `${m.providerID}/${m.modelID}`
+    const m = messageModel(last)
+    if (m) return `${m.providerID}/${m.modelID}`
     if (props.model()) return `${props.model()!.providerID}/${props.model()!.modelID}`
     return undefined
   })
@@ -1742,7 +1743,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const msgs = sid ? (props.store.message[sid] || []) : []
     const assistants = msgs.filter(m => m.role === "assistant")
     const last = assistants[assistants.length - 1]
-    return last?.model?.modelID || last?.agent || "default"
+    return messageModel(last)?.modelID || last?.agent || "default"
   })
 
   const currentModelLabel = createMemo(() => props.model()?.label || modelName())

@@ -50,6 +50,7 @@ import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
 import type { ModelEntry } from "./components/pickers/ModelPicker"
+import { messageModel } from "./message-model"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
@@ -1891,8 +1892,8 @@ export function MafwShell() {
     if (pick) return pick
     const msgs = sid ? (store.message[sid] || []) : []
     const last = [...msgs].reverse().find((m: any) => m.role === "assistant")
-    const m = last?.model
-    if (m?.providerID && m?.modelID) {
+    const m = messageModel(last)
+    if (m) {
       const group = modelGroups().find((g) => g.providerID === m.providerID)
       const entry = group?.models.find((em) => em.id === m.modelID)
       return { providerID: m.providerID, modelID: m.modelID, label: entry?.name || m.modelID }
