@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 
 
 import { Icon } from "@mafw/ui/icon"
@@ -1800,16 +1800,14 @@ export function MafwShell() {
   const [providersRetry, setProvidersRetry] = createSignal(0)
   let providersRetryTimer: ReturnType<typeof setTimeout> | null = null
   onCleanup(() => { if (providersRetryTimer) clearTimeout(providersRetryTimer) })
-  createEffect(() => {
-    if (!gwReadyForMenus()) return
-    providersRetry() // re-run when a failed providers fetch schedules a retry
+  const refreshMenus = () => {
     window.api.mafw.agents.list().then((list: any[]) => {
       setAgentsData(Array.isArray(list) ? list : [])
     }).catch(e => console.warn("[mafw] agents.list:", e))
     window.api.mafw.providers.list().then((p: any) => {
       setProvidersData(p)
       // Default the model pill to the most recently used model (first entry of
-      // localStorage mafw-recent-models) — only when the user hasn't picked one.
+      // localStorage mafw-recent-models) — only when we have no default yet.
       if (defaultModel() === null) {
         try {
           const recent: string[] = JSON.parse(localStorage.getItem("mafw-recent-models") || "[]")
@@ -1850,6 +1848,12 @@ export function MafwShell() {
         }, 10_000)
       }
     })
+  }
+
+  createEffect(() => {
+    if (!gwReadyForMenus()) return
+    providersRetry() // re-run when a failed providers fetch schedules a retry
+    refreshMenus()
   })
 
   // Primary agents (switchable driver) vs subagent agents (mentionable too).
