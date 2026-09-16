@@ -570,7 +570,7 @@ opencode LLM（推理 Agent）                       └─ MediaService → pi 
 
 - 单文件包 `name.js` 或目录包 `name/plugin.json`（`{name, version?, main?}`，main 缺省 index.js）
 - 模块形状：声明式 `{ name, usage?, media?, runtime?, uiTools? }` 或 `async activate(ctx) → contributions`
-- 统一 ctx = 三个 legacy ctx 超集：apiKey/fetch(60s)/log/pluginConfig（读 `plugins.<name>.config`，回退 legacy 三段）/projectDir/gatewayPort/usage.modelStats（`gateway/src/plugins/package-context.ts`）
+- 统一 ctx = 三个 legacy ctx 超集：apiKey/fetch(60s)/log/pluginConfig（读 `plugins.<name>.config`，回退 legacy 三段）/projectDir/gatewayPort/usage.modelStats（`gateway/src/plugins/package-context.ts`）/emit（`POST /api/events` 发布自定义事件到全 UI 通道；type 建议 `plugin:<name>:<event>` 命名空间，消费方对未知 type 忽略——SSE 通知语义，无注册制）
 - **优先级（同名）：包 > legacy 目录文件 > 内置**；legacy 四目录行为不变
 - PluginHost（`gateway/src/plugins/package-host.ts`）：扫描/激活/跨面原子 reload（先全部激活再一次性推各 loader 的 `setPackageEntries`）+ 顶层与每包子目录双 watcher
 - 内置件与用户插件同一接口（dogfood）：opencode 经 `registerBuiltin('opencode', …)` 注册（index.ts，可被同名文件/包覆盖）；media `pi` 经 `registerBuiltinEngine('pi', …)` 注册，`resolveMediaPrompt`（`media/resolve-prompt.ts`）先查 engines map，非 builtin 同名直接生效

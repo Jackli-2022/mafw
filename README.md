@@ -97,7 +97,8 @@ module.exports = {
 };
 ```
 
-- **统一上下文**：`apiKey` / `fetch` / `pluginConfig` / `projectDir` / `gatewayPort` / `usage.modelStats`——
+- **统一上下文**：`apiKey` / `fetch` / `pluginConfig` / `projectDir` / `gatewayPort` / `usage.modelStats` /
+  `emit`（向桌面/TUI/推送全通道广播自定义事件）——
   三类插件 ctx 的超集，配置收敛在 `plugins.<name>.config`
 - **内置件同接口**：opencode runtime 与 media `pi` 引擎就是注册进同一体系的内置插件，
   用户同名文件/包可直接覆盖

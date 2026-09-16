@@ -264,7 +264,7 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 
 | 组 | 代表端点 |
 |---|---|
-| 健康/事件 | `GET /health`、`GET /api/events`（SSE）、`POST /api/events` |
+| 健康/事件 | `GET /health`、`GET /api/events`（SSE 订阅）、`POST /api/events`（发布：顶层扁平或 opencode_event 信封，全 UI 通道） |
 | 项目/会话 | `POST /register`、`GET /api/projects`、`GET /api/sessions`、`GET /api/manager/session` |
 | Goal 编排 | `POST /api/work/{goalId}/validate`、`POST /api/work/{goalId}/complete`、`POST /control`（PAUSE/ABORT） |
 | 记忆 | `GET /api/recall/context`、`GET /api/recall/pinned`、`POST /api/obs/capture`、`POST /api/memory/add`、`GET /api/memory/search`、`GET /api/memory/stats` |
