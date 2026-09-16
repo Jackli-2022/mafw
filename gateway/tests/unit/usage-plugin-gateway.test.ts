@@ -121,4 +121,109 @@ describe('builtin usage plugin: gateway (蓝区统一网关)', () => {
     expect(byWin.balance.used).toBe(0);
     expect(byWin.day.used).toBe(0);
   });
+
+  // ---- /v1/usage/by-model 权威路径（BlueRegionUsage 链路，2026-09-16 实测可用）----
+
+  // 路由式 mock：/models 返回 credit_history；/usage/by-model?window=* 返回逐日明细
+  function mkRoutedFetch(modelsPayload: any, usagePayloads: Record<string, any>, log: Array<string> = []) {
+    return async (url: string, opts?: any) => {
+      log.push(url);
+      if (url.endsWith('/models')) {
+        return { ok: true, json: async () => modelsPayload };
+      }
+      const m = url.match(/\/usage\/by-model\?window=(\w+)$/);
+      if (!m) return { ok: false, status: 404, json: async () => ({}) };
+      const payload = usagePayloads[m[1]];
+      if (!payload) return { ok: false, status: 404, json: async () => ({}) };
+      return { ok: true, json: async () => payload };
+    };
+  }
+
+  it('prefers /v1/usage/by-model for day/week/month credits with credit_history segmentation', async () => {
+    // m1 系数：08-01 起 1.0，09-10 起 2.0（区间语义 [from, 下一条 from)）
+    const modelsPayload = {
+      data: [{ id: 'm1', credit: 2.0, credit_history: [{ from: '2026-08-01', credit: 1.0 }, { from: '2026-09-10', credit: 2.0 }] }],
+    };
+    const usagePayloads = {
+      today: { data: [{ model: 'm1', daily: [{ date: '2026-09-16', req_tokens: 300000, rsp_tokens: 200000, total_tokens: 500000 }] }] },
+      week: {
+        data: [{
+          model: 'm1',
+          daily: [
+            { date: '2026-09-09', req_tokens: 600000, rsp_tokens: 400000, total_tokens: 1000000 }, // × 1.0 = 1.0
+            { date: '2026-09-11', req_tokens: 500000, rsp_tokens: 0, total_tokens: 500000 }, // × 2.0 = 1.0
+          ],
+        }],
+      },
+      month: { data: [{ model: 'm1', daily: [{ date: '2026-09-16', req_tokens: 1000000, rsp_tokens: 0, total_tokens: 1000000 }] }] },
+    };
+    const calls: string[] = [];
+    const plugin = loadPlugin();
+    const res = await plugin.fetch(mkCtx({ fetch: mkRoutedFetch(modelsPayload, usagePayloads, calls) }));
+    const byWin = Object.fromEntries(res.windows.map((w: any) => [w.window, w]));
+    // today: 0.5M × 2.0 = 1.0（req+rsp 口径，req 含缓存命中）
+    expect(byWin.day.used).toBe(1);
+    // week: 1.0M × 1.0（09-09）+ 0.5M × 2.0（09-11）= 2.0（跨系数变更按日分段）
+    expect(byWin['7d'].used).toBe(2);
+    // month: 1.0M × 2.0 = 2.0
+    expect(byWin.month.used).toBe(2);
+    // 权威路径确实调了三个窗口端点，且全部携带 Bearer key
+    expect(calls.filter(u => u.includes('/usage/by-model?window=today')).length).toBe(1);
+    expect(calls.filter(u => u.includes('/usage/by-model?window=week')).length).toBe(1);
+    expect(calls.filter(u => u.includes('/usage/by-model?window=month')).length).toBe(1);
+    expect(calls.length).toBeGreaterThan(0);
+    const routed = calls.filter(u => u.includes('/usage/'));
+    expect(routed.length).toBe(3);
+  });
+
+  it('balance window still uses local all-time trajectory estimate', async () => {
+    // /models: m1 当前 2.0（带 history）、m2 0.5 → 本地全历史 balance = 1M×2.0 + 1M×0.5 = 2.5
+    const modelsPayload = {
+      data: [
+        { id: 'm1', credit: 2.0, credit_history: [{ from: '2026-08-01', credit: 2.0 }] },
+        { id: 'm2', credit: 0.5 },
+      ],
+    };
+    const usagePayloads = {
+      today: { data: [{ model: 'm1', daily: [{ date: '2026-09-16', req_tokens: 500000, rsp_tokens: 0, total_tokens: 500000 }] }] },
+    };
+    const plugin = loadPlugin();
+    const res = await plugin.fetch(mkCtx({ fetch: mkRoutedFetch(modelsPayload, usagePayloads) }));
+    const byWin = Object.fromEntries(res.windows.map((w: any) => [w.window, w]));
+    expect(byWin.balance.used).toBe(2.5); // 本地 trajectory × /models 价格
+    expect(byWin.balance.detailLines[0]).toContain('m1');
+    expect(byWin.day.used).toBe(1); // 网关权威：0.5M × 2.0
+  });
+
+  it('falls back to local estimation per window when /usage/by-model fails (404/throw)', async () => {
+    const calls: string[] = [];
+    const fetch = async (url: string) => {
+      calls.push(url);
+      if (url.includes('/usage/by-model?window=week')) throw new Error('boom'); // 网络异常
+      if (url.includes('/usage/')) return { ok: false, status: 404, json: async () => ({}) }; // 端点不存在
+      return { ok: true, json: async () => MODELS_PAYLOAD };
+    };
+    const plugin = loadPlugin();
+    const res = await plugin.fetch(mkCtx({ fetch }));
+    const byWin = Object.fromEntries(res.windows.map((w: any) => [w.window, w]));
+    // 三窗口全部回退本地 RECENT_ROWS（m2 0.5M × 0.5 = 0.25? 不——m2 是 1M tok × 0.5 = 0.5）
+    expect(byWin.day.used).toBe(0.5);
+    expect(byWin['7d'].used).toBe(0.5);
+    expect(byWin.month.used).toBe(0.5);
+  });
+
+  it('falls back to current /models credit for models without credit_history', async () => {
+    const modelsPayload = { data: [{ id: 'm1', credit: 1.5 }] };
+    const usagePayloads = {
+      today: { data: [{ model: 'm1', daily: [{ date: '2026-09-16', req_tokens: 1000000, rsp_tokens: 0, total_tokens: 1000000 }] }] },
+      week: { data: [{ model: 'm1', daily: [{ date: '2026-09-09', req_tokens: 200000, rsp_tokens: 0, total_tokens: 200000 }] }] },
+      month: { data: [{ model: 'm1', daily: [{ date: '2026-09-01', req_tokens: 400000, rsp_tokens: 0, total_tokens: 400000 }] }] },
+    };
+    const plugin = loadPlugin();
+    const res = await plugin.fetch(mkCtx({ fetch: mkRoutedFetch(modelsPayload, usagePayloads) }));
+    const byWin = Object.fromEntries(res.windows.map((w: any) => [w.window, w]));
+    expect(byWin.day.used).toBe(1.5);
+    expect(byWin['7d'].used).toBe(0.3);
+    expect(byWin.month.used).toBe(0.6);
+  });
 });
