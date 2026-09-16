@@ -427,6 +427,17 @@ class MafwScheduler {
     if (opencodePassword) {
       sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
     }
+    // opencode 注册为正式内置插件（与用户插件同一接口；同名文件/包可覆盖）
+    const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
+    this.runtimeLoader.registerBuiltin(
+      'opencode',
+      async () => (await import('./runtime/opencode-runtime.js')).createOpencodeRuntime({
+        ...sdkSnapshot,
+        headers: { ...sdkSnapshot.headers },
+      }),
+      fullCapabilities(),
+      !!process.env.MAFW_SERVER_SERVE_URL,
+    );
     const runtime = await this.createRuntime(sdkConfig);
     this.opencodeClient = runtime;
     this.runtimeCaps = runtime.capabilities;
@@ -1043,6 +1054,11 @@ class MafwScheduler {
         log.warn(`[Runtime] plugin '${pluginName}' not found — falling back to opencode`);
       }
     }
+    const builtin = this.runtimeLoader?.get('opencode');
+    if (builtin) {
+      return builtin.createRuntime(createRuntimePluginContext(undefined));
+    }
+    // 最终安全网：loader 未注册时直连（不应发生）
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
     return createOpencodeRuntime({
       ...sdkConfig,
@@ -4031,7 +4047,7 @@ class MafwScheduler {
             builtinEntries: (): any[] => {
               const entries: any[] = [];
               const rt = (name: string) => ({ type: 'runtime', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
-              entries.push(rt('opencode'));
+              // opencode 经 registerBuiltin 注册，getBuiltinNames 已含——不再手工 push（防重复）
               for (const name of this.runtimeLoader?.getBuiltinNames?.() ?? []) entries.push(rt(name));
               entries.push({ type: 'media', name: 'pi', file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
               const usageState: any[] = this.pluginLoader?.getState?.() ?? [];
