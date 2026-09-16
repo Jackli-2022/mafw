@@ -30,6 +30,8 @@ export interface HubDeps {
   maxBytes?: number;
   /** builtin inventory entries in display order; hub stamps builtin/overridden/config-disabled. */
   builtinEntries?: () => PluginEntry[];
+  /** PluginHost 包状态（GET /api/plugins 的 packages 键）。 */
+  getPackages?: () => unknown[];
 }
 
 export class HubError extends Error {

@@ -128,4 +128,28 @@ describe('plugins routes', () => {
     });
     expect(status).toBe(400);
   });
+
+  test('list 响应携带 packages 键（缺省空数组）', async () => {
+    const list = await new Promise<{ status: number; body: any }>((resolve, reject) => {
+      const addr = server.address() as { port: number };
+      http.get({ hostname: '127.0.0.1', port: addr.port, path: '/api/plugins' }, (res) => {
+        let chunks = ''; res.on('data', (c) => chunks += c);
+        res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(chunks) }));
+      }).on('error', reject);
+    });
+    expect(list.status).toBe(200);
+    expect(list.body.packages).toEqual([]);
+  });
+
+  test('list 响应透传 getPackages()', async () => {
+    deps.hub.getPackages = () => [{ name: 'acme', status: 'ok' }];
+    const list = await new Promise<{ status: number; body: any }>((resolve, reject) => {
+      const addr = server.address() as { port: number };
+      http.get({ hostname: '127.0.0.1', port: addr.port, path: '/api/plugins' }, (res) => {
+        let chunks = ''; res.on('data', (c) => chunks += c);
+        res.on('end', () => resolve({ status: res.statusCode!, body: JSON.parse(chunks) }));
+      }).on('error', reject);
+    });
+    expect(list.body.packages).toEqual([{ name: 'acme', status: 'ok' }]);
+  });
 });

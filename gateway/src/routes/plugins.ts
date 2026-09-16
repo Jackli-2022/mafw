@@ -46,7 +46,10 @@ async function guarded(res: http.ServerResponse, fn: () => Promise<unknown>): Pr
 export interface PluginsRouteDeps { hub: HubDeps }
 
 export async function handlePluginsList(_req: http.IncomingMessage, res: http.ServerResponse, deps: PluginsRouteDeps): Promise<void> {
-  await guarded(res, async () => ({ plugins: listPlugins(deps.hub) }));
+  await guarded(res, async () => ({
+    plugins: listPlugins(deps.hub),
+    packages: deps.hub.getPackages?.() ?? [],
+  }));
 }
 
 export async function handlePluginsInstall(req: http.IncomingMessage, res: http.ServerResponse, deps: PluginsRouteDeps): Promise<void> {
