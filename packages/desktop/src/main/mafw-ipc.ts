@@ -9,7 +9,6 @@ import {
   onGatewayStateChange,
   restartGateway,
   startGateway,
-  stopGateway,
 } from "./mafw-sidecar"
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
@@ -23,8 +22,10 @@ import { createGatewayHealthMonitor, createRestartScheduler } from "./gateway-he
 let mafwClient: import("@mafw/sdk").MafwClient | null = null
 
 // ── Health Monitor + auto-restart ──
-const HEALTH_INTERVAL_MS = 30_000
-const MAX_CONSECUTIVE_FAILURES = 5
+// 10s × 3 ≈ 30s to declare down: CLI restarts by others kill a gateway we
+// don't own (no exit event) — detection latency IS reconnect latency here.
+const HEALTH_INTERVAL_MS = 10_000
+const MAX_CONSECUTIVE_FAILURES = 3
 const RESTART_DELAY_MS = 3_000
 const RESTART_MAX_ATTEMPTS = 3
 

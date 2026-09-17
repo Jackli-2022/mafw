@@ -192,13 +192,16 @@ function pollUntilReady(url: string): void {
   }, 1000)
 }
 
-export async function startGateway(opts?: { skipAdopt?: boolean }): Promise<void> {
+export async function startGateway(): Promise<void> {
   if (state !== "stopped") return
 
   // Try connecting to an already-running gateway before spawning a new one.
-  // Skipped in the restart path: we just killed our own gateway — a "found
-  // running" answer here would be the dying process (adopt race).
-  const existingUrl = opts?.skipAdopt ? null : await probeExistingGateway()
+  // Adopt is always safe: stopGateway waits for the killed process to stop
+  // answering before returning, so a "found running" answer here is a LIVE
+  // gateway — ours, the user's CLI daemon, or someone else's restart. All
+  // of them are the correct thing to connect to (declarative desired state:
+  // "a healthy gateway on the port", not "the process we spawned").
+  const existingUrl = await probeExistingGateway()
   // Hermes-style ladder: the user's own `mafw` install wins over the bundled
   // copy — probed (`mafw version`) before use, never trusted blindly.
   const cliProbe = await probeMafwCli()
@@ -248,16 +251,16 @@ export async function startGateway(opts?: { skipAdopt?: boolean }): Promise<void
 export async function stopGateway(): Promise<void> {
   // Capture the live URL before clearing state — needed for the down-wait.
   const liveUrl = port ? `http://127.0.0.1:${port}` : null
+  let killedOurs = false
   if (bundledChild) {
+    // Only the bundled child is desktop-owned and killed directly.
     await killBundledChild()
-  } else if (spawnedByUs) {
-    // CLI daemon we started; adopted gateways (spawnedByUs=false) are left alone.
-    await new Promise<void>((resolve) => {
-      try {
-        execFile("mafw", ["stop"], { shell: true, windowsHide: true }, () => resolve())
-      } catch { resolve() }
-    })
+    killedOurs = true
   }
+  // CLI-daemon case: deliberately NO `mafw stop` here. The pid file may
+  // belong to a gateway someone else just started (CLI restart); killing it
+  // starts a desktop-vs-CLI kill war. A live CLI daemon is re-adopted by
+  // startGateway's probe instead (restart becomes "ensure healthy").
   if (healthInterval) {
     clearInterval(healthInterval)
     healthInterval = null
@@ -265,23 +268,28 @@ export async function stopGateway(): Promise<void> {
   port = null
   spawnedByUs = false
   notifyState("stopped")
-  // Wait until the old process actually stops answering before letting a
+  // Wait until the killed process actually stops answering before letting a
   // restart probe/spawn — otherwise startGateway adopts the dying gateway
   // and reports a false "ready" (the 2026-09-16 two-click restart bug).
-  if (liveUrl) {
+  // Only after a real kill: when we killed nothing (CLI restart by someone
+  // else), a live gateway on the port is the thing to adopt, not wait out.
+  if (liveUrl && killedOurs) {
     await waitForGatewayDown(() => checkHealth(liveUrl), { timeoutMs: 8000, intervalMs: 200 })
   }
 }
 
 let restartInflight: Promise<void> | null = null
 
-/** Stop → wait for death → start (skipping adopt). In-flight deduped:
- *  a manual click and an auto-restart racing would double-kill/spawn. */
+/** Stop → wait for death → start (adopt-always). In-flight deduped:
+ *  a manual click and an auto-restart racing would double-kill/spawn.
+ *  Adopt handles the "someone restarted the gateway via CLI" case: their
+ *  new gateway answers the probe and is adopted instead of spawning a
+ *  duplicate that the single-instance guard exits. */
 export function restartGateway(): Promise<void> {
   if (restartInflight) return restartInflight
   restartInflight = (async () => {
     await stopGateway()
-    await startGateway({ skipAdopt: true })
+    await startGateway()
   })().finally(() => { restartInflight = null })
   return restartInflight
 }
