@@ -359,15 +359,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   voiceSession.on("error", (e) => showToastV2({ description: `语音失败: ${e.message}`, duration: 3000 }))
   voiceSession.on("segment", ({ wavBytes, duration }) => { void handleVoiceSegment(wavBytes, duration) })
 
-  // assistant 消息行内播报按钮（与 copy 按钮同款）：toggle 语义
+  // assistant 消息行内播报按钮（与 copy 按钮同款）：toggle 语义——同条再点=停止，
+  // 点其他条/其他播报进行中=先停再播（speak 的 state guard 会吞掉并发请求，故先显式 stop）
   const [speakingPartId, setSpeakingPartId] = createSignal<string | null>(null)
   const assistantActions = (): AssistantActions => ({
     speakingPartId: () => speakingPartId(),
     onSpeakToggle: (text, partId) => {
-      if (ttsSpeaking() && speakingPartId() === partId) {
+      if (speakingPartId() === partId) {
         voiceSession.stopSpeaking("manual")
         return
       }
+      voiceSession.stopSpeaking("manual")
       setSpeakingPartId(partId)
       void voiceSession.speak(text).catch(() => {}).finally(() => setSpeakingPartId(null))
     },

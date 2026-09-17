@@ -1567,3 +1567,28 @@ body:not([data-new-layout]) {
     color: var(--text-weak);
   }
 }
+
+/* ── 播报按钮（assistant 行内，与 copy 同款）：播报中动效 ── */
+.speak-btn-wrap {
+  display: inline-flex;
+  position: relative;
+}
+
+.speak-btn-wrap[data-speaking="true"] button {
+  color: var(--accent, var(--card-accent));
+  animation: speak-btn-pulse 1.4s ease-in-out infinite;
+}
+
+.speak-btn-wrap[data-speaking="true"] button svg {
+  animation: speak-icon-breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes speak-btn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, var(--card-accent)) 40%, transparent); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+
+@keyframes speak-icon-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}

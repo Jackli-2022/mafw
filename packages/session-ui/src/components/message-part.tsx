@@ -1788,17 +1788,19 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
         <Show when={showCopy()}>
           <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
             <Show when={props.assistantActions?.onSpeakToggle}>
-              <MessageActionButton
-                icon={speaking() ? "stop" : "volume"}
-                label={speaking() ? i18n.t("ui.message.stopSpeaking") : i18n.t("ui.message.speak")}
-                useV2={props.useV2Actions}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  props.assistantActions?.onSpeakToggle?.(text(), part().id)
-                }}
-                aria-label={speaking() ? i18n.t("ui.message.stopSpeaking") : i18n.t("ui.message.speak")}
-              />
+              <span class="speak-btn-wrap" data-speaking={speaking() ? "true" : undefined}>
+                <MessageActionButton
+                  icon={speaking() ? "stop" : "volume"}
+                  label={speaking() ? i18n.t("ui.message.stopSpeaking") : i18n.t("ui.message.speak")}
+                  useV2={props.useV2Actions}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    props.assistantActions?.onSpeakToggle?.(text(), part().id)
+                  }}
+                  aria-label={speaking() ? i18n.t("ui.message.stopSpeaking") : i18n.t("ui.message.speak")}
+                />
+              </span>
             </Show>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
