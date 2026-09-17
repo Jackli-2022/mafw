@@ -70,7 +70,6 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
-import { startTray, stopTray } from './tray';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
 import {
   StepInjectState,
@@ -5210,7 +5209,6 @@ class MafwScheduler {
             wss.emit('connection', ws, req);
           });
         });
-        startTray(this.apiPort);
         resolve();
       });
     });
@@ -6223,14 +6221,12 @@ if (require.main === module) {
 
   process.on('SIGINT', () => {
     log.info('\n[Scheduler] Received SIGINT, shutting down...');
-    stopTray();
     scheduler.stop();
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
     log.info('\n[Scheduler] Received SIGTERM, shutting down...');
-    stopTray();
     scheduler.stop();
     process.exit(0);
   });
