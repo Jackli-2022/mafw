@@ -16,7 +16,7 @@ export class MemoryStore {
   readonly sticky: StickyNote[] = []
   budget?: StickyNoteBudget
   private deps: MemoryStoreDeps
-  private retriever: 'bm25' | 'token' | 'hybrid'
+  readonly retriever: 'bm25' | 'token' | 'hybrid'
 
   constructor(deps: MemoryStoreDeps, retriever: 'bm25' | 'token' | 'hybrid' = 'bm25') {
     this.deps = deps

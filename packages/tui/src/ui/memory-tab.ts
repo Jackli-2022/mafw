@@ -54,7 +54,8 @@ export class MemoryTab extends Container implements Focusable {
     const { store } = this.deps
     const lines: string[] = []
     const budget = store.budget ? `📝 ${store.sticky.length}/${store.budget.max}` : ''
-    lines.push(theme.accent('搜索: ') + (this._focused ? theme.dim('输入后 Enter 检索 · Esc 到列表') : theme.dim('i 聚焦输入框')) + theme.dim(`  ·  ${budget}`))
+    const meta = [store.retriever, budget].filter(Boolean).join(' · ')
+    lines.push(theme.accent('搜索: ') + (this._focused ? theme.dim('输入后 Enter 检索 · Esc 到列表') : theme.dim('i 聚焦输入框')) + theme.dim(`  ·  ${meta}`))
     lines.push(theme.accent(`检索结果 (${store.results.length})`))
     if (store.results.length === 0) lines.push(theme.dim('  （空——在上方输入关键词）'))
     store.results.forEach((u, i) => lines.push(memoryLine(u, i === this.selected)))

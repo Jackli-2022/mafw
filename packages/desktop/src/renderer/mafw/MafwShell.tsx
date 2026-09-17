@@ -89,7 +89,6 @@ export function MafwShell() {
 
   // Question widget state
   const [activeQuestion, setActiveQuestion] = createSignal<QuestionData | null>(null)
-  const [gatewayUrl, setGatewayUrl] = createSignal("")
 
   // Chat sessions (tabs)
   const [sessions, setSessions] = createSignal<ChatSession[]>([])
@@ -1284,8 +1283,8 @@ export function MafwShell() {
       return
     }
     console.log("[mafw] SSE connecting to", info.url)
-    setGatewayUrl(info.url)
-    const source = new EventSource(`${info.url}/api/events`)
+    // URL 契约归 SDK（event.url）；EventSource 传输保持 renderer 直连。
+    const source = new EventSource(await window.api.mafw.event.url())
     es = source
     // onopen fires on initial connect AND after every EventSource auto-reconnect:
     // a gateway restart breaks SSE but keeps the same port, so the reconnect is
@@ -2767,7 +2766,6 @@ export function MafwShell() {
       <Show when={activeQuestion()}>
         <QuestionWidget
           question={activeQuestion()!}
-          gatewayUrl={gatewayUrl()}
           onDismiss={() => setActiveQuestion(null)}
         />
       </Show>

@@ -79,7 +79,6 @@ export type ChatPaneProps = {
   taskMetrics: (sid: string) => { tokens: number; started: number }
   tasksAllDone: (sid: string) => boolean
   gwReady: boolean
-  gatewayUrl?: string
   agentSel: () => AgentEntry | null
   model: () => { providerID: string; modelID: string; label: string } | null
   modelGroups: () => { provider: string; providerID: string; models: ModelEntry[] }[]
@@ -135,6 +134,36 @@ export function ChatPane(props: ChatPaneProps) {
   return (
     <Show keyed when={props.sessionID || "__none__"}>
       {(sid) => <PaneInner {...props} sid={sid === "__none__" ? "" : sid} />}
+    </Show>
+  )
+}
+
+// 历史媒体附件播放器：artifact URL 经 SDK helper 异步解析（media.artifactUrl），
+// 渲染端不自己拼 /a2a/artifacts/ 字符串。
+function MediaHistoryAttachment(props: { artifactId: string; name: string; mediaType: string }) {
+  const [url, setUrl] = createSignal<string | null>(null)
+  createEffect(() => {
+    void window.api.mafw.media.artifactUrl(props.artifactId).then(setUrl)
+  })
+  return (
+    <Show when={url()}>
+      {(u) => (
+        <div class="mafw-media-history">
+          <Show when={props.mediaType.startsWith("image/")}>
+            <img src={u()} alt={props.name} class="mafw-media-image" />
+          </Show>
+          <Show when={props.mediaType.startsWith("audio/")}>
+            <audio controls preload="metadata" src={u()}>
+              您的浏览器不支持音频播放。
+            </audio>
+          </Show>
+          <Show when={props.mediaType.startsWith("video/")}>
+            <video controls preload="metadata" src={u()} class="mafw-media-video">
+              您的浏览器不支持视频播放。
+            </video>
+          </Show>
+        </div>
+      )}
     </Show>
   )
 }
@@ -404,9 +433,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // 流式 PCM16 播放：逐块解码 → AudioBufferSource 排队（ctx 由调用方手势内创建）
   const playStreamingTts = async (text: string, voice: string, ctx: AudioContext, signal?: AbortSignal) => {
-    // 直接 fetch gateway SSE（渲染进程原生 fetch；IPC 无法克隆 AsyncGenerator）
-    const base = (props.gatewayUrl || "http://127.0.0.1:3000").replace(/\/+$/, "")
-    const res = await fetch(`${base}/api/tts/stream`, {
+    // 直接 fetch gateway SSE（渲染进程原生 fetch；IPC 无法克隆 AsyncGenerator）。
+    // URL 契约归 SDK（tts.streamUrl），传输保持 renderer 直连。
+    const streamUrl = await window.api.mafw.tts.streamUrl()
+    const res = await fetch(streamUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice }),
@@ -1025,7 +1055,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             bytes = await blob.arrayBuffer()
           }
           if (!bytes) throw new Error("无法读取媒体数据")
-          console.log("[media] uploading to A2A artifact:", a.name, mediaType, bytes.byteLength, "bytes @", props.gatewayUrl || "http://127.0.0.1:3000(default)")
+          console.log("[media] uploading to A2A artifact:", a.name, mediaType, bytes.byteLength, "bytes")
           artifactId = await uploadMediaBinary(bytes, mediaType)
           task = await window.api.mafw.media.createTask({
             artifactId,
@@ -1392,7 +1422,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 标记，供 AudioReply 渲染（挂在该 turn 的 SessionTurn 上方）。
   const voiceRepliesForTurn = (userMsgId: string) => {
     const sid = sidProp()
-    if (!sid || !props.gatewayUrl) return []
+    if (!sid) return []
     const msgs = props.store.message[sid] || []
     const userMsg = msgs.find(m => m.id === userMsgId)
     if (!userMsg) return []
@@ -1416,7 +1446,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 标记，供历史消息渲染（图片/音频/视频播放器）。
   const mediaRefsForTurn = (userMsgId: string) => {
     const sid = sidProp()
-    if (!sid || !props.gatewayUrl) return []
+    if (!sid) return []
     const parts = props.store.part[userMsgId] || []
     const texts: string[] = []
     for (const p of parts) {
@@ -1442,13 +1472,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 去重：playedVoiceArtifacts（历史重载不重播）；标记 h 匹配"已流式播放"→ 跳过（防双播）。
   createEffect(() => {
     const sid = sidProp()
-    if (!sid || !props.gatewayUrl) return
+    if (!sid) return
     const users = userMessages()
     const last = users.length > 0 ? users[users.length - 1] : null
     if (!last) return
     const replies = voiceRepliesForTurn(last.id)
     if (replies.length === 0) return
-    const base = props.gatewayUrl.replace(/\/+$/, "")
     for (const r of replies) {
       if (r.hash && streamedSpeakHashes.has(r.hash)) {
         console.log("[voice] artifact skipped (already streamed):", r.artifactId)
@@ -1456,23 +1485,32 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       }
       if (playedVoiceArtifacts.has(r.artifactId)) continue
       playedVoiceArtifacts.add(r.artifactId)
-      const audio = new Audio(`${base}/a2a/artifacts/${r.artifactId}`)
-      audio.onplay = () => console.log("[voice] artifact auto-playing:", r.artifactId)
-      audio.onerror = () => console.log("[voice] artifact playback error:", r.artifactId)
-      beginPlayback()
-      activeAudioRef = audio
-      const done = () => {
-        if (activeAudioRef === audio) activeAudioRef = null
-        endPlayback()
-      }
-      audio.onended = done
-      void audio.play().then(
-        () => console.log("[voice] artifact play() resolved:", r.artifactId),
+      // URL 契约归 SDK（media.artifactUrl）；自动播放保持 renderer 直连。
+      void window.api.mafw.media.artifactUrl(r.artifactId).then(
+        (url) => {
+          const audio = new Audio(url)
+          audio.onplay = () => console.log("[voice] artifact auto-playing:", r.artifactId)
+          audio.onerror = () => console.log("[voice] artifact playback error:", r.artifactId)
+          beginPlayback()
+          activeAudioRef = audio
+          const done = () => {
+            if (activeAudioRef === audio) activeAudioRef = null
+            endPlayback()
+          }
+          audio.onended = done
+          void audio.play().then(
+            () => console.log("[voice] artifact play() resolved:", r.artifactId),
+            (err: any) => {
+              done()
+              playedVoiceArtifacts.delete(r.artifactId)
+              console.log("[voice] artifact play() rejected:", r.artifactId, err?.name || err?.message || String(err))
+              showToastV2({ description: "语音回复已生成，请点击播放", duration: 4000 })
+            },
+          )
+        },
         (err: any) => {
-          done()
           playedVoiceArtifacts.delete(r.artifactId)
-          console.log("[voice] artifact play() rejected:", r.artifactId, err?.name || err?.message || String(err))
-          showToastV2({ description: "语音回复已生成，请点击播放", duration: 4000 })
+          console.log("[voice] artifact url error:", r.artifactId, err?.message || String(err))
         },
       )
     }
@@ -1925,26 +1963,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   {/* Media attachments from history: render image/audio/video players */}
                   <Show when={msg.role === "user" && (!msg.voiceStatus || msg.voiceStatus === "done")}>
                     <For each={mediaRefsForTurn(msg.id)}>
-                      {(ref) => {
-                        const url = `${props.gatewayUrl.replace(/\/+$/, "")}/a2a/artifacts/${ref.artifactId}`
-                        return (
-                          <div class="mafw-media-history">
-                            <Show when={ref.mediaType.startsWith("image/")}>
-                              <img src={url} alt={ref.name} class="mafw-media-image" />
-                            </Show>
-                            <Show when={ref.mediaType.startsWith("audio/")}>
-                              <audio controls preload="metadata" src={url}>
-                                您的浏览器不支持音频播放。
-                              </audio>
-                            </Show>
-                            <Show when={ref.mediaType.startsWith("video/")}>
-                              <video controls preload="metadata" src={url} class="mafw-media-video">
-                                您的浏览器不支持视频播放。
-                              </video>
-                            </Show>
-                          </div>
-                        )
-                      }}
+                      {(ref) => (
+                        <MediaHistoryAttachment artifactId={ref.artifactId} name={ref.name} mediaType={ref.mediaType} />
+                      )}
                     </For>
                   </Show>
                   <For each={voiceRepliesForTurn(msg.id)}>
@@ -1952,7 +1973,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       <div class="mafw-turn-audio">
                         <AudioReply
                           text={`[语音回复 art:${vr.artifactId}${vr.voice ? ` 音色:${vr.voice}` : ''}]`}
-                          gatewayUrl={props.gatewayUrl || 'http://127.0.0.1:3000'}
                         />
                       </div>
                     )}

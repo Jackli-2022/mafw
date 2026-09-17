@@ -255,23 +255,20 @@ export function registerMafwIpcHandlers() {
 
   // Binary media upload straight from the main process to the gateway. Node's
   // network stack bypasses the renderer's (Chromium) proxy settings, which can
-  // hang or stall plain fetches to 127.0.0.1.
+  // hang or stall plain fetches to 127.0.0.1. 15s timeout preserved via
+  // Promise.race (SDK methods take no AbortSignal).
+  const withUploadTimeout = <T,>(p: Promise<T>): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("媒体上传失败: 超时（15s）")), 15_000),
+      ),
+    ])
+
   ipcMain.handle("mafw-media-upload", async (_event: IpcMainInvokeEvent, bytes: ArrayBuffer | Buffer, mediaType: string) => {
-    const port = getGatewayPort()
-    if (!port) throw new Error("MAFW Gateway not ready")
+    if (!mafwClient) throw new Error("MAFW Gateway not ready")
     const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(new Uint8Array(bytes))
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/media/upload?type=${encodeURIComponent(mediaType)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: new Uint8Array(buf),
-        signal: AbortSignal.timeout(15_000),
-      },
-    )
-    if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
-    const data: any = await res.json()
-    if (!data?.artifactId) throw new Error("媒体上传失败: 无 artifactId")
+    const data = await withUploadTimeout(mafwClient.media.upload({ bytes: new Uint8Array(buf), mediaType }))
     writeLog("utility", "mafw-media-upload ok", { mediaType, bytes: buf.byteLength, artifactId: data.artifactId.slice(0, 8) })
     return data.artifactId
   })
@@ -280,24 +277,11 @@ export function registerMafwIpcHandlers() {
   // compared to mafw-media-upload followed by mafw-invoke("media", "createTask").
   ipcMain.handle("mafw-media-upload-and-create", async (_event: IpcMainInvokeEvent, bytes: ArrayBuffer | Buffer, mediaType: string, question?: string) => {
     const t0 = Date.now()
-    const port = getGatewayPort()
-    if (!port) throw new Error("MAFW Gateway not ready")
+    if (!mafwClient) throw new Error("MAFW Gateway not ready")
     const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(new Uint8Array(bytes))
-    const qs = new URLSearchParams({ type: mediaType })
-    if (question) qs.set("question", question)
     const t1 = Date.now()
-    const res = await fetch(
-      `http://127.0.0.1:${port}/api/media/upload-and-create?${qs.toString()}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: new Uint8Array(buf),
-        signal: AbortSignal.timeout(15_000),
-      },
-    )
+    const data = await withUploadTimeout(mafwClient.media.uploadAndCreate({ bytes: new Uint8Array(buf), mediaType, question }))
     const t2 = Date.now()
-    if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
-    const data: any = await res.json()
     if (!data?.id) throw new Error("媒体上传失败: 无 task id")
     const t3 = Date.now()
     writeLog("utility", "mafw-media-upload-and-create ok", {

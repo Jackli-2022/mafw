@@ -181,10 +181,12 @@ export interface PermissionRequest {
 }
 
 export interface TriageItem {
+  id: string
   goalId: string
   reason: string
   severity: 'low' | 'medium' | 'high'
   createdAt: string
+  state?: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'REJECTED'
 }
 
 export interface AutomationRule {
@@ -378,6 +380,8 @@ export interface EventNamespace {
   subscribeToSession(sessionID: string): Promise<{ on(event: string, cb: (data: any) => void): void }>
   /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
   connected(): boolean
+  /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）。 */
+  url(sessionID?: string): string
 }
 
 export interface RuntimeNamespace {
@@ -522,6 +526,8 @@ export interface GoalsNamespace {
   control(action: GoalControlAction): Promise<void>
   /** goal → sessions 映射（编排可视化下钻）。 */
   sessions(goalId: string): Promise<GoalSessionInfo[]>
+  /** goal 作用域问答回复（desktop QuestionWidget）。与 /api/questions/:id/reply（原生 question API）是两套通道。 */
+  respondQuestion(goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }): Promise<{ status: string }>
 }
 
 export interface MemorySearchOptions {
@@ -659,6 +665,12 @@ export interface MediaNamespace {
   }>
   /** Create an A2A vision task from an image (data URL) + initial question. */
   createTask: (opts: { dataUrl?: string; artifactId?: string; mediaType?: string; question?: string }) => Promise<MediaTask>
+  /** 二进制媒体上传（raw octet-stream，?type=）。返回 artifact 引用（供 createTask artifactId 路径）。 */
+  upload: (input: { bytes: Uint8Array; mediaType: string }) => Promise<{ artifactId: string }>
+  /** 上传 + 建 A2A 任务一次往返（?type=&question=）。 */
+  uploadAndCreate: (input: { bytes: Uint8Array; mediaType: string; question?: string }) => Promise<{ id: string; contextId: string; state: string; artifactId?: string; mediaType?: string; size?: number }>
+  /** 工件 URL（TTS 音频/上传媒体）。契约归 SDK：renderer 直连 <audio src> 时用此构造。 */
+  artifactUrl: (id: string) => string
 }
 
 // ============================================================
@@ -679,4 +691,6 @@ export interface TtsNamespace {
   voices: () => Promise<{ voices: { id: string; label: string; lang: string }[]; models: { id: string; description: string }[]; defaultVoice: string; defaultModel: string }>
   /** Streaming TTS (SSE, PCM16 24kHz mono): async iterable of base64 chunks. */
   speakStream: (opts: { text: string; voice?: string; style?: string }) => AsyncGenerator<{ data: string; voice: string }>
+  /** 流式 TTS 端点 URL（契约归 SDK：IPC 无法克隆 SSE 流，renderer 直连 fetch 时用此构造）。 */
+  streamUrl: () => string
 }

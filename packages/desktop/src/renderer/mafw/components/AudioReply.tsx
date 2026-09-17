@@ -1,13 +1,13 @@
 ﻿// @ts-nocheck
-import { Show, For, createSignal, onCleanup } from "solid-js"
+import { Show, For, createSignal, createEffect, onCleanup } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 
 /**
  * AudioReply — 渲染 assistant 消息中的语音回复标记。
  *
  * 检测文本中的 `[语音回复 art:<id> 音色:<voice>]`，用 gateway 的 artifact URL
- * 渲染 <audio controls autoplay>。URL 必须是绝对地址（渲染进程 origin 是
- * oc://renderer，相对路径到不了 gateway）。
+ * 渲染 <audio controls autoplay>。URL 经 SDK helper（media.artifactUrl）解析，
+ * 必须是绝对地址（渲染进程 origin 是 oc://renderer，相对路径到不了 gateway）。
  *
  * NOTE: Desktop app connects to gateway via localhost (127.0.0.1), so auth is not
  * needed for local playback. For LAN/Tailscale scenarios, pass authToken prop.
@@ -17,30 +17,36 @@ const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+
 
 interface Props {
   text: string
-  /** gateway base URL（来自 gateway.info().url）。 */
-  gatewayUrl: string
   /** Optional auth token for LAN/Tailscale access (Base64 encoded). */
   authToken?: string
 }
 
 type VoiceReply = { artifactId: string; voice?: string; url: string }
 
-function extractVoiceReplies(text: string, baseUrl: string): VoiceReply[] {
-  const out: VoiceReply[] = []
+function extractVoiceReplies(text: string): Array<{ artifactId: string; voice?: string }> {
+  const out: Array<{ artifactId: string; voice?: string }> = []
   for (const m of text.matchAll(VOICE_REPLY_RE)) {
     const id = m[1]
     if (!id) continue
     out.push({
       artifactId: id,
       voice: m[2]?.trim(),
-      url: `${baseUrl.replace(/\/+$/, "")}/a2a/artifacts/${id}`,
     })
   }
   return out
 }
 
 export function AudioReply(props: Props) {
-  const [replies] = createSignal<VoiceReply[]>(extractVoiceReplies(props.text || "", props.gatewayUrl || "http://127.0.0.1:3000"))
+  const [replies, setReplies] = createSignal<VoiceReply[]>([])
+  createEffect(() => {
+    void (async () => {
+      const found = extractVoiceReplies(props.text || "")
+      const withUrls = await Promise.all(
+        found.map(async (r) => ({ ...r, url: await window.api.mafw.media.artifactUrl(r.artifactId) })),
+      )
+      setReplies(withUrls)
+    })()
+  })
 
   return (
     <Show when={replies().length > 0}>

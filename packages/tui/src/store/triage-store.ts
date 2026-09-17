@@ -1,13 +1,10 @@
 import type { Approval, TriageItem } from '@mafw/sdk'
 
-/** TriageItem 的 SDK 类型缺 id 字段（wire 实际有，desktop 用 t.id）。 */
-export type TriageRow = TriageItem & { id: string }
-
 export type TriageAction = 'approve' | 'reject' | 'confirm' | 'dismiss'
 
 export class TriageStore {
   readonly approvals: Approval[] = []
-  readonly items: TriageRow[] = []
+  readonly items: TriageItem[] = []
   private stopped = false
   private cleanup?: () => void
   private schedule: (fn: () => void, ms: number) => () => void
@@ -43,7 +40,7 @@ export class TriageStore {
       this.approvals.length = 0
       this.approvals.push(...a)
       this.items.length = 0
-      this.items.push(...(t as TriageRow[]))
+      this.items.push(...t)
       this.deps.onChange()
     } catch {
       /* 轮询失败保留旧数据 */

@@ -374,6 +374,12 @@ export class MafwClient implements IMafwClient {
     /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
     connected: (): boolean => this._sse.connected,
 
+    /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）。 */
+    url: (sessionID?: string): string =>
+      sessionID
+        ? `${this.baseUrl}/api/events?sessionID=${encodeURIComponent(sessionID)}`
+        : `${this.baseUrl}/api/events`,
+
     /** 发布自定义事件到全部 UI 通道（SSE/WS/推送）。type 建议命名空间
      *  'plugin:<name>:<event>'；消费方对未知 type 忽略（SSE 通知语义，无注册制）。 */
     publish: async (event: { type: string; [key: string]: any }): Promise<{ ok: true }> =>
@@ -566,6 +572,13 @@ export class MafwClient implements IMafwClient {
         method: 'POST',
         body: JSON.stringify(action),
       })
+    },
+
+    respondQuestion: async (goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }): Promise<{ status: string }> => {
+      return this.request<{ status: string }>(
+        `/api/goals/${encodeURIComponent(goalId)}/questions/${encodeURIComponent(questionId)}/respond`,
+        { method: 'POST', body: JSON.stringify(input) },
+      )
     },
   }
 
@@ -809,6 +822,34 @@ export class MafwClient implements IMafwClient {
       if (!task?.id) throw new Error('Vision createTask failed: no task returned')
       return { id: task.id, contextId: task.contextId, state: task.status?.state || '' }
     },
+
+    upload: async (input: { bytes: Uint8Array; mediaType: string }): Promise<{ artifactId: string }> => {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/media/upload?type=${encodeURIComponent(input.mediaType)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: input.bytes as unknown as BodyInit,
+      })
+      if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
+      const data: any = await res.json()
+      if (!data?.artifactId) throw new Error('媒体上传失败: 无 artifactId')
+      return { artifactId: data.artifactId }
+    },
+
+    uploadAndCreate: async (input: { bytes: Uint8Array; mediaType: string; question?: string }): Promise<{ id: string; contextId: string; state: string; artifactId?: string; mediaType?: string; size?: number }> => {
+      const qs = new URLSearchParams({ type: input.mediaType })
+      if (input.question) qs.set('question', input.question)
+      const res = await this.fetchImpl(`${this.baseUrl}/api/media/upload-and-create?${qs.toString()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: input.bytes as unknown as BodyInit,
+      })
+      if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
+      const data: any = await res.json()
+      if (!data?.id) throw new Error('媒体上传失败: 无 task id')
+      return { id: data.id, contextId: data.contextId, state: data.state, artifactId: data.artifactId, mediaType: data.mediaType, size: data.size }
+    },
+
+    artifactUrl: (id: string): string => `${this.baseUrl}/a2a/artifacts/${id}`,
   }
 
   // ── TTS (MiMo-V2.5-TTS speech synthesis) ──
@@ -879,6 +920,9 @@ export class MafwClient implements IMafwClient {
       }
       })()
     },
+
+    /** 流式 TTS 端点 URL（契约归 SDK：IPC 无法克隆 SSE 流，renderer 直连 fetch 时用此构造）。 */
+    streamUrl: (): string => `${this.baseUrl}/api/tts/stream`,
   }
 
   // ── Providers & Agents (composer model pill / @agent mention) ──

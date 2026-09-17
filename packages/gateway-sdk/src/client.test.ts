@@ -692,3 +692,66 @@ test("event.publish passes opencode_event envelope through", async () => {
   const [, init] = fetchMock.mock.calls[0]
   expect(JSON.parse((init as any).body)).toEqual(envelope)
 })
+
+// ── P2 契约收敛：SDK 补齐方法 ──
+
+test("goals.respondQuestion sends POST /api/goals/:gid/questions/:qid/respond", async () => {
+  fetchMock.mockResolvedValue(okJson({ status: "accepted" }))
+  const c = new MafwClient("http://gw:3000")
+  const result = await c.goals.respondQuestion("g1", "q1", { type: "answer", answer: "42" })
+  expect(result).toEqual({ status: "accepted" })
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe("http://gw:3000/api/goals/g1/questions/q1/respond")
+  expect((init as any).method).toBe("POST")
+  expect(JSON.parse((init as any).body)).toEqual({ type: "answer", answer: "42" })
+})
+
+test("goals.respondQuestion encodes ids", async () => {
+  fetchMock.mockResolvedValue(okJson({ status: "accepted" }))
+  const c = new MafwClient("http://gw:3000")
+  await c.goals.respondQuestion("g 1", "q/1", { type: "cancel" })
+  expect(fetchMock.mock.calls[0][0]).toBe("http://gw:3000/api/goals/g%201/questions/q%2F1/respond")
+})
+
+test("media.upload posts octet-stream to /api/media/upload?type=", async () => {
+  fetchMock.mockResolvedValue(okJson({ artifactId: "art-123" }))
+  const c = new MafwClient("http://gw:3000")
+  const result = await c.media.upload({ bytes: new Uint8Array([1, 2, 3]), mediaType: "image/png" })
+  expect(result).toEqual({ artifactId: "art-123" })
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe("http://gw:3000/api/media/upload?type=image%2Fpng")
+  expect((init as any).method).toBe("POST")
+  expect((init as any).headers["Content-Type"]).toBe("application/octet-stream")
+})
+
+test("media.upload throws on missing artifactId", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await expect(c.media.upload({ bytes: new Uint8Array([1]), mediaType: "image/png" })).rejects.toThrow("artifactId")
+})
+
+test("media.uploadAndCreate posts octet-stream with question query", async () => {
+  fetchMock.mockResolvedValue(okJson({ id: "t1", contextId: "c1", state: "COMPLETED", artifactId: "a1", mediaType: "image/png", size: 3 }))
+  const c = new MafwClient("http://gw:3000")
+  const result = await c.media.uploadAndCreate({ bytes: new Uint8Array([1, 2, 3]), mediaType: "image/png", question: "这是什么" })
+  expect(result.id).toBe("t1")
+  const [url, init] = fetchMock.mock.calls[0]
+  expect(url).toBe("http://gw:3000/api/media/upload-and-create?type=image%2Fpng&question=" + encodeURIComponent("这是什么"))
+  expect((init as any).method).toBe("POST")
+})
+
+test("media.artifactUrl builds artifact URL from baseUrl", () => {
+  const c = new MafwClient("http://gw:3000")
+  expect(c.media.artifactUrl("abc")).toBe("http://gw:3000/a2a/artifacts/abc")
+})
+
+test("event.url builds SSE endpoint (global + session-scoped)", () => {
+  const c = new MafwClient("http://gw:3000")
+  expect(c.event.url()).toBe("http://gw:3000/api/events")
+  expect(c.event.url("s 1")).toBe("http://gw:3000/api/events?sessionID=s%201")
+})
+
+test("tts.streamUrl builds stream endpoint", () => {
+  const c = new MafwClient("http://gw:3000")
+  expect(c.tts.streamUrl()).toBe("http://gw:3000/api/tts/stream")
+})

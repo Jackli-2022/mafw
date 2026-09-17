@@ -105,6 +105,7 @@ export type MafwAPI = {
     validate: (input: GoalCreateInput) => Promise<{ goalId: string }>
     control: (action: GoalControlAction) => Promise<void>
     sessions: (id: string) => Promise<GoalSessionInfo[]>
+    respondQuestion: (goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }) => Promise<{ status: string }>
   }
 
   memory: {
@@ -158,11 +159,20 @@ export type MafwAPI = {
     uploadAndCreate: (opts: { bytes: ArrayBuffer; mediaType: string; question?: string }) => Promise<{ id: string; contextId: string; state: string; artifactId: string; mediaType: string; size: number }>
     plugins: () => Promise<{ plugins: { file: string; name?: string; status: string; error?: string; modalities?: string[] }[] }>
     switch: (opts: { engine?: string; image?: { engine?: string }; video?: { engine?: string }; audio?: { engine?: string } }) => Promise<{ success: boolean; media: { engine?: string; image?: { engine?: string; model?: string }; video?: { engine?: string; model?: string }; audio?: { engine?: string; model?: string } } }>
+    /** Artifact 下载/播放 URL（SDK 契约：renderer 不自己拼 /a2a/artifacts/）。 */
+    artifactUrl: (id: string) => Promise<string>
   }
 
   tts: {
     speak: (opts: { text: string; voice?: string; style?: string }) => Promise<{ artifactId: string; voice: string; mime: string; url: string }>
     voices: () => Promise<{ voices: { id: string; label: string; lang: string }[]; models: { id: string; description: string }[]; defaultVoice: string; defaultModel: string }>
+    /** 流式 TTS 端点 URL（IPC 无法克隆 SSE 流，renderer 直连 fetch 时用此取 URL）。 */
+    streamUrl: () => Promise<string>
+  }
+
+  event: {
+    /** SSE 端点 URL（带/不带 sessionID），renderer 直连 EventSource 用。 */
+    url: (sessionID?: string) => Promise<string>
   }
 
   providers: {

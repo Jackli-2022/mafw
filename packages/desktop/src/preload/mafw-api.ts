@@ -135,6 +135,7 @@ export function createMafwApi(): MafwAPI {
       validate: (input) => invoke("goals", "validate", input),
       control: (action) => invoke("goals", "control", action),
       sessions: (id) => invoke("goals", "sessions", id),
+      respondQuestion: (goalId, questionId, input) => invoke("goals", "respondQuestion", goalId, questionId, input),
     },
 
     memory: {
@@ -191,11 +192,20 @@ export function createMafwApi(): MafwAPI {
       uploadAndCreate: (opts) => ipcRenderer.invoke("mafw-media-upload-and-create", opts.bytes, opts.mediaType, opts.question),
       plugins: () => invoke("media", "plugins"),
       switch: (opts) => invoke("media", "switch", opts),
+      // Artifact URL helper（SDK 纯函数，经 main 的 mafwClient 取值）。
+      artifactUrl: (id) => invoke("media", "artifactUrl", id),
     },
 
     tts: {
       speak: (opts) => invoke("tts", "speak", opts),
       voices: () => invoke("tts", "voices"),
+      // 流式 TTS 端点 URL（SSE 流经 renderer 原生 fetch，IPC 无法克隆）。
+      streamUrl: () => invoke("tts", "streamUrl"),
+    },
+
+    event: {
+      // SSE 端点 URL（带/不带 sessionID），renderer 直连 EventSource 用。
+      url: (sessionID?) => invoke("event", "url", sessionID),
     },
 
     providers: {

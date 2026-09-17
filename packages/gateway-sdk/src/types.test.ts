@@ -103,6 +103,13 @@ test("all MAFW namespaces exist on MafwClient", () => {
   expect(typeof c.media.switch).toBe("function")
   expect(typeof c.models.get).toBe("function")
   expect(typeof c.models.update).toBe("function")
+  // P2 契约收敛：SDK 补齐方法
+  expect(typeof c.goals.respondQuestion).toBe("function")
+  expect(typeof c.media.upload).toBe("function")
+  expect(typeof c.media.uploadAndCreate).toBe("function")
+  expect(typeof c.media.artifactUrl).toBe("function")
+  expect(typeof c.event.url).toBe("function")
+  expect(typeof c.tts.streamUrl).toBe("function")
 })
 
 test("SSEConnection has all SSE methods", () => {

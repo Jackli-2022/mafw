@@ -17,7 +17,6 @@ export interface QuestionData {
 
 type Props = {
   question: QuestionData
-  gatewayUrl: string
   onDismiss: () => void
 }
 
@@ -38,18 +37,11 @@ export function QuestionWidget(props: Props) {
   async function submit(action: "answer" | "cancel") {
     setSubmitting(true)
     try {
-      const res = await fetch(
-        `${props.gatewayUrl}/api/goals/${props.question.goalId}/questions/${props.question.questionId}/respond`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: action === "cancel" ? "cancel" : "answer",
-            answer: answer(),
-          }),
-        },
+      const data = await window.api.mafw.goals.respondQuestion(
+        props.question.goalId,
+        props.question.questionId,
+        { type: action === "cancel" ? "cancel" : "answer", answer: answer() },
       )
-      const data = await res.json()
       setResult(data.status)
       if (data.status === "accepted") setTimeout(() => props.onDismiss(), 1500)
     } catch {
