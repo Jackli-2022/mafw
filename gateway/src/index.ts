@@ -83,7 +83,6 @@ import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
-import { handleEventPublish } from './routes/event-publish';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
 import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './routes/plugins';
 import { PluginHost } from './plugins/package-host';
@@ -91,20 +90,17 @@ import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
 import { cleanupExamples } from './plugins/hub';
 import { handleRestartAgent } from './routes/restart-agent';
-import { handleSessionMutations } from './routes/session-mutations';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { ensureServeForBuiltinRuntime } from './runtime/serve-for-runtime';
-import { handleMediaSwitch } from './routes/media-switch';
-import { handleUsagePluginCreate, handleUsagePluginDelete, handleUsagePluginsList, handleUsagePluginSourceGet, handleUsagePluginSourcePut, handleUsagePluginTest, UsagePluginsDeps } from './routes/usage-plugins';
+import type { UsagePluginsDeps } from './routes/usage-plugins';
 import { buildModelStats, ModelUsageWindows } from './usage/model-stats';
 
-import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from './routes/model-config';
-import { handleSessionBranch } from './routes/session-branch';
-import { handleSessionSummarize } from './routes/session-summarize';
-import { handleGoalSessions } from './routes/goal-sessions';
-import { handleTriageDismiss } from './routes/triage-dismiss';
-import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
-import { handleManagerRotate, runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
+import type { ModelConfigDeps } from './routes/model-config';
+import { RouteRegistry } from './routes/registry';
+import { buildRouteCatalog } from './routes/route-catalog';
+import { attachWave1Handlers } from './routes/wave1-handlers';
+import type { EmbeddingConfigDeps } from './routes/embedding-config';
+import { runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
  * MAFW Scheduler — v5.0 SDK 编排器
  *
@@ -262,6 +258,12 @@ class MafwScheduler {
   private mcpEndpoint?: McpSSEEndpoint;
   private mcpStreamableEndpoint?: McpStreamableEndpoint;
   private opencodeClient: AgentRuntime | null = null;
+  /**
+   * P4 shadow registry + P5 Wave 1 dispatch：catalog 全量登记（130 条，贡献 spec），
+   * Wave 1 已 attach 的 22 条在请求链顶端优先 dispatch（见 startApiServer），
+   * 未 attach 的 shadow 条目自然落回 legacy 内联链。
+   */
+  private routeRegistry: RouteRegistry = new RouteRegistry().register(...buildRouteCatalog());
   private runtimeCaps: RuntimeCapabilities = minimalCapabilities();
   private runtimeName = 'opencode';
   private runtimeLoader?: RuntimePluginLoader;
@@ -2331,9 +2333,38 @@ class MafwScheduler {
 
   private async startApiServer() {
     return new Promise<void>((resolve) => {
+      // P5 Wave 1: catalog shadow 登记 + 模块 handler 绑定（一次性，重复 attach 会抛错）。
+      // adapter 显式桥接私有成员（结构化类型不认 private）。
+      attachWave1Handlers(this.routeRegistry, {
+        getGatewayDb: () => this.getGatewayDb(),
+        opencodeClient: this.opencodeClient,
+        automationEngine: this.automationEngine,
+        ledger: this.ledger,
+        rotateDeps: () => this.rotateDeps(),
+        embeddingConfigDeps: () => this.embeddingConfigDeps(),
+        modelConfigDeps: () => this.modelConfigDeps(),
+        usagePluginsDeps: () => this.usagePluginsDeps(),
+        pluginLoader: this.pluginLoader,
+        mediaPluginLoader: this.mediaPluginLoader,
+        broadcast: (e) => this.broadcast(e),
+        runtimeCaps: this.runtimeCaps,
+      });
+
       const server = http.createServer(async (req, res) => {
         try {
           res.setHeader('Content-Type', 'application/json');
+
+          // P5 Wave 1: registry dispatch —— attach 过 handler 的路由在 legacy 链之前
+          // 统一接管（shadow 条目无 handler 自然落回内联链）。挂在鉴权之后、一切
+          // /api matcher 之前：goals.sessions 须先于 dashboard 兜底、embedding-config
+          // 须先于 /api/memory/* 委托（AGENTS.md §6.5 顺序教训由 dispatch 位置一次性满足）。
+          {
+            const matched = this.routeRegistry.match(req.method as never, req.url || '');
+            if (matched?.def.handler) {
+              const handled = await matched.def.handler(req, res, matched.params);
+              if (handled !== false) return;
+            }
+          }
 
           // CORS headers for SSE
           res.setHeader("Access-Control-Allow-Origin", config.server.cors.origin);
@@ -3127,16 +3158,8 @@ class MafwScheduler {
         }
 
         // GET/POST /api/memory/embedding-config — memory embedding engine
-        // settings (hot-swap: rebuild runtime + background backfill). MUST
-        // stay above the /api/memory/* dashboard delegation below.
-        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'GET') {
-          await handleEmbeddingConfigGet(req, res, this.embeddingConfigDeps());
-          return;
-        }
-        if (req.url?.match(/^\/api\/memory\/embedding-config(?:\?|$)/) && req.method === 'POST') {
-          await handleEmbeddingConfigUpdate(req, res, this.embeddingConfigDeps());
-          return;
-        }
+        // settings（P5 Wave 1 起由 registry dispatch 接管，见 routes/wave1-handlers.ts；
+        // 历史顺序约束"须高于 /api/memory/* dashboard 委托"由 dispatch 位置满足）
 
         // GET /api/memory/stats — consolidation health + vector coverage (P2)
         if (req.url?.match(/^\/api\/memory\/stats(?:\?|$)/) && req.method === 'GET') {
@@ -3371,15 +3394,8 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/goals/:id/sessions — goal session 映射（编排可视化下钻）。
-        // 必须挂在 Dashboard API 的 /api/goals* 兜底之前（AGENTS.md §6.5 路由顺序教训）。
-        if (req.url?.match(/^\/api\/goals\/[^/]+\/sessions(?:\?|$)/) && req.method === 'GET') {
-          const handled = await handleGoalSessions(req, res, req.url, {
-            listGoalSessions: (goalId) => this.getGatewayDb().listGoalSessions(goalId),
-            getSession: (sessionID) => this.opencodeClient?.session.get({ sessionID }).catch(() => null),
-          });
-          if (handled) return;
-        }
+        // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
+        // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
 
         // Dashboard API
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {
@@ -3606,13 +3622,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/manager/session/rotate — start a new manager topic
-        // (thin wiring → routes/manager-rotate.ts).
-        if (req.method === 'POST' && req.url?.match(/^\/api\/manager\/session\/rotate(?:\?|$)/)) {
-          await handleManagerRotate(req, res, this.rotateDeps());
-          return;
-        }
-
+        // POST /api/manager/session/rotate — P5 Wave 1 起由 registry dispatch 接管
         // GET /api/manager/session — return manager session info (per-project,
         // read from the gateway DB). ?projectDir= filters a single project.
         if (req.url && req.url.startsWith('/api/manager/session') && req.method === 'GET') {
@@ -4291,15 +4301,6 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/triage/{id}/dismiss — user dismisses triage (alias of reject; SDK triage.dismiss 的落地路由)
-        {
-          const handled = await handleTriageDismiss(req, res, req.url || '', {
-            rejectTriage: (id: string) => this.automationEngine?.rejectTriage(id) ?? false,
-            appendLedger: (entry) => this.ledger?.append(entry as any),
-          });
-          if (handled) return;
-        }
-
         // POST /api/triage/{id}/propose — user proposes a decision suggestion
         // (same flow as the MCP mafw_propose_triage_decision tool)
         const triageProposeMatch = req.url?.match(/^\/api\/triage\/([^/]+)\/propose$/);
@@ -4542,13 +4543,7 @@ class MafwScheduler {
           return;
         }
 
-        // DELETE/PATCH /api/sessions/:id — true forwards (rename / delete)
-        if (await handleSessionMutations(req, res, {
-          getCapabilities: () => this.runtimeCaps,
-          getClient: () => (this.opencodeClient ?? null) as any,
-        })) {
-          return;
-        }
+        // DELETE/PATCH /api/sessions/:id — P5 Wave 1 起由 registry dispatch 接管
 
         // GET /api/sessions — list sessions (optional ?projectID=xxx)
         if (req.url?.match(/^\/api\/sessions(?:\?|$)/) && req.method === 'GET') {
@@ -4708,49 +4703,7 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/usage/plugins — plugin state list (+templates for the wizard)
-        if (req.url?.match(/^\/api\/usage\/plugins(?:\?|$)/) && req.method === 'GET') {
-          await handleUsagePluginsList(req, res, this.usagePluginsDeps());
-          return;
-        }
-
-        // POST /api/usage/plugins/create — template wizard or raw source
-        if (req.url?.match(/^\/api\/usage\/plugins\/create$/) && req.method === 'POST') {
-          await handleUsagePluginCreate(req, res, this.usagePluginsDeps());
-          return;
-        }
-
-        // GET/PUT /api/usage/plugins/:name/source — user plugin code editor
-        const mSource = req.url?.match(/^\/api\/usage\/plugins\/([^/]+)\/source$/);
-        if (mSource && req.method === 'GET') {
-          await handleUsagePluginSourceGet(req, res, this.usagePluginsDeps(), decodeURIComponent(mSource[1]));
-          return;
-        }
-        if (mSource && req.method === 'PUT') {
-          await handleUsagePluginSourcePut(req, res, this.usagePluginsDeps(), decodeURIComponent(mSource[1]));
-          return;
-        }
-
-        // POST /api/usage/plugins/:name/test — one-shot adapter fetch
-        const mTest = req.url?.match(/^\/api\/usage\/plugins\/([^/]+)\/test$/);
-        if (mTest && req.method === 'POST') {
-          await handleUsagePluginTest(req, res, this.usagePluginsDeps(), decodeURIComponent(mTest[1]));
-          return;
-        }
-
-        // DELETE /api/usage/plugins/:name — remove user plugin file
-        const mDel = req.url?.match(/^\/api\/usage\/plugins\/([^/]+)$/);
-        if (mDel && req.method === 'DELETE') {
-          await handleUsagePluginDelete(req, res, this.usagePluginsDeps(), decodeURIComponent(mDel[1]));
-          return;
-        }
-
-        // POST /api/usage/plugins/reload — manual reload
-        if (req.url?.match(/^\/api\/usage\/plugins\/reload$/) && req.method === 'POST') {
-          await this.pluginLoader?.reload();
-          await handleUsagePluginsList(req, res, this.usagePluginsDeps());
-          return;
-        }
+        // /api/usage/plugins* — P5 Wave 1 起由 registry dispatch 接管（7 条）
 
         // GET /api/media/plugins — media engine plugin state list
         if (req.url?.match(/^\/api\/media\/plugins(?:\?|$)/) && req.method === 'GET') {
@@ -4781,44 +4734,12 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/media/switch — switch media engine per modality
-        if (req.url?.match(/^\/api\/media\/switch(?:\?|$)/) && req.method === 'POST') {
-          await handleMediaSwitch(req, res, {
-            persist: (o) => config.persistOverrides(o),
-            reloadPlugins: async () => { await this.mediaPluginLoader?.reload(); },
-            availableEngines: () => (this.mediaPluginLoader?.getState().map(s => s.name).filter((n): n is string => !!n) ?? []),
-            currentMedia: () => ({
-              engine: config.raw.media.engine,
-              image: config.raw.media.image,
-              video: config.raw.media.video,
-              audio: config.raw.media.audio,
-            }),
-          });
-          return;
-        }
+        // POST /api/media/switch — P5 Wave 1 起由 registry dispatch 接管
 
-        // GET/POST /api/model-config — recall worker model + media models (hot-apply)
-        if (req.url?.match(/^\/api\/model-config(?:\?|$)/) && req.method === 'GET') {
-          await handleModelConfigGet(req, res, this.modelConfigDeps());
-          return;
-        }
-        if (req.url?.match(/^\/api\/model-config(?:\?|$)/) && req.method === 'POST') {
-          await handleModelConfigUpdate(req, res, this.modelConfigDeps());
-          return;
-        }
+        // GET/POST /api/model-config — P5 Wave 1 起由 registry dispatch 接管
 
-        // POST /api/sessions/:id/fork|revert|unrevert — session branch primitives
-        // (capability-gated: sessionBranchApi; unrevert is opencode-only → 404 on pi)
-        if (req.url?.match(/^\/api\/sessions\/[^/]+\/(fork|revert|unrevert)(?:\?|$)/) && req.method === 'POST') {
-          const handled = await handleSessionBranch(req, res, req.url, { getRuntime: () => this.opencodeClient ?? null });
-          if (handled) return;
-        }
-
-        // POST /api/session/:id/summarize — 手动压缩会话（TUI /compact；runtime 薄代理）
-        if (req.url?.match(/^\/api\/session\/[^/]+\/summarize(?:\?|$)/) && req.method === 'POST') {
-          const handled = await handleSessionSummarize(req, res, req.url, { getRuntime: () => this.opencodeClient ?? null });
-          if (handled) return;
-        }
+        // POST /api/sessions/:id/fork|revert|unrevert + /api/session/:id/summarize
+        // — P5 Wave 1 起由 registry dispatch 接管
 
         // GET /api/usage?sessionID=xxx&projectID=xxx — consolidated usage (summary + providers)
         if (req.url?.match(/^\/api\/usage(?:\?|$)/) && req.method === 'GET') {
@@ -5078,11 +4999,7 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/events —— 事件发布（插件/外部程序 → 全 UI 通道；契约见 routes/event-publish.ts）
-        if (req.url && req.url.startsWith('/api/events') && req.method === 'POST') {
-          await handleEventPublish({ broadcast: (e) => this.broadcast(e) }, req, res);
-          return;
-        }
+        // POST /api/events — P5 Wave 1 起由 registry dispatch 接管
 
         // SSE 事件（→ Dashboard / Chat）
         if (req.url && req.url.startsWith('/api/events') && req.method === 'GET') {

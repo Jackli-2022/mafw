@@ -16,8 +16,12 @@ export interface RouteDef {
   operationId: string;
   summary?: string;
   tags?: string[];
-  /** Phase 3 dispatch 用；shadow 登记阶段可缺省。 */
-  handler?: (req: import('http').IncomingMessage, res: import('http').ServerResponse, params: Record<string, string>) => Promise<void> | void;
+  /**
+   * Phase 3 dispatch；shadow 登记阶段缺省。返回 false 表示"实际未处理"
+   * （模块内部正则未命中，如 query 形状差异）→ dispatch 放行回退 legacy 链；
+   * 返回 void/true 视为已处理。
+   */
+  handler?: (req: import('http').IncomingMessage, res: import('http').ServerResponse, params: Record<string, string>) => Promise<boolean | void> | boolean | void;
 }
 
 export interface MatchedRoute {
@@ -60,6 +64,23 @@ export class RouteRegistry {
 
   list(): readonly RouteDef[] {
     return this.defs;
+  }
+
+  /**
+   * P5 Wave 迁移：给已 shadow 登记的 operationId 挂真实 handler。
+   * 幂等禁止——重复 attach 抛错（防两个迁移波次互相覆盖）。
+   */
+  attachHandler(operationId: string, handler: NonNullable<RouteDef['handler']>): this {
+    const def = this.defs.find((d) => d.operationId === operationId);
+    if (!def) throw new Error(`attachHandler: unknown operationId '${operationId}'（catalog 未登记？）`);
+    if (def.handler) throw new Error(`attachHandler: '${operationId}' already has a handler`);
+    def.handler = handler;
+    return this;
+  }
+
+  /** 已挂 handler 的 operationId 集合（迁移覆盖率测试用）。 */
+  attachedOperationIds(): Set<string> {
+    return new Set(this.defs.filter((d) => d.handler).map((d) => d.operationId));
   }
 
   private compile(): CompiledRoute[] {

@@ -164,7 +164,9 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/health', operationId: 'health.root', tags: ['internal'] },
 ];
 
-/** gateway 全量 HTTP 端点 shadow 登记（无 handler；Phase 3 逐条挂 handler 前不参与 dispatch）。 */
+/** gateway 全量 HTTP 端点 shadow 登记（无 handler；Phase 3 逐条挂 handler 前不参与 dispatch）。
+ *  每次调用返回全新 def 对象（浅拷贝）——attachHandler 会原地改写 def.handler，
+ *  共享模块级常量会让第二次 build 的 registry 带上一次的 handler（测试已抓过）。 */
 export function buildRouteCatalog(): RouteDef[] {
-  return [...SDK_FACING_ROUTES, ...NON_SDK_ROUTES];
+  return [...SDK_FACING_ROUTES, ...NON_SDK_ROUTES].map((d) => ({ ...d }));
 }
