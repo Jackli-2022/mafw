@@ -21,6 +21,7 @@ import { scrollPinDecision } from "./ChatPaneScroll"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { createInputHistory } from "./input-history"
+import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
 import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
@@ -1061,6 +1062,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   // ── Slash command system (/ panel) ──
+  // mafw 组从 gateway 命令注册表动态拉取（P0 收敛）；拉取失败回退内置 6 条。
+  const MAFW_FALLBACK_COMMANDS: CommandItem[] = [
+    { id: "mafw-goal", trigger: "/goal", title: "新建 Goal", description: "提交 Goal 给 Manager", group: "mafw" },
+    { id: "mafw-status", trigger: "/status", title: "MAFW 状态", description: "查看当前状态", group: "mafw" },
+    { id: "mafw-merge", trigger: "/merge-memory", title: "记忆融合", description: "合并 worktree 记忆", group: "mafw" },
+    { id: "mafw-new-topic", trigger: "/new-topic", title: "新话题", description: "开新话题（当前 Manager 会话归档）", group: "mafw" },
+    { id: "mafw-btw", trigger: "/btw", title: "支线问答", description: "一次性会话回答支线问题，不污染主线", group: "mafw" },
+    { id: "mafw-waitwhat", trigger: "/waitwhat", title: "没听懂，重述", description: "用简明语言+项目术语重述上一条回复", group: "mafw" },
+  ]
+  const MAFW_FALLBACK_NAMES = new Set(MAFW_FALLBACK_COMMANDS.map(c => c.trigger.slice(1)))
+  const [mafwRemote, setMafwRemote] = createSignal<{ items: CommandItem[]; names: Set<string> }>({ items: [], names: new Set() })
+
   const closeCommandPicker = () => setPickerOpen(p => p === "command" ? null : p)
 
   const insertCommandText = (trigger: string) => {
@@ -1086,14 +1099,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       { id: "triage", trigger: "/triage", title: "Triage 页", description: "打开分诊页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("triage") } },
       { id: "automation", trigger: "/automation", title: "Automation 页", description: "打开自动化页", group: "local", source: "builtin", run: () => { closeCommandPicker(); props.onNavigateTab?.("automation") } },
     ]
-    const mafw: CommandItem[] = [
-      { id: "mafw-goal", trigger: "/goal", title: "新建 Goal", description: "提交 Goal 给 Manager", group: "mafw" },
-      { id: "mafw-status", trigger: "/status", title: "MAFW 状态", description: "查看当前状态", group: "mafw" },
-      { id: "mafw-merge", trigger: "/merge-memory", title: "记忆融合", description: "合并 worktree 记忆", group: "mafw" },
-      { id: "mafw-new-topic", trigger: "/new-topic", title: "新话题", description: "开新话题（当前 Manager 会话归档）", group: "mafw" },
-      { id: "mafw-btw", trigger: "/btw", title: "支线问答", description: "一次性会话回答支线问题，不污染主线", group: "mafw" },
-      { id: "mafw-waitwhat", trigger: "/waitwhat", title: "没听懂，重述", description: "用简明语言+项目术语重述上一条回复", group: "mafw" },
-    ]
+    const mafw: CommandItem[] = mafwRemote().items.length > 0
+      ? mafwRemote().items
+      : MAFW_FALLBACK_COMMANDS
     const custom: CommandItem[] = cmdCustom().map(c => ({
       id: `custom-${c.source}-${c.name}`,
       trigger: `/${c.name}`,
@@ -1112,10 +1120,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setCmdLoading(true)
     try {
       const dir = props.currentProject || undefined
-      const [cmds, skills] = await Promise.all([
+      const [cmds, skills, remoteMafw] = await Promise.all([
         window.api.mafw.command.list(dir).catch(() => []),
         window.api.mafw.skill.list(dir).catch(() => []),
+        window.api.mafw.mafwCommands.list?.().catch(() => []),
       ])
+      if (Array.isArray(remoteMafw)) setMafwRemote(mergeRemoteCommands(remoteMafw))
       const seen = new Set<string>()
       const merged: { name: string; source: string }[] = []
       for (const c of Array.isArray(cmds) ? cmds : []) {
@@ -1141,7 +1151,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const m = text.match(/^\/(\S+)(?:\s+(.*))?$/)
     if (!m) return null
     const name = m[1].toLowerCase()
-    if (name === "goal" || name === "status" || name === "merge-memory" || name === "new-topic" || name === "btw" || name === "waitwhat") return { name, group: "mafw" }
+    if (mafwRemote().names.has(name) || MAFW_FALLBACK_NAMES.has(name)) return { name, group: "mafw" }
     if (cmdCustom().some(c => c.name === name)) return { name, group: "custom" }
     return null
   }

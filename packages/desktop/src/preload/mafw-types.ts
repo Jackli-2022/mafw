@@ -85,6 +85,8 @@ export type MafwAPI = {
 
   mafwCommands: {
     run: (opts: { command: string; args?: string; sessionID?: string }) => Promise<{ ok: boolean; message?: string; text?: string; error?: string; sessionID?: string; added?: number; conflicts?: number; skipped?: number }>
+    /** gateway 命令注册表清单（含用户自定义命令） */
+    list: () => Promise<Array<{ name: string; aliases?: string[]; description: string; argumentHint?: string; category: 'goals' | 'session' | 'memory' | 'custom'; destructive?: boolean; kind: 'builtin' | 'custom'; source?: string }>>
   }
 
   manager: {

@@ -115,6 +115,7 @@ export function createMafwApi(): MafwAPI {
 
     mafwCommands: {
       run: (opts) => invoke("mafwCommands", "run", opts),
+      list: () => invoke("mafwCommands", "list"),
     },
 
     manager: {
