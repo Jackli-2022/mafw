@@ -4,7 +4,7 @@
   nsExec::ExecToStack 'node --version'
   Pop $0
   ${If} $0 == 0
-    nsExec::ExecToLog 'node "$INSTDIR\resources\gateway-update\update-global-gateway.js"'
+    nsExec::ExecToLog 'node "$INSTDIR\resources\gateway-update\update-global-gateway.cjs"'
     Pop $0
   ${EndIf}
 !macroend

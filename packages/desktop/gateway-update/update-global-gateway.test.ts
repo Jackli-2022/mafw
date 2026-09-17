@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { compareVersions, decide, readPkgVersion, readPidFile, runUpdate, shouldKill, stopGatewayDaemon } from "./update-global-gateway"
+import { compareVersions, decide, readPkgVersion, readPidFile, runUpdate, shouldKill, stopGatewayDaemon } from "./update-global-gateway.cjs"
 
 describe("compareVersions", () => {
   test("orders major/minor/patch", () => {
@@ -47,6 +47,12 @@ describe("readPkgVersion", () => {
     const empty = join(dir, "empty.json")
     writeFileSync(empty, JSON.stringify({ name: "x" }))
     expect(readPkgVersion(require("node:fs"), empty)).toBeNull()
+  })
+  test("tolerates UTF-8 BOM (PowerShell Set-Content trap)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gwupd-"))
+    const pkg = join(dir, "package.json")
+    writeFileSync(pkg, "\uFEFF" + JSON.stringify({ version: "4.10.1" }))
+    expect(readPkgVersion(require("node:fs"), pkg)).toBe("4.10.1")
   })
 })
 

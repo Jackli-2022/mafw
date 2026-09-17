@@ -4,13 +4,15 @@ const os = require("node:os")
 const path = require("node:path")
 
 const NPM_PACKAGE = "@jack200714/mafw"
-const NPM_TIMEOUT_MS = 120000
+const NPM_TIMEOUT_MS = 300000
 const IS_WIN = process.platform === "win32"
 const NPM_BIN = IS_WIN ? "npm.cmd" : "npm"
 
 function readPkgVersion(fsMod, pkgPath) {
   try {
-    const pkg = JSON.parse(fsMod.readFileSync(pkgPath, "utf-8"))
+    // Strip the PowerShell UTF8 BOM trap (same lesson as self-update.ts token reads).
+    const raw = fsMod.readFileSync(pkgPath, "utf-8").replace(/^\uFEFF/, "")
+    const pkg = JSON.parse(raw)
     return typeof pkg.version === "string" && pkg.version.trim() ? pkg.version.trim() : null
   } catch {
     return null
@@ -116,8 +118,16 @@ function runUpdate(deps) {
 }
 
 function defaultDeps() {
-  const run = (cmd, args, timeoutMs) =>
-    execFileSync(cmd, args, { timeout: timeoutMs, encoding: "utf-8", windowsHide: true })
+  const run = (cmd, args, timeoutMs) => {
+    const opts = {
+      timeout: timeoutMs,
+      encoding: "utf-8",
+      windowsHide: true,
+      cwd: os.homedir(),
+    }
+    if (cmd.endsWith(".cmd") || cmd.endsWith(".bat")) opts.shell = true
+    return execFileSync(cmd, args, opts)
+  }
   return {
     fs,
     bundledPkgPath: path.join(__dirname, "..", "gateway", "package.json"),

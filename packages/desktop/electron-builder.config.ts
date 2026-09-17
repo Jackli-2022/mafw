@@ -37,11 +37,12 @@ const extraResources: Array<{ from: string; to: string; filter?: string[] }> = [
     to: "gateway/node_modules/",
   },
   // Installer-time global gateway update script (NSIS customInstall runs it
-  // via node). Test file stays out of the shipped payload.
+  // via node). .cjs so node never treats it as ESM via an ancestor
+  // package.json's "type": "module". Test file stays out of the shipped payload.
   {
     from: "gateway-update/",
     to: "gateway-update/",
-    filter: ["update-global-gateway.js"],
+    filter: ["update-global-gateway.cjs"],
   },
 ]
 if (existsSync(path.join(packageDir, "native"))) {
