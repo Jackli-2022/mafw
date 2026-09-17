@@ -109,6 +109,7 @@ opencode 加载插件（plugin.ts）
 斜杠命令（`/btw` 支线问答、`/new-topic` 开新话题）由插件捕获后转发
 `POST /api/mafw-commands/run`——**UI/用户指令驱动**，刻意不暴露为 MCP 工具给 agent。
 `/merge-memory`（跨 worktree 记忆融合）走 `POST /api/merge-memory`（复用 MCP handler）。
+命令清单经 `GET /api/mafw-commands` 暴露（含用户自定义命令，见 AGENTS.md §5.13c）。
 
 ## MCP 自接线
 

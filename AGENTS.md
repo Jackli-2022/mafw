@@ -469,6 +469,16 @@ post-task curator 只看轨迹会记下错误答案/过度泛化/过期知识（
 
 限制：bash 不开（opencode 权限 per-tool，无法过滤只读命令），"命令还能不能跑"类验证不在覆盖范围；plan B（gateway 侧确定性路径探测）记录在案未实施。
 
+#### 5.13c Slash 命令注册表（2026-09-18）
+
+`/api/mafw-commands/run` 由硬编码 if 链收敛为注册表（`gateway/src/commands/`）：
+
+- **registry.ts**：`MafwCommandDef`（name/aliases/description/argumentHint/category/destructive/kind）+ `MafwCommandRegistry`（别名解析、重注册覆盖）；6 条内置元数据在 `BUILTIN_COMMAND_DEFS`（new-topic 别名 `new`）
+- **builtin-handlers.ts**：6 条内置 handler（deps 注入可单测），语义与原 if 链逐字一致；**custom-exec.ts**：自定义命令执行 = 渲染模板 → promptAsync 到 sessionID（缺省 manager session 兜底）
+- **custom-commands.ts**：用户自定义命令——`~/.mafw/commands/`（用户级）+ `<project>/.mafw/commands/`（项目级，同名覆盖用户级），markdown + frontmatter（description/argument-hint），子目录即命名空间（`git/commit.md`→`git:commit`）；模板语法 `$ARGUMENTS`/`$1..$N`/`` !`shell` ``（块内参数 shell 转义防注入，cwd=projectDir、30s 超时、1MB cap）/`@file`（≤100KB，相对 projectDir，防路径逃逸）；`fs.watch` 300ms 防抖热重载，变更广播 `mafw_commands_changed`（扁平顶层事件）
+- **GET /api/mafw-commands**：元数据清单（SDK `mafwCommands.list()`）；TUI/Desktop 拉取合并——**本地命令优先**（远端 name/alias 撞本地 name/alias 时隐藏远端，故 TUI `/new` 与远端 `new-topic` 不双显、远端 `status` 在 TUI 隐藏让位本地 recap）；TUI 未命中本地时 fallback 到 `mafwCommands.run` 派发，远端 destructive 命令同样过确认门
+- 插件侧 6 条 opencode command 维持静态注册（`/goal` 插件走 requests 文件 skill 流程，与 gateway goal 的 manager-prompt 语义不同——刻意保留两条路径）
+
 ### api/recall/context endpoint
 
 ```

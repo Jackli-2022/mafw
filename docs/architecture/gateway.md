@@ -274,7 +274,7 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 | Python | `POST /api/python/execute`、`POST /api/python/restart` |
 | 用量/配置 | `GET /api/usage`、`GET/POST /api/model-config`、`GET/POST /api/memory/embedding-config` |
 | 插件中心 | `GET /api/plugins`（含 `packages`）、`POST /api/plugins/install|enable|disable|delete` |
-| 命令/融合 | `POST /api/mafw-commands/run`（/btw、new-topic）、`POST /api/merge-memory` |
+| 命令/融合 | `POST /api/mafw-commands/run`（注册表派发，§5.13c）、`GET /api/mafw-commands`（清单）、`POST /api/merge-memory` |
 | 观测 | `GET /api/orchestration/outcomes` |
 
 > 历史注：曾有的独立 Web Dashboard（端口 3001/3111）已退役——`dashboard/server.ts`
