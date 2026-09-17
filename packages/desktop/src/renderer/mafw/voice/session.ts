@@ -117,6 +117,23 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
   }
 
   async function playStream(text: string, voice: string, signal: AbortSignal): Promise<void> {
+    // AudioContext 必须在用户手势的同步段内创建（Chromium autoplay 策略：await 后
+    // 创建会 suspended 且 resume 被拒 → 无声——ChatPane 旧实现的既踩坑）。
+    // 引擎采样率要等响应头才知道，先按默认 24k 建（当前全部内置引擎都是 24k）；
+    // 响应头不同时再重建（插件引擎罕见路径）。
+    const makeCtx = deps._makeCtx ?? ((sr: number) => {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      return new AudioCtx({ sampleRate: sr })
+    })
+    const ctx = makeCtx(24000)
+    if (ctx.state === "suspended") {
+      try { await ctx.resume() } catch { void ctx.close().catch(() => {}); throw new Error("AudioContext resume failed") }
+    }
+    try {
+      const sid = (ctx as any).setSinkId
+      if (typeof sid === "function") void sid.call(ctx, "default").catch(() => {})
+    } catch { /* ignore */ }
+
     const streamUrl = await deps.streamUrl()
     const doFetch = deps.fetchImpl ?? fetch
     const res = await doFetch(streamUrl, {
@@ -127,20 +144,19 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
     })
     if (!res.ok || !res.body) throw new Error(`TTS stream HTTP ${res.status}`)
     const sampleRate = parseInt(res.headers.get("x-tts-sample-rate") || "24000", 10)
-    const makeCtx = deps._makeCtx ?? ((sr: number) => {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-      return new AudioCtx({ sampleRate: sr })
-    })
-    const ctx = makeCtx(sampleRate)
-    if (ctx.state === "suspended") {
-      try { await ctx.resume() } catch { void ctx.close().catch(() => {}); throw new Error("AudioContext resume failed") }
+    // 引擎采样率与手势内建的 ctx 不一致（插件引擎）→ 重建；此时已脱离手势窗口，
+    // resume 尽力而为（与旧 media_speak 路径同语义）
+    let activeCtx = ctx
+    if (sampleRate !== ctx.sampleRate) {
+      console.log("[voice] engine sampleRate", sampleRate, "!= gesture ctx", ctx.sampleRate, "→ recreate")
+      void ctx.close().catch(() => {})
+      activeCtx = makeCtx(sampleRate)
+      if (activeCtx.state === "suspended") {
+        try { await activeCtx.resume() } catch { void activeCtx.close().catch(() => {}) }
+      }
     }
-    try {
-      const sid = (ctx as any).setSinkId
-      if (typeof sid === "function") void sid.call(ctx, "default").catch(() => {})
-    } catch { /* ignore */ }
     const makePlayer = deps._makePlayer ?? createAudioWorkletPlayer
-    const player = await makePlayer(ctx) as TtsPlayer & { markEof?(): void }
+    const player = await makePlayer(activeCtx) as TtsPlayer & { markEof?(): void }
     activePlayer = player
     setState("speaking")
     const reader = res.body.getReader()
@@ -151,7 +167,7 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        if (signal.aborted || ctx.state === "closed") throw new DOMException("aborted", "AbortError")
+        if (signal.aborted || activeCtx.state === "closed") throw new DOMException("aborted", "AbortError")
         buf += decoder.decode(value, { stream: true })
         const lines = buf.split("\n")
         buf = lines.pop() || ""
