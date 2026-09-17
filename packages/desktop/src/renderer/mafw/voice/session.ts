@@ -16,6 +16,8 @@ export interface VoiceSessionDeps {
   fetchImpl?: typeof fetch
   /** 测试注入点；生产缺省 = 手势内新建 AudioContext（采样率 = 引擎声明） */
   _makeCtx?: (sampleRate: number) => AudioContext
+  /** 整段 wav 兜底（/api/tts）；流式失败且非 barge-in 时调用 */
+  speakFallback?: (text: string, voice: string) => Promise<{ url: string }>
 }
 
 type Handler = (data?: any) => void
@@ -41,10 +43,11 @@ function encodeWavBytes(samples: Float32Array, sampleRate: number): ArrayBuffer 
   return buffer
 }
 
+// djb2 hash —— 与 gateway 插件 src/tools/media-speak.ts 同实现（标记 h:<hash> 契约）
 function hashText(t: string): string {
-  let h = 0
-  for (let i = 0; i < t.length; i++) h = ((h << 5) - h + t.charCodeAt(i)) | 0
-  return String(h)
+  let h = 5381
+  for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) >>> 0
+  return h.toString(16).padStart(8, "0")
 }
 
 /**
@@ -60,6 +63,7 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
   const recentSpeaks = new Map<string, number>() // hash → ts（TTL 去重）
   let activePlayer: (TtsPlayer & { markEof?(): void }) | null = null
   let activeAbort: AbortController | null = null
+  let activeAudio: HTMLAudioElement | null = null
 
   const emit = (event: string, data?: any) => {
     for (const cb of listeners.get(event) ?? []) {
@@ -87,6 +91,7 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
     console.log(`[voice] barge-in: flushed at ${cursor}ms`)
     activePlayer?.flush()
     activeAbort?.abort()
+    if (activeAudio) { try { activeAudio.pause(); activeAudio.src = "" } catch { /* ignore */ } activeAudio = null }
     const sid = deps.sessionId()
     if (sid) void deps.interrupt(sid).catch(e => console.warn("[voice] interrupt failed:", e))
     setState("interrupted")
@@ -185,6 +190,15 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
     activeAbort = abort
     try {
       await playStream(t, voice || deps.defaultVoice(), abort.signal)
+    } catch (e: any) {
+      // barge-in 打断不兜底重播；其余失败回退整段 wav 路径（沿用现状）
+      if (e?.name === "AbortError") throw e
+      if (deps.speakFallback) {
+        const r = await deps.speakFallback(t, voice || deps.defaultVoice())
+        await playUrl(r.url)
+        return
+      }
+      throw e
     } finally {
       if (activeAbort === abort) activeAbort = null
       if (state === "speaking") setState("idle")
@@ -205,12 +219,48 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
   function stopSpeaking(_reason: "user_barge_in" | "manual") {
     activePlayer?.flush()
     activeAbort?.abort()
+    if (activeAudio) { try { activeAudio.pause(); activeAudio.src = "" } catch { /* ignore */ } activeAudio = null }
     if (state === "speaking" || state === "interrupted") setState("idle")
+  }
+
+  /**
+   * 播放 artifact URL（HTMLAudio 短播放路径，[语音回复] 自动播放）。
+   * 经 VoiceSession 以获得播放互斥 + barge-in 一致性。
+   * resolve({ ok: false }) = 播放失败（调用方可回退为手动点击播放）。
+   */
+  function playUrl(url: string): Promise<{ ok: boolean }> {
+    return new Promise((resolve) => {
+      stopSpeaking("manual")
+      const audio = new Audio(url)
+      activeAudio = audio
+      setState("speaking")
+      let settled = false
+      const done = (ok: boolean) => {
+        if (settled) return
+        settled = true
+        if (activeAudio === audio) activeAudio = null
+        if (state === "speaking") setState("idle")
+        resolve({ ok })
+      }
+      audio.onended = () => done(true)
+      audio.onerror = () => done(false)
+      void audio.play().then(
+        () => { /* ended 事件负责收尾 */ },
+        () => done(false),
+      )
+    })
+  }
+
+  /** 该文本（djb2 hex）近期是否已被流式播报（artifact 自动播放去重用）。 */
+  function hasRecentSpeakHash(hex: string): boolean {
+    const now = Date.now()
+    for (const [k, ts] of recentSpeaks) if (now - ts > DEDUP_TTL_MS) recentSpeaks.delete(k)
+    return recentSpeaks.has(hex)
   }
 
   return {
     get state() { return state },
-    startRecording, stopRecording, speak, speakFromTool, stopSpeaking,
+    startRecording, stopRecording, speak, speakFromTool, stopSpeaking, playUrl, hasRecentSpeakHash,
     on(event: string, cb: Handler) {
       let set = listeners.get(event)
       if (!set) { set = new Set(); listeners.set(event, set) }

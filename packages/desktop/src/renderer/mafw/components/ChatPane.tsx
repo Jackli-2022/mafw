@@ -16,7 +16,6 @@ import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply } from "./AudioReply"
-import { VoiceRecorder } from "./VoiceRecorder"
 import { scrollPinDecision } from "./ChatPaneScroll"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
@@ -26,6 +25,11 @@ import { fuzzyMatchFiles } from "./file-fuzzy"
 import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
 import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 import { CompressionDivider } from "./CompressionDivider"
+import { createVoiceSession } from "../voice/session"
+import { createSileroVadAnalyzer } from "../voice/silero"
+import { SilenceTimeoutStrategy } from "../voice/turn"
+import { DEFAULT_VAD_PARAMS, type VadParams } from "../voice/types"
+import { uploadVoiceSegment } from "../voice/upload"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -33,15 +37,6 @@ export type FlowCardRecord =
 
 // 已自动播放过的语音回复 artifact（防历史重载/重渲染重复播放）
 const playedVoiceArtifacts = new Set<string>()
-// 已流式播放的文本指纹（mafw_media_speak 工具事件 → 流式；标记出现时据此跳过 artifact）
-const streamedSpeakHashes = new Set<string>()
-
-// djb2 hash（与 gateway 插件 src/tools/media-speak.ts 同实现）
-const hashText = (s: string): string => {
-  let h = 5381
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0
-  return h.toString(16).padStart(8, "0")
-}
 
 // [语音回复 art:<id> 音色:<voice> h:<hash>]
 const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+?))?(?:\s+h:([a-f0-9]{8}))?\]/g
@@ -324,21 +319,37 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [previewing, setPreviewing] = createSignal<string | null>(null)
   const [ttsSpeaking, setTtsSpeaking] = createSignal(false)
 
-  // ── 播放互斥（同一时刻一路语音）+ barge-in 打断 ──
-  let activeCtxRef: AudioContext | null = null
-  let activeAudioRef: HTMLAudioElement | null = null
-  let activeAbortRef: AbortController | null = null
-  let activePlayCount = 0
+  // ── 语音核心（VoiceSession 状态机；UI 只绑定事件）──
+  // VAD 参数对象可变：config 异步加载后 Object.assign，MicVAD.new 在 start() 时才读值。
+  const vadParams: VadParams = { ...DEFAULT_VAD_PARAMS }
+  void (async () => {
+    try {
+      const cfg: any = await window.api.mafw.config.get("media.tts.vad")
+      if (cfg && typeof cfg === "object") Object.assign(vadParams, cfg)
+    } catch { /* fail-open 默认值 */ }
+  })()
 
-  // 停止当前所有播放（新播放开始前互斥；barge-in 检测到人声时打断）
-  const stopActivePlayback = () => {
-    const c = activeCtxRef
-    if (c) { activeCtxRef = null; void c.close().catch(() => {}) }
-    const a = activeAudioRef
-    if (a) { activeAudioRef = null; try { a.pause(); a.src = "" } catch { /* ignore */ } }
-    const ab = activeAbortRef
-    if (ab) { activeAbortRef = null; ab.abort() }
-  }
+  const voiceSession = createVoiceSession({
+    vad: createSileroVadAnalyzer(vadParams),
+    strategy: new SilenceTimeoutStrategy({ stopSecs: vadParams.stopSecs }),
+    streamUrl: () => window.api.mafw.tts.streamUrl(),
+    interrupt: (sid) => window.api.mafw.tts.interrupt(sid),
+    sessionId: () => sidProp(),
+    defaultVoice: () => ttsVoiceSel() ?? "茉莉",
+    speakFallback: (text, voice) => window.api.mafw.tts.speak({ text, voice }),
+  })
+  onCleanup(() => voiceSession.dispose())
+
+  voiceSession.on("state", (s) => {
+    setVoiceRecording(s === "recording")
+    setTtsSpeaking(s === "speaking")
+    if (s !== "speaking") setPreviewing(null)
+  })
+  voiceSession.on("error", (e) => showToastV2({ description: `语音失败: ${e.message}`, duration: 3000 }))
+  voiceSession.on("segment", ({ wavBytes, duration }) => { void handleVoiceSegment(wavBytes, duration) })
+
+  // 手动打断：录音开始前/新播放前停掉正在播放的语音（AEC 兜底，双击安全）
+  const stopActivePlayback = () => voiceSession.stopSpeaking("manual")
 
   // 取本会话最后一条 assistant 消息的纯文本（供语音播报）。
   // 排除 synthetic parts（工具结果/指针）与 [语音回复] 标记自身。
@@ -366,267 +377,103 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       if (!t) showToastV2({ description: "没有可播报的回复文本", duration: 3000 })
       return
     }
-    // 手势内创建 AudioContext（Chromium autoplay 策略：await 后创建会 suspended 且 resume 被拒 → 无声）
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-    const ctx = new AudioCtx({ sampleRate: 24000 })
-    console.log("[voice] ctx created, state:", ctx.state, "| sampleRate:", ctx.sampleRate)
-    if (ctx.state === "suspended") {
-      try {
-        await ctx.resume()
-        console.log("[voice] ctx resumed, state:", ctx.state)
-      } catch (e: any) {
-        console.error("[voice] ctx resume FAILED:", e?.message || String(e))
-        showToastV2({ description: `音频启动失败: ${e?.message || String(e)}`, duration: 4000 })
-        await ctx.close().catch(() => {})
-        return
-      }
-    }
-    // 显式路由到系统默认输出设备（某些 Windows 机器上 AudioContext 默认 sink 未初始化 → 无声）
     try {
-      const sid = (ctx as any).setSinkId
-      if (typeof sid === "function") {
-        void sid.call(ctx, "default").then(
-          () => console.log("[voice] setSinkId('default') ok"),
-          (e: any) => console.log("[voice] setSinkId failed:", e?.message || String(e)),
-        )
-      }
-    } catch { /* ignore */ }
-    // 播放互斥（停掉正在播的其他语音）+ barge-in 监听（用户说话 → 立即打断）
-    stopActivePlayback()
-    activeCtxRef = ctx
-    const abort = new AbortController()
-    activeAbortRef = abort
-    activePlayCount++
-    if (activePlayCount === 1) void recorder.startMonitoring(stopActivePlayback)
-    setTtsSpeaking(true)
-    // 超时保护：防 ttsSpeaking 卡 true 导致按钮永久禁用
-    const guard = setTimeout(() => setTtsSpeaking(false), 90_000)
-    try {
-      // 流式 TTS：PCM16 块 → AudioContext 拼接播放（首块快、实时）
-      await playStreamingTts(t, ttsVoiceSel() ?? "茉莉", ctx, abort.signal)
+      await voiceSession.speak(t, ttsVoiceSel() ?? undefined)
     } catch (e: any) {
-      // 打断/失败（barge-in 或 ctx 被关）不兜底重播
-      if (e?.name === "AbortError" || ctx.state === "closed") {
-        console.log("[voice] speakText aborted by barge-in")
-        return
+      // 打断（barge-in）不算失败；其余报 toast
+      if (e?.name !== "AbortError") {
+        showToastV2({ description: `语音合成失败: ${e?.message || String(e)}`, duration: 3000 })
       }
-      // 兜底：非流式（wav）路径
-      try {
-        const res = await window.api.mafw.tts.speak({ text: t, voice: ttsVoiceSel() ?? "茉莉" })
-        const audio = new Audio(res.url)
-        audio.onerror = () => showToastV2({ description: "语音播放失败（音频加载错误）", duration: 3000 })
-        const p = audio.play()
-        if (p) p.catch((err: any) => showToastV2({ description: `语音播放失败: ${err?.message || String(err)}`, duration: 3000 }))
-      } catch (e2: any) {
-        showToastV2({ description: `语音合成失败: ${e2?.message || String(e2)}`, duration: 3000 })
-      }
-    } finally {
-      clearTimeout(guard)
-      setTtsSpeaking(false)
-      if (activeAbortRef === abort) activeAbortRef = null
-      activePlayCount--
-      if (activePlayCount <= 0) { activePlayCount = 0; recorder.stopMonitoring(stopActivePlayback) }
-      activeCtxRef = null
-      await ctx.close().catch(() => {})
     }
   }
 
-  // 流式 PCM16 播放：逐块解码 → AudioBufferSource 排队（ctx 由调用方手势内创建）
-  const playStreamingTts = async (text: string, voice: string, ctx: AudioContext, signal?: AbortSignal) => {
-    // 直接 fetch gateway SSE（渲染进程原生 fetch；IPC 无法克隆 AsyncGenerator）。
-    // URL 契约归 SDK（tts.streamUrl），传输保持 renderer 直连。
-    const streamUrl = await window.api.mafw.tts.streamUrl()
-    const res = await fetch(streamUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice }),
-      signal,
-    })
-    if (!res.ok || !res.body) throw new Error(`TTS stream HTTP ${res.status}`)
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    // 残余字节（chunk 边界可能切半个 sample）
-    let remainder = new Uint8Array(0)
-    let nextNode: AudioBufferSourceNode | null = null
-    let buf = ""
-    let chunks = 0
-    let maxAmp = 0
-    const t0 = ctx.currentTime
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (signal?.aborted || ctx.state === "closed") throw new DOMException("aborted", "AbortError")
-        buf += decoder.decode(value, { stream: true })
-        const lines = buf.split("\n")
-        buf = lines.pop() || ""
-        for (const line of lines) {
-          const t = line.trim()
-          if (!t.startsWith("data:")) continue
-          let j: any
-          try { j = JSON.parse(t.slice(5).trim()) } catch { continue }
-          if (!j.data) continue
-          const bin = atob(j.data)
-          const bytes = new Uint8Array(bin.length)
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-          const combined = new Uint8Array(remainder.length + bytes.length)
-          combined.set(remainder)
-          combined.set(bytes, remainder.length)
-          const aligned = combined.length - (combined.length % 2)
-          remainder = combined.subarray(aligned)
-          if (aligned === 0) continue
-          const frames = aligned / 2
-          const audioBuf = ctx.createBuffer(1, frames, 24000)
-          const data = audioBuf.getChannelData(0)
-          const dv = new DataView(combined.buffer, combined.byteOffset, aligned)
-          for (let i = 0; i < frames; i++) {
-            const s = dv.getInt16(i * 2, true)
-            const a = Math.abs(s)
-            if (a > maxAmp) maxAmp = a
-            data[i] = s / 32768
-          }
-          const src = ctx.createBufferSource()
-          src.buffer = audioBuf
-          src.connect(ctx.destination)
-          if (nextNode) {
-            nextNode.onended = () => src.start()
-          } else {
-            console.log("[voice] first PCM chunk → start playback")
-            src.start()
-          }
-          nextNode = src
-          chunks++
-        }
-      }
-      console.log("[voice] stream complete, chunks:", chunks, "| maxAmp:", maxAmp, "| ctx.state:", ctx.state, "| ctx.currentTime advanced:", (ctx.currentTime - t0).toFixed(2), "s")
-      // 等最后一个节点播完（带超时兜底，防 onended 不触发卡住）
-      if (nextNode) {
-        await Promise.race([
-          new Promise<void>(r => { nextNode!.onended = () => r() }),
-          new Promise<void>(r => setTimeout(r, 60_000)),
-        ])
-      }
-    } finally {
-      reader.releaseLock()
-      console.log("[voice] playback done (final ctx.currentTime:", ctx.currentTime.toFixed(2), "s)")
-    }
-  }
-
-  // ── 语音输入（录音 + VAD 分段）：乐观显示 + 后台上传 ──
+  // ── 语音输入：VoiceSession.on('segment') → 乐观显示 + 后台上传 ──
   const [voiceRecording, setVoiceRecording] = createSignal(false)
-  const recorder = VoiceRecorder({
-    onSegment: (wavBytes: ArrayBuffer, duration: number) => {
-      const sid = sidProp()
-      if (!sid) return
-      const tempMsgId = `temp-voice-${Date.now()}`
 
-      // 立即创建本地消息（乐观显示，voiceStatus: "uploading"）
-      props.setStore(prev => {
-        const msgs = { ...prev.message }
-        const sessionMsgs = [...(msgs[sid] || [])]
-        sessionMsgs.push({
-          id: tempMsgId,
-          sessionID: sid,
-          role: "user",
-          parentID: null,
-          time: { created: Date.now() },
-          text: "",
-          agent: "general",
-          model: { providerID: "opencode", modelID: "" },
-          voiceStatus: "uploading",
-          voiceDuration: duration,
-        })
-        msgs[sid] = sessionMsgs
-        return { ...prev, message: msgs }
+  const handleVoiceSegment = async (wavBytes: ArrayBuffer, duration: number) => {
+    const sid = sidProp()
+    if (!sid) return
+    const tempMsgId = `temp-voice-${Date.now()}`
+
+    // 立即创建本地消息（乐观显示，voiceStatus: "uploading"）
+    props.setStore(prev => {
+      const msgs = { ...prev.message }
+      const sessionMsgs = [...(msgs[sid] || [])]
+      sessionMsgs.push({
+        id: tempMsgId,
+        sessionID: sid,
+        role: "user",
+        parentID: null,
+        time: { created: Date.now() },
+        text: "",
+        agent: "general",
+        model: { providerID: "opencode", modelID: "" },
+        voiceStatus: "uploading",
+        voiceDuration: duration,
       })
+      msgs[sid] = sessionMsgs
+      return { ...prev, message: msgs }
+    })
 
-      // 后台上传 + 发送（一次 IPC 完成 upload + createTask）
-      const t0 = performance.now()
-      console.log("[voice][perf] onSegment start", { bytes: wavBytes.byteLength, duration })
-      void uploadAndSendVoice(tempMsgId, wavBytes, sid, duration, t0)
-    },
-    onStateChange: setVoiceRecording,
-  })
-
-  // 后台上传语音 + 更新消息状态 + 发送（单次 IPC：upload + createTask）
-  const uploadAndSendVoice = async (tempMsgId: string, wavBytes: ArrayBuffer, sid: string, duration: number, t0: number) => {
+    // 后台上传 + 发送（一次 IPC 完成 upload + createTask）
+    const t0 = performance.now()
+    console.log("[voice][perf] onSegment start", { bytes: wavBytes.byteLength, duration })
     try {
-      // 单次 IPC：上传 + 创建任务（Plan C）
       const t1 = performance.now()
-      const task = await window.api.mafw.media.uploadAndCreate({
-        bytes: wavBytes,
-        mediaType: "audio/wav",
+      const result = await uploadVoiceSegment({
+        wavBytes,
+        sessionID: sid,
+        uploadAndCreate: (args) => window.api.mafw.media.uploadAndCreate(args),
+        sendEnriched: (args) => window.api.mafw.chat.sendEnriched(args as any),
+        onUploaded: ({ pointerText, partId }) => {
+          // 上传完成即显示指针文本（analyzing 态）——发送前保持旧 UI 时序
+          const realMsgId = `user-${Date.now()}`
+          props.setStore(prev => {
+            const msgs = { ...prev.message }
+            const sessionMsgs = [...(msgs[sid] || [])]
+            const idx = sessionMsgs.findIndex(m => m.id === tempMsgId)
+            if (idx >= 0) {
+              sessionMsgs[idx] = {
+                ...sessionMsgs[idx],
+                id: realMsgId,
+                text: pointerText,
+                voiceStatus: "analyzing",
+              }
+            }
+            msgs[sid] = sessionMsgs
+            const parts = { ...prev.part }
+            parts[realMsgId] = [{
+              type: "text",
+              id: partId,
+              text: pointerText,
+              sessionID: sid,
+              messageID: realMsgId,
+              synthetic: true,
+            }]
+            return { ...prev, message: msgs, part: parts }
+          })
+          props.onSetUserMsgId(sid, realMsgId)
+        },
       })
       const t2 = performance.now()
-      console.log("[voice][perf] uploadAndCreate done", {
+      console.log("[voice][perf] uploadAndSend done", {
         ipcMs: (t1 - t0).toFixed(1),
-        roundTripMs: (t2 - t1).toFixed(1),
         totalMs: (t2 - t0).toFixed(1),
-        artifactId: task.artifactId.slice(0, 8),
-        taskId: task.id.slice(0, 8),
       })
 
-      // 更新消息状态为 "analyzing"，替换临时 ID 为真实 ID
-      const realMsgId = `user-${Date.now()}`
-      const ts = Date.now()
-      const pointerText = `[媒体附件 taskID: ${task.id} contextID: ${task.contextId} artifactId: ${task.artifactId}（媒体: voice-${ts}.wav），这是用户发给你的语音消息——调用 mafw_media_ask 工具获取其内容后，用 mafw_media_speak 工具以语音回复用户（taskID 填 ${task.id}）]`
-
+      // 发送完成：voiceStatus → done
       props.setStore(prev => {
         const msgs = { ...prev.message }
         const sessionMsgs = [...(msgs[sid] || [])]
-        const idx = sessionMsgs.findIndex(m => m.id === tempMsgId)
-        if (idx >= 0) {
-          sessionMsgs[idx] = {
-            ...sessionMsgs[idx],
-            id: realMsgId,
-            text: pointerText,
-            voiceStatus: "analyzing",
-          }
-        }
-        msgs[sid] = sessionMsgs
-        // 添加 part（指针文本）
-        const partId = `prt_media_${ts}_0`
-        const parts = { ...prev.part }
-        parts[realMsgId] = [{
-          type: "text",
-          id: partId,
-          text: pointerText,
-          sessionID: sid,
-          messageID: realMsgId,
-          synthetic: true,
-        }]
-        return { ...prev, message: msgs, part: parts }
-      })
-
-      props.onSetUserMsgId(sid, realMsgId)
-
-      // 发送消息（触发 AI 回复）
-      await window.api.mafw.chat.sendEnriched({
-        message: "",
-        sessionID: sid,
-        parts: [{
-          type: "text",
-          id: `prt_media_${ts}_0`,
-          text: pointerText,
-          synthetic: true,
-        }],
-      })
-
-      // 更新消息状态为 "done"（AI 开始回复）
-      props.setStore(prev => {
-        const msgs = { ...prev.message }
-        const sessionMsgs = [...(msgs[sid] || [])]
-        const idx = sessionMsgs.findIndex(m => m.id === realMsgId)
-        if (idx >= 0) {
+        const idx = sessionMsgs.findIndex(m => m.id.startsWith("user-") && m.voiceStatus !== "done")
+        if (idx >= 0 && sessionMsgs[idx]?.voiceStatus === "analyzing") {
           sessionMsgs[idx] = { ...sessionMsgs[idx], voiceStatus: "done" }
         }
         msgs[sid] = sessionMsgs
         return { ...prev, message: msgs }
       })
-
     } catch (err: any) {
       console.warn("[voice] upload failed:", err)
-      // 更新消息状态为 "failed"
       props.setStore(prev => {
         const msgs = { ...prev.message }
         const sessionMsgs = [...(msgs[sid] || [])]
@@ -640,49 +487,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     }
   }
 
-  // ── 播放协调：互斥 + barge-in 引用计数（recorder 就绪后才可用）──
-  const beginPlayback = () => {
-    stopActivePlayback()
-    activePlayCount++
-    if (activePlayCount === 1) void recorder.startMonitoring(stopActivePlayback)
-  }
-  const endPlayback = () => {
-    activePlayCount--
-    if (activePlayCount <= 0) { activePlayCount = 0; recorder.stopMonitoring(stopActivePlayback) }
-  }
-
-  // mafw_media_speak 流式：工具事件（tool 名 + text/voice）→ 立即 /api/tts/stream 播放，
-  // 与回复文本生成并行。记录 hash 供 artifact effect 去重。
-  const handleMediaSpeak = async (text: string, voice?: string) => {
-    const clean = (text || "").trim()
-    if (!clean) return
-    streamedSpeakHashes.add(hashText(clean))
-    console.log("[voice] media-speak streaming:", clean.length, "chars | voice:", voice || "default")
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-    const ctx = new AudioCtx({ sampleRate: 24000 })
-    if (ctx.state === "suspended") {
-      try { await ctx.resume() } catch { void ctx.close().catch(() => {}); return }
-    }
-    try {
-      const sid = (ctx as any).setSinkId
-      if (typeof sid === "function") {
-        void sid.call(ctx, "default").catch(() => {})
-      }
-    } catch { /* ignore */ }
-    beginPlayback()
-    activeCtxRef = ctx
-    const abort = new AbortController()
-    activeAbortRef = abort
-    try {
-      await playStreamingTts(clean, voice || ttsVoiceSel() || "茉莉", ctx, abort.signal)
-    } catch (e: any) {
-      console.log("[voice] media-speak stream failed:", e?.message || String(e))
-    } finally {
-      if (activeAbortRef === abort) activeAbortRef = null
-      endPlayback()
-      activeCtxRef = null
-      void ctx.close().catch(() => {})
-    }
+  // mafw_media_speak 流式：工具事件 → VoiceSession（互斥/barge-in/hash 去重收敛在核心）。
+  const handleMediaSpeak = (text: string, voice?: string) => {
+    void voiceSession.speakFromTool(text, voice)
   }
   props.onRegisterMediaSpeak?.(sidProp(), handleMediaSpeak)
   onCleanup(() => props.onUnregisterMediaSpeak?.(sidProp()))
@@ -1366,30 +1173,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   const previewTtsVoice = async (voice: string, label: string) => {
-    if (previewing() === voice) { stopActivePlayback(); return }
+    if (previewing() === voice) { stopActivePlayback(); setPreviewing(null); return }
     stopActivePlayback()
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-    const ctx = new AudioCtx({ sampleRate: 24000 })
-    try {
-      if (ctx.state === "suspended") await ctx.resume()
-      const sid = (ctx as any).setSinkId
-      if (typeof sid === "function") void sid.call(ctx, "default").catch(() => {})
-    } catch {
-      await ctx.close().catch(() => {})
-      return
-    }
-    activeCtxRef = ctx
-    const abort = new AbortController()
-    activeAbortRef = abort
     setPreviewing(voice)
     try {
-      await playStreamingTts(`你好，我是${label}。`, voice, ctx, abort.signal)
+      await voiceSession.speak(`你好，我是${label}。`, voice)
     } catch { /* preview errors ignored */ }
     finally {
-      if (activeAbortRef === abort) activeAbortRef = null
-      if (activeCtxRef === ctx) activeCtxRef = null
       setPreviewing(null)
-      await ctx.close().catch(() => {})
     }
   }
 
@@ -1469,7 +1260,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   // mafw_media_speak 自动播放：回复文本出现新的 [语音回复 art:...] → 自动播 artifact。
-  // 去重：playedVoiceArtifacts（历史重载不重播）；标记 h 匹配"已流式播放"→ 跳过（防双播）。
+  // 去重：playedVoiceArtifacts（历史重载不重播）；标记 h 匹配"已流式播放"→ 跳过（防双播，
+  // hash 由 VoiceSession.speakFromTool 记录，同 gateway media-speak djb2 实现）。
   createEffect(() => {
     const sid = sidProp()
     if (!sid) return
@@ -1479,32 +1271,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const replies = voiceRepliesForTurn(last.id)
     if (replies.length === 0) return
     for (const r of replies) {
-      if (r.hash && streamedSpeakHashes.has(r.hash)) {
+      if (r.hash && voiceSession.hasRecentSpeakHash(r.hash)) {
         console.log("[voice] artifact skipped (already streamed):", r.artifactId)
         continue
       }
       if (playedVoiceArtifacts.has(r.artifactId)) continue
       playedVoiceArtifacts.add(r.artifactId)
-      // URL 契约归 SDK（media.artifactUrl）；自动播放保持 renderer 直连。
+      // URL 契约归 SDK（media.artifactUrl）；播放经 VoiceSession（互斥 + barge-in 一致）。
       void window.api.mafw.media.artifactUrl(r.artifactId).then(
         (url) => {
-          const audio = new Audio(url)
-          audio.onplay = () => console.log("[voice] artifact auto-playing:", r.artifactId)
-          audio.onerror = () => console.log("[voice] artifact playback error:", r.artifactId)
-          beginPlayback()
-          activeAudioRef = audio
-          const done = () => {
-            if (activeAudioRef === audio) activeAudioRef = null
-            endPlayback()
-          }
-          audio.onended = done
-          void audio.play().then(
-            () => console.log("[voice] artifact play() resolved:", r.artifactId),
-            (err: any) => {
-              done()
-              playedVoiceArtifacts.delete(r.artifactId)
-              console.log("[voice] artifact play() rejected:", r.artifactId, err?.name || err?.message || String(err))
-              showToastV2({ description: "语音回复已生成，请点击播放", duration: 4000 })
+          console.log("[voice] artifact auto-playing:", r.artifactId)
+          void voiceSession.playUrl(url).then(
+            ({ ok }) => {
+              if (!ok) {
+                playedVoiceArtifacts.delete(r.artifactId)
+                showToastV2({ description: "语音回复已生成，请点击播放", duration: 4000 })
+              }
             },
           )
         },
@@ -2192,10 +1974,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   classList={{ "mafw-voice-recording": voiceRecording() }}
                   aria-label="语音输入"
                   onClick={() => {
-                    if (voiceRecording()) { recorder.stop(); return }
+                    if (voiceRecording()) { voiceSession.stopRecording(); return }
                     // 手动打断：录音开始前停掉正在播放的语音（AEC 兜底，双击安全）
                     stopActivePlayback()
-                    void recorder.start()
+                    void voiceSession.startRecording()
                   }}
                 >{voiceRecording() ? "⏹" : "🎤"}</ButtonV2>
               </TooltipV2>

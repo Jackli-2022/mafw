@@ -168,6 +168,8 @@ export type MafwAPI = {
     voices: () => Promise<{ voices: { id: string; label: string; lang: string }[]; models: { id: string; description: string }[]; defaultVoice: string; defaultModel: string }>
     /** 流式 TTS 端点 URL（IPC 无法克隆 SSE 流，renderer 直连 fetch 时用此取 URL）。 */
     streamUrl: () => Promise<string>
+    /** barge-in 打断：取消该 session 全部在途 TTS 合成。 */
+    interrupt: (sessionId: string) => Promise<{ ok: boolean; cancelled: number }>
   }
 
   event: {

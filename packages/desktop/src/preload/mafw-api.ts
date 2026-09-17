@@ -201,6 +201,8 @@ export function createMafwApi(): MafwAPI {
       voices: () => invoke("tts", "voices"),
       // 流式 TTS 端点 URL（SSE 流经 renderer 原生 fetch，IPC 无法克隆）。
       streamUrl: () => invoke("tts", "streamUrl"),
+      // barge-in 打断：取消该 session 在途 TTS 合成
+      interrupt: (sessionId) => invoke("tts", "interrupt", sessionId),
     },
 
     event: {
