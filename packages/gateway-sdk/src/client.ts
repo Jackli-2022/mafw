@@ -330,7 +330,10 @@ export class MafwClient implements IMafwClient {
     },
 
     setCurrent: async (path: string): Promise<void> => {
-      await this.request('/api/projects/register', {
+      // Gateway's real register route is POST /register (index.ts) — it persists the
+      // registry and broadcasts project_registered. /api/projects/register does not
+      // exist and would fall through to the opencode reverse proxy (502/SPA HTML).
+      await this.request('/register', {
         method: 'POST',
         body: JSON.stringify({ projectDir: path, mafwDir: path + '/.mafw' }),
       })

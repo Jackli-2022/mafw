@@ -269,12 +269,15 @@ test("project.current returns project from envelope", async () => {
   expect(p.id).toBe("p1")
 })
 
-test("project.setCurrent sends POST /api/projects/register", async () => {
+test("project.setCurrent sends POST /register (gateway's real register route)", async () => {
   fetchMock.mockResolvedValue(okJson({}))
   const c = new MafwClient()
   await c.project.setCurrent("/my/project")
-  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/projects/register",
-    expect.objectContaining({ method: "POST" }))
+  expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/register",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ projectDir: "/my/project", mafwDir: "/my/project/.mafw" }),
+    }))
 })
 
 // ── Goals ──
