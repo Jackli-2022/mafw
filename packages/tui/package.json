@@ -1,6 +1,6 @@
 {
   "name": "@mafw/tui",
-  "version": "4.7.2",
+  "version": "4.10.1",
   "private": true,
   "type": "module",
   "bin": {
