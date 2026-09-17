@@ -13,7 +13,7 @@ import { getDirectory, getFilename } from "../util/path"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
-import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions } from "./message-part"
+import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions, type AssistantActions } from "./message-part"
 import { Card } from "@mafw/ui/card"
 import { Accordion } from "@mafw/ui/accordion"
 import { StickyAccordionHeader } from "@mafw/ui/sticky-accordion-header"
@@ -155,6 +155,7 @@ export function SessionTurn(
     messageID: string
     messages?: MessageType[]
     actions?: UserActions
+    assistantActions?: AssistantActions
     showReasoningSummaries?: boolean
     shellToolDefaultOpen?: boolean
     editToolDefaultOpen?: boolean
@@ -398,7 +399,7 @@ export function SessionTurn(
               class={props.classes?.container}
             >
               <div data-slot="session-turn-message-content" aria-live="off">
-                <Message message={message()!} parts={parts()} actions={props.actions} />
+                <Message message={message()!} parts={parts()} actions={props.actions} assistantActions={props.assistantActions} />
               </div>
               <Show when={divider()}>
                 <div data-slot="session-turn-compaction">
@@ -415,6 +416,7 @@ export function SessionTurn(
                     showReasoningSummaries={showReasoningSummaries()}
                     shellToolDefaultOpen={props.shellToolDefaultOpen}
                     editToolDefaultOpen={props.editToolDefaultOpen}
+                    assistantActions={props.assistantActions}
                   />
                 </div>
               </Show>

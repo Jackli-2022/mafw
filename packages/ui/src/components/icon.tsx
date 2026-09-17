@@ -54,6 +54,7 @@ const icons = {
   task: `<path d="M9.99992 2.0835V17.9168M7.08325 3.75016H2.08325V16.2502H7.08325M12.9166 16.2502H17.9166V3.75016H12.9166" stroke="currentColor" stroke-linecap="square"/>`,
   subagent: `<path d="M4.5 5C4.5 4.72386 4.72386 4.5 5 4.5H11C11.2761 4.5 11.5 4.72386 11.5 5V11C11.5 11.2761 11.2761 11.5 11 11.5H5C4.72386 11.5 4.5 11.2761 4.5 11V5Z" fill="currentColor"/><path d="M13.5 2C13.7761 2 14 2.22386 14 2.5V13.5C14 13.7761 13.7761 14 13.5 14H2.5C2.22386 14 2 13.7761 2 13.5V2.5C2 2.22386 2.22386 2 2.5 2H13.5ZM3 13H13V3H3V13Z" fill="currentColor"/>`,
   stop: `<rect x="5" y="5" width="10" height="10" fill="currentColor"/>`,
+  volume: `<path d="M2.5 7.75H5.25L9 4.25V15.75L5.25 12.25H2.5V7.75Z" stroke="currentColor" stroke-linejoin="round"/><path d="M12.25 7.25C13.15 8.05 13.65 9.2 13.65 10.5C13.65 11.8 13.15 12.95 12.25 13.75" stroke="currentColor" stroke-linecap="round"/>`,
   status: `<path d="M2 10V18H18V10M2 10V2H18V10M2 10H18M5 6H9M5 14H9" stroke="currentColor"/>`,
   "status-active": `<path d="M18 2H2V10H18V2Z" fill="currentColor" fill-opacity="0.1"/>
 <path d="M2 18H18V10H2V18Z" fill="currentColor" fill-opacity="0.1"/>

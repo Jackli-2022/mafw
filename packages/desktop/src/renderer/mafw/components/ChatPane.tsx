@@ -6,6 +6,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { SessionTurn } from "@mafw/session-ui/session-turn"
+import type { AssistantActions } from "@mafw/session-ui/message-part"
 import { TaskBar } from "./TaskBar"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
@@ -353,10 +354,24 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   voiceSession.on("state", (s) => {
     setVoiceRecording(s === "recording")
     setTtsSpeaking(s === "speaking")
-    if (s !== "speaking") setPreviewing(null)
+    if (s !== "speaking") { setPreviewing(null); setSpeakingPartId(null) }
   })
   voiceSession.on("error", (e) => showToastV2({ description: `语音失败: ${e.message}`, duration: 3000 }))
   voiceSession.on("segment", ({ wavBytes, duration }) => { void handleVoiceSegment(wavBytes, duration) })
+
+  // assistant 消息行内播报按钮（与 copy 按钮同款）：toggle 语义
+  const [speakingPartId, setSpeakingPartId] = createSignal<string | null>(null)
+  const assistantActions = (): AssistantActions => ({
+    speakingPartId: () => speakingPartId(),
+    onSpeakToggle: (text, partId) => {
+      if (ttsSpeaking() && speakingPartId() === partId) {
+        voiceSession.stopSpeaking("manual")
+        return
+      }
+      setSpeakingPartId(partId)
+      void voiceSession.speak(text).catch(() => {}).finally(() => setSpeakingPartId(null))
+    },
+  })
 
   // 手动打断：录音开始前/新播放前停掉正在播放的语音（AEC 兜底，双击安全）
   const stopActivePlayback = () => voiceSession.stopSpeaking("manual")
@@ -1797,6 +1812,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       sessionID={sidProp()}
                       messageID={msg.id}
                       actions={userActions()}
+                      assistantActions={assistantActions()}
                       classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
                     />
                   </Show>

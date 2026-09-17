@@ -129,6 +129,14 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<path d="M4.14908 11.0081H1.76282V1.51758H9.1038V2.55588M14.2225 4.99681H6.75397V14.4873H14.2225V4.99681Z" stroke="currentColor"/>`,
   },
+  volume: {
+    viewBox: "0 0 16 16",
+    body: `<path d="M2 6H4.5L8 3V13L4.5 10H2V6Z" stroke="currentColor" stroke-linejoin="round"/><path d="M10.5 5.5C11.2 6.1 11.6 7 11.6 8C11.6 9 11.2 9.9 10.5 10.5" stroke="currentColor" stroke-linecap="round"/>`,
+  },
+  stop: {
+    viewBox: "0 0 16 16",
+    body: `<rect x="3.75" y="3.75" width="8.5" height="8.5" rx="1.5" fill="currentColor"/>`,
+  },
   "outline-square-arrow": {
     viewBox: "0 0 16 16",
     body: `<path d="M13.5555 6.66656V2.44434H9.33326M13.5555 2.44434L7.99993 7.99989M13.5555 9.33324V13.5555C13.5555 13.5555 12.7599 13.5555 11.7777 13.5555H2.44438C2.44438 13.5555 2.44438 12.7599 2.44438 11.7777V4.22213C2.44438 3.2399 2.44434 2.44435 2.44434 2.44435H6.66661" stroke="currentColor"/>`,

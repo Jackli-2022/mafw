@@ -159,6 +159,8 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
     const player = await makePlayer(activeCtx) as TtsPlayer & { markEof?(): void }
     activePlayer = player
     setState("speaking")
+    // barge-in 前提：播报期间 VAD 监听人声（与旧 speakText.startMonitoring 等价）
+    void deps.vad.start().catch(e => console.warn("[voice] vad start failed:", e))
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let remainder = new Uint8Array(0)
@@ -195,6 +197,8 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
       reader.releaseLock()
       await player.dispose()
       if (activePlayer === player) activePlayer = null
+      // 回 idle/interrupted 且非录音 → 释放麦克风（对齐旧 stopMonitoring 行为）
+      if (state !== "recording") deps.vad.stop()
     }
   }
 
@@ -250,12 +254,14 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
       const audio = new Audio(url)
       activeAudio = audio
       setState("speaking")
+      void deps.vad.start().catch(() => {}) // barge-in 监听
       let settled = false
       const done = (ok: boolean) => {
         if (settled) return
         settled = true
         if (activeAudio === audio) activeAudio = null
         if (state === "speaking") setState("idle")
+        if (state !== "recording") deps.vad.stop()
         resolve({ ok })
       }
       audio.onended = () => done(true)

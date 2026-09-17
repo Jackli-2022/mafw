@@ -165,6 +165,8 @@ export const dict = {
   "ui.message.forkMessage": "分叉到新会话",
   "ui.message.revertMessage": "重置到此点",
   "ui.message.copyResponse": "复制回复",
+  "ui.message.speak": "播报",
+  "ui.message.stopSpeaking": "停止播报",
   "ui.message.copied": "已复制！",
   "ui.message.interrupted": "已中断",
   "ui.message.queued": "排队中",

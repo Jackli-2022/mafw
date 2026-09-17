@@ -5,12 +5,13 @@ import { DEFAULT_VAD_PARAMS, type VadAnalyzer, type VadEvent } from "./types"
 
 function fakeVad() {
   const subs = new Map<VadEvent, ((a?: Float32Array) => void)[]>()
+  const counters = { starts: 0, stops: 0 }
   const vad: VadAnalyzer = {
-    start: async () => {},
-    stop: () => {},
+    start: async () => { counters.starts++ },
+    stop: () => { counters.stops++ },
     on: (e, cb) => { subs.set(e, [...(subs.get(e) ?? []), cb]) },
   }
-  return { vad, emit: (e: VadEvent, a?: Float32Array) => subs.get(e)?.forEach(cb => cb(a)) }
+  return { vad, counters, emit: (e: VadEvent, a?: Float32Array) => subs.get(e)?.forEach(cb => cb(a)) }
 }
 
 function fakePlayer() {
@@ -75,6 +76,27 @@ test("speakFromTool dedupes repeated identical text", async () => {
   await vs.speakFromTool("同一段话").catch(() => {})
   await vs.speakFromTool("同一段话").catch(() => {})
   expect(plays).toBe(1)
+  vs.dispose()
+})
+
+test("speak starts vad while speaking and stops it after playback ends", async () => {
+  const { vad, counters } = fakeVad()
+  // 完整走通 playStream：空 SSE → markEof → drained 立即触发
+  const emptySse = () => new Response(new ReadableStream({ start(c) { c.close() } }), { status: 200 })
+  const player = {
+    ...fakePlayer(),
+    on: (event: string, cb: () => void) => { if (event === "drained") setTimeout(cb, 0) },
+  }
+  const vs = createVoiceSession({
+    ...baseDeps(vad),
+    fetchImpl: (async () => emptySse()) as any,
+    _makeCtx: () => fakeCtx() as any,
+    _makePlayer: async () => player as any,
+  } as any)
+  await vs.speak("一段播报")
+  expect(counters.starts).toBeGreaterThanOrEqual(1) // speaking 期间启动 VAD（barge-in 前提）
+  expect(counters.stops).toBeGreaterThanOrEqual(1) // 播完且非录音态 → 释放麦克风
+  expect(vs.state).toBe("idle")
   vs.dispose()
 })
 

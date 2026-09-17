@@ -167,6 +167,7 @@ export interface MessageProps {
   message: MessageType
   parts: PartType[]
   actions?: UserActions
+  assistantActions?: AssistantActions
   showAssistantCopyPartID?: string | null
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
@@ -179,6 +180,15 @@ export type UserActions = {
   fork?: SessionAction
   revert?: SessionAction
   openAttachment?: (file: FilePart) => void
+}
+
+/**
+ * Assistant 消息侧的 per-part 动作注入（对齐 UserActions 模式）。
+ * speakingPartId 是响应式 getter（内部读 Solid signal），返回当前正在播报的 part id。
+ */
+export type AssistantActions = {
+  speakingPartId?: () => string | null
+  onSpeakToggle?: (text: string, partId: string) => void
 }
 
 export type UserMessageComment = {
@@ -203,11 +213,12 @@ export interface MessagePartProps {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   useV2Actions?: boolean
+  assistantActions?: AssistantActions
 }
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "check" | "copy" | "reset"
+    icon: "check" | "copy" | "reset" | "volume" | "stop"
     label: JSX.Element
     useV2?: boolean
   },
@@ -743,6 +754,7 @@ export function AssistantParts(props: {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   useV2Actions?: boolean
+  assistantActions?: AssistantActions
   working?: boolean
   showReasoningSummaries?: boolean
   shellToolDefaultOpen?: boolean
@@ -829,6 +841,7 @@ export function AssistantParts(props: {
                         turnDurationMs={props.turnDurationMs}
                         useV2Actions={props.useV2Actions}
                         defaultOpen={partDefaultOpen(item()!, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
+                        assistantActions={props.assistantActions}
                       />
                     </Show>
                   </Show>
@@ -972,6 +985,7 @@ export function Message(props: MessageProps) {
             showAssistantCopyPartID={props.showAssistantCopyPartID}
             showReasoningSummaries={props.showReasoningSummaries}
             useV2Actions={props.useV2Actions}
+            assistantActions={props.assistantActions}
           />
         )}
       </Match>
@@ -985,6 +999,7 @@ export function AssistantMessageDisplay(props: {
   showAssistantCopyPartID?: string | null
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
+  assistantActions?: AssistantActions
 }) {
   const emptyTools: ToolPart[] = []
   const part = createMemo(() => index(props.parts))
@@ -1045,6 +1060,7 @@ export function AssistantMessageDisplay(props: {
                       message={props.message}
                       showAssistantCopyPartID={props.showAssistantCopyPartID}
                       useV2Actions={props.useV2Actions}
+                      assistantActions={props.assistantActions}
                     />
                   </Show>
                 )
@@ -1467,6 +1483,7 @@ export function Part(props: MessagePartProps) {
         showAssistantCopyPartID={props.showAssistantCopyPartID}
         turnDurationMs={props.turnDurationMs}
         useV2Actions={props.useV2Actions}
+        assistantActions={props.assistantActions}
       />
     </Show>
   )
@@ -1727,6 +1744,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return isLastTextPart()
   })
   const [copied, setCopied] = createSignal(false)
+  const speaking = () => props.assistantActions?.speakingPartId?.() === part().id
 
   const handleCopy = async () => {
     const content = text()
@@ -1747,6 +1765,19 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
         </div>
         <Show when={showCopy()}>
           <div data-slot="text-part-copy-wrapper" data-interrupted={interrupted() ? "" : undefined}>
+            <Show when={props.assistantActions?.onSpeakToggle}>
+              <MessageActionButton
+                icon={speaking() ? "stop" : "volume"}
+                label={speaking() ? i18n.t("ui.message.stopSpeaking") : i18n.t("ui.message.speak")}
+                useV2={props.useV2Actions}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.assistantActions?.onSpeakToggle?.(text(), part().id)
+                }}
+                aria-label={speaking() ? i18n.t("ui.message.stopSpeaking") : i18n.t("ui.message.speak")}
+              />
+            </Show>
             <MessageActionButton
               icon={copied() ? "check" : "copy"}
               label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copyResponse")}
