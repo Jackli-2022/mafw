@@ -70,6 +70,76 @@ function stopGatewayDaemon(deps) {
   return "stopped"
 }
 
+function runUpdate(deps) {
+  const log = deps.log
+  const bundled = readPkgVersion(deps.fs, deps.bundledPkgPath)
+  if (!bundled) {
+    log("skip: bundled gateway version unreadable")
+    return 0
+  }
+
+  let prefix
+  try {
+    prefix = String(deps.exec(NPM_BIN, ["config", "get", "prefix"], 15000)).trim()
+  } catch (err) {
+    log(`skip: npm not usable (${String(err.message).split("\n")[0]})`)
+    return 0
+  }
+  if (!prefix) {
+    log("skip: npm prefix empty")
+    return 0
+  }
+
+  const globalPkgPath = path.join(prefix, "node_modules", ...NPM_PACKAGE.split("/"), "package.json")
+  const global = readPkgVersion(deps.fs, globalPkgPath)
+  if (!global) {
+    log(`skip: ${NPM_PACKAGE} not installed globally — desktop will use bundled gateway`)
+    return 0
+  }
+
+  if (decide(bundled, global) === "skip") {
+    log(`skip: global ${global} >= bundled ${bundled}`)
+    return 0
+  }
+
+  log(`gateway update: global ${global} < bundled ${bundled}`)
+  log(`daemon: ${stopGatewayDaemon(deps)}`)
+
+  try {
+    deps.exec(NPM_BIN, ["install", "-g", `${NPM_PACKAGE}@${bundled}`], NPM_TIMEOUT_MS)
+    log(`ok: ${NPM_PACKAGE}@${bundled} installed globally; daemon stays stopped until next desktop launch`)
+  } catch (err) {
+    log(`fail: npm install -g failed (${String(err.message).split("\n")[0]})`)
+    log(`manual fix: npm install -g ${NPM_PACKAGE}@${bundled}`)
+  }
+  return 0
+}
+
+function defaultDeps() {
+  const run = (cmd, args, timeoutMs) =>
+    execFileSync(cmd, args, { timeout: timeoutMs, encoding: "utf-8", windowsHide: true })
+  return {
+    fs,
+    bundledPkgPath: path.join(__dirname, "..", "gateway", "package.json"),
+    pidFilePath: path.join(os.homedir(), ".config", "mafw", "gateway.pid"),
+    exec: run,
+    pidImageName: (pid) => pidImageName(run, pid),
+    sleep: (ms) => {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+    },
+    log: (line) => console.log(`[gateway-update] ${line}`),
+  }
+}
+
+if (require.main === module) {
+  try {
+    process.exit(runUpdate(defaultDeps()))
+  } catch (err) {
+    console.log(`[gateway-update] fail: unexpected (${err.message})`)
+    process.exit(0)
+  }
+}
+
 module.exports = {
   NPM_PACKAGE,
   NPM_BIN,
@@ -80,4 +150,5 @@ module.exports = {
   pidImageName,
   shouldKill,
   stopGatewayDaemon,
+  runUpdate,
 }

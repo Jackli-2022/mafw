@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { compareVersions, decide, readPkgVersion, readPidFile, shouldKill, stopGatewayDaemon } from "./update-global-gateway"
+import { compareVersions, decide, readPkgVersion, readPidFile, runUpdate, shouldKill, stopGatewayDaemon } from "./update-global-gateway"
 
 describe("compareVersions", () => {
   test("orders major/minor/patch", () => {
@@ -115,5 +115,76 @@ describe("stopGatewayDaemon", () => {
     const { deps: deps2 } = fakeDeps("4242", null, calls2)
     expect(stopGatewayDaemon(deps2)).toBe("not-running")
     expect(calls2.some(([cmd]) => cmd === "taskkill")).toBe(false)
+  })
+})
+
+describe("runUpdate", () => {
+  const realFs = require("node:fs")
+  function fixture(over = {}) {
+    const { installError = null, ...depsOver } = over
+    const dir = mkdtempSync(join(tmpdir(), "gwupd-run-"))
+    const bundledPkgPath = join(dir, "bundled", "gateway", "package.json")
+    realFs.mkdirSync(join(dir, "bundled", "gateway"), { recursive: true })
+    realFs.writeFileSync(bundledPkgPath, JSON.stringify({ version: "4.10.1" }))
+    const pidPath = join(dir, "gateway.pid")
+    const logs = []
+    const deps = {
+      fs: realFs,
+      bundledPkgPath,
+      pidFilePath: pidPath,
+      exec: (cmd, args) => {
+        if (cmd === "npm.cmd" && args[0] === "config") return join(dir, "fake-prefix") + "\n"
+        if (installError && cmd === "npm.cmd" && args[0] === "install") throw installError
+        logs.push([cmd, args])
+        return ""
+      },
+      pidImageName: () => "node.exe",
+      sleep: () => {},
+      log: (line) => logs.push(line),
+      ...depsOver,
+    }
+    return { deps, logs, dir, pidPath }
+  }
+
+  test("skips when npm unusable", () => {
+    const { deps, logs } = fixture({ exec: () => { throw new Error("spawn ENOENT") } })
+    expect(runUpdate(deps)).toBe(0)
+    expect(logs.some((l) => String(l).includes("skip: npm not usable"))).toBe(true)
+  })
+
+  test("skips when global package missing", () => {
+    const { deps, logs } = fixture()
+    expect(runUpdate(deps)).toBe(0)
+    expect(logs.some((l) => String(l).includes("not installed globally"))).toBe(true)
+  })
+
+  test("skips when global >= bundled (never downgrade)", () => {
+    const { deps, logs, dir } = fixture()
+    const nm = join(dir, "fake-prefix", "node_modules", "@jack200714", "mafw")
+    realFs.mkdirSync(nm, { recursive: true })
+    realFs.writeFileSync(join(nm, "package.json"), JSON.stringify({ version: "4.10.1" }))
+    expect(runUpdate(deps)).toBe(0)
+    expect(logs.some((l) => String(l).includes("skip: global"))).toBe(true)
+    expect(logs.some(([cmd, args]) => cmd === "npm.cmd" && args?.[0] === "install")).toBe(false)
+  })
+
+  test("stops daemon then installs when global < bundled", () => {
+    const { deps, logs, dir, pidPath } = fixture()
+    realFs.writeFileSync(pidPath, "4242")
+    const nm = join(dir, "fake-prefix", "node_modules", "@jack200714", "mafw")
+    realFs.mkdirSync(nm, { recursive: true })
+    realFs.writeFileSync(join(nm, "package.json"), JSON.stringify({ version: "4.9.0" }))
+    expect(runUpdate(deps)).toBe(0)
+    expect(logs.some(([cmd, args]) => cmd === "taskkill" && args.includes("4242"))).toBe(true)
+    expect(logs.some(([cmd, args]) => cmd === "npm.cmd" && args[0] === "install" && args[2] === "@jack200714/mafw@4.10.1")).toBe(true)
+  })
+
+  test("npm failure leaves manual-fix log, exit 0", () => {
+    const { deps, logs, dir } = fixture({ installError: new Error("ETIMEDOUT") })
+    const nm = join(dir, "fake-prefix", "node_modules", "@jack200714", "mafw")
+    realFs.mkdirSync(nm, { recursive: true })
+    realFs.writeFileSync(join(nm, "package.json"), JSON.stringify({ version: "4.9.0" }))
+    expect(runUpdate(deps)).toBe(0)
+    expect(logs.some((l) => String(l).includes("manual fix: npm install -g @jack200714/mafw@4.10.1"))).toBe(true)
   })
 })
