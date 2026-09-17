@@ -31,6 +31,12 @@ function contractOps(): Map<string, string[]> {
   return map
 }
 
+/** internal 端点（gateway 内部/dashboard/mobile 用）不被 @mafw/sdk 调用，豁免死契约检查。 */
+function isInternal(path: string): boolean {
+  const methods = contract.paths[path] as any
+  return Object.values(methods).some((op: any) => Array.isArray(op?.tags) && op.tags.includes('internal'))
+}
+
 /**
  * 模板串内容 → 归一化路径。
  * - 剥离 `${this.baseUrl}`/`${baseUrl}` 前缀
@@ -171,12 +177,15 @@ const clientSrc = readFileSync(new URL("./client.ts", import.meta.url), "utf-8")
 const sseSrc = readFileSync(new URL("./sse.ts", import.meta.url), "utf-8")
 const calls = [...extractCalls("client.ts", clientSrc), ...extractCalls("sse.ts", sseSrc)]
 
-test("contract ops ⊆ SDK 调用面（无死契约）", () => {
+test("contract ops ⊆ SDK 调用面（无死契约；internal 标签豁免）", () => {
   const used = new Set(calls.map(c => `${c.method} ${c.path}`))
   const dead: string[] = []
-  for (const [path, methods] of contractOps()) {
-    for (const method of methods) {
-      if (!used.has(`${method} ${path}`)) dead.push(`${method} ${path}`)
+  for (const [rawPath, methods] of Object.entries<any>(contract.paths)) {
+    if (isInternal(rawPath)) continue
+    for (const m of Object.keys(methods)) {
+      if (!(METHODS as readonly string[]).includes(m)) continue
+      const key = `${m.toUpperCase()} ${norm(rawPath)}`
+      if (!used.has(key)) dead.push(key)
     }
   }
   expect(dead).toEqual([])

@@ -1,0 +1,566 @@
+{
+  "$comment": "P4-B 手写响应 schema 覆盖层，按 operationId keyed；merge-contract 时注入 openapi.json 的 responses.200.content['application/json'].schema",
+  "operations": {
+    "session.list": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "projectID": {
+                  "type": "string"
+                },
+                "directory": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "time": {
+                  "type": "object",
+                  "properties": {
+                    "created": {
+                      "type": "number"
+                    },
+                    "updated": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "created",
+                    "updated"
+                  ]
+                },
+                "parentID": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "projectID",
+                "directory",
+                "title",
+                "time"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ]
+      }
+    },
+    "session.get": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectID": {
+            "type": "string"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "type": "number"
+              },
+              "updated": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "created",
+              "updated"
+            ]
+          },
+          "parentID": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectID",
+          "directory",
+          "title",
+          "time"
+        ]
+      }
+    },
+    "goals.list": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "goals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "goalId": {
+                  "type": "string"
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "loop": {
+                  "type": "number"
+                },
+                "currentWave": {
+                  "type": "number"
+                },
+                "totalWaves": {
+                  "type": "number"
+                },
+                "nextAction": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "goalId",
+                "phase",
+                "loop",
+                "currentWave",
+                "totalWaves"
+              ]
+            }
+          }
+        },
+        "required": [
+          "goals"
+        ]
+      }
+    },
+    "goals.get": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "loop": {
+            "type": "number"
+          },
+          "currentWave": {
+            "type": "number"
+          },
+          "totalWaves": {
+            "type": "number"
+          },
+          "nextAction": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "goalId",
+          "phase",
+          "loop",
+          "currentWave",
+          "totalWaves"
+        ]
+      }
+    },
+    "goals.sessions": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sessionID": {
+                  "type": "string"
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "loop": {
+                  "type": "number"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "time": {
+                  "type": "object",
+                  "properties": {
+                    "created": {
+                      "type": "number"
+                    },
+                    "updated": {
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "sessionID",
+                "phase",
+                "loop"
+              ]
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ]
+      }
+    },
+    "memory.search": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "episodic",
+                    "semantic",
+                    "procedural",
+                    "global"
+                  ]
+                },
+                "primary_abstraction": {
+                  "type": "string"
+                },
+                "cue_anchors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "memory_value": {
+                  "type": "string"
+                },
+                "energy": {
+                  "type": "number"
+                },
+                "salience": {
+                  "type": "number"
+                },
+                "created_at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "primary_abstraction",
+                "cue_anchors",
+                "memory_value",
+                "energy"
+              ]
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      }
+    },
+    "triage.list": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "goalId": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "PENDING_CONFIRMATION",
+                    "CONFIRMED",
+                    "REJECTED"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "goalId",
+                "reason",
+                "severity",
+                "createdAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      }
+    },
+    "approvals.list": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "goalId": {
+                  "type": "string"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "goalId",
+                "question",
+                "status",
+                "createdAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "approvals"
+        ]
+      }
+    },
+    "automations.list": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "trigger": {
+                  "type": "object",
+                  "properties": {
+                    "schedule": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "schedule",
+                    "timezone"
+                  ]
+                },
+                "action": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "enabled"
+              ]
+            }
+          }
+        },
+        "required": [
+          "rules"
+        ]
+      }
+    },
+    "questions.list": {
+      "responseSchema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "sessionID": {
+                  "type": "string"
+                },
+                "questions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "question": {
+                        "type": "string"
+                      },
+                      "header": {
+                        "type": "string"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string"
+                            },
+                            "description": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "label"
+                          ]
+                        }
+                      },
+                      "multiple": {
+                        "type": "boolean"
+                      },
+                      "custom": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "question",
+                      "options"
+                    ]
+                  }
+                },
+                "tool": {
+                  "type": "object",
+                  "properties": {
+                    "messageID": {
+                      "type": "string"
+                    },
+                    "callID": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "messageID",
+                    "callID"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "sessionID",
+                "questions"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      }
+    },
+    "triage.dismiss": {
+      "summary": "Dismiss triage item",
+      "description": "Dismiss = reject alias (state REJECTED), ledger reason triage_dismissed. Route added 2026-09-17 fixing SDK drift bug."
+    },
+    "goals.control": {
+      "summary": "Goal control",
+      "description": "PAUSE/ABORT/FORCE_PHASE/RESET_PARAMETRIC. Gateway also accepts legacy POST /control (MCP handler compat) - same handler."
+    },
+    "event.subscribe": {
+      "summary": "SSE event stream",
+      "description": "?sessionID= scopes to a session. SDK helper events.url() returns this URL for renderer-direct EventSource (contract in SDK, transport direct)."
+    },
+    "tts.speakStream": {
+      "summary": "Streaming TTS",
+      "description": "SSE of base64 PCM16 chunks (24kHz mono). SDK helper tts.streamUrl() returns this URL; transport stays renderer-direct (IPC cannot clone the SSE stream)."
+    },
+    "media.upload": {
+      "summary": "Binary media upload",
+      "description": "Raw octet-stream, ?type=. Must go through Node network stack (Chromium fetch hangs behind system proxies). SDK helper media.upload()."
+    },
+    "media.uploadAndCreate": {
+      "summary": "Upload + A2A task create in one round-trip",
+      "description": "?type=&question=. SDK helper media.uploadAndCreate()."
+    },
+    "media.artifact": {
+      "summary": "Artifact bytes",
+      "description": "TTS audio / uploaded media. Consumed directly by <audio src> via SDK media.artifactUrl() helper - transport stays direct."
+    },
+    "project.setCurrent": {
+      "summary": "Register current project",
+      "description": "Real register route persists the registry and broadcasts project_registered."
+    },
+    "goals.respondQuestion": {
+      "summary": "Goal-scoped question reply",
+      "description": "Desktop QuestionWidget. Distinct from /api/questions/{id}/reply (native opencode question API)."
+    }
+  }
+}

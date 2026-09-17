@@ -40,9 +40,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["session.get"];
@@ -58,9 +56,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["session.messages"];
@@ -76,9 +72,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["session.todo"];
@@ -94,9 +88,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["session.children"];
@@ -112,9 +104,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["session.trajectory"];
@@ -130,9 +120,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["session.tokenSummary"];
@@ -148,9 +136,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -166,9 +152,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -184,9 +168,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -202,9 +184,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -220,9 +200,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -238,9 +216,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -256,9 +232,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -274,9 +248,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -372,9 +344,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                name: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["session.usagePluginSourceGet"];
@@ -390,9 +360,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                name: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -408,9 +376,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                name: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -543,6 +509,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Register current project
+         * @description Real register route persists the registry and broadcasts project_registered.
+         */
         post: operations["project.setCurrent"];
         delete?: never;
         options?: never;
@@ -557,7 +527,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description SSE event stream; ?sessionID= scopes to a session (session-scoped subscribe). SDK helper events.url() returns this URL for renderer-direct EventSource. */
+        /**
+         * SSE event stream
+         * @description ?sessionID= scopes to a session. SDK helper events.url() returns this URL for renderer-direct EventSource (contract in SDK, transport direct).
+         */
         get: operations["event.subscribe"];
         put?: never;
         post: operations["event.publish"];
@@ -747,9 +720,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["goals.get"];
@@ -765,9 +736,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["goals.sessions"];
@@ -783,15 +752,15 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                goalId: string;
-                questionId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
         put?: never;
-        /** @description Goal-scoped question reply (desktop QuestionWidget). Distinct from /api/questions/{id}/reply (native opencode question API). */
+        /**
+         * Goal-scoped question reply
+         * @description Desktop QuestionWidget. Distinct from /api/questions/{id}/reply (native opencode question API).
+         */
         post: operations["goals.respondQuestion"];
         delete?: never;
         options?: never;
@@ -803,9 +772,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                goalId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -826,7 +793,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Goal control (PAUSE/ABORT/FORCE_PHASE/RESET_PARAMETRIC). Gateway also accepts legacy POST /control (MCP handler compat) — same handler. */
+        /**
+         * Goal control
+         * @description PAUSE/ABORT/FORCE_PHASE/RESET_PARAMETRIC. Gateway also accepts legacy POST /control (MCP handler compat) - same handler.
+         */
         post: operations["goals.control"];
         delete?: never;
         options?: never;
@@ -902,9 +872,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -984,9 +952,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1018,14 +984,15 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
         put?: never;
-        /** @description Dismiss = reject alias (state REJECTED), ledger reason triage_dismissed. Route added 2026-09-17 fixing SDK drift bug. */
+        /**
+         * Dismiss triage item
+         * @description Dismiss = reject alias (state REJECTED), ledger reason triage_dismissed. Route added 2026-09-17 fixing SDK drift bug.
+         */
         post: operations["triage.dismiss"];
         delete?: never;
         options?: never;
@@ -1037,9 +1004,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1055,9 +1020,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1073,9 +1036,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1107,9 +1068,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1125,9 +1084,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1159,9 +1116,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1246,7 +1201,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Binary media upload (raw octet-stream, ?type=). Must go through Node network stack — Chromium fetch is blocked by system proxies. SDK helper media.upload(). */
+        /**
+         * Binary media upload
+         * @description Raw octet-stream, ?type=. Must go through Node network stack (Chromium fetch hangs behind system proxies). SDK helper media.upload().
+         */
         post: operations["media.upload"];
         delete?: never;
         options?: never;
@@ -1263,7 +1221,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Upload + A2A task create in one round-trip (?type=&question=). SDK helper media.uploadAndCreate(). */
+        /**
+         * Upload + A2A task create in one round-trip
+         * @description ?type=&question=. SDK helper media.uploadAndCreate().
+         */
         post: operations["media.uploadAndCreate"];
         delete?: never;
         options?: never;
@@ -1280,7 +1241,6 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description A2A JSON-RPC (Agent2Agent v1.0) — media task creation and multi-turn follow-up via referenceTaskIds. Loopback-only. */
         post: operations["media.createTask"];
         delete?: never;
         options?: never;
@@ -1292,12 +1252,13 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        /** @description Artifact bytes (TTS audio / uploaded media). Consumed directly by <audio src> in renderer via SDK media.artifactUrl() helper — transport stays direct. */
+        /**
+         * Artifact bytes
+         * @description TTS audio / uploaded media. Consumed directly by <audio src> via SDK media.artifactUrl() helper - transport stays direct.
+         */
         get: operations["media.artifact"];
         put?: never;
         post?: never;
@@ -1348,7 +1309,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Streaming TTS (SSE of base64 PCM16 chunks, 24kHz mono). SDK helper tts.streamUrl() returns this URL; transport stays renderer-direct (IPC cannot clone the SSE stream). */
+        /**
+         * Streaming TTS
+         * @description SSE of base64 PCM16 chunks (24kHz mono). SDK helper tts.streamUrl() returns this URL; transport stays renderer-direct (IPC cannot clone the SSE stream).
+         */
         post: operations["tts.speakStream"];
         delete?: never;
         options?: never;
@@ -1424,9 +1388,7 @@ export interface paths {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
@@ -1454,6 +1416,583 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/python/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["python.execute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/python/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["python.restart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/python/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["python.status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/obs/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["obs.capture"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recall/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["recall.context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recall/pinned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["recall.pinned"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["memory.add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["memory.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["memory.stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/embeddings/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["memory.embeddingsBackfill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/l5/heuristics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["memory.getL5Heuristics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/goals/{id}/loops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["goals.loops"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/work/{goalId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["goals.complete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** MCP 兼容别名，与 /api/goals/control 同 handler */
+        post: operations["goals.controlLegacy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orchestration/outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["orchestration.outcomes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/create-task": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["media.createTaskApi"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/resolve-task/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["media.resolveTask"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/analyze-audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["media.analyzeAudio"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/media/plugins/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["media.pluginsReload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["dashboard.stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/costs/{window}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["dashboard.costs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["dashboard.alignment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["feedback.record"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user-answers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["dashboard.userAnswer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["session.metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["health.check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gateway/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["gateway.pause"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gateway/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["gateway.resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gateway/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["gateway.cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gateway/checkpoint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["gateway.checkpoint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gateway/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["gateway.rollback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mobile/media/tasks/{id}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mobile.mediaTaskAsk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/eval/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["eval.chatCompletions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/compress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["llm.compress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/merge-memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["memory.merge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["health.root"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1475,7 +2014,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Created session */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1493,12 +2032,26 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Session list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessions: {
+                            id: string;
+                            projectID: string;
+                            directory: string;
+                            title: string;
+                            time: {
+                                created: number;
+                                updated: number;
+                            };
+                            parentID?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -1513,19 +2066,24 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Session */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        id: string;
+                        projectID: string;
+                        directory: string;
+                        title: string;
+                        time: {
+                            created: number;
+                            updated: number;
+                        };
+                        parentID?: string;
+                    };
                 };
-                content?: never;
             };
         };
     };
@@ -1540,7 +2098,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1560,7 +2118,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Renamed */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1580,7 +2138,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Paged message parts */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1600,7 +2158,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Session todos */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1620,7 +2178,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Child sessions */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1640,7 +2198,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Trajectory turns/events */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1660,7 +2218,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Token summary */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1680,7 +2238,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Forked session */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1700,7 +2258,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Reverted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1720,7 +2278,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Revert undone */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1740,7 +2298,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Aborted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1760,7 +2318,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Summarized */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1780,7 +2338,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Prompt result parts */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1800,7 +2358,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Accepted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1820,7 +2378,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Command executed */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1838,7 +2396,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Usage snapshot */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1856,7 +2414,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Usage summary */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1874,7 +2432,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Usage plugin list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1892,7 +2450,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Reloaded */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1910,7 +2468,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Created */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1930,7 +2488,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Plugin source */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1950,7 +2508,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Source saved */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1970,7 +2528,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1990,7 +2548,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Test result */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2008,7 +2566,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Opencode commands (reverse-proxied) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2026,7 +2584,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Skills (reverse-proxied) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2044,7 +2602,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Command result */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2062,7 +2620,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Manager session info */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2080,7 +2638,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Rotated */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2098,7 +2656,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Registered projects */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2116,7 +2674,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Current project */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2134,7 +2692,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Registered/broadcast project_registered */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2152,7 +2710,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description text/event-stream */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2170,7 +2728,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Published to all UI channels */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2188,7 +2746,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Runtime identity + capabilities */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2206,15 +2764,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Switched */
+            /** @description OK */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unknown plugin */
-            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2231,15 +2782,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Restarted */
+            /** @description OK */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description External/进程内 runtime 不可重启 */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2256,7 +2800,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Plugin hub list + packages */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2274,7 +2818,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Installed (raw octet-stream body) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2292,7 +2836,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Enabled */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2310,7 +2854,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Disabled */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2328,7 +2872,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2346,7 +2890,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Gateway config */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2364,7 +2908,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Config saved (read-then-write pattern) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2382,7 +2926,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Native opencode config */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2400,7 +2944,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Config updated */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2418,12 +2962,24 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Goal list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        goals: {
+                            goalId: string;
+                            phase: string;
+                            loop: number;
+                            currentWave: number;
+                            totalWaves: number;
+                            nextAction?: string;
+                            updatedAt?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -2438,19 +2994,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Goal */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
+                content: {
+                    "application/json": {
+                        goalId: string;
+                        phase: string;
+                        loop: number;
+                        currentWave: number;
+                        totalWaves: number;
+                        nextAction?: string;
+                        updatedAt?: string;
+                    };
                 };
-                content?: never;
             };
         };
     };
@@ -2465,12 +3024,25 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Goal session mapping */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        sessions: {
+                            sessionID: string;
+                            phase: string;
+                            loop: number;
+                            title?: string;
+                            time?: {
+                                created?: number;
+                                updated?: number;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -2486,7 +3058,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Answered */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2506,15 +3078,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Validated */
+            /** @description OK */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Goal already exists */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2531,7 +3096,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Accepted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2549,12 +3114,26 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Harmonic memory search results */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        results: {
+                            id: string;
+                            /** @enum {string} */
+                            type: "episodic" | "semantic" | "procedural" | "global";
+                            primary_abstraction: string;
+                            cue_anchors: string[];
+                            memory_value: string;
+                            energy: number;
+                            salience?: number;
+                            created_at?: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -2567,7 +3146,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Merged memory facts */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2585,7 +3164,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Energy distribution */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2603,7 +3182,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description L5 axioms + heuristics */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2623,7 +3202,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Deleted */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2641,7 +3220,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Note-board entries + budget */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2659,7 +3238,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Pin/unpin/sticky applied */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2677,7 +3256,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Embedding engine settings */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2695,7 +3274,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Updated (hot-swap) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2713,12 +3292,23 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Approval list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        approvals: {
+                            id: string;
+                            goalId: string;
+                            question: string;
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "expired";
+                            createdAt: string;
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -2733,7 +3323,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Responded */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2751,12 +3341,25 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Triage items */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            goalId: string;
+                            reason: string;
+                            /** @enum {string} */
+                            severity: "low" | "medium" | "high";
+                            createdAt: string;
+                            /** @enum {string} */
+                            state?: "PENDING_CONFIRMATION" | "CONFIRMED" | "REJECTED";
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -2771,7 +3374,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description dismissed | not_found */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2791,22 +3394,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Confirmed, goal created */
+            /** @description OK */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Wrong state */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2825,7 +3414,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description rejected | not_found */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2845,22 +3434,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Suggestion recorded */
+            /** @description OK */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid suggestion */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2877,12 +3452,33 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Native question list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            sessionID: string;
+                            questions: {
+                                question: string;
+                                header?: string;
+                                options: {
+                                    label: string;
+                                    description?: string;
+                                }[];
+                                multiple?: boolean;
+                                custom?: boolean;
+                            }[];
+                            tool?: {
+                                messageID: string;
+                                callID: string;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -2897,7 +3493,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Replied */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2917,7 +3513,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Rejected */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2935,7 +3531,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Permission requests */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2955,7 +3551,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description once/always/reject reply */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2973,7 +3569,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Chat response */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2991,7 +3587,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Enriched chat response (deltas + facts + recall) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3009,7 +3605,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Media engine plugin status */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3027,15 +3623,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Engine switched (hot) */
+            /** @description OK */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unknown engine */
-            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3052,7 +3641,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Upload result (artifact ref) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3070,7 +3659,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Task created with artifact */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3088,7 +3677,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description JSON-RPC response */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3108,15 +3697,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Artifact bytes */
+            /** @description OK */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Expired/unknown artifact */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3133,7 +3715,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Synthesis result */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3151,7 +3733,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Voice list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3169,7 +3751,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description text/event-stream */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3187,7 +3769,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Model providers */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3205,7 +3787,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Agent list */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3223,7 +3805,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Recall worker + media model config */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3241,7 +3823,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Model config updated */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3259,12 +3841,27 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Automation rules */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        rules: {
+                            id: string;
+                            enabled: boolean;
+                            name?: string;
+                            trigger?: {
+                                schedule: string;
+                                timezone: string;
+                            };
+                            action?: {
+                                type: string;
+                            };
+                        }[];
+                    };
+                };
             };
         };
     };
@@ -3279,7 +3876,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Toggled */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3297,15 +3894,670 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Draft created (disabled) */
+            /** @description OK */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Automation engine unavailable */
-            503: {
+        };
+    };
+    "python.execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "python.restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "python.status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "obs.capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "recall.context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "recall.pinned": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "memory.add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "memory.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "memory.stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "memory.embeddingsBackfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "memory.getL5Heuristics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "goals.loops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "goals.complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                goalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "goals.controlLegacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "orchestration.outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "media.createTaskApi": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "media.resolveTask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "media.analyzeAudio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "media.pluginsReload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "dashboard.stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "dashboard.costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                window: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "dashboard.alignment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "feedback.record": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "dashboard.userAnswer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "session.metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "health.check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "gateway.pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "gateway.resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "gateway.cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "gateway.checkpoint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "gateway.rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "mobile.mediaTaskAsk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "eval.chatCompletions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "llm.compress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "memory.merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "health.root": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

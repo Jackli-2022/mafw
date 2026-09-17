@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "npm run gen:api && tsc",
-    "gen:api": "openapi-typescript contract/openapi.json -o src/api-schema.gen.ts",
+    "gen:api": "node scripts/merge-contract.mjs && openapi-typescript contract/openapi.json -o src/api-schema.gen.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
