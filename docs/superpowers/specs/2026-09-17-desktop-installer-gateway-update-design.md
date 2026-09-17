@@ -50,7 +50,7 @@ compareVersions(global, bundled) ≥ 0 → exit 0（永不降级）
   ① 读 ~/.config/mafw/gateway.pid：
        文件缺失 / PID 不在运行 → 跳过停止
        tasklist 校验该 PID 镜像为 node.exe（防 PID 复用误杀）→ taskkill /F /T /PID → 等 1s 释放文件锁
-  ② execFileSync npm install -g @jack200714/mafw@<bundled>（timeout 120s）
+  ② execFileSync npm install -g @jack200714/mafw@<bundled>（timeout 300s）
        成功 → 日志 OK；daemon 保持停止
        失败 → 日志留手动补救命令：npm install -g @jack200714/mafw@<bundled>
 ```
