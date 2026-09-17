@@ -47,6 +47,7 @@ import { MediaPluginLoader } from "./media/media-plugin-loader";
 import { createTtsService } from "./media/tts-service";
 import { TtsEngineRegistry } from "./tts/registry";
 import { createMimoEngine } from "./tts/mimo-engine";
+import { createKokoroEngine } from "./tts/kokoro-engine";
 import { adaptToStream } from "./tts/sentence-adapter";
 import { handleTtsInterrupt } from './routes/tts-interrupt';
 import { TtsPluginLoader } from './tts/tts-plugin-loader';
@@ -1980,6 +1981,7 @@ class MafwScheduler {
       config: () => config.raw as any,
       get credentials() { return self.opencodeClient?.credentials; },
     }));
+    this.ttsRegistry.registerBuiltin(createKokoroEngine({ modelsDir: path.join(mafwDir, 'models') }));
     const pyBin = process.env.MAFW_PYTHON_BIN
       || path.join(os.homedir(), 'AppData', 'Local', 'agent-vision-toolkit', '.venv-pykernel', 'Scripts', 'python.exe');
     this.kernels = new SessionKernels(pyBin);
