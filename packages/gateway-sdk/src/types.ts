@@ -335,6 +335,21 @@ export interface SkillNamespace {
 
 // ── MAFW native commands (desktop slash panel) ──
 
+/** MAFW 命令元数据（GET /api/mafw-commands，注册表清单） */
+export interface MafwCommandDef {
+  name: string
+  aliases?: string[]
+  description: string
+  /** 补全提示，如 '<问题>'、'<worktree路径> [strategy]' */
+  argumentHint?: string
+  category: 'goals' | 'session' | 'memory' | 'custom'
+  /** 破坏性操作：客户端据此弹确认 */
+  destructive?: boolean
+  kind: 'builtin' | 'custom'
+  /** custom：来源文件绝对路径 */
+  source?: string
+}
+
 export interface MafwCommandResult {
   ok: boolean
   message?: string

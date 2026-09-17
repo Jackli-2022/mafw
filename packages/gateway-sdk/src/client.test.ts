@@ -755,3 +755,20 @@ test("tts.streamUrl builds stream endpoint", () => {
   const c = new MafwClient("http://gw:3000")
   expect(c.tts.streamUrl()).toBe("http://gw:3000/api/tts/stream")
 })
+
+// ── mafwCommands.list ──
+
+test("mafwCommands.list returns command defs", async () => {
+  const defs = [{ name: "btw", description: "支线问答", argumentHint: "<问题>", category: "session", kind: "builtin" }]
+  fetchMock.mockResolvedValue(okJson({ commands: defs }))
+  const c = new MafwClient("http://gw:3000")
+  const out = await c.mafwCommands.list()
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/mafw-commands", expect.anything())
+  expect(out).toEqual(defs)
+})
+
+test("mafwCommands.list empty envelope → []", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  expect(await c.mafwCommands.list()).toEqual([])
+})

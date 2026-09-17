@@ -4,7 +4,7 @@ import {
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows,
-  CommandInfo, SkillInfo, MafwCommandResult, ManagerSessionInfo, ManagerRotateResult,
+  CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState,
   MethodNotSupportedError,
@@ -301,6 +301,11 @@ export class MafwClient implements IMafwClient {
         method: 'POST',
         body: JSON.stringify(params),
       })
+    },
+    /** 命令元数据清单（补全/面板）；网关不可达时由调用方 catch 兜底。 */
+    list: async (): Promise<MafwCommandDef[]> => {
+      const data = await this.request<{ commands?: MafwCommandDef[] }>('/api/mafw-commands')
+      return data.commands || []
     },
   }
 
