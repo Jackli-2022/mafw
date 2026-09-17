@@ -46,6 +46,8 @@ export interface SlashDeps {
   gatewayCommands(): { name: string; aliases?: string[]; destructive?: boolean }[]
   /** /export：导出会话为 Markdown；返回提示文本。 */
   exportChat(): Promise<string | null>
+  /** /copy [N]：复制第 N 近回复到剪贴板；返回提示文本。 */
+  copyReply(n: number): string
 }
 
 
@@ -98,6 +100,10 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
         return null
       case 'export':
         return deps.exportChat()
+      case 'copy': {
+        const n = parseInt(args.trim(), 10)
+        return deps.copyReply(Number.isNaN(n) || n < 1 ? 1 : n)
+      }
       default: {
         const gw = deps.gatewayCommands().find((c) => c.name === cmd || c.aliases?.includes(cmd))
         if (gw) return deps.runGatewayCommand(gw.name, args)

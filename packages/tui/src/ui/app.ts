@@ -20,6 +20,7 @@ import { helpLines } from './command-registry.ts'
 import { COMMAND_REGISTRY, resolveCommand } from './command-registry.ts'
 import { mergeCommands, type RemoteCommand } from './gateway-commands.ts'
 import { exportChat as exportChatToFile } from './export-chat.ts'
+import { lastAssistantText, copyToClipboard } from './copy-text.ts'
 import { QueueOverlay } from './queue-overlay.ts'
 import { TranscriptSearchOverlay } from './transcript-search.ts'
 import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
@@ -479,6 +480,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
       } catch (e: any) {
         return `导出失败: ${String(e?.message ?? e).slice(0, 80)}`
       }
+    },
+    copyReply: (n) => {
+      const text = lastAssistantText(chatStore.turns, n)
+      if (!text) return '没有可复制的回复'
+      copyToClipboard(text, (s) => tui.terminal.write(s))
+      return `已复制第 ${n} 近回复（${text.length} 字符）`
     },
   })
 
