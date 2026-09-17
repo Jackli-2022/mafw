@@ -83,13 +83,13 @@ import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
-import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './routes/runtime-switch';
-import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './routes/plugins';
+import type { RuntimeSwitchDeps } from './routes/runtime-switch';
+import type { PluginsRouteDeps } from './routes/plugins';
 import { PluginHost } from './plugins/package-host';
 import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
 import { cleanupExamples } from './plugins/hub';
-import { handleRestartAgent } from './routes/restart-agent';
+import type { RestartAgentDeps } from './routes/restart-agent';
 import { createServeSupervisor, ServeSupervisor } from './runtime/serve-supervisor';
 import { ensureServeForBuiltinRuntime } from './runtime/serve-for-runtime';
 import type { UsagePluginsDeps } from './routes/usage-plugins';
@@ -99,6 +99,7 @@ import type { ModelConfigDeps } from './routes/model-config';
 import { RouteRegistry } from './routes/registry';
 import { buildRouteCatalog } from './routes/route-catalog';
 import { attachWave1Handlers } from './routes/wave1-handlers';
+import { attachWave2Handlers } from './routes/wave2-handlers';
 import type { EmbeddingConfigDeps } from './routes/embedding-config';
 import { runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
@@ -1277,8 +1278,113 @@ class MafwScheduler {
     return { ...result, vectors: rt.vectors.size(), indexEntries: entries.length };
   }
 
-  private embeddingConfigDeps(): EmbeddingConfigDeps {
+  /** P5 Wave 2：/api/runtime 路由 deps（自内联块上移，行为逐字节等价）。 */
+  private runtimeDeps(): RuntimeSwitchDeps {
     return {
+      loader: this.runtimeLoader,
+      persist: (o: Record<string, any>) => config.persistOverrides(o),
+      getCurrent: () => this.opencodeClient,
+      runtimeName: () => this.runtimeName,
+      runtimeCaps: () => this.runtimeCaps,
+      envOverride: () => !!process.env.MAFW_RUNTIME_PLUGIN,
+      createRuntime: async () => {
+        const sdkConfig = {
+          baseUrl: this.serveUrl,
+          directory: this.projectDir,
+          headers: {} as Record<string, string>,
+        };
+        const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
+        if (opencodePassword) {
+          sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
+        }
+        return this.createRuntime(sdkConfig);
+      },
+      onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
+        this.opencodeClient = rt;
+        this.runtimeCaps = rt.capabilities;
+        this.runtimeName = rt.name;
+        // Switching onto a runtime that owns serve (builtin opencode) must
+        // ensure the sidecar exists — the gateway may have started under an
+        // external runtime (pi) that never spawned one. Must run AFTER the
+        // assignment above: the supervisor's spawn closure reads
+        // this.opencodeClient to find agentProcess.spawnServe.
+        if ((rt as any).agentProcess?.spawnServe) {
+          await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
+        }
+        this.sdkSession.setClient(this.opencodeClient);
+        if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
+        if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
+        await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
+        // Desktop hint: a runtime switch swaps the session storage backend
+        // (opencode SQLite vs pi), so cached session lists are stale.
+        this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
+        if (prev && (prev as any).dispose) {
+          try { await (prev as any).dispose(); }
+          catch (err: any) { log.warn(`[Runtime] dispose old runtime failed: ${err.message}`); }
+        }
+      },
+    };
+  }
+
+  /** P5 Wave 2：/api/runtime/restart-agent deps。 */
+  private restartAgentDeps(): RestartAgentDeps {
+    return {
+      capabilities: () => this.runtimeCaps,
+      isRecovering: () => this.serveRecovering,
+      isSwitching: () => this.switchingRuntime,
+      begin: () => { this.serveRecovering = true; },
+      end: () => { this.serveRecovering = false; },
+      restartAgent: () => this.restartAgentOrchestrated(),
+    };
+  }
+
+  /** P5 Wave 2：/api/plugins* deps（Plugin Hub 四类型统一面）。 */
+  private pluginHubDeps(): PluginsRouteDeps {
+    return {
+      hub: {
+        dirs: {
+          runtime: config.resolvePath('runtime-plugins'),
+          media: config.resolvePath('media-plugins'),
+          usage: config.resolvePath('usage-plugins'),
+          ui: process.env.MAFW_UI_PLUGINS_DIR || path.join(os.homedir(), '.mafw', 'ui-plugins'),
+        },
+        builtinEntries: (): any[] => {
+          const entries: any[] = [];
+          const rt = (name: string) => ({ type: 'runtime', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
+          for (const name of this.runtimeLoader?.getBuiltinNames?.() ?? []) entries.push(rt(name));
+          for (const name of this.mediaPluginLoader?.getBuiltinEngineNames?.() ?? []) {
+            entries.push({ type: 'media', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
+          }
+          const usageState: any[] = this.pluginLoader?.getState?.() ?? [];
+          for (const s of usageState) {
+            if (s.builtin && s.status === 'ok' && s.name) {
+              entries.push({ type: 'usage', name: s.name, file: s.file, status: 'enabled', size: 0, mtime: '', pluginType: s.pluginType });
+            }
+          }
+          return entries;
+        },
+        getErrors: (type: string): Record<string, string> => {
+          const stateOf = (loader: any): any[] => (loader && typeof loader.getState === 'function' ? loader.getState() : []);
+          const source = type === 'runtime' ? this.runtimeLoader : type === 'media' ? this.mediaPluginLoader : type === 'usage' ? this.pluginLoader : null;
+          const out: Record<string, string> = {};
+          for (const p of stateOf(source)) {
+            if (p && p.error) out[p.name || p.file] = p.error;
+          }
+          return out;
+        },
+        configDisabledUsage: () => new Set<string>(Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : []),
+        reload: async (type: string): Promise<void> => {
+          if (type === 'runtime') await this.runtimeLoader?.scan();
+          else if (type === 'media') await this.mediaPluginLoader?.reload();
+          else if (type === 'usage') await this.pluginLoader?.reload();
+          // ui: desktop main fs.watch picks it up automatically
+        },
+        getPackages: () => this.pluginHost?.getState() ?? [],
+      } as any,
+    };
+  }
+
+  private embeddingConfigDeps(): EmbeddingConfigDeps {    return {
       currentConfig: () => {
         const e = config.raw.memory.embedding;
         return {
@@ -2348,6 +2454,14 @@ class MafwScheduler {
         mediaPluginLoader: this.mediaPluginLoader,
         broadcast: (e) => this.broadcast(e),
         runtimeCaps: this.runtimeCaps,
+      });
+      attachWave2Handlers(this.routeRegistry, {
+        runtimeDeps: () => this.runtimeDeps(),
+        restartAgentDeps: () => this.restartAgentDeps(),
+        pluginHubDeps: () => this.pluginHubDeps(),
+        runtimeSwitchBlocked: () => this.serveRecovering || this.switchingRuntime,
+        beginRuntimeSwitch: () => { this.switchingRuntime = true; },
+        endRuntimeSwitch: () => { this.switchingRuntime = false; },
       });
 
       const server = http.createServer(async (req, res) => {
@@ -3975,160 +4089,13 @@ class MafwScheduler {
 
         // 鈹€鈹€ Provider & Agents (composer model pill / @agent mention) 鈹€鈹€
 
-        // ── /api/runtime routes (thin wiring → routes/runtime-switch.ts) ──
-        if (req.url?.match(/^\/api\/runtime(?:\/|$)/)) {
-          const runtimeDeps = {
-            loader: this.runtimeLoader,
-            persist: (o: Record<string, any>) => config.persistOverrides(o),
-            getCurrent: () => this.opencodeClient,
-            runtimeName: () => this.runtimeName,
-            runtimeCaps: () => this.runtimeCaps,
-            envOverride: () => !!process.env.MAFW_RUNTIME_PLUGIN,
-            createRuntime: async () => {
-              const sdkConfig = {
-                baseUrl: this.serveUrl,
-                directory: this.projectDir,
-                headers: {} as Record<string, string>,
-              };
-              const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
-              if (opencodePassword) {
-                sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
-              }
-              return this.createRuntime(sdkConfig);
-            },
-            onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
-              this.opencodeClient = rt;
-              this.runtimeCaps = rt.capabilities;
-              this.runtimeName = rt.name;
-              // Switching onto a runtime that owns serve (builtin opencode) must
-              // ensure the sidecar exists — the gateway may have started under an
-              // external runtime (pi) that never spawned one. Must run AFTER the
-              // assignment above: the supervisor's spawn closure reads
-              // this.opencodeClient to find agentProcess.spawnServe.
-              if ((rt as any).agentProcess?.spawnServe) {
-                await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
-              }
-              this.sdkSession.setClient(this.opencodeClient);
-              if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
-              if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
-              await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
-              // Desktop hint: a runtime switch swaps the session storage backend
-              // (opencode SQLite vs pi), so cached session lists are stale.
-              this.broadcast({ type: 'runtime_switched', runtime: rt.name, previous: prev?.name ?? null });
-              if (prev && (prev as any).dispose) {
-                try { await (prev as any).dispose(); }
-                catch (err: any) { log.warn(`[Runtime] dispose old runtime failed: ${err.message}`); }
-              }
-            },
-          };
+        // ── /api/runtime routes — P5 Wave 2 起由 registry dispatch 接管
+        // （runtimeDeps/restartAgentDeps 构造上移至私有方法；内联块对未知
+        //   /api/runtime/* 悬空 return 吞请求的行为随之终结——现落回 legacy 链）
 
-          if (req.method === 'GET' && req.url?.match(/^\/api\/runtime(?:\?|$)/)) {
-            await handleRuntimeGet(req, res, runtimeDeps);
-            return;
-          }
-          if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/switch(?:\?|$)/)) {
-            if (this.serveRecovering || this.switchingRuntime) {
-              res.writeHead(409, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: 'Cannot switch runtime during agent restart' }));
-              return;
-            }
-            this.switchingRuntime = true;
-            try {
-              await handleRuntimeSwitch(req, res, runtimeDeps);
-            } finally {
-              this.switchingRuntime = false;
-            }
-            return;
-          }
-          if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/reload(?:\?|$)/)) {
-            await handleRuntimeReload(req, res, runtimeDeps);
-            return;
-          }
-          if (req.method === 'POST' && req.url?.match(/^\/api\/runtime\/restart-agent(?:\?|$)/)) {
-            await handleRestartAgent(req, res, {
-              capabilities: () => this.runtimeCaps,
-              isRecovering: () => this.serveRecovering,
-              isSwitching: () => this.switchingRuntime,
-              begin: () => { this.serveRecovering = true; },
-              end: () => { this.serveRecovering = false; },
-              restartAgent: () => this.restartAgentOrchestrated(),
-            });
-            return;
-          }
-          return;
-        }
-
-        // ── Plugin Hub (all four plugin types) ──
-        const pluginHubDeps = {
-          hub: {
-            dirs: {
-              runtime: config.resolvePath('runtime-plugins'),
-              media: config.resolvePath('media-plugins'),
-              usage: config.resolvePath('usage-plugins'),
-              ui: process.env.MAFW_UI_PLUGINS_DIR || path.join(os.homedir(), '.mafw', 'ui-plugins'),
-            },
-            builtinEntries: (): any[] => {
-              const entries: any[] = [];
-              const rt = (name: string) => ({ type: 'runtime', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
-              // opencode 经 registerBuiltin 注册，getBuiltinNames 已含——不再手工 push（防重复）
-              for (const name of this.runtimeLoader?.getBuiltinNames?.() ?? []) entries.push(rt(name));
-              for (const name of this.mediaPluginLoader?.getBuiltinEngineNames?.() ?? []) {
-                entries.push({ type: 'media', name, file: '(builtin)', status: 'enabled', size: 0, mtime: '' });
-              }
-              const usageState: any[] = this.pluginLoader?.getState?.() ?? [];
-              for (const s of usageState) {
-                if (s.builtin && s.status === 'ok' && s.name) {
-                  entries.push({ type: 'usage', name: s.name, file: s.file, status: 'enabled', size: 0, mtime: '', pluginType: s.pluginType });
-                }
-              }
-              return entries;
-            },
-            getErrors: (type: string): Record<string, string> => {
-              const stateOf = (loader: any): any[] => (loader && typeof loader.getState === 'function' ? loader.getState() : []);
-              const source = type === 'runtime' ? this.runtimeLoader : type === 'media' ? this.mediaPluginLoader : type === 'usage' ? this.pluginLoader : null;
-              const out: Record<string, string> = {};
-              for (const p of stateOf(source)) {
-                if (p && p.error) out[p.name || p.file] = p.error;
-              }
-              return out;
-            },
-            configDisabledUsage: () => new Set<string>(Array.isArray(config.usage?.disabledPlugins) ? config.usage.disabledPlugins : []),
-            reload: async (type: string): Promise<void> => {
-              if (type === 'runtime') await this.runtimeLoader?.scan();
-              else if (type === 'media') await this.mediaPluginLoader?.reload();
-              else if (type === 'usage') await this.pluginLoader?.reload();
-              // ui: desktop main fs.watch picks it up automatically
-            },
-            getPackages: () => this.pluginHost?.getState() ?? [],
-          } as any,
-        };
-        try {
-          const cleaned = cleanupExamples(pluginHubDeps.hub);
-          if (cleaned.removed.length) log.info(`[PluginsHub] removed stale examples: ${cleaned.removed.length}`);
-          if (cleaned.failed.length) log.warn(`[PluginsHub] cleanupExamples failed: ${cleaned.failed.join(', ')}`);
-        } catch (err: any) {
-          log.warn(`[PluginsHub] cleanupExamples error: ${err.message}`);
-        }
-        if (req.method === 'GET' && req.url?.match(/^\/api\/plugins(?:\?|$)/)) {
-          await handlePluginsList(req, res, pluginHubDeps);
-          return;
-        }
-        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/install(?:\?|$)/)) {
-          await handlePluginsInstall(req, res, pluginHubDeps);
-          return;
-        }
-        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/enable(?:\?|$)/)) {
-          await handlePluginsEnable(req, res, pluginHubDeps);
-          return;
-        }
-        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/disable(?:\?|$)/)) {
-          await handlePluginsDisable(req, res, pluginHubDeps);
-          return;
-        }
-        if (req.method === 'POST' && req.url?.match(/^\/api\/plugins\/delete(?:\?|$)/)) {
-          await handlePluginsDelete(req, res, pluginHubDeps);
-          return;
-        }
+        // ── Plugin Hub (all four plugin types) — P5 Wave 2 起由 registry dispatch
+        // 接管（pluginHubDeps 构造上移至私有方法；cleanupExamples 改为命中
+        // /api/plugins 路由时才执行——内联时代每个到达此处的请求都跑）。
 
         // GET /api/orchestration/outcomes — goal outcome query
         if (req.url?.match(/^\/api\/orchestration\/outcomes(?:\?|$)/) && req.method === 'GET') {

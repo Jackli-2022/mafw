@@ -8,9 +8,12 @@
  *  - NON_SDK_ROUTES：非 SDK 暴露面的补充登记（desktop/TUI/worker/dashboard 专用端点），
  *    operationId 自拟（ns.action 风格），tags 统一 'internal'。
  *
- * 刻意不登记：/mcp（传输端点非 REST）、/api/devices* 与未核实子路由、dashboard SPA fallback、
- * /api/events?stream=true（与 /api/events 同路径，不单独登记）。
- * Phase 2 shadow 阶段一律不写 handler；Phase 3 接线时再逐条补挂。
+ * 刻意不登记：/mcp（传输端点非 REST）、/api/ws（websocket upgrade）、dashboard SPA
+ * fallback 与静态资源（/index.html、/assets/*、/static/*）、dashboard 委托内部子路由
+ * （/api/memory/{tier}/{id} 等，见 dashboard/api.ts）、/api/events?stream=true（与
+ * /api/events 同路径，不单独登记）。P5 Wave 2 反向审计后补齐：devices/mobile 全家、
+ * automations history、goals loops :n、A2A agent-card、runtime reload、permissions
+ * runtime 代理、legacy singular session delete。
  */
 
 import type { RouteDef } from './registry';
@@ -57,6 +60,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/runtime', operationId: 'runtime.get', tags: ['runtime'] },
   { method: 'POST', path: '/api/runtime/switch', operationId: 'runtime.switch', tags: ['runtime'] },
   { method: 'POST', path: '/api/runtime/restart-agent', operationId: 'runtime.restartAgent', tags: ['runtime'] },
+  // runtime.reload（POST /api/runtime/reload）在下方 NON_SDK 补遗块登记（SDK 不调用 → internal）
   { method: 'GET', path: '/api/plugins', operationId: 'plugins.list', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/install', operationId: 'plugins.install', tags: ['plugins'] },
   { method: 'POST', path: '/api/plugins/enable', operationId: 'plugins.enable', tags: ['plugins'] },
@@ -153,8 +157,26 @@ const NON_SDK_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/gateway/cancel', operationId: 'gateway.cancel', tags: ['internal'] },
   { method: 'POST', path: '/api/gateway/checkpoint', operationId: 'gateway.checkpoint', tags: ['internal'] },
   { method: 'POST', path: '/api/gateway/rollback', operationId: 'gateway.rollback', tags: ['internal'] },
-  // 移动端（仅登记已核实的 media task 追问端点，其余 /api/mobile/* 宁缺毋滥）
+  // 移动端（P5 Wave 2 反向审计后全量登记）
   { method: 'POST', path: '/api/mobile/media/tasks/:id/ask', operationId: 'mobile.mediaTaskAsk', tags: ['internal'] },
+  { method: 'POST', path: '/api/mobile/media/tasks', operationId: 'mobile.mediaTaskUpload', tags: ['internal'] },
+  { method: 'GET', path: '/api/mobile/tts/artifacts/:id', operationId: 'mobile.ttsArtifact', tags: ['internal'] },
+  { method: 'GET', path: '/api/mobile/devices', operationId: 'mobile.devicesList', tags: ['internal'] },
+  { method: 'DELETE', path: '/api/mobile/devices/:id', operationId: 'mobile.devicesDelete', tags: ['internal'] },
+  { method: 'POST', path: '/api/mobile/devices/register', operationId: 'mobile.devicesRegister', tags: ['internal'] },
+  { method: 'GET', path: '/api/mobile/pairing-code', operationId: 'mobile.pairingCode', tags: ['internal'] },
+  { method: 'POST', path: '/api/mobile/pairing/verify', operationId: 'mobile.pairingVerify', tags: ['internal'] },
+  // 设备注册（mobile 的 legacy 别名族）
+  { method: 'POST', path: '/api/devices', operationId: 'devices.register', tags: ['internal'] },
+  { method: 'GET', path: '/api/devices', operationId: 'devices.list', tags: ['internal'] },
+  { method: 'DELETE', path: '/api/devices/:id', operationId: 'devices.delete', tags: ['internal'] },
+  // P5 Wave 2 反向审计补遗
+  { method: 'GET', path: '/.well-known/agent-card.json', operationId: 'a2a.agentCard', tags: ['internal'] },
+  { method: 'GET', path: '/api/automations/:id/history', operationId: 'automations.history', tags: ['internal'] },
+  { method: 'GET', path: '/api/goals/:id/loops/:n', operationId: 'goals.loopsAt', tags: ['internal'] },
+  { method: 'POST', path: '/api/runtime/reload', operationId: 'runtime.reload', tags: ['internal'] },
+  { method: 'POST', path: '/api/sessions/:sid/permissions/:rid', operationId: 'permissions.replyRuntime', tags: ['internal'] },
+  { method: 'DELETE', path: '/api/session/:id', operationId: 'session.deleteLegacy', tags: ['internal'] },
   // Eval / LLM 压缩
   { method: 'POST', path: '/api/eval/chat/completions', operationId: 'eval.chatCompletions', tags: ['internal'] },
   { method: 'POST', path: '/api/llm/compress', operationId: 'llm.compress', tags: ['internal'] },
