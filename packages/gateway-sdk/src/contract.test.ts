@@ -117,8 +117,9 @@ function extractCalls(fileName: string, src: string): SdkCall[] {
   const calls: SdkCall[] = []
   const lineAt = (idx: number) => src.slice(0, idx).split("\n").length
 
-  // pass 1: this.request(...)（可带泛型 <T>，泛型内可能含括号）
-  const reqRe = /this\.request\b/g
+  // pass 1: this.request / this.fetchPath / client.fetchPath（可带泛型 <T>，泛型内可能含括号；
+  // `client` 是 speakStream 闭包里的 `const client = this` 捕获）
+  const reqRe = /(?:this|client)\.(?:request|fetchPath)\b/g
   let m: RegExpExecArray | null
   while ((m = reqRe.exec(src))) {
     let i = m.index + m[0].length

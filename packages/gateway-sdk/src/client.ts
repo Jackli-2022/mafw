@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+﻿import { randomUUID } from 'crypto'
 import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo,
@@ -10,6 +10,7 @@ import {
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
+import type { ApiPath } from './api-path'
 
 export class MafwClient implements IMafwClient {
   private baseUrl: string
@@ -24,7 +25,7 @@ export class MafwClient implements IMafwClient {
     this._sse = new SSEConnection()
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+  private async request<T>(path: ApiPath, init?: RequestInit): Promise<T> {
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       headers: { 'Content-Type': 'application/json' },
       ...init,
@@ -39,7 +40,15 @@ export class MafwClient implements IMafwClient {
     return res.json()
   }
 
-  // ── Session ──
+  /**
+   * 裸 fetch 的编译期约束入口：与 request 同一 ApiPath 契约，但返回原始 Response，
+   * 供 SSE 流/二进制体/自定义错误处理的调用方使用（P3 收编，fetch 直调仅剩此出口）。
+   */
+  private fetchPath(path: ApiPath, init?: RequestInit): Promise<Response> {
+    return this.fetchImpl(`${this.baseUrl}${path}`, init)
+  }
+
+  // 鈹€鈹€ Session 鈹€鈹€
 
   session = {
     create: async (
@@ -145,7 +154,7 @@ export class MafwClient implements IMafwClient {
         body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }
       },
     ): Promise<void> => {
-      const res = await fetch(`${this.baseUrl}/api/session/${params.path.id}/promptAsync`, {
+      const res = await this.fetchPath(`/api/session/${params.path.id}/promptAsync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -255,7 +264,7 @@ export class MafwClient implements IMafwClient {
     command: async (
       params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } },
     ): Promise<void> => {
-      const res = await fetch(`${this.baseUrl}/api/session/${params.path.id}/command`, {
+      const res = await this.fetchPath(`/api/session/${params.path.id}/command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params.body),
@@ -264,7 +273,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Commands & skills (opencode serve, proxied by the gateway) ──
+  // 鈹€鈹€ Commands & skills (opencode serve, proxied by the gateway) 鈹€鈹€
 
   command = {
     list: async (directory?: string): Promise<CommandInfo[]> => {
@@ -284,7 +293,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── MAFW native commands (desktop slash panel) ──
+  // 鈹€鈹€ MAFW native commands (desktop slash panel) 鈹€鈹€
 
   mafwCommands = {
     run: async (params: { command: string; args?: string; sessionID?: string }): Promise<MafwCommandResult> => {
@@ -295,7 +304,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Manager session (authoritative per-project manager, from gateway DB) ──
+  // 鈹€鈹€ Manager session (authoritative per-project manager, from gateway DB) 鈹€鈹€
 
   manager = {
     session: async (projectDir?: string): Promise<ManagerSessionInfo | null> => {
@@ -315,7 +324,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Project ──
+  // 鈹€鈹€ Project 鈹€鈹€
 
   project = {
     list: async (): Promise<Project[]> => {
@@ -330,7 +339,7 @@ export class MafwClient implements IMafwClient {
     },
 
     setCurrent: async (path: string): Promise<void> => {
-      // Gateway's real register route is POST /register (index.ts) — it persists the
+      // Gateway's real register route is POST /register (index.ts) 鈥?it persists the
       // registry and broadcasts project_registered. /api/projects/register does not
       // exist and would fall through to the opencode reverse proxy (502/SPA HTML).
       await this.request('/register', {
@@ -340,7 +349,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Event ──
+  // 鈹€鈹€ Event 鈹€鈹€
 
   event = {
     subscribe: async (): Promise<{ on(event: string, cb: (data: any) => void): void }> => {
@@ -371,17 +380,17 @@ export class MafwClient implements IMafwClient {
       }
     },
 
-    /** SSE 连接状态（onopen/onerror 维护；供监督器健康轮询）。 */
+    /** SSE 杩炴帴鐘舵€侊紙onopen/onerror 缁存姢锛涗緵鐩戠潱鍣ㄥ仴搴疯疆璇級銆?*/
     connected: (): boolean => this._sse.connected,
 
-    /** SSE 端点 URL（契约归 SDK：renderer 直连 EventSource 时用此构造，不自己拼字符串）。 */
+    /** SSE 绔偣 URL锛堝绾﹀綊 SDK锛歳enderer 鐩磋繛 EventSource 鏃剁敤姝ゆ瀯閫狅紝涓嶈嚜宸辨嫾瀛楃涓诧級銆?*/
     url: (sessionID?: string): string =>
       sessionID
         ? `${this.baseUrl}/api/events?sessionID=${encodeURIComponent(sessionID)}`
         : `${this.baseUrl}/api/events`,
 
-    /** 发布自定义事件到全部 UI 通道（SSE/WS/推送）。type 建议命名空间
-     *  'plugin:<name>:<event>'；消费方对未知 type 忽略（SSE 通知语义，无注册制）。 */
+    /** 鍙戝竷鑷畾涔変簨浠跺埌鍏ㄩ儴 UI 閫氶亾锛圫SE/WS/鎺ㄩ€侊級銆倀ype 寤鸿鍛藉悕绌洪棿
+     *  'plugin:<name>:<event>'锛涙秷璐规柟瀵规湭鐭?type 蹇界暐锛圫SE 閫氱煡璇箟锛屾棤娉ㄥ唽鍒讹級銆?*/
     publish: async (event: { type: string; [key: string]: any }): Promise<{ ok: true }> =>
       this.request<{ ok: true }>("/api/events", {
         method: "POST",
@@ -390,7 +399,7 @@ export class MafwClient implements IMafwClient {
       }),
   }
 
-  // ── Runtime ──
+  // 鈹€鈹€ Runtime 鈹€鈹€
 
   runtime = {
     /** Get active runtime identity, capabilities, and plugin scan state. */
@@ -411,7 +420,7 @@ export class MafwClient implements IMafwClient {
       active: { name: string; capabilities: Record<string, boolean> };
       envOverride: boolean;
     }> => {
-      const res = await fetch(`${this.baseUrl}/api/runtime/switch`, {
+      const res = await this.fetchPath(`/api/runtime/switch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plugin }),
@@ -425,7 +434,7 @@ export class MafwClient implements IMafwClient {
 
     /** Restart the agent runtime (opencode serve). */
     restartAgent: async (): Promise<{ success: boolean; mode: string }> => {
-      const res = await fetch(`${this.baseUrl}/api/runtime/restart-agent`, {
+      const res = await this.fetchPath(`/api/runtime/restart-agent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
@@ -437,7 +446,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Plugins Hub ──
+  // 鈹€鈹€ Plugins Hub 鈹€鈹€
 
   plugins = {
     list: async (): Promise<{
@@ -448,7 +457,7 @@ export class MafwClient implements IMafwClient {
       const params = new URLSearchParams({ filename: input.filename });
       if (input.type) params.set('type', input.type);
       if (input.overwrite) params.set('overwrite', '1');
-      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/install?${params.toString()}`, {
+      const res = await this.fetchPath(`/api/plugins/install?${params.toString()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: input.bytes as unknown as BodyInit,
@@ -461,7 +470,7 @@ export class MafwClient implements IMafwClient {
     },
 
     enable: async (type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any> => {
-      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/enable`, {
+      const res = await this.fetchPath(`/api/plugins/enable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, filename }),
@@ -474,7 +483,7 @@ export class MafwClient implements IMafwClient {
     },
 
     disable: async (type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<any> => {
-      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/disable`, {
+      const res = await this.fetchPath(`/api/plugins/disable`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, filename }),
@@ -487,7 +496,7 @@ export class MafwClient implements IMafwClient {
     },
 
     delete: async (type: 'runtime' | 'media' | 'usage' | 'ui', filename: string): Promise<{ ok: true }> => {
-      const res = await this.fetchImpl(`${this.baseUrl}/api/plugins/delete`, {
+      const res = await this.fetchPath(`/api/plugins/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, filename }),
@@ -500,7 +509,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Config ──
+  // 鈹€鈹€ Config 鈹€鈹€
 
   config = {
     get: async (key?: string): Promise<any> => {
@@ -508,11 +517,11 @@ export class MafwClient implements IMafwClient {
       return key ? data[key] : data
     },
     set: async (key: string, value: any): Promise<void> => {
-      // NOTE: read-then-write pattern — concurrent set() calls will race.
+      // NOTE: read-then-write pattern 鈥?concurrent set() calls will race.
       // The backend should support PATCH for individual keys to avoid lost updates.
       const current = await this.request<any>('/api/config')
       current[key] = value
-      await fetch(`${this.baseUrl}/api/config`, {
+      await this.fetchPath(`/api/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(current),
@@ -520,7 +529,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── OpenCode config (native opencode /config) ──
+  // 鈹€鈹€ OpenCode config (native opencode /config) 鈹€鈹€
 
   opencodeConfig = {
     get: async (): Promise<any> => {
@@ -529,7 +538,7 @@ export class MafwClient implements IMafwClient {
     },
 
     update: async (config: Record<string, unknown>): Promise<any> => {
-      const res = await fetch(`${this.baseUrl}/api/opencode-config`, {
+      const res = await this.fetchPath(`/api/opencode-config`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
@@ -539,7 +548,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Goals ──
+  // 鈹€鈹€ Goals 鈹€鈹€
 
   goals = {
     list: async (): Promise<Goal[]> => {
@@ -582,7 +591,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Memory ──
+  // 鈹€鈹€ Memory 鈹€鈹€
 
   memory = {
     search: async (opts: MemorySearchOptions): Promise<MemoryUnit[]> => {
@@ -629,7 +638,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Approvals ──
+  // 鈹€鈹€ Approvals 鈹€鈹€
 
   approvals = {
     list: async (): Promise<Approval[]> => {
@@ -645,7 +654,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Triage ──
+  // 鈹€鈹€ Triage 鈹€鈹€
 
   triage = {
     list: async (): Promise<TriageItem[]> => {
@@ -673,7 +682,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Questions (AskCard — proxies the native opencode Question API) ──
+  // 鈹€鈹€ Questions (AskCard 鈥?proxies the native opencode Question API) 鈹€鈹€
 
   questions = {
     list: async (): Promise<QuestionRequest[]> => {
@@ -693,7 +702,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Permissions (PermissionCard — proxies the native opencode Permission API) ──
+  // 鈹€鈹€ Permissions (PermissionCard 鈥?proxies the native opencode Permission API) 鈹€鈹€
 
   permissions = {
     list: async (): Promise<PermissionRequest[]> => {
@@ -713,11 +722,11 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Chat ──
+  // 鈹€鈹€ Chat 鈹€鈹€
 
   chat = {
     send: async (message: string, sessionID?: string): Promise<{ sessionID: string }> => {
-      const res = await fetch(`${this.baseUrl}/api/chat`, {
+      const res = await this.fetchPath(`/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, sessionID }),
@@ -735,7 +744,7 @@ export class MafwClient implements IMafwClient {
         model?: { providerID: string; modelID: string }
       },
     ): Promise<{ sessionID: string }> => {
-      const res = await fetch(`${this.baseUrl}/api/chat/enriched`, {
+      const res = await this.fetchPath(`/api/chat/enriched`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(opts),
@@ -745,7 +754,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Media (A2A Media Agent) ──
+  // 鈹€鈹€ Media (A2A Media Agent) 鈹€鈹€
 
   media = {
     /** List media engine plugins (status + modalities). */
@@ -773,7 +782,7 @@ export class MafwClient implements IMafwClient {
         audio?: { engine?: string; model?: string }
       }
     }> => {
-      const res = await fetch(`${this.baseUrl}/api/media/switch`, {
+      const res = await this.fetchPath(`/api/media/switch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(opts),
@@ -792,14 +801,14 @@ export class MafwClient implements IMafwClient {
       question?: string
     }): Promise<{ id: string; contextId: string; state: string }> => {
       // Prefer the artifact reference path (media bytes uploaded separately
-      // via /api/media/upload) — the message carries only a URL part, so the
+      // via /api/media/upload) 鈥?the message carries only a URL part, so the
       // JSON body stays tiny. Falls back to the raw base64 part for legacy
       // callers that only have a data URL.
       const parts: any[] = opts.artifactId
         ? [{ url: `/a2a/artifacts/${opts.artifactId}`, mediaType: opts.mediaType || 'application/octet-stream', filename: 'upload.bin' }]
         : [{ raw: opts.dataUrl?.split(',')[1] || '', mediaType: opts.mediaType || 'image/png', filename: 'paste.bin' }]
       if (opts.question) parts.push({ text: opts.question })
-      const res = await fetch(`${this.baseUrl}/a2a`, {
+      const res = await this.fetchPath(`/a2a`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'A2A-Version': '1.0' },
         body: JSON.stringify({
@@ -824,35 +833,35 @@ export class MafwClient implements IMafwClient {
     },
 
     upload: async (input: { bytes: Uint8Array; mediaType: string }): Promise<{ artifactId: string }> => {
-      const res = await this.fetchImpl(`${this.baseUrl}/api/media/upload?type=${encodeURIComponent(input.mediaType)}`, {
+      const res = await this.fetchPath(`/api/media/upload?type=${encodeURIComponent(input.mediaType)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: input.bytes as unknown as BodyInit,
       })
-      if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
+      if (!res.ok) throw new Error(`濯掍綋涓婁紶澶辫触: HTTP ${res.status}`)
       const data: any = await res.json()
-      if (!data?.artifactId) throw new Error('媒体上传失败: 无 artifactId')
+      if (!data?.artifactId) throw new Error('濯掍綋涓婁紶澶辫触: 鏃?artifactId')
       return { artifactId: data.artifactId }
     },
 
     uploadAndCreate: async (input: { bytes: Uint8Array; mediaType: string; question?: string }): Promise<{ id: string; contextId: string; state: string; artifactId?: string; mediaType?: string; size?: number }> => {
       const qs = new URLSearchParams({ type: input.mediaType })
       if (input.question) qs.set('question', input.question)
-      const res = await this.fetchImpl(`${this.baseUrl}/api/media/upload-and-create?${qs.toString()}`, {
+      const res = await this.fetchPath(`/api/media/upload-and-create?${qs.toString()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: input.bytes as unknown as BodyInit,
       })
-      if (!res.ok) throw new Error(`媒体上传失败: HTTP ${res.status}`)
+      if (!res.ok) throw new Error(`濯掍綋涓婁紶澶辫触: HTTP ${res.status}`)
       const data: any = await res.json()
-      if (!data?.id) throw new Error('媒体上传失败: 无 task id')
+      if (!data?.id) throw new Error('濯掍綋涓婁紶澶辫触: 鏃?task id')
       return { id: data.id, contextId: data.contextId, state: data.state, artifactId: data.artifactId, mediaType: data.mediaType, size: data.size }
     },
 
     artifactUrl: (id: string): string => `${this.baseUrl}/a2a/artifacts/${id}`,
   }
 
-  // ── TTS (MiMo-V2.5-TTS speech synthesis) ──
+  // 鈹€鈹€ TTS (MiMo-V2.5-TTS speech synthesis) 鈹€鈹€
 
   tts = {
     speak: async (opts: { text: string; voice?: string; style?: string }): Promise<{
@@ -861,7 +870,7 @@ export class MafwClient implements IMafwClient {
       mime: string
       url: string
     }> => {
-      const res = await fetch(`${this.baseUrl}/api/tts`, {
+      const res = await this.fetchPath(`/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(opts),
@@ -880,16 +889,16 @@ export class MafwClient implements IMafwClient {
       defaultVoice: string
       defaultModel: string
     }> => {
-      const res = await fetch(`${this.baseUrl}/api/tts/voices`)
+      const res = await this.fetchPath(`/api/tts/voices`)
       if (!res.ok) throw new Error(`TTS voices failed: HTTP ${res.status}`)
       return res.json()
     },
 
-    /** 流式 TTS：返回 async iterable of base64 PCM16 chunks（24kHz mono）。 */
+    /** 娴佸紡 TTS锛氳繑鍥?async iterable of base64 PCM16 chunks锛?4kHz mono锛夈€?*/
     speakStream: (opts: { text: string; voice?: string; style?: string }): AsyncGenerator<{ data: string; voice: string }> => {
-      const base = this.baseUrl
+      const client = this
       return (async function* () {
-        const res = await fetch(`${base}/api/tts/stream`, {
+        const res = await client.fetchPath(`/api/tts/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(opts),
@@ -921,11 +930,11 @@ export class MafwClient implements IMafwClient {
       })()
     },
 
-    /** 流式 TTS 端点 URL（契约归 SDK：IPC 无法克隆 SSE 流，renderer 直连 fetch 时用此构造）。 */
+    /** 娴佸紡 TTS 绔偣 URL锛堝绾﹀綊 SDK锛欼PC 鏃犳硶鍏嬮殕 SSE 娴侊紝renderer 鐩磋繛 fetch 鏃剁敤姝ゆ瀯閫狅級銆?*/
     streamUrl: (): string => `${this.baseUrl}/api/tts/stream`,
   }
 
-  // ── Providers & Agents (composer model pill / @agent mention) ──
+  // 鈹€鈹€ Providers & Agents (composer model pill / @agent mention) 鈹€鈹€
 
   providers = {
     list: async (): Promise<{ all: Record<string, any>[]; default?: Record<string, string>; connected?: string[] } | null> => {
@@ -941,7 +950,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Model config (recall worker + media models) ──
+  // 鈹€鈹€ Model config (recall worker + media models) 鈹€鈹€
 
   models = {
     get: async (): Promise<import('./types').ModelConfigState> => {
@@ -949,7 +958,7 @@ export class MafwClient implements IMafwClient {
     },
 
     update: async (opts: import('./types').ModelConfigUpdate): Promise<{ success: boolean; recall: import('./types').ModelConfigState['recall']; media: import('./types').ModelConfigState['media'] }> => {
-      const res = await fetch(`${this.baseUrl}/api/model-config`, {
+      const res = await this.fetchPath(`/api/model-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(opts),
@@ -962,7 +971,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Memory embedding config (hot-swap engine, no restart) ──
+  // 鈹€鈹€ Memory embedding config (hot-swap engine, no restart) 鈹€鈹€
 
   embedding = {
     get: async (): Promise<import('./types').EmbeddingConfigGetResponse> => {
@@ -970,7 +979,7 @@ export class MafwClient implements IMafwClient {
     },
 
     update: async (opts: import('./types').EmbeddingConfigUpdate): Promise<{ success: boolean; current: import('./types').EmbeddingConfigState; runtime: import('./types').EmbeddingRuntimeState; note?: string }> => {
-      const res = await fetch(`${this.baseUrl}/api/memory/embedding-config`, {
+      const res = await this.fetchPath(`/api/memory/embedding-config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(opts),
@@ -983,7 +992,7 @@ export class MafwClient implements IMafwClient {
     },
   }
 
-  // ── Automations ──
+  // 鈹€鈹€ Automations 鈹€鈹€
 
   automations = {
     list: async (): Promise<AutomationRule[]> => {
@@ -998,7 +1007,7 @@ export class MafwClient implements IMafwClient {
       })
     },
 
-    /** 起草规则（enabled=false 落盘，需手动启用）。返回校验结果。 */
+    /** 璧疯崏瑙勫垯锛坋nabled=false 钀界洏锛岄渶鎵嬪姩鍚敤锛夈€傝繑鍥炴牎楠岀粨鏋溿€?*/
     draft: async (input: {
       id: string
       trigger: { schedule: string; timezone?: string }

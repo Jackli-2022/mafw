@@ -1,3 +1,5 @@
 export { MafwClient } from './client'
 export { SSEConnection } from './sse'
 export * from './types'
+export type { ApiPath } from './api-path'
+export type { paths, operations } from './api-schema.gen'
