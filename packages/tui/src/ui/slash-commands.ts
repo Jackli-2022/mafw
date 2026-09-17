@@ -44,6 +44,8 @@ export interface SlashDeps {
   runGatewayCommand(name: string, args: string): Promise<string | null>
   /** 当前可见的 gateway 命令（确认门查 destructive 用）。 */
   gatewayCommands(): { name: string; aliases?: string[]; destructive?: boolean }[]
+  /** /export：导出会话为 Markdown；返回提示文本。 */
+  exportChat(): Promise<string | null>
 }
 
 
@@ -94,6 +96,8 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
       case 'editor':
         await deps.openExternalEditor()
         return null
+      case 'export':
+        return deps.exportChat()
       default: {
         const gw = deps.gatewayCommands().find((c) => c.name === cmd || c.aliases?.includes(cmd))
         if (gw) return deps.runGatewayCommand(gw.name, args)

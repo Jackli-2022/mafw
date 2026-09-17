@@ -19,6 +19,7 @@ import { InteractionStateMachine } from './interaction-state.ts'
 import { helpLines } from './command-registry.ts'
 import { COMMAND_REGISTRY, resolveCommand } from './command-registry.ts'
 import { mergeCommands, type RemoteCommand } from './gateway-commands.ts'
+import { exportChat as exportChatToFile } from './export-chat.ts'
 import { QueueOverlay } from './queue-overlay.ts'
 import { TranscriptSearchOverlay } from './transcript-search.ts'
 import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
@@ -471,6 +472,14 @@ export async function runApp(opts: AppOptions): Promise<void> {
       return (r as any).message || (r as any).text || null
     },
     gatewayCommands: () => gatewayCmds,
+    exportChat: async () => {
+      try {
+        const file = await exportChatToFile(chatStore.turns, process.cwd())
+        return `已导出: ${file}`
+      } catch (e: any) {
+        return `导出失败: ${String(e?.message ?? e).slice(0, 80)}`
+      }
+    },
   })
 
   // ── 布局：TabStrip / 内容区(grow) / StatusBar ──
