@@ -38,11 +38,21 @@ export interface RuntimeContributionSpec {
   createRuntime: (ctx: PluginPackageContext) => Promise<AgentRuntime>;
 }
 
+export interface TtsContributionSpec {
+  /** 缺省 = 包名 */
+  name?: string;
+  capabilities: import('../tts/types').TtsCapabilities;
+  voices(): import('../tts/types').TtsVoice[];
+  synthesize(ctx: PluginPackageContext, text: string, opts: import('../tts/types').TtsOpts): Promise<Buffer>;
+  synthesizeStream?(ctx: PluginPackageContext, text: string, opts: import('../tts/types').TtsOpts, signal: AbortSignal): AsyncIterable<import('../tts/types').PcmChunk>;
+}
+
 export interface PluginContributions {
   /** legacy usage 插件模块形状：{ name, type?, plan?, fetch(ctx), configSchema? } */
   usage?: Record<string, any>;
   media?: MediaContributionSpec;
   runtime?: RuntimeContributionSpec;
+  tts?: TtsContributionSpec;
   /** v1 仅登记展示，不激活（desktop 进程侧加载不变） */
   uiTools?: Record<string, unknown>;
 }
@@ -64,6 +74,12 @@ export interface MediaPackageEntry {
   name: string;
   prompt: PromptFn;
   modalities: string[];
+  source: string;
+}
+
+export interface TtsPackageEntry {
+  name: string;
+  engine: import('../tts/types').TtsEngine;
   source: string;
 }
 

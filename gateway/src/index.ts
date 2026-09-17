@@ -49,6 +49,7 @@ import { TtsEngineRegistry } from "./tts/registry";
 import { createMimoEngine } from "./tts/mimo-engine";
 import { adaptToStream } from "./tts/sentence-adapter";
 import { handleTtsInterrupt } from './routes/tts-interrupt';
+import { TtsPluginLoader } from './tts/tts-plugin-loader';
 import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
@@ -293,6 +294,7 @@ class MafwScheduler {
   private ttsService?: ReturnType<typeof createTtsService>;
   private ttsRegistry = new TtsEngineRegistry();
   private ttsInflight = new Map<string, Set<AbortController>>(); // sessionId → 在途合成
+  private ttsPluginLoader?: TtsPluginLoader;
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
@@ -1870,6 +1872,7 @@ class MafwScheduler {
     }
     this.pluginLoader?.stop();
     this.mediaPluginLoader?.stop();
+    this.ttsPluginLoader?.stop();
   this.pluginHost?.stop();
     if (this.opencodeClient && typeof (this.opencodeClient as any).dispose === 'function') {
       void (this.opencodeClient as any).dispose().catch((err: any) => {
@@ -1914,6 +1917,13 @@ class MafwScheduler {
     });
     await this.mediaPluginLoader.init();
     this.pluginHost?.bindMedia((entries) => this.mediaPluginLoader?.setPackageEntries(entries));
+    this.pluginHost?.bindTts((entries) => this.ttsRegistry.setPackageEngines(entries.map(e => e.engine)));
+    // TTS legacy 插件目录（~/.mafw/tts-plugins/）+ 包贡献接线
+    this.ttsPluginLoader = new TtsPluginLoader(path.join(mafwDir, 'tts-plugins'), {
+      onChanged: () => this.ttsRegistry.setLegacyEngines(this.ttsPluginLoader?.getEngines() ?? []),
+    });
+    await this.ttsPluginLoader.init();
+    this.ttsRegistry.setLegacyEngines(this.ttsPluginLoader.getEngines());
     // 内置 pi 引擎登记（可被用户同名包/文件覆盖——resolveMediaPrompt 语义）
     this.mediaPluginLoader.registerBuiltinEngine('pi', ['image', 'video', 'audio']);
 

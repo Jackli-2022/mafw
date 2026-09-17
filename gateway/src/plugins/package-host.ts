@@ -9,8 +9,9 @@ import { log } from '../core/utils/logger';
 import { createPiPromptAdapter } from '../media/pi-adapter';
 import type {
   MediaPackageEntry, PackageDescriptor, PackageManifest, PackageState,
-  PluginContributions, PluginPackageContext, RuntimePackageEntry, UsagePackageEntry,
+  PluginContributions, PluginPackageContext, RuntimePackageEntry, TtsPackageEntry, UsagePackageEntry,
 } from './package-types';
+import type { PcmChunk, TtsEngine, TtsOpts } from '../tts/types';
 
 const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
 
@@ -23,9 +24,11 @@ export class PluginHost {
   private pkgDirs: string[] = [];
   private runtimeCb?: (entries: RuntimePackageEntry[]) => void;
   private mediaCb?: (entries: MediaPackageEntry[]) => void;
+  private ttsCb?: (entries: TtsPackageEntry[]) => void;
   private usageCb?: (entries: UsagePackageEntry[]) => void;
   private lastRuntime: RuntimePackageEntry[] = [];
   private lastMedia: MediaPackageEntry[] = [];
+  private lastTts: TtsPackageEntry[] = [];
   private lastUsage: UsagePackageEntry[] = [];
 
   constructor(
@@ -35,6 +38,7 @@ export class PluginHost {
 
   bindRuntime(cb: (entries: RuntimePackageEntry[]) => void): void { this.runtimeCb = cb; cb(this.lastRuntime); }
   bindMedia(cb: (entries: MediaPackageEntry[]) => void): void { this.mediaCb = cb; cb(this.lastMedia); }
+  bindTts(cb: (entries: TtsPackageEntry[]) => void): void { this.ttsCb = cb; cb(this.lastTts); }
   bindUsage(cb: (entries: UsagePackageEntry[]) => void): void { this.usageCb = cb; cb(this.lastUsage); }
 
   async init(): Promise<void> {
@@ -67,6 +71,7 @@ export class PluginHost {
     const next = new Map<string, PackageState>();
     const runtime: RuntimePackageEntry[] = [];
     const media: MediaPackageEntry[] = [];
+    const tts: TtsPackageEntry[] = [];
     const usage: UsagePackageEntry[] = [];
     const pkgDirs: string[] = [];
     for (const desc of this.scanDescriptors(next)) {
@@ -75,6 +80,7 @@ export class PluginHost {
         const c = await this.activate(desc);
         if (c.runtime) runtime.push(c.runtime);
         if (c.media) media.push(c.media);
+        if (c.tts) tts.push(c.tts);
         if (c.usage) usage.push(c.usage);
         next.set(desc.name, {
           name: desc.name, source: desc.mainFile, status: 'ok',
@@ -89,9 +95,11 @@ export class PluginHost {
     this.pkgDirs = pkgDirs;
     this.lastRuntime = runtime;
     this.lastMedia = media;
+    this.lastTts = tts;
     this.lastUsage = usage;
     this.runtimeCb?.(runtime);
     this.mediaCb?.(media);
+    this.ttsCb?.(tts);
     this.usageCb?.(usage);
     this.refreshDirWatchers();
   }
@@ -149,6 +157,7 @@ export class PluginHost {
     contributions: string[];
     runtime?: RuntimePackageEntry;
     media?: MediaPackageEntry;
+    tts?: TtsPackageEntry;
     usage?: UsagePackageEntry;
   }> {
     try { delete require.cache[require.resolve(desc.mainFile)]; } catch { /* first load */ }
@@ -162,6 +171,7 @@ export class PluginHost {
     const kinds: string[] = [];
     let runtime: RuntimePackageEntry | undefined;
     let media: MediaPackageEntry | undefined;
+    let tts: TtsPackageEntry | undefined;
     let usage: UsagePackageEntry | undefined;
 
     if (contribs.usage) {
@@ -184,6 +194,23 @@ export class PluginHost {
       if (typeof prompt !== 'function') throw new Error('media: createPrompt did not return a function');
       media = { name: spec.name ?? modName, prompt, modalities: spec.modalities, source: desc.mainFile };
       kinds.push('media');
+    }
+    if (contribs.tts) {
+      const spec = contribs.tts;
+      if (typeof spec.synthesize !== 'function') throw new Error('tts: missing synthesize(ctx, text, opts)');
+      if (typeof spec.voices !== 'function') throw new Error('tts: missing voices()');
+      if (!spec.capabilities || typeof spec.capabilities.sampleRate !== 'number') throw new Error('tts: capabilities.sampleRate required');
+      const engine: TtsEngine = {
+        name: spec.name ?? modName,
+        capabilities: spec.capabilities,
+        voices: () => spec.voices(),
+        synthesize: (text: string, opts: TtsOpts) => spec.synthesize(ctx, text, opts),
+        synthesizeStream: spec.synthesizeStream
+          ? (text: string, opts: TtsOpts, signal: AbortSignal) => spec.synthesizeStream!(ctx, text, opts, signal)
+          : async function* (): AsyncIterable<PcmChunk> { throw new Error('tts engine does not support native streaming'); },
+      };
+      tts = { name: engine.name, engine, source: desc.mainFile };
+      kinds.push('tts');
     }
     if (contribs.runtime) {
       const spec = contribs.runtime;
@@ -210,8 +237,8 @@ export class PluginHost {
       }
       kinds.push('uiTools');
     }
-    if (kinds.length === 0) throw new Error('no contributions (usage/media/runtime/uiTools)');
-    return { contributions: kinds, runtime, media, usage };
+    if (kinds.length === 0) throw new Error('no contributions (usage/media/runtime/tts/uiTools)');
+    return { contributions: kinds, runtime, media, tts, usage };
   }
 
   private startWatch(): void {
@@ -238,6 +265,7 @@ function pickContributions(mod: any): PluginContributions {
   if (mod.usage) out.usage = mod.usage;
   if (mod.media) out.media = mod.media;
   if (mod.runtime) out.runtime = mod.runtime;
+  if (mod.tts) out.tts = mod.tts;
   if (mod.uiTools) out.uiTools = mod.uiTools;
   return out;
 }
