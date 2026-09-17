@@ -218,7 +218,7 @@ export interface MessagePartProps {
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "check" | "copy" | "reset" | "volume" | "stop"
+    icon: "check" | "copy" | "reset" | "volume" | "stop" | "branch"
     label: JSX.Element
     useV2?: boolean
   },
@@ -1300,6 +1300,15 @@ export function UserMessageDisplay(props: {
       .finally(() => setState("busy", false))
   }
 
+  const fork = () => {
+    const act = props.actions?.fork
+    if (!act || busy()) return
+    void act({
+      sessionID: props.message.sessionID,
+      messageID: props.message.id,
+    })
+  }
+
   const renderAttachments = () => (
     <Show when={attachments().length > 0}>
       <div data-slot="user-message-attachments">
@@ -1392,6 +1401,19 @@ export function UserMessageDisplay(props: {
                 </span>
               </Show>
             </span>
+          </Show>
+          <Show when={props.actions?.fork}>
+            <MessageActionButton
+              icon="branch"
+              label={i18n.t("ui.message.forkMessage")}
+              useV2={props.useV2Actions}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.stopPropagation()
+                fork()
+              }}
+              aria-label={i18n.t("ui.message.forkMessage")}
+            />
           </Show>
           <Show when={props.actions?.revert}>
             <MessageActionButton
