@@ -7,6 +7,7 @@ import {
   getGatewayStatus,
   getGatewayPort,
   onGatewayStateChange,
+  restartGateway,
   startGateway,
   stopGateway,
 } from "./mafw-sidecar"
@@ -37,8 +38,8 @@ const restartScheduler = createRestartScheduler({
   maxAttempts: RESTART_MAX_ATTEMPTS,
   run: () => {
     writeLog("utility", "gateway auto-restart triggered", { attempt: restartScheduler.attempts }, "info")
-    stopGateway()
-    void startGateway()
+    // restartGateway = stop → wait for death → start (skip adopt)；dedup 防与手动点击并发
+    void restartGateway()
   },
   onExhausted: (attempts) => {
     writeLog("utility", "gateway auto-restart exhausted — manual restart required", { attempts }, "error")
@@ -75,9 +76,7 @@ function startHealthMonitor() {
       onRecovery: () => pushHealthEvent(true, 0),
       onGiveUp: (n) => {
         writeLog("utility", "mafw gateway health check failed — restarting", { consecutiveFailures: n }, "warn")
-        mafwClient = null
-        stopGateway()
-        void startGateway()
+        void restartGateway()
       },
     },
     { intervalMs: HEALTH_INTERVAL_MS, maxFailures: MAX_CONSECUTIVE_FAILURES },
@@ -209,10 +208,8 @@ export function registerMafwIpcHandlers() {
 
   ipcMain.handle("mafw-gateway-restart", async () => {
     restartScheduler.cancel()
-    stopHealthMonitor()
-    stopGateway()
-    mafwClient = null
-    await startGateway()
+    // stop → 等旧进程停止应答 → start（skip adopt 垂死进程竞态）
+    await restartGateway()
     return getGatewayStatus()
   })
 

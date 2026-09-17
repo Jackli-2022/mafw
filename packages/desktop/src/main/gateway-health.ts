@@ -21,6 +21,25 @@ export function exitNotification(state: GatewayState, expectedExit: boolean): Ga
   return "failed"
 }
 
+/**
+ * Poll `check` until the gateway stops answering (check() === false).
+ * Guard for the restart adopt-race (2026-09-16: restart re-adopted the
+ * dying old gateway and reported a false "ready" — needed two clicks to
+ * actually reconnect). Best-effort: resolves false on timeout so callers
+ * can proceed instead of hanging forever.
+ */
+export async function waitForGatewayDown(
+  check: () => Promise<boolean>,
+  opts: { timeoutMs: number; intervalMs: number },
+): Promise<boolean> {
+  const deadline = Date.now() + opts.timeoutMs
+  while (Date.now() < deadline) {
+    if (!(await check())) return true
+    await new Promise((r) => setTimeout(r, opts.intervalMs))
+  }
+  return false
+}
+
 export type HealthMonitorDeps = {
   probe: () => Promise<void>
   onFirstFailure?: () => void

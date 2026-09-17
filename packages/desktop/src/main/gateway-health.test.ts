@@ -3,6 +3,7 @@ import {
   createGatewayHealthMonitor,
   createRestartScheduler,
   exitNotification,
+  waitForGatewayDown,
 } from "./gateway-health"
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -146,5 +147,26 @@ describe("createRestartScheduler", () => {
     s.cancel()
     await sleep(25)
     expect(runs).toBe(0)
+  })
+})
+
+describe("waitForGatewayDown (restart adopt-race guard)", () => {
+  test("resolves true once the gateway stops answering", async () => {
+    let alive = true
+    setTimeout(() => { alive = false }, 30)
+    const t0 = Date.now()
+    const down = await waitForGatewayDown(() => Promise.resolve(alive), { timeoutMs: 2000, intervalMs: 10 })
+    expect(down).toBe(true)
+    expect(Date.now() - t0).toBeLessThan(1500)
+  })
+
+  test("resolves true immediately when already down", async () => {
+    const down = await waitForGatewayDown(() => Promise.resolve(false), { timeoutMs: 1000, intervalMs: 10 })
+    expect(down).toBe(true)
+  })
+
+  test("resolves false on timeout while still answering (best-effort proceed)", async () => {
+    const down = await waitForGatewayDown(() => Promise.resolve(true), { timeoutMs: 60, intervalMs: 10 })
+    expect(down).toBe(false)
   })
 })

@@ -7,7 +7,7 @@ import { write as writeLog } from "./logging"
 import { probeMafwCli } from "./mafw-cli-probe"
 import { planGatewayStart } from "./mafw-gateway-plan"
 import { clearGatewayPidFile, writeGatewayPidFile } from "./mafw-pid-file"
-import { exitNotification } from "./gateway-health"
+import { exitNotification, waitForGatewayDown } from "./gateway-health"
 
 export type GatewayState = "stopped" | "starting" | "ready" | "failed"
 
@@ -97,20 +97,24 @@ function installQuitHook() {
   })
 }
 
-function killBundledChild() {
+function killBundledChild(): Promise<void> {
   const child = bundledChild
   bundledChild = null
-  if (!child || child.killed) return
+  if (!child || child.killed) return Promise.resolve()
   expectedExit = true
-  try {
-    if (process.platform === "win32" && child.pid) {
-      // cmd-less tree kill: SIGKILL is a no-op on Windows.
-      execFile("taskkill", ["/F", "/T", "/PID", String(child.pid)], { windowsHide: true }, () => {})
-    } else {
-      child.kill("SIGTERM")
-    }
-    if (child.pid) void clearGatewayPidFile(child.pid)
-  } catch {}
+  const done = new Promise<void>((resolve) => {
+    try {
+      if (process.platform === "win32" && child.pid) {
+        // cmd-less tree kill: SIGKILL is a no-op on Windows.
+        execFile("taskkill", ["/F", "/T", "/PID", String(child.pid)], { windowsHide: true }, () => resolve())
+      } else {
+        child.kill("SIGTERM")
+        resolve()
+      }
+    } catch { resolve() }
+  })
+  if (child.pid) void clearGatewayPidFile(child.pid)
+  return done
 }
 
 function spawnBundledGateway(entry: string): ChildProcess {
@@ -188,11 +192,13 @@ function pollUntilReady(url: string): void {
   }, 1000)
 }
 
-export async function startGateway(): Promise<void> {
+export async function startGateway(opts?: { skipAdopt?: boolean }): Promise<void> {
   if (state !== "stopped") return
 
-  // Try connecting to an already-running gateway before spawning a new one
-  const existingUrl = await probeExistingGateway()
+  // Try connecting to an already-running gateway before spawning a new one.
+  // Skipped in the restart path: we just killed our own gateway — a "found
+  // running" answer here would be the dying process (adopt race).
+  const existingUrl = opts?.skipAdopt ? null : await probeExistingGateway()
   // Hermes-style ladder: the user's own `mafw` install wins over the bundled
   // copy — probed (`mafw version`) before use, never trusted blindly.
   const cliProbe = await probeMafwCli()
@@ -239,14 +245,18 @@ export async function startGateway(): Promise<void> {
   pollUntilReady(`http://127.0.0.1:${port}`)
 }
 
-export function stopGateway(): void {
+export async function stopGateway(): Promise<void> {
+  // Capture the live URL before clearing state — needed for the down-wait.
+  const liveUrl = port ? `http://127.0.0.1:${port}` : null
   if (bundledChild) {
-    killBundledChild()
+    await killBundledChild()
   } else if (spawnedByUs) {
     // CLI daemon we started; adopted gateways (spawnedByUs=false) are left alone.
-    try {
-      execFile("mafw", ["stop"], { shell: true, windowsHide: true })
-    } catch {}
+    await new Promise<void>((resolve) => {
+      try {
+        execFile("mafw", ["stop"], { shell: true, windowsHide: true }, () => resolve())
+      } catch { resolve() }
+    })
   }
   if (healthInterval) {
     clearInterval(healthInterval)
@@ -255,6 +265,25 @@ export function stopGateway(): void {
   port = null
   spawnedByUs = false
   notifyState("stopped")
+  // Wait until the old process actually stops answering before letting a
+  // restart probe/spawn — otherwise startGateway adopts the dying gateway
+  // and reports a false "ready" (the 2026-09-16 two-click restart bug).
+  if (liveUrl) {
+    await waitForGatewayDown(() => checkHealth(liveUrl), { timeoutMs: 8000, intervalMs: 200 })
+  }
+}
+
+let restartInflight: Promise<void> | null = null
+
+/** Stop → wait for death → start (skipping adopt). In-flight deduped:
+ *  a manual click and an auto-restart racing would double-kill/spawn. */
+export function restartGateway(): Promise<void> {
+  if (restartInflight) return restartInflight
+  restartInflight = (async () => {
+    await stopGateway()
+    await startGateway({ skipAdopt: true })
+  })().finally(() => { restartInflight = null })
+  return restartInflight
 }
 
 export function getGatewayStatus(): GatewayStatus {
