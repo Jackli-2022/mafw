@@ -894,6 +894,17 @@ export class MafwClient implements IMafwClient {
       return res.json()
     },
 
+    /** barge-in 打断：取消该 session 全部在途 TTS 合成。 */
+    interrupt: async (sessionId: string): Promise<{ ok: boolean; cancelled: number }> => {
+      const res = await this.fetchPath(`/api/tts/interrupt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      })
+      if (!res.ok) throw new Error(`TTS interrupt failed: HTTP ${res.status}`)
+      return res.json()
+    },
+
     /** 娴佸紡 TTS锛氳繑鍥?async iterable of base64 PCM16 chunks锛?4kHz mono锛夈€?*/
     speakStream: (opts: { text: string; voice?: string; style?: string }): AsyncGenerator<{ data: string; voice: string }> => {
       const client = this

@@ -48,6 +48,7 @@ import { createTtsService } from "./media/tts-service";
 import { TtsEngineRegistry } from "./tts/registry";
 import { createMimoEngine } from "./tts/mimo-engine";
 import { adaptToStream } from "./tts/sentence-adapter";
+import { handleTtsInterrupt } from './routes/tts-interrupt';
 import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
@@ -2904,6 +2905,13 @@ class MafwScheduler {
               res.end();
             }
           }
+          return;
+        }
+
+        // POST /api/tts/interrupt — barge-in 打断：取消 session 在途 TTS 合成
+        if (req.url === "/api/tts/interrupt" && req.method === "POST") {
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          await handleTtsInterrupt(req, res, { inflight: this.ttsInflight });
           return;
         }
 

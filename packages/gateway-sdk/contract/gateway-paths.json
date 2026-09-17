@@ -1466,6 +1466,19 @@
         }
       }
     },
+    "/api/tts/interrupt": {
+      "post": {
+        "operationId": "tts.interrupt",
+        "tags": [
+          "tts"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/provider": {
       "get": {
         "operationId": "providers.list",
