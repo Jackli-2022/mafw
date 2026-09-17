@@ -134,7 +134,15 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
       if (typeof sid === "function") void sid.call(ctx, "default").catch(() => {})
     } catch { /* ignore */ }
 
+    // 点击瞬间进入 speaking（按钮动效立即启动，不等云端响应）；此时 activePlayer
+    // 尚为 null——barge-in 的 flush 是 no-op、abort 照常生效，语义安全。
+    setState("speaking")
+    // barge-in 前提：播报期间 VAD 监听人声（与旧 speakText.startMonitoring 等价）
+    void deps.vad.start().catch(e => console.warn("[voice] vad start failed:", e))
+
+    const t0 = performance.now()
     const streamUrl = await deps.streamUrl()
+    const t1 = performance.now()
     const doFetch = deps.fetchImpl ?? fetch
     const res = await doFetch(streamUrl, {
       method: "POST",
@@ -142,7 +150,9 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
       body: JSON.stringify({ text, voice, sessionId: deps.sessionId() ?? undefined }),
       signal,
     })
+    const t2 = performance.now()
     if (!res.ok || !res.body) throw new Error(`TTS stream HTTP ${res.status}`)
+    console.log(`[voice][perf] speak "${text.slice(0, 12)}…" streamUrl=${Math.round(t1 - t0)}ms headers=${Math.round(t2 - t1)}ms`)
     const sampleRate = parseInt(res.headers.get("x-tts-sample-rate") || "24000", 10)
     // 引擎采样率与手势内建的 ctx 不一致（插件引擎）→ 重建；此时已脱离手势窗口，
     // resume 尽力而为（与旧 media_speak 路径同语义）
@@ -158,9 +168,13 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
     const makePlayer = deps._makePlayer ?? createAudioWorkletPlayer
     const player = await makePlayer(activeCtx) as TtsPlayer & { markEof?(): void }
     activePlayer = player
-    setState("speaking")
-    // barge-in 前提：播报期间 VAD 监听人声（与旧 speakText.startMonitoring 等价）
-    void deps.vad.start().catch(e => console.warn("[voice] vad start failed:", e))
+    const t3 = performance.now()
+    let firstChunkMs = -1
+    let firstFeedMs = -1
+    player.on("started", () => {
+      const startedMs = Math.round(performance.now() - t0)
+      console.log(`[voice][perf] speaking starts at ${startedMs}ms (streamUrl=${Math.round(t1 - t0)} headers=${Math.round(t2 - t1)} player=${Math.round(t3 - t2)} firstChunk=${Math.round(firstChunkMs - t0)} firstFeed=${Math.round(firstFeedMs - t0)})`)
+    })
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let remainder = new Uint8Array(0)
@@ -185,7 +199,9 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
           const { aligned, remainder: rem } = alignPcmChunks(remainder, bytes)
           remainder = rem
           if (aligned.length === 0) continue
+          if (firstChunkMs < 0) firstChunkMs = performance.now()
           player.feed(new Int16Array(aligned.buffer, aligned.byteOffset, aligned.length / 2))
+          if (firstFeedMs < 0) firstFeedMs = performance.now()
         }
       }
       player.markEof?.()
