@@ -40,6 +40,10 @@ export interface SlashDeps {
   showStatusRecap(): void
   /** /waitwhat：简明重述上一条回复；返回错误文本或 null（重述经 SSE 送达）。 */
   waitwhat(): Promise<string | null>
+  /** gateway 远端命令派发（本地注册表未命中时）；返回提示文本或 null。 */
+  runGatewayCommand(name: string, args: string): Promise<string | null>
+  /** 当前可见的 gateway 命令（确认门查 destructive 用）。 */
+  gatewayCommands(): { name: string; aliases?: string[]; destructive?: boolean }[]
 }
 
 
@@ -90,8 +94,11 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
       case 'editor':
         await deps.openExternalEditor()
         return null
-      default:
-        return `未知命令 /${rawCmd}（可用: ${COMMAND_REGISTRY.map((c) => `/${c.name}`).join(' ')}）`
+      default: {
+        const gw = deps.gatewayCommands().find((c) => c.name === cmd || c.aliases?.includes(cmd))
+        if (gw) return deps.runGatewayCommand(gw.name, args)
+        return `未知命令 /${rawCmd}（可用: ${COMMAND_REGISTRY.map((c) => `/${c.name}`).join(' ')} …）`
+      }
     }
   }
 }

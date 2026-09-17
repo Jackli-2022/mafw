@@ -127,6 +127,20 @@ export class ChatTab extends VStack implements Focusable {
     deps.store.loadHistory().then(() => this.rebuild())
   }
 
+  private autocompleteExtra: { name: string; description: string }[] = []
+
+  /** gateway 远端命令到达后刷新补全（重建 provider）。 */
+  setAutocompleteExtra(items: { name: string; description: string; argumentHint?: string }[]): void {
+    this.autocompleteExtra = items.map((c) => ({
+      name: c.name,
+      description: c.argumentHint ? `${c.description} ${c.argumentHint}` : c.description,
+    }))
+    this.editor.setAutocompleteProvider(new CombinedAutocompleteProvider(
+      [...autocompleteItems(), ...this.autocompleteExtra],
+      process.cwd(),
+    ))
+  }
+
   /** 顶部（用户上翻到头）→ 自动 loadOlder。由 app 轮询调用。 */
   get atTop(): boolean {
     return !this.scrollView.isFollowingEnd && this.scrollView.scrollTop === 0

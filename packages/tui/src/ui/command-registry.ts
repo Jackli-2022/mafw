@@ -7,7 +7,7 @@ import { theme } from '../theme.ts'
  * - immediate：busy 时立即执行不排队（Claude Code 语义：/model 等）
  */
 
-export const COMMAND_CATEGORIES = ['会话', '上下文', '模型', '输入', '帮助'] as const
+export const COMMAND_CATEGORIES = ['会话', '上下文', '模型', '输入', '自定义', '帮助'] as const
 export type CommandCategory = (typeof COMMAND_CATEGORIES)[number]
 
 export interface CommandDef {
@@ -19,6 +19,10 @@ export interface CommandDef {
   destructive?: boolean
   /** busy 期间立即执行（不排队） */
   immediate?: boolean
+  /** 参数提示（补全/帮助展示），如 '<问题>' */
+  argumentHint?: string
+  /** 来自 gateway 注册表（远端命令，派发到 mafwCommands.run） */
+  gateway?: boolean
 }
 
 export const COMMAND_REGISTRY: CommandDef[] = [
@@ -51,16 +55,28 @@ export function resolveCommand(name: string): string | null {
   return null
 }
 
-/** 编辑器 slash 补全条目（chat-tab CombinedAutocompleteProvider 直接消费）。 */
-export function autocompleteItems(): { name: string; description: string }[] {
-  return COMMAND_REGISTRY.map((c) => ({ name: c.name, description: c.description }))
+/** 编辑器 slash 补全条目（chat-tab CombinedAutocompleteProvider 直接消费）；
+ *  extra 为 gateway 远端命令（合并后），argumentHint 拼进描述尾；同名本地优先。 */
+export function autocompleteItems(extra: CommandDef[] = []): { name: string; description: string }[] {
+  const seen = new Set<string>()
+  const out: { name: string; description: string }[] = []
+  for (const c of [...COMMAND_REGISTRY, ...extra]) {
+    if (seen.has(c.name)) continue
+    seen.add(c.name)
+    out.push({
+      name: c.name,
+      description: c.argumentHint ? `${c.description} ${c.argumentHint}` : c.description,
+    })
+  }
+  return out
 }
 
-/** /help overlay 渲染行：按分类分组，破坏性命令带 ⚠。 */
-export function helpLines(): string[] {
+/** /help overlay 渲染行：按分类分组，破坏性命令带 ⚠。extra 为 gateway 远端命令。 */
+export function helpLines(extra: CommandDef[] = []): string[] {
+  const all = [...COMMAND_REGISTRY, ...extra]
   const lines: string[] = []
   for (const cat of COMMAND_CATEGORIES) {
-    const cmds = COMMAND_REGISTRY.filter((c) => c.category === cat)
+    const cmds = all.filter((c) => c.category === cat)
     if (cmds.length === 0) continue
     lines.push(theme.accent(cat))
     for (const c of cmds) {

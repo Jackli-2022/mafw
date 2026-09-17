@@ -18,6 +18,7 @@ import { dispatchKey, type KeyDispatchContext } from './keymap.ts'
 import { InteractionStateMachine } from './interaction-state.ts'
 import { helpLines } from './command-registry.ts'
 import { COMMAND_REGISTRY, resolveCommand } from './command-registry.ts'
+import { mergeCommands, type RemoteCommand } from './gateway-commands.ts'
 import { QueueOverlay } from './queue-overlay.ts'
 import { TranscriptSearchOverlay } from './transcript-search.ts'
 import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
@@ -102,6 +103,13 @@ export async function runApp(opts: AppOptions): Promise<void> {
     onSlash: (cmd, args) => handleSlashWithConfirm(cmd, args),
     onError: (m) => setStatus({ hint: theme.err(`⚠ ${m.slice(0, 60)}`) }),
   })
+
+  // ── gateway 命令注册表拉取（P0）：本地命令优先合并进补全；未命中本地时 fallback 派发 ──
+  let gatewayCmds: RemoteCommand[] = []
+  void client.mafwCommands.list().then((cmds) => {
+    gatewayCmds = cmds
+    chatTab.setAutocompleteExtra(mergeCommands([], cmds))
+  }).catch(() => { /* fail-open：远端命令不可用不阻塞 */ })
 
   // ── Goals tab ──
   const goalsStore = new GoalsStore({
@@ -361,11 +369,15 @@ export async function runApp(opts: AppOptions): Promise<void> {
   async function handleSlashWithConfirm(rawCmd: string, args: string): Promise<string | null> {
     const name = resolveCommand(rawCmd)
     const def = COMMAND_REGISTRY.find((c) => c.name === name)
+    const gwDef = gatewayCmds.find((c) => c.name === rawCmd || c.aliases?.includes(rawCmd))
     const inlineSkip = /^(now|--yes|-y)(\s|$)/i.test(args.trim())
-    if (def?.destructive && !inlineSkip && !sessionApproved.has(def.name)) {
-      const answer = await showConfirm(`确认执行 /${def.name}？`, def.description)
+    if ((def?.destructive || gwDef?.destructive) && !inlineSkip
+      && !(def && sessionApproved.has(def.name)) && !(gwDef && sessionApproved.has(gwDef.name))) {
+      const title = def?.name ?? gwDef?.name ?? rawCmd
+      const desc = def?.description ?? gwDef?.description ?? ''
+      const answer = await showConfirm(`确认执行 /${title}？`, desc)
       if (answer === 'cancel') return '已取消'
-      if (answer === 'always') sessionApproved.add(def.name)
+      if (answer === 'always') sessionApproved.add(title)
     }
     return slashHandler(rawCmd, inlineSkip ? args.trim().replace(/^(now|--yes|-y)\s+/i, '') : args)
   }
@@ -451,6 +463,14 @@ export async function runApp(opts: AppOptions): Promise<void> {
     undo: () => chatStore.undo(),
     redo: () => chatStore.redo(),
     openExternalEditor: openInExternalEditor,
+    runGatewayCommand: async (name, args) => {
+      const sid = chatStore.sessionID
+      const r = await client.mafwCommands.run({ command: name, args, ...(sid ? { sessionID: sid } : {}) })
+        .catch((e: any) => ({ error: e.message }))
+      if ('error' in (r as any)) return `/${name} 失败: ${(r as any).error}`
+      return (r as any).message || (r as any).text || null
+    },
+    gatewayCommands: () => gatewayCmds,
   })
 
   // ── 布局：TabStrip / 内容区(grow) / StatusBar ──

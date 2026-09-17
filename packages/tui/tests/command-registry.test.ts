@@ -44,7 +44,9 @@ test('helpLines groups by category and covers every command', () => {
   for (const c of COMMAND_REGISTRY) {
     assert.ok(joined.includes(`/${c.name}`), `/${c.name} 出现在 help`)
   }
+  // 只断言非空分类（空分类如『自定义』无可渲染命令，不出现标题）
   for (const cat of COMMAND_CATEGORIES) {
+    if (!COMMAND_REGISTRY.some((c) => c.category === cat)) continue
     assert.ok(joined.includes(cat), `分类 ${cat} 有标题`)
   }
   // 破坏性命令带标记（行尾 ⚠）
@@ -56,4 +58,26 @@ test('helpLines groups by category and covers every command', () => {
 test('immediate commands (busy 时不排队立即执行) are flagged', () => {
   const immediate = COMMAND_REGISTRY.filter((c) => c.immediate).map((c) => c.name).sort()
   assert.deepEqual(immediate, ['compact', 'diff', 'editor', 'focus', 'fork', 'help', 'model', 'older', 'queue', 'rename', 'sessions', 'status', 'verbose', 'waitwhat'])
+})
+
+test('autocompleteItems includes argumentHint from extra commands', () => {
+  const items = autocompleteItems([
+    { name: 'goal', description: '提交 Goal', category: '自定义', gateway: true, argumentHint: '<目标>' },
+  ])
+  assert.equal(items.find((i) => i.name === 'goal')?.description, '提交 Goal <目标>')
+})
+
+test('autocompleteItems dedupes by name (local wins on collision)', () => {
+  const items = autocompleteItems([
+    { name: 'btw', description: '重复条目', category: '自定义', gateway: true },
+  ])
+  assert.equal(items.filter((i) => i.name === 'btw').length, 1)
+  assert.equal(items.find((i) => i.name === 'btw')?.description, COMMAND_REGISTRY.find((c) => c.name === 'btw')?.description)
+})
+
+test('helpLines renders extra gateway commands', () => {
+  const lines = helpLines([
+    { name: 'goal', description: '提交 Goal', category: '自定义', gateway: true },
+  ])
+  assert.ok(lines.join('\n').includes('/goal'))
 })

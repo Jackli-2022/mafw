@@ -23,6 +23,8 @@ function harness(over: Partial<Record<string, any>> = {}) {
     fork: async () => { calls.push('fork'); return null },
     showStatusRecap: () => { calls.push('status') },
     waitwhat: async () => { calls.push('waitwhat'); return null },
+    runGatewayCommand: async (name: string, args: string) => { calls.push(`gw:${name}:${args}`); return null },
+    gatewayCommands: () => [],
     ...over,
   }
   return { calls, deps, handler: createSlashHandler(deps as any) }
@@ -99,6 +101,23 @@ test('unknown command lists available commands', async () => {
   const r = await h.handler('nope', '')
   assert.ok(r!.includes('nope'))
   for (const c of SLASH_COMMANDS) assert.ok(r!.includes(`/${c.name}`))
+})
+
+test('unknown-to-local command falls back to gateway dispatch', async () => {
+  const h = harness({
+    gatewayCommands: () => [{ name: 'goal', aliases: ['g'], destructive: false }],
+  })
+  const r = await h.handler('goal', '做个登录页')
+  assert.equal(r, null)
+  assert.deepEqual(h.calls, ['gw:goal:做个登录页'])
+})
+
+test('gateway alias resolves to canonical name for dispatch', async () => {
+  const h = harness({
+    gatewayCommands: () => [{ name: 'goal', aliases: ['g'], destructive: false }],
+  })
+  await h.handler('g', 'x')
+  assert.deepEqual(h.calls, ['gw:goal:x'])
 })
 
 test('SLASH_COMMANDS covers the full command surface', () => {
