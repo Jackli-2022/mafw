@@ -1,18 +1,23 @@
 /**
- * Serve 进程唯一所有者：kill / spawn / 就绪等待 / 健康探测。
+ * Serve 进程唯一编排者：adopt / kill / spawn / 就绪等待。
  * 从 index.ts 下沉（原 killProcessOnPort + startServe + isServeHealthy 的动作段）。
- * kill 与 spawn 都是 runtime 契约原语（killServePort / agentProcess.spawnServe），
- * 本模块只做通用编排；gateway 编排层（recoverServe/watchdog）在其上叠加事件流重订。
- * deps 全部注入以便单测；生产装配见 index.ts。
+ * 原则：gateway 只编排，不实现——健康检测经 runtime 契约（health()）、
+ * 地址归 runtime（baseUrl()）、kill/spawn 都是 runtime 原语，gateway 不传
+ * host/port（serve 端口是 runtime 实现细节）。deps 全部注入以便单测。
  */
 
 export interface ServeSupervisorDeps {
-  port: number;
-  host?: string;
-  external: boolean;
-  killPort: (port: number) => void;
-  spawn: (opts: { host: string; port: number; timeoutMs: number; onOutput?: (chunk: string) => void }) => Promise<{ url: string; close: () => void }>;
-  probe: (url: string) => Promise<boolean>;
+  /** runtime 是否持有启停原语（agentProcess.spawnServe）——late-bound：
+   *  runtime 可热切换（opencode↔pi），每次调用现读，防旧判定残留。 */
+  managed: () => boolean;
+  /** 健康检测唯一真相源：runtime 契约 healthCheck()。gateway 不自带探测。 */
+  health: () => Promise<boolean>;
+  /** 当前 agent 后端地址（runtime.getBaseUrl()），供返回值/日志。 */
+  baseUrl: () => string;
+  /** runtime 原语：清场（杀遗留 serve 端口占用者）。 */
+  killServe: () => void;
+  /** runtime 原语：拉起 server 进程。gateway 不传 host/port。 */
+  spawn: (opts: { timeoutMs: number }) => Promise<{ url: string; close: () => void }>;
   probeIntervalMs?: number;
   probeTimeoutMs?: number;
 }
@@ -26,45 +31,35 @@ export interface ServeSupervisor {
 }
 
 export function createServeSupervisor(deps: ServeSupervisorDeps): ServeSupervisor {
-  const host = deps.host ?? '127.0.0.1';
   const probeIntervalMs = deps.probeIntervalMs ?? 500;
   const probeTimeoutMs = deps.probeTimeoutMs ?? 60_000;
 
   let instance: { url: string; close: () => void } | undefined;
   let starting: Promise<string> | undefined;
 
-  const refused = () => new Error('external agent process is not managed by the gateway');
+  const refused = () => new Error('unmanaged runtime: gateway holds no start/stop primitives');
 
   const spawnAndWait = async (): Promise<string> => {
-    instance = await deps.spawn({ host, port: deps.port, timeoutMs: probeTimeoutMs });
+    instance = await deps.spawn({ timeoutMs: probeTimeoutMs });
     const deadline = Date.now() + probeTimeoutMs;
     while (Date.now() < deadline) {
-      if (await deps.probe(instance.url)) return instance.url;
+      if (await deps.health()) return deps.baseUrl();
       await new Promise(r => setTimeout(r, probeIntervalMs));
     }
-    throw new Error(`serve did not become healthy within ${probeTimeoutMs}ms`);
+    throw new Error(`runtime did not become healthy within ${probeTimeoutMs}ms`);
   };
 
   return {
-    get owned() { return !deps.external; },
+    get owned() { return deps.managed(); },
     async ensureStarted(): Promise<string> {
-      if (deps.external) throw refused();
-      if (instance && await deps.probe(instance.url)) return instance.url;
-      // Adopt: gateway startup may have adopted a healthy serve, or a
-      // user-managed opencode may already listen here — never killPort a
-      // healthy listener on this port (that would drop every SSE/desktop/TUI
-      // connection on a pi→opencode switch).
-      const candidateUrl = `http://${host}:${deps.port}`;
-      try {
-        if (await deps.probe(candidateUrl)) {
-          instance = { url: candidateUrl, close: () => {} };
-          return candidateUrl;
-        }
-      } catch { /* not healthy → spawn below */ }
+      if (!deps.managed()) throw refused();
+      // Adopt：runtime 健康（含用户自管/已有监听）直接收养，绝不 kill——
+      // 健康判定来自 runtime 契约，gateway 不构造候选 URL。
+      if (await deps.health()) return deps.baseUrl();
       if (starting) return starting;
       starting = (async () => {
         try {
-          deps.killPort(deps.port);
+          deps.killServe();
           instance = undefined;
           return await spawnAndWait();
         } finally { starting = undefined; }
@@ -72,11 +67,11 @@ export function createServeSupervisor(deps: ServeSupervisorDeps): ServeSuperviso
       return starting;
     },
     async restart(): Promise<string> {
-      if (deps.external) throw refused();
+      if (!deps.managed()) throw refused();
       if (starting) return starting;
       starting = (async () => {
         try {
-          deps.killPort(deps.port);
+          deps.killServe();
           instance?.close();
           instance = undefined;
           return await spawnAndWait();
@@ -85,8 +80,7 @@ export function createServeSupervisor(deps: ServeSupervisorDeps): ServeSuperviso
       return starting;
     },
     async health(): Promise<boolean> {
-      if (!instance) return false;
-      return deps.probe(instance.url);
+      return deps.health();
     },
     close() {
       try { instance?.close(); } catch { /* ignore */ }

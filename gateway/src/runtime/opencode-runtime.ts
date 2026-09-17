@@ -272,7 +272,9 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
       },
     },
     getBaseUrl(): string {
-      return process.env.MAFW_SERVER_SERVE_URL || gatewayConfig.server.serveUrl;
+      // 地址归 runtime 所有：bootstrap 取配置，spawnServe 吸收 sidecar 实际
+      // URL 后（含动态端口），gateway 一律经此读取，不直连配置。
+      return process.env.MAFW_SERVER_SERVE_URL || config.baseUrl;
     },
     async healthCheck(): Promise<boolean> {
       try {
@@ -334,7 +336,21 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
   // Gateway core never hardcodes agent-specific spawn details.
   if (!rt.external) {
     rt.agentProcess = {
-      spawnServe: (opts) => startServeSidecar(opts),
+      spawnServe: async (opts) => {
+        // host/port 缺省由 runtime 自定（serve 端口是实现细节，gateway 不传）
+        const sidecar = await startServeSidecar({
+          host: opts.host ?? gatewayConfig.server.serveHost ?? '127.0.0.1',
+          port: opts.port ?? gatewayConfig.server.servePort,
+          timeoutMs: opts.timeoutMs,
+          onOutput: opts.onOutput,
+          onExit: opts.onExit,
+        });
+        // 吸收 sidecar 报告的实际地址（可能与请求端口不同，如动态分配）：
+        // 之后 getBaseUrl/healthCheck/adapter 请求全部跟随实际 URL。
+        config.baseUrl = sidecar.url;
+        return sidecar;
+      },
+      killServe: () => killServePort(gatewayConfig.server.servePort),
       async restart(): Promise<void> {
         log.info('[Runtime] agentProcess.restart() — killing serve (gateway orchestrates respawn)');
         killServePort(gatewayConfig.server.servePort);

@@ -44,7 +44,21 @@ function messageToParts(message?: string, parts?: any[]): any[] {
 
 export async function createOpencodeAdapter(config: { baseUrl: string; directory?: string; headers?: Record<string, string> }): Promise<OpencodeAdapter> {
   const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
-  const client = createOpencodeClient(config);
+  let current = createOpencodeClient(config);
+  let clientBaseUrl = config.baseUrl;
+  // URL 吸收：runtime 的 spawnServe 会把 sidecar 实际地址写回 config.baseUrl
+  // （动态端口前提）。SDK 客户端内部持有构造期 config 快照，感知不到变更——
+  // 每次访问按 baseUrl 惰性重建（幂等，无变更零开销）。directNative/
+  // healthCheck 直读 config.baseUrl，天然跟随。
+  const client = new Proxy(current, {
+    get(_t, prop) {
+      if (config.baseUrl !== clientBaseUrl) {
+        clientBaseUrl = config.baseUrl;
+        current = createOpencodeClient({ ...config, baseUrl: config.baseUrl });
+      }
+      return Reflect.get(current as object, prop, current as object);
+    },
+  }) as typeof current;
 
   // opencode 原生 V1 路由的 workspace 路由细节收敛在 adapter 内（契约保持
   // runtime 中立）——带 directory 的调用直连 fetch（V2 SDK 调用不带 workspace 语义）。

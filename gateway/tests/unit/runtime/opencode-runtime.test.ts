@@ -23,6 +23,10 @@ jest.mock('../../../src/opencode-adapter', () => ({
 jest.mock('../../../src/core/utils/logger', () => ({
   log: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
+jest.mock('../../../src/runtime/serve-sidecar', () => ({
+  startServeSidecar: jest.fn(),
+  killServePort: jest.fn(),
+}));
 jest.mock('../../../src/config', () => ({
   config: { server: { serveUrl: 'http://127.0.0.1:4096', servePort: 4096 } },
 }));
@@ -33,6 +37,10 @@ jest.mock('../../../src/runtime/auth', () => ({
 }));
 
 import { createOpencodeRuntime } from '../../../src/runtime/opencode-runtime';
+import { startServeSidecar, killServePort } from '../../../src/runtime/serve-sidecar';
+
+const mockStartServe = startServeSidecar as jest.Mock;
+const mockKillServePort = killServePort as jest.Mock;
 
 describe('createOpencodeRuntime', () => {
   const saved = process.env.MAFW_SERVER_SERVE_URL;
@@ -127,5 +135,47 @@ describe('createOpencodeRuntime', () => {
     } finally {
       (globalThis as any).fetch = savedFetch;
     }
+  });
+
+  // ── URL 归 runtime：spawnServe 吸收 sidecar 实际地址（动态端口前提） ──
+
+  it('spawnServe fills host/port defaults from gateway config (gateway passes none)', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    mockStartServe.mockResolvedValueOnce({ url: 'http://127.0.0.1:4096', close: jest.fn() });
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.agentProcess!.spawnServe!({} as any);
+    expect(mockStartServe).toHaveBeenCalledWith(
+      expect.objectContaining({ host: '127.0.0.1', port: 4096 }),
+    );
+  });
+
+  it('spawnServe absorbs the actual sidecar URL (getBaseUrl + healthCheck follow)', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    mockStartServe.mockResolvedValueOnce({ url: 'http://127.0.0.1:5555', close: jest.fn() });
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.agentProcess!.spawnServe!({} as any);
+    expect(rt.getBaseUrl()).toBe('http://127.0.0.1:5555');
+    const calls: string[] = [];
+    const savedFetch = globalThis.fetch;
+    (globalThis as any).fetch = (async (url: string) => {
+      calls.push(String(url));
+      return { ok: true, status: 200 };
+    }) as any;
+    try {
+      await expect(rt.healthCheck!()).resolves.toBe(true);
+      expect(calls[0]).toBe('http://127.0.0.1:5555/global/health');
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+
+  it('killServe primitive is the runtime-owned port killer (restart routes through it)', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    expect(typeof rt.agentProcess!.killServe).toBe('function');
+    rt.agentProcess!.killServe!();
+    expect(mockKillServePort).toHaveBeenCalledWith(4096);
+    await rt.agentProcess!.restart();
+    expect(mockKillServePort).toHaveBeenCalledWith(4096);
   });
 });

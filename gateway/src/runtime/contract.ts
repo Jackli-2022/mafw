@@ -285,7 +285,10 @@ export interface AgentRuntime extends RuntimeClient {
   readonly external?: boolean;
   /** Returns the base URL of the serve process (external or owned). */
   getBaseUrl(): string;
-  /** 健康探测（watchdog / adopt 判定用）；缺省时由调用方自管。 */
+  /**
+   * 健康检测唯一真相源（watchdog / adopt / supervisor 全部经此；gateway 不自带探测）。
+   * 语义 = "agent 后端活着"——serve 型 runtime 探测 serve，进程内 runtime 探测自身引擎。
+   */
   healthCheck?(): Promise<boolean>;
   /**
    * Agent 进程重启原语（只有 runtime 自己知道如何重启自己的进程）。
@@ -297,15 +300,20 @@ export interface AgentRuntime extends RuntimeClient {
     restart(): Promise<void>;
     /** 拉起 runtime 自带的 server 进程（opencode: `opencode serve` sidecar，
      *  含 windowsHide）。进程内 runtime（pi）不提供——gateway 据此跳过 serve
-     *  拉起（MCP-only 降级），不再硬编码任何具体 agent 的 spawn 细节。 */
+     *  拉起（MCP-only 降级），不再硬编码任何具体 agent 的 spawn 细节。
+     *  host/port 缺省由 runtime 自定（serve 端口是实现细节）；sidecar 报告的
+     *  实际 URL 由 runtime 吸收（getBaseUrl/healthCheck 随之更新）。 */
     spawnServe?(opts: ServeSpawnOpts): Promise<ServeSpawnResult>;
+    /** 清场原语：杀掉遗留的 server 端口占用者（opencode: killServePort）。
+     *  gateway 不感知端口号——动态端口下"按配置端口杀"由 runtime 收敛。 */
+    killServe?(): void;
   };
 }
 
-/** 拉起 runtime 自带 server 进程的选项。 */
+/** 拉起 runtime 自带 server 进程的选项。host/port 缺省 = runtime 自定。 */
 export interface ServeSpawnOpts {
-  host: string;
-  port: number;
+  host?: string;
+  port?: number;
   timeoutMs?: number;
   onOutput?: (chunk: string) => void;
   onExit?: (code: number | null) => void;

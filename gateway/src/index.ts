@@ -65,7 +65,6 @@ import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { startTray, stopTray } from './tray';
-import { killServePort } from './runtime/serve-sidecar';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
 import {
   StepInjectState,
@@ -307,28 +306,23 @@ class MafwScheduler {
     this.registryPath = config.paths.registryFile;
     this.chatSessions = new ChatSessionManager();
     this.serveSupervisor = createServeSupervisor({
-      port: config.server.servePort,
-      external: !!process.env.MAFW_SERVER_SERVE_URL,
-      killPort: (port) => killServePort(port),
-      // Spawn 原语来自活跃 runtime 的契约（agentProcess.spawnServe）——
-      // gateway 核心不硬编码任何具体 agent 的 server 拉起细节。
+      // 全部经 runtime 契约且 late-bound（runtime 可热切换）：
+      // managed = runtime 是否持有启停原语；health = 契约 healthCheck；
+      // baseUrl/killServe = runtime 自报地址与清场原语；spawn 不传 host/port。
+      managed: () => !!this.opencodeClient?.agentProcess?.spawnServe,
+      health: async () => {
+        try { return (await this.opencodeClient?.healthCheck?.()) ?? false; }
+        catch { return false; }
+      },
+      baseUrl: () => this.opencodeClient?.getBaseUrl?.() ?? this.serveUrl,
+      killServe: () => this.opencodeClient?.agentProcess?.killServe?.(),
       spawn: async (opts) => {
         const spawnServe = this.opencodeClient?.agentProcess?.spawnServe;
         if (!spawnServe) {
           throw new Error('active runtime does not own a server process (agentProcess.spawnServe missing)');
         }
-        const sidecar = await spawnServe({
-          host: opts.host,
-          port: opts.port,
-          timeoutMs: opts.timeoutMs,
-        });
+        const sidecar = await spawnServe({ timeoutMs: opts.timeoutMs });
         return { url: sidecar.url, close: () => sidecar.close() };
-      },
-      probe: async (url: string) => {
-        try {
-          const res = await fetch(`${url}/global/health`, { signal: AbortSignal.timeout(3000) } as any);
-          return res.ok;
-        } catch { return false; }
       },
     });
   }
@@ -338,19 +332,6 @@ class MafwScheduler {
   }
 
   /** Check actual serve health via TCP connection, not just object existence. */
-  private async checkServeActualHealth(): Promise<boolean> {
-    try {
-      const url = `${this.serveUrl}/global/health`;
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(2000),
-        headers: { 'User-Agent': 'MAFW-Gateway-HealthCheck' }
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  }
-
   async start() {
     log.info('MAFW Scheduler v5.0 starting...');
 
@@ -472,7 +453,8 @@ class MafwScheduler {
         this.startServeWatchdog();
       } else {
         log.info('OpenCode Serve not reachable, checking for stale process...');
-        killServePort(config.server.servePort);
+        // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
+        this.opencodeClient?.agentProcess?.killServe?.();
         try {
           await this.startServe();
           serveReady = !!this.serveInstance;
@@ -2071,12 +2053,10 @@ class MafwScheduler {
       return;
     }
     log.info('Starting OpenCode Serve sidecar...');
-    const port = config.server.servePort;
-    const host = config.server.serveHost;
     try {
+      // host/port 归 runtime 自定（serve 端口是实现细节）；sidecar 实际 URL
+      // 由 runtime 吸收（getBaseUrl 跟随），gateway 只记 bookkeeping。
       const sidecar = await spawnServe({
-        host,
-        port,
         onOutput: (chunk) => log.debug(`[Serve] ${chunk.trimEnd()}`),
         onExit: (code) => this.handleServeExit(code),
       });
@@ -2324,18 +2304,13 @@ class MafwScheduler {
   }
 
   private async isServeHealthy(): Promise<boolean> {
-    const url = `${this.serveUrl}/global/health`;
-    return new Promise((resolve) => {
-      const req = http.get(url, { timeout: 5000 }, (res) => {
-        resolve(res.statusCode === 200);
-        res.resume();
-      });
-      req.on('error', () => resolve(false));
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(false);
-      });
-    });
+    // 健康唯一真相源 = runtime 契约 healthCheck()（serve 型探测 serve，
+    // 进程内 runtime 探测自身引擎）；gateway 不自带 HTTP 探测。
+    try {
+      return (await this.opencodeClient?.healthCheck?.()) ?? false;
+    } catch {
+      return false;
+    }
   }
 
   private async waitForServeReady(): Promise<void> {
@@ -5129,8 +5104,9 @@ class MafwScheduler {
           return;
         }
 
-        // Reverse proxy to opencode server for non-MAFW routes
-        const serveUrl = config.server.serveUrl;
+        // Reverse proxy to the agent backend for non-MAFW routes —
+        // target from the runtime contract (getBaseUrl), config 仅 bootstrap 兜底
+        const serveUrl = this.opencodeClient?.getBaseUrl?.() ?? config.server.serveUrl;
         try {
           const proxyUrl = new URL(req.url || '/', serveUrl);
           const proxyReq = http.request(proxyUrl, {
