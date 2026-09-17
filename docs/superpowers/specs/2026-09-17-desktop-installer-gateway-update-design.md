@@ -31,7 +31,7 @@ MAFW gateway 在用户机器上存在两个独立来源：desktop 安装包内�
 
 | 组件 | 位置 | 职责 |
 |---|---|---|
-| 更新脚本 | `packages/desktop/resources/gateway-update/update-global-gateway.js`（CJS，零 npm 依赖，随 extraResources 进安装包） | 检测比较 + 停 daemon + npm 更新 |
+| 更新脚本 | `packages/desktop/resources/gateway-update/update-global-gateway.cjs`（CJS，零 npm 依赖，随 extraResources 进安装包；`.cjs` 后缀规避祖先 package.json `type:module` 的 ESM 歧义） | 检测比较 + 停 daemon + npm 更新 |
 | NSIS 钩子 | `packages/desktop/build/installer.nsh`（electron-builder `nsis.include`，`customInstall` 宏） | 探测 node → nsExec 同步执行更新脚本，输出进安装日志 |
 | 打包接线 | `packages/desktop/electron-builder.config.ts` | `extraResources` 增加 `gateway-update/` → `resources/gateway-update/`；`nsis.include` 指向 installer.nsh |
 
@@ -70,7 +70,12 @@ compareVersions(global, bundled) ≥ 0 → exit 0（永不降级）
 | npm 源无此版本（desktop 领先 npm 发布）或网络失败 | 日志留手动命令，exit 0 |
 | PID 文件指向已死/非 node 进程 | 跳过停止（不误杀） |
 | taskkill 失败 | 日志警告，继续 npm（可能因文件锁失败→走失败分支） |
-| npm 超时 120s | kill 子进程，走失败分支 |
+| npm 超时 300s | kill 子进程，走失败分支 |
+
+真机冒烟修正（2026-09-17 实测，原 120s 不够——全局包完整安装 >120s，超时中断会留下半装状态且 `mafw` bin 暂失）：
+- npm 超时 **300s**（spec §5 的 120s 作废）
+- `.cmd` 必须 `shell: true`（Node ≥22 CVE-2024-27980 强制，否则 EINVAL）；npm 调用统一 `cwd: ~`（workspaces 目录内 `config get prefix` 报 ENOWORKSPACES）
+- `readPkgVersion` 容忍 UTF-8 BOM（PowerShell Set-Content 教训，对齐 `self-update.ts` token 读取）
 
 Windows 细节：npm 必须以 `npm.cmd` 调用（win32 无 shell 时裸 `npm` 不解析）；脚本整体自限时 ~150s，防止安装器卡住。
 
