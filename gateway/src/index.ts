@@ -34,6 +34,9 @@ import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
 import { redactSecrets } from "./recall/redact";
 import { buildMafwCommandRegistry, handleMafwCommandRun, handleMafwCommandList } from "./routes/mafw-commands";
 import type { MafwCommandRegistry } from "./commands/registry";
+import { scanCommandDirs, watchCommandDirs, type CommandDir } from "./commands/custom-commands";
+import { registerCustomCommands } from "./commands/custom-exec";
+import { exec } from "child_process";
 import { ConsolidationService } from "./memory/consolidation-service";
 import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
@@ -1829,6 +1832,8 @@ class MafwScheduler {
     this.kernels?.disposeAll();
     this.milestonePush?.dispose();
     this.budgetGuards.clear();
+    this.customCommandWatcherDispose?.();
+    this.customCommandWatcherDispose = null;
     // Give an in-flight pipeline a short window to settle before closing the
     // T1 store (closing mid-run would leave turns un-deleted → duplicate
     // extraction on next start), then dispose workers best-effort.
@@ -2913,6 +2918,7 @@ class MafwScheduler {
             if (!abort.signal.aborted) res.write('data: {"done":true}\n\n');
             res.end();
           } catch (err: any) {
+            log.error(`[TTS] stream synthesis failed (engine=${(config.raw as any)?.media?.tts?.engine ?? 'mimo'}): ${err?.message || String(err)}`);
             if (!res.headersSent) {
               res.writeHead(502);
               res.end(JSON.stringify({ error: err?.message || String(err) }));
@@ -6118,8 +6124,43 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       },
       llmAvailable: () => !!this.opencodeClient,
     });
+    // 自定义命令：用户级 ~/.mafw/commands/ + 项目级 <project>/.mafw/commands/，热重载
+    const registry = this.mafwCommandRegistry;
+    const cmdDirs: CommandDir[] = [
+      { dir: path.join(this.mafwDir, 'commands'), scope: 'user' },
+      { dir: path.join(this.projectDir, '.mafw', 'commands'), scope: 'project' },
+    ];
+    const execDeps = {
+      promptAsync: async (sid: string, text: string) => {
+        await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }] });
+      },
+      ensureManagerSession: async (projectDir: string) => (await this.ensureManagerSession(projectDir, this.mafwDir).catch(() => '')) || '',
+      llmAvailable: () => !!this.opencodeClient,
+      exec: (cmd: string) => new Promise<string>((resolveExec, rejectExec) => {
+        exec(cmd, { cwd: this.projectDir, timeout: 30000, maxBuffer: 1024 * 1024, windowsHide: true },
+          (err, stdout, stderr) => err ? rejectExec(new Error(stderr?.trim() || err.message)) : resolveExec(stdout.trim()));
+      }),
+      readFile: async (rel: string) => {
+        const full = path.resolve(this.projectDir, rel);
+        if (!full.startsWith(path.resolve(this.projectDir))) throw new Error('path escapes project');
+        const stat = fs.statSync(full);
+        if (stat.size > 100 * 1024) throw new Error('file too large (>100KB)');
+        return fs.readFileSync(full, 'utf-8');
+      },
+    };
+    void scanCommandDirs(cmdDirs).then((specs) => {
+      registerCustomCommands(registry, specs, execDeps);
+      if (specs.length > 0) log.info(`[Commands] 自定义命令已加载: ${specs.map((s) => s.name).join(', ')}`);
+    }).catch(() => { /* fail-open */ });
+    this.customCommandWatcherDispose = watchCommandDirs(cmdDirs, (specs) => {
+      registerCustomCommands(registry, specs, execDeps);
+      log.info(`[Commands] 自定义命令已热重载（${specs.length} 条）`);
+      this.broadcast({ type: 'mafw_commands_changed' });
+    });
     return this.mafwCommandRegistry;
   }
+
+  private customCommandWatcherDispose: (() => void) | null = null;
 
   // One-off side-question session (user-driven /btw command): create → prompt
   // once → discard. Internal role keeps its output out of T1.
