@@ -885,6 +885,24 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 - `gateway/src/orchestration/registry.ts` 声明可演化组件（Phase 1 只读）
 - `gateway/src/orchestration/policy.ts` 读 `~/.mafw/orchestration/active.json` 回退 builtin-v1
 
+### 5.21 语音管道（Voice Pipeline，2026-09-17 重构）
+
+**Desktop 核心（`packages/desktop/src/renderer/mafw/voice/`，UI 无关纯 TS）**：
+- **VadAnalyzer**（`silero.ts`）：Silero VAD v5 单实例 + 单 getUserMedia 流（echoCancellation/noiseSuppression/autoGainControl），事件 hub 多播 `speech_started/speech_stopped/misfire`——不再有 monitor/recording 模式切换；参数 `media.tts.vad.*`（confidence 0.5/stopSecs 1.2/minSpeechMs 500）可配，fail-open 默认值；`?url` 资产导入带 typeof 守卫（bun test 可导入）
+- **TurnStopStrategy**（`turn.ts`）：轮次边界与 VAD 分层（Pipecat 模式）；v1 `SilenceTimeoutStrategy` 直通（静音宽限已由 Silero redemptionMs 在引擎内），未来语义 turn detector 挂此接口
+- **AudioWorkletPlayer**（`worklet-player.ts` + `public/voice/pcm-worklet.js`）：环形缓冲流式 PCM 播放，起步缓冲 200ms 抗抖动，`flush()` = 清缓冲即时静音（barge-in），`playCursorMs` 播放游标（v1 仅日志）；采样率取 SSE `x-tts-sample-rate` 响应头（不再硬编码 24kHz）；**无 BufferSource 回退**（Electron Chromium 必有 AudioWorklet，显式报错）
+- **VoiceSession**（`session.ts`）：桌面语音唯一入口，显式状态机 `idle|recording|speaking|interrupted`；VAD 信号按状态路由（recording→分段/ speaking→barge-in）；barge-in = flush + `POST /api/tts/interrupt`（fire-and-forget）+ 状态 interrupted；`speakFromTool` djb2 hash TTL 去重（与 gateway media-speak 工具同实现）；`playUrl` artifact 短播放也走会话（互斥/barge-in 一致）；`speak` 流式失败回退整段 wav（barge-in abort 不回退）；ChatPane 只留绑定层（事件→UI 信号、segment→upload helper）
+
+**Gateway TTS 插件化（`gateway/src/tts/`）**：
+- **TtsEngine** 接口：`capabilities { streaming: 'native'|'none', voiceCloning, styleControl, languages, sampleRate }` + `synthesizeStream → AsyncIterable<PcmChunk>`（采样率随块走，不强写 24k）+ `synthesize → wav Buffer`（兜底）+ `TtsOpts { voice/style/speed/lang/refAudio? }`（refAudio 克隆预留）
+- **TtsEngineRegistry**：优先级 包 > legacy（`~/.mafw/tts-plugins/*.js`）> 内置；未知名 fail-open 回退 mimo + warn
+- **内置引擎**：`mimo`（MiMo-V2.5-TTS 云，native 流式，默认）；`kokoro`（kokoro-js 进程内 ONNX，Apache 2.0 含权重，optional dependency 不强装，模型 ~90MB 按需下载到 `~/.mafw/models/kokoro/`，`streaming:'none'`，ESM 桥 `new Function('spec','return import(spec)')`，加载失败 promise 缓存复位可重试）
+- **句切分适配层**（`sentence-adapter.ts`）：`streaming:'none'` 引擎按句 synthesize 立即 yield，统一流式语义（中英标点切分 + 100 字符硬切）
+- **插件接口**（legacy 形态）：`module.exports = { name, capabilities?, voices(), synthesize(text,opts,ctx)→wav Buffer, synthesizeStream? }`；统一插件包新增 `tts` 贡献类型（`TtsContributionSpec`，PluginHost bindTts 原子推送）
+- **打断传播**：`POST /api/tts/interrupt { sessionId }` → abort 该 session 全部在途合成（`ttsInflight` Map 登记，stream 路由 close 时清理）；`/api/tts/stream` body 新增可选 `sessionId`，响应头带 `x-tts-sample-rate`
+- **许可红线**（内置只从安全档选）：ChatTTS/F5-TTS/Fish S2（非商用/研究许可）、IndexTTS（商用需授权）、edge-tts（微软 ToS）、Piper（GPL）**不内置**，仅可作用户自装插件；CosyVoice/GPT-SoVITS 等经 tts-plugins 接入
+- 测试：gateway jest 27 个 TTS 单测（registry/adapter/mimo/interrupt/loader/kokoro）；desktop bun 12 个 voice 单测（turn/silero hub/pcm-align/session 状态机）
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令
