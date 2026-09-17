@@ -50,6 +50,8 @@ export interface SlashDeps {
   copyReply(n: number): string
   /** /exit（别名 /quit）：退出 TUI。 */
   quitApp(): void
+  /** /usage：用量概览 overlay；返回错误文本或 null。 */
+  showUsage(): Promise<string | null>
 }
 
 
@@ -109,6 +111,8 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
       case 'exit':
         deps.quitApp()
         return null
+      case 'usage':
+        return deps.showUsage()
       default: {
         const gw = deps.gatewayCommands().find((c) => c.name === cmd || c.aliases?.includes(cmd))
         if (gw) return deps.runGatewayCommand(gw.name, args)

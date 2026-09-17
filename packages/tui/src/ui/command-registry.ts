@@ -47,6 +47,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
   { name: 'model', description: '选择模型（作用于后续消息）', category: '模型', immediate: true },
   { name: 'editor', description: '外部编辑器编辑输入（同 Ctrl+G）', category: '输入', immediate: true },
   { name: 'help', description: '快捷键帮助', category: '帮助', immediate: true },
+  { name: 'usage', description: '用量与成本概览', category: '帮助', aliases: ['cost'], immediate: true },
 ]
 
 /** 名字/别名 → 规范命令名；未知名 → null。 */

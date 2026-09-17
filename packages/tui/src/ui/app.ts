@@ -21,6 +21,7 @@ import { COMMAND_REGISTRY, resolveCommand } from './command-registry.ts'
 import { mergeCommands, type RemoteCommand } from './gateway-commands.ts'
 import { exportChat as exportChatToFile } from './export-chat.ts'
 import { lastAssistantText, copyToClipboard } from './copy-text.ts'
+import { usageLines } from './usage-overlay.ts'
 import { QueueOverlay } from './queue-overlay.ts'
 import { TranscriptSearchOverlay } from './transcript-search.ts'
 import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
@@ -162,7 +163,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       '  ! <command>     本地 shell（零成本，不进对话）',
       '  @路径 / /命令   编辑器补全',
       '',
-      ...helpLines(),
+      ...helpLines(mergeCommands([], gatewayCmds)),
       theme.dim('⚠ = 破坏性操作'),
     ].join('\n')
     model.helpVisible = true
@@ -488,6 +489,19 @@ export async function runApp(opts: AppOptions): Promise<void> {
       return `已复制第 ${n} 近回复（${text.length} 字符）`
     },
     quitApp: quitApp,
+    showUsage: async () => {
+      try {
+        const summary = await client.session.usageSummary({})
+        const overlay = tui.showOverlay(new Text(usageLines(summary).join('\n'), 1, 1), { width: '70%', maxHeight: 24, anchor: 'center' })
+        const off = tui.addInputListener((data) => {
+          if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) { off(); overlay.hide(); return { consume: true } }
+          return undefined
+        })
+        return null
+      } catch (e: any) {
+        return `usage 获取失败: ${String(e?.message ?? e).slice(0, 80)}`
+      }
+    },
   })
 
   // ── 布局：TabStrip / 内容区(grow) / StatusBar ──

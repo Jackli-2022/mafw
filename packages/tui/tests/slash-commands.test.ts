@@ -25,6 +25,10 @@ function harness(over: Partial<Record<string, any>> = {}) {
     waitwhat: async () => { calls.push('waitwhat'); return null },
     runGatewayCommand: async (name: string, args: string) => { calls.push(`gw:${name}:${args}`); return null },
     gatewayCommands: () => [],
+    quitApp: () => { calls.push('exit') },
+    exportChat: async () => { calls.push('export'); return null },
+    copyReply: (n: number) => { calls.push(`copy:${n}`); return 'ok' },
+    showUsage: async () => { calls.push('usage'); return null },
     ...over,
   }
   return { calls, deps, handler: createSlashHandler(deps as any) }
@@ -120,7 +124,22 @@ test('gateway alias resolves to canonical name for dispatch', async () => {
   assert.deepEqual(h.calls, ['gw:goal:x'])
 })
 
+test('exit triggers quit callback (alias quit)', async () => {
+  const h = harness()
+  await h.handler('exit', '')
+  await h.handler('quit', '')
+  assert.deepEqual(h.calls, ['exit', 'exit'])
+})
+
+test('usage/copy/export dispatch to their deps', async () => {
+  const h = harness()
+  assert.equal(await h.handler('usage', ''), null)
+  assert.equal(await h.handler('copy', '2'), 'ok')
+  assert.equal(await h.handler('export', ''), null)
+  assert.deepEqual(h.calls, ['usage', 'copy:2', 'export'])
+})
+
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'verbose', 'waitwhat'])
+  assert.deepEqual(names, ['btw', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
 })
