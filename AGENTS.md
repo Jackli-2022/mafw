@@ -174,6 +174,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - 主 UI：左侧 Rail(200px) + 上部 TabStrip + 内容区
 - 构建：`cd packages/desktop && npx electron-vite build`（main/preload/renderer 三段）；dev 用 bun 脚本（predev 仅拷图标，不再构建 opencode CLI）
 - 根 npm workspaces：`packages/*`；opencode-dev/ 已移除（2026-09-09），全部源码以 packages/ 为准
+- **Tray 系统托盘**（2026-09-17 重构，对齐 MS 通知区域指南 + Slack/Discord 惯例）：`src/main/tray.ts`（Electron 耦合层）+ 三个纯模块——`tray-toggle.ts`（单击 toggle：无窗口→create / 可见且聚焦→hide / 否则 show；双击=Open 防 toggle 双击抖动）、`tray-status.ts`（`countPending`/`trayTooltip`/`trayMenuStatusLabel` 纯函数 + 30s 轮询 `/api/approvals`+`/api/permissions` 的 fail-open poller，tooltip 与菜单状态行动态反映待审批数）、`close-decision.ts`（close 决策新增 `trayAvailable` 输入：无托盘图标时 hide-to-tray 会让窗口不可达，降级为真关）。`tray-prefs.ts`：closeToTray/trayIconEnabled/两个一次性提示标志。菜单 = 状态行(disabled) + Open MAFW + Close to tray 复选 + Quit MAFW；取消勾选 close-to-tray 首次弹窗告知"关最后窗口=退出应用并树杀 bundle gateway"（P0 静默杀栈修复）；首次 hide-to-tray 弹一次性 OS 通知（`tray-hint.ts`，windows.ts→tray-hint 单向 import 防循环）。Windows 用 icon.ico（不传 GUID——未签名 exe 下 GUID 绑死 exe 路径，换路径会让托盘创建失败）；macOS 不接 click handler（setContextMenu 后左键本就弹菜单，接了会双触发）。Config 页新增 Desktop 区块镜像两个开关（IPC `get-tray-prefs`/`set-tray-prefs` → `syncTrayPresence()` 热创建/销毁）
 
 ### 5.6 Rail 侧边栏数据流
 Rail 通过 `window.api.mafw.{namespace}.{method}(...)` 静态类型 API 获取数据：
@@ -657,7 +658,7 @@ opencode serve（4096）由 gateway 以 **sidecar 子进程**方式直接监管
   serve 崩溃原因不再静默；诊断同时依赖 watchdog 的 "Serve unhealthy" / recovery 日志
 - 经验：子进程型依赖必须配监督（检测点不能在启动时一次完事）；恢复动作必须完整
   （重启进程 ≠ 恢复连接，事件订阅要一并重连）；
-  **detached 环境下所有子进程 spawn 必须带 `windowsHide: true`**（python kernel / llamacpp / tray 均已带）
+  **detached 环境下所有子进程 spawn 必须带 `windowsHide: true`**（python kernel / llamacpp 均已带）
 
 ### 5.16 自更新（Self-Update，不依赖 desktop）
 

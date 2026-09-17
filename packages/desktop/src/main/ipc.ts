@@ -11,6 +11,8 @@ import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
 import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar } from "./windows"
+import { isCloseToTrayEnabled, isTrayIconEnabled, setCloseToTray, setTrayIconEnabled } from "./tray-prefs"
+import { syncTrayPresence } from "./tray"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 
@@ -264,6 +266,15 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("get-pinch-zoom-enabled", () => getPinchZoomEnabled())
   ipcMain.handle("set-pinch-zoom-enabled", (_event: IpcMainInvokeEvent, enabled: boolean) => {
     setPinchZoomEnabled(enabled)
+  })
+  ipcMain.handle("get-tray-prefs", () => ({
+    trayIcon: isTrayIconEnabled(),
+    closeToTray: isCloseToTrayEnabled(),
+  }))
+  ipcMain.handle("set-tray-prefs", (_event: IpcMainInvokeEvent, prefs: { trayIcon?: boolean; closeToTray?: boolean }) => {
+    if (typeof prefs?.trayIcon === "boolean") setTrayIconEnabled(prefs.trayIcon)
+    if (typeof prefs?.closeToTray === "boolean") setCloseToTray(prefs.closeToTray)
+    syncTrayPresence()
   })
   ipcMain.handle("set-titlebar", (event: IpcMainInvokeEvent, theme: TitlebarTheme) => {
     const win = BrowserWindow.fromWebContents(event.sender)

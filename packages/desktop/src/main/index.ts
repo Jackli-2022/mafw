@@ -40,7 +40,8 @@ import {
   setDockIcon,
   restoreMainWindows,
 } from "./windows"
-import { createTray } from "./tray"
+import { createTray, updateTrayPending } from "./tray"
+import { startTrayStatusPolling } from "./tray-status"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
 import { spawnWslSidecar } from "./wsl/sidecar"
@@ -341,6 +342,12 @@ const main = Effect.gen(function* () {
       username: "opencode",
       password: null,
     })
+    // Tray status: pending approvals/permissions → tooltip + menu status line.
+    const stopTrayStatus = startTrayStatusPolling({
+      getBaseUrl: () => gwUrl,
+      onPending: (pending) => updateTrayPending(pending),
+    })
+    app.once("will-quit", stopTrayStatus)
   } else {
     logger.error("MAFW Gateway failed to start")
     yield* Deferred.fail(serverReady, new Error("MAFW Gateway failed to start"))

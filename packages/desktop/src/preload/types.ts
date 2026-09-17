@@ -29,6 +29,10 @@ export type UpdaterAPI = {
 }
 
 export type LinuxDisplayBackend = "wayland" | "auto"
+export type TrayPrefs = {
+  trayIcon: boolean
+  closeToTray: boolean
+}
 export type TitlebarTheme = {
   mode: "light" | "dark"
   scheme?: "system" | "light" | "dark"
@@ -103,6 +107,8 @@ export type ElectronAPI = {
   setZoomFactor: (factor: number) => Promise<void>
   getPinchZoomEnabled: () => Promise<boolean>
   setPinchZoomEnabled: (enabled: boolean) => Promise<void>
+  getTrayPrefs: () => Promise<TrayPrefs>
+  setTrayPrefs: (prefs: Partial<TrayPrefs>) => Promise<void>
   onPinchZoomEnabledChanged: (cb: (enabled: boolean) => void) => () => void
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
   platform: string

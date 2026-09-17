@@ -19,7 +19,7 @@ interface ConfigSection {
   fields: [string, any][]
 }
 
-export type NavKey = "gateway" | "plugins" | "models" | "memory" | "usage" | "opencode" | "mafw"
+export type NavKey = "gateway" | "desktop" | "plugins" | "models" | "memory" | "usage" | "opencode" | "mafw"
 
 export function isNavKey(v: unknown): v is NavKey {
   return NAV_ITEMS.some(n => n.key === v)
@@ -27,6 +27,7 @@ export function isNavKey(v: unknown): v is NavKey {
 
 const NAV_ITEMS: { key: NavKey; icon: string; label: string; desc: string }[] = [
   { key: "gateway",  icon: "⚡", label: "Gateway",  desc: "管理 Gateway 进程状态、重启服务和查看日志" },
+  { key: "desktop",  icon: "🖥️", label: "Desktop",  desc: "托盘图标、关闭按钮行为等桌面集成" },
   { key: "plugins",  icon: "🧩", label: "Plugins",  desc: "切换 Runtime 引擎和媒体分析引擎" },
   { key: "models",   icon: "🤖", label: "Models",   desc: "配置记忆 worker 和媒体分析使用的 AI 模型" },
   { key: "memory",   icon: "🧠", label: "Memory",   desc: "记忆系统嵌入引擎（ONNX / llama.cpp / GPU 卸载）与向量索引" },
@@ -62,7 +63,31 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setLoading(false)
   }
 
-  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig() })
+  // ── Desktop integration (tray) prefs ──
+  const [trayPrefs, setTrayPrefs] = createSignal<{ trayIcon: boolean; closeToTray: boolean } | null>(null)
+
+  async function loadTrayPrefs() {
+    try {
+      setTrayPrefs(await window.api.getTrayPrefs())
+    } catch {
+      setTrayPrefs(null)
+    }
+  }
+
+  async function updateTrayPrefs(patch: { trayIcon?: boolean; closeToTray?: boolean }) {
+    const cur = trayPrefs()
+    if (!cur) return
+    const next = { ...cur, ...patch }
+    setTrayPrefs(next)
+    try {
+      await window.api.setTrayPrefs(patch)
+    } catch {
+      setTrayPrefs(cur)
+      showToastV2({ description: "托盘设置保存失败", duration: 3000 })
+    }
+  }
+
+  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig(); loadTrayPrefs() })
 
   // Dock "配置" requests arrive as window events; the config page can already be
   // mounted when one fires, so listen here instead of relying on mount-time props.
@@ -696,6 +721,44 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                         </div>
                       )}
                     </For>
+                  </div>
+                </Show>
+              </div>
+            </div>
+          </Show>
+
+          {/* ═══ Desktop ═══*/}
+          <Show when={activeNav() === "desktop"}>
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">🖥️</span>
+                <span class="mafw-config-section-title">桌面集成</span>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  系统托盘与窗口关闭行为。托盘图标悬浮提示会显示待审批数量；单击图标显示/隐藏窗口。
+                </div>
+                <Show when={trayPrefs()} fallback={<div class="mafw-empty" style={{ padding: "8px 0" }}>读取设置失败</div>}>
+                  <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                    <div style={{ flex: 1 }}>
+                      <div class="mafw-card-title">显示托盘图标</div>
+                      <div class="mafw-card-meta">关闭后不再显示系统托盘图标，"关闭到托盘"随之失效</div>
+                    </div>
+                    <SwitchV2 checked={trayPrefs()!.trayIcon} onChange={(v) => void updateTrayPrefs({ trayIcon: v })} hideLabel />
+                  </div>
+                  <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                    <div style={{ flex: 1 }}>
+                      <div class="mafw-card-title">关闭到托盘</div>
+                      <div class="mafw-card-meta">
+                        开启：点 X 隐藏窗口到托盘，应用继续运行。关闭：关闭最后一个窗口会退出 MAFW Desktop——打包模式下内置 Gateway 也会随之停止。
+                      </div>
+                    </div>
+                    <SwitchV2
+                      checked={trayPrefs()!.closeToTray}
+                      disabled={!trayPrefs()!.trayIcon}
+                      onChange={(v) => void updateTrayPrefs({ closeToTray: v })}
+                      hideLabel
+                    />
                   </div>
                 </Show>
               </div>

@@ -14,7 +14,8 @@ import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowRegistry } from "./window-registry"
 import { windowCloseAction } from "./close-decision"
-import { isCloseToTrayEnabled } from "./tray-prefs"
+import { isCloseToTrayEnabled, isTrayIconEnabled } from "./tray-prefs"
+import { notifyHiddenToTray } from "./tray-hint"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -94,6 +95,13 @@ function iconPath() {
 
 export function trayIconPath() {
   return join(iconsDir(), "icon.png")
+}
+
+// Tray icon for the Tray itself: .ico is the recommended format on Windows
+// (best visual results per Electron docs); png elsewhere. Distinct from
+// trayIconPath(), which stays png for Notification icons.
+export function trayIconImagePath() {
+  return process.platform === "win32" ? join(iconsDir(), "icon.ico") : trayIconPath()
 }
 
 function tone() {
@@ -221,15 +229,17 @@ function registerWindow(win: BrowserWindow, id: string) {
 
   win.on("focus", () => registry.focused(id))
   // Close-to-tray: hide instead of destroying while the app keeps running
-  // (the MAFW gateway daemon is independent and keeps working).
+  // (requires a tray icon to come back from — see close-decision.ts).
   win.on("close", (event) => {
     const action = windowCloseAction({
       isQuitting: registry.isQuitting(),
       closeToTray: isCloseToTrayEnabled(),
+      trayAvailable: isTrayIconEnabled(),
     })
     if (action === "hide-to-tray") {
       event.preventDefault()
       win.hide()
+      notifyHiddenToTray(trayIconPath())
     }
   })
   const notifyMaximized = () => {
