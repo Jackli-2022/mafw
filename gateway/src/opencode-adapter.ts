@@ -263,7 +263,8 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
 
       question: {
         async list(opts?: { directory?: string }) {
-          const result = await (client.session as any).question.list(
+          // SDK 1.18.x：question 是 OpencodeClient 顶层命名空间（session 上没有）
+          const result = await client.question.list(
             opts?.directory ? { directory: opts.directory } : undefined,
           );
           const data = unwrap<any>(result);
@@ -274,7 +275,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
             await directNative(`/question/${opts.requestID}/reply`, 'POST', { answers: opts.answers }, opts.directory);
             return;
           }
-          const result = await (client.session as any).question.reply({
+          const result = await client.question.reply({
             requestID: opts.requestID,
             answers: opts.answers,
           });
@@ -287,7 +288,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
             await directNative(`/question/${opts.requestID}/reject`, 'POST', undefined, opts.directory);
             return;
           }
-          const result = await (client.session as any).question.reject({ requestID: opts.requestID });
+          const result = await client.question.reject({ requestID: opts.requestID });
           if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
             throw new Error(String((result as any).error));
           }

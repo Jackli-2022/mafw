@@ -6,13 +6,14 @@
 import { createOpencodeAdapter } from '../../src/opencode-adapter';
 
 const sdkCalls: Array<{ method: string; args: any }> = [];
+// 形状对齐真实 SDK 1.18.x：question 是顶层命名空间，session 上没有
 const mockClient: any = {
+  question: {
+    list: jest.fn(async () => ({ data: [] })),
+    reply: jest.fn(async (...a: any[]) => { sdkCalls.push({ method: 'reply', args: a }); return {}; }),
+    reject: jest.fn(async (...a: any[]) => { sdkCalls.push({ method: 'reject', args: a }); return {}; }),
+  },
   session: {
-    question: {
-      list: jest.fn(async () => ({ data: [] })),
-      reply: jest.fn(async (...a: any[]) => { sdkCalls.push({ method: 'reply', args: a }); return {}; }),
-      reject: jest.fn(async (...a: any[]) => { sdkCalls.push({ method: 'reject', args: a }); return {}; }),
-    },
     permission: {
       reply: jest.fn(async () => ({})),
     },
@@ -58,7 +59,7 @@ describe('opencode-adapter permission/question contract surface', () => {
     it('no directory → SDK path (unchanged)', async () => {
       const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
       await rt.session.question!.reply({ requestID: 'q1', answers: [['a']] });
-      expect(mockClient.session.question.reply).toHaveBeenCalledWith({ requestID: 'q1', answers: [['a']] });
+      expect(mockClient.question.reply).toHaveBeenCalledWith({ requestID: 'q1', answers: [['a']] });
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
@@ -66,7 +67,7 @@ describe('opencode-adapter permission/question contract surface', () => {
       fetchSpy.mockResolvedValue(new Response('{}', { status: 200 }));
       const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096', directory: '/proj' });
       await rt.session.question!.reply({ requestID: 'q1', answers: [['a']], directory: '/other' });
-      expect(mockClient.session.question.reply).not.toHaveBeenCalled();
+      expect(mockClient.question.reply).not.toHaveBeenCalled();
       const [url, init]: [string, RequestInit] = fetchSpy.mock.calls[0];
       expect(url).toBe('http://127.0.0.1:4096/question/q1/reply?directory=%2Fother');
       expect(init.method).toBe('POST');
@@ -78,7 +79,7 @@ describe('opencode-adapter permission/question contract surface', () => {
       fetchSpy.mockResolvedValue(new Response('{}', { status: 200 }));
       const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
       await rt.session.question!.reject({ requestID: 'q2', directory: '/w2' });
-      expect(mockClient.session.question.reject).not.toHaveBeenCalled();
+      expect(mockClient.question.reject).not.toHaveBeenCalled();
       const [url, init]: [string, RequestInit] = fetchSpy.mock.calls[0];
       expect(url).toBe('http://127.0.0.1:4096/question/q2/reject?directory=%2Fw2');
       expect(init.method).toBe('POST');

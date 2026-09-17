@@ -1,6 +1,13 @@
 import { createOpencodeAdapter } from '../../../src/opencode-adapter';
 
 const mockClient = {
+  // 形状对齐真实 SDK 1.18.x（OpencodeClient）：question 是顶层命名空间，
+  // session 上没有 question（曾因 mock 假形状漏掉生产 TypeError reading 'list'）
+  question: {
+    list: jest.fn(async (params?: any) => ({ data: [{ id: 'q1' }] })),
+    reply: jest.fn(async (params: any) => ({})),
+    reject: jest.fn(async (params: any) => ({})),
+  },
   session: {
     fork: jest.fn(async (opts: any) => ({ id: 'ses_forked', ...opts })),
     revert: jest.fn(async () => ({})),
@@ -15,11 +22,6 @@ const mockClient = {
     promptAsync: jest.fn(async () => ({})),
     permission: {
       reply: jest.fn(async () => ({})),
-    },
-    question: {
-      list: jest.fn(async () => ({ items: [{ id: 'q1' }] })),
-      reply: jest.fn(async () => ({})),
-      reject: jest.fn(async () => ({})),
     },
   },
 };
@@ -73,14 +75,27 @@ describe('opencode adapter branch + envelope', () => {
     expect(ok).toBe(true);
   });
 
-  it('question list/reply/reject pass through', async () => {
+  it('question list/reply/reject route to the SDK top-level question namespace', async () => {
     const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
     const items = await client.session.question!.list();
+    expect(mockClient.question.list).toHaveBeenCalledWith(undefined);
     expect(items).toEqual([{ id: 'q1' }]);
+    await client.session.question!.list({ directory: 'C:\\proj' });
+    expect(mockClient.question.list).toHaveBeenLastCalledWith({ directory: 'C:\\proj' });
     await client.session.question!.reply({ requestID: 'q1', answers: [['a', 'b']] });
-    expect(mockClient.session.question.reply).toHaveBeenCalledWith({ requestID: 'q1', answers: [['a', 'b']] });
-    await client.session.question!.reject({ requestID: 'q1' });
-    expect(mockClient.session.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
+    expect(mockClient.question.reply).toHaveBeenCalledWith({ requestID: 'q1', answers: [['a', 'b']] });
+    // directory 变体走 directNative（x-opencode-directory header）——mock fetch 验证不抛
+    const savedFetch = globalThis.fetch;
+    (globalThis as any).fetch = (async () => ({ ok: true, status: 200, json: async () => ({}) })) as any;
+    try {
+      await client.session.question!.reply({ requestID: 'q1', answers: [['a']], directory: 'C:\\proj' });
+      await client.session.question!.reject({ requestID: 'q1' });
+      expect(mockClient.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
+      await client.session.question!.reject({ requestID: 'q1', directory: 'C:\\proj' });
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+    expect(mockClient.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
   });
 
   it('promptAsync maps expectReply=false to noReply', async () => {
