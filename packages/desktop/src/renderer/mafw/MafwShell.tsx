@@ -1440,7 +1440,9 @@ export function MafwShell() {
         const prev = trajectoryLive()[sid] || []
         // dedup by (turnID, seq); seq may be number or string across sources
         if (!prev.some((e: any) => String(e.turnID ?? e.turn_id ?? 0) === String(props.turnID ?? props.turn_id ?? 0) && String(e.seq ?? 0) === String(props.seq ?? 0))) {
-          setTrajectoryLive({ ...trajectoryLive(), [sid]: [...prev, props] })
+          // 滚动窗口：长会话 liveEvents 无限增长会让 displayedEvents 每事件全量 merge+sort
+          const merged = [...prev, props].slice(-200)
+          setTrajectoryLive({ ...trajectoryLive(), [sid]: merged })
         }
         return
       }

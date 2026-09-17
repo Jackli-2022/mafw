@@ -47,22 +47,11 @@ export function TrajectoryDock(props: {
 
   createEffect(() => {
     const sid = props.sessionID
-    console.log("[TrajectoryDock] sessionID changed:", sid, "loadedFor:", loadedFor)
     if (!sid) return
     if (loadedFor !== sid) {
       loadedFor = sid
       void load()
     }
-  })
-
-  createEffect(() => {
-    const live = props.liveEvents || []
-    console.log("[TrajectoryDock] liveEvents updated:", live.length, "events for session:", props.sessionID)
-  })
-
-  createEffect(() => {
-    const t = props.liveTurn
-    console.log("[TrajectoryDock] liveTurn updated:", t ? `turnID=${t.turnID ?? t.turn_id}` : "null")
   })
 
   const displayedEvents = createMemo(() => {
