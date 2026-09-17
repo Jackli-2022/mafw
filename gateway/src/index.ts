@@ -2462,9 +2462,13 @@ class MafwScheduler {
     return new Promise<void>((resolve) => {
       // P5 Wave 1: catalog shadow 登记 + 模块 handler 绑定（一次性，重复 attach 会抛错）。
       // adapter 显式桥接私有成员（结构化类型不认 private）。
+      // opencodeClient/runtimeCaps 必须是 getter（活引用）：attach 发生在 startApiServer，
+      // 早于 runtime 初始化（441 行）与热切换重赋值——字面量快照会让 session.fork 等
+      // 路由永远拿到 null/旧 capabilities（P5 引入的回归，2026-09-17 修复）。
+      const gwSelf = this;
       attachWave1Handlers(this.routeRegistry, {
         getGatewayDb: () => this.getGatewayDb(),
-        opencodeClient: this.opencodeClient,
+        get opencodeClient() { return gwSelf.opencodeClient; },
         automationEngine: this.automationEngine,
         ledger: this.ledger,
         rotateDeps: () => this.rotateDeps(),
@@ -2474,7 +2478,7 @@ class MafwScheduler {
         pluginLoader: this.pluginLoader,
         mediaPluginLoader: this.mediaPluginLoader,
         broadcast: (e) => this.broadcast(e),
-        runtimeCaps: this.runtimeCaps,
+        get runtimeCaps() { return gwSelf.runtimeCaps; },
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),
