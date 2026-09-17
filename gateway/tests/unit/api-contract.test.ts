@@ -1,18 +1,25 @@
 /**
- * P1 契约漂移防线（gateway 侧）：contract/openapi.json 的每条 SDK-facing
- * operation 必须在 gateway/src 源码中有路由落地（=== 字面量 / startsWith 前缀 /
- * /^...$/ 正则三种匹配器，路径参数归一化为 {}）。
+ * P4 契约防线（gateway 侧）：spec 事实源已收敛到 routes/route-catalog.ts，本测试守两条：
+ *
+ * A. phantom 检查 —— catalog 每条路由必须在 gateway 源码的路由面上有落地
+ *    （=== 字面量 / startsWith 前缀 / /^...$/ 正则三种匹配器，路径参数归一化为 {}），
+ *    防 catalog 登记了实际不存在的端点。
+ * B. 新鲜度 —— contract/openapi.json 的 paths/operationId 必须与 catalog 重新生成的
+ *    结果一致，防 catalog 改了忘跑 emit:openapi（陈旧产物）。
  *
  * 用法：npx jest tests/unit/api-contract.test.ts
- * 删改 gateway 路由前先更新 contract（SDK 侧测试同步红），否则本测试红。
+ * 新增 gateway 路由：登记进 route-catalog.ts → npm run emit:openapi → (sdk) npm run gen:api。
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { RouteRegistry, toOpenApiPath } from '../../src/routes/registry';
+import { buildRouteCatalog } from '../../src/routes/route-catalog';
 
 const CONTRACT_PATH = join(__dirname, '..', '..', '..', 'packages', 'gateway-sdk', 'contract', 'openapi.json');
 const GATEWAY_SRC = join(__dirname, '..', '..', 'src');
 
 const contract = JSON.parse(readFileSync(CONTRACT_PATH, 'utf-8'));
+const registry = new RouteRegistry().register(...buildRouteCatalog());
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -26,7 +33,7 @@ function walk(dir: string): string[] {
   return out;
 }
 
-// ── gateway 路由面采集 ──
+// ── gateway 源码路由面采集 ──
 
 const exactRoutes = new Set<string>();
 const prefixRoutes = new Set<string>();
@@ -34,12 +41,12 @@ const regexRoutes = new Set<string>();
 
 /** 正则体 → 归一化路径：\/→/、去锚点、去非捕获组、捕获组→{}。 */
 function normalizeRegexBody(body: string): string | null {
-  let s = body.replace(/\\(.)/g, '$1'); // \/ → /, \. → ., \- → -
+  let s = body.replace(/\\(.)/g, '$1');
   s = s.replace(/^\^/, '').replace(/\$$/, '');
-  s = s.replace(/\(\?:[^)]*\)/g, ''); // 非捕获组（(?:\?|$) 等）剥离
-  s = s.replace(/\(([^()]*)\)/g, '{}'); // 捕获组 → {}
+  s = s.replace(/\(\?:[^)]*\)/g, '');
+  s = s.replace(/\(([^()]*)\)/g, '{}');
   if (!s.startsWith('/')) return null;
-  if (/[^a-zA-Z0-9\/\-_.:{}]/.test(s)) return null; // 仍含量词/字符类 → 不是纯路径形状
+  if (/[^a-zA-Z0-9\/\-_.:{}]/.test(s)) return null;
   return s;
 }
 
@@ -79,12 +86,12 @@ beforeAll(() => {
 });
 
 /**
- * 由 index.ts 末尾的反代兜底（"Reverse proxy to the agent backend for non-MAFW routes"，
- * ~5117 行）服务的契约路径——无独立路由匹配器，透传 opencode serve。
+ * 由 index.ts 末尾的反代兜底（"Reverse proxy to the agent backend for non-MAFW routes"）
+ * 服务的契约路径——无独立路由匹配器，透传 opencode serve。
  */
 const REVERSE_PROXY_PATHS = new Set(['/command', '/skill']);
 
-/** contract 路径是否被 gateway 路由面覆盖。 */
+/** 归一化路径是否被源码路由面覆盖。 */
 function isCovered(normPath: string): boolean {
   if (exactRoutes.has(normPath) || regexRoutes.has(normPath)) return true;
   if (REVERSE_PROXY_PATHS.has(normPath)) return true;
@@ -94,22 +101,44 @@ function isCovered(normPath: string): boolean {
   return false;
 }
 
-describe('api-contract: gateway 路由落地', () => {
-  const missing: string[] = [];
-
-  test('每条 contract operation 都有 gateway 路由', () => {
-    for (const [path, methods] of Object.entries<any>(contract.paths)) {
-      const normPath = path.replace(/\{[^}]+\}/g, '{}');
-      if (!isCovered(normPath)) missing.push(`${Object.keys(methods).map((m) => m.toUpperCase()).join('/')} ${normPath}`);
+describe('api-contract: catalog phantom 检查', () => {
+  test('catalog 每条路由在 gateway 源码有落地', () => {
+    const phantom: string[] = [];
+    for (const def of registry.list()) {
+      const normPath = toOpenApiPath(def.path).replace(/\{[^}]+\}/g, '{}');
+      if (!isCovered(normPath)) phantom.push(`${def.method} ${normPath} (${def.operationId})`);
     }
-    if (missing.length) console.error('[api-contract] 未落地的契约路径:\n' + missing.join('\n'));
-    expect(missing).toEqual([]);
+    if (phantom.length) console.error('[api-contract] catalog 幻影路由:\n' + phantom.join('\n'));
+    expect(phantom).toEqual([]);
   });
 
-  test('本次两个漂移 bug 的回归锚点', () => {
-    expect(exactRoutes.has('/api/goals/control')).toBe(true);
-    expect(regexRoutes.has('/api/triage/{}/dismiss')).toBe(true);
-    expect(regexRoutes.has('/api/triage/{}/confirm')).toBe(true);
-    expect(regexRoutes.has('/api/triage/{}/reject')).toBe(true);
+  test('本次两个漂移 bug 的回归锚点（catalog 内）', () => {
+    const ids = new Set(registry.list().map((d) => d.operationId));
+    expect(ids.has('triage.dismiss')).toBe(true);
+    expect(ids.has('goals.control')).toBe(true);
+    expect(ids.has('goals.respondQuestion')).toBe(true);
+  });
+});
+
+describe('api-contract: contract 产物新鲜度', () => {
+  test('openapi.json paths/operationId ≡ catalog 当前生成结果', () => {
+    const expected = registry.toOpenApiPaths();
+    const contractPaths = contract.paths as Record<string, any>;
+    const missing = Object.keys(expected).filter((p) => !(p in contractPaths));
+    const extra = Object.keys(contractPaths).filter((p) => !(p in expected));
+    const idDrift: string[] = [];
+    for (const [p, methods] of Object.entries<any>(expected)) {
+      const cp = contractPaths[p];
+      if (!cp) continue;
+      for (const [m, op] of Object.entries<any>(methods)) {
+        if (!cp[m]) { idDrift.push(`${m.toUpperCase()} ${p} 缺失`); continue; }
+        if (cp[m].operationId !== op.operationId) idDrift.push(`${m.toUpperCase()} ${p}: ${cp[m].operationId} ≠ ${op.operationId}`);
+      }
+    }
+    const problems = [...missing.map((p) => `contract 缺 path ${p}`), ...extra.map((p) => `contract 多 path ${p}`), ...idDrift];
+    if (problems.length) {
+      console.error('[api-contract] 契约产物过期 —— 先跑: (gateway) npm run emit:openapi && (sdk) npm run gen:api\n' + problems.join('\n'));
+    }
+    expect(problems).toEqual([]);
   });
 });
