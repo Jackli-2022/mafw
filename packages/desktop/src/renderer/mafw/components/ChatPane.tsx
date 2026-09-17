@@ -38,6 +38,13 @@ export type FlowCardRecord =
 // 已自动播放过的语音回复 artifact（防历史重载/重渲染重复播放）
 const playedVoiceArtifacts = new Set<string>()
 
+// TTS 引擎来源徽标文案（/api/tts/voices engines[].source）
+const TTS_ENGINE_SOURCE_LABEL: Record<string, string> = {
+  builtin: "内置引擎",
+  legacy: "本地插件（~/.mafw/tts-plugins/）",
+  package: "插件包",
+}
+
 // [语音回复 art:<id> 音色:<voice> h:<hash>]
 const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+?))?(?:\s+h:([a-f0-9]{8}))?\]/g
 
@@ -180,6 +187,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [ttsVoices, setTtsVoices] = createSignal<{ id: string; label: string; lang: string }[]>([])
   const [ttsVoiceSel, setTtsVoiceSel] = createSignal<string | null>(null)
   const [ttsStyle, setTtsStyle] = createSignal("")
+  // TTS 引擎（/api/tts/voices 返回 engine/engines；切换持久化到 media.tts.engine）
+  const [ttsEngines, setTtsEngines] = createSignal<{ name: string; source: string }[]>([])
+  const [ttsEngine, setTtsEngine] = createSignal<string>("mimo")
   const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
@@ -1140,16 +1150,39 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     } catch { /* ignore */ }
   })
 
+  const loadTtsVoices = async (force = false) => {
+    if (!force && ttsVoices().length > 0) return
+    try {
+      const data: any = await window.api.mafw.tts.voices()
+      if (data?.voices) setTtsVoices(data.voices)
+      if (data?.defaultVoice) setTtsVoiceSel(v => v || data.defaultVoice)
+      if (data?.engine) setTtsEngine(data.engine)
+      if (Array.isArray(data?.engines)) setTtsEngines(data.engines)
+    } catch (e) { console.warn("[mafw] tts voices fetch:", e) }
+  }
+
   const openTtsPicker = async () => {
-    if (ttsVoices().length === 0) {
+    await loadTtsVoices()
+    setPickerTrigger(textareaEl())
+    setPickerOpen("tts")
+  }
+
+  // TTS 引擎切换：持久化 + 重载该引擎的音色表（音色随引擎不同）
+  const selectTtsEngine = async (name: string) => {
+    if (name === ttsEngine()) return
+    try {
+      await window.api.mafw.config.set("media.tts.engine", name)
+      setTtsEngine(name)
+      setTtsVoiceSel(null)
       try {
         const data: any = await window.api.mafw.tts.voices()
         if (data?.voices) setTtsVoices(data.voices)
-        if (data?.defaultVoice) setTtsVoiceSel(v => v || data.defaultVoice)
-      } catch (e) { console.warn("[mafw] tts voices fetch:", e) }
+        if (data?.defaultVoice) setTtsVoiceSel(data.defaultVoice)
+      } catch { /* 保留旧列表，fail-open */ }
+      showToastV2({ description: `TTS 引擎：${name}`, duration: 2000 })
+    } catch (e: any) {
+      showToastV2({ description: `引擎切换失败: ${e?.message || String(e)}`, duration: 3000 })
     }
-    setPickerTrigger(textareaEl())
-    setPickerOpen("tts")
   }
 
   const selectTtsVoice = async (id: string, label: string) => {
@@ -2141,6 +2174,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 onClick={() => { console.log("[voice] speak from picker"); void speakText() }}
               >{ttsSpeaking() ? "播报中…" : "🔊 播报"}</ButtonV2>
             </div>
+            <Show when={ttsEngines().length > 0}>
+              <div class="mafw-picker-group-label">引擎</div>
+              <div class="mafw-tts-engines">
+                <For each={ttsEngines()}>
+                  {(e) => (
+                    <TooltipV2 value={TTS_ENGINE_SOURCE_LABEL[e.source] ?? e.source} openDelay={300}>
+                      <ButtonV2
+                        variant={ttsEngine() === e.name ? "contrast" : "ghost"}
+                        size="small"
+                        class="mafw-tts-engine-chip"
+                        onClick={() => void selectTtsEngine(e.name)}
+                      >{e.name}</ButtonV2>
+                    </TooltipV2>
+                  )}
+                </For>
+              </div>
+            </Show>
             <div class="mafw-picker-title">语音音色</div>
             <Show when={ttsVoices().length > 0} fallback={<div class="mafw-picker-empty">正在加载音色…</div>}>
               <div class="mafw-tts-list">
