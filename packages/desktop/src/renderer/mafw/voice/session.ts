@@ -227,7 +227,9 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
     try {
       await playStream(t, voice || deps.defaultVoice(), abort.signal)
     } catch (e: any) {
-      // barge-in 打断不兜底重播；其余失败回退整段 wav 路径（沿用现状）
+      // barge-in 打断不兜底重播；其余失败回退整段 wav 路径（沿用现状）。
+      // 打印真实错误——此前被上层 catch(() => {}) 吞掉，流式失败只能靠兜底延迟感知。
+      console.warn("[voice] stream playback failed, falling back to whole-wav:", e?.name, e?.message || e)
       if (e?.name === "AbortError") throw e
       if (deps.speakFallback) {
         const r = await deps.speakFallback(t, voice || deps.defaultVoice())

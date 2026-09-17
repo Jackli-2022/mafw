@@ -39,7 +39,9 @@ export async function createAudioWorkletPlayer(ctx: AudioContext): Promise<Audio
   }
 
   return {
-    feed(pcm: Int16Array) { node.port.postMessage({ type: "feed", pcm }, [pcm.buffer]) },
+    // 不能用 transferList 转移 pcm.buffer：aligned/remainder 与该 buffer 同源，
+    // transfer 会立即 detach 它，跨块残余（remainder）随之损坏（流式播放静默失败）。
+    feed(pcm: Int16Array) { node.port.postMessage({ type: "feed", pcm }) },
     flush() { node.port.postMessage({ type: "flush" }) },
     markEof() { node.port.postMessage({ type: "eof" }) },
     get playCursorMs() { return Math.round((renderedFrames / ctx.sampleRate) * 1000) },
