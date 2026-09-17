@@ -519,13 +519,24 @@ export class MafwClient implements IMafwClient {
   config = {
     get: async (key?: string): Promise<any> => {
       const data = await this.request<any>('/api/config')
-      return key ? data[key] : data
+      if (!key) return data
+      // dotted 语义路径（media.tts.engine）走嵌套读取；字面顶层 key（含历史扁平写残留）兜底
+      const nested = key.split('.').reduce<any>((acc, k) => (acc && typeof acc === 'object' ? acc[k] : undefined), data)
+      return nested !== undefined ? nested : data[key]
     },
     set: async (key: string, value: any): Promise<void> => {
       // NOTE: read-then-write pattern 鈥?concurrent set() calls will race.
       // The backend should support PATCH for individual keys to avoid lost updates.
       const current = await this.request<any>('/api/config')
-      current[key] = value
+      // dotted key 展开为嵌套写入（media.tts.engine → {media:{tts:{engine}}}），
+      // 否则 yaml.dump 会固化顶层带点 key，gateway 嵌套读取永远 miss
+      const parts = key.split('.')
+      let cursor = current
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!cursor[parts[i]] || typeof cursor[parts[i]] !== 'object') cursor[parts[i]] = {}
+        cursor = cursor[parts[i]]
+      }
+      cursor[parts[parts.length - 1]] = value
       await this.fetchPath(`/api/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

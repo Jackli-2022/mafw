@@ -17,15 +17,18 @@ import type { PcmChunk, TtsEngine, TtsOpts, TtsVoice } from './types';
 
 const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 
-/** 音色子集（kokoro 全量见模型卡；zh 用 zf_/zm_ 前缀，en 用 af_/am_ 前缀）。 */
+/**
+ * v1.0 音色集（kokoro-js 1.2.1 硬编码校验，无中文 zf_/zm_——v1.1-zh 不被支持）。
+ * 定位：英文离线兜底；中文离线兜底待 sherpa-onnx VITS-zh / MeloTTS sidecar（§8 后续方向）。
+ */
 const KOKORO_VOICES: TtsVoice[] = [
-  { id: 'zf_xiaobei', label: '小北（中文女声）', lang: 'zh' },
-  { id: 'zf_xiaoni', label: '小妮（中文女声）', lang: 'zh' },
   { id: 'af_heart', label: 'Heart (EN female)', lang: 'en' },
+  { id: 'af_nova', label: 'Nova (EN female)', lang: 'en' },
   { id: 'am_michael', label: 'Michael (EN male)', lang: 'en' },
+  { id: 'am_fenrir', label: 'Fenrir (EN male)', lang: 'en' },
 ];
 
-const DEFAULT_VOICE = 'zf_xiaobei';
+const DEFAULT_VOICE = 'af_heart';
 
 export function createKokoroEngine(deps: {
   modelsDir: string;
@@ -51,10 +54,19 @@ export function createKokoroEngine(deps: {
             `离线兜底引擎需要 optional dependency：cd gateway && npm i kokoro-js`,
           );
         }
-        log.info('[TTS] loading kokoro model (first use downloads ~90MB)');
+        log.info('[TTS] loading kokoro model (first use downloads ~90MB; slow network → set HF_ENDPOINT=https://hf-mirror.com for mirror)');
+        const lastPct = { v: 0 };
         const tts = await mod.KokoroTTS.from_pretrained(MODEL_ID, {
           dtype: 'q8',
           cache_dir: path.join(deps.modelsDir, 'kokoro'),
+          progress_callback: (p: any) => {
+            if (p?.status === 'progress' && typeof p.progress === 'number') {
+              const pct = Math.floor(p.progress);
+              if (pct >= lastPct.v + 25) { lastPct.v = pct; log.info(`[TTS] kokoro model download: ${pct}%`); }
+            }
+          },
+        }).catch((err: any) => {
+          throw new Error(`kokoro 模型加载失败（${err?.message ?? String(err)}）。首次使用需下载 ~90MB 模型；网络不通时设置环境变量 HF_ENDPOINT=https://hf-mirror.com 走镜像后重启 gateway`);
         });
         log.info('[TTS] kokoro model ready');
         return tts;

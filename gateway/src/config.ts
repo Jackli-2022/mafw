@@ -441,12 +441,12 @@ export class Config {
     const data = defaults(pd);
 
     const globalFile = data.paths.globalConfig;
-    this.deepMerge(data, this.loadYaml(globalFile));
+    this.deepMerge(data, this.normalizeDottedKeys(this.loadYaml(globalFile)));
 
     // Project-level config now lives in the fixed data directory (migrated
     // with the memory store) rather than the project-relative .mafw.
     const projectFile = path.join(this.dataDirValue, 'config.yaml');
-    this.deepMerge(data, this.loadYaml(projectFile));
+    this.deepMerge(data, this.normalizeDottedKeys(this.loadYaml(projectFile)));
 
     this.applyEnvOverrides(data);
     return data;
@@ -558,6 +558,29 @@ export class Config {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 历史遗留：SDK config.set 曾把 dotted key（media.tts.engine）当字面顶层 key
+   * 写进 yaml。归一化为嵌套结构（media.tts.engine），嵌套读取不再 miss；
+   * 字面 key 与嵌套同名时嵌套优先（保留 deepMerge 后的既有效值不被覆盖）。
+   */
+  private normalizeDottedKeys(obj: Partial<GatewayConfig> | null): Partial<GatewayConfig> | null {
+    if (!obj || typeof obj !== 'object') return obj;
+    const dotted = Object.keys(obj).filter((k) => k.includes('.'));
+    for (const key of dotted) {
+      const value = (obj as any)[key];
+      delete (obj as any)[key];
+      const parts = key.split('.');
+      let cursor: any = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!cursor[parts[i]] || typeof cursor[parts[i]] !== 'object') cursor[parts[i]] = {};
+        cursor = cursor[parts[i]];
+      }
+      const leaf = parts[parts.length - 1];
+      if (cursor[leaf] === undefined) cursor[leaf] = value;
+    }
+    return obj;
   }
 
   private deepMerge(target: any, source: any): void {

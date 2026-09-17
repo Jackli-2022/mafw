@@ -7,7 +7,8 @@ describe('kokoro engine', () => {
     expect(e.capabilities.streaming).toBe('none');
     expect(e.capabilities.sampleRate).toBe(24000);
     expect(e.voices().length).toBeGreaterThan(0);
-    expect(e.voices().some(v => v.lang === 'zh')).toBe(true);
+    // kokoro-js 1.2.1 硬编码 v1.0 英文音色集（无 zf_/zm_ 中文）——中文离线兜底待 sherpa-onnx/MeloTTS
+    expect(e.voices().every(v => v.lang === 'en')).toBe(true);
   });
 
   test('synthesize wraps missing kokoro-js into actionable error', async () => {
