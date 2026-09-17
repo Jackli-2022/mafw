@@ -487,6 +487,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       copyToClipboard(text, (s) => tui.terminal.write(s))
       return `已复制第 ${n} 近回复（${text.length} 字符）`
     },
+    quitApp: quitApp,
   })
 
   // ── 布局：TabStrip / 内容区(grow) / StatusBar ──

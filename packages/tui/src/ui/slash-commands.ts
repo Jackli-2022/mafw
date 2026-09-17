@@ -48,6 +48,8 @@ export interface SlashDeps {
   exportChat(): Promise<string | null>
   /** /copy [N]：复制第 N 近回复到剪贴板；返回提示文本。 */
   copyReply(n: number): string
+  /** /exit（别名 /quit）：退出 TUI。 */
+  quitApp(): void
 }
 
 
@@ -104,6 +106,9 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
         const n = parseInt(args.trim(), 10)
         return deps.copyReply(Number.isNaN(n) || n < 1 ? 1 : n)
       }
+      case 'exit':
+        deps.quitApp()
+        return null
       default: {
         const gw = deps.gatewayCommands().find((c) => c.name === cmd || c.aliases?.includes(cmd))
         if (gw) return deps.runGatewayCommand(gw.name, args)

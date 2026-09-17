@@ -122,5 +122,5 @@ test('gateway alias resolves to canonical name for dispatch', async () => {
 
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'copy', 'diff', 'editor', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'verbose', 'waitwhat'])
+  assert.deepEqual(names, ['btw', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'verbose', 'waitwhat'])
 })
