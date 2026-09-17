@@ -276,6 +276,13 @@ onMount → gateway.info() 等 ready
 - **`mafw tui --session <id>`**：cli.ts parseArgs 显式连接指定会话（fork 后跳转、调试用）；**入口守卫**——cli.ts 顶层 main() 改为 `import.meta.url === pathToFileURL(process.argv[1]).href` 才执行（测试 import 解析参数不再触发网络探测，曾导致测试套 180s 挂死）
 - 测试 167（166 过/1 冒烟条件跳过，MAFW_TUI_SMOKE=1 时真跑）
 
+#### 5.9b.6 TUI 命令扩展（2026-09-18，v4.11.0）
+
+- 新命令：`/export`（`ui/export-chat.ts` 导出会话为 Markdown 文件，跳过 queued/local 块）、`/copy [N]`（`ui/copy-text.ts` OSC52 复制第 N 近 assistant 回复，`\x1b]52;c;<b64>\x07` fail-open）、`/exit`（别名 /quit）、`/usage`（别名 /cost，`ui/usage-overlay.ts` 渲染 gateway `/api/usage/summary` 的 session/project/global KPI）
+- 远端命令消费：启动时 `mafwCommands.list()` 拉取 → `ui/gateway-commands.ts` `mergeCommands` 合并（**本地优先**：远端 name/alias 撞本地 name/alias 隐藏远端；远端 category 映射 本地分类），`chatTab.setAutocompleteExtra` 重建补全 provider；未命中本地的命令 fallback 到 `mafwCommands.run` 派发（`slash-commands.ts` default 分支），远端 destructive 同过确认门
+- `CommandDef` 新增 `argumentHint`（补全描述尾拼接）/`gateway` 标记；`COMMAND_CATEGORIES` 增『自定义』
+- **模糊匹配不自建**：pi-tui `CombinedAutocompleteProvider` 内建 `fuzzyFilter`（子序列+大小写不敏感+`- _ . / :` 词边界加权+打分排序，dist/fuzzy.js），slash 补全天然满足 Claude Code 语义——评估后 YAGNI 不引入自建 fuzzy 模块
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）
