@@ -19,7 +19,7 @@ const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+
 // 历史重载会重挂组件——没有缓存时每次都打 artifactUrl IPC（风暴源头）。
 const artifactUrlCache = new Map<string, string>()
 
-async function cachedArtifactUrl(id: string): Promise<string> {
+export async function cachedArtifactUrl(id: string): Promise<string> {
   let url = artifactUrlCache.get(id)
   if (!url) {
     url = await window.api.mafw.media.artifactUrl(id)
