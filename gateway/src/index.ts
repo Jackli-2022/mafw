@@ -102,6 +102,7 @@ import { handleModelConfigGet, handleModelConfigUpdate, ModelConfigDeps } from '
 import { handleSessionBranch } from './routes/session-branch';
 import { handleSessionSummarize } from './routes/session-summarize';
 import { handleGoalSessions } from './routes/goal-sessions';
+import { handleTriageDismiss } from './routes/triage-dismiss';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, EmbeddingConfigDeps } from './routes/embedding-config';
 import { handleManagerRotate, runManagerRotate, ManagerRotateDeps, ManagerRotateResult } from './routes/manager-rotate';
 /**
@@ -3500,8 +3501,8 @@ class MafwScheduler {
           return;
         }
 
-        // 控制指令
-        if (req.url === '/control' && req.method === 'POST') {
+        // 控制指令（/control 为 MCP handler 兼容路径；/api/goals/control 为 SDK goals.control 契约路径，两者等价）
+        if ((req.url === '/control' || req.url === '/api/goals/control') && req.method === 'POST') {
           let body = '';
           req.on('data', chunk => body += chunk);
           req.on('end', async () => {
@@ -4288,6 +4289,15 @@ class MafwScheduler {
           });
           res.end(JSON.stringify({ status: ok ? 'rejected' : 'not_found' }));
           return;
+        }
+
+        // POST /api/triage/{id}/dismiss — user dismisses triage (alias of reject; SDK triage.dismiss 的落地路由)
+        {
+          const handled = await handleTriageDismiss(req, res, req.url || '', {
+            rejectTriage: (id: string) => this.automationEngine?.rejectTriage(id) ?? false,
+            appendLedger: (entry) => this.ledger?.append(entry as any),
+          });
+          if (handled) return;
         }
 
         // POST /api/triage/{id}/propose — user proposes a decision suggestion
@@ -5157,7 +5167,7 @@ class MafwScheduler {
       server.listen(this.apiPort, () => {
         log.info(`[Scheduler] HTTP API on port ${this.apiPort}`);
         log.info(`[Scheduler]  - POST /register  { projectDir, mafwDir }`);
-        log.info(`[Scheduler]  - POST /control  { action, goalId, ... }`);
+        log.info(`[Scheduler]  - POST /control | /api/goals/control  { action, goalId, ... }`);
         log.info(`[Scheduler]  - GET  /health`);
         log.info(`[Scheduler]  - GET  /mcp           (MCP legacy SSE / StreamableHTTP 405)`);
         log.info(`[Scheduler]  - POST /mcp           (MCP StreamableHTTP stateless + legacy SSE messages)`);
