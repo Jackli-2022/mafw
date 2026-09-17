@@ -36,6 +36,13 @@ const extraResources: Array<{ from: string; to: string; filter?: string[] }> = [
     from: "gateway-bundle/node_modules/",
     to: "gateway/node_modules/",
   },
+  // Installer-time global gateway update script (NSIS customInstall runs it
+  // via node). Test file stays out of the shipped payload.
+  {
+    from: "gateway-update/",
+    to: "gateway-update/",
+    filter: ["update-global-gateway.js"],
+  },
 ]
 if (existsSync(path.join(packageDir, "native"))) {
   extraResources.unshift({
@@ -92,6 +99,7 @@ const getBase = (appId: string): Configuration => ({
     perMachine: false,
     installerIcon: `resources/icons/icon.ico`,
     installerHeaderIcon: `resources/icons/icon.ico`,
+    include: path.join(packageDir, "resources", "installer.nsh"),
   },
   linux: {
     icon: `resources/icons`,
