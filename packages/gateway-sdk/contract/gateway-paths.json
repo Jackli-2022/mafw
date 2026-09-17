@@ -585,6 +585,19 @@
         }
       }
     },
+    "/api/mafw-commands": {
+      "get": {
+        "operationId": "mafwCommands.list",
+        "tags": [
+          "mafwCommands"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/manager/session": {
       "get": {
         "operationId": "manager.session",

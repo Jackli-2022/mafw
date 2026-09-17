@@ -32,7 +32,8 @@ import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
 import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
 import { redactSecrets } from "./recall/redact";
-import { runWaitwhat } from "./routes/waitwhat-command";
+import { buildMafwCommandRegistry, handleMafwCommandRun, handleMafwCommandList } from "./routes/mafw-commands";
+import type { MafwCommandRegistry } from "./commands/registry";
 import { ConsolidationService } from "./memory/consolidation-service";
 import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
@@ -3165,98 +3166,25 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/mafw-commands/run — native MAFW commands from the desktop
-        // slash panel (/goal, /status, /merge-memory). Kept out of the MCP
-        // registry because these are UI-driven, not LLM-driven.
+        // POST /api/mafw-commands/run — 注册表派发（内置+自定义命令，UI-driven 不进 MCP）
         if (req.url === "/api/mafw-commands/run" && req.method === "POST") {
-          try {
-            const body = await readBody(req);
-            const { command, args, sessionID } = JSON.parse(body);
-            const cmd = String(command || "").trim().toLowerCase();
-            const argStr = String(args || "").trim();
-            const firstProject = this.registeredProjects.values().next().value;
-            const projectDir = firstProject?.projectDir || this.projectDir;
+          const reply = await handleMafwCommandRun(
+            {
+              registry: this.getMafwCommandRegistry(),
+              resolveProjectDir: () => this.registeredProjects.values().next().value?.projectDir || this.projectDir,
+            },
+            JSON.parse(await readBody(req)),
+          );
+          res.writeHead(reply.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(reply.body));
+          return;
+        }
 
-            if (cmd === "goal") {
-              if (!argStr) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "goal description required" })); return; }
-              const manager = await this.ensureManagerSession(projectDir, this.mafwDir).catch(() => "");
-              const target = manager || (await this.opencodeClient?.session.create({ directory: projectDir }))?.id;
-              if (!target || !this.opencodeClient) {
-                res.writeHead(503); res.end(JSON.stringify({ ok: false, error: "LLM client not available" })); return;
-              }
-              const message = `创建新 Goal：${argStr}`;
-              await this.opencodeClient.session.promptAsync({ sessionID: target, parts: [{ type: "text", text: message }] });
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: true, message: `Goal 已提交：${argStr}`, sessionID: target }));
-              return;
-            }
-
-            if (cmd === "new-topic") {
-              const result = await this.rotateManagerSessionFor(projectDir);
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: true, message: `新话题已开启：${result.sessionId}`, ...result }));
-              return;
-            }
-
-            if (cmd === "btw") {
-              if (!argStr) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "usage: /btw <question>" })); return; }
-              const answer = await this.btwAsk(argStr);
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: true, text: answer }));
-              return;
-            }
-
-            if (cmd === "waitwhat") {
-              if (!sessionID) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: "sessionID required" })); return; }
-              if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: "LLM client not available" })); return; }
-              const result = await runWaitwhat(String(sessionID), {
-                listMessages: async (sid) => {
-                  const r = await this.opencodeClient!.session.messages({ sessionID: sid, limit: 50 });
-                  return (r?.data || []) as any;
-                },
-                promptAsync: async (sid, text) => {
-                  await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: "text", text }] });
-                },
-              });
-              res.writeHead(result.ok ? 200 : 400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(result.ok
-                ? { ok: true, message: '重述请求已发送到当前会话' }
-                : { ok: false, error: result.error }));
-              return;
-            }
-
-            if (cmd === "status") {
-              const statusPath = path.join(this.mafwDir, 'STATUS.md');
-              const text = fs.existsSync(statusPath) ? fs.readFileSync(statusPath, 'utf-8') : 'No active Goals. Use /goal to create one.';
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: true, text }));
-              return;
-            }
-
-            if (cmd === "merge-memory") {
-              const parts = argStr.split(/\s+/);
-              const sourceWorktree = parts[0];
-              if (!sourceWorktree) {
-                res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'Usage: /merge-memory <sourceWorktreePath> [strategy]' })); return;
-              }
-              const { handleMergeMemory } = await import('./mcp/handlers/merge-memory.js');
-              const result = await handleMergeMemory({ sourceWorktree, resolveStrategy: parts[1] || 'manual' } as any, {
-                memory: this.memoryService,
-              } as any);
-              const text = result.content?.[0]?.text || '{}';
-              let parsed: any;
-              try { parsed = JSON.parse(text) } catch { parsed = { text } }
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ ok: parsed.success !== false, ...parsed }));
-              return;
-            }
-
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, error: `Unknown command: ${cmd}` }));
-          } catch (err: any) {
-            res.writeHead(500);
-            res.end(JSON.stringify({ ok: false, error: err.message }));
-          }
+        // GET /api/mafw-commands — 命令元数据清单（客户端补全/面板）
+        if (req.url?.match(/^\/api\/mafw-commands(?:\?|$)/) && req.method === "GET") {
+          const reply = handleMafwCommandList({ registry: this.getMafwCommandRegistry(), resolveProjectDir: () => this.projectDir });
+          res.writeHead(reply.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(reply.body));
           return;
         }
         // POST /api/merge-memory — direct merge endpoint used by the plugin
@@ -6151,6 +6079,46 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
   rotateManagerSessionFor(projectDir: string): Promise<ManagerRotateResult> {
     return runManagerRotate(projectDir, this.rotateDeps());
+  }
+
+  private mafwCommandRegistry: MafwCommandRegistry | null = null;
+
+  /** 命令注册表懒构建：内置 6 命令 handler 绑定到本类依赖（P0 收敛，见 §5.13c）。 */
+  private getMafwCommandRegistry(): MafwCommandRegistry {
+    if (this.mafwCommandRegistry) return this.mafwCommandRegistry;
+    this.mafwCommandRegistry = buildMafwCommandRegistry({
+      ensureManagerSession: async (projectDir) => {
+        const id = await this.ensureManagerSession(projectDir, this.mafwDir).catch(() => '');
+        return id || '';
+      },
+      createSession: async (projectDir) => {
+        const s = await this.opencodeClient?.session.create({ directory: projectDir }).catch(() => null);
+        return s?.id ?? null;
+      },
+      promptAsync: async (sid, text) => {
+        await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }] });
+      },
+      listMessages: async (sid) => {
+        const r = await this.opencodeClient!.session.messages({ sessionID: sid, limit: 50 });
+        return (r?.data || []) as any;
+      },
+      btwAsk: (q) => this.btwAsk(q),
+      rotateManagerSession: (projectDir) => this.rotateManagerSessionFor(projectDir) as any,
+      mergeMemory: async (sourceWorktree, strategy) => {
+        const { handleMergeMemory } = await import('./mcp/handlers/merge-memory.js');
+        const result = await handleMergeMemory({ sourceWorktree, resolveStrategy: strategy } as any, {
+          memory: this.memoryService,
+        } as any);
+        const text = result.content?.[0]?.text || '{}';
+        try { return JSON.parse(text); } catch { return { text }; }
+      },
+      readStatus: () => {
+        const statusPath = path.join(this.mafwDir, 'STATUS.md');
+        return fs.existsSync(statusPath) ? fs.readFileSync(statusPath, 'utf-8') : 'No active Goals. Use /goal to create one.';
+      },
+      llmAvailable: () => !!this.opencodeClient,
+    });
+    return this.mafwCommandRegistry;
   }
 
   // One-off side-question session (user-driven /btw command): create → prompt

@@ -50,6 +50,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/command', operationId: 'command.list', tags: ['command'] },
   { method: 'GET', path: '/skill', operationId: 'skill.list', tags: ['skill'] },
   { method: 'POST', path: '/api/mafw-commands/run', operationId: 'mafwCommands.run', tags: ['mafwCommands'] },
+  { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'] },
   { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'] },
   { method: 'POST', path: '/api/manager/session/rotate', operationId: 'manager.rotate', tags: ['manager'] },
   { method: 'GET', path: '/api/projects', operationId: 'project.list', tags: ['project'] },
