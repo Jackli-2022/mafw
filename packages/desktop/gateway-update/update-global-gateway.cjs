@@ -137,7 +137,12 @@ function defaultDeps() {
     sleep: (ms) => {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
     },
-    log: (line) => console.log(`[gateway-update] ${line}`),
+    log: (line) => {
+      console.log(`[gateway-update] ${line}`)
+      try {
+        fs.appendFileSync(path.join(os.tmpdir(), "mafw-gateway-update.log"), `${new Date().toISOString()} ${line}\n`)
+      } catch {}
+    },
   }
 }
 

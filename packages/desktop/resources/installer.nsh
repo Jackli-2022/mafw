@@ -1,6 +1,7 @@
 !macro customInstall
   ; Best-effort global gateway update (see docs/superpowers/specs/2026-09-17-desktop-installer-gateway-update-design.md).
   ; The script is fail-open: every failure path exits 0 and never blocks installation.
+  ; Script output goes to the NSIS install log AND %TEMP%\mafw-gateway-update.log.
   nsExec::ExecToStack 'node --version'
   Pop $0
   ${If} $0 == 0
