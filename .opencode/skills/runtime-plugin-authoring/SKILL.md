@@ -1,6 +1,6 @@
 ---
 name: runtime-plugin-authoring
-description: 为 MAFW Gateway 编写 Runtime 插件的完整指南。覆盖能力契约（Tier 0/1/2）、CJS 插件格式、事件归一化、可选接口、激活与测试。当需要接入新的 agent runtime（如 pi-coding-agent、claude、自定义 LLM 服务）时使用此 skill。
+description: 为 MAFW Gateway 编写 Runtime 插件的完整指南。覆盖能力契约（Tier 0/1/2）、CJS 插件格式、事件归一化、记忆系统接入（观察捕获/边界 recall/MCP 主动记忆）、可选接口、激活与测试。当需要接入新的 agent runtime（如 pi-coding-agent、claude、自定义 LLM 服务）时使用此 skill。
 ---
 
 # MAFW Runtime Plugin 编写指南
@@ -337,7 +337,79 @@ TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`）：`mess
 - [ ] 新 type 用 `plugin:<name>:<event>` 命名空间；消费端（你自己的 renderer 逻辑）负责分发
 - [ ] 不要依赖事件顺序（SSE 无序保证）；不要在事件里放大数据载荷（走 API 拉取）
 
-## 第四步：激活与测试
+## 第四步：接入记忆系统
+
+记忆系统与 runtime 的接缝分两层：**gateway 侧**（实现契约即自动获得，零额外工作）与**宿主侧**（每个 runtime 自己的交付物，gateway 暴露的 HTTP 端点 runtime 中立）。
+
+**鉴权**：gateway 默认监听 loopback，同机宿主**无需任何鉴权头**；跨机调用需带 `Authorization: Bearer <apiToken>`（或 `X-API-Token` 头 / `?token=` query，token 来自 config.yaml 的 `server.apiToken`；空 token + 远程 = 全拒）。
+
+```
+Gateway 侧（契约自动获得）                 宿主侧（runtime 自己实现，经 gateway HTTP）
+├─ 步进注入 step-inject                    ① 观察捕获  POST /api/obs/capture
+│   eventStream step 切面 + promptWhileBusy ② 边界 recall GET /api/recall/context
+├─ turnCompress / 反思 / stale-verify       ③ system 注入 <memory-guide> + /api/recall/pinned
+│   worker 会话经你的 session API 创建      ④ MCP 接线 runtime MCP client → /mcp
+└─ Trajectory / goal outcomes（事件累积）
+```
+
+### 4.1 自动获得的部分（及其隐藏依赖）
+
+| 功能 | 机制 | 你要做的 |
+|---|---|---|
+| 步进注入（per-step 记忆追加进会话） | 事件产出 step 切面（3.1 契约表）→ gateway markStepSeen 去重 → `promptAsync` 追加注入消息 | **依赖 `promptWhileBusy`**（Tier 0 已有）；`session.idle` 必须带 sessionID（触发 drain） |
+| 记忆 worker 会话 | gateway 经你的 `session.create`/`promptAsync` 创建；自动注册 internal（递归防护，runtime 无需参与标记） | 无；`summarize` 缺失 → worker idle 后 dispose 轮换（fail-open 不阻塞） |
+| Trajectory / 反思 / stale-verify | 事件累积 + worker 会话 | 无 |
+
+**关键陷阱：turnCompress 的蒸馏素材不是 `session.messages`，是 t1_observations**（宿主经 `/api/obs/capture` 写入）。不接观察捕获 → hourly cron 与 compaction flush 照常触发但没有可蒸馏内容，回合蒸馏永远空转。
+
+### 4.2 观察捕获（turnCompress 的唯一数据源）
+
+在宿主侧的事件钩子里调 `POST /api/obs/capture`：
+
+```json
+{ "sessionID": "ses_xxx", "source": "user_input", "content": "用户输入文本", "failure": false }
+```
+
+- **source 四值**（对齐 opencode 宿主插件的捕获时机）：`user_input`（用户消息，**开新回合**）/ `tool_result`（工具执行后）/ `assistant_reply`（assistant 文本完成）/ `reasoning`（推理结束）。其余三个归入当前回合
+- **响应**：`{ ok: true, id, turnId, deduped }`——`deduped: true` 且 `id: null` 表示被去重/递归防护/内容过滤吞掉（正常现象，无需重试）
+- **gateway 负责**：turnID 分配（重启不会重编号）、DB UNIQUE 去重、入库前 `redactSecrets()`（sk-/ghp_/Bearer/JWT/key=value → `[REDACTED]`，宿主无需自行脱敏）、100KB 截断、递归防护（internal 会话与管线 prompt 内容自动过滤）、fail-open（错误也返回 200，不阻塞 agent，不重试）
+- `user_input` 额外触发语义召回 prefetch（content 前 500 字符），加速下一次边界 recall
+
+### 4.3 边界 recall（每次 LLM 调用前注入）
+
+在你的 per-LLM-call transform（或 prompt 包装器）里调 `GET /api/recall/context?sessionID=&query=`（query = 最新用户输入前 500 字符），把返回的 `pointers`（string|null）拼到 messages 尾部：
+
+- 返回物已含三块：`<recall>` 检索指针块（BM25 top-3，#mem-xxx 指针非全文）+ `<note-board>` 便签板 + `<goal-snapshot>`（仅 manager 会话）；step 注入已推送的记忆自动去重
+- **同回合多次 LLM 调用**：agentic loop 内每个 step 都会经过你的注入点——宿主自己维护 per-session 增量游标（自上次注入后无新用户输入时跳过或只带 query 为空调用，返回物仍含 note-board/goal-snapshot），避免同 turn 重复注入（opencode 宿主插件即此做法）
+- **fail-open 硬要求**：客户端 100ms abort；超时/失败拿不到 pointers 就直接调 LLM（null 是合法返回）。不做 fail-open = gateway 卡顿阻塞每次 LLM 调用
+- 不要在宿主展开记忆全文——pointers 是指针（id + 一句话 gist），agent 需要全文时自己调 `mafw_get_memory`
+- `perLlmCallTransform` 能力位是**信息性声明**（gateway 不消费）；注入实现完全在你的 runtime 内
+
+### 4.4 system 注入（两块）
+
+1. **`<memory-guide>`**：静态常驻 system 前缀（主动记忆引导——告诉 agent 学到新知识/偏好/教训时主动调 `mafw_add_memory`，需要旧记忆时主动调 `mafw_search_hybrid`）。文案参考 `src/hooks/memory-guide.ts`，直接复制嵌入
+2. **`<user-profile>`**：`GET /api/recall/pinned` → 返回 `{ profile: string|null, entries: [], budget: { max: 20, maxChars: 2000, used } }`，`profile` 是渲染好的 `<user-profile>` 块，接在 memory-guide 之后（pinned 披露层，用户身份/长期偏好每轮必达；半稳定内容靠后保前缀缓存）；150ms fail-open
+
+### 4.5 MCP 接线（agent 主动读写记忆的唯一通道）
+
+40 个 `mafw_*` 工具（写 `mafw_add_memory`、查 `mafw_search_hybrid`、取 `mafw_get_memory` 等）经 gateway MCP server 暴露：
+
+- runtime 的 MCP client 必须自己配置 remote HTTP 指向 `http://127.0.0.1:<gatewayPort>/mcp`（端口取 `ctx.gatewayPort`，缺省 3000；也读 `MAFW_SERVER_API_PORT`）
+- opencode 有 self-wiring（激活时自动补配置）；**自定义 runtime 没有这层**——不接 MCP，被动注入照常，但 agent 主动写入/检索/取代（supersedes）全失效
+
+### 4.6 事件形状对记忆质量的影响
+
+- **用户文本必须以 text part 进 `message.part.updated`**（`part.{type:'text', text, sessionID, messageID}`）——trajectory curator 的回合 transcript 与成败信号（goal grade）都从 text parts 捕获；`message.updated` 的 summary/body 是空的，不能替代
+- 工具事件类型名含 `tool` 且带 `args.command` 才能被自更新调用者定位（3.1 契约表）
+
+### 4.7 记忆接入验证清单
+
+- [ ] 发一条消息后 `mafw logs` 无 capture 报错；hourly cron 或 compaction flush 出现 `[TurnPipeline]` 行
+- [ ] 对 agent 说"记住 X" → `mafw_search_hybrid` 能检索到（MCP 接线通）
+- [ ] 新会话首条消息触发 recall（日志无阻塞；断开 gateway 后 agent 仍能正常回复 = fail-open 生效）
+- [ ] pinned 一条记忆（`mafw_add_memory { pinned: true }`）→ 下一轮 agent 回答能引用
+
+## 第五步：激活与测试
 
 ### 激活方式
 
@@ -381,7 +453,7 @@ MAFW_RUNTIME_PLUGIN=my-runtime
 | `status: "error", error: "duplicate name"` | 多个文件导出相同 `name` | 检查重复插件 |
 | Gateway 仍用 opencode | 插件加载失败 / 未配置 | 检查 `/api/runtime` 返回；确认 `config.yaml` 的 `runtime.plugin` |
 
-## 第五步：参考实现
+## 第六步：参考实现
 
 ### 内置 opencode runtime
 
@@ -826,6 +898,9 @@ curl http://localhost:3000/api/runtime
 - **契约定义**：`gateway/src/runtime/contract.ts`
 - **插件加载器**：`gateway/src/runtime/loader.ts`
 - **事件归一化**：`gateway/src/runtime/normalize.ts`
+- **记忆管线（turnCompress / worker 会话）**：`gateway/src/recall/turn-pipeline.ts`、`gateway/src/recall/session-worker-pool.ts`
+- **记忆注入端点（runtime 中立 HTTP）**：`/api/obs/capture`、`/api/recall/context`、`/api/recall/pinned`（`gateway/src/index.ts` 路由段）
+- **memory-guide 文案（宿主 system 注入用）**：`src/hooks/memory-guide.ts`
 - **参考实现**：`gateway/src/runtime/opencode-runtime.ts`
 - **Agent 定义模型**：`gateway/src/runtime/agent-definition.ts`
 - **Gateway 激活逻辑**：`gateway/src/index.ts:814`（`createRuntime()` 方法）
@@ -838,8 +913,9 @@ curl http://localhost:3000/api/runtime
 1. **理解能力分级**（Tier 0/1/2），选择需要的能力
 2. **编写 CJS 插件**（`module.exports`），声明能力 + 实现 `createRuntime(ctx)`
 3. **处理事件归一化**（优先兼容 opencode 事件形状）
-4. **激活与测试**（config.yaml 或环境变量，热切换或重启 gateway，检查 `/api/runtime`）
-5. **参考内置实现**（`opencode-runtime.ts` 是完整的 Tier 2 参考）
+4. **接入记忆系统**（观察捕获 + 边界 recall + system 注入 + MCP 接线；见第四步）
+5. **激活与测试**（config.yaml 或环境变量，热切换或重启 gateway，检查 `/api/runtime`）
+6. **参考内置实现**（`opencode-runtime.ts` 是完整的 Tier 2 参考）
 
 **关键原则：**
 - 能力自声明 + fail-open 降级
