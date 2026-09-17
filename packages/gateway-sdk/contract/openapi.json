@@ -1,0 +1,311 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MAFW Gateway API — SDK-facing contract",
+    "version": "1.0.0",
+    "description": "Single source of truth for every endpoint @mafw/sdk may call. Covers the MafwClient namespaces, SSE event stream, A2A media agent, and TTS streaming. Drift is enforced by tests on both sides: gateway-sdk/src/contract.test.ts (SDK calls ⊆ contract) and gateway/tests/unit/api-contract.test.ts (contract ⊆ gateway routes). Path parameters are normalized to {} in drift comparisons. Adding an SDK method requires adding its operation here FIRST (SDK drift test fails otherwise); removing/changing a gateway route requires updating this file (gateway drift test fails otherwise)."
+  },
+  "paths": {
+    "/api/session": {
+      "post": { "operationId": "session.create", "tags": ["session"], "responses": { "200": { "description": "Created session" } } }
+    },
+    "/api/sessions": {
+      "get": { "operationId": "session.list", "tags": ["session"], "responses": { "200": { "description": "Session list" } } }
+    },
+    "/api/sessions/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "session.get", "tags": ["session"], "responses": { "200": { "description": "Session" }, "404": { "description": "Not found" } } },
+      "delete": { "operationId": "session.delete", "tags": ["session"], "responses": { "200": { "description": "Deleted" } } },
+      "patch": { "operationId": "session.rename", "tags": ["session"], "responses": { "200": { "description": "Renamed" } } }
+    },
+    "/api/sessions/{id}/messages": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "session.messages", "tags": ["session"], "responses": { "200": { "description": "Paged message parts" } } }
+    },
+    "/api/sessions/{id}/todo": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "session.todo", "tags": ["session"], "responses": { "200": { "description": "Session todos" } } }
+    },
+    "/api/sessions/{id}/children": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "session.children", "tags": ["session"], "responses": { "200": { "description": "Child sessions" } } }
+    },
+    "/api/sessions/{id}/trajectory": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "session.trajectory", "tags": ["session"], "responses": { "200": { "description": "Trajectory turns/events" } } }
+    },
+    "/api/sessions/{id}/token-summary": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "session.tokenSummary", "tags": ["session"], "responses": { "200": { "description": "Token summary" } } }
+    },
+    "/api/sessions/{id}/fork": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.fork", "tags": ["session"], "responses": { "200": { "description": "Forked session" } } }
+    },
+    "/api/sessions/{id}/revert": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.revert", "tags": ["session"], "responses": { "200": { "description": "Reverted" } } }
+    },
+    "/api/sessions/{id}/unrevert": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.unrevert", "tags": ["session"], "responses": { "200": { "description": "Revert undone" } } }
+    },
+    "/api/session/{id}/abort": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.abort", "tags": ["session"], "responses": { "200": { "description": "Aborted" } } }
+    },
+    "/api/session/{id}/summarize": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.summarize", "tags": ["session"], "responses": { "200": { "description": "Summarized" } } }
+    },
+    "/api/session/{id}/prompt": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.prompt", "tags": ["session"], "responses": { "200": { "description": "Prompt result parts" } } }
+    },
+    "/api/session/{id}/promptAsync": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.promptAsync", "tags": ["session"], "responses": { "200": { "description": "Accepted" } } }
+    },
+    "/api/session/{id}/command": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.command", "tags": ["session"], "responses": { "200": { "description": "Command executed" } } }
+    },
+    "/api/usage": {
+      "get": { "operationId": "session.usage", "tags": ["session"], "responses": { "200": { "description": "Usage snapshot" } } }
+    },
+    "/api/usage/summary": {
+      "get": { "operationId": "session.usageSummary", "tags": ["session"], "responses": { "200": { "description": "Usage summary" } } }
+    },
+    "/api/usage/plugins": {
+      "get": { "operationId": "session.usagePluginsList", "tags": ["session"], "responses": { "200": { "description": "Usage plugin list" } } }
+    },
+    "/api/usage/plugins/reload": {
+      "post": { "operationId": "session.usagePluginsReload", "tags": ["session"], "responses": { "200": { "description": "Reloaded" } } }
+    },
+    "/api/usage/plugins/create": {
+      "post": { "operationId": "session.usagePluginsCreate", "tags": ["session"], "responses": { "200": { "description": "Created" } } }
+    },
+    "/api/usage/plugins/{name}/source": {
+      "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "session.usagePluginSourceGet", "tags": ["session"], "responses": { "200": { "description": "Plugin source" } } },
+      "put": { "operationId": "session.usagePluginSourcePut", "tags": ["session"], "responses": { "200": { "description": "Source saved" } } }
+    },
+    "/api/usage/plugins/{name}": {
+      "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "delete": { "operationId": "session.usagePluginsDelete", "tags": ["session"], "responses": { "200": { "description": "Deleted" } } }
+    },
+    "/api/usage/plugins/{name}/test": {
+      "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "session.usagePluginTest", "tags": ["session"], "responses": { "200": { "description": "Test result" } } }
+    },
+    "/command": {
+      "get": { "operationId": "command.list", "tags": ["command"], "responses": { "200": { "description": "Opencode commands (reverse-proxied)" } } }
+    },
+    "/skill": {
+      "get": { "operationId": "skill.list", "tags": ["skill"], "responses": { "200": { "description": "Skills (reverse-proxied)" } } }
+    },
+    "/api/mafw-commands/run": {
+      "post": { "operationId": "mafwCommands.run", "tags": ["mafwCommands"], "responses": { "200": { "description": "Command result" } } }
+    },
+    "/api/manager/session": {
+      "get": { "operationId": "manager.session", "tags": ["manager"], "responses": { "200": { "description": "Manager session info" } } }
+    },
+    "/api/manager/session/rotate": {
+      "post": { "operationId": "manager.rotate", "tags": ["manager"], "responses": { "200": { "description": "Rotated" } } }
+    },
+    "/api/projects": {
+      "get": { "operationId": "project.list", "tags": ["project"], "responses": { "200": { "description": "Registered projects" } } }
+    },
+    "/api/projects/current": {
+      "get": { "operationId": "project.current", "tags": ["project"], "responses": { "200": { "description": "Current project" } } }
+    },
+    "/register": {
+      "post": { "operationId": "project.setCurrent", "tags": ["project"], "responses": { "200": { "description": "Registered/broadcast project_registered" } } }
+    },
+    "/api/events": {
+      "get": { "operationId": "event.subscribe", "tags": ["event"], "description": "SSE event stream; ?sessionID= scopes to a session (session-scoped subscribe). SDK helper events.url() returns this URL for renderer-direct EventSource.", "responses": { "200": { "description": "text/event-stream" } } },
+      "post": { "operationId": "event.publish", "tags": ["event"], "responses": { "200": { "description": "Published to all UI channels" } } }
+    },
+    "/api/runtime": {
+      "get": { "operationId": "runtime.get", "tags": ["runtime"], "responses": { "200": { "description": "Runtime identity + capabilities" } } }
+    },
+    "/api/runtime/switch": {
+      "post": { "operationId": "runtime.switch", "tags": ["runtime"], "responses": { "200": { "description": "Switched" }, "400": { "description": "Unknown plugin" } } }
+    },
+    "/api/runtime/restart-agent": {
+      "post": { "operationId": "runtime.restartAgent", "tags": ["runtime"], "responses": { "200": { "description": "Restarted" }, "503": { "description": "External/进程内 runtime 不可重启" } } }
+    },
+    "/api/plugins": {
+      "get": { "operationId": "plugins.list", "tags": ["plugins"], "responses": { "200": { "description": "Plugin hub list + packages" } } }
+    },
+    "/api/plugins/install": {
+      "post": { "operationId": "plugins.install", "tags": ["plugins"], "responses": { "200": { "description": "Installed (raw octet-stream body)" } } }
+    },
+    "/api/plugins/enable": {
+      "post": { "operationId": "plugins.enable", "tags": ["plugins"], "responses": { "200": { "description": "Enabled" } } }
+    },
+    "/api/plugins/disable": {
+      "post": { "operationId": "plugins.disable", "tags": ["plugins"], "responses": { "200": { "description": "Disabled" } } }
+    },
+    "/api/plugins/delete": {
+      "post": { "operationId": "plugins.delete", "tags": ["plugins"], "responses": { "200": { "description": "Deleted" } } }
+    },
+    "/api/config": {
+      "get": { "operationId": "config.get", "tags": ["config"], "responses": { "200": { "description": "Gateway config" } } },
+      "put": { "operationId": "config.set", "tags": ["config"], "responses": { "200": { "description": "Config saved (read-then-write pattern)" } } }
+    },
+    "/api/opencode-config": {
+      "get": { "operationId": "opencodeConfig.get", "tags": ["opencodeConfig"], "responses": { "200": { "description": "Native opencode config" } } },
+      "patch": { "operationId": "opencodeConfig.update", "tags": ["opencodeConfig"], "responses": { "200": { "description": "Config updated" } } }
+    },
+    "/api/goals": {
+      "get": { "operationId": "goals.list", "tags": ["goals"], "responses": { "200": { "description": "Goal list" } } }
+    },
+    "/api/goals/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "goals.get", "tags": ["goals"], "responses": { "200": { "description": "Goal" }, "404": { "description": "Not found" } } }
+    },
+    "/api/goals/{id}/sessions": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "goals.sessions", "tags": ["goals"], "responses": { "200": { "description": "Goal session mapping" } } }
+    },
+    "/api/goals/{goalId}/questions/{questionId}/respond": {
+      "parameters": [
+        { "name": "goalId", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "questionId", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "post": { "operationId": "goals.respondQuestion", "tags": ["goals"], "description": "Goal-scoped question reply (desktop QuestionWidget). Distinct from /api/questions/{id}/reply (native opencode question API).", "responses": { "200": { "description": "Answered" } } }
+    },
+    "/api/work/{goalId}/validate": {
+      "parameters": [{ "name": "goalId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "goals.validate", "tags": ["goals"], "responses": { "200": { "description": "Validated" }, "409": { "description": "Goal already exists" } } }
+    },
+    "/api/goals/control": {
+      "post": { "operationId": "goals.control", "tags": ["goals"], "description": "Goal control (PAUSE/ABORT/FORCE_PHASE/RESET_PARAMETRIC). Gateway also accepts legacy POST /control (MCP handler compat) — same handler.", "responses": { "200": { "description": "Accepted" } } }
+    },
+    "/api/memory/search": {
+      "get": { "operationId": "memory.search", "tags": ["memory"], "responses": { "200": { "description": "Harmonic memory search results" } } }
+    },
+    "/api/memory/merged-search": {
+      "get": { "operationId": "memory.mergedSearch", "tags": ["memory"], "responses": { "200": { "description": "Merged memory facts" } } }
+    },
+    "/api/memory/energy-distribution": {
+      "get": { "operationId": "memory.getEnergyDistribution", "tags": ["memory"], "responses": { "200": { "description": "Energy distribution" } } }
+    },
+    "/api/l5/axioms": {
+      "get": { "operationId": "memory.getL5Axioms", "tags": ["memory"], "responses": { "200": { "description": "L5 axioms + heuristics" } } }
+    },
+    "/api/memory/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "delete": { "operationId": "memory.delete", "tags": ["memory"], "responses": { "200": { "description": "Deleted" } } }
+    },
+    "/api/memory/sticky": {
+      "get": { "operationId": "memory.listSticky", "tags": ["memory"], "responses": { "200": { "description": "Note-board entries + budget" } } }
+    },
+    "/api/memory/pin": {
+      "post": { "operationId": "memory.setSticky", "tags": ["memory"], "responses": { "200": { "description": "Pin/unpin/sticky applied" } } }
+    },
+    "/api/memory/embedding-config": {
+      "get": { "operationId": "embedding.get", "tags": ["embedding"], "responses": { "200": { "description": "Embedding engine settings" } } },
+      "post": { "operationId": "embedding.update", "tags": ["embedding"], "responses": { "200": { "description": "Updated (hot-swap)" } } }
+    },
+    "/api/approvals": {
+      "get": { "operationId": "approvals.list", "tags": ["approvals"], "responses": { "200": { "description": "Approval list" } } }
+    },
+    "/api/approvals/{id}/respond": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "approvals.respond", "tags": ["approvals"], "responses": { "200": { "description": "Responded" } } }
+    },
+    "/api/triage": {
+      "get": { "operationId": "triage.list", "tags": ["triage"], "responses": { "200": { "description": "Triage items" } } }
+    },
+    "/api/triage/{id}/dismiss": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "triage.dismiss", "tags": ["triage"], "description": "Dismiss = reject alias (state REJECTED), ledger reason triage_dismissed. Route added 2026-09-17 fixing SDK drift bug.", "responses": { "200": { "description": "dismissed | not_found" } } }
+    },
+    "/api/triage/{id}/confirm": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "triage.confirm", "tags": ["triage"], "responses": { "200": { "description": "Confirmed, goal created" }, "404": { "description": "Not found" }, "400": { "description": "Wrong state" } } }
+    },
+    "/api/triage/{id}/reject": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "triage.reject", "tags": ["triage"], "responses": { "200": { "description": "rejected | not_found" } } }
+    },
+    "/api/triage/{id}/propose": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "triage.propose", "tags": ["triage"], "responses": { "200": { "description": "Suggestion recorded" }, "404": { "description": "Not found" }, "400": { "description": "Invalid suggestion" } } }
+    },
+    "/api/questions": {
+      "get": { "operationId": "questions.list", "tags": ["questions"], "responses": { "200": { "description": "Native question list" } } }
+    },
+    "/api/questions/{id}/reply": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "questions.reply", "tags": ["questions"], "responses": { "200": { "description": "Replied" } } }
+    },
+    "/api/questions/{id}/reject": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "questions.reject", "tags": ["questions"], "responses": { "200": { "description": "Rejected" } } }
+    },
+    "/api/permissions": {
+      "get": { "operationId": "permissions.list", "tags": ["permissions"], "responses": { "200": { "description": "Permission requests" } } }
+    },
+    "/api/permissions/{id}/reply": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": { "operationId": "permissions.reply", "tags": ["permissions"], "responses": { "200": { "description": "once/always/reject reply" } } }
+    },
+    "/api/chat": {
+      "post": { "operationId": "chat.send", "tags": ["chat"], "responses": { "200": { "description": "Chat response" } } }
+    },
+    "/api/chat/enriched": {
+      "post": { "operationId": "chat.sendEnriched", "tags": ["chat"], "responses": { "200": { "description": "Enriched chat response (deltas + facts + recall)" } } }
+    },
+    "/api/media/plugins": {
+      "get": { "operationId": "media.plugins", "tags": ["media"], "responses": { "200": { "description": "Media engine plugin status" } } }
+    },
+    "/api/media/switch": {
+      "post": { "operationId": "media.switch", "tags": ["media"], "responses": { "200": { "description": "Engine switched (hot)" }, "400": { "description": "Unknown engine" } } }
+    },
+    "/api/media/upload": {
+      "post": { "operationId": "media.upload", "tags": ["media"], "description": "Binary media upload (raw octet-stream, ?type=). Must go through Node network stack — Chromium fetch is blocked by system proxies. SDK helper media.upload().", "responses": { "200": { "description": "Upload result (artifact ref)" } } }
+    },
+    "/api/media/upload-and-create": {
+      "post": { "operationId": "media.uploadAndCreate", "tags": ["media"], "description": "Upload + A2A task create in one round-trip (?type=&question=). SDK helper media.uploadAndCreate().", "responses": { "200": { "description": "Task created with artifact" } } }
+    },
+    "/a2a": {
+      "post": { "operationId": "media.createTask", "tags": ["media"], "description": "A2A JSON-RPC (Agent2Agent v1.0) — media task creation and multi-turn follow-up via referenceTaskIds. Loopback-only.", "responses": { "200": { "description": "JSON-RPC response" } } }
+    },
+    "/a2a/artifacts/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "media.artifact", "tags": ["media"], "description": "Artifact bytes (TTS audio / uploaded media). Consumed directly by <audio src> in renderer via SDK media.artifactUrl() helper — transport stays direct.", "responses": { "200": { "description": "Artifact bytes" }, "404": { "description": "Expired/unknown artifact" } } }
+    },
+    "/api/tts": {
+      "post": { "operationId": "tts.speak", "tags": ["tts"], "responses": { "200": { "description": "Synthesis result" } } }
+    },
+    "/api/tts/voices": {
+      "get": { "operationId": "tts.voices", "tags": ["tts"], "responses": { "200": { "description": "Voice list" } } }
+    },
+    "/api/tts/stream": {
+      "post": { "operationId": "tts.speakStream", "tags": ["tts"], "description": "Streaming TTS (SSE of base64 PCM16 chunks, 24kHz mono). SDK helper tts.streamUrl() returns this URL; transport stays renderer-direct (IPC cannot clone the SSE stream).", "responses": { "200": { "description": "text/event-stream" } } }
+    },
+    "/api/provider": {
+      "get": { "operationId": "providers.list", "tags": ["providers"], "responses": { "200": { "description": "Model providers" } } }
+    },
+    "/api/agents": {
+      "get": { "operationId": "agents.list", "tags": ["agents"], "responses": { "200": { "description": "Agent list" } } }
+    },
+    "/api/model-config": {
+      "get": { "operationId": "models.get", "tags": ["models"], "responses": { "200": { "description": "Recall worker + media model config" } } },
+      "post": { "operationId": "models.update", "tags": ["models"], "responses": { "200": { "description": "Model config updated" } } }
+    },
+    "/api/automations": {
+      "get": { "operationId": "automations.list", "tags": ["automations"], "responses": { "200": { "description": "Automation rules" } } }
+    },
+    "/api/automations/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "put": { "operationId": "automations.toggle", "tags": ["automations"], "responses": { "200": { "description": "Toggled" } } }
+    },
+    "/api/automations/draft": {
+      "post": { "operationId": "automations.draft", "tags": ["automations"], "responses": { "200": { "description": "Draft created (disabled)" }, "503": { "description": "Automation engine unavailable" } } }
+    }
+  }
+}
