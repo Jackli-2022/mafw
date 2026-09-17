@@ -15,6 +15,19 @@ import { Icon } from "@mafw/ui/icon"
 
 const VOICE_REPLY_RE = /\[语音回复\s+art:([a-zA-Z0-9-]+)(?:\s+音色:([^\]]+))?\]/g
 
+// artifactId → url 稳定映射缓存：流式期间 text 每个增量都会重跑 effect、
+// 历史重载会重挂组件——没有缓存时每次都打 artifactUrl IPC（风暴源头）。
+const artifactUrlCache = new Map<string, string>()
+
+async function cachedArtifactUrl(id: string): Promise<string> {
+  let url = artifactUrlCache.get(id)
+  if (!url) {
+    url = await window.api.mafw.media.artifactUrl(id)
+    artifactUrlCache.set(id, url)
+  }
+  return url
+}
+
 interface Props {
   text: string
   /** Optional auth token for LAN/Tailscale access (Base64 encoded). */
@@ -38,11 +51,16 @@ function extractVoiceReplies(text: string): Array<{ artifactId: string; voice?: 
 
 export function AudioReply(props: Props) {
   const [replies, setReplies] = createSignal<VoiceReply[]>([])
+  let lastIds = ""
   createEffect(() => {
     void (async () => {
       const found = extractVoiceReplies(props.text || "")
+      // 流式期间 text 每个增量都触发本 effect：ids 未变化时跳过（重复 resolve + setState）
+      const ids = found.map((r) => r.artifactId).join(",")
+      if (ids === lastIds && replies().length > 0) return
+      lastIds = ids
       const withUrls = await Promise.all(
-        found.map(async (r) => ({ ...r, url: await window.api.mafw.media.artifactUrl(r.artifactId) })),
+        found.map(async (r) => ({ ...r, url: await cachedArtifactUrl(r.artifactId) })),
       )
       setReplies(withUrls)
     })()

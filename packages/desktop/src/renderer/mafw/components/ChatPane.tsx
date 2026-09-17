@@ -16,7 +16,7 @@ import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
-import { AudioReply } from "./AudioReply"
+import { AudioReply, cachedArtifactUrl } from "./AudioReply"
 import { scrollPinDecision } from "./ChatPaneScroll"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
@@ -1328,7 +1328,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       if (playedVoiceArtifacts.has(r.artifactId)) continue
       playedVoiceArtifacts.add(r.artifactId)
       // URL 契约归 SDK（media.artifactUrl）；播放经 VoiceSession（互斥 + barge-in 一致）。
-      void window.api.mafw.media.artifactUrl(r.artifactId).then(
+      void cachedArtifactUrl(r.artifactId).then(
         (url) => {
           console.log("[voice] artifact auto-playing:", r.artifactId)
           void voiceSession.playUrl(url).then(
