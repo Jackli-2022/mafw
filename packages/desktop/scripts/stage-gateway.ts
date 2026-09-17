@@ -43,10 +43,14 @@ await mkdir(outDir, { recursive: true })
 await cp(gatewayDist, path.join(outDir, "dist"), { recursive: true })
 
 // Minimal manifest: production dependencies only.
+// Version label comes from the ROOT package.json — the single version source
+// (scripts/bump-version.mjs only syncs packages/* workspaces, so
+// gateway/package.json lags behind and must not be trusted here).
 const gatewayPkg = JSON.parse(await readFile(path.join(gatewayDir, "package.json"), "utf8"))
+const rootPkg = JSON.parse(await readFile(path.join(rootDir, "package.json"), "utf8"))
 const bundlePkg = {
   name: "mafw-gateway-bundled",
-  version: gatewayPkg.version,
+  version: rootPkg.version,
   private: true,
   main: "dist/index.js",
   dependencies: gatewayPkg.dependencies,
