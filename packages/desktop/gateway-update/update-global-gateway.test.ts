@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { compareVersions, decide, readPkgVersion } from "./update-global-gateway"
+import { compareVersions, decide, readPkgVersion, readPidFile, shouldKill, stopGatewayDaemon } from "./update-global-gateway"
 
 describe("compareVersions", () => {
   test("orders major/minor/patch", () => {
@@ -47,5 +47,73 @@ describe("readPkgVersion", () => {
     const empty = join(dir, "empty.json")
     writeFileSync(empty, JSON.stringify({ name: "x" }))
     expect(readPkgVersion(require("node:fs"), empty)).toBeNull()
+  })
+})
+
+describe("readPidFile", () => {
+  test("numeric pid only", () => {
+    const dir = mkdtempSync(join(tmpdir(), "gwupd-"))
+    const pidPath = join(dir, "gateway.pid")
+    writeFileSync(pidPath, "4242\n")
+    expect(readPidFile(require("node:fs"), pidPath)).toBe("4242")
+    writeFileSync(pidPath, "not-a-pid")
+    expect(readPidFile(require("node:fs"), pidPath)).toBeNull()
+    expect(readPidFile(require("node:fs"), join(dir, "absent.pid"))).toBeNull()
+  })
+})
+
+describe("shouldKill", () => {
+  test("only node.exe image", () => {
+    expect(shouldKill("node.exe")).toBe(true)
+    expect(shouldKill("msedge.exe")).toBe(false)
+    expect(shouldKill(null)).toBe(false)
+  })
+})
+
+describe("stopGatewayDaemon", () => {
+  function fakeDeps(pidContent, imageName, calls) {
+    const dir = mkdtempSync(join(tmpdir(), "gwupd-"))
+    const pidPath = join(dir, "gateway.pid")
+    if (pidContent !== null) writeFileSync(pidPath, pidContent)
+    return {
+      deps: {
+        fs: require("node:fs"),
+        pidFilePath: pidPath,
+        pidImageName: (pid) => {
+          calls.push(["image", pid])
+          return imageName
+        },
+        exec: (cmd, args) => {
+          calls.push([cmd, args])
+          return ""
+        },
+        sleep: (ms) => calls.push(["sleep", ms]),
+      },
+      pidPath,
+    }
+  }
+
+  test("kills when pid alive and image is node.exe", () => {
+    const calls = []
+    const { deps } = fakeDeps("4242", "node.exe", calls)
+    expect(stopGatewayDaemon(deps)).toBe("stopped")
+    expect(calls.some(([cmd]) => cmd === "taskkill")).toBe(true)
+  })
+
+  test("skips when image is not node.exe (pid reuse guard)", () => {
+    const calls = []
+    const { deps } = fakeDeps("4242", "msedge.exe", calls)
+    expect(stopGatewayDaemon(deps)).toBe("not-running")
+    expect(calls.some(([cmd]) => cmd === "taskkill")).toBe(false)
+  })
+
+  test("skips when pid file missing or dead process", () => {
+    const calls = []
+    const { deps } = fakeDeps(null, null, calls)
+    expect(stopGatewayDaemon(deps)).toBe("not-running")
+    const calls2 = []
+    const { deps: deps2 } = fakeDeps("4242", null, calls2)
+    expect(stopGatewayDaemon(deps2)).toBe("not-running")
+    expect(calls2.some(([cmd]) => cmd === "taskkill")).toBe(false)
   })
 })

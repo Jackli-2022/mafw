@@ -32,4 +32,52 @@ function decide(bundled, global) {
   return compareVersions(global, bundled) < 0 ? "update" : "skip"
 }
 
-module.exports = { NPM_PACKAGE, NPM_BIN, readPkgVersion, compareVersions, decide }
+function readPidFile(fsMod, pidPath) {
+  try {
+    const raw = fsMod.readFileSync(pidPath, "utf-8").trim()
+    return /^\d+$/.test(raw) ? raw : null
+  } catch {
+    return null
+  }
+}
+
+function pidImageName(exec, pid) {
+  try {
+    const out = exec("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], 10000)
+    const first = String(out).split(/\r?\n/).find((line) => line.trim().startsWith('"'))
+    if (!first) return null
+    return first.split('","')[0].replace(/^"/, "").toLowerCase() || null
+  } catch {
+    return null
+  }
+}
+
+function shouldKill(imageName) {
+  return imageName === "node.exe"
+}
+
+function stopGatewayDaemon(deps) {
+  const pid = readPidFile(deps.fs, deps.pidFilePath)
+  if (!pid) return "not-running"
+  const image = deps.pidImageName(pid)
+  if (!shouldKill(image)) return "not-running"
+  try {
+    deps.exec("taskkill", ["/F", "/T", "/PID", pid], 15000)
+  } catch {
+    return "not-running"
+  }
+  deps.sleep(1000)
+  return "stopped"
+}
+
+module.exports = {
+  NPM_PACKAGE,
+  NPM_BIN,
+  readPkgVersion,
+  compareVersions,
+  decide,
+  readPidFile,
+  pidImageName,
+  shouldKill,
+  stopGatewayDaemon,
+}
