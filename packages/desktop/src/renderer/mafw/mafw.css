@@ -581,6 +581,10 @@ html[data-theme="light"] .mafw-shell {
 .mafw-session-turn-container {
   flex: 1;
   overflow-y: auto;
+  /* overflow-y 非 visible 时 overflow-x 规范计算为 auto——session-turn content
+     强制 overflow-visible（锚点需求）会让任何宽内容顶出横向滚动条。
+     Chat 容器禁横向滚：宽内容由 markdown pre/table 自身 overflow-x 滚动。 */
+  overflow-x: hidden;
   min-height: 0;
   padding: 0 32px;
   padding-bottom: 48px;   /* last message clears the jump-to-latest button */
