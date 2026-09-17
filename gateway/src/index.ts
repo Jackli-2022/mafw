@@ -45,6 +45,9 @@ import { createMediaRuntimeExecutor, MediaRuntimeExecutor } from "./media/media-
 import { resolveMediaPrompt } from './media/resolve-prompt';
 import { MediaPluginLoader } from "./media/media-plugin-loader";
 import { createTtsService } from "./media/tts-service";
+import { TtsEngineRegistry } from "./tts/registry";
+import { createMimoEngine } from "./tts/mimo-engine";
+import { adaptToStream } from "./tts/sentence-adapter";
 import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
@@ -287,6 +290,8 @@ class MafwScheduler {
   private pluginHost?: PluginHost;
   private usageStatsProvider?: UsageStatsProvider;
   private ttsService?: ReturnType<typeof createTtsService>;
+  private ttsRegistry = new TtsEngineRegistry();
+  private ttsInflight = new Map<string, Set<AbortController>>(); // sessionId → 在途合成
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
@@ -1960,6 +1965,10 @@ class MafwScheduler {
       config: () => config.raw,
       get credentials() { return self.opencodeClient?.credentials; },
     });
+    this.ttsRegistry.registerBuiltin(createMimoEngine({
+      config: () => config.raw as any,
+      get credentials() { return self.opencodeClient?.credentials; },
+    }));
     const pyBin = process.env.MAFW_PYTHON_BIN
       || path.join(os.homedir(), 'AppData', 'Local', 'agent-vision-toolkit', '.venv-pykernel', 'Scripts', 'python.exe');
     this.kernels = new SessionKernels(pyBin);
@@ -2572,21 +2581,24 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/tts/voices — preset voice list + model info (desktop picker)
+        // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
         if (req.url === "/api/tts/voices" && req.method === "GET") {
           try {
-            const { TTS_VOICES, TTS_DEFAULT_VOICE, TTS_DEFAULT_MODEL } = await import('./media/tts-service.js');
             const ttsCfg = (config.raw as any)?.media?.tts ?? {};
+            const engine = this.ttsRegistry.resolve(ttsCfg.engine);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
-              voices: TTS_VOICES,
+              voices: engine.voices(),
+              engine: engine.name,
+              capabilities: engine.capabilities,
+              engines: this.ttsRegistry.list().map(e => ({ name: e.name, source: e.source })),
               models: [
                 { id: 'mimo-v2.5-tts', description: '预置音色语音合成（支持唱歌模式）' },
                 { id: 'mimo-v2.5-tts-voicedesign', description: '文本描述定制音色' },
                 { id: 'mimo-v2.5-tts-voiceclone', description: '音频样本复刻音色' },
               ],
-              defaultVoice: ttsCfg.defaultVoice || TTS_DEFAULT_VOICE,
-              defaultModel: ttsCfg.model || TTS_DEFAULT_MODEL,
+              defaultVoice: ttsCfg.defaultVoice || '茉莉',
+              defaultModel: ttsCfg.model || 'mimo-v2.5-tts',
             }));
           } catch (err: any) {
             res.writeHead(502);
@@ -2604,14 +2616,16 @@ class MafwScheduler {
             if (!text.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'text is required' })); return; }
             const voice = typeof body?.voice === 'string' ? body.voice : undefined;
             const style = typeof body?.style === 'string' ? body.style : undefined;
-            const result = await this.ttsService.synthesize({ text, voice, style });
-            const artifactId = this.mediaAgent.putArtifact(result.audioDataUrl);
+            const ttsCfg: any = (config.raw as any)?.media?.tts ?? {};
+            const ttsEngine = this.ttsRegistry.resolve(ttsCfg.engine);
+            const wav = await ttsEngine.synthesize(text, { voice, style });
+            const artifactId = this.mediaAgent.putArtifact(`data:audio/wav;base64,${wav.toString('base64')}`);
             const baseUrl = `http://127.0.0.1:${config.server.apiPort}`;
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
               artifactId,
-              voice: result.voice,
-              mime: result.mime,
+              voice: voice || ttsCfg.defaultVoice || '茉莉',
+              mime: 'audio/wav',
               url: `${baseUrl}/a2a/artifacts/${artifactId}`,
             }));
           } catch (err: any) {
@@ -2840,8 +2854,10 @@ class MafwScheduler {
           if (handled) return;
         }
 
-        // POST /api/tts/stream — 流式 TTS（SSE，pcm16 24kHz mono 分块）。
+        // POST /api/tts/stream — 流式 TTS（SSE，PCM16 mono 分块）。
+        // 响应头 x-tts-sample-rate 声明引擎采样率；
         // 每块：data: {"data":"<base64 pcm16>","voice":"<voice>"}\n\n；结束：data: {"done":true}
+        // body.sessionId 可选：登记在途合成，供 /api/tts/interrupt 取消。
         if (req.url === "/api/tts/stream" && req.method === "POST") {
           if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
           const body = JSON.parse(await readBody(req));
@@ -2849,20 +2865,35 @@ class MafwScheduler {
           if (!text.trim()) { res.writeHead(400); res.end(JSON.stringify({ error: 'text is required' })); return; }
           const voice = typeof body?.voice === 'string' ? body.voice : undefined;
           const style = typeof body?.style === 'string' ? body.style : undefined;
+          const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
           try {
-            if (!this.ttsService) { res.writeHead(503); res.end(JSON.stringify({ error: 'TTS not initialized' })); return; }
+            const ttsCfg = (config.raw as any)?.media?.tts ?? {};
+            const ttsEngine = this.ttsRegistry.resolve(ttsCfg.engine);
+            const abort = new AbortController();
+            req.on('close', () => abort.abort());
+            if (sessionId) {
+              let inflightSet = this.ttsInflight.get(sessionId);
+              if (!inflightSet) { inflightSet = new Set(); this.ttsInflight.set(sessionId, inflightSet); }
+              inflightSet.add(abort);
+              res.on('close', () => {
+                inflightSet.delete(abort);
+                if (inflightSet.size === 0) this.ttsInflight.delete(sessionId);
+              });
+            }
             res.writeHead(200, {
               'Content-Type': 'text/event-stream',
               'Cache-Control': 'no-cache',
               Connection: 'keep-alive',
+              'x-tts-sample-rate': String(ttsEngine.capabilities.sampleRate),
             });
-            const abort = new AbortController();
-            req.on('close', () => abort.abort());
-            const gen = this.ttsService.synthesizeStream({ text, voice, style }, { signal: abort.signal });
+            const gen = ttsEngine.capabilities.streaming === 'native'
+              ? ttsEngine.synthesizeStream(text, { voice, style }, abort.signal)
+              : adaptToStream(ttsEngine, text, { voice, style }, abort.signal);
             for await (const chunk of gen) {
-              res.write(`data: ${JSON.stringify({ data: chunk.data, voice: chunk.voice })}\n\n`);
+              if (abort.signal.aborted) break;
+              res.write(`data: ${JSON.stringify({ data: chunk.pcm.toString('base64'), voice: voice || ttsCfg.defaultVoice || '茉莉' })}\n\n`);
             }
-            res.write('data: {"done":true}\n\n');
+            if (!abort.signal.aborted) res.write('data: {"done":true}\n\n');
             res.end();
           } catch (err: any) {
             if (!res.headersSent) {
