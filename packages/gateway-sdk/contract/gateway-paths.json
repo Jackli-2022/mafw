@@ -2316,6 +2316,19 @@
         }
       }
     },
+    "/api/runtime/dry-event": {
+      "post": {
+        "operationId": "runtime.dryEvent",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/sessions/{sid}/permissions/{rid}": {
       "post": {
         "operationId": "permissions.replyRuntime",
