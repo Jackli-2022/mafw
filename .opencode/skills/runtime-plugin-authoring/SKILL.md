@@ -305,7 +305,7 @@ module.exports = {
 
 1. `JSON.parse(e.data)`，失败静默丢弃
 2. 剥壳：`event = raw?.data || raw`
-3. 特判分发（其余未知 type **静默忽略——SSE 规范行为**，发送方随时可加新类型）：
+3. 特判分发（其余未知 type **不再完全静默**——gateway 入口会计数告警，desktop 打 `[mafw] unhandled SSE event` warn 并在事件检查器（Ctrl+Shift+E）里以 `miss` 红显；事件本身 fail-open 照常透传，"发了没人理"现在是可观测的）：
 
 | type | 消费行为 | 依赖字段 |
 |---|---|---|
@@ -327,7 +327,7 @@ TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`）：`mess
 ### 3.6 自定义事件（两条合法路径）
 
 1. **runtime 内部事件**：直接向 `global.event()` 流里发任意 type——normalize 后走 passthrough 进 Mode A。想要 desktop 有反应就复用 3.4 的契约 type；全新 type 桌面会忽略（合法，但等于没发）
-2. **插件包 / 外部程序**：`ctx.emit({ type: 'plugin:<name>:<event>', ... })` 或 `POST /api/events`（SDK `event.publish()`）——发布到全部 UI 通道，无需 runtime 参与通知类信息
+2. **插件包 / 外部程序**：`ctx.emit({ type: 'plugin:<name>:<event>', ... })` 或 `POST /api/events`（SDK `event.publish()`）——发布到全部 UI 通道，无需 runtime 参与通知类信息。`plugin:*` 命名空间事件是**静默放行的合法自定义通道**（桌面尾部判定 accounted，不触发 miss 告警）；非命名空间的未知类型则会触发 gateway 遥测计数 + 桌面 miss 红显
 
 ### 3.7 事件发布检查清单
 
@@ -335,6 +335,9 @@ TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`）：`mess
 - [ ] 需要 desktop 有反应 → 对照 3.4 契约表选 type 并给全必需字段（尤其 `sessionID` 与 `properties.info`）
 - [ ] 需要 ChatPane/TUI 跟随流式输出 → 必须产出 opencode 兼容的 `message.part.updated`（`part.text`）与 `session.idle`
 - [ ] 新 type 用 `plugin:<name>:<event>` 命名空间；消费端（你自己的 renderer 逻辑）负责分发
+- [ ] 事件样本过一遍试衣间：`curl -X POST http://localhost:3000/api/runtime/dry-event -H 'Content-Type: application/json' -d '{"event": {...}}'` → 响应 `warnings` 为空
+- [ ] 用 `ctx.events.make()` 构造事件（未知 type 在构造点即打 warn，第一时间可见）
+- [ ] 端到端验证：`mafw plugin-test`（两场景 PASS；会消耗一次真实 LLM 往返）
 - [ ] 不要依赖事件顺序（SSE 无序保证）；不要在事件里放大数据载荷（走 API 拉取）
 
 ## 第四步：接入记忆系统
@@ -648,12 +651,12 @@ mafw restart
 **规则：** 声明的能力必须有对应实现；未实现的能力声明为 `false`。
 
 ### 3. 事件形状不兼容
-自定义事件形状与 `normalizeOpencodeEvent()` 不兼容 → 归一化产出空 facets（畸形限频 warn）或字段提取失败（desktop/TUI 静默忽略）。
+自定义事件形状与 `normalizeOpencodeEvent()` 不兼容 → 归一化产出空 facets（畸形限频 warn）或字段提取失败（desktop 打 miss warn + 检查器红显）。
 
 **解决：** 
 - 优先让事件形状接近 opencode（见"第三步：SSE 事件"的输入契约表 3.1）
-- 逐 type 核对必需字段（sessionID / properties.info / part.text）——缺字段不报错，只是对应消费方无反应
-- desktop/TUI 对未知 type 静默忽略是 SSE 规范行为；自写新 type 需配套自己的消费端
+- 逐 type 核对必需字段（sessionID / properties.info / part.text）——缺字段不报错，只是对应消费方无反应；**用试衣间端点替代肉眼对照契约表**（见下方「开发工具箱」）
+- desktop/TUI 对未知 type 现在可观测（遥测 + miss 红显）；自写新 type 需配套自己的消费端
 
 ### 4. 忽略 external 字段
 `external: true`（默认）→ gateway 不 spawn 进程，仅做健康探测。
@@ -723,6 +726,52 @@ curl http://localhost:3000/health
 ```
 
 返回 `{"status":"ok"}` 表示 gateway 正常运行。若插件的 `healthCheck()` 返回 `false`，gateway 会记录警告日志。
+
+## 开发工具箱（事件防遗漏四件套）
+
+### 1. 未知事件遥测（gateway 侧，自动生效）
+
+gateway 在事件入口对**不在 canonical 集、也不带 `plugin:*` 命名空间**的未知类型计数，首次出现打一条 warn（带 runtime 名）。计数经 `GET /api/runtime` 的 `unknownEvents` 字段暴露（per-runtime per-type）：
+
+```bash
+curl http://localhost:3000/api/runtime | jq .unknownEvents
+# { "my-runtime": { "weird.event": 47 } }
+```
+
+canonical 集 = `@mafw/sdk` 的 `RUNTIME_EVENT_TYPES`（gateway 侧镜像：`EVENT_FLOW_MATRIX` keys）+ `plugin:*` / `session.next.*` 前缀族。
+
+### 2. 事件试衣间（离线验证，不发消息不起桌面）
+
+```bash
+curl -X POST http://localhost:3000/api/runtime/dry-event \
+  -H 'Content-Type: application/json' \
+  -d '{"event": {"type": "session.idle", "properties": {"sessionID": "s1"}}}'
+```
+
+响应：`known`（是否 canonical）+ `facets`（normalize 后会被哪些切面消费：step/chatSignal/broadcast/compaction）+ `flow`（Mode A 处置 modeA / desktop / tui 各跳）+ `warnings`（缺字段警告，来自字段契约的可执行版）。`warnings: []` = 事件会被正确消费。
+
+### 3. ctx.events 构造助手（把错误提前到 emit 调用点）
+
+`createRuntime(ctx)` 的 ctx 上有 `events.make` / `events.check`：
+
+```javascript
+// make：构造形状 A 信封（sessionID 合并进 properties）；未知 type 构造点即 warn（不阻断）
+const evt = ctx.events.make('session.idle', {}, sessionID);
+// check：字段契约检查，返回 warnings 数组（同试衣间响应）
+const problems = ctx.events.check(evt);
+```
+
+### 4. mafw plugin-test（端到端场景一致性）
+
+```bash
+mafw plugin-test
+```
+
+对**活跃 runtime** 跑两个场景并逐项报告 PASS/FAIL：
+- `chat-roundtrip`：真实创建会话 + promptAsync 一条消息，断言事件流中出现内容事件（part/delta/updated）且回合有终态（complete/idle/error）
+- `session-lifecycle`：create → list 可见 → delete → list 不可见
+
+注意：会**消耗真实 LLM 往返**（每场景一次）；等价 HTTP 入口 `POST /api/runtime/conformance`（body 可传 `{"scenarios": [...], "timeoutMs": n}` 过滤/调参）。
 
 ## 完整示例：接入自定义 LLM 服务
 

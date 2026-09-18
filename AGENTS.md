@@ -829,6 +829,8 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
 runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应端点 503、
 事件订阅跳过，不崩溃。
 
+> **插件开发协助四件套（2026-09-18）**：①未知事件遥测（`event-telemetry.ts`，已知集=EVENT_FLOW_MATRIX keys ∪ `plugin:`/`session.next.` 前缀族，全量启用；首次出现 warn + `GET /api/runtime` 暴露 `unknownEvents`；`POST /api/events` 扁平非命名空间发布同样采集）；②事件试衣间 `POST /api/runtime/dry-event`（normalize facets + 矩阵每跳处置 + 字段契约警告 `event-field-contract.ts`，纯函数零 deps）；③`ctx.events.make/check` 构造期助手（loader ctx，未知 type 构造点即 warn，fail-open）；④场景一致性 `POST /api/runtime/conformance` + `mafw plugin-test`（S1 chat-roundtrip 事件序 / S2 session-lifecycle API 往返，`handleOpencodeEvent` 的 per-session event tap 收集观测，驱动真实会话消耗 LLM 往返）。评估器纯函数在 `conformance-scenarios.ts`。
+
 #### Runtime 热切换（无需重启）
 
 运行时切换有两种触发路径，均**不重启 gateway 进程**：
