@@ -2897,6 +2897,19 @@
         }
       }
     },
+    "/api/runtime/conformance": {
+      "post": {
+        "operationId": "runtime.conformance",
+        "tags": [
+          "internal"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/sessions/{sid}/permissions/{rid}": {
       "post": {
         "operationId": "permissions.replyRuntime",

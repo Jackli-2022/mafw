@@ -58,7 +58,7 @@ const COMMANDS = [
   'start', 'daemon', 'stop', 'status', 'restart', 'logs',
     'health', 'stats', 'projects', 'goals', 'register',
     'sessions', 'control', 'memory-search',
-    'automations', 'approvals', 'triage', 'restart-agent',
+    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test',
   'service-register', 'service-unregister',
   'config', 'dashboard', 'uninstall', 'version', 'update', 'tui',
 ];
@@ -349,6 +349,7 @@ async function main() {
 
     case 'health': await callApi('health', 'GET', '/health'); break;
     case 'restart-agent': await callApi('restart-agent', 'POST', '/api/runtime/restart-agent'); break;
+    case 'plugin-test': await runConformance(); break;
     case 'stats': await callApi('stats', 'GET', '/api/stats'); break;
     case 'projects': await callApi('projects', 'GET', '/api/projects'); break;
     case 'goals': await callApi('goals', 'GET', '/api/goals'); break;
@@ -386,6 +387,27 @@ async function main() {
     case 'update': requestUpdate(); break;
     case 'tui': launchTui(); break;
   }
+}
+
+// `mafw plugin-test`: run conformance scenarios against the ACTIVE runtime
+// (drives real sessions — costs one LLM roundtrip per scenario).
+async function runConformance() {
+  const port = process.env.MAFW_SERVER_API_PORT || 3000;
+  const res = await fetch(`http://127.0.0.1:${port}/api/runtime/conformance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+    signal: AbortSignal.timeout(180000),
+  }).catch((e) => { console.error(`Gateway unreachable: ${e.message}`); process.exit(1); });
+  const data = await res.json();
+  console.log(`Runtime: ${data.runtime}`);
+  for (const r of data.results || []) {
+    const mark = r.pass ? 'PASS' : 'FAIL';
+    console.log(`  [${mark}] ${r.id} — ${r.title} (${r.durationMs}ms)`);
+    for (const f of r.failures || []) console.log(`         - ${f}`);
+  }
+  console.log(`Summary: ${data.summary.pass} pass / ${data.summary.fail} fail`);
+  process.exit(data.summary.fail > 0 ? 1 : 0);
 }
 
 // `mafw update`: write the self-update token (atomic tmp+rename). The running

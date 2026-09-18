@@ -94,6 +94,7 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
+import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
 import { PluginHost } from './plugins/package-host';
 import { createPluginPackageContext } from './plugins/package-context';
@@ -280,6 +281,8 @@ class MafwScheduler {
   private runtimeLoader?: RuntimePluginLoader;
   /** 未知事件遥测（L1）：per-source（runtime 名 / 'api'）per-type 计数。 */
   private unknownEventTracker = new UnknownEventTracker();
+  /** Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。 */
+  private eventTaps = new Map<string, Set<(e: { type: string; sessionID?: string; at: number }) => void>>();
   private serveSupervisor: ServeSupervisor;
   private switchingRuntime = false;
   /** Abort controller for the active event stream subscription. Cancelled
@@ -948,6 +951,15 @@ class MafwScheduler {
       } catch { /* fail-open */ }
     }
     const { type, properties: props, sessionID } = f;
+    // Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。
+    // 放在 internal 过滤之前——tap 要看到该会话的全量事件（fail-open 不阻断主链）。
+    if (sessionID) {
+      const taps = this.eventTaps.get(sessionID);
+      if (taps && taps.size) {
+        const snap = { type: f.type, sessionID, at: Date.now() };
+        for (const t of taps) { try { t(snap); } catch { /* fail-open */ } }
+      }
+    }
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
     // store writes + re-render storms froze the UI). Tiered policy for them:
@@ -1310,6 +1322,30 @@ class MafwScheduler {
   /** Wave1Gateway 契约：POST /api/events 扁平未知类型遥测。 */
   recordUnknownEvent(type: string): void {
     try { this.unknownEventTracker.record('api', type); } catch { /* fail-open */ }
+  }
+
+  /** 注册 per-session 事件观察者（conformance harness 用）；返回注销函数。 */
+  registerEventTap(sessionID: string, cb: (e: { type: string; sessionID?: string; at: number }) => void): () => void {
+    let set = this.eventTaps.get(sessionID);
+    if (!set) { set = new Set(); this.eventTaps.set(sessionID, set); }
+    set.add(cb);
+    return () => { set!.delete(cb); if (set!.size === 0) this.eventTaps.delete(sessionID); };
+  }
+
+  /** POST /api/runtime/conformance deps。 */
+  private conformanceDeps(): ConformanceDeps {
+    return {
+      runtimeName: () => this.runtimeName,
+      caps: () => this.runtimeCaps as any,
+      createSession: async (opts) => this.runtime!.session.create(opts || {}),
+      promptAsync: async (opts) => { await this.runtime!.session.promptAsync(opts); },
+      deleteSession: async (id) => { await this.runtime!.session.delete({ sessionID: id }); },
+      listSessions: async () => {
+        const r: any = await this.runtime!.session.list({});
+        return Array.isArray(r) ? r : (r?.sessions || r?.data || []);
+      },
+      registerEventTap: (sid, cb) => this.registerEventTap(sid, cb),
+    };
   }
 
   /** P5 Wave 2：/api/runtime 路由 deps（自内联块上移，行为逐字节等价）。 */

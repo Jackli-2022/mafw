@@ -2185,6 +2185,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runtime/conformance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["runtime.conformance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{sid}/permissions/{rid}": {
         parameters: {
             query?: never;
@@ -5081,6 +5097,24 @@ export interface operations {
         };
     };
     "runtime.dryEvent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "runtime.conformance": {
         parameters: {
             query?: never;
             header?: never;
