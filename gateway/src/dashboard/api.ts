@@ -9,19 +9,11 @@ export class DashboardAPI {
   private projectDir: string;
   private mafwDir: string;
   private scheduler?: SchedulerState;
-  private opencodeClient: any;
-  private compressSessionId: string | null;
 
-  constructor(projectDir: string = '.', scheduler?: SchedulerState, opencodeClient?: any) {
+  constructor(projectDir: string = '.', scheduler?: SchedulerState) {
     this.projectDir = projectDir;
     this.mafwDir = path.join(projectDir, gatewayConfig.paths.mafwDir);
     this.scheduler = scheduler;
-    this.opencodeClient = opencodeClient || null;
-    this.compressSessionId = null;
-  }
-
-  private async getClient(): Promise<any> {
-    return this.opencodeClient;
   }
 
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -296,16 +288,6 @@ export class DashboardAPI {
         return;
       }
 
-      // POST /api/llm/compress — LLM compression proxy
-      if (pathname === '/api/llm/compress' && method === 'POST') {
-        const body = await this.readBody(req);
-        const { observations, model } = JSON.parse(body);
-        const result = await this.llmCompress(observations || [], model);
-        res.writeHead(200);
-        res.end(JSON.stringify(result));
-        return;
-      }
-
       // GET /api/l5/axioms
       if (pathname === '/api/l5/axioms' && method === 'GET') {
         const topK = parseInt(parsedUrl.searchParams.get('topK') || '10', 10);
@@ -332,58 +314,6 @@ export class DashboardAPI {
     } catch (err: any) {
       res.writeHead(500);
       res.end(JSON.stringify({ error: err.message || 'Internal server error' }));
-    }
-  }
-
-  async llmCompress(observations: string[], model?: string): Promise<any> {
-    const prompt = `Analyze the following agent observations and extract structured memories.
-Return JSON only:
-{
-  "narrative": "summary of what happened",
-  "facts": ["specific fact 1", "specific fact 2"],
-  "concepts": ["keyword1", "keyword2"],
-  "energy": 0.5
-}
-
-Observations:
-${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
-
-    const systemPrompt = 'You are a memory compression system. Extract structured memories from observations. Return ONLY valid JSON.';
-
-    try {
-      const client = await this.getClient();
-
-      if (!this.compressSessionId) {
-        const session = await client.session.create({ directory: this.projectDir });
-        this.compressSessionId = session.id;
-      }
-
-      const result = await client.session.prompt({
-        sessionID: this.compressSessionId,
-        parts: [{ type: 'text', text: prompt }],
-        system: systemPrompt,
-        noReply: false,
-        ...(model ? {
-          model: { providerID: 'opencode', modelID: model }
-        } : {}),
-      });
-
-      const text = result.parts
-        ?.filter((p: any) => p.type === 'text')
-        .map((p: any) => p.text)
-        .join('\n') || '';
-      return this.parseLLMResponse(text);
-    } catch (err: any) {
-      return { narrative: 'Compression failed: ' + err.message, facts: [], concepts: [], energy: 0.3 };
-    }
-  }
-
-  parseLLMResponse(text: string): any {
-    try {
-      const parsed = JSON.parse(text);
-      return { narrative: parsed.narrative || '', facts: Array.isArray(parsed.facts) ? parsed.facts : [], concepts: Array.isArray(parsed.concepts) ? parsed.concepts : [], energy: typeof parsed.energy === 'number' ? parsed.energy : 0.5 };
-    } catch {
-      return { narrative: text.slice(0, 200), facts: [], concepts: [], energy: 0.5 };
     }
   }
 

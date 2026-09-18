@@ -5,7 +5,7 @@ import type { AgentRuntime } from '../../src/runtime/contract';
 import { Readable } from 'stream';
 
 /**
- * 回归测试（2026-09-17）：P5 Wave1 attach 用字面量快照传 opencodeClient，
+ * 回归测试（2026-09-17）：P5 Wave1 attach 用字面量快照传 runtime，
  * attach 早于 runtime 初始化 → session.fork 永远 503 "runtime 'none'"。
  * attach 字面量必须用 getter（活引用）——本测试锁定该语义。
  */
@@ -26,11 +26,11 @@ function fakeRes(): any {
   return out;
 }
 
-describe('wave1 attach: opencodeClient is a live reference (getter), not a snapshot', () => {
+describe('wave1 attach: runtime is a live reference (getter), not a snapshot', () => {
   test('session.fork resolves runtime assigned AFTER attach', async () => {
-    const state = { opencodeClient: null as AgentRuntime | null };
+    const state = { runtime: null as AgentRuntime | null };
     const gw = {
-      get opencodeClient() { return state.opencodeClient; },
+      get runtime() { return state.runtime; },
       get runtimeCaps() { return {} as any; },
       getGatewayDb: () => ({ listGoalSessions: () => [] }),
       rotateDeps: () => { throw new Error('not used'); },
@@ -44,7 +44,7 @@ describe('wave1 attach: opencodeClient is a live reference (getter), not a snaps
     attachWave1Handlers(registry, gw);
 
     // attach 之后（模拟启动顺序：startApiServer 先于 runtime 初始化）
-    state.opencodeClient = {
+    state.runtime = {
       name: 'opencode',
       capabilities: { sessionBranchApi: true },
       session: {

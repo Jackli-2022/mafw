@@ -6,7 +6,7 @@ import type { UsageStatsProvider } from '../usage/plugin-context';
 import type { PluginPackageContext } from './package-types';
 
 export interface PackageContextDeps {
-  /** thunk 惰性求值（host 初始化时 opencodeClient/trajStore 可能尚未就绪） */
+  /** thunk 惰性求值（host 初始化时 runtime/trajStore 可能尚未就绪） */
   getCredentials?: () => RuntimeCredentials | undefined;
   usageStats?: () => UsageStatsProvider | undefined;
   projectDir: string;

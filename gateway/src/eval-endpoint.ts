@@ -22,7 +22,7 @@ import * as path from 'path';
  */
 
 export interface EvalEndpointOptions {
-  opencodeClient: any;
+  runtime: any;
   directory?: string;
   /** Main agent model. */
   providerID: string;
@@ -155,13 +155,13 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
       }
 
       // 1. fresh session for isolation
-      const session = await opts.opencodeClient.session.create({ directory: opts.directory || '.' });
+      const session = await opts.runtime.session.create({ directory: opts.directory || '.' });
       sessionId = session.id;
       if (!sessionId) throw new Error('Failed to create eval session');
 
       // 2. prompt the main agent (full agent loop: ingest → tool → answer)
       try {
-        await opts.opencodeClient.session.promptAsync({
+        await opts.runtime.session.promptAsync({
           sessionID: sessionId,
           parts,
           model: { providerID: opts.providerID, modelID: opts.modelID },
@@ -181,7 +181,7 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
         await new Promise((r) => setTimeout(r, pollMs));
         let messages: Array<{ info: any; parts: any[] }> = [];
         try {
-          const res = await opts.opencodeClient.session.messages({ sessionID: sessionId });
+          const res = await opts.runtime.session.messages({ sessionID: sessionId });
           messages = res.data ?? [];
         } catch {
           /* keep polling */
@@ -209,7 +209,7 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
       return { status: 500, body: { error: { message: `eval chat error: ${err?.message || String(err)}` } } };
     } finally {
       if (sessionId) {
-        await opts.opencodeClient.session.delete({ sessionID: sessionId }).catch(() => {});
+        await opts.runtime.session.delete({ sessionID: sessionId }).catch(() => {});
       }
     }
   };

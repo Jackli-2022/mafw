@@ -44,7 +44,7 @@ export class TrajectoryCollector {
   private turns = new Map<string, TurnState>();
   private seqCounters = new Map<string, number>();
   private seenUserMessageIDs = new Set<string>();
-  private opencodeClient: any;
+  private runtime: any;
   private _roleFor?: (sessionID: string) => string | null;
 
   constructor(
@@ -54,8 +54,8 @@ export class TrajectoryCollector {
     private getRetentionDays: () => number = () => 14,
   ) {}
 
-  setOpencodeClient(client: any): void {
-    this.opencodeClient = client;
+  setRuntime(client: any): void {
+    this.runtime = client;
   }
 
   setRoleFor(fn: (sessionID: string) => string | null): void {
@@ -139,7 +139,7 @@ export class TrajectoryCollector {
         const summaryBody = info?.summary?.body || '';
         s.userText = truncate(summaryBody, USER_TEXT_MAX) || '';
         log.info(`[Trajectory] user message: sessionID=${sessionID}, id=${info.id}, summaryBody.len=${summaryBody.length}`);
-        if (!s.userText && info.id && this.opencodeClient) {
+        if (!s.userText && info.id && this.runtime) {
           void this.fetchUserText(sessionID, info.id, s);
         }
         return this.emit(sessionID, s, 'turn_start', {}, projectID);
@@ -297,7 +297,7 @@ export class TrajectoryCollector {
 
   private async fetchUserText(sessionID: string, messageID: string, s: TurnState): Promise<void> {
     try {
-      const result = await this.opencodeClient.session.messages({
+      const result = await this.runtime.session.messages({
         sessionID,
         limit: 50,
       });

@@ -32,7 +32,7 @@ import {
 /** gateway 实例的最小依赖面（只声明 Wave 1 闭包实际用到的成员）。 */
 export interface Wave1Gateway {
   getGatewayDb(): { listGoalSessions(goalId: string): any };
-  opencodeClient: AgentRuntime | null;
+  runtime: AgentRuntime | null;
   automationEngine?: { rejectTriage(id: string): boolean } | null;
   ledger?: { append(entry: unknown): void } | null;
   rotateDeps(): ManagerRotateDeps;
@@ -54,7 +54,7 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
   registry.attachHandler('goals.sessions', H(async (req, res, params) =>
     handleGoalSessions(req, res, req.url || '', {
       listGoalSessions: (goalId: string) => gw.getGatewayDb().listGoalSessions(goalId),
-      getSession: (sessionID: string) => gw.opencodeClient?.session.get({ sessionID }).catch(() => null),
+      getSession: (sessionID: string) => gw.runtime?.session.get({ sessionID }).catch(() => null),
     })));
 
   registry.attachHandler('triage.dismiss', H(async (req, res, params) =>
@@ -76,25 +76,25 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleModelConfigUpdate(req, res, gw.modelConfigDeps())));
 
   registry.attachHandler('session.fork', H(async (req, res, params) =>
-    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.opencodeClient })));
+    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
   registry.attachHandler('session.revert', H(async (req, res, params) =>
-    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.opencodeClient })));
+    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
   registry.attachHandler('session.unrevert', H(async (req, res, params) =>
-    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.opencodeClient })));
+    handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
 
   registry.attachHandler('session.delete', H(async (req, res) =>
     handleSessionMutations(req, res, {
       getCapabilities: () => gw.runtimeCaps,
-      getClient: () => (gw.opencodeClient ?? null) as any,
+      getClient: () => (gw.runtime ?? null) as any,
     })));
   registry.attachHandler('session.rename', H(async (req, res) =>
     handleSessionMutations(req, res, {
       getCapabilities: () => gw.runtimeCaps,
-      getClient: () => (gw.opencodeClient ?? null) as any,
+      getClient: () => (gw.runtime ?? null) as any,
     })));
 
   registry.attachHandler('session.summarize', H(async (req, res) =>
-    handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.opencodeClient })));
+    handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.runtime })));
 
   registry.attachHandler('event.publish', H(async (req, res) =>
     handleEventPublish({ broadcast: (e) => gw.broadcast(e) }, req, res)));

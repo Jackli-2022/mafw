@@ -13,14 +13,14 @@ export interface SessionRecord {
 }
 
 export class SdkSessionResource {
-  private opencodeClient: any;
+  private client: any;
   private sessions: Map<string, SessionRecord> = new Map();
   private sessionsDir: string;
   public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }) => Promise<void>;
   public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }> }>;
 
-  constructor(opencodeClient?: any, mafwDir?: string) {
-    this.opencodeClient = opencodeClient;
+  constructor(client?: any, mafwDir?: string) {
+    this.client = client;
     this.sessionsDir = mafwDir ? path.join(mafwDir, 'sessions') : '';
     this.promptAsync = this._rawPromptAsync.bind(this);
     this.prompt = this._rawPrompt.bind(this);
@@ -43,8 +43,8 @@ export class SdkSessionResource {
     fs.writeFileSync(path.join(this.sessionsDir, `${record.id}.json`), JSON.stringify(record, null, 2), 'utf-8');
   }
 
-  setClient(client: any) { this.opencodeClient = client; }
-  isReady(): boolean { return !!this.opencodeClient; }
+  setClient(client: any) { this.client = client; }
+  isReady(): boolean { return !!this.client; }
 
   createPromptAsyncWithInjection(memorySearch: (query: string, maxFacts: number) => Promise<MemoryFact[]>): (sessionID: string, message: string) => Promise<void> {
     return withMemoryInjection(this._rawPromptAsync.bind(this), {
@@ -59,9 +59,9 @@ export class SdkSessionResource {
     let id: string;
     let projectID: string;
     let title: string;
-    if (this.opencodeClient) {
+    if (this.client) {
       try {
-        const created = await this.opencodeClient.session.create({
+        const created = await this.client.session.create({
           directory: directory || '.',
         });
         id = created.id;
@@ -122,7 +122,7 @@ export class SdkSessionResource {
     agent?: string,
     model?: { providerID: string; modelID: string },
   ): Promise<void> {
-    if (!this.opencodeClient) throw new Error('OpenCode client not available');
+    if (!this.client) throw new Error('Runtime client not available');
     if (!sessionID) return;
     const promptParts: Array<{ type: string; [key: string]: any }> = [];
     if (message) promptParts.push({ type: 'text', text: message });
@@ -130,7 +130,7 @@ export class SdkSessionResource {
     const promptOpts: any = { sessionID, parts: promptParts };
     if (agent) promptOpts.agent = agent;
     if (model?.providerID && model?.modelID) promptOpts.model = model;
-    await this.opencodeClient.session.promptAsync(promptOpts);
+    await this.client.session.promptAsync(promptOpts);
   }
 
   private async _rawPrompt(
@@ -138,11 +138,11 @@ export class SdkSessionResource {
     parts: Array<{ type: string; text: string }>,
     system?: string,
   ): Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }> }> {
-    if (!this.opencodeClient) throw new Error('OpenCode client not available');
+    if (!this.client) throw new Error('Runtime client not available');
     if (!sessionID) {
       return { parts: [] };
     }
-    const result = await this.opencodeClient.session.prompt({
+    const result = await this.client.session.prompt({
       sessionID,
       parts,
       system,
@@ -159,8 +159,8 @@ export class SdkSessionResource {
   }
 
   async delete(sessionID: string): Promise<void> {
-    if (this.opencodeClient && sessionID) {
-      await this.opencodeClient.session.delete({ sessionID }).catch(() => {});
+    if (this.client && sessionID) {
+      await this.client.session.delete({ sessionID }).catch(() => {});
     }
     this.sessions.delete(sessionID);
     if (this.sessionsDir) {

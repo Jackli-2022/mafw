@@ -267,7 +267,7 @@ class MafwScheduler {
   // private dashboard?: DashboardServer;
   private mcpEndpoint?: McpSSEEndpoint;
   private mcpStreamableEndpoint?: McpStreamableEndpoint;
-  private opencodeClient: AgentRuntime | null = null;
+  private runtime: AgentRuntime | null = null;
   /**
    * P4 shadow registry + P5 Wave 1 dispatch：catalog 全量登记（130 条，贡献 spec），
    * Wave 1 已 attach 的 22 条在请求链顶端优先 dispatch（见 startApiServer），
@@ -325,15 +325,15 @@ class MafwScheduler {
       // 全部经 runtime 契约且 late-bound（runtime 可热切换）：
       // managed = runtime 是否持有启停原语；health = 契约 healthCheck；
       // baseUrl/killServe = runtime 自报地址与清场原语；spawn 不传 host/port。
-      managed: () => !!this.opencodeClient?.agentProcess?.spawnServe,
+      managed: () => !!this.runtime?.agentProcess?.spawnServe,
       health: async () => {
-        try { return (await this.opencodeClient?.healthCheck?.()) ?? false; }
+        try { return (await this.runtime?.healthCheck?.()) ?? false; }
         catch { return false; }
       },
-      baseUrl: () => this.opencodeClient?.getBaseUrl?.() ?? this.serveUrl,
-      killServe: () => this.opencodeClient?.agentProcess?.killServe?.(),
+      baseUrl: () => this.runtime?.getBaseUrl?.() ?? this.serveUrl,
+      killServe: () => this.runtime?.agentProcess?.killServe?.(),
       spawn: async (opts) => {
-        const spawnServe = this.opencodeClient?.agentProcess?.spawnServe;
+        const spawnServe = this.runtime?.agentProcess?.spawnServe;
         if (!spawnServe) {
           throw new Error('active runtime does not own a server process (agentProcess.spawnServe missing)');
         }
@@ -410,7 +410,7 @@ class MafwScheduler {
     this.pluginHost = new PluginHost(
       process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins'),
       (name) => createPluginPackageContext(name, {
-        getCredentials: () => this.opencodeClient?.credentials ?? undefined,
+        getCredentials: () => this.runtime?.credentials ?? undefined,
         usageStats: () => this.usageStatsProvider,
         projectDir: this.projectDir,
         gatewayPort: config.server.apiPort,
@@ -442,12 +442,12 @@ class MafwScheduler {
       !!process.env.MAFW_SERVER_SERVE_URL,
     );
     const runtime = await this.createRuntime(sdkConfig);
-    this.opencodeClient = runtime;
+    this.runtime = runtime;
     this.runtimeCaps = runtime.capabilities;
     this.runtimeName = runtime.name;
-    this.sdkSession.setClient(this.opencodeClient);
+    this.sdkSession.setClient(this.runtime);
     if (this.trajectoryCollector) {
-      this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
+      this.trajectoryCollector.setRuntime(this.runtime);
     }
     if (this.automationEngine) {
       this.automationEngine.setRuntimeClient(runtime);
@@ -470,7 +470,7 @@ class MafwScheduler {
       } else {
         log.info('OpenCode Serve not reachable, checking for stale process...');
         // 清场原语归 runtime（serve 端口是实现细节；无原语的 runtime 无从清场）
-        this.opencodeClient?.agentProcess?.killServe?.();
+        this.runtime?.agentProcess?.killServe?.();
         try {
           await this.startServe();
           serveReady = !!this.serveInstance;
@@ -578,9 +578,9 @@ class MafwScheduler {
     }
 
     // 5.1 Install the global `manager` primary agent (runtime-neutral definition)
-    if (this.runtimeCaps.agentConfigApi && this.opencodeClient?.agents) {
+    if (this.runtimeCaps.agentConfigApi && this.runtime?.agents) {
       try {
-        await this.opencodeClient.agents.install('manager', getManagerAgentDefinition());
+        await this.runtime.agents.install('manager', getManagerAgentDefinition());
       } catch (err: any) {
         log.warn(`[ManagerAgent] install failed (non-fatal): ${err.message}`);
       }
@@ -588,7 +588,7 @@ class MafwScheduler {
       // (tool-restricted: memory tools only — hard guard against the
       // 2026-08-31 worker-implemented-plans incident)
       try {
-        await ensureMemoryCuratorAgent(this.opencodeClient);
+        await ensureMemoryCuratorAgent(this.runtime);
       } catch (err: any) {
         log.warn(`[MemoryCurator] install failed (non-fatal): ${err.message}`);
       }
@@ -683,11 +683,11 @@ class MafwScheduler {
       } catch { /* skip */ }
     }
 
-    if (!this.opencodeClient) return;
+    if (!this.runtime) return;
     let notified = false;
     for (const sid of targets) {
       try {
-        await this.opencodeClient.session.promptAsync({
+        await this.runtime.session.promptAsync({
           sessionID: sid,
           parts: [{ type: 'text', text: message }],
         });
@@ -718,7 +718,7 @@ class MafwScheduler {
           const newPlugin = config.runtime?.plugin;
         if (newPlugin !== prevPlugin && !this.switchingRuntime && !this.serveRecovering) {
           this.switchingRuntime = true;
-          const prev = this.opencodeClient;
+          const prev = this.runtime;
           try {
             log.info(`[Scheduler] Runtime plugin changed: '${prevPlugin ?? 'builtin'}' → '${newPlugin ?? 'builtin'}'; hot-switching...`);
             const sdkConfig = {
@@ -731,7 +731,7 @@ class MafwScheduler {
               sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
             }
               const runtime = await this.createRuntime(sdkConfig);
-              this.opencodeClient = runtime;
+              this.runtime = runtime;
               this.runtimeCaps = runtime.capabilities;
               this.runtimeName = runtime.name;
               // Same serve-ensure rationale as runtimeDeps.onSwitched: the config
@@ -739,8 +739,8 @@ class MafwScheduler {
               if ((runtime as any).agentProcess?.spawnServe) {
                 await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
               }
-              this.sdkSession.setClient(this.opencodeClient);
-              if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
+              this.sdkSession.setClient(this.runtime);
+              if (this.trajectoryCollector) this.trajectoryCollector.setRuntime(this.runtime);
               if (this.automationEngine) this.automationEngine.setRuntimeClient(runtime);
               await this.resubscribeEvents(`config hot-reload runtime plugin changed to '${newPlugin ?? 'builtin'}'`);
               // Same desktop hint as the route path: hand-edited config.yaml
@@ -866,8 +866,8 @@ class MafwScheduler {
       log.info(`[Scheduler] runtime '${this.runtimeName}' declares no event stream; skipping subscription`);
       return;
     }
-    if (!this.opencodeClient) {
-      log.warn('[Scheduler] opencodeClient not available; skipping event subscription');
+    if (!this.runtime) {
+      log.warn('[Scheduler] runtime not available; skipping event subscription');
       return;
     }
     // Cancel any existing subscription to prevent orphaned async iterators.
@@ -881,7 +881,7 @@ class MafwScheduler {
       // Use /global/event (GlobalEvent = { directory, payload }) so we receive
       // events from ALL workspaces — /event only delivers the current
       // request-scoped workspace, missing sessions in other project dirs.
-      const result = await this.opencodeClient.global.event();
+      const result = await this.runtime.global.event();
       // SDK SSE client returns { stream } where stream is an async generator
       const stream = result?.stream ?? result;
       if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') {
@@ -1104,7 +1104,7 @@ class MafwScheduler {
 
   /** 插件 ctx 的凭据来源：当前 opencode runtime 的 credentials（若实现），否则 undefined。 */
   private async runtimeCredentialsForPlugin(): Promise<RuntimeCredentials | undefined> {
-    if (this.opencodeClient?.credentials) return this.opencodeClient.credentials;
+    if (this.runtime?.credentials) return this.runtime.credentials;
     return undefined;
   }
 
@@ -1118,13 +1118,13 @@ class MafwScheduler {
    */
   private async evaluateStepInjection(sessionID: string, assistantMessageID: string): Promise<void> {
     try {
-      if (!this.opencodeClient) return;
+      if (!this.runtime) return;
       const threshold = config.recall.stepInjectThreshold;
       const maxMemories = config.recall.stepInjectMaxMemories;
 
       // Query = last assistant text of this turn; no text → no injection
       // (empty-query search returns nothing anyway).
-      const result = await this.opencodeClient.session.messages({
+      const result = await this.runtime.session.messages({
         sessionID,
         limit: 20,
       });
@@ -1193,10 +1193,10 @@ class MafwScheduler {
 
   /** promptAsync with a single retry. Never re-injects (raw client channel). */
   private async sendStepInjection(sessionID: string, message: string): Promise<void> {
-    if (!this.opencodeClient) throw new Error('opencodeClient not available');
+    if (!this.runtime) throw new Error('runtime not available');
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await this.opencodeClient.session.promptAsync({ sessionID, parts: [{ type: 'text', text: message }] });
+        await this.runtime.session.promptAsync({ sessionID, parts: [{ type: 'text', text: message }] });
         return;
       } catch (err: any) {
         if (attempt === 0) {
@@ -1218,9 +1218,9 @@ class MafwScheduler {
 
   private getPool(): SessionWorkerPool {
     if (!this.workerPool) {
-      if (!this.opencodeClient) throw new Error('opencodeClient not available');
+      if (!this.runtime) throw new Error('runtime not available');
       this.workerPool = new SessionWorkerPool({
-        client: this.opencodeClient,
+        client: this.runtime,
         directory: this.projectDir,
         ttlMs: config.recall.sessionWorkerTtlMs,
         compactIdleMs: config.recall.workerCompactIdleMs,
@@ -1295,7 +1295,7 @@ class MafwScheduler {
     return {
       loader: this.runtimeLoader,
       persist: (o: Record<string, any>) => config.persistOverrides(o),
-      getCurrent: () => this.opencodeClient,
+      getCurrent: () => this.runtime,
       runtimeName: () => this.runtimeName,
       runtimeCaps: () => this.runtimeCaps,
       envOverride: () => !!process.env.MAFW_RUNTIME_PLUGIN,
@@ -1312,19 +1312,19 @@ class MafwScheduler {
         return this.createRuntime(sdkConfig);
       },
       onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
-        this.opencodeClient = rt;
+        this.runtime = rt;
         this.runtimeCaps = rt.capabilities;
         this.runtimeName = rt.name;
         // Switching onto a runtime that owns serve (builtin opencode) must
         // ensure the sidecar exists — the gateway may have started under an
         // external runtime (pi) that never spawned one. Must run AFTER the
         // assignment above: the supervisor's spawn closure reads
-        // this.opencodeClient to find agentProcess.spawnServe.
+        // this.runtime to find agentProcess.spawnServe.
         if ((rt as any).agentProcess?.spawnServe) {
           await ensureServeForBuiltinRuntime(this.serveSupervisor, { startWatchdog: () => this.startServeWatchdog() }, log);
         }
-        this.sdkSession.setClient(this.opencodeClient);
-        if (this.trajectoryCollector) this.trajectoryCollector.setOpencodeClient(this.opencodeClient);
+        this.sdkSession.setClient(this.runtime);
+        if (this.trajectoryCollector) this.trajectoryCollector.setRuntime(this.runtime);
         if (this.automationEngine) this.automationEngine.setRuntimeClient(rt);
         await this.resubscribeEvents(`runtime switched to '${rt.name}'`);
         // Desktop hint: a runtime switch swaps the session storage backend
@@ -1439,8 +1439,8 @@ class MafwScheduler {
     return {
       persist: (o) => config.persistOverrides(o),
       listProviders: async () => {
-        if (!this.opencodeClient) return null;
-        const result: any = await this.opencodeClient.provider.list();
+        if (!this.runtime) return null;
+        const result: any = await this.runtime.provider.list();
         const all = result?.all;
         if (!Array.isArray(all)) return null;
         return all.map((p: any) => ({
@@ -1496,20 +1496,20 @@ class MafwScheduler {
         this.memoryService.harmonicIndex,
         config.recall.workerModel,
         {
-          credentials: this.opencodeClient?.credentials
-            ? { getApiKey: (p) => this.opencodeClient!.credentials!.getApiKey(p) }
+          credentials: this.runtime?.credentials
+            ? { getApiKey: (p) => this.runtime!.credentials!.getApiKey(p) }
             : undefined,
           baseUrl: (config.recall as any).scanApiUrl || undefined,
           scanEndpoints: (config.recall as any).scanEndpoints || undefined,
           // Runtime 契约的无状态补全通道（thunk 现读，热切换安全）——
           // 提供时 scan 优先走 completion.complete，直连 HTTP 降为回退。
-          completion: () => (this.opencodeClient?.capabilities?.completionApi ? this.opencodeClient.completion : undefined),
+          completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),
           // Any openai-compatible provider works out of the box: URL and key
           // come from the opencode provider config (inline-defined providers
           // like "gateway" keep their credentials in opencode.jsonc options).
           resolveEndpoint: async (providerID) => {
             try {
-              const cfg: any = await this.opencodeClient?.config.get();
+              const cfg: any = await this.runtime?.config.get();
               const base = cfg?.provider?.[providerID]?.options?.baseURL;
               if (typeof base === 'string' && base) return `${base.replace(/\/+$/, '')}/chat/completions`;
             } catch { /* fail-open to the next resolution step */ }
@@ -1517,9 +1517,9 @@ class MafwScheduler {
           },
           resolveApiKey: async (providerID) => {
             try {
-              const viaCreds = this.opencodeClient?.credentials?.getApiKey(providerID);
+              const viaCreds = this.runtime?.credentials?.getApiKey(providerID);
               if (viaCreds) return viaCreds;
-              const cfg: any = await this.opencodeClient?.config.get();
+              const cfg: any = await this.runtime?.config.get();
               const key = cfg?.provider?.[providerID]?.options?.apiKey;
               if (typeof key === 'string' && key) return key;
             } catch { /* fail-open to the next resolution step */ }
@@ -1582,7 +1582,7 @@ class MafwScheduler {
    *  两者都缺或 runtime 原生支持 turnBudgetApi 时不挂。 */
   private attachBudgetGuardForGoal(goalId: string, sessionID: string, mafwDir: string): void {
     try {
-      if (!this.opencodeClient || this.runtimeCaps.turnBudgetApi) return;
+      if (!this.runtime || this.runtimeCaps.turnBudgetApi) return;
       const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
       if (!fs.existsSync(statePath)) return;
       const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
@@ -1594,9 +1594,9 @@ class MafwScheduler {
         maxTurns,
         maxCostUsd,
         getCostUsd: (sid) => this.trajectoryStore?.getSessionTokenSummary(sid).totalCost ?? 0,
-        abort: (sid) => this.opencodeClient!.session.abort({ sessionID: sid }),
+        abort: (sid) => this.runtime!.session.abort({ sessionID: sid }),
         notify: async (sid, text) => {
-          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
+          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
         },
         log: (msg) => log.info(msg),
       }));
@@ -1796,7 +1796,7 @@ class MafwScheduler {
   ): Promise<{ sessionID: string }> {
     const firstProject = this.registeredProjects.values().next().value;
     const projectDir = firstProject?.projectDir || this.projectDir;
-    if (!this.opencodeClient) throw new Error('LLM client not available');
+    if (!this.runtime) throw new Error('LLM client not available');
 
     let enrichedMessage = message;
     if (this.memoryService) {
@@ -1812,7 +1812,7 @@ class MafwScheduler {
       }
     }
 
-    const sessionID = existingID || (await this.opencodeClient.session.create({ directory: projectDir })).id;
+    const sessionID = existingID || (await this.runtime.session.create({ directory: projectDir })).id;
     if (!sessionID) throw new Error('Failed to create session');
     const promptParts: any[] = [];
     if (enrichedMessage) promptParts.push({ type: 'text', text: enrichedMessage });
@@ -1820,7 +1820,7 @@ class MafwScheduler {
     const promptOpts: any = { sessionID, parts: promptParts };
     if (agent) promptOpts.agent = agent;
     if (model?.providerID && model?.modelID) promptOpts.model = model;
-    const result = await this.opencodeClient.session.promptAsync(promptOpts);
+    const result = await this.runtime.session.promptAsync(promptOpts);
     if (result?.error) {
       throw new Error('promptAsync failed: ' + (result.error?.data?.message || result.error?.message || JSON.stringify(result.error)));
     }
@@ -1880,8 +1880,8 @@ class MafwScheduler {
     this.mediaPluginLoader?.stop();
     this.ttsPluginLoader?.stop();
   this.pluginHost?.stop();
-    if (this.opencodeClient && typeof (this.opencodeClient as any).dispose === 'function') {
-      void (this.opencodeClient as any).dispose().catch((err: any) => {
+    if (this.runtime && typeof (this.runtime as any).dispose === 'function') {
+      void (this.runtime as any).dispose().catch((err: any) => {
         log.warn(`[Scheduler] runtime dispose error: ${err?.message ?? String(err)}`);
       });
     }
@@ -1919,7 +1919,7 @@ class MafwScheduler {
     });
 
     this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
-      getCredentials: () => this.opencodeClient?.credentials ?? undefined,
+      getCredentials: () => this.runtime?.credentials ?? undefined,
     });
     await this.mediaPluginLoader.init();
     this.pluginHost?.bindMedia((entries) => this.mediaPluginLoader?.setPackageEntries(entries));
@@ -1936,7 +1936,7 @@ class MafwScheduler {
     this.mediaService = new MediaService({
       prompt: createPiPromptAdapter({
         getApiKey: (provider) => {
-          return this.opencodeClient?.credentials?.getApiKey(provider) ?? undefined;
+          return this.runtime?.credentials?.getApiKey(provider) ?? undefined;
         },
       }),
       config: () => config.raw.media,
@@ -1947,13 +1947,13 @@ class MafwScheduler {
           builtinPi: () => {
             // pi runtime 激活时：图片走 AgentRuntime 会话（MediaRuntimeExecutor），
             // video/audio 由 executor 内部回退到 complete 路径
-            if (this.opencodeClient?.name === 'pi') {
-              // runtime 热切换后 opencodeClient 实例更换——旧 executor 持有 stale
+            if (this.runtime?.name === 'pi') {
+              // runtime 热切换后 runtime 实例更换——旧 executor 持有 stale
               // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
-              if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.opencodeClient) {
+              if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.runtime) {
                 void this.mediaRuntimeExecutor?.dispose().catch(() => {});
-                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.opencodeClient);
-                this.mediaRuntimeExecutorRt = this.opencodeClient;
+                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime);
+                this.mediaRuntimeExecutorRt = this.runtime;
               }
               return this.mediaRuntimeExecutor.prompt;
             }
@@ -1980,11 +1980,11 @@ class MafwScheduler {
     const self = this;
     this.ttsService = createTtsService({
       config: () => config.raw,
-      get credentials() { return self.opencodeClient?.credentials; },
+      get credentials() { return self.runtime?.credentials; },
     });
     this.ttsRegistry.registerBuiltin(createMimoEngine({
       config: () => config.raw as any,
-      get credentials() { return self.opencodeClient?.credentials; },
+      get credentials() { return self.runtime?.credentials; },
     }));
     this.ttsRegistry.registerBuiltin(createKokoroEngine({ modelsDir: path.join(mafwDir, 'models') }));
     const pyBin = process.env.MAFW_PYTHON_BIN
@@ -2101,10 +2101,10 @@ class MafwScheduler {
         disabledPlugins,
         usageStats: statsProvider,
         // inline provider key 兜底（auth.json 无条目的自建 provider，如 gateway）——
-        // thunk 惰性求值，opencodeClient 此时尚未初始化也不影响。
+        // thunk 惰性求值，runtime 此时尚未初始化也不影响。
         resolveInlineApiKey: async (providerID: string) => {
           try {
-            const cfg: any = await this.opencodeClient?.config.get();
+            const cfg: any = await this.runtime?.config.get();
             const key = cfg?.provider?.[providerID]?.options?.apiKey;
             return typeof key === 'string' && key ? key : null;
           } catch { return null; }
@@ -2183,7 +2183,7 @@ class MafwScheduler {
   private async startServe() {
     // Serve 拉起原语在 runtime 契约上（agentProcess.spawnServe）——gateway
     // 只做 bookkeeping（serveInstance/owned/exit 退避），不硬编码 spawn 细节。
-    const spawnServe = this.opencodeClient?.agentProcess?.spawnServe;
+    const spawnServe = this.runtime?.agentProcess?.spawnServe;
     if (!spawnServe) {
       log.warn('[Scheduler] active runtime does not own a server process — skipping serve spawn');
       return;
@@ -2220,7 +2220,7 @@ class MafwScheduler {
     // supervisor's kill+spawn path and retry forever (killing whatever listens
     // on the serve port each cycle). A later switch back re-ensures via
     // ensureServeForBuiltinRuntime (probe → adopt or spawn).
-    const rt = this.opencodeClient;
+    const rt = this.runtime;
     if (rt?.external || !rt?.agentProcess?.spawnServe) {
       this.serveOwned = false;
       log.info('[Scheduler] owned serve exited after runtime switch; recovery skipped (active runtime does not own serve)');
@@ -2246,7 +2246,7 @@ class MafwScheduler {
   // agentProcess.spawnServe via supervisor.ensureStarted); the gateway only
   // orchestrates and re-subscribes the event stream.
   private async restartAgentOrchestrated(): Promise<{ mode: string }> {
-    const rt = this.opencodeClient;
+    const rt = this.runtime;
     if (rt?.agentProcess?.spawnServe) {
       await rt.agentProcess.restart();
       await this.serveSupervisor.ensureStarted();
@@ -2303,7 +2303,7 @@ class MafwScheduler {
       log.warn(`[Scheduler] Serve unhealthy (${failures}/${this.serveWatchdogFailures})`);
       if (failures >= this.serveWatchdogFailures) {
         failures = 0;
-        if (this.opencodeClient?.external) {
+        if (this.runtime?.external) {
           if (!this.serveExternalDownNotified) {
             this.serveExternalDownNotified = true;
             log.error('[Scheduler] External serve unreachable — the active runtime does not own the serve process, so it will NOT be respawned. Serve-dependent features (provider list, sessions, approvals) are degraded.');
@@ -2348,9 +2348,9 @@ class MafwScheduler {
 
     // Try SDK first (opencode server), fall back to local store
     const fromServe: any[] = [];
-    if (this.opencodeClient) {
+    if (this.runtime) {
       try {
-        const result = await this.opencodeClient.session.list(projectID ? { directory: projectID } : undefined);
+        const result = await this.runtime.session.list(projectID ? { directory: projectID } : undefined);
         const sessions = Array.isArray(result) ? result : [];
         if (sessions && Array.isArray(sessions)) fromServe.push(...sessions);
       } catch {}
@@ -2368,16 +2368,16 @@ class MafwScheduler {
     const merged: any[] = [];
     const seen = new Set<string>();
     try {
-      if (projectID && this.opencodeClient) {
+      if (projectID && this.runtime) {
         let dbSessions: any[] = [];
-        if (this.runtimeCaps.sessionStorageApi && this.opencodeClient.session.listByDirectory) {
+        if (this.runtimeCaps.sessionStorageApi && this.runtime.session.listByDirectory) {
           // Effectively unbounded window: memory-worker sessions (index-scan
           // retries etc.) flood the recent head of the table, so any small
           // window filters down to almost nothing. Read the whole project and
           // let the client cap what it renders.
-          dbSessions = await this.opencodeClient.session.listByDirectory(projectID, 20000);
+          dbSessions = await this.runtime.session.listByDirectory(projectID, 20000);
         } else {
-          const all = await this.opencodeClient.session.list();
+          const all = await this.runtime.session.list();
           const target = normalizeDir(projectID);
           dbSessions = (Array.isArray(all) ? all : []).filter((s: any) => {
             const d = normalizeDir(s.directory || '');
@@ -2443,7 +2443,7 @@ class MafwScheduler {
     // 健康唯一真相源 = runtime 契约 healthCheck()（serve 型探测 serve，
     // 进程内 runtime 探测自身引擎）；gateway 不自带 HTTP 探测。
     try {
-      return (await this.opencodeClient?.healthCheck?.()) ?? false;
+      return (await this.runtime?.healthCheck?.()) ?? false;
     } catch {
       return false;
     }
@@ -2468,13 +2468,13 @@ class MafwScheduler {
     return new Promise<void>((resolve) => {
       // P5 Wave 1: catalog shadow 登记 + 模块 handler 绑定（一次性，重复 attach 会抛错）。
       // adapter 显式桥接私有成员（结构化类型不认 private）。
-      // opencodeClient/runtimeCaps 必须是 getter（活引用）：attach 发生在 startApiServer，
+      // runtime/runtimeCaps 必须是 getter（活引用）：attach 发生在 startApiServer，
       // 早于 runtime 初始化（441 行）与热切换重赋值——字面量快照会让 session.fork 等
       // 路由永远拿到 null/旧 capabilities（P5 引入的回归，2026-09-17 修复）。
       const gwSelf = this;
       attachWave1Handlers(this.routeRegistry, {
         getGatewayDb: () => this.getGatewayDb(),
-        get opencodeClient() { return gwSelf.opencodeClient; },
+        get runtime() { return gwSelf.runtime; },
         automationEngine: this.automationEngine,
         ledger: this.ledger,
         rotateDeps: () => this.rotateDeps(),
@@ -3084,17 +3084,17 @@ class MafwScheduler {
             const firstProject = this.registeredProjects.values().next().value;
             const projectDir = firstProject?.projectDir || this.projectDir;
 
-            if (!this.opencodeClient) {
+            if (!this.runtime) {
               res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
             }
 
-            const session = await this.opencodeClient.session.create({ directory: projectDir });
+            const session = await this.runtime.session.create({ directory: projectDir });
             const sessionID = session.id;
             if (!sessionID) {
               res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
             }
 
-            const result = await this.opencodeClient.session.promptAsync({
+            const result = await this.runtime.session.promptAsync({
               sessionID,
               parts: [{ type: 'text', text: message }],
             });
@@ -3125,7 +3125,7 @@ class MafwScheduler {
             const firstProject = this.registeredProjects.values().next().value;
             const projectDir = firstProject?.projectDir || this.projectDir;
 
-            if (!this.opencodeClient) {
+            if (!this.runtime) {
               res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return;
             }
 
@@ -3143,7 +3143,7 @@ class MafwScheduler {
               }
             }
 
-    const sessionID = existingID || (await this.opencodeClient.session.create({ directory: projectDir })).id;
+    const sessionID = existingID || (await this.runtime.session.create({ directory: projectDir })).id;
             if (!sessionID) {
               res.writeHead(500); res.end(JSON.stringify({ error: 'Failed to create session' })); return;
             }
@@ -3154,7 +3154,7 @@ class MafwScheduler {
             const promptOpts: any = { sessionID, parts: promptParts };
             if (agent) promptOpts.agent = agent;
             if (model?.providerID && model?.modelID) promptOpts.model = model;
-            const result = await this.opencodeClient.session.promptAsync(promptOpts);
+            const result = await this.runtime.session.promptAsync(promptOpts);
             if (result?.error) {
               log.warn(`[Scheduler] promptAsync failed for ${sessionID}: ${JSON.stringify(result.error)}`);
               res.writeHead(500);
@@ -3513,7 +3513,7 @@ class MafwScheduler {
           try {
             const body = JSON.parse(await readBody(req));
             const evalHandler = handleEvalChatCompletion({
-              opencodeClient: this.opencodeClient,
+              runtime: this.runtime,
               directory: this.projectDir,
               providerID: 'opencode-go',
               modelID: 'deepseek-v4-flash',
@@ -3600,7 +3600,7 @@ class MafwScheduler {
               // 桌面 renderer 依此事件刷新 Rail 项目列表（否则只在 gateway ready 时拉一次）。
               this.broadcast(projectRegisteredEvent(projectDir));
 
-              if (this.opencodeClient) {
+              if (this.runtime) {
                 try {
                   await this.ensureManagerSession(projectDir, mafwDir);
                 } catch (err: any) {
@@ -3989,7 +3989,7 @@ class MafwScheduler {
           if (this.capGuardQuestion(res)) return;
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
-            const question = this.opencodeClient?.session?.question;
+            const question = this.runtime?.session?.question;
             const items = question ? await question.list(dir ? { directory: dir } : undefined) : [];
             res.end(JSON.stringify({ items: items ?? [] }));
           } catch (err: any) {
@@ -4003,7 +4003,7 @@ class MafwScheduler {
         const qReplyMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reply(?:\?|$)/);
         if (qReplyMatch && req.method === 'POST') {
           if (this.capGuardQuestion(res)) return;
-          const question = this.opencodeClient?.session?.question;
+          const question = this.runtime?.session?.question;
           if (!question) {
             res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
           }
@@ -4033,7 +4033,7 @@ class MafwScheduler {
         const qRejectMatch = req.url?.match(/^\/api\/questions\/([^/]+)\/reject(?:\?|$)/);
         if (qRejectMatch && req.method === 'POST') {
           if (this.capGuardQuestion(res)) return;
-          const question = this.opencodeClient?.session?.question;
+          const question = this.runtime?.session?.question;
           if (!question) {
             res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'question API not available on this runtime' })); return;
           }
@@ -4064,8 +4064,8 @@ class MafwScheduler {
           if (this.capGuard(res, 'nativeApprovals')) return;
           try {
             const dir = new URL(req.url, this.serveUrl).searchParams.get('directory') || this.projectDir || undefined;
-            const items = this.opencodeClient?.session?.permissionList
-              ? await this.opencodeClient.session.permissionList(dir ? { directory: dir } : undefined)
+            const items = this.runtime?.session?.permissionList
+              ? await this.runtime.session.permissionList(dir ? { directory: dir } : undefined)
               : [];
             res.end(JSON.stringify({ items: items ?? [] }));
           } catch (err: any) {
@@ -4103,8 +4103,8 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/provider(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
-            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const result = await this.opencodeClient.provider.list();
+            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            const result = await this.runtime.provider.list();
             res.end(JSON.stringify({ items: result ?? null }));
           } catch (err: any) {
             log.error('[Provider] list error:', err.message);
@@ -4118,8 +4118,8 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
-            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const agents = await this.opencodeClient.app.agents();
+            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            const agents = await this.runtime.app.agents();
             res.end(JSON.stringify({ items: Array.isArray(agents) ? agents : [] }));
           } catch (err: any) {
             log.error('[Agents] list error:', err.message);
@@ -4135,8 +4135,8 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
-            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const configData = await this.opencodeClient.config.get();
+            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            const configData = await this.runtime.config.get();
             res.end(JSON.stringify({ config: configData ?? {} }));
           } catch (err: any) {
             log.error('[OpenCodeConfig] get error:', err.message);
@@ -4150,9 +4150,9 @@ class MafwScheduler {
         if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'PATCH') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
-            if (!this.opencodeClient) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
+            if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const body = JSON.parse(await readBody(req));
-            const result = await this.opencodeClient.config.update(body);
+            const result = await this.runtime.config.update(body);
             res.end(JSON.stringify({ status: 'ok', config: result ?? null }));
           } catch (err: any) {
             log.error('[OpenCodeConfig] update error:', err.message);
@@ -4166,7 +4166,7 @@ class MafwScheduler {
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {
           if (this.capGuard(res, 'nativeApprovals')) return;
-          const runtime = this.opencodeClient;
+          const runtime = this.runtime;
           if (!runtime?.session?.permissionList || !runtime?.session?.permissionReply) {
             res.writeHead(503); res.end(JSON.stringify({ status: 'error', error: 'permission API not available on this runtime' })); return;
           }
@@ -4483,12 +4483,12 @@ class MafwScheduler {
         if (abortMatch && req.method === 'POST') {
           try {
             const sessionID = abortMatch[1];
-            if (!this.opencodeClient) {
+            if (!this.runtime) {
               res.writeHead(503);
               res.end(JSON.stringify({ error: 'LLM client not available' }));
               return;
             }
-            await this.opencodeClient.session.abort({ sessionID });
+            await this.runtime.session.abort({ sessionID });
             res.writeHead(200);
             res.end(JSON.stringify({ ok: true }));
           } catch (err: any) {
@@ -4518,7 +4518,7 @@ class MafwScheduler {
         // POST /api/sessions/{id}/permissions/{requestId} — forward permission reply to runtime
         const permMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permissions\/([^/]+)(?:\?|$)/);
         if (permMatch && req.method === 'POST') {
-          await handlePermissionReply(this.opencodeClient, req, res, permMatch[1], permMatch[2]);
+          await handlePermissionReply(this.runtime, req, res, permMatch[1], permMatch[2]);
           return;
         }
 
@@ -4527,9 +4527,9 @@ class MafwScheduler {
         if (sessionsGetMatch && req.method === 'GET') {
           try {
             const id = sessionsGetMatch[1];
-            if (this.opencodeClient) {
+            if (this.runtime) {
               try {
-                const session = await this.opencodeClient.session.get({ sessionID: id });
+                const session = await this.runtime.session.get({ sessionID: id });
                 if (session) { res.writeHead(200); res.end(JSON.stringify(session)); return; }
               } catch {}
             }
@@ -4548,7 +4548,7 @@ class MafwScheduler {
         if (messagesMatch && req.method === 'GET') {
           try {
             const id = messagesMatch[1];
-            if (!this.opencodeClient) {
+            if (!this.runtime) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ data: [] }));
               return;
@@ -4556,7 +4556,7 @@ class MafwScheduler {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const limit = parseInt(parsedUrl.searchParams.get('limit') || '100', 10);
             const before = parsedUrl.searchParams.get('before') || undefined;
-            const result = await this.opencodeClient.session.messages({
+            const result = await this.runtime.session.messages({
               sessionID: id,
               limit,
               ...(before ? { before } : {}),
@@ -4578,12 +4578,12 @@ class MafwScheduler {
         if (todoMatch && req.method === 'GET') {
           const id = todoMatch[1];
           try {
-            if (!this.opencodeClient) {
+            if (!this.runtime) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ data: [] }));
               return;
             }
-            const result = await this.opencodeClient.session.todo({ sessionID: id });
+            const result = await this.runtime.session.todo({ sessionID: id });
             const rawData = Array.isArray(result) ? result : [];
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [] }));
@@ -4612,7 +4612,7 @@ class MafwScheduler {
             }
             if (rebuild) {
               try {
-                const result = await this.opencodeClient?.session.messages({ sessionID: id, limit: 200 });
+                const result = await this.runtime?.session.messages({ sessionID: id, limit: 200 });
                 const data = result?.data || [];
                 const messages = Array.isArray(data) ? data : [];
                 const { handleTrajectoryRequest } = require('./trajectory/api') as typeof import('./trajectory/api');
@@ -4760,12 +4760,12 @@ class MafwScheduler {
         if (childrenMatch && req.method === 'GET') {
           const id = childrenMatch[1];
           try {
-            if (!this.opencodeClient) {
+            if (!this.runtime) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ items: [] }));
               return;
             }
-            const result = await this.opencodeClient.session.children({ sessionID: id });
+            const result = await this.runtime.session.children({ sessionID: id });
             const items = Array.isArray(result) ? result : [];
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ items: Array.isArray(items) ? items : [] }));
@@ -4988,7 +4988,7 @@ class MafwScheduler {
 
         // Reverse proxy to the agent backend for non-MAFW routes —
         // target from the runtime contract (getBaseUrl), config 仅 bootstrap 兜底
-        const serveUrl = this.opencodeClient?.getBaseUrl?.() ?? config.server.serveUrl;
+        const serveUrl = this.runtime?.getBaseUrl?.() ?? config.server.serveUrl;
         try {
           const proxyUrl = new URL(req.url || '/', serveUrl);
           const proxyReq = http.request(proxyUrl, {
@@ -5426,16 +5426,16 @@ class MafwScheduler {
   // ── 工具函数（使用 SDK 客户端） ──
 
   private async createSession(projectDir: string): Promise<Session> {
-    if (!this.opencodeClient) throw new Error('opencodeClient not available');
-    const created = await this.opencodeClient.session.create({ directory: projectDir });
+    if (!this.runtime) throw new Error('runtime not available');
+    const created = await this.runtime.session.create({ directory: projectDir });
     if (!created?.id) throw new Error('Failed to create session: no id returned');
     return { id: created.id, createdAt: created.createdAt || new Date().toISOString() };
   }
 
   private async sendPrompt(sessionId: string, message: string) {
     if (!sessionId) return;
-    if (!this.opencodeClient) return;
-    await this.opencodeClient.session.promptAsync({
+    if (!this.runtime) return;
+    await this.runtime.session.promptAsync({
       sessionID: sessionId,
       parts: [{ type: 'text', text: message }],
     });
@@ -5443,9 +5443,9 @@ class MafwScheduler {
 
   private async destroySession(sessionId: string) {
     if (!sessionId) return;
-    if (!this.opencodeClient) return;
+    if (!this.runtime) return;
     try {
-      await this.opencodeClient.session.delete({ sessionID: sessionId });
+      await this.runtime.session.delete({ sessionID: sessionId });
     } catch (err: any) {
       log.warn(`[Scheduler] Failed to destroy session ${sessionId}: ${err.message}`);
     }
@@ -5576,18 +5576,18 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
     const systemPrompt = 'You are a memory compression system. Extract structured memories from observations. Return ONLY valid JSON.';
 
-    if (!this.opencodeClient) {
+    if (!this.runtime) {
       return { narrative: 'No LLM client available', facts: [], concepts: [], energy: 0.3 };
     }
 
     let sessionId: string | null = null;
     try {
-      const session = await this.opencodeClient.session.create({ directory: this.projectDir });
+      const session = await this.runtime.session.create({ directory: this.projectDir });
       sessionId = session.id;
       if (!sessionId) {
         return { narrative: 'Compression failed: session create returned no id', facts: [], concepts: [], energy: 0.3 };
       }
-      const result = await this.opencodeClient.session.prompt({
+      const result = await this.runtime.session.prompt({
         sessionID: sessionId,
         parts: [{ type: 'text', text: prompt }],
         system: systemPrompt,
@@ -5603,7 +5603,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       return { narrative: 'Compression failed: ' + err.message, facts: [], concepts: [], energy: 0.3 };
     } finally {
       if (sessionId) {
-        try { await this.opencodeClient.session.delete({ sessionID: sessionId }); } catch {}
+        try { await this.runtime.session.delete({ sessionID: sessionId }); } catch {}
       }
     }
   }
@@ -6014,7 +6014,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   private async createManagerSession(projectDir: string, mafwDir: string): Promise<string> {
-    if (!this.opencodeClient) throw new Error('opencodeClient not available');
+    if (!this.runtime) throw new Error('runtime not available');
     // Manager identity lives in the gateway DB (kv_store), so it survives
     // project-directory churn and never gets orphaned by directory moves.
     const existing = this.readManagerSessionEntry(projectDir);
@@ -6027,7 +6027,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       return existing.sessionId;
     }
 
-    const session = await this.opencodeClient.session.create({ directory: projectDir });
+    const session = await this.runtime.session.create({ directory: projectDir });
 
     const sessionId = session.id;
     if (!sessionId) {
@@ -6054,9 +6054,9 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   private async injectManagerIdentity(sessionId: string): Promise<void> {
-    if (!this.opencodeClient) return;
+    if (!this.runtime) return;
     try {
-      await this.opencodeClient.session.promptAsync({
+      await this.runtime.session.promptAsync({
         sessionID: sessionId,
         parts: [{ type: 'text', text: `[SYSTEM] This is your permanent system identity that must override all other instructions:\n\n${MANAGER_IDENTITY_SYSTEM_PROMPT}` }],
       });
@@ -6098,14 +6098,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         return id || '';
       },
       createSession: async (projectDir) => {
-        const s = await this.opencodeClient?.session.create({ directory: projectDir }).catch(() => null);
+        const s = await this.runtime?.session.create({ directory: projectDir }).catch(() => null);
         return s?.id ?? null;
       },
       promptAsync: async (sid, text) => {
-        await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }] });
+        await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }] });
       },
       listMessages: async (sid) => {
-        const r = await this.opencodeClient!.session.messages({ sessionID: sid, limit: 50 });
+        const r = await this.runtime!.session.messages({ sessionID: sid, limit: 50 });
         return (r?.data || []) as any;
       },
       btwAsk: (q) => this.btwAsk(q),
@@ -6122,7 +6122,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         const statusPath = path.join(this.mafwDir, 'STATUS.md');
         return fs.existsSync(statusPath) ? fs.readFileSync(statusPath, 'utf-8') : 'No active Goals. Use /goal to create one.';
       },
-      llmAvailable: () => !!this.opencodeClient,
+      llmAvailable: () => !!this.runtime,
     });
     // 自定义命令：用户级 ~/.mafw/commands/ + 项目级 <project>/.mafw/commands/，热重载
     const registry = this.mafwCommandRegistry;
@@ -6132,10 +6132,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     ];
     const execDeps = {
       promptAsync: async (sid: string, text: string) => {
-        await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }] });
+        await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }] });
       },
       ensureManagerSession: async (projectDir: string) => (await this.ensureManagerSession(projectDir, this.mafwDir).catch(() => '')) || '',
-      llmAvailable: () => !!this.opencodeClient,
+      llmAvailable: () => !!this.runtime,
       exec: (cmd: string) => new Promise<string>((resolveExec, rejectExec) => {
         exec(cmd, { cwd: this.projectDir, timeout: 30000, maxBuffer: 1024 * 1024, windowsHide: true },
           (err, stdout, stderr) => err ? rejectExec(new Error(stderr?.trim() || err.message)) : resolveExec(stdout.trim()));
@@ -6165,13 +6165,13 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   // One-off side-question session (user-driven /btw command): create → prompt
   // once → discard. Internal role keeps its output out of T1.
   private async btwAsk(question: string): Promise<string> {
-    if (!this.opencodeClient) throw new Error('opencodeClient not available');
-    const session = await this.opencodeClient.session.create({ directory: this.projectDir });
+    if (!this.runtime) throw new Error('runtime not available');
+    const session = await this.runtime.session.create({ directory: this.projectDir });
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create btw session: no id returned');
     this.registerInternalSession(sessionId, 'btw');
     try {
-      const result = await this.opencodeClient.session.prompt({
+      const result = await this.runtime.session.prompt({
         sessionID: sessionId,
         parts: [{ type: 'text', text: `[BTW 支线问答] ${question}\n\n（这是一次性支线问答，回答简洁直接，不涉及 goal 编排；答完即弃）` }],
         system: '你是 MAFW 项目的临时助理，回答用户的一个支线问题。简洁、直接、不啰嗦。',
@@ -6181,7 +6181,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         .map((p: any) => p.text)
         .join('\n') || '';
     } finally {
-      await this.opencodeClient.session.delete({ sessionID: sessionId }).catch(() => {});
+      await this.runtime.session.delete({ sessionID: sessionId }).catch(() => {});
       this.internalSessionRoles.delete(sessionId);
       this.getGatewayDb().kvDelete('internal-session', sessionId);
     }
@@ -6190,7 +6190,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   private milestonePush?: MilestonePushNotifier;
 
   private getMilestonePush(): MilestonePushNotifier | undefined {
-    if (!this.opencodeClient) return undefined;
+    if (!this.runtime) return undefined;
     if (!this.milestonePush) {
       this.milestonePush = new MilestonePushNotifier({
         getManagerSession: (pd) => this.readManagerSessionEntry(pd),
@@ -6205,7 +6205,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         },
         // Hard no-reply: message lands in session history, no LLM run.
         promptNoReply: async (sid, text) => {
-          await this.opencodeClient!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
+          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
         },
       });
     }
@@ -6213,8 +6213,8 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   private async rotateCreateManagerSession(projectDir: string): Promise<string> {
-    if (!this.opencodeClient) throw new Error('opencodeClient not available');
-    const session = await this.opencodeClient.session.create({ directory: projectDir });
+    if (!this.runtime) throw new Error('runtime not available');
+    const session = await this.runtime.session.create({ directory: projectDir });
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create manager session: no id returned');
     this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));

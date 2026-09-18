@@ -14,7 +14,7 @@ const WAVE1_OPIDS = [
 function fakeGw(over: Partial<Wave1Gateway> = {}): Wave1Gateway {
   return {
     getGatewayDb: jest.fn(() => ({ listGoalSessions: jest.fn(async () => []) })),
-    opencodeClient: null,
+    runtime: null,
     automationEngine: { rejectTriage: jest.fn(() => true) },
     ledger: { append: jest.fn() },
     rotateDeps: jest.fn((() => ({})) as any),
