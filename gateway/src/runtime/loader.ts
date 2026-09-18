@@ -11,6 +11,8 @@ import * as path from 'path';
 import { log } from '../core/utils/logger';
 import { config } from '../config';
 import { AgentRuntime, RuntimeCapabilities, RuntimeCredentials, minimalCapabilities } from './contract';
+import { isKnownEventType } from './event-telemetry';
+import { checkEventFields } from './event-field-contract';
 import type { RuntimePackageEntry } from '../plugins/package-types';
 
 export interface RuntimePluginContext {
@@ -25,6 +27,13 @@ export interface RuntimePluginContext {
   projectDir?: string;
   /** gateway API 端口（pi getBaseUrl 此前直读 config.server.apiPort） */
   gatewayPort?: number;
+  /** 事件构造与校验助手（L3 构造期防线）。 */
+  events: {
+    /** 构造形状 A 信封；未知 type 打 warn（构造点第一秒可见）但不阻断（fail-open）。 */
+    make(type: string, props?: Record<string, any>, sessionID?: string): { payload: { type: string; properties: Record<string, any> } };
+    /** 字段契约检查（同 dry-event 端点的 warnings；空数组 = 无警告）。 */
+    check(evt: object): string[];
+  };
 }
 
 export type RuntimeFactory = (ctx: RuntimePluginContext) => Promise<AgentRuntime>;
@@ -197,6 +206,23 @@ export function createRuntimePluginContext(
     credentials,
     projectDir: extra?.projectDir,
     gatewayPort: extra?.gatewayPort,
+    events: {
+      make: (type: string, props?: Record<string, any>, sessionID?: string) => {
+        if (!isKnownEventType(type)) {
+          log.warn(
+            `[ctx.events] plugin constructing UNKNOWN event type '${type}' — desktop renders nothing; ` +
+            `map to a canonical type or use 'plugin:<name>:<event>' (this warn fires at the emit call site)`,
+          );
+        }
+        return {
+          payload: {
+            type,
+            properties: sessionID ? { ...(props || {}), sessionID } : { ...(props || {}) },
+          },
+        };
+      },
+      check: (evt: object) => checkEventFields(evt as any),
+    },
   };
 }
 
