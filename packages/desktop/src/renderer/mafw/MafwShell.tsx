@@ -18,6 +18,8 @@ import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { sessionStore } from "./session-store"
   import { planSessionEvent, type RawSessionEvent, isTailAccountedAtShell } from "./session-events"
+  import { traceEvent } from "./event-trace"
+  import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
@@ -1256,6 +1258,7 @@ export function MafwShell() {
   // read the same phase via useConnPhase().
   const connPhase = useConnPhase()
   const connDown = () => connPhase() === "down"
+  const [showInspector, setShowInspector] = createSignal(false)
   let es: EventSource | null = null
   let esRetry: ReturnType<typeof setTimeout> | null = null
   const scheduleEsRetry = (delayMs = 5000) => {
@@ -1324,6 +1327,7 @@ export function MafwShell() {
       if (!event) return
 
       if (event.type === "user_question") {
+        traceEvent(event, "notify:question")
         console.log("[mafw] SSE user_question", event.goalId, event.questionId)
         setActiveQuestion(event as QuestionData)
         notifyIfHidden("MAFW：Agent 需要你的回答", String(event.question || "").slice(0, 80))
@@ -1331,6 +1335,7 @@ export function MafwShell() {
       }
 
       if (event.type === "project_registered") {
+        traceEvent(event, "rail:projects")
         // Flat top-level broadcast (no data envelope): raw.data is absent so
         // the fields live directly on the event.
         console.log("[mafw] SSE project_registered", event.projectDir)
@@ -1339,6 +1344,7 @@ export function MafwShell() {
       }
 
       if (event.type === "runtime_switched") {
+        traceEvent(event, "rail:runtime")
         console.log("[mafw] SSE runtime_switched", event.runtime)
         // Runtime switch swaps the session storage backend (opencode SQLite vs
         // pi) — cached session lists, model/agent menus, and open tabs belong
@@ -1356,6 +1362,7 @@ export function MafwShell() {
       // the session-events planner (hidden-session parity + field whitelist,
       // so the local metadata.mafw.role marker survives info that lacks it).
       if (event.type === "session.created" || event.type === "session.updated" || event.type === "session.deleted") {
+        traceEvent(event, "rail:planner")
         const action = planSessionEvent(event as RawSessionEvent)
         if (action.kind === "invalidate") {
           // Broadcast carries no project mapping — refetch the cached buckets.
@@ -1383,16 +1390,26 @@ export function MafwShell() {
         || event?.properties?.part?.sessionID
         || event?.properties?.info?.sessionID
         || ""
-      if (!sid) return
+      // 漏接线检测：不属于尾部合法放行（else-if 链 / 前缀类 / 显式忽略）=
+      // 未知事件（gateway 新增而 desktop 未接）。warn + trace 留痕，不抛错。
+      const missTrace = () => {
+        if (!isTailAccountedAtShell(event.type)) {
+          console.warn("[mafw] unhandled SSE event at shell:", event.type)
+          traceEvent(event, "miss")
+        }
+      }
+      if (!sid) { missTrace(); return }
 
       // Flow cards: native question / permission requests (AskCard / PermissionCard)
       if (event.type === "question.asked") {
+        traceEvent(event, "card:ask")
         console.log("[mafw] SSE question.asked", sid, event.properties?.id)
         upsertCard(sid, { kind: "ask", data: mapAskCard(event.properties || {}, Date.now()) })
         notifyIfHidden("MAFW：Agent 提问", String(event.properties?.question || "").slice(0, 80))
         return
       }
       if (event.type === "permission.asked") {
+        traceEvent(event, "card:permission")
         console.log("[mafw] SSE permission.asked", sid, event.properties?.id, event.properties?.permission)
         const card = mapPermissionCard(event.properties || {}, Date.now())
         upsertCard(sid, { kind: "permission", data: card })
@@ -1408,12 +1425,14 @@ export function MafwShell() {
         return
       }
       if (event.type === "session.compacted") {
+        traceEvent(event, "chat:compacted")
         console.log("[mafw] SSE session.compacted", sid)
         const summary = event.properties?.summary || event.properties?.part?.text || undefined
         setCompactionMarks(prev => ({ ...prev, [sid]: { at: Date.now(), summary } }))
         return
       }
       if (event.type === "question.replied") {
+        traceEvent(event, "card:ask-resolve")
         const props = event.properties || {}
         const id = props.requestID || props.id
         const answers = props.answers || []
@@ -1421,12 +1440,14 @@ export function MafwShell() {
         return
       }
       if (event.type === "question.rejected") {
+        traceEvent(event, "card:ask-cancel")
         const props = event.properties || {}
         const id = props.requestID || props.id
         if (id) resolveCard(sid, id, { status: "cancelled" })
         return
       }
       if (event.type === "permission.replied") {
+        traceEvent(event, "card:permission-resolve")
         const props = event.properties || {}
         const id = props.requestID || props.id
         if (id) {
@@ -1437,6 +1458,7 @@ export function MafwShell() {
       }
 
       if (event.type === "trajectory.event") {
+        traceEvent(event, "dock:trajectory")
         if (!sid) return
         const props = (event as any).properties || (raw as any).data?.properties || {}
         const prev = trajectoryLive()[sid] || []
@@ -1449,6 +1471,7 @@ export function MafwShell() {
         return
       }
       if (event.type === "trajectory.turn") {
+        traceEvent(event, "dock:trajectory-turn")
         if (!sid) return
         const props = (event as any).properties || {}
         setTrajectoryTurnLive({ ...trajectoryTurnLive(), [sid]: props })
@@ -1456,11 +1479,13 @@ export function MafwShell() {
       }
 
       if (event.type === "todo.updated") {
+        traceEvent(event, "dock:todos")
         const list = event.properties?.todos
         if (Array.isArray(list)) setTodos(sid, list)
         return
       }
       if (event.type === "message.updated") {
+        traceEvent(event, "chat:message")
         const info = event.properties?.info
         if (!info?.id || !info?.role) return
         const msgId = info.id
@@ -1517,6 +1542,7 @@ export function MafwShell() {
       // ({partID, field: "text", delta}); accumulate it into the part record so
       // the reply renders incrementally (message.part.updated only fires once).
       if (event.type === "message.part.delta") {
+        traceEvent(event, "chat:delta")
         const props = event.properties || {}
         const msgId = props.messageID
         const partID = props.partID
@@ -1541,6 +1567,8 @@ export function MafwShell() {
         })
         return
       }
+      // 流式主链：part 更新 / complete / idle / error 五类共用一个分支链
+      traceEvent(event, "chat:stream")
       if (event.type === "message.part.updated") {
         const part = event.payload?.part || event.properties?.part
         if (!part) return
@@ -1637,12 +1665,7 @@ export function MafwShell() {
         console.log("[mafw] media_speak raw:", JSON.stringify(raw).slice(0, 600))
         if (text) mediaSpeakHandlers[sid]?.(text, voice)
       }
-
-      // 漏接线检测：到这里仍不属于尾部合法放行（else-if 链 / 前缀类 / 显式忽略）
-      // = 未知事件（gateway 新增而 desktop 未接）。warn 留痕，不抛错不阻塞。
-      if (!isTailAccountedAtShell(event.type)) {
-        console.warn("[mafw] unhandled SSE event at shell:", event.type)
-      }
+      missTrace()
     }
   }
 
@@ -1650,7 +1673,16 @@ export function MafwShell() {
   // only becomes available after this window loaded.
   onMount(() => {
     const reconcileTimer = setInterval(reconcileFlowCards, 60000)
+    // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
+    const onInspectorKey = (ev: KeyboardEvent) => {
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === "E" || ev.key === "e")) {
+        ev.preventDefault()
+        setShowInspector(v => !v)
+      }
+    }
+    window.addEventListener("keydown", onInspectorKey)
     onCleanup(() => {
+      window.removeEventListener("keydown", onInspectorKey)
       clearInterval(reconcileTimer)
       if (esRetry) { clearTimeout(esRetry); esRetry = null }
       if (es) { console.log("[mafw] SSE closing"); es.close(); es = null }
@@ -2778,6 +2810,9 @@ export function MafwShell() {
           question={activeQuestion()!}
           onDismiss={() => setActiveQuestion(null)}
         />
+      </Show>
+      <Show when={showInspector()}>
+        <EventInspector onClose={() => setShowInspector(false)} />
       </Show>
     </div>
             </DataProvider>
