@@ -759,6 +759,12 @@ export function AssistantParts(props: {
   showReasoningSummaries?: boolean
   shellToolDefaultOpen?: boolean
   editToolDefaultOpen?: boolean
+  /**
+   * 顶层 part 条目渲染后追加内容的钩子（如权限卡内联到发起它的工具卡后面）。
+   * 只对渲染为顶层「part」条目的 part 触发（context 组工具/隐藏工具不触发）；
+   * 桌面侧判定锚点资格见 desktop flow-card-placement.ts（规则镜像，需同步）。
+   */
+  renderAfterPart?: (part: PartType, message: MessageType) => JSX.Element
 }) {
   const data = useData()
   const emptyParts: PartType[] = []
@@ -843,6 +849,7 @@ export function AssistantParts(props: {
                         defaultOpen={partDefaultOpen(item()!, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
                         assistantActions={props.assistantActions}
                       />
+                      {props.renderAfterPart?.(item()!, message()!)}
                     </Show>
                   </Show>
                 )

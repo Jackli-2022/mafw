@@ -2,6 +2,7 @@
 import { createSignal, createMemo, createEffect, Show, For } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { flowCardInitialExpanded } from "./flow-card-placement"
 
 export type PermissionCardData = {
   id: string
@@ -19,6 +20,8 @@ export type PermissionCardData = {
   createdAt: number
   /** The assistant message id whose tool call triggered this request. */
   messageID?: string
+  /** The tool call id (ToolPart.callID) that triggered this request — inline anchor. */
+  callID?: string
 }
 
 function StatusBadge(props: { status: string }) {
@@ -47,6 +50,8 @@ export function PermissionCard(props: {
   const [confirmArmed, setConfirmArmed] = createSignal(false)
   const [noteOpen, setNoteOpen] = createSignal(false)
   const [note, setNote] = createSignal("")
+  // 已处理的卡默认收起为一行；初始 pending 的卡回答后不自动收起（不抽走视图）。
+  const [expanded, setExpanded] = createSignal(flowCardInitialExpanded(props.data.status))
 
   let armTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -123,6 +128,24 @@ export function PermissionCard(props: {
       }}
     >
       <div class="mafw-flow-leftbar" classList={{ danger: highRisk() }} />
+      {/* Collapsed one-liner (resolved, default) — click/Enter expands */}
+      <Show when={expanded()} fallback={
+        <div
+          class="mafw-flow-collapsed"
+          role="button"
+          tabIndex="0"
+          onClick={() => setExpanded(true)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(true) } }}
+        >
+          <span class="mafw-flow-icon mafw-flow-icon-danger" classList={{ danger: highRisk() }}>🛡</span>
+          <span class="mafw-flow-summary-check" classList={{ denied: props.data.status === "denied" || props.data.status === "expired" }}>
+            {props.data.status === "denied" || props.data.status === "expired" ? "✗" : "✓"}
+          </span>
+          <span class="mafw-flow-summary-text">{props.data.action.title}</span>
+          <span class="mafw-flow-summary-payload">{props.data.action.payload}</span>
+          <span class="mafw-flow-collapsed-chevron">▸</span>
+        </div>
+      }>
       {/* Header */}
       <header class="mafw-flow-header">
         <span class="mafw-flow-icon mafw-flow-icon-danger" classList={{ danger: highRisk() }}>🛡</span>
@@ -132,6 +155,16 @@ export function PermissionCard(props: {
           <StatusBadge status={props.data.status} />
           <Show when={(props.queueLength || 0) > 0}>
             <span class="mafw-flow-badge mafw-flow-badge-muted">还有 {props.queueLength} 项</span>
+          </Show>
+          <Show when={props.data.status !== "pending"}>
+            <span
+              class="mafw-flow-collapse-toggle"
+              role="button"
+              tabIndex="0"
+              title="收起"
+              onClick={(e) => { e.stopPropagation(); setExpanded(false) }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setExpanded(false) } }}
+            >▾</span>
           </Show>
         </div>
       </header>
@@ -197,6 +230,7 @@ export function PermissionCard(props: {
             </ButtonV2>
           </div>
         </footer>
+      </Show>
       </Show>
     </section>
   )

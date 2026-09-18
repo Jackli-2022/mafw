@@ -1016,6 +1016,7 @@ export function MafwShell() {
     status: "pending",
     createdAt,
     messageID: req.tool?.messageID,
+    callID: req.tool?.callID,
     questions: (req.questions || []).map((q: any, i: number) => ({
       id: `${req.id}-q${i}`,
       title: q.question,
@@ -1043,6 +1044,7 @@ export function MafwShell() {
       impact: req.metadata?.impact as string | undefined,
       createdAt,
       messageID: req.tool?.messageID,
+      callID: req.tool?.callID,
     }
   }
 

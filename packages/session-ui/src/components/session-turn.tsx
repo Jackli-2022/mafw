@@ -10,7 +10,7 @@ import { useFileComponent } from "@mafw/ui/context/file"
 
 import { Binary } from "../util/binary"
 import { getDirectory, getFilename } from "../util/path"
-import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, ParentProps, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions, type AssistantActions } from "./message-part"
@@ -159,6 +159,11 @@ export function SessionTurn(
     showReasoningSummaries?: boolean
     shellToolDefaultOpen?: boolean
     editToolDefaultOpen?: boolean
+    /**
+     * 顶层 part 条目渲染后追加内容的钩子（如权限卡内联到发起它的工具卡后面）。
+     * 只对渲染为顶层「part」条目的 part 触发（context 组工具/隐藏工具不触发）。
+     */
+    renderAfterPart?: (part: PartType, message: MessageType) => JSX.Element
     active?: boolean
     status?: SessionStatus
     onUserInteracted?: () => void
@@ -416,6 +421,7 @@ export function SessionTurn(
                     showReasoningSummaries={showReasoningSummaries()}
                     shellToolDefaultOpen={props.shellToolDefaultOpen}
                     editToolDefaultOpen={props.editToolDefaultOpen}
+                    renderAfterPart={props.renderAfterPart}
                     assistantActions={props.assistantActions}
                   />
                 </div>

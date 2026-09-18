@@ -18,6 +18,7 @@ import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
 import { scrollPinDecision } from "./ChatPaneScroll"
+import { inlineAnchor } from "./flow-card-placement"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { createInputHistory } from "./input-history"
@@ -1560,6 +1561,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // bottom of the conversation (old seeds, races where the message has not
   // arrived yet — the store is reactive, so a late-arriving message moves the
   // card into its turn automatically).
+  //
+  // 内联优先：卡片带 callID 且锚 part 渲染为顶层条目时，由 SessionTurn 的
+  // renderAfterPart 挂到发起它的工具卡后面；这里必须同步排除（防双重渲染）。
+  // 资格判定与 AssistantParts 条目规则严格一致（flow-card-placement.ts）。
+  const hasInlineAnchor = (c: FlowCardRecord): boolean =>
+    !!inlineAnchor(c.data, (mid) => (props.store.part[mid] as any[]) || [])
+
+  const inlineCardsForPart = (messageID: string, callID: string): FlowCardRecord[] =>
+    props.sessionCards(sidProp()).visible.filter(
+      (c) => c.data.messageID === messageID && c.data.callID === callID && hasInlineAnchor(c),
+    )
+
   const renderFlowCard = (c: FlowCardRecord) => {
     const sc = props.sessionCards(sidProp())
     return c.kind === "permission" ? (
@@ -1606,6 +1619,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const isLast = users.length > 0 && users[users.length - 1].id === userMsgId
     return props.sessionCards(sid).visible
       .filter(c => {
+        // 内联挂载的卡不参与回合底部归位
+        if (hasInlineAnchor(c)) return false
         // Card explicitly belongs to this turn
         if (c.data.messageID && turnOfMessage(c.data.messageID) === userMsgId) return true
         // Unplaced cards (no messageID or can't resolve) attach to the last turn
@@ -1621,7 +1636,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const unplacedCards = (): FlowCardRecord[] => {
     if (userMessages().length > 0) return []
     return props.sessionCards(sidProp()).visible
-      .filter(c => !c.data.messageID || !turnOfMessage(c.data.messageID))
+      .filter(c => !hasInlineAnchor(c) && (!c.data.messageID || !turnOfMessage(c.data.messageID)))
       .sort((a, b) => a.data.createdAt - b.data.createdAt)
   }
 
@@ -1826,6 +1841,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       actions={userActions()}
                       assistantActions={assistantActions()}
                       classes={{ root: "min-w-0 w-full relative", content: "!overflow-visible", container: "w-full" }}
+                      renderAfterPart={(part: any, message: any) => {
+                        if (part.type !== "tool" || !part.callID) return undefined
+                        const cards = inlineCardsForPart(message.id, part.callID)
+                        return cards.length ? <For each={cards}>{(c) => renderFlowCard(c)}</For> : undefined
+                      }}
                     />
                   </Show>
                   <For each={cardsForTurn(msg.id)}>

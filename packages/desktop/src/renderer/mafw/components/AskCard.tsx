@@ -1,6 +1,7 @@
 ﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, Show, For } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { flowCardInitialExpanded } from "./flow-card-placement"
 
 export type AskQuestionData = {
   id: string
@@ -21,6 +22,8 @@ export type AskCardData = {
   createdAt: number
   /** The assistant message id whose tool call triggered this request. */
   messageID?: string
+  /** The tool call id (ToolPart.callID) that triggered this request — inline anchor. */
+  callID?: string
 }
 
 const CUSTOM_ID = "__custom__"
@@ -49,6 +52,8 @@ export function AskCard(props: {
   const [selected, setSelected] = createSignal<Record<string, string[]>>({})
   const [customVals, setCustomVals] = createSignal<Record<string, string>>({})
   const customRefs: Record<string, HTMLInputElement | undefined> = {}
+  // 已处理的卡默认收起为一行；初始 pending 的卡回答后不自动收起（不抽走视图）。
+  const [expanded, setExpanded] = createSignal(flowCardInitialExpanded(props.data.status))
 
   const questions = () => props.data.questions
 
@@ -141,12 +146,42 @@ export function AskCard(props: {
       "mafw-flow-card-resolved": props.data.status !== "pending",
     }}>
       <div class="mafw-flow-leftbar" />
+      {/* Collapsed one-liner (resolved, default) — click/Enter expands */}
+      <Show when={expanded()} fallback={
+        <div
+          class="mafw-flow-collapsed"
+          role="button"
+          tabIndex="0"
+          onClick={() => setExpanded(true)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(true) } }}
+        >
+          <span class="mafw-flow-icon">?</span>
+          <span class="mafw-flow-summary-check" classList={{ denied: props.data.status === "cancelled" || props.data.status === "expired" }}>
+            {props.data.status === "cancelled" || props.data.status === "expired" ? "✗" : "✓"}
+          </span>
+          <span class="mafw-flow-summary-text">
+            {props.data.questions[0]?.title || "决策"}
+            {props.data.questions.length > 1 ? `（${props.data.questions.length} 个问题）` : ""}
+          </span>
+          <span class="mafw-flow-collapsed-chevron">▸</span>
+        </div>
+      }>
       {/* Header */}
       <header class="mafw-flow-header">
         <span class="mafw-flow-icon">?</span>
         <span class="mafw-flow-title">{props.data.agentName || "Agent"} 需要你的决策</span>
         <div class="mafw-flow-badge-wrap">
           <StatusBadge status={props.data.status} />
+          <Show when={props.data.status !== "pending"}>
+            <span
+              class="mafw-flow-collapse-toggle"
+              role="button"
+              tabIndex="0"
+              title="收起"
+              onClick={(e) => { e.stopPropagation(); setExpanded(false) }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setExpanded(false) } }}
+            >▾</span>
+          </Show>
         </div>
       </header>
 
@@ -261,6 +296,7 @@ export function AskCard(props: {
             </ButtonV2>
           </div>
         </footer>
+      </Show>
       </Show>
     </section>
   )

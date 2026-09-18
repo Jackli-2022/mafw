@@ -1988,6 +1988,29 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-flow-btn-danger { background: var(--danger); color: #fff; }
 
 /* Collapsed summary */
+.mafw-flow-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 18px;
+  cursor: pointer;
+  min-width: 0;
+  border-radius: inherit;
+}
+.mafw-flow-collapsed:hover { background: var(--bg-raised); }
+.mafw-flow-collapsed:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.mafw-flow-collapsed .mafw-flow-icon { font-size: 12px; flex-shrink: 0; }
+.mafw-flow-collapsed-chevron { color: var(--text-4); font-size: 11px; flex-shrink: 0; }
+.mafw-flow-collapse-toggle {
+  color: var(--text-4);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+.mafw-flow-collapse-toggle:hover { background: var(--bg-raised); color: var(--text-2); }
+
 .mafw-flow-summary { padding: 10px 16px 12px 20px; display: flex; flex-direction: column; gap: 6px; }
 .mafw-flow-summary-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mafw-flow-summary-check {
