@@ -17,7 +17,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { sessionStore } from "./session-store"
-import { planSessionEvent, type RawSessionEvent } from "./session-events"
+  import { planSessionEvent, type RawSessionEvent, isTailAccountedAtShell } from "./session-events"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
@@ -1636,6 +1636,12 @@ export function MafwShell() {
         console.log("[mafw] media_speak event:", event.type, "| toolName:", toolName, "| text len:", text.length, "| voice:", voice)
         console.log("[mafw] media_speak raw:", JSON.stringify(raw).slice(0, 600))
         if (text) mediaSpeakHandlers[sid]?.(text, voice)
+      }
+
+      // 漏接线检测：到这里仍不属于尾部合法放行（else-if 链 / 前缀类 / 显式忽略）
+      // = 未知事件（gateway 新增而 desktop 未接）。warn 留痕，不抛错不阻塞。
+      if (!isTailAccountedAtShell(event.type)) {
+        console.warn("[mafw] unhandled SSE event at shell:", event.type)
       }
     }
   }

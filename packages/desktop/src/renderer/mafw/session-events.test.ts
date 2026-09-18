@@ -2,7 +2,13 @@
 // to sessionStore actions. Parity with gateway isHiddenSession + no-overwrite
 // guard for local-only fields (metadata.mafw.role) that broadcast info lacks.
 import { describe, expect, test } from "bun:test"
-import { planSessionEvent } from "./session-events"
+import { RUNTIME_EVENT_TYPES, FLAT_EVENT_TYPES } from "@mafw/sdk"
+import {
+  planSessionEvent,
+  IGNORED_AT_SHELL,
+  isTailAccountedAtShell,
+  assertShellEventCoverage,
+} from "./session-events"
 
 const createdEvent = (info: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
   type: "session.created",
@@ -121,5 +127,41 @@ describe("planSessionEvent: other events", () => {
       kind: "none",
     })
     expect(planSessionEvent({})).toEqual({ kind: "none" })
+  })
+})
+
+describe("shell event coverage guard", () => {
+  test("IGNORED_AT_SHELL entries are real canonical types", () => {
+    const known = new Set<string>([...RUNTIME_EVENT_TYPES, ...FLAT_EVENT_TYPES])
+    for (const t of IGNORED_AT_SHELL) {
+      expect(known.has(t)).toBe(true)
+    }
+  })
+
+  test("planner-consumed lifecycle types are not in the ignore list", () => {
+    for (const t of ["session.created", "session.updated", "session.deleted"]) {
+      expect(IGNORED_AT_SHELL).not.toContain(t)
+    }
+  })
+
+  test("isTailAccountedAtShell: else-if chain types and prefixes accounted", () => {
+    expect(isTailAccountedAtShell("message.part.updated")).toBe(true)
+    expect(isTailAccountedAtShell("message.complete")).toBe(true)
+    expect(isTailAccountedAtShell("session.idle")).toBe(true)
+    expect(isTailAccountedAtShell("plugin:myplug:done")).toBe(true)
+    expect(isTailAccountedAtShell("session.next.tool.updated")).toBe(true)
+    expect(isTailAccountedAtShell("goal_created")).toBe(true)
+    expect(isTailAccountedAtShell(undefined)).toBe(true)
+  })
+
+  test("isTailAccountedAtShell: unknown future types are NOT accounted (miss detection)", () => {
+    expect(isTailAccountedAtShell("session.somehow.new")).toBe(false)
+    expect(isTailAccountedAtShell("message.chunk.merged")).toBe(false)
+  })
+
+  test("coverage function runs without throwing on a known type (compile-time is the real guard)", () => {
+    expect(() =>
+      assertShellEventCoverage({ type: "opencode_event", data: { type: "session.idle", sessionID: "s1" } }),
+    ).not.toThrow()
   })
 })
