@@ -26,6 +26,8 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 export interface EventPublishDeps {
   /** gateway 全通道广播（SSE + WS + 移动端推送） */
   broadcast: (event: { type: string; [key: string]: any }) => void;
+  /** 未知类型遥测（扁平非 plugin:* 命名空间时调用；fail-open）。 */
+  recordUnknown?: (type: string) => void;
 }
 
 export async function handleEventPublish(
@@ -56,6 +58,10 @@ export async function handleEventPublish(
       deps.broadcast(opencodeBroadcast(body.data, body.data.internal === true) as any);
       send(200, { ok: true });
       return;
+    }
+    if (!body.type.startsWith('plugin:')) {
+      // 未知类型遥测：扁平非命名空间发布计为潜在漏接线（fail-open）
+      try { deps.recordUnknown?.(body.type); } catch { /* fail-open */ }
     }
     deps.broadcast(body);
     send(200, { ok: true });

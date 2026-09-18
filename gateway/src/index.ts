@@ -84,6 +84,7 @@ import {
 } from './recall/step-inject';
 import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
+import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
@@ -277,6 +278,8 @@ class MafwScheduler {
   private runtimeCaps: RuntimeCapabilities = minimalCapabilities();
   private runtimeName = 'opencode';
   private runtimeLoader?: RuntimePluginLoader;
+  /** 未知事件遥测（L1）：per-source（runtime 名 / 'api'）per-type 计数。 */
+  private unknownEventTracker = new UnknownEventTracker();
   private serveSupervisor: ServeSupervisor;
   private switchingRuntime = false;
   /** Abort controller for the active event stream subscription. Cancelled
@@ -930,6 +933,20 @@ class MafwScheduler {
         log.warn(`[SSE] malformed event from runtime '${this.runtimeName}' (no type/properties) — dropped consumers may misbehave; payload: ${summary}`);
       }
     }
+    // 未知类型遥测（全量启用）：首次出现时 warn 一次给可定位诊断，
+    // 计数经 GET /api/runtime 的 unknownEvents 暴露。fail-open 不阻断。
+    if (!isKnownEventType(f.type)) {
+      try {
+        const { firstSeen } = this.unknownEventTracker.record(this.runtimeName, f.type);
+        if (firstSeen) {
+          log.warn(
+            `[SSE] runtime '${this.runtimeName}' emitted unknown event type '${f.type}' ` +
+            `(not canonical, not plugin:* namespaced) — desktop will show it as ` +
+            `'miss' in the event inspector; counters: GET /api/runtime .unknownEvents`,
+          );
+        }
+      } catch { /* fail-open */ }
+    }
     const { type, properties: props, sessionID } = f;
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
@@ -1290,6 +1307,11 @@ class MafwScheduler {
     return { ...result, vectors: rt.vectors.size(), indexEntries: entries.length };
   }
 
+  /** Wave1Gateway 契约：POST /api/events 扁平未知类型遥测。 */
+  recordUnknownEvent(type: string): void {
+    try { this.unknownEventTracker.record('api', type); } catch { /* fail-open */ }
+  }
+
   /** P5 Wave 2：/api/runtime 路由 deps（自内联块上移，行为逐字节等价）。 */
   private runtimeDeps(): RuntimeSwitchDeps {
     return {
@@ -1335,6 +1357,7 @@ class MafwScheduler {
           catch (err: any) { log.warn(`[Runtime] dispose old runtime failed: ${err.message}`); }
         }
       },
+      unknownEvents: () => this.unknownEventTracker.snapshot(),
     };
   }
 

@@ -26,6 +26,8 @@ export interface RuntimeSwitchDeps {
   createRuntime: () => Promise<AgentRuntime>;
   /** Wire the new runtime into the gateway (client/caps/name/session) and re-subscribe events. */
   onSwitched: (rt: AgentRuntime, prev: AgentRuntime | null) => Promise<void>;
+  /** 未知事件遥测快照（per-source per-type 计数）；缺省空对象。 */
+  unknownEvents?: () => Record<string, Record<string, number>>;
 }
 
 // ─── GET /api/runtime ─── active runtime identity + capabilities + plugin scan state
@@ -42,6 +44,7 @@ export async function handleRuntimeGet(
       envOverride: deps.envOverride(),
     },
     plugins: deps.loader?.getState() ?? [],
+    unknownEvents: deps.unknownEvents ? deps.unknownEvents() : {},
   }));
 }
 

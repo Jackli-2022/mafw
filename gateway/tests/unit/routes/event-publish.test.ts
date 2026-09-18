@@ -99,3 +99,42 @@ describe('POST /api/events (publish)', () => {
     expect(res.body.error).toMatch(/json/i);
   });
 });
+
+describe('POST /api/events (unknown type telemetry)', () => {
+  let server: http.Server;
+  let recorded: string[];
+  afterEach((done) => { server?.close(() => done()); });
+
+  function startTelemetry(): Promise<void> {
+    recorded = [];
+    server = http.createServer(async (req, res) => {
+      if (req.method === 'POST' && req.url?.match(/^\/api\/events(?:\?|$)/)) {
+        await handleEventPublish({
+          broadcast: () => {},
+          recordUnknown: (t) => recorded.push(t),
+        }, req, res);
+        return;
+      }
+      res.writeHead(404); res.end();
+    });
+    return new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  }
+
+  it('records flat non-namespaced unknown types', async () => {
+    await startTelemetry();
+    await post(server, { type: 'my_custom_event', level: 'warn' });
+    expect(recorded).toEqual(['my_custom_event']);
+  });
+
+  it('does not record plugin:* namespaced types', async () => {
+    await startTelemetry();
+    await post(server, { type: 'plugin:x:y' });
+    expect(recorded).toEqual([]);
+  });
+
+  it('does not record envelope passthrough (opencode_event data)', async () => {
+    await startTelemetry();
+    await post(server, { type: 'opencode_event', data: { type: 'session.idle', sessionID: 's1' } });
+    expect(recorded).toEqual([]);
+  });
+});

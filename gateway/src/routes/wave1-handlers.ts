@@ -42,6 +42,8 @@ export interface Wave1Gateway {
   pluginLoader?: { reload(): Promise<void> } | null;
   mediaPluginLoader?: { reload(): Promise<void>; getState(): { name?: string }[] } | null;
   broadcast(event: { type: string; [key: string]: any }): void;
+  /** 未知事件遥测（扁平非 plugin:* 发布；缺省不采集）。 */
+  recordUnknownEvent?(type: string): void;
   runtimeCaps: SessionMutationDeps['getCapabilities'] extends () => infer C ? C : never;
 }
 
@@ -97,7 +99,7 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.runtime })));
 
   registry.attachHandler('event.publish', H(async (req, res) =>
-    handleEventPublish({ broadcast: (e) => gw.broadcast(e) }, req, res)));
+    handleEventPublish({ broadcast: (e) => gw.broadcast(e), recordUnknown: (t) => gw.recordUnknownEvent?.(t) }, req, res)));
 
   registry.attachHandler('media.switch', H(async (req, res) =>
     handleMediaSwitch(req, res, {
