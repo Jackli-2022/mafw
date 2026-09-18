@@ -1,0 +1,3 @@
+{"type":"session.created","properties":{"info":{"id":"s9","title":"new chat","directory":"/p"}}}
+{"type":"session.updated","sessionID":"s9","properties":{"sessionID":"s9","info":{"id":"s9","title":"renamed","time":{"updated":123}}}}
+{"type":"session.deleted","sessionID":"s9","properties":{"sessionID":"s9"}}
