@@ -89,7 +89,7 @@ export interface EventFacets {
 ### 5.2 kv_store（gateway.db）
 
 - key `perm-mode/<sessionID>` → `'manual' | 'auto'`（写失败 fail-open 内存态兜底）
-- 预算计数：内存 Map，重启清零（与 desktop 现状等价，可接受）
+- 预算计数：内存 Map；显式切 manual / 预算回落 / gateway 重启时清零（见 §6.2）
 
 ### 5.3 config.yaml approval 段
 
@@ -142,8 +142,9 @@ export interface ApprovalPolicyServiceDeps {
 }
 ```
 
-- 内部会话判定源：`internalSessionRoles`（manager/btw/index-scan/extract/reflect 已登记；goal execute 等 goal 会话按现有登记面覆盖）
+- 内部会话判定源：`internalSessionRoles`（现有登记面：manager / btw / index-scan / extract / reflect）。**goal plan/execute/review 编排会话不在登记面、不走 fail-safe**——它们是用户发起的编排会话（桌面有 tab、有人在环），asked 落普通评估（manual → human → 卡片等待）；cron automation 触发的无人值守 goal 同样弹卡挂起，超时兜底（pi bridge 5min / desktop 60s 对账），v1 不为 automation goal 加策略配置
 - mode set 时同步广播 `permission_mode` 扁平事件（wire 契约：顶层无 `data` 键）
+- 预算计数语义（规范化 desktop 现状的"从不重置"）：会话生命周期内 auto-approvals 总计；**显式 `setMode('manual')` 或预算触发回落时清零**（用户重新开 auto = 重新计），gateway 重启清零
 
 ### 6.3 allowlist-store.ts
 
