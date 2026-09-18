@@ -192,6 +192,8 @@ export function createVoiceSession(deps: VoiceSessionDeps) {
           if (!t.startsWith("data:")) continue
           let j: any
           try { j = JSON.parse(t.slice(5).trim()) } catch { continue }
+          if (j.error) throw new Error(`TTS stream error: ${j.error}`)
+          if (j.done) break
           if (!j.data) continue
           const bin = atob(j.data)
           const bytes = new Uint8Array(bin.length)

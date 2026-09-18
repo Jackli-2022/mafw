@@ -43,6 +43,11 @@ class PcmPlayerProcessor extends AudioWorkletProcessor {
   }
   process(_inputs, outputs) {
     const out = outputs[0][0]
+    // 空流（引擎 0 块 + eof）：不依赖 playing 态也能报 drained，否则主线程挂 60s 兜底
+    if (!this.playing && this.eof && this.buffered === 0) {
+      this.eof = false
+      this.port.postMessage({ type: 'drained' })
+    }
     if (this.playing) {
       for (let i = 0; i < out.length; i++) {
         if (this.buffered > 0) {
