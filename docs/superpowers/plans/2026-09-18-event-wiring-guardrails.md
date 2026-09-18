@@ -723,3 +723,13 @@ git commit -m "feat(desktop): dev event inspector with per-branch trace ring"
 - **占位符扫描**：Task 5 Step 4 的 15 处 traceEvent 插入是机械重复，执行时逐分支添加即可（分支标签命名规则：`flow-card:*` / `chat:*` / `rail:*` / `notify:*` / `miss`）。其余代码均完整。
 - **类型一致性**：`UnwrappedEvent` / `assertNever` / `IGNORED_AT_SHELL` / `TraceEntry` 跨任务签名一致；`assertMatrixComplete` 在 Task 2 测试与实现一致。
 - **已知风险**：Task 3 的 if-chain narrowing 可能因 `startsWith` 前缀分支失效——已内置退化方案（Step 3c 的独立类型级函数承担编译期强制，assertNever 保持运行期兜底）。matrix 中 TUI 列只核对了 chat-store/app 两个文件，执行 Task 2 时如发现 TUI 实际消费更多类型，以代码现状修正矩阵。
+
+## 执行偏差记录（2026-09-18，inline 执行）
+
+1. **Task 2 矩阵修正**：`session.error` / `message.error` 的 modeA 经 index.ts:1037-1043 核实为 if/else-if 严格改写——`session.error` 是 `rewrite`（自身不再透传，改写为 message.error）；`message.error` 自身 broadcast=passthrough 另有透传（与 session.error 双发）。
+2. **Task 3 三处重设计**（原方案的 `assertNever(event.type as never)` 恒编译通过，且运行时尾巴会误伤经 else-if 链合法落到尾部的 `message.part.updated`）：
+   - `IGNORED_AT_SHELL` / `isTailAccountedAtShell` / `assertShellEventCoverage` 放纯模块 `session-events.ts`（避免测试 import 2783 行组件）；
+   - 编译期强制改用 **switch 残余窄化**（default 分支赋值给 `plugin:${string}`，SDK 新增类型未归类即 TS2322）；
+   - 运行期兜底降级为 **warn + trace("miss")**（不抛错），并覆盖 `!sid` 早退路径（否则新扁平广播事件被静默吞掉不告警）。
+3. **守卫实弹演练**：临时向 SDK union 注入 `session.future.thing` → desktop typecheck 精确红在 session-events.ts:189 → 还原。编译期强制已证实生效。
+4. **Task 5**：miss 检测合并进 `missTrace()` 局部函数，`!sid` 早退与尾部两处调用；trace 埋点 17 处（含 `chat:stream` 链合并 1 处）。
