@@ -41,7 +41,7 @@ import { DashboardPage } from "./pages/Dashboard"
 import { parseDeepLink } from "./deep-link"
 import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
-import { shouldAutoApprove, nextPermissionMode } from "./components/permission-mode"
+import { nextMode as nextPermissionMode } from "./components/permission-card-mapping"
 import { saveLayout, loadLayout, pruneMissing } from "./layout-persist"
 import { buildSessionMarkdown } from "./export-markdown"
 import { MemoryPage } from "./pages/Memory"
@@ -229,6 +229,7 @@ export function MafwShell() {
     }
     setActiveSessionId(sid)
     setActiveViewId(sid)
+    syncPermissionMode(sid) // 🛡 徽标初始态（kv 真相源拉取）
   }
 
   // Single resolution path for the manager session: authoritative gateway DB
@@ -342,11 +343,15 @@ export function MafwShell() {
   }
   const lastIdleNotify: Record<string, number> = {}
 
-  // Per-session approval mode (Manual/Auto-lite): auto mode auto-replies
-  // "once" to SAFE commands only, with a hard consecutive budget; dangerous
-  // commands always require the double-click arm flow.
+  // Per-session approval mode (Manual/Auto-lite)。真相源在 gateway（kv perm-mode，
+  // 25 次预算 + 危险正则判定）；desktop 只缓存 UI 态：开 tab 拉取 + SSE
+  // permission_mode 事件驱动 + toggle 乐观更新失败回滚。
   const [permissionModes, setPermissionModes] = createStore<Record<string, "manual" | "auto">>({})
-  const autoApprovalCounts: Record<string, number> = {}
+  const syncPermissionMode = (sid: string) => {
+    void window.api.mafw.permissions.getMode(sid)
+      .then((m: any) => { if (m?.mode === "manual" || m?.mode === "auto") setPermissionModes(sid, m.mode) })
+      .catch(() => {})
+  }
 
   // Shared destructive confirmation request (ConfirmOverlay) — replaces the
   // blocking window.confirm for in-shell actions.
@@ -1014,6 +1019,8 @@ export function MafwShell() {
   // session end) while an SSE gap swallowed the reply event — without this,
   // ghost pending cards inflate the approvals badge forever.
   const reconcileFlowCards = () => {
+    // 顺带补拉各会话审批模式（覆盖非 tab 打开路径，如全局 Approvals 页；60s 对账周期）
+    for (const sid of Object.keys(flowCards())) syncPermissionMode(sid)
     window.api.mafw.permissions.list().then((items: any[]) => {
       const live = new Set<string>((items || []).map((r: any) => String(r.id)))
       for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
@@ -1372,15 +1379,20 @@ export function MafwShell() {
         console.log("[mafw] SSE permission.asked", sid, event.properties?.id, event.properties?.permission)
         const card = mapPermissionCard(event.properties || {}, Date.now())
         upsertCard(sid, { kind: "permission", data: card })
-        notifyIfHidden("MAFW：需要权限审批", String(event.properties?.permission?.tool || "工具调用").slice(0, 80))
-        // Auto mode: safe commands get an automatic "once" (budget-capped);
-        // high-risk cards still wait for the human double-click arm flow.
-        const mode = permissionModes[sid] || "manual"
-        if (shouldAutoApprove({ mode, isDangerous: card.risk === "high", autoApprovals: autoApprovalCounts[sid] || 0 })) {
-          autoApprovalCounts[sid] = (autoApprovalCounts[sid] || 0) + 1
-          console.log("[mafw] auto-approve (session mode=auto)", sid.slice(-8), "count", autoApprovalCounts[sid])
-          void permReply(card, "once")
+        if (shouldNotify(card)) {
+          notifyIfHidden("MAFW：需要权限审批", String(event.properties?.permission?.tool || "工具调用").slice(0, 80))
+        } else {
+          // auto 决策兜底：5s 后对账服务端真值（gateway auto-reply 失败时，卡片被
+          // reconcile 重新映射回 pending，用户仍可手动答复）。
+          setTimeout(() => reconcileFlowCards(), 5000)
         }
+        return
+      }
+      if (event.type === "permission_mode") {
+        // gateway 审批模式变更（🛡 toggle / 预算回落广播）——三端徽标同步
+        const pmSid = event.sessionID || event.properties?.sessionID
+        const pmMode = event.properties?.mode
+        if (pmSid && (pmMode === "manual" || pmMode === "auto")) setPermissionModes(pmSid, pmMode)
         return
       }
       if (event.type === "session.compacted") {
@@ -2516,7 +2528,15 @@ export function MafwShell() {
                           onUnregisterQueueFlush={(s) => { delete queueFlushers[s] }}
                           compactionMark={compactionMarks()[leaf.sid] || null}
                           permissionMode={permissionModes[leaf.sid] || "manual"}
-                          onTogglePermissionMode={() => setPermissionModes(leaf.sid, nextPermissionMode(permissionModes[leaf.sid] || "manual"))}
+                          onTogglePermissionMode={() => {
+                            const prev = (permissionModes[leaf.sid] || "manual") as "manual" | "auto"
+                            const next = nextPermissionMode(prev)
+                            setPermissionModes(leaf.sid, next) // 乐观更新
+                            window.api.mafw.permissions.setMode(leaf.sid, next).catch(() => {
+                              setPermissionModes(leaf.sid, prev) // 回滚
+                              showToastV2({ description: "切换审批模式失败", duration: 2000 })
+                            })
+                          }}
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />
