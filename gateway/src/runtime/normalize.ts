@@ -24,6 +24,15 @@ export interface RawRuntimeEvent {
   sessionID?: string;
 }
 
+/** permission.asked 切面载荷：双 runtime 形状在此对齐
+ *  （opencode: id/permission/patterns/metadata；pi: requestId/toolName/args/risk）。 */
+export interface ApprovalFacet {
+  requestId: string;
+  toolName: string;
+  patterns: string[];
+  metadata?: Record<string, unknown>;
+}
+
 /**
  * 畸形事件判定：类型与属性全空 = 归一化后无任何可消费信息。
  * handleOpencodeEvent 入口据此做限频 warn——runtime 插件发坏事件时
@@ -55,6 +64,8 @@ export interface EventFacets {
   compaction: 'start' | 'end' | null;
   /** 工具事件携带的 shell command（自更新调用者定位用） */
   toolCommand?: string;
+  /** permission.asked 切面：非 asked 或畸形（缺 requestId/toolName）恒 null（喂 approval policy） */
+  approval: ApprovalFacet | null;
 }
 
 export function normalizeOpencodeEvent(evt: RawRuntimeEvent): EventFacets {
@@ -104,5 +115,24 @@ export function normalizeOpencodeEvent(evt: RawRuntimeEvent): EventFacets {
   const compaction: EventFacets['compaction'] =
     type === 'session.compacting' ? 'start' : type === 'session.compacted' ? 'end' : null;
 
-  return { type, properties: props, sessionID, directory: evt?.directory, step, chatSignal, deltaText, chatError, broadcast, compaction, toolCommand };
+  // approval facet：permission.asked 双 runtime 形状对齐（opencode: id/permission/
+  // patterns/metadata；pi: requestId/toolName/args/risk）。缺 requestId/toolName 视为
+  // 畸形（恒 null），下游按无切面处理。
+  let approval: ApprovalFacet | null = null;
+  if (type === 'permission.asked' && sessionID) {
+    const requestId = props?.requestId ?? props?.id;
+    const toolName = props?.permission ?? props?.toolName;
+    if (requestId && toolName) {
+      approval = {
+        requestId: String(requestId),
+        toolName: String(toolName),
+        patterns: Array.isArray(props?.patterns) ? props.patterns : [],
+        metadata: props?.metadata ?? (props?.args !== undefined || props?.risk !== undefined
+          ? { args: props?.args, risk: props?.risk }
+          : undefined),
+      };
+    }
+  }
+
+  return { type, properties: props, sessionID, directory: evt?.directory, step, chatSignal, deltaText, chatError, broadcast, compaction, toolCommand, approval };
 }
