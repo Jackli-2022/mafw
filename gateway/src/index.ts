@@ -75,14 +75,6 @@ import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
 import { PairingService } from './mobile/pairing';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
-import {
-  StepInjectState,
-  shouldConsiderStep,
-  selectMemories,
-  memoryFingerprint,
-  defaultStepInjectOptions,
-} from './recall/step-inject';
-import { renderMemoryBlocks } from './recall/inject-format';
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
@@ -231,16 +223,6 @@ class MafwScheduler {
   /** 畸形事件 warn 限频（每 runtime 30s 一次） */
   private malformedEventWarnAt = new Map<string, number>();
   private stopTokenWatcher: (() => void) | null = null;
-
-  // Path 1 step-injection state (mark-before-async + dedup + queue). All
-  // per-session entries expire via TtlMap.
-  private stepInject = new StepInjectState({
-    threshold: config.recall.stepInjectThreshold,
-    maxMemories: config.recall.stepInjectMaxMemories,
-    intervalMs: config.recall.stepInjectIntervalMs,
-    queueCap: config.recall.stepInjectQueueCap,
-    ttlMs: config.recall.stepInjectTtlMs,
-  });
 
   // SQLite T1 observation store (single writer = this gateway; the opencode
   // plugin pushes observations via /api/obs/capture). Lazy: constructed after
@@ -1031,15 +1013,6 @@ class MafwScheduler {
       });
     }
 
-    // Path 1: settled LLM step → evaluate high-salience memory injection.
-    // shouldConsiderStep validates sessionID/assistantMessageID exist and finish is not excluded.
-    if (f.step && shouldConsiderStep(f.step)) {
-      const { sessionID: sid, assistantMessageID: mid } = f.step;
-      if (sid && mid && this.stepInject.markStepSeen(sid, mid)) {
-        void this.evaluateStepInjection(sid, mid);
-      }
-    }
-
     // BudgetGuard: goal-session turn/cost hard stop (turnBudgetApi-lacking
     // runtimes). Guard auto-detonates once → detach.
     if (f.step && sessionID) {
@@ -1064,9 +1037,6 @@ class MafwScheduler {
     // Global broadcast (Mode A — used by the desktop renderer).
     // Normalize to the renderer's contract: { type, properties, sessionID }.
     if (f.broadcast === 'idle') {
-      // Path 1: turn fully settled → drain any queued memory injection
-      // (delayed to idle so we never collide with the finishing drain).
-      if (sessionID) void this.drainStepInjections(sessionID);
       try {
         if (this.trajectoryCollector && sessionID) {
           const turn = this.trajectoryCollector.onIdle(sessionID);
@@ -1149,107 +1119,6 @@ class MafwScheduler {
   private async runtimeCredentialsForPlugin(): Promise<RuntimeCredentials | undefined> {
     if (this.runtime?.credentials) return this.runtime.credentials;
     return undefined;
-  }
-
-  // ── Path 1: step-ended memory injection ────────────────────────────────
-
-  /**
-   * Async half of step-ended injection (the seen-mark already happened in
-   * handleOpencodeEvent, synchronously). Fetches the turn's last assistant
-   * text, searches high-salience memories, dedups by fingerprint, and queues
-   * the memory block. Fail-open: any error only logs; nothing is queued.
-   */
-  private async evaluateStepInjection(sessionID: string, assistantMessageID: string): Promise<void> {
-    try {
-      if (!this.runtime) return;
-      const threshold = config.recall.stepInjectThreshold;
-      const maxMemories = config.recall.stepInjectMaxMemories;
-
-      // Query = last assistant text of this turn; no text → no injection
-      // (empty-query search returns nothing anyway).
-      const result = await this.runtime.session.messages({
-        sessionID,
-        limit: 20,
-      });
-      const rawData = result.data || [];
-      const assistantMsgs = (Array.isArray(rawData) ? rawData : []).filter(
-        (m: any) => m?.info?.role === 'assistant',
-      );
-      const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
-      const texts = (lastAssistant?.parts || [])
-        .filter((p: any) => p?.type === 'text' && typeof p?.text === 'string')
-        .map((p: any) => p.text);
-      const query = texts.join(' ').trim().slice(0, 500);
-      if (!query) {
-        log.info(`[StepInject] no assistant text for ${sessionID}/${assistantMessageID}; skip`);
-        return;
-      }
-
-      const entries = this.memoryService?.harmonicIndex.search(query, 8, { retriever: config.search.defaultRetriever }) || [];
-      const candidates = entries.map((e: any) => ({
-        id: e.id,
-        energy: e.energy || 0,
-        type: e.type,
-        content: e.primary_abstraction || '',
-      }));
-      const picked = selectMemories(candidates, threshold, maxMemories);
-      if (picked.length === 0) return;
-
-      const memIds = picked.map((m) => m.id);
-      const fp = memoryFingerprint(memIds);
-      if (this.stepInject.fingerprintSeen(sessionID, fp)) {
-        log.info(`[StepInject] fingerprint already injected (${fp}); skip`);
-        return;
-      }
-
-      const blocks = renderMemoryBlocks(picked);
-      if (blocks.length === 0) return;
-      const block =
-        blocks.join('\n\n') +
-        '\n\n[记忆] 检测到高价值记忆，请结合记忆内容判断是否需要继续行动；无需行动时仅简短确认。';
-      this.stepInject.enqueue(sessionID, { block, memIds, at: Date.now() });
-      log.info(`[StepInject] queued ${memIds.length} memories for ${sessionID}`);
-    } catch (err: any) {
-      log.warn(`[StepInject] evaluate failed (non-fatal): ${err.message}`);
-    }
-  }
-
-  /**
-   * Idle consumer: sends one queued injection per idle. The frequency gate
-   * lives inside consume() — if the session injected recently the whole
-   * queue is discarded in one shot.
-   */
-  private async drainStepInjections(sessionID: string): Promise<void> {
-    const next = this.stepInject.consume(sessionID);
-    if (!next) return;
-    try {
-      await this.sendStepInjection(sessionID, next.block);
-      this.stepInject.markInjected(sessionID, next.memIds, memoryFingerprint(next.memIds));
-      log.info(`[StepInject] injected ${next.memIds.length} memories into ${sessionID}`);
-    } catch (err: any) {
-      // Roll back pushed-memory marks so a failed send never permanently
-      // masks those memories from recall injection.
-      this.stepInject.rollbackPushed(sessionID, next.memIds);
-      log.error(`[StepInject] promptAsync failed for ${sessionID}: ${err.message}`);
-    }
-  }
-
-  /** promptAsync with a single retry. Never re-injects (raw client channel). */
-  private async sendStepInjection(sessionID: string, message: string): Promise<void> {
-    if (!this.runtime) throw new Error('runtime not available');
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        await this.runtime.session.promptAsync({ sessionID, parts: [{ type: 'text', text: message }] });
-        return;
-      } catch (err: any) {
-        if (attempt === 0) {
-          log.warn(`[StepInject] promptAsync attempt 1 failed, retrying: ${err.message}`);
-          await new Promise((r) => setTimeout(r, 1000));
-          continue;
-        }
-        throw err;
-      }
-    }
   }
 
   // ── Memory pipelines (turn compress / reflection) ───────────────────────
@@ -4941,9 +4810,9 @@ class MafwScheduler {
             const { searchRecallMemories } = require('./recall/recall-context');
             let memories: any[] = [];
             if (this.memoryService) {
-              // B3: memories already actively pushed by path 1 (step injection)
-              // are filtered out so boundary recall never re-exposes them.
-              const pushed = this.stepInject.pushedMemoriesFor(sessionID);
+              // No push channel exists anymore (step-inject retired): nothing
+              // is filtered out of boundary recall.
+              const pushed = new Set<string>();
               // Sync path is BM25-only (<50ms): the plugin client aborts after
               // 100ms. Scan results arrive via async prefetch snapshot (C).
               const scanSnapshot = this.getScanService()?.getSnapshot(sessionID) ?? null;

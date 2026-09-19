@@ -147,11 +147,6 @@ export interface GatewayConfig {
     reportIntervalMin: number;
   };
   recall: {
-    stepInjectThreshold: number;
-    stepInjectMaxMemories: number;
-    stepInjectIntervalMs: number;
-    stepInjectQueueCap: number;
-    stepInjectTtlMs: number;
     turnStaleMs: number;
     obsCapturePath: string;
     sessionWorkerTtlMs: number;
@@ -356,11 +351,6 @@ function defaults(projectDir: string): GatewayConfig {
       reportIntervalMin: parseInt(process.env.MAFW_MANAGER_REPORT_INTERVAL || '') || 5,
     },
     recall: {
-      stepInjectThreshold: 0.7,
-      stepInjectMaxMemories: 2,
-      stepInjectIntervalMs: 15 * 60 * 1000,
-      stepInjectQueueCap: 3,
-      stepInjectTtlMs: 24 * 60 * 60 * 1000,
       turnStaleMs: 30 * 60 * 1000,
       obsCapturePath: 'memory/gateway.db',
       sessionWorkerTtlMs: 24 * 60 * 60 * 1000,

@@ -33,7 +33,7 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
     case 'session.error':
     case 'session.compacting':
     case 'session.compacted':
-      if (!sid) warnings.push(`'${type}' without sessionID — step-inject drain / compaction flush will not trigger`);
+      if (!sid) warnings.push(`'${type}' without sessionID — compaction flush / trajectory idle aggregation will not trigger`);
       break;
     case 'message.part.updated': {
       const part = props?.part;

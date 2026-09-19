@@ -52,8 +52,8 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
 
     const { HarmonicUnitFileStore } = await import("../../memory/harmonic-file-store.js");
     // Share the in-memory index with the rest of the gateway so that memories
-    // written via MCP are immediately visible to recall, step-injection, and
-    // subsequent searches without requiring a restart.
+    // written via MCP are immediately visible to recall and subsequent
+    // searches without requiring a restart.
     const sharedIndex = (memory as any)?.harmonicIndex;
     const sharedGraph = (memory as any)?.harmonicIndex?.getAnchorGraphStore?.()
       ?? (memory as any)?.getAnchorGraphStore?.() ?? undefined;

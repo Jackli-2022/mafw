@@ -3,17 +3,43 @@
  *
  * 每个 runtime 一个 normalize 函数；index.ts 的调度逻辑只消费 facets，
  * 不再出现 runtime 事件类型字符串。opencode 版本知识（≥1.18 无
- * session.next.step.ended，step 以 step-finish part 结算）只存在于本文件
- * 和 step-inject.ts 的两个 helper 里。
+ * session.next.step.ended，step 以 step-finish part 结算）只存在于本文件。
  *
  * 注意：facets 是正交的（一个事件可同时有 step 与 chatSignal），这是为了
  * 与现 handleOpencodeEvent 的多路消费行为逐点等价。
  */
-import {
-  stepPropsFromPartUpdated,
-  stepPropsFromMessageUpdated,
-  StepEndedProps,
-} from '../recall/step-inject';
+
+/** 一个已结算的 LLM step（喂 BudgetGuard 回合计数）。 */
+export interface StepEndedProps {
+  sessionID?: string
+  assistantMessageID?: string
+  finish?: string
+}
+
+// opencode ≥1.18 no longer publishes `session.next.step.ended`. Steps settle as
+// `step-finish` parts carried by `message.part.updated`. Messages also emit
+// `message.updated` with `info.role='assistant'` and `info.time.completed` once
+// the final assistant message is settled. These helpers normalize both shapes
+// back into the old StepEndedProps contract.
+export function stepPropsFromPartUpdated(props: unknown): StepEndedProps | null {
+  const part = (props as any)?.part
+  if (!part || part.type !== 'step-finish') return null
+  return {
+    sessionID: part.sessionID,
+    assistantMessageID: part.messageID,
+    finish: part.reason,
+  }
+}
+
+export function stepPropsFromMessageUpdated(props: unknown): StepEndedProps | null {
+  const info = (props as any)?.info
+  if (!info || info.role !== 'assistant' || !info.time?.completed) return null
+  return {
+    sessionID: info.sessionID,
+    assistantMessageID: info.id,
+    finish: info.finish,
+  }
+}
 
 /** GlobalEvent 信封或裸事件，两者都接受。 */
 export interface RawRuntimeEvent {
@@ -52,7 +78,7 @@ export interface EventFacets {
   properties: any;
   sessionID?: string;
   directory?: string;
-  /** 非 null = 此事件标志一个已结算的 LLM step（喂 step-inject） */
+  /** 非 null = 此事件标志一个已结算的 LLM step（喂 BudgetGuard 回合计数） */
   step: StepEndedProps | null;
   /** chat 转发信号（per-session SSE Mode B） */
   chatSignal: 'delta' | 'complete' | 'error' | null;

@@ -47,6 +47,22 @@ function buildQuery(messages: any[]): string {
     .slice(0, 500)
 }
 
+// Short-increment fallback: when the user replies with a very short message
+// ("继续" / "好的") after a quiet gap, the increment alone carries no
+// retrieval signal. Fold in the tail of the last assistant message so the
+// recall query still has topical context. (Covers the only retrieval signal
+// the retired step-inject path owned — see AGENTS.md §5.11.)
+const SHORT_INCREMENT_MIN = 50
+const ASSISTANT_TAIL_MAX = 300
+
+function buildQueryWithFallback(realMessages: any[], increment: any[]): string {
+  const base = buildQuery(increment)
+  if (base.trim().length >= SHORT_INCREMENT_MIN) return base
+  const lastAssistant = [...realMessages].reverse().find((m: any) => m.info?.role === 'assistant')
+  const tail = lastAssistant ? extractText(lastAssistant).trim().slice(-ASSISTANT_TAIL_MAX) : ''
+  return [base, tail].filter((s) => s.trim()).join('\n').slice(0, 500)
+}
+
 async function fetchRecall(query: string, sessionID: string): Promise<{ pointers: string | null }> {
   if (!query.trim()) return { pointers: null }
   try {
@@ -79,13 +95,13 @@ export async function sessionRecallHook(input: any, output: any): Promise<any> {
   if (!sessionID) return output
 
   const increment = getIncrementalMessages(messages, cursorBySession.get(sessionID))
-  const query = buildQuery(increment)
+  const real = messages.filter((m: any) => !isInjectedMessage(m))
+  const query = buildQueryWithFallback(real, increment)
   if (!query.trim()) return output
 
   const recall = await fetchRecall(query, sessionID)
 
   // Advance cursor past the last real message (injected parts excluded).
-  const real = messages.filter((m: any) => !isInjectedMessage(m))
   const lastReal = real[real.length - 1]
   if (lastReal?.info?.id) cursorBySession.set(sessionID, lastReal.info.id)
 

@@ -357,16 +357,17 @@ opencode server 进程                    Gateway 进程
 └─────────────────────────────┘        └──────────────────────┘
 ```
 
-实际的 recall/观察机制由两部分组成（插件观察捕获 + daemon 事件驱动注入）：
+实际的 recall/观察机制由两部分组成（插件观察捕获 + 边界注入）：
 
 | 环节 | 时机 | 实现 |
 |------|------|------|
 | ① 观察捕获 | 用户消息 / 工具执行后 / text.complete / reasoning.ended / tool.failed | 插件 hooks（`src/plugin.ts`）→ `POST /api/obs/capture` 写 t1_observations |
-| ② 边界 recall | **每次 LLM 调用前**（messages.transform 在 agentic 循环内；增量游标使同 turn 后续 step 近似幂等） | 插件调 `GET /api/recall/context` → `<recall>` 指针块 |
-| ③ 步进注入 | `message.part.updated` 中 `part.type === 'step-finish'` + `session.idle` 事件 | daemon（gateway `index.ts` StepInject）→ 高价值记忆注入 |
+| ② 边界 recall | **每次 LLM 调用前**（messages.transform 在 agentic 循环内；增量游标使同 turn 后续 step 近似幂等；增量 <50 字符时拼入上一条 assistant 尾文本做短增量回退） | 插件调 `GET /api/recall/context` → `<recall>` 指针块 |
 | ④ 聚合压缩 | cron 每小时（turn-compress 规则） | turnCompress pipeline → per-session worker → `mafw_add_memory` |
 
-**职责分工：** Plugin = 两个 transform 注射口。Daemon = gateway 事件流订阅四拍信号。
+> 旧 ③ 步进注入（step-inject：step-finish 后 daemon 把高价值记忆 `promptAsync` 回会话触发自治续跑）已于 2026-09-19 删除：实测产出几乎全是"已确认，无需行动"（一次全上下文回放换一句废话），且依赖 runtime 事件流——会话不跑在托管 serve 上时整条链断供。其唯一独占的检索信号（以 assistant 尾文本为 query）已由 ② 的短增量回退覆盖。
+
+**职责分工：** Plugin = 两个 transform 注射口。Daemon = gateway 事件流订阅（轨迹采集 / compaction flush / BudgetGuard 等）。
 聚合压缩/反思 worker 的 LLM 模型由 `config.recall.workerModel` 固定（代码默认 `alibaba-cn/qwen3.7-max`，Config 页可改），per-message 传入；已存在的 worker session 下一次 prompt 即生效，无需重建。
 - 为复用前缀缓存、降低 token 成本，worker session 在 idle 达到 `config.recall.workerCompactIdleMs`（默认 8h）后，下一次 prompt 会先调 opencode 的 `session.summarize` 做 compaction；summarize 失败则直接 dispose 轮换（下次 prompt 重建新会话）。
 - xiaomi provider 可在 opencode 配置里开 `options.setCacheKey: true`，让请求带上 `promptCacheKey` 以便命中缓存（对端点是否生效取决于小米 API）。
@@ -495,7 +496,6 @@ Response: { pointers: string|null }
 
 - v0：同步 HarmonicIndexManager.search(query, 3) → formatRecallContext()
 - fail-open：超时/错误返回 `{ pointers: null }`，不阻塞 LLM 流程
-- 已推送记忆过滤：路径 1（step-ended 注入）登记过的记忆 ID 不再通过本端点重复暴露
 - 未来：daemon 预计算好注入载荷，endpoint 读快照 ~1ms
 
 ### 5.14 Media 接入（A2A Media Agent，pi 引擎 · 多模态）
@@ -761,7 +761,7 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   → Tier 1（+ 自治执行 + per-step 记忆）→ Tier 2（+ 桌面完整，opencode 形状 DTO 归一化输出）
 - `normalize.ts` — runtime 原生事件 → `EventFacets`（正交切面：step/chatSignal/
   broadcast/toolCommand）；opencode 版本知识（≥1.18 step-finish part 结算）只存在于
-  本文件和 step-inject.ts 的两个 helper
+  本文件（step facet 喂 BudgetGuard 回合计数）
 - `opencode-runtime.ts` — 内置恒等实现（全能力，`external` 跟随 MAFW_SERVER_SERVE_URL）；
   内含 opencode 专属实现：SQLite session 存储（`sessionStorageApi`）、auth.json 凭据
   （`credentials`）、agent frontmatter 序列化（`agents.install`）

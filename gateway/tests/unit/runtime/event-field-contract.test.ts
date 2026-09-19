@@ -9,7 +9,7 @@ describe('checkEventFields', () => {
     })).toEqual([]);
   });
 
-  it('session.idle without any sessionID warns (breaks step-inject drain)', () => {
+  it('session.idle without any sessionID warns (breaks compaction flush)', () => {
     const w = checkEventFields({ type: 'session.idle', properties: {} });
     expect(w.some((x) => x.includes('sessionID'))).toBe(true);
   });
