@@ -920,9 +920,9 @@ html[data-theme="light"] .mafw-shell {
    body is an ANCESTOR of .mafw-shell, and data-color-scheme lives on html —
    selector (0,5,1) beats session-ui's [data-color-scheme="light"] rule (0,4,1). */
 [data-color-scheme] body[data-new-layout] .mafw-shell [data-component="user-message"] [data-slot="user-message-text"] {
-  border-radius: 16px 16px 4px 16px;
-  background: var(--bg-overlay);
-  border: 1px solid var(--border-subtle);
+  border-radius: 10px 10px 4px 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
   padding: 10px 14px;
   font-size: 14px;
   color: var(--text-1);

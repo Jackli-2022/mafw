@@ -69,3 +69,13 @@ describe("TabStrip 激活态 v4", () => {
     expect(b).toContain("box-shadow: inset 0 -2px 0 var(--accent)")
   })
 })
+
+describe("用户气泡 v4", () => {
+  const sel = '[data-color-scheme] body[data-new-layout] .mafw-shell [data-component="user-message"] [data-slot="user-message-text"]'
+  test("accent-soft 底 + accent-border 描边", () => {
+    const b = cssBlock(sel)
+    expect(b).toContain("background: var(--accent-soft)")
+    expect(b).toContain("border: 1px solid var(--accent-border)")
+  })
+  test("圆角 10/10/4/10", () => expect(cssBlock(sel)).toContain("border-radius: 10px 10px 4px 10px"))
+})
