@@ -88,8 +88,10 @@ import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
 import { ApprovalPolicyService } from './core/approval/policy-service';
+import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { applyApprovalPolicy } from './core/approval/hook';
+import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntimeShape } from './runtime/validate';
@@ -4248,7 +4250,16 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/permissions/{id}/reply ── { reply, message? }（契约：列表反查 sessionID → permissionReply）
+        // per-session 审批模式（manual/auto）—— 具体路径，必须在 /api/permissions/:id 之前匹配
+        const permModeMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permission-mode(?:\?|$)/);
+        if (permModeMatch && (req.method === 'GET' || req.method === 'POST')) {
+          const pmDeps = { policy: this.approvalPolicy, budget: AUTO_APPROVE_BUDGET };
+          if (req.method === 'GET') await handlePermissionModeGet(res, permModeMatch[1], pmDeps);
+          else await handlePermissionModeSet(req, res, permModeMatch[1], pmDeps);
+          return;
+        }
+
+        // POST /api/permissions/{id}/reply ── { reply, message?, persist? }（契约：列表反查 sessionID → permissionReply）
         const pReplyMatch = req.url?.match(/^\/api\/permissions\/([^/]+)\/reply(?:\?|$)/);
         if (pReplyMatch && req.method === 'POST') {
           if (this.capGuard(res, 'nativeApprovals')) return;
