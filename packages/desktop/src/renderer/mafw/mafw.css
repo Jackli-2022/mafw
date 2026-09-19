@@ -3,18 +3,23 @@
   color-scheme: dark;
   /* 消息列宽分档（§4.5：宽屏不再两侧大留白） */
   --msg-col-width: 760px;
-  /* 背景四阶（文档 §3.1，v3: 07/0E/16/1F） */
-  --bg-base: #070709;
-  --bg-raised: #0E0E12;
-  --bg-overlay: #16161B;
-  --bg-float: #1F1F26;
+  /* 背景五阶（§3.1 v4: 09/10/17/1F + inset 凹陷井，冷蓝调） */
+  --bg-base: #09090B;
+  --bg-raised: #101014;
+  --bg-overlay: #17171D;
+  --bg-float: #1F1F27;
+  --bg-inset: #0D0D10;
   --bg-hover: rgba(255,255,255,.04);
   --border-subtle: rgba(255,255,255,.07);
-  /* 品牌绿（§3.2） */
+  /* 品牌绿（§3.2，v4 信号色阶：只在主动作/活跃/运行中/成功出现） */
   --accent: #46DC82;
   --accent-dim: rgba(70,220,130,.13);
   --accent-text: #7FE3A6;
-  --on-accent: #070709;
+  --on-accent: #09090B;
+  --accent-strong: #5CE896;
+  --accent-soft: rgba(70,220,130,.12);
+  --accent-border: rgba(70,220,130,.35);
+  --info: #6CA6F1;
   /* 卡片语义色（AskCard/PermissionCard） */
   --warning: #E7A13D;
   --danger: #E5484D;
@@ -41,27 +46,37 @@
   --composer-focus: rgba(70,220,130,.4);
   --composer-halo: rgba(70,220,130,.1);
   /* v1 token 覆盖：chrome 组件全量跟随暗色（statusbar/card/session-close 等） */
-  --background-base: #070709;
-  --background-weak: #0E0E12;
-  --background-stronger: #0E0E12;
-  --surface-base: #16161B;
+  --background-base: #09090B;
+  --background-weak: #101014;
+  --background-stronger: #101014;
+  --surface-base: #17171D;
   --surface-base-hover: rgba(255,255,255,.04);
   --surface-base-active: rgba(255,255,255,.05);
-  --surface-raised-base: #1F1F26;
+  --surface-raised-base: #1F1F27;
   --text-base: #8C8C94;
   --text-weak: #5C5C64;
   --text-strong: #ECECF0;
   --border-weak-base: rgba(255,255,255,.07);
   --border-base: rgba(255,255,255,.10);
   /* v2 token 覆盖（限定本作用域，防泄漏到非 MAFW 区） */
-  --v2-background-bg-base: #070709;
-  --v2-background-bg-layer-01: #16161B;
-  --v2-background-bg-layer-02: #1F1F26;
+  --v2-background-bg-base: #09090B;
+  --v2-background-bg-layer-01: #17171D;
+  --v2-background-bg-layer-02: #1F1F27;
   --v2-background-bg-layer-03: #2A2A32;
   --v2-border-border-muted: rgba(255,255,255,.07);
   --v2-text-text-base: #CFCFD6;
   --v2-text-text-muted: #8C8C94;
   --v2-text-text-faint: #5C5C64;
+  /* v4 尺度 token（radius / motion） */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --dur-3: 200ms;
+  --dur-4: 240ms;
+  --ease: cubic-bezier(.25,0,0,1);
 }
 /* 亮色：手动覆盖（html[data-theme]） */
 html[data-theme="light"] .mafw-shell {
@@ -76,6 +91,11 @@ html[data-theme="light"] .mafw-shell {
   --accent-dim: rgba(31,157,90,.10);
   --accent-text: #177A48;
   --on-accent: #FFFFFF;
+  --accent-strong: #178048;
+  --accent-soft: rgba(31,157,90,.10);
+  --accent-border: rgba(31,157,90,.32);
+  --info: #3B6FC4;
+  --bg-inset: #F2F2F5;
   --warning: #B87A1E;
   --danger: #C93A3E;
   --danger-dim: rgba(201,58,62,.10);
@@ -118,6 +138,16 @@ html[data-theme="light"] .mafw-shell {
   --v2-text-text-base: #34343B;
   --v2-text-text-muted: #5E5E66;
   --v2-text-text-faint: #8E8E96;
+  /* v4 尺度 token（radius / motion，与暗色一致） */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --dur-3: 200ms;
+  --dur-4: 240ms;
+  --ease: cubic-bezier(.25,0,0,1);
 }
 /* 亮色：跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -144,6 +174,15 @@ html[data-theme="light"] .mafw-shell {
     --v2-background-bg-base: #ECECF0; --v2-background-bg-layer-01: #EDEDF1; --v2-background-bg-layer-02: #FFFFFF; --v2-background-bg-layer-03: #F0F0F4;
     --v2-border-border-muted: rgba(0,0,0,.09);
     --v2-text-text-base: #34343B; --v2-text-text-muted: #5E5E66; --v2-text-text-faint: #8E8E96;
+    /* v4 信号色 + 尺度 token（与手动亮色块一致） */
+    --accent-strong: #178048;
+    --accent-soft: rgba(31,157,90,.10);
+    --accent-border: rgba(31,157,90,.32);
+    --info: #3B6FC4;
+    --bg-inset: #F2F2F5;
+    --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 14px;
+    --dur-1: 120ms; --dur-2: 160ms; --dur-3: 200ms; --dur-4: 240ms;
+    --ease: cubic-bezier(.25,0,0,1);
   }
 }
 
@@ -1231,6 +1270,11 @@ html[data-theme="light"] .mafw-shell {
   --accent-dim: rgba(70,220,130,.13);
   --accent-text: #7FE3A6;
   --on-accent: #070709;
+  --accent-strong: #5CE896;
+  --accent-soft: rgba(70,220,130,.12);
+  --accent-border: rgba(70,220,130,.35);
+  --info: #6CA6F1;
+  --bg-inset: #0D0D10;
   --hover: rgba(255,255,255,.04);
 }
 html[data-theme="light"] .mafw-picker-pop {
@@ -1248,6 +1292,11 @@ html[data-theme="light"] .mafw-picker-pop {
   --accent-dim: rgba(31,157,90,.10);
   --accent-text: #177A48;
   --on-accent: #FFFFFF;
+  --accent-strong: #178048;
+  --accent-soft: rgba(31,157,90,.10);
+  --accent-border: rgba(31,157,90,.32);
+  --info: #3B6FC4;
+  --bg-inset: #F2F2F5;
   --hover: rgba(0,0,0,.04);
 }
 @media (prefers-color-scheme: light) {
@@ -1262,10 +1311,15 @@ html[data-theme="light"] .mafw-picker-pop {
     --text-3: #5E5E66;
     --text-4: #8E8E96;
     --text-5: #B9B9BF;
-    --accent: #1F9D5A;
-    --accent-dim: rgba(31,157,90,.10);
-    --accent-text: #177A48;
-    --on-accent: #FFFFFF;
+  --accent: #1F9D5A;
+  --accent-dim: rgba(31,157,90,.10);
+  --accent-text: #177A48;
+  --on-accent: #FFFFFF;
+  --accent-strong: #178048;
+  --accent-soft: rgba(31,157,90,.10);
+  --accent-border: rgba(31,157,90,.32);
+  --info: #3B6FC4;
+  --bg-inset: #F2F2F5;
     --hover: rgba(0,0,0,.04);
   }
 }
@@ -4198,7 +4252,7 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text, #7aa2f7); transition: width .3s ease; }
 .mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
 
-/* ���� Approvals�������־ð������༭�������� */
+/* ���� Approvals�������־ð������༭�������� */
 .mafw-allowlist-add { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0 18px; }
 .mafw-allowlist-add-fields { display: flex; gap: 10px; flex: 1; min-width: 0; }
 .mafw-allowlist-add-fields > * { min-width: 0; }
