@@ -36,6 +36,7 @@ import { TabStrip, type Tab } from "./components/TabStrip"
 import { WindowControls } from "./components/WindowControls"
 import { registerMafwToolCards } from "./components/MafwToolCards"
 import { registerUserPluginCards } from "./components/UserPluginCards"
+import { registerThinkingBlock } from "./components/ThinkingBlock"
 import { WelcomeHome } from "./components/WelcomeHome"
 import { DashboardPage } from "./pages/Dashboard"
 import { parseDeepLink } from "./deep-link"
@@ -1157,6 +1158,7 @@ export function MafwShell() {
   onMount(() => {
     registerMafwToolCards()
     registerUserPluginCards() // 必须在 registerMafwToolCards 之后（捕获 original）
+    registerThinkingBlock()   // reasoning part → dsh 式可折叠思考块
     // Use the modern session-ui rendering branch (rounded bubbles, v2 tokens).
     document.body.setAttribute("data-new-layout", "")
   })
