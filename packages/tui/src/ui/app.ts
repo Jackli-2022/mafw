@@ -35,6 +35,7 @@ import { MemoryStore } from '../store/memory-store.ts'
 import { MemoryTab } from './memory-tab.ts'
 import { TriageStore } from '../store/triage-store.ts'
 import { TriageTab } from './triage-tab.ts'
+import { PermissionModeStore } from '../store/permission-mode.ts'
 import { theme } from '../theme.ts'
 
 export type Retriever = 'bm25' | 'hybrid'
@@ -101,6 +102,13 @@ export async function runApp(opts: AppOptions): Promise<void> {
     onError: (message) => setStatus({ hint: theme.err(`⚠ ${message.slice(0, 60)}`) }),
     getModel: () => modelSelection,
   })
+  // 审批模式（gateway kv 真相源；SSE permission_mode 驱动 🛡 徽标）
+  const permStore = new PermissionModeStore(client)
+  if (managerSessionID) {
+    void permStore.load(managerSessionID).then(() => {
+      setStatus({ permAuto: permStore.get(managerSessionID) === 'auto' })
+    })
+  }
   const chatTab = new ChatTab({
     tui, store: chatStore,
     onSlash: (cmd, args) => handleSlashWithConfirm(cmd, args),
@@ -451,6 +459,19 @@ export async function runApp(opts: AppOptions): Promise<void> {
         return undefined
       })
     },
+    togglePermissionMode: async () => {
+      const sid = chatStore.sessionID
+      if (!sid || sid === 'none') return '当前无会话'
+      try {
+        const next = await permStore.toggle(sid)
+        setStatus({ permAuto: next === 'auto' })
+        return next === 'auto'
+          ? '审批模式：auto（安全命令自动放行，预算 25 次）'
+          : '审批模式：manual（每次询问）'
+      } catch (e: any) {
+        return `切换失败: ${String(e?.message ?? e).slice(0, 60)}`
+      }
+    },
     compact: async () => {
       const sid = chatStore.sessionID
       if (!sid || sid === 'none') return '当前无会话'
@@ -527,6 +548,14 @@ export async function runApp(opts: AppOptions): Promise<void> {
       const req: any = data?.properties ?? data
       if (req?.id) {
         showPermissionOverlay(tui, req, (r) => client.permissions.reply(req.id, r))
+      }
+    } else if (type === 'permission_mode') {
+      // gateway 审批模式变更（🛡 toggle / 预算回落广播）
+      const sid = data?.sessionID ?? data?.properties?.sessionID
+      const mode = data?.properties?.mode
+      if (sid && (mode === 'manual' || mode === 'auto')) {
+        permStore.set(sid, mode)
+        setStatus({ permAuto: mode === 'auto' })
       }
     } else if (type === 'session.idle') {
       void refreshUsage()

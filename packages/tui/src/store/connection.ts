@@ -19,6 +19,7 @@ const KNOWN_EVENTS = [
   'message.error',
   'session.error',
   'permission.asked',
+  'permission_mode',
   'question.asked',
 ]
 

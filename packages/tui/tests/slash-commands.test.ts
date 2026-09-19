@@ -141,5 +141,5 @@ test('usage/copy/export dispatch to their deps', async () => {
 
 test('SLASH_COMMANDS covers the full command surface', () => {
   const names = SLASH_COMMANDS.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
+  assert.deepEqual(names, ['btw', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'permissions', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
 })

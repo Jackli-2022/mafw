@@ -24,6 +24,8 @@ export interface StatusState {
   stashed?: number
   /** /focus 静视图开启（◉ 徽标） */
   focus?: boolean
+  /** 审批模式 auto（gateway policy 🛡 徽标） */
+  permAuto?: boolean
 }
 
 /** token 数紧凑化：1234 → 1.2K、1250000 → 1.3M。 */
@@ -52,6 +54,7 @@ export class StatusBar implements Component {
       : s.conn === 'reconnecting' ? theme.warn('reconnecting') : theme.err('disconnected')
     const parts: string[] = [s.project ?? '-', s.session ? s.session.slice(0, 12) : '-', conn]
     if (s.busy) parts.push(theme.warn('busy'))
+    if (s.permAuto) parts.push(theme.warn('🛡 auto'))
     if (typeof s.queued === 'number' && s.queued > 0) parts.push(theme.warn(`queued ${s.queued}`))
     if (typeof s.stashed === 'number' && s.stashed > 0) parts.push(theme.dim(`📌${s.stashed}`))
     if (s.focus) parts.push(theme.accent('◉ focus'))

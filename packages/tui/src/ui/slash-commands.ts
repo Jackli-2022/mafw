@@ -38,6 +38,8 @@ export interface SlashDeps {
   fork(): Promise<string | null>
   /** /status：本地会话回顾 overlay。 */
   showStatusRecap(): void
+  /** /permissions（别名 /perm）：切换审批模式 manual/auto；返回提示文本。 */
+  togglePermissionMode(): Promise<string>
   /** /waitwhat：简明重述上一条回复；返回错误文本或 null（重述经 SSE 送达）。 */
   waitwhat(): Promise<string | null>
   /** gateway 远端命令派发（本地注册表未命中时）；返回提示文本或 null。 */
@@ -85,6 +87,8 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
       case 'status':
         deps.showStatusRecap()
         return null
+      case 'permissions':
+        return deps.togglePermissionMode()
       case 'waitwhat':
         return deps.waitwhat()
       case 'queue':
