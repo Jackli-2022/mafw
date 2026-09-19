@@ -10,6 +10,8 @@ export type PermissionCardData = {
   agentName: string
   status: "pending" | "allowed-once" | "allowed-always" | "denied" | "expired"
   risk: "medium" | "high"
+  /** gateway 策略已自动处置的卡（非交互记录）：'auto'=auto-approve，'internal'=内部会话 fail-safe 拒绝 */
+  autoResolved?: "auto" | "internal"
   action: {
     type: string
     title: string

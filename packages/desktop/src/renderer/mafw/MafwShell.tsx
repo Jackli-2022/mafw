@@ -52,6 +52,7 @@ import { ConfigPage, isNavKey, type NavKey } from "./pages/Config"
 import { QuestionWidget, type QuestionData } from "./components/QuestionWidget"
 import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
+import { mapPermissionCard as mapPermissionCardPure } from "./components/permission-card-mapping"
 import type { ModelEntry } from "./components/pickers/ModelPicker"
 import { messageModel } from "./message-model"
 
@@ -984,37 +985,14 @@ export function MafwShell() {
     })
   }
 
-  const actionTypeOf = (permission: string): { type: string; title: string } => {
-    const p = permission.toLowerCase()
-    if (p.includes("bash") || p.includes("shell") || p.includes("terminal") || p.includes("command")) {
-      return { type: "shell", title: "执行 Shell 命令" }
-    }
-    if (p.includes("unlink") || p.includes("delete")) return { type: "file-delete", title: "删除文件" }
-    if (p.includes("write") || p.includes("edit")) return { type: "file-write", title: "写入文件" }
-    if (p.includes("network") || p.includes("webfetch") || p.includes("http")) return { type: "network", title: "访问网络" }
-    return { type: "custom", title: permission }
-  }
-
-  const riskOf = (permission: string, patterns: string[]): "medium" | "high" => {
-    const p = permission.toLowerCase()
-    const joined = patterns.join(" ").toLowerCase()
-    if (p.includes("unlink") || p.includes("delete")) return "high"
-    if (p.includes("bash") && /\b(rm|del|format)\b/.test(joined)) return "high"
-    return "medium"
-  }
-
-  const dangerousPartsOf = (permission: string, patterns: string[]): string[] => {
-    const parts: string[] = []
-    for (const pat of patterns) {
-      if (/\b(rm|del|format|mv|dd)\b/.test(pat.toLowerCase())) parts.push(pat)
-    }
-    return parts
-  }
+  // mapPermissionCard / actionTypeOf / riskOf / dangerousPartsOf 已抽出为纯函数模块
+  // （components/permission-card-mapping.ts，含 mafwPolicy 合并——gateway 富化优先）。
+  const agentTitleOf = (sid: string) => sessions().find(s => s.id === sid)?.title || "Agent"
 
   const mapAskCard = (req: any, createdAt: number): AskCardData => ({
     id: req.id,
     sessionID: req.sessionID,
-    agentName: sessions().find(s => s.id === req.sessionID)?.title || "Agent",
+    agentName: agentTitleOf(req.sessionID),
     status: "pending",
     createdAt,
     messageID: req.tool?.messageID,
@@ -1028,27 +1006,8 @@ export function MafwShell() {
     })),
   })
 
-  const mapPermissionCard = (req: any, createdAt: number): PermissionCardData => {
-    const patterns = Array.isArray(req.patterns) ? req.patterns : []
-    const { type, title } = actionTypeOf(req.permission)
-    return {
-      id: req.id,
-      sessionID: req.sessionID,
-      agentName: sessions().find(s => s.id === req.sessionID)?.title || "Agent",
-      status: "pending",
-      risk: riskOf(req.permission, patterns),
-      action: {
-        type,
-        title,
-        payload: patterns.join(" && ") || req.permission,
-        dangerousParts: dangerousPartsOf(req.permission, patterns),
-      },
-      impact: req.metadata?.impact as string | undefined,
-      createdAt,
-      messageID: req.tool?.messageID,
-      callID: req.tool?.callID,
-    }
-  }
+  const mapPermissionCard = (req: any, createdAt: number): PermissionCardData =>
+    mapPermissionCardPure(req, createdAt, agentTitleOf(req.sessionID))
 
   // Reconcile flow cards against server truth. Pending cards the server no
   // longer knows about were resolved elsewhere (approval-bridge timeout,
