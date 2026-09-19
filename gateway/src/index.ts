@@ -92,6 +92,7 @@ import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
+import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntimeShape } from './runtime/validate';
@@ -4256,6 +4257,17 @@ class MafwScheduler {
           const pmDeps = { policy: this.approvalPolicy, budget: AUTO_APPROVE_BUDGET };
           if (req.method === 'GET') await handlePermissionModeGet(res, permModeMatch[1], pmDeps);
           else await handlePermissionModeSet(req, res, permModeMatch[1], pmDeps);
+          return;
+        }
+
+        // 持久白名单 CRUD —— 同样必须在 /api/permissions/:id 之前
+        const allowlistMatch = req.url?.match(/^\/api\/approvals\/allowlist(?:\?|$)/);
+        if (allowlistMatch) {
+          const alDeps = { store: this.allowlistStore };
+          if (req.method === 'GET') await handleAllowlistGet(res, alDeps);
+          else if (req.method === 'POST') await handleAllowlistPost(req, res, alDeps);
+          else if (req.method === 'DELETE') await handleAllowlistDelete(req, res, alDeps);
+          else { res.writeHead(405); res.end(); }
           return;
         }
 
