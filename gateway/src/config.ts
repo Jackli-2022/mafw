@@ -176,6 +176,10 @@ export interface GatewayConfig {
   trajectory: {
     retentionDays: number;
   };
+  approval: {
+    /** 持久白名单：条目为裸工具名（"read"）或 "tool:prefix"（"bash:git status"） */
+    allowlist: string[];
+  };
   media: {
     /** opencode provider that owns the credentials (must be connected in opencode). */
     provider: string;
@@ -378,6 +382,9 @@ function defaults(projectDir: string): GatewayConfig {
     trajectory: {
       retentionDays: 365,
     },
+    approval: {
+      allowlist: [],
+    },
     media: {
       provider: 'xiaomi',
       model: 'mimo-v2.5',
@@ -506,6 +513,7 @@ export class Config {
   get recall() { return this.data.recall; }
   get usage() { return this.data.usage; }
   get trajectory() { return this.data.trajectory; }
+  get approval() { return this.data.approval; }
   get runtime() { return this.data.runtime; }
 
   /**
