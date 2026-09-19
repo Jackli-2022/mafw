@@ -6,7 +6,9 @@ import { Icon } from "@mafw/ui/icon"
  * AudioReply — 渲染 assistant 消息中的语音回复标记。
  *
  * 检测文本中的 `[语音回复 art:<id> 音色:<voice>]`，用 gateway 的 artifact URL
- * 渲染 <audio controls autoplay>。URL 经 SDK helper（media.artifactUrl）解析，
+ * 渲染 <audio controls>（不 autoplay——到达时自动播放由 ChatPane effect 统一
+ * 负责，带 hash 去重；卡片挂载/历史重载不得自发出声）。URL 经 SDK helper
+ * （media.artifactUrl）解析，
  * 必须是绝对地址（渲染进程 origin 是 oc://renderer，相对路径到不了 gateway）。
  *
  * NOTE: Desktop app connects to gateway via localhost (127.0.0.1), so auth is not
@@ -108,7 +110,7 @@ function AudioPlayer(props: { url: string; authToken?: string }) {
   // If no auth token or localhost connection, use original URL directly
   if (!props.authToken || isLocalhost) {
     return (
-      <audio controls autoplay preload="auto" src={props.url}>
+      <audio controls preload="auto" src={props.url}>
         您的浏览器不支持音频播放。
       </audio>
     )
@@ -145,7 +147,7 @@ function AudioPlayer(props: { url: string; authToken?: string }) {
   }
 
   return (
-    <audio controls autoplay preload="auto" src={audioUrl()}>
+    <audio controls preload="auto" src={audioUrl()}>
       您的浏览器不支持音频播放。
     </audio>
   )

@@ -1271,7 +1271,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   )
 
   // 语音回复：扫描本会话所有 assistant 消息的 text parts，提取 [语音回复 art:<id>]
-  // 标记，供 AudioReply 渲染（挂在该 turn 的 SessionTurn 上方）。
+  // 标记，供 AudioReply 渲染（挂在该 turn 的 SessionTurn 之后，跟在回复文本下方）。
   const voiceRepliesForTurn = (userMsgId: string) => {
     const sid = sidProp()
     if (!sid) return []
@@ -1825,15 +1825,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       )}
                     </For>
                   </Show>
-                  <For each={voiceRepliesForTurn(msg.id)}>
-                    {(vr) => (
-                      <div class="mafw-turn-audio">
-                        <AudioReply
-                          text={`[语音回复 art:${vr.artifactId}${vr.voice ? ` 音色:${vr.voice}` : ''}]`}
-                        />
-                      </div>
-                    )}
-                  </For>
                   <Show when={!msg.voiceStatus || msg.voiceStatus === "done"}>
                     <SessionTurn
                       sessionID={sidProp()}
@@ -1848,6 +1839,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       }}
                     />
                   </Show>
+                  {/* 语音回复：渲染在 SessionTurn 之后（跟在助手回复文本下方，
+                      而非用户消息上方）；到达时自动播放由上方 effect 统一负责
+                      （带 hash 去重），卡片本身点击播放。 */}
+                  <For each={voiceRepliesForTurn(msg.id)}>
+                    {(vr) => (
+                      <div class="mafw-turn-audio">
+                        <AudioReply
+                          text={`[语音回复 art:${vr.artifactId}${vr.voice ? ` 音色:${vr.voice}` : ''}]`}
+                        />
+                      </div>
+                    )}
+                  </For>
                   <For each={cardsForTurn(msg.id)}>
                     {(c) => renderFlowCard(c)}
                   </For>
