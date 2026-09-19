@@ -28,7 +28,7 @@ import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
 import { computeRecap, recapLines } from './session-recap.ts'
 import { colorDiffLine } from './message-blocks.ts'
 import { runShell } from '../shell-mode.ts'
-import { showPermissionOverlay } from './overlays.ts'
+import { showPermissionOverlay, shouldShowOverlay } from './overlays.ts'
 import { GoalsStore } from '../store/goals-store.ts'
 import { GoalsTab } from './goals-tab.ts'
 import { MemoryStore } from '../store/memory-store.ts'
@@ -547,7 +547,18 @@ export async function runApp(opts: AppOptions): Promise<void> {
     if (type === 'permission.asked') {
       const req: any = data?.properties ?? data
       if (req?.id) {
-        showPermissionOverlay(tui, req, (r) => client.permissions.reply(req.id, r))
+        if (shouldShowOverlay(req)) {
+          showPermissionOverlay(tui, req, (r) => {
+            if (r === 'persist') return client.permissions.reply(req.id, 'always', undefined, true)
+            return client.permissions.reply(req.id, r)
+          })
+        } else {
+          // gateway 已自动放行/拒绝 —— 状态栏短提示，不弹 overlay
+          const label = req.mafwPolicy?.action === 'auto-approve' ? '已自动放行' : '已自动拒绝(内部)'
+          const tool = req.permission ?? req.toolName ?? 'tool'
+          setStatus({ hint: `${label}: ${tool} (gateway policy)` })
+          setTimeout(() => setStatus({ hint: undefined }), 3000)
+        }
       }
     } else if (type === 'permission_mode') {
       // gateway 审批模式变更（🛡 toggle / 预算回落广播）

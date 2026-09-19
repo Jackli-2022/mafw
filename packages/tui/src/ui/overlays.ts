@@ -13,17 +13,25 @@ export function permissionToItems(): SelectItem[] {
   return [
     { value: 'once', label: '允许一次', description: '仅本次' },
     { value: 'always', label: '总是允许', description: '本会话内' },
+    { value: 'persist', label: '持久允许', description: '跨会话记住' },
     { value: 'reject', label: '拒绝', description: '拒绝此请求' },
   ]
 }
 
-/** permission.asked 弹窗：SelectList once/always/reject → permissions.reply（支持鼠标点击行）。 */
+/** gateway 已自动答复（mafwPolicy.action !== 'human'）的 asked 不弹 overlay。 */
+export function shouldShowOverlay(req: { mafwPolicy?: { action?: string } }): boolean {
+  const action = req.mafwPolicy?.action
+  return !action || action === 'human'
+}
+
+/** permission.asked 弹窗：SelectList once/always/persist/reject → permissions.reply
+ *  （支持鼠标点击行；persist = always + 写入跨会话白名单）。 */
 export function showPermissionOverlay(
   tui: TUI,
   req: PermissionRequest,
-  reply: (r: 'once' | 'always' | 'reject') => Promise<void>,
+  reply: (r: 'once' | 'always' | 'persist' | 'reject') => Promise<void>,
 ): OverlayHandle {
-  const list = new SelectList(permissionToItems(), 3, selectListTheme)
+  const list = new SelectList(permissionToItems(), 4, selectListTheme)
   const overlay = new HeaderSelectOverlay(
     new Text(theme.warn('权限请求') + '  ' + permissionSummary(req), 1, 1),
     list,
@@ -31,7 +39,7 @@ export function showPermissionOverlay(
   const handle = tui.showOverlay(overlay, { width: '70%', maxHeight: 10, anchor: 'center' })
   const done = () => handle.hide()
   list.onSelect = (item) => {
-    void reply(item.value as 'once' | 'always' | 'reject')
+    void reply(item.value as 'once' | 'always' | 'persist' | 'reject')
       .catch(() => {})
       .finally(done)
   }

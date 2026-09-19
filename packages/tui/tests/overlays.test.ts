@@ -8,7 +8,7 @@ test('permissionSummary shows permission + patterns', () => {
   assert.ok(s.includes('rm -rf *'))
 })
 
-test('permissionToItems is once/always/reject in order', () => {
+test('permissionToItems is once/always/persist/reject in order', () => {
   const items = permissionToItems()
-  assert.deepEqual(items.map(i => i.value), ['once', 'always', 'reject'])
+  assert.deepEqual(items.map(i => i.value), ['once', 'always', 'persist', 'reject'])
 })

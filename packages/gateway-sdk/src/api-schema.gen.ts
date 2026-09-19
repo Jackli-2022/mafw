@@ -1128,13 +1128,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/permissions/{id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["permissions.reply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{sid}/permission-mode": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                sid: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get: operations["permissions.getMode"];
@@ -1157,22 +1171,6 @@ export interface paths {
         put?: never;
         post: operations["permissions.addAllowlist"];
         delete: operations["permissions.removeAllowlist"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/permissions/{id}/reply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["permissions.reply"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
