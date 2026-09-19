@@ -3,6 +3,7 @@ import { createSignal, createMemo, createEffect, Show, For } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { flowCardInitialExpanded } from "./flow-card-placement"
+import { autoBadgeText } from "./permission-card-mapping"
 
 export type PermissionCardData = {
   id: string
@@ -26,7 +27,11 @@ export type PermissionCardData = {
   callID?: string
 }
 
-function StatusBadge(props: { status: string }) {
+function StatusBadge(props: { status: string; autoResolved?: "auto" | "internal" }) {
+  const auto = autoBadgeText(props.autoResolved)
+  if (auto) {
+    return <span class={`mafw-flow-badge ${props.autoResolved === "internal" ? "mafw-flow-badge-danger" : "mafw-flow-badge-ok"}`}>{auto}</span>
+  }
   if (props.status === "allowed-once" || props.status === "allowed-always") {
     return <span class="mafw-flow-badge mafw-flow-badge-ok">{props.status === "allowed-always" ? "始终允许" : "已允许"}</span>
   }
@@ -47,6 +52,8 @@ export function PermissionCard(props: {
   keyboardOwner?: boolean
   onAllowOnce?: () => void
   onAllowAlways?: () => void
+  /** 持久允许：always + 写入跨会话白名单（persist: true） */
+  onAllowPersist?: () => void
   onDeny?: (note?: string) => void
 }) {
   const [confirmArmed, setConfirmArmed] = createSignal(false)
@@ -90,6 +97,7 @@ export function PermissionCard(props: {
       const k = e.key.toLowerCase()
       if (k === "y" || e.key === "Enter") { e.preventDefault(); allowOnce() }
       else if (k === "a") { e.preventDefault(); props.onAllowAlways?.() }
+      else if (k === "p") { e.preventDefault(); props.onAllowPersist?.() }
       else if (k === "n") { e.preventDefault(); setNoteOpen(true) }
       else if (e.key === "Escape") { e.preventDefault(); deny(false) }
     }
@@ -154,7 +162,7 @@ export function PermissionCard(props: {
         <span class="mafw-flow-title">{props.data.agentName || "Agent"} 请求权限</span>
         <span class={`mafw-flow-risk mafw-flow-risk-${highRisk() ? "high" : "med"}`}>{highRisk() ? "高风险" : "中风险"}</span>
         <div class="mafw-flow-badge-wrap">
-          <StatusBadge status={props.data.status} />
+          <StatusBadge status={props.data.status} autoResolved={props.data.autoResolved} />
           <Show when={(props.queueLength || 0) > 0}>
             <span class="mafw-flow-badge mafw-flow-badge-muted">还有 {props.queueLength} 项</span>
           </Show>
@@ -213,10 +221,19 @@ export function PermissionCard(props: {
 
         {/* Footer */}
         <footer class="mafw-flow-footer">
-          <span class="mafw-flow-keyhint">Y 允许一次 · A 始终允许 · N 拒绝</span>
+          <span class="mafw-flow-keyhint">Y 允许一次 · A 始终允许 · P 持久允许 · N 拒绝</span>
           <div class="mafw-flow-footer-actions">
             <ButtonV2 variant="ghost" size="small" class="mafw-flow-btn-ghost" onClick={() => setNoteOpen(true)}>
               拒绝
+            </ButtonV2>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-flow-btn-ghost"
+              aria-label="持久允许（跨会话记住）"
+              onClick={() => props.onAllowPersist?.()}
+            >
+              持久允许
             </ButtonV2>
             <ButtonV2 variant="outline" size="small" class="mafw-flow-btn-always" onClick={() => props.onAllowAlways?.()}>
               本会话始终允许

@@ -102,7 +102,7 @@ export type ChatPaneProps = {
   onOpenSettings?: () => void
   onModelSelect: (m: ModelEntry, sid?: string) => void
   onApplyAgentSwitch: (a: AgentEntry) => void
-  onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string) => void
+  onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean) => void
   onAskSubmit: (card: AskCardData, answers: Record<string, string[]>, custom: Record<string, string>) => void
   onAskCancel: (card: AskCardData) => void
   onTitlebarRef: (el: HTMLElement | null) => void
@@ -1580,9 +1580,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         data={c.data}
         queueLength={c.data.status === "pending" ? sc.queueLength : 0}
         keyboardOwner={c.data.id === sc.keyboardOwnerId}
-        onAllowOnce={() => props.onPermReply(c.data, "once")}
-        onAllowAlways={() => props.onPermReply(c.data, "always")}
-        onDeny={(note) => props.onPermReply(c.data, "reject", note)}
+                onAllowOnce={() => props.onPermReply(c.data, "once")}
+                onAllowAlways={() => props.onPermReply(c.data, "always")}
+                onAllowPersist={() => props.onPermReply(c.data, "always", undefined, true)}
+                onDeny={(note) => props.onPermReply(c.data, "reject", note)}
       />
     ) : (
       <AskCard

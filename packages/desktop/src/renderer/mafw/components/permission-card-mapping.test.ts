@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mapPermissionCard, nextMode, shouldNotify } from "./permission-card-mapping";
+import { mapPermissionCard, nextMode, shouldNotify, autoBadgeText } from "./permission-card-mapping";
 
 const baseReq = {
   id: "r1", sessionID: "s1", permission: "bash", patterns: ["npm test"],
@@ -66,5 +66,17 @@ describe("migration helpers（T11 消费）", () => {
     expect(shouldNotify({ autoResolved: "auto" })).toBe(false);
     expect(shouldNotify({ autoResolved: "internal" })).toBe(false);
     expect(shouldNotify({})).toBe(true);
+  });
+});
+
+describe("autoBadgeText（T12 徽标文案）", () => {
+  test("auto → 已自动放行", () => {
+    expect(autoBadgeText("auto")).toBe("已自动放行");
+  });
+  test("internal → 已自动拒绝 · 内部", () => {
+    expect(autoBadgeText("internal")).toBe("已自动拒绝 · 内部");
+  });
+  test("undefined → null（走既有徽标文案）", () => {
+    expect(autoBadgeText(undefined)).toBeNull();
   });
 });

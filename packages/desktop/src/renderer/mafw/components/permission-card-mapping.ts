@@ -72,3 +72,10 @@ export function nextMode(prev: "manual" | "auto"): "manual" | "auto" {
 export function shouldNotify(card: { autoResolved?: string }): boolean {
   return !card.autoResolved
 }
+
+/** autoResolved 徽标文案；null = 无自动处置（走既有徽标文案）。 */
+export function autoBadgeText(autoResolved: "auto" | "internal" | undefined): string | null {
+  if (autoResolved === "auto") return "已自动放行"
+  if (autoResolved === "internal") return "已自动拒绝 · 内部"
+  return null
+}

@@ -1090,9 +1090,9 @@ export function MafwShell() {
     }
   }
 
-  const permReply = async (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string) => {
+  const permReply = async (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean) => {
     try {
-      await window.api.mafw.permissions.reply(card.id, reply, message)
+      await window.api.mafw.permissions.reply(card.id, reply, message, persist)
       resolveCard(card.sessionID, card.id, {
         status: reply === "always" ? "allowed-always" : reply === "reject" ? "denied" : "allowed-once",
       })
