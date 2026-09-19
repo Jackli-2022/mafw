@@ -940,14 +940,20 @@ html[data-theme="light"] .mafw-shell {
   overflow: clip;
 }
 .mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"] {
-  height: 32px;
+  height: 28px;
   padding: 0 10px;
-  color: var(--text-2);
-  font-size: 13px;
+  color: var(--text-3);
+  font-size: 12.5px;
   font-weight: 500;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"]:hover {
+  color: var(--text-1);
+  background: var(--hover);
 }
 .mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-content"] > * {
   border-left: 2px solid var(--border-subtle);
+  background: var(--bg-inset);
 }
 /* Thinking block (dsh-style collapsible reasoning) */
 .mafw-thinking { margin: 2px 0; }
