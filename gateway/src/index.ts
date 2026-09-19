@@ -87,6 +87,9 @@ import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
+import { ApprovalPolicyService } from './core/approval/policy-service';
+import { AllowlistStore } from './core/approval/allowlist-store';
+import { applyApprovalPolicy } from './core/approval/hook';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntimeShape } from './runtime/validate';
@@ -260,6 +263,8 @@ class MafwScheduler {
   }
   private pipelineRunning = false; // action-level in-flight guard (cron + manual triggers)
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
+  private approvalPolicy!: ApprovalPolicyService; // asked 事件策略评估（manual/auto + 预算 + 内部 fail-safe）
+  private allowlistStore!: AllowlistStore; // 持久白名单（config.yaml approval 段）
 
   activeGoals = new Map<string, StateFile>();
   registeredProjects = new Map<string, RegisteredProject>();
@@ -959,6 +964,12 @@ class MafwScheduler {
         const snap = { type: f.type, sessionID, at: Date.now() };
         for (const t of taps) { try { t(snap); } catch { /* fail-open */ } }
       }
+    }
+    // Approval policy：asked 事件先于 internal 过滤与 Mode A 广播评估（内部会话
+    // fail-safe 需在 memoryWorker drop 之前生效）；决策附在广播 properties.mafwPolicy，
+    // 三端据此分流（非 human = 直接渲染已决记录，不弹交互卡）。
+    if (f.approval && sessionID) {
+      applyApprovalPolicy(this.approvalPolicy, this.runtime, f.approval, sessionID, props);
     }
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
@@ -1959,6 +1970,22 @@ class MafwScheduler {
     const projectDir = this.projectDir;
     const mafwDir = config.resolvePath();
     this.mafwDir = mafwDir;
+
+    // Approval policy（spec docs/superpowers/specs/2026-09-18-gateway-approval-policy-design.md）：
+    // 持久白名单（config.yaml approval 段，懒读热生效）+ per-session mode（kv perm-mode）。
+    this.allowlistStore = new AllowlistStore({
+      readRawAllowlist: () => (config.raw as any)?.approval?.allowlist,
+      persist: (o) => config.persistOverrides(o as any),
+    });
+    this.approvalPolicy = new ApprovalPolicyService({
+      getInternalRole: (sid) => this.internalSessionRoles.get(sid),
+      allowlistMatches: (toolName, candidate) => this.allowlistStore.matches(toolName, candidate),
+      loadMode: async (sid) => this.getGatewayDb().kvGet<'manual' | 'auto'>('perm-mode', sid) ?? 'manual',
+      saveMode: async (sid, mode) => { this.getGatewayDb().kvSet('perm-mode', sid, mode); },
+      onModeChanged: (sid, mode, reason) => {
+        this.broadcast(opencodeBroadcast({ type: 'permission_mode', properties: { mode, reason }, sessionID: sid }));
+      },
+    });
 
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
     this.memoryService = new MemoryService(mafwDir);
