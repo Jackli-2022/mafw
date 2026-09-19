@@ -87,3 +87,19 @@ describe("Tool part 卡片 v4", () => {
   const content = '.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-content"] > *'
   test("输出井 inset 背景", () => expect(cssBlock(content)).toContain("background: var(--bg-inset)"))
 })
+
+describe("Composer v4", () => {
+  test("聚焦双层柔焦（1px accent-border + 4px accent-soft）", () => {
+    const b = cssBlock(".mafw-composer:focus-within")
+    expect(b).toContain("border-color: var(--accent-border)")
+    expect(b).toContain("box-shadow: 0 0 0 4px var(--accent-soft)")
+  })
+  test("composer 圆角 r-xl", () => expect(cssBlock(".mafw-composer {")).toContain("border-radius: var(--r-xl)"))
+  test("chat 面板圆角 r-xl", () => expect(cssBlock(".mafw-chat {")).toContain("border-radius: var(--r-xl)"))
+  test("发送钮 hover 上移 + accent-strong", () => {
+    const b = cssBlock('.mafw-composer [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled)')
+    expect(b).toContain("background: var(--accent-strong)")
+    expect(b).toContain("transform: translateY(-1px)")
+  })
+  test("附件缩略图 20px", () => expect(cssBlock(".mafw-chip-thumb {")).toContain("width: 20px"))
+})
