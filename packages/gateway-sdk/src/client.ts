@@ -730,11 +730,41 @@ export class MafwClient implements IMafwClient {
       id: string,
       reply: 'once' | 'always' | 'reject',
       message?: string,
+      persist?: boolean,
     ): Promise<void> => {
       await this.request(`/api/permissions/${id}/reply`, {
         method: 'POST',
-        body: JSON.stringify({ reply, message }),
+        body: JSON.stringify({ reply, message, persist }),
       })
+    },
+
+    getMode: async (
+      sessionID: string,
+    ): Promise<{ mode: 'manual' | 'auto'; autoApprovals: number; budget: number }> => {
+      return this.request(`/api/sessions/${encodeURIComponent(sessionID)}/permission-mode`)
+    },
+
+    setMode: async (sessionID: string, mode: 'manual' | 'auto'): Promise<void> => {
+      await this.request(`/api/sessions/${encodeURIComponent(sessionID)}/permission-mode`, {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      })
+    },
+
+    listAllowlist: async (): Promise<{ entries: Array<{ tool: string; prefix?: string }> }> => {
+      return this.request('/api/approvals/allowlist')
+    },
+
+    addAllowlist: async (
+      entry: { tool: string; prefix?: string },
+    ): Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }> => {
+      return this.request('/api/approvals/allowlist', { method: 'POST', body: JSON.stringify(entry) })
+    },
+
+    removeAllowlist: async (
+      entry: { tool: string; prefix?: string },
+    ): Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }> => {
+      return this.request('/api/approvals/allowlist', { method: 'DELETE', body: JSON.stringify(entry) })
     },
   }
 

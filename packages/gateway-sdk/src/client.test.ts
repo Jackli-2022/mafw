@@ -772,3 +772,59 @@ test("mafwCommands.list empty envelope → []", async () => {
   const c = new MafwClient("http://gw:3000")
   expect(await c.mafwCommands.list()).toEqual([])
 })
+
+// ── Permissions (approval policy face) ──
+
+test("permissions.getMode sends GET /api/sessions/:sid/permission-mode", async () => {
+  fetchMock.mockResolvedValue(okJson({ mode: "auto", autoApprovals: 2, budget: 25 }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.permissions.getMode("s1")
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/permission-mode", expect.anything())
+  expect(r).toEqual({ mode: "auto", autoApprovals: 2, budget: 25 })
+})
+
+test("permissions.setMode sends POST with { mode }", async () => {
+  fetchMock.mockResolvedValue(okJson({ mode: "manual", autoApprovals: 0, budget: 25 }))
+  const c = new MafwClient("http://gw:3000")
+  await c.permissions.setMode("s1", "manual")
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/permission-mode",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toEqual({ mode: "manual" })
+})
+
+test("permissions.listAllowlist sends GET /api/approvals/allowlist", async () => {
+  fetchMock.mockResolvedValue(okJson({ entries: [{ tool: "read" }, { tool: "bash", prefix: "git status" }] }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.permissions.listAllowlist()
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/approvals/allowlist", expect.anything())
+  expect(r.entries).toHaveLength(2)
+})
+
+test("permissions.addAllowlist sends POST entry", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: true, entries: [] }))
+  const c = new MafwClient("http://gw:3000")
+  await c.permissions.addAllowlist({ tool: "bash", prefix: "git status" })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/approvals/allowlist",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toEqual({ tool: "bash", prefix: "git status" })
+})
+
+test("permissions.removeAllowlist sends DELETE entry", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: true, entries: [] }))
+  const c = new MafwClient("http://gw:3000")
+  await c.permissions.removeAllowlist({ tool: "read" })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/approvals/allowlist",
+    expect.objectContaining({ method: "DELETE" }))
+})
+
+test("permissions.reply appends persist param to body", async () => {
+  fetchMock.mockResolvedValue(okJson({ status: "ok" }))
+  const c = new MafwClient("http://gw:3000")
+  await c.permissions.reply("id1", "always", undefined, true)
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/permissions/id1/reply",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toEqual({ reply: "always", message: undefined, persist: true })
+})

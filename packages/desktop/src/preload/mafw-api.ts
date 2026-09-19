@@ -162,7 +162,12 @@ export function createMafwApi(): MafwAPI {
 
     permissions: {
       list: () => invoke("permissions", "list"),
-      reply: (id, reply, message?) => invoke("permissions", "reply", id, reply, message),
+      reply: (id, reply, message?, persist?) => invoke("permissions", "reply", id, reply, message, persist),
+      getMode: (sid) => invoke("permissions", "getMode", sid),
+      setMode: (sid, mode) => invoke("permissions", "setMode", sid, mode),
+      listAllowlist: () => invoke("permissions", "listAllowlist"),
+      addAllowlist: (entry) => invoke("permissions", "addAllowlist", entry),
+      removeAllowlist: (entry) => invoke("permissions", "removeAllowlist", entry),
     },
 
     triage: {

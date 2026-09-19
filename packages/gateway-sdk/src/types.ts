@@ -599,7 +599,14 @@ export interface QuestionsNamespace {
 
 export interface PermissionsNamespace {
   list(): Promise<PermissionRequest[]>
-  reply(id: string, reply: 'once' | 'always' | 'reject', message?: string): Promise<void>
+  reply(id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean): Promise<void>
+  /** per-session 审批模式（gateway kv 持久；新会话恒 manual） */
+  getMode(sessionID: string): Promise<{ mode: 'manual' | 'auto'; autoApprovals: number; budget: number }>
+  setMode(sessionID: string, mode: 'manual' | 'auto'): Promise<void>
+  /** 持久白名单（~/.mafw/config.yaml approval 段） */
+  listAllowlist(): Promise<{ entries: Array<{ tool: string; prefix?: string }> }>
+  addAllowlist(entry: { tool: string; prefix?: string }): Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }>
+  removeAllowlist(entry: { tool: string; prefix?: string }): Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }>
 }
 
 // ============================================================

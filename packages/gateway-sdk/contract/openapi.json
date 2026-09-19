@@ -1827,6 +1827,85 @@
         }
       }
     },
+    "/api/sessions/{sid}/permission-mode": {
+      "get": {
+        "operationId": "permissions.getMode",
+        "tags": [
+          "permissions"
+        ],
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "permissions.setMode",
+        "tags": [
+          "permissions"
+        ],
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/approvals/allowlist": {
+      "get": {
+        "operationId": "permissions.listAllowlist",
+        "tags": [
+          "permissions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "permissions.addAllowlist",
+        "tags": [
+          "permissions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "permissions.removeAllowlist",
+        "tags": [
+          "permissions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/chat": {
       "post": {
         "operationId": "chat.send",
