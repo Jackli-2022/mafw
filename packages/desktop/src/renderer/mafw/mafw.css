@@ -4197,3 +4197,13 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-plugin-progress-track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-base-hover); overflow: hidden; }
 .mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text, #7aa2f7); transition: width .3s ease; }
 .mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
+
+/* ── Approvals（审批持久白名单编辑器）── */
+.mafw-allowlist-add { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0 18px; }
+.mafw-allowlist-add-fields { display: flex; gap: 10px; flex: 1; min-width: 0; }
+.mafw-allowlist-add-fields > * { min-width: 0; }
+.mafw-allowlist-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mafw-allowlist-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border-base, rgba(128,128,128,.25)); border-radius: 8px; background: var(--bg-raised, rgba(128,128,128,.08)); }
+.mafw-allowlist-tool { font-family: var(--font-mono, monospace); font-size: 12px; font-weight: 600; min-width: 88px; }
+.mafw-allowlist-prefix { flex: 1; font-size: 12px; color: var(--text-muted, #888); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-allowlist-empty { font-size: 12px; color: var(--text-muted, #888); margin: 18px 0; }

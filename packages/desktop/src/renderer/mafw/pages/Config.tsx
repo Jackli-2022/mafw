@@ -11,6 +11,7 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, groupEntries, typeMeta, formatSize, type HubEntry } from "./plugin-hub"
 import { UsageProviders } from "../components/UsageProviders"
+import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
 
 interface ConfigSection {
@@ -19,7 +20,7 @@ interface ConfigSection {
   fields: [string, any][]
 }
 
-export type NavKey = "gateway" | "desktop" | "plugins" | "models" | "memory" | "usage" | "opencode" | "mafw"
+export type NavKey = "gateway" | "desktop" | "plugins" | "models" | "memory" | "usage" | "approvals" | "opencode" | "mafw"
 
 export function isNavKey(v: unknown): v is NavKey {
   return NAV_ITEMS.some(n => n.key === v)
@@ -32,6 +33,7 @@ const NAV_ITEMS: { key: NavKey; icon: string; label: string; desc: string }[] = 
   { key: "models",   icon: "🤖", label: "Models",   desc: "配置记忆 worker 和媒体分析使用的 AI 模型" },
   { key: "memory",   icon: "🧠", label: "Memory",   desc: "记忆系统嵌入引擎（ONNX / llama.cpp / GPU 卸载）与向量索引" },
   { key: "usage",    icon: "📊", label: "Usage",    desc: "设置 token 限额、余额预算和平台 cookie" },
+  { key: "approvals", icon: "🛡", label: "Approvals", desc: "审批持久白名单（跨会话放行工具/命令前缀）" },
   { key: "opencode", icon: "⚙️", label: "opencode", desc: "编辑 opencode 原生配置文件" },
   { key: "mafw",     icon: "🔧", label: "MAFW",     desc: "MAFW 原始配置文件（高级用户）" },
 ]
@@ -1067,6 +1069,11 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
           {/* ═══ Usage ═══*/}
           <Show when={activeNav() === "usage"}>
             <UsageProviders modelAvailable={modelAvailable} />
+          </Show>
+
+          {/* ═══ Approvals（审批持久白名单）═══*/}
+          <Show when={activeNav() === "approvals"}>
+            <ApprovalsSection />
           </Show>
 
           {/* ═══ OpenCode Config ═══*/}
