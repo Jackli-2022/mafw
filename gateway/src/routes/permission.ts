@@ -50,3 +50,18 @@ export async function handlePermissionReply(
     res.end(JSON.stringify({ error: err.message }));
   }
 }
+
+/** 'always' + persist 的白名单写回：patterns[0] 去尾部 * 为 prefix，patterns 空则裸工具名。
+ *  仅供 /api/permissions/:id/reply 路由（有 permissionList 反查）；sessionID 直连路由不支持 persist。 */
+export function persistAlwaysToAllowlist(
+  store: { add(entry: { tool: string; prefix?: string }): { ok: boolean; entries: unknown[] } },
+  found: { permission?: string; toolName?: string; patterns?: string[] },
+): { tool: string; prefix?: string } | null {
+  const tool = String(found?.permission ?? found?.toolName ?? '').trim();
+  if (!tool) return null;
+  const firstPattern = Array.isArray(found?.patterns) ? String(found.patterns[0] ?? '').trim() : '';
+  const prefix = firstPattern.replace(/\*+$/, '').trim();
+  const entry = prefix ? { tool, prefix } : { tool };
+  store.add(entry);
+  return entry;
+}

@@ -98,7 +98,7 @@ import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntim
 import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
-import { handlePermissionReply } from './routes/permission';
+import { handlePermissionReply, persistAlwaysToAllowlist } from './routes/permission';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
@@ -4294,6 +4294,14 @@ class MafwScheduler {
             const ok = await runtime.session.permissionReply!(found.sessionID, pReplyMatch[1], reply, body.message);
             if (!ok) {
               res.writeHead(404); res.end(JSON.stringify({ status: 'error', error: 'permission request not found' })); return;
+            }
+            // always + persist：runtime 回复成功后把 tool/prefix 写持久白名单（fail-open 不阻塞）
+            if (body.persist === true && reply === 'always') {
+              try {
+                persistAlwaysToAllowlist(this.allowlistStore, found);
+              } catch (persistErr: any) {
+                log.warn(`[Permission] persist always to allowlist failed (non-fatal): ${persistErr.message}`);
+              }
             }
             res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {
