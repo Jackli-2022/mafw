@@ -397,8 +397,9 @@ html[data-theme="light"] .mafw-shell {
 }
 .mafw-shell .mafw-tabstrip [role="tab"]:hover { color: var(--text-2); }
 .mafw-shell .mafw-tabstrip [role="tab"][data-selected] {
-  background: var(--accent-dim);
+  background: var(--bg-overlay);
   color: var(--text-1);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .mafw-shell .mafw-tabstrip [role="tab"][data-selected] svg { color: var(--accent); }
 .mafw-tabstrip-trajectory {
@@ -417,8 +418,9 @@ html[data-theme="light"] .mafw-shell {
 }
 .mafw-tabstrip-trajectory:hover { color: var(--text-2); }
 .mafw-tabstrip-trajectory.active {
-  background: var(--accent-dim);
+  background: var(--bg-overlay);
   color: var(--text-1);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .mafw-tab-count {
   min-width: 16px;

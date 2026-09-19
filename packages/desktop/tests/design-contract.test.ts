@@ -57,3 +57,15 @@ describe("token v4 — 暗色背景换冷蓝调", () => {
   test("bg-overlay #17171D", () => expect(dark).toContain("--bg-overlay: #17171D"))
   test("bg-inset #0D0D10", () => expect(dark).toContain("--bg-inset: #0D0D10"))
 })
+
+describe("TabStrip 激活态 v4", () => {
+  const sel = '.mafw-shell .mafw-tabstrip [role="tab"][data-selected]'
+  test("激活底色 bg-overlay", () => expect(cssBlock(sel)).toContain("background: var(--bg-overlay)"))
+  test("2px 底部 accent 指示条", () =>
+    expect(cssBlock(sel)).toContain("box-shadow: inset 0 -2px 0 var(--accent)"))
+  test("轨迹按钮激活同构", () => {
+    const b = cssBlock(".mafw-tabstrip-trajectory.active")
+    expect(b).toContain("background: var(--bg-overlay)")
+    expect(b).toContain("box-shadow: inset 0 -2px 0 var(--accent)")
+  })
+})
