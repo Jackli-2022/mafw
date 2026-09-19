@@ -34,7 +34,7 @@ export interface RuntimeSwitchDeps {
 export async function handleRuntimeGet(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
-  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader'>,
+  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents'>,
 ): Promise<void> {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({

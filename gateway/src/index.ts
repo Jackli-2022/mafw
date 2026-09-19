@@ -2579,6 +2579,7 @@ class MafwScheduler {
         runtimeDeps: () => this.runtimeDeps(),
         restartAgentDeps: () => this.restartAgentDeps(),
         pluginHubDeps: () => this.pluginHubDeps(),
+        conformanceDeps: () => this.conformanceDeps(),
         runtimeSwitchBlocked: () => this.serveRecovering || this.switchingRuntime,
         beginRuntimeSwitch: () => { this.switchingRuntime = true; },
         endRuntimeSwitch: () => { this.switchingRuntime = false; },
