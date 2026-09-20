@@ -84,18 +84,24 @@ export function UsagePill(props: Props) {
     return lines.join("\n")
   })
 
+  const severity = createMemo(() => {
+    const pct = hottest()?.window.pct ?? 0
+    return pct >= 90 ? "critical" : pct >= 75 ? "high" : pct >= 50 ? "mid" : "low"
+  })
+
   return (
     <Show when={hottest()}>
       {(h) => (
         <TooltipV2 value={tooltipContent()} openDelay={300}>
           <div class="mafw-usage-pill" onClick={() => props.onClick?.()}>
-            <span class="mafw-usage-pill-dot" style={{ background: severityColor(h().window.pct >= 90 ? "critical" : h().window.pct >= 75 ? "high" : h().window.pct >= 50 ? "mid" : "low") }} />
+            <span class="mafw-usage-pill-dot" style={{ background: severityColor(severity()) }} />
             <span class="mafw-usage-pill-provider">{h().provider}</span>
             <span class="mafw-usage-pill-window">{h().window.window}</span>
             <span class="mafw-usage-pill-pct">{h().window.pct}%</span>
             <Show when={h().window.resetAt}>
               <span class="mafw-usage-pill-reset">{fmtTime(h().window.resetAt - Date.now())}</span>
             </Show>
+            <div class="mafw-usage-pill-progress" style={{ width: `${Math.min(h().window.pct, 100)}%`, background: severityColor(severity()) }} />
           </div>
         </TooltipV2>
       )}

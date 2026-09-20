@@ -132,3 +132,17 @@ describe("用量指标行 v4", () => {
     expect(b).toContain("border-radius: 2px")
   })
 })
+
+describe("Rail CTA + UsagePill v4", () => {
+  test("New session 主 CTA：accent-soft 底 + accent-border 描边", () => {
+    const b = cssBlock(".mafw-rail-new-btn {")
+    expect(b).toContain("background: var(--accent-soft)")
+    expect(b).toContain("border: 1px solid var(--accent-border)")
+  })
+  test("New session hover 实心绿", () =>
+    expect(cssBlock(".mafw-rail-new-btn:hover {")).toContain("background: var(--accent)"))
+  test("UsagePill 细线进度条 2px", () =>
+    expect(cssBlock(".mafw-usage-pill-progress {")).toContain("height: 2px"))
+  test("UsagePill 数字 tabular", () =>
+    expect(cssBlock(".mafw-usage-pill {")).toContain("font-variant-numeric: tabular-nums"))
+})
