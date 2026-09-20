@@ -3,8 +3,7 @@ import { Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { TabsV2 } from "@mafw/ui/v2/tabs-v2"
-
-type DockTab = "tasks" | "trajectory" | "usage" | "quota" | "notes"
+import { type DockTab } from "./dock-tab"
 
 export function RightDock(props: {
   open: boolean
@@ -23,7 +22,6 @@ export function RightDock(props: {
               <TabsV2.Trigger value="tasks">📋 任务</TabsV2.Trigger>
               <TabsV2.Trigger value="trajectory">📊 轨迹</TabsV2.Trigger>
               <TabsV2.Trigger value="usage">📈 用量</TabsV2.Trigger>
-              <TabsV2.Trigger value="quota">⏳ 配额</TabsV2.Trigger>
               <TabsV2.Trigger value="notes">📝 便签</TabsV2.Trigger>
             </TabsV2.List>
           </TabsV2>
