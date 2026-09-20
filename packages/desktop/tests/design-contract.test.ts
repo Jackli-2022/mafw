@@ -224,3 +224,25 @@ describe("Rail 尾巴 v4", () => {
   test("ManagerCard hover 边框提亮", () =>
     expect(cssBlock(".mafw-manager-card:hover {")).toContain("border-color"))
 })
+
+describe("动效基建 v4", () => {
+  test("reduced-motion 全局压制", () => {
+    const i = css.indexOf("@media (prefers-reduced-motion: reduce)")
+    expect(i).toBeGreaterThan(0)
+    const seg = css.slice(i, i + 700)
+    expect(seg).toContain("animation-duration: 0.01ms")
+    expect(seg).toContain("transition-duration: 0.01ms")
+    expect(seg).toContain("!important")
+  })
+  test("enter 动画 4px + token", () => {
+    const b = cssBlock("@keyframes mafw-enter")
+    expect(b).toContain("translateY(4px)")
+    expect(cssBlock('.mafw-session-turn-container [data-component="session-turn"]')).toContain("var(--dur-3)")
+  })
+  test("tab 内容淡入 160ms", () =>
+    expect(cssBlock(".mafw-content:not(.mafw-chat-content) > *")).toContain("mafw-fade-in"))
+  test("dock 进场 200ms", () =>
+    expect(cssBlock(".mafw-right-dock {")).toContain("mafw-dock-in"))
+  test("模态 scale 进场", () =>
+    expect(cssBlock(".mafw-confirm {")).toContain("mafw-modal-in"))
+})

@@ -193,10 +193,31 @@ html[data-theme="light"] .mafw-shell {
 
 /* ── Motion (§5: hover 120ms / collapse 200ms / enter 200ms, 无 >300ms 装饰动画) ── */
 @keyframes mafw-enter {
-  from { transform: translateY(8px); opacity: 0; }
+  from { transform: translateY(4px); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
 }
-.mafw-session-turn-container [data-component="session-turn"] { animation: mafw-enter 200ms ease-out; }
+.mafw-session-turn-container [data-component="session-turn"] { animation: mafw-enter var(--dur-3) var(--ease); }
+@keyframes mafw-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes mafw-dock-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes mafw-modal-in {
+  from { opacity: 0; transform: scale(.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+/* 无障碍：系统"减弱动态效果"时压制全部动画/过渡（保留终态帧） */
+@media (prefers-reduced-motion: reduce) {
+  .mafw-shell, .mafw-shell *, .mafw-shell *::before, .mafw-shell *::after,
+  .mafw-picker-pop, .mafw-picker-pop *, .mafw-picker-pop *::before, .mafw-picker-pop *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 
 /* ── Shell Layout ── */
 .mafw-shell {
@@ -441,6 +462,8 @@ html[data-theme="light"] .mafw-shell {
 .mafw-content { grid-row: 2; overflow: auto; padding: 16px; }
 .mafw-content:only-child { grid-row: 1 / -1; }
 .mafw-chat-content { overflow: hidden; padding: 0; }
+/* 非 chat 页：tab 切换时组件重挂载触发首帧淡入 */
+.mafw-content:not(.mafw-chat-content) > * { animation: mafw-fade-in var(--dur-2) var(--ease); }
 
 /* ── Chat Layout ── */
 .mafw-chat {
@@ -1507,9 +1530,10 @@ html[data-theme="light"] .mafw-picker-pop {
   width: 320px;
   background: var(--bg-float);
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   box-shadow: var(--shadow-float);
   padding: 16px;
+  animation: mafw-modal-in var(--dur-4) var(--ease);
 }
 .mafw-confirm-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 8px; }
 .mafw-confirm-text { font-size: 13px; color: var(--text-3); line-height: 1.5; margin-bottom: 14px; }
@@ -2321,6 +2345,7 @@ html[data-theme="light"] .mafw-picker-pop {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  animation: mafw-dock-in var(--dur-3) var(--ease);
 }
 .mafw-dock-slot {
   position: relative;
