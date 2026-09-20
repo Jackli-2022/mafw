@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { permissionToItems, shouldShowOverlay } from '../src/ui/overlays.ts';
 
-test('选项含持久允许（第四项）', () => {
+test('选项含两个持久化档（第四/五项）+ 拒绝（第六项）', () => {
   const items = permissionToItems();
-  assert.equal(items.length, 4);
+  assert.equal(items.length, 5);
   assert.deepEqual(
     items.map((i) => i.value),
-    ['once', 'always', 'persist', 'reject'],
+    ['once', 'always', 'persist', 'persist-tool', 'reject'],
   );
 });
 

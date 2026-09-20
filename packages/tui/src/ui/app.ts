@@ -106,7 +106,8 @@ export async function runApp(opts: AppOptions): Promise<void> {
   const permStore = new PermissionModeStore(client)
   if (managerSessionID) {
     void permStore.load(managerSessionID).then(() => {
-      setStatus({ permAuto: permStore.get(managerSessionID) === 'auto' })
+      const m = permStore.get(managerSessionID)
+      setStatus({ permAuto: m !== 'read-only', permLabel: m !== 'read-only' ? (m === 'full-access' ? '🛡 全开' : '🛡 auto') : undefined })
     })
   }
   const chatTab = new ChatTab({
@@ -464,10 +465,13 @@ export async function runApp(opts: AppOptions): Promise<void> {
       if (!sid || sid === 'none') return '当前无会话'
       try {
         const next = await permStore.toggle(sid)
-        setStatus({ permAuto: next === 'auto' })
-        return next === 'auto'
-          ? '审批模式：auto（安全命令自动放行，预算 25 次）'
-          : '审批模式：manual（每次询问）'
+        setStatus({ permAuto: next !== 'read-only', permLabel: next !== 'read-only' ? (next === 'full-access' ? '🛡 全开' : '🛡 auto') : undefined })
+        const hints: Record<string, string> = {
+          'read-only': '审批模式：只读（只读工具免审，任何变更需确认）',
+          auto: '审批模式：auto（安全命令自动放行，预算 25 次）',
+          'full-access': '审批模式：全开（不再审批，危险命令也直接执行）',
+        }
+        return hints[next] ?? `审批模式：${next}`
       } catch (e: any) {
         return `切换失败: ${String(e?.message ?? e).slice(0, 60)}`
       }
@@ -549,7 +553,8 @@ export async function runApp(opts: AppOptions): Promise<void> {
       if (req?.id) {
         if (shouldShowOverlay(req)) {
           showPermissionOverlay(tui, req, (r) => {
-            if (r === 'persist') return client.permissions.reply(req.id, 'always', undefined, true)
+            if (r === 'persist') return client.permissions.reply(req.id, 'always', undefined, 'prefix')
+            if (r === 'persist-tool') return client.permissions.reply(req.id, 'always', undefined, 'tool')
             return client.permissions.reply(req.id, r)
           })
         } else {
@@ -561,12 +566,12 @@ export async function runApp(opts: AppOptions): Promise<void> {
         }
       }
     } else if (type === 'permission_mode') {
-      // gateway 审批模式变更（🛡 toggle / 预算回落广播）
+      // gateway 审批模式变更（🛡 toggle / 预算回落广播；未知值 store 内归一化 read-only）
       const sid = data?.sessionID ?? data?.properties?.sessionID
-      const mode = data?.properties?.mode
-      if (sid && (mode === 'manual' || mode === 'auto')) {
-        permStore.set(sid, mode)
-        setStatus({ permAuto: mode === 'auto' })
+      if (sid && data?.properties?.mode) {
+        permStore.set(sid, data.properties.mode)
+        const m = permStore.get(sid)
+        setStatus({ permAuto: m !== 'read-only', permLabel: m !== 'read-only' ? (m === 'full-access' ? '🛡 全开' : '🛡 auto') : undefined })
       }
     } else if (type === 'session.idle') {
       void refreshUsage()

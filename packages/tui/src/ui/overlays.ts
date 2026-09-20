@@ -13,7 +13,8 @@ export function permissionToItems(): SelectItem[] {
   return [
     { value: 'once', label: '允许一次', description: '仅本次' },
     { value: 'always', label: '总是允许', description: '本会话内' },
-    { value: 'persist', label: '持久允许', description: '跨会话记住' },
+    { value: 'persist', label: '记此前缀', description: '跨会话记住命令前缀' },
+    { value: 'persist-tool', label: '记此工具', description: '跨会话记住整个工具' },
     { value: 'reject', label: '拒绝', description: '拒绝此请求' },
   ]
 }
@@ -24,14 +25,14 @@ export function shouldShowOverlay(req: { mafwPolicy?: { action?: string } }): bo
   return !action || action === 'human'
 }
 
-/** permission.asked 弹窗：SelectList once/always/persist/reject → permissions.reply
- *  （支持鼠标点击行；persist = always + 写入跨会话白名单）。 */
+/** permission.asked 弹窗：SelectList once/always/persist/persist-tool/reject → permissions.reply
+ *  （支持鼠标点击行；persist = always + persist:'prefix'，persist-tool = persist:'tool'）。 */
 export function showPermissionOverlay(
   tui: TUI,
   req: PermissionRequest,
-  reply: (r: 'once' | 'always' | 'persist' | 'reject') => Promise<void>,
+  reply: (r: 'once' | 'always' | 'persist' | 'persist-tool' | 'reject') => Promise<void>,
 ): OverlayHandle {
-  const list = new SelectList(permissionToItems(), 4, selectListTheme)
+  const list = new SelectList(permissionToItems(), 5, selectListTheme)
   const overlay = new HeaderSelectOverlay(
     new Text(theme.warn('权限请求') + '  ' + permissionSummary(req), 1, 1),
     list,
@@ -39,7 +40,7 @@ export function showPermissionOverlay(
   const handle = tui.showOverlay(overlay, { width: '70%', maxHeight: 10, anchor: 'center' })
   const done = () => handle.hide()
   list.onSelect = (item) => {
-    void reply(item.value as 'once' | 'always' | 'persist' | 'reject')
+    void reply(item.value as 'once' | 'always' | 'persist' | 'persist-tool' | 'reject')
       .catch(() => {})
       .finally(done)
   }
