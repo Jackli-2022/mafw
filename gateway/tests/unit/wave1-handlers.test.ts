@@ -6,6 +6,7 @@ const WAVE1_OPIDS = [
   'goals.sessions', 'triage.dismiss', 'manager.rotate',
   'embedding.get', 'embedding.update', 'models.get', 'models.update',
   'session.fork', 'session.revert', 'session.unrevert', 'session.delete', 'session.rename', 'session.summarize',
+  'session.diff', 'session.revertDiff',
   'event.publish', 'media.switch',
   'session.usagePluginsList', 'session.usagePluginsReload', 'session.usagePluginsCreate',
   'session.usagePluginSourceGet', 'session.usagePluginSourcePut', 'session.usagePluginTest', 'session.usagePluginsDelete',

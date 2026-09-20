@@ -33,6 +33,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/sessions/:id/fork', operationId: 'session.fork', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/revert', operationId: 'session.revert', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/unrevert', operationId: 'session.unrevert', tags: ['session'] },
+  { method: 'GET', path: '/api/sessions/:id/diff', operationId: 'session.diff', tags: ['session'] },
+  { method: 'POST', path: '/api/sessions/:id/diff/revert', operationId: 'session.revertDiff', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/abort', operationId: 'session.abort', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/summarize', operationId: 'session.summarize', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/prompt', operationId: 'session.prompt', tags: ['session'] },

@@ -19,6 +19,7 @@ import { handleManagerRotate, type ManagerRotateDeps } from './manager-rotate';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, type EmbeddingConfigDeps } from './embedding-config';
 import { handleModelConfigGet, handleModelConfigUpdate, type ModelConfigDeps } from './model-config';
 import { handleSessionBranch } from './session-branch';
+import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
 import { handleSessionSummarize } from './session-summarize';
 import { handleEventPublish } from './event-publish';
@@ -83,6 +84,13 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
   registry.attachHandler('session.unrevert', H(async (req, res, params) =>
     handleSessionBranch(req, res, req.url || '', { getRuntime: () => gw.runtime })));
+
+  registry.attachHandler('session.diff', H(async (req, res, params) => {
+    const u = new URL(req.url || '/', 'http://x');
+    await handleSessionDiff(res, params.id, u.searchParams.get('messageID') ?? undefined, { runtime: gw.runtime });
+  }));
+  registry.attachHandler('session.revertDiff', H(async (req, res, params) =>
+    handleSessionDiffRevert(req, res, params.id, { runtime: gw.runtime })));
 
   registry.attachHandler('session.delete', H(async (req, res) =>
     handleSessionMutations(req, res, {
