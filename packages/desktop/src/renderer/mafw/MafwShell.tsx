@@ -58,6 +58,7 @@ import { mapPermissionCard as mapPermissionCardPure } from "./components/permiss
 import type { ModelEntry } from "./components/pickers/ModelPicker"
 import { messageModel } from "./message-model"
 import { workspace, type ChatSession } from "./workspace/session-workspace"
+import { countUserTurns, shouldKeepPaging } from "./components/history-paging"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
@@ -1371,7 +1372,7 @@ export function MafwShell() {
     console.log("[mafw] loadSessionHistory", sessionID)
     try {
       const [data, sessionData] = await Promise.all([
-        window.api.mafw.sessions.messages(sessionID, 100) as any, // [perf] initial paint: last 20 only; scroll-up loads older via pageState.cursor
+        window.api.mafw.sessions.messages(sessionID, 100) as any, // [perf] first paint: newest 100 raw; backfill loop below tops up to ≥10 user turns; scroll-up pages older via pageState.cursor
         window.api.mafw.sessions.get(sessionID).catch(() => null),
       ]) as [any, any]
       // Fetch the todo list for the TaskList (also updated live via SSE)
@@ -1380,7 +1381,7 @@ export function MafwShell() {
         if (Array.isArray(arr)) setTodos(sessionID, arr)
       }).catch(() => {})
       const rawItems = Array.isArray(data) ? data : data?.data
-      const nextCursor = data?.nextCursor ?? null
+      let nextCursor: string | null = data?.nextCursor ?? null
       if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
         setPageState(sessionID, { cursor: nextCursor, hasMore: !!nextCursor, loading: false })
         return
@@ -1389,60 +1390,72 @@ export function MafwShell() {
       // Merge with any existing in-store messages by id (preserve object identity so
       // <For>-keyed SessionTurn list doesn't fully remount on reload; avoids clobbering
       // live SSE / optimistic messages that arrived while the fetch was in flight).
-      const rawExisting = store.message[sessionID]
-      const existing = Array.isArray(rawExisting) ? rawExisting : []
-      if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
-      const existingById = new Map(existing.map(m => [m.id, m]))
-      const msgs: any[] = [...existing]
-      const parts: Record<string, any[]> = {}
-      for (const item of rawItems) {
-        const info = item.info || item
-        const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
-        if (existingById.has(msgId)) continue
-        // Preserve all API fields — spread entire info object
-        const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
-        msgs.push(msg)
-        let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
-        if (Array.isArray(itemParts) && itemParts.length > 0) {
-          parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+      const mergeRaw = (pageItems: any[]) => {
+        const rawExisting = store.message[sessionID]
+        const existing = Array.isArray(rawExisting) ? rawExisting : []
+        if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
+        const existingById = new Map(existing.map(m => [m.id, m]))
+        const msgs: any[] = [...existing]
+        const parts: Record<string, any[]> = {}
+        for (const item of pageItems) {
+          const info = item.info || item
+          const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
+          if (existingById.has(msgId)) continue
+          // Preserve all API fields — spread entire info object
+          const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
+          msgs.push(msg)
+          let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
+          if (Array.isArray(itemParts) && itemParts.length > 0) {
+            parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+          }
         }
+        if (msgs.length > 0) {
+          msgs.sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
+          // Orphan fallback: assistant messages with a missing/invalid parentID are
+          // grouped under the most recent preceding user message (time-based), so
+          // older/broken sessions still render their replies.
+          const byId = new Map(msgs.map(m => [m.id, m]))
+          let lastUserId: string | null = null
+          for (const m of msgs) {
+            if (m.role === "user") { lastUserId = m.id; continue }
+            if (m.role !== "assistant") continue
+            if (m.parentID && byId.has(m.parentID)) continue
+            if (lastUserId) m.parentID = lastUserId
+          }
+          setStore(prev => ({
+            ...prev,
+            session: sessionData ? [...prev.session.filter(s => s.id !== sessionID), sessionData] : prev.session,
+            message: { ...prev.message, [sessionID]: msgs },
+            part: { ...prev.part, ...parts },
+            session_status: { ...prev.session_status, [sessionID]: { type: "idle" } },
+          }))
+        }
+        return msgs
       }
-      if (msgs.length > 0) {
-        msgs.sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
-        // Orphan fallback: assistant messages with a missing/invalid parentID are
-        // grouped under the most recent preceding user message (time-based), so
-        // older/broken sessions still render their replies.
-        const byId = new Map(msgs.map(m => [m.id, m]))
-        let lastUserId: string | null = null
-        for (const m of msgs) {
-          if (m.role === "user") { lastUserId = m.id; continue }
-          if (m.role !== "assistant") continue
-          if (m.parentID && byId.has(m.parentID)) continue
-          if (lastUserId) m.parentID = lastUserId
-        }
-        setStore(prev => ({
-          ...prev,
-          session: sessionData ? [...prev.session.filter(s => s.id !== sessionID), sessionData] : prev.session,
-          message: { ...prev.message, [sessionID]: msgs },
-          part: { ...prev.part, ...parts },
-          session_status: { ...prev.session_status, [sessionID]: { type: "idle" } },
-        }))
-        // Set userMsgId to the first user message
-        const userMsg = msgs.findLast(m => m.role === "user") // [perf] windowed: anchor live messages to the newest user turn
-        if (userMsg) {
-          setSessions(prev => prev.map(s => s.id === sessionID ? { ...s, userMsgId: userMsg.id } : s))
-          console.log("[mafw] set userMsgId:", userMsg.id, "found in msgs:", msgs.some(m => m.id === userMsg.id))
-        } else {
-          console.warn("[mafw] no user message found, first msg role:", msgs[0]?.role, "id:", msgs[0]?.id)
-        }
-        setTimeout(() => {
-          const msgCount = store.message[sessionID]?.length || 0
-          const partKeys = Object.keys(store.part).length
-          console.log("[mafw] store verify - msgs:", msgCount, "partKeys:", partKeys, "sid:", sessionID, "sidExists:", !!store.message[sessionID])
-        }, 100)
-        setPageState(sessionID, { cursor: nextCursor, hasMore: !!nextCursor, loading: false })
-        anchorRegistry[sessionID]?.()
+
+      const msgs = mergeRaw(rawItems)
+      // Set userMsgId to the first user message
+      const userMsg = msgs.findLast(m => m.role === "user") // [perf] windowed: anchor live messages to the newest user turn
+      if (userMsg) {
+        setSessions(prev => prev.map(s => s.id === sessionID ? { ...s, userMsgId: userMsg.id } : s))
+        console.log("[mafw] set userMsgId:", userMsg.id, "found in msgs:", msgs.some(m => m.id === userMsg.id))
+      } else {
+        console.warn("[mafw] no user message found, first msg role:", msgs[0]?.role, "id:", msgs[0]?.id)
       }
+      // Assistant-dense backfill: 一页 100 条原始消息可能只有 0~4 个 user turn
+      //（自治长跑会话 10:1），首窗空 → 只见「加载更早」按钮。首屏已渲染第一页，
+      // 这里后台继续按 user turn 补齐（≤4 页封顶），密度无关（mem_1789616908701）。
+      let pageCount = 1
+      while (shouldKeepPaging({ collected: countUserTurns(store.message[sessionID] || []), target: 10, nextCursor, pageCount, maxPages: 4 })) {
+        const data2 = await window.api.mafw.sessions.messages(sessionID, 100, nextCursor) as any
+        const items2 = Array.isArray(data2) ? data2 : data2?.data
+        nextCursor = data2?.nextCursor ?? null
+        pageCount++
+        if (!Array.isArray(items2) || items2.length === 0) { nextCursor = null; break }
+        mergeRaw(items2)
+      }
+      setPageState(sessionID, { cursor: nextCursor, hasMore: !!nextCursor, loading: false })
+      anchorRegistry[sessionID]?.()
     } catch (e) { console.warn("[mafw] loadHistory failed", e); showToastV2({ description: "Failed to load session history", duration: 5000 }) }
   }
 

@@ -21,6 +21,7 @@ import { scrollPinDecision } from "./ChatPaneScroll"
 import { inlineAnchor } from "./flow-card-placement"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
+import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { createInputHistory } from "./input-history"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -1462,51 +1463,67 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   })
 
   // Lazy load older messages when scrolled near the top.
+  // Assistant-dense sessions may pack <10 user turns into 100 raw messages, so
+  // each invocation loops pages until +10 user turns (or cursor exhausted /
+  // 4-page cap) instead of one page per click — density-independent paging.
   async function loadOlder(sessionID: string) {
     const page = props.pageState[sessionID]
     if (!page || page.loading || !page.hasMore || !page.cursor) return
     props.setPageState(sessionID, 'loading', true)
     try {
-      const data = await window.api.mafw.sessions.messages(sessionID, 100, page.cursor) as any
-      const rawItems = Array.isArray(data) ? data : data?.data
-      const nextCursor = data?.nextCursor ?? null
+      let cursor: string | null = page.cursor
+      let nextCursor: string | null = null
+      let pageCount = 0
+      const baseCount = countUserTurns(Array.isArray(props.store.message[sessionID]) ? props.store.message[sessionID] : [])
       const el = containerRef()
       const prevHeight = el?.scrollHeight || 0
-      if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
-        const rawExisting = props.store.message[sessionID]
-        const existing = Array.isArray(rawExisting) ? rawExisting : []
-        if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
-        const existingById = new Map(existing.map(m => [m.id, m]))
-        const msgs: any[] = [...existing]
-        const parts: Record<string, any[]> = {}
-        for (const item of rawItems) {
-          const info = item.info || item
-          const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
-          if (existingById.has(msgId)) continue
-          const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
-          msgs.push(msg)
-          let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
-          if (Array.isArray(itemParts) && itemParts.length > 0) {
-            parts[msgId] = mergeLocalParts(props.store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+      while (shouldKeepPaging({
+        collected: countUserTurns(Array.isArray(props.store.message[sessionID]) ? props.store.message[sessionID] : []) - baseCount,
+        target: 10, nextCursor: cursor, pageCount, maxPages: 4,
+      })) {
+        const data = await window.api.mafw.sessions.messages(sessionID, 100, cursor) as any
+        const rawItems = Array.isArray(data) ? data : data?.data
+        nextCursor = data?.nextCursor ?? null
+        pageCount++
+        if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
+          const rawExisting = props.store.message[sessionID]
+          const existing = Array.isArray(rawExisting) ? rawExisting : []
+          if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
+          const existingById = new Map(existing.map(m => [m.id, m]))
+          const msgs: any[] = [...existing]
+          const parts: Record<string, any[]> = {}
+          for (const item of rawItems) {
+            const info = item.info || item
+            const msgId = info.id || `msg-${Date.now()}-${Math.random()}`
+            if (existingById.has(msgId)) continue
+            const msg = { ...info, id: msgId, sessionID, time: info.time || { created: Date.now() } }
+            msgs.push(msg)
+            let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
+            if (Array.isArray(itemParts) && itemParts.length > 0) {
+              parts[msgId] = mergeLocalParts(props.store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+            }
+          }
+          if (msgs.length > 0) {
+            msgs.sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
+            props.setStore(prev => ({
+              ...prev,
+              message: { ...prev.message, [sessionID]: msgs },
+              part: { ...prev.part, ...parts },
+            }))
           }
         }
-        if (msgs.length > 0) {
-          msgs.sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
-          props.setStore(prev => ({
-            ...prev,
-            message: { ...prev.message, [sessionID]: msgs },
-            part: { ...prev.part, ...parts },
-          }))
-          // Preserve viewport position: older content is prepended above.
-          if (el) {
-            requestAnimationFrame(() => {
-              el.scrollTop += el.scrollHeight - prevHeight
-              lastScrollTop = el.scrollTop
-            })
-          }
-        }
+        if (!nextCursor) break
+        cursor = nextCursor
       }
       props.setPageState(sessionID, { cursor: nextCursor, hasMore: !!nextCursor, loading: false })
+      // Preserve viewport position once for the whole batch: older content is
+      // prepended above.
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollTop += el.scrollHeight - prevHeight
+          lastScrollTop = el.scrollTop
+        })
+      }
     } catch (e) {
       console.warn("[mafw] loadOlder failed", e)
       props.setPageState(sessionID, 'loading', false)
