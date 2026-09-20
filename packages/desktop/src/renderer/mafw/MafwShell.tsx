@@ -20,6 +20,7 @@ import { sessionStore } from "./session-store"
   import { planSessionEvent, type RawSessionEvent, isTailAccountedAtShell } from "./session-events"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
+import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
   import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
@@ -992,26 +993,12 @@ export function MafwShell() {
     })
   }
 
-  // mapPermissionCard / actionTypeOf / riskOf / dangerousPartsOf 已抽出为纯函数模块
-  // （components/permission-card-mapping.ts，含 mafwPolicy 合并——gateway 富化优先）。
+  // mapAskCard/mapPermissionCard 均为纯函数模块（sse/handlers/flow-cards.ts、
+  // components/permission-card-mapping.ts），agentTitle 经参数注入。
   const agentTitleOf = (sid: string) => sessions().find(s => s.id === sid)?.title || "Agent"
 
-  const mapAskCard = (req: any, createdAt: number): AskCardData => ({
-    id: req.id,
-    sessionID: req.sessionID,
-    agentName: agentTitleOf(req.sessionID),
-    status: "pending",
-    createdAt,
-    messageID: req.tool?.messageID,
-    callID: req.tool?.callID,
-    questions: (req.questions || []).map((q: any, i: number) => ({
-      id: `${req.id}-q${i}`,
-      title: q.question,
-      mode: q.multiple ? "multi" : "single",
-      options: (q.options || []).map((o: any) => ({ id: o.label, title: o.label, description: o.description })),
-      allowCustom: q.custom !== false,
-    })),
-  })
+  const mapAskCard = (req: any, createdAt: number): AskCardData =>
+    mapAskCardPure(req, createdAt, agentTitleOf(req.sessionID))
 
   const mapPermissionCard = (req: any, createdAt: number): PermissionCardData =>
     mapPermissionCardPure(req, createdAt, agentTitleOf(req.sessionID))
@@ -1059,14 +1046,6 @@ export function MafwShell() {
         return changed ? next : prev
       })
     }).catch(e => console.warn("[mafw] questions reconcile:", e))
-  }
-
-  const answersToRecord = (answers: string[][], sid: string, cardId: string): Record<string, string[]> => {
-    const rec: Record<string, string[]> = {}
-    const card = flowCards()[sid]?.find(c => c.data.id === cardId)
-    if (!card || card.kind !== "ask") return rec
-    card.data.questions.forEach((q, i) => { rec[q.id] = answers[i] || [] })
-    return rec
   }
 
   // ── Flow card actions ──
@@ -1274,6 +1253,17 @@ export function MafwShell() {
       remove: (id) => sessionStore.remove(id),
       closeIfOpen: (id) => { if (sessions().some(s => s.id === id)) closeSession(id) },
     },
+    flowCards: {
+      upsertCard,
+      resolveCard,
+      setPermissionMode: (sid, mode) => setPermissionModes(sid, mode),
+      setCompactionMark: (sid, mark) => setCompactionMarks(prev => ({ ...prev, [sid]: mark })),
+      notify: notifyIfHidden,
+      trace: traceEvent,
+      scheduleReconcile: (delayMs) => { setTimeout(() => reconcileFlowCards(), delayMs) },
+      agentTitleOf,
+      getAskCard: (sid, id) => (flowCards()[sid] || []).find(c => c.kind === "ask" && c.data.id === id)?.data as AskCardData | undefined,
+    },
   }
 
   async function connectSse() {
@@ -1323,8 +1313,8 @@ export function MafwShell() {
       const event = raw?.data || raw
       if (!event) return
 
-      // 无 sid 依赖的分支走 dispatcher（core + session 生命周期，纯路由可单测）。
-      const before = ["user_question", "project_registered", "runtime_switched", "session.created", "session.updated", "session.deleted"]
+      // 已迁移到 dispatcher 的分支（core + 生命周期 + flow cards，纯路由可单测）。
+      const before = ["user_question", "project_registered", "runtime_switched", "session.created", "session.updated", "session.deleted", "question.asked", "permission.asked", "permission_mode", "session.compacted", "question.replied", "question.rejected", "permission.replied"]
       if (before.includes(event.type)) { dispatchShellEvent(event, sseDeps); return }
 
       // sessionID may be top-level (gateway-normalized) or nested in opencode event properties
@@ -1342,68 +1332,6 @@ export function MafwShell() {
         }
       }
       if (!sid) { missTrace(); return }
-
-      // Flow cards: native question / permission requests (AskCard / PermissionCard)
-      if (event.type === "question.asked") {
-        traceEvent(event, "card:ask")
-        console.log("[mafw] SSE question.asked", sid, event.properties?.id)
-        upsertCard(sid, { kind: "ask", data: mapAskCard(event.properties || {}, Date.now()) })
-        notifyIfHidden("MAFW：Agent 提问", String(event.properties?.question || "").slice(0, 80))
-        return
-      }
-      if (event.type === "permission.asked") {
-        traceEvent(event, "card:permission")
-        console.log("[mafw] SSE permission.asked", sid, event.properties?.id, event.properties?.permission)
-        const card = mapPermissionCard(event.properties || {}, Date.now())
-        upsertCard(sid, { kind: "permission", data: card })
-        if (shouldNotify(card)) {
-          notifyIfHidden("MAFW：需要权限审批", String(event.properties?.permission?.tool || "工具调用").slice(0, 80))
-        } else {
-          // auto 决策兜底：5s 后对账服务端真值（gateway auto-reply 失败时，卡片被
-          // reconcile 重新映射回 pending，用户仍可手动答复）。
-          setTimeout(() => reconcileFlowCards(), 5000)
-        }
-        return
-      }
-      if (event.type === "permission_mode") {
-        // gateway 审批模式变更（🛡 toggle / 预算回落广播）——三端徽标同步
-        const pmSid = event.sessionID || event.properties?.sessionID
-        const pmMode = event.properties?.mode
-        if (pmSid && (pmMode === "manual" || pmMode === "auto")) setPermissionModes(pmSid, pmMode)
-        return
-      }
-      if (event.type === "session.compacted") {
-        traceEvent(event, "chat:compacted")
-        console.log("[mafw] SSE session.compacted", sid)
-        const summary = event.properties?.summary || event.properties?.part?.text || undefined
-        setCompactionMarks(prev => ({ ...prev, [sid]: { at: Date.now(), summary } }))
-        return
-      }
-      if (event.type === "question.replied") {
-        traceEvent(event, "card:ask-resolve")
-        const props = event.properties || {}
-        const id = props.requestID || props.id
-        const answers = props.answers || []
-        if (id) resolveCard(sid, id, { status: "answered", answers: answersToRecord(answers, sid, id) })
-        return
-      }
-      if (event.type === "question.rejected") {
-        traceEvent(event, "card:ask-cancel")
-        const props = event.properties || {}
-        const id = props.requestID || props.id
-        if (id) resolveCard(sid, id, { status: "cancelled" })
-        return
-      }
-      if (event.type === "permission.replied") {
-        traceEvent(event, "card:permission-resolve")
-        const props = event.properties || {}
-        const id = props.requestID || props.id
-        if (id) {
-          const reply = props.reply
-          resolveCard(sid, id, { status: reply === "always" ? "allowed-always" : reply === "reject" ? "denied" : "allowed-once" })
-        }
-        return
-      }
 
       if (event.type === "trajectory.event") {
         traceEvent(event, "dock:trajectory")

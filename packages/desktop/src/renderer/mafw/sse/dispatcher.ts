@@ -2,6 +2,7 @@
 // 纯路由；一切副作用经注入 deps，逐分支可单测（无 Solid / 无 DOM）。
 // 分支语义逐字迁移自 MafwShell.tsx onmessage（commit 13ad8348，行 1297-1353、1361-1368）。
 import { planSessionEvent, isTailAccountedAtShell, type RawSessionEvent } from "../session-events"
+import { handleFlowCardEvent, type FlowCardDeps } from "./handlers/flow-cards"
 
 export interface CoreDeps {
   trace(event: { type?: string }, channel: string): void
@@ -25,11 +26,13 @@ export interface LifecycleDeps {
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
+  flowCards: FlowCardDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
 export type SidHandler = (event: any, sid: string, deps: ShellEventDeps) => boolean
 export const EXTRA_HANDLERS: SidHandler[] = []
+EXTRA_HANDLERS.push(handleFlowCardEvent)
 
 /** 语义与 MafwShell.tsx:1356-1360 一致：sid 可多形态承载。 */
 export function sessionIdOf(event: any): string {

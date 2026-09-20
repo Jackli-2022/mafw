@@ -20,6 +20,17 @@ function makeDeps() {
       remove: rec("remove"),
       closeIfOpen: rec("closeIfOpen"),
     },
+    flowCards: {
+      upsertCard: rec("upsertCard"),
+      resolveCard: rec("resolveCard"),
+      setPermissionMode: rec("setPermissionMode"),
+      setCompactionMark: rec("setCompactionMark"),
+      notify: rec("notify"),
+      trace: rec("trace"),
+      scheduleReconcile: rec("scheduleReconcile"),
+      agentTitleOf: () => "Agent",
+      getAskCard: () => undefined,
+    },
   }
   return { deps, calls }
 }
