@@ -19,6 +19,7 @@ describe('runtime contract capabilities', () => {
       sessionBranchApi: true,
       turnBudgetApi: false,
       questionApi: true,
+      diffApi: true,
     });
   });
 
@@ -36,6 +37,7 @@ describe('runtime contract capabilities', () => {
       sessionBranchApi: false,
       turnBudgetApi: false,
       questionApi: false,
+      diffApi: false,
     });
   });
 

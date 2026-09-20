@@ -47,6 +47,8 @@ export interface RuntimeCapabilities {
   turnBudgetApi?: boolean;
   /** runtime 提供原生 question API（question.list/reply/reject） */
   questionApi?: boolean;
+  /** runtime 提供会话 diff 与工作区 patch 应用（session.diff / vcs.diff / vcs.apply；opencode v2 独有） */
+  diffApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -62,6 +64,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     agentProcessApi: true,
     completionApi: true,
     sessionBranchApi: true,
+    diffApi: true,
     // opencode 适配器不转发 maxTurns/maxCostUsd（SDK 无对应字段）——预算由
     // gateway 侧 BudgetGuard 承担；声明 true 会让 attachBudgetGuardForGoal
     // 跳过挂载，goal 预算在默认 runtime 上完全失效。
@@ -84,6 +87,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     sessionBranchApi: false,
     turnBudgetApi: false,
     questionApi: false,
+    diffApi: false,
   };
 }
 
@@ -250,6 +254,21 @@ export interface RuntimeClient {
     revert?(opts: { sessionID: string; messageID: string; partID?: string }): Promise<void>;
     /** 撤销 revert（仅 opencode；pi 不实现——方法缺席即能力缺失） */
     unrevert?(opts: { sessionID: string }): Promise<void>;
+    /**
+     * 会话文件变更 diff（diffApi 能力）。opencode v2 `session.diff`——返回某会话
+     * （可选锚定 messageID）导致的文件变更快照。pi 不实现。
+     */
+    diff?(opts: { sessionID: string; messageID?: string }): Promise<
+      Array<{ file?: string; patch?: string; additions?: number; deletions?: number; status?: string }>
+    >;
+    /**
+     * 工作区 git 原语（diffApi 能力；opencode v2 独有）。apply 将 patch 落到
+     * runtime 工作区（用于 hunk 级反向回退）；diff 返回工作区/分支级 diff。
+     */
+    vcs?: {
+      diff?(opts?: { mode?: 'git' | 'branch' }): Promise<any[]>;
+      apply?(opts: { patch: string }): Promise<void>;
+    };
   };
   global: {
     event(): Promise<any>;

@@ -243,6 +243,24 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
         }
       },
 
+      async diff(opts: { sessionID: string; messageID?: string }) {
+        const result = await client.session.diff({
+          sessionID: opts.sessionID,
+          ...(opts.messageID ? { messageID: opts.messageID } : {}),
+        });
+        return unwrap<any[]>(result) ?? [];
+      },
+
+      vcs: {
+        async diff(opts?: { mode?: 'git' | 'branch' }) {
+          const result = await client.vcs.diff({ mode: opts?.mode ?? 'git' });
+          return unwrap<any[]>(result) ?? [];
+        },
+        async apply(opts: { patch: string }) {
+          await client.vcs.apply({ patch: opts.patch });
+        },
+      },
+
       async permissionReply(
         sessionID: string,
         requestId: string,
