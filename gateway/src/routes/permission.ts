@@ -1,5 +1,6 @@
 import * as http from 'http';
 import { AgentRuntime } from '../runtime/contract';
+import { deriveAlwaysRule } from '../core/approval/rules-store';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -10,12 +11,19 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+/** 'always' 回复沉淀持久规则的反查依赖（findRequest 反查审批请求以取 tool/patterns）。 */
+export interface PersistAlwaysDeps {
+  rules: { add(rule: { tool: string; pattern?: string; action: 'allow' }): { ok: boolean } };
+  findRequest(): Promise<{ permission?: string; toolName?: string; patterns?: string[] } | null>;
+}
+
 export async function handlePermissionReply(
   runtime: AgentRuntime | null,
   req: http.IncomingMessage,
   res: http.ServerResponse,
   sessionID: string,
   requestId: string,
+  persistDeps?: PersistAlwaysDeps,
 ): Promise<void> {
   if (!runtime?.session?.permissionReply) {
     res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -43,6 +51,19 @@ export async function handlePermissionReply(
       return;
     }
 
+    // 切片 1：'always' 回复自动沉淀持久规则（无需客户端 persist:true；scope 见下；
+    // fail-open：反查失败只 warn，不阻断已成功的回复）。
+    if (reply === 'always' && persistDeps) {
+      try {
+        const found = await persistDeps.findRequest();
+        const scope = body.persist === 'tool' ? 'tool' : body.persist === 'prefix' ? 'prefix' : true;
+        const rule = deriveAlwaysRule(found ?? {}, scope);
+        if (rule) persistDeps.rules.add(rule);
+      } catch (err: any) {
+        console.warn('[Permission] persist always rule failed (non-fatal):', err?.message);
+      }
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
   } catch (err: any) {
@@ -51,17 +72,3 @@ export async function handlePermissionReply(
   }
 }
 
-/** 'always' + persist 的白名单写回：patterns[0] 去尾部 * 为 prefix，patterns 空则裸工具名。
- *  仅供 /api/permissions/:id/reply 路由（有 permissionList 反查）；sessionID 直连路由不支持 persist。 */
-export function persistAlwaysToAllowlist(
-  store: { add(entry: { tool: string; prefix?: string }): { ok: boolean; entries: unknown[] } },
-  found: { permission?: string; toolName?: string; patterns?: string[] },
-): { tool: string; prefix?: string } | null {
-  const tool = String(found?.permission ?? found?.toolName ?? '').trim();
-  if (!tool) return null;
-  const firstPattern = Array.isArray(found?.patterns) ? String(found.patterns[0] ?? '').trim() : '';
-  const prefix = firstPattern.replace(/\*+$/, '').trim();
-  const entry = prefix ? { tool, prefix } : { tool };
-  store.add(entry);
-  return entry;
-}

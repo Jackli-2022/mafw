@@ -91,7 +91,8 @@ import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntim
 import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
-import { handlePermissionReply, persistAlwaysToAllowlist } from './routes/permission';
+import { handlePermissionReply } from './routes/permission';
+import { deriveAlwaysRule } from './core/approval/rules-store';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
@@ -4170,12 +4171,15 @@ class MafwScheduler {
             if (!ok) {
               res.writeHead(404); res.end(JSON.stringify({ status: 'error', error: 'permission request not found' })); return;
             }
-            // always + persist：runtime 回复成功后把 tool/prefix 写持久白名单（fail-open 不阻塞）
-            if (body.persist === true && reply === 'always') {
+            // always：回复成功后沉淀持久规则（spec 切片 1；scope 由 persist 参数控制，
+            // 缺省 true = prefix 优先自动推导；fail-open 不阻塞回复）
+            if (reply === 'always') {
               try {
-                persistAlwaysToAllowlist(this.allowlistStore, found);
+                const scope = body.persist === 'tool' ? 'tool' : body.persist === 'prefix' ? 'prefix' : true;
+                const rule = deriveAlwaysRule(found, scope);
+                if (rule) this.permissionRules.add(rule);
               } catch (persistErr: any) {
-                log.warn(`[Permission] persist always to allowlist failed (non-fatal): ${persistErr.message}`);
+                log.warn(`[Permission] persist always rule failed (non-fatal): ${persistErr.message}`);
               }
             }
             res.end(JSON.stringify({ status: 'ok' }));
@@ -4510,7 +4514,17 @@ class MafwScheduler {
         // POST /api/sessions/{id}/permissions/{requestId} — forward permission reply to runtime
         const permMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/permissions\/([^/]+)(?:\?|$)/);
         if (permMatch && req.method === 'POST') {
-          await handlePermissionReply(this.runtime, req, res, permMatch[1], permMatch[2]);
+          // 直连路由与主 reply 路由对称：always 也沉淀持久规则（反查失败 fail-open）
+          await handlePermissionReply(this.runtime, req, res, permMatch[1], permMatch[2], {
+            rules: this.permissionRules,
+            findRequest: async () => {
+              try {
+                if (!this.runtime?.session?.permissionList) return null;
+                const pending = await this.runtime.session.permissionList();
+                return (Array.isArray(pending) ? pending : []).find((p: any) => p?.id === permMatch[2]) ?? null;
+              } catch { return null; }
+            },
+          });
           return;
         }
 
