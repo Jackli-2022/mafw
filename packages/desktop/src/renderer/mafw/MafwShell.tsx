@@ -19,6 +19,7 @@ import { Rail } from "./components/Rail"
 import { sessionStore } from "./session-store"
   import { planSessionEvent, type RawSessionEvent, isTailAccountedAtShell } from "./session-events"
   import { traceEvent } from "./event-trace"
+import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
   import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
@@ -1247,6 +1248,34 @@ export function MafwShell() {
     onCleanup(unsubConn)
   })
 
+  // SSE 事件副作用经 dispatcher 的 deps 注入（纯路由可单测）；
+  // 各分支语义与 onmessage 原实现逐字对应。
+  const sseDeps: ShellEventDeps = {
+    core: {
+      trace: traceEvent,
+      notify: notifyIfHidden,
+      warn: (m) => console.warn(m),
+      setActiveQuestion: (q) => setActiveQuestion(q as QuestionData),
+      bumpProjectsRev: () => setProjectsRev(v => v + 1),
+      onRuntimeSwitched: () => {
+        sessionStore.invalidate()
+        void refreshMenus()
+        resetChatWorkspace()
+        if (currentProject()) reloadManagerSession(currentProject()!)
+      },
+    },
+    lifecycle: {
+      invalidate: () => sessionStore.invalidate(),
+      patch: (id, patch) => sessionStore.patch(id, patch),
+      retitleOpenTab: (id, title) => {
+        setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s))
+        setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title } : x) }))
+      },
+      remove: (id) => sessionStore.remove(id),
+      closeIfOpen: (id) => { if (sessions().some(s => s.id === id)) closeSession(id) },
+    },
+  }
+
   async function connectSse() {
     if (es) return
     const info = await window.api.mafw.gateway.info()
@@ -1294,63 +1323,9 @@ export function MafwShell() {
       const event = raw?.data || raw
       if (!event) return
 
-      if (event.type === "user_question") {
-        traceEvent(event, "notify:question")
-        console.log("[mafw] SSE user_question", event.goalId, event.questionId)
-        setActiveQuestion(event as QuestionData)
-        notifyIfHidden("MAFW：Agent 需要你的回答", String(event.question || "").slice(0, 80))
-        return
-      }
-
-      if (event.type === "project_registered") {
-        traceEvent(event, "rail:projects")
-        // Flat top-level broadcast (no data envelope): raw.data is absent so
-        // the fields live directly on the event.
-        console.log("[mafw] SSE project_registered", event.projectDir)
-        setProjectsRev(v => v + 1)
-        return
-      }
-
-      if (event.type === "runtime_switched") {
-        traceEvent(event, "rail:runtime")
-        console.log("[mafw] SSE runtime_switched", event.runtime)
-        // Runtime switch swaps the session storage backend (opencode SQLite vs
-        // pi) — cached session lists, model/agent menus, and open tabs belong
-        // to the previous runtime. Refetch menus and reset the chat workspace
-        // to the fresh-launch state (welcome page).
-        sessionStore.invalidate()
-        void refreshMenus()
-        resetChatWorkspace()
-        if (currentProject()) reloadManagerSession(currentProject()!)
-        return
-      }
-
-      // Session list lifecycle (Rail interactivity): created/updated/deleted
-      // from ANY client (TUI, CLI, another window) sync the local caches via
-      // the session-events planner (hidden-session parity + field whitelist,
-      // so the local metadata.mafw.role marker survives info that lacks it).
-      if (event.type === "session.created" || event.type === "session.updated" || event.type === "session.deleted") {
-        traceEvent(event, "rail:planner")
-        const action = planSessionEvent(event as RawSessionEvent)
-        if (action.kind === "invalidate") {
-          // Broadcast carries no project mapping — refetch the cached buckets.
-          sessionStore.invalidate()
-        } else if (action.kind === "patch") {
-          sessionStore.patch(action.id, action.patch)
-          const title = action.patch.title
-          if (typeof title === "string") {
-            // Tab strip + ChatPane keep their own title copies — patch both.
-            setSessions(prev => prev.map(s => s.id === action.id ? { ...s, title } : s))
-            setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === action.id ? { ...x, title } : x) }))
-          }
-        } else if (action.kind === "remove") {
-          sessionStore.remove(action.id)
-          // External delete of an open tab: closeSession handles the active
-          // fallback, split-view leaf removal and layout state.
-          if (sessions().some(s => s.id === action.id)) closeSession(action.id)
-        }
-        return
-      }
+      // 无 sid 依赖的分支走 dispatcher（core + session 生命周期，纯路由可单测）。
+      const before = ["user_question", "project_registered", "runtime_switched", "session.created", "session.updated", "session.deleted"]
+      if (before.includes(event.type)) { dispatchShellEvent(event, sseDeps); return }
 
       // sessionID may be top-level (gateway-normalized) or nested in opencode event properties
       const sid = event?.sessionID
