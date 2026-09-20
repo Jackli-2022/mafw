@@ -2298,18 +2298,24 @@ export function MafwShell() {
                      </div>
                    }
                  >
-                  <WelcomeHome
-                    projects={projects()}
-                    currentProject={currentProject()}
-                    onSelectProject={(w) => void handleSelectProject(w)}
-                    openSessions={sessions()}
-                    historySessions={historySessions()}
-                    onSelect={(sid) => { const h = historySessions().find(x => x.id === sid); openSessionTab(sid, h?.title) }}
-                    onCreate={() => void createSession()}
-                    onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }}
-                    onNewGoal={handleNewGoal}
-                    onOpenManager={handleOpenManager}
-                  />
+                   <WelcomeHome
+                     projects={projects()}
+                     currentProject={currentProject()}
+                     onSelectProject={(w) => void handleSelectProject(w)}
+                     openSessions={sessions()}
+                     historySessions={historySessions()}
+                     onSelect={(sid) => { const h = historySessions().find(x => x.id === sid); openSessionTab(sid, h?.title) }}
+                     onCreate={() => void createSession()}
+                     onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }}
+                     onNewGoal={handleNewGoal}
+                     onOpenManager={handleOpenManager}
+                     hasPlanAgent={primaryAgents().some(a => a.name === "plan")}
+                     onStartWithPlan={() => {
+                       const planEntry = primaryAgents().find(a => a.name === "plan")
+                       if (!planEntry) return
+                       void createSession().then((sid) => { if (sid) applyAgentSwitch(planEntry, sid) })
+                     }}
+                   />
                 </Show>
                 {/* Split direction menus */}
                 <Show when={splitMenuFor()}>

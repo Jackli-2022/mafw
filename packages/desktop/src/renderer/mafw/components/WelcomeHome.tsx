@@ -26,6 +26,9 @@ export function WelcomeHome(props: {
   onNavigate: (tab: "chat" | "goals" | "memory" | "approvals" | "triage" | "automation") => void
   onNewGoal: (description: string, opts?: { planReview?: boolean }) => Promise<boolean>
   onOpenManager: () => Promise<boolean>
+  /** plan-first 引导（切片 3）：能力门由 MafwShell 传（primaryAgents 含 plan） */
+  hasPlanAgent?: boolean
+  onStartWithPlan?: () => void
 }) {
   const [goals, setGoals] = createSignal<any[]>([])
   const [approvals, setApprovals] = createSignal<any[]>([])
@@ -143,6 +146,11 @@ export function WelcomeHome(props: {
       {/* Quick actions */}
       <div class="mafw-welcome-actions">
         <ButtonV2 variant="contrast" icon="edit" onClick={props.onCreate}>新建会话</ButtonV2>
+        <Show when={props.hasPlanAgent}>
+          <ButtonV2 variant="outline" icon="file" onClick={() => props.onStartWithPlan?.()}>
+            先规划，再执行
+          </ButtonV2>
+        </Show>
         <ButtonV2 variant="outline" icon="user" onClick={() => void props.onOpenManager()}>Manager 会话</ButtonV2>
         <ButtonV2 variant="outline" icon="target" onClick={() => { setGoalInputOpen(o => !o) }}>新建 Goal</ButtonV2>
         <ButtonV2 variant="outline" icon="check" onClick={() => props.onNavigate("approvals")}>
