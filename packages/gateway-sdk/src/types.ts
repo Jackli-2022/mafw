@@ -597,13 +597,29 @@ export interface QuestionsNamespace {
   reject(id: string): Promise<void>
 }
 
+/** 持久审批规则（切片 1：~/.mafw/permission-rules.json）。 */
+export interface PermissionRule {
+  tool: string
+  /** 尾部 `*` 表示前缀匹配；缺省 = 工具级 */
+  pattern?: string
+  action: 'allow'
+}
+
 export interface PermissionsNamespace {
   list(): Promise<PermissionRequest[]>
-  reply(id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean): Promise<void>
-  /** per-session 审批模式（gateway kv 持久；新会话恒 manual） */
-  getMode(sessionID: string): Promise<{ mode: 'manual' | 'auto'; autoApprovals: number; budget: number }>
-  setMode(sessionID: string, mode: 'manual' | 'auto'): Promise<void>
-  /** 持久白名单（~/.mafw/config.yaml approval 段） */
+  reply(id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean | 'tool' | 'prefix'): Promise<void>
+  /**
+   * per-session 审批模式（gateway kv 持久）。三档预设：read-only（只读工具放行、变更必问）/
+   * auto（工作区内自由、危险问、25 次预算回落 read-only）/ full-access（全放）。
+   * legacy 'manual' 由 gateway 归一化 read-only。
+   */
+  getMode(sessionID: string): Promise<{ mode: 'read-only' | 'auto' | 'full-access'; autoApprovals: number; budget: number }>
+  setMode(sessionID: string, mode: 'read-only' | 'auto' | 'full-access'): Promise<void>
+  /** 持久规则（~/.mafw/permission-rules.json；切片 1 起的规则唯一存储） */
+  listRules(): Promise<{ entries: PermissionRule[] }>
+  addRule(rule: { tool: string; pattern?: string }): Promise<{ success: boolean; entries: PermissionRule[] }>
+  removeRule(rule: { tool: string; pattern?: string }): Promise<{ success: boolean; entries: PermissionRule[] }>
+  /** legacy 白名单（config.yaml approval 段；gateway 双读过渡，新代码用 rules） */
   listAllowlist(): Promise<{ entries: Array<{ tool: string; prefix?: string }> }>
   addAllowlist(entry: { tool: string; prefix?: string }): Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }>
   removeAllowlist(entry: { tool: string; prefix?: string }): Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }>

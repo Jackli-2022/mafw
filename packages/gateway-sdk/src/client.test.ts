@@ -828,3 +828,37 @@ test("permissions.reply appends persist param to body", async () => {
   const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
   expect(body).toEqual({ reply: "always", message: undefined, persist: true })
 })
+
+test("permissions.reply accepts persist scope string ('tool'|'prefix')", async () => {
+  fetchMock.mockResolvedValue(okJson({ status: "ok" }))
+  const c = new MafwClient("http://gw:3000")
+  await c.permissions.reply("id1", "always", undefined, "tool")
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body.persist).toBe("tool")
+})
+
+test("permissions.listRules sends GET /api/approvals/rules", async () => {
+  fetchMock.mockResolvedValue(okJson({ entries: [{ tool: "bash", pattern: "git status", action: "allow" }] }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.permissions.listRules()
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/approvals/rules", expect.anything())
+  expect(r.entries).toEqual([{ tool: "bash", pattern: "git status", action: "allow" }])
+})
+
+test("permissions.addRule sends POST rule", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: true, entries: [] }))
+  const c = new MafwClient("http://gw:3000")
+  await c.permissions.addRule({ tool: "bash", pattern: "git status" })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/approvals/rules",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toEqual({ tool: "bash", pattern: "git status" })
+})
+
+test("permissions.removeRule sends DELETE rule", async () => {
+  fetchMock.mockResolvedValue(okJson({ success: true, entries: [] }))
+  const c = new MafwClient("http://gw:3000")
+  await c.permissions.removeRule({ tool: "read" })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/approvals/rules",
+    expect.objectContaining({ method: "DELETE" }))
+})

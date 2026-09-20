@@ -83,6 +83,7 @@ import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
 import { PermissionRulesStore } from './core/approval/rules-store';
+import { normalizeMode, SessionPermissionMode } from './core/approval/policy-service';
 import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
@@ -93,6 +94,7 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
+import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
@@ -1858,7 +1860,10 @@ class MafwScheduler {
       getInternalRole: (sid) => this.internalSessionRoles.get(sid),
       allowlistMatches: (toolName, candidate) =>
         this.permissionRules.matches(toolName, candidate) || this.allowlistStore.matches(toolName, candidate),
-      loadMode: async (sid) => this.getGatewayDb().kvGet<'manual' | 'auto' | 'read-only' | 'full-access'>('perm-mode', sid) ?? 'read-only',
+      loadMode: async (sid) => {
+        const raw = this.getGatewayDb().kvGet<string>('perm-mode', sid);
+        return raw ? (normalizeMode(raw) as SessionPermissionMode) : 'read-only';
+      },
       saveMode: async (sid, mode) => { this.getGatewayDb().kvSet('perm-mode', sid, mode); },
       onModeChanged: (sid, mode, reason) => {
         this.broadcast(opencodeBroadcast({ type: 'permission_mode', properties: { mode, reason }, sessionID: sid }));
@@ -4143,6 +4148,17 @@ class MafwScheduler {
           if (req.method === 'GET') await handleAllowlistGet(res, alDeps);
           else if (req.method === 'POST') await handleAllowlistPost(req, res, alDeps);
           else if (req.method === 'DELETE') await handleAllowlistDelete(req, res, alDeps);
+          else { res.writeHead(405); res.end(); }
+          return;
+        }
+
+        // 持久规则 CRUD（切片 1）—— 与 allowlist 同级注册
+        const rulesMatch = req.url?.match(/^\/api\/approvals\/rules(?:\?|$)/);
+        if (rulesMatch) {
+          const rulesDeps = { store: this.permissionRules };
+          if (req.method === 'GET') await handleRulesGet(res, rulesDeps);
+          else if (req.method === 'POST') await handleRulesPost(req, res, rulesDeps);
+          else if (req.method === 'DELETE') await handleRulesDelete(req, res, rulesDeps);
           else { res.writeHead(405); res.end(); }
           return;
         }

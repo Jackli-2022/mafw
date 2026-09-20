@@ -6,7 +6,7 @@ import {
   StickyNote, StickyNoteBudget, ModelUsageWindows,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
-  QuestionRequest, PermissionRequest, MediaPluginState,
+  QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -730,7 +730,7 @@ export class MafwClient implements IMafwClient {
       id: string,
       reply: 'once' | 'always' | 'reject',
       message?: string,
-      persist?: boolean,
+      persist?: boolean | 'tool' | 'prefix',
     ): Promise<void> => {
       await this.request(`/api/permissions/${id}/reply`, {
         method: 'POST',
@@ -740,15 +740,34 @@ export class MafwClient implements IMafwClient {
 
     getMode: async (
       sessionID: string,
-    ): Promise<{ mode: 'manual' | 'auto'; autoApprovals: number; budget: number }> => {
+    ): Promise<{ mode: 'read-only' | 'auto' | 'full-access'; autoApprovals: number; budget: number }> => {
       return this.request(`/api/sessions/${encodeURIComponent(sessionID)}/permission-mode`)
     },
 
-    setMode: async (sessionID: string, mode: 'manual' | 'auto'): Promise<void> => {
+    setMode: async (
+      sessionID: string,
+      mode: 'read-only' | 'auto' | 'full-access',
+    ): Promise<void> => {
       await this.request(`/api/sessions/${encodeURIComponent(sessionID)}/permission-mode`, {
         method: 'POST',
         body: JSON.stringify({ mode }),
       })
+    },
+
+    listRules: async (): Promise<{ entries: PermissionRule[] }> => {
+      return this.request('/api/approvals/rules')
+    },
+
+    addRule: async (
+      rule: { tool: string; pattern?: string },
+    ): Promise<{ success: boolean; entries: PermissionRule[] }> => {
+      return this.request('/api/approvals/rules', { method: 'POST', body: JSON.stringify(rule) })
+    },
+
+    removeRule: async (
+      rule: { tool: string; pattern?: string },
+    ): Promise<{ success: boolean; entries: PermissionRule[] }> => {
+      return this.request('/api/approvals/rules', { method: 'DELETE', body: JSON.stringify(rule) })
     },
 
     listAllowlist: async (): Promise<{ entries: Array<{ tool: string; prefix?: string }> }> => {

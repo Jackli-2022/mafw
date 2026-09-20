@@ -1906,6 +1906,41 @@
         }
       }
     },
+    "/api/approvals/rules": {
+      "get": {
+        "operationId": "permissions.listRules",
+        "tags": [
+          "permissions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "permissions.addRule",
+        "tags": [
+          "permissions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "permissions.removeRule",
+        "tags": [
+          "permissions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/chat": {
       "post": {
         "operationId": "chat.send",
