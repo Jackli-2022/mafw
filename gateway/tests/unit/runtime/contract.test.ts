@@ -20,6 +20,7 @@ describe('runtime contract capabilities', () => {
       turnBudgetApi: false,
       questionApi: true,
       diffApi: true,
+      worktreeApi: true,
     });
   });
 
@@ -38,6 +39,7 @@ describe('runtime contract capabilities', () => {
       turnBudgetApi: false,
       questionApi: false,
       diffApi: false,
+      worktreeApi: false,
     });
   });
 

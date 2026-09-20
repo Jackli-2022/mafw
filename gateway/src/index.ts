@@ -77,6 +77,7 @@ import { PairingService } from './mobile/pairing';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
+import { RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
 import { ApprovalPolicyService } from './core/approval/policy-service';
@@ -95,6 +96,7 @@ import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
+import { createSessionWithWorktree, cleanupWorktreeForSession } from './routes/session-worktree';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
@@ -919,6 +921,10 @@ class MafwScheduler {
 
   private handleOpencodeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
+    // opencode v2 sync 信封：与 legacy 事件双发的状态重同步噪声，gateway
+    // 边界丢弃（处置登记于 event-flow-matrix.ts RUNTIME_NATIVE_DROPPED）。
+    // 放行会重复处理 + desktop miss 告警 + [SSE] 日志刷屏。
+    if (RUNTIME_NATIVE_DROPPED.has(f.type)) return;
     // 畸形事件诊断（限频）：runtime 插件发来的事件 type/properties 全空时
     // 静默穿过会污染 trajectory 与桌面 SSE——这里给可定位诊断。
     if (isMalformedEvent(evt)) {
@@ -4429,7 +4435,16 @@ class MafwScheduler {
           try {
             const body = await readBody(req);
             const opts = body ? JSON.parse(body) : {};
-            const result = await this.sdkSession.create(opts.directory, opts.metadata);
+            // 切片 4：worktree 参数 → git worktree add + 会话绑定 worktree 目录 + kv 映射
+            const result = await createSessionWithWorktree(
+              {
+                kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
+                kvSet: (key, id, v) => this.getGatewayDb().kvSet(key, id, v),
+                kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
+                createSession: (directory, metadata) => this.sdkSession.create(directory, metadata),
+              },
+              opts,
+            );
             res.writeHead(200);
             res.end(JSON.stringify(result));
           } catch (err: any) {

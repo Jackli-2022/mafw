@@ -17,6 +17,10 @@ describe('isKnownEventType', () => {
     expect(isKnownEventType('session.next.followup.started')).toBe(true);
   });
 
+  it('accepts runtime-native dropped types (deliberate disposal at the gateway, not unknown)', () => {
+    expect(isKnownEventType('sync')).toBe(true);
+  });
+
   it('rejects unknown types', () => {
     expect(isKnownEventType('my_custom_event')).toBe(false);
     expect(isKnownEventType('session.future.thing')).toBe(false);

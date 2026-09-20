@@ -1,4 +1,4 @@
-import { EVENT_FLOW_MATRIX, assertMatrixComplete } from '../../../src/runtime/event-flow-matrix';
+import { EVENT_FLOW_MATRIX, assertMatrixComplete, RUNTIME_NATIVE_DROPPED } from '../../../src/runtime/event-flow-matrix';
 import { RUNTIME_EVENT_TYPES, FLAT_EVENT_TYPES } from '../../../../packages/gateway-sdk/src/events';
 
 describe('event flow matrix', () => {
@@ -18,6 +18,14 @@ describe('event flow matrix', () => {
     const known = new Set<string>([...RUNTIME_EVENT_TYPES, ...FLAT_EVENT_TYPES]);
     for (const key of Object.keys(EVENT_FLOW_MATRIX)) {
       expect(known.has(key) || key.startsWith('plugin:')).toBe(true);
+    }
+  });
+
+  it('runtime-native dropped types are disposed at the gateway, never broadcast to clients', () => {
+    // opencode v2 sync 信封与 legacy 事件双发：gateway 丢弃，不进客户端契约
+    expect(RUNTIME_NATIVE_DROPPED.has('sync')).toBe(true);
+    for (const t of RUNTIME_NATIVE_DROPPED) {
+      expect(EVENT_FLOW_MATRIX[t]).toBeUndefined();
     }
   });
 

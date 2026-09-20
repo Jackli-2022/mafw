@@ -11,6 +11,8 @@ export interface SessionClientLike {
 export interface SessionMutationDeps {
   getCapabilities: () => { sessionApi?: boolean };
   getClient: () => SessionClientLike | null;
+  /** 切片 4：session 删除成功后的 worktree 联动清理（fail-open；缺省跳过）。 */
+  cleanupWorktree?: (sessionID: string) => Promise<void>;
 }
 
 /**
@@ -46,6 +48,12 @@ export async function handleSessionMutations(
   try {
     if (deleteMatch) {
       await client.session.delete({ sessionID });
+      // 切片 4：worktree 会话删除联动（fail-open，不阻塞删除响应）
+      if (deps.cleanupWorktree) {
+        await deps.cleanupWorktree(sessionID).catch((e: any) => {
+          console.warn(`[Session] worktree cleanup failed for ${sessionID} (non-fatal): ${e?.message}`);
+        });
+      }
       json(200, { ok: true });
       return true;
     }

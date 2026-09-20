@@ -20,6 +20,7 @@ import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, type EmbeddingCo
 import { handleModelConfigGet, handleModelConfigUpdate, type ModelConfigDeps } from './model-config';
 import { handleSessionBranch } from './session-branch';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
+import { cleanupWorktreeForSession } from './session-worktree';
 import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
 import { handleSessionSummarize } from './session-summarize';
 import { handleEventPublish } from './event-publish';
@@ -96,6 +97,16 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleSessionMutations(req, res, {
       getCapabilities: () => gw.runtimeCaps,
       getClient: () => (gw.runtime ?? null) as any,
+      cleanupWorktree: (sid) => {
+        const db = (gw as any).getGatewayDb?.();
+        if (!db) return Promise.resolve();
+        return cleanupWorktreeForSession({
+          kvGet: (key, id) => db.kvGet(key, id),
+          kvSet: (key, id, v) => db.kvSet(key, id, v),
+          kvDel: (key, id) => db.kvDelete(key, id),
+          createSession: async () => ({ id: '' }),
+        }, sid);
+      },
     })));
   registry.attachHandler('session.rename', H(async (req, res) =>
     handleSessionMutations(req, res, {

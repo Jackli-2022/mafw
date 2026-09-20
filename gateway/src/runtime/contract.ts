@@ -49,6 +49,8 @@ export interface RuntimeCapabilities {
   questionApi?: boolean;
   /** runtime 提供会话 diff 与工作区 patch 应用（session.diff / vcs.diff / vcs.apply；opencode v2 独有） */
   diffApi?: boolean;
+  /** runtime 支持按 directory 创建会话（worktree 并行隔离前提；opencode 天然支持） */
+  worktreeApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -65,6 +67,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     completionApi: true,
     sessionBranchApi: true,
     diffApi: true,
+    worktreeApi: true,
     // opencode 适配器不转发 maxTurns/maxCostUsd（SDK 无对应字段）——预算由
     // gateway 侧 BudgetGuard 承担；声明 true 会让 attachBudgetGuardForGoal
     // 跳过挂载，goal 预算在默认 runtime 上完全失效。
@@ -88,6 +91,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     turnBudgetApi: false,
     questionApi: false,
     diffApi: false,
+    worktreeApi: false,
   };
 }
 
