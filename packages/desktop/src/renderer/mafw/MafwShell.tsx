@@ -57,20 +57,12 @@ import type { PermissionCardData } from "./components/PermissionCard"
 import { mapPermissionCard as mapPermissionCardPure } from "./components/permission-card-mapping"
 import type { ModelEntry } from "./components/pickers/ModelPicker"
 import { messageModel } from "./message-model"
+import { workspace, type ChatSession } from "./workspace/session-workspace"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
 import "./mafw.css"
 
-interface ChatSession {
-  id: string
-  title: string
-  userMsgId: string
-  assistantMsgId: string | null
-  done: boolean
-  manager?: boolean
-  metadata?: { mafw?: { role?: string } }
-}
 export function MafwShell() {
   const [activeTab, setActiveTab] = createSignal<Tab>("chat")
   const [showConfig, setShowConfig] = createSignal(false)
@@ -84,20 +76,19 @@ export function MafwShell() {
   const [defaultModel, setDefaultModel] = createSignal<ModelSel | null>(null)
 
   // Reactive data store for SessionTurn (SolidJS store Proxy for fine-grained tracking)
-  const [store, setStore] = createStore({
-    session: [] as any[],
-    session_status: {} as Record<string, any>,
-    session_diff: {} as Record<string, any[]>,
-    message: {} as Record<string, any[]>,
-    part: {} as Record<string, any[]>,
-  })
+  // 会话工作区状态收敛为模块单例（workspace/session-workspace.ts）；
+  // 以下别名为同一 signal/store 对象，全部调用点保持原语法零改动。
+  const store = workspace.store
+  const setStore = workspace.setStore
 
   // Question widget state
   const [activeQuestion, setActiveQuestion] = createSignal<QuestionData | null>(null)
 
   // Chat sessions (tabs)
-  const [sessions, setSessions] = createSignal<ChatSession[]>([])
-  const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null)
+  const sessions = workspace.sessions
+  const setSessions = workspace.setSessions
+  const activeSessionId = workspace.activeId
+  const setActiveSessionId = workspace.setActiveId
   // Session list refresh: shared sessionStore.invalidate() (see SSE onopen and
   // session create/close flows). The old sessionRefreshKey signal is removed.
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
@@ -333,9 +324,10 @@ export function MafwShell() {
   // Scroll anchors / sending-reset per session, keyed by sid. Used by
   // loadHistory to scroll the pane showing a session, and by the SSE lifecycle
   // to clear a pane's "stop" button state.
-  const anchorRegistry: Record<string, () => void> = {}
-  const sendingResetters: Record<string, () => void> = {}
-  const queueFlushers: Record<string, () => void> = {}
+  // 回调注册表收敛于 workspace（Record 形态保留，兼容 registry[sid]?.() 调用点）
+  const anchorRegistry = workspace.records.anchor
+  const sendingResetters = workspace.records.sendingReset
+  const queueFlushers = workspace.records.queueFlush
 
   // OS notification only when the window is hidden (tray/minimized); the
   // in-app toasts remain the primary feedback while the window is visible.
@@ -471,9 +463,9 @@ export function MafwShell() {
   // Compaction boundary marks per session (session.compacted SSE events) —
   // rendered by ChatPane as a divider above the surviving context.
   const [compactionMarks, setCompactionMarks] = createSignal<Record<string, { at: number; summary?: string }>>({})
-  const phaseUpdaters: Record<string, (p: 'idle' | 'searching' | 'writing') => void> = {}
+  const phaseUpdaters = workspace.records.phase
   // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
-  const mediaSpeakHandlers: Record<string, (text: string, voice?: string) => void> = {}
+  const mediaSpeakHandlers = workspace.records.mediaSpeak
 
   const [splitViews, setSplitViews] = createSignal<SplitViewRec[]>(loadSplitViews())
   const [activeViewId, setActiveViewId] = createSignal<string | null>(null)
