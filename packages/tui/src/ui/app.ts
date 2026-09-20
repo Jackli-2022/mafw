@@ -233,11 +233,17 @@ export async function runApp(opts: AppOptions): Promise<void> {
       setStatus({ hint: theme.dim('（当前项目无会话）') })
       return
     }
-    const items: SelectItem[] = sessions.map((s: any) => ({
-      value: s.id,
-      label: `${s.title || String(s.id).slice(0, 20)}${s.id === managerSessionID ? theme.ok(' ★manager') : ''}`,
-      description: s.time?.updated ? new Date(s.time.updated).toLocaleString() : '',
-    }))
+    const items: SelectItem[] = sessions.map((s: any) => {
+      // 切片 4：worktree 会话标注（directory 落在项目子目录 `<base>-wt-*`）
+      const dir = String(s.directory ?? '').replace(/\\/g, '/')
+      const base = dir.split('/').pop() ?? ''
+      const wt = base.includes('-wt-') ? ` ⎇${base.split('-wt-').pop()}` : ''
+      return {
+        value: s.id,
+        label: `${s.title || String(s.id).slice(0, 20)}${theme.dim(wt)}${s.id === managerSessionID ? theme.ok(' ★manager') : ''}`,
+        description: s.time?.updated ? new Date(s.time.updated).toLocaleString() : '',
+      }
+    })
     const list = new SelectList(items, Math.min(items.length, 10), selectListTheme)
     const handle = tui.showOverlay(new ClickableSelectList(list), { width: '70%', maxHeight: 16, anchor: 'center' })
     const close = () => { off(); handle.hide() }
