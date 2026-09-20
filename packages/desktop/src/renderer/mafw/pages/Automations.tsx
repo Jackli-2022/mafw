@@ -2,6 +2,7 @@
 import { createSignal, createEffect, onCleanup, Show } from "solid-js"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { PageHeader } from "../components/PageHeader"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
@@ -74,7 +75,7 @@ export function AutomationsPage() {
   return (
     <div>
       <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", "margin-bottom": 12 }}>
-        <h2 class="mafw-page-title" style={{ margin: 0 }}>Automations</h2>
+        <PageHeader title="Automations" subtitle="定时与事件驱动任务" />
         <ButtonV2 variant="outline" size="small" onClick={() => setFormOpen(o => !o)}>{formOpen() ? "收起" : "+ 新建规则"}</ButtonV2>
       </div>
 

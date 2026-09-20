@@ -2,6 +2,7 @@
 import { createSignal, createEffect, onCleanup } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { PageHeader } from "../components/PageHeader"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
@@ -43,7 +44,7 @@ export function TriagePage() {
 
   return (
     <div>
-      <h2 class="mafw-page-title">Triage</h2>
+      <PageHeader title="Triage" subtitle="自动化扫描结果确认" />
         {loading() ? (
           <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "20px 0" }}>
             <LoaderV2 width={16} height={16} />

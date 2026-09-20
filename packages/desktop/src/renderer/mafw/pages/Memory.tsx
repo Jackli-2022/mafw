@@ -2,6 +2,7 @@
 import { createSignal, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
+import { PageHeader } from "../components/PageHeader"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
@@ -75,7 +76,7 @@ export function MemoryPage() {
 
   return (
     <div>
-      <h2 class="mafw-page-title">Memory</h2>
+      <PageHeader title="Memory" subtitle="谐波记忆检索与便签板" />
 
       {/* Energy distribution badges */}
       {dist() && (

@@ -2,6 +2,7 @@
 import { createSignal, createEffect, For, Show, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { PageHeader } from "../components/PageHeader"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 
@@ -44,7 +45,7 @@ export function ApprovalsPage(props: {
 
   return (
     <div>
-      <h2 class="mafw-page-title">Approvals</h2>
+      <PageHeader title="Approvals" subtitle="待审批的工具调用" />
       {loading() ? (
         <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "20px 0" }}>
           <LoaderV2 width={16} height={16} />

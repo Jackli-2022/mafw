@@ -146,3 +146,16 @@ describe("Rail CTA + UsagePill v4", () => {
   test("UsagePill 数字 tabular", () =>
     expect(cssBlock(".mafw-usage-pill {")).toContain("font-variant-numeric: tabular-nums"))
 })
+
+describe("PageHeader v4", () => {
+  test("页头 flex 两端布局", () => {
+    const b = cssBlock(".mafw-page-header {")
+    expect(b).toContain("display: flex")
+    expect(b).toContain("justify-content: space-between")
+  })
+  test("副标题 12px muted", () => {
+    const b = cssBlock(".mafw-page-subtitle {")
+    expect(b).toContain("font-size: 12px")
+    expect(b).toContain("color: var(--text-3)")
+  })
+})

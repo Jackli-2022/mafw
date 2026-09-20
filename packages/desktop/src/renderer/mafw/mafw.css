@@ -1537,12 +1537,26 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 
 /* ── Page shared ── */
+.mafw-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.mafw-page-header-text { min-width: 0; }
 .mafw-page-title {
   font-size: 14px;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: 2px;
   color: var(--text-strong);
 }
+.mafw-page-subtitle {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+.mafw-page-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 /* ── ConfigPage: gateway ops ── */
 .mafw-config-head {

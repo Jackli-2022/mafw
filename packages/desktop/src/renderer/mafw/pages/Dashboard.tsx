@@ -4,6 +4,7 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
+import { PageHeader } from "../components/PageHeader"
 
 export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) {
   const [goals, setGoals] = createSignal<any[]>([])
@@ -46,7 +47,7 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) 
 
   return (
     <div>
-      <h2 class="mafw-page-title">Goals</h2>
+      <PageHeader title="Goals" subtitle="目标编排总览" />
       <div style={{ display: "grid", "grid-template-columns": "repeat(4, 1fr)", gap: 12, "margin-bottom": 24 }}>
         {kpis.map(kpi => (
           <div class="mafw-kpi-card">
