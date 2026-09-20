@@ -814,7 +814,30 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   （`TurnPipeline.runSession`，fail-open，与 hourly cron 互斥）
 - `permissionReply(sessionID, requestId, 'once'|'always'|'reject', message?)` — 三值签名（P1 破坏性变更，
   原 boolean approved）；pi `'always'` = session 级动态 allowlist（运行时 push `policy.autoApprove`，
-  不落盘）；`/api/sessions/:id/permissions/:requestId` body 接受 `{reply, message?}` 兼容旧 `{approved}`
+  不落盘）；`/api/sessions/:id/permissions/:requestId` body 接受 `{reply, message?}` 兼容旧 `{approved}`；
+  **切片 1 起 'always' 在两条 reply 路由都自动沉淀持久规则**（`persist` 参数 `'tool'|'prefix'|true` 控制
+  粒度，缺省 true=prefix 优先自动推导；fail-open）
+
+#### 审批三档预设（2026-09-20，切片 1）
+
+`ApprovalPolicyService` mode 从 manual/auto 二档升级为三档预设（spec `2026-09-20-desktop-ux-refactor-design.md` §3）：
+
+- **三档语义**：`read-only`（只读工具 `isReadOnlyTool` 自动放行，任何变更 human）→ `auto`（安全命令免审、
+  危险正则 human、25 次预算耗尽**回落 read-only** 并广播）→ `full-access`（一律 auto-approve，不计数，
+  内部会话 auto-deny 仍最高优先）
+- **legacy 兼容**：kv 存量 `'manual'` 由 `normalizeMode` 读归一化 `'read-only'`；`POST permission-mode`
+  仍接受 `'manual'`；未知值一律 read-only（fail 保守）
+- **规则存储**：`~/.mafw/permission-rules.json`（`PermissionRulesStore`，条目 `{tool, pattern?, action:'allow'}`，
+  原子写、损坏 fail-open 空表）；evaluate 双读 `rules.matches || allowlistStore.matches`（config.yaml
+  `approval.allowlist` 为 legacy 过渡）；pattern 尾 `*` = 前缀匹配（对 commandText 与 patterns）
+- **规则沉淀**：`deriveAlwaysRule(found, scope)` 纯函数（scope true=prefix 优先/'tool'/'prefix'）；reply 路由
+  always 分支 fail-open 写规则；`/api/approvals/rules` GET/POST/DELETE CRUD（契约已登记，SDK
+  `permissions.listRules/addRule/removeRule`）
+- **三端**：desktop 🛡 按钮三档循环 + PermissionCard「记此前缀(P)/记此工具(T)」双按钮 +
+  ApprovalsSection 切 rules API；TUI `/permissions` 三档循环 + 状态栏 `permLabel`（`🛡 全开`）+ overlay
+  五项（once/always/persist/persist-tool/reject）
+- **已知边界**：pi 扩展内置 `autoApprove`（read/grep/ls/find/glob）先于 gateway 放行的旁路未统一——
+  这些只读工具在 MAFW 层本也放行，语义一致；opencode 原生 agent permission 配置与 MAFW 层正交保留
 - `questionApi?: boolean` + `session.question.{list,reply,reject}` — 原生 question 通道（opencode v2 SDK
   `session.question.*` 直连；pi 无 question API 不实现）；`/api/questions*` 能力门按
   `questionApi ?? nativeApprovals` 向后兼容
