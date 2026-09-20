@@ -70,14 +70,15 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) 
             <MafwContextMenu items={goalMenu(g)}>
               <div class="mafw-card">
                 <div>
-                  <div class="mafw-card-title">{g.goalId}</div>
+                  <div class="mafw-card-title">{g.title || g.goalId}</div>
                   <div class="mafw-card-meta">Wave {g.currentWave}/{g.totalWaves} · Loop {g.loop}</div>
                 </div>
                 <div style={{ display: "flex", "align-items": "center", gap: 8, "margin-left": "auto" }}>
-                  <span class="mafw-badge" style={{
-                    background: g.phase === "COMPLETED" || g.phase === "ARCHIVED" ? "var(--accent-dim)" : g.phase === "FAILED" ? "rgba(232,99,107,0.12)" : "var(--surface-interactive-base)",
-                    color: g.phase === "COMPLETED" || g.phase === "ARCHIVED" ? "var(--accent-text)" : g.phase === "FAILED" ? "#e8636b" : "var(--text-interactive-base)",
-                  }}>{g.phase}</span>
+                  <span class={`mafw-phase-badge ${
+                    g.phase === "COMPLETED" || g.phase === "ARCHIVED" ? "mafw-phase-badge-ok"
+                    : g.phase === "FAILED" ? "mafw-phase-badge-fail"
+                    : "mafw-phase-badge-run"
+                  }`}>{g.phase}</span>
                   <span style={{ "font-size": 11, color: "var(--text-base)" }}>{g.updatedAt ? new Date(g.updatedAt).toLocaleString() : ""}</span>
                 </div>
               </div>

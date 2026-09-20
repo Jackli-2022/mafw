@@ -1640,25 +1640,25 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  margin-bottom: 4px;
-  border: 0.5px solid var(--border-weak-base);
-  border-radius: 6px;
-  background: var(--background-base);
-  transition: background 0.12s;
-  box-shadow: var(--shadow-xxs-border);
+  gap: 12px;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  background: var(--bg-overlay);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
-.mafw-card:hover { background: var(--surface-base-hover); }
+.mafw-card:hover { background: var(--bg-overlay); border-color: var(--text-5); }
 .mafw-card-title { color: var(--text-strong); margin-bottom: 2px; font-size: 13px; font-weight: 500; }
 .mafw-card-meta { color: var(--text-base); font-size: 11px; }
 .mafw-kpi-card {
-  background: var(--surface-raised-base, var(--background-weak));
-  border: 0.5px solid var(--border-weak-base);
-  border-radius: 6px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
   padding: 12px;
   text-align: center;
-  box-shadow: var(--shadow-xxs-border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
 }
 .mafw-kpi-card .mafw-kpi-value {
   font-size: 20px;
@@ -1672,6 +1672,10 @@ html[data-theme="light"] .mafw-picker-pop {
   color: var(--text-base);
 }
 .mafw-badge { padding: 1px 7px; border-radius: 4px; font-size: 11px; }
+.mafw-phase-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mafw-phase-badge-ok { background: var(--accent-soft); color: var(--accent-text); }
+.mafw-phase-badge-fail { background: var(--danger-dim); color: var(--danger-text); }
+.mafw-phase-badge-run { background: var(--bg-overlay); color: var(--text-2); border: 1px solid var(--border-subtle); }
 .mafw-btn {
   padding: 4px 12px;
   border-radius: 6px;

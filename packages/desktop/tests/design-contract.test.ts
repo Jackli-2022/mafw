@@ -182,3 +182,20 @@ describe("EmptyState v4", () => {
     expect(b).toContain("padding: 48px 16px")
   })
 })
+
+describe("卡片 v4 配方", () => {
+  test("mafw-card 顶部内侧高光 + r-lg", () => {
+    const b = cssBlock(".mafw-card {")
+    expect(b).toContain("inset 0 1px 0 rgba(255,255,255,.03)")
+    expect(b).toContain("border-radius: var(--r-lg)")
+  })
+  test("mafw-card hover 边框提亮", () =>
+    expect(cssBlock(".mafw-card:hover {")).toContain("border-color"))
+  test("KPI value tabular", () =>
+    expect(cssBlock(".mafw-kpi-card .mafw-kpi-value {")).toContain("font-variant-numeric: tabular-nums"))
+  test("phase 徽标语义 class", () => {
+    expect(cssBlock(".mafw-phase-badge-ok {")).toContain("background: var(--accent-soft)")
+    expect(cssBlock(".mafw-phase-badge-fail {")).toContain("background: var(--danger-dim)")
+    expect(cssBlock(".mafw-phase-badge-run {")).toContain("background: var(--bg-overlay)")
+  })
+})
