@@ -52,9 +52,9 @@ export class MafwClient implements IMafwClient {
 
   session = {
     create: async (
-      params?: { directory?: string; metadata?: Record<string, unknown> },
-    ): Promise<Session> => {
-      return this.request<Session>('/api/session', {
+      params?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string },
+    ): Promise<Session & { worktree?: { dir: string; branch: string } }> => {
+      return this.request<Session & { worktree?: { dir: string; branch: string } }>('/api/session', {
         method: 'POST',
         body: JSON.stringify(params || {}),
       })

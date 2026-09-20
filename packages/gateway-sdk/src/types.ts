@@ -283,7 +283,8 @@ export interface GatewayStatus {
 // ============================================================
 
 export interface SessionNamespace {
-  create(params?: { directory?: string; metadata?: Record<string, unknown> }): Promise<Session>
+  /** worktree: true|'<slug>' → git worktree add + 会话绑定隔离目录（切片 4；worktreeApi runtime-only） */
+  create(params?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }): Promise<Session & { worktree?: { dir: string; branch: string } }>
   get(params: { path: { id: string } }): Promise<Session>
   list(params?: { query?: { projectID?: string } }): Promise<Session[]>
   delete(params: { path: { id: string } }): Promise<void>

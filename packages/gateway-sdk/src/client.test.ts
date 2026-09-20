@@ -160,6 +160,17 @@ test("session.revertDiff sends POST patches body", async () => {
   expect(r.reverted).toBe(1)
 })
 
+test("session.create passes worktree option in body", async () => {
+  fetchMock.mockResolvedValue(okJson({ id: "s_wt", worktree: { dir: "C:/p-wt-x", branch: "mafw/x" } }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.create({ directory: "C:/p", worktree: true })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/session",
+    expect.objectContaining({ method: "POST" }))
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toEqual({ directory: "C:/p", worktree: true })
+  expect(r.worktree?.branch).toBe("mafw/x")
+})
+
 test("session.prompt sends POST /api/session/:id/prompt", async () => {
   fetchMock.mockResolvedValue(okJson({ parts: [] }))
   const c = new MafwClient("http://gw:3000")
