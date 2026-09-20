@@ -31,6 +31,13 @@ function makeDeps() {
       agentTitleOf: () => "Agent",
       getAskCard: () => undefined,
     },
+    dock: {
+      trace: rec("trace"),
+      getTrajectoryEvents: () => [],
+      setTrajectoryEvents: rec("setTrajectoryEvents"),
+      setTrajectoryTurn: rec("setTrajectoryTurn"),
+      setTodos: rec("setTodos"),
+    },
   }
   return { deps, calls }
 }

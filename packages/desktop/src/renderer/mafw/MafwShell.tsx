@@ -1264,6 +1264,13 @@ export function MafwShell() {
       agentTitleOf,
       getAskCard: (sid, id) => (flowCards()[sid] || []).find(c => c.kind === "ask" && c.data.id === id)?.data as AskCardData | undefined,
     },
+    dock: {
+      trace: traceEvent,
+      getTrajectoryEvents: (sid) => trajectoryLive()[sid] || [],
+      setTrajectoryEvents: (sid, events) => setTrajectoryLive({ ...trajectoryLive(), [sid]: events }),
+      setTrajectoryTurn: (sid, turn) => setTrajectoryTurnLive({ ...trajectoryTurnLive(), [sid]: turn }),
+      setTodos: (sid, list) => setTodos(sid, list),
+    },
   }
 
   async function connectSse() {
@@ -1313,8 +1320,8 @@ export function MafwShell() {
       const event = raw?.data || raw
       if (!event) return
 
-      // 已迁移到 dispatcher 的分支（core + 生命周期 + flow cards，纯路由可单测）。
-      const before = ["user_question", "project_registered", "runtime_switched", "session.created", "session.updated", "session.deleted", "question.asked", "permission.asked", "permission_mode", "session.compacted", "question.replied", "question.rejected", "permission.replied"]
+      // 已迁移到 dispatcher 的分支（core + 生命周期 + flow cards + dock，纯路由可单测）。
+      const before = ["user_question", "project_registered", "runtime_switched", "session.created", "session.updated", "session.deleted", "question.asked", "permission.asked", "permission_mode", "session.compacted", "question.replied", "question.rejected", "permission.replied", "trajectory.event", "trajectory.turn", "todo.updated"]
       if (before.includes(event.type)) { dispatchShellEvent(event, sseDeps); return }
 
       // sessionID may be top-level (gateway-normalized) or nested in opencode event properties
@@ -1333,33 +1340,6 @@ export function MafwShell() {
       }
       if (!sid) { missTrace(); return }
 
-      if (event.type === "trajectory.event") {
-        traceEvent(event, "dock:trajectory")
-        if (!sid) return
-        const props = (event as any).properties || (raw as any).data?.properties || {}
-        const prev = trajectoryLive()[sid] || []
-        // dedup by (turnID, seq); seq may be number or string across sources
-        if (!prev.some((e: any) => String(e.turnID ?? e.turn_id ?? 0) === String(props.turnID ?? props.turn_id ?? 0) && String(e.seq ?? 0) === String(props.seq ?? 0))) {
-          // 滚动窗口：长会话 liveEvents 无限增长会让 displayedEvents 每事件全量 merge+sort
-          const merged = [...prev, props].slice(-200)
-          setTrajectoryLive({ ...trajectoryLive(), [sid]: merged })
-        }
-        return
-      }
-      if (event.type === "trajectory.turn") {
-        traceEvent(event, "dock:trajectory-turn")
-        if (!sid) return
-        const props = (event as any).properties || {}
-        setTrajectoryTurnLive({ ...trajectoryTurnLive(), [sid]: props })
-        return
-      }
-
-      if (event.type === "todo.updated") {
-        traceEvent(event, "dock:todos")
-        const list = event.properties?.todos
-        if (Array.isArray(list)) setTodos(sid, list)
-        return
-      }
       if (event.type === "message.updated") {
         traceEvent(event, "chat:message")
         const info = event.properties?.info

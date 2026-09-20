@@ -3,6 +3,7 @@
 // 分支语义逐字迁移自 MafwShell.tsx onmessage（commit 13ad8348，行 1297-1353、1361-1368）。
 import { planSessionEvent, isTailAccountedAtShell, type RawSessionEvent } from "../session-events"
 import { handleFlowCardEvent, type FlowCardDeps } from "./handlers/flow-cards"
+import { handleDockEvent, type DockDeps } from "./handlers/dock"
 
 export interface CoreDeps {
   trace(event: { type?: string }, channel: string): void
@@ -27,12 +28,14 @@ export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
   flowCards: FlowCardDeps
+  dock: DockDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
 export type SidHandler = (event: any, sid: string, deps: ShellEventDeps) => boolean
 export const EXTRA_HANDLERS: SidHandler[] = []
 EXTRA_HANDLERS.push(handleFlowCardEvent)
+EXTRA_HANDLERS.push(handleDockEvent)
 
 /** 语义与 MafwShell.tsx:1356-1360 一致：sid 可多形态承载。 */
 export function sessionIdOf(event: any): string {
