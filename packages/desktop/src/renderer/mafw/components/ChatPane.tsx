@@ -121,6 +121,8 @@ export type ChatPaneProps = {
   onAskCancel: (card: AskCardData) => void
   /** 打开改动审阅面板（切片 2；SessionTurn actions + composer 工具条双入口） */
   onOpenDiffReview?: () => void
+  /** plan/build 模式三态循环（切片 3；'default' = 清除 picks 回 runtime 默认） */
+  onPlanBuildToggle?: (next: "plan" | "build" | "default") => void
   onTitlebarRef: (el: HTMLElement | null) => void
   taskListOpen: boolean
   tasksPlacement: "bar" | "dock"
@@ -288,6 +290,30 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       part: { ...prev.part, [sidProp()]: [] },
     }))
     props.setPageState(sidProp(), { cursor: null, hasMore: true, loading: false })
+  }
+
+  // ── plan/build 模式循环（切片 3）──────────────────────────────
+  // 能力门：primaryAgents 列表内容含 plan/build 才启用（pi 列表恒空 → 自动隐藏）；
+  // manager 会话锁不适用。
+  const planBuildGate = () =>
+    !props.isManager && (props.primaryAgents() || []).some((a: any) => a?.name === "plan" || a?.name === "build")
+  const planBuildState = (): "plan" | "build" | "default" => {
+    const n = props.agentSel()?.name
+    return n === "plan" || n === "build" ? n : "default"
+  }
+  const cyclePlanBuild = () => {
+    const cur = planBuildState()
+    props.onPlanBuildToggle?.(cur === "plan" ? "build" : cur === "build" ? "default" : "plan")
+  }
+  const PLAN_BUILD_LABEL: Record<"plan" | "build" | "default", string> = {
+    plan: "◇ plan",
+    build: "◇ build",
+    default: "◇ 默认",
+  }
+  const PLAN_BUILD_HINT: Record<"plan" | "build" | "default", string> = {
+    plan: "规划模式：只读 agent 出方案，不改文件。点击/Tab 切到 build",
+    build: "执行模式：完整工具集执行改动。点击/Tab 切回默认",
+    default: "默认模式：runtime 默认 agent。点击/Tab 切到 plan",
   }
 
   const userActions = () => ({
@@ -2038,6 +2064,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 if (item.kind === "agent") { addAgent(item.value); setPickerOpen(null) }
                 else addFileMention(item.value)
               }
+              else if (e.key === "Tab" && !pickerOpen() && planBuildGate()) {
+                // plan/build 模式循环（opencode Tab 语义；补全/mention 激活时不抢）
+                e.preventDefault()
+                cyclePlanBuild()
+              }
               else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } sendMessage() }
               else if (e.key === "ArrowUp" && !e.currentTarget.value) {
                 const prev = history.up(input())
@@ -2087,6 +2118,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onClick={() => props.onOpenDiffReview?.()}
                 >⇄</ButtonV2>
               </TooltipV2>
+              <Show when={planBuildGate()}>
+                <TooltipV2 value={PLAN_BUILD_HINT[planBuildState()]} openDelay={300}>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    class="mafw-composer-icon"
+                    classList={{ "mafw-perm-mode-auto": planBuildState() !== "default" }}
+                    aria-label="plan/build 模式循环（Tab）"
+                    onClick={() => cyclePlanBuild()}
+                  >{PLAN_BUILD_LABEL[planBuildState()]}</ButtonV2>
+                </TooltipV2>
+              </Show>
               <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>🗣</ButtonV2>
               </TooltipV2>
@@ -2121,18 +2164,20 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               </TooltipV2>
             </div>
             <div class="mafw-composer-right">
-              <TooltipV2 value="切换 Agent" openDelay={300}>
-                <ButtonV2
-                  variant="ghost"
-                  size="small"
-                  class="mafw-model-pill"
-                  aria-label="切换 Agent"
-                  ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
-                  onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
-                >
-                  {agentSelName()}<span class="mafw-model-chevron">▾</span>
-                </ButtonV2>
-              </TooltipV2>
+              <Show when={(props.primaryAgents() || []).length > 0 || props.isManager}>
+                <TooltipV2 value="切换 Agent" openDelay={300}>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    class="mafw-model-pill"
+                    aria-label="切换 Agent"
+                    ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
+                    onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
+                  >
+                    {agentSelName()}<span class="mafw-model-chevron">▾</span>
+                  </ButtonV2>
+                </TooltipV2>
+              </Show>
               <TooltipV2 value="模型" openDelay={300}>
                 <ButtonV2
                   variant="ghost"

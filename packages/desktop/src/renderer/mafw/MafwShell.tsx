@@ -2242,6 +2242,14 @@ export function MafwShell() {
                           onClosePane={() => closePane(leaf.sid)}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
                           onOpenDiffReview={() => setDiffPanelFor(leaf.sid)}
+                          onPlanBuildToggle={(next) => {
+                            if (next === "default") {
+                              setAgentPicks(leaf.sid, undefined as any)
+                              return
+                            }
+                            const entry = primaryAgents().find(a => a.name === next)
+                            if (entry) applyAgentSwitch(entry, leaf.sid)
+                          }}
                           onCreateSession={createSession}
                           onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
                           onRegisterAnchor={(s, fn) => { anchorRegistry[s] = fn }}
