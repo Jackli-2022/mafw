@@ -18,7 +18,8 @@
     "version:check": "node scripts/bump-version.mjs --check",
     "test": "npm test --prefix gateway",
     "test:unit": "npm test --prefix gateway",
-    "test:tui": "node --test packages/tui/tests/*.test.ts"
+    "test:tui": "node --test packages/tui/tests/*.test.ts",
+    "test:desktop": "cd packages/desktop && bun test"
   },
   "files": [
     "gateway/dist/",

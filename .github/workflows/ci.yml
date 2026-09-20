@@ -44,3 +44,6 @@ jobs:
 
       - name: Test TUI
         run: npm run test:tui
+
+      - name: Test desktop
+        run: npm run test:desktop

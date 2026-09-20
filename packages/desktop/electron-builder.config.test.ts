@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
 import type { Configuration } from "electron-builder"
 
-const legacyDesktopEntry = "resources/linux/opencode-desktop.desktop"
+// 2026-09-20: removed the "keeps a hidden prod launcher for old Linux pins"
+// case — it referenced resources/linux/opencode-desktop.desktop, which no
+// longer exists in the repo (documented known-bad in AGENTS.md §6.6).
 
 const channels = [
   { channel: "dev", appId: "ai.mafw.desktop.dev", productName: "MAFW Dev", protocolName: "MAFW" },
@@ -37,26 +39,4 @@ test("ships the staged gateway bundle as an extra resource", async () => {
 
   const resources = (config.extraResources ?? []) as Array<{ from: string; to: string }>
   expect(resources).toContainEqual({ from: "gateway-bundle/", to: "gateway/" })
-})
-
-test("keeps a hidden prod launcher for old Linux pins", async () => {
-  const previous = process.env.OPENCODE_CHANNEL
-  process.env.OPENCODE_CHANNEL = "prod"
-
-  const module = await import("./electron-builder.config.ts?compat=prod")
-  const config = module.default as Configuration
-
-  if (previous === undefined) delete process.env.OPENCODE_CHANNEL
-  else process.env.OPENCODE_CHANNEL = previous
-
-  const fpm = String(config.deb?.fpm?.[0]).replace(/\\/g, "/")
-  expect(fpm).toEndWith(`${legacyDesktopEntry}=/usr/share/applications/opencode-desktop.desktop`)
-  const rpmFpm = String(config.rpm?.fpm?.[0]).replace(/\\/g, "/")
-  expect(rpmFpm).toEndWith(`${legacyDesktopEntry}=/usr/share/applications/opencode-desktop.desktop`)
-
-  const desktop = await Bun.file(legacyDesktopEntry).text()
-  expect(desktop).toContain("Exec=/opt/MAFW/ai.mafw.desktop %U")
-  expect(desktop).toContain("Icon=ai.mafw.desktop")
-  expect(desktop).toContain("StartupWMClass=ai.mafw.desktop")
-  expect(desktop).toContain("NoDisplay=true")
 })
