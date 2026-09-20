@@ -159,3 +159,26 @@ describe("PageHeader v4", () => {
     expect(b).toContain("color: var(--text-3)")
   })
 })
+
+describe("EmptyState v4", () => {
+  test("glyph 井 inset 底圆形", () => {
+    const b = cssBlock(".mafw-empty-state-glyph {")
+    expect(b).toContain("background: var(--bg-inset)")
+    expect(b).toContain("border-radius: 50%")
+  })
+  test("主文案 13px text-2", () => {
+    const b = cssBlock(".mafw-empty-state-title {")
+    expect(b).toContain("font-size: 13px")
+    expect(b).toContain("color: var(--text-2)")
+  })
+  test("提示 12px text-4", () => {
+    const b = cssBlock(".mafw-empty-state-hint {")
+    expect(b).toContain("font-size: 12px")
+    expect(b).toContain("color: var(--text-4)")
+  })
+  test("容器居中列", () => {
+    const b = cssBlock(".mafw-empty-state {")
+    expect(b).toContain("align-items: center")
+    expect(b).toContain("padding: 48px 16px")
+  })
+})
