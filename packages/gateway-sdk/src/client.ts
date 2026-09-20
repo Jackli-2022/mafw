@@ -6,7 +6,7 @@ import {
   StickyNote, StickyNoteBudget, ModelUsageWindows,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
-  QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule,
+  QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -128,6 +128,23 @@ export class MafwClient implements IMafwClient {
 
     unrevert: async (params: { path: { id: string } }): Promise<void> => {
       await this.request(`/api/sessions/${params.path.id}/unrevert`, { method: 'POST' })
+    },
+
+    /** 会话文件变更快照（切片 2；diffApi runtime-only，opencode） */
+    diff: async (params: { path: { id: string }; query?: { messageID?: string } }): Promise<{ files: FileDiffInfo[] }> => {
+      const q = params.query?.messageID ? `?messageID=${encodeURIComponent(params.query.messageID)}` : ''
+      return this.request<{ files: FileDiffInfo[] }>(`/api/sessions/${params.path.id}/diff${q}`)
+    },
+
+    /** 逐 hunk 回退：客户端传原 patch + 选中 hunk 下标，gateway 反转后 vcs.apply */
+    revertDiff: async (
+      params: { path: { id: string }; body: { patches: Array<{ file?: string; patch: string; hunkIndices: number[] }> } },
+    ): Promise<{ reverted: number }> => {
+      return this.request<{ reverted: number }>(`/api/sessions/${params.path.id}/diff/revert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
+      })
     },
 
     summarize: async (

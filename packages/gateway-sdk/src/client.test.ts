@@ -136,6 +136,30 @@ test("session.unrevert sends POST /api/sessions/:id/unrevert", async () => {
     expect.objectContaining({ method: "POST" }))
 })
 
+test("session.diff sends GET with optional messageID query", async () => {
+  fetchMock.mockResolvedValue(okJson({ files: [{ file: "x.txt", patch: "@@ -1 +1 @@\n-a\n+b", additions: 1, deletions: 1 }] }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.diff({ path: { id: "s1" }, query: { messageID: "m1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/diff?messageID=m1", expect.anything())
+  expect(r.files).toHaveLength(1)
+  expect(r.files[0].file).toBe("x.txt")
+  const r2 = await c.session.diff({ path: { id: "s1" } })
+  expect(fetchMock).toHaveBeenLastCalledWith("http://gw:3000/api/sessions/s1/diff", expect.anything())
+  expect(r2.files).toHaveLength(1)
+})
+
+test("session.revertDiff sends POST patches body", async () => {
+  fetchMock.mockResolvedValue(okJson({ reverted: 1 }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.revertDiff({
+    path: { id: "s1" },
+    body: { patches: [{ file: "x.txt", patch: "@@ -1 +1 @@\n-a\n+b", hunkIndices: [0] }] },
+  })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/diff/revert",
+    expect.objectContaining({ method: "POST" }))
+  expect(r.reverted).toBe(1)
+})
+
 test("session.prompt sends POST /api/session/:id/prompt", async () => {
   fetchMock.mockResolvedValue(okJson({ parts: [] }))
   const c = new MafwClient("http://gw:3000")

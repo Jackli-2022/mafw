@@ -300,8 +300,21 @@ export interface SessionNamespace {
   fork(params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ session: Session }>
   revert(params: { path: { id: string }; body: { messageID: string; partID?: string } }): Promise<void>
   unrevert(params: { path: { id: string } }): Promise<void>
+  /** 会话文件变更快照（切片 2；diffApi runtime-only，opencode） */
+  diff(params: { path: { id: string }; query?: { messageID?: string } }): Promise<{ files: FileDiffInfo[] }>
+  /** 逐 hunk 回退：传原 patch + 选中 hunk 下标（0-based），gateway 反转后 vcs.apply */
+  revertDiff(params: { path: { id: string }; body: { patches: Array<{ file?: string; patch: string; hunkIndices: number[] }> } }): Promise<{ reverted: number }>
   /** 手动压缩会话（TUI /compact；runtime summarize 薄代理）。 */
   summarize(params: { path: { id: string }; body?: { providerID?: string; modelID?: string } }): Promise<void>
+}
+
+/** 会话文件变更条目（opencode SnapshotFileDiff 归一化）。 */
+export interface FileDiffInfo {
+  file?: string
+  patch?: string
+  additions?: number
+  deletions?: number
+  status?: string
 }
 
 // ── Commands & skills (opencode serve shapes) ──
