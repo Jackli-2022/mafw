@@ -116,9 +116,11 @@ export type ChatPaneProps = {
   onOpenSettings?: () => void
   onModelSelect: (m: ModelEntry, sid?: string) => void
   onApplyAgentSwitch: (a: AgentEntry) => void
-  onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean) => void
+  onPermReply: (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean | "tool" | "prefix") => void
   onAskSubmit: (card: AskCardData, answers: Record<string, string[]>, custom: Record<string, string>) => void
   onAskCancel: (card: AskCardData) => void
+  /** 打开改动审阅面板（切片 2；SessionTurn actions + composer 工具条双入口） */
+  onOpenDiffReview?: () => void
   onTitlebarRef: (el: HTMLElement | null) => void
   taskListOpen: boolean
   tasksPlacement: "bar" | "dock"
@@ -301,6 +303,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     revert: async ({ messageID }: { sessionID: string; messageID: string }) => {
       setRevertConfirm({ messageID })
     },
+    diffReview: () => props.onOpenDiffReview?.(),
   })
 
   const doRevert = async () => {
@@ -2075,12 +2078,20 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onClick={() => props.onTogglePermissionMode?.()}
                 >{PERMISSION_MODE_LABEL[props.permissionMode ?? "read-only"]}</ButtonV2>
               </TooltipV2>
+              <TooltipV2 value="审阅改动（逐 hunk 保留 / 回退）" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-composer-icon"
+                  aria-label="审阅改动"
+                  onClick={() => props.onOpenDiffReview?.()}
+                >⇄</ButtonV2>
+              </TooltipV2>
               <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>🗣</ButtonV2>
               </TooltipV2>
               <TooltipV2 value="附件" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">+</ButtonV2>
-              </TooltipV2>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">+</ButtonV2>              </TooltipV2>
 
               <TooltipV2 value={voiceRecording() ? "停止录音" : "语音输入（录音，静音自动分段）"} openDelay={300}>
                 <ButtonV2

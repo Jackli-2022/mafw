@@ -138,6 +138,7 @@ type ShellHandledType =
   | "message.updated" | "message.part.delta" | "message.part.updated"
   | "message.complete" | "message.part.complete"
   | "session.idle" | "session.error" | "message.error" | "message.aborted"
+  | "session.diff"
 
 /**
  * 类型级穷尽检查（永不抛错，编译失败即守卫生效）：
@@ -158,6 +159,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "permission.asked":
     case "permission.replied":
     case "session.compacted":
+    case "session.diff":
     case "trajectory.event":
     case "trajectory.turn":
     case "todo.updated":

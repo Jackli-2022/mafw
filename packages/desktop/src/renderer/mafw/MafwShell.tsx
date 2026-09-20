@@ -20,6 +20,7 @@ import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
+import { DiffReviewPanel } from "./components/DiffReviewPanel"
   import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
@@ -1199,6 +1200,8 @@ export function MafwShell() {
   const connPhase = useConnPhase()
   const connDown = () => connPhase() === "down"
   const [showInspector, setShowInspector] = createSignal(false)
+  // 改动审阅面板（切片 2）：值 = 打开面板的 sessionID
+  const [diffPanelFor, setDiffPanelFor] = createSignal<string | null>(null)
   let es: EventSource | null = null
   let esRetry: ReturnType<typeof setTimeout> | null = null
   const scheduleEsRetry = (delayMs = 5000) => {
@@ -1285,6 +1288,10 @@ export function MafwShell() {
         }
       },
       mediaSpeak: (sid, text, voice) => mediaSpeakHandlers[sid]?.(text, voice),
+    },
+    diff: {
+      trace: traceEvent,
+      setSessionDiff: (sid, files) => setStore(prev => ({ ...prev, session_diff: { ...prev.session_diff, [sid]: files } })),
     },
   }
 
@@ -2224,6 +2231,7 @@ export function MafwShell() {
                           onFocus={() => { setShowConfig(false); setActiveTab("chat"); setActiveSessionId(leaf.sid) }}
                           onClosePane={() => closePane(leaf.sid)}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
+                          onOpenDiffReview={() => setDiffPanelFor(leaf.sid)}
                           onCreateSession={createSession}
                           onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
                           onRegisterAnchor={(s, fn) => { anchorRegistry[s] = fn }}
@@ -2261,10 +2269,17 @@ export function MafwShell() {
                         />
                       )
                     )}
-                  />
-                    </div>
-                  }
-                >
+                   />
+                   <Show when={diffPanelFor()}>
+                     <DiffReviewPanel
+                       sessionID={diffPanelFor()!}
+                       diffs={(store.session_diff as any)[diffPanelFor()!] as any}
+                       onClose={() => setDiffPanelFor(null)}
+                     />
+                   </Show>
+                     </div>
+                   }
+                 >
                   <WelcomeHome
                     projects={projects()}
                     currentProject={currentProject()}

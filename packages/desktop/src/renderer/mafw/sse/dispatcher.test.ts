@@ -51,6 +51,10 @@ function makeDeps() {
       notifyIdle: rec("notifyIdle"),
       mediaSpeak: rec("mediaSpeak"),
     },
+    diff: {
+      trace: rec("trace"),
+      setSessionDiff: rec("setSessionDiff"),
+    },
   }
   return { deps, calls }
 }

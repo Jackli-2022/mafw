@@ -180,6 +180,8 @@ export type UserActions = {
   fork?: SessionAction
   revert?: SessionAction
   openAttachment?: (file: FilePart) => void
+  /** 打开改动审阅面板（切片 2；调用方自持面板开闭状态） */
+  diffReview?: () => void
 }
 
 /**
@@ -1434,6 +1436,19 @@ export function UserMessageDisplay(props: {
                 revert()
               }}
               aria-label={i18n.t("ui.message.revertMessage")}
+            />
+          </Show>
+          <Show when={props.actions?.diffReview}>
+            <MessageActionButton
+              icon="file"
+              label="审阅改动"
+              useV2={props.useV2Actions}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.stopPropagation()
+                props.actions?.diffReview?.()
+              }}
+              aria-label="审阅改动"
             />
           </Show>
           <Show when={text()}>
