@@ -199,3 +199,21 @@ describe("卡片 v4 配方", () => {
     expect(cssBlock(".mafw-phase-badge-run {")).toContain("background: var(--bg-overlay)")
   })
 })
+
+describe("WelcomeHome v4", () => {
+  test("标题 text-1 + 字重 600", () => {
+    const b = cssBlock(".mafw-welcome-title {")
+    expect(b).toContain("color: var(--text-1)")
+    expect(b).toContain("font-weight: 600")
+  })
+  test("区块标题 12px text-3", () => {
+    const b = cssBlock(".mafw-welcome-section-title {")
+    expect(b).toContain("font-size: 12px")
+    expect(b).toContain("color: var(--text-3)")
+  })
+  test("项目 chip 选中态 v4 信号色（无蓝色回退）", () => {
+    const b = cssBlock(".mafw-welcome-project[data-selected]")
+    expect(b).toContain("background: var(--accent-soft)")
+    expect(b).not.toContain("#7698fd")
+  })
+})

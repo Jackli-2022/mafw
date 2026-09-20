@@ -2591,10 +2591,10 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 .mafw-welcome-project:hover { background: var(--surface-base-hover); }
 .mafw-welcome-project[data-selected] {
-  background: var(--accent-dim, rgba(118,152,253,0.15)); color: var(--accent, #7698fd); border-color: var(--accent, #7698fd);
+  background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-border);
 }
 .mafw-welcome-projects-empty { color: var(--text-weak); font-size: 12px; padding: 4px 0; }
-.mafw-welcome-title { margin: 0; font-size: 26px; font-weight: 650; color: var(--text-strong); }
+.mafw-welcome-title { margin: 0; font-size: 26px; font-weight: 600; color: var(--text-1); letter-spacing: -0.01em; }
 .mafw-welcome-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .mafw-welcome-goal-input {
   display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 420px;
@@ -2605,7 +2605,7 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-welcome-goal-error { color: #e8636b; font-size: 12px; }
 .mafw-welcome-section { width: 100%; display: flex; flex-direction: column; gap: 8px; }
 .mafw-welcome-section-title {
-  color: var(--text-weak); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-3); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
 }
 .mafw-welcome-goals { display: flex; flex-direction: column; gap: 4px; }
 .mafw-welcome-goal {
