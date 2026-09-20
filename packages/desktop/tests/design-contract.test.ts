@@ -113,3 +113,22 @@ describe("Sticky header + phase bar v4", () => {
   test("phase bar 28px", () => expect(cssBlock(".mafw-phase-bar {")).toContain("height: 28px"))
   test("phase dot 4px", () => expect(cssBlock(".mafw-phase-dot {")).toContain("width: 4px"))
 })
+
+describe("用量指标行 v4", () => {
+  test("指标行 label 12px muted", () => {
+    const b = cssBlock(".mafw-usage-row {")
+    expect(b).toContain("font-size: 12px")
+    expect(b).toContain("color: var(--text-3)")
+  })
+  test("指标值 13px tabular", () => {
+    expect(cssBlock(".mafw-usage-value {")).toContain("font-size: 13px")
+    expect(cssBlock(".mafw-usage-value {")).toContain("font-variant-numeric: tabular-nums")
+  })
+  test("模型条形图绿渐变填充", () =>
+    expect(cssBlock(".mafw-usage-model-bar-fill {")).toContain("linear-gradient"))
+  test("模型条形图细轨圆角", () => {
+    const b = cssBlock(".mafw-usage-model-bar {")
+    expect(b).toContain("height: 4px")
+    expect(b).toContain("border-radius: 2px")
+  })
+})

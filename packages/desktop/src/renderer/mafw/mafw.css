@@ -3027,7 +3027,11 @@ html[data-theme="light"] .mafw-picker-pop {
   align-items: center;
   gap: 8px;
   font-size: 12px;
+  color: var(--text-3);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
+.mafw-usage-row:last-child { border-bottom: none; }
 .mafw-usage-pct {
   font-size: 10px;
   color: var(--text-4);
@@ -3053,6 +3057,7 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-usage-value {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  font-size: 13px;
   color: var(--text-1);
   min-width: 48px;
   text-align: right;
@@ -3356,16 +3361,18 @@ html[data-theme="light"] .mafw-picker-pop {
 
 .mafw-usage-model-bar {
   grid-area: bar;
-  height: 3px;
-  background: var(--hover-strong);
+  height: 4px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .mafw-usage-model-bar-fill {
   height: 100%;
-  background: var(--accent);
-  opacity: 0.7;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, transparent), var(--accent));
+  border-radius: 2px;
+  transition: width var(--dur-3) var(--ease);
 }
 
 .mafw-usage-model-pct {
