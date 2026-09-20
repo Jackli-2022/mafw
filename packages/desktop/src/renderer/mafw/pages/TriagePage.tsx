@@ -3,6 +3,7 @@ import { createSignal, createEffect, onCleanup } from "solid-js"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { PageHeader } from "../components/PageHeader"
+import { EmptyState } from "../components/EmptyState"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
@@ -51,7 +52,7 @@ export function TriagePage() {
             <span class="mafw-empty">Loading...</span>
           </div>
       ) : items().length === 0 ? (
-        <div class="mafw-empty">No triage items</div>
+          <EmptyState glyph="⚖" title="没有待确认项" hint="自动化扫描的结果会出现在这里" />
       ) : (
         items().map(t => {
           const menu: ContextMenuItem[] = [

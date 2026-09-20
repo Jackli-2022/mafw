@@ -3,6 +3,7 @@ import { createSignal, createEffect, onCleanup, Show } from "solid-js"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { PageHeader } from "../components/PageHeader"
+import { EmptyState } from "../components/EmptyState"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
@@ -116,7 +117,7 @@ export function AutomationsPage() {
           <span class="mafw-empty">Loading...</span>
         </div>
       ) : rules().length === 0 ? (
-        <div class="mafw-empty">No automation rules configured</div>
+          <EmptyState glyph="⏱" title="还没有自动化规则" hint="添加定时或事件驱动的任务规则" />
       ) : (
         rules().map((rule, idx) =>
           <MafwContextMenu items={[

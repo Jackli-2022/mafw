@@ -3,6 +3,7 @@ import { createSignal, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { PageHeader } from "../components/PageHeader"
+import { EmptyState } from "../components/EmptyState"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
@@ -169,7 +170,7 @@ export function MemoryPage() {
             </MafwContextMenu>
           )
         }) : loaded() ? (
-          <div class="mafw-empty">No memories found</div>
+          <EmptyState glyph="⌕" title="没有匹配的记忆" hint="换个关键词，或先用 BM25 默认检索试试" />
         ) : null}
       </div>
     </div>

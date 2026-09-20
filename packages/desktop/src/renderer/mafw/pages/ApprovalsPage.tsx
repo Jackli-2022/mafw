@@ -3,6 +3,7 @@ import { createSignal, createEffect, For, Show, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { PageHeader } from "../components/PageHeader"
+import { EmptyState } from "../components/EmptyState"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 
@@ -52,7 +53,7 @@ export function ApprovalsPage(props: {
           <span class="mafw-empty">Loading...</span>
         </div>
       ) : !hasAnything() ? (
-        <div class="mafw-empty">No pending approvals</div>
+          <EmptyState glyph="✓" title="没有待审批项" hint="需要确认的工具调用会出现在这里" />
       ) : (
         <>
         <Show when={perms().length > 0}>

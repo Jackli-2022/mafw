@@ -5,6 +5,7 @@ import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
 import { PageHeader } from "../components/PageHeader"
+import { EmptyState } from "../components/EmptyState"
 
 export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) {
   const [goals, setGoals] = createSignal<any[]>([])
@@ -63,7 +64,7 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) 
             <span class="mafw-empty">Loading...</span>
           </div>
         ) : goals().length === 0 ? (
-          <div class="mafw-empty">No goals yet</div>
+          <EmptyState glyph="◎" title="还没有 Goal" hint="让 Manager 为你编排第一个目标，或从欢迎页快速创建" />
         ) : (
           goals().map(g => (
             <MafwContextMenu items={goalMenu(g)}>
