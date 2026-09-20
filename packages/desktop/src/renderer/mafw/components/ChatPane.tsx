@@ -22,6 +22,19 @@ import { inlineAnchor } from "./flow-card-placement"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
+import { type PermissionMode } from "./permission-card-mapping"
+
+/** 🛡 三档按钮文案与提示（切片 1）。 */
+const PERMISSION_MODE_LABEL: Record<PermissionMode, string> = {
+  "read-only": "🛡只读",
+  auto: "🛡auto",
+  "full-access": "🛡全开",
+}
+const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
+  "read-only": "审批模式：只读 — 只读工具免审，任何变更需确认。点击切到自动",
+  auto: "审批模式：自动 — 安全命令免审，高危仍需确认，25 次后回落只读。点击切到全开",
+  "full-access": "审批模式：全开 — 不再审批（危险命令也直接执行）。点击切回只读",
+}
 import { createInputHistory } from "./input-history"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -126,7 +139,7 @@ export type ChatPaneProps = {
   onRegisterQueueFlush?: (sid: string, fn: () => void) => void
   onUnregisterQueueFlush?: (sid: string) => void
   compactionMark?: { at: number; summary?: string } | null
-  permissionMode?: "manual" | "auto"
+  permissionMode?: "read-only" | "auto" | "full-access"
   onTogglePermissionMode?: () => void
   onRegisterMediaSpeak?: (sid: string, fn: (text: string, voice?: string) => void) => void
   onUnregisterMediaSpeak?: (sid: string) => void
@@ -1599,7 +1612,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         keyboardOwner={c.data.id === sc.keyboardOwnerId}
                 onAllowOnce={() => props.onPermReply(c.data, "once")}
                 onAllowAlways={() => props.onPermReply(c.data, "always")}
-                onAllowPersist={() => props.onPermReply(c.data, "always", undefined, true)}
+                onAllowPersist={() => props.onPermReply(c.data, "always", undefined, "prefix")}
+                onAllowPersistTool={() => props.onPermReply(c.data, "always", undefined, "tool")}
                 onDeny={(note) => props.onPermReply(c.data, "reject", note)}
       />
     ) : (
@@ -2051,15 +2065,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <TooltipV2 value="命令 (/)" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>/</ButtonV2>
               </TooltipV2>
-              <TooltipV2 value={(props.permissionMode ?? "manual") === "auto" ? "审批模式：自动 — 安全命令免审，高危仍需确认。点击切回手动" : "审批模式：手动 — 每次审批。点击切换自动（安全命令免审）"} openDelay={300}>
+              <TooltipV2 value={PERMISSION_MODE_HINT[props.permissionMode ?? "read-only"]} openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
                   class="mafw-composer-icon"
-                  classList={{ "mafw-perm-mode-auto": (props.permissionMode ?? "manual") === "auto" }}
-                  aria-label="审批模式"
+                  classList={{ "mafw-perm-mode-auto": (props.permissionMode ?? "read-only") !== "read-only" }}
+                  aria-label="审批模式（三档循环：只读 / 自动 / 全开）"
                   onClick={() => props.onTogglePermissionMode?.()}
-                >{(props.permissionMode ?? "manual") === "auto" ? "🛡auto" : "🛡"}</ButtonV2>
+                >{PERMISSION_MODE_LABEL[props.permissionMode ?? "read-only"]}</ButtonV2>
               </TooltipV2>
               <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>🗣</ButtonV2>

@@ -54,10 +54,18 @@ describe("handleFlowCardEvent", () => {
     })
   })
 
-  test("permission_mode manual → setPermissionMode", () => {
+  test("permission_mode 三值解析；未知值回退 read-only", () => {
     const { deps, calls } = makeDeps()
     handleFlowCardEvent({ type: "permission_mode", sessionID: "s1", properties: { mode: "manual" } }, "s1", deps)
-    expect(calls.find(c => c.name === "setPermissionMode")!.args).toEqual(["s1", "manual"])
+    expect(calls.find(c => c.name === "setPermissionMode")!.args).toEqual(["s1", "read-only"])
+
+    const d2 = makeDeps()
+    handleFlowCardEvent({ type: "permission_mode", sessionID: "s1", properties: { mode: "full-access" } }, "s1", d2.deps)
+    expect(d2.calls.find(c => c.name === "setPermissionMode")!.args).toEqual(["s1", "full-access"])
+
+    const d3 = makeDeps()
+    handleFlowCardEvent({ type: "permission_mode", sessionID: "s1", properties: { mode: "yolo" } }, "s1", d3.deps)
+    expect(d3.calls.find(c => c.name === "setPermissionMode")!.args).toEqual(["s1", "read-only"])
   })
 
   test("session.compacted → setCompactionMark", () => {

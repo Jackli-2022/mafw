@@ -1,6 +1,7 @@
-// Config 页「审批 Approvals」区块：持久白名单编辑器（gateway /api/approvals/allowlist）。
-// 条目语义：裸工具名（整工具放行）或 tool:prefix（命令前缀放行）——评估顺序第 2 步：
-// 内部会话拒绝 → 持久白名单 → 会话模式（manual/auto）→ 人工。
+// Config 页「审批 Approvals」区块：持久规则编辑器（gateway /api/approvals/rules，切片 1）。
+// 条目语义：{tool}（整工具放行）或 {tool, pattern}（命令前缀放行）——评估顺序第 2 步：
+// 内部会话拒绝 → 持久规则/白名单 → 会话三档模式（read-only/auto/full-access）→ 人工。
+// 权限卡「记此工具 / 记此前缀」也写入同一存储（~/.mafw/permission-rules.json）。
 import { createSignal, onMount, For, Show } from "solid-js";
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2";
 import { ButtonV2 } from "@mafw/ui/v2/button-v2";
@@ -26,18 +27,18 @@ export function ApprovalsSection() {
   const [busy, setBusy] = createSignal(false);
 
   const refresh = () =>
-    window.api.mafw.permissions.listAllowlist()
-      .then((r: any) => setEntries(sortAllowlistEntries(r?.entries ?? [])))
+    window.api.mafw.permissions.listRules()
+      .then((r: any) => setEntries(sortAllowlistEntries((r?.entries ?? []).map((e: any) => ({ tool: e.tool, prefix: e.pattern })))))
       .catch(() => { /* gateway 未就绪 fail-open */ });
   onMount(refresh);
 
   const add = async () => {
     const t = tool().trim();
     if (!t) { showToastV2({ description: "工具名不能为空", duration: 2000 }); return }
-    const entry = prefix().trim() ? { tool: t, prefix: prefix().trim() } : { tool: t };
+    const rule = prefix().trim() ? { tool: t, pattern: prefix().trim() } : { tool: t };
     setBusy(true);
     try {
-      await window.api.mafw.permissions.addAllowlist(entry);
+      await window.api.mafw.permissions.addRule(rule);
       setTool(""); setPrefix("");
       await refresh();
     } catch { showToastV2({ description: "添加失败", duration: 2000 }) }
@@ -46,7 +47,7 @@ export function ApprovalsSection() {
 
   const remove = async (e: AllowlistEntryUi) => {
     try {
-      await window.api.mafw.permissions.removeAllowlist(e);
+      await window.api.mafw.permissions.removeRule(e.prefix ? { tool: e.tool, pattern: e.prefix } : { tool: e.tool });
       await refresh();
     } catch { showToastV2({ description: "删除失败", duration: 2000 }) }
   };
@@ -56,8 +57,8 @@ export function ApprovalsSection() {
       <header class="mafw-config-panel-header">
         <h2>审批 Approvals</h2>
         <p class="mafw-config-panel-desc">
-          持久白名单：条目在评估顺序第 2 步生效（内部会话拒绝 → 持久白名单 → 会话模式 manual/auto → 人工）。
-          裸工具名放行整个工具；「工具名 + 命令前缀」只放行匹配前缀的命令。会话内的 🛡 模式切换在聊天界面。
+          持久规则：条目在评估顺序第 2 步生效（内部会话拒绝 → 持久规则 → 会话模式 只读/自动/全开 → 人工）。
+          裸工具名放行整个工具；「工具名 + 命令前缀」只放行匹配前缀的命令。会话内的 🛡 三档切换在聊天界面。
         </p>
       </header>
 
@@ -81,7 +82,7 @@ export function ApprovalsSection() {
 
       <Show
         when={entries().length > 0}
-        fallback={<p class="mafw-allowlist-empty">暂无白名单条目。权限卡上选「持久允许」也会写入这里。</p>}
+        fallback={<p class="mafw-allowlist-empty">暂无规则。权限卡上选「记此工具 / 记此前缀」也会写入这里。</p>}
       >
         <ul class="mafw-allowlist-list">
           <For each={entries()}>

@@ -9,7 +9,7 @@ import type { SidHandler, ShellEventDeps } from "../dispatcher"
 export interface FlowCardDeps {
   upsertCard(sid: string, card: { kind: "ask" | "permission"; data: unknown }): void
   resolveCard(sid: string, id: string, resolution: { status: string; answers?: Record<string, string[]> }): void
-  setPermissionMode(sid: string, mode: "manual" | "auto"): void
+  setPermissionMode(sid: string, mode: "read-only" | "auto" | "full-access"): void
   setCompactionMark(sid: string, mark: { at: number; summary?: string }): void
   notify(title: string, body: string): void
   trace(event: { type?: string }, channel: string): void
@@ -67,10 +67,12 @@ export const handleFlowCardEvent: SidHandler = (event, sid, deps) => {
     return true
   }
   if (event.type === "permission_mode") {
-    // gateway 审批模式变更（🛡 toggle / 预算回落广播）——三端徽标同步
+    // gateway 审批模式变更（🛡 toggle / 预算回落广播）——三端徽标同步。
+    // 未知值（旧广播残留等）回退 read-only，保证卡片映射不落空。
     const pmSid = event.sessionID || event.properties?.sessionID
-    const pmMode = event.properties?.mode
-    if (pmSid && (pmMode === "manual" || pmMode === "auto")) d.setPermissionMode(pmSid, pmMode)
+    const rawMode = event.properties?.mode
+    const pmMode = rawMode === "auto" || rawMode === "full-access" ? rawMode : "read-only"
+    if (pmSid) d.setPermissionMode(pmSid, pmMode)
     return true
   }
   if (event.type === "session.compacted") {

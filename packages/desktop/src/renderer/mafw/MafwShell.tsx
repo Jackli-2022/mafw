@@ -341,7 +341,7 @@ export function MafwShell() {
   // Per-session approval mode (Manual/Auto-lite)。真相源在 gateway（kv perm-mode，
   // 25 次预算 + 危险正则判定）；desktop 只缓存 UI 态：开 tab 拉取 + SSE
   // permission_mode 事件驱动 + toggle 乐观更新失败回滚。
-  const [permissionModes, setPermissionModes] = createStore<Record<string, "manual" | "auto">>({})
+  const [permissionModes, setPermissionModes] = createStore<Record<string, "read-only" | "auto" | "full-access">>({})
   const syncPermissionMode = (sid: string) => {
     void window.api.mafw.permissions.getMode(sid)
       .then((m: any) => { if (m?.mode === "manual" || m?.mode === "auto") setPermissionModes(sid, m.mode) })
@@ -1063,7 +1063,7 @@ export function MafwShell() {
     }
   }
 
-  const permReply = async (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean) => {
+  const permReply = async (card: PermissionCardData, reply: "once" | "always" | "reject", message?: string, persist?: boolean | "tool" | "prefix") => {
     try {
       await window.api.mafw.permissions.reply(card.id, reply, message, persist)
       resolveCard(card.sessionID, card.id, {
@@ -2237,9 +2237,9 @@ export function MafwShell() {
                           onRegisterQueueFlush={(s, fn) => { queueFlushers[s] = fn }}
                           onUnregisterQueueFlush={(s) => { delete queueFlushers[s] }}
                           compactionMark={compactionMarks()[leaf.sid] || null}
-                          permissionMode={permissionModes[leaf.sid] || "manual"}
+                          permissionMode={permissionModes[leaf.sid] || "read-only"}
                           onTogglePermissionMode={() => {
-                            const prev = (permissionModes[leaf.sid] || "manual") as "manual" | "auto"
+                            const prev = permissionModes[leaf.sid] || "read-only"
                             const next = nextPermissionMode(prev)
                             setPermissionModes(leaf.sid, next) // 乐观更新
                             window.api.mafw.permissions.setMode(leaf.sid, next).catch(() => {

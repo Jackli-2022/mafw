@@ -58,9 +58,14 @@ describe("mapPermissionCard — mafwPolicy 合并", () => {
 });
 
 describe("migration helpers（T11 消费）", () => {
-  test("nextMode 循环", () => {
+  test("nextMode 三档循环", () => {
+    expect(nextMode("read-only")).toBe("auto");
+    expect(nextMode("auto")).toBe("full-access");
+    expect(nextMode("full-access")).toBe("read-only");
+  });
+  test("nextMode legacy manual / 未知值 → auto（read-only 的下一档）", () => {
     expect(nextMode("manual")).toBe("auto");
-    expect(nextMode("auto")).toBe("manual");
+    expect(nextMode("yolo")).toBe("auto");
   });
   test("shouldNotify：autoResolved 卡不发通知；human 卡发", () => {
     expect(shouldNotify({ autoResolved: "auto" })).toBe(false);

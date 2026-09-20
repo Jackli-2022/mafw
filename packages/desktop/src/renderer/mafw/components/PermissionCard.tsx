@@ -52,8 +52,10 @@ export function PermissionCard(props: {
   keyboardOwner?: boolean
   onAllowOnce?: () => void
   onAllowAlways?: () => void
-  /** 持久允许：always + 写入跨会话白名单（persist: true） */
+  /** 持久允许 · 此前缀（always + persist: 'prefix'，patterns 空时 gateway 兜底落工具级） */
   onAllowPersist?: () => void
+  /** 持久允许 · 此工具（always + persist: 'tool'，工具级规则） */
+  onAllowPersistTool?: () => void
   onDeny?: (note?: string) => void
 }) {
   const [confirmArmed, setConfirmArmed] = createSignal(false)
@@ -98,6 +100,7 @@ export function PermissionCard(props: {
       if (k === "y" || e.key === "Enter") { e.preventDefault(); allowOnce() }
       else if (k === "a") { e.preventDefault(); props.onAllowAlways?.() }
       else if (k === "p") { e.preventDefault(); props.onAllowPersist?.() }
+      else if (k === "t") { e.preventDefault(); props.onAllowPersistTool?.() }
       else if (k === "n") { e.preventDefault(); setNoteOpen(true) }
       else if (e.key === "Escape") { e.preventDefault(); deny(false) }
     }
@@ -221,7 +224,7 @@ export function PermissionCard(props: {
 
         {/* Footer */}
         <footer class="mafw-flow-footer">
-          <span class="mafw-flow-keyhint">Y 允许一次 · A 始终允许 · P 持久允许 · N 拒绝</span>
+          <span class="mafw-flow-keyhint">Y 允许一次 · A 本会话 · P 记此前缀 · T 记此工具 · N 拒绝</span>
           <div class="mafw-flow-footer-actions">
             <ButtonV2 variant="ghost" size="small" class="mafw-flow-btn-ghost" onClick={() => setNoteOpen(true)}>
               拒绝
@@ -230,10 +233,19 @@ export function PermissionCard(props: {
               variant="ghost"
               size="small"
               class="mafw-flow-btn-ghost"
-              aria-label="持久允许（跨会话记住）"
+              aria-label="持久允许此前缀（跨会话记住命令前缀）"
               onClick={() => props.onAllowPersist?.()}
             >
-              持久允许
+              记此前缀
+            </ButtonV2>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-flow-btn-ghost"
+              aria-label="持久允许此工具（跨会话记住整个工具）"
+              onClick={() => props.onAllowPersistTool?.()}
+            >
+              记此工具
             </ButtonV2>
             <ButtonV2 variant="outline" size="small" class="mafw-flow-btn-always" onClick={() => props.onAllowAlways?.()}>
               本会话始终允许

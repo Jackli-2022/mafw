@@ -63,9 +63,16 @@ export function mapPermissionCard(req: any, createdAt: number, agentTitle: strin
   }
 }
 
-/** 🛡 toggle 循环（T11 消费；替代已删除的 permission-mode.ts nextPermissionMode）。 */
-export function nextMode(prev: "manual" | "auto"): "manual" | "auto" {
-  return prev === "manual" ? "auto" : "manual"
+/** 审批三档预设（切片 1）：read-only（只读放行、变更必问）/ auto（工作区内自由、危险问、
+ *  25 次预算回落 read-only）/ full-access（全放）。legacy 'manual' 由 gateway 归一化 read-only。 */
+export type PermissionMode = "read-only" | "auto" | "full-access"
+export const PERMISSION_MODES: PermissionMode[] = ["read-only", "auto", "full-access"]
+
+/** 🛡 toggle 循环（三档；未知值回退 read-only）。 */
+export function nextMode(prev: PermissionMode | string): PermissionMode {
+  const idx = PERMISSION_MODES.indexOf(prev as PermissionMode)
+  if (idx < 0) return "auto" // read-only 的下一档
+  return PERMISSION_MODES[(idx + 1) % PERMISSION_MODES.length]
 }
 
 /** autoResolved 卡不发 OS 通知（gateway 已自动处置）。 */

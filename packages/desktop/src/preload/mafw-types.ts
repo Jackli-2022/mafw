@@ -133,9 +133,12 @@ export type MafwAPI = {
 
   permissions: {
     list: () => Promise<PermissionRequest[]>
-    reply: (id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean) => Promise<void>
-    getMode: (sessionID: string) => Promise<{ mode: 'manual' | 'auto'; autoApprovals: number; budget: number }>
-    setMode: (sessionID: string, mode: 'manual' | 'auto') => Promise<void>
+    reply: (id: string, reply: 'once' | 'always' | 'reject', message?: string, persist?: boolean | 'tool' | 'prefix') => Promise<void>
+    getMode: (sessionID: string) => Promise<{ mode: 'read-only' | 'auto' | 'full-access'; autoApprovals: number; budget: number }>
+    setMode: (sessionID: string, mode: 'read-only' | 'auto' | 'full-access') => Promise<void>
+    listRules: () => Promise<{ entries: Array<{ tool: string; pattern?: string; action: 'allow' }> }>
+    addRule: (rule: { tool: string; pattern?: string }) => Promise<{ success: boolean; entries: Array<{ tool: string; pattern?: string; action: 'allow' }> }>
+    removeRule: (rule: { tool: string; pattern?: string }) => Promise<{ success: boolean; entries: Array<{ tool: string; pattern?: string; action: 'allow' }> }>
     listAllowlist: () => Promise<{ entries: Array<{ tool: string; prefix?: string }> }>
     addAllowlist: (entry: { tool: string; prefix?: string }) => Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }>
     removeAllowlist: (entry: { tool: string; prefix?: string }) => Promise<{ success: boolean; entries: Array<{ tool: string; prefix?: string }> }>
