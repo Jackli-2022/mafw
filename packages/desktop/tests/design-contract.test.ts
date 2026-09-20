@@ -217,3 +217,10 @@ describe("WelcomeHome v4", () => {
     expect(b).not.toContain("#7698fd")
   })
 })
+
+describe("Rail 尾巴 v4", () => {
+  test("切换器 hover 边框", () =>
+    expect(cssBlock(".mafw-rail-switcher:hover {")).toContain("border-color: var(--border-subtle)"))
+  test("ManagerCard hover 边框提亮", () =>
+    expect(cssBlock(".mafw-manager-card:hover {")).toContain("border-color"))
+})

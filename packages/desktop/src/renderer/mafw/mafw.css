@@ -277,8 +277,8 @@ html[data-theme="light"] .mafw-shell {
 }
 /* ── Header: project switcher (left) + collapse arrow (right) ── */
 .mafw-rail-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 2px; flex-shrink: 0; }
-.mafw-rail-switcher { flex: 1; display: flex; align-items: center; gap: 5px; min-width: 0; height: 28px; padding: 0 6px; border-radius: 4px; cursor: pointer; color: var(--text-2); font-size: 13px; font-weight: 500; }
-.mafw-rail-switcher:hover { background: var(--hover); color: var(--text-1); }
+.mafw-rail-switcher { flex: 1; display: flex; align-items: center; gap: 5px; min-width: 0; height: 28px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--r-md); cursor: pointer; color: var(--text-2); font-size: 13px; font-weight: 500; }
+.mafw-rail-switcher:hover { background: var(--hover); color: var(--text-1); border-color: var(--border-subtle); }
 .mafw-rail-switcher-caret { flex-shrink: 0; opacity: .55; }
 .mafw-rail-switcher-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-rail-check { margin-left: auto; opacity: .8; }
@@ -331,8 +331,8 @@ html[data-theme="light"] .mafw-shell {
 /* ── Pinned bottom area: footer, never scrolls ── */
 .mafw-rail-fixed { flex-shrink: 0; background: var(--bg-base); border-top: 1px solid var(--border-subtle); }
 /* ── Manager command card (below rail head) ── */
-.mafw-manager-card { margin: 8px 10px 4px; padding: 8px 10px; border-radius: 8px; border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); cursor: pointer; user-select: none; }
-.mafw-manager-card:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.mafw-manager-card { margin: 8px 10px 4px; padding: 8px 10px; border-radius: var(--r-md); border: 1px solid var(--border-subtle); border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); cursor: pointer; user-select: none; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+.mafw-manager-card:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--text-5); }
 .mafw-manager-card.offline { border-left-color: var(--border-subtle); background: transparent; }
 .mafw-manager-card-head { display: flex; align-items: center; gap: 6px; }
 .mafw-manager-card-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success, #3fb950); flex-shrink: 0; }
