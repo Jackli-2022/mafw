@@ -1631,7 +1631,7 @@ export function MafwShell() {
     setFlowCards({})
     setPageState(reconcile({}))
     setCompactionMarks({})
-    setAgentSel(null)
+    setAgentPicks(reconcile({}))
   }
 
   // Primary agents (switchable driver) vs subagent agents (mentionable too).
@@ -1684,7 +1684,9 @@ export function MafwShell() {
   }
 
   // ── Pickers: agent selection (shared), per-pane picker state lives in ChatPane ──
-  const [agentSel, setAgentSel] = createSignal<AgentEntry | null>(null)
+  // Per-session agent pick（切片 3：agentSel 全局单值 → per-session，对齐 modelPicks 模式）。
+  // 值 = agent name（null/缺省 = runtime 默认）；plan/build 快捷切换写这里。
+  const [agentPicks, setAgentPicks] = createStore<Record<string, string>>({})
   const [switchLogs, setSwitchLogs] = createSignal<Record<string, string[]>>({})
   const [taskListOpen, setTaskListOpen] = createSignal(false)
   const [tasksPlacement, setTasksPlacement] = createSignal<"bar" | "dock">(
@@ -1868,12 +1870,20 @@ export function MafwShell() {
   // primary agent is not allowed there.
   const isManagerSession = createMemo(() => active()?.manager === true)
 
-  const applyAgentSwitch = (a: AgentEntry) => {
-    setAgentSel(a)
-    const sid = currentSessionID()
+  const applyAgentSwitch = (a: AgentEntry, sidOverride?: string) => {
+    const sid = sidOverride ?? currentSessionID()
     if (sid) {
+      setAgentPicks(sid, a.name)
       setSwitchLogs(prev => ({ ...prev, [sid]: [...(prev[sid] || []), `已切换到 ${a.name}`] }))
     }
+  }
+
+  /** 当前会话（或指定 sid）解析后的 agent：picks → 查 primaryAgents → null（runtime 默认）。 */
+  const sessionAgent = (sid: string | null | undefined): AgentEntry | null => {
+    if (!sid) return null
+    const name = agentPicks[sid]
+    if (!name) return null
+    return primaryAgents().find(a => a.name === name) ?? null
   }
 
   // TaskList metrics: tokens + start time of the current (last) turn
@@ -2201,7 +2211,7 @@ export function MafwShell() {
                           taskMetrics={taskMetrics}
                           tasksAllDone={tasksAllDone}
                           gwReady={gwStatus()?.state === "ready"}
-                          agentSel={agentSel}
+                          agentSel={() => sessionAgent(leaf.sid)}
                           model={() => sessionModel(leaf.sid)}
                           modelGroups={modelGroups}
                           primaryAgents={primaryAgents}
