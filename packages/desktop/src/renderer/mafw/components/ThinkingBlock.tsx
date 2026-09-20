@@ -5,7 +5,7 @@ import { Markdown } from "@mafw/session-ui/markdown"
 import { useData } from "@mafw/session-ui/context"
 import { readPartText } from "@mafw/session-ui/message-part-text"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { thinkingDurationSec, thinkingLabel } from "./thinking-label"
+import { thinkingDurationSec, thinkingLabel, reasoningStreaming } from "./thinking-label"
 
 /** 幂等注册：覆盖 session-ui 默认 reasoning 渲染为 dsh 式可折叠块 */
 export function registerThinkingBlock() {
@@ -15,9 +15,7 @@ export function registerThinkingBlock() {
 export function ThinkingBlock(props: { part: any; message: any }) {
   const data = useData()
   const part = () => props.part
-  const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof props.message.time?.completed !== "number",
-  )
+  const streaming = createMemo(() => reasoningStreaming(props.message, part().time))
   const text = createMemo(() => readPartText(data.store.part_text_accum_delta, part()))
   const label = createMemo(() =>
     thinkingLabel({ streaming: streaming(), durationSec: thinkingDurationSec(part().time) }),

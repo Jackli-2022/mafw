@@ -55,7 +55,7 @@ import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
 import { mapPermissionCard as mapPermissionCardPure } from "./components/permission-card-mapping"
 import type { ModelEntry } from "./components/pickers/ModelPicker"
-import { messageModel } from "./message-model"
+import { messageModel, mergeAssistantMessage } from "./message-model"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
@@ -1501,10 +1501,13 @@ export function MafwShell() {
         } else if (info.role === "assistant") {
           setStore(prev => {
             const msgs = { ...prev.message }
-            const sessionMsgs = [...(msgs[sid] || [])]
-            if (sessionMsgs.find(m => m.id === msgId)) return prev
-            const pm = info.parentID || sessions().find(s => s.id === sid)?.userMsgId || null
-            sessionMsgs.push({ ...info, id: msgId, sessionID: sid, parentID: pm, time: info.time || { created: Date.now() }, parts: [] })
+            const sessionMsgs = mergeAssistantMessage(
+              msgs[sid] || [],
+              info,
+              { sid, parentFallback: sessions().find(s => s.id === sid)?.userMsgId || null },
+            )
+            // 无变化时保持引用（mergeAssistantMessage 返回原数组）
+            if (sessionMsgs === msgs[sid]) return prev
             msgs[sid] = sessionMsgs
             return { ...prev, message: msgs }
           })
