@@ -38,6 +38,19 @@ function makeDeps() {
       setTrajectoryTurn: rec("setTrajectoryTurn"),
       setTodos: rec("setTodos"),
     },
+    chat: {
+      trace: rec("trace"),
+      getStore: () => ({ message: {}, part: {}, session_status: {} }) as any,
+      patchStore: rec("patchStore"),
+      setSessionStatus: rec("setSessionStatus"),
+      markSessionDone: rec("markSessionDone"),
+      setUserMsgId: rec("setUserMsgId"),
+      parentFallback: () => null,
+      phase: rec("phase"),
+      onTurnSettled: rec("onTurnSettled"),
+      notifyIdle: rec("notifyIdle"),
+      mediaSpeak: rec("mediaSpeak"),
+    },
   }
   return { deps, calls }
 }

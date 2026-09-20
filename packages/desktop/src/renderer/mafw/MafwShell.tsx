@@ -17,7 +17,6 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { sessionStore } from "./session-store"
-  import { planSessionEvent, type RawSessionEvent, isTailAccountedAtShell } from "./session-events"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
@@ -57,7 +56,7 @@ import type { AskCardData } from "./components/AskCard"
 import type { PermissionCardData } from "./components/PermissionCard"
 import { mapPermissionCard as mapPermissionCardPure } from "./components/permission-card-mapping"
 import type { ModelEntry } from "./components/pickers/ModelPicker"
-import { messageModel, mergeAssistantMessage } from "./message-model"
+import { messageModel } from "./message-model"
 
 type ModelSel = { providerID: string; modelID: string; label: string }
 import type { AgentEntry } from "./components/pickers/AgentPicker"
@@ -1271,6 +1270,29 @@ export function MafwShell() {
       setTrajectoryTurn: (sid, turn) => setTrajectoryTurnLive({ ...trajectoryTurnLive(), [sid]: turn }),
       setTodos: (sid, list) => setTodos(sid, list),
     },
+    chat: {
+      trace: traceEvent,
+      getStore: () => store,
+      patchStore: (p) => setStore(prev => ({ ...prev, ...p })),
+      setSessionStatus: (sid, s) => setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: s } })),
+      markSessionDone: (sid) => setSessions(prev => prev.map(x => x.id === sid ? { ...x, done: true } : x)),
+      setUserMsgId: (sid, msgId) => setSessions(prev => prev.map(x => x.id === sid ? { ...x, userMsgId: msgId } : x)),
+      parentFallback: (sid) => sessions().find(x => x.id === sid)?.userMsgId || null,
+      phase: (sid, p) => phaseUpdaters[sid]?.(p),
+      onTurnSettled: (sid, o) => {
+        sendingResetters[sid]?.()
+        if (o.expireCards) expireSessionCards(sid)
+        queueFlushers[sid]?.()
+      },
+      notifyIdle: (sid) => {
+        if (document.hidden && Date.now() - (lastIdleNotify[sid] || 0) > 60_000) {
+          lastIdleNotify[sid] = Date.now()
+          const title = sessions().find(x => x.id === sid)?.title || "会话"
+          notifyIfHidden("MAFW：回合完成", `「${title}」已回复`)
+        }
+      },
+      mediaSpeak: (sid, text, voice) => mediaSpeakHandlers[sid]?.(text, voice),
+    },
   }
 
   async function connectSse() {
@@ -1317,214 +1339,9 @@ export function MafwShell() {
     es.onmessage = (e: MessageEvent) => {
       let raw: any
       try { raw = JSON.parse(e.data) } catch { return }
-      const event = raw?.data || raw
-      if (!event) return
-
-      // 已迁移到 dispatcher 的分支（core + 生命周期 + flow cards + dock，纯路由可单测）。
-      const before = ["user_question", "project_registered", "runtime_switched", "session.created", "session.updated", "session.deleted", "question.asked", "permission.asked", "permission_mode", "session.compacted", "question.replied", "question.rejected", "permission.replied", "trajectory.event", "trajectory.turn", "todo.updated"]
-      if (before.includes(event.type)) { dispatchShellEvent(event, sseDeps); return }
-
-      // sessionID may be top-level (gateway-normalized) or nested in opencode event properties
-      const sid = event?.sessionID
-        || event?.properties?.sessionID
-        || event?.properties?.part?.sessionID
-        || event?.properties?.info?.sessionID
-        || ""
-      // 漏接线检测：不属于尾部合法放行（else-if 链 / 前缀类 / 显式忽略）=
-      // 未知事件（gateway 新增而 desktop 未接）。warn + trace 留痕，不抛错。
-      const missTrace = () => {
-        if (!isTailAccountedAtShell(event.type)) {
-          console.warn("[mafw] unhandled SSE event at shell:", event.type)
-          traceEvent(event, "miss")
-        }
-      }
-      if (!sid) { missTrace(); return }
-
-      if (event.type === "message.updated") {
-        traceEvent(event, "chat:message")
-        const info = event.properties?.info
-        if (!info?.id || !info?.role) return
-        const msgId = info.id
-        if (info.role === "user") {
-          // Replace the optimistic user message (id `user-...`) with the real
-          // opencode message id so the turn anchor matches assistant parentIDs
-          // and part messageIDs.
-          setStore(prev => {
-            const msgs = { ...prev.message }
-            const sessionMsgs = [...(msgs[sid] || [])]
-            if (sessionMsgs.find(m => m.id === msgId)) return prev
-            const optIdx = sessionMsgs.findIndex(m => m.role === "user" && m.id.startsWith("user-"))
-            if (optIdx >= 0) {
-              const opt = sessionMsgs[optIdx]
-              sessionMsgs[optIdx] = { 
-                ...info, 
-                id: msgId, 
-                sessionID: sid, 
-                time: info.time || opt.time || { created: Date.now() },
-                // Preserve voice UI fields from optimistic message
-                voiceStatus: opt.voiceStatus,
-                voiceDuration: opt.voiceDuration,
-              }
-              for (const m of sessionMsgs) {
-                if (m.parentID === opt.id) m.parentID = msgId
-              }
-              msgs[sid] = sessionMsgs
-              const parts = { ...prev.part }
-              if (parts[opt.id]) {
-                parts[msgId] = (parts[msgId] || []).concat(parts[opt.id].map(p => ({ ...p, sessionID: sid, messageID: msgId })))
-                delete parts[opt.id]
-              }
-              return { ...prev, message: msgs, part: parts }
-            }
-            sessionMsgs.push({ ...info, id: msgId, sessionID: sid, time: info.time || { created: Date.now() }, parts: [] })
-            msgs[sid] = sessionMsgs
-            return { ...prev, message: msgs }
-          })
-          setSessions(prev => prev.map(s => s.id === sid ? { ...s, userMsgId: msgId } : s))
-        } else if (info.role === "assistant") {
-          setStore(prev => {
-            const msgs = { ...prev.message }
-            const sessionMsgs = mergeAssistantMessage(
-              msgs[sid] || [],
-              info,
-              { sid, parentFallback: sessions().find(s => s.id === sid)?.userMsgId || null },
-            )
-            // 无变化时保持引用（mergeAssistantMessage 返回原数组）
-            if (sessionMsgs === msgs[sid]) return prev
-            msgs[sid] = sessionMsgs
-            return { ...prev, message: msgs }
-          })
-        }
-        return
-      }
-      // opencode ≥1.18 streams assistant text via message.part.delta
-      // ({partID, field: "text", delta}); accumulate it into the part record so
-      // the reply renders incrementally (message.part.updated only fires once).
-      if (event.type === "message.part.delta") {
-        traceEvent(event, "chat:delta")
-        const props = event.properties || {}
-        const msgId = props.messageID
-        const partID = props.partID
-        if (!msgId || !partID || props.field !== "text") return
-        const delta = props.delta
-        if (!delta) return
-        phaseUpdaters[sid]?.('writing')
-        setStore(prev => {
-          const parts = { ...prev.part }
-          const existing = parts[msgId] || []
-          const idx = existing.findIndex(p => p.id === partID)
-          if (idx >= 0) {
-            const cur = existing[idx]
-            if (typeof cur.text !== "string") return prev
-            const text = cur.text + delta
-            if (text === cur.text) return prev
-            parts[msgId] = existing.map((p, i) => (i === idx ? { ...p, text } : p))
-            return { ...prev, part: parts }
-          }
-          parts[msgId] = [...existing, { id: partID, type: "text", text: delta, sessionID: sid, messageID: msgId }]
-          return { ...prev, part: parts }
-        })
-        return
-      }
-      // 流式主链：part 更新 / complete / idle / error 五类共用一个分支链
-      traceEvent(event, "chat:stream")
-      if (event.type === "message.part.updated") {
-        const part = event.payload?.part || event.properties?.part
-        if (!part) return
-        const msgId = part.messageID
-        if (!msgId) return
-        console.log("[mafw] SSE part:", part.type, "partId:", part.id, "msgId:", msgId, "len:", (part.text || "").length, (part.text || "").slice(0, 60))
-        phaseUpdaters[sid]?.('writing')
-
-        setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "busy" } } }))
-
-        setStore(prev => {
-          const parts = { ...prev.part }
-          const existing = parts[msgId] || []
-          const partObj = { ...part, id: part.id || `${msgId}-${part.type}`, sessionID: sid, messageID: msgId }
-          let idx = existing.findIndex(p => p.id === partObj.id)
-          if (idx < 0 && part.type === "text") {
-            // absorb the optimistic user text part (id `user-...-text`) when the
-            // real user part with identical text arrives
-            idx = existing.findIndex(p => p.type === "text" && p.id.startsWith("user-") && (p.text || "") === (part.text || ""))
-          }
-          parts[msgId] = idx >= 0
-            ? existing.map((p, i) => (i === idx ? { ...p, ...partObj } : p))
-            : [...existing, partObj]
-          return { ...prev, part: parts }
-        })
-      } else if (event.type === "message.complete") {
-        setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
-        setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
-        sendingResetters[sid]?.()
-        expireSessionCards(sid)
-        queueFlushers[sid]?.()
-      } else if (event.type === "message.part.complete") {
-        setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
-        setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
-        sendingResetters[sid]?.()
-        queueFlushers[sid]?.()
-      } else if (event.type === "session.idle") {
-        // Defensive fallback: the gateway rewrites session.idle into
-        // message.complete before broadcasting (index.ts broadcast facet), so
-        // this branch is unreachable in Mode A — it only guards against
-        // future/direct senders. Without it the sending flag would never reset.
-        setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
-        setSessions(prev => prev.map(s => s.id === sid ? { ...s, done: true } : s))
-        sendingResetters[sid]?.()
-        expireSessionCards(sid)
-        queueFlushers[sid]?.()
-        if (document.hidden && Date.now() - (lastIdleNotify[sid] || 0) > 60_000) {
-          lastIdleNotify[sid] = Date.now()
-          const title = sessions().find(s => s.id === sid)?.title || "会话"
-          notifyIfHidden("MAFW：回合完成", `「${title}」已回复`)
-        }
-      } else if (event.type === "session.error" || event.type === "message.error" || event.type === "message.aborted") {
-        setStore(prev => ({ ...prev, session_status: { ...prev.session_status, [sid]: { type: "idle" } } }))
-        sendingResetters[sid]?.()
-        expireSessionCards(sid)
-        queueFlushers[sid]?.()
-      }
-
-      if (event.type?.startsWith("session.next.tool.") && event.assistantMessageID) {
-        const msgId = event.assistantMessageID
-        setStore(prev => {
-          const msgs = { ...prev.message }
-          const sessionMsgs = [...(msgs[sid] || [])]
-          if (!sessionMsgs.find(m => m.id === msgId)) {
-            const pm = sessions().find(s => s.id === sid)?.userMsgId || null
-            sessionMsgs.push({ id: msgId, sessionID: sid, role: "assistant", parentID: pm, time: { created: Date.now() }, parts: [] })
-            msgs[sid] = sessionMsgs
-          }
-          return { ...prev, message: msgs }
-        })
-      }
-
-      // mafw_media_speak 工具事件 → 流式 TTS 播放（合成即出声，与回复生成并行）。
-      // 参数字段多形态兼容：input（opencode tool part 标准字段）优先，args 保留兼容。
-      const toolName = event.properties?.tool || event.properties?.info?.tool || event.info?.tool || (event.properties?.part as any)?.tool
-      if (toolName === "mafw_media_speak" && sid) {
-        const propsArgs = event.properties?.input || event.properties?.info?.input || event.properties?.part?.input
-          || event.properties?.args || event.properties?.info?.args || event.info?.args
-        let text = typeof propsArgs?.text === "string" ? propsArgs.text : ""
-        let voice = typeof propsArgs?.voice === "string" ? propsArgs.voice : undefined
-        if (!text) {
-          // 兜底：从 store 里该 assistant 消息的 tool part 提取（part 结构 { type, tool, input }）
-          const msgId = event.assistantMessageID
-          const parts = msgId ? (store.part[msgId] || []) : []
-          for (const p of parts) {
-            if (p?.type === "tool" && (p.tool === "mafw_media_speak" || p.tool === "mafw_speak")) {
-              text = typeof p.input?.text === "string" ? p.input.text : ""
-              voice = typeof p.input?.voice === "string" ? p.input.voice : voice
-              break
-            }
-          }
-        }
-        console.log("[mafw] media_speak event:", event.type, "| toolName:", toolName, "| text len:", text.length, "| voice:", voice)
-        console.log("[mafw] media_speak raw:", JSON.stringify(raw).slice(0, 600))
-        if (text) mediaSpeakHandlers[sid]?.(text, voice)
-      }
-      missTrace()
+      // 全部事件经 dispatcher 纯路由分发（sse/dispatcher.ts + sse/handlers/*，
+      // 分支语义见各 handler 注释；漏接线检测在 dispatcher 尾部 missTrace）。
+      dispatchShellEvent(raw?.data || raw, sseDeps)
     }
   }
 
