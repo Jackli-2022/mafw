@@ -1202,6 +1202,27 @@ export function MafwShell() {
   const [showInspector, setShowInspector] = createSignal(false)
   // 改动审阅面板（切片 2）：值 = 打开面板的 sessionID
   const [diffPanelFor, setDiffPanelFor] = createSignal<string | null>(null)
+  // worktree 并行隔离（切片 4）：runtime 能力缓存 + 创建入口
+  const [rtCaps, setRtCaps] = createSignal<Record<string, boolean>>({})
+  createEffect(() => {
+    if (gwStatus()?.state !== "ready") return
+    void window.api.mafw.runtime.get().then((r: any) => {
+      setRtCaps(r?.active?.capabilities ?? {})
+    }).catch(() => {})
+  })
+  const worktreeEnabled = () => rtCaps().worktreeApi === true
+  const createWorktreeSession = () => {
+    const dir = currentProject()
+    if (!dir) { showToastV2({ description: "未选择项目，无法开并行任务", duration: 2500 }); return }
+    void window.api.mafw.sessions.create({ directory: dir, worktree: true })
+      .then((r: any) => {
+        if (r?.id) {
+          openSessionTab(r.id)
+          showToastV2({ description: `已开并行任务（worktree：${r.worktree?.dir ?? dir}）`, duration: 3500 })
+        }
+      })
+      .catch((e: any) => showToastV2({ description: `创建失败：${String(e?.message ?? e).slice(0, 80)}`, duration: 4000 }))
+  }
   let es: EventSource | null = null
   let esRetry: ReturnType<typeof setTimeout> | null = null
   const scheduleEsRetry = (delayMs = 5000) => {
@@ -2242,6 +2263,9 @@ export function MafwShell() {
                           onClosePane={() => closePane(leaf.sid)}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
                           onOpenDiffReview={() => setDiffPanelFor(leaf.sid)}
+                          worktreeEnabled={worktreeEnabled()}
+                          onCreateWorktreeSession={createWorktreeSession}
+                          projectDirectory={currentProject()}
                           onPlanBuildToggle={(next) => {
                             if (next === "default") {
                               setAgentPicks(leaf.sid, undefined as any)

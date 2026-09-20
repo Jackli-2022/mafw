@@ -11,6 +11,7 @@ import { UsagePill } from "./UsagePill"
 import { ManagerCard } from "./ManagerCard"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { sessionStore } from "../session-store"
+import { worktreeBadge } from "./worktree-label"
 import { useConnPhase } from "../connection-state"
 import { ConnBanner } from "./ConnBanner"
 
@@ -256,8 +257,15 @@ export function Rail(props: Props) {
           data-hi={flatResults().indexOf(s) === hi() ? "1" : undefined}
           onClick={() => { props.onSelectSession(s.id, sessionName(s), false); setHi(-1) }}
         >
-          <TooltipV2 value={new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
-            <span class="mafw-rail-session-title">{sessionName(s)}</span>
+          <TooltipV2 value={worktreeBadge(s.directory, projectID())
+            ? `worktree：${s.directory}`
+            : new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
+            <span class="mafw-rail-session-title">
+              <Show when={worktreeBadge(s.directory, projectID())}>
+                <span class="mafw-rail-wt-badge" title="">⎇ {worktreeBadge(s.directory, projectID())}</span>
+              </Show>
+              {sessionName(s)}
+            </span>
           </TooltipV2>
           <span
             class="mafw-rail-row-dots"

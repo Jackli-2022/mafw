@@ -63,6 +63,14 @@ function missTrace(event: any, deps: ShellEventDeps): void {
 export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (!event) return
 
+  // opencode v2 sync 信封（{syncEvent:{type:'*.1',...}}，与 legacy 事件双发）：
+  // gateway 边界已丢弃（RUNTIME_NATIVE_DROPPED）；此处兜底消费，防 gateway
+  // 版本偏差泄漏时刷屏（语义重复，三端只消费 legacy 事件）。
+  if (event.type === "sync") {
+    deps.core.trace(event, "sync-envelope")
+    return
+  }
+
   if (event.type === "user_question") {
     deps.core.trace(event, "notify:question")
     deps.core.setActiveQuestion(event)

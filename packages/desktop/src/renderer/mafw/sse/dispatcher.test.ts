@@ -120,4 +120,11 @@ describe("dispatchShellEvent: tail", () => {
     dispatchShellEvent({ type: "user_feedback", sessionID: "s1" }, deps)
     expect(calls.some(c => c.name === "warn")).toBe(false)
   })
+
+  test("opencode v2 sync envelope → consumed silently (gateway drops upstream)", () => {
+    const { deps, calls } = makeDeps()
+    dispatchShellEvent({ type: "sync", syncEvent: { type: "session.updated.1", aggregateID: "s1", data: { sessionID: "s1" } } }, deps)
+    expect(calls.map(c => c.name)).toEqual(["trace"])
+    expect(calls[0].args[1]).toBe("sync-envelope")
+  })
 })

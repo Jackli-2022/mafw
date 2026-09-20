@@ -4417,3 +4417,4 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-diff-line.del { color: var(--text-danger, #ff6b6b); background: rgba(255,107,107,.08); }
 .mafw-diff-panel-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--border-base, rgba(128,128,128,.25)); }
 .mafw-diff-panel-count { font-size: 12px; color: var(--text-muted, #888); font-variant-numeric: tabular-nums; }
+.mafw-rail-wt-badge { display: inline-block; font-size: 10px; color: var(--accent, #46DC82); border: 1px solid var(--accent, #46DC82); border-radius: 4px; padding: 0 4px; margin-right: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }

@@ -22,6 +22,7 @@ import { inlineAnchor } from "./flow-card-placement"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
+import { worktreeBadge } from "./worktree-label"
 import { type PermissionMode } from "./permission-card-mapping"
 
 /** 🛡 三档按钮文案与提示（切片 1）。 */
@@ -123,6 +124,11 @@ export type ChatPaneProps = {
   onOpenDiffReview?: () => void
   /** plan/build 模式三态循环（切片 3；'default' = 清除 picks 回 runtime 默认） */
   onPlanBuildToggle?: (next: "plan" | "build" | "default") => void
+  /** worktree 并行隔离（切片 4）：能力门由 MafwShell 传（runtime worktreeApi） */
+  worktreeEnabled?: boolean
+  onCreateWorktreeSession?: () => void
+  /** 当前项目主目录（worktree 徽标判定的对照基准） */
+  projectDirectory?: string | null
   onTitlebarRef: (el: HTMLElement | null) => void
   taskListOpen: boolean
   tasksPlacement: "bar" | "dock"
@@ -315,6 +321,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     build: "执行模式：完整工具集执行改动。点击/Tab 切回默认",
     default: "默认模式：runtime 默认 agent。点击/Tab 切到 plan",
   }
+
+  // ── worktree 并行隔离（切片 4）：当前会话的 directory 与徽标 ──
+  const sessionDirectory = (): string | undefined =>
+    props.store.session.find((s: any) => s.id === sidProp())?.directory
+  const worktreeBadgeOf = () => worktreeBadge(sessionDirectory(), props.projectDirectory)
 
   const userActions = () => ({
     fork: async ({ sessionID, messageID }: { sessionID: string; messageID: string }) => {
@@ -1815,6 +1826,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <Show when={props.isManager && props.onNewTopic}>
                   <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
                     <ButtonV2 variant="ghost" size="small" onClick={e => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
+                  </TooltipV2>
+                </Show>
+                <Show when={worktreeBadgeOf()}>
+                  <TooltipV2 value={`worktree：${sessionDirectory()}`} openDelay={300}>
+                    <span class="mafw-rail-wt-badge">⎇ {worktreeBadgeOf()}</span>
+                  </TooltipV2>
+                </Show>
+                <Show when={props.worktreeEnabled && props.onCreateWorktreeSession}>
+                  <TooltipV2 value="在独立 git worktree 中开并行任务（互不踩踏）" openDelay={300}>
+                    <ButtonV2 variant="ghost" size="small" onClick={e => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务">⎇ 并行</ButtonV2>
                   </TooltipV2>
                 </Show>
                 <Show when={props.canClosePane}>
