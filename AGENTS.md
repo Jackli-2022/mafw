@@ -202,6 +202,15 @@ onMount → gateway.info() 等 ready
 - **顺手修复**：Rail 删除调用 `sessions.remove`（不存在）→ `delete`（原删除必弹失败 toast）；Rail 删除后 tab 残留（`onSessionDeleted` 接 `closeSession`）；tab 双击改名纯本地 → 接 gateway rename
 - **pi runtime 固有降级**：pi 无 created/deleted/标题事件（SessionManager 无 hook），invalidate 兜底；测试 desktop +23 / gateway +6
 
+#### Shell 事件分发与会话工作区收敛（2026-09-20，阶段一绞杀者）
+
+MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立模块，shell 收敛为布局壳（spec：`docs/superpowers/specs/2026-09-20-desktop-ux-refactor-design.md`）：
+
+- **SSE dispatcher**（`renderer/mafw/sse/dispatcher.ts`）：`dispatchShellEvent(event, deps)` 纯路由——core/lifecycle 内联，其余经 `EXTRA_HANDLERS` 链（flow-cards / dock / chat-stream / media-speak，`sse/handlers/*`）；一切副作用经注入 `ShellEventDeps`（core/lifecycle/flowCards/dock/chat 五组），逐分支 bun 可测；消费语义精确保留原落穿行为（`message.updated`/`part.delta` 提前消费，流式主链与未知事件落穿到 media_speak 检查后 missTrace）；漏接线检测（`isTailAccountedAtShell`）在 dispatcher 尾部
+- **纯 reducer**（`sse/chat-reducers.ts`）：乐观 user 消息替换 / assistant 合并 / part delta 累积 / part upsert（含乐观 text 吸收）/ `session.next.tool.*` 承载消息确保 / media_speak 参数提取，全部无 Solid 依赖可测
+- **会话工作区单例**（`workspace/session-workspace.ts`）：`workspace` 拥有 tabs signal（`sessions`/`activeId`）、消息 store（`store`/`setStore`）与五个回调注册表（anchor/sendingReset/queueFlush/phase/mediaSpeak，Record 形态 + register/unregister/call API）；MafwShell 以别名引用（`const store = workspace.store` 等），调用点语法零改动
+- 测试：desktop 测试已入 CI（root `test:desktop`；desktop 包 `bun test`）；desktop +53（dispatcher 9 / flow-cards 9 / dock 8 / chat-reducers+chat-stream 27 / workspace 5，含已知坏 legacy launcher 测试移除 -1）
+
 ### 5.9a RightDock 用量/配额拆分（2026-09-07）
 - RightDock tabs：`tasks | trajectory | usage | quota | notes`
 - **UsageDock（用量）**：上下文条 + Token 统计（会话/项目/记忆三行 + **分模型统计**：今日/7天/30天/全部窗口切换、KPI 行 [总 tokens/估算成本/缓存命中率]、Top3+其他聚合、TooltipV2 五类明细）；数据 `GET /api/usage` 的 `modelStats.windows`，15s 轮询
