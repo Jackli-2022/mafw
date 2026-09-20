@@ -82,6 +82,7 @@ import { BudgetGuard } from './core/budget-guard';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
+import { PermissionRulesStore } from './core/approval/rules-store';
 import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
@@ -249,7 +250,8 @@ class MafwScheduler {
   private pipelineRunning = false; // action-level in-flight guard (cron + manual triggers)
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private approvalPolicy!: ApprovalPolicyService; // asked 事件策略评估（manual/auto + 预算 + 内部 fail-safe）
-  private allowlistStore!: AllowlistStore; // 持久白名单（config.yaml approval 段）
+  private allowlistStore!: AllowlistStore; // legacy 白名单（config.yaml approval 段，双读过渡）
+  private permissionRules!: PermissionRulesStore; // 持久规则（~/.mafw/permission-rules.json）
 
   activeGoals = new Map<string, StateFile>();
   registeredProjects = new Map<string, RegisteredProject>();
@@ -1843,16 +1845,19 @@ class MafwScheduler {
     const mafwDir = config.resolvePath();
     this.mafwDir = mafwDir;
 
-    // Approval policy（spec docs/superpowers/specs/2026-09-18-gateway-approval-policy-design.md）：
-    // 持久白名单（config.yaml approval 段，懒读热生效）+ per-session mode（kv perm-mode）。
+    // Approval policy（spec docs/superpowers/specs/2026-09-18-gateway-approval-policy-design.md
+    // + 切片 1 三档化）：持久规则（~/.mafw/permission-rules.json，新）+ legacy 白名单
+    // （config.yaml approval 段，双读过渡）+ per-session 三档 mode（kv perm-mode）。
     this.allowlistStore = new AllowlistStore({
       readRawAllowlist: () => (config.raw as any)?.approval?.allowlist,
       persist: (o) => config.persistOverrides(o as any),
     });
+    this.permissionRules = new PermissionRulesStore(mafwDir);
     this.approvalPolicy = new ApprovalPolicyService({
       getInternalRole: (sid) => this.internalSessionRoles.get(sid),
-      allowlistMatches: (toolName, candidate) => this.allowlistStore.matches(toolName, candidate),
-      loadMode: async (sid) => this.getGatewayDb().kvGet<'manual' | 'auto'>('perm-mode', sid) ?? 'manual',
+      allowlistMatches: (toolName, candidate) =>
+        this.permissionRules.matches(toolName, candidate) || this.allowlistStore.matches(toolName, candidate),
+      loadMode: async (sid) => this.getGatewayDb().kvGet<'manual' | 'auto' | 'read-only' | 'full-access'>('perm-mode', sid) ?? 'read-only',
       saveMode: async (sid, mode) => { this.getGatewayDb().kvSet('perm-mode', sid, mode); },
       onModeChanged: (sid, mode, reason) => {
         this.broadcast(opencodeBroadcast({ type: 'permission_mode', properties: { mode, reason }, sessionID: sid }));

@@ -2,7 +2,7 @@
 // /api/permissions/:id 通配匹配之前（triage 吞噬教训）。
 
 import * as http from 'http';
-import { SessionPermissionMode } from '../core/approval/policy-service';
+import { SessionPermissionMode, normalizeMode } from '../core/approval/policy-service';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -53,13 +53,14 @@ export async function handlePermissionModeSet(
     json(res, 400, { error: `invalid JSON: ${err.message}` });
     return;
   }
-  if (body?.mode !== 'manual' && body?.mode !== 'auto') {
-    json(res, 400, { error: "mode must be 'manual'|'auto'" });
+  if (body?.mode !== 'read-only' && body?.mode !== 'auto' && body?.mode !== 'full-access' && body?.mode !== 'manual') {
+    json(res, 400, { error: "mode must be 'read-only'|'auto'|'full-access' ('manual' accepted as legacy alias)" });
     return;
   }
+  const mode: SessionPermissionMode = normalizeMode(body.mode);
   try {
-    await deps.policy.setMode(sessionID, body.mode);
-    json(res, 200, { mode: body.mode, autoApprovals: 0, budget: deps.budget });
+    await deps.policy.setMode(sessionID, mode);
+    json(res, 200, { mode, autoApprovals: 0, budget: deps.budget });
   } catch (err: any) {
     json(res, 500, { error: err.message });
   }

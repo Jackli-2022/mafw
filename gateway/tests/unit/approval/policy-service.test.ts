@@ -68,10 +68,10 @@ describe('评估顺序（spec §6.2，逐条短路）', () => {
     const d = svc.evaluate('s1', SAFE); // 第 26 次
     expect(d.action).toBe('human');
     expect(d.reason).toContain('budget');
-    expect(calls.broadcasts.some((b) => b.sid === 's1' && b.mode === 'manual')).toBe(true);
-    expect(calls.mode.some(([sid, m]) => sid === 's1' && m === 'manual')).toBe(true);
+    expect(calls.broadcasts.some((b) => b.sid === 's1' && b.mode === 'read-only')).toBe(true);
+    expect(calls.mode.some(([sid, m]) => sid === 's1' && m === 'read-only')).toBe(true);
     expect(svc.getAutoApprovals('s1')).toBe(0);
-    // 回落后维持 manual
+    // 回落后维持 read-only
     expect(svc.evaluate('s1', SAFE).action).toBe('human');
   });
 
@@ -101,14 +101,14 @@ describe('mode 持久化与预算重置', () => {
     expect(await svc.getMode('s1')).toBe('auto');
   });
 
-  it('setMode：内存 + kv + 广播 + 预算清零；显式切 manual 重置预算', async () => {
+  it('setMode：内存 + kv + 广播 + 预算清零；legacy manual 归一化 read-only 并重置预算', async () => {
     const { deps, calls } = makeDeps({ loadMode: async () => 'auto' });
     const svc = new ApprovalPolicyService(deps);
     await svc.getMode('s1');
     svc.evaluate('s1', SAFE); // count=1
     await svc.setMode('s1', 'manual');
-    expect(calls.mode).toContainEqual(['s1', 'manual']);
-    expect(calls.broadcasts.some((b) => b.mode === 'manual' && b.reason === 'user toggled')).toBe(true);
+    expect(calls.mode).toContainEqual(['s1', 'read-only']);
+    expect(calls.broadcasts.some((b) => b.mode === 'read-only' && b.reason === 'user toggled')).toBe(true);
     expect(svc.getAutoApprovals('s1')).toBe(0);
     await svc.setMode('s1', 'auto');
     expect(svc.evaluate('s1', SAFE).reason).toContain('1/25'); // 预算重新计

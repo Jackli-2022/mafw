@@ -43,15 +43,28 @@ describe('GET /api/sessions/:sid/permission-mode', () => {
 });
 
 describe('POST /api/sessions/:sid/permission-mode', () => {
-  it('合法 mode → setMode + 返回', async () => {
+  it("legacy 'manual' 归一化为 read-only → setMode + 返回", async () => {
     const res = makeRes();
     const setCalls: string[] = [];
     await handlePermissionModeSet(makeReq({ mode: 'manual' }), res, 's1', makeDeps({
-      setMode: async (_s, m) => { setCalls.push(m); },
+      setMode: async (_s, m) => { setCalls.push(m as any); },
     }));
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse((res as any).body).mode).toBe('manual');
-    expect(setCalls).toEqual(['manual']);
+    expect(JSON.parse((res as any).body).mode).toBe('read-only');
+    expect(setCalls).toEqual(['read-only']);
+  });
+
+  it('三档 mode 均接受（read-only / auto / full-access）', async () => {
+    for (const mode of ['read-only', 'auto', 'full-access'] as const) {
+      const res = makeRes();
+      const setCalls: string[] = [];
+      await handlePermissionModeSet(makeReq({ mode }), res, 's1', makeDeps({
+        setMode: async (_s, m) => { setCalls.push(m as any); },
+      }));
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse((res as any).body).mode).toBe(mode);
+      expect(setCalls).toEqual([mode]);
+    }
   });
 
   it('非法 mode → 400', async () => {
