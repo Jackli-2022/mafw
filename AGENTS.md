@@ -219,6 +219,15 @@ MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立�
 - **TUI**：`/plan` `/build`（幂等 set agentSelection）+ `/agent` picker（含「默认」项）+ chat-store `getAgent` dep 并入 promptAsync body + 状态栏 `◇plan` 徽标
 - **顺带修复**：`POST /api/approvals/:id/respond` 空 stub 仍在挂账（独立 bug，与切片无关）
 
+#### worktree 并行会话（2026-09-20，切片 4）
+
+- **能力位**：`RuntimeCapabilities.worktreeApi`（opencode true / pi false）——desktop 入口按 `GET /api/runtime` 的 capabilities 显隐
+- **创建**：`POST /api/session` body 加 `worktree?: boolean | string`（`routes/session-worktree.ts` `createSessionWithWorktree`）——`SessionWorktreeManager.create(slug)`：`git worktree add <project>-wt-<slug> -b mafw/<slug>`（平铺于项目同级，与 goal `<proj>-goal-<id>` 约定一致；同名 slug 一律递增 -2/-3，**每会话独立 worktree，无跨调用复用**）→ `session.create({ directory: worktreeDir })` → kv `session-worktree/<sid>` = `{dir, branch, projectDir}`
+- **删除联动**：`session.delete`（wave1 dispatch）成功后 `cleanupWorktreeForSession`——worktree remove + branch -D，全部 fail-open 不阻塞删除
+- **desktop**：ChatPane titlebar「⎇ 并行」按钮（能力门）+ Rail 行 / titlebar 的 `⎇ <slug>` 徽标（`worktree-label.ts` 纯函数判定：`s.directory` basename 前缀 `<base>-wt-` 且 ≠ 项目主目录）
+- **TUI**：`/sessions` picker 行尾 dim `⎇<slug>` 标注（只读）
+- **已知边界**：①TS 类字段初始化器先于 constructor 参数属性——`git = simpleGit(this.projectDir)` 拿到 undefined 回退 process.cwd() 会把 worktree 注册进 gateway 自身 repo（已修：constructor 内赋值；GoalWorktreeManager 同款写法属 latent，goal 路径 cwd 恰为项目目录时被掩盖）；②worktree 内记忆写入不随 directory 分离（HarmonicUnitFileStore 固定 `~/.mafw`），session 维度记忆融合机制未建（goal 链路的 mergeMemoryFromWorktree 不受影响）；③残留孤儿 worktree 可经 `git worktree prune` + 手动清理
+
 ### 5.9a RightDock 用量/配额拆分（2026-09-07）
 - RightDock tabs：`tasks | trajectory | usage | quota | notes`
 - **UsageDock（用量）**：上下文条 + Token 统计（会话/项目/记忆三行 + **分模型统计**：今日/7天/30天/全部窗口切换、KPI 行 [总 tokens/估算成本/缓存命中率]、Top3+其他聚合、TooltipV2 五类明细）；数据 `GET /api/usage` 的 `modelStats.windows`，15s 轮询
