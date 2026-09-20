@@ -11,6 +11,11 @@ export type SafetyVerdict = 'safe' | 'dangerous';
 
 const READ_ONLY_TOOLS = new Set(['read', 'grep', 'glob', 'ls', 'find']);
 
+/** 只读工具判定（read-only 档放行依据；导出供 policy-service 消费）。 */
+export function isReadOnlyTool(toolName: string): boolean {
+  return READ_ONLY_TOOLS.has(String(toolName).toLowerCase());
+}
+
 const DANGER_COMMAND_RE: RegExp[] = [
   /\brm\s+-[a-z]*[rf]/i,                       // rm -r / -f 任意组合
   /\bgit\s+push\s+.*(--force|-f)(\s|$)/i,
