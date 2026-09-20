@@ -1,9 +1,9 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, For, Show, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
+import { SkeletonRows } from "../components/Skeleton"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 
@@ -48,10 +48,7 @@ export function ApprovalsPage(props: {
     <div>
       <PageHeader title="Approvals" subtitle="待审批的工具调用" />
       {loading() ? (
-        <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "20px 0" }}>
-          <LoaderV2 width={16} height={16} />
-          <span class="mafw-empty">Loading...</span>
-        </div>
+        <SkeletonRows rows={3} h="52px" />
       ) : !hasAnything() ? (
           <EmptyState glyph="✓" title="没有待审批项" hint="需要确认的工具调用会出现在这里" />
       ) : (

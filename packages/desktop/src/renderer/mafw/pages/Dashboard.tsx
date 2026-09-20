@@ -1,11 +1,11 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, onCleanup } from "solid-js"
-import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
+import { SkeletonRows } from "../components/Skeleton"
 
 export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) {
   const [goals, setGoals] = createSignal<any[]>([])
@@ -59,9 +59,11 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) 
       </div>
       <div>
         {loading() ? (
-          <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "20px 0" }}>
-            <LoaderV2 width={16} height={16} />
-            <span class="mafw-empty">Loading...</span>
+          <div>
+            <div style={{ display: "grid", "grid-template-columns": "repeat(4, 1fr)", gap: 12, "margin-bottom": 24 }}>
+              {[0, 1, 2, 3].map(() => <div class="mafw-skeleton" style={{ height: "64px", "border-radius": "var(--r-lg)" }} />)}
+            </div>
+            <SkeletonRows rows={3} h="52px" />
           </div>
         ) : goals().length === 0 ? (
           <EmptyState glyph="◎" title="还没有 Goal" hint="让 Manager 为你编排第一个目标，或从欢迎页快速创建" />

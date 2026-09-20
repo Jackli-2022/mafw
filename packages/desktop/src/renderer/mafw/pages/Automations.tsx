@@ -1,9 +1,9 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, onCleanup, Show } from "solid-js"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
-import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
+import { SkeletonRows } from "../components/Skeleton"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
@@ -112,10 +112,7 @@ export function AutomationsPage() {
       </Show>
 
       {loading() ? (
-        <div style={{ display: "flex", "align-items": "center", gap: 8, padding: "20px 0" }}>
-          <LoaderV2 width={16} height={16} />
-          <span class="mafw-empty">Loading...</span>
-        </div>
+        <SkeletonRows rows={3} h="52px" />
       ) : rules().length === 0 ? (
           <EmptyState glyph="⏱" title="还没有自动化规则" hint="添加定时或事件驱动的任务规则" />
       ) : (

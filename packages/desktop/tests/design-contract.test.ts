@@ -246,3 +246,15 @@ describe("动效基建 v4", () => {
   test("模态 scale 进场", () =>
     expect(cssBlock(".mafw-confirm {")).toContain("mafw-modal-in"))
 })
+
+describe("Skeleton v4", () => {
+  test("shimmer keyframes 存在", () =>
+    expect(cssBlock("@keyframes mafw-shimmer")).toContain("background-position"))
+  test("skeleton 基础类", () => {
+    const b = cssBlock(".mafw-skeleton {")
+    expect(b).toContain("background: var(--bg-inset)")
+    expect(b).toContain("animation: mafw-shimmer")
+  })
+  test("行组布局", () =>
+    expect(cssBlock(".mafw-skeleton-rows {")).toContain("flex-direction: column"))
+})

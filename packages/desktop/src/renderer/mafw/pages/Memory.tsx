@@ -4,6 +4,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
+import { SkeletonRows } from "../components/Skeleton"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
@@ -133,10 +134,7 @@ export function MemoryPage() {
       {/* Results */}
       <div>
         {searching() ? (
-          <div style={{ display: "flex", "align-items": "center", gap: 8, padding: 20 }}>
-            <LoaderV2 width={16} height={16} />
-            <span style={{ "font-size": 13, color: "var(--text-base)" }}>Searching...</span>
-          </div>
+          <SkeletonRows rows={3} h="52px" />
         ) : results().length > 0 ? results().map(unit => {
           const memItems: ContextMenuItem[] = [
             { label: "Copy Abstraction", onSelect: () => navigator.clipboard.writeText(unit.primary_abstraction ?? "") },
