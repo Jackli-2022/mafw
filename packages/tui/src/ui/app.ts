@@ -93,6 +93,17 @@ export async function runApp(opts: AppOptions): Promise<void> {
     }
   }).catch(() => {})
 
+  // ── Agent 选择（/plan /build /agent；null = runtime 默认，切片 3）──
+  let agentSelection: string | null = null
+  const applyAgentLabel = (): void => {
+    setStatus({ agentLabel: agentSelection ? `◇${agentSelection}` : undefined })
+  }
+  const setAgentSelection = (name: string | null): void => {
+    agentSelection = name
+    applyAgentLabel()
+    setStatus({ hint: theme.ok(name ? `Agent: ${name}（作用于后续消息）` : 'Agent: 默认（runtime 默认）') })
+  }
+
   // ── Chat tab ──
   const interaction = new InteractionStateMachine()
   const chatStore = new ChatStore({
@@ -101,6 +112,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     onChange: () => { tui.requestRender(); syncInteraction() },
     onError: (message) => setStatus({ hint: theme.err(`⚠ ${message.slice(0, 60)}`) }),
     getModel: () => modelSelection,
+    getAgent: () => agentSelection,
   })
   // 审批模式（gateway kv 真相源；SSE permission_mode 驱动 🛡 徽标）
   const permStore = new PermissionModeStore(client)
@@ -274,6 +286,43 @@ export async function runApp(opts: AppOptions): Promise<void> {
     list.onCancel = close
   }
 
+  /** /plan /build /agent（切片 3）：agent 选择作用于后续 promptAsync。 */
+  function setPlanMode(): string {
+    setAgentSelection('plan')
+    return '规划模式：只读 plan agent 出方案（/build 切执行）'
+  }
+  function setBuildMode(): string {
+    setAgentSelection('build')
+    return '执行模式：完整工具集（/plan 切回规划）'
+  }
+  async function showAgentPicker(): Promise<string | null> {
+    let agents: any[] = []
+    try {
+      const r = await client.agents.list()
+      agents = (r as any)?.items ?? []
+    } catch { return '无法获取 agent 列表' }
+    const items: SelectItem[] = [{ value: '__default__', label: '默认', description: 'runtime 默认 agent' }]
+    for (const a of agents) {
+      if (a?.hidden) continue
+      items.push({ value: String(a.name), label: String(a.name), description: a.description || String(a.mode ?? '') })
+    }
+    if (items.length === 1) return '无可用 agent（runtime 未提供）'
+    const list = new SelectList(items, 10, selectListTheme)
+    const handle = tui.showOverlay(new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
+    const close = () => { off(); handle.hide() }
+    const off = tui.addInputListener((data) => {
+      if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
+      return undefined
+    })
+    list.onSelect = (item) => {
+      close()
+      if (item.value === '__default__') setAgentSelection(null)
+      else setAgentSelection(String(item.value))
+    }
+    list.onCancel = close
+    return null
+  }
+
   // ── 用量轮询（模型/token/成本/时长 → 状态栏）──
   let promptStart: number | null = null
   let lastPromptMs = 0
@@ -423,6 +472,9 @@ export async function runApp(opts: AppOptions): Promise<void> {
     showSessionPicker,
     showQueueManager,
     showModelPicker,
+    setPlanMode,
+    setBuildMode,
+    showAgentPicker,
     cycleVerbosity: () => { const v = chatTab.cycleVerbosity(); setStatus({ focus: chatTab.display.focus }); return v },
     toggleFocus: () => { const f = chatTab.toggleFocus(); setStatus({ focus: f }); return f },
     showDiff,

@@ -18,6 +18,12 @@ export interface SlashDeps {
   showQueueManager(): Promise<void>
   /** /model：模型选择 picker（选择后作用于后续 promptAsync）。 */
   showModelPicker(): Promise<void>
+  /** /plan：规划模式（plan agent 作用于后续消息）；返回提示文本。 */
+  setPlanMode(): string
+  /** /build：执行模式（build agent 作用于后续消息）；返回提示文本。 */
+  setBuildMode(): string
+  /** /agent：Agent 选择 picker（含默认）；返回错误文本或 null。 */
+  showAgentPicker(): Promise<string | null>
   /** /compact：压缩当前会话；返回错误文本或 null。 */
   compact(): Promise<string | null>
   /** /undo：回退最后一轮；返回错误文本或 null。 */
@@ -97,6 +103,12 @@ export function createSlashHandler(deps: SlashDeps): (cmd: string, args: string)
       case 'model':
         await deps.showModelPicker()
         return null
+      case 'plan':
+        return deps.setPlanMode()
+      case 'build':
+        return deps.setBuildMode()
+      case 'agent':
+        return await deps.showAgentPicker()
       case 'compact':
         return deps.compact()
       case 'undo':

@@ -234,6 +234,26 @@ test('send passes selected model to promptAsync when getModel is set', async () 
   assert.deepEqual(fx.calls.promptAsync[0].body.model, { providerID: 'xiaomi', modelID: 'mimo-v2.5' })
 })
 
+test('send passes agent to promptAsync when getAgent is set (slice 3 /plan /build)', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({
+    session: fx as any, sessionID: 's', onChange: () => {},
+    getAgent: () => 'plan',
+  })
+  await s.send('q')
+  assert.equal(fx.calls.promptAsync[0].body.agent, 'plan')
+})
+
+test('send omits agent when getAgent returns null/undefined', async () => {
+  const fx = fakeSession()
+  const s = new ChatStore({
+    session: fx as any, sessionID: 's', onChange: () => {},
+    getAgent: () => undefined,
+  })
+  await s.send('q')
+  assert.equal('agent' in fx.calls.promptAsync[0].body, false)
+})
+
 test('switchSession reloads history for the new session id', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's1', onChange: () => {} })

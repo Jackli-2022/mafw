@@ -28,6 +28,8 @@ export interface StatusState {
   permAuto?: boolean
   /** 审批模式徽标文案（切片 1 三档：'🛡 auto' / '🛡 全开'；read-only 不显示） */
   permLabel?: string
+  /** agent 模式徽标（切片 3：'◇plan' / '◇build'；默认不显示） */
+  agentLabel?: string
 }
 
 /** token 数紧凑化：1234 → 1.2K、1250000 → 1.3M。 */
@@ -56,6 +58,7 @@ export class StatusBar implements Component {
       : s.conn === 'reconnecting' ? theme.warn('reconnecting') : theme.err('disconnected')
     const parts: string[] = [s.project ?? '-', s.session ? s.session.slice(0, 12) : '-', conn]
     if (s.busy) parts.push(theme.warn('busy'))
+    if (s.agentLabel) parts.push(theme.accent(s.agentLabel))
     if (s.permLabel) parts.push(theme.warn(s.permLabel))
     else if (s.permAuto) parts.push(theme.warn('🛡 auto'))
     if (typeof s.queued === 'number' && s.queued > 0) parts.push(theme.warn(`queued ${s.queued}`))

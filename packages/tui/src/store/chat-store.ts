@@ -20,7 +20,7 @@ export interface SessionApi {
     data: HistoryItem[]
     nextCursor: string | null
   }>
-  promptAsync(p: { path: { id: string }; body: { parts: Record<string, unknown>[]; model?: { providerID: string; modelID: string } } }): Promise<void>
+  promptAsync(p: { path: { id: string }; body: { parts: Record<string, unknown>[]; model?: { providerID: string; modelID: string }; agent?: string } }): Promise<void>
   abort(p: { path: { id: string } }): Promise<void>
   revert?(p: { path: { id: string }; body: { messageID: string; partID?: string } }): Promise<void>
   unrevert?(p: { path: { id: string } }): Promise<void>
@@ -41,6 +41,8 @@ export interface ChatStoreDeps {
   onError?: (message: string) => void
   /** /model 选择结果；返回 null/undefined 用会话默认模型。 */
   getModel?: () => { providerID: string; modelID: string } | null | undefined
+  /** /plan /build /agent 选择结果；返回 null/undefined 用 runtime 默认 agent（切片 3）。 */
+  getAgent?: () => string | null | undefined
 }
 
 export class ChatStore {
@@ -160,9 +162,10 @@ export class ChatStore {
     this.deps.onChange()
     try {
       const model = this.deps.getModel?.()
+      const agent = this.deps.getAgent?.() || undefined
       await this.deps.session.promptAsync({
         path: { id: this._sessionID },
-        body: { parts: [{ type: 'text', text }], ...(model ? { model } : {}) },
+        body: { parts: [{ type: 'text', text }], ...(model ? { model } : {}), ...(agent ? { agent } : {}) },
       })
     } catch (err: any) {
       this.streaming = false

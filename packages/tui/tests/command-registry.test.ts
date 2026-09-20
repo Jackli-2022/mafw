@@ -15,7 +15,7 @@ test('registry has unique names, every command has description + category', () =
 
 test('current command surface is fully covered', () => {
   const names = COMMAND_REGISTRY.map((c) => c.name).sort()
-  assert.deepEqual(names, ['btw', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'permissions', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
+  assert.deepEqual(names, ['agent', 'btw', 'build', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'new', 'older', 'permissions', 'plan', 'queue', 'redo', 'rename', 'sessions', 'status', 'undo', 'usage', 'verbose', 'waitwhat'])
 })
 
 test('resolveCommand resolves aliases and exact names; unknown → null', () => {
@@ -57,7 +57,7 @@ test('helpLines groups by category and covers every command', () => {
 
 test('immediate commands (busy 时不排队立即执行) are flagged', () => {
   const immediate = COMMAND_REGISTRY.filter((c) => c.immediate).map((c) => c.name).sort()
-  assert.deepEqual(immediate, ['compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'older', 'permissions', 'queue', 'rename', 'sessions', 'status', 'usage', 'verbose', 'waitwhat'])
+  assert.deepEqual(immediate, ['agent', 'build', 'compact', 'copy', 'diff', 'editor', 'exit', 'export', 'focus', 'fork', 'help', 'model', 'older', 'permissions', 'plan', 'queue', 'rename', 'sessions', 'status', 'usage', 'verbose', 'waitwhat'])
 })
 
 test('autocompleteItems includes argumentHint from extra commands', () => {
