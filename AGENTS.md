@@ -798,10 +798,16 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   共享实现在 `runtime/completion-http.ts`）；`cacheable` 是 prompt-cache 提示非承诺
   （直连传输映射为 DashScope `cache_control: ephemeral`，其他 runtime 可忽略）；
   usage 由消费侧记账，runtime 只负责返回
-- `sessionBranchApi?: boolean` + `session.fork/revert/unrevert` — 会话分支原语（fork=新会话携带历史副本；
-  revert=消息级回退）。pi 不实现 unrevert（HTTP 404），且 pi revert 不回滚文件（SessionManager.branch
+- `sessionBranchApi?: boolean` + `session.fork/revert/unrevert` — 会话分支原语（fork=新会话携带历史副本；  revert=消息级回退）。pi 不实现 unrevert（HTTP 404），且 pi revert 不回滚文件（SessionManager.branch
   原地移 leaf、不可逆——语义弱于 opencode，契约注释为准）；HTTP 薄代理 `routes/session-branch.ts`
   （能力门 503），SDK `session.fork/revert/unrevert`
+- `diffApi?: boolean` + `session.diff` / `session.vcs.{diff,apply}` — 会话 diff 与工作区 patch 原语
+  （切片 2；opencode v2 独有，pi 缺席即能力门 503）。HTTP 面：`GET /api/sessions/:id/diff?messageID=`
+  与 `POST /api/sessions/:id/diff/revert`（body 传原 patch + hunkIndices，gateway `core/diff/hunk-patch.ts`
+  纯函数反转选中 hunk 后 `vcs.apply` 落工作区；校验 400 / apply 502 / 能力门 503）。registry dispatch
+  （wave1-handlers `session.diff`/`session.revertDiff`），SDK `session.diff/revertDiff`；desktop 审阅面板
+  `DiffReviewPanel`（composer ⇄ 按钮 + SessionTurn「审阅改动」双入口），SSE `session.diff` 经
+  dispatcher diff handler 实时填充 `session_diff` store
 - `turnBudgetApi?: boolean` + `SessionPromptOpts.maxTurns/maxCostUsd` — 回合预算；两个内置 runtime 均无
   原生强制，gateway 侧 `BudgetGuard`（`core/budget-guard.ts`）兜底：按 step 切面计数 + TrajectoryStore
   成本，超限 abort + noReply 通知；goal 会话经 `onSessionCreated` 挂载，预算读 goal state
