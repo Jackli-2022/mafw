@@ -211,6 +211,14 @@ MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立�
 - **会话工作区单例**（`workspace/session-workspace.ts`）：`workspace` 拥有 tabs signal（`sessions`/`activeId`）、消息 store（`store`/`setStore`）与五个回调注册表（anchor/sendingReset/queueFlush/phase/mediaSpeak，Record 形态 + register/unregister/call API）；MafwShell 以别名引用（`const store = workspace.store` 等），调用点语法零改动
 - 测试：desktop 测试已入 CI（root `test:desktop`；desktop 包 `bun test`）；desktop +53（dispatcher 9 / flow-cards 9 / dock 8 / chat-reducers+chat-stream 27 / workspace 5，含已知坏 legacy launcher 测试移除 -1）
 
+#### plan/build 模式引导（2026-09-20，切片 3）
+
+- **gateway 零改动**：`SessionPromptOpts.agent` 全链路已通（两条 prompt 路由 + pi 透传）；opencode 内置 plan/build primary agent 天然在 `/api/agents` 列表
+- **能力门 = 列表内容判定**：pi 的 `translateAgents()` 恒空（providerConfigApi=true 也不 503），desktop `primaryAgents` 含 plan/build 才显示切换 UI——不得用 capability flag
+- **desktop**：`agentSel` 全局单值升级 `agentPicks: Record<sid, name>`（对齐 modelPicks，内存级；`sessionAgent(sid)` accessor）；composer 三态循环「默认→plan→build」（按钮 + Tab 键，picker/mention 激活时 Tab 不抢）；agent pill 加列表非空门（pi 下不再渲染假 "manager" pill）；WelcomeHome「先规划，再执行」按钮（`onStartWithPlan` = createSession + applyAgentSwitch(plan)）
+- **TUI**：`/plan` `/build`（幂等 set agentSelection）+ `/agent` picker（含「默认」项）+ chat-store `getAgent` dep 并入 promptAsync body + 状态栏 `◇plan` 徽标
+- **顺带修复**：`POST /api/approvals/:id/respond` 空 stub 仍在挂账（独立 bug，与切片无关）
+
 ### 5.9a RightDock 用量/配额拆分（2026-09-07）
 - RightDock tabs：`tasks | trajectory | usage | quota | notes`
 - **UsageDock（用量）**：上下文条 + Token 统计（会话/项目/记忆三行 + **分模型统计**：今日/7天/30天/全部窗口切换、KPI 行 [总 tokens/估算成本/缓存命中率]、Top3+其他聚合、TooltipV2 五类明细）；数据 `GET /api/usage` 的 `modelStats.windows`，15s 轮询
