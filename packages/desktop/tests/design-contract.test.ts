@@ -351,16 +351,40 @@ describe("动效 v4.1 — token 纪律与出场动画", () => {
   })
 })
 
-describe("Skeleton v4", () => {
-  test("shimmer keyframes 存在", () =>
-    expect(cssBlock("@keyframes mafw-shimmer")).toContain("background-position"))
-  test("skeleton 基础类", () => {
+describe("Skeleton v4 (v5.3 transform 化)", () => {
+  test("shimmer keyframes 走 transform", () =>
+    expect(cssBlock("@keyframes mafw-shimmer")).toContain("translateX"))
+  test("skeleton 基础类（bg-inset 井）", () => {
     const b = cssBlock(".mafw-skeleton {")
     expect(b).toContain("background: var(--bg-inset)")
-    expect(b).toContain("animation: mafw-shimmer")
+    expect(b).toContain("position: relative")
+    expect(b).toContain("overflow: hidden")
   })
+  test("扫光在 ::after 伪元素上", () =>
+    expect(cssBlock(".mafw-skeleton::after")).toContain("animation: mafw-shimmer"))
   test("行组布局", () =>
     expect(cssBlock(".mafw-skeleton-rows {")).toContain("flex-direction: column"))
+})
+
+describe("token v5.3 — keyframes 属性纪律", () => {
+  const kfBlocks = () => {
+    const out: { name: string; body: string }[] = []
+    const re = /@keyframes\s+([\w-]+)\s*\{((?:[^{}]|(?:\{[^{}]*\}))*)\}/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(css)) !== null) out.push({ name: m[1], body: m[2] })
+    return out
+  }
+  test("全部 keyframes 只动画 opacity/transform", () => {
+    const bad = kfBlocks().filter(({ body }) =>
+      [...body.matchAll(/([a-z-]+)\s*:/g)]
+        .map((x) => x[1])
+        .filter((p) => !["from", "to", "opacity", "transform"].includes(p)).length > 0)
+    expect(bad.map((b) => b.name)).toEqual([])
+  })
+  test("无 background-position / height 动画残留", () => {
+    expect(css).not.toMatch(/@keyframes[\s\S]*?background-position/)
+    expect(css).not.toMatch(/@keyframes mafw-eq[\s\S]*?\bheight:/)
+  })
 })
 
 describe("token v5.1 — 双字体契约", () => {
