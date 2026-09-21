@@ -68,6 +68,10 @@ export function createSessionWorkspace() {
       records[kind][sid]?.(...args)
     },
     records,
+    /** per-session 角色判定（split view 下各 pane 各自查，不再共享全局标记）。 */
+    sessionRole(sid: string): string | undefined {
+      return sessions().find((s) => s.id === sid)?.metadata?.mafw?.role
+    },
   }
 }
 

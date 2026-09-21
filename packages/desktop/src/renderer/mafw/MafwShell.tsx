@@ -1914,7 +1914,7 @@ export function MafwShell() {
 
   // Manager sessions are locked to the manager agent — switching to another
   // primary agent is not allowed there.
-  const isManagerSession = createMemo(() => active()?.manager === true)
+  // isManager 判定已收敛进 ChatPane（workspace.sessionRole per-session）
 
   const applyAgentSwitch = (a: AgentEntry, sidOverride?: string) => {
     const sid = sidOverride ?? currentSessionID()
@@ -2248,8 +2248,6 @@ export function MafwShell() {
                           sessionID={leaf.sid}
                           focused={activeSessionId() === leaf.sid}
                           canClosePane={leafCount(currentTree()) > 1}
-                          store={store as any}
-                          setStore={setStore as any}
                           todos={todos}
                           switchLogs={switchLogs}
                           sessionCards={sessionCards}
@@ -2263,7 +2261,6 @@ export function MafwShell() {
                           primaryAgents={primaryAgents}
                           subagentAgents={subagentAgents}
                           subagentRunning={subagentRunning}
-                          isManager={isManagerSession()}
                           onNewTopic={() => void handleNewTopic()}
                           readOnly={!!store.session.find((s: any) => s.id === leaf.sid)?.parentID}
                           parentID={store.session.find((s: any) => s.id === leaf.sid)?.parentID ?? null}
@@ -2301,16 +2298,6 @@ export function MafwShell() {
                           }}
                           onCreateSession={createSession}
                           onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
-                          onRegisterAnchor={(s, fn) => { anchorRegistry[s] = fn }}
-                          onUnregisterAnchor={(s) => { delete anchorRegistry[s] }}
-                          onRegisterResetSending={(s, fn) => { sendingResetters[s] = fn }}
-                          onUnregisterResetSending={(s) => { delete sendingResetters[s] }}
-                          onRegisterPhaseUpdater={(s, fn) => { phaseUpdaters[s] = fn }}
-                          onUnregisterPhaseUpdater={(s) => { delete phaseUpdaters[s] }}
-                          onRegisterMediaSpeak={(s, fn) => { mediaSpeakHandlers[s] = fn }}
-                          onUnregisterMediaSpeak={(s) => { delete mediaSpeakHandlers[s] }}
-                          onRegisterQueueFlush={(s, fn) => { queueFlushers[s] = fn }}
-                          onUnregisterQueueFlush={(s) => { delete queueFlushers[s] }}
                           compactionMark={compactionMarks()[leaf.sid] || null}
                           permissionMode={permissionModes[leaf.sid] || "read-only"}
                           onTogglePermissionMode={() => {

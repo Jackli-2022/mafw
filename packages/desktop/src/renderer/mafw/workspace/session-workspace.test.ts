@@ -2,6 +2,17 @@ import { describe, expect, test } from "bun:test"
 import { createSessionWorkspace } from "./session-workspace"
 
 describe("session workspace", () => {
+  test("sessionRole 返回 per-session 角色", () => {
+    const ws = createSessionWorkspace()
+    ws.setSessions(prev => [...prev,
+      { id: "s1", title: "a", userMsgId: "", assistantMsgId: null, done: false, metadata: { mafw: { role: "manager" } } } as any,
+      { id: "s2", title: "b", userMsgId: "", assistantMsgId: null, done: false } as any,
+    ])
+    expect(ws.sessionRole("s1")).toBe("manager")
+    expect(ws.sessionRole("s2")).toBeUndefined()
+    expect(ws.sessionRole("missing")).toBeUndefined()
+  })
+
   test("tabs add/activate", () => {
     const ws = createSessionWorkspace()
     ws.setSessions(prev => [...prev, { id: "s1", title: "t" } as any])

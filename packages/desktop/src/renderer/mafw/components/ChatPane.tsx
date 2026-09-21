@@ -53,6 +53,7 @@ import { FilePicker, type FilePickerItem } from "./pickers/FilePicker"
 import { TranscriptSearchOverlay } from "./TranscriptSearchOverlay"
 import { CompressionDivider } from "./CompressionDivider"
 import { useVoiceBinding, extractVoiceReplies } from "../chat/use-voice-binding"
+import { workspace } from "../workspace/session-workspace"
 
 export type FlowCardRecord =
   | { kind: "ask"; data: AskCardData }
@@ -99,7 +100,6 @@ export type ChatPaneProps = {
   primaryAgents: () => any[]
   subagentAgents: () => any[]
   subagentRunning: (id: string) => boolean
-  isManager: boolean
   onNewTopic?: () => void
   readOnly?: boolean
   parentID?: string | null
@@ -193,6 +193,11 @@ function MediaHistoryAttachment(props: { artifactId: string; name: string; media
 
 function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sidProp = () => props.sid
+  // workspace 单例直连（store 单一所有权；注册表显式化，不再经 props 穿透）
+  const store = workspace.store
+  const setStore = workspace.setStore as unknown as (fn: (prev: typeof store) => typeof store) => typeof store
+  // accessor 保持响应式（sessions 变化即重算；split view 各 pane 各自查）
+  const isManager = () => workspace.sessionRole(sidProp()) === "manager"
   const connPhase = useConnPhase()
 
   // ── Composer state (per pane) ──
@@ -283,7 +288,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   })
 
   const refreshAfterRevert = () => {
-    props.setStore(prev => ({
+    setStore(prev => ({
       ...prev,
       message: { ...prev.message, [sidProp()]: [] },
       part: { ...prev.part, [sidProp()]: [] },
@@ -295,7 +300,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 能力门：primaryAgents 列表内容含 plan/build 才启用（pi 列表恒空 → 自动隐藏）；
   // manager 会话锁不适用。
   const planBuildGate = () =>
-    !props.isManager && (props.primaryAgents() || []).some((a: any) => a?.name === "plan" || a?.name === "build")
+    !isManager() && (props.primaryAgents() || []).some((a: any) => a?.name === "plan" || a?.name === "build")
   const planBuildState = (): "plan" | "build" | "default" => {
     const n = props.agentSel()?.name
     return n === "plan" || n === "build" ? n : "default"
@@ -322,7 +327,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // ── worktree 并行隔离（切片 4）：当前会话的 directory 与徽标 ──
   const sessionDirectory = (): string | undefined =>
-    props.store.session.find((s: any) => s.id === sidProp())?.directory
+    store.session.find((s: any) => s.id === sidProp())?.directory
   const worktreeBadgeOf = () => worktreeBadge(sessionDirectory(), props.projectDirectory)
 
   const userActions = () => ({
@@ -379,8 +384,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     voiceSession, voiceRecording, ttsSpeaking, speakingPartId,
     assistantActions, stopActivePlayback, speakText,
   } = useVoiceBinding(() => sidProp(), {
-    store: props.store,
-    setStore: props.setStore,
+    store: store,
+    setStore: setStore,
     gwReady: () => props.gwReady,
     ttsVoiceSel: () => ttsVoiceSel(),
     onSetUserMsgId: (s, id) => props.onSetUserMsgId(s, id),
@@ -393,8 +398,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const handleMediaSpeak = (text: string, voice?: string) => {
     void voiceSession.speakFromTool(text, voice)
   }
-  props.onRegisterMediaSpeak?.(sidProp(), handleMediaSpeak)
-  onCleanup(() => props.onUnregisterMediaSpeak?.(sidProp()))
+  workspace.register("mediaSpeak", sidProp(), handleMediaSpeak)
+  onCleanup(() => workspace.unregister("mediaSpeak", sidProp()))
   const [containerRef, setContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [jumpVisible, setJumpVisible] = createSignal(false)
 
@@ -407,15 +412,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   onMount(() => {
-    if (sidProp()) props.onRegisterAnchor(sidProp(), forceAnchor)
-    props.onRegisterResetSending(sidProp(), () => { setSending(false); setPhase('idle') })
-    props.onRegisterPhaseUpdater?.(sidProp(), setPhase)
+    if (sidProp()) workspace.register("anchor", sidProp(), forceAnchor)
+    workspace.register("sendingReset", sidProp(), () => { setSending(false); setPhase('idle') })
+    workspace.register("phase", sidProp(), setPhase)
   })
   onCleanup(() => {
     props.onTitlebarRef(null)
-    if (sidProp()) props.onUnregisterAnchor(sidProp())
-    props.onUnregisterResetSending(sidProp())
-    props.onUnregisterPhaseUpdater?.(sidProp())
+    if (sidProp()) workspace.unregister("anchor", sidProp())
+    workspace.unregister("sendingReset", sidProp())
+    workspace.unregister("phase", sidProp())
   })
 
   const addAgent = (name: string) => {
@@ -464,7 +469,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     matchSlash: (t) => matchCommand(t),
     agentSel: () => props.agentSel(),
     model: () => props.model(),
-    setStore: props.setStore,
+    setStore: setStore,
     forceAnchor: () => forceAnchor(),
     imageToDataUrl,
     uploadMediaBinary,
@@ -473,8 +478,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   // ESC / Ctrl+C interrupts this pane only when it is focused and sending.
   onMount(() => {
-    props.onRegisterQueueFlush?.(sidProp(), flushQueue)
-    onCleanup(() => props.onUnregisterQueueFlush?.(sidProp()))
+    workspace.register("queueFlush", sidProp(), flushQueue)
+    onCleanup(() => workspace.unregister("queueFlush", sidProp()))
     const onKey = (e: KeyboardEvent) => {
       if (!props.focused || !sending()) return
       const isEsc = e.key === "Escape"
@@ -635,7 +640,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const userMessages = () => {
     const sid = sidProp()
     if (!sid) return []
-    const msgs = props.store.message[sid]
+    const msgs = store.message[sid]
     if (!msgs?.length) return []
     return msgs
       .filter(m => m.role === "user")
@@ -645,7 +650,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // DeepSeek-style node nav: one node per user turn, preview from text parts.
   const navTurns = createMemo(() =>
     userMessages().map(m => {
-      const parts = props.store.part[m.id] || []
+      const parts = store.part[m.id] || []
       const text = parts
         .filter(p => p?.type === "text" && typeof p.text === "string")
         .map(p => p.text)
@@ -660,14 +665,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const voiceRepliesForTurn = (userMsgId: string) => {
     const sid = sidProp()
     if (!sid) return []
-    const msgs = props.store.message[sid] || []
+    const msgs = store.message[sid] || []
     const userMsg = msgs.find(m => m.id === userMsgId)
     if (!userMsg) return []
     // 该 turn 的 assistant 消息 = parentID 指向 userMsg 的
     const assistants = msgs.filter(m => m.role === "assistant" && m.parentID === userMsg.id)
     const texts: string[] = []
     for (const a of assistants) {
-      for (const p of props.store.part[a.id] || []) {
+      for (const p of store.part[a.id] || []) {
         if (p?.type === "text" && typeof p.text === "string") texts.push(p.text)
       }
     }
@@ -680,7 +685,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const mediaRefsForTurn = (userMsgId: string) => {
     const sid = sidProp()
     if (!sid) return []
-    const parts = props.store.part[userMsgId] || []
+    const parts = store.part[userMsgId] || []
     const texts: string[] = []
     for (const p of parts) {
       if (p?.type === "text" && typeof p.text === "string") texts.push(p.text)
@@ -709,7 +714,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const picked = props.model()
     if (picked) return `${picked.providerID}/${picked.modelID}`
     const sid = sidProp()
-    const msgs = sid ? (props.store.message[sid] || []) : []
+    const msgs = sid ? (store.message[sid] || []) : []
     const last = [...msgs].reverse().find(m => m.role === "assistant")
     const m = messageModel(last)
     if (m) return `${m.providerID}/${m.modelID}`
@@ -721,7 +726,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setPickerOpen(null)
   }
 
-  const busy = () => props.store.session_status[sidProp()]?.type === "busy"
+  const busy = () => store.session_status[sidProp()]?.type === "busy"
 
   const onAgentSelect = (a: AgentEntry) => {
     setPickerOpen(null)
@@ -770,11 +775,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const el = containerRef()
     const sid = sidProp()
     if (!el || !sid) return
-    const msgs = props.store.message[sid]
+    const msgs = store.message[sid]
     void (msgs || []).reduce(
-      (n, m) => n + (props.store.part[m.id] || []).reduce(
+      (n, m) => n + (store.part[m.id] || []).reduce(
         (t, p) => t + (p.text?.length || 0),
-        props.store.part[m.id]?.length || 0,
+        store.part[m.id]?.length || 0,
       ),
       0,
     )
@@ -815,11 +820,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       let cursor: string | null = page.cursor
       let nextCursor: string | null = null
       let pageCount = 0
-      const baseCount = countUserTurns(Array.isArray(props.store.message[sessionID]) ? props.store.message[sessionID] : [])
+      const baseCount = countUserTurns(Array.isArray(store.message[sessionID]) ? store.message[sessionID] : [])
       const el = containerRef()
       const prevHeight = el?.scrollHeight || 0
       while (shouldKeepPaging({
-        collected: countUserTurns(Array.isArray(props.store.message[sessionID]) ? props.store.message[sessionID] : []) - baseCount,
+        collected: countUserTurns(Array.isArray(store.message[sessionID]) ? store.message[sessionID] : []) - baseCount,
         target: 10, nextCursor: cursor, pageCount, maxPages: 4,
       })) {
         const data = await window.api.mafw.sessions.messages(sessionID, 100, cursor) as any
@@ -827,7 +832,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         nextCursor = data?.nextCursor ?? null
         pageCount++
         if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
-          const rawExisting = props.store.message[sessionID]
+          const rawExisting = store.message[sessionID]
           const existing = Array.isArray(rawExisting) ? rawExisting : []
           if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
           const existingById = new Map(existing.map(m => [m.id, m]))
@@ -841,12 +846,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             msgs.push(msg)
             let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
             if (Array.isArray(itemParts) && itemParts.length > 0) {
-              parts[msgId] = mergeLocalParts(props.store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+              parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
             }
           }
           if (msgs.length > 0) {
             msgs.sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
-            props.setStore(prev => ({
+            setStore(prev => ({
               ...prev,
               message: { ...prev.message, [sessionID]: msgs },
               part: { ...prev.part, ...parts },
@@ -888,7 +893,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (el.scrollTop < 100) { if (hiddenTurnCount() > 0) { expandRendered() } else { void loadOlder(sid) } }
   }
 
-  const title = () => props.store.session.find(s => s.id === sidProp())?.title || "Chat"
+  const title = () => store.session.find(s => s.id === sidProp())?.title || "Chat"
 
   // Render window: mount only the newest N turns; scrolling up expands locally
   // first (no network) and falls through to cursor pagination once the
@@ -902,7 +907,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const searchableTurns = createMemo(() => visibleTurns().map((m: any) => ({
     id: m.id,
     role: m.role || "user",
-    text: [m.text, ...(props.store.part[m.id] || []).map((p: any) => (typeof p.text === "string" ? p.text : ""))].join(" "),
+    text: [m.text, ...(store.part[m.id] || []).map((p: any) => (typeof p.text === "string" ? p.text : ""))].join(" "),
   })))
   const hiddenTurnCount = () => Math.max(0, allTurns().length - renderLimit())
   const expandRendered = () => {
@@ -915,7 +920,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // ── Flow card placement ──
   // 归位纯函数在 ../chat/flow-card-slots.ts（逐字迁移，闭包改显式参数）；
   // 这里只做组件态接线（store/sessionCards/userMessages 注入）。
-  const flowSlotPartsOf = (mid: string): any[] => (props.store.part[mid] as any[]) || []
+  const flowSlotPartsOf = (mid: string): any[] => (store.part[mid] as any[]) || []
   const flowSlotCards = () => props.sessionCards(sidProp()).visible as any[]
 
   const hasInlineAnchor = (c: FlowCardRecord): boolean => hasInlineAnchorSlot(c, flowSlotPartsOf)
@@ -947,25 +952,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   const turnOfMessage = (messageID: string): string | null =>
-    turnOfMessageSlot(messageID, props.store, sidProp())
+    turnOfMessageSlot(messageID, store, sidProp())
 
   // Cards belonging to the user turn `userMsgId` (direct or via the assistant
   // message's parentID), in creation order.
   const cardsForTurn = (userMsgId: string): FlowCardRecord[] =>
-    cardsForTurnSlot(flowSlotCards(), userMsgId, props.store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
+    cardsForTurnSlot(flowSlotCards(), userMsgId, store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
   // Cards that could not be placed into any turn (no/unknown message link).
   // These are now attached to the last user turn via cardsForTurn, so this
   // returns empty when there are user messages.
   const unplacedCards = (): FlowCardRecord[] =>
-    unplacedCardsSlot(flowSlotCards(), props.store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
+    unplacedCardsSlot(flowSlotCards(), store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
   const agentSelName = () => props.agentSel()?.name || "manager"
 
   // Real model name of the last assistant message (fallback: agent → "default")
   const modelName = createMemo(() => {
     const sid = sidProp()
-    const msgs = sid ? (props.store.message[sid] || []) : []
+    const msgs = sid ? (store.message[sid] || []) : []
     const assistants = msgs.filter(m => m.role === "assistant")
     const last = assistants[assistants.length - 1]
     return messageModel(last)?.modelID || last?.agent || "default"
@@ -977,7 +982,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const contextUsage = createMemo(() => {
     const sid = sidProp()
     if (!sid) return { used: 0, total: 0, percent: 0 }
-    const msgs = props.store.message[sid] || []
+    const msgs = store.message[sid] || []
     const assistants = msgs.filter(m => m.role === "assistant")
     const last = assistants[assistants.length - 1]
     let used = 0
@@ -1004,7 +1009,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const sessionTokenSummary = createMemo(() => {
     const sid = sidProp()
     if (!sid) return { input: 0, output: 0, reasoning: 0, cacheRead: 0, total: 0, cost: 0, turns: 0 }
-    const msgs = props.store.message[sid] || []
+    const msgs = store.message[sid] || []
     let input = 0, output = 0, reasoning = 0, cacheRead = 0, cost = 0, turns = 0
     for (const m of msgs) {
       if (m.role === "assistant" && m.tokens) {
@@ -1065,13 +1070,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     {(props.todos[sidProp()] || []).length}
                   </span>
                 </Show>
-                <Show when={props.store.session_status[sidProp()]?.type === "busy"}>
+                <Show when={store.session_status[sidProp()]?.type === "busy"}>
                   <span class="mafw-session-status">
                     <span class="mafw-session-status-dot" />
                     Running
                   </span>
                 </Show>
-                <Show when={props.isManager && props.onNewTopic}>
+                <Show when={isManager() && props.onNewTopic}>
                   <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
                     <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
                   </TooltipV2>
@@ -1445,7 +1450,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               </Show>
             </div>
             <div class="mafw-composer-right">
-              <Show when={(props.primaryAgents() || []).length > 0 || props.isManager}>
+              <Show when={(props.primaryAgents() || []).length > 0 || isManager()}>
                 <TooltipV2 value="切换 Agent" openDelay={300}>
                   <ButtonV2
                     variant="ghost"
@@ -1551,7 +1556,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           subagentAgents={props.subagentAgents()}
           subagents={subagents()}
           isRunning={props.subagentRunning}
-          lockedManager={props.isManager}
+          lockedManager={isManager()}
           currentName={agentSelName()}
           onSelect={(a) => {
             if (pickerOpen() === "agent-mention") {
