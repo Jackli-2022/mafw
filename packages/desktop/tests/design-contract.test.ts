@@ -409,3 +409,37 @@ describe("token v5.1 — streaming 尾光标", () => {
     expect(seg).toContain("mafw-caret-blink")
   })
 })
+
+describe("token v5.2 — bento 基建", () => {
+  test("4 列 grid + gap", () => {
+    const b = cssBlock(".mafw-bento {")
+    expect(b).toContain("display: grid")
+    expect(b).toContain("grid-template-columns: repeat(4, minmax(0,1fr))")
+    expect(b).toContain("gap: 12px")
+  })
+  test("span 类只允许 1/2/4（anchor = 2x2）", () => {
+    expect(cssBlock(".mafw-bento-span-2 {")).toContain("grid-column: span 2")
+    expect(cssBlock(".mafw-bento-span-4 {")).toContain("grid-column: span 4")
+    expect(cssBlock(".mafw-bento-anchor {")).toContain("grid-row: span 2")
+    expect(css).not.toMatch(/grid-column:\s*span 3/)
+  })
+  test("响应式降级：≤1100px 两列、≤640px 单列", () => {
+    expect(css).toContain("@media (max-width: 1100px)")
+    expect(css).toContain("@media (max-width: 640px)")
+  })
+})
+
+describe("token v5.2 — 组件接线", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("WelcomeHome 使用 bento board", () =>
+    expect(read("src/renderer/mafw/components/WelcomeHome.tsx")).toContain('class="mafw-welcome mafw-bento"'))
+  test("Dashboard KPI 行接入 bento", () =>
+    expect(read("src/renderer/mafw/pages/Dashboard.tsx")).toContain('class="mafw-bento"'))
+  test("ChatPane 主区带双栏 hook 属性", () =>
+    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain('data-layout="chat"'))
+  test("ChatPane hook grid 等价转换", () => {
+    const b = cssBlock('.mafw-pane[data-layout="chat"] {')
+    expect(b).toContain("grid-template-columns: minmax(0, 1fr)")
+    expect(b).toContain("grid-template-rows: minmax(0, 1fr) auto auto")
+  })
+})
