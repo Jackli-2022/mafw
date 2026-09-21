@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
+import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -25,11 +26,11 @@ import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { type PermissionMode } from "./permission-card-mapping"
 
-/** 🛡 三档按钮文案与提示（切片 1）。 */
+/** 🛡 三档按钮文案与提示（切片 1）；图标由 shield 承担，文案不带 emoji。 */
 const PERMISSION_MODE_LABEL: Record<PermissionMode, string> = {
-  "read-only": "🛡只读",
-  auto: "🛡auto",
-  "full-access": "🛡全开",
+  "read-only": "只读",
+  auto: "auto",
+  "full-access": "全开",
 }
 const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
   "read-only": "审批模式：只读 — 只读工具免审，任何变更需确认。点击切到自动",
@@ -312,9 +313,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     props.onPlanBuildToggle?.(cur === "plan" ? "build" : cur === "build" ? "default" : "plan")
   }
   const PLAN_BUILD_LABEL: Record<"plan" | "build" | "default", string> = {
-    plan: "◇ plan",
-    build: "◇ build",
-    default: "◇ 默认",
+    plan: "plan",
+    build: "build",
+    default: "默认",
+  }
+  const PLAN_BUILD_ICON: Record<"plan" | "build" | "default", "bullet-list" | "terminal" | "sliders"> = {
+    plan: "bullet-list",
+    build: "terminal",
+    default: "sliders",
   }
   const PLAN_BUILD_HINT: Record<"plan" | "build" | "default", string> = {
     plan: "规划模式：只读 agent 出方案，不改文件。点击/Tab 切到 build",
@@ -2034,7 +2040,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <For each={mentionedAgents()}>
                 {(a) => (
                   <span class="mafw-chip">
-                    <Icon name="sparkles" size="small" />
+                    <IconV2 name="sparkles" size="small" />
                     <span class="mafw-chip-label">@{a.name}</span>
                     <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAgent(a.name)} aria-label="移除引用">✕</ButtonV2>
                   </span>
@@ -2117,18 +2123,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           <span class="mafw-keyhint">↑ 历史 · Enter 发送 · Shift+Enter 换行 · @ 引用文件</span>
           <div class="mafw-composer-toolbar">
             <div class="mafw-composer-left">
-              <TooltipV2 value="命令 (/)" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>/</ButtonV2>
+              <TooltipV2 value="附件" openDelay={300}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">
+                  <Icon name="paperclip" size="small" />
+                </ButtonV2>
               </TooltipV2>
-              <TooltipV2 value={PERMISSION_MODE_HINT[props.permissionMode ?? "read-only"]} openDelay={300}>
+              <TooltipV2 value="命令 (/)" openDelay={300}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>
+                  <Icon name="console" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <TooltipV2 value="引用 Agent" openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
                   class="mafw-composer-icon"
-                  classList={{ "mafw-perm-mode-auto": (props.permissionMode ?? "read-only") !== "read-only" }}
-                  aria-label="审批模式（三档循环：只读 / 自动 / 全开）"
-                  onClick={() => props.onTogglePermissionMode?.()}
-                >{PERMISSION_MODE_LABEL[props.permissionMode ?? "read-only"]}</ButtonV2>
+                  aria-label="引用 Agent"
+                  ref={(el: any) => { if (pickerOpen() === "agent-mention") setPickerTrigger(el) }}
+                  onClick={() => { setPickerTrigger(document.activeElement as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}
+                ><Icon name="subagent" size="small" /></ButtonV2>
               </TooltipV2>
               <TooltipV2 value="审阅改动（逐 hunk 保留 / 回退）" openDelay={300}>
                 <ButtonV2
@@ -2137,26 +2150,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   class="mafw-composer-icon"
                   aria-label="审阅改动"
                   onClick={() => props.onOpenDiffReview?.()}
-                >⇄</ButtonV2>
+                ><Icon name="review" size="small" /></ButtonV2>
               </TooltipV2>
-              <Show when={planBuildGate()}>
-                <TooltipV2 value={PLAN_BUILD_HINT[planBuildState()]} openDelay={300}>
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    class="mafw-composer-icon"
-                    classList={{ "mafw-perm-mode-auto": planBuildState() !== "default" }}
-                    aria-label="plan/build 模式循环（Tab）"
-                    onClick={() => cyclePlanBuild()}
-                  >{PLAN_BUILD_LABEL[planBuildState()]}</ButtonV2>
-                </TooltipV2>
-              </Show>
               <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>🗣</ButtonV2>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
+                  <Icon name="volume" size="small" />
+                </ButtonV2>
               </TooltipV2>
-              <TooltipV2 value="附件" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" onClick={addAttachments} aria-label="附件">+</ButtonV2>              </TooltipV2>
-
               <TooltipV2 value={voiceRecording() ? "停止录音" : "语音输入（录音，静音自动分段）"} openDelay={300}>
                 <ButtonV2
                   variant="ghost"
@@ -2170,19 +2170,37 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     stopActivePlayback()
                     void voiceSession.startRecording()
                   }}
-                >{voiceRecording() ? "⏹" : "🎤"}</ButtonV2>
+                ><Icon name={voiceRecording() ? "stop" : "microphone"} size="small" /></ButtonV2>
               </TooltipV2>
-
-              <TooltipV2 value="引用 Agent" openDelay={300}>
+              <span class="mafw-composer-divider" />
+              <TooltipV2 value={PERMISSION_MODE_HINT[props.permissionMode ?? "read-only"]} openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
-                  class="mafw-composer-icon"
-                  aria-label="引用 Agent"
-                  ref={(el: any) => { if (pickerOpen() === "agent-mention") setPickerTrigger(el) }}
-                  onClick={() => { setPickerTrigger(document.activeElement as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}
-                >@</ButtonV2>
+                  class="mafw-mode-pill"
+                  classList={{ "mafw-perm-mode-auto": (props.permissionMode ?? "read-only") !== "read-only" }}
+                  aria-label="审批模式（三档循环：只读 / 自动 / 全开）"
+                  onClick={() => props.onTogglePermissionMode?.()}
+                >
+                  <Icon name="shield" size="small" />
+                  <span>{PERMISSION_MODE_LABEL[props.permissionMode ?? "read-only"]}</span>
+                </ButtonV2>
               </TooltipV2>
+              <Show when={planBuildGate()}>
+                <TooltipV2 value={PLAN_BUILD_HINT[planBuildState()]} openDelay={300}>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    class="mafw-mode-pill"
+                    classList={{ "mafw-perm-mode-auto": planBuildState() !== "default" }}
+                    aria-label="plan/build 模式循环（Tab）"
+                    onClick={() => cyclePlanBuild()}
+                  >
+                    <Icon name={PLAN_BUILD_ICON[planBuildState()]} size="small" />
+                    <span>{PLAN_BUILD_LABEL[planBuildState()]}</span>
+                  </ButtonV2>
+                </TooltipV2>
+              </Show>
             </div>
             <div class="mafw-composer-right">
               <Show when={(props.primaryAgents() || []).length > 0 || props.isManager}>
