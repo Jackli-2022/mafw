@@ -1008,6 +1008,9 @@ html[data-theme="light"] .mafw-shell {
   max-width: min(70%, 64ch);
 }
 
+/* changed files 移出 chat 流：回合级 diffs 块由 dock changes tab + 审阅抽屉承载 */
+.mafw-shell [data-component="session-turn-diffs-group"] { display: none; }
+
 /* v5.1 消息正文：16px/1.7（业界 AI 对话标准），仅 assistant text part；reasoning 块不波及 */
 .mafw-shell [data-component="text-part"] [data-component="markdown"] {
   font-size: 16px;

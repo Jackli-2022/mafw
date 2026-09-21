@@ -578,3 +578,18 @@ describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）"
     expect(cssBlock(".mafw-diff-comment {")).not.toBe("")
   })
 })
+
+describe("changed files 数据源：message.summary.diffs 聚合", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("chat 回合 diffs 块隐藏（由 dock/抽屉承载）", () => {
+    expect(cssBlock('.mafw-shell [data-component="session-turn-diffs-group"]')).toContain("display: none")
+  })
+  test("MafwShell 抽屉/停靠数据来自 aggregateSessionDiffs", () => {
+    const src = read("src/renderer/mafw/MafwShell.tsx")
+    expect(src).toContain("aggregateSessionDiffs")
+    expect(src).not.toContain("store.session_diff as any)[diffPanelFor()")
+  })
+  test("ChatPane 徽标计数来自 aggregateSessionDiffs", () => {
+    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("aggregateSessionDiffs")
+  })
+})

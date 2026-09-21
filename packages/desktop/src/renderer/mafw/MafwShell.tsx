@@ -31,6 +31,7 @@ import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
 import { NotesDock } from "./components/NotesDock"
 import { ChangesDock } from "./components/ChangesDock"
+import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab } from "./components/dock-tab"
@@ -2328,7 +2329,7 @@ export function MafwShell() {
                      <Show when={diffPanelFor()}>
                       <DiffReviewPanel
                         sessionID={diffPanelFor()!}
-                        diffs={(store.session_diff as any)[diffPanelFor()!] as any}
+                        diffs={aggregateSessionDiffs((store.message as any)[diffPanelFor()!] || [])}
                         onClose={() => setDiffPanelFor(null)}
                         onSendComment={(sid, text) => {
                           void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
@@ -2558,7 +2559,7 @@ export function MafwShell() {
               <div style={{ display: rightDockTab() === "changes" ? "contents" : "none" }}>
                 <ChangesDock
                   sessionID={currentSessionID() || null}
-                  diffs={(store.session_diff as any)[currentSessionID()] as any}
+                  diffs={aggregateSessionDiffs((store.message as any)[currentSessionID()] || [])}
                   onOpenReview={(sid) => setDiffPanelFor(sid)}
                 />
               </div>

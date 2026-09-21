@@ -33,6 +33,7 @@ import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./tur
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { type PermissionMode } from "./permission-card-mapping"
+import { aggregateSessionDiffs } from "./session-diffs"
 
 /** 🛡 三档按钮文案与提示（切片 1）；图标由 shield 承担，文案不带 emoji。 */
 const PERMISSION_MODE_LABEL: Record<PermissionMode, string> = {
@@ -967,8 +968,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const agentSelName = () => props.agentSel()?.name || "manager"
 
-  // 会话改动文件数（SSE session.diff 实时快照）——composer 审阅按钮的常驻计数徽标
-  const diffCount = () => ((store as any).session_diff?.[sidProp()] as any[] | undefined)?.length ?? 0
+  // 会话改动文件数（message.summary.diffs 聚合，含 patch）——composer 审阅按钮的常驻计数徽标
+  const diffCount = () => aggregateSessionDiffs((store.message as any)[sidProp()] || []).length
 
   // Real model name of the last assistant message (fallback: agent → "default")
   const modelName = createMemo(() => {
