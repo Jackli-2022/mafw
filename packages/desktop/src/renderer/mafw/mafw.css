@@ -646,7 +646,7 @@ html[data-theme="light"] .mafw-shell {
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border-subtle);
 }
-.mafw-usage-wb-drawer-head .mafw-usage-wb-card-name { font-size: 15px; }
+.mafw-usage-wb-drawer-head .mafw-usage-wb-card-name { font-size: 14px; }
 .mafw-usage-wb-section {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-subtle);
@@ -915,7 +915,7 @@ html[data-theme="light"] .mafw-shell {
   user-select: none;
 }
 .mafw-session-titlebar-text {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-1);
   overflow: hidden;
@@ -2085,7 +2085,7 @@ html[data-theme="light"] .mafw-picker-pop {
 /* Question / action block */
 .mafw-flow-question + .mafw-flow-question { border-top: 1px solid var(--border-subtle); }
 .mafw-flow-qtitle {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-1);
   padding: 14px 16px 8px;
@@ -3907,7 +3907,7 @@ html[data-theme="light"] .mafw-picker-pop {
   flex-shrink: 0;
 }
 .mafw-config-section-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-1);
   flex: 1;
