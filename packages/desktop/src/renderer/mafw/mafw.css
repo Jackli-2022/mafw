@@ -927,6 +927,7 @@ html[data-theme="light"] .mafw-shell {
 .mafw-session-token-cost {
   opacity: 0.7;
   font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 .mafw-session-status {
   margin-left: auto;
@@ -1251,6 +1252,7 @@ html[data-theme="light"] .mafw-shell {
   opacity: 0.7;
   padding-left: 4px;
   border-left: 1px solid currentColor;
+  font-variant-numeric: tabular-nums;
 }
 .mafw-context-pill.mafw-context-warn {
   color: var(--warning);
@@ -2973,6 +2975,7 @@ html[data-theme="light"] .mafw-picker-pop {
   font-size: 13px;
   color: var(--text-2);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .mafw-voice-status {
@@ -3236,7 +3239,7 @@ html[data-theme="light"] .mafw-picker-pop {
   min-width: 48px;
   text-align: right;
 }
-.mafw-usage-cost { color: var(--warning); }
+.mafw-usage-cost { color: var(--warning); font-variant-numeric: tabular-nums; }
 
 .mafw-usage-total {
   display: flex;
@@ -3286,6 +3289,7 @@ html[data-theme="light"] .mafw-picker-pop {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-variant-numeric: tabular-nums;
 }
 .mafw-usage-memory-role-tokens {
   font-weight: 600;
@@ -4423,7 +4427,7 @@ html[data-theme="light"] .mafw-picker-pop {
 
 /* Busy-turn queue bar (composer above-row, P0-1) */
 .mafw-queue-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; margin-bottom: 6px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 10px; background: var(--surface-base-hover); }
-.mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; }
+.mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* Goal detail overlay (P0-3) */
 .mafw-goal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; }
@@ -4446,7 +4450,7 @@ html[data-theme="light"] .mafw-picker-pop {
    keep position:relative there so the overlay floats with the pane. */
 .mafw-session-turn-container { position: relative; }
 .mafw-tsearch { position: sticky; top: 8px; z-index: 60; width: min(380px, 80%); margin-left: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 8px; }
-.mafw-tsearch-count { font-size: 10px; color: var(--text-base); padding-left: 4px; }
+.mafw-tsearch-count { font-size: 10px; color: var(--text-base); padding-left: 4px; font-variant-numeric: tabular-nums; }
 .mafw-tsearch-hits { max-height: 260px; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
 .mafw-tsearch-hit { display: flex; gap: 8px; padding: 6px 10px; cursor: pointer; font-size: 11px; align-items: baseline; }
 .mafw-tsearch-hit.sel, .mafw-tsearch-hit:hover { background: var(--surface-base-hover); }
