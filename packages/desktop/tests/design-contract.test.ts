@@ -544,3 +544,18 @@ describe("Dock changes tab（改动列表常驻入口）", () => {
     expect(cssBlock(".mafw-changes-row {")).toContain("cursor: pointer")
   })
 })
+
+describe("DiffReviewPanel 两栏（B2：文件树 + 单文件预览）", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("面板含左文件列表栏", () => {
+    const src = read("src/renderer/mafw/components/DiffReviewPanel.tsx")
+    expect(src).toContain("mafw-diff-files")
+    expect(src).toContain("selectedFile")
+  })
+  test("body 为两栏 grid", () => {
+    expect(cssBlock(".mafw-diff-panel-body {")).toContain("grid-template-columns")
+  })
+  test("文件行选中态样式存在", () => {
+    expect(cssBlock(".mafw-diff-file-row.sel {")).not.toBe("")
+  })
+})

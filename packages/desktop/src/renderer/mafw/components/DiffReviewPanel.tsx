@@ -4,7 +4,7 @@
 import { Show, For, createSignal, createMemo, createEffect } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { splitHunks, hunkStats, type DiffHunk } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile, type DiffHunk } from "./diff-hunks"
 import type { FileDiffInfo } from "@mafw/sdk"
 
 export interface FileDiffEntry {
@@ -25,12 +25,19 @@ export function DiffReviewPanel(props: {
   const [loading, setLoading] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
+  // 两栏：左文件列表 + 右当前文件 hunks（opencode v2 ReviewPanel 模式）
+  const [selectedFileRaw, setSelectedFile] = createSignal<string | null>(null)
 
   const files = createMemo<FileDiffEntry[]>(() => {
     const live = props.diffs
     if (live && live.length > 0) return live
     return fetched()
   })
+
+  const fileName = (f: FileDiffEntry) => f.file ?? "(unknown)"
+  const fileNames = createMemo(() => files().map(fileName))
+  const selectedFile = createMemo(() => pickSelectedFile(fileNames(), selectedFileRaw()))
+  const currentFile = createMemo(() => files().find((f) => fileName(f) === selectedFile()))
 
   const refresh = () => {
     if (props.diffs && props.diffs.length > 0) return
@@ -56,7 +63,7 @@ export function DiffReviewPanel(props: {
       if (!f.patch) continue
       const { hunks } = splitHunks(f.patch)
       const idx: number[] = []
-      hunks.forEach((_, i) => { if (selected().has(keyed(f.file ?? "", i))) idx.push(i) })
+      hunks.forEach((_, i) => { if (selected().has(keyed(fileName(f), i))) idx.push(i) })
       if (idx.length > 0) patches.push({ file: f.file, patch: f.patch, hunkIndices: idx })
     }
     if (patches.length === 0) { showToastV2({ description: "未勾选任何 hunk", duration: 2000 }); return }
@@ -91,57 +98,81 @@ export function DiffReviewPanel(props: {
             when={files().length > 0}
             fallback={<p class="mafw-diff-panel-empty">当前会话没有待审的文件改动。</p>}
           >
-            <For each={files()}>
-              {(f) => {
-                const file = f.file ?? "(unknown)"
-                const { hunks } = splitHunks(f.patch ?? "")
-                return (
-                  <section class="mafw-diff-file">
-                    <header class="mafw-diff-file-header">
-                      <span class="mafw-diff-file-name">{file}</span>
-                      <Show when={typeof f.additions === "number"}>
-                        <span class="mafw-diff-stat add">+{f.additions}</span>
-                      </Show>
-                      <Show when={typeof f.deletions === "number"}>
-                        <span class="mafw-diff-stat del">-{f.deletions}</span>
-                      </Show>
-                    </header>
-                    <For each={hunks}>
-                      {(h: DiffHunk, i) => {
-                        const key = keyed(file, i())
-                        const stats = hunkStats(h.lines)
-                        const checked = () => selected().has(key)
-                        return (
-                          <label class="mafw-diff-hunk" classList={{ checked: checked() }}>
-                            <input
-                              type="checkbox"
-                              checked={checked()}
-                              onChange={() => toggle(key)}
-                            />
-                            <span class="mafw-diff-hunk-header">{h.header}</span>
-                            <span class="mafw-diff-stat add">+{stats.added}</span>
-                            <span class="mafw-diff-stat del">-{stats.removed}</span>
-                            <pre class="mafw-diff-hunk-body">
-                              <For each={h.lines}>
-                                {(line) => (
-                                  <span
-                                    classList={{
-                                      "mafw-diff-line": true,
-                                      add: line.startsWith("+"),
-                                      del: line.startsWith("-"),
-                                    }}
-                                  >{line}</span>
-                                )}
-                              </For>
-                            </pre>
-                          </label>
-                        )
-                      }}
-                    </For>
-                  </section>
-                )
-              }}
-            </For>
+            <div class="mafw-diff-files">
+              <For each={files()}>
+                {(f) => (
+                  <div
+                    class="mafw-diff-file-row"
+                    classList={{ sel: fileName(f) === selectedFile() }}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedFile(fileName(f))}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setSelectedFile(fileName(f)) }}
+                  >
+                    <span class="mafw-diff-file-row-name">{fileName(f)}</span>
+                    <Show when={typeof f.additions === "number"}>
+                      <span class="mafw-diff-stat add">+{f.additions}</span>
+                    </Show>
+                    <Show when={typeof f.deletions === "number"}>
+                      <span class="mafw-diff-stat del">-{f.deletions}</span>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+            <div class="mafw-diff-detail">
+              <Show when={currentFile()}>
+                {(f) => {
+                  const file = fileName(f())
+                  const { hunks } = splitHunks(f().patch ?? "")
+                  return (
+                    <section class="mafw-diff-file">
+                      <header class="mafw-diff-file-header">
+                        <span class="mafw-diff-file-name">{file}</span>
+                        <Show when={typeof f().additions === "number"}>
+                          <span class="mafw-diff-stat add">+{f().additions}</span>
+                        </Show>
+                        <Show when={typeof f().deletions === "number"}>
+                          <span class="mafw-diff-stat del">-{f().deletions}</span>
+                        </Show>
+                      </header>
+                      <For each={hunks}>
+                        {(h: DiffHunk, i) => {
+                          const key = keyed(file, i())
+                          const stats = hunkStats(h.lines)
+                          const checked = () => selected().has(key)
+                          return (
+                            <label class="mafw-diff-hunk" classList={{ checked: checked() }}>
+                              <input
+                                type="checkbox"
+                                checked={checked()}
+                                onChange={() => toggle(key)}
+                              />
+                              <span class="mafw-diff-hunk-header">{h.header}</span>
+                              <span class="mafw-diff-stat add">+{stats.added}</span>
+                              <span class="mafw-diff-stat del">-{stats.removed}</span>
+                              <pre class="mafw-diff-hunk-body">
+                                <For each={h.lines}>
+                                  {(line) => (
+                                    <span
+                                      classList={{
+                                        "mafw-diff-line": true,
+                                        add: line.startsWith("+"),
+                                        del: line.startsWith("-"),
+                                      }}
+                                    >{line}</span>
+                                  )}
+                                </For>
+                              </pre>
+                            </label>
+                          )
+                        }}
+                      </For>
+                    </section>
+                  )
+                }}
+              </Show>
+            </div>
           </Show>
         </Show>
       </div>

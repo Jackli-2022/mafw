@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { splitHunks, hunkStats } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile } from "./diff-hunks"
 
 const PATCH = [
   'diff --git a/x.txt b/x.txt',
@@ -34,5 +34,21 @@ describe('splitHunks', () => {
 describe('hunkStats', () => {
   test('counts +/- lines', () => {
     expect(hunkStats([' one', '-two', '+TWO', '+two-bis', ' three'])).toEqual({ added: 2, removed: 1 })
+  })
+})
+
+describe('pickSelectedFile', () => {
+  test('当前选中仍在列表则保留', () => {
+    expect(pickSelectedFile(['a.ts', 'b.ts'], 'b.ts')).toBe('b.ts')
+  })
+  test('当前选中消失则回退第一个', () => {
+    expect(pickSelectedFile(['a.ts', 'b.ts'], 'gone.ts')).toBe('a.ts')
+  })
+  test('无选中默认第一个', () => {
+    expect(pickSelectedFile(['a.ts'], null)).toBe('a.ts')
+  })
+  test('空列表返回 null', () => {
+    expect(pickSelectedFile([], 'a.ts')).toBeNull()
+    expect(pickSelectedFile([], null)).toBeNull()
   })
 })

@@ -47,3 +47,13 @@ export function hunkStats(lines: string[]): { added: number; removed: number } {
   }
   return { added, removed }
 }
+
+/**
+ * 选中文件兜底（两栏抽屉用）：当前选中仍在列表则保留，否则回退第一个；
+ * 空列表返回 null。文件标识 = f.file ?? "(unknown)"（与面板 keyed 口径一致）。
+ */
+export function pickSelectedFile(files: string[], current: string | null): string | null {
+  if (files.length === 0) return null
+  if (current && files.includes(current)) return current
+  return files[0]
+}
