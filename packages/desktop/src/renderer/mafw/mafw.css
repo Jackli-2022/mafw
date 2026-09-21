@@ -1,6 +1,7 @@
 /* ══ 主题变量层（作用域 .mafw-shell，暗色默认，v5 暖纸色板） ══ */
 .mafw-shell {
   color-scheme: dark;
+  font-family: var(--font-ui);
   /* 消息列宽分档（§4.5：宽屏不再两侧大留白） */
   --msg-col-width: 760px;
   /* 背景五阶（§3.1 v5: 暖纸调，chroma≤0.02） */
@@ -77,6 +78,9 @@
   --dur-3: 200ms;
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
+  /* v5.1 双字体契约：sans 管 UI、mono 管数据（复用 ui 包既有变量，像素零变化） */
+  --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
 }
 /* 亮色：手动覆盖（html[data-theme]） */
 html[data-theme="light"] .mafw-shell {
@@ -148,6 +152,8 @@ html[data-theme="light"] .mafw-shell {
   --dur-3: 200ms;
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
+  --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+  --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
 }
 /* 亮色：跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -183,6 +189,8 @@ html[data-theme="light"] .mafw-shell {
     --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 14px;
     --dur-1: 120ms; --dur-2: 160ms; --dur-3: 200ms; --dur-4: 240ms;
     --ease: cubic-bezier(.25,0,0,1);
+    --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+    --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
   }
 }
 
