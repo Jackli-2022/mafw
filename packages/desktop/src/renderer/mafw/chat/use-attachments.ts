@@ -206,6 +206,7 @@ export function useAttachments() {
     addAttachments,
     removeAttachment,
     addPastedFile,
+    imageToDataUrl,
     handlePaste,
     handleDragOver,
     handleDragLeave,
