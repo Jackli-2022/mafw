@@ -78,6 +78,19 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
 const VALID_MODE_A = new Set(['passthrough', 'rewrite', 'drop']);
 const VALID_CONSUMPTION = new Set(['handled', 'ignore']);
 
+/**
+ * runtime 原生但**不进客户端契约**的事件类型 —— gateway 边界直接丢弃。
+ *
+ * `sync`：opencode v2 事件溯源信封 `{type:'sync', syncEvent:{type:'*.1',
+ * seq, aggregateID, data}}`（session/message/session.next 全族），opencode
+ * 自家客户端的状态重同步传输，与 legacy 顶层事件**双发**。MAFW 三端消费
+ * legacy/dedicated 事件即可：放行只会造成重复处理、desktop miss 告警与
+ * [SSE] 日志刷屏。刻意不进 EVENT_FLOW_MATRIX（canonical 契约的单表）——
+ * 这些类型永远不到客户端。若未来 opencode 移除 legacy 双发，应在
+ * normalize.ts 把 syncEvent 翻译为 canonical 形状，而非放行原始信封。
+ */
+export const RUNTIME_NATIVE_DROPPED: ReadonlySet<string> = new Set(['sync']);
+
 /** 返回矩阵完整性的问题列表；空数组 = 通过。 */
 export function assertMatrixComplete(): string[] {
   const issues: string[] = [];

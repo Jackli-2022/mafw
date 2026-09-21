@@ -7,7 +7,7 @@
  *
  * fail-open：record/查询任何异常不抛出（调用方在事件热路径上）。
  */
-import { EVENT_FLOW_MATRIX } from './event-flow-matrix';
+import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './event-flow-matrix';
 
 const KNOWN_PREFIXES = ['plugin:', 'session.next.'];
 
@@ -17,6 +17,7 @@ const MATRIX_KEYS: ReadonlySet<string> = new Set(Object.keys(EVENT_FLOW_MATRIX))
 export function isKnownEventType(type: string | undefined): boolean {
   if (!type) return true; // 无 type 属于畸形事件范畴（isMalformedEvent 管），不算未知
   if (MATRIX_KEYS.has(type)) return true;
+  if (RUNTIME_NATIVE_DROPPED.has(type)) return true; // gateway 边界有意丢弃 ≠ 未知
   return KNOWN_PREFIXES.some((p) => type.startsWith(p));
 }
 
