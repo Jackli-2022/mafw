@@ -456,8 +456,12 @@ describe("token v5.2 — bento 基建", () => {
 
 describe("token v5.2 — 组件接线", () => {
   const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
-  test("WelcomeHome 使用 bento board", () =>
-    expect(read("src/renderer/mafw/components/WelcomeHome.tsx")).toContain('class="mafw-welcome mafw-bento"'))
+  test("WelcomeHome 保持居中单列（v4 语义，bento 不用于欢迎页）", () => {
+    const b = cssBlock(".mafw-welcome {")
+    expect(b).toContain("max-width: 720px")
+    expect(b).toContain("align-items: center")
+    expect(read("src/renderer/mafw/components/WelcomeHome.tsx")).not.toContain('class="mafw-welcome mafw-bento"')
+  })
   test("Dashboard KPI 行接入 bento", () =>
     expect(read("src/renderer/mafw/pages/Dashboard.tsx")).toContain('class="mafw-bento"'))
   test("ChatPane 主区带双栏 hook 属性", () =>

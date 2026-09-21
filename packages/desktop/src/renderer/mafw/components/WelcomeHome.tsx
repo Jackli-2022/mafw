@@ -112,151 +112,139 @@ export function WelcomeHome(props: {
   }
 
   return (
-    <div class="mafw-welcome mafw-bento" onClick={(e) => e.stopPropagation()}>
+    <div class="mafw-welcome" onClick={(e) => e.stopPropagation()}>
       <Show when={!connected()}>
-        <div class="mafw-welcome-banner mafw-bento-span-4">
+        <div class="mafw-welcome-banner">
           <span>Gateway 服务未连接</span>
           <ButtonV2 variant="outline" size="small" onClick={fetchAll}>重试</ButtonV2>
         </div>
       </Show>
 
-      {/* Anchor card — 今天要做什么？ */}
-      <div class="mafw-welcome-card mafw-bento-anchor">
-        <h1 class="mafw-welcome-title">今天要做什么？</h1>
-
-        {/* Quick actions */}
-        <div class="mafw-welcome-actions">
-          <ButtonV2 variant="contrast" icon="edit" onClick={props.onCreate}>新建会话</ButtonV2>
-          <Show when={props.hasPlanAgent}>
-            <ButtonV2 variant="outline" icon="file" onClick={() => props.onStartWithPlan?.()}>
-              先规划，再执行
-            </ButtonV2>
-          </Show>
-          <ButtonV2 variant="outline" icon="user" onClick={() => void props.onOpenManager()}>Manager 会话</ButtonV2>
-          <ButtonV2 variant="outline" icon="target" onClick={() => { setGoalInputOpen(o => !o) }}>新建 Goal</ButtonV2>
-          <ButtonV2 variant="outline" icon="check" onClick={() => props.onNavigate("approvals")}>
-            待审批{`${pendingApprovals() > 0 ? ` (${pendingApprovals()})` : ""}`}
-          </ButtonV2>
-          <ButtonV2 variant="outline" icon="database" onClick={() => props.onNavigate("memory")}>记忆回顾</ButtonV2>
-        </div>
-
-        {/* New Goal inline input */}
-        <Show when={goalInputOpen()}>
-          <div class="mafw-welcome-goal-input">
-            <TextInputV2
-              value={goalDraft()}
-              onInput={setGoalDraft}
-              placeholder="描述要创建的 Goal（例如：重构登录模块）…"
-              onKeyDown={(e) => { if (e.key === "Enter") void submitGoal() }}
-            />
-            <div class="mafw-welcome-goal-input-actions">
-              <span class="mafw-welcome-plan-review" title="规划完成后 manager 会先用 mafw_ask_user 把方案发给你确认，经确认后才开始执行（Cowork 式 review-then-run）">
-                <SwitchV2 checked={planReview()} onChange={(v: boolean) => setPlanReview(v)} size="small" />
-                <span style={{ "font-size": 11, color: "var(--text-base)" }}>规划完成后先经我确认再执行</span>
-              </span>
-              <span style={{ flex: 1 }} />
-              <ButtonV2 variant="contrast" size="small" disabled={goalSubmitting() || !goalDraft().trim()} onClick={() => void submitGoal()}>
-                {goalSubmitting() ? "提交中…" : "提交"}
-              </ButtonV2>
-              <ButtonV2 variant="ghost" size="small" onClick={() => setGoalInputOpen(false)}>取消</ButtonV2>
-            </div>
-            <Show when={goalError()}><div class="mafw-welcome-goal-error">{goalError()}</div></Show>
-          </div>
+      {/* Project switcher — horizontal chips */}
+      <div class="mafw-welcome-projects">
+        <Show when={props.projects.length > 0} fallback={<div class="mafw-welcome-projects-empty">未注册项目（在 gateway 侧 /register 注册）</div>}>
+          <For each={props.projects}>
+            {(p) => (
+              <TooltipV2 placement="bottom" value={p.worktree}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-welcome-project"
+                  data-selected={props.currentProject === p.worktree ? "" : undefined}
+                  onClick={() => props.onSelectProject(p.worktree)}
+                >
+                  {projectName(p)}
+                </ButtonV2>
+              </TooltipV2>
+            )}
+          </For>
         </Show>
       </div>
 
-      {/* Project switcher card */}
-      <div class="mafw-welcome-card mafw-bento-span-2">
-        <div class="mafw-welcome-section-title">项目</div>
-        <div class="mafw-welcome-projects">
-          <Show when={props.projects.length > 0} fallback={<div class="mafw-welcome-projects-empty">未注册项目（在 gateway 侧 /register 注册）</div>}>
-            <For each={props.projects}>
-              {(p) => (
-                <TooltipV2 placement="bottom" value={p.worktree}>
-                  <ButtonV2
-                    variant="ghost"
-                    size="small"
-                    class="mafw-welcome-project"
-                    data-selected={props.currentProject === p.worktree ? "" : undefined}
-                    onClick={() => props.onSelectProject(p.worktree)}
-                  >
-                    {projectName(p)}
-                  </ButtonV2>
-                </TooltipV2>
+      <h1 class="mafw-welcome-title">今天要做什么？</h1>
+
+      {/* Quick actions */}
+      <div class="mafw-welcome-actions">
+        <ButtonV2 variant="contrast" icon="edit" onClick={props.onCreate}>新建会话</ButtonV2>
+        <Show when={props.hasPlanAgent}>
+          <ButtonV2 variant="outline" icon="file" onClick={() => props.onStartWithPlan?.()}>
+            先规划，再执行
+          </ButtonV2>
+        </Show>
+        <ButtonV2 variant="outline" icon="user" onClick={() => void props.onOpenManager()}>Manager 会话</ButtonV2>
+        <ButtonV2 variant="outline" icon="target" onClick={() => { setGoalInputOpen(o => !o) }}>新建 Goal</ButtonV2>
+        <ButtonV2 variant="outline" icon="check" onClick={() => props.onNavigate("approvals")}>
+          待审批{`${pendingApprovals() > 0 ? ` (${pendingApprovals()})` : ""}`}
+        </ButtonV2>
+        <ButtonV2 variant="outline" icon="database" onClick={() => props.onNavigate("memory")}>记忆回顾</ButtonV2>
+      </div>
+
+      {/* New Goal inline input */}
+      <Show when={goalInputOpen()}>
+        <div class="mafw-welcome-goal-input">
+          <TextInputV2
+            value={goalDraft()}
+            onInput={setGoalDraft}
+            placeholder="描述要创建的 Goal（例如：重构登录模块）…"
+            onKeyDown={(e) => { if (e.key === "Enter") void submitGoal() }}
+          />
+          <div class="mafw-welcome-goal-input-actions">
+            <span class="mafw-welcome-plan-review" title="规划完成后 manager 会先用 mafw_ask_user 把方案发给你确认，经确认后才开始执行（Cowork 式 review-then-run）">
+              <SwitchV2 checked={planReview()} onChange={(v: boolean) => setPlanReview(v)} size="small" />
+              <span style={{ "font-size": 11, color: "var(--text-base)" }}>规划完成后先经我确认再执行</span>
+            </span>
+            <span style={{ flex: 1 }} />
+            <ButtonV2 variant="contrast" size="small" disabled={goalSubmitting() || !goalDraft().trim()} onClick={() => void submitGoal()}>
+              {goalSubmitting() ? "提交中…" : "提交"}
+            </ButtonV2>
+            <ButtonV2 variant="ghost" size="small" onClick={() => setGoalInputOpen(false)}>取消</ButtonV2>
+          </div>
+          <Show when={goalError()}><div class="mafw-welcome-goal-error">{goalError()}</div></Show>
+        </div>
+      </Show>
+
+      {/* Active goals */}
+      <Show when={activeGoals().length > 0}>
+        <section class="mafw-welcome-section">
+          <div class="mafw-welcome-section-title">活跃 Goal</div>
+          <div class="mafw-welcome-goals">
+            <For each={activeGoals()}>
+              {(g) => (
+                <ButtonV2 variant="ghost" size="small" class="mafw-welcome-goal" onClick={() => props.onNavigate("goals")}>
+                  <span class="mafw-welcome-goal-title">{g.title || g.goalId}</span>
+                  <span class="mafw-welcome-goal-meta">
+                    {g.phase} · loop {g.loop || 0}
+                  </span>
+                </ButtonV2>
               )}
             </For>
-          </Show>
-        </div>
-      </div>
-
-      {/* Pending overview card */}
-      <Show when={pendingApprovals() > 0 || triageCount() > 0 || enabledAutomations() > 0}>
-        <div class="mafw-welcome-card mafw-bento-span-2">
-          <section class="mafw-welcome-section">
-            <div class="mafw-welcome-section-title">待办概览</div>
-            <div class="mafw-welcome-badges">
-              <Show when={pendingApprovals() > 0}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-welcome-badge" onClick={() => props.onNavigate("approvals")}>
-                  {pendingApprovals()} 条待审批
-                </ButtonV2>
-              </Show>
-              <Show when={triageCount() > 0}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-welcome-badge" onClick={() => props.onNavigate("triage")}>
-                  {triageCount()} 条 triage
-                </ButtonV2>
-              </Show>
-              <Show when={enabledAutomations() > 0}>
-                <span class="mafw-welcome-badge mafw-welcome-badge-static">
-                  {enabledAutomations()} 个自动化运行中
-                </span>
-              </Show>
-            </div>
-          </section>
-        </div>
-      </Show>
-
-      {/* Active goals card */}
-      <Show when={activeGoals().length > 0}>
-        <div class="mafw-welcome-card mafw-bento-span-2">
-          <section class="mafw-welcome-section">
-            <div class="mafw-welcome-section-title">活跃 Goal</div>
-            <div class="mafw-welcome-goals">
-              <For each={activeGoals()}>
-                {(g) => (
-                  <ButtonV2 variant="ghost" size="small" class="mafw-welcome-goal" onClick={() => props.onNavigate("goals")}>
-                    <span class="mafw-welcome-goal-title">{g.title || g.goalId}</span>
-                    <span class="mafw-welcome-goal-meta">
-                      {g.phase} · loop {g.loop || 0}
-                    </span>
-                  </ButtonV2>
-                )}
-              </For>
-            </div>
-          </section>
-        </div>
-      </Show>
-
-      {/* Recent sessions card */}
-      <div class="mafw-welcome-card mafw-bento-span-2">
-        <section class="mafw-welcome-section">
-          <div class="mafw-welcome-section-title">最近会话</div>
-          <Show when={recentSessions().length > 0} fallback={
-            <div class="mafw-welcome-empty">
-              {loading() ? "加载中…" : "暂无会话，点击「新建会话」开始"}
-            </div>
-          }>
-            <div class="mafw-welcome-sessions">
-              <For each={recentSessions()}>
-                {(s) => (
-                  <ButtonV2 variant="ghost" size="small" class="mafw-welcome-session" onClick={() => props.onSelect(s.id)}>
-                    <span class="mafw-welcome-session-title">{s.title}</span>
-                  </ButtonV2>
-                )}
-              </For>
-            </div>
-          </Show>
+          </div>
         </section>
-      </div>
+      </Show>
+
+      {/* Pending overview */}
+      <Show when={pendingApprovals() > 0 || triageCount() > 0 || enabledAutomations() > 0}>
+        <section class="mafw-welcome-section">
+          <div class="mafw-welcome-section-title">待办概览</div>
+          <div class="mafw-welcome-badges">
+            <Show when={pendingApprovals() > 0}>
+              <ButtonV2 variant="ghost" size="small" class="mafw-welcome-badge" onClick={() => props.onNavigate("approvals")}>
+                {pendingApprovals()} 条待审批
+              </ButtonV2>
+            </Show>
+            <Show when={triageCount() > 0}>
+              <ButtonV2 variant="ghost" size="small" class="mafw-welcome-badge" onClick={() => props.onNavigate("triage")}>
+                {triageCount()} 条 triage
+              </ButtonV2>
+            </Show>
+            <Show when={enabledAutomations() > 0}>
+              <span class="mafw-welcome-badge mafw-welcome-badge-static">
+                {enabledAutomations()} 个自动化运行中
+              </span>
+            </Show>
+          </div>
+        </section>
+      </Show>
+
+      {/* Recent sessions */}
+      <section class="mafw-welcome-section">
+        <div class="mafw-welcome-section-title">最近会话</div>
+        <Show when={recentSessions().length > 0} fallback={
+          <div class="mafw-welcome-empty">
+            {loading() ? "加载中…" : "暂无会话，点击「新建会话」开始"}
+          </div>
+        }>
+          <div class="mafw-welcome-sessions">
+            <For each={recentSessions()}>
+              {(s) => (
+                <ButtonV2 variant="ghost" size="small" class="mafw-welcome-session" onClick={() => props.onSelect(s.id)}>
+                  <span class="mafw-welcome-session-title">{s.title}</span>
+                </ButtonV2>
+              )}
+            </For>
+          </div>
+        </Show>
+      </section>
     </div>
   )
 }
