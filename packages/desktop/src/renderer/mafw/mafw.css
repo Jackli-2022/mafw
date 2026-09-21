@@ -1690,6 +1690,26 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 .mafw-page-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
+/* ── Bento board（v5.2：概览页专用；跨列 ∈ {1,2,4}，一卡一问题） ── */
+.mafw-bento {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.mafw-bento > * { min-width: 0; }
+.mafw-bento-span-2 { grid-column: span 2; }
+.mafw-bento-span-4 { grid-column: span 4; }
+.mafw-bento-anchor { grid-column: span 2; grid-row: span 2; }
+@media (max-width: 1100px) {
+  .mafw-bento { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .mafw-bento-span-4, .mafw-bento-anchor { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+  .mafw-bento { grid-template-columns: minmax(0,1fr); }
+  .mafw-bento-span-2, .mafw-bento-span-4, .mafw-bento-anchor { grid-column: span 1; grid-row: span 1; }
+}
+
 /* ── ConfigPage: gateway ops ── */
 .mafw-config-head {
   display: flex;
