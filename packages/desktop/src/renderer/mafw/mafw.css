@@ -2738,11 +2738,21 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-trajectory-turn.open .mafw-trajectory-turn-user { white-space: normal; }
 .mafw-rightdock-btn { font-size: 13px; }
 
-/* ── Welcome home (今天要做什么？) ── */
+/* ── Welcome home（v5.2 bento board：锚点卡 + 项目/待办/Goal/会话卡） ── */
 .mafw-welcome {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 16px; padding: 48px 24px; width: 100%; max-width: 720px; margin: 0 auto;
+  padding: 32px 24px; width: 100%; max-width: 1040px; margin: 0 auto;
   overflow-y: auto; height: 100%;
+}
+.mafw-welcome-card {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 .mafw-welcome-banner {
   display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 8px;
@@ -2805,6 +2815,10 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-welcome-session:hover { background: var(--surface-base-hover); color: var(--text-strong); }
 .mafw-welcome-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-welcome-empty { color: var(--text-weak); font-size: 13px; padding: 8px 0; }
+/* v5.2 bento 卡内微调（置于段尾，防 cssBlock 首次匹配碰撞） */
+.mafw-welcome-card .mafw-welcome-section-title { margin: 0; }
+.mafw-welcome-card .mafw-welcome-projects { justify-content: flex-start; }
+.mafw-welcome-card.mafw-bento-anchor .mafw-welcome-title { font-size: 24px; }
 
 /* ── Rail (new: wrap/scroll/footer/collapse) ── */
 .mafw-rail-wrap { position: relative; min-width: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
