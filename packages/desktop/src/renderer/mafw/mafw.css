@@ -705,6 +705,7 @@ html[data-theme="light"] .mafw-shell {
   padding: 0 32px;
   padding-bottom: 48px;   /* last message clears the jump-to-latest button */
   position: relative;
+  position: relative; /* tsearch overlay 锚点 */
 }
 /* DeepSeek-style node nav: per-turn scroll anchors + right-edge dash rail */
 .mafw-turn-anchor { scroll-margin-top: 64px; }
@@ -1314,6 +1315,13 @@ html[data-theme="light"] .mafw-shell {
 }
 .mafw-composer:focus-within .mafw-keyhint { opacity: 1; }
 
+/* Permission mode toggle (P1 batch 2) */
+.mafw-perm-mode-auto { color: var(--accent-text, #7aa2f7); background: var(--surface-base-active); }
+
+/* Busy-turn queue bar (composer above-row, P0-1) */
+.mafw-queue-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; margin-bottom: 6px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 10px; background: var(--surface-base-hover); }
+.mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
 /* ── Composer chips (attachments / @agent) + menus ── */
 .mafw-composer-chips {
   display: flex;
@@ -1570,6 +1578,12 @@ html[data-theme="light"] .mafw-picker-pop {
   color: var(--text-5);
   flex-shrink: 0;
 }
+
+/* File mention picker + chips (P1) */
+.mafw-file-picker { max-height: 320px; overflow-y: auto; }
+.mafw-file-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.mafw-file-row.sel, .mafw-file-row:hover { background: var(--surface-base-hover); }
+.mafw-file-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 
 /* AgentPicker rows */
 .mafw-agent-row {
@@ -1876,6 +1890,19 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-delta-text { color: var(--text-strong); font-size: 13px; }
 .mafw-delta-priority { color: var(--text-weak); font-size: 11px; }
 .mafw-tool-output { color: var(--text-base); overflow-x: auto; padding: 8px; background: var(--surface-inset-base, var(--background-weak)); border-radius: 4px; max-height: 200px; font-size: 12px; }
+
+/* Plugin widget vocabulary v2: markdown + progress (P3 batch) */
+.mafw-plugin-markdown { font-size: 12px; line-height: 1.6; }
+.mafw-plugin-markdown :is(h1, h2, h3) { font-size: 13px; margin: 8px 0 4px; }
+.mafw-plugin-markdown p { margin: 4px 0; }
+.mafw-plugin-markdown pre { background: var(--surface-base-hover); border-radius: 6px; padding: 8px; overflow-x: auto; font-size: 11px; }
+.mafw-plugin-markdown code { font-family: var(--font-data); font-size: 11px; }
+.mafw-plugin-markdown ul, .mafw-plugin-markdown ol { padding-left: 18px; margin: 4px 0; }
+.mafw-plugin-markdown a { color: var(--accent-text, #7aa2f7); }
+.mafw-plugin-progress { display: flex; align-items: center; gap: 8px; }
+.mafw-plugin-progress-track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-base-hover); overflow: hidden; }
+.mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text, #7aa2f7); transition: width var(--dur-4) var(--ease); }
+.mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
 
 /* ── Question Widget ── */
 .mafw-question-overlay {
@@ -2737,7 +2764,40 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-trajectory-turn.open .mafw-trajectory-turn-user { white-space: normal; }
 .mafw-rightdock-btn { font-size: 13px; }
 
+/* Goal detail overlay (P0-3) */
+.mafw-goal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; }
+.mafw-goal-panel { width: min(640px, 90vw); max-height: 80vh; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 16px; }
+.mafw-goal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mafw-goal-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.mafw-goal-charter { font-size: 12px; color: var(--text-base); white-space: pre-wrap; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; padding: 10px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
+.mafw-goal-sec-title { font-size: 11px; color: var(--text-base); margin-bottom: 6px; }
+.mafw-goal-session { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.mafw-goal-session:hover { background: var(--surface-base-hover); }
+.mafw-goal-session-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Transcript search overlay (P1). Anchors inside the scroll container:
+   keep position:relative there so the overlay floats with the pane. */
+.mafw-tsearch { position: sticky; top: 8px; z-index: 60; width: min(380px, 80%); margin-left: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 8px; }
+.mafw-tsearch-count { font-size: 10px; color: var(--text-base); padding-left: 4px; font-variant-numeric: tabular-nums; }
+.mafw-tsearch-hits { max-height: 260px; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
+.mafw-tsearch-hit { display: flex; gap: 8px; padding: 6px 10px; cursor: pointer; font-size: 11px; align-items: baseline; }
+.mafw-tsearch-hit.sel, .mafw-tsearch-hit:hover { background: var(--surface-base-hover); }
+.mafw-tsearch-role { flex-shrink: 0; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--surface-base-active); }
+.mafw-tsearch-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Global command palette (Ctrl+P, P2 batch) */
+.mafw-palette-backdrop { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.mafw-palette-list { max-height: 380px; overflow-y: auto; }
+.mafw-palette-group { font-size: 10px; color: var(--text-4); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .05em; }
+.mafw-palette-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.mafw-palette-row.sel, .mafw-palette-row:hover { background: var(--surface-base-hover); }
+.mafw-palette-hint { font-size: 10px; color: var(--text-4); flex-shrink: 0; }
+
 /* ── Welcome home (今天要做什么？居中单列，v5.2 定版：bento 不用于欢迎页) ── */
+/* Goal plan-review toggle (P1 batch 2) */
+.mafw-welcome-plan-review { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
 .mafw-welcome {
   display: flex; flex-direction: column; align-items: center;
   gap: 16px; padding: 48px 24px; width: 100%; max-width: 720px; margin: 0 auto;
@@ -3169,24 +3229,12 @@ html[data-theme="light"] .mafw-picker-pop {
   overflow: hidden;
   background: var(--bg-overlay);
   gap: 1px;
+  margin-bottom: 2px;
 }
 .mafw-usage-stack-seg {
   height: 100%;
   min-width: 2px;
   border-radius: 1px;
-  transition: width var(--dur-4) var(--ease);
-}
-
-.mafw-usage-stack-bar {
-  display: flex;
-  height: 6px;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--bg-overlay);
-  margin-bottom: 2px;
-}
-.mafw-usage-stack-seg {
-  height: 100%;
   transition: width var(--dur-4) var(--ease);
 }
 
@@ -4258,6 +4306,16 @@ html[data-theme="light"] .mafw-picker-pop {
   gap: 18px;
   border-left: 3px solid var(--warning);
 }
+/* ���� Approvals�������־ð������༭�������� */
+.mafw-allowlist-add { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0 18px; }
+.mafw-allowlist-add-fields { display: flex; gap: 10px; flex: 1; min-width: 0; }
+.mafw-allowlist-add-fields > * { min-width: 0; }
+.mafw-allowlist-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mafw-allowlist-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border-base, rgba(128,128,128,.25)); border-radius: 8px; background: var(--bg-raised, rgba(128,128,128,.08)); }
+.mafw-allowlist-tool { font-family: var(--font-data); font-size: 12px; font-weight: 600; min-width: 88px; }
+.mafw-allowlist-prefix { flex: 1; font-size: 12px; color: var(--text-muted, #888); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-allowlist-empty { font-size: 12px; color: var(--text-muted, #888); margin: 18px 0; }
+
 /* Model rows */
 .mafw-config-models-grid {
   display: flex;
@@ -4399,13 +4457,11 @@ html[data-theme="light"] .mafw-picker-pop {
   background: var(--hover);
 }
 .mafw-config-oc-name {
-  font-size: 14px;
   font-weight: 600;
   color: var(--text-1);
   flex: 1;
   letter-spacing: 0.01em;
   font-family: var(--font-data);
-  font-size: 13px;
   font-size: 12px;
 }
 .mafw-config-oc-body {
@@ -4471,75 +4527,14 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-search-select-item.current { color: var(--accent); }
 .mafw-search-select-check { margin-left: 8px; color: var(--accent); }
 
-/* Busy-turn queue bar (composer above-row, P0-1) */
-.mafw-queue-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; margin-bottom: 6px; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 10px; background: var(--surface-base-hover); }
-.mafw-queue-count { font-size: 11px; color: var(--text-base); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-/* Goal detail overlay (P0-3) */
-.mafw-goal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; }
-.mafw-goal-panel { width: min(640px, 90vw); max-height: 80vh; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 16px; }
-.mafw-goal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.mafw-goal-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.mafw-goal-charter { font-size: 12px; color: var(--text-base); white-space: pre-wrap; border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; padding: 10px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; }
-.mafw-goal-sec-title { font-size: 11px; color: var(--text-base); margin-bottom: 6px; }
-.mafw-goal-session { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
-.mafw-goal-session:hover { background: var(--surface-base-hover); }
-.mafw-goal-session-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* File mention picker + chips (P1) */
-.mafw-file-picker { max-height: 320px; overflow-y: auto; }
-.mafw-file-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
-.mafw-file-row.sel, .mafw-file-row:hover { background: var(--surface-base-hover); }
-.mafw-file-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 
-/* Transcript search overlay (P1). Anchors inside the scroll container:
-   keep position:relative there so the overlay floats with the pane. */
-.mafw-session-turn-container { position: relative; }
-.mafw-tsearch { position: sticky; top: 8px; z-index: 60; width: min(380px, 80%); margin-left: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 8px; }
-.mafw-tsearch-count { font-size: 10px; color: var(--text-base); padding-left: 4px; font-variant-numeric: tabular-nums; }
-.mafw-tsearch-hits { max-height: 260px; overflow-y: auto; background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 8px; }
-.mafw-tsearch-hit { display: flex; gap: 8px; padding: 6px 10px; cursor: pointer; font-size: 11px; align-items: baseline; }
-.mafw-tsearch-hit.sel, .mafw-tsearch-hit:hover { background: var(--surface-base-hover); }
-.mafw-tsearch-role { flex-shrink: 0; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--surface-base-active); }
-.mafw-tsearch-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Global command palette (Ctrl+P, P2 batch) */
-.mafw-palette-backdrop { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
-.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
-.mafw-palette-list { max-height: 380px; overflow-y: auto; }
-.mafw-palette-group { font-size: 10px; color: var(--text-4); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .05em; }
-.mafw-palette-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
-.mafw-palette-row.sel, .mafw-palette-row:hover { background: var(--surface-base-hover); }
-.mafw-palette-hint { font-size: 10px; color: var(--text-4); flex-shrink: 0; }
 
-/* Permission mode toggle (P1 batch 2) */
-.mafw-perm-mode-auto { color: var(--accent-text, #7aa2f7); background: var(--surface-base-active); }
 
-/* Goal plan-review toggle (P1 batch 2) */
-.mafw-welcome-plan-review { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 
-/* Plugin widget vocabulary v2: markdown + progress (P3 batch) */
-.mafw-plugin-markdown { font-size: 12px; line-height: 1.6; }
-.mafw-plugin-markdown :is(h1, h2, h3) { font-size: 13px; margin: 8px 0 4px; }
-.mafw-plugin-markdown p { margin: 4px 0; }
-.mafw-plugin-markdown pre { background: var(--surface-base-hover); border-radius: 6px; padding: 8px; overflow-x: auto; font-size: 11px; }
-.mafw-plugin-markdown code { font-family: var(--font-data); font-size: 11px; }
-.mafw-plugin-markdown ul, .mafw-plugin-markdown ol { padding-left: 18px; margin: 4px 0; }
-.mafw-plugin-markdown a { color: var(--accent-text, #7aa2f7); }
-.mafw-plugin-progress { display: flex; align-items: center; gap: 8px; }
-.mafw-plugin-progress-track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-base-hover); overflow: hidden; }
-.mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text, #7aa2f7); transition: width var(--dur-4) var(--ease); }
-.mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
 
-/* ���� Approvals�������־ð������༭�������� */
-.mafw-allowlist-add { display: flex; align-items: flex-end; gap: 10px; margin: 14px 0 18px; }
-.mafw-allowlist-add-fields { display: flex; gap: 10px; flex: 1; min-width: 0; }
-.mafw-allowlist-add-fields > * { min-width: 0; }
-.mafw-allowlist-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.mafw-allowlist-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border-base, rgba(128,128,128,.25)); border-radius: 8px; background: var(--bg-raised, rgba(128,128,128,.08)); }
-.mafw-allowlist-tool { font-family: var(--font-data); font-size: 12px; font-weight: 600; min-width: 88px; }
-.mafw-allowlist-prefix { flex: 1; font-size: 12px; color: var(--text-muted, #888); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mafw-allowlist-empty { font-size: 12px; color: var(--text-muted, #888); margin: 18px 0; }
 
 /* ── DiffReviewPanel（切片 2）────────────────────────────────────────── */
 .mafw-diff-panel { position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg-base, #111); border-left: 1px solid var(--border-base, rgba(128,128,128,.25)); }
