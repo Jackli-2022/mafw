@@ -1556,6 +1556,13 @@ export function MafwShell() {
       const remaining = sessions().filter(s => s.id !== id)
       setActiveSessionId(remaining.length > 0 ? remaining[remaining.length - 1].id : null)
     }
+    // v5.2: last tab closed → return to the Welcome home board (ChatGPT/Cursor
+    // new-tab-home semantics) instead of an empty split placeholder.
+    if (sessions().length === 0) {
+      setShowWelcome(true)
+      setActiveViewId(null)
+      setActiveSessionId(null)
+    }
     sessionStore.invalidate()
   }
 
