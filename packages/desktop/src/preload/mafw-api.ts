@@ -87,6 +87,8 @@ export function createMafwApi(): MafwAPI {
       fork: (sessionID, messageID?) => invoke("session", "fork", { path: { id: sessionID }, body: { messageID } }),
       revert: (sessionID, messageID) => invoke("session", "revert", { path: { id: sessionID }, body: { messageID } }),
       unrevert: (sessionID) => invoke("session", "unrevert", { path: { id: sessionID } }),
+      diff: (sessionID, messageID?) => invoke("session", "diff", { path: { id: sessionID }, query: { messageID } }),
+      revertDiff: (sessionID, patches) => invoke("session", "revertDiff", { path: { id: sessionID }, body: { patches } }),
       delete: (id) => invoke("session", "delete", { path: { id } }),
       rename: (id, title) => invoke("session", "rename", { path: { id }, body: { title } }),
       trajectory: (sessionID, query?) => invoke("session", "trajectory", { path: { id: sessionID }, query: query || {} }),
