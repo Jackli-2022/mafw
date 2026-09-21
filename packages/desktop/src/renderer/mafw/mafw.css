@@ -2847,6 +2847,13 @@ html[data-theme="light"] .mafw-picker-pop {
   flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;
   overflow: hidden; background: var(--bg-raised);
 }
+/* v5.2 双栏 hook：当前单列（与 flex 版视觉等价）；未来工件栏把 columns 改为
+   minmax(0,1fr) 360px 即得 chat+artifact 双栏，无需动组件 */
+.mafw-pane[data-layout="chat"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
 .mafw-split [data-component="resize-handle"][data-direction="horizontal"] {
   position: static !important; flex: 0 0 6px; width: 6px; height: auto; align-self: stretch;
   transform: none; inset: auto; cursor: col-resize;

@@ -49,7 +49,7 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) 
   return (
     <div>
       <PageHeader title="Goals" subtitle="目标编排总览" />
-      <div style={{ display: "grid", "grid-template-columns": "repeat(4, 1fr)", gap: 12, "margin-bottom": 24 }}>
+      <div class="mafw-bento" style={{ "margin-bottom": "24px" }}>
         {kpis.map(kpi => (
           <div class="mafw-kpi-card">
             <div class="mafw-kpi-value">{kpi.value}</div>

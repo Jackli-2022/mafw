@@ -1785,7 +1785,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   return (
-    <div class="mafw-pane" onClick={props.onFocus}>
+    <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
         <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll}>
           <Show when={sidProp()}>
