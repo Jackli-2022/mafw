@@ -204,11 +204,19 @@ module.exports = {
       }, 300)
     }
 
-    // ── 事件流（EventEmitter → AsyncIterable 桥）──
-    const listeners = new Set()
+    // ── 事件流（async queue 桥：无消费者时事件入队不丢，单消费者语义）──
+    const eventQueue = []
+    let pendingResolve = null
     const emitEvent = (type, properties) => {
       const ev = { type, properties, sessionID: properties.sessionID }
-      for (const l of listeners) l(ev)
+      if (pendingResolve) { const r = pendingResolve; pendingResolve = null; r(ev) }
+      else eventQueue.push(ev)
+    }
+    const eventStream = async function* () {
+      while (true) {
+        if (eventQueue.length) yield eventQueue.shift()
+        else yield await new Promise((r) => { pendingResolve = r })
+      }
     }
 
     // ── 单轮执行：toWire → fetch（流式/非流式）→ 事件/信封 ──
@@ -249,10 +257,10 @@ module.exports = {
       sess.time = { created: sess.time.created, updated: Date.now() }
       save()
       // 事件契约（3.1）：assistant 正文必须以 text part 进 message.part.updated（trajectory/curator 依赖）
+      // 终态快照不带 delta 键（key 稳定性；delta 只在流式增量事件上）
       emitEvent('message.part.updated', {
         sessionID,
         part: { id: 'as_' + Date.now(), sessionID, type: 'text', text, time: { end: Date.now() } },
-        delta: text,
       })
       emitEvent('message.updated', {
         sessionID,
@@ -322,17 +330,8 @@ module.exports = {
 
       global: {
         async event() {
-          return {
-            stream: (async function* () {
-              while (true) {
-                const ev = await new Promise((resolveListener) => {
-                  const l = (e) => { listeners.delete(l); resolveListener(e) }
-                  listeners.add(l)
-                })
-                yield ev
-              }
-            })(),
-          }
+          // 单消费者语义：gateway 是唯一事件订阅方
+          return { stream: eventStream() }
         },
       },
 
@@ -414,7 +413,9 @@ http.createServer((req, res) => {
         clearInterval(timer)
       }
     }, 60)
-    req.on('close', () => clearInterval(timer))
+    // 注意：req 的 'close' 在 body 读完（end 之前）即触发（node ≥16 语义），
+    // 会把 setInterval 清掉导致流式零输出——必须监听 res 的 'close'（连接断开）
+    res.on('close', () => clearInterval(timer))
   })
 }).listen(port, () => console.log('mock one-api listening on http://127.0.0.1:' + port))
 `
