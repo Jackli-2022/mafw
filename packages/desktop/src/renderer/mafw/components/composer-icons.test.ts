@@ -15,6 +15,13 @@ const COMPOSER_ICONS = [
   "sliders",
   "bullet-list",
   "terminal",
+  // titlebar / chips / jump / send（glyph 统一批次）
+  "close",
+  "branch",
+  "arrow-left",
+  "arrow-up",
+  "arrow-down-to-line",
+  "file",
 ] as const
 
 describe("composer toolbar icons", () => {

@@ -1083,22 +1083,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </Show>
                 <Show when={worktreeBadgeOf()}>
                   <TooltipV2 value={`worktree：${sessionDirectory()}`} openDelay={300}>
-                    <span class="mafw-rail-wt-badge">⎇ {worktreeBadgeOf()}</span>
+                    <span class="mafw-rail-wt-badge"><Icon name="branch" size="small" /> {worktreeBadgeOf()}</span>
                   </TooltipV2>
                 </Show>
                 <Show when={props.worktreeEnabled && props.onCreateWorktreeSession}>
                   <TooltipV2 value="在独立 git worktree 中开并行任务（互不踩踏）" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务">⎇ 并行</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务"><Icon name="branch" size="small" /> 并行</ButtonV2>
                   </TooltipV2>
                 </Show>
                 <Show when={props.canClosePane}>
                   <TooltipV2 value="关闭分屏" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏">✕</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏"><Icon name="close" size="small" /></ButtonV2>
                   </TooltipV2>
                 </Show>
                 <Show when={props.parentID && props.onBackToParent}>
                   <TooltipV2 value="返回父会话" openDelay={300}>
-                    <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话">← 返回</ButtonV2>
+                    <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话"><Icon name="arrow-left" size="small" /> 返回</ButtonV2>
                   </TooltipV2>
                 </Show>
               </div>
@@ -1224,9 +1224,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             onClick={jumpToLatest}
             aria-label="Jump to latest"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332" stroke="currentColor" stroke-linecap="square" />
-            </svg>
+            <Icon name="arrow-down-to-line" size="small" />
           </ButtonV2>
         </Show>
       </div>
@@ -1256,7 +1254,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               {(q, i) => (
                 <span class="mafw-chip">
                   <span class="mafw-chip-label">{q.text.trim().slice(0, 40) || `(${q.atts.length} 个附件)`}</span>
-                  <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setQueuedItems(removeTurnAt(queuedItems(), i()))} aria-label="移除排队消息">✕</ButtonV2>
+                  <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setQueuedItems(removeTurnAt(queuedItems(), i()))} aria-label="移除排队消息"><Icon name="close" size="small" /></ButtonV2>
                 </span>
               )}
             </For>
@@ -1280,7 +1278,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       <img class="mafw-chip-thumb" src={a.dataUrl} alt="" />
                     </Show>
                     <span class="mafw-chip-label">{a.name}</span>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAttachment(i())} aria-label="移除附件">✕</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAttachment(i())} aria-label="移除附件"><Icon name="close" size="small" /></ButtonV2>
                   </span>
                 )}
               </For>
@@ -1289,7 +1287,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <span class="mafw-chip">
                     <IconV2 name="sparkles" size="small" />
                     <span class="mafw-chip-label">@{a.name}</span>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAgent(a.name)} aria-label="移除引用">✕</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => removeAgent(a.name)} aria-label="移除引用"><Icon name="close" size="small" /></ButtonV2>
                   </span>
                 )}
               </For>
@@ -1298,7 +1296,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <span class="mafw-chip">
                     <Icon name="file" size="small" />
                     <span class="mafw-chip-label" title={f.rel}>{f.rel}</span>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setMentionedFiles(prev => prev.filter(x => x.rel !== f.rel))} aria-label="移除文件引用">✕</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-chip-x" onClick={() => setMentionedFiles(prev => prev.filter(x => x.rel !== f.rel))} aria-label="移除文件引用"><Icon name="close" size="small" /></ButtonV2>
                   </span>
                 )}
               </For>
@@ -1520,9 +1518,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   classList={{ "mafw-send-disabled": !input().trim() && attachments().length === 0 }}
                   aria-label={connPhase() === "down" ? "Gateway 已断开" : "发送"}
                 >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                    <path d="M7 11.5V2.5M3 6.5L7 2.5L11 6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
+                  <Icon name="arrow-up" size="small" />
                 </ButtonV2>
               }>
                 <ButtonV2
