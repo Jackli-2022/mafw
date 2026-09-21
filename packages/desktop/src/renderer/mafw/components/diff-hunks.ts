@@ -57,3 +57,28 @@ export function pickSelectedFile(files: string[], current: string | null): strin
   if (current && files.includes(current)) return current
   return files[0]
 }
+
+/** 行级评论回喂的 prompt 组装（opencode onLineComment 模式的纯函数核）。
+ *  hunk 行数截断 40 行防巨型 prompt；评论原样嵌入。 */
+export function buildDiffCommentPrompt(
+  file: string,
+  hunkHeader: string,
+  hunkLines: string[],
+  comment: string,
+): string {
+  const CAP = 40
+  const truncated = hunkLines.length > CAP
+  const body = hunkLines.slice(0, CAP).join("\n") + (truncated ? "\n…（其余行截断）" : "")
+  return [
+    `文件 \`${file}\` 的这处改动需要修正：`,
+    "",
+    "```diff",
+    hunkHeader,
+    body,
+    "```",
+    "",
+    `我的意见：${comment}`,
+    "",
+    "请按上述意见修改该文件。",
+  ].join("\n")
+}

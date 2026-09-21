@@ -4,7 +4,7 @@
 import { Show, For, createSignal, createMemo, createEffect } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { splitHunks, hunkStats, pickSelectedFile, type DiffHunk } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, type DiffHunk } from "./diff-hunks"
 import type { FileDiffInfo } from "@mafw/sdk"
 
 export interface FileDiffEntry {
@@ -20,6 +20,8 @@ export function DiffReviewPanel(props: {
   /** SSE session.diff 实时快照（可空 → 组件自行拉取） */
   diffs?: FileDiffEntry[]
   onClose: () => void
+  /** 行级评论回喂（可选）：组装好的评论 prompt 发到会话 */
+  onSendComment?: (sessionID: string, text: string) => void
 }) {
   const [fetched, setFetched] = createSignal<FileDiffEntry[]>([])
   const [loading, setLoading] = createSignal(false)
@@ -27,6 +29,9 @@ export function DiffReviewPanel(props: {
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   // 两栏：左文件列表 + 右当前文件 hunks（opencode v2 ReviewPanel 模式）
   const [selectedFileRaw, setSelectedFile] = createSignal<string | null>(null)
+  // 行级评论：commentingOn = 正在评论的 hunk key
+  const [commentingOn, setCommentingOn] = createSignal<string | null>(null)
+  const [commentDraft, setCommentDraft] = createSignal("")
 
   const files = createMemo<FileDiffEntry[]>(() => {
     const live = props.diffs
@@ -81,6 +86,15 @@ export function DiffReviewPanel(props: {
   }
 
   const totalSel = () => selected().size
+
+  // 行级评论回喂（opencode onLineComment 模式）：组装 prompt 交给宿主发送
+  const submitComment = (file: string, h: DiffHunk) => {
+    const text = commentDraft().trim()
+    if (!text || !props.onSendComment) return
+    props.onSendComment(props.sessionID, buildDiffCommentPrompt(file, h.header, h.lines, text))
+    setCommentDraft("")
+    setCommentingOn(null)
+  }
 
   return (
     <div class="mafw-diff-panel" role="dialog" aria-label="审阅改动">
@@ -151,6 +165,14 @@ export function DiffReviewPanel(props: {
                               <span class="mafw-diff-hunk-header">{h.header}</span>
                               <span class="mafw-diff-stat add">+{stats.added}</span>
                               <span class="mafw-diff-stat del">-{stats.removed}</span>
+                              <Show when={props.onSendComment}>
+                                <ButtonV2
+                                  variant="ghost"
+                                  size="small"
+                                  class="mafw-diff-comment-btn"
+                                  onClick={(e: MouseEvent) => { e.preventDefault(); setCommentingOn(commentingOn() === key ? null : key); setCommentDraft("") }}
+                                >评论</ButtonV2>
+                              </Show>
                               <pre class="mafw-diff-hunk-body">
                                 <For each={h.lines}>
                                   {(line) => (
@@ -164,6 +186,26 @@ export function DiffReviewPanel(props: {
                                   )}
                                 </For>
                               </pre>
+                              <Show when={commentingOn() === key}>
+                                <div class="mafw-diff-comment" onClick={(e) => e.preventDefault()}>
+                                  <textarea
+                                    class="mafw-diff-comment-input"
+                                    rows={3}
+                                    placeholder="对这处改动有什么意见？（回喂给 agent 修正）"
+                                    value={commentDraft()}
+                                    onInput={(e) => setCommentDraft(e.currentTarget.value)}
+                                  />
+                                  <div class="mafw-diff-comment-actions">
+                                    <ButtonV2 variant="ghost" size="small" onClick={() => setCommentingOn(null)}>取消</ButtonV2>
+                                    <ButtonV2
+                                      variant="contrast"
+                                      size="small"
+                                      disabled={!commentDraft().trim()}
+                                      onClick={() => submitComment(file, h)}
+                                    >发送给 agent</ButtonV2>
+                                  </div>
+                                </div>
+                              </Show>
                             </label>
                           )
                         }}

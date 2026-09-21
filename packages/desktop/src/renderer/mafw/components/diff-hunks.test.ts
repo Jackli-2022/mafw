@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { splitHunks, hunkStats, pickSelectedFile } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt } from "./diff-hunks"
 
 const PATCH = [
   'diff --git a/x.txt b/x.txt',
@@ -50,5 +50,23 @@ describe('pickSelectedFile', () => {
   test('空列表返回 null', () => {
     expect(pickSelectedFile([], 'a.ts')).toBeNull()
     expect(pickSelectedFile([], null)).toBeNull()
+  })
+})
+
+describe('buildDiffCommentPrompt', () => {
+  const lines = [' one', '-two', '+TWO']
+  test('包含文件、header、行与评论', () => {
+    const out = buildDiffCommentPrompt('a.ts', '@@ -1,3 +1,4 @@', lines, '这里不该改名')
+    expect(out).toContain('a.ts')
+    expect(out).toContain('@@ -1,3 +1,4 @@')
+    expect(out).toContain('-two')
+    expect(out).toContain('这里不该改名')
+  })
+  test('超长 hunk 截断 40 行并带标记', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ' line' + i)
+    const out = buildDiffCommentPrompt('a.ts', '@@ -1 +1 @@', many, 'x')
+    expect(out).toContain('line39')
+    expect(out).not.toContain('line40')
+    expect(out).toContain('截断')
   })
 })

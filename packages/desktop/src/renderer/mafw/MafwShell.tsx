@@ -2326,12 +2326,17 @@ export function MafwShell() {
                     )}
                    />
                     <Show when={diffPanelFor() === leaf.sid}>
-                     <DiffReviewPanel
-                       sessionID={diffPanelFor()!}
-                       diffs={(store.session_diff as any)[diffPanelFor()!] as any}
-                       onClose={() => setDiffPanelFor(null)}
-                     />
-                   </Show>
+                      <DiffReviewPanel
+                        sessionID={diffPanelFor()!}
+                        diffs={(store.session_diff as any)[diffPanelFor()!] as any}
+                        onClose={() => setDiffPanelFor(null)}
+                        onSendComment={(sid, text) => {
+                          void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                            .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
+                            .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                        }}
+                      />
+                    </Show>
                      </div>
                    }
                  >

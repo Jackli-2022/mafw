@@ -559,3 +559,20 @@ describe("DiffReviewPanel 两栏（B2：文件树 + 单文件预览）", () => {
     expect(cssBlock(".mafw-diff-file-row.sel {")).not.toBe("")
   })
 })
+
+describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("面板含评论输入 UI", () => {
+    const src = read("src/renderer/mafw/components/DiffReviewPanel.tsx")
+    expect(src).toContain("mafw-diff-comment")
+    expect(src).toContain("onSendComment")
+  })
+  test("MafwShell 把评论接线到 promptAsync", () => {
+    const src = read("src/renderer/mafw/MafwShell.tsx")
+    expect(src).toContain("onSendComment")
+    expect(src).toContain("promptAsync")
+  })
+  test("评论输入样式存在", () => {
+    expect(cssBlock(".mafw-diff-comment {")).not.toBe("")
+  })
+})
