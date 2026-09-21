@@ -158,12 +158,15 @@ describe("用户气泡 v4", () => {
   test("圆角 10/10/4/10", () => expect(cssBlock(sel)).toContain("border-radius: 10px 10px 4px 10px"))
 })
 
-describe("Tool part 卡片 v4", () => {
+describe("Tool part 卡片 v4（紧凑条目）", () => {
   const trig = '.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"]'
-  test("折叠行 28px", () => expect(cssBlock(trig)).toContain("height: 28px"))
-  test("折叠行文字 12.5px", () => expect(cssBlock(trig)).toContain("font-size: 12.5px"))
+  test("折叠行 22px", () => expect(cssBlock(trig)).toContain("height: 22px"))
+  test("折叠行文字 12px", () => expect(cssBlock(trig)).toContain("font-size: 12px"))
   const content = '.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-content"] > *'
-  test("输出井 inset 背景", () => expect(cssBlock(content)).toContain("background: var(--bg-inset)"))
+  test("输出区透明背景 + 缩进", () => {
+    expect(cssBlock(content)).toContain("background: transparent")
+    expect(cssBlock(content)).toContain("margin-left: 4px")
+  })
 })
 
 describe("Composer v4", () => {
