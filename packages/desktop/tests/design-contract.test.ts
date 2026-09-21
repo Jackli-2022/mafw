@@ -495,3 +495,34 @@ describe("token v5.2 — 组件接线", () => {
     expect(b).toContain("grid-template-rows: minmax(0, 1fr) auto auto")
   })
 })
+
+describe("DiffReviewPanel 抽屉化（业界对齐：无全屏遮罩）", () => {
+  const panel = cssBlock(".mafw-diff-panel {")
+  test("右侧钉边抽屉，不再 inset:0 全屏遮罩", () => {
+    expect(panel).toContain("right: 0")
+    expect(panel).not.toContain("inset: 0")
+  })
+  test("宽度 min(720px, 55%)——chat 保持可见", () => {
+    expect(panel).toContain("width: min(720px, 55%)")
+  })
+  test("滑入动画 mafw-drawer-in", () => {
+    expect(css).toContain("@keyframes mafw-drawer-in")
+    expect(panel).toContain("mafw-drawer-in")
+  })
+})
+
+describe("DiffReviewPanel 接线", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("MafwShell：审阅改动 toggle（再点关闭）", () => {
+    const src = read("src/renderer/mafw/MafwShell.tsx")
+    expect(src).toContain("setDiffPanelFor(prev => prev === leaf.sid ? null : leaf.sid)")
+  })
+  test("ChatPane：composer 审阅按钮带改动计数徽标", () => {
+    const src = read("src/renderer/mafw/components/ChatPane.tsx")
+    expect(src).toContain("mafw-composer-badge")
+    expect(src).toContain("diffCount")
+  })
+  test("徽标样式存在", () => {
+    expect(cssBlock(".mafw-composer-badge {")).toContain("position: absolute")
+  })
+})

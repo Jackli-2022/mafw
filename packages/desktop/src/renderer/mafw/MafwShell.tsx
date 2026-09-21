@@ -2284,7 +2284,7 @@ export function MafwShell() {
                           onFocus={() => { setShowConfig(false); setActiveTab("chat"); setActiveSessionId(leaf.sid) }}
                           onClosePane={() => closePane(leaf.sid)}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
-                          onOpenDiffReview={() => setDiffPanelFor(leaf.sid)}
+                          onOpenDiffReview={() => setDiffPanelFor(prev => prev === leaf.sid ? null : leaf.sid)}
                           worktreeEnabled={worktreeEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
                           projectDirectory={currentProject()}

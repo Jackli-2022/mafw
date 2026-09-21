@@ -967,6 +967,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   const agentSelName = () => props.agentSel()?.name || "manager"
 
+  // 会话改动文件数（SSE session.diff 实时快照）——composer 审阅按钮的常驻计数徽标
+  const diffCount = () => ((store as any).session_diff?.[sidProp()] as any[] | undefined)?.length ?? 0
+
   // Real model name of the last assistant message (fallback: agent → "default")
   const modelName = createMemo(() => {
     const sid = sidProp()
@@ -1388,14 +1391,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onClick={() => { setPickerTrigger(document.activeElement as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}
                 ><Icon name="subagent" size="small" /></ButtonV2>
               </TooltipV2>
-              <TooltipV2 value="审阅改动（逐 hunk 保留 / 回退）" openDelay={300}>
+              <TooltipV2 value={diffCount() > 0 ? `审阅改动（${diffCount()} 个文件，逐 hunk 保留 / 回退）` : "审阅改动（逐 hunk 保留 / 回退）"} openDelay={300}>
                 <ButtonV2
                   variant="ghost"
                   size="small"
                   class="mafw-composer-icon"
                   aria-label="审阅改动"
+                  style={{ position: "relative" }}
                   onClick={() => props.onOpenDiffReview?.()}
-                ><Icon name="review" size="small" /></ButtonV2>
+                ><Icon name="review" size="small" />
+                  <Show when={diffCount() > 0}><span class="mafw-composer-badge">{diffCount()}</span></Show>
+                </ButtonV2>
               </TooltipV2>
               <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
