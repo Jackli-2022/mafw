@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { compareVersions, decide, readPkgVersion, readPidFile, runUpdate, shouldKill, stopGatewayDaemon } from "./update-global-gateway.cjs"
+import { compareVersions, decide, readPkgVersion, readPidFile, runUpdate, shouldKill, stopGatewayDaemon, NPM_BIN } from "./update-global-gateway.cjs"
 
 describe("compareVersions", () => {
   test("orders major/minor/patch", () => {
@@ -139,8 +139,8 @@ describe("runUpdate", () => {
       bundledPkgPath,
       pidFilePath: pidPath,
       exec: (cmd, args) => {
-        if (cmd === "npm.cmd" && args[0] === "config") return join(dir, "fake-prefix") + "\n"
-        if (installError && cmd === "npm.cmd" && args[0] === "install") throw installError
+        if (cmd === NPM_BIN && args[0] === "config") return join(dir, "fake-prefix") + "\n"
+        if (installError && cmd === NPM_BIN && args[0] === "install") throw installError
         logs.push([cmd, args])
         return ""
       },
@@ -171,7 +171,7 @@ describe("runUpdate", () => {
     realFs.writeFileSync(join(nm, "package.json"), JSON.stringify({ version: "4.10.1" }))
     expect(runUpdate(deps)).toBe(0)
     expect(logs.some((l) => String(l).includes("skip: global"))).toBe(true)
-    expect(logs.some(([cmd, args]) => cmd === "npm.cmd" && args?.[0] === "install")).toBe(false)
+    expect(logs.some(([cmd, args]) => cmd === NPM_BIN && args?.[0] === "install")).toBe(false)
   })
 
   test("stops daemon then installs when global < bundled", () => {
@@ -182,7 +182,7 @@ describe("runUpdate", () => {
     realFs.writeFileSync(join(nm, "package.json"), JSON.stringify({ version: "4.9.0" }))
     expect(runUpdate(deps)).toBe(0)
     expect(logs.some(([cmd, args]) => cmd === "taskkill" && args.includes("4242"))).toBe(true)
-    expect(logs.some(([cmd, args]) => cmd === "npm.cmd" && args[0] === "install" && args[2] === "@jack200714/mafw@4.10.1")).toBe(true)
+    expect(logs.some(([cmd, args]) => cmd === NPM_BIN && args[0] === "install" && args[2] === "@jack200714/mafw@4.10.1")).toBe(true)
   })
 
   test("npm failure leaves manual-fix log, exit 0", () => {
