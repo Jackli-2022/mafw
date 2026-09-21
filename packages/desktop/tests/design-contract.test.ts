@@ -362,3 +362,50 @@ describe("Skeleton v4", () => {
   test("行组布局", () =>
     expect(cssBlock(".mafw-skeleton-rows {")).toContain("flex-direction: column"))
 })
+
+describe("token v5.1 — 双字体契约", () => {
+  test("暗色块定义 --font-ui（引用 --font-family-sans）", () =>
+    expect(dark).toMatch(/--font-ui:\s*var\(--font-family-sans/))
+  test("暗色块定义 --font-data（引用 --font-family-mono）", () =>
+    expect(dark).toMatch(/--font-data:\s*var\(--font-family-mono/))
+  test("亮色块同步定义", () => {
+    expect(light).toMatch(/--font-ui:\s*var\(--font-family-sans/)
+    expect(light).toMatch(/--font-data:\s*var\(--font-family-mono/)
+  })
+  test("mafw-shell 应用 --font-ui", () =>
+    expect(cssBlock(".mafw-shell {")).toContain("font-family: var(--font-ui)"))
+  test("无硬编码 mono 栈（全部走 var(--font-data)）", () => {
+    const raw = css.match(/font-family:\s*(ui-monospace|SFMono|monospace\s*;)/g) || []
+    expect(raw).toEqual([])
+  })
+})
+
+describe("token v5.1 — 消息排版", () => {
+  test("列宽 720px", () => expect(dark).toContain("--msg-col-width: 720px"))
+  test("text-part 内 markdown 16px / 行高 1.7", () => {
+    const b = cssBlock('.mafw-shell [data-component="text-part"] [data-component="markdown"]')
+    expect(b).toContain("font-size: 16px")
+    expect(b).toContain("line-height: 1.7")
+  })
+})
+
+describe("token v5.1 — streaming 尾光标", () => {
+  const cursor = '.mafw-shell [data-component="markdown"][data-streaming="true"] > [data-markdown-block]:last-child > :last-child::after'
+  test("▌ 伪元素存在", () => {
+    const b = cssBlock(cursor)
+    expect(b).toContain('content: "▌"')
+    expect(b).toContain("color: var(--accent)")
+    expect(b).toContain("animation: mafw-caret-blink")
+  })
+  test("blink keyframes（opacity 0↔1，1s）", () => {
+    const b = cssBlock("@keyframes mafw-caret-blink")
+    expect(b).toContain("opacity: 1")
+    expect(b).toContain("opacity: 0")
+    expect(b).toContain("1s")
+  })
+  test("reduced-motion 下静态显示", () => {
+    const i = css.indexOf("@media (prefers-reduced-motion: reduce)")
+    const seg = css.slice(i, i + 1200)
+    expect(seg).toContain("mafw-caret-blink")
+  })
+})
