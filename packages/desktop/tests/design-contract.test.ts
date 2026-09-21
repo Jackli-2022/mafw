@@ -537,8 +537,10 @@ describe("Dock changes tab（改动列表常驻入口）", () => {
     expect(src).toContain("ChangesDock")
     expect(src).toContain('rightDockTab() === "changes"')
   })
-  test("抽屉按 pane 归属挂载（split view 不双开）", () => {
-    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("diffPanelFor() === leaf.sid")
+  test("抽屉为 shell 级单例（挂 SplitView 外，全 chat 区一个实例）", () => {
+    const src = read("src/renderer/mafw/MafwShell.tsx")
+    expect(src).toContain("<Show when={diffPanelFor()}>")
+    expect(src.split("<DiffReviewPanel").length - 1).toBe(1)
   })
   test("ChangesDock 行样式存在", () => {
     expect(cssBlock(".mafw-changes-row {")).toContain("cursor: pointer")

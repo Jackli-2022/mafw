@@ -2325,7 +2325,7 @@ export function MafwShell() {
                       )
                     )}
                    />
-                    <Show when={diffPanelFor() === leaf.sid}>
+                     <Show when={diffPanelFor()}>
                       <DiffReviewPanel
                         sessionID={diffPanelFor()!}
                         diffs={(store.session_diff as any)[diffPanelFor()!] as any}
