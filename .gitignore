@@ -47,3 +47,4 @@ gateway/src/src/
 # 运行时数据
 scheduler/
 *.db
+tsconfig.tsbuildinfo
