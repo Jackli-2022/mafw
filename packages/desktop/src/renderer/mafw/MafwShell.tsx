@@ -30,6 +30,7 @@ import { SplitPlaceholder } from "./components/SplitPlaceholder"
 import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
 import { NotesDock } from "./components/NotesDock"
+import { ChangesDock } from "./components/ChangesDock"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab } from "./components/dock-tab"
@@ -2324,7 +2325,7 @@ export function MafwShell() {
                       )
                     )}
                    />
-                   <Show when={diffPanelFor()}>
+                    <Show when={diffPanelFor() === leaf.sid}>
                      <DiffReviewPanel
                        sessionID={diffPanelFor()!}
                        diffs={(store.session_diff as any)[diffPanelFor()!] as any}
@@ -2548,6 +2549,13 @@ export function MafwShell() {
               </div>
               <div style={{ display: rightDockTab() === "notes" ? "contents" : "none" }}>
                 <NotesDock />
+              </div>
+              <div style={{ display: rightDockTab() === "changes" ? "contents" : "none" }}>
+                <ChangesDock
+                  sessionID={currentSessionID() || null}
+                  diffs={(store.session_diff as any)[currentSessionID()] as any}
+                  onOpenReview={(sid) => setDiffPanelFor(sid)}
+                />
               </div>
             </RightDock>
             )}

@@ -23,6 +23,7 @@ export function RightDock(props: {
               <TabsV2.Trigger value="trajectory">📊 轨迹</TabsV2.Trigger>
               <TabsV2.Trigger value="usage">📈 用量</TabsV2.Trigger>
               <TabsV2.Trigger value="notes">📝 便签</TabsV2.Trigger>
+              <TabsV2.Trigger value="changes">🗒 改动</TabsV2.Trigger>
             </TabsV2.List>
           </TabsV2>
           <div class="mafw-right-dock-spacer" />

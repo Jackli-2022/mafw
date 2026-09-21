@@ -526,3 +526,21 @@ describe("DiffReviewPanel 接线", () => {
     expect(cssBlock(".mafw-composer-badge {")).toContain("position: absolute")
   })
 })
+
+describe("Dock changes tab（改动列表常驻入口）", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("RightDock 含 changes trigger", () => {
+    expect(read("src/renderer/mafw/components/RightDock.tsx")).toContain('value="changes"')
+  })
+  test("MafwShell 挂载 ChangesDock 到 dock 内容区", () => {
+    const src = read("src/renderer/mafw/MafwShell.tsx")
+    expect(src).toContain("ChangesDock")
+    expect(src).toContain('rightDockTab() === "changes"')
+  })
+  test("抽屉按 pane 归属挂载（split view 不双开）", () => {
+    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("diffPanelFor() === leaf.sid")
+  })
+  test("ChangesDock 行样式存在", () => {
+    expect(cssBlock(".mafw-changes-row {")).toContain("cursor: pointer")
+  })
+})

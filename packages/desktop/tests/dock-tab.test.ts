@@ -23,7 +23,10 @@ describe("normalizeDockTab", () => {
 })
 
 describe("DOCK_TABS", () => {
-  test("四栏且不含 quota", () => {
-    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes"])
+  test("五栏且不含 quota", () => {
+    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes"])
+  })
+  test("changes 合法值直通", () => {
+    expect(normalizeDockTab("changes")).toBe("changes")
   })
 })

@@ -4556,6 +4556,16 @@ html[data-theme="light"] .mafw-picker-pop {
 @keyframes mafw-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 /* composer 按钮改动计数徽标（审阅改动常驻入口，对齐 Amp Changes pane 常驻可见性） */
 .mafw-composer-badge { position: absolute; top: -4px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 9px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
+/* ── ChangesDock（改动列表常驻入口，文件级；hunk 级在抽屉） ── */
+.mafw-changes-dock { padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; height: 100%; }
+.mafw-changes-dock-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 6px; }
+.mafw-changes-dock-title { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.mafw-changes-dock-stats { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.mafw-changes-dock-empty { font-size: 12px; color: var(--text-4); padding: 24px 8px; text-align: center; }
+.mafw-changes-dock-list { display: flex; flex-direction: column; gap: 2px; }
+.mafw-changes-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text-2); transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.mafw-changes-row:hover { background: var(--hover); color: var(--text-1); }
+.mafw-changes-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-data); }
 .mafw-diff-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-base); }
 .mafw-diff-panel-header h2 { margin: 0; font-size: 14px; font-weight: 600; }
 .mafw-diff-panel-actions { display: flex; gap: 8px; }
