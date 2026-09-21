@@ -417,6 +417,26 @@ describe("token v5.1 — 消息排版", () => {
   })
 })
 
+describe("token v5.2 — 排版节奏（业界对齐）", () => {
+  const md = '.mafw-shell [data-component="text-part"] [data-component="markdown"]'
+  test("标题刻度大于 16px 正文：h1 20 / h2 17 / h3 16", () => {
+    expect(cssBlock(`${md} h1`)).toContain("font-size: 20px")
+    expect(cssBlock(`${md} h2`)).toContain("font-size: 17px")
+    expect(cssBlock(`${md} h3`)).toContain("font-size: 16px")
+  })
+  test("段距 16px（≈0.6×行盒）", () => {
+    expect(cssBlock(`${md} p`)).toContain("margin-bottom: 16px")
+  })
+  test("text-part 顶距 12px（不再是 24px 大裂谷）", () => {
+    expect(cssBlock('.mafw-shell [data-component="text-part"] {')).toContain("margin-top: 12px")
+  })
+  test("宽屏列宽封顶 880px（不放 1000/1100）", () => {
+    expect(css).not.toContain("--msg-col-width: 1000px")
+    expect(css).not.toContain("--msg-col-width: 1100px")
+    expect(css).toContain("--msg-col-width: 880px")
+  })
+})
+
 describe("token v5.1 — streaming 尾光标", () => {
   const cursor = '.mafw-shell [data-component="markdown"][data-streaming="true"] > [data-markdown-block]:last-child > :last-child::after'
   // reduced-motion 块内的同选择器单行规则在前，真正的光标规则跟在 keyframes 之后

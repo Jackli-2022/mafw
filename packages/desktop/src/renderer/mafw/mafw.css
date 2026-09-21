@@ -194,10 +194,9 @@ html[data-theme="light"] .mafw-shell {
   }
 }
 
-/* ── 宽屏列宽分档（§4.5） ── */
+/* ── 宽屏列宽分档（§4.5）：封顶 880px（业界 768-896px 舒适阅读宽度，
+   16px 正文的 1100px 一行 70+ 汉字超出舒适区） ── */
 @media (min-width: 1500px) { .mafw-shell { --msg-col-width: 880px; } }
-@media (min-width: 1800px) { .mafw-shell { --msg-col-width: 1000px; } }
-@media (min-width: 2200px) { .mafw-shell { --msg-col-width: 1100px; } }
 
 /* ── Motion (§5: hover 120ms / collapse 200ms / enter 200ms, 无 >300ms 装饰动画) ── */
 @keyframes mafw-enter {
@@ -1013,6 +1012,19 @@ html[data-theme="light"] .mafw-shell {
 .mafw-shell [data-component="text-part"] [data-component="markdown"] {
   font-size: 16px;
   line-height: 1.7;
+}
+
+/* v5.2 排版节奏（业界对齐调研 2026-09-21）：
+   ① 标题刻度对齐 16px 正文（session-ui 的 17/15/13 是 14px body 时代残留，h2/h3 比正文还小）
+   ② 段距 12→16px（≈0.6×行盒 27.2px；业界 0.6-0.8×，中文取紧凑侧）
+   ③ text-part 顶距 24→12px（part 级 24px + assistant-message gap 12px 叠加 = 36px 大裂谷，
+      是被工具卡打断的两段文字间距过远的根因；12+12=24px 与段距形成层级差） */
+.mafw-shell [data-component="text-part"] [data-component="markdown"] h1 { font-size: 20px; }
+.mafw-shell [data-component="text-part"] [data-component="markdown"] h2 { font-size: 17px; }
+.mafw-shell [data-component="text-part"] [data-component="markdown"] h3 { font-size: 16px; }
+.mafw-shell [data-component="text-part"] [data-component="markdown"] p { margin-bottom: 16px; }
+.mafw-shell [data-component="text-part"] {
+  margin-top: 12px;
 }
 
 /* Tool blocks compact: real DOM is [data-component="tool-part-wrapper"]
