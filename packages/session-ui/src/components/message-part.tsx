@@ -626,8 +626,7 @@ function taskSession(
     .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
 }
 
-const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
-const HIDDEN_TOOLS = new Set(["todowrite"])
+import { CONTEXT_GROUP_TOOLS, HIDDEN_TOOLS, renderable as renderableCore } from "./parts-rules"
 
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
@@ -731,13 +730,9 @@ function index<T extends { id: string }>(items: readonly T[]) {
 }
 
 export function renderable(part: PartType, showReasoningSummaries = true) {
-  if (part.type === "tool") {
-    if (HIDDEN_TOOLS.has(part.tool)) return false
-    if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
-    return true
+  if (part.type === "tool" || part.type === "text" || part.type === "reasoning") {
+    return renderableCore(part as any, showReasoningSummaries)
   }
-  if (part.type === "text") return !!part.text?.trim()
-  if (part.type === "reasoning") return showReasoningSummaries && !!part.text?.trim()
   return !!PART_MAPPING[part.type]
 }
 
