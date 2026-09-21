@@ -226,7 +226,7 @@ MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立�
 - **删除联动**：`session.delete`（wave1 dispatch）成功后 `cleanupWorktreeForSession`——worktree remove + branch -D，全部 fail-open 不阻塞删除
 - **desktop**：ChatPane titlebar「⎇ 并行」按钮（能力门）+ Rail 行 / titlebar 的 `⎇ <slug>` 徽标（`worktree-label.ts` 纯函数判定：`s.directory` basename 前缀 `<base>-wt-` 且 ≠ 项目主目录）
 - **TUI**：`/sessions` picker 行尾 dim `⎇<slug>` 标注（只读）
-- **已知边界**：①TS 类字段初始化器先于 constructor 参数属性——`git = simpleGit(this.projectDir)` 拿到 undefined 回退 process.cwd() 会把 worktree 注册进 gateway 自身 repo（已修：constructor 内赋值；GoalWorktreeManager 同款写法属 latent，goal 路径 cwd 恰为项目目录时被掩盖）；②worktree 内记忆写入不随 directory 分离（HarmonicUnitFileStore 固定 `~/.mafw`），session 维度记忆融合机制未建（goal 链路的 mergeMemoryFromWorktree 不受影响）；③残留孤儿 worktree 可经 `git worktree prune` + 手动清理
+- **已知边界**：①TS 类字段初始化器先于 constructor 参数属性——`git = simpleGit(this.projectDir)` 拿到 undefined 回退 process.cwd() 会把 worktree 注册进 gateway 自身 repo（已修：constructor 内赋值）；②worktree 内记忆写入不随 directory 分离（HarmonicUnitFileStore 固定 `~/.mafw`），session 维度记忆融合机制未建（goal 链路的 mergeMemoryFromWorktree 不受影响）；③残留孤儿 worktree 可经 `git worktree prune` + 手动清理。**GoalWorktreeManager 修复（2026-09-20）**：①prepare(archive) 的 projectDir 与 constructor 不一致时重绑 simpleGit cwd（防御性，测试钉扎）；②并行路径改为 `worktree add -b` 直建分支——旧实现先在主仓 checkoutLocalBranch 再 `worktree add <branch>`，主仓分支被切走且 add 必败被吞成"already exists"假日志。另：`POST /api/approvals/:id/respond` 空 stub 已替换为真实现（`routes/approvals-respond.ts`：在注册项目 user-questions/（flat+legacy）定位提问 JSON 写 answered/answer/answeredAt，goal askUser 轮询消费；id 路径逃逸防护）
 
 ### 5.9a RightDock 用量/配额拆分（2026-09-07）
 - RightDock tabs：`tasks | trajectory | usage | quota | notes`

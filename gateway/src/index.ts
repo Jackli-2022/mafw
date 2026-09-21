@@ -97,6 +97,7 @@ import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
 import { createSessionWithWorktree, cleanupWorktreeForSession } from './routes/session-worktree';
+import { handleApprovalsRespond } from './routes/approvals-respond';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
@@ -3951,10 +3952,12 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/approvals/{id}/respond — respond to an approval
+        // POST /api/approvals/{id}/respond — { decision: 'approve'|'reject' }
+        // 写 .mafw/user-questions/{id}.json（goal askUser 轮询消费；2026-09-20 替换空 stub）
         const approveMatch = req.url?.match(/^\/api\/approvals\/([^/]+)\/respond$/);
         if (approveMatch && req.method === 'POST') {
-          res.end(JSON.stringify({ status: 'ok' }));
+          const dirs = [...this.registeredProjects.values()].map((info: any) => info.mafwDir);
+          await handleApprovalsRespond(req, res, decodeURIComponent(approveMatch[1]), { resolveDirs: () => dirs });
           return;
         }
 

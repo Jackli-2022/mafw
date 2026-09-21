@@ -1,5 +1,7 @@
 ﻿import { log } from '../utils/logger';
 import simpleGit from 'simple-git';
+import * as path from 'path';
+import * as fs from 'fs';
 
 /**
  * Goal Worktree Manager — Goal 级 Git Worktree 隔离
@@ -39,6 +41,14 @@ export class GoalWorktreeManager {
   async prepare(config: { projectDir: string; goalId: string; parallel: boolean }): Promise<WorktreeInfo> {
     const { projectDir, goalId, parallel } = config;
 
+    // 防御性重绑（2026-09-20）：prepare 的 projectDir 与 constructor 不一致时，
+    // git 操作必须落在 config.projectDir 的 repo——否则 worktree/分支会注册进
+    // constructor 目录（SessionWorktreeManager 同类问题的变体）。
+    if (path.resolve(config.projectDir) !== path.resolve(this.projectDir)) {
+      this.projectDir = config.projectDir;
+      this.git = simpleGit(config.projectDir);
+    }
+
     if (!parallel) {
       // 闈炲苟琛屾ā寮忥細鍦ㄥ綋鍓嶇洰褰曞垏鎹㈠垎鏀?
       const branch = `goal/${goalId}`;
@@ -54,19 +64,15 @@ export class GoalWorktreeManager {
     const worktreeDir = `${projectDir}-goal-${goalId}`;
     const branch = `goal/${goalId}`;
 
-    const branches = await this.git.branchLocal();
-    if (!branches.all.includes(branch)) {
-      await this.git.checkoutLocalBranch(branch);
+    // 2026-09-20 修复：worktree add -b 直建分支——旧实现先在主仓
+    // checkoutLocalBranch 再 worktree add <branch>，主仓分支被切走且
+    // 分支被检出导致 add 必败（被 catch 吞成"already exists"假日志）。
+    if (fs.existsSync(worktreeDir)) {
+      log.info(`[GoalWorktree] Worktree ${worktreeDir} already exists — reuse`);
+      return { worktreeDir, branch, isIsolated: true };
     }
-
-    // 创建 worktree
-    try {
-      await this.git.raw(['worktree', 'add', worktreeDir, branch]);
-      log.info(`[GoalWorktree] Created worktree ${worktreeDir} for branch ${branch}`);
-    } catch (err: any) {
-      // 如果 worktree 已存在，直接返回
-      log.info(`[GoalWorktree] Worktree ${worktreeDir} already exists`);
-    }
+    await this.git.raw(['worktree', 'add', worktreeDir, '-b', branch]);
+    log.info(`[GoalWorktree] Created worktree ${worktreeDir} for branch ${branch}`);
 
     return { worktreeDir, branch, isIsolated: true };
   }
