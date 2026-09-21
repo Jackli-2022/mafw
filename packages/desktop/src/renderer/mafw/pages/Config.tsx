@@ -5,11 +5,12 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { SelectV2 } from "@mafw/ui/v2/select-v2"
-import { Icon } from "@mafw/ui/icon"
+import { Icon } from "@mafw/ui/v2/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, groupEntries, typeMeta, formatSize, type HubEntry } from "./plugin-hub"
+import { isNavKey, navItems, type NavKey } from "./config-nav"
 import { UsageProviders } from "../components/UsageProviders"
 import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
@@ -20,23 +21,8 @@ interface ConfigSection {
   fields: [string, any][]
 }
 
-export type NavKey = "gateway" | "desktop" | "plugins" | "models" | "memory" | "usage" | "approvals" | "opencode" | "mafw"
-
-export function isNavKey(v: unknown): v is NavKey {
-  return NAV_ITEMS.some(n => n.key === v)
-}
-
-const NAV_ITEMS: { key: NavKey; icon: string; label: string; desc: string }[] = [
-  { key: "gateway",  icon: "⚡", label: "Gateway",  desc: "管理 Gateway 进程状态、重启服务和查看日志" },
-  { key: "desktop",  icon: "🖥️", label: "Desktop",  desc: "托盘图标、关闭按钮行为等桌面集成" },
-  { key: "plugins",  icon: "🧩", label: "Plugins",  desc: "切换 Runtime 引擎和媒体分析引擎" },
-  { key: "models",   icon: "🤖", label: "Models",   desc: "配置记忆 worker 和媒体分析使用的 AI 模型" },
-  { key: "memory",   icon: "🧠", label: "Memory",   desc: "记忆系统嵌入引擎（ONNX / llama.cpp / GPU 卸载）与向量索引" },
-  { key: "usage",    icon: "📊", label: "Usage",    desc: "设置 token 限额、余额预算和平台 cookie" },
-  { key: "approvals", icon: "🛡", label: "Approvals", desc: "审批持久白名单（跨会话放行工具/命令前缀）" },
-  { key: "opencode", icon: "⚙️", label: "opencode", desc: "编辑 opencode 原生配置文件" },
-  { key: "mafw",     icon: "🔧", label: "MAFW",     desc: "MAFW 原始配置文件（高级用户）" },
-]
+export { isNavKey }
+export type { NavKey }
 
 export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey }) {
   const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
@@ -588,7 +574,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     setOcSaving(false)
   }
 
-  const navDesc = () => NAV_ITEMS.find(n => n.key === activeNav())?.desc ?? ""
+  const navDesc = () => navItems().find(n => n.key === activeNav())?.desc ?? ""
 
   return (
     <ErrorBoundary fallback={(err, reset) => (
@@ -622,7 +608,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
           配置 Gateway、插件、模型和用量
         </div>
         <div class="mafw-config-nav-list">
-          <For each={NAV_ITEMS}>
+          <For each={navItems()}>
             {(item) => (
               <ButtonV2
                 variant="ghost"
@@ -632,7 +618,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                 aria-current={activeNav() === item.key ? "page" : undefined}
                 onClick={() => setActiveNav(item.key)}
               >
-                <span class="mafw-config-nav-icon">{item.icon}</span>
+                <span class="mafw-config-nav-icon"><Icon name={item.icon} /></span>
                 <span class="mafw-config-nav-label">{item.label}</span>
                 {activeNav() === item.key && <span class="mafw-config-nav-indicator" />}
               </ButtonV2>
@@ -645,8 +631,8 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
       <main class="mafw-config-panel">
         <div class="mafw-config-panel-head">
           <h2 class="mafw-config-panel-title">
-            {NAV_ITEMS.find(n => n.key === activeNav())?.icon}{' '}
-            {NAV_ITEMS.find(n => n.key === activeNav())?.label}
+            <Icon name={navItems().find(n => n.key === activeNav())?.icon ?? "help"} />
+            {navItems().find(n => n.key === activeNav())?.label}
           </h2>
           <span class="mafw-config-panel-desc">{navDesc()}</span>
         </div>
@@ -817,7 +803,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                   {(g) => (
                     <div class="mafw-hub-group">
                       <div class="mafw-hub-group-header">
-                        <span class="mafw-hub-group-icon">{typeMeta(g.type).icon}</span>
+                        <span class="mafw-hub-group-icon"><Icon name={typeMeta(g.type).icon} /></span>
                         <span class="mafw-hub-group-title">{typeMeta(g.type).label}</span>
                         <span class="mafw-hub-group-count">{g.entries.length}</span>
                       </div>

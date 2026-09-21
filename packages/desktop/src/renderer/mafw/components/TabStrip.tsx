@@ -20,7 +20,6 @@ type Props = {
   onChange: (tab: Tab) => void
   counts?: Partial<Record<Tab, number>>
   onOpenTrajectory?: () => void
-  trajectoryActive?: boolean
 }
 
 export function TabStrip(props: Props) {
@@ -40,7 +39,6 @@ export function TabStrip(props: Props) {
           variant="ghost"
           size="small"
           class="mafw-tabstrip-trajectory"
-          classList={{ active: !!props.trajectoryActive }}
           onClick={props.onOpenTrajectory}
           aria-label="轨迹时间线"
         >

@@ -156,7 +156,7 @@ export function WelcomeHome(props: {
         <ButtonV2 variant="outline" icon="check" onClick={() => props.onNavigate("approvals")}>
           待审批{`${pendingApprovals() > 0 ? ` (${pendingApprovals()})` : ""}`}
         </ButtonV2>
-        <ButtonV2 variant="outline" icon="brain" onClick={() => props.onNavigate("memory")}>记忆回顾</ButtonV2>
+        <ButtonV2 variant="outline" icon="database" onClick={() => props.onNavigate("memory")}>记忆回顾</ButtonV2>
       </div>
 
       {/* New Goal inline input */}

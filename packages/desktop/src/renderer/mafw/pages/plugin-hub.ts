@@ -32,10 +32,10 @@ export function installableTypes(): PluginType[] {
 }
 
 const TYPE_META: Record<PluginType, { label: string; icon: string }> = {
-  runtime: { label: "Runtime", icon: "⚙️" },
-  media: { label: "Media", icon: "🎬" },
-  usage: { label: "Usage", icon: "📊" },
-  ui: { label: "UI", icon: "🎨" },
+  runtime: { label: "Runtime", icon: "settings-gear" },
+  media: { label: "Media", icon: "video" },
+  usage: { label: "Usage", icon: "chart-bar" },
+  ui: { label: "UI", icon: "shapes" },
 }
 
 export function typeMeta(type: PluginType): { label: string; icon: string } {

@@ -61,12 +61,18 @@ describe("token v4 — 暗色背景换冷蓝调", () => {
 describe("TabStrip 激活态 v4", () => {
   const sel = '.mafw-shell .mafw-tabstrip [role="tab"][data-selected]'
   test("激活底色 bg-overlay", () => expect(cssBlock(sel)).toContain("background: var(--bg-overlay)"))
-  test("2px 底部 accent 指示条", () =>
-    expect(cssBlock(sel)).toContain("box-shadow: inset 0 -2px 0 var(--accent)"))
+  test("2px 底部 accent 指示条（::after scaleX 生长，双向可过渡）", () => {
+    const after = cssBlock('.mafw-shell .mafw-tabstrip [role="tab"]::after')
+    expect(after).toContain("height: 2px")
+    expect(after).toContain("background: var(--accent)")
+    expect(after).toContain("transform: scaleX(0)")
+    expect(after).toContain("transition: transform")
+    expect(cssBlock(sel + "::after")).toContain("transform: scaleX(1)")
+  })
   test("轨迹按钮激活同构", () => {
     const b = cssBlock(".mafw-tabstrip-trajectory.active")
     expect(b).toContain("background: var(--bg-overlay)")
-    expect(b).toContain("box-shadow: inset 0 -2px 0 var(--accent)")
+    expect(cssBlock(".mafw-tabstrip-trajectory.active::after")).toContain("transform: scaleX(1)")
   })
 })
 
@@ -245,6 +251,32 @@ describe("动效基建 v4", () => {
     expect(cssBlock(".mafw-right-dock {")).toContain("mafw-dock-in"))
   test("模态 scale 进场", () =>
     expect(cssBlock(".mafw-confirm {")).toContain("mafw-modal-in"))
+})
+
+describe("动效 v4.1 — token 纪律与出场动画", () => {
+  test("transition 一律走 --dur token（禁裸时长）", () => {
+    const raw = css.match(/(?<!-)transition:[^;{}]*[\d.]+m?s/g) || []
+    expect(raw).toEqual([])
+  })
+  test("禁 transition: all", () => {
+    const all = css.match(/transition:\s*all[;\s]/g) || []
+    expect(all).toEqual([])
+  })
+  test("picker 有出场态（.closing 淡出下沉）", () => {
+    const b = cssBlock(".mafw-picker-pop.closing")
+    expect(b).toContain("opacity: 0")
+    expect(b).toContain("pointer-events: none")
+  })
+  test("confirm 有出场态（backdrop 淡出 + 卡片 settle）", () => {
+    const b = cssBlock(".mafw-confirm-backdrop.mafw-confirm-out")
+    expect(b).toContain("opacity: 0")
+    expect(cssBlock(".mafw-confirm-backdrop.mafw-confirm-out .mafw-confirm")).toContain("transform: scale(.98)")
+  })
+  test("Welcome 入场级联（actions stagger 40ms 步进）", () => {
+    expect(cssBlock(".mafw-welcome-title {")).toContain("animation: mafw-enter")
+    expect(cssBlock(".mafw-welcome-actions > *")).toContain("animation: mafw-enter")
+    expect(cssBlock(".mafw-welcome-actions > *:nth-child(2)")).toContain("animation-delay")
+  })
 })
 
 describe("Skeleton v4", () => {

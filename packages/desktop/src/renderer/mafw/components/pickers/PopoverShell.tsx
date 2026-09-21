@@ -30,6 +30,19 @@ export function PopoverShell(props: {
 }) {
   const [pos, setPos] = createSignal<{ top: number; left: number; width: number } | null>(null)
   const [selfRef, setSelfRef] = createSignal<HTMLDivElement | null>(null)
+  const [closing, setClosing] = createSignal(false)
+
+  // Exit phase: when open flips false and the pop was shown, keep it mounted
+  // for 120ms with the .closing class (fade+settle) before unmounting. pos is
+  // retained during the phase so the pop holds its last position; nulling pos
+  // here — instead of in the positioning effect below — is what defers unmount.
+  createEffect(() => {
+    if (props.open) { setClosing(false); return }
+    if (!pos()) return
+    setClosing(true)
+    const t = setTimeout(() => { setClosing(false); setPos(null) }, 120)
+    onCleanup(() => clearTimeout(t))
+  })
 
   // Pure placement math — parameterized so it never touches reactive props.
   const compute = (t: HTMLElement | null, anchor: string, width: number) => {
@@ -83,7 +96,7 @@ export function PopoverShell(props: {
     const t = props.trigger
     const a = props.anchor
     const w = props.width ?? 288
-    if (!props.open) { setPos(null); return }
+    if (!props.open) return
     if (!t) return
     compute(t, a, w)
     const onResize = () => compute(t, a, w)
@@ -132,12 +145,12 @@ export function PopoverShell(props: {
 
   return (
     <Portal>
-      <Show when={props.open && pos()}>
+      <Show when={(props.open || closing()) && pos()}>
         {(p) => (
           <div
             ref={setSelfRef}
             data-pickpop=""
-            class={`mafw-picker-pop ${props.class || ""}`}
+            class={`mafw-picker-pop ${closing() ? "closing" : ""} ${props.class || ""}`}
             style={{ top: `${p().top}px`, left: `${p().left}px`, width: `${p().width}px` }}
             onMouseEnter={props.onHoverEnter}
             onMouseLeave={props.onHoverExit}

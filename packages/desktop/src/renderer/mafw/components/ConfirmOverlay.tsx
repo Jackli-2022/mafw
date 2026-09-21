@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Show, onMount, onCleanup } from "solid-js"
+import { Show, onMount, onCleanup, createSignal, createEffect } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 
 // Shared destructive-action confirmation (mafw-confirm styling). Replaces
@@ -14,6 +14,19 @@ export function ConfirmOverlay(props: {
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const [wasOpen, setWasOpen] = createSignal(false)
+  const [closing, setClosing] = createSignal(false)
+
+  // Exit phase: on open→false after having been shown, keep the overlay
+  // mounted for 100ms (backdrop fade + card settle) before unmounting.
+  createEffect(() => {
+    if (props.open) { setWasOpen(true); setClosing(false); return }
+    if (!wasOpen()) return
+    setClosing(true)
+    const t = setTimeout(() => { setClosing(false); setWasOpen(false) }, 100)
+    onCleanup(() => clearTimeout(t))
+  })
+
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!props.open) return
@@ -25,8 +38,8 @@ export function ConfirmOverlay(props: {
   })
 
   return (
-    <Show when={props.open}>
-      <div class="mafw-confirm-backdrop" onClick={e => { if (e.target === e.currentTarget) props.onCancel() }}>
+    <Show when={props.open || closing()}>
+      <div class={`mafw-confirm-backdrop${closing() ? " mafw-confirm-out" : ""}`} onClick={e => { if (e.target === e.currentTarget) props.onCancel() }}>
         <div class="mafw-confirm">
           <div class="mafw-confirm-title">{props.title}</div>
           <Show when={props.message}>

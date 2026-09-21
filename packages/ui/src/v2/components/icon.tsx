@@ -157,6 +157,50 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<path d="M13.1112 13.5555V14.0555H13.6112V13.5555H13.1112ZM2.889 13.5555H2.389L2.389 14.0555H2.889V13.5555ZM3.38901 5.55546L3.38901 5.05546L2.38901 5.05546L2.38901 5.55546L2.88901 5.55546L3.38901 5.55546ZM14.4446 2.44434H14.9446V1.94434L14.4446 1.94434L14.4446 2.44434ZM14.4446 5.55545L14.4446 6.05545L14.9446 6.05545V5.55545H14.4446ZM1.55566 5.55546L1.05566 5.55545L1.05566 6.05546L1.55566 6.05546L1.55566 5.55546ZM1.5557 2.44436L1.5557 1.94436L1.05571 1.94436L1.0557 2.44435L1.5557 2.44436ZM13.1112 5.55546H12.6112V13.5555H13.1112H13.6112V5.55546H13.1112ZM2.889 13.5555H3.389L3.38901 5.55546L2.88901 5.55546L2.38901 5.55546L2.389 13.5555H2.889ZM14.4446 2.44434H13.9446V5.55545H14.4446H14.9446V2.44434H14.4446ZM1.55566 5.55546L2.05566 5.55547L2.0557 2.44436L1.5557 2.44436L1.0557 2.44435L1.05566 5.55545L1.55566 5.55546ZM6.22234 8.22213V8.72213H9.7779V8.22213V7.72213H6.22234V8.22213ZM13.1112 13.5555V13.0555H2.889V13.5555V14.0555H13.1112V13.5555ZM1.5557 2.44436L1.5557 2.94436L14.4446 2.94434L14.4446 2.44434L14.4446 1.94434L1.5557 1.94436L1.5557 2.44436ZM14.4446 5.55545L14.4446 5.05545L1.55566 5.05546L1.55566 5.55546L1.55566 6.05546L14.4446 6.05545L14.4446 5.55545Z" fill="currentColor"/>`,
   },
+  server: {
+    viewBox: "0 0 16 16",
+    body: `<rect x="2" y="2.5" width="12" height="4.5" rx="1" stroke="currentColor"/><rect x="2" y="9" width="12" height="4.5" rx="1" stroke="currentColor"/><path d="M4.4 4.75h1M4.4 11.25h1" stroke="currentColor" stroke-linecap="round"/>`,
+  },
+  cube: {
+    viewBox: "0 0 16 16",
+    body: `<path d="M8 1.9L13.8 5.1V10.9L8 14.1L2.2 10.9V5.1L8 1.9Z" stroke="currentColor" stroke-linejoin="round"/><path d="M2.2 5.1L8 8.3L13.8 5.1M8 8.3V14.1" stroke="currentColor" stroke-linejoin="round"/>`,
+  },
+  database: {
+    viewBox: "0 0 16 16",
+    body: `<ellipse cx="8" cy="3.6" rx="5.5" ry="2.1" stroke="currentColor"/><path d="M2.5 3.6V12.4C2.5 13.56 5.04 14.5 8 14.5C10.96 14.5 13.5 13.56 13.5 12.4V3.6M2.5 8C2.5 9.16 5.04 10.1 8 10.1C10.96 10.1 13.5 9.16 13.5 8" stroke="currentColor"/>`,
+  },
+  "chart-bar": {
+    viewBox: "0 0 16 16",
+    body: `<path d="M2.5 2.5V13.5H13.5" stroke="currentColor" stroke-linecap="round"/><path d="M5.6 10.8V6.4M8.4 10.8V4.2M11.2 10.8V7.6" stroke="currentColor" stroke-linecap="round"/>`,
+  },
+  shield: {
+    viewBox: "0 0 16 16",
+    body: `<path d="M8 1.6L13.4 3.6V7.6C13.4 10.9 11 13.3 8 14.4C5 13.3 2.6 10.9 2.6 7.6V3.6L8 1.6Z" stroke="currentColor" stroke-linejoin="round"/><path d="M5.6 7.9L7.3 9.6L10.4 6.4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>`,
+  },
+  file: {
+    viewBox: "0 0 16 16",
+    body: `<path d="M4 1.5H9.6L13.5 5.4V14.5H4V1.5Z" stroke="currentColor" stroke-linejoin="round"/><path d="M9.6 1.5V5.4H13.5" stroke="currentColor" stroke-linejoin="round"/>`,
+  },
+  sparkles: {
+    viewBox: "0 0 16 16",
+    body: `<path d="M7.2 2.5L8.4 6.6L12.5 7.8L8.4 9L7.2 13.1L6 9L1.9 7.8L6 6.6L7.2 2.5Z" stroke="currentColor" stroke-linejoin="round"/><path d="M12.3 10.8v3M10.8 12.3h3" stroke="currentColor" stroke-linecap="round"/>`,
+  },
+  video: {
+    viewBox: "0 0 16 16",
+    body: `<rect x="1.8" y="3" width="12.4" height="10" rx="1.6" stroke="currentColor"/><path d="M6.8 5.8V10.2L10.6 8L6.8 5.8Z" stroke="currentColor" stroke-linejoin="round"/>`,
+  },
+  shapes: {
+    viewBox: "0 0 16 16",
+    body: `<rect x="2.2" y="2.2" width="7.2" height="7.2" rx="1.2" stroke="currentColor"/><circle cx="10.4" cy="10.4" r="3.4" stroke="currentColor"/>`,
+  },
+  user: {
+    viewBox: "0 0 16 16",
+    body: `<circle cx="8" cy="5.2" r="2.9" stroke="currentColor"/><path d="M2.8 14C3.3 11.2 5.4 9.6 8 9.6C10.6 9.6 12.7 11.2 13.2 14" stroke="currentColor" stroke-linecap="round"/>`,
+  },
+  target: {
+    viewBox: "0 0 16 16",
+    body: `<circle cx="8" cy="8" r="5.8" stroke="currentColor"/><circle cx="8" cy="8" r="2.6" stroke="currentColor"/><circle cx="8" cy="8" r="0.9" fill="currentColor"/>`,
+  },
 }
 
 const spriteID = "opencode-v2-icon-sprite"

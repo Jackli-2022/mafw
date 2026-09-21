@@ -77,6 +77,13 @@ describe("typeMeta", () => {
     expect(typeMeta("usage").label).toBe("Usage")
     expect(typeMeta("ui").label).toBe("UI")
   })
+  test("icons are SVG icon names, never emoji", () => {
+    const expected = { runtime: "settings-gear", media: "video", usage: "chart-bar", ui: "shapes" }
+    for (const t of ["runtime", "media", "usage", "ui"] as const) {
+      expect(typeMeta(t).icon).toBe(expected[t])
+      expect(typeMeta(t).icon).toMatch(/^[a-z][a-z-]*$/)
+    }
+  })
 })
 
 describe("groupEntries", () => {
