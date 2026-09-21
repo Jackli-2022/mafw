@@ -20,6 +20,7 @@ import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
 import { scrollPinDecision } from "./ChatPaneScroll"
 import { inlineAnchor } from "./flow-card-placement"
+import { isLocalMessageId } from "../chat/local-id"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
@@ -554,7 +555,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       props.setStore(prev => {
         const msgs = { ...prev.message }
         const sessionMsgs = [...(msgs[sid] || [])]
-        const idx = sessionMsgs.findIndex(m => m.id.startsWith("user-") && m.voiceStatus !== "done")
+        const idx = sessionMsgs.findIndex(m => isLocalMessageId(m.id) && m.voiceStatus !== "done")
         if (idx >= 0 && sessionMsgs[idx]?.voiceStatus === "analyzing") {
           sessionMsgs[idx] = { ...sessionMsgs[idx], voiceStatus: "done" }
         }

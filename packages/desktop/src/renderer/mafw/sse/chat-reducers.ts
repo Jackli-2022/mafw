@@ -2,6 +2,7 @@
 // 逐字迁移自 MafwShell.tsx onmessage 内 setStore updater（commit 13ad8348）。
 // 约定：返回 null = 无变化（调用方跳过 patchStore，保持 Solid 引用语义）。
 import { mergeAssistantMessage } from "../message-model"
+import { isLocalMessageId } from "../chat/local-id"
 
 export type ChatStoreState = {
   message: Record<string, any[]>
@@ -18,7 +19,7 @@ export function applyUserMessageArrival(
   const sessionMsgs = [...(msgs[sid] || [])]
   const msgId = info.id
   if (sessionMsgs.find(m => m.id === msgId)) return null
-  const optIdx = sessionMsgs.findIndex(m => m.role === "user" && m.id.startsWith("user-"))
+  const optIdx = sessionMsgs.findIndex(m => m.role === "user" && isLocalMessageId(m.id))
   if (optIdx >= 0) {
     const opt = sessionMsgs[optIdx]
     sessionMsgs[optIdx] = {
@@ -101,7 +102,7 @@ export function applyPartUpsert(
   if (idx < 0 && part.type === "text") {
     // absorb the optimistic user text part (id `user-...-text`) when the
     // real user part with identical text arrives
-    idx = existing.findIndex(p => p.type === "text" && p.id.startsWith("user-") && (p.text || "") === (part.text || ""))
+    idx = existing.findIndex(p => p.type === "text" && isLocalMessageId(p.id) && (p.text || "") === (part.text || ""))
   }
   parts[part.messageID] = idx >= 0
     ? existing.map((p, i) => (i === idx ? { ...p, ...partObj } : p))
