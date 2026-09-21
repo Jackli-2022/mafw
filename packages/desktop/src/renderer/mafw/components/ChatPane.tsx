@@ -28,6 +28,7 @@ import {
 } from "../chat/flow-card-slots"
 import { useAttachments, mimeOf } from "../chat/use-attachments"
 import { useSendMessage } from "../chat/use-send-message"
+import { TtsPicker } from "../chat/TtsPicker"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
@@ -59,11 +60,6 @@ export type FlowCardRecord =
   | { kind: "permission"; data: PermissionCardData }
 
 // TTS 引擎来源徽标文案（/api/tts/voices engines[].source）
-const TTS_ENGINE_SOURCE_LABEL: Record<string, string> = {
-  builtin: "内置引擎",
-  legacy: "本地插件（~/.mafw/tts-plugins/）",
-  package: "插件包",
-}
 
 // [媒体附件 taskID: <id> contextID: <id> artifactId: <id>（媒体: <name>）...]
 const MEDIA_POINTER_RE = /\[媒体附件\s+taskID:\s*([^\s]+)\s+contextID:\s*([^\s]+)(?:\s+artifactId:\s*([a-zA-Z0-9-]+))?（媒体:\s*([^）]+)）[^\]]*\]/g
@@ -211,13 +207,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   } = useAttachments()
   const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
   const [pickerOpen, setPickerOpen] = createSignal<"model" | "agent-switch" | "agent-mention" | "command" | "tts" | "file" | null>(null)
-  // TTS voice picker: preset voices + default style, persisted to gateway
-  // config (media.tts) so /api/tts without an explicit voice uses it.
-  const [ttsVoices, setTtsVoices] = createSignal<{ id: string; label: string; lang: string }[]>([])
+  // TTS voice picker: 选中音色/引擎归宿主（voice hook 消费 defaultVoice）；
+  // 列表加载、风格输入、试听态在 ../chat/TtsPicker.tsx 内部自管。
   const [ttsVoiceSel, setTtsVoiceSel] = createSignal<string | null>(null)
-  const [ttsStyle, setTtsStyle] = createSignal("")
-  // TTS 引擎（/api/tts/voices 返回 engine/engines；切换持久化到 media.tts.engine）
-  const [ttsEngines, setTtsEngines] = createSignal<{ name: string; source: string }[]>([])
   const [ttsEngine, setTtsEngine] = createSignal<string>("mimo")
   const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
@@ -379,17 +371,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [cmdLoading, setCmdLoading] = createSignal(false)
   const [cmdCustom, setCmdCustom] = createSignal<{ name: string; source: string }[]>([])
 
-  // ── TTS state（统一音色入口：picker 选择 + 试听 + 选中即保存）──
-  const VOICE_GRADIENTS = [
-    "linear-gradient(135deg,#f6d365,#fda085)",
-    "linear-gradient(135deg,#a8edea,#fed6e3)",
-    "linear-gradient(135deg,#d299c2,#fef9d7)",
-    "linear-gradient(135deg,#89f7fe,#66a6ff)",
-    "linear-gradient(135deg,#ff9a9e,#fecfef)",
-    "linear-gradient(135deg,#a1c4fd,#c2e9fb)",
-    "linear-gradient(135deg,#fbc2eb,#a6c1ee)",
-    "linear-gradient(135deg,#84fab0,#8fd3f4)",
-  ]
+  // previewing = TTS picker 试听态（TtsPicker 内部管理高亮；这里的信号仅供
+  // voice hook 在播报结束时清除残留高亮）
   const [previewing, setPreviewing] = createSignal<string | null>(null)
 
   // ── 语音绑定层（VoiceSession 接线/播报/分段上传/自动播放 → ../chat/use-voice-binding.ts）──
@@ -641,80 +624,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     insertCommandText(item.trigger)
   }
 
-  // ── TTS voice picker（统一音色入口：选中即保存 + 试听）──
-  onMount(async () => {
-    try {
-      const cfg: any = await window.api.mafw.config.get("media.tts")
-      if (cfg?.defaultVoice) setTtsVoiceSel(cfg.defaultVoice)
-      if (cfg?.style) setTtsStyle(cfg.style)
-    } catch { /* ignore */ }
-  })
-
-  const loadTtsVoices = async (force = false) => {
-    if (!force && ttsVoices().length > 0) return
-    try {
-      const data: any = await window.api.mafw.tts.voices()
-      if (data?.voices) setTtsVoices(data.voices)
-      if (data?.defaultVoice) setTtsVoiceSel(v => v || data.defaultVoice)
-      if (data?.engine) setTtsEngine(data.engine)
-      if (Array.isArray(data?.engines)) setTtsEngines(data.engines)
-    } catch (e) { console.warn("[mafw] tts voices fetch:", e) }
-  }
-
-  const openTtsPicker = async () => {
-    await loadTtsVoices()
+  // ── TTS 音色选择器（列表/风格/试听 → ../chat/TtsPicker.tsx；宿主持有 voice 信号）──
+  const openTtsPicker = () => {
     setPickerTrigger(textareaEl())
     setPickerOpen("tts")
-  }
-
-  // TTS 引擎切换：持久化 + 重载该引擎的音色表（音色随引擎不同）
-  const selectTtsEngine = async (name: string) => {
-    if (name === ttsEngine()) return
-    try {
-      await window.api.mafw.config.set("media.tts.engine", name)
-      setTtsEngine(name)
-      setTtsVoiceSel(null)
-      try {
-        const data: any = await window.api.mafw.tts.voices()
-        if (data?.voices) setTtsVoices(data.voices)
-        if (data?.defaultVoice) setTtsVoiceSel(data.defaultVoice)
-      } catch { /* 保留旧列表，fail-open */ }
-      showToastV2({ description: `TTS 引擎：${name}`, duration: 2000 })
-    } catch (e: any) {
-      showToastV2({ description: `引擎切换失败: ${e?.message || String(e)}`, duration: 3000 })
-    }
-  }
-
-  const selectTtsVoice = async (id: string, label: string) => {
-    setTtsVoiceSel(id)
-    try {
-      await window.api.mafw.config.set("media.tts.defaultVoice", id)
-      showToastV2({ description: `默认音色：${label}`, duration: 2000 })
-    } catch (e: any) {
-      console.warn("[mafw] tts voice save:", e)
-      showToastV2({ description: `音色保存失败: ${e?.message || String(e)}`, duration: 3000 })
-    }
-  }
-
-  const saveTtsStyle = async () => {
-    try {
-      await window.api.mafw.config.set("media.tts.style", ttsStyle().trim())
-    } catch (e: any) {
-      console.warn("[mafw] tts style save:", e)
-      showToastV2({ description: `风格保存失败: ${e?.message || String(e)}`, duration: 3000 })
-    }
-  }
-
-  const previewTtsVoice = async (voice: string, label: string) => {
-    if (previewing() === voice) { stopActivePlayback(); setPreviewing(null); return }
-    stopActivePlayback()
-    setPreviewing(voice)
-    try {
-      await voiceSession.speak(`你好，我是${label}。`, voice)
-    } catch { /* preview errors ignored */ }
-    finally {
-      setPreviewing(null)
-    }
   }
 
   // One user message = one turn. Sorted by time as insurance against any
@@ -1669,81 +1582,21 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           }}
           onClose={() => setPickerOpen(p => p === "file" ? null : p)}
         />
-        <PopoverShell open={pickerOpen() === "tts"} trigger={pickerTrigger()} anchor="below-center" width={340} onClose={() => setPickerOpen(p => p === "tts" ? null : p)}>
-          <div class="mafw-tts-picker">
-            <div class="mafw-tts-speak-section">
-              <span class="mafw-tts-speak-label">播报最后一条回复</span>
-              <ButtonV2
-                variant="contrast"
-                size="small"
-                class="mafw-tts-speak-btn"
-                disabled={ttsSpeaking()}
-                onClick={() => { console.log("[voice] speak from picker"); void speakText() }}
-              >{ttsSpeaking() ? "播报中…" : "🔊 播报"}</ButtonV2>
-            </div>
-            <Show when={ttsEngines().length > 0}>
-              <div class="mafw-picker-group-label">引擎</div>
-              <div class="mafw-tts-engines">
-                <For each={ttsEngines()}>
-                  {(e) => (
-                    <TooltipV2 value={TTS_ENGINE_SOURCE_LABEL[e.source] ?? e.source} openDelay={300}>
-                      <ButtonV2
-                        variant={ttsEngine() === e.name ? "contrast" : "ghost"}
-                        size="small"
-                        class="mafw-tts-engine-chip"
-                        onClick={() => void selectTtsEngine(e.name)}
-                      >{e.name}</ButtonV2>
-                    </TooltipV2>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <div class="mafw-picker-title">语音音色</div>
-            <Show when={ttsVoices().length > 0} fallback={<div class="mafw-picker-empty">正在加载音色…</div>}>
-              <div class="mafw-tts-list">
-                <For each={ttsVoices()}>
-                  {(v, i) => (
-                    <div
-                      class="mafw-tts-row"
-                      classList={{ sel: ttsVoiceSel() === v.id, playing: previewing() === v.id }}
-                      onClick={() => void selectTtsVoice(v.id, v.label)}
-                    >
-                      <span class="mafw-tts-avatar" style={{ background: VOICE_GRADIENTS[i() % VOICE_GRADIENTS.length] }}>{v.label[0]}</span>
-                      <span class="mafw-tts-name">{v.label}</span>
-                      <span class="mafw-tts-lang">{v.lang === "zh" ? "中文" : v.lang === "en" ? "EN" : v.lang || "auto"}</span>
-                      <ButtonV2
-                        variant="ghost"
-                        size="small"
-                        class="mafw-tts-preview"
-                        aria-label={`试听 ${v.label}`}
-                        disabled={previewing() !== null && previewing() !== v.id}
-                        onClick={(e: MouseEvent) => { e.stopPropagation(); void previewTtsVoice(v.id, v.label) }}
-                      >{previewing() === v.id ? <span class="mafw-tts-eq"><i/><i/><i/></span> : "▶"}</ButtonV2>
-                      <Show when={ttsVoiceSel() === v.id}>
-                        <span class="mafw-picker-row-check">✓</span>
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <div class="mafw-tts-divider" />
-            <div class="mafw-picker-group-label">默认风格（可选）</div>
-            <div class="mafw-picker-search mafw-tts-style">
-              <span class="mafw-picker-search-icon">✨</span>
-              <input
-                class="mafw-picker-search-input"
-                placeholder="如：用轻快上扬的语调，语速稍快…"
-                value={ttsStyle()}
-                onInput={e => setTtsStyle(e.currentTarget.value)}
-                onBlur={() => void saveTtsStyle()}
-                onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); void saveTtsStyle() } }}
-              />
-            </div>
-            <div class="mafw-tts-hint">支持音频标签：(风格)文本 · [标签] · (唱歌)歌词</div>
-            <div class="mafw-picker-hint">点击选择 · ▶ 试听 · Esc 关闭</div>
-          </div>
-        </PopoverShell>
+        <TtsPicker
+          open={pickerOpen() === "tts"}
+          trigger={pickerTrigger()}
+          onClose={() => setPickerOpen(p => p === "tts" ? null : p)}
+          ttsVoiceSel={ttsVoiceSel()}
+          onVoiceSelect={(id) => setTtsVoiceSel(id)}
+          onVoiceReset={() => setTtsVoiceSel(null)}
+          onDefaultVoice={(id) => setTtsVoiceSel(v => v || id)}
+          ttsEngine={ttsEngine()}
+          onEngineChange={(name) => setTtsEngine(name)}
+          ttsSpeaking={ttsSpeaking()}
+          speakText={() => void speakText()}
+          stopActivePlayback={stopActivePlayback}
+          previewSpeak={(text, voice) => voiceSession.speak(text, voice)}
+        />
         {/* Revert confirm */}
         <Show when={revertConfirm()}>
           <div class="mafw-confirm-backdrop">
