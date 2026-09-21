@@ -58,9 +58,11 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
 Rail 侧边栏 + TabStrip 布局：`chat / goals / memory / approvals / triage / automation / notes` 全功能 GUI，
 右 Dock 内置上下文用量、分模型成本统计与配额窗口，15s 轮询实时刷新。
 
-v1.20 交互面：**steering**（忙碌回合排队续发）、会话分支（fork / revert / unrevert）、全局命令面板（Ctrl+P）、
-每会话审批模式（manual / auto + 预算上限）、系统托盘与 OS 通知、会话导出 Markdown、@file 文件提及、
-transcript 搜索（Ctrl+F）；UI 工具卡插件系统支持 `.js` 文件自定义工具执行卡（v2：依赖声明 + 流式渲染）。
+交互面：**steering**（忙碌回合排队续发）、会话分支（fork / revert / unrevert）、全局命令面板（Ctrl+P）、
+审批三档（只读 / 自动 / 全开）与 plan / build 模式引导、worktree 并行会话（每会话独立 `⎇` 工作树）、
+语音输入（VAD 静音自动分段）与 TTS 播报（barge-in 可打断）、系统托盘与 OS 通知、会话导出 Markdown、@file 文件提及、
+transcript 搜索（Ctrl+F）；composer 工具条全 SVG 图标化、动作与模式开关分组；
+UI 工具卡插件系统支持 `.js` 文件自定义工具执行卡（v2：依赖声明 + 流式渲染）。
 
 ### 🎬 媒体理解
 
