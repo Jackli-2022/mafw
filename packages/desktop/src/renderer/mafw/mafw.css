@@ -1791,13 +1791,21 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-empty-state-action { margin-top: 8px; }
 /* Skeleton shimmer loading */
 @keyframes mafw-shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: calc(200px + 100%) 0; }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 .mafw-skeleton {
-  background: var(--bg-inset) linear-gradient(90deg, transparent, var(--hover-strong), transparent) no-repeat;
-  background-size: 200px 100%;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-inset);
   border-radius: var(--r-sm);
+}
+.mafw-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--hover-strong), transparent);
   animation: mafw-shimmer 1.2s var(--ease) infinite;
 }
 .mafw-skeleton-rows { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
