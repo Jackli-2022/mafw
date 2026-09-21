@@ -21,6 +21,13 @@ import { AudioReply, cachedArtifactUrl } from "./AudioReply"
 import { scrollPinDecision } from "./ChatPaneScroll"
 import { inlineAnchor } from "./flow-card-placement"
 import { isLocalMessageId } from "../chat/local-id"
+import {
+  hasInlineAnchor as hasInlineAnchorSlot,
+  inlineCardsForPart as inlineCardsForPartSlot,
+  turnOfMessage as turnOfMessageSlot,
+  cardsForTurn as cardsForTurnSlot,
+  unplacedCards as unplacedCardsSlot,
+} from "../chat/flow-card-slots"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
@@ -1632,23 +1639,15 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   // ── Flow card placement ──
-  // Cards carry the assistant message id of the tool call that triggered them
-  // (tool.messageID); place each card right after the user turn that contains
-  // that assistant message. Cards without a resolvable link fall back to the
-  // bottom of the conversation (old seeds, races where the message has not
-  // arrived yet — the store is reactive, so a late-arriving message moves the
-  // card into its turn automatically).
-  //
-  // 内联优先：卡片带 callID 且锚 part 渲染为顶层条目时，由 SessionTurn 的
-  // renderAfterPart 挂到发起它的工具卡后面；这里必须同步排除（防双重渲染）。
-  // 资格判定与 AssistantParts 条目规则严格一致（flow-card-placement.ts）。
-  const hasInlineAnchor = (c: FlowCardRecord): boolean =>
-    !!inlineAnchor(c.data, (mid) => (props.store.part[mid] as any[]) || [])
+  // 归位纯函数在 ../chat/flow-card-slots.ts（逐字迁移，闭包改显式参数）；
+  // 这里只做组件态接线（store/sessionCards/userMessages 注入）。
+  const flowSlotPartsOf = (mid: string): any[] => (props.store.part[mid] as any[]) || []
+  const flowSlotCards = () => props.sessionCards(sidProp()).visible as any[]
+
+  const hasInlineAnchor = (c: FlowCardRecord): boolean => hasInlineAnchorSlot(c, flowSlotPartsOf)
 
   const inlineCardsForPart = (messageID: string, callID: string): FlowCardRecord[] =>
-    props.sessionCards(sidProp()).visible.filter(
-      (c) => c.data.messageID === messageID && c.data.callID === callID && hasInlineAnchor(c),
-    )
+    inlineCardsForPartSlot(flowSlotCards(), messageID, callID, flowSlotPartsOf) as FlowCardRecord[]
 
   const renderFlowCard = (c: FlowCardRecord) => {
     const sc = props.sessionCards(sidProp())
@@ -1673,51 +1672,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     )
   }
 
-  const turnOfMessage = (messageID: string): string | null => {
-    const sid = sidProp()
-    const msgs = props.store.message[sid] || []
-    const msg = msgs.find(m => m.id === messageID)
-    if (!msg) return null
-    if (msg.role === "user") return msg.id
-    if (msg.parentID) return msg.parentID
-    const sorted = [...msgs].sort((a, b) => (a.time?.created || 0) - (b.time?.created || 0))
-    const idx = sorted.findIndex(m => m.id === messageID)
-    if (idx > 0) {
-      for (let i = idx - 1; i >= 0; i--) {
-        if (sorted[i].role === "user") return sorted[i].id
-      }
-    }
-    return null
-  }
+  const turnOfMessage = (messageID: string): string | null =>
+    turnOfMessageSlot(messageID, props.store, sidProp())
 
   // Cards belonging to the user turn `userMsgId` (direct or via the assistant
   // message's parentID), in creation order.
-  const cardsForTurn = (userMsgId: string): FlowCardRecord[] => {
-    const sid = sidProp()
-    const users = userMessages()
-    const isLast = users.length > 0 && users[users.length - 1].id === userMsgId
-    return props.sessionCards(sid).visible
-      .filter(c => {
-        // 内联挂载的卡不参与回合底部归位
-        if (hasInlineAnchor(c)) return false
-        // Card explicitly belongs to this turn
-        if (c.data.messageID && turnOfMessage(c.data.messageID) === userMsgId) return true
-        // Unplaced cards (no messageID or can't resolve) attach to the last turn
-        if (isLast && !turnOfMessage(c.data.messageID || '')) return true
-        return false
-      })
-      .sort((a, b) => a.data.createdAt - b.data.createdAt)
-  }
+  const cardsForTurn = (userMsgId: string): FlowCardRecord[] =>
+    cardsForTurnSlot(flowSlotCards(), userMsgId, props.store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
   // Cards that could not be placed into any turn (no/unknown message link).
   // These are now attached to the last user turn via cardsForTurn, so this
   // returns empty when there are user messages.
-  const unplacedCards = (): FlowCardRecord[] => {
-    if (userMessages().length > 0) return []
-    return props.sessionCards(sidProp()).visible
-      .filter(c => !hasInlineAnchor(c) && (!c.data.messageID || !turnOfMessage(c.data.messageID)))
-      .sort((a, b) => a.data.createdAt - b.data.createdAt)
-  }
+  const unplacedCards = (): FlowCardRecord[] =>
+    unplacedCardsSlot(flowSlotCards(), props.store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
   const agentSelName = () => props.agentSel()?.name || "manager"
 
