@@ -2,8 +2,8 @@
 .mafw-shell {
   color-scheme: dark;
   font-family: var(--font-ui);
-  /* 消息列宽分档（§4.5：宽屏不再两侧大留白） */
-  --msg-col-width: 760px;
+  /* 消息列宽分档（§4.5：宽屏不再两侧大留白；v5.1 基准 720px） */
+  --msg-col-width: 720px;
   /* 背景五阶（§3.1 v5: 暖纸调，chroma≤0.02） */
   --bg-base: #100F0E;
   --bg-raised: #161513;
@@ -992,6 +992,12 @@ html[data-theme="light"] .mafw-shell {
 }
 .mafw-shell [data-component="user-message"] [data-slot="user-message-body"] {
   max-width: min(70%, 64ch);
+}
+
+/* v5.1 消息正文：16px/1.7（业界 AI 对话标准），仅 assistant text part；reasoning 块不波及 */
+.mafw-shell [data-component="text-part"] [data-component="markdown"] {
+  font-size: 16px;
+  line-height: 1.7;
 }
 
 /* Tool blocks card-ized: real DOM is [data-component="tool-part-wrapper"]
