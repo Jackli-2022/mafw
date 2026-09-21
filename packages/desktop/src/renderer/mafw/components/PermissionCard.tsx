@@ -19,6 +19,8 @@ export type PermissionCardData = {
     payload: string
     dangerousParts?: string[]
   }
+  /** 原始 permission 名（bash/edit/...），asked 事件缺 tool 字段时用于反查内联锚点。 */
+  toolName?: string
   impact?: string
   createdAt: number
   /** The assistant message id whose tool call triggered this request. */
@@ -61,8 +63,12 @@ export function PermissionCard(props: {
   const [confirmArmed, setConfirmArmed] = createSignal(false)
   const [noteOpen, setNoteOpen] = createSignal(false)
   const [note, setNote] = createSignal("")
-  // 已处理的卡默认收起为一行；初始 pending 的卡回答后不自动收起（不抽走视图）。
+  // 已处理的卡默认收起为一行；pending→resolved 迁移自动收起（一行摘要保留在原地，
+  // 点击可重新展开）。
   const [expanded, setExpanded] = createSignal(flowCardInitialExpanded(props.data.status))
+  createEffect(() => {
+    if (props.data.status !== "pending") setExpanded(false)
+  })
 
   let armTimer: ReturnType<typeof setTimeout> | null = null
 

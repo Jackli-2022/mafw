@@ -45,6 +45,7 @@ import { parseDeepLink } from "./deep-link"
 import { ConfirmOverlay } from "./components/ConfirmOverlay"
 import { CommandPalette, type PaletteItem } from "./components/CommandPalette"
 import { nextMode as nextPermissionMode } from "./components/permission-card-mapping"
+import { findPendingToolPart } from "./components/flow-card-placement"
 import { saveLayout, loadLayout, pruneMissing } from "./layout-persist"
 import { buildSessionMarkdown } from "./export-markdown"
 import { MemoryPage } from "./pages/Memory"
@@ -959,6 +960,23 @@ export function MafwShell() {
   const [flowCards, setFlowCards] = createSignal<Record<string, FlowCardRecord[]>>({})
 
   const upsertCard = (sid: string, rec: FlowCardRecord) => {
+    // permission.asked 的 properties.tool 是可选字段（pi runtime 恒缺）——缺链接的
+    // 卡永远内联不了，堆在回合底部。反查 store 中 pending 的同名 ToolPart 恢复
+    // 锚点；store reactive，晚到的 part 也会随下一次 upsert/reconcile 自动补上。
+    if (rec.kind === "permission" && !(rec.data.messageID && rec.data.callID) && rec.data.status === "pending") {
+      const msgs = store.message[sid] || []
+      const assistantIds = msgs.filter((m: any) => m.role === "assistant").map((m: any) => m.id)
+      const usedCallIDs = (flowCards()[sid] || [])
+        .filter((c) => c.kind === "permission" && c.data.callID)
+        .map((c) => c.data.callID as string)
+      const link = findPendingToolPart(
+        String(rec.data.toolName || ""),
+        (mid) => (store.part[mid] as any[]) || [],
+        assistantIds,
+        usedCallIDs,
+      )
+      if (link) rec = { ...rec, data: { ...rec.data, ...link } }
+    }
     setFlowCards(prev => {
       const list = prev[sid] || []
       const existing = list.find(c => c.data.id === rec.data.id)

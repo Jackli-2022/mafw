@@ -41,8 +41,8 @@ export function isTopLevelToolEntry(part: ToolPartLike): boolean {
 
 /**
  * 卡片初始展开状态：pending 展开（它是操作点），已处理（answered/allowed/denied/
- * expired/cancelled）默认收起为一行摘要，点击展开。只决定**初始**值——挂载后
- * pending→resolved 的迁移不自动收起（避免回答后视图被抽走）。
+ * expired/cancelled）默认收起为一行摘要，点击展开。挂载后 pending→resolved 迁移
+ * 由卡片组件自动收起（一行摘要保留在原地）。
  */
 export function flowCardInitialExpanded(status: string): boolean {
   return status === "pending"
@@ -62,4 +62,30 @@ export function inlineAnchor(
   const hit = (partsOf(mid) || []).find((p) => p.type === "tool" && p.callID === cid)
   if (!hit || !isTopLevelToolEntry(hit)) return null
   return { messageID: mid, callID: cid }
+}
+
+/**
+ * asked 事件反查 tool 链接：permission.asked 的 properties.tool 是可选字段
+ * （pi runtime 恒缺），卡片缺 messageID/callID 时永远内联不了，堆在回合底部。
+ * 审批串行（同一时刻只有一个待审请求）+ 工具名匹配 → 扫 store 中 pending 的
+ * 同名 ToolPart 恢复锚点，高置信。excludeCallIDs 排除已被其他卡片占用的 callID。
+ */
+export function findPendingToolPart(
+  toolName: string,
+  partsOf: (messageID: string) => ToolPartLike[],
+  messageIDs: string[],
+  excludeCallIDs: string[] = [],
+): { messageID: string; callID: string } | null {
+  if (!toolName) return null
+  const excluded = new Set(excludeCallIDs)
+  let hit: { messageID: string; callID: string } | null = null
+  for (const mid of messageIDs) {
+    for (const p of partsOf(mid) || []) {
+      if (p.type !== "tool" || p.tool !== toolName) continue
+      if (!p.callID || excluded.has(p.callID)) continue
+      if (p.state?.status !== "pending") continue
+      hit = { messageID: mid, callID: p.callID } // 按回合时间序，后者覆盖 → 最新命中
+    }
+  }
+  return hit
 }

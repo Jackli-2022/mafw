@@ -52,8 +52,12 @@ export function AskCard(props: {
   const [selected, setSelected] = createSignal<Record<string, string[]>>({})
   const [customVals, setCustomVals] = createSignal<Record<string, string>>({})
   const customRefs: Record<string, HTMLInputElement | undefined> = {}
-  // 已处理的卡默认收起为一行；初始 pending 的卡回答后不自动收起（不抽走视图）。
+  // 已处理的卡默认收起为一行；pending→resolved 迁移自动收起（一行摘要保留在原地，
+  // 点击可重新展开）。
   const [expanded, setExpanded] = createSignal(flowCardInitialExpanded(props.data.status))
+  createEffect(() => {
+    if (props.data.status !== "pending") setExpanded(false)
+  })
 
   const questions = () => props.data.questions
 

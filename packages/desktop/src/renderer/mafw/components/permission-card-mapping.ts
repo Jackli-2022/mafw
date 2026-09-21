@@ -56,6 +56,7 @@ export function mapPermissionCard(req: any, createdAt: number, agentTitle: strin
       payload: patterns.join(" && ") || permission,
       dangerousParts: dangerousPartsOf(permission, patterns),
     },
+    toolName: permission || undefined,
     impact: req.metadata?.impact as string | undefined,
     createdAt,
     messageID: req.tool?.messageID,
