@@ -40,3 +40,11 @@ test("ships the staged gateway bundle as an extra resource", async () => {
   const resources = (config.extraResources ?? []) as Array<{ from: string; to: string }>
   expect(resources).toContainEqual({ from: "gateway-bundle/", to: "gateway/" })
 })
+
+test("stages channel icons next to the executable for runtime icon paths", async () => {
+  const module = await import("./electron-builder.config.ts?icons=1")
+  const config = module.default as Configuration
+
+  const resources = (config.extraResources ?? []) as Array<{ from: string; to: string }>
+  expect(resources).toContainEqual({ from: "resources/icons", to: "icons" })
+})
