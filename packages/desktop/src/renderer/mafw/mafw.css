@@ -225,6 +225,20 @@ html[data-theme="light"] .mafw-shell {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  /* v5.1: 光标静态显示（信息载体，不闪烁） */
+  .mafw-shell [data-component="markdown"][data-streaming="true"] > [data-markdown-block]:last-child > :last-child::after { animation: none; }
+}
+
+/* v5.1 streaming 尾光标：仅流式中的 markdown 根渲染 ▌（完成即消失） */
+@keyframes mafw-caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.mafw-shell [data-component="markdown"][data-streaming="true"] > [data-markdown-block]:last-child > :last-child::after {
+  content: "▌";
+  color: var(--accent);
+  margin-left: 2px;
+  animation: mafw-caret-blink 1s var(--ease) infinite;
 }
 
 /* ── Shell Layout ── */

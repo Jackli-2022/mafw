@@ -504,6 +504,7 @@ export function Markdown(
   return (
     <div
       data-component="markdown"
+      data-streaming={local.streaming ? "true" : undefined}
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,

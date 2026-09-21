@@ -391,17 +391,17 @@ describe("token v5.1 — 消息排版", () => {
 
 describe("token v5.1 — streaming 尾光标", () => {
   const cursor = '.mafw-shell [data-component="markdown"][data-streaming="true"] > [data-markdown-block]:last-child > :last-child::after'
-  test("▌ 伪元素存在", () => {
-    const b = cssBlock(cursor)
-    expect(b).toContain('content: "▌"')
-    expect(b).toContain("color: var(--accent)")
-    expect(b).toContain("animation: mafw-caret-blink")
+  // reduced-motion 块内的同选择器单行规则在前，真正的光标规则跟在 keyframes 之后
+  const cursorRule = css.slice(css.indexOf("@keyframes mafw-caret-blink"))
+  test("▌ 伪元素存在（accent 色 + blink 动画 1s）", () => {
+    expect(cursorRule).toContain('content: "▌"')
+    expect(cursorRule).toContain("color: var(--accent)")
+    expect(cursorRule).toContain("animation: mafw-caret-blink 1s")
   })
-  test("blink keyframes（opacity 0↔1，1s）", () => {
+  test("blink keyframes（opacity 0↔1）", () => {
     const b = cssBlock("@keyframes mafw-caret-blink")
     expect(b).toContain("opacity: 1")
     expect(b).toContain("opacity: 0")
-    expect(b).toContain("1s")
   })
   test("reduced-motion 下静态显示", () => {
     const i = css.indexOf("@media (prefers-reduced-motion: reduce)")
