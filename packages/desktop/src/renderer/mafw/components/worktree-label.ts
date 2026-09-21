@@ -4,8 +4,8 @@
 // currentProject().worktree（同源字段名）。
 
 /** 目录比较统一为正斜杠 + 小写（Windows 盘符/分隔符形态差异兜底）。 */
-function normDir(d: string): string {
-  return d.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+function normDir(d: string | undefined | null): string {
+  return (d ?? "").replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 }
 
 /**

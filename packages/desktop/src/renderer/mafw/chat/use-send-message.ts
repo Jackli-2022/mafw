@@ -44,6 +44,7 @@ export function buildOptimisticParts(opts: {
 export interface SendMessageDeps {
   sid: () => string
   onCreateSession: () => Promise<string | null>
+  onSetUserMsgId: (sid: string, id: string) => void
   // composer signals
   input: () => string
   setInput: (v: string) => void
@@ -88,7 +89,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     const atts = attachments()
     const agents = mentionedAgents()
     if (!text.trim() && atts.length === 0) return
-    let sid = sidProp()
+    let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
     console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice)

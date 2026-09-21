@@ -64,7 +64,7 @@ export function DiffReviewPanel(props: {
     try {
       const r = await window.api.mafw.sessions.revertDiff(props.sessionID, patches)
       showToastV2({ description: `已回退 ${r.reverted} 个文件的选中改动`, duration: 2500 })
-      setSelected(new Set())
+      setSelected(new Set<string>())
       refresh()
     } catch (e: any) {
       showToastV2({ description: `回退失败：${String(e?.message ?? e).slice(0, 80)}`, duration: 4000 })

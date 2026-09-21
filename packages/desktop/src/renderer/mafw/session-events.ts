@@ -159,7 +159,6 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "permission.asked":
     case "permission.replied":
     case "session.compacted":
-    case "session.diff":
     case "trajectory.event":
     case "trajectory.turn":
     case "todo.updated":

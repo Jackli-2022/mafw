@@ -220,7 +220,7 @@ export interface MessagePartProps {
 
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
-    icon: "check" | "copy" | "reset" | "volume" | "stop" | "branch"
+    icon: "check" | "copy" | "reset" | "volume" | "stop" | "branch" | "file"
     label: JSX.Element
     useV2?: boolean
   },

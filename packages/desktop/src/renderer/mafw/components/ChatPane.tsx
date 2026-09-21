@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
@@ -453,6 +452,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const { sendMessage, interrupt, flushQueue } = useSendMessage({
     sid: () => sidProp(),
     onCreateSession: () => props.onCreateSession(),
+    onSetUserMsgId: (s2, id) => props.onSetUserMsgId(s2, id),
     input, setInput, sending, setSending, setPhase,
     attachments, setAttachments,
     mentionedAgents, setMentionedAgents,
@@ -465,7 +465,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     agentSel: () => props.agentSel(),
     model: () => props.model(),
     setStore: props.setStore,
-    forceAnchor,
+    forceAnchor: () => forceAnchor(),
     imageToDataUrl,
     uploadMediaBinary,
     encodeFilePath,
@@ -1035,7 +1035,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
                 <span class="mafw-agent-avatar">{title().charAt(0)}</span>
                 <span class="mafw-session-titlebar-text">{title()}</span>
-                <Show when={sessionTokenSummary().turns > 0}>
+                <Show when={sessionTokenSummary().turns > 0 ? sessionTokenSummary() : undefined}>
                   {(s) => (
                     <TooltipV2 value={`${fmtCtx(s().total)} tokens · ${s().turns} 回合${s().cost > 0 ? ` · $${s().cost.toFixed(4)}` : ''}`} openDelay={300}>
                       <span class="mafw-session-token-badge">
@@ -1073,7 +1073,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </Show>
                 <Show when={props.isManager && props.onNewTopic}>
                   <TooltipV2 value="开新话题（当前会话归档为历史）" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" onClick={e => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onNewTopic?.() }}>新话题</ButtonV2>
                   </TooltipV2>
                 </Show>
                 <Show when={worktreeBadgeOf()}>
@@ -1083,17 +1083,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </Show>
                 <Show when={props.worktreeEnabled && props.onCreateWorktreeSession}>
                   <TooltipV2 value="在独立 git worktree 中开并行任务（互不踩踏）" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" onClick={e => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务">⎇ 并行</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务">⎇ 并行</ButtonV2>
                   </TooltipV2>
                 </Show>
                 <Show when={props.canClosePane}>
                   <TooltipV2 value="关闭分屏" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏">✕</ButtonV2>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏">✕</ButtonV2>
                   </TooltipV2>
                 </Show>
                 <Show when={props.parentID && props.onBackToParent}>
                   <TooltipV2 value="返回父会话" openDelay={300}>
-                    <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={e => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话">← 返回</ButtonV2>
+                    <ButtonV2 variant="outline" size="small" class="mafw-back-parent" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onBackToParent?.() }} aria-label="返回父会话">← 返回</ButtonV2>
                   </TooltipV2>
                 </Show>
               </div>

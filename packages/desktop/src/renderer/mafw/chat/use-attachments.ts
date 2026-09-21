@@ -170,7 +170,7 @@ export function useAttachments() {
     }
   }
   const handleDragLeave = (e: DragEvent) => {
-    if (!e.currentTarget?.contains(e.relatedTarget as Node)) setDragging(false)
+    if (!(e.currentTarget as HTMLElement | null)?.contains(e.relatedTarget as Node)) setDragging(false)
   }
   const handleDrop = async (e: DragEvent) => {
     e.preventDefault()

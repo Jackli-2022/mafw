@@ -34,14 +34,13 @@ export type MafwAPI = {
 
   sessions: {
     list: (projectID?: string) => Promise<Session[]>
-    create: (opts?: { directory?: string; metadata?: Record<string, unknown> }) => Promise<Session>
+    create: (opts?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }) => Promise<Session & { worktree?: { dir: string; branch: string } }>
     get: (id: string) => Promise<Session | null>
     messages: (sessionID: string, limit?: number, before?: string) => Promise<any>
     todo: (sessionID: string) => Promise<{ data: any[] }>
     children: (sessionID: string) => Promise<any[]>
     abort: (sessionID: string) => Promise<void>
     fork: (sessionID: string, messageID?: string) => Promise<{ session: { id: string } }>
-    create: (opts?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }) => Promise<{ id: string; worktree?: { dir: string; branch: string } }>
     revert: (sessionID: string, messageID: string) => Promise<void>
     unrevert: (sessionID: string) => Promise<void>
     diff: (sessionID: string, messageID?: string) => Promise<{ files: Array<{ file?: string; patch?: string; additions?: number; deletions?: number; status?: string }> }>
