@@ -382,8 +382,9 @@ describe("token v5.3 — keyframes 属性纪律", () => {
     expect(bad.map((b) => b.name)).toEqual([])
   })
   test("无 background-position / height 动画残留", () => {
-    expect(css).not.toMatch(/@keyframes[\s\S]*?background-position/)
-    expect(css).not.toMatch(/@keyframes mafw-eq[\s\S]*?\bheight:/)
+    const offenders = kfBlocks().filter(({ body }) =>
+      body.includes("background-position") || /(?:^|\{|\s|;)height\s*:/.test(body))
+    expect(offenders.map((b) => b.name)).toEqual([])
   })
 })
 

@@ -1073,10 +1073,6 @@ html[data-theme="light"] .mafw-shell {
 }
 
 /* ── Phase indicator bar (Perplexity-style) ── */
-@keyframes mafw-phase-sweep {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
 @keyframes mafw-phase-pulse {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
@@ -1105,12 +1101,7 @@ html[data-theme="light"] .mafw-shell {
   animation: mafw-phase-pulse 1.2s ease-in-out infinite;
 }
 .mafw-phase-searching .mafw-phase-text {
-  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-1) 50%, var(--text-3) 100%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: mafw-phase-sweep 2s linear infinite;
+  animation: mafw-phase-pulse 1.2s var(--ease) infinite;
 }
 .mafw-phase-writing .mafw-phase-dot {
   background: var(--accent-success, #22c55e);
@@ -2948,10 +2939,10 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-tts-row:hover .mafw-tts-preview, .mafw-tts-row.sel .mafw-tts-preview { opacity: 1; }
 .mafw-tts-preview:disabled { opacity: 0.35; pointer-events: none; }
 .mafw-tts-eq { display: inline-flex; align-items: flex-end; justify-content: center; gap: 1.5px; width: 12px; height: 10px; }
-.mafw-tts-eq i { width: 2px; border-radius: 1px; background: currentColor; animation: mafw-eq 0.8s ease-in-out infinite; }
+.mafw-tts-eq i { width: 2px; height: 10px; border-radius: 1px; background: currentColor; transform-origin: center; animation: mafw-eq 0.8s ease-in-out infinite; }
 .mafw-tts-eq i:nth-child(2) { animation-delay: 0.15s; }
 .mafw-tts-eq i:nth-child(3) { animation-delay: 0.3s; }
-@keyframes mafw-eq { 0%, 100% { height: 3px; } 50% { height: 10px; } }
+@keyframes mafw-eq { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
 .mafw-tts-divider { height: 1px; background: var(--border-subtle); margin: 4px 12px; flex-shrink: 0; }
 .mafw-tts-engines { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px; }
 .mafw-tts-engine-chip { height: 24px !important; padding: 0 12px !important; font-size: 11px !important; border-radius: 999px !important; flex-shrink: 0; }
