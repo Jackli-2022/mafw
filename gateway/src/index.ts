@@ -4438,7 +4438,9 @@ class MafwScheduler {
           try {
             const body = await readBody(req);
             const opts = body ? JSON.parse(body) : {};
-            // 切片 4：worktree 参数 → git worktree add + 会话绑定 worktree 目录 + kv 映射
+            // 切片 4：worktree 参数 → git worktree add + 会话绑定 worktree 目录 + kv 映射。
+            // 返回形状保持向后兼容：SessionRecord 平铺（顶层 id）+ 可选 worktree 字段——
+            // desktop createSession() 读 r.id，包信封会破坏所有既有创建入口。
             const result = await createSessionWithWorktree(
               {
                 kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
@@ -4449,7 +4451,7 @@ class MafwScheduler {
               opts,
             );
             res.writeHead(200);
-            res.end(JSON.stringify(result));
+            res.end(JSON.stringify({ ...result.session, worktree: result.worktree }));
           } catch (err: any) {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
