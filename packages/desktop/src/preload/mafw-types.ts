@@ -124,7 +124,7 @@ export type MafwAPI = {
 
   approvals: {
     list: () => Promise<Approval[]>
-    respond: (id: string, decision: 'approve' | 'reject') => Promise<void>
+    respond: (id: string, input: 'approve' | 'reject' | { answer: string }) => Promise<void>
   }
 
   questions: {

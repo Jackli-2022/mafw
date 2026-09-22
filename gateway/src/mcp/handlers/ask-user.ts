@@ -27,7 +27,9 @@ export const handleAskUser: ToolHandler = async (args) => {
       "utf-8"
     );
 
-    eventBus.emit("user_question", { type: "user_question", goalId, questionId });
+    // 事件必须携带 question/options：桌面 QuestionWidget 直接渲染事件载荷，
+    // 只发 id 会导致弹窗无问题无选项（2026-09-22 事故根因）。
+    eventBus.emit("user_question", { type: "user_question", goalId, questionId, question, options });
 
     return { content: [{ type: "text", text: JSON.stringify({ success: true, questionId, status: "pending" }) }] };
   } catch (err: any) {

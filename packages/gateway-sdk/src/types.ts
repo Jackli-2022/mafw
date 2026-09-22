@@ -579,7 +579,8 @@ export interface MemoryNamespace {
 
 export interface ApprovalsNamespace {
   list(): Promise<Approval[]>
-  respond(id: string, decision: 'approve' | 'reject'): Promise<void>
+  /** decision 决定 或 文本回答（无 goalId 的 MCP ask_user 问题，写 user-questions JSON） */
+  respond(id: string, input: 'approve' | 'reject' | { answer: string }): Promise<void>
 }
 
 export interface TriageNamespace {

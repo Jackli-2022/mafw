@@ -3927,10 +3927,9 @@ class MafwScheduler {
         // GET /api/approvals — list pending approvals
         if (req.url === '/api/approvals' && req.method === 'GET') {
           const approvals: any[] = [];
-          // Read from .mafw/user-questions/ directories (flat layout)
-          for (const [, info] of this.registeredProjects) {
+          const scanUserQuestions = (mafwDir: string) => {
             try {
-              const qDir = path.join(info.mafwDir, 'user-questions');
+              const qDir = path.join(mafwDir, 'user-questions');
               if (fs.existsSync(qDir)) {
                 for (const f of fs.readdirSync(qDir).filter((f: string) => f.endsWith('.json'))) {
                   const q = JSON.parse(fs.readFileSync(path.join(qDir, f), 'utf-8'));
@@ -3947,16 +3946,24 @@ class MafwScheduler {
                 }
               }
             } catch { /* ignore */ }
+          };
+          // Read from .mafw/user-questions/ directories (flat layout)
+          for (const [, info] of this.registeredProjects) {
+            scanUserQuestions(info.mafwDir);
           }
+          // MCP handleAskUser 写入 ~/.mafw/user-questions（数据根，非项目目录）——
+          // 不扫描会导致 QuestionWidget 的 approvals 回退查找永远失败（弹窗无问题文本）
+          scanUserQuestions(config.resolvePath());
           res.end(JSON.stringify({ approvals }));
           return;
         }
 
-        // POST /api/approvals/{id}/respond — { decision: 'approve'|'reject' }
+        // POST /api/approvals/{id}/respond — { decision: 'approve'|'reject' } 或 { answer: '文本' }
         // 写 .mafw/user-questions/{id}.json（goal askUser 轮询消费；2026-09-20 替换空 stub）
         const approveMatch = req.url?.match(/^\/api\/approvals\/([^/]+)\/respond$/);
         if (approveMatch && req.method === 'POST') {
-          const dirs = [...this.registeredProjects.values()].map((info: any) => info.mafwDir);
+          // 数据根优先：MCP handleAskUser 的问题文件在 ~/.mafw/user-questions
+          const dirs = [config.resolvePath(), ...[...this.registeredProjects.values()].map((info: any) => info.mafwDir)];
           await handleApprovalsRespond(req, res, decodeURIComponent(approveMatch[1]), { resolveDirs: () => dirs });
           return;
         }

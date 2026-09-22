@@ -679,10 +679,11 @@ export class MafwClient implements IMafwClient {
       return data.approvals || []
     },
 
-    respond: async (id: string, decision: 'approve' | 'reject'): Promise<void> => {
+    respond: async (id: string, input: 'approve' | 'reject' | { answer: string }): Promise<void> => {
+      const body = typeof input === 'string' ? { decision: input } : { answer: input.answer }
       await this.request(`/api/approvals/${id}/respond`, {
         method: 'POST',
-        body: JSON.stringify({ decision }),
+        body: JSON.stringify(body),
       })
     },
   }

@@ -44,10 +44,11 @@ export function resolveApprovalFile(projectDirs: string[], id: string): string |
   return null;
 }
 
-export function respondApprovalFile(filePath: string, decision: 'approve' | 'reject'): void {
+/** 写回答：answer 可为 approve/reject 决定或用户文本回答（弹窗输入/选项） */
+export function respondApprovalFile(filePath: string, answer: string): void {
   const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   data.answered = true;
-  data.answer = decision;
+  data.answer = answer;
   data.answeredAt = new Date().toISOString();
   const tmp = `${filePath}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf-8');
@@ -60,12 +61,15 @@ export async function handleApprovalsRespond(
   id: string,
   deps: ApprovalsRespondDeps,
 ): Promise<void> {
-  let decision: 'approve' | 'reject' | undefined;
+  let body: any = {};
   try {
-    decision = JSON.parse(await readBody(req) || '{}')?.decision;
-  } catch { /* invalid json → undefined */ }
-  if (decision !== 'approve' && decision !== 'reject') {
-    json(res, 400, { error: "decision must be 'approve'|'reject'" });
+    body = JSON.parse(await readBody(req) || '{}');
+  } catch { /* invalid json → {} */ }
+  const decision: 'approve' | 'reject' | undefined = body?.decision;
+  // QuestionWidget（无 goalId 的 MCP ask_user）以文本回答：{ answer: string }
+  const answer: string | undefined = typeof body?.answer === 'string' ? body.answer : undefined;
+  if (decision !== 'approve' && decision !== 'reject' && answer === undefined) {
+    json(res, 400, { error: "decision must be 'approve'|'reject' or answer must be a string" });
     return;
   }
   const file = resolveApprovalFile(deps.resolveDirs(), id);
@@ -74,8 +78,8 @@ export async function handleApprovalsRespond(
     return;
   }
   try {
-    respondApprovalFile(file, decision);
-    json(res, 200, { status: 'ok', decision });
+    respondApprovalFile(file, answer !== undefined ? answer : decision!);
+    json(res, 200, { status: 'ok', decision: answer !== undefined ? 'answered' : decision });
   } catch (err: any) {
     json(res, 500, { error: err.message });
   }

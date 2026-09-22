@@ -98,4 +98,25 @@ describe('handleApprovalsRespond', () => {
     await handleApprovalsRespond(makeReq({ decision: 'yolo' }), res, 'q_b', makeDeps(dir));
     expect(res.statusCode).toBe(400);
   });
+
+  // QuestionWidget（无 goalId 的 MCP ask_user）回答契约：answer 文本直写
+  test('answer 文本 → 200 + 文件写回答内容', async () => {
+    const dir = makeProject();
+    writeQuestion(dir, 'q_c');
+    const res = makeRes();
+    await handleApprovalsRespond(makeReq({ answer: '选 A' }), res, 'q_c', makeDeps(dir));
+    expect(res.statusCode).toBe(200);
+    const data = JSON.parse(fs.readFileSync(resolveApprovalFile([dir], 'q_c')!, 'utf-8'));
+    expect(data.answered).toBe(true);
+    expect(data.answer).toBe('选 A');
+    expect(typeof data.answeredAt).toBe('string');
+  });
+
+  test('既无 decision 也无 answer → 400', async () => {
+    const dir = makeProject();
+    writeQuestion(dir, 'q_d');
+    const res = makeRes();
+    await handleApprovalsRespond(makeReq({}), res, 'q_d', makeDeps(dir));
+    expect(res.statusCode).toBe(400);
+  });
 });
