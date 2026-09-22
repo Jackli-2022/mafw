@@ -203,3 +203,43 @@ describe("interact specs", () => {
     expect((secs[0] as any).rows[3]).toEqual(["路由", "weird"])
   })
 })
+
+describe("desktop control specs", () => {
+  test("mafw_desktop_screenshot：文件路径 KV", () => {
+    const secs = TOOL_SPECS.mafw_desktop_screenshot.extract(
+      { selector: ".mafw-content" },
+      JSON.stringify({ path: ".mafw/screenshots/x.png" }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[0]).toEqual(["区域", ".mafw-content"])
+    expect(rows[1][1]).toContain("x.png")
+  })
+  test("mafw_desktop_navigate：目标 tab", () => {
+    const secs = TOOL_SPECS.mafw_desktop_navigate.extract({ tab: "goals" }, undefined)
+    expect((secs[0] as any).rows[0]).toEqual(["目标 Tab", "goals"])
+  })
+  test("mafw_desktop_get_ui_state：元素数 + 窗口", () => {
+    const secs = TOOL_SPECS.mafw_desktop_get_ui_state.extract({}, JSON.stringify({
+      activeTab: "chat", elements: [1, 2, 3], window: { width: 1280, height: 800 },
+    }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[1]).toEqual(["元素数", "3"])
+    expect(rows[2]).toEqual(["窗口", "1280×800"])
+  })
+  test("mafw_desktop_click：selector + 命中", () => {
+    const secs = TOOL_SPECS.mafw_desktop_click.extract(
+      { selector: "#btn" }, JSON.stringify({ tag: "BUTTON", text: "确定" }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[0]).toEqual(["Selector", "#btn"])
+    expect(rows[1][1]).toBe("BUTTON 确定")
+  })
+  test("mafw_desktop_type / scroll：KV", () => {
+    const a = TOOL_SPECS.mafw_desktop_type.extract({ selector: "#in", text: "hello" }, undefined)
+    expect((a[0] as any).rows[1]).toEqual(["文本", "hello"])
+    const b = TOOL_SPECS.mafw_desktop_scroll.extract({ direction: "down", amount: 400 }, undefined)
+    expect((b[0] as any).rows[0]).toEqual(["方向", "down"])
+  })
+  test("mafw_restart_agent：失败文本标 error tone", () => {
+    const secs = TOOL_SPECS.mafw_restart_agent.extract({}, "restart failed: 503")
+    expect((secs[0] as any).tone).toBe("error")
+  })
+})

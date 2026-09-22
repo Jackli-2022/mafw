@@ -328,4 +328,60 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
       }]
     },
   },
+
+  // ── 桌面控制族 ──────────────────────────────────────────────
+  mafw_desktop_screenshot: {
+    icon: "magnifying-glass", title: "桌面截图",
+    subtitle: (i) => i?.selector,
+    extract: (i, o) => {
+      const p = parseOut(o)
+      if (p && typeof p === "object" && (p.path || p.file))
+        return [{ kind: "kv", rows: [["区域", s(i?.selector, "全窗口")], ["文件", s(p.path ?? p.file)]] }]
+      return rawSection(o)
+    },
+  },
+  mafw_desktop_navigate: {
+    icon: "menu", title: "桌面导航",
+    subtitle: (i) => i?.tab,
+    extract: (i) => [{ kind: "kv", rows: [["目标 Tab", s(i?.tab)]] }],
+  },
+  mafw_desktop_get_ui_state: {
+    icon: "bullet-list", title: "桌面 UI 状态",
+    extract: (_i, o) => {
+      const p = parseOut(o)
+      if (!p || typeof p !== "object") return rawSection(o)
+      return [{
+        kind: "kv",
+        rows: [
+          ["活跃 Tab", s(p.activeTab)],
+          ["元素数", s(Array.isArray(p.elements) ? p.elements.length : p.elementCount)],
+          ["窗口", p.window ? `${p.window.width}×${p.window.height}` : s(p.dimensions)],
+        ],
+      }]
+    },
+  },
+  mafw_desktop_click: {
+    icon: "enter", title: "桌面点击",
+    subtitle: (i) => i?.selector,
+    extract: (i, o) => {
+      const p = parseOut(o)
+      const hit = p && typeof p === "object" ? `${s(p.tag, "")} ${s(p.text, "")}`.trim() : ""
+      return [{ kind: "kv", rows: [["Selector", s(i?.selector)], ["命中", hit || "-"]] }]
+    },
+  },
+  mafw_desktop_type: {
+    icon: "edit", title: "桌面输入",
+    subtitle: (i) => trunc(i?.text, 40),
+    extract: (i) => [{ kind: "kv", rows: [["Selector", s(i?.selector)], ["文本", trunc(i?.text, 80)]] }],
+  },
+  mafw_desktop_scroll: {
+    icon: "menu", title: "桌面滚动",
+    subtitle: (i) => `${s(i?.direction, "")} ${s(i?.amount, "")}`.trim(),
+    extract: (i) => [{ kind: "kv", rows: [["方向", s(i?.direction)], ["像素", s(i?.amount, 200)]] }],
+  },
+  mafw_restart_agent: {
+    icon: "rotate-ccw", title: "重启 Agent",
+    extract: (_i, o) =>
+      o ? [{ kind: "text", text: trunc(o, 200), tone: /fail|error|503/i.test(o) ? "error" as const : "muted" as const }] : [],
+  },
 }
