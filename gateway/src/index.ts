@@ -261,6 +261,10 @@ class MafwScheduler {
 
   activeGoals = new Map<string, StateFile>();
   registeredProjects = new Map<string, RegisteredProject>();
+  // 当前项目（桌面 Rail"切换项目"语义）：/register 时更新，kv 持久化跨重启。
+  // 之前无此状态——projects/current 恒返回 entries[0]，Rail 每次 setCurrent 后
+  // 被 projectsRev 重拉弹回首注册项目（切换失效根因，2026-09-22）。
+  private currentProjectDir: string | null = null;
   private registryPath: string;
   private registryWriteQueue: Promise<void> = Promise.resolve();
   private running = true;
@@ -3571,6 +3575,11 @@ class MafwScheduler {
                 registeredAt: new Date().toISOString()
               });
 
+              // Desktop Rail 的"切换项目"（SDK project.setCurrent → POST /register）
+              // 语义 = 注册 + 设为当前项目（kv 持久化跨重启）。
+              this.currentProjectDir = projectDir;
+              this.getGatewayDb().kvSet('current-project', 'default', projectDir);
+
               // 持久化到磁盘（写队列防并发覆盖）
               await this.persistRegistry();
 
@@ -3780,12 +3789,20 @@ class MafwScheduler {
 
         // GET /api/projects/current — current/active project
         if (req.url === '/api/projects/current' && req.method === 'GET') {
+          if (!this.currentProjectDir) {
+            this.currentProjectDir = this.getGatewayDb().kvGet<string>('current-project', 'default') || null;
+          }
+          const cur = this.currentProjectDir && this.registeredProjects.has(this.currentProjectDir)
+            ? this.currentProjectDir
+            : null;
           const entries = Array.from(this.registeredProjects.entries());
           if (entries.length === 0) {
             res.end(JSON.stringify({ project: null }));
             return;
           }
-          const [projectDir, info] = entries[0];
+          const [projectDir, info] = cur
+            ? [cur, this.registeredProjects.get(cur)!]
+            : entries[0];
           res.end(JSON.stringify({
             project: { id: projectDir, worktree: projectDir, mafwDir: info.mafwDir },
           }));
