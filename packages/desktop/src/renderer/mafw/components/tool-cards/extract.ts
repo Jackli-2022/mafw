@@ -282,4 +282,50 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
       }]
     },
   },
+
+  // ── 交互/反馈族 ─────────────────────────────────────────────
+  mafw_ask_user: {
+    icon: "help", title: "向用户提问",
+    subtitle: (i) => trunc(i?.question, 50),
+    extract: (i) => {
+      const secs: Section[] = [{ kind: "text", text: s(i?.question) }]
+      if (Array.isArray(i?.options) && i.options.length)
+        secs.push({ kind: "tags", items: i.options.map(String) })
+      return secs
+    },
+  },
+  mafw_record_feedback: {
+    icon: "comment", title: "记录反馈",
+    subtitle: (i) => i?.type,
+    extract: (i) => {
+      const mark = i?.type === "thumbs_up" ? "👍" : i?.type === "thumbs_down" ? "👎" : "✏️"
+      return [{
+        kind: "kv",
+        rows: [
+          ["类型", `${mark} ${s(i?.type)}`],
+          ["目标", s(i?.targetId)],
+          ["Goal", s(i?.goalId)],
+          ["循环", s(i?.loopNum)],
+          ["备注", s(i?.comment)],
+        ],
+      }]
+    },
+  },
+  mafw_get_model_route: {
+    icon: "models", title: "模型路由",
+    subtitle: (i) => i?.agentType,
+    extract: (i, o) => {
+      const p = parseOut(o)
+      const route = p && typeof p === "object" ? s(p.model ?? p.route) : s(o)
+      return [{
+        kind: "kv",
+        rows: [
+          ["Agent", s(i?.agentType)],
+          ["剩余预算", s(i?.remainingBudget)],
+          ["总预算", s(i?.totalBudget)],
+          ["路由", route],
+        ],
+      }]
+    },
+  },
 }

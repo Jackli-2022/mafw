@@ -172,3 +172,34 @@ describe("goal specs", () => {
     expect((b[0] as any).rows[0]).toEqual(["Goal", "g1"])
   })
 })
+
+describe("interact specs", () => {
+  test("mafw_ask_user：问题文本 + options tags", () => {
+    const secs = TOOL_SPECS.mafw_ask_user.extract(
+      { question: "用哪种方案？", options: ["A", "B"], priority: "high" }, undefined)
+    expect(secs[0]).toEqual({ kind: "text", text: "用哪种方案？" })
+    expect((secs[1] as any).items).toEqual(["A", "B"])
+  })
+  test("mafw_ask_user：无 options 只有文本段", () => {
+    const secs = TOOL_SPECS.mafw_ask_user.extract({ question: "继续？" }, undefined)
+    expect(secs).toHaveLength(1)
+  })
+  test("mafw_record_feedback：KV 含类型/目标/备注", () => {
+    const secs = TOOL_SPECS.mafw_record_feedback.extract(
+      { type: "thumbs_up", targetId: "wave-1", goalId: "g1", loopNum: 2 }, undefined)
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[0]).toEqual(["类型", "👍 thumbs_up"])
+    expect(rows[1]).toEqual(["目标", "wave-1"])
+  })
+  test("mafw_get_model_route：KV 预算 + 路由结果", () => {
+    const secs = TOOL_SPECS.mafw_get_model_route.extract(
+      { agentType: "execute", remainingBudget: 8000, totalBudget: 10000 },
+      JSON.stringify({ model: "qwen3.7-max" }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[3]).toEqual(["路由", "qwen3.7-max"])
+  })
+  test("mafw_get_model_route：非 JSON output 不崩", () => {
+    const secs = TOOL_SPECS.mafw_get_model_route.extract({ agentType: "plan" }, "weird")
+    expect((secs[0] as any).rows[3]).toEqual(["路由", "weird"])
+  })
+})
