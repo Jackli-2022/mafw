@@ -33,7 +33,7 @@ export function parseOut(output: string | undefined): any {
   try { return JSON.parse(output) } catch { return undefined }
 }
 
-function rawSection(output: string | undefined): Section[] {
+export function rawSection(output: string | undefined): Section[] {
   return output ? [{ kind: "code", text: output }] : []
 }
 
@@ -105,6 +105,50 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
       if (Array.isArray(i?.triggerContext) && i.triggerContext.length)
         secs.push({ kind: "tags", items: i.triggerContext.map(String) })
       return secs
+    },
+  },
+
+  // ── 记忆检索族 ──────────────────────────────────────────────
+  mafw_get_memory: {
+    icon: "brain", title: "记忆全文",
+    subtitle: (i) => trunc(i?.id, 24),
+    extract: (i, o) => {
+      const p = parseOut(o)
+      if (!p || typeof p !== "object") return rawSection(o)
+      const m = p.memory ?? p
+      const secs: Section[] = [{
+        kind: "kv",
+        rows: [
+          ["id", s(m.id ?? i?.id)],
+          ["类型", s(m.type)],
+          ["能量", s(m.energy)],
+          ["pinned", m.pinned ? "是" : "-"],
+          ["sticky", s(m.sticky_until)],
+        ],
+      }]
+      if (Array.isArray(m.cue_anchors) && m.cue_anchors.length)
+        secs.push({ kind: "tags", items: m.cue_anchors.map(String) })
+      if (m.memory_value)
+        secs.push({ kind: "code", text: trunc(m.memory_value, 2000), language: "markdown" })
+      if (m.superseded_by)
+        secs.push({ kind: "text", text: `已被取代 → ${m.superseded_by}`, tone: "warn" })
+      return secs
+    },
+  },
+  mafw_get_axioms: {
+    icon: "glasses", title: "L5 公理",
+    extract: (_i, o) => {
+      const p = parseOut(o)
+      const arr = Array.isArray(p) ? p : p?.axioms ?? p?.heuristics
+      if (!Array.isArray(arr)) return rawSection(o)
+      return [{
+        kind: "list",
+        items: arr.map((a: any) => ({
+          title: s(a.pattern ?? a.primary_abstraction ?? a.content),
+          badge: a.energy != null ? `E:${Number(a.energy).toFixed(1)}` : undefined,
+          badgeTone: "accent" as const,
+        })),
+      }]
     },
   },
 }

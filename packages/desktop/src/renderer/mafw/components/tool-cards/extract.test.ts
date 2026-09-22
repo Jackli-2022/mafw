@@ -67,3 +67,41 @@ describe("memory-write specs", () => {
     expect((secs[1] as any).items).toEqual(["tdd", "test"])
   })
 })
+
+describe("memory-read specs", () => {
+  test("mafw_get_memory：KV + anchors + 全文段", () => {
+    const mem = {
+      id: "mem_abc", type: "semantic", energy: 0.9,
+      cue_anchors: ["tdd", "发布"], memory_value: "用户偏好 TDD",
+    }
+    const secs = TOOL_SPECS.mafw_get_memory.extract({ id: "mem_abc" }, JSON.stringify(mem))
+    const kv = secs[0] as any
+    expect(kv.rows.map((r: any) => r[0])).toEqual(["id", "类型", "能量", "pinned", "sticky"])
+    expect((secs[1] as any).items).toEqual(["tdd", "发布"])
+    expect((secs[2] as any).text).toBe("用户偏好 TDD")
+  })
+  test("mafw_get_memory：superseded 警告行", () => {
+    const secs = TOOL_SPECS.mafw_get_memory.extract({}, JSON.stringify({ id: "m1", superseded_by: "m2" }))
+    const warn = secs.find((x) => x.kind === "text") as any
+    expect(warn.tone).toBe("warn")
+    expect(warn.text).toContain("m2")
+  })
+  test("mafw_get_memory：非 JSON output 降级 raw", () => {
+    const secs = TOOL_SPECS.mafw_get_memory.extract({}, "plain text")
+    expect(secs[0]).toEqual({ kind: "code", text: "plain text" })
+  })
+  test("mafw_get_axioms：数组 → list 带能量徽标", () => {
+    const secs = TOOL_SPECS.mafw_get_axioms.extract({}, JSON.stringify([
+      { pattern: "先验证再宣称完成", energy: 0.85 },
+      { primary_abstraction: "子代理不写记忆", energy: 0.6 },
+    ]))
+    const items = (secs[0] as any).items
+    expect(items[0].title).toBe("先验证再宣称完成")
+    expect(items[0].badge).toBe("E:0.8")
+    expect(items[1].title).toBe("子代理不写记忆")
+  })
+  test("mafw_get_axioms：{axioms:[...]} 信封兼容", () => {
+    const secs = TOOL_SPECS.mafw_get_axioms.extract({}, JSON.stringify({ axioms: [{ pattern: "p", energy: 1 }] }))
+    expect((secs[0] as any).items).toHaveLength(1)
+  })
+})
