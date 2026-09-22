@@ -5,6 +5,7 @@ import {
 import type { MafwClient } from '@mafw/sdk'
 import { MemoryStore } from '../store/memory-store.ts'
 import { theme } from '../theme.ts'
+import { showModal } from './overlay-surface.ts'
 
 function memoryLine(item: { id: string; type: string; primary_abstraction: string; energy: number }, selected: boolean): string {
   const mark = selected ? '› ' : '  '
@@ -148,7 +149,7 @@ export class MemoryTab extends Container implements Focusable {
       '',
       item.memory_value || theme.dim('(空)'),
     ].join('\n')
-    const overlay = this.deps.tui.showOverlay(new Text(body, 1, 1), { width: '80%', maxHeight: '70%', anchor: 'center' })
+    const overlay = showModal(this.deps.tui,new Text(body, 1, 1), { width: '80%', maxHeight: '70%', anchor: 'center' })
     const close = () => { off(); overlay.hide() }
     const off = this.deps.tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) {

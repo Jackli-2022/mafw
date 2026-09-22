@@ -25,6 +25,7 @@ import { usageLines } from './usage-overlay.ts'
 import { QueueOverlay } from './queue-overlay.ts'
 import { TranscriptSearchOverlay } from './transcript-search.ts'
 import { ConfirmOverlay, type ConfirmAnswer } from './confirm-overlay.ts'
+import { showModal } from './overlay-surface.ts'
 import { computeRecap, recapLines } from './session-recap.ts'
 import { colorDiffLine } from './message-blocks.ts'
 import { runShell } from '../shell-mode.ts'
@@ -189,7 +190,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     ].join('\n')
     model.helpVisible = true
     applyTab()
-    helpHandle = tui.showOverlay(new Text(body, 1, 1), { width: 62, maxHeight: 32, anchor: 'center' })
+    helpHandle = showModal(tui, new Text(body, 1, 1), { width: 62, maxHeight: 32, anchor: 'center' })
   }
 
   // ── 会话切换（/sessions）──
@@ -245,7 +246,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       }
     })
     const list = new SelectList(items, Math.min(items.length, 10), selectListTheme)
-    const handle = tui.showOverlay(new ClickableSelectList(list), { width: '70%', maxHeight: 16, anchor: 'center' })
+    const handle = showModal(tui, new ClickableSelectList(list), { width: '70%', maxHeight: 16, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
@@ -272,7 +273,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       return
     }
     const list = new SelectList(items, 10, selectListTheme)
-    const handle = tui.showOverlay(new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
+    const handle = showModal(tui, new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
@@ -314,7 +315,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     }
     if (items.length === 1) return '无可用 agent（runtime 未提供）'
     const list = new SelectList(items, 10, selectListTheme)
-    const handle = tui.showOverlay(new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
+    const handle = showModal(tui, new ClickableSelectList(list), { width: '60%', maxHeight: 16, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
@@ -377,7 +378,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       onClose: () => { handle.hide(); syncInteraction() },
       requestRender: () => tui.requestRender(),
     })
-    const handle = tui.showOverlay(overlay, { width: '60%', maxHeight: 14, anchor: 'center' })
+    const handle = showModal(tui, overlay, { width: '60%', maxHeight: 14, anchor: 'center' })
     syncInteraction()
     return Promise.resolve()
   }
@@ -393,7 +394,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
       onClose: () => handle.hide(),
       requestRender: () => tui.requestRender(),
     })
-    const handle = tui.showOverlay(overlay, { width: '70%', maxHeight: 14, anchor: 'center' })
+    const handle = showModal(tui, overlay, { width: '70%', maxHeight: 14, anchor: 'center' })
   }
 
   // ── /diff git 变更视图 ──
@@ -412,7 +413,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
 
   function showDiffOverlay(lines: string[], scope: string): void {
     const title = theme.accent(`git diff${scope ? ` (${scope})` : ''}`) + theme.dim(' · Esc 关闭')
-    const overlay = tui.showOverlay(new Text([title, '', ...lines].join('\n'), 1, 1), { width: '90%', maxHeight: '70%', anchor: 'center' })
+    const overlay = showModal(tui, new Text([title, '', ...lines].join('\n'), 1, 1), { width: '90%', maxHeight: '70%', anchor: 'center' })
     const close = () => { off(); overlay.hide() }
     const off = tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape)) { close(); return { consume: true } }
@@ -429,7 +430,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
         onAnswer: (mode) => { handle.hide(); resolve(mode) },
         requestRender: () => tui.requestRender(),
       })
-      const handle = tui.showOverlay(overlay, { width: 52, maxHeight: 12, anchor: 'center' })
+      const handle = showModal(tui, overlay, { width: 52, maxHeight: 12, anchor: 'center' })
     })
   }
 
@@ -511,7 +512,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
         chatStore.sessionID,
         status.project ?? '-',
       ).join('\n')
-      const overlay = tui.showOverlay(new Text(body, 1, 1), { width: '70%', maxHeight: 20, anchor: 'center' })
+      const overlay = showModal(tui, new Text(body, 1, 1), { width: '70%', maxHeight: 20, anchor: 'center' })
       const close = () => { off(); overlay.hide() }
       const off = tui.addInputListener((data) => {
         if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) { close(); return { consume: true } }
@@ -575,7 +576,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
     showUsage: async () => {
       try {
         const summary = await client.session.usageSummary({})
-        const overlay = tui.showOverlay(new Text(usageLines(summary).join('\n'), 1, 1), { width: '70%', maxHeight: 24, anchor: 'center' })
+        const overlay = showModal(tui, new Text(usageLines(summary).join('\n'), 1, 1), { width: '70%', maxHeight: 24, anchor: 'center' })
         const off = tui.addInputListener((data) => {
           if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) { off(); overlay.hide(); return { consume: true } }
           return undefined

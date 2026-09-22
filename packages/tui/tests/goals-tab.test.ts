@@ -91,7 +91,8 @@ test('selecting a session opens its transcript (messages fetched)', async () => 
   await tab.openGoalSessions('g1')
   const wrap = tui.overlays.at(-1)
   assert.ok(wrap, 'sessions overlay（ClickableSelectList 包装）已挂')
-  await wrap.list.onSelect({ value: 'ses_plan', label: 'plan worker' })
+  const list = (wrap.inner ?? wrap).list
+  await list.onSelect({ value: 'ses_plan', label: 'plan worker' })
   assert.ok(client.calls.includes('messages:ses_plan'), '取 session 消息')
   const transcript = tui.overlays.at(-1)
   assert.notEqual(transcript, wrap, 'transcript overlay 已弹出')

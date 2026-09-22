@@ -9,6 +9,7 @@ import { turnToLines } from './message-blocks.ts'
 import { theme } from '../theme.ts'
 import { selectListTheme } from './chat-tab.ts'
 import { ClickableSelectList } from './clickable-select-list.ts'
+import { showModal } from './overlay-surface.ts'
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 
@@ -123,7 +124,7 @@ export class GoalsTab implements Component {
         '',
         theme.dim('s: 查看 session 列表 · Esc: 关闭'),
       ].filter(Boolean).join('\n')
-      const overlay = this.deps.tui.showOverlay(new Text(body, 1, 1), { width: 64, maxHeight: 16, anchor: 'center' })
+      const overlay = showModal(this.deps.tui,new Text(body, 1, 1), { width: 64, maxHeight: 16, anchor: 'center' })
       const close = () => { offKey(); offEsc(); overlay.hide() }
       const offEsc = escCloser(this.deps.tui, close)
       const offKey = this.deps.tui.addInputListener((data) => {
@@ -147,7 +148,7 @@ export class GoalsTab implements Component {
       return
     }
     if (sessions.length === 0) {
-      const overlay = this.deps.tui.showOverlay(
+      const overlay = showModal(this.deps.tui,
         new Text(`goal ${goalId}\n${formatGoalSessions(sessions).join('\n')}`, 1, 1),
         { width: 56, maxHeight: 6, anchor: 'center' },
       )
@@ -163,7 +164,7 @@ export class GoalsTab implements Component {
       })),
       Math.min(sessions.length, 8), selectListTheme,
     )
-    const handle = this.deps.tui.showOverlay(new ClickableSelectList(list), { width: '70%', maxHeight: 12, anchor: 'center' })
+    const handle = showModal(this.deps.tui,new ClickableSelectList(list), { width: '70%', maxHeight: 12, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = escCloser(this.deps.tui, close)
     list.onSelect = (item) => { close(); void this.openTranscript(String(item.value)) }
@@ -183,7 +184,7 @@ export class GoalsTab implements Component {
     const turns = historyItemsToTurns(messages)
     const lines = turns.flatMap((t) => turnToLines(t, 76))
     const body = lines.length > 0 ? lines.join('\n') : theme.dim('（空会话）')
-    const overlay = this.deps.tui.showOverlay(
+    const overlay = showModal(this.deps.tui,
       new Text(`${theme.accent('transcript')} ${theme.dim(sessionID)}\n\n${body}`, 1, 1),
       { width: '80%', maxHeight: '70%', anchor: 'center' },
     )
@@ -196,7 +197,7 @@ export class GoalsTab implements Component {
       [{ value: 'yes', label: '确认取消', description: goalId }, { value: 'no', label: '返回' }],
       2, selectListTheme,
     )
-    const handle = this.deps.tui.showOverlay(new ClickableSelectList(list), { width: 44, maxHeight: 6, anchor: 'center' })
+    const handle = showModal(this.deps.tui,new ClickableSelectList(list), { width: 44, maxHeight: 6, anchor: 'center' })
     const close = () => { off(); handle.hide() }
     const off = escCloser(this.deps.tui, close)
     list.onSelect = (item) => {
@@ -214,7 +215,7 @@ export class GoalsTab implements Component {
     const first = q.questions[0]
     if (!first) return
     if (q.questions.length > 1) {
-      const handle = this.deps.tui.showOverlay(
+      const handle = showModal(this.deps.tui,
         new Text(theme.warn('多问题请求') + '（v1 请在桌面端处理）\nEsc 关闭', 1, 1),
         { width: 52, maxHeight: 6, anchor: 'center' },
       )
@@ -232,13 +233,13 @@ export class GoalsTab implements Component {
         first.options.map((o) => ({ value: o.label, label: o.label, description: o.description })),
         Math.min(first.options.length, 6), selectListTheme,
       )
-      const handle = this.deps.tui.showOverlay(new ClickableSelectList(list), { width: '70%', maxHeight: 12, anchor: 'center' })
+      const handle = showModal(this.deps.tui,new ClickableSelectList(list), { width: '70%', maxHeight: 12, anchor: 'center' })
       const close = () => { off(); handle.hide() }
       const off = escCloser(this.deps.tui, close)
       list.onSelect = (item) => { close(); finish([[item.value]]) }
       list.onCancel = close
     } else {
-      const overlay = this.deps.tui.showOverlay(
+      const overlay = showModal(this.deps.tui,
         new Text(`${first.question}\n\n（开放问题请在桌面端回答；r 拒绝）`, 1, 1),
         { width: 60, maxHeight: 8, anchor: 'center' },
       )

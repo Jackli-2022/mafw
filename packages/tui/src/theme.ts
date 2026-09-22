@@ -8,4 +8,7 @@ export const theme = {
   warn: (s: string) => chalk.yellow(s),
   err: (s: string) => chalk.red(s),
   border: (s: string) => chalk.gray(s),
+  // 弹层浮面背景：pi-tui compositeOverlays 是文本直叠，overlay 组件必须自带
+  // 不透明背景，否则下层 transcript 透出（"弹窗背景透明"问题的修复面）。
+  floatBg: (s: string) => chalk.bgAnsi256(235)(s),
 }

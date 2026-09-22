@@ -3,6 +3,7 @@ import type { PermissionRequest } from '@mafw/sdk'
 import { theme } from '../theme.ts'
 import { selectListTheme } from './chat-tab.ts'
 import { HeaderSelectOverlay } from './clickable-select-list.ts'
+import { showModal } from './overlay-surface.ts'
 
 export function permissionSummary(req: PermissionRequest): string {
   const patterns = req.patterns.length > 0 ? req.patterns.join(', ') : '(无 patterns)'
@@ -37,7 +38,7 @@ export function showPermissionOverlay(
     new Text(theme.warn('权限请求') + '  ' + permissionSummary(req), 1, 1),
     list,
   )
-  const handle = tui.showOverlay(overlay, { width: '70%', maxHeight: 10, anchor: 'center' })
+  const handle = showModal(tui, overlay, { width: '70%', maxHeight: 10, anchor: 'center' })
   const done = () => handle.hide()
   list.onSelect = (item) => {
     void reply(item.value as 'once' | 'always' | 'persist' | 'persist-tool' | 'reject')

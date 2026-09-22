@@ -6,6 +6,7 @@ import type { MafwClient } from '@mafw/sdk'
 import { TriageStore, type TriageAction } from '../store/triage-store.ts'
 import { theme } from '../theme.ts'
 import { selectListTheme } from './chat-tab.ts'
+import { showModal } from './overlay-surface.ts'
 
 /** Triage 面板：approvals 区块 + triage 列表（selection 跨两区）。 */
 export class TriageTab implements Component {
@@ -125,7 +126,7 @@ export class TriageTab implements Component {
     const body = isApproval
       ? `类型: approval\nquestion: ${(item as any).question}\ngoalId: ${(item as any).goalId}\n\na 批准 · r 拒绝`
       : `类型: triage\nseverity: ${(item as any).severity}\nreason: ${(item as any).reason}\ngoalId: ${(item as any).goalId}\n\nc 确认 · r 拒绝 · d 忽略`
-    const overlay = this.deps.tui.showOverlay(new Text(body, 1, 1), { width: 64, maxHeight: 12, anchor: 'center' })
+    const overlay = showModal(this.deps.tui,new Text(body, 1, 1), { width: 64, maxHeight: 12, anchor: 'center' })
     const close = () => { off(); overlay.hide() }
     const off = this.deps.tui.addInputListener((data) => {
       if (matchesKey(data, Key.escape)) {
