@@ -515,6 +515,23 @@ describe("token v5.1 — streaming 尾光标", () => {
   })
 })
 
+describe("titlebar 收缩契约 — 标题过长只压缩 text，按钮不变形", () => {
+  test("titlebar 直接子元素默认不收缩，text 是唯一可收缩项", () => {
+    const b = cssBlock(".mafw-session-titlebar-inner > *")
+    expect(b).toContain("flex-shrink: 0")
+    const t = cssBlock(".mafw-session-titlebar-inner > .mafw-session-titlebar-text")
+    expect(t).toContain("flex-shrink: 1")
+  })
+  test("text 保留 ellipsis + min-width: 0（收缩前提）", () => {
+    // 原块在 shrink:1 规则之后，indexOf 从该锚起找，避开前缀截胡
+    const anchor = css.indexOf(".mafw-session-titlebar-text {", css.indexOf("flex-shrink: 1"))
+    const t = css.slice(anchor, css.indexOf("}", anchor))
+    expect(t).toContain("overflow: hidden")
+    expect(t).toContain("text-overflow: ellipsis")
+    expect(t).toContain("min-width: 0")
+  })
+})
+
 describe("token v5.2 — bento 基建", () => {
   test("4 列 grid + gap", () => {
     const b = cssBlock(".mafw-bento {")

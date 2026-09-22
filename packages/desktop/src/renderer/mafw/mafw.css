@@ -924,6 +924,10 @@ html[data-theme="light"] body {
   max-width: var(--msg-col-width);
   margin-inline: auto;
 }
+/* 标题过长时只允许 text 收缩（ellipsis）；flex 收缩按 basis 比例分配，
+   按钮不设 shrink:0 会被同步压缩变形（并行按钮被顶变形根因） */
+.mafw-session-titlebar-inner > * { flex-shrink: 0; }
+.mafw-session-titlebar-inner > .mafw-session-titlebar-text { flex-shrink: 1; }
 .mafw-chat-header-divider {
   width: 1px;
   height: 14px;
