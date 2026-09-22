@@ -243,3 +243,34 @@ describe("desktop control specs", () => {
     expect((secs[0] as any).tone).toBe("error")
   })
 })
+
+describe("media specs", () => {
+  test("mafw_media_upload：文件名 + taskID", () => {
+    const secs = TOOL_SPECS.mafw_media_upload.extract(
+      { mediaPath: "C:\\pics\\shot.png", question: "图里有啥" },
+      JSON.stringify({ taskID: "t1", answer: "一只猫" }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[0]).toEqual(["文件", "shot.png"])
+    expect(rows[1]).toEqual(["taskID", "t1"])
+  })
+  test("mafw_media_ask：问题 + 回答 + newTaskID 徽标", () => {
+    const secs = TOOL_SPECS.mafw_media_ask.extract(
+      { taskID: "t1", mediaPath: "", question: "细节？" },
+      JSON.stringify({ answer: "更多细节", newTaskID: "t2" }))
+    expect((secs[1] as any).text).toBe("更多细节")
+    const tags = secs.find((x) => x.kind === "tags") as any
+    expect(tags.items[0]).toContain("t2")
+  })
+  test("mafw_media_ask：纯文本 output 当回答", () => {
+    const secs = TOOL_SPECS.mafw_media_ask.extract(
+      { taskID: "t1", mediaPath: "", question: "？" }, "直接文本回答")
+    expect(secs.some((x) => x.kind === "text" && (x as any).text === "直接文本回答")).toBe(true)
+  })
+  test("mafw_media_speak：音色 KV + 文本摘要", () => {
+    const secs = TOOL_SPECS.mafw_media_speak.extract(
+      { text: "你好世界", voice: "茉莉", style: "轻快" }, undefined)
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[0]).toEqual(["音色", "茉莉"])
+    expect((secs[1] as any).text).toBe("你好世界")
+  })
+})

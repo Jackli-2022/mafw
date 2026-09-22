@@ -384,4 +384,45 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
     extract: (_i, o) =>
       o ? [{ kind: "text", text: trunc(o, 200), tone: /fail|error|503/i.test(o) ? "error" as const : "muted" as const }] : [],
   },
+
+  // ── 媒体族 ─────────────────────────────────────────────────
+  mafw_media_upload: {
+    icon: "mcp", title: "媒体上传",
+    subtitle: (i) => s(i?.mediaPath, "").split(/[\\/]/).pop() || undefined,
+    extract: (i, o) => {
+      const p = parseOut(o)
+      return [{
+        kind: "kv",
+        rows: [
+          ["文件", s(s(i?.mediaPath, "").split(/[\\/]/).pop())],
+          ["taskID", s(p?.taskID ?? p?.taskId)],
+          ["首问", trunc(i?.question, 60)],
+          ["回答", trunc(p?.answer ?? p?.response, 200)],
+        ],
+      }]
+    },
+  },
+  mafw_media_ask: {
+    icon: "magnifying-glass", title: "媒体追问",
+    subtitle: (i) => trunc(i?.question, 50),
+    extract: (i, o) => {
+      const p = parseOut(o)
+      const secs: Section[] = [{
+        kind: "kv",
+        rows: [["taskID", s(i?.taskID)], ["问题", trunc(i?.question, 120)]],
+      }]
+      const ans = p?.answer ?? p?.output ?? (p === undefined && o ? o : undefined)
+      if (ans) secs.push({ kind: "text", text: trunc(ans, 500) })
+      if (p?.newTaskID) secs.push({ kind: "tags", items: [`新 taskID: ${p.newTaskID}`] })
+      return secs
+    },
+  },
+  mafw_media_speak: {
+    icon: "comment", title: "语音回复",
+    subtitle: (i) => trunc(i?.text, 50),
+    extract: (i) => [
+      { kind: "kv", rows: [["音色", s(i?.voice)], ["风格", s(i?.style)]] },
+      { kind: "text", text: trunc(i?.text, 200) },
+    ],
+  },
 }
