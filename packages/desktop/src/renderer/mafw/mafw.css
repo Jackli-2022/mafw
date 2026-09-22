@@ -1212,7 +1212,12 @@ html[data-theme="light"] body {
   font-weight: 400;
 }
 .mafw-thinking .mafw-thinking-head:hover { color: var(--text-2); background: var(--hover); }
-.mafw-thinking-glyph { font-size: 11px; color: var(--text-5); }
+.mafw-thinking-glyph { font-size: 11px; color: var(--text-5); display: inline-block; }
+.mafw-thinking-glyph.stream { animation: mafw-think-spin 1.2s linear infinite; }
+@keyframes mafw-think-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
 .mafw-thinking-caret { font-size: 9px; opacity: .7; }
 .mafw-thinking-body {
   margin: 2px 0 6px;

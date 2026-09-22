@@ -1,5 +1,12 @@
-export function thinkingLabel(opts: { streaming: boolean; durationSec: number | null }): string {
-  if (opts.streaming) return "思考中…"
+export function thinkingLabel(opts: {
+  streaming: boolean
+  durationSec: number | null
+  /** 流式中的活动计时秒数（存在则逐秒显示；缺省回退静态"思考中…"） */
+  tickingSec?: number | null
+}): string {
+  if (opts.streaming) {
+    return opts.tickingSec != null ? `思考中 ${opts.tickingSec}s` : "思考中…"
+  }
   if (opts.durationSec == null) return "已思考"
   return `已思考 ${opts.durationSec}s`
 }

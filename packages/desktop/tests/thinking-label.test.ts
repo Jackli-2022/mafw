@@ -3,6 +3,8 @@ import { thinkingLabel, thinkingDurationSec, reasoningStreaming } from "../src/r
 
 describe("thinkingLabel", () => {
   test("流式中", () => expect(thinkingLabel({ streaming: true, durationSec: null })).toBe("思考中…"))
+  test("流式中带 tick 秒数（活动计时）", () =>
+    expect(thinkingLabel({ streaming: true, durationSec: null, tickingSec: 7 })).toBe("思考中 7s"))
   test("完成带时长", () => expect(thinkingLabel({ streaming: false, durationSec: 12 })).toBe("已思考 12s"))
   test("完成无时长", () => expect(thinkingLabel({ streaming: false, durationSec: null })).toBe("已思考"))
 })
