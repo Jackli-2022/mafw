@@ -105,3 +105,70 @@ describe("memory-read specs", () => {
     expect((secs[0] as any).items).toHaveLength(1)
   })
 })
+
+describe("goal specs", () => {
+  test("mafw_create_goal：KV 五字段", () => {
+    const secs = TOOL_SPECS.mafw_create_goal.extract(
+      { goalId: "003-foo", title: "做卡片", priority: "high", maxLoops: 5,
+        budget: { maxTurns: 30, maxCostUsd: 2 } }, undefined)
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[0]).toEqual(["Goal", "003-foo"])
+    expect(rows[4]).toEqual(["预算", "30 轮 / $2"])
+  })
+  test("mafw_get_goal_status：解析 output 阶段/判定", () => {
+    const secs = TOOL_SPECS.mafw_get_goal_status.extract(
+      { goalId: "g1" }, JSON.stringify({ goalId: "g1", phase: "EXECUTING", verdict: "PASS", loopNum: 2 }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[1]).toEqual(["阶段", "EXECUTING"])
+    expect(rows[2]).toEqual(["判定", "PASS"])
+  })
+  test("mafw_list_goals：list + verdict 着色", () => {
+    const secs = TOOL_SPECS.mafw_list_goals.extract({}, JSON.stringify([
+      { goalId: "g1", title: "A", phase: "EXECUTING" },
+      { goalId: "g2", title: "B", verdict: "FAILED" },
+    ]))
+    const items = (secs[0] as any).items
+    expect(items).toHaveLength(2)
+    expect(items[0].badge).toBe("EXECUTING")
+    expect(items[1].badgeTone).toBe("err")
+  })
+  test("mafw_get_evidence：长文本 code 段截断", () => {
+    const long = "x".repeat(5000)
+    const secs = TOOL_SPECS.mafw_get_evidence.extract({ goalId: "g1" }, long)
+    expect(secs[0].kind).toBe("code")
+    expect((secs[0] as any).text.length).toBeLessThan(4200)
+  })
+  test("mafw_update_state：goalId + patch code 段", () => {
+    const secs = TOOL_SPECS.mafw_update_state.extract(
+      { goalId: "g1", patch: { loopNum: 3 } }, undefined)
+    expect((secs[0] as any).rows[0]).toEqual(["Goal", "g1"])
+    expect((secs[1] as any).text).toContain("loopNum")
+  })
+  test("mafw_load_state：output pretty code 段", () => {
+    const secs = TOOL_SPECS.mafw_load_state.extract(
+      { goalId: "g1" }, JSON.stringify({ goalId: "g1", loopNum: 1 }))
+    expect(secs[0].kind).toBe("code")
+    expect((secs[0] as any).text).toContain("loopNum")
+  })
+  test("mafw_answer_question：questionId + answer", () => {
+    const secs = TOOL_SPECS.mafw_answer_question.extract(
+      { goalId: "g1", questionId: "q9", answer: "选 A" }, undefined)
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[1]).toEqual(["问题", "q9"])
+    expect(rows[2]).toEqual(["回答", "选 A"])
+  })
+  test("mafw_list_pending_questions：list 带 goalId 徽标", () => {
+    const secs = TOOL_SPECS.mafw_list_pending_questions.extract({}, JSON.stringify([
+      { id: "q1", question: "继续吗？", goalId: "g1" },
+    ]))
+    const items = (secs[0] as any).items
+    expect(items[0].title).toBe("继续吗？")
+    expect(items[0].badge).toBe("g1")
+  })
+  test("mafw_set_goal / mafw_cancel_goal：KV", () => {
+    const a = TOOL_SPECS.mafw_set_goal.extract({ goalId: "g1", title: "T" }, undefined)
+    expect((a[0] as any).rows[0]).toEqual(["Goal", "g1"])
+    const b = TOOL_SPECS.mafw_cancel_goal.extract({ goalId: "g1" }, "cancelled")
+    expect((b[0] as any).rows[0]).toEqual(["Goal", "g1"])
+  })
+})
