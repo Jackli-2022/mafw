@@ -1,18 +1,13 @@
 import { For, Show } from "solid-js"
 import { BasicTool } from "@mafw/session-ui/basic-tool"
 import type { ToolProps } from "@mafw/session-ui/message-part"
+import { RULE_TOOLS } from "./registered-tools"
 
 function safeJson(text: string): any {
   try { return JSON.parse(text) } catch (e) { console.warn("[mafw]", e); return [] }
 }
 
-export const RULE_TOOLS = [
-  "mafw_list_automation_rules", "mafw_get_automation_rule",
-  "mafw_list_triage_items", "mafw_get_triage_item",
-  "mafw_get_automation_history", "mafw_run_automation",
-  "mafw_validate_rule", "mafw_propose_triage_decision",
-  "mafw_draft_automation_rule",
-] as const
+export { RULE_TOOLS }
 
 export function MafwRuleCard(props: ToolProps) {
   const toolName = () => props.tool?.replace(/^mafw_/, "") || ""
