@@ -175,6 +175,85 @@ describe('ConsolidationService', () => {
     expect((outcome as any).reason).toMatch(/judge/i);
   });
 
+  test('judge via runtime completion channel when no direct llm config', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]);
+    const store = stubStore([unit('old', 'Existing memory', 'existing value')]);
+
+    let called = 0;
+    const completion = () => ({
+      complete: async (req: any) => {
+        called++;
+        expect(req.model).toEqual({ providerID: 'gateway', modelID: 'glm-5.3-flash' });
+        return { text: '{"action":"update","target_id":"old"}' };
+      },
+    });
+
+    const svc = new ConsolidationService({
+      store: store as any,
+      vectors,
+      provider: vecProvider({}),
+      completion,
+      model: { providerID: 'gateway', modelID: 'glm-5.3-flash' },
+    } as any);
+
+    const outcome = await svc.consolidate(unit('u1', 'New memory', 'new value'));
+    expect(outcome.action).toBe('update');
+    expect(called).toBe(1);
+    expect(store.superseded).toEqual([{ id: 'old', byId: 'u1' }]);
+  });
+
+  test('completion channel failure → skip (fail-open)', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]);
+    const completion = () => ({
+      complete: async () => { throw new Error('no endpoint'); },
+    });
+    const svc = new ConsolidationService({
+      store: stubStore([unit('old', 'E', 'v')]) as any,
+      vectors,
+      provider: vecProvider({}),
+      completion,
+      model: { providerID: 'gateway', modelID: 'glm' },
+    } as any);
+    const outcome = await svc.consolidate(unit('u1', 'N', 'v2'));
+    expect(outcome.action).toBe('skip');
+  });
+
+  test('completion channel unusable but direct llm configured → falls back to direct HTTP', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]);
+    const store = stubStore([unit('old', 'Existing', 'val')]);
+
+    const completion = () => ({
+      complete: async () => { throw new Error('no endpoint'); },
+    });
+    const fetchFn = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: '{"action":"update","target_id":"old"}' } }] }),
+    })) as any;
+
+    const svc = new ConsolidationService({
+      store: store as any,
+      vectors,
+      provider: vecProvider({}),
+      completion,
+      model: { providerID: 'gateway', modelID: 'glm' },
+      llm: { baseUrl: 'http://x', apiKey: 'k', model: 'm', fetchFn },
+    } as any);
+
+    const outcome = await svc.consolidate(unit('u1', 'New', 'new value'));
+    expect(outcome.action).toBe('update');
+    expect(store.superseded).toEqual([{ id: 'old', byId: 'u1' }]);
+  });
+
   test('judge target_id outside candidates → skip', async () => {
     const dir = tmpDir();
     const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);

@@ -8,7 +8,7 @@ import { readOKFFile } from './okf-parser';
 import { EventLog } from './event-log';
 import { WriteQueue } from './write-queue';
 import { AnchorGraph } from '../graph/anchor-graph';
-import { tokenize, extractDerivedTerms } from './derived-terms';
+import { tokenize, extractDerivedTerms, extractAnchors } from './derived-terms';
 import { MinHashMerger } from '../core/memory/minhash-merger';
 
 const globalWriteQueues = new Map<string, WriteQueue>();
@@ -291,20 +291,3 @@ export class HarmonicUnitFileStore {
   }
 }
 
-/** Extract 2-5 cue anchors from a primary_abstraction when none were provided.
- *  Picks the most frequent lowercase words (len>=4) plus notable tokens. */
-function extractAnchors(abstraction: string): string[] {
-  if (!abstraction) return [];
-  const words = abstraction.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4);
-  const freq = new Map<string, number>();
-  for (const w of words) freq.set(w, (freq.get(w) || 0) + 1);
-  const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1]);
-  const stop = new Set(['with', 'this', 'that', 'from', 'have', 'must', 'should', 'when', 'into', 'will', 'also', 'they', 'them', 'then', 'than', 'which', 'their', 'there']);
-  const anchors = sorted.filter(([w]) => !stop.has(w)).map(([w]) => w);
-  // ensure coverage: pick first 5 distinct tokens (word-level), fall back to CJK
-  if (anchors.length < 2) {
-    const cjk = abstraction.match(/[\u4e00-\u9fff]/g) || [];
-    for (const c of [...new Set(cjk)].slice(0, 3)) anchors.push(c);
-  }
-  return anchors.slice(0, 5);
-}

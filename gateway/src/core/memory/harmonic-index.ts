@@ -177,7 +177,10 @@ export class HarmonicIndexManager {
       sticky_until: (unit as any).sticky_until,
       merged_from: unit.merged_from,
       filePath: (unit as any).filePath,
-      created_at: unit.created_at,
+      // Always stamp created_at: it is the decay baseline fallback for entries
+      // that predate (or miss) last_decay_at. Omitting it left every index
+      // entry timeless, so new memories could never decay.
+      created_at: unit.created_at || new Date().toISOString(),
       source_session_id: unit.source_session_id,
     });
     this.save();

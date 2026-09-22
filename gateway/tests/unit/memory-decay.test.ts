@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { actionRegistry } from '../../src/automation-engine';
+import { HarmonicIndexManager } from '../../src/core/memory/harmonic-index';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -145,5 +146,47 @@ describe('memory:decay incremental decay', () => {
     const entry = readIndex(tmpDir).entries[0];
     expect(entry.energy).toBeCloseTo(0.88, 3); // 4 × 0.005
     expect(entry.last_decay_at).toBeDefined();
+  });
+
+  test('decay migrates the LIVE index instance so a later live write does not clobber it', async () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 1,
+      updated_at: new Date(now).toISOString(),
+      entries: [makeEntry({ created_at: new Date(now - 10 * DAY).toISOString() })],
+    });
+
+    // The running gateway holds its own in-memory index (loaded at boot). A
+    // throwaway manager inside the action would migrate the FILE, but the live
+    // instance's next save would overwrite it back to v1 — the real 2026-09
+    // production freeze (index stuck at v1, no last_decay_at, zero decay).
+    const live = new HarmonicIndexManager(tmpDir);
+    expect(live.getIndex().version).toBe(1);
+
+    const action = actionRegistry.get('memory:decay');
+    expect(action).toBeDefined();
+    await action!({} as any, { mafwDir: tmpDir, getLiveIndexManager: () => live } as any);
+
+    // Simulate any later memory write through the live instance.
+    live.addEntry(makeEntry({ id: 'new1' }) as any, 'semantic');
+
+    const idx = readIndex(tmpDir);
+    expect(idx.version).toBe(2);
+    expect(idx.entries.find((e: any) => e.id === 'm1').last_decay_at).toBeDefined();
+    expect(idx.entries.find((e: any) => e.id === 'new1')).toBeDefined();
+  });
+
+  test('addEntry stamps created_at so new entries keep a decay baseline', () => {
+    fs.mkdirSync(path.join(tmpDir, 'memory'), { recursive: true });
+    const mgr = new HarmonicIndexManager(tmpDir);
+    mgr.addEntry({
+      id: 'n1',
+      type: 'semantic',
+      primary_abstraction: 'x',
+      cue_anchors: [],
+      energy: 0.8,
+    } as any, 'semantic');
+
+    expect(mgr.getIndex().entries[0].created_at).toBeDefined();
   });
 });

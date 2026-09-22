@@ -1192,8 +1192,16 @@ class MafwScheduler {
     // Judge reuses the worker-model transport; unresolvable → skip path.
     if (config.memory.embedding.consolidation) {
       const providerID = config.recall.workerModel?.providerID;
+      const modelID = config.recall.workerModel?.modelID;
       const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
       const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+      // Judge transport: prefer the runtime's stateless completion channel
+      // (thunk — resolves inline-defined providers like "gateway" via opencode
+      // provider config, hot-swap safe), fall back to direct HTTP. The thunk is
+      // resolved per call, so do NOT probe it here — this runs before
+      // this.runtime exists.
+      const completion = () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined);
+      const direct = Boolean(judgeBaseUrl && judgeApiKey);
       this.consolidationService = new ConsolidationService({
         store: new HarmonicUnitFileStore(mafwDir),
         vectors: embeddingRuntime.vectors,
@@ -1201,9 +1209,15 @@ class MafwScheduler {
         llm: judgeBaseUrl && judgeApiKey
           ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: config.recall.workerModel.modelID }
           : undefined,
+        completion,
+        model: providerID && modelID ? { providerID, modelID } : undefined,
         minCosine: config.memory.embedding.minCosine,
       });
-      log.info(`[Consolidation] enabled (judge: ${judgeBaseUrl && judgeApiKey ? providerID : 'unavailable → skip'})`);
+      log.info(
+        `[Consolidation] enabled (judge: ${providerID || 'none'}; transport: ${
+          direct ? 'direct HTTP' : 'runtime completion (resolved per call)'
+        })`,
+      );
     }
   }
 
@@ -1974,6 +1988,10 @@ class MafwScheduler {
     this.ledger = new SchedulerLedger(projectDir);
     this.automationEngine = new AutomationEngine(mafwDir);
     this.automationEngine.setLedger(this.ledger);
+    // memory:decay must mutate the gateway's LIVE index instance — a throwaway
+    // manager's v1→v2 migration would be clobbered by the live instance's next
+    // save (the 2026-09 decay freeze).
+    this.automationEngine.setIndexManagerProvider(() => this.memoryService!.harmonicIndex);
     ensureManagerRules(mafwDir);
     ensureMemoryPipelineRules(mafwDir);
     this.automationEngine.loadRules();

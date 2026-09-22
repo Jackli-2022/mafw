@@ -50,23 +50,28 @@ actionRegistry.set('memory:distill', async (_rule, engine) => {
     errors: result.errors,
   });
 });
-actionRegistry.set('memory:decay', async (_rule, engine) => {
-  log.info('[AutomationEngine] Running energy decay...');
-  const indexManager = new HarmonicIndexManager(engine.mafwDir);
+/**
+ * One energy-decay pass over a HarmonicIndexManager.
+ *
+ * Runs the one-time v1→v2 baseline migration on the first call (stamping
+ * last_decay_at WITHOUT applying decay — pre-fix passes over-decayed
+ * quadratically from created_at, so the past is forgiven), then applies
+ * incremental pure-time decay. Mutates the GIVEN manager so the caller's live
+ * in-memory index stays authoritative: a throwaway manager would migrate the
+ * file, but the live instance's next save would overwrite it back to v1 —
+ * the 2026-09 production freeze (index stuck at v1, zero decay).
+ */
+export function runEnergyDecay(
+  indexManager: HarmonicIndexManager,
+  now: number = Date.now(),
+): { migrated: number; decayed: number } {
   const index = indexManager.getIndex();
   const energySystem = new EnergySystem();
-  const now = Date.now();
   const nowIso = new Date(now).toISOString();
   const DAY_MS = 24 * 60 * 60 * 1000;
-  // One-time migration (index v1 → v2): stamp last_decay_at = now WITHOUT
-  // applying decay. Pre-fix passes computed full-age decay from created_at
-  // on every run, accumulating r·n(n+1)/2 (quadratic) loss — entries are
-  // already over-decayed, so the past is forgiven and incremental decay
-  // starts from this baseline.
   if ((index.version || 1) < 2) {
     const migrated = indexManager.migrateDecayBaseline(nowIso);
-    log.info(`[AutomationEngine] Migrated ${migrated} entries to incremental decay baseline (v2)`);
-    return;
+    return { migrated, decayed: 0 };
   }
   let decayed = 0;
   for (const entry of index.entries) {
@@ -89,7 +94,20 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
     }
   }
   indexManager.save();
-  log.info(`[AutomationEngine] Energy decay applied to ${decayed} entries`);
+  return { migrated: 0, decayed };
+}
+
+actionRegistry.set('memory:decay', async (_rule, engine) => {
+  log.info('[AutomationEngine] Running energy decay...');
+  // Prefer the gateway's live index instance (set via setIndexManagerProvider)
+  // so the migration is not clobbered by the live instance's next save.
+  const indexManager = engine.getLiveIndexManager?.() ?? new HarmonicIndexManager(engine.mafwDir);
+  const res = runEnergyDecay(indexManager);
+  if (res.migrated > 0) {
+    log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
+  } else {
+    log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries`);
+  }
 });
 actionRegistry.set('memory:review', async (_rule, engine) => {
   log.info('[AutomationEngine] Checking review queue...');
@@ -174,6 +192,7 @@ export class AutomationEngine {
   private lastFireTimes: Map<string, number> = new Map();
   private reportedPairs: Set<string> = new Set();
   private eventHandlerRefs: Map<string, Array<{ event: string; handler: (...args: any[]) => void }>> = new Map();
+  private _indexManagerProvider?: () => HarmonicIndexManager;
 
   constructor(mafwDir: string) {
     this.mafwDir = mafwDir;
@@ -181,6 +200,20 @@ export class AutomationEngine {
 
   setLedger(ledger: SchedulerLedger): void {
     this._ledger = ledger;
+  }
+
+  /**
+   * Inject the gateway's live HarmonicIndexManager. Actions that mutate the
+   * index (memory:decay) must operate on the SAME instance the gateway keeps
+   * in memory — otherwise their file-level changes are clobbered by the live
+   * instance's next save.
+   */
+  setIndexManagerProvider(fn: () => HarmonicIndexManager): void {
+    this._indexManagerProvider = fn;
+  }
+
+  getLiveIndexManager(): HarmonicIndexManager | undefined {
+    return this._indexManagerProvider?.();
   }
 
   setRuntimeClient(client: import('./runtime/contract').RuntimeClient): void {

@@ -19,6 +19,7 @@ import { log } from '../core/utils/logger';
 import { HarmonicUnit } from '../core/memory/harmonic-types';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
+import type { CompletionChannel } from '../runtime/contract';
 
 export interface ConsolidationLlmConfig {
   baseUrl: string;
@@ -37,6 +38,15 @@ export interface ConsolidationDeps {
   vectors: MemoryVectorStore;
   provider: EmbeddingProvider;
   llm?: ConsolidationLlmConfig;
+  /**
+   * Runtime stateless-completion channel (thunk, read live so runtime hot-swap
+   * is safe). Preferred over `llm`: it resolves inline-defined providers (e.g.
+   * "gateway" whose baseURL/apiKey live in opencode provider config) that the
+   * sync hardcoded endpoint table cannot see.
+   */
+  completion?: () => CompletionChannel | undefined;
+  /** Model for the completion channel (required when `completion` is used). */
+  model?: { providerID: string; modelID: string };
   /** Cosine threshold for candidate recall (default 0.8). */
   minCosine?: number;
   maxCandidates?: number;
@@ -65,6 +75,8 @@ export class ConsolidationService {
   private vectors: MemoryVectorStore;
   private provider: EmbeddingProvider;
   private llm?: ConsolidationLlmConfig;
+  private completion?: () => CompletionChannel | undefined;
+  private model?: { providerID: string; modelID: string };
   private minCosine: number;
   private maxCandidates: number;
   private stats = { judged: 0, updates: 0, creates: 0 };
@@ -74,6 +86,8 @@ export class ConsolidationService {
     this.vectors = deps.vectors;
     this.provider = deps.provider;
     this.llm = deps.llm;
+    this.completion = deps.completion;
+    this.model = deps.model;
     this.minCosine = deps.minCosine ?? 0.8;
     this.maxCandidates = deps.maxCandidates ?? 3;
   }
@@ -132,7 +146,7 @@ export class ConsolidationService {
     }
     if (candidateIds.length === 0) return { action: 'create' };
 
-    if (!this.llm) return { action: 'skip', reason: 'no-judge' };
+    if (!this.llm && !this.completion?.()) return { action: 'skip', reason: 'no-judge' };
 
     this.stats.judged++;
     const verdict = await this.judge(unit, candidateIds);
@@ -178,7 +192,6 @@ export class ConsolidationService {
   }
 
   private async judge(unit: HarmonicUnit, candidateIds: string[]): Promise<JudgeVerdict | null> {
-    const llm = this.llm!;
     const candidatesBlock: string[] = [];
     for (const id of candidateIds) {
       const target = await this.store.read(id);
@@ -191,9 +204,30 @@ export class ConsolidationService {
 
     const user = `NEW MEMORY ENTRY:\nID: ${unit.id}\nIndex: ${unit.primary_abstraction}\nValue: ${unit.memory_value}\n\n${candidatesBlock.join('\n\n')}\n\nShould the new entry UPDATE one of the existing entries, or be CREATEd separately?`;
 
-    const fetchFn = llm.fetchFn ?? globalThis.fetch.bind(globalThis);
-    const timeoutMs = llm.timeoutMs ?? 30_000;
     try {
+      // Preferred: runtime stateless-completion channel (resolves inline
+      // providers like "gateway" via opencode provider config). Falls back to
+      // the direct-HTTP llm config when the channel cannot resolve an endpoint.
+      const channel = this.completion?.();
+      if (channel && this.model) {
+        try {
+          const res = await channel.complete({
+            model: this.model,
+            system: [{ text: JUDGE_SYSTEM }],
+            user: [{ type: 'text', text: user }],
+            temperature: 0,
+            maxTokens: 200,
+          });
+          return parseJudgeVerdict(res?.text ?? '');
+        } catch (err: any) {
+          if (!this.llm) throw err;
+          log.warn(`[Consolidation] completion judge failed, falling back to direct HTTP: ${err?.message || err}`);
+        }
+      }
+
+      const llm = this.llm!;
+      const fetchFn = llm.fetchFn ?? globalThis.fetch.bind(globalThis);
+      const timeoutMs = llm.timeoutMs ?? 30_000;
       const resp = await Promise.race([
         fetchFn(llm.baseUrl, {
           method: 'POST',
@@ -216,18 +250,24 @@ export class ConsolidationService {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       const content: string = data?.choices?.[0]?.message?.content ?? '';
-      const jsonText = content.replace(/```json|```/g, '').trim();
-      const start = jsonText.indexOf('{');
-      const end = jsonText.lastIndexOf('}');
-      if (start === -1 || end === -1) return { action: 'create' };
-      const parsed = JSON.parse(jsonText.slice(start, end + 1));
-      if (parsed?.action !== 'update' && parsed?.action !== 'create') return { action: 'create' };
-      return parsed as JudgeVerdict;
+      return parseJudgeVerdict(content);
     } catch (err: any) {
       log.warn(`[Consolidation] judge failed: ${err?.message || err}`);
       return null;
     }
   }
+}
+
+/** Parse a judge reply into a verdict. No braces → create; malformed JSON →
+ *  null (judge failure, fail-open skip); unknown action → create. */
+function parseJudgeVerdict(content: string): JudgeVerdict | null {
+  const jsonText = String(content ?? '').replace(/```json|```/g, '').trim();
+  const start = jsonText.indexOf('{');
+  const end = jsonText.lastIndexOf('}');
+  if (start === -1 || end === -1) return { action: 'create' };
+  const parsed = JSON.parse(jsonText.slice(start, end + 1));
+  if (parsed?.action !== 'update' && parsed?.action !== 'create') return { action: 'create' };
+  return parsed as JudgeVerdict;
 }
 
 function dedupeCap(items: string[], cap: number): string[] {
