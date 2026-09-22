@@ -51,6 +51,63 @@ describe("token v3 回归守卫（变量名必须保留）", () => {
   test.each(V3_GUARD)("保留 %s", (t) => expect(dark).toContain(`${t}:`))
 })
 
+// ══ Portal 令牌镜像（body 级）══
+// ConfirmOverlay（Config.tsx）与 SearchSelect 列表经 <Portal> 渲染到 document.body，
+// 不在 .mafw-shell 内——令牌若只在 shell 作用域定义，var(--bg-float) 等解析失败，
+// 弹窗卡片背景透明（2026-09-22「弹窗背景透明」事故根因）。
+const bodyDark = cssBlock("\nbody {")
+const bodyLight = cssBlock('html[data-theme="light"] body')
+const bodySysLight = cssBlock("html:not([data-theme]) body")
+
+const PORTAL_TOKENS = [
+  "--bg-float", "--bg-overlay", "--border-subtle", "--shadow-float",
+  "--text-1", "--text-3", "--accent", "--on-accent",
+  "--v2-background-bg-layer-01", "--v2-text-text-base",
+]
+
+describe("portal 令牌镜像 — body 暗色块", () => {
+  test.each(PORTAL_TOKENS)("定义 %s", (t) => expect(bodyDark).toContain(`${t}:`))
+  test("bg-float 与 .mafw-shell 同值", () => expect(tokenHex(bodyDark, "--bg-float")).toBe("#252320"))
+})
+
+describe("portal 令牌镜像 — body 亮色手动块", () => {
+  test.each(PORTAL_TOKENS)("定义 %s", (t) => expect(bodyLight).toContain(`${t}:`))
+  test("bg-float 与 .mafw-shell 亮色同值", () => expect(tokenHex(bodyLight, "--bg-float")).toBe("#FFFFFF"))
+})
+
+describe("portal 令牌镜像 — body 亮色跟随系统块", () => {
+  test.each(PORTAL_TOKENS)("定义 %s", (t) => expect(bodySysLight).toContain(`${t}:`))
+})
+
+// ══ QuestionWidget 提问卡（业界 question 模式：问题焦点 + 全宽选项行）══
+describe("question 卡层级契约", () => {
+  test("问题文本是焦点（14px semibold text-strong）", () => {
+    const q = cssBlock(".mafw-question-q {")
+    expect(q).toContain("font-weight: 600")
+    expect(q).toContain("var(--text-strong)")
+  })
+  test("选项行有边框 + hover 态", () => {
+    const opt = cssBlock(".mafw-question-opt {")
+    expect(opt).toContain("var(--border-subtle)")
+    const hover = cssBlock(".mafw-question-opt:hover")
+    expect(hover).toContain("var(--hover)")
+  })
+  test("选中态用 accent 信号色（重点突出）", () => {
+    const sel = cssBlock(".mafw-question-opt.sel")
+    expect(sel).toContain("var(--accent-border)")
+    expect(sel).toContain("var(--accent-soft)")
+  })
+  test("radio 指示点存在且选中态填充 accent", () => {
+    expect(cssBlock(".mafw-question-opt-dot {")).toContain("border-radius: 50%")
+    const dot = cssBlock(".mafw-question-opt.sel .mafw-question-opt-dot")
+    expect(dot).toContain("var(--accent)")
+  })
+  test("header 不再使用黄色警示带（去噪）", () => {
+    const header = cssBlock(".mafw-question-header {")
+    expect(header).not.toContain("rgba(232,184,75")
+  })
+})
+
 /** 取块内某 token 的 hex 值；找不到返回 null */
 export function tokenHex(block: string, name: string): string | null {
   const m = block.match(new RegExp(`${name}:\\s*(#[0-9A-Fa-f]{6})`))

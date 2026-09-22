@@ -194,6 +194,152 @@ html[data-theme="light"] .mafw-shell {
   }
 }
 
+/* ══ Portal 令牌镜像（body 级）══
+   <Portal> 弹层（Config 的 ConfirmOverlay / SearchSelect 列表等）挂载在 document.body，
+   不在 .mafw-shell 内——令牌若只在 shell 作用域定义，var(--bg-float) 等在弹窗上解析失败，
+   background 整块失效 → 卡片透明（2026-09-22「弹窗背景透明」事故根因）。
+   此块与 .mafw-shell 暗色块保持同步（复制，勿引用选择器）；v2 子集同步 MAFW 色板，
+   portal 的 v2 弹层（SelectV2 下拉等）不再落到 theme.css 通用灰。 */
+body {
+  color-scheme: dark;
+  --bg-base: #100F0E;
+  --bg-raised: #161513;
+  --bg-overlay: #1D1B18;
+  --bg-float: #252320;
+  --bg-inset: #12110F;
+  --bg-hover: rgba(255,255,255,.04);
+  --border-subtle: rgba(255,255,255,.07);
+  --accent: #4FD388;
+  --accent-dim: rgba(79,211,136,.13);
+  --accent-text: #8CE0B1;
+  --on-accent: #100F0E;
+  --accent-strong: #67DE9B;
+  --accent-soft: rgba(79,211,136,.12);
+  --accent-border: rgba(79,211,136,.35);
+  --info: #6CA6F1;
+  --warning: #E7A13D;
+  --danger: #E5484D;
+  --danger-dim: rgba(229,72,77,.12);
+  --danger-text: #F0757A;
+  --text-1: #EDECE9;
+  --text-2: #D1CFCA;
+  --text-3: #8E8C86;
+  --text-4: #5E5C57;
+  --text-5: #42403C;
+  --hover: rgba(255,255,255,.04);
+  --hover-strong: rgba(255,255,255,.07);
+  --active: rgba(255,255,255,.05);
+  --shadow-float: 0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+  --background-base: #100F0E;
+  --background-weak: #161513;
+  --background-stronger: #161513;
+  --surface-base: #1D1B18;
+  --surface-base-hover: rgba(255,255,255,.04);
+  --surface-base-active: rgba(255,255,255,.05);
+  --surface-raised-base: #252320;
+  --text-base: #8E8C86;
+  --text-weak: #5E5C57;
+  --text-strong: #EDECE9;
+  --border-weak-base: rgba(255,255,255,.07);
+  --border-base: rgba(255,255,255,.10);
+  --v2-background-bg-base: #100F0E;
+  --v2-background-bg-layer-01: #1D1B18;
+  --v2-background-bg-layer-02: #252320;
+  --v2-background-bg-layer-03: #2E2C27;
+  --v2-border-border-muted: rgba(255,255,255,.07);
+  --v2-text-text-base: #D1CFCA;
+  --v2-text-text-muted: #8E8C86;
+  --v2-text-text-faint: #5E5C57;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --dur-3: 200ms;
+  --dur-4: 240ms;
+  --ease: cubic-bezier(.25,0,0,1);
+}
+/* Portal 镜像：亮色手动覆盖 */
+html[data-theme="light"] body {
+  color-scheme: light;
+  --bg-base: #FAF9F5;
+  --bg-raised: #F3F1EB;
+  --bg-overlay: #FFFFFF;
+  --bg-float: #FFFFFF;
+  --bg-inset: #EFEDE7;
+  --bg-hover: rgba(0,0,0,.04);
+  --border-subtle: rgba(0,0,0,.09);
+  --accent: #17804C;
+  --accent-dim: rgba(23,128,76,.10);
+  --accent-text: #14663C;
+  --on-accent: #FFFFFF;
+  --accent-strong: #126B3D;
+  --accent-soft: rgba(23,128,76,.10);
+  --accent-border: rgba(23,128,76,.32);
+  --info: #3B6FC4;
+  --warning: #B87A1E;
+  --danger: #C93A3E;
+  --danger-dim: rgba(201,58,62,.10);
+  --danger-text: #C93A3E;
+  --text-1: #1A1917;
+  --text-2: #35332F;
+  --text-3: #605D57;
+  --text-4: #8F8C85;
+  --text-5: #BAB7B0;
+  --hover: rgba(0,0,0,.04);
+  --hover-strong: rgba(0,0,0,.06);
+  --active: rgba(0,0,0,.05);
+  --shadow-float: 0 8px 24px rgba(0,0,0,.10), 0 0 0 1px rgba(0,0,0,.04);
+  --background-base: #FAF9F5;
+  --background-weak: #F3F1EB;
+  --background-stronger: #F3F1EB;
+  --surface-base: #FFFFFF;
+  --surface-base-hover: rgba(0,0,0,.04);
+  --surface-base-active: rgba(0,0,0,.05);
+  --surface-raised-base: #FFFFFF;
+  --text-base: #605D57;
+  --text-weak: #8F8C85;
+  --text-strong: #1A1917;
+  --border-weak-base: rgba(0,0,0,.09);
+  --border-base: rgba(0,0,0,.12);
+  --v2-background-bg-base: #FAF9F5;
+  --v2-background-bg-layer-01: #FFFFFF;
+  --v2-background-bg-layer-02: #FFFFFF;
+  --v2-background-bg-layer-03: #EAE7E0;
+  --v2-border-border-muted: rgba(0,0,0,.09);
+  --v2-text-text-base: #35332F;
+  --v2-text-text-muted: #605D57;
+  --v2-text-text-faint: #8F8C85;
+}
+/* Portal 镜像：亮色跟随系统（无手动覆盖时） */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) body {
+    color-scheme: light;
+    --bg-base: #FAF9F5; --bg-raised: #F3F1EB; --bg-overlay: #FFFFFF; --bg-float: #FFFFFF;
+    --bg-inset: #EFEDE7;
+    --bg-hover: rgba(0,0,0,.04); --border-subtle: rgba(0,0,0,.09);
+    --accent: #17804C; --accent-dim: rgba(23,128,76,.10); --accent-text: #14663C; --on-accent: #FFFFFF;
+    --accent-strong: #126B3D; --accent-soft: rgba(23,128,76,.10); --accent-border: rgba(23,128,76,.32);
+    --info: #3B6FC4;
+    --warning: #B87A1E;
+    --danger: #C93A3E; --danger-dim: rgba(201,58,62,.10); --danger-text: #C93A3E;
+    --text-1: #1A1917; --text-2: #35332F; --text-3: #605D57; --text-4: #8F8C85; --text-5: #BAB7B0;
+    --hover: rgba(0,0,0,.04); --hover-strong: rgba(0,0,0,.06); --active: rgba(0,0,0,.05);
+    --shadow-float: 0 8px 24px rgba(0,0,0,.10), 0 0 0 1px rgba(0,0,0,.04);
+    --background-base: #FAF9F5; --background-weak: #F3F1EB; --background-stronger: #F3F1EB;
+    --surface-base: #FFFFFF; --surface-base-hover: rgba(0,0,0,.04); --surface-base-active: rgba(0,0,0,.05); --surface-raised-base: #FFFFFF;
+    --text-base: #605D57; --text-weak: #8F8C85; --text-strong: #1A1917;
+    --border-weak-base: rgba(0,0,0,.09); --border-base: rgba(0,0,0,.12);
+    --v2-background-bg-base: #FAF9F5; --v2-background-bg-layer-01: #FFFFFF; --v2-background-bg-layer-02: #FFFFFF; --v2-background-bg-layer-03: #EAE7E0;
+    --v2-border-border-muted: rgba(0,0,0,.09);
+    --v2-text-text-base: #35332F; --v2-text-text-muted: #605D57; --v2-text-text-faint: #8F8C85;
+    --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 14px;
+    --dur-1: 120ms; --dur-2: 160ms; --dur-3: 200ms; --dur-4: 240ms;
+    --ease: cubic-bezier(.25,0,0,1);
+  }
+}
+
 /* ── 宽屏列宽分档（§4.5）：封顶 880px（业界 768-896px 舒适阅读宽度，
    16px 正文的 1100px 一行 70+ 汉字超出舒适区） ── */
 @media (min-width: 1500px) { .mafw-shell { --msg-col-width: 880px; } }
@@ -1920,54 +2066,121 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-plugin-progress-fill { height: 100%; border-radius: 999px; background: var(--accent-text); transition: width var(--dur-4) var(--ease); }
 .mafw-plugin-progress-label { font-size: 11px; color: var(--text-base); white-space: nowrap; }
 
-/* ── Question Widget ── */
+/* ── Question Widget（业界 question 模式：问题焦点 + 全宽选项行 + 数字快选）── */
 .mafw-question-overlay {
   position: fixed;
   bottom: 48px;
   right: 16px;
   z-index: 1000;
-  max-width: 400px;
+  max-width: 420px;
   width: 100%;
 }
 .mafw-question-card {
-  background: var(--surface-raised-base, var(--background-stronger));
-  border: 0.5px solid var(--border-base, rgba(255,255,255,0.12));
-  border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  background: var(--bg-float);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-float);
   overflow: hidden;
 }
 .mafw-question-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: rgba(232,184,75,0.12);
-  border-bottom: 0.5px solid var(--border-weak-base);
+  gap: 8px;
+  padding: 10px 12px 0;
 }
-.mafw-question-title {
-  flex: 1;
-  font-size: 12px;
+.mafw-question-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-strong);
+  letter-spacing: .02em;
+}
+.mafw-question-meta {
+  font-size: 11px;
+  color: var(--text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mafw-question-close {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-weak);
-  padding: 2px 4px;
-  font-size: 12px;
-  line-height: 1;
+  margin-left: auto;
+  color: var(--text-4);
 }
 .mafw-question-close:hover { color: var(--text-strong); }
 .mafw-question-body {
-  padding: 12px;
+  padding: 10px 12px 12px;
 }
-.mafw-question-text {
-  font-size: 13px;
+.mafw-question-q {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-strong);
-  margin-bottom: 8px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.mafw-question-q-dim { color: var(--text-3); font-weight: 500; }
+.mafw-question-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.mafw-question-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text-1);
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.mafw-question-opt:hover {
+  background: var(--hover);
+}
+.mafw-question-opt.sel {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.mafw-question-opt:disabled { opacity: .6; cursor: default; }
+.mafw-question-opt-dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-4);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.mafw-question-opt.sel .mafw-question-opt-dot {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--bg-float), inset 0 0 0 14px var(--accent);
+}
+.mafw-question-opt-label {
+  flex: 1;
+  font-size: 13px;
   line-height: 1.4;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+.mafw-question-opt.sel .mafw-question-opt-label { color: var(--text-strong); }
+.mafw-question-opt-key {
+  flex: none;
+  min-width: 16px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 3px;
 }
 .mafw-question-list {
   margin: 4px 0 8px 20px;
@@ -1980,8 +2193,16 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 .mafw-question-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
+}
+.mafw-question-actions-spacer { flex: 1; }
+.mafw-question-cancel-goal { color: var(--danger-text); }
+.mafw-question-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-5);
 }
 .mafw-question-result {
   font-size: 12px;

@@ -186,14 +186,18 @@ const main = Effect.gen(function* () {
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
-  if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
+  if (!app.isPackaged) {
+    // MAFW_DEBUG_PORT 可覆盖（多实例 dev 调试；默认 9222 可能被残留监听占用）
+    app.commandLine.appendSwitch("remote-debugging-port", process.env.MAFW_DEBUG_PORT ?? "9222")
+  }
 
   // Audio: 修复渲染进程 AudioContext 无声（out-of-process 音频服务在部分 Windows 上
   // 初始化失败导致 currentTime 推进但无物理输出）；autoplay-policy 双保险。
   app.commandLine.appendSwitch("disable-features", "AudioServiceOutOfProcess")
   app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required")
 
-  if (!app.requestSingleInstanceLock()) {
+  // MAFW_ALLOW_MULTI_INSTANCE=1 旁路单实例锁（多实例 dev 调试用，配合 MAFW_DEBUG_PORT）
+  if (!process.env.MAFW_ALLOW_MULTI_INSTANCE && !app.requestSingleInstanceLock()) {
     app.quit()
     return
   }
