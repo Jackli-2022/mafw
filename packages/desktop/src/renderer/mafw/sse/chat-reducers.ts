@@ -149,3 +149,25 @@ export function extractMediaSpeak(
   if (!text) return null
   return { text, voice }
 }
+
+/**
+ * 回合终态兜底：为该会话所有缺 time.completed 的 assistant 消息盖章。
+ * session-ui text part 的流式光标（▌）判定只看 message.time.completed，
+ * abort / 终帧缺失的消息会永久闪烁绿色方块——回合结束事件到达时在此统一封口。
+ * 返回 null = 无需盖章（调用方跳过 patchStore）。
+ */
+export function sealUnfinishedAssistantMessages(
+  state: ChatStoreState,
+  sid: string,
+  completedAt: number = Date.now(),
+): { message: Record<string, any[]> } | null {
+  const msgs = state.message[sid]
+  if (!Array.isArray(msgs) || msgs.length === 0) return null
+  let touched = false
+  const next = msgs.map(m => {
+    if (!m || m.role !== "assistant" || typeof m.time?.completed === "number") return m
+    touched = true
+    return { ...m, time: { ...(m.time || {}), completed: completedAt } }
+  })
+  return touched ? { message: { ...state.message, [sid]: next } } : null
+}

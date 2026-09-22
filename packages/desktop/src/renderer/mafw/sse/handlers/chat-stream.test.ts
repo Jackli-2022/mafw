@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { handleChatStreamEvent, handleMediaSpeakEvent, type ChatDeps } from "./chat-stream"
 import type { ShellEventDeps } from "../dispatcher"
 
-function makeDeps() {
+function makeDeps(store: any = { message: {}, part: {}, session_status: {} }) {
   const calls: { name: string; args: unknown[] }[] = []
   const rec = (name: string) => (...args: unknown[]) => { calls.push({ name, args }) }
   const chat: ChatDeps = {
     trace: rec("trace"),
-    getStore: () => ({ message: {}, part: {}, session_status: {} }) as any,
+    getStore: () => store,
     patchStore: rec("patchStore"),
     setSessionStatus: rec("setSessionStatus"),
     markSessionDone: rec("markSessionDone"),
@@ -85,6 +85,43 @@ describe("handleChatStreamEvent", () => {
     const { deps, calls } = makeDeps()
     expect(handleChatStreamEvent({ type: "plugin:foo", sessionID: "s1" }, "s1", deps)).toBe(false)
     expect(calls.some(c => c.name === "patchStore")).toBe(false)
+  })
+})
+
+describe("turn-end seal（绿色方块兜底：缺 time.completed 的 assistant 消息盖章）", () => {
+  const dirtyStore = () => ({
+    message: { s1: [
+      { id: "u1", role: "user" },
+      { id: "a1", role: "assistant", time: { created: 1 } },
+    ] },
+    part: {},
+    session_status: {},
+  })
+  const sealed = (calls: { name: string; args: unknown[] }[]) => {
+    const p = calls.filter(c => c.name === "patchStore").map(c => c.args[0] as any).find(x => x.message?.s1)
+    return p ? (p.message.s1[1] as any).time?.completed : undefined
+  }
+
+  test.each(["message.complete", "session.idle", "session.error", "message.error", "message.aborted"] as const)(
+    "%s → seals unfinished assistant message",
+    (type) => {
+      const { deps, calls } = makeDeps(dirtyStore())
+      handleChatStreamEvent({ type, sessionID: "s1" } as any, "s1", deps)
+      expect(sealed(calls)).toBeTypeOf("number")
+    },
+  )
+
+  test("message.part.complete → 不盖章（per-part 非回合终态）", () => {
+    const { deps, calls } = makeDeps(dirtyStore())
+    handleChatStreamEvent({ type: "message.part.complete", sessionID: "s1" }, "s1", deps)
+    expect(sealed(calls)).toBeUndefined()
+  })
+
+  test("已完结 store → 无盖章 patch", () => {
+    const clean = { message: { s1: [{ id: "a1", role: "assistant", time: { created: 1, completed: 9 } }] }, part: {}, session_status: {} }
+    const { deps, calls } = makeDeps(clean)
+    handleChatStreamEvent({ type: "session.idle", sessionID: "s1" }, "s1", deps)
+    expect(sealed(calls)).toBeUndefined()
   })
 })
 

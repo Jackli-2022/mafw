@@ -1766,9 +1766,18 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     return items.filter((x) => !!x).join(" \u00B7 ")
   })
 
-  const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
-  )
+  // 流式判定（防御层，与 desktop reasoningStreaming 同构）：
+  // 1. message 级完成信号（time.completed）优先——缺它时 abort/终帧缺失的消息
+  //    会永久渲染流式尾光标；
+  // 2. part 自身已有 time.end = 该段已完结（覆盖 aborted 历史/终帧丢失）；
+  // 3. 两者皆缺才视为流式中。message.time 整体缺失时原实现会 TypeError，一并防御。
+  const streaming = createMemo(() => {
+    if (props.message.role !== "assistant") return false
+    if (typeof (props.message as AssistantMessage).time?.completed === "number") return false
+    const partTime = (part() as TextPart | undefined)?.time
+    if (partTime && typeof partTime.end === "number") return false
+    return true
+  })
   const text = () => readPartText(data.store.part_text_accum_delta, part())
   const isLastTextPart = createMemo(() => {
     const last = (data.store.part?.[props.message.id] ?? [])
@@ -1842,9 +1851,15 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
   const part = () => props.part as ReasoningPart
-  const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
-  )
+  // 同 text part 的防御层：part.time.end 优先于 message.time.completed 兜底，
+  // message.time 缺失不崩（desktop 已用 ThinkingBlock 覆盖本渲染器）。
+  const streaming = createMemo(() => {
+    if (props.message.role !== "assistant") return false
+    if (typeof (props.message as AssistantMessage).time?.completed === "number") return false
+    const partTime = part().time
+    if (partTime && typeof partTime.end === "number") return false
+    return true
+  })
   const text = () => readPartText(data.store.part_text_accum_delta, part())
 
   return (

@@ -10,6 +10,7 @@
 import {
   applyUserMessageArrival, applyAssistantMessage, applyPartDelta,
   applyPartUpsert, ensureAssistantMessage, extractMediaSpeak,
+  sealUnfinishedAssistantMessages,
 } from "../chat-reducers"
 import type { SidHandler, ShellEventDeps } from "../dispatcher"
 
@@ -70,6 +71,10 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
 
   // 流式主链：part 更新 / complete / idle / error 共用一段（不消费，落穿 media_speak）
   const CHAIN_TYPES = new Set(["message.part.updated", "message.complete", "message.part.complete", "session.idle", "session.error", "message.error", "message.aborted"])
+  // 回合级终态：缺 time.completed 的 assistant 消息盖章（session-ui 流式光标
+  // 只认 message.time.completed，abort/终帧缺失会永久闪绿色方块）。
+  // message.part.complete 是 per-part 帧，同一消息后续 part 仍可能流式，不在此列。
+  const TURN_END_TYPES = new Set(["message.complete", "session.idle", "session.error", "message.error", "message.aborted"])
   const isNextTool = typeof event.type === "string" && event.type.startsWith("session.next.tool.")
   if (!CHAIN_TYPES.has(event.type) && !isNextTool) return false
   d.trace(event, "chat:stream")
@@ -103,6 +108,10 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     d.onTurnSettled(sid, { expireCards: true })
   }
 
+  if (TURN_END_TYPES.has(event.type)) {
+    const seal = sealUnfinishedAssistantMessages(d.getStore(), sid)
+    if (seal) d.patchStore(seal)
+  }
   if (isNextTool && event.assistantMessageID) {
     const out = ensureAssistantMessage(d.getStore(), sid, event.assistantMessageID, d.parentFallback(sid))
     if (out) d.patchStore(out)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { applyUserMessageArrival, applyPartDelta, applyPartUpsert, applyAssistantMessage, ensureAssistantMessage, extractMediaSpeak } from "./chat-reducers"
+import { applyUserMessageArrival, applyPartDelta, applyPartUpsert, applyAssistantMessage, ensureAssistantMessage, extractMediaSpeak, sealUnfinishedAssistantMessages } from "./chat-reducers"
 
 describe("applyUserMessageArrival", () => {
   test("replaces optimistic user message, remaps parentIDs, migrates parts", () => {
@@ -82,6 +82,41 @@ describe("ensureAssistantMessage", () => {
   test("existing → null", () => {
     const state = { message: { s1: [{ id: "a9", role: "assistant" }] }, part: {} }
     expect(ensureAssistantMessage(state as any, "s1", "a9", "u9")).toBeNull()
+  })
+})
+
+describe("sealUnfinishedAssistantMessages", () => {
+  test("stamps completed on assistant messages missing it", () => {
+    const state = { message: { s1: [
+      { id: "u1", role: "user", time: { created: 1 } },
+      { id: "a1", role: "assistant", time: { created: 2 } },
+      { id: "a2", role: "assistant", time: { created: 3, completed: 99 } },
+    ] }, part: {} }
+    const out = sealUnfinishedAssistantMessages(state as any, "s1", 1234)!
+    const msgs = out.message.s1
+    expect((msgs[0] as any).time.completed).toBeUndefined()
+    expect((msgs[1] as any).time.completed).toBe(1234)
+    expect((msgs[1] as any).time.created).toBe(2)
+    expect((msgs[2] as any).time.completed).toBe(99)
+  })
+  test("assistant message without time object gets one", () => {
+    const state = { message: { s1: [{ id: "a1", role: "assistant" }] }, part: {} }
+    const out = sealUnfinishedAssistantMessages(state as any, "s1", 77)!
+    expect((out.message.s1[0] as any).time.completed).toBe(77)
+  })
+  test("other sessions untouched", () => {
+    const state = { message: { s1: [{ id: "a1", role: "assistant" }], s2: [{ id: "a2", role: "assistant" }] }, part: {} }
+    const out = sealUnfinishedAssistantMessages(state as any, "s1", 5)!
+    expect((out.message.s1[0] as any).time.completed).toBe(5)
+    expect((out.message.s2[0] as any).time?.completed).toBeUndefined()
+  })
+  test("nothing to seal → null (no patchStore churn)", () => {
+    const state = { message: { s1: [
+      { id: "u1", role: "user" },
+      { id: "a1", role: "assistant", time: { created: 1, completed: 2 } },
+    ] }, part: {} }
+    expect(sealUnfinishedAssistantMessages(state as any, "s1")).toBeNull()
+    expect(sealUnfinishedAssistantMessages({ message: {}, part: {} } as any, "s1")).toBeNull()
   })
 })
 
