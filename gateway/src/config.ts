@@ -324,7 +324,7 @@ function defaults(projectDir: string): GatewayConfig {
       maxExpandRounds: 2,
       /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
       fusionSparseWeight: 0.65,
-      channelSplit: { enabled: false, episodicWeight: 0.3 },
+      channelSplit: { enabled: true, episodicWeight: 0.3 },
     },
     memory: {
       defaultEnergy: 0.8,
