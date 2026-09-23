@@ -6,6 +6,7 @@ import { config } from '../../config';
 
 import type { Reranker } from './reranker';
 import { detectTimeWindow, applyTimeBoost } from '../../recall/time-anchor';
+import { personalizedPageRank } from '../../graph/diffusion';
 
 interface HookManagerLike {
   execute(event: string, context: any): Promise<void>;
@@ -124,6 +125,7 @@ export class HarmonicIndexManager {
   private index: HarmonicIndex;
   private hookManager: HookManagerLike | null;
   private anchorGraphStore: import('../../graph/anchor-graph-store').AnchorGraphStore | null = null;
+  private coactivationGraphStore: import('../../graph/coactivation-store').CoactivationGraphStore | null = null;
 
   constructor(baseDir: string, hookManager?: HookManagerLike | null) {
     const memoryDir = path.join(baseDir, 'memory');
@@ -138,6 +140,14 @@ export class HarmonicIndexManager {
 
   getAnchorGraphStore(): import('../../graph/anchor-graph-store').AnchorGraphStore | null {
     return this.anchorGraphStore;
+  }
+
+  setCoactivationGraphStore(store: import('../../graph/coactivation-store').CoactivationGraphStore | null): void {
+    this.coactivationGraphStore = store;
+  }
+
+  getCoactivationGraphStore(): import('../../graph/coactivation-store').CoactivationGraphStore | null {
+    return this.coactivationGraphStore;
   }
 
   private load(): HarmonicIndex {
@@ -317,52 +327,84 @@ export class HarmonicIndexManager {
       scored = rrfFuse(scored, denseScored.slice(0, recallK), options.fusionK ?? 60, recallK, options.fusionSparseWeight ?? config.search.fusionSparseWeight);
     }
 
-    // ── Anchor-graph multi-hop expansion (Memora-style) ──
+    // ── Association layer: merged anchor + coactivation neighbors → bounded PPR ──
     const graphExpand = options.graphExpand ?? config.search.graph.enabled;
-    if (graphExpand && this.anchorGraphStore && scored.length > 0) {
-      const maxHops = options.maxHops ?? config.search.graph.maxHops;
-      const damping = options.graphDamping ?? config.search.graph.damping;
-      const maxNeighbors = options.graphMaxNeighbors ?? config.search.graph.maxNeighbors;
-      const candidateCap = config.search.graph.candidateCap;
-      const byId = new Map<string, ScoredEntry & { graphScore?: number }>(scored.map(s => [s.entry.id, s]));
-      let hop = 1;
-      while (hop <= maxHops && byId.size < candidateCap) {
-        const frontier = [...byId.keys()];
-        const exclude = new Set(byId.keys());
-        let expanded = false;
-        for (const id of frontier) {
-          const neighbors = this.anchorGraphStore.getNeighbors([id], maxNeighbors, exclude);
-          for (const [nbId, info] of neighbors) {
-            const nbEntry = this.index.entries.find(e => e.id === nbId);
-            if (!nbEntry || nbEntry.superseded_by) continue;
-            const graphScore = info.weight * (nbEntry.energy ?? 0.8) * (nbEntry.salience ?? 1) * Math.pow(damping, hop);
-            const existing = byId.get(nbId);
-            if (!existing) {
-              byId.set(nbId, { entry: nbEntry, score: graphScore, graphScore });
-              expanded = true;
-            } else if ((existing.graphScore ?? 0) < graphScore) {
-              existing.graphScore = graphScore;
-              expanded = true;
-            }
-          }
-        }
-        if (!expanded) break;
-        hop++;
-      }
-      // 融合：bm25 分归一化 + graph 分归一化加权
-      const graphWeight = config.search.graph.rerankGraphWeight;
-      const entries = [...byId.values()];
-      const norm = (vals: number[]) => {
+    const gcfg = config.search.graph;
+    if (graphExpand && (this.anchorGraphStore || this.coactivationGraphStore) && scored.length > 0) {
+      const maxNeighbors = options.graphMaxNeighbors ?? gcfg.maxNeighbors;
+      const candidateCap = gcfg.candidateCap;
+      const seedK = Math.min(scored.length, candidateCap);
+      const seeds = scored.slice(0, seedK).map(s => s.entry.id);
+      const seedSet = new Set(seeds);
+      const norm = (m: Map<string, number>) => {
+        const vals = [...m.values()];
+        if (vals.length === 0) return m;
         const min = Math.min(...vals);
         const max = Math.max(...vals);
-        if (max === min) return vals.map(() => 0.5);
-        return vals.map(v => (v - min) / (max - min));
+        if (max === min) return new Map([...m].map(([k]) => [k, 0.5]));
+        return new Map([...m].map(([k, v]) => [k, (v - min) / (max - min)]));
       };
-      const nb = norm(entries.map(e => e.score));
-      const ng = norm(entries.map(e => e.graphScore ?? 0));
-      scored = entries.map((e, i) => ({
+
+      const merged = new Map<string, Map<string, number>>();
+      for (const id of seeds) {
+        const anchorNbs = this.anchorGraphStore
+          ? new Map([...this.anchorGraphStore.getNeighbors([id], maxNeighbors, seedSet)].map(([k, v]) => [k, v.weight]))
+          : new Map<string, number>();
+        const coactNbs = (gcfg.coactivation.enabled && this.coactivationGraphStore)
+          ? new Map<string, number>(this.coactivationGraphStore.getNeighbors([id], maxNeighbors, seedSet).get(id) ?? new Map())
+          : new Map<string, number>();
+        const na = norm(anchorNbs);
+        const nc = norm(coactNbs);
+        const mix = new Map<string, number>();
+        for (const [k, v] of na) mix.set(k, (mix.get(k) ?? 0) + gcfg.edgeMix.anchor * v);
+        for (const [k, v] of nc) mix.set(k, (mix.get(k) ?? 0) + gcfg.edgeMix.coactivation * v);
+        merged.set(id, mix);
+      }
+
+      const neighborsOf = (id: string) => merged.get(id) ?? new Map<string, number>();
+
+      const byId = new Map<string, ScoredEntry & { graphScore?: number }>(scored.map(s => [s.entry.id, s]));
+      if (gcfg.diffusion.enabled) {
+        const ppr = personalizedPageRank(seeds, neighborsOf, {
+          alpha: gcfg.diffusion.alpha,
+          iterations: gcfg.diffusion.iterations,
+          candidateCap,
+        });
+        for (const [id, gs] of ppr) {
+          if (seedSet.has(id)) continue;
+          const entry = this.index.entries.find(e => e.id === id);
+          if (!entry || entry.superseded_by) continue;
+          byId.set(id, { entry, score: gs, graphScore: gs });
+        }
+      } else {
+        // fallback: legacy hop-greedy
+        const damping = options.graphDamping ?? gcfg.damping;
+        let hop = 1;
+        while (hop <= (options.maxHops ?? gcfg.maxHops) && byId.size < candidateCap) {
+          const frontier = [...byId.keys()];
+          let expanded = false;
+          for (const id of frontier) {
+            for (const [nbId, w] of neighborsOf(id)) {
+              const nbEntry = this.index.entries.find(e => e.id === nbId);
+              if (!nbEntry || nbEntry.superseded_by) continue;
+              const gs = w * (nbEntry.energy ?? 0.8) * (nbEntry.salience ?? 1) * Math.pow(damping, hop);
+              const ex = byId.get(nbId);
+              if (!ex) { byId.set(nbId, { entry: nbEntry, score: gs, graphScore: gs }); expanded = true; }
+              else if ((ex.graphScore ?? 0) < gs) { ex.graphScore = gs; expanded = true; }
+            }
+          }
+          if (!expanded) break;
+          hop++;
+        }
+      }
+
+      const graphWeight = gcfg.rerankGraphWeight;
+      const entries = [...byId.values()];
+      const nbv = norm(new Map(entries.map(e => [e.entry.id, e.score])));
+      const ngv = norm(new Map(entries.map(e => [e.entry.id, e.graphScore ?? 0])));
+      scored = entries.map(e => ({
         entry: e.entry,
-        score: (1 - graphWeight) * nb[i] + graphWeight * ng[i],
+        score: (1 - graphWeight) * (nbv.get(e.entry.id) ?? 0) + graphWeight * (ngv.get(e.entry.id) ?? 0),
       }));
       scored.sort((a, b) => b.score - a.score);
     }
