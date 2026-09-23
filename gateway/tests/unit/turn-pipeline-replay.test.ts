@@ -1,4 +1,4 @@
-import { priorKnowledgeFor, priorKnowledgeBlock, TurnPipeline, TOOL_EXTRACTION_SYSTEM } from '../../src/recall/turn-pipeline';
+import { priorKnowledgeFor, priorKnowledgeBlock, TurnPipeline, TOOL_EXTRACTION_SYSTEM, capTranscript } from '../../src/recall/turn-pipeline';
 import { HarmonicIndexManager } from '../../src/core/memory/harmonic-index';
 import { HarmonicUnit } from '../../src/core/memory/harmonic-types';
 import * as fs from 'fs';
@@ -85,5 +85,16 @@ describe('TurnPipeline replay injection', () => {
 
   test('TOOL_EXTRACTION_SYSTEM 含 reconcile 指令', () => {
     expect(TOOL_EXTRACTION_SYSTEM).toContain('Prior knowledge from other work');
+  });
+});
+
+describe('capTranscript', () => {
+  test('超预算截断并加标记', () => {
+    const capped = capTranscript('x'.repeat(100), 50);
+    expect(capped).toContain('truncated');
+    expect(capped.length).toBeLessThanOrEqual(50 + 60);
+  });
+  test('未超预算原样返回', () => {
+    expect(capTranscript('short', 100)).toBe('short');
   });
 });

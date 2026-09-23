@@ -1677,6 +1677,7 @@ class MafwScheduler {
       // worker prompt so the curator reconciles rather than only creating.
       replayK: 5,
       replayMaxChars: 1500,
+      transcriptMaxChars: config.recall.workerTranscriptMaxChars,
       // Outcome-feedback signal (env-probing curation, grade gi): lets the
       // curator calibrate trust in the trajectory — a failed goal means its
       // "lessons" need verification before they become memories.

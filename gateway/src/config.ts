@@ -173,6 +173,8 @@ export interface GatewayConfig {
     sessionWorkerTtlMs: number;
     /** Hard ceiling per worker prompt (extract/reflect). Default 300000. */
     workerPromptTimeoutMs: number;
+    /** Hard cap on the transcript chars sent to a worker prompt (budget). Default 40000. */
+    workerTranscriptMaxChars: number;
     reflectThresholdEpisodic: number;
     maxEpisodicPerReflect: number;
     workerModel: { providerID: string; modelID: string };
@@ -398,6 +400,7 @@ function defaults(projectDir: string): GatewayConfig {
       obsCapturePath: 'memory/gateway.db',
       sessionWorkerTtlMs: 24 * 60 * 60 * 1000,
       workerPromptTimeoutMs: 300_000,
+      workerTranscriptMaxChars: 40_000,
       reflectThresholdEpisodic: 3,
       maxEpisodicPerReflect: 100,
       workerModel: { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
