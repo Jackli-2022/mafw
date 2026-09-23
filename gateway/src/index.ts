@@ -319,6 +319,7 @@ class MafwScheduler {
   private mafwDir!: string;
   private trajectoryStore: import('./trajectory/trajectory-store').TrajectoryStore | null = null;
   private anchorGraphStore: import('./graph/anchor-graph-store').AnchorGraphStore | null = null;
+  private coactivationGraphStore: import('./graph/coactivation-store').CoactivationGraphStore | null = null;
   private trajectoryCollector: import('./trajectory/collector').TrajectoryCollector | null = null;
   private usagePoller: import('./usage/usage-poller').UsagePoller | null = null;
   private pluginLoader: import('./usage/plugin-loader').PluginLoader | null = null;
@@ -2172,6 +2173,14 @@ class MafwScheduler {
       this.anchorGraphStore = anchorStore;
       this.memoryService?.harmonicIndex?.setAnchorGraphStore(anchorStore);
       log.info('[AnchorGraph] store initialized & rebuilt');
+
+      const { CoactivationGraphStore } = require('./graph/coactivation-store');
+      const coactStore = new CoactivationGraphStore(this.getGatewayDb());
+      coactStore.rebuild(index ?? { entries: [] });
+      this.coactivationGraphStore = coactStore;
+      this.memoryService?.harmonicIndex?.setCoactivationGraphStore(coactStore);
+      try { this.heartbeat?.record('coactivation-rebuild', { ok: true, counts: coactStore.stats() }); } catch { /* non-fatal */ }
+      log.info('[Coactivation] store initialized & rebuilt');
     } catch (err: any) {
       log.warn(`[AnchorGraph] init failed (non-fatal): ${err.message}`);
     }
@@ -3325,6 +3334,9 @@ class MafwScheduler {
               },
               consolidation,
               pipelines: this.heartbeat?.snapshot() ?? [],
+              coactivation: (() => {
+                try { return this.coactivationGraphStore?.stats() ?? null; } catch { return null; }
+              })(),
             }));
           } catch (err: any) {
             res.writeHead(500);
