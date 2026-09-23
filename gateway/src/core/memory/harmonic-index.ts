@@ -7,6 +7,7 @@ import { config } from '../../config';
 import type { Reranker } from './reranker';
 import { detectTimeWindow, applyTimeBoost } from '../../recall/time-anchor';
 import { personalizedPageRank } from '../../graph/diffusion';
+import { abstractionLevelFor } from './abstraction-level';
 
 interface HookManagerLike {
   execute(event: string, context: any): Promise<void>;
@@ -153,7 +154,18 @@ export class HarmonicIndexManager {
   private load(): HarmonicIndex {
     try {
       if (fs.existsSync(this.indexPath)) {
-        return JSON.parse(fs.readFileSync(this.indexPath, 'utf-8'));
+        const idx: HarmonicIndex = JSON.parse(fs.readFileSync(this.indexPath, 'utf-8'));
+        // Backfill abstraction_level for entries predating the field (index-only,
+        // idempotent; type is the authority so no unit-file read is needed).
+        let changed = false;
+        for (const e of idx.entries ?? []) {
+          if ((e as any).abstraction_level === undefined && e.type) {
+            (e as any).abstraction_level = abstractionLevelFor(e.type);
+            changed = true;
+          }
+        }
+        if (changed) { try { fs.writeFileSync(this.indexPath, JSON.stringify(idx, null, 2)); } catch {} }
+        return idx;
       }
     } catch {}
     return { version: 1, updated_at: new Date().toISOString(), entries: [] };
