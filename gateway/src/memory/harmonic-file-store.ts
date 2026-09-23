@@ -8,6 +8,7 @@ import { readOKFFile } from './okf-parser';
 import { EventLog } from './event-log';
 import { WriteQueue } from './write-queue';
 import { AnchorGraph } from '../graph/anchor-graph';
+import { CoactivationGraphStore } from '../graph/coactivation-store';
 import { tokenize, extractDerivedTerms, extractAnchors } from './derived-terms';
 import { MinHashMerger } from '../core/memory/minhash-merger';
 
@@ -28,11 +29,13 @@ export class HarmonicUnitFileStore {
   private anchorGraph: AnchorGraph;
   private minHashMerger: MinHashMerger;
   private anchorGraphStore: import('../graph/anchor-graph-store').AnchorGraphStore | undefined;
+  private coactivationStore: CoactivationGraphStore | undefined;
 
   constructor(
     private baseDir: string,
     indexManager?: HarmonicIndexManager,
     anchorGraphStore?: import('../graph/anchor-graph-store').AnchorGraphStore,
+    coactivationStore?: CoactivationGraphStore,
   ) {
     this.indexManager = indexManager || new HarmonicIndexManager(baseDir);
     this.graphManager = new CognitiveGraphManager(baseDir);
@@ -47,6 +50,11 @@ export class HarmonicUnitFileStore {
     this.anchorGraph = new AnchorGraph();
     this.minHashMerger = new MinHashMerger();
     this.anchorGraphStore = anchorGraphStore;
+    this.coactivationStore = coactivationStore;
+  }
+
+  getCoactivationGraphStore(): CoactivationGraphStore | undefined {
+    return this.coactivationStore;
   }
 
   async write(unit: HarmonicUnit, tier?: string, opts?: { skipMerge?: boolean }): Promise<string> {
@@ -98,12 +106,22 @@ export class HarmonicUnitFileStore {
         // keys off unit.type), not the tier label — a tier arg such as 'tier3'
         // does not relocate the file. read() resolves via this path.
         filePath: path.join('memory', getOKFDirectory(targetUnit), fileName).replace(/\\/g, '/'),
+        created_at: targetUnit.created_at,
         source_session_id: targetUnit.source_session_id,
       } as any, entryTier);
 
       // 锚点图（多跳检索）增量更新——失败不影响记忆写入（降级）
       try {
         this.anchorGraphStore?.upsertUnit(targetUnit.id, targetUnit.cue_anchors ?? []);
+      } catch { /* non-fatal */ }
+
+      // 共激活图（联想层）增量更新——失败不影响记忆写入（降级）
+      try {
+        this.coactivationStore?.upsertUnit({
+          id: targetUnit.id,
+          source_session_id: targetUnit.source_session_id,
+          created_at: targetUnit.created_at,
+        });
       } catch { /* non-fatal */ }
 
       const linkRegex = /\[\[([^\]]+)\]\]/g;
