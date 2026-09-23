@@ -1157,6 +1157,7 @@ class MafwScheduler {
         directory: this.projectDir,
         ttlMs: config.recall.sessionWorkerTtlMs,
         compactIdleMs: config.recall.workerCompactIdleMs,
+        promptTimeoutMs: config.recall.workerPromptTimeoutMs,
         // Recursion guard (A): internal worker sessions are registered so
         // /api/obs/capture never records their output as observations.
         onSessionCreated: (sessionId, role) => {
