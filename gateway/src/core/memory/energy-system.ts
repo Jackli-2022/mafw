@@ -68,8 +68,9 @@ export class EnergySystem {
    * Pure time-based decay with no event bonus — used by the memory:decay
    * automation so memories fade solely by elapsed time.
    */
-  decay(currentEnergy: number, daysSinceLastUpdate: number, salience: number = 1.0): number {
-    const effectiveDecay = this.decayRatePerDay * (1 / Math.max(0.1, salience));
+  decay(currentEnergy: number, daysSinceLastUpdate: number, salience: number = 1.0, ratePerDay?: number): number {
+    const rate = ratePerDay ?? this.decayRatePerDay;
+    const effectiveDecay = rate * (1 / Math.max(0.1, salience));
     return Math.max(this.minEnergy, Math.min(this.maxEnergy, currentEnergy - effectiveDecay * Math.max(0, daysSinceLastUpdate)));
   }
 

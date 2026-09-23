@@ -71,6 +71,12 @@
 
 **实现分层（本地优先）**：Tier 0 deterministic/embedding（免费即时）→ cross-encoder（1–10ms）→ NLI（20–200ms）→ worker LLM（兜底）。**关键**：Qwen3-Embedding 是 **bi-encoder**（query/doc 各自编码）→ **挂头只能做分类/打分，做不了 pair 判断**（矛盾/精排需 cross-encoder）。**Jev 仅 ⑥ 合并裁判真适配**（可选，默认不接；外部依赖/隐私/中文），②/③ 可选试点，其余本地更优或 Jev 做不到。
 
+**判断分两类（关键，实测证伪得出）**：
+- **调质式**（给分/门控，**信号加性**）→ **可确定性/规则**：salience（情绪+novelty+reward+repetition，已实现）、遗忘、回放采样。
+- **语义式**（"是不是同一实体/事实"，**需理解**）→ **必须模型**：consolidation（UPDATE/CREATE）、contradiction、type、精排。
+- **实测证伪**：曾试图用"cosine ≥0.95 直接合并"给 consolidation 省 LLM 调用 → 现有测试证伪（cosine 0.995 但实为不同实体，LLM 判 `create`）→ **过度合并**（Memora over-consolidation 降质，健康区间 ~16–22%）。**consolidation 必须保持 LLM/模型裁判**，不可确定性自动化。
+- **区分依据**：调质式只需"给个分"（标量加性，像大脑多巴胺/去甲肾上腺素）；语义式需"判断同一性"（理解语义，不是算分）——这解释了为什么 salience 可规则化而 consolidation 不可。
+
 ## 4. 分阶段改动
 
 ### Phase A：清理与统一（零/低成本，先做）
@@ -81,7 +87,7 @@
 ### Phase B：调控层（判断层）—— 本地分层（Jev 可选）
 - **B1 统一接口**：`gateway/src/judge/`（`judge(kind, state) → typed answer`），每个 kind 选实现（规则/embedding/cross-encoder/NLI/LLM/Jev）。
 - **B2 本地分层**：Tier 0 deterministic/embedding（type 分类、salience 新颖度）→ cross-encoder（精排/矛盾）→ NLI（矛盾/类型）→ worker LLM（兜底）。
-- **B3 合并裁判**：worker LLM 保持；**可选**换 Jev Choice（`{update|create|none}` + target_id，低置信升级 LLM）。
+- **B3 合并裁判**：worker LLM 保持（**不可确定性自动化**，见 §3.4 证伪）；**可选**换 Jev Choice（`{update|create|none}` + target_id，低置信升级 LLM）。
 - **B4（可选）**：Jev 试点（精排/显著性）——**默认不接**（外部依赖/隐私/中文）。
 
 ### Phase C：双系统结构（高成本，需独立 spec/plan）

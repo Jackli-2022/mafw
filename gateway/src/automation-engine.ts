@@ -7,6 +7,7 @@ import { EnergySystem } from './core/memory/energy-system';
 import { ReviewScheduler } from './core/memory/review-scheduler';
 import { CognitiveGraphManager } from './core/memory/cognitive-graph';
 import { L5Store } from './core/memory/l5-store';
+import { decayRateFor } from './core/memory/abstraction-level';
 
 import { SchedulerLedger } from './ledger';
 import { eventBus } from './event-bus';
@@ -69,7 +70,7 @@ export function runEnergyDecay(
     const daysSinceDecay = base > 0 ? Math.max(0, (now - base) / DAY_MS) : 0;
     // Pure time decay — no event bonus. The `retrieved` bonus belongs to real
     // recall paths (search), not to the background decay pass.
-    const decayedEnergy = energySystem.decay(entry.energy, daysSinceDecay, salience);
+    const decayedEnergy = energySystem.decay(entry.energy, daysSinceDecay, salience, decayRateFor(entry.type));
     const diff = entry.energy - decayedEnergy;
     if (diff > 0.005) {
       indexManager.updateEnergy(entry.id, -(diff));
