@@ -64,17 +64,20 @@ export type ConsolidationOutcome =
   | { action: 'skip'; reason: string };
 
 interface JudgeVerdict {
-  action: 'update' | 'create';
+  action: 'update' | 'create' | 'separate';
   target_id?: string;
+  /** For `separate`: the disambiguating keyword distinguishing this entry. */
+  distinction?: string;
 }
 
-const JUDGE_SYSTEM = `You are a memory management assistant. Given a NEW memory entry and similar existing entries, decide whether the new entry should UPDATE (merge into) an existing entry or be CREATEd as a separate memory.
+const JUDGE_SYSTEM = `You are a memory management assistant. Given a NEW memory entry and similar existing entries, decide how the new entry relates to them.
 
 Rules:
-- UPDATE when both entries describe the same underlying subject/entity/topic with overlapping or complementary details (e.g. evolving state of the same project, updated preferences, new facts about the same person).
-- CREATE when the subjects are merely similar in wording but refer to different entities, events, or aspects.
+- UPDATE when the new entry describes the SAME underlying subject/entity/topic as an existing entry with overlapping or complementary details (e.g. evolving state of the same project, an updated preference value, a new fact about the same person). Pick the single best target.
+- SEPARATE when the new entry is highly similar in wording/structure but refers to a DIFFERENT entity or instance (e.g. "deploy to us-east-1" vs "deploy to eu-west-1", two distinct people, two distinct services). Keep both, disambiguated.
+- CREATE when the entries are only superficially similar and unrelated in subject.
 Respond with ONLY a JSON object:
-{"action":"update","target_id":"<id of the entry to merge into>"} or {"action":"create"}`;
+{"action":"update","target_id":"<id>"} or {"action":"separate","target_id":"<id>","distinction":"<short disambiguating keyword>"} or {"action":"create"}`;
 
 export class ConsolidationService {
   private store: ConsolidationDeps['store'];
@@ -173,7 +176,10 @@ export class ConsolidationService {
     const verdict = await this.judge(unit, candidateIds);
     this.onJudge?.(verdict ? { ok: true } : { ok: false, error: 'judge-error' });
     if (!verdict) return { action: 'skip', reason: 'judge-error' };
-    if (verdict.action === 'create') {
+    if (verdict.action === 'create' || verdict.action === 'separate') {
+      // `separate` = keep both (do not merge) — the post-write listener has no
+      // disambiguation surface, so it behaves as create here; route-write (S4)
+      // handles the distinction anchors.
       this.stats.creates++;
       return { action: 'create' };
     }
@@ -309,13 +315,15 @@ export async function consolidationJudge(
 
 /** Parse a judge reply into a verdict. No braces → create; malformed JSON →
  *  null (judge failure, fail-open skip); unknown action → create. */
-function parseJudgeVerdict(content: string): JudgeVerdict | null {
+export function parseJudgeVerdict(content: string): JudgeVerdict | null {
   const jsonText = String(content ?? '').replace(/```json|```/g, '').trim();
   const start = jsonText.indexOf('{');
   const end = jsonText.lastIndexOf('}');
   if (start === -1 || end === -1) return { action: 'create' };
   const parsed = JSON.parse(jsonText.slice(start, end + 1));
-  if (parsed?.action !== 'update' && parsed?.action !== 'create') return { action: 'create' };
+  if (parsed?.action !== 'update' && parsed?.action !== 'create' && parsed?.action !== 'separate') {
+    return { action: 'create' };
+  }
   return parsed as JudgeVerdict;
 }
 
