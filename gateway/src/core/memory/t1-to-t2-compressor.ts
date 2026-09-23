@@ -1,6 +1,7 @@
 import { T1Store, T1Observation } from './t1-store';
 import { CompressionPipeline } from '../compression/compression-pipeline';
 import { HarmonicUnit, generateHarmonicId } from './harmonic-types';
+import { abstractionLevelFor } from './abstraction-level';
 import { HarmonicIndexManager } from './harmonic-index';
 import { HarmonicUnitFileStore } from '../../memory/harmonic-file-store';
 import { calculateSalience } from './salience-perceptor';
@@ -132,7 +133,7 @@ export class T1ToT2Compressor {
       memory_value: memoryValue,
       energy: Math.max(0, Math.min(1, energy)),
       salience: calculateSalience(memoryValue),
-      abstraction_level: 1,
+      abstraction_level: abstractionLevelFor('episodic'),
       goal_id: goalId !== 'default' ? goalId : undefined,
       source_session_id: sessionID,
       created_at: new Date().toISOString(),

@@ -3,6 +3,7 @@ import * as path from "path";
 import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { generateHarmonicId } from "../../core/memory/harmonic-types";
+import { abstractionLevelFor } from "../../core/memory/abstraction-level";
 import { calculateSalience, importanceToSalience } from "../../core/memory/salience-perceptor";
 
 export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) => {
@@ -42,7 +43,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       memory_value: content,
       energy: memCfg.defaultEnergy,
       salience,
-      abstraction_level: memoryType === "global" ? 3 : memoryType === "episodic" ? 1 : 2,
+      abstraction_level: abstractionLevelFor(memoryType),
       created_at: now,
       updated_at: now,
       // Sticky note board: guaranteed per-turn visibility until the date

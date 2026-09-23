@@ -9,6 +9,7 @@ import { MemoryWorker } from './memory-worker';
 import { MinHashMerger } from '../core/memory/minhash-merger';
 import { ReflectCursor } from './reflect-cursor';
 import { generateHarmonicId, HarmonicUnit } from '../core/memory/harmonic-types';
+import { abstractionLevelFor } from '../core/memory/abstraction-level';
 import { calculateSalience } from '../core/memory/salience-perceptor';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 
@@ -285,7 +286,7 @@ export class ReflectionPipeline {
         memory_value: insight.content,
         energy: CATEGORY_ENERGY[insight.category],
         salience: calculateSalience(insight.content),
-        abstraction_level: 2,
+        abstraction_level: abstractionLevelFor('semantic'),
         created_at: now,
         updated_at: now,
         source_session_id: sessionID === ORPHAN_SESSION ? undefined : sessionID,

@@ -5,6 +5,7 @@ import { askUser } from '../tools/run-ask-user';
 import { recordFeedback } from '../tools/run-record-feedback';
 import { CognitiveRouter } from '../cost/cognitive-router';
 import { HarmonicUnit, generateHarmonicId } from '../memory/harmonic-types';
+import { abstractionLevelFor } from '../memory/abstraction-level';
 import { HarmonicIndexManager } from '../memory/harmonic-index';
 import { calculateSalience } from '../memory/salience-perceptor';
 
@@ -462,7 +463,7 @@ export function registerTools(): { definitions: ToolDefinition[]; handlers: Reco
           memory_value: content,
           energy: 0.8,
           salience: calculateSalience(content),
-          abstraction_level: memoryType === 'procedural' ? 3 : memoryType === 'global' ? 4 : 2,
+          abstraction_level: abstractionLevelFor(memoryType),
           created_at: now,
           updated_at: now,
           pinned: args.pinned === true || undefined,

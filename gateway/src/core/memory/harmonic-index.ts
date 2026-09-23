@@ -232,6 +232,7 @@ export class HarmonicIndexManager {
       // entry timeless, so new memories could never decay.
       created_at: unit.created_at || new Date().toISOString(),
       source_session_id: unit.source_session_id,
+      abstraction_level: (unit as any).abstraction_level,
     });
     this.save();
     this.hookManager?.execute('memory.write', {

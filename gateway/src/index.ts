@@ -19,6 +19,7 @@ import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
 import { createMemorySearch } from "./interceptors/memory-injector";
 import { createToolRegistry } from "./mcp/tool-registry";
+import { abstractionLevelFor } from './core/memory/abstraction-level';
 import { MemoryService } from "./memory/service";
 import { initEmbeddingRuntime, computeDenseScores, getEmbeddingRuntime, setEmbeddingRuntime } from "./memory/embedding-runtime";
 import { EmbeddingIndexer } from "./memory/vector-store";
@@ -3333,6 +3334,15 @@ class MafwScheduler {
               coactivation: (() => {
                 try { return this.coactivationGraphStore?.stats() ?? null; } catch { return null; }
               })(),
+              abstractionLevels: (() => {
+                const counts: Record<string, number> = { '1': 0, '2': 0, '3': 0, unknown: 0 };
+                for (const e of indexEntries) {
+                  const lvl = (e as any).abstraction_level;
+                  if (lvl === 1 || lvl === 2 || lvl === 3) counts[String(lvl)]++;
+                  else counts.unknown++;
+                }
+                return counts;
+              })(),
             }));
           } catch (err: any) {
             res.writeHead(500);
@@ -6036,7 +6046,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           memory_value: content.slice(0, 4000),
           energy: 0.8,
           salience,
-          abstraction_level: memoryType === 'global' ? 3 : memoryType === 'episodic' ? 1 : 2,
+          abstraction_level: abstractionLevelFor(memoryType),
           created_at: now,
           updated_at: now,
           pinned: data?.pinned === true || undefined,

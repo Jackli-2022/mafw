@@ -107,6 +107,7 @@ export class HarmonicUnitFileStore {
         // does not relocate the file. read() resolves via this path.
         filePath: path.join('memory', getOKFDirectory(targetUnit), fileName).replace(/\\/g, '/'),
         created_at: targetUnit.created_at,
+        abstraction_level: targetUnit.abstraction_level,
         source_session_id: targetUnit.source_session_id,
       } as any, entryTier);
 

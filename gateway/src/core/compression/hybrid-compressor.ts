@@ -1,5 +1,6 @@
 import { ZeroTokenCompressor } from './zero-token-compressor';
 import { HarmonicUnit, generateHarmonicId } from '../memory/harmonic-types';
+import { abstractionLevelFor } from '../memory/abstraction-level';
 import { HarmonicIndexManager } from '../memory/harmonic-index';
 import { calculateSalience } from '../memory/salience-perceptor';
 import { HarmonicUnitFileStore } from '../../memory/harmonic-file-store';
@@ -77,7 +78,7 @@ export class HybridCompressor {
       memory_value: '',
       energy: Math.max(0, Math.min(1, energy)),
       salience: calculateSalience(allContent),
-      abstraction_level: memoryType === 'procedural' ? 2 : memoryType === 'episodic' ? 1 : 2,
+      abstraction_level: abstractionLevelFor(memoryType),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };

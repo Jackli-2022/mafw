@@ -7,7 +7,6 @@ import { EnergySystem } from './core/memory/energy-system';
 import { ReviewScheduler } from './core/memory/review-scheduler';
 import { CognitiveGraphManager } from './core/memory/cognitive-graph';
 import { L5Store } from './core/memory/l5-store';
-import { runDistillation } from './core/memory/abstraction-distiller';
 
 import { SchedulerLedger } from './ledger';
 import { eventBus } from './event-bus';
@@ -38,18 +37,6 @@ export function unregisterAction(type: string): boolean {
 export function resetActionRegistry(): void {
   actionRegistry.clear();
 }
-actionRegistry.set('memory:distill', async (_rule, engine) => {
-  log.info('[AutomationEngine] Starting memory distillation...');
-  const indexManager = new HarmonicIndexManager(engine.mafwDir);
-  const result = await runDistillation(indexManager, engine.mafwDir);
-  log.info(`[AutomationEngine] Distillation complete: created ${result.created}, locked ${result.locked}`);
-  eventBus.emit('memory_distillation_complete', {
-    type: 'memory_distillation_complete',
-    created: result.created,
-    locked: result.locked,
-    errors: result.errors,
-  });
-});
 /**
  * One energy-decay pass over a HarmonicIndexManager.
  *

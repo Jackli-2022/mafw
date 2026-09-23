@@ -44,6 +44,8 @@ export interface HarmonicIndexEntry {
   filePath?: string;
   created_at?: string;
   source_session_id?: string;
+  /** Abstraction degree (orthogonal to type): 1=episodic, 2=semantic/procedural, 3=global. */
+  abstraction_level?: number;
   superseded_by?: string;
   merged_from?: string[];
   pinned?: boolean;

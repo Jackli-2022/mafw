@@ -6,6 +6,7 @@
 // Idempotent: the renamed backup file (constraints.migrated.json) marks a
 // project as already migrated; second runs skip it.
 import * as fs from 'fs';
+import { abstractionLevelFor } from '../core/memory/abstraction-level';
 import * as path from 'path';
 import { log } from '../core/utils/logger';
 
@@ -61,7 +62,7 @@ export async function migrateConstraintsFiles(projectDirs: string[]): Promise<Mi
           memory_value: text,
           energy: 0.9,
           salience: 1.0,
-          abstraction_level: 2,
+          abstraction_level: abstractionLevelFor('semantic'),
           created_at: now,
           updated_at: now,
         };

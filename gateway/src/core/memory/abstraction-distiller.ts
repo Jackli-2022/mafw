@@ -1,4 +1,7 @@
-// src/memory/abstraction-distiller.ts — Rewritten for v7 proposition extraction
+// src/memory/abstraction-distiller.ts — DEPRECATED.
+// The `memory:distill` action was a no-op stub and has been removed from the
+// action registry. These regex helpers are unused by the live path; kept for
+// reference only. Do not re-register without implementing real distillation.
 
 export function hasKnowledgeSignal(observation: string): string | null {
   const lower = observation.toLowerCase();

@@ -1,4 +1,4 @@
-import { ToolDefinition, ToolHandler } from "../types";
+﻿import { ToolDefinition, ToolHandler } from "../types";
 
 export interface ToolRegistry {
   definitions: ToolDefinition[];
@@ -47,7 +47,7 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_search_hybrid",
-    description: "Search memory units using BM25 (×energy) with optional iterative expansion. If results are insufficient and canExpand=true, call again with the returned state to expand via shared cue anchors. Stop when memories suffice; max 2 expansion rounds (3 calls total).",
+    description: "Search memory units using BM25 (脳energy) with optional iterative expansion. If results are insufficient and canExpand=true, call again with the returned state to expand via shared cue anchors. Stop when memories suffice; max 2 expansion rounds (3 calls total).",
     inputSchema: {
       type: "object",
       properties: {
@@ -130,7 +130,7 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_add_memory",
-    description: "Save a memory unit to the harmonic memory system. Agent calls this to persist reusable experiences, solutions, patterns, and insights for future retrieval. Before writing preference/fact memories, search for similar existing memories first — if one already covers the same fact, use mafw_supersede_memory instead.",
+    description: "Save a memory unit to the harmonic memory system. Agent calls this to persist reusable experiences, solutions, patterns, and insights for future retrieval. Before writing preference/fact memories, search for similar existing memories first 鈥?if one already covers the same fact, use mafw_supersede_memory instead.",
     inputSchema: {
       type: "object",
       properties: {
@@ -139,7 +139,7 @@ const DEFINITIONS: ToolDefinition[] = [
         cueAnchors: { type: "array", items: { type: "string" }, description: "Tags/keywords for retrieval (max 8)" },
         primaryAbstraction: { type: "string", description: "6-8 word summary (auto-generated from content if omitted)" },
         supersedes: { type: "array", items: { type: "string" }, description: "IDs of existing memories this new memory replaces/updates. The old memories will be marked superseded (energy halved, search penalty applied)." },
-        sticky: { type: "boolean", description: "Put this memory on the note board: injected into every turn's recall context until it expires (default 7 days). Use when the user explicitly says 'remember this / 记下来 / 别忘了'. Expiry only removes it from the board; the memory stays searchable." },
+        sticky: { type: "boolean", description: "Put this memory on the note board: injected into every turn's recall context until it expires (default 7 days). Use when the user explicitly says 'remember this / 璁颁笅鏉?/ 鍒繕浜?. Expiry only removes it from the board; the memory stays searchable." },
         stickyDays: { type: "number", description: "Note-board TTL in days (default 7, only with sticky: true)" },
       },
       required: ["content", "memoryType"],
@@ -230,10 +230,10 @@ const DEFINITIONS: ToolDefinition[] = [
       required: ["conflictingId", "newAbstraction", "action"],
     },
   },
-  // ── Manager tools ──
+  // 鈹€鈹€ Manager tools 鈹€鈹€
   {
     name: "mafw_set_goal",
-    description: "Create a new MAFW goal (Manager tool — must confirm with user first)",
+    description: "Create a new MAFW goal (Manager tool 鈥?must confirm with user first)",
     inputSchema: {
       type: "object",
       properties: {
@@ -310,7 +310,7 @@ const DEFINITIONS: ToolDefinition[] = [
     description: "List all currently pending loop questions",
     inputSchema: { type: "object", properties: {} },
   },
-  // ── Tier 1: Read-only automation tools ──
+  // 鈹€鈹€ Tier 1: Read-only automation tools 鈹€鈹€
   {
     name: "mafw_list_automation_rules",
     description: "List all automation rules with next trigger times and recent execution records",
@@ -362,10 +362,10 @@ const DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
-  // ── Tier 2: Safe action automation tools ──
+  // 鈹€鈹€ Tier 2: Safe action automation tools 鈹€鈹€
   {
     name: "mafw_run_automation",
-    description: "Run a scan-type automation rule. Force auto_confirm=false — results always go to PENDING_CONFIRMATION for your review",
+    description: "Run a scan-type automation rule. Force auto_confirm=false 鈥?results always go to PENDING_CONFIRMATION for your review",
     inputSchema: {
       type: "object",
       properties: {
@@ -395,7 +395,7 @@ const DEFINITIONS: ToolDefinition[] = [
         action: {
           type: "object",
           properties: {
-            type: { type: "string", enum: ["memory:distill", "memory:decay", "memory:review", "memory:prune"], description: "Memory action type" },
+            type: { type: "string", enum: ["memory:decay", "memory:review", "memory:prune"], description: "Memory action type" },
           },
         },
         onResult: {
@@ -416,10 +416,10 @@ const DEFINITIONS: ToolDefinition[] = [
       required: ["id", "trigger"],
     },
   },
-  // ── Tier 3: Draft/Suggest automation tools ──
+  // 鈹€鈹€ Tier 3: Draft/Suggest automation tools 鈹€鈹€
   {
     name: "mafw_propose_triage_decision",
-    description: "Attach your analysis and suggestion to a triage item. Item REMAINS PENDING_CONFIRMATION — the user sees your suggestion when they review triage items and can accept or override it",
+    description: "Attach your analysis and suggestion to a triage item. Item REMAINS PENDING_CONFIRMATION 鈥?the user sees your suggestion when they review triage items and can accept or override it",
     inputSchema: {
       type: "object",
       properties: {
@@ -452,7 +452,7 @@ const DEFINITIONS: ToolDefinition[] = [
         action: {
           type: "object",
           properties: {
-            type: { type: "string", enum: ["memory:distill", "memory:decay", "memory:review", "memory:prune"] },
+            type: { type: "string", enum: ["memory:decay", "memory:review", "memory:prune"] },
           },
         },
         onResult: {
@@ -473,7 +473,7 @@ const DEFINITIONS: ToolDefinition[] = [
       required: ["id", "trigger"],
     },
   },
-  // ── Desktop GUI automation tools ──
+  // 鈹€鈹€ Desktop GUI automation tools 鈹€鈹€
   {
     name: "mafw_desktop_screenshot",
     description: "Take a screenshot of the MAFW Desktop GUI. Optionally capture a specific region by CSS selector. The PNG is saved to .mafw/screenshots/ and the file path is returned. Use this to verify visual output.",
