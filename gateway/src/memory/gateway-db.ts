@@ -19,6 +19,8 @@ export interface T1Observation {
   source: ObservationSource;
   content: string;
   failure: number;
+  /** S3 encoding-time salience (0..1); null for legacy rows. */
+  salience?: number | null;
   created_at: number;
 }
 
@@ -67,6 +69,7 @@ export class GatewayDatabase {
         source TEXT NOT NULL,
         content TEXT NOT NULL,
         failure INTEGER DEFAULT 0,
+        salience REAL,
         created_at INTEGER DEFAULT (unixepoch()),
         UNIQUE(session_id, turn_id, source, content)
       );
@@ -259,6 +262,14 @@ export class GatewayDatabase {
     } catch {
       // Column already exists, ignore
     }
+
+    // Migration: add salience column to t1_observations if not exists (S3
+    // encoding-time salience tag; legacy rows read as null → neutral 0.5).
+    try {
+      this.db.exec(`ALTER TABLE t1_observations ADD COLUMN salience REAL`);
+    } catch {
+      // Column already exists, ignore
+    }
   }
 
   // ── T1 observations ─────────────────────────────────────────────────────
@@ -290,10 +301,10 @@ export class GatewayDatabase {
   append(obs: Omit<T1Observation, 'id' | 'created_at'>): number | null {
     const result = this.db
       .prepare(
-        `INSERT OR IGNORE INTO t1_observations (session_id, turn_id, source, content, failure)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO t1_observations (session_id, turn_id, source, content, failure, salience)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(obs.session_id, obs.turn_id, obs.source, obs.content, obs.failure);
+      .run(obs.session_id, obs.turn_id, obs.source, obs.content, obs.failure, obs.salience ?? null);
     return result.changes > 0 ? Number(result.lastInsertRowid) : null;
   }
 

@@ -41,6 +41,7 @@ import { registerCustomCommands } from "./commands/custom-exec";
 import { exec } from "child_process";
 import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
 import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
+import { obsSalience } from "./recall/obs-salience";
 import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
@@ -5118,6 +5119,7 @@ class MafwScheduler {
                 return;
               }
               const turnId = source === 'user_input' ? this.getGatewayDb().nextTurnId(sessionID) : this.getGatewayDb().currentTurnId(sessionID);
+              const redacted = redactSecrets(content).slice(0, 100_000);
               const id = this.getGatewayDb().append({
                 session_id: sessionID,
                 turn_id: turnId,
@@ -5125,8 +5127,10 @@ class MafwScheduler {
                 // Redact secrets once at capture so every downstream consumer
                 // (turnCompress transcripts, worker prompts, archive) only
                 // ever sees redacted content.
-                content: redactSecrets(content).slice(0, 100_000),
+                content: redacted,
                 failure,
+                // S3: encoding-time salience tag (deterministic, LLM-free).
+                salience: obsSalience({ text: redacted }).score,
               });
               // Async scan prefetch: precompute semantic recall for this turn
               // so the next boundary recall can merge it without waiting.
