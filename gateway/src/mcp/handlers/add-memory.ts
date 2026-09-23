@@ -5,6 +5,7 @@ import { ToolHandler } from "../../types";
 import { generateHarmonicId } from "../../core/memory/harmonic-types";
 import { abstractionLevelFor } from "../../core/memory/abstraction-level";
 import { judgeSalience } from "../../judge/salience";
+import { schemaFastPath } from "../../judge/schema";
 import { getEmbeddingRuntime } from "../../memory/embedding-runtime";
 import { importanceToSalience } from "../../core/memory/salience-perceptor";
 
@@ -34,30 +35,37 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
 
     const memCfg = config.memory;
     const importance = (args.importance as number | undefined);
+    const sharedIndex = (memory as any)?.harmonicIndex;
     // Tier 0 salience judgment: integrate novelty (embedding distance to the
     // nearest existing memory) with the regex emotional signal — brain's
     // neuromodulator scalar integration, not an LLM. Fail-open.
     let novelty: number | undefined;
+    let nearestSemanticCosine = 0;
     try {
       const rt = getEmbeddingRuntime();
       if (rt) {
         const [v] = await rt.provider.embed([content], 'document');
         if (v) {
-          const hits = rt.vectors.searchByCosine(v, 1);
+          const hits = rt.vectors.searchByCosine(v, 5);
           novelty = hits.length > 0 ? 1 - hits[0].cosine : 1;
+          for (const h of hits) {
+            const e = sharedIndex?.getIndex().entries.find((x: any) => x.id === h.id);
+            if (e && e.type === 'semantic') { nearestSemanticCosine = h.cosine; break; }
+          }
         }
       }
     } catch { /* fail-open */ }
     const salience = importance !== undefined
       ? importanceToSalience(importance)
       : judgeSalience({ text: content, novelty }).score;
+    const energy = schemaFastPath({ nearestSemanticCosine, type: memoryType }).energy;
     const unit = {
       id: unitId,
       type: memoryType,
       primary_abstraction: primaryAbstraction.slice(0, memCfg.abstractionMaxLength),
       cue_anchors: cueAnchors.slice(0, memCfg.maxCueAnchors),
       memory_value: content,
-      energy: memCfg.defaultEnergy,
+      energy,
       salience,
       abstraction_level: abstractionLevelFor(memoryType),
       created_at: now,
@@ -71,7 +79,6 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     // Share the in-memory index with the rest of the gateway so that memories
     // written via MCP are immediately visible to recall and subsequent
     // searches without requiring a restart.
-    const sharedIndex = (memory as any)?.harmonicIndex;
     const sharedGraph = (memory as any)?.harmonicIndex?.getAnchorGraphStore?.()
       ?? (memory as any)?.getAnchorGraphStore?.() ?? undefined;
     const store = sharedIndex
