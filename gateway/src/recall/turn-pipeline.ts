@@ -11,6 +11,7 @@
 // safeguard at near-zero storage cost for personal-scale usage.
 import { GatewayDatabase, T1Observation } from '../memory/gateway-db';
 import { HarmonicIndexManager } from '../core/memory/harmonic-index';
+import { HarmonicIndexEntry } from '../core/memory/harmonic-types';
 import { MemoryWorker } from './memory-worker';
 import { completeTurns, TurnEval } from './turn-completion';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
@@ -107,6 +108,45 @@ export function sessionContext(
     .slice(-maxEpisodes)
     .map((e) => `- ${e.primary_abstraction}`);
   return prior.length > 0 ? prior.join('\n') : '';
+}
+
+/**
+ * Cross-session related prior memories for interleaved replay (CLS): retrieve by
+ * the new transcript, drop the current session and episodic narratives, keep the
+ * top-k semantic/procedural entries. Fail-open: returns [] on any error.
+ */
+export function priorKnowledgeFor(
+  index: HarmonicIndexManager,
+  sessionID: string,
+  query: string,
+  k: number,
+): HarmonicIndexEntry[] {
+  if (k <= 0 || !query.trim()) return [];
+  try {
+    return index
+      .searchScored(query, k * 3, { retriever: 'bm25', graphExpand: true })
+      .map((s) => s.entry)
+      .filter((e) => e.source_session_id !== sessionID)
+      .filter((e) => e.type !== 'episodic')
+      .filter((e) => !e.superseded_by)
+      .slice(0, k);
+  } catch {
+    return [];
+  }
+}
+
+/** Render prior knowledge as a budgeted "reconcile" block (empty when nothing fits). */
+export function priorKnowledgeBlock(entries: HarmonicIndexEntry[], maxChars: number): string {
+  const lines: string[] = [];
+  let used = 0;
+  for (const e of entries) {
+    const line = `- [${e.id}] ${e.primary_abstraction}`;
+    if (used + line.length > maxChars) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  if (lines.length === 0) return '';
+  return `Prior knowledge from other work (reconcile — update/merge/supersede rather than duplicate):\n${lines.join('\n')}`;
 }
 
 export class TurnPipeline {
