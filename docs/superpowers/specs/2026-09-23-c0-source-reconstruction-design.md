@@ -48,22 +48,27 @@ searchArchive(session_id: string, anchors: string[], k: number): T1Observation[]
 ```ts
 import { T1Observation } from '../memory/gateway-db';
 
-/** Render archived turns as budgeted evidence lines (empty when nothing fits). */
+/** Render archived turns as budgeted evidence lines (empty only when maxChars too small). */
 export function reconstructSource(turns: T1Observation[], maxChars: number): string {
   const lines: string[] = [];
   let used = 0;
   for (const t of turns) {
+    if (used >= maxChars) break;
     const tag = t.source === 'user_input' ? 'USER'
       : t.source === 'reasoning' ? 'THINKING'
       : t.source === 'tool_result' ? 'TOOL' : 'ASSISTANT';
-    const line = `[${tag}] ${(t.content || '').replace(/\s+/g, ' ').trim()}`;
-    if (used + line.length > maxChars) break;
+    const text = `[${tag}] ${(t.content || '').replace(/\s+/g, ' ').trim()}`;
+    const remaining = maxChars - used;
+    const line = text.length > remaining ? `${text.slice(0, Math.max(0, remaining - 1))}…` : text;
     lines.push(line);
     used += line.length + 1;
   }
-  return lines.join('\n');
+  const out = lines.join('\n');
+  return out.length > maxChars ? out.slice(0, maxChars) : out;
 }
 ```
+
+> **实测踩坑**：首条 turn 内容常 > `maxChars`（实测 3004 字符 > 1500）→ 若"超预算即 break"会产出**空证据**。必须**截断加 `…`**，保证至少一条。已加回归测试。
 
 ### 3.3 兑现（`handleGetMemory`）
 `handleGetMemory` 解构加 `searchArchive`；在返回体加 `source`（仅当有 `searchArchive`、目标有 `source_session_id`、且开关开）：
