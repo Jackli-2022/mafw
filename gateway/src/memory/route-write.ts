@@ -11,6 +11,7 @@
 import { HarmonicUnit } from '../core/memory/harmonic-types';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
+import { getReconsolidationQueue } from '../recall/reconsolidation';
 
 export type RoutingOutcome =
   | { action: 'skip'; targetId: string }
@@ -143,6 +144,8 @@ export async function routeAndWrite(
   await store.markSuperseded(target.id, merged.id);
   deps.vectors.remove(target.id);
   deps.vectors.flush();
+  // S5: the target was just reconsolidated (updated) — leave the labile window.
+  try { getReconsolidationQueue().consume(target.id); } catch { /* fail-open */ }
   return { action: 'update', id: merged.id, targetId: target.id };
 }
 

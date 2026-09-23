@@ -43,6 +43,7 @@ import { ConsolidationService, consolidationJudge } from "./memory/consolidation
 import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
 import { obsSalience } from "./recall/obs-salience";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
+import { getReconsolidationQueue } from "./recall/reconsolidation";
 import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
@@ -3413,6 +3414,9 @@ class MafwScheduler {
                 coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
               },
               consolidation,
+              reconsolidation: (() => {
+                try { return { eligible: getReconsolidationQueue().listEligible().length }; } catch { return null; }
+              })(),
               pipelines: this.heartbeat?.snapshot() ?? [],
               coactivation: (() => {
                 try { return this.coactivationGraphStore?.stats() ?? null; } catch { return null; }

@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { ToolHandler } from "../../types";
 import { eventBus } from "../../event-bus";
+import { getReconsolidationQueue } from "../../recall/reconsolidation";
 
 const projectDir = process.env.MAFW_PROJECT_DIR || process.cwd();
 
@@ -24,6 +25,12 @@ export const handleRecordFeedback: ToolHandler = async (args) => {
     );
 
     eventBus.emit("user_feedback", { type: "user_feedback", goalId, targetId, feedbackType: type });
+
+    // S5: a positively-used memory enters the reconsolidation window — a later
+    // consolidation pass may UPDATE it under the prediction-error gate.
+    if (type === "thumbs_up" && targetId) {
+      try { getReconsolidationQueue().mark(targetId, "feedback"); } catch { /* fail-open */ }
+    }
 
     return { content: [{ type: "text", text: JSON.stringify({ success: true }) }] };
   } catch (err: any) {
