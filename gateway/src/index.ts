@@ -6032,12 +6032,25 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         if (!this.memoryService) return { success: false, error: 'memoryService not ready' };
         const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
         const { generateHarmonicId } = require('./core/memory/harmonic-types.js');
-        const { calculateSalience, importanceToSalience } = require('./core/memory/salience-perceptor.js');
+        const { importanceToSalience } = require('./core/memory/salience-perceptor.js');
+        const { judgeSalience } = require('./judge/salience.js');
+        const { getEmbeddingRuntime } = require('./memory/embedding-runtime.js');
         const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
         const now = new Date().toISOString();
+        let novelty: number | undefined;
+        try {
+          const rt = getEmbeddingRuntime();
+          if (rt) {
+            const [v] = await rt.provider.embed([content], 'document');
+            if (v) {
+              const hits = rt.vectors.searchByCosine(v, 1);
+              novelty = hits.length > 0 ? 1 - hits[0].cosine : 1;
+            }
+          }
+        } catch { /* fail-open */ }
         const salience = typeof data?.importance === 'number' && Number.isFinite(data.importance)
           ? importanceToSalience(data.importance)
-          : calculateSalience(content);
+          : judgeSalience({ text: content, novelty }).score;
         const unit = {
           id: generateHarmonicId(),
           type: memoryType,
