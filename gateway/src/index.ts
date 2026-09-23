@@ -1210,7 +1210,7 @@ class MafwScheduler {
       const completion = () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined);
       const direct = Boolean(judgeBaseUrl && judgeApiKey);
       this.consolidationService = new ConsolidationService({
-        store: new HarmonicUnitFileStore(mafwDir),
+        store: new HarmonicUnitFileStore(mafwDir, this.memoryService?.harmonicIndex),
         vectors: embeddingRuntime.vectors,
         provider: embeddingRuntime.provider,
         llm: judgeBaseUrl && judgeApiKey
@@ -1225,6 +1225,10 @@ class MafwScheduler {
           error: r.error,
           counts: this.consolidationService?.getStats(),
         }),
+        // Persist stats across service rebuilds (initEmbeddingServices is
+        // re-entrant on hot-swap) so updateRatio/skipped survive restarts.
+        onStats: (s) => { try { this.getGatewayDb().kvSet('consolidation-stats', 'latest', s); } catch { /* fail-open */ } },
+        initialStats: (() => { try { return this.getGatewayDb().kvGet('consolidation-stats', 'latest') ?? undefined; } catch { return undefined; } })(),
         minCosine: config.memory.embedding.minCosine,
       });
       log.info(

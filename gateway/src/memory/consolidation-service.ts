@@ -49,6 +49,10 @@ export interface ConsolidationDeps {
   model?: { providerID: string; modelID: string };
   /** Fired whenever the LLM judge is actually invoked (heartbeat seam). */
   onJudge?: (result: { ok: boolean; error?: string }) => void;
+  /** Fired on every consolidate() terminal state (stats persistence seam). */
+  onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
+  /** Restore persisted counters on startup (so stats survive restarts). */
+  initialStats?: { judged?: number; updates?: number; creates?: number; skipped?: number };
   /** Cosine threshold for candidate recall (default 0.8). */
   minCosine?: number;
   maxCandidates?: number;
@@ -80,9 +84,10 @@ export class ConsolidationService {
   private completion?: () => CompletionChannel | undefined;
   private model?: { providerID: string; modelID: string };
   private onJudge?: (result: { ok: boolean; error?: string }) => void;
+  private onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
   private minCosine: number;
   private maxCandidates: number;
-  private stats = { judged: 0, updates: 0, creates: 0 };
+  private stats = { judged: 0, updates: 0, creates: 0, skipped: 0 };
 
   constructor(deps: ConsolidationDeps) {
     this.store = deps.store;
@@ -92,11 +97,13 @@ export class ConsolidationService {
     this.completion = deps.completion;
     this.model = deps.model;
     this.onJudge = deps.onJudge;
+    this.onStats = deps.onStats;
+    if (deps.initialStats) this.stats = { ...this.stats, ...deps.initialStats };
     this.minCosine = deps.minCosine ?? 0.8;
     this.maxCandidates = deps.maxCandidates ?? 3;
   }
 
-  getStats(): { judged: number; updates: number; creates: number; updateRatio: number } {
+  getStats(): { judged: number; updates: number; creates: number; skipped: number; updateRatio: number } {
     const judged = this.stats.updates + this.stats.creates;
     return {
       ...this.stats,
@@ -117,6 +124,16 @@ export class ConsolidationService {
   }
 
   async consolidate(unit: HarmonicUnit): Promise<ConsolidationOutcome> {
+    try {
+      const outcome = await this.consolidateInner(unit);
+      if (outcome.action === 'skip') this.stats.skipped++;
+      return outcome;
+    } finally {
+      this.onStats?.({ ...this.stats });
+    }
+  }
+
+  private async consolidateInner(unit: HarmonicUnit): Promise<ConsolidationOutcome> {
     if (!unit?.id) return { action: 'skip', reason: 'no-unit' };
     // Recursion guard: never re-consolidate merge products.
     if (unit.merged_from && unit.merged_from.length > 0) {
