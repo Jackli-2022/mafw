@@ -118,6 +118,7 @@ function parseArgs() {
     fusionSparseWeight: parseFloat(flags.get('--fusionSparseWeight') ?? '0.65'),
     graph: flags.get('--graph') === 'true',
     coactivation: flags.get('--coactivation') === 'true',
+    channelSplit: flags.get('--channelSplit') === 'true',
     coactWindowSec: parseInt(flags.get('--coactWindowSec') ?? '3600', 10),
     scan: flags.get('--scan') === 'true',
     scanApiUrl: flags.get('--scanApiUrl') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
@@ -369,6 +370,7 @@ async function main() {
   // Scan implies graph (needs anchor graph for 1-hop expansion on scan results)
   const graphEnabled = args.graph || args.scan;
   config.search.graph.coactivation.timeWindowSec = args.coactWindowSec;
+  config.search.channelSplit.enabled = args.channelSplit;
   const searchOptions: SearchOptions = {
     retriever: retriever === 'hybrid' ? 'bm25' : retriever,
     cutoffRatio: reranker ? 0 : args.cutoffRatio,
