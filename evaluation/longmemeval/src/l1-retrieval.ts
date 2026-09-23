@@ -61,7 +61,7 @@ export async function runScan(
   model: string,
 ): Promise<{ ids: string[]; confidence: number }> {
   const entries = index.getIndex().entries.filter((e: any) => !e.superseded_by);
-  const lines = entries.map(formatEntryForIndex);
+  const lines = entries.map((e: any) => formatEntryForIndex(e));
   const indexText = `# Memory Index (${entries.length} entries)\n\n${lines.join('\n')}`;
   const prompt = `${indexText}\n\n---\n\nUser query: ${query}\n\nSelect the most relevant memory entries from the index above.`;
 
@@ -117,6 +117,8 @@ function parseArgs() {
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
     fusionSparseWeight: parseFloat(flags.get('--fusionSparseWeight') ?? '0.65'),
     graph: flags.get('--graph') === 'true',
+    coactivation: flags.get('--coactivation') === 'true',
+    coactWindowSec: parseInt(flags.get('--coactWindowSec') ?? '3600', 10),
     scan: flags.get('--scan') === 'true',
     scanApiUrl: flags.get('--scanApiUrl') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
     scanApiKeyProvider: flags.get('--scanApiKeyProvider') ?? 'alibaba-cn',
@@ -140,6 +142,8 @@ function help() {
   console.log('  --recallK N     candidates before rerank');
   console.log('  --cutoffRatio N drop results below topScore × ratio (0 = off)');
   console.log('  --graph true|false  enable anchor-graph multi-hop expansion (default false)');
+  console.log('  --coactivation true|false  enable association layer (co-activation edges + PPR) (default false)');
+  console.log('  --coactWindowSec N  co-activation time-proximity window in seconds (default 3600)');
   console.log('  --scan true|false   enable mimo index scan + graph expansion (default false)');
   console.log('  --scanApiUrl URL    scan API endpoint (default dashscope)');
   console.log('  --scanApiKeyProvider NAME  auth.json provider for scan (default alibaba-cn)');
@@ -157,6 +161,7 @@ async function runOne(
   recallK: number,
   cutoffRatio: number,
   graphEnabled: boolean,
+  coactivationEnabled: boolean,
   scanEnabled: boolean,
   scanApiUrl: string,
   scanApiKeyProvider: string,
@@ -184,6 +189,18 @@ async function runOne(
       const graph = new AnchorGraphStore(db);
       graph.rebuild(index.getIndex());
       index.setAnchorGraphStore(graph);
+    }
+    if (coactivationEnabled) {
+      if (!db) {
+        const { GatewayDatabase } = require('../../../gateway/src/memory/gateway-db');
+        db = new GatewayDatabase(path.join(tmpDir, 'graph.db'));
+      }
+      const { CoactivationGraphStore } = require('../../../gateway/src/graph/coactivation-store');
+      const coact = new CoactivationGraphStore(db);
+      coact.rebuild(index.getIndex());
+      index.setCoactivationGraphStore(coact);
+      const cs = coact.stats();
+      console.error(`[coact] edges=${cs.edges} session=${cs.session} goal=${cs.goal} time=${cs.time}`);
     }
 
     let entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
@@ -351,6 +368,7 @@ async function main() {
   const reranker = await createRerankerForRun(args.reranker);
   // Scan implies graph (needs anchor graph for 1-hop expansion on scan results)
   const graphEnabled = args.graph || args.scan;
+  config.search.graph.coactivation.timeWindowSec = args.coactWindowSec;
   const searchOptions: SearchOptions = {
     retriever: retriever === 'hybrid' ? 'bm25' : retriever,
     cutoffRatio: reranker ? 0 : args.cutoffRatio,
@@ -363,14 +381,14 @@ async function main() {
   const runPath = path.join(resultsDir, 'l1-run.jsonl');
   const summaryPath = path.join(resultsDir, 'l1-summary.json');
 
-  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, embedding=${embeddingProvider?.name ?? 'n/a'}, reranker=${args.reranker}, graph=${args.graph}, scan=${args.scan}, timeAnchor=true`);
+  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, embedding=${embeddingProvider?.name ?? 'n/a'}, reranker=${args.reranker}, graph=${args.graph}, coactivation=${args.coactivation}, scan=${args.scan}, timeAnchor=true`);
   const results: L1QuestionResult[] = [];
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     process.stdout.write(`[${i + 1}/${questions.length}] ${q.question_id} ${q.question_type} ... `);
     // Per-question options: time anchoring is relative to the question date.
     const perQuestionOptions: SearchOptions = { ...searchOptions, now: q.question_date };
-    const res = await runOne(q, ingestOpts, args.keep, perQuestionOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel, embeddingProvider);
+    const res = await runOne(q, ingestOpts, args.keep, perQuestionOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.coactivation, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel, embeddingProvider);
     results.push(res);
     fs.appendFileSync(runPath, JSON.stringify(res) + '\n', 'utf-8');
     process.stdout.write(`R@1=${res.recall[1].toFixed(2)} R@10=${res.recall[10].toFixed(2)}\n`);

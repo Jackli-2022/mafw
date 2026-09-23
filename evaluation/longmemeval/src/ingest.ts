@@ -51,6 +51,7 @@ function makeUnit(opts: {
   cueAnchors: string[];
   date: string;
   energy: number;
+  sessionId?: string;
 }): HarmonicUnit {
   const ms = parseLmeDate(opts.date);
   const iso = Number.isNaN(ms) ? new Date(0).toISOString() : new Date(ms).toISOString();
@@ -63,6 +64,7 @@ function makeUnit(opts: {
     energy: opts.energy,
     created_at: iso,
     updated_at: iso,
+    source_session_id: opts.sessionId,
   };
 }
 
@@ -96,6 +98,7 @@ export function buildUnitsForQuestion(
         cueAnchors: [marker, date],
         date,
         energy,
+        sessionId: sid,
       });
       units.push(unit);
       sessionOfUnit.set(unit.id, sid);
@@ -107,6 +110,7 @@ export function buildUnitsForQuestion(
           cueAnchors: [marker, date, round.role],
           date,
           energy,
+          sessionId: sid,
         });
         units.push(unit);
         sessionOfUnit.set(unit.id, sid);

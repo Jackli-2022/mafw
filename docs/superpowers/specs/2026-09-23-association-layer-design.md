@@ -209,3 +209,24 @@ diffusion:
 - 新增：`gateway/src/graph/coactivation-store.ts`、`gateway/src/graph/diffusion.ts`
 - 修改：`gateway/src/memory/gateway-db.ts`（建表）、`gateway/src/config.ts`（配置）、`gateway/src/core/memory/harmonic-index.ts`（检索接线）、`gateway/src/memory/harmonic-file-store.ts`（写时构建 + `addEntry` 补 `created_at`）、`gateway/src/index.ts`（wiring/rebuild）、stats 路由
 - 测试：`gateway/tests/unit/graph/coactivation-store.test.ts`、`diffusion.test.ts`、`harmonic-index` 集成
+
+## 15. 验收结果（2026-09-23）
+
+实现完成后在 LongMemEval S 集（`--sample 2`，每类 2 题共 12 题，seed 42）上做了 A/B 对照。harness 已加 `--coactivation` 与 `--coactWindowSec` 开关，并让 ingest 写入 `source_session_id`（原先缺失）。
+
+| 配置 | 粒度 | overall R@1 | R@5 | R@10 | 边数（每问） |
+|---|---|---|---|---|---|
+| baseline（coactivation=false, graph=true） | session | 0.183 | 0.283 | 0.425 | 0 |
+| coactivation=true, window=1h | session | 0.183 | 0.283 | 0.425 | 0（会话间无同会话边、时间窗太窄） |
+| coactivation=true, window=7d | session | 0.183 | 0.283 | 0.425 | ~140（仅时间边） |
+| baseline（coactivation=false, graph=true） | round | — | — | — | 0 |
+| coactivation=true, window=1h | round | — | — | — | ~1400（session+time） |
+
+**结论：联想层在 LongMemEval 上零可测增益**（round 粒度边数 ~1400 但 session 级 recall 不变）。
+
+**归因**：
+1. LongMemEval 的 session 粒度下"同会话"信号天然为空（1 单元/会话）；时间信号需大窗口才连边，但连到的"时间邻近会话"并非答案会话。
+2. 核心不匹配：共激活边连接"一起出现"的记忆，而 LongMemEval 的答案会话未必与 query 的 BM25 命中**共现**——联想扩展引入的是"同现相关"而非"答案相关"。
+3. 因此该层面向的是**生产语义**（同一任务/会话内多条记忆、Goal、时间簇），而非该基准的 session 检索。
+
+**待决**：`coactivation.enabled` / `diffusion.enabled` 默认值——基准无增益，但生产语义可能有益。当前实现默认 `true`；如需保守可改默认 `false`（opt-in）。
