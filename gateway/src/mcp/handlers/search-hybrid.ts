@@ -3,6 +3,7 @@ import { ToolHandler } from "../../types";
 import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store";
 import { createReranker, applyReranker } from "../../core/memory/reranker";
 import { computeDenseScores } from "../../memory/embedding-runtime";
+import { applyAccessBonus } from "../../recall/access-bonus";
 
 interface FrontierItem { id: string; weight: number; }
 interface IterState { seen: string[]; frontier: FrontierItem[]; round: number; }
@@ -125,16 +126,14 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
       .slice(0, topK)
       .map(r => r.entry);
 
-    // D2 reconsolidation: explicit retrieval access bonus (+0.02) on returned
+    // D2/S5 reconsolidation: explicit retrieval access bonus (+0.02) on returned
     // entries — the `retrieved` energy event, wired on the agent-facing search
     // path only (not boundary recall). Fail-open.
-    try {
-      const idx = (memory as any)?.harmonicIndex;
-      if (idx?.updateEnergy && results.length > 0) {
-        for (const r of results) idx.updateEnergy(r.id, 0.02);
-        idx.save?.();
-      }
-    } catch { /* fail-open */ }
+    const idx = (memory as any)?.harmonicIndex;
+    if (idx?.updateEnergy) {
+      applyAccessBonus(results.map((r: any) => r.id), idx);
+      try { idx.save?.(); } catch { /* fail-open */ }
+    }
 
     const canExpand = frontier.length > 0 && round < maxRounds;
 
