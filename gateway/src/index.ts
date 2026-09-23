@@ -40,7 +40,7 @@ import { scanCommandDirs, watchCommandDirs, type CommandDir } from "./commands/c
 import { registerCustomCommands } from "./commands/custom-exec";
 import { exec } from "child_process";
 import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
-import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
+import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite, getRouteStats } from "./memory/route-write";
 import { obsSalience } from "./recall/obs-salience";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getReconsolidationQueue } from "./recall/reconsolidation";
@@ -3414,6 +3414,7 @@ class MafwScheduler {
                 coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
               },
               consolidation,
+              routing: (() => { try { return getRouteStats(); } catch { return null; } })(),
               reconsolidation: (() => {
                 try { return { eligible: getReconsolidationQueue().listEligible().length }; } catch { return null; }
               })(),

@@ -105,10 +105,12 @@ export async function routeAndWrite(
 ): Promise<{ action: 'skip' | 'create' | 'update' | 'separate'; id: string; targetId?: string }> {
   const decision = await decideRouting(unit, deps);
   if (decision.action === 'skip') {
+    routeStats.skip++;
     return { action: 'skip', id: decision.targetId, targetId: decision.targetId };
   }
   if (decision.action === 'create') {
     await store.write(unit);
+    routeStats.create++;
     return { action: 'create', id: unit.id };
   }
   if (decision.action === 'separate') {
@@ -124,12 +126,14 @@ export async function routeAndWrite(
       updated_at: new Date().toISOString(),
     };
     await store.write(separated);
+    routeStats.separate++;
     return { action: 'separate', id: separated.id, targetId: decision.targetId };
   }
   // update: merge new content over the existing target, then supersede the target.
   const target = await store.read(decision.targetId);
   if (!target) {
     await store.write(unit);
+    routeStats.create++;
     return { action: 'create', id: unit.id };
   }
   const merged: HarmonicUnit = {
@@ -146,7 +150,15 @@ export async function routeAndWrite(
   deps.vectors.flush();
   // S5: the target was just reconsolidated (updated) — leave the labile window.
   try { getReconsolidationQueue().consume(target.id); } catch { /* fail-open */ }
+  routeStats.update++;
   return { action: 'update', id: merged.id, targetId: target.id };
+}
+
+/** Route-write counters for /api/memory/stats (skip = duplicates prevented). */
+const routeStats = { create: 0, skip: 0, update: 0, separate: 0 };
+
+export function getRouteStats(): { create: number; skip: number; update: number; separate: number } {
+  return { ...routeStats };
 }
 
 function dedupeCap(items: string[], cap: number): string[] {
