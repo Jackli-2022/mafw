@@ -43,7 +43,17 @@ export class AnchorGraphStore {
     const insAnchor = this.rawDb.prepare('INSERT OR IGNORE INTO anchor_units (anchor, unit_id) VALUES (?, ?)');
     for (const anchor of unique) insAnchor.run(anchor, unitId);
 
-    // 2. 对每个锚点，找共享单元并建边
+    // 2. 对每个锚点，找共享单元并建边。边权 = 共享锚点的 IDF 和，IDF 由
+    //    anchor_units 的度数现算（log(N/df)）：hub 锚点低增益、稀有锚点高增益，
+    //    但不删除 hub 边（大脑"保留 hub + 降增益"，非跳过）。
+    const n = (this.rawDb.prepare('SELECT COUNT(DISTINCT unit_id) AS c FROM anchor_units').get() as { c: number }).c;
+    const idfOf = (anchor: string): number => {
+      const df = (this.rawDb
+        .prepare('SELECT COUNT(DISTINCT unit_id) AS c FROM anchor_units WHERE anchor = ?')
+        .get(anchor) as { c: number }).c;
+      // 平滑 IDF（恒正）：df=N（全共享）仍 >0，小语料不归零
+      return Math.log(1 + n / Math.max(1, df));
+    };
     const candidates = new Map<string, Set<string>>(); // unitId -> anchors
     const sel = this.rawDb.prepare('SELECT unit_id FROM anchor_units WHERE anchor = ?');
     for (const anchor of unique) {
@@ -63,12 +73,9 @@ export class AnchorGraphStore {
          weight = excluded.weight,
          updated_at = unixepoch()`,
     );
-    const idf = this.idf;
     for (const [otherId, sharedAnchors] of candidates) {
       const [a, b] = this.normalizePair(unitId, otherId);
-      const weight = idf
-        ? [...sharedAnchors].reduce((sum, anchor) => sum + idf.idf(anchor), 0)
-        : sharedAnchors.size;
+      const weight = [...sharedAnchors].reduce((sum, anchor) => sum + idfOf(anchor), 0);
       insEdge.run(a, b, sharedAnchors.size, weight);
     }
   }
