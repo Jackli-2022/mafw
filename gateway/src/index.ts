@@ -1485,6 +1485,8 @@ class MafwScheduler {
             : undefined,
           baseUrl: (config.recall as any).scanApiUrl || undefined,
           scanEndpoints: (config.recall as any).scanEndpoints || undefined,
+          timeoutMs: config.recall.scanTimeoutMs,
+          maxIndexChars: config.recall.scanMaxIndexChars,
           // Runtime 契约的无状态补全通道（thunk 现读，热切换安全）——
           // 提供时 scan 优先走 completion.complete，直连 HTTP 降为回退。
           completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),

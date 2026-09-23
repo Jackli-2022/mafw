@@ -177,6 +177,11 @@ export interface GatewayConfig {
     workerCompactIdleMs: number;
     /** providerID → OpenAI-compatible chat-completions URL overrides for the direct-HTTP index scan. */
     scanEndpoints?: Record<string, string>;
+    /** Max chars of the memory index sent to the index scan (budget; the full
+     *  index grows past the model context). Default 80000 (~20k tokens). */
+    scanMaxIndexChars: number;
+    /** Timeout for the index-scan LLM call. Default 60000. */
+    scanTimeoutMs: number;
     /** Source-turn reconstruction for mafw_get_memory (C0). */
     sourceEvidence: { enabled: boolean; k: number; maxChars: number };
   };
@@ -394,6 +399,8 @@ function defaults(projectDir: string): GatewayConfig {
       maxEpisodicPerReflect: 100,
       workerModel: { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
       workerCompactIdleMs: 8 * 60 * 60 * 1000,
+      scanMaxIndexChars: 80_000,
+      scanTimeoutMs: 60_000,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
     },
     usage: {

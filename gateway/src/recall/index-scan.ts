@@ -51,6 +51,8 @@ export interface ScanHttpDeps {
   credentials?: { getApiKey(provider: string): string | null };
   /** Default timeout for scan() when options.timeoutMs is omitted. */
   timeoutMs?: number;
+  /** Max chars of the memory index sent to the scan (budget). Default 80000. */
+  maxIndexChars?: number;
   /** providerID → chat-completions URL (config recall.scanEndpoints). */
   scanEndpoints?: Record<string, string>;
   /** Async endpoint resolution (e.g. opencode provider config baseURL); wins over scanEndpoints, loses to baseUrl. */
@@ -178,7 +180,7 @@ function formatDateOnly(iso?: string): string {
  * hits across hourly refreshes. Header is static (no entry count) for the
  * same reason.
  */
-export function formatIndexForScan(index: HarmonicIndexManager): string {
+export function formatIndexForScan(index: HarmonicIndexManager, maxChars = 80_000): string {
   const entries = index.getIndex().entries
     .filter((e: any) => !e.superseded_by)
     .sort((a: any, b: any) => {
@@ -188,6 +190,21 @@ export function formatIndexForScan(index: HarmonicIndexManager): string {
     });
 
   const lines = entries.map((e: any) => formatEntryForIndex(e));
+  // Budget the prompt: keep the most RECENT entries that fit. The full index
+  // has grown past the model context (3.4k entries ≈ 132k tokens → scan times
+  // out). Older entries stay retrievable via BM25; the scan is a recency-biased
+  // prefetch. maxChars <= 0 disables the cap (full index).
+  if (maxChars > 0) {
+    const kept: string[] = [];
+    let used = 0;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (used + lines[i].length + 1 > maxChars) break;
+      kept.push(lines[i]);
+      used += lines[i].length + 1;
+    }
+    kept.reverse();
+    return `# Memory Index\n\n${kept.join('\n')}`;
+  }
   return `# Memory Index\n\n${lines.join('\n')}`;
 }
 
@@ -280,7 +297,7 @@ export class IndexScanService {
 
   /** Refresh the cached index text. Called hourly by turn-compress cron. */
   refreshCache(): void {
-    const text = formatIndexForScan(this.index);
+    const text = formatIndexForScan(this.index, this.deps.maxIndexChars ?? 80_000);
     const hash = hashText(text);
     const changed = this.lastIndexHash !== null && this.lastIndexHash !== hash;
     log.info(`[IndexScan] cache refreshed: ${text.split('\n').length - 2} entries, ${text.length} chars, hash=${hash}${this.lastIndexHash !== null ? `, changed=${changed}` : ''}`);
