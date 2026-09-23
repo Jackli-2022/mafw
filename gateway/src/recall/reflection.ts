@@ -12,6 +12,7 @@ import { generateHarmonicId, HarmonicUnit } from '../core/memory/harmonic-types'
 import { abstractionLevelFor } from '../core/memory/abstraction-level';
 import { calculateSalience } from '../core/memory/salience-perceptor';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
+import { getRouteWriteDeps, routeAndWrite } from '../memory/route-write';
 
 /** Session key for episodic memories with no source_session_id (legacy data). */
 export const ORPHAN_SESSION = '__orphan__';
@@ -297,8 +298,16 @@ export class ReflectionPipeline {
           this.store.markSuperseded(classification.conflictTarget, unit.id);
           result.superseded++;
         }
-        await this.store.write(unit);
-        result.distilled++;
+        // S1 write-time routing: dedup/update against existing memories when wired.
+        const routeDeps = getRouteWriteDeps();
+        if (routeDeps) {
+          const routed = await routeAndWrite(unit, this.store as any, routeDeps);
+          if (routed.action === 'skip') result.deduped++;
+          else result.distilled++;
+        } else {
+          await this.store.write(unit);
+          result.distilled++;
+        }
       } catch {
         result.failed++;
       }
