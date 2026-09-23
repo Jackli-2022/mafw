@@ -24,4 +24,11 @@ describe('reconstructSource', () => {
   test('空输入空串', () => {
     expect(reconstructSource([], 1000)).toBe('');
   });
+
+  test('首条超长仍产出截断证据（非空）', () => {
+    const out = reconstructSource([t('tool_result', 'x'.repeat(5000))], 200);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.length).toBeLessThanOrEqual(200);
+    expect(out.startsWith('[TOOL]')).toBe(true);
+  });
 });
