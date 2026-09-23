@@ -197,69 +197,96 @@ export class ConsolidationService {
   }
 
   private async judge(unit: HarmonicUnit, candidateIds: string[]): Promise<JudgeVerdict | null> {
-    const candidatesBlock: string[] = [];
-    for (const id of candidateIds) {
-      const target = await this.store.read(id);
-      if (!target) continue;
-      candidatesBlock.push(
-        `EXISTING ENTRY:\nID: ${target.id}\nIndex: ${target.primary_abstraction}\nValue: ${target.memory_value}`,
-      );
-    }
-    if (candidatesBlock.length === 0) return { action: 'create' };
+    return consolidationJudge(unit, candidateIds, {
+      store: this.store,
+      llm: this.llm,
+      completion: this.completion,
+      model: this.model,
+    });
+  }
+}
 
-    const user = `NEW MEMORY ENTRY:\nID: ${unit.id}\nIndex: ${unit.primary_abstraction}\nValue: ${unit.memory_value}\n\n${candidatesBlock.join('\n\n')}\n\nShould the new entry UPDATE one of the existing entries, or be CREATEd separately?`;
+/**
+ * Reusable identity judge: given a unit and candidate ids, ask the worker-model
+ * (via the runtime stateless-completion channel, falling back to direct HTTP)
+ * whether the unit UPDATEs one candidate or should be CREATEd separately.
+ * Fail-open: returns null on any error.
+ */
+export interface ConsolidationJudgeDeps {
+  store: { read(id: string): Promise<HarmonicUnit | null> };
+  llm?: ConsolidationLlmConfig;
+  completion?: () => CompletionChannel | undefined;
+  model?: { providerID: string; modelID: string };
+}
 
-    try {
-      // Preferred: runtime stateless-completion channel (resolves inline
-      // providers like "gateway" via opencode provider config). Falls back to
-      // the direct-HTTP llm config when the channel cannot resolve an endpoint.
-      const channel = this.completion?.();
-      if (channel && this.model) {
-        try {
-          const res = await channel.complete({
-            model: this.model,
-            system: [{ text: JUDGE_SYSTEM }],
-            user: [{ type: 'text', text: user }],
-            temperature: 0,
-            maxTokens: 200,
-          });
-          return parseJudgeVerdict(res?.text ?? '');
-        } catch (err: any) {
-          if (!this.llm) throw err;
-          log.warn(`[Consolidation] completion judge failed, falling back to direct HTTP: ${err?.message || err}`);
-        }
+export async function consolidationJudge(
+  unit: HarmonicUnit,
+  candidateIds: string[],
+  deps: ConsolidationJudgeDeps,
+): Promise<JudgeVerdict | null> {
+  const candidatesBlock: string[] = [];
+  for (const id of candidateIds) {
+    const target = await deps.store.read(id);
+    if (!target) continue;
+    candidatesBlock.push(
+      `EXISTING ENTRY:\nID: ${target.id}\nIndex: ${target.primary_abstraction}\nValue: ${target.memory_value}`,
+    );
+  }
+  if (candidatesBlock.length === 0) return { action: 'create' };
+
+  const user = `NEW MEMORY ENTRY:\nID: ${unit.id}\nIndex: ${unit.primary_abstraction}\nValue: ${unit.memory_value}\n\n${candidatesBlock.join('\n\n')}\n\nShould the new entry UPDATE one of the existing entries, or be CREATEd separately?`;
+
+  try {
+    // Preferred: runtime stateless-completion channel (resolves inline
+    // providers like "gateway" via opencode provider config). Falls back to
+    // the direct-HTTP llm config when the channel cannot resolve an endpoint.
+    const channel = deps.completion?.();
+    if (channel && deps.model) {
+      try {
+        const res = await channel.complete({
+          model: deps.model,
+          system: [{ text: JUDGE_SYSTEM }],
+          user: [{ type: 'text', text: user }],
+          temperature: 0,
+          maxTokens: 200,
+        });
+        return parseJudgeVerdict(res?.text ?? '');
+      } catch (err: any) {
+        if (!deps.llm) throw err;
+        log.warn(`[Consolidation] completion judge failed, falling back to direct HTTP: ${err?.message || err}`);
       }
-
-      const llm = this.llm!;
-      const fetchFn = llm.fetchFn ?? globalThis.fetch.bind(globalThis);
-      const timeoutMs = llm.timeoutMs ?? 30_000;
-      const resp = await Promise.race([
-        fetchFn(llm.baseUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${llm.apiKey}` },
-          body: JSON.stringify({
-            model: llm.model,
-            messages: [
-              { role: 'system', content: JUDGE_SYSTEM },
-              { role: 'user', content: user },
-            ],
-            temperature: 0,
-            max_tokens: 200,
-          }),
-        }),
-        new Promise<never>((_, reject) => {
-          const timer = setTimeout(() => reject(new Error('judge timeout')), timeoutMs);
-          timer.unref?.();
-        }),
-      ]) as Response;
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      const content: string = data?.choices?.[0]?.message?.content ?? '';
-      return parseJudgeVerdict(content);
-    } catch (err: any) {
-      log.warn(`[Consolidation] judge failed: ${err?.message || err}`);
-      return null;
     }
+
+    const llm = deps.llm;
+    if (!llm) return null;
+    const fetchFn = llm.fetchFn ?? globalThis.fetch.bind(globalThis);
+    const timeoutMs = llm.timeoutMs ?? 30_000;
+    const resp = await Promise.race([
+      fetchFn(llm.baseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${llm.apiKey}` },
+        body: JSON.stringify({
+          model: llm.model,
+          messages: [
+            { role: 'system', content: JUDGE_SYSTEM },
+            { role: 'user', content: user },
+          ],
+          temperature: 0,
+          max_tokens: 200,
+        }),
+      }),
+      new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error('judge timeout')), timeoutMs);
+        timer.unref?.();
+      }),
+    ]) as Response;
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const content: string = data?.choices?.[0]?.message?.content ?? '';
+    return parseJudgeVerdict(content);
+  } catch (err: any) {
+    log.warn(`[Consolidation] judge failed: ${err?.message || err}`);
+    return null;
   }
 }
 

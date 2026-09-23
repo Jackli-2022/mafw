@@ -39,7 +39,8 @@ import type { MafwCommandRegistry } from "./commands/registry";
 import { scanCommandDirs, watchCommandDirs, type CommandDir } from "./commands/custom-commands";
 import { registerCustomCommands } from "./commands/custom-exec";
 import { exec } from "child_process";
-import { ConsolidationService } from "./memory/consolidation-service";
+import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
+import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
 import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
@@ -1940,6 +1941,35 @@ class MafwScheduler {
       }
       this.consolidationService?.enqueue(u);
     });
+
+    // S1: wire write-time routing (embedding recall + LLM identity judge).
+    // The judge store shares this.memoryService.harmonicIndex so UPDATE merges
+    // land in the live index (fixing the consolidation index divergence).
+    const routeRt = getEmbeddingRuntime();
+    if (routeRt && this.memoryService) {
+      const judgeStore = new HarmonicUnitFileStore(mafwDir, this.memoryService.harmonicIndex);
+      const providerID = config.recall.workerModel?.providerID;
+      const modelID = config.recall.workerModel?.modelID;
+      const judgeBaseUrl = providerID ? resolveScanBaseUrl(providerID) : undefined;
+      const judgeApiKey = judgeBaseUrl ? getProviderApiKey(providerID!) : null;
+      setRouteWriteDeps({
+        vectors: routeRt.vectors,
+        provider: routeRt.provider,
+        judge: (u, ids) => consolidationJudge(u, ids, {
+          store: judgeStore,
+          llm: judgeBaseUrl && judgeApiKey && modelID
+            ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: modelID }
+            : undefined,
+          completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),
+          model: providerID && modelID ? { providerID, modelID } : undefined,
+        }),
+        candidateCosine: config.memory.embedding.minCosine,
+        dupCosine: config.memory.embedding.dupCosine,
+        isSuperseded: (id) =>
+          Boolean(this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id)?.superseded_by),
+      });
+      log.info('[RouteWrite] write-time routing enabled');
+    }
 
     this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
       getCredentials: () => this.runtime?.credentials ?? undefined,
@@ -6079,6 +6109,20 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           supersedesTarget = this.memoryService.harmonicIndex.getIndex().entries.find((e: any) => e.id === sid);
           if (!supersedesTarget) return { success: false, error: `supersedes target not found: ${sid}` };
           unit.energy = Math.max(unit.energy, supersedesTarget.energy ?? 0);
+        }
+        const routeDeps = getRouteWriteDeps();
+        if (routeDeps) {
+          const routed = await routeAndWrite(unit as any, store as any, routeDeps);
+          if (routed.action === 'create' && supersedesTarget && !supersedesTarget.superseded_by) {
+            store.markSuperseded(supersedesTarget.id, unit.id);
+          }
+          return {
+            success: true,
+            id: routed.id,
+            deduped: routed.action === 'skip' ? true : undefined,
+            updated: routed.action === 'update' ? routed.targetId : undefined,
+            sticky_until: routed.action === 'create' ? (unit as any).sticky_until : undefined,
+          };
         }
         await store.write(unit);
         if (supersedesTarget && !supersedesTarget.superseded_by) {

@@ -7,6 +7,7 @@ import { abstractionLevelFor } from "../../core/memory/abstraction-level";
 import { judgeSalience } from "../../judge/salience";
 import { schemaFastPath } from "../../judge/schema";
 import { getEmbeddingRuntime } from "../../memory/embedding-runtime";
+import { getRouteWriteDeps, routeAndWrite } from "../../memory/route-write";
 import { importanceToSalience } from "../../core/memory/salience-perceptor";
 
 export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) => {
@@ -93,6 +94,23 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       if (store.markSuperseded(oldId, unitId)) {
         supersededIds.push(oldId);
       }
+    }
+
+    // S1 write-time routing: when the embedding runtime + judge are wired,
+    // decide skip (duplicate → non-write) / update (integrate) / create before
+    // persisting. Absent deps → fall through to the plain write (rollback-safe).
+    const routeDeps = getRouteWriteDeps();
+    if (routeDeps) {
+      const routed = await routeAndWrite(unit as any, store as any, routeDeps);
+      return { content: [{ type: "text", text: JSON.stringify({
+        success: true,
+        id: routed.id,
+        tier: 'memories',
+        deduped: routed.action === 'skip' ? true : undefined,
+        updated: routed.action === 'update' ? routed.targetId : undefined,
+        sticky_until: routed.action === 'create' ? (unit as any).sticky_until : undefined,
+        superseded: supersededIds.length > 0 ? supersededIds : undefined,
+      }) }] };
     }
 
     await store.write(unit as any);
