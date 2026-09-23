@@ -381,6 +381,21 @@ export class GatewayDatabase {
     return (this.db.prepare('SELECT COUNT(*) AS c FROM t1_archive').get() as { c: number }).c;
   }
 
+  /** Search a session's archived turns by anchor substrings (LIKE), best-match first. */
+  searchArchive(session_id: string, anchors: string[], k: number): T1Observation[] {
+    if (!session_id || anchors.length === 0 || k <= 0) return [];
+    const needle = anchors.map((a) => a.toLowerCase());
+    const likes = needle.map(() => 'content LIKE ?').join(' OR ');
+    const rows = this.db
+      .prepare(`SELECT * FROM t1_archive WHERE session_id = ? AND (${likes}) ORDER BY turn_id LIMIT 200`)
+      .all(session_id, ...needle.map((a) => `%${a}%`)) as T1Observation[];
+    const scored = rows
+      .map((r) => ({ r, hits: needle.filter((a) => (r.content || '').toLowerCase().includes(a)).length }))
+      .filter((x) => x.hits > 0)
+      .sort((a, b) => b.hits - a.hits || a.r.turn_id - b.r.turn_id);
+    return scored.slice(0, k).map((x) => x.r);
+  }
+
   // ── Noop log (extraction coverage monitoring) ──────────────────────────
 
   /**
