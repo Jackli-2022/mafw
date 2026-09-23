@@ -119,6 +119,7 @@ function parseArgs() {
     graph: flags.get('--graph') === 'true',
     coactivation: flags.get('--coactivation') === 'true',
     channelSplit: flags.get('--channelSplit') === 'true',
+    assignTypes: flags.get('--assignTypes') === 'true',
     coactWindowSec: parseInt(flags.get('--coactWindowSec') ?? '3600', 10),
     scan: flags.get('--scan') === 'true',
     scanApiUrl: flags.get('--scanApiUrl') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
@@ -349,6 +350,7 @@ async function main() {
   const ingestOpts: IngestOptions = {
     granularity: args.granularity as 'round' | 'session',
     energyMode: args.energyMode as 'frozen' | 'realistic',
+    assignTypes: args.assignTypes,
   };
   const retriever = args.retriever as 'token' | 'bm25' | 'hybrid';
   const embeddingProvider: EmbeddingProvider | null = retriever === 'hybrid'

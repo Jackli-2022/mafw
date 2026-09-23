@@ -24,6 +24,16 @@ export interface IngestOptions {
   granularity?: 'round' | 'session';
   energyMode?: 'frozen' | 'realistic';
   frozenEnergy?: number;
+  /** Eval probe: assign per-unit type by a content heuristic so the
+   *  channelSplit (Phase C4b) can be exercised — LongMemEval is otherwise
+   *  all-episodic (semantic channel empty → split never fires). */
+  assignTypes?: boolean;
+}
+
+/** Coarse content heuristic for type assignment (eval probe only, not ground truth). */
+function classifyUnitType(text: string): 'semantic' | 'episodic' {
+  const declarative = (text.match(/\b(is|are|was|were|always|never|prefer|favorite|usually|likes?|uses?|means|refers)\b/gi) || []).length;
+  return declarative >= 3 ? 'semantic' : 'episodic';
 }
 
 export const SID_MARKER_PREFIX = 'lmesid:';
@@ -52,12 +62,13 @@ function makeUnit(opts: {
   date: string;
   energy: number;
   sessionId?: string;
+  type?: 'semantic' | 'episodic';
 }): HarmonicUnit {
   const ms = parseLmeDate(opts.date);
   const iso = Number.isNaN(ms) ? new Date(0).toISOString() : new Date(ms).toISOString();
   return {
     id: generateHarmonicId(),
-    type: 'episodic',
+    type: opts.type ?? 'episodic',
     primary_abstraction: opts.abstraction,
     cue_anchors: opts.cueAnchors,
     memory_value: opts.value,
@@ -99,6 +110,7 @@ export function buildUnitsForQuestion(
         date,
         energy,
         sessionId: sid,
+        type: options.assignTypes ? classifyUnitType(text) : 'episodic',
       });
       units.push(unit);
       sessionOfUnit.set(unit.id, sid);
@@ -111,6 +123,7 @@ export function buildUnitsForQuestion(
           date,
           energy,
           sessionId: sid,
+          type: options.assignTypes ? classifyUnitType(round.content) : 'episodic',
         });
         units.push(unit);
         sessionOfUnit.set(unit.id, sid);
