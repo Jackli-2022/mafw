@@ -1669,6 +1669,10 @@ class MafwScheduler {
       workerFor: (sessionID) => this.getPool().getWorker(sessionID, 'extract'),
       staleMs: config.recall.turnStaleMs,
       workerModel: config.recall.workerModel,
+      // Interleaved replay (CLS): recall cross-session prior knowledge into the
+      // worker prompt so the curator reconciles rather than only creating.
+      replayK: 5,
+      replayMaxChars: 1500,
       // Outcome-feedback signal (env-probing curation, grade gi): lets the
       // curator calibrate trust in the trajectory — a failed goal means its
       // "lessons" need verification before they become memories.

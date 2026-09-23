@@ -1,4 +1,4 @@
-import { priorKnowledgeFor, priorKnowledgeBlock } from '../../src/recall/turn-pipeline';
+import { priorKnowledgeFor, priorKnowledgeBlock, TurnPipeline, TOOL_EXTRACTION_SYSTEM } from '../../src/recall/turn-pipeline';
 import { HarmonicIndexManager } from '../../src/core/memory/harmonic-index';
 import { HarmonicUnit } from '../../src/core/memory/harmonic-types';
 import * as fs from 'fs';
@@ -50,5 +50,40 @@ describe('priorKnowledgeBlock', () => {
 
   test('空数组返回空串', () => {
     expect(priorKnowledgeBlock([], 1000)).toBe('');
+  });
+});
+
+describe('TurnPipeline replay injection', () => {
+  test('runSession prompt 含跨会话 prior knowledge 块', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'replay-int-'));
+    fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+    const index = new HarmonicIndexManager(dir);
+    index.addEntry(unit('other', 'kubernetes deployment prior decision', 'other-session'), 'semantic');
+
+    let captured = '';
+    const fakeWorker = { prompt: async (p: string) => { captured = p; return '[NOOP: test]'; } };
+    const fakeDb = {
+      listTurns: () => [{ session_id: 's1', turn_id: 1, count: 2, has_user_input: 1, response_count: 1, last_ts: 0 }],
+      readTurn: () => [{ source: 'user_input', content: 'kubernetes deployment question' }],
+      archiveTurn: () => {},
+      logNoop: () => {},
+    } as any;
+
+    const pipeline = new TurnPipeline({
+      t1db: fakeDb,
+      index,
+      workerFor: () => fakeWorker as any,
+      staleMs: 0,
+      replayK: 5,
+      replayMaxChars: 1500,
+    });
+    await pipeline.runSession('s1');
+    expect(captured).toContain('Prior knowledge from other work');
+    expect(captured).toContain('[other]');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('TOOL_EXTRACTION_SYSTEM 含 reconcile 指令', () => {
+    expect(TOOL_EXTRACTION_SYSTEM).toContain('Prior knowledge from other work');
   });
 });

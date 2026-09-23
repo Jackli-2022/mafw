@@ -29,6 +29,9 @@ export interface TurnPipelineOptions {
    *  appended to the worker prompt so the curator can calibrate trust in the
    *  trajectory (env-probing curation, signal D). */
   gradeFor?: (sessionID: string) => string | null;
+  /** Interleaved replay: recall cross-session prior knowledge into the worker prompt. */
+  replayK?: number;
+  replayMaxChars?: number;
 }
 
 export interface TurnPipelineResult {
@@ -74,6 +77,7 @@ Before writing preference/fact memories (semantic type), ALWAYS search for simil
 - Record reusable procedures (how to do X), never instance answers (the result of doing X once). Incidental values are not memories.
 - For every memory you verified via probing, add a "verified:YYYY-MM-DD" anchor (today's date) to cue_anchors so future agents can distinguish environment-verified memories from trajectory-only ones.
 - Outcome feedback (when present in the input): a passing grade or verdict does NOT validate every intermediate assumption in the trajectory; a failed outcome means treat that trajectory's "lessons" with suspicion and verify before writing.
+When "Prior knowledge from other work" is provided: compare each new insight against it. If a new insight updates or contradicts an existing memory, call mafw_add_memory with supersedes: [that id] (or mafw_supersede_memory to retract without replacement) — do not create a duplicate. If prior knowledge is unrelated, ignore it.
 ${HARD_BOUNDARIES}
 
 After processing, ALWAYS end your response with exactly one of these lines:
@@ -205,10 +209,13 @@ export class TurnPipeline {
       const base = context
         ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
         : `Observations of the last hour:\n${transcript}`;
+      const prior = priorKnowledgeFor(this.opts.index, sessionID, transcript, this.opts.replayK ?? 5);
+      const priorBlock = priorKnowledgeBlock(prior, this.opts.replayMaxChars ?? 1500);
       const grade = this.opts.gradeFor?.(sessionID);
-      const prompt = grade
-        ? `${base}\n\nOutcome feedback for this session's recent work (a signal about trajectory reliability, not proof of correctness):\n${grade}`
-        : base;
+      const gradeBlock = grade
+        ? `Outcome feedback for this session's recent work (a signal about trajectory reliability, not proof of correctness):\n${grade}`
+        : '';
+      const prompt = [base, priorBlock, gradeBlock].filter(Boolean).join('\n\n');
       try {
         const reply = await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel, 'memory-curator');
         // Parse noop indicator from the worker's response
