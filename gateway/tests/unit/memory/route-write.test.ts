@@ -43,13 +43,45 @@ describe('decideRouting', () => {
     expect(judged).toBe(0);
   });
 
-  test('cos >= dupCosine → skip with targetId (no judge call)', async () => {
+  test('cos >= dupCosine AND near-identical text → skip (no judge call)', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('dup', [1, 0]); // cos = 1.0
     let judged = 0;
-    const out = await decideRouting(u('n1'), { vectors: v, provider, judge: async () => { judged++; return null; } });
+    const out = await decideRouting(u('n1'), {
+      vectors: v,
+      provider,
+      judge: async () => { judged++; return null; },
+      readEntry: () => ({ primary_abstraction: 'n1' }), // same abstraction as u('n1')
+    });
     expect(out).toEqual({ action: 'skip', targetId: 'dup' });
     expect(judged).toBe(0);
+  });
+
+  test('cos >= dupCosine but DIFFERENT text → judge (value change not dropped)', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('dup', [1, 0]);
+    let judged = 0;
+    const out = await decideRouting(u('n1'), {
+      vectors: v,
+      provider,
+      judge: async () => { judged++; return { action: 'update', targetId: 'dup' }; },
+      readEntry: () => ({ primary_abstraction: 'replicas upper bound is five' }),
+    });
+    expect(judged).toBe(1);
+    expect(out.action).toBe('update');
+  });
+
+  test('cos >= dupCosine without readEntry → judge (safe default)', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('dup', [1, 0]);
+    let judged = 0;
+    const out = await decideRouting(u('n1'), {
+      vectors: v,
+      provider,
+      judge: async () => { judged++; return null; },
+    });
+    expect(judged).toBe(1);
+    expect(out.action).toBe('create');
   });
 
   test('candidate band → judge update', async () => {
@@ -121,7 +153,12 @@ describe('routeAndWrite', () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('dup', [1, 0]);
     const s = memStore([u('dup')]);
-    const out = await routeAndWrite(u('n1'), s as any, { vectors: v, provider, judge: async () => null });
+    const out = await routeAndWrite(u('n1'), s as any, {
+      vectors: v,
+      provider,
+      judge: async () => null,
+      readEntry: () => ({ primary_abstraction: 'n1' }),
+    });
     expect(out).toEqual({ action: 'skip', id: 'dup', targetId: 'dup' });
     expect(s.writes).toHaveLength(0);
   });

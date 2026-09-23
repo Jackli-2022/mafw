@@ -38,6 +38,38 @@ export interface RouteWriteDeps {
   maxCandidates?: number;
   /** Exclude revoked (superseded) entries from candidates. */
   isSuperseded?: (id: string) => boolean;
+  /**
+   * Read an existing entry's index fields (for the near-identical skip check).
+   * Without it, a cos≥θ_dup hit is NOT skipped — it routes to the judge, so a
+   * small value change ("3" → "5") is never silently dropped.
+   */
+  readEntry?: (id: string) => { primary_abstraction?: string } | undefined;
+}
+
+/** Token-set Jaccard over lowercase words + CJK chars. */
+function tokenSet(s: string): Set<string> {
+  return new Set((s || '').toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/).filter((w) => w.length >= 2));
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 1;
+  let inter = 0;
+  const [small, large] = a.size < b.size ? [a, b] : [b, a];
+  for (const t of small) if (large.has(t)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 1 : inter / union;
+}
+
+/**
+ * True only when the two abstractions are lexically near-identical (a genuine
+ * re-statement). Embedding proximity alone is insufficient: a value change
+ * ("replicas=3" → "replicas=5") is embedding-close but must NOT be dropped.
+ */
+export function isNearIdentical(a: string | undefined, b: string | undefined, theta = 0.9): boolean {
+  const ja = tokenSet(a || '');
+  const jb = tokenSet(b || '');
+  if (ja.size === 0 || jb.size === 0) return false;
+  return jaccard(ja, jb) >= theta;
 }
 
 export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): Promise<RoutingOutcome> {
@@ -67,7 +99,14 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
   if (hits.length === 0) return { action: 'create' };
 
   const top = hits[0];
-  if (top.cosine >= thetaDup) return { action: 'skip', targetId: top.id };
+  if (top.cosine >= thetaDup) {
+    // Non-write ONLY for a genuine lexical re-statement. A value change is
+    // embedding-close but must route to the judge (update) — never dropped.
+    const cand = deps.readEntry?.(top.id);
+    if (cand && isNearIdentical(unit.primary_abstraction, cand.primary_abstraction)) {
+      return { action: 'skip', targetId: top.id };
+    }
+  }
 
   const candidateIds = hits.slice(0, maxCand).map((h) => h.id);
   let verdict: JudgeDecision | null = null;

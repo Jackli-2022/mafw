@@ -23,6 +23,8 @@ test('near-exact duplicate → deduped, not persisted', async () => {
     vectors: v,
     provider: { name: 's', dims: 2, embed: async (t) => t.map(() => [1, 0]) },
     judge: async () => null,
+    // Same abstraction as the incoming unit → genuine re-statement → skip.
+    readEntry: () => ({ primary_abstraction: 'same' }),
   });
 
   const res: any = await handleAddMemory(

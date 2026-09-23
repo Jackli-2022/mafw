@@ -2017,6 +2017,10 @@ class MafwScheduler {
         dupCosine: config.memory.embedding.dupCosine,
         isSuperseded: (id) =>
           Boolean(this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id)?.superseded_by),
+        // Near-identical skip check: a value change must route to the judge,
+        // not be dropped as a duplicate.
+        readEntry: (id) =>
+          this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id),
       });
       log.info('[RouteWrite] write-time routing enabled');
     }
