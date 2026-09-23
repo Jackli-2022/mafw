@@ -4,7 +4,9 @@ import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { generateHarmonicId } from "../../core/memory/harmonic-types";
 import { abstractionLevelFor } from "../../core/memory/abstraction-level";
-import { calculateSalience, importanceToSalience } from "../../core/memory/salience-perceptor";
+import { judgeSalience } from "../../judge/salience";
+import { getEmbeddingRuntime } from "../../memory/embedding-runtime";
+import { importanceToSalience } from "../../core/memory/salience-perceptor";
 
 export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) => {
   try {
@@ -32,9 +34,23 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
 
     const memCfg = config.memory;
     const importance = (args.importance as number | undefined);
+    // Tier 0 salience judgment: integrate novelty (embedding distance to the
+    // nearest existing memory) with the regex emotional signal — brain's
+    // neuromodulator scalar integration, not an LLM. Fail-open.
+    let novelty: number | undefined;
+    try {
+      const rt = getEmbeddingRuntime();
+      if (rt) {
+        const [v] = await rt.provider.embed([content], 'document');
+        if (v) {
+          const hits = rt.vectors.searchByCosine(v, 1);
+          novelty = hits.length > 0 ? 1 - hits[0].cosine : 1;
+        }
+      }
+    } catch { /* fail-open */ }
     const salience = importance !== undefined
       ? importanceToSalience(importance)
-      : calculateSalience(content);
+      : judgeSalience({ text: content, novelty }).score;
     const unit = {
       id: unitId,
       type: memoryType,
