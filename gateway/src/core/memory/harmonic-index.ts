@@ -340,6 +340,18 @@ export class HarmonicIndexManager {
       scored = rrfFuse(scored, denseScored.slice(0, recallK), options.fusionK ?? 60, recallK, options.fusionSparseWeight ?? config.search.fusionSparseWeight);
     }
 
+    // ── Per-system retrieval channels (Phase C4b) ──
+    // Fuse the episodic ranking and the semantic ranking via RRF so the fast
+    // layer cannot crowd out the slow layer (config-gated, default off).
+    const cs = config.search.channelSplit;
+    if (cs?.enabled && scored.length > 1) {
+      const episodic = scored.filter((s) => s.entry.type === 'episodic');
+      const semantic = scored.filter((s) => s.entry.type !== 'episodic');
+      if (episodic.length > 0 && semantic.length > 0) {
+        scored = rrfFuse(semantic, episodic, options.fusionK ?? 60, Math.max(scored.length, recallK), 1 - cs.episodicWeight);
+      }
+    }
+
     // ── Association layer: merged anchor + coactivation neighbors → bounded PPR ──
     const graphExpand = options.graphExpand ?? config.search.graph.enabled;
     const gcfg = config.search.graph;
