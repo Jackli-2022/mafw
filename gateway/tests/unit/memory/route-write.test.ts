@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { decideRouting, routeAndWrite } from '../../../src/memory/route-write';
+import { decideRouting, routeAndWrite, setRouteWriteDeps, getRouteWriteDeps } from '../../../src/memory/route-write';
 import { MemoryVectorStore } from '../../../src/memory/vector-store';
 import { EmbeddingProvider } from '../../../src/memory/embedding-provider';
 import { HarmonicUnit } from '../../../src/core/memory/harmonic-types';
@@ -139,5 +139,14 @@ describe('routeAndWrite', () => {
     expect(s.writes.map((w) => w.id)).toEqual(['n1']);
     expect(s.superseded).toEqual([{ id: 'old', byId: 'n1' }]);
     expect(s.writes[0].merged_from).toContain('old');
+  });
+});
+
+describe('route deps singleton', () => {
+  test('set/get/null', () => {
+    setRouteWriteDeps({ vectors: null as any, provider: null as any, judge: async () => null });
+    expect(getRouteWriteDeps()).not.toBeNull();
+    setRouteWriteDeps(null);
+    expect(getRouteWriteDeps()).toBeNull();
   });
 });

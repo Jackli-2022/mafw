@@ -117,6 +117,9 @@ export interface GatewayConfig {
       baseUrl: string;
       /** Cosine threshold for consolidation candidate recall (P2). */
       minCosine: number;
+      /** Cosine threshold above which a write is treated as a near-exact
+       *  duplicate → non-write (skip) in write-time routing (S1). */
+      dupCosine: number;
       /** Enable LLM UPDATE/CREATE consolidation judge (P2). */
       consolidation: boolean;
       /** ONNX intra-op thread cap for the local provider (default 2 — ORT
@@ -348,6 +351,7 @@ function defaults(projectDir: string): GatewayConfig {
         dimensions: 1024,
         baseUrl: '',
         minCosine: 0.8,
+        dupCosine: 0.95,
         consolidation: true,
         threads: 2,
         engine: 'onnx',

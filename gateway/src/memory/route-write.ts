@@ -134,3 +134,16 @@ function dedupeCap(items: string[], cap: number): string[] {
   }
   return out;
 }
+
+// Module singleton so write entry points (MCP handler / HTTP / reflection) can
+// route without plumbing deps through every call site. Wired by index.ts once
+// the embedding runtime + judge are ready; null → callers skip routing.
+let routeDeps: RouteWriteDeps | null = null;
+
+export function setRouteWriteDeps(deps: RouteWriteDeps | null): void {
+  routeDeps = deps;
+}
+
+export function getRouteWriteDeps(): RouteWriteDeps | null {
+  return routeDeps;
+}
