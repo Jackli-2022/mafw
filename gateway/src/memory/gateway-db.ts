@@ -141,6 +141,29 @@ export class GatewayDatabase {
       CREATE INDEX IF NOT EXISTS idx_anchor_edges_a ON anchor_edges(unit_a);
       CREATE INDEX IF NOT EXISTS idx_anchor_edges_b ON anchor_edges(unit_b);
 
+      CREATE TABLE IF NOT EXISTS coactivation_units (
+        unit_id    TEXT PRIMARY KEY,
+        session_id TEXT,
+        goal_id    TEXT,
+        created_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_coact_units_session ON coactivation_units(session_id);
+      CREATE INDEX IF NOT EXISTS idx_coact_units_goal    ON coactivation_units(goal_id);
+      CREATE INDEX IF NOT EXISTS idx_coact_units_created ON coactivation_units(created_at);
+
+      CREATE TABLE IF NOT EXISTS coactivation_edges (
+        unit_a     TEXT NOT NULL,
+        unit_b     TEXT NOT NULL,
+        session_co REAL NOT NULL DEFAULT 0,
+        goal_co    REAL NOT NULL DEFAULT 0,
+        time_co    REAL NOT NULL DEFAULT 0,
+        weight     REAL NOT NULL,
+        updated_at INTEGER DEFAULT (unixepoch()),
+        PRIMARY KEY (unit_a, unit_b)
+      );
+      CREATE INDEX IF NOT EXISTS idx_coact_edges_a ON coactivation_edges(unit_a);
+      CREATE INDEX IF NOT EXISTS idx_coact_edges_b ON coactivation_edges(unit_b);
+
       CREATE TABLE IF NOT EXISTS kv_store (
         scope TEXT NOT NULL,
         key TEXT NOT NULL,

@@ -74,6 +74,25 @@ export interface GatewayConfig {
       damping: number;
       candidateCap: number;
       rerankGraphWeight: number;
+      /** 合并锚点边与共激活边时的权重比（各自 min-max 归一后）。 */
+      edgeMix: { anchor: number; coactivation: number };
+      /** 共激活边（同会话/同 Goal/时间邻近）。 */
+      coactivation: {
+        enabled: boolean;
+        sessionWeight: number;
+        goalWeight: number;
+        timeWeight: number;
+        /** 时间邻近窗口（epoch 秒）。 */
+        timeWindowSec: number;
+        /** 读时衰减半衰期（天）。 */
+        halfLifeDays: number;
+        /** 每单元每信号最多邻居数。 */
+        maxNeighbors: number;
+        /** session/goal 成员数超过则跳过该信号。 */
+        maxGroupSize: number;
+      };
+      /** 有界 Personalized PageRank 扩散。 */
+      diffusion: { enabled: boolean; iterations: number; alpha: number };
     };
     /** Agent-driven iterative expansion rounds for mafw_search_hybrid (0 = first round only). */
     maxExpandRounds: number;
@@ -285,6 +304,18 @@ function defaults(projectDir: string): GatewayConfig {
         damping: 0.6,
         candidateCap: 50,
         rerankGraphWeight: 0.15,
+        edgeMix: { anchor: 0.6, coactivation: 0.4 },
+        coactivation: {
+          enabled: true,
+          sessionWeight: 1.0,
+          goalWeight: 0.6,
+          timeWeight: 0.3,
+          timeWindowSec: 3600,
+          halfLifeDays: 14,
+          maxNeighbors: 3,
+          maxGroupSize: 50,
+        },
+        diffusion: { enabled: true, iterations: 15, alpha: 0.85 },
       },
       maxExpandRounds: 2,
       /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
