@@ -47,6 +47,8 @@ export interface ConsolidationDeps {
   completion?: () => CompletionChannel | undefined;
   /** Model for the completion channel (required when `completion` is used). */
   model?: { providerID: string; modelID: string };
+  /** Fired whenever the LLM judge is actually invoked (heartbeat seam). */
+  onJudge?: (result: { ok: boolean; error?: string }) => void;
   /** Cosine threshold for candidate recall (default 0.8). */
   minCosine?: number;
   maxCandidates?: number;
@@ -77,6 +79,7 @@ export class ConsolidationService {
   private llm?: ConsolidationLlmConfig;
   private completion?: () => CompletionChannel | undefined;
   private model?: { providerID: string; modelID: string };
+  private onJudge?: (result: { ok: boolean; error?: string }) => void;
   private minCosine: number;
   private maxCandidates: number;
   private stats = { judged: 0, updates: 0, creates: 0 };
@@ -88,6 +91,7 @@ export class ConsolidationService {
     this.llm = deps.llm;
     this.completion = deps.completion;
     this.model = deps.model;
+    this.onJudge = deps.onJudge;
     this.minCosine = deps.minCosine ?? 0.8;
     this.maxCandidates = deps.maxCandidates ?? 3;
   }
@@ -150,6 +154,7 @@ export class ConsolidationService {
 
     this.stats.judged++;
     const verdict = await this.judge(unit, candidateIds);
+    this.onJudge?.(verdict ? { ok: true } : { ok: false, error: 'judge-error' });
     if (!verdict) return { action: 'skip', reason: 'judge-error' };
     if (verdict.action === 'create') {
       this.stats.creates++;

@@ -31,6 +31,7 @@ import { MemoryWorker } from "./recall/memory-worker";
 import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
 import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
+import { PipelineHeartbeat } from "./recall/pipeline-heartbeat";
 import { redactSecrets } from "./recall/redact";
 import { buildMafwCommandRegistry, handleMafwCommandRun, handleMafwCommandList } from "./routes/mafw-commands";
 import type { MafwCommandRegistry } from "./commands/registry";
@@ -246,6 +247,8 @@ class MafwScheduler {
   private workerPool: SessionWorkerPool | null = null;
   private scanService: IndexScanService | null = null;
   private consolidationService: ConsolidationService | null = null;
+  private heartbeat?: PipelineHeartbeat;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
   // captured back into T1 (recursion guard A). Maps sessionID → worker role
   // (manager, turn-compress, index-scan, reflect) for token usage tracking.
@@ -1211,6 +1214,13 @@ class MafwScheduler {
           : undefined,
         completion,
         model: providerID && modelID ? { providerID, modelID } : undefined,
+        // Heartbeat: fires only when the judge is actually invoked, so a broken
+        // judge (never firing) shows up as a stalled pipeline.
+        onJudge: (r) => this.heartbeat?.record('consolidation', {
+          ok: r.ok,
+          error: r.error,
+          counts: this.consolidationService?.getStats(),
+        }),
         minCosine: config.memory.embedding.minCosine,
       });
       log.info(
@@ -1587,9 +1597,15 @@ class MafwScheduler {
           log.info(
             `[TurnPipeline] sessions=${res.sessions} turns=${res.turns} archived=${res.archived} noops=${res.noops} failed=${res.failed}`,
           );
+          this.heartbeat?.record('memory:turnCompress', {
+            ok: res.failed === 0,
+            error: res.failed > 0 ? `${res.failed} session(s) failed` : undefined,
+            counts: { sessions: res.sessions, turns: res.turns, archived: res.archived, failed: res.failed },
+          });
           // Refresh index scan cache after compression (new memories may have been written)
           this.scanService?.refreshCache();
         } catch (err: any) {
+          this.heartbeat?.record('memory:turnCompress', { ok: false, error: err.message });
           log.warn(`[TurnPipeline] run failed: ${err.message}`);
         }
       });
@@ -1602,7 +1618,13 @@ class MafwScheduler {
           log.info(
             `[Reflection] sessions=${res.sessions} reviewed=${res.reviewed} distilled=${res.distilled} deduped=${res.deduped} superseded=${res.superseded} failed=${res.failed}`,
           );
+          this.heartbeat?.record('memory:reflect', {
+            ok: res.failed === 0,
+            error: res.failed > 0 ? `${res.failed} session(s) failed` : undefined,
+            counts: { sessions: res.sessions, reviewed: res.reviewed, distilled: res.distilled, superseded: res.superseded, failed: res.failed },
+          });
         } catch (err: any) {
+          this.heartbeat?.record('memory:reflect', { ok: false, error: err.message });
           log.warn(`[Reflection] run failed: ${err.message}`);
         }
       });
@@ -1620,7 +1642,13 @@ class MafwScheduler {
           log.info(
             `[StaleVerify] candidates=${res.candidates} checked=${res.checked} superseded=${res.superseded} failed=${res.failed}`,
           );
+          this.heartbeat?.record('memory:review', {
+            ok: !res.failed,
+            error: res.failed ? 'stale-verify worker failed' : undefined,
+            counts: { candidates: res.candidates, checked: res.checked, superseded: res.superseded },
+          });
         } catch (err: any) {
+          this.heartbeat?.record('memory:review', { ok: false, error: err.message });
           log.warn(`[StaleVerify] run failed: ${err.message}`);
         }
       });
@@ -1988,6 +2016,23 @@ class MafwScheduler {
     this.ledger = new SchedulerLedger(projectDir);
     this.automationEngine = new AutomationEngine(mafwDir);
     this.automationEngine.setLedger(this.ledger);
+    // Pipeline heartbeat (arXiv:2609.05510): background pipelines fail silently
+    // by default — record last-run/last-success/counts and flag stalled ones.
+    {
+      const db = this.getGatewayDb();
+      this.heartbeat = new PipelineHeartbeat(
+        {
+          get: (name) => db.kvGet('pipeline-heartbeat', name),
+          set: (name, record) => db.kvSet('pipeline-heartbeat', name, record),
+        },
+        { onWarn: (msg) => log.warn(msg) },
+      );
+      this.automationEngine.setHeartbeat(this.heartbeat);
+      if (!this.heartbeatTimer) {
+        this.heartbeatTimer = setInterval(() => this.heartbeat?.sweep(), 30 * 60 * 1000);
+        this.heartbeatTimer.unref?.();
+      }
+    }
     // memory:decay must mutate the gateway's LIVE index instance — a throwaway
     // manager's v1→v2 migration would be clobbered by the live instance's next
     // save (the 2026-09 decay freeze).
@@ -3279,6 +3324,7 @@ class MafwScheduler {
                 coverage: indexEntries.length > 0 ? indexed / indexEntries.length : 0,
               },
               consolidation,
+              pipelines: this.heartbeat?.snapshot() ?? [],
             }));
           } catch (err: any) {
             res.writeHead(500);

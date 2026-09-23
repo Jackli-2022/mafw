@@ -22,7 +22,7 @@ interface HarmonicUnit {
   last_reviewed?: string;         // 休眠：同上
   top_associations?: string[];    // 未实现：类型声明，全仓库零读写（联想预取不存在）
   merged_from?: string[];         // MinHash 合并来源 id（写路径 merge 时填充）
-  superseded_by?: string;         // soft-supersede：指向取代本条的新 id（披露注入与检索排序排除）
+  superseded_by?: string;         // soft-supersede：指向取代本条的新 id（披露注入排除；检索命中改写为其 supersede 链头）
   pinned?: boolean;               // 披露层：每轮注入 <user-profile>（superseded 后失效）；与 type 正交
   sticky_until?: string;          // 便签板：每轮注入 <note-board> 直到该 ISO 日期（板级过期，记忆本体保留；坏日期 fail-open 在板）
   created_at: string;
@@ -33,7 +33,7 @@ interface HarmonicUnit {
 > 存量合体清理：`cd gateway; npx ts-node scripts/unmerge-blobs.ts`（dry-run 默认，`--apply` 执行并自动备份；需先 `mafw stop`；索引 filePath 相对 `~/.mafw` 解析）
 
 > 注：`goal_id` 为历史兼容字段，当前写路径不填充。
-> MinHash 合并采用 **soft supersede**：相似旧条目标记 `superseded_by` 并降低 energy（×0.5），不物理删除，便于 knowledge-update 场景保留历史版本；检索排序时 superseded 条目再 ×0.5 惩罚。
+> MinHash 合并采用 **soft supersede**：相似旧条目标记 `superseded_by` 并降低 energy（×0.5），不物理删除，便于 knowledge-update 场景保留历史版本。检索出口由 `resolveSupersededHeads()`（`harmonic-index.ts`，`searchScored` 末尾单点）**强制撤销**：命中 superseded 条目改写到其 supersede 链头（保分数、按链头去重取最高分），悬空/成环/超深（默认 5）链直接丢弃——仅靠排序惩罚不够，被撤销事实仍会返回并压过替代项（arXiv:2609.08258）。
 
 ### 3.2 检索
 
@@ -81,6 +81,14 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - index v1→v2 一次性迁移：全部 entry 盖 `last_decay_at`=迁移时刻、**不补扣历史衰减**（旧实现按 `created_at` 每次运行重复扣全龄衰减，累计 r·n(n+1)/2 平方损失，历史已过度衰减故豁免）；迁移由 `HarmonicIndexManager.migrateDecayBaseline()` 执行
 - 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
 - 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
+
+### 3.6 管线心跳（Pipeline Heartbeat）
+
+背景管线**默认静默失败**——ledger 只记 `AUTOMATION_TRIGGERED`（规则触发了），不记是否跑成/产出多少；2026-09 的衰减冻结与判官空转正是这类（日志只有 Scheduled/重复 Migrated，无"实际生效"信号）。
+
+- `recall/pipeline-heartbeat.ts`：`PipelineHeartbeat`（kv 持久化 + 纯逻辑可测）——每个管线出口 `record(name, { ok, counts?, error? })`，`snapshot()` 计算 `stale`（距上次成功 > 2× 预期间隔；从未跑过不判 stale 防启动误报），`sweep()` 每 episode 只告警一次（成功即清）
+- 接线：`memory:decay`（automation-engine action，经 `AutomationEngine.setHeartbeat`）、`memory:turnCompress`/`memory:reflect`/`memory:review`（index.ts 管线闭包，`failed>0` 记 ok:false）、`consolidation`（`ConsolidationService.onJudge` 回调，仅判官真正被调用时记录）
+- 落 `gateway.db` kv_store scope `pipeline-heartbeat`；`GET /api/memory/stats` 增 `pipelines` 字段（`lastRunAt`/`lastSuccessAt`/`lastCounts`/`ok`/`stale`）；index.ts 每 30min `sweep()` 告警（arXiv:2609.05510「没有枚举失败模式可以静默通过」）
 
 ## 4. Tools 清单（v6.9 总共 44 个）
 

@@ -79,6 +79,46 @@ export function rrfFuse(
     .slice(0, recallK);
 }
 
+/**
+ * Enforce soft-supersede at retrieval time (arXiv:2609.08258: systems that only
+ * mark a fact revoked still return it, and it outranks its replacement).
+ *
+ * Each hit on a superseded entry is rewritten to its supersede-chain head —
+ * this keeps knowledge-update queries pointing at the current version instead
+ * of dropping them. Chains that are dangling, cyclic, or deeper than `maxDepth`
+ * are dropped (the replacement is unknown, so the revoked fact must not surface).
+ * Rewrites are deduped by head id, keeping the highest score.
+ */
+export function resolveSupersededHeads(
+  scored: ScoredEntry[],
+  lookup: (id: string) => HarmonicIndexEntry | undefined,
+  maxDepth = 5,
+): ScoredEntry[] {
+  const out = new Map<string, ScoredEntry>();
+  for (const s of scored) {
+    let entry = s.entry;
+    if (entry.superseded_by) {
+      const seen = new Set<string>([entry.id]);
+      let cur: HarmonicIndexEntry | undefined = entry;
+      let depth = 0;
+      while (cur?.superseded_by && depth < maxDepth) {
+        const nextId = cur.superseded_by;
+        if (seen.has(nextId)) { cur = undefined; break; } // cycle
+        seen.add(nextId);
+        const next = lookup(nextId);
+        if (!next) { cur = undefined; break; } // dangling pointer
+        cur = next;
+        depth++;
+      }
+      if (!cur || cur.superseded_by) continue; // unresolved → drop
+      entry = cur;
+    }
+    const existing = out.get(entry.id);
+    if (!existing || s.score > existing.score) out.set(entry.id, { entry, score: s.score });
+  }
+  return [...out.values()].sort((a, b) => b.score - a.score);
+}
+
 export class HarmonicIndexManager {
   private indexPath: string;
   private index: HarmonicIndex;
@@ -351,6 +391,11 @@ export class HarmonicIndexManager {
         scored = scored.filter(s => s.score >= threshold);
       }
       scored = scored.slice(0, topK);
+    }
+
+    // ── Supersede enforcement: never present a revoked fact as authoritative ──
+    if (scored.length > 0) {
+      scored = resolveSupersededHeads(scored, (id) => this.index.entries.find(e => e.id === id));
     }
 
     const cutoffRatio = options.cutoffRatio ?? 0;

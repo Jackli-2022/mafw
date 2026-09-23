@@ -224,6 +224,46 @@ describe('ConsolidationService', () => {
     expect(outcome.action).toBe('skip');
   });
 
+  test('reports judge invocations via onJudge (heartbeat seam)', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]);
+    const calls: Array<{ ok: boolean; error?: string }> = [];
+    const completion = () => ({ complete: async () => ({ text: '{"action":"create"}' }) });
+    const svc = new ConsolidationService({
+      store: stubStore([unit('old', 'E', 'v')]) as any,
+      vectors,
+      provider: vecProvider({}),
+      completion,
+      model: { providerID: 'gateway', modelID: 'glm' },
+      onJudge: (r) => calls.push(r),
+    } as any);
+
+    await svc.consolidate(unit('u1', 'N', 'v2'));
+    expect(calls).toEqual([{ ok: true, error: undefined }]);
+  });
+
+  test('reports judge failure via onJudge', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]);
+    const calls: Array<{ ok: boolean; error?: string }> = [];
+    const completion = () => ({ complete: async () => { throw new Error('no endpoint'); } });
+    const svc = new ConsolidationService({
+      store: stubStore([unit('old', 'E', 'v')]) as any,
+      vectors,
+      provider: vecProvider({}),
+      completion,
+      model: { providerID: 'gateway', modelID: 'glm' },
+      onJudge: (r) => calls.push(r),
+    } as any);
+
+    await svc.consolidate(unit('u1', 'N', 'v2'));
+    expect(calls).toEqual([{ ok: false, error: 'judge-error' }]);
+  });
+
   test('completion channel unusable but direct llm configured → falls back to direct HTTP', async () => {
     const dir = tmpDir();
     const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);

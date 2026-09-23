@@ -176,6 +176,26 @@ describe('memory:decay incremental decay', () => {
     expect(idx.entries.find((e: any) => e.id === 'new1')).toBeDefined();
   });
 
+  test('decay reports to the pipeline heartbeat when provided', async () => {
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ last_decay_at: new Date(Date.now() - 2 * DAY).toISOString() })],
+    });
+
+    const recorded: Array<[string, any]> = [];
+    const action = actionRegistry.get('memory:decay')!;
+    await action({} as any, {
+      mafwDir: tmpDir,
+      getHeartbeat: () => ({ record: (name: string, r: any) => recorded.push([name, r]) }),
+    } as any);
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0][0]).toBe('memory:decay');
+    expect(recorded[0][1].ok).toBe(true);
+    expect(recorded[0][1].counts).toEqual({ migrated: 0, decayed: 1 });
+  });
+
   test('addEntry stamps created_at so new entries keep a decay baseline', () => {
     fs.mkdirSync(path.join(tmpDir, 'memory'), { recursive: true });
     const mgr = new HarmonicIndexManager(tmpDir);

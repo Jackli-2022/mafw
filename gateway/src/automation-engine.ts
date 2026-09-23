@@ -102,11 +102,18 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
   // Prefer the gateway's live index instance (set via setIndexManagerProvider)
   // so the migration is not clobbered by the live instance's next save.
   const indexManager = engine.getLiveIndexManager?.() ?? new HarmonicIndexManager(engine.mafwDir);
-  const res = runEnergyDecay(indexManager);
-  if (res.migrated > 0) {
-    log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
-  } else {
-    log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries`);
+  const heartbeat = engine.getHeartbeat?.();
+  try {
+    const res = runEnergyDecay(indexManager);
+    if (res.migrated > 0) {
+      log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
+    } else {
+      log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries`);
+    }
+    heartbeat?.record('memory:decay', { ok: true, counts: { migrated: res.migrated, decayed: res.decayed } });
+  } catch (err: any) {
+    heartbeat?.record('memory:decay', { ok: false, error: err?.message || String(err) });
+    throw err;
   }
 });
 actionRegistry.set('memory:review', async (_rule, engine) => {
@@ -193,9 +200,19 @@ export class AutomationEngine {
   private reportedPairs: Set<string> = new Set();
   private eventHandlerRefs: Map<string, Array<{ event: string; handler: (...args: any[]) => void }>> = new Map();
   private _indexManagerProvider?: () => HarmonicIndexManager;
+  private _heartbeat?: import('./recall/pipeline-heartbeat').PipelineHeartbeat;
 
   constructor(mafwDir: string) {
     this.mafwDir = mafwDir;
+  }
+
+  /** Inject the pipeline heartbeat so background actions can record outcomes. */
+  setHeartbeat(hb: import('./recall/pipeline-heartbeat').PipelineHeartbeat): void {
+    this._heartbeat = hb;
+  }
+
+  getHeartbeat(): import('./recall/pipeline-heartbeat').PipelineHeartbeat | undefined {
+    return this._heartbeat;
   }
 
   setLedger(ledger: SchedulerLedger): void {
