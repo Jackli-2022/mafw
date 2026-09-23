@@ -15,6 +15,7 @@ import { HarmonicIndexEntry } from '../core/memory/harmonic-types';
 import { MemoryWorker } from './memory-worker';
 import { completeTurns, TurnEval } from './turn-completion';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
+import { log } from '../core/utils/logger';
 
 export interface TurnPipelineOptions {
   t1db: GatewayDatabase;
@@ -226,8 +227,9 @@ export class TurnPipeline {
             result.noops++;
           }
         }
-      } catch {
+      } catch (err: any) {
         result.failed++;
+        log.warn(`[TurnPipeline] session ${sessionID} worker failed: ${err?.message || err}`);
       }
     }
 
