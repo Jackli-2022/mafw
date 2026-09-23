@@ -10,6 +10,9 @@ export interface HarmonicUnit {
   updated_at: string;
   goal_id?: string;
   merged_from?: string[];
+  /** Pattern-separation marker (S4): ids of similar-but-distinct entries this
+   *  unit was deliberately kept apart from (do not merge; preserve distinction). */
+  distinct_from?: string[];
   salience?: number;
   abstraction_level?: number;
   review_count?: number;

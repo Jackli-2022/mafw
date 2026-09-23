@@ -15,11 +15,13 @@ import { EmbeddingProvider } from './embedding-provider';
 export type RoutingOutcome =
   | { action: 'skip'; targetId: string }
   | { action: 'create' }
-  | { action: 'update'; targetId: string };
+  | { action: 'update'; targetId: string }
+  | { action: 'separate'; targetId: string; distinction?: string };
 
 export interface JudgeDecision {
-  action: 'create' | 'update';
+  action: 'create' | 'update' | 'separate';
   targetId?: string;
+  distinction?: string;
 }
 
 export interface RouteWriteDeps {
@@ -75,6 +77,9 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
   }
   if (!verdict || verdict.action === 'create') return { action: 'create' };
   if (verdict.targetId && candidateIds.includes(verdict.targetId)) {
+    if (verdict.action === 'separate') {
+      return { action: 'separate', targetId: verdict.targetId, distinction: verdict.distinction };
+    }
     return { action: 'update', targetId: verdict.targetId };
   }
   return { action: 'create' }; // invalid target → fail-open
@@ -96,7 +101,7 @@ export async function routeAndWrite(
   unit: HarmonicUnit,
   store: RouteStore,
   deps: RouteWriteDeps,
-): Promise<{ action: 'skip' | 'create' | 'update'; id: string; targetId?: string }> {
+): Promise<{ action: 'skip' | 'create' | 'update' | 'separate'; id: string; targetId?: string }> {
   const decision = await decideRouting(unit, deps);
   if (decision.action === 'skip') {
     return { action: 'skip', id: decision.targetId, targetId: decision.targetId };
@@ -104,6 +109,21 @@ export async function routeAndWrite(
   if (decision.action === 'create') {
     await store.write(unit);
     return { action: 'create', id: unit.id };
+  }
+  if (decision.action === 'separate') {
+    // Keep both entries: write the new unit with a disambiguating anchor and a
+    // distinct_from marker. No merge, no supersede.
+    const separated: HarmonicUnit = {
+      ...unit,
+      cue_anchors: dedupeCap(
+        [...(unit.cue_anchors || []), ...(decision.distinction ? [decision.distinction] : [])],
+        8,
+      ),
+      distinct_from: [...(unit.distinct_from || []), decision.targetId],
+      updated_at: new Date().toISOString(),
+    };
+    await store.write(separated);
+    return { action: 'separate', id: separated.id, targetId: decision.targetId };
   }
   // update: merge new content over the existing target, then supersede the target.
   const target = await store.read(decision.targetId);

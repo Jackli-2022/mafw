@@ -1959,14 +1959,18 @@ class MafwScheduler {
       setRouteWriteDeps({
         vectors: routeRt.vectors,
         provider: routeRt.provider,
-        judge: (u, ids) => consolidationJudge(u, ids, {
-          store: judgeStore,
-          llm: judgeBaseUrl && judgeApiKey && modelID
-            ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: modelID }
-            : undefined,
-          completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),
-          model: providerID && modelID ? { providerID, modelID } : undefined,
-        }),
+        judge: async (u, ids) => {
+          const v = await consolidationJudge(u, ids, {
+            store: judgeStore,
+            llm: judgeBaseUrl && judgeApiKey && modelID
+              ? { baseUrl: judgeBaseUrl, apiKey: judgeApiKey, model: modelID }
+              : undefined,
+            completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),
+            model: providerID && modelID ? { providerID, modelID } : undefined,
+          });
+          if (!v) return null;
+          return { action: v.action, targetId: v.target_id, distinction: v.distinction };
+        },
         candidateCosine: config.memory.embedding.minCosine,
         dupCosine: config.memory.embedding.dupCosine,
         isSuperseded: (id) =>
