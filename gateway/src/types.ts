@@ -29,6 +29,8 @@ export interface Services {
   desktop?: DesktopClient;
   /** Gateway-provided callback for agent process restart (MCP tool). */
   restartAgent?: () => Promise<{ success: boolean; mode: string }>;
+  /** Optional archive source-turn search for mafw_get_memory (C0). */
+  searchArchive?: (sessionID: string, anchors: string[], k: number) => import('./memory/gateway-db').T1Observation[];
 }
 
 export type ToolHandler = (

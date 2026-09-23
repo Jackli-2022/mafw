@@ -1,6 +1,7 @@
 import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { HarmonicUnit } from "../../core/memory/harmonic-types";
+import { reconstructSource } from "../../recall/source-reconstruction";
 
 /**
  * Resolve a memory by full id or by the 6-char pointer tail shown in <recall>
@@ -8,7 +9,7 @@ import { HarmonicUnit } from "../../core/memory/harmonic-types";
  * guessing. Superseded memories report the supersede chain with the latest
  * version attached so the agent never acts on stale notes.
  */
-export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir }) => {
+export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive }) => {
   try {
     const id = String(args.id || '').trim().replace(/^#?(?:mem-)?/, '');
     if (!id) {
@@ -58,10 +59,21 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       latest = next;
     }
 
+    // C0: reconstruct raw source-turn evidence from t1_archive when available.
+    let source: { sessionId: string; evidence: string } | undefined;
+    if (searchArchive && unit.source_session_id && config.recall.sourceEvidence.enabled) {
+      try {
+        const turns = searchArchive(unit.source_session_id, unit.cue_anchors ?? [], config.recall.sourceEvidence.k);
+        const evidence = reconstructSource(turns, config.recall.sourceEvidence.maxChars);
+        if (evidence) source = { sessionId: unit.source_session_id, evidence };
+      } catch { /* fail-open */ }
+    }
+
     return { content: [{ type: "text", text: JSON.stringify({
       success: true,
       memory: unit,
       ...(latest ? { latest } : {}),
+      ...(source ? { source } : {}),
     }) }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ success: false, error: err.message }) }], isError: true };

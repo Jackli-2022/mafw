@@ -175,6 +175,8 @@ export interface GatewayConfig {
     workerCompactIdleMs: number;
     /** providerID → OpenAI-compatible chat-completions URL overrides for the direct-HTTP index scan. */
     scanEndpoints?: Record<string, string>;
+    /** Source-turn reconstruction for mafw_get_memory (C0). */
+    sourceEvidence: { enabled: boolean; k: number; maxChars: number };
   };
   usage: {
     pollIntervalMs: number;
@@ -389,6 +391,7 @@ function defaults(projectDir: string): GatewayConfig {
       maxEpisodicPerReflect: 100,
       workerModel: { providerID: 'alibaba-cn', modelID: 'qwen3.7-max' },
       workerCompactIdleMs: 8 * 60 * 60 * 1000,
+      sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
     },
     usage: {
       pollIntervalMs: 60000,
