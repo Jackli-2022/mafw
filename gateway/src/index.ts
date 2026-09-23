@@ -256,7 +256,7 @@ class MafwScheduler {
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
-  private pipelineRunning = false; // action-level in-flight guard (cron + manual triggers)
+  private pipelineGuard = new (require('./recall/pipeline-guard').PipelineGuard)({ timeoutMs: 30 * 60_000, log: (m: string) => log.warn(m) }); // action-level in-flight guards, keyed by action name
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
   private approvalPolicy!: ApprovalPolicyService; // asked 事件策略评估（manual/auto + 预算 + 内部 fail-safe）
   private allowlistStore!: AllowlistStore; // legacy 白名单（config.yaml approval 段，双读过渡）
@@ -1549,16 +1549,7 @@ class MafwScheduler {
    * each pipeline runs at most once at a time.
    */
   private async runPipelineGuarded(name: string, fn: () => Promise<void>): Promise<void> {
-    if (this.pipelineRunning) {
-      log.warn(`[Scheduler] ${name} skipped: previous run still in flight`);
-      return;
-    }
-    this.pipelineRunning = true;
-    try {
-      await fn();
-    } finally {
-      this.pipelineRunning = false;
-    }
+    await this.pipelineGuard.run(name, fn);
   }
 
   /** Goal 会话预算挂载：读 state/<goalId>.json 的 policySnapshot.{maxTurns,maxCostUsd}；
@@ -1841,7 +1832,7 @@ class MafwScheduler {
     const settle = new Promise<void>((resolve) => {
       const started = Date.now();
       const check = () => {
-        if (!this.pipelineRunning || Date.now() - started > 5000) resolve();
+        if (this.pipelineGuard.size === 0 || Date.now() - started > 5000) resolve();
         else setTimeout(check, 100);
       };
       check();
