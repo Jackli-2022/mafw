@@ -79,3 +79,58 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
   }
   return { action: 'create' }; // invalid target → fail-open
 }
+
+/** Minimal store surface routeAndWrite needs (matches HarmonicUnitFileStore). */
+export interface RouteStore {
+  read(id: string): Promise<HarmonicUnit | null>;
+  write(unit: HarmonicUnit, tier?: string, opts?: { skipMerge?: boolean }): Promise<string>;
+  markSuperseded(id: string, byId: string): boolean | void | Promise<void>;
+}
+
+/**
+ * Decide + apply in one call: `skip` persists nothing (returns the existing
+ * canonical id), `create` writes the unit, `update` merges the new content over
+ * the existing target and soft-supersedes it.
+ */
+export async function routeAndWrite(
+  unit: HarmonicUnit,
+  store: RouteStore,
+  deps: RouteWriteDeps,
+): Promise<{ action: 'skip' | 'create' | 'update'; id: string; targetId?: string }> {
+  const decision = await decideRouting(unit, deps);
+  if (decision.action === 'skip') {
+    return { action: 'skip', id: decision.targetId, targetId: decision.targetId };
+  }
+  if (decision.action === 'create') {
+    await store.write(unit);
+    return { action: 'create', id: unit.id };
+  }
+  // update: merge new content over the existing target, then supersede the target.
+  const target = await store.read(decision.targetId);
+  if (!target) {
+    await store.write(unit);
+    return { action: 'create', id: unit.id };
+  }
+  const merged: HarmonicUnit = {
+    ...unit,
+    memory_value: `${unit.memory_value}\n---\n[Updated ${new Date().toISOString()}] ${target.memory_value}`,
+    cue_anchors: dedupeCap([...(unit.cue_anchors || []), ...(target.cue_anchors || [])], 8),
+    merged_from: [...(unit.merged_from || []), target.id],
+    energy: Math.min(1, (unit.energy ?? 0.8) + 0.15),
+    updated_at: new Date().toISOString(),
+  };
+  await store.write(merged, undefined, { skipMerge: true });
+  await store.markSuperseded(target.id, merged.id);
+  deps.vectors.remove(target.id);
+  deps.vectors.flush();
+  return { action: 'update', id: merged.id, targetId: target.id };
+}
+
+function dedupeCap(items: string[], cap: number): string[] {
+  const out: string[] = [];
+  for (const it of items) {
+    if (it && !out.includes(it)) out.push(it);
+    if (out.length >= cap) break;
+  }
+  return out;
+}

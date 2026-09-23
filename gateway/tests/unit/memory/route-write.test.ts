@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { decideRouting } from '../../../src/memory/route-write';
+import { decideRouting, routeAndWrite } from '../../../src/memory/route-write';
 import { MemoryVectorStore } from '../../../src/memory/vector-store';
 import { EmbeddingProvider } from '../../../src/memory/embedding-provider';
 import { HarmonicUnit } from '../../../src/core/memory/harmonic-types';
@@ -91,5 +91,53 @@ describe('decideRouting', () => {
     const deps = { vectors: v, provider, judge: async () => null, isSuperseded: (id: string) => id === 'old' } as any;
     const out = await decideRouting(u('n1'), deps);
     expect(out.action).toBe('create');
+  });
+});
+
+describe('routeAndWrite', () => {
+  function memStore(units: HarmonicUnit[]) {
+    const byId = new Map(units.map((x) => [x.id, x]));
+    const writes: HarmonicUnit[] = [];
+    const superseded: Array<{ id: string; byId: string }> = [];
+    return {
+      byId,
+      writes,
+      superseded,
+      async read(id: string) { return byId.get(id) ?? null; },
+      async write(x: HarmonicUnit) { byId.set(x.id, x); writes.push(x); return 'f.md'; },
+      async markSuperseded(id: string, by: string) { superseded.push({ id, byId: by }); },
+    };
+  }
+
+  test('create → writes unit, returns own id', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    const s = memStore([]);
+    const out = await routeAndWrite(u('n1'), s as any, { vectors: v, provider, judge: async () => null });
+    expect(out).toEqual({ action: 'create', id: 'n1' });
+    expect(s.writes.map((w) => w.id)).toEqual(['n1']);
+  });
+
+  test('skip → no write, returns existing id', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('dup', [1, 0]);
+    const s = memStore([u('dup')]);
+    const out = await routeAndWrite(u('n1'), s as any, { vectors: v, provider, judge: async () => null });
+    expect(out).toEqual({ action: 'skip', id: 'dup', targetId: 'dup' });
+    expect(s.writes).toHaveLength(0);
+  });
+
+  test('update → merges into newer, supersedes target', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', [0.9, 0.44]);
+    const s = memStore([u('old')]);
+    const out = await routeAndWrite(u('n1'), s as any, {
+      vectors: v,
+      provider,
+      judge: async (_x, ids) => ({ action: 'update', targetId: ids[0] }),
+    });
+    expect(out).toEqual({ action: 'update', id: 'n1', targetId: 'old' });
+    expect(s.writes.map((w) => w.id)).toEqual(['n1']);
+    expect(s.superseded).toEqual([{ id: 'old', byId: 'n1' }]);
+    expect(s.writes[0].merged_from).toContain('old');
   });
 });
