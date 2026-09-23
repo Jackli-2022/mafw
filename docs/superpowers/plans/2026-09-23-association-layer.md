@@ -339,17 +339,19 @@ describe('CoactivationGraphStore', () => {
     (db as any).db.prepare(
       'INSERT INTO goal_sessions (goal_id, session_id, phase, loop, created_at) VALUES (?,?,?,?,?)'
     ).run('g1', 's2', 'execute', 1, new Date().toISOString());
+    // created_at 相隔 5 天（超出时间窗）且会话不同 → 只有 Goal 信号能连边
     store.upsertUnit({ id: 'a', source_session_id: 's1', created_at: iso(10 * DAY) });
-    store.upsertUnit({ id: 'b', source_session_id: 's2', created_at: iso(10 * DAY) });
+    store.upsertUnit({ id: 'b', source_session_id: 's2', created_at: iso(5 * DAY) });
     const nb = store.getNeighbors(['a'], 10).get('a')!;
     expect(nb.get('b')).toBeGreaterThan(0);
   });
 
-  test('hub 防护：会话成员超 maxGroupSize 跳过该信号', () => {
-    // config 默认 maxGroupSize=50；造 60 个同会话单元
-    for (let i = 0; i < 60; i++) store.upsertUnit({ id: `u${i}`, source_session_id: 'big', created_at: iso(10 * DAY) });
-    const nb = store.getNeighbors(['u0'], 100).get('u0')!;
-    expect(nb.size).toBe(0);
+  test('hub 防护：会话成员超 maxGroupSize 后新单元不再建该信号边', () => {
+    // config 默认 maxGroupSize=50；造 60 个同会话单元，created_at 彼此错开 2 天（避开时间窗）
+    for (let i = 0; i < 60; i++) store.upsertUnit({ id: `u${i}`, source_session_id: 'big', created_at: iso((i + 1) * 2 * DAY) });
+    // 第 61 个单元：会话成员数已 >50 → 跳过会话信号；时间窗也避开
+    store.upsertUnit({ id: 'late', source_session_id: 'big', created_at: iso(200 * DAY) });
+    expect(store.getNeighbors(['late'], 100).get('late')!.size).toBe(0);
   });
 
   test('读时衰减：越久未更新的边权越小', () => {
@@ -857,9 +859,9 @@ In `gateway/src/core/memory/harmonic-index.ts`:
         const anchorNbs = this.anchorGraphStore
           ? new Map([...this.anchorGraphStore.getNeighbors([id], maxNeighbors, seedSet)].map(([k, v]) => [k, v.weight]))
           : new Map<string, number>();
-        const coactNbs = new Map<string, number>(
-          this.coactivationGraphStore?.getNeighbors([id], maxNeighbors, seedSet).get(id) ?? new Map(),
-        );
+        const coactNbs = (gcfg.coactivation.enabled && this.coactivationGraphStore)
+          ? new Map<string, number>(this.coactivationGraphStore.getNeighbors([id], maxNeighbors, seedSet).get(id) ?? new Map())
+          : new Map<string, number>();
         const na = norm(anchorNbs);
         const nc = norm(coactNbs);
         const mix = new Map<string, number>();
