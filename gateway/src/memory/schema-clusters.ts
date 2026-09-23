@@ -55,3 +55,41 @@ export function topClusters(queryVec: number[], clusters: Cluster[], n: number):
     .slice(0, n)
     .map((x) => x.c);
 }
+
+/**
+ * Greedy single-pass clustering of weighted members: each member joins the
+ * nearest cluster above `theta` (centroid updated as a running mean) or starts
+ * a new one. The representative is the highest-weight member.
+ */
+export function buildSchemaClusters(
+  members: Array<{ id: string; vector: number[]; weight: number }>,
+  theta: number,
+): Cluster[] {
+  const clusters: Cluster[] = [];
+  const repWeight = new Map<string, number>();
+  for (const m of members) {
+    let best: Cluster | null = null;
+    let bestSim = -1;
+    for (const c of clusters) {
+      const s = cosine(m.vector, c.centroid);
+      if (s > bestSim) {
+        bestSim = s;
+        best = c;
+      }
+    }
+    if (best && bestSim >= theta) {
+      best.members.push(m.id);
+      const n = best.members.length;
+      best.centroid = best.centroid.map((v, i) => v + ((m.vector[i] ?? 0) - v) / n);
+      if (m.weight > (repWeight.get(best.id) ?? -1)) {
+        best.representative = m.id;
+        repWeight.set(best.id, m.weight);
+      }
+    } else {
+      const id = `c_${m.id}`;
+      clusters.push({ id, centroid: [...m.vector], members: [m.id], representative: m.id });
+      repWeight.set(id, m.weight);
+    }
+  }
+  return clusters;
+}

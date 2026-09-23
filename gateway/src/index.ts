@@ -42,6 +42,7 @@ import { exec } from "child_process";
 import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
 import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite } from "./memory/route-write";
 import { obsSalience } from "./recall/obs-salience";
+import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
 import { getProviderApiKey } from "./runtime/auth";
 import { HarmonicUnitFileStore } from "./memory/harmonic-file-store";
 import { L5Store } from "./core/memory/l5-store";
@@ -1671,6 +1672,31 @@ class MafwScheduler {
     });
   }
 
+  private schemaClustersCache: { at: number; clusters: Cluster[] } | null = null;
+
+  /** S2: build (cached 5min) semantic schema clusters from the shared index. */
+  private getSchemaClusters(): Cluster[] {
+    try {
+      const now = Date.now();
+      if (this.schemaClustersCache && now - this.schemaClustersCache.at < 5 * 60_000) {
+        return this.schemaClustersCache.clusters;
+      }
+      const rt = getEmbeddingRuntime();
+      if (!rt || !this.memoryService) return [];
+      const members: Array<{ id: string; vector: number[]; weight: number }> = [];
+      for (const e of this.memoryService.harmonicIndex.getIndex().entries) {
+        if (e.type !== 'semantic' || e.superseded_by) continue;
+        const v = rt.vectors.get(e.id);
+        if (v) members.push({ id: e.id, vector: v, weight: (e.energy ?? 0.8) * (e.salience ?? 1) });
+      }
+      const clusters = buildSchemaClusters(members, config.memory.embedding.minCosine);
+      this.schemaClustersCache = { at: now, clusters };
+      return clusters;
+    } catch {
+      return [];
+    }
+  }
+
   private getTurnPipeline(): TurnPipeline {
     if (!this.memoryService) throw new Error('memoryService not ready');
     return new TurnPipeline({
@@ -1684,6 +1710,20 @@ class MafwScheduler {
       replayK: 5,
       replayMaxChars: 1500,
       transcriptMaxChars: config.recall.workerTranscriptMaxChars,
+      // S2: schema-cluster interleaving (integrate into schemas, not append).
+      schemaClusters: () => this.getSchemaClusters(),
+      clusterVector: async (obs) => {
+        try {
+          const rt = getEmbeddingRuntime();
+          if (!rt) return undefined;
+          const text = obs.map((o) => o.content).join(' ').slice(0, 2000);
+          if (!text.trim()) return undefined;
+          const [v] = await rt.provider.embed([text], 'query');
+          return v ?? undefined;
+        } catch {
+          return undefined;
+        }
+      },
       // Outcome-feedback signal (env-probing curation, grade gi): lets the
       // curator calibrate trust in the trajectory — a failed goal means its
       // "lessons" need verification before they become memories.

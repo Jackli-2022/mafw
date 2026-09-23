@@ -16,6 +16,8 @@ import { MemoryWorker } from './memory-worker';
 import { completeTurns, TurnEval } from './turn-completion';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { log } from '../core/utils/logger';
+import { replayPriority, sampleByPriority } from './replay-sampling';
+import { topClusters, Cluster } from '../memory/schema-clusters';
 
 export interface TurnPipelineOptions {
   t1db: GatewayDatabase;
@@ -35,6 +37,13 @@ export interface TurnPipelineOptions {
   /** Interleaved replay: recall cross-session prior knowledge into the worker prompt. */
   replayK?: number;
   replayMaxChars?: number;
+  /** S2: schema clusters for interleaved replay (integrating new facts into
+   *  existing schemas). Absent → no schema block (rollback-safe). */
+  schemaClusters?: () => Cluster[];
+  /** S2: compute a query vector from the session's observations (may be async). */
+  clusterVector?: (obs: T1Observation[]) => number[] | undefined | Promise<number[] | undefined>;
+  /** S2: how many related clusters to surface (default 3). */
+  schemaTopN?: number;
 }
 
 export interface TurnPipelineResult {
@@ -81,6 +90,7 @@ Before writing preference/fact memories (semantic type), ALWAYS search for simil
 - For every memory you verified via probing, add a "verified:YYYY-MM-DD" anchor (today's date) to cue_anchors so future agents can distinguish environment-verified memories from trajectory-only ones.
 - Outcome feedback (when present in the input): a passing grade or verdict does NOT validate every intermediate assumption in the trajectory; a failed outcome means treat that trajectory's "lessons" with suspicion and verify before writing.
 When "Prior knowledge from other work" is provided: compare each new insight against it. If a new insight updates or contradicts an existing memory, call mafw_add_memory with supersedes: [that id] (or mafw_supersede_memory to retract without replacement) — do not create a duplicate. If prior knowledge is unrelated, ignore it.
+When "Related schemas" is provided: prefer integrating a matching new fact into the named schema cluster — reference the schema representative id via supersedes when the new fact updates that entry — rather than creating a new standalone fragment. Only create a new entry when no schema matches.
 ${HARD_BOUNDARIES}
 
 After processing, ALWAYS end your response with exactly one of these lines:
@@ -203,15 +213,45 @@ export class TurnPipeline {
     if (sessionTurns.length === 0) return result;
     result.turns = sessionTurns.length;
 
-    // 1) merge all observations of the session's completed turns
+    // 1) merge the session's completed turns, sampled by replay priority (S2)
+    //    rather than dumped in full — the brain replays salient/recent material.
+    const turnObs = sessionTurns.map((t) => ({
+      turn: t,
+      obs: this.opts.t1db.readTurn(t.session_id, t.turn_id),
+    }));
+    const nowSec = Date.now() / 1000;
+    const scoredTurns = turnObs.map((x) => {
+      const salience = x.obs.reduce((m, o) => Math.max(m, o.salience ?? 0.5), 0);
+      const ageHours = x.turn.last_ts ? Math.max(0, (nowSec - x.turn.last_ts) / 3600) : 0;
+      return { ...x, priority: replayPriority({ salience, novelty: 0.5, ageHours }) };
+    });
+    const sampledTurns = sampleByPriority(
+      scoredTurns,
+      (x) => x.priority,
+      this.opts.transcriptMaxChars ?? 40_000,
+      (x) => x.obs.reduce((n, o) => n + (o.content?.length ?? 0) + 16, 0),
+    );
     const observations: T1Observation[] = [];
-    for (const t of sessionTurns) {
-      observations.push(...this.opts.t1db.readTurn(t.session_id, t.turn_id));
-    }
+    for (const x of sampledTurns) observations.push(...x.obs);
     const transcript = capTranscript(
       observationsToTranscript(observations.slice(0, this.opts.maxObservationsPerSession ?? 200)),
       this.opts.transcriptMaxChars ?? 40_000,
     );
+
+    // 1b) schema interleave (S2): surface related existing clusters so the
+    //     worker integrates into a schema (UPDATE) rather than appending.
+    let schemaBlock = '';
+    const clusters = this.opts.schemaClusters?.() ?? [];
+    const qvec = await this.opts.clusterVector?.(observations);
+    if (clusters.length > 0 && qvec) {
+      const related = topClusters(qvec, clusters, this.opts.schemaTopN ?? 3);
+      const lines = related.map(
+        (c) => `[schema:${c.id}] id: ${c.representative ?? c.members[0] ?? '?'} members: ${c.members.length}`,
+      );
+      if (lines.length > 0) {
+        schemaBlock = `Related schemas (integrate matching new facts into these clusters via UPDATE rather than creating new entries):\n${lines.join('\n')}`;
+      }
+    }
 
     // 2) ask the session's persistent worker agent to save memories itself
     if (transcript.trim()) {
@@ -225,7 +265,7 @@ export class TurnPipeline {
       const gradeBlock = grade
         ? `Outcome feedback for this session's recent work (a signal about trajectory reliability, not proof of correctness):\n${grade}`
         : '';
-      const prompt = [base, priorBlock, gradeBlock].filter(Boolean).join('\n\n');
+      const prompt = [base, schemaBlock, priorBlock, gradeBlock].filter(Boolean).join('\n\n');
       try {
         const reply = await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel, 'memory-curator');
         // Parse noop indicator from the worker's response

@@ -98,3 +98,49 @@ describe('capTranscript', () => {
     expect(capTranscript('short', 100)).toBe('short');
   });
 });
+
+describe('S2 replay sampling + schema interleave', () => {
+  test('prompt interleaves a schema block for a related cluster', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'schema-int-'));
+    fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+    const index = new HarmonicIndexManager(dir);
+    let captured = '';
+    const fakeWorker = { prompt: async (p: string) => { captured = p; return '[NOOP: test]'; } };
+    const fakeDb = {
+      listTurns: () => [{ session_id: 's1', turn_id: 1, count: 2, has_user_input: 1, response_count: 1, last_ts: 0 }],
+      readTurn: () => [{ source: 'user_input', content: 'deployed', salience: 0.9 }],
+      archiveTurn: () => {},
+      logNoop: () => {},
+    } as any;
+    const clusters = [{ id: 'c1', centroid: [1, 0], members: ['rep'], representative: 'rep' }];
+    const pipeline = new TurnPipeline({
+      t1db: fakeDb,
+      index,
+      workerFor: () => fakeWorker as any,
+      staleMs: 0,
+      schemaClusters: () => clusters,
+      clusterVector: () => [1, 0],
+    });
+    await pipeline.runSession('s1');
+    expect(captured).toContain('[schema:c1]');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('no schema providers → no schema block (rollback-safe)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'schema-none-'));
+    fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+    const index = new HarmonicIndexManager(dir);
+    let captured = '';
+    const fakeWorker = { prompt: async (p: string) => { captured = p; return '[NOOP: test]'; } };
+    const fakeDb = {
+      listTurns: () => [{ session_id: 's1', turn_id: 1, count: 1, has_user_input: 1, response_count: 0, last_ts: 0 }],
+      readTurn: () => [{ source: 'user_input', content: 'x', salience: 0.5 }],
+      archiveTurn: () => {},
+      logNoop: () => {},
+    } as any;
+    const pipeline = new TurnPipeline({ t1db: fakeDb, index, workerFor: () => fakeWorker as any, staleMs: 0 });
+    await pipeline.runSession('s1');
+    expect(captured).not.toContain('[schema:');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
