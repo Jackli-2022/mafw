@@ -1,9 +1,22 @@
 import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store";
-import { createReranker, applyReranker } from "../../core/memory/reranker";
+import { createReranker, applyReranker, Reranker } from "../../core/memory/reranker";
 import { computeDenseScores } from "../../memory/embedding-runtime";
 import { applyAccessBonus } from "../../recall/access-bonus";
+
+// Cached reranker: one sidecar per gateway process (avoids per-search spawn
+// churn). Keyed by name+gpu so a config change rebuilds it.
+let cachedReranker: { key: string; r: Reranker } | null = null;
+function getReranker(): Reranker | null {
+  const name = config.search.reranker;
+  if (name === 'off') return null;
+  const key = `${name}:${config.search.rerankerGpu}`;
+  if (cachedReranker?.key === key) return cachedReranker.r;
+  const r = createReranker(name, config.search.rerankWeights, { gpu: config.search.rerankerGpu });
+  cachedReranker = r ? { key, r } : null;
+  return r;
+}
 
 interface FrontierItem { id: string; weight: number; }
 interface IterState { seen: string[]; frontier: FrontierItem[]; round: number; }
@@ -112,11 +125,13 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
       frontier = [...computeFrontier(graphStore, scored.map(s => s.entry.id), new Set(seen)), ...remaining];
     }
 
-    // cross-encoder reranking（handler-level，不改 searchScored 同步签名）
-    if (config.search.reranker === 'cross-encoder' && scored.length > 0) {
-      const reranker = createReranker('cross-encoder');
+    // Verification layer (handler-level; keeps searchScored synchronous):
+    // 'heuristic' | 'cross-encoder' | 'llamacpp' (Qwen3-Reranker = CA1 analog).
+    // NOT on the boundary-recall path (100ms contract).
+    if (config.search.reranker !== 'off' && scored.length > 0) {
+      const reranker = getReranker();
       if (reranker) {
-        scored = (await applyReranker(query, scored as any, reranker, topK * 2))
+        scored = (await applyReranker(query, scored as any, reranker, topK * 2, config.search.cutoffRatio))
           .map(s => ({ entry: s.entry, score: s.score, graphScore: 0 }));
       }
     }

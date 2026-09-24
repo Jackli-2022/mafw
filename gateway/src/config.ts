@@ -53,8 +53,11 @@ export interface GatewayConfig {
     axiomsTopK: number;
     /** Default harmonic retriever: 'token' (legacy substring counting) or 'bm25'. */
     defaultRetriever: 'token' | 'bm25';
-    /** Two-stage reranking: 'off' | 'heuristic' | 'cross-encoder'. */
-    reranker: 'off' | 'heuristic' | 'cross-encoder';
+    /** Two-stage reranking: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp'
+     *  ('llamacpp' = Qwen3-Reranker verification layer, CA1 analog). */
+    reranker: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp';
+    /** GPU variant for the llamacpp reranker ('cpu' | 'vulkan' | 'cuda'). */
+    rerankerGpu: string;
     /** How many candidates the retriever returns before reranking. */
     recallK: number;
     /** Drop reranked results below topScore × cutoffRatio (0 = disabled). */
@@ -305,6 +308,7 @@ function defaults(projectDir: string): GatewayConfig {
       axiomsTopK: 10,
       defaultRetriever: 'bm25',
       reranker: 'off',
+      rerankerGpu: 'vulkan',
       recallK: 50,
       cutoffRatio: 0,
       rerankWeights: {
