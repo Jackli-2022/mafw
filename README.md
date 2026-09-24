@@ -45,6 +45,11 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
 - **主动记忆引导**（OptMem 式）：Agent 自主决定何时写入、何时检索，而非被动灌注
 - **环境探测式维护**：记忆 curator 写入前用只读工具验证候选记忆（propose–probe–commit），
   每周自动重验高价值记忆、被环境证伪的走 supersedes 链更新——能量衰减管"淡忘"，探测验证管"内容有效性"
+- **类脑写入路径**（2026-09 重构）：写入前**路由**——精确重述 → 不落盘（non-write）；语义相近 → **整合进既有条目**而非追加；
+  同题不同实体 → **强制分离**（模式分离）。配合**回放采样**（巩固时优先回放高显著回合、按语义簇交错整合进图式）、
+  **编码门控**（观测捕获即打显著度标签）、**再巩固**（检索+使用反馈进入可更新窗口，预测误差门防漂移），
+  直击"同主题碎片化"（实测历史库 ~21% 近似重复）
+- **写时路由自检**：`mafw route-check` 一键验证 create / dedup / update 三条路径是否健康
 
 ### 🤖 Goal 编排
 
@@ -148,6 +153,7 @@ mafw start          # 前台启动
 mafw daemon         # 后台守护
 mafw status         # 查看状态
 mafw tui            # 终端界面（Chat / Goals / Memory / Triage）
+mafw route-check    # 记忆写时路由自检（create / dedup / update）
 mafw dashboard      # 打开 Web Dashboard
 ```
 
