@@ -112,7 +112,7 @@ function parseArgs() {
     embeddingEngine: flags.get('--embeddingEngine') as 'onnx' | 'llamacpp' | undefined,
     embeddingThreads: flags.get('--embeddingThreads') ? parseInt(flags.get('--embeddingThreads')!, 10) : undefined,
     embeddingGpu: flags.get('--embeddingGpu'),
-    reranker: (flags.get('--reranker') ?? 'off') as 'off' | 'heuristic' | 'cross-encoder',
+    reranker: (flags.get('--reranker') ?? 'off') as 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp',
     recallK: parseInt(flags.get('--recallK') ?? String(config.search.recallK), 10),
     cutoffRatio: parseFloat(flags.get('--cutoffRatio') ?? String(config.search.cutoffRatio)),
     fusionSparseWeight: parseFloat(flags.get('--fusionSparseWeight') ?? '0.65'),
@@ -326,7 +326,7 @@ async function runOne(
 }
 
 async function createRerankerForRun(
-  name: 'off' | 'heuristic' | 'cross-encoder',
+  name: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp',
 ): Promise<Reranker | undefined> {
   if (name === 'off') return undefined;
   const reranker = createReranker(name, config.search.rerankWeights);
@@ -334,6 +334,10 @@ async function createRerankerForRun(
   if (reranker.name === 'cross-encoder') {
     // Force async pipeline init so the first query does not pay full cold-start.
     await (reranker as any).ensurePipeline?.();
+  }
+  if (reranker.name === 'llamacpp') {
+    // Pre-start the llama-server rerank sidecar (model load is ~seconds).
+    await (reranker as any).ensureServer?.();
   }
   return reranker;
 }

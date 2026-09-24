@@ -121,6 +121,8 @@ export class CrossEncoderReranker implements Reranker {
   name = 'cross-encoder';
   private modelName = 'Xenova/bge-reranker-base';
   private classifier: any = null;
+  private tokenizer: any = null;
+  private model: any = null;
   private fallback = new HeuristicReranker();
   private loading: Promise<void> | null = null;
 
@@ -134,7 +136,13 @@ export class CrossEncoderReranker implements Reranker {
         const mod: any = await new Function('spec', 'return import(spec)')('@huggingface/transformers');
         // v4 has env.remoteHost but doesn't auto-read HF_ENDPOINT; set it manually
         mod.env.remoteHost = process.env.HF_ENDPOINT || 'https://hf-mirror.com/';
-        this.classifier = await mod.pipeline('text-classification', this.modelName);
+        const pipe = await mod.pipeline('text-classification', this.modelName);
+        // The v4 text-classification pipeline `_call` does NOT forward text_pair
+        // to the tokenizer, so query×doc pairs cannot go through `pipe(...)`.
+        // Keep the pipeline for model/tokenizer access and drive them directly.
+        this.classifier = pipe;
+        this.tokenizer = pipe.tokenizer;
+        this.model = pipe.model;
       } catch (err: any) {
         // eslint-disable-next-line no-console
         console.warn(`[CrossEncoderReranker] failed to load ${this.modelName}, falling back to heuristic: ${err.message}`);
@@ -150,22 +158,26 @@ export class CrossEncoderReranker implements Reranker {
     }
     if (candidates.length === 0) return [];
 
-    // v4 text-classification supports pair semantics: [[query, doc], ...]
-    const pairs = candidates.map(c => [query, c.entry.primary_abstraction + ' ' + (c.entry.cue_anchors || []).join(' ')]);
-    const outputs = await this.classifier(pairs);
-
-    // Extract scores from outputs (v4 returns array of {label, score} objects)
-    const ceScores = outputs.map((o: any) => {
-      // bge-reranker outputs LABEL_0 (irrelevant) and LABEL_1 (relevant)
-      // We want the relevance score
-      if (Array.isArray(o)) {
-        // Multi-label output: find LABEL_1 score
-        const label1 = o.find((x: any) => x.label === 'LABEL_1');
-        return label1 ? label1.score : 0;
-      }
-      // Single label output: score is the confidence
-      return o.label === 'LABEL_1' ? o.score : (1 - o.score);
-    });
+    // Cross-encoder: encode (query, doc) as a token pair in one forward pass.
+    const queries = candidates.map(() => query);
+    const docs = candidates.map(c => c.entry.primary_abstraction + ' ' + (c.entry.cue_anchors || []).join(' '));
+    let ceScores: number[];
+    try {
+      const inputs = this.tokenizer(queries, { text_pair: docs, padding: true, truncation: true });
+      const outputs = await this.model(inputs);
+      const logits: number[][] = outputs.logits.tolist();
+      // bge-reranker is a 2-class model: softmax(row)[1] = relevance.
+      ceScores = logits.map((row) => {
+        const m = Math.max(...row);
+        const exps = row.map(v => Math.exp(v - m));
+        const sum = exps.reduce((a, b) => a + b, 0) || 1;
+        return exps[1] / sum;
+      });
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.warn(`[CrossEncoderReranker] scoring failed, falling back to heuristic: ${err.message}`);
+      return this.fallback.rerank(query, candidates, topK);
+    }
 
     // Fuse cross-encoder score with original BM25 score (both min-max normalized).
     const normBm25 = normalize(candidates.map(c => c.score));
@@ -180,9 +192,14 @@ export class CrossEncoderReranker implements Reranker {
   }
 }
 
-export function createReranker(name: 'off' | 'heuristic' | 'cross-encoder', weights?: Partial<RerankWeights>): Reranker | null {
+export function createReranker(name: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp', weights?: Partial<RerankWeights>): Reranker | null {
   if (name === 'off') return null;
   if (name === 'heuristic') return new HeuristicReranker({ weights });
+  if (name === 'llamacpp') {
+    // Lazy require breaks the reranker ⇄ llamacpp-reranker import cycle.
+    const { LlamaCppReranker } = require('./llamacpp-reranker');
+    return new LlamaCppReranker();
+  }
   return new CrossEncoderReranker();
 }
 

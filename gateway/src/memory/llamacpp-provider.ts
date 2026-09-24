@@ -57,7 +57,7 @@ const DEFAULT_MODEL = 'hf:mradermacher/Qwen3-Embedding-0.6B-GGUF:Qwen3-Embedding
 const HEALTH_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
-function platformKey(): string {
+export function platformKey(): string {
   if (process.platform === 'win32') return 'win';
   if (process.platform === 'darwin') return 'mac';
   return 'linux';
@@ -66,7 +66,7 @@ function platformKey(): string {
 export type LlamaCppVariant = 'cpu' | 'vulkan' | 'cuda';
 
 /** Assets to download per variant (cuda needs the cudart companion zip). */
-function assetNames(variant: LlamaCppVariant, version: string): { files: string[]; exe: string } | null {
+export function assetNames(variant: LlamaCppVariant, version: string): { files: string[]; exe: string } | null {
   const p = platformKey();
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
   if (p === 'win') {
@@ -94,7 +94,7 @@ function assetNames(variant: LlamaCppVariant, version: string): { files: string[
   return null;
 }
 
-async function pickFreePort(): Promise<number> {
+export async function pickFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
     srv.once('error', reject);
