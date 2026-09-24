@@ -46,30 +46,22 @@ export interface RouteWriteDeps {
   readEntry?: (id: string) => { primary_abstraction?: string } | undefined;
 }
 
-/** Token-set Jaccard over lowercase words + CJK chars. */
-function tokenSet(s: string): Set<string> {
-  return new Set((s || '').toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/).filter((w) => w.length >= 2));
-}
-
-function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 1;
-  let inter = 0;
-  const [small, large] = a.size < b.size ? [a, b] : [b, a];
-  for (const t of small) if (large.has(t)) inter++;
-  const union = a.size + b.size - inter;
-  return union === 0 ? 1 : inter / union;
+/** Normalize for exact re-statement comparison (case/whitespace insensitive). */
+function normalizeText(s: string | undefined): string {
+  return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 /**
- * True only when the two abstractions are lexically near-identical (a genuine
- * re-statement). Embedding proximity alone is insufficient: a value change
- * ("replicas=3" → "replicas=5") is embedding-close but must NOT be dropped.
+ * True only when the two abstractions are the SAME text after normalization —
+ * a genuine re-statement. Embedding proximity is insufficient (a value change
+ * "replicas=3" → "replicas=5" is embedding-close), and token-overlap is too
+ * lenient for long strings (one changed value still scores >0.9 Jaccard), so
+ * only exact normalized equality triggers the non-write shortcut.
  */
-export function isNearIdentical(a: string | undefined, b: string | undefined, theta = 0.9): boolean {
-  const ja = tokenSet(a || '');
-  const jb = tokenSet(b || '');
-  if (ja.size === 0 || jb.size === 0) return false;
-  return jaccard(ja, jb) >= theta;
+export function isNearIdentical(a: string | undefined, b: string | undefined): boolean {
+  const na = normalizeText(a);
+  const nb = normalizeText(b);
+  return na.length > 0 && na === nb;
 }
 
 export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): Promise<RoutingOutcome> {

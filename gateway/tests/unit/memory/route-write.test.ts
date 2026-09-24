@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { decideRouting, routeAndWrite, setRouteWriteDeps, getRouteWriteDeps } from '../../../src/memory/route-write';
+import { decideRouting, routeAndWrite, setRouteWriteDeps, getRouteWriteDeps, isNearIdentical } from '../../../src/memory/route-write';
 import { MemoryVectorStore } from '../../../src/memory/vector-store';
 import { EmbeddingProvider } from '../../../src/memory/embedding-provider';
 import { HarmonicUnit } from '../../../src/core/memory/harmonic-types';
@@ -185,5 +185,19 @@ describe('route deps singleton', () => {
     expect(getRouteWriteDeps()).not.toBeNull();
     setRouteWriteDeps(null);
     expect(getRouteWriteDeps()).toBeNull();
+  });
+});
+
+describe('isNearIdentical', () => {
+  test('exact re-statement (case/whitespace insensitive) → true', () => {
+    expect(isNearIdentical('副本数上限是 3 个', '副本数上限是 3 个')).toBe(true);
+    expect(isNearIdentical('Deploy to US-EAST-1', 'deploy to  us-east-1')).toBe(true);
+  });
+  test('value change → false (must not be dropped)', () => {
+    expect(isNearIdentical('副本数上限是 3 个', '副本数上限是 5 个')).toBe(false);
+  });
+  test('empty → false', () => {
+    expect(isNearIdentical('', '')).toBe(false);
+    expect(isNearIdentical(undefined, undefined)).toBe(false);
   });
 });
