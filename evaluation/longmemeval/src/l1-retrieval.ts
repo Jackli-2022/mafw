@@ -329,7 +329,7 @@ async function createRerankerForRun(
   name: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp',
 ): Promise<Reranker | undefined> {
   if (name === 'off') return undefined;
-  const reranker = createReranker(name, config.search.rerankWeights);
+  const reranker = createReranker(name, config.search.rerankWeights, { gpu: process.env.MAFW_RERANKER_GPU || 'vulkan' });
   if (!reranker) return undefined;
   if (reranker.name === 'cross-encoder') {
     // Force async pipeline init so the first query does not pay full cold-start.

@@ -192,13 +192,17 @@ export class CrossEncoderReranker implements Reranker {
   }
 }
 
-export function createReranker(name: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp', weights?: Partial<RerankWeights>): Reranker | null {
+export function createReranker(
+  name: 'off' | 'heuristic' | 'cross-encoder' | 'llamacpp',
+  weights?: Partial<RerankWeights>,
+  llamacppOpts?: import('./llamacpp-reranker').LlamaCppRerankerConfig,
+): Reranker | null {
   if (name === 'off') return null;
   if (name === 'heuristic') return new HeuristicReranker({ weights });
   if (name === 'llamacpp') {
     // Lazy require breaks the reranker ⇄ llamacpp-reranker import cycle.
     const { LlamaCppReranker } = require('./llamacpp-reranker');
-    return new LlamaCppReranker();
+    return new LlamaCppReranker(llamacppOpts ?? {});
   }
   return new CrossEncoderReranker();
 }
