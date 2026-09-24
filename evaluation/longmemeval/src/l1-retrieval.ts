@@ -93,6 +93,41 @@ export async function runScan(
   }
 }
 
+// R1: query construction (PFC expectation). Rewrite the question into the
+// declarative, entity-rich form a memory would be written in, so lexical
+// retrieval and the verification reranker see the same surface as the stored
+// text. Fail-open: on any error, use the original question.
+const REWRITE_SYSTEM = `You rewrite a user's question into a concise retrieval query that matches how a personal memory would be written.
+Output ONLY the rewritten query on one line (no quotes, no explanation).
+Rules:
+- Convert the question to a declarative statement about the user/entities (e.g. "What language does the user prefer?" -> "user preference UI language Chinese").
+- Keep ALL named entities, numbers, and dates verbatim.
+- For comparison/aggregation questions, list BOTH sides' key terms.
+- Keep any time expression and add its resolved calendar date when obvious.
+- 3-12 keywords, no question words.`;
+
+async function rewriteQuery(question: string, apiUrl: string, apiKeyProvider: string, model: string): Promise<string> {
+  try {
+    const raw = await chatCompletion({
+      model,
+      apiUrl,
+      apiKey: loadAuthKey(apiKeyProvider),
+      messages: [
+        { role: 'system', content: REWRITE_SYSTEM },
+        { role: 'user', content: question },
+      ],
+      temperature: 0,
+      max_tokens: 64,
+    });
+    const q = String(raw || '').trim().split('\n')[0].replace(/^["'`]+|["'`]+$/g, '').trim();
+    if (q) console.error(`[rewrite] "${question.slice(0, 60)}" -> "${q.slice(0, 80)}"`);
+    return q || question;
+  } catch (err: any) {
+    console.error(`[rewrite] failed: ${err.message}`);
+    return question;
+  }
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const flags = new Map<string, string>();
@@ -125,6 +160,7 @@ function parseArgs() {
     scanApiUrl: flags.get('--scanApiUrl') ?? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
     scanApiKeyProvider: flags.get('--scanApiKeyProvider') ?? 'alibaba-cn',
     scanModel: flags.get('--scanModel') ?? 'qwen3.7-max',
+    queryRewrite: flags.get('--queryRewrite') === 'true',
     keep: flags.has('--keep'),
     data: flags.get('--data'),
   };
@@ -168,6 +204,7 @@ async function runOne(
   scanApiUrl: string,
   scanApiKeyProvider: string,
   scanModel: string,
+  queryRewrite: boolean,
   embeddingProvider?: EmbeddingProvider | null,
 ): Promise<L1QuestionResult> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `lme-l1-${question.question_id}-`));
@@ -205,7 +242,13 @@ async function runOne(
       console.error(`[coact] edges=${cs.edges} session=${cs.session} goal=${cs.goal} time=${cs.time}`);
     }
 
-    let entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
+    // R1: construct the retrieval query (PFC expectation) once, before any
+    // retrieval/rerank, so both stages see the memory-shaped surface.
+    const retrievalQuery = queryRewrite
+      ? await rewriteQuery(question.question, scanApiUrl, scanApiKeyProvider, scanModel)
+      : question.question;
+
+    let entries = index.searchScored(retrievalQuery, reranker ? recallK : Math.max(...KS), searchOptions);
     if (embeddingProvider) {
       // Hybrid: build the dense channel over this question's haystack, then
       // re-run searchScored with fused dense scores.
@@ -247,12 +290,12 @@ async function runOne(
         }
         for (const id of suppressed) denseMap.delete(id);
         searchOptions.denseScores = denseMap;
-        entries = index.searchScored(question.question, reranker ? recallK : Math.max(...KS), searchOptions);
+        entries = index.searchScored(retrievalQuery, reranker ? recallK : Math.max(...KS), searchOptions);
         console.error(`[hybrid] indexed=${backfill.indexed} denseHits=${hits.length} suppressed=${suppressed.size}`);
       }
     }
     if (reranker && entries.length > 0) {
-      entries = await applyReranker(question.question, entries, reranker, Math.max(...KS), cutoffRatio);
+      entries = await applyReranker(retrievalQuery, entries, reranker, Math.max(...KS), cutoffRatio);
     }
 
     // ── Scan + graph expansion (if enabled) ──
@@ -396,7 +439,7 @@ async function main() {
     process.stdout.write(`[${i + 1}/${questions.length}] ${q.question_id} ${q.question_type} ... `);
     // Per-question options: time anchoring is relative to the question date.
     const perQuestionOptions: SearchOptions = { ...searchOptions, now: q.question_date };
-    const res = await runOne(q, ingestOpts, args.keep, perQuestionOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.coactivation, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel, embeddingProvider);
+    const res = await runOne(q, ingestOpts, args.keep, perQuestionOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.coactivation, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel, args.queryRewrite, embeddingProvider);
     results.push(res);
     fs.appendFileSync(runPath, JSON.stringify(res) + '\n', 'utf-8');
     process.stdout.write(`R@1=${res.recall[1].toFixed(2)} R@10=${res.recall[10].toFixed(2)}\n`);

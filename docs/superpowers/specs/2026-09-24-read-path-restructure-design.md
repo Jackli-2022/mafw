@@ -66,11 +66,10 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 - **待接线**：config `search.reranker: 'llamacpp'` + 显式检索路径；边界路径不接。
 - **坑**：`createReranker('llamacpp')` 默认 CPU（19s）→ 必须 `gpu: 'vulkan'`（250ms）。
 
-### R1 期望生成（PFC）—— 待做
-- **内容**：检索前构造"期望"——问句 → "记忆会怎么写"（查询改写）；实体扩展/消歧；时间归一；**情境重现**（session/goal/近因作 cue）。
-- **目标类型**：multi-session（需分解）、temporal（需时间归一）、knowledge-update。
-- **约束**：同步路径不能上 LLM（100ms）→ 规则优先；LLM 改写只走显式路径。
-- **可测**：对 multi-session/temporal 子集做 A/B。
+### R1 期望生成（PFC）—— ❌ 实测否决（LLM 查询改写版）
+- **实现**：harness `--queryRewrite`（用 worker 模型把问句改写成"记忆会怎么写"的陈述式查询，如 "Where did I attend my cousin's wedding?" → "user cousin wedding location"）。
+- **实测**（111/120，bm25+reranker+rewrite）：overall R@1 **0.615 < 0.657**（无改写）；preference 0.750→0.650（↓）、其余持平。
+- **结论**：**有验证层时查询改写净负**——验证层已直接读 query×候选桥接"问句↔陈述"，改写反而给 BM25 候选集与判官加噪。**R1（LLM 改写）不做**；若做，只考虑规则式时间归一（待验证）。
 
 ### R2 双过程级联 —— ❌ 实测否决（不做）
 - **实测**：hybrid+rerank (R@1 0.622) **低于** bm25+rerank (0.657)；有验证层时 dense 全面净负（user 0.90→0.80、preference 0.75→0.65）。
