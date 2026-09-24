@@ -38,6 +38,7 @@ API Commands:
   sessions           List sessions (GET /api/sessions)
   control <action> <goalId>  Control goal (pause|abort|force-phase)
   memory-search <query>      Memory context injection (GET /api/memory/merged-search)
+  route-check        Verify write-time routing: create / dedup (skip) / update
   automations        List automation rules (GET /api/automations)
   approvals          List pending approvals (GET /api/approvals)
   triage             List triage items (GET /api/triage)
@@ -58,12 +59,12 @@ const COMMANDS = [
   'start', 'daemon', 'stop', 'status', 'restart', 'logs',
     'health', 'stats', 'projects', 'goals', 'register',
     'sessions', 'control', 'memory-search',
-    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test',
+    'automations', 'approvals', 'triage', 'restart-agent', 'plugin-test', 'route-check',
   'service-register', 'service-unregister',
   'config', 'dashboard', 'uninstall', 'version', 'update', 'tui',
 ];
 
-function httpRequest(method, urlPath, body) {
+function httpRequest(method, urlPath, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, GATEWAY_URL);
     const opts = {
@@ -72,7 +73,7 @@ function httpRequest(method, urlPath, body) {
       path: url.pathname + url.search,
       method,
       headers: { 'Content-Type': 'application/json' },
-      timeout: 10000,
+      timeout: timeoutMs || 10000,
     };
     const req = http.request(opts, (res) => {
       let data = '';
@@ -350,6 +351,7 @@ async function main() {
     case 'health': await callApi('health', 'GET', '/health'); break;
     case 'restart-agent': await callApi('restart-agent', 'POST', '/api/runtime/restart-agent'); break;
     case 'plugin-test': await runConformance(); break;
+    case 'route-check': await runRouteCheck(); break;
     case 'stats': await callApi('stats', 'GET', '/api/stats'); break;
     case 'projects': await callApi('projects', 'GET', '/api/projects'); break;
     case 'goals': await callApi('goals', 'GET', '/api/goals'); break;
@@ -410,7 +412,64 @@ async function runConformance() {
   process.exit(data.summary.fail > 0 ? 1 : 0);
 }
 
-// `mafw update`: write the self-update token (atomic tmp+rename). The running
+// `mafw route-check`: verify write-time routing (S1) end to end against the
+// running gateway. Two DETERMINISTIC assertions gate the exit code:
+//   - an exact re-statement must dedup (non-write / skip)
+//   - a value change must NOT be dropped (the isNearIdentical regression guard)
+// Whether a value change lands as `update` (judge merged) or `create` is
+// LLM-dependent and reported, not asserted.
+// NOTE: ASCII-only probe content — shells/terminals can mangle non-ASCII in
+// request bodies, which would corrupt the comparison.
+async function runRouteCheck() {
+  const marker = `route-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const A = `probe ${marker} replicas upper bound is 3`;
+  const A2 = `probe ${marker} replicas upper bound is 5`;
+  const add = async (content) => {
+    const res = await httpRequest('POST', '/api/memory/add', {
+      content, memoryType: 'semantic', cueAnchors: [marker], primaryAbstraction: content,
+    }, 60000);
+    if (res.status >= 400) throw new Error(`add failed (${res.status}): ${JSON.stringify(res.body)}`);
+    return res.body;
+  };
+  const stats = async () => {
+    const res = await httpRequest('GET', '/api/memory/stats');
+    return res.body || {};
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  console.log(`MAFW write-time routing check`);
+  console.log(`Probe marker: ${marker}\n`);
+  const before = (await stats()).routing || {};
+
+  const r1 = await add(A);
+  console.log(`1) create       → ${JSON.stringify(r1)}`);
+  await sleep(2500);
+
+  const r2 = await add(A);
+  const skipOk = r2?.deduped === true;
+  console.log(`2) exact dup    → ${JSON.stringify(r2)}  [${skipOk ? 'PASS' : 'FAIL'}]  expect deduped:true`);
+  await sleep(2500);
+
+  const r3 = await add(A2);
+  const notDropped = r3?.deduped !== true;
+  console.log(`3) value change → ${JSON.stringify(r3)}  [${notDropped ? 'PASS' : 'FAIL'}]  expect NOT deduped`);
+  await sleep(3000);
+
+  const after = (await stats()).routing || {};
+  const d = (k) => (after[k] ?? 0) - (before[k] ?? 0);
+  console.log(`\nRouting delta: create=${d('create')} skip=${d('skip')} update=${d('update')} separate=${d('separate')}`);
+  console.log(
+    `  update path: ${d('update') > 0
+      ? 'fired — judge merged the value change'
+      : 'not fired — judge chose create (LLM-dependent, not a failure)'}`,
+  );
+
+  const pass = skipOk && notDropped;
+  console.log(`\n${pass ? 'PASS' : 'FAIL'}: ${pass ? 'write-time routing healthy' : 'routing regression detected'}`);
+  process.exit(pass ? 0 : 1);
+}
+
+
 // gateway watches ~/.mafw/pending-restart.json, rebuilds itself and hands off
 // to a takeover process; it then notifies the caller session.
 function requestUpdate() {
