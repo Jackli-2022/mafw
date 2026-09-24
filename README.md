@@ -41,6 +41,8 @@ MAFW 是一个以**谐波记忆（Harmonic Memory）**为核心的 AI Agent 工�
 - **BM25 检索**：`primary_abstraction` + `cue_anchors` 上的倒排检索 × 能量 × 显著度，1000 条记忆 ~2-3ms
 - **能量系统**：检索/反馈加成、按天衰减（显著度越高衰减越慢），重要的事自然浮起，琐碎的事自然沉底
 - **MinHash 合并**：跨层相似记忆自动 soft-supersede 合并，历史版本可追溯
+- **联想层**：共激活边（同会话 / 同 Goal / 时间邻近）+ 有界 Personalized PageRank 扩散 + 边读时衰减，检索从"词面共享"扩展到"一起出现"
+- **分系统检索通道**：episodic / semantic 双通道 RRF 融合 + 分层衰减（episodic 快 / semantic 慢 / procedural、global 更慢）
 - **Pinned 披露层 + Sticky 便签板**：身份画像每轮必见，"记下来"类提醒限时必达
 - **主动记忆引导**（OptMem 式）：Agent 自主决定何时写入、何时检索，而非被动灌注
 - **环境探测式维护**：记忆 curator 写入前用只读工具验证候选记忆（propose–probe–commit），
@@ -80,7 +82,7 @@ UI 工具卡插件系统支持 `.js` 文件自定义工具执行卡（v2：依�
 
 ### ⚙️ 自动化引擎
 
-Cron 规则驱动：记忆衰减、回合聚合压缩（每小时）、反思管线、stale 记忆重验（每周）；triage 队列让关键决定仍由你确认。
+Cron 规则驱动：记忆衰减、回合聚合压缩（每小时）、反思管线、stale 记忆重验（每周）；每条管线出口记账 + 心跳遥测（`/api/memory/stats` 的 `pipelines` 暴露 `lastRunAt / lastSuccessAt / stale`，静默失败不再隐形），triage 队列让关键决定仍由你确认。
 
 ### 🔌 Runtime 能力契约
 
@@ -227,6 +229,9 @@ MAFW 的设计站在这些项目与研究的肩膀上：
 | [opencode](https://github.com/sst/opencode) | 插件宿主平台；Desktop 端（`packages/desktop`）源自其桌面架构并深度改造（MAFW Rail/Tabs/Config、gateway sidecar 等） |
 | [Memora](https://arxiv.org/abs/2602.03315)（Microsoft M365 Research, ICML 2026） | 谐波记忆系统的架构参照：`primary_abstraction` / `cue_anchors` / `memory_value` 三元数据模型与其同构；embedding 相似度合并 + LLM UPDATE/CREATE 裁判（ConsolidationService）采用其方案；其 LongMemEval-S 87.4% SOTA 是本项目记忆管线设计的方向验证 |
 | [Grounding Agent Memory](https://arxiv.org/abs/2609.11060)（Microsoft, 2026） | 环境探测式记忆维护（Environment-Probing Curation）的方案来源：post-task curator 以最小权限只读工具在写入前验证候选记忆（propose–probe–commit）、定期重验并刷新 stale 条目；其 CLBench/APEX 实验证明该机制同时提升正确率并降低 task-agent 成本 |
+| [Dual-Layer Agentic Memory](https://arxiv.org/abs/2608.22215)（2026） | 类脑写入路径的 CLS（互补学习系统）蓝本：写时 epistemic 路由（non-write / write-new / write-update）+ 周期巩固，剪冗余同时保 QA；MAFW 写时路由（S1）与再巩固（S5）的直接参照 |
+| [REALM](https://arxiv.org/abs/2609.16053)（2026） | 检索驱动再巩固：记忆作为持续生命周期、检索反馈重组记忆（消融证实持续有益）；MAFW 再巩固队列 + 预测误差门的来源 |
+| [AutoViewMem](https://arxiv.org/abs/2609.21940)（2026） | 写时正交视图抗语义干扰；MAFW 模式分离（S4，同题不同实体强制区分）的轻量参照 |
 | OKF（Open Knowledge Format） | 记忆存储层：Markdown + frontmatter、每记忆一文件，索引视为纯可推导产物；设计见 `docs/superpowers/specs/2026-07-16-okf-migration-design.md` |
 
 ## 许可
