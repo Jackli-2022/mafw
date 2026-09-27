@@ -1,8 +1,9 @@
 # 读路径重构：从「打分 → top-k」到「期望 → 补全 → 验证 → 竞争 → 重构」
 
-> 日期：2026-09-24 · 状态：R3 已实现并验证，R1/R2/R4/R5 待做
+> 日期：2026-09-24（2026-09-27 调研修订）· 状态：R3 已实现并验证；R1/R2/R4 实测否决；R6/R5/R7/R8 已调研待实现
 > 范围：把记忆**读路径**（检索/取回/注入）按大脑方式重构
-> 依据：本次 LongMemEval 测量 + 大脑读路径调研（`docs/research/2026-09-23-brain-vs-ai-memory-survey.md` §1.4/1.5）+ CA1 比较器/PFC-海马比较器文献
+> 依据：本次 LongMemEval 测量 + 大脑读路径调研（`docs/research/2026-09-23-brain-vs-ai-memory-survey.md` §1.4/1.5）
+> + 读路径专项调研（`docs/research/2026-09-27-read-path-brain-alignment.md`，FOK/上下文复原/线索抽取/预测预取四方向）
 > 相关：`2026-09-24-write-time-routing-design.md`（写路径 S1，读路径是其对偶）
 
 ## 1. 背景与测量
@@ -86,23 +87,52 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 |---|---|---|
 | R1 查询改写（LLM） | 0.615 < 0.657 | ❌ 否决 |
 | R2 双过程级联（dense） | 0.622 < 0.657 | ❌ 否决 |
-| R3 验证层（Qwen3-Reranker） | **0.657**（+0.089） | ✅ **唯一有效** |
+| R3 验证层（Qwen3-Reranker） | **0.657**（+0.089） | ✅ **唯一已验证** |
 | R4 近因竞争 | 0.644 < 0.657 | ❌ 否决 |
-| R5 检索监控 | 待做（低成本结构项） | — |
+| R6 上下文复原 | 待实现（调研证据最强：CueMem/EdgeMem/EM-LLM） | → 见 §5 |
+| R5 FOK 元记忆门 | 待实现（防臆造结构防线） | → 见 §5 |
+| R7 确定性线索抽取 | 待实现（标识符分词 + 逐字加权） | → 见 §5 |
+| R8 预测预取快照 | 待实现（延迟优化，非质量优化） | → 见 §5 |
 
-**结论**：**验证层（CA1 匹配-失配）是读路径唯一有效的重构**——它强到把 dense、查询改写、近因竞争全部吸收/压倒。剩余弱类型（multi-session 0.39 / temporal 0.45 / knowledge-update 0.45）**非检索机制可修**——答案深埋于会话内、会话表面（abstraction）与查询词面不匹配，属**粒度/推理限制**，需更深的多跳/时间推理（超出本 spec）。
+**结论修正（2026-09-27）**：R1–R4 的结论是"验证层是打分-排序阶段唯一有效的重构"，但**"剩余弱类型非检索层可修"的判断被新调研推翻**——CueMem（去图扩展 81.1→71.4）与 EdgeMem（episode 通道 +8.4）证明**命中锚点的时间邻居扩展**直接作用于 temporal/multi-session/knowledge-update 三类弱项。脑机制依据：lag-CRP（Kahana 1996）、TCM 上下文复原（Howard & Kahana 2002）、语义与时间信号可加（Polyn et al. 2009）。
 
-### R5 检索监控/停止（PFC）—— 待做
-- **内容**：agent 迭代路径（`mafw_search_hybrid`）接饱和判据 + 预算（GuidedRetriever 已有雏形，未接线主工具）。
-- **依据**：HippoRAG 证明单步 PPR 媲美迭代；监控用于"何时停"。
+### R6 情景上下文复原（temporal neighbor bundling）—— 待实现，**证据最强**
+- **依据**（详见调研 §2）：lag-CRP 效应（Kahana 1996）；CueMem 去扩展 81.1→71.4；EdgeMem episode 通道 +8.4；EM-LLM contiguity buffer（须 ≤ similarity buffer）。
+- **实现**（检索出口层，`harmonic-index.ts` 或 `search-hybrid.ts`）：
+  1. BM25 命中（分超 floor）为锚点 → 捆绑同 session ±1 条目（对称窗，w∈{1,2} 在 LongMemEval 上调）；
+  2. 锚点为 session 首/尾时，桥接时间相邻 session 的边缘 1 条；
+  3. 呈现：时间序成块、`[日期, session]` 前缀、锚点标 ▶、邻居 token ≤ 50% 预算、去重；
+  4. 知识更新：保留全部版本 + 指令"优先采用离问题时间最近的信息"（CueMem 消融值 +6.4/+6.8）+ 显式标记 supersede 链头；
+  5. **绝不物理排除旧版本**（"X 什么时候变的"类问题需要）。
+- **评测**：LongMemEval per-category，预期增益集中在 temporal / multi-session / knowledge-update。
+- **坑**：误命中锚点的邻居 = 误上下文 → 只扩展高分锚点；硬 token 帽防膨胀（CueMem ~2K 重构 > 108K 全史）。
 
-## 5. 优先级与依据
+### R5 FOK 元记忆门（PFC 监控）—— 待实现
+- **依据**（调研 §1）：mPFC 损伤 = 自信虚构（Schnyer 2004）；LLM 自报置信无效（2605.24299）→ **门必须在检索代码里**；prompt 式弃答在误导上下文下崩溃（2608.22228）；便宜信号够用（2501.12835）。
+- **实现**（`/api/recall/context` + `mafw_search_hybrid` 出口）：
+  1. 特征 = reranker top1 概率 + top1−top2 margin（**用未经 energy×salience 加权的原始相关性分**）；
+  2. isotonic 校准（LongMemEval 日志做校准集）；
+  3. 三区：正常注入 / top1+低置信包装 / **显式注入 `<recall status="no-reliable-memory">` 块**（沉默是错的）；
+  4. supersede 链解析先于 margin 计算（新旧成对压低 margin）。
+- **阈值**：非对称目标（错记忆重罚、漏记忆轻罚）。
 
-1. **R3 接线**（低成本、已验证增益）——把验证层接进 gateway 显式检索路径。
-2. **R1 期望生成**（剩余弱项最大杠杆：multi-session/temporal/knowledge-update）。
-3. **R4 竞争抑制**（knowledge-update）。
-4. **R2 双过程级联**（结构，需 R1/R3 后评估是否还需要）。
-5. **R5 监控**（低成本收尾）。
+### R7 确定性线索抽取 —— 待实现（低优先级）
+- **依据**（调研 §3）：确认 R1 否决（CAsT 自动改写比人工差 35%）；query reduction > expansion（Kumaran & Allan 2008）；编码特异性——逐字 token 必在写入 trace 里。
+- **实现**：① 标识符感知分词（camelCase/snake 双索引，效应量最大，arXiv:2605.18561）；② 抽取路径/标识符/引号串/日期 → 2–3× **加性**加权（永不减性过滤）；③ 分词变更后必须重跑 LongMemEval 基线（IDF 会移动）。
+- **前置检查**：写路径 `primary_abstraction` 是否保留逐字标识符。
+
+### R8 预测预取快照 —— 待实现（最低优先级，延迟优化）
+- **依据**（调研 §4）：preplay（Dragoi & Tonegawa 2011）；predictive prefetching −43.5% 延迟（2605.17989）；**最后一轮只含 session 词汇 36%**（2607.22392）→ 快照 query 用滚动 N 轮 + goal 快照 + 活跃文件。
+- **实现**：kv_store `recall-snapshot/{sessionID}`（top-N + 预格式化块 + queryHash）；后台刷新（回合完成防抖 / goal 变更 / 话题转移）；边界读快照 ~1ms，增量 >50 字符时跑正常搜索并**新鲜结果在前**合并；快照构建走 `resolveSupersededHeads`；话题转移检测确定性做在 gateway（LLM 会带陈旧上下文，2605.09268）。
+- **定位**：只解决 100ms 边界契约的覆盖问题，不提升 R@1。
+
+## 5. 优先级与依据（2026-09-27 修订）
+
+1. **R6 上下文复原**（调研证据最强，直击 temporal/multi-session/knowledge-update 三大弱项；呈现指令部分零风险）。
+2. **R5 FOK 门**（防臆造结构防线；脑机制对应最清晰）。
+3. **R7 线索抽取**（安全加性，先查写端保真）。
+4. **R8 预测预取**（只优化延迟）。
+5. ~~R3 接线~~（已完成）；~~R1/R2/R4~~（已实测否决）。
 
 ## 6. 非目标
 
@@ -113,6 +143,7 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 ## 7. 涉及文件
 
 - R3：`gateway/src/core/memory/llamacpp-reranker.ts`（新）、`reranker.ts`、`config.ts`（`search.reranker: 'llamacpp'`）、`mcp/handlers/search-hybrid.ts`、`index.ts`
-- R1：`gateway/src/recall/`（查询构造）、`recall-context.ts`
-- R4：`gateway/src/core/memory/harmonic-index.ts`（检索出口）
-- R5：`gateway/src/mcp/handlers/search-hybrid.ts`、`retrieval/guided-retriever.ts`
+- R6：`gateway/src/core/memory/harmonic-index.ts`（检索出口扩展）、`inject-format.ts`（邻居块呈现）、`recall-context.ts`
+- R5：`gateway/src/mcp/handlers/search-hybrid.ts`、`routes/recall-context.ts`（三区门 + 校准）
+- R7：`gateway/src/core/memory/harmonic-index.ts`（tokenizer 双索引）、query 预处理
+- R8：kv_store `recall-snapshot/{sessionID}`、`routes/recall-context.ts`、回合完成钩子
