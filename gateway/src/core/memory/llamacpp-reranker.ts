@@ -27,6 +27,8 @@ export interface LlamaCppRerankerConfig {
   /** 'cpu' (default) | 'vulkan' | 'cuda'. */
   gpu?: string;
   binaryVersion?: string;
+  /** R4 recency-competition weight in the fusion (0 = off, default). */
+  recencyWeight?: number;
   deps?: {
     spawnFn?: typeof spawn;
     fetchFn?: typeof fetch;
@@ -249,9 +251,18 @@ export class LlamaCppReranker implements Reranker {
 
     const normCe = normalize(ceScores);
     const normBm25 = normalize(candidates.map(c => c.score));
+    // R4 competition/inhibition (retrieval-induced forgetting analog): among
+    // competing candidates, the more RECENT one wins (the latest value of a
+    // fact should beat older/competing sessions). Weight 0 = pure R3 baseline.
+    const recencyWeight = Math.max(0, Math.min(1, Number(process.env.MAFW_RERANKER_RECENCY ?? this.cfg.recencyWeight ?? 0) || 0));
+    const recency = normalize(candidates.map(c => {
+      const t = c.entry.created_at ? Date.parse(c.entry.created_at) : NaN;
+      return Number.isNaN(t) ? 0 : t;
+    }));
+    const base = (1 - recencyWeight) / 2;
     const fused = candidates.map((c, i) => ({
       ...c,
-      fusedScore: 0.5 * normBm25[i] + 0.5 * normCe[i],
+      fusedScore: base * normBm25[i] + base * normCe[i] + recencyWeight * recency[i],
     }));
     fused.sort((a, b) => b.fusedScore - a.fusedScore);
     return fused.slice(0, topK).map(({ entry, score }) => ({ entry, score }));

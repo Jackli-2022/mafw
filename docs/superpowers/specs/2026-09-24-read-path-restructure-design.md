@@ -75,10 +75,22 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 - **实测**：hybrid+rerank (R@1 0.622) **低于** bm25+rerank (0.657)；有验证层时 dense 全面净负（user 0.90→0.80、preference 0.75→0.65）。
 - **结论**：验证层已覆盖语义匹配；dense 只往候选集塞"语义相近但缺关键信息"的干扰项。**R2 不做**。
 
-### R4 竞争抑制（提取诱发遗忘）—— 待做
-- **内容**：候选按语义簇分组，簇内选胜者、压制其余（demote/dedup）。
-- **目标**：knowledge-update（旧值 vs 新值竞争）、减少"相似项并列"。
-- **可测**：簇内 top-1 保持率。
+### R4 竞争抑制（提取诱发遗忘）—— ❌ 实测否决（近因竞争版）
+- **实现**：重排融合加近因项 `score = base·bm25 + base·ce + w_recency·recency`（`MAFW_RERANKER_RECENCY`/`recencyWeight`，默认 0 = R3 基线）。
+- **实测**（w=0.2，120 题）：overall R@1 **0.644 < 0.657**；knowledge-update 0.450→0.475（↑）但 user 0.900→0.850、preference 0.750→0.700（↓）。
+- **结论**：**近因竞争净负**（与 HeuristicReranker 近因零增益一致）。**R4 不做**。
+
+## 切片实测总结
+
+| 切片 | 结果 | 判定 |
+|---|---|---|
+| R1 查询改写（LLM） | 0.615 < 0.657 | ❌ 否决 |
+| R2 双过程级联（dense） | 0.622 < 0.657 | ❌ 否决 |
+| R3 验证层（Qwen3-Reranker） | **0.657**（+0.089） | ✅ **唯一有效** |
+| R4 近因竞争 | 0.644 < 0.657 | ❌ 否决 |
+| R5 检索监控 | 待做（低成本结构项） | — |
+
+**结论**：**验证层（CA1 匹配-失配）是读路径唯一有效的重构**——它强到把 dense、查询改写、近因竞争全部吸收/压倒。剩余弱类型（multi-session 0.39 / temporal 0.45 / knowledge-update 0.45）**非检索机制可修**——答案深埋于会话内、会话表面（abstraction）与查询词面不匹配，属**粒度/推理限制**，需更深的多跳/时间推理（超出本 spec）。
 
 ### R5 检索监控/停止（PFC）—— 待做
 - **内容**：agent 迭代路径（`mafw_search_hybrid`）接饱和判据 + 预算（GuidedRetriever 已有雏形，未接线主工具）。
