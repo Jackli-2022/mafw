@@ -79,14 +79,16 @@
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
   /* v5.1 双字体契约：sans 管 UI、mono 管数据（复用 ui 包既有变量，像素零变化） */
-  --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
-  --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
+  --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  --font-ui: var(--font-family-sans, "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif);
+  --font-data: var(--font-family-mono, "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
   /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
   --hairline: 0.5px;
   --elev-soft: 0 1px 2px rgba(0,0,0,.25);
   --elev-panel: 0 4px 16px rgba(0,0,0,.35);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.5);
-  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+  --font-display: var(--font-ui);
 }
 /* 亮色：手动覆盖（html[data-theme]） */
 html[data-theme="light"] .mafw-shell {
@@ -158,14 +160,16 @@ html[data-theme="light"] .mafw-shell {
   --dur-3: 200ms;
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
-  --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
-  --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
+  --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  --font-ui: var(--font-family-sans, "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif);
+  --font-data: var(--font-family-mono, "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
   /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
   --hairline: 0.5px;
   --elev-soft: 0 1px 2px rgba(0,0,0,.06);
   --elev-panel: 0 4px 16px rgba(0,0,0,.10);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
-  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+  --font-display: var(--font-ui);
 }
 /* 亮色：跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -201,14 +205,16 @@ html[data-theme="light"] .mafw-shell {
     --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 14px;
     --dur-1: 120ms; --dur-2: 160ms; --dur-3: 200ms; --dur-4: 240ms;
     --ease: cubic-bezier(.25,0,0,1);
-    --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
-    --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
+    --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+    --font-ui: var(--font-family-sans, "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif);
+    --font-data: var(--font-family-mono, "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
     /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
     --hairline: 0.5px;
     --elev-soft: 0 1px 2px rgba(0,0,0,.06);
     --elev-panel: 0 4px 16px rgba(0,0,0,.10);
     --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
-    --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+    --font-display: var(--font-ui);
   }
 }
 
@@ -282,7 +288,7 @@ body {
   --elev-soft: 0 1px 2px rgba(0,0,0,.25);
   --elev-panel: 0 4px 16px rgba(0,0,0,.35);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.5);
-  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+  --font-display: var(--font-ui);
 }
 /* Portal 镜像：亮色手动覆盖 */
 html[data-theme="light"] body {
@@ -340,7 +346,7 @@ html[data-theme="light"] body {
   --elev-soft: 0 1px 2px rgba(0,0,0,.06);
   --elev-panel: 0 4px 16px rgba(0,0,0,.10);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
-  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+  --font-display: var(--font-ui);
 }
 /* Portal 镜像：亮色跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -372,7 +378,7 @@ html[data-theme="light"] body {
     --elev-soft: 0 1px 2px rgba(0,0,0,.06);
     --elev-panel: 0 4px 16px rgba(0,0,0,.10);
     --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
-    --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+    --font-display: var(--font-ui);
   }
 }
 
@@ -4747,8 +4753,8 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 
 /* ── 字体分层（v6 §2）─────────────────────────────────────────── */
-/* 品牌点睛：页面标题 / 欢迎页大标题用衬线（系统栈，零新字体文件） */
-.mafw-page-title, .mafw-welcome-title { font-family: var(--font-display); }
+/* 标题与正文同族（Inter），靠字重分层 */
+.mafw-page-title, .mafw-welcome-title { font-family: var(--font-display); font-weight: 600; }
 /* 人机用字分工：用户气泡用 mono 契约见上方 scoped override（font-family 已并入
    既有 user-message-text 规则，避免重复选择器）；行内代码沿用 session-ui mono。 */
 

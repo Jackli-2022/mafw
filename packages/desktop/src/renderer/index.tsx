@@ -1,4 +1,6 @@
-﻿import "@mafw/ui/styles/tailwind"
+﻿import "@fontsource-variable/inter"
+import "@fontsource-variable/jetbrains-mono"
+import "@mafw/ui/styles/tailwind"
 import "@mafw/ui/v2/styles/tailwind.css"
 import "@mafw/session-ui/styles"
 import { ErrorBoundary } from "solid-js"

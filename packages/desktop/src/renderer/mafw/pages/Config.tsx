@@ -692,7 +692,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                     {(e) => (
                       <div class="mafw-card" style={{ "margin-bottom": 6 }}>
                         <div style={{ flex: 1 }}>
-                          <span class="mafw-tool-chip" style={{ "font-family": "var(--font-mono, monospace)" }}>{e.tool}</span>
+                          <span class="mafw-tool-chip" style={{ "font-family": "var(--font-data)" }}>{e.tool}</span>
                           <Show when={e.override}><span class="mafw-badge" style={{ "margin-left": 6 }}>override</span></Show>
                         </div>
                       </div>

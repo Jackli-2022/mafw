@@ -88,8 +88,26 @@ describe("token v6 — 字体分层", () => {
     expect(light).toContain("--font-display:")
     expect(sysLight).toContain("--font-display:")
   })
-  test("--font-display 引用衬线栈", () => {
-    expect(css).toMatch(/--font-display:\s*[^;]*serif/)
+  test("--font-display 引用 UI 字体（衬线栈已退役）", () => {
+    expect(css).toMatch(/--font-display:\s*var\(--font-ui\)/)
+    expect(css).not.toContain("Georgia")
+    expect(css).not.toContain("SimSun")
+  })
+  test("--font-ui 首选打包 Inter，中文回落雅黑 UI", () => {
+    expect(css).toMatch(/--font-ui:[^;]*"Inter Variable"/)
+    expect(css).toMatch(/--font-ui:[^;]*"Microsoft YaHei UI"/)
+  })
+  test("覆盖 ui 包 :root 默认：--font-family-sans/-mono 指向打包字体", () => {
+    expect(css).toMatch(/--font-family-sans:\s*"Inter Variable"/)
+    expect(css).toMatch(/--font-family-mono:\s*"JetBrains Mono Variable"/)
+  })
+  test("--font-data 首选打包 JetBrains Mono", () => {
+    expect(css).toMatch(/--font-data:[^;]*"JetBrains Mono Variable"/)
+  })
+  test("渲染入口打包 Inter + JetBrains Mono woff2", () => {
+    const entry = readFileSync(join(import.meta.dir, "..", "src", "renderer", "index.tsx"), "utf8")
+    expect(entry).toContain("@fontsource-variable/inter")
+    expect(entry).toContain("@fontsource-variable/jetbrains-mono")
   })
   test("用户气泡用 mono 数据字体", () => {
     const rule = cssBlock('.mafw-shell [data-component="user-message"] [data-slot="user-message-text"] {')
