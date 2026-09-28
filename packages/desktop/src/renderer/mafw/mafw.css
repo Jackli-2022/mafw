@@ -716,7 +716,7 @@ html[data-theme="light"] body {
   max-height: calc(100vh - 120px); overflow-y: auto;
   border: 1px solid var(--border-subtle); border-radius: 14px;
   padding: 0; background: var(--bg-raised);
-  box-shadow: 0 6px 20px rgb(0 0 0 / .08);
+  box-shadow: var(--elev-panel);
   display: flex; flex-direction: column;
   animation: mafw-usage-wb-in var(--dur-2) var(--ease);
   scrollbar-width: thin;
@@ -828,7 +828,7 @@ html[data-theme="light"] body {
   background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  box-shadow: 0 4px 16px rgb(0 0 0 / .12);
+  box-shadow: var(--elev-soft);
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-2);
@@ -2718,7 +2718,7 @@ html[data-theme="light"] .mafw-picker-pop {
   right: 0;
   bottom: 0;
   z-index: 70;
-  box-shadow: -4px 0 16px rgba(0,0,0,0.06);
+  box-shadow: var(--elev-panel);
 }
 .mafw-right-dock-tabs {
   display: flex;
@@ -2978,7 +2978,7 @@ html[data-theme="light"] .mafw-picker-pop {
 
 /* Global command palette (Ctrl+P, P2 batch) */
 .mafw-palette-backdrop { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
-.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.mafw-palette { width: min(520px, 90vw); background: var(--surface-base); border: 0.5px solid var(--border-base, rgba(255,255,255,0.12)); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--elev-prominent); }
 .mafw-palette-list { max-height: 380px; overflow-y: auto; }
 .mafw-palette-group { font-size: 10px; color: var(--text-4); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .05em; }
 .mafw-palette-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
@@ -4645,7 +4645,7 @@ html[data-theme="light"] .mafw-picker-pop {
   background: var(--bg-overlay);
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--elev-prominent);
   padding: 4px;
 }
 .mafw-search-select-item {
@@ -4676,7 +4676,7 @@ html[data-theme="light"] .mafw-picker-pop {
 /* ── DiffReviewPanel（切片 2）────────────────────────────────────────── */
 /* DiffReviewPanel：右侧非模态抽屉（业界对齐：opencode v2 side panel / OpenHands Changes tab
    ——审阅是长时工作流，chat 必须保持可见可操作，不做全屏遮罩） */
-.mafw-diff-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(720px, 55%); z-index: 60; display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-base); box-shadow: -8px 0 24px rgba(0,0,0,.18); animation: mafw-drawer-in var(--dur-3) var(--ease); }
+.mafw-diff-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(720px, 55%); z-index: 60; display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-base); box-shadow: var(--elev-panel); animation: mafw-drawer-in var(--dur-3) var(--ease); }
 @keyframes mafw-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 /* composer 按钮改动计数徽标（审阅改动常驻入口，对齐 Amp Changes pane 常驻可见性） */
 .mafw-composer-badge { position: absolute; top: -4px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 9px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
