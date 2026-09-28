@@ -15,6 +15,7 @@ import { L1QuestionResult, L2QuestionResult } from './types';
 import { chatCompletion, chatCompletionFull, ChatMessage, loadAuthKey } from './llm';
 import { buildJudgePrompt, parseJudgeScore } from './judge-prompts';
 import { aggregateByType } from './metrics';
+import { computeFokFeatures, classifyFok, FokZone } from '../../../gateway/src/recall/fok-gate';
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -37,7 +38,62 @@ function parseArgs() {
     enumerate: flags.get('--enumerate') === 'true',
     readerMode: (flags.get('--readerMode') ?? 'plain') as 'plain' | 'chain-of-note',
     scoreThreshold: parseFloat(flags.get('--scoreThreshold') ?? '0'),
+    // R5 FOK gate: apply the three-zone gate to the reader prompt. Both
+    // thresholds must be > 0 to enable (0 = off, the default).
+    fokLow: parseFloat(flags.get('--fokLow') ?? '0'),
+    fokHigh: parseFloat(flags.get('--fokHigh') ?? '0'),
+    // R5 FOK via reranker probability: JSONL with per-question `top1prob`
+    // (produced by probe-fok-rerank.ts). Overrides the score-based feature —
+    // the cross-encoder probability discriminates answerable vs unanswerable
+    // (AUROC 0.78) while the BM25 score ratio does not (0.58).
+    fokProbs: flags.get('--fokProbs'),
+    // Production-faithful abstention measurement: the production pipeline does
+    // NOT know a question is unanswerable, so the official abstention hint
+    // (which the benchmark hands the reader for `_abs` items) inflates the
+    // baseline. Set true to withhold that hint (judge semantics unchanged).
+    noAbstentionHint: flags.get('--noAbstentionHint') === 'true',
+    // Variant B (production default): in the no-memory zone KEEP the retrieved
+    // contexts and state the caution. Measured best on both sides (abstention
+    // 0.967 vs 0.933 withhold vs 0.867 baseline; answerable subset 0.523 vs
+    // 0.386 vs 0.500). Pass `--fokKeepContexts false` for the withholding
+    // ablation.
+    fokKeepContexts: flags.get('--fokKeepContexts') !== 'false',
   };
+}
+
+/** R5 zone from a reranker top-1 probability (higher = more trustworthy). */
+export function zoneFromProbability(prob: number | undefined, low: number, high: number): FokZone {
+  if (prob === undefined || Number.isNaN(prob)) return 'inject';
+  if (prob >= high) return 'inject';
+  if (prob >= low) return 'low-confidence';
+  return 'no-memory';
+}
+
+/** Load question_id → top1prob from a probe dump (fail-open → empty map). */
+export function loadFokProbs(file: string | undefined): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!file) return map;
+  try {
+    for (const line of fs.readFileSync(file, 'utf-8').split('\n')) {
+      if (!line.trim()) continue;
+      const row = JSON.parse(line);
+      if (row?.question_id !== undefined && typeof row.top1prob === 'number') {
+        map.set(String(row.question_id), row.top1prob);
+      }
+    }
+  } catch { /* fail-open: no probs → all inject */ }
+  return map;
+}
+
+/** R5 zone for one item, from its raw top-k scores (top1/mean feature). */
+export function fokZoneFor(topScores: number[] | undefined, low: number, high: number): FokZone {
+  if (!(low > 0) || !(high > 0)) return 'inject';
+  return classifyFok(computeFokFeatures(topScores ?? []), { low, high });
+}
+
+/** Reader-visible context count: the no-memory zone withholds candidates. */
+export function noMemoryCtx(item: L1QuestionResult, zone: FokZone, topK: number): number {
+  return zone === 'no-memory' ? 0 : item.top_contexts.length;
 }
 
 function help() {
@@ -54,6 +110,10 @@ function help() {
   console.log('  --cot true|false       official step-by-step reasoning (default false)');
   console.log('  --enumerate true|false enumerate-then-aggregate for aggregation questions (default false)');
   console.log('  --scoreThreshold N     if top-1 retrieval score < N, add a low-confidence hint');
+  console.log('  --fokLow N --fokHigh N R5 FOK gate: top1/mean thresholds (0 = off); no-memory withholds contexts');
+  console.log('  --fokProbs PATH        R5 FOK from reranker top-1 probability (probe-fok-rerank dump)');
+  console.log('  --noAbstentionHint true  production-faithful: withhold the official abstention hint');
+  console.log('  --fokKeepContexts false no-memory withholds contexts (ablation; default keeps them)');
 }
 
 function sortByDatePrefix(contexts: string[]): string[] {
@@ -96,8 +156,16 @@ export function buildReaderMessages(
   enumerate = false,
   questionDate?: string,
   readerMode: 'plain' | 'chain-of-note' = 'plain',
+  fokZone: 'inject' | 'low-confidence' | 'no-memory' = 'inject',
+  keepContextsOnNoMemory = false,
 ): ChatMessage[] {
-  const sorted = sortContexts(contexts.slice(0, 20), order); // cap reader context
+  // R5 FOK gate: the no-memory zone deliberately withholds candidates and says
+  // so — silence is what invites confabulation. `keepContextsOnNoMemory`
+  // (variant B) keeps them for measurement of the withholding cost.
+  const noMemory = fokZone === 'no-memory';
+  const withhold = noMemory && !keepContextsOnNoMemory;
+  const effectiveLowConfidence = lowConfidence || fokZone === 'low-confidence';
+  const sorted = withhold ? [] : sortContexts(contexts.slice(0, 20), order); // cap reader context
   // Official LongMemEval reader template (run_generation.py): numbered
   // sessions with explicit dates, then Current Date + Question.
   const ctxBlock = sorted.length
@@ -111,13 +179,16 @@ export function buildReaderMessages(
   const abstentionHint = isAbstention
     ? 'If the history chats do not contain the requested information, say that the information is incomplete, but you may mention related facts that ARE in the chats.'
     : 'If the history chats do not contain the answer, say "I don\'t know".';
+  const noMemoryHint = noMemory
+    ? '\n\nNo reliable memory was retrieved for this question. Do NOT invent details. If the history chats contain no relevant information, state plainly that the information is unavailable.'
+    : '';
   const cotHint = cot
     ? 'Answer the question step by step: first extract all the relevant information, and then reason over the information to get the answer.'
     : '';
   const enumerateHint = enumerate
     ? 'Before answering, you MUST: (1) Scan all sessions and list EVERY relevant fact with its session number, e.g. "Session 3: earned $225 from jam sales. Session 5: earned $120 from plant sales." (2) For counting/summing/comparing questions, compute the answer by explicitly iterating over your list. (3) Every conclusion must cite the session numbers that support it. (4) Only say "no record" if your enumerated list is empty. (5) For preference/suggestion questions (e.g., "Can you suggest X for Y?"), infer the user\'s preferences from past discussions of similar topics and apply them to the new context — e.g., if the user discussed Seattle hotels and expressed preferences for great views and rooftop pools, apply those same preferences when suggesting Miami hotels.'
     : '';
-  const confidenceHint = lowConfidence
+  const confidenceHint = effectiveLowConfidence
     ? '\n\nNote: retrieval confidence is LOW. Treat the memories as uncertain and abstain if they do not clearly answer the question.'
     : '';
   // Chain-of-Note (arXiv:2311.04889): per-session relevance notes + facts, then
@@ -126,7 +197,7 @@ export function buildReaderMessages(
   const chainOfNoteHint = readerMode === 'chain-of-note'
     ? 'Before answering, write a note for EVERY session above, in this exact format:\nNote S# (relevant: yes/no): <one or two facts the session states that bear on the question, quoting specifics; if not relevant, write "no bearing".>\nThen give "Answer:" using ONLY what your notes established. If your notes contain no relevant fact, say you don\'t know.'
     : '';
-  const system = `You are a helpful assistant answering a user based only on their past conversation history. ${abstentionHint}${confidenceHint}`;
+  const system = `You are a helpful assistant answering a user based only on their past conversation history. ${abstentionHint}${confidenceHint}${noMemoryHint}`;
   const questionDateStr = questionDate ? `Question Date: ${questionDate}\n` : '';
   const temporalHint = questionDate
     ? 'IMPORTANT: Temporal references in the question (e.g., "last month", "two weeks ago", "two months ago") should be interpreted relative to the Question Date provided below, not the current date or session dates.'
@@ -185,6 +256,14 @@ async function judgeOne(
   return parseJudgeScore(raw);
 }
 
+/** accuracy for a subset (null when empty). */
+function accuracyFor(rows: Array<{ judge_score: number }>): { count: number; accuracy: number | null } {
+  return {
+    count: rows.length,
+    accuracy: rows.length ? Number((rows.reduce((a, r) => a + r.judge_score, 0) / rows.length).toFixed(4)) : null,
+  };
+}
+
 async function main() {
   const args = parseArgs();
   if (!args.l1Run) {
@@ -211,6 +290,8 @@ async function main() {
   if (fs.existsSync(hardNegativesPath)) fs.unlinkSync(hardNegativesPath);
 
   console.log(`L2 QA: ${l1Items.length} questions, topK=${args.topK}, reader=${args.readerModel}, judge=${args.judgeModel}, order=${args.order}`);
+  const fokProbMap = loadFokProbs(args.fokProbs);
+  if (fokProbMap.size > 0) console.log(`R5 FOK gate: probability-driven (${fokProbMap.size} probs), low=${args.fokLow} high=${args.fokHigh}`);
   const results: L2QuestionResult[] = [];
 
   for (let i = 0; i < l1Items.length; i++) {
@@ -218,16 +299,21 @@ async function main() {
     process.stdout.write(`[${i + 1}/${l1Items.length}] ${item.question_id} ... `);
     try {
       const lowConfidence = args.scoreThreshold > 0 && (item.top_scores?.[0] ?? Infinity) < args.scoreThreshold;
+      const fokZone = fokProbMap.size > 0
+        ? zoneFromProbability(fokProbMap.get(item.question_id), args.fokLow, args.fokHigh)
+        : fokZoneFor(item.top_scores, args.fokLow, args.fokHigh);
       const readerMessages = buildReaderMessages(
         item.question,
         item.top_contexts.slice(0, args.topK),
-        item.is_abstention,
+        args.noAbstentionHint ? false : item.is_abstention,
         args.order,
         lowConfidence,
         args.cot,
         args.enumerate,
         item.question_date,
         args.readerMode,
+        fokZone,
+        args.fokKeepContexts,
       );
       const readerResult = await chatCompletionFull({
         model: args.readerModel,
@@ -283,8 +369,9 @@ async function main() {
         reader_answer: readerAnswer,
         judge_score: score,
         judge_reason: reason,
-        top_k_used: Math.min(args.topK, item.top_contexts.length),
+        top_k_used: Math.min(args.topK, noMemoryCtx(item, fokZone, args.topK)),
       };
+      (res as any).fok_zone = fokZone;
       results.push(res);
       fs.appendFileSync(runPath, JSON.stringify(res) + '\n', 'utf-8');
       process.stdout.write(`score=${score}\n`);
@@ -306,6 +393,24 @@ async function main() {
     by_type: Object.fromEntries(
       Object.entries(byType).map(([type, m]) => [type, { count: m.count, accuracy: m.qaAccuracy }]),
     ),
+    // R5 gate breakdown: accuracy by zone, and the answerable/abstention split
+    // (abstention accuracy = did the reader correctly identify unanswerable Qs).
+    fok: args.fokLow > 0 && args.fokHigh > 0 ? {
+      low: args.fokLow,
+      high: args.fokHigh,
+      by_zone: Object.fromEntries(
+        (['inject', 'low-confidence', 'no-memory'] as const).map(zone => {
+          const zs = judged.filter(r => (r as any).fok_zone === zone);
+          return [zone, {
+            count: zs.length,
+            accuracy: zs.length ? Number((zs.reduce((a, r) => a + r.judge_score, 0) / zs.length).toFixed(4)) : null,
+            abstention_count: zs.filter(r => r.is_abstention).length,
+          }];
+        }),
+      ),
+      answerable: accuracyFor(judged.filter(r => !r.is_abstention)),
+      abstention: accuracyFor(judged.filter(r => r.is_abstention)),
+    } : null,
   };
   fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
 

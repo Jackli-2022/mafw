@@ -21,10 +21,15 @@ describe('formatRecallContext FOK status', () => {
     expect(pointers).toContain('status="no-reliable-memory"');
   });
 
-  test('no-memory overrides candidates: trusted pointers are NOT injected', () => {
+  test('no-memory with candidates: KEEPS the pointers and states the status', () => {
+    // Measured design (LongMemEval L2, 2026-09-28): withholding contexts hurts
+    // answerable accuracy (-20pt on the affected zone) AND lowers abstention
+    // accuracy (0.933 vs 0.967) — the reader needs the evidence to confirm the
+    // information is absent. Declare, don't withhold.
     const { pointers } = formatRecallContext([mem('mem_1_aaaaaa', 'secret plan')], { status: 'no-memory' });
     expect(pointers).toContain('status="no-reliable-memory"');
-    expect(pointers).not.toContain('secret plan');
+    expect(pointers).toContain('mem-aaaaaa');
+    expect(pointers).toContain('secret plan');
   });
 
   test('low-confidence injects the pointers plus a caution marker', () => {

@@ -117,8 +117,14 @@ const END_TAG = `</recall>`
 
 // R5 FOK gate: weak evidence must be *stated*, never silently withheld
 // (silence invites confabulation — the brain's mPFC monitor exists precisely
-// to flag "I don't actually know").
-const NO_RELIABLE_POINTERS = `<recall status="no-reliable-memory">\n[无可靠记忆 · 不要臆造：可换关键词 mafw_search_hybrid 再试；仍无 → 直说不知道或用 mafw_ask_user]\n</recall>`
+// to flag "I don't actually know"). Measured refinement (LongMemEval L2,
+// 2026-09-28): the candidates must be KEPT as well — withholding them cost
+// answerable accuracy (-20pt on the affected zone) and even *lowered*
+// abstention accuracy (0.933 vs 0.967) because the reader needs the evidence
+// to confirm the information is absent. Declare, don't withhold.
+const RELIABLE_OPEN = `<recall status="no-reliable-memory">`
+const RELIABLE_NOTE = `[无可靠记忆 · 不要臆造：下列线索可能与问题无关，据此下结论前先核实；可换关键词 mafw_search_hybrid 再试，仍无 → 直说不知道或 mafw_ask_user]`
+const NO_RELIABLE_POINTERS = `${RELIABLE_OPEN}\n${RELIABLE_NOTE}\n</recall>`
 const LOW_CONFIDENCE_NOTE = `[置信度低 · 下列线索可能与问题无关，据此下结论前先核实]`
 
 /**
@@ -137,16 +143,19 @@ function groupMemoriesByType(memories: MemoryUnit[]): Map<string, MemoryUnit[]> 
 
 export interface FormatRecallOptions {
   /**
-   * R5 FOK zone from the retrieval score distribution. 'no-memory' replaces the
-   * pointer block with an explicit status block (candidates are deliberately
-   * withheld); 'low-confidence' prepends a caution note; 'inject' = unchanged.
+   * R5 FOK zone from the retrieval score distribution. 'no-memory' KEEPS the
+   * candidates but marks the block `status="no-reliable-memory"` with a
+   * no-fabrication note (measured: withholding hurts both sides);
+   * 'low-confidence' prepends a caution note; 'inject' = unchanged.
    */
   status?: RecallFokStatus
 }
 
 export function formatRecallContext(memories: MemoryUnit[], options: FormatRecallOptions = {}): RecallFormat {
   const status = options.status
-  if (status === 'no-memory') return { pointers: NO_RELIABLE_POINTERS }
+  // Empty + no-memory: the retrieval produced nothing at all — the status block
+  // is then the only content there is.
+  if (status === 'no-memory' && memories.length === 0) return { pointers: NO_RELIABLE_POINTERS }
   if (memories.length === 0) return { pointers: null }
 
   // Episodic grouping: memories sharing a source session render under one
@@ -196,8 +205,14 @@ export function formatRecallContext(memories: MemoryUnit[], options: FormatRecal
     }
   }
 
-  const header = status === 'low-confidence' ? `${POINTER_HEADER}\n${LOW_CONFIDENCE_NOTE}` : POINTER_HEADER
-  const pointers = `${TAG}\n${header}\n${lines.slice(0, 5).join('\n')}\n${END_TAG}`
+  // R5 FOK: declare weak evidence without withholding the candidates.
+  const tag = status === 'no-memory' ? RELIABLE_OPEN : TAG
+  const header = status === 'low-confidence'
+    ? `${POINTER_HEADER}\n${LOW_CONFIDENCE_NOTE}`
+    : status === 'no-memory'
+      ? `${RELIABLE_NOTE}\n${POINTER_HEADER}`
+      : POINTER_HEADER
+  const pointers = `${tag}\n${header}\n${lines.slice(0, 5).join('\n')}\n${END_TAG}`
   return { pointers }
 }
 

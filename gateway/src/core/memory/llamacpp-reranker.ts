@@ -204,6 +204,51 @@ export class LlamaCppReranker implements Reranker {
     } catch { /* best effort */ }
   }
 
+  /**
+   * Raw relevance probabilities P("yes") per candidate, in INPUT order — no
+   * fusion, no reordering. Reranker-only observability used by the R5 FOK
+   * feature probe (the trained cross-encoder is a relevance judge, so its
+   * top-1 probability is a candidate feeling-of-knowing signal). Throws when
+   * the sidecar is unavailable (callers decide the fallback).
+   */
+  async scoreCandidates(query: string, candidates: ScoredEntry[]): Promise<number[]> {
+    if (candidates.length === 0) return [];
+    const baseUrl = await this.ensureServer();
+    return this.scoreAll(baseUrl, query, candidates);
+  }
+
+  private async scoreAll(baseUrl: string, query: string, candidates: ScoredEntry[]): Promise<number[]> {
+    const docs = candidates.map(c =>
+      `${c.entry.primary_abstraction} ${(c.entry.cue_anchors || []).join(' ')}`.slice(0, 1200),
+    );
+    const prompts = docs.map(d => formatRerankPrompt(query, d));
+    const fetchFn = this.cfg.deps?.fetchFn ?? globalThis.fetch.bind(globalThis);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let data: any;
+    try {
+      // Score all candidates in one batched completion (prompt array → n choices).
+      const resp = await fetchFn(`${baseUrl}/v1/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompts, max_tokens: 1, temperature: 0, logprobs: 20 }),
+        signal: controller.signal,
+      } as any);
+      if (!resp.ok) throw new Error(`llama-server completions HTTP ${resp.status}`);
+      data = await resp.json();
+    } finally {
+      clearTimeout(timer);
+    }
+    const ceScores = new Array(candidates.length).fill(0.5);
+    for (const ch of data?.choices || []) {
+      const top = ch?.logprobs?.content?.[0]?.top_logprobs || [];
+      if (typeof ch.index === 'number' && ch.index >= 0 && ch.index < ceScores.length) {
+        ceScores[ch.index] = scoreFromTopLogprobs(top);
+      }
+    }
+    return ceScores;
+  }
+
   async rerank(query: string, candidates: ScoredEntry[], topK: number): Promise<ScoredEntry[]> {
     if (candidates.length === 0) return [];
     let baseUrl: string;
@@ -214,36 +259,9 @@ export class LlamaCppReranker implements Reranker {
       return this.fallback.rerank(query, candidates, topK);
     }
 
-    const docs = candidates.map(c =>
-      `${c.entry.primary_abstraction} ${(c.entry.cue_anchors || []).join(' ')}`.slice(0, 1200),
-    );
-    const prompts = docs.map(d => formatRerankPrompt(query, d));
     let ceScores: number[];
     try {
-      const fetchFn = this.cfg.deps?.fetchFn ?? globalThis.fetch.bind(globalThis);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      let data: any;
-      try {
-        // Score all candidates in one batched completion (prompt array → n choices).
-        const resp = await fetchFn(`${baseUrl}/v1/completions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: prompts, max_tokens: 1, temperature: 0, logprobs: 20 }),
-          signal: controller.signal,
-        } as any);
-        if (!resp.ok) throw new Error(`llama-server completions HTTP ${resp.status}`);
-        data = await resp.json();
-      } finally {
-        clearTimeout(timer);
-      }
-      ceScores = new Array(candidates.length).fill(0.5);
-      for (const ch of data?.choices || []) {
-        const top = ch?.logprobs?.content?.[0]?.top_logprobs || [];
-        if (typeof ch.index === 'number' && ch.index >= 0 && ch.index < ceScores.length) {
-          ceScores[ch.index] = scoreFromTopLogprobs(top);
-        }
-      }
+      ceScores = await this.scoreAll(baseUrl, query, candidates);
     } catch (err: any) {
       log.warn(`[LlamaReranker] scoring failed, falling back to heuristic: ${err?.message || err}`);
       return this.fallback.rerank(query, candidates, topK);

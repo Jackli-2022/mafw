@@ -148,6 +148,23 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 ### R5 FOK 元记忆门（PFC 监控）—— ✅ 已实现（默认 off）
 - **依据**（调研 §1）：mPFC 损伤 = 自信虚构（Schnyer 2004）；LLM 自报置信无效（2605.24299）→ **门必须在检索代码里**；prompt 式弃答在误导上下文下崩溃（2608.22228）；便宜信号够用（2501.12835）。
 - **特征选型（2026-09-27 AUROC 预检驱动）**：取 **未加 energy×salience 加权的原始相关性分** 的 `top1/mean`（尺度无关）为主特征——实测 AUROC bm25 0.851(hit@1)/0.876(hit@3)、hybrid s1 0.95–1.0；`gap/ratio` 类特征弱（<0.66）不用。reranker top1 概率仅作显式路径的备选（边界路径无 reranker）。
+- **⚠ 特征选型被 2026-09-28 拒答实验推翻（重要）**：上面那个 AUROC 测的是**"命中 vs 未命中"**（答案在不在自己检索出的 top-k），**不是"可答 vs 不可答"**（问题的答案是否存在于语料）。用 30 道 `_abs` 拒答题单独测：
+  | 特征 | AUROC(可答≥不可答) | 中位数（可答 / 不可答） |
+  |---|---|---|
+  | **reranker top1 概率** | **0.782** | 0.840 / **0.052** |
+  | bm25 top1（绝对分） | 0.691 | 17.95 / 14.33 |
+  | bm25 top1/mean（原选型） | 0.582 | 1.48 / 1.41 |
+  交叉编码器（R3）能直接判"该段落与问题无关"，所以它的 top1 概率才是 FOK 信号；BM25 的分数分布只反映"检索是否占优"。**FOK 与验证是同一机制**（CA1 比较器兼做两者），门控必须建立在验证层之上——这也意味着 FOK 只能落在可负担 rerank 的路径（显式检索 / 异步预取 / L2），不在 100ms 边界路径。
+- **L2 端到端实测（2026-09-28，mimo-v2.5 reader+judge，LongMemEval-S）**：门控特征 = reranker top1 概率，low=0.2 / high=0.5。
+  | 臂 | 拒答集 (30) | 可答子集 (44，含 29 道门控命中的难题) |
+  |---|---|---|
+  | 基线（无门，无 oracle 提示） | 0.8667 | 0.500 |
+  | A 撤上下文 + 声明 | 0.9333 | 0.3864 |
+  | **B 保留上下文 + 声明（采纳）** | **0.9667** | **0.5227** |
+  逐区归因（可答侧）：inject 区 0 变化（如设计）；low-confidence 只加警示 −11pt；no-memory 撤上下文 −20pt。
+  **设计结论：声明而不撤回**——撤掉候选既伤可答（−20pt）又反而降低拒答准确率（0.933 < 0.967），因为 reader 需要证据来确认"信息确实不存在"。"沉默是错的"仍成立，但"撤回也是错的"。
+  **生产实现已改为 B**（`formatRecallContext` no-memory = 保留指针 + `status="no-reliable-memory"` + 不臆造提示）。
+  **局限**：n=30/44、单 benchmark、单 reader 模型；门控依赖 reranker 概率（AUROC 0.78），故只落在可负担 rerank 的路径；阈值 0.2/0.5 来自混淆矩阵（行为 B 下阈值敏感性已降低）。
 - **实现**：`gateway/src/recall/fok-gate.ts`——`computeFokFeatures` / `classifyFok` 三区 / `fitFokThresholds` 离线校准（low = 最大平衡准确率点，high = 精度目标点）；`harmonic-index.bm25RawScores()` 供原始分（`bm25SearchScored` 重构共用内核，不改变行为）。
 - **三区**：`inject` 正常指针 / `low-confidence` 指针 + 核实提示 / `no-memory` **显式注入 `<recall status="no-reliable-memory">` 且撤回候选指针**（沉默是错的）。
 - **接线**：`/api/recall/context`（`computeRecallFokZone`，fail-open：未启用/取分失败一律 inject）；config `search.fok {enabled:false, low:1.2, high:1.35}`。
