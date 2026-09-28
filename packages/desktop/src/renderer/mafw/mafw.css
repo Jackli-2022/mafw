@@ -81,6 +81,11 @@
   /* v5.1 双字体契约：sans 管 UI、mono 管数据（复用 ui 包既有变量，像素零变化） */
   --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
   --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
+  /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
+  --hairline: 0.5px;
+  --elev-soft: 0 1px 2px rgba(0,0,0,.25);
+  --elev-panel: 0 4px 16px rgba(0,0,0,.35);
+  --elev-prominent: 0 12px 40px rgba(0,0,0,.5);
 }
 /* 亮色：手动覆盖（html[data-theme]） */
 html[data-theme="light"] .mafw-shell {
@@ -154,6 +159,11 @@ html[data-theme="light"] .mafw-shell {
   --ease: cubic-bezier(.25,0,0,1);
   --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
   --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
+  /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
+  --hairline: 0.5px;
+  --elev-soft: 0 1px 2px rgba(0,0,0,.06);
+  --elev-panel: 0 4px 16px rgba(0,0,0,.10);
+  --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
 }
 /* 亮色：跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -191,6 +201,11 @@ html[data-theme="light"] .mafw-shell {
     --ease: cubic-bezier(.25,0,0,1);
     --font-ui: var(--font-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
     --font-data: var(--font-family-mono, ui-monospace, "Cascadia Code", Consolas, Menlo, monospace);
+    /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
+    --hairline: 0.5px;
+    --elev-soft: 0 1px 2px rgba(0,0,0,.06);
+    --elev-panel: 0 4px 16px rgba(0,0,0,.10);
+    --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
   }
 }
 
@@ -259,6 +274,11 @@ body {
   --dur-3: 200ms;
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
+  /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
+  --hairline: 0.5px;
+  --elev-soft: 0 1px 2px rgba(0,0,0,.25);
+  --elev-panel: 0 4px 16px rgba(0,0,0,.35);
+  --elev-prominent: 0 12px 40px rgba(0,0,0,.5);
 }
 /* Portal 镜像：亮色手动覆盖 */
 html[data-theme="light"] body {
@@ -311,6 +331,11 @@ html[data-theme="light"] body {
   --v2-text-text-base: #35332F;
   --v2-text-text-muted: #605D57;
   --v2-text-text-faint: #8F8C85;
+  /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
+  --hairline: 0.5px;
+  --elev-soft: 0 1px 2px rgba(0,0,0,.06);
+  --elev-panel: 0 4px 16px rgba(0,0,0,.10);
+  --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
 }
 /* Portal 镜像：亮色跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -337,6 +362,11 @@ html[data-theme="light"] body {
     --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 14px;
     --dur-1: 120ms; --dur-2: 160ms; --dur-3: 200ms; --dur-4: 240ms;
     --ease: cubic-bezier(.25,0,0,1);
+    /* v6 发丝线 + 三级 elevation（浮层走描边+投影，内容卡片实底） */
+    --hairline: 0.5px;
+    --elev-soft: 0 1px 2px rgba(0,0,0,.06);
+    --elev-panel: 0 4px 16px rgba(0,0,0,.10);
+    --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
   }
 }
 
@@ -4779,3 +4809,9 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-diff-panel-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--border-base); }
 .mafw-diff-panel-count { font-size: 12px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 .mafw-rail-wt-badge { display: inline-block; font-size: 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin-right: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+
+/* ── hairline 低 DPI 退化（0.5px 不可见时升 1px）── */
+@media (max-resolution: 1dppx) {
+  .mafw-shell, body { --hairline: 1px; }
+}

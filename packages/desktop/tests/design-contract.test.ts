@@ -65,6 +65,23 @@ const PORTAL_TOKENS = [
   "--v2-background-bg-layer-01", "--v2-text-text-base",
 ]
 
+const V6_TOKENS = ["--hairline", "--elev-soft", "--elev-panel", "--elev-prominent"]
+
+describe("token v6 — 暗色默认块", () => {
+  test.each(V6_TOKENS)("定义 %s", (t) => expect(dark).toContain(`${t}:`))
+})
+describe("token v6 — 亮色手动块", () => {
+  test.each(V6_TOKENS)("定义 %s", (t) => expect(light).toContain(`${t}:`))
+})
+describe("token v6 — 亮色跟随系统块", () => {
+  test.each(V6_TOKENS)("定义 %s", (t) => expect(sysLight).toContain(`${t}:`))
+})
+describe("token v6 — body portal 镜像", () => {
+  test.each(V6_TOKENS)("暗色 body 定义 %s", (t) => expect(bodyDark).toContain(`${t}:`))
+  test.each(V6_TOKENS)("亮色 body 定义 %s", (t) => expect(bodyLight).toContain(`${t}:`))
+  test.each(V6_TOKENS)("系统亮色 body 定义 %s", (t) => expect(bodySysLight).toContain(`${t}:`))
+})
+
 describe("portal 令牌镜像 — body 暗色块", () => {
   test.each(PORTAL_TOKENS)("定义 %s", (t) => expect(bodyDark).toContain(`${t}:`))
   test("bg-float 与 .mafw-shell 同值", () => expect(tokenHex(bodyDark, "--bg-float")).toBe("#252320"))
@@ -589,7 +606,7 @@ describe("DiffReviewPanel 接线", () => {
   const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
   test("MafwShell：审阅改动 toggle（再点关闭）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain("setDiffPanelFor(prev => prev === leaf.sid ? null : leaf.sid)")
+    expect(src).toContain("setDiffPanelFor(prev => prev === activeSessionId()! ? null : activeSessionId()!)")
   })
   test("ChatPane：composer 审阅按钮带改动计数徽标", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
