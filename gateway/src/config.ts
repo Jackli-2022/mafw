@@ -113,6 +113,16 @@ export interface GatewayConfig {
       maxNeighbors: number;
       anchorK: number;
     };
+    /**
+     * R5 FOK meta-memory gate: classify the raw score distribution into
+     * inject / low-confidence / no-memory. Thresholds are calibration-set
+     * dependent (retriever scale); defaults fitted on LongMemEval-S bm25.
+     */
+    fok: {
+      enabled: boolean;
+      low: number;
+      high: number;
+    };
   };
   memory: {
     defaultEnergy: number;
@@ -363,6 +373,17 @@ function defaults(projectDir: string): GatewayConfig {
         anchorFloor: 0.3,
         maxNeighbors: 20,
         anchorK: 5,
+      },
+      /**
+       * R5 FOK gate: off by default. Thresholds fitted on LongMemEval-S 120q
+       * bm25 runs (raw top1/mean; low = max balanced accuracy 1.36,
+       * high = precision≥0.95 point 1.34 → rounded band 1.20/1.35). Re-fit per
+       * retriever/config: the raw scale is not comparable across retrievers.
+       */
+      fok: {
+        enabled: false,
+        low: 1.2,
+        high: 1.35,
       },
     },
     memory: {

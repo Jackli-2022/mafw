@@ -145,14 +145,14 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 - **评测**：LongMemEval per-category，预期增益集中在 temporal / multi-session / knowledge-update。
 - **坑**：误命中锚点的邻居 = 误上下文 → 只扩展高分锚点；硬 token 帽防膨胀（CueMem ~2K 重构 > 108K 全史）。
 
-### R5 FOK 元记忆门（PFC 监控）—— 待实现
+### R5 FOK 元记忆门（PFC 监控）—— ✅ 已实现（默认 off）
 - **依据**（调研 §1）：mPFC 损伤 = 自信虚构（Schnyer 2004）；LLM 自报置信无效（2605.24299）→ **门必须在检索代码里**；prompt 式弃答在误导上下文下崩溃（2608.22228）；便宜信号够用（2501.12835）。
-- **实现**（`/api/recall/context` + `mafw_search_hybrid` 出口）：
-  1. 特征 = reranker top1 概率 + top1−top2 margin（**用未经 energy×salience 加权的原始相关性分**）；
-  2. isotonic 校准（LongMemEval 日志做校准集）；
-  3. 三区：正常注入 / top1+低置信包装 / **显式注入 `<recall status="no-reliable-memory">` 块**（沉默是错的）；
-  4. supersede 链解析先于 margin 计算（新旧成对压低 margin）。
-- **阈值**：非对称目标（错记忆重罚、漏记忆轻罚）。
+- **特征选型（2026-09-27 AUROC 预检驱动）**：取 **未加 energy×salience 加权的原始相关性分** 的 `top1/mean`（尺度无关）为主特征——实测 AUROC bm25 0.851(hit@1)/0.876(hit@3)、hybrid s1 0.95–1.0；`gap/ratio` 类特征弱（<0.66）不用。reranker top1 概率仅作显式路径的备选（边界路径无 reranker）。
+- **实现**：`gateway/src/recall/fok-gate.ts`——`computeFokFeatures` / `classifyFok` 三区 / `fitFokThresholds` 离线校准（low = 最大平衡准确率点，high = 精度目标点）；`harmonic-index.bm25RawScores()` 供原始分（`bm25SearchScored` 重构共用内核，不改变行为）。
+- **三区**：`inject` 正常指针 / `low-confidence` 指针 + 核实提示 / `no-memory` **显式注入 `<recall status="no-reliable-memory">` 且撤回候选指针**（沉默是错的）。
+- **接线**：`/api/recall/context`（`computeRecallFokZone`，fail-open：未启用/取分失败一律 inject）；config `search.fok {enabled:false, low:1.2, high:1.35}`。
+- **阈值注意**：LongMemEval-S bm25 拟合值（low≈1.36 / high≈1.34）；**原始分尺度跨检索器不可比，换检索配置必须重标定**（hybrid 分布压缩至 1.04–1.38）。
+- **待办**：`mafw_search_hybrid` 出口（handler 目前丢弃 searchScored 分数，需捕获原始分）；无答案探测集（LongMemEval-S 仅 1–2 道拒答题，abstention 判别无法评估）。
 
 ### R7 确定性线索抽取 —— 待实现（低优先级）
 - **依据**（调研 §3）：确认 R1 否决（CAsT 自动改写比人工差 35%）；query reduction > expansion（Kumaran & Allan 2008）；编码特异性——逐字 token 必在写入 trace 里。
@@ -166,7 +166,7 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 
 ## 5. 优先级与依据（2026-09-28 修订）
 
-1. **R5 FOK 门**（预检 GO；防臆造结构防线；特征选型已定：s1 / top1OverMean，阈值按检索配置分别标定）。
+1. **R5 FOK 门**（✅ 已实现，默认 off；预检 GO，特征选型已定：原始分 top1/mean，阈值按检索配置分别标定）。
 2. **R6 呈现层**（检索层已否决；邻居捆绑 + "优先采用最近版本"指令进注入块，**靠 L2 reader 测**）。
 3. **R2+R3 生产接线设计**（已确认增益；边界 recall 100ms 契约：hybrid dense 融合可进，R3 reranker ~250ms 只能进显式/异步路径，待定）。
 4. **R7 线索抽取**（安全加性，先查写端保真）。

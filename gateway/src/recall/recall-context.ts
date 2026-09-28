@@ -3,6 +3,7 @@
 // merged by mergeScanResults() 鈥?never awaited inline.
 import type { HarmonicIndexManager } from '../core/memory/harmonic-index'
 import type { ScanResult } from './index-scan'
+import { computeFokFeatures, classifyFok, FokThresholds, FokZone } from './fok-gate'
 import { config } from '../config'
 import { log } from '../core/utils/logger'
 
@@ -179,6 +180,27 @@ export interface SearchRecallOptions {
 export function blobPenalty(abstraction: string | undefined): number {
   const segs = (abstraction || '').split('|').map(s => s.trim()).filter(Boolean).length
   return segs >= 4 ? 0.5 : 1
+}
+
+/**
+ * R5 FOK zone for the boundary-recall exit. Reads the *raw* BM25 score
+ * distribution (never energy×salience-weighted) and classifies it into the
+ * three-zone gate. Fail-open: disabled config / missing raw scorer → 'inject'
+ * (never suppress recall because the gate itself could not run).
+ */
+export function computeRecallFokZone(
+  index: any,
+  query: string,
+  cfg: ({ enabled: boolean } & FokThresholds) | undefined,
+  topK: number = 10,
+): FokZone {
+  if (!cfg?.enabled) return 'inject'
+  try {
+    if (typeof index?.bm25RawScores !== 'function') return 'inject'
+    return classifyFok(computeFokFeatures(index.bm25RawScores(query, topK)), cfg)
+  } catch {
+    return 'inject'
+  }
 }
 
 /**

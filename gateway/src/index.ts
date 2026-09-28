@@ -5061,8 +5061,9 @@ class MafwScheduler {
               return;
             }
             const { formatRecallContext } = require('./recall/inject-format');
-            const { searchRecallMemories } = require('./recall/recall-context');
+            const { searchRecallMemories, computeRecallFokZone } = require('./recall/recall-context');
             let memories: any[] = [];
+            let fokStatus: 'inject' | 'low-confidence' | 'no-memory' = 'inject';
             if (this.memoryService) {
               // No push channel exists anymore (step-inject retired): nothing
               // is filtered out of boundary recall.
@@ -5080,8 +5081,11 @@ class MafwScheduler {
                   scanSnapshot,
                 },
               );
+              // R5 FOK gate (fail-open): weak evidence is stated, not silently
+              // withheld. Only active when config.search.fok.enabled.
+              fokStatus = computeRecallFokZone(this.memoryService.harmonicIndex, query, config.search.fok);
             }
-            const formatted = formatRecallContext(memories);
+            const formatted = formatRecallContext(memories, { status: fokStatus });
             const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
             const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
             res.writeHead(200, { 'Content-Type': 'application/json' });

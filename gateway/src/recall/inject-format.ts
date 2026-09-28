@@ -13,6 +13,9 @@ export interface RecallFormat {
   pointers: string | null
 }
 
+/** R5 FOK zone (mirrors recall/fok-gate.ts; inlined to avoid a cycle). */
+export type RecallFokStatus = 'inject' | 'low-confidence' | 'no-memory'
+
 function formatDate(iso?: string): string {
   if (!iso) return ''
   try {
@@ -112,6 +115,12 @@ const POINTER_HEADER = `[联想线索 · 依据前请验证：取全文 → mafw
 const TAG = `<recall>`
 const END_TAG = `</recall>`
 
+// R5 FOK gate: weak evidence must be *stated*, never silently withheld
+// (silence invites confabulation — the brain's mPFC monitor exists precisely
+// to flag "I don't actually know").
+const NO_RELIABLE_POINTERS = `<recall status="no-reliable-memory">\n[无可靠记忆 · 不要臆造：可换关键词 mafw_search_hybrid 再试；仍无 → 直说不知道或用 mafw_ask_user]\n</recall>`
+const LOW_CONFIDENCE_NOTE = `[置信度低 · 下列线索可能与问题无关，据此下结论前先核实]`
+
 /**
  * Group memories by type for better cross-session visibility.
  * Multi-session queries benefit from seeing memories organized by topic.
@@ -126,7 +135,18 @@ function groupMemoriesByType(memories: MemoryUnit[]): Map<string, MemoryUnit[]> 
   return groups;
 }
 
-export function formatRecallContext(memories: MemoryUnit[]): RecallFormat {
+export interface FormatRecallOptions {
+  /**
+   * R5 FOK zone from the retrieval score distribution. 'no-memory' replaces the
+   * pointer block with an explicit status block (candidates are deliberately
+   * withheld); 'low-confidence' prepends a caution note; 'inject' = unchanged.
+   */
+  status?: RecallFokStatus
+}
+
+export function formatRecallContext(memories: MemoryUnit[], options: FormatRecallOptions = {}): RecallFormat {
+  const status = options.status
+  if (status === 'no-memory') return { pointers: NO_RELIABLE_POINTERS }
   if (memories.length === 0) return { pointers: null }
 
   // Episodic grouping: memories sharing a source session render under one
@@ -176,7 +196,8 @@ export function formatRecallContext(memories: MemoryUnit[]): RecallFormat {
     }
   }
 
-  const pointers = `${TAG}\n${POINTER_HEADER}\n${lines.slice(0, 5).join('\n')}\n${END_TAG}`
+  const header = status === 'low-confidence' ? `${POINTER_HEADER}\n${LOW_CONFIDENCE_NOTE}` : POINTER_HEADER
+  const pointers = `${TAG}\n${header}\n${lines.slice(0, 5).join('\n')}\n${END_TAG}`
   return { pointers }
 }
 

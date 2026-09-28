@@ -615,6 +615,30 @@ export class HarmonicIndexManager {
    * + CJK unigrams.
    */
   bm25SearchScored(query: string, topK: number = 20): ScoredEntry[] {
+    return this.bm25RawScored(query)
+      .map(({ entry, raw }) => ({
+        entry,
+        score: raw * entry.energy * (entry.salience ?? 1) * (entry.superseded_by ? 0.5 : 1) * ((entry.merged_from?.length ?? 0) > 0 ? 0.8 : 1),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+  }
+
+  /**
+   * Unweighted BM25 scores in descending order — the raw relevance signal
+   * without the energy×salience prior. R5 FOK gate feature source: the gate
+   * judges evidence strength, so a recency/importance multiplier must not
+   * distort it (LongMemEval calibration assumed frozen-energy raw scores).
+   */
+  bm25RawScores(query: string, topK: number = 20): number[] {
+    return this.bm25RawScored(query)
+      .sort((a, b) => b.raw - a.raw)
+      .slice(0, topK)
+      .map(s => s.raw);
+  }
+
+  /** Shared BM25 core: Okapi scoring over the in-memory index, no priors. */
+  private bm25RawScored(query: string): Array<{ entry: HarmonicIndexEntry; raw: number }> {
     const entries = this.index.entries;
     const N = entries.length;
     if (N === 0) return [];
@@ -647,7 +671,7 @@ export class HarmonicIndexManager {
       idf.set(t, Math.log((N - dfT + 0.5) / (dfT + 0.5) + 1));
     }
 
-    const scored: Array<{ entry: HarmonicIndexEntry; score: number }> = [];
+    const scored: Array<{ entry: HarmonicIndexEntry; raw: number }> = [];
     docs.forEach((d, i) => {
       const dl = docLengths[i];
       let score = 0;
@@ -657,14 +681,10 @@ export class HarmonicIndexManager {
         if (tf === 0) continue;
         score += (idf.get(t) || 0) * (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * (dl / avgdl)));
       }
-      if (score > 0) scored.push({ entry: d.entry, score: score * d.entry.energy * (d.entry.salience ?? 1) * (d.entry.superseded_by ? 0.5 : 1) * ((d.entry.merged_from?.length ?? 0) > 0 ? 0.8 : 1) });
+      if (score > 0) scored.push({ entry: d.entry, raw: score });
     });
 
-    const results = scored
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
-
-    return results;
+    return scored;
   }
 
   bm25Search(query: string, topK: number = 20): HarmonicIndexEntry[] {
