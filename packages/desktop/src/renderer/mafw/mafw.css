@@ -4814,4 +4814,20 @@ html[data-theme="light"] .mafw-picker-pop {
 /* ── hairline 低 DPI 退化（0.5px 不可见时升 1px）── */
 @media (max-resolution: 1dppx) {
   .mafw-shell, body { --hairline: 1px; }
-}
+}
+
+/* ── 元数据行（v6 §3）──────────────────────────────────────────── */
+.mafw-tool-summary { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 2px; }
+.mafw-tool-summary-line {
+  display: flex; align-items: center; gap: 6px;
+  font: 12px/1.5 var(--font-ui);
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+.mafw-tool-summary-line.error { color: var(--danger); }
+.mafw-tool-summary-icon { flex: none; }
+.mafw-composer-meta {
+  font: 12px/1.5 var(--font-ui);
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}

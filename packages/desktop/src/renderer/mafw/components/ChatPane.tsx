@@ -32,6 +32,7 @@ import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
+import { summarizeTools } from "./tool-summary"
 import { type PermissionMode } from "./permission-card-mapping"
 import { aggregateSessionDiffs } from "./session-diffs"
 
@@ -681,6 +682,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return extractVoiceReplies(joined)
   }
 
+  // 元数据行（v6 §3）：本 turn 已完成的 tool part 聚合为一行摘要（该 turn 全部
+  // assistant 消息完成后才显示，避免与进行态工具卡打架）。
+  const toolSummaryForTurn = (userMsgId: string) => {
+    const sid = sidProp()
+    if (!sid) return []
+    const msgs = store.message[sid] || []
+    const userMsg = msgs.find(m => m.id === userMsgId)
+    if (!userMsg) return []
+    const assistants = msgs.filter(m => m.role === "assistant" && m.parentID === userMsg.id)
+    if (assistants.length === 0) return []
+    const allDone = assistants.every(a => typeof a.time?.completed === "number")
+    if (!allDone) return []
+    const parts: any[] = []
+    for (const a of assistants) parts.push(...(store.part[a.id] || []))
+    return summarizeTools(parts)
+  }
+
   // 媒体附件：扫描用户消息的 text parts，提取 [媒体附件 ... artifactId: <id>（媒体: <name>）]
   // 标记，供历史消息渲染（图片/音频/视频播放器）。
   const mediaRefsForTurn = (userMsgId: string) => {
@@ -1177,6 +1195,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                         return cards.length ? <For each={cards}>{(c) => renderFlowCard(c)}</For> : undefined
                       }}
                     />
+                  </Show>
+                  {/* 元数据行：已完成工具聚合摘要（v6 §3，Claude 式 "Read 3 files"） */}
+                  <Show when={toolSummaryForTurn(msg.id).length > 0}>
+                    <div class="mafw-tool-summary">
+                      <For each={toolSummaryForTurn(msg.id)}>
+                        {(line) => (
+                          <div class="mafw-tool-summary-line" classList={{ error: !!line.error }}>
+                            <span class="mafw-tool-summary-icon">{line.icon}</span>
+                            <span class="mafw-tool-summary-text">{line.text}</span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
                   </Show>
                   {/* 语音回复：渲染在 SessionTurn 之后（跟在助手回复文本下方，
                       而非用户消息上方）；到达时自动播放由上方 effect 统一负责
