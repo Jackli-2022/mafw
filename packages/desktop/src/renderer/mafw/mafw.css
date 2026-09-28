@@ -3122,18 +3122,8 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-rail-expand:hover { color: var(--text-1); background: var(--bg-overlay); }
 .mafw-rail-expand span { font-size: 10px; }
 
-/* ── Split panes (tmux-like) ── */
+/* ── Chat panes (single pane since v6; mafw-pane keeps the artifact-column hook) ── */
 .mafw-chat-panes { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
-.mafw-split-root { flex: 1; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
-.mafw-split { flex: 1; display: flex; min-width: 0; min-height: 0; position: relative; }
-.mafw-split-h { flex-direction: row; }
-.mafw-split-v { flex-direction: column; }
-.mafw-split-cell { display: flex; min-width: 0; min-height: 0; }
-.mafw-split-divider { flex: 0 0 6px; background: var(--border-subtle); cursor: col-resize; transition: background var(--dur-2) var(--ease); }
-.mafw-split-divider-h { width: 6px; height: auto; align-self: stretch; }
-.mafw-split-divider-v { height: 6px; width: auto; align-self: stretch; cursor: row-resize; }
-.mafw-split-divider:hover,
-.mafw-split-divider-active { background: var(--accent); }
 .mafw-pane {
   flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0;
   overflow: hidden; background: var(--bg-raised);
@@ -3145,54 +3135,10 @@ html[data-theme="light"] .mafw-picker-pop {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto auto;
 }
-.mafw-split [data-component="resize-handle"][data-direction="horizontal"] {
-  position: static !important; flex: 0 0 6px; width: 6px; height: auto; align-self: stretch;
-  transform: none; inset: auto; cursor: col-resize;
-}
-.mafw-split [data-component="resize-handle"][data-direction="vertical"] {
-  position: static !important; flex: 0 0 6px; height: 6px; width: auto; align-self: stretch;
-  transform: none; inset: auto; cursor: row-resize;
-}
-.mafw-split [data-component="resize-handle"]::after { opacity: 0.5; background: var(--border-subtle); transition: opacity var(--dur-2) var(--ease), background var(--dur-2) var(--ease); }
-.mafw-split [data-component="resize-handle"]:hover::after,
-.mafw-split [data-component="resize-handle"]:active::after { opacity: 1; background: var(--accent); }
 
-/* ── Split view tab + session split ── */
-.mafw-split-view-tab { gap: 4px; }
-.mafw-split-view-icon { font-size: 11px; color: var(--accent-text); flex-shrink: 0; }
-.mafw-session-split { background: none; border: none; cursor: pointer; color: var(--text-weak); padding: 0; line-height: 1; opacity: 0; transition: opacity var(--dur-1) var(--ease); font-size: 11px; }
-.mafw-session-tab:hover .mafw-session-split { opacity: 1; }
-.mafw-session-split:hover { color: var(--text-strong); }
 
-/* ── Split direction menu ── */
-.mafw-split-menu { display: flex; flex-direction: column; gap: 2px; padding: 4px; }
-.mafw-split-menu-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer; background: none; border: none; color: var(--text-2); font-size: 13px; }
-.mafw-split-menu-item:hover { background: var(--hover); color: var(--text-1); }
-.mafw-split-menu-glyph { font-size: 13px; color: var(--accent-text); }
-.mafw-split-menu-hint { padding: 8px 10px; text-align: center; font-size: 12px; color: var(--text-4); }
 
-/* ── Split pane drop wrapper + per-pane preview overlay ── */
-.mafw-pane-drop { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
-.mafw-pane-preview { position: absolute; z-index: 5; pointer-events: none; background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 10px; transition: inset var(--dur-1) var(--ease); }
-.mafw-pane-preview-left   { inset: 4px auto 4px 4px; width: calc(50% - 4px); }
-.mafw-pane-preview-right  { inset: 4px 4px 4px auto; width: calc(50% - 4px); }
-.mafw-pane-preview-top    { inset: 4px 4px auto 4px; height: calc(50% - 4px); }
-.mafw-pane-preview-bottom { inset: auto 4px 4px 4px; height: calc(50% - 4px); }
-.mafw-pane-preview-center { inset: 8px; }
 
-/* ── Chat placeholder pane ── */
-.mafw-placeholder-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-raised); }
-.mafw-split-placeholder-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; align-items: stretch; justify-content: center; padding: 20px; }
-.mafw-split-placeholder-title { font-size: 13px; font-weight: 500; color: var(--text-3); text-align: center; }
-.mafw-split-placeholder-search { width: 100%; }
-.mafw-split-placeholder-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 4px; background: var(--bg-overlay); }
-.mafw-split-placeholder-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer; background: none; border: none; color: var(--text-2); font-size: 13px; text-align: left; min-width: 0; }
-.mafw-split-placeholder-item:hover { background: var(--hover); color: var(--text-1); }
-.mafw-split-placeholder-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mafw-split-placeholder-dot-closed { background: var(--text-4); }
-.mafw-split-placeholder-item-tag { flex-shrink: 0; font-size: 11px; color: var(--text-4); background: var(--bg-float); border-radius: 6px; padding: 1px 6px; }
-.mafw-split-placeholder-empty { padding: 12px; text-align: center; font-size: 12px; color: var(--text-4); }
-.mafw-split-placeholder-new { align-self: center; }
 
 /* ── Command badge + TTS picker ── */
 .mafw-command-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; color: var(--text-4); border: 0.5px solid var(--border-subtle); background: var(--surface-base-hover); flex-shrink: 0; }

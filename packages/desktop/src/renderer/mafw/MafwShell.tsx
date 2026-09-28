@@ -25,8 +25,6 @@ import { DiffReviewPanel } from "./components/DiffReviewPanel"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
-import { SplitView, leafIds, leafCount, fillEmpty, removeLeaf, setRatio, splitLeaf, splitAtPath, replaceAtPath, removeSid, isSidLeaf, firstLeafPath, findSidPath, parentDirOf, splitWithTarget, zoneForPoint, zoneToDir, type SplitNode, type SplitLeaf, type DropZone } from "./components/SplitView"
-import { SplitPlaceholder } from "./components/SplitPlaceholder"
 import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
 import { NotesDock } from "./components/NotesDock"
@@ -142,8 +140,8 @@ export function MafwShell() {
   // picks a session, creates one, or navigates into the chat.
   const [showWelcome, setShowWelcome] = createSignal(true)
 
-  // All project sessions (for the split placeholder picker). Served by the
-  // shared session store (cached, invalidated on SSE reconnect / mutations).
+  // All project sessions. Served by the shared session store
+  // (cached, invalidated on SSE reconnect / mutations).
   const [historySessions, setHistorySessions] = createSignal<{ id: string; title?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]>([])
   createEffect(() => {
     const pd = currentProject()
@@ -208,9 +206,8 @@ export function MafwShell() {
     setHistorySessions(Array.isArray(list) ? list : [])
   }
 
-  // Open a session as a plain single-pane tab (no split view involvement).
-  // Welcome-page entries (manager / new session / recent session) must never
-  // create a split view — that only happens via explicit split actions.
+  // Open a session as a tab (single pane; v6 removed the split-view model).
+  // Welcome-page entries (manager / new session / recent session) go through here.
   const openSessionTab = (sid: string, title?: string, manager?: boolean, metadata?: any) => {
     setShowConfig(false)
     setActiveTab("chat")
@@ -308,23 +305,6 @@ export function MafwShell() {
 
   // Todo list per session (drives the TaskList; updated live via SSE todo.updated)
   const [todos, setTodos] = createStore<Record<string, any[]>>({})
-
-  // ── Split views (tmux-window model) ──
-  // SessionStrip shows one tab per session AND one tab per split view. A split
-  // view is a multi-pane layout; clicking its tab shows it, clicking a session
-  // tab shows that session as a single pane. Split views are session-local
-  // only (never persisted; each launch starts fresh on the welcome page).
-  type SplitViewRec = { id: string; title: string; layout: SplitNode | null }
-
-  const loadSplitViews = (): SplitViewRec[] => {
-    // Fresh start: never restore layouts across restarts. Clear any legacy
-    // persisted keys once so stale data cannot resurface later.
-    try {
-      localStorage.removeItem("mafw-split-layout")
-      localStorage.removeItem("mafw-split-layouts")
-    } catch { /* ignore */ }
-    return []
-  }
 
   // Scroll anchors / sending-reset per session, keyed by sid. Used by
   // loadHistory to scroll the pane showing a session, and by the SSE lifecycle
@@ -472,20 +452,10 @@ export function MafwShell() {
   // mafw_media_speak 工具事件 → 对应会话 ChatPane 的流式播放回调
   const mediaSpeakHandlers = workspace.records.mediaSpeak
 
-  const [splitViews, setSplitViews] = createSignal<SplitViewRec[]>(loadSplitViews())
   const [activeViewId, setActiveViewId] = createSignal<string | null>(null)
-  const [renamingViewId, setRenamingViewId] = createSignal<string | null>(null)
 
-  // Current split view record (when the active view is a split), else null.
-  const activeSplitView = createMemo<SplitViewRec | null>(() => {
-    const id = activeViewId()
-    if (!id || !id.startsWith("split-")) return null
-    return splitViews().find(v => v.id === id) ?? null
-  })
 
   // ── Layout persistence: session tabs + active view survive restarts ──
-  // Split-view trees are intentionally NOT persisted (they reference pane
-  // paths); only the flat tab list does, pruned against live sessions.
   const layoutIO = { getItem: (k: string) => localStorage.getItem(k), setItem: (k: string, v: string) => localStorage.setItem(k, v), removeItem: (k: string) => localStorage.removeItem(k) }
   let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
   createEffect(() => {
@@ -522,441 +492,7 @@ export function MafwShell() {
     console.log("[mafw] layout restored:", pruned.tabs.length, "tabs")
   })
 
-  const persistSplitViews = (recs: SplitViewRec[]) => {
-    setSplitViews(recs)
-  }
 
-  // Update the layout of the currently active split view.
-  const updateCurrentLayout = (node: SplitNode | null) => {
-    const id = activeViewId()
-    if (!id || !id.startsWith("split-")) return
-    setSplitViews(prev => prev.map(v => v.id === id ? { ...v, layout: node } : v))
-  }
-
-  // The effective tree: the active split view's layout, or a single leaf
-  // following the active session.
-  const currentTree = createMemo<SplitNode>(() => {
-    const split = activeSplitView()
-    if (split?.layout) return split.layout
-    return activeSessionId() ? { sid: activeSessionId()! } : { empty: true }
-  })
-
-  // Register persisted split-pane sessions that are not yet in the local
-  // session list so panes render titles and the strip shows them.
-  createEffect(() => {
-    const recs = splitViews()
-    if (recs.length === 0) return
-    for (const rec of recs) {
-      if (!rec.layout) continue
-      for (const sid of leafIds(rec.layout)) {
-        if (sessions().some(s => s.id === sid)) continue
-        const existing = store.session.find(s => s.id === sid)
-        const title = existing?.title || historySessions().find(s => s.id === sid)?.title || `Chat ${sessions().length + 1}`
-        setSessions(prev => prev.some(s => s.id === sid) ? prev : [...prev, {
-          id: sid, title, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false,
-        }])
-        if (!existing) {
-          setStore(prev => ({
-            ...prev,
-            session: [...prev.session, { id: sid, title, directory: ".", time: { created: Date.now() }, projectID: "." }],
-            session_status: { ...prev.session_status, [sid]: { type: "idle" } },
-            message: { ...prev.message, [sid]: [] },
-          }))
-        }
-      }
-    }
-  })
-
-  // Create a new split view tab (auto-numbered title) and switch to it.
-  const createSplitView = (initial: SplitNode | null): string => {
-    const nextId = `split-${Date.now()}`
-    const n = splitViews().length + 1
-    const rec: SplitViewRec = { id: nextId, title: `分屏 ${n}`, layout: initial }
-    persistSplitViews([...splitViews(), rec])
-    setActiveViewId(nextId)
-    return nextId
-  }
-
-  const closeSplitView = (id: string) => {
-    setSplitViews(prev => prev.filter(v => v.id !== id))
-    if (activeViewId() === id) {
-      const firstSession = sessions()[0]
-      setActiveViewId(firstSession?.id ?? null)
-    }
-  }
-
-  const renameSplitView = (id: string, title: string) => {
-    setSplitViews(prev => prev.map(v => v.id === id ? { ...v, title } : v))
-  }
-
-  // Ensure a session is visible in the current view. In a split view, fill a
-  // placeholder pane if one exists; in a single-session view it is already
-  // shown (the view is that session).
-  const ensureSessionVisible = (id: string) => {
-    const split = activeSplitView()
-    if (!split?.layout) return
-    const tree = split.layout
-    if (leafIds(tree).includes(id)) return
-    if (leafCount(tree) === 1) {
-      updateCurrentLayout({ sid: id })
-      return
-    }
-    const filled = fillEmpty(tree, id)
-    if (filled !== tree) updateCurrentLayout(filled)
-  }
-
-  /**
-   * Unified split entry for operations INSIDE a split view (drag, placeholder
-   * fill, pane close). Updates the active split view's layout; if no split view
-   * is active, creates a new one.
-   */
-  const applySplit = (path: number[], dir: "h" | "v", place: "before" | "after", target: SplitLeaf) => {
-    const split = activeSplitView()
-    const tree = split?.layout ?? null
-    if (!tree) {
-      // No active split view: create one, splitting the single-session view.
-      const base: SplitLeaf = activeSessionId() && sessions().some(s => s.id === activeSessionId())
-        ? { sid: activeSessionId()! }
-        : { empty: true }
-      const a = place === "before" ? target : base
-      const b = place === "after" ? target : base
-      createSplitView({ dir, ratio: 0.5, a, b })
-      if ("sid" in target) setActiveSessionId(target.sid)
-      return
-    }
-    const next = splitWithTarget(tree, path, dir, place, target)
-    if (next !== tree) {
-      updateCurrentLayout(next)
-      if ("sid" in target) setActiveSessionId(target.sid)
-    }
-  }
-
-  /**
-   * Four directional split options. Filtered by the no-same-direction rule:
-   * children of an `h` split may only split vertically and vice versa; the
-   * root (or a single-pane layout) is free. Returns [] when the 4-pane cap is
-   * reached.
-   */
-  type DirOption = { dir: "h" | "v"; place: "before" | "after"; label: string; glyph: string }
-  const ALL_FOUR: DirOption[] = [
-    { dir: "h", place: "before", label: "向左分屏", glyph: "⇤" },
-    { dir: "h", place: "after", label: "向右分屏", glyph: "⇥" },
-    { dir: "v", place: "before", label: "向上分屏", glyph: "⇧" },
-    { dir: "v", place: "after", label: "向下分屏", glyph: "⇩" },
-  ]
-  const directionOptions = (path: number[]): DirOption[] => {
-    const split = activeSplitView()
-    const tree = split?.layout ?? null
-    if (!tree) return ALL_FOUR
-    if (leafCount(tree) >= 4) return []
-    const parentDir = parentDirOf(tree, path)
-    if (parentDir === "h") return ALL_FOUR.filter(o => o.dir === "v")
-    if (parentDir === "v") return ALL_FOUR.filter(o => o.dir === "h")
-    return ALL_FOUR
-  }
-
-  // Direction options for a tab's session: no active split (or session absent
-  // from it) → free four ways; otherwise governed by the parent split
-  // direction of the pane holding it.
-  const directionOptionsFor = (sid: string): DirOption[] => {
-    const split = activeSplitView()
-    const tree = split?.layout ?? null
-    if (!tree) return ALL_FOUR
-    if (leafCount(tree) >= 4) return []
-    const sidPath = findSidPath(tree, sid)
-    if (!sidPath) return ALL_FOUR // not on screen yet → treated as free
-    return directionOptions(sidPath)
-  }
-
-  // Per-tab split (session tab ⿻ menu): create a NEW split view whose layout
-  // is [the session | empty placeholder], then switch to it.
-  const splitTab = (sid: string, dir: "h" | "v", place: "before" | "after") => {
-    if (!sessions().some(s => s.id === sid)) return
-    setShowWelcome(false)
-    const base: SplitLeaf = { sid }
-    const other: SplitLeaf = { empty: true }
-    const layout: SplitNode = place === "before"
-      ? { dir, ratio: 0.5, a: other, b: base }
-      : { dir, ratio: 0.5, a: base, b: other }
-    createSplitView(layout)
-    setActiveSessionId(sid)
-  }
-
-  // Global split (⿻ button): create a NEW split view beside the focused
-  // session, with an empty placeholder on the other side.
-  const splitGlobal = (dir: "h" | "v", place: "before" | "after") => {
-    setShowWelcome(false)
-    const base: SplitLeaf = activeSessionId() && sessions().some(s => s.id === activeSessionId())
-      ? { sid: activeSessionId()! }
-      : { empty: true }
-    const other: SplitLeaf = { empty: true }
-    const layout: SplitNode = place === "before"
-      ? { dir, ratio: 0.5, a: other, b: base }
-      : { dir, ratio: 0.5, a: base, b: other }
-    createSplitView(layout)
-  }
-
-  // Continue splitting inside an existing split view (its ⿻ button): split an
-  // empty placeholder pane beside the focused pane, updating that view's
-  // layout (no new split view tab).
-  const continueSplitIn = (viewId: string, dir: "h" | "v", place: "before" | "after") => {
-    const rec = splitViews().find(v => v.id === viewId)
-    const tree = rec?.layout ?? null
-    if (!tree) return
-    const focusedPath = activeSessionId() ? findSidPath(tree, activeSessionId()!) : null
-    const target = focusedPath ?? firstLeafPath(tree)
-    const next = splitWithTarget(tree, target, dir, place, { empty: true })
-    if (next !== tree) {
-      setSplitViews(prev => prev.map(v => v.id === viewId ? { ...v, layout: next } : v))
-      setActiveViewId(viewId)
-    }
-  }
-
-  const closePane = (sid: string) => {
-    const split = activeSplitView()
-    const tree = split?.layout ?? null
-    if (!tree) return
-    const leaves = leafIds(tree)
-    if (leaves.length <= 1) return
-    const next = removeLeaf(tree, sid)
-    updateCurrentLayout(next)
-    if (activeSessionId() === sid) setActiveSessionId(leafIds(next)[0] || null)
-  }
-
-  // Close the pane at a tree path (used by placeholder panes, which have no sid).
-  const closePaneAtPath = (path: number[]) => {
-    const split = activeSplitView()
-    const tree = split?.layout ?? null
-    if (!tree) return
-    if (leafCount(tree) <= 1) return
-    const nodeAt = walkPath(tree, path)
-    if (isSidLeaf(nodeAt)) {
-      closePane(nodeAt.sid)
-      return
-    }
-    // Remove the leaf at path: walk down, collapsing the vacated side.
-    const remove = (n: SplitNode, idxs: number[]): SplitNode | null => {
-      if (isLeaf(n)) return null // removing the leaf itself
-      if (idxs.length === 0) return n
-      const [head, ...rest] = idxs
-      if (head !== 0 && head !== 1) return n
-      const child = head === 0 ? n.a : n.b
-      const next = remove(child, rest)
-      if (next === null) {
-        // This child collapsed away; keep the sibling.
-        return head === 0 ? n.b : n.a
-      }
-      if (next === child) return n
-      return head === 0 ? { ...n, a: next } : { ...n, b: next }
-    }
-    const next = remove(tree, path)
-    if (next && next !== tree) {
-      updateCurrentLayout(next)
-      if (activeSessionId() && !leafIds(next).includes(activeSessionId()!)) {
-        setActiveSessionId(leafIds(next)[0] || null)
-      }
-    }
-  }
-
-  // Ensure a session has a sessionstrip tab carrying its real title (a
-  // placeholder fill can bring in a history session that is not in the tab
-  // list yet, or a tab that was auto-created with a "Chat N" placeholder name).
-  const ensureSessionTab = (sid: string) => {
-    const title = historySessions().find(s => s.id === sid)?.title
-      ?? store.session.find(s => s.id === sid)?.title
-      ?? sessions().find(s => s.id === sid)?.title
-    if (!sessions().some(s => s.id === sid)) {
-      setSessions(prev => [...prev, {
-        id: sid,
-        title: title || `Chat ${sessions().length + 1}`,
-        userMsgId: `user-${Date.now()}`,
-        assistantMsgId: null,
-        done: false,
-      }])
-      setStore(prev => {
-        if (prev.session.some(s => s.id === sid)) return prev
-        return {
-          ...prev,
-          session: [...prev.session, { id: sid, title: title || `Chat ${sessions().length + 1}`, directory: ".", time: { created: Date.now() }, projectID: "." }],
-          session_status: { ...prev.session_status, [sid]: { type: "idle" } },
-          message: { ...prev.message, [sid]: [] },
-        }
-      })
-    } else if (title && !sessions().some(s => s.id === sid && s.title === title)) {
-      setSessions(prev => prev.map(s => s.id === sid ? { ...s, title } : s))
-    }
-  }
-
-  // Fill the first empty placeholder pane with a session. If no split view is
-  // active, create one holding just that session.
-  const fillPlaceholder = (sid: string) => {
-    setShowWelcome(false)
-    ensureSessionTab(sid)
-    const split = activeSplitView()
-    if (!split?.layout) {
-      createSplitView({ sid })
-      setActiveSessionId(sid)
-      return
-    }
-    const tree = split.layout
-    const next = fillEmpty(tree, sid)
-    if (next !== tree) updateCurrentLayout(next)
-    setActiveSessionId(sid)
-  }
-
-  const setSplitRatio = (path: number[], ratio: number) => {
-    const split = activeSplitView()
-    const tree = split?.layout ?? null
-    if (!tree) return
-    updateCurrentLayout(setRatio(tree, path, ratio))
-  }
-
-  // ── Split menu (Windows-style: explicit button + edge-drag) ──
-  const [splitMenuFor, setSplitMenuFor] = createSignal<{ sid: string; el: HTMLElement | null } | null>(null)
-  const [globalSplitMenu, setGlobalSplitMenu] = createSignal<{ el: HTMLElement | null } | null>(null)
-  const [splitViewMenuFor, setSplitViewMenuFor] = createSignal<{ id: string; el: HTMLElement | null } | null>(null)
-  const [splitPreview, setSplitPreview] = createSignal<{ path: number[]; zone: DropZone } | null>(null)
-
-  const onTabDragStart = (e: DragEvent, sid: string) => {
-    e.dataTransfer?.setData("text/mafw-sid", sid)
-    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"
-  }
-
-  const onLeafDragOver = (path: number[], e: DragEvent) => {
-    // dragover 阶段 getData() 返回空（Chromium 安全限制）；用 types 判断来源。
-    const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : []
-    if (!types.some(t => t.includes("mafw-sid"))) return
-    e.preventDefault()
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move"
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    const zone = zoneForPoint(rect, x, y)
-    // Idempotent update: dragover fires per mousemove; returning the previous
-    // object reference when nothing changed stops SolidJS from re-rendering the
-    // whole split tree on every pixel (which manifested as flicker).
-    setSplitPreview(prev => {
-      if (prev && prev.path.length === path.length && prev.path.every((v, i) => v === path[i]) && prev.zone === zone) {
-        return prev
-      }
-      return { path, zone }
-    })
-  }
-
-  const onLeafDrop = (path: number[], e: DragEvent) => {
-    const sid = e.dataTransfer?.getData("text/mafw-sid")
-    setSplitPreview(null)
-    if (!sid) return
-    e.preventDefault()
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    const zone = zoneForPoint(rect, x, y)
-
-    // Dragging in a single-session view: create a split view from it.
-    if (!activeSplitView()?.layout) {
-      const mapping0 = zoneToDir(zone)
-      if (!mapping0) {
-        // Drop on the only pane's center in single view → just switch view.
-        setActiveViewId(sid)
-        return
-      }
-      applySplit([], mapping0.dir, mapping0.place, { sid })
-      return
-    }
-
-    const tree = currentTree()
-    const ids = leafIds(tree)
-    const alreadyOpen = ids.includes(sid)
-
-    // Dragging a session onto its own current pane → no-op.
-    const targetOwn = (() => {
-      const nodeAt = walkPath(tree, path)
-      return isSidLeaf(nodeAt) && nodeAt.sid === sid
-    })()
-
-    // Move semantics: remove the old position first, then insert at target.
-    // removeSid collapses the tree, which may invalidate `path` when the removed
-    // leaf sat in the same branch as the target pane. A path is only valid if
-    // every step stays inside the tree (never hits a leaf early).
-    const removal = alreadyOpen ? removeSid(tree, sid) : null
-    const base = removal ? removal.tree : tree
-    const pathDrifted = removal?.removed ? !isValidPath(base, path) : false
-    // When the target pane itself was the removed leaf, targetOwn already
-    // returned above; a drifted path means the target pane collapsed away.
-
-    const mapping = zoneToDir(zone)
-    if (!mapping) {
-      // center → replace this pane's content with the dragged session.
-      if (alreadyOpen && targetOwn) return
-      if (leafCount(base) === 1) {
-        // The whole view collapsed to a single pane → it becomes the dragged
-        // session (the replaced pane's content already went back to tabs).
-        updateCurrentLayout({ sid })
-        setActiveSessionId(sid)
-        return
-      }
-      const target = pathDrifted ? firstLeafPath(base) : path
-      const final = replaceAtPath(base, target, sid)
-      if (final !== base) {
-        updateCurrentLayout(final)
-        setActiveSessionId(sid)
-      }
-      return
-    }
-
-    const { dir, place } = mapping
-    if (targetOwn) return // dropping onto its own pane edge does nothing
-    // No-same-direction nesting rule: a drag that would nest the same
-    // direction (h inside h, v inside v) is rejected with a hint.
-    const layout = activeSplitView()?.layout ?? null
-    if (layout) {
-      const parentDir = parentDirOf(layout, path)
-      if (parentDir === dir) {
-        showToastV2({ description: "不允许同向嵌套分屏（父 pane 已是该方向）", duration: 3000 })
-        return
-      }
-    }
-    if (leafCount(base) === 1) {
-      // Old position collapsed to a single pane → split it in the chosen
-      // direction with the dragged session on the selected side.
-      const leaf = base
-      const next = place === "before"
-        ? { dir, ratio: 0.5, a: { sid } as SplitLeaf, b: leaf }
-        : { dir, ratio: 0.5, a: leaf, b: { sid } as SplitLeaf }
-      updateCurrentLayout(next)
-      setActiveSessionId(sid)
-      return
-    }
-    const target = pathDrifted ? firstLeafPath(base) : path
-    const next = splitAtPath(base, target, dir, sid, place)
-    if (next !== base) {
-      updateCurrentLayout(next)
-      setActiveSessionId(sid)
-    }
-  }
-
-  // Walk the split tree along a path to the node (leaf or internal).
-  const walkPath = (root: SplitNode, path: number[]): SplitNode => {
-    let node = root
-    for (const idx of path) {
-      if (isLeaf(node)) break
-      node = idx === 0 ? node.a : node.b
-    }
-    return node
-  }
-
-  // A path is valid if every step descends into the tree (never hits a leaf
-  // before the path is exhausted). Used to detect paths invalidated by the
-  // tree collapsing after removeSid.
-  const isValidPath = (root: SplitNode, path: number[]): boolean => {
-    let node = root
-    for (const idx of path) {
-      if (isLeaf(node)) return false
-      node = idx === 0 ? node.a : node.b
-    }
-    return true
-  }
 
   // AskCard / PermissionCard per session (in-chat flow cards)
   const [flowCards, setFlowCards] = createSignal<Record<string, FlowCardRecord[]>>({})
@@ -1532,7 +1068,6 @@ export function MafwShell() {
       sessionStore.invalidate()
       if (!opts?.noReveal) {
         setActiveViewId(id)
-        ensureSessionVisible(id)
       }
       return id
     } catch {
@@ -1542,7 +1077,6 @@ export function MafwShell() {
       sessionStore.invalidate()
       if (!opts?.noReveal) {
         setActiveViewId(id)
-        ensureSessionVisible(id)
       }
       return id
     }
@@ -1552,32 +1086,15 @@ export function MafwShell() {
     setSessions(prev => prev.filter(s => s.id !== id))
     const wasActive = activeSessionId() === id
     const wasActiveView = activeViewId() === id
-    // Remove the session from every split view's layout.
-    let changed = false
-    setSplitViews(prev => prev.map(v => {
-      if (!v.layout || !leafIds(v.layout).includes(id)) return v
-      changed = true
-      const next = removeLeaf(v.layout, id)
-      return { ...v, layout: next }
-    }))
-    if (changed) {
-      sessionStore.invalidate()
-    }
     if (wasActiveView) {
-      // The active view was that session — fall back to another session or a split.
-      const firstSplit = splitViews()[0]
       const firstSession = sessions()[0]
-      setActiveViewId(firstSplit?.id ?? firstSession?.id ?? null)
-      // sessions() is already filtered above: when the closed tab was ALSO the
-      // active session (single-tab case activeSessionId === activeViewId),
-      // leaving it set renders a zombie pane for the dead session.
+      setActiveViewId(firstSession?.id ?? null)
       if (wasActive) setActiveSessionId(firstSession?.id ?? null)
     } else if (wasActive) {
       const remaining = sessions().filter(s => s.id !== id)
       setActiveSessionId(remaining.length > 0 ? remaining[remaining.length - 1].id : null)
     }
-    // v5.2: last tab closed → return to the Welcome home board (ChatGPT/Cursor
-    // new-tab-home semantics) instead of an empty split placeholder.
+    // Last tab closed → return to the Welcome home board.
     if (sessions().length === 0) {
       setShowWelcome(true)
       setActiveViewId(null)
@@ -1663,7 +1180,6 @@ export function MafwShell() {
   const resetChatWorkspace = () => {
     setShowWelcome(true)
     setSessions([])
-    setSplitViews([])
     setActiveViewId(null)
     setActiveSessionId(null)
     setSubagentStack(reconcile({}))
@@ -1750,10 +1266,9 @@ export function MafwShell() {
     onCleanup(unsub)
   })
   // Anchor for the TaskList popover: the titlebar of the pane whose TaskBar the
-  // user clicked (per-pane; the shared titlebarRef is unreliable in splits).
+  // user clicked (per-pane titlebar ref).
   const [taskAnchor, setTaskAnchor] = createSignal<HTMLElement | null>(null)
-  // Session whose todos the TaskList popover shows (per-pane, so a split pane's
-  // TaskBar never shows the active session's tasks).
+  // Session whose todos the TaskList popover shows.
   const [taskListSid, setTaskListSid] = createSignal<string | null>(null)
   const [dockRef, setDockRef] = createSignal<HTMLDivElement | null>(null)
 
@@ -2103,10 +1618,7 @@ export function MafwShell() {
                         as="div"
                         class="mafw-session-tab"
                         classList={{ active: activeViewId() === s.id }}
-                        draggable
-                        onDragStart={e => onTabDragStart(e, s.id)}
-                        onDragEnd={() => setSplitPreview(null)}
-                        onClick={() => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(s.id); setActiveViewId(s.id); ensureSessionVisible(s.id) }}
+                        onClick={() => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(s.id); setActiveViewId(s.id) }}
                       >
                         <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
                         <span
@@ -2144,29 +1656,10 @@ export function MafwShell() {
                             />
                           }>{s.title}</Show>
                         </span>
-                        <TooltipV2 value="分屏" openDelay={300}>
-                          <ButtonV2 variant="ghost" size="small" class="mafw-session-split" onClick={e => {
-                            e.stopPropagation()
-                            setGlobalSplitMenu(null)
-                            setSplitMenuFor({ sid: s.id, el: (e.currentTarget as HTMLElement).parentElement })
-                          }} aria-label="分屏">⿻</ButtonV2>
-                        </TooltipV2>
                         <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); closeSession(s.id) }}>✕</ButtonV2>
                       </ContextMenu.Trigger>
                       <ContextMenu.Portal>
                         <ContextMenu.Content>
-                          <For each={directionOptionsFor(s.id)}>
-                            {(o) => (
-                              <ContextMenu.Item onSelect={() => splitTab(s.id, o.dir, o.place)}>
-                                <ContextMenu.ItemLabel>{o.glyph} {o.label}</ContextMenu.ItemLabel>
-                              </ContextMenu.Item>
-                            )}
-                          </For>
-                          <Show when={directionOptionsFor(s.id).length === 0 && leafCount(currentTree()) >= 4}>
-                            <ContextMenu.Item disabled>
-                              <ContextMenu.ItemLabel>已达最多 4 个 pane</ContextMenu.ItemLabel>
-                            </ContextMenu.Item>
-                          </Show>
                           <ContextMenu.Item onSelect={() => closeSession(s.id)}>
                             <ContextMenu.ItemLabel>Close</ContextMenu.ItemLabel>
                           </ContextMenu.Item>
@@ -2180,76 +1673,17 @@ export function MafwShell() {
                       </ContextMenu.Portal>
                     </ContextMenu>
                   ))}
-                  {/* Split view tabs */}
-                  {splitViews().map(v => (
-                    <div
-                      class="mafw-session-tab mafw-split-view-tab"
-                      classList={{ active: activeViewId() === v.id }}
-                      onClick={() => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveViewId(v.id) }}
-                    >
-                      <span class="mafw-split-view-icon">⛶</span>
-                      <span
-                        class="mafw-session-title"
-                        title="双击重命名"
-                        onDblClick={e => {
-                          e.stopPropagation()
-                          setRenamingViewId(v.id)
-                          setRenameDraft(v.title)
-                        }}
-                      >
-                        <Show when={renamingViewId() !== v.id} fallback={
-                          <TextInputV2
-                            value={renameDraft()}
-                            onInput={e => setRenameDraft(e.currentTarget.value)}
-                            onKeyDown={e => {
-                              e.stopPropagation()
-                              if (e.key === 'Enter') {
-                                const next = renameDraft().trim()
-                                if (next) renameSplitView(v.id, next)
-                                setRenamingViewId(null)
-                              }
-                              if (e.key === 'Escape') setRenamingViewId(null)
-                            }}
-                            onBlur={() => setRenamingViewId(null)}
-                            style={{ width: 120, height: 22, fontSize: 12 }}
-                          />
-                        }>{v.title}</Show>
-                      </span>
-                      <TooltipV2 value="在此分屏中继续分屏" openDelay={300}>
-                        <ButtonV2 variant="ghost" size="small" class="mafw-session-split" onClick={e => {
-                          e.stopPropagation()
-                          setGlobalSplitMenu(null)
-                          setSplitViewMenuFor({ id: v.id, el: (e.currentTarget as HTMLElement).parentElement })
-                        }} aria-label="继续分屏">⿻</ButtonV2>
-                      </TooltipV2>
-                      <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); closeSplitView(v.id) }}>✕</ButtonV2>
-                    </div>
-                  ))}
-                  <TooltipV2 value="分屏" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={e => {
-                      setSplitMenuFor(null)
-                      setGlobalSplitMenu({ el: (e.currentTarget as HTMLElement).parentElement })
-                    }}>⿻</ButtonV2>
-                  </TooltipV2>
                   <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
                 </div>
-                {/* Split panes — one ChatPane per leaf */}
+                {/* Single ChatPane for the active session */}
                 <Show
-                  when={showWelcome()}
+                  when={showWelcome() || !activeSessionId()}
                   fallback={
                     <div class="mafw-chat-panes">
-                      <SplitView
-                        root={currentTree()}
-                    onRatio={setSplitRatio}
-                    preview={splitPreview()}
-                    onLeafDragOver={onLeafDragOver}
-                    onLeafDrop={onLeafDrop}
-                    renderLeaf={(leaf, path) => (
-                      "sid" in leaf ? (
                         <ChatPane
-                          sessionID={leaf.sid}
-                          focused={activeSessionId() === leaf.sid}
-                          canClosePane={leafCount(currentTree()) > 1}
+                          sessionID={activeSessionId()!}
+                          focused
+                          canClosePane={false}
                           todos={todos}
                           switchLogs={switchLogs}
                           sessionCards={sessionCards}
@@ -2257,16 +1691,16 @@ export function MafwShell() {
                           taskMetrics={taskMetrics}
                           tasksAllDone={tasksAllDone}
                           gwReady={gwStatus()?.state === "ready"}
-                          agentSel={() => sessionAgent(leaf.sid)}
-                          model={() => sessionModel(leaf.sid)}
+                          agentSel={() => sessionAgent(activeSessionId()!)}
+                          model={() => sessionModel(activeSessionId()!)}
                           modelGroups={modelGroups}
                           primaryAgents={primaryAgents}
                           subagentAgents={subagentAgents}
                           subagentRunning={subagentRunning}
                           onNewTopic={() => void handleNewTopic()}
-                          readOnly={!!store.session.find((s: any) => s.id === leaf.sid)?.parentID}
-                          parentID={store.session.find((s: any) => s.id === leaf.sid)?.parentID ?? null}
-                          onBackToParent={() => backToParent(leaf.sid)}
+                          readOnly={!!store.session.find((s: any) => s.id === activeSessionId()!)?.parentID}
+                          parentID={store.session.find((s: any) => s.id === activeSessionId()!)?.parentID ?? null}
+                          onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
                           currentProject={currentProject()}
                           onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
@@ -2283,50 +1717,37 @@ export function MafwShell() {
                           onTaskToggle={(el, sid) => toggleTasks(el, sid ?? null)}
                           onTaskHoverOpen={(el, sid) => openTasksHover(el, sid ?? null)}
                           onTaskHoverLeave={scheduleTaskClose}
-                          onFocus={() => { setShowConfig(false); setActiveTab("chat"); setActiveSessionId(leaf.sid) }}
-                          onClosePane={() => closePane(leaf.sid)}
+                          onFocus={() => { setShowConfig(false); setActiveTab("chat") }}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
-                          onOpenDiffReview={() => setDiffPanelFor(prev => prev === leaf.sid ? null : leaf.sid)}
+                          onOpenDiffReview={() => setDiffPanelFor(prev => prev === activeSessionId()! ? null : activeSessionId()!)}
                           worktreeEnabled={worktreeEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
                           projectDirectory={currentProject()}
                           onPlanBuildToggle={(next) => {
                             if (next === "default") {
-                              setAgentPicks(leaf.sid, undefined as any)
+                              setAgentPicks(activeSessionId()!, undefined as any)
                               return
                             }
                             const entry = primaryAgents().find(a => a.name === next)
-                            if (entry) applyAgentSwitch(entry, leaf.sid)
+                            if (entry) applyAgentSwitch(entry, activeSessionId()!)
                           }}
                           onCreateSession={createSession}
                           onSetUserMsgId={(sid2, userMsgId2) => setSessions(prev => prev.map(s => s.id === sid2 ? { ...s, userMsgId: userMsgId2 } : s))}
-                          compactionMark={compactionMarks()[leaf.sid] || null}
-                          permissionMode={permissionModes[leaf.sid] || "read-only"}
+                          compactionMark={compactionMarks()[activeSessionId()!] || null}
+                          permissionMode={permissionModes[activeSessionId()!] || "read-only"}
                           onTogglePermissionMode={() => {
-                            const prev = permissionModes[leaf.sid] || "read-only"
+                            const prev = permissionModes[activeSessionId()!] || "read-only"
                             const next = nextPermissionMode(prev)
-                            setPermissionModes(leaf.sid, next) // 乐观更新
-                            window.api.mafw.permissions.setMode(leaf.sid, next).catch(() => {
-                              setPermissionModes(leaf.sid, prev) // 回滚
+                            setPermissionModes(activeSessionId()!, next) // 乐观更新
+                            window.api.mafw.permissions.setMode(activeSessionId()!, next).catch(() => {
+                              setPermissionModes(activeSessionId()!, prev) // 回滚
                               showToastV2({ description: "切换审批模式失败", duration: 2000 })
                             })
                           }}
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />
-                      ) : (
-                        <SplitPlaceholder
-                          openSessions={sessions()}
-                          historySessions={historySessions()}
-                          canClosePane={leafCount(currentTree()) > 1}
-                          onClose={() => closePaneAtPath(path)}
-                          onSelect={fillPlaceholder}
-                          onCreate={() => void createSession({ noReveal: true }).then(id => id && fillPlaceholder(id))}
-                        />
-                      )
-                    )}
-                   />
-                     <Show when={diffPanelFor()}>
+                      <Show when={diffPanelFor()}>
                       <DiffReviewPanel
                         sessionID={diffPanelFor()!}
                         diffs={aggregateSessionDiffs((store.message as any)[diffPanelFor()!] || [])}
@@ -2338,9 +1759,9 @@ export function MafwShell() {
                         }}
                       />
                     </Show>
-                     </div>
-                   }
-                 >
+                    </div>
+                  }
+                >
                    <WelcomeHome
                      projects={projects()}
                      currentProject={currentProject()}
@@ -2359,110 +1780,6 @@ export function MafwShell() {
                        void createSession().then((sid) => { if (sid) applyAgentSwitch(planEntry, sid) })
                      }}
                    />
-                </Show>
-                {/* Split direction menus */}
-                <Show when={splitMenuFor()}>
-                  {(m) => {
-                    const opts = () => directionOptionsFor(m().sid)
-                    return (
-                      <PopoverShell
-                        open={!!splitMenuFor()}
-                        trigger={m().el}
-                        anchor="below-center"
-                        width={160}
-                        onClose={() => setSplitMenuFor(null)}
-                      >
-                        <div class="mafw-split-menu">
-                          <For each={opts()}>
-                            {(o) => (
-                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => {
-                                // Snapshot sid BEFORE clearing the menu signal:
-                                // Show's `m()` getter throws once the signal is null.
-                                const sid = m().sid
-                                setSplitMenuFor(null)
-                                splitTab(sid, o.dir, o.place)
-                              }}>
-                                <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
-                              </ButtonV2>
-                            )}
-                          </For>
-                          <Show when={opts().length === 0}>
-                            <div class="mafw-split-menu-hint">已达最多 4 个 pane</div>
-                          </Show>
-                        </div>
-                      </PopoverShell>
-                    )
-                  }}
-                </Show>
-                <Show when={globalSplitMenu()}>
-                  {(m) => {
-                    // Global split always creates a NEW split view with a free
-                    // four-way direction choice (not constrained by the
-                    // current split view's layout).
-                    const opts = () => ALL_FOUR
-                    return (
-                      <PopoverShell
-                        open={!!globalSplitMenu()}
-                        trigger={m().el}
-                        anchor="below-center"
-                        width={160}
-                        onClose={() => setGlobalSplitMenu(null)}
-                      >
-                        <div class="mafw-split-menu">
-                          <For each={opts()}>
-                            {(o) => (
-                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => { setGlobalSplitMenu(null); splitGlobal(o.dir, o.place) }}>
-                                <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
-                              </ButtonV2>
-                            )}
-                          </For>
-                          <Show when={opts().length === 0}>
-                            <div class="mafw-split-menu-hint">已达最多 4 个 pane</div>
-                          </Show>
-                        </div>
-                      </PopoverShell>
-                    )
-                  }}
-                </Show>
-                {/* Continue-split menu inside a split view tab */}
-                <Show when={splitViewMenuFor()}>
-                  {(m) => {
-                    const opts = () => {
-                      const rec = splitViews().find(v => v.id === m().id)
-                      const tree = rec?.layout ?? null
-                      if (!tree) return ALL_FOUR
-                      if (leafCount(tree) >= 4) return []
-                      const focused = activeSessionId() ? findSidPath(tree, activeSessionId()!) : null
-                      const target = focused ?? firstLeafPath(tree)
-                      return directionOptions(target)
-                    }
-                    return (
-                      <PopoverShell
-                        open={!!splitViewMenuFor()}
-                        trigger={m().el}
-                        anchor="below-center"
-                        width={160}
-                        onClose={() => setSplitViewMenuFor(null)}
-                      >
-                        <div class="mafw-split-menu">
-                          <For each={opts()}>
-                            {(o) => (
-                              <ButtonV2 variant="ghost" size="small" class="mafw-split-menu-item" onClick={() => {
-                                const id = m().id
-                                setSplitViewMenuFor(null)
-                                continueSplitIn(id, o.dir, o.place)
-                              }}>
-                                <span class="mafw-split-menu-glyph">{o.glyph}</span> {o.label}
-                              </ButtonV2>
-                            )}
-                          </For>
-                          <Show when={opts().length === 0}>
-                            <div class="mafw-split-menu-hint">已达最多 4 个 pane</div>
-                          </Show>
-                        </div>
-                      </PopoverShell>
-                    )
-                  }}
                 </Show>
                 {/* TaskList: popover (bar state) - kept for inline TaskBar popover */}
                 <Show when={taskListOpen() && tasksPlacement() === "bar"}>
