@@ -1479,6 +1479,83 @@ class MafwScheduler {
     };
   }
 
+  // ---- R8 predictive prefetch snapshot ----
+  /** Per-session debounce timers for the background snapshot refresh. */
+  private snapshotTimers = new Map<string, NodeJS.Timeout>();
+
+  /** Schedule a debounced snapshot refresh (called on each user turn). */
+  private scheduleSnapshotRefresh(sessionID: string): void {
+    const cfg = config.search.snapshot;
+    if (!cfg?.enabled || !this.memoryService || !sessionID) return;
+    const existing = this.snapshotTimers.get(sessionID);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.snapshotTimers.delete(sessionID);
+      this.refreshSnapshot(sessionID).catch(() => { /* fail-open */ });
+    }, cfg.debounceMs ?? 2000);
+    (timer as any).unref?.();
+    this.snapshotTimers.set(sessionID, timer);
+  }
+
+  /**
+   * Build the expensive retrieval for a session in the background: BM25 +
+   * expansion (+ optional reranker) rendered as the pointer block, stored in kv
+   * so the boundary path can serve it inside the 100ms contract.
+   */
+  private async refreshSnapshot(sessionID: string): Promise<void> {
+    if (!this.memoryService) return;
+    const db = this.getGatewayDb();
+    const { buildSnapshot } = require('./recall/snapshot-builder');
+    const { searchRecallMemoriesSync, recallNeighbors } = require('./recall/recall-context');
+    const { formatRecallContext } = require('./recall/inject-format');
+    const { getReranker } = require('./core/memory/reranker-singleton');
+    const { applyReranker } = require('./core/memory/reranker');
+    const t0 = Date.now();
+    const snap = await buildSnapshot({
+      recentTurnTexts: (sid: string, maxTurns: number) => {
+        const out: string[] = [];
+        for (const turn of db.listTurns(sid).slice(-maxTurns)) {
+          for (const obs of db.readTurn(sid, turn.turn_id)) {
+            if (obs.source === 'user_input' || obs.source === 'assistant_reply') out.push(obs.content);
+          }
+        }
+        return out;
+      },
+      search: (q: string, n: number) =>
+        searchRecallMemoriesSync(this.memoryService!.harmonicIndex, q, new Set<string>(), n, {
+          retriever: config.search.defaultRetriever as any,
+        }),
+      rerank: async (q: string, ms: any[]) => {
+        const reranker = getReranker();
+        if (!reranker) return ms;
+        const byId = new Map(ms.map((m: any) => [m.id, m]));
+        const scored = await applyReranker(
+          q,
+          ms.map((m: any) => ({
+            entry: { id: m.id, primary_abstraction: m.primary_abstraction, cue_anchors: [], created_at: m.created_at } as any,
+            score: m.score,
+          })),
+          reranker,
+          ms.length,
+          0,
+        );
+        return scored.map((s: any) => byId.get(s.entry.id)).filter(Boolean) as any[];
+      },
+      render: (ms: any[]) => {
+        const tn = config.search.temporalNeighbors;
+        const neighbors = tn?.presentation
+          ? recallNeighbors(this.memoryService!.harmonicIndex, ms, tn)
+          : undefined;
+        return formatRecallContext(ms, {
+          status: 'inject',
+          neighbors: neighbors && neighbors.size > 0 ? neighbors : undefined,
+        }).pointers;
+      },
+      store: (sid: string, s: any) => db.kvSet('recall-snapshot', sid, s),
+    }, sessionID, config.search.snapshot, 3);
+    if (snap) log.info(`[Recall] snapshot built for ${sessionID} (${Date.now() - t0}ms, ${snap.ids.length} ids)`);
+  }
+
   private getScanService(): IndexScanService | null {
     if (!this.memoryService) return null;
     if (!this.scanService) {
@@ -5062,9 +5139,26 @@ class MafwScheduler {
             }
             const { formatRecallContext } = require('./recall/inject-format');
             const { searchRecallMemories, computeRecallFokZone, recallNeighbors } = require('./recall/recall-context');
+            // R8: serve the precomputed snapshot when it still matches the topic
+            // (falls back to the live cheap search otherwise).
+            let snapshotPointers: string | null = null;
+            const snapCfg = config.search.snapshot;
+            if (snapCfg?.enabled && sessionID) {
+              try {
+                const { decideSnapshotUse } = require('./recall/recall-snapshot');
+                const snap = this.getGatewayDb().kvGet('recall-snapshot', sessionID) as any;
+                const decision = decideSnapshotUse(snap, query, new Date(), snapCfg);
+                if (decision === 'use' && snap) {
+                  snapshotPointers = snap.block;
+                  log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms)`);
+                } else if (decision !== 'no-snapshot') {
+                  log.info(`[Recall] snapshot skipped (${decision}) for ${sessionID}`);
+                }
+              } catch { /* fail-open: live path */ }
+            }
             let memories: any[] = [];
             let fokStatus: 'inject' | 'low-confidence' | 'no-memory' = 'inject';
-            if (this.memoryService) {
+            if (!snapshotPointers && this.memoryService) {
               // No push channel exists anymore (step-inject retired): nothing
               // is filtered out of boundary recall.
               const pushed = new Set<string>();
@@ -5098,7 +5192,9 @@ class MafwScheduler {
                 neighbors = nb.size > 0 ? nb : undefined;
               } catch { neighbors = undefined; }
             }
-            const formatted = formatRecallContext(memories, { status: fokStatus, neighbors });
+            const formatted = snapshotPointers
+              ? { pointers: snapshotPointers }
+              : formatRecallContext(memories, { status: fokStatus, neighbors });
             const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
             const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -5202,6 +5298,9 @@ class MafwScheduler {
               // so the next boundary recall can merge it without waiting.
               if (source === 'user_input') {
                 this.getScanService()?.prefetch(sessionID, content.slice(0, 500));
+                // R8: refresh the predictive prefetch snapshot (debounced) so
+                // the next boundary recall can serve the expensive retrieval.
+                this.scheduleSnapshotRefresh(sessionID);
               }
               res.writeHead(200);
               res.end(JSON.stringify({ ok: true, id, turnId, deduped: id === null }));

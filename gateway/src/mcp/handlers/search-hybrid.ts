@@ -1,22 +1,10 @@
 import { config } from "../../config";
 import { ToolHandler } from "../../types";
 import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store";
-import { createReranker, applyReranker, Reranker } from "../../core/memory/reranker";
+import { applyReranker } from "../../core/memory/reranker";
+import { getReranker } from "../../core/memory/reranker-singleton";
 import { computeDenseScores } from "../../memory/embedding-runtime";
 import { applyAccessBonus } from "../../recall/access-bonus";
-
-// Cached reranker: one sidecar per gateway process (avoids per-search spawn
-// churn). Keyed by name+gpu so a config change rebuilds it.
-let cachedReranker: { key: string; r: Reranker } | null = null;
-function getReranker(): Reranker | null {
-  const name = config.search.reranker;
-  if (name === 'off') return null;
-  const key = `${name}:${config.search.rerankerGpu}`;
-  if (cachedReranker?.key === key) return cachedReranker.r;
-  const r = createReranker(name, config.search.rerankWeights, { gpu: config.search.rerankerGpu });
-  cachedReranker = r ? { key, r } : null;
-  return r;
-}
 
 interface FrontierItem { id: string; weight: number; }
 interface IterState { seen: string[]; frontier: FrontierItem[]; round: number; }

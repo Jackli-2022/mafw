@@ -129,6 +129,19 @@ export interface GatewayConfig {
       low: number;
       high: number;
     };
+    /**
+     * R8 predictive prefetch snapshot: precompute the expensive retrieval
+     * (reranker + dense) in the background after each turn so the 100ms
+     * boundary path can serve it verbatim instead of running a live search.
+     */
+    snapshot: {
+      enabled: boolean;
+      ttlMs: number;
+      maxTurns: number;
+      maxChars: number;
+      debounceMs: number;
+      topicShiftThreshold: number;
+    };
   };
   memory: {
     defaultEnergy: number;
@@ -391,6 +404,18 @@ function defaults(projectDir: string): GatewayConfig {
         enabled: false,
         low: 1.2,
         high: 1.35,
+      },
+      /**
+       * R8: off by default. ttlMs 10min / 4 turns of context / 600 chars query
+       * (last turn alone holds only ~36% of session vocabulary, arXiv:2607.22392).
+       */
+      snapshot: {
+        enabled: false,
+        ttlMs: 10 * 60 * 1000,
+        maxTurns: 4,
+        maxChars: 600,
+        debounceMs: 2000,
+        topicShiftThreshold: 0.25,
       },
     },
     memory: {

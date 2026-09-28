@@ -1,0 +1,58 @@
+/**
+ * R8 snapshot builder: builds the expensive (reranked) pointer block in the
+ * background and stores it for the boundary path; fails open at every step.
+ */
+import { buildSnapshot, SnapshotDeps } from '../../../src/recall/snapshot-builder';
+import { RecallMemory } from '../../../src/recall/recall-context';
+
+function mem(id: string, score: number): RecallMemory {
+  return { id, primary_abstraction: `abstraction ${id}`, memory_value: '', energy: 0.8, score };
+}
+
+function deps(over: Partial<SnapshotDeps> = {}): SnapshotDeps {
+  return {
+    recentTurnTexts: () => ['kubernetes deployment rollout question', 'earlier turn about clusters'],
+    search: (_q, n) => [mem('a', 1), mem('b', 0.8), mem('c', 0.6)].slice(0, n),
+    render: ms => `<recall>${ms.map(m => m.id).join(',')}</recall>`,
+    store: () => { /* noop */ },
+    now: () => new Date('2026-09-28T10:00:00Z'),
+    ...over,
+  };
+}
+
+describe('buildSnapshot', () => {
+  test('builds and stores a snapshot with the rolling-window query', async () => {
+    const stored: any[] = [];
+    const snap = await buildSnapshot(deps({ store: (sid, s) => stored.push([sid, s]) }), 'ses_1');
+    expect(snap).not.toBeNull();
+    expect(snap!.query).toContain('kubernetes');
+    expect(snap!.builtAt).toBe('2026-09-28T10:00:00.000Z');
+    expect(stored).toHaveLength(1);
+    expect(stored[0][0]).toBe('ses_1');
+  });
+
+  test('applies the reranker and renders the reranked order', async () => {
+    const snap = await buildSnapshot(
+      deps({
+        rerank: async (_q, ms) => [...ms].reverse(),
+      }),
+      'ses_1',
+    );
+    expect(snap!.block).toBe('<recall>c,b,a</recall>');
+    expect(snap!.ids[0]).toBe('c');
+  });
+
+  test('reranker failure is fail-open (keeps un-reranked ranking)', async () => {
+    const snap = await buildSnapshot(
+      deps({ rerank: async () => { throw new Error('sidecar down'); } }),
+      'ses_1',
+    );
+    expect(snap!.block).toBe('<recall>a,b,c</recall>');
+  });
+
+  test('no recent turns / no hits / empty render → null (caller falls back)', async () => {
+    expect(await buildSnapshot(deps({ recentTurnTexts: () => [] }), 'ses_1')).toBeNull();
+    expect(await buildSnapshot(deps({ search: () => [] }), 'ses_1')).toBeNull();
+    expect(await buildSnapshot(deps({ render: () => null }), 'ses_1')).toBeNull();
+  });
+});
