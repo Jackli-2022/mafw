@@ -509,6 +509,15 @@ html[data-theme="light"] body {
   background: var(--bg-base);
   border-right: 1px solid var(--border-subtle);
 }
+/* ── Brand row（38px，与顶行同高对齐；logo + 状态点 + 主题切换） ── */
+.mafw-rail-brand {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 8px 0 12px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  -webkit-app-region: drag; user-select: none;
+}
+.mafw-rail-brand button { -webkit-app-region: no-drag; }
+.mafw-rail-brand-name { font-size: 13px; font-weight: 600; color: var(--text-2); }
 /* ── Header: project switcher (left) + collapse arrow (right) ── */
 .mafw-rail-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 2px; flex-shrink: 0; }
 .mafw-rail-switcher { flex: 1; display: flex; align-items: center; gap: 5px; min-width: 0; height: 28px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--r-md); cursor: pointer; color: var(--text-2); font-size: 13px; font-weight: 500; }
@@ -2739,13 +2748,6 @@ html[data-theme="light"] .mafw-picker-pop {
   padding: 8px 10px;
   flex: none;
 }
-.mafw-right-dock-tab-list {
-  display: flex;
-  gap: 4px;
-  padding: 0;
-  border: none;
-  background: transparent;
-}
 .mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
   height: 28px;
   border-radius: 6px;
@@ -3072,8 +3074,12 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-rail-wrap { position: relative; min-width: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
 .mafw-rail-footer { background: var(--bg-base); }
 .mafw-rail-collapsed {
-  width: 32px; height: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 8px;
+  width: 32px; height: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 0;
   background: var(--bg-base); border-right: 1px solid var(--border-subtle); flex-shrink: 0;
+}
+.mafw-rail-collapsed-brand {
+  width: 100%; height: 38px; display: flex; align-items: center; justify-content: center;
+  color: var(--text-2); flex-shrink: 0; -webkit-app-region: drag;
 }
 .mafw-rail-expand { width: 22px !important; height: 22px !important; min-width: 22px !important; padding: 0 !important; color: var(--text-3); border-radius: 4px; }
 .mafw-rail-expand:hover { color: var(--text-1); background: var(--bg-overlay); }

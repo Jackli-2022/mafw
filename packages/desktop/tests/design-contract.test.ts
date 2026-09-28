@@ -818,3 +818,21 @@ describe("topframe — 顶行框架", () => {
     expect(css).not.toMatch(/\.mafw-titlebar\s*\{/)
   })
 })
+
+describe("topframe — Rail 品牌行", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("Rail 渲染 brand slot（项目切换行之上）", () => {
+    const rail = read("src/renderer/mafw/components/Rail.tsx")
+    expect(rail).toContain("mafw-rail-brand")
+    expect(rail.indexOf("mafw-rail-brand")).toBeLessThan(rail.indexOf("mafw-rail-head"))
+  })
+  test("MafwShell 传入品牌内容（logo+状态点+主题切换）", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toContain("brand=")
+    expect(shell).toContain("mafw-theme-toggle")
+  })
+  test("CSS：品牌行 38px 与顶行同高且可拖拽", () => {
+    expect(css).toMatch(/\.mafw-rail-brand\s*\{[^}]*height:\s*38px/)
+    expect(css).toMatch(/\.mafw-rail-brand\s*\{[^}]*-webkit-app-region:\s*drag/)
+  })
+})

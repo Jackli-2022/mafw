@@ -49,6 +49,7 @@ type Props = {
   onSettings?: () => void
   onToggleCollapsed?: () => void
   onOpenUsage?: () => void
+  brand?: any
 }
 
 export function Rail(props: Props) {
@@ -287,6 +288,9 @@ export function Rail(props: Props) {
 
   return (
     <div class="mafw-rail">
+      <Show when={props.brand}>
+        <div class="mafw-rail-brand">{props.brand}</div>
+      </Show>
       {/* Header: project switcher (left) + search + collapse arrow (right) */}
       <div class="mafw-rail-head">
         <DropdownMenu placement="bottom-start">

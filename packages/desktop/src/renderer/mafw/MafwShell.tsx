@@ -1528,13 +1528,51 @@ export function MafwShell() {
       <div class="mafw-rail-col">
         {railCollapsed() ? (
           <div class="mafw-rail-collapsed">
+            <div class="mafw-rail-collapsed-brand"><Icon name="logo" size="small" /></div>
             <ButtonV2 variant="ghost" size="small" class="mafw-rail-expand" onClick={() => applyRailCollapsed(false)} aria-label="展开侧边栏">
               <Icon name="chevron-right" size="small" />
             </ButtonV2>
           </div>
         ) : (
           <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
-            <Rail activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSessionDeleted={closeSession} projectsRev={projectsRev} onSelectSession={(id, title, manager) => {
+            <Rail
+              brand={
+                <>
+                  <Icon name="logo" size="small" />
+                  <span class="mafw-rail-brand-name">MAFW</span>
+                  <TooltipV2
+                    value={
+                      connPhase() === "down" ? "Gateway 已断开，正在自动重启…" :
+                      connPhase() === "reconnecting" ? `Gateway 正在重连（第 ${conn.attempts()} 次尝试）` :
+                      connPhase() === "connected" ? "Gateway 已连接" :
+                      gwStatus()?.state === "starting" ? "Gateway 启动中" :
+                      gwStatus()?.state === "failed" ? "Gateway 启动失败" :
+                      gwStatus()?.state === "stopped" ? "Gateway 已停止" :
+                      "Gateway 启动中"
+                    }
+                    openDelay={300}
+                  >
+                    <div class="mafw-titlebar-dot" classList={{
+                      ready: connPhase() === "connected" && gwStatus()?.state !== "starting",
+                      reconnecting: connPhase() === "reconnecting",
+                      failed: connPhase() === "down" || gwStatus()?.state === "failed",
+                      starting: connPhase() === "initial" || gwStatus()?.state === "starting",
+                      stopped: connPhase() !== "down" && connPhase() !== "reconnecting" && connPhase() !== "connected" && gwStatus()?.state === "stopped",
+                    }} style={{ "margin-left": 4 }} />
+                  </TooltipV2>
+                  <div style={{ flex: 1 }} />
+                  <TooltipV2 value="切换主题" openDelay={300}>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
+                      {theme() === 'light' ? '☀' : (
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                          <path d="M11.2 8.9A5 5 0 1 1 5.1 2.8a4 4 0 0 0 6.1 6.1Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      )}
+                    </ButtonV2>
+                  </TooltipV2>
+                </>
+              }
+              activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSessionDeleted={closeSession} projectsRev={projectsRev} onSelectSession={(id, title, manager) => {
               setShowConfig(false)
               setActiveTab("chat")
               setShowWelcome(false)
