@@ -31,7 +31,7 @@ import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
-import { type DockTab, normalizeDockTab, dockTabWidth } from "./components/dock-tab"
+import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -1314,11 +1314,17 @@ export function MafwShell() {
   const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
     normalizeDockTab(localStorage.getItem("mafw-right-dock-tab"), "tasks")
   )
-  // 宽度按 tab 记忆（v6 W4）：changes 等宽 tab 默认 480，其余 320。
-  const [rightDockWidths, setRightDockWidths] = createSignal<Record<string, number>>((() => {
-    try { return JSON.parse(localStorage.getItem("mafw-right-dock-widths") || "{}") } catch { return {} }
+  // 宽度全局统一：所有 tab 共用一个记忆宽度（旧版按 tab 记忆，点 tab 会跳宽）。
+  const [rightDockWidth, setRightDockWidth] = createSignal<number>((() => {
+    const v = Number(localStorage.getItem("mafw-right-dock-width"))
+    if (v > 0) return v
+    try {
+      const old = JSON.parse(localStorage.getItem("mafw-right-dock-widths") || "{}")
+      const oldVal = Number(old[localStorage.getItem("mafw-right-dock-tab") || ""])
+      if (oldVal > 0) return oldVal
+    } catch { /* ignore */ }
+    return DOCK_DEFAULT_WIDTH
   })())
-  const rightDockWidth = () => dockTabWidth(rightDockTab(), rightDockWidths())
 
   const applyRightDock = (open: boolean, tab?: DockTab) => {
     setRightDockOpen(open)
@@ -1327,11 +1333,8 @@ export function MafwShell() {
     if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
   }
   const applyRightDockWidth = (w: number) => {
-    setRightDockWidths(prev => {
-      const next = { ...prev, [rightDockTab()]: w }
-      try { localStorage.setItem("mafw-right-dock-widths", JSON.stringify(next)) } catch {}
-      return next
-    })
+    setRightDockWidth(w)
+    try { localStorage.setItem("mafw-right-dock-width", String(w)) } catch {}
   }
 
   // SSE live trajectory signals
