@@ -701,6 +701,13 @@ describe("审批卡汇总为一行（v6 追加）", () => {
     expect(blk).toContain("toolLineSummary")
     expect(blk).toContain("mafw-tool-summary-toggle")
   })
+  test("汇总行与 SessionTurn 同阅读列（max-width + margin-inline auto）", () => {
+    for (const sel of [".mafw-tool-summary {", ".mafw-approval-summary {", ".mafw-turn-cards {"]) {
+      const rule = cssBlock(sel)
+      expect(rule).toContain("max-width: var(--msg-col-width)")
+      expect(rule).toContain("auto")
+    }
+  })
 })
 
 describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）", () => {

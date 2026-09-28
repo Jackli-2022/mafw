@@ -4732,7 +4732,7 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 
 /* ── 元数据行（v6 §3）──────────────────────────────────────────── */
-.mafw-tool-summary { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 2px; }
+.mafw-tool-summary { display: flex; flex-direction: column; gap: 2px; max-width: var(--msg-col-width); width: 100%; margin: 6px auto 2px; }
 .mafw-tool-summary-line {
   display: flex; align-items: center; gap: 6px;
   font: 12px/1.5 var(--font-ui);
@@ -4813,7 +4813,7 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 
 /* ── 审批汇总行（v6 追加：所有批准缩成一行，点击展开原卡片）── */
-.mafw-approval-summary { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 2px; }
+.mafw-approval-summary { display: flex; flex-direction: column; gap: 4px; max-width: var(--msg-col-width); width: 100%; margin: 6px auto 2px; }
 .mafw-approval-summary-line { cursor: pointer; gap: 8px; color: var(--text-3); user-select: none; }
 .mafw-approval-summary-line:hover { color: var(--text-1); }
 .mafw-approval-summary-text { flex: none; }
@@ -4824,3 +4824,6 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-tool-summary-toggle { cursor: pointer; color: var(--text-4); user-select: none; }
 .mafw-tool-summary-toggle:hover { color: var(--text-1); }
 .mafw-tool-summary-toggle .mafw-tool-summary-text { flex: none; }
+
+/* ── 回合底部流程卡容器（与 SessionTurn 阅读列对齐）── */
+.mafw-turn-cards { display: flex; flex-direction: column; gap: 6px; max-width: var(--msg-col-width); width: 100%; margin: 4px auto 2px; }

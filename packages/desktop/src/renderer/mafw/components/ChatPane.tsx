@@ -1236,9 +1236,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       </div>
                     )}
                   </For>
-                  <For each={otherCardsForTurn(msg.id)}>
-                    {(c) => renderFlowCard(c)}
-                  </For>
+                  <Show when={otherCardsForTurn(msg.id).length > 0}>
+                    <div class="mafw-turn-cards">
+                      <For each={otherCardsForTurn(msg.id)}>
+                        {(c) => renderFlowCard(c)}
+                      </For>
+                    </div>
+                  </Show>
                   {/* 审批卡统一在回合最下方汇总为一行，点击展开原卡片 */}
                   <ApprovalSummaryLine
                     cards={permissionCardsForTurn(msg.id)}
@@ -1255,9 +1259,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </For>
             {/* Flow cards without a resolvable turn link stay at the bottom */}
             <Show when={sidProp()}>
-              <For each={unplacedCards().filter((c: any) => c?.kind !== "permission")}>
-                {(c) => renderFlowCard(c)}
-              </For>
+              <Show when={unplacedCards().filter((c: any) => c?.kind !== "permission").length > 0}>
+                <div class="mafw-turn-cards">
+                  <For each={unplacedCards().filter((c: any) => c?.kind !== "permission")}>
+                    {(c) => renderFlowCard(c)}
+                  </For>
+                </div>
+              </Show>
               <ApprovalSummaryLine
                 cards={unplacedCards().filter((c: any) => c?.kind === "permission")}
                 renderCard={renderFlowCard}
