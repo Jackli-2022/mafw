@@ -158,6 +158,7 @@ export function buildReaderMessages(
   readerMode: 'plain' | 'chain-of-note' = 'plain',
   fokZone: 'inject' | 'low-confidence' | 'no-memory' = 'inject',
   keepContextsOnNoMemory = false,
+  neighborContexts: string[] = [],
 ): ChatMessage[] {
   // R5 FOK gate: the no-memory zone deliberately withholds candidates and says
   // so — silence is what invites confabulation. `keepContextsOnNoMemory`
@@ -166,15 +167,25 @@ export function buildReaderMessages(
   const withhold = noMemory && !keepContextsOnNoMemory;
   const effectiveLowConfidence = lowConfidence || fokZone === 'low-confidence';
   const sorted = withhold ? [] : sortContexts(contexts.slice(0, 20), order); // cap reader context
+  // R6 presentation: chronological neighbours of the hits, rendered as extra
+  // sessions (context reinstatement — they were never ranked).
+  const neighbors = withhold ? [] : neighborContexts;
   // Official LongMemEval reader template (run_generation.py): numbered
   // sessions with explicit dates, then Current Date + Question.
-  const ctxBlock = sorted.length
-    ? sorted.map((c, i) => {
-        const date = c.match(/^\[(\d{4}\/\d{2}\/\d{2})\s+\(\w+\)\s+\d{2}:\d{2}\]/)?.[1] ?? '';
-        const body = c.replace(/^\[[^\]]*\]\s*/, '');
-        const weeksAgo = weeksSince(date);
-        return `### Session ${i + 1}:\nSession Date: ${date}${weeksAgo}\nSession Content:\n${body}`;
-      }).join('\n\n')
+  const ctxBlock = sorted.length || neighbors.length
+    ? [
+        ...sorted.map((c, i) => {
+          const date = c.match(/^\[(\d{4}\/\d{2}\/\d{2})\s+\(\w+\)\s+\d{2}:\d{2}\]/)?.[1] ?? '';
+          const body = c.replace(/^\[[^\]]*\]\s*/, '');
+          const weeksAgo = weeksSince(date);
+          return `### Session ${i + 1}:\nSession Date: ${date}${weeksAgo}\nSession Content:\n${body}`;
+        }),
+        ...neighbors.map((c, i) => {
+          const date = c.match(/^\[(\d{4}\/\d{2}\/\d{2})\s+\(\w+\)\s+\d{2}:\d{2}\]/)?.[1] ?? '';
+          const body = c.replace(/^\[[^\]]*\]\s*/, '');
+          return `### Neighbouring session ${i + 1} (adjacent in time to a retrieved hit):\nSession Date: ${date}\nSession Content:\n${body}`;
+        }),
+      ].join('\n\n')
     : '(no relevant history chats retrieved)';
   const abstentionHint = isAbstention
     ? 'If the history chats do not contain the requested information, say that the information is incomplete, but you may mention related facts that ARE in the chats.'
@@ -198,13 +209,16 @@ export function buildReaderMessages(
     ? 'Before answering, write a note for EVERY session above, in this exact format:\nNote S# (relevant: yes/no): <one or two facts the session states that bear on the question, quoting specifics; if not relevant, write "no bearing".>\nThen give "Answer:" using ONLY what your notes established. If your notes contain no relevant fact, say you don\'t know.'
     : '';
   const system = `You are a helpful assistant answering a user based only on their past conversation history. ${abstentionHint}${confidenceHint}${noMemoryHint}`;
+  const neighborHint = neighbors.length
+    ? '\n\nNote: the "Neighbouring session" blocks are temporally adjacent to a retrieved hit but were NOT retrieved themselves — use them as context. If the same fact appears with several versions, prefer the one CLOSEST to the Question Date.'
+    : '';
   const questionDateStr = questionDate ? `Question Date: ${questionDate}\n` : '';
   const temporalHint = questionDate
     ? 'IMPORTANT: Temporal references in the question (e.g., "last month", "two weeks ago", "two months ago") should be interpreted relative to the Question Date provided below, not the current date or session dates.'
     : 'IMPORTANT: Temporal references in the question (e.g., "last month", "two weeks ago") should be interpreted relative to the session dates, not the current date.';
   const user = `I will give you several history chats between you and a user. Please answer the question based on the relevant chat history. ${temporalHint}${cotHint ? ' ' + cotHint : ''}${enumerateHint ? ' ' + enumerateHint : ''}${chainOfNoteHint ? '\n\n' + chainOfNoteHint : ''}\n\n\nHistory Chats:\n\n${ctxBlock}\n\n${questionDateStr}Question: ${question}\nAnswer:`;
   return [
-    { role: 'system', content: system },
+    { role: 'system', content: `${system}${neighborHint}` },
     { role: 'user', content: user },
   ];
 }
@@ -314,6 +328,7 @@ async function main() {
         args.readerMode,
         fokZone,
         args.fokKeepContexts,
+        item.neighbor_contexts ?? [],
       );
       const readerResult = await chatCompletionFull({
         model: args.readerModel,

@@ -26,6 +26,7 @@ import { recallAtK, ndcgAtK, aggregateByType, mean } from './metrics';
 import { L1QuestionResult, L1Summary } from './types';
 import { chatCompletion, loadAuthKey } from './llm';
 import { formatEntryForIndex, parseScanResponse, resolveShortIds } from '../../../gateway/src/recall/index-scan';
+import { computeTemporalNeighbors, chronologicalOrder } from '../../../gateway/src/recall/temporal-neighbors';
 import { createEmbeddingProvider, EmbeddingProvider } from '../../../gateway/src/memory/embedding-provider';
 import { MemoryVectorStore, EmbeddingIndexer } from '../../../gateway/src/memory/vector-store';
 
@@ -162,6 +163,7 @@ function parseArgs() {
     scanModel: flags.get('--scanModel') ?? 'qwen3.7-max',
     queryRewrite: flags.get('--queryRewrite') === 'true',
     temporalNeighbors: flags.get('--temporalNeighbors') === 'true',
+    temporalNeighborsPresentation: flags.get('--temporalNeighborsPresentation') === 'true',
     keep: flags.has('--keep'),
     data: flags.get('--data'),
   };
@@ -189,6 +191,7 @@ function help() {
   console.log('  --scanModel MODEL   model for scan (default qwen3.7-max)');
   console.log('  --data PATH     override dataset path');
   console.log('  --temporalNeighbors true|false  R6: bundle chronological neighbors of top hits (default false)');
+  console.log('  --temporalNeighborsPresentation true|false  R6 presentation: emit neighbor_contexts for L2 (default false)');
   console.log('  --keep          keep per-question tmp dirs');
 }
 
@@ -208,6 +211,7 @@ async function runOne(
   scanModel: string,
   queryRewrite: boolean,
   embeddingProvider?: EmbeddingProvider | null,
+  temporalNeighborsPresentation = false,
 ): Promise<L1QuestionResult> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), `lme-l1-${question.question_id}-`));
   let store: HarmonicUnitFileStore | null = null;
@@ -345,6 +349,27 @@ async function runOne(
       recall[k] = recallAtK(topSessions, question.answer_session_ids, k);
       ndcg[k] = ndcgAtK(topSessions, question.answer_session_ids, k);
     }
+
+    // R6 presentation: chronological neighbours of the top-3 hits, emitted for
+    // the L2 reader as extra sessions (never affects ranking or L1 metrics).
+    let neighborContexts: string[] | undefined;
+    if (temporalNeighborsPresentation) {
+      try {
+        const allEntries = index.getIndex().entries;
+        const anchors = entries.slice(0, 3).map(e => ({ id: e.entry.id, score: e.score }));
+        const nbs = computeTemporalNeighbors(anchors, chronologicalOrder(allEntries), {
+          window: 1, maxNeighbors: 4, anchorK: 3,
+        });
+        const already = new Set(entries.slice(0, 10).map(e => e.entry.id));
+        const byId = new Map(allEntries.map(e => [e.id, e]));
+        neighborContexts = nbs
+          .filter(n => !already.has(n.id))
+          .map(n => byId.get(n.id)?.primary_abstraction ?? '')
+          .filter(Boolean)
+          .slice(0, 4) as string[];
+      } catch { /* fail-open: no neighbours emitted */ }
+    }
+
     result = {
       question_id: question.question_id,
       question_type: question.question_type,
@@ -358,6 +383,7 @@ async function runOne(
       top_sessions: topSessions.slice(0, 10),
       top_contexts: entries.slice(0, 10).map(e => e.entry.primary_abstraction),
       top_scores: entries.slice(0, 10).map(e => e.score),
+      neighbor_contexts: neighborContexts,
     };
   } finally {
     try { db?.close(); } catch { /* ignore */ }
@@ -442,7 +468,7 @@ async function main() {
     process.stdout.write(`[${i + 1}/${questions.length}] ${q.question_id} ${q.question_type} ... `);
     // Per-question options: time anchoring is relative to the question date.
     const perQuestionOptions: SearchOptions = { ...searchOptions, now: q.question_date };
-    const res = await runOne(q, ingestOpts, args.keep, perQuestionOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.coactivation, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel, args.queryRewrite, embeddingProvider);
+    const res = await runOne(q, ingestOpts, args.keep, perQuestionOptions, reranker, args.recallK, args.cutoffRatio, args.graph, args.coactivation, args.scan, args.scanApiUrl, args.scanApiKeyProvider, args.scanModel, args.queryRewrite, embeddingProvider, args.temporalNeighborsPresentation);
     results.push(res);
     fs.appendFileSync(runPath, JSON.stringify(res) + '\n', 'utf-8');
     process.stdout.write(`R@1=${res.recall[1].toFixed(2)} R@10=${res.recall[10].toFixed(2)}\n`);

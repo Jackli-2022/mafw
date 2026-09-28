@@ -149,6 +149,24 @@ export interface FormatRecallOptions {
    * 'low-confidence' prepends a caution note; 'inject' = unchanged.
    */
   status?: RecallFokStatus
+  /**
+   * R6 presentation: anchor memory id → its chronological neighbours, rendered
+   * as `↳` lines beneath the anchor. Neighbours never compete for ranking, so
+   * this is presentation-only (CueMem/EdgeMem style context reinstatement).
+   */
+  neighbors?: Map<string, MemoryUnit[]>
+}
+
+/** R6 presentation budget: neighbour lines are capped so they never crowd out
+ *  genuine hits (spec: neighbour tokens ≤ 50% of the block budget). */
+export const NEIGHBOR_BUDGET = { maxLines: 4 } as const
+const RECENT_PREFERENCE_NOTE = `[知识更新 · 同一事实有多个版本时，优先采用离问题时间最近的信息，不要把旧版本当成现状]`
+
+interface RenderLine {
+  text: string
+  /** Anchor memory id (set for pointer lines, absent for headers). */
+  id?: string
+  neighbor?: boolean
 }
 
 export function formatRecallContext(memories: MemoryUnit[], options: FormatRecallOptions = {}): RecallFormat {
@@ -174,8 +192,20 @@ export function formatRecallContext(memories: MemoryUnit[], options: FormatRecal
   }
 
   const groups = groupMemoriesByType(memories)
-  const lines: string[] = []
+  const lines: RenderLine[] = []
   let sessionHeaders = 0
+
+  // R6: neighbour lines follow their anchor (capped globally, never ranked).
+  let neighborCount = 0
+  const pushNeighbors = (m: MemoryUnit) => {
+    const nbs = options.neighbors?.get(m.id ?? '')
+    if (!nbs || nbs.length === 0) return
+    for (const nb of nbs.slice(0, 2)) {
+      if (neighborCount >= NEIGHBOR_BUDGET.maxLines) return
+      lines.push({ text: `  ↳ ${pointerLine(nb)}`, id: nb.id, neighbor: true })
+      neighborCount++
+    }
+  }
 
   for (const [sessionId, mems] of sessionGroups) {
     if (mems.length < 2) continue
@@ -183,9 +213,10 @@ export function formatRecallContext(memories: MemoryUnit[], options: FormatRecal
     const range = dates.length >= 2 && dates[0] !== dates[dates.length - 1]
       ? `${dates[0]}~${dates[dates.length - 1]}`
       : dates[0] ?? ''
-    lines.push(`[session ${sessionId.slice(0, 8)}${range ? ' · ' + range : ''}]`)
+    lines.push({ text: `[session ${sessionId.slice(0, 8)}${range ? ' · ' + range : ''}]` })
     for (const m of mems) {
-      lines.push(`  ${pointerLine(m)}`)
+      lines.push({ text: `  ${pointerLine(m)}`, id: m.id })
+      pushNeighbors(m)
     }
     sessionHeaders++
   }
@@ -194,16 +225,30 @@ export function formatRecallContext(memories: MemoryUnit[], options: FormatRecal
   const rest = memories.filter(m => !groupedIds.has(m.id!))
   const restGroups = groupMemoriesByType(rest)
   if (restGroups.size <= 1 && sessionHeaders === 0) {
-    lines.push(...rest.slice(0, 3).map(pointerLine))
+    for (const m of rest.slice(0, 3)) {
+      lines.push({ text: pointerLine(m), id: m.id })
+      pushNeighbors(m)
+    }
   } else if (rest.length > 0) {
     for (const [type, mems] of restGroups) {
       if (mems.length === 0) continue
-      lines.push(`[${type}]`)
+      lines.push({ text: `[${type}]` })
       for (const m of mems.slice(0, 2)) {
-        lines.push(`  ${pointerLine(m)}`)
+        lines.push({ text: `  ${pointerLine(m)}`, id: m.id })
+        pushNeighbors(m)
       }
     }
   }
+
+  // Budget: ≤5 anchor lines, neighbour lines already capped; headers always kept.
+  let anchors = 0
+  const capped = lines.filter(l => {
+    if (l.neighbor) return true
+    if (!l.id) return true
+    if (anchors >= 5) return false
+    anchors++
+    return true
+  })
 
   // R5 FOK: declare weak evidence without withholding the candidates.
   const tag = status === 'no-memory' ? RELIABLE_OPEN : TAG
@@ -212,7 +257,8 @@ export function formatRecallContext(memories: MemoryUnit[], options: FormatRecal
     : status === 'no-memory'
       ? `${RELIABLE_NOTE}\n${POINTER_HEADER}`
       : POINTER_HEADER
-  const pointers = `${tag}\n${header}\n${lines.slice(0, 5).join('\n')}\n${END_TAG}`
+  const footer = neighborCount > 0 ? `\n${RECENT_PREFERENCE_NOTE}` : ''
+  const pointers = `${tag}\n${header}\n${capped.map(l => l.text).join('\n')}${footer}\n${END_TAG}`
   return { pointers }
 }
 

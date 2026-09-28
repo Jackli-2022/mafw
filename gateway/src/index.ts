@@ -5061,7 +5061,7 @@ class MafwScheduler {
               return;
             }
             const { formatRecallContext } = require('./recall/inject-format');
-            const { searchRecallMemories, computeRecallFokZone } = require('./recall/recall-context');
+            const { searchRecallMemories, computeRecallFokZone, recallNeighbors } = require('./recall/recall-context');
             let memories: any[] = [];
             let fokStatus: 'inject' | 'low-confidence' | 'no-memory' = 'inject';
             if (this.memoryService) {
@@ -5085,7 +5085,16 @@ class MafwScheduler {
               // withheld. Only active when config.search.fok.enabled.
               fokStatus = computeRecallFokZone(this.memoryService.harmonicIndex, query, config.search.fok);
             }
-            const formatted = formatRecallContext(memories, { status: fokStatus });
+            // R6 presentation (off by default): bundle chronological neighbours
+            // under their anchors. Never re-ranks — presentation only.
+            let neighbors: Map<string, any[]> | undefined;
+            if (config.search.temporalNeighbors?.presentation && memories.length > 0 && this.memoryService) {
+              try {
+                neighbors = recallNeighbors(this.memoryService.harmonicIndex, memories, config.search.temporalNeighbors);
+                if (neighbors.size === 0) neighbors = undefined;
+              } catch { neighbors = undefined; }
+            }
+            const formatted = formatRecallContext(memories, { status: fokStatus, neighbors });
             const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
             const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
             res.writeHead(200, { 'Content-Type': 'application/json' });

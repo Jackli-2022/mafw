@@ -4,6 +4,7 @@
 import type { HarmonicIndexManager } from '../core/memory/harmonic-index'
 import type { ScanResult } from './index-scan'
 import { computeFokFeatures, classifyFok, FokThresholds, FokZone } from './fok-gate'
+import { computeTemporalNeighbors, chronologicalOrder, TemporalNeighborOptions } from './temporal-neighbors'
 import { config } from '../config'
 import { log } from '../core/utils/logger'
 
@@ -180,6 +181,47 @@ export interface SearchRecallOptions {
 export function blobPenalty(abstraction: string | undefined): number {
   const segs = (abstraction || '').split('|').map(s => s.trim()).filter(Boolean).length
   return segs >= 4 ? 0.5 : 1
+}
+
+/**
+ * R6 presentation: chronological neighbours of the returned memories, keyed by
+ * anchor id. Presentation-only — neighbours never enter the ranking, they are
+ * extra context rendered under the hit (CueMem/EdgeMem style reinstatement).
+ * Fail-open: any failure returns an empty map (no neighbours rendered).
+ */
+export function recallNeighbors(
+  index: any,
+  memories: RecallMemory[],
+  opts: TemporalNeighborOptions = {},
+): Map<string, RecallMemory[]> {
+  const out = new Map<string, RecallMemory[]>()
+  try {
+    const entries: any[] = index?.getIndex?.()?.entries
+    if (!Array.isArray(entries) || entries.length === 0 || memories.length === 0) return out
+    const neighbors = computeTemporalNeighbors(
+      memories.map(m => ({ id: m.id, score: m.score })),
+      chronologicalOrder(entries),
+      opts,
+    )
+    const byId = new Map<string, any>(entries.map((e: any) => [e.id, e]))
+    for (const nb of neighbors) {
+      const e = byId.get(nb.id)
+      if (!e || e.superseded_by) continue
+      const list = out.get(nb.anchorId) ?? []
+      list.push({
+        id: e.id,
+        primary_abstraction: e.primary_abstraction || '',
+        memory_value: e.memory_value || e.content || '',
+        energy: e.energy || 0,
+        score: nb.score,
+        type: e.type,
+        created_at: e.created_at,
+        source: 'neighbor',
+      })
+      out.set(nb.anchorId, list)
+    }
+  } catch { /* fail-open */ }
+  return out
 }
 
 /**

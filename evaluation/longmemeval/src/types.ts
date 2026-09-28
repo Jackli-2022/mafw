@@ -11,6 +11,12 @@ export interface L1QuestionResult {
   top_sessions: string[];
   top_contexts: string[];
   top_scores: number[];
+  /**
+   * R6 presentation: chronological neighbours of the top hits (abstractions),
+   * bundled into the reader context as extra sessions. Never ranked — the L1
+   * metric is blind to them by construction.
+   */
+  neighbor_contexts?: string[];
 }
 
 export interface L1Summary {

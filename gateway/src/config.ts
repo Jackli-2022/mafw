@@ -106,6 +106,12 @@ export interface GatewayConfig {
     /** R6 context reinstatement: bundle chronological neighbors (±window) of top hits. */
     temporalNeighbors: {
       enabled: boolean;
+      /**
+       * R6 presentation mode: render neighbours into the injected block under
+       * their anchor (never re-ranks). Measured at L2 only; the L1 metric is
+       * blind to it by construction.
+       */
+      presentation: boolean;
       window: number;
       sameSessionWeight: number;
       crossSessionWeight: number;
@@ -367,6 +373,7 @@ function defaults(projectDir: string): GatewayConfig {
        */
       temporalNeighbors: {
         enabled: false,
+        presentation: false,
         window: 1,
         sameSessionWeight: 0.5,
         crossSessionWeight: 0.35,
