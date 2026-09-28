@@ -406,6 +406,39 @@ opencode server 进程                    Gateway 进程
 - 为复用前缀缓存、降低 token 成本，worker session 在 idle 达到 `config.recall.workerCompactIdleMs`（默认 8h）后，下一次 prompt 会先调 opencode 的 `session.summarize` 做 compaction；summarize 失败则直接 dispose 轮换（下次 prompt 重建新会话）。
 - xiaomi provider 可在 opencode 配置里开 `options.setCacheKey: true`，让请求带上 `promptCacheKey` 以便命中缓存（对端点是否生效取决于小米 API）。
 
+### 5.11a 边界 recall 性能契约与预取快照（R8，2026-09-28）
+
+边界 recall（`/api/recall/context`，插件每轮 LLM 调用前注入 `<recall>`）有 **100ms 硬契约**（插件侧 abort，fail-open）。**实测曾长期 240ms → 契约被违反 → abort → fail-open → 每轮自动记忆注入静默失效**。三个叠加根因与修复：
+
+| 根因 | 实测 | 修复 |
+|---|---|---|
+| BM25 每次查询对全库重新分词 | 3753 条 ≈53ms/趟 | `tokenCache`（按 id 缓存 tokens，searchable text 校验失效；`bm25RawScored`） |
+| 查询扩展 10 实体 + 4 子查询 = 14 趟全库 BM25 | 并发下 256–297ms | `search.expansionMaxSearches`（默认 4） |
+| 后台快照构建并发（dense 嵌入 + 两次 reranker）饿死边界路径 | — | `snapshotBuildInFlight` 串行 + `LlamaCppReranker.rerankDetailed`（一次打分同时出重排与概率） |
+
+修复后：**服务端检索 74–77ms（契约内）**，快照路径 **3ms**。
+
+**R8 预取快照**（`search.snapshot`，默认 off→生产已开）：`/api/obs/capture` 的 `user_input` 触发每会话防抖（2s）后台构建——滚动窗口查询（4 轮/600 字符，最后一轮只含 session 词汇 ~36%）→ hybrid（R2 dense RRF）+ R3 rerank + R5 FOK + R6 邻居 → 渲染块存 kv（scope `recall-snapshot`）；边界路径命中即服务（TTL 10min + **包含度**≥0.25 判定话题未漂移），否则回落实时 BM25。
+- **话题判定必须用包含度（overlap/min 侧）而非 Jaccard**：Jaccard 对"600 字符窗口 vs 15 token 追问"有长度偏置，实测 158/246 次快照被误跳过
+- 定位延迟用 `/api/recall/context` 的 `[Recall] timing` debug 日志（search/noteBoard/goal/neighbours 分段）
+
+### 5.11b 读路径脑对齐切片（R1–R8）交付状态
+
+| 切片 | 层 | 状态 | 关键实测 |
+|---|---|---|---|
+| R3 验证层（Qwen3-Reranker GGUF） | 排序 | ✅ | R@1 +0.09 |
+| R2 dense 融合 | 召回 | ✅（快照内） | 回合粒度 R@1 +4~7pt / R@10 +6~8pt |
+| R2+R3 叠加 | 排序 | ✅ | 120q R@1 0.673 / NDCG@1 0.917（最优） |
+| R6 邻居**呈现**（↳ 行 + 最近版本指令） | 注入 | ✅ 每轮 | L2 +8.3pt |
+| R6 邻居**检索层** | 排序 | ❌ 默认 off | 两粒度全零（LongMemEval 真值粒度错配） |
+| R5 FOK 三区门 | 门控 | ✅（快照内） | 拒答 0.867→0.967；特征必须用 reranker 概率（AUROC 0.782）而非 bm25 分数比（0.582）；行为"声明不撤回" |
+| R7 标识符双索引 | 分词 | ✅ | 空格形 hit@10 38%→90% |
+| 写端标识符收割（cue_anchors） | 写路径 | ✅ + 迁移脚本 | 冻结样本 hit@50 70%→98% |
+| R1 LLM 改写 / R4 近因 | — | ❌ 不作默认 | 伤 temporal / 净负 |
+
+**方法论（写死）**：先问测量面——加候选类看回合粒度 R@k，重排类看 R@1/NDCG，呈现类只能看 L2，门控类看 AUROC，写端保真看冻结样本 + 可复现对照。**样本漂移会伪造结论**（缺口集合随状态移动）；**一次性备份会被后续迁移覆盖**，A/B 的 before 必须从当前状态派生。
+- 探针：`evaluation/mafw-identifier-probe.js`（R7）、`mafw-fidelity-probe.js` / `mafw-fidelity-ab.js`（写端保真）、`gateway/scripts/harvest-cue-anchors.ts`（迁移，dry-run 默认）
+
 ### 5.12 注入点收敛
 
 所有注入路径统一使用 `gateway/src/recall/inject-format.ts` 的 `formatRecallContext()` 渲染：
