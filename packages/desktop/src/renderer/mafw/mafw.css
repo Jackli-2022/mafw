@@ -1101,8 +1101,9 @@ html[data-theme="light"] body {
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
   padding: 10px 14px;
-  font-family: var(--font-data);
-  font-size: 13px;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.7;
   color: var(--text-1);
 }
 .mafw-shell [data-component="user-message"] [data-slot="user-message-body"] {
@@ -4755,8 +4756,7 @@ html[data-theme="light"] .mafw-picker-pop {
 /* ── 字体分层（v6 §2）─────────────────────────────────────────── */
 /* 标题与正文同族（Inter），靠字重分层 */
 .mafw-page-title, .mafw-welcome-title { font-family: var(--font-display); font-weight: 600; }
-/* 人机用字分工：用户气泡用 mono 契约见上方 scoped override（font-family 已并入
-   既有 user-message-text 规则，避免重复选择器）；行内代码沿用 session-ui mono。 */
+/* 用户气泡与回复统一 sans 16px/1.7（见上方 user-message-text 规则）；等宽只留给代码/diff/工具卡。 */
 
 /* ── Rail 主导航 + 多项目会话树（v6 §0b）────────────────────────── */
 .mafw-rail-nav { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; flex-shrink: 0; }

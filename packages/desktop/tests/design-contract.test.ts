@@ -109,9 +109,11 @@ describe("token v6 — 字体分层", () => {
     expect(entry).toContain("@fontsource-variable/inter")
     expect(entry).toContain("@fontsource-variable/jetbrains-mono")
   })
-  test("用户气泡用 mono 数据字体", () => {
-    const rule = cssBlock('.mafw-shell [data-component="user-message"] [data-slot="user-message-text"] {')
-    expect(rule).toContain("var(--font-data)")
+  test("用户气泡与回复同字体同字号（sans 16px/1.7）", () => {
+    const rule = cssBlock('[data-component="user-message"] [data-slot="user-message-text"] {')
+    expect(rule).toContain("font-family: var(--font-ui)")
+    expect(rule).toContain("font-size: 16px")
+    expect(rule).toContain("line-height: 1.7")
   })
 })
 
