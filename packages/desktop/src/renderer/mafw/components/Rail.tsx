@@ -11,9 +11,10 @@ import { UsagePill } from "./UsagePill"
 import { ManagerCard } from "./ManagerCard"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { sessionStore } from "../session-store"
-import { worktreeBadge } from "./worktree-label"
 import { useConnPhase } from "../connection-state"
 import { ConnBanner } from "./ConnBanner"
+import { buildSessionTree, type SessionNode, type ProjectNode } from "./session-tree"
+import { NAV_TABS, type NavTab } from "./nav-tab"
 
 const copyText = async (text: string) => {
   try {
@@ -22,24 +23,6 @@ const copyText = async (text: string) => {
   } catch (e) {
     console.warn("[mafw] clipboard failed", e)
   }
-}
-
-const DAY = 86400000
-const dayStart = (ts: number) => {
-  const d = new Date(ts)
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-}
-
-// Fixed date groups (industry consensus): 今天 / 昨天 / 过去 7 天 / 按月（跨年带年份）
-const groupLabel = (ts: number): string => {
-  const diffDays = Math.round((dayStart(Date.now()) - dayStart(ts)) / DAY)
-  if (diffDays <= 0) return "今天"
-  if (diffDays === 1) return "昨天"
-  if (diffDays < 7) return "过去 7 天"
-  const d = new Date(ts)
-  const y = d.getFullYear()
-  const nowY = new Date().getFullYear()
-  return y === nowY ? `${d.getMonth() + 1}月` : `${y}年${d.getMonth() + 1}月`
 }
 
 // Ellipsis as a real SVG icon (the icon set has none); three current-color dots.
@@ -51,13 +34,16 @@ const EllipsisIcon = () => (
   </svg>
 )
 
-const PAGE = 100
 const SEARCH_CAP = 200
 
 type Props = {
   activeSessionId: string | null
   managerSessionId?: string | null
   projectsRev?: () => number
+  activeTab?: NavTab
+  tabCounts?: Partial<Record<NavTab, number>>
+  onTabChange?: (tab: NavTab) => void
+  onOpenTrajectory?: () => void
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSessionDeleted?: (id: string) => void
   onSettings?: () => void
@@ -71,13 +57,13 @@ export function Rail(props: Props) {
   const [gwStatus, setGwStatus] = createSignal<any>(null)
   const [query, setQuery] = createSignal("")
   const [searchOpen, setSearchOpen] = createSignal(false)
-  const [limit, setLimit] = createSignal(PAGE)
   const [hi, setHi] = createSignal(-1)
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
   const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
+  // 多项目懒加载：仅展开的项目拉取会话（sessionStore 首访触发），当前项目默认展开。
+  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
   let searchRef: HTMLDivElement | undefined
-  let scrollRef: HTMLDivElement | undefined
 
   const gwReady = createMemo(() => gwStatus()?.state === "ready")
   const connPhase = useConnPhase()
@@ -100,49 +86,67 @@ export function Rail(props: Props) {
     window.api.mafw.projects.current().then((res: any) => { if (res) setCurrentProject(res) }).catch(e => console.warn("[mafw] projects.current error:", e))
   })
 
-  // Store read: refetches on first access, reactive to invalidate().
-  const allSessions = createMemo(() => sessionStore.sessionsFor(projectID()))
-  const offline = createMemo(() => sessionStore.isOffline(projectID()) || connPhase() === "down")
-
-  const managerRow = createMemo(() => {
-    const id = props.managerSessionId
-    if (!id) return null
-    return allSessions().find(s => s.id === id && s.metadata?.mafw?.role === 'manager') || null
-  })
-
-  // History = everything except manager sessions.
-  const history = createMemo(() => allSessions().filter(s => s.metadata?.mafw?.role !== 'manager'))
-
   const searching = createMemo(() => query().trim().length > 0)
-  const filtered = createMemo(() => {
-    const q = query().trim().toLowerCase()
-    if (!q) return history()
-    return history().filter(s => (s.title || '').toLowerCase().includes(q))
+
+  // 展开集合：当前项目始终保持展开。
+  createEffect(() => {
+    const pid = projectID()
+    if (!pid) return
+    setExpanded(prev => (prev[pid] ? prev : { ...prev, [pid]: true }))
   })
 
-  // Date groups over the rendered slice.
-  const groups = createMemo(() => {
-    const slice = filtered().slice(0, searching() ? SEARCH_CAP : limit())
-    const out: { label: string; items: any[] }[] = []
-    for (const s of slice) {
-      const label = groupLabel(s.time?.updated || s.time?.created || Date.now())
-      const last = out[out.length - 1]
-      if (last && last.label === label) last.items.push(s)
-      else out.push({ label, items: [s] })
+  // 已展开（或搜索中）项目的会话；sessionsFor 首访触发懒拉取。
+  const sessionsByProject = createMemo(() => {
+    const out: Record<string, any[]> = {}
+    for (const p of projects()) {
+      const pid = p.worktree || p.id
+      if (!pid) continue
+      if (!expanded()[pid] && !searching()) continue
+      out[pid] = sessionStore.sessionsFor(pid)
     }
     return out
   })
 
-  const flatResults = createMemo(() => groups().flatMap(g => g.items))
+  const tree = createMemo(() => buildSessionTree(projects(), sessionsByProject(), projectID()))
 
-  // Search keyboard navigation: ↑↓ move highlight, Enter opens, Esc clears.
+  // 搜索：跨已加载项目过滤；项目无命中则不显示。
+  const filteredTree = createMemo<ProjectNode[]>(() => {
+    const q = query().trim().toLowerCase()
+    if (!q) return tree()
+    const hit = (n: SessionNode) => n.title.toLowerCase().includes(q)
+    return tree()
+      .map(p => ({
+        ...p,
+        manager: p.manager && hit(p.manager) ? p.manager : null,
+        groups: p.groups
+          .map(g => ({ ...g, items: g.items.filter(hit) }))
+          .filter(g => g.items.length > 0),
+      }))
+      .filter(p => p.manager || p.groups.length > 0)
+  })
+
+  // 键盘导航的扁平序列（搜索时）
+  const flatResults = createMemo(() =>
+    filteredTree().flatMap(p => [...(p.manager ? [p.manager] : []), ...p.groups.flatMap(g => g.items)]),
+  )
+
+  const offline = createMemo(() => (projectID() ? sessionStore.isOffline(projectID()) : false) || connPhase() === "down")
+
+  // 当前项目的 manager 节点（用于 ManagerCard 更新时间）。
+  const managerRow = createMemo<SessionNode | null>(() => {
+    const pid = projectID()
+    return tree().find(p => p.projectID === pid)?.manager ?? null
+  })
+
+  const truncated = createMemo(() => searching() && flatResults().length > SEARCH_CAP)
+
   const onSearchKeyDown = (e: KeyboardEvent) => {
-    const list = flatResults()
+    const list = flatResults().slice(0, SEARCH_CAP)
     if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, list.length - 1)) }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
     else if (e.key === "Enter") {
       const s = list[hi()]
-      if (s) { props.onSelectSession(s.id, s.title, false); setQuery(""); setHi(-1) }
+      if (s) { props.onSelectSession(s.id, s.title, s.manager); setQuery(""); setHi(-1) }
     } else if (e.key === "Escape") { setQuery(""); setHi(-1); setSearchOpen(false) }
   }
 
@@ -159,41 +163,30 @@ export function Rail(props: Props) {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // Infinite scroll: near-bottom → grow the rendered window.
-  createEffect(() => {
-    const el = scrollRef
-    if (!el) return
-    const onScroll = () => {
-      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
-        setLimit(l => (l < filtered().length ? l + PAGE : l))
-      }
-    }
-    el.addEventListener("scroll", onScroll, { passive: true })
-    onCleanup(() => el.removeEventListener("scroll", onScroll))
-  })
+  const toggleProject = (pid: string) => setExpanded(prev => ({ ...prev, [pid]: !prev[pid] }))
 
   // Inline rename (Electron has no window.prompt): row swaps to a TextInputV2.
-  const startRename = (s: any) => { setRenamingId(s.id); setRenameDraft(sessionName(s)) }
-  const commitRename = async (id: string) => {
+  const startRename = (node: SessionNode) => { setRenamingId(node.id); setRenameDraft(node.title) }
+  const commitRename = async (id: string, pid: string | null) => {
     const title = renameDraft().trim()
     setRenamingId(null)
     if (!title) return
     try {
       await window.api.mafw.sessions.rename(id, title)
-      sessionStore.invalidate(projectID())
+      sessionStore.invalidate(pid)
     } catch (e: any) {
       showToastV2({ description: `重命名失败: ${e?.message || e}`, duration: 3000 })
     }
   }
 
-  const deleteSession = async (id: string) => {
+  const deleteSession = async (id: string, pid: string | null) => {
     try {
       // Preload exposes sessions.delete (there is no `remove` alias).
       await window.api.mafw.sessions.delete(id)
       // Close any open tab of the deleted session (MafwShell wires this to
       // closeSession; a safe no-op when the session is not open).
       props.onSessionDeleted?.(id)
-      sessionStore.invalidate(projectID())
+      sessionStore.invalidate(pid)
       showToastV2({ description: "已删除", duration: 2000 })
     } catch (e: any) {
       showToastV2({ description: `删除失败: ${e?.message || e}`, duration: 3000 })
@@ -214,7 +207,6 @@ export function Rail(props: Props) {
     try { window.api.mafw.projects.setCurrent(p.worktree) } catch (e) { console.warn("[mafw]", e) }
     // Cached projects can be stale — refetch on switch (per spec).
     sessionStore.invalidate(p.worktree || p.id || null)
-    setLimit(PAGE)
   }
 
   const openProjectFolder = async () => {
@@ -230,18 +222,25 @@ export function Rail(props: Props) {
     }
   }
 
-  const sessionName = (s: any): string => s.title || (s.id || "").slice(0, 12)
+  // 点击会话行：跨项目时先切项目（setCurrent）再开会话 tab。
+  const openNode = (node: SessionNode, p: ProjectNode) => {
+    if (!p.current) {
+      selectProject({ worktree: p.projectID, id: p.projectID, name: p.name })
+    }
+    props.onSelectSession(node.id, node.title, node.manager)
+    setHi(-1)
+  }
 
-  const renderSessionRow = (s: any) => (
+  const renderNode = (node: SessionNode, p: ProjectNode) => (
     <Show
-      when={renamingId() !== s.id}
+      when={renamingId() !== node.id}
       fallback={
         <div class="mafw-rail-session renaming">
           <TextInputV2
             value={renameDraft()}
             onInput={e => setRenameDraft(e.currentTarget.value)}
             onKeyDown={e => {
-              if (e.key === "Enter") { e.preventDefault(); commitRename(s.id) }
+              if (e.key === "Enter") { e.preventDefault(); commitRename(node.id, p.projectID) }
               else if (e.key === "Escape") setRenamingId(null)
             }}
             autoFocus
@@ -253,18 +252,19 @@ export function Rail(props: Props) {
         <ContextMenu.Trigger
           as="div"
           class="mafw-rail-session"
-          classList={{ active: props.activeSessionId === s.id }}
-          data-hi={flatResults().indexOf(s) === hi() ? "1" : undefined}
-          onClick={() => { props.onSelectSession(s.id, sessionName(s), false); setHi(-1) }}
+          classList={{ active: props.activeSessionId === node.id }}
+          data-hi={flatResults().indexOf(node) === hi() ? "1" : undefined}
+          onClick={() => openNode(node, p)}
         >
-          <TooltipV2 value={worktreeBadge(s.directory, projectID())
-            ? `worktree：${s.directory}`
-            : new Date(s.time?.updated || s.time?.created || Date.now()).toLocaleString()} openDelay={300}>
+          <TooltipV2 value={node.worktree ? `worktree：${node.worktree}` : new Date(node.updated || Date.now()).toLocaleString()} openDelay={300}>
             <span class="mafw-rail-session-title">
-              <Show when={worktreeBadge(s.directory, projectID())}>
-                <span class="mafw-rail-wt-badge" title="">⎇ {worktreeBadge(s.directory, projectID())}</span>
+              <Show when={node.manager}>
+                <span class="mafw-rail-manager-star" aria-hidden="true">★</span>
               </Show>
-              {sessionName(s)}
+              <Show when={node.worktree}>
+                <span class="mafw-rail-wt-badge" title="">⎇ {node.worktree}</span>
+              </Show>
+              {node.title}
             </span>
           </TooltipV2>
           <span
@@ -274,16 +274,16 @@ export function Rail(props: Props) {
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Content>
-            <ContextMenu.Item onSelect={() => props.onSelectSession(s.id, sessionName(s), false)}>
+            <ContextMenu.Item onSelect={() => openNode(node, p)}>
               <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
             </ContextMenu.Item>
-            <ContextMenu.Item onSelect={() => startRename(s)}>
+            <ContextMenu.Item onSelect={() => startRename(node)}>
               <ContextMenu.ItemLabel>Rename</ContextMenu.ItemLabel>
             </ContextMenu.Item>
-            <ContextMenu.Item onSelect={() => setDeleteConfirmId(s.id)}>
+            <ContextMenu.Item onSelect={() => setDeleteConfirmId(node.id)}>
               <ContextMenu.ItemLabel>Delete</ContextMenu.ItemLabel>
             </ContextMenu.Item>
-            <ContextMenu.Item onSelect={() => copyText(s.id)}>
+            <ContextMenu.Item onSelect={() => copyText(node.id)}>
               <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
             </ContextMenu.Item>
           </ContextMenu.Content>
@@ -294,7 +294,7 @@ export function Rail(props: Props) {
 
   return (
     <div class="mafw-rail">
-      {/* Header: project switcher (left) + collapse arrow (right) */}
+      {/* Header: project switcher (left) + search + collapse arrow (right) */}
       <div class="mafw-rail-head">
         <DropdownMenu placement="bottom-start">
           <DropdownMenu.Trigger as="div" class="mafw-rail-switcher">
@@ -351,48 +351,89 @@ export function Rail(props: Props) {
         </div>
       </Show>
 
+      {/* 主导航（v6 §0b：吸收原 TabStrip 六页职责 + trajectory + 新建会话） */}
+      <nav class="mafw-rail-nav">
+        <button type="button" class="mafw-rail-new" onClick={() => void newSession()}>
+          <Icon name="plus-small" size="small" />
+          <span>New session</span>
+        </button>
+        <For each={NAV_TABS}>
+          {(t) => (
+            <button
+              type="button"
+              class="mafw-rail-nav-item"
+              classList={{ active: props.activeTab === t.id }}
+              onClick={() => props.onTabChange?.(t.id)}
+            >
+              <Icon name={t.icon} size="small" />
+              <span class="mafw-rail-nav-label">{t.label}</span>
+              <Show when={(props.tabCounts?.[t.id] || 0) > 0}>
+                <span class="mafw-tab-count">{props.tabCounts?.[t.id]}</span>
+              </Show>
+            </button>
+          )}
+        </For>
+        <button type="button" class="mafw-rail-nav-item" onClick={() => props.onOpenTrajectory?.()}>
+          <Icon name="status" size="small" />
+          <span class="mafw-rail-nav-label">轨迹</span>
+        </button>
+      </nav>
+
       <ManagerCard
-        managerSessionId={props.managerSessionId ?? null}
-        managerUpdatedAt={managerRow()?.time?.updated}
+        managerSessionId={managerRow()?.id ?? props.managerSessionId ?? null}
+        managerUpdatedAt={managerRow()?.updated}
         online={gwReady()}
         onSelectSession={props.onSelectSession}
       />
 
-      <div class="mafw-rail-new">
-        <ButtonV2 variant="outline" size="small" class="mafw-rail-new-btn" onClick={() => void newSession()}>
-          <Icon name="plus-small" size="small" />
-          <span>New session</span>
-        </ButtonV2>
-      </div>
-
-      {/* Scroll area: fixed date groups, infinite scroll, search results */}
+      {/* Scroll area: multi-project lazy session tree */}
       <Show when={connPhase() === "down"}><ConnBanner /></Show>
-      <div class="mafw-rail-scroll" ref={scrollRef}>
+      <div class="mafw-rail-scroll">
         <Show when={offline()}>
           <div class="mafw-rail-empty">Gateway offline</div>
         </Show>
-        <Show when={!offline() && !searching() && allSessions().length === 0 && !sessionStore.isLoading()}>
-          <div class="mafw-rail-empty">No sessions yet</div>
+        <Show when={!offline() && !searching() && projects().length === 0}>
+          <div class="mafw-rail-empty">No projects yet</div>
         </Show>
-        <Show when={searching() && filtered().length === 0}>
+        <Show when={searching() && flatResults().length === 0}>
           <div class="mafw-rail-empty">No chats found</div>
         </Show>
-        <For each={groups()}>
-          {(g) => (
-            <>
-              <div class="mafw-rail-date-group">
-                <span>{g.label}</span>
-                <span class="mafw-rail-date-count">{g.items.length}</span>
+        <For each={filteredTree()}>
+          {(p) => (
+            <div class="mafw-rail-project">
+              <div
+                class="mafw-rail-project-head"
+                classList={{ current: p.current, open: !!expanded()[p.projectID] }}
+                onClick={() => toggleProject(p.projectID)}
+              >
+                <span class="mafw-rail-project-caret" aria-hidden="true">{expanded()[p.projectID] ? "▾" : "▸"}</span>
+                <span class="mafw-rail-project-name">{p.name?.split(/[/\\]/).pop() || p.projectID}</span>
               </div>
-              <For each={g.items}>{(s) => renderSessionRow(s)}</For>
-            </>
+              <Show when={expanded()[p.projectID] || searching()}>
+                <Show when={p.manager}>{renderNode(p.manager!, p)}</Show>
+                <For each={p.groups}>
+                  {(g) => (
+                    <>
+                      <div class="mafw-rail-date-group">
+                        <span>{g.label}</span>
+                        <span class="mafw-rail-date-count">{g.items.length}</span>
+                      </div>
+                      <For each={g.items}>{(node) => renderNode(node, p)}</For>
+                    </>
+                  )}
+                </For>
+                <Show when={!p.manager && p.groups.length === 0 && (sessionsByProject()[p.projectID]?.length ?? 0) === 0 && !sessionStore.isLoading()}>
+                  <div class="mafw-rail-empty">No sessions yet</div>
+                </Show>
+              </Show>
+            </div>
           )}
         </For>
-        <Show when={!searching() && filtered().length > limit()}>
-          <div class="mafw-rail-load-more" onClick={() => setLimit(l => l + PAGE)}>加载更多</div>
-        </Show>
-        <Show when={searching() && filtered().length > SEARCH_CAP}>
+        <Show when={truncated()}>
           <div class="mafw-rail-load-more">仅显示前 {SEARCH_CAP} 条结果</div>
+        </Show>
+        <Show when={searching() && projects().some(pr => !expanded()[pr.worktree || pr.id])}>
+          <div class="mafw-rail-empty">展开项目以搜索其会话</div>
         </Show>
       </div>
 
@@ -413,7 +454,11 @@ export function Rail(props: Props) {
         message="此操作不可恢复。"
         confirmLabel="删除"
         danger
-        onConfirm={() => { const id = deleteConfirmId(); setDeleteConfirmId(null); if (id) void deleteSession(id) }}
+        onConfirm={() => {
+          const id = deleteConfirmId()
+          setDeleteConfirmId(null)
+          if (id) void deleteSession(id, projectID())
+        }}
         onCancel={() => setDeleteConfirmId(null)}
       />
     </div>

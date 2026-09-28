@@ -34,7 +34,7 @@ import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab } from "./components/dock-tab"
 import { PopoverShell } from "./components/pickers/PopoverShell"
-import { TabStrip, type Tab } from "./components/TabStrip"
+import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
 import { registerMafwToolCards } from "./components/tool-cards"
 import { registerUserPluginCards } from "./components/UserPluginCards"
@@ -67,7 +67,7 @@ import type { AgentEntry } from "./components/pickers/AgentPicker"
 import "./mafw.css"
 
 export function MafwShell() {
-  const [activeTab, setActiveTab] = createSignal<Tab>("chat")
+  const [activeTab, setActiveTab] = createSignal<NavTab>("chat")
   const [showConfig, setShowConfig] = createSignal(false)
   const [configSection, setConfigSection] = createSignal<NavKey | undefined>(undefined)
   const [gwStatus, setGwStatus] = createSignal<{ state: string; port: number | null } | null>(null)
@@ -350,7 +350,7 @@ export function MafwShell() {
   })
 
   const paletteItems = (): PaletteItem[] => {
-    const nav = (id: Tab, label: string, hint: string): PaletteItem => ({
+    const nav = (id: NavTab, label: string, hint: string): PaletteItem => ({
       id: `tab-${id}`, label, hint, group: "导航",
       run: () => { setShowConfig(false); setShowWelcome(false); setActiveTab(id) },
     })
@@ -706,7 +706,7 @@ export function MafwShell() {
   })
 
   // Reset configSection when config page closes to prevent stale section leaking
-  // to other entry points (Rail settings, TabStrip, etc.).
+  // to other entry points (Rail settings / nav, etc.).
   createEffect(() => {
     if (!showConfig()) setConfigSection(undefined)
   })
@@ -1587,7 +1587,11 @@ export function MafwShell() {
               }
               setActiveSessionId(id)
               setActiveViewId(id)
-            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "usage")} />
+            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "usage")}
+              activeTab={activeTab()}
+              tabCounts={{ approvals: pendingPermissionCount() }}
+              onTabChange={(t) => { setActiveTab(t); setConfigSection(undefined); setShowConfig(false) }}
+              onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} />
             <ResizeHandle
               direction="horizontal"
               edge="end"
@@ -1601,7 +1605,6 @@ export function MafwShell() {
           </div>
         )}
         <div class="mafw-main">
-          {!showConfig() && <TabStrip active={activeTab()} onChange={t => { setActiveTab(t); setConfigSection(undefined); setShowConfig(false) }} counts={{ approvals: pendingPermissionCount() }} onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} />}
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
             {showConfig() ? (

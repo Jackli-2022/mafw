@@ -513,11 +513,6 @@ html[data-theme="light"] body {
 .mafw-rail-search-toggle:hover { opacity: 1; }
 .mafw-rail-search-toggle[data-size="small"] { min-height: 24px; height: 24px; padding: 0; }
 /* ── New session + search ── */
-.mafw-rail-new { padding: 8px 8px 0; flex-shrink: 0; }
-.mafw-rail-new-btn { width: 100%; height: 30px; display: flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 0 9px; border: 1px solid var(--accent-border); background: var(--accent-soft); color: var(--accent-text); border-radius: var(--r-md); font-size: 13px; font-weight: 500; cursor: pointer; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
-.mafw-rail-new-btn:hover { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-.mafw-rail-new-btn:active { background: var(--accent-strong); color: var(--on-accent); border-color: transparent; }
-.mafw-rail-new-btn svg { flex-shrink: 0; }
 .mafw-rail-search { padding: 8px 8px 8px; flex-shrink: 0; }
 /* Swiss search: flat borderless surface; focus signal = leading icon brightens. */
 .mafw-rail-search div[data-component="text-input-v2"] {
@@ -587,95 +582,8 @@ html[data-theme="light"] body {
 .mafw-shell :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
 /* ── Main ── */
-.mafw-main { display: grid; grid-template-rows: 44px 1fr; overflow: hidden; min-width: 0; }
+.mafw-main { display: grid; grid-template-rows: 1fr; overflow: hidden; min-width: 0; }
 
-/* ── TabStrip (pill group, §4.2) ──
-   TabsV2's base rules (data-component/data-variant/data-orientation +
-   data-slot) carry (0,5,0) specificity; mirror them with the .mafw-shell /
-   .mafw-tabstrip anchors so our overrides win deterministically. Active tab
-   is marked by Kobalte's [data-selected] on the [role="tab"] trigger. */
-.mafw-shell [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] [data-slot="tabs-v2-list"].mafw-tabstrip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 44px;
-  padding: 0 8px;
-  background: var(--bg-base);
-  border-bottom: 1px solid var(--border-subtle);
-  overflow-x: auto;
-}
-.mafw-shell [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] [data-slot="tabs-v2-list"].mafw-tabstrip::before {
-  content: none;
-}
-.mafw-shell [data-component="tabs-v2"][data-variant="normal"][data-orientation="horizontal"] .mafw-tabstrip [role="tab"] {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: auto;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-4);
-  position: relative;
-  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
-}
-/* Selection indicator: grows from center (scaleX) instead of teleporting
-   between tabs; keeps animating on both select and deselect. */
-.mafw-shell .mafw-tabstrip [role="tab"]::after {
-  content: "";
-  position: absolute;
-  left: 11px;
-  right: 11px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: center;
-  transition: transform var(--dur-2) var(--ease);
-}
-.mafw-shell .mafw-tabstrip [role="tab"]:hover { color: var(--text-2); }
-.mafw-shell .mafw-tabstrip [role="tab"][data-selected] {
-  background: var(--bg-overlay);
-  color: var(--text-1);
-}
-.mafw-shell .mafw-tabstrip [role="tab"][data-selected]::after { transform: scaleX(1); }
-.mafw-shell .mafw-tabstrip [role="tab"][data-selected] svg { color: var(--accent); }
-.mafw-tabstrip-trajectory {
-  margin-left: auto;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: auto;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-4);
-  position: relative;
-  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
-}
-.mafw-tabstrip-trajectory::after {
-  content: "";
-  position: absolute;
-  left: 11px;
-  right: 11px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: center;
-  transition: transform var(--dur-2) var(--ease);
-}
-.mafw-tabstrip-trajectory:hover { color: var(--text-2); }
-.mafw-tabstrip-trajectory.active {
-  background: var(--bg-overlay);
-  color: var(--text-1);
-}
-.mafw-tabstrip-trajectory.active::after { transform: scaleX(1); }
 .mafw-tab-count {
   min-width: 16px;
   height: 16px;
@@ -4844,3 +4752,40 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-page-title, .mafw-welcome-title { font-family: var(--font-display); }
 /* 人机用字分工：用户气泡用 mono 契约见上方 scoped override（font-family 已并入
    既有 user-message-text 规则，避免重复选择器）；行内代码沿用 session-ui mono。 */
+
+/* ── Rail 主导航 + 多项目会话树（v6 §0b）────────────────────────── */
+.mafw-rail-nav { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; flex-shrink: 0; }
+.mafw-rail-new {
+  display: flex; align-items: center; justify-content: flex-start; gap: 6px;
+  height: 30px; padding: 0 9px; margin-bottom: 4px;
+  font: 500 13px/1.4 var(--font-ui);
+  color: var(--accent-text); background: var(--accent-soft);
+  border: 1px solid var(--accent-border); border-radius: var(--r-md);
+  cursor: pointer; text-align: left;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.mafw-rail-new:hover { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.mafw-rail-new:active { background: var(--accent-strong); color: var(--on-accent); border-color: transparent; }
+.mafw-rail-nav-item {
+  display: flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 10px;
+  font: 13px/1.4 var(--font-ui); color: var(--text-3);
+  background: none; border: none; border-radius: var(--r-md);
+  cursor: pointer; text-align: left;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.mafw-rail-nav-item:hover { background: var(--hover); color: var(--text-2); }
+.mafw-rail-nav-item.active { background: var(--bg-overlay); color: var(--text-1); }
+.mafw-rail-nav-item.active svg { color: var(--accent); }
+.mafw-rail-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-rail-project { margin-top: 2px; }
+.mafw-rail-project-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px 4px; cursor: pointer; user-select: none;
+  color: var(--text-5); font-size: 11px; font-weight: 600; letter-spacing: .04em;
+}
+.mafw-rail-project-head:hover { color: var(--text-3); }
+.mafw-rail-project-head.current { color: var(--text-3); }
+.mafw-rail-project-caret { width: 10px; flex-shrink: 0; font-size: 9px; }
+.mafw-rail-project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
+.mafw-rail-manager-star { color: var(--accent); margin-right: 4px; }

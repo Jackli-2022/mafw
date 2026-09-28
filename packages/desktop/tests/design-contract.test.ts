@@ -219,21 +219,19 @@ describe("token v5 — v1/v2 兼容覆盖层跟随", () => {
   test("亮色 --v2-background-bg-layer-03 #EAE7E0", () => expect(light).toContain("--v2-background-bg-layer-03: #EAE7E0"))
 })
 
-describe("TabStrip 激活态 v4", () => {
-  const sel = '.mafw-shell .mafw-tabstrip [role="tab"][data-selected]'
-  test("激活底色 bg-overlay", () => expect(cssBlock(sel)).toContain("background: var(--bg-overlay)"))
-  test("2px 底部 accent 指示条（::after scaleX 生长，双向可过渡）", () => {
-    const after = cssBlock('.mafw-shell .mafw-tabstrip [role="tab"]::after')
-    expect(after).toContain("height: 2px")
-    expect(after).toContain("background: var(--accent)")
-    expect(after).toContain("transform: scaleX(0)")
-    expect(after).toContain("transition: transform")
-    expect(cssBlock(sel + "::after")).toContain("transform: scaleX(1)")
+describe("Rail 主导航 + 会话树（v6 §0b）", () => {
+  test("Rail 消费 nav-tab 导航表", () => {
+    const rail = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
+    expect(rail).toContain("nav-tab")
+    expect(rail).toContain("buildSessionTree")
   })
-  test("轨迹按钮激活同构", () => {
-    const b = cssBlock(".mafw-tabstrip-trajectory.active")
-    expect(b).toContain("background: var(--bg-overlay)")
-    expect(cssBlock(".mafw-tabstrip-trajectory.active::after")).toContain("transform: scaleX(1)")
+  test("MafwShell 不再引用 TabStrip", () => {
+    const shell = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "MafwShell.tsx"), "utf8")
+    expect(shell).not.toContain("TabStrip")
+  })
+  test("导航项与项目树样式存在", () => {
+    expect(cssBlock(".mafw-rail-nav {")).not.toBe("")
+    expect(cssBlock(".mafw-rail-project-head {")).not.toBe("")
   })
 })
 
@@ -305,12 +303,12 @@ describe("用量指标行 v4", () => {
 
 describe("Rail CTA + UsagePill v4", () => {
   test("New session 主 CTA：accent-soft 底 + accent-border 描边", () => {
-    const b = cssBlock(".mafw-rail-new-btn {")
+    const b = cssBlock(".mafw-rail-new {")
     expect(b).toContain("background: var(--accent-soft)")
     expect(b).toContain("border: 1px solid var(--accent-border)")
   })
   test("New session hover 实心绿", () =>
-    expect(cssBlock(".mafw-rail-new-btn:hover {")).toContain("background: var(--accent)"))
+    expect(cssBlock(".mafw-rail-new:hover {")).toContain("background: var(--accent)"))
   test("UsagePill 细线进度条 2px", () =>
     expect(cssBlock(".mafw-usage-pill-progress {")).toContain("height: 2px"))
   test("UsagePill 数字 tabular", () =>
