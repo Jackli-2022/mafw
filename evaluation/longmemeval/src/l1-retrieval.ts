@@ -161,6 +161,7 @@ function parseArgs() {
     scanApiKeyProvider: flags.get('--scanApiKeyProvider') ?? 'alibaba-cn',
     scanModel: flags.get('--scanModel') ?? 'qwen3.7-max',
     queryRewrite: flags.get('--queryRewrite') === 'true',
+    temporalNeighbors: flags.get('--temporalNeighbors') === 'true',
     keep: flags.has('--keep'),
     data: flags.get('--data'),
   };
@@ -187,6 +188,7 @@ function help() {
   console.log('  --scanApiKeyProvider NAME  auth.json provider for scan (default alibaba-cn)');
   console.log('  --scanModel MODEL   model for scan (default qwen3.7-max)');
   console.log('  --data PATH     override dataset path');
+  console.log('  --temporalNeighbors true|false  R6: bundle chronological neighbors of top hits (default false)');
   console.log('  --keep          keep per-question tmp dirs');
 }
 
@@ -424,6 +426,7 @@ async function main() {
     retriever: retriever === 'hybrid' ? 'bm25' : retriever,
     cutoffRatio: reranker ? 0 : args.cutoffRatio,
     fusionSparseWeight: args.fusionSparseWeight,
+    temporalNeighbors: args.temporalNeighbors,
   };
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -432,7 +435,7 @@ async function main() {
   const runPath = path.join(resultsDir, 'l1-run.jsonl');
   const summaryPath = path.join(resultsDir, 'l1-summary.json');
 
-  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, embedding=${embeddingProvider?.name ?? 'n/a'}, reranker=${args.reranker}, graph=${args.graph}, coactivation=${args.coactivation}, scan=${args.scan}, timeAnchor=true`);
+  console.log(`L1 retrieval: ${questions.length} questions, granularity=${ingestOpts.granularity}, energyMode=${ingestOpts.energyMode}, retriever=${retriever}, embedding=${embeddingProvider?.name ?? 'n/a'}, reranker=${args.reranker}, graph=${args.graph}, coactivation=${args.coactivation}, scan=${args.scan}, temporalNeighbors=${args.temporalNeighbors}, timeAnchor=true`);
   const results: L1QuestionResult[] = [];
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];

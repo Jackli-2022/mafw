@@ -8,6 +8,8 @@ import type { Reranker } from './reranker';
 import { detectTimeWindow, applyTimeBoost } from '../../recall/time-anchor';
 import { personalizedPageRank } from '../../graph/diffusion';
 import { abstractionLevelFor } from './abstraction-level';
+import { computeTemporalNeighbors, chronologicalOrder } from '../../recall/temporal-neighbors';
+import { renameWithRetry } from '../utils/atomic-write';
 
 interface HookManagerLike {
   execute(event: string, context: any): Promise<void>;
@@ -37,6 +39,11 @@ export interface SearchOptions {
    * the eval harness passes the question date for reproducibility.
    */
   now?: string;
+  /**
+   * R6 context reinstatement: pull the chronological neighbors (±window) of
+   * top hits into the candidate set. Overrides config.search.temporalNeighbors.enabled.
+   */
+  temporalNeighbors?: boolean;
 }
 
 export interface ScoredEntry {
@@ -175,7 +182,7 @@ export class HarmonicIndexManager {
     this.index.updated_at = new Date().toISOString();
     const tmpPath = this.indexPath + '.tmp';
     fs.writeFileSync(tmpPath, JSON.stringify(this.index, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, this.indexPath);
+    renameWithRetry(tmpPath, this.indexPath);
   }
 
   /**
@@ -469,6 +476,33 @@ export class HarmonicIndexManager {
     if (cutoffRatio > 0 && scored.length > 0) {
       const threshold = scored[0].score * cutoffRatio;
       scored = scored.filter(s => s.score >= threshold);
+    }
+
+    // ── R6 context reinstatement: bundle chronological neighbors of top hits ──
+    // Retrieving one memory reinstates its temporal context, cueing adjacent
+    // entries (lag-CRP). Same-session neighbors outweigh the cross-session
+    // bridge; never outranks a genuine hit. Runs after cutoff so neighbors
+    // (weaker by construction) are not pruned. Off by default.
+    const tnCfg = config.search.temporalNeighbors;
+    const tnEnabled = options.temporalNeighbors ?? tnCfg?.enabled ?? false;
+    if (tnEnabled && scored.length > 0) {
+      const neighbors = computeTemporalNeighbors(
+        scored.map(s => ({ id: s.entry.id, score: s.score })),
+        chronologicalOrder(this.index.entries),
+        tnCfg,
+      );
+      if (neighbors.length > 0) {
+        const have = new Set(scored.map(s => s.entry.id));
+        const byId = new Map(this.index.entries.map(e => [e.id, e]));
+        const added: ScoredEntry[] = [];
+        for (const nb of neighbors) {
+          if (have.has(nb.id)) continue;
+          const entry = byId.get(nb.id);
+          if (!entry || entry.superseded_by) continue;
+          added.push({ entry, score: nb.score });
+        }
+        if (added.length > 0) scored = [...scored, ...added].sort((a, b) => b.score - a.score);
+      }
     }
 
     scored = scored.slice(0, topK);

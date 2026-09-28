@@ -103,6 +103,16 @@ export interface GatewayConfig {
     fusionSparseWeight: number;
     /** Per-system retrieval channels (Phase C4b): fuse episodic vs semantic rankings via RRF. */
     channelSplit: { enabled: boolean; episodicWeight: number };
+    /** R6 context reinstatement: bundle chronological neighbors (±window) of top hits. */
+    temporalNeighbors: {
+      enabled: boolean;
+      window: number;
+      sameSessionWeight: number;
+      crossSessionWeight: number;
+      anchorFloor: number;
+      maxNeighbors: number;
+      anchorK: number;
+    };
   };
   memory: {
     defaultEnergy: number;
@@ -341,6 +351,19 @@ function defaults(projectDir: string): GatewayConfig {
       /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
       fusionSparseWeight: 0.65,
       channelSplit: { enabled: true, episodicWeight: 0.3 },
+      /**
+       * R6 context reinstatement: bundling the chronological neighbors (±window)
+       * of top hits. Off by default; measurement-gated (LongMemEval).
+       */
+      temporalNeighbors: {
+        enabled: false,
+        window: 1,
+        sameSessionWeight: 0.5,
+        crossSessionWeight: 0.35,
+        anchorFloor: 0.3,
+        maxNeighbors: 20,
+        anchorK: 5,
+      },
     },
     memory: {
       defaultEnergy: 0.8,

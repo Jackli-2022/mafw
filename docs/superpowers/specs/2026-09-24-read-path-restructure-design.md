@@ -1,6 +1,6 @@
 # 读路径重构：从「打分 → top-k」到「期望 → 补全 → 验证 → 竞争 → 重构」
 
-> 日期：2026-09-24（2026-09-27 调研修订）· 状态：R3 已实现并验证；R1/R2/R4 实测否决；R6/R5/R7/R8 已调研待实现
+> 日期：2026-09-24（2026-09-28 修订）· 状态：R3 已实现并验证；**R2 回合粒度翻案、R2+R3 叠加为全实验最优；R1 部分翻案（伤 temporal）；R4 维持否决；R6 检索层实测无测量面 → 改呈现层 + L2；R5 预检 GO；R7/R8 待实现**
 > 范围：把记忆**读路径**（检索/取回/注入）按大脑方式重构
 > 依据：本次 LongMemEval 测量 + 大脑读路径调研（`docs/research/2026-09-23-brain-vs-ai-memory-survey.md` §1.4/1.5）
 > + 读路径专项调研（`docs/research/2026-09-27-read-path-brain-alignment.md`，FOK/上下文复原/线索抽取/预测预取四方向）
@@ -31,7 +31,35 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 | hybrid + reranker | 0.622 | 0.858 | 0.650 | 0.800 ↓ |
 | **bm25 + Qwen3-Reranker（R3 验证层）** | **0.657** | **0.892** | **0.750** | **0.900** |
 
-**结论：加验证层（CA1 匹配-失配）优于再加检索通道（dense）。** dense 一涨一跌（拉入语义相近但缺关键信息的干扰项）；**有验证层时 dense 净负**（hybrid+rerank 0.622 < bm25+rerank 0.657）→ **R2（双过程级联/dense 融合）实测否决，不做**。
+**结论（2026-09-27，已被 §1.3 修正）**：加验证层（CA1 匹配-失配）优于再加检索通道（dense）。dense 一涨一跌（拉入语义相近但缺关键信息的干扰项）。~~**R2（双过程级联/dense 融合）实测否决，不做**~~ —— **该否决在 2026-09-28 被推翻，见 §1.3**。
+
+### 1.3 2026-09-28 修正：session 粒度的池饱和假象
+
+**问题**：§1.2 的对照实验全部在 **session 粒度 + 内部 `recallK=50`** 下测量，而 LongMemEval-S session 粒度下每题语料本身就 ≈50 session —— **候选池已覆盖整个语料**，任何"往池里加新候选"的机制（dense 语义通道、query 改写、时间邻居）都只剩**重排**价值，recall 面被系统性遮蔽。
+
+**回合粒度六臂对照**（`--granularity round`，语料 ≈500 回合 vs 候选池 50，48 题 / 120 题，seed 42，无 reranker）：
+
+| 臂 | R@1 (48q→120q) | R@10 (48q→120q) | NDCG@1 (48q→120q) |
+|---|---|---|---|
+| base bm25 | 0.589 → 0.594 | 0.894 → 0.870 | 0.813 → 0.808 |
+| +R1 查询改写 | 0.629 → — | 0.960 → — | 0.854 → — |
+| +R2 dense 融合 | 0.655 → 0.633 | 0.965 → 0.929 | 0.917 → 0.867 |
+| +R3 reranker | 0.648 → 0.654 | 0.930 → 0.905 | 0.896 → 0.883 |
+| **R2+R3 叠加** | **0.697 → 0.673** | **0.975 → 0.954** | **0.958 → 0.917** |
+| +R6 时间邻居 | 0.589 → — | 0.894 → — | 0.813 → — |
+
+**修正后结论**：
+- **R2 翻案**：dense 通道在回合粒度 R@1 +4~7pt、R@10 +6~8pt（multi-session R@10 0.809→0.95）。它的价值在 **recall 层**（R@10 高于 R3），与 R3 的头部精排**正交互补**；**R2+R3 是全实验史最优配置**（R@1 0.673 / NDCG@1 0.917 @120q），超过 session 粒度 R3 单臂（0.657/0.892）。
+- **R1 部分翻案**：整体 R@1 +4pt / R@10 +6.6pt，但 **temporal-reasoning R@1 反降**（0.406→0.312）——改写丢时间线索，与 R7"query reduction > expansion"一致。故 LLM 无差别改写仍**不作为默认**。
+- **R6 检索层定案否决**：检索侧时间邻居在 **两种粒度都零增益**（见 §5 R6）——不是池饱和，而是 **LongMemEval 真值本身是 session 粒度**，而同 session 回合时间上必然相邻（插进去的邻居全是同 session → 对 session 映射指标天然不可见）。
+- **R4 维持否决**：纯重排机制，session/回合粒度都有测量面，实测净负成立。
+
+**方法论教训（本 spec 的核心方法）**：
+> **证伪一个机制前，先问它的作用面在哪一层，当前指标能否看到那一层。**
+> - 加候选类（dense 语义通道 / query 改写 / 邻居扩展）→ 需**候选池 ≪ 语料**的回合粒度 R@k，或"新进 top-k 答案数"
+> - 重排类（reranker / recency）→ R@1 / NDCG@1
+> - 上下文质量类（邻居捆绑 / 版本指令）→ **只能靠 L2 reader**（session 粒度 R@k 永远看不见）
+
 
 ## 2. 大脑读路径（目标模型）
 
@@ -67,36 +95,46 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 - **待接线**：config `search.reranker: 'llamacpp'` + 显式检索路径；边界路径不接。
 - **坑**：`createReranker('llamacpp')` 默认 CPU（19s）→ 必须 `gpu: 'vulkan'`（250ms）。
 
-### R1 期望生成（PFC）—— ❌ 实测否决（LLM 查询改写版）
+### R1 期望生成（PFC）—— ◐ **部分翻案（2026-09-28）**
 - **实现**：harness `--queryRewrite`（用 worker 模型把问句改写成"记忆会怎么写"的陈述式查询，如 "Where did I attend my cousin's wedding?" → "user cousin wedding location"）。
-- **实测**（111/120，bm25+reranker+rewrite）：overall R@1 **0.615 < 0.657**（无改写）；preference 0.750→0.650（↓）、其余持平。
-- **结论**：**有验证层时查询改写净负**——验证层已直接读 query×候选桥接"问句↔陈述"，改写反而给 BM25 候选集与判官加噪。**R1（LLM 改写）不做**；若做，只考虑规则式时间归一（待验证）。
+- **旧实测（session 粒度）**：overall R@1 **0.615 < 0.657**（同 R3 配置），曾判净负。
+- **新实测（回合粒度，§1.3）**：R@1 0.629（base 0.589，**+4pt**）、R@10 0.960（base 0.894，**+6.6pt**）——recall 面确有价值；但 **temporal-reasoning R@1 0.406→0.312 反降**（改写丢时间线索）。
+- **结论**：LLM 无差别改写**不作为默认**（伤 temporal，且与 R7"query reduction > expansion"冲突）；若做，走规则式/时间保真的定向改写（待验证）。
 
-### R2 双过程级联 —— ❌ 实测否决（不做）
-- **实测**：hybrid+rerank (R@1 0.622) **低于** bm25+rerank (0.657)；有验证层时 dense 全面净负（user 0.90→0.80、preference 0.75→0.65）。
-- **结论**：验证层已覆盖语义匹配；dense 只往候选集塞"语义相近但缺关键信息"的干扰项。**R2 不做**。
+### R2 双过程级联 —— ✅ **翻案（2026-09-28）**
+- **旧实测（session 粒度，已作废）**：hybrid+rerank (R@1 0.622) 低于 bm25+rerank (0.657) → 曾判"净负"。
+- **新实测（回合粒度，§1.3）**：dense 单臂 R@1 0.655/0.633、R@10 0.965/0.929（48q/120q），**R@10 高于 R3 单臂**；**R2+R3 叠加 0.697/0.673 全指标最优**。
+- **结论**：dense 是 **recall 层**机制（捞 BM25 漏掉的语义相近候选），与 R3 验证层正交；旧否决是 session 粒度池饱和造成的假象。**R2 采纳**（生产接线待定，见 §5）。
+- **遗留**：single-session-user R@1 在旧 session 粒度有下降（0.90→0.80）——需确认是否为该子集的噪声（120q 回合粒度未见）。
 
-### R4 竞争抑制（提取诱发遗忘）—— ❌ 实测否决（近因竞争版）
+### R4 竞争抑制（提取诱发遗忘）—— ❌ 实测否决（近因竞争版，**结论维持**）
 - **实现**：重排融合加近因项 `score = base·bm25 + base·ce + w_recency·recency`（`MAFW_RERANKER_RECENCY`/`recencyWeight`，默认 0 = R3 基线）。
 - **实测**（w=0.2，120 题）：overall R@1 **0.644 < 0.657**；knowledge-update 0.450→0.475（↑）但 user 0.900→0.850、preference 0.750→0.700（↓）。
-- **结论**：**近因竞争净负**（与 HeuristicReranker 近因零增益一致）。**R4 不做**。
+- **结论**：近因是**纯重排**机制（session/回合粒度都有测量面），净负成立。**R4 不做**（仅测了 w=0.2 一个点，如需可再扫权重）。
 
 ## 切片实测总结
 
 | 切片 | 结果 | 判定 |
 |---|---|---|
-| R1 查询改写（LLM） | 0.615 < 0.657 | ❌ 否决 |
-| R2 双过程级联（dense） | 0.622 < 0.657 | ❌ 否决 |
-| R3 验证层（Qwen3-Reranker） | **0.657**（+0.089） | ✅ **唯一已验证** |
-| R4 近因竞争 | 0.644 < 0.657 | ❌ 否决 |
-| R6 上下文复原 | 待实现（调研证据最强：CueMem/EdgeMem/EM-LLM） | → 见 §5 |
-| R5 FOK 元记忆门 | 待实现（防臆造结构防线） | → 见 §5 |
+| R1 查询改写（LLM） | 回合粒度 R@1 0.629 / R@10 0.960（↑）但 temporal R@1 ↓ | ◐ 部分翻案，不作默认 |
+| R2 双过程级联（dense） | 回合粒度 R@1 0.633 / R@10 0.929；R2+R3 **0.673/0.954** | ✅ **翻案（recall 层）** |
+| R3 验证层（Qwen3-Reranker） | 回合粒度 0.654 / 0.905；session 粒度 0.657 | ✅ 已验证 |
+| R4 近因竞争 | 0.644 < 0.657 | ❌ 否决（维持） |
+| R6 上下文复原（检索层） | 两粒度均零增益（真值粒度问题，非池饱和） | ❌ 检索层否决 → 改呈现层 |
+| R5 FOK 元记忆门 | 预检：top1OverMean AUROC 0.85–0.88（bm25）/ s1 0.95–1.0（hybrid） | ✅ GO |
 | R7 确定性线索抽取 | 待实现（标识符分词 + 逐字加权） | → 见 §5 |
 | R8 预测预取快照 | 待实现（延迟优化，非质量优化） | → 见 §5 |
 
 **结论修正（2026-09-27）**：R1–R4 的结论是"验证层是打分-排序阶段唯一有效的重构"，但**"剩余弱类型非检索层可修"的判断被新调研推翻**——CueMem（去图扩展 81.1→71.4）与 EdgeMem（episode 通道 +8.4）证明**命中锚点的时间邻居扩展**直接作用于 temporal/multi-session/knowledge-update 三类弱项。脑机制依据：lag-CRP（Kahana 1996）、TCM 上下文复原（Howard & Kahana 2002）、语义与时间信号可加（Polyn et al. 2009）。
 
-### R6 情景上下文复原（temporal neighbor bundling）—— 待实现，**证据最强**
+### R6 情景上下文复原（temporal neighbor bundling）—— ⚠ 检索层已实现并**否决**；改**呈现层** + L2
+
+**检索层实测（2026-09-28）**：`gateway/src/recall/temporal-neighbors.ts`（±window 时间邻居，同 session 权重 0.5 / 跨 session 0.35，跳过 superseded 与已入池项，确定性排序）已接线 `searchScored`（config `search.temporalNeighbors`，默认 off）。
+- session 粒度：与 base **逐指标完全一致**（池≈语料）。
+- 回合粒度（语料 500 vs 池 50）：仍**完全一致**；但 top-10 内容在 14/48 题确有变化——插入的邻居**全是同 session 回合**（同 session 回合时间上必然相邻；跨 session 邻居只在 session 边界出现，锚点落边界概率极低）。
+- **根因**：LongMemEval 真值是 **session 粒度**，同 session 邻居对 session 映射指标天然不可见。**不是池饱和**（回合粒度也零），是**真值粒度与机制作用面错配**。
+- **结论**：检索层代码保留（默认 off、有测试），**无 L1 测量面**；改为呈现层（邻居捆绑进注入块）+ **只靠 L2 reader 测量**（CueMem/EdgeMem 的增益也都在 reader/端到端）。
+
 - **依据**（详见调研 §2）：lag-CRP 效应（Kahana 1996）；CueMem 去扩展 81.1→71.4；EdgeMem episode 通道 +8.4；EM-LLM contiguity buffer（须 ≤ similarity buffer）。
 - **实现**（检索出口层，`harmonic-index.ts` 或 `search-hybrid.ts`）：
   1. BM25 命中（分超 floor）为锚点 → 捆绑同 session ±1 条目（对称窗，w∈{1,2} 在 LongMemEval 上调）；
@@ -126,13 +164,21 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 - **实现**：kv_store `recall-snapshot/{sessionID}`（top-N + 预格式化块 + queryHash）；后台刷新（回合完成防抖 / goal 变更 / 话题转移）；边界读快照 ~1ms，增量 >50 字符时跑正常搜索并**新鲜结果在前**合并；快照构建走 `resolveSupersededHeads`；话题转移检测确定性做在 gateway（LLM 会带陈旧上下文，2605.09268）。
 - **定位**：只解决 100ms 边界契约的覆盖问题，不提升 R@1。
 
-## 5. 优先级与依据（2026-09-27 修订）
+## 5. 优先级与依据（2026-09-28 修订）
 
-1. **R6 上下文复原**（调研证据最强，直击 temporal/multi-session/knowledge-update 三大弱项；呈现指令部分零风险）。
-2. **R5 FOK 门**（防臆造结构防线；脑机制对应最清晰）。
-3. **R7 线索抽取**（安全加性，先查写端保真）。
-4. **R8 预测预取**（只优化延迟）。
-5. ~~R3 接线~~（已完成）；~~R1/R2/R4~~（已实测否决）。
+1. **R5 FOK 门**（预检 GO；防臆造结构防线；特征选型已定：s1 / top1OverMean，阈值按检索配置分别标定）。
+2. **R6 呈现层**（检索层已否决；邻居捆绑 + "优先采用最近版本"指令进注入块，**靠 L2 reader 测**）。
+3. **R2+R3 生产接线设计**（已确认增益；边界 recall 100ms 契约：hybrid dense 融合可进，R3 reranker ~250ms 只能进显式/异步路径，待定）。
+4. **R7 线索抽取**（安全加性，先查写端保真）。
+5. **R8 预测预取**（只优化延迟）。
+6. ~~R3 接线~~（已完成）；~~R1~~（部分翻案但不作默认）；~~R4~~（维持否决）。
+
+## 5.1 测量方法（每个切片动工前的测量面预审）
+
+- 加候选类机制 → 跑 **回合粒度** R@k（或"新进 top-k 答案 session 数"），session 粒度会饱和
+- 重排类机制 → R@1 / NDCG@1
+- 上下文质量/呈现类机制 → **L2 reader**（L1 永远看不见）
+- 门控类机制 → 门控特征对命中的 **AUROC**（零成本离线预检，见 R5）
 
 ## 6. 非目标
 
@@ -143,7 +189,8 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 ## 7. 涉及文件
 
 - R3：`gateway/src/core/memory/llamacpp-reranker.ts`（新）、`reranker.ts`、`config.ts`（`search.reranker: 'llamacpp'`）、`mcp/handlers/search-hybrid.ts`、`index.ts`
-- R6：`gateway/src/core/memory/harmonic-index.ts`（检索出口扩展）、`inject-format.ts`（邻居块呈现）、`recall-context.ts`
+- R6：`gateway/src/recall/temporal-neighbors.ts`（新，检索层已实现默认 off）、`chronologicalOrder`；呈现层待做：`inject-format.ts`（邻居块呈现）、`recall-context.ts`
+- 基建：`gateway/src/core/utils/atomic-write.ts`（新，`renameWithRetry`——Windows `renameSync` 偶发 EPERM 硬化，已在 `harmonic-index.ts` `save()` 接线）
 - R5：`gateway/src/mcp/handlers/search-hybrid.ts`、`routes/recall-context.ts`（三区门 + 校准）
 - R7：`gateway/src/core/memory/harmonic-index.ts`（tokenizer 双索引）、query 预处理
 - R8：kv_store `recall-snapshot/{sessionID}`、`routes/recall-context.ts`、回合完成钩子
