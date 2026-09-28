@@ -99,6 +99,13 @@ export interface GatewayConfig {
     };
     /** Agent-driven iterative expansion rounds for mafw_search_hybrid (0 = first round only). */
     maxExpandRounds: number;
+    /**
+     * Budget for the boundary-path query expansion: each expansion search is a
+     * full-corpus BM25 pass, so the old 10-entity + 4-subquery fan-out
+     * (~250ms under load) blew the 100ms contract. 4 keeps cross-session
+     * bridging while fitting the budget.
+     */
+    expansionMaxSearches: number;
     /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
     fusionSparseWeight: number;
     /** Per-system retrieval channels (Phase C4b): fuse episodic vs semantic rankings via RRF. */
@@ -144,6 +151,13 @@ export interface GatewayConfig {
      */
     snapshot: {
       enabled: boolean;
+      /**
+       * Retriever used when BUILDING the snapshot. 'hybrid' (default) adds the
+       * R2 dense channel on top of BM25 before the R3 rerank — the combination
+       * measured best (round-granularity R@1 0.673 / NDCG@1 0.917). Falls back
+       * to BM25 automatically when no embedding provider is available.
+       */
+      retriever: 'bm25' | 'hybrid';
       ttlMs: number;
       maxTurns: number;
       maxChars: number;
@@ -385,6 +399,7 @@ function defaults(projectDir: string): GatewayConfig {
         diffusion: { enabled: true, iterations: 15, alpha: 0.85 },
       },
       maxExpandRounds: 2,
+      expansionMaxSearches: 4,
       /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
       fusionSparseWeight: 0.65,
       channelSplit: { enabled: true, episodicWeight: 0.3 },
@@ -421,6 +436,7 @@ function defaults(projectDir: string): GatewayConfig {
        */
       snapshot: {
         enabled: false,
+        retriever: 'hybrid',
         ttlMs: 10 * 60 * 1000,
         maxTurns: 4,
         maxChars: 600,

@@ -249,6 +249,47 @@ export class LlamaCppReranker implements Reranker {
     return ceScores;
   }
 
+  /**
+   * Rerank AND return the raw per-candidate relevance probabilities, from ONE
+   * scoring pass. R5 FOK consumes the same probabilities the reranker already
+   * computed — calling scoreCandidates separately doubled the GPU cost (~115ms)
+   * of every background snapshot build and starved the boundary path.
+   * Returns null when the sidecar is unavailable (caller falls back).
+   */
+  async rerankDetailed(
+    query: string,
+    candidates: ScoredEntry[],
+    topK: number,
+  ): Promise<{ scored: ScoredEntry[]; probs: number[] } | null> {
+    if (candidates.length === 0) return { scored: [], probs: [] };
+    let baseUrl: string;
+    let ceScores: number[];
+    try {
+      baseUrl = await this.ensureServer();
+      ceScores = await this.scoreAll(baseUrl, query, candidates);
+    } catch (err: any) {
+      log.warn(`[LlamaReranker] detailed scoring unavailable: ${err?.message || err}`);
+      return null;
+    }
+    const normCe = normalize(ceScores);
+    const normBm25 = normalize(candidates.map(c => c.score));
+    const recencyWeight = Math.max(0, Math.min(1, Number(process.env.MAFW_RERANKER_RECENCY ?? this.cfg.recencyWeight ?? 0) || 0));
+    const recency = normalize(candidates.map(c => {
+      const t = c.entry.created_at ? Date.parse(c.entry.created_at) : NaN;
+      return Number.isNaN(t) ? 0 : t;
+    }));
+    const base = (1 - recencyWeight) / 2;
+    const fused = candidates.map((c, i) => ({
+      ...c,
+      fusedScore: base * normBm25[i] + base * normCe[i] + recencyWeight * recency[i],
+    }));
+    fused.sort((a, b) => b.fusedScore - a.fusedScore);
+    return {
+      scored: fused.slice(0, topK).map(({ entry, score }) => ({ entry, score })),
+      probs: ceScores,
+    };
+  }
+
   async rerank(query: string, candidates: ScoredEntry[], topK: number): Promise<ScoredEntry[]> {
     if (candidates.length === 0) return [];
     let baseUrl: string;

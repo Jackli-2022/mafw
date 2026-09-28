@@ -1482,6 +1482,8 @@ class MafwScheduler {
   // ---- R8 predictive prefetch snapshot ----
   /** Per-session debounce timers for the background snapshot refresh. */
   private snapshotTimers = new Map<string, NodeJS.Timeout>();
+  /** Serialises snapshot builds (shared GPU sidecars). */
+  private snapshotBuildInFlight = false;
 
   /** Schedule a debounced snapshot refresh (called on each user turn). */
   private scheduleSnapshotRefresh(sessionID: string): void {
@@ -1504,6 +1506,19 @@ class MafwScheduler {
    */
   private async refreshSnapshot(sessionID: string): Promise<void> {
     if (!this.memoryService) return;
+    // One build at a time: each build does a dense embedding + a reranker pass,
+    // and concurrent builds starve the boundary path's own search.
+    if (this.snapshotBuildInFlight) return;
+    this.snapshotBuildInFlight = true;
+    try {
+      await this.refreshSnapshotInner(sessionID);
+    } finally {
+      this.snapshotBuildInFlight = false;
+    }
+  }
+
+  private async refreshSnapshotInner(sessionID: string): Promise<void> {
+    if (!this.memoryService) return;
     const db = this.getGatewayDb();
     const { buildSnapshot } = require('./recall/snapshot-builder');
     const { searchRecallMemoriesSync, recallNeighbors } = require('./recall/recall-context');
@@ -1521,10 +1536,25 @@ class MafwScheduler {
         }
         return out;
       },
-      search: (q: string, n: number) =>
-        searchRecallMemoriesSync(this.memoryService!.harmonicIndex, q, new Set<string>(), n, {
-          retriever: config.search.defaultRetriever as any,
-        }),
+      // R2+R3 wiring for the boundary path: build the snapshot with the dense
+      // channel (query embedding ~8ms, background so it is affordable) fused
+      // with BM25, then the R3 rerank — the best-measured combination. Falls
+      // back to BM25 when no embedding provider is configured/available.
+      search: async (q: string, n: number) => {
+        const { searchRecallMemories } = require('./recall/recall-context');
+        let denseScores: Map<string, number> | undefined;
+        if ((config.search.snapshot.retriever ?? 'hybrid') === 'hybrid') {
+          try {
+            const { computeDenseScores } = require('./memory/embedding-runtime');
+            denseScores = (await computeDenseScores(q, n * 4, this.memoryService!.harmonicIndex)) ?? undefined;
+          } catch { /* fail-open: BM25 only */ }
+        }
+        return searchRecallMemories(this.memoryService!.harmonicIndex, q, new Set<string>(), n, {
+          retriever: 'bm25',
+          denseScores,
+          scanSnapshot: this.getScanService()?.getSnapshot(sessionID) ?? null,
+        } as any);
+      },
       rerank: async (q: string, ms: any[]) => {
         const reranker = getReranker();
         if (!reranker) return ms;
@@ -1551,25 +1581,37 @@ class MafwScheduler {
           neighbors: neighbors && neighbors.size > 0 ? neighbors : undefined,
         }).pointers;
       },
-      // R5 FOK on the verification layer: the reranker's top-1 probability is
-      // the feature that actually discriminates unanswerable questions
-      // (AUROC 0.78 vs 0.58 for the BM25 score ratio) — affordable here because
-      // this runs in the background.
-      fokZone: config.search.fok?.enabled
+      // R3 + R5 in ONE reranker pass: the same scoring call yields both the
+      // reranked order and the top-1 relevance probability used by the FOK gate
+      // (two separate calls doubled the GPU cost and starved the boundary path).
+      verify: config.search.fok?.enabled || config.search.reranker !== 'off'
         ? async (q: string, ms: any[]) => {
             const r: any = getReranker();
-            if (!r || typeof r.scoreCandidates !== 'function' || ms.length === 0) return 'inject' as const;
-            const { zoneFromProbability } = require('./recall/fok-gate');
-            const probs: number[] = await r.scoreCandidates(
-              q,
-              ms.map((m: any) => ({
-                entry: { id: m.id, primary_abstraction: m.primary_abstraction, cue_anchors: [], created_at: m.created_at } as any,
-                score: m.score,
-              })),
-            );
-            const zone = zoneFromProbability(probs[0], config.search.fok.probLow, config.search.fok.probHigh);
-            log.info(`[Recall] FOK zone=${zone} (top1prob=${(probs[0] ?? 0).toFixed(3)}) for snapshot`);
-            return zone;
+            if (!r || ms.length === 0) return { memories: ms };
+            const byId = new Map(ms.map((m: any) => [m.id, m]));
+            const toScored = (m: any) => ({
+              entry: { id: m.id, primary_abstraction: m.primary_abstraction, cue_anchors: [], created_at: m.created_at } as any,
+              score: m.score,
+            });
+            if (typeof r.rerankDetailed === 'function') {
+              const detailed = await r.rerankDetailed(q, ms.map(toScored), ms.length);
+              if (!detailed) return { memories: ms };
+              const reranked = detailed.scored.map((s: any) => byId.get(s.entry.id)).filter(Boolean);
+              const topId = detailed.scored[0]?.entry?.id;
+              const topProb = topId ? detailed.probs[ms.findIndex((m: any) => m.id === topId)] : undefined;
+              let zone: any;
+              if (config.search.fok?.enabled && topProb !== undefined) {
+                const { zoneFromProbability } = require('./recall/fok-gate');
+                zone = zoneFromProbability(topProb, config.search.fok.probLow, config.search.fok.probHigh);
+                log.info(`[Recall] FOK zone=${zone} (top1prob=${topProb.toFixed(3)}) for snapshot`);
+              }
+              return { memories: reranked.length ? reranked : ms, fokStatus: zone };
+            }
+            // Fallback: rerank without probabilities (no FOK zone).
+            const { applyReranker } = require('./core/memory/reranker');
+            const scored = await applyReranker(q, ms.map(toScored), r, ms.length, 0);
+            const reranked = scored.map((s: any) => byId.get(s.entry.id)).filter(Boolean);
+            return { memories: reranked.length ? reranked : ms };
           }
         : undefined,
       store: (sid: string, s: any) => db.kvSet('recall-snapshot', sid, s),
@@ -5122,6 +5164,7 @@ class MafwScheduler {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const query = parsedUrl.searchParams.get('query') || '';
             const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+            const tGoal0 = Date.now();
             // Goal snapshot: injected every turn for the ACTIVE manager session
             // only (kv compare). Compaction-proof goal awareness (spec §3.4①).
             let goalSnap: string | null = null;
@@ -5139,6 +5182,8 @@ class MafwScheduler {
             // per-turn visibility until sticky_until passes (board-level
             // expiry only). Deterministic filter, fail-open like pinned;
             // injected even when the recall query is empty.
+            const tGoal = Date.now() - tGoal0;
+            const tNote0 = Date.now();
             let noteBoard: string | null = null;
             if (this.memoryService) {
               try {
@@ -5152,6 +5197,7 @@ class MafwScheduler {
                 noteBoard = nb.board;
               } catch { /* fail-open */ }
             }
+            const tNoteBoard = Date.now() - tNote0;
             if (!query.trim()) {
               const only = [noteBoard, goalSnap].filter(Boolean);
               res.writeHead(200);
@@ -5179,6 +5225,7 @@ class MafwScheduler {
             }
             let memories: any[] = [];
             let fokStatus: 'inject' | 'low-confidence' | 'no-memory' = 'inject';
+            const tSearch0 = Date.now();
             if (!snapshotPointers && this.memoryService) {
               // No push channel exists anymore (step-inject retired): nothing
               // is filtered out of boundary recall.
@@ -5202,6 +5249,7 @@ class MafwScheduler {
             }
             // R6 presentation (off by default): bundle chronological neighbours
             // under their anchors. Never re-ranks — presentation only.
+            const tNb0 = Date.now();
             let neighbors: Map<string, any[]> | undefined;
             if (config.search.temporalNeighbors?.presentation && memories.length > 0 && this.memoryService) {
               try {
@@ -5213,11 +5261,14 @@ class MafwScheduler {
                 neighbors = nb.size > 0 ? nb : undefined;
               } catch { neighbors = undefined; }
             }
+            const tNeighbors = Date.now() - tNb0;
             const formatted = snapshotPointers
               ? { pointers: snapshotPointers }
               : formatRecallContext(memories, { status: fokStatus, neighbors });
             const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
             const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
+            // Latency breakdown (debug): the boundary path has a 100ms contract.
+            log.debug(`[Recall] timing session=${sessionID || '-'} search=${snapshotPointers ? 0 : Date.now() - tSearch0}ms noteBoard=${tNoteBoard}ms goal=${tGoal}ms neighbours=${tNeighbors}ms`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ pointers }));
           } catch (err: any) {

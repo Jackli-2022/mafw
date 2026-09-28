@@ -1,4 +1,4 @@
-/**
+﻿/**
  * R8 snapshot builder: builds the expensive (reranked) pointer block in the
  * background and stores it for the boundary path; fails open at every step.
  */
@@ -34,7 +34,7 @@ describe('buildSnapshot', () => {
   test('applies the reranker and renders the reranked order', async () => {
     const snap = await buildSnapshot(
       deps({
-        rerank: async (_q, ms) => [...ms].reverse(),
+        verify: async (_q, ms) => ({ memories: [...ms].reverse() }),
       }),
       'ses_1',
     );
@@ -44,23 +44,31 @@ describe('buildSnapshot', () => {
 
   test('reranker failure is fail-open (keeps un-reranked ranking)', async () => {
     const snap = await buildSnapshot(
-      deps({ rerank: async () => { throw new Error('sidecar down'); } }),
+      deps({ verify: async () => { throw new Error('sidecar down'); } }),
       'ses_1',
     );
     expect(snap!.block).toBe('<recall>a,b,c</recall>');
   });
 
-  test('no recent turns / no hits / empty render → null (caller falls back)', async () => {
+  test('no recent turns / no hits / empty render 鈫?null (caller falls back)', async () => {
     expect(await buildSnapshot(deps({ recentTurnTexts: () => [] }), 'ses_1')).toBeNull();
     expect(await buildSnapshot(deps({ search: () => [] }), 'ses_1')).toBeNull();
     expect(await buildSnapshot(deps({ render: () => null }), 'ses_1')).toBeNull();
+  });
+
+  test('async search dep (dense channel) is awaited', async () => {
+    const snap = await buildSnapshot(
+      deps({ search: async (_q, n) => [mem('z', 1)].slice(0, n) }),
+      'ses_1',
+    );
+    expect(snap!.block).toBe('<recall>z</recall>');
   });
 
   test('R5 FOK zone from the verification layer is baked into the snapshot', async () => {
     const snap = await buildSnapshot(
       deps({
         render: (ms, status) => `<recall status="${status ?? 'inject'}">${ms.map(m => m.id).join(',')}</recall>`,
-        fokZone: async () => 'no-memory' as const,
+        verify: async (_q, ms) => ({ memories: ms, fokStatus: 'no-memory' as const }),
       }),
       'ses_1',
     );
@@ -68,11 +76,11 @@ describe('buildSnapshot', () => {
     expect(snap!.block).toContain('status="no-memory"');
   });
 
-  test('fail-open: fokZone throwing leaves the snapshot at the normal zone', async () => {
+  test('fail-open: verify throwing leaves the snapshot at the normal zone', async () => {
     const snap = await buildSnapshot(
       deps({
         render: (ms, status) => `<recall status="${status ?? 'inject'}">${ms.map(m => m.id).join(',')}</recall>`,
-        fokZone: async () => { throw new Error('reranker down'); },
+        verify: async () => { throw new Error('reranker down'); },
       }),
       'ses_1',
     );

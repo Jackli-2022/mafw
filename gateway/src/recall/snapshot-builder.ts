@@ -15,15 +15,16 @@ export const SNAPSHOT_SCOPE = 'recall-snapshot';
 export interface SnapshotDeps {
   /** Recent turn texts, oldest → newest (from T1 observations). */
   recentTurnTexts: (sessionID: string, maxTurns: number) => string[];
-  /** Cheap in-memory BM25 + expansion search (sync path). */
-  search: (query: string, topK: number) => RecallMemory[];
-  /** Optional verification layer; undefined = no rerank. */
-  rerank?: (query: string, memories: RecallMemory[]) => Promise<RecallMemory[]>;
+  /** Cheap in-memory BM25 + expansion search (sync path); may be async when
+   *  the dense channel (R2) needs a query embedding. */
+  search: (query: string, topK: number) => RecallMemory[] | Promise<RecallMemory[]>;
   /**
-   * R5 FOK zone from the verification layer's probability (background path can
-   * afford it; the 100ms boundary path cannot). Undefined = no gate.
+   * Verification layer + R5 FOK in ONE step: returns the reranked memories and
+   * the FOK zone derived from the same scoring pass (the reranker probability
+   * is the feature that actually discriminates unanswerable questions; the
+   * boundary path cannot afford it, this background path can).
    */
-  fokZone?: (query: string, memories: RecallMemory[]) => Promise<FokZone | undefined>;
+  verify?: (query: string, memories: RecallMemory[]) => Promise<{ memories: RecallMemory[]; fokStatus?: FokZone }>;
   /** Render the pointer block (formatRecallContext + neighbours + status). */
   render: (memories: RecallMemory[], status?: FokZone) => string | null;
   /** kv write (fail-open by the caller). */
@@ -47,20 +48,16 @@ export async function buildSnapshot(
   const query = snapshotQueryFromTurns(texts, cfg.maxChars ?? SNAPSHOT_DEFAULTS.maxChars);
   if (!query.trim()) return null;
 
-  let memories = deps.search(query, topK * 2);
+  let memories = await deps.search(query, topK * 2);
   if (memories.length === 0) return null;
-  if (deps.rerank) {
-    try {
-      memories = await deps.rerank(query, memories);
-    } catch { /* fail-open: keep the un-reranked ranking */ }
-  }
-  // R5 FOK: decide the zone here (the boundary path cannot afford the reranker
-  // probability this decision needs). Fail-open to 'inject'.
+  // R3 + R5 in one scoring pass; fail-open to the un-reranked ranking.
   let fokStatus: FokZone | undefined;
-  if (deps.fokZone) {
+  if (deps.verify) {
     try {
-      fokStatus = await deps.fokZone(query, memories);
-    } catch { /* fail-open */ }
+      const verified = await deps.verify(query, memories);
+      if (verified?.memories?.length) memories = verified.memories;
+      fokStatus = verified?.fokStatus;
+    } catch { /* fail-open: keep the un-reranked ranking, no gate */ }
   }
   const block = deps.render(memories, fokStatus);
   if (!block) return null;

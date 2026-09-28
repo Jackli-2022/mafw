@@ -122,8 +122,10 @@ function expandQuery(
   query: string,
   pushed: Set<string>,
   topK: number = 3,
+  maxSearches: number = config.search.expansionMaxSearches ?? 4,
 ): { id: string; score: number }[] {
   const expandedScores = new Map<string, number>();
+  let used = 0;
   const accumulate = (hits: Array<{ entry: any; score: number }>, weight: number) => {
     const norms = maxNormalize(hits.map(h => h.score));
     hits.forEach((h, i) => {
@@ -133,18 +135,25 @@ function expandQuery(
     });
   };
 
-  // Strategy 1: entity-based expansion (individual entity searches)
+  // Strategy 1: entity-based expansion (individual entity searches).
+  // Budget-capped: each search is a full-corpus BM25 pass, and the old
+  // 10-entity + 4-subquery fan-out (14 passes ≈ 250ms under load) was the
+  // dominant cost of the 100ms boundary path.
   const entities = extractQueryEntities(query);
   for (const entity of entities) {
+    if (used >= maxSearches) break;
     const hits = fetchScored(index, entity, topK, {});
     accumulate(hits, 0.4);
+    used++;
   }
 
   // Strategy 2: multi-hop decomposition (sub-query searches)
   const subQueries = decomposeMultiHopQuery(query);
   for (const sq of subQueries) {
+    if (used >= maxSearches) break;
     const hits = fetchScored(index, sq, topK, {});
     accumulate(hits, 0.35);
+    used++;
   }
 
   // Sort by accumulated score
@@ -175,6 +184,8 @@ export interface SearchRecallOptions {
   retriever?: 'token' | 'bm25'
   /** Precomputed scan snapshot (from async prefetch) to merge in-memory. */
   scanSnapshot?: ScanResult | null
+  /** R2 dense channel: fused inside searchScored via RRF (boundary/snapshot paths). */
+  denseScores?: Map<string, number>
 }
 
 /** Multi-topic blob abstraction (chained MinHash merges) 鈥?dilutes precision. */
@@ -260,7 +271,10 @@ function maxNormalize(values: number[]): number[] {
 /** Fetch scored candidates preferring searchScored (raw scores) with a legacy search() fallback. */
 function fetchScored(index: any, query: string, topK: number, options: SearchRecallOptions): Array<{ entry: any; score: number }> {
   if (typeof index.searchScored === 'function') {
-    return index.searchScored(query, topK, { retriever: options.retriever ?? 'bm25' }) || []
+    return index.searchScored(query, topK, {
+      retriever: options.retriever ?? 'bm25',
+      ...(options.denseScores ? { denseScores: options.denseScores } : {}),
+    }) || []
   }
   return (index.search(query, topK, options) || []).map((e: any) => ({ entry: e, score: 0.5 }))
 }
