@@ -15,6 +15,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { SessionStrip } from "./components/SessionStrip"
+import { DockTabButtons } from "./components/DockTabButtons"
 import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
@@ -1523,49 +1524,8 @@ export function MafwShell() {
         onConfirm={() => { const req = confirmReq(); setConfirmReq(null); req?.onConfirm() }}
         onCancel={() => setConfirmReq(null)}
       />
-      <div
-        class="mafw-titlebar"
-        onDblClick={(e) => {
-          if (window.api.platform !== "win32") return
-          if ((e.target as HTMLElement).closest("button")) return
-          void window.api.windowControls.toggleMaximize()
-        }}
-      >
-        <Icon name="logo" size="small" />
-        <span style={{ "font-size": 13, "font-weight": 600, color: "var(--text-2)" }}>MAFW</span>
-        <TooltipV2
-          value={
-            connPhase() === "down" ? "Gateway 已断开，正在自动重启…" :
-            connPhase() === "reconnecting" ? `Gateway 正在重连（第 ${conn.attempts()} 次尝试）` :
-            connPhase() === "connected" ? "Gateway 已连接" :
-            gwStatus()?.state === "starting" ? "Gateway 启动中" :
-            gwStatus()?.state === "failed" ? "Gateway 启动失败" :
-            gwStatus()?.state === "stopped" ? "Gateway 已停止" :
-            "Gateway 启动中"
-          }
-          openDelay={300}
-        >
-          <div class="mafw-titlebar-dot" classList={{
-            ready: connPhase() === "connected" && gwStatus()?.state !== "starting",
-            reconnecting: connPhase() === "reconnecting",
-            failed: connPhase() === "down" || gwStatus()?.state === "failed",
-            starting: connPhase() === "initial" || gwStatus()?.state === "starting",
-            stopped: connPhase() !== "down" && connPhase() !== "reconnecting" && connPhase() !== "connected" && gwStatus()?.state === "stopped",
-          }} style={{ "margin-left": 4 }} />
-        </TooltipV2>
-        <TooltipV2 value="切换主题" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" class="mafw-theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme() === 'light' ? '☀' : (
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <path d="M11.2 8.9A5 5 0 1 1 5.1 2.8a4 4 0 0 0 6.1 6.1Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            )}
-          </ButtonV2>
-        </TooltipV2>
-        <div style={{ flex: 1 }} />
-        <WindowControls />
-      </div>
-      <div class="mafw-body" style={{ "grid-template-columns": `${railCollapsed() ? 32 : railWidth()}px 1fr ${rightDockOpen() && !viewportNarrow() ? `${rightDockWidth()}px` : "0px"}` }}>
+      {/* 左列：rail 通高（grid-row 1/-1），折叠态 32px 不变 */}
+      <div class="mafw-rail-col">
         {railCollapsed() ? (
           <div class="mafw-rail-collapsed">
             <ButtonV2 variant="ghost" size="small" class="mafw-rail-expand" onClick={() => applyRailCollapsed(false)} aria-label="展开侧边栏">
@@ -1608,6 +1568,41 @@ export function MafwShell() {
             />
           </div>
         )}
+      </div>
+      {/* 顶行：strip（会话 tab 恒显）+ dock 图标组 + 窗口控制 */}
+      <div
+        class="mafw-topstrip"
+        onDblClick={(e) => {
+          if (window.api.platform !== "win32") return
+          if ((e.target as HTMLElement).closest("button,input,[data-component],a")) return
+          void window.api.windowControls.toggleMaximize()
+        }}
+      >
+        <SessionStrip
+          sessions={sessions}
+          activeViewId={activeViewId}
+          onSelect={(id) => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
+          onClose={closeSession}
+          onRename={(id, next) => {
+            setSessions(prev => prev.map(x => x.id === id ? { ...x, title: next } : x))
+            setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title: next } : x) }))
+            window.api.mafw.sessions.rename(id, next)
+              .catch((err: any) => showToastV2({ description: `重命名失败: ${err?.message || err}`, duration: 3000 }))
+          }}
+          onExport={(id) => void exportSession(id)}
+          onCopyId={copyText}
+          onNew={createSession}
+        />
+        <div class="mafw-topstrip-spacer" />
+        <DockTabButtons
+          tab={rightDockTab}
+          open={rightDockOpen}
+          onToggle={(t) => applyRightDock(!(rightDockOpen() && rightDockTab() === t), t)}
+        />
+        <WindowControls />
+      </div>
+      {/* 右列下行：main | dock */}
+      <div class="mafw-body" style={{ "grid-template-columns": `1fr ${rightDockOpen() && !viewportNarrow() ? `${rightDockWidth()}px` : "0px"}` }}>
         <div class="mafw-main">
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>
@@ -1617,22 +1612,6 @@ export function MafwShell() {
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : activeTab() === "chat" ? (
               <div class="mafw-chat">
-                {/* SessionStrip */}
-                <SessionStrip
-                  sessions={sessions}
-                  activeViewId={activeViewId}
-                  onSelect={(id) => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
-                  onClose={closeSession}
-                  onRename={(id, next) => {
-                    setSessions(prev => prev.map(x => x.id === id ? { ...x, title: next } : x))
-                    setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title: next } : x) }))
-                    window.api.mafw.sessions.rename(id, next)
-                      .catch((err: any) => showToastV2({ description: `重命名失败: ${err?.message || err}`, duration: 3000 }))
-                  }}
-                  onExport={(id) => void exportSession(id)}
-                  onCopyId={copyText}
-                  onNew={createSession}
-                />
                 {/* Single ChatPane for the active session */}
                 <Show
                   when={showWelcome() || !activeSessionId()}
@@ -1785,10 +1764,8 @@ export function MafwShell() {
             ) : (
             <RightDock
               open={rightDockOpen()}
-              tab={rightDockTab()}
               width={rightDockWidth()}
               onClose={() => applyRightDock(false)}
-              onTab={(t) => applyRightDock(true, t)}
             >
               <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
                     <TaskList

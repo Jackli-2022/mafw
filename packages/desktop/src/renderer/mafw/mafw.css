@@ -431,6 +431,7 @@ html[data-theme="light"] body {
 /* ── Shell Layout ── */
 .mafw-shell {
   display: grid;
+  grid-template-columns: auto 1fr;
   grid-template-rows: 38px 1fr;
   height: 100vh;
   background: var(--background-base);
@@ -438,19 +439,19 @@ html[data-theme="light"] body {
   font-variant-numeric: tabular-nums;   /* §4.8: 所有数字等宽（耗时/token/计数） */
 }
 
-/* ── Titlebar (38px, §4.1) ── */
-.mafw-titlebar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 0 0 12px;
-  height: 38px;
+/* ── Topframe 顶行（38px）：strip + dock 图标 + 窗口控制 ── */
+.mafw-topstrip {
+  display: flex; align-items: center; gap: 4px;
+  height: 38px; padding: 0 0 0 8px;
   background: var(--bg-base);
   border-bottom: 1px solid var(--border-subtle);
   -webkit-app-region: drag;
   user-select: none;
 }
-.mafw-titlebar button, .mafw-titlebar .mafw-theme-toggle { -webkit-app-region: no-drag; }
+.mafw-topstrip button, .mafw-topstrip input, .mafw-topstrip .mafw-session-tab { -webkit-app-region: no-drag; }
+.mafw-topstrip-spacer { flex: 1; }
+.mafw-dock-buttons { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.mafw-dock-button.active { background: var(--bg-overlay); color: var(--text-1); }
 
 /* ── Window controls (win32 自绘 caption 按钮, Win11 Fluent) ── */
 .mafw-window-controls { display: flex; align-self: stretch; flex-shrink: 0; -webkit-app-region: no-drag; }
@@ -492,8 +493,11 @@ html[data-theme="light"] body {
 }
 .mafw-theme-toggle:hover { color: var(--text-2); background: var(--hover); }
 
-/* ── Body ── */
-.mafw-body { display: grid; grid-template-columns: 264px 1fr; overflow: hidden; }
+/* ── Body（仅 main | dock 两列，列宽由 inline style 接管的右列） ── */
+.mafw-body { display: grid; grid-template-columns: 1fr; overflow: hidden; min-height: 0; }
+
+/* ── Rail column（通高：跨顶行与 body 行） ── */
+.mafw-rail-col { grid-row: 1 / -1; display: flex; min-height: 0; }
 
 /* ── Rail ── */
 .mafw-rail {
@@ -646,11 +650,12 @@ html[data-theme="light"] body {
   display: flex;
   gap: 4px;
   align-items: center;
-  height: 36px;
+  height: 38px;
   padding: 0 8px;
   background: var(--bg-base);
   overflow-x: auto;
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .mafw-session-tab {
   display: flex;
@@ -2727,7 +2732,7 @@ html[data-theme="light"] .mafw-picker-pop {
   z-index: 70;
   box-shadow: var(--elev-panel);
 }
-.mafw-right-dock-tabs {
+.mafw-right-dock-head {
   display: flex;
   align-items: center;
   gap: 4px;

@@ -659,8 +659,8 @@ describe("DiffReviewPanel 接线", () => {
 
 describe("Dock changes tab（改动列表常驻入口）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
-  test("RightDock 含 changes trigger", () => {
-    expect(read("src/renderer/mafw/components/RightDock.tsx")).toContain('value="changes"')
+  test("DockTabButtons 含 changes trigger（tab 条从 RightDock 迁至顶行）", () => {
+    expect(read("src/renderer/mafw/components/DockTabButtons.tsx")).toContain('"changes"')
   })
   test("MafwShell 挂载 ChangesDock 到 dock 内容区", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
@@ -782,5 +782,39 @@ describe("topframe — SessionStrip 组件提取", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toContain("<SessionStrip")
     expect(shell).not.toContain('class="mafw-session-tab"')
+  })
+})
+
+describe("topframe — 顶行框架", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("无 .mafw-titlebar 移除；WindowControls 入顶行", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).not.toContain('class="mafw-titlebar"')
+    const stripIdx = shell.indexOf('class="mafw-topstrip"')
+    expect(stripIdx).toBeGreaterThan(-1)
+    expect(shell.indexOf("<WindowControls", stripIdx)).toBeGreaterThan(stripIdx)
+  })
+  test("顶行含 SessionStrip 与 DockTabButtons", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    const stripIdx = shell.indexOf('class="mafw-topstrip"')
+    expect(shell.indexOf("<SessionStrip", stripIdx)).toBeGreaterThan(stripIdx)
+    expect(shell.indexOf("<DockTabButtons", stripIdx)).toBeGreaterThan(stripIdx)
+  })
+  test("DockTabButtons 组件：五 tab 图标组 + 点当前关闭语义", () => {
+    const src = read("src/renderer/mafw/components/DockTabButtons.tsx")
+    for (const t of ["tasks", "trajectory", "usage", "notes", "changes"]) expect(src).toContain(`"${t}"`)
+    expect(src).toContain("props.open() && props.tab() === t")
+  })
+  test("RightDock 不再渲染 tab 条，保留关闭按钮", () => {
+    const src = read("src/renderer/mafw/components/RightDock.tsx")
+    expect(src).not.toContain("TabsV2")
+    expect(src).toContain("mafw-right-dock-close")
+  })
+  test("CSS：topstrip 拖拽契约", () => {
+    expect(css).toMatch(/\.mafw-topstrip\s*\{[^}]*-webkit-app-region:\s*drag/)
+    expect(css).toMatch(/\.mafw-topstrip\s+button[^{]*\{[^}]*-webkit-app-region:\s*no-drag/)
+  })
+  test("CSS：旧 titlebar 规则删除", () => {
+    expect(css).not.toMatch(/\.mafw-titlebar\s*\{/)
   })
 })
