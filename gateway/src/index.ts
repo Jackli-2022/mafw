@@ -5090,8 +5090,12 @@ class MafwScheduler {
             let neighbors: Map<string, any[]> | undefined;
             if (config.search.temporalNeighbors?.presentation && memories.length > 0 && this.memoryService) {
               try {
-                neighbors = recallNeighbors(this.memoryService.harmonicIndex, memories, config.search.temporalNeighbors);
-                if (neighbors.size === 0) neighbors = undefined;
+                const nb: Map<string, any[]> = recallNeighbors(
+                  this.memoryService.harmonicIndex,
+                  memories,
+                  config.search.temporalNeighbors,
+                );
+                neighbors = nb.size > 0 ? nb : undefined;
               } catch { neighbors = undefined; }
             }
             const formatted = formatRecallContext(memories, { status: fokStatus, neighbors });

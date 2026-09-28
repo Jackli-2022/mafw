@@ -33,6 +33,7 @@ import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./tur
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { summarizeTools } from "./tool-summary"
+import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { formatComposerMeta } from "./composer-meta"
 import { type PermissionMode } from "./permission-card-mapping"
 import { aggregateSessionDiffs } from "./session-diffs"
@@ -963,7 +964,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const hasInlineAnchor = (c: FlowCardRecord): boolean => hasInlineAnchorSlot(c, flowSlotPartsOf)
 
   const inlineCardsForPart = (messageID: string, callID: string): FlowCardRecord[] =>
-    inlineCardsForPartSlot(flowSlotCards(), messageID, callID, flowSlotPartsOf) as FlowCardRecord[]
+    // v6 追加需求：审批卡不再内联（统一走回合底部汇总行）；仅提问卡保持内联。
+    inlineCardsForPartSlot(flowSlotCards(), messageID, callID, flowSlotPartsOf)
+      .filter((c: any) => c?.kind !== "permission") as FlowCardRecord[]
 
   const renderFlowCard = (c: FlowCardRecord) => {
     const sc = props.sessionCards(sidProp())
@@ -996,7 +999,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const cardsForTurn = (userMsgId: string): FlowCardRecord[] =>
     cardsForTurnSlot(flowSlotCards(), userMsgId, store, sidProp(), flowSlotPartsOf, userMessages()) as FlowCardRecord[]
 
-  // Cards that could not be placed into any turn (no/unknown message link).
+  // 回合底部：审批卡汇总为一行（ApprovalSummaryLine），其余卡（无锚点的提问卡）照旧渲染。
+  const permissionCardsForTurn = (userMsgId: string): FlowCardRecord[] =>
+    cardsForTurn(userMsgId).filter((c: any) => c?.kind === "permission")
+  const otherCardsForTurn = (userMsgId: string): FlowCardRecord[] =>
+    cardsForTurn(userMsgId).filter((c: any) => c?.kind !== "permission")
   // These are now attached to the last user turn via cardsForTurn, so this
   // returns empty when there are user messages.
   const unplacedCards = (): FlowCardRecord[] =>
@@ -1239,9 +1246,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       </div>
                     )}
                   </For>
-                  <For each={cardsForTurn(msg.id)}>
+                  <For each={otherCardsForTurn(msg.id)}>
                     {(c) => renderFlowCard(c)}
                   </For>
+                  {/* 审批卡统一在回合最下方汇总为一行，点击展开原卡片 */}
+                  <ApprovalSummaryLine
+                    cards={permissionCardsForTurn(msg.id)}
+                    renderCard={renderFlowCard}
+                  />
                 </>
                 </ErrorBoundary>
                 </div>
@@ -1253,9 +1265,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </For>
             {/* Flow cards without a resolvable turn link stay at the bottom */}
             <Show when={sidProp()}>
-              <For each={unplacedCards()}>
+              <For each={unplacedCards().filter((c: any) => c?.kind !== "permission")}>
                 {(c) => renderFlowCard(c)}
               </For>
+              <ApprovalSummaryLine
+                cards={unplacedCards().filter((c: any) => c?.kind === "permission")}
+                renderCard={renderFlowCard}
+              />
             </Show>
           </Show>
         </div>

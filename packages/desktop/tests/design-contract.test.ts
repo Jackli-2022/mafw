@@ -669,6 +669,27 @@ describe("DiffReviewPanel 两栏（B2：文件树 + 单文件预览）", () => {
   })
 })
 
+describe("审批卡汇总为一行（v6 追加）", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("ChatPane 不再内联审批卡（仅提问卡内联）", () => {
+    const src = read("src/renderer/mafw/components/ChatPane.tsx")
+    expect(src).toContain('c?.kind !== "permission"')
+    expect(src).toContain("ApprovalSummaryLine")
+  })
+  test("回合底部渲染审批汇总行", () => {
+    const src = read("src/renderer/mafw/components/ChatPane.tsx")
+    expect(src).toContain("permissionCardsForTurn")
+  })
+  test("汇总行组件用 tool summary line 样式且不改卡片逻辑", () => {
+    const src = read("src/renderer/mafw/components/ApprovalSummaryLine.tsx")
+    expect(src).toContain("mafw-tool-summary-line")
+    expect(src).toContain("summarizeApprovals")
+  })
+  test("汇总行样式存在", () => {
+    expect(cssBlock(".mafw-approval-summary-line {")).not.toBe("")
+  })
+})
+
 describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
   test("面板含评论输入 UI", () => {
