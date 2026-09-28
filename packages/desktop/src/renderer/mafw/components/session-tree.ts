@@ -49,6 +49,26 @@ const toNode = (s: SessionInfo, projectDir: string, manager: boolean): SessionNo
   worktree: worktreeBadge(s.directory, projectDir),
 })
 
+/** 逐项目分页（v6 修复）：恢复被重写丢失的 limit，避免一次渲染数千会话行。 */
+export const RAIL_PAGE_SIZE = 100
+
+export function pageGroups(
+  groups: ProjectNode["groups"],
+  limit: number,
+): { groups: ProjectNode["groups"]; total: number; hasMore: boolean } {
+  const total = groups.reduce((n, g) => n + g.items.length, 0)
+  if (limit >= total) return { groups, total, hasMore: false }
+  const out: ProjectNode["groups"] = []
+  let left = limit
+  for (const g of groups) {
+    if (left <= 0) break
+    const items = g.items.slice(0, left)
+    out.push({ label: g.label, items })
+    left -= items.length
+  }
+  return { groups: out, total, hasMore: true }
+}
+
 export function buildSessionTree(
   projects: { id: string; name?: string; worktree?: string }[],
   sessionsByProject: Record<string, SessionInfo[]>,

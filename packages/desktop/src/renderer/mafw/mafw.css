@@ -530,7 +530,7 @@ html[data-theme="light"] body {
 .mafw-rail-search input { width: 100%; font-size: 13px; }
 /* ── Scroll area: Swiss folio date groups + flat session rows ── */
 .mafw-rail-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 8px; }
-.mafw-rail-date-group { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 6px; padding: 10px 12px 4px; background: var(--bg-base); color: var(--text-5); font-size: 11px; font-weight: 500; letter-spacing: .04em; user-select: none; }
+.mafw-rail-date-group { display: flex; align-items: baseline; gap: 6px; padding: 10px 12px 4px; background: var(--bg-base); color: var(--text-5); font-size: 11px; font-weight: 500; letter-spacing: .04em; user-select: none; }
 .mafw-rail-date-group::after { content: ""; order: 3; flex: 1; height: 1px; background: var(--border-subtle); transform: translateY(-2px); }
 .mafw-rail-date-count { order: 2; margin-left: auto; font-variant-numeric: tabular-nums; font-size: 10px; opacity: .8; }
 .mafw-rail-scroll > .mafw-rail-date-group:first-child { padding-top: 6px; }
@@ -4802,3 +4802,12 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-trajectory-node.error .mafw-trajectory-tool-name { color: var(--danger); }
 .mafw-trajectory-node-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font: 12px/1.6 var(--font-ui); color: var(--text-3); }
 .mafw-trajectory-node-row .mafw-trajectory-duration { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-4); }
+
+/* ── Rail 会话树嵌套（v6 修复：子项缩进在项目节点之下，明确从属关系）── */
+.mafw-rail-project-body { padding-left: 14px; }
+.mafw-rail-project-count {
+  margin-left: auto; min-width: 16px; padding: 0 5px;
+  font-size: 10px; line-height: 15px; text-align: center;
+  color: var(--text-5); background: var(--pill); border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}

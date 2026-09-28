@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { buildSessionTree } from "./session-tree"
+import { buildSessionTree, pageGroups } from "./session-tree"
 
 const NOW = new Date(2026, 8, 28, 12, 0, 0).getTime()
 const DAY = 86400000
@@ -59,5 +59,32 @@ describe("buildSessionTree", () => {
     const tree = buildSessionTree(projects, {}, P1, NOW)
     expect(tree[1].groups).toEqual([])
     expect(tree[1].manager).toBeNull()
+  })
+})
+
+describe("pageGroups（v6 修复：逐项目分页）", () => {
+  const groups = [
+    { label: "今天", items: [{ id: "a" }, { id: "b" }] },
+    { label: "昨天", items: [{ id: "c" }] },
+    { label: "9月", items: [{ id: "d" }, { id: "e" }, { id: "f" }] },
+  ] as any
+
+  test("limit 大于总数时原样返回", () => {
+    const r = pageGroups(groups, 10)
+    expect(r.hasMore).toBe(false)
+    expect(r.groups.flatMap((g: any) => g.items).map((i: any) => i.id)).toEqual(["a", "b", "c", "d", "e", "f"])
+    expect(r.total).toBe(6)
+  })
+
+  test("跨组截断，保留前 limit 条并标记 hasMore", () => {
+    const r = pageGroups(groups, 3)
+    expect(r.groups.flatMap((g: any) => g.items).map((i: any) => i.id)).toEqual(["a", "b", "c"])
+    expect(r.hasMore).toBe(true)
+    expect(r.total).toBe(6)
+  })
+
+  test("limit 落在组中间时该组被裁剪", () => {
+    const r = pageGroups(groups, 4)
+    expect(r.groups.map((g: any) => [g.label, g.items.length])).toEqual([["今天", 2], ["昨天", 1], ["9月", 1]])
   })
 })

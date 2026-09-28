@@ -13,7 +13,7 @@ import { ConfirmOverlay } from "./ConfirmOverlay"
 import { sessionStore } from "../session-store"
 import { useConnPhase } from "../connection-state"
 import { ConnBanner } from "./ConnBanner"
-import { buildSessionTree, type SessionNode, type ProjectNode } from "./session-tree"
+import { buildSessionTree, pageGroups, RAIL_PAGE_SIZE, type SessionNode, type ProjectNode } from "./session-tree"
 import { NAV_TABS, type NavTab } from "./nav-tab"
 
 const copyText = async (text: string) => {
@@ -95,13 +95,13 @@ export function Rail(props: Props) {
     setExpanded(prev => (prev[pid] ? prev : { ...prev, [pid]: true }))
   })
 
-  // 已展开（或搜索中）项目的会话；sessionsFor 首访触发懒拉取。
+  // 展开项目的会话；sessionsFor 首访触发懒拉取（搜索不自动加载未展开项目）。
   const sessionsByProject = createMemo(() => {
     const out: Record<string, any[]> = {}
     for (const p of projects()) {
       const pid = p.worktree || p.id
       if (!pid) continue
-      if (!expanded()[pid] && !searching()) continue
+      if (!expanded()[pid]) continue
       out[pid] = sessionStore.sessionsFor(pid)
     }
     return out
@@ -109,7 +109,21 @@ export function Rail(props: Props) {
 
   const tree = createMemo(() => buildSessionTree(projects(), sessionsByProject(), projectID()))
 
-  // 搜索：跨已加载项目过滤；项目无命中则不显示。
+  // 项目会话计数徽标（仅统计已加载过的项目，保持懒加载）。
+  const [counts, setCounts] = createSignal<Record<string, number>>({})
+  createEffect(() => {
+    const loaded = sessionsByProject()
+    setCounts(prev => {
+      let next = prev
+      for (const pid of Object.keys(loaded)) {
+        const n = loaded[pid].length
+        if (next[pid] !== n) { next = { ...next, [pid]: n } }
+      }
+      return next
+    })
+  })
+
+  // 搜索：跨已展开项目过滤；项目无命中则不显示。
   const filteredTree = createMemo<ProjectNode[]>(() => {
     const q = query().trim().toLowerCase()
     if (!q) return tree()
@@ -130,6 +144,24 @@ export function Rail(props: Props) {
     filteredTree().flatMap(p => [...(p.manager ? [p.manager] : []), ...p.groups.flatMap(g => g.items)]),
   )
 
+  // 高亮节点 id（O(1) 比较，避免每个节点一次 indexOf 的 O(n²)）。
+  const hiNodeId = createMemo(() => {
+    const i = hi()
+    if (i < 0) return null
+    return flatResults().slice(0, SEARCH_CAP)[i]?.id ?? null
+  })
+
+  // 逐项目分页（修复：曾一次渲染数千会话行）。
+  const [limits, setLimits] = createSignal<Record<string, number>>({})
+  const limitFor = (pid: string) => limits()[pid] ?? RAIL_PAGE_SIZE
+  const showMore = (pid: string) => setLimits(prev => ({ ...prev, [pid]: (prev[pid] ?? RAIL_PAGE_SIZE) + RAIL_PAGE_SIZE }))
+  const pagedOf = (p: ProjectNode) => pageGroups(p.groups, limitFor(p.projectID))
+  // 搜索命中总数超过上限时的截断提示。
+  const searchTruncated = createMemo(() => searching() && flatResults().length > SEARCH_CAP)
+  const collapsedUnsearched = createMemo(() =>
+    searching() && projects().some(pr => !expanded()[pr.worktree || pr.id]),
+  )
+
   const offline = createMemo(() => (projectID() ? sessionStore.isOffline(projectID()) : false) || connPhase() === "down")
 
   // 当前项目的 manager 节点（用于 ManagerCard 更新时间）。
@@ -137,8 +169,6 @@ export function Rail(props: Props) {
     const pid = projectID()
     return tree().find(p => p.projectID === pid)?.manager ?? null
   })
-
-  const truncated = createMemo(() => searching() && flatResults().length > SEARCH_CAP)
 
   const onSearchKeyDown = (e: KeyboardEvent) => {
     const list = flatResults().slice(0, SEARCH_CAP)
@@ -253,7 +283,7 @@ export function Rail(props: Props) {
           as="div"
           class="mafw-rail-session"
           classList={{ active: props.activeSessionId === node.id }}
-          data-hi={flatResults().indexOf(node) === hi() ? "1" : undefined}
+          data-hi={hiNodeId() === node.id ? "1" : undefined}
           onClick={() => openNode(node, p)}
         >
           <TooltipV2 value={node.worktree ? `worktree：${node.worktree}` : new Date(node.updated || Date.now()).toLocaleString()} openDelay={300}>
@@ -408,31 +438,41 @@ export function Rail(props: Props) {
               >
                 <span class="mafw-rail-project-caret" aria-hidden="true">{expanded()[p.projectID] ? "▾" : "▸"}</span>
                 <span class="mafw-rail-project-name">{p.name?.split(/[/\\]/).pop() || p.projectID}</span>
-              </div>
-              <Show when={expanded()[p.projectID] || searching()}>
-                <Show when={p.manager}>{renderNode(p.manager!, p)}</Show>
-                <For each={p.groups}>
-                  {(g) => (
-                    <>
-                      <div class="mafw-rail-date-group">
-                        <span>{g.label}</span>
-                        <span class="mafw-rail-date-count">{g.items.length}</span>
-                      </div>
-                      <For each={g.items}>{(node) => renderNode(node, p)}</For>
-                    </>
-                  )}
-                </For>
-                <Show when={!p.manager && p.groups.length === 0 && (sessionsByProject()[p.projectID]?.length ?? 0) === 0 && !sessionStore.isLoading()}>
-                  <div class="mafw-rail-empty">No sessions yet</div>
+                <Show when={counts()[p.projectID] !== undefined}>
+                  <span class="mafw-rail-project-count">{counts()[p.projectID]}</span>
                 </Show>
+              </div>
+              <Show when={expanded()[p.projectID]}>
+                <div class="mafw-rail-project-body">
+                  <Show when={p.manager}>{renderNode(p.manager!, p)}</Show>
+                  <For each={pagedOf(p).groups}>
+                    {(g) => (
+                      <>
+                        <div class="mafw-rail-date-group">
+                          <span>{g.label}</span>
+                          <span class="mafw-rail-date-count">{g.items.length}</span>
+                        </div>
+                        <For each={g.items}>{(node) => renderNode(node, p)}</For>
+                      </>
+                    )}
+                  </For>
+                  <Show when={!p.manager && p.groups.length === 0 && !sessionStore.isLoading()}>
+                    <div class="mafw-rail-empty">No sessions yet</div>
+                  </Show>
+                  <Show when={pagedOf(p).hasMore}>
+                    <div class="mafw-rail-load-more" onClick={() => showMore(p.projectID)}>
+                      加载更多（还有 {pagedOf(p).total - limitFor(p.projectID)} 条）
+                    </div>
+                  </Show>
+                </div>
               </Show>
             </div>
           )}
         </For>
-        <Show when={truncated()}>
+        <Show when={searchTruncated()}>
           <div class="mafw-rail-load-more">仅显示前 {SEARCH_CAP} 条结果</div>
         </Show>
-        <Show when={searching() && projects().some(pr => !expanded()[pr.worktree || pr.id])}>
+        <Show when={collapsedUnsearched()}>
           <div class="mafw-rail-empty">展开项目以搜索其会话</div>
         </Show>
       </div>
