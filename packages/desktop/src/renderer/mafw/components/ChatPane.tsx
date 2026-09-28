@@ -33,6 +33,7 @@ import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./tur
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { summarizeTools } from "./tool-summary"
+import { formatComposerMeta } from "./composer-meta"
 import { type PermissionMode } from "./permission-card-mapping"
 import { aggregateSessionDiffs } from "./session-diffs"
 
@@ -746,6 +747,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
 
   const busy = () => store.session_status[sidProp()]?.type === "busy"
+
+  // composer 元数据（v6 §3）：streaming 时逐秒跳（reduced-motion 下环境不宜逐秒亦无害），
+  // 空闲时只显示冻结的 token 数。数据面复用 taskMetrics（无新增请求）。
+  const [metaNow, setMetaNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (!busy()) return
+    const t = setInterval(() => setMetaNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(t))
+  })
+  const composerMeta = () => {
+    const sid = sidProp()
+    if (!sid) return ""
+    const m = props.taskMetrics(sid)
+    const streaming = busy()
+    const elapsedMs = streaming && m.started ? metaNow() - m.started : null
+    return formatComposerMeta({ elapsedMs, tokens: m.tokens || null, streaming })
+  }
 
   const onAgentSelect = (a: AgentEntry) => {
     setPickerOpen(null)
@@ -1486,6 +1504,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               </Show>
             </div>
             <div class="mafw-composer-right">
+              <Show when={composerMeta()}>
+                <span class="mafw-composer-meta">{composerMeta()}</span>
+              </Show>
               <Show when={(props.primaryAgents() || []).length > 0 || isManager()}>
                 <TooltipV2 value="切换 Agent" openDelay={300}>
                   <ButtonV2
