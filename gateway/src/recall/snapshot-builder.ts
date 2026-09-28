@@ -8,6 +8,7 @@
  */
 import { RecallSnapshot, snapshotQueryFromTurns, SNAPSHOT_DEFAULTS, SnapshotConfig } from './recall-snapshot';
 import type { RecallMemory } from './recall-context';
+import type { FokZone } from './fok-gate';
 
 export const SNAPSHOT_SCOPE = 'recall-snapshot';
 
@@ -18,8 +19,13 @@ export interface SnapshotDeps {
   search: (query: string, topK: number) => RecallMemory[];
   /** Optional verification layer; undefined = no rerank. */
   rerank?: (query: string, memories: RecallMemory[]) => Promise<RecallMemory[]>;
-  /** Render the pointer block (formatRecallContext + neighbours). */
-  render: (memories: RecallMemory[]) => string | null;
+  /**
+   * R5 FOK zone from the verification layer's probability (background path can
+   * afford it; the 100ms boundary path cannot). Undefined = no gate.
+   */
+  fokZone?: (query: string, memories: RecallMemory[]) => Promise<FokZone | undefined>;
+  /** Render the pointer block (formatRecallContext + neighbours + status). */
+  render: (memories: RecallMemory[], status?: FokZone) => string | null;
   /** kv write (fail-open by the caller). */
   store: (sessionID: string, snapshot: RecallSnapshot) => void;
   now?: () => Date;
@@ -48,7 +54,15 @@ export async function buildSnapshot(
       memories = await deps.rerank(query, memories);
     } catch { /* fail-open: keep the un-reranked ranking */ }
   }
-  const block = deps.render(memories);
+  // R5 FOK: decide the zone here (the boundary path cannot afford the reranker
+  // probability this decision needs). Fail-open to 'inject'.
+  let fokStatus: FokZone | undefined;
+  if (deps.fokZone) {
+    try {
+      fokStatus = await deps.fokZone(query, memories);
+    } catch { /* fail-open */ }
+  }
+  const block = deps.render(memories, fokStatus);
   if (!block) return null;
 
   const snapshot: RecallSnapshot = {
@@ -56,6 +70,7 @@ export async function buildSnapshot(
     block,
     ids: memories.slice(0, topK).map(m => m.id),
     builtAt: (deps.now?.() ?? new Date()).toISOString(),
+    fokStatus,
   };
   deps.store(sessionID, snapshot);
   return snapshot;

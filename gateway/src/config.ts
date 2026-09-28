@@ -128,6 +128,14 @@ export interface GatewayConfig {
       enabled: boolean;
       low: number;
       high: number;
+      /**
+       * R5 on the verification layer: thresholds for the R3 cross-encoder's
+       * top-1 relevance probability (the feature that discriminates answerable
+       * from unanswerable; fitted on LongMemEval-S 2026-09-28: low 0.2 / high 0.5
+       * → unanswerable flagged 67% while answerable flagged 17%).
+       */
+      probLow: number;
+      probHigh: number;
     };
     /**
      * R8 predictive prefetch snapshot: precompute the expensive retrieval
@@ -404,6 +412,8 @@ function defaults(projectDir: string): GatewayConfig {
         enabled: false,
         low: 1.2,
         high: 1.35,
+        probLow: 0.2,
+        probHigh: 0.5,
       },
       /**
        * R8: off by default. ttlMs 10min / 4 turns of context / 600 chars query

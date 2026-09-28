@@ -55,4 +55,28 @@ describe('buildSnapshot', () => {
     expect(await buildSnapshot(deps({ search: () => [] }), 'ses_1')).toBeNull();
     expect(await buildSnapshot(deps({ render: () => null }), 'ses_1')).toBeNull();
   });
+
+  test('R5 FOK zone from the verification layer is baked into the snapshot', async () => {
+    const snap = await buildSnapshot(
+      deps({
+        render: (ms, status) => `<recall status="${status ?? 'inject'}">${ms.map(m => m.id).join(',')}</recall>`,
+        fokZone: async () => 'no-memory' as const,
+      }),
+      'ses_1',
+    );
+    expect(snap!.fokStatus).toBe('no-memory');
+    expect(snap!.block).toContain('status="no-memory"');
+  });
+
+  test('fail-open: fokZone throwing leaves the snapshot at the normal zone', async () => {
+    const snap = await buildSnapshot(
+      deps({
+        render: (ms, status) => `<recall status="${status ?? 'inject'}">${ms.map(m => m.id).join(',')}</recall>`,
+        fokZone: async () => { throw new Error('reranker down'); },
+      }),
+      'ses_1',
+    );
+    expect(snap!.fokStatus).toBeUndefined();
+    expect(snap!.block).toContain('status="inject"');
+  });
 });

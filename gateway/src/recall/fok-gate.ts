@@ -73,6 +73,21 @@ export function classifyFok(f: FokFeatures, th: FokThresholds): FokZone {
 }
 
 /**
+ * Three-zone decision from a *probability* feature (e.g. the R3 cross-encoder's
+ * relevance probability for the top candidate). This is the feature that
+ * actually discriminates answerable from unanswerable questions
+ * (AUROC 0.782; median 0.840 vs 0.052, LongMemEval-S 2026-09-28), unlike the
+ * BM25 score ratio (0.582) — FOK and verification are the same mechanism (CA1
+ * comparator), so the gate belongs on top of the verification layer.
+ */
+export function zoneFromProbability(prob: number | undefined | null, low: number, high: number): FokZone {
+  if (prob === undefined || prob === null || Number.isNaN(prob)) return 'inject';
+  if (prob >= high) return 'inject';
+  if (prob >= low) return 'low-confidence';
+  return 'no-memory';
+}
+
+/**
  * Offline threshold fitting from labelled runs (feature value + "answer was in
  * top-k"). `low` maximises balanced accuracy (inject vs no-memory); `high` is
  * the lowest threshold meeting the precision target. Returns null when the

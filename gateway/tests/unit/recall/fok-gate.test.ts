@@ -7,7 +7,7 @@
  * scale-free top1/mean dominates; gap/ratio features are weak; the signal must
  * come from the *raw* relevance scores (never energy×salience-weighted).
  */
-import { computeFokFeatures, classifyFok, fitFokThresholds } from '../../../src/recall/fok-gate';
+import { computeFokFeatures, classifyFok, fitFokThresholds, zoneFromProbability } from '../../../src/recall/fok-gate';
 
 describe('computeFokFeatures', () => {
   test('empty candidate set → zeroed features, count 0', () => {
@@ -57,6 +57,27 @@ describe('classifyFok three zones', () => {
   test('high threshold is inclusive', () => {
     const f = { top1: 1.35, mean: 1, top1OverMean: 1.35, count: 3 };
     expect(classifyFok(f, th)).toBe('inject');
+  });
+});
+
+describe('zoneFromProbability (reranker top-1 probability)', () => {
+  const th = { low: 0.2, high: 0.5 };
+
+  test('missing / NaN probability → inject (fail-open)', () => {
+    expect(zoneFromProbability(undefined, th.low, th.high)).toBe('inject');
+    expect(zoneFromProbability(null, th.low, th.high)).toBe('inject');
+    expect(zoneFromProbability(NaN, th.low, th.high)).toBe('inject');
+  });
+
+  test('confident relevance → inject; middling → low-confidence; near-zero → no-memory', () => {
+    expect(zoneFromProbability(0.84, th.low, th.high)).toBe('inject');
+    expect(zoneFromProbability(0.3, th.low, th.high)).toBe('low-confidence');
+    expect(zoneFromProbability(0.05, th.low, th.high)).toBe('no-memory');
+  });
+
+  test('boundaries are inclusive', () => {
+    expect(zoneFromProbability(0.5, th.low, th.high)).toBe('inject');
+    expect(zoneFromProbability(0.2, th.low, th.high)).toBe('low-confidence');
   });
 });
 

@@ -1541,16 +1541,37 @@ class MafwScheduler {
         );
         return scored.map((s: any) => byId.get(s.entry.id)).filter(Boolean) as any[];
       },
-      render: (ms: any[]) => {
+      render: (ms: any[], status?: any) => {
         const tn = config.search.temporalNeighbors;
         const neighbors = tn?.presentation
           ? recallNeighbors(this.memoryService!.harmonicIndex, ms, tn)
           : undefined;
         return formatRecallContext(ms, {
-          status: 'inject',
+          status: status ?? 'inject',
           neighbors: neighbors && neighbors.size > 0 ? neighbors : undefined,
         }).pointers;
       },
+      // R5 FOK on the verification layer: the reranker's top-1 probability is
+      // the feature that actually discriminates unanswerable questions
+      // (AUROC 0.78 vs 0.58 for the BM25 score ratio) — affordable here because
+      // this runs in the background.
+      fokZone: config.search.fok?.enabled
+        ? async (q: string, ms: any[]) => {
+            const r: any = getReranker();
+            if (!r || typeof r.scoreCandidates !== 'function' || ms.length === 0) return 'inject' as const;
+            const { zoneFromProbability } = require('./recall/fok-gate');
+            const probs: number[] = await r.scoreCandidates(
+              q,
+              ms.map((m: any) => ({
+                entry: { id: m.id, primary_abstraction: m.primary_abstraction, cue_anchors: [], created_at: m.created_at } as any,
+                score: m.score,
+              })),
+            );
+            const zone = zoneFromProbability(probs[0], config.search.fok.probLow, config.search.fok.probHigh);
+            log.info(`[Recall] FOK zone=${zone} (top1prob=${(probs[0] ?? 0).toFixed(3)}) for snapshot`);
+            return zone;
+          }
+        : undefined,
       store: (sid: string, s: any) => db.kvSet('recall-snapshot', sid, s),
     }, sessionID, config.search.snapshot, 3);
     if (snap) log.info(`[Recall] snapshot built for ${sessionID} (${Date.now() - t0}ms, ${snap.ids.length} ids)`);
@@ -5150,7 +5171,7 @@ class MafwScheduler {
                 const decision = decideSnapshotUse(snap, query, new Date(), snapCfg);
                 if (decision === 'use' && snap) {
                   snapshotPointers = snap.block;
-                  log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms)`);
+                  log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
                 } else if (decision !== 'no-snapshot') {
                   log.info(`[Recall] snapshot skipped (${decision}) for ${sessionID}`);
                 }

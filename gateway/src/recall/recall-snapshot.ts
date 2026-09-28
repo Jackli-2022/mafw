@@ -26,6 +26,12 @@ export interface RecallSnapshot {
   ids: string[];
   /** ISO timestamp of construction. */
   builtAt: string;
+  /**
+   * R5 FOK zone decided while building (from the R3 reranker probability — the
+   * feature that actually discriminates answerable from unanswerable). The
+   * block is rendered with this status baked in.
+   */
+  fokStatus?: 'inject' | 'low-confidence' | 'no-memory';
 }
 
 export interface SnapshotConfig {
