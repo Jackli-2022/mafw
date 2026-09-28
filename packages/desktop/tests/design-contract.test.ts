@@ -694,15 +694,8 @@ describe("审批卡汇总为一行（v6 追加）", () => {
   test("汇总行样式存在", () => {
     expect(cssBlock(".mafw-approval-summary-line {")).not.toBe("")
   })
-  test("工具元数据多行折叠成一行（ToolSummaryBlock）", () => {
-    const src = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
-    expect(src).toContain("ToolSummaryBlock")
-    const blk = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ToolSummaryBlock.tsx"), "utf8")
-    expect(blk).toContain("toolLineSummary")
-    expect(blk).toContain("mafw-tool-summary-toggle")
-  })
   test("汇总行与 SessionTurn 同阅读列（max-width + margin-inline auto）", () => {
-    for (const sel of [".mafw-tool-summary {", ".mafw-approval-summary {", ".mafw-turn-cards {"]) {
+    for (const sel of [".mafw-approval-summary {", ".mafw-turn-cards {"]) {
       const rule = cssBlock(sel)
       expect(rule).toContain("max-width: var(--msg-col-width)")
       expect(rule).toContain("auto")
@@ -715,8 +708,15 @@ describe("审批卡汇总为一行（v6 追加）", () => {
     expect(open).toBeGreaterThan(-1)
     expect(close).toBeGreaterThan(open)
     const inner = src.slice(open, close)
-    expect(inner).toContain("ToolSummaryBlock")
     expect(inner).toContain("ApprovalSummaryLine")
+  })
+  test("细节档位：SessionTurn shell/edit 默认展开由 detailsMode 驱动", () => {
+    const src = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
+    expect(src).toContain("shellToolDefaultOpen={detailsMode()}")
+    expect(src).toContain("editToolDefaultOpen={detailsMode()}")
+  })
+  test("过程元数据不再有独立 summary 行（由内联折叠工具卡承载）", () => {
+    expect(() => readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ToolSummaryBlock.tsx"), "utf8")).toThrow()
   })
 })
 

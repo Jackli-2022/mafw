@@ -32,8 +32,6 @@ import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
-import { summarizeTools } from "./tool-summary"
-import { ToolSummaryBlock } from "./ToolSummaryBlock"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { formatComposerMeta } from "./composer-meta"
 import { type PermissionMode } from "./permission-card-mapping"
@@ -216,7 +214,24 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   } = useAttachments()
   const [mentionedAgents, setMentionedAgents] = createSignal<{ name: string }[]>([])
   const [pickerOpen, setPickerOpen] = createSignal<"model" | "agent-switch" | "agent-mention" | "command" | "tts" | "file" | null>(null)
-  // TTS voice picker: 选中音色/引擎归宿主（voice hook 消费 defaultVoice）；
+  // 细节档位（v6 追加，行业对齐）：全部展开工具卡/编辑卡；Ctrl+O 切换，持久化。
+  const [detailsMode, setDetailsMode] = createSignal(localStorage.getItem("mafw-chat-details") === "1")
+  const toggleDetails = () => setDetailsMode(v => {
+    const next = !v
+    try { localStorage.setItem("mafw-chat-details", next ? "1" : "0") } catch { /* ignore */ }
+    return next
+  })
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "o") return
+      const el = document.activeElement as HTMLElement | null
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return
+      e.preventDefault()
+      toggleDetails()
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })  // TTS voice picker: 选中音色/引擎归宿主（voice hook 消费 defaultVoice）；
   // 列表加载、风格输入、试听态在 ../chat/TtsPicker.tsx 内部自管。
   const [ttsVoiceSel, setTtsVoiceSel] = createSignal<string | null>(null)
   const [ttsEngine, setTtsEngine] = createSignal<string>("mimo")
@@ -685,23 +700,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     return extractVoiceReplies(joined)
   }
 
-  // 元数据行（v6 §3）：本 turn 已完成的 tool part 聚合为一行摘要（该 turn 全部
-  // assistant 消息完成后才显示，避免与进行态工具卡打架）。
-  const toolSummaryForTurn = (userMsgId: string) => {
-    const sid = sidProp()
-    if (!sid) return []
-    const msgs = store.message[sid] || []
-    const userMsg = msgs.find(m => m.id === userMsgId)
-    if (!userMsg) return []
-    const assistants = msgs.filter(m => m.role === "assistant" && m.parentID === userMsg.id)
-    if (assistants.length === 0) return []
-    const allDone = assistants.every(a => typeof a.time?.completed === "number")
-    if (!allDone) return []
-    const parts: any[] = []
-    for (const a of assistants) parts.push(...(store.part[a.id] || []))
-    return summarizeTools(parts)
-  }
-
   // 媒体附件：扫描用户消息的 text parts，提取 [媒体附件 ... artifactId: <id>（媒体: <name>）]
   // 标记，供历史消息渲染（图片/音频/视频播放器）。
   const mediaRefsForTurn = (userMsgId: string) => {
@@ -1139,6 +1137,14 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务"><Icon name="branch" size="small" /> 并行</ButtonV2>
                   </TooltipV2>
                 </Show>
+                <TooltipV2 value="展开全部细节：工具/编辑卡默认展开 (Ctrl+O)" openDelay={300}>
+                  <ButtonV2
+                    variant={detailsMode() ? "outline" : "ghost"}
+                    size="small"
+                    aria-pressed={detailsMode() ? "true" : "false"}
+                    onClick={(e: MouseEvent) => { e.stopPropagation(); toggleDetails() }}
+                  >{detailsMode() ? "细节 ▾" : "细节 ▸"}</ButtonV2>
+                </TooltipV2>
                 <Show when={props.canClosePane}>
                   <TooltipV2 value="关闭分屏" openDelay={300}>
                     <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onClosePane() }} aria-label="关闭分屏"><Icon name="close" size="small" /></ButtonV2>
@@ -1220,10 +1226,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                         const cards = inlineCardsForPart(message.id, part.callID)
                         return cards.length ? <For each={cards}>{(c) => renderFlowCard(c)}</For> : undefined
                       }}
+                      shellToolDefaultOpen={detailsMode()}
+                      editToolDefaultOpen={detailsMode()}
                     >
-                      {/* 元数据行/底部流程卡/审批汇总：放进 SessionTurn 内部（children 插槽，
-                          在居中阅读列内、助手内容之后），自动与 turn 对齐（v6 追加） */}
-                      <ToolSummaryBlock lines={toolSummaryForTurn(msg.id)} />
+                      {/* 过程元数据由内联折叠工具卡承载（发生处、默认折叠）；
+                          审批汇总在 turn 末尾一行（v6 追加） */}
                       <Show when={otherCardsForTurn(msg.id).length > 0}>
                         <div class="mafw-turn-cards">
                           <For each={otherCardsForTurn(msg.id)}>

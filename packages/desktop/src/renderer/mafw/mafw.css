@@ -4732,7 +4732,6 @@ html[data-theme="light"] .mafw-picker-pop {
 }
 
 /* ── 元数据行（v6 §3）──────────────────────────────────────────── */
-.mafw-tool-summary { display: flex; flex-direction: column; gap: 2px; max-width: var(--msg-col-width); width: 100%; margin: 6px auto 2px; }
 .mafw-tool-summary-line {
   display: flex; align-items: center; gap: 6px;
   font: 12px/1.5 var(--font-ui);
@@ -4819,11 +4818,6 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-approval-summary-text { flex: none; }
 .mafw-approval-caret { margin-left: auto; flex: none; color: var(--text-4); }
 .mafw-approval-cards { display: flex; flex-direction: column; gap: 6px; }
-
-/* ── 工具元数据折叠行（v6 追加：多行 summary 折成一行，点击展开）── */
-.mafw-tool-summary-toggle { cursor: pointer; color: var(--text-4); user-select: none; }
-.mafw-tool-summary-toggle:hover { color: var(--text-1); }
-.mafw-tool-summary-toggle .mafw-tool-summary-text { flex: none; }
 
 /* ── 回合底部流程卡容器（与 SessionTurn 阅读列对齐）── */
 .mafw-turn-cards { display: flex; flex-direction: column; gap: 6px; max-width: var(--msg-col-width); width: 100%; margin: 4px auto 2px; }
