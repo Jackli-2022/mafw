@@ -708,6 +708,16 @@ describe("审批卡汇总为一行（v6 追加）", () => {
       expect(rule).toContain("auto")
     }
   })
+  test("汇总块放进 SessionTurn children（在 </SessionTurn> 之前）", () => {
+    const src = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
+    const open = src.indexOf("<SessionTurn")
+    const close = src.indexOf("</SessionTurn>", open)
+    expect(open).toBeGreaterThan(-1)
+    expect(close).toBeGreaterThan(open)
+    const inner = src.slice(open, close)
+    expect(inner).toContain("ToolSummaryBlock")
+    expect(inner).toContain("ApprovalSummaryLine")
+  })
 })
 
 describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）", () => {

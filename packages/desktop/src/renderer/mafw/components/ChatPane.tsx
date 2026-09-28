@@ -1220,10 +1220,23 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                         const cards = inlineCardsForPart(message.id, part.callID)
                         return cards.length ? <For each={cards}>{(c) => renderFlowCard(c)}</For> : undefined
                       }}
-                    />
+                    >
+                      {/* 元数据行/底部流程卡/审批汇总：放进 SessionTurn 内部（children 插槽，
+                          在居中阅读列内、助手内容之后），自动与 turn 对齐（v6 追加） */}
+                      <ToolSummaryBlock lines={toolSummaryForTurn(msg.id)} />
+                      <Show when={otherCardsForTurn(msg.id).length > 0}>
+                        <div class="mafw-turn-cards">
+                          <For each={otherCardsForTurn(msg.id)}>
+                            {(c) => renderFlowCard(c)}
+                          </For>
+                        </div>
+                      </Show>
+                      <ApprovalSummaryLine
+                        cards={permissionCardsForTurn(msg.id)}
+                        renderCard={renderFlowCard}
+                      />
+                    </SessionTurn>
                   </Show>
-                  {/* 元数据行：已完成工具聚合；多行折叠成一行，点击展开（v6 追加） */}
-                  <ToolSummaryBlock lines={toolSummaryForTurn(msg.id)} />
                   {/* 语音回复：渲染在 SessionTurn 之后（跟在助手回复文本下方，
                       而非用户消息上方）；到达时自动播放由上方 effect 统一负责
                       （带 hash 去重），卡片本身点击播放。 */}
@@ -1236,18 +1249,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       </div>
                     )}
                   </For>
-                  <Show when={otherCardsForTurn(msg.id).length > 0}>
-                    <div class="mafw-turn-cards">
-                      <For each={otherCardsForTurn(msg.id)}>
-                        {(c) => renderFlowCard(c)}
-                      </For>
-                    </div>
-                  </Show>
-                  {/* 审批卡统一在回合最下方汇总为一行，点击展开原卡片 */}
-                  <ApprovalSummaryLine
-                    cards={permissionCardsForTurn(msg.id)}
-                    renderCard={renderFlowCard}
-                  />
                 </>
                 </ErrorBoundary>
                 </div>
