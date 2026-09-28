@@ -23,3 +23,18 @@ export function summarizeTools(parts: any[]): ToolSummaryLine[] {
   }
   return lines
 }
+
+/**
+ * 折叠行的工具名摘要（v6 追加）：前 maxNames 个工具名 + 其余行数计数。
+ * 例：["Bash","Read ×3","Grep","Edit"] → { text: "Bash · Read ×3 · Grep", extra: 1 }
+ */
+export function toolLineSummary(
+  lines: ToolSummaryLine[],
+  maxNames = 3,
+): { text: string; extra: number } {
+  const list = lines ?? []
+  if (list.length === 0) return { text: "", extra: 0 }
+  const shown = list.slice(0, maxNames)
+  const extra = list.length - shown.length
+  return { text: shown.map(l => l.text).join(" · "), extra }
+}

@@ -33,6 +33,7 @@ import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./tur
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { summarizeTools } from "./tool-summary"
+import { ToolSummaryBlock } from "./ToolSummaryBlock"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { formatComposerMeta } from "./composer-meta"
 import { type PermissionMode } from "./permission-card-mapping"
@@ -1221,19 +1222,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                       }}
                     />
                   </Show>
-                  {/* 元数据行：已完成工具聚合摘要（v6 §3，Claude 式 "Read 3 files"） */}
-                  <Show when={toolSummaryForTurn(msg.id).length > 0}>
-                    <div class="mafw-tool-summary">
-                      <For each={toolSummaryForTurn(msg.id)}>
-                        {(line) => (
-                          <div class="mafw-tool-summary-line" classList={{ error: !!line.error }}>
-                            <span class="mafw-tool-summary-icon">{line.icon}</span>
-                            <span class="mafw-tool-summary-text">{line.text}</span>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
+                  {/* 元数据行：已完成工具聚合；多行折叠成一行，点击展开（v6 追加） */}
+                  <ToolSummaryBlock lines={toolSummaryForTurn(msg.id)} />
                   {/* 语音回复：渲染在 SessionTurn 之后（跟在助手回复文本下方，
                       而非用户消息上方）；到达时自动播放由上方 effect 统一负责
                       （带 hash 去重），卡片本身点击播放。 */}

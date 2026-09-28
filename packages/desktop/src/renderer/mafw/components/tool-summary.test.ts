@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { summarizeTools } from "./tool-summary"
+import { summarizeTools, toolLineSummary } from "./tool-summary"
 
 const tool = (name: string, status = "completed", title?: string, error = false) => ({
   type: "tool",
@@ -41,5 +41,19 @@ describe("summarizeTools", () => {
   test("错误不参与合并（打断连续段）", () => {
     const lines = summarizeTools([tool("read"), tool("read", "error"), tool("read")])
     expect(lines.map(l => l.text)).toEqual(["Read", "Read", "Read"])
+  })
+})
+
+describe("toolLineSummary（折叠行摘要）", () => {
+  const L = (text: string) => ({ icon: "✓", text })
+  test("空输入", () => {
+    expect(toolLineSummary([])).toEqual({ text: "", extra: 0 })
+  })
+  test("不超过 maxNames 时全部列出，extra=0", () => {
+    expect(toolLineSummary([L("Bash"), L("Grep")], 3)).toEqual({ text: "Bash · Grep", extra: 0 })
+  })
+  test("超过 maxNames 时截断并给剩余计数", () => {
+    const r = toolLineSummary([L("Bash"), L("Read ×3"), L("Grep"), L("Edit"), L("Webfetch")], 3)
+    expect(r).toEqual({ text: "Bash · Read ×3 · Grep", extra: 2 })
   })
 })

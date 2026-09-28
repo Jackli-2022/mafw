@@ -694,6 +694,13 @@ describe("审批卡汇总为一行（v6 追加）", () => {
   test("汇总行样式存在", () => {
     expect(cssBlock(".mafw-approval-summary-line {")).not.toBe("")
   })
+  test("工具元数据多行折叠成一行（ToolSummaryBlock）", () => {
+    const src = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
+    expect(src).toContain("ToolSummaryBlock")
+    const blk = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ToolSummaryBlock.tsx"), "utf8")
+    expect(blk).toContain("toolLineSummary")
+    expect(blk).toContain("mafw-tool-summary-toggle")
+  })
 })
 
 describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）", () => {
