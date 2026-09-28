@@ -5,6 +5,7 @@
 import {
   snapshotQueryFromTurns,
   snapshotOverlap,
+  snapshotContainment,
   decideSnapshotUse,
   SNAPSHOT_DEFAULTS,
   RecallSnapshot,
@@ -40,7 +41,20 @@ describe('snapshotQueryFromTurns', () => {
   });
 });
 
-describe('snapshotOverlap / topic shift', () => {
+describe('snapshotOverlap / snapshotContainment / topic shift', () => {
+  test('Jaccard is length-biased; containment is not (the reason for the swap)', () => {
+    const window = 'kubernetes deployment rollout notes from the previous turns about clusters and pods and services and ingresses';
+    const followUp = 'kubernetes rollout pods';
+    // A short on-topic follow-up scores near zero with Jaccard…
+    expect(snapshotOverlap(window, followUp)).toBeLessThan(0.25);
+    // …but its tokens are fully covered by the context → containment is high.
+    expect(snapshotContainment(window, followUp)).toBeGreaterThan(0.9);
+  });
+
+  test('clearly different topics stay low on containment', () => {
+    expect(snapshotContainment('kubernetes deployment rollout notes', 'pasta recipe tomato sauce')).toBe(0);
+  });
+
   test('same topic → high overlap; different topic → low', () => {
     const same = snapshotOverlap('kubernetes deployment rollout', 'kubernetes rollout failed');
     const diff = snapshotOverlap('kubernetes deployment rollout', 'pasta recipe tomato sauce');
@@ -74,6 +88,11 @@ describe('decideSnapshotUse', () => {
   test('continuing the same topic → use', () => {
     const s = snap({ builtAt: new Date(now.getTime() - 60_000).toISOString() });
     expect(decideSnapshotUse(s, 'kubernetes deployment rollout status', now)).toBe('use');
+  });
+
+  test('short on-topic follow-up → use (containment, not Jaccard)', () => {
+    const s = snap({ builtAt: new Date(now.getTime() - 60_000).toISOString() });
+    expect(decideSnapshotUse(s, 'kubernetes rollout', now)).toBe('use');
   });
 
   test('new topic → topic-shift (fall back to live search)', () => {

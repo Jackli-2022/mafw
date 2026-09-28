@@ -1,10 +1,11 @@
-/**
+﻿/**
  * Write-side fidelity: identifier cues living only in the memory body are
  * harvested into cue_anchors so queries can actually reach them.
  */
 import { HarmonicUnitFileStore } from '../../../src/memory/harmonic-file-store';
 import { HarmonicIndexManager } from '../../../src/core/memory/harmonic-index';
 import { HarmonicUnit } from '../../../src/core/memory/harmonic-types';
+import { config } from '../../../src/config';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -44,6 +45,6 @@ describe('write() identifier harvest', () => {
     await store.write(unit('a', 'notes', 'see alphaBeta gammaDelta and existing cue'), undefined, { skipMerge: true });
     const entry = index.getIndex().entries.find(e => e.id === 'a')!;
     expect(entry.cue_anchors.filter((c: string) => c === 'existing cue')).toHaveLength(1);
-    expect(entry.cue_anchors.length).toBeLessThanOrEqual(8);
+    expect(entry.cue_anchors.length).toBeLessThanOrEqual(8 + (config.memory.harvestMaxCues ?? 8));
   });
 });

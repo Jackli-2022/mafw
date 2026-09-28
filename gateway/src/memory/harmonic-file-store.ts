@@ -72,7 +72,9 @@ export class HarmonicUnitFileStore {
     // them into cue_anchors, additively and bounded by maxCueAnchors.
     if (config.memory.harvestIdentifierCues !== false) {
       const current = unit.cue_anchors ?? [];
-      const room = Math.max(0, (config.memory.maxCueAnchors ?? 8) - current.length);
+      // Independent budget: the harvest must not be starved by anchors the
+      // abstract/LLM already provided.
+      const room = Math.max(0, config.memory.harvestMaxCues ?? 8);
       if (room > 0) {
         const harvested = harvestIdentifierCues(unit.memory_value || '', current, { max: room });
         if (harvested.length > 0) unit.cue_anchors = [...current, ...harvested];

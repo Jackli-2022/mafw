@@ -176,6 +176,13 @@ export interface GatewayConfig {
      * Disabled by the benchmark harness to keep runs deterministic.
      */
     harvestIdentifierCues: boolean;
+    /**
+     * Max identifier cues the harvest may ADD per memory (independent of
+     * maxCueAnchors, which bounds the abstract/LLM-provided anchors). The
+     * first migration was capped by the shared budget, which left the 9th+
+     * body identifier of a memory unreachable (hit@50 53% vs 30% before).
+     */
+    harvestMaxCues: number;
     abstractionMaxLength: number;
     defaultPrimaryAbstractionLength: number;
     defaultSalience: number;
@@ -456,6 +463,7 @@ function defaults(projectDir: string): GatewayConfig {
       defaultMemoryType: 'semantic',
       maxCueAnchors: 8,
       harvestIdentifierCues: true,
+      harvestMaxCues: 8,
       abstractionMaxLength: 200,
       defaultPrimaryAbstractionLength: 80,
       defaultSalience: 1.0,

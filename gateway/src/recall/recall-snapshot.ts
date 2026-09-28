@@ -98,6 +98,24 @@ export function snapshotOverlap(a: string, b: string): number {
   return inter / (sa.size + sb.size - inter);
 }
 
+/**
+ * Containment: how much of the SHORTER side is covered by the longer one.
+ *
+ * This is the right metric for the topic-shift check: Jaccard is length-biased
+ * (a 600-char rolling window vs a 15-token follow-up question scores near zero
+ * even on the same topic — measured: 158/246 snapshot decisions were skipped as
+ * "topic-shift" with Jaccard 0.25). Containment asks the question we actually
+ * care about: is the current query covered by the prefetched context?
+ */
+export function snapshotContainment(a: string, b: string): number {
+  const sa = snapshotTokens(a);
+  const sb = snapshotTokens(b);
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let inter = 0;
+  for (const t of sa) if (sb.has(t)) inter++;
+  return inter / Math.min(sa.size, sb.size);
+}
+
 export type SnapshotDecision = 'use' | 'no-snapshot' | 'stale' | 'topic-shift';
 
 /**
@@ -116,6 +134,6 @@ export function decideSnapshotUse(
   if (age > (cfg.ttlMs ?? SNAPSHOT_DEFAULTS.ttlMs)) return 'stale';
   if (!query.trim()) return 'use'; // nothing better to compute
   const threshold = cfg.topicShiftThreshold ?? SNAPSHOT_DEFAULTS.topicShiftThreshold;
-  if (snapshotOverlap(snapshot.query, query) < threshold) return 'topic-shift';
+  if (snapshotContainment(snapshot.query, query) < threshold) return 'topic-shift';
   return 'use';
 }

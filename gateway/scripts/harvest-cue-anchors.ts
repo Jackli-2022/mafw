@@ -1,4 +1,4 @@
-/**
+﻿/**
  * One-off migration: harvest identifier-like cues from each memory's BODY into
  * its cue_anchors (write-side fidelity). Search only reads
  * primary_abstraction + cue_anchors, so body-only identifiers were unreachable
@@ -33,7 +33,7 @@ async function main() {
   }
   const index = new HarmonicIndexManager(BASE);
   const entries = index.getIndex().entries;
-  const maxAnchors = config.memory.maxCueAnchors ?? 8;
+  const maxAnchors = config.memory.harvestMaxCues ?? 8;
 
   let scanned = 0;
   let filesMissing = 0;
@@ -50,7 +50,7 @@ async function main() {
     try { parsed = readOKFFile(fullPath); } catch { filesMissing++; continue; }
     const { unit, body } = parsed;
     const current: string[] = entry.cue_anchors ?? [];
-    const room = Math.max(0, maxAnchors - current.length);
+    const room = Math.max(0, maxAnchors);
     if (room <= 0) continue;
     // In OKF the memory_value lives in the BODY; frontmatter holds metadata.
     const cues = harvestIdentifierCues(body || unit.memory_value || '', current, { max: room });
@@ -77,7 +77,7 @@ async function main() {
     index.save();
     console.log(`applied: rewrote ${updates.length} OKF files, saved index (backup: ${backup})`);
   } else {
-    console.log('dry-run only — re-run with --apply to write');
+    console.log('dry-run only 鈥?re-run with --apply to write');
   }
 }
 
