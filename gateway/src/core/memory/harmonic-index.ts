@@ -670,8 +670,23 @@ export class HarmonicIndexManager {
       // NOTE: no toLowerCase() here — R7 identifier splitting needs the original
       // case (camelCase boundaries); tokenizeBM25 lowercases internally.
       const text = entry.primary_abstraction + ' ' + entry.cue_anchors.join(' ');
-      return { entry, toks: this.tokenizeBM25(text) };
+      // Memoize per-entry tokens: tokenizing the whole corpus on every query was
+      // ~50ms at 3.7k entries, and query expansion multiplies it ~15× → the
+      // boundary recall path silently blew its 100ms contract. The cached text
+      // guards against entry updates (same id, new searchable text).
+      const cached = this.tokenCache.get(entry.id);
+      if (cached && cached.text === text) return { entry, toks: cached.toks };
+      const toks = this.tokenizeBM25(text);
+      this.tokenCache.set(entry.id, { text, toks });
+      return { entry, toks };
     });
+    // Bound the cache: drop entries that no longer exist in the index.
+    if (this.tokenCache.size > entries.length * 2 + 64) {
+      const live = new Set(entries.map(e => e.id));
+      for (const key of this.tokenCache.keys()) {
+        if (!live.has(key)) this.tokenCache.delete(key);
+      }
+    }
     const docLengths = docs.map(d => d.toks.length);
     const avgdl = docLengths.reduce((a, c) => a + c, 0) / N;
 
@@ -707,6 +722,12 @@ export class HarmonicIndexManager {
   bm25Search(query: string, topK: number = 20): HarmonicIndexEntry[] {
     return this.bm25SearchScored(query, topK).map(s => s.entry);
   }
+
+  /**
+   * Memoized per-entry BM25 tokens (see bm25RawScored). Keyed by entry id and
+   * validated against the searchable text, so index updates stay correct.
+   */
+  private tokenCache = new Map<string, { text: string; toks: string[] }>();
 
   private tokenizeBM25(text: string): string[] {
     const tokens: string[] = [];
