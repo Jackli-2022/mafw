@@ -106,6 +106,18 @@ export interface GatewayConfig {
      * bridging while fitting the budget.
      */
     expansionMaxSearches: number;
+    /**
+     * Boundary fallback path: fuse the R2 dense channel into the live search
+     * (topic-shift turns and sessions without a snapshot), guarded by a short
+     * deadline so a busy embedding sidecar cannot blow the 100ms contract.
+     *
+     * Measured 2026-09-28: enabling it pushed the live path from 72–86ms to
+     * 100–107ms (the guard fired at +25ms with no dense benefit) → the boundary
+     * path has no headroom for dense; R2 reaches it through the R8 snapshot
+     * (built in the background) instead. Off by default; kept for experiments.
+     */
+    boundaryDense: boolean;
+    boundaryDenseTimeoutMs: number;
     /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
     fusionSparseWeight: number;
     /** Per-system retrieval channels (Phase C4b): fuse episodic vs semantic rankings via RRF. */
@@ -414,6 +426,8 @@ function defaults(projectDir: string): GatewayConfig {
       },
       maxExpandRounds: 2,
       expansionMaxSearches: 4,
+      boundaryDense: false,
+      boundaryDenseTimeoutMs: 25,
       /** Sparse weight in weighted RRF (hybrid retrieval). >0.5 favors BM25 ordering. */
       fusionSparseWeight: 0.65,
       channelSplit: { enabled: true, episodicWeight: 0.3 },

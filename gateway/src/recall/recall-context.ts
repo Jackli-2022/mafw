@@ -195,6 +195,25 @@ export function blobPenalty(abstraction: string | undefined): number {
 }
 
 /**
+ * Race a promise against a deadline, resolving null on timeout. Used to add the
+ * dense channel to the 100ms boundary path without ever letting a busy
+ * embedding sidecar (e.g. mid-backfill) blow the contract.
+ */
+export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; resolve(null); }
+    }, ms);
+    (timer as any).unref?.();
+    p.then(
+      (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
+      () => { if (!settled) { settled = true; clearTimeout(timer); resolve(null); } },
+    );
+  });
+}
+
+/**
  * R6 presentation: chronological neighbours of the returned memories, keyed by
  * anchor id. Presentation-only — neighbours never enter the ranking, they are
  * extra context rendered under the hit (CueMem/EdgeMem style reinstatement).

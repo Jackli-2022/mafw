@@ -5233,6 +5233,21 @@ class MafwScheduler {
               // Sync path is BM25-only (<50ms): the plugin client aborts after
               // 100ms. Scan results arrive via async prefetch snapshot (C).
               const scanSnapshot = this.getScanService()?.getSnapshot(sessionID) ?? null;
+              // R2 on the boundary fallback too (topic-shift turns / no snapshot):
+              // the dense query embedding costs ~8ms, but a busy sidecar must
+              // never blow the contract — hence the short deadline + BM25 fallback.
+              let denseScores: Map<string, number> | undefined;
+              if (config.search.boundaryDense !== false) {
+                try {
+                  const { computeDenseScores } = require('./memory/embedding-runtime');
+                  const { withTimeout } = require('./recall/recall-context');
+                  const dense = await withTimeout(
+                    Promise.resolve(computeDenseScores(query, 12, this.memoryService.harmonicIndex)),
+                    config.search.boundaryDenseTimeoutMs ?? 25,
+                  );
+                  denseScores = dense ?? undefined;
+                } catch { /* fail-open: BM25 only */ }
+              }
               memories = await searchRecallMemories(
                 this.memoryService.harmonicIndex,
                 query,
@@ -5241,6 +5256,7 @@ class MafwScheduler {
                 {
                   retriever: config.search.defaultRetriever,
                   scanSnapshot,
+                  denseScores,
                 },
               );
               // R5 FOK gate (fail-open): weak evidence is stated, not silently

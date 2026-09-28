@@ -670,15 +670,17 @@ export class HarmonicIndexManager {
       // NOTE: no toLowerCase() here — R7 identifier splitting needs the original
       // case (camelCase boundaries); tokenizeBM25 lowercases internally.
       const text = entry.primary_abstraction + ' ' + entry.cue_anchors.join(' ');
-      // Memoize per-entry tokens: tokenizing the whole corpus on every query was
-      // ~50ms at 3.7k entries, and query expansion multiplies it ~15× → the
-      // boundary recall path silently blew its 100ms contract. The cached text
-      // guards against entry updates (same id, new searchable text).
+      // Memoize per-entry scoring stats: tokenizing the whole corpus on every
+      // query was ~50ms, and counting tf by scanning every token per query term
+      // added another ~18ms per pass (the boundary path runs five). The cached
+      // text guards against entry updates (same id, new searchable text).
       const cached = this.tokenCache.get(entry.id);
-      if (cached && cached.text === text) return { entry, toks: cached.toks };
+      if (cached && cached.text === text) return { entry, tf: cached.tf, len: cached.len };
       const toks = this.tokenizeBM25(text);
-      this.tokenCache.set(entry.id, { text, toks });
-      return { entry, toks };
+      const tf = new Map<string, number>();
+      for (const t of toks) tf.set(t, (tf.get(t) || 0) + 1);
+      this.tokenCache.set(entry.id, { text, tf, len: toks.length });
+      return { entry, tf, len: toks.length };
     });
     // Bound the cache: drop entries that no longer exist in the index.
     if (this.tokenCache.size > entries.length * 2 + 64) {
@@ -687,12 +689,12 @@ export class HarmonicIndexManager {
         if (!live.has(key)) this.tokenCache.delete(key);
       }
     }
-    const docLengths = docs.map(d => d.toks.length);
+    const docLengths = docs.map(d => d.len);
     const avgdl = docLengths.reduce((a, c) => a + c, 0) / N;
 
     const df = new Map<string, number>();
     for (const d of docs) {
-      for (const t of new Set(d.toks)) {
+      for (const t of d.tf.keys()) {
         df.set(t, (df.get(t) || 0) + 1);
       }
     }
@@ -708,8 +710,7 @@ export class HarmonicIndexManager {
       const dl = docLengths[i];
       let score = 0;
       for (const t of queryTokens) {
-        let tf = 0;
-        for (const tok of d.toks) if (tok === t) tf++;
+        const tf = d.tf.get(t) || 0;
         if (tf === 0) continue;
         score += (idf.get(t) || 0) * (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * (dl / avgdl)));
       }
@@ -724,10 +725,13 @@ export class HarmonicIndexManager {
   }
 
   /**
-   * Memoized per-entry BM25 tokens (see bm25RawScored). Keyed by entry id and
+   * Memoized per-entry BM25 stats (see bm25RawScored). Keyed by entry id and
    * validated against the searchable text, so index updates stay correct.
+   * `tf`/`len` are what scoring actually needs: counting term frequencies by
+   * scanning every doc token per query token made a single pass O(Σ|docToks|)
+   * (~18ms warm at 3.8k entries) and the boundary path's five passes ~90ms.
    */
-  private tokenCache = new Map<string, { text: string; toks: string[] }>();
+  private tokenCache = new Map<string, { text: string; tf: Map<string, number>; len: number }>();
 
   private tokenizeBM25(text: string): string[] {
     const tokens: string[] = [];
