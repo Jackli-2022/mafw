@@ -4,6 +4,7 @@ import { createStore } from "solid-js/store"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 
+import { buildCallTree, type CallNode } from "./trajectory-tree"
 const fmtDur = (ms?: number | null): string => {
   if (ms === null || ms === undefined || ms < 0) return "\u2014"
   if (ms < 1000) return `${Math.round(ms)}ms`
@@ -16,6 +17,27 @@ const fmtDur = (ms?: number | null): string => {
 const fmtTokens = (n: number): string => (n >= 10000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 
 const fmtCost = (c: number): string => `$${Number(c).toFixed(4)}`
+
+// call tree 节点（v6 §5）：tool 配对后按嵌套层级递归渲染，缩进 14px/层。
+const CallTreeNode = (props: { node: CallNode; depth: number }) => (
+  <div class="mafw-trajectory-node" classList={{ error: props.node.error }} style={{ "padding-left": `${props.depth * 14}px` }}>
+    <div class="mafw-trajectory-node-row">
+      <span class="mafw-trajectory-event-icon">
+        {props.node.kind === "tool"
+          ? (props.node.error ? "✗" : props.node.durationMs != null ? "✓" : "⟳")
+          : props.node.kind === "reasoning" ? "🧠" : "·"}
+      </span>
+      <span class="mafw-trajectory-tool-name">{props.node.label}</span>
+      <Show when={props.node.durationMs != null}>
+        <span class="mafw-trajectory-duration">{fmtDur(props.node.durationMs)}</span>
+      </Show>
+    </div>
+    <For each={props.node.children}>
+      {(c) => <CallTreeNode node={c} depth={props.depth + 1} />}
+    </For>
+  </div>
+)
+
 
 export function TrajectoryDock(props: {
   sessionID: string
@@ -153,44 +175,8 @@ export function TrajectoryDock(props: {
               </button>
               <Show when={expanded[tid(t)]}>
                 <div class="mafw-trajectory-events">
-                  <For each={eventsForTurn(tid(t))}>
-                    {(e) => (
-                      <div class={`mafw-trajectory-event mafw-trajectory-${e.eventType ?? e.event_type}${e.toolState === "error" ? " mafw-trajectory-error" : ""}`}>
-                        <span class="mafw-trajectory-event-icon">
-                          {e.eventType === "tool_start" && "⟳"}
-                          {e.eventType === "tool_end" && (e.toolState === "error" ? "✗" : "✓")}
-                          {(e.eventType === "reasoning_start" || e.eventType === "reasoning_end") && "🧠"}
-                          {e.eventType === "model_switch" && "⇄"}
-                          {e.eventType === "agent_switch" && "⇄"}
-                          {e.eventType === "step_finish" && "∑"}
-                          {e.eventType === "turn_start" && "▶"}
-                          {e.eventType === "turn_end" && "■"}
-                        </span>
-                        <span class="mafw-trajectory-event-main">
-                          <Show when={e.toolName || e.tool_name}>
-                            <span class="mafw-trajectory-tool-name">{e.toolName || e.tool_name}</span>
-                          </Show>
-                          <Show when={e.model}>
-                            <span class="mafw-trajectory-model">{e.model}</span>
-                          </Show>
-                          <Show when={e.agent}>
-                            <span class="mafw-trajectory-agent">Agent: {e.agent}</span>
-                          </Show>
-                          <Show when={e.outputSummary || e.output_summary || e.error}>
-                            <span class="mafw-trajectory-output">{e.error || e.outputSummary || e.output_summary}</span>
-                          </Show>
-                          <Show when={e.cost !== undefined || e.tokens}>
-                            <span class="mafw-trajectory-tokens">
-                              {fmtTokens(e.tokens?.input || 0)}/{fmtTokens(e.tokens?.output || 0)} tok
-                              <Show when={e.cost !== undefined}>{" · "}{fmtCost(e.cost || 0)}</Show>
-                            </span>
-                          </Show>
-                        </span>
-                        <Show when={e.durationMs !== undefined && e.durationMs !== null}>
-                          <span class="mafw-trajectory-duration">{fmtDur(e.durationMs)}</span>
-                        </Show>
-                      </div>
-                    )}
+                  <For each={buildCallTree(eventsForTurn(tid(t)))}>
+                    {(n) => <CallTreeNode node={n} depth={0} />}
                   </For>
                 </div>
               </Show>

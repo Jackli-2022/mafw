@@ -4796,3 +4796,9 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-diff-panel.embedded .mafw-diff-panel-header { padding: 8px 10px; }
 .mafw-diff-panel.embedded .mafw-diff-panel-header h2 { font-size: 13px; }
 .mafw-diff-panel-back { margin-right: 6px; }
+
+/* ── Trajectory call tree（v6 §5）── */
+.mafw-trajectory-node { display: block; }
+.mafw-trajectory-node.error .mafw-trajectory-tool-name { color: var(--danger); }
+.mafw-trajectory-node-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font: 12px/1.6 var(--font-ui); color: var(--text-3); }
+.mafw-trajectory-node-row .mafw-trajectory-duration { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-4); }
