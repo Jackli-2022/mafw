@@ -184,10 +184,19 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 - **阈值注意**：LongMemEval-S bm25 拟合值（low≈1.36 / high≈1.34）；**原始分尺度跨检索器不可比，换检索配置必须重标定**（hybrid 分布压缩至 1.04–1.38）。
 - **待办**：`mafw_search_hybrid` 出口（handler 目前丢弃 searchScored 分数，需捕获原始分）；无答案探测集（LongMemEval-S 仅 1–2 道拒答题，abstention 判别无法评估）。
 
-### R7 确定性线索抽取 —— 待实现（低优先级）
+### R7 确定性线索抽取 —— ✅ 已实现（标识符双索引）+ 实测
 - **依据**（调研 §3）：确认 R1 否决（CAsT 自动改写比人工差 35%）；query reduction > expansion（Kumaran & Allan 2008）；编码特异性——逐字 token 必在写入 trace 里。
-- **实现**：① 标识符感知分词（camelCase/snake 双索引，效应量最大，arXiv:2605.18561）；② 抽取路径/标识符/引号串/日期 → 2–3× **加性**加权（永不减性过滤）；③ 分词变更后必须重跑 LongMemEval 基线（IDF 会移动）。
-- **前置检查**：写路径 `primary_abstraction` 是否保留逐字标识符。
+- **实现**：`harmonic-index.ts` 的 `tokenizeBM25` 增加**标识符双索引**（`splitIdentifierParts` 切 camelCase/PascalCase/snake_case，把**部件**也加入 token 流；拼接形保留）——纯加性，绝不删词（R1 教训）。同步修掉文档路径分词前 `.toLowerCase()`（会抹掉 camelCase 边界）。
+- **前置检查（2026-09-28 实测）**：3722 条 OKF 记忆里 **39% 的 abstraction/anchors 含标识符类线索**（camelCase 897 / 路径 558 / 点号 308 / snake 156）；另 **2270 条**标识符只在正文、不在可检索字段——那是**写端摘要丢字**，查询侧无解（待写端保真改进）。
+- **实测（真实语料 3735 条，40 个稀有标识符样本；`evaluation/mafw-identifier-probe.js`）**：
+  | 查询形态 | 部署前 | 部署后 |
+  |---|---|---|
+  | 精确形 hit@1 / @10 / @50 | 73% / 93% / 100% | 68% / 90% / 100% |
+  | **空格形 hit@1 / @10 / @50** | **18% / 38% / 53%** | **53% / 90% / 100%** |
+  | 空格形完全检索不到 | **19/40** | **0/40** |
+- **基线回归检查**：LongMemEval round 粒度 base bm25 **R@1 0.589 / R@10 0.894 / NDCG@1 0.812**（旧 0.589 / 0.894 / 0.813）→ **无回归**（对话语料无标识符，符合预期——该基准对该切片无测量面）。
+- **注意**：精确形 hit@1 73%→68% 属于加词后的轻微稀释（n=40 内属噪声），若需可加 idf 惩罚平衡。
+
 
 ### R8 预测预取快照 —— 待实现（最低优先级，延迟优化）
 - **依据**（调研 §4）：preplay（Dragoi & Tonegawa 2011）；predictive prefetching −43.5% 延迟（2605.17989）；**最后一轮只含 session 词汇 36%**（2607.22392）→ 快照 query 用滚动 N 轮 + goal 快照 + 活跃文件。

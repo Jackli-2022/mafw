@@ -55,6 +55,21 @@ const BM25_K1 = 1.2;
 const BM25_B = 0.75;
 
 /**
+ * R7: split an identifier into its component words (camelCase boundaries and
+ * snake_case). Returns [] when the word is not an identifier (single part).
+ * Pure + exported for tests.
+ */
+export function splitIdentifierParts(word: string): string[] {
+  const spaced = word
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')   // camelCase / PascalCase
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2') // HTTPServer → HTTP Server
+    .replace(/_/g, ' ');
+  const parts = spaced.toLowerCase().split(/\s+/).filter(p => p.length >= 2);
+  return parts.length > 1 ? parts : [];
+}
+
+
+/**
  * Weighted Reciprocal Rank Fusion (Cormack et al., SIGIR 2009; weighting per
  * Bruch et al. TOT 2023): score(d) = w_s/(k+rank_s) + (1-w_s)/(k+rank_d).
  * Only ranks are consumed — no score normalization needed. sparseWeight < 0.5
@@ -652,7 +667,9 @@ export class HarmonicIndexManager {
     // pollution is instead handled at write time (B4 length cap) and via the
     // merged_from penalty (A2).
     const docs = entries.map(entry => {
-      const text = (entry.primary_abstraction + ' ' + entry.cue_anchors.join(' ')).toLowerCase();
+      // NOTE: no toLowerCase() here — R7 identifier splitting needs the original
+      // case (camelCase boundaries); tokenizeBM25 lowercases internally.
+      const text = entry.primary_abstraction + ' ' + entry.cue_anchors.join(' ');
       return { entry, toks: this.tokenizeBM25(text) };
     });
     const docLengths = docs.map(d => d.toks.length);
@@ -695,6 +712,16 @@ export class HarmonicIndexManager {
     const tokens: string[] = [];
     const words = text.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 2);
     tokens.push(...words);
+    // R7 deterministic cue extraction (encoding specificity): identifiers are
+    // indexed in BOTH surface forms — the literal joined token above plus their
+    // camelCase/snake_case parts — so `searchScored` and `search scored` match
+    // each other in either direction. Purely additive: no term is ever removed
+    // (the R1 lesson: never rewrite away the literal cue).
+    const rawWords = text.split(/[^A-Za-z0-9_]+/).filter(w => w.length >= 3);
+    for (const w of rawWords) {
+      const parts = splitIdentifierParts(w);
+      if (parts.length > 1) tokens.push(...parts);
+    }
     const cjk = text.toLowerCase().match(/[\u4e00-\u9fff]/g) || [];
     tokens.push(...cjk);
     return tokens;
