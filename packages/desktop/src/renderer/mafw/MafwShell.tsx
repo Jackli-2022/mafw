@@ -6,9 +6,7 @@ import { createStore, reconcile } from "solid-js/store"
 import { Icon } from "@mafw/ui/icon"
 import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { ContextMenu } from "@mafw/ui/context-menu"
 import { ToastV2, showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { DataProvider } from "@mafw/session-ui/context"
 import { DialogProvider } from "@mafw/ui/context/dialog"
@@ -16,6 +14,7 @@ import { MarkedProvider } from "@mafw/ui/context/marked"
 import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
+import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
@@ -93,8 +92,6 @@ export function MafwShell() {
   const setActiveSessionId = workspace.setActiveId
   // Session list refresh: shared sessionStore.invalidate() (see SSE onopen and
   // session create/close flows). The old sessionRefreshKey signal is removed.
-  const [renamingId, setRenamingId] = createSignal<string | null>(null)
-  const [renameDraft, setRenameDraft] = createSignal("")
 
   // Subagent navigation: childID → parentID. Entering a subagent session only
   // switches the content pane (no tab change); this map powers the back button.
@@ -1621,70 +1618,21 @@ export function MafwShell() {
             ) : activeTab() === "chat" ? (
               <div class="mafw-chat">
                 {/* SessionStrip */}
-                <div class="mafw-sessionstrip">
-                  {sessions().map(s => (
-                    <ContextMenu>
-                      <ContextMenu.Trigger
-                        as="div"
-                        class="mafw-session-tab"
-                        classList={{ active: activeViewId() === s.id }}
-                        onClick={() => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(s.id); setActiveViewId(s.id) }}
-                      >
-                        <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
-                        <span
-                          class="mafw-session-title"
-                          title="双击重命名"
-                          onDblClick={e => {
-                            e.stopPropagation()
-                            setRenamingId(s.id)
-                            setRenameDraft(s.title || "")
-                          }}
-                        >
-                          <Show when={renamingId() !== s.id} fallback={
-                            <TextInputV2
-                              value={renameDraft()}
-                              onInput={e => setRenameDraft(e.currentTarget.value)}
-                              onKeyDown={e => {
-                                e.stopPropagation()
-                                if (e.key === 'Enter') {
-                                  const next = renameDraft().trim()
-                                  if (next && next !== s.title) {
-                                    setSessions(prev => prev.map(x => x.id === s.id ? { ...x, title: next } : x))
-                                    setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === s.id ? { ...x, title: next } : x) }))
-                                    // Persist to the runtime too (same path as
-                                    // Rail rename) so the title survives and the
-                                    // session.updated broadcast syncs other views.
-                                    window.api.mafw.sessions.rename(s.id, next)
-                                      .catch((err: any) => showToastV2({ description: `重命名失败: ${err?.message || err}`, duration: 3000 }))
-                                  }
-                                  setRenamingId(null)
-                                }
-                                if (e.key === 'Escape') setRenamingId(null)
-                              }}
-                              onBlur={() => setRenamingId(null)}
-                              style={{ width: 120, height: 22, fontSize: 12 }}
-                            />
-                          }>{s.title}</Show>
-                        </span>
-                        <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); closeSession(s.id) }}>✕</ButtonV2>
-                      </ContextMenu.Trigger>
-                      <ContextMenu.Portal>
-                        <ContextMenu.Content>
-                          <ContextMenu.Item onSelect={() => closeSession(s.id)}>
-                            <ContextMenu.ItemLabel>Close</ContextMenu.ItemLabel>
-                          </ContextMenu.Item>
-                          <ContextMenu.Item onSelect={() => void exportSession(s.id)}>
-                            <ContextMenu.ItemLabel>导出 Markdown…</ContextMenu.ItemLabel>
-                          </ContextMenu.Item>
-                          <ContextMenu.Item onSelect={() => copyText(s.id)}>
-                            <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
-                          </ContextMenu.Item>
-                        </ContextMenu.Content>
-                      </ContextMenu.Portal>
-                    </ContextMenu>
-                  ))}
-                  <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={createSession}>+</ButtonV2>
-                </div>
+                <SessionStrip
+                  sessions={sessions}
+                  activeViewId={activeViewId}
+                  onSelect={(id) => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
+                  onClose={closeSession}
+                  onRename={(id, next) => {
+                    setSessions(prev => prev.map(x => x.id === id ? { ...x, title: next } : x))
+                    setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title: next } : x) }))
+                    window.api.mafw.sessions.rename(id, next)
+                      .catch((err: any) => showToastV2({ description: `重命名失败: ${err?.message || err}`, duration: 3000 }))
+                  }}
+                  onExport={(id) => void exportSession(id)}
+                  onCopyId={copyText}
+                  onNew={createSession}
+                />
                 {/* Single ChatPane for the active session */}
                 <Show
                   when={showWelcome() || !activeSessionId()}

@@ -771,3 +771,16 @@ describe("changed files 数据源：message.summary.diffs 聚合", () => {
     expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("aggregateSessionDiffs")
   })
 })
+
+describe("topframe — SessionStrip 组件提取", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("SessionStrip 组件文件存在且导出", () => {
+    const src = read("src/renderer/mafw/components/SessionStrip.tsx")
+    expect(src).toContain("export function SessionStrip")
+  })
+  test("MafwShell 以组件形式渲染（不再内联 session tab map）", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toContain("<SessionStrip")
+    expect(shell).not.toContain('class="mafw-session-tab"')
+  })
+})
