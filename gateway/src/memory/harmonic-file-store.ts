@@ -1,8 +1,10 @@
-import * as fs from 'fs';
+﻿import * as fs from 'fs';
 import * as path from 'path';
 import { HarmonicUnit } from '../core/memory/harmonic-types';
 import { HarmonicIndexManager } from '../core/memory/harmonic-index';
 import { CognitiveGraphManager } from '../core/memory/cognitive-graph';
+import { config } from '../config';
+import { harvestIdentifierCues } from './cue-harvest';
 import { writeOKFFile, getOKFDirectory } from './okf-writer';
 import { readOKFFile } from './okf-parser';
 import { EventLog } from './event-log';
@@ -14,7 +16,7 @@ import { MinHashMerger } from '../core/memory/minhash-merger';
 
 const globalWriteQueues = new Map<string, WriteQueue>();
 
-/** Post-write listeners (static — every store instance fires them). */
+/** Post-write listeners (static 鈥?every store instance fires them). */
 export type MemoryWriteListener = (unit: HarmonicUnit) => void;
 const writeListeners: MemoryWriteListener[] = [];
 export function onMemoryWritten(cb: MemoryWriteListener): void {
@@ -65,10 +67,21 @@ export class HarmonicUnitFileStore {
     if (!unit.cue_anchors || unit.cue_anchors.length === 0) {
       unit.cue_anchors = extractAnchors(unit.primary_abstraction);
     }
+    // R7 follow-up (write-side fidelity): identifiers that live only in the BODY
+    // are unreachable 鈥?search reads abstraction + cue_anchors only. Harvest
+    // them into cue_anchors, additively and bounded by maxCueAnchors.
+    if (config.memory.harvestIdentifierCues !== false) {
+      const current = unit.cue_anchors ?? [];
+      const room = Math.max(0, (config.memory.maxCueAnchors ?? 8) - current.length);
+      if (room > 0) {
+        const harvested = harvestIdentifierCues(unit.memory_value || '', current, { max: room });
+        if (harvested.length > 0) unit.cue_anchors = [...current, ...harvested];
+      }
+    }
     await this.writeQueue.enqueue(async () => {
       // Cross-tier merge check: if the incoming unit is highly similar to an
       // existing memory, fold the existing one into it (skipped when the unit
-      // is itself the product of a merge, or the caller opts out — e.g. the
+      // is itself the product of a merge, or the caller opts out 鈥?e.g. the
       // LongMemEval benchmark ingests one deterministic unit per round and must
       // not be collapsed).
       let targetUnit = unit;
@@ -103,7 +116,7 @@ export class HarmonicUnitFileStore {
         sticky_until: targetUnit.sticky_until,
         merged_from: targetUnit.merged_from,
         // filePath must reflect the ACTUAL on-disk directory (getOKFDirectory
-        // keys off unit.type), not the tier label — a tier arg such as 'tier3'
+        // keys off unit.type), not the tier label 鈥?a tier arg such as 'tier3'
         // does not relocate the file. read() resolves via this path.
         filePath: path.join('memory', getOKFDirectory(targetUnit), fileName).replace(/\\/g, '/'),
         created_at: targetUnit.created_at,
@@ -111,12 +124,12 @@ export class HarmonicUnitFileStore {
         source_session_id: targetUnit.source_session_id,
       } as any, entryTier);
 
-      // 锚点图（多跳检索）增量更新——失败不影响记忆写入（降级）
+      // 閿氱偣鍥撅紙澶氳烦妫€绱級澧為噺鏇存柊鈥斺€斿け璐ヤ笉褰卞搷璁板繂鍐欏叆锛堥檷绾э級
       try {
         this.anchorGraphStore?.upsertUnit(targetUnit.id, targetUnit.cue_anchors ?? []);
       } catch { /* non-fatal */ }
 
-      // 共激活图（联想层）增量更新——失败不影响记忆写入（降级）
+      // 鍏辨縺娲诲浘锛堣仈鎯冲眰锛夊閲忔洿鏂扳€斺€斿け璐ヤ笉褰卞搷璁板繂鍐欏叆锛堥檷绾э級
       try {
         this.coactivationStore?.upsertUnit({
           id: targetUnit.id,

@@ -415,6 +415,10 @@ async function createRerankerForRun(
 
 async function main() {
   const args = parseArgs();
+  // Deterministic ingest: the body-identifier harvest (write-side fidelity) is
+  // a production behaviour; the benchmark ingests controlled units and must not
+  // gain anchors from haystack prose.
+  config.memory.harvestIdentifierCues = false;
   if (args.sample <= 0 || !['round', 'session'].includes(args.granularity)) {
     help();
     process.exit(1);

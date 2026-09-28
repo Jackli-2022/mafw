@@ -169,6 +169,13 @@ export interface GatewayConfig {
     defaultEnergy: number;
     defaultMemoryType: string;
     maxCueAnchors: number;
+    /**
+     * R7 write-side fidelity: harvest identifier-like tokens (camelCase,
+     * snake_case, paths) from the memory BODY into cue_anchors — otherwise they
+     * are unreachable by search (which only reads abstraction + anchors).
+     * Disabled by the benchmark harness to keep runs deterministic.
+     */
+    harvestIdentifierCues: boolean;
     abstractionMaxLength: number;
     defaultPrimaryAbstractionLength: number;
     defaultSalience: number;
@@ -448,6 +455,7 @@ function defaults(projectDir: string): GatewayConfig {
       defaultEnergy: 0.8,
       defaultMemoryType: 'semantic',
       maxCueAnchors: 8,
+      harvestIdentifierCues: true,
       abstractionMaxLength: 200,
       defaultPrimaryAbstractionLength: 80,
       defaultSalience: 1.0,
