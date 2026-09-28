@@ -20,8 +20,7 @@ import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
-import { DiffReviewPanel } from "./components/DiffReviewPanel"
-  import { EventInspector } from "./components/EventInspector"
+import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
@@ -32,7 +31,7 @@ import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
-import { type DockTab, normalizeDockTab } from "./components/dock-tab"
+import { type DockTab, normalizeDockTab, dockTabWidth } from "./components/dock-tab"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -756,8 +755,6 @@ export function MafwShell() {
   const connPhase = useConnPhase()
   const connDown = () => connPhase() === "down"
   const [showInspector, setShowInspector] = createSignal(false)
-  // 改动审阅面板（切片 2）：值 = 打开面板的 sessionID
-  const [diffPanelFor, setDiffPanelFor] = createSignal<string | null>(null)
   // worktree 并行隔离（切片 4）：runtime 能力缓存 + 创建入口
   const [rtCaps, setRtCaps] = createSignal<Record<string, boolean>>({})
   createEffect(() => {
@@ -1312,12 +1309,16 @@ export function MafwShell() {
     setTaskListOpen(o => !o)
   }
 
-  // ── Unified right dock (tasks / trajectory tabs) ──
+  // ── Unified right dock (tasks / trajectory / usage / notes / changes) ──
   const [rightDockOpen, setRightDockOpen] = createSignal(localStorage.getItem("mafw-right-dock-open") === "1")
   const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
     normalizeDockTab(localStorage.getItem("mafw-right-dock-tab"), "tasks")
   )
-  const [rightDockWidth, setRightDockWidth] = createSignal(Number(localStorage.getItem("mafw-right-dock-width")) || 320)
+  // 宽度按 tab 记忆（v6 W4）：changes 等宽 tab 默认 480，其余 320。
+  const [rightDockWidths, setRightDockWidths] = createSignal<Record<string, number>>((() => {
+    try { return JSON.parse(localStorage.getItem("mafw-right-dock-widths") || "{}") } catch { return {} }
+  })())
+  const rightDockWidth = () => dockTabWidth(rightDockTab(), rightDockWidths())
 
   const applyRightDock = (open: boolean, tab?: DockTab) => {
     setRightDockOpen(open)
@@ -1326,8 +1327,11 @@ export function MafwShell() {
     if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
   }
   const applyRightDockWidth = (w: number) => {
-    setRightDockWidth(w)
-    try { localStorage.setItem("mafw-right-dock-width", String(w)) } catch {}
+    setRightDockWidths(prev => {
+      const next = { ...prev, [rightDockTab()]: w }
+      try { localStorage.setItem("mafw-right-dock-widths", JSON.stringify(next)) } catch {}
+      return next
+    })
   }
 
   // SSE live trajectory signals
@@ -1722,7 +1726,7 @@ export function MafwShell() {
                           onTaskHoverLeave={scheduleTaskClose}
                           onFocus={() => { setShowConfig(false); setActiveTab("chat") }}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
-                          onOpenDiffReview={() => setDiffPanelFor(prev => prev === activeSessionId()! ? null : activeSessionId()!)}
+                          onOpenDiffReview={() => applyRightDock(true, "changes")}
                           worktreeEnabled={worktreeEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
                           projectDirectory={currentProject()}
@@ -1750,18 +1754,6 @@ export function MafwShell() {
                           pageState={pageState}
                           setPageState={setPageState as any}
                         />
-                      <Show when={diffPanelFor()}>
-                      <DiffReviewPanel
-                        sessionID={diffPanelFor()!}
-                        diffs={aggregateSessionDiffs((store.message as any)[diffPanelFor()!] || [])}
-                        onClose={() => setDiffPanelFor(null)}
-                        onSendComment={(sid, text) => {
-                          void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
-                            .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
-                            .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
-                        }}
-                      />
-                    </Show>
                     </div>
                   }
                 >
@@ -1880,7 +1872,11 @@ export function MafwShell() {
                 <ChangesDock
                   sessionID={currentSessionID() || null}
                   diffs={aggregateSessionDiffs((store.message as any)[currentSessionID()] || [])}
-                  onOpenReview={(sid) => setDiffPanelFor(sid)}
+                  onSendComment={(sid, text) => {
+                    void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                      .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
+                      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                  }}
                 />
               </div>
             </RightDock>

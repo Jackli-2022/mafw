@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { normalizeDockTab, DOCK_TABS } from "../src/renderer/mafw/components/dock-tab"
+import { normalizeDockTab, DOCK_TABS, dockTabWidth } from "../src/renderer/mafw/components/dock-tab"
 
 describe("normalizeDockTab", () => {
   test("合法值直通", () => {
@@ -29,4 +29,10 @@ describe("DOCK_TABS", () => {
   test("changes 合法值直通", () => {
     expect(normalizeDockTab("changes")).toBe("changes")
   })
+})
+
+describe("dockTabWidth（v6 W4）", () => {
+  test("changes 默认 480", () => expect(dockTabWidth("changes", {})).toBe(480))
+  test("普通 tab 默认 320", () => expect(dockTabWidth("usage", {})).toBe(320))
+  test("用户记忆值优先", () => expect(dockTabWidth("changes", { changes: 400 })).toBe(400))
 })

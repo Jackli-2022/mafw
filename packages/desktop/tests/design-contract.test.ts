@@ -619,7 +619,7 @@ describe("DiffReviewPanel 接线", () => {
   const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
   test("MafwShell：审阅改动 toggle（再点关闭）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain("setDiffPanelFor(prev => prev === activeSessionId()! ? null : activeSessionId()!)")
+    expect(src).toContain('applyRightDock(true, "changes")')
   })
   test("ChatPane：composer 审阅按钮带改动计数徽标", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
@@ -641,10 +641,13 @@ describe("Dock changes tab（改动列表常驻入口）", () => {
     expect(src).toContain("ChangesDock")
     expect(src).toContain('rightDockTab() === "changes"')
   })
-  test("抽屉为 shell 级单例（挂 SplitView 外，全 chat 区一个实例）", () => {
+  test("两级视图：dock 内嵌 DiffReviewPanel（无 shell 级抽屉）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain("<Show when={diffPanelFor()}>")
-    expect(src.split("<DiffReviewPanel").length - 1).toBe(1)
+    expect(src).not.toContain("diffPanelFor")
+    expect(src).toContain('applyRightDock(true, "changes")')
+    const dock = read("src/renderer/mafw/components/ChangesDock.tsx")
+    expect(dock).toContain("embedded")
+    expect(dock).toContain("<DiffReviewPanel")
   })
   test("ChangesDock 行样式存在", () => {
     expect(cssBlock(".mafw-changes-row {")).toContain("cursor: pointer")

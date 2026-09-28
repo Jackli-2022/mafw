@@ -17,18 +17,23 @@ export interface FileDiffEntry {
 
 export function DiffReviewPanel(props: {
   sessionID: string
-  /** SSE session.diff 实时快照（可空 → 组件自行拉取） */
+  /** SSE session.diff 实时快照（可缺省 → 组件自行拉取） */
   diffs?: FileDiffEntry[]
-  onClose: () => void
+  onClose?: () => void
   /** 行级评论回喂（可选）：组装好的评论 prompt 发到会话 */
   onSendComment?: (sessionID: string, text: string) => void
+  /** 嵌入 RightDock changes tab（隐藏自带文件列表栏与关闭钮，改显返回钮） */
+  embedded?: boolean
+  /** 初始选中的文件（从 dock 文件列表进入时预选） */
+  initialFile?: string | null
+  onBack?: () => void
 }) {
   const [fetched, setFetched] = createSignal<FileDiffEntry[]>([])
   const [loading, setLoading] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   // 两栏：左文件列表 + 右当前文件 hunks（opencode v2 ReviewPanel 模式）
-  const [selectedFileRaw, setSelectedFile] = createSignal<string | null>(null)
+  const [selectedFileRaw, setSelectedFile] = createSignal<string | null>(props.initialFile ?? null)
   // 行级评论：commentingOn = 正在评论的 hunk key
   const [commentingOn, setCommentingOn] = createSignal<string | null>(null)
   const [commentDraft, setCommentDraft] = createSignal("")
@@ -97,12 +102,17 @@ export function DiffReviewPanel(props: {
   }
 
   return (
-    <div class="mafw-diff-panel" role="dialog" aria-label="审阅改动">
+    <div class="mafw-diff-panel" classList={{ embedded: !!props.embedded }} role="dialog" aria-label="审阅改动">
       <header class="mafw-diff-panel-header">
+        <Show when={props.embedded && props.onBack}>
+          <ButtonV2 variant="ghost" size="small" class="mafw-diff-panel-back" onClick={() => props.onBack?.()}>← 改动列表</ButtonV2>
+        </Show>
         <h2>审阅改动</h2>
         <div class="mafw-diff-panel-actions">
           <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => void refresh()}>刷新</ButtonV2>
-          <ButtonV2 variant="ghost" size="small" onClick={() => props.onClose()}>关闭</ButtonV2>
+          <Show when={!props.embedded}>
+            <ButtonV2 variant="ghost" size="small" onClick={() => props.onClose?.()}>关闭</ButtonV2>
+          </Show>
         </div>
       </header>
       <p class="mafw-diff-panel-hint">勾选要撤销的 hunk，点「回退选中」。未勾选的改动保持不变。</p>
@@ -112,6 +122,7 @@ export function DiffReviewPanel(props: {
             when={files().length > 0}
             fallback={<p class="mafw-diff-panel-empty">当前会话没有待审的文件改动。</p>}
           >
+            <Show when={!props.embedded}>
             <div class="mafw-diff-files">
               <For each={files()}>
                 {(f) => (
@@ -134,6 +145,7 @@ export function DiffReviewPanel(props: {
                 )}
               </For>
             </div>
+            </Show>
             <div class="mafw-diff-detail">
               <Show when={currentFile()}>
                 {(f) => {
