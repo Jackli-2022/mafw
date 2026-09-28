@@ -817,6 +817,10 @@ describe("topframe — 顶行框架", () => {
   test("CSS：旧 titlebar 规则删除", () => {
     expect(css).not.toMatch(/\.mafw-titlebar\s*\{/)
   })
+  test("顶行双击守卫排除会话 tab（防误最大化）", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toMatch(/closest\(["'][^"']*\.mafw-session-tab[^"']*["']\)/)
+  })
 })
 
 describe("topframe — Rail 品牌行", () => {

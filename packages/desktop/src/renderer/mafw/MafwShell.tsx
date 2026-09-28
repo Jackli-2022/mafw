@@ -1612,7 +1612,7 @@ export function MafwShell() {
         class="mafw-topstrip"
         onDblClick={(e) => {
           if (window.api.platform !== "win32") return
-          if ((e.target as HTMLElement).closest("button,input,[data-component],a")) return
+          if ((e.target as HTMLElement).closest("button,input,[data-component],a,.mafw-session-tab")) return
           void window.api.windowControls.toggleMaximize()
         }}
       >
