@@ -86,6 +86,7 @@
   --elev-soft: 0 1px 2px rgba(0,0,0,.25);
   --elev-panel: 0 4px 16px rgba(0,0,0,.35);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.5);
+  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
 }
 /* 亮色：手动覆盖（html[data-theme]） */
 html[data-theme="light"] .mafw-shell {
@@ -164,6 +165,7 @@ html[data-theme="light"] .mafw-shell {
   --elev-soft: 0 1px 2px rgba(0,0,0,.06);
   --elev-panel: 0 4px 16px rgba(0,0,0,.10);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
+  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
 }
 /* 亮色：跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -206,6 +208,7 @@ html[data-theme="light"] .mafw-shell {
     --elev-soft: 0 1px 2px rgba(0,0,0,.06);
     --elev-panel: 0 4px 16px rgba(0,0,0,.10);
     --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
+    --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
   }
 }
 
@@ -279,6 +282,7 @@ body {
   --elev-soft: 0 1px 2px rgba(0,0,0,.25);
   --elev-panel: 0 4px 16px rgba(0,0,0,.35);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.5);
+  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
 }
 /* Portal 镜像：亮色手动覆盖 */
 html[data-theme="light"] body {
@@ -336,6 +340,7 @@ html[data-theme="light"] body {
   --elev-soft: 0 1px 2px rgba(0,0,0,.06);
   --elev-panel: 0 4px 16px rgba(0,0,0,.10);
   --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
+  --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
 }
 /* Portal 镜像：亮色跟随系统（无手动覆盖时） */
 @media (prefers-color-scheme: light) {
@@ -367,6 +372,7 @@ html[data-theme="light"] body {
     --elev-soft: 0 1px 2px rgba(0,0,0,.06);
     --elev-panel: 0 4px 16px rgba(0,0,0,.10);
     --elev-prominent: 0 12px 40px rgba(0,0,0,.16);
+    --font-display: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
   }
 }
 
@@ -1181,7 +1187,8 @@ html[data-theme="light"] body {
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
   padding: 10px 14px;
-  font-size: 14px;
+  font-family: var(--font-data);
+  font-size: 13px;
   color: var(--text-1);
 }
 .mafw-shell [data-component="user-message"] [data-slot="user-message-body"] {
@@ -4831,3 +4838,9 @@ html[data-theme="light"] .mafw-picker-pop {
   color: var(--text-4);
   font-variant-numeric: tabular-nums;
 }
+
+/* ── 字体分层（v6 §2）─────────────────────────────────────────── */
+/* 品牌点睛：页面标题 / 欢迎页大标题用衬线（系统栈，零新字体文件） */
+.mafw-page-title, .mafw-welcome-title { font-family: var(--font-display); }
+/* 人机用字分工：用户气泡用 mono 契约见上方 scoped override（font-family 已并入
+   既有 user-message-text 规则，避免重复选择器）；行内代码沿用 session-ui mono。 */

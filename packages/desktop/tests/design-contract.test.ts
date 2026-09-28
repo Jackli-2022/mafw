@@ -82,6 +82,21 @@ describe("token v6 — body portal 镜像", () => {
   test.each(V6_TOKENS)("系统亮色 body 定义 %s", (t) => expect(bodySysLight).toContain(`${t}:`))
 })
 
+describe("token v6 — 字体分层", () => {
+  test("--font-display 三主题块定义", () => {
+    expect(dark).toContain("--font-display:")
+    expect(light).toContain("--font-display:")
+    expect(sysLight).toContain("--font-display:")
+  })
+  test("--font-display 引用衬线栈", () => {
+    expect(css).toMatch(/--font-display:\s*[^;]*serif/)
+  })
+  test("用户气泡用 mono 数据字体", () => {
+    const rule = cssBlock('.mafw-shell [data-component="user-message"] [data-slot="user-message-text"] {')
+    expect(rule).toContain("var(--font-data)")
+  })
+})
+
 describe("portal 令牌镜像 — body 暗色块", () => {
   test.each(PORTAL_TOKENS)("定义 %s", (t) => expect(bodyDark).toContain(`${t}:`))
   test("bg-float 与 .mafw-shell 同值", () => expect(tokenHex(bodyDark, "--bg-float")).toBe("#252320"))
