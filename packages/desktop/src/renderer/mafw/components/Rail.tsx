@@ -61,8 +61,6 @@ export function Rail(props: Props) {
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
   const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
-  // 多项目懒加载：仅展开的项目拉取会话（sessionStore 首访触发），当前项目默认展开。
-  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
   let searchRef: HTMLDivElement | undefined
 
   const gwReady = createMemo(() => gwStatus()?.state === "ready")
@@ -88,87 +86,60 @@ export function Rail(props: Props) {
 
   const searching = createMemo(() => query().trim().length > 0)
 
-  // 展开集合：当前项目始终保持展开。
-  createEffect(() => {
+  // 单项目树（v6 决定）：只加载当前项目会话；跨项目切换用顶部 switcher。
+  const currentSessions = createMemo(() => (projectID() ? sessionStore.sessionsFor(projectID()) : []))
+
+  // 当前项目条目：优先取注册项目（拿 name/worktree），否则用 currentProject() 合成。
+  const currentEntry = createMemo<{ id: string; name?: string; worktree?: string } | null>(() => {
     const pid = projectID()
-    if (!pid) return
-    setExpanded(prev => (prev[pid] ? prev : { ...prev, [pid]: true }))
+    if (!pid) return null
+    const found = projects().find(p => (p.worktree || p.id) === pid)
+    if (found) return found
+    const cp = currentProject()
+    return { id: cp?.id || pid, name: cp?.name || cp?.worktree || pid, worktree: pid }
   })
 
-  // 展开项目的会话；sessionsFor 首访触发懒拉取（搜索不自动加载未展开项目）。
-  const sessionsByProject = createMemo(() => {
-    const out: Record<string, any[]> = {}
-    for (const p of projects()) {
-      const pid = p.worktree || p.id
-      if (!pid) continue
-      if (!expanded()[pid]) continue
-      out[pid] = sessionStore.sessionsFor(pid)
-    }
-    return out
+  const tree = createMemo<ProjectNode[]>(() => {
+    const entry = currentEntry()
+    const pid = projectID()
+    if (!entry || !pid) return []
+    return buildSessionTree([entry], { [pid]: currentSessions() }, pid)
   })
 
-  const tree = createMemo(() => buildSessionTree(projects(), sessionsByProject(), projectID()))
+  const projectNode = createMemo<ProjectNode | null>(() => tree()[0] ?? null)
 
-  // 项目会话计数徽标（仅统计已加载过的项目，保持懒加载）。
-  const [counts, setCounts] = createSignal<Record<string, number>>({})
-  createEffect(() => {
-    const loaded = sessionsByProject()
-    setCounts(prev => {
-      let next = prev
-      for (const pid of Object.keys(loaded)) {
-        const n = loaded[pid].length
-        if (next[pid] !== n) { next = { ...next, [pid]: n } }
-      }
-      return next
-    })
-  })
-
-  // 搜索：跨已展开项目过滤；项目无命中则不显示。
-  const filteredTree = createMemo<ProjectNode[]>(() => {
+  // 搜索：仅当前项目（标题匹配）。
+  const filteredGroups = createMemo<ProjectNode["groups"]>(() => {
+    const groups = projectNode()?.groups ?? []
     const q = query().trim().toLowerCase()
-    if (!q) return tree()
-    const hit = (n: SessionNode) => n.title.toLowerCase().includes(q)
-    return tree()
-      .map(p => ({
-        ...p,
-        manager: p.manager && hit(p.manager) ? p.manager : null,
-        groups: p.groups
-          .map(g => ({ ...g, items: g.items.filter(hit) }))
-          .filter(g => g.items.length > 0),
-      }))
-      .filter(p => p.manager || p.groups.length > 0)
+    if (!q) return groups
+    return groups
+      .map(g => ({ ...g, items: g.items.filter(n => n.title.toLowerCase().includes(q)) }))
+      .filter(g => g.items.length > 0)
   })
 
-  // 键盘导航的扁平序列（搜索时）
-  const flatResults = createMemo(() =>
-    filteredTree().flatMap(p => [...(p.manager ? [p.manager] : []), ...p.groups.flatMap(g => g.items)]),
-  )
+  const flatResults = createMemo(() => filteredGroups().flatMap(g => g.items))
 
-  // 高亮节点 id（O(1) 比较，避免每个节点一次 indexOf 的 O(n²)）。
+  // 高亮节点 id（O(1) 比较）。
   const hiNodeId = createMemo(() => {
     const i = hi()
     if (i < 0) return null
     return flatResults().slice(0, SEARCH_CAP)[i]?.id ?? null
   })
 
-  // 逐项目分页（修复：曾一次渲染数千会话行）。
-  const [limits, setLimits] = createSignal<Record<string, number>>({})
-  const limitFor = (pid: string) => limits()[pid] ?? RAIL_PAGE_SIZE
-  const showMore = (pid: string) => setLimits(prev => ({ ...prev, [pid]: (prev[pid] ?? RAIL_PAGE_SIZE) + RAIL_PAGE_SIZE }))
-  const pagedOf = (p: ProjectNode) => pageGroups(p.groups, limitFor(p.projectID))
-  // 搜索命中总数超过上限时的截断提示。
+  // 分页（100 + 加载更多）；切换项目重置。
+  const [limit, setLimit] = createSignal(RAIL_PAGE_SIZE)
+  createEffect(() => { projectID(); setLimit(RAIL_PAGE_SIZE) })
+  const paged = createMemo(() => pageGroups(filteredGroups(), limit()))
+  const showMore = () => setLimit(l => l + RAIL_PAGE_SIZE)
+  const totalCount = createMemo(() => (projectNode()?.groups ?? []).reduce((n, g) => n + g.items.length, 0))
+
   const searchTruncated = createMemo(() => searching() && flatResults().length > SEARCH_CAP)
-  const collapsedUnsearched = createMemo(() =>
-    searching() && projects().some(pr => !expanded()[pr.worktree || pr.id]),
-  )
 
   const offline = createMemo(() => (projectID() ? sessionStore.isOffline(projectID()) : false) || connPhase() === "down")
 
-  // 当前项目的 manager 节点（用于 ManagerCard 更新时间）。
-  const managerRow = createMemo<SessionNode | null>(() => {
-    const pid = projectID()
-    return tree().find(p => p.projectID === pid)?.manager ?? null
-  })
+  // 当前项目的 manager 节点（用于 ManagerCard 更新时间；manager 不入树）。
+  const managerRow = createMemo<SessionNode | null>(() => projectNode()?.manager ?? null)
 
   const onSearchKeyDown = (e: KeyboardEvent) => {
     const list = flatResults().slice(0, SEARCH_CAP)
@@ -192,8 +163,6 @@ export function Rail(props: Props) {
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
-
-  const toggleProject = (pid: string) => setExpanded(prev => ({ ...prev, [pid]: !prev[pid] }))
 
   // Inline rename (Electron has no window.prompt): row swaps to a TextInputV2.
   const startRename = (node: SessionNode) => { setRenamingId(node.id); setRenameDraft(node.title) }
@@ -252,16 +221,13 @@ export function Rail(props: Props) {
     }
   }
 
-  // 点击会话行：跨项目时先切项目（setCurrent）再开会话 tab。
-  const openNode = (node: SessionNode, p: ProjectNode) => {
-    if (!p.current) {
-      selectProject({ worktree: p.projectID, id: p.projectID, name: p.name })
-    }
-    props.onSelectSession(node.id, node.title, node.manager)
+  // 点击会话行：直接打开（单项目树，无跨项目切换；manager 不在树内）。
+  const openNode = (node: SessionNode) => {
+    props.onSelectSession(node.id, node.title, false)
     setHi(-1)
   }
 
-  const renderNode = (node: SessionNode, p: ProjectNode) => (
+  const renderNode = (node: SessionNode) => (
     <Show
       when={renamingId() !== node.id}
       fallback={
@@ -270,7 +236,7 @@ export function Rail(props: Props) {
             value={renameDraft()}
             onInput={e => setRenameDraft(e.currentTarget.value)}
             onKeyDown={e => {
-              if (e.key === "Enter") { e.preventDefault(); commitRename(node.id, p.projectID) }
+              if (e.key === "Enter") { e.preventDefault(); commitRename(node.id, projectID()) }
               else if (e.key === "Escape") setRenamingId(null)
             }}
             autoFocus
@@ -284,13 +250,10 @@ export function Rail(props: Props) {
           class="mafw-rail-session"
           classList={{ active: props.activeSessionId === node.id }}
           data-hi={hiNodeId() === node.id ? "1" : undefined}
-          onClick={() => openNode(node, p)}
+          onClick={() => openNode(node)}
         >
           <TooltipV2 value={node.worktree ? `worktree：${node.worktree}` : new Date(node.updated || Date.now()).toLocaleString()} openDelay={300}>
             <span class="mafw-rail-session-title">
-              <Show when={node.manager}>
-                <span class="mafw-rail-manager-star" aria-hidden="true">★</span>
-              </Show>
               <Show when={node.worktree}>
                 <span class="mafw-rail-wt-badge" title="">⎇ {node.worktree}</span>
               </Show>
@@ -304,7 +267,7 @@ export function Rail(props: Props) {
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Content>
-            <ContextMenu.Item onSelect={() => openNode(node, p)}>
+            <ContextMenu.Item onSelect={() => openNode(node)}>
               <ContextMenu.ItemLabel>Open</ContextMenu.ItemLabel>
             </ContextMenu.Item>
             <ContextMenu.Item onSelect={() => startRename(node)}>
@@ -416,64 +379,51 @@ export function Rail(props: Props) {
         onSelectSession={props.onSelectSession}
       />
 
-      {/* Scroll area: multi-project lazy session tree */}
+      {/* Scroll area: single-project tree（项目根 → 日期组 → 会话） */}
       <Show when={connPhase() === "down"}><ConnBanner /></Show>
       <div class="mafw-rail-scroll">
         <Show when={offline()}>
           <div class="mafw-rail-empty">Gateway offline</div>
         </Show>
-        <Show when={!offline() && !searching() && projects().length === 0}>
-          <div class="mafw-rail-empty">No projects yet</div>
+        <Show when={!offline() && !projectNode()}>
+          <div class="mafw-rail-empty">No project</div>
         </Show>
         <Show when={searching() && flatResults().length === 0}>
           <div class="mafw-rail-empty">No chats found</div>
         </Show>
-        <For each={filteredTree()}>
-          {(p) => (
-            <div class="mafw-rail-project">
-              <div
-                class="mafw-rail-project-head"
-                classList={{ current: p.current, open: !!expanded()[p.projectID] }}
-                onClick={() => toggleProject(p.projectID)}
-              >
-                <span class="mafw-rail-project-caret" aria-hidden="true">{expanded()[p.projectID] ? "▾" : "▸"}</span>
-                <span class="mafw-rail-project-name">{p.name?.split(/[/\\]/).pop() || p.projectID}</span>
-                <Show when={counts()[p.projectID] !== undefined}>
-                  <span class="mafw-rail-project-count">{counts()[p.projectID]}</span>
-                </Show>
-              </div>
-              <Show when={expanded()[p.projectID]}>
-                <div class="mafw-rail-project-body">
-                  <Show when={p.manager}>{renderNode(p.manager!, p)}</Show>
-                  <For each={pagedOf(p).groups}>
-                    {(g) => (
-                      <>
-                        <div class="mafw-rail-date-group">
-                          <span>{g.label}</span>
-                          <span class="mafw-rail-date-count">{g.items.length}</span>
-                        </div>
-                        <For each={g.items}>{(node) => renderNode(node, p)}</For>
-                      </>
-                    )}
-                  </For>
-                  <Show when={!p.manager && p.groups.length === 0 && !sessionStore.isLoading()}>
-                    <div class="mafw-rail-empty">No sessions yet</div>
-                  </Show>
-                  <Show when={pagedOf(p).hasMore}>
-                    <div class="mafw-rail-load-more" onClick={() => showMore(p.projectID)}>
-                      加载更多（还有 {pagedOf(p).total - limitFor(p.projectID)} 条）
+        <Show when={projectNode()}>
+          <div class="mafw-rail-project">
+            <div class="mafw-rail-project-head current">
+              <span class="mafw-rail-project-name">{(projectNode()!.name || projectNode()!.projectID).split(/[/\\]/).pop()}</span>
+              <Show when={totalCount() > 0}>
+                <span class="mafw-rail-project-count">{totalCount()}</span>
+              </Show>
+            </div>
+            <div class="mafw-rail-project-body">
+              <For each={paged().groups}>
+                {(g) => (
+                  <>
+                    <div class="mafw-rail-date-group">
+                      <span>{g.label}</span>
+                      <span class="mafw-rail-date-count">{g.items.length}</span>
                     </div>
-                  </Show>
+                    <For each={g.items}>{(node) => renderNode(node)}</For>
+                  </>
+                )}
+              </For>
+              <Show when={!sessionStore.isLoading() && paged().total === 0}>
+                <div class="mafw-rail-empty">{searching() ? "No chats found" : "No sessions yet"}</div>
+              </Show>
+              <Show when={paged().hasMore}>
+                <div class="mafw-rail-load-more" onClick={() => showMore()}>
+                  加载更多（还有 {paged().total - limit()} 条）
                 </div>
               </Show>
             </div>
-          )}
-        </For>
+          </div>
+        </Show>
         <Show when={searchTruncated()}>
           <div class="mafw-rail-load-more">仅显示前 {SEARCH_CAP} 条结果</div>
-        </Show>
-        <Show when={collapsedUnsearched()}>
-          <div class="mafw-rail-empty">展开项目以搜索其会话</div>
         </Show>
       </div>
 

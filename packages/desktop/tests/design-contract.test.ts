@@ -233,6 +233,12 @@ describe("Rail 主导航 + 会话树（v6 §0b）", () => {
     expect(cssBlock(".mafw-rail-nav {")).not.toBe("")
     expect(cssBlock(".mafw-rail-project-head {")).not.toBe("")
   })
+  test("单项目树：只加载当前项目，manager 不入树", () => {
+    const rail = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
+    expect(rail).toContain("sessionsFor(projectID())")
+    expect(rail).not.toContain("renderNode(p.manager")
+    expect(rail).not.toContain("collapsedUnsearched")
+  })
 })
 
 describe("用户气泡 v4", () => {
