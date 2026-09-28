@@ -60,6 +60,32 @@ function hitsFor(index, query, topK = 50) {
 
 function main() {
   const raw = JSON.parse(fs.readFileSync(INDEX, 'utf8'));
+  const reportOnly = process.argv.includes('--by-month');
+
+  if (reportOnly) {
+    // Gap rate by creation month: a baseline for the write-prompt fix (the
+    // memory-guide / worker prompt now demand verbatim identifiers in
+    // cue_anchors/abstraction, so months after the fix should show a falling
+    // rate). Measured against the ABSTRACTION only — cue_anchors are also
+    // auto-filled by the harvest, so they are not a signal for the prompt.
+    const byMonth = new Map();
+    for (const e of raw.entries || []) {
+      const month = String(e.created_at || '').slice(0, 7) || 'unknown';
+      const abstraction = (e.primary_abstraction || '').toLowerCase();
+      const body = bodyOf(e.filePath || '');
+      const bucket = byMonth.get(month) || { total: 0, gap: 0 };
+      bucket.total++;
+      const ident = body ? (body.match(IDENT) || []).find(t => t.length >= 6) : null;
+      if (ident && !abstraction.includes(ident.toLowerCase())) bucket.gap++;
+      byMonth.set(month, bucket);
+    }
+    console.log('month     entries  body-identifier-absent-from-abstraction');
+    for (const [month, b] of [...byMonth.entries()].sort()) {
+      console.log(`${month}  ${String(b.total).padStart(7)}  ${(100 * b.gap / b.total).toFixed(0)}%`);
+    }
+    return;
+  }
+
   // 1. frozen sample: identifier in BODY but not in the ABSTRACTION
   const frozen = [];
   for (const e of raw.entries || []) {

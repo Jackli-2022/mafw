@@ -16,6 +16,7 @@ const GUIDE_BODY = `## 记忆
 - 学到新知识、用户明确陈述的偏好与约束、完成的重要工作、踩过的坑
   → 调用 mafw_add_memory（按内容选择 semantic / episodic / procedural，附 cueAnchors 关键词，每条一句话）
 - 内容已被 repo 文件承载（代码/文档/ADR/issue）→ 记指针（路径 + 一句话 gist），不复述全文：文件是真相源，记忆只是索引
+- **逐字保留标识符**：函数名 / 文件名 / 路径 / 命令 / 错误码 / 配置键原样写进 cueAnchors（或 primaryAbstraction），不翻译、不缩写——检索只匹配字面 token（实测：只在正文里出现的标识符 98% 查不到，收割后可达 98%）
 - procedural 记忆结尾带"→ 下次用：<skill/工具/命令>"：记忆即路标，不只存档
 - 不写冗余记忆
 

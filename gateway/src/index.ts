@@ -5219,7 +5219,16 @@ class MafwScheduler {
                   snapshotPointers = snap.block;
                   log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
                 } else if (decision !== 'no-snapshot') {
-                  log.info(`[Recall] snapshot skipped (${decision}) for ${sessionID}`);
+                  // Log the containment score: short instruction-style user turns
+                  // ("继续", "可以") legitimately score 0 against a content window,
+                  // so this number tells us whether the threshold or the usage
+                  // pattern is responsible for the skip rate.
+                  let containment = 0;
+                  try {
+                    const { snapshotContainment } = require('./recall/recall-snapshot');
+                    containment = snap ? snapshotContainment(snap.query, query) : 0;
+                  } catch { /* ignore */ }
+                  log.info(`[Recall] snapshot skipped (${decision}, containment=${containment.toFixed(2)}, queryTokens=${query.trim().length}) for ${sessionID}`);
                 }
               } catch { /* fail-open: live path */ }
             }

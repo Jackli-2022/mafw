@@ -75,6 +75,7 @@ Division of labor: your job is the FACT LAYER of this session — concrete facts
 - For multi-topic sessions, list entities from EACH topic separately in cue_anchors
 - Include entity variants: e.g., both "React" and "react", both "User Auth Module" and "auth module"
 - For technical discussions, include error codes, stack traces, or specific function names as anchors
+- Keep identifiers VERBATIM: function/file/symbol names, paths, commands and config keys go into cue_anchors exactly as written in the code — never translated, abbreviated or split into words. Retrieval matches literal tokens only, and an identifier that survives solely inside memory_value is unreachable (measured: 98% of such cases missed until harvested)
 - For user preferences, include the dimension AND value: e.g., "pref:ui-language=chinese" AND "chinese" AND "ui-language"
 - For cross-session linking, include topic keywords that might appear in OTHER sessions about the same subject
 - For personal information the user reveals about themselves (age, location, occupation, preferences, family, habits, salary, department size), create anchors with format "user:<category>=<value>" (e.g., "user:age=27", "user:occupation=engineer", "user:dept-avg-age=29.5") — these cross-session personal anchors are critical for multi-hop comparison questions
