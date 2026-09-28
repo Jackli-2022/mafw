@@ -7,7 +7,7 @@
  * scale-free top1/mean dominates; gap/ratio features are weak; the signal must
  * come from the *raw* relevance scores (never energy×salience-weighted).
  */
-import { computeFokFeatures, classifyFok, fitFokThresholds, zoneFromProbability } from '../../../src/recall/fok-gate';
+import { computeFokFeatures, classifyFok, fitFokThresholds, zoneFromProbability, fokSummaryFor } from '../../../src/recall/fok-gate';
 
 describe('computeFokFeatures', () => {
   test('empty candidate set → zeroed features, count 0', () => {
@@ -78,6 +78,32 @@ describe('zoneFromProbability (reranker top-1 probability)', () => {
   test('boundaries are inclusive', () => {
     expect(zoneFromProbability(0.5, th.low, th.high)).toBe('inject');
     expect(zoneFromProbability(0.2, th.low, th.high)).toBe('low-confidence');
+  });
+
+  test('non-finite thresholds → inject (fail-open, never blanket no-memory)', () => {
+    expect(zoneFromProbability(0.95, undefined as any, undefined as any)).toBe('inject');
+    expect(zoneFromProbability(0.95, NaN, NaN)).toBe('inject');
+  });
+});
+
+describe('fokSummaryFor (explicit search path)', () => {
+  const th = { low: 0.2, high: 0.5 };
+  const candidates = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  test('looks the probability up by id (probs follow INPUT order)', () => {
+    // reranked order is c,a,b but probs stay aligned to the input candidates
+    const s = fokSummaryFor([0.1, 0.9, 0.05], candidates, 'c', th);
+    expect(s).toEqual({ zone: 'no-memory', top1prob: 0.05 });
+  });
+
+  test('confident top-1 → inject', () => {
+    expect(fokSummaryFor([0.1, 0.9, 0.05], candidates, 'b', th)?.zone).toBe('inject');
+  });
+
+  test('missing inputs → undefined (field omitted, no false signal)', () => {
+    expect(fokSummaryFor(undefined, candidates, 'a', th)).toBeUndefined();
+    expect(fokSummaryFor([0.1], candidates, undefined, th)).toBeUndefined();
+    expect(fokSummaryFor([0.1], candidates, 'zzz', th)).toBeUndefined();
   });
 });
 

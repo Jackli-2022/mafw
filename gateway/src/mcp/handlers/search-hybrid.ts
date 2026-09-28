@@ -116,11 +116,38 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
     // Verification layer (handler-level; keeps searchScored synchronous):
     // 'heuristic' | 'cross-encoder' | 'llamacpp' (Qwen3-Reranker = CA1 analog).
     // NOT on the boundary-recall path (100ms contract).
+    // R5: the same scoring pass yields the relevance probabilities, so the
+    // explicit search can declare its own feeling-of-knowing to the agent.
+    let fok: { zone: string; top1prob: number } | undefined;
     if (config.search.reranker !== 'off' && scored.length > 0) {
-      const reranker = getReranker();
+      const reranker: any = getReranker();
       if (reranker) {
-        scored = (await applyReranker(query, scored as any, reranker, topK * 2, config.search.cutoffRatio))
-          .map(s => ({ entry: s.entry, score: s.score, graphScore: 0 }));
+        let reranked: any[] | null = null;
+        if (typeof reranker.rerankDetailed === 'function') {
+          const detailed = await reranker.rerankDetailed(query, scored as any, topK * 2);
+          if (detailed) {
+            const rankedNow: any[] = detailed.scored;
+            reranked = rankedNow;
+            if (config.search.fok?.enabled) {
+              const { fokSummaryFor } = require('../../recall/fok-gate');
+              fok = fokSummaryFor(
+                detailed.probs,
+                scored.map((s: any) => s.entry),
+                rankedNow[0]?.entry?.id,
+                // NOTE: probability thresholds, NOT the score-ratio ones (low/high).
+                { low: config.search.fok.probLow, high: config.search.fok.probHigh },
+              );
+            }
+          }
+        }
+        if (!reranked) {
+          reranked = await applyReranker(query, scored as any, reranker, topK * 2, config.search.cutoffRatio);
+        } else if (config.search.cutoffRatio > 0) {
+          const ranked: any[] = reranked;
+          const threshold = ranked[0].score * config.search.cutoffRatio;
+          reranked = ranked.filter(s => s.score >= threshold);
+        }
+        scored = reranked.map(s => ({ entry: s.entry, score: s.score, graphScore: 0 }));
       }
     }
 
@@ -152,13 +179,20 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
     }
 
     const state = canExpand || round > 0 ? encodeState({ seen, frontier, round }) : null;
+    // R5: declare the retrieval layer's confidence (never hide it — the agent
+    // must know when the evidence is thin rather than treat it as fact).
+    const fokNote = fok?.zone === 'no-memory'
+      ? '检索层置信度低（top1 相关性概率 ' + fok.top1prob.toFixed(2) + '）：结果可能不切题，据此类推前先核实。'
+      : fok?.zone === 'low-confidence'
+        ? '检索层置信度中等（top1 相关性概率 ' + fok.top1prob.toFixed(2) + '）：结果可能不完全切题。'
+        : '';
     const hint = canExpand
       ? '如需更多相关记忆，携带 state 再次调用本工具继续扩展检索。'
       : frontier.length === 0
         ? '已无更多可扩展的相关记忆。'
         : '已达最大扩展轮数。';
 
-    return { content: [{ type: "text", text: JSON.stringify({ results: enriched, canExpand, state, round, count: enriched.length, hint }) }] };
+    return { content: [{ type: "text", text: JSON.stringify({ results: enriched, canExpand, state, round, count: enriched.length, fok, hint: `${hint}${fokNote ? ' ' + fokNote : ''}` }) }] };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ error: err.message }) }], isError: true };
   }

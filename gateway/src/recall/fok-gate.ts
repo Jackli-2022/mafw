@@ -81,10 +81,33 @@ export function classifyFok(f: FokFeatures, th: FokThresholds): FokZone {
  * comparator), so the gate belongs on top of the verification layer.
  */
 export function zoneFromProbability(prob: number | undefined | null, low: number, high: number): FokZone {
+  // Fail-open on unusable thresholds: callers occasionally have only a partial
+  // config (e.g. a yaml block that set `enabled` alone), and NaN comparisons
+  // would silently classify everything as no-memory.
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return 'inject';
   if (prob === undefined || prob === null || Number.isNaN(prob)) return 'inject';
   if (prob >= high) return 'inject';
   if (prob >= low) return 'low-confidence';
   return 'no-memory';
+}
+
+/**
+ * R5 FOK summary for a reranked candidate list: the top-1 candidate's relevance
+ * probability (looked up by id, since `probs` is aligned to the INPUT order)
+ * and the resulting zone. Returns undefined when the probability is unknown —
+ * callers then omit the field entirely (no gate, no false signal).
+ */
+export function fokSummaryFor(
+  probs: number[] | undefined,
+  candidates: Array<{ id: string }>,
+  topId: string | undefined,
+  thresholds: { low: number; high: number },
+): { zone: FokZone; top1prob: number } | undefined {
+  if (!probs || !topId) return undefined;
+  const idx = candidates.findIndex(c => c.id === topId);
+  if (idx < 0 || probs[idx] === undefined) return undefined;
+  const top1prob = probs[idx];
+  return { zone: zoneFromProbability(top1prob, thresholds.low, thresholds.high), top1prob };
 }
 
 /**
