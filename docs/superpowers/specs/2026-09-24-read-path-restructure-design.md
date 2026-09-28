@@ -135,6 +135,19 @@ LongMemEval-S（120 题，session 粒度，bm25 + graph + coactivation + channel
 - **根因**：LongMemEval 真值是 **session 粒度**，同 session 邻居对 session 映射指标天然不可见。**不是池饱和**（回合粒度也零），是**真值粒度与机制作用面错配**。
 - **结论**：检索层代码保留（默认 off、有测试），**无 L1 测量面**；改为呈现层（邻居捆绑进注入块）+ **只靠 L2 reader 测量**（CueMem/EdgeMem 的增益也都在 reader/端到端）。
 
+**呈现层 L2 实测（2026-09-28，session 粒度 48 题，mimo-v2.5 reader+judge）**：命中 top-3 的 ±1 时间邻居（最多 4 条）渲染为 `↳` 行 + "Neighbouring session" 块 + nearest-version 指令；L1 指标两臂完全相同（R@10 0.949）。
+| 类型 | off | on | Δ |
+|---|---|---|---|
+| single-session-user | 0.875 | 0.750 | −0.125 |
+| **multi-session** | 0.375 | **0.625** | **+0.250** |
+| **single-session-preference** | 0.500 | **0.750** | **+0.250** |
+| temporal-reasoning | 0.875 | 0.750 | −0.125 |
+| knowledge-update | 0.750 | **0.875** | +0.125 |
+| single-session-assistant | 0.875 | **1.000** | +0.125 |
+| **overall** | **0.7083** | **0.7917** | **+0.0834** |
+**结论：呈现层有效**（净 +4/48 题；增益集中在 multi-session 与 preference，与 lag-CRP/相邻 episode 假设一致），且**无需 reranker**（纯内存 O(entries) 计算）→ **可进 100ms 边界路径**。默认仍 off（`search.temporalNeighbors.presentation`）。
+**局限**：n=48（逐类型 ±1 题 = ±12.5pt）；单 reader 模型；建议加大样本复核后再开生产默认。
+
 - **依据**（详见调研 §2）：lag-CRP 效应（Kahana 1996）；CueMem 去扩展 81.1→71.4；EdgeMem episode 通道 +8.4；EM-LLM contiguity buffer（须 ≤ similarity buffer）。
 - **实现**（检索出口层，`harmonic-index.ts` 或 `search-hybrid.ts`）：
   1. BM25 命中（分超 floor）为锚点 → 捆绑同 session ±1 条目（对称窗，w∈{1,2} 在 LongMemEval 上调）；
