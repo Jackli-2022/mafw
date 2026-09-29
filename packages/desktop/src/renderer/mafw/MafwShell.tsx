@@ -15,7 +15,6 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { Rail } from "./components/Rail"
 import { SessionStrip } from "./components/SessionStrip"
-import { DockTabButtons } from "./components/DockTabButtons"
 import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
@@ -1632,11 +1631,6 @@ export function MafwShell() {
           onNew={createSession}
         />
         <div class="mafw-topstrip-spacer" />
-        <DockTabButtons
-          tab={rightDockTab}
-          open={rightDockOpen}
-          onToggle={(t) => applyRightDock(!(rightDockOpen() && rightDockTab() === t), t)}
-        />
         <WindowControls />
       </div>
       {/* 右列下行：main | dock */}
@@ -1802,8 +1796,10 @@ export function MafwShell() {
             ) : (
             <RightDock
               open={rightDockOpen()}
+              tab={rightDockTab()}
               width={rightDockWidth()}
               onClose={() => applyRightDock(false)}
+              onTab={(t) => applyRightDock(true, t)}
             >
               <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
                     <TaskList

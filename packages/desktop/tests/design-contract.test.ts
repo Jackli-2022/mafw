@@ -659,8 +659,8 @@ describe("DiffReviewPanel 接线", () => {
 
 describe("Dock changes tab（改动列表常驻入口）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
-  test("DockTabButtons 含 changes trigger（tab 条从 RightDock 迁至顶行）", () => {
-    expect(read("src/renderer/mafw/components/DockTabButtons.tsx")).toContain('"changes"')
+  test("RightDock 含 changes trigger（tab 条归位于 dock 内部）", () => {
+    expect(read("src/renderer/mafw/components/RightDock.tsx")).toContain('"changes"')
   })
   test("MafwShell 挂载 ChangesDock 到 dock 内容区", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
@@ -794,20 +794,15 @@ describe("topframe — 顶行框架", () => {
     expect(stripIdx).toBeGreaterThan(-1)
     expect(shell.indexOf("<WindowControls", stripIdx)).toBeGreaterThan(stripIdx)
   })
-  test("顶行含 SessionStrip 与 DockTabButtons", () => {
+  test("顶行含 SessionStrip，且不再含 dock 图标组", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     const stripIdx = shell.indexOf('class="mafw-topstrip"')
     expect(shell.indexOf("<SessionStrip", stripIdx)).toBeGreaterThan(stripIdx)
-    expect(shell.indexOf("<DockTabButtons", stripIdx)).toBeGreaterThan(stripIdx)
+    expect(shell).not.toContain("DockTabButtons")
   })
-  test("DockTabButtons 组件：五 tab 图标组 + 点当前关闭语义", () => {
-    const src = read("src/renderer/mafw/components/DockTabButtons.tsx")
-    for (const t of ["tasks", "trajectory", "usage", "notes", "changes"]) expect(src).toContain(`"${t}"`)
-    expect(src).toContain("props.open() && props.tab() === t")
-  })
-  test("RightDock 不再渲染 tab 条，保留关闭按钮", () => {
+  test("RightDock 重新渲染内部 tab 条（五 tab），保留关闭按钮", () => {
     const src = read("src/renderer/mafw/components/RightDock.tsx")
-    expect(src).not.toContain("TabsV2")
+    expect(src).toContain("TabsV2")
     expect(src).toContain("mafw-right-dock-close")
   })
   test("CSS：topstrip 拖拽契约", () => {
@@ -838,5 +833,24 @@ describe("topframe — Rail 品牌行", () => {
   test("CSS：品牌行 38px 与顶行同高且可拖拽", () => {
     expect(css).toMatch(/\.mafw-rail-brand\s*\{[^}]*height:\s*38px/)
     expect(css).toMatch(/\.mafw-rail-brand\s*\{[^}]*-webkit-app-region:\s*drag/)
+  })
+})
+
+describe("layout-toggles — dock tabs 归位", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("RightDock 内部恢复 TabsV2 五 tab + onTab", () => {
+    const src = read("src/renderer/mafw/components/RightDock.tsx")
+    expect(src).toContain("TabsV2")
+    expect(src).toContain("onTab")
+    for (const t of ["tasks", "trajectory", "usage", "notes", "changes"]) expect(src).toContain(`value="${t}"`)
+    expect(src).toContain("mafw-right-dock-close")
+  })
+  test("DockTabButtons 组件删除且 MafwShell 不再引用", () => {
+    expect(() => read("src/renderer/mafw/components/DockTabButtons.tsx")).toThrow()
+    expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("DockTabButtons")
+  })
+  test("CSS：恢复 dock 内 tabs-v2 规则，删除 .mafw-dock-button 规则", () => {
+    expect(css).toContain('.mafw-right-dock [data-component="tabs-v2"]')
+    expect(css).not.toContain(".mafw-dock-button")
   })
 })
