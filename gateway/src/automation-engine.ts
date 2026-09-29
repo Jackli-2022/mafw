@@ -8,6 +8,8 @@ import { ReviewScheduler } from './core/memory/review-scheduler';
 import { CognitiveGraphManager } from './core/memory/cognitive-graph';
 import { L5Store } from './core/memory/l5-store';
 import { decayRateFor } from './core/memory/abstraction-level';
+import { getRetrievalEventBuffer, RetrievalEvent } from './core/memory/retrieval-events';
+import { actrBonus } from './core/memory/retrieval-bonus';
 
 import { SchedulerLedger } from './ledger';
 import { eventBus } from './event-bus';
@@ -52,14 +54,41 @@ export function resetActionRegistry(): void {
 export function runEnergyDecay(
   indexManager: HarmonicIndexManager,
   now: number = Date.now(),
-): { migrated: number; decayed: number } {
+  events: RetrievalEvent[] = [],
+): { migrated: number; decayed: number; bonused: number } {
   const index = indexManager.getIndex();
   const energySystem = new EnergySystem();
   const nowIso = new Date(now).toISOString();
   const DAY_MS = 24 * 60 * 60 * 1000;
   if ((index.version || 1) < 2) {
     const migrated = indexManager.migrateDecayBaseline(nowIso);
-    return { migrated, decayed: 0 };
+    return { migrated, decayed: 0, bonused: 0 };
+  }
+  // A3 settlement: group drained retrieval events by id and apply the ACT-R
+  // log-form bonus FIRST — the decay loop below reads the same live entries,
+  // so "use it or lose it" nets out within one pass. Bonuses clamp at the
+  // 1.0 ceiling; ids no longer in the index (superseded/pruned meanwhile)
+  // are dropped silently.
+  let bonused = 0;
+  if (events.length > 0) {
+    const byId = new Map<string, RetrievalEvent[]>();
+    for (const e of events) {
+      if (!e?.id) continue;
+      const list = byId.get(e.id);
+      if (list) list.push(e); else byId.set(e.id, [e]);
+    }
+    const entryById = new Map(index.entries.map((e: any) => [e.id, e]));
+    for (const [id, evts] of byId) {
+      const entry = entryById.get(id);
+      if (!entry) continue;
+      const bonus = actrBonus(evts, now);
+      const room = Math.max(0, 1.0 - entry.energy);
+      const applied = Math.min(bonus, room);
+      if (applied > 0.0005) {
+        indexManager.updateEnergy(id, applied);
+        bonused++;
+      }
+    }
   }
   let decayed = 0;
   for (const entry of index.entries) {
@@ -68,8 +97,8 @@ export function runEnergyDecay(
     // after the migration have no last_decay_at yet → fall back to created_at).
     const base = new Date(entry.last_decay_at || entry.created_at || 0).getTime();
     const daysSinceDecay = base > 0 ? Math.max(0, (now - base) / DAY_MS) : 0;
-    // Pure time decay — no event bonus. The `retrieved` bonus belongs to real
-    // recall paths (search), not to the background decay pass.
+    // Pure time decay — event bonuses are settled above from the retrieval
+    // event buffer (ACT-R form), not from this pass.
     const decayedEnergy = energySystem.decay(entry.energy, daysSinceDecay, salience, decayRateFor(entry.type));
     const diff = entry.energy - decayedEnergy;
     if (diff > 0.005) {
@@ -82,7 +111,7 @@ export function runEnergyDecay(
     }
   }
   indexManager.save();
-  return { migrated: 0, decayed };
+  return { migrated: 0, decayed, bonused };
 }
 
 actionRegistry.set('memory:decay', async (_rule, engine) => {
@@ -92,13 +121,17 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
   const indexManager = engine.getLiveIndexManager?.() ?? new HarmonicIndexManager(engine.mafwDir);
   const heartbeat = engine.getHeartbeat?.();
   try {
-    const res = runEnergyDecay(indexManager);
+    // A3: settle the accumulated retrieval events (ACT-R log bonus + exposure
+    // discount) in the same daily pass — zero extra scheduling.
+    const buffer = getRetrievalEventBuffer();
+    const events = buffer.drain();
+    const res = runEnergyDecay(indexManager, Date.now(), events);
     if (res.migrated > 0) {
       log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
     } else {
-      log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries`);
+      log.info(`[AutomationEngine] Energy decay applied to ${res.decayed} entries, bonus to ${res.bonused} (from ${events.length} retrieval events)`);
     }
-    heartbeat?.record('memory:decay', { ok: true, counts: { migrated: res.migrated, decayed: res.decayed } });
+    heartbeat?.record('memory:decay', { ok: true, counts: { migrated: res.migrated, decayed: res.decayed, bonused: res.bonused } });
   } catch (err: any) {
     heartbeat?.record('memory:decay', { ok: false, error: err?.message || String(err) });
     throw err;

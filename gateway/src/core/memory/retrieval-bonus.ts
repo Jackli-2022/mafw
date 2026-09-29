@@ -11,9 +11,11 @@ export interface BonusOptions {
   d?: number;
   /** Age offset in hours so fresh events stay finite (default 24). */
   offsetHours?: number;
-  /** Upper bound on the applied bonus (default 0.05 — one day's decay order). */
+  /** Upper bound on the applied bonus (default 0.02 ≈ 4 days of decay —
+   *  keeps a hot day from outrunning the decay rate by an order of magnitude). */
   cap?: number;
-  /** Scale applied to ln(1+activation) (default 0.1). */
+  /** Scale applied to ln(1+activation). Default 0.03 is the equilibrium
+   *  point where ONE fresh retrieval ≈ one day of decay (0.005). */
   k?: number;
   /** Injections beyond this count in the batch start the exposure discount (default 5). */
   exposureThreshold?: number;
@@ -29,8 +31,8 @@ export function actrBonus(events: RetrievalEvent[], now: number, opts: BonusOpti
   if (!events || events.length === 0) return 0;
   const d = opts.d ?? 0.5;
   const offset = opts.offsetHours ?? 24;
-  const cap = opts.cap ?? 0.05;
-  const k = opts.k ?? 0.1;
+  const cap = opts.cap ?? 0.02;
+  const k = opts.k ?? 0.03;
   const thr = opts.exposureThreshold ?? 5;
   const disc = opts.exposureDiscount ?? 0.3;
 

@@ -193,7 +193,95 @@ describe('memory:decay incremental decay', () => {
     expect(recorded).toHaveLength(1);
     expect(recorded[0][0]).toBe('memory:decay');
     expect(recorded[0][1].ok).toBe(true);
-    expect(recorded[0][1].counts).toEqual({ migrated: 0, decayed: 1 });
+    expect(recorded[0][1].counts).toEqual({ migrated: 0, decayed: 1, bonused: 0 });
+  });
+
+  test('A3: applies ACT-R bonus from drained events before decay', async () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [
+        makeEntry({ id: 'e1', last_decay_at: new Date(now - 2 * DAY).toISOString() }),
+        makeEntry({ id: 'e2', last_decay_at: new Date(now - 2 * DAY).toISOString() }),
+      ],
+    });
+
+    // 3 fresh retrieval events for e1 only; e2 has none.
+    const events = [1, 2, 3].map(() => ({ id: 'e1', prob: 1, kind: 'recall' as const, ts: now }));
+    const live = new HarmonicIndexManager(tmpDir);
+    const action = actionRegistry.get('memory:decay')!;
+    await action({} as any, { mafwDir: tmpDir, getLiveIndexManager: () => live } as any);
+
+    // direct function form for deterministic math (no buffer in the action
+    // when called this way — the settlement math is asserted via runEnergyDecay)
+    const { runEnergyDecay } = await import('../../src/automation-engine');
+    const res = runEnergyDecay(live, now, events);
+
+    expect(res.bonused).toBe(1);
+    const e1 = live.getIndex().entries.find((e: any) => e.id === 'e1')!;
+    const e2 = live.getIndex().entries.find((e: any) => e.id === 'e2')!;
+    // e1: bonus 3×24^-0.5=0.6124 → 0.03·ln(1.6124)=0.01434, minus decay 2d×0.005=0.01
+    expect(e1.energy).toBeCloseTo(0.9 + 0.01434 - 0.01, 3);
+    // e2: decay only — identical to legacy behavior
+    expect(e2.energy).toBeCloseTo(0.89, 3);
+  });
+
+  test('A3: bonus clamps at the energy ceiling', async () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ id: 'hi', energy: 0.99, last_decay_at: new Date(now).toISOString() })],
+    });
+    const live = new HarmonicIndexManager(tmpDir);
+    const { runEnergyDecay } = await import('../../src/automation-engine');
+    const events = [1, 2, 3, 4, 5].map(() => ({ id: 'hi', prob: 1, kind: 'recall' as const, ts: now }));
+    runEnergyDecay(live, now, events);
+    const e = live.getIndex().entries.find((x: any) => x.id === 'hi')!;
+    expect(e.energy).toBeLessThanOrEqual(1.0);
+    expect(e.energy).toBeCloseTo(1.0, 5);
+  });
+
+  test('A3: events for unknown ids are dropped silently', () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ id: 'e1', last_decay_at: new Date(now).toISOString() })],
+    });
+    const live = new HarmonicIndexManager(tmpDir);
+    const { runEnergyDecay } = require('../../src/automation-engine');
+    const res = runEnergyDecay(live, now, [
+      { id: 'gone', prob: 1, kind: 'recall', ts: now },
+    ]);
+    expect(res.bonused).toBe(0);
+    expect(live.getIndex().entries[0].energy).toBeCloseTo(0.9, 5);
+  });
+
+  test('A3: the automation action drains the singleton event buffer', async () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date().toISOString(),
+      entries: [makeEntry({ id: 'e1', last_decay_at: new Date(now).toISOString() })],
+    });
+    const { RetrievalEventBuffer, setRetrievalEventBufferForTest } = await import(
+      '../../src/core/memory/retrieval-events'
+    );
+    const buf = new RetrievalEventBuffer();
+    buf.record({ id: 'e1', prob: 1, kind: 'recall', ts: now });
+    setRetrievalEventBufferForTest(buf);
+    try {
+      const live = new HarmonicIndexManager(tmpDir);
+      const action = actionRegistry.get('memory:decay')!;
+      await action({} as any, { mafwDir: tmpDir, getLiveIndexManager: () => live } as any);
+      // drained: buffer empty afterwards, energy bumped (bonus > 0, no decay)
+      expect(buf.drain()).toHaveLength(0);
+      expect(live.getIndex().entries[0].energy).toBeGreaterThan(0.9);
+    } finally {
+      setRetrievalEventBufferForTest(null);
+    }
   });
 
   test('addEntry stamps created_at so new entries keep a decay baseline', () => {
