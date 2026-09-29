@@ -119,6 +119,88 @@ describe('MinHashMerger', () => {
       expect(result.merged_from).toContain('old_1');
     });
 
+    test('fires onMerge audit listener per absorbed entry (fail-open)', async () => {
+      const events: any[] = [];
+      const off = MinHashMerger.onMerge((e) => events.push(e));
+      try {
+        const index = makeMockIndex([{
+          id: 'old_aud',
+          pa: 'Memory-Curator Agent Definition With Restricted Tool Whitelist',
+        }]);
+        const store = {
+          read: async (id: string) => ({
+            id,
+            type: 'semantic' as const,
+            primary_abstraction: 'Memory-Curator Agent Definition With Restricted Tool Whitelist',
+            cue_anchors: [],
+            memory_value: 'some content',
+            energy: 0.8,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }),
+          deleteSync: () => true,
+          markSuperseded: () => true,
+        };
+        const unit = {
+          id: 'new_aud',
+          type: 'semantic' as const,
+          primary_abstraction: 'memory-curator agent definition with restricted tool whitelist',
+          cue_anchors: [],
+          memory_value: 'some content',
+          energy: 0.8,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        await merger.merge(unit as any, index as any, store);
+        expect(events.length).toBe(1);
+        expect(events[0].newId).toBe('new_aud');
+        expect(events[0].oldId).toBe('old_aud');
+        expect(events[0].similarity).toBe(1.0); // exact normalized duplicate
+        expect(events[0].oldAbstraction).toContain('Memory-Curator');
+        expect(typeof events[0].ts).toBe('number');
+      } finally {
+        off();
+      }
+    });
+
+    test('onMerge listener errors do not break merging', async () => {
+      const off = MinHashMerger.onMerge(() => { throw new Error('listener boom'); });
+      try {
+        const index = makeMockIndex([{
+          id: 'old_err',
+          pa: 'Memory-Curator Agent Definition With Restricted Tool Whitelist',
+        }]);
+        const store = {
+          read: async (id: string) => ({
+            id,
+            type: 'semantic' as const,
+            primary_abstraction: 'Memory-Curator Agent Definition With Restricted Tool Whitelist',
+            cue_anchors: [],
+            memory_value: 'some content',
+            energy: 0.8,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }),
+          deleteSync: () => true,
+          markSuperseded: () => true,
+        };
+        const unit = {
+          id: 'new_err',
+          type: 'semantic' as const,
+          primary_abstraction: 'memory-curator agent definition with restricted tool whitelist',
+          cue_anchors: [],
+          memory_value: 'some content',
+          energy: 0.8,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        const result = await merger.merge(unit as any, index as any, store);
+        expect(result.merged_from).toContain('old_err'); // merge survived the throwing listener
+      } finally {
+        off();
+      }
+    });
+
     test('catches duplicates with different punctuation', async () => {
       const index = makeMockIndex([{
         id: 'old_2',

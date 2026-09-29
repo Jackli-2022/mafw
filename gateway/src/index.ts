@@ -24,6 +24,7 @@ import { MemoryService } from "./memory/service";
 import { initEmbeddingRuntime, computeDenseScores, getEmbeddingRuntime, setEmbeddingRuntime } from "./memory/embedding-runtime";
 import { EmbeddingIndexer } from "./memory/vector-store";
 import { onMemoryWritten } from "./memory/harmonic-file-store";
+import { MinHashMerger } from "./core/memory/minhash-merger";
 import { GatewayDatabase } from "./memory/gateway-db";
 import { TurnPipeline } from "./recall/turn-pipeline";
 import { ReflectionPipeline } from "./recall/reflection";
@@ -2205,6 +2206,18 @@ class MafwScheduler {
         rt.scheduleFlush();
       }
       this.consolidationService?.enqueue(u);
+    });
+
+    // H1 audit: log every write-time MinHash merge to jsonl — the preemption
+    // rate on the real distribution + hand-check surface for separate-class
+    // wrong-merges (char-3gram similar but different entity). Static listener
+    // catches all merge sites (file store, merge-memory handler, scripts).
+    MinHashMerger.onMerge((e) => {
+      try {
+        const logsDir = path.join(mafwDir, 'logs');
+        fs.mkdirSync(logsDir, { recursive: true });
+        fs.appendFileSync(path.join(logsDir, 'minhash-merges.jsonl'), JSON.stringify(e) + '\n', 'utf-8');
+      } catch { /* fail-open */ }
     });
 
     // S1: wire write-time routing (embedding recall + LLM identity judge).

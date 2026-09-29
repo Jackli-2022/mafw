@@ -1,12 +1,44 @@
 import { HarmonicUnit } from './harmonic-types';
 import { HarmonicIndexManager } from './harmonic-index';
 
+/** Audit event for write-time MinHash merges — H1 measurement surface: the
+ *  preemption rate on the real distribution (how often MinHash consumes a
+ *  case the semantic consolidation judge would have seen) and a hand-check
+ *  surface for separate-class wrong-merges (entity-swap pairs with high
+ *  char-3gram similarity). Fired per absorbed entry; fail-open. */
+export interface MinHashMergeEvent {
+  newId: string;
+  oldId: string;
+  similarity: number;
+  newAbstraction: string;
+  oldAbstraction: string;
+  ts: number;
+}
+
 export class MinHashMerger {
   private signatureSize: number = 32;
   private threshold: number = 0.7;
   private maxMergeChars: number = 500;
   private maxMergeDepth: number = 10;
   private maxMergedValueChars: number = 2000;
+
+  private static mergeListeners: Array<(e: MinHashMergeEvent) => void> = [];
+
+  /** Register a merge-audit listener (all merger instances fire it — static,
+   *  same pattern as onMemoryWritten). Returns an unsubscribe function. */
+  static onMerge(cb: (e: MinHashMergeEvent) => void): () => void {
+    MinHashMerger.mergeListeners.push(cb);
+    return () => {
+      const i = MinHashMerger.mergeListeners.indexOf(cb);
+      if (i >= 0) MinHashMerger.mergeListeners.splice(i, 1);
+    };
+  }
+
+  private emitMerge(e: MinHashMergeEvent): void {
+    for (const cb of MinHashMerger.mergeListeners) {
+      try { cb(e); } catch { /* fail-open: audit must never break writes */ }
+    }
+  }
 
   static normalizeForDedup(text: string): string {
     return text
@@ -162,6 +194,15 @@ export class MinHashMerger {
         } else {
           store.deleteSync(existingUnit.id);
         }
+
+        this.emitMerge({
+          newId: unit.id,
+          oldId: existingUnit.id,
+          similarity: exactMatch ? 1.0 : sim,
+          newAbstraction: String(unit.primary_abstraction ?? '').slice(0, 200),
+          oldAbstraction: String(existingUnit.primary_abstraction ?? '').slice(0, 200),
+          ts: Date.now(),
+        });
       }
     }
 
