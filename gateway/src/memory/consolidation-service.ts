@@ -59,6 +59,15 @@ export interface ConsolidationDeps {
   /** Cosine threshold for candidate recall (default 0.8). */
   minCosine?: number;
   maxCandidates?: number;
+  /** Laya conflict-judge cascade (one-sided v1): when the local conflict
+   *  model is confident (p >= tauHigh) that the new unit SUPERSEDES a
+   *  candidate, adopt UPDATE without an LLM call. Everything else falls
+   *  through to the LLM judge unchanged (scores land in the audit pair). */
+  laya?: {
+    client: { askConflict(known: string, newInfo: string): Promise<number | null> };
+    tauHigh: number;
+    maxTextChars?: number;
+  };
 }
 
 export type ConsolidationOutcome =
@@ -75,6 +84,10 @@ export interface JudgedPair {
   candidates: Array<{ id: string; cosine: number }>;
   verdict: 'update' | 'create' | 'separate' | 'skip';
   ts: number;
+  /** Which judge decided: 'laya' = local conflict model adopted, 'llm' = worker LLM. */
+  decidedBy?: 'laya' | 'llm';
+  /** Per-candidate laya noul scores (present whenever the cascade ran). */
+  layaScores?: Array<{ id: string; p: number }>;
 }
 
 interface JudgeVerdict {
@@ -103,9 +116,10 @@ export class ConsolidationService {
   private onJudge?: (result: { ok: boolean; error?: string }) => void;
   private onPair?: (pair: JudgedPair) => void;
   private onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
+  private laya?: ConsolidationDeps['laya'];
   private minCosine: number;
   private maxCandidates: number;
-  private stats = { judged: 0, updates: 0, creates: 0, skipped: 0 };
+  private stats = { judged: 0, updates: 0, creates: 0, skipped: 0, layaAdopted: 0, layaEscalated: 0 };
 
   constructor(deps: ConsolidationDeps) {
     this.store = deps.store;
@@ -117,6 +131,7 @@ export class ConsolidationService {
     this.onJudge = deps.onJudge;
     this.onPair = deps.onPair;
     this.onStats = deps.onStats;
+    this.laya = deps.laya;
     if (deps.initialStats) this.stats = { ...this.stats, ...deps.initialStats };
     this.minCosine = deps.minCosine ?? 0.8;
     this.maxCandidates = deps.maxCandidates ?? 3;
@@ -198,24 +213,33 @@ export class ConsolidationService {
     }
     if (liveCandidates.length === 0) return { action: 'create' };
 
+    // Laya conflict cascade (one-sided v1): confident conflicts adopt UPDATE
+    // directly; everything else escalates to the LLM judge with scores
+    // attached (audit/calibration data on every event).
+    let layaScores: Array<{ id: string; p: number }> | undefined;
+    if (this.laya) {
+      const r = await this.layaCascade(unit, liveCandidates);
+      layaScores = r.scores.length > 0 ? r.scores : undefined;
+      if (r.adoptedTargetId) {
+        this.stats.layaAdopted++;
+        this.stats.updates++;
+        this.emitPair(unit, liveCandidates, 'update', 'laya', layaScores);
+        const merged = await this.mergeIntoNewer(unit, r.adoptedTargetId);
+        return { action: 'update', targetId: r.adoptedTargetId, mergedId: merged.id };
+      }
+      this.stats.layaEscalated++;
+    }
+
     if (!this.llm && !this.completion?.()) return { action: 'skip', reason: 'no-judge' };
 
     this.stats.judged++;
     const candidateIds = liveCandidates.map((c) => c.id);
     const verdict = await this.judge(unit, candidateIds);
     this.onJudge?.(verdict ? { ok: true } : { ok: false, error: 'judge-error' });
-    try {
-      const invalidTarget =
-        verdict?.action === 'update' &&
-        !(verdict.target_id && candidateIds.includes(verdict.target_id));
-      this.onPair?.({
-        newId: unit.id,
-        newAbstraction: unit.primary_abstraction,
-        candidates: liveCandidates.map((c) => ({ id: c.id, cosine: +c.cosine.toFixed(4) })),
-        verdict: !verdict || invalidTarget ? 'skip' : verdict.action,
-        ts: Date.now(),
-      });
-    } catch { /* fail-open */ }
+    const invalidTarget =
+      verdict?.action === 'update' &&
+      !(verdict.target_id && candidateIds.includes(verdict.target_id));
+    this.emitPair(unit, liveCandidates, !verdict || invalidTarget ? 'skip' : verdict.action, 'llm', layaScores);
     if (!verdict) return { action: 'skip', reason: 'judge-error' };
     if (verdict.action === 'create' || verdict.action === 'separate') {
       // `separate` = keep both (do not merge) — the post-write listener has no
@@ -236,6 +260,49 @@ export class ConsolidationService {
     const merged = await this.mergeIntoNewer(unit, targetId);
     this.stats.updates++;
     return { action: 'update', targetId, mergedId: merged.id };
+  }
+
+  /** Ask the laya conflict model per live candidate; returns scores and the
+   *  adopted target when the best score clears tauHigh. Client failures
+   *  (null) are skipped — sidecar-down means "no scores", not a verdict. */
+  private async layaCascade(
+    unit: HarmonicUnit,
+    candidates: Array<{ id: string; cosine: number }>,
+  ): Promise<{ scores: Array<{ id: string; p: number }>; adoptedTargetId?: string }> {
+    const laya = this.laya!;
+    const cap = laya.maxTextChars ?? 800;
+    const trunc = (s: string) => String(s ?? '').slice(0, cap);
+    const scores: Array<{ id: string; p: number }> = [];
+    let best: { id: string; p: number } | null = null;
+    for (const c of candidates) {
+      const target = await this.store.read(c.id);
+      if (!target) continue;
+      const p = await laya.client.askConflict(trunc(target.memory_value), trunc(unit.memory_value));
+      if (p === null) continue;
+      scores.push({ id: c.id, p });
+      if (!best || p > best.p) best = { id: c.id, p };
+    }
+    return { scores, adoptedTargetId: best && best.p >= laya.tauHigh ? best.id : undefined };
+  }
+
+  private emitPair(
+    unit: HarmonicUnit,
+    candidates: Array<{ id: string; cosine: number }>,
+    verdict: JudgedPair['verdict'],
+    decidedBy: JudgedPair['decidedBy'],
+    layaScores?: Array<{ id: string; p: number }>,
+  ): void {
+    try {
+      this.onPair?.({
+        newId: unit.id,
+        newAbstraction: unit.primary_abstraction,
+        candidates: candidates.map((c) => ({ id: c.id, cosine: +c.cosine.toFixed(4) })),
+        verdict,
+        decidedBy,
+        layaScores,
+        ts: Date.now(),
+      });
+    } catch { /* fail-open */ }
   }
 
   private async mergeIntoNewer(incoming: HarmonicUnit, targetId: string): Promise<HarmonicUnit> {
