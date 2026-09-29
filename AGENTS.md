@@ -72,15 +72,16 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - **EmbeddingRuntime**（`gateway/src/memory/embedding-runtime.ts`）：进程单例（provider + `MemoryVectorStore` + `EmbeddingIndexer`）。向量文件 `~/.mafw/memory/vectors-<model>.json`（按 provider.name 打标签，GGUF 与 ONNX 嵌入不共享）；写路径 fire-and-forget 嵌入（2s 防抖批量 flush，失败丢弃不阻塞）
 - **本地引擎双实现**（`memory.embedding.engine`）：`onnx`（transformers.js 进程内，`threads` 线程帽默认 2）/ `llamacpp`（`llamacpp-provider.ts`：llama-server sidecar 子进程，官方二进制自动下载含 ghfast.top 镜像回退，`gpu: cpu|vulkan|cuda` 变体切换、GPU 变体自动 `-ngl 99`）。**llama-server embedding 必备旗标**（踩坑实证）：`-fa on`（否则非因果注意力物化 L² 矩阵，ctx4096 时 RSS 3GB）、`-np 1 --no-warmup`（否则 np=auto 多槽 KV + warmup 全量缓冲 → 2.8GB）、`-cram 0`（prompt cache 对 embedding 任务只写不读涨到 8GB 上限，llama.cpp #26293）、`-c/-b/-ub ≥ 文本 token 上限`（超长输入 HTTP 400 被静默丢弃会拖垮 dense 通道，provider 有 400→截断重试兜底）
 - **检索**：`computeDenseScores(query)` → `searchScored({denseScores})` → RRF 融合；`mafw_search_hybrid` 的 `retriever:'hybrid'` 与 `/api/memory/search?retriever=hybrid` 已接线；boundary recall 同步路径**不**嵌查询（100ms 契约）
-- **ConsolidationService**（`gateway/src/memory/consolidation-service.ts`）：写入后 cosine≥0.8 候选召回 → worker 模型 LLM 判 UPDATE/CREATE（Memora 式）；UPDATE 合入新条目 + soft-supersede 旧条目 + 删除旧向量；裁判不可达时 skip（fail-open）；`GET /api/memory/stats` 暴露 update ratio（健康区间 ~16-22%）
+- **ConsolidationService**（`gateway/src/memory/consolidation-service.ts`）：写入后 cosine≥0.8 候选召回 → worker 模型 LLM 判 UPDATE/CREATE（Memora 式）；UPDATE 合入新条目 + soft-supersede 旧条目 + 删除旧向量；裁判不可达时 skip（fail-open）；`GET /api/memory/stats` 暴露 update ratio。**候选池过滤（2026-09-29 审计 H4）**：判官前剔除 superseded 与孤儿候选（向量在但 unit 不可读）——合并进死条目会复活它；**判定对审计日志** `~/.mafw/logs/consolidation-pairs.jsonl`（每次判官调用一行：new/候选/cosine/verdict）——update ratio 0% 的根因审计见 `docs/research/2026-09-29-consolidation-audit.md`（H2 判官偏置待 pair 数据终判，16-22% 健康带对个人库可能需重定义）
 
 ### 3.4 能量衰减
 
 - 基础衰减率 **0.005/天**（`EnergySystem.decayRatePerDay`，salience 越高衰减越慢——`HarmonicIndexEntry` 携带 `salience`，衰减 pass 读取）
 - 默认自动化规则 `memory-decay`（每日 UTC 3:30，`recall/pipeline-rules.ts` 供给）：**增量衰减**——按 entry `last_decay_at`（缺失回退 `created_at`）计算流逝天数做纯时间衰减（无事件加成）；`last_decay_at` 仅在实际写入衰减时盖章（低于 0.005 写入阈值时天数继续累积，防低 salience 条目饥饿）
+- **检索访问结算（ACT-R 式，2026-09-29）**：recall 路由 / 快照 serve / `mafw_search_hybrid` 三个生产出口把命中（id + 概率 + 时间戳）记入 `RetrievalEventBuffer`（内存环形缓冲 + 7 天 need 索引，`core/memory/retrieval-events.ts`，fail-open；eval 不经这些出口天然隔离）；每日衰减 pass **同一趟** drain 并按 `actrBonus()`（`B=ln(1+Σ(Δt+24h)^-0.5·w)`，`core/memory/retrieval-bonus.ts`）结算——k=0.03 均衡点使"一次新鲜检索 ≈ 一天衰减"，cap 0.02，重复曝光折扣防 rich-get-richer；bonus 先于衰减应用并 clamp 1.0。线性 `+0.02` 直写已删（无界/正反馈，access-bonus.ts 移除）
+- **goal 奖励调制（B4，2026-09-29）**：`archiveGoal(verdict=PASS)` → goal_sessions 关联且未 superseded 的记忆 energy +0.08（clamp 1.0；**不对称：失败不降权**，防错误归因）——`core/manager/goal-reward.ts`，fail-open
+- 事件加成（`useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于反馈路径的语义，**不在**衰减 pass 中混用
 - index v1→v2 一次性迁移：全部 entry 盖 `last_decay_at`=迁移时刻、**不补扣历史衰减**（旧实现按 `created_at` 每次运行重复扣全龄衰减，累计 r·n(n+1)/2 平方损失，历史已过度衰减故豁免）；迁移由 `HarmonicIndexManager.migrateDecayBaseline()` 执行
-- 事件加成（`retrieved` +0.02 / `useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于检索/反馈路径的语义，**不在**衰减 pass 中混用
-- 检索访问加成（search 时 +0.02）当前未接入检索路径（休眠）
 
 ### 3.6 管线心跳（Pipeline Heartbeat）
 
@@ -534,7 +535,7 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - **/waitwhat 重述**（2026-09-15，借鉴 mattpocock wait-what）：用户发"没听懂"→ gateway 取当前会话最后一条 assistant 文本，promptAsync 回同一会话要求"简明语言（STE100 风格）+ CONTEXT.md 术语重述，不新增内容"（`routes/waitwhat-command.ts`，deps 注入可单测；回答经 SSE 三端同见）；接线：桌面 ChatPane mafw 命令组 + 插件 `waitwhat` command + TUI `/waitwhat`（immediate）
 - 旧三条 `manager-report-*` 自动化规则已退役（wake 链路读已删除的 legacy 文件 + 事件无人 emit，整链死代码），`ensureManagerRules` 启动时清理规则文件
 
-**聚合压缩（memory:turnCompress，每小时）**：每活跃 session 将本小时所有完成回合合并为一份 batch transcript，交给该 session 的**持久 worker 会话**，由 agent **自主调用 `mafw_add_memory`** 记录值得长期记忆的条目（类型按内容自选）。处理过的回合**一律删除**（空/失败不重试）。内部 worker 会话经 `/api/obs/capture` 的会话白名单过滤——**输出永不回流 T1**（防递归）。
+**聚合压缩（memory:turnCompress，每小时）**：每活跃 session 将本小时所有完成回合合并为一份 batch transcript，交给该 session 的**持久 worker 会话**，由 agent **自主调用 `mafw_add_memory`** 记录值得长期记忆的条目（类型按内容自选）。处理过的回合**一律归档**（t1_archive，空/失败不重试——原始观察保留供未来重提取）。内部 worker 会话经 `/api/obs/capture` 的会话白名单过滤——**输出永不回流 T1**（防递归）。**交错回放（B1 二期，2026-09-29）**：worker prompt 除新回合外注入跨会话 prior knowledge——BM25 召回候选池后按 `need × gain × 1/energy` 重排（need = RetrievalEventBuffer 的 7 天命中数，`replayPriorityForMemory`），被选条目盖 `last_replayed` 戳（48h 排除窗防 primacy bias，池全排除时回填防空）；回放条目只作 reconcile 对照证据不重写原文（防 domain shortcut）；`TurnPipelineResult.replayed` 计入 heartbeat 观测。
 
 #### 5.13b 环境探测式记忆维护（Environment-Probing Curation，2026-09-14，arXiv:2609.11060）
 
