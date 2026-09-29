@@ -1750,12 +1750,12 @@ class MafwScheduler {
           const pipeline = this.getTurnPipeline();
           const res = await pipeline.runOnce();
           log.info(
-            `[TurnPipeline] sessions=${res.sessions} turns=${res.turns} archived=${res.archived} noops=${res.noops} failed=${res.failed}`,
+            `[TurnPipeline] sessions=${res.sessions} turns=${res.turns} archived=${res.archived} noops=${res.noops} replayed=${res.replayed} failed=${res.failed}`,
           );
           this.heartbeat?.record('memory:turnCompress', {
             ok: res.failed === 0,
             error: res.failed > 0 ? `${res.failed} session(s) failed` : undefined,
-            counts: { sessions: res.sessions, turns: res.turns, archived: res.archived, failed: res.failed },
+            counts: { sessions: res.sessions, turns: res.turns, archived: res.archived, replayed: res.replayed, failed: res.failed },
           });
           // Refresh index scan cache after compression (new memories may have been written)
           this.scanService?.refreshCache();
