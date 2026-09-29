@@ -5217,6 +5217,15 @@ class MafwScheduler {
                 const decision = decideSnapshotUse(snap, query, new Date(), snapCfg);
                 if (decision === 'use' && snap) {
                   snapshotPointers = snap.block;
+                  // A3: a served snapshot is a real injection — record exposure
+                  // for the daily ACT-R settlement (fail-open, in-memory only).
+                  try {
+                    const { recordRetrievalFromScored } = require('./core/memory/retrieval-events');
+                    recordRetrievalFromScored(
+                      ((snap.ids ?? []) as string[]).map((id) => ({ entry: { id } })),
+                      'recall',
+                    );
+                  } catch { /* fail-open */ }
                   log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
                 } else if (decision !== 'no-snapshot') {
                   // Log the containment score: short instruction-style user turns
@@ -5271,6 +5280,16 @@ class MafwScheduler {
               // R5 FOK gate (fail-open): weak evidence is stated, not silently
               // withheld. Only active when config.search.fok.enabled.
               fokStatus = computeRecallFokZone(this.memoryService.harmonicIndex, query, config.search.fok);
+              // A3: record the live-path retrieval for the daily ACT-R
+              // settlement (log-form bonus + exposure discount — the linear
+              // +0.02 direct write was unbounded with popularity feedback).
+              try {
+                const { recordRetrievalFromScored } = require('./core/memory/retrieval-events');
+                recordRetrievalFromScored(
+                  memories.map((m: any) => ({ entry: { id: m.id } })),
+                  'recall',
+                );
+              } catch { /* fail-open */ }
             }
             // R6 presentation (off by default): bundle chronological neighbours
             // under their anchors. Never re-ranks — presentation only.

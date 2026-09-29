@@ -4,7 +4,6 @@ import { HarmonicUnitFileStore } from "../../memory/harmonic-file-store";
 import { applyReranker } from "../../core/memory/reranker";
 import { getReranker } from "../../core/memory/reranker-singleton";
 import { computeDenseScores } from "../../memory/embedding-runtime";
-import { applyAccessBonus } from "../../recall/access-bonus";
 
 interface FrontierItem { id: string; weight: number; }
 interface IterState { seen: string[]; frontier: FrontierItem[]; round: number; }
@@ -156,14 +155,14 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
       .slice(0, topK)
       .map(r => r.entry);
 
-    // D2/S5 reconsolidation: explicit retrieval access bonus (+0.02) on returned
-    // entries — the `retrieved` energy event, wired on the agent-facing search
-    // path only (not boundary recall). Fail-open.
-    const idx = (memory as any)?.harmonicIndex;
-    if (idx?.updateEnergy) {
-      applyAccessBonus(results.map((r: any) => r.id), idx);
-      try { idx.save?.(); } catch { /* fail-open */ }
-    }
+    // A3: retrieval events feed the daily ACT-R settlement (log-form bonus
+    // with exposure discount). Replaces the S5 linear +0.02 direct write —
+    // unbounded, no recency decay, rich-get-richer through retrieval × energy
+    // (survey §A3). Fail-open, in-memory only.
+    try {
+      const { recordRetrievalFromScored } = require("../../core/memory/retrieval-events");
+      recordRetrievalFromScored(results.map((r: any) => ({ entry: { id: r.id } })), 'search');
+    } catch { /* fail-open */ }
 
     const canExpand = frontier.length > 0 && round < maxRounds;
 
