@@ -186,10 +186,22 @@ export class ConsolidationService {
     }
     if (candidates.length === 0) return { action: 'create' };
 
+    // Audit H4 fix: only LIVE units may be judged/merged — superseded targets
+    // (dead versions) and orphan vectors (unit file gone, index pruned) are
+    // filtered before the judge. Merging into a dead entry would resurrect it.
+    const liveCandidates: Array<{ id: string; cosine: number }> = [];
+    for (const c of candidates) {
+      try {
+        const u = await this.store.read(c.id);
+        if (u && !u.superseded_by) liveCandidates.push(c);
+      } catch { /* treat unreadable as dead */ }
+    }
+    if (liveCandidates.length === 0) return { action: 'create' };
+
     if (!this.llm && !this.completion?.()) return { action: 'skip', reason: 'no-judge' };
 
     this.stats.judged++;
-    const candidateIds = candidates.map((c) => c.id);
+    const candidateIds = liveCandidates.map((c) => c.id);
     const verdict = await this.judge(unit, candidateIds);
     this.onJudge?.(verdict ? { ok: true } : { ok: false, error: 'judge-error' });
     try {
@@ -199,7 +211,7 @@ export class ConsolidationService {
       this.onPair?.({
         newId: unit.id,
         newAbstraction: unit.primary_abstraction,
-        candidates: candidates.map((c) => ({ id: c.id, cosine: +c.cosine.toFixed(4) })),
+        candidates: liveCandidates.map((c) => ({ id: c.id, cosine: +c.cosine.toFixed(4) })),
         verdict: !verdict || invalidTarget ? 'skip' : verdict.action,
         ts: Date.now(),
       });

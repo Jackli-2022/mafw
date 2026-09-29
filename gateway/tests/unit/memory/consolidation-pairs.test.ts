@@ -121,4 +121,51 @@ describe('ConsolidationService judged-pair logging', () => {
     expect(outcome.action).toBe('create');
     expect(pairs).toHaveLength(0);
   });
+
+  test('audit H4: superseded candidates are filtered out before the judge', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('dead', [0.99, 0.1]); // high cosine but superseded
+
+    const store = stubStore([]);
+    (store.byId as Map<string, HarmonicUnit>).set('dead', {
+      ...unit('dead', 'Old memory', 'v'),
+      superseded_by: 'mem_newer',
+    });
+
+    const pairs: JudgedPair[] = [];
+    const svc = new ConsolidationService({
+      store: store as any,
+      vectors,
+      provider: vecProvider,
+      onPair: (p) => pairs.push(p),
+    });
+
+    const outcome = await svc.consolidate(unit('u1', 'a', 'v'));
+    // The only candidate is dead → no judge call at all → plain create, no pair.
+    expect(outcome.action).toBe('create');
+    expect(pairs).toHaveLength(0);
+    expect(svc.getStats().judged).toBe(0);
+  });
+
+  test('audit H4: orphan vectors (unit unreadable) are filtered out too', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('orphan', [0.99, 0.1]); // vector exists, no unit file
+
+    const pairs: JudgedPair[] = [];
+    const svc = new ConsolidationService({
+      store: stubStore([]) as any,
+      vectors,
+      provider: vecProvider,
+      onPair: (p) => pairs.push(p),
+    });
+
+    const outcome = await svc.consolidate(unit('u1', 'a', 'v'));
+    expect(outcome.action).toBe('create');
+    expect(pairs).toHaveLength(0);
+    expect(svc.getStats().judged).toBe(0);
+  });
 });
