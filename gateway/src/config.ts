@@ -212,6 +212,14 @@ export interface GatewayConfig {
       dupCosine: number;
       /** Enable LLM UPDATE/CREATE consolidation judge (P2). */
       consolidation: boolean;
+      /** Laya conflict-judge cascade (one-sided v1). Inert until the sidecar
+       *  is provisioned at ~/.mafw/laya (gateway/scripts/setup-laya-venv.ts). */
+      laya?: {
+        enabled?: boolean;
+        url?: string;
+        tauHigh?: number;
+        device?: 'cpu' | 'cuda';
+      };
       /** ONNX intra-op thread cap for the local provider (default 2 — ORT
        *  otherwise uses every core, spiking CPU to 100% per embed call). */
       threads: number;
@@ -489,6 +497,7 @@ function defaults(projectDir: string): GatewayConfig {
         minCosine: 0.8,
         dupCosine: 0.95,
         consolidation: true,
+        laya: { enabled: true, url: 'http://127.0.0.1:13129', tauHigh: 0.85, device: 'cpu' },
         threads: 2,
         engine: 'onnx',
         llamacpp: {
