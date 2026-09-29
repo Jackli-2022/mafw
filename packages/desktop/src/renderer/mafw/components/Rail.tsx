@@ -43,11 +43,9 @@ type Props = {
   activeTab?: NavTab
   tabCounts?: Partial<Record<NavTab, number>>
   onTabChange?: (tab: NavTab) => void
-  onOpenTrajectory?: () => void
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSessionDeleted?: (id: string) => void
   onSettings?: () => void
-  onToggleCollapsed?: () => void
   onOpenUsage?: () => void
   brand?: any
 }
@@ -327,9 +325,6 @@ export function Rail(props: Props) {
             class="mafw-rail-search-toggle"
           />
         </TooltipV2>
-        <ButtonV2 variant="ghost" size="small" class="mafw-rail-collapse" onClick={() => props.onToggleCollapsed?.()} aria-label="折叠侧边栏">
-          <Icon name="chevron-left" size="small" />
-        </ButtonV2>
       </div>
 
       <Show when={searchOpen()}>
@@ -370,10 +365,6 @@ export function Rail(props: Props) {
             </button>
           )}
         </For>
-        <button type="button" class="mafw-rail-nav-item" onClick={() => props.onOpenTrajectory?.()}>
-          <Icon name="status" size="small" />
-          <span class="mafw-rail-nav-label">轨迹</span>
-        </button>
       </nav>
 
       <ManagerCard

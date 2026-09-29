@@ -882,3 +882,19 @@ describe("layout-toggles — 顶行两端开关", () => {
     expect(css).toContain(".mafw-layout-toggle")
   })
 })
+
+describe("layout-toggles — Rail 瘦身", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("Rail 不再有折叠箭头与轨迹入口", () => {
+    const rail = read("src/renderer/mafw/components/Rail.tsx")
+    expect(rail).not.toContain("mafw-rail-collapse")
+    expect(rail).not.toContain("onOpenTrajectory")
+    expect(rail).not.toContain("onToggleCollapsed")
+  })
+  test("MafwShell 不再传 onOpenTrajectory / onToggleCollapsed，折叠态无展开按钮", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).not.toContain("onOpenTrajectory")
+    expect(shell).not.toContain("onToggleCollapsed")
+    expect(shell).not.toContain("mafw-rail-expand")
+  })
+})

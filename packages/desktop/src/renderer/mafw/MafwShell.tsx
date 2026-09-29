@@ -1543,9 +1543,6 @@ export function MafwShell() {
         {railCollapsed() ? (
           <div class="mafw-rail-collapsed">
             <div class="mafw-rail-collapsed-brand"><Icon name="logo" size="small" /></div>
-            <ButtonV2 variant="ghost" size="small" class="mafw-rail-expand" onClick={() => applyRailCollapsed(false)} aria-label="展开侧边栏">
-              <Icon name="chevron-right" size="small" />
-            </ButtonV2>
           </div>
         ) : (
           <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
@@ -1603,11 +1600,10 @@ export function MafwShell() {
               }
               setActiveSessionId(id)
               setActiveViewId(id)
-            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onToggleCollapsed={() => applyRailCollapsed(true)} onOpenUsage={() => applyRightDock(true, "usage")}
+            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onOpenUsage={() => applyRightDock(true, "usage")}
               activeTab={activeTab()}
               tabCounts={{ approvals: pendingPermissionCount() }}
-              onTabChange={(t) => { setActiveTab(t); setConfigSection(undefined); setShowConfig(false) }}
-              onOpenTrajectory={() => applyRightDock(!rightDockOpen(), "trajectory")} />
+              onTabChange={(t) => { setActiveTab(t); setConfigSection(undefined); setShowConfig(false) }} />
             <ResizeHandle
               direction="horizontal"
               edge="end"

@@ -528,8 +528,6 @@ html[data-theme="light"] body {
 .mafw-rail-switcher-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-rail-check { margin-left: auto; opacity: .8; }
 .mafw-rail-switcher-menu { max-height: 320px; overflow-y: auto; }
-.mafw-rail-collapse { width: 24px; height: 24px; flex-shrink: 0; border: none; background: transparent; color: var(--text-3); border-radius: 4px; cursor: pointer; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center; }
-.mafw-rail-collapse:hover { background: var(--hover); color: var(--text-1); }
 .mafw-rail-search-toggle { flex-shrink: 0; opacity: .75; }
 .mafw-rail-search-toggle:hover { opacity: 1; }
 .mafw-rail-search-toggle[data-size="small"] { min-height: 24px; height: 24px; padding: 0; }
@@ -3090,10 +3088,6 @@ html[data-theme="light"] .mafw-picker-pop {
   width: 100%; height: 38px; display: flex; align-items: center; justify-content: center;
   color: var(--text-2); flex-shrink: 0; -webkit-app-region: drag;
 }
-.mafw-rail-expand { width: 22px !important; height: 22px !important; min-width: 22px !important; padding: 0 !important; color: var(--text-3); border-radius: 4px; }
-.mafw-rail-expand:hover { color: var(--text-1); background: var(--bg-overlay); }
-.mafw-rail-expand span { font-size: 10px; }
-
 /* ── Chat panes (single pane since v6; mafw-pane keeps the artifact-column hook) ── */
 .mafw-chat-panes { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
 .mafw-pane {
