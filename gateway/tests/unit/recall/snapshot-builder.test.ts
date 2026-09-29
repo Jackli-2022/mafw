@@ -76,6 +76,17 @@ describe('buildSnapshot', () => {
     expect(snap!.block).toContain('status="no-memory"');
   });
 
+  test('A4 hit-proxy: top1prob from the verification layer is carried into the snapshot', async () => {
+    const snap = await buildSnapshot(
+      deps({
+        verify: async (_q, ms) => ({ memories: ms, fokStatus: 'inject' as const, top1prob: 0.87 }),
+      }),
+      'ses_1',
+    );
+    expect(snap!.top1prob).toBe(0.87);
+    expect(snap!.fokStatus).toBe('inject');
+  });
+
   test('fail-open: verify throwing leaves the snapshot at the normal zone', async () => {
     const snap = await buildSnapshot(
       deps({

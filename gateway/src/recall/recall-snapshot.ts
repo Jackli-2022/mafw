@@ -32,6 +32,9 @@ export interface RecallSnapshot {
    * block is rendered with this status baked in.
    */
   fokStatus?: 'inject' | 'low-confidence' | 'no-memory';
+  /** Reranker top-1 probability the zone was decided from (hit-proxy
+   *  calibration sample — see recall/fok-samples.ts). */
+  top1prob?: number;
 }
 
 export interface SnapshotConfig {

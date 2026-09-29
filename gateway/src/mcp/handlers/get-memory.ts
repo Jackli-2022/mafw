@@ -47,6 +47,14 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `memory file missing: ${target.id}` }) }], isError: true };
     }
 
+    // A4 hit-proxy: a redemption is "the injected pointer was actually used"
+    // evidence — the calibration join (recall/fok-samples.ts) matches it
+    // against recent injections. Fail-open.
+    try {
+      const { appendFokEvent } = await import("../../recall/fok-samples.js");
+      appendFokEvent({ e: 'rdm', ts: Date.now(), id: target.id });
+    } catch { /* fail-open */ }
+
     // Follow the supersede chain to the latest version (bounded loop).
     let latest: HarmonicUnit | null = null;
     let cursor: HarmonicUnit = unit;

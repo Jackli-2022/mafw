@@ -1616,7 +1616,7 @@ class MafwScheduler {
                 zone = zoneFromProbability(topProb, config.search.fok.probLow, config.search.fok.probHigh);
                 log.info(`[Recall] FOK zone=${zone} (top1prob=${topProb.toFixed(3)}) for snapshot`);
               }
-              return { memories: reranked.length ? reranked : ms, fokStatus: zone };
+              return { memories: reranked.length ? reranked : ms, fokStatus: zone, top1prob: topProb };
             }
             // Fallback: rerank without probabilities (no FOK zone).
             const { applyReranker } = require('./core/memory/reranker');
@@ -5243,6 +5243,21 @@ class MafwScheduler {
                       ((snap.ids ?? []) as string[]).map((id) => ({ entry: { id } })),
                       'recall',
                     );
+                  } catch { /* fail-open */ }
+                  // A4 hit-proxy: log the probability-gated injection as a
+                  // calibration sample — hit when a pointer is later redeemed
+                  // via mafw_get_memory (join by id within TTL).
+                  try {
+                    if (Number.isFinite(snap.top1prob)) {
+                      const { appendFokEvent } = require('./recall/fok-samples');
+                      appendFokEvent({
+                        e: 'inj',
+                        ts: Date.now(),
+                        top1prob: snap.top1prob,
+                        zone: snap.fokStatus ?? 'inject',
+                        ids: (snap.ids ?? []) as string[],
+                      });
+                    }
                   } catch { /* fail-open */ }
                   log.info(`[Recall] snapshot served for ${sessionID} (age=${Date.now() - Date.parse(snap.builtAt)}ms, fok=${snap.fokStatus ?? 'inject'})`);
                 } else if (decision !== 'no-snapshot') {

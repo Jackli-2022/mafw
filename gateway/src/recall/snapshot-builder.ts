@@ -22,9 +22,10 @@ export interface SnapshotDeps {
    * Verification layer + R5 FOK in ONE step: returns the reranked memories and
    * the FOK zone derived from the same scoring pass (the reranker probability
    * is the feature that actually discriminates unanswerable questions; the
-   * boundary path cannot afford it, this background path can).
+   * boundary path cannot afford it, this background path can). `top1prob` is
+   * carried through for the hit-proxy calibration samples.
    */
-  verify?: (query: string, memories: RecallMemory[]) => Promise<{ memories: RecallMemory[]; fokStatus?: FokZone }>;
+  verify?: (query: string, memories: RecallMemory[]) => Promise<{ memories: RecallMemory[]; fokStatus?: FokZone; top1prob?: number }>;
   /** Render the pointer block (formatRecallContext + neighbours + status). */
   render: (memories: RecallMemory[], status?: FokZone) => string | null;
   /** kv write (fail-open by the caller). */
@@ -52,11 +53,13 @@ export async function buildSnapshot(
   if (memories.length === 0) return null;
   // R3 + R5 in one scoring pass; fail-open to the un-reranked ranking.
   let fokStatus: FokZone | undefined;
+  let top1prob: number | undefined;
   if (deps.verify) {
     try {
       const verified = await deps.verify(query, memories);
       if (verified?.memories?.length) memories = verified.memories;
       fokStatus = verified?.fokStatus;
+      top1prob = verified?.top1prob;
     } catch { /* fail-open: keep the un-reranked ranking, no gate */ }
   }
   const block = deps.render(memories, fokStatus);
@@ -68,6 +71,7 @@ export async function buildSnapshot(
     ids: memories.slice(0, topK).map(m => m.id),
     builtAt: (deps.now?.() ?? new Date()).toISOString(),
     fokStatus,
+    top1prob,
   };
   deps.store(sessionID, snapshot);
   return snapshot;
