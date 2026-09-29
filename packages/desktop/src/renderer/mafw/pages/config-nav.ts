@@ -13,7 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "desktop",  icon: "monitor",    label: "Desktop",  desc: "托盘图标、关闭按钮行为等桌面集成" },
   { key: "plugins",  icon: "grid-plus",  label: "Plugins",  desc: "切换 Runtime 引擎和媒体分析引擎" },
   { key: "models",   icon: "cube",       label: "Models",   desc: "配置记忆 worker 和媒体分析使用的 AI 模型" },
-  { key: "memory",   icon: "database",   label: "Memory",   desc: "记忆系统嵌入引擎（ONNX / llama.cpp / GPU 卸载）与向量索引" },
+  { key: "memory",   icon: "database",  label: "Memory",   desc: "嵌入引擎、检索行为开关与记忆观测（FOK 标注/事件流/管线心跳）" },
   { key: "usage",    icon: "chart-bar",  label: "Usage",    desc: "设置 token 限额、余额预算和平台 cookie" },
   { key: "approvals", icon: "shield",    label: "Approvals", desc: "审批持久白名单（跨会话放行工具/命令前缀）" },
   { key: "opencode", icon: "file",       label: "opencode", desc: "编辑 opencode 原生配置文件" },

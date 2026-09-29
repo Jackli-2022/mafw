@@ -149,6 +149,7 @@ export function createMafwApi(): MafwAPI {
       getL5Axioms: (topK) => invoke("memory", "getL5Axioms", topK),
       listSticky: () => invoke("memory", "listSticky"),
       setSticky: (id, sticky, stickyDays?) => invoke("memory", "setSticky", { id, sticky, stickyDays }),
+      stats: () => invoke("memory", "stats"),
     },
 
     approvals: {

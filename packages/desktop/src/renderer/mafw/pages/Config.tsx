@@ -11,6 +11,7 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
 import { statusLabel, runtimeActivatable, parseAmbiguousCandidates, builtinMeta, groupEntries, typeMeta, formatSize, type HubEntry } from "./plugin-hub"
 import { isNavKey, navItems, type NavKey } from "./config-nav"
+import { draftFromConfig, validateFokThresholds, toSearchOverrides, mergeSearchSection, RERANKER_OPTIONS } from "./search-behavior"
 import { UsageProviders } from "../components/UsageProviders"
 import { ApprovalsSection } from "../components/ApprovalsSection"
 import { ConfirmOverlay } from "../components/ConfirmOverlay"
@@ -75,7 +76,57 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     }
   }
 
-  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig(); loadTrayPrefs() })
+  // ── Memory: search behavior (P1) + observability (P2) ──
+  const [searchDraft, setSearchDraft] = createSignal<any | null>(null)
+  const [searchSaving, setSearchSaving] = createSignal(false)
+  const [memStats, setMemStats] = createSignal<any | null>(null)
+
+  async function loadSearchDraft() {
+    try {
+      const cfg = await window.api.mafw.config.get()
+      setSearchDraft(draftFromConfig(cfg))
+    } catch {
+      setSearchDraft(null)
+    }
+  }
+
+  const fokValidationError = createMemo(() => {
+    const d = searchDraft()
+    if (!d) return null
+    return validateFokThresholds(d.probLow, d.probHigh)
+  })
+
+  async function saveSearchDraft() {
+    const d = searchDraft()
+    if (!d || fokValidationError()) return
+    setSearchSaving(true)
+    try {
+      // config.set replaces the WHOLE section — merge the card's keys into
+      // the current search section so foreign keys (expansion, graph, …) survive.
+      const current = await window.api.mafw.config.get("search")
+      await window.api.mafw.config.set("search", mergeSearchSection(current, toSearchOverrides(d).search))
+      showToastV2({ description: "检索行为已保存（热生效）", duration: 3000 })
+    } catch {
+      showToastV2({ description: "保存失败，请重试", duration: 3000 })
+    }
+    setSearchSaving(false)
+  }
+
+  async function loadMemStats() {
+    try {
+      setMemStats(await window.api.mafw.memory.stats())
+    } catch {
+      setMemStats(null)
+    }
+  }
+
+  onMount(() => { loadConfig(); loadOpenCodeConfig(); loadPluginState(); loadModelState(); loadEmbeddingConfig(); loadTrayPrefs(); loadSearchDraft(); loadMemStats() })
+
+  // Memory observability refresh (15s, same cadence as Approvals).
+  onMount(() => {
+    const t = setInterval(() => { if (activeNav() === "memory") void loadMemStats() }, 15_000)
+    onCleanup(() => clearInterval(t))
+  })
 
   // Dock "配置" requests arrive as window events; the config page can already be
   // mounted when one fires, so listen here instead of relying on mount-time props.
@@ -1045,6 +1096,145 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                       <ButtonV2 variant="contrast" size="small" onClick={saveEmbeddingConfig} disabled={embSaving() || !embDirtyMemo()}>
                         {embSaving() ? "保存中…" : "应用"}
                       </ButtonV2>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── 检索行为（P1）——四个用户可感知开关，走通用 config 通道 ── */}
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">🎯</span>
+                <span class="mafw-config-section-title">检索行为</span>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  记忆检索的四个行为开关。保存后热生效，无需重启 Gateway。
+                </div>
+                {!searchDraft() ? (
+                  <div class="mafw-config-inline-loading">
+                    <LoaderV2 width={14} height={14} /> 加载中…
+                  </div>
+                ) : (
+                  <div class="mafw-config-models-grid">
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">FOK 记忆置信门</label>
+                      <span class="mafw-config-hint">低于拒答阈值时显式声明"无可信记忆"而非静默注入（防臆造）</span>
+                      <SwitchV2
+                        checked={searchDraft().fokEnabled}
+                        onChange={(v: boolean) => setSearchDraft((p: any) => ({ ...p, fokEnabled: v }))}
+                      />
+                    </div>
+                    <Show when={searchDraft().fokEnabled}>
+                      <div class="mafw-config-field-group">
+                        <label class="mafw-config-label">拒答阈值 / 注入阈值</label>
+                        <span class="mafw-config-hint">由 fok-calibrate --log 校准产出；拒答 &lt; 注入，均在 0–1 开区间</span>
+                        <div style={{ display: "flex", gap: 8, "align-items": "center" }}>
+                          <TextInputV2
+                            value={searchDraft().probLow}
+                            onInput={e => setSearchDraft((p: any) => ({ ...p, probLow: e.currentTarget.value }))}
+                            style={{ width: 80 }}
+                          />
+                          <span class="mafw-config-hint">/</span>
+                          <TextInputV2
+                            value={searchDraft().probHigh}
+                            onInput={e => setSearchDraft((p: any) => ({ ...p, probHigh: e.currentTarget.value }))}
+                            style={{ width: 80 }}
+                          />
+                        </div>
+                        <Show when={fokValidationError()}>
+                          <span class="mafw-config-error-row">{fokValidationError()}</span>
+                        </Show>
+                      </div>
+                    </Show>
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">预取快照</label>
+                      <span class="mafw-config-hint">边界注入走后台预计算路径（~3ms vs 实时 ~70ms）</span>
+                      <SwitchV2
+                        checked={searchDraft().snapshotEnabled}
+                        onChange={(v: boolean) => setSearchDraft((p: any) => ({ ...p, snapshotEnabled: v }))}
+                      />
+                    </div>
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">时间邻居呈现</label>
+                      <span class="mafw-config-hint">注入时附带时间相邻记忆（↳ 行）与"优先最近版本"指令</span>
+                      <SwitchV2
+                        checked={searchDraft().neighborsPresentation}
+                        onChange={(v: boolean) => setSearchDraft((p: any) => ({ ...p, neighborsPresentation: v }))}
+                      />
+                    </div>
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">重排引擎</label>
+                      <span class="mafw-config-hint">off = 纯 BM25；heuristic = 零增益兜底；llamacpp = Qwen3-Reranker 本地 sidecar</span>
+                      <SelectV2
+                        options={[...RERANKER_OPTIONS]}
+                        current={searchDraft().reranker}
+                        value={(x: string) => x}
+                        label={(x: string) => x}
+                        onSelect={(v) => v && setSearchDraft((p: any) => ({ ...p, reranker: v }))}
+                        disabled={searchSaving()}
+                      />
+                    </div>
+                    <div style={{ "margin-top": 8 }}>
+                      <ButtonV2 variant="contrast" size="small" onClick={saveSearchDraft} disabled={searchSaving() || !!fokValidationError()}>
+                        {searchSaving() ? "保存中…" : "保存"}
+                      </ButtonV2>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── 记忆观测（P2）——只读统计行，15s 轮询 ── */}
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">📊</span>
+                <span class="mafw-config-section-title">记忆观测</span>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                {!memStats() ? (
+                  <div class="mafw-config-hint">暂无数据（Gateway 未就绪或无活动）</div>
+                ) : (
+                  <div class="mafw-config-models-grid">
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">FOK 标注样本</label>
+                      <span class="mafw-config-hint">
+                        {memStats()?.fok
+                          ? `${memStats().fok.samples} 个（命中率 ${(memStats().fok.hitRate === null ? '—' : (memStats().fok.hitRate * 100).toFixed(0) + '%')}）· 注入 ${memStats().fok.injections} 次 · 兑现 ${memStats().fok.redemptions} 次`
+                          : "尚未积累"}
+                      </span>
+                    </div>
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">检索事件流</label>
+                      <span class="mafw-config-hint">
+                        {memStats()?.retrievalEvents
+                          ? `待结算 ${memStats().retrievalEvents.pending} 条 · need 追踪 ${memStats().retrievalEvents.needTracked} 个（每日 UTC 3:30 批量结算）`
+                          : "未启用"}
+                      </span>
+                    </div>
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">合并裁判</label>
+                      <span class="mafw-config-hint">
+                        {memStats()?.consolidation
+                          ? `判定 ${memStats().consolidation.judged} 次 · update ${(memStats().consolidation.updateRatio * 100).toFixed(0)}% · create ${memStats().consolidation.creates}`
+                          : "未启用"}
+                      </span>
+                    </div>
+                    <div class="mafw-config-field-group">
+                      <label class="mafw-config-label">管线心跳</label>
+                      <span class="mafw-config-hint">
+                        {(memStats()?.pipelines ?? [])
+                          .filter((p: any) => ['memory:decay', 'memory:turnCompress'].includes(p.name))
+                          .map((p: any) => {
+                            const c = p.lastCounts ?? {}
+                            const extra = p.name === 'memory:decay'
+                              ? (c.bonused !== undefined ? ` · 加成 ${c.bonused} 条` : '')
+                              : (c.replayed !== undefined ? ` · 回放 ${c.replayed} 条` : '')
+                            return `${p.name.replace('memory:', '')}: ${p.ok === false ? '失败' : 'ok'}${extra}`
+                          })
+                          .join('　') || "暂无记录"}
+                      </span>
                     </div>
                   </div>
                 )}
