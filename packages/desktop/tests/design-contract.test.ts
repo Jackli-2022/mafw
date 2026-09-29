@@ -854,3 +854,31 @@ describe("layout-toggles — dock tabs 归位", () => {
     expect(css).not.toContain(".mafw-dock-button")
   })
 })
+
+describe("layout-toggles — 顶行两端开关", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  test("顶行左端=侧边栏开关，右端=面板开关（填充/描边成对图标）", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toContain("layout-left-full")
+    expect(shell).toContain("layout-left-partial")
+    expect(shell).toContain("layout-right-full")
+    expect(shell).toContain("layout-right-partial")
+    expect(shell).toMatch(/applyRailCollapsed\(!railCollapsed\(\)\)/)
+    expect(shell).toMatch(/applyRightDock\(!rightDockOpen\(\)\)/)
+  })
+  test("两个开关都带 aria-pressed 与 tooltip 快捷键提示", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect((shell.match(/aria-pressed/g) || []).length).toBeGreaterThanOrEqual(2)
+    expect(shell).toContain("Ctrl+B")
+    expect(shell).toContain("Ctrl+Alt+B")
+  })
+  test("快捷键分支：Ctrl+B 切侧边栏、Ctrl+Alt+B 切面板（跳过输入框）", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toMatch(/e\.altKey[\s\S]{0,300}applyRightDock/)
+    expect(shell).toContain("isContentEditable")
+  })
+  test("CSS：布局开关样式存在，no-drag 由 topstrip button 规则覆盖", () => {
+    expect(css).toMatch(/\.mafw-topstrip\s+button[^{]*\{[^}]*-webkit-app-region:\s*no-drag/)
+    expect(css).toContain(".mafw-layout-toggle")
+  })
+})

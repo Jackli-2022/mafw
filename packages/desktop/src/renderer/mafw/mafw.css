@@ -450,6 +450,10 @@ html[data-theme="light"] body {
 }
 .mafw-topstrip button, .mafw-topstrip input, .mafw-topstrip .mafw-session-tab { -webkit-app-region: no-drag; }
 .mafw-topstrip-spacer { flex: 1; }
+/* ── 布局开关（顶行两端：左=侧边栏、右=面板；填充=开、描边=关）── */
+.mafw-layout-toggle { color: var(--text-3); flex-shrink: 0; }
+.mafw-layout-toggle:hover { color: var(--text-1); }
+.mafw-layout-toggle[aria-pressed="true"] { color: var(--text-2); }
 
 /* ── Window controls (win32 自绘 caption 按钮, Win11 Fluent) ── */
 .mafw-window-controls { display: flex; align-self: stretch; flex-shrink: 0; -webkit-app-region: no-drag; }

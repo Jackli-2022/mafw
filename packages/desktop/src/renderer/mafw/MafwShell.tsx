@@ -1405,6 +1405,21 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
+  // 布局开关快捷键（VS Code 惯例）：Ctrl+B 侧边栏、Ctrl+Alt+B 面板。skip when typing.
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return
+      if (e.key !== "b" && e.key !== "B") return
+      e.preventDefault()
+      if (e.altKey) applyRightDock(!rightDockOpen())
+      else applyRailCollapsed(!railCollapsed())
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
   // Ctrl/Cmd+T: toggle unified right dock. Skip when typing.
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1615,6 +1630,18 @@ export function MafwShell() {
           void window.api.windowControls.toggleMaximize()
         }}
       >
+        <TooltipV2 value={`${railCollapsed() ? "显示" : "隐藏"}侧边栏 (Ctrl+B)`} openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-layout-toggle"
+            aria-label="切换侧边栏"
+            aria-pressed={!railCollapsed()}
+            onClick={() => applyRailCollapsed(!railCollapsed())}
+          >
+            <Icon name={railCollapsed() ? "layout-left-partial" : "layout-left-full"} size="small" />
+          </ButtonV2>
+        </TooltipV2>
         <SessionStrip
           sessions={sessions}
           activeViewId={activeViewId}
@@ -1631,6 +1658,18 @@ export function MafwShell() {
           onNew={createSession}
         />
         <div class="mafw-topstrip-spacer" />
+        <TooltipV2 value={`${rightDockOpen() ? "隐藏" : "显示"}面板 (Ctrl+Alt+B)`} openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            class="mafw-layout-toggle"
+            aria-label="切换面板"
+            aria-pressed={rightDockOpen()}
+            onClick={() => applyRightDock(!rightDockOpen())}
+          >
+            <Icon name={rightDockOpen() ? "layout-right-full" : "layout-right-partial"} size="small" />
+          </ButtonV2>
+        </TooltipV2>
         <WindowControls />
       </div>
       {/* 右列下行：main | dock */}
