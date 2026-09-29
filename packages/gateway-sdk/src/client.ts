@@ -3,7 +3,7 @@ import {
   MafwClient as IMafwClient, MafwClientOptions,
   Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
-  StickyNote, StickyNoteBudget, ModelUsageWindows,
+  StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
@@ -668,6 +668,10 @@ export class MafwClient implements IMafwClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, sticky, stickyDays }),
       })
+    },
+
+    stats: async (): Promise<MemoryStats> => {
+      return this.request<MemoryStats>('/api/memory/stats')
     },
   }
 

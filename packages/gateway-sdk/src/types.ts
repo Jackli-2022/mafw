@@ -94,6 +94,21 @@ export interface StickyNoteBudget {
   used: number
 }
 
+/** GET /api/memory/stats — every field is optional (fail-open endpoint). */
+export interface MemoryStats {
+  embedding?: { provider: string; model?: string; vectors: number; indexEntries: number; coverage: number } | null
+  consolidation?: { judged: number; updates: number; creates: number; skipped: number; updateRatio: number } | null
+  routing?: Record<string, unknown> | null
+  reconsolidation?: { eligible: number } | null
+  pipelines?: Array<{ name: string; lastRunAt?: string; lastSuccessAt?: string; lastCounts?: Record<string, number>; ok?: boolean; stale?: boolean }>
+  coactivation?: Record<string, unknown> | null
+  abstractionLevels?: Record<string, number>
+  /** A4 hit-proxy labeling counters (10s-cached file read). */
+  fok?: { injections: number; redemptions: number; samples: number; hitRate: number | null } | null
+  /** A3 retrieval event stream counters. */
+  retrievalEvents?: { pending: number; needTracked: number } | null
+}
+
 export interface ModelUsageStat {
   provider: string | null
   model: string
