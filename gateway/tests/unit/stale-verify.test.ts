@@ -19,7 +19,11 @@ function entry(over: Partial<any>): any {
 function makePipeline(entries: any[], opts: Partial<any> = {}) {
   const prompts: string[] = [];
   const systems: string[] = [];
-  const index: any = { getIndex: () => ({ entries }) };
+  const stamps: string[] = [];
+  const index: any = {
+    getIndex: () => ({ entries }),
+    stampReview: (id: string) => stamps.push(id),
+  };
   const readMemory = async (id: string) => ({ id, memory_value: `content of ${id}` });
   const worker: any = {
     prompt: async (message: string, system?: string) => {
@@ -35,7 +39,7 @@ function makePipeline(entries: any[], opts: Partial<any> = {}) {
     now: Date.now(),
     ...opts.pipelineOpts,
   });
-  return { pipeline, prompts, systems };
+  return { pipeline, prompts, systems, stamps };
 }
 
 describe('StaleVerifyPipeline candidate selection', () => {
@@ -84,6 +88,27 @@ describe('StaleVerifyPipeline candidate selection', () => {
     const { pipeline } = makePipeline(entries, { pipelineOpts: { topK: 2 } });
     const ids = pipeline.selectCandidates().map((e: any) => e.id);
     expect(ids).toEqual(['high', 'mid']);
+  });
+
+  it('A1: excludes entries reviewed within minReviewIntervalDays', () => {
+    const { pipeline } = makePipeline([
+      entry({ id: 'never', energy: 0.8 }),
+      entry({ id: 'recent', energy: 0.8, last_reviewed: new Date(Date.now() - 3 * DAY_MS).toISOString() }),
+      entry({ id: 'longago', energy: 0.8, last_reviewed: new Date(Date.now() - 40 * DAY_MS).toISOString() }),
+    ]);
+    const ids = pipeline.selectCandidates().map((e: any) => e.id);
+    expect(ids).toContain('never');
+    expect(ids).toContain('longago');
+    expect(ids).not.toContain('recent');
+  });
+
+  it('A1: never-reviewed entries sort before reviewed ones at equal energy×salience', () => {
+    const { pipeline } = makePipeline([
+      entry({ id: 'seen', energy: 0.8, review_count: 5 }),
+      entry({ id: 'unseen', energy: 0.8 }),
+    ]);
+    const ids = pipeline.selectCandidates().map((e: any) => e.id);
+    expect(ids[0]).toBe('unseen');
   });
 });
 
@@ -139,5 +164,25 @@ describe('StaleVerifyPipeline.runOnce', () => {
     const res = await pipeline.runOnce();
     expect(res.failed).toBe(true);
     expect(res.candidates).toBe(1);
+  });
+
+  it('A1: stamps reviewed candidates after a successful pass', async () => {
+    const { pipeline, stamps } = makePipeline([
+      entry({ id: 'mem_a' }),
+      entry({ id: 'mem_b' }),
+    ]);
+    await pipeline.runOnce();
+    expect(stamps.sort()).toEqual(['mem_a', 'mem_b']);
+  });
+
+  it('A1: does not stamp when the worker fails', async () => {
+    const { pipeline, stamps } = makePipeline([entry({ id: 'mem_a' })], {
+      reply: undefined,
+      pipelineOpts: {},
+    });
+    // worker that throws
+    (pipeline as any).opts.worker = { prompt: async () => { throw new Error('down'); } };
+    await pipeline.runOnce();
+    expect(stamps).toHaveLength(0);
   });
 });

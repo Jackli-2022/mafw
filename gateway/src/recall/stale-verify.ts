@@ -25,6 +25,8 @@ export interface StaleVerifyOptions {
   worker: StaleVerifyWorker;
   topK?: number; // default 10
   minAgeDays?: number; // default 14 — only re-verify memories older than this
+  /** A1: exclude entries reviewed within this many days (default 21). */
+  minReviewIntervalDays?: number; // default 21
   now?: number; // test hook
   workerModel?: { providerID: string; modelID: string };
 }
@@ -54,11 +56,14 @@ export class StaleVerifyPipeline {
   constructor(private opts: StaleVerifyOptions) {}
 
   /** High-value, drift-exposed memories: procedural/semantic, live (not
-   *  superseded), older than minAgeDays, ranked by energy × salience. */
+   *  superseded), older than minAgeDays, ranked by energy × salience.
+   *  A1 scheduling state: entries reviewed within minReviewIntervalDays are
+   *  excluded, never-reviewed entries sort first. */
   selectCandidates(): HarmonicIndexEntry[] {
     const now = this.opts.now ?? Date.now();
     const topK = this.opts.topK ?? 10;
     const minAgeDays = this.opts.minAgeDays ?? 14;
+    const minReviewDays = this.opts.minReviewIntervalDays ?? 21;
     return this.opts.index
       .getIndex()
       .entries.filter((e) => (e.type === 'procedural' || e.type === 'semantic') && !e.superseded_by)
@@ -66,7 +71,16 @@ export class StaleVerifyPipeline {
         const created = e.created_at ? new Date(e.created_at).getTime() : 0;
         return created > 0 && now - created >= minAgeDays * DAY_MS;
       })
-      .sort((a, b) => b.energy * (b.salience ?? 1) - a.energy * (a.salience ?? 1))
+      .filter((e) => {
+        const reviewed = e.last_reviewed ? new Date(e.last_reviewed).getTime() : 0;
+        return reviewed === 0 || now - reviewed >= minReviewDays * DAY_MS;
+      })
+      .sort((a, b) => {
+        const ra = a.review_count ?? 0;
+        const rb = b.review_count ?? 0;
+        if ((ra === 0) !== (rb === 0)) return ra === 0 ? -1 : 1;
+        return b.energy * (b.salience ?? 1) - a.energy * (a.salience ?? 1);
+      })
       .slice(0, topK);
   }
 
@@ -100,6 +114,14 @@ export class StaleVerifyPipeline {
       if (m) {
         result.checked = parseInt(m[1], 10);
         result.superseded = parseInt(m[2], 10);
+        // A1: stamp scheduling state — these candidates were reviewed now,
+        // excluding them from the next minReviewIntervalDays window.
+        const nowIso = new Date(this.opts.now ?? Date.now()).toISOString();
+        for (const c of candidates) {
+          try {
+            (this.opts.index as any).stampReview?.(c.id, nowIso);
+          } catch { /* fail-open */ }
+        }
       }
     } catch {
       result.failed = true;

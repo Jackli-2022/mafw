@@ -1786,6 +1786,10 @@ class MafwScheduler {
           log.info(
             `[StaleVerify] candidates=${res.candidates} checked=${res.checked} superseded=${res.superseded} failed=${res.failed}`,
           );
+          // A1: persist review scheduling stamps (review_count/last_reviewed).
+          try {
+            this.memoryService?.harmonicIndex?.save?.();
+          } catch { /* fail-open */ }
           this.heartbeat?.record('memory:review', {
             ok: !res.failed,
             error: res.failed ? 'stale-verify worker failed' : undefined,

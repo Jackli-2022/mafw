@@ -777,4 +777,14 @@ export class HarmonicIndexManager {
     const entry = this.index.entries.find(e => e.id === id);
     if (entry) entry.last_decay_at = nowIso;
   }
+
+  /** A1: stamp a stale-verify review — increments review_count and sets
+   *  last_reviewed (the review queue's scheduling state). Caller saves. */
+  stampReview(id: string, nowIso: string = new Date().toISOString()): void {
+    const entry = this.index.entries.find(e => e.id === id);
+    if (entry) {
+      entry.review_count = (entry.review_count ?? 0) + 1;
+      entry.last_reviewed = nowIso;
+    }
+  }
 }

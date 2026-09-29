@@ -57,6 +57,11 @@ export interface HarmonicIndexEntry {
    *  pass actually applies, or by the v1→v2 migration (forgives the past).
    *  Entries without it fall back to created_at. */
   last_decay_at?: string;
+  /** A1: stale-verify scheduling state — the review queue's consumer. Never
+   *  reviewed entries are prioritized; recently reviewed ones are excluded
+   *  for minReviewIntervalDays (default 21). */
+  review_count?: number;
+  last_reviewed?: string;
 }
 
 export function generateHarmonicId(): string {
