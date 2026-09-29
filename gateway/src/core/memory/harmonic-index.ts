@@ -787,4 +787,13 @@ export class HarmonicIndexManager {
       entry.last_reviewed = nowIso;
     }
   }
+
+  /** B1: stamp interleaved-replay selection (primacy-bias guard — recently
+   *  replayed entries sit out the exclusion window). Caller saves. */
+  stampReplayed(ids: string[], nowIso: string = new Date().toISOString()): void {
+    const set = new Set(ids);
+    for (const entry of this.index.entries) {
+      if (set.has(entry.id)) entry.last_replayed = nowIso;
+    }
+  }
 }

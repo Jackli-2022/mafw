@@ -28,6 +28,7 @@ import { GatewayDatabase } from "./memory/gateway-db";
 import { TurnPipeline } from "./recall/turn-pipeline";
 import { ReflectionPipeline } from "./recall/reflection";
 import { StaleVerifyPipeline } from "./recall/stale-verify";
+import { getRetrievalEventBuffer } from "./core/memory/retrieval-events";
 import { MemoryWorker } from "./recall/memory-worker";
 import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
@@ -1864,6 +1865,9 @@ class MafwScheduler {
       // worker prompt so the curator reconciles rather than only creating.
       replayK: 5,
       replayMaxChars: 1500,
+      // B1: the "need" term of the replay priority (need × gain × 1/energy) —
+      // 7-day retrieval hit counts from the shared event buffer.
+      needFor: (id) => getRetrievalEventBuffer().needFor(id),
       transcriptMaxChars: config.recall.workerTranscriptMaxChars,
       // S2: schema-cluster interleaving (integrate into schemas, not append).
       schemaClusters: () => this.getSchemaClusters(),

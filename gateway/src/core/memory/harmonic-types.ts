@@ -62,6 +62,10 @@ export interface HarmonicIndexEntry {
    *  for minReviewIntervalDays (default 21). */
   review_count?: number;
   last_reviewed?: string;
+  /** B1: interleaved-replay stamp — when this entry was last fed into a
+   *  turnCompress worker prompt as prior knowledge. Recent stamps are
+   *  excluded from replay sampling (primacy-bias guard, arXiv:2502.00802). */
+  last_replayed?: string;
 }
 
 export function generateHarmonicId(): string {

@@ -37,6 +37,9 @@ export interface TurnPipelineOptions {
   /** Interleaved replay: recall cross-session prior knowledge into the worker prompt. */
   replayK?: number;
   replayMaxChars?: number;
+  /** B1: 7-day retrieval hit count per id — the "need" term of the replay
+   *  priority (need × gain × 1/energy). Wired to the retrieval event buffer. */
+  needFor?: (id: string) => number;
   /** S2: schema clusters for interleaved replay (integrating new facts into
    *  existing schemas). Absent → no schema block (rollback-safe). */
   schemaClusters?: () => Cluster[];
@@ -138,21 +141,60 @@ export function sessionContext(
  * Cross-session related prior memories for interleaved replay (CLS): retrieve by
  * the new transcript, drop the current session and episodic narratives, keep the
  * top-k semantic/procedural entries. Fail-open: returns [] on any error.
+ *
+ * B1: with `opts`, the BM25 pool is re-ranked by replay priority
+ * (need × gain × 1/energy — Mattar & Daw's need×gain with an energy
+ * counterweight so already-strong memories yield the slot) and entries
+ * replayed within the exclusion window sit out (primacy-bias guard). Absent
+ * opts → legacy behavior (rollback-safe).
  */
+export function replayPriorityForMemory(
+  e: { id: string; energy: number; salience?: number },
+  need: number,
+): number {
+  return ((1 + Math.log1p(Math.max(0, need))) * (e.salience ?? 1)) / Math.max(0.2, e.energy);
+}
+
+export interface PriorKnowledgeOpts {
+  /** B1: 7-day retrieval hit count per id (the "need" signal). */
+  needFor?: (id: string) => number;
+  /** Test hook / clock. */
+  now?: number;
+  /** Recently replayed entries are excluded within this window (default 48h). */
+  excludeReplayedMs?: number;
+}
+
 export function priorKnowledgeFor(
   index: HarmonicIndexManager,
   sessionID: string,
   query: string,
   k: number,
+  opts?: PriorKnowledgeOpts,
 ): HarmonicIndexEntry[] {
   if (k <= 0 || !query.trim()) return [];
   try {
-    return index
+    const pool = index
       .searchScored(query, k * 3, { retriever: 'bm25', graphExpand: true })
       .map((s) => s.entry)
       .filter((e) => e.source_session_id !== sessionID)
       .filter((e) => e.type !== 'episodic')
-      .filter((e) => !e.superseded_by)
+      .filter((e) => !e.superseded_by);
+    if (!opts) return pool.slice(0, k); // legacy
+    const now = opts.now ?? Date.now();
+    const window = opts.excludeReplayedMs ?? 48 * 3600_000;
+    const fresh = pool.filter((e) => {
+      const t = e.last_replayed ? new Date(e.last_replayed).getTime() : 0;
+      return t === 0 || now - t >= window;
+    });
+    // Backfill only when exclusion empties the pool — exclusion means "sit
+    // out this round", not "demote"; an empty prior block is worse.
+    const source = fresh.length > 0 ? fresh : pool;
+    return [...source]
+      .sort(
+        (a, b) =>
+          replayPriorityForMemory(b, opts.needFor?.(b.id) ?? 0) -
+          replayPriorityForMemory(a, opts.needFor?.(a.id) ?? 0),
+      )
       .slice(0, k);
   } catch {
     return [];
@@ -260,7 +302,17 @@ export class TurnPipeline {
       const base = context
         ? `Prior episodes of this conversation:\n${context}\n\nObservations of the last hour:\n${transcript}`
         : `Observations of the last hour:\n${transcript}`;
-      const prior = priorKnowledgeFor(this.opts.index, sessionID, transcript, this.opts.replayK ?? 5);
+      const prior = priorKnowledgeFor(this.opts.index, sessionID, transcript, this.opts.replayK ?? 5, {
+        needFor: this.opts.needFor,
+      });
+      if (prior.length > 0) {
+        // B1: stamp the selection so the same entries don't dominate every
+        // hour (primacy bias) — they sit out the 48h exclusion window.
+        try {
+          this.opts.index.stampReplayed(prior.map((e) => e.id));
+          (this.opts.index as any).save?.();
+        } catch { /* fail-open */ }
+      }
       const priorBlock = priorKnowledgeBlock(prior, this.opts.replayMaxChars ?? 1500);
       const grade = this.opts.gradeFor?.(sessionID);
       const gradeBlock = grade
