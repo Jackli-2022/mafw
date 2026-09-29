@@ -5841,6 +5841,25 @@ class MafwScheduler {
       });
     }
 
+    // B4: reward-modulated energy — a PASS verdict strengthens the memories
+    // written during this goal's sessions (asymmetric: failure never drains).
+    // Fail-open; rides the replay loop via the shared need×gain priority.
+    if (outcome?.verdict === 'PASS' && this.memoryService) {
+      try {
+        const { applyGoalReward } = await import('./core/manager/goal-reward.js');
+        const sessions = this.getGatewayDb()
+          .listGoalSessions(goalId)
+          .map((s: any) => s.session_id);
+        const r = applyGoalReward(
+          { index: this.memoryService.harmonicIndex, sessions },
+          outcome.verdict,
+        );
+        log.info(`[GoalReward] goal ${goalId}: rewarded ${r.rewarded} memories (+0.08 each, clamped)`);
+      } catch (err: any) {
+        log.warn(`[GoalReward] failed for ${goalId} (non-fatal): ${err?.message || err}`);
+      }
+    }
+
     if (projectDir) this.getMilestonePush()?.onArchived(goalId, projectDir, outcome?.verdict ?? 'CANCELLED');
 
     log.info(`[Scheduler] Goal ${goalId} archived`);
