@@ -38,7 +38,7 @@ describe('TurnPipeline.runSession', () => {
   it('returns zeros when the session has no completed turns', async () => {
     const { pipeline } = makePipeline([], []);
     const res = await pipeline.runSession('nobody');
-    expect(res).toEqual({ turns: 0, archived: 0, noops: 0, failed: 0 });
+    expect(res).toEqual({ turns: 0, archived: 0, noops: 0, failed: 0, replayed: 0 });
   });
 
   it('runOnce still aggregates across sessions (no regression)', async () => {

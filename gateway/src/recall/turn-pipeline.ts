@@ -55,6 +55,8 @@ export interface TurnPipelineResult {
   archived: number;
   failed: number;
   noops: number;
+  /** B1 observability: prior-memory entries injected into worker prompts. */
+  replayed: number;
 }
 
 export const TOOL_EXTRACTION_SYSTEM = `You are a memory curator for a coding agent. Review the conversation observations of this session and record durable memories.
@@ -219,7 +221,7 @@ export class TurnPipeline {
   constructor(private opts: TurnPipelineOptions) {}
 
   async runOnce(): Promise<TurnPipelineResult> {
-    const result: TurnPipelineResult = { sessions: 0, turns: 0, archived: 0, failed: 0, noops: 0 };
+    const result: TurnPipelineResult = { sessions: 0, turns: 0, archived: 0, failed: 0, noops: 0, replayed: 0 };
     const turns = this.opts.t1db.listTurns();
     const complete = completeTurns(turns, { staleMs: this.opts.staleMs });
 
@@ -238,6 +240,7 @@ export class TurnPipeline {
       result.archived += r.archived;
       result.noops += r.noops;
       result.failed += r.failed;
+      result.replayed += r.replayed;
     }
 
     return result;
@@ -248,8 +251,8 @@ export class TurnPipeline {
    * → archive). Shared by the hourly runOnce() batch and the compaction
    * flush (compaction facet consumption).
    */
-  async runSession(sessionID: string): Promise<{ turns: number; archived: number; noops: number; failed: number }> {
-    const result = { turns: 0, archived: 0, noops: 0, failed: 0 };
+  async runSession(sessionID: string): Promise<{ turns: number; archived: number; noops: number; failed: number; replayed: number }> {
+    const result = { turns: 0, archived: 0, noops: 0, failed: 0, replayed: 0 };
     const turns = this.opts.t1db.listTurns();
     const sessionTurns = completeTurns(turns, { staleMs: this.opts.staleMs })
       .filter((t) => t.session_id === sessionID);
@@ -305,6 +308,7 @@ export class TurnPipeline {
       const prior = priorKnowledgeFor(this.opts.index, sessionID, transcript, this.opts.replayK ?? 5, {
         needFor: this.opts.needFor,
       });
+      result.replayed = prior.length;
       if (prior.length > 0) {
         // B1: stamp the selection so the same entries don't dominate every
         // hour (primacy bias) — they sit out the 48h exclusion window.

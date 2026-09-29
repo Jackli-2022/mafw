@@ -182,9 +182,10 @@ describe('B1 need-driven replay sampling', () => {
       replayMaxChars: 1500,
       needFor: () => 0,
     });
-    await pipeline.runSession('s1');
+    const r = await pipeline.runSession('s1');
     const stamped = index.getIndex().entries.find((e: any) => e.id === 'prior');
     expect(stamped?.last_replayed).toBeDefined();
+    expect(r.replayed).toBe(1); // observability: prior entries injected
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
