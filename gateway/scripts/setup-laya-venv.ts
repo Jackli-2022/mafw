@@ -22,13 +22,14 @@ if (!fs.existsSync(venvPy)) {
 } else {
   console.log('[1/4] venv exists');
 }
-console.log('[2/4] pip install laya (tuna mirror fallback)...');
+console.log('[2/4] pip install laya (tuna mirror primary, direct PyPI fallback)...');
 const pip = path.join(home, '.venv', 'Scripts', 'pip.exe');
+const mirror = process.env.PIP_INDEX_URL || 'https://pypi.tuna.tsinghua.edu.cn/simple';
 try {
-  run(`"${pip}" install laya`);
+  run(`"${pip}" install laya -i ${mirror}`);
 } catch {
-  console.log('direct PyPI failed, retrying via tuna mirror...');
-  run(`"${pip}" install laya -i https://pypi.tuna.tsinghua.edu.cn/simple`);
+  console.log('mirror failed, retrying via direct PyPI...');
+  run(`"${pip}" install laya`);
 }
 console.log('[3/4] copying sidecar script...');
 fs.copyFileSync(srcScript, dstScript);
