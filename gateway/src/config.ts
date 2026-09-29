@@ -213,7 +213,11 @@ export interface GatewayConfig {
       /** Enable LLM UPDATE/CREATE consolidation judge (P2). */
       consolidation: boolean;
       /** Laya conflict-judge cascade (one-sided v1). Inert until the sidecar
-       *  is provisioned at ~/.mafw/laya (gateway/scripts/setup-laya-venv.ts). */
+       *  is provisioned at ~/.mafw/laya (gateway/scripts/setup-laya-venv.ts).
+       *  tauHigh 0.99 = adoption gated OFF (probe 2026-09-29: separate-class
+       *  false positives land in the same 0.90-0.93 band as true conflicts —
+       *  no separable threshold on synthetic pairs; calibrate from real
+       *  pairs jsonl layaScores, then lower). */
       laya?: {
         enabled?: boolean;
         url?: string;
@@ -497,7 +501,7 @@ function defaults(projectDir: string): GatewayConfig {
         minCosine: 0.8,
         dupCosine: 0.95,
         consolidation: true,
-        laya: { enabled: true, url: 'http://127.0.0.1:13129', tauHigh: 0.85, device: 'cpu' },
+        laya: { enabled: true, url: 'http://127.0.0.1:13129', tauHigh: 0.99, device: 'cpu' },
         threads: 2,
         engine: 'onnx',
         llamacpp: {

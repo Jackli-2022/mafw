@@ -1229,7 +1229,7 @@ class MafwScheduler {
           this.startLayaSidecar(layaPy, layaScript, layaCfg);
           layaDeps = {
             client: new LayaConflictClient({ url: layaCfg.url }),
-            tauHigh: layaCfg.tauHigh ?? 0.85,
+            tauHigh: layaCfg.tauHigh ?? 0.99, // 0.99 = adoption gated off until calibrated from real pairs
           };
           log.info(`[Laya] conflict cascade enabled (tauHigh=${layaDeps.tauHigh}, url=${layaCfg.url})`);
         } else {
