@@ -197,3 +197,101 @@ ConsolidationService                          LAYA_DEVICE=cuda
 - Jev/Laya 决策层分析（pentest harness）：arXiv:2609.28940
 - TypeSafe 概念文档：docs.typesafe.ai（本地 typesafe-ai skill）；级联模式参考其 "extraction cascades" cookbook
 - 下一步（若立项）：brainstorming → writing-plans 出 TDD 计划（影子模式切片先行）
+
+## 6. 追加调研（同日晚）：官方 Jev rerank 实证——"社区在做"的确切形态
+
+用户指出社区已开始用 jev/laya 做 rerank，实抓 TypeSafe 官方文档验证（laya GitHub 当日直连失败，
+其仓库内容上午已覆盖）。
+
+### 6.1 证据一：官方 reranking cookbook（jev-1.12，CLERC 法律检索）
+
+- **形态**：BM25 top-30 短列表 → **逐对 pointwise Noul**（每 query-candidate 一次调用）→ 按 noul 排序
+- **问题是 criteria-defined 的**："这个候选段是否可能出自被引判例？" true="陈述了 query 在引用点所
+  依赖的具体规则/标准/判决" false="仅主题相似"——**不是泛化相关性，是任务定义的判定**
+- **结果**：top-1 5%→18%、top-5 15%→35%、top-10 38%→62%（vs 仅 BM25）
+- **成本**：1,200 次调用 $0.0645（jev $0.042/1M input tokens）
+- **对照通用 LLM rerank 的卖点**：无需发明打分尺度、criteria 固定同一标准跨候选一致、更快更便宜
+- **关键限定**：cookbook 只对照 BM25 基线，**从未主张与专精 cross-encoder reranker 平起平坐**
+
+### 6.2 证据二：Classifying RAG passages cookbook——我们的 FOK/写闸门形状，官方一等公民
+
+top-12 余弦检索 → 每段**一次调用四个并行 Noul** → 代码阈值路由：
+
+| 问题 | 阈值路由 |
+|---|---|
+| `is_relevant` | < 0.45 → 丢弃 |
+| `contains_answer_evidence` | > 0.55 → 进证据块 |
+| `contradicts_query_premise` | > 0.70 → 进**冲突块**（非丢弃） |
+| `contains_prompt_injection` | > 0.70 → 排除（第一优先级） |
+
+实测亮点：相似度排第 1 的注入段被 injection 0.99 抓住；假前提 query 被矛盾检测 0.92 抓住
+（relevance 0.49 + evidence 0.51 单独都会漏掉它）。
+
+设计原则与 MAFW 架构逐条同构：
+- **"四个问题没有一个问'要不要收录'——那个决定在代码里"** = 我们的 policy-in-code 原则
+- **"重路由零 API 成本"**（raw judgments 可复用）= 我们的 composite scoring / 阈值热调
+- **阈值是语料特定的起点非默认值** = 我们的 corpus-specific 校准立场
+
+### 6.3 与 §2.4 的调和（本节修正早上的结论框架）
+
+§2.4 的"不替代"针对**泛化相关性**（laya 0.625 vs Qwen3-Reranker 0.917）——该结论维持，
+R3 主干不变。但社区实践揭示的入口不是"用决策模型做泛化 rerank"，而是：
+
+1. **criteria-defined relevance**——任务定义的判定（"是否供给 query 依赖的具体命题"），
+   专精 reranker 无法表达这个轴
+2. **多问题组合门控**——价值在类型化判断的组合，不在单点排序质量
+3. **一次调用并行多问**（parallel questions cookbook：13 问合 1 调用 = 12.2× 便宜 / 10× 快）
+
+### 6.4 对 MAFW 架构的影响（增量，非推翻）
+
+| 项 | 影响 |
+|---|---|
+| R3 主干（Qwen3-Reranker） | **不变**——cookbook 从未主张专精 reranker 平价 |
+| P1 FOK 集成 | 从"研究向"升级为**官方验证的模式形状**；且每候选可一次问一组：{relevance, sufficiency, contradiction, injection} |
+| 新决策点候选① | **读时矛盾检测**（`contradicts_query_premise`）——我们只有 supersede 链管存储态冲突，没有"query 前提 vs 记忆"的活体矛盾声明（比 FOK 的 no-memory 声明更富） |
+| 新决策点候选② | **记忆投毒扫描**（`contains_prompt_injection`）——记忆库可被注入指令污染，我们目前无此防线 |
+| 成本 | jev API 我们的量级下可忽略（$0.06/1200 调用）；自托管 laya 因隐私照旧 |
+| 接线 | 快照路径（后台）按 cookbook 形态：每候选一次调用、并行多问、线程池并发 |
+
+结论：社区实践**强化**了统一决策层的四个入口（且白送两个新决策点候选），
+同时**没有动摇**"专精 reranker 留在 R3 主干"的分工——两份证据完全自洽。
+
+## 7. 追加调研（同日深夜）：社区微调生态——"直接拿来用"路线成立
+
+用户定向：找社区已微调 laya，直接部署，跳过影子期。HF（经 hf-mirror）实测调研。
+
+### 7.1 生态总况
+
+- 官方 org = **convaiinnovations**（base 4303 赞，2026-09-18 发布，11 天生态爆发）
+- **125 个社区微调**（laya 95 + laya-multilingual 30）+ 大量移植（MLX/CoreML/ONNX/GGUF/LiteRT/browser）
+- 质量文化好：预注册评测规则、冻结 held-out、官方 RLCD 配方 + 温度拟合、诚实的 limits 章节
+
+### 7.2 对口清单（我们的决策点 → 社区 checkpoint）
+
+| MAFW 决策点 | checkpoint | 关键数字 | 语言/底座 |
+|---|---|---|---|
+| **巩固判官（P0）+ 读时矛盾检测** | `Modusnsus/laya-nli-memory-conflict` | **acc 0.901 / ECE 0.019**；任务=「新信息与已有记忆是否冲突，冲突=需 supersede」——就是我们的 UPDATE/CREATE 判定 | **multilingual 322M（中文✓）** |
+| FOK/证据门 | `flaukowski/laya-kannaka-evidence-gate` | **AUROC 0.963**（base 0.748）；**在 LongMemEval-S 上训练**（我们的基准！）；recall@0.5 **0.95**；20.6ms/判（RTX 4090） | 英文 ModernBERT-large 421M |
+| 注入扫描 | `16sulphur/laya-prompt-guard` | injection 0.954 / jailbreak 0.994（base 0.468/0.809）；真实 Apache 数据集 | 英文 |
+| 上下文预过滤 | `Zamax14/laya-context-prefilter` | held-out 目录 90%（base 41%）；claude-decide 实战：token -17% / cost -18%；0.24s/49 候选（4050） | multilingual（en/es/pt 主） |
+| agent 回合停止 | `tampajohn/laya-stop-completion-judge` | AUROC 0.85（base≈随机）；守 Claude Code Stop hook | 英文 |
+| （官方参照） | `convaiinnovations/laya-typed-decisions` | acc 0.766 > Jev 1.13 已发布 0.727，超 teacher 上限 | 英文 421M/1024ctx |
+
+### 7.3 三个关键发现
+
+1. **P0 直接解锁**：conflict 判官就是我们的 ConsolidationService 裁判任务（连"是否 supersede"语义都一致），
+   multilingual 底座中文可用——不再等自己的 pairs 标签，LLM 判官降级为抽检参照
+2. **Kannaka 镜像**：`flaukowski/laya-kannaka-evidence-gate` 出自 Kannaka（"wave-interference memory for
+   persistent agents"）——**另一个持久记忆系统用 laya 做检索门**，训练脚本公开（build_e_l1b_dataset.py），
+   且选了和我们相同的基准（LongMemEval-S）
+3. **中文缺口**：evidence-gate 仅英文（ModernBERT tokenization 对中文基本无效）；唯一的中文 MLX 版
+   （ZLHAOOO/laya-mlx-zh）是 Apple Silicon 专用，Windows/NVIDIA 跑不了——FOK 中文版要么先测 zero-shot
+   迁移，要么用 Kannaka 公开配方 + LongMemEval 中文数据自己补一版（仍是社区路线，最后一步自己跑）
+
+### 7.4 对原计划的修正
+
+- **影子期 → 直接部署 + fail-open + 原有日志抽检**：社区 checkpoint 自带 held-out 评测（比我们的零数据强），
+  剩余风险=分布漂移（中文记忆语料 vs 其训练分布），用原有 consolidation-pairs/fok-samples 日志做部署后
+  抽检，不搞独立影子部署
+- 首个部署候选 = conflict 判官（322M multilingual，巩固低频后台任务，CPU 都够）
+- 多 head 资源：一个 Python sidecar 可加载多个 checkpoint（322M+421M×n），按岗分批上，对齐驻留分级原则
