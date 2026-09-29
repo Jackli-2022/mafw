@@ -1228,6 +1228,16 @@ class MafwScheduler {
           error: r.error,
           counts: this.consolidationService?.getStats(),
         }),
+        // B1: audit trail — one line per judge invocation (new, candidates,
+        // cosines, verdict). The zero-update root cause gets decided from this
+        // data (MinHash preemption vs judge bias vs cosine threshold).
+        onPair: (pair) => {
+          try {
+            const logsDir = path.join(mafwDir, 'logs');
+            fs.mkdirSync(logsDir, { recursive: true });
+            fs.appendFileSync(path.join(logsDir, 'consolidation-pairs.jsonl'), JSON.stringify(pair) + '\n', 'utf-8');
+          } catch { /* fail-open */ }
+        },
         // Persist stats across service rebuilds (initEmbeddingServices is
         // re-entrant on hot-swap) so updateRatio/skipped survive restarts.
         onStats: (s) => { try { this.getGatewayDb().kvSet('consolidation-stats', 'latest', s); } catch { /* fail-open */ } },

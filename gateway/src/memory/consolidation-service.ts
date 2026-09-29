@@ -49,6 +49,9 @@ export interface ConsolidationDeps {
   model?: { providerID: string; modelID: string };
   /** Fired whenever the LLM judge is actually invoked (heartbeat seam). */
   onJudge?: (result: { ok: boolean; error?: string }) => void;
+  /** B1: fired once per judge invocation with the (new, candidates, verdict)
+   *  triple — the audit data source. Synchronous, fail-open. */
+  onPair?: (pair: JudgedPair) => void;
   /** Fired on every consolidate() terminal state (stats persistence seam). */
   onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
   /** Restore persisted counters on startup (so stats survive restarts). */
@@ -62,6 +65,17 @@ export type ConsolidationOutcome =
   | { action: 'create' }
   | { action: 'update'; targetId: string; mergedId: string }
   | { action: 'skip'; reason: string };
+
+/** B1 audit record: one line per actual LLM-judge invocation, so the
+ *  zero-update root cause (MinHash preemption vs judge bias vs threshold)
+ *  can be decided from data. `verdict: 'skip'` = judge error or invalid target. */
+export interface JudgedPair {
+  newId: string;
+  newAbstraction: string;
+  candidates: Array<{ id: string; cosine: number }>;
+  verdict: 'update' | 'create' | 'separate' | 'skip';
+  ts: number;
+}
 
 interface JudgeVerdict {
   action: 'update' | 'create' | 'separate';
@@ -87,6 +101,7 @@ export class ConsolidationService {
   private completion?: () => CompletionChannel | undefined;
   private model?: { providerID: string; modelID: string };
   private onJudge?: (result: { ok: boolean; error?: string }) => void;
+  private onPair?: (pair: JudgedPair) => void;
   private onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
   private minCosine: number;
   private maxCandidates: number;
@@ -100,6 +115,7 @@ export class ConsolidationService {
     this.completion = deps.completion;
     this.model = deps.model;
     this.onJudge = deps.onJudge;
+    this.onPair = deps.onPair;
     this.onStats = deps.onStats;
     if (deps.initialStats) this.stats = { ...this.stats, ...deps.initialStats };
     this.minCosine = deps.minCosine ?? 0.8;
@@ -161,20 +177,33 @@ export class ConsolidationService {
     }
 
     const hits = this.vectors.searchByCosine(vector, this.maxCandidates + 1);
-    const candidateIds: string[] = [];
+    const candidates: Array<{ id: string; cosine: number }> = [];
     for (const h of hits) {
       if (h.id === unit.id) continue;
       if (h.cosine < this.minCosine) continue;
-      candidateIds.push(h.id);
-      if (candidateIds.length >= this.maxCandidates) break;
+      candidates.push({ id: h.id, cosine: h.cosine });
+      if (candidates.length >= this.maxCandidates) break;
     }
-    if (candidateIds.length === 0) return { action: 'create' };
+    if (candidates.length === 0) return { action: 'create' };
 
     if (!this.llm && !this.completion?.()) return { action: 'skip', reason: 'no-judge' };
 
     this.stats.judged++;
+    const candidateIds = candidates.map((c) => c.id);
     const verdict = await this.judge(unit, candidateIds);
     this.onJudge?.(verdict ? { ok: true } : { ok: false, error: 'judge-error' });
+    try {
+      const invalidTarget =
+        verdict?.action === 'update' &&
+        !(verdict.target_id && candidateIds.includes(verdict.target_id));
+      this.onPair?.({
+        newId: unit.id,
+        newAbstraction: unit.primary_abstraction,
+        candidates: candidates.map((c) => ({ id: c.id, cosine: +c.cosine.toFixed(4) })),
+        verdict: !verdict || invalidTarget ? 'skip' : verdict.action,
+        ts: Date.now(),
+      });
+    } catch { /* fail-open */ }
     if (!verdict) return { action: 'skip', reason: 'judge-error' };
     if (verdict.action === 'create' || verdict.action === 'separate') {
       // `separate` = keep both (do not merge) — the post-write listener has no
