@@ -18,9 +18,8 @@ interface HarmonicUnit {
   energy: number;
   salience?: number;              // 参与排序（写路径计算并存 OKF，检索 ×energy×salience，缺失按 1）
   abstraction_level?: number;     // 0=T1, 1=T2, 2=T3/T4, 3=L5；写路径统一映射（episodic→1，semantic/procedural→2，global→3）
-  review_count?: number;          // 休眠：类型声明，无写路径，复习队列无消费者
-  last_reviewed?: string;         // 休眠：同上
-  top_associations?: string[];    // 未实现：类型声明，全仓库零读写（联想预取不存在）
+  review_count?: number;          // A1：stale-verify 调度状态（验证后 stampReview 盖章；21 天排除窗 + 无记录优先）
+  last_reviewed?: string;         // A1：同上
   merged_from?: string[];         // MinHash 合并来源 id（写路径 merge 时填充）
   superseded_by?: string;         // soft-supersede：指向取代本条的新 id（披露注入排除；检索命中改写为其 supersede 链头）
   pinned?: boolean;               // 披露层：每轮注入 <user-profile>（superseded 后失效）；与 type 正交
@@ -33,6 +32,7 @@ interface HarmonicUnit {
 > 存量合体清理：`cd gateway; npx ts-node scripts/unmerge-blobs.ts`（dry-run 默认，`--apply` 执行并自动备份；需先 `mafw stop`；索引 filePath 相对 `~/.mafw` 解析）
 
 > 注：`goal_id` 为历史兼容字段，当前写路径不填充。
+> `top_associations` 已删（2026-09-29）：预存静态联想链接被新证据反对（SYNTHESIS arXiv:2601.02744 主张 relevance 来自动态激活；query-blind 链接是噪音源 arXiv:2606.30133），未来多跳走 query-aware 动态激活——见 docs/research/2026-09-29-memory-gap-abc-survey.md §A2。
 > MinHash 合并采用 **soft supersede**：相似旧条目标记 `superseded_by` 并降低 energy（×0.5），不物理删除，便于 knowledge-update 场景保留历史版本。检索出口由 `resolveSupersededHeads()`（`harmonic-index.ts`，`searchScored` 末尾单点）**强制撤销**：命中 superseded 条目改写到其 supersede 链头（保分数、按链头去重取最高分），悬空/成环/超深（默认 5）链直接丢弃——仅靠排序惩罚不够，被撤销事实仍会返回并压过替代项（arXiv:2609.08258）。
 
 ### 3.2 检索

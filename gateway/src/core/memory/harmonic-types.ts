@@ -15,9 +15,9 @@ export interface HarmonicUnit {
   distinct_from?: string[];
   salience?: number;
   abstraction_level?: number;
+  /** A1: stale-verify scheduling state (see HarmonicIndexEntry). */
   review_count?: number;
   last_reviewed?: string;
-  top_associations?: string[];
   /** If set, this memory has been superseded by the referenced newer unit; retrieval should penalize it. */
   superseded_by?: string;
   /** Disclosure layer: injected into the system prompt every turn (excluded when superseded). */
