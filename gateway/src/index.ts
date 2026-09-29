@@ -41,6 +41,7 @@ import { scanCommandDirs, watchCommandDirs, type CommandDir } from "./commands/c
 import { registerCustomCommands } from "./commands/custom-exec";
 import { exec } from "child_process";
 import { ConsolidationService, consolidationJudge } from "./memory/consolidation-service";
+import { LayaConflictClient } from "./memory/laya-client";
 import { setRouteWriteDeps, getRouteWriteDeps, routeAndWrite, getRouteStats } from "./memory/route-write";
 import { obsSalience } from "./recall/obs-salience";
 import { buildSchemaClusters, Cluster } from "./memory/schema-clusters";
@@ -253,6 +254,7 @@ class MafwScheduler {
   private workerPool: SessionWorkerPool | null = null;
   private scanService: IndexScanService | null = null;
   private consolidationService: ConsolidationService | null = null;
+  private layaSidecar: import("child_process").ChildProcess | null = null;
   /** A4 observability cache for the fok-samples counters (10s TTL). */
   private fokStatsCache: { at: number; stats: any } | null = null;
   private heartbeat?: PipelineHeartbeat;
@@ -1215,6 +1217,25 @@ class MafwScheduler {
       // this.runtime exists.
       const completion = () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined);
       const direct = Boolean(judgeBaseUrl && judgeApiKey);
+      // Laya conflict cascade (one-sided v1): spawn sidecar when provisioned;
+      // cascade is inert otherwise (fail-open to the LLM judge).
+      const layaCfg = (config.memory.embedding as any).laya;
+      let layaDeps: import("./memory/consolidation-service").ConsolidationDeps['laya'] | undefined;
+      if (layaCfg?.enabled) {
+        const layaHome = path.join(os.homedir(), '.mafw', 'laya');
+        const layaPy = path.join(layaHome, '.venv', 'Scripts', 'python.exe');
+        const layaScript = path.join(layaHome, 'laya-serve-conflict.py');
+        if (fs.existsSync(layaPy) && fs.existsSync(layaScript)) {
+          this.startLayaSidecar(layaPy, layaScript, layaCfg);
+          layaDeps = {
+            client: new LayaConflictClient({ url: layaCfg.url }),
+            tauHigh: layaCfg.tauHigh ?? 0.85,
+          };
+          log.info(`[Laya] conflict cascade enabled (tauHigh=${layaDeps.tauHigh}, url=${layaCfg.url})`);
+        } else {
+          log.info('[Laya] sidecar not provisioned (~/.mafw/laya) — cascade inert; provision via gateway/scripts/setup-laya-venv.ts');
+        }
+      }
       this.consolidationService = new ConsolidationService({
         store: new HarmonicUnitFileStore(mafwDir, this.memoryService?.harmonicIndex),
         vectors: embeddingRuntime.vectors,
@@ -1246,12 +1267,49 @@ class MafwScheduler {
         onStats: (s) => { try { this.getGatewayDb().kvSet('consolidation-stats', 'latest', s); } catch { /* fail-open */ } },
         initialStats: (() => { try { return this.getGatewayDb().kvGet('consolidation-stats', 'latest') ?? undefined; } catch { return undefined; } })(),
         minCosine: config.memory.embedding.minCosine,
+        laya: layaDeps,
       });
       log.info(
         `[Consolidation] enabled (judge: ${providerID || 'none'}; transport: ${
           direct ? 'direct HTTP' : 'runtime completion (resolved per call)'
         })`,
       );
+    }
+  }
+
+  /** Spawn the laya conflict sidecar (windowsHide mandatory — detached
+   *  gateway). Non-blocking readiness probe: cascade stays fail-open until
+   *  healthy. HF_ENDPOINT routes the checkpoint download through hf-mirror
+   *  (huggingface.co unreachable from this network). */
+  private startLayaSidecar(python: string, script: string, cfg: { url: string; device?: string }): void {
+    try {
+      this.layaSidecar?.kill();
+      const port = (() => { try { return new URL(cfg.url).port || '13129'; } catch { return '13129'; } })();
+      this.layaSidecar = spawn(python, [script], {
+        windowsHide: true,
+        env: {
+          ...process.env,
+          LAYA_PORT: port,
+          LAYA_DEVICE: cfg.device || 'cpu',
+          HF_ENDPOINT: 'https://hf-mirror.com',
+        },
+      });
+      this.layaSidecar.stdout?.on('data', (d) => log.info(`[Laya] ${String(d).trim()}`));
+      this.layaSidecar.stderr?.on('data', (d) => log.warn(`[Laya] ${String(d).trim()}`));
+      this.layaSidecar.on('exit', (code) => log.warn(`[Laya] sidecar exited (code=${code}) — cascade degraded to LLM-only (fail-open)`));
+      const t0 = Date.now();
+      (async () => {
+        for (let i = 0; i < 30; i++) {
+          try {
+            const resp = await fetch(`${cfg.url}/health`, { signal: AbortSignal.timeout(1000) } as any);
+            if (resp.ok) { log.info(`[Laya] sidecar ready (${((Date.now() - t0) / 1000).toFixed(1)}s)`); return; }
+          } catch { /* not up yet */ }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+        log.warn('[Laya] sidecar not healthy after 60s — cascade degraded (LLM-only)');
+      })();
+    } catch (err: any) {
+      log.warn(`[Laya] sidecar spawn failed: ${err?.message || err}`);
     }
   }
 
@@ -2038,6 +2096,7 @@ class MafwScheduler {
   stop() {
     this.running = false;
     this.kernels?.disposeAll();
+    try { this.layaSidecar?.kill(); } catch { /* best effort */ }
     this.milestonePush?.dispose();
     this.budgetGuards.clear();
     this.customCommandWatcherDispose?.();
