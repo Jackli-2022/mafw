@@ -48,6 +48,16 @@ describe('RetrievalEventBuffer', () => {
     expect(b.drain()).toHaveLength(0);
     expect(b.needFor('m1')).toBe(0);
   });
+
+  it('stats() reports pending events and need-tracked ids', () => {
+    const b = new RetrievalEventBuffer();
+    b.record({ id: 'm1', prob: 1, kind: 'recall', ts: Date.now() });
+    b.record({ id: 'm1', prob: 1, kind: 'recall', ts: Date.now() });
+    b.record({ id: 'm2', prob: 1, kind: 'search', ts: Date.now() });
+    expect(b.stats()).toEqual({ pending: 3, needTracked: 2 });
+    b.drain();
+    expect(b.stats()).toEqual({ pending: 0, needTracked: 2 }); // need survives drain
+  });
 });
 
 describe('recordRetrievalFromScored', () => {

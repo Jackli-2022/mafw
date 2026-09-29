@@ -66,3 +66,41 @@ export function joinFokSamples(lines: string[], opts: JoinOptions = {}): FokLabe
     hit: redemptions.some((r) => r.ts >= inj.ts && r.ts <= inj.ts + ttl && inj.ids.includes(r.id)),
   }));
 }
+
+export interface FokSampleStats {
+  /** Total injection events (incl. those without top1prob). */
+  injections: number;
+  /** Total redemption events. */
+  redemptions: number;
+  /** Joinable calibration samples (injections WITH top1prob). */
+  samples: number;
+  /** hits / samples; null when no samples yet. */
+  hitRate: number | null;
+}
+
+/** Observability counters over the raw event log (10s-cached by the caller). */
+export function fokSampleStats(lines: string[]): FokSampleStats {
+  let injections = 0;
+  let redemptions = 0;
+  const joinable: string[] = [];
+  for (const line of lines ?? []) {
+    try {
+      const j = JSON.parse(line);
+      if (j?.e === 'inj') {
+        injections++;
+        if (Number.isFinite(j.top1prob) && Array.isArray(j.ids)) joinable.push(line);
+      } else if (j?.e === 'rdm') {
+        redemptions++;
+        joinable.push(line); // the join needs the redemption events too
+      }
+    } catch { /* skip malformed */ }
+  }
+  const samples = joinFokSamples(joinable);
+  const hits = samples.filter((s) => s.hit).length;
+  return {
+    injections,
+    redemptions,
+    samples: samples.length,
+    hitRate: samples.length > 0 ? hits / samples.length : null,
+  };
+}

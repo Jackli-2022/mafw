@@ -3,14 +3,15 @@
  * mafw_get_memory are "hit" evidence for the injection's top1prob — a
  * continuous, label-free labeling loop for the A4 isotonic calibration.
  */
-import { joinFokSamples, appendFokEvent, FokEvent } from '../../../src/recall/fok-samples';
+import { joinFokSamples, appendFokEvent, fokSampleStats, FokEvent } from '../../../src/recall/fok-samples';
 
 const MIN = 60_000;
 
+const inj = (ts: number, top1prob: number, ids: string[]): string =>
+  JSON.stringify({ e: 'inj', ts, top1prob, zone: 'inject', ids });
+const rdm = (ts: number, id: string): string => JSON.stringify({ e: 'rdm', ts, id });
+
 describe('joinFokSamples', () => {
-  const inj = (ts: number, top1prob: number, ids: string[]): string =>
-    JSON.stringify({ e: 'inj', ts, top1prob, zone: 'inject', ids });
-  const rdm = (ts: number, id: string): string => JSON.stringify({ e: 'rdm', ts, id });
 
   it('redemption of an injected id within TTL → hit', () => {
     const lines = [
@@ -65,6 +66,29 @@ describe('joinFokSamples', () => {
     const lines = [inj(1000, 0.9, ['a']), rdm(1000 + 2 * MIN, 'a')];
     expect(joinFokSamples(lines, { ttlMs: MIN })).toEqual([{ top1prob: 0.9, hit: false }]);
     expect(joinFokSamples(lines, { ttlMs: 5 * MIN })).toEqual([{ top1prob: 0.9, hit: true }]);
+  });
+});
+
+describe('fokSampleStats', () => {
+  it('empty log → zeros with null hitRate', () => {
+    expect(fokSampleStats([])).toEqual({ injections: 0, redemptions: 0, samples: 0, hitRate: null });
+  });
+
+  it('counts events and derives hitRate from the join', () => {
+    const lines = [
+      inj(1000, 0.9, ['a']),
+      inj(2000, 0.2, ['b']),
+      rdm(1000 + MIN, 'a'), // hit for inj1
+    ];
+    expect(fokSampleStats(lines)).toEqual({ injections: 2, redemptions: 1, samples: 2, hitRate: 0.5 });
+  });
+
+  it('injections without top1prob count as injections but not calibration samples', () => {
+    const lines = [
+      JSON.stringify({ e: 'inj', ts: 1000, ids: ['a'] }), // no top1prob
+      inj(2000, 0.5, ['b']),
+    ];
+    expect(fokSampleStats(lines)).toEqual({ injections: 2, redemptions: 0, samples: 1, hitRate: 0 });
   });
 });
 

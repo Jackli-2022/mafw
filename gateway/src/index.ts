@@ -253,6 +253,8 @@ class MafwScheduler {
   private workerPool: SessionWorkerPool | null = null;
   private scanService: IndexScanService | null = null;
   private consolidationService: ConsolidationService | null = null;
+  /** A4 observability cache for the fok-samples counters (10s TTL). */
+  private fokStatsCache: { at: number; stats: any } | null = null;
   private heartbeat?: PipelineHeartbeat;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
@@ -3592,6 +3594,28 @@ class MafwScheduler {
                   else counts.unknown++;
                 }
                 return counts;
+              })(),
+              // A4 observability: hit-proxy labeling counts (10s cache — the
+              // file read must not run on every stats poll).
+              fok: (() => {
+                try {
+                  const now = Date.now();
+                  if (!this.fokStatsCache || now - this.fokStatsCache.at > 10_000) {
+                    const { FOK_SAMPLES_FILE, fokSampleStats } = require('./recall/fok-samples');
+                    const lines = fs.existsSync(FOK_SAMPLES_FILE())
+                      ? fs.readFileSync(FOK_SAMPLES_FILE(), 'utf-8').split(/\r?\n/).filter(Boolean)
+                      : [];
+                    this.fokStatsCache = { at: now, stats: fokSampleStats(lines) };
+                  }
+                  return this.fokStatsCache.stats;
+                } catch { return null; }
+              })(),
+              // A3 observability: event stream counters (pending = unsettled
+              // batch for the daily pass; needTracked = live need signals).
+              retrievalEvents: (() => {
+                try {
+                  return getRetrievalEventBuffer().stats();
+                } catch { return null; }
               })(),
             }));
           } catch (err: any) {

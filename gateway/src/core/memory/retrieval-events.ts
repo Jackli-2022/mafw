@@ -73,6 +73,12 @@ export class RetrievalEventBuffer {
     this.events = [];
     this.need.clear();
   }
+
+  /** Observability counters (stats endpoint): pending settlement batch size
+   *  and how many ids carry a live need signal for replay sampling. */
+  stats(): { pending: number; needTracked: number } {
+    return { pending: this.events.length, needTracked: this.need.size };
+  }
 }
 
 let singleton: RetrievalEventBuffer | null = null;
