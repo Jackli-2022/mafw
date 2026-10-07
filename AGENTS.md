@@ -141,14 +141,18 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 >
 > **双传输端点（2026-09-09，commit 1fa8c304）**：`/mcp` 同时承载两种传输，客户端按形态自动分流——`POST /mcp`（无 sessionId）→ **无状态 StreamableHTTP**（官方 transport，`sessionIdGenerator: undefined` + `enableJsonResponse`，响应随 POST 内联返回；opencode 客户端优先此路径）；`POST /mcp?sessionId=` → legacy SSE 消息通道；`GET /mcp`（带 `mcp-protocol-version` 头）→ 405（无独立流，StreamableHTTP 客户端视为预期）；`GET /mcp`（无该头）→ legacy SSE 会话建立。**每条 SSE 连接独立 `Server` 实例**（SDK Protocol 单传输，共享会导致响应路由到"最后连接"的客户端——2026-09-09 间歇性 -32001 超时事故根因，回归测试 `gateway/tests/unit/mcp-sse-multi-client.test.ts`）+ 15s `: ping` 心跳（防 ~305s 客户端 idle-abort 重连轮转）+ 会话生命周期日志（`[MCP]` 前缀）。SDK `@modelcontextprotocol/sdk@^1.30`。
 
-### 4.2 插件侧工具（4 个，`src/tools/`）
+### 4.2 插件侧工具（6 个，`src/tools/`）
 
 | Tool | 用途 |
 |---|---|
 | `mafw_media_ask` | 分析/追问图片/视频/音频（经 Media Agent A2A；支持 taskID 多轮追问或 mediaPath 自动上传） |
 | `mafw_media_upload` | 上传本地媒体文件到 Media Agent 并返回引用指针 |
+| `mafw_media_speak` | 文本合成语音（TTS；带 djb2 hash 标记供桌面端去重播放） |
 | `mafw_python` | 持久 Python 内核执行（变量/导入跨调用保持；matplotlib 图表返回图片附件） |
 | `mafw_python_restart` | 重启 Python 内核（内核崩溃或内存泄漏时调用） |
+| `mafw_add_memory` | 写入记忆单元（HTTP 直连 `/api/memory/add`——serve 派生的 worker 会话无 MCP 连接，故不走 MCP 通道） |
+
+> **插件 dev loop**：本仓库内 opencode 经 `.opencode/plugins/mafw-plugin.ts` shim 直连 `../src/plugin`（v1 原生加载 TS，无需 tsc）；改动生效 = `mafw restart-agent`。仓库外项目靠全局 `file:<npm-prefix>/node_modules/@jack200714/mafw` 加载 `dist/plugin.js`（发布后 `npm install -g jack200714-mafw-<ver>.tgz` 更新）。包入口字段：`main` + `opencode.plugin` = `dist/plugin.js`（2026-10-05 修复：此前 tarball 不含 `dist/` 且全局配置指向旧包名路径，仓库外项目冻结在 v4.5.1）。
 
 ## 5. v6.8 新增系统
 
