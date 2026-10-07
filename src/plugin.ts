@@ -74,7 +74,8 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       console.log('[MAFW] Self-wired mcp.mafw into global opencode config (restart sessions to load tools)');
     }
   } catch {}
-  console.log('[MAFW] Plugin activated. All hooks registered.');
+  const pkg = require('../package.json') as { version: string };
+  console.log(`[MAFW] Plugin activated v${pkg.version}. All hooks registered.`);
 
   const gatewayUrl = getGatewayUrl(mafwDir);
 

@@ -9,6 +9,10 @@
   "bin": {
     "mafw": "./bin/mafw.js"
   },
+  "main": "dist/plugin.js",
+  "opencode": {
+    "plugin": "dist/plugin.js"
+  },
   "scripts": {
     "build": "tsc && cd gateway && npm run build && cd .. && npm run build -w @mafw/sdk && npm run build -w @mafw/tui",
     "postinstall": "node -e \"var p=require('path'),f=require('fs'),d=p.join(__dirname,'gateway'),ts=p.join(d,'node_modules','typescript','bin','tsc');if(f.existsSync(d)){if(f.existsSync(ts)){console.log('[mafw] gateway dev deps present, skip prod install')}else{require('child_process').execSync('npm install --omit=dev --no-audit --no-fund --loglevel=error',{cwd:d,stdio:'inherit'})}}\"",
@@ -25,6 +29,7 @@
     "gateway/dist/",
     "gateway/package.json",
     "bin/",
+    "dist/",
     "packages/tui/dist/",
     "README.md"
   ],
