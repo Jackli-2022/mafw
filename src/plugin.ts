@@ -1,15 +1,6 @@
 ﻿import * as fs from 'fs';
 import * as path from 'path';
-import { loadState, updateState } from './utils/state';
 import { sessionEndingHook } from './hooks/session-ending';
-import { ConfigLoader } from './utils/config-loader';
-import { HookManager } from './hooks/hook-manager';
-import { sessionStartHook } from './hooks/session-start';
-import { toolBeforeHook } from './hooks/tool-before';
-import { userPromptHook } from './hooks/user-prompt';
-import { llmAfterHook } from './hooks/llm-after';
-import { sessionCompactingHook } from './hooks/session-compacting';
-import { handoffHook } from './hooks/handoff';
 import { sessionRecallHook } from './hooks/session-recall';
 import { mediaIngestHook, ingestLargeMediaBeforeStore } from './hooks/media-ingest';
 import { pythonGuideHook } from './hooks/bash-python-guide';
@@ -74,7 +65,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   installFileLogging(path.join(mafwDir, 'logs'));
   console.log(`[MAFW] File logging enabled: ${mafwDir}/logs/mafw.log`);
 
-  ConfigLoader.getInstance(directory).getAll();
   await registerWithGateway(directory, mafwDir);
   // Self-wire gateway MCP into the global opencode config so mafw_* tools are
   // mounted in every session (plugin config hook cannot inject mcp). Fail-open.
@@ -86,89 +76,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
   } catch {}
   console.log('[MAFW] Plugin activated. All hooks registered.');
 
-  const hookManager = new HookManager({ failBehavior: 'continue', timeout: 30000 });
   const gatewayUrl = getGatewayUrl(mafwDir);
-
-  hookManager.register({
-    name: 'session-start-handler', event: 'session.start',
-    handler: async (ctx) => { const data = ctx.data || ctx; sessionStartHook(data); },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'session-end-handler', event: 'session.end',
-    handler: async (ctx) => { const data = ctx.data || ctx; sessionEndingHook(data); },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'tool-before-handler', event: 'tool.before',
-    handler: async (ctx) => { const data = ctx.data || ctx; await toolBeforeHook(data); },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'tool-executed-handler', event: 'tool.executed',
-    handler: async (ctx) => {
-      const data = ctx.data || ctx;
-      if (data?.sessionID) {
-      }
-    },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'user-prompt-handler', event: 'user.prompt',
-    handler: async (ctx) => { const data = ctx.data || ctx; await userPromptHook(data); },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'llm-after-handler', event: 'llm.after',
-    handler: async (ctx) => { const data = ctx.data || ctx; await llmAfterHook(data); },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'session-compacting-handler', event: 'session.compacting',
-    handler: async (ctx) => { const data = ctx.data || ctx; sessionCompactingHook(data); },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'session-handoff-handler', event: 'session.handoff',
-    handler: async (ctx) => { const data = ctx.data || ctx; handoffHook(data); },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'memory-recall-handler', event: 'memory.recall',
-    handler: async (ctx) => {
-      const { query, resultIds } = ctx.data || ctx;
-    },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'memory-contradiction-handler', event: 'memory.contradiction',
-    handler: async (ctx) => {
-      const { existingId, newId, field } = ctx.data || ctx;
-      
-    },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'goal-state-change-handler', event: 'state_change',
-    handler: async (ctx) => {
-      const data = ctx.data || ctx;
-    },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'goal-created-handler', event: 'goal_created',
-    handler: async (ctx) => {
-      const data = ctx.data || ctx;
-    },
-    priority: 100
-  });
-  hookManager.register({
-    name: 'user-feedback-handler', event: 'user_feedback',
-    handler: async (ctx) => {
-      const data = ctx.data || ctx;
-    },
-    priority: 100
-  });
 
   return {
     tool: {
@@ -179,15 +87,13 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
       mafw_python_restart: pythonRestartTool,
       mafw_add_memory: addMemoryTool,
     },
-    'session.end': (ctx: any) => hookManager.execute('session.end', ctx),
-    'tool.execute.before': (ctx: any) => hookManager.execute('tool.before', ctx),
+    'session.end': (ctx: any) => sessionEndingHook(ctx?.data || ctx),
     // Observation capture (T1 store lives in the gateway):
     //  - chat.message(input, output): user text lives in output.parts
     //    (resolvedParts; the hook fires BEFORE the message is persisted, so
     //    video/audio parts are converted to A2A text pointers here to avoid
     //    writing large base64 into the session store)
     'chat.message': async (input: any, output: any) => {
-      hookManager.execute('user.prompt', input);
       const text = extractTextFromParts(output?.parts);
       void pushObservation(input?.sessionID || '', 'user_input', text);
       await ingestLargeMediaBeforeStore(output);
@@ -195,7 +101,6 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     },
     //  - tool.execute.after(input, output): tool/sessionID from input, result from output
     'tool.execute.after': (input: any, output: any) => {
-      hookManager.execute('tool.executed', { ...input, data: output });
       const result = [output?.title, output?.output].filter(Boolean).join('\n');
       void pushObservation(input?.sessionID || '', 'tool_result', result);
       return output;
