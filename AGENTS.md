@@ -982,6 +982,20 @@ runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应
 
 **认知面宿主扩展 mafw-host（2026-10-08，Phase 2）**：`runtime/pi/pi-mafw-host-extension.ts`，随会话 factory 注入（create/fork 双路径，`runtime.pluginConfig.pi.hostExtension !== false` 默认开）。四动词：observe（message_end user/assistant+thinking + tool_result → loopback `/api/obs/capture`）、injectContext（context 事件，双模游标=id 优先/count 回退，短增量并入 assistant 尾部，100ms fail-open，synthetic part 标记防回流）、injectSystem（before_agent_start 链式追加 `<memory-guide>` + pinned `<user-profile>`）、tools（六件套 registerTool，typebox 经 ESM 桥 import `@earendil-works/pi-coding-agent/node_modules/typebox` 取同实例）。与 v1 插件完全同出口（loopback HTTP）——ACT-R 结算/FOK 采样/内部会话过滤零漂移。**approval 旁路已修（2026-10-08）**：静态 autoApprove 五件套删除，改为 `evaluatePermission`（ApprovalPolicyService.evaluate 同步直评，index.ts 三处 runtime 赋值点注入）+ ask→政策环（applyApprovalPolicy）兜底；`ApprovalPolicy.autoApprove` 语义 = 会话动态 allowlist + config 显式预置。
 
+#### 事件映射注册（2026-10-08，v4.20.0）
+
+runtime 插件用**纯数据表**把原生事件接入 canonical 管线，不再手写翻译层（spec：`docs/superpowers/specs/2026-10-08-event-mapping-registration-design.md`）：
+
+- **插件声明**（`module.exports`）：`eventSource { typePath, sessionIdPath?, directoryPath? }` + `eventMappings: [{ from, to, when?, fields? }]` + `transformEvent(raw)` 逃逸口。
+  - `from` = 原生类型（string|string[]）；`to` = canonical 类型或 `'drop'`；`when` 为纯数据条件（`{path, equals?|exists?}`，`typePath` 可指嵌套判别字段如 Claude `$.event.type`）
+  - `fields` 值三选一：`{path,default?}` / `{const}` / `{template}`（`'pi_step_{$.sessionID}'` 式插值，覆盖 ID 物化）；路径 = 裁剪 JSONPath 子集（点号+下标，**无 eval**）
+  - **匹配优先级**：eventMappings（数组序）→ canonical 直发 passthrough → transformEvent（返回 null=丢弃，数组=扇出）→ 丢弃 + 未知遥测
+- **gateway 侧**：`CANONICAL_FACET_RULES`（`runtime/canonical-facets.ts`）把 canonical type → EventFacets 表化（原 `normalizeOpencodeEvent` if 链；`normalize-oracle.test.ts` 逐事件钉扎新旧等价）；`toolCommand`（`type.includes('tool')` + 信封依赖）与 approval metadata 构造为执行器内置特例
+- **执行器**：`runtime/path-expr.ts`（安全路径求值）+ `runtime/event-mapper.ts`（applyEventMappings / validateEventMappings / wrapGlobalEventStream）
+- **加载期校验**（`loader.ts`）：未知 canonical `to` / 坏路径 → 插件 `eventStream` 能力降级 + error 状态（fail-open，仍注册）
+- **dry-event 试衣间**：`POST /api/runtime/dry-event { plugin, event }` 输出 映射→facet→矩阵→字段契约 每跳（含 approval facet 回显）
+- **已迁入**：pi（`PI_EVENT_MAPPINGS`，`translatePiEvent` 由 switch 表化——**turn_end 改 `part.messageID`，修复 BudgetGuard step facet 在 pi 上从未触发的 bug**）；opencode 原生事件即 canonical（不包装）；词汇表沿用 opencode 形状（25+15 类型，2026-10-08 补登 permission_mode/session.diff 两个暗契约漏洞）
+
 #### nativeApprovals 翻译层（pi runtime）
 
 pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 tool_call 事件：

@@ -328,4 +328,35 @@ module.exports = {
 Capabilities declared here gate gateway features declaratively: missing
 capabilities disable the corresponding features (503 on gated endpoints,
 skipped event subscription) — they never crash.
+
+## Event mappings (declarative native → canonical)
+
+Declare how your runtime's native events map onto the canonical vocabulary
+(see packages/gateway-sdk/src/events.ts). No hand-written translation layer:
+
+\`\`\`js
+module.exports = {
+  name: "my-runtime",
+  capabilities: { eventStream: true },
+  eventSource: { typePath: "$.type", sessionIdPath: "$.sessionID" },
+  eventMappings: [
+    { from: ["turn_done", "turn_failed"], to: "session.idle" },
+    { from: "token", to: "message.part.delta",
+      fields: { "part.type": { const: "text" }, "part.text": { path: "$.text" } } },
+    { from: "step_end", to: "message.part.updated",
+      fields: { "part.type": { const: "step-finish" },
+                "part.messageID": { template: "my_{$.sessionID}" } } },
+    { from: "heartbeat", to: "drop" },
+  ],
+  // Escape hatch: state machines, 1→N fan-out, side effects. Called only when
+  // no mapping matches. Return null to drop, an array to fan out.
+  transformEvent(raw) { return null; },
+  async createRuntime(ctx) { /* ... */ },
+};
+\`\`\`
+
+Match priority: eventMappings (array order) → already-canonical passthrough →
+transformEvent → drop + unknown telemetry. Load-time validation rejects unknown
+canonical targets / malformed paths (plugin's eventStream capability degrades,
+fail-open). Test offline with POST /api/runtime/dry-event { plugin, event }.
 `;
