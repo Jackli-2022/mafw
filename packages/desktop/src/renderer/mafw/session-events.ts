@@ -138,7 +138,7 @@ type ShellHandledType =
   | "message.updated" | "message.part.delta" | "message.part.updated"
   | "message.complete" | "message.part.complete"
   | "session.idle" | "session.error" | "message.error" | "message.aborted"
-  | "session.diff"
+  | "session.diff" | "permission_mode"
 
 /**
  * 类型级穷尽检查（永不抛错，编译失败即守卫生效）：
@@ -185,6 +185,8 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "session.next.step.ended":
     case "session.next.reasoning.ended":
     case "session.next.tool.failed":
+    case "session.diff":
+    case "permission_mode":
       return
     default: {
       // 残余必须恰好是 plugin:* 模板；出现任何其他字面量 = 有事件未归类。

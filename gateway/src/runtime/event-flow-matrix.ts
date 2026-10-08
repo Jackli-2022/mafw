@@ -59,6 +59,9 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   'session.next.step.ended':     R(['step'], 'passthrough', 'ignore', 'ignore', 'legacy 兜底（opencode <1.18）'),
   'session.next.reasoning.ended':R([], 'passthrough', 'ignore', 'ignore', '插件 obs 捕获用，客户端不消费'),
   'session.next.tool.failed':    R([], 'passthrough', 'ignore', 'ignore', '插件 obs 捕获用'),
+  // ---- 能力面（2026-10-08 补登：此前被客户端消费但不在单表——暗契约漏洞） ----
+  'permission_mode':             R([], 'passthrough', 'handled', 'handled', 'gateway 自发（审批三档预设变更）；desktop flow-cards/TUI 状态栏消费'),
+  'session.diff':                R([], 'passthrough', 'handled', 'ignore', 'opencode v2 会话文件变更（diffApi）；desktop diff handler 实时填充'),
   // ---- 扁平顶层广播 ----
   'user_question':              R([], 'passthrough', 'handled', 'ignore', 'desktop setActiveQuestion + 通知'),
   'user_feedback':              R([], 'passthrough', 'ignore', 'ignore', ''),

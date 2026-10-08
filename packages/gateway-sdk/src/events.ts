@@ -17,6 +17,7 @@ export const RUNTIME_EVENT_TYPES = [
   "todo.updated",
   "trajectory.event", "trajectory.turn",
   "session.next.step.ended", "session.next.reasoning.ended", "session.next.tool.failed",
+  "permission_mode", "session.diff",
 ] as const
 
 export type RuntimeEventType = typeof RUNTIME_EVENT_TYPES[number]
