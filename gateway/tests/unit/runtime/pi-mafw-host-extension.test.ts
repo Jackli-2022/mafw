@@ -204,3 +204,89 @@ describe('pi-mafw-host injectSystem', () => {
     expect(ret[0].systemPrompt).not.toContain('<user-profile>');
   });
 });
+
+const FakeType: any = {
+  Object: (o: any) => ({ type: 'object', properties: o }),
+  String: (d: any) => ({ type: 'string', ...(d || {}) }),
+  Optional: (s: any) => s,
+  Number: (d: any) => ({ type: 'number', ...(d || {}) }),
+  Array: (s: any) => ({ type: 'array', items: s }),
+  Union: (a: any[]) => ({ anyOf: a }),
+  Literal: (v: any) => ({ const: v }),
+};
+
+describe('pi-mafw-host tools', () => {
+  it('注册 6 个工具', async () => {
+    const { fetchImpl } = makeFakeFetch([]);
+    const { pi, tools } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl, getType: async () => FakeType }).on(pi);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(tools.map((t: any) => t.name).sort()).toEqual([
+      'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart',
+    ]);
+  });
+
+  it('getType 失败 → 不注册不抛错（fail-open）', async () => {
+    const { fetchImpl } = makeFakeFetch([]);
+    const { pi, tools } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl, getType: async () => { throw new Error('no typebox'); } }).on(pi);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(tools).toHaveLength(0);
+  });
+
+  it('mafw_add_memory → POST /api/memory/add 带正确 body', async () => {
+    const { calls, fetchImpl } = makeFakeFetch([
+      { match: (r) => r.url.includes('/api/memory/add'), res: { ok: true, json: { success: true, id: 'mem_1' } } },
+    ]);
+    const { pi, tools } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl, getType: async () => FakeType }).on(pi);
+    await new Promise((r) => setTimeout(r, 10));
+    const tool = tools.find((t: any) => t.name === 'mafw_add_memory');
+    const out = await tool.execute('call1', { content: '测试记忆', cueAnchors: ['a', 'b'] }, undefined as any, undefined as any, {} as any);
+    expect(calls[0].body).toMatchObject({ content: '测试记忆', sessionID: 'pi_s1', cueAnchors: ['a', 'b'] });
+    expect(out.content[0].text).toContain('mem_1');
+  });
+
+  it('mafw_python → execute 输出文本化（stdout/result/kernelRestarted）', async () => {
+    const { fetchImpl } = makeFakeFetch([
+      { match: (r) => r.url.includes('/api/python/execute'), res: { ok: true, json: { status: 'ok', stdout: '42', kernelRestarted: true, attachments: [{ data: 'x' }] } } },
+    ]);
+    const { pi, tools } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl, getType: async () => FakeType }).on(pi);
+    await new Promise((r) => setTimeout(r, 10));
+    const tool = tools.find((t: any) => t.name === 'mafw_python');
+    const out = await tool.execute('c', { code: 'print(42)' }, undefined as any, undefined as any, {} as any);
+    expect(out.content[0].text).toContain('42');
+    expect(out.content[0].text).toContain('python_kernel_reset');
+    expect(out.content[0].text).toContain('1 张图片');
+  });
+
+  it('mafw_media_speak → 返回带 djb2 hash 的标记', async () => {
+    const { fetchImpl } = makeFakeFetch([
+      { match: (r) => r.url.includes('/api/tts'), res: { ok: true, json: { artifactId: 'art_9', voice: '茉莉', url: '/x.wav' } } },
+    ]);
+    const { pi, tools } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl, getType: async () => FakeType }).on(pi);
+    await new Promise((r) => setTimeout(r, 10));
+    const tool = tools.find((t: any) => t.name === 'mafw_media_speak');
+    const out = await tool.execute('c', { text: '你好' }, undefined as any, undefined as any, {} as any);
+    expect(out.content[0].text).toBe(`[语音回复 art:art_9 音色:茉莉 h:${hashText('你好')}]`);
+  });
+
+  it('mafw_media_ask → GetTask + SendMessage 追问链', async () => {
+    const { calls, fetchImpl } = makeFakeFetch([
+      { match: (r) => r.url.includes('/a2a') && r.body?.method === 'GetTask', res: { ok: true, json: { result: { task: { id: 't1', contextId: 'ctx1' } } } } },
+      { match: (r) => r.url.includes('/a2a') && r.body?.method === 'SendMessage', res: { ok: true, json: { result: { task: { id: 't2', status: { state: 'TASK_STATE_COMPLETED', message: { parts: [{ text: '图里有只猫' }] } } } } } } },
+    ]);
+    const { pi, tools } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl, getType: async () => FakeType }).on(pi);
+    await new Promise((r) => setTimeout(r, 10));
+    const tool = tools.find((t: any) => t.name === 'mafw_media_ask');
+    const out = await tool.execute('c', { taskID: 't1', question: '图里有什么' }, undefined as any, undefined as any, {} as any);
+    expect(out.content[0].text).toContain('图里有只猫');
+    expect(out.content[0].text).toContain('t2');
+    const send = calls.find((c) => c.body?.method === 'SendMessage');
+    expect(send.body.params.message.referenceTaskIds).toEqual(['t1']);
+    expect(send.body.params.message.contextId).toBe('ctx1');
+  });
+});

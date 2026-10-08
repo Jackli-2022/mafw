@@ -209,7 +209,242 @@ export function createMafwHostExtension(deps: MafwHostDeps) {
         if (typeof j?.profile === 'string' && j.profile.trim()) extra += '\n\n' + j.profile;
         return { systemPrompt: `${event?.systemPrompt ?? ''}\n\n${extra}` };
       });
-      // tools 由后续任务追加
+      // === tools：六件套（typebox 经 ESM 桥；fail-open） ===
+      void registerMafwTools(pi, deps, f).catch(() => { /* 工具面缺失不阻塞会话 */ });
     },
   };
+}
+
+async function a2aRequest(f: typeof fetch, baseUrl: string, method: string, params: unknown, signal?: AbortSignal): Promise<any> {
+  const sig = signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000);
+  const res = await f(`${baseUrl}/a2a`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'A2A-Version': '1.0' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    signal: sig,
+  });
+  if (!res.ok) throw new Error(`gateway HTTP ${res.status}`);
+  const parsed: any = await res.json();
+  if (parsed?.error) throw new Error(parsed.error?.message || JSON.stringify(parsed.error));
+  return parsed?.result;
+}
+
+function taskAnswer(task: any): string {
+  const parts = task?.status?.message?.parts ?? [];
+  return parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('').trim();
+}
+
+function makeMediaPointer(id: string, contextId: string, filename: string): string {
+  return `[媒体附件 taskID: ${id} contextID: ${contextId}（媒体: ${filename}）]`;
+}
+
+/** 读取媒体（本地路径 / file:// / data URL）为 A2A raw FilePart 载荷。 */
+export function mediaDataFromSource(mediaPath: string): { data: string; mediaType: string; filename: string } | null {
+  const fs = require('fs') as typeof import('fs');
+  let mediaType: string | undefined;
+  let data: string | undefined;
+  let filename = 'media.bin';
+  if (mediaPath.startsWith('data:')) {
+    const m = /^data:([^;,]+)?(;base64)?,([\s\S]*)$/.exec(mediaPath);
+    if (!m) return null;
+    mediaType = m[1];
+    data = m[3];
+  } else {
+    const path = mediaPath.startsWith('file://') ? decodeURIComponent(mediaPath.slice('file://'.length)) : mediaPath;
+    const ext = path.slice(path.lastIndexOf('.')).toLowerCase();
+    mediaType = MEDIA_EXT_MIME[ext];
+    if (!mediaType) return null;
+    filename = path.split(/[\\/]/).pop() || filename;
+    const bytes = fs.readFileSync(path);
+    const kindPrefix = mediaType.split('/')[0] + '/';
+    const max = MAX_BYTES[kindPrefix] ?? Infinity;
+    if (bytes.length > max) throw new Error(`媒体过大：${(bytes.length / 1048576).toFixed(1)}MB 超过上限 ${(max / 1048576).toFixed(0)}MB`);
+    data = bytes.toString('base64');
+  }
+  if (!mediaType || !data) return null;
+  return { data, mediaType, filename };
+}
+
+/** 工具执行里的 POST（带 signal 合并超时）。 */
+async function postToolJson(f: typeof fetch, base: string, path: string, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<{ ok: boolean; body?: any; text?: string }> {
+  try {
+    const sig = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
+    const res = await f(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: sig });
+    let parsed: any;
+    try { parsed = await res.json(); } catch { /* ignore */ }
+    if (!res.ok || parsed?.success === false) return { ok: false, body: parsed, text: `HTTP ${res.status}` };
+    return { ok: true, body: parsed };
+  } catch (err: any) { return { ok: false, text: err?.message ?? String(err) }; }
+}
+
+async function registerMafwTools(pi: any, deps: MafwHostDeps, f: typeof fetch): Promise<void> {
+  const T = await (deps.getType ? deps.getType() : Promise.resolve(null));
+  if (!T) return; // typebox 不可达 → fail-open 跳过注册
+  const sid = deps.sessionId;
+  const base = deps.baseUrl;
+  const ok = (text: string) => ({ content: [{ type: 'text', text }], details: {} });
+  const fail = (text: string) => ({ content: [{ type: 'text', text }], details: {}, isError: true });
+
+  pi.registerTool({
+    name: 'mafw_add_memory',
+    label: 'MAFW 记忆写入',
+    description: '保存一条记忆到谐波记忆系统（跨会话存续的事实/决定/偏好/教训/模式）。一次一条，附 cueAnchors 检索关键词；memoryType: semantic=事实/偏好/约束, episodic=叙事, procedural=教训/模式, global=跨项目。逐字保留标识符进 cueAnchors。',
+    parameters: T.Object({
+      content: T.String({ description: '记忆内容（一句话）' }),
+      memoryType: T.Optional(T.Union([T.Literal('semantic'), T.Literal('episodic'), T.Literal('procedural'), T.Literal('global')])),
+      cueAnchors: T.Optional(T.Array(T.String({ description: '检索关键词（≤8）' }))),
+      primaryAbstraction: T.Optional(T.String({ description: '6-8 词摘要（缺省自动生成）' })),
+      importance: T.Optional(T.Number({ description: '重要性 1-10' })),
+    }),
+    async execute(_id: string, params: any, signal: AbortSignal) {
+      const r = await postToolJson(f, base, '/api/memory/add', {
+        content: params.content,
+        memoryType: params.memoryType || 'semantic',
+        cueAnchors: params.cueAnchors || [],
+        primaryAbstraction: params.primaryAbstraction,
+        importance: params.importance,
+        sessionID: sid,
+      }, 10_000, signal);
+      return r.ok ? ok(`记忆已保存：${r.body?.id ?? ''}`) : fail(`记忆写入失败：${r.text ?? ''} ${JSON.stringify(r.body ?? {})}`);
+    },
+  });
+
+  pi.registerTool({
+    name: 'mafw_python',
+    label: 'MAFW Python 内核',
+    description: '在会话的持久 Python 内核中执行代码（变量/导入跨调用保持）。数据分析/统计/科学计算/多步计算优先用本工具。matplotlib 图表作为图片附件返回（输出中标注数量）。',
+    parameters: T.Object({ code: T.String({ description: '要执行的 Python 代码' }) }),
+    async execute(_id: string, params: any, signal: AbortSignal) {
+      const r = await postToolJson(f, base, '/api/python/execute', { sessionID: sid, code: params.code }, 180_000, signal);
+      if (!r.ok) return fail(`内核不可用：${r.text ?? ''}（可用 mafw_python_restart 重启）`);
+      const j = r.body ?? {};
+      if (j.status === 'error' && j.error) {
+        const tb = Array.isArray(j.error.traceback) ? j.error.traceback.join('\n').split('\n').slice(-6).join('\n') : '';
+        return fail(`代码执行出错：${j.error.ename}: ${j.error.evalue}\n${tb}\n（内核状态保留，可修改后重试）`);
+      }
+      const parts: string[] = [];
+      if (j.kernelRestarted) parts.push('<python_kernel_reset> 内核已重启，之前的变量/导入已丢失。</python_kernel_reset>');
+      if (j.stdout) parts.push(j.stdout);
+      if (j.result) parts.push(j.result);
+      if (j.stderr) parts.push(`stderr:\n${j.stderr}`);
+      if (j.truncated) parts.push('...(输出已截断)');
+      if (Array.isArray(j.attachments) && j.attachments.length) parts.push(`[生成 ${j.attachments.length} 张图片]`);
+      return ok(parts.join('\n') || '(无输出)');
+    },
+  });
+
+  pi.registerTool({
+    name: 'mafw_python_restart',
+    label: 'MAFW Python 内核重启',
+    description: '重启会话的持久 Python 内核（内核崩溃或内存泄漏时调用；重启后变量丢失）。',
+    parameters: T.Object({}),
+    async execute(_id: string, _params: any, signal: AbortSignal) {
+      const r = await postToolJson(f, base, '/api/python/restart', { sessionID: sid }, 60_000, signal);
+      return r.ok ? ok('内核已重启') : fail(`重启失败：${r.text ?? ''}`);
+    },
+  });
+
+  pi.registerTool({
+    name: 'mafw_media_speak',
+    label: 'MAFW 语音合成',
+    description: '将文本合成为语音。用户通过语音消息输入时必须调用本工具以语音回复。返回 [语音回复 art:... 音色:... h:...] 标记，必须原样包含在回复文本中（h 为文本指纹，桌面端用于流式去重）。',
+    parameters: T.Object({
+      text: T.String({ description: '要合成的文本（≤2000 字符）' }),
+      voice: T.Optional(T.String({ description: '音色：冰糖/茉莉/苏打/白桦/Mia/Chloe/Milo/Dean（默认茉莉）' })),
+      style: T.Optional(T.String({ description: '发音风格指令' })),
+    }),
+    async execute(_id: string, params: any, signal: AbortSignal) {
+      const r = await postToolJson(f, base, '/api/tts', { text: params.text, voice: params.voice, style: params.style }, 130_000, signal);
+      if (!r.ok || !r.body?.artifactId) return fail(`语音合成失败：${r.text ?? ''}`);
+      const voice = r.body.voice || params.voice || '默认';
+      return ok(`[语音回复 art:${r.body.artifactId} 音色:${voice} h:${hashText(params.text)}]`);
+    },
+  });
+
+  pi.registerTool({
+    name: 'mafw_media_upload',
+    label: 'MAFW 媒体上传',
+    description: '上传本地图片/视频/音频到 Media Agent 并返回引用指针；之后用返回的 taskID 经 mafw_media_ask 多轮追问。mediaPath 为本地绝对路径。',
+    parameters: T.Object({
+      mediaPath: T.String({ description: '本地媒体文件绝对路径' }),
+      question: T.Optional(T.String({ description: '可选的首个问题' })),
+    }),
+    async execute(_id: string, params: any, signal: AbortSignal) {
+      try {
+        const media = mediaDataFromSource(params.mediaPath);
+        if (!media) return fail(`不支持的媒体格式或文件不存在：${params.mediaPath}`);
+        const result = await a2aRequest(f, base, 'SendMessage', {
+          message: {
+            messageId: `upload-${randomUUID()}`,
+            role: 1,
+            parts: [
+              { raw: media.data, mediaType: media.mediaType, filename: media.filename },
+              ...(params.question ? [{ text: params.question }] : []),
+            ],
+          },
+        }, signal);
+        const task = result?.task;
+        if (!task?.id) return fail('gateway 未返回任务');
+        const answer = taskAnswer(task);
+        if (task?.status?.state === 'TASK_STATE_FAILED') return fail(answer || 'Media Agent 分析失败');
+        return ok(makeMediaPointer(task.id, task.contextId, media.filename) + (answer ? `\n首个问题回答：${answer}` : ''));
+      } catch (err: any) { return fail(`媒体上传失败：${err?.message ?? err}`); }
+    },
+  });
+
+  pi.registerTool({
+    name: 'mafw_media_ask',
+    label: 'MAFW 媒体追问',
+    description: '分析或追问图片/视频/音频。会话里有 [媒体附件 taskID: xxx] 指针时传 taskID；只有本地文件路径时传 mediaPath（自动上传后追问）。返回分析文本 + 新 taskID（追问用新 ID，媒体不重传）。',
+    parameters: T.Object({
+      taskID: T.Optional(T.String({ description: '从 [媒体附件 taskID: xxx] 指针提取（与 mediaPath 二选一）' })),
+      mediaPath: T.Optional(T.String({ description: '本地媒体文件绝对路径（与 taskID 二选一）' })),
+      question: T.String({ description: '要问这个媒体的具体问题' }),
+    }),
+    async execute(_id: string, params: any, signal: AbortSignal) {
+      try {
+        let activeTaskID = params.taskID;
+        let activeContextId: string | undefined;
+        if (activeTaskID) {
+          const task = await a2aRequest(f, base, 'GetTask', { id: activeTaskID }, signal);
+          activeContextId = task?.task?.contextId ?? task?.contextId;
+          if (!activeContextId) return fail(`任务 ${activeTaskID} 不存在或已被清理，请重新上传媒体。`);
+        } else if (params.mediaPath) {
+          const media = mediaDataFromSource(params.mediaPath);
+          if (!media) return fail(`不支持的媒体格式或文件不存在：${params.mediaPath}`);
+          const created = await a2aRequest(f, base, 'SendMessage', {
+            message: {
+              messageId: `ask-${randomUUID()}`,
+              role: 1,
+              parts: [{ raw: media.data, mediaType: media.mediaType, filename: media.filename }, { text: params.question }],
+            },
+          }, signal);
+          const t = created?.task;
+          if (!t?.id) return fail('gateway 未返回任务');
+          activeTaskID = t.id;
+          activeContextId = t.contextId;
+          if (t?.status?.state === 'TASK_STATE_COMPLETED') {
+            const answer = taskAnswer(t);
+            if (answer) return ok(`${answer}\n（新任务 taskID: ${t.id}，继续追问请用新 taskID）`);
+          }
+        } else {
+          return fail('缺少参数：请提供 taskID（媒体附件指针）或 mediaPath（媒体文件路径）。');
+        }
+        const result = await a2aRequest(f, base, 'SendMessage', {
+          message: {
+            messageId: `ask-${randomUUID()}`,
+            role: 1,
+            contextId: activeContextId,
+            referenceTaskIds: [activeTaskID],
+            parts: [{ text: params.question }],
+          },
+        }, signal);
+        const t = result?.task;
+        const answer = taskAnswer(t);
+        if (t?.status?.state === 'TASK_STATE_FAILED') return fail(answer || 'Media Agent 分析失败');
+        if (!answer) return fail('Media Agent 未返回描述，请稍后重试。');
+        return ok(`${answer}\n（新任务 taskID: ${t?.id}，继续追问请用新 taskID）`);
+      } catch (err: any) { return fail(`Media Agent 调用失败：${err?.message ?? err}`); }
+    },
+  });
 }
