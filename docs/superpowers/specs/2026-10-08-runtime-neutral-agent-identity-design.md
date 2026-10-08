@@ -43,6 +43,7 @@ MAFW 即将接入多个 agent runtime（claude、codex、pi、dsh、kimi、zcode
 - goal 节点 plan/execute/review 的实现——属 goal-loop 线，届时注册进 registry 即零成本
 - MCP server 改动
 - 跨 runtime 身份状态同步——身份无状态，绑定是 gateway 私有
+- **车道 2/3 的宿主侧消费本期不实现**——现有及可预见的可驱动 runtime（opencode/pi/claude/codex/kimi/dsh）均支持物化（车道 1）；spec 保留车道 2/3 为前瞻策略，待首个无法物化的 runtime 出现再实现
 
 ## 3. 设计
 
@@ -65,7 +66,7 @@ interface IdentityPolicy {
 }
 ```
 
-- **类别标签**（MAFW 中立词汇，非 opencode 形状）：`file-edit`（写文件）/ `shell`（命令执行）/ `subagent`（委派派发）/ `web`（网络获取）。类别解析表 v1 内置 opencode + pi 两份（`identity-policy.ts`：opencode `edit|write|apply_patch→file-edit`、`task→subagent`、`bash→shell`、`webfetch→web`；pi 同构）；未来 runtime 插件经 loader extras 声明 `toolCategories` 映射（registerBuiltin extras 已有先例）。
+- **类别标签**（MAFW 中立词汇，非 opencode 形状）：`file-edit`（写文件）/ `shell`（命令执行）/ `subagent`（委派派发）/ `web`（网络获取）/ `readonly`（只读探查）。类别解析表 v1 内置 opencode + pi 两份（`identity-registry.ts`：opencode `edit|write|apply_patch→file-edit`、`task→subagent`、`bash→shell`、`webfetch→web`、`read|grep|glob|ls|list→readonly`；pi 同构）；未来 runtime 插件经 loader extras 声明 `toolCategories` 映射（registerBuiltin extras 已有先例）。
 - **内置身份**：`manager`（迁自 `manager-agent-config.ts`）、`memory-curator`（迁自 `memory-curator-agent.ts`）。
 - **派生单向**：`toAgentDefinition(spec)` 从注册表派出现有 `AgentDefinition` 喂原生优化通道——install 永远从源派生，无漂移。
 - 内置身份的 policy：
@@ -113,30 +114,33 @@ else                              → 车道3（消息位追加，声明式）
 
 ### 3.3 网关策略层——IdentityPolicy 评估
 
-扩展 `ApprovalPolicyService.evaluate()`，评估顺序（**deny-first，身份只收窄不放宽**）：
+扩展 `ApprovalPolicyService.evaluate()`。**身份绑定必须先于 internal blanket-deny**——manager 会话本身就是内部会话（`registerInternalSession(sid, 'manager')`），若 internal 先评估会把它全部拒掉。评估顺序：
 
 ```
 evaluate(sessionID, tool):
-  1. 内部会话 → auto-deny          （现有，最高优先）
-  2. 身份策略（若 session→identity 有绑定）：
-     - tool/类别 ∈ policy.deny        → DENY（绝对，任何会话档位下都拒）
-     - 白名单存在且 tool ∉ allowlist  → DENY（未列出即拒绝）
+  1. 身份绑定存在 → 身份策略（优先于一切）：
+     - ∈ policy.deny 或（白名单存在且 ∉ allowlist）→ auto-DENY（绝对）
+     - ∈ allowlist 且会话是 gateway 驱动（internal）→ auto-APPROVE（无人值守，不落三档）
+     - ∈ allowlist 且会话是用户驱动（回合级绑定）  → 落三档评估（用户在场，档位决定问/不问）
+  2. 内部会话无身份绑定 → auto-deny（现有 fail-safe，不变）
   3. 其余 → 现有三档模式评估（read-only/auto/full-access，语义不变）
 ```
 
-- 身份策略是**硬天花板**：白名单内的工具仍由用户会话档位决定问/不问——身份只能砍掉可能性，永远不能越过用户设的 read-only 放行 shell。
-- **最底层软护栏**：identity systemPrompt 内嵌边界声明（推广 memory-curator HARD_BOUNDARIES 模式到 manager）——无桥 runtime 的诚实降级。
+- 身份策略是**硬天花板**：对用户驱动会话，白名单内的工具仍由用户会话档位决定问/不问——身份只能砍掉可能性，永远不能越过用户设的 read-only 放行 shell。
+- `IdentityPolicy` 形状：`{ deny: string[]; allowlist?: string[] }`；条目支持**类别标签**（file-edit/shell/subagent/web/readonly）与**工具名**（前缀通配 `mafw_*`）。
+- 内置身份的 policy：manager `deny=[file-edit, subagent]`、`allowlist=[mafw_* + question + plan_exit + shell + readonly]`；memory-curator `deny=[file-edit, shell, web]`、`allowlist=[mafw_add_memory + mafw_search_hybrid + mafw_supersede_memory + readonly]`（对齐 MEMORY_CURATOR_TOOLS）。
+- **自动应答器已存在**：`applyApprovalPolicy`（`core/approval/hook.ts`）在 approval facet 上同步评估 → 富化 `props.mafwPolicy` → fire-and-forget `permissionReply`。identity 维度接入 evaluate 后双 runtime 自动生效，零新接线。
+- deny 决策 reason 带 `identity policy (<name>)` 前缀——desktop 审批卡/日志可区分"身份策略拒" vs "用户模式拒"。
+- **最底层软护栏**：identity systemPrompt 内嵌边界声明（memory-curator HARD_BOUNDARIES 模式，manager 身份提示词已含边界段）——无桥 runtime 的诚实降级。
 
 **桥接通道**：
 
 | runtime | 挂钩 | 工作量 |
 |---|---|---|
 | pi | mafw-host 的 `evaluatePermission` 桥已存在（tool_call → gateway 同步直评） | 只加 identity 查询 |
-| opencode | 车道 1 时原生 agent 权限已覆盖；另新增 **permission.asked 自动应答器**（identity 绑定会话的审批请求按策略自动回复，复用 approvals-respond 路由） | 新接线 |
+| opencode | 车道 1 原生 agent 权限 + **applyApprovalPolicy 自动应答器（已存在）** | 只加 identity 维度 |
 | claude / codex / kimi… | 各 runtime 插件的 tool 拦截桥（claude 可走 per-query `tools`/`permissionMode` 即车道 1） | 未来各插件 |
 | 无桥 runtime | prompt 声明降级 + `GET /api/runtime` 能力明示 | 诚实降级，日志可见 |
-
-**观测**：deny 决策带 `identity` 来源标记（desktop 审批卡/日志可区分"身份策略拒" vs "用户模式拒"）。
 
 ### 3.4 原生通道收编、客户端合并、迁移兼容
 
