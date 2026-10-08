@@ -12,6 +12,7 @@ import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/aut
 import { NodeDriver } from './core/goal/driver';
 import { ensureGoalState, loadGoalState } from './core/goal/state-v3';
 import { resolveGoalDir } from './core/goal/starter';
+import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
@@ -5990,6 +5991,23 @@ class MafwScheduler {
       if (!this.running) return;
       try {
         await this.discoverNewGoals();
+        // NodeDriver watchdog：in-flight 节点超时 → abort + 重试/归档（spec §6）。
+        if (this.goalDriver) {
+          const states = this.listGoalStates();
+          for (const s of states) {
+            this.goalDriverMafwDirCache.set(s.goalId, s.mafwDir);
+            this.goalDriver.registerGoalDir(s.goalId, s.mafwDir);
+          }
+          await watchdogScan({
+            driver: this.goalDriver, states,
+            probeSession: this.runtimeCaps.sessionStorageApi
+              ? async (sid) => {
+                  try { const info = await this.runtime!.session.get({ sessionID: sid }); return info ? 'alive' : 'dead'; }
+                  catch { return 'dead'; }
+                }
+              : undefined,
+          });
+        }
       } catch (err: any) {
         log.error('[Scheduler] Backup poll error:', err.message);
       }
@@ -6137,6 +6155,19 @@ class MafwScheduler {
 
   // ── 9. 恢复 ──
 
+  /** 收集所有注册项目的 state 引用（NodeDriver 恢复/watchdog 用）。 */
+  private listGoalStates(): Array<{ goalId: string; mafwDir: string; projectDir: string }> {
+    const out: Array<{ goalId: string; mafwDir: string; projectDir: string }> = [];
+    for (const [projectDir, info] of this.registeredProjects) {
+      const stateDir = path.join(info.mafwDir, 'state');
+      if (!fs.existsSync(stateDir)) continue;
+      for (const f of fs.readdirSync(stateDir)) {
+        if (f.endsWith('.json')) out.push({ goalId: f.replace(/\.json$/, ''), mafwDir: info.mafwDir, projectDir });
+      }
+    }
+    return out;
+  }
+
   private async recoverState() {
     for (const [projectDir, info] of this.registeredProjects) {
       const stateDir = path.join(info.mafwDir, 'state');
@@ -6155,6 +6186,25 @@ class MafwScheduler {
           log.warn(`[Scheduler] Failed to recover ${file}: ${err.message}`);
         }
       }
+    }
+
+    // NodeDriver 崩溃恢复（spec §6）：产物优先 → 会话探测 → 节点重试/归档。
+    if (this.goalDriver) {
+      const states = this.listGoalStates();
+      for (const s of states) {
+        this.goalDriverMafwDirCache.set(s.goalId, s.mafwDir);
+        this.goalDriver.registerGoalDir(s.goalId, s.mafwDir);
+      }
+      await recoverGoals({
+        driver: this.goalDriver,
+        states,
+        probeSession: this.runtimeCaps.sessionStorageApi
+          ? async (sid) => {
+              try { const info = await this.runtime!.session.get({ sessionID: sid }); return info ? 'alive' : 'dead'; }
+              catch { return 'dead'; }
+            }
+          : undefined,
+      });
     }
   }
 

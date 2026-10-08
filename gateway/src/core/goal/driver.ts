@@ -367,8 +367,53 @@ export class NodeDriver {
     return true;
   }
 
-  /** 崩溃恢复/watchdog 共用——Task 11 实现。 */
-  async examineStaleNode(_goalId: string, _opts?: { probeSession?: (sessionID: string) => Promise<'alive' | 'dead'> }): Promise<void> {}
+  /**
+   * 崩溃恢复 / watchdog 共用：检查在飞节点的处置（spec §6）。
+   * ① 产物优先（gateway 死亡期间完成的节点直接兑现）
+   * ② 会话探测（alive 则交还监听/watchdog 兜底；无探测能力视为 dead）
+   * ③ abort + 重试 attempt+1（≥maxAttempts → archive_fail）
+   */
+  async examineStaleNode(
+    goalId: string,
+    opts?: { probeSession?: (sessionID: string) => Promise<'alive' | 'dead'> },
+  ): Promise<void> {
+    const found = this.findState(goalId);
+    if (!found) return;
+    const { mafwDir } = found;
+    const state = loadGoalState(mafwDir, goalId);
+    if (!state || isTerminalState(state)) return;
+    const ns = state.nodeSession;
+    if (!ns) { await this.advance(goalId); return; }
+
+    // ① 产物优先：gateway 死亡期间节点可能已完成——直接走完成判定兑现
+    const round = effectiveRound(state);
+    const a = nodeArtifactPaths(mafwDir, goalId, round);
+    const artifact = ns.phase === 'plan' ? a.waves : ns.phase === 'execute' ? a.receipt : a.review;
+    if (fs.existsSync(artifact)) {
+      await this.completeNode(goalId, ns.id);
+      return;
+    }
+
+    // ② 会话探测（无探测能力 → 视为 dead，交 watchdog 超时兜底）
+    if (opts?.probeSession) {
+      try {
+        const alive = await opts.probeSession(ns.id);
+        if (alive === 'alive') return; // 还在跑——监听若在则正常；若丢（重启）由 watchdog 超时兜底
+      } catch { /* fail-open */ }
+    }
+
+    // ③ abort + 重试
+    try { await this.deps.client.abort?.(ns.id); } catch { /* fail-open */ }
+    this.deps.db.finishNodeRun(ns.runId, {
+      status: 'aborted', finishedAt: new Date().toISOString(), error: 'stale node (recovery/watchdog)',
+    });
+    if (ns.attempt >= this.deps.maxAttempts) {
+      await this.failNode(goalId, ns.id, 'timeout', `node ${ns.phase} exhausted attempts (${ns.attempt})`);
+      return;
+    }
+    writeGoalState(mafwDir, goalId, { nodeSession: null }); // 清死会话 → advance 重启（attempt+1 由 latestNodeAttempt 推导）
+    await this.advance(goalId);
+  }
 
   /** 节点重跑——Task 12 实现。 */
   async retryNodeRun(_goalId: string, _runId: number): Promise<{ runId: number }> { throw new Error('not implemented'); }

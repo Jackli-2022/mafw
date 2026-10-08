@@ -51,7 +51,7 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
     client,
     db: {
       insertNodeRun: (i: any) => { const id = seq++; nodeRuns.push({ id, status: 'running', ...i }); return id; },
-      finishNodeRun: (id: number, p: any) => { Object.assign(nodeRuns.find((r) => r.id === id)!, p); },
+      finishNodeRun: (id: number, p: any) => { const r = nodeRuns.find((x) => x.id === id); if (r) Object.assign(r, p); },
       listNodeRuns: (g: string) => nodeRuns.filter((r) => r.goalId === g),
       latestNodeAttempt: (g: string, l: number, n: string) =>
         [...nodeRuns].reverse().find((r) => r.goalId === g && r.loop === l && r.node === n) ?? null,
@@ -88,13 +88,25 @@ export function makeHarness(opts?: { nodeTimeoutMs?: number; maxAttempts?: numbe
     },
     load: (goalId) => loadGoalState(mafwDir, goalId),
     write: (goalId, patch) => writeGoalState(mafwDir, goalId, patch),
+    _bumpSeq: (n: number) => { seq = Math.max(seq, n); },
   };
 }
 
-/** 便捷：建 goal + charter + 注册目录。 */
+/** 便捷：建 goal + charter + 注册目录。nodeSession patch 时同步补一条 running run 行（与真实语义一致）。 */
 export function seedGoal(h: Harness, goalId: string, init?: { maxRounds?: number; patch?: any }): void {
   ensureGoalState(h.mafwDir, goalId, { projectDir: 'C:/p', maxRounds: init?.maxRounds ?? 3 });
   h.driver.registerGoalDir(goalId, h.mafwDir);
   h.charter(goalId);
-  if (init?.patch) h.write(goalId, init.patch);
+  if (init?.patch) {
+    h.write(goalId, init.patch);
+    const ns = init.patch.nodeSession;
+    if (ns?.runId) {
+      const round = init.patch.round ?? init.patch.loop ?? 1;
+      h.nodeRuns.push({
+        id: ns.runId, goalId, loop: round, node: ns.phase, attempt: ns.attempt ?? 1,
+        sessionId: ns.id, status: 'running', startedAt: ns.startedAt,
+      });
+      (h as any)._bumpSeq?.(ns.runId + 1);
+    }
+  }
 }
