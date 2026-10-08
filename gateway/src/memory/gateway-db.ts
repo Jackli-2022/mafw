@@ -662,6 +662,14 @@ export class GatewayDatabase {
     return row ?? null;
   }
 
+  /** 最新归档 outcome（timeline 用）。 */
+  getGoalOutcome(goalId: string): GoalOutcome | null {
+    const row = this.db.prepare(
+      'SELECT * FROM goal_outcomes WHERE goal_id = ? ORDER BY archived_at DESC LIMIT 1',
+    ).get(goalId) as GoalOutcome | undefined;
+    return row ?? null;
+  }
+
   close(): void {
     this.db.close();
   }

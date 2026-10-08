@@ -563,6 +563,41 @@ export interface GoalSessionInfo {
   time?: { created?: number; updated?: number }
 }
 
+export interface GoalNodeRunInfo {
+  runId: number
+  loop: number
+  node: string
+  attempt: number
+  status: string
+  sessionId: string | null
+  startedAt: string
+  finishedAt: string | null
+  durationMs: number | null
+  outcome: string | null
+  error: string | null
+  tokensInput: number | null
+  tokensOutput: number | null
+  costUsd: number | null
+}
+
+export interface GoalTimeline {
+  goal: {
+    goalId: string
+    title: string
+    phase: string
+    round: number
+    maxRounds: number
+    verdict: string | null
+    nextNode: string
+    nextAction: string
+    lastError: string | null
+    updatedAt: string
+  }
+  nodes: GoalNodeRunInfo[]
+  artifacts: { wavesPath: string; receipts: string[]; reviewsDir: string }
+  outcome?: unknown
+}
+
 export interface GoalsNamespace {
   list(): Promise<Goal[]>
   get(id: string): Promise<Goal | null>
@@ -572,6 +607,10 @@ export interface GoalsNamespace {
   sessions(goalId: string): Promise<GoalSessionInfo[]>
   /** goal 作用域问答回复（desktop QuestionWidget）。与 /api/questions/:id/reply（原生 question API）是两套通道。 */
   respondQuestion(goalId: string, questionId: string, input: { type: 'answer' | 'cancel'; answer?: string }): Promise<{ status: string }>
+  /** 节点级执行 trace 聚合（编排可视化）。 */
+  timeline(goalId: string): Promise<GoalTimeline>
+  /** 节点重跑（execute 需 confirm）。 */
+  retryNode(goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }>
 }
 
 export interface MemorySearchOptions {

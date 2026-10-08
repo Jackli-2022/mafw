@@ -13,6 +13,8 @@ import { NodeDriver } from './core/goal/driver';
 import { ensureGoalState, loadGoalState } from './core/goal/state-v3';
 import { resolveGoalDir } from './core/goal/starter';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
+import { handleGoalTimeline } from './routes/goal-timeline';
+import { handleNodeRetry } from './routes/goal-node-retry';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
@@ -4046,6 +4048,31 @@ class MafwScheduler {
 
         // GET /api/goals/:id/sessions — P5 Wave 1 起由 registry dispatch 接管
         // （历史约束"须挂 Dashboard /api/goals* 兜底之前"由 dispatch 位置满足）。
+
+        // GET /api/goals/:id/timeline — 节点级 trace 聚合（须在 dashboard 兜底之前）
+        if (await handleGoalTimeline(req, res, req.url!, {
+          loadState: (goalId) => {
+            const mafwDir = this.goalDriverMafwDirCache.get(goalId)
+              ?? this.findGoalStatePath(goalId)?.info.mafwDir;
+            return mafwDir ? loadGoalState(mafwDir, goalId) : null;
+          },
+          listNodeRuns: (goalId) => this.getGatewayDb().listNodeRuns(goalId),
+          loadRequest: (goalId) => { try { return this.loadRequest(goalId); } catch { return null; } },
+          getOutcome: (goalId) => this.getGatewayDb().getGoalOutcome(goalId),
+        })) return;
+
+        // POST /api/goals/:id/nodes/:runId/retry — 节点重跑（execute 过 destructive 门）
+        if (req.url?.match(/^\/api\/goals\/[^/]+\/nodes\/\d+\/retry$/) && req.method === 'POST') {
+          const raw = await readBody(req);
+          let body: any; try { body = JSON.parse(raw); } catch { body = {}; }
+          const goalIdM = req.url.match(/^\/api\/goals\/([^/]+)\/nodes\/\d+\/retry$/)!;
+          const goalId = decodeURIComponent(goalIdM[1]);
+          if (await handleNodeRetry(req, res, req.url!, {
+            body,
+            getNodeRun: (runId) => this.getGatewayDb().listNodeRuns(goalId).find((r: any) => r.id === runId) ?? null,
+            retryNodeRun: (g, runId) => this.goalDriver!.retryNodeRun(g, runId),
+          })) return;
+        }
 
         // Dashboard API
         if (req.url?.startsWith("/api/goals") || req.url?.startsWith("/api/stats") || req.url?.startsWith("/api/memory")) {

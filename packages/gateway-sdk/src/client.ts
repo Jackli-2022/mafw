@@ -1,7 +1,7 @@
 ﻿import { randomUUID } from 'crypto'
 import {
   MafwClient as IMafwClient, MafwClientOptions,
-  Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo,
+  Session, Project, TextPart, Goal, GoalCreateInput, GoalControlAction, GoalSessionInfo, GoalTimeline,
   MemoryUnit, MemorySearchOptions, MergedSearchOptions, MemoryFact, EnergyDistribution, Axiom, L5Heuristic,
   StickyNote, StickyNoteBudget, ModelUsageWindows, MemoryStats,
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
@@ -620,6 +620,17 @@ export class MafwClient implements IMafwClient {
       return this.request<{ status: string }>(
         `/api/goals/${encodeURIComponent(goalId)}/questions/${encodeURIComponent(questionId)}/respond`,
         { method: 'POST', body: JSON.stringify(input) },
+      )
+    },
+
+    timeline: async (goalId: string): Promise<GoalTimeline> => {
+      return this.request<GoalTimeline>(`/api/goals/${encodeURIComponent(goalId)}/timeline`)
+    },
+
+    retryNode: async (goalId: string, runId: number, opts?: { confirm?: boolean }): Promise<{ success: boolean; runId: number }> => {
+      return this.request<{ success: boolean; runId: number }>(
+        `/api/goals/${encodeURIComponent(goalId)}/nodes/${runId}/retry`,
+        { method: 'POST', body: JSON.stringify(opts ?? {}) },
       )
     },
   }

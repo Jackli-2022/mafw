@@ -415,6 +415,22 @@ export class NodeDriver {
     await this.advance(goalId);
   }
 
-  /** 节点重跑——Task 12 实现。 */
-  async retryNodeRun(_goalId: string, _runId: number): Promise<{ runId: number }> { throw new Error('not implemented'); }
+  /** 节点重跑（DFX）：失败/超时行重试；execute 的 destructive 门在路由层。 */
+  async retryNodeRun(goalId: string, runId: number): Promise<{ runId: number }> {
+    const found = this.findState(goalId);
+    if (!found) throw new Error('goal not found');
+    const { mafwDir } = found;
+    const state = loadGoalState(mafwDir, goalId);
+    if (!state || isTerminalState(state)) throw new Error('goal is terminal');
+    const run = this.deps.db.listNodeRuns(goalId).find((r: any) => r.id === runId);
+    if (!run) throw new Error(`node run ${runId} not found`);
+    // 清在飞会话（若有）并指回该节点
+    if (state.nodeSession) {
+      try { await this.deps.client.abort?.(state.nodeSession.id); } catch { /* fail-open */ }
+    }
+    writeGoalState(mafwDir, goalId, { nodeSession: null, nextNode: run.node, nextAction: `RUNNING_${run.node}` });
+    await this.advance(goalId);
+    const latest = this.deps.db.latestNodeAttempt(goalId, run.loop, run.node);
+    return { runId: latest?.id ?? runId };
+  }
 }
