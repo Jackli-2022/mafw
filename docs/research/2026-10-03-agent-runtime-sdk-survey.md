@@ -216,3 +216,78 @@ Kimi Code 的 TUI 建在 pi-tui 上；我们嵌入 pi-coding-agent。pi-mono 正
 - boundary recall 注入量（已指针化；按 FOK/命中率数据持续收紧）
 - BudgetGuard（若 runtime 出原生预算 API → 退化为纯记账）
 - manager charter/state 文件协议 vs 直接给模型工作流原语
+
+## 8. Phase 1 Spike 实测（2026-10-08，v2.0.6，Windows）
+
+> 环境隔离：npm 本地 prefix 安装（npmmirror 23s；官方 zip 直连 6 分钟超时）；`USERPROFILE`/`HOME` 重定向实现完全隔离（`debug paths` 验证 config/data/cache/state/db 全进 spike home，v1 生产零接触）；v2 npm 包自带 `opencode2` 别名可与 v1 共存；v2 存储为单 SQLite `opencode.db`。
+
+### 8.1 五项验证全部通过
+
+| # | 验证项 | 结果 |
+|---|---|---|
+| 1 | **context hook（recall/system 注入）** | ✅ `session.hook("context")` 每次模型调用触发（**含工具续跑**：msgs=1/4/6/8 连续触发）；`event.system.push({type:"text",text})` + `event.messages.push({role:"user",content:[{type:"text",text}]})` 注入，模型**逐字复述两个 tagged 块**确认到达；`event.options` 每次调用为空表（override 语义，注入 temperature 生效） |
+| 2 | **tool hooks（obs 捕获）** | ✅ `execute.before/after` 拦截内置工具、Code Mode `execute`、**MCP 工具**（`tool=mafw_mafw_search_hybrid`）；形状 `{tool, sessionID, agent, messageID, id, input, status, result}`（比 v1 多 messageID/call-id/status） |
+| 3 | **mcp.transform（self-wiring 替代）** | ✅ `editor.set("mafw",{type:"remote",url})` 注册即连通（mcp.status.changed + mcp.resources.changed 事件）；模型真实调用 gateway MCP 工具拿到检索结果 |
+| 4 | **Service.ensure + @opencode/client（sidecar/adapter 替代）** | ✅ `Service.ensure({command:[exe,"serve","--service"],version 谓词})` 自起服务（**内置 basic auth**，`Service.headers()` 供认证——v1 serve 无认证，这是行为差异）；typed client 的 session.create/prompt/event.subscribe 全通；Service.stop 干净关闭 |
+| 5 | **事件目录 + 记账** | ✅ `session.text.ended` 带 `{sessionID, assistantMessageID, ordinal, text}`（text.complete 的完整替代）；`session.usage.updated` 每模型调用带 `{input, output, reasoning, cache.read/write}`（比 v1 envelope 更全，BudgetGuard 数据源更直接） |
+
+### 8.2 事件映射（v1 normalize.ts → v2，实测）
+
+| v1 事件 | v2 对应 | 备注 |
+|---|---|---|
+| `session.idle` | `session.execution.succeeded`（推测另有 `.failed`） | 终态语义对齐 |
+| `message.updated` / `message.part.updated` | `session.text.delta/ended` + `session.reasoning.*` + `session.step.*` + `session.tool.*` | 粒度更细（per-part 家族事件） |
+| `session.updated` | `session.renamed` / `session.instructions.updated` | 拆分 |
+| agent_start | `session.step.started` | |
+| compacted | 未观测（推测 `session.compaction.*`） | 迁移时确认 |
+| permission.asked/replied | 未观测（`permission.hook("evaluate")` 已确认存在） | 迁移时确认 |
+| —（无对应） | `session.usage.updated`（每步 token/cost）、`session.inbox.enqueued/delivered`、registry 家族（`{domain}.updated`） | 新增能力 |
+
+事件信封统一为 `{id, created, type, durable?, location?, data}`（v1 无 location/durable）。
+
+### 8.3 迁移成本清单（实测增量事实）
+
+- **插件**：v1 不兼容（官方明示"V1 plugin implementations do not run in V2"）；本地插件需 `@opencode/plugin` 可解析（`npm install --prefix .opencode @opencode/plugin@2.0.24`，286 依赖）；**单包双栈模式存在**（`Plugin.define` + `server()` 同 default export）但 v1 侧要求 opencode ≥1.18.29（我们 1.17.x，需先升 v1 或发双版本）
+- **配置断裂**：`plugin`→`plugins`（自动 normalize）、`mcp.{name}`→`mcp.servers.{name}`、provider `npm`→`package`+`settings`、模型引用 `provider/model#variant`
+- **编排面**：serve-sidecar.ts + opencode-adapter.ts → `Service.ensure()` + `@opencode/client`（注意 basic auth）；normalize.ts 事件全表重写；session 存储变单 SQLite（`listByDirectory` 的 node:sqlite 直读要重做）
+- **工具名变化**：bash→`shell`、task→`subagent`、新增 `question`/`execute`(Code Mode)/`skill`（权限规则与 manager agent 配置需跟着改）
+- **Windows**：原生 OK（shell 工具走 PowerShell）；zip 直连慢但 npm 镜像快
+
+### 8.4 结论与排期建议
+
+**路线 A 技术可行性全绿**——认知面 100% 转正 + 编排面有官方原语（Service.ensure/client）替代全部手写件。迁移规模：插件重写（六动词 ~500 行）+ adapter/sidecar 替换（~400 行）+ normalize 重写（~200 行）+ 配置迁移脚本，估 **3-5 个工作日** + 事件对照 conformance。
+
+建议排期：
+1. **不立即切生产**——v2 处于 2.0.x 周更节奏，事件形状仍可能变；等 2.1 稳定或锁定 2.0.x 后再切主
+2. **P2（pi 认知面）先行**——HostAdapter 抽象先在 pi 上形式化落地，v2 迁移届时只是第三个适配器实现（契约驱动，甚至可生成）
+3. 升级路径准备：v1 bump 到 ≥1.18.29 可解锁"单包双栈"过渡期（v1/v2 同包并行）
+4. spike 工件保留：`%TEMP%\opencode\spike-project\.opencode\plugins\mafw-spike\index.ts`（未来 v2 适配器的种子）+ `client-spike\test.mjs`（adapter 替换的参考实现）
+
+**本次 spike 的 v2 原型插件核心**（经实测验证的注入/捕获/注册三件套）：
+
+```ts
+import { Plugin } from "@opencode/plugin"
+
+export default Plugin.define({
+  id: "mafw-spike",
+  async setup(ctx) {
+    // 边界注入（messages.transform + system.transform 的合体转正）
+    await ctx.session.hook("context", (event) => {
+      event.system.push({ type: "text", text: "<memory-guide>...</memory-guide>" })
+      event.messages.push({ role: "user", content: [{ type: "text", text: "<recall>...</recall>" }] })
+    })
+    // obs 捕获（tool.execute.after 的转正；含 MCP 工具）
+    await ctx.tool.hook("execute.after", (event) => {
+      // event: {tool, sessionID, agent, messageID, id, input, status, result}
+    })
+    // MCP 注册（self-wiring 消亡）
+    await ctx.mcp.transform((editor) => {
+      editor.set("mafw", { type: "remote", url: "http://127.0.0.1:3000/mcp" })
+    })
+    // assistant 文本捕获（experimental.text.complete 的替代）
+    for await (const ev of ctx.event.subscribe()) {
+      if (ev.type === "session.text.ended") { /* ev.data: {sessionID, assistantMessageID, ordinal, text} */ }
+    }
+  },
+})
+```
