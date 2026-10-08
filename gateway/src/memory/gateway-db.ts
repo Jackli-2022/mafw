@@ -53,6 +53,24 @@ export interface GoalOutcome {
   archived_at: string;
 }
 
+export interface NodeRunRow {
+  id: number;
+  goal_id: string;
+  project_id: string;
+  loop: number;
+  node: string;
+  attempt: number;
+  session_id: string | null;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  outcome: string | null;
+  error: string | null;
+  tokens_input: number | null;
+  tokens_output: number | null;
+  cost_usd: number | null;
+}
+
 export class GatewayDatabase {
   private db: Database.Database;
 
@@ -228,6 +246,25 @@ export class GatewayDatabase {
         PRIMARY KEY (goal_id, session_id)
       );
       CREATE INDEX IF NOT EXISTS idx_goal_sessions_session ON goal_sessions(session_id);
+
+      CREATE TABLE IF NOT EXISTS goal_node_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        goal_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        loop INTEGER NOT NULL,
+        node TEXT NOT NULL,
+        attempt INTEGER NOT NULL DEFAULT 1,
+        session_id TEXT,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        outcome TEXT,
+        error TEXT,
+        tokens_input INTEGER,
+        tokens_output INTEGER,
+        cost_usd REAL
+      );
+      CREATE INDEX IF NOT EXISTS idx_node_runs_goal ON goal_node_runs(goal_id, loop);
 
       CREATE TABLE IF NOT EXISTS evolution_proposals (
         id TEXT PRIMARY KEY,
@@ -582,6 +619,46 @@ export class GatewayDatabase {
       WHERE s.session_id = ?
       ORDER BY o.archived_at DESC LIMIT 1
     `).get(sessionId) as GoalOutcome | undefined;
+    return row ?? null;
+  }
+
+  /** goal 节点级 trace（goal_node_runs 表）——NodeDriver 的 DFX 数据面。 */
+  insertNodeRun(input: {
+    goalId: string; projectId: string; loop: number; node: string;
+    attempt: number; sessionId: string | null; startedAt: string;
+  }): number {
+    const info = this.db.prepare(`
+      INSERT INTO goal_node_runs (goal_id, project_id, loop, node, attempt, session_id, status, started_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'running', ?)
+    `).run(input.goalId, input.projectId, input.loop, input.node, input.attempt, input.sessionId, input.startedAt);
+    return Number(info.lastInsertRowid);
+  }
+
+  finishNodeRun(id: number, patch: {
+    status: string; finishedAt: string; outcome?: string | null; error?: string | null;
+    tokensInput?: number | null; tokensOutput?: number | null; costUsd?: number | null;
+  }): void {
+    this.db.prepare(`
+      UPDATE goal_node_runs
+      SET status = ?, finished_at = ?,
+          outcome = COALESCE(?, outcome), error = COALESCE(?, error),
+          tokens_input = COALESCE(?, tokens_input), tokens_output = COALESCE(?, tokens_output),
+          cost_usd = COALESCE(?, cost_usd)
+      WHERE id = ?
+    `).run(patch.status, patch.finishedAt, patch.outcome ?? null, patch.error ?? null,
+      patch.tokensInput ?? null, patch.tokensOutput ?? null, patch.costUsd ?? null, id);
+  }
+
+  listNodeRuns(goalId: string): NodeRunRow[] {
+    return this.db.prepare(
+      'SELECT * FROM goal_node_runs WHERE goal_id = ? ORDER BY id ASC',
+    ).all(goalId) as NodeRunRow[];
+  }
+
+  latestNodeAttempt(goalId: string, loop: number, node: string): NodeRunRow | null {
+    const row = this.db.prepare(
+      'SELECT * FROM goal_node_runs WHERE goal_id = ? AND loop = ? AND node = ? ORDER BY id DESC LIMIT 1',
+    ).get(goalId, loop, node) as NodeRunRow | undefined;
     return row ?? null;
   }
 
