@@ -124,6 +124,7 @@ import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntim
 import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
+import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent } from './runtime/pi/pi-events';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
@@ -452,7 +453,12 @@ class MafwScheduler {
     this.runtimeLoader.setCanonicalTypes(CANONICAL_TYPE_SET);
     await this.runtimeLoader.init();
     // 内置插件注册：pi-coding-agent runtime（进程内 SDK 嵌入）
-    this.runtimeLoader.registerBuiltin('pi', createPiRuntime, PI_CAPABILITIES, true);
+    // extras 声明事件映射（纯数据）——加载期校验 + dry-event 试衣间 + 流包装用。
+    this.runtimeLoader.registerBuiltin('pi', createPiRuntime, PI_CAPABILITIES, true, {
+      eventSource: PI_EVENT_SOURCE,
+      eventMappings: PI_EVENT_MAPPINGS,
+      transformEvent: piTransformEvent,
+    });
 
     // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
     this.pluginHost = new PluginHost(

@@ -1,54 +1,73 @@
 import type { RawRuntimeEvent } from '../normalize';
+import { applyEventMappings, EventMapping, EventSourceShape, TransformEventFn } from '../event-mapper';
 
-export function translatePiEvent(event: any, sessionID: string): RawRuntimeEvent | null {
+/** pi 原生事件源形状：session.subscribe 事件顶层 type；sessionID 由 PiEventStream 解析后附上。 */
+export const PI_EVENT_SOURCE: EventSourceShape = { typePath: '$.type', sessionIdPath: '$.sessionID' };
+
+/**
+ * pi 原生事件 → canonical（声明式，原 translatePiEvent switch 的表化）。
+ * turn_end 写 part.messageID（修复：facet 规则读 messageID 而非 assistantMessageID，
+ * pi 上 BudgetGuard step 此前从未触发）。
+ */
+export const PI_EVENT_MAPPINGS: EventMapping[] = [
+  { from: 'agent_start', to: 'session.updated' },
+  { from: ['message_start', 'message_update'], to: 'message.part.updated',
+    fields: { 'part.type': { const: 'text' }, 'part.text': { path: '$.delta', default: '' } } },
+  { from: 'message_end', to: 'message.updated', fields: { 'info.role': { const: 'assistant' } } },
+  { from: 'tool_call', to: 'message.part.updated', fields: { 'part.type': { const: 'tool-call' } } },
+  { from: 'tool_result', to: 'message.part.updated', fields: { 'part.type': { const: 'tool-result' } } },
+  { from: 'turn_start', to: 'message.part.updated', fields: { 'part.type': { const: 'step-start' } } },
+  { from: 'turn_end', to: 'message.part.updated',
+    fields: { 'part.type': { const: 'step-finish' }, 'part.messageID': { template: 'pi_step_{$.sessionID}' } } },
+  { from: ['agent_end', 'agent_settled'], to: 'session.idle' },
+];
+
+/**
+ * 逃逸口：permission.asked/replied 已 canonical 形状（带顶层 type 时命中此处；
+ * 已信封化的事件走执行器 passthrough），逐字保留现输出。
+ */
+export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent | null => {
   const t = event?.type ?? event?.payload?.type;
-  const prop = (extra: any = {}) => ({ payload: { type: 'message.part.updated', properties: { part: { sessionID, ...extra } } } });
-  switch (t) {
-    case 'agent_start':
-      return { payload: { type: 'session.updated', properties: { sessionID } } };
-    case 'message_start':
-    case 'message_update':
-      return { payload: { type: 'message.part.updated', properties: { part: { sessionID, type: 'text', text: event?.delta ?? '' } } } };
-    case 'message_end':
-      return { payload: { type: 'message.updated', properties: { sessionID, info: { role: 'assistant' } } } };
-    case 'tool_call':
-      return prop({ type: 'tool-call' });
-    case 'tool_result':
-      return prop({ type: 'tool-result' });
-    case 'turn_start':
-      return prop({ type: 'step-start' });
-    case 'turn_end':
-      return prop({ type: 'step-finish', assistantMessageID: `pi_step_${sessionID}` });
-    case 'agent_end':
-    case 'agent_settled':
-      return { payload: { type: 'session.idle', properties: { sessionID } } };
-    case 'permission.asked':
-      return {
-        payload: {
-          type: 'permission.asked',
-          properties: {
-            sessionID: event.payload.properties.sessionID,
-            requestId: event.payload.properties.requestId,
-            toolName: event.payload.properties.toolName,
-            args: event.payload.properties.args,
-            risk: event.payload.properties.risk,
-          },
+  if (t === 'permission.asked') {
+    return {
+      payload: {
+        type: 'permission.asked',
+        properties: {
+          sessionID: event.payload.properties.sessionID,
+          requestId: event.payload.properties.requestId,
+          toolName: event.payload.properties.toolName,
+          args: event.payload.properties.args,
+          risk: event.payload.properties.risk,
         },
-      };
-    case 'permission.replied':
-      return {
-        payload: {
-          type: 'permission.replied',
-          properties: {
-            sessionID: event.payload.properties.sessionID,
-            requestId: event.payload.properties.requestId,
-            approved: event.payload.properties.approved,
-          },
-        },
-      };
-    default:
-      return null;
+      },
+    };
   }
+  if (t === 'permission.replied') {
+    return {
+      payload: {
+        type: 'permission.replied',
+        properties: {
+          sessionID: event.payload.properties.sessionID,
+          requestId: event.payload.properties.requestId,
+          approved: event.payload.properties.approved,
+        },
+      },
+    };
+  }
+  return null;
+};
+
+/**
+ * pi 事件翻译（表驱动）。isCanonical 恒 false：pi 原生事件名不在 canonical 词汇表，
+ * permission 由 transformEvent 兜底——保持输出形状与旧 switch 逐字一致。
+ */
+export function translatePiEvent(event: any, sessionID: string): RawRuntimeEvent | null {
+  const out = applyEventMappings(
+    { ...event, sessionID },
+    { eventSource: PI_EVENT_SOURCE, eventMappings: PI_EVENT_MAPPINGS, transformEvent: piTransformEvent },
+    () => false,
+  );
+  return (out[0] as RawRuntimeEvent) ?? null;
 }
 
 export class PiEventStream {

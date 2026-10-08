@@ -1,4 +1,5 @@
 import { translatePiEvent } from '../../../src/runtime/pi/pi-events';
+import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
 
 describe('translatePiEvent', () => {
   it('agent_end maps to session.idle (not session.updated)', () => {
@@ -13,11 +14,17 @@ describe('translatePiEvent', () => {
     expect(out?.payload.properties.part.text).toBe('hi');
   });
 
-  it('turn_end maps to step-finish part with assistantMessageID', () => {
+  it('turn_end maps to step-finish part with messageID (bug fix: facet reads messageID)', () => {
     const out = translatePiEvent({ type: 'turn_end' }, 'pi_x');
     expect(out?.payload.type).toBe('message.part.updated');
     expect(out?.payload.properties.part.type).toBe('step-finish');
-    expect(out?.payload.properties.part.assistantMessageID).toBeDefined();
+    expect(out?.payload.properties.part.messageID).toBe('pi_step_pi_x');
+  });
+
+  it('turn_end full chain yields a step facet (BudgetGuard now fires on pi)', () => {
+    const mapped = translatePiEvent({ type: 'turn_end' }, 'pi_x');
+    const facets = normalizeOpencodeEvent(mapped!);
+    expect(facets.step).toEqual({ sessionID: 'pi_x', assistantMessageID: 'pi_step_pi_x', finish: undefined });
   });
 
   it('unknown event types return null', () => {
