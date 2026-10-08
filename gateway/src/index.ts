@@ -133,6 +133,7 @@ import { handleApprovalsRespond } from './routes/approvals-respond';
 import type { RuntimeSwitchDeps } from './routes/runtime-switch';
 import type { ConformanceDeps } from './routes/conformance';
 import type { PluginsRouteDeps } from './routes/plugins';
+import type { DryEventDeps } from './routes/dry-event';
 import { PluginHost } from './plugins/package-host';
 import { createPluginPackageContext } from './plugins/package-context';
 import type { UsageStatsProvider } from './usage/plugin-context';
@@ -1401,6 +1402,23 @@ class MafwScheduler {
       registerEventTap: (sid, cb) => this.registerEventTap(sid, cb),
       getObservations: (sessionID: string) => Promise.resolve(this.getGatewayDb().getObservationsBySession(sessionID)),
       getRecallCalledAt: (sessionID: string) => this.recallCalledBySession.get(sessionID) ?? null,
+    };
+  }
+
+  /** POST /api/runtime/dry-event deps：插件事件映射声明（试衣间映射跳）。 */
+  private dryEventDeps(): DryEventDeps {
+    return {
+      getPluginEventEntry: (name: string) => {
+        const e = this.runtimeLoader?.get(name);
+        return e?.eventMappings?.length
+          ? { eventSource: e.eventSource, eventMappings: e.eventMappings, transformEvent: e.transformEvent }
+          : null;
+      },
+      listPlugins: () =>
+        (this.runtimeLoader?.getState() ?? [])
+          .filter((s) => s.status === 'ok' && s.name)
+          .map((s) => s.name as string),
+      isCanonicalType: (t: string) => CANONICAL_TYPE_SET.has(t),
     };
   }
 
@@ -2911,6 +2929,7 @@ class MafwScheduler {
         restartAgentDeps: () => this.restartAgentDeps(),
         pluginHubDeps: () => this.pluginHubDeps(),
         conformanceDeps: () => this.conformanceDeps(),
+        dryEventDeps: () => this.dryEventDeps(),
         runtimeSwitchBlocked: () => this.serveRecovering || this.switchingRuntime,
         beginRuntimeSwitch: () => { this.switchingRuntime = true; },
         endRuntimeSwitch: () => { this.switchingRuntime = false; },

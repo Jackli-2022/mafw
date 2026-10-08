@@ -20,6 +20,7 @@ import type { PluginsRouteDeps } from './plugins';
 import { handleRuntimeGet, handleRuntimeSwitch, handleRuntimeReload } from './runtime-switch';
 import { handleRestartAgent } from './restart-agent';
 import { handleDryEvent } from './dry-event';
+import type { DryEventDeps } from './dry-event';
 import { handleConformance, type ConformanceDeps } from './conformance';
 import { handlePluginsList, handlePluginsInstall, handlePluginsEnable, handlePluginsDisable, handlePluginsDelete } from './plugins';
 import { cleanupExamples } from '../plugins/hub';
@@ -31,6 +32,7 @@ export interface Wave2Gateway {
   restartAgentDeps(): RestartAgentDeps;
   conformanceDeps(): ConformanceDeps;
   pluginHubDeps(): PluginsRouteDeps;
+  dryEventDeps(): DryEventDeps;
   /** runtime.switch 守卫：serveRecovering || switchingRuntime。 */
   runtimeSwitchBlocked(): boolean;
   beginRuntimeSwitch(): void;
@@ -63,7 +65,7 @@ export function attachWave2Handlers(registry: RouteRegistry, gw: Wave2Gateway): 
   registry.attachHandler('runtime.reload', H(async (req, res) =>
     handleRuntimeReload(req, res, gw.runtimeDeps())));
 
-  registry.attachHandler('runtime.dryEvent', H(async (req, res) => handleDryEvent(req, res)));
+  registry.attachHandler('runtime.dryEvent', H(async (req, res) => handleDryEvent(req, res, gw.dryEventDeps())));
 
   registry.attachHandler('runtime.conformance', H(async (req, res) =>
     handleConformance(req, res, gw.conformanceDeps())));
