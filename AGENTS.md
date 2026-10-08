@@ -809,21 +809,49 @@ opencode LLM                              Gateway（3000）                  .ve
   `bash-python-guide` hook 检测长 python 内联脚本注入温和提示（每会话一次）
 - 测试：kernel 集成套件需 `--runInBand --forceExit`（真实内核 + zeromq handle 残留）
 
-### 5.18 Manager Agent 权限（对齐 plan + gateway MCP 白名单）
+### 5.18 Agent 身份层 IdentityRegistry（v4.21.0）
 
-manager agent 通过 `agents.install('manager', getManagerAgentDefinition())` 安装
-（定义见 `gateway/src/skills/manager-agent-config.ts`）；系统规则由 `ensureManagerRules()`
-（`gateway/src/core/manager/system-rule-templates.ts`）每次启动写入 `~/.mafw/`：
+所有 MAFW agent 身份（manager / memory-curator + 未来内置）收敛到 gateway 持有的
+**`IdentityRegistry`**（`gateway/src/runtime/identity-registry.ts`）= 身份单一事实源：
+`IdentitySpec { name, description, scope, systemPrompt, policy, nativePermissions?, nativeTools? }`
+——`policy { deny, allowlist }` 用中立类别词汇（`file-edit`/`shell`/`subagent`/`web`/`readonly`）
++ 工具名（`mafw_*` 前缀通配）；物化侧 `toAgentDefinition(spec)` 从**同一 builder** 派生
+（manager←`getManagerAgentDefinition`、curator←`buildMemoryCuratorDefinition`），原生产物零漂移。
 
-- **`edit: {"*": "deny"}`**：禁用 edit/write/apply_patch（不能直接改文件/代码）——与内置 plan 对齐
-- **`task: {"general": "deny"}`**：不派发 opencode 子任务（委派走 `mafw_set_goal` MCP 工具）
-- **bash 默认 allow**：执行命令不受限（自更新等流程经 bash 通道；与 plan 同级）
-- **gateway MCP 工具显式 allow**：38 个 `mafw_*` 工具白名单（`mafw_set_goal`/`mafw_update_state`/
-  `mafw_ask_user`/记忆/自动化/桌面控制等）——opencode 权限按工具名匹配，`edit` deny 不影响
-  MCP 工具；显式 allow 防未来 defaults 收紧（如 `"*": "ask"`）时误伤
-- 机制依据：opencode `permission/index.ts` 的 `disabled()`——仅 `edit/write/apply_patch` 映射到
-  `edit` key，其余工具用工具名作 permission key
-- 自更新影响：manager 不能 edit 文件 → SKILL.md 要求自更新全流程用 bash 命令执行（bash 默认允许）
+设计文档：`docs/superpowers/specs/2026-10-08-runtime-neutral-agent-identity-design.md`；
+调研：`docs/research/2026-10-08-agent-identity-injection-survey.md`（7 runtime 身份注入机制）。
+
+**注入三车道**：
+- **车道 1（默认·主通道）物化 + 绑定**：启动遍历注册表 `agents.install(name, toAgentDefinition(spec))`
+  （= 物化——opencode 写 agent md / pi 写 prompts+extension，零重写）；`IdentityState`
+  （`gateway/src/runtime/identity-state.ts`）记 `(runtime, identity)` 物化状态；
+  `withIdentityPrompt` 包装 `runtime.session.promptAsync/prompt`：绑定+已物化 → 注入 `agent` 参数；
+  注册表身份但未物化 → 剥离（防未知 agent 报错）；非注册表 agent（build/plan）原样透传。
+  compaction 免疫由 runtime 自身保证（Codex strip+重建 / Kimi 重渲染 / dsh 重派生）。
+- **车道 2/3（前瞻·未实现）**：无物化通道的 runtime 落 injectSystem（认知面）或消息位追加。
+
+**绑定**：`registerInternalSession(sid, role, identity?)` 登记 session 级绑定（manager 全路径 +
+worker `onSessionCreated` → memory-curator）；用户经桌面/TUI 选身份 = 回合级绑定
+（`/api/session/:id/promptAsync` 路由登记，`session.idle` 清除）；manager rotate 降级解绑。
+`injectManagerIdentity`（旧一次性 `[SYSTEM]` 消息）**已删除**——身份经车道 1 到达，修复 compaction 稀释。
+
+**网关策略层**（`ApprovalPolicyService.evaluate` 身份维度，**先于 internal blanket-deny**——
+manager 本身即 internal 会话）：
+- ∈ `policy.deny` 或（白名单存在且 ∉ allowlist）→ **auto-deny**（reason 带 `identity policy (<name>)`）
+- ∈ allowlist 且会话 internal（gateway 驱动）→ **auto-approve**（无人值守）
+- ∈ allowlist 且会话用户驱动 → 落三档评估（用户在场，档位决定问/不问）
+- `applyApprovalPolicy`（`core/approval/hook.ts`）既有自动应答器**零改动生效**（opencode+pi 双 runtime）
+- `GET /api/agents` 合并输出：注册表身份（`source:'mafw'`）在前 + runtime 原生（`source:'runtime'`）
+
+**manager 权限（仍成立，经 registry 物化）**：`edit` deny / `task.general` deny / bash 默认 allow /
+38 个 `mafw_*` MCP 工具显式 allow（对齐内置 plan）；系统规则 `ensureManagerRules()`
+（`gateway/src/core/manager/system-rule-templates.ts`）每次启动写 `~/.mafw/`。机制依据：
+opencode `permission/index.ts` 的 `disabled()`——仅 `edit/write/apply_patch` 映射 `edit` key，
+其余用工具名作 permission key。自更新影响：manager 不能 edit → SKILL.md 要求自更新全流程走 bash。
+
+**runtime 插件职责**：实现 `agents.install` 即**物化器**（把 AgentDefinition 渲染成自家格式：
+agent md / config 指令键 / patch）；物化成功后 gateway 自动走车道 1。见
+`.opencode/skills/runtime-plugin-authoring/SKILL.md`。
 
 ### 5.19 Runtime 能力契约（多 runtime 接缝）
 

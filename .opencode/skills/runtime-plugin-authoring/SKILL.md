@@ -36,7 +36,7 @@ Tier 0 是 `minimalCapabilities()` 默认值，插件无需声明即可获得。
 | 能力 | 说明 | 缺省行为 |
 |------|------|----------|
 | `sessionStorageApi` | 直读 runtime 私有存储列出会话 | 回退 `session.list` + 客户端过滤 |
-| `agentConfigApi` | Agent 定义安装 | Manager agent 安装跳过（warn 日志） |
+| `agentConfigApi` | Agent 定义**物化**（身份层：把 AgentDefinition 渲染成自家格式） | 身份落车道 2/3（info 日志） |
 
 **选择指南：**
 - 仅协作对话 → Tier 0 即可
@@ -218,10 +218,14 @@ module.exports = {
       //   getApiKey(provider) { return process.env[`${provider.toUpperCase()}_API_KEY`] || null; }
       // },
       
-      // ─── 可选：Agent 定义安装（需 agentConfigApi 能力）
+      // ─── 可选：Agent 身份物化（需 agentConfigApi 能力，v4.21.0 身份层）
+      // 身份层把 MAFW IdentityRegistry 的条目（manager / memory-curator）渲染成
+      // 你 runtime 的原生格式落盘/进 config（agent md / config 指令键 / patch 皆可）。
+      // 物化成功后 gateway 自动走车道 1（prompt 带 agent 参数绑定身份）。
+      // 参见 AGENTS.md §5.18 与 docs/superpowers/specs/2026-10-08-runtime-neutral-agent-identity-design.md。
       // agents: {
-      //   async install(name, definition) { /* 写入配置文件 */ },
-      //   async remove(name) { /* 删除配置 */ },
+      //   async install(name, definition) { /* 渲染 definition 为自家格式并落盘 */ },
+      //   async remove(name) { /* 删除物化产物 */ },
       // },
     };
   },
