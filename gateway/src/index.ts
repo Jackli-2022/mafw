@@ -1431,6 +1431,8 @@ class MafwScheduler {
       registerEventTap: (sid, cb) => this.registerEventTap(sid, cb),
       getObservations: (sessionID: string) => Promise.resolve(this.getGatewayDb().getObservationsBySession(sessionID)),
       getRecallCalledAt: (sessionID: string) => this.recallCalledBySession.get(sessionID) ?? null,
+      bindIdentity: (sessionID: string, identity: string) => this.identityState.bind(sessionID, identity, 'session'),
+      evaluatePolicy: (sessionID, candidate) => this.approvalPolicy.evaluate(sessionID, candidate),
     };
   }
 

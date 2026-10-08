@@ -24,9 +24,13 @@ function makeDeps(overrides: Partial<ConformanceDeps> = {}): ConformanceDeps {
     getObservations: async () => [
       { source: 'user_input', content: 'prompt' },
       { source: 'tool_result', content: '[shell]\nfile.txt' },
-      { source: 'assistant_reply', content: 'DONE ## 记忆' },
+      { source: 'assistant_reply', content: 'DONE ## 记忆 [MAFW MANAGER IDENTITY]' },
     ],
     getRecallCalledAt: () => 123,
+    bindIdentity: () => {},
+    evaluatePolicy: (_sid: string, c: { toolName: string }) => ({
+      action: c.toolName === 'bash' ? 'human' : 'auto-deny',
+    }),
     ...overrides,
   } as ConformanceDeps;
 }
@@ -47,7 +51,7 @@ async function post(body: unknown, deps: ConformanceDeps): Promise<any> {
 describe('POST /api/runtime/conformance', () => {
   it('runs all scenarios and reports pass summary', async () => {
     const json = await post({}, makeDeps());
-    expect(json.summary).toEqual({ pass: 4, fail: 0 });
+    expect(json.summary).toEqual({ pass: 5, fail: 0 });
     expect(json.results.every((r: any) => r.pass)).toBe(true);
     expect(json.runtime).toBe('fake-runtime');
   });

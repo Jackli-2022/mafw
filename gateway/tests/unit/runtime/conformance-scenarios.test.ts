@@ -44,8 +44,8 @@ describe('S2 session-lifecycle evaluator', () => {
 });
 
 describe('catalog', () => {
-  it('has 4 scenarios with prompts and timeouts', () => {
-    expect(SCENARIOS.length).toBe(4);
+  it('has 5 scenarios with prompts and timeouts', () => {
+    expect(SCENARIOS.length).toBe(5);
     for (const s of SCENARIOS) {
       expect(s.id).toBeTruthy();
       expect(s.timeoutMs).toBeGreaterThan(1000);
@@ -104,5 +104,71 @@ describe('S4 cognition-inject evaluator', () => {
     });
     expect(r.pass).toBe(false);
     expect(r.failures.join()).toContain('memory-guide');
+  });
+});
+
+describe('S5 identity-roundtrip evaluator', () => {
+  // non-internal conformance session → allowlist 命中落穿档位（bash=human），
+  // 非白名单/deny 一律 auto-deny（无人值守 auto-approve 由 policy-service 单测覆盖）。
+  const goodPolicy = [
+    { tool: 'bash', action: 'human' },
+    { tool: 'webfetch', action: 'auto-deny' },
+    { tool: 'edit', action: 'auto-deny' },
+  ];
+
+  it('passes on identity echo + deny/allowlist gating', () => {
+    const r = evaluateScenario('identity-roundtrip', [], undefined, undefined, {
+      identityEcho: '[MAFW MANAGER IDENTITY]',
+      policy: goodPolicy,
+    });
+    expect(r).toEqual({ pass: true, failures: [] });
+  });
+
+  it('fails when identity did not reach the model (lane 1 broken)', () => {
+    const r = evaluateScenario('identity-roundtrip', [], undefined, undefined, {
+      identityEcho: '',
+      policy: goodPolicy,
+    });
+    expect(r.pass).toBe(false);
+    expect(r.failures.join()).toContain('identity');
+  });
+
+  it('fails when edit is not denied by policy', () => {
+    const r = evaluateScenario('identity-roundtrip', [], undefined, undefined, {
+      identityEcho: '[MAFW MANAGER IDENTITY]',
+      policy: [
+        { tool: 'bash', action: 'human' },
+        { tool: 'webfetch', action: 'auto-deny' },
+        { tool: 'edit', action: 'auto-approve' },
+      ],
+    });
+    expect(r.pass).toBe(false);
+    expect(r.failures.join()).toContain('edit');
+  });
+
+  it('fails when a non-allowlisted tool is not denied', () => {
+    const r = evaluateScenario('identity-roundtrip', [], undefined, undefined, {
+      identityEcho: '[MAFW MANAGER IDENTITY]',
+      policy: [
+        { tool: 'bash', action: 'human' },
+        { tool: 'webfetch', action: 'human' },
+        { tool: 'edit', action: 'auto-deny' },
+      ],
+    });
+    expect(r.pass).toBe(false);
+    expect(r.failures.join()).toContain('webfetch');
+  });
+
+  it('fails when an allowlisted tool is wrongly denied', () => {
+    const r = evaluateScenario('identity-roundtrip', [], undefined, undefined, {
+      identityEcho: '[MAFW MANAGER IDENTITY]',
+      policy: [
+        { tool: 'bash', action: 'auto-deny' },
+        { tool: 'webfetch', action: 'auto-deny' },
+        { tool: 'edit', action: 'auto-deny' },
+      ],
+    });
+    expect(r.pass).toBe(false);
+    expect(r.failures.join()).toContain('bash');
   });
 });

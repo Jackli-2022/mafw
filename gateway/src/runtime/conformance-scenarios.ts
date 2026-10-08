@@ -11,7 +11,7 @@ export interface ObservedEvent {
 }
 
 export interface ScenarioDef {
-  id: 'chat-roundtrip' | 'session-lifecycle' | 'cognition-observe' | 'cognition-inject';
+  id: 'chat-roundtrip' | 'session-lifecycle' | 'cognition-observe' | 'cognition-inject' | 'identity-roundtrip';
   title: string;
   description: string;
   prompt: string;
@@ -54,6 +54,14 @@ export const SCENARIOS: ScenarioDef[] = [
     timeoutMs: 90_000,
     requires: { eventStream: true },
   },
+  {
+    id: 'identity-roundtrip',
+    title: '身份层·物化+策略（S5）',
+    description: 'manager 身份经物化 agent 到达模型（复述身份标题）+ 网关策略层放行 allowlist 工具 / 拒绝 file-edit',
+    prompt: 'Reply with the exact first line of your system instructions. Nothing else.',
+    timeoutMs: 90_000,
+    requires: { eventStream: true },
+  },
 ];
 
 const CONTENT_TYPES = new Set(['message.part.updated', 'message.part.delta', 'message.updated']);
@@ -66,11 +74,18 @@ export interface CognitionObservation {
   guideEcho?: string;
 }
 
+/** S5 观测：模型对身份标题的回声 + 网关策略层对合成候选项的判定。 */
+export interface IdentityObservation {
+  identityEcho?: string;
+  policy: Array<{ tool: string; action: string }>;
+}
+
 export function evaluateScenario(
   id: string,
   events: ObservedEvent[],
   apiResult?: { created: boolean; deleted: boolean },
   cognition?: CognitionObservation,
+  identity?: IdentityObservation,
 ): { pass: boolean; failures: string[] } {
   const failures: string[] = [];
   if (id === 'chat-roundtrip') {
@@ -91,6 +106,16 @@ export function evaluateScenario(
   } else if (id === 'cognition-inject') {
     if (!cognition?.recallCalledAt) failures.push('no /api/recall/context call recorded for this session — host injectContext verb not wired');
     if (!/记忆|memory-guide/i.test(cognition?.guideEcho ?? '')) failures.push('assistant reply does not echo the <memory-guide> heading — injectSystem did not reach the model');
+  } else if (id === 'identity-roundtrip') {
+    if (!/MAFW|MANAGER|identity/i.test(identity?.identityEcho ?? '')) {
+      failures.push('assistant reply does not echo the identity heading — materialized agent did not carry the identity system prompt (lane 1 broken)');
+    }
+    const edit = identity?.policy.find((p) => p.tool === 'edit');
+    const web = identity?.policy.find((p) => p.tool === 'webfetch');
+    const bash = identity?.policy.find((p) => p.tool === 'bash');
+    if (!edit || edit.action !== 'auto-deny') failures.push('policy: edit (file-edit deny) not auto-denied — identity policy dimension not wired');
+    if (!web || web.action !== 'auto-deny') failures.push('policy: webfetch (not allowlisted) not auto-denied');
+    if (!bash || bash.action === 'auto-deny') failures.push('policy: bash (allowlisted) wrongly denied');
   } else {
     failures.push(`unknown scenario '${id}'`);
   }

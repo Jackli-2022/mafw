@@ -19,6 +19,10 @@ export interface ConformanceDeps {
   getObservations(sessionID: string): Promise<Array<{ source: string; content: string }>>;
   /** S4：gateway 侧 recall/context 最近触达时间（null = 从未）。 */
   getRecallCalledAt(sessionID: string): number | null;
+  /** S5：绑定会话身份（策略层评估依据）。 */
+  bindIdentity(sessionID: string, identity: string): void;
+  /** S5：直接评估合成候选项的网关审批策略。 */
+  evaluatePolicy(sessionID: string, candidate: { toolName: string; patterns: string[]; metadata: Record<string, unknown> }): { action: string };
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -102,6 +106,23 @@ export async function handleConformance(
           guideEcho: obs.filter((o) => o.source === 'assistant_reply').map((o) => o.content).join('\n'),
         };
         const r = evaluateScenario(sc.id, [], undefined, cognition);
+        await deps.deleteSession(sess.id).catch(() => {});
+        results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
+      } else if (sc.id === 'identity-roundtrip') {
+        const sess = await deps.createSession({});
+        deps.bindIdentity(sess.id, 'manager');
+        const p = collectUntilTerminal(deps.registerEventTap, sess.id, perTimeout ?? sc.timeoutMs);
+        await deps.promptAsync({ sessionID: sess.id, message: sc.prompt });
+        await p;
+        const obs = await deps.getObservations(sess.id);
+        const identity = {
+          identityEcho: obs.filter((o) => o.source === 'assistant_reply').map((o) => o.content).join('\n'),
+          policy: ['bash', 'webfetch', 'edit'].map((toolName) => ({
+            tool: toolName,
+            action: deps.evaluatePolicy(sess.id, { toolName, patterns: [], metadata: {} }).action,
+          })),
+        };
+        const r = evaluateScenario(sc.id, [], undefined, undefined, identity);
         await deps.deleteSession(sess.id).catch(() => {});
         results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
       } else {
