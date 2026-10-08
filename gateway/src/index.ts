@@ -87,6 +87,7 @@ import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-
 import { wrapGlobalEventStream } from './runtime/event-mapper';
 import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
+import { isHiddenSession } from './core/session-visibility';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。 */
 const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
@@ -2812,17 +2813,10 @@ class MafwScheduler {
     // Task-tool subagent children (they have a parent session). The role
     // registry covers workers created after its introduction; title patterns
     // catch the pre-registry stragglers (their titles are the first line of
-    // the pipeline prompt, e.g. "# Memory Index..." / '{"relevant_ids":...').
-    const isHiddenSession = (s: any): boolean => {
-      if (s?.parentID) return true;
-      const title: string = s?.title || '';
-      if (title.startsWith('# Memory Index')) return true;
-      // Worker prompts open with raw JSON / fenced JSON / a "标题：" header —
-      // their session titles are that first line. Hide the whole family.
-      if (title.startsWith('{') || title.startsWith('```') || title.startsWith('标题：')) return true;
-      const role = s?.id ? this.internalSessionRoles.get(s.id) : undefined;
-      return role === 'index-scan' || role === 'extract' || role === 'reflect';
-    };
+    // the pipeline prompt, e.g. "# Memory Index..." / '{"relevant_ids":...}');
+    // agent='memory-curator' survives the internal-session kv TTL prune.
+    const isHidden = (s: any): boolean =>
+      isHiddenSession(s, (id) => this.internalSessionRoles.get(id));
 
     // Try SDK first (opencode server), fall back to local store
     const fromServe: any[] = [];
@@ -2865,7 +2859,7 @@ class MafwScheduler {
         for (const s of dbSessions) {
           if (s?.parentID) childSessionIds.add(s.id);
           if (!seen.has(s.id)) {
-            if (isHiddenSession(s)) continue;
+            if (isHidden(s)) continue;
             merged.push(s);
             seen.add(s.id);
           }
@@ -2873,7 +2867,7 @@ class MafwScheduler {
       }
     } catch {}
     for (const s of fromServe) {
-      if (isHiddenSession(s) || (s?.id && childSessionIds.has(s.id))) continue;
+      if (isHidden(s) || (s?.id && childSessionIds.has(s.id))) continue;
       if (s?.id && seen.has(s.id)) {
         // Server state is fresher — replace the SQLite copy in place.
         const idx = merged.findIndex(m => m.id === s.id);

@@ -208,7 +208,7 @@ onMount → gateway.info() 等 ready
 会话列表对**任意客户端**（TUI/CLI/另一窗口）的增/删/改名即时同步，不再依赖"本地写后 invalidate"：
 
 - **sessionStore 局部变更**（`session-store.ts`）：`patch(id, partial)` / `remove(id)`（跨缓存桶、保排序与兜底标题、bump version signal）
-- **事件规划器**（`session-events.ts`，纯函数可测）：`planSessionEvent()` 把 SSE 生命周期事件映射为 patch/remove/invalidate/none——隐藏口径对齐 gateway `isHiddenSession`（parentID / legacy worker 标题前缀 / `internal` 标记）；patch 走字段白名单（title/time/directory/projectID），**绝不 spread info**（SSE info 无 `metadata.mafw.role`，防止抹掉本地 manager 标记）；pi 的 `session.updated` 空壳（agent_start，无 info）忽略，防每回合 invalidate 风暴
+- **事件规划器**（`session-events.ts`，纯函数可测）：`planSessionEvent()` 把 SSE 生命周期事件映射为 patch/remove/invalidate/none——隐藏口径对齐 gateway `isHiddenSession`（`core/session-visibility.ts`：parentID / legacy worker 标题前缀 / `agent==='memory-curator'` / `internal` 角色表——agent 判定是确定性的，kv 角色表 7 天 TTL 剪枝后老 worker 会话不会复活到列表）；patch 走字段白名单（title/time/directory/projectID），**绝不 spread info**（SSE info 无 `metadata.mafw.role`，防止抹掉本地 manager 标记）；pi 的 `session.updated` 空壳（agent_start，无 info）忽略，防每回合 invalidate 风暴
 - **MafwShell onmessage 三分支**：`created`→invalidate；`updated`→patch + tab 标题双写（`sessions()` + `store.session`）；`deleted`→remove + `closeSession`（外部删除已打开 tab 自动关闭，split view/active 回退复用）
 - **gateway 配套**（`runtime/event-broadcast.ts` 纯函数 + jest）：Mode A 广播封装收敛 `opencodeBroadcast()`，passthrough 事件透传 `directory`（normalize 已提取）；两个项目注册点（HTTP `/register` + registry 目录 watcher）广播 `project_registered`，desktop `projectsRev` 信号触发 Rail/MafwShell 项目列表重拉
 - **wire 契约**：gateway 顶层广播（非 `opencode_event` 类型）必须**扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`；形状由 `event-broadcast.test.ts` 固化
