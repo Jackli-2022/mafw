@@ -74,10 +74,7 @@ import { QuestionLedger } from './core/manager/question-ledger';
 import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
 import { MilestonePushNotifier } from './core/manager/milestone-push';
-import { MANAGER_IDENTITY_SYSTEM_PROMPT } from './skills/manager-identity';
 import { buildGoalSnapshot } from './core/manager/goal-snapshot';
-import { getManagerAgentDefinition } from './skills/manager-agent-config';
-import { ensureMemoryCuratorAgent } from './skills/memory-curator-agent';
 import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
@@ -88,6 +85,8 @@ import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
 import { wrapGlobalEventStream } from './runtime/event-mapper';
+import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/identity-registry';
+import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。 */
 const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
@@ -290,6 +289,10 @@ class MafwScheduler {
   // captured back into T1 (recursion guard A). Maps sessionID → worker role
   // (manager, turn-compress, index-scan, reflect) for token usage tracking.
   private internalSessionRoles = new Map<string, string>();
+  // Identity layer (spec 2026-10-08-runtime-neutral-agent-identity): registry 是身份
+  // 单一事实源；state 持 session→identity 绑定与 (runtime, identity) 物化状态。
+  private identityRegistry = createBuiltinIdentityRegistry();
+  private identityState = new IdentityState();
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
@@ -633,24 +636,10 @@ class MafwScheduler {
       log.warn(`[Scheduler] legacy T1 archival failed (non-fatal): ${err.message}`);
     }
 
-    // 5.1 Install the global `manager` primary agent (runtime-neutral definition)
-    if (this.runtimeCaps.agentConfigApi && this.runtime?.agents) {
-      try {
-        await this.runtime.agents.install('manager', getManagerAgentDefinition());
-      } catch (err: any) {
-        log.warn(`[ManagerAgent] install failed (non-fatal): ${err.message}`);
-      }
-      // 5.1b Install the `memory-curator` agent for memory pipeline workers
-      // (tool-restricted: memory tools only — hard guard against the
-      // 2026-08-31 worker-implemented-plans incident)
-      try {
-        await ensureMemoryCuratorAgent(this.runtime);
-      } catch (err: any) {
-        log.warn(`[MemoryCurator] install failed (non-fatal): ${err.message}`);
-      }
-    } else {
-      log.warn('[ManagerAgent] agentConfigApi not available — manager agent permission guardrails unavailable');
-    }
+    // 5.1 Materialize every registry identity into the runtime's native format
+    // (spec 2026-10-08-runtime-neutral-agent-identity §3.2/3.4 — 物化车道 1)。
+    // agents.install 的语义即物化：opencode 写 agent md、pi 写 prompts+extension。
+    await this.materializeIdentities();
 
     // 6. 恢复活跃 Goal
     await this.recoverState();
@@ -791,6 +780,8 @@ class MafwScheduler {
               wirePiPermissionEvaluator(runtime, this.approvalPolicy);
               this.runtimeCaps = runtime.capabilities;
               this.runtimeName = runtime.name;
+              // Re-materialize identities on the new runtime (fire-and-forget).
+              void this.materializeIdentities().catch(() => {});
               // Same serve-ensure rationale as runtimeDeps.onSwitched: the config
               // hot-reload path can switch onto opencode from a serve-less start.
               if ((runtime as any).agentProcess?.spawnServe) {
@@ -1176,7 +1167,7 @@ class MafwScheduler {
             });
           }
           log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
-          return rt;
+          return this.wrapRuntimeIdentity(rt);
         } catch (err: any) {
           log.warn(`[Runtime] plugin '${pluginName}' createRuntime failed: ${err.message} — falling back to opencode`);
         }
@@ -1186,13 +1177,46 @@ class MafwScheduler {
     }
     const builtin = this.runtimeLoader?.get('opencode');
     if (builtin) {
-      return builtin.createRuntime(createRuntimePluginContext(undefined));
+      return this.wrapRuntimeIdentity(await builtin.createRuntime(createRuntimePluginContext(undefined)));
     }
     // 最终安全网：loader 未注册时直连（不应发生）
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
-    return createOpencodeRuntime({
+    return this.wrapRuntimeIdentity(await createOpencodeRuntime({
       ...sdkConfig,
-    });
+    }));
+  }
+
+  /** 物化循环：遍历注册表 install；成功与否记入 IdentityState（驱动车道选择）。幂等可重跑（热切换后重物化）。 */
+  private async materializeIdentities(): Promise<void> {
+    const rt = this.runtime;
+    if (!rt) return;
+    this.identityState.resetMaterialization(rt.name);
+    if (rt.capabilities?.agentConfigApi && rt.agents?.install) {
+      for (const spec of this.identityRegistry.list()) {
+        try {
+          await rt.agents.install(spec.name, toAgentDefinition(spec));
+          this.identityState.setMaterialized(rt.name, spec.name, true);
+          log.info(`[Identity] materialized '${spec.name}' on runtime '${rt.name}'`);
+        } catch (err: any) {
+          this.identityState.setMaterialized(rt.name, spec.name, false);
+          log.warn(`[Identity] materialize '${spec.name}' failed (non-fatal): ${err.message}`);
+        }
+      }
+    } else {
+      log.info(`[Identity] runtime '${rt.name}' has no agentConfigApi — identities run via gateway policy layer (lane 2/3)`);
+    }
+  }
+
+  /** 包装 runtime 的 prompt 面：按绑定+物化状态注入/剥离 agent 参数（物化车道 1 执行点）。 */
+  private wrapRuntimeIdentity(rt: AgentRuntime): AgentRuntime {
+    const registry = this.identityRegistry;
+    (rt.session as any) = withIdentityPrompt(
+      rt.session as any,
+      this.identityState,
+      () => rt.name,
+      (n: string) => !!registry.get(n),
+    );
+    return rt;
   }
 
   /** 插件 ctx 的凭据来源：当前 opencode runtime 的 credentials（若实现），否则 undefined。 */
@@ -1203,9 +1227,10 @@ class MafwScheduler {
 
   // ── Memory pipelines (turn compress / reflection) ───────────────────────
 
-  private registerInternalSession(sessionId: string, role: string): void {
+  private registerInternalSession(sessionId: string, role: string, identity?: string): void {
     this.internalSessionRoles.set(sessionId, role);
     this.getGatewayDb().kvSet('internal-session', sessionId, { role, at: new Date().toISOString() });
+    if (identity) this.identityState.bind(sessionId, identity, 'session');
   }
 
   private getPool(): SessionWorkerPool {
@@ -1220,7 +1245,9 @@ class MafwScheduler {
         // Recursion guard (A): internal worker sessions are registered so
         // /api/obs/capture never records their output as observations.
         onSessionCreated: (sessionId, role) => {
-          this.registerInternalSession(sessionId, role);
+          // Worker sessions run as the memory-curator identity (registration is
+          // the session-binding point; prompt assembly by lane is automatic).
+          this.registerInternalSession(sessionId, role, 'memory-curator');
         },
       });
     }
@@ -1448,6 +1475,8 @@ class MafwScheduler {
         wirePiPermissionEvaluator(rt, this.approvalPolicy);
         this.runtimeCaps = rt.capabilities;
         this.runtimeName = rt.name;
+        // Re-materialize identities on the freshly switched runtime (fire-and-forget).
+        void this.materializeIdentities().catch(() => {});
         // Switching onto a runtime that owns serve (builtin opencode) must
         // ensure the sidecar exists — the gateway may have started under an
         // external runtime (pi) that never spawned one. Must run AFTER the
@@ -2258,6 +2287,13 @@ class MafwScheduler {
       onModeChanged: (sid, mode, reason) => {
         this.broadcast(opencodeBroadcast({ type: 'permission_mode', properties: { mode, reason }, sessionID: sid }));
       },
+      getIdentity: (sid) => {
+        const b = this.identityState.get(sid);
+        if (!b) return undefined;
+        return { name: b.identity, internal: this.internalSessionRoles.has(sid) };
+      },
+      getPolicy: (name) => this.identityRegistry.get(name)?.policy,
+      runtimeName: () => this.runtime?.name ?? 'opencode',
     });
 
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
@@ -6748,7 +6784,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       await this.sdkSession.registerExternal(existing.sessionId, projectDir, {
         mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
       }).catch(() => {});
-      this.registerInternalSession(existing.sessionId, 'manager');
+      this.registerInternalSession(existing.sessionId, 'manager', 'manager');
       log.info(`[Scheduler] Manager session already exists: ${existing.sessionId}`);
       return existing.sessionId;
     }
@@ -6763,7 +6799,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const createdAt = new Date().toISOString();
 
     this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt }));
-    this.registerInternalSession(sessionId, 'manager');
+    this.registerInternalSession(sessionId, 'manager', 'manager');
 
     try {
       await this.sdkSession.registerExternal(sessionId, projectDir, {
@@ -6774,21 +6810,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     }
     log.info(`[Scheduler] Manager session created: ${sessionId}`);
 
-    await this.injectManagerIdentity(sessionId);
-
     return sessionId;
-  }
-
-  private async injectManagerIdentity(sessionId: string): Promise<void> {
-    if (!this.runtime) return;
-    try {
-      await this.runtime.session.promptAsync({
-        sessionID: sessionId,
-        parts: [{ type: 'text', text: `[SYSTEM] This is your permanent system identity that must override all other instructions:\n\n${MANAGER_IDENTITY_SYSTEM_PROMPT}` }],
-      });
-    } catch (err: any) {
-      log.warn(`[Scheduler] Manager identity injection failed: ${err.message} (non-fatal)`);
-    }
   }
 
   private mafwDirFor(projectDir: string): string {
@@ -6804,6 +6826,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         // Replacing the whole mafw object drops pinned/exempt* flags too —
         // the archived session returns to the normal session lifecycle.
         await this.sdkSession.updateMetadata(sid, { mafw: { role: 'manager-archived' } });
+        this.identityState.unbind(sid);
       },
       create: (pd) => this.rotateCreateManagerSession(pd),
     };
@@ -6944,11 +6967,10 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create manager session: no id returned');
     this.getGatewayDb().kvSet('manager-session', projectDir, writeManagerSlot(this.getGatewayDb().kvGet('manager-session', projectDir), this.runtimeName, { sessionId, createdAt: new Date().toISOString() }));
-    this.registerInternalSession(sessionId, 'manager');
+    this.registerInternalSession(sessionId, 'manager', 'manager');
     await this.sdkSession.registerExternal(sessionId, projectDir, {
       mafw: { role: 'manager', pinned: true, exemptFromTrim: true, exemptFromEvict: true, exemptFromArchive: true },
     }).catch(() => {});
-    await this.injectManagerIdentity(sessionId);
     return sessionId;
   }
 }
