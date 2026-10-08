@@ -10,6 +10,7 @@
 // evaluate 必须同步（handleOpencodeEvent 是同步路径）；kv 懒加载，未完成时按 read-only 保守。
 
 import { ApprovalCandidate, SafetyVerdict, classifySafety, isReadOnlyTool } from './safety-classifier';
+import { IdentityPolicy, ToolCategory, policyDecides, resolveToolCategory } from '../../runtime/identity-registry';
 
 export type SessionPermissionMode = 'read-only' | 'auto' | 'full-access';
 export const AUTO_APPROVE_BUDGET = 25;
@@ -33,6 +34,10 @@ export interface ApprovalPolicyDeps {
   loadMode(sessionID: string): Promise<SessionPermissionMode>;
   saveMode(sessionID: string, mode: SessionPermissionMode): Promise<void>;
   onModeChanged(sessionID: string, mode: SessionPermissionMode, reason: string): void;
+  /** 身份层（spec 2026-10-08-runtime-neutral-agent-identity §3.3）：internal = gateway 驱动会话。全部可选。 */
+  getIdentity?(sessionID: string): { name: string; internal: boolean } | undefined;
+  getPolicy?(name: string): IdentityPolicy | undefined;
+  runtimeName?(): string;
 }
 
 export class ApprovalPolicyService {
@@ -56,6 +61,31 @@ export class ApprovalPolicyService {
   }
 
   evaluate(sessionID: string, candidate: ApprovalCandidate): PolicyDecision {
+    // 0. 身份策略（先于 internal blanket-deny——manager 本身就是 internal 会话）
+    const binding = this.deps.getIdentity?.(sessionID);
+    if (binding) {
+      const policy = this.deps.getPolicy?.(binding.name);
+      if (policy) {
+        const cat = (t: string): ToolCategory | null =>
+          resolveToolCategory(t, this.deps.runtimeName?.() ?? 'opencode');
+        const decision = policyDecides(policy, candidate.toolName, cat);
+        if (decision === 'deny') {
+          return {
+            action: 'auto-deny',
+            verdict: classifySafety(candidate),
+            reason: `identity policy (${binding.name}) — ${candidate.toolName} not permitted for this identity`,
+          };
+        }
+        if (decision === 'allow' && binding.internal) {
+          return {
+            action: 'auto-approve',
+            verdict: classifySafety(candidate),
+            reason: `identity policy (${binding.name}) — ${candidate.toolName} allowlisted (unattended)`,
+          };
+        }
+        // allow + 非 internal → 落穿（用户档位决定问/不问）；null → 落穿
+      }
+    }
     // 1. 内部会话 fail-safe
     const role = this.deps.getInternalRole(sessionID);
     if (role) {
