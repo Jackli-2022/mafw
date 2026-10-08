@@ -1,4 +1,5 @@
-import { createMafwHostExtension, hashText, buildRecallQuery } from '../../../src/runtime/pi/pi-mafw-host-extension';
+import { createMafwHostExtension } from '../../../src/runtime/pi/pi-mafw-host-extension';
+import { hashText, buildRecallQuery } from '../../../src/runtime/host-adapter';
 
 type Req = { url: string; method: string; body?: any };
 type Res = { ok: boolean; json?: any };
