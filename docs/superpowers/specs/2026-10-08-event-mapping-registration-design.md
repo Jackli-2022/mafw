@@ -34,7 +34,7 @@ runtime 插件接入事件流时，今天必须手写翻译层把自己的原生
 - **CanonicalFacetTable**（gateway 侧）：canonical type → facet 提取规则。`normalizeOpencodeEvent` 的 if 链表化。**插件不需要懂 facet**——facet 是 gateway 的协议知识。
 - opencode 迁入：其原生事件即 canonical 事件，PluginEventMap 为恒等（可省略声明），迁移工作量全在 CanonicalFacetTable 化。
 
-行业依据：ECS 模式（词汇表与规则宿主定义，插件只搬运）；DAP 模式（词汇表只增不废 + capabilities 位）；OTTL/EventBridge（声明式映射 + 加载期校验 + 错误 fail-open）。
+行业依据：ECS 模式（词汇表与规则宿主定义，插件只搬运）；DAP 模式（词汇表只增不废 + capabilities 位）；OTTL/EventBridge（声明式映射 + 加载期校验 + 错误 fail-open）；**codex 官方 `event_mapping.rs` 自述**（2026-10-08 补调研实证）："This only covers the stateless event-to-notification projections that have a one-to-one mapping. Callers remain responsible for any surrounding state checks or side effects."——无状态投影可数据化、带状态路径不可数据化，与本设计三层同构。ACP 反面教训：中立词汇表=最小公分母（Kimi 自有 Server API 远比其 ACP 面丰富），佐证沿用 opencode 形状。
 
 ## 4. PluginEventMap Schema（纯数据，JSON-serializable 子集）
 
@@ -92,6 +92,9 @@ module.exports = {
 ```
 
 ### 规则语义
+
+- **嵌套分发**：`eventSource.typePath` 可指向嵌套判别字段（如 Claude `stream_event` 的 `$.event.type`），`when` 条件始终作用于**完整原始事件**（可同时检查外层 `$.type` 与内层字段）——二级分发（外层类型 + 内层子类型路由到不同 canonical）由此表达，无需特殊机制。
+- **输入源不限于事件流**：RPC 响应携带的回合终态（如 ACP `session/prompt` 响应的 stopReason、codex approval 的 JSON-RPC request）由插件**合成为原生事件形状后经同一入口进表**（pi 已有先例：`PiEventStream.push()`）。映射管线对"流事件"与"合成事件"一视同仁；需要应答的请求-响应对（approval）仍由插件持有 pending 登记，表只负责出站通知侧。
 
 - `fields` 值三选一：`{path}` / `{const}` / `{template}`——无裸字符串，无歧义。
 - 路径语法 = 裁剪 JSONPath 子集（点号 + 数组下标）。**无 eval、无脚本表达式**。理由修正：同进程可信插件下 eval 不扩大恶意威胁模型，但①表达式混入数据面会扩大威胁；②运行期崩溃 vs 加载期校验；③丧失试衣间/字段契约的静态分析能力。
@@ -200,6 +203,19 @@ export const CANONICAL_FACET_RULES: FacetRule[] = [
 - 1→N 扇出 / 跨事件状态机的声明式表达（逃逸口函数覆盖——AI SDK/DAP 用整层放弃声明式证明此类逻辑永远手写）
 - HostAdapter 认知面四动词（独立通道，不动）
 - pi `message_end` 无 `time.completed` 导致不产 trajectory step_finish 的现状（语义保留，另行评估）
+
+## 8a. 已知缺口（2026-10-08 四家事件面补调研发现，本期只记录不动工）
+
+详见 `docs/research/2026-10-08-agent-event-models-survey.md`：
+
+| 缺口 | 证据 | 后续动作 |
+|---|---|---|
+| canonical 缺 usage 更新类型 | ACP `usage_update`、codex `thread/tokenUsage/updated`、kimi `turn.ended` 携带 | 词汇表扩展立项时入册 |
+| canonical 缺 plan 更新类型 | ACP `plan`、codex `turn/plan/updated` + `todo_list` item | 同上 |
+| question 应与 permission 并列为一等交互 | kimi `event.question.*`、ACP `elicitation/create`、codex `item/tool/requestUserInput`、claude Elicitation——四家全部分开 | 同上（question.asked 已在词汇表，但语义对齐需重审） |
+| subagent/task 生命周期无 canonical | claude `task_*` 五件套、codex `CollabAgentToolCall`/`SubAgentActivity`、kimi `TaskStarted` | 同上 |
+| permission.asked 载荷可加 `options[]` + 沉淀规则草稿 | codex `availableDecisions[]` + `proposedExecpolicyAmendment`（服务端起草规则，比我们 reply 侧推导更准）；claude allow 可带 updatedInput 改写输入；kimi 审批 24h 过期 + resolved 对账 | approval 契约升级时参考 |
+| SSE 三端消费可靠性 | kimi durable seq/volatile 分级/offset/subscribe_v2（off/turn/block/delta + transcript.reset/ops 断线续传）——业界最完整答案 | 独立立项候选 |
 
 ## 9. 风险
 
