@@ -1,44 +1,18 @@
 /**
- * 事件归一化器 —— 把 runtime 原生事件翻译成 EventFacets（正交切面）。
+ * 事件归一化器 —— 把 canonical 事件翻译成 EventFacets（正交切面）。
  *
- * 每个 runtime 一个 normalize 函数；index.ts 的调度逻辑只消费 facets，
- * 不再出现 runtime 事件类型字符串。opencode 版本知识（≥1.18 无
- * session.next.step.ended，step 以 step-finish part 结算）只存在于本文件。
- *
+ * facet 提取规则已表化到 canonical-facets.ts 的 CANONICAL_FACET_RULES；
+ * 本文件只保留信封解包、sessionID 提取链、toolCommand 特例与畸形判定。
  * 注意：facets 是正交的（一个事件可同时有 step 与 chatSignal），这是为了
- * 与现 handleOpencodeEvent 的多路消费行为逐点等价。
+ * 与 handleOpencodeEvent 的多路消费行为逐点等价（oracle 测试钉扎）。
  */
+import { CANONICAL_FACET_RULES, evaluateFacetRules } from './canonical-facets';
 
 /** 一个已结算的 LLM step（喂 BudgetGuard 回合计数）。 */
 export interface StepEndedProps {
   sessionID?: string
   assistantMessageID?: string
   finish?: string
-}
-
-// opencode ≥1.18 no longer publishes `session.next.step.ended`. Steps settle as
-// `step-finish` parts carried by `message.part.updated`. Messages also emit
-// `message.updated` with `info.role='assistant'` and `info.time.completed` once
-// the final assistant message is settled. These helpers normalize both shapes
-// back into the old StepEndedProps contract.
-export function stepPropsFromPartUpdated(props: unknown): StepEndedProps | null {
-  const part = (props as any)?.part
-  if (!part || part.type !== 'step-finish') return null
-  return {
-    sessionID: part.sessionID,
-    assistantMessageID: part.messageID,
-    finish: part.reason,
-  }
-}
-
-export function stepPropsFromMessageUpdated(props: unknown): StepEndedProps | null {
-  const info = (props as any)?.info
-  if (!info || info.role !== 'assistant' || !info.time?.completed) return null
-  return {
-    sessionID: info.sessionID,
-    assistantMessageID: info.id,
-    finish: info.finish,
-  }
 }
 
 /** GlobalEvent 信封或裸事件，两者都接受。 */
@@ -98,67 +72,17 @@ export function normalizeOpencodeEvent(evt: RawRuntimeEvent): EventFacets {
   const payload = evt?.payload || {};
   const type = payload?.type || evt?.type || '';
   const props = payload?.properties || evt?.properties || {};
+  // sessionID 五层提取链：信封约定（非 facet 规则），执行器内置。
   const sessionID =
     props?.sessionID || props?.part?.sessionID || props?.info?.sessionID || payload?.sessionID || evt?.sessionID;
 
-  // settled-step 归一化：legacy step.ended（保留兜底）→ step-finish part →
-  // completed assistant message，与现 handleOpencodeEvent 的判定顺序一致。
-  let step: StepEndedProps | null = null;
-  if (type === 'session.next.step.ended' && sessionID) {
-    step = { sessionID, assistantMessageID: props?.assistantMessageID, finish: props?.finish };
-  } else if (type === 'message.part.updated') {
-    step = stepPropsFromPartUpdated(props);
-  } else if (type === 'message.updated') {
-    step = stepPropsFromMessageUpdated(props);
-  }
+  const facets = evaluateFacetRules(CANONICAL_FACET_RULES, type, props, sessionID);
 
-  let chatSignal: EventFacets['chatSignal'] = null;
-  let deltaText: string | undefined;
-  let chatError: unknown;
-  if (type === 'message.part.updated') {
-    const text = props?.part?.text || props?.delta || '';
-    if (text) {
-      deltaText = text;
-      chatSignal = 'delta';
-    }
-  } else if (type === 'session.idle' || type === 'message.updated') {
-    chatSignal = 'complete';
-  } else if (type === 'session.error' || type === 'message.error') {
-    chatSignal = 'error';
-    chatError = props?.error || 'Unknown error';
-  }
-
-  const broadcast: EventFacets['broadcast'] =
-    type === 'session.idle' ? 'idle' : type === 'session.error' ? 'error' : 'passthrough';
-
-  // 自更新调用者定位：仅工具事件携带 command 时提取。
-  // （'session.next.tool' 已包含 'tool' 子串，includes('tool') 一条即覆盖，
-  //  与现 `(type.includes('tool') || type.includes('session.next.tool'))` 等价。）
+  // toolCommand：type.includes('tool') + 信封 payload.args 依赖，表化不了——
+  // 执行器内置特例（spec §5）。
   const toolArgs = props?.args || props?.info?.args || payload?.args;
   const command = typeof toolArgs?.command === 'string' ? toolArgs.command : '';
   const toolCommand = command && type.includes('tool') ? command : undefined;
 
-  const compaction: EventFacets['compaction'] =
-    type === 'session.compacting' ? 'start' : type === 'session.compacted' ? 'end' : null;
-
-  // approval facet：permission.asked 双 runtime 形状对齐（opencode: id/permission/
-  // patterns/metadata；pi: requestId/toolName/args/risk）。缺 requestId/toolName 视为
-  // 畸形（恒 null），下游按无切面处理。
-  let approval: ApprovalFacet | null = null;
-  if (type === 'permission.asked' && sessionID) {
-    const requestId = props?.requestId ?? props?.id;
-    const toolName = props?.permission ?? props?.toolName;
-    if (requestId && toolName) {
-      approval = {
-        requestId: String(requestId),
-        toolName: String(toolName),
-        patterns: Array.isArray(props?.patterns) ? props.patterns : [],
-        metadata: props?.metadata ?? (props?.args !== undefined || props?.risk !== undefined
-          ? { args: props?.args, risk: props?.risk }
-          : undefined),
-      };
-    }
-  }
-
-  return { type, properties: props, sessionID, directory: evt?.directory, step, chatSignal, deltaText, chatError, broadcast, compaction, toolCommand, approval };
+  return { type, properties: props, sessionID, directory: evt?.directory, toolCommand, ...facets };
 }
