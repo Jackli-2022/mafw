@@ -273,6 +273,8 @@ class MafwScheduler {
   private layaSidecar: import("child_process").ChildProcess | null = null;
   /** A4 observability cache for the fok-samples counters (10s TTL). */
   private fokStatsCache: { at: number; stats: any } | null = null;
+  /** S4 认知一致性：per-session recall/context 最近触达时间（有界 500）。 */
+  private recallCalledBySession = new Map<string, number>();
   private heartbeat?: PipelineHeartbeat;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
@@ -1368,6 +1370,8 @@ class MafwScheduler {
         return Array.isArray(r) ? r : (r?.sessions || r?.data || []);
       },
       registerEventTap: (sid, cb) => this.registerEventTap(sid, cb),
+      getObservations: (sessionID: string) => Promise.resolve(this.getGatewayDb().getObservationsBySession(sessionID)),
+      getRecallCalledAt: (sessionID: string) => this.recallCalledBySession.get(sessionID) ?? null,
     };
   }
 
@@ -5296,6 +5300,11 @@ class MafwScheduler {
             const parsedUrl = new URL(req.url!, `http://${req.headers.host || 'localhost'}`);
             const query = parsedUrl.searchParams.get('query') || '';
             const sessionID = parsedUrl.searchParams.get('sessionID') || '';
+            // S4 认知一致性：记录 recall 触达（有界，conformance 消费）
+            if (sessionID) {
+              this.recallCalledBySession.set(sessionID, Date.now());
+              if (this.recallCalledBySession.size > 500) this.recallCalledBySession.clear();
+            }
             const tGoal0 = Date.now();
             // Goal snapshot: injected every turn for the ACTIVE manager session
             // only (kv compare). Compaction-proof goal awareness (spec §3.4①).

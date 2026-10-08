@@ -15,6 +15,10 @@ export interface ConformanceDeps {
   deleteSession(id: string): Promise<void>;
   listSessions(): Promise<Array<{ id?: string }>>;
   registerEventTap(sessionID: string, cb: (e: ObservedEvent) => void): () => void;
+  /** S3/S4：按会话取 T1 观察行。 */
+  getObservations(sessionID: string): Promise<Array<{ source: string; content: string }>>;
+  /** S4：gateway 侧 recall/context 最近触达时间（null = 从未）。 */
+  getRecallCalledAt(sessionID: string): number | null;
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -84,6 +88,20 @@ export async function handleConformance(
         await deps.promptAsync({ sessionID: sess.id, message: sc.prompt });
         const events = await p;
         const r = evaluateScenario(sc.id, events);
+        await deps.deleteSession(sess.id).catch(() => {});
+        results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
+      } else if (sc.id === 'cognition-observe' || sc.id === 'cognition-inject') {
+        const sess = await deps.createSession({});
+        const p = collectUntilTerminal(deps.registerEventTap, sess.id, perTimeout ?? sc.timeoutMs);
+        await deps.promptAsync({ sessionID: sess.id, message: sc.prompt });
+        await p;
+        const obs = await deps.getObservations(sess.id);
+        const cognition = {
+          sources: obs.map((o) => o.source),
+          recallCalledAt: deps.getRecallCalledAt(sess.id),
+          guideEcho: obs.filter((o) => o.source === 'assistant_reply').map((o) => o.content).join('\n'),
+        };
+        const r = evaluateScenario(sc.id, [], undefined, cognition);
         await deps.deleteSession(sess.id).catch(() => {});
         results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
       } else {

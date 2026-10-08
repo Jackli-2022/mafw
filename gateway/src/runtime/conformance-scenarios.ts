@@ -11,7 +11,7 @@ export interface ObservedEvent {
 }
 
 export interface ScenarioDef {
-  id: 'chat-roundtrip' | 'session-lifecycle';
+  id: 'chat-roundtrip' | 'session-lifecycle' | 'cognition-observe' | 'cognition-inject';
   title: string;
   description: string;
   prompt: string;
@@ -38,15 +38,39 @@ export const SCENARIOS: ScenarioDef[] = [
     timeoutMs: 15_000,
     requires: {},
   },
+  {
+    id: 'cognition-observe',
+    title: '认知面·观察捕获（T1）',
+    description: '真实回合后 T1 应有 user_input / tool_result / assistant_reply 三类观察行（宿主 observe 动词）',
+    prompt: 'Use a shell command tool to list the files in the current directory, then reply with the single word DONE.',
+    timeoutMs: 120_000,
+    requires: { eventStream: true },
+  },
+  {
+    id: 'cognition-inject',
+    title: '认知面·注入到达（recall + memory-guide）',
+    description: '边界 recall 应触达 gateway（injectContext），模型能复述 <memory-guide> 首行（injectSystem 端到端到达）',
+    prompt: 'Reply with the exact first heading line that appears inside the <memory-guide> block in your system instructions. Nothing else.',
+    timeoutMs: 90_000,
+    requires: { eventStream: true },
+  },
 ];
 
 const CONTENT_TYPES = new Set(['message.part.updated', 'message.part.delta', 'message.updated']);
 const TERMINAL_TYPES = new Set(['message.complete', 'session.idle', 'message.error', 'session.error']);
 
+/** S3/S4 观测：T1 观察行 + recall 触达时间 + 模型对 guide 的回声文本。 */
+export interface CognitionObservation {
+  sources: string[];
+  recallCalledAt?: number | null;
+  guideEcho?: string;
+}
+
 export function evaluateScenario(
   id: string,
   events: ObservedEvent[],
   apiResult?: { created: boolean; deleted: boolean },
+  cognition?: CognitionObservation,
 ): { pass: boolean; failures: string[] } {
   const failures: string[] = [];
   if (id === 'chat-roundtrip') {
@@ -59,6 +83,14 @@ export function evaluateScenario(
   } else if (id === 'session-lifecycle') {
     if (!apiResult?.created) failures.push('created session not visible in session.list');
     if (!apiResult?.deleted) failures.push('deleted session still visible in session.list (leak)');
+  } else if (id === 'cognition-observe') {
+    const sources = new Set(cognition?.sources ?? []);
+    for (const need of ['user_input', 'tool_result', 'assistant_reply']) {
+      if (!sources.has(need)) failures.push(`missing T1 observation source '${need}' — host observe verb not wired for this event class`);
+    }
+  } else if (id === 'cognition-inject') {
+    if (!cognition?.recallCalledAt) failures.push('no /api/recall/context call recorded for this session — host injectContext verb not wired');
+    if (!/记忆|memory-guide/i.test(cognition?.guideEcho ?? '')) failures.push('assistant reply does not echo the <memory-guide> heading — injectSystem did not reach the model');
   } else {
     failures.push(`unknown scenario '${id}'`);
   }

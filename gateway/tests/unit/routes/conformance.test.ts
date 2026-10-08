@@ -21,6 +21,12 @@ function makeDeps(overrides: Partial<ConformanceDeps> = {}): ConformanceDeps {
       setTimeout(() => { cb({ type: 'message.part.updated', sessionID: 't1', at: 1 }); cb({ type: 'message.complete', sessionID: 't1', at: 2 }); }, 5);
       return () => {};
     },
+    getObservations: async () => [
+      { source: 'user_input', content: 'prompt' },
+      { source: 'tool_result', content: '[shell]\nfile.txt' },
+      { source: 'assistant_reply', content: 'DONE ## 记忆' },
+    ],
+    getRecallCalledAt: () => 123,
     ...overrides,
   } as ConformanceDeps;
 }
@@ -41,7 +47,7 @@ async function post(body: unknown, deps: ConformanceDeps): Promise<any> {
 describe('POST /api/runtime/conformance', () => {
   it('runs all scenarios and reports pass summary', async () => {
     const json = await post({}, makeDeps());
-    expect(json.summary).toEqual({ pass: 2, fail: 0 });
+    expect(json.summary).toEqual({ pass: 4, fail: 0 });
     expect(json.results.every((r: any) => r.pass)).toBe(true);
     expect(json.runtime).toBe('fake-runtime');
   });
@@ -63,5 +69,31 @@ describe('POST /api/runtime/conformance', () => {
     const json = await post({ scenarios: ['session-lifecycle'] }, makeDeps());
     expect(json.results.length).toBe(1);
     expect(json.results[0].id).toBe('session-lifecycle');
+  });
+
+  it('cognition-observe fails when T1 rows missing the tool_result class', async () => {
+    const deps = makeDeps({
+      getObservations: async () => [
+        { source: 'user_input', content: 'prompt' },
+        { source: 'assistant_reply', content: 'DONE' },
+      ],
+    });
+    const json = await post({ scenarios: ['cognition-observe'] }, deps);
+    expect(json.results[0].pass).toBe(false);
+    expect(json.results[0].failures.join()).toContain('tool_result');
+  });
+
+  it('cognition-inject fails when recall never called', async () => {
+    const deps = makeDeps({ getRecallCalledAt: () => null });
+    const json = await post({ scenarios: ['cognition-inject'] }, deps);
+    expect(json.results[0].pass).toBe(false);
+    expect(json.results[0].failures.join()).toContain('recall');
+  });
+
+  it('cognition scenario marks crash (not 500) when getObservations throws', async () => {
+    const deps = makeDeps({ getObservations: async () => { throw new Error('db down'); } });
+    const json = await post({ scenarios: ['cognition-inject'] }, deps);
+    expect(json.results[0].pass).toBe(false);
+    expect(json.results[0].failures.join()).toContain('crashed');
   });
 });

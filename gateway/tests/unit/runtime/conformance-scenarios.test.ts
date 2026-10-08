@@ -44,11 +44,65 @@ describe('S2 session-lifecycle evaluator', () => {
 });
 
 describe('catalog', () => {
-  it('has 2 scenarios with prompts and timeouts', () => {
-    expect(SCENARIOS.length).toBe(2);
+  it('has 4 scenarios with prompts and timeouts', () => {
+    expect(SCENARIOS.length).toBe(4);
     for (const s of SCENARIOS) {
       expect(s.id).toBeTruthy();
       expect(s.timeoutMs).toBeGreaterThan(1000);
     }
+  });
+});
+
+describe('S3 cognition-observe evaluator', () => {
+  it('passes when user_input + tool_result + assistant_reply all present', () => {
+    const r = evaluateScenario('cognition-observe', [], undefined, {
+      sources: ['user_input', 'tool_result', 'assistant_reply'],
+    });
+    expect(r).toEqual({ pass: true, failures: [] });
+  });
+
+  it('fails and names the missing source (tool_result)', () => {
+    const r = evaluateScenario('cognition-observe', [], undefined, {
+      sources: ['user_input', 'assistant_reply'],
+    });
+    expect(r.pass).toBe(false);
+    expect(r.failures.join()).toContain('tool_result');
+  });
+
+  it('fails when no observations at all (host observe verb missing)', () => {
+    const r = evaluateScenario('cognition-observe', [], undefined, { sources: [] });
+    expect(r.pass).toBe(false);
+    expect(r.failures).toHaveLength(3);
+  });
+});
+
+describe('S4 cognition-inject evaluator', () => {
+  it('passes on guide echo + recall touch', () => {
+    const r = evaluateScenario('cognition-inject', [], undefined, {
+      sources: ['user_input', 'assistant_reply'],
+      recallCalledAt: 123,
+      guideEcho: '## 记忆',
+    });
+    expect(r).toEqual({ pass: true, failures: [] });
+  });
+
+  it('fails when recall never called (injectContext not wired)', () => {
+    const r = evaluateScenario('cognition-inject', [], undefined, {
+      sources: ['user_input', 'assistant_reply'],
+      recallCalledAt: null,
+      guideEcho: '## 记忆',
+    });
+    expect(r.pass).toBe(false);
+    expect(r.failures.join()).toContain('recall');
+  });
+
+  it('fails when guide did not reach the model (no echo)', () => {
+    const r = evaluateScenario('cognition-inject', [], undefined, {
+      sources: ['user_input', 'assistant_reply'],
+      recallCalledAt: 123,
+      guideEcho: 'I have no such block',
+    });
+    expect(r.pass).toBe(false);
+    expect(r.failures.join()).toContain('memory-guide');
   });
 });

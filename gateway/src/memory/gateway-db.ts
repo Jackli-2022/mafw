@@ -333,6 +333,14 @@ export class GatewayDatabase {
       .all(session_id, turn_id) as T1Observation[];
   }
 
+  /** conformance S3/S4：按会话取观察行（时间正序，截尾 limit）。 */
+  getObservationsBySession(sessionID: string, limit = 100): Array<{ source: string; content: string }> {
+    const rows = this.db
+      .prepare('SELECT source, content FROM t1_observations WHERE session_id = ? ORDER BY id DESC LIMIT ?')
+      .all(sessionID, limit) as Array<{ source: string; content: string }>;
+    return rows.reverse();
+  }
+
   /** Remove all observations for a session up to (and including) a turn. */
   deleteTurn(session_id: string, turn_id: number): number {
     const result = this.db
