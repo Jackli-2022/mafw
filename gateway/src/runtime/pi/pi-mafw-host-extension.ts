@@ -88,6 +88,15 @@ const MAX_BYTES: Record<string, number> = {
   'audio/': 25 * 1024 * 1024,
 };
 
+/** 查询构造（v1 session-recall 同构）：增量优先，短增量并入 assistant 尾部。 */
+export function buildRecallQuery(real: any[], increment: any[]): string {
+  const base = increment.map((m: any) => contentToText(m.content)).join('\n');
+  if (base.trim().length >= SHORT_INCREMENT_MIN) return base.slice(0, 500);
+  const lastAssistant = [...real].reverse().find((m: any) => m?.role === 'assistant');
+  const tail = lastAssistant ? contentToText(lastAssistant.content).trim().slice(-ASSISTANT_TAIL_MAX) : '';
+  return [base, tail].filter((s) => s.trim()).join('\n').slice(0, 500);
+}
+
 export function createMafwHostExtension(deps: MafwHostDeps) {
   const f = (deps.fetchImpl ?? fetch) as typeof fetch;
   const sessionId = deps.sessionId;
@@ -128,6 +137,26 @@ export function createMafwHostExtension(deps: MafwHostDeps) {
     void postJson('/api/obs/capture', { sessionID: sessionId, source, content, failure: failure ? 1 : 0 }, OBS_TIMEOUT_MS);
   }
 
+  function buildIncrement(real: any[]): any[] {
+    if (lastRealId) {
+      const idx = real.findIndex((m: any) => m?.id === lastRealId);
+      if (idx >= 0) return real.slice(idx + 1);
+    }
+    if (real.length >= lastRealCount && lastRealCount > 0) return real.slice(lastRealCount);
+    return real.slice(-8);
+  }
+
+  function appendRecall(userMsg: any, pointers: string): void {
+    const part = { type: 'text', text: pointers, synthetic: true };
+    if (typeof userMsg.content === 'string') {
+      userMsg.content = [{ type: 'text', text: userMsg.content }, part];
+    } else if (Array.isArray(userMsg.content)) {
+      userMsg.content.push(part);
+    } else {
+      userMsg.content = [part];
+    }
+  }
+
   return {
     name: 'mafw-host' as const,
     on: (pi: any) => {
@@ -153,7 +182,27 @@ export function createMafwHostExtension(deps: MafwHostDeps) {
           : String(raw ?? '');
         postObs('tool_result', `[${event?.toolName}]\n${text}`, Boolean(event?.isError));
       });
-      // injectContext / injectSystem / tools 由后续任务追加
+      // === injectContext：边界 recall（100ms 契约，fail-open） ===
+      pi.on('context', async (event: any) => {
+        const messages: any[] = Array.isArray(event?.messages) ? event.messages : [];
+        if (messages.length === 0) return undefined;
+        const real = messages.filter((m: any) => m && typeof m.role === 'string');
+        if (real.length === 0) return undefined;
+        const query = buildRecallQuery(real, buildIncrement(real));
+        if (query.trim()) {
+          const j = await getJson(`/api/recall/context?sessionID=${encodeURIComponent(sessionId)}&query=${encodeURIComponent(query)}`, RECALL_TIMEOUT_MS);
+          const pointers = j?.pointers;
+          if (pointers) {
+            const lastUser = [...real].reverse().find((m: any) => m.role === 'user');
+            if (lastUser) appendRecall(lastUser, pointers);
+          }
+        }
+        const lastReal = real[real.length - 1];
+        if (lastReal?.id) lastRealId = lastReal.id;
+        lastRealCount = real.length;
+        return { messages };
+      });
+      // injectSystem / tools 由后续任务追加
     },
   };
 }
