@@ -330,11 +330,42 @@ export class NodeDriver {
     await this.advance(goalId);
   }
 
-  /** askUser 应答——Task 8 实现。 */
-  handleAnswer(_goalId: string, _questionId: string, _answer: string): boolean { return false; }
+  /** 应答 askUser（respond 路由 / mafw_answer_question → HTTP → index.ts 调入）。 */
+  handleAnswer(goalId: string, questionId: string, answer: string): boolean {
+    const found = this.findState(goalId);
+    if (!found) return false;
+    const { mafwDir } = found;
+    const state = loadGoalState(mafwDir, goalId);
+    if (!state || !state.pendingQuestion || state.pendingQuestion.questionId !== questionId) return false;
+    this.deps.ledger.appendQuestionEvent({
+      type: 'answered', questionId, goalId, answer, answeredAt: new Date().toISOString(),
+    });
+    writeGoalState(mafwDir, goalId, {
+      pendingQuestion: null,
+      userResponse: { questionId, answer, respondedAt: new Date().toISOString() },
+      nextNode: 'plan',
+    });
+    void this.advance(goalId);
+    return true;
+  }
 
-  /** askUser 取消——Task 8 实现。 */
-  handleCancel(_goalId: string, _questionId: string): boolean { return false; }
+  /** 取消 askUser → 用户拒答，goal 无法继续 → archive_fail。 */
+  handleCancel(goalId: string, questionId: string): boolean {
+    const found = this.findState(goalId);
+    if (!found) return false;
+    const { mafwDir } = found;
+    const state = loadGoalState(mafwDir, goalId);
+    if (!state || !state.pendingQuestion || state.pendingQuestion.questionId !== questionId) return false;
+    this.deps.ledger.appendQuestionEvent({
+      type: 'cancelled', questionId, goalId, cancelledAt: new Date().toISOString(),
+    });
+    writeGoalState(mafwDir, goalId, {
+      pendingQuestion: null, lastError: `askUser cancelled by user (question ${questionId})`,
+      nextNode: 'archive_fail',
+    });
+    void this.advance(goalId);
+    return true;
+  }
 
   /** 崩溃恢复/watchdog 共用——Task 11 实现。 */
   async examineStaleNode(_goalId: string, _opts?: { probeSession?: (sessionID: string) => Promise<'alive' | 'dead'> }): Promise<void> {}
