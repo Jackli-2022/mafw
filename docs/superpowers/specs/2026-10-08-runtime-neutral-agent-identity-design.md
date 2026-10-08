@@ -1,7 +1,7 @@
 # Runtime 中立 Agent 身份（IdentityRegistry）设计
 
-> 日期：2026-10-08 · 状态：已与用户逐节确认（四节全部 ok）
-> 前序调研：`docs/research/2026-10-08-node-execution-runtime-survey.md`（install / at-prompt / config 三策略结论）
+> 日期：2026-10-08 · 状态：已与用户逐节确认（四节全部 ok）；§3.2 已按身份注入调研修订
+> 前序调研：`docs/research/2026-10-08-agent-identity-injection-survey.md`（身份注入机制，本次设计主依据）、`docs/research/2026-10-08-node-execution-runtime-survey.md`（install / at-prompt / config 三策略结论）
 > 姊妹篇：`2026-10-08-event-mapping-registration-design.md`（事件面）、HostAdapter 认知面契约（AGENTS.md §5.19）
 
 ## 1. 背景与问题
@@ -18,9 +18,12 @@ MAFW 即将接入多个 agent runtime（claude、codex、pi、dsh、kimi、zcode
 | opencode v1 | ✓ `agents.install` | 常驻注册 |
 | pi | ✓ `agentConfigApi` | 常驻注册（MAFW 自建翻译器） |
 | Claude Agent SDK | ✓ 最丰富 | **per-query 注入**（`options.agents`，不注册常驻 server） |
-| Codex SDK | ✗ | 只有 config 覆盖 + AGENTS.md |
-| dsh | ✗（developer preview） | 插件 kits 即一切 |
-| kimi / zcode | 未查证 | — |
+| Codex SDK | config 指令键（`developer_instructions` 等） | 无 install API；身份 = config 层 + per-identity 实例（调研修正：main 分支已出现 agent-roles crate，语义未验证） |
+| dsh | persona patch / SDK | YAML patch 进 Cordis 配置树（"kits"术语已废弃） |
+| kimi | **身份机制最全** | agents/*.md（body=system）+ SYSTEM.md + `--agent` 绑定；ACP 面无身份位 |
+| zcode（智谱 Z.ai） | 仅 subagent | `~/.zcode/agents/*.md`（主 Agent 不可自定义 system）；驱动契约未公开 |
+
+（Zed 经查证是 ACP **客户端**，不是可被驱动的 runtime，不在目标列表。）
 
 逐家写翻译器不可持续，且 `AgentDefinition` 的权限词汇表本身是 opencode 形状。**install 语义不能作为通用抽象，身份的源必须收到 gateway。**
 
@@ -69,31 +72,44 @@ interface IdentityPolicy {
   - manager：`deny=[file-edit, subagent]`，`allowlist=[mafw_*（38 个）+ question + plan_exit + shell + read/grep/glob/ls]`
   - memory-curator：`deny=[file-edit, shell, web]`，`allowlist=[记忆三工具 + read/grep/glob/ls]`（对齐现有 HARD_BOUNDARIES）
 
-### 3.2 身份注入——三条车道
+### 3.2 身份注入——物化为主的三车道（调研实证修订）
+
+调研结论（identity-injection survey）：身份注入的业界事实标准 = **物化（materialization）+ 创建时绑定**，无一例外用消息位做持久身份；compaction 免疫普遍由 runtime 自己保证（Codex strip+重建 / Kimi 每次构建重渲染 / dsh 每步组装重派生 / Claude 旗标重建）。
 
 ```
-                    ┌─ 车道1：原生策略 ──── promptAsync({agent:'X'}) ──→ runtime 原生 agent 定义
-                    │   （install 派生物：原生 system + 原生硬护栏）
-session→identity 绑定 ─┼─ 车道2：system 策略 ── promptAsync({system}) ──→ gateway 组装身份提示词
-                    │   （网关策略层护栏；compaction 免疫——每次重组）
-                    └─ 车道3：prepend 策略 ── 身份块前置进消息首部 ──→ 最弱兜底
-                        （连 per-prompt system 都没有的 runtime；网关策略层护栏）
+              ┌─ 车道1（默认·主通道）：物化 + 绑定
+              │   registry → runtime 插件的 materializer 渲染成原生格式（落盘/进 config）
+session→identity ─┼─ 车道2（兜底）：宿主扩展 injectSystem（认知面动词，per-turn 重组）
+              └─ 车道3（最弱兜底）：消息位追加（hooks additionalContext / ACP prompt 前缀）
 ```
+
+**车道 1 的物化目标与绑定机制**（形态 A：md + frontmatter，body = system prompt；形态 B：config 指令键/补丁）：
+
+| runtime | 物化目标 | 绑定机制 |
+|---|---|---|
+| opencode | `~/.config/opencode/agent/<name>.md`（现役 `installAgentFile` 即物化器） | per-prompt `agent` 参数 |
+| pi | `~/.pi/agent/prompts/<name>.md`（现役 `pi-agent-config`） | per-prompt `agent` 参数 |
+| claude | Agent SDK `options.agents`（per-query 程序化，动态工厂官方推荐）或 `.claude/agents/*.md` | `options.agent` / agent 参数 |
+| codex | config 层 `developer_instructions`（追加 developer 位，比 `instructions` 整替安全）；TS SDK **每身份一个 Codex 实例**，或 app-server v2 per-thread 指令 | per-identity 实例 / thread 参数 |
+| kimi | `agents/*.md`（作用域目录）+（可选）`SYSTEM.md` | `--agent`；Server API 会话（**身份必须落盘**——API 的 `system_prompt` 是占位不生效） |
+| dsh | personaPrefix/Suffix patch（YAML）或 Python SDK `DSH_SYSTEM_PROMPT` | acp profile + patch / SDK |
+| zcode | `~/.zcode/agents/<name>.md`（**仅 subagent**；主 Agent 不可自定义 → primary 身份走车道 2/3） | 新会话生效 |
 
 **选道规则（确定性）**：
 
 ```
-if (该 runtime 已成功原生安装身份 X)   → 车道1（promptAsync 带 agent: 'X'，不再传 system 防双重注入）
-else if (适配器支持 per-prompt system) → 车道2
-else                                   → 车道3
+if (runtime 插件能为身份 X 物化)  → 车道1（物化+绑定；prompt 带 agent 选择器，不再传 system 防双重注入）
+else if (runtime 有宿主扩展)      → 车道2（injectSystem 每轮组装身份块，与 memory-guide 同拍）
+else                              → 车道3（消息位追加，声明式）
 ```
 
 **关键性质**：
-- **单一源无漂移**：车道 1 的原生定义本就是 `toAgentDefinition(spec)` 派生物——同一份 systemPrompt。
-- **compaction 免疫**：车道 1 的 system 在 agent 定义里、车道 2 每次 prompt 重组——修复现状 `[SYSTEM]` 消息被 compaction 稀释的缺陷。
-- **已验证地基**：opencode 适配器（`opencode-adapter.ts:94-105`）与 pi（`pi-session.ts:98`）均支持 per-prompt `system` + `agent`——车道 1/2 当天可用；codex 类落车道 2/3。
+- **单一源无漂移**：物化永远从 `toAgentDefinition(spec)` 派生。
+- **compaction 免疫责任分界**：车道 1 = runtime 承担（逐家实证）；车道 2 = MAFW per-turn 重组（天然免疫）；车道 3 = 不免疫（仅声明）。
 - **绑定记录**：gateway 驱动的会话在创建时登记 `session→identity`（泛化现有 `registerInternalSession` 的 role 标记）；用户经桌面/TUI 选身份则为回合级绑定——gateway 在翻译选身份的 prompt 时登记（策略层需要绑定才能评估该回合的工具调用），回合结束不持久。
-- **职责分界**：编排面运身份（system 参数），认知面运记忆（memory-guide/pinned 继续走 HostAdapter injectSystem）——车道 2 的 system 参数只装身份提示词，不重复装记忆块。
+- **职责分界**：编排面运身份物化与绑定，认知面运记忆（memory-guide/pinned 继续走 HostAdapter injectSystem）——车道 2 复用认知面通道但身份仍由注册表派生，不重复装记忆块。
+- **`injectManagerIdentity`（一次性 `[SYSTEM]` 消息）被车道 1/2 替换**——修复身份消息被 compaction 稀释的现状缺陷。
+- **opencode per-prompt `system` 参数车道撤销**（append/replace 语义未验证且不再需要——物化+agent 参数已覆盖）。
 
 ### 3.3 网关策略层——IdentityPolicy 评估
 
@@ -124,10 +140,11 @@ evaluate(sessionID, tool):
 
 ### 3.4 原生通道收编、客户端合并、迁移兼容
 
-**原生优化通道统一收编**：
+**物化通道统一收编**：
+- `agents.install` 契约动词保留，语义扩展为**物化**——各 runtime 插件实现各自格式（opencode 写 agent md / pi 写 prompts / 未来 claude/codex/kimi/dsh 各自渲染）。opencode/pi 现役实现即物化器，零重写。
 - index.ts 启动时两处 install 改为遍历注册表派生：`for identity of registry: if runtime.agentConfigApi → agents.install(name, toAgentDefinition(spec))`。
-- install 成功与否按 `(runtime, identity)` 记录 → 驱动车道选择。runtime 热切换时随 createRuntime 包装器重跑 install。
-- `agentConfigApi` 语义不变但降级为优化通道：缺失时 warn 降为 info（"无原生优化，走网关策略层"）。
+- 物化成功与否按 `(runtime, identity)` 记录 → 驱动车道选择。runtime 热切换时随 createRuntime 包装器重跑物化。
+- `agentConfigApi` 缺失 = 该 runtime 插件未实现物化 → 落车道 2/3；warn 降为 info（"无物化通道，走 injectSystem/消息位兜底"）。
 
 **桌面/TUI agent 列表合并**：
 - `GET /api/agents` 合并输出：注册表身份（`source: 'mafw'`）+ runtime 原生 agents（`source: 'runtime'`），注册表在前。任何 runtime 上 manager 都出现在列表（今天 pi 下列表恒空）。
@@ -142,8 +159,8 @@ evaluate(sessionID, tool):
 
 ## 4. 测试与验证
 
-- **单元**：identity-registry（条目/派生/遍历）、IdentityPolicy 评估（deny-first 顺序、白名单语义、类别解析两表）、prompt 路由身份感知（车道翻译）。
-- **conformance 新场景 S5 `identity-roundtrip`**：起 manager 会话 → 断言 system 含身份块 + 白名单内工具放行、`file-edit` 被拒。
+- **单元**：identity-registry（条目/派生/遍历）、物化器（`toAgentDefinition` 派生、(runtime, identity) 成功记录、车道选择规则）、IdentityPolicy 评估（deny-first 顺序、白名单语义、类别解析两表）、prompt 路由身份感知。
+- **conformance 新场景 S5 `identity-roundtrip`**：起 manager 会话 → 断言身份经车道 1（agent 定义）或车道 2（injectSystem）到达模型 + 白名单内工具放行、`file-edit` 被拒。
 - **回归基线**：240 suites / 1628 tests 全绿（当前 v4.20.0）。
 - **线上探针**：opencode 与 pi 双 runtime 验证车道 1 生效（manager prompt 落在 agent 定义上）；dry-run 车道 2（模拟无 agentConfigApi runtime）。
 
