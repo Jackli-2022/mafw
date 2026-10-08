@@ -9,7 +9,9 @@ import { spawn, execSync } from 'child_process';
 import { config } from "./config";
 import { log } from './core/utils/logger';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
-import { buildExecutionGraph, FileCheckpointer, planNode, executeNode, reviewNode, syncToDashboard } from './core/langgraph';
+import { NodeDriver } from './core/goal/driver';
+import { ensureGoalState, loadGoalState } from './core/goal/state-v3';
+import { resolveGoalDir } from './core/goal/starter';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
 
@@ -17,7 +19,6 @@ import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
 import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
-import { createMemorySearch } from "./interceptors/memory-injector";
 import { createToolRegistry } from "./mcp/tool-registry";
 import { abstractionLevelFor } from './core/memory/abstraction-level';
 import { MemoryService } from "./memory/service";
@@ -75,7 +76,6 @@ import { ensureManagerRules } from './core/manager/system-rule-templates';
 import { ensureMemoryPipelineRules } from './recall/pipeline-rules';
 import { MilestonePushNotifier } from './core/manager/milestone-push';
 import { buildGoalSnapshot } from './core/manager/goal-snapshot';
-import { MultiServerMCPClient } from 'langchain-mcp-adapters';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PushGateway } from './mobile/push-gateway';
 import { DeviceStore } from './mobile/device-store';
@@ -294,6 +294,9 @@ class MafwScheduler {
   // 单一事实源；state 持 session→identity 绑定与 (runtime, identity) 物化状态。
   private identityRegistry = createBuiltinIdentityRegistry();
   private identityState = new IdentityState();
+  // Goal 编排 P1：NodeDriver（state 文件 + 事件驱动重入，替代 langgraph invoke）。
+  private goalDriver: NodeDriver | null = null;
+  private goalDriverMafwDirCache = new Map<string, string>();
   private getReflectCursor(): ReflectCursor {
     return new ReflectCursor(this.getGatewayDb());
   }
@@ -642,6 +645,42 @@ class MafwScheduler {
     // agents.install 的语义即物化：opencode 写 agent md、pi 写 prompts+extension。
     await this.materializeIdentities();
 
+    // 5.2 Goal NodeDriver（spec 2026-10-08-goal-orchestration-p1）：state 文件驱动的
+    // 编排状态机。client 直连 sdkSession（agent 参数显式绑定身份）；memory 注入由
+    // 边界 recall（消息 transform / pi host extension）按每 LLM 调用覆盖，故不再走
+    // legacy withMemoryInjection 全量注入。
+    this.goalDriver = new NodeDriver({
+      client: {
+        create: async (directory: string) => {
+          const rec = await this.sdkSession.create(directory);
+          return { id: rec.id };
+        },
+        promptAsync: async (opts) => {
+          const text = opts.parts.find((p) => p.type === 'text')?.text ?? '';
+          await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent);
+        },
+        delete: (sessionID: string) => this.sdkSession.delete(sessionID),
+        abort: async (sessionID: string) => { await this.runtime!.session.abort({ sessionID }); },
+      },
+      db: {
+        insertNodeRun: (i) => this.getGatewayDb().insertNodeRun(i),
+        finishNodeRun: (id, p) => this.getGatewayDb().finishNodeRun(id, p),
+        listNodeRuns: (g) => this.getGatewayDb().listNodeRuns(g),
+        latestNodeAttempt: (g, l, n) => this.getGatewayDb().latestNodeAttempt(g, l, n),
+      },
+      ledger: new QuestionLedger(this.mafwDir),
+      emitNodeEvent: (p) => this.broadcast(p as any), // 扁平顶层广播（wire 契约 §5.6）
+      emitPhaseTransition: (p) => eventBus.emit('phase_transition', p),
+      onSessionCreated: (info) => {
+        recordSessionInDb(this.getGatewayDb(), info);
+        const mafwDir = this.goalDriverMafwDirCache.get(info.goalId);
+        if (mafwDir) this.attachBudgetGuardForGoal(info.goalId, info.sessionId, mafwDir);
+      },
+      archiveGoal: (goalId, opts) => this.archiveGoal(goalId, opts as any),
+      nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
+      maxAttempts: 2,
+    });
+
     // 6. 恢复活跃 Goal
     await this.recoverState();
 
@@ -862,7 +901,7 @@ class MafwScheduler {
           log.info(`[Events] Received: ${event.type} for ${event.goalId || ''}`);
           this.broadcast(event);
           if (event.goalId && this.activeGoals.has(event.goalId)) {
-            setImmediate(() => this.onEvent(event.goalId));
+            setImmediate(() => void this.goalDriver?.advance(event.goalId));
           }
           fs.unlinkSync(filePath);
         } catch {
@@ -1005,6 +1044,13 @@ class MafwScheduler {
       if (taps && taps.size) {
         const snap = { type: f.type, sessionID, at: Date.now() };
         for (const t of taps) { try { t(snap); } catch { /* fail-open */ } }
+      }
+    }
+    // Goal node listeners: NodeDriver 完成/失败双门的事件侧（spec §3）。
+    if (sessionID) {
+      if (type === 'session.idle' || f.broadcast === 'idle') this.goalDriver?.onSessionIdle(sessionID);
+      if (f.broadcast === 'error' || type === 'session.error') {
+        this.goalDriver?.onSessionError(sessionID, String(props?.error ?? 'session error'));
       }
     }
     // Approval policy：asked 事件先于 internal 过滤与 Mode A 广播评估（内部会话
@@ -2626,11 +2672,12 @@ class MafwScheduler {
   private setupEventBus() {
     eventBus.on("goal_created", (data: any) => {
       this.broadcast({ type: "goal_created", ...data });
-      if (data.goalId) setImmediate(() => this.onEvent(data.goalId));
+      if (data.goalId) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
     });
     eventBus.on("state_change", (data: any) => {
       this.broadcast({ type: "state_change", ...data });
-      if (data.goalId) setImmediate(() => this.onEvent(data.goalId));
+      // legacy /goal skill 链唤醒——driver.advance 幂等（在飞即短路）
+      if (data.goalId) setImmediate(() => void this.goalDriver?.advance(data.goalId));
     });
     eventBus.on("user_question", (data: any) => {
       this.broadcast({ type: "user_question", ...data });
@@ -3980,30 +4027,15 @@ class MafwScheduler {
             return;
           }
           if (data.type === 'cancel') {
-            ledger.appendQuestionEvent({
-              type: 'cancelled', questionId, goalId, cancelledAt: new Date().toISOString(),
-            });
+            // NodeDriver 写 ledger cancelled + state → archive_fail（不再依赖 langgraph）
+            this.goalDriver?.handleCancel(goalId, questionId);
             eventBus.emit('question_cancelled', { questionId, goalId });
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'accepted', action: 'cancelled' }));
             return;
           }
-          // answer or redirect
-          ledger.appendQuestionEvent({
-            type: 'answered', questionId, goalId,
-            answer: data.answer || '', answeredAt: new Date().toISOString(),
-          });
-          // Resume graph
-          const found = this.findGoalStatePath(goalId);
-          if (found) {
-            const cp = new FileCheckpointer(found.info.mafwDir);
-            const graph = buildExecutionGraph(this.buildNodeOptions(found.info.mafwDir));
-            graph.checkpointer = cp;
-            const { Command } = await import('@langchain/langgraph');
-            await graph.invoke(new Command({ resume: { answer: data.answer || '' } }) as any, {
-              configurable: { thread_id: goalId },
-            });
-          }
+          // answer or redirect —— NodeDriver（state 驱动，langgraph Command 退役）
+          this.goalDriver?.handleAnswer(goalId, questionId, data.answer || '');
           eventBus.emit('question_answered', { questionId, goalId, answer: data.answer });
           res.writeHead(200);
           res.end(JSON.stringify({ status: 'accepted' }));
@@ -5957,7 +5989,6 @@ class MafwScheduler {
       if (!this.running) return;
       try {
         await this.discoverNewGoals();
-        await this.resumeStaleThreads();
       } catch (err: any) {
         log.error('[Scheduler] Backup poll error:', err.message);
       }
@@ -6259,53 +6290,33 @@ class MafwScheduler {
   }
 
   private async handleValidate(goalId: string, data?: { projectDir?: string }): Promise<any> {
-    let projectDir: string;
-    let mafwDir: string;
-    if (data?.projectDir && this.registeredProjects.has(data.projectDir)) {
-      projectDir = data.projectDir;
-      mafwDir = this.registeredProjects.get(data.projectDir)!.mafwDir;
-    } else {
-      const first = this.registeredProjects.values().next().value;
-      if (!first) throw new Error('No registered projects');
-      projectDir = first.projectDir;
-      mafwDir = first.mafwDir;
-    }
-
-    const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
-    if (fs.existsSync(statePath)) {
-      throw new Error('Goal already exists');
-    }
-
-    const stateDir = path.dirname(statePath);
-    if (!fs.existsSync(stateDir)) {
-      fs.mkdirSync(stateDir, { recursive: true });
-    }
-
-    const state: StateFile = {
-      version: '2', goalId, loop: 1, phase: 'PLANNING',
-      lastPhase: null, currentWave: 0, totalWaves: null,
-      sessions: {}, nextAction: 'GRAPH_INVOKED', artifacts: {},
-      updatedAt: new Date().toISOString(),
-      policySnapshot: mergeBudgetIntoSnapshot(
-        (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
-        path.join(mafwDir, 'requests', `${goalId}.json`),
-      ),
-    };
-
-    const tmpPath = `${statePath}.tmp`;
-    fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, statePath);
-
-    this.activeGoals.set(goalId, state);
-
-    // 立即触发 graph invoke（事件驱动）
-    setImmediate(() => this.onGoalCreated(goalId, projectDir, mafwDir));
-
+    setImmediate(() => void this.startGoal(goalId, data?.projectDir));
     return { success: true, goalId, nextAction: 'GRAPH_INVOKED' };
   }
 
+  /** Goal starter（spec §4）：定位目标项目 → ensureState(v3) → NodeDriver.advance。 */
+  private async startGoal(goalId: string, projectDirHint?: string): Promise<void> {
+    const projects = Array.from(this.registeredProjects.entries())
+      .map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir }));
+    const found = resolveGoalDir(projects, projectDirHint, (mafwDir) =>
+      fs.existsSync(path.join(mafwDir, 'requests', `${goalId}.json`)));
+    if (!found) { log.warn(`[Goal] ${goalId}: no project dir resolved — skipping`); return; }
+    this.goalDriverMafwDirCache.set(goalId, found.mafwDir);
+    this.goalDriver?.registerGoalDir(goalId, found.mafwDir);
+    ensureGoalState(found.mafwDir, goalId, {
+      projectDir: found.projectDir,
+      maxRounds: config.loop.maxRounds,
+      policySnapshot: mergeBudgetIntoSnapshot(
+        (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
+        path.join(found.mafwDir, 'requests', `${goalId}.json`),
+      ),
+    });
+    this.activeGoals.set(goalId, loadGoalState(found.mafwDir, goalId) as any);
+    await this.goalDriver?.advance(goalId);
+  }
+
   private async handleComplete(goalId: string, data?: { score?: number }): Promise<any> {
-    setImmediate(() => this.onEvent(goalId));
+    setImmediate(() => void this.goalDriver?.advance(goalId));
     return { success: true, nextAction: 'SCHEDULED' };
   }
 
@@ -6384,208 +6395,6 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   // 鈹€鈹€ LangGraph Node Options 鈹€鈹€
-
-  private createInProcessClient(): { session: { create(opts: { directory: string }): Promise<{ id: string }>; promptAsync(opts: { sessionID: string; parts: Array<{ type: string; text: string }> }): Promise<void>; delete(opts: { sessionID: string }): Promise<void> } } {
-    const resource = this.sdkSession;
-
-    let promptAsync: (opts: { sessionID: string; parts: Array<{ type: string; text: string }> }) => Promise<void>;
-
-    if (this.memoryService) {
-      const memorySearch = createMemorySearch(
-        this.memoryService.parametricStore,
-        this.memoryService.deltaInjector,
-        this.memoryService.harmonicIndex,
-      );
-      const wrapped = resource.createPromptAsyncWithInjection(memorySearch);
-      promptAsync = async (opts) => {
-        const message = opts.parts.find(p => p.type === 'text')?.text || '';
-        return wrapped(opts.sessionID, message);
-      };
-    } else {
-      promptAsync = async (opts) => {
-        const message = opts.parts.find(p => p.type === 'text')?.text || '';
-        return resource.promptAsync(opts.sessionID, message);
-      };
-    }
-
-    return {
-      session: {
-        create: async (opts) => resource.create(opts.directory),
-        promptAsync,
-        delete: async (opts) => resource.delete(opts.sessionID),
-      },
-    };
-  }
-
-  private buildNodeOptions(mafwDir: string) {
-    const syncToFile = (state: any) => {
-      syncToDashboard({ ...state, mafwDir });
-      if (state.goalId && state.phase) {
-        eventBus.emit("phase_transition", {
-          type: "phase_transition",
-          goalId: state.goalId,
-          phase: state.phase,
-          loop: state.round ?? 0,
-          projectDir: state.projectDir,
-        });
-      }
-    };
-    const client = this.createInProcessClient();
-    const onSessionCreated = (info: { goalId: string; sessionId: string; phase: string; loop: number }) => {
-      recordSessionInDb(this.getGatewayDb(), {
-        goalId: info.goalId,
-        sessionId: info.sessionId,
-        phase: info.phase,
-        loop: info.loop,
-      });
-      this.attachBudgetGuardForGoal(info.goalId, info.sessionId, mafwDir);
-    };
-    return {
-      plan: async (s: any) => planNode(s, {
-        client,
-        syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
-        onSessionCreated,
-      }),
-      askUser: async (s: any) => {
-        syncToFile({ ...s, pendingQuestion: null, phase: 'ASKING_USER', mafwDir });
-        const { interrupt } = await import('@langchain/langgraph');
-        const userResponse = interrupt({
-          type: "user_question",
-          goalId: s.goalId,
-          questionId: s.pendingQuestion?.questionId,
-          questions: s.pendingQuestion?.questions,
-        });
-        return { pendingQuestion: null, userResponse };
-      },
-      execute: async (s: any) => executeNode(s, {
-        client,
-        syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
-        onSessionCreated,
-      }),
-      review: async (s: any) => reviewNode(s, {
-        client,
-        syncToFile: (st: any) => syncToFile({ ...s, ...st, projectDir: s.projectDir, mafwDir }),
-        onSessionCreated,
-      }),
-      archiveSuccess: async (s: any) => {
-        log.info(`[Scheduler] Goal ${s.goalId} PASSED`);
-        syncToFile({ ...s, phase: 'ARCHIVED' });
-        await this.archiveGoal(s.goalId, { verdict: 'PASS', rounds: s.round, reviewFeedback: s.reviewFeedback });
-        return {};
-      },
-      archiveFail: async (s: any) => {
-        log.error(`[Scheduler] Goal ${s.goalId} FAILED: ${s.lastError}`);
-        syncToFile({ ...s, phase: 'FAILED' });
-        await this.archiveGoal(s.goalId, { verdict: 'FAIL', rounds: s.round, lastError: s.lastError, reviewFeedback: s.reviewFeedback });
-        return {};
-      },
-      archiveMaxRetries: async (s: any) => {
-        log.error(`[Scheduler] Goal ${s.goalId} max retries`);
-        syncToFile({ ...s, phase: 'FAILED' });
-        await this.archiveGoal(s.goalId, { verdict: 'MAX_RETRIES', rounds: s.round, lastError: s.lastError });
-        return {};
-      },
-    };
-  }
-
-  private async initLangChainTools() {
-    try {
-      const mcpClient = new MultiServerMCPClient({
-        "mafw-server": {
-          url: config.server.mcpUrl,
-          transport: "sse",
-        },
-      });
-      const tools = await mcpClient.getTools();
-      log.info(`[LangChain] Loaded ${tools.length} MCP tools`);
-      return tools;
-    } catch (err) {
-      log.warn('[LangChain] MCP client init failed (non-fatal):', err);
-      return [];
-    }
-  }
-
-  private async onGoalCreated(goalId: string, projectDir: string, mafwDir: string) {
-    const cp = new FileCheckpointer(mafwDir);
-    const graph = buildExecutionGraph(this.buildNodeOptions(mafwDir));
-    graph.checkpointer = cp;
-    
-    // Write policy snapshot to state file
-    try {
-      const { getActivePolicy } = await import('./orchestration/policy.js');
-      const policy = getActivePolicy(mafwDir);
-      const statePath = path.join(mafwDir, 'state', `${goalId}.json`);
-      if (fs.existsSync(statePath)) {
-        const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-        state.policySnapshot = mergeBudgetIntoSnapshot(
-          {
-            version: policy.version,
-            proposalId: policy.proposalId,
-          },
-          path.join(mafwDir, 'requests', `${goalId}.json`),
-        );
-        fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf-8');
-      }
-    } catch (err: any) {
-      log.warn(`[Scheduler] Failed to write policySnapshot for ${goalId}: ${err.message}`);
-    }
-    
-    const initialState: any = {
-      goalId, projectDir, mafwDir,
-      round: config.loop.initialRound, maxRounds: config.loop.maxRounds,
-      wavePlanPath: null, receiptPath: null,
-      reviewVerdict: 'FAIL' as const,
-      reviewReportPath: null, reviewFeedback: '', lastError: null,
-    };
-    await graph.invoke(initialState, {
-      configurable: { thread_id: goalId },
-    });
-  }
-
-  private async onEvent(goalId: string) {
-    const found = this.findGoalStatePath(goalId);
-    if (!found) return;
-    const { info } = found;
-    const cp = new FileCheckpointer(info.mafwDir);
-    const current = await cp.getCurrentState(goalId);
-    if (!current || ['ARCHIVED', 'FAILED'].includes(current.phase)) return;
-
-    const graph = buildExecutionGraph(this.buildNodeOptions(info.mafwDir));
-    graph.checkpointer = cp;
-    await graph.invoke(null, {
-      configurable: { thread_id: goalId },
-    });
-    await this.syncFromCheckpoint(goalId, cp);
-  }
-
-  private async syncFromCheckpoint(goalId: string, cp: FileCheckpointer) {
-    const current = await cp.getCurrentState(goalId);
-    if (!current) return;
-    syncToDashboard({
-      goalId, round: current.round,
-      phase: current.phase,
-      reviewVerdict: current.verdict,
-      lastError: current.lastError || null,
-    } as any);
-  }
-
-  private async resumeStaleThreads() {
-    for (const [, info] of this.registeredProjects) {
-      const checkpointsDir = path.join(info.mafwDir, 'checkpoints');
-      if (!fs.existsSync(checkpointsDir)) continue;
-      const threads = fs.readdirSync(checkpointsDir);
-      for (const threadId of threads) {
-        if (!this.activeGoals.has(threadId)) {
-          const cp = new FileCheckpointer(info.mafwDir);
-          const state = await cp.getCurrentState(threadId);
-          if (state && state.phase !== 'ARCHIVED' && state.phase !== 'FAILED') {
-            log.info(`[Scheduler] Resuming stale thread ${threadId}`);
-            await this.onEvent(threadId);
-          }
-        }
-      }
-    }
-  }
 
   private async handleDashboardAPI(req: http.IncomingMessage): Promise<any> {
     if (req.url?.startsWith("/api/goals")) {
