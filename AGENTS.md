@@ -908,8 +908,7 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
 - **三端**：desktop 🛡 按钮三档循环 + PermissionCard「记此前缀(P)/记此工具(T)」双按钮 +
   ApprovalsSection 切 rules API；TUI `/permissions` 三档循环 + 状态栏 `permLabel`（`🛡 全开`）+ overlay
   五项（once/always/persist/persist-tool/reject）
-- **已知边界**：pi 扩展内置 `autoApprove`（read/grep/ls/find/glob）先于 gateway 放行的旁路未统一——
-  这些只读工具在 MAFW 层本也放行，语义一致；opencode 原生 agent permission 配置与 MAFW 层正交保留
+- ~~pi 扩展内置 `autoApprove` 旁路~~（**2026-10-08 已修**：pi tool_call 先经 `evaluatePermission` 同步直评，ask→政策环兜底，见 §5.19 mafw-host）；opencode 原生 agent permission 配置与 MAFW 层正交保留
 - `questionApi?: boolean` + `session.question.{list,reply,reject}` — 原生 question 通道（opencode v2 SDK
   `session.question.*` 直连；pi 无 question API 不实现）；`/api/questions*` 能力门按
   `questionApi ?? nativeApprovals` 向后兼容
@@ -967,6 +966,8 @@ runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应
 - 事件：`PiEventStream`（subscribe → RawRuntimeEvent → normalize.ts 四信号 session.idle/session.error/message.part.updated/message.updated）
 - external=true：gateway 不 spawn；外部 runtime 的事件订阅与 serveReady 解耦（不等 opencode serve）
 - 媒体 agent 消费 AgentRuntime（Phase 2，见 `docs/superpowers/specs/2026-08-27-pi-runtime-design.md`）
+
+**认知面宿主扩展 mafw-host（2026-10-08，Phase 2）**：`runtime/pi/pi-mafw-host-extension.ts`，随会话 factory 注入（create/fork 双路径，`runtime.pluginConfig.pi.hostExtension !== false` 默认开）。四动词：observe（message_end user/assistant+thinking + tool_result → loopback `/api/obs/capture`）、injectContext（context 事件，双模游标=id 优先/count 回退，短增量并入 assistant 尾部，100ms fail-open，synthetic part 标记防回流）、injectSystem（before_agent_start 链式追加 `<memory-guide>` + pinned `<user-profile>`）、tools（六件套 registerTool，typebox 经 ESM 桥 import `@earendil-works/pi-coding-agent/node_modules/typebox` 取同实例）。与 v1 插件完全同出口（loopback HTTP）——ACT-R 结算/FOK 采样/内部会话过滤零漂移。**approval 旁路已修（2026-10-08）**：静态 autoApprove 五件套删除，改为 `evaluatePermission`（ApprovalPolicyService.evaluate 同步直评，index.ts 三处 runtime 赋值点注入）+ ask→政策环（applyApprovalPolicy）兜底；`ApprovalPolicy.autoApprove` 语义 = 会话动态 allowlist + config 显式预置。
 
 #### nativeApprovals 翻译层（pi runtime）
 

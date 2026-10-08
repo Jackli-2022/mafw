@@ -1,13 +1,13 @@
 {
   "name": "@jack200714/mafw",
-  "version": "4.17.0",
+  "version": "4.18.0",
   "description": "MAFW Loop Agent Plugin for OpenCode - Phase Relay + TMEM + Dynamic Compression",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Jackli-2022/mafw.git"
   },
   "bin": {
-    "mafw": "./bin/mafw.js"
+    "mafw": "bin/mafw.js"
   },
   "main": "dist/plugin.js",
   "opencode": {
@@ -76,5 +76,17 @@
   },
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "directories": {
+    "doc": "docs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "types": "./dist/plugin.d.ts",
+  "bugs": {
+    "url": "https://github.com/Jackli-2022/mafw/issues"
+  },
+  "homepage": "https://github.com/Jackli-2022/mafw#readme"
 }
