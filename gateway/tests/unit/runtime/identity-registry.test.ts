@@ -9,8 +9,10 @@ const manager = registry.get('manager')!;
 const curator = registry.get('memory-curator')!;
 
 describe('builtin identities', () => {
-  it('has manager (primary) and memory-curator (worker)', () => {
-    expect(registry.list().map((i) => i.name).sort()).toEqual(['manager', 'memory-curator']);
+  it('has manager (primary), memory-curator + goal nodes (worker)', () => {
+    expect(registry.list().map((i) => i.name).sort()).toEqual([
+      'mafw-execute', 'mafw-plan', 'mafw-review', 'manager', 'memory-curator',
+    ]);
     expect(manager.scope).toBe('primary');
     expect(curator.scope).toBe('worker');
     expect(manager.systemPrompt).toContain('MAFW MANAGER IDENTITY');
