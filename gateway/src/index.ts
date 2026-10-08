@@ -86,7 +86,14 @@ import { PairingService } from './mobile/pairing';
 import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-update';
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
-import { RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
+import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
+import { wrapGlobalEventStream } from './runtime/event-mapper';
+
+/** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。 */
+const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
+  ...Object.keys(EVENT_FLOW_MATRIX),
+  ...RUNTIME_NATIVE_DROPPED,
+]);
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
 import { ApprovalPolicyService } from './core/approval/policy-service';
@@ -442,6 +449,7 @@ class MafwScheduler {
 
     // 2. 初始化 runtime 插件加载器
     this.runtimeLoader = new RuntimePluginLoader(config.resolvePath('runtime-plugins'));
+    this.runtimeLoader.setCanonicalTypes(CANONICAL_TYPE_SET);
     await this.runtimeLoader.init();
     // 内置插件注册：pi-coding-agent runtime（进程内 SDK 嵌入）
     this.runtimeLoader.registerBuiltin('pi', createPiRuntime, PI_CAPABILITIES, true);
@@ -1144,6 +1152,21 @@ class MafwScheduler {
           if (issues.length > 0) {
             for (const issue of issues) log.error(`[Runtime] shape violation: ${issue}`);
             throw new Error(`runtime '${rt.name}' failed shape validation (${issues.length} issue(s)) — see logs`);
+          }
+          // 事件映射声明：插件声明的 eventMappings 在 gateway 侧包装其原生流，
+          // 使原生事件进入 canonical 管线（opencode 无声明 → 不包装，零风险）。
+          if (plugin.eventMappings?.length) {
+            wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
+              try {
+                const { firstSeen } = this.unknownEventTracker.record(rt.name, t);
+                if (firstSeen) {
+                  log.warn(
+                    `[SSE] runtime '${rt.name}' native event '${t}' unmapped — dropped ` +
+                    `(declare it in eventMappings or handle via transformEvent)`,
+                  );
+                }
+              } catch { /* fail-open */ }
+            });
           }
           log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
           return rt;

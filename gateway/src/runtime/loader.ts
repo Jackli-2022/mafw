@@ -13,6 +13,7 @@ import { config } from '../config';
 import { AgentRuntime, RuntimeCapabilities, RuntimeCredentials, minimalCapabilities } from './contract';
 import { isKnownEventType } from './event-telemetry';
 import { checkEventFields } from './event-field-contract';
+import { EventMappingEntry, validateEventMappings } from './event-mapper';
 import type { RuntimePackageEntry } from '../plugins/package-types';
 
 export interface RuntimePluginContext {
@@ -50,16 +51,28 @@ export interface RuntimePluginState {
 
 export class RuntimePluginLoader {
   private factories = new Map<string, RuntimeFactory>();
-  private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean }>();
+  private meta = new Map<string, { capabilities: RuntimeCapabilities; external: boolean } & EventMappingEntry>();
   private state = new Map<string, RuntimePluginState>();
-  private builtins = new Map<string, { factory: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean }>();
+  private builtins = new Map<string, { factory: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean } & EventMappingEntry>();
   private packageEntries = new Map<string, RuntimePackageEntry>();
+  /** canonical 词汇表（校验 eventMappings.to 用）——index.ts 注入，避免 loader 依赖矩阵。 */
+  private canonicalTypes: ReadonlySet<string> = new Set();
 
   constructor(private pluginsDir: string) {}
 
-  /** 注册内置插件（优先级低于文件插件）。 */
-  registerBuiltin(name: string, factory: RuntimeFactory, capabilities: RuntimeCapabilities, external: boolean): void {
-    this.builtins.set(name, { factory, capabilities, external });
+  setCanonicalTypes(types: ReadonlySet<string>): void {
+    this.canonicalTypes = types;
+  }
+
+  /** 注册内置插件（优先级低于文件插件）。extras 携带事件映射声明（纯数据）。 */
+  registerBuiltin(
+    name: string,
+    factory: RuntimeFactory,
+    capabilities: RuntimeCapabilities,
+    external: boolean,
+    extras?: EventMappingEntry,
+  ): void {
+    this.builtins.set(name, { factory, capabilities, external, ...(extras ?? {}) });
   }
 
   async init(): Promise<void> {
@@ -125,10 +138,27 @@ export class RuntimePluginLoader {
       }
       // 能力合并：插件声明覆盖在 Tier-0 基线之上
       const capabilities: RuntimeCapabilities = { ...minimalCapabilities(), ...(mod.capabilities || {}) };
+      // 事件映射声明（纯数据）：eventSource + eventMappings + transformEvent
+      const eventExtras: EventMappingEntry = {
+        eventSource: mod.eventSource,
+        eventMappings: Array.isArray(mod.eventMappings) ? mod.eventMappings : undefined,
+        transformEvent: typeof mod.transformEvent === 'function' ? mod.transformEvent : undefined,
+      };
+      // 加载期校验：未知 canonical to / 坏路径 → eventStream 能力降级 + error 状态（fail-open，仍注册）
+      let issues: string[] = [];
+      try {
+        issues = validateEventMappings(eventExtras, this.canonicalTypes);
+      } catch (err: any) {
+        issues = [`event mapping validation threw: ${err.message}`];
+      }
+      if (issues.length > 0) {
+        for (const i of issues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
+        capabilities.eventStream = false;
+      }
       // 插件 runtime 一律视为外部托管（gateway 不 spawn/监管其进程）
       const external = mod.external !== false;
       this.factories.set(name, mod.createRuntime);
-      this.meta.set(name, { capabilities, external });
+      this.meta.set(name, { capabilities, external, ...eventExtras });
       loadedNames.add(name);
       // Filename-stem alias: the plugin hub addresses runtime plugins by
       // filename stem (statEntry baseName) while switch/createRuntime
@@ -140,10 +170,15 @@ export class RuntimePluginLoader {
       let alias: string | undefined;
       if (stem !== name && !this.factories.has(stem) && !this.builtins.has(stem)) {
         this.factories.set(stem, mod.createRuntime);
-        this.meta.set(stem, { capabilities, external });
+        this.meta.set(stem, { capabilities, external, ...eventExtras });
         alias = stem;
       }
-      this.state.set(file, { file, name, status: 'ok', capabilities, alias });
+      this.state.set(file, {
+        file, name,
+        status: issues.length > 0 ? 'error' : 'ok',
+        error: issues.length > 0 ? issues.join('; ') : undefined,
+        capabilities, alias,
+      });
       log.info(`[RuntimePluginLoader] Loaded ${file} (${name})${alias ? ` [alias: ${alias}]` : ''}`);
     } catch (err: any) {
       const prev = this.state.get(file);
@@ -158,7 +193,7 @@ export class RuntimePluginLoader {
   }
 
   /** 插件不存在或未通过校验时返回 undefined（调用方回退内置 opencode）。文件插件优先于内置。 */
-  get(name: string): { createRuntime: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean } | undefined {
+  get(name: string): ({ createRuntime: RuntimeFactory; capabilities: RuntimeCapabilities; external: boolean } & EventMappingEntry) | undefined {
     const createRuntime = this.factories.get(name);
     const meta = this.meta.get(name);
     if (createRuntime && meta) return { createRuntime, ...meta };
