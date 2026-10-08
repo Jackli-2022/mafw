@@ -181,3 +181,26 @@ describe('pi-mafw-host injectContext', () => {
     expect(second).not.toContain('omega');
   });
 });
+
+describe('pi-mafw-host injectSystem', () => {
+  it('before_agent_start 返回原 prompt + memory-guide + pinned', async () => {
+    const { fetchImpl } = makeFakeFetch([
+      { match: (r) => r.url.includes('/api/recall/pinned'), res: { ok: true, json: { profile: '<user-profile>- 偏好 TDD</user-profile>' } } },
+    ]);
+    const { pi, fire } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl }).on(pi);
+    const ret = await fire('before_agent_start', { systemPrompt: 'BASE' });
+    expect(ret[0].systemPrompt).toContain('BASE');
+    expect(ret[0].systemPrompt).toContain('<memory-guide>');
+    expect(ret[0].systemPrompt).toContain('<user-profile>');
+  });
+
+  it('pinned 超时 → 只有 guide（fail-open）', async () => {
+    const fetchImpl: any = async () => { throw new Error('timeout'); };
+    const { pi, fire } = makeFakePi();
+    createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl }).on(pi);
+    const ret = await fire('before_agent_start', { systemPrompt: 'BASE' });
+    expect(ret[0].systemPrompt).toContain('<memory-guide>');
+    expect(ret[0].systemPrompt).not.toContain('<user-profile>');
+  });
+});

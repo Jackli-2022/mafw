@@ -202,7 +202,14 @@ export function createMafwHostExtension(deps: MafwHostDeps) {
         lastRealCount = real.length;
         return { messages };
       });
-      // injectSystem / tools 由后续任务追加
+      // === injectSystem：memory-guide（静态）+ pinned profile（150ms fail-open） ===
+      pi.on('before_agent_start', async (event: any) => {
+        let extra = MEMORY_GUIDE;
+        const j = await getJson('/api/recall/pinned', PINNED_TIMEOUT_MS);
+        if (typeof j?.profile === 'string' && j.profile.trim()) extra += '\n\n' + j.profile;
+        return { systemPrompt: `${event?.systemPrompt ?? ''}\n\n${extra}` };
+      });
+      // tools 由后续任务追加
     },
   };
 }
