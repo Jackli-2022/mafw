@@ -1012,6 +1012,8 @@ class MafwScheduler {
     if (f.approval && sessionID) {
       applyApprovalPolicy(this.approvalPolicy, this.runtime, f.approval, sessionID, props);
     }
+    // Turn-level identity binding cleanup: a user-picked identity lasts one turn.
+    if (type === 'session.idle' && sessionID) this.identityState.clearTurnBindings(sessionID);
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
     // store writes + re-render storms froze the UI). Tiered policy for them:
@@ -4652,13 +4654,18 @@ class MafwScheduler {
           return;
         }
 
-        // GET /api/agents 鈹€ list available agents (legacy /agent)
+        // GET /api/agents ─ merged list: registry identities (source:'mafw') first,
+        // then runtime-native agents (source:'runtime') — uniform picker across runtimes.
         if (req.url?.match(/^\/api\/agents(?:\?|$)/) && req.method === 'GET') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
-            const agents = await this.runtime.app.agents();
-            res.end(JSON.stringify({ items: Array.isArray(agents) ? agents : [] }));
+            const runtimeAgents = await this.runtime.app.agents();
+            const items = mergeAgentLists(
+              this.identityRegistry.list().map((s) => ({ name: s.name, description: s.description, scope: s.scope })),
+              Array.isArray(runtimeAgents) ? runtimeAgents : [],
+            );
+            res.end(JSON.stringify({ items }));
           } catch (err: any) {
             log.error('[Agents] list error:', err.message);
             res.writeHead(500);
@@ -5026,6 +5033,12 @@ class MafwScheduler {
             const body = await readBody(req);
             const { message, parts, agent, model } = body ? JSON.parse(body) : {};
             if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
+            // Identity-aware (spec §3.2): picking a registry identity binds it for
+            // this turn — the policy layer evaluates the turn's tool calls against it.
+            // The agent param itself is injected/stripped by withIdentityPrompt at the runtime.
+            if (agent && this.identityRegistry.get(agent)) {
+              this.identityState.bind(sessionID, agent, 'turn');
+            }
             await this.sdkSession.promptAsync(sessionID, message, parts, agent, model);
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));
