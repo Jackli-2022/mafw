@@ -26,14 +26,50 @@ describe('MafwApprovalExtension', () => {
     bridge.dispose();
   });
 
-  it('should auto-approve read-only tools', async () => {
+  it('read 工具不再隐式旁路：无评估器时走 human 问询（gateway 政策环兜底）', async () => {
     const event = { toolName: 'read', input: { path: '/tmp/file' } };
     const ctx = { sessionId: 'session-1' };
 
-    const result = await toolCallHandler(event, ctx);
+    const promise = toolCallHandler(event, ctx);
 
+    expect(emittedEvents).toHaveLength(1);
+    expect(emittedEvents[0].payload!.type).toBe('permission.asked');
+    expect(emittedEvents[0].payload!.properties.toolName).toBe('read');
+    bridge.reply(emittedEvents[0].payload!.properties.requestId, true);
+    await promise;
+  });
+
+  it('评估器 auto-approve → 直接放行不 emit（无卡片闪烁）', async () => {
+    const evalExt = createMafwApprovalExtension(
+      bridge,
+      (event) => emittedEvents.push(event),
+      { autoApprove: [], autoDeny: [] },
+      'gw-ses-1',
+      (sid: string, c: any) => (c.toolName === 'read'
+        ? { action: 'auto-approve', reason: 'read-only mode' }
+        : { action: 'human', reason: '' }),
+    );
+    const em = { on: jest.fn() };
+    evalExt.on(em);
+    const handler = em.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
+    const result = await handler({ toolName: 'read', input: {} }, { sessionId: 'pi-native' });
     expect(result).toBeUndefined();
     expect(emittedEvents).toHaveLength(0);
+  });
+
+  it('评估器 auto-deny → block', async () => {
+    const evalExt = createMafwApprovalExtension(
+      bridge,
+      (event) => emittedEvents.push(event),
+      { autoApprove: [], autoDeny: [] },
+      'gw-ses-1',
+      () => ({ action: 'auto-deny', reason: 'internal session fail-safe' }),
+    );
+    const em = { on: jest.fn() };
+    evalExt.on(em);
+    const handler = em.on.mock.calls.find((c: any) => c[0] === 'tool_call')![1];
+    const result = await handler({ toolName: 'read', input: {} }, { sessionId: 'pi-native' });
+    expect(result).toEqual({ block: true, reason: 'internal session fail-safe' });
   });
 
   it('should auto-deny tools in autoDeny list', async () => {

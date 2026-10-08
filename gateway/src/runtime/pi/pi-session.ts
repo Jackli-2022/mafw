@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { ApprovalBridge } from './pi-approval-bridge';
-import { createMafwApprovalExtension, type ApprovalPolicy } from './pi-approval-extension';
+import { createMafwApprovalExtension, type ApprovalPolicy, type PermissionEvaluator } from './pi-approval-extension';
 import type { RawRuntimeEvent } from '../normalize';
 
 export interface PiSessionDeps {
@@ -19,6 +19,12 @@ export interface PiSessionRegistryOptions {
   sessionTtlMs?: number;   // 默认 24h
   emitEvent?: (event: RawRuntimeEvent) => void;
   policy?: ApprovalPolicy;
+  /** gateway 三档政策同步直评（index.ts 注入；缺省时 human 问询兜底） */
+  evaluatePermission?: PermissionEvaluator;
+  /** mafw-host 认知面扩展的 loopback 基址（Task 6 接线；缺省不装扩展） */
+  hostBaseUrl?: string;
+  /** ESM 桥取 pi 同实例 typebox（pi-runtime 注入；host 工具注册用） */
+  getType?: () => Promise<any>;
 }
 
 export class PiSessionRegistry {
@@ -49,7 +55,7 @@ export class PiSessionRegistry {
     const sessionPolicy: ApprovalPolicy | undefined = this.policy
       ? { autoApprove: [...(this.policy.autoApprove ?? [])], autoDeny: [...(this.policy.autoDeny ?? [])] }
       : undefined;
-    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, sessionPolicy as any, id);
+    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, sessionPolicy as any, id, this.opts.evaluatePermission);
     // Compaction listener: pi fires session_before_compact / session_compact to
     // extensions; re-emit as normalized runtime events (compaction facet).
     const compactionExtension = this.makeCompactionExtension(id);
@@ -257,6 +263,11 @@ export class PiSessionRegistry {
     return out;
   }
 
+  /** index.ts 注入 gateway 三档政策评估器（运行时采纳后调用）。 */
+  setPermissionEvaluator(fn: NonNullable<PiSessionRegistryOptions['evaluatePermission']>): void {
+    this.opts.evaluatePermission = fn;
+  }
+
   async abort(id: string): Promise<void> {
     const s = this.sessions.get(id);
     if (s) { try { await s.abort(); } catch { /* ignore */ } }
@@ -280,7 +291,7 @@ export class PiSessionRegistry {
     const forkPolicy: ApprovalPolicy | undefined = this.policy
       ? { autoApprove: [...(this.policy.autoApprove ?? [])], autoDeny: [...(this.policy.autoDeny ?? [])] }
       : undefined;
-    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, forkPolicy as any, newId);
+    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, forkPolicy as any, newId, this.opts.evaluatePermission);
     const compactionExtension = this.makeCompactionExtension(newId);
     const mediaExtension = this.makeMediaExtension(newId);
     try {

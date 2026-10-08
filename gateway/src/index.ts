@@ -98,6 +98,21 @@ import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
+
+/**
+ * pi runtime 采纳点注入三档政策评估器：pi 扩展的 tool_call 先同步直评
+ * （auto 路径不 emit permission.asked，避免桌面卡片闪烁），human 落回
+ * ask→applyApprovalPolicy 政策环。非 pi runtime（无 registry）静默跳过。
+ */
+function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicyService): void {
+  const registry = (runtime as any).registry;
+  if (typeof registry?.setPermissionEvaluator === 'function') {
+    registry.setPermissionEvaluator((sessionID: string, candidate: Parameters<ApprovalPolicyService['evaluate']>[1]) => {
+      try { return policy.evaluate(sessionID, candidate); } catch { return null; }
+    });
+  }
+}
+
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
@@ -466,6 +481,7 @@ class MafwScheduler {
     );
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
+    wirePiPermissionEvaluator(runtime, this.approvalPolicy);
     this.runtimeCaps = runtime.capabilities;
     this.runtimeName = runtime.name;
     this.sdkSession.setClient(this.runtime);
@@ -755,6 +771,7 @@ class MafwScheduler {
             }
               const runtime = await this.createRuntime(sdkConfig);
               this.runtime = runtime;
+              wirePiPermissionEvaluator(runtime, this.approvalPolicy);
               this.runtimeCaps = runtime.capabilities;
               this.runtimeName = runtime.name;
               // Same serve-ensure rationale as runtimeDeps.onSwitched: the config
@@ -1377,6 +1394,7 @@ class MafwScheduler {
       },
       onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
         this.runtime = rt;
+        wirePiPermissionEvaluator(rt, this.approvalPolicy);
         this.runtimeCaps = rt.capabilities;
         this.runtimeName = rt.name;
         // Switching onto a runtime that owns serve (builtin opencode) must
