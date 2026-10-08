@@ -4664,7 +4664,14 @@ class MafwScheduler {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
             const runtimeAgents = await this.runtime.app.agents();
             const items = mergeAgentLists(
-              this.identityRegistry.list().map((s) => ({ name: s.name, description: s.description, scope: s.scope })),
+              this.identityRegistry.list().map((s) => ({
+                name: s.name,
+                description: s.description,
+                scope: s.scope,
+                // 未物化身份不出现在列表（选了也会被 withIdentityPrompt 剥离，
+                // 列出是 UX 谎言）；runtime 无 agentConfigApi 时全部滤出。
+                materialized: this.identityState.isMaterialized(this.runtime!.name, s.name),
+              })),
               Array.isArray(runtimeAgents) ? runtimeAgents : [],
             );
             res.end(JSON.stringify({ items }));

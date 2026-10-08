@@ -81,18 +81,21 @@ export function withIdentityPrompt<S extends { sessionID: string; agent?: string
   };
 }
 
-/** GET /api/agents 合并：注册表身份在前（source: 'mafw'），runtime 原生在后（source: 'runtime'），同名去重 */
+/** GET /api/agents 合并：注册表身份在前（source: 'mafw'），runtime 原生在后（source: 'runtime'），同名去重。
+ *  materialized === false 的注册表身份被滤出（当前 runtime 上 agent 参数会被剥离，
+ *  列出它是 UX 谎言）；被滤出的名字不占去重——runtime 侧同名条目以 source:'runtime' 落穿。 */
 export function mergeAgentLists(
-  registryItems: Array<{ name: string; description: string; scope: string }>,
+  registryItems: Array<{ name: string; description: string; scope: string; materialized?: boolean }>,
   runtimeAgents: any[],
 ): any[] {
-  const out: any[] = registryItems.map((i) => ({
+  const visible = registryItems.filter((i) => i.materialized !== false);
+  const out: any[] = visible.map((i) => ({
     name: i.name,
     description: i.description,
     mode: i.scope === 'primary' ? 'primary' : 'subagent',
     source: 'mafw',
   }));
-  const seen = new Set(registryItems.map((i) => i.name));
+  const seen = new Set(visible.map((i) => i.name));
   for (const a of Array.isArray(runtimeAgents) ? runtimeAgents : []) {
     if (a && typeof a.name === 'string' && !seen.has(a.name)) {
       seen.add(a.name);

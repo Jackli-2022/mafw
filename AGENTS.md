@@ -841,7 +841,7 @@ manager 本身即 internal 会话）：
 - ∈ allowlist 且会话 internal（gateway 驱动）→ **auto-approve**（无人值守）
 - ∈ allowlist 且会话用户驱动 → 落三档评估（用户在场，档位决定问/不问）
 - `applyApprovalPolicy`（`core/approval/hook.ts`）既有自动应答器**零改动生效**（opencode+pi 双 runtime）
-- `GET /api/agents` 合并输出：注册表身份（`source:'mafw'`）在前 + runtime 原生（`source:'runtime'`）
+- `GET /api/agents` 合并输出：注册表身份（`source:'mafw'`）在前 + runtime 原生（`source:'runtime'`）；**仅已物化身份可见**（未物化选了也会被 `withIdentityPrompt` 剥离，列出是 UX 谎言；被滤名字不占去重，runtime 同名条目以 `source:'runtime'` 落穿）
 
 **manager 权限（仍成立，经 registry 物化）**：`edit` deny / `task.general` deny / bash 默认 allow /
 38 个 `mafw_*` MCP 工具显式 allow（对齐内置 plan）；系统规则 `ensureManagerRules()`

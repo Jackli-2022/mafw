@@ -107,4 +107,34 @@ describe('mergeAgentLists', () => {
     const out = mergeAgentLists([{ name: 'manager', description: 'd', scope: 'primary' }], undefined as any);
     expect(out).toHaveLength(1);
   });
+
+  it('filters out unmaterialized registry identities (materialized: false)', () => {
+    const out = mergeAgentLists(
+      [
+        { name: 'manager', description: 'd', scope: 'primary', materialized: false },
+        { name: 'memory-curator', description: 'd', scope: 'worker', materialized: true },
+      ],
+      [{ name: 'build', description: 'x' }],
+    );
+    expect(out.map((a: any) => a.name)).toEqual(['memory-curator', 'build']);
+  });
+
+  it('unmaterialized registry name does not block a runtime agent of the same name', () => {
+    // manager 物化失败，但 runtime 列表里仍有旧安装的 manager —— 应以 source:'runtime' 落穿，
+    // 而不是被（不可见的）注册表条目吞掉。
+    const out = mergeAgentLists(
+      [{ name: 'manager', description: 'd', scope: 'primary', materialized: false }],
+      [{ name: 'manager', description: 'runtime copy' }],
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ name: 'manager', source: 'runtime' });
+  });
+
+  it('materialized undefined treated as visible (back-compat)', () => {
+    const out = mergeAgentLists(
+      [{ name: 'manager', description: 'd', scope: 'primary' }],
+      [],
+    );
+    expect(out).toHaveLength(1);
+  });
 });
