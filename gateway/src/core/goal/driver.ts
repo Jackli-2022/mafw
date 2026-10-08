@@ -225,9 +225,109 @@ export class NodeDriver {
     await this.advance(goalId);
   }
 
-  /** 节点完成（idle + 产物双门）——Task 7 实现。 */
+  /** 节点完成（idle + 产物双门）：解析产物 → 路由 → 写 state → advance。 */
   private async completeNode(goalId: string, sessionID: string): Promise<void> {
-    void goalId; void sessionID; void routeNext; void parseReviewVerdict; void matchesSignature; void nodeArtifactPaths;
+    const found = this.findState(goalId);
+    if (!found) return;
+    const { mafwDir } = found;
+    const state = loadGoalState(mafwDir, goalId)!;
+    const ns = state.nodeSession;
+    if (!ns || ns.id !== sessionID) return; // stale 事件守卫
+
+    const node = ns.phase;
+    const round = effectiveRound(state);
+    const a = nodeArtifactPaths(mafwDir, goalId, round);
+
+    // —— 双门之二：产物校验 ——
+    const artifactPath = node === 'plan' ? a.waves : node === 'execute' ? a.receipt : a.review;
+    if (!fs.existsSync(artifactPath)) {
+      await this.failNode(goalId, sessionID, 'artifact_missing', `expected ${artifactPath}`);
+      return;
+    }
+
+    // —— 解析（移植 NODE_CONFIGS.parseResult + plan.node/review.node 语义）——
+    let patch: Partial<GoalStateV3>;
+    let outcome: string;
+    try {
+      if (node === 'plan') {
+        const waves = JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
+        if (waves.status === 'need_clarification') {
+          patch = {
+            pendingQuestion: {
+              questionId: `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_ok`,
+              node: 'plan', loop: round, questions: waves.ambiguities || [], askedAt: new Date().toISOString(),
+            },
+          };
+          outcome = 'need_clarification';
+        } else {
+          patch = { wavePlanPath: a.waves, pendingQuestion: null };
+          outcome = `waves=${(waves.waves || []).length}`;
+        }
+      } else if (node === 'execute') {
+        const receipt = JSON.parse(fs.readFileSync(a.receipt, 'utf-8'));
+        patch = { receiptPath: a.receipt };
+        outcome = `receipts=${(receipt.receipts || []).length}`;
+      } else {
+        const content = fs.readFileSync(a.review, 'utf-8');
+        const verdict = parseReviewVerdict(content); // 既有共享模块
+        const p: Partial<GoalStateV3> = {
+          reviewVerdict: verdict.verdict,
+          reviewReportPath: a.review,
+          reviewFeedback: verdict.feedback,
+          round: round + 1,
+        };
+        // same-signature 追问（移植 review.node.ts:56-74，上限 3）
+        if (verdict.verdict === 'FAIL' && round < state.maxRounds) {
+          const sameSig = state.reviewFeedback && matchesSignature(state.reviewFeedback, verdict.feedback);
+          const newSameSigCount = sameSig ? state.sameSigCount + 1 : 1;
+          p.sameSigCount = newSameSigCount;
+          if (sameSig && newSameSigCount >= 2 && newSameSigCount <= 3) {
+            p.pendingQuestion = {
+              questionId: `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_ok`,
+              node: 'review', loop: round,
+              questions: [`Review keeps failing with same issue: ${verdict.feedback}. Continue retrying?`],
+              askedAt: new Date().toISOString(),
+            };
+          }
+        } else {
+          p.sameSigCount = 0;
+        }
+        patch = p;
+        outcome = verdict.verdict;
+      }
+    } catch (err: any) {
+      await this.failNode(goalId, sessionID, 'artifact_invalid', `${artifactPath}: ${err.message}`);
+      return;
+    }
+
+    try { await this.deps.client.delete(sessionID); } catch { /* fail-open */ }
+
+    const phaseNames = NODE_PHASE[node];
+    const nextRound = patch.round ?? round;
+    const nextNode = routeNext(
+      node === 'plan' ? 'after_plan' : node === 'execute' ? 'after_execute' : 'after_review',
+      {
+        lastError: state.lastError,
+        reviewVerdict: (patch.reviewVerdict ?? state.reviewVerdict) as any,
+        round: nextRound,
+        maxRounds: state.maxRounds,
+        pendingQuestion: patch.pendingQuestion ?? null,
+      },
+    );
+
+    this.deps.db.finishNodeRun(ns.runId, {
+      status: 'succeeded', finishedAt: new Date().toISOString(), outcome,
+    });
+    this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: phaseNames.complete, loop: nextRound, projectDir: state.projectDir });
+    this.deps.emitNodeEvent({
+      type: 'goal_node', goalId, projectDir: state.projectDir, loop: round, node,
+      transition: 'finished', at: new Date().toISOString(), outcome, attempt: ns.attempt,
+    });
+
+    writeGoalState(mafwDir, goalId, {
+      ...patch, nodeSession: null, phase: phaseNames.complete, nextNode, nextAction: `NEXT_${nextNode}`,
+    }, { bumpVersion: node === 'review' });
+    await this.advance(goalId);
   }
 
   /** askUser 应答——Task 8 实现。 */
