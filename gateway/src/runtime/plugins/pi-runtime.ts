@@ -139,7 +139,20 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       eventStream.trackSession(session);
       return { session };
     },
-  }, { sessionTtlMs: cfg.sessionTtlMs, emitEvent: (evt) => eventStream.push(evt), policy: cfg.approvalPolicy });
+  }, {
+    sessionTtlMs: cfg.sessionTtlMs,
+    emitEvent: (evt) => eventStream.push(evt),
+    policy: cfg.approvalPolicy,
+    // mafw-host 认知面扩展（Phase 2）：默认开，cfg.hostExtension === false 关闭。
+    // getType 经 ESM 桥取 pi 同实例 typebox（registerTool 的 TSchema 符号同一性）。
+    ...(cfg.hostExtension === false ? {} : {
+      hostBaseUrl: `http://127.0.0.1:${ctx.gatewayPort ?? config.server.apiPort ?? 3000}`,
+      getType: async () => {
+        const mod = await imp('@earendil-works/pi-coding-agent/node_modules/typebox');
+        return mod.Type;
+      },
+    }),
+  });
 
   const sessionAPI = {
     create: async (opts: { directory?: string }) => {

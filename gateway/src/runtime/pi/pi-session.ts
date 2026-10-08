@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ApprovalBridge } from './pi-approval-bridge';
 import { createMafwApprovalExtension, type ApprovalPolicy, type PermissionEvaluator } from './pi-approval-extension';
+import { createMafwHostExtension } from './pi-mafw-host-extension';
 import type { RawRuntimeEvent } from '../normalize';
 
 export interface PiSessionDeps {
@@ -64,12 +65,17 @@ export class PiSessionRegistry {
     // （小米 wire 格式），随后清空 pending——pi 内容层不认识这两种类型，只能在
     // 出 wire 前合并。
     const mediaExtension = this.makeMediaExtension(id);
+    // 认知面宿主扩展（Phase 2）：observe / injectContext / injectSystem / tools
+    const hostExtension = this.opts.hostBaseUrl
+      ? createMafwHostExtension({ sessionId: id, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType })
+      : null;
     // Combine approval extension with agent-specific extensions
     // These will be passed to createAgentSession via extensionFactories
     const allExtensions = [
       { name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) },
       compactionExtension,
       mediaExtension,
+      ...(hostExtension ? [{ name: 'mafw-host', factory: (pi: any) => hostExtension.on(pi) }] : []),
       ...agentExtensions,
     ];
 
@@ -294,6 +300,9 @@ export class PiSessionRegistry {
     const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, forkPolicy as any, newId, this.opts.evaluatePermission);
     const compactionExtension = this.makeCompactionExtension(newId);
     const mediaExtension = this.makeMediaExtension(newId);
+    const forkHostExtension = this.opts.hostBaseUrl
+      ? createMafwHostExtension({ sessionId: newId, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType })
+      : null;
     try {
       const { session } = await this.deps.createSession({
         cwd: sm.getCwd?.() ?? undefined,
@@ -302,6 +311,7 @@ export class PiSessionRegistry {
           { name: 'mafw-approval', factory: (pi: any) => approvalExtension.on(pi) },
           compactionExtension,
           mediaExtension,
+          ...(forkHostExtension ? [{ name: 'mafw-host', factory: (pi: any) => forkHostExtension.on(pi) }] : []),
         ],
       });
       this.sessions.set(newId, session);
