@@ -1,3 +1,4 @@
+// @deprecated (2026-10-08, goal P1): RequestManager 无生产使用点。物理删除安排在后续清理 PR。
 import * as fs from 'fs';
 import * as path from 'path';
 import { config } from './config';

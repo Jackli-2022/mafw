@@ -1083,6 +1083,22 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 - **许可红线**（内置只从安全档选）：ChatTTS/F5-TTS/Fish S2（非商用/研究许可）、IndexTTS（商用需授权）、edge-tts（微软 ToS）、Piper（GPL）**不内置**，仅可作用户自装插件；CosyVoice/GPT-SoVITS 等经 tts-plugins 接入
 - 测试：gateway jest 27 个 TTS 单测（registry/adapter/mimo/interrupt/loader/kokoro）；desktop bun 12 个 voice 单测（turn/silero hub/pcm-align/session 状态机）
 
+### 5.22 Goal 编排 P1：NodeDriver + 节点级 Trace（2026-10-08）
+
+goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（graph/checkpointer/interrupt/Command-resume）退役**，换为 state 文件 + 事件驱动的 `NodeDriver`（`gateway/src/core/goal/`）。spec `docs/superpowers/specs/2026-10-08-goal-orchestration-p1-design.md`；plan `docs/superpowers/plans/2026-10-08-goal-orchestration-p1.md`。
+
+- **NodeDriver**（`driver.ts`）：每 goal 一个互斥状态机实例。`advance(goalId)` 读 state v3 → `routing.ts` 纯函数定下一节点（从 `graph.ts:4-15` 逐字移植）→ 建会话（`agent: 'mafw-'+node` 绑定身份）→ `void promptAsync`（**不 await**——pi 的 promptAsync 在 idle 会话阻塞到回合结束，pi-session.ts:117-120）→ 注册 per-session 完成监听 → `writeGoalState(nodeSession)`。完成由 `handleOpencodeEvent` 的 idle/error 分支分发（`goalDriver?.onSessionIdle/onSessionError`）。
+- **双门完成判定**：`session.idle` + 产物文件（`node-prompts.ts:nodeArtifactPaths`：waves.json / `receipts/{goalId}/loop-{N}-receipt.json`（per-loop 不再覆盖）/ `reviews/{goalId}-loop{N}.md`）存在且可解析；缺失/非法 → `failNode`（artifact_missing/artifact_invalid）→ archive_fail。
+- **三节点身份**：`IdentityRegistry` 内置 `mafw-plan`（deny file-edit/shell/web）/ `mafw-execute`（全开）/ `mafw-review`（deny file-edit/web，allowlist 含 shell）——复用 v4.21.0 物化车道，替换旧 `/skill mafw-*` 裸文本。
+- **state v3**（`state-v3.ts`，NodeDriver 唯一写入方）：`round` 为规范名 + `loop` 双写别名（旧读方兼容）；新增 `nodeSession`/`nextNode`/`nextAction`。原子写（.tmp+rename）。
+- **starter**（`index.ts:startGoal` + `starter.ts:resolveGoalDir`）：`goal_created` 事件 → 定位目标项目（hint > request 文件扫描 > 首项目）→ `ensureGoalState` → advance。`mafw_set_goal`/`mafw_create_goal` 接受 `projectDir`（已注册校验，MCP services 注入 `listProjects`），写入目标项目 `.mafw`（修目录错配）。
+- **askUser state 驱动**：`executeAskUser` 写 `QuestionLedger` asked（修「asked 无写入点 → respond 恒 404」断链）+ state.pendingQuestion；`handleAnswer/handleCancel` 写 state.userResponse/nextNode → advance；respond 路由改调 driver（不再 Command-resume）。manager 可经 `mafw_list_pending_questions`/`mafw_answer_question` 自治代答。
+- **Trace 数据层**：`goal_node_runs` 表（gateway.db：goal_id/loop/node/attempt/session_id/status/started_at/finished_at/outcome/error/tokens/cost；watchdog 重试 = 新行新 attempt 保留失败历史）；`goal_node` SSE 事件（扁平顶层广播：`{type,goalId,projectDir,loop,node,transition,at,durationMs?,verdict?,error?,attempt}`）；`phase_transition` payload 签名不变（milestone-push 零迁移）。
+- **恢复/watchdog**（`recovery.ts` + `driver.examineStaleNode`）：启动 `recoverGoals` + 周期 `watchdogScan`（挂 startBackupPolling）。语义：**产物优先**（gateway 死亡期间完成的节点直接兑现）→ 会话探测（`session.get`，能力门 sessionStorageApi）→ abort + 重试 attempt+1（≥maxAttempts → archive_fail）。
+- **API**：`GET /api/goals/:id/timeline`（node_runs ⋈ state 聚合，须挂 dashboard 兜底前）、`POST /api/goals/:id/nodes/:runId/retry`（execute 需 `confirm:true` destructive 门）；SDK `goals.timeline/retryNode`。
+- **legacy 并存**：`core/skills/mafw-*/entry.ts` + 插件 `/goal` 命令链保留（`state_change` 唤醒走 driver.advance 幂等）；死代码标注 deprecated（`chat/graph-runner.ts`/`core/mcp/tools.ts`/`poll.ts`/`core/plugin.ts`，物理删除留后续 PR）。
+- 测试：gateway 新增 14 文件 / 65 用例（routing/state-v3/node-runs/identities/node-prompts/driver/completion/askuser/starter/projectdir/recovery/timeline-route/retry-route/e2e）；全量 258 套件 1738 用例绿。
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令

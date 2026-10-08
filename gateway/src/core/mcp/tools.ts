@@ -1,3 +1,5 @@
+// @deprecated (2026-10-08, goal P1): legacy MCP 工具面（自认 deprecated），goal 编排
+// 写路径已由 core/goal/driver.ts + MCP 工具注册表接管。物理删除安排在后续清理 PR。
 import * as fs from 'fs';
 import * as path from 'path';
 import { updateState, loadState } from '../utils/state';

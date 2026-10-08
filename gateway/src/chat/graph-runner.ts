@@ -1,4 +1,6 @@
-﻿import { log } from '../core/utils/logger';
+﻿// @deprecated (2026-10-08, goal P1): GraphRunner 无生产实例化点，goal 编排已由
+// core/goal/driver.ts（NodeDriver）接管。物理删除安排在后续清理 PR。
+import { log } from '../core/utils/logger';
 import { config } from '../config';
 import { buildExecutionGraph, FileCheckpointer } from '../core/langgraph';
 import { LoopStateType } from '../core/langgraph/loop-state';

@@ -1,4 +1,6 @@
-﻿import { log } from './utils/logger';
+﻿// @deprecated (2026-10-08, goal P1): legacy 插件实现（含自己的 /goal + runSkill 链），
+// 不被 gateway index.ts 引用；goal 编排 P1 后由 NodeDriver 承担。物理删除安排后续清理 PR。
+import { log } from './utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ParametricStore } from './memory/store';
