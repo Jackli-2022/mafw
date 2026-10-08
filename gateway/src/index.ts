@@ -2567,6 +2567,7 @@ class MafwScheduler {
       automation: this.automationEngine,
       ledger: this.ledger,
       mafwDir,
+      listProjects: () => Array.from(this.registeredProjects.entries()).map(([projectDir, info]) => ({ projectDir, mafwDir: info.mafwDir })),
       desktop: desktopClient || undefined,
       restartAgent: async () => {
         if (!this.runtimeCaps.agentProcessApi) {
