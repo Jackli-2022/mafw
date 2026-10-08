@@ -90,6 +90,12 @@ Gateway 与 Agent runtime 之间是能力自声明契约（Tier 0-2）：内置 
 external 托管模式可热切换，无需重启。契约能力面覆盖会话分支（fork / revert）、回合预算、
 结果信封（usage / finish）、三值审批回复（once / always / reject）、原生 question 通道等。
 
+**声明式事件映射**：runtime 插件用**纯数据表**把原生事件接入统一事件流，不再手写翻译层——
+`eventMappings`（`{from → to, when?, fields}`，字段 = 路径 / 常量 / `{$.path}` 模板）+ 可选的
+`transformEvent` 逃逸口（状态机 / 扇出 / 副作用）；gateway 侧 canonical facet 规则表化，
+插件原生事件经同一管线进入 `EventFacets`。加载期静态校验（未知事件类型 / 坏路径 = 能力降级），
+`POST /api/runtime/dry-event` 试衣间逐跳回显。已内置 pi 适配；新 runtime 接入只需填表。
+
 ### 🧩 统一插件包
 
 `~/.mafw/plugins/` 下**一个插件包可同时贡献多种能力**——usage 配额、media 引擎、agent runtime、

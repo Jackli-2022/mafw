@@ -201,6 +201,7 @@ review 节点的 verdict 解析统一走共享模块 `review-parser.ts` 的**机
 |---|---|---|
 | serve sidecar 监管 | index.ts + 契约 | spawn/收养、watchdog、recoverServe、事件流重订阅 |
 | Runtime 能力契约 | `runtime/` | Tier 0-2 能力自声明；opencode 内置 / pi 插件 / 热切换 |
+| 事件映射注册 | `runtime/event-mapper.ts` + `canonical-facets.ts` | 插件纯数据表（原生→canonical）+ facet 规则表（canonical→EventFacets）；`path-expr.ts` 安全路径求值；`wrapGlobalEventStream` 包装；加载期校验 + dry-event 试衣间 |
 | 谐波记忆 | `memory/` + `recall/` | OKF 存储、BM25/hybrid 检索、能量、MinHash 合并、ConsolidationService |
 | 记忆管线 | `recall/` | turnCompress / reflection / stale 重验（见下文专节） |
 | MCP 服务 | `mcp/` | 40 工具；/mcp 双传输（无状态 StreamableHTTP + legacy SSE） |
@@ -269,7 +270,7 @@ Gateway 侧插件按能力分四种类型，各有 loader 与目录（**legacy �
 | Goal 编排 | `POST /api/work/{goalId}/validate`、`POST /api/work/{goalId}/complete`、`POST /control`（PAUSE/ABORT） |
 | 记忆 | `GET /api/recall/context`、`GET /api/recall/pinned`、`POST /api/obs/capture`、`POST /api/memory/add`、`GET /api/memory/search`、`GET /api/memory/stats` |
 | MCP | `POST/GET /mcp`（双传输） |
-| 运行时 | `GET /api/runtime`、`POST /api/runtime/switch`、`POST /api/runtime/restart-agent` |
+| 运行时 | `GET /api/runtime`、`POST /api/runtime/switch`、`POST /api/runtime/restart-agent`、`POST /api/runtime/dry-event`（事件试衣间：映射→facet→矩阵→字段契约） |
 | 媒体 | `POST /a2a`、`GET /a2a/artifacts/:id`、`GET /api/media/plugins` |
 | Python | `POST /api/python/execute`、`POST /api/python/restart` |
 | 用量/配置 | `GET /api/usage`、`GET/POST /api/model-config`、`GET/POST /api/memory/embedding-config` |
