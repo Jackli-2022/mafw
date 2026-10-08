@@ -957,6 +957,19 @@ runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应
 不在本契约内；gateway 侧 HTTP（/api/obs/capture、/api/recall/context、/a2a）
 对宿主插件保持 runtime 中立。
 
+#### HostAdapter 认知面契约（2026-10-08，Phase 3 形式化）
+
+编排面（RuntimeClient）管 gateway→runtime；**认知面（HostAdapter）管宿主适配器→gateway**，协议 = loopback HTTP（宿主语言/进程无关），实现核心在 `gateway/src/runtime/host-adapter.ts`（`COGNITION_CONTRACT` 时序常量 + `createCognitionClient` + `createRecallCursor` + 工具 HTTP 核心）。四动词：
+
+| 动词 | 协议 | 时序/语义 |
+|---|---|---|
+| observe | POST /api/obs/capture | 5s fail-open；source ∈ user_input/assistant_reply/tool_result/reasoning |
+| injectContext | GET /api/recall/context | **100ms fail-open**；游标增量（id 优先/count 回退）+ 短增量（<50 字符）并入 assistant 尾部 300；注入物带 `synthetic:true` 部件标记防回流 |
+| injectSystem | GET /api/recall/pinned + 静态 MEMORY_GUIDE | 150ms fail-open；追加 system 尾部 |
+| tools | /api/memory/add、/api/python/*、/api/tts、/a2a | 六件套；add_memory 走 HTTP 因 serve worker 无 MCP |
+
+宿主实现：pi = `runtime/pi/pi-mafw-host-extension.ts`（薄事件映射，消费 host-adapter 核心）；v1 opencode 插件 = 原生实现同语义（**刻意不重构**——生产宿主，v2 迁移时统一）；v2 = 待迁移（以 host-adapter 为核，spike 原型见调研文档 §8）。**一致性验证**：`POST /api/runtime/conformance {scenarios:["cognition-observe","cognition-inject"]}` —— S3 验证 T1 三类观察行、S4 验证 recall 触达 + memory-guide 端到端到达模型（复述法，宿主无关）。
+
 **内置插件：pi-coding-agent runtime（`gateway/src/runtime/plugins/pi-runtime.ts`）**
 - `config.runtime.plugin: pi` 激活；进程内 SDK 嵌入（ESM 桥 `new Function('spec','return import(spec)')`）
 - 能力：sessionApi/promptWhileBusy/eventStream/nativeApprovals/providerConfigApi/sessionStorageApi/agentConfigApi true
