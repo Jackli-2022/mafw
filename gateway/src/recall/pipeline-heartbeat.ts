@@ -36,7 +36,9 @@ const DAY = 24 * HOUR;
 export const DEFAULT_PIPELINE_INTERVALS_MS: Record<string, number> = {
   'memory:decay': DAY,
   'memory:turnCompress': HOUR,
-  'memory:reflect': HOUR,
+  // reflect 的 cron 是每日（0 3 * * *，pipeline-rules.ts）——配 HOUR 会让
+  // stale 恒真误报（>2h 无成功即报警，而正常节奏是 24h）。
+  'memory:reflect': DAY,
   'memory:review': 7 * DAY,
   consolidation: 7 * DAY,
 };

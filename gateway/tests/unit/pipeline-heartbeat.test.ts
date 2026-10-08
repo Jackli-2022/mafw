@@ -3,7 +3,7 @@
  * unrecorded). Records last-run / last-success / counts per background
  * pipeline and flags pipelines that stopped producing successes.
  */
-import { PipelineHeartbeat, HeartbeatKv, PipelineRunRecord } from '../../src/recall/pipeline-heartbeat';
+import { PipelineHeartbeat, HeartbeatKv, PipelineRunRecord, DEFAULT_PIPELINE_INTERVALS_MS } from '../../src/recall/pipeline-heartbeat';
 
 const HOUR = 3600_000;
 
@@ -108,5 +108,14 @@ describe('PipelineHeartbeat', () => {
     clock.advance(3 * 24 * HOUR);
     expect(hb.sweep(['decay'])).toEqual(['decay']);
     expect(warnings).toHaveLength(2);
+  });
+
+  test('default intervals match the provisioned cron schedules (pipeline-rules.ts)', () => {
+    // 误配回归（2026-10-08）：reflect 的 cron 是每日（0 3 * * *）但默认表配成 HOUR，
+    // 导致 stale 恒真误报。默认表必须与 pipeline-rules.ts 的供给节奏一致。
+    expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:decay']).toBe(24 * HOUR);        // 30 3 * * *
+    expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:turnCompress']).toBe(HOUR);      // 0 * * * *
+    expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:reflect']).toBe(24 * HOUR);      // 0 3 * * *
+    expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:review']).toBe(7 * 24 * HOUR);   // 0 4 * * 0
   });
 });
