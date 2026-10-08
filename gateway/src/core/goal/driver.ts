@@ -191,10 +191,13 @@ export class NodeDriver {
       : node === 'archive_max_retries'
         ? { verdict: 'MAX_RETRIES', phase: 'FAILED', nextAction: 'FAILED' }
         : { verdict: 'FAIL', phase: 'FAILED', nextAction: 'FAILED' };
+    // review 完成时 round 已 +1 → PASS 归档报实际完成的 loop 数（round-1）
+    const rounds = (node === 'archive_success' && state.reviewVerdict === 'PASS')
+      ? Math.max(1, round - 1) : round;
     this.deps.emitPhaseTransition({ type: 'phase_transition', goalId, phase: v.phase, loop: round, projectDir: state.projectDir });
     writeGoalState(mafwDir, goalId, { phase: v.phase, nextAction: v.nextAction, nodeSession: null });
     await this.deps.archiveGoal(goalId, {
-      verdict: v.verdict, rounds: round,
+      verdict: v.verdict, rounds,
       lastError: state.lastError, reviewFeedback: state.reviewFeedback,
     });
   }
