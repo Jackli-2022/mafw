@@ -154,22 +154,22 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
   try {
     verdict = await deps.judge(unit, candidateIds);
   } catch {
-    emitRoute(deps, unit, hits, 'create', 'llm-route');
+    emitRoute(deps, unit, hits, 'create', 'llm-route', redundantScores);
     return { action: 'create' }; // fail-open
   }
   if (!verdict || verdict.action === 'create') {
-    emitRoute(deps, unit, hits, 'create', 'llm-route');
+    emitRoute(deps, unit, hits, 'create', 'llm-route', redundantScores);
     return { action: 'create' };
   }
   if (verdict.targetId && candidateIds.includes(verdict.targetId)) {
     if (verdict.action === 'separate') {
-      emitRoute(deps, unit, hits, 'separate', 'llm-route');
+      emitRoute(deps, unit, hits, 'separate', 'llm-route', redundantScores);
       return { action: 'separate', targetId: verdict.targetId, distinction: verdict.distinction };
     }
-    emitRoute(deps, unit, hits, 'update', 'llm-route');
+    emitRoute(deps, unit, hits, 'update', 'llm-route', redundantScores);
     return { action: 'update', targetId: verdict.targetId };
   }
-  emitRoute(deps, unit, hits, 'create', 'llm-route');
+  emitRoute(deps, unit, hits, 'create', 'llm-route', redundantScores);
   return { action: 'create' }; // invalid target → fail-open
 }
 
