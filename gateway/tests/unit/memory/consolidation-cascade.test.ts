@@ -52,6 +52,20 @@ function makeHarness(opts: {
   return { svc, pairs, written, superseded, newUnit };
 }
 
+describe('redundant-sink guard (G2)', () => {
+  it('skips units carrying a redundant: anchor (sunk by write-phase routing)', async () => {
+    const svc = new ConsolidationService({
+      store: { read: async () => null, write: async () => '', markSuperseded: () => {} } as any,
+      vectors: {} as unknown as MemoryVectorStore,
+      provider: {} as unknown as EmbeddingProvider,
+    });
+    const unit = makeUnit('sunk-1', 'sunk fact');
+    unit.cue_anchors = ['x', 'redundant:mem_covering'];
+    const out = await svc.consolidate(unit);
+    expect(out).toEqual({ action: 'skip', reason: 'redundant-sink' });
+  });
+});
+
 describe('laya one-sided cascade', () => {
   it('adopts UPDATE when p >= tauHigh (no LLM call)', async () => {
     const h = makeHarness({ p: 0.95 });

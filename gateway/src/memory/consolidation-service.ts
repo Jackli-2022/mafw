@@ -178,6 +178,11 @@ export class ConsolidationService {
 
   private async consolidateInner(unit: HarmonicUnit): Promise<ConsolidationOutcome> {
     if (!unit?.id) return { action: 'skip', reason: 'no-unit' };
+    // G2: units sunk by write-phase routing (redundant:<id> anchor) must not be
+    // re-consolidated — the routing decision already disposed of them.
+    if (unit.cue_anchors?.some((a) => typeof a === 'string' && a.startsWith('redundant:'))) {
+      return { action: 'skip', reason: 'redundant-sink' };
+    }
     // Recursion guard: never re-consolidate merge products.
     if (unit.merged_from && unit.merged_from.length > 0) {
       return { action: 'skip', reason: 'merged-product' };
