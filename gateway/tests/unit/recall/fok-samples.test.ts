@@ -67,6 +67,17 @@ describe('joinFokSamples', () => {
     expect(joinFokSamples(lines, { ttlMs: MIN })).toEqual([{ top1prob: 0.9, hit: false }]);
     expect(joinFokSamples(lines, { ttlMs: 5 * MIN })).toEqual([{ top1prob: 0.9, hit: true }]);
   });
+
+  it('inj topic flows through join; legacy lines without topic leave it undefined', () => {
+    const lines = [
+      JSON.stringify({ e: 'inj', ts: 1000, top1prob: 0.9, zone: 'inject', ids: ['a'], topic: 'gateway' }),
+      rdm(1000 + MIN, 'a'),
+      JSON.stringify({ e: 'inj', ts: 1000, top1prob: 0.5, zone: 'inject', ids: ['b'] }),
+    ];
+    const out = joinFokSamples(lines);
+    expect(out.find((s) => s.top1prob === 0.9)?.topic).toBe('gateway');
+    expect(out.find((s) => s.top1prob === 0.5)?.topic).toBeUndefined();
+  });
 });
 
 describe('fokSampleStats', () => {

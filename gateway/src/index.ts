@@ -1876,6 +1876,22 @@ class MafwScheduler {
       store: (sid: string, s: any) => db.kvSet('recall-snapshot', sid, s),
     }, sessionID, config.search.snapshot, 3);
     if (snap) log.info(`[Recall] snapshot built for ${sessionID} (${Date.now() - t0}ms, ${snap.ids.length} ids)`);
+    // L3: FOK calibration sample — record the injection with the top-1
+    // memory's topic (its first cue anchor) so per-topic thresholds can be fit.
+    if (snap && typeof snap.top1prob === 'number') {
+      try {
+        const { appendFokEvent } = require('./recall/fok-samples');
+        const topId = snap.ids?.[0];
+        const entry = topId
+          ? this.memoryService?.harmonicIndex.getIndex().entries.find((e: any) => e.id === topId)
+          : undefined;
+        appendFokEvent({
+          e: 'inj', ts: Date.now(), top1prob: snap.top1prob,
+          zone: snap.fokStatus ?? 'inject', ids: snap.ids ?? [],
+          topic: entry?.cue_anchors?.[0],
+        });
+      } catch { /* fail-open */ }
+    }
   }
 
   private getScanService(): IndexScanService | null {

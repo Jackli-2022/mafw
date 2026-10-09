@@ -7,7 +7,28 @@
  * scale-free top1/mean dominates; gap/ratio features are weak; the signal must
  * come from the *raw* relevance scores (never energy×salience-weighted).
  */
-import { computeFokFeatures, classifyFok, fitFokThresholds, zoneFromProbability, fokSummaryFor } from '../../../src/recall/fok-gate';
+import { computeFokFeatures, classifyFok, fitFokThresholds, fitFokThresholdsByTopic, zoneFromProbability, fokSummaryFor } from '../../../src/recall/fok-gate';
+
+describe('fitFokThresholdsByTopic', () => {
+  const mk = (topic: string | undefined, n: number, feature: number, hit: boolean) =>
+    Array.from({ length: n }, () => ({ feature, hit, topic }));
+  test('per-topic fit when n>=minPerTopic, else pooled into global', () => {
+    const samples = [
+      ...mk('gateway', 30, 0.9, true), ...mk('gateway', 30, 0.2, false),
+      ...mk('tiny', 5, 0.9, true), ...mk('tiny', 5, 0.1, false),
+      ...mk(undefined, 40, 0.8, true), ...mk(undefined, 40, 0.3, false),
+    ];
+    const r = fitFokThresholdsByTopic(samples as any, { minPerTopic: 30 });
+    expect(r.byTopic['gateway']).toBeDefined();
+    expect(r.byTopic['tiny']).toBeUndefined();
+    expect(r.global).not.toBeNull();
+  });
+  test('no topic groups → only global', () => {
+    const r = fitFokThresholdsByTopic(mk(undefined, 40, 0.8, true).concat(mk(undefined, 40, 0.3, false)) as any, { minPerTopic: 30 });
+    expect(Object.keys(r.byTopic)).toEqual([]);
+    expect(r.global).not.toBeNull();
+  });
+});
 
 describe('computeFokFeatures', () => {
   test('empty candidate set → zeroed features, count 0', () => {

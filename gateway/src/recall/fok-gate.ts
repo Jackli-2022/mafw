@@ -162,3 +162,44 @@ export function fitFokThresholds(
   const low = best;
   return { low, high: high !== null && high >= low ? high : low };
 }
+
+export interface FokTopicFitSample extends FokFitSample {
+  /** L3: coarse topic (the top-1 memory's first cue anchor). */
+  topic?: string;
+}
+
+/**
+ * L3 knowledge-boundary fit: per-topic thresholds when a topic has enough
+ * samples, otherwise those samples pool into the global fit. Consumers pick
+ * `byTopic[topic] ?? global`. Topics whose fit is not separable are also
+ * pooled back into global so no group is silently dropped.
+ */
+export function fitFokThresholdsByTopic(
+  samples: FokTopicFitSample[],
+  opts: FokFitOptions & { minPerTopic?: number } = {},
+): { byTopic: Record<string, FokThresholds>; global: FokThresholds | null } {
+  const minPerTopic = opts.minPerTopic ?? 30;
+  const byTopicRaw = new Map<string, FokFitSample[]>();
+  const pool: FokFitSample[] = [];
+  for (const s of samples) {
+    const base: FokFitSample = { feature: s.feature, hit: s.hit };
+    if (s.topic) {
+      const arr = byTopicRaw.get(s.topic) ?? [];
+      arr.push(base);
+      byTopicRaw.set(s.topic, arr);
+    } else {
+      pool.push(base);
+    }
+  }
+  const byTopic: Record<string, FokThresholds> = {};
+  for (const [topic, arr] of byTopicRaw) {
+    if (arr.length >= minPerTopic) {
+      const th = fitFokThresholds(arr, opts);
+      if (th) byTopic[topic] = th;
+      else pool.push(...arr);
+    } else {
+      pool.push(...arr);
+    }
+  }
+  return { byTopic, global: fitFokThresholds(pool, opts) };
+}

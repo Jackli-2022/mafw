@@ -16,7 +16,7 @@ import * as os from 'os';
 import { log } from '../core/utils/logger';
 
 export type FokEvent =
-  | { e: 'inj'; ts: number; top1prob: number; zone: string; ids: string[] }
+  | { e: 'inj'; ts: number; top1prob: number; zone: string; ids: string[]; topic?: string }
   | { e: 'rdm'; ts: number; id: string };
 
 export const FOK_SAMPLES_FILE = (): string =>
@@ -40,6 +40,8 @@ export interface JoinOptions {
 export interface FokLabeledSample {
   top1prob: number;
   hit: boolean;
+  /** L3: topic of the top-1 injected memory (its first cue anchor) when known. */
+  topic?: string;
 }
 
 /**
@@ -49,22 +51,30 @@ export interface FokLabeledSample {
  */
 export function joinFokSamples(lines: string[], opts: JoinOptions = {}): FokLabeledSample[] {
   const ttl = opts.ttlMs ?? 10 * 60_000;
-  const injections: Array<{ ts: number; top1prob: number; ids: string[] }> = [];
+  const injections: Array<{ ts: number; top1prob: number; ids: string[]; topic?: string }> = [];
   const redemptions: Array<{ ts: number; id: string }> = [];
   for (const line of lines ?? []) {
     try {
       const j = JSON.parse(line);
       if (j?.e === 'inj' && Number.isFinite(j.top1prob) && Array.isArray(j.ids)) {
-        injections.push({ ts: j.ts, top1prob: j.top1prob, ids: j.ids.filter((x: any) => typeof x === 'string') });
+        injections.push({
+          ts: j.ts, top1prob: j.top1prob,
+          ids: j.ids.filter((x: any) => typeof x === 'string'),
+          topic: typeof j.topic === 'string' && j.topic ? j.topic : undefined,
+        });
       } else if (j?.e === 'rdm' && typeof j.id === 'string' && Number.isFinite(j.ts)) {
         redemptions.push({ ts: j.ts, id: j.id });
       }
     } catch { /* skip malformed */ }
   }
-  return injections.map((inj) => ({
-    top1prob: inj.top1prob,
-    hit: redemptions.some((r) => r.ts >= inj.ts && r.ts <= inj.ts + ttl && inj.ids.includes(r.id)),
-  }));
+  return injections.map((inj) => {
+    const sample: FokLabeledSample = {
+      top1prob: inj.top1prob,
+      hit: redemptions.some((r) => r.ts >= inj.ts && r.ts <= inj.ts + ttl && inj.ids.includes(r.id)),
+    };
+    if (inj.topic !== undefined) sample.topic = inj.topic;
+    return sample;
+  });
 }
 
 export interface FokSampleStats {
