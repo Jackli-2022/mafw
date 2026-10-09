@@ -2061,6 +2061,55 @@ class MafwScheduler {
         }
       });
     });
+    // D2: reconsolidation sweep — mutated (labile) memories are checked daily
+    // against newer related memories; contradicted ones are updated through the
+    // supersedes chain (budget-gated, fail-open).
+    actionRegistry.set('memory:reconsolidate', async () => {
+      await this.runPipelineGuarded('memory:reconsolidate', async () => {
+        try {
+          if (!this.memoryService) return;
+          const { ReconsolidatePipeline } = require('./recall/reconsolidate-pipeline');
+          const { getReconsolidationQueue } = require('./recall/reconsolidation');
+          const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
+          const pipeline = new ReconsolidatePipeline({
+            queue: getReconsolidationQueue(),
+            index: this.memoryService.harmonicIndex,
+            readMemory: (id: string) => store.read(id),
+            readRelated: (id: string) => store.read(id),
+            worker: {
+              prompt: (t: string, s: string) =>
+                this.getPool().getWorker('reconsolidate', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-curator'),
+            },
+            writeSuperseding: async (oldId: string, content: string) => {
+              const { generateHarmonicId } = require('./core/memory/harmonic-types');
+              const old = await store.read(oldId);
+              const id = generateHarmonicId();
+              await store.write({
+                id,
+                type: old?.type ?? 'semantic',
+                primary_abstraction: content.slice(0, 80),
+                cue_anchors: [...((old?.cue_anchors ?? []).filter((c: string) => c !== 'reconsolidate')), 'reconsolidated'],
+                memory_value: content,
+                energy: Math.max(0.8, old?.energy ?? 0.8),
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              } as any);
+              await store.markSuperseded(oldId, id);
+              return id;
+            },
+            budget: this.getPipelineBudget(),
+          });
+          const r = await pipeline.runOnce();
+          if (r.checked > 0) {
+            log.info(`[Reconsolidate] checked=${r.checked} rewritten=${r.rewritten} skipped=${r.skipped}`);
+          }
+          this.heartbeat?.record('memory:reconsolidate', { ok: true, counts: r });
+        } catch (err: any) {
+          this.heartbeat?.record('memory:reconsolidate', { ok: false, error: err.message });
+          log.warn(`[Reconsolidate] run failed: ${err.message}`);
+        }
+      });
+    });
     // W2: skill promotion — procedural memories passing G1-G5 become staged
     // SKILL.md drafts + triage items for human approval (weekly).
     actionRegistry.set('memory:skillPromotion', async () => {

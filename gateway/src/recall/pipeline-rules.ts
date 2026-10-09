@@ -14,6 +14,10 @@ const RULES: Array<{ id: string; schedule: string; timezone: string; action: str
   // procedural/semantic memories against the live environment (read-only
   // probes) and supersedes contradicted ones (env-probing curation).
   { id: 'memory-review', schedule: '0 4 * * 0', timezone: 'UTC', action: 'memory:review' },
+  // D2: daily reconsolidation sweep — mutated (labile) memories are checked
+  // against newer related memories; contradicted ones get an update via the
+  // supersedes chain. Runs after decay (3:30) so energy is settled.
+  { id: 'memory-reconsolidate', schedule: '30 4 * * *', timezone: 'UTC', action: 'memory:reconsolidate' },
   // Weekly skill promotion (W2) — procedural memories that pass G1-G5 are
   // rendered to staged SKILL.md drafts + triage items for human approval.
   { id: 'skill-promotion', schedule: '0 5 * * 0', timezone: 'UTC', action: 'memory:skillPromotion' },

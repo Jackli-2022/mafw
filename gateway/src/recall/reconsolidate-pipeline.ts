@@ -34,7 +34,7 @@ export function selectNewerRelated(
       const c = e.created_at ? new Date(e.created_at).getTime() : 0;
       return c > unitCreated && c <= now;
     })
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())
     .slice(0, cap);
 }
 
