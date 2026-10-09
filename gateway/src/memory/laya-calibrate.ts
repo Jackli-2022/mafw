@@ -90,3 +90,46 @@ export function proposeTauLow(
     },
   };
 }
+
+export interface RoutePairRecord {
+  redundantScores?: Array<{ id: string; p: number }>;
+  verdict: string;
+  decidedBy?: string;
+  ts: number;
+}
+
+function maxRedundant(r: RoutePairRecord): number | null {
+  if (!r.redundantScores || r.redundantScores.length === 0) return null;
+  return Math.max(...r.redundantScores.map((s) => s.p));
+}
+
+/** Propose tauRedundantHigh from the real distribution. Conservative direction:
+ *  above the threshold NO update-verdict record may sit (a covered entry cannot
+ *  be one that needed updating). 0.99 ceiling mirrors tauHigh's blindness band. */
+export function proposeTauRedundantHigh(
+  records: RoutePairRecord[],
+): {
+  proposal: { tauRedundantHigh: number; maxUpdateP: number; above: number; scoredPairs: number; updatePairs: number } | null;
+  reason?: string;
+} {
+  const scored = records
+    .map((r) => ({ p: maxRedundant(r), verdict: r.verdict }))
+    .filter((x): x is { p: number; verdict: string } => x.p !== null);
+  if (scored.length < MIN_SCORED) {
+    return { proposal: null, reason: `need >= ${MIN_SCORED} redundant-scored records, have ${scored.length}` };
+  }
+  const updates = scored.filter((x) => x.verdict === 'update').map((x) => x.p);
+  if (updates.length < MIN_UPDATES) {
+    return { proposal: null, reason: `need >= ${MIN_UPDATES} update-verdict records, have ${updates.length}` };
+  }
+  const maxUpdateP = Math.max(...updates);
+  const t = Math.min(1, maxUpdateP + 0.01);
+  if (t >= 0.99) {
+    return { proposal: null, reason: `update band reaches ${maxUpdateP} — no safe line below 0.99` };
+  }
+  const above = scored.filter((x) => x.p >= t && x.verdict !== 'update').length;
+  if (above < 3) {
+    return { proposal: null, reason: `only ${above} non-update record(s) above ${t} — opening the gate is pointless` };
+  }
+  return { proposal: { tauRedundantHigh: t, maxUpdateP, above, scoredPairs: scored.length, updatePairs: updates.length } };
+}

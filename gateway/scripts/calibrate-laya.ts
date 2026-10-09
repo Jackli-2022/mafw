@@ -3,7 +3,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { bucketDistribution, proposeTauLow, LayaPairRecord } from '../src/memory/laya-calibrate';
+import { bucketDistribution, proposeTauLow, proposeTauRedundantHigh, LayaPairRecord } from '../src/memory/laya-calibrate';
 
 const file = process.argv[2] ?? path.join(os.homedir(), '.mafw', 'logs', 'consolidation-pairs.jsonl');
 if (!fs.existsSync(file)) {
@@ -14,4 +14,8 @@ const records: LayaPairRecord[] = fs.readFileSync(file, 'utf-8')
   .split('\n').filter(Boolean)
   .map((line) => { try { return JSON.parse(line); } catch { return null; } })
   .filter(Boolean);
-console.log(JSON.stringify({ file, ...bucketDistribution(records), ...proposeTauLow(records) }, null, 2));
+console.log(JSON.stringify({
+  file,
+  conflict: { ...bucketDistribution(records), ...proposeTauLow(records) },
+  redundant: proposeTauRedundantHigh(records as any),
+}, null, 2));
