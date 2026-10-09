@@ -11,6 +11,7 @@ import { pythonExecTool } from './tools/python-exec';
 import { pythonRestartTool } from './tools/python-restart';
 import { memoryGuideHook } from './hooks/memory-guide';
 import { userProfileSystemHook } from './hooks/user-profile';
+import { agentPriorsSystemHook } from './hooks/agent-priors';
 import { voiceGuideMessagesHook, voiceGuideSystemHook } from './hooks/voice-guide';
 import { pushObservation, extractTextFromParts, toolFailureText } from './utils/obs-capture';
 import { addMemoryTool } from './tools/add-memory';
@@ -130,6 +131,7 @@ export default async function MafwPlugin({ directory }: { directory: string }) {
     'experimental.chat.system.transform': async (input: any, output: any) => {
       memoryGuideHook(input, output);
       await userProfileSystemHook(input, output);
+      await agentPriorsSystemHook(input, output);
       voiceGuideSystemHook(input, output);
       return output;
     },
