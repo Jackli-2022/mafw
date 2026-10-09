@@ -27,6 +27,7 @@ import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/Cha
 import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
 import { isNarrowViewport, railAutoAction } from "./layout-breakpoints"
+import { createPresence, SURFACE_MS } from "./components/presence"
 import { NotesDock } from "./components/NotesDock"
 import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
@@ -1354,6 +1355,7 @@ export function MafwShell() {
     setRailWidth(w)
     try { localStorage.setItem("mafw-rail-width", String(w)) } catch { /* ignore */ }
   }
+  const railPresent = createPresence(() => !railCollapsed(), SURFACE_MS)
 
   const applyTasksPlacement = (p: "bar" | "dock") => {
     setTasksPlacement(p)
@@ -1542,7 +1544,7 @@ export function MafwShell() {
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
-              <div class="mafw-shell" classList={{ maximized: winMaximized() }}>
+              <div class="mafw-shell" classList={{ maximized: winMaximized() }} style={{ "--rail-w": railCollapsed() ? "0px" : `${railWidth()}px` }}>
       <ToastV2.Region />
       <CommandPalette
         open={paletteOpen()}
@@ -1559,7 +1561,7 @@ export function MafwShell() {
       />
       {/* 左列：rail 通高（grid-row 1/-1）；收起时整列不渲染（0 宽，靠顶栏按钮 / Ctrl+B 再展开） */}
       <div class="mafw-rail-col">
-        {railCollapsed() ? null : (
+        <Show when={railPresent()}>
           <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
             <Rail
               brand={
@@ -1630,7 +1632,7 @@ export function MafwShell() {
               onCollapse={() => applyRailCollapsed(true)}
             />
           </div>
-        )}
+        </Show>
       </div>
       {/* 顶行：strip（会话 tab 恒显）+ dock 图标组 + 窗口控制 */}
       <div

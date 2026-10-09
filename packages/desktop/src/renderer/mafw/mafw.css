@@ -439,9 +439,11 @@ html[data-theme="light"] body {
 /* ── Shell Layout ── */
 .mafw-shell {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: var(--rail-w, 264px) 1fr;
   grid-template-rows: 38px 1fr;
   height: 100vh;
+  --rail-w: 264px;
+  transition: grid-template-columns var(--dur-surface) var(--ease-surface);
   background: var(--background-base);
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;   /* §4.8: 所有数字等宽（耗时/token/计数） */
@@ -507,7 +509,7 @@ html[data-theme="light"] body {
 .mafw-body { display: grid; grid-template-columns: 1fr; overflow: hidden; min-height: 0; }
 
 /* ── Rail column（通高：跨顶行与 body 行） ── */
-.mafw-rail-col { grid-row: 1 / -1; display: flex; min-height: 0; }
+.mafw-rail-col { grid-row: 1 / -1; display: flex; min-height: 0; overflow: hidden; }
 
 /* ── Rail ── */
 .mafw-rail {
@@ -3108,7 +3110,7 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-welcome-empty { color: var(--text-weak); font-size: 13px; padding: 8px 0; }
 
 /* ── Rail (new: wrap/scroll/footer/collapse) ── */
-.mafw-rail-wrap { position: relative; min-width: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+.mafw-rail-wrap { position: relative; min-width: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; flex: 0 0 auto; }
 .mafw-rail-footer { background: var(--bg-base); }
 /* 收起态：整列不渲染（0 宽），无残留细条 */
 /* ── Chat panes (single pane since v6; mafw-pane keeps the artifact-column hook) ── */

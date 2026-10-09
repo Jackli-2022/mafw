@@ -20,3 +20,13 @@ describe("v7 semantic motion tokens", () => {
     expect(shellBlock).toMatch(/--ease:\s*cubic-bezier\(\.25,0,0,1\)/)
   })
 })
+
+describe("rail column width transition", () => {
+  test("shell drives the rail column with an animatable var", () => {
+    expect(css).toMatch(/\.mafw-shell\s*\{[^}]*grid-template-columns:\s*var\(--rail-w/)
+    expect(css).toMatch(/\.mafw-shell\s*\{[^}]*transition:\s*grid-template-columns\s+var\(--dur-surface\)\s+var\(--ease-surface\)/)
+  })
+  test("rail column clips overflow so content never reflows mid-animation", () => {
+    expect(css).toMatch(/\.mafw-rail-col\s*\{[^}]*overflow:\s*hidden/)
+  })
+})
