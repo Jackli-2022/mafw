@@ -125,7 +125,8 @@ git commit -m "feat(desktop): v7 semantic motion tokens (fast/surface + standard
 **Interfaces:**
 - Produces:
   - `export const SURFACE_MS = 280` — 与 `--dur-surface` 对齐的 JS 常量（CSS 不能读回，故双写）。
-  - `export function isPresent(open: boolean, exitingSince: number | null, now: number, exitMs: number): boolean` — 纯函数。
+  - `export type PresenceAction = "mount" | "hold" | "schedule-unmount"`
+  - `export function presenceStep(prevOpen: boolean, nextOpen: boolean, present: boolean): PresenceAction` — 纯函数（可测；Solid 的 `createEffect` 在 bun 的裸 `createRoot` 下不 flush，故把决策抽为纯 fn）。
   - `export function createPresence(open: () => boolean, exitMs?: number): () => boolean` — Solid 包装，返回是否应渲染；由开转闭时保持 `exitMs` 后卸载。
 
 - [ ] **Step 1: 写失败测试**
@@ -134,43 +135,24 @@ Create `packages/desktop/src/renderer/mafw/components/presence.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
-import { createRoot, createSignal } from "solid-js"
-import { createPresence, isPresent, SURFACE_MS } from "./presence"
+import { presenceStep, SURFACE_MS } from "./presence"
 
-describe("isPresent (pure)", () => {
-  test("open => always present", () => {
-    expect(isPresent(true, null, 0, 280)).toBe(true)
-    expect(isPresent(true, 999, 1000, 280)).toBe(true)
+describe("presenceStep (pure)", () => {
+  test("mount when opening", () => {
+    expect(presenceStep(false, true, false)).toBe("mount")
+    expect(presenceStep(false, true, true)).toBe("mount")
   })
-  test("closed with no exit timestamp => absent", () => {
-    expect(isPresent(false, null, 1000, 280)).toBe(false)
+  test("schedule unmount only on the falling edge while still present", () => {
+    expect(presenceStep(true, false, true)).toBe("schedule-unmount")
   })
-  test("closed within exit window => present; after => absent", () => {
-    expect(isPresent(false, 1000, 1200, 280)).toBe(true)
-    expect(isPresent(false, 1000, 1280, 280)).toBe(false)
-    expect(isPresent(false, 1000, 9999, 280)).toBe(false)
+  test("hold when already closing or unchanged-closed", () => {
+    expect(presenceStep(true, false, false)).toBe("hold")
+    expect(presenceStep(false, false, true)).toBe("hold")
   })
 })
 
-describe("createPresence (solid)", () => {
-  test("stays mounted through the exit window then unmounts", async () => {
-    await new Promise<void>((resolve) => {
-      createRoot((dispose) => {
-        const [open, setOpen] = createSignal(true)
-        const present = createPresence(open, 40)
-        expect(present()).toBe(true)
-        setOpen(false)
-        expect(present()).toBe(true) // 退出窗口内仍挂载
-        setTimeout(() => {
-          expect(present()).toBe(false)
-          dispose()
-          resolve()
-        }, 80)
-      })
-    })
-  })
-
-  test("SURFACE_MS matches the CSS surface tier", () => {
+describe("SURFACE_MS", () => {
+  test("mirrors the CSS surface tier", () => {
     expect(SURFACE_MS).toBe(280)
   })
 })
@@ -186,16 +168,18 @@ Expected: FAIL（`./presence` 不存在）。
 Create `packages/desktop/src/renderer/mafw/components/presence.ts`:
 
 ```ts
-import { createEffect, createSignal, on, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 
 /** Must mirror `--dur-surface` in mafw.css (CSS can't be read back at runtime). */
 export const SURFACE_MS = 280
 
-/** Pure: should the surface be mounted? */
-export function isPresent(open: boolean, exitingSince: number | null, now: number, exitMs: number): boolean {
-  if (open) return true
-  if (exitingSince === null) return false
-  return now - exitingSince < exitMs
+export type PresenceAction = "mount" | "hold" | "schedule-unmount"
+
+/** Pure transition: what should happen when `open` moves from prevOpen to nextOpen? */
+export function presenceStep(prevOpen: boolean, nextOpen: boolean, present: boolean): PresenceAction {
+  if (nextOpen) return "mount"
+  if (prevOpen && present) return "schedule-unmount"
+  return "hold"
 }
 
 /**
@@ -205,19 +189,23 @@ export function isPresent(open: boolean, exitingSince: number | null, now: numbe
  */
 export function createPresence(open: () => boolean, exitMs: number = SURFACE_MS): () => boolean {
   const [present, setPresent] = createSignal(open())
-  const [exitingSince, setExitingSince] = createSignal<number | null>(null)
   let timer: ReturnType<typeof setTimeout> | null = null
+  let prevOpen = open()
+  let initialized = false
 
-  createEffect(on(open, (o) => {
-    if (o) {
+  createEffect(() => {
+    const nextOpen = open()
+    if (!initialized) { initialized = true; prevOpen = nextOpen; return }
+    const action = presenceStep(prevOpen, nextOpen, present())
+    prevOpen = nextOpen
+    if (action === "mount") {
       if (timer) { clearTimeout(timer); timer = null }
-      setExitingSince(null)
       setPresent(true)
-    } else if (present()) {
-      setExitingSince(Date.now())
-      timer = setTimeout(() => { timer = null; setExitingSince(null); setPresent(false) }, exitMs)
+    } else if (action === "schedule-unmount") {
+      if (timer) { clearTimeout(timer); timer = null }
+      timer = setTimeout(() => { timer = null; setPresent(false) }, exitMs)
     }
-  }, { defer: true }))
+  })
 
   onCleanup(() => { if (timer) clearTimeout(timer) })
   return present
@@ -227,7 +215,7 @@ export function createPresence(open: () => boolean, exitMs: number = SURFACE_MS)
 - [ ] **Step 4: 运行测试确认通过**
 
 Run: `cd packages/desktop && bun test src/renderer/mafw/components/presence.test.ts`
-Expected: PASS（5 用例）。
+Expected: PASS（4 用例）。
 
 - [ ] **Step 5: 提交**
 
