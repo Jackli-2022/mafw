@@ -56,6 +56,34 @@
 4. **可逆**：降级 = 删 skill 文件，记忆本体仍在
 
 这条通道补上了"next-time 路标只能指向已存在 skill"的缺口——路标第一次可以指向**记忆自己长出来的** skill。
+
+### 3.2 不是什么记忆都值得做 skill：提升判据体系（脑 + 业界）
+
+用户问题：不是所有记忆都配成为 skill。判据从两侧取证：
+
+**脑（技能固化/习惯形成的条件）**：
+- **Schneider & Shiffrin（1977）一致映射**：自动控制只在**一致的 cue→response 映射**下形成；可变映射永远走控制加工——内容高度条件分支化的知识不应固化
+- **Anderson ACT-R proceduralization**：陈述性→程序性知识需要**同一程序的反复执行**（练习驱动，非时间驱动）
+- **习惯 vs 目标导向双系统**（基底节）：习惯=缓存策略，只在**稳定环境**经重复+奖赏形成；环境多变时保持目标导向（灵活但贵）——在漂移环境里固化习惯会产生自动化错误
+- Fitts & Posner 三阶段：cognitive→associative→autonomous，自动化是练出来的不是写出来的
+
+**业界**：
+- **JIT 分层编译**（HotSpot）：默认解释执行（=检索），只有**热点**（调用计数超阈值）才编译（=skill 化）；profile-guided 用真实运行数据决策；**逆优化（deopt）存在**——假设失效即回退。最贴切的工业隐喻
+- **Voyager**（已验证）：技能入库的门 = **自验证成功**（执行通过才存）
+- **AWM**（已验证）：只归纳"commonly reused routines"——跨任务频率是唯一门票
+- **Self-RAG**（已验证，arXiv:2310.11511）：检索与否是学出的**自适应决策**（reflection token），不一刀切
+
+**MAFW 提升闸门（五级，全部信号现成）**：
+
+| 闸门 | 判据 | 信号源 |
+|---|---|---|
+| G1 热度（JIT 类比） | 7 天检索命中 ≥ 阈值 | RetrievalEventBuffer need |
+| G2 一致映射 | 内容=确定性步骤序列，非条件分支丛 | curator 提升前结构判断 |
+| G3 验证过（Voyager 门） | 带 `verified:` 锚点或关联 goal PASS | cue_anchors / goal_outcomes |
+| G4 稳定性 | 近 N 天未被 supersede/修订（漂移中的知识固化=放大错误） | updated_at vs supersede 史 |
+| G5 成本不对称 | 检索成本×频率 > skill 化成本；skill description 全进发现面，**列表膨胀会稀释 skill 选择** | 计数即可 |
+
+**逆优化通道（deopt）**：skill 长期不被调用 → 降级回纯记忆；关联记忆被 supersede → skill 回炉修订。习惯可消退。
 | W3 | **schema 驱动感知** | Bartlett/Friston pattern completion | 边界 recall 命中 schema 簇时整簇 gist 作为"先验预测"注入 | 依赖 D5（S2 簇已有） |
 | W4 | **goal 级先验** | options/GA 规划层式 | plan 节点注入能力账本+失败谱（自我认知 L1/L2 的消费点） | v4.22.0 plan 节点已接线 |
 
