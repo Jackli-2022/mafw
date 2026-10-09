@@ -563,7 +563,7 @@ html[data-theme="light"] body {
 .mafw-rail-date-group::after { content: ""; order: 3; flex: 1; height: 1px; background: var(--border-subtle); transform: translateY(-2px); }
 .mafw-rail-date-count { order: 2; margin-left: auto; font-variant-numeric: tabular-nums; font-size: 10px; opacity: .8; }
 .mafw-rail-scroll > .mafw-rail-date-group:first-child { padding-top: 6px; }
-.mafw-rail-session { display: flex; align-items: center; gap: 6px; height: 32px; margin: 1px 6px; padding: 0 8px 0 12px; border-radius: 4px; cursor: pointer; color: var(--text-2); font-size: 13px; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease); }
+.mafw-rail-session { display: flex; align-items: center; gap: 6px; height: 32px; margin: 1px 6px; padding: 0 8px 0 12px; border-radius: 4px; cursor: pointer; color: var(--text-2); font-size: 13px; transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard); }
 .mafw-rail-session:hover { background: var(--hover); color: var(--text-1); }
 .mafw-rail-session.active { background: var(--hover); color: var(--text-1); box-shadow: inset 2px 0 0 var(--accent); }
 .mafw-rail-session[data-hi="1"] { background: var(--hover); color: var(--text-1); }
@@ -594,7 +594,7 @@ html[data-theme="light"] body {
 .mafw-manager-card-meta { margin-top: 3px; font-size: 10px; opacity: .6; color: var(--text-3); }
 .mafw-manager-card-idle { margin-top: 4px; font-size: 11px; opacity: .6; color: var(--text-3); }
 .mafw-rail-footer { display: flex; flex-direction: column; }
-.mafw-rail-settings-bar { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font-size: 13px; color: var(--text-3); background: var(--bg-base); cursor: pointer; flex-shrink: 0; transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+.mafw-rail-settings-bar { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font-size: 13px; color: var(--text-3); background: var(--bg-base); cursor: pointer; flex-shrink: 0; transition: color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard); }
 .mafw-rail-settings-bar:hover { color: var(--text-1); background: var(--bg-overlay); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
@@ -689,7 +689,7 @@ html[data-theme="light"] body {
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 .mafw-session-tab:hover { background: var(--hover); color: var(--text-2); }
 .mafw-session-tab.active { background: var(--bg-overlay); color: var(--text-1); }
@@ -4891,3 +4891,15 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-goal-artifacts { display: flex; gap: 8px; margin-top: 10px; }
 .mafw-artifact-chip { font-size: 11px; background: var(--bg-raised); border: 1px solid var(--border-base); border-radius: var(--r-sm); padding: 2px 8px; cursor: pointer; color: var(--text-4); }
 .mafw-goal-actions { margin-top: 12px; display: flex; gap: 8px; }
+
+/* ── v7 微交互：按压下沉半像素（无缩放抖动）；hover/press 统一 fast 档 ── */
+.mafw-rail-session:active,
+.mafw-rail-settings-bar:active,
+.mafw-rail-nav-item:active,
+.mafw-rail-new:active,
+.mafw-tts-row:active,
+.mafw-changes-row:active,
+.mafw-diff-file-row:active,
+.mafw-rail-load-more:active { background: var(--active); }
+.mafw-session-tab:active { background: var(--active); transform: translateY(.5px); }
+.mafw-rail-session:active { transform: translateY(.5px); }

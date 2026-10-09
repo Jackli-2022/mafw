@@ -43,3 +43,12 @@ describe("surface-tier entrances use surface tokens", () => {
     expect(css).toMatch(/mafw-dock-in var\(--dur-surface\) var\(--ease-surface\)/)
   })
 })
+
+describe("micro-interaction press feedback", () => {
+  test("primary self-drawn controls define a press state", () => {
+    expect(css).toMatch(/\.mafw-rail-session:active/)
+    expect(css).toMatch(/\.mafw-session-tab:active\s*\{/)
+    expect(css).toMatch(/\.mafw-rail-nav-item:active/)
+    expect(css).toMatch(/\.mafw-changes-row:active/)
+  })
+})
