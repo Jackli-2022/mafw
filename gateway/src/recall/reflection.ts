@@ -9,6 +9,7 @@ import { MemoryWorker } from './memory-worker';
 import { MinHashMerger } from '../core/memory/minhash-merger';
 import { ReflectCursor } from './reflect-cursor';
 import { generateHarmonicId, HarmonicUnit } from '../core/memory/harmonic-types';
+import { HarmonicIndexEntry } from '../core/memory/harmonic-types';
 import { abstractionLevelFor } from '../core/memory/abstraction-level';
 import { calculateSalience } from '../core/memory/salience-perceptor';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
@@ -221,6 +222,40 @@ export function unreflectedBySession(
   return bySession;
 }
 
+/** A2: tentative draft abstractions (fast-system output) awaiting slow-system
+ *  validation — live entries carrying the literal 'tentative' cue anchor. */
+export function collectTentative(entries: HarmonicIndexEntry[], _now: number): HarmonicIndexEntry[] {
+  return entries.filter((e) => !e.superseded_by && (e.cue_anchors ?? []).includes('tentative'));
+}
+
+export interface TentativeVerdict { id: string; verdict: 'promote' | 'reject' }
+
+export const TENTATIVE_SYSTEM = `You validate draft abstractions produced by the hourly extraction pipeline. A draft is valid only if it holds up as a genuine CROSS-EPISODE pattern (not a restatement of one episode). Reply with ONLY JSON: {"drafts":[{"id":"...","verdict":"promote|reject"}]}.`;
+
+/** Promote → strip 'tentative', bump energy to 0.7, stamp verified; reject →
+ *  demote to 0.05 energy and swap the anchor to 'rejected'. */
+export async function applyTentativeVerdicts(
+  verdicts: TentativeVerdict[],
+  deps: { read: (id: string) => Promise<HarmonicUnit | null>; write: (u: HarmonicUnit) => Promise<unknown> },
+  now: Date,
+): Promise<{ promoted: number; rejected: number }> {
+  const out = { promoted: 0, rejected: 0 };
+  const stamp = `verified:${now.toISOString().slice(0, 10)}`;
+  for (const v of verdicts) {
+    const unit = await deps.read(v.id);
+    if (!unit) continue;
+    const cues = (unit.cue_anchors ?? []).filter((c) => c !== 'tentative');
+    if (v.verdict === 'promote') {
+      await deps.write({ ...unit, cue_anchors: [...cues, stamp], energy: 0.7, updated_at: now.toISOString() });
+      out.promoted++;
+    } else if (v.verdict === 'reject') {
+      await deps.write({ ...unit, cue_anchors: [...cues, 'rejected'], energy: 0.05, updated_at: now.toISOString() });
+      out.rejected++;
+    }
+  }
+  return out;
+}
+
 export class ReflectionPipeline {
   private store: HarmonicUnitFileStore;
   private merger = new MinHashMerger();
@@ -383,6 +418,31 @@ export class ReflectionPipeline {
         result.failed++;
       }
     }
+
+    // A2: validate this session's tentative drafts (promote/reject) with the
+    // same worker — drafts that hold up become normal semantic memories.
+    try {
+      const tentative = collectTentative(this.opts.index.getIndex().entries, Date.now());
+      if (tentative.length > 0) {
+        const listText = tentative.slice(0, 10).map((e) => `- [${e.id}] ${e.primary_abstraction}`).join('\n');
+        const reply = await worker.prompt(
+          `DRAFT ABSTRACTIONS:\n${listText}`,
+          TENTATIVE_SYSTEM,
+          this.opts.workerModel,
+          'memory-curator',
+        );
+        const m = reply.match(/\{[\s\S]*\}/);
+        const parsed = m ? JSON.parse(m[0]) : null;
+        if (Array.isArray(parsed?.drafts) && parsed.drafts.length > 0) {
+          const r = await applyTentativeVerdicts(
+            parsed.drafts,
+            { read: (id) => this.store.read(id), write: (u) => this.store.write(u) },
+            new Date(),
+          );
+          result.distilled += r.promoted;
+        }
+      }
+    } catch { /* fail-open: drafts remain for the next run */ }
 
     // D1b: gist 化后源 verbatim episodes 降能（Fuzzy-Trace：细节先死、要点存活）。
     // 降能不失联——条目仍可检索，只是在排序中让位给 gist。
