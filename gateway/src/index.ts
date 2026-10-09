@@ -5666,6 +5666,25 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/recall/priors — W1 常驻先验块（L5 公理 + L2 失败模式谱），fail-open。
+        if (req.url?.startsWith('/api/recall/priors') && req.method === 'GET') {
+          try {
+            const { handleAgentPriors } = require('./routes/agent-priors');
+            const result = await handleAgentPriors({
+              l5: new L5Store(),
+              getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
+              needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            log.error('[Recall] priors error:', err.message);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ block: null, used: 0, budget: { maxChars: 800 } }));
+          }
+          return;
+        }
+
         // POST /api/obs/capture — observation intake from the opencode plugin.
         // The gateway owns the T1 store (SQLite) and assigns turn IDs, so
         // plugin/serve restarts can never renumber turns or duplicate writes
