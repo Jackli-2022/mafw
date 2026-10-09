@@ -13,6 +13,7 @@ function makeUnit(id: string, value: string): HarmonicUnit {
 function makeHarness(opts: {
   p?: number | null;                // laya client 返回（undefined = 不配 laya）
   tauHigh?: number;
+  tauLow?: number;
   llmVerdict?: string;              // LLM 判官 JSON 回复（undefined = 不配 LLM）
 }) {
   const newUnit = makeUnit('new-1', '新事实');
@@ -44,6 +45,7 @@ function makeHarness(opts: {
     laya: opts.p !== undefined ? {
       client: { askConflict: async () => (opts.p ?? null) as any },
       tauHigh: opts.tauHigh ?? 0.85,
+      tauLow: opts.tauLow,
     } : undefined,
     onPair: (pr) => pairs.push(pr),
   });
@@ -98,5 +100,48 @@ describe('laya one-sided cascade', () => {
     expect(h.pairs[0].decidedBy).toBe('llm');
     expect(h.pairs[0].layaScores).toBeUndefined();
     expect(h.svc.getStats().judged).toBe(1);
+  });
+});
+
+describe('laya three-way gate (tauLow)', () => {
+  it('CREATEs directly when ALL candidate scores <= tauLow (no LLM call)', async () => {
+    const h = makeHarness({ p: 0.05, tauLow: 0.1, llmVerdict: '{"action":"update","targetId":"old-1"}' });
+    const out = await h.svc.consolidate(h.newUnit);
+    expect(out.action).toBe('create');
+    expect(h.pairs[0].decidedBy).toBe('laya-low');
+    expect(h.pairs[0].layaScores).toEqual([{ id: 'old-1', p: 0.05 }]);
+    const s = h.svc.getStats() as any;
+    expect(s.layaCreated).toBe(1);
+    expect(s.creates).toBe(1);
+    expect(s.judged).toBe(0);
+  });
+
+  it('tauLow = 0 (default) keeps legacy escalation', async () => {
+    const h = makeHarness({ p: 0.05, llmVerdict: '{"action":"create"}' });
+    const out = await h.svc.consolidate(h.newUnit);
+    expect(out.action).toBe('create');
+    expect(h.pairs[0].decidedBy).toBe('llm');
+    expect(h.svc.getStats().judged).toBe(1);
+  });
+
+  it('middle band (tauLow < p < tauHigh) still escalates to LLM', async () => {
+    const h = makeHarness({ p: 0.5, tauLow: 0.1, llmVerdict: '{"action":"create"}' });
+    const out = await h.svc.consolidate(h.newUnit);
+    expect(out.action).toBe('create');
+    expect(h.pairs[0].decidedBy).toBe('llm');
+  });
+
+  it('client null (sidecar down) never auto-CREATEs', async () => {
+    const h = makeHarness({ p: null, tauLow: 0.1, llmVerdict: '{"action":"create"}' });
+    const out = await h.svc.consolidate(h.newUnit);
+    expect(out.action).toBe('create');
+    expect(h.pairs[0].decidedBy).toBe('llm');
+  });
+
+  it('tauHigh still wins over tauLow when both would match', async () => {
+    const h = makeHarness({ p: 0.95, tauHigh: 0.85, tauLow: 0.99, llmVerdict: '{"action":"create"}' });
+    const out = await h.svc.consolidate(h.newUnit);
+    expect(out.action).toBe('update');
+    expect(h.pairs[0].decidedBy).toBe('laya');
   });
 });

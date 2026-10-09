@@ -60,13 +60,15 @@ export interface ConsolidationDeps {
   /** Cosine threshold for candidate recall (default 0.8). */
   minCosine?: number;
   maxCandidates?: number;
-  /** Laya conflict-judge cascade (one-sided v1): when the local conflict
-   *  model is confident (p >= tauHigh) that the new unit SUPERSEDES a
-   *  candidate, adopt UPDATE without an LLM call. Everything else falls
-   *  through to the LLM judge unchanged (scores land in the audit pair). */
+  /** Laya conflict cascade (three-way): p >= tauHigh → adopt UPDATE without
+   *  LLM; ALL candidate scores <= tauLow → CREATE without LLM (CREATE is the
+   *  judge's fail-open outcome anyway, so this only short-circuits certain
+   *  no-conflict cases); middle band → LLM judge unchanged. tauLow 0 = off.
+   *  tauHigh stays 0.99 in production (separate-class blindness band). */
   laya?: {
     client: { askConflict(known: string, newInfo: string): Promise<number | null> };
     tauHigh: number;
+    tauLow?: number;
     maxTextChars?: number;
   };
   /** Daily USD cap gate for background pipelines (0 = unlimited). */
@@ -87,8 +89,10 @@ export interface JudgedPair {
   candidates: Array<{ id: string; cosine: number }>;
   verdict: 'update' | 'create' | 'separate' | 'skip';
   ts: number;
-  /** Which judge decided: 'laya' = local conflict model adopted, 'llm' = worker LLM. */
-  decidedBy?: 'laya' | 'llm';
+  /** Which judge decided: 'laya' = local conflict model adopted UPDATE,
+   *  'laya-low' = all candidates below tauLow → CREATE without LLM,
+   *  'llm' = worker LLM. */
+  decidedBy?: 'laya' | 'laya-low' | 'llm';
   /** Per-candidate laya noul scores (present whenever the cascade ran). */
   layaScores?: Array<{ id: string; p: number }>;
 }
@@ -123,7 +127,7 @@ export class ConsolidationService {
   private budget?: ConsolidationDeps['budget'];
   private minCosine: number;
   private maxCandidates: number;
-  private stats = { judged: 0, updates: 0, creates: 0, skipped: 0, layaAdopted: 0, layaEscalated: 0 };
+  private stats = { judged: 0, updates: 0, creates: 0, skipped: 0, layaAdopted: 0, layaEscalated: 0, layaCreated: 0 };
 
   constructor(deps: ConsolidationDeps) {
     this.store = deps.store;
@@ -231,6 +235,15 @@ export class ConsolidationService {
         this.emitPair(unit, liveCandidates, 'update', 'laya', layaScores);
         const merged = await this.mergeIntoNewer(unit, r.adoptedTargetId);
         return { action: 'update', targetId: r.adoptedTargetId, mergedId: merged.id };
+      }
+      // Three-way gate: laya confident "no conflict" with EVERY live candidate
+      // → CREATE directly. Only when scores exist (client null = no opinion).
+      const tauLow = this.laya.tauLow ?? 0;
+      if (tauLow > 0 && r.scores.length > 0 && r.scores.every((s) => s.p <= tauLow)) {
+        this.stats.layaCreated++;
+        this.stats.creates++;
+        this.emitPair(unit, liveCandidates, 'create', 'laya-low', layaScores);
+        return { action: 'create' };
       }
       this.stats.layaEscalated++;
     }
