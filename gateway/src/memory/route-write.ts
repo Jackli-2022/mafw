@@ -225,7 +225,7 @@ export async function routeAndWrite(
     const sunk: HarmonicUnit = {
       ...unit,
       energy: 0.05,
-      cue_anchors: dedupeCap([...(unit.cue_anchors || []), `redundant:${decision.targetId}`], 8),
+      cue_anchors: dedupeCap([`redundant:${decision.targetId}`, ...(unit.cue_anchors || [])], 8),
       updated_at: new Date().toISOString(),
     };
     await store.write(sunk, undefined, { skipMerge: true });

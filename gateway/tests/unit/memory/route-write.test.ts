@@ -270,6 +270,25 @@ describe('routeAndWrite', () => {
     expect(s.writes[0].merged_from).toContain('old');
   });
 
+  test('redundant → redundant anchor survives truncation when unit has 8 unique anchors', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', [0.9, 0.44]);
+    const s = memStore([u('old')]);
+    const full = u('n1');
+    full.cue_anchors = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'];
+    const out = await routeAndWrite(full, s as any, {
+      vectors: v,
+      provider,
+      laya: { client: { askPair: async () => ({ pConflict: 0.1, pRedundant: 0.97 }) }, tauRedundantHigh: 0.9 },
+      readUnit: async () => ({ memory_value: '已知内容' }),
+      judge: async () => { throw new Error('judge must not be called'); },
+    });
+    expect(out.action).toBe('redundant');
+    expect(s.writes).toHaveLength(1);
+    expect(s.writes[0].cue_anchors).toContain('redundant:old');
+    expect(s.writes[0].cue_anchors!.length).toBeLessThanOrEqual(8);
+  });
+
   test('redundant → sunk write (energy 0.05 + redundant anchor) + reinforcement event', async () => {
     const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
     v.upsert('old', [0.9, 0.44]);
