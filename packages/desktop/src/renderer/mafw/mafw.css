@@ -433,7 +433,7 @@ html[data-theme="light"] body {
   content: "▌";
   color: var(--accent);
   margin-left: 2px;
-  animation: mafw-caret-blink 1s var(--ease) infinite;
+  animation: mafw-caret-blink 1s var(--ease-standard) infinite;
 }
 
 /* ── Shell Layout ── */

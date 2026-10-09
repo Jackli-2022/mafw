@@ -59,3 +59,9 @@ describe("turn enter gating", () => {
     expect(css).not.toMatch(/\.mafw-session-turn-container \[data-component="session-turn"\]\s*\{[^}]*mafw-enter/)
   })
 })
+
+describe("streaming caret", () => {
+  test("uses the standard easing token", () => {
+    expect(css).toMatch(/mafw-caret-blink 1s var\(--ease-standard\)/)
+  })
+})
