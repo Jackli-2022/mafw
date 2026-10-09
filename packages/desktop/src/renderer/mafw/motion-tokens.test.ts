@@ -52,3 +52,10 @@ describe("micro-interaction press feedback", () => {
     expect(css).toMatch(/\.mafw-changes-row:active/)
   })
 })
+
+describe("turn enter gating", () => {
+  test("enter animation is class-scoped (no blanket rule => no history cascade)", () => {
+    expect(css).toMatch(/\.mafw-turn-animate\s*\{[^}]*mafw-enter/)
+    expect(css).not.toMatch(/\.mafw-session-turn-container \[data-component="session-turn"\]\s*\{[^}]*mafw-enter/)
+  })
+})

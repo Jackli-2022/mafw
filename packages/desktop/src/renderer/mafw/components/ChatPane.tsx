@@ -1,5 +1,6 @@
-import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
+import { createSignal, createMemo, createEffect, on, onMount, onCleanup, Show, For, ErrorBoundary } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
+import { shouldAnimateTail, tailIdOf } from "../chat/turn-enter"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
@@ -939,6 +940,16 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const allTurns = () => userMessages()
   const visibleTurns = () => { const all = allTurns(); return all.slice(Math.max(0, all.length - renderLimit())) }
 
+  // 进场去抖：仅「本会话加载后新追加的 tail」播 mafw-enter；历史水合/翻旧页不弹
+  const [animateTurnId, setAnimateTurnId] = createSignal<string | null>(null)
+  let prevTailId: string | null = null
+  createEffect(on(() => props.sessionID, () => { prevTailId = null; setAnimateTurnId(null) }, { defer: true }))
+  createEffect(() => {
+    const next = tailIdOf(visibleTurns())
+    if (shouldAnimateTail(prevTailId, next)) setAnimateTurnId(next)
+    prevTailId = next
+  })
+
   // Transcript search source: every visible turn (user + assistant) with
   // its full text (message.text + text parts) flattened for matching.
   const searchableTurns = createMemo(() => visibleTurns().map((m: any) => ({
@@ -1169,7 +1180,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </Show>
             <For each={visibleTurns()}>
               {(msg) => (
-                <div class="mafw-turn-anchor" data-turn-id={msg.id}>
+                <div class="mafw-turn-anchor" data-turn-id={msg.id} classList={{ "mafw-turn-animate": animateTurnId() === msg.id }}>
                 <ErrorBoundary
                   fallback={(err) => {
                     console.error("[mafw] turn render error:", err)

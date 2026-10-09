@@ -399,7 +399,7 @@ html[data-theme="light"] body {
   from { transform: translateY(4px); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
 }
-.mafw-session-turn-container [data-component="session-turn"] { animation: mafw-enter var(--dur-3) var(--ease); }
+.mafw-turn-animate { animation: mafw-enter var(--dur-surface) var(--ease-surface); }
 @keyframes mafw-fade-in {
   from { opacity: 0; }
   to   { opacity: 1; }

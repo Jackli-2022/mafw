@@ -428,10 +428,10 @@ describe("动效基建 v4", () => {
     expect(seg).toContain("transition-duration: 0.01ms")
     expect(seg).toContain("!important")
   })
-  test("enter 动画 4px + token", () => {
+  test("enter 动画 4px + surface token（v7：class 作用域 · 仅新 tail）", () => {
     const b = cssBlock("@keyframes mafw-enter")
     expect(b).toContain("translateY(4px)")
-    expect(cssBlock('.mafw-session-turn-container [data-component="session-turn"]')).toContain("var(--dur-3)")
+    expect(cssBlock(".mafw-turn-animate")).toContain("var(--dur-surface)")
   })
   test("tab 内容淡入 160ms", () =>
     expect(cssBlock(".mafw-content:not(.mafw-chat-content) > *")).toContain("mafw-fade-in"))
