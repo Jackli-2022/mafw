@@ -227,7 +227,25 @@ describe('laya redundant gate', () => {
     });
     expect(out.action).toBe('redundant');
   });
-});
+
+  test('observe-only (tau=1.0) judge-path row still carries redundantScores', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', bandVec);
+    const judged = { n: 0 };
+    const rows: any[] = [];
+    const out = await decideRouting(u('n1'), {
+      vectors: v, provider,
+      laya: { client: { askPair: async () => ({ pConflict: 0.1, pRedundant: 0.5 }) }, tauRedundantHigh: 1.0 },
+      readUnit: async () => ({ memory_value: '已知内容' }),
+      judge: async () => { judged.n++; return { action: 'create' as const }; },
+      onRoute: (r) => rows.push(r),
+    });
+    expect(out.action).toBe('create');
+    expect(judged.n).toBe(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].decidedBy).toBe('llm-route');
+    expect(rows[0].redundantScores).toEqual([{ id: 'old', p: 0.5 }]);
+  });
 ```
 
 - [ ] **Step 2: 跑测试确认红**
@@ -335,7 +353,7 @@ decideRouting 插入段（位于 `const candidateIds = ...` 之前；dup 分支�
   }
 ```
 
-judge 路径的既有 return 处补审计（`verdict` 有效时 decidedBy 'llm-route'，verdict 为 update/separate/create 原样记入；fail-open create 处记 `'llm-route'` + verdict 'create'）。无候选的早退（`hits.length === 0`）**不**记审计（控制文件体积）。
+judge 路径的既有 return 处补审计（`verdict` 有效时 decidedBy 'llm-route'，verdict 为 update/separate/create 原样记入；fail-open create 处记 `'llm-route'` + verdict 'create'）。**必须把 `redundantScores` 一并传入每个 judge-path emit**——observe-only（tau=1.0）下门几乎不触发，校准数据全靠 judge-path 行携带 redundantScores；漏传则校准永远收不到数据。无候选的早退（`hits.length === 0`）**不**记审计（控制文件体积）。
 
 - [ ] **Step 4: 跑测试确认绿**
 
