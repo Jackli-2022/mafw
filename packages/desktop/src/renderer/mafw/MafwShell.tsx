@@ -1356,6 +1356,7 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-rail-width", String(w)) } catch { /* ignore */ }
   }
   const railPresent = createPresence(() => !railCollapsed(), SURFACE_MS)
+  const dockPresent = createPresence(() => rightDockOpen(), SURFACE_MS)
 
   const applyTasksPlacement = (p: "bar" | "dock") => {
     setTasksPlacement(p)
@@ -1841,13 +1842,13 @@ export function MafwShell() {
         {/* Unified right dock (tasks / trajectory tabs): real sidebar on wide
             viewports (third grid column), overlay on narrow (<1200px) */}
         <div class="mafw-dock-slot" classList={{ overlay: viewportNarrow() }} ref={setDockRef}>
-          <Show when={rightDockOpen()}>
+          <Show when={dockPresent()}>
             <Show when={connDown()}><ConnBanner /></Show>
             {connDown() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
             <RightDock
-              open={rightDockOpen()}
+              open={dockPresent()}
               tab={rightDockTab()}
               width={rightDockWidth()}
               onClose={() => applyRightDock(false)}

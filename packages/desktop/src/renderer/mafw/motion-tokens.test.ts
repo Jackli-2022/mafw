@@ -30,3 +30,9 @@ describe("rail column width transition", () => {
     expect(css).toMatch(/\.mafw-rail-col\s*\{[^}]*overflow:\s*hidden/)
   })
 })
+
+describe("dock column width transition", () => {
+  test("body animates its grid columns", () => {
+    expect(css).toMatch(/\.mafw-body\s*\{[^}]*transition:\s*grid-template-columns\s+var\(--dur-surface\)\s+var\(--ease-surface\)/)
+  })
+})

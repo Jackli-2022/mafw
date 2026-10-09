@@ -506,7 +506,7 @@ html[data-theme="light"] body {
 .mafw-theme-toggle:hover { color: var(--text-2); background: var(--hover); }
 
 /* ── Body（仅 main | dock 两列，列宽由 inline style 接管的右列） ── */
-.mafw-body { display: grid; grid-template-columns: 1fr; overflow: hidden; min-height: 0; }
+.mafw-body { display: grid; grid-template-columns: 1fr; overflow: hidden; min-height: 0; transition: grid-template-columns var(--dur-surface) var(--ease-surface); }
 
 /* ── Rail column（通高：跨顶行与 body 行） ── */
 .mafw-rail-col { grid-row: 1 / -1; display: flex; min-height: 0; overflow: hidden; }
