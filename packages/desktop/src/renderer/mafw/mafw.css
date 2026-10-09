@@ -748,7 +748,7 @@ html[data-theme="light"] body {
   padding: 0; background: var(--bg-raised);
   box-shadow: var(--elev-panel);
   display: flex; flex-direction: column;
-  animation: mafw-usage-wb-in var(--dur-2) var(--ease);
+  animation: mafw-usage-wb-in var(--dur-surface) var(--ease-surface);
   scrollbar-width: thin;
 }
 @keyframes mafw-usage-wb-in {
@@ -1651,7 +1651,7 @@ html[data-theme="light"] .mafw-picker-pop {
   border-radius: 10px;
   box-shadow: var(--shadow-float);
   overflow: hidden;
-  animation: mafw-picker-in var(--dur-1) var(--ease);
+  animation: mafw-picker-in var(--dur-surface) var(--ease-surface);
 }
 /* Exit phase (PopoverShell keeps the pop mounted 120ms with .closing) */
 .mafw-picker-pop.closing {
@@ -1810,7 +1810,7 @@ html[data-theme="light"] .mafw-picker-pop {
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-float);
   padding: 16px;
-  animation: mafw-modal-in var(--dur-4) var(--ease);
+  animation: mafw-modal-in var(--dur-surface) var(--ease-surface);
 }
 .mafw-confirm-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 8px; }
 .mafw-confirm-text { font-size: 13px; color: var(--text-3); line-height: 1.5; margin-bottom: 14px; }
@@ -4722,7 +4722,7 @@ html[data-theme="light"] .mafw-picker-pop {
 /* ── DiffReviewPanel（切片 2）────────────────────────────────────────── */
 /* DiffReviewPanel：右侧非模态抽屉（业界对齐：opencode v2 side panel / OpenHands Changes tab
    ——审阅是长时工作流，chat 必须保持可见可操作，不做全屏遮罩） */
-.mafw-diff-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(720px, 55%); z-index: 60; display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-base); box-shadow: var(--elev-panel); animation: mafw-drawer-in var(--dur-3) var(--ease); }
+.mafw-diff-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(720px, 55%); z-index: 60; display: flex; flex-direction: column; background: var(--bg-base); border-left: 1px solid var(--border-base); box-shadow: var(--elev-panel); animation: mafw-drawer-in var(--dur-surface) var(--ease-surface); }
 @keyframes mafw-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 /* composer 按钮改动计数徽标（审阅改动常驻入口，对齐 Amp Changes pane 常驻可见性） */
 .mafw-composer-badge { position: absolute; top: -4px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 9px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }

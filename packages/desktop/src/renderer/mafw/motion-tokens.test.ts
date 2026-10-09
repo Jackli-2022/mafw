@@ -65,3 +65,9 @@ describe("streaming caret", () => {
     expect(css).toMatch(/mafw-caret-blink 1s var\(--ease-standard\)/)
   })
 })
+
+describe("v7 closing (tier discipline)", () => {
+  test("drawer entrance uses surface tier", () => {
+    expect(css).toMatch(/mafw-drawer-in var\(--dur-surface\) var\(--ease-surface\)/)
+  })
+})

@@ -49,7 +49,7 @@ v5 建 token/排版/动效，v6 做美学微精化。desktop 已有成熟设计�
 
 - **两级定义**：微交互（hover/press/toggle/focus/小淡入）= `--dur-fast` + `--ease-standard`；表面级（折叠/覆盖/进场/抽屉/modal）= `--dur-surface` + `--ease-surface`。
 - **循环动画**（breathe/spin/shimmer/pulse/eq）时长**保持硬编码**（循环不属 token 尺度），在 `mafw.css` 动效区集中注释建档（名称 / 用途 / 时长 / 缓动）。
-- motion token 与主题色无关：亮/暗两套 `.mafw-shell` 色块各自重复定义了一份 `--r-*`/`--dur-*`；W5 把 motion 段抽到两主题共用的基础块，去重（色 token 仍各自定义）。
+- motion token 与主题色无关：亮/暗两套 `.mafw-shell` 色块各自重复定义了一份 `--r-*`/`--dur-*`（v5 刻意「复制，勿引用选择器」，`design-contract.test.ts` 的「token v4」套件钉扎）。**v7 决策（执行中修正）**：保留该重复不变（去重会与既有不变量冲突，收益近零），仅在此前提下迁移错档 usage。
 
 ### W2 — 布局过渡
 
@@ -88,7 +88,7 @@ v5 建 token/排版/动效，v6 做美学微精化。desktop 已有成熟设计�
 ### W5 — 收口 + 验收
 
 - 全量把「错档」使用迁移到语义 token（表面用 `--dur-1`、微交互用 `--dur-3` 等改正）；`--dur-1..4` / `--ease` 标 `@deprecated` 保留别名，供未迁移处回退。
-- 两主题 token 块去重 motion 段。
+- ~~两主题 token 块去重 motion 段~~（**执行中撤销**：与 v5「复制，勿引用选择器」不变量 + `design-contract.test.ts` token v4 套件冲突）。
 - 契约测试（沿用 `composer-toolbar-css.test.ts` 模式，纯文本读 CSS）：
   1. 语义 token 存在且值正确；
   2. 无新增硬编码时长（白名单仅循环动画集合）；
