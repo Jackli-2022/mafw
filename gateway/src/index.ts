@@ -284,6 +284,9 @@ class MafwScheduler {
   private scanService: IndexScanService | null = null;
   private consolidationService: ConsolidationService | null = null;
   private layaSidecar: import("child_process").ChildProcess | null = null;
+  /** Laya conflict cascade deps, hoisted so write-phase routing can reuse the
+   *  same client (defined in initEmbeddingServices; undefined when disabled). */
+  private layaDeps?: import("./memory/consolidation-service").ConsolidationDeps['laya'];
   /** A4 observability cache for the fok-samples counters (10s TTL). */
   private fokStatsCache: { at: number; stats: any } | null = null;
   /** S4 认知一致性：per-session recall/context 最近触达时间（有界 500）。 */
@@ -1399,6 +1402,9 @@ class MafwScheduler {
           log.info('[Laya] sidecar not provisioned (~/.mafw/laya) — cascade inert; provision via gateway/scripts/setup-laya-venv.ts');
         }
       }
+      // Hoist for write-phase routing (setRouteWriteDeps in initServices) —
+      // undefined when disabled/unprovisioned, keeping the gate skipped.
+      this.layaDeps = layaDeps;
       this.consolidationService = new ConsolidationService({
         store: new HarmonicUnitFileStore(mafwDir, this.memoryService?.harmonicIndex),
         vectors: embeddingRuntime.vectors,
@@ -2690,6 +2696,20 @@ class MafwScheduler {
         // not be dropped as a duplicate.
         readEntry: (id) =>
           this.memoryService!.harmonicIndex.getIndex().entries.find(e => e.id === id),
+        // G2 laya redundancy gate (write-phase): only wired when the sidecar is
+        // provisioned (this.layaDeps undefined otherwise → gate skipped).
+        // tauRedundantHigh 1.0 = observe-only (scores still flow to onRoute).
+        laya: this.layaDeps
+          ? { client: this.layaDeps.client as any, tauRedundantHigh: config.memory.embedding.laya?.tauRedundantHigh ?? 1.0 }
+          : undefined,
+        readUnit: async (id) => judgeStore.read(id),
+        onRoute: (record) => {
+          try {
+            const logsDir = path.join(mafwDir, 'logs');
+            fs.mkdirSync(logsDir, { recursive: true });
+            fs.appendFileSync(path.join(logsDir, 'consolidation-pairs.jsonl'), JSON.stringify(record) + '\n', 'utf-8');
+          } catch { /* fail-open */ }
+        },
       });
       log.info('[RouteWrite] write-time routing enabled');
     }

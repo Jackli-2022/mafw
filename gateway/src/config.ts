@@ -226,6 +226,10 @@ export interface GatewayConfig {
          *  CREATE without the LLM judge. 0 = off (default; open only after
          *  pairs>=50 calibration + user approval). */
         tauLow?: number;
+        /** Write-phase redundancy gate: pRedundant >= tauRedundantHigh → sink
+         *  the write without the LLM judge. 1.0 = observe-only (default; open
+         *  only after proposeTauRedundantHigh + user approval). */
+        tauRedundantHigh?: number;
         device?: 'cpu' | 'cuda';
       };
       /** ONNX intra-op thread cap for the local provider (default 2 — ORT
@@ -509,7 +513,7 @@ function defaults(projectDir: string): GatewayConfig {
         minCosine: 0.8,
         dupCosine: 0.95,
         consolidation: true,
-        laya: { enabled: true, url: 'http://127.0.0.1:13129', tauHigh: 0.99, device: 'cpu' },
+        laya: { enabled: true, url: 'http://127.0.0.1:13129', tauHigh: 0.99, tauRedundantHigh: 1.0, device: 'cpu' },
         threads: 2,
         engine: 'onnx',
         llamacpp: {
