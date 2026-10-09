@@ -9,6 +9,7 @@ import {
 } from './state-v3';
 import { routeNext, GoalNodeName } from './routing';
 import { renderNodePrompt, nodeArtifactPaths } from './node-prompts';
+import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewVerdict } from '../langgraph/review-parser';
 import { matchesSignature } from '../langgraph/signature-detector';
 
@@ -41,8 +42,11 @@ export interface DriverDeps {
   archiveGoal(goalId: string, opts: { verdict: string; rounds: number; lastError?: string | null; reviewFeedback?: string }): Promise<void>;
   nodeTimeoutMs: number;
   maxAttempts: number;
-  /** W4：能力账本 + 失败谱块（plan 节点先验），缺省不注入。fail-open。 */
-  capabilityPrior?: () => string | null;
+  /** W4：能力账本 + 失败谱块（plan 节点先验），缺省不注入。fail-open。
+   *  D4b 起签名带 goalId（读 state.taskType 做同类任务先验）。 */
+  capabilityPrior?: (goalId: string) => string | null;
+  /** D4b：反事实推演块（pre-mortem，仅 plan 注入），缺省不注入。fail-open。 */
+  counterfactualPrior?: (goalId: string) => string | null;
 }
 
 const NODE_PHASE: Record<'plan' | 'execute' | 'review', { running: string; complete: string }> = {
@@ -141,7 +145,8 @@ export class NodeDriver {
       charterPath: path.join(mafwDir, 'goals', `${goalId}.md`),
       requestPath: path.join(mafwDir, 'requests', `${goalId}.json`),
       reviewFeedback: state.reviewFeedback || undefined,
-      priorBlock: this.deps.capabilityPrior?.() ?? undefined,
+      priorBlock: this.deps.capabilityPrior?.(goalId) ?? undefined,
+      counterfactualBlock: node === 'plan' ? (this.deps.counterfactualPrior?.(goalId) ?? undefined) : undefined,
     });
 
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）
@@ -266,8 +271,13 @@ export class NodeDriver {
           };
           outcome = 'need_clarification';
         } else {
-          patch = { wavePlanPath: a.waves, pendingQuestion: null };
-          outcome = `waves=${(waves.waves || []).length}`;
+          // D4b: the planner read charter + repo — its taskType judgement wins
+          // over the creation-time declaration. Validated; absent/invalid ignored.
+          patch = {
+            wavePlanPath: a.waves, pendingQuestion: null,
+            ...(isTaskType(waves.taskType) ? { taskType: waves.taskType } : {}),
+          };
+          outcome = `waves=${(waves.waves || []).length}${isTaskType(waves.taskType) ? ` taskType=${waves.taskType}` : ''}`;
         }
       } else if (node === 'execute') {
         const receipt = JSON.parse(fs.readFileSync(a.receipt, 'utf-8'));

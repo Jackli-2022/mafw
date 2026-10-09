@@ -53,6 +53,9 @@ export interface GoalStateV3 {
   totalWaves: number | null;
   sessions: Record<string, { id: string; createdAt: string; destroyedAt?: string; active: boolean }>;
   policySnapshot?: { version: string; proposalId: string | null; maxTurns?: number; maxCostUsd?: number };
+  /** D4b 任务类型（'feature'|'bugfix'|'refactor'|'research'|'docs'|'test'|'other'）。
+   *  创建时声明（request.json）→ plan 节点 waves.taskType 回写覆盖（规划者优先）。 */
+  taskType?: string;
   updatedAt: string;
 }
 
@@ -111,6 +114,7 @@ function normalize(raw: any, mafwDir: string, goalId: string): GoalStateV3 {
     totalWaves: raw.totalWaves ?? null,
     sessions: raw.sessions ?? {},
     policySnapshot: raw.policySnapshot,
+    taskType: raw.taskType,
     updatedAt: raw.updatedAt ?? new Date().toISOString(),
   };
 }
@@ -146,7 +150,7 @@ export function writeGoalState(
 export function ensureGoalState(
   mafwDir: string,
   goalId: string,
-  init: { projectDir: string; maxRounds: number; policySnapshot?: GoalStateV3['policySnapshot'] },
+  init: { projectDir: string; maxRounds: number; policySnapshot?: GoalStateV3['policySnapshot']; taskType?: string },
 ): GoalStateV3 {
   const existing = loadGoalState(mafwDir, goalId);
   if (existing) return existing;
@@ -161,6 +165,7 @@ export function ensureGoalState(
     nextNode: 'plan', nextAction: 'RUNNING_plan',
     artifacts: {}, currentWave: 0, totalWaves: null, sessions: {},
     ...(init.policySnapshot ? { policySnapshot: init.policySnapshot } : {}),
+    ...(init.taskType ? { taskType: init.taskType } : {}),
     updatedAt: new Date().toISOString(),
   };
   const p = statePathFor(mafwDir, goalId);

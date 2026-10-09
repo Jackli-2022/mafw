@@ -15,6 +15,12 @@ export const handleManagerSetGoal: ToolHandler = async (args, services) => {
     const maxLoops = (args.maxLoops as number) || 5;
     const budget = (args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined);
     const hasBudget = !!budget && (typeof budget.maxTurns === 'number' || typeof budget.maxCostUsd === 'number');
+    // D4b: optional task type (plan node write-back wins over this declaration).
+    const taskType = args.taskType as string | undefined;
+    const { isTaskType } = await import('../../orchestration/capability-ledger.js');
+    if (taskType !== undefined && !isTaskType(taskType)) {
+      return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `invalid taskType: ${taskType} (feature|bugfix|refactor|research|docs|test|other)` }) }], isError: true };
+    }
 
     const requestedProjectDir = args.projectDir as string | undefined;
     const listProjects = (services as any).listProjects as
@@ -51,6 +57,7 @@ export const handleManagerSetGoal: ToolHandler = async (args, services) => {
       source, projectDir, mafwDir, goalCharter: charterPath,
       metrics, boundaries, priority, maxLoops, parallel: false,
       ...(hasBudget ? { budget } : {}),
+      ...(taskType ? { taskType } : {}),
     };
     fs.writeFileSync(path.join(requestsDir, `${goalId}.json`), JSON.stringify(request, null, 2), 'utf-8');
 

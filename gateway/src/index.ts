@@ -11,6 +11,7 @@ import { log } from './core/utils/logger';
 import { isLoopbackAddr, authorizeRequest, authorizeWsUpgrade } from './core/auth';
 import { NodeDriver } from './core/goal/driver';
 import { ensureGoalState, loadGoalState } from './core/goal/state-v3';
+import { isTaskType } from './orchestration/capability-ledger';
 import { resolveGoalDir } from './core/goal/starter';
 import { recoverGoals, watchdogScan } from './core/goal/recovery';
 import { handleGoalTimeline } from './routes/goal-timeline';
@@ -708,12 +709,30 @@ class MafwScheduler {
       nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
       maxAttempts: 2,
       // W4: plan 节点注入 L1 能力账本 + L2 失败谱（自我认知闭环），fail-open。
-      capabilityPrior: () => {
+      // D4b: 签名带 goalId——读 state.taskType 做同类任务先验。
+      capabilityPrior: (goalId: string) => {
         try {
           const { buildCapabilityLedger, buildFailureTaxonomy, capabilityPriorBlock } = require('./orchestration/capability-ledger');
           const ledger = buildCapabilityLedger(this.getGatewayDb().listGoalOutcomes({ limit: 200 }));
           const taxonomy = buildFailureTaxonomy(this.memoryService?.harmonicIndex.getIndex().entries ?? []);
           return capabilityPriorBlock(ledger, taxonomy) || null;
+        } catch {
+          return null;
+        }
+      },
+      // D4b: plan 节点注入反事实推演块（pre-mortem）——同类任务失败形态 + riskNote 要求。
+      counterfactualPrior: (goalId: string) => {
+        try {
+          const { counterfactualBlock } = require('./orchestration/capability-ledger');
+          const mafwDir = this.goalDriverMafwDirCache.get(goalId);
+          const taskType = mafwDir
+            ? (loadGoalState(mafwDir, goalId)?.taskType ?? 'other')
+            : 'other';
+          const outcomes = this.getGatewayDb().listGoalOutcomes({ limit: 200 });
+          const taxonomy = require('./orchestration/capability-ledger').buildFailureTaxonomy(
+            this.memoryService?.harmonicIndex.getIndex().entries ?? [],
+          );
+          return counterfactualBlock({ taskType }, outcomes, taxonomy) || null;
         } catch {
           return null;
         }
@@ -6789,6 +6808,13 @@ class MafwScheduler {
         (() => { try { return getActivePolicy(config.resolvePath()); } catch { return { version: 'builtin-v1', proposalId: null }; } })(),
         path.join(found.mafwDir, 'requests', `${goalId}.json`),
       ),
+      // D4b: creation-time task type declaration (plan node write-back wins).
+      taskType: (() => {
+        try {
+          const req = JSON.parse(fs.readFileSync(path.join(found.mafwDir, 'requests', `${goalId}.json`), 'utf-8'));
+          return isTaskType(req?.taskType) ? req.taskType : undefined;
+        } catch { return undefined; }
+      })(),
     });
     this.activeGoals.set(goalId, loadGoalState(found.mafwDir, goalId) as any);
     await this.goalDriver?.advance(goalId);

@@ -28,6 +28,8 @@ export interface NodePromptCtx {
   reviewFeedback?: string;
   /** W4：能力账本 + 失败谱块（仅 plan 节点注入，规划时主动规避反复失败）。 */
   priorBlock?: string;
+  /** D4b：反事实推演块（仅 plan 节点注入，pre-mortem）。 */
+  counterfactualBlock?: string;
 }
 
 export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
@@ -39,12 +41,14 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
     return [
       head, docs, '',
       ctx.priorBlock || '',
+      ctx.counterfactualBlock || '',
       `任务：阅读 charter 与仓库现状，产出 wave 执行计划，写入 ${a.waves}。`,
       ctx.round > 1 && ctx.reviewFeedback
         ? `上一轮 review 指出的问题（本轮计划必须消化）：\n${ctx.reviewFeedback}` : '',
       '',
       `产物契约（必须是合法 JSON，写入 ${a.waves}）：`,
-      '{"waves":[{"id":"w1","title":"...","tasks":["..."]}],"status":"ready"}',
+      '{"taskType":"feature|bugfix|refactor|research|docs|test|other","waves":[{"id":"w1","title":"...","tasks":["..."],"riskNote":"此 wave 最可能的失败 + 对应缓解"}],"status":"ready"}',
+      '顶层 taskType 与每 wave 的 riskNote 为 D4b 反事实要求（判断任务类型；对照历史失败模式为每个 wave 预设缓解）。',
       '若存在无法自行消除的歧义：{"status":"need_clarification","ambiguities":["问题..."]}',
     ].filter(Boolean).join('\n');
   }

@@ -324,6 +324,10 @@ MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立�
 - `CommandDef` 新增 `argumentHint`（补全描述尾拼接）/`gateway` 标记；`COMMAND_CATEGORIES` 增『自定义』
 - **模糊匹配不自建**：pi-tui `CombinedAutocompleteProvider` 内建 `fuzzyFilter`（子序列+大小写不敏感+`- _ . / :` 词边界加权+打分排序，dist/fuzzy.js），slash 补全天然满足 Claude Code 语义——评估后 YAGNI 不引入自建 fuzzy 模块
 
+#### 5.9b.7 TUI 小窗口布局修复（2026-10-09）
+
+调研 codex/claude/opencode/kimi/dsh 小窗口策略后（`docs/research/2026-10-09-tui-small-window-layout-research.md`，含复现器 `packages/tui/layout-probe.ts`）修三个问题：①**开口箱**——矮行时 VStack 用 `slice(0,allocated)` 硬切 Editor，底边框消失；新增 `ui/editor-frame.ts` 包裹 Editor，钳总行数到 `max(3, rows-3)`、保顶/底边框、优先留输入行再留补全项，ChatTab 以 `minSize:3` 挂载。②**补全弹层无相对约束**——ChatTab.render 按 `terminal.rows` 调 `editor.setAutocompleteMaxVisible`（<12→3、<16→4、否则 5；仅下次触发生效，当前列表由 EditorFrame 兜底裁剪）。③**状态栏截断方向错**——`status-bar.ts` 段带优先级逐段删最低者（hint/占位先丢，usage/conn 最后留），不再从左到右盲截。参照：kimi dock 契约 editor `minSize:3`、codex composer `Min(3)` + footer 折叠链。测试 `tests/small-window.test.ts` 7 例；TUI 全量 219（218 过/1 冒烟跳过）。
+
 ### 5.10 UI 组件约定
 - MAFW 禁止新增裸 `<button>`、`<input>`、裸 `title` 属性，一律用 `@opencode-ai/ui/v2/*` 组件
 - 按钮用 `ButtonV2`（variant: contrast/outline/ghost）
@@ -1135,6 +1139,7 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **G1 权威标签（2026-10-09，`2bf5ea6f`）**：`HarmonicUnit.authority`（`user|agent|tool|pipeline`，缺省=legacy 按 pipeline 最低处理；AuthMem-Bench 权威坍缩修复）。写路径：HTTP/MCP add 接受+校验（默认 agent）、reflection 固定 pipeline、merge 权威只升不降（`higherAuthority`）。消费面：`<agent-priors>` 徽标 + pipeline ×0.7 软惩罚、pinned 非 user 加 `[待确认]`、skill 物化 G6 闸门（pipeline 无 verified 不物化）、axiom 草稿带 `authorityFloor`。spec `docs/superpowers/specs/2026-10-09-g1-authority-preservation-design.md`。
 - **G4 检索仲裁（MARTA，2026-10-09，`1ad3b2cb`）**：`recall/parametric-arbiter.ts` 纯函数——实体包含度（60s 缓存）+ 自指正则 + FOK zone → 三态；v1 **annotate-only 永不硬跳**（注入块头部加提示），observe-first 落 `~/.mafw/logs/arbiter-samples.jsonl`；`search.arbiter` 默认 on。spec `docs/superpowers/specs/2026-10-09-g4-retrieval-arbiter-design.md`。
 - **D5 PPR 增强 + CATD（2026-10-09）**：检索层 `searchScored` 的 association PPR（`graph/diffusion.ts`）增 **Hebbian need 调制**（`diffusion.needModulation` 默认 on——转移权重 ×(1+ln(1+need7d))，被检索过的通路更易再走）+ **Macro-Hub 抑制**（`diffusion.hubFloor` 默认 50——入边 ÷(1+ln(deg/floor))，hub 是通路非终点）。能量衰减增 **CATD**（`abstraction-level.ts:catdDecayRate` + `AnchorGraphStore.weightedDegree`；`decay.catd` 默认 on，β=0.5——承重条目半衰期随拓扑负载延长，孤立条目不变）。spec `docs/superpowers/specs/2026-10-09-d5-ppr-catd-design.md`（测量门 LongMemEval multi-session 0.375→≥0.55 待跑）。
+- **D4b 反事实模拟（2026-10-09）**：goal 增 **taskType 维度**（`TASK_TYPES` 七值枚举；创建时声明（`mafw_create_goal`/`mafw_set_goal` 参数）→ plan 节点 `waves.taskType` 回写**优先**（规划者判断更准，`completeNode` 校验回写 state v3）；`goal_outcomes` 加 `task_type` 列（幂等 ALTER，legacy NULL → other 池））。L1 账本增 `byTaskType` 聚合 + `ledgerForTaskType`（同类型 ≥3 样本才分桶，小样本退全局防外推）。plan prompt 注入 **`counterfactualBlock` pre-mortem**（同类任务失败率/最常见 failure_kind/平均损失 + L2 踩坑对照 + 每 wave `riskNote` 要求——要求本身不依赖历史数据）。`DriverDeps.capabilityPrior` 签名改 `(goalId)`，新增 `counterfactualPrior`。spec `docs/superpowers/specs/2026-10-09-d4b-counterfactual-design.md`。
 
 ## 6. Gateway 运维
 

@@ -49,6 +49,8 @@ export interface GoalOutcome {
   evolution_proposal_id: string | null;
   failure_kind: string | null;
   failure_signature: string | null;
+  /** D4b: task type at archive time (state.taskType; legacy rows null). */
+  task_type?: string | null;
   created_at: string | null;
   archived_at: string;
 }
@@ -304,6 +306,14 @@ export class GatewayDatabase {
     // encoding-time salience tag; legacy rows read as null → neutral 0.5).
     try {
       this.db.exec(`ALTER TABLE t1_observations ADD COLUMN salience REAL`);
+    } catch {
+      // Column already exists, ignore
+    }
+
+    // Migration: D4b task-type dimension on goal_outcomes (legacy rows NULL →
+    // aggregate into the global/'other' bucket).
+    try {
+      this.db.exec(`ALTER TABLE goal_outcomes ADD COLUMN task_type TEXT`);
     } catch {
       // Column already exists, ignore
     }
@@ -570,29 +580,31 @@ export class GatewayDatabase {
     this.db.prepare(`
       INSERT INTO goal_outcomes (goal_id, project_id, verdict, rounds, duration_ms,
         tokens_input, tokens_output, total_cost, tool_error_count, thumbs_up, thumbs_down,
-        policy_version, evolution_proposal_id, failure_kind, failure_signature, created_at, archived_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        policy_version, evolution_proposal_id, failure_kind, failure_signature, task_type, created_at, archived_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(goal_id) DO UPDATE SET
         verdict=excluded.verdict, rounds=excluded.rounds, duration_ms=excluded.duration_ms,
         tokens_input=excluded.tokens_input, tokens_output=excluded.tokens_output, total_cost=excluded.total_cost,
         tool_error_count=excluded.tool_error_count, thumbs_up=excluded.thumbs_up, thumbs_down=excluded.thumbs_down,
         policy_version=excluded.policy_version, evolution_proposal_id=excluded.evolution_proposal_id,
         failure_kind=excluded.failure_kind, failure_signature=excluded.failure_signature,
+        task_type=excluded.task_type,
         created_at=excluded.created_at, archived_at=excluded.archived_at
     `).run(
       o.goal_id, o.project_id, o.verdict, o.rounds, o.duration_ms,
       o.tokens_input, o.tokens_output, o.total_cost, o.tool_error_count,
       o.thumbs_up, o.thumbs_down, o.policy_version, o.evolution_proposal_id,
-      o.failure_kind, o.failure_signature, o.created_at, o.archived_at
+      o.failure_kind, o.failure_signature, o.task_type ?? null, o.created_at, o.archived_at
     );
   }
 
-  listGoalOutcomes(filter?: { policy?: string; verdict?: string; project?: string; limit?: number }): GoalOutcome[] {
+  listGoalOutcomes(filter?: { policy?: string; verdict?: string; project?: string; taskType?: string; limit?: number }): GoalOutcome[] {
     const conditions: string[] = [];
     const params: any[] = [];
     if (filter?.policy) { conditions.push('policy_version = ?'); params.push(filter.policy); }
     if (filter?.verdict) { conditions.push('verdict = ?'); params.push(filter.verdict); }
     if (filter?.project) { conditions.push('project_id = ?'); params.push(filter.project); }
+    if (filter?.taskType) { conditions.push('task_type = ?'); params.push(filter.taskType); }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const limit = filter?.limit ?? 100;
     return this.db.prepare(`SELECT * FROM goal_outcomes ${where} ORDER BY archived_at DESC LIMIT ?`).all(...params, limit) as GoalOutcome[];

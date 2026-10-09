@@ -33,6 +33,13 @@ export const handleCreateGoal: ToolHandler = async (args, services) => {
     const maxLoops = (args.maxLoops as number) || 5;
     const budget = (args.budget as { maxTurns?: number; maxCostUsd?: number } | undefined);
     const hasBudget = !!budget && (typeof budget.maxTurns === 'number' || typeof budget.maxCostUsd === 'number');
+    // D4b: optional task type (validated against the canonical enum; plan node
+    // may refine it later — its waves.taskType write-back wins).
+    const taskType = args.taskType as string | undefined;
+    const { isTaskType } = await import("../../orchestration/capability-ledger.js");
+    if (taskType !== undefined && !isTaskType(taskType)) {
+      return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `invalid taskType: ${taskType} (feature|bugfix|refactor|research|docs|test|other)` }) }], isError: true };
+    }
 
     const goalsDir = path.join(mafwDir, "goals");
     const requestsDir = path.join(mafwDir, "requests");
@@ -53,6 +60,7 @@ export const handleCreateGoal: ToolHandler = async (args, services) => {
       metrics, boundaries, priority, maxLoops, parallel: false,
       degradeOnLoop: Math.ceil(maxLoops * 0.6),
       ...(hasBudget ? { budget } : {}),
+      ...(taskType ? { taskType } : {}),
     };
 
     const requestPath = path.join(requestsDir, `${goalId}.json`);

@@ -186,6 +186,8 @@ export function recordGoalOutcome(db: GatewayDatabase, input: OutcomeInput): voi
         errorText: input.lastError ?? input.reviewFeedback,
         firstErrorTool,
       }),
+      // D4b: task type (state carries the plan-node-refined value; legacy null).
+      task_type: state?.taskType ?? null,
       created_at: createdAt,
       archived_at: new Date().toISOString(),
     });
