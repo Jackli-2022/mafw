@@ -517,6 +517,14 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 （结构化 entries+budget，fail-open）→ SDK `memory.listSticky/setSticky` → 右侧 Dock「📝 便签」tab
 （NotesDock：倒计时 ≤1 天红色高亮、续期/下架/删除、预算徽标、15s 轮询）。
 
+#### Agent-priors 常驻先验块 + Skill 物化通道（W1/W2 + D1b，2026-10-08）
+
+抽象层到 runtime 的 push 通道（此前 L5 公理纯 MCP pull、reflection insight 只有 BM25 或然命中）。调研：`docs/research/2026-10-08-abstraction-runtime-wiring.md`；路线图：`2026-10-08-brain-like-roadmap.md`。
+
+- **W1 `<agent-priors>`**：`GET /api/recall/priors`（`routes/agent-priors.ts`，deps 注入可单测）聚合 L5 公理/启发式 + L2 失败模式谱（`cat:failure`/`cat:correction` 锚点，need×energy×salience 排序），经 `formatAgentPriors()`（预算 800 字符）渲染；插件 `src/hooks/agent-priors.ts` 在 `system.transform` 注入（memory-guide/user-profile 之后，fail-open 150ms）。**先决**：reflection 的 insight category 现落 `cat:` 锚点（`buildInsightUnit`，此前映射到 type 后即弃）。
+- **W2 skill 物化**（md↔md 通道，零 LLM）：`memory/skill-promotion.ts` 的 `evaluatePromotion` 五闸门 G1 热度(need7d)/G2 一致映射(步骤式 vs 条件分支)/G3 验证过(`verified:` 锚点)/G4 稳定性(近 7 天未修订)/G5 列表膨胀(maxSkills) + `renderSkillMd`（OKF→SKILL.md，name=`ms-<id尾6>`，description=摘要+触发词）→ 周管线 `memory:skillPromotion`（周日 05:00 UTC）扫描 procedural 记忆，合格者写 `~/.mafw/skill-staging/<name>/SKILL.md` + triage 草稿（`summary.skillDraft`）→ 人审（`POST /api/triage/:id/confirm` 的 skillDraft 分支调 `skill-install.ts`）→ 拷入 `~/.config/opencode/skills/` + 源记忆改写为指针（`已物化为 skill:<name>` + `skill:<name>` 锚点）。判据依据：Schneider&Shiffrin 一致映射、JIT 热点编译、Voyager 自验证、AWM 复用频率。
+- **D1b**：reflection 成功蒸馏后对源 episodes 按 factor（默认 0.3）降能（`demoteSourceEpisodes`）——Fuzzy-Trace：细节先淡、要点存活；降能非 supersede（多 gist 共享 episode，1:1 链会过度重定向）。
+
 ### 5.13a 数据目录与统一数据库
 
 **MAFW 数据根固定为 `os.homedir()/.mafw`**（`config.resolvePath()`，与启动 cwd / MAFW_PROJECT_DIR 完全解耦；`paths.mafwDir` 配置覆盖失效）。启动时自动迁移 gateway 包目录旁的旧数据（`gateway/src/recall/data-dir-migrate.ts`，幂等，删除旧位置）——注意迁移源是 `<gateway包>/../.mafw`，**不是** project-relative `.mafw`；插件侧仍会在项目目录重建 `.mafw/`（日志与请求文件等）。

@@ -84,11 +84,11 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 
 | 序 | 项 | 理由 |
 |---|---|---|
-| 0 | **W1 常驻先验块** | 接线侧最高杠杆；不等抽象质量，先接现有 L5+失败谱 |
-| 1 | **W2 skill 物化通道**（md↔md 渲染 + G1-G5 闸门 + deopt，见附录三 §3.1/3.2） | 用户 2026-10-08 定调：通用抽象模式=skill，记忆与 skill 同为 md 同构，渲染确定性零 LLM |
-| 2 | D1b 源条目降能（gist 化后 supersede 源 episodes） | D1 分档衰减已在跑，只剩这一步 |
+| 0 | ✅ **W1 常驻先验块** | 已交付（Plan 1，2026-10-08） |
+| 1 | ✅ **W2 skill 物化通道**（md↔md 渲染 + G1-G5 闸门；deopt 留 v2） | 已交付（Plan 1，2026-10-08） |
+| 2 | ✅ **D1b 源条目降能** | 已交付（Plan 1，2026-10-08） |
 | 3 | D3 surprise 门控 | consolidation 余弦本来就在算 |
-| 4 | L2 失败模式谱 | MinHash 现成；**前置缺口：reflection 不落 category**；W1 先验块的内容源 |
+| 4 | L2 失败模式谱（category 落盘 ✅ Plan 1；聚合待做） | MinHash 现成；W1 先验块的内容源 |
 | 5 | A4 选择压力回流 | need 信号现成，改 reflection prompt |
 | 6 | L1 能力账本 | 纯 SQL，goal_outcomes 在写；**缺口：任务分类器（与 L3 主题分桶共享）** |
 | 7 | D4a 做梦预取 | R8 快照管线现成，缺查询生成器 |
@@ -100,6 +100,8 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | 13 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
 | 14 | D6/D7+L4 | 体验层，远端 |
 | — | ~~A3 抽象用强模型~~ | **用户判定非瓶颈**（2026-10-08：问题在缺 skill 通道，不在模型能力）——降权搁置 |
+
+> **第一批（Plan 1）已落地**（2026-10-08）：W1 常驻先验块（`<agent-priors>` 全链）+ W2 skill 物化通道（五闸门→staging→triage→安装指针化）+ D1b 源条目降能 + L2 category 落盘。计划：`docs/superpowers/plans/2026-10-08-w1-w2-d1b-abstraction-wiring.md`。
 
 > 实施核查（2026-10-08）发现 D1 分档衰减已在生产运行（`automation-engine.ts:102` 调 `decayRateFor(entry.type)`），原"纯参数"判断过时；reconsolidation 窗口（`recall/reconsolidation.ts`）也已在反馈路径接线，D2 只缺冲突触发的消费 worker。
 
