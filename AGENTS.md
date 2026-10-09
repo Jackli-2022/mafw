@@ -1131,6 +1131,10 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **L3 知识边界**：FOK 样本（`recall/fok-samples.ts`）inj 形加 `topic`（= top-1 记忆首个 cue_anchor；快照构建后经 `appendFokEvent` 落 `fok-samples.jsonl`）；`fitFokThresholdsByTopic`（`recall/fok-gate.ts`）按主题拟合、样本不足/不可分则并入 global，消费 `byTopic[topic] ?? global`。
 - **P1.5 审批决策判定**：`core/approval/decision-log.ts` 落 `~/.mafw/logs/approval-decisions.jsonl`（`eval`/`reply` 两形，按 requestId join）——`hook.ts` 记 verdict，两处 reply 路由记 human 回复。**模型选型后置**（当前 laya 为冲突专用 checkpoint，命令破坏性分类 off-label）。
 - **G2 写相路由冗余门（2026-10-09）**：route-write 中间带插 laya redundant 问题（`askPair` 双问题同调用）——pRedundant≥tauRedundantHigh → 沉底（energy 0.05 + `redundant:<id>` 锚，可 BM25 捞回）+ 覆盖条目 actrBonus 强化（重复=Hebbian 加强旧痕迹），跳过 LLM judge；consolidation 对 `redundant:` 锚条目 skip（`redundant-sink`）。observe-first：tauRedundantHigh 默认 1.0，校准 `proposeTauRedundantHigh`（保守方向：阈值以上不许有 update verdict）+ 用户批准开闸。spec `docs/superpowers/specs/2026-10-09-laya-write-routing-design.md`。
+- **G5/G3 蒸馏安全（2026-10-09，`64f24164`）**：REFLECT_SYSTEM 加「防过度泛化（scope 限定观察语境）+ 保语气证据等级」约束，TENTATIVE_SYSTEM 保 tentative 措辞，AXIOM_SYSTEM 禁扩 scope——OEP/SAVOR 与 Manufactured Confidence 的写侧修复，零 schema 变更。
+- **G1 权威标签（2026-10-09，`2bf5ea6f`）**：`HarmonicUnit.authority`（`user|agent|tool|pipeline`，缺省=legacy 按 pipeline 最低处理；AuthMem-Bench 权威坍缩修复）。写路径：HTTP/MCP add 接受+校验（默认 agent）、reflection 固定 pipeline、merge 权威只升不降（`higherAuthority`）。消费面：`<agent-priors>` 徽标 + pipeline ×0.7 软惩罚、pinned 非 user 加 `[待确认]`、skill 物化 G6 闸门（pipeline 无 verified 不物化）、axiom 草稿带 `authorityFloor`。spec `docs/superpowers/specs/2026-10-09-g1-authority-preservation-design.md`。
+- **G4 检索仲裁（MARTA，2026-10-09，`1ad3b2cb`）**：`recall/parametric-arbiter.ts` 纯函数——实体包含度（60s 缓存）+ 自指正则 + FOK zone → 三态；v1 **annotate-only 永不硬跳**（注入块头部加提示），observe-first 落 `~/.mafw/logs/arbiter-samples.jsonl`；`search.arbiter` 默认 on。spec `docs/superpowers/specs/2026-10-09-g4-retrieval-arbiter-design.md`。
+- **D5 PPR+CATD spec（2026-10-09，已落盘未实施）**：`docs/superpowers/specs/2026-10-09-d5-ppr-catd-design.md`——U-PPR（BM25 top-8 作 query-aware seed，Hebbian need 调制转移概率，hub 抑制）作 RRF 第三源；CATD 按加权度缩放衰减半衰期（β=0.5）。P1 挂快照路径，测量面 LongMemEval multi-session 0.375 → ≥0.55。
 
 ## 6. Gateway 运维
 
