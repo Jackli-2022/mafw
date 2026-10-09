@@ -95,7 +95,7 @@ export interface GatewayConfig {
         maxGroupSize: number;
       };
       /** 有界 Personalized PageRank 扩散。 */
-      diffusion: { enabled: boolean; iterations: number; alpha: number };
+      diffusion: { enabled: boolean; iterations: number; alpha: number; needModulation: boolean; hubFloor: number };
     };
     /** Agent-driven iterative expansion rounds for mafw_search_hybrid (0 = first round only). */
     maxExpandRounds: number;
@@ -254,6 +254,13 @@ export interface GatewayConfig {
         binaryVersion: string;
       };
     };
+  };
+  /** D5 CATD (EngramRAG arXiv:2609.32049): topology-weighted decay — entries
+   *  load-bearing for many others (high anchor-graph weighted degree) decay
+   *  slower: rate = base / (1 + beta·ln(1+degree)). */
+  decay: {
+    catd: boolean;
+    catdBeta: number;
   };
   llm: {
     defaultProvider: string;
@@ -452,7 +459,7 @@ function defaults(projectDir: string): GatewayConfig {
           maxNeighbors: 3,
           maxGroupSize: 50,
         },
-        diffusion: { enabled: true, iterations: 15, alpha: 0.85 },
+        diffusion: { enabled: true, iterations: 15, alpha: 0.85, needModulation: true, hubFloor: 50 },
       },
       maxExpandRounds: 2,
       expansionMaxSearches: 4,
@@ -533,6 +540,7 @@ function defaults(projectDir: string): GatewayConfig {
         },
       },
     },
+    decay: { catd: true, catdBeta: 0.5 },
     llm: {
       defaultProvider: 'anthropic',
       defaultModel: 'claude-3-haiku-20240307',
@@ -716,6 +724,7 @@ export class Config {
   get loop() { return this.data.loop; }
   get search() { return this.data.search; }
   get memory() { return this.data.memory; }
+  get decay() { return this.data.decay; }
   get llm() { return this.data.llm; }
   get mcpserver() { return this.data.mcpserver; }
   get metrics() { return this.data.metrics; }

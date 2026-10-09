@@ -2,6 +2,14 @@ export interface DiffusionOptions {
   alpha: number;
   iterations: number;
   candidateCap: number;
+  /** D5 Hebbian plasticity (EngramRAG U-PPR): 7-day retrieval-hit count per
+   *  node — transitions into frequently-walked traces get upweighted by
+   *  (1 + ln(1+need)). Absent → flat legacy behavior. */
+  needFor?: (id: string) => number;
+  /** D5 Macro-Hub suppression: nodes whose out-degree exceeds this floor get
+   *  incoming edge weights scaled by 1/(1+ln(deg/floor)) — hubs are pathways,
+   *  not destinations. Absent/0 → no suppression. */
+  hubFloor?: number;
 }
 
 /**
@@ -32,8 +40,14 @@ export function personalizedPageRank(
     const nb = neighborsOf(id);
     const out = new Map<string, number>();
     let sum = 0;
-    for (const [, w] of nb) if (w > 0) sum += w;
-    if (sum > 0) for (const [n, w] of nb) if (w > 0) out.set(n, w / sum);
+    const needW = new Map<string, number>();
+    for (const [n, w] of nb) {
+      if (w <= 0) continue;
+      const mod = opts.needFor ? w * (1 + Math.log1p(Math.max(0, opts.needFor(n)))) : w;
+      needW.set(n, mod);
+      sum += mod;
+    }
+    if (sum > 0) for (const [n, w] of needW) out.set(n, w / sum);
     adj.set(id, out);
     for (const n of out.keys()) {
       if (!nodes.has(n) && nodes.size < opts.candidateCap) {
@@ -44,6 +58,19 @@ export function personalizedPageRank(
   }
 
   if (nodes.size === 0) return new Map();
+
+  // D5 Macro-Hub suppression (post-build pass): edges INTO a high-degree node
+  // are scaled down so mass flows through hubs rather than pooling in them.
+  if (opts.hubFloor && opts.hubFloor > 0) {
+    const deg = new Map<string, number>();
+    for (const [id, out] of adj) deg.set(id, out.size);
+    for (const [, out] of adj) {
+      for (const [n, w] of out) {
+        const d = deg.get(n) ?? 0;
+        if (d > opts.hubFloor) out.set(n, w / (1 + Math.log(d / opts.hubFloor)));
+      }
+    }
+  }
 
   const seedSet = [...new Set(seeds)].filter((s) => nodes.has(s));
   const teleport = seedSet.length > 0 ? 1 / seedSet.length : 0;

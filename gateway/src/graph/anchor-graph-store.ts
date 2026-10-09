@@ -113,8 +113,16 @@ export class AnchorGraphStore {
     return result;
   }
 
-  getSharedAnchors(a: string, b: string): number {
-    const [x, y] = this.normalizePair(a, b);
+  /** D5 CATD: weighted degree = sum of all edge weights touching this unit
+   *  (its topological load). 0 for isolated units. */
+  weightedDegree(unitId: string): number {
+    const row = this.rawDb
+      .prepare('SELECT COALESCE(SUM(weight), 0) AS d FROM anchor_edges WHERE unit_a = ? OR unit_b = ?')
+      .get(unitId, unitId) as { d: number } | undefined;
+    return row?.d ?? 0;
+  }
+
+  getSharedAnchors(a: string, b: string): number {    const [x, y] = this.normalizePair(a, b);
     const row = this.rawDb.prepare('SELECT shared_anchors FROM anchor_edges WHERE unit_a = ? AND unit_b = ?').get(x, y) as
       | { shared_anchors: number }
       | undefined;

@@ -1134,7 +1134,7 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **G5/G3 蒸馏安全（2026-10-09，`64f24164`）**：REFLECT_SYSTEM 加「防过度泛化（scope 限定观察语境）+ 保语气证据等级」约束，TENTATIVE_SYSTEM 保 tentative 措辞，AXIOM_SYSTEM 禁扩 scope——OEP/SAVOR 与 Manufactured Confidence 的写侧修复，零 schema 变更。
 - **G1 权威标签（2026-10-09，`2bf5ea6f`）**：`HarmonicUnit.authority`（`user|agent|tool|pipeline`，缺省=legacy 按 pipeline 最低处理；AuthMem-Bench 权威坍缩修复）。写路径：HTTP/MCP add 接受+校验（默认 agent）、reflection 固定 pipeline、merge 权威只升不降（`higherAuthority`）。消费面：`<agent-priors>` 徽标 + pipeline ×0.7 软惩罚、pinned 非 user 加 `[待确认]`、skill 物化 G6 闸门（pipeline 无 verified 不物化）、axiom 草稿带 `authorityFloor`。spec `docs/superpowers/specs/2026-10-09-g1-authority-preservation-design.md`。
 - **G4 检索仲裁（MARTA，2026-10-09，`1ad3b2cb`）**：`recall/parametric-arbiter.ts` 纯函数——实体包含度（60s 缓存）+ 自指正则 + FOK zone → 三态；v1 **annotate-only 永不硬跳**（注入块头部加提示），observe-first 落 `~/.mafw/logs/arbiter-samples.jsonl`；`search.arbiter` 默认 on。spec `docs/superpowers/specs/2026-10-09-g4-retrieval-arbiter-design.md`。
-- **D5 PPR+CATD spec（2026-10-09，已落盘未实施）**：`docs/superpowers/specs/2026-10-09-d5-ppr-catd-design.md`——U-PPR（BM25 top-8 作 query-aware seed，Hebbian need 调制转移概率，hub 抑制）作 RRF 第三源；CATD 按加权度缩放衰减半衰期（β=0.5）。P1 挂快照路径，测量面 LongMemEval multi-session 0.375 → ≥0.55。
+- **D5 PPR 增强 + CATD（2026-10-09）**：检索层 `searchScored` 的 association PPR（`graph/diffusion.ts`）增 **Hebbian need 调制**（`diffusion.needModulation` 默认 on——转移权重 ×(1+ln(1+need7d))，被检索过的通路更易再走）+ **Macro-Hub 抑制**（`diffusion.hubFloor` 默认 50——入边 ÷(1+ln(deg/floor))，hub 是通路非终点）。能量衰减增 **CATD**（`abstraction-level.ts:catdDecayRate` + `AnchorGraphStore.weightedDegree`；`decay.catd` 默认 on，β=0.5——承重条目半衰期随拓扑负载延长，孤立条目不变）。spec `docs/superpowers/specs/2026-10-09-d5-ppr-catd-design.md`（测量门 LongMemEval multi-session 0.375→≥0.55 待跑）。
 
 ## 6. Gateway 运维
 

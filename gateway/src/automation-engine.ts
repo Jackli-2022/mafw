@@ -3,11 +3,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CronJob } from 'cron';
 import { HarmonicIndexManager } from './core/memory/harmonic-index';
+import { config } from './config';
 import { EnergySystem } from './core/memory/energy-system';
 import { ReviewScheduler } from './core/memory/review-scheduler';
 import { CognitiveGraphManager } from './core/memory/cognitive-graph';
 import { L5Store } from './core/memory/l5-store';
-import { decayRateFor } from './core/memory/abstraction-level';
+import { decayRateFor, catdDecayRate } from './core/memory/abstraction-level';
 import { getRetrievalEventBuffer, RetrievalEvent } from './core/memory/retrieval-events';
 import { actrBonus } from './core/memory/retrieval-bonus';
 
@@ -55,6 +56,10 @@ export function runEnergyDecay(
   indexManager: HarmonicIndexManager,
   now: number = Date.now(),
   events: RetrievalEvent[] = [],
+  /** D5 CATD: topology-weighted decay — when provided, each entry's decay rate
+   *  is scaled by its anchor-graph weighted degree (load-bearing entries
+   *  forget slower). */
+  catd?: { degreeFor: (id: string) => number; beta?: number },
 ): { migrated: number; decayed: number; bonused: number } {
   const index = indexManager.getIndex();
   const energySystem = new EnergySystem();
@@ -98,8 +103,15 @@ export function runEnergyDecay(
     const base = new Date(entry.last_decay_at || entry.created_at || 0).getTime();
     const daysSinceDecay = base > 0 ? Math.max(0, (now - base) / DAY_MS) : 0;
     // Pure time decay — event bonuses are settled above from the retrieval
-    // event buffer (ACT-R form), not from this pass.
-    const decayedEnergy = energySystem.decay(entry.energy, daysSinceDecay, salience, decayRateFor(entry.type));
+    // event buffer (ACT-R form), not from this pass. D5 CATD scales the rate
+    // by topological load when a degree provider is wired.
+    let rate = decayRateFor(entry.type);
+    if (catd) {
+      try {
+        rate = catdDecayRate(rate, catd.degreeFor(entry.id), catd.beta ?? 0.5);
+      } catch { /* fail-open: base rate */ }
+    }
+    const decayedEnergy = energySystem.decay(entry.energy, daysSinceDecay, salience, rate);
     const diff = entry.energy - decayedEnergy;
     if (diff > 0.005) {
       indexManager.updateEnergy(entry.id, -(diff));
@@ -125,7 +137,15 @@ actionRegistry.set('memory:decay', async (_rule, engine) => {
     // discount) in the same daily pass — zero extra scheduling.
     const buffer = getRetrievalEventBuffer();
     const events = buffer.drain();
-    const res = runEnergyDecay(indexManager, Date.now(), events);
+    // D5 CATD: scale decay by anchor-graph weighted degree when enabled.
+    let catd: { degreeFor: (id: string) => number; beta?: number } | undefined;
+    try {
+      if (config.decay?.catd !== false) {
+        const graph = indexManager.getAnchorGraphStore?.();
+        if (graph) catd = { degreeFor: (id) => graph.weightedDegree(id), beta: config.decay?.catdBeta };
+      }
+    } catch { catd = undefined; }
+    const res = runEnergyDecay(indexManager, Date.now(), events, catd);
     if (res.migrated > 0) {
       log.info(`[AutomationEngine] Migrated ${res.migrated} entries to incremental decay baseline (v2)`);
     } else {

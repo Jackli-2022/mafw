@@ -412,10 +412,23 @@ export class HarmonicIndexManager {
 
       const byId = new Map<string, ScoredEntry & { graphScore?: number }>(scored.map(s => [s.entry.id, s]));
       if (gcfg.diffusion.enabled) {
+        // D5: Hebbian need modulation (retrieval-hit counts upweight transitions
+        // into frequently-walked traces) + Macro-Hub suppression. Both default
+        // on; needFor resolution is lazy to keep this module cycle-free.
+        let needFor: ((id: string) => number) | undefined;
+        if (gcfg.diffusion.needModulation !== false) {
+          try {
+            const { getRetrievalEventBuffer } = require('./retrieval-events');
+            const buffer = getRetrievalEventBuffer();
+            needFor = (id: string) => buffer.needFor(id);
+          } catch { needFor = undefined; }
+        }
         const ppr = personalizedPageRank(seeds, neighborsOf, {
           alpha: gcfg.diffusion.alpha,
           iterations: gcfg.diffusion.iterations,
           candidateCap,
+          needFor,
+          hubFloor: gcfg.diffusion.hubFloor,
         });
         for (const [id, gs] of ppr) {
           if (seedSet.has(id)) continue;
