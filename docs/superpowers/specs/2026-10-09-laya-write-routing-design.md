@@ -1,25 +1,43 @@
 # G2 写相路由（laya 冗余门）设计
 
-> 日期：2026-10-09
+> 日期：2026-10-09（v2：挂点从 consolidation 改为 route-write，用户已批准）
 > 前置：`2026-10-09-brain-research-refresh.md`（G2 缺口）、D3 laya 三值门（`2026-10-09-d3-laya-three-way-gate.md`）
 > 脑依据：repetition suppression（冗余不再编码）+ DG/CA3 模式分离/完成（写入瞬间路由）+ 重复=Hebbian 强化旧痕迹
 
 ## 1. 目标与边界
 
-**目标**：新记忆写入时，laya 本地判定 `non-write / write-new / write-update` 三态——
+**目标**：新记忆写入时，laya 本地判冗余——
 - 减少冗余条目入库（存储卫生）
-- 高置信时替代 consolidation 的 LLM judge（判官成本）
+- 高置信时跳过 route-write 的 LLM judge（写相 judge 成本）
 
 **明确不做**：
-- 不动 worker 提取成本（turnCompress/index-scan 是另一层；index-scan 占 87% 成本的问题归 G4 检索仲裁，不在本 spec）
-- 不做硬删除（全系统 soft-supersede 不变量）
-- 不动 tauHigh/tauLow 既有语义
+- 不动 worker 提取成本（turnCompress/index-scan；index-scan 占 87% 成本归 G4 检索仲裁）
+- 不做硬删除（全系统 soft-supersede 不变量；S1 的 dup skip 仅限逐字重述，本门不触碰）
+- 不动 consolidation 的 conflict 级联（tauHigh/tauLow 语义不变）——冗余门是写时路由的新分支，不是 consolidation 的改造
 
-## 2. 机制
+## 2. 挂点：route-write（S1 写时路由）
 
-### 2.1 双问题同调用
+现有 `decideRouting`（`gateway/src/memory/route-write.ts`）：
+```
+cosine ≥ dupCosine(0.95) 且逐字相同 → skip（既有，不动）
+0.8–0.95 中间带 → LLM judge
+< candidateCosine(0.8) → create 快路径
+```
 
-`/v1/predict` 的 `questions` 字段原生支持多问题。`LayaConflictClient` 泛化：
+冗余门插在中间带、LLM judge **之前**：
+```
+中间带候选 → laya askPair（一次调用双问题）
+  max(pRedundant) ≥ tauRedundantHigh → 【新】redundant 出口（沉底+强化，跳过 LLM judge）
+  否则 → LLM judge（既有；observe 期间 judge 结果即校准 ground truth）
+```
+
+挂这里的理由（vs consolidation 写后沉底）：写前判定直接省掉 route-write 的 LLM judge 调用（真省成本）；与 dupCosine 门同层并列，决策链一处可读；consolidation 的 conflict 语义不受污染。
+
+## 3. 机制
+
+### 3.1 laya 客户端双问题
+
+`LayaConflictClient` 加：
 
 ```typescript
 export const REDUNDANT_QUESTION = {
@@ -28,59 +46,83 @@ export const REDUNDANT_QUESTION = {
   labels: { false: '未覆盖', true: '已覆盖' },
 } as const;
 
-// 新接口（askConflict 保留兼容或重构为包装）
-askPair(known: string, newInfo: string): Promise<{ pConflict: number; pRedundant: number } | null>
+askPair(known: string, newInfo: string): Promise<{ pConflict: number | null; pRedundant: number | null } | null>
 ```
 
-一次 HTTP 调用返回两个概率；任一解析失败按该字段 null 处理（conflict null → 级联维持现状 escalate；redundant null → 冗余分支不触发）。熔断器逻辑不变。
+一次 `/v1/predict` 携带两个 question；任一字段缺失按该字段 null（redundant null → 冗余门不触发，fall through 到 judge，fail-open）。熔断器沿用。`askConflict` 保留（consolidation 现有调用不改动）。
 
-### 2.2 级联决策矩阵（consolidation-service.layaCascade）
+### 3.2 route-write 改动
 
-对每个 live 候选取双分后聚合（max 语义）：
-
+**`RouteWriteDeps` 新增**：
+```typescript
+laya?: {
+  client: { askPair(known: string, newInfo: string): Promise<{ pConflict: number | null; pRedundant: number | null } | null> };
+  tauRedundantHigh: number;   // 1.0 = observe-only（默认）
+  maxTextChars?: number;      // 默认 800
+};
+/** 读候选正文（laya 需要 memory_value，readEntry 只有 abstraction） */
+readUnit?: (id: string) => Promise<{ memory_value?: string } | null>;
+/** 审计：每次路由一行（校准数据源），fail-open */
+onRoute?: (record: RouteAuditRecord) => void;
 ```
-1. max(pConflict) ≥ tauHigh           → UPDATE（既有行为，不变）
-2. max(pRedundant) ≥ tauRedundantHigh → **NON-WRITE（沉底+强化）**
-3. max(pConflict) ≤ tauLow 且 max(pRedundant) ≤ tauLow → CREATE（既有 laya-low）
-4. 其余                                → LLM judge（escalate）
+
+**`RoutingOutcome` 新增**：`{ action: 'redundant'; targetId: string }`
+
+**`routeAndWrite` 处理 redundant（沉底+强化，用户批准的组合）**：
+```typescript
+const sunk: HarmonicUnit = {
+  ...unit,
+  energy: 0.05,
+  cue_anchors: dedupeCap([...(unit.cue_anchors || []), `redundant:${decision.targetId}`], 8),
+  updated_at: new Date().toISOString(),
+};
+await store.write(sunk, undefined, { skipMerge: true });
+getRetrievalEventBuffer().record({ id: decision.targetId, prob: pRedundant, kind: 'recall', ts: Date.now() });
+routeStats.redundant++;
 ```
 
-顺序即优先级：冲突更新 > 冗余沉底 > 直连新增。冲突优先是因为"内容矛盾"比"内容重复"更需要处置。
+- **沉底**（可挽回）：energy 0.05 + `redundant:<coveringId>` 锚——BM25 尾部可捞回，几天内自然衰减到不可见；不走 supersede 链（旧条目未被取代）
+- **强化**（脑保真）：覆盖条目记一次合成检索事件，每日衰减 pass 按既有 `actrBonus` 结算（cap 0.02、重复折扣、clamp 1.0 全部继承）；`kind:'recall'`（record 会把非 'search' 归一为 'recall'；该命中同时计入 7 天 need 索引——冗余命中语义上就是重复曝光，正当）
+- `skipMerge: true` 防 MinHash 把沉底条目合并掉
 
-### 2.3 NON-WRITE 的两半（用户已批准的组合方案）
+### 3.3 consolidation 防二次处理
 
-**沉底管安全**（可挽回）：
-- 新条目**正常写库**（consolidation 本就是写后监听器，无需拦截写路径）
-- 判冗余后：energy 置 0.05（同 rejected tentative 档位）+ cue_anchor 追加 `redundant:<coveringId>`
-- 效果：BM25 尾部仍可捞回（误判可挽回），几天内自然衰减到检索不可见（卫生不衰）
-- 不走 supersede 链——旧条目没有被取代，是新条目没必要存在
+沉底条目经 `store.write` 会触发 `onMemoryWritten` → consolidation。在 `consolidateInner` 入口加守卫：
+```typescript
+if (unit.cue_anchors?.some((a) => typeof a === 'string' && a.startsWith('redundant:'))) {
+  return { action: 'skip', reason: 'redundant-sink' };
+}
+```
 
-**强化管脑保真**（重复加强旧痕迹）：
-- 给覆盖条目记一次合成检索事件：`getRetrievalEventBuffer().record({ id: coveringId, prob: pRedundant, kind, ts })`
-- 每日衰减 pass 按既有 `actrBonus` 数学结算（cap 0.02、重复曝光折扣、clamp 1.0 全部自动继承）
-- 零新增能量机制；event kind 枚举实现时确认（必要则加 `'redundant'` 类）
+### 3.4 审计
 
-### 2.4 审计与观测
+```typescript
+interface RouteAuditRecord {
+  newId: string;
+  newAbstraction: string;
+  candidates: Array<{ id: string; cosine: number }>;
+  redundantScores?: Array<{ id: string; p: number }>;  // laya redundant per candidate
+  verdict: 'create' | 'update' | 'separate' | 'skip' | 'redundant';
+  decidedBy: 'fast-path' | 'dup' | 'laya-redundant' | 'llm-route';
+  ts: number;
+}
+```
+index.ts 把 `onRoute` 落到**同一个** `~/.mafw/logs/consolidation-pairs.jsonl`（校准器读单文件；`decidedBy` 区分来源）。
 
-- `layaScores` 元素扩展为 `{ id, pConflict, pRedundant }`（读取方 calibrate 向后兼容：旧记录 `p` → `pConflict`）
-- 冗余采纳时审计行 `decidedBy: 'laya-redundant'`，verdict 记 `'skip'`
-- stats 加 `layaSkipped`（`/api/memory/stats` 透出）
-- PipelineHeartbeat：冗余判定是本地零成本，**不受** PipelineBudget 门控（与 D3 laya 一致）
-
-### 2.5 校准（observe-first，对齐 laya 接入约束 `mem_1791526546074_oosl9o`）
+### 3.5 校准（observe-first，对齐 laya 接入约束 `mem_1791526546074_oosl9o`）
 
 - `config.memory.embedding.laya.tauRedundantHigh` **默认 1.0 = 永不触发（纯 observe）**
-- 积累方式：observe 期间所有对仍走 escalate → LLM judge，pairs jsonl 同时落双分数 + judge verdict
-- **校准判据**（`laya-calibrate.ts` 加 `proposeTauRedundantHigh`）：
-  - ≥50 个带 redundant 分数的对
-  - 安全性：**阈值 T 以上不允许存在任何 judge verdict=update 的对**（冗余覆盖的条目不可能是"需要更新旧记忆"的；这是保守方向的分离性检验）
-  - 有用性：T 以上 ≥3 对（否则开闸无意义）
-  - 上限 0.99（与 tauHigh 一致，失明带永不自动行动）
-  - 不满足 → `proposal: null`（与 tauLow 校准器同形态）
-- 开闸需用户显式批准（改 config），与 tauLow 同流程
-- `gateway/scripts/calibrate-laya.ts` 输出扩展为双提议（tauLow + tauRedundantHigh）
+- `laya-calibrate.ts` 加 `proposeTauRedundantHigh(records)`：
+  - ≥50 个带 redundantScores 的记录
+  - ≥5 个 update-verdict 记录（无 update 无法验证安全性 → null）
+  - **T = max(update  verdict 记录的 maxRedundant) + ε**：阈值以上不许有任何 update（冗余覆盖的条目不该是"需要更新"的；保守方向分离性检验）
+  - T ≥ 0.99 → null（无安全线，与 tauHigh 失明带同理）
+  - 有用性：T 以上 ≥3 条非 update 记录，否则 null（开闸无意义）
+- `scripts/calibrate-laya.ts` 输出扩展为双提议（tauLow + tauRedundantHigh）
+- 开闸需用户显式批准改 config，与 tauLow 同流程
+- 既有 187 条旧记录无 redundantScores 字段——读取兼容（跳过无 redundant 分的行）
 
-### 2.6 配置
+### 3.6 配置
 
 ```yaml
 memory:
@@ -89,40 +131,44 @@ memory:
       tauRedundantHigh: 1.0   # 默认 observe-only
 ```
 
-## 3. 改动文件
+index.ts：`setRouteWriteDeps` 增 `laya`（复用 consolidation 同一个 `LayaConflictClient` 单例）、`readUnit`（judgeStore.read）、`onRoute`（append jsonl）。
+
+## 4. 改动文件
 
 | 文件 | 改动 |
 |---|---|
-| `gateway/src/memory/laya-client.ts` | `REDUNDANT_QUESTION` + `askPair` 双问题调用 |
-| `gateway/src/memory/consolidation-service.ts` | 决策矩阵第 2 支 + 沉底 + 强化事件 + 审计/统计扩展 |
-| `gateway/src/memory/laya-calibrate.ts` | `proposeTauRedundantHigh` + 双分数字段兼容读取 |
-| `gateway/scripts/calibrate-laya.ts` | 输出双提议 |
-| `gateway/src/config.ts` | `tauRedundantHigh` 默认 1.0 |
-| `gateway/src/index.ts` | 接线 `tauRedundantHigh` 进 layaDeps |
-| 测试 | 新增见 §4 |
+| `gateway/src/memory/laya-client.ts` | `REDUNDANT_QUESTION` + `askPair` |
+| `gateway/src/memory/route-write.ts` | laya 冗余门 + `redundant` 出口 + 沉底/强化 + `routeStats.redundant` + `onRoute` |
+| `gateway/src/memory/consolidation-service.ts` | `redundant-sink` 守卫 |
+| `gateway/src/memory/laya-calibrate.ts` | `RouteAuditRecord` 兼容读取 + `proposeTauRedundantHigh` |
+| `gateway/scripts/calibrate-laya.ts` | 双提议输出 |
+| `gateway/src/config.ts` | `tauRedundantHigh` schema + 默认 1.0 |
+| `gateway/src/index.ts` | 接线（laya/readUnit/onRoute 进 setRouteWriteDeps） |
+| 测试 | 见 §5 |
 
-## 4. 测试计划（TDD）
+## 5. 测试计划（TDD）
 
-1. `laya-client.test.ts`：`askPair` 双问题契约（请求体含两个 question）、部分字段缺失 → 该字段 null、熔断器沿用
-2. `consolidation-service` 决策矩阵四象限：conflict高→update / redundant高→skip+沉底字段断言+强化事件断言 / 双低→laya-low create / 中间带→llm
-3. 优先级：conflict 与 redundant 双高 → update 赢
-4. 沉底：energy 0.05 + `redundant:<id>` 锚 + `decidedBy:'laya-redundant'` 审计行 + `stats.layaSkipped`
-5. 强化：RetrievalEventBuffer 收到 coveringId 事件（prob=pRedundant）
-6. `laya-calibrate.test.ts`：旧格式 `{id,p}` 兼容；`proposeTauRedundantHigh`——T 以上有 update verdict → null；对数不足 → null；满足 → 提议值
-7. tauRedundantHigh=1.0 默认下行为与现状逐字节一致（回归）
+1. `laya-client.test.ts`：`askPair` 请求体含双 question；redundant 字段缺失 → `pRedundant:null` 但整体非 null；整体失败 → null；熔断器沿用
+2. `route-write` 冗余门：中间带 + pRedundant≥tau → `{action:'redundant', targetId}`（不发 judge）；pRedundant<tau → judge 照常；askPair null → judge 照常（fail-open）；无 laya dep → 现状逐字节一致
+3. `routeAndWrite` 沉底：energy 0.05 + `redundant:<id>` 锚 + skipMerge 调用断言 + RetrievalEventBuffer 收到 targetId 事件（prob=pRedundant）+ `routeStats.redundant` 递增
+4. `onRoute` 审计：各 decidedBy 分支记录字段完整；onRoute 抛错不影响路由（fail-open）
+5. `consolidation-service`：`redundant:` 锚条目 → `{action:'skip', reason:'redundant-sink'}`
+6. `laya-calibrate.test.ts`：`proposeTauRedundantHigh`——update 分布顶到 0.99 → null；记录数不足 → null；正常分离 → 提议 T=maxUpdate+ε；旧格式（无 redundantScores）跳过不炸
+7. 回归：tauRedundantHigh=1.0（默认）下 decideRouting 行为与现状一致
 
-## 5. 风险与缓解
+## 6. 风险与缓解
 
 | 风险 | 缓解 |
 |---|---|
-| redundant 契约 off-label 误判 | tauRedundantHigh=1.0 默认 observe-only；校准判据是保守方向（只验"不误伤 update"） |
-| 沉底条目误判后找不回 | 不硬删，BM25 尾部可捞；`redundant:` 锚可枚举全部沉底条目人工复查 |
-| 强化造成 rich-get-richer | actrBonus 自带重复曝光折扣 + cap 0.02 + clamp 1.0 |
-| 双问题使单次调用变慢 | 本地模型，pairs 串行调用本就非热路径（写后监听器，fire-and-forget） |
+| redundant 契约 off-label 误判 | tauRedundantHigh=1.0 默认 observe-only；校准是保守方向（阈值以上不许有 update） |
+| 沉底条目误判后找不回 | 不硬删，BM25 尾部可捞；`redundant:` 锚可枚举复查 |
+| 强化 rich-get-richer | actrBonus 自带重复曝光折扣 + cap 0.02 + clamp 1.0 |
+| 中间带每写一次多一次 laya 调用 | 本地模型 ~ms 级，写路径非热路径；laya down → null → fall through judge（零回归） |
+| 审计文件混入两种记录 | `decidedBy` 区分；calibrate 对缺 redundantScores 的行跳过 |
 
-## 6. 验收
+## 7. 验收
 
 - 全量 jest 绿（1826 + 新增）
 - root build exit 0
 - 默认配置下行为与现状一致（observe-only 零行为变化）
-- 部署后 pairs jsonl 出现双分数字段
+- 部署后 consolidation-pairs.jsonl 出现 `redundantScores` 字段
