@@ -28,6 +28,8 @@ export interface ReflectionOptions {
   exclusive?: (sessionID: string, fn: () => Promise<unknown>) => Promise<unknown>;
   /** Pin a model for each worker prompt. */
   workerModel?: { providerID: string; modelID: string };
+  /** D1b: fraction of source-episode energy removed after a successful distillation (default 0.3). */
+  sourceDemoteFactor?: number;
 }
 
 export interface ReflectionResult {
@@ -112,6 +114,32 @@ const CATEGORY_ENERGY: Record<InsightCategory, number> = {
  * (L2) and the `<agent-priors>` block (W1) can filter by category — previously
  * the category was mapped to type and then discarded.
  */
+/**
+ * D1b helper: demote source verbatim episodes after their gist was distilled
+ * (Fuzzy-Trace: detail fades, gist survives). Demotion — not supersede — keeps
+ * episodes retrievable (multiple gists may draw on overlapping episodes, so a
+ * 1:1 supersede chain would over-redirect). Pure over an injected index.
+ * @returns number of episodes actually demoted
+ */
+export function demoteSourceEpisodes(
+  index: { getIndex(): { entries: any[] }; updateEnergy(id: string, delta: number): void; save?(): void },
+  episodeIds: string[],
+  factor: number = 0.3,
+): number {
+  const byId = new Map(index.getIndex().entries.map((e: any) => [e.id, e]));
+  let demoted = 0;
+  for (const id of episodeIds) {
+    const entry = byId.get(id);
+    if (!entry) continue;
+    index.updateEnergy(id, -((entry.energy ?? 0) * factor));
+    demoted++;
+  }
+  if (demoted > 0) {
+    try { index.save?.(); } catch { /* fail-open */ }
+  }
+  return demoted;
+}
+
 export function buildInsightUnit(insight: Insight, sessionID: string, now: string): HarmonicUnit {
   return {
     id: generateHarmonicId(),
@@ -322,6 +350,12 @@ export class ReflectionPipeline {
       } catch {
         result.failed++;
       }
+    }
+
+    // D1b: gist 化后源 verbatim episodes 降能（Fuzzy-Trace：细节先死、要点存活）。
+    // 降能不失联——条目仍可检索，只是在排序中让位给 gist。
+    if (result.distilled > 0) {
+      demoteSourceEpisodes(this.opts.index, episodes.map((e) => e.id), this.opts.sourceDemoteFactor ?? 0.3);
     }
 
     // Mark the batch reflected once the LLM produced a parseable result —
