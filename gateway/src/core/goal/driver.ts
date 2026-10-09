@@ -41,6 +41,8 @@ export interface DriverDeps {
   archiveGoal(goalId: string, opts: { verdict: string; rounds: number; lastError?: string | null; reviewFeedback?: string }): Promise<void>;
   nodeTimeoutMs: number;
   maxAttempts: number;
+  /** W4：能力账本 + 失败谱块（plan 节点先验），缺省不注入。fail-open。 */
+  capabilityPrior?: () => string | null;
 }
 
 const NODE_PHASE: Record<'plan' | 'execute' | 'review', { running: string; complete: string }> = {
@@ -139,6 +141,7 @@ export class NodeDriver {
       charterPath: path.join(mafwDir, 'goals', `${goalId}.md`),
       requestPath: path.join(mafwDir, 'requests', `${goalId}.json`),
       reviewFeedback: state.reviewFeedback || undefined,
+      priorBlock: this.deps.capabilityPrior?.() ?? undefined,
     });
 
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）

@@ -682,6 +682,17 @@ class MafwScheduler {
       archiveGoal: (goalId, opts) => this.archiveGoal(goalId, opts as any),
       nodeTimeoutMs: (config as any).goal?.nodeTimeoutMs ?? 30 * 60_000,
       maxAttempts: 2,
+      // W4: plan 节点注入 L1 能力账本 + L2 失败谱（自我认知闭环），fail-open。
+      capabilityPrior: () => {
+        try {
+          const { buildCapabilityLedger, buildFailureTaxonomy, capabilityPriorBlock } = require('./orchestration/capability-ledger');
+          const ledger = buildCapabilityLedger(this.getGatewayDb().listGoalOutcomes({ limit: 200 }));
+          const taxonomy = buildFailureTaxonomy(this.memoryService?.harmonicIndex.getIndex().entries ?? []);
+          return capabilityPriorBlock(ledger, taxonomy) || null;
+        } catch {
+          return null;
+        }
+      },
     });
 
     // 6. 恢复活跃 Goal
