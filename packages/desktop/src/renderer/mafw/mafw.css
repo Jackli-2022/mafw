@@ -385,6 +385,7 @@ html[data-theme="light"] body {
 /* ── 宽屏列宽分档（§4.5）：封顶 880px（业界 768-896px 舒适阅读宽度，
    16px 正文的 1100px 一行 70+ 汉字超出舒适区） ── */
 @media (min-width: 1500px) { .mafw-shell { --msg-col-width: 880px; } }
+@media (max-width: 680px) { .mafw-input-area { width: min(var(--msg-col-width), calc(100% - 32px)); } }
 
 /* ── Motion (§5: hover 120ms / collapse 200ms / enter 200ms, 无 >300ms 装饰动画) ── */
 @keyframes mafw-enter {
@@ -1321,12 +1322,17 @@ html[data-theme="light"] body {
   justify-content: space-between;
   height: 44px;
   padding: 0 10px 0;
+  min-width: 0;
 }
 .mafw-composer-left, .mafw-composer-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
+/* 左侧可收缩（空间不足时裁切自身，绝不外溢到输入框外）；右侧（含发送）恒完整可见 */
+.mafw-composer-left { flex: 1 1 auto; overflow: hidden; }
+.mafw-composer-right { flex: 0 0 auto; }
 .mafw-composer [data-component="button-v2"].mafw-composer-icon {
   width: 28px;
   height: 28px;
@@ -1378,6 +1384,23 @@ html[data-theme="light"] body {
   color: var(--text-2);
 }
 .mafw-model-chevron { font-size: 9px; opacity: 0.6; }
+.mafw-model-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 窄 composer：按优先级逐档隐藏（先次要图标 → 分隔线/meta → 上下文 pill），pill 文本截断——对齐桌面共识 */
+.mafw-input-area { container-type: inline-size; }
+@container (max-width: 720px) {
+  .mafw-composer-optional { display: none; }
+  .mafw-composer-meta { display: none; }
+  .mafw-model-name { max-width: 120px; }
+}
+@container (max-width: 620px) {
+  .mafw-composer-divider { display: none; }
+  .mafw-model-name { max-width: 96px; }
+}
+@container (max-width: 520px) {
+  .mafw-context-pill { display: none; }
+  .mafw-model-pill { padding: 0 8px; }
+  .mafw-model-name { max-width: 72px; }
+}
 .mafw-context-pill {
   display: inline-flex;
   align-items: center;
@@ -3080,14 +3103,7 @@ html[data-theme="light"] .mafw-picker-pop {
 /* ── Rail (new: wrap/scroll/footer/collapse) ── */
 .mafw-rail-wrap { position: relative; min-width: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
 .mafw-rail-footer { background: var(--bg-base); }
-.mafw-rail-collapsed {
-  width: 32px; height: 100%; display: flex; flex-direction: column; align-items: center; padding-top: 0;
-  background: var(--bg-base); border-right: 1px solid var(--border-subtle); flex-shrink: 0;
-}
-.mafw-rail-collapsed-brand {
-  width: 100%; height: 38px; display: flex; align-items: center; justify-content: center;
-  color: var(--text-2); flex-shrink: 0; -webkit-app-region: drag;
-}
+/* 收起态：整列不渲染（0 宽），无残留细条 */
 /* ── Chat panes (single pane since v6; mafw-pane keeps the artifact-column hook) ── */
 .mafw-chat-panes { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
 .mafw-pane {

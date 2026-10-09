@@ -1467,7 +1467,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <ButtonV2
                   variant="ghost"
                   size="small"
-                  class="mafw-composer-icon"
+                  class="mafw-composer-icon mafw-composer-optional"
                   aria-label="审阅改动"
                   style={{ position: "relative" }}
                   onClick={() => props.onOpenDiffReview?.()}
@@ -1476,7 +1476,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </ButtonV2>
               </TooltipV2>
               <TooltipV2 value="语音（音色选择 / 播报）" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-optional" aria-label="语音" onClick={() => { if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
                   <Icon name="volume" size="small" />
                 </ButtonV2>
               </TooltipV2>
@@ -1484,7 +1484,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <ButtonV2
                   variant="ghost"
                   size="small"
-                  class="mafw-composer-icon"
+                  class="mafw-composer-icon mafw-composer-optional"
                   classList={{ "mafw-voice-recording": voiceRecording() }}
                   aria-label="语音输入"
                   onClick={() => {
@@ -1539,7 +1539,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
                     onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
                   >
-                    {agentSelName()}<span class="mafw-model-chevron">▾</span>
+                    <span class="mafw-model-name">{agentSelName()}</span><span class="mafw-model-chevron">▾</span>
                   </ButtonV2>
                 </TooltipV2>
               </Show>
@@ -1552,7 +1552,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   ref={(el: any) => { if (pickerOpen() === "model") setPickerTrigger(el) }}
                   onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("model") }}
                 >
-                  {currentModelLabel()}<span class="mafw-model-chevron">▾</span>
+                  <span class="mafw-model-name">{currentModelLabel()}</span><span class="mafw-model-chevron">▾</span>
                 </ButtonV2>
               </TooltipV2>
               <Show when={contextUsage()}>

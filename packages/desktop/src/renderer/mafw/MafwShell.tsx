@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For } from "solid-js"
+import { createSignal, createEffect, createMemo, onMount, onCleanup, untrack, Show, For } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
 
@@ -26,6 +26,7 @@ import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
+import { isNarrowViewport, railAutoAction } from "./layout-breakpoints"
 import { NotesDock } from "./components/NotesDock"
 import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
@@ -1252,7 +1253,7 @@ export function MafwShell() {
   const [tasksPlacement, setTasksPlacement] = createSignal<"bar" | "dock">(
     (localStorage.getItem("mafw-tasks-placement") as "bar" | "dock") || "bar"
   )
-  const [viewportNarrow, setViewportNarrow] = createSignal(window.innerWidth < 1200)
+  const [viewportNarrow, setViewportNarrow] = createSignal(isNarrowViewport(window.innerWidth))
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
   const [winMaximized, setWinMaximized] = createSignal(false)
   onMount(() => {
@@ -1343,9 +1344,11 @@ export function MafwShell() {
   const [railCollapsed, setRailCollapsed] = createSignal(localStorage.getItem("mafw-rail-collapsed") === "1")
   const [railWidth, setRailWidth] = createSignal(Number(localStorage.getItem("mafw-rail-width")) || 264)
 
-  const applyRailCollapsed = (c: boolean) => {
+  const applyRailCollapsed = (c: boolean, persist = true) => {
     setRailCollapsed(c)
-    try { localStorage.setItem("mafw-rail-collapsed", c ? "1" : "0") } catch { /* ignore */ }
+    if (persist) {
+      try { localStorage.setItem("mafw-rail-collapsed", c ? "1" : "0") } catch { /* ignore */ }
+    }
   }
   const applyRailWidth = (w: number) => {
     setRailWidth(w)
@@ -1435,9 +1438,23 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // Dock → overlay under 1200px viewport (storage unchanged).
+  // Dock → overlay + Rail 自动折叠：跨越 1200px 断点时动作（不持久化自动折叠，避免覆盖用户偏好）。
   createEffect(() => {
-    const onResize = () => setViewportNarrow(window.innerWidth < 1200)
+    let lastWidth = window.innerWidth
+    let autoCollapsed = false
+    // 启动即在窄窗口时先收起 Rail（本轮会话内；untrack 避免 railCollapsed 变更重跑本 effect 造成拉锯）
+    if (isNarrowViewport(lastWidth) && !untrack(railCollapsed)) {
+      applyRailCollapsed(true, false)
+      autoCollapsed = true
+    }
+    const onResize = () => {
+      const next = window.innerWidth
+      const action = railAutoAction(lastWidth, next, autoCollapsed)
+      if (action === "collapse") { applyRailCollapsed(true, false); autoCollapsed = true }
+      else if (action === "expand") { applyRailCollapsed(false, false); autoCollapsed = false }
+      lastWidth = next
+      setViewportNarrow(isNarrowViewport(next))
+    }
     window.addEventListener("resize", onResize)
     onCleanup(() => window.removeEventListener("resize", onResize))
   })
@@ -1540,13 +1557,9 @@ export function MafwShell() {
         onConfirm={() => { const req = confirmReq(); setConfirmReq(null); req?.onConfirm() }}
         onCancel={() => setConfirmReq(null)}
       />
-      {/* 左列：rail 通高（grid-row 1/-1），折叠态 32px 不变 */}
+      {/* 左列：rail 通高（grid-row 1/-1）；收起时整列不渲染（0 宽，靠顶栏按钮 / Ctrl+B 再展开） */}
       <div class="mafw-rail-col">
-        {railCollapsed() ? (
-          <div class="mafw-rail-collapsed">
-            <div class="mafw-rail-collapsed-brand"><Icon name="logo" size="small" /></div>
-          </div>
-        ) : (
+        {railCollapsed() ? null : (
           <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
             <Rail
               brand={

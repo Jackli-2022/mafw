@@ -13,6 +13,7 @@ import { getStore, removeStoreFile } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowRegistry } from "./window-registry"
+import { mainWindowOptions } from "./window-bounds"
 import { windowCloseAction } from "./close-decision"
 import { isCloseToTrayEnabled, isTrayIconEnabled } from "./tray-prefs"
 import { notifyHiddenToTray } from "./tray-hint"
@@ -167,10 +168,7 @@ export function createMainWindow(id: string = randomUUID()) {
   })
 
   const win = new BrowserWindow({
-    x: state.x,
-    y: state.y,
-    width: state.width,
-    height: state.height,
+    ...mainWindowOptions(state),
     show: false,
     autoHideMenuBar: true,
     title: "OpenCode",
