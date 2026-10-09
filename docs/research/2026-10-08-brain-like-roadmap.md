@@ -87,7 +87,7 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | 0 | ✅ **W1 常驻先验块** | 已交付（Plan 1，2026-10-08） |
 | 1 | ✅ **W2 skill 物化通道**（md↔md 渲染 + G1-G5 闸门；deopt 留 v2） | 已交付（Plan 1，2026-10-08） |
 | 2 | ✅ **D1b 源条目降能** | 已交付（Plan 1，2026-10-08） |
-| 3 | D3 surprise 门控 | consolidation 余弦本来就在算 |
+| 3 | ✅ **D3 surprise 门控**（laya 三值门 tauLow） | 已交付（2026-10-09：tauLow 默认关 + 校准器；真实数据证明暂无安全线） |
 | 4 | ✅ **L2 失败模式谱** | 已交付（Plan 2：`buildFailureTaxonomy` + cat: 锚点） |
 | 5 | ✅ **A4 选择压力回流** | 已交付（Plan 2：`selectionFeedbackBlock`） |
 | 6 | ✅ **L1 能力账本** | 已交付（Plan 2：`buildCapabilityLedger` + `/api/agent/capabilities`；任务分类器仍缺） |
