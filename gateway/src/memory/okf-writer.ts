@@ -22,6 +22,7 @@ export function buildOKF(unit: HarmonicUnit): string {
   if (unit.sticky_until) frontmatter.sticky_until = unit.sticky_until;
   if (unit.source_session_id) frontmatter.source_session_id = unit.source_session_id;
   if (unit.authority) frontmatter.authority = unit.authority;
+  if (unit.distilled_by?.length) frontmatter.distilled_by = unit.distilled_by;
 
   const yamlStr = yaml.dump(frontmatter, { lineWidth: -1, quotingType: '"' });
   return `---\n${yamlStr}---\n${unit.memory_value}\n`;

@@ -125,6 +125,7 @@ export class HarmonicUnitFileStore {
         abstraction_level: targetUnit.abstraction_level,
         source_session_id: targetUnit.source_session_id,
         authority: targetUnit.authority,
+        distilled_by: targetUnit.distilled_by,
       } as any, entryTier);
 
       // 閿氱偣鍥撅紙澶氳烦妫€绱級澧為噺鏇存柊鈥斺€斿け璐ヤ笉褰卞搷璁板繂鍐欏叆锛堥檷绾э級
@@ -271,6 +272,41 @@ export class HarmonicUnitFileStore {
 
     this.indexManager.save();
     return true;
+  }
+
+  /**
+   * A5 schema write-back: stamp atomic members with the gist id they were
+   * distilled into. Direct OKF rewrite (mirrors setSticky) — deliberately NOT
+   * store.write, which would run the MinHash pipeline and merge near-identical
+   * members. Append + dedupe + cap 3; supersede semantics untouched. Returns
+   * the number of actually stamped members (fail-open per member).
+   */
+  stampDistilled(ids: string[], gistId: string): number {
+    if (!gistId || !Array.isArray(ids)) return 0;
+    let stamped = 0;
+    for (const id of ids) {
+      const entry = this.indexManager.getIndex().entries.find(e => e.id === id);
+      if (!entry || !(entry as any).filePath) continue;
+      const fullPath = path.join(this.baseDir, (entry as any).filePath);
+      if (!fs.existsSync(fullPath)) continue;
+      try {
+        const { unit, body } = readOKFFile(fullPath);
+        const prev: string[] = Array.isArray(unit.distilled_by) ? unit.distilled_by : [];
+        const next = [...new Set([...prev, gistId])].slice(0, 3);
+        if (next.length === prev.length && prev.includes(gistId)) continue; // already stamped
+        unit.distilled_by = next;
+        unit.updated_at = new Date().toISOString();
+        const yaml = require('js-yaml');
+        const yamlStr = yaml.dump(unit, { lineWidth: -1, quotingType: '"' });
+        const tmpPath = fullPath + '.tmp';
+        fs.writeFileSync(tmpPath, `---\n${yamlStr}---\n${body}\n`, 'utf-8');
+        fs.renameSync(tmpPath, fullPath);
+        (entry as any).distilled_by = next;
+        stamped++;
+      } catch { /* fail-open: skip this member */ }
+    }
+    if (stamped > 0) this.indexManager.save();
+    return stamped;
   }
 
   /**

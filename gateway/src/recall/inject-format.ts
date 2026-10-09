@@ -7,6 +7,8 @@
   type?: string
   created_at?: string
   source_session_id?: string
+  /** A5: gist ids distilled from this entry (schema write-back pointer). */
+  distilled_by?: string[]
 }
 
 export interface RecallFormat {
@@ -40,7 +42,13 @@ function pointerLine(m: MemoryUnit): string {
   const energy = typeof m.energy === 'number' ? m.energy.toFixed(1) : '?'
   // ids are `mem_<timestamp>_<rand>` — the FIRST 6 chars are constant across
   // every memory; use the tail so pointers stay unique and verifiable.
-  return `- #mem-${(m.id || '?').slice(-6)} ${tagStr}"${text}" (E:${energy})`
+  // A5: members distilled into a gist carry a pointer hint so the model knows
+  // a more condensed version exists (fetch via mafw_get_memory on demand).
+  const gist = (m as any).distilled_by as string[] | undefined
+  const gistHint = gist?.length
+    ? ` ↳ gist 已蒸馏（get_memory 可取）：${gist.map((g) => g.slice(-6)).join(',')}`
+    : ''
+  return `- #mem-${(m.id || '?').slice(-6)} ${tagStr}"${text}" (E:${energy})${gistHint}`
 }
 
 // ---- Memory block rendering (shared by all full-content injection paths) ----

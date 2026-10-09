@@ -392,6 +392,7 @@ export class ReflectionPipeline {
     }
 
     const maxInsights = this.opts.maxInsights ?? 10;
+    const distilledGistIds: string[] = [];
     for (const insight of insights.slice(0, maxInsights)) {
       const classification = this.classifyInsight(insight.content, insight.cue_anchors ?? []);
 
@@ -413,10 +414,11 @@ export class ReflectionPipeline {
         if (routeDeps) {
           const routed = await routeAndWrite(unit, this.store as any, routeDeps);
           if (routed.action === 'skip') result.deduped++;
-          else result.distilled++;
+          else { result.distilled++; distilledGistIds.push(routed.id); }
         } else {
           await this.store.write(unit);
           result.distilled++;
+          distilledGistIds.push(unit.id);
         }
       } catch {
         result.failed++;
@@ -452,6 +454,15 @@ export class ReflectionPipeline {
     // 降能不失联——条目仍可检索，只是在排序中让位给 gist。
     if (result.distilled > 0) {
       demoteSourceEpisodes(this.opts.index, episodes.map((e) => e.id), this.opts.sourceDemoteFactor ?? 0.3);
+    }
+
+    // A5 schema write-back: stamp the source episodes with the gist ids they
+    // were distilled into (pointer, NOT supersede — the same pass as D1b
+    // demotion; fail-open). Keeps members linked to their condensed versions.
+    if (result.distilled > 0 && distilledGistIds.length > 0) {
+      for (const gistId of distilledGistIds) {
+        try { (this.store as any).stampDistilled?.(episodes.map((e) => e.id), gistId); } catch { /* fail-open */ }
+      }
     }
 
     // Mark the batch reflected once the LLM produced a parseable result —

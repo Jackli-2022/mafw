@@ -176,6 +176,8 @@ export interface RecallMemory {
   score: number
   type?: string
   created_at?: string
+  /** A5: gist ids distilled from this entry (schema write-back pointer). */
+  distilled_by?: string[]
   /** Source: 'bm25', 'expansion', 'scan', 'scan+graph', or 'both'. */
   source?: string
 }
@@ -331,6 +333,7 @@ export async function searchRecallMemories(
       score: norms[i] * blobPenalty(s.entry.primary_abstraction),
       type: s.entry.type,
       created_at: s.entry.created_at,
+      distilled_by: s.entry.distilled_by,
       source: 'bm25',
     })
   })
@@ -349,6 +352,7 @@ export async function searchRecallMemories(
       memory_value: entry.memory_value || entry.content || '',
       energy: entry.energy || 0,
       score: exp.score * blobPenalty(entry.primary_abstraction),
+      distilled_by: entry.distilled_by,
       type: entry.type,
       created_at: entry.created_at,
       source: 'expansion',

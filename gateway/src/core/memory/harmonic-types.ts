@@ -52,6 +52,9 @@ export interface HarmonicUnit {
   source_session_id?: string;
   /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
   authority?: Authority;
+  /** A5: ids of gist units distilled FROM this entry. NOT a supersede chain —
+   *  the member stays live & retrievable (multiple gists may share members). */
+  distilled_by?: string[];
 }
 
 export interface HarmonicIndex {
@@ -92,6 +95,8 @@ export interface HarmonicIndexEntry {
   last_replayed?: string;
   /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
   authority?: Authority;
+  /** A5: gist ids distilled from this entry (schema write-back pointer). */
+  distilled_by?: string[];
 }
 
 export function generateHarmonicId(): string {
