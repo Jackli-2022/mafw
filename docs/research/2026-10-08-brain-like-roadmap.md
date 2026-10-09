@@ -2,7 +2,7 @@
 
 > 日期：2026-10-08
 > 本文是整合层：差距 → 7 个脑化方向 → 自我认知模型 → 统一依赖图与路线图。
-> 细节附录：`2026-10-08-more-brain-like-memory.md`（7 方向全量论证）、`2026-10-08-self-cognition-model.md`（自我认知模型全量论证）。
+> 细节附录：`2026-10-08-more-brain-like-memory.md`（附录一：7 方向全量论证）、`2026-10-08-self-cognition-model.md`（附录二：自我认知模型全量论证）、`2026-10-08-abstraction-runtime-wiring.md`（附录三：W 系列接线 + skill 物化通道与 G1-G5 闸门）。
 
 ## 1. 差距回顾（curator vs 脑的六个本质差距）
 
@@ -85,20 +85,21 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | 序 | 项 | 理由 |
 |---|---|---|
 | 0 | **W1 常驻先验块** | 接线侧最高杠杆；不等抽象质量，先接现有 L5+失败谱 |
-| 1 | **A3 抽象用强模型** | 一行配置拆分，直接抬抽象质量上限 |
-| 1 | D1b 源条目降能（gist 化后 supersede 源 episodes） | D1 分档衰减已在跑，只剩这一步 |
-| 2 | D3 surprise 门控 | consolidation 余弦本来就在算 |
-| 3 | L1 能力账本 | 纯 SQL，goal_outcomes 在写，Brier 可测 |
-| 4 | A4 选择压力回流 | need 信号现成，改 reflection prompt |
-| 5 | D4a 做梦预取 | R8 快照管线现成 |
-| 6 | L2 失败模式谱 | MinHash 现成；**前置缺口：reflection 不落 category** |
-| 7 | A2 真并行草稿-验证 | 双管线现成，需 prompt+tentative 标记设计 |
-| 8 | D2 检索即重写 | reconsolidation 窗口已有（S5），缺消费 worker |
-| 9 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0） |
-| 10 | A1 阶梯补顶 | 依赖抽象质量先上来（A3/A4） |
-| 11 | L3 知识边界 | 缺口：FOK 样本无主题字段 + 样本量（接便签板校准任务） |
-| 12 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
-| 13 | D6/D7+L4 | 体验层，远端 |
+| 1 | **W2 skill 物化通道**（md↔md 渲染 + G1-G5 闸门 + deopt，见附录三 §3.1/3.2） | 用户 2026-10-08 定调：通用抽象模式=skill，记忆与 skill 同为 md 同构，渲染确定性零 LLM |
+| 2 | D1b 源条目降能（gist 化后 supersede 源 episodes） | D1 分档衰减已在跑，只剩这一步 |
+| 3 | D3 surprise 门控 | consolidation 余弦本来就在算 |
+| 4 | L2 失败模式谱 | MinHash 现成；**前置缺口：reflection 不落 category**；W1 先验块的内容源 |
+| 5 | A4 选择压力回流 | need 信号现成，改 reflection prompt |
+| 6 | L1 能力账本 | 纯 SQL，goal_outcomes 在写；**缺口：任务分类器（与 L3 主题分桶共享）** |
+| 7 | D4a 做梦预取 | R8 快照管线现成，缺查询生成器 |
+| 8 | A2 真并行草稿-验证 | 双管线现成，需 prompt+tentative 标记设计 |
+| 9 | D2 检索即重写 | reconsolidation 窗口已有（S5），缺消费 worker |
+| 10 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0） |
+| 11 | A1 阶梯补顶 | 依赖抽象质量先上来（A4） |
+| 12 | L3 知识边界 | 缺口：FOK 样本无主题字段 + 样本量（接便签板校准任务） |
+| 13 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
+| 14 | D6/D7+L4 | 体验层，远端 |
+| — | ~~A3 抽象用强模型~~ | **用户判定非瓶颈**（2026-10-08：问题在缺 skill 通道，不在模型能力）——降权搁置 |
 
 > 实施核查（2026-10-08）发现 D1 分档衰减已在生产运行（`automation-engine.ts:102` 调 `decayRateFor(entry.type)`），原"纯参数"判断过时；reconsolidation 窗口（`recall/reconsolidation.ts`）也已在反馈路径接线，D2 只缺冲突触发的消费 worker。
 
