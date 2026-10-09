@@ -1,4 +1,4 @@
-import { LayaConflictClient, CONFLICT_QUESTION } from '../../../src/memory/laya-client';
+import { LayaConflictClient, CONFLICT_QUESTION, REDUNDANT_QUESTION } from '../../../src/memory/laya-client';
 
 function okFetch(body: unknown, status = 200): typeof fetch {
   return (async () => new Response(JSON.stringify(body), { status })) as any;
@@ -65,5 +65,32 @@ describe('LayaConflictClient', () => {
   it('healthCheck returns true on 200', async () => {
     const c = new LayaConflictClient(deps(okFetch({ ok: true })));
     expect(await c.healthCheck()).toBe(true);
+  });
+});
+
+describe('askPair', () => {
+  const deps = (fetchFn: any) => ({ url: 'http://127.0.0.1:13129', timeoutMs: 50, fetchFn });
+
+  it('sends both questions in one call and returns both scores', async () => {
+    let captured: any;
+    const fetchFn = (async (_url: string, init: any) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({ answers: { conflict: { noul: 0.2 }, redundant: { noul: 0.93 } } }), { status: 200 });
+    }) as any;
+    const r = await new LayaConflictClient(deps(fetchFn)).askPair('已知', '新信息');
+    expect(captured.questions.conflict).toEqual(CONFLICT_QUESTION);
+    expect(captured.questions.redundant).toEqual(REDUNDANT_QUESTION);
+    expect(r).toEqual({ pConflict: 0.2, pRedundant: 0.93 });
+  });
+
+  it('missing redundant field → pRedundant null, overall non-null', async () => {
+    const fetchFn = (async () => new Response(JSON.stringify({ answers: { conflict: { noul: 0.4 } } }), { status: 200 })) as any;
+    const r = await new LayaConflictClient(deps(fetchFn)).askPair('a', 'b');
+    expect(r).toEqual({ pConflict: 0.4, pRedundant: null });
+  });
+
+  it('total failure → null', async () => {
+    const fetchFn = (async () => new Response(JSON.stringify({ error: 'x' }), { status: 500 })) as any;
+    expect(await new LayaConflictClient(deps(fetchFn)).askPair('a', 'b')).toBeNull();
   });
 });

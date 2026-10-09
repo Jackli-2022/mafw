@@ -20,6 +20,14 @@ export const CONFLICT_QUESTION = {
   labels: { false: '兼容', true: '冲突' },
 } as const;
 
+/** G2 write-routing redundancy question — separate contract from CONFLICT_QUESTION,
+ *  calibrated independently (observe-first, tauRedundantHigh default 1.0). */
+export const REDUNDANT_QUESTION = {
+  type: 'noul',
+  instructions: '新信息(new)是否已被已有记忆(known)覆盖？覆盖=known已包含new的实质内容，new不带来新事实',
+  labels: { false: '未覆盖', true: '已覆盖' },
+} as const;
+
 export class LayaConflictClient {
   private url: string;
   private timeoutMs: number;
@@ -58,6 +66,43 @@ export class LayaConflictClient {
       if (typeof p !== 'number' || !Number.isFinite(p)) return null;
       this.consecutiveFails = 0;
       return p;
+    } catch (err: any) {
+      this.consecutiveFails++;
+      if (this.consecutiveFails >= 3) {
+        this.breakerOpenUntil = Date.now() + this.breakerCooldownMs;
+        this.consecutiveFails = 0;
+        log.warn(`[Laya] circuit breaker open for ${this.breakerCooldownMs / 1000}s (${err?.message || err})`);
+      }
+      return null;
+    }
+  }
+
+  async askPair(known: string, newInfo: string): Promise<{ pConflict: number | null; pRedundant: number | null } | null> {
+    if (Date.now() < this.breakerOpenUntil) return null;
+    try {
+      const resp = await Promise.race([
+        this.fetchFn(`${this.url}/v1/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            state: { known, new: newInfo },
+            questions: { conflict: CONFLICT_QUESTION, redundant: REDUNDANT_QUESTION },
+          }),
+        }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error('laya timeout')), this.timeoutMs);
+          timer.unref?.();
+        }),
+      ]) as Response;
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const pc = data?.answers?.conflict?.noul;
+      const pr = data?.answers?.redundant?.noul;
+      const pConflict = typeof pc === 'number' && Number.isFinite(pc) ? pc : null;
+      const pRedundant = typeof pr === 'number' && Number.isFinite(pr) ? pr : null;
+      if (pConflict === null && pRedundant === null) return null;
+      this.consecutiveFails = 0;
+      return { pConflict, pRedundant };
     } catch (err: any) {
       this.consecutiveFails++;
       if (this.consecutiveFails >= 3) {
