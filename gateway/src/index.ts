@@ -6840,6 +6840,12 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           if (!supersedesTarget) return { success: false, error: `supersedes target not found: ${sid}` };
           unit.energy = Math.max(unit.energy, supersedesTarget.energy ?? 0);
         }
+        // A2: tentative draft abstractions are energy-capped at write time
+        // until the daily reflection pipeline promotes or discards them.
+        try {
+          const { capTentativeEnergy } = require('./recall/turn-pipeline');
+          Object.assign(unit, capTentativeEnergy(unit as any));
+        } catch { /* fail-open */ }
         const routeDeps = getRouteWriteDeps();
         if (routeDeps) {
           const routed = await routeAndWrite(unit as any, store as any, routeDeps);

@@ -62,6 +62,15 @@ export interface TurnPipelineResult {
   replayed: number;
 }
 
+/** A2: tentative draft abstractions (fast-system output awaiting slow-system
+ *  validation) are capped at 0.35 energy until reflection promotes them. */
+export function capTentativeEnergy<T extends { cue_anchors?: string[]; energy: number }>(unit: T): T {
+  if ((unit.cue_anchors ?? []).includes('tentative') && unit.energy > 0.35) {
+    return { ...unit, energy: 0.35 };
+  }
+  return unit;
+}
+
 export const TOOL_EXTRACTION_SYSTEM = `You are a memory curator for a coding agent. Review the conversation observations of this session and record durable memories.
 Use the mafw_add_memory tool to save every entry worth remembering long-term:
 - semantic: durable facts, decisions, preferences, user constraints
@@ -77,6 +86,7 @@ Rules:
 - for every memory you write, include an explicit importance score via the mafw_add_memory importance parameter: 1=trivial routine, 5=ordinary fact, 9-10=architecture-level decision or serious incident
 - if nothing is worth saving, do not call the tool
 Division of labor: your job is the FACT LAYER of this session — concrete facts, decisions, preferences, event outcomes, and specific technical pitfalls (which API does what). Do NOT attempt cross-session pattern generalization — that is the daily reflection pipeline's job.
+Exception — draft abstractions: if the session's facts strongly suggest ONE cross-episode pattern, you MAY record it as type=semantic with the literal cue anchor "tentative" and importance <= 4. At most one per batch. The daily reflection pipeline will promote or discard it.
 
 ### Entity Extraction Rules (CRITICAL for cross-session retrieval):
 - ALWAYS extract ALL named entities from the conversation: project names, module names, person names, API endpoints, feature names, file paths, commands, error messages, configuration keys
