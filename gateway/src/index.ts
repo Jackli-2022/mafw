@@ -2091,6 +2091,33 @@ class MafwScheduler {
     }
   }
 
+  /** W2 安装器 deps：staging→用户级 skills 目录 + 源记忆指针改写。 */
+  private skillInstallDeps(): {
+    copyDir(src: string, dst: string): void;
+    readMemory(id: string): Promise<{ id: string; memory_value: string; cue_anchors?: string[] } | null>;
+    writeMemory(unit: { id: string; memory_value: string; cue_anchors?: string[] }): Promise<unknown>;
+    stagingDir: string;
+    skillsDir: string;
+  } {
+    const mafwDir = this.mafwDir;
+    const store = this.memoryService
+      ? new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex)
+      : null;
+    return {
+      copyDir: (src, dst) => fs.cpSync(src, dst, { recursive: true }),
+      readMemory: async (id) => {
+        if (!store) return null;
+        const u = await store.read(id);
+        return u ? { id: u.id, memory_value: u.memory_value, cue_anchors: u.cue_anchors } : null;
+      },
+      writeMemory: async (unit) => {
+        if (store) await store.write(unit as any);
+      },
+      stagingDir: path.join(mafwDir, 'skill-staging'),
+      skillsDir: this.skillsDir(),
+    };
+  }
+
   private getStaleVerifyPipeline(): StaleVerifyPipeline {
     if (!this.memoryService) throw new Error('memoryService not ready');
     const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
@@ -4929,6 +4956,15 @@ class MafwScheduler {
           }
           if (item.state !== 'PENDING_CONFIRMATION') {
             res.writeHead(400); res.end(JSON.stringify({ error: `Already ${item.state}` })); return;
+          }
+          // W2: skill 物化草稿的确认分支——安装 skill + 记忆变指针（不建 goal）
+          const skillDraft = (item as any).summary?.skillDraft;
+          if (skillDraft?.name && skillDraft?.memoryId) {
+            const { installSkillDraft } = await import('./memory/skill-install.js');
+            const r = await installSkillDraft(skillDraft, this.skillInstallDeps());
+            this.automationEngine?.confirmTriage(triageId, item);
+            res.end(JSON.stringify({ status: 'confirmed', installed: r.installed }));
+            return;
           }
           const goalId = `confirmed-${item.automationId}-${Date.now()}`;
           this.automationEngine?.confirmTriage(goalId, item);
