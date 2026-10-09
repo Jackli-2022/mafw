@@ -1,4 +1,4 @@
-import { evaluatePromotion, isConsistentMapping, DEFAULT_PROMOTION_GATES } from '../../../src/memory/skill-promotion';
+import { evaluatePromotion, isConsistentMapping, DEFAULT_PROMOTION_GATES, renderSkillMd } from '../../../src/memory/skill-promotion';
 
 describe('isConsistentMapping', () => {
   it('step-shaped body passes', () => {
@@ -26,5 +26,32 @@ describe('evaluatePromotion', () => {
   });
   it('G2 条件分支体 → ineligible', () => {
     expect(evaluatePromotion({ ...base, body: '如果 x 则 a 否则 b' }).eligible).toBe(false);
+  });
+});
+
+describe('renderSkillMd', () => {
+  it('renders OKF unit as SKILL.md (name/desc/body mapping)', () => {
+    const r = renderSkillMd({
+      id: 'mem_1791453253146_y3ggt9',
+      primary_abstraction: 'serve sidecar 重启后必须重订事件流',
+      memory_value: '1. killProcessOnPort\n2. startServe\n3. subscribeToEvents',
+      cue_anchors: ['serve', 'watchdog', 'sse'],
+    });
+    expect(r.name).toBe('ms-y3ggt9');
+    expect(r.content).toMatch(/^---\nname: ms-y3ggt9\n/);
+    expect(r.content).toContain('description: serve sidecar 重启后必须重订事件流。触发词：serve / watchdog / sse');
+    expect(r.content).toContain('1. killProcessOnPort');
+    expect(r.content).toContain('> 物化自记忆 mem_1791453253146_y3ggt9');
+  });
+
+  it('excludes namespaced anchors (cat:/pref:/skill:) from trigger words', () => {
+    const r = renderSkillMd({
+      id: 'mem_x_abcdef',
+      primary_abstraction: 'P',
+      memory_value: '1. a\n2. b',
+      cue_anchors: ['alpha', 'cat:failure', 'verified:2026-10-01'],
+    });
+    expect(r.content).toContain('触发词：alpha');
+    expect(r.content).not.toContain('cat:failure');
   });
 });

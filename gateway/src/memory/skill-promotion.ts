@@ -41,3 +41,27 @@ export function evaluatePromotion(
   if (s.existingSkillCount >= cfg.maxSkills) reasons.push(`G5 skill 列表已满（${s.existingSkillCount}≥${cfg.maxSkills}）`);
   return { eligible: reasons.length === 0, reasons };
 }
+
+/**
+ * OKF 记忆 → SKILL.md 渲染（md-to-md 通道）。name 取 id 尾 6 位保证 ascii 安全；
+ * description 是 skill 发现性的命门（primary_abstraction + 触发词）。
+ */
+export function renderSkillMd(unit: {
+  id: string;
+  primary_abstraction: string;
+  memory_value: string;
+  cue_anchors?: string[];
+}): { name: string; content: string } {
+  const name = `ms-${unit.id.slice(-6)}`;
+  const triggers = (unit.cue_anchors ?? []).filter((a) => !a.includes(':')).slice(0, 5).join(' / ');
+  const content = `---
+name: ${name}
+description: ${unit.primary_abstraction}。触发词：${triggers}
+---
+
+${unit.memory_value}
+
+> 物化自记忆 ${unit.id}（记忆为索引，本文件为真相源；修订请改本文件后由 curator 回写）。
+`;
+  return { name, content };
+}
