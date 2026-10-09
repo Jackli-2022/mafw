@@ -18,6 +18,9 @@ const RULES: Array<{ id: string; schedule: string; timezone: string; action: str
   // against newer related memories; contradicted ones get an update via the
   // supersedes chain. Runs after decay (3:30) so energy is settled.
   { id: 'memory-reconsolidate', schedule: '30 4 * * *', timezone: 'UTC', action: 'memory:reconsolidate' },
+  // D4a: nightly dream prefetch — generate the most likely next-session queries
+  // per recently-active session; the first user input of the day prefetches them.
+  { id: 'memory-dream', schedule: '0 2 * * *', timezone: 'UTC', action: 'memory:dream' },
   // Weekly skill promotion (W2) — procedural memories that pass G1-G5 are
   // rendered to staged SKILL.md drafts + triage items for human approval.
   { id: 'skill-promotion', schedule: '0 5 * * 0', timezone: 'UTC', action: 'memory:skillPromotion' },

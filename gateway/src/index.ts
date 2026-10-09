@@ -2110,6 +2110,44 @@ class MafwScheduler {
         }
       });
     });
+    // D4a: nightly dream prefetch — generate likely next-session queries for
+    // recently-active sessions; the first user input of the day consumes them.
+    actionRegistry.set('memory:dream', async () => {
+      await this.runPipelineGuarded('memory:dream', async () => {
+        try {
+          if (!this.scanService) return;
+          const { selectDreamSessions, parseDreamQueries, DREAM_SYSTEM } = require('./recall/dream-prefetch');
+          const db = this.getGatewayDb();
+          const sids = selectDreamSessions(db.listTurns(), {
+            now: Date.now(), maxSessions: 5, windowMs: 24 * 3600_000,
+            isInternal: (sid: string) => this.internalSessionRoles.has(sid),
+          });
+          let generated = 0;
+          for (const sid of sids) {
+            if (!this.getPipelineBudget().allow('dream')) break;
+            const turns = db.listTurns(sid).slice(-20);
+            const tail = turns
+              .flatMap((t: any) => db.readTurn(sid, t.turn_id))
+              .map((o: any) => o.content)
+              .filter(Boolean)
+              .join('\n')
+              .slice(-3000);
+            if (!tail.trim()) continue;
+            const worker = this.getPool().getWorker(`dream-${sid}`, 'reflect');
+            const reply = await worker.prompt(`SESSION TAIL:\n${tail}`, DREAM_SYSTEM, config.recall.workerModel, 'memory-curator');
+            const queries = parseDreamQueries(reply, 3);
+            if (queries.length > 0) {
+              db.kvSet('dream-queries', sid, { queries, generatedAt: Date.now() });
+              generated++;
+            }
+          }
+          this.heartbeat?.record('memory:dream', { ok: true, counts: { sessions: sids.length, generated } });
+        } catch (err: any) {
+          this.heartbeat?.record('memory:dream', { ok: false, error: err.message });
+          log.warn(`[Dream] run failed: ${err.message}`);
+        }
+      });
+    });
     // W2: skill promotion — procedural memories passing G1-G5 become staged
     // SKILL.md drafts + triage items for human approval (weekly).
     actionRegistry.set('memory:skillPromotion', async () => {
@@ -5961,6 +5999,16 @@ class MafwScheduler {
                 // R8: refresh the predictive prefetch snapshot (debounced) so
                 // the next boundary recall can serve the expensive retrieval.
                 this.scheduleSnapshotRefresh(sessionID);
+                // D4a: consume any dream queries generated overnight for this
+                // session — prefetch them so the day's first recall hits a
+                // prebuilt snapshot (one-shot handoff).
+                try {
+                  const dq = this.getGatewayDb().kvGet<{ queries: string[] }>('dream-queries', sessionID);
+                  if (dq?.queries?.length) {
+                    this.getGatewayDb().kvDelete('dream-queries', sessionID);
+                    for (const q of dq.queries) this.getScanService()?.prefetch(sessionID, q);
+                  }
+                } catch { /* fail-open */ }
               }
               res.writeHead(200);
               res.end(JSON.stringify({ ok: true, id, turnId, deduped: id === null }));
