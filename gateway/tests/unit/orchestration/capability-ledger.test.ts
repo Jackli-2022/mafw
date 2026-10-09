@@ -1,4 +1,4 @@
-import { buildCapabilityLedger, buildFailureTaxonomy } from '../../../src/orchestration/capability-ledger';
+import { buildCapabilityLedger, buildFailureTaxonomy, capabilityPriorBlock } from '../../../src/orchestration/capability-ledger';
 
 describe('buildCapabilityLedger', () => {
   it('aggregates pass rate, avg rounds, and failure-kind breakdown', () => {
@@ -38,5 +38,27 @@ describe('buildFailureTaxonomy', () => {
     expect(top.count).toBe(2);
     expect(top.energy).toBeCloseTo(0.9);
     expect(top.id).toBe('m1');
+  });
+});
+
+describe('capabilityPriorBlock', () => {
+  it('renders history summary + recurrent failure patterns', () => {
+    const block = capabilityPriorBlock(
+      { total: 4, passRate: 0.5, avgRounds: 3.2, avgCostUsd: 0.18, thumbsUp: 1, thumbsDown: 1, byFailureKind: { max_retries: 2 } },
+      [{ pattern: 'serve 崩溃后事件订阅必须重连', count: 2, energy: 0.9, id: 'm1' }],
+    );
+    expect(block).toContain('历史 PASS 率 50%');
+    expect(block).toContain('平均 3.2 轮');
+    expect(block).toContain('serve 崩溃后事件订阅必须重连');
+    expect(block).toContain('回避');
+  });
+
+  it('empty book → empty string', () => {
+    expect(
+      capabilityPriorBlock(
+        { total: 0, passRate: 0, avgRounds: 0, avgCostUsd: 0, thumbsUp: 0, thumbsDown: 0, byFailureKind: {} },
+        [],
+      ),
+    ).toBe('');
   });
 });

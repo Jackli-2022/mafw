@@ -88,3 +88,23 @@ export function buildFailureTaxonomy(entries: Array<{
   }
   return [...groups.values()].sort((a, b) => b.count - a.count);
 }
+
+/**
+ * W4：把能力账本 + 失败谱渲染为注入 plan 节点 prompt 的"行动先验"块。
+ * 规划时看到自己在同类任务上的历史与反复失败模式，主动规避。空账本返回 ''。
+ */
+export function capabilityPriorBlock(ledger: CapabilityLedger, taxonomy: FailurePattern[]): string {
+  if (ledger.total === 0 && taxonomy.length === 0) return '';
+  const lines: string[] = ['### 你在此类任务上的历史（自我认知账本）'];
+  if (ledger.total > 0) {
+    lines.push(
+      `- 历史 PASS 率 ${Math.round(ledger.passRate * 100)}%（${ledger.total} 个 goal），` +
+        `平均 ${ledger.avgRounds.toFixed(1)} 轮，平均成本 $${ledger.avgCostUsd.toFixed(2)}`,
+    );
+  }
+  if (taxonomy.length > 0) {
+    lines.push('- 反复失败模式（计划时主动回避）：');
+    for (const t of taxonomy.slice(0, 5)) lines.push(`  - [×${t.count}] ${t.pattern}`);
+  }
+  return lines.join('\n');
+}
