@@ -88,9 +88,9 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | 1 | ✅ **W2 skill 物化通道**（md↔md 渲染 + G1-G5 闸门；deopt 留 v2） | 已交付（Plan 1，2026-10-08） |
 | 2 | ✅ **D1b 源条目降能** | 已交付（Plan 1，2026-10-08） |
 | 3 | D3 surprise 门控 | consolidation 余弦本来就在算 |
-| 4 | L2 失败模式谱（category 落盘 ✅ Plan 1；聚合待做） | MinHash 现成；W1 先验块的内容源 |
-| 5 | A4 选择压力回流 | need 信号现成，改 reflection prompt |
-| 6 | L1 能力账本 | 纯 SQL，goal_outcomes 在写；**缺口：任务分类器（与 L3 主题分桶共享）** |
+| 4 | ✅ **L2 失败模式谱** | 已交付（Plan 2：`buildFailureTaxonomy` + cat: 锚点） |
+| 5 | ✅ **A4 选择压力回流** | 已交付（Plan 2：`selectionFeedbackBlock`） |
+| 6 | ✅ **L1 能力账本** | 已交付（Plan 2：`buildCapabilityLedger` + `/api/agent/capabilities`；任务分类器仍缺） |
 | 7 | D4a 做梦预取 | R8 快照管线现成，缺查询生成器 |
 | 8 | A2 真并行草稿-验证 | 双管线现成，需 prompt+tentative 标记设计 |
 | 9 | D2 检索即重写 | reconsolidation 窗口已有（S5），缺消费 worker |
