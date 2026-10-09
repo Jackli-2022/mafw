@@ -124,6 +124,78 @@ describe('decideRouting', () => {
     const out = await decideRouting(u('n1'), deps);
     expect(out.action).toBe('create');
   });
+
+  describe('laya redundant gate', () => {
+    const bandVec: [number, number] = [0.9, 0.44]; // cos ≈ 0.898 → 中间带
+    const layaDeps = (pRedundant: number | null, judged: { n: number }) => ({
+      laya: {
+        client: { askPair: async () => (pRedundant === null ? null : { pConflict: 0.1, pRedundant }) },
+        tauRedundantHigh: 0.9,
+      },
+      readUnit: async () => ({ memory_value: '已知内容' }),
+      judge: async () => { judged.n++; return { action: 'create' as const }; },
+    });
+
+    test('pRedundant >= tau → redundant outcome, judge NOT called', async () => {
+      const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+      v.upsert('old', bandVec);
+      const judged = { n: 0 };
+      const out = await decideRouting(u('n1'), { vectors: v, provider, ...layaDeps(0.95, judged) });
+      expect(out).toEqual({ action: 'redundant', targetId: 'old', pRedundant: 0.95 });
+      expect(judged.n).toBe(0);
+    });
+
+    test('pRedundant < tau → judge called as before', async () => {
+      const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+      v.upsert('old', bandVec);
+      const judged = { n: 0 };
+      const out = await decideRouting(u('n1'), { vectors: v, provider, ...layaDeps(0.5, judged) });
+      expect(out.action).toBe('create');
+      expect(judged.n).toBe(1);
+    });
+
+    test('askPair null → fail-open to judge', async () => {
+      const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+      v.upsert('old', bandVec);
+      const judged = { n: 0 };
+      const out = await decideRouting(u('n1'), { vectors: v, provider, ...layaDeps(null, judged) });
+      expect(out.action).toBe('create');
+      expect(judged.n).toBe(1);
+    });
+
+    test('no laya dep → behavior byte-identical to before', async () => {
+      const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+      v.upsert('old', bandVec);
+      const judged = { n: 0 };
+      const out = await decideRouting(u('n1'), { vectors: v, provider, judge: async () => { judged.n++; return { action: 'create' as const }; } });
+      expect(out.action).toBe('create');
+      expect(judged.n).toBe(1);
+    });
+
+    test('onRoute receives audit row with redundantScores', async () => {
+      const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+      v.upsert('old', bandVec);
+      const rows: any[] = [];
+      const judged = { n: 0 };
+      await decideRouting(u('n1'), { vectors: v, provider, ...layaDeps(0.95, judged), onRoute: (r) => rows.push(r) });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].decidedBy).toBe('laya-redundant');
+      expect(rows[0].verdict).toBe('redundant');
+      expect(rows[0].redundantScores).toEqual([{ id: 'old', p: 0.95 }]);
+      expect(rows[0].candidates[0].id).toBe('old');
+    });
+
+    test('onRoute throwing does not break routing (fail-open)', async () => {
+      const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+      v.upsert('old', bandVec);
+      const judged = { n: 0 };
+      const out = await decideRouting(u('n1'), {
+        vectors: v, provider, ...layaDeps(0.95, judged),
+        onRoute: () => { throw new Error('audit down'); },
+      });
+      expect(out.action).toBe('redundant');
+    });
+  });
 });
 
 describe('routeAndWrite', () => {

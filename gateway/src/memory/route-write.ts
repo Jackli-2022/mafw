@@ -12,12 +12,24 @@ import { HarmonicUnit } from '../core/memory/harmonic-types';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
 import { getReconsolidationQueue } from '../recall/reconsolidation';
+import { getRetrievalEventBuffer } from '../core/memory/retrieval-events';
 
 export type RoutingOutcome =
   | { action: 'skip'; targetId: string }
   | { action: 'create' }
   | { action: 'update'; targetId: string }
-  | { action: 'separate'; targetId: string; distinction?: string };
+  | { action: 'separate'; targetId: string; distinction?: string }
+  | { action: 'redundant'; targetId: string; pRedundant: number };
+
+export interface RouteAuditRecord {
+  newId: string;
+  newAbstraction: string;
+  candidates: Array<{ id: string; cosine: number }>;
+  redundantScores?: Array<{ id: string; p: number }>;
+  verdict: 'create' | 'update' | 'separate' | 'skip' | 'redundant';
+  decidedBy: 'fast-path' | 'dup' | 'laya-redundant' | 'llm-route';
+  ts: number;
+}
 
 export interface JudgeDecision {
   action: 'create' | 'update' | 'separate';
@@ -44,6 +56,16 @@ export interface RouteWriteDeps {
    * small value change ("3" → "5") is never silently dropped.
    */
   readEntry?: (id: string) => { primary_abstraction?: string } | undefined;
+  /** G2 laya redundancy gate for the candidate band (tauRedundantHigh 1.0 = observe-only). */
+  laya?: {
+    client: { askPair(known: string, newInfo: string): Promise<{ pConflict: number | null; pRedundant: number | null } | null> };
+    tauRedundantHigh: number;
+    maxTextChars?: number;
+  };
+  /** Read a candidate's full text (laya needs memory_value; readEntry has only the abstraction). */
+  readUnit?: (id: string) => Promise<{ memory_value?: string } | null>;
+  /** Audit sink for calibration data — one row per contested write. Fail-open. */
+  onRoute?: (record: RouteAuditRecord) => void;
 }
 
 /** Normalize for exact re-statement comparison (case/whitespace insensitive). */
@@ -96,7 +118,34 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
     // embedding-close but must route to the judge (update) — never dropped.
     const cand = deps.readEntry?.(top.id);
     if (cand && isNearIdentical(unit.primary_abstraction, cand.primary_abstraction)) {
+      emitRoute(deps, unit, hits, 'skip', 'dup');
       return { action: 'skip', targetId: top.id };
+    }
+  }
+
+  // G2 laya redundancy gate (write-phase routing): high-confidence "already
+  // covered" → redundant outcome, skipping the LLM judge. Observe-only while
+  // tauRedundantHigh = 1.0 (scores still flow to the audit for calibration).
+  let redundantScores: Array<{ id: string; p: number }> | undefined;
+  if (deps.laya && deps.readUnit) {
+    const laya = deps.laya;
+    const cap = laya.maxTextChars ?? 800;
+    const trunc = (s: string) => String(s ?? '').slice(0, cap);
+    const scores: Array<{ id: string; p: number }> = [];
+    let bestR: { id: string; p: number } | null = null;
+    for (const h of hits.slice(0, maxCand)) {
+      let targetText: string | undefined;
+      try { targetText = (await deps.readUnit(h.id))?.memory_value; } catch { continue; }
+      if (!targetText) continue;
+      const r = await laya.client.askPair(trunc(targetText), trunc(unit.memory_value));
+      if (r?.pRedundant == null) continue;
+      scores.push({ id: h.id, p: r.pRedundant });
+      if (!bestR || r.pRedundant > bestR.p) bestR = { id: h.id, p: r.pRedundant };
+    }
+    if (scores.length > 0) redundantScores = scores;
+    if (bestR && bestR.p >= laya.tauRedundantHigh) {
+      emitRoute(deps, unit, hits, 'redundant', 'laya-redundant', redundantScores);
+      return { action: 'redundant', targetId: bestR.id, pRedundant: bestR.p };
     }
   }
 
@@ -105,16 +154,44 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
   try {
     verdict = await deps.judge(unit, candidateIds);
   } catch {
+    emitRoute(deps, unit, hits, 'create', 'llm-route');
     return { action: 'create' }; // fail-open
   }
-  if (!verdict || verdict.action === 'create') return { action: 'create' };
+  if (!verdict || verdict.action === 'create') {
+    emitRoute(deps, unit, hits, 'create', 'llm-route');
+    return { action: 'create' };
+  }
   if (verdict.targetId && candidateIds.includes(verdict.targetId)) {
     if (verdict.action === 'separate') {
+      emitRoute(deps, unit, hits, 'separate', 'llm-route');
       return { action: 'separate', targetId: verdict.targetId, distinction: verdict.distinction };
     }
+    emitRoute(deps, unit, hits, 'update', 'llm-route');
     return { action: 'update', targetId: verdict.targetId };
   }
+  emitRoute(deps, unit, hits, 'create', 'llm-route');
   return { action: 'create' }; // invalid target → fail-open
+}
+
+function emitRoute(
+  deps: RouteWriteDeps,
+  unit: HarmonicUnit,
+  hits: Array<{ id: string; cosine: number }>,
+  verdict: RouteAuditRecord['verdict'],
+  decidedBy: RouteAuditRecord['decidedBy'],
+  redundantScores?: Array<{ id: string; p: number }>,
+): void {
+  try {
+    deps.onRoute?.({
+      newId: unit.id,
+      newAbstraction: unit.primary_abstraction,
+      candidates: hits.map((h) => ({ id: h.id, cosine: +h.cosine.toFixed(4) })),
+      redundantScores,
+      verdict,
+      decidedBy,
+      ts: Date.now(),
+    });
+  } catch { /* fail-open */ }
 }
 
 /** Minimal store surface routeAndWrite needs (matches HarmonicUnitFileStore). */
