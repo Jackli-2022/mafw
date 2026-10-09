@@ -633,7 +633,7 @@ html[data-theme="light"] body {
 .mafw-content:only-child { grid-row: 1 / -1; }
 .mafw-chat-content { overflow: hidden; padding: 0; }
 /* 非 chat 页：tab 切换时组件重挂载触发首帧淡入 */
-.mafw-content:not(.mafw-chat-content) > * { animation: mafw-fade-in var(--dur-2) var(--ease); }
+.mafw-content:not(.mafw-chat-content) > * { animation: mafw-fade-in var(--dur-surface) var(--ease-surface); }
 
 /* ── Chat Layout ── */
 .mafw-chat {
@@ -2755,7 +2755,7 @@ html[data-theme="light"] .mafw-picker-pop {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  animation: mafw-dock-in var(--dur-3) var(--ease);
+  animation: mafw-dock-in var(--dur-surface) var(--ease-surface);
 }
 .mafw-dock-slot {
   position: relative;

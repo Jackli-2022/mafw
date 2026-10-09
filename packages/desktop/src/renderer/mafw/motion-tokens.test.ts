@@ -36,3 +36,10 @@ describe("dock column width transition", () => {
     expect(css).toMatch(/\.mafw-body\s*\{[^}]*transition:\s*grid-template-columns\s+var\(--dur-surface\)\s+var\(--ease-surface\)/)
   })
 })
+
+describe("surface-tier entrances use surface tokens", () => {
+  test("content first-paint and dock entrance use surface tokens", () => {
+    expect(css).toMatch(/\.mafw-content:not\(\.mafw-chat-content\)\s*>\s*\*\s*\{[^}]*var\(--dur-surface\)/)
+    expect(css).toMatch(/mafw-dock-in var\(--dur-surface\) var\(--ease-surface\)/)
+  })
+})
