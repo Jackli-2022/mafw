@@ -334,3 +334,37 @@ export function formatNoteBoard(entries: NoteBoardEntry[], now: Date = new Date(
     used: lines.length,
   };
 }
+
+// ---- W1 常驻先验块（<agent-priors>，system 每轮注入）----
+
+export const AGENT_PRIORS_BUDGET = { maxAxioms: 5, maxPatterns: 5, maxChars: 800 } as const;
+
+/**
+ * W1 常驻先验块：把蒸馏产物（L5 公理/启发式 + L2 失败模式谱）渲染为每轮常驻
+ * system 的小块。与 <memory-guide>/<user-profile> 一样稳定靠前以保前缀缓存。
+ * 预算小而高浓度——细节仍走检索，此处只放"行动先验"。
+ */
+export function formatAgentPriors(input: {
+  axioms: string[];
+  heuristics: string[];
+  failurePatterns: string[];
+}): { block: string | null; used: number } {
+  const lines: string[] = [];
+  let chars = 0;
+  let used = 0;
+  const push = (line: string): boolean => {
+    if (chars + line.length > AGENT_PRIORS_BUDGET.maxChars) return false;
+    lines.push(line);
+    chars += line.length + 1;
+    used++;
+    return true;
+  };
+  for (const a of input.axioms.slice(0, AGENT_PRIORS_BUDGET.maxAxioms)) if (!push(`- [公理] ${a}`)) break;
+  for (const h of input.heuristics.slice(0, AGENT_PRIORS_BUDGET.maxAxioms)) if (!push(`- [启发式] ${h}`)) break;
+  for (const f of input.failurePatterns.slice(0, AGENT_PRIORS_BUDGET.maxPatterns)) if (!push(`- [勿再犯] ${f}`)) break;
+  if (lines.length === 0) return { block: null, used: 0 };
+  return {
+    block: `<agent-priors>\n## 行动先验（长期记忆蒸馏，常驻）\n${lines.join('\n')}\n</agent-priors>`,
+    used,
+  };
+}
