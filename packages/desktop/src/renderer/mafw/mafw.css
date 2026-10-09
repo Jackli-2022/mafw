@@ -4841,3 +4841,28 @@ html[data-theme="light"] .mafw-picker-pop {
 
 /* ── 回合底部流程卡容器（与 SessionTurn 阅读列对齐）── */
 .mafw-turn-cards { display: flex; flex-direction: column; gap: 6px; max-width: var(--msg-col-width); width: 100%; margin: 4px auto 2px; }
+
+/* ── Goal 详情：泳道（阶段 × loop）+ 内联明细（P2）── */
+.mafw-lane-wrap { margin-top: 10px; overflow-x: auto; }
+.mafw-lane-grid { display: grid; border: 1px solid var(--border-base); border-radius: var(--r-md); overflow: hidden; font-size: 12px; }
+.mafw-lane-corner, .mafw-lane-colhead { background: var(--bg-inset); color: var(--text-4); padding: 6px 8px; }
+.mafw-lane-colhead { border-left: 1px solid var(--border-base); }
+.mafw-lane-rowhead { padding: 10px 8px; color: var(--text-3); border-top: 1px solid var(--border-base); }
+.mafw-lane-cellwrap { padding: 7px; border-top: 1px solid var(--border-base); border-left: 1px solid var(--border-base); }
+.mafw-lane-cell { border-radius: var(--r-sm); padding: 6px 8px; cursor: pointer; border: 1px solid transparent; }
+.mafw-lane-cell-ok { background: #16241b; border-color: #2f5c40; color: #7ec78e; }
+.mafw-lane-cell-running { background: #241d12; border-color: #5c4a2f; color: #e0b46a; }
+.mafw-lane-cell-fail { background: #241616; border-color: #5c2f2f; color: #e08a8a; }
+.mafw-lane-cell-idle { background: transparent; border-color: var(--border-subtle); color: var(--text-5); }
+.mafw-lane-cell-line1 { display: flex; gap: 6px; align-items: center; }
+.mafw-lane-cell-line2 { color: var(--text-4); font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mafw-lane-attempt-badge { margin-left: auto; font-size: 10px; color: var(--text-4); }
+.mafw-lane-caret { margin-left: auto; }
+.mafw-lane-expand { background: var(--bg-inset); border-top: 1px dashed var(--border-base); padding: 12px 14px; }
+.mafw-lane-expand-head { color: var(--text-3); margin-bottom: 8px; }
+.mafw-lane-expand-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 18px; color: var(--text-4); margin-bottom: 10px; }
+.mafw-lane-expand-error { background: #1c1414; border-left: 3px solid #8a2b2b; padding: 6px 10px; border-radius: var(--r-sm); color: #c9a0a0; margin-bottom: 10px; }
+.mafw-lane-expand-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mafw-goal-artifacts { display: flex; gap: 8px; margin-top: 10px; }
+.mafw-artifact-chip { font-size: 11px; background: var(--bg-raised); border: 1px solid var(--border-base); border-radius: var(--r-sm); padding: 2px 8px; cursor: pointer; color: var(--text-4); }
+.mafw-goal-actions { margin-top: 12px; display: flex; gap: 8px; }
