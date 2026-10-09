@@ -65,3 +65,63 @@ ${unit.memory_value}
 `;
   return { name, content };
 }
+
+export interface ScanDeps {
+  getIndex(): { entries: any[] };
+  readUnit(id: string): Promise<{ id: string; memory_value: string; cue_anchors?: string[] } | null>;
+  needFor: (id: string) => number;
+  existingSkillCount: () => number;
+  writeStaging: (name: string, content: string) => void;
+  createTriageItem: (item: { summary: { skillDraft: { name: string; memoryId: string } } }) => void;
+  now: Date;
+  gates?: typeof DEFAULT_PROMOTION_GATES;
+}
+
+/**
+ * W2 扫描管线：遍历 procedural 记忆，过 G1-G5 闸门，合格者渲染 SKILL.md 写入
+ * staging 目录并建 triage 草稿（人审后安装）。幂等：已带 `skill:` 锚点的跳过。
+ * 全 fail-open——单个候选读失败不影响其余。
+ * @returns 本次提升的候选数
+ */
+export async function scanPromotionCandidates(deps: ScanDeps): Promise<number> {
+  const cfg = deps.gates ?? DEFAULT_PROMOTION_GATES;
+  let promoted = 0;
+  const existing = deps.existingSkillCount();
+  for (const entry of deps.getIndex().entries) {
+    if (entry.type !== 'procedural' || entry.superseded_by) continue;
+    if ((entry.cue_anchors ?? []).some((a: string) => a.startsWith('skill:'))) continue;
+    try {
+      const unit = await deps.readUnit(entry.id);
+      if (!unit) continue;
+      const anchors: string[] = unit.cue_anchors ?? entry.cue_anchors ?? [];
+      const updatedMs = Date.parse(entry.updated_at ?? entry.created_at ?? 0);
+      const daysSinceRevision = updatedMs > 0
+        ? Math.floor((deps.now.getTime() - updatedMs) / 86400e3)
+        : 0;
+      const decision = evaluatePromotion(
+        {
+          need7d: deps.needFor(entry.id),
+          energy: entry.energy ?? 0,
+          body: unit.memory_value,
+          verified: anchors.some((a) => a.startsWith('verified:')),
+          daysSinceRevision,
+          existingSkillCount: existing + promoted,
+        },
+        cfg,
+      );
+      if (!decision.eligible) continue;
+      const { name, content } = renderSkillMd({
+        id: unit.id,
+        primary_abstraction: entry.primary_abstraction ?? unit.id,
+        memory_value: unit.memory_value,
+        cue_anchors: anchors,
+      });
+      deps.writeStaging(name, content);
+      deps.createTriageItem({ summary: { skillDraft: { name, memoryId: unit.id } } });
+      promoted++;
+    } catch {
+      // fail-open: skip this candidate
+    }
+  }
+  return promoted;
+}

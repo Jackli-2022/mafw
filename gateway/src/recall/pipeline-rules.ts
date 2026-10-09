@@ -14,6 +14,9 @@ const RULES: Array<{ id: string; schedule: string; timezone: string; action: str
   // procedural/semantic memories against the live environment (read-only
   // probes) and supersedes contradicted ones (env-probing curation).
   { id: 'memory-review', schedule: '0 4 * * 0', timezone: 'UTC', action: 'memory:review' },
+  // Weekly skill promotion (W2) — procedural memories that pass G1-G5 are
+  // rendered to staged SKILL.md drafts + triage items for human approval.
+  { id: 'skill-promotion', schedule: '0 5 * * 0', timezone: 'UTC', action: 'memory:skillPromotion' },
 ];
 
 export function ensureMemoryPipelineRules(mafwDir: string): void {

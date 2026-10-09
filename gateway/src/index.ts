@@ -2025,6 +2025,70 @@ class MafwScheduler {
         }
       });
     });
+    // W2: skill promotion — procedural memories passing G1-G5 become staged
+    // SKILL.md drafts + triage items for human approval (weekly).
+    actionRegistry.set('memory:skillPromotion', async () => {
+      await this.runPipelineGuarded('memory:skillPromotion', async () => {
+        try {
+          if (!this.memoryService) return;
+          const stagingDir = path.join(this.mafwDir, 'skill-staging');
+          const triageDir = path.join(this.mafwDir, 'triage');
+          const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
+          const { scanPromotionCandidates } = require('./memory/skill-promotion');
+          const promoted = await scanPromotionCandidates({
+            getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
+            readUnit: async (id: string) => {
+              const u = await store.read(id);
+              return u ? { id: u.id, memory_value: u.memory_value, cue_anchors: u.cue_anchors } : null;
+            },
+            needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
+            existingSkillCount: () => this.installedSkillCount(),
+            writeStaging: (name: string, content: string) => {
+              const dir = path.join(stagingDir, name);
+              fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf-8');
+            },
+            createTriageItem: (item: any) => {
+              fs.mkdirSync(triageDir, { recursive: true });
+              const triageId = `triage-skillpromo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+              fs.writeFileSync(path.join(triageDir, `${triageId}.json`), JSON.stringify({
+                id: triageId,
+                automationId: 'skill-promotion',
+                discoveredAt: new Date().toISOString(),
+                source: 'skill-promotion',
+                summary: item.summary,
+                proposedGoal: { title: `物化 skill: ${item.summary.skillDraft.name}`, boundaries: [], estimatedLoops: 1 },
+                state: 'PENDING_CONFIRMATION',
+                userAction: null,
+                deadline: new Date(Date.now() + 7 * 86400e3).toISOString(),
+                updatedAt: new Date().toISOString(),
+              }, null, 2), 'utf-8');
+            },
+            now: new Date(),
+          });
+          this.heartbeat?.record('memory:skillPromotion', { ok: true, counts: { promoted } });
+          if (promoted > 0) log.info(`[SkillPromotion] staged ${promoted} skill draft(s)`);
+        } catch (err: any) {
+          this.heartbeat?.record('memory:skillPromotion', { ok: false, error: err.message });
+          log.warn(`[SkillPromotion] run failed: ${err.message}`);
+        }
+      });
+    });
+  }
+
+  /** 用户级 skills 目录（W2 安装目标）。 */
+  private skillsDir(): string {
+    return path.join(os.homedir(), '.config', 'opencode', 'skills');
+  }
+
+  /** 已安装 skill 数（含 staging 之外的用户级目录）——G5 列表膨胀闸门的输入。 */
+  private installedSkillCount(): number {
+    try {
+      return fs.readdirSync(this.skillsDir(), { withFileTypes: true })
+        .filter((d) => d.isDirectory()).length;
+    } catch {
+      return 0;
+    }
   }
 
   private getStaleVerifyPipeline(): StaleVerifyPipeline {

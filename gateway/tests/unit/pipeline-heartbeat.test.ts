@@ -117,5 +117,6 @@ describe('PipelineHeartbeat', () => {
     expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:turnCompress']).toBe(HOUR);      // 0 * * * *
     expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:reflect']).toBe(24 * HOUR);      // 0 3 * * *
     expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:review']).toBe(7 * 24 * HOUR);   // 0 4 * * 0
+    expect(DEFAULT_PIPELINE_INTERVALS_MS['memory:skillPromotion']).toBe(7 * 24 * HOUR); // 0 5 * * 0
   });
 });

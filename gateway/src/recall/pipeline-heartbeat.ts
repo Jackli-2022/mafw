@@ -40,6 +40,7 @@ export const DEFAULT_PIPELINE_INTERVALS_MS: Record<string, number> = {
   // stale 恒真误报（>2h 无成功即报警，而正常节奏是 24h）。
   'memory:reflect': DAY,
   'memory:review': 7 * DAY,
+  'memory:skillPromotion': 7 * DAY,
   consolidation: 7 * DAY,
 };
 
