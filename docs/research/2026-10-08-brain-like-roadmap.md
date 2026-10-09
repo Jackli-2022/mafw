@@ -97,6 +97,7 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | 10 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0）→ **spec-first**（`2026-10-09-remaining-roadmap-all.md` Phase I） |
 | 11 | ✅ **A1 阶梯补顶** | 已交付（2026-10-09：周管线 insights→公理候选→triage→L5） |
 | 12 | ✅ **L3 知识边界** | 已交付（2026-10-09：FOK 样本 topic 字段 + 分主题阈值拟合） |
+| — | ✅ **G2 写相路由（laya 冗余门）** | 已交付（2026-10-09：route-write 冗余门 + 沉底/强化 + observe-first） |
 | 13 | D5 PPR 检索 | 需建图，LongMemEval 可测 → **spec-first**（Phase G） |
 | — | P1.5 审批决策判定 | ✅ 数据积累已交付（2026-10-09：approval-decisions.jsonl eval/reply 对；模型选型后置） |
 | — | D6/D7+L4 | 体验层，远端 |

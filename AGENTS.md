@@ -1130,6 +1130,7 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **A1 阶梯补顶**：`memory/axiom-distill.ts`（`selectAxiomSources`/`parseAxiomCandidates`）+ 周 `memory:axiomDistill`（cron `0 6 * * 0`）把高 need semantic insights 蒸馏为公理候选 → triage 草稿（`summary.axiomDraft`）→ confirm 分支逐条经 `L5Store.addHeuristic` 提交（不建 goal）。
 - **L3 知识边界**：FOK 样本（`recall/fok-samples.ts`）inj 形加 `topic`（= top-1 记忆首个 cue_anchor；快照构建后经 `appendFokEvent` 落 `fok-samples.jsonl`）；`fitFokThresholdsByTopic`（`recall/fok-gate.ts`）按主题拟合、样本不足/不可分则并入 global，消费 `byTopic[topic] ?? global`。
 - **P1.5 审批决策判定**：`core/approval/decision-log.ts` 落 `~/.mafw/logs/approval-decisions.jsonl`（`eval`/`reply` 两形，按 requestId join）——`hook.ts` 记 verdict，两处 reply 路由记 human 回复。**模型选型后置**（当前 laya 为冲突专用 checkpoint，命令破坏性分类 off-label）。
+- **G2 写相路由冗余门（2026-10-09）**：route-write 中间带插 laya redundant 问题（`askPair` 双问题同调用）——pRedundant≥tauRedundantHigh → 沉底（energy 0.05 + `redundant:<id>` 锚，可 BM25 捞回）+ 覆盖条目 actrBonus 强化（重复=Hebbian 加强旧痕迹），跳过 LLM judge；consolidation 对 `redundant:` 锚条目 skip（`redundant-sink`）。observe-first：tauRedundantHigh 默认 1.0，校准 `proposeTauRedundantHigh`（保守方向：阈值以上不许有 update verdict）+ 用户批准开闸。spec `docs/superpowers/specs/2026-10-09-laya-write-routing-design.md`。
 
 ## 6. Gateway 运维
 
