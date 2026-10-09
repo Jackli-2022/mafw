@@ -6,6 +6,7 @@ import { AgentRuntime } from '../../runtime/contract';
 import { ApprovalFacet } from '../../runtime/normalize';
 import { log } from '../../core/utils/logger';
 import { ApprovalPolicyService } from './policy-service';
+import { appendApprovalRecord } from './decision-log';
 
 export function applyApprovalPolicy(
   policy: ApprovalPolicyService,
@@ -21,6 +22,17 @@ export function applyApprovalPolicy(
       metadata: facet.metadata,
     });
     props.mafwPolicy = decision;
+    // P1.5: record the verdict for later offline calibration (fail-open).
+    appendApprovalRecord({
+      e: 'eval',
+      requestId: facet.requestId,
+      sessionID,
+      tool: facet.toolName,
+      patterns: facet.patterns ?? [],
+      action: decision.action,
+      reason: (decision as any).reason,
+      ts: Date.now(),
+    });
     if (decision.action !== 'human') {
       const reply = decision.action === 'auto-approve' ? 'once' : 'reject';
       void runtime?.session?.permissionReply?.(sessionID, facet.requestId, reply, decision.reason)

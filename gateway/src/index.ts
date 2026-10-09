@@ -5104,6 +5104,11 @@ class MafwScheduler {
             if (!ok) {
               res.writeHead(404); res.end(JSON.stringify({ status: 'error', error: 'permission request not found' })); return;
             }
+            // P1.5: record the human's reply (joins the eval record by requestId).
+            try {
+              const { appendApprovalRecord } = require('./core/approval/decision-log');
+              appendApprovalRecord({ e: 'reply', requestId: pReplyMatch[1], sessionID: found.sessionID, reply, ts: Date.now() });
+            } catch { /* fail-open */ }
             // always：回复成功后沉淀持久规则（spec 切片 1；scope 由 persist 参数控制，
             // 缺省 true = prefix 优先自动推导；fail-open 不阻塞回复）
             if (reply === 'always') {

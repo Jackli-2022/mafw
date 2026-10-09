@@ -1,6 +1,7 @@
 import * as http from 'http';
 import { AgentRuntime } from '../runtime/contract';
 import { deriveAlwaysRule } from '../core/approval/rules-store';
+import { appendApprovalRecord } from '../core/approval/decision-log';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -50,6 +51,9 @@ export async function handlePermissionReply(
       res.end(JSON.stringify({ error: 'Permission request not found' }));
       return;
     }
+
+    // P1.5: record the human's reply (joins the eval record by requestId).
+    appendApprovalRecord({ e: 'reply', requestId, sessionID, reply, ts: Date.now() });
 
     // 切片 1：'always' 回复自动沉淀持久规则（无需客户端 persist:true；scope 见下；
     // fail-open：反查失败只 warn，不阻断已成功的回复）。
