@@ -210,11 +210,30 @@ export async function routeAndWrite(
   unit: HarmonicUnit,
   store: RouteStore,
   deps: RouteWriteDeps,
-): Promise<{ action: 'skip' | 'create' | 'update' | 'separate'; id: string; targetId?: string }> {
+): Promise<{ action: 'skip' | 'create' | 'update' | 'separate' | 'redundant'; id: string; targetId?: string }> {
   const decision = await decideRouting(unit, deps);
   if (decision.action === 'skip') {
     routeStats.skip++;
     return { action: 'skip', id: decision.targetId, targetId: decision.targetId };
+  }
+  if (decision.action === 'redundant') {
+    // Sink, not drop: energy 0.05 + provenance anchor keeps the entry
+    // BM25-recoverable (misjudgment reversible) while decay pushes it below
+    // retrieval visibility within days. The covering entry gets a synthetic
+    // ACT-R exposure — repetition strengthens the existing trace (Hebbian),
+    // settled by the daily decay pass via actrBonus.
+    const sunk: HarmonicUnit = {
+      ...unit,
+      energy: 0.05,
+      cue_anchors: dedupeCap([...(unit.cue_anchors || []), `redundant:${decision.targetId}`], 8),
+      updated_at: new Date().toISOString(),
+    };
+    await store.write(sunk, undefined, { skipMerge: true });
+    try {
+      getRetrievalEventBuffer().record({ id: decision.targetId, prob: decision.pRedundant, kind: 'recall', ts: Date.now() });
+    } catch { /* fail-open */ }
+    routeStats.redundant++;
+    return { action: 'redundant', id: sunk.id, targetId: decision.targetId };
   }
   if (decision.action === 'create') {
     await store.write(unit);
@@ -263,9 +282,9 @@ export async function routeAndWrite(
 }
 
 /** Route-write counters for /api/memory/stats (skip = duplicates prevented). */
-const routeStats = { create: 0, skip: 0, update: 0, separate: 0 };
+const routeStats = { create: 0, skip: 0, update: 0, separate: 0, redundant: 0 };
 
-export function getRouteStats(): { create: number; skip: number; update: number; separate: number } {
+export function getRouteStats(): { create: number; skip: number; update: number; separate: number; redundant: number } {
   return { ...routeStats };
 }
 

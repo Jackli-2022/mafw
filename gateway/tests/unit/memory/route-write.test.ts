@@ -5,10 +5,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { decideRouting, routeAndWrite, setRouteWriteDeps, getRouteWriteDeps, isNearIdentical } from '../../../src/memory/route-write';
+import { decideRouting, routeAndWrite, setRouteWriteDeps, getRouteWriteDeps, getRouteStats, isNearIdentical } from '../../../src/memory/route-write';
 import { MemoryVectorStore } from '../../../src/memory/vector-store';
 import { EmbeddingProvider } from '../../../src/memory/embedding-provider';
 import { HarmonicUnit } from '../../../src/core/memory/harmonic-types';
+import { setRetrievalEventBufferForTest, RetrievalEventBuffer } from '../../../src/core/memory/retrieval-events';
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-route-'));
@@ -267,6 +268,34 @@ describe('routeAndWrite', () => {
     expect(s.writes.map((w) => w.id)).toEqual(['n1']);
     expect(s.superseded).toEqual([{ id: 'old', byId: 'n1' }]);
     expect(s.writes[0].merged_from).toContain('old');
+  });
+
+  test('redundant → sunk write (energy 0.05 + redundant anchor) + reinforcement event', async () => {
+    const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+    v.upsert('old', [0.9, 0.44]);
+    const s = memStore([u('old')]);
+    const buf = new RetrievalEventBuffer();
+    setRetrievalEventBufferForTest(buf);
+    try {
+      const out = await routeAndWrite(u('n1'), s as any, {
+        vectors: v,
+        provider,
+        laya: { client: { askPair: async () => ({ pConflict: 0.1, pRedundant: 0.97 }) }, tauRedundantHigh: 0.9 },
+        readUnit: async () => ({ memory_value: '已知内容' }),
+        judge: async () => { throw new Error('judge must not be called'); },
+      });
+      expect(out).toEqual({ action: 'redundant', id: 'n1', targetId: 'old' });
+      expect(s.writes).toHaveLength(1);
+      expect(s.writes[0].energy).toBe(0.05);
+      expect(s.writes[0].cue_anchors).toContain('redundant:old');
+      const drained = buf.drain();
+      expect(drained).toHaveLength(1);
+      expect(drained[0].id).toBe('old');
+      expect(drained[0].prob).toBe(0.97);
+      expect(getRouteStats().redundant).toBeGreaterThan(0);
+    } finally {
+      setRetrievalEventBufferForTest(null);
+    }
   });
 });
 
