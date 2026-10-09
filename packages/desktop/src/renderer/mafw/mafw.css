@@ -78,6 +78,13 @@
   --dur-3: 200ms;
   --dur-4: 240ms;
   --ease: cubic-bezier(.25,0,0,1);
+  /* v7 两级动效（fast=微交互 / surface=表面级），无 spring；dur-1..4/ease 为 deprecated 别名 */
+  --dur-fast: 140ms;
+  --dur-surface: 280ms;
+  --ease-standard: cubic-bezier(.25,0,0,1);
+  --ease-surface: cubic-bezier(.16,1,.3,1);
+  /* 循环动画时长（不属 token 尺度，集中建档）：mafw-breathe 2s|1s · mafw-spin 1s · mafw-think-spin 1.2s
+     · mafw-phase-pulse 1.2s|0.8s · mafw-shimmer 1.2s · mafw-eq 0.8s · mafw-voice-pulse 1.5s */
   /* v5.1 双字体契约：sans 管 UI、mono 管数据（复用 ui 包既有变量，像素零变化） */
   --font-family-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
