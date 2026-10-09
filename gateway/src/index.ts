@@ -5785,6 +5785,24 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/agent/capabilities — L1 能力账本 + L2 失败谱（自我认知只读面），fail-open。
+        if (req.url?.startsWith('/api/agent/capabilities') && req.method === 'GET') {
+          try {
+            const { handleCapabilities } = require('./routes/capability');
+            const result = await handleCapabilities({
+              listOutcomes: () => this.getGatewayDb().listGoalOutcomes({ limit: 200 }),
+              getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
+            });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            log.error('[Agent] capabilities error:', err.message);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ledger: { total: 0, passRate: 0 }, failureTaxonomy: [] }));
+          }
+          return;
+        }
+
         // POST /api/obs/capture — observation intake from the opencode plugin.
         // The gateway owns the T1 store (SQLite) and assigns turn IDs, so
         // plugin/serve restarts can never renumber turns or duplicate writes
