@@ -41,6 +41,17 @@ CLS 的双系统是**并行且持续交互**的（海马体记实例 / 新皮层
 
 **测量面**：semantic 层下游命中率、L5 提升率、A2 草稿被提升/否决比例。
 
+## 2.6 接线侧：抽象→runtime 的 push 通道（W 系列，2026-10-08 用户修正）
+
+> 详见 `2026-10-08-abstraction-runtime-wiring.md`。核心修正：抽象不足的真因不在生产侧而在接线侧——L5 公理纯 pull（MCP 工具），reflection insight 只有 BM25 检索一条或然通道，**零 push**。
+
+| # | 通道 | 业界模式 | 一句话 |
+|---|---|---|---|
+| W1 | 常驻先验块 `<agent-priors>`（L5+失败谱+能力账本，~800 字符，compaction 免疫） | Letta 常驻式 | 全路线图杠杆最高 |
+| W2 | workflow 物化（高频 procedural → skill 文件，审批门） | Voyager/AWM 物化式 | 抽象变可调用能力 |
+| W3 | schema 驱动感知（命中簇→整簇 gist 注入） | Bartlett pattern completion | 依赖 D5 |
+| W4 | goal 级先验（plan 注入 L1+L2） | options/规划层式 | plan 节点已接线（v4.22.0） |
+
 ## 3. 自我认知模型（详见附录二）
 
 核心论点：**记录 ≠ 模型**。自我认知需要 monitoring → 结构化表示 → control 消费的闭环。
@@ -73,7 +84,8 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 
 | 序 | 项 | 理由 |
 |---|---|---|
-| 0 | **A3 抽象用强模型** | 一行配置拆分，直接抬抽象质量上限 |
+| 0 | **W1 常驻先验块** | 接线侧最高杠杆；不等抽象质量，先接现有 L5+失败谱 |
+| 1 | **A3 抽象用强模型** | 一行配置拆分，直接抬抽象质量上限 |
 | 1 | D1b 源条目降能（gist 化后 supersede 源 episodes） | D1 分档衰减已在跑，只剩这一步 |
 | 2 | D3 surprise 门控 | consolidation 余弦本来就在算 |
 | 3 | L1 能力账本 | 纯 SQL，goal_outcomes 在写，Brier 可测 |
