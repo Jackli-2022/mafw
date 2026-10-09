@@ -41,6 +41,7 @@ export const DEFAULT_PIPELINE_INTERVALS_MS: Record<string, number> = {
   'memory:reflect': DAY,
   'memory:review': 7 * DAY,
   'memory:skillPromotion': 7 * DAY,
+  'memory:axiomDistill': 7 * DAY,
   'memory:reconsolidate': DAY,
   'memory:dream': DAY,
   consolidation: 7 * DAY,

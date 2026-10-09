@@ -24,6 +24,9 @@ const RULES: Array<{ id: string; schedule: string; timezone: string; action: str
   // Weekly skill promotion (W2) — procedural memories that pass G1-G5 are
   // rendered to staged SKILL.md drafts + triage items for human approval.
   { id: 'skill-promotion', schedule: '0 5 * * 0', timezone: 'UTC', action: 'memory:skillPromotion' },
+  // A1: weekly axiom distillation — high-need semantic insights become axiom
+  // candidates queued for human triage; confirmation commits them to L5.
+  { id: 'axiom-distill', schedule: '0 6 * * 0', timezone: 'UTC', action: 'memory:axiomDistill' },
 ];
 
 export function ensureMemoryPipelineRules(mafwDir: string): void {

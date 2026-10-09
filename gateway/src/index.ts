@@ -2148,6 +2148,49 @@ class MafwScheduler {
         }
       });
     });
+    // A1: weekly axiom distillation — high-need semantic insights become axiom
+    // candidates queued for human triage; confirmation commits them to L5.
+    actionRegistry.set('memory:axiomDistill', async () => {
+      await this.runPipelineGuarded('memory:axiomDistill', async () => {
+        try {
+          if (!this.memoryService) return;
+          const { selectAxiomSources, parseAxiomCandidates, AXIOM_SYSTEM } = require('./memory/axiom-distill');
+          const sources = selectAxiomSources(
+            this.memoryService.harmonicIndex.getIndex().entries,
+            (id: string) => getRetrievalEventBuffer().needFor(id),
+            { now: Date.now(), minAgeDays: 14, cap: 20 },
+          );
+          let created = 0;
+          if (sources.length >= 3 && this.getPipelineBudget().allow('axiomDistill')) {
+            const evidence = sources.map((e: any) => `- [${e.id}] ${e.primary_abstraction}`).join('\n');
+            const worker = this.getPool().getWorker('axiom-distill', 'reflect');
+            const reply = await worker.prompt(evidence, AXIOM_SYSTEM, config.recall.workerModel, 'memory-curator');
+            const candidates = parseAxiomCandidates(reply, 3);
+            if (candidates.length > 0) {
+              const triageDir = path.join(this.mafwDir, 'triage');
+              fs.mkdirSync(triageDir, { recursive: true });
+              const triageId = `triage-axiom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+              fs.writeFileSync(path.join(triageDir, `${triageId}.json`), JSON.stringify({
+                id: triageId,
+                automationId: 'axiom-distill',
+                discoveredAt: new Date().toISOString(),
+                source: 'axiom-distill',
+                summary: { axiomDraft: { candidates, sourceIds: sources.map((e: any) => e.id) } },
+                state: 'PENDING_CONFIRMATION',
+                userAction: null,
+                deadline: new Date(Date.now() + 7 * 86400e3).toISOString(),
+                updatedAt: new Date().toISOString(),
+              }, null, 2), 'utf-8');
+              created = candidates.length;
+            }
+          }
+          this.heartbeat?.record('memory:axiomDistill', { ok: true, counts: { sources: sources.length, candidates: created } });
+        } catch (err: any) {
+          this.heartbeat?.record('memory:axiomDistill', { ok: false, error: err.message });
+          log.warn(`[AxiomDistill] run failed: ${err.message}`);
+        }
+      });
+    });
     // W2: skill promotion — procedural memories passing G1-G5 become staged
     // SKILL.md drafts + triage items for human approval (weekly).
     actionRegistry.set('memory:skillPromotion', async () => {
@@ -5092,6 +5135,21 @@ class MafwScheduler {
             const r = await installSkillDraft(skillDraft, this.skillInstallDeps());
             this.automationEngine?.confirmTriage(triageId, item);
             res.end(JSON.stringify({ status: 'confirmed', installed: r.installed }));
+            return;
+          }
+          // A1: 公理草稿确认分支——每条 candidate 经 L5 commit（不建 goal）
+          const axiomDraft = (item as any).summary?.axiomDraft;
+          if (axiomDraft?.candidates?.length) {
+            const l5 = new L5Store();
+            let committed = 0;
+            for (const pattern of axiomDraft.candidates as string[]) {
+              try {
+                l5.addHeuristic(pattern, ['axiom-distilled'], axiomDraft.sourceIds ?? []);
+                committed++;
+              } catch { /* fail-open per candidate */ }
+            }
+            this.automationEngine?.confirmTriage(triageId, item);
+            res.end(JSON.stringify({ status: 'confirmed', axioms: committed }));
             return;
           }
           const goalId = `confirmed-${item.automationId}-${Date.now()}`;
