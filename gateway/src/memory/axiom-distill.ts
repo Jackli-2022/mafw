@@ -27,4 +27,4 @@ export function parseAxiomCandidates(reply: string, max: number): string[] {
     .slice(0, max);
 }
 
-export const AXIOM_SYSTEM = `Distill the following validated insights into at most 3 general axioms (patterns of patterns). One per line, no numbering. Each must be actionable guidance, not a restatement of any single insight.`;
+export const AXIOM_SYSTEM = `Distill the following validated insights into at most 3 general axioms (patterns of patterns). One per line, no numbering. Each must be actionable guidance, not a restatement of any single insight. Never widen scope: an axiom must not claim more generality than the source insights support — preserve their qualifiers and evidence level.`;

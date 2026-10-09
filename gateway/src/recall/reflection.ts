@@ -63,6 +63,8 @@ Rules:
 - every cue_anchors list MUST include the topic entity names (project, module, API, person, feature) so the insight can be found across sessions
 - for category "preference", include a machine-readable anchor like "pref:<dimension>=<value>" (e.g., "pref:output-language=chinese" or "pref:spicy=false")
 - prefer insights that hold across multiple episodes of this conversation
+- scope every insight to the contexts actually observed: a single success or one-off observation never justifies a universal rule — phrase it with its observed scope (e.g. "in this repo", "for this provider")
+- preserve the evidence level of the source: keep hedging language (maybe / reportedly / observed once) instead of upgrading it into confident assertions
 Division of labor: focus on CROSS-EPISODE high-level patterns — recurring failure root causes, lessons that generalize to future tasks, user behavior patterns. Do NOT re-record single-point facts already present in the episodic memories (the hourly extract pipeline already saved those).
 
 ### Cross-Session Entity Linking (CRITICAL):
@@ -230,7 +232,7 @@ export function collectTentative(entries: HarmonicIndexEntry[], _now: number): H
 
 export interface TentativeVerdict { id: string; verdict: 'promote' | 'reject' }
 
-export const TENTATIVE_SYSTEM = `You validate draft abstractions produced by the hourly extraction pipeline. A draft is valid only if it holds up as a genuine CROSS-EPISODE pattern (not a restatement of one episode). Reply with ONLY JSON: {"drafts":[{"id":"...","verdict":"promote|reject"}]}.`;
+export const TENTATIVE_SYSTEM = `You validate draft abstractions produced by the hourly extraction pipeline. A draft is valid only if it holds up as a genuine CROSS-EPISODE pattern (not a restatement of one episode). Preserve hedging language and tentative wording exactly — validating a draft never upgrades it into a confident assertion. Reply with ONLY JSON: {"drafts":[{"id":"...","verdict":"promote|reject"}]}.`;
 
 /** Promote → strip 'tentative', bump energy to 0.7, stamp verified; reject →
  *  demote to 0.05 energy and swap the anchor to 'rejected'. */
