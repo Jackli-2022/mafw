@@ -157,6 +157,12 @@ export interface GatewayConfig {
       probHigh: number;
     };
     /**
+     * G4 retrieval arbiter (MARTA): annotate the inject block when parametric
+     * knowledge likely suffices (zero entity overlap + FOK no-memory).
+     * v1 never hard-skips — annotation only. Default on (non-destructive).
+     */
+    arbiter: boolean;
+    /**
      * R8 predictive prefetch snapshot: precompute the expensive retrieval
      * (reranker + dense) in the background after each turn so the 100ms
      * boundary path can serve it verbatim instead of running a live search.
@@ -482,6 +488,7 @@ function defaults(projectDir: string): GatewayConfig {
         probLow: 0.2,
         probHigh: 0.5,
       },
+      arbiter: true,
       /**
        * R8: off by default. ttlMs 10min / 4 turns of context / 600 chars query
        * (last turn alone holds only ~36% of session vocabulary, arXiv:2607.22392).

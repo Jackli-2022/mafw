@@ -5897,6 +5897,7 @@ class MafwScheduler {
             let memories: any[] = [];
             let fokStatus: 'inject' | 'low-confidence' | 'no-memory' = 'inject';
             const tSearch0 = Date.now();
+            let arbiterNote: string | undefined;
             if (!snapshotPointers && this.memoryService) {
               // No push channel exists anymore (step-inject retired): nothing
               // is filtered out of boundary recall.
@@ -5933,6 +5934,20 @@ class MafwScheduler {
               // R5 FOK gate (fail-open): weak evidence is stated, not silently
               // withheld. Only active when config.search.fok.enabled.
               fokStatus = computeRecallFokZone(this.memoryService.harmonicIndex, query, config.search.fok);
+              // G4 parametric arbiter (MARTA): annotate-only in v1 — prepends a
+              // note when parametric knowledge likely suffices; never skips.
+              if (config.search.arbiter !== false) {
+                try {
+                  const { arbitrateRetrieval, entityOverlap, getEntitySetCached } = require('./recall/parametric-arbiter');
+                  const entries = this.memoryService.harmonicIndex.getIndex().entries;
+                  const overlap = entityOverlap(query, getEntitySetCached(entries));
+                  const arb = arbitrateRetrieval(query, { entityOverlap: overlap, fokZone: fokStatus });
+                  arbiterNote = arb.note;
+                  // observe-first: one JSONL row per arbitrated boundary recall
+                  const line = JSON.stringify({ ts: Date.now(), q: query.length, overlap: +overlap.toFixed(3), zone: fokStatus, action: arb.action }) + '\n';
+                  fs.appendFile(path.join(config.resolvePath(), 'logs', 'arbiter-samples.jsonl'), line, () => {});
+                } catch { /* fail-open */ }
+              }
               // A3: record the live-path retrieval for the daily ACT-R
               // settlement (log-form bonus + exposure discount — the linear
               // +0.02 direct write was unbounded with popularity feedback).
@@ -5962,6 +5977,9 @@ class MafwScheduler {
             const formatted = snapshotPointers
               ? { pointers: snapshotPointers }
               : formatRecallContext(memories, { status: fokStatus, neighbors });
+            if (arbiterNote && formatted.pointers) {
+              formatted.pointers = `${arbiterNote}\n${formatted.pointers}`;
+            }
             const blocks = [formatted.pointers, noteBoard, goalSnap].filter(Boolean);
             const pointers = blocks.length > 0 ? blocks.join('\n\n') : null;
             // Latency breakdown (debug): the boundary path has a 100ms contract.
