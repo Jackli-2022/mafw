@@ -26,6 +26,8 @@ export interface NodePromptCtx {
   charterPath: string;
   requestPath: string;
   reviewFeedback?: string;
+  /** W4：能力账本 + 失败谱块（仅 plan 节点注入，规划时主动规避反复失败）。 */
+  priorBlock?: string;
 }
 
 export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodePromptCtx): string {
@@ -36,6 +38,7 @@ export function renderNodePrompt(node: 'plan' | 'execute' | 'review', ctx: NodeP
   if (node === 'plan') {
     return [
       head, docs, '',
+      ctx.priorBlock || '',
       `任务：阅读 charter 与仓库现状，产出 wave 执行计划，写入 ${a.waves}。`,
       ctx.round > 1 && ctx.reviewFeedback
         ? `上一轮 review 指出的问题（本轮计划必须消化）：\n${ctx.reviewFeedback}` : '',
