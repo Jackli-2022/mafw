@@ -139,6 +139,8 @@ export function createMafwApi(): MafwAPI {
       control: (action) => invoke("goals", "control", action),
       sessions: (id) => invoke("goals", "sessions", id),
       respondQuestion: (goalId, questionId, input) => invoke("goals", "respondQuestion", goalId, questionId, input),
+      timeline: (id) => invoke("goals", "timeline", id),
+      retryNode: (goalId, runId, opts) => invoke("goals", "retryNode", goalId, runId, opts),
     },
 
     memory: {
