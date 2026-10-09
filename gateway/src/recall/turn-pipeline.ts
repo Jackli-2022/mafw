@@ -17,6 +17,7 @@ import { completeTurns, TurnEval } from './turn-completion';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { log } from '../core/utils/logger';
 import { replayPriority, sampleByPriority } from './replay-sampling';
+import { PipelineBudgetLike } from './pipeline-budget';
 import { topClusters, Cluster } from '../memory/schema-clusters';
 
 export interface TurnPipelineOptions {
@@ -47,6 +48,8 @@ export interface TurnPipelineOptions {
   clusterVector?: (obs: T1Observation[]) => number[] | undefined | Promise<number[] | undefined>;
   /** S2: how many related clusters to surface (default 3). */
   schemaTopN?: number;
+  /** Daily USD cap gate for background pipelines (0 = unlimited). */
+  budget?: PipelineBudgetLike;
 }
 
 export interface TurnPipelineResult {
@@ -253,6 +256,7 @@ export class TurnPipeline {
    */
   async runSession(sessionID: string): Promise<{ turns: number; archived: number; noops: number; failed: number; replayed: number }> {
     const result = { turns: 0, archived: 0, noops: 0, failed: 0, replayed: 0 };
+    if (this.opts.budget && !this.opts.budget.allow('extract')) return result;
     const turns = this.opts.t1db.listTurns();
     const sessionTurns = completeTurns(turns, { staleMs: this.opts.staleMs })
       .filter((t) => t.session_id === sessionID);

@@ -291,6 +291,10 @@ export interface GatewayConfig {
     scanMaxIndexChars: number;
     /** Timeout for the index-scan LLM call. Default 60000. */
     scanTimeoutMs: number;
+    /** Daily USD cap across all background memory pipelines (extract / reflect /
+     *  review / index-scan / consolidation judge). 0 or negative = unlimited.
+     *  Default 0 (off). */
+    pipelineBudgetUsdPerDay: number;
     /** Source-turn reconstruction for mafw_get_memory (C0). */
     sourceEvidence: { enabled: boolean; k: number; maxChars: number };
   };
@@ -560,6 +564,7 @@ function defaults(projectDir: string): GatewayConfig {
       workerCompactIdleMs: 8 * 60 * 60 * 1000,
       scanMaxIndexChars: 80_000,
       scanTimeoutMs: 60_000,
+      pipelineBudgetUsdPerDay: 0,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
     },
     usage: {

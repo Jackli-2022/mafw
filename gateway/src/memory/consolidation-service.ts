@@ -20,6 +20,7 @@ import { HarmonicUnit } from '../core/memory/harmonic-types';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
 import type { CompletionChannel } from '../runtime/contract';
+import type { PipelineBudgetLike } from '../recall/pipeline-budget';
 
 export interface ConsolidationLlmConfig {
   baseUrl: string;
@@ -68,6 +69,8 @@ export interface ConsolidationDeps {
     tauHigh: number;
     maxTextChars?: number;
   };
+  /** Daily USD cap gate for background pipelines (0 = unlimited). */
+  budget?: PipelineBudgetLike;
 }
 
 export type ConsolidationOutcome =
@@ -117,6 +120,7 @@ export class ConsolidationService {
   private onPair?: (pair: JudgedPair) => void;
   private onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
   private laya?: ConsolidationDeps['laya'];
+  private budget?: ConsolidationDeps['budget'];
   private minCosine: number;
   private maxCandidates: number;
   private stats = { judged: 0, updates: 0, creates: 0, skipped: 0, layaAdopted: 0, layaEscalated: 0 };
@@ -132,6 +136,7 @@ export class ConsolidationService {
     this.onPair = deps.onPair;
     this.onStats = deps.onStats;
     this.laya = deps.laya;
+    this.budget = deps.budget;
     if (deps.initialStats) this.stats = { ...this.stats, ...deps.initialStats };
     this.minCosine = deps.minCosine ?? 0.8;
     this.maxCandidates = deps.maxCandidates ?? 3;
@@ -231,6 +236,13 @@ export class ConsolidationService {
     }
 
     if (!this.llm && !this.completion?.()) return { action: 'skip', reason: 'no-judge' };
+
+    // Daily budget cap: deny → skip judging (laya cascade above stays
+    // ungated — it is local and zero-cost).
+    if (this.budget && !this.budget.allow('consolidation')) {
+      this.stats.skipped++;
+      return { action: 'skip', reason: 'budget-exceeded' };
+    }
 
     this.stats.judged++;
     const candidateIds = liveCandidates.map((c) => c.id);

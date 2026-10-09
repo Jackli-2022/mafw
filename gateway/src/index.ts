@@ -39,6 +39,7 @@ import { SessionWorkerPool } from "./recall/session-worker-pool";
 import { ReflectCursor } from "./recall/reflect-cursor";
 import { IndexScanService, resolveScanBaseUrl } from "./recall/index-scan";
 import { PipelineHeartbeat } from "./recall/pipeline-heartbeat";
+import { PipelineBudget } from "./recall/pipeline-budget";
 import { redactSecrets } from "./recall/redact";
 import { buildMafwCommandRegistry, handleMafwCommandRun, handleMafwCommandList } from "./routes/mafw-commands";
 import type { MafwCommandRegistry } from "./commands/registry";
@@ -288,6 +289,27 @@ class MafwScheduler {
   /** S4 认知一致性：per-session recall/context 最近触达时间（有界 500）。 */
   private recallCalledBySession = new Map<string, number>();
   private heartbeat?: PipelineHeartbeat;
+
+  private pipelineBudget?: PipelineBudget;
+  /** Shared daily USD cap for background memory pipelines. Constructed lazily;
+   *  zero overhead when the cap is off (allow() short-circuits before the
+   *  spend query). Day boundary is UTC (aligned with the cron schedules). */
+  private getPipelineBudget(): PipelineBudget {
+    if (!this.pipelineBudget) {
+      this.pipelineBudget = new PipelineBudget({
+        budgetUsdPerDay: config.recall.pipelineBudgetUsdPerDay,
+        getSpendToday: () => {
+          const store = this.trajectoryStore;
+          if (!store) return 0;
+          const now = new Date();
+          const dayStartEpochSec = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000;
+          return store.getWorkerSpendSince(dayStartEpochSec);
+        },
+        log: (msg) => log.warn(msg),
+      });
+    }
+    return this.pipelineBudget;
+  }
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
   // captured back into T1 (recursion guard A). Maps sessionID → worker role
@@ -1408,6 +1430,7 @@ class MafwScheduler {
         initialStats: (() => { try { return this.getGatewayDb().kvGet('consolidation-stats', 'latest') ?? undefined; } catch { return undefined; } })(),
         minCosine: config.memory.embedding.minCosine,
         laya: layaDeps,
+        budget: this.getPipelineBudget(),
       });
       log.info(
         `[Consolidation] enabled (judge: ${providerID || 'none'}; transport: ${
@@ -1871,6 +1894,7 @@ class MafwScheduler {
           scanEndpoints: (config.recall as any).scanEndpoints || undefined,
           timeoutMs: config.recall.scanTimeoutMs,
           maxIndexChars: config.recall.scanMaxIndexChars,
+          budget: this.getPipelineBudget(),
           // Runtime 契约的无状态补全通道（thunk 现读，热切换安全）——
           // 提供时 scan 优先走 completion.complete，直连 HTTP 降为回退。
           completion: () => (this.runtime?.capabilities?.completionApi ? this.runtime.completion : undefined),
@@ -2140,6 +2164,7 @@ class MafwScheduler {
       },
       worker: this.getPool().getWorker('stale-verify', 'reflect'),
       workerModel: config.recall.workerModel,
+      budget: this.getPipelineBudget(),
     });
   }
 
@@ -2214,6 +2239,7 @@ class MafwScheduler {
           return null;
         }
       },
+      budget: this.getPipelineBudget(),
     });
   }
 
@@ -2230,6 +2256,7 @@ class MafwScheduler {
       workerModel: config.recall.workerModel,
       // A4: selection-pressure feedback — prior insights' 7-day retrieval hits.
       needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
+      budget: this.getPipelineBudget(),
     });
   }
 

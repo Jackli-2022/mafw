@@ -26,6 +26,7 @@ import { log } from '../core/utils/logger';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import type { CompletionChannel, CompletionRequest, CompletionResult } from '../runtime/contract';
 import { httpComplete } from '../runtime/completion-http';
+import type { PipelineBudgetLike } from './pipeline-budget';
 
 export interface ScanResult {
   relevantIds: string[];
@@ -53,6 +54,8 @@ export interface ScanHttpDeps {
   timeoutMs?: number;
   /** Max chars of the memory index sent to the scan (budget). Default 80000. */
   maxIndexChars?: number;
+  /** Daily USD cap gate for background pipelines (0 = unlimited). */
+  budget?: PipelineBudgetLike;
   /** providerID → chat-completions URL (config recall.scanEndpoints). */
   scanEndpoints?: Record<string, string>;
   /** Async endpoint resolution (e.g. opencode provider config baseURL); wins over scanEndpoints, loses to baseUrl. */
@@ -323,6 +326,9 @@ export class IndexScanService {
   async scan(query: string, options: IndexScanOptions = {}): Promise<ScanResult | null> {
     const timeoutMs = options.timeoutMs ?? this.deps.timeoutMs ?? 30_000;
     const minConfidence = options.minConfidence ?? 0.3;
+
+    // Daily budget cap: deny → null (fail-open to BM25 fallback)
+    if (this.deps.budget && !this.deps.budget.allow('index-scan')) return null;
 
     // Failure cooldown (exponential backoff: 1/2/4 min, capped)
     if (this.consecutiveFails > 0) {

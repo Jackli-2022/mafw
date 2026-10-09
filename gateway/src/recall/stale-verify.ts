@@ -7,6 +7,7 @@
 import { HarmonicIndexManager } from '../core/memory/harmonic-index';
 import { HarmonicIndexEntry } from '../core/memory/harmonic-types';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
+import { PipelineBudgetLike } from './pipeline-budget';
 
 export interface StaleVerifyWorker {
   prompt(
@@ -29,6 +30,8 @@ export interface StaleVerifyOptions {
   minReviewIntervalDays?: number; // default 21
   now?: number; // test hook
   workerModel?: { providerID: string; modelID: string };
+  /** Daily USD cap gate for background pipelines (0 = unlimited). */
+  budget?: PipelineBudgetLike;
 }
 
 export interface StaleVerifyResult {
@@ -85,6 +88,9 @@ export class StaleVerifyPipeline {
   }
 
   async runOnce(): Promise<StaleVerifyResult> {
+    if (this.opts.budget && !this.opts.budget.allow('review')) {
+      return { candidates: 0, checked: 0, superseded: 0, failed: false };
+    }
     const candidates = this.selectCandidates();
     const result: StaleVerifyResult = {
       candidates: candidates.length,

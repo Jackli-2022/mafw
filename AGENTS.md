@@ -90,6 +90,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - `recall/pipeline-heartbeat.ts`：`PipelineHeartbeat`（kv 持久化 + 纯逻辑可测）——每个管线出口 `record(name, { ok, counts?, error? })`，`snapshot()` 计算 `stale`（距上次成功 > 2× 预期间隔；从未跑过不判 stale 防启动误报），`sweep()` 每 episode 只告警一次（成功即清）
 - 接线：`memory:decay`（automation-engine action，经 `AutomationEngine.setHeartbeat`）、`memory:turnCompress`/`memory:reflect`/`memory:review`（index.ts 管线闭包，`failed>0` 记 ok:false）、`consolidation`（`ConsolidationService.onJudge` 回调，仅判官真正被调用时记录）
 - 落 `gateway.db` kv_store scope `pipeline-heartbeat`；`GET /api/memory/stats` 增 `pipelines` 字段（`lastRunAt`/`lastSuccessAt`/`lastCounts`/`ok`/`stale`）；index.ts 每 30min `sweep()` 告警（arXiv:2609.05510「没有枚举失败模式可以静默通过」）
+- **日预算帽（2026-10-09）**：`recall.pipelineBudgetUsdPerDay`（默认 0=无限）——`PipelineBudget`（`recall/pipeline-budget.ts`，fail-open）按 UTC 日聚合 `TrajectoryStore.getWorkerSpendSince`（worker_role 非空的 turns cost 求和）门控五个 LLM 管线：extract/reflect/review/index-scan/consolidation 判官；超限 deny + 每管线每日 warn 一次；laya 级联（本地零成本）与 decay/回放等非 LLM 路径不受门控。
 
 ## 4. Tools 清单（v6.9 总共 44 个）
 

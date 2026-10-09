@@ -300,6 +300,17 @@ export class TrajectoryStore {
     return { totalTokens: total, totalCost, turnCount: rows.length, sessionCount: sessions.size };
   }
 
+  /** Sum of cost (USD) for pipeline-worker turns created since the cutoff
+   *  (epoch seconds). Turns without worker_role are excluded. */
+  getWorkerSpendSince(sinceEpochSec: number): number {
+    const row = this.rawDb
+      .prepare(
+        'SELECT COALESCE(SUM(cost), 0) AS total FROM trajectory_turns WHERE worker_role IS NOT NULL AND created_at >= ?',
+      )
+      .get(sinceEpochSec) as { total: number } | undefined;
+    return row?.total ?? 0;
+  }
+
   getMemoryTokenSummary(): {
     totalTokens: TokenCounts;
     totalCost: number;

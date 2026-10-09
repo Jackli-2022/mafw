@@ -13,6 +13,7 @@ import { abstractionLevelFor } from '../core/memory/abstraction-level';
 import { calculateSalience } from '../core/memory/salience-perceptor';
 import { HARD_BOUNDARIES } from '../skills/memory-curator-agent';
 import { getRouteWriteDeps, routeAndWrite } from '../memory/route-write';
+import { PipelineBudgetLike } from './pipeline-budget';
 
 /** Session key for episodic memories with no source_session_id (legacy data). */
 export const ORPHAN_SESSION = '__orphan__';
@@ -32,6 +33,8 @@ export interface ReflectionOptions {
   sourceDemoteFactor?: number;
   /** A4: downstream retrieval-hit count per memory id (7d need) — selection-pressure feedback. */
   needFor?: (id: string) => number;
+  /** Daily USD cap gate for background pipelines (0 = unlimited). */
+  budget?: PipelineBudgetLike;
 }
 
 export interface ReflectionResult {
@@ -405,6 +408,7 @@ export class ReflectionPipeline {
    */
   async runAll(): Promise<ReflectionResult> {
     const total: ReflectionResult = { sessions: 0, reviewed: 0, distilled: 0, deduped: 0, superseded: 0, failed: 0, pendingSessions: 0 };
+    if (this.opts.budget && !this.opts.budget.allow('reflect')) return total;
     const bySession = unreflectedBySession(
       this.opts.index,
       this.opts.cursor,
