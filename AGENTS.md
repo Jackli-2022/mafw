@@ -1111,6 +1111,15 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **legacy 并存**：`core/skills/mafw-*/entry.ts` + 插件 `/goal` 命令链保留（`state_change` 唤醒走 driver.advance 幂等）；死代码标注 deprecated（`chat/graph-runner.ts`/`core/mcp/tools.ts`/`poll.ts`/`core/plugin.ts`，物理删除留后续 PR）。
 - 测试：gateway 新增 14 文件 / 65 用例（routing/state-v3/node-runs/identities/node-prompts/driver/completion/askuser/starter/projectdir/recovery/timeline-route/retry-route/e2e）；全量 258 套件 1738 用例绿。
 
+**P2 前端节点泳道图（2026-10-09，仅 Desktop）**：Goal 详情 `GoalDetailOverlay` 从「charter + 会话列表」升级为**节点级执行可视化**——泳道（行=plan/execute/review，列=loop）+ 点格子内联明细（起止/耗时/token/成本/verdict/错误/产物 chips/打开会话/重跑）。
+
+- **纯逻辑** `packages/desktop/src/renderer/mafw/goal-timeline.ts`：`buildGoalLanes(nodes, maxRounds)`（行×列矩阵 + 每格 attempts 归并）、`cellTone`（review verdict 覆盖）、`formatDuration`、`cellSummary`、`artifactRef`（per-loop 相对路径引用）——bun 单测
+- **组件** `GoalTimelineLane.tsx`（props 驱动，泳道网格 + 内联展开）→ `GoalDetailOverlay.tsx` 接 `window.api.mafw.goals.timeline/retryNode`；会话下钻经 `onOpenSession(sessionId)`（节点 run 自带 sessionId）
+- **实时**：dispatcher 顶层消费 `goal_node`/`goal_created`/`phase_transition` → `CoreDeps.onGoalEvent` → 模块单例 `goals-rev.ts` 的 `goalsRev` signal bump；GoalDetailOverlay/Dashboard 依赖该 signal 重拉，保留 15s 轮询兜底（`goal_node` 无 sessionID，必须在 sid 分发前消费，否则 missTrace 刷屏）
+- **preload** `mafw-api.ts`/`mafw-types.ts` goals 段补 `timeline`/`retryNode`（SDK P1 已有方法 + `GoalTimeline` 类型）
+- **产物**：桌面无 mafwDir，产物以相对路径 chips 展示、点击复制（OS 打开留后续）
+- 测试：desktop `bun test` 864 用例全绿（goal-timeline 10 + dispatcher 增量 2）；`electron-vite build` 成功。手工冒烟（真实 goal 观察泳道实时变化）留待 GUI 环境
+
 ### 5.23 脑启发记忆演化第二批（2026-10-09）
 
 计划：`docs/superpowers/plans/2026-10-09-remaining-roadmap-all.md`（D3 独立计划见 `2026-10-09-d3-laya-three-way-gate.md`）。全部后台管线统一形态：纯函数核心 + cron 接线 + `PipelineBudget` 门控 + heartbeat 记录 + observe-first。

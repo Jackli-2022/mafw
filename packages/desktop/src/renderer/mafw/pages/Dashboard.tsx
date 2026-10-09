@@ -6,6 +6,7 @@ import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
 import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
 import { SkeletonRows } from "../components/Skeleton"
+import { goalsRev } from "../goals-rev"
 
 export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) {
   const [goals, setGoals] = createSignal<any[]>([])
@@ -22,6 +23,7 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) 
   }
 
   createEffect(() => {
+    void goalsRev() // SSE goal 事件 → 触发一次拉取
     fetchGoals()
     const interval = setInterval(fetchGoals, 15000)
     onCleanup(() => clearInterval(interval))
