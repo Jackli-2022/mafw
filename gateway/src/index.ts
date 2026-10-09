@@ -2197,7 +2197,16 @@ class MafwScheduler {
                 automationId: 'axiom-distill',
                 discoveredAt: new Date().toISOString(),
                 source: 'axiom-distill',
-                summary: { axiomDraft: { candidates, sourceIds: sources.map((e: any) => e.id) } },
+                summary: { axiomDraft: {
+                  candidates,
+                  sourceIds: sources.map((e: any) => e.id),
+                  // G1: floor = LOWEST authority among source insights,
+                  // surfaced to the human reviewer — pipeline-distilled axioms
+                  // stay visibly inferred even after promotion to L5.
+                  authorityFloor: sources.some((e: any) => (e.authority ?? 'pipeline') === 'pipeline')
+                    ? 'pipeline'
+                    : sources.some((e: any) => (e.authority ?? 'pipeline') !== 'user') ? 'agent' : 'user',
+                } },
                 state: 'PENDING_CONFIRMATION',
                 userAction: null,
                 deadline: new Date(Date.now() + 7 * 86400e3).toISOString(),
@@ -6892,6 +6901,11 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         if (!content || !['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
           return { success: false, error: 'content and valid memoryType required' };
         }
+        const { normalizeAuthority } = require('./core/memory/harmonic-types.js');
+        const authority = normalizeAuthority(data?.authority);
+        if (authority === null) {
+          return { success: false, error: `invalid authority: ${String(data?.authority)} (user|agent|tool|pipeline)` };
+        }
         if (!this.memoryService) return { success: false, error: 'memoryService not ready' };
         const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
         const { generateHarmonicId } = require('./core/memory/harmonic-types.js');
@@ -6926,6 +6940,9 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           created_at: now,
           updated_at: now,
           pinned: data?.pinned === true || undefined,
+          // G1: provenance authority — default 'agent' (direct agent write);
+          // absent field on legacy entries is treated as 'pipeline' downstream.
+          authority: authority ?? 'agent',
           // Sticky note board parity with the MCP mafw_add_memory handler.
           ...(data?.sticky === true ? {
             sticky_until: new Date(Date.now() + (typeof data?.stickyDays === 'number' && data.stickyDays > 0 ? data.stickyDays : 7) * 86400e3).toISOString(),

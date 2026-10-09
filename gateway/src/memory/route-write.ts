@@ -8,7 +8,7 @@
 // candidateCosine <= cosine < dupCosine → ask the LLM judge (create vs update);
 // cosine < candidateCosine → create without an LLM call (fast path). All
 // failures are fail-open to `create` so routing never blocks or loses a write.
-import { HarmonicUnit } from '../core/memory/harmonic-types';
+import { HarmonicUnit, higherAuthority } from '../core/memory/harmonic-types';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
 import { getReconsolidationQueue } from '../recall/reconsolidation';
@@ -272,6 +272,8 @@ export async function routeAndWrite(
     memory_value: `${unit.memory_value}\n---\n[Updated ${new Date().toISOString()}] ${target.memory_value}`,
     cue_anchors: dedupeCap([...(unit.cue_anchors || []), ...(target.cue_anchors || [])], 8),
     merged_from: [...(unit.merged_from || []), target.id],
+    // G1: authority only rises across a merge.
+    authority: higherAuthority(unit.authority, target.authority),
     energy: Math.min(1, (unit.energy ?? 0.8) + 0.15),
     updated_at: new Date().toISOString(),
   };

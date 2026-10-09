@@ -280,7 +280,11 @@ export function formatPinnedProfile(entries: MemoryUnit[]): { profile: string | 
   let chars = 0;
   for (const m of entries.slice(0, PINNED_BUDGET.max)) {
     const text = (m.memory_value || m.primary_abstraction || '?').replace(/\n/g, ' ');
-    const line = `- ${text}`;
+    // G1: pinned entries whose authority is not 'user' carry a confirmation
+    // marker — the disclosure layer is high-authority real estate and must
+    // not launder pipeline inference into user truth (AuthMem-Bench).
+    const mark = (m as any).authority && (m as any).authority !== 'user' ? '[待确认] ' : '';
+    const line = `- ${mark}${text}`;
     if (chars + line.length > PINNED_BUDGET.maxChars) break;
     lines.push(line);
     chars += line.length;
@@ -347,7 +351,8 @@ export const AGENT_PRIORS_BUDGET = { maxAxioms: 5, maxPatterns: 5, maxChars: 800
 export function formatAgentPriors(input: {
   axioms: string[];
   heuristics: string[];
-  failurePatterns: string[];
+  /** G1: patterns may carry provenance authority (rendered as a badge). */
+  failurePatterns: Array<string | { text: string; authority?: string }>;
 }): { block: string | null; used: number } {
   const lines: string[] = [];
   let chars = 0;
@@ -361,7 +366,11 @@ export function formatAgentPriors(input: {
   };
   for (const a of input.axioms.slice(0, AGENT_PRIORS_BUDGET.maxAxioms)) if (!push(`- [公理] ${a}`)) break;
   for (const h of input.heuristics.slice(0, AGENT_PRIORS_BUDGET.maxAxioms)) if (!push(`- [启发式] ${h}`)) break;
-  for (const f of input.failurePatterns.slice(0, AGENT_PRIORS_BUDGET.maxPatterns)) if (!push(`- [勿再犯] ${f}`)) break;
+  for (const f of input.failurePatterns.slice(0, AGENT_PRIORS_BUDGET.maxPatterns)) {
+    const text = typeof f === 'string' ? f : f.text;
+    const badge = typeof f === 'string' ? '' : `[${f.authority ?? 'pipeline'}] `;
+    if (!push(`- [勿再犯] ${badge}${text}`)) break;
+  }
   if (lines.length === 0) return { block: null, used: 0 };
   return {
     block: `<agent-priors>\n## 行动先验（长期记忆蒸馏，常驻）\n${lines.join('\n')}\n</agent-priors>`,

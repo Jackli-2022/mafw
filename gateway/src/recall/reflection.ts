@@ -175,6 +175,8 @@ export function buildInsightUnit(insight: Insight, sessionID: string, now: strin
     created_at: now,
     updated_at: now,
     source_session_id: sessionID === ORPHAN_SESSION ? undefined : sessionID,
+    // G1: distilled insights are pipeline inferences — never self-elevate.
+    authority: 'pipeline',
   };
 }
 

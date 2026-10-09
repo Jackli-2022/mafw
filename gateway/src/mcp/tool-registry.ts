@@ -141,6 +141,7 @@ const DEFINITIONS: ToolDefinition[] = [
         supersedes: { type: "array", items: { type: "string" }, description: "IDs of existing memories this new memory replaces/updates. The old memories will be marked superseded (energy halved, search penalty applied)." },
         sticky: { type: "boolean", description: "Put this memory on the note board: injected into every turn's recall context until it expires (default 7 days). Use when the user explicitly says 'remember this / 璁颁笅鏉?/ 鍒繕浜?. Expiry only removes it from the board; the memory stays searchable." },
         stickyDays: { type: "number", description: "Note-board TTL in days (default 7, only with sticky: true)" },
+        authority: { type: "string", enum: ["user", "agent", "tool", "pipeline"], description: "Provenance authority (G1). Default 'agent'. Use 'user' ONLY for verbatim user statements; 'tool' for verifiable tool-returned facts; 'pipeline' is reserved for background pipelines." },
       },
       required: ["content", "memoryType"],
     },

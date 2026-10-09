@@ -16,7 +16,7 @@
 // Memora paper's sweet spot is ~16-22% (over-consolidation degrades quality).
 
 import { log } from '../core/utils/logger';
-import { HarmonicUnit } from '../core/memory/harmonic-types';
+import { HarmonicUnit, higherAuthority } from '../core/memory/harmonic-types';
 import { MemoryVectorStore, EmbeddingIndexer } from './vector-store';
 import { EmbeddingProvider } from './embedding-provider';
 import type { CompletionChannel } from '../runtime/contract';
@@ -346,6 +346,9 @@ export class ConsolidationService {
       memory_value: `${incoming.memory_value}\n---\n[Updated ${new Date().toISOString()}] ${target.memory_value}`,
       cue_anchors: dedupeCap([...(incoming.cue_anchors || []), ...(target.cue_anchors || [])], 8),
       merged_from: [...(incoming.merged_from || []), target.id],
+      // G1: authority only rises across a merge — user is never demoted and
+      // pipeline inference never elevates the result.
+      authority: higherAuthority(incoming.authority, target.authority),
       energy: Math.min(1, (incoming.energy ?? 0.8) + 0.15),
       updated_at: new Date().toISOString(),
     };

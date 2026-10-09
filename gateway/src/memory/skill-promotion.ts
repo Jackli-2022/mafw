@@ -19,6 +19,8 @@ export interface PromotionSignals {
   verified: boolean;
   daysSinceRevision: number;
   existingSkillCount: number;
+  /** G1: provenance authority (absent = legacy → treated as pipeline). */
+  authority?: string;
 }
 
 /** G2：一致映射——确定性步骤序列才配固化；条件分支丛保持陈述性（可变映射）。 */
@@ -39,6 +41,11 @@ export function evaluatePromotion(
   if (!s.verified) reasons.push('G3 未验证（缺 verified: 锚点）');
   if (s.daysSinceRevision < cfg.minStableDays) reasons.push(`G4 漂移中（${s.daysSinceRevision}d<${cfg.minStableDays}d）`);
   if (s.existingSkillCount >= cfg.maxSkills) reasons.push(`G5 skill 列表已满（${s.existingSkillCount}≥${cfg.maxSkills}）`);
+  // G6 (G1 authority): pipeline inference without environment verification must
+  // never become an auto-executing skill (AuthMem-Bench authority collapse).
+  if ((s.authority ?? 'pipeline') === 'pipeline' && !s.verified) {
+    reasons.push('G6 pipeline 推断未验证（不得物化为自动执行 skill）');
+  }
   return { eligible: reasons.length === 0, reasons };
 }
 
@@ -106,6 +113,7 @@ export async function scanPromotionCandidates(deps: ScanDeps): Promise<number> {
           verified: anchors.some((a) => a.startsWith('verified:')),
           daysSinceRevision,
           existingSkillCount: existing + promoted,
+          authority: (unit as any).authority ?? (entry as any).authority,
         },
         cfg,
       );

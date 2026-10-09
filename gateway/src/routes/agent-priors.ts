@@ -24,10 +24,17 @@ export async function handleAgentPriors(deps: AgentPriorsDeps): Promise<{
     )
     .map((e: any) => ({
       text: e.primary_abstraction as string,
-      score: (e.energy ?? 0) * (e.salience ?? 1) * (1 + (deps.needFor?.(e.id) ?? 0)),
+      authority: (e.authority as string | undefined) ?? 'pipeline',
+      // G1: pipeline-inferred patterns get a soft penalty (×0.7) — soft, not
+      // filtered (E.4 trap), so verified-by-use inference can still surface.
+      score:
+        (e.energy ?? 0) *
+        (e.salience ?? 1) *
+        (1 + (deps.needFor?.(e.id) ?? 0)) *
+        ((e.authority ?? 'pipeline') === 'pipeline' ? 0.7 : 1),
     }))
     .sort((a, b) => b.score - a.score)
-    .map((p) => p.text);
+    .map((p) => ({ text: p.text, authority: p.authority }));
 
   const { block, used } = formatAgentPriors({
     axioms: (axioms ?? []).map((a) => a.content),

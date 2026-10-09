@@ -1,3 +1,25 @@
+/** G1: provenance authority (AuthMem-Bench arXiv:2608.01679 — consolidation
+ *  erases source constraints; stored items gain authority beyond their source).
+ *  Ranking: user > agent ≈ tool > pipeline. Absent = legacy → lowest. */
+export type Authority = 'user' | 'agent' | 'tool' | 'pipeline';
+
+const AUTHORITY_RANK: Record<Authority, number> = { pipeline: 1, tool: 2, agent: 2, user: 3 };
+
+/** Parse an untrusted value into an Authority. undefined/absent → undefined
+ *  (caller applies its default); invalid → null (caller should reject). */
+export function normalizeAuthority(value: unknown): Authority | undefined | null {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === 'string' && value in AUTHORITY_RANK ? (value as Authority) : null;
+}
+
+/** Merge rule: authority only rises, never demotes. Absent counts as
+ *  'pipeline' (legacy entries must not gain authority by merging). */
+export function higherAuthority(a?: Authority, b?: Authority): Authority {
+  const ra = AUTHORITY_RANK[a ?? 'pipeline'];
+  const rb = AUTHORITY_RANK[b ?? 'pipeline'];
+  return ra >= rb ? (a ?? 'pipeline') : (b ?? 'pipeline');
+}
+
 export interface HarmonicUnit {
   id: string;
   type: 'episodic' | 'semantic' | 'procedural' | 'global';
@@ -28,6 +50,8 @@ export interface HarmonicUnit {
   sticky_until?: string;
   /** Origin session for pipeline-written memories (per-session worker bookkeeping). */
   source_session_id?: string;
+  /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
+  authority?: Authority;
 }
 
 export interface HarmonicIndex {
@@ -66,6 +90,8 @@ export interface HarmonicIndexEntry {
    *  turnCompress worker prompt as prior knowledge. Recent stamps are
    *  excluded from replay sampling (primacy-bias guard, arXiv:2502.00802). */
   last_replayed?: string;
+  /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
+  authority?: Authority;
 }
 
 export function generateHarmonicId(): string {

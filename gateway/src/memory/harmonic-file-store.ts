@@ -124,6 +124,7 @@ export class HarmonicUnitFileStore {
         created_at: targetUnit.created_at,
         abstraction_level: targetUnit.abstraction_level,
         source_session_id: targetUnit.source_session_id,
+        authority: targetUnit.authority,
       } as any, entryTier);
 
       // 閿氱偣鍥撅紙澶氳烦妫€绱級澧為噺鏇存柊鈥斺€斿け璐ヤ笉褰卞搷璁板繂鍐欏叆锛堥檷绾э級

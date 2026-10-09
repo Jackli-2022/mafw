@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { config } from "../../config";
 import { ToolHandler } from "../../types";
-import { generateHarmonicId } from "../../core/memory/harmonic-types";
+import { generateHarmonicId, normalizeAuthority } from "../../core/memory/harmonic-types";
 import { abstractionLevelFor } from "../../core/memory/abstraction-level";
 import { judgeSalience } from "../../judge/salience";
 import { schemaFastPath } from "../../judge/schema";
@@ -35,6 +35,11 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
 
     if (!["episodic", "semantic", "procedural", "global"].includes(memoryType)) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid memoryType: ${memoryType}` }) }], isError: true };
+    }
+
+    const authority = normalizeAuthority(args.authority);
+    if (authority === null) {
+      return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `Invalid authority: ${String(args.authority)} (user|agent|tool|pipeline)` }) }], isError: true };
     }
 
     const resolvedDir = mafwDir ?? config.resolvePath();
@@ -84,6 +89,9 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       abstraction_level: abstractionLevelFor(memoryType),
       created_at: now,
       updated_at: now,
+      // G1: provenance authority — default 'agent'; pipeline workers are
+      // prompted to use 'user' only for verbatim user statements.
+      authority: authority ?? 'agent',
       // Sticky note board: guaranteed per-turn visibility until the date
       // passes; expiry only removes it from the board, never deletes the memory.
       ...(sticky ? { sticky_until: new Date(Date.now() + stickyDays * 86400e3).toISOString() } : {}),
