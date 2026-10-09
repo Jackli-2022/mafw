@@ -54,13 +54,20 @@ export class IdentityState {
  * - 绑定 + 已物化 + 未指定 agent → 注入 agent = identity 名
  * - agent 是注册表身份且未物化 → 剥离（防未知 agent 报错；该 runtime 走车道 2/3 时身份不经 agent）
  * - 非注册表 agent（build/plan 等 runtime 原生）原样透传
+ *
+ * 用 Proxy 转发：只覆写 promptAsync/prompt，**其余方法（messages/list/get/delete/todo/fork…）
+ * 一律透传**——此前返回两方法对象整体替换 rt.session，导致 session.messages is not a function，
+ * 会话列表/历史全空（v4.21.0 回归，2026-10-09 修）。
  */
-export function withIdentityPrompt<S extends { sessionID: string; agent?: string }>(
-  session: { promptAsync(o: S): Promise<any>; prompt(o: S): Promise<any> },
+export function withIdentityPrompt<
+  S extends { sessionID: string; agent?: string },
+  T extends { promptAsync(o: any): Promise<any>; prompt(o: any): Promise<any> },
+>(
+  session: T,
   state: IdentityState,
   runtimeName: () => string,
   isRegistryIdentity: (name: string) => boolean,
-): { promptAsync(o: S): Promise<any>; prompt(o: S): Promise<any> } {
+): T {
   const apply = (opts: S): S => {
     if (opts.agent) {
       if (isRegistryIdentity(opts.agent) && !state.isMaterialized(runtimeName(), opts.agent)) {
@@ -75,10 +82,14 @@ export function withIdentityPrompt<S extends { sessionID: string; agent?: string
     }
     return opts;
   };
-  return {
-    promptAsync: (o: S) => session.promptAsync(apply(o)),
-    prompt: (o: S) => session.prompt(apply(o)),
-  };
+  return new Proxy(session as any, {
+    get(target, prop, receiver) {
+      if (prop === 'promptAsync') return (o: S) => target.promptAsync(apply(o));
+      if (prop === 'prompt') return (o: S) => target.prompt(apply(o));
+      const v = Reflect.get(target, prop, receiver);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  }) as unknown as T;
 }
 
 /** GET /api/agents 合并：注册表身份在前（source: 'mafw'），runtime 原生在后（source: 'runtime'），同名去重。

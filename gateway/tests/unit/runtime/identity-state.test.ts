@@ -92,6 +92,38 @@ describe('withIdentityPrompt wrapper', () => {
   });
 });
 
+describe('withIdentityPrompt preserves non-prompt session methods', () => {
+  it('keeps messages/list/get/delete/todo after wrapping (regression: chat history empty)', () => {
+    const full = {
+      async promptAsync(_o: any) {},
+      async prompt(_o: any) { return { parts: [] }; },
+      async messages(_o: any) { return { data: [1, 2, 3] }; },
+      async list() { return ['s1']; },
+      async get(_o: any) { return { id: 's1' }; },
+      async delete(_o: any) {},
+      async todo(_o: any) { return []; },
+    };
+    const w: any = withIdentityPrompt(full as any, new IdentityState(), () => 'opencode', () => false);
+    expect(typeof w.messages).toBe('function');
+    expect(typeof w.list).toBe('function');
+    expect(typeof w.get).toBe('function');
+    expect(typeof w.delete).toBe('function');
+    expect(typeof w.todo).toBe('function');
+  });
+
+  it('forwarded non-prompt methods still reach the original (and this-binding works)', async () => {
+    const self = {
+      vals: [10, 20],
+      async promptAsync(_o: any) {},
+      async prompt(_o: any) { return { parts: [] }; },
+      async messages(_o: any) { return { data: this.vals }; },
+    };
+    const w: any = withIdentityPrompt(self as any, new IdentityState(), () => 'opencode', () => false);
+    const res = await w.messages({ sessionID: 'x' });
+    expect(res.data).toEqual([10, 20]);
+  });
+});
+
 describe('mergeAgentLists', () => {
   it('registry first with source tag; runtime items tagged; dedupe by name', () => {
     const out = mergeAgentLists(
