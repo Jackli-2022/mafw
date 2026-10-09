@@ -10,6 +10,7 @@ import {
 import { isShellCommand, parseShellCommand, runShell, shellResultToLines } from '../shell-mode.ts'
 import { autocompleteItems } from './command-registry.ts'
 import { PromptStash } from './prompt-stash.ts'
+import { EditorFrame } from './editor-frame.ts'
 import { theme } from '../theme.ts'
 
 export function parseSlash(text: string): { cmd: string; args: string } | null {
@@ -123,8 +124,18 @@ export class ChatTab extends VStack implements Focusable {
     ))
     this.editor.onSubmit = (text) => { void this.submit(text) }
     this.addChild(this.scrollView, { basis: 0, grow: 1, minSize: 1 })
-    this.addChild(this.editor, { basis: 'auto', shrink: 1, minSize: 1 })
+    this.addChild(new EditorFrame(this.editor, deps.tui), { basis: 'auto', shrink: 1, minSize: 3 })
     deps.store.loadHistory().then(() => this.rebuild())
+  }
+
+  /** 矮窗口下按终端行数收窄补全可见行（避免弹层吃掉整屏），否则默认 5。 */
+  render(width: number): string[] {
+    const rows = this.deps.tui.terminal?.rows ?? 24
+    const maxVisible = rows < 12 ? 3 : rows < 16 ? 4 : 5
+    if (this.editor.getAutocompleteMaxVisible() !== maxVisible) {
+      this.editor.setAutocompleteMaxVisible(maxVisible)
+    }
+    return super.render(width)
   }
 
   private autocompleteExtra: { name: string; description: string }[] = []

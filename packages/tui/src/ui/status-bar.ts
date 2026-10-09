@@ -1,5 +1,7 @@
-import { truncateToWidth, type Component } from '@earendil-works/pi-tui'
+import { truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui'
 import { theme } from '../theme.ts'
+
+interface StatusSegment { text: string; prio: number }
 
 export interface UsageState {
   model?: string
@@ -56,14 +58,21 @@ export class StatusBar implements Component {
     const s = this.state
     const conn = s.conn === 'ok' ? theme.ok('connected')
       : s.conn === 'reconnecting' ? theme.warn('reconnecting') : theme.err('disconnected')
-    const parts: string[] = [s.project ?? '-', s.session ? s.session.slice(0, 12) : '-', conn]
-    if (s.busy) parts.push(theme.warn('busy'))
-    if (s.agentLabel) parts.push(theme.accent(s.agentLabel))
-    if (s.permLabel) parts.push(theme.warn(s.permLabel))
-    else if (s.permAuto) parts.push(theme.warn('🛡 auto'))
-    if (typeof s.queued === 'number' && s.queued > 0) parts.push(theme.warn(`queued ${s.queued}`))
-    if (typeof s.stashed === 'number' && s.stashed > 0) parts.push(theme.dim(`📌${s.stashed}`))
-    if (s.focus) parts.push(theme.accent('◉ focus'))
+    // 段按语义标注优先级（高=优先保留）：窄列时先丢占位/提示等低价值段，
+    // 保住 usage（model/tokens/cost）——不盲目从左到右截断。
+    const segs: StatusSegment[] = []
+    const project = s.project ?? '-'
+    segs.push({ text: theme.dim(project), prio: project && project !== '-' ? 30 : 5 })
+    const session = s.session ? s.session.slice(0, 12) : '-'
+    segs.push({ text: theme.dim(session), prio: session && session !== '-' ? 40 : 5 })
+    segs.push({ text: conn, prio: 90 })
+    if (s.busy) segs.push({ text: theme.warn('busy'), prio: 70 })
+    if (s.agentLabel) segs.push({ text: theme.accent(s.agentLabel), prio: 70 })
+    if (s.permLabel) segs.push({ text: theme.warn(s.permLabel), prio: 75 })
+    else if (s.permAuto) segs.push({ text: theme.warn('🛡 auto'), prio: 75 })
+    if (typeof s.queued === 'number' && s.queued > 0) segs.push({ text: theme.warn(`queued ${s.queued}`), prio: 60 })
+    if (typeof s.stashed === 'number' && s.stashed > 0) segs.push({ text: theme.dim(`📌${s.stashed}`), prio: 55 })
+    if (s.focus) segs.push({ text: theme.accent('◉ focus'), prio: 65 })
     const u = s.usage
     if (u) {
       const usageBits: string[] = []
@@ -72,9 +81,23 @@ export class StatusBar implements Component {
       if (typeof u.costUsd === 'number' && u.costUsd > 0) usageBits.push(`$${u.costUsd < 0.01 ? u.costUsd.toFixed(3) : u.costUsd.toFixed(2)}`)
       if (typeof u.promptMs === 'number') usageBits.push(theme.accent(`⏱ ${formatDuration(u.promptMs)}`))
       if (typeof u.durationMs === 'number') usageBits.push(formatDuration(u.durationMs))
-      if (usageBits.length > 0) parts.push(usageBits.join(' '))
+      if (usageBits.length > 0) segs.push({ text: usageBits.join(' '), prio: 100 })
     }
-    parts.push(s.hint ?? '1-4:tab q:quit ?:help')
-    return [truncateToWidth(theme.dim(parts.join('  ·  ')), width)]
+    segs.push({ text: theme.dim(s.hint ?? '1-4:tab q:quit ?:help'), prio: 20 })
+
+    const SEP = '  ·  '
+    const sepW = visibleWidth(SEP)
+    const total = (list: StatusSegment[]) =>
+      list.reduce((sum, seg, i) => sum + visibleWidth(seg.text) + (i > 0 ? sepW : 0), 0)
+    const active = segs.slice()
+    while (active.length > 1 && total(active) > width) {
+      let minIdx = 0
+      for (let i = 1; i < active.length; i++) {
+        if (active[i].prio < active[minIdx].prio) minIdx = i
+      }
+      active.splice(minIdx, 1)
+    }
+    const line = active.map((seg) => seg.text).join(theme.dim(SEP))
+    return [truncateToWidth(line, width)]
   }
 }
