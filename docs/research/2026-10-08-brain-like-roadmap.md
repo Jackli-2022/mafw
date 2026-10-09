@@ -98,7 +98,8 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | 11 | A1 阶梯补顶 | 依赖抽象质量先上来（A4） |
 | 12 | L3 知识边界 | 缺口：FOK 样本无主题字段 + 样本量（接便签板校准任务） |
 | 13 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
-| 14 | D6/D7+L4 | 体验层，远端 |
+| — | D6/D7+L4 | 体验层，远端 |
+| — | ✅ **W4 goal 级先验** | 已交付（Plan 3：plan 节点注入 L1+L2） |
 | — | ~~A3 抽象用强模型~~ | **用户判定非瓶颈**（2026-10-08：问题在缺 skill 通道，不在模型能力）——降权搁置 |
 
 > **第一批（Plan 1）已落地**（2026-10-08）：W1 常驻先验块（`<agent-priors>` 全链）+ W2 skill 物化通道（五闸门→staging→triage→安装指针化）+ D1b 源条目降能 + L2 category 落盘。计划：`docs/superpowers/plans/2026-10-08-w1-w2-d1b-abstraction-wiring.md`。
