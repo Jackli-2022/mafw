@@ -17,7 +17,7 @@
 
 | # | 方向 | 脑机制 | 一句话改法 |
 |---|---|---|---|
-| D1 | 差异化衰减 | Fuzzy-Trace：细节先死、要点存活 | 按 abstraction_level 分档衰减率；gist 写出后源 episodes 降能 |
+| D1 | ~~差异化衰减~~（已落地一半） | Fuzzy-Trace：细节先死、要点存活 | ~~分档衰减率~~**已实现**（`abstraction-level.ts:decayRateFor`：episodic 0.010/procedural 0.003/global 0.001/semantic 0.005）；**剩余**：gist 写出后源 episodes 降能 |
 | D2 | 检索即重写 | reconsolidation：回忆时可塑 | 高频命中+检测到冲突 → curator 当场改写（supersede 链） |
 | D3 | surprise 门控 | 多巴胺=预测误差 | novelty = 1 − maxCosine 作 importance 先验（向量基建现成） |
 | D4 | 做梦 | 生成性回放 | D4a 预测性预取（R8 快照扩展）；D4b 反事实模拟注入 plan |
@@ -57,16 +57,18 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 
 | 序 | 项 | 理由 |
 |---|---|---|
-| 1 | D1 差异化衰减 | 纯参数 + supersede 链现成 |
+| 1 | D1b 源条目降能（gist 化后 supersede 源 episodes） | D1 分档衰减已在跑，只剩这一步 |
 | 2 | D3 surprise 门控 | consolidation 余弦本来就在算 |
 | 3 | L1 能力账本 | 纯 SQL，goal_outcomes 在写，Brier 可测 |
 | 4 | D4a 做梦预取 | R8 快照管线现成 |
-| 5 | L2 失败模式谱 | MinHash 基建现成 |
-| 6 | D2 检索即重写 | need 信号现成，缺触发管线 |
-| 7 | D4b 反事实模拟 | 依赖 L1+L2 |
-| 8 | L3 知识边界 | 等 FOK 样本量（接便签板校准任务） |
+| 5 | L2 失败模式谱 | MinHash 现成；**前置缺口：reflection 不落 category** |
+| 6 | D2 检索即重写 | reconsolidation 窗口已有（S5），缺消费 worker |
+| 7 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0） |
+| 8 | L3 知识边界 | 缺口：FOK 样本无主题字段 + 样本量（接便签板校准任务） |
 | 9 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
 | 10 | D6/D7+L4 | 体验层，远端 |
+
+> 实施核查（2026-10-08）发现 D1 分档衰减已在生产运行（`automation-engine.ts:102` 调 `decayRateFor(entry.type)`），原"纯参数"判断过时；reconsolidation 窗口（`recall/reconsolidation.ts`）也已在反馈路径接线，D2 只缺冲突触发的消费 worker。
 
 ## 6. 显式排除
 
