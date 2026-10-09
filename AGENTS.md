@@ -1111,6 +1111,17 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 - **legacy 并存**：`core/skills/mafw-*/entry.ts` + 插件 `/goal` 命令链保留（`state_change` 唤醒走 driver.advance 幂等）；死代码标注 deprecated（`chat/graph-runner.ts`/`core/mcp/tools.ts`/`poll.ts`/`core/plugin.ts`，物理删除留后续 PR）。
 - 测试：gateway 新增 14 文件 / 65 用例（routing/state-v3/node-runs/identities/node-prompts/driver/completion/askuser/starter/projectdir/recovery/timeline-route/retry-route/e2e）；全量 258 套件 1738 用例绿。
 
+### 5.23 脑启发记忆演化第二批（2026-10-09）
+
+计划：`docs/superpowers/plans/2026-10-09-remaining-roadmap-all.md`（D3 独立计划见 `2026-10-09-d3-laya-three-way-gate.md`）。全部后台管线统一形态：纯函数核心 + cron 接线 + `PipelineBudget` 门控 + heartbeat 记录 + observe-first。
+
+- **D2 检索即重写**：`recall/reconsolidate-pipeline.ts`（`selectNewerRelated` 纯函数 + `ReconsolidatePipeline.runOnce`）——被检索进入 24h labile 窗口（`recall/reconsolidation.ts` 已 mark）的记忆，每日 `memory:reconsolidate`（cron `30 4 * * *`）用更新的同 cue 记忆对照，worker 判 keep/rewrite；rewrite 经 supersedes 链写新条目。每 id 每趟 consume 一次（无重试风暴）；budget 门。
+- **D4a 做梦预取**：`recall/dream-prefetch.ts`（`selectDreamSessions`/`parseDreamQueries`）+ 每晚 `memory:dream`（cron `0 2 * * *`）对近 24h 活跃会话生成 ≤3 条"下次可能问"，存 kv `dream-queries`；`/api/obs/capture` 的 user_input 分支一次性消费 → `scanService.prefetch` 预建快照。
+- **A2 草稿-验证并行**：turnCompress prompt 放开 ≤1 条 `tentative` 锚草稿（`capTentativeEnergy` 在 `/api/memory/add` 写前封顶 energy 0.35）；reflection（`collectTentative`/`applyTentativeVerdicts`）每日提升（去 tentative + energy 0.7 + `verified:` 锚）或否决（energy 0.05 + `rejected` 锚）。快系统产草稿、慢系统验证。
+- **A1 阶梯补顶**：`memory/axiom-distill.ts`（`selectAxiomSources`/`parseAxiomCandidates`）+ 周 `memory:axiomDistill`（cron `0 6 * * 0`）把高 need semantic insights 蒸馏为公理候选 → triage 草稿（`summary.axiomDraft`）→ confirm 分支逐条经 `L5Store.addHeuristic` 提交（不建 goal）。
+- **L3 知识边界**：FOK 样本（`recall/fok-samples.ts`）inj 形加 `topic`（= top-1 记忆首个 cue_anchor；快照构建后经 `appendFokEvent` 落 `fok-samples.jsonl`）；`fitFokThresholdsByTopic`（`recall/fok-gate.ts`）按主题拟合、样本不足/不可分则并入 global，消费 `byTopic[topic] ?? global`。
+- **P1.5 审批决策判定**：`core/approval/decision-log.ts` 落 `~/.mafw/logs/approval-decisions.jsonl`（`eval`/`reply` 两形，按 requestId join）——`hook.ts` 记 verdict，两处 reply 路由记 human 回复。**模型选型后置**（当前 laya 为冲突专用 checkpoint，命令破坏性分类 off-label）。
+
 ## 6. Gateway 运维
 
 ### 6.1 CLI 命令

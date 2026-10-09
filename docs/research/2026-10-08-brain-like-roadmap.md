@@ -91,13 +91,14 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | 4 | ✅ **L2 失败模式谱** | 已交付（Plan 2：`buildFailureTaxonomy` + cat: 锚点） |
 | 5 | ✅ **A4 选择压力回流** | 已交付（Plan 2：`selectionFeedbackBlock`） |
 | 6 | ✅ **L1 能力账本** | 已交付（Plan 2：`buildCapabilityLedger` + `/api/agent/capabilities`；任务分类器仍缺） |
-| 7 | D4a 做梦预取 | R8 快照管线现成，缺查询生成器 |
-| 8 | A2 真并行草稿-验证 | 双管线现成，需 prompt+tentative 标记设计 |
-| 9 | D2 检索即重写 | reconsolidation 窗口已有（S5），缺消费 worker |
-| 10 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0） |
-| 11 | A1 阶梯补顶 | 依赖抽象质量先上来（A4） |
-| 12 | L3 知识边界 | 缺口：FOK 样本无主题字段 + 样本量（接便签板校准任务） |
-| 13 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
+| 7 | ✅ **D4a 做梦预取** | 已交付（2026-10-09：每晚生成查询 → 首捕获消费） |
+| 8 | ✅ **A2 真并行草稿-验证** | 已交付（2026-10-09：tentative 草稿 + reflection 提升/否决） |
+| 9 | ✅ **D2 检索即重写** | 已交付（2026-10-09：每日 reconsolidate 消费 worker） |
+| 10 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0）→ **spec-first**（`2026-10-09-remaining-roadmap-all.md` Phase I） |
+| 11 | ✅ **A1 阶梯补顶** | 已交付（2026-10-09：周管线 insights→公理候选→triage→L5） |
+| 12 | ✅ **L3 知识边界** | 已交付（2026-10-09：FOK 样本 topic 字段 + 分主题阈值拟合） |
+| 13 | D5 PPR 检索 | 需建图，LongMemEval 可测 → **spec-first**（Phase G） |
+| — | P1.5 审批决策判定 | ✅ 数据积累已交付（2026-10-09：approval-decisions.jsonl eval/reply 对；模型选型后置） |
 | — | D6/D7+L4 | 体验层，远端 |
 | — | ✅ **W4 goal 级先验** | 已交付（Plan 3：plan 节点注入 L1+L2） |
 | — | ~~A3 抽象用强模型~~ | **用户判定非瓶颈**（2026-10-08：问题在缺 skill 通道，不在模型能力）——降权搁置 |
