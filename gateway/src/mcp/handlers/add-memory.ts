@@ -10,6 +10,19 @@ import { getEmbeddingRuntime } from "../../memory/embedding-runtime";
 import { getRouteWriteDeps, routeAndWrite } from "../../memory/route-write";
 import { importanceToSalience } from "../../core/memory/salience-perceptor";
 
+/** Mark each old id as superseded by `byId`; return only the ids actually marked. */
+function markSupersedes(
+  store: { markSuperseded(id: string, byId: string): boolean | void },
+  oldIds: string[],
+  byId: string,
+): string[] {
+  const marked: string[] = [];
+  for (const oldId of oldIds) {
+    if (store.markSuperseded(oldId, byId)) marked.push(oldId);
+  }
+  return marked;
+}
+
 export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) => {
   try {
     const content = args.content as string;
@@ -86,22 +99,16 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       ? new HarmonicUnitFileStore(resolvedDir, sharedIndex, sharedGraph)
       : new HarmonicUnitFileStore(resolvedDir, undefined, sharedGraph);
 
-    // Mark superseded memories before writing the new one. This establishes
-    // the supersede link: old entries get energy halved + search penalty,
-    // new entry becomes the authoritative version.
-    const supersededIds: string[] = [];
-    for (const oldId of supersedes) {
-      if (store.markSuperseded(oldId, unitId)) {
-        supersededIds.push(oldId);
-      }
-    }
-
     // S1 write-time routing: when the embedding runtime + judge are wired,
     // decide skip (duplicate → non-write) / update (integrate) / create before
     // persisting. Absent deps → fall through to the plain write (rollback-safe).
     const routeDeps = getRouteWriteDeps();
     if (routeDeps) {
       const routed = await routeAndWrite(unit as any, store as any, routeDeps);
+      // Supersede is meaningful only when the new entry was actually persisted
+      // as the authoritative (create) version. skip never writes; update/separate
+      // manage their own targets — marking there would dangle or double-lower.
+      const supersededIds = routed.action === 'create' ? markSupersedes(store, supersedes, routed.id) : [];
       return { content: [{ type: "text", text: JSON.stringify({
         success: true,
         id: routed.id,
@@ -114,6 +121,10 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
     }
 
     await store.write(unit as any);
+
+    // Mark superseded memories after writing the new one (parity with the HTTP
+    // /api/memory/add path). The plain path always persists → a real create.
+    const supersededIds = markSupersedes(store, supersedes, unitId);
 
     return { content: [{ type: "text", text: JSON.stringify({
       success: true,

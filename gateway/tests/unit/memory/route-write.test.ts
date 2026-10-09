@@ -215,6 +215,25 @@ describe('decideRouting', () => {
       expect(rows[0].decidedBy).toBe('llm-route');
       expect(rows[0].redundantScores).toEqual([{ id: 'old', p: 0.5 }]);
     });
+
+    test('observe-only sentinel: tau=1.0 with pRedundant exactly 1.0 falls through to judge', async () => {
+      const v = new MemoryVectorStore(path.join(tmp(), 'v.json'), 2);
+      v.upsert('old', bandVec);
+      const judged = { n: 0 };
+      const rows: any[] = [];
+      const out = await decideRouting(u('n1'), {
+        vectors: v, provider,
+        laya: { client: { askPair: async () => ({ pConflict: 0.1, pRedundant: 1.0 }) }, tauRedundantHigh: 1.0 },
+        readUnit: async () => ({ memory_value: '已知内容' }),
+        judge: async () => { judged.n++; return { action: 'create' as const }; },
+        onRoute: (r) => rows.push(r),
+      });
+      expect(out.action).toBe('create');
+      expect(judged.n).toBe(1);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].decidedBy).toBe('llm-route');
+      expect(rows[0].redundantScores).toEqual([{ id: 'old', p: 1.0 }]);
+    });
   });
 });
 

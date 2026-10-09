@@ -143,7 +143,11 @@ export async function decideRouting(unit: HarmonicUnit, deps: RouteWriteDeps): P
       if (!bestR || r.pRedundant > bestR.p) bestR = { id: h.id, p: r.pRedundant };
     }
     if (scores.length > 0) redundantScores = scores;
-    if (bestR && bestR.p >= laya.tauRedundantHigh) {
+    // tauRedundantHigh >= 1 is the disabled sentinel (default 1.0): scores are
+    // still computed for calibration/audit, but the gate never fires — so the
+    // default is a true zero-behavior-change observe mode even if a sidecar
+    // returns an exact 1.0.
+    if (bestR && laya.tauRedundantHigh < 1 && bestR.p >= laya.tauRedundantHigh) {
       emitRoute(deps, unit, hits, 'redundant', 'laya-redundant', redundantScores);
       return { action: 'redundant', targetId: bestR.id, pRedundant: bestR.p };
     }
