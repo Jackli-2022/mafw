@@ -8,6 +8,43 @@
 
 **Tech Stack:** gateway TS（jest --runInBand）、插件 src/hooks（opencode transform）、无新依赖。
 
+## 0. 全局项落位（7 方向 + 4 接线 + 4 自我认知 + 5 生产侧，共 20 项）
+
+本计划只详展**第一批**（Plan 1）；其余批次各出独立 plan（writing-plans：每个 plan 独立可测可交付），此处登记落位防丢。路线图总表：`docs/research/2026-10-08-brain-like-roadmap.md` §5。
+
+| 系列 | 项 | 批次 / 状态 | 实现 plan |
+|---|---|---|---|
+| **D（脑化）** | D1 分档衰减 | ✅ 已实现 | — |
+| | **D1b 源条目降能** | **第一批** | **Plan 1 Task 10** |
+| | D2 检索即重写 | 第三批（窗口已有，缺消费 worker） | Plan 3 |
+| | D3 surprise 门控 | 第二批（向量基建现成） | Plan 2 |
+| | D4a 做梦预取 | 第二批（R8 现成，缺查询生成器） | Plan 2 |
+| | D4b 反事实模拟 | 第三批（依赖 L1+L2） | Plan 3 |
+| | D5 PPR 扩散激活 | 远端（需建图） | Plan 4 |
+| | D6 第一人称重放 | 远端（体验层） | Plan 4 |
+| | D7 叙事自我 | 远端（=L4 数据源） | Plan 4 |
+| **W（接线）** | **W1 常驻先验块** | **第一批** | **Plan 1 Task 2-5** |
+| | **W2 skill 物化通道** | **第一批** | **Plan 1 Task 6-9** |
+| | W3 schema pattern completion | 远端（依赖 D5） | Plan 4 |
+| | W4 goal 级先验 | 第三批（依赖 L1+L2；plan 节点已通） | Plan 3 |
+| **L（自我认知）** | L1 能力账本 | 第二批（缺口：任务分类器） | Plan 2 |
+| | **L2 失败模式谱** | **第一批落 category + W1 消费（首形）；完整聚合第二批** | **Plan 1 Task 1** / Plan 2 |
+| | L3 知识边界 | 第三批（缺口：FOK 主题字段+样本量） | Plan 3 |
+| | L4 自传时间线 | 远端（依赖 D7） | Plan 4 |
+| **A（生产侧）** | A1 阶梯补顶 | 远端（依赖 A4） | Plan 4 |
+| | A2 草稿-验证并行 | 第三批 | Plan 3 |
+| | A3 抽象用强模型 | 搁置（用户判定非瓶颈） | — |
+| | A4 选择压力回流 | 第二批（need 信号现成） | Plan 2 |
+| | A5 抽象写回 schema | 远端 | Plan 4 |
+
+**批次构成**：
+- **Plan 1（本文件）**：W1 + W2 + D1b + L2（category 落盘）
+- **Plan 2**：D3 + D4a + L1 + L2（聚合完整）+ A4
+- **Plan 3**：A2 + D2 + D4b + W4 + L3
+- **Plan 4（远端）**：D5 + W3 + A1 + A5 + D6 + D7 + L4
+
+**批次排序依据**：接线侧（W）先通——现有抽象产物立刻生效；生产侧（A/D）随后提升质量；自我认知（L）与做梦（D4）在数据源就绪后跟进；远端项依赖建图/体验层/前置数据。
+
 ## Global Constraints
 
 - **TDD**：先写失败测试再实现；每个 task 结束 commit
