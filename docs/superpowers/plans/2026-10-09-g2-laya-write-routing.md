@@ -388,14 +388,10 @@ import { setRetrievalEventBufferForTest, RetrievalEventBuffer } from '../../../s
       expect(drained).toHaveLength(1);
       expect(drained[0].id).toBe('old');
       expect(drained[0].prob).toBe(0.97);
+      expect(getRouteStats().redundant).toBeGreaterThan(0);
     } finally {
       setRetrievalEventBufferForTest(null);
     }
-  });
-
-  test('getRouteStats includes redundant counter', async () => {
-    const stats = getRouteStats();
-    expect(typeof stats.redundant).toBe('number');
   });
 ```
 
