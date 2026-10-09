@@ -105,6 +105,29 @@ const CATEGORY_ENERGY: Record<InsightCategory, number> = {
   'tool-quirk': 0.8,
 };
 
+/**
+ * Build the harmonic unit for a distilled insight. Extracted as a pure function
+ * so the unit shape (notably the `cat:` anchor) is testable without the LLM
+ * worker. `cat:<category>` is persisted to cue_anchors so the failure taxonomy
+ * (L2) and the `<agent-priors>` block (W1) can filter by category — previously
+ * the category was mapped to type and then discarded.
+ */
+export function buildInsightUnit(insight: Insight, sessionID: string, now: string): HarmonicUnit {
+  return {
+    id: generateHarmonicId(),
+    type: CATEGORY_TO_TYPE[insight.category],
+    primary_abstraction: insight.content.slice(0, 200),
+    cue_anchors: [...(insight.cue_anchors ?? []), `cat:${insight.category}`],
+    memory_value: insight.content,
+    energy: CATEGORY_ENERGY[insight.category],
+    salience: calculateSalience(insight.content),
+    abstraction_level: abstractionLevelFor('semantic'),
+    created_at: now,
+    updated_at: now,
+    source_session_id: sessionID === ORPHAN_SESSION ? undefined : sessionID,
+  };
+}
+
 export function parseInsights(text: string): Insight[] {
   try {
     const parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
@@ -279,19 +302,7 @@ export class ReflectionPipeline {
       }
 
       const now = new Date().toISOString();
-      const unit: HarmonicUnit = {
-        id: generateHarmonicId(),
-        type: CATEGORY_TO_TYPE[insight.category],
-        primary_abstraction: insight.content.slice(0, 200),
-        cue_anchors: insight.cue_anchors ?? [],
-        memory_value: insight.content,
-        energy: CATEGORY_ENERGY[insight.category],
-        salience: calculateSalience(insight.content),
-        abstraction_level: abstractionLevelFor('semantic'),
-        created_at: now,
-        updated_at: now,
-        source_session_id: sessionID === ORPHAN_SESSION ? undefined : sessionID,
-      };
+      const unit = buildInsightUnit(insight, sessionID, now);
       try {
         // If this insight conflicts with an existing memory, supersede the old one
         if (classification.kind === 'conflict' && classification.conflictTarget) {
