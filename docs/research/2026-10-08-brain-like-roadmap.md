@@ -25,6 +25,22 @@
 | D6 | 第一人称重放 | 同基质 replay | reflection 喂 turn 级原文；主模型自反思（成本换保真） |
 | D7 | 叙事自我 | McAdams 叙事身份 | 每日第一人称日记（=自我认知模型 L4 的数据源） |
 
+## 2.5 双系统并行差距：抽象能力不足（2026-10-08 用户提出，优先级高于 D 系列）
+
+CLS 的双系统是**并行且持续交互**的（海马体记实例 / 新皮层抽规律，每次回放都是快系统喂慢系统）；我们是"小时编码 + 每日蒸馏"的**串行批处理**，且抽象环节是全套系统里投入最薄的：单遍 JSON 蒸馏、最弱模型、无层级、无质量回流。
+
+**五个具体短板**：①单遍蒸馏无迭代；②最贵的认知任务用最便宜的 workerModel（一刀切）；③阶梯顶端断裂（semantic insight 不再被抽象，L5 靠手动）；④伪并行（turnCompress 被 prompt 明文禁止泛化，两管线同周期零交互）；⑤抽象产物无选择压力（下游命中率不回流）。
+
+| # | 方向 | 改法 | 基建 |
+|---|---|---|---|
+| A1 | 阶梯补顶（模式的模式） | 周管线 insights→公理候选→审批进 L5 | L5 commit 现成 |
+| A2 | 真并行（草稿-验证） | turnCompress 产低置信 tentative 草稿抽象，reflection 提升/否决 | 双管线现成，改 prompt+标记位 |
+| A3 | 抽象用强模型 | workerModel 拆 extract/reflect 两档（`worker.prompt` 第四参收 model） | 配置拆分 |
+| A4 | 选择压力回流 | 上轮蒸馏产物的 need 命中率写进下轮 reflection prompt | RetrievalEventBuffer 现成 |
+| A5 | 抽象写回 schema | 蒸馏更新 schema 簇代表条目，不只新增碎片 | S2 簇现成，缺写回 |
+
+**测量面**：semantic 层下游命中率、L5 提升率、A2 草稿被提升/否决比例。
+
 ## 3. 自我认知模型（详见附录二）
 
 核心论点：**记录 ≠ 模型**。自我认知需要 monitoring → 结构化表示 → control 消费的闭环。
@@ -57,16 +73,20 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 
 | 序 | 项 | 理由 |
 |---|---|---|
+| 0 | **A3 抽象用强模型** | 一行配置拆分，直接抬抽象质量上限 |
 | 1 | D1b 源条目降能（gist 化后 supersede 源 episodes） | D1 分档衰减已在跑，只剩这一步 |
 | 2 | D3 surprise 门控 | consolidation 余弦本来就在算 |
 | 3 | L1 能力账本 | 纯 SQL，goal_outcomes 在写，Brier 可测 |
-| 4 | D4a 做梦预取 | R8 快照管线现成 |
-| 5 | L2 失败模式谱 | MinHash 现成；**前置缺口：reflection 不落 category** |
-| 6 | D2 检索即重写 | reconsolidation 窗口已有（S5），缺消费 worker |
-| 7 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0） |
-| 8 | L3 知识边界 | 缺口：FOK 样本无主题字段 + 样本量（接便签板校准任务） |
-| 9 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
-| 10 | D6/D7+L4 | 体验层，远端 |
+| 4 | A4 选择压力回流 | need 信号现成，改 reflection prompt |
+| 5 | D4a 做梦预取 | R8 快照管线现成 |
+| 6 | L2 失败模式谱 | MinHash 现成；**前置缺口：reflection 不落 category** |
+| 7 | A2 真并行草稿-验证 | 双管线现成，需 prompt+tentative 标记设计 |
+| 8 | D2 检索即重写 | reconsolidation 窗口已有（S5），缺消费 worker |
+| 9 | D4b 反事实模拟 | 依赖 L1+L2；plan 节点已接线（v4.22.0） |
+| 10 | A1 阶梯补顶 | 依赖抽象质量先上来（A3/A4） |
+| 11 | L3 知识边界 | 缺口：FOK 样本无主题字段 + 样本量（接便签板校准任务） |
+| 12 | D5 PPR 检索 | 需建图，LongMemEval 可测 |
+| 13 | D6/D7+L4 | 体验层，远端 |
 
 > 实施核查（2026-10-08）发现 D1 分档衰减已在生产运行（`automation-engine.ts:102` 调 `decayRateFor(entry.type)`），原"纯参数"判断过时；reconsolidation 窗口（`recall/reconsolidation.ts`）也已在反馈路径接线，D2 只缺冲突触发的消费 worker。
 
