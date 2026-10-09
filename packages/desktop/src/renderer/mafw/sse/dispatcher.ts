@@ -14,6 +14,7 @@ export interface CoreDeps {
   setActiveQuestion(q: unknown): void
   bumpProjectsRev(): void
   onRuntimeSwitched(): void
+  onGoalEvent(event: unknown): void
 }
 
 export interface LifecycleDeps {
@@ -87,6 +88,13 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "runtime_switched") {
     deps.core.trace(event, "rail:runtime")
     deps.core.onRuntimeSwitched()
+    return
+  }
+
+  // Goal 编排事件（spec P2 §7）：goal_node 无 sessionID，必须在 sid 分发前消费。
+  if (event.type === "goal_node" || event.type === "goal_created" || event.type === "phase_transition") {
+    deps.core.trace(event, "goals:rev")
+    deps.core.onGoalEvent(event)
     return
   }
 

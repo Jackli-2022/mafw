@@ -12,6 +12,7 @@ function makeDeps() {
       setActiveQuestion: rec("setActiveQuestion"),
       bumpProjectsRev: rec("bumpProjectsRev"),
       onRuntimeSwitched: rec("onRuntimeSwitched"),
+      onGoalEvent: rec("onGoalEvent"),
     },
     lifecycle: {
       invalidate: rec("invalidate"),
@@ -126,5 +127,21 @@ describe("dispatchShellEvent: tail", () => {
     dispatchShellEvent({ type: "sync", syncEvent: { type: "session.updated.1", aggregateID: "s1", data: { sessionID: "s1" } } }, deps)
     expect(calls.map(c => c.name)).toEqual(["trace"])
     expect(calls[0].args[1]).toBe("sync-envelope")
+  })
+})
+
+describe("dispatchShellEvent: goal events", () => {
+  test("goal_node 顶层消费 → onGoalEvent，不 missTrace", () => {
+    const { deps, calls } = makeDeps()
+    dispatchShellEvent({ type: "goal_node", goalId: "g1", node: "execute", transition: "finished" }, deps)
+    expect(calls.some(c => c.name === "onGoalEvent")).toBe(true)
+    expect(calls.filter(c => c.name === "warn").length).toBe(0)
+  })
+  test("goal_created / phase_transition 同样触发 onGoalEvent", () => {
+    for (const type of ["goal_created", "phase_transition"]) {
+      const { deps, calls } = makeDeps()
+      dispatchShellEvent({ type, goalId: "g1" }, deps)
+      expect(calls.some(c => c.name === "onGoalEvent")).toBe(true)
+    }
   })
 })

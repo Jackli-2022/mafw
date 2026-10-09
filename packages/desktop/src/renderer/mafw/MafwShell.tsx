@@ -18,6 +18,7 @@ import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
+import { bumpGoalsRev } from "./goals-rev"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
 import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
@@ -802,6 +803,7 @@ export function MafwShell() {
       warn: (m) => console.warn(m),
       setActiveQuestion: (q) => setActiveQuestion(q as QuestionData),
       bumpProjectsRev: () => setProjectsRev(v => v + 1),
+      onGoalEvent: () => bumpGoalsRev(),
       onRuntimeSwitched: () => {
         sessionStore.invalidate()
         void refreshMenus()
