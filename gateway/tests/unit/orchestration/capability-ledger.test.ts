@@ -1,4 +1,4 @@
-import { buildCapabilityLedger } from '../../../src/orchestration/capability-ledger';
+import { buildCapabilityLedger, buildFailureTaxonomy } from '../../../src/orchestration/capability-ledger';
 
 describe('buildCapabilityLedger', () => {
   it('aggregates pass rate, avg rounds, and failure-kind breakdown', () => {
@@ -20,5 +20,23 @@ describe('buildCapabilityLedger', () => {
   it('empty → zeroed ledger (no NaN)', () => {
     const led = buildCapabilityLedger([]);
     expect(led).toMatchObject({ total: 0, passRate: 0, avgRounds: 0, avgCostUsd: 0, byFailureKind: {} });
+  });
+});
+
+describe('buildFailureTaxonomy', () => {
+  it('clusters cat:failure/correction entries by primary_abstraction, drops superseded', () => {
+    const t = buildFailureTaxonomy([
+      { id: 'm1', energy: 0.9, primary_abstraction: 'serve 崩溃后事件订阅必须重连', cue_anchors: ['cat:failure'] },
+      { id: 'm2', energy: 0.7, primary_abstraction: 'serve 崩溃后事件订阅必须重连', cue_anchors: ['cat:failure'] },
+      { id: 'm3', energy: 0.8, primary_abstraction: '别的坑', cue_anchors: ['cat:correction'] },
+      { id: 'm4', energy: 0.9, primary_abstraction: '不收', cue_anchors: ['cat:insight'] },
+      { id: 'm5', energy: 0.9, primary_abstraction: '已取代', cue_anchors: ['cat:failure'], superseded_by: 'm1' },
+    ]);
+    expect(t).toHaveLength(2);
+    const top = t[0];
+    expect(top.pattern).toBe('serve 崩溃后事件订阅必须重连');
+    expect(top.count).toBe(2);
+    expect(top.energy).toBeCloseTo(0.9);
+    expect(top.id).toBe('m1');
   });
 });
