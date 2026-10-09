@@ -36,6 +36,26 @@
 |---|---|---|---|---|
 | W1 | **常驻先验块 `<agent-priors>`** | Letta 常驻式 | system 注入（车道 1 物化，compaction 免疫）：top L5 公理 + top 失败模式 + 能力账本摘要，预算 ~800 字符 | L5Store.getTop 现成；注入点 = system.transform/物化 systemPrompt |
 | W2 | **workflow 物化** | Voyager/AWM 物化式 | 高频 procedural 记忆（need 信号）→ 草稿 skill 文件（`.opencode/skills/`）→ 审批进 runtime 原生技能系统——抽象从文本变可调用能力 | need 信号 + 插件 skills 目录现成 |
+
+### 3.1 W2 展开：md ↔ md 同源打通（2026-10-08 用户指出）
+
+**格式同构已验证**：记忆 OKF = frontmatter(type/id/cue_anchors/energy…) + md 正文；SKILL.md = frontmatter(name/description) + md 正文。打通不需要新格式、不需要强模型——**抽象在 curator 写记忆时已完成，物化是机械渲染**。
+
+**渲染映射**：
+
+| SKILL.md | 来源 |
+|---|---|
+| `name` | slug(primary_abstraction) 或 curator 命名 |
+| `description`（触发条件，skill 发现的命门） | primary_abstraction + cue_anchors 拼装 |
+| 正文 | memory_value（procedural 已带"→ next time"路标约定） |
+
+**通道设计**：
+1. **提升判据**：procedural + 高 need（RetrievalEventBuffer 7 天命中）+ 高 energy + `verified:` 锚点——"被反复检索且验证过的程序性知识"才配成为能力
+2. **审批门**：skill 改变 runtime 能力面 → draft 进 staging → triage/人审 → 落 `.opencode/skills/`（项目级）或 `~/.config/opencode/skills/`（跨项目级，按记忆适用范围分流）
+3. **闭环**：物化后**记忆变指针**（memory_value 改写为"已物化为 skill:<name>，直接用"——指针优于全文原则的闭环，skill 文件成为 artifact 真相源）；skill 调用出现在轨迹里 → need 信号回流 → 不用的 skill 降级回纯记忆
+4. **可逆**：降级 = 删 skill 文件，记忆本体仍在
+
+这条通道补上了"next-time 路标只能指向已存在 skill"的缺口——路标第一次可以指向**记忆自己长出来的** skill。
 | W3 | **schema 驱动感知** | Bartlett/Friston pattern completion | 边界 recall 命中 schema 簇时整簇 gist 作为"先验预测"注入 | 依赖 D5（S2 簇已有） |
 | W4 | **goal 级先验** | options/GA 规划层式 | plan 节点注入能力账本+失败谱（自我认知 L1/L2 的消费点） | v4.22.0 plan 节点已接线 |
 
