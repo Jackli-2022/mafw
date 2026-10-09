@@ -30,6 +30,8 @@ export interface ReflectionOptions {
   workerModel?: { providerID: string; modelID: string };
   /** D1b: fraction of source-episode energy removed after a successful distillation (default 0.3). */
   sourceDemoteFactor?: number;
+  /** A4: downstream retrieval-hit count per memory id (7d need) — selection-pressure feedback. */
+  needFor?: (id: string) => number;
 }
 
 export interface ReflectionResult {
@@ -138,6 +140,20 @@ export function demoteSourceEpisodes(
     try { index.save?.(); } catch { /* fail-open */ }
   }
   return demoted;
+}
+
+/**
+ * A4 selection-pressure feedback: render the downstream retrieval-hit counts of
+ * previously distilled insights so the next reflection round can calibrate —
+ * insights that never get retrieved are candidates for merge/deletion. Pure;
+ * returns '' for an empty set.
+ */
+export function selectionFeedbackBlock(items: Array<{ text: string; need: number }>): string {
+  if (items.length === 0) return '';
+  const lines = items.map((i) =>
+    i.need > 0 ? `- [命中 ${i.need}] ${i.text}` : `- [未被检索] ${i.text}`,
+  );
+  return `### 你此前蒸馏洞察的使用反馈（按 need 校准：未被检索的考虑合并或删除）\n${lines.join('\n')}`;
 }
 
 export function buildInsightUnit(insight: Insight, sessionID: string, now: string): HarmonicUnit {
@@ -313,7 +329,20 @@ export class ReflectionPipeline {
       const entityBlock = episodeEntities.size > 0
         ? `\n\n### Session Entities (for cross-session linking)\n${[...episodeEntities].slice(0, 20).join(', ')}`
         : '';
-      const text = await worker.prompt(prompt + evidenceBlock + entityBlock, REFLECT_SYSTEM, this.opts.workerModel, 'memory-curator');
+      // A4: prior distilled insights of THIS session + their downstream usage.
+      let feedbackBlock = '';
+      if (this.opts.needFor) {
+        const prior = this.opts.index.getIndex().entries
+          .filter((e: any) =>
+            e.source_session_id === sessionID &&
+            (e.type === 'semantic' || e.type === 'procedural') &&
+            !e.superseded_by)
+          .slice(0, 10)
+          .map((e: any) => ({ text: e.primary_abstraction as string, need: this.opts.needFor!(e.id) }));
+        const fb = selectionFeedbackBlock(prior);
+        if (fb) feedbackBlock = `\n\n${fb}`;
+      }
+      const text = await worker.prompt(prompt + evidenceBlock + entityBlock + feedbackBlock, REFLECT_SYSTEM, this.opts.workerModel, 'memory-curator');
       insights = parseInsights(text);
     } catch {
       result.failed++;

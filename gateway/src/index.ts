@@ -2217,6 +2217,8 @@ class MafwScheduler {
       maxEpisodicPerSession: config.recall.maxEpisodicPerReflect,
       exclusive: (sessionID, fn) => pool.runExclusive(sessionID, 'reflect', fn),
       workerModel: config.recall.workerModel,
+      // A4: selection-pressure feedback — prior insights' 7-day retrieval hits.
+      needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
     });
   }
 
