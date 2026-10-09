@@ -222,6 +222,10 @@ export interface GatewayConfig {
         enabled?: boolean;
         url?: string;
         tauHigh?: number;
+        /** Three-way gate low threshold: ALL candidate scores <= tauLow →
+         *  CREATE without the LLM judge. 0 = off (default; open only after
+         *  pairs>=50 calibration + user approval). */
+        tauLow?: number;
         device?: 'cpu' | 'cuda';
       };
       /** ONNX intra-op thread cap for the local provider (default 2 — ORT

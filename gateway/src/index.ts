@@ -1392,8 +1392,9 @@ class MafwScheduler {
           layaDeps = {
             client: new LayaConflictClient({ url: layaCfg.url }),
             tauHigh: layaCfg.tauHigh ?? 0.99, // 0.99 = adoption gated off until calibrated from real pairs
+            tauLow: layaCfg.tauLow ?? 0,      // 0 = three-way gate off until calibrated
           };
-          log.info(`[Laya] conflict cascade enabled (tauHigh=${layaDeps.tauHigh}, url=${layaCfg.url})`);
+          log.info(`[Laya] conflict cascade enabled (tauHigh=${layaDeps.tauHigh}, tauLow=${layaDeps.tauLow}, url=${layaCfg.url})`);
         } else {
           log.info('[Laya] sidecar not provisioned (~/.mafw/laya) — cascade inert; provision via gateway/scripts/setup-laya-venv.ts');
         }
