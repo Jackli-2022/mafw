@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { TOOL_SPECS, genericSections, parseOut, trunc, s } from "./extract"
+import { TOOL_SPECS, genericSections, parseOut, searchResults, trunc, s } from "./extract"
 
 describe("helpers", () => {
   test("parseOut：合法 JSON 解析，非法/空 → undefined", () => {
@@ -299,5 +299,26 @@ describe("genericSections 兜底（保证卡片不空）", () => {
   test("空/未定义 → []", () => {
     expect(genericSections(undefined)).toEqual([])
     expect(genericSections("")).toEqual([])
+  })
+})
+
+describe("mafw_search_hybrid 结果解析", () => {
+  test("读 .results 数组（顶层是对象，不是数组）", () => {
+    const out = JSON.stringify({
+      results: [{ id: "m1", type: "semantic", primary_abstraction: "偏好 TDD", energy: 0.8 }],
+      fok: { zone: "confident", top1prob: 0.9 }, hint: "可以了", count: 1,
+    })
+    const m = searchResults(out)
+    expect(m.results).toHaveLength(1)
+    expect(m.results[0].title).toBe("偏好 TDD")
+    expect(m.results[0].energy).toBe("0.8")
+    expect(m.results[0].type).toBe("semantic")
+    expect(m.fok).toContain("confident")
+    expect(m.hint).toBe("可以了")
+  })
+  test("空/畸形 output → 空结果、不崩", () => {
+    expect(searchResults(undefined).results).toEqual([])
+    expect(searchResults("oops").results).toEqual([])
+    expect(searchResults(JSON.stringify({ results: [] })).results).toEqual([])
   })
 })

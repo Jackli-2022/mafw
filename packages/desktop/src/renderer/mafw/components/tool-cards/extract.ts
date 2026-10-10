@@ -72,6 +72,33 @@ export function genericSections(output: string | undefined): Section[] {
   return [{ kind: "text", text: String(p) }]
 }
 
+export interface SearchResult {
+  id?: string
+  type?: string
+  source?: string
+  title: string
+  energy?: string | number
+}
+
+/** mafw_search_hybrid output = { results:[...], fok, hint, count, ... }（顶层是对象，results 才是数组）。 */
+export function searchResults(output: string | undefined): { results: SearchResult[]; fok?: string; hint?: string } {
+  const p = parseOut(output)
+  const raw = Array.isArray(p) ? p : (p && typeof p === "object" ? (p as any).results : undefined)
+  const arr = Array.isArray(raw) ? raw : []
+  const results = arr.map((r: any) => ({
+    id: r?.id,
+    type: r?.type,
+    source: r?.source,
+    title: trunc(r?.primary_abstraction ?? r?.content ?? r?.memory_value ?? r?.id ?? JSON.stringify(r), 200),
+    energy: typeof r?.energy === "number" ? r.energy.toFixed(1) : r?.energy,
+  }))
+  const fok = p?.fok?.zone
+    ? `${p.fok.zone}${typeof p.fok.top1prob === "number" ? `（top1 ${p.fok.top1prob.toFixed(2)}）` : ""}`
+    : undefined
+  const hint = typeof p?.hint === "string" ? p.hint : undefined
+  return { results, fok, hint }
+}
+
 const verdictTone = (v: any): ListItem["badgeTone"] => {
   const x = String(v ?? "").toUpperCase()
   if (x === "COMPLETED" || x === "PASS") return "ok"
