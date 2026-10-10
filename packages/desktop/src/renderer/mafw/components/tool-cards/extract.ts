@@ -99,6 +99,32 @@ export function searchResults(output: string | undefined): { results: SearchResu
   return { results, fok, hint }
 }
 
+/** mafw_add_memory：输入是 camelCase（content/memoryType/cueAnchors/primaryAbstraction/importance），
+ *  输出 MCP {success,id,tier,deduped?,updated?,sticky_until?,superseded?} / 插件 {success,id}。 */
+export function addMemorySections(i: any, o: string | undefined): Section[] {
+  const p = parseOut(o)
+  const secs: Section[] = [{
+    kind: "kv",
+    rows: [
+      ["类型", s(i?.memoryType)],
+      ["摘要", s(i?.primaryAbstraction ?? trunc(i?.content, 80))],
+      ["重要性", i?.importance != null ? s(i.importance) : "-"],
+      ["权威", s(i?.authority)],
+    ],
+  }]
+  if (i?.content) secs.push({ kind: "code", text: trunc(i.content, 1500), language: "markdown" })
+  if (Array.isArray(i?.cueAnchors) && i.cueAnchors.length) secs.push({ kind: "tags", items: i.cueAnchors.map(String) })
+  const out: Array<[string, string]> = []
+  if (p?.id) out.push(["id", s(p.id)])
+  if (p?.tier) out.push(["tier", s(p.tier)])
+  if (p?.deduped) out.push(["去重", "合并进已有"])
+  if (p?.updated) out.push(["更新", "已更新已有"])
+  if (p?.sticky_until) out.push(["便签至", s(p.sticky_until)])
+  if (p?.superseded) out.push(["取代", Array.isArray(p.superseded) ? p.superseded.join(", ") : s(p.superseded)])
+  if (out.length) secs.push({ kind: "kv", rows: out })
+  return secs
+}
+
 const verdictTone = (v: any): ListItem["badgeTone"] => {
   const x = String(v ?? "").toUpperCase()
   if (x === "COMPLETED" || x === "PASS") return "ok"

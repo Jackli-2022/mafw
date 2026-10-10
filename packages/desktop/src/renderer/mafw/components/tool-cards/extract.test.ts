@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { TOOL_SPECS, genericSections, parseOut, searchResults, trunc, s } from "./extract"
+import { TOOL_SPECS, addMemorySections, genericSections, parseOut, searchResults, trunc, s } from "./extract"
 
 describe("helpers", () => {
   test("parseOut：合法 JSON 解析，非法/空 → undefined", () => {
@@ -320,5 +320,25 @@ describe("mafw_search_hybrid 结果解析", () => {
     expect(searchResults(undefined).results).toEqual([])
     expect(searchResults("oops").results).toEqual([])
     expect(searchResults(JSON.stringify({ results: [] })).results).toEqual([])
+  })
+})
+
+describe("mafw_add_memory 卡片（camelCase 输入）", () => {
+  test("读 camelCase 输入 + 输出 id/tier", () => {
+    const secs = addMemorySections(
+      { content: "用户偏好 TDD", memoryType: "semantic", cueAnchors: ["tdd", "发布"], primaryAbstraction: "偏好 TDD", importance: 7 },
+      JSON.stringify({ success: true, id: "mem_1", tier: "semantic" }))
+    const kv = secs[0] as any
+    expect(kv.rows.map((r: any) => r[0])).toEqual(["类型", "摘要", "重要性", "权威"])
+    expect(kv.rows[0][1]).toBe("semantic")
+    expect(kv.rows[1][1]).toBe("偏好 TDD")
+    expect((secs.find((x: any) => x.kind === "tags") as any).items).toEqual(["tdd", "发布"])
+    const outKv = secs.filter((x: any) => x.kind === "kv")[1] as any
+    expect(outKv.rows.map((r: any) => r[0])).toEqual(["id", "tier"])
+  })
+  test("摘要回退到 content；无输出也不空", () => {
+    const secs = addMemorySections({ content: "只有内容", memoryType: "episodic" }, undefined)
+    expect((secs[0] as any).rows[0][1]).toBe("episodic")
+    expect((secs[0] as any).rows[1][1]).toBe("只有内容")
   })
 })

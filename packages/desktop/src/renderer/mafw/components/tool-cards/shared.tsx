@@ -84,6 +84,11 @@ function SectionView(props: { section: Section }) {
   )
 }
 
+/** Renders a list of Sections — shared by familyCard and bespoke cards. */
+export function ToolSections(props: { sections: Section[] }) {
+  return <For each={props.sections}>{(sec) => <SectionView section={sec} />}</For>
+}
+
 export function familyCard(spec: ToolCardSpec): Component<ToolProps> {
   return (props) => {
     const sections = (): Section[] => {
@@ -104,7 +109,7 @@ export function familyCard(spec: ToolCardSpec): Component<ToolProps> {
         status={props.status}
         defaultOpen={spec.defaultOpen}
       >
-        <For each={sections()}>{(sec) => <SectionView section={sec} />}</For>
+        <ToolSections sections={sections()} />
         <Show when={props.status === "completed" && sections().length === 0}>
           <div class="mafw-tool-empty">(无输出)</div>
         </Show>
