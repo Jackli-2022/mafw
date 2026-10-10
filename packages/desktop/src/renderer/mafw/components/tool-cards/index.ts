@@ -4,9 +4,9 @@ import { familyCard } from "./shared"
 import { MafwSearchCard } from "./memory-read"
 import { MafwAddMemoryCard } from "./memory-write"
 import { MafwDeltasCard } from "./interact"
-import { MafwRuleCard, RULE_TOOLS } from "./automation"
+import { MafwRuleCard } from "./automation"
 import { MafwPythonCard, MafwPythonRestartCard } from "./python"
-import { REGISTERED_TOOLS, aliasKeys } from "./registered-tools"
+import { REGISTERED_TOOLS, RULE_TOOLS, aliasKeys } from "./registered-tools"
 
 export { REGISTERED_TOOLS }
 
