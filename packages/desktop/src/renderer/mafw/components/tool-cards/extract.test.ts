@@ -45,10 +45,11 @@ describe("memory-write specs", () => {
   test("mafw_merge_memory：output JSON 提取统计", () => {
     const secs = TOOL_SPECS.mafw_merge_memory.extract(
       { sourceWorktree: "/tmp/wt" },
-      JSON.stringify({ extracted: 5, conflicts: 2 }))
+      JSON.stringify({ added: 5, conflicts: 2, skipped: 1 }))
     const rows = (secs[0] as any).rows as Array<[string, string]>
-    expect(rows.map((r) => r[0])).toContain("提取")
+    expect(rows.map((r) => r[0])).toContain("新增")
     expect(rows.map((r) => r[0])).toContain("冲突")
+    expect(rows.find((r) => r[0] === "新增")?.[1]).toBe("5")
   })
   test("mafw_merge_memory：畸形 output 降级 raw code 段", () => {
     const secs = TOOL_SPECS.mafw_merge_memory.extract({ sourceWorktree: "/tmp/wt" }, "oops")
@@ -340,5 +341,47 @@ describe("mafw_add_memory 卡片（camelCase 输入）", () => {
     const secs = addMemorySections({ content: "只有内容", memoryType: "episodic" }, undefined)
     expect((secs[0] as any).rows[0][1]).toBe("episodic")
     expect((secs[0] as any).rows[1][1]).toBe("只有内容")
+  })
+})
+
+describe("真实 output 形状对齐（wave5）", () => {
+  test("get_goal_status 读 round", () => {
+    const secs = TOOL_SPECS.mafw_get_goal_status.extract({ goalId: "g1" },
+      JSON.stringify({ success: true, goalId: "g1", phase: "EXECUTING", round: 3, verdict: "PASS" }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows.find((r) => r[0] === "循环")?.[1]).toBe("3")
+  })
+  test("get_evidence 解析 {success,goalId,file,content}", () => {
+    const secs = TOOL_SPECS.mafw_get_evidence.extract({ goalId: "g1" },
+      JSON.stringify({ success: true, goalId: "g1", file: "reviews/g1.md", content: "# 报告\n通过" }))
+    expect((secs[0] as any).rows[1]).toEqual(["文件", "reviews/g1.md"])
+    expect((secs[1] as any).kind).toBe("code")
+    expect((secs[1] as any).text).toContain("报告")
+  })
+  test("desktop_screenshot 读 filePath + 尺寸", () => {
+    const secs = TOOL_SPECS.mafw_desktop_screenshot.extract({},
+      JSON.stringify({ filePath: ".mafw/screenshots/x.png", width: 2560, height: 1380 }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[1][1]).toContain("x.png")
+    expect(rows[2][1]).toBe("2560×1380")
+  })
+  test("desktop_get_ui_state 读 tab/dimensions", () => {
+    const secs = TOOL_SPECS.mafw_desktop_get_ui_state.extract({},
+      JSON.stringify({ tab: "chat", elements: [1, 2], dimensions: { width: 1494, height: 1104 }, scrollPosition: { x: 0, y: 0 } }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows[0]).toEqual(["活跃 Tab", "chat"])
+    expect(rows[2]).toEqual(["窗口", "1494×1104"])
+  })
+  test("desktop_click 读 {clicked,element}", () => {
+    const secs = TOOL_SPECS.mafw_desktop_click.extract({ selector: "#btn" },
+      JSON.stringify({ clicked: true, element: { tag: "BUTTON", text: "确定" } }))
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows.find((r) => r[0] === "已点击")?.[1]).toBe("是")
+    expect(rows.find((r) => r[0] === "命中")?.[1]).toBe("BUTTON 确定")
+  })
+  test("media_upload 纯文本 output 当回答", () => {
+    const secs = TOOL_SPECS.mafw_media_upload.extract({ mediaPath: "C:\\a\\b.png" }, "已上传，taskID: t9")
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows.find((r) => r[0] === "回答")?.[1]).toContain("t9")
   })
 })

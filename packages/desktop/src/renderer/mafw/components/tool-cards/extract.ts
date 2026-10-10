@@ -174,8 +174,9 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
         rows: [
           ["来源", s(i?.sourceWorktree)],
           ["策略", s(i?.resolveStrategy, "manual")],
-          ["提取", s(p.extracted ?? p.merged)],
+          ["新增", s(p.added ?? p.extracted ?? p.merged)],
           ["冲突", s(p.conflicts ?? p.conflicting)],
+          ["跳过", s(p.skipped)],
         ],
       }]
     },
@@ -288,7 +289,7 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
           ["Goal", s(p.goalId ?? i?.goalId)],
           ["阶段", s(p.phase)],
           ["判定", s(p.verdict)],
-          ["循环", s(p.loopNum ?? p.loop)],
+          ["循环", s(p.round ?? p.loopNum ?? p.loop)],
         ],
       }]
     },
@@ -322,7 +323,19 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
   mafw_get_evidence: {
     icon: "folder", title: "Goal 证据",
     subtitle: (i) => i?.goalId,
-    extract: (_i, o) => (o ? [{ kind: "code", text: trunc(o, 4000), language: "markdown" }] : []),
+    extract: (i, o) => {
+      const p = parseOut(o)
+      if (p && typeof p === "object") {
+        const secs: Section[] = [{
+          kind: "kv",
+          rows: [["Goal", s(p.goalId ?? i?.goalId)], ["文件", s(p.file)]],
+        }]
+        const body = p.content ?? p.evidence
+        if (typeof body === "string" && body) secs.push({ kind: "code", text: trunc(body, 4000), language: "markdown" })
+        return secs
+      }
+      return o ? [{ kind: "code", text: trunc(o, 4000), language: "markdown" }] : []
+    },
   },
   mafw_update_state: {
     icon: "edit", title: "更新 Goal 状态",
@@ -363,7 +376,7 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
       return [{
         kind: "list",
         items: arr.map((q: any) => ({
-          title: s(q.question ?? q.text ?? q.id),
+          title: s(q.questions ?? q.question ?? q.questionId ?? q.id),
           badge: s(q.goalId, ""),
           badgeTone: "accent" as const,
         })),
@@ -423,8 +436,12 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
     subtitle: (i) => i?.selector,
     extract: (i, o) => {
       const p = parseOut(o)
-      if (p && typeof p === "object" && (p.path || p.file))
-        return [{ kind: "kv", rows: [["区域", s(i?.selector, "全窗口")], ["文件", s(p.path ?? p.file)]] }]
+      if (p && typeof p === "object" && (p.filePath || p.path || p.file))
+        return [{ kind: "kv", rows: [
+          ["区域", s(i?.selector, "全窗口")],
+          ["文件", s(p.filePath ?? p.path ?? p.file)],
+          ["尺寸", p.width && p.height ? `${p.width}×${p.height}` : "-"],
+        ] }]
       return rawSection(o)
     },
   },
@@ -438,12 +455,13 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
     extract: (_i, o) => {
       const p = parseOut(o)
       if (!p || typeof p !== "object") return rawSection(o)
+      const dim = p.dimensions ?? p.window
       return [{
         kind: "kv",
         rows: [
-          ["活跃 Tab", s(p.activeTab)],
+          ["活跃 Tab", s(p.tab ?? p.activeTab)],
           ["元素数", s(Array.isArray(p.elements) ? p.elements.length : p.elementCount)],
-          ["窗口", p.window ? `${p.window.width}×${p.window.height}` : s(p.dimensions)],
+          ["窗口", dim ? `${dim.width}×${dim.height}` : "-"],
         ],
       }]
     },
@@ -453,8 +471,12 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
     subtitle: (i) => i?.selector,
     extract: (i, o) => {
       const p = parseOut(o)
-      const hit = p && typeof p === "object" ? `${s(p.tag, "")} ${s(p.text, "")}`.trim() : ""
-      return [{ kind: "kv", rows: [["Selector", s(i?.selector)], ["命中", hit || "-"]] }]
+      const el = (p && typeof p === "object") ? (p.element ?? p) : null
+      const hit = el ? `${s(el.tag, "")} ${s(el.text, "")}`.trim() : ""
+      const rows: Array<[string, string]> = [["Selector", s(i?.selector)]]
+      if (p && typeof p === "object" && p.clicked !== undefined) rows.push(["已点击", p.clicked ? "是" : "否"])
+      if (hit) rows.push(["命中", hit])
+      return [{ kind: "kv", rows }]
     },
   },
   mafw_desktop_type: {
@@ -479,15 +501,17 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
     subtitle: (i) => s(i?.mediaPath, "").split(/[\\/]/).pop() || undefined,
     extract: (i, o) => {
       const p = parseOut(o)
-      return [{
-        kind: "kv",
-        rows: [
-          ["文件", s(s(i?.mediaPath, "").split(/[\\/]/).pop())],
-          ["taskID", s(p?.taskID ?? p?.taskId)],
-          ["首问", trunc(i?.question, 60)],
-          ["回答", trunc(p?.answer ?? p?.response, 200)],
-        ],
-      }]
+      const rows: Array<[string, string]> = [
+        ["文件", s(s(i?.mediaPath, "").split(/[\\/]/).pop())],
+        ["taskID", s(p?.taskID ?? p?.taskId)],
+        ["首问", trunc(i?.question, 60)],
+      ]
+      if (p && typeof p === "object") {
+        if (p.answer ?? p.response) rows.push(["回答", trunc(p.answer ?? p.response, 200)])
+      } else if (o) {
+        rows.push(["回答", trunc(o, 300)])
+      }
+      return [{ kind: "kv", rows }]
     },
   },
   mafw_media_ask: {
