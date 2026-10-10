@@ -78,7 +78,21 @@
 5. **eMEM 消融**：纯 RAG 在 context-dependent 检索丢 30pt；巩固本身在 DRM-lure 拒斥值 29pt——**两层都要**。
 6. **我们的自有证据**：LongMemEval 评测摄取把 haystack 全文放 primary_abstraction，BM25 检索 R@10=0.949——**raw 文本 BM25 检索本身成立**（当时被判为"评测专用形态"，实为 verbatim 层可行性的直接证据）。
 
-### 2.3 十条设计模式（跨系统收敛）
+### 2.3 海马粒度规格（2026-10-10 追问补充，脑侧证据）
+
+海马**不是单一粒度，是多尺度同时表征**（Mau 2018：同一 CA1 群体同时携带秒级序列与小时-天漂移）：
+
+| 尺度 | 规格 | 脑证据 | MAFW 对应 |
+|---|---|---|---|
+| 绑定单元 | theta 周期 ~125ms 一个 item-place-time 合取（gamma 子周期 5-9 槽） | Lisman & Jensen 2013 | 观察行（单条 obs） |
+| engram 单元 | 稀疏集合（几个 % 神经元）；**~1 天窗口内重叠集合链接记忆** | Liu 2012；Cai 2016 | round/回合 |
+| **事件单元** | situation model（人/物/地/活动），秒-分钟（典型几十秒），**内容定边界非时钟** | Zacks 2007；Radvansky & Zacks 2011；Güler 2025 | **话题分段（V2/N3）的目标单元** |
+| episode 单元 | 事件链 + TCM 漂移上下文胶水（小时-天 recency 码） | Howard & Kahana 2002；Mankin 2012 | 会话 envelope + R8 滚动窗口（粗糙近似） |
+| 自传层级 | ESK（秒-分）→ 一般事件（时-天）→ 人生时期（年）；海马=细节层，vmPFC=图式层 | Conway 2000；Gilboa & Marlatte 2017 | round → session → project/goal |
+
+**边界规则**（证据强度排序）：①上下文稳定性/变化（Güler 2025——主导）②贝叶斯惊喜（Kumar 2023——**分布级** divergence，非简单 surprisal）③目标相关性 ④唤醒状态；**时间邻近是链接信号不是分割信号**（小时窗口内链接，Cai 2016）。重放按**链式子序列**（Davidson 2009）——巩固读原文应按事件段，非整段 transcript。修正：Kraus 2013 是几十秒 time×distance 联合编码，小时-天级是 Mankin 2012/Mau 2018。
+
+## 2.4 十条设计模式（跨系统收敛）
 
 1. raw 永远可检索，抽象是更慢更便宜的附加路径——**没有任何保留 raw 的系统退化到 abstraction-only**。
 2. 巩固按调度读 raw，**从不改写它**（raw append-only）。
