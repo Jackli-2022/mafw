@@ -898,3 +898,12 @@ describe("layout-toggles — Rail 瘦身", () => {
     expect(shell).not.toContain("mafw-rail-expand")
   })
 })
+
+describe("chat card fills the content area (v7 bottom-gap fix)", () => {
+  test(".mafw-chat has symmetric vertical margins (no vestigial 16px bottom)", () => {
+    const b = cssBlock(".mafw-chat {")
+    expect(b).toContain("height: calc(100% - 8px)")
+    expect(b).toContain("margin: 4px 8px 4px")
+    expect(b).not.toContain("margin: 4px 8px 16px")
+  })
+})

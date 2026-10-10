@@ -640,8 +640,8 @@ html[data-theme="light"] body {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100% - 24px);
-  margin: 4px 8px 16px;
+  height: calc(100% - 8px);
+  margin: 4px 8px 4px;
   border-radius: var(--r-xl);
   overflow: hidden;
   background: var(--bg-raised);
