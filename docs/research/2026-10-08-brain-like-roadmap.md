@@ -130,4 +130,5 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 
 - **D5 测量门与 N1 合跑**（实体层改变 PPR 基线，分开跑浪费基准）。
 - **海马映射修正（2026-10-10 质询）**：turnCompress ≠ 海马（它做写时抽象+写时选择，恰是海马不做的两件事）；真对应物是 session transcript/t1（捕获属性对但不可检索进 harmonic 面）。详见 survey §2.4。后果：FTT verbatim 轨迹在检索空间不存在、选择错误不可恢复（t1_archive 死存储）——**D6 从"reflection 喂原文"升格为"verbatim 可检索层"设计**，且强化差距 #2（同基质重放）。
+- **海马层重构调研完成（2026-10-10，`2026-10-10-hippocampal-layer-redesign-survey.md`）**：海马八职能七个机械（LLM 只属巩固层）；verbatim 层业界收敛 + 硬证据（MemGPT DMR 92.5% vs 32.1%、LongMemEval 键增广 +9.4%）；t1_archive 51616 回合只写不读。**分级选项 V1（verbatim 检索面+provenance 修复，2-3 天零新 LLM）/ V2（机械捕获+话题分段+turnCompress 读原文重定位，吸收 D6+N3+N7）/ V3（分系统通道+N1 实体层+index-scan 成本重构 83%）待用户决策**。前史：09-23 双系统 spec 的 C0 已实施（按需兑现）、C4 检索通道未落地。
 - **对齐确认**：soft-supersede（Lei 2024 加法式更新 × Graphiti/Mem0 业界转向）、离线双系统（Letta/Mem0/LightMem 跟进）、A2 草稿-验证（Davis & Gaskell 词学习 CLS 模型同构）——三条差异化资产获外部证据。
