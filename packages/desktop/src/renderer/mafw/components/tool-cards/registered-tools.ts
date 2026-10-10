@@ -26,3 +26,15 @@ export const REGISTERED_TOOLS = [
   // rule 族（9）
   ...RULE_TOOLS,
 ] as const
+
+// opencode 对 MCP 工具的命名是 sanitize(serverKey) + "_" + toolName，
+// 经 gateway MCP 暴露的工具 part.tool 实为 "mafw_" + 裸名（如 mafw_mafw_search_hybrid）。
+// ToolRegistry 只按精确 key 匹配，故每个工具需同时挂裸名（插件原生）与前缀别名（MCP），
+// 这是别名规则的唯一来源——registerMafwToolCards 与测试都走它。
+export function aliasKeys(name: string): string[] {
+  return [name, `mafw_${name}`]
+}
+
+export function registryKeys(): string[] {
+  return REGISTERED_TOOLS.flatMap(aliasKeys)
+}

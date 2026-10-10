@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { REGISTERED_TOOLS, RULE_TOOLS } from "./registered-tools"
+import { REGISTERED_TOOLS, RULE_TOOLS, aliasKeys, registryKeys } from "./registered-tools"
 import { TOOL_SPECS } from "./extract"
 
 const ALL_TOOLS = [
@@ -35,5 +35,29 @@ describe("registration completeness", () => {
   test("spec / bespoke / rule 三区数字吻合（30 + 5 + 9）", () => {
     expect(Object.keys(TOOL_SPECS)).toHaveLength(30)
     expect(RULE_TOOLS).toHaveLength(9)
+  })
+})
+
+describe("MCP 双前缀别名", () => {
+  test("registryKeys 为每个工具附加 mafw_ 前缀别名（opencode MCP 命名）", () => {
+    const keys = registryKeys()
+    expect(keys).toHaveLength(REGISTERED_TOOLS.length * 2)
+    for (const name of REGISTERED_TOOLS) {
+      expect(keys).toContain(name)
+      expect(keys).toContain(`mafw_${name}`)
+    }
+  })
+  test("registryKeys 无重复 key", () => {
+    const keys = registryKeys()
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+})
+
+describe("别名规则单一来源 aliasKeys", () => {
+  test("aliasKeys 返回裸名 + mafw_ 前缀名", () => {
+    expect(aliasKeys("mafw_search_hybrid")).toEqual(["mafw_search_hybrid", "mafw_mafw_search_hybrid"])
+  })
+  test("registryKeys 由 aliasKeys 派生（无平行副本）", () => {
+    expect(registryKeys()).toEqual(REGISTERED_TOOLS.flatMap((n) => [n, `mafw_${n}`]))
   })
 })
