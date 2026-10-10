@@ -112,3 +112,21 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 
 - LoRA 权重级巩固（无训练基建 + 灾难性遗忘）——远期愿景
 - 情绪模拟（无测量面）
+
+## 7. 2026-10-10 刷新：N 系列新缺口（`2026-10-10-memory-architecture-brain-survey.md`）
+
+> 四线调研（系统巩固/睡眠、抽象/图式、检索/遗忘/调制、AI 业界格局）产出。G 系列已全部落地；N 系列接续编号。
+
+| # | 缺口 | 一句话 | 优先级 |
+|---|---|---|---|
+| N1 | 实体概念层 | canonical entity ID + 写时别名挂接 + identity 判合并（修 MinHash 假合并；distilled_by 的深化）——concept cells / Kolibius 2025 | 高 |
+| N2 | REM 生成性重组 | 第二种离线偏置：跨簇类比、gist 重组（现全部管线是 SWS 式整合）；D6/D7 第一块砖，observe-first | 高（远期启动） |
+| N3 | 事件分段 | 上下文稳定性/PE 触发 episode 边界替代小时批（Güler 2025：context stability 主导；与 10-09 HiMem 缺口合流） | 高 |
+| N4 | 自适应分化 | PE 违背的记忆增强区分度而非合并（MinHash 只有 integration 半边；Kim 2017） | 中，挂 G2 后续 |
+| N5 | 检索双面性 | 检索后失真检查 + RIF 竞争者抑制（ACT-R 只覆盖强化半边） | 中，挂 G2 后续 |
+| N6 | 双时间戳查询面 | point-in-time 查询（Graphiti 模式；数据已在 supersede 链） | 低 |
+| N7 | 巩固优先级消费 | goal-active 期记忆优先巩固 + 写后 tag window 回溯提升（Wilhelm 2011；behavioral tagging） | 中 |
+| N8 | 结构骨架一等记忆 | W3 升级：存关系骨架供跨域迁移（TEM；Yu 2021 因子化） | 低（W3 重定义后） |
+
+- **D5 测量门与 N1 合跑**（实体层改变 PPR 基线，分开跑浪费基准）。
+- **对齐确认**：soft-supersede（Lei 2024 加法式更新 × Graphiti/Mem0 业界转向）、离线双系统（Letta/Mem0/LightMem 跟进）、A2 草稿-验证（Davis & Gaskell 词学习 CLS 模型同构）——三条差异化资产获外部证据。
