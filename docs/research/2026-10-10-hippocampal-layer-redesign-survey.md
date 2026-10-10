@@ -235,8 +235,7 @@
 1. **海马层生命周期**：eMEM 默认 1h 归档为 gist-only；脑是天-周。建议 round 级独立衰减档（快于 episodic 0.010/天）+ 容量上限，永不删除——具体参数 V1 observe-first 定。
 2. **episodic 精选单元去留**：eMEM/LongMemEval 证据支持 raw+gist 两层已够；turnCompress 的 episodic 精选保留为"策展高亮"还是逐步淡出（大改动，放 V3 决策）。
 3. **index-scan 成本重构时机**：独立立项还是并入 V3（83% 成本的诱惑 vs 一次动太多）。
-4. **V1 的检索面实现**：FTS5（SQLite 原生，简单）vs 内存 BM25（tokenCache 复用，与现有一致）——实现时 benchmark 定。
-   **→ 2026-10-10 定案（BM25 vs embedding 之问）**：非二选一，是三层分工——**BM25 = 底座**（V1 起步：tokenCache 模式复用，~10ms/趟，标识符精确匹配 R7 38%→90%，verbatim 层的本职是 token 级回忆即 encoding specificity）；**embedding = 增强**（V1.5/V2 接入现有 runtime，覆盖换述盲区，R2 实测回合粒度 R@1 +4~7pt）；**RRF 融合 = 快照路径最优**（R2+R3 叠加 R@1 0.673/NDCG@1 0.917）。硬约束：边界路径 100ms 契约下 dense +25ms 超标 → boundaryDense 维持 false，dense 只住后台快照。盲区互补表：BM25 瞎于换述/同义/跨语言，dense 睎于标识符/否定/精确串/数字——coding agent 两者都致命。真正的升级轴不是二选一：键增广（+9.4%）、PPR 融合（已有）、reranker 验证（已有）。脑侧对应：CA3 模式补全≈向量近邻（部分线索→吸引子），BM25 是文本符号性的工程红利（脑无倒排索引）；Tulving encoding specificity——verbatim 层编码的就是 token 序列，token 重叠是它的天然检索律。
+4. **V1 的检索面实现**：~~FTS5 vs 内存 BM25 benchmark 定~~ → **2026-10-10 用户定案：直接上 dense**（覆盖此前"BM25 底座"方案）。定案成立的理由：①H 层进场点是**快照路径**（后台 2s 防抖构建，无 100ms 契约约束——dense 的 +25ms 不伤边界路径，边界实时回退维持现状 BM25-only 不动）；②写时嵌入本来就是捕获机械操作（fire-and-forget runtime 已有）；③一次性回填 51k 轮成本可控（本地 ONNX 后台数小时，或 dashscope ~$1-3）；④单一检索方法 = V1 更简单。**显式接受的两个 V1 盲区（V2 键增广补）**：标识符/精确串查询（R7 教训：dense 对 `ts-node` 类 token 瞎——V2 GLiNER+regex 实体收割进键）；数字/路径精确匹配（同靠键增广）。C0 的 SQL LIKE 回源（get_memory 锚点兑现）继续可用作标识符查询的兜底通道。融合升级轴不变：键增广（+9.4%）、PPR 融合（已有）、reranker 验证（已有）。脑侧注：CA3 模式补全≈向量近邻（部分线索→吸引子），dense 是更"海马"的检索原语。
 
 ---
 
