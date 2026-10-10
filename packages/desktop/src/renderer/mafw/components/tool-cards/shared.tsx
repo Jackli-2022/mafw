@@ -1,7 +1,7 @@
 import { For, Show, type Component } from "solid-js"
 import { BasicTool } from "@mafw/session-ui/basic-tool"
 import type { ToolProps } from "@mafw/session-ui/message-part"
-import type { ListItem, Section, ToolCardSpec } from "./extract"
+import { genericSections, type ListItem, type Section, type ToolCardSpec } from "./extract"
 
 const BADGE_STYLE: Record<string, any> = {
   ok: { background: "var(--accent-bg)", color: "var(--accent)" },
@@ -88,12 +88,14 @@ export function familyCard(spec: ToolCardSpec): Component<ToolProps> {
   return (props) => {
     const sections = (): Section[] => {
       if (props.status !== "completed" || !props.output) return []
+      let out: Section[] = []
       try {
-        return spec.extract(props.input, props.output)
+        out = spec.extract(props.input, props.output)
       } catch (e) {
         console.warn("[mafw]", e)
-        return [{ kind: "code", text: String(props.output) }]
       }
+      // 兜底：spec 没产出内容时，用通用 JSON 视图，保证卡片不留空
+      return out.length ? out : genericSections(props.output)
     }
     return (
       <BasicTool

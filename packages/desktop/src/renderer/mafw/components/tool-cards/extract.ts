@@ -37,6 +37,41 @@ export function rawSection(output: string | undefined): Section[] {
   return output ? [{ kind: "code", text: output }] : []
 }
 
+function summarize(v: unknown): string {
+  if (v === null || v === undefined) return "-"
+  if (typeof v === "string") return trunc(v, 200)
+  if (typeof v === "number" || typeof v === "boolean") return String(v)
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "[]"
+    if (v.every((x) => typeof x === "string" || typeof x === "number")) return trunc(v.join(", "), 200)
+    return `[${v.length} 项]`
+  }
+  if (typeof v === "object") return trunc(JSON.stringify(v), 200)
+  return String(v)
+}
+
+/**
+ * 兜底渲染：任何工具输出都能得到非空内容。
+ * 合法 JSON 对象 → 顶层键值表；数组 → 列表；非 JSON → 原文 code 段。
+ * 各工具 spec 的 extract 返回空时由 familyCard 回退到这里，杜绝"空卡片"。
+ */
+export function genericSections(output: string | undefined): Section[] {
+  if (!output) return []
+  const p = parseOut(output)
+  if (p === undefined) return [{ kind: "code", text: trunc(output, 4000) }]
+  if (Array.isArray(p)) {
+    if (p.length === 0) return [{ kind: "text", text: "（空）", tone: "muted" }]
+    return [{ kind: "list", items: p.map((it) => ({ title: summarize(it) })) }]
+  }
+  if (typeof p === "object") {
+    const rows = Object.entries(p as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => [k, summarize(v)] as [string, string])
+    return rows.length ? [{ kind: "kv", rows }] : [{ kind: "code", text: trunc(output, 4000) }]
+  }
+  return [{ kind: "text", text: String(p) }]
+}
+
 const verdictTone = (v: any): ListItem["badgeTone"] => {
   const x = String(v ?? "").toUpperCase()
   if (x === "COMPLETED" || x === "PASS") return "ok"

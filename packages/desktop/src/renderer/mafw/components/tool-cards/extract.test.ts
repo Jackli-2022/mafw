@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { TOOL_SPECS, parseOut, trunc, s } from "./extract"
+import { TOOL_SPECS, genericSections, parseOut, trunc, s } from "./extract"
 
 describe("helpers", () => {
   test("parseOut：合法 JSON 解析，非法/空 → undefined", () => {
@@ -272,5 +272,32 @@ describe("media specs", () => {
     const rows = (secs[0] as any).rows as Array<[string, string]>
     expect(rows[0]).toEqual(["音色", "茉莉"])
     expect((secs[1] as any).text).toBe("你好世界")
+  })
+})
+
+describe("genericSections 兜底（保证卡片不空）", () => {
+  test("对象 → 顶层键值表（嵌套值字符串化）", () => {
+    const secs = genericSections(JSON.stringify({ success: true, id: "m1", nested: { a: 1 } }))
+    expect(secs[0].kind).toBe("kv")
+    const rows = (secs[0] as any).rows as Array<[string, string]>
+    expect(rows.map((r) => r[0])).toEqual(["success", "id", "nested"])
+    expect(rows[0][1]).toBe("true")
+    expect(rows[2][1]).toContain("a")
+  })
+  test("数组 → 列表", () => {
+    const secs = genericSections(JSON.stringify([{ a: 1 }, "x", 2]))
+    expect(secs[0].kind).toBe("list")
+    expect((secs[0] as any).items).toHaveLength(3)
+  })
+  test("空数组 → 提示文本", () => {
+    const secs = genericSections("[]")
+    expect(secs[0]).toEqual({ kind: "text", text: "（空）", tone: "muted" })
+  })
+  test("非 JSON → 原文 code 段", () => {
+    expect(genericSections("oops")).toEqual([{ kind: "code", text: "oops" }])
+  })
+  test("空/未定义 → []", () => {
+    expect(genericSections(undefined)).toEqual([])
+    expect(genericSections("")).toEqual([])
   })
 })
