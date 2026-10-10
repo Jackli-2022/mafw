@@ -385,3 +385,15 @@ describe("真实 output 形状对齐（wave5）", () => {
     expect(rows.find((r) => r[0] === "回答")?.[1]).toContain("t9")
   })
 })
+
+describe("全 spec 冒烟（不抛异常、返回数组）", () => {
+  test("每个 TOOL_SPECS.extract 对空/典型 JSON 输入均返回数组且不抛", () => {
+    for (const [name, spec] of Object.entries(TOOL_SPECS)) {
+      expect(Array.isArray(spec.extract({} as any, undefined))).toBe(true)
+      expect(() => spec.extract({} as any, JSON.stringify({ ok: true, count: 1 }))).not.toThrow()
+      expect(() => spec.extract({} as any, "not json")).not.toThrow()
+      expect(typeof spec.icon).toBe("string")
+      expect(typeof spec.title).toBe("string")
+    }
+  })
+})
