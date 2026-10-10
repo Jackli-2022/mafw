@@ -116,7 +116,34 @@ B1 只覆盖 turnCompress 的 worker prompt。reflection 的输入是 per-sessio
 
 ---
 
-## 5. 决策点（留给用户）
+## 5. LLM 边界与"权重"清单（2026-10-10 追问定案）
+
+### 6.1 海马层零 LLM（重申 + 收口）
+
+H 层全部职能机械实现（§见 hippocampal-layer survey §3.1）；唯一的 LLM-on-H 操作是**键增广**（LongMemEval +9.4% 的事实键拼接），但它由巩固层**异步**补做，不是捕获时依赖。F 层（turnCompress）保留 LLM 但重定位为"读原文写候选"，且触发可从每小时固定改为**容量/话题边界事件驱动**（LightMem 证据：全部高性能系统用阈值/语义边界，无固定墙钟窗口）——省 LLM 调用的同时贴近脑的觉醒态即时性。
+
+### 6.2 慢路径不更新模型权重——"皮层"是文本库，不是模型
+
+**架构事实**：我们的"皮层"= harmonic 文本记忆库（roadmap 显式排除 LoRA 权重巩固）。三个模型组件（embedding 模型 / laya / reranker）全部冻结，**它们是计算电路，不是皮层存储**。
+
+我们系统里真正被"慢学习"更新的"权重"（CLS 皮层可塑性的对应物）：
+
+| "权重" | 更新者 | LLM？ |
+|---|---|---|
+| 文本条目本身（巩固重写） | F/S 巩固管线 | ✅（唯一语义席位） |
+| energy / salience | 衰减 + ACT-R + goal reward | ❌ 机械 |
+| anchor 图边权（D5 Hebbian need 调制——最接近真突触可塑性的结构） | 检索遍历 | ❌ 机械 |
+| cue_anchors（检索键重写） | 巩固 + verified:/tentative 状态机 | 混合 |
+| 向量（派生索引） | 条目重写时重嵌 + supersede 时删旧 | ❌ 机械（fire-and-forget） |
+
+三个组件的定位与"学习"方式：
+- **embedding 模型**：冻结——微调个人库无收益且破坏向量库跨版本兼容；向量只是派生物，跟随重写重算。
+- **laya**：冻结——它是**调控层/判断层**（神经调质对应物），不是皮层。它的"学习"= τ 校准（calibrate-laya / G2 τ / observe-first 开闸）；知识走 **context 注入**不走权重（2026-09-29 既定决定：实时权重有害——灾难遗忘 + serving 失稳）。
+- **reranker**：冻结——它的"学习" = FOK 分主题阈值拟合（L3）+ arbiter observe-first——**元认知校准，不是权重更新**。
+
+例外通道（维持远期排除）：影子日志驱动的批处理微调（睡眠压力=judge-vs-outcome 不一致率超阈触发）——CLS 视角对应真正的参数化皮层学习，无训练基建 + 灾难遗忘风险，维持 roadmap 显式排除。
+
+## 6. 决策点（留给用户）
 
 1. **宽限期重访的窗口与深度**：48h/72h？只重访 gist 还是连 tentative/episodic 一起？（建议：V2 实施 spec 时 observe-first——先记录"重访会改判多少"再全量开）
 2. **reflection 交错形态**：B1 式注入（改 prompt）vs 混合批次（改游标语义）——前者小后者深
