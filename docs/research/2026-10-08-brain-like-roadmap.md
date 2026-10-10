@@ -129,4 +129,5 @@ T1 观察 ──turnCompress──▶ episodic ──reflection──▶ semanti
 | N8 | 结构骨架一等记忆 | W3 升级：存关系骨架供跨域迁移（TEM；Yu 2021 因子化） | 低（W3 重定义后） |
 
 - **D5 测量门与 N1 合跑**（实体层改变 PPR 基线，分开跑浪费基准）。
+- **海马映射修正（2026-10-10 质询）**：turnCompress ≠ 海马（它做写时抽象+写时选择，恰是海马不做的两件事）；真对应物是 session transcript/t1（捕获属性对但不可检索进 harmonic 面）。详见 survey §2.4。后果：FTT verbatim 轨迹在检索空间不存在、选择错误不可恢复（t1_archive 死存储）——**D6 从"reflection 喂原文"升格为"verbatim 可检索层"设计**，且强化差距 #2（同基质重放）。
 - **对齐确认**：soft-supersede（Lei 2024 加法式更新 × Graphiti/Mem0 业界转向）、离线双系统（Letta/Mem0/LightMem 跟进）、A2 草稿-验证（Davis & Gaskell 词学习 CLS 模型同构）——三条差异化资产获外部证据。

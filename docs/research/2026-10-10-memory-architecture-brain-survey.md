@@ -93,7 +93,8 @@
 
 | # | MAFW 机制 | 脑对应 | 关键证据 | 评估 |
 |---|---|---|---|---|
-| 1 | T1 观察 + hourly turnCompress（episodic 快编码，高带宽） | 海马快速捕获（CLS 快系统） | McClelland CLS；O'Reilly & Norman 2003 | 对齐 |
+| 1 | runtime session transcript + t1_observations（verbatim 高保真捕获；transcript 可经 runtime 工具检索） | 海马本体：快速、高保真、**无选择**捕获 + 可检索（模式补全）+ 天然衰减（compaction ≈ 有损衰减时钟，且不受记忆系统控制） | Teyler 索引理论；Sekeres 2016 | 部分——捕获属性对，但海马职能被拆散且部分错位（→ §2.4） |
+| 1a | hourly turnCompress（选择 + 首次抽象 + B1 回放） | **不是海马**：「写入门（调质式选择，但脑的门在巩固侧、海马先全收；我们的门在存储侧、先筛再收）+ SWS 快速整合/图式直通 + 觉醒态重放」的混合体 | Tse 2007；van Kesteren SLIMM；Lewis & Durrant 2011 | 部分（映射修正 2026-10-10，见 §2.4） |
 | 2 | reflection 蒸馏 + D1b 源降能 | **巩固=转换非复制**：感知细节最先丢、语义内容存活皮层化 | Winocur/Moscovitch 转换理论 2016；Sekeres 2016；Krenz 2023（表征向语义化漂移，*Nat Commun*） | 对齐——D1b 正是 "details fade, gist survives" |
 | 3 | A2 草稿-验证（tentative 0.35 → promote/reject） | FTT：verbatim/gist 并行独立存储；（近似）低置信 gist 直到验证 | Reyna FTT；Chang 2025（MINERVA2 形式化） | 对齐（工程实现先于脑对应；FTT 双迹并行支持我们"源不删 + 草稿低权"） |
 | 4 | decay（全局）+ ACT-R bonus（选择性）配对 | **全局突触缩减 + 选择性强化是同一个系统的两面** | Tononi SHY；Rasch & Born 2013（renormalization 使选择性强化成可能）；Xu 2024（睡眠恢复最优计算域） | 对齐——decay-only 丢选择性，boost-only 干扰爆炸，我们两边都有 |
@@ -117,6 +118,26 @@
 | 22 | salience 写时计算 | **写入门控**：新奇（LC-NE）、奖赏 PE（DA）、情绪（杏仁核）、**预期未来相关性**都能开门 | Takeuchi 2016（*Nature*）；Adcock 2006；Wilhelm 2011 | 部分——salience 有了；缺 reward-tagging / expected-relevance 显式接线与**追溯性 tag window**（→ N7） |
 | 23 | 边界 recall 读路径零写 + 管线批量写 | **ACh 编码/检索模式切换**：同基底同时读写会互相干扰 | Hasselmo 1999/2006 | 对齐（架构层面天然满足） |
 | 24 | 双系统 = 串行批处理（小时编码 + 每日蒸馏） | CLS 双系统**并行且每刻交互**（快系统每次回放都在喂慢系统） | Sun et al. 2023（*Nat Neurosci*：重叠存储的目的就是泛化） | 张力——A2 已部分缓解（快系统产草稿、慢系统验证）；串行批处理仍是大框架差异（见 §6） |
+
+### 2.4 映射修正（2026-10-10）：海马体对应物的精确定位
+
+> 初版把「T1 + turnCompress ↔ 海马快速捕获」标为对齐，经质询修正：turnCompress 做的恰是海马**不做**的两件事——**写时抽象**与**写时选择**。海马是高保真、快、不筛选的编码器；抽象与筛选是（慢速）皮层与（调质）巩固门的事。
+
+海马的一揽子职能在 MAFW 中被拆到四处，其中两处错位、一处缺位、一处反向：
+
+| 海马职能 | MAFW 落点 | 状态 |
+|---|---|---|
+| 快速高保真无选择捕获 | session transcript（runtime 所有）+ t1_observations（结构化镜像） | 捕获属性对；但海马同时**可检索**——t1 不可检索（冷存储），transcript 不进 harmonic 检索面（只在 runtime 工具里） |
+| 索引（索引 ≠ 内容） | harmonic index（primary_abstraction + cue_anchors） | 错位：脑**先建索引后巩固**，我们**先抽象（turnCompress 转述）后建索引** |
+| 模式分离（相似保持区分） | —（MinHash 反向：写时合并相似，容量 hack） | 缺位/反向 → N4 |
+| 模式补全（部分线索恢复全貌） | BM25/PPR 检索 | 部分：是**库级**检索，非**痕迹级** auto-association |
+| 重放发生器（ripples） | B1 交错回放（注入 worker prompt） | 半对：服务于**提取时刻**，脑的重放服务于**皮层整合** |
+
+**turnCompress 的真实身份**是三个脑功能的混合体，没有一个叫海马：①写入门（神经调质式选择——但脑的门在"是否被巩固"且海马先全收，我们的门在"是否进入可检索记忆"先筛再收）；②SWS 式首次抽象（图式一致直通快路径——Tse 2007 的 48h 皮层化的小时级对应物）；③觉醒态重放（B1）。
+
+**工程根因（非失误，是约束权衡）**：①成本不对称——海马容量天文数字、单条边际成本为零；我们每条记忆付一次 LLM 调用，"先全收再筛"付不起，必须写时一次完成筛选+压缩；②检索质量——对 raw transcript 做全库检索会被噪声淹没；③组织边界——verbatim 层归 runtime 所有，其生命周期（compaction）不受记忆系统控制，只能挂 compaction 事件做抢救性 flush（turnCompress flush on compacted）。
+
+**架构后果**：①FTT 的 verbatim 轨迹**在检索空间不存在**——从第 1 小时起，检索面只有 worker 转述；脑"早期可回忆原文、晚期只剩 gist"的双轨迹能力缺失；②选择错误不可恢复——turnCompress 漏掉的掉进 t1_archive 死存储（"供未来重提取"但今天无重提取管线）；③脑 "tag at encoding → consolidate selectively" vs 我们 "先筛再收"——§2.5 张力-1 的根源形态；④与 2026-10-08 路线图差距 #2（同基质重放 vs 二手转述）/ D6 同源，且比当时认知更深：不只反思读不到原文，**检索面从未有过原文**。修复方向：D6 从"reflection 喂 turn 级原文"升格为"verbatim 可检索层"的完整设计（transcript/t1 的检索面接入 + compaction 前抢救已部分存在）。
 
 ### 2.5 三个深层张力（机制映射之外）
 
