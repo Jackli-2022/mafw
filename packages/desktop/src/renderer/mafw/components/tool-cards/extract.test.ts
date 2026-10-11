@@ -397,3 +397,14 @@ describe("全 spec 冒烟（不抛异常、返回数组）", () => {
     }
   })
 })
+
+describe("ToolCardSpec.badge（状态徽标）", () => {
+  test("get_goal_status：PASS → ok 徽标", () => {
+    const b = TOOL_SPECS.mafw_get_goal_status.badge!({ goalId: "g1" }, JSON.stringify({ verdict: "PASS", phase: "DONE" }))
+    expect(b).toEqual({ text: "PASS", tone: "ok" })
+  })
+  test("get_goal_status：FAILED → err；无 verdict → undefined", () => {
+    expect(TOOL_SPECS.mafw_get_goal_status.badge!({}, JSON.stringify({ verdict: "FAILED" }))?.tone).toBe("err")
+    expect(TOOL_SPECS.mafw_get_goal_status.badge!({}, JSON.stringify({ phase: "EXECUTING" }))).toBeUndefined()
+  })
+})

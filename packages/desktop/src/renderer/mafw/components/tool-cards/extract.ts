@@ -12,12 +12,18 @@ export interface ListItem {
   badgeTone?: "ok" | "warn" | "err" | "muted" | "accent"
 }
 
+export interface ToolBadge {
+  text: string
+  tone?: "ok" | "warn" | "err" | "muted"
+}
+
 export interface ToolCardSpec {
   icon: string
   title: string
   subtitle?: (input: any) => string | undefined
   defaultOpen?: boolean
   extract: (input: any, output: string | undefined) => Section[]
+  badge?: (input: any, output: string | undefined) => ToolBadge | undefined
 }
 
 export const s = (v: any, fb: any = "-"): string =>
@@ -280,6 +286,12 @@ export const TOOL_SPECS: Record<string, ToolCardSpec> = {
   mafw_get_goal_status: {
     icon: "magnifying-glass", title: "Goal 状态",
     subtitle: (i) => i?.goalId,
+    badge: (_i, o) => {
+      const v = parseOut(o)?.verdict
+      if (typeof v !== "string" || !v) return undefined
+      const up = v.toUpperCase()
+      return { text: up, tone: up === "PASS" || up === "COMPLETED" ? "ok" : up === "FAIL" || up === "FAILED" || up === "CANCELLED" ? "err" : "muted" }
+    },
     extract: (i, o) => {
       const p = parseOut(o)
       if (!p || typeof p !== "object") return rawSection(o)

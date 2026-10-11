@@ -1,7 +1,7 @@
 import { For, Show, type Component } from "solid-js"
 import { BasicTool } from "@mafw/session-ui/basic-tool"
 import type { ToolProps } from "@mafw/session-ui/message-part"
-import { genericSections, type ListItem, type Section, type ToolCardSpec } from "./extract"
+import { genericSections, type ListItem, type Section, type ToolBadge, type ToolCardSpec } from "./extract"
 
 const BADGE_STYLE: Record<string, any> = {
   ok: { background: "var(--accent-bg)", color: "var(--accent)" },
@@ -102,10 +102,16 @@ export function familyCard(spec: ToolCardSpec): Component<ToolProps> {
       // 兜底：spec 没产出内容时，用通用 JSON 视图，保证卡片不留空
       return out.length ? out : genericSections(props.output)
     }
+    const badge = (): ToolBadge | undefined =>
+      props.status === "completed" ? spec.badge?.(props.input, props.output) : undefined
     return (
       <BasicTool
         icon={spec.icon as any}
-        trigger={{ title: spec.title, subtitle: spec.subtitle?.(props.input) }}
+        trigger={{
+          title: spec.title,
+          subtitle: spec.subtitle?.(props.input),
+          action: badge() ? <span class="mafw-tool-badge" data-tone={badge()!.tone ?? "muted"}>{badge()!.text}</span> : undefined,
+        }}
         status={props.status}
         defaultOpen={spec.defaultOpen}
       >
