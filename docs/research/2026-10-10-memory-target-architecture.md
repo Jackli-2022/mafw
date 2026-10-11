@@ -43,9 +43,10 @@
 │ F 层（快巩固 = turnCompress 重定位）      │ S 层（深巩固 = reflection 扩展）│
 │ 事件驱动（话题边界/容量，替代小时批）       │ 每日 3:00                      │
 │ 读: 事件段原文 + B1 交错 + S2 schema 簇   │ 读: 新 episodic + 近48-72h 自产 │
-│ 写: semantic 候选 + tentative(0.35)      │     gist（宽限期重访）+ 交错prior│
-│ 选择软化: 不写≠丢失（raw 永在）            │ 写: gist+distilled_by+D1b 降能  │
-│                                          │     +A2 promote/reject+A4 回流 │
+│ 写: semantic 候选 + tentative(0.35       │     gist（宽限期重访）+ 交错prior│
+│     =皮层弱标签,双系统并行①的对应物)      │ 写: gist+distilled_by+D1b 降能  │
+│ 选择软化: 不写≠丢失（raw 永在）            │     +A2 promote/reject+A4 回流 │
+│                                          │  (promote=弱标签成熟,并行⑤)    │
 └──────────────────────────────────────────────────────────────────┘
      两层都是 LLM。周管线: axiom-distill（need 二遍）/ skill-promotion
      （W2 = goal-directed→habitual + task-bracketing，SKILL.md=情境触发宏）
