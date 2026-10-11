@@ -61,3 +61,38 @@ export function renderT1Lines(hits: T1Hit[], opts: { k: number; maxChars: number
   }
   return lines.join('\n');
 }
+
+export interface T1SearchDeps {
+  runtime: {
+    provider: { embed(texts: string[], kind: string): Promise<number[][]> };
+    t1Vectors?: { searchByCosine(query: number[], topK: number): Array<{ id: string; cosine: number }> } | null;
+  };
+  /** Archive-first row lookup (falls back to live observations). */
+  fetchRows: (sessionId: string, turnId: number) => T1Row[];
+}
+
+/** Factory for the SnapshotDeps.searchT1 dep: dense search over t1 vectors,
+ *  grouped to turns, excerpts resolved through the row fetcher. Fail-open. */
+export function makeT1Search(deps: T1SearchDeps): (query: string, k: number) => Promise<T1Hit[]> {
+  return async (query: string, k: number): Promise<T1Hit[]> => {
+    const vecs = deps.runtime.t1Vectors;
+    if (!vecs || !query.trim()) return [];
+    try {
+      const [qv] = await deps.runtime.provider.embed([query], 'query');
+      if (!qv) return [];
+      const raw = vecs.searchByCosine(qv, Math.max(k * 4, 12));
+      const turns = groupT1HitsToTurns(raw, k);
+      const out: T1Hit[] = [];
+      for (const t of turns) {
+        const rows = deps.fetchRows(t.sessionId, t.turnId);
+        if (!rows.length) continue;
+        const matchKey = raw.find(h => h.id.startsWith(`${t.sessionId}:${t.turnId}:`))?.id ?? '';
+        const excerpt = excerptFromRows(rows, matchKey, 220);
+        if (excerpt) out.push({ sessionId: t.sessionId, turnId: t.turnId, cosine: t.cosine, excerpt });
+      }
+      return out;
+    } catch {
+      return []; // fail-open — snapshot stays harmonic-only
+    }
+  };
+}

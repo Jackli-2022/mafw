@@ -1,5 +1,5 @@
 import {
-  t1VectorKey, parseT1Key, groupT1HitsToTurns, excerptFromRows, renderT1Lines, T1Hit,
+  t1VectorKey, parseT1Key, groupT1HitsToTurns, excerptFromRows, renderT1Lines, makeT1Search, T1Hit,
 } from '../../../src/recall/verbatim-recall';
 
 const row = (s: string, t: number, src: string, c: string) => ({ session_id: s, turn_id: t, source: src, content: c });
@@ -72,5 +72,48 @@ describe('renderT1Lines', () => {
   });
   test('empty hits → empty string', () => {
     expect(renderT1Lines([], { k: 3, maxChars: 600 })).toBe('');
+  });
+});
+
+describe('makeT1Search', () => {
+  const key = (s: string, t: number, c: string) => t1VectorKey(s, t, c);
+  test('embeds query, groups hits to turns, builds excerpts from rows', async () => {
+    const store = {
+      searchByCosine: (_q: number[], k: number) => [
+        { id: key('s1', 1, 'row a'), cosine: 0.9 },
+        { id: key('s1', 1, 'row b'), cosine: 0.6 },
+        { id: key('s2', 2, 'row c'), cosine: 0.7 },
+      ].slice(0, k),
+    };
+    const rowsByTurn = new Map<string, any[]>([
+      ['s1:1', [row('s1', 1, 'user_input', 'row a'), row('s1', 1, 'tool_result', 'row b')]],
+      ['s2:2', [row('s2', 2, 'assistant_reply', 'row c')]],
+    ]);
+    const search = makeT1Search({
+      runtime: { provider: { embed: async () => [[1, 0]] }, t1Vectors: store as any },
+      fetchRows: (sid, tid) => rowsByTurn.get(`${sid}:${tid}`) ?? [],
+    });
+    const hits = await search('query', 3);
+    expect(hits.map(h => [h.sessionId, h.turnId])).toEqual([['s1', 1], ['s2', 2]]);
+    expect(hits[0].cosine).toBe(0.9);
+    expect(hits[0].excerpt).toBe('row a');
+    expect(hits[1].excerpt).toBe('row c');
+  });
+  test('missing rows → hit dropped (no empty excerpts)', async () => {
+    const store = { searchByCosine: () => [{ id: key('sX', 9, 'gone'), cosine: 0.95 }] };
+    const search = makeT1Search({
+      runtime: { provider: { embed: async () => [[1, 0]] }, t1Vectors: store as any },
+      fetchRows: () => [],
+    });
+    expect(await search('q', 3)).toEqual([]);
+  });
+  test('no t1Vectors → empty; embed throws → empty (fail-open)', async () => {
+    const noVec = makeT1Search({ runtime: { provider: { embed: async () => [[]] }, t1Vectors: null }, fetchRows: () => [] });
+    expect(await noVec('q', 3)).toEqual([]);
+    const broken = makeT1Search({
+      runtime: { provider: { embed: async () => { throw new Error('down'); } }, t1Vectors: { searchByCosine: () => [] } as any },
+      fetchRows: () => [],
+    });
+    expect(await broken('q', 3)).toEqual([]);
   });
 });
