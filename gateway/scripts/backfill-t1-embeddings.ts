@@ -29,34 +29,38 @@ const rows = db
 let missing = 0;
 let skipped = 0;
 let enqueued = 0;
-let sinceFlush = 0;
+let pending = 0;
+const CHUNK = 500;
 const t0 = Date.now();
 
-for (const r of rows) {
-  const key = t1VectorKey(r.session_id, r.turn_id, r.content);
-  if (rt.t1Vectors.get(key)) {
-    skipped++;
-    continue;
+async function main(): Promise<void> {
+  for (const r of rows) {
+    const key = t1VectorKey(r.session_id, r.turn_id, r.content);
+    if (rt!.t1Vectors.get(key)) {
+      skipped++;
+      continue;
+    }
+    missing++;
+    if (!apply) continue;
+    rt!.t1Indexer.enqueueText(key, r.content.slice(0, 2000));
+    enqueued++;
+    pending++;
+    if (pending >= CHUNK) {
+      await rt!.t1Indexer.flushQueue();
+      pending = 0;
+      console.log(`[backfill] embedded ${enqueued}/${rows.length} (${Math.round((Date.now() - t0) / 1000)}s)`);
+    }
   }
-  missing++;
-  if (!apply) continue;
-  rt.t1Indexer.enqueueText(key, r.content.slice(0, 2000));
-  enqueued++;
-  sinceFlush++;
-  if (sinceFlush >= 500) {
-    void rt.t1Indexer.flushQueue().then(() => { /* progress flush */ });
-    sinceFlush = 0;
-    console.log(`[backfill] enqueued ${enqueued}/${rows.length} ${Math.round((Date.now() - t0) / 1000)}s`);
+
+  if (apply && enqueued > 0) {
+    const { indexed, failed } = await rt!.t1Indexer.flushQueue();
+    console.log(`[backfill] done: total=${rows.length} enqueued=${enqueued} finalFlushIndexed=${indexed} skipped(existing)=${skipped} failed=${failed} in ${Math.round((Date.now() - t0) / 1000)}s`);
+    process.exit(failed > 0 ? 2 : 0);
+  } else {
+    console.log(`[backfill] dry-run: total rows=${rows.length} missing vectors=${missing} already embedded=${skipped}`);
+    console.log(apply ? 'nothing to embed' : 're-run with --apply to embed');
   }
 }
 
-if (apply && enqueued > 0) {
-  rt.t1Indexer.flushQueue().then(({ indexed, failed }) => {
-    console.log(`[backfill] final flush: indexed=${indexed} failed=${failed}`);
-    console.log(`[backfill] done: total=${rows.length} embedded=${indexed} skipped(existing)=${skipped} failed=${failed} in ${Math.round((Date.now() - t0) / 1000)}s`);
-    process.exit(failed > 0 ? 2 : 0);
-  }).catch((e: any) => { console.error('flush failed:', e?.message || e); process.exit(3); });
-} else {
-  console.log(`[backfill] dry-run: total rows=${rows.length} missing vectors=${missing} already embedded=${skipped}`);
-  console.log(apply ? 'nothing to embed' : 're-run with --apply to embed');
-}
+main().catch((e: any) => { console.error('[backfill] failed:', e?.message || e); process.exit(3); });
+

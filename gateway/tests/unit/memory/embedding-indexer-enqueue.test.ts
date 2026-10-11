@@ -30,4 +30,27 @@ describe('EmbeddingIndexer.enqueueText', () => {
     await indexer.flushQueue();
     expect(vectors.get('k1')).toEqual([11, 1, 0, 0]);
   });
+  test('drains items enqueued while a flush is in flight (no stranded rows)', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => { release = r; });
+    let firstCall = true;
+    const provider = {
+      name: 'fake', dims: 2,
+      async embed(texts: string[]) {
+        if (firstCall) { firstCall = false; await gate; }
+        return texts.map(() => [1, 0]);
+      },
+    };
+    const vectors = new MemoryVectorStore(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'idx-drain-')), 'v.json'), 2, 'fake');
+    const indexer = new EmbeddingIndexer({ vectors: vectors as any, provider: provider as any });
+    indexer.enqueueText('a', 'aaa');
+    const p = indexer.flushQueue();          // captures 'a', blocks on gate
+    await new Promise(r => setTimeout(r, 5));
+    indexer.enqueueText('b', 'bbb');          // enqueued while in-flight
+    release();
+    const r = await p;
+    expect(r.indexed).toBe(2);
+    expect(vectors.get('a')).toEqual([1, 0]);
+    expect(vectors.get('b')).toEqual([1, 0]);
+  });
 });

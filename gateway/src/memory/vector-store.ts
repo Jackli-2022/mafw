@@ -187,23 +187,26 @@ export class EmbeddingIndexer {
   }
 
   private async flushQueueInner(): Promise<{ indexed: number; failed: number }> {
-    if (this.queue.size === 0) return { indexed: 0, failed: 0 };
-    const items = [...this.queue.values()];
-    this.queue.clear();
-
     let indexed = 0;
     let failed = 0;
-    for (let i = 0; i < items.length; i += this.batchSize) {
-      const batch = items.slice(i, i + this.batchSize);
-      try {
-        const vectors = await this.provider.embed(batch.map(b => b.text), 'document');
-        for (let j = 0; j < batch.length; j++) {
-          this.vectors.upsert(batch[j].id, vectors[j]);
-          indexed++;
+    // Drain until the queue is empty: items enqueued while a flush is in
+    // flight would otherwise be stranded until the next scheduleFlush (the
+    // re-entry guard coalesces concurrent calls into this one).
+    while (this.queue.size > 0) {
+      const items = [...this.queue.values()];
+      this.queue.clear();
+      for (let i = 0; i < items.length; i += this.batchSize) {
+        const batch = items.slice(i, i + this.batchSize);
+        try {
+          const vectors = await this.provider.embed(batch.map(b => b.text), 'document');
+          for (let j = 0; j < batch.length; j++) {
+            this.vectors.upsert(batch[j].id, vectors[j]);
+            indexed++;
+          }
+        } catch (err: any) {
+          failed += batch.length;
+          log.warn(`[EmbeddingIndexer] batch embed failed (${batch.length} items): ${err?.message || err}`);
         }
-      } catch (err: any) {
-        failed += batch.length;
-        log.warn(`[EmbeddingIndexer] batch embed failed (${batch.length} items): ${err?.message || err}`);
       }
     }
     if (indexed > 0) this.vectors.flush();
