@@ -1,4 +1,4 @@
-import { genericSections, parseOut, rawSection, s, trunc, type Section } from "./extract"
+import { genericSections, parseOut, rawSection, s, trunc, type Section, type ToolBadge } from "./extract"
 
 function joinTruthy(parts: Array<string | undefined>): string | undefined {
   const x = parts.filter(Boolean).join(" · ")
@@ -88,5 +88,31 @@ export function ruleSections(tool: string, output: string | undefined): Section[
       ])]
     default:
       return genericSections(output)
+  }
+}
+
+/** rule 族工具触发行右侧状态徽标（valid / count / status）。 */
+export function ruleBadge(tool: string, output: string | undefined): ToolBadge | undefined {
+  const name = (tool || "").replace(/^mafw_/, "")
+  const p = parseOut(output)
+  if (p === undefined || p === null || typeof p !== "object") return undefined
+  switch (name) {
+    case "validate_rule":
+    case "draft_automation_rule":
+      if (typeof p.valid !== "boolean") return undefined
+      return { text: p.valid ? "valid" : "invalid", tone: p.valid ? "ok" : "err" }
+    case "list_automation_rules": {
+      const n = Array.isArray(p.rules) ? p.rules.length : typeof p.count === "number" ? p.count : undefined
+      return n === undefined ? undefined : { text: String(n), tone: "muted" }
+    }
+    case "list_triage_items": {
+      const n = Array.isArray(p.items) ? p.items.length : typeof p.count === "number" ? p.count : undefined
+      return n === undefined ? undefined : { text: String(n), tone: "muted" }
+    }
+    case "run_automation":
+    case "propose_triage_decision":
+      return typeof p.status === "string" && p.status ? { text: p.status, tone: "muted" } : undefined
+    default:
+      return undefined
   }
 }

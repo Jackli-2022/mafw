@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ruleSections } from "./rule-model"
+import { ruleBadge, ruleSections } from "./rule-model"
 
 const kvRows = (secs: any[]) => (secs[0] as any).rows as Array<[string, string]>
 
@@ -50,5 +50,22 @@ describe("ruleSections 按工具分派", () => {
   test("非 JSON → raw code；未知工具 → generic 兜底", () => {
     expect(ruleSections("mafw_run_automation", "oops")[0]).toEqual({ kind: "code", text: "oops" })
     expect(ruleSections("mafw_unknown", JSON.stringify({ a: 1 }))[0].kind).toBe("kv")
+  })
+})
+
+describe("ruleBadge", () => {
+  test("validate_rule → valid/invalid", () => {
+    expect(ruleBadge("mafw_validate_rule", JSON.stringify({ valid: true }))).toEqual({ text: "valid", tone: "ok" })
+    expect(ruleBadge("mafw_validate_rule", JSON.stringify({ valid: false }))).toEqual({ text: "invalid", tone: "err" })
+  })
+  test("list_automation_rules → count", () => {
+    expect(ruleBadge("mafw_list_automation_rules", JSON.stringify({ rules: [1, 2, 3], count: 3 }))).toEqual({ text: "3", tone: "muted" })
+  })
+  test("run_automation → status", () => {
+    expect(ruleBadge("mafw_run_automation", JSON.stringify({ status: "PENDING_CONFIRMATION" }))?.text).toBe("PENDING_CONFIRMATION")
+  })
+  test("未知/无 → undefined", () => {
+    expect(ruleBadge("mafw_get_automation_rule", JSON.stringify({}))).toBeUndefined()
+    expect(ruleBadge("mafw_validate_rule", "oops")).toBeUndefined()
   })
 })
