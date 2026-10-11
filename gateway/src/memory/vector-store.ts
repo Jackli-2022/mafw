@@ -163,6 +163,13 @@ export class EmbeddingIndexer {
     });
   }
 
+  /** Generic raw-text enqueue (t1 verbatim channel): bypasses the harmonic
+   *  documentText domain — the caller owns what gets embedded. */
+  enqueueText(id: string, text: string): void {
+    if (!id || !text) return;
+    this.queue.set(id, { id, text });
+  }
+
   removeUnit(id: string): void {
     this.queue.delete(id);
     this.vectors.remove(id);
