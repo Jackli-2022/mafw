@@ -15,6 +15,9 @@ describe("tool card trigger (v8)", () => {
     expect(css).toMatch(/\.mafw-tool-badge\[data-tone="ok"\]/)
     expect(css).toMatch(/\.mafw-tool-badge\[data-tone="err"\]/)
   })
+  test("trigger title keeps base color (shimmer not clobbered)", () => {
+    expect(css).toMatch(/\[data-slot="basic-tool-tool-title"\]\s*\{[^}]*color:\s*var\(--text-1\)/)
+  })
 })
 
 describe("tool card body surface (v8)", () => {

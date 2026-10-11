@@ -10,6 +10,7 @@ export function MafwAddMemoryCard(props: ToolProps) {
       icon="brain"
       trigger={{ title: "MAFW Add Memory", subtitle: props.input?.primaryAbstraction ?? trunc(props.input?.content, 40) }}
       status={props.status}
+      animated
     >
       <div class="mafw-tool-box"><ToolSections sections={sections()} /></div>
     </BasicTool>

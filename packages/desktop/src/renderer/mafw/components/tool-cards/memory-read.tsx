@@ -11,6 +11,7 @@ export function MafwSearchCard(props: ToolProps) {
       trigger={{ title: "MAFW Hybrid Search", subtitle: props.input?.query, args: [`topK: ${props.input?.topK || 20}`] }}
       status={props.status}
       defaultOpen
+      animated
     >
       <div class="mafw-tool-box">
       <div class="mafw-tool-results">

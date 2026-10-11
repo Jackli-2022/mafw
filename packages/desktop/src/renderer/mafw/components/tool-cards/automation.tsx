@@ -16,6 +16,7 @@ export function MafwRuleCard(props: ToolProps) {
         action: badge() ? <span class="mafw-tool-badge" data-tone={badge()!.tone ?? "muted"}>{badge()!.text}</span> : undefined,
       }}
       status={props.status}
+      animated
     >
       <div class="mafw-tool-box"><ToolSections sections={ruleSections(props.tool, props.output)} /></div>
     </BasicTool>

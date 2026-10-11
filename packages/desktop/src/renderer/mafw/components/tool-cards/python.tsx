@@ -69,6 +69,7 @@ export function MafwPythonCard(props: ToolProps) {
       }}
       status={props.status}
       defaultOpen
+      animated
     >
       <div class="mafw-python-card">
         <Show when={data().kernelRestarted}>
@@ -116,6 +117,7 @@ export function MafwPythonRestartCard(props: ToolProps) {
       trigger={{ title: "Python 内核重启", subtitle: out() ? out().slice(0, 60) : undefined }}
       status={props.status}
       defaultOpen
+      animated
     >
       <pre class="mafw-tool-output">{out() || "(无输出)"}</pre>
     </BasicTool>
