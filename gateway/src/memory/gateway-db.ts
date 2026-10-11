@@ -462,6 +462,14 @@ export class GatewayDatabase {
     return scored.slice(0, k).map((x) => x.r);
   }
 
+  /** V1 t1 pointer redemption: find archive rows by session-id tail + turn. */
+  findArchiveBySessionTail(tail: string, turnId: number): T1Observation[] {
+    if (!tail || !Number.isInteger(turnId) || turnId < 0) return [];
+    return this.db
+      .prepare(`SELECT * FROM t1_archive WHERE session_id LIKE '%' || ? || '%' AND turn_id = ? ORDER BY id LIMIT 50`)
+      .all(tail, turnId) as T1Observation[];
+  }
+
   // ── Noop log (extraction coverage monitoring) ──────────────────────────
 
   /**

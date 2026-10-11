@@ -2892,6 +2892,7 @@ class MafwScheduler {
     const services = {
       memory: this.memoryService,
       searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
+      resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findArchiveBySessionTail(tail, turnId),
       cost,
       automation: this.automationEngine,
       ledger: this.ledger,
@@ -4215,6 +4216,7 @@ class MafwScheduler {
               memory: this.memoryService,
               mafwDir: this.mafwDir,
               searchArchive: (sid: string, anchors: string[], k: number) => this.getGatewayDb().searchArchive(sid, anchors, k),
+              resolveT1: (tail: string, turnId: number) => this.getGatewayDb().findArchiveBySessionTail(tail, turnId),
             } as any);
             const body = JSON.parse(result.content[0].text);
             res.writeHead(result.isError ? 404 : 200, { 'Content-Type': 'application/json' });

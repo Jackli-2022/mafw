@@ -9,8 +9,32 @@ import { reconstructSource } from "../../recall/source-reconstruction";
  * guessing. Superseded memories report the supersede chain with the latest
  * version attached so the agent never acts on stale notes.
  */
-export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive }) => {
+export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, searchArchive, resolveT1 }) => {
   try {
+    // V1: t1 pointer redemption — ids of the form `t1:<sessionTail>:<turnId>`
+    // resolve to raw archived round rows (verbatim layer).
+    const rawId = String(args?.id || '').trim();
+    if (/^#?t1:[^:]+:\d+$/.test(rawId)) {
+      const body = rawId.replace(/^#/, '');
+      const [, tail, turnStr] = body.split(':');
+      const turnId = Number(turnStr);
+      if (!resolveT1) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: 't1 pointer resolution unavailable (gateway service missing)' }) }], isError: true };
+      }
+      const rows = resolveT1(tail, turnId);
+      if (!rows.length) {
+        return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `no t1 rows for session tail ${tail} turn ${turnId}` }) }], isError: true };
+      }
+      return { content: [{ type: "text", text: JSON.stringify({
+        success: true,
+        t1: {
+          sessionId: rows[0].session_id,
+          turnId,
+          rows: rows.map(r => ({ source: r.source, content: r.content })),
+        },
+      }) }] };
+    }
+
     const id = String(args.id || '').trim().replace(/^#?(?:mem-)?/, '');
     if (!id) {
       return { content: [{ type: "text", text: JSON.stringify({ success: false, error: 'id required' }) }], isError: true };
