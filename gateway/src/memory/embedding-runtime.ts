@@ -18,7 +18,10 @@ export interface EmbeddingRuntime {
   provider: EmbeddingProvider;
   vectors: MemoryVectorStore;
   indexer: EmbeddingIndexer;
-  /** Debounced async flush of the embedding queue (call after each write). */
+  /** V1 verbatim layer: second vector namespace over t1 rounds. */
+  t1Vectors: MemoryVectorStore;
+  t1Indexer: EmbeddingIndexer;
+  /** Debounced async flush of both embedding queues (call after each write). */
   scheduleFlush(): void;
 }
 
@@ -38,13 +41,15 @@ export interface InitEmbeddingRuntimeOptions {
   getTextForId?: (id: string) => Promise<string | null>;
   /** Config override for tests (defaults to config.memory.embedding). */
   cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string; threads?: number; engine?: 'onnx' | 'llamacpp'; llamacpp?: any };
+  /** Test seam: override the provider factory (fake providers). */
+  createProviderFn?: typeof createEmbeddingProvider;
 }
 
 export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): EmbeddingRuntime | null {
   const cfg = opts.cfg ?? (config as any).memory?.embedding;
   if (!cfg || cfg.provider === 'off') return null;
   try {
-    const provider = createEmbeddingProvider({
+    const provider = (opts.createProviderFn ?? createEmbeddingProvider)({
       provider: cfg.provider,
       model: cfg.model,
       dimensions: cfg.dimensions,
@@ -67,23 +72,34 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
 
     const indexer = new EmbeddingIndexer({ vectors, provider, getTextForId: opts.getTextForId });
 
+    // V1 verbatim layer: a second, independent vector namespace over t1
+    // rounds (raw observation/archive rows), keyed by session:turn:hash.
+    const t1Vectors = new MemoryVectorStore(
+      path.join(opts.baseDir, 'memory', `vectors-t1-${modelTag}.json`),
+      cfg.dimensions || provider.dims,
+      cfg.model,
+    );
+    const t1Indexer = new EmbeddingIndexer({ vectors: t1Vectors, provider });
+
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     const rt: EmbeddingRuntime = {
       provider,
       vectors,
       indexer,
+      t1Vectors,
+      t1Indexer,
       scheduleFlush() {
         if (flushTimer) return;
         flushTimer = setTimeout(() => {
           flushTimer = null;
-          indexer.flushQueue().catch(() => { /* fail-open */ });
+          Promise.all([indexer.flushQueue(), t1Indexer.flushQueue()]).catch(() => { /* fail-open */ });
         }, 2000);
         (flushTimer as any).unref?.();
       },
     };
 
     runtime = rt;
-    log.info(`[Embedding] runtime initialized: ${provider.name} (${vectors.size()} vectors)`);
+    log.info(`[Embedding] runtime initialized: ${provider.name} (${vectors.size()} vectors, t1 ${t1Vectors.size()})`);
     return rt;
   } catch (err: any) {
     log.warn(`[Embedding] runtime init failed (BM25-only fallback): ${err?.message || err}`);
