@@ -6,6 +6,7 @@
 // run the same worker twice at once.
 import { TtlMap } from './ttl-map';
 import { MemoryWorker, WorkerClient } from './memory-worker';
+import { registerWorkerOrigin } from './worker-origin';
 
 export type WorkerKind = 'extract' | 'reflect';
 
@@ -71,18 +72,20 @@ export class SessionWorkerPool {
           label: `${label}:extract`,
           compactIdleMs: this.opts.compactIdleMs,
           promptTimeoutMs: this.opts.promptTimeoutMs,
-          onSessionCreated: this.opts.onSessionCreated
-            ? (sid) => this.opts.onSessionCreated!(sid, 'extract')
-            : undefined,
+          onSessionCreated: (sid) => {
+            registerWorkerOrigin(sid, sessionID);
+            this.opts.onSessionCreated?.(sid, 'extract');
+          },
         }),
         reflect: new MemoryWorker(this.opts.client, {
           directory: this.opts.directory,
           label: `${label}:reflect`,
           compactIdleMs: this.opts.compactIdleMs,
           promptTimeoutMs: this.opts.promptTimeoutMs,
-          onSessionCreated: this.opts.onSessionCreated
-            ? (sid) => this.opts.onSessionCreated!(sid, 'reflect')
-            : undefined,
+          onSessionCreated: (sid) => {
+            registerWorkerOrigin(sid, sessionID);
+            this.opts.onSessionCreated?.(sid, 'reflect');
+          },
         }),
         label,
       };

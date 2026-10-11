@@ -6993,7 +6993,9 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           ...(data?.sticky === true ? {
             sticky_until: new Date(Date.now() + (typeof data?.stickyDays === 'number' && data.stickyDays > 0 ? data.stickyDays : 7) * 86400e3).toISOString(),
           } : {}),
-          source_session_id: data?.sessionID ? String(data.sessionID) : undefined,
+          // V1 provenance: pipeline workers write via HTTP with their own
+          // session id — map back to the source session for C0 reconstruction.
+          source_session_id: (data?.sessionID && require('./recall/worker-origin').resolveWorkerOrigin(String(data.sessionID))) || (data?.sessionID ? String(data.sessionID) : undefined),
         };
         let supersedesTarget: any = null;
         if (data?.supersedes) {
