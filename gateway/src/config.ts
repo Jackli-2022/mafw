@@ -318,6 +318,8 @@ export interface GatewayConfig {
     pipelineBudgetUsdPerDay: number;
     /** Source-turn reconstruction for mafw_get_memory (C0). */
     sourceEvidence: { enabled: boolean; k: number; maxChars: number };
+    /** V1 verbatim dense layer: fuse t1 round hits into R8 snapshots. */
+    t1Recall: { enabled: boolean; k: number; maxChars: number };
   };
   usage: {
     pollIntervalMs: number;
@@ -589,6 +591,7 @@ function defaults(projectDir: string): GatewayConfig {
       scanTimeoutMs: 60_000,
       pipelineBudgetUsdPerDay: 0,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
+      t1Recall: { enabled: true, k: 3, maxChars: 600 },
     },
     usage: {
       pollIntervalMs: 60000,

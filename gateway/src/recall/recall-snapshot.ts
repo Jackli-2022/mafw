@@ -35,6 +35,8 @@ export interface RecallSnapshot {
   /** Reranker top-1 probability the zone was decided from (hit-proxy
    *  calibration sample — see recall/fok-samples.ts). */
   top1prob?: number;
+  /** V1: verbatim t1 hits fused into this snapshot (session:turn excerpts). */
+  t1Hits?: Array<{ sessionId: string; turnId: number; cosine: number; excerpt: string }>;
 }
 
 export interface SnapshotConfig {
@@ -47,6 +49,10 @@ export interface SnapshotConfig {
   maxChars?: number;
   /** Jaccard overlap below which the snapshot is treated as stale topic (0.25). */
   topicShiftThreshold?: number;
+  /** V1 verbatim layer: how many t1 round hits to fuse (default 3). */
+  t1K?: number;
+  /** V1 verbatim layer: total char budget for t1 lines (default 600). */
+  t1MaxChars?: number;
 }
 
 export const SNAPSHOT_DEFAULTS = {
@@ -54,6 +60,8 @@ export const SNAPSHOT_DEFAULTS = {
   maxTurns: 4,
   maxChars: 600,
   topicShiftThreshold: 0.25,
+  t1K: 3,
+  t1MaxChars: 600,
 } as const;
 
 /**
