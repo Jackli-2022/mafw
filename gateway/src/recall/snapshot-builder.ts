@@ -7,6 +7,7 @@
  * inside the 100ms contract.
  */
 import { RecallSnapshot, snapshotQueryFromTurns, SNAPSHOT_DEFAULTS, SnapshotConfig } from './recall-snapshot';
+import { renderT1Lines, T1Hit } from './verbatim-recall';
 import type { RecallMemory } from './recall-context';
 import type { FokZone } from './fok-gate';
 
@@ -28,6 +29,9 @@ export interface SnapshotDeps {
   verify?: (query: string, memories: RecallMemory[]) => Promise<{ memories: RecallMemory[]; fokStatus?: FokZone; top1prob?: number }>;
   /** Render the pointer block (formatRecallContext + neighbours + status). */
   render: (memories: RecallMemory[], status?: FokZone) => string | null;
+  /** V1 verbatim layer: dense search over t1 rounds (fail-open — absence
+   *  keeps the snapshot harmonic-only). */
+  searchT1?: (query: string, k: number) => Promise<T1Hit[]> | T1Hit[];
   /** kv write (fail-open by the caller). */
   store: (sessionID: string, snapshot: RecallSnapshot) => void;
   now?: () => Date;
@@ -62,8 +66,24 @@ export async function buildSnapshot(
       top1prob = verified?.top1prob;
     } catch { /* fail-open: keep the un-reranked ranking, no gate */ }
   }
-  const block = deps.render(memories, fokStatus);
+  let block = deps.render(memories, fokStatus);
   if (!block) return null;
+
+  // V1: verbatim fusion — append t1 round hits after the pointer block.
+  let t1Hits: T1Hit[] | undefined;
+  if (deps.searchT1) {
+    const t1K = cfg.t1K ?? SNAPSHOT_DEFAULTS.t1K ?? 3;
+    try {
+      const hits = await deps.searchT1(query, t1K);
+      if (hits && hits.length > 0) {
+        const lines = renderT1Lines(hits, { k: t1K, maxChars: cfg.t1MaxChars ?? SNAPSHOT_DEFAULTS.t1MaxChars ?? 600 });
+        if (lines) {
+          block = `${block}\n${lines}`;
+          t1Hits = hits.slice(0, t1K);
+        }
+      }
+    } catch { /* fail-open: harmonic-only snapshot */ }
+  }
 
   const snapshot: RecallSnapshot = {
     query,
@@ -72,6 +92,7 @@ export async function buildSnapshot(
     builtAt: (deps.now?.() ?? new Date()).toISOString(),
     fokStatus,
     top1prob,
+    t1Hits,
   };
   deps.store(sessionID, snapshot);
   return snapshot;
