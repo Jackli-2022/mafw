@@ -1165,16 +1165,28 @@ html[data-theme="light"] body {
   overflow: clip;
 }
 .mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"] {
-  height: 22px;
-  padding: 0 4px;
+  height: 26px;
+  padding: 0 6px;
   color: var(--text-3);
-  font-size: 12px;
-  font-weight: 400;
-  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+  font-size: 13px;
+  font-weight: 500;
+  transition: color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
 }
 .mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"]:hover {
   color: var(--text-1);
   background: var(--hover);
+}
+.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"]:active {
+  background: var(--active);
+}
+.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="basic-tool-tool-title"] {
+  color: var(--text-1);
+  font-size: 13px;
+  font-weight: 500;
+}
+.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="basic-tool-tool-arg"] {
+  color: var(--text-4);
+  font-size: 11px;
 }
 .mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-content"] > * {
   border-left: 1px solid var(--border-subtle);
@@ -2044,6 +2056,11 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-tool-energy { color: var(--text-weak); font-variant-numeric: tabular-nums; flex-shrink: 0; font-size: 11px; }
 .mafw-tool-empty { color: var(--text-weak); padding: 8px; font-size: 13px; }
 .mafw-tool-tag { padding: 1px 6px; border-radius: 3px; flex-shrink: 0; text-transform: uppercase; font-size: 10px; }
+.mafw-tool-badge { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 16px; font-variant-numeric: tabular-nums; border: 0.5px solid var(--border-subtle); color: var(--text-3); }
+.mafw-tool-badge[data-tone="ok"] { color: var(--accent-text); background: var(--accent-dim); border-color: var(--accent-border); }
+.mafw-tool-badge[data-tone="warn"] { color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); border-color: color-mix(in srgb, var(--warning) 30%, transparent); }
+.mafw-tool-badge[data-tone="err"] { color: var(--danger-text); background: var(--danger-dim); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.mafw-tool-badge[data-tone="muted"] { color: var(--text-4); background: transparent; }
 .mafw-tag-semantic { background: rgba(118,152,253,0.15); color: var(--text-interactive-base, #7698fd); }
 .mafw-tag-procedural { background: rgba(168,85,247,0.15); color: #a855f7; }
 .mafw-tag-episodic { background: var(--accent-dim); color: var(--accent); }
