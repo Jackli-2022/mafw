@@ -1839,6 +1839,24 @@ class MafwScheduler {
           scanSnapshot: this.getScanService()?.getSnapshot(sessionID) ?? null,
         } as any);
       },
+      // V1 verbatim layer: dense t1 round hits fused into the snapshot block.
+      ...(config.recall.t1Recall?.enabled !== false
+        ? (() => {
+            const { getEmbeddingRuntime: getRt } = require('./memory/embedding-runtime');
+            const { makeT1Search } = require('./recall/verbatim-recall');
+            const rt = getRt();
+            if (!rt?.t1Vectors) return {};
+            return {
+              searchT1: makeT1Search({
+                runtime: rt,
+                fetchRows: (sid: string, tid: number) => {
+                  const rows = db.readArchiveTurn(sid, tid);
+                  return rows.length ? rows : db.readTurn(sid, tid);
+                },
+              }),
+            };
+          })()
+        : {}),
       rerank: async (q: string, ms: any[]) => {
         const reranker = getReranker();
         if (!reranker) return ms;
@@ -6139,6 +6157,17 @@ class MafwScheduler {
                 // S3: encoding-time salience tag (deterministic, LLM-free).
                 salience: obsSalience({ text: redacted }).score,
               });
+              // V1 verbatim layer: fire-and-forget dense embedding of the raw
+              // row. Key = session:turn:contentHash — stable across the
+              // obs→archive move, idempotent on identical content. Fail-open.
+              try {
+                const rt = getEmbeddingRuntime();
+                const { t1VectorKey } = require('./recall/verbatim-recall');
+                if (rt?.t1Indexer && redacted) {
+                  rt.t1Indexer.enqueueText(t1VectorKey(sessionID, turnId, redacted), redacted.slice(0, 2000));
+                  rt.scheduleFlush();
+                }
+              } catch { /* fail-open */ }
               // Async scan prefetch: precompute semantic recall for this turn
               // so the next boundary recall can merge it without waiting.
               if (source === 'user_input') {
