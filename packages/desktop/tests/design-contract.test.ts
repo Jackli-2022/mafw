@@ -275,10 +275,9 @@ describe("Tool part 卡片 v8（触发行结构化）", () => {
   const trig = '.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-trigger"]'
   test("折叠行 26px", () => expect(cssBlock(trig)).toContain("height: 26px"))
   test("折叠行文字 13px", () => expect(cssBlock(trig)).toContain("font-size: 13px"))
-  const content = '.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-content"] > *'
-  test("输出区透明背景 + 缩进", () => {
-    expect(cssBlock(content)).toContain("background: transparent")
-    expect(cssBlock(content)).toContain("margin-left: 4px")
+  test("内容体 surface 盒（v8）", () => {
+    expect(cssBlock(".mafw-tool-box {")).toContain("border: 0.5px solid var(--border-subtle)")
+    expect(cssBlock(".mafw-tool-box {")).toContain("background: var(--bg-inset)")
   })
 })
 

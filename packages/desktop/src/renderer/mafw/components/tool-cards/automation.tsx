@@ -15,7 +15,7 @@ export function MafwRuleCard(props: ToolProps) {
       }}
       status={props.status}
     >
-      <ToolSections sections={ruleSections(props.tool, props.output)} />
+      <div class="mafw-tool-box"><ToolSections sections={ruleSections(props.tool, props.output)} /></div>
     </BasicTool>
   )
 }

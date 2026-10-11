@@ -11,7 +11,7 @@ export function MafwAddMemoryCard(props: ToolProps) {
       trigger={{ title: "MAFW Add Memory", subtitle: props.input?.primaryAbstraction ?? trunc(props.input?.content, 40) }}
       status={props.status}
     >
-      <ToolSections sections={sections()} />
+      <div class="mafw-tool-box"><ToolSections sections={sections()} /></div>
     </BasicTool>
   )
 }

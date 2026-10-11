@@ -1188,11 +1188,8 @@ html[data-theme="light"] body {
   color: var(--text-4);
   font-size: 11px;
 }
-.mafw-session-turn-container [data-component="tool-part-wrapper"] [data-slot="collapsible-content"] > * {
-  border-left: 1px solid var(--border-subtle);
-  background: transparent;
-  margin-left: 4px;
-}
+/* v8 内容体 surface 盒（替代旧「左竖线 + margin-left 4px」缩进） */
+.mafw-tool-box { margin: 4px 0 8px; padding: 8px 10px; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); color: var(--text-base); }
 /* Thinking block (dsh-style collapsible reasoning) */
 .mafw-thinking { margin: 2px 0; }
 .mafw-thinking .mafw-thinking-head {
@@ -2075,7 +2072,7 @@ html[data-theme="light"] .mafw-picker-pop {
 .mafw-delta-content { flex: 1; }
 .mafw-delta-text { color: var(--text-strong); font-size: 13px; }
 .mafw-delta-priority { color: var(--text-weak); font-size: 11px; }
-.mafw-tool-output { color: var(--text-base); overflow-x: auto; padding: 8px; background: var(--surface-inset-base, var(--background-weak)); border-radius: 4px; max-height: 200px; font-size: 12px; }
+.mafw-tool-output { color: var(--text-base); overflow-x: auto; padding: 8px; background: var(--surface-inset-base, var(--background-weak)); border-radius: 4px; max-height: 240px; font-size: 12px; font-family: var(--font-data); }
 
 /* Plugin widget vocabulary v2: markdown + progress (P3 batch) */
 .mafw-plugin-markdown { font-size: 12px; line-height: 1.6; }

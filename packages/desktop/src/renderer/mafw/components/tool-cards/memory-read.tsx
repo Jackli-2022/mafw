@@ -12,6 +12,7 @@ export function MafwSearchCard(props: ToolProps) {
       status={props.status}
       defaultOpen
     >
+      <div class="mafw-tool-box">
       <div class="mafw-tool-results">
         <For each={model().results}>{(r) => (
           <div class="mafw-tool-result">
@@ -31,6 +32,7 @@ export function MafwSearchCard(props: ToolProps) {
       </div>
       <Show when={model().fok}><div class="mafw-tool-meta">{model().fok}</div></Show>
       <Show when={model().hint}><div class="mafw-tool-meta" style="font-size:11px">{model().hint}</div></Show>
+      </div>
     </BasicTool>
   )
 }

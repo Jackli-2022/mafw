@@ -109,7 +109,7 @@ export function familyCard(spec: ToolCardSpec): Component<ToolProps> {
         status={props.status}
         defaultOpen={spec.defaultOpen}
       >
-        <ToolSections sections={sections()} />
+        <div class="mafw-tool-box"><ToolSections sections={sections()} /></div>
         <Show when={props.status === "completed" && sections().length === 0}>
           <div class="mafw-tool-empty">(无输出)</div>
         </Show>
