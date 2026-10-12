@@ -121,7 +121,7 @@ function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicy
 }
 
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
-import { validateRuntimeShape } from './runtime/validate';
+import { validateRuntime, RuntimeValidation } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent } from './runtime/pi/pi-events';
@@ -1247,6 +1247,24 @@ class MafwScheduler {
   }
 
   /**
+   * 激活期"声明 vs 实现"校验：hard → 抛错（调用方回退内置）；downgraded/warnings
+   * 记录进 runtimeValidationNotes（GET /api/runtime 可见）并打日志。
+   * fatal=false 用于内置件——兜底不能再回退，只降级+暴露。
+   */
+  private applyRuntimeValidation(rt: AgentRuntime, source: string, fatal: boolean): void {
+    const v: RuntimeValidation = validateRuntime(rt, source);
+    this.runtimeValidationNotes = [...v.downgraded, ...v.warnings];
+    for (const d of v.downgraded) log.error(`[Runtime] capability downgraded: ${d}`);
+    for (const w of v.warnings) log.warn(`[Runtime] ${w}`);
+    if (v.hard.length > 0) {
+      for (const issue of v.hard) log.error(`[Runtime] shape violation: ${issue}`);
+      if (fatal) {
+        throw new Error(`runtime '${rt.name}' failed shape validation (${v.hard.length} issue(s)) — see logs`);
+      }
+    }
+  }
+
+  /**
    * Runtime 选择：config.runtime.plugin 指定 ~/.mafw/runtime-plugins/ 中的插件；
    * 未配置/找不到/加载失败一律回退内置 opencode（fail-open，行为与现状一致）。
    */
@@ -1261,13 +1279,9 @@ class MafwScheduler {
             projectDir: this.projectDir,
             gatewayPort: config.server.apiPort,
           }));
-          // 声明 vs 实现一致性校验：错位插件在切换/启动期给出字段级诊断并回退，
-          // 而不是运行时深处才炸。
-          const issues = validateRuntimeShape(rt, pluginName);
-          if (issues.length > 0) {
-            for (const issue of issues) log.error(`[Runtime] shape violation: ${issue}`);
-            throw new Error(`runtime '${rt.name}' failed shape validation (${issues.length} issue(s)) — see logs`);
-          }
+          // 声明 vs 实现一致性校验：必选面缺失 → 回退；能力位虚报 → 强制降级
+          // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
+          this.applyRuntimeValidation(rt, pluginName, true);
           // 事件映射声明：插件声明的 eventMappings 在 gateway 侧包装其原生流，
           // 使原生事件进入 canonical 管线（opencode 无声明 → 不包装，零风险）。
           if (plugin.eventMappings?.length) {
@@ -1297,6 +1311,8 @@ class MafwScheduler {
     const builtin = this.runtimeLoader?.get('opencode');
     if (builtin) {
       const rt = await builtin.createRuntime(createRuntimePluginContext(undefined));
+      // 内置件同样过校验（dogfood）：不回退（无处可退），但缺口要暴露。
+      this.applyRuntimeValidation(rt, 'builtin:opencode', false);
       wrapToolPartAssembly(rt); // opencode 无三原语，恒等直通
       return this.wrapRuntimeIdentity(rt);
     }
@@ -1305,6 +1321,7 @@ class MafwScheduler {
     const fallbackRt = await createOpencodeRuntime({
       ...sdkConfig,
     });
+    this.applyRuntimeValidation(fallbackRt, 'builtin:opencode(direct)', false);
     wrapToolPartAssembly(fallbackRt);
     return this.wrapRuntimeIdentity(fallbackRt);
   }
@@ -1649,6 +1666,7 @@ class MafwScheduler {
         }
       },
       unknownEvents: () => this.unknownEventTracker.snapshot(),
+      validationNotes: () => this.runtimeValidationNotes,
     };
   }
 
@@ -1803,6 +1821,8 @@ class MafwScheduler {
   // ---- R8 predictive prefetch snapshot ----
   /** Per-session debounce timers for the background snapshot refresh. */
   private snapshotTimers = new Map<string, NodeJS.Timeout>();
+  /** 激活期 runtime 校验记录（能力降级 + 警告），GET /api/runtime 暴露。 */
+  private runtimeValidationNotes: string[] = [];
   /** Serialises snapshot builds (shared GPU sidecars). */
   private snapshotBuildInFlight = false;
 

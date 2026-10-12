@@ -96,6 +96,15 @@ export function validateEventMappings(entry: EventMappingEntry, canonicalTypes: 
   if (entry.eventMappings && entry.eventMappings.length > 0 && !entry.eventSource?.typePath) {
     issues.push('eventMappings declared but eventSource.typePath is missing');
   }
+  if (entry.eventSource) {
+    for (const [k, p] of Object.entries({
+      typePath: entry.eventSource.typePath,
+      sessionIdPath: entry.eventSource.sessionIdPath,
+      directoryPath: entry.eventSource.directoryPath,
+    })) {
+      if (p !== undefined && !/^\$/.test(p)) issues.push(`eventSource.${k}: bad path '${p}' (must start with '$')`);
+    }
+  }
   for (const m of entry.eventMappings ?? []) {
     if (!m.from || (Array.isArray(m.from) && m.from.length === 0)) issues.push(`mapping to '${m.to}': empty from`);
     if (m.to !== 'drop' && !canonicalTypes.has(m.to)) issues.push(`mapping '${m.from}' → unknown canonical type '${m.to}'`);

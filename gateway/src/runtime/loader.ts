@@ -125,10 +125,12 @@ export class RuntimePluginLoader {
       const name = mod?.name;
       if (!name || typeof name !== 'string') {
         this.state.set(file, { file, status: 'error', error: 'missing name' });
+        log.error(`[RuntimePluginLoader] ${file}: missing 'name' export — plugin NOT registered`);
         return;
       }
       if (typeof mod.createRuntime !== 'function') {
         this.state.set(file, { file, name, status: 'error', error: 'missing createRuntime(ctx)' });
+        log.error(`[RuntimePluginLoader] ${file} (${name}): missing createRuntime(ctx) export — plugin NOT registered`);
         return;
       }
       if (loadedNames.has(name)) {
@@ -145,16 +147,31 @@ export class RuntimePluginLoader {
         transformEvent: typeof mod.transformEvent === 'function' ? mod.transformEvent : undefined,
       };
       // 加载期校验：未知 canonical to / 坏路径 → eventStream 能力降级 + error 状态（fail-open，仍注册）
-      let issues: string[] = [];
+      let mappingIssues: string[] = [];
       try {
-        issues = validateEventMappings(eventExtras, this.canonicalTypes);
+        mappingIssues = validateEventMappings(eventExtras, this.canonicalTypes);
       } catch (err: any) {
-        issues = [`event mapping validation threw: ${err.message}`];
+        mappingIssues = [`event mapping validation threw: ${err.message}`];
       }
-      if (issues.length > 0) {
-        for (const i of issues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
+      if (mappingIssues.length > 0) {
+        for (const i of mappingIssues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
         capabilities.eventStream = false;
       }
+      // 事件注册交叉校验：声明了映射面但事件流关闭 / 死配置——不强制降级
+      // （runtime 可能直发 canonical 事件），但记 error 状态让 hub 可见。
+      const crossIssues: string[] = [];
+      const hasMappings = (eventExtras.eventMappings?.length ?? 0) > 0;
+      if (hasMappings && !capabilities.eventStream) {
+        crossIssues.push('eventMappings declared but capabilities.eventStream is false — mappings never applied');
+      }
+      if (eventExtras.transformEvent && !capabilities.eventStream) {
+        crossIssues.push('transformEvent declared but capabilities.eventStream is false — never invoked');
+      }
+      if (eventExtras.eventSource && !hasMappings && !eventExtras.transformEvent) {
+        crossIssues.push('eventSource declared but neither eventMappings nor transformEvent — dead config');
+      }
+      for (const i of crossIssues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
+      const issues = [...mappingIssues, ...crossIssues];
       // 插件 runtime 一律视为外部托管（gateway 不 spawn/监管其进程）
       const external = mod.external !== false;
       this.factories.set(name, mod.createRuntime);

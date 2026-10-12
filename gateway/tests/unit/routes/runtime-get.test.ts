@@ -33,4 +33,27 @@ describe('GET /api/runtime (unknownEvents exposure)', () => {
     } as any);
     expect(JSON.parse(body()).unknownEvents).toEqual({});
   });
+
+  it('exposes runtime validation notes when provided', async () => {
+    const { res, body } = fakeRes();
+    await handleRuntimeGet({} as http.IncomingMessage, res, {
+      runtimeName: () => 'my-runtime',
+      runtimeCaps: () => ({}),
+      envOverride: () => false,
+      validationNotes: () => ["my-rt: declares completionApi but completion.complete is missing — downgraded to false"],
+    } as any);
+    const parsed = JSON.parse(body());
+    expect(parsed.validation).toHaveLength(1);
+    expect(parsed.validation[0]).toMatch(/completionApi/);
+  });
+
+  it('validation defaults to empty array', async () => {
+    const { res, body } = fakeRes();
+    await handleRuntimeGet({} as http.IncomingMessage, res, {
+      runtimeName: () => 'opencode',
+      runtimeCaps: () => ({}),
+      envOverride: () => false,
+    } as any);
+    expect(JSON.parse(body()).validation).toEqual([]);
+  });
 });
