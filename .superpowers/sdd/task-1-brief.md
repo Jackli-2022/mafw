@@ -1,139 +1,118 @@
-### Task 1: ApprovalBridge Core
+### Task 1: laya-client `askPair` 双问题
 
 **Files:**
-- Create: `gateway/src/runtime/pi/pi-approval-bridge.ts`
-- Create: `gateway/tests/unit/runtime/pi-approval-bridge.test.ts`
+- Modify: `gateway/src/memory/laya-client.ts`
+- Test: `gateway/tests/unit/memory/laya-client.test.ts`
 
 **Interfaces:**
-- Consumes: None (standalone utility)
-- Produces: `ApprovalBridge` class with `request(requestId: string): Promise<boolean>`, `reply(requestId: string, approved: boolean): boolean`, `dispose(): void`
+- Produces: `REDUNDANT_QUESTION`（const）；`LayaConflictClient.askPair(known: string, newInfo: string): Promise<{ pConflict: number | null; pRedundant: number | null } | null>`。`askConflict` 签名不变（consolidation-service.ts:305 在用）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: 写失败测试**（追加到 laya-client.test.ts）
 
 ```typescript
-// gateway/tests/unit/runtime/pi-approval-bridge.test.ts
-import { ApprovalBridge } from '../../../src/runtime/pi/pi-approval-bridge';
+import { LayaConflictClient, CONFLICT_QUESTION, REDUNDANT_QUESTION } from '../../../src/memory/laya-client';
 
-describe('ApprovalBridge', () => {
-  let bridge: ApprovalBridge;
+describe('askPair', () => {
+  const deps = (fetchFn: any) => ({ url: 'http://127.0.0.1:13129', timeoutMs: 50, fetchFn });
 
-  beforeEach(() => {
-    bridge = new ApprovalBridge();
+  it('sends both questions in one call and returns both scores', async () => {
+    let captured: any;
+    const fetchFn = (async (_url: string, init: any) => {
+      captured = JSON.parse(init.body);
+      return new Response(JSON.stringify({ answers: { conflict: { noul: 0.2 }, redundant: { noul: 0.93 } } }), { status: 200 });
+    }) as any;
+    const r = await new LayaConflictClient(deps(fetchFn)).askPair('已知', '新信息');
+    expect(captured.questions.conflict).toEqual(CONFLICT_QUESTION);
+    expect(captured.questions.redundant).toEqual(REDUNDANT_QUESTION);
+    expect(r).toEqual({ pConflict: 0.2, pRedundant: 0.93 });
   });
 
-  afterEach(() => {
-    bridge.dispose();
+  it('missing redundant field → pRedundant null, overall non-null', async () => {
+    const fetchFn = (async () => new Response(JSON.stringify({ answers: { conflict: { noul: 0.4 } } }), { status: 200 })) as any;
+    const r = await new LayaConflictClient(deps(fetchFn)).askPair('a', 'b');
+    expect(r).toEqual({ pConflict: 0.4, pRedundant: null });
   });
 
-  it('should resolve request when reply is called with true', async () => {
-    const promise = bridge.request('req-1');
-    const result = bridge.reply('req-1', true);
-    expect(result).toBe(true);
-    await expect(promise).resolves.toBe(true);
-  });
-
-  it('should resolve request when reply is called with false', async () => {
-    const promise = bridge.request('req-2');
-    bridge.reply('req-2', false);
-    await expect(promise).resolves.toBe(false);
-  });
-
-  it('should return false when reply is called for unknown requestId', () => {
-    const result = bridge.reply('unknown', true);
-    expect(result).toBe(false);
-  });
-
-  it('should auto-reject on timeout', async () => {
-    jest.useFakeTimers();
-    const promise = bridge.request('req-3');
-    jest.advanceTimersByTime(300_000);
-    await expect(promise).resolves.toBe(false);
-    jest.useRealTimers();
-  });
-
-  it('should reject all pending requests on dispose', async () => {
-    const p1 = bridge.request('req-4');
-    const p2 = bridge.request('req-5');
-    bridge.dispose();
-    await expect(p1).resolves.toBe(false);
-    await expect(p2).resolves.toBe(false);
-  });
-
-  it('should handle multiple concurrent requests', async () => {
-    const p1 = bridge.request('req-6');
-    const p2 = bridge.request('req-7');
-    bridge.reply('req-6', true);
-    bridge.reply('req-7', false);
-    await expect(p1).resolves.toBe(true);
-    await expect(p2).resolves.toBe(false);
+  it('total failure → null', async () => {
+    const fetchFn = (async () => new Response(JSON.stringify({ error: 'x' }), { status: 500 })) as any;
+    expect(await new LayaConflictClient(deps(fetchFn)).askPair('a', 'b')).toBeNull();
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: 跑测试确认红**
 
-Run: `cd gateway && npx jest tests/unit/runtime/pi-approval-bridge.test.ts`
-Expected: FAIL with "Cannot find module"
+Run: `cd gateway; npx jest tests/unit/memory/laya-client.test.ts`
+Expected: FAIL（REDUNDANT_QUESTION / askPair 不存在）
 
-- [ ] **Step 3: Implement ApprovalBridge**
+- [ ] **Step 3: 实现**（laya-client.ts）
+
+在 `CONFLICT_QUESTION` 后加：
 
 ```typescript
-// gateway/src/runtime/pi/pi-approval-bridge.ts
-interface PendingRequest {
-  resolve: (approved: boolean) => void;
-  timeout: NodeJS.Timeout;
-}
-
-export class ApprovalBridge {
-  private pending = new Map<string, PendingRequest>();
-  private timeoutMs: number;
-
-  constructor(timeoutMs: number = 300_000) {
-    this.timeoutMs = timeoutMs;
-  }
-
-  request(requestId: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(requestId);
-        resolve(false);
-      }, this.timeoutMs);
-
-      this.pending.set(requestId, { resolve, timeout });
-    });
-  }
-
-  reply(requestId: string, approved: boolean): boolean {
-    const req = this.pending.get(requestId);
-    if (!req) return false;
-
-    clearTimeout(req.timeout);
-    this.pending.delete(requestId);
-    req.resolve(approved);
-    return true;
-  }
-
-  dispose(): void {
-    for (const { resolve, timeout } of this.pending.values()) {
-      clearTimeout(timeout);
-      resolve(false);
-    }
-    this.pending.clear();
-  }
-}
+/** G2 write-routing redundancy question — separate contract from CONFLICT_QUESTION,
+ *  calibrated independently (observe-first, tauRedundantHigh default 1.0). */
+export const REDUNDANT_QUESTION = {
+  type: 'noul',
+  instructions: '新信息(new)是否已被已有记忆(known)覆盖？覆盖=known已包含new的实质内容，new不带来新事实',
+  labels: { false: '未覆盖', true: '已覆盖' },
+} as const;
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+类中加方法（复用同一熔断器状态）：
 
-Run: `cd gateway && npx jest tests/unit/runtime/pi-approval-bridge.test.ts`
-Expected: PASS (6 tests)
+```typescript
+  async askPair(known: string, newInfo: string): Promise<{ pConflict: number | null; pRedundant: number | null } | null> {
+    if (Date.now() < this.breakerOpenUntil) return null;
+    try {
+      const resp = await Promise.race([
+        this.fetchFn(`${this.url}/v1/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            state: { known, new: newInfo },
+            questions: { conflict: CONFLICT_QUESTION, redundant: REDUNDANT_QUESTION },
+          }),
+        }),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error('laya timeout')), this.timeoutMs);
+          timer.unref?.();
+        }),
+      ]) as Response;
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const pc = data?.answers?.conflict?.noul;
+      const pr = data?.answers?.redundant?.noul;
+      const pConflict = typeof pc === 'number' && Number.isFinite(pc) ? pc : null;
+      const pRedundant = typeof pr === 'number' && Number.isFinite(pr) ? pr : null;
+      if (pConflict === null && pRedundant === null) return null;
+      this.consecutiveFails = 0;
+      return { pConflict, pRedundant };
+    } catch (err: any) {
+      this.consecutiveFails++;
+      if (this.consecutiveFails >= 3) {
+        this.breakerOpenUntil = Date.now() + this.breakerCooldownMs;
+        this.consecutiveFails = 0;
+        log.warn(`[Laya] circuit breaker open for ${this.breakerCooldownMs / 1000}s (${err?.message || err})`);
+      }
+      return null;
+    }
+  }
+```
+
+注意：`consecutiveFails` / `breakerOpenUntil` 现为 private——同类内新方法直接可用，无需改可见性。
+
+- [ ] **Step 4: 跑测试确认绿**
+
+Run: `cd gateway; npx jest tests/unit/memory/laya-client.test.ts`
+Expected: PASS（9 个）
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd gateway && git add src/runtime/pi/pi-approval-bridge.ts tests/unit/runtime/pi-approval-bridge.test.ts
-git commit -m "feat(pi): add ApprovalBridge for nativeApprovals
-
-Shared Promise map coordinating between pi extension and gateway HTTP API.
-5-minute timeout, auto-reject on timeout, per-session lifecycle."
+git add gateway/src/memory/laya-client.ts gateway/tests/unit/memory/laya-client.test.ts
+git commit -m "feat: laya askPair dual-question (conflict+redundant) client"
 ```
+
+---
+
