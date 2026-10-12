@@ -51,4 +51,24 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('fallback result');
   });
+
+  it('image 路径：从归一 DTO（{info, parts}）提取最新 assistant 文本', async () => {
+    const imagePart = { type: 'file', url: 'data:image/png;base64,AAAA', mime: 'image/png' };
+    const fakeRt: any = {
+      capabilities: {},
+      session: {
+        create: async () => ({ id: 's1' }),
+        promptAsync: async () => {},
+        messages: async () => ({
+          data: [
+            { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'q' }] },
+            { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'text', text: 'a cat' }, { type: 'tool', tool: 'x' }] },
+          ],
+        }),
+      },
+    };
+    const executor = createMediaRuntimeExecutor(fakeRt);
+    const out = await executor.prompt([imagePart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
+    expect(out).toBe('a cat');
+  });
 });

@@ -133,7 +133,7 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent } from './runtime/pi/pi-events';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
-import { applyNormalizeMessages } from './runtime/normalize-messages';
+import { wrapRuntimeMessages } from './runtime/normalize-messages';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
@@ -1329,6 +1329,9 @@ class MafwScheduler {
 
   /** 包装 runtime 的 prompt 面：按绑定+物化状态注入/剥离 agent 参数（物化车道 1 执行点）。 */
   private wrapRuntimeIdentity(rt: AgentRuntime): AgentRuntime {
+    // 历史消息归一收口：声明 normalizeMessages 的 runtime 在 session.messages 出口
+    // 统一转 opencode {info, parts} DTO（所有消费者形状一致）。必须先于身份包装。
+    wrapRuntimeMessages(rt);
     const registry = this.identityRegistry;
     (rt.session as any) = withIdentityPrompt(
       rt.session as any,
@@ -5628,10 +5631,9 @@ class MafwScheduler {
               ...(before ? { before } : {}),
             });
             const rawData = result.data || [];
-            const data = applyNormalizeMessages(this.runtime, Array.isArray(rawData) ? rawData : []);
             const nextCursor = result.nextCursor || null;
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: Array.isArray(data) ? data : [], nextCursor }));
+            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [], nextCursor }));
           } catch (err: any) {
             log.warn(`[Scheduler] Failed to fetch messages (serve may not be ready): ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
