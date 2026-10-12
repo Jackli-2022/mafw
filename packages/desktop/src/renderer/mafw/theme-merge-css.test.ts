@@ -50,6 +50,20 @@ describe("picker-pop token 块已删除（经 Portal 挂 body，从 body 继承�
   })
 })
 
+describe("宽屏消息列覆盖 — 三主题态同宽", () => {
+  const wide = block("@media (min-width: 1500px)")
+  test("覆盖亮色手动选择器（否则高优先级的亮色主题块 720px 永远压住 880px）", () => {
+    expect(wide).toContain('html[data-theme="light"] .mafw-shell')
+  })
+  test("覆盖亮色跟随系统选择器", () => {
+    expect(wide).toContain("html:not([data-theme]) .mafw-shell")
+  })
+  test("覆盖暗色默认选择器", () => {
+    expect(wide).toContain(".mafw-shell")
+    expect(wide).toContain("--msg-col-width: 880px")
+  })
+})
+
 describe("合并块保留代码块主题令牌", () => {
   test("暗色块", () => {
     expect(dark).toContain("--color-background-stronger: var(--background-stronger)")

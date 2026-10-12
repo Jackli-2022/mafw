@@ -314,7 +314,7 @@ html[data-theme="light"] body {
    <Portal> 弹层挂 document.body，token 由合并块覆盖，无需独立镜像。 */
 /* ── 宽屏列宽分档（§4.5）：封顶 880px（业界 768-896px 舒适阅读宽度，
    16px 正文的 1100px 一行 70+ 汉字超出舒适区） ── */
-@media (min-width: 1500px) { .mafw-shell { --msg-col-width: 880px; } }
+@media (min-width: 1500px) { .mafw-shell, html[data-theme="light"] .mafw-shell, html:not([data-theme]) .mafw-shell { --msg-col-width: 880px; } }
 @media (max-width: 680px) { .mafw-input-area { width: min(var(--msg-col-width), calc(100% - 32px)); } }
 
 /* ── Motion (§5: hover 120ms / collapse 200ms / enter 200ms, 无 >300ms 装饰动画) ── */
