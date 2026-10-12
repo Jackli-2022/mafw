@@ -4,7 +4,8 @@ export interface SessionClientLike {
   session: {
     delete(opts: { sessionID: string }): Promise<void>;
     // Flat signature — the v2 opencode SDK takes { sessionID, title }, no body wrapper.
-    update(opts: { sessionID: string; title: string }): Promise<any>;
+    // Optional: runtimes without rename support omit it; the route 503s instead of a TypeError 500.
+    update?(opts: { sessionID: string; title: string }): Promise<any>;
   };
 }
 
@@ -67,6 +68,10 @@ export async function handleSessionMutations(
     try { title = String(JSON.parse(raw || '{}').title ?? ''); } catch { /* invalid json → empty */ }
     if (!title.trim()) {
       json(400, { error: 'title is required' });
+      return true;
+    }
+    if (typeof client.session.update !== 'function') {
+      json(503, { error: `runtime does not implement session.update (rename unsupported)` });
       return true;
     }
     await client.session.update({ sessionID, title: title.trim() });

@@ -53,10 +53,18 @@ const fakePi = {
       subscribe: () => () => {},
       isStreaming: false,
       messages: [],
+      setSessionName: (name: string) => {
+        (globalThis as any).__piRenames = [...((globalThis as any).__piRenames || []), name];
+      },
     },
   }),
   SessionManager: {
     list: async (_cwd: string) => fakeSessionList,
+    open: (path: string) => ({
+      appendSessionInfo: (name: string) => {
+        (globalThis as any).__piAppends = [...((globalThis as any).__piAppends || []), { path, name }];
+      },
+    }),
   },
 };
 
@@ -98,6 +106,49 @@ describe('pi-runtime', () => {
     const { data } = await rt.session.messages({ sessionID: id });
     expect(Array.isArray(data)).toBe(true);
     expect(msgCount).toBe(0);
+  });
+});
+
+describe('pi session.update (rename)', () => {
+  afterEach(() => {
+    delete (globalThis as any).__piRenames;
+    delete (globalThis as any).__piAppends;
+  });
+
+  it('implements session.update (validateRuntime must not warn)', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    expect(typeof (rt.session as any).update).toBe('function');
+  });
+
+  it('live session → setSessionName', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    const { id } = await rt.session.create({ directory: '/tmp/proj' });
+    await (rt.session as any).update({ sessionID: id, title: '新标题' });
+    expect((globalThis as any).__piRenames).toEqual(['新标题']);
+  });
+
+  it('persisted session → SessionManager.open + appendSessionInfo', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    await (rt.session as any).update({ sessionID: 'pi-sess-1', title: '改名' });
+    expect((globalThis as any).__piAppends).toEqual([{ path: '/tmp/sessions/pi-sess-1.jsonl', name: '改名' }]);
+  });
+
+  it('unknown session → throws a diagnosable error', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    await expect((rt.session as any).update({ sessionID: 'nope', title: 'x' }))
+      .rejects.toThrow(/not found/);
   });
 });
 

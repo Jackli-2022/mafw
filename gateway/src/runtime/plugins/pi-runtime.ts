@@ -180,6 +180,27 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     normalizeMessages: (raw: any[]) => normalizePiMessages(raw),
     get: async (opts: { sessionID: string }) => registry.get(opts.sessionID),
     delete: async (opts: { sessionID: string }) => { await registry.delete(opts.sessionID); },
+    // 重命名：live 会话走 AgentSession.setSessionName（内部 appendSessionInfo
+    // 落盘）；已持久化会话定位 SessionManager 文件后 appendSessionInfo。
+    update: async (opts: { sessionID: string; title: string }) => {
+      const live = registry.sessionFor(opts.sessionID);
+      if (live) {
+        if (typeof live.setSessionName === 'function') live.setSessionName(opts.title);
+        else if (typeof live.sessionManager?.appendSessionInfo === 'function') live.sessionManager.appendSessionInfo(opts.title);
+        else throw new Error('pi session.update: live session exposes no rename primitive (setSessionName/appendSessionInfo)');
+        return { id: opts.sessionID, title: opts.title };
+      }
+      const pi = await imp('@earendil-works/pi-coding-agent');
+      const SM = pi.SessionManager;
+      if (!SM?.list || !SM?.open) throw new Error('pi session.update: SessionManager.list/open unavailable');
+      const dir = ctx.projectDir ?? config.raw.paths.projectDir;
+      const found = ((await SM.list(dir)) as any[]).find((s) => s.id === opts.sessionID);
+      if (!found) throw new Error(`pi session.update: session ${opts.sessionID} not found (live or persisted under ${dir})`);
+      const sm = SM.open(found.path);
+      if (typeof sm.appendSessionInfo !== 'function') throw new Error('pi session.update: SessionManager.appendSessionInfo unavailable');
+      sm.appendSessionInfo(opts.title);
+      return { id: opts.sessionID, title: opts.title };
+    },
     abort: async (opts: { sessionID: string }) => { await registry.abort(opts.sessionID); },
     list: async () => registry.list(),
     todo: async () => registry.todo(),

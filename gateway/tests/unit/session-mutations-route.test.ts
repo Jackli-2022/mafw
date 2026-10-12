@@ -119,6 +119,17 @@ describe('handleSessionMutations', () => {
     expect(res.body.error).toBe('not found');
   });
 
+  it('returns 503 when runtime lacks session.update (declared sessionApi but method absent)', async () => {
+    const deps = okDeps();
+    deps.getClient.mockReturnValue({ session: { delete: jest.fn() } }); // 无 update
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+
+    const res = await send(server, 'PATCH', '/api/sessions/ses_1', { title: 'x' });
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/update/);
+  });
+
   it('returns false for unrelated routes', async () => {
     server = createServer({ getCapabilities: jest.fn(), getClient: jest.fn() });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
