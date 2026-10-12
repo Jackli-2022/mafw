@@ -33,9 +33,11 @@ describe('searchScored time anchoring integration', () => {
     const results = index.searchScored('recent kubernetes cluster setup notes', 2, { now: NOW.toISOString() } as any);
     expect(results[0].entry.id).toBe('recent-hit');
 
-    // Same query without a time expression → no date preference.
+    // Same query without a time expression → no date preference. V2 L2:
+    // verbatim-duplicate text folds at the search exit (recent-hit is the
+    // same abstraction re-recorded later — one pointer suffices).
     const plain = index.searchScored('kubernetes cluster setup notes', 2, {});
-    expect(plain.map(r => r.entry.id)).toEqual(['old-hit', 'recent-hit']);
+    expect(plain.map(r => r.entry.id)).toEqual(['old-hit']);
   });
 });
 

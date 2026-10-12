@@ -56,15 +56,10 @@ describe('pinned memory store', () => {
     expect(store.setPinned('mem_nope', true)).toBe(false);
   });
 
-  test('MinHash merge: pinned = OR across sources', async () => {
-    await store.write(makeUnit({ pinned: true, primary_abstraction: '用户偏好中文回复和简洁代码' }));
-    // 相似 abstraction 触发合并（threshold 0.75，3-gram shingle）
-    const b = makeUnit({ primary_abstraction: '用户偏好中文回复和简洁代码风格', pinned: false });
-    await store.write(b);
-    const mergedEntry = store.indexManager_().getIndex().entries.find((e: any) => e.merged_from?.length);
-    expect(mergedEntry).toBeDefined();
-    expect(mergedEntry.pinned).toBe(true);
-  });
+  // V2 ①a: the "MinHash merge: pinned = OR across sources" test was removed
+  // with the write-path merge (2026-10-12) — pinned propagation now rides the
+  // supersede chain only, and near-dup handling moved to the three tiers
+  // (exact-hash / read-time collapse / consolidation).
 
   test('explicit supersedes flow: old entry gets superseded_by = new id', async () => {
     const old = makeUnit({ primary_abstraction: '用户偏好在晚上工作' });
