@@ -248,16 +248,14 @@ export class ChatStore {
   }
 
   applyEvent(type: string, data: any): void {
-    if (type === 'message.part.updated') {
+    if (type === 'part.updated') {
       const part = data?.properties?.part
       if (!part) return
       if (part.sessionID && part.sessionID !== this._sessionID) return
       this.applyPart(part)
       this.deps.onChange()
-    } else if (type === 'session.idle') {
-      this.finalizeTurn()
-    } else if (type === 'message.complete') {
-      // gateway Mode A 广播把 session.idle 翻译成 message.complete（带顶层 sessionID）
+    } else if (type === 'turn.completed' || type === 'turn.failed' || type === 'turn.aborted') {
+      // v2：回合终态三元组（原 session.idle/message.complete 双轨合并；Mode A 改写已删）
       const sid = data?.sessionID
       if (!sid || sid === this._sessionID) this.finalizeTurn()
     }

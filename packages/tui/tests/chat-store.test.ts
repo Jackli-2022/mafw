@@ -51,17 +51,17 @@ test('send appends user turn and calls promptAsync with parts', async () => {
   assert.equal(s.streaming, true)
 })
 
-test('message.part.updated snapshot-replaces per partID; session.idle finalizes', async () => {
+test('part.updated snapshot-replaces per partID; turn.completed finalizes', async () => {
   const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
   await s.send('q')
-  s.applyEvent('message.part.updated', { type: 'message.part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hel' } } })
-  s.applyEvent('message.part.updated', { type: 'message.part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hello' } } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hel' } } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hello' } } })
   assert.equal(s.streaming, true)
   const t = s.turns.at(-1)!
   assert.equal(t.role, 'assistant')
   assert.equal(t.parts.length, 1, '同 partID 快照替换不新增')
   assert.equal(t.parts[0].text, 'Hello')
-  s.applyEvent('session.idle', { type: 'session.idle' })
+  s.applyEvent('turn.completed', { type: 'turn.completed' })
   assert.equal(s.streaming, false)
   assert.equal(s.turns.at(-1)!.done, true)
 })
@@ -69,19 +69,19 @@ test('message.part.updated snapshot-replaces per partID; session.idle finalizes'
 test('ignores parts from other sessions', async () => {
   const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
   await s.send('q')
-  s.applyEvent('message.part.updated', { type: 'message.part.updated', properties: { part: { id: 'px', messageID: 'mx', sessionID: 'other', type: 'text', text: 'x' } } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'px', messageID: 'mx', sessionID: 'other', type: 'text', text: 'x' } } })
   assert.equal(s.turns.length, 1, '只有本地 user turn')
 })
 
 test('tool part running until terminal status; output only when completed', async () => {
   const s = new ChatStore({ session: fakeSession() as any, sessionID: 's', onChange: () => {} })
   await s.send('q')
-  s.applyEvent('message.part.updated', { type: 'message.part.updated', properties: { part: { id: 'pt', messageID: 'ma', sessionID: 's', type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'npm test' } } } } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pt', messageID: 'ma', sessionID: 's', type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'npm test' } } } } })
   let part = s.turns.at(-1)!.parts[0]
   assert.equal(part.state, 'running')
   assert.ok(part.text.includes('npm test'))
   assert.equal(part.text, 'npm test', 'running 不含输出')
-  s.applyEvent('message.part.updated', { type: 'message.part.updated', properties: { part: { id: 'pt', messageID: 'ma', sessionID: 's', type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'npm test' }, output: 'ok 12 passed' } } } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pt', messageID: 'ma', sessionID: 's', type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'npm test' }, output: 'ok 12 passed' } } } })
   part = s.turns.at(-1)!.parts[0]
   assert.equal(part.state, 'completed')
   assert.ok(part.text.includes('ok 12 passed'))
@@ -174,40 +174,40 @@ test('busy sends are queued (turn flagged queued) and flushed on idle in order',
   const queuedTurns = s.turns.filter(t => t.queued)
   assert.equal(queuedTurns.length, 2, '两条排队 turn')
   assert.deepEqual(queuedTurns.map(t => t.parts[0].text), ['second', 'third'])
-  s.applyEvent('session.idle', { type: 'session.idle' })
+  s.applyEvent('turn.completed', { type: 'turn.completed' })
   await settle()
-  assert.equal(fx.calls.promptAsync.length, 2, 'idle 后自动发一条')
+  assert.equal(fx.calls.promptAsync.length, 2, 'turn.completed 后自动发一条')
   assert.deepEqual(fx.calls.promptAsync[1].body.parts, [{ type: 'text', text: 'second' }])
   assert.equal(s.turns.filter(t => t.queued).length, 1, '还剩一条排队')
-  s.applyEvent('session.idle', { type: 'session.idle' })
+  s.applyEvent('turn.completed', { type: 'turn.completed' })
   await settle()
   assert.equal(fx.calls.promptAsync.length, 3)
   assert.deepEqual(fx.calls.promptAsync[2].body.parts, [{ type: 'text', text: 'third' }])
   assert.equal(s.turns.filter(t => t.queued).length, 0)
 })
 
-test('message.complete (gateway 对 session.idle 的翻译名) finalizes turn and flushes queue', async () => {
+test('turn.completed (v2 回合终态) finalizes turn and flushes queue', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
   await s.send('q')
   await s.send('queued-msg')
-  s.applyEvent('message.part.updated', { type: 'message.part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hi' } } })
+  s.applyEvent('part.updated', { type: 'part.updated', properties: { part: { id: 'pa', messageID: 'ma', sessionID: 's', type: 'text', text: 'Hi' } } })
   assert.equal(s.streaming, true)
-  // Mode A 广播的回合结束事件：{ type: 'message.complete', sessionID }
-  s.applyEvent('message.complete', { type: 'message.complete', sessionID: 's' })
+  // v2 wire 形状：{ type: 'turn.completed', sessionID }
+  s.applyEvent('turn.completed', { type: 'turn.completed', sessionID: 's' })
   await settle()
-  assert.equal(fx.calls.promptAsync.length, 2, 'message.complete 视同 idle → flush 排队')
+  assert.equal(fx.calls.promptAsync.length, 2, 'turn.completed → flush 排队')
   assert.equal(s.turns.filter(t => t.queued).length, 0, '排队转正')
   assert.equal(s.turns.filter(t => t.parts[0]?.text === 'queued-msg').length, 1)
 })
 
-test('message.complete from another session is ignored', async () => {
+test('turn.completed from another session is ignored', async () => {
   const fx = fakeSession()
   const s = new ChatStore({ session: fx as any, sessionID: 's', onChange: () => {} })
   await s.send('q')
-  s.applyEvent('message.complete', { type: 'message.complete', sessionID: 'other' })
+  s.applyEvent('turn.completed', { type: 'turn.completed', sessionID: 'other' })
   await settle()
-  assert.equal(s.streaming, true, '他session的complete不影响')
+  assert.equal(s.streaming, true, '他session的turn终态不影响')
   assert.equal(fx.calls.promptAsync.length, 1)
 })
 
@@ -217,7 +217,7 @@ test('flushed queued turn is re-used (no duplicate user turn)', async () => {
   await s.send('first')
   const before = s.turns.length
   await s.send('second')
-  s.applyEvent('session.idle', { type: 'session.idle' })
+  s.applyEvent('turn.completed', { type: 'turn.completed' })
   await settle()
   assert.equal(s.turns.length, before + 1, '排队 turn 转正而非新增')
   assert.equal(s.turns.at(-1)!.parts[0].text, 'second')

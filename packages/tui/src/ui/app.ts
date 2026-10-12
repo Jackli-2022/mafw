@@ -632,7 +632,7 @@ export async function runApp(opts: AppOptions): Promise<void> {
         const m = permStore.get(sid)
         setStatus({ permAuto: m !== 'read-only', permLabel: m !== 'read-only' ? (m === 'full-access' ? '🛡 全开' : '🛡 auto') : undefined })
       }
-    } else if (type === 'session.idle') {
+    } else if (type === 'turn.completed') {
       void refreshUsage()
     }
   }

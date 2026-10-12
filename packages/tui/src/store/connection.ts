@@ -13,13 +13,15 @@ export interface ConnectionDeps {
 const BACKOFF = [1000, 2000, 5000, 15000]
 const HEALTH_TICK_MS = 1000
 /** TUI 精确订阅的白名单（`'*'` 兜底转发其余）；tests/event-coverage.test.ts
- *  与 @mafw/sdk 事件 union 交叉校验——词汇替换时此处必须跟随。 */
+ *  与 @mafw/sdk 事件 union 交叉校验——词汇替换时此处必须跟随。
+ *  v2：turn 三元组 / part.*（原 session.idle/message.complete/message.error/
+ *  session.error/message.part.updated 五类收敛）。 */
 export const KNOWN_EVENTS = [
-  'message.part.updated',
-  'session.idle',
-  'message.complete',
-  'message.error',
-  'session.error',
+  'part.updated',
+  'part.delta',
+  'turn.completed',
+  'turn.failed',
+  'turn.aborted',
   'permission.asked',
   'permission_mode',
   'question.asked',
