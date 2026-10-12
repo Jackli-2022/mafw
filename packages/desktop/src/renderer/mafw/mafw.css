@@ -362,7 +362,9 @@ html[data-theme="light"] body {
 /* ── Shell Layout ── */
 .mafw-shell {
   display: grid;
-  grid-template-columns: var(--rail-w, 264px) 1fr;
+  grid-template-columns: var(--rail-w, 264px) minmax(0, 1fr);
+  /* minmax(0,·)：1fr=minmax(auto,1fr) 会让顶行 session tab 的 min-content
+     撑破轨道，把窗口控制按钮推出可视区 */
   grid-template-rows: 38px 1fr;
   height: 100vh;
   --rail-w: 264px;
@@ -376,6 +378,7 @@ html[data-theme="light"] body {
 .mafw-topstrip {
   display: flex; align-items: center; gap: 4px;
   height: 38px; padding: 0 0 0 8px;
+  min-width: 0; /* grid item 的 auto 最小尺寸必须可压到 0，strip 内滚接管溢出 */
   background: var(--bg-base);
   border-bottom: 1px solid var(--border-subtle);
   -webkit-app-region: drag;
