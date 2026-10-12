@@ -112,13 +112,13 @@ describe('ToolPartAssembler', () => {
     const partMsgId = partOf(evts).messageID;
     expect(partMsgId).toBe(evts[0].payload.properties.info.id);
     const evts2 = a.applyCall({ sessionID: 's1', callID: 'c2', tool: 'bash', input: {} });
-    expect(evts2.every((e) => e.payload.type === 'message.part.updated')).toBe(true);
+    expect(evts2.every((e) => e.payload.type === 'part.updated')).toBe(true);
     expect(partOf(evts2).messageID).toBe(partMsgId);
   });
 
   test('observeAnchor 从过路事件学真实 messageID 后优先使用', () => {
     const a = mk();
-    a.observeAnchor({ payload: { type: 'message.part.updated', properties: { part: { id: 'p9', messageID: 'm9', type: 'text' } } }, sessionID: 's1' } as any);
+    a.observeAnchor({ payload: { type: 'part.updated', properties: { part: { id: 'p9', messageID: 'm9', type: 'text' } } }, sessionID: 's1' } as any);
     const part = partOf(a.applyCall({ sessionID: 's1', callID: 'c1', tool: 'bash', input: {} }));
     expect(part.messageID).toBe('m9');
   });

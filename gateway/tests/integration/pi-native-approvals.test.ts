@@ -102,7 +102,6 @@ describe('pi nativeApprovals integration', () => {
     expect(facets.type).toBe('permission.asked');
     expect(facets.sessionID).toBe('pi_test');
     expect(facets.properties.requestId).toBe('req-100');
-    expect(facets.broadcast).toBe('passthrough');
     expect(facets.step).toBeNull();
   });
 
@@ -125,7 +124,6 @@ describe('pi nativeApprovals integration', () => {
     const facets = normalizeOpencodeEvent(translated!);
     expect(facets.type).toBe('permission.replied');
     expect(facets.properties.approved).toBe(true);
-    expect(facets.broadcast).toBe('passthrough');
   });
 
   it('should return false when permissionReply is called for unknown session', async () => {

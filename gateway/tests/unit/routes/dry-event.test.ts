@@ -20,13 +20,12 @@ async function post(body: unknown, deps?: any): Promise<{ status: number; json: 
 }
 
 describe('POST /api/runtime/dry-event', () => {
-  it('reports facets + matrix flow for a well-formed session.idle', async () => {
-    const { status, json } = await post({ event: { type: 'session.idle', properties: { sessionID: 's1' } } });
+  it('reports facets + matrix flow for a well-formed turn.completed', async () => {
+    const { status, json } = await post({ event: { type: 'turn.completed', properties: { sessionID: 's1' } } });
     expect(status).toBe(200);
     expect(json.known).toBe(true);
-    expect(json.facets.broadcast).toBe('idle');
     expect(json.facets.chatSignal).toBe('complete');
-    expect(json.flow.modeA).toBe('rewrite');
+    expect(json.flow.modeA).toBe('passthrough');
     expect(json.flow.desktop).toBe('handled');
     expect(json.warnings).toEqual([]);
   });
@@ -38,14 +37,14 @@ describe('POST /api/runtime/dry-event', () => {
     expect(json.flow).toBeUndefined();
   });
 
-  it('warns on missing fields (session.idle without sessionID)', async () => {
-    const { json } = await post({ event: { type: 'session.idle', properties: {} } });
+  it('warns on missing fields (turn.completed without sessionID)', async () => {
+    const { json } = await post({ event: { type: 'turn.completed', properties: {} } });
     expect(json.warnings.some((w: string) => w.includes('sessionID'))).toBe(true);
   });
 
   it('accepts the event object directly at top level (no envelope)', async () => {
-    const { json } = await post({ type: 'session.idle', properties: { sessionID: 's1' } });
-    expect(json.facets.broadcast).toBe('idle');
+    const { json } = await post({ type: 'turn.completed', properties: { sessionID: 's1' } });
+    expect(json.facets.chatSignal).toBe('complete');
   });
 
   it('rejects non-object body with 400', async () => {
@@ -62,7 +61,7 @@ describe('POST /api/runtime/dry-event', () => {
 describe('POST /api/runtime/dry-event with plugin mapping hop', () => {
   const entry = {
     eventSource: { typePath: '$.type', sessionIdPath: '$.sessionID' },
-    eventMappings: [{ from: 'done', to: 'session.idle' }, { from: 'noise', to: 'drop' }],
+    eventMappings: [{ from: 'done', to: 'turn.completed' }, { from: 'noise', to: 'drop' }],
   };
   const deps = {
     getPluginEventEntry: (name: string) => (name === 'fake' ? entry : null),
@@ -72,9 +71,9 @@ describe('POST /api/runtime/dry-event with plugin mapping hop', () => {
   it('maps a native event and reports the mapping hop', async () => {
     const { status, json } = await post({ plugin: 'fake', event: { type: 'done', sessionID: 's1' } }, deps);
     expect(status).toBe(200);
-    expect(json.mapping).toEqual({ matched: true, to: 'session.idle' });
-    expect(json.type).toBe('session.idle');
-    expect(json.facets.broadcast).toBe('idle');
+    expect(json.mapping).toEqual({ matched: true, to: 'turn.completed' });
+    expect(json.type).toBe('turn.completed');
+    expect(json.facets.chatSignal).toBe('complete');
   });
 
   it('reports dropped mapping', async () => {
@@ -120,7 +119,7 @@ describe('POST /api/runtime/dry-event tool primitive hop', () => {
     expect(json.mapping).toEqual({ matched: true, to: 'tool.call' });
     expect(json.known).toBe(true);
     expect(json.facets).toBeNull();
-    const part = json.assembled.find((e: any) => e.payload?.type === 'message.part.updated')?.payload?.properties?.part;
+    const part = json.assembled.find((e: any) => e.payload?.type === 'part.updated')?.payload?.properties?.part;
     expect(part?.id).toBe('toolpart_tc1');
     expect(part?.type).toBe('tool');
     expect(part?.state.status).toBe('running');

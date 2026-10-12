@@ -5,7 +5,7 @@
  * 广播出口形状守卫（event-broadcast.ts，fail-open）。
  */
 import { isMalformedEvent } from '../../../src/runtime/normalize';
-import { opencodeBroadcast } from '../../../src/runtime/event-broadcast';
+import { mafwBroadcast } from '../../../src/runtime/event-broadcast';
 
 describe('isMalformedEvent', () => {
   it('empty type + no properties -> malformed', () => {
@@ -15,16 +15,16 @@ describe('isMalformedEvent', () => {
   });
 
   it('real event types are fine even with empty properties', () => {
-    expect(isMalformedEvent({ type: 'session.idle', properties: {} })).toBe(false);
-    expect(isMalformedEvent({ type: 'message.part.updated', properties: { part: {} } })).toBe(false);
+    expect(isMalformedEvent({ type: 'turn.completed', properties: {} })).toBe(false);
+    expect(isMalformedEvent({ type: 'part.updated', properties: { part: {} } })).toBe(false);
   });
 
   it('legacy envelope shapes (payload.type) count as typed', () => {
-    expect(isMalformedEvent({ payload: { type: 'session.idle' } } as any)).toBe(false);
+    expect(isMalformedEvent({ payload: { type: 'turn.completed' } } as any)).toBe(false);
   });
 });
 
-describe('opencodeBroadcast shape guard', () => {
+describe('mafwBroadcast shape guard', () => {
   let errSpy: jest.SpyInstance;
 
   beforeEach(() => {
@@ -33,15 +33,15 @@ describe('opencodeBroadcast shape guard', () => {
   afterEach(() => errSpy.mockRestore());
 
   it('well-formed data passes silently', () => {
-    const env = opencodeBroadcast({ type: 'session.idle', sessionID: 's1' });
-    expect(env.type).toBe('opencode_event');
-    expect(env.data.type).toBe('session.idle');
+    const env = mafwBroadcast({ type: 'turn.completed', sessionID: 's1' });
+    expect(env.type).toBe('mafw_event');
+    expect(env.data.type).toBe('turn.completed');
     expect(errSpy).not.toHaveBeenCalled();
   });
 
   it('missing type -> error log with diagnostic (env still returned, fail-open)', () => {
-    const env = opencodeBroadcast({ type: undefined as any, sessionID: 's1' });
-    expect(env.type).toBe('opencode_event');
+    const env = mafwBroadcast({ type: undefined as any, sessionID: 's1' });
+    expect(env.type).toBe('mafw_event');
     expect(errSpy).toHaveBeenCalled();
     const msg = errSpy.mock.calls.map((c) => c.join(' ')).join(' ');
     expect(msg).toContain('type');

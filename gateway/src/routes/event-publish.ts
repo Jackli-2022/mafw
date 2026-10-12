@@ -8,11 +8,11 @@
  * 双发布形态：
  * - 顶层扁平：{ type: 'plugin:<name>:<event>', ...payload } → 原样广播
  *   （与 runtime_switched / project_registered 同 wire 约定，桌面剥壳 raw?.data || raw）
- * - opencode_event 信封：{ type: 'opencode_event', data: { type, ... } } → data
- *   经 opencodeBroadcast 形状守卫（畸形 data.type 打诊断日志后照发）
+ * - mafw_event 信封：{ type: 'mafw_event', data: { type, ... } } → data
+ *   经 mafwBroadcast 形状守卫（畸形 data.type 打诊断日志后照发）
  */
 import * as http from 'http';
-import { opencodeBroadcast } from '../runtime/event-broadcast';
+import { mafwBroadcast } from '../runtime/event-broadcast';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -49,13 +49,13 @@ export async function handleEventPublish(
       send(400, { error: "body.type must be a non-empty string (recommended namespace: 'plugin:<name>:<event>')" });
       return;
     }
-    if (body.type === 'opencode_event') {
+    if (body.type === 'mafw_event') {
       // 信封旁路：data 形状守卫（data.type 缺失 → 400，不发半成品事件）
       if (!body.data || typeof body.data !== 'object' || typeof body.data.type !== 'string' || !body.data.type) {
-        send(400, { error: 'opencode_event envelope requires data.type (non-empty string)' });
+        send(400, { error: 'mafw_event envelope requires data.type (non-empty string)' });
         return;
       }
-      deps.broadcast(opencodeBroadcast(body.data, body.data.internal === true) as any);
+      deps.broadcast(mafwBroadcast(body.data, body.data.internal === true) as any);
       send(200, { ok: true });
       return;
     }

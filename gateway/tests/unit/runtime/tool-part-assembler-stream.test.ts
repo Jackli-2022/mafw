@@ -13,8 +13,8 @@ async function collect(stream: AsyncIterable<any>) {
 describe('wrapToolPartAssembly', () => {
   test('非原语事件原样透传（opencode 恒等 oracle）', async () => {
     const events = [
-      { payload: { type: 'message.part.updated', properties: { part: { id: 'p1', messageID: 'm1', type: 'text', text: 'hi' } } }, sessionID: 's1' },
-      { payload: { type: 'session.idle', properties: { sessionID: 's1' } }, sessionID: 's1' },
+      { payload: { type: 'part.updated', properties: { part: { id: 'p1', messageID: 'm1', type: 'text', text: 'hi' } } }, sessionID: 's1' },
+      { payload: { type: 'turn.completed', properties: { sessionID: 's1' } }, sessionID: 's1' },
     ];
     const rt = fakeRuntime(events);
     wrapToolPartAssembly(rt);
@@ -22,13 +22,13 @@ describe('wrapToolPartAssembly', () => {
     expect(await collect(result.stream)).toEqual(events);
   });
 
-  test('tool.call → message.part.updated ToolPart 快照', async () => {
+  test('tool.call → part.updated ToolPart 快照', async () => {
     const rt = fakeRuntime([
       { payload: { type: 'tool.call', properties: { sessionID: 's1', callID: 'c1', tool: 'bash', input: { command: 'ls' } } }, sessionID: 's1' },
     ]);
     wrapToolPartAssembly(rt);
     const out = await collect((await rt.global.event()).stream);
-    const partEvt = out.find((e) => e.payload.type === 'message.part.updated');
+    const partEvt = out.find((e) => e.payload.type === 'part.updated');
     expect(partEvt.payload.properties.part.id).toBe('toolpart_c1');
     expect(partEvt.payload.properties.part.state.status).toBe('running');
   });
@@ -40,7 +40,7 @@ describe('wrapToolPartAssembly', () => {
     ]);
     wrapToolPartAssembly(rt);
     const out = await collect((await rt.global.event()).stream);
-    const parts = out.filter((e) => e.payload.type === 'message.part.updated');
+    const parts = out.filter((e) => e.payload.type === 'part.updated');
     expect(parts).toHaveLength(2);
     expect(parts[0].payload.properties.part.id).toBe('toolpart_c1');
     expect(parts[1].payload.properties.part.id).toBe('toolpart_c1');
@@ -50,12 +50,12 @@ describe('wrapToolPartAssembly', () => {
 
   test('锚点学习：先过 text part，后续工具 part 挂同一 messageID', async () => {
     const rt = fakeRuntime([
-      { payload: { type: 'message.part.updated', properties: { part: { id: 'p1', messageID: 'm-real', type: 'text', text: 'x' } } }, sessionID: 's1' },
+      { payload: { type: 'part.updated', properties: { part: { id: 'p1', messageID: 'm-real', type: 'text', text: 'x' } } }, sessionID: 's1' },
       { payload: { type: 'tool.call', properties: { sessionID: 's1', callID: 'c1', tool: 'bash', input: {} } }, sessionID: 's1' },
     ]);
     wrapToolPartAssembly(rt);
     const out = await collect((await rt.global.event()).stream);
-    const toolEvt = out.filter((e) => e.payload.type === 'message.part.updated').at(-1);
+    const toolEvt = out.filter((e) => e.payload.type === 'part.updated').at(-1);
     expect(toolEvt.payload.properties.part.messageID).toBe('m-real');
   });
 

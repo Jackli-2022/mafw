@@ -33,11 +33,13 @@ describe('event flow matrix', () => {
     expect(assertMatrixComplete()).toEqual([]);
   });
 
-  it('normalize.ts facet consumers are a subset of matrix normalizeFacet claims', () => {
-    // session.idle 必须声明 chatSignal+broadcast 两个 facet 消费（index.ts 现状）
-    expect(EVENT_FLOW_MATRIX['session.idle'].normalizeFacet).toContain('chatSignal');
-    expect(EVENT_FLOW_MATRIX['session.idle'].normalizeFacet).toContain('broadcast');
-    // session.idle 在 Mode A 被改写为 message.complete（MafwShell 注释印证）
-    expect(EVENT_FLOW_MATRIX['session.idle'].modeA).toBe('rewrite');
+  it('facet consumers are a subset of matrix normalizeFacet claims', () => {
+    // turn.completed 必须声明 chatSignal 消费（Mode B / index.ts 现状）
+    expect(EVENT_FLOW_MATRIX['turn.completed'].normalizeFacet).toContain('chatSignal');
+    // v2：Mode A 改写 hack 已删除，回合终态统一 passthrough
+    expect(EVENT_FLOW_MATRIX['turn.completed'].modeA).toBe('passthrough');
+    expect(EVENT_FLOW_MATRIX['turn.failed'].modeA).toBe('passthrough');
+    // part.updated 声明 toolCommand facet（tool part 快照载体）
+    expect(EVENT_FLOW_MATRIX['part.updated'].normalizeFacet).toContain('toolCommand');
   });
 });

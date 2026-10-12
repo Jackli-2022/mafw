@@ -2,7 +2,7 @@
 // + prompt 包装器（物化车道 1 的绑定执行点）+ GET /api/agents 列表合并。
 //
 // 绑定不持久化：gateway 驱动会话在创建/恢复时重新登记（ensureManagerSession 启动遍历），
-// 回合级绑定（用户选身份）在 session.idle 清除。
+// 回合级绑定（用户选身份）在 turn.completed 清除。
 // （spec docs/superpowers/specs/2026-10-08-runtime-neutral-agent-identity-design.md §3.2/3.4）
 
 export interface IdentityBinding {

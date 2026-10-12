@@ -64,8 +64,10 @@ export const SCENARIOS: ScenarioDef[] = [
   },
 ];
 
-const CONTENT_TYPES = new Set(['message.part.updated', 'message.part.delta', 'message.updated']);
-const TERMINAL_TYPES = new Set(['message.complete', 'session.idle', 'message.error', 'session.error']);
+/** Tier 0 内容面：快照（message/part.updated）或增量（part.delta）任一可满足。 */
+const CONTENT_TYPES = new Set(['part.updated', 'part.delta', 'message.updated']);
+/** Tier 0 回合终态：turn 三元组（翻译层产出；原生事件或响应投影合成都算）。 */
+const TERMINAL_TYPES = new Set(['turn.completed', 'turn.failed']);
 
 /** S3/S4 观测：T1 观察行 + recall 触达时间 + 模型对 guide 的回声文本。 */
 export interface CognitionObservation {
@@ -91,9 +93,9 @@ export function evaluateScenario(
   if (id === 'chat-roundtrip') {
     const content = events.filter((e) => CONTENT_TYPES.has(e.type));
     const terminal = events.filter((e) => TERMINAL_TYPES.has(e.type));
-    if (content.length === 0) failures.push('no content event observed (message.part.updated/delta/message.updated) — streaming render impossible');
-    if (terminal.length === 0) failures.push('no terminal event observed (message.complete/session.idle) — turn never settles, UI stays busy');
-    const errored = events.some((e) => e.type === 'message.error' || e.type === 'session.error');
+    if (content.length === 0) failures.push('no content event observed (part.updated/part.delta/message.updated) — streaming render impossible');
+    if (terminal.length === 0) failures.push('no terminal event observed (turn.completed/turn.failed) — turn never settles, UI stays busy');
+    const errored = events.some((e) => e.type === 'turn.failed');
     if (errored) failures.push('turn ended in error state');
   } else if (id === 'session-lifecycle') {
     if (!apiResult?.created) failures.push('created session not visible in session.list');

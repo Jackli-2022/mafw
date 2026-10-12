@@ -62,16 +62,16 @@ describe('POST /api/events (publish)', () => {
 
   it('opencode_event 信封旁路（data 内层透传）', async () => {
     await start();
-    const res = await post(server, { type: 'opencode_event', data: { type: 'session.idle', sessionID: 's1' } });
+    const res = await post(server, { type: 'mafw_event', data: { type: 'turn.completed', sessionID: 's1' } });
     expect(res.status).toBe(200);
     expect(broadcasted).toHaveLength(1);
-    expect(broadcasted[0].type).toBe('opencode_event');
-    expect(broadcasted[0].data).toMatchObject({ type: 'session.idle', sessionID: 's1' });
+    expect(broadcasted[0].type).toBe('mafw_event');
+    expect(broadcasted[0].data).toMatchObject({ type: 'turn.completed', sessionID: 's1' });
   });
 
   it('信封 data.type 缺失 → 400（形状守卫）', async () => {
     await start();
-    const res = await post(server, { type: 'opencode_event', data: { sessionID: 's1' } });
+    const res = await post(server, { type: 'mafw_event', data: { sessionID: 's1' } });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/data\.type/i);
     expect(broadcasted).toHaveLength(0);
@@ -132,9 +132,9 @@ describe('POST /api/events (unknown type telemetry)', () => {
     expect(recorded).toEqual([]);
   });
 
-  it('does not record envelope passthrough (opencode_event data)', async () => {
+  it('does not record envelope passthrough (mafw_event data)', async () => {
     await startTelemetry();
-    await post(server, { type: 'opencode_event', data: { type: 'session.idle', sessionID: 's1' } });
+    await post(server, { type: 'mafw_event', data: { type: 'turn.completed', sessionID: 's1' } });
     expect(recorded).toEqual([]);
   });
 });

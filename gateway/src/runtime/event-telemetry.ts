@@ -2,14 +2,16 @@
  * 事件边界遥测 —— 插件（及内置 runtime）未知事件类型的采集与告警。
  *
  * 已知集 = EVENT_FLOW_MATRIX keys（canonical 全集，测试保证与 SDK union 同步）
- *        ∪ 前缀族（plugin:* 命名空间 / session.next.* legacy 族）。
- * 全量启用（内置 runtime 也采集）依赖该已知集覆盖内置实际发射的全部类型。
+ *        ∪ RUNTIME_NATIVE_DROPPED ∪ 前缀族（plugin:* 命名空间）。
+ * v2：session.next.* 前缀豁免删除——该 legacy 族由 opencode 翻译层的
+ * transformEvent 前缀丢弃消费；家族若有新成员漏网，会以 unknown 形式
+ * 在此暴露（漏网探测器，按 firstSeen 补 drop 行即可）。
  *
  * fail-open：record/查询任何异常不抛出（调用方在事件热路径上）。
  */
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './event-flow-matrix';
 
-const KNOWN_PREFIXES = ['plugin:', 'session.next.'];
+const KNOWN_PREFIXES = ['plugin:'];
 
 /** 矩阵 keys 的运行时拷贝（模块加载时构建一次）。 */
 const MATRIX_KEYS: ReadonlySet<string> = new Set(Object.keys(EVENT_FLOW_MATRIX));

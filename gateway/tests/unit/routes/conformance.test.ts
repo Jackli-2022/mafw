@@ -18,7 +18,7 @@ function makeDeps(overrides: Partial<ConformanceDeps> = {}): ConformanceDeps {
     listSessions: async () => [...sessions.keys()].map((id) => ({ id })),
     registerEventTap: (_sid: string, cb: (e: any) => void) => {
       // 立即回放一条成功序列，模拟 runtime 事件
-      setTimeout(() => { cb({ type: 'message.part.updated', sessionID: 't1', at: 1 }); cb({ type: 'message.complete', sessionID: 't1', at: 2 }); }, 5);
+      setTimeout(() => { cb({ type: 'part.updated', sessionID: 't1', at: 1 }); cb({ type: 'turn.completed', sessionID: 't1', at: 2 }); }, 5);
       return () => {};
     },
     getObservations: async () => [

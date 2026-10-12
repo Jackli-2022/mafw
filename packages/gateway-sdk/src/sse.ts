@@ -34,9 +34,9 @@ export class SSEConnection {
     this.eventSource.onmessage = (e: MessageEvent) => {
       try {
         let data = JSON.parse(e.data)
-        // gateway Mode A 全局流 wire 格式：{ type: 'opencode_event', data: { type, properties, sessionID } }
+        // gateway Mode A 全局流 wire 格式：{ type: 'mafw_event', data: { type, properties, sessionID } }
         // 剥壳后统一为 { type, properties, sessionID }（desktop 直连不走 SDK，不受影响）
-        if (data && data.type === 'opencode_event' && data.data && typeof data.data === 'object') {
+        if (data && data.type === 'mafw_event' && data.data && typeof data.data === 'object') {
           data = data.data
         }
         const type = data.type || 'message'

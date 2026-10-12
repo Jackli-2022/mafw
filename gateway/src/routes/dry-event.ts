@@ -120,7 +120,6 @@ export async function handleDryEvent(
       sessionID: f.sessionID ?? null,
       step: !!f.step,
       chatSignal: f.chatSignal,
-      broadcast: f.broadcast,
       compaction: f.compaction,
       toolCommand: f.toolCommand ?? null,
       approval: f.approval ?? null,

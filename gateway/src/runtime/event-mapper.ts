@@ -39,9 +39,9 @@ export interface EventMappingEntry {
   transformEvent?: TransformEventFn;
 }
 
-/** sessionID 注入约定：与 pi 现状输出逐字节对齐（message.part.updated 进 part，其余进 properties）。 */
+/** sessionID 注入约定：与 pi 现状输出逐字节对齐（part.updated 进 part，其余进 properties）。 */
 const SESSION_ID_TARGETS: Record<string, 'part' | 'properties'> = {
-  'message.part.updated': 'part',
+  'part.updated': 'part',
 };
 
 function evalField(v: FieldValue, raw: any): unknown {
@@ -142,14 +142,20 @@ export function validateEventMappings(entry: EventMappingEntry, canonicalTypes: 
   return issues;
 }
 
-/** 包装 runtime.global.event()：声明了 eventMappings 的 runtime，其原生流在此过表。 */
+/**
+ * 包装 runtime.global.event()：原生流在此过翻译表（v2 强制接线——不再有
+ * 「免翻译特权」；无声明的 runtime 恒等透传 + onNoMappings 警告一次）。
+ * 声明了 eventMappings/transformEvent 的 runtime，其原生流映射为 canonical。
+ */
 export function wrapGlobalEventStream(
   rt: any,
   entry: EventMappingEntry,
   isCanonicalType: (t: string) => boolean,
   onUnknown?: (t: string) => void,
+  onNoMappings?: () => void,
 ): void {
-  if (!entry.eventMappings || entry.eventMappings.length === 0) return;
+  const hasDeclarations = (entry.eventMappings?.length ?? 0) > 0 || !!entry.transformEvent;
+  if (!hasDeclarations) onNoMappings?.();
   const orig = rt.global.event.bind(rt.global);
   rt.global.event = async () => {
     const result = await orig();

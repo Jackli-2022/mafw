@@ -7,11 +7,12 @@ export const PI_EVENT_SOURCE: EventSourceShape = { typePath: '$.type', sessionId
 /**
  * pi 原生事件 → canonical（声明式，原 translatePiEvent switch 的表化）。
  * turn_end 写 part.messageID（修复：facet 规则读 messageID 而非 assistantMessageID，
- * pi 上 BudgetGuard step 此前从未触发）。
+ * pi 上 BudgetGuard step 此前从未触发）。v2：目标词跟随 MAFW 词汇
+ * （session.idle→turn.completed；message.part.updated→part.updated）。
  */
 export const PI_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'agent_start', to: 'session.updated' },
-  { from: ['message_start', 'message_update'], to: 'message.part.updated',
+  { from: ['message_start', 'message_update'], to: 'part.updated',
     fields: { 'part.type': { const: 'text' }, 'part.text': { path: '$.delta', default: '' } } },
   { from: 'message_end', to: 'message.updated', fields: { 'info.role': { const: 'assistant' } } },
   { from: 'tool_call', to: 'tool.call',
@@ -19,10 +20,10 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'tool_result', to: 'tool.result',
     fields: { callID: { path: '$.toolCallId' }, tool: { path: '$.toolName' },
               isError: { path: '$.isError' }, output: { path: '$.content' } } },
-  { from: 'turn_start', to: 'message.part.updated', fields: { 'part.type': { const: 'step-start' } } },
-  { from: 'turn_end', to: 'message.part.updated',
+  { from: 'turn_start', to: 'part.updated', fields: { 'part.type': { const: 'step-start' } } },
+  { from: 'turn_end', to: 'part.updated',
     fields: { 'part.type': { const: 'step-finish' }, 'part.messageID': { template: 'pi_step_{$.sessionID}' } } },
-  { from: ['agent_end', 'agent_settled'], to: 'session.idle' },
+  { from: ['agent_end', 'agent_settled'], to: 'turn.completed' },
 ];
 
 /**

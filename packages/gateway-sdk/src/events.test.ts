@@ -6,7 +6,7 @@ import {
 
 test("runtime event list has no duplicates", () => {
   expect(new Set(RUNTIME_EVENT_TYPES).size).toBe(RUNTIME_EVENT_TYPES.length)
-  expect(RUNTIME_EVENT_TYPES.length).toBe(27)
+  expect(RUNTIME_EVENT_TYPES.length).toBe(23)
 })
 
 test("flat event list has no duplicates", () => {
@@ -19,12 +19,12 @@ test("assertNever throws with context", () => {
 })
 
 test("GatewayEvent accepts envelope and flat shapes (compile-time)", () => {
-  const a: GatewayEvent = { type: "opencode_event", data: { type: "session.idle", sessionID: "s1" } }
+  const a: GatewayEvent = { type: "mafw_event", data: { type: "turn.completed", sessionID: "s1" } }
   const b: GatewayEvent = { type: "project_registered", projectDir: "/x" }
-  const c: GatewayEvent = { type: "opencode_event", data: { type: "plugin:foo:bar" } }
-  expect(a.type).toBe("opencode_event")
+  const c: GatewayEvent = { type: "mafw_event", data: { type: "plugin:foo:bar" } }
+  expect(a.type).toBe("mafw_event")
   expect(b.type).toBe("project_registered")
-  expect(c.type).toBe("opencode_event")
+  expect(c.type).toBe("mafw_event")
 })
 
 test("every runtime type is a dotted name (permission_mode is the sole flat exception)", () => {

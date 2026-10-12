@@ -1,7 +1,9 @@
 /**
  * CanonicalFacetTable —— canonical 事件类型 → EventFacets 的纯数据规则表。
- * 初始内容 = normalizeOpencodeEvent（normalize.ts）if 链的逐行表化；
- * opencode 知识与执行机制分离，v2/新 runtime 落地时只加规则行。
+ * v2（2026-10-12）：broadcast 切面随 Mode A 改写 hack 删除；toolCommand
+ * 从 normalize.ts 内置特例升为规则行（载体：tool part 快照的
+ * state.input.command——原 session.next.tool.* 载体随词汇除名）。
+ * 词汇常量镜像 ./mafw-vocabulary.ts；规则行序即求值序（正交切面可叠加）。
  */
 import { getPath, evalConditions, Condition } from './path-expr';
 import type { EventFacets, StepEndedProps, ApprovalFacet } from './normalize';
@@ -14,42 +16,43 @@ export interface FacetRule {
     sessionID: string | string[];
     assistantMessageID: string;
     finish: string;
-    /** 仅 legacy 行：sessionID 解析失败时回退 chain 并以此判定是否产出 */
-    requiresSessionID?: boolean;
   };
   chatSignal?: 'delta' | 'complete' | 'error';
   deltaText?: string;
   chatError?: string;
-  broadcast?: 'idle' | 'error' | 'passthrough';
   compaction?: 'start' | 'end';
+  /** tool part 快照携带的 shell command 路径（自更新调用者定位用） */
+  toolCommand?: string;
   approval?: { requestId: string | string[]; toolName: string | string[]; patterns?: string };
 }
 
 export const CANONICAL_FACET_RULES: FacetRule[] = [
-  // step 三载体（行序 = normalize.ts if 链顺序）
-  { type: 'session.next.step.ended',
-    step: { sessionID: ['$.sessionID', '$.part.sessionID', '$.info.sessionID'], assistantMessageID: '$.assistantMessageID', finish: '$.finish', requiresSessionID: true } },
-  { type: 'message.part.updated', when: [{ path: '$.part.type', equals: 'step-finish' }],
+  // step 双载体（legacy session.next.step.ended 载体随词汇 v2 除名）
+  { type: 'part.updated', when: [{ path: '$.part.type', equals: 'step-finish' }],
     step: { sessionID: '$.part.sessionID', assistantMessageID: '$.part.messageID', finish: '$.part.reason' } },
   { type: 'message.updated',
     when: [{ path: '$.info.role', equals: 'assistant' }, { path: '$.info.time.completed', exists: true }],
     step: { sessionID: '$.info.sessionID', assistantMessageID: '$.info.id', finish: '$.info.finish' } },
   // chatSignal（delta 双路径：part.text 优先）
-  { type: 'message.part.updated', when: [{ path: '$.part.text', exists: true }], chatSignal: 'delta', deltaText: '$.part.text' },
-  { type: 'message.part.updated', when: [{ path: '$.delta', exists: true }], chatSignal: 'delta', deltaText: '$.delta' },
-  { type: 'session.idle', chatSignal: 'complete', broadcast: 'idle' },
+  { type: 'part.updated', when: [{ path: '$.part.text', exists: true }], chatSignal: 'delta', deltaText: '$.part.text' },
+  { type: 'part.updated', when: [{ path: '$.delta', exists: true }], chatSignal: 'delta', deltaText: '$.delta' },
+  { type: 'turn.completed', chatSignal: 'complete' },
   { type: 'message.updated', chatSignal: 'complete' },
-  { type: 'session.error', chatSignal: 'error', chatError: '$.error', broadcast: 'error' },
-  { type: 'message.error', chatSignal: 'error', chatError: '$.error' },
+  { type: 'turn.failed', chatSignal: 'error', chatError: '$.error' },
+  // toolCommand：载体从 session.next.tool.*（随 v2 除名）迁到 tool part 快照
+  // （opencode ToolPart 与 assembler 合成快照都携带 state.input.command）
+  { type: 'part.updated', when: [{ path: '$.part.type', equals: 'tool' }], toolCommand: '$.part.state.input.command' },
   // compaction
   { type: 'session.compacting', compaction: 'start' },
   { type: 'session.compacted', compaction: 'end' },
-  // approval 双形状对齐；metadata 构造为执行器内置特例
+  // approval 双形状对齐（opencode: id/permission/patterns/metadata；pi: requestId/toolName/args/risk）；
+  // v2 增量可选字段 options[]/suggestedRule 随 properties 透传，facet 不动。
+  // metadata 构造为执行器内置特例。
   { type: 'permission.asked',
     approval: { requestId: ['$.requestId', '$.id'], toolName: ['$.permission', '$.toolName'], patterns: '$.patterns' } },
 ];
 
-type FacetSubset = Pick<EventFacets, 'step' | 'chatSignal' | 'deltaText' | 'chatError' | 'broadcast' | 'compaction' | 'approval'>;
+type FacetSubset = Pick<EventFacets, 'step' | 'chatSignal' | 'deltaText' | 'chatError' | 'compaction' | 'toolCommand' | 'approval'>;
 
 function firstTruthy(paths: string | string[], props: any): unknown {
   for (const p of Array.isArray(paths) ? paths : [paths]) {
@@ -60,18 +63,15 @@ function firstTruthy(paths: string | string[], props: any): unknown {
 }
 
 export function evaluateFacetRules(rules: FacetRule[], type: string, props: any, chainSessionID: string | undefined): FacetSubset {
-  const out: FacetSubset = { step: null, chatSignal: null, deltaText: undefined, chatError: undefined, broadcast: 'passthrough', compaction: null, approval: null };
+  const out: FacetSubset = { step: null, chatSignal: null, deltaText: undefined, chatError: undefined, compaction: null, toolCommand: undefined, approval: null };
   for (const r of rules) {
     if (r.type !== type) continue;
     if (!evalConditions(r.when, props)) continue;
     if (!out.step && r.step) {
-      let sid = firstTruthy(r.step.sessionID, props) as string | undefined;
-      if (r.step.requiresSessionID) {
-        sid = sid || chainSessionID;
-        if (!sid) continue; // legacy 行：无 sessionID 不产 step
-      }
+      // 旧语义保留：规则命中即产出（sessionID 可为 undefined——legacy 行的
+      // requiresSessionID 门已随载体除名；下游 BudgetGuard 自行按 sessionID 门控）
       out.step = {
-        sessionID: sid,
+        sessionID: firstTruthy(r.step.sessionID, props) as string | undefined,
         assistantMessageID: getPath(props, r.step.assistantMessageID) as string | undefined,
         finish: getPath(props, r.step.finish) as string | undefined,
       } as StepEndedProps;
@@ -81,8 +81,11 @@ export function evaluateFacetRules(rules: FacetRule[], type: string, props: any,
       if (r.deltaText) out.deltaText = getPath(props, r.deltaText) as string | undefined;
       if (r.chatError) out.chatError = getPath(props, r.chatError) || 'Unknown error'; // 内置：对齐现状 `|| 'Unknown error'`
     }
-    if (out.broadcast === 'passthrough' && r.broadcast) out.broadcast = r.broadcast;
     if (!out.compaction && r.compaction) out.compaction = r.compaction;
+    if (out.toolCommand === undefined && r.toolCommand) {
+      const c = getPath(props, r.toolCommand);
+      if (typeof c === 'string' && c) out.toolCommand = c;
+    }
     if (!out.approval && r.approval && chainSessionID) {
       const requestId = firstTruthy(r.approval.requestId, props);
       const toolName = firstTruthy(r.approval.toolName, props);

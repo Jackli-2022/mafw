@@ -46,7 +46,7 @@ async function collectUntilTerminal(
   let settled = false;
   const stop = tapReg(sid, (e) => {
     events.push(e);
-    if (e.type === 'message.complete' || e.type === 'session.idle' || e.type === 'message.error' || e.type === 'session.error') {
+    if (e.type === 'turn.completed' || e.type === 'turn.failed') {
       settled = true;
     }
   });

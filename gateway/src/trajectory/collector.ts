@@ -173,7 +173,7 @@ export class TrajectoryCollector {
       return null;
     }
 
-    if (type === 'message.part.updated') {
+    if (type === 'part.updated') {
       const part = props?.part;
       if (!part) return null;
       const s = this.stateFor(sessionID, undefined, projectID);

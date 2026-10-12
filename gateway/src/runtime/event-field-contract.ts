@@ -29,21 +29,25 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
 
   const sid = sidOf(evt);
   switch (type) {
-    case 'session.idle':
-    case 'session.error':
+    case 'turn.completed':
+    case 'turn.failed':
+    case 'turn.aborted':
     case 'session.compacting':
     case 'session.compacted':
-      if (!sid) warnings.push(`'${type}' without sessionID — compaction flush / trajectory idle aggregation will not trigger`);
+      if (!sid) warnings.push(`'${type}' without sessionID — goal driver / compaction flush / trajectory turn aggregation will not trigger`);
       break;
-    case 'message.part.updated': {
+    case 'part.updated': {
       const part = props?.part;
       if (!part || typeof part !== 'object') {
-        warnings.push("message.part.updated without properties.part — no step/delta extraction, desktop shows nothing");
+        warnings.push("part.updated without properties.part — no step/delta/toolCommand extraction, desktop shows nothing");
         break;
       }
-      if (!sid) warnings.push('message.part.updated without sessionID (part.sessionID or properties.sessionID)');
+      if (!sid) warnings.push('part.updated without sessionID (part.sessionID or properties.sessionID)');
       if (part.type === 'text' && !part.text && !props?.delta) {
         warnings.push("text part without part.text or properties.delta — streaming render shows nothing");
+      }
+      if (part.type === 'tool' && !part.state?.input?.command && !part.state?.output && !part.state?.error) {
+        warnings.push("tool part without state.input/output/error — tool card renders empty");
       }
       break;
     }

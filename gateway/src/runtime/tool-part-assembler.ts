@@ -1,10 +1,11 @@
 /**
  * ToolPartAssembler —— 把「call/result 分离」runtime 的三原语合帧为 opencode 形状
  * ToolPart 快照。spec：docs/superpowers/specs/2026-10-12-tool-part-compat-design.md
- * per-session、callID 键控；每帧产全量快照（message.part.updated 语义）。
+ * per-session、callID 键控；每帧产全量快照（part.updated 语义，v2 词汇）。
  */
 import { randomUUID } from 'crypto';
 import type { RawRuntimeEvent } from './normalize';
+import { MAFW } from './mafw-vocabulary';
 
 export const TOOL_PRIMITIVE_TYPES: ReadonlySet<string> = new Set(['tool.call', 'tool.delta', 'tool.result']);
 
@@ -65,10 +66,10 @@ export class ToolPartAssembler {
     const sid = (evt as any)?.sessionID ?? props?.sessionID ?? props?.part?.sessionID ?? props?.info?.sessionID;
     if (typeof sid !== 'string' || !sid) return;
     const s = this.stateFor(sid);
-    if (type === 'message.part.updated') {
+    if (type === MAFW.partUpdated) {
       const mid = props?.part?.messageID;
       if (typeof mid === 'string' && mid) s.lastAssistantMessageID = mid;
-    } else if (type === 'message.updated') {
+    } else if (type === MAFW.messageUpdated) {
       const info = props?.info;
       if (info?.role === 'assistant' && typeof info?.id === 'string' && info.id) s.lastAssistantMessageID = info.id;
     }
@@ -82,13 +83,13 @@ export class ToolPartAssembler {
     if (!s.syntheticAnchorID) {
       s.syntheticAnchorID = `asst_${sessionID}_synth`;
       const info = { id: s.syntheticAnchorID, role: 'assistant', sessionID, parentID: null, time: { created: this.now() } };
-      return { messageID: s.syntheticAnchorID, pre: [{ payload: { type: 'message.updated', properties: { info } }, sessionID } as any] };
+      return { messageID: s.syntheticAnchorID, pre: [{ payload: { type: MAFW.messageUpdated, properties: { info } }, sessionID } as any] };
     }
     return { messageID: s.syntheticAnchorID, pre: [] };
   }
 
   private partEvent(sessionID: string, part: any): RawRuntimeEvent {
-    return { payload: { type: 'message.part.updated', properties: { part } }, sessionID } as any;
+    return { payload: { type: MAFW.partUpdated, properties: { part } }, sessionID } as any;
   }
 
   applyCall(p: ToolCallPrimitive): RawRuntimeEvent[] {

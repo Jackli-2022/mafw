@@ -4,19 +4,23 @@
  * 本文件必须保持零 import：gateway jest 经相对路径直接 import，
  * desktop/TUI 经 @mafw/sdk import。新增事件类型 = 在这里加一行，
  * desktop/TUI 的穷尽检查随即编译报错，指向需要接线的位置。
+ *
+ * v2（2026-10-12）：词汇所有权归 MAFW（spec 2026-10-12-native-event-vocabulary-design.md）。
+ * turn 三元组取代 session.idle/message.complete/message.error/message.aborted 双轨；
+ * part.* 去冗余前缀；信封 mafw_event；gateway 侧常量镜像在
+ * gateway/src/runtime/mafw-vocabulary.ts（双向交叉测试钉扎一致）。
  */
 
-/** opencode_event 信封内层 data.type 全集（runtime 原生事件经 normalize 后的 canonical 名） */
+/** mafw_event 信封内层 data.type 全集（runtime 原生事件经翻译层后的 canonical 名） */
 export const RUNTIME_EVENT_TYPES = [
-  "session.created", "session.updated", "session.deleted", "session.idle",
-  "session.error", "session.compacting", "session.compacted",
-  "message.updated", "message.part.updated", "message.part.delta",
-  "message.complete", "message.part.complete", "message.error", "message.aborted",
+  "session.created", "session.updated", "session.deleted",
+  "turn.completed", "turn.failed", "turn.aborted",
+  "session.compacting", "session.compacted",
+  "message.updated", "part.updated", "part.delta", "part.complete",
   "question.asked", "question.replied", "question.rejected",
   "permission.asked", "permission.replied",
-  "todo.updated",
+  "plan.updated", "usage.updated",
   "trajectory.event", "trajectory.turn",
-  "session.next.step.ended", "session.next.reasoning.ended", "session.next.tool.failed",
   "permission_mode", "session.diff",
 ] as const
 
@@ -33,8 +37,8 @@ export const FLAT_EVENT_TYPES = [
 
 export type FlatEventType = typeof FLAT_EVENT_TYPES[number]
 
-/** opencode_event 信封内层载荷（wire 契约见 gateway event-broadcast.ts） */
-export interface OpencodeEventData {
+/** mafw_event 信封内层载荷（wire 契约见 gateway event-broadcast.ts） */
+export interface MafwEventData {
   type: RuntimeEventType | `plugin:${string}`
   properties?: any
   sessionID?: string
@@ -43,9 +47,9 @@ export interface OpencodeEventData {
   internal?: boolean
 }
 
-export interface OpencodeEventEnvelope {
-  type: "opencode_event"
-  data: OpencodeEventData
+export interface MafwEventEnvelope {
+  type: "mafw_event"
+  data: MafwEventData
 }
 
 /** 顶层扁平广播：判别 union，载荷宽松（各消费方自行窄化） */
@@ -68,10 +72,10 @@ export type FlatGatewayEvent =
   | { type: `plugin:${string}`; [key: string]: any }
 
 /** /api/events 上一帧的完整 union（剥壳前） */
-export type GatewayEvent = OpencodeEventEnvelope | FlatGatewayEvent
+export type GatewayEvent = MafwEventEnvelope | FlatGatewayEvent
 
 /** 剥壳后的统一视图（desktop `raw?.data || raw` 的产物） */
-export type UnwrappedEvent = OpencodeEventData | FlatGatewayEvent
+export type UnwrappedEvent = MafwEventData | FlatGatewayEvent
 
 /**
  * 穷尽性守卫：switch/if-chain 末端调用。所有 union 成员都被分支消费后
@@ -80,6 +84,6 @@ export type UnwrappedEvent = OpencodeEventData | FlatGatewayEvent
  */
 export function assertNever(x: never, context?: string): never {
   throw new Error(
-    `Unhandled event${context ? ` at ${context}` : ""}: ${JSON.stringify(x)}`
+    `Unhandled event${context ? ` at ${context}`: ""}: ${JSON.stringify(x)}`
   )
 }

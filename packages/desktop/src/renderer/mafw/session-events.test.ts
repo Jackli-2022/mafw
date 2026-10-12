@@ -170,7 +170,7 @@ describe("shell event coverage guard", () => {
 
   test("coverage function runs without throwing on a known type (compile-time is the real guard)", () => {
     expect(() =>
-      assertShellEventCoverage({ type: "opencode_event", data: { type: "session.idle", sessionID: "s1" } }),
+      assertShellEventCoverage({ type: "opencode_event", data: { type: "session.idle", sessionID: "s1" } as any }),
     ).not.toThrow()
   })
 })

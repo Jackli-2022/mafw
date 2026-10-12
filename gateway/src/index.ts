@@ -94,7 +94,9 @@ import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/iden
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { isHiddenSession } from './core/session-visibility';
 
-import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
+import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
+import { MAFW } from './runtime/mafw-vocabulary';
+import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { BudgetGuard } from './core/budget-guard';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
@@ -125,6 +127,7 @@ import { validateRuntime, RuntimeValidation } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, opencodeTransformEvent } from './runtime/opencode-events';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
@@ -531,7 +534,9 @@ class MafwScheduler {
     if (opencodePassword) {
       sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
     }
-    // opencode 注册为正式内置插件（与用户插件同一接口；同名文件/包可覆盖）
+    // opencode 注册为正式内置插件（与用户插件同一接口；同名文件/包可覆盖）。
+    // v2：携带事件翻译声明——opencode 不再有「免翻译特权」，原生流经同一
+    // wrap 序列（映射差异行 + transformEvent 前缀丢弃）进 canonical 管线。
     const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
     this.runtimeLoader.registerBuiltin(
       'opencode',
@@ -541,6 +546,11 @@ class MafwScheduler {
       }),
       fullCapabilities(),
       !!process.env.MAFW_SERVER_SERVE_URL,
+      {
+        eventSource: OPENCODE_EVENT_SOURCE,
+        eventMappings: OPENCODE_EVENT_MAPPINGS,
+        transformEvent: opencodeTransformEvent,
+      },
     );
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
@@ -1118,9 +1128,11 @@ class MafwScheduler {
       }
     }
     // Goal node listeners: NodeDriver 完成/失败双门的事件侧（spec §3）。
+    // v2：turn.completed/turn.failed 是回合终态一等公民（opencode session.idle /
+    // pi agent_end 经翻译层产出），双保险的 broadcast 切面已随 Mode A 改写删除。
     if (sessionID) {
-      if (type === 'session.idle' || f.broadcast === 'idle') this.goalDriver?.onSessionIdle(sessionID);
-      if (f.broadcast === 'error' || type === 'session.error') {
+      if (type === MAFW.turnCompleted) this.goalDriver?.onSessionIdle(sessionID);
+      if (type === MAFW.turnFailed) {
         this.goalDriver?.onSessionError(sessionID, String(props?.error ?? 'session error'));
       }
     }
@@ -1131,7 +1143,7 @@ class MafwScheduler {
       applyApprovalPolicy(this.approvalPolicy, this.runtime, f.approval, sessionID, props);
     }
     // Turn-level identity binding cleanup: a user-picked identity lasts one turn.
-    if (type === 'session.idle' && sessionID) this.identityState.clearTurnBindings(sessionID);
+    if (type === MAFW.turnCompleted && sessionID) this.identityState.clearTurnBindings(sessionID);
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
     // store writes + re-render storms froze the UI). Tiered policy for them:
@@ -1140,9 +1152,9 @@ class MafwScheduler {
     // user chats AND manager goal sessions — passes through untouched.
     const role = sessionID ? this.internalSessionRoles.get(sessionID) : undefined;
     const memoryWorker = !!role && (role === 'index-scan' || role === 'extract' || role === 'reflect');
-    if (memoryWorker && type !== 'message.complete' && type !== 'session.idle' && type !== 'message.error' && type !== 'message.aborted' && f.broadcast !== 'error') return;
+    if (memoryWorker && type !== MAFW.turnCompleted && type !== MAFW.turnFailed && type !== MAFW.turnAborted) return;
     // deltas are never logged for any session (per-token lines churned the 5MB log)
-    if (type !== 'message.part.delta') log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}`);
+    if (type !== MAFW.partDelta) log.info(`[SSE] ${this.runtimeName} event: ${type} sessionID=${sessionID}`);
 
     // Caller-location bookkeeping for self-update: every event refreshes the
     // session's last-active stamp; tool events carrying a shell command that
@@ -1164,7 +1176,7 @@ class MafwScheduler {
         if (collector) {
           const trajEvt = collector.handleEvent(type, props, f.directory);
           if (trajEvt) {
-            this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.event', properties: trajEvt, sessionID } });
+            this.broadcast(mafwBroadcast({ type: MAFW.trajectoryEvent, properties: trajEvt, sessionID }, memoryWorker));
           }
         }
       }
@@ -1211,26 +1223,42 @@ class MafwScheduler {
     }
 
     // Global broadcast (Mode A — used by the desktop renderer).
-    // Normalize to the renderer's contract: { type, properties, sessionID }.
-    if (f.broadcast === 'idle') {
+    // v2：Mode A 改写 hack（session.idle→message.complete / session.error→
+    // message.error）已删除——turn.completed/turn.failed 是词汇一等公民，翻译层
+    // 直接产出；回合聚合与 usage 合成挂在 turn.completed，广播统一 passthrough。
+    if (type === MAFW.turnCompleted && sessionID) {
       try {
-        if (this.trajectoryCollector && sessionID) {
+        if (this.trajectoryCollector) {
           const turn = this.trajectoryCollector.onIdle(sessionID);
           if (turn) {
-            this.broadcast({ type: 'opencode_event', data: { type: 'trajectory.turn', properties: turn, sessionID } });
+            this.broadcast(mafwBroadcast({ type: MAFW.trajectoryTurn, properties: turn, sessionID }, memoryWorker));
+            // v2 增量：usage.updated 从回合聚合合成（tokens/cost 汇总；Tier 0 之外
+            // 的可选组，desktop UsagePill 事件化消费留后续，轮询保留兜底）。
+            if (turn.tokens || turn.cost) {
+              this.broadcast(mafwBroadcast({
+                type: MAFW.usageUpdated,
+                properties: { tokens: turn.tokens, cost: turn.cost, model: turn.model, provider: turn.provider, turnID: turn.turnID },
+                sessionID,
+              }, memoryWorker));
+            }
           }
         }
       } catch (err: any) {
-        log.warn(`[Trajectory] idle aggregation failed (non-fatal): ${err.message}`);
+        log.warn(`[Trajectory] turn aggregation failed (non-fatal): ${err.message}`);
       }
-      this.broadcast(opencodeBroadcast({ type: 'message.complete', sessionID }, memoryWorker));
-    } else if (f.broadcast === 'error') {
-      this.broadcast(opencodeBroadcast({ type: 'message.error', sessionID, error: props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error') }, memoryWorker));
-    } else {
-      // directory 透传：session.created/updated/deleted 的消费方（桌面 Rail）
-      // 据此定位所属项目做定向刷新（normalize 已从 GlobalEvent 信封提取）。
-      this.broadcast(opencodeBroadcast({ type, properties: props, sessionID, directory: f.directory }, memoryWorker));
     }
+    // turn.failed 保留 error 字段提取（消费方错误展示的 wire 契约）；其余 passthrough。
+    const errorText = type === MAFW.turnFailed
+      ? (props?.error instanceof Error ? props.error.message : String(props?.error ?? 'Unknown error'))
+      : undefined;
+    this.broadcast(mafwBroadcast(
+      {
+        type, properties: props, sessionID,
+        directory: f.directory,
+        ...(errorText !== undefined ? { error: errorText } : {}),
+      },
+      memoryWorker,
+    ));
   }
 
   /** 能力门：runtime 未声明该能力时以 503 显式拒绝（fail-open 的声明式降级）。 */
@@ -1285,22 +1313,25 @@ class MafwScheduler {
           // 声明 vs 实现一致性校验：必选面缺失 → 回退；能力位虚报 → 强制降级
           // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
           this.applyRuntimeValidation(rt, pluginName, true);
-          // 事件映射声明：插件声明的 eventMappings 在 gateway 侧包装其原生流，
-          // 使原生事件进入 canonical 管线（opencode 无声明 → 不包装，零风险）。
-          if (plugin.eventMappings?.length) {
-            wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
-              try {
-                const { firstSeen } = this.unknownEventTracker.record(rt.name, t);
-                if (firstSeen) {
-                  log.warn(
-                    `[SSE] runtime '${rt.name}' native event '${t}' unmapped — dropped ` +
-                    `(declare it in eventMappings or handle via transformEvent)`,
-                  );
-                }
-              } catch { /* fail-open */ }
-            });
-          }
-          // 工具三原语合帧：必须在 eventMappings 包装之后（消费映射后的 canonical 流）。
+          // v2 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
+          // 映射表（差异行）→ canonical passthrough → transformEvent → 未知遥测。
+          wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
+            try {
+              const { firstSeen } = this.unknownEventTracker.record(rt.name, t);
+              if (firstSeen) {
+                log.warn(
+                  `[SSE] runtime '${rt.name}' native event '${t}' unmapped — dropped ` +
+                  `(declare it in eventMappings or handle via transformEvent)`,
+                );
+              }
+            } catch { /* fail-open */ }
+          }, () => {
+            log.warn(
+              `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
+              `native stream passes through untranslated (OK only for canonical-identity runtimes)`,
+            );
+          });
+          // 工具三原语合帧：必须在翻译包装之后（消费映射后的 canonical 流）。
           wrapToolPartAssembly(rt);
           log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
           return this.wrapRuntimeIdentity(rt);
@@ -1316,6 +1347,11 @@ class MafwScheduler {
       const rt = await builtin.createRuntime(createRuntimePluginContext(undefined));
       // 内置件同样过校验（dogfood）：不回退（无处可退），但缺口要暴露。
       this.applyRuntimeValidation(rt, 'builtin:opencode', false);
+      // v2：opencode 注册时携带 OPENCODE_EVENT_MAPPINGS（差异行 + 前缀丢弃），
+      // builtin 分支与插件分支走同一 wrap 序列。
+      wrapGlobalEventStream(rt, builtin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
+        try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
+      });
       wrapToolPartAssembly(rt); // opencode 无三原语，恒等直通
       return this.wrapRuntimeIdentity(rt);
     }
@@ -1325,6 +1361,13 @@ class MafwScheduler {
       ...sdkConfig,
     });
     this.applyRuntimeValidation(fallbackRt, 'builtin:opencode(direct)', false);
+    wrapGlobalEventStream(fallbackRt, {
+      eventSource: OPENCODE_EVENT_SOURCE,
+      eventMappings: OPENCODE_EVENT_MAPPINGS,
+      transformEvent: opencodeTransformEvent,
+    }, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
+      try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
+    });
     wrapToolPartAssembly(fallbackRt);
     return this.wrapRuntimeIdentity(fallbackRt);
   }
@@ -2785,7 +2828,7 @@ class MafwScheduler {
       },
       saveMode: async (sid, mode) => { this.getGatewayDb().kvSet('perm-mode', sid, mode); },
       onModeChanged: (sid, mode, reason) => {
-        this.broadcast(opencodeBroadcast({ type: 'permission_mode', properties: { mode, reason }, sessionID: sid }));
+        this.broadcast(mafwBroadcast({ type: MAFW.permissionMode, properties: { mode, reason }, sessionID: sid }));
       },
       getIdentity: (sid) => {
         const b = this.identityState.get(sid);
@@ -3143,39 +3186,20 @@ class MafwScheduler {
   }
 
   private setupEventBus() {
+    // v2：eventBus → 扁平广播的翻译收敛为注册表（flat-emit-registry.ts，
+    // 发射侧不再硬编码 if 链）；特殊消费者保持独立订阅，与广播翻译正交。
+    for (const [name, emit] of FLAT_EMITTERS) {
+      eventBus.on(name, (data: any) => this.broadcast(emit(data)));
+    }
     eventBus.on("goal_created", (data: any) => {
-      this.broadcast({ type: "goal_created", ...data });
-      if (data.goalId) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
+      if (data?.goalId) setImmediate(() => void this.startGoal(data.goalId, data.projectDir));
     });
     eventBus.on("state_change", (data: any) => {
-      this.broadcast({ type: "state_change", ...data });
       // legacy /goal skill 链唤醒——driver.advance 幂等（在飞即短路）
-      if (data.goalId) setImmediate(() => void this.goalDriver?.advance(data.goalId));
-    });
-    eventBus.on("user_question", (data: any) => {
-      this.broadcast({ type: "user_question", ...data });
-    });
-    eventBus.on("user_feedback", (data: any) => {
-      this.broadcast({ type: "user_feedback", ...data });
+      if (data?.goalId) setImmediate(() => void this.goalDriver?.advance(data.goalId));
     });
     eventBus.on("phase_transition", (data: any) => {
-      this.broadcast({ type: "phase_transition", ...data });
       this.getMilestonePush()?.onPhaseTransition(data);
-    });
-    eventBus.on("memory_written", (data: any) => {
-      this.broadcast({ type: "memory_written", ...data });
-    });
-    eventBus.on("memory_energy_changed", (data: any) => {
-      this.broadcast({ type: "memory_energy_changed", ...data });
-    });
-    eventBus.on("memory_distillation_complete", (data: any) => {
-      this.broadcast({ type: "memory_distillation_complete", ...data });
-    });
-    eventBus.on("automation_triggered", (data: any) => {
-      this.broadcast({ type: "automation_triggered", ...data });
-    });
-    eventBus.on("automation_completed", (data: any) => {
-      this.broadcast({ type: "automation_completed", ...data });
     });
   }
 
@@ -6346,7 +6370,7 @@ class MafwScheduler {
               'Connection': 'keep-alive',
               'Access-Control-Allow-Origin': '*'
             });
-            res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+            res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString(), vocab: 'v2' })}\n\n`);
             this.sseClients.add(res);
             req.on('close', () => { this.sseClients.delete(res); });
           }
@@ -6436,7 +6460,7 @@ class MafwScheduler {
           (ws as any).isAlive = true;
           (ws as any).missedPongs = 0;
           ws.on('pong', () => { (ws as any).isAlive = true; (ws as any).missedPongs = 0; });
-          ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() }));
+          ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString(), vocab: 'v2' }));
           ws.on('message', (raw) => {
             void this.handleWsMessage(ws, raw);
           });

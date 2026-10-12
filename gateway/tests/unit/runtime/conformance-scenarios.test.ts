@@ -4,26 +4,26 @@ const ev = (type: string, at = 0) => ({ type, at });
 
 describe('S1 chat-roundtrip evaluator', () => {
   it('passes on delta + terminal sequence', () => {
-    const events = [ev('message.part.updated', 1), ev('message.part.delta', 2), ev('message.complete', 3)];
+    const events = [ev('part.updated', 1), ev('part.delta', 2), ev('turn.completed', 3)];
     expect(evaluateScenario('chat-roundtrip', events)).toEqual({ pass: true, failures: [] });
   });
 
   it('fails when no content event ever arrives (silent runtime)', () => {
-    const events = [ev('session.idle', 1)];
+    const events = [ev('turn.completed', 1)];
     const r = evaluateScenario('chat-roundtrip', events);
     expect(r.pass).toBe(false);
     expect(r.failures.some((f) => f.includes('content'))).toBe(true);
   });
 
   it('fails when no terminal event (turn never settles)', () => {
-    const events = [ev('message.part.updated', 1), ev('message.part.delta', 2)];
+    const events = [ev('part.updated', 1), ev('part.delta', 2)];
     const r = evaluateScenario('chat-roundtrip', events);
     expect(r.pass).toBe(false);
     expect(r.failures.some((f) => f.includes('terminal'))).toBe(true);
   });
 
   it('fails on error terminal (counts as failure with error note)', () => {
-    const events = [ev('message.part.updated', 1), ev('message.error', 2)];
+    const events = [ev('part.updated', 1), ev('turn.failed', 2)];
     const r = evaluateScenario('chat-roundtrip', events);
     expect(r.pass).toBe(false);
   });

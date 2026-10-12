@@ -2,20 +2,20 @@ import { checkEventFields } from '../../../src/runtime/event-field-contract';
 
 describe('checkEventFields', () => {
   it('known well-formed events produce no warnings', () => {
-    expect(checkEventFields({ type: 'session.idle', properties: { sessionID: 's1' } })).toEqual([]);
+    expect(checkEventFields({ type: 'turn.completed', properties: { sessionID: 's1' } })).toEqual([]);
     expect(checkEventFields({
-      type: 'message.part.updated',
+      type: 'part.updated',
       properties: { part: { sessionID: 's1', messageID: 'm1', type: 'text', text: 'hi' } },
     })).toEqual([]);
   });
 
   it('session.idle without any sessionID warns (breaks compaction flush)', () => {
-    const w = checkEventFields({ type: 'session.idle', properties: {} });
+    const w = checkEventFields({ type: 'turn.completed', properties: {} });
     expect(w.some((x) => x.includes('sessionID'))).toBe(true);
   });
 
   it('message.part.updated text part without text or delta warns', () => {
-    const w = checkEventFields({ type: 'message.part.updated', properties: { part: { sessionID: 's1', type: 'text' } } });
+    const w = checkEventFields({ type: 'part.updated', properties: { part: { sessionID: 's1', type: 'text' } } });
     expect(w.some((x) => x.includes('text'))).toBe(true);
   });
 
@@ -36,7 +36,7 @@ describe('checkEventFields', () => {
   });
 
   it('shape-B flat envelope (payload nesting) is honored', () => {
-    const w = checkEventFields({ payload: { type: 'session.idle', properties: {} } });
+    const w = checkEventFields({ payload: { type: 'turn.completed', properties: {} } });
     expect(w.some((x) => x.includes('sessionID'))).toBe(true);
   });
 

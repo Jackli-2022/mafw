@@ -2,7 +2,9 @@
  * 事件归一化器 —— 把 canonical 事件翻译成 EventFacets（正交切面）。
  *
  * facet 提取规则已表化到 canonical-facets.ts 的 CANONICAL_FACET_RULES；
- * 本文件只保留信封解包、sessionID 提取链、toolCommand 特例与畸形判定。
+ * 本文件只保留信封解包、sessionID 提取链与畸形判定。
+ * v2（2026-10-12）：broadcast 切面删除（Mode A 改写 hack 消亡，广播统一
+ * passthrough）；toolCommand 升为 facet 规则行（原内置特例删除）。
  * 注意：facets 是正交的（一个事件可同时有 step 与 chatSignal），这是为了
  * 与 handleOpencodeEvent 的多路消费行为逐点等价（oracle 测试钉扎）。
  */
@@ -46,7 +48,7 @@ export function isMalformedEvent(evt: RawRuntimeEvent | null | undefined): boole
 }
 
 export interface EventFacets {
-  /** 原始 runtime 事件类型（透传，用于 trajectory/broadcast） */
+  /** canonical 事件类型（透传，用于 trajectory/broadcast） */
   type: string;
   /** 原始 properties（透传） */
   properties: any;
@@ -58,11 +60,9 @@ export interface EventFacets {
   chatSignal: 'delta' | 'complete' | 'error' | null;
   deltaText?: string;
   chatError?: unknown;
-  /** 全局广播形态（Mode A，桌面 renderer） */
-  broadcast: 'idle' | 'error' | 'passthrough';
   /** 会话压缩信号：'start'=压缩前（仅 pi 有），'end'=压缩完成；无事件恒 null */
   compaction: 'start' | 'end' | null;
-  /** 工具事件携带的 shell command（自更新调用者定位用） */
+  /** tool part 快照携带的 shell command（自更新调用者定位用；v2 起 facet 规则行产出） */
   toolCommand?: string;
   /** permission.asked 切面：非 asked 或畸形（缺 requestId/toolName）恒 null（喂 approval policy） */
   approval: ApprovalFacet | null;
@@ -78,11 +78,5 @@ export function normalizeOpencodeEvent(evt: RawRuntimeEvent): EventFacets {
 
   const facets = evaluateFacetRules(CANONICAL_FACET_RULES, type, props, sessionID);
 
-  // toolCommand：type.includes('tool') + 信封 payload.args 依赖，表化不了——
-  // 执行器内置特例（spec §5）。
-  const toolArgs = props?.args || props?.info?.args || payload?.args;
-  const command = typeof toolArgs?.command === 'string' ? toolArgs.command : '';
-  const toolCommand = command && type.includes('tool') ? command : undefined;
-
-  return { type, properties: props, sessionID, directory: evt?.directory, toolCommand, ...facets };
+  return { type, properties: props, sessionID, directory: evt?.directory, ...facets };
 }

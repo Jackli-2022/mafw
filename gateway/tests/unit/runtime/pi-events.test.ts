@@ -2,21 +2,21 @@ import { translatePiEvent, setPiUnknownRecorder } from '../../../src/runtime/pi/
 import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
 
 describe('translatePiEvent', () => {
-  it('agent_end maps to session.idle (not session.updated)', () => {
+  it('agent_end maps to turn.completed (v2: not session.updated)', () => {
     const out = translatePiEvent({ type: 'agent_end' }, 'pi_x');
-    expect(out?.payload.type).toBe('session.idle');
+    expect(out?.payload.type).toBe('turn.completed');
     expect(out?.payload.properties.sessionID).toBe('pi_x');
   });
 
-  it('message_update maps to message.part.updated with delta text', () => {
+  it('message_update maps to part.updated with delta text', () => {
     const out = translatePiEvent({ type: 'message_update', delta: 'hi' }, 'pi_x');
-    expect(out?.payload.type).toBe('message.part.updated');
+    expect(out?.payload.type).toBe('part.updated');
     expect(out?.payload.properties.part.text).toBe('hi');
   });
 
   it('turn_end maps to step-finish part with messageID (bug fix: facet reads messageID)', () => {
     const out = translatePiEvent({ type: 'turn_end' }, 'pi_x');
-    expect(out?.payload.type).toBe('message.part.updated');
+    expect(out?.payload.type).toBe('part.updated');
     expect(out?.payload.properties.part.type).toBe('step-finish');
     expect(out?.payload.properties.part.messageID).toBe('pi_step_pi_x');
   });

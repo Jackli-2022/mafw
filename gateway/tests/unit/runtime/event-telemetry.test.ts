@@ -6,15 +6,17 @@ import {
 describe('isKnownEventType', () => {
   it('accepts every matrix key', () => {
     // 矩阵 keys 全部已知（间接锁定已知集 ⊇ 矩阵）
-    for (const t of ['session.idle', 'message.part.updated', 'project_registered', 'runtime_switched', 'session.next.tool.failed']) {
+    for (const t of ['turn.completed', 'part.updated', 'project_registered', 'runtime_switched', 'goal_node']) {
       expect(isKnownEventType(t)).toBe(true);
     }
   });
 
-  it('accepts prefix families (plugin namespace + legacy session.next.*)', () => {
+  it('accepts plugin: prefix family only (v2: session.next.* exemption removed — legacy family consumed by opencode transformEvent)', () => {
     expect(isKnownEventType('plugin:myplug:done')).toBe(true);
-    expect(isKnownEventType('session.next.tool.updated')).toBe(true);
-    expect(isKnownEventType('session.next.followup.started')).toBe(true);
+    // v2：session.next.* 不再豁免——家族成员若从翻译层漏网，会以 unknown 暴露
+    // （漏网探测器语义，补 transformEvent drop 前缀即可覆盖）
+    expect(isKnownEventType('session.next.tool.updated')).toBe(false);
+    expect(isKnownEventType('session.next.followup.started')).toBe(false);
   });
 
   it('accepts runtime-native dropped types (deliberate disposal at the gateway, not unknown)', () => {
