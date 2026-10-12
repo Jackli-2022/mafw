@@ -1,0 +1,122 @@
+// V2 ④: grace-period re-visit. Young (≤48h) slow-system writes with a
+// prediction-error signal (newer same-cue content exists — selectNewerRelated
+// reused from D2) are re-read nightly by the reflection worker; verdicts:
+// keep / update (additive supersede) / merge (dupCandidate convergence) /
+// demote. authority=user entries are observe-only. Sevenster 2014: PE
+// demarcates retrieval→reconsolidation→new-learning; no PE = no window.
+import { HarmonicIndexEntry, HarmonicUnit } from '../core/memory/harmonic-types';
+import { selectNewerRelated } from './reconsolidate-pipeline';
+import { PipelineBudgetLike } from './pipeline-budget';
+
+export const GRACE_WINDOW_MS = 48 * 3600 * 1000;
+
+export function selectGraceCandidates(
+  entries: HarmonicIndexEntry[],
+  now: number,
+  opts?: { windowMs?: number; maxPerRun?: number },
+): Array<{ id: string; related: HarmonicIndexEntry[] }> {
+  const windowMs = opts?.windowMs ?? GRACE_WINDOW_MS;
+  const out: Array<{ id: string; related: HarmonicIndexEntry[] }> = [];
+  for (const e of entries) {
+    if (out.length >= (opts?.maxPerRun ?? 20)) break;
+    if (e.type !== 'semantic' && e.type !== 'procedural') continue;
+    if (e.superseded_by) continue;
+    const anchors = e.cue_anchors ?? [];
+    if (anchors.includes('rejected') || anchors.some(a => a.startsWith('redundant:'))) continue;
+    const created = e.created_at ? Date.parse(e.created_at) : 0;
+    if (!created || now - created > windowMs) continue;
+    const related = selectNewerRelated(
+      { id: e.id, cue_anchors: anchors, created_at: e.created_at! }, entries, now, 5);
+    if (related.length === 0) continue; // PE gate: no newer related → no window
+    out.push({ id: e.id, related });
+  }
+  return out;
+}
+
+export interface GraceVerdict {
+  id: string;
+  verdict: 'keep' | 'update' | 'merge' | 'demote';
+  content?: string;
+  mergeWith?: string;
+}
+
+export interface GraceRevisitDeps {
+  index: { getIndex(): { entries: HarmonicIndexEntry[] } };
+  readMemory: (id: string) => Promise<HarmonicUnit | null>;
+  worker: { prompt(text: string, system: string): Promise<string> };
+  /** Additive rewrite: new version + supersedes old (Lei 2024). */
+  writeSuperseding: (oldId: string, content: string) => Promise<string>;
+  /** Merge convergence: combined unit supersedes BOTH. */
+  writeMerged: (aId: string, bId: string, content: string) => Promise<string>;
+  markRejected: (id: string) => Promise<void>;
+  /** 'shadow' = verdicts logged, never executed. */
+  mode: 'shadow' | 'live';
+  /** Observe sink — every verdict lands here (jsonl in production). */
+  onVerdict: (v: GraceVerdict & { executed: boolean }) => void;
+  budget?: PipelineBudgetLike;
+  maxPerRun?: number;
+}
+
+export const GRACE_SYSTEM = `You re-visit young long-term memories that have received newer related evidence. For each memory decide: "keep" (evidence adds nothing), "update" (evidence evolves or contradicts it — provide the merged updated full text), "merge" (a distinct memory listed in mergeWith says the same thing — provide the combined full text), or "demote" (the memory is wrong or worthless now). Reply with ONLY JSON: {"revisits":[{"id":"...","verdict":"keep|update|merge|demote","content":"<full merged text when update/merge>","mergeWith":"<related id when merge>"}]}`;
+
+export interface GraceRevisitResult {
+  selected: number; kept: number; updated: number; merged: number; demoted: number; skipped: number;
+}
+
+export class GraceRevisitPipeline {
+  constructor(private opts: GraceRevisitDeps) {}
+
+  async runOnce(): Promise<GraceRevisitResult> {
+    const r: GraceRevisitResult = { selected: 0, kept: 0, updated: 0, merged: 0, demoted: 0, skipped: 0 };
+    if (this.opts.budget && !this.opts.budget.allow('reflect')) return r;
+    const entries = this.opts.index.getIndex().entries;
+    const now = Date.now();
+    const candidates = selectGraceCandidates(entries, now, { maxPerRun: this.opts.maxPerRun ?? 20 });
+    if (candidates.length === 0) return r;
+    r.selected = candidates.length;
+
+    const blocks: string[] = [];
+    for (const c of candidates) {
+      const unit = await this.opts.readMemory(c.id);
+      if (!unit || unit.superseded_by) { r.skipped++; continue; }
+      const related = c.related.map(rel => `- [${rel.id}] ${rel.primary_abstraction}`).join('\n');
+      blocks.push(`MEMORY [${c.id}]:\n${unit.memory_value.slice(0, 1500)}\nNEWER RELATED:\n${related}`);
+    }
+    if (blocks.length === 0) return r;
+
+    let verdicts: GraceVerdict[] = [];
+    try {
+      const reply = await this.opts.worker.prompt(blocks.join('\n\n---\n\n'), GRACE_SYSTEM);
+      const m = reply.match(/\{[\s\S]*\}/);
+      const parsed = m ? JSON.parse(m[0]) : null;
+      if (Array.isArray(parsed?.revisits)) verdicts = parsed.revisits;
+    } catch { return r; }
+
+    const byId = new Map(entries.map(e => [e.id, e]));
+    for (const v of verdicts) {
+      const entry = byId.get(v.id);
+      if (!entry || entry.superseded_by) { r.skipped++; continue; }
+      // G1 discipline: the pipeline never rewrites user-authority memories.
+      const isUser = (entry as any).authority === 'user';
+      const executed = this.opts.mode === 'live' && !isUser && v.verdict !== 'keep';
+      try {
+        if (executed && v.verdict === 'update' && v.content?.trim()) {
+          await this.opts.writeSuperseding(v.id, v.content.trim());
+          r.updated++;
+        } else if (executed && v.verdict === 'merge' && v.mergeWith && v.content?.trim()) {
+          await this.opts.writeMerged(v.id, v.mergeWith, v.content.trim());
+          r.merged++;
+        } else if (executed && v.verdict === 'demote') {
+          await this.opts.markRejected(v.id);
+          r.demoted++;
+        } else if (v.verdict === 'keep') {
+          r.kept++;
+        } else {
+          r.skipped++;
+        }
+      } catch { r.skipped++; continue; }
+      this.opts.onVerdict({ ...v, executed });
+    }
+    return r;
+  }
+}
