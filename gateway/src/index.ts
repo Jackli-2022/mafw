@@ -2467,6 +2467,10 @@ class MafwScheduler {
       workerFor: (sessionID) => this.getPool().getWorker(sessionID, 'extract'),
       staleMs: config.recall.turnStaleMs,
       workerModel: config.recall.workerModel,
+      // V2 ②/③: TCM boundary shadow log + event-segment verbatim input
+      // (A/B day parity) — flags from config.recall.
+      segmentation: config.recall?.segmentation ?? 'shadow',
+      eventSegmentInput: config.recall?.eventSegmentInput === true,
       // Interleaved replay (CLS): recall cross-session prior knowledge into the
       // worker prompt so the curator reconciles rather than only creating.
       replayK: 5,

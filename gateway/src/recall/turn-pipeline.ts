@@ -48,6 +48,15 @@ export interface TurnPipelineOptions {
   clusterVector?: (obs: T1Observation[]) => number[] | undefined | Promise<number[] | undefined>;
   /** S2: how many related clusters to surface (default 3). */
   schemaTopN?: number;
+  /** V2 ②: event-segmentation mode — 'shadow' logs how TCM boundaries WOULD
+   *  have split this batch (segmentation-shadow.jsonl), 'off' disables.
+   *  Production wires from config.recall.segmentation. */
+  segmentation?: 'off' | 'shadow' | 'live';
+  /** V2 ③: append the event-segment verbatim block to the worker prompt
+   *  (A/B day parity per session — see abAssignment). */
+  eventSegmentInput?: boolean;
+  /** Shadow-log sink override (tests inject tmp paths). */
+  shadowLogPath?: string;
   /** Daily USD cap gate for background pipelines (0 = unlimited). */
   budget?: PipelineBudgetLike;
 }
@@ -69,6 +78,18 @@ export function capTentativeEnergy<T extends { cue_anchors?: string[]; energy: n
     return { ...unit, energy: 0.35 };
   }
   return unit;
+}
+
+/** V2 ③ A/B assignment: per-session day parity — even UTC days get the
+ * event-segment arm, odd days stay batch-only, so both arms accumulate
+ * comparable need-hit data on the same sessions. Pure + exported. */
+export function abAssignment(sessionID: string, now: number): boolean {
+  // Session-keyed hash keeps parity stable within a day regardless of the
+  // id's content; the day component alternates the arm.
+  const day = new Date(now).getUTCDate();
+  let h = 0;
+  for (let i = 0; i < sessionID.length; i++) h = (h * 31 + sessionID.charCodeAt(i)) >>> 0;
+  return (day + h) % 2 === 0;
 }
 
 export const TOOL_EXTRACTION_SYSTEM = `You are a memory curator for a coding agent. Review the conversation observations of this session and record durable memories.
@@ -336,7 +357,44 @@ export class TurnPipeline {
       const gradeBlock = grade
         ? `Outcome feedback for this session's recent work (a signal about trajectory reliability, not proof of correctness):\n${grade}`
         : '';
-      const prompt = [base, schemaBlock, priorBlock, gradeBlock].filter(Boolean).join('\n\n');
+
+      // V2 ② shadow + V2 ③ event-segment input share one segmentation pass
+      // over the sampled turns (the exact input this hourly batch processed).
+      let eventSegBlock = '';
+      const segMode = this.opts.segmentation ?? 'off';
+      if (segMode === 'shadow' || (this.opts.eventSegmentInput && abAssignment(sessionID, Date.now()))) {
+        try {
+          const { segmentTurns } = require('./topic-segmentation');
+          const segText = (x: { obs: T1Observation[] }) =>
+            x.obs.map((o) => o.content ?? '').join(' ').slice(0, 2000);
+          const segs = segmentTurns(sampledTurns.map((x) => ({ text: segText(x) })));
+          if (segMode === 'shadow') {
+            const line = JSON.stringify({
+              ts: Date.now(), sessionID, batchTurns: sampledTurns.length,
+              segments: segs.map((s: any) => ({ n: s.items.length, boundaryBefore: s.boundaryBefore })),
+            }) + '\n';
+            const fs = require('fs');
+            const os = require('os');
+            const path = require('path');
+            const logPath = this.opts.shadowLogPath
+              ?? path.join(os.homedir(), '.mafw', 'logs', 'segmentation-shadow.jsonl');
+            try {
+              fs.mkdirSync(path.dirname(logPath), { recursive: true });
+              fs.appendFileSync(logPath, line, 'utf-8');
+            } catch { /* fail-open */ }
+          }
+          if (this.opts.eventSegmentInput && abAssignment(sessionID, Date.now())) {
+            const block = segs
+              .map((s: any, i: number) => `### Event Segment ${i + 1}\n${s.items.map((it: any) => it.text).join('\n').slice(0, 4000)}`)
+              .join('\n\n');
+            if (block) {
+              eventSegBlock = `Event-segment verbatim (same material, split at topic boundaries):\n${block}`;
+            }
+          }
+        } catch { /* fail-open: batch transcript only */ }
+      }
+
+      const prompt = [base, schemaBlock, priorBlock, gradeBlock, eventSegBlock].filter(Boolean).join('\n\n');
       try {
         const reply = await this.opts.workerFor(sessionID).prompt(prompt, TOOL_EXTRACTION_SYSTEM, this.opts.workerModel, 'memory-curator');
         // Parse noop indicator from the worker's response
