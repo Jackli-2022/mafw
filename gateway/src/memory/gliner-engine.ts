@@ -211,3 +211,31 @@ export async function getGliner(): Promise<GlinerEngine | null> {
   }
   return enginePromise;
 }
+
+export const GLINER_LABELS = ['tool', 'project', 'version', 'concept', 'command'];
+
+/** Build the write-path augmentation listener (deps injected for tests).
+ * Production: index.ts registers `glinerAugmentListener({ index })` via
+ * onMemoryWritten; spans land in the entry's cue_anchors (index-level
+ * retrieval key surface — OKF files are not rewritten). Fail-open always. */
+export function glinerAugmentListener(deps: {
+  index: { getIndex(): { entries: Array<{ id: string; cue_anchors?: string[]; superseded_by?: string }> }; save(): void };
+}): (unit: { id: string; memory_value?: string }) => void {
+  return (unit) => {
+    void (async () => {
+      try {
+        const engine = await getGliner();
+        if (!engine) return;
+        const spans = await engine.extract(String(unit.memory_value ?? ''), GLINER_LABELS);
+        const texts = spans.map(s => s.text).filter(t => t.length >= 2 && t.length <= 40);
+        if (texts.length === 0) return;
+        const entry = deps.index.getIndex().entries.find(e => e.id === unit.id);
+        if (!entry || entry.superseded_by) return;
+        const merged = [...new Set([...(entry.cue_anchors ?? []), ...texts])].slice(0, 10);
+        if (merged.length === (entry.cue_anchors ?? []).length) return;
+        entry.cue_anchors = merged;
+        deps.index.save();
+      } catch { /* fail-open */ }
+    })();
+  };
+}

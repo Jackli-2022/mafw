@@ -2713,6 +2713,14 @@ class MafwScheduler {
       this.consolidationService?.enqueue(u);
     });
 
+    // V2 ①c: GLiNER entity augmentation (fire-and-forget, fail-open). Zero-
+    // shot spans land in the index entry's cue_anchors (retrieval key
+    // surface only — the OKF file is not rewritten).
+    if (config.recall?.entityHarvest !== false && this.memoryService) {
+      const { glinerAugmentListener } = require('./memory/gliner-engine');
+      onMemoryWritten(glinerAugmentListener({ index: this.memoryService.harmonicIndex }));
+    }
+
     // H1 audit: log every write-time MinHash merge to jsonl — the preemption
     // rate on the real distribution + hand-check surface for separate-class
     // wrong-merges (char-3gram similar but different entity). Static listener

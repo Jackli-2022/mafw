@@ -1,4 +1,4 @@
-import { buildGlinerInput, decodeGlinerOutput, GLINER_ENT, GLINER_SEP } from '../../../src/memory/gliner-engine';
+import { buildGlinerInput, decodeGlinerOutput, GLINER_ENT, GLINER_SEP, glinerAugmentListener, setGlinerForTest } from '../../../src/memory/gliner-engine';
 
 describe('GLiNER pure helpers (V2 ①c)', () => {
   it('buildGlinerInput: label segments precede the text segment', () => {
@@ -33,5 +33,56 @@ describe('GLiNER pure helpers (V2 ①c)', () => {
       tokens: ['a', 'b', 'x', 'y', 'z'], threshold: 0.5, maxWidth: 12,
     });
     expect(spans).toEqual([]);
+  });
+});
+
+describe('glinerAugmentListener (V2 ①c wiring)', () => {
+  function mkIndex(entries: any[]) {
+    let saved = 0;
+    return {
+      getIndex: () => ({ entries }),
+      save: () => { saved++; },
+      savedCount: () => saved,
+    };
+  }
+
+  afterEach(() => setGlinerForTest(undefined));
+
+  it('fake engine spans augment cue_anchors (dedup + cap 10)', async () => {
+    const entry = { id: 'u1', cue_anchors: ['bm25'], superseded_by: undefined };
+    const idx = mkIndex([entry]);
+    setGlinerForTest({
+      extract: async () => [
+        { label: 'tool', text: 'HarmonicIndexManager', score: 0.9 },
+        { label: 'tool', text: 'BM25 Cache', score: 0.8 },
+      ],
+    });
+    const flush = glinerAugmentListener({ index: idx as any });
+    flush({ id: 'u1', memory_value: 'some text' });
+    await new Promise(r => setTimeout(r, 20));
+    expect(entry.cue_anchors).toEqual(['bm25', 'HarmonicIndexManager', 'BM25 Cache']);
+    expect((idx as any).savedCount()).toBe(1);
+  });
+
+  it('null engine → no-op, no save', async () => {
+    const entry = { id: 'u2', cue_anchors: ['x'] };
+    const idx = mkIndex([entry]);
+    setGlinerForTest(null);
+    const flush = glinerAugmentListener({ index: idx as any });
+    flush({ id: 'u2', memory_value: 'text' });
+    await new Promise(r => setTimeout(r, 10));
+    expect(entry.cue_anchors).toEqual(['x']);
+    expect((idx as any).savedCount()).toBe(0);
+  });
+
+  it('superseded entry → skip', async () => {
+    const entry = { id: 'u3', cue_anchors: ['x'], superseded_by: 'z' };
+    const idx = mkIndex([entry]);
+    setGlinerForTest({ extract: async () => [{ label: 'tool', text: 'thing', score: 0.9 }] });
+    const flush = glinerAugmentListener({ index: idx as any });
+    flush({ id: 'u3', memory_value: 'text' });
+    await new Promise(r => setTimeout(r, 10));
+    expect(entry.cue_anchors).toEqual(['x']);
+    expect((idx as any).savedCount()).toBe(0);
   });
 });
