@@ -59,3 +59,13 @@ describe("合并块保留代码块主题令牌", () => {
     expect(light).toContain("--syntax-string: #006656")
   })
 })
+
+describe("悬空 token 兜底别名（值 = 现行 fallback 生效值，零视觉变化）", () => {
+  for (const [name, b] of [["暗色", dark], ["亮色手动", light], ["亮色系统", sysLight]] as const) {
+    test(`${name}块定义 --text-6 / --success / --border-strong`, () => {
+      expect(b).toContain("--text-6: var(--text-5)")
+      expect(b).toContain("--success: #3fb950")
+      expect(b).toContain("--border-strong: var(--text-5)")
+    })
+  }
+})
