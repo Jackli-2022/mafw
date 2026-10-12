@@ -27,7 +27,7 @@ export const FLAT_EVENT_TYPES = [
   "user_question", "user_feedback", "goal_created", "state_change",
   "phase_transition", "memory_written", "memory_energy_changed",
   "memory_distillation_complete", "automation_triggered", "automation_completed",
-  "project_registered", "runtime_switched", "mafw_commands_changed",
+  "project_registered", "runtime_switched", "mafw_commands_changed", "goal_node",
 ] as const
 
 export type FlatEventType = typeof FLAT_EVENT_TYPES[number]
@@ -62,6 +62,7 @@ export type FlatGatewayEvent =
   | { type: "project_registered"; projectDir: string }
   | { type: "runtime_switched"; runtime: string; previous: string | null }
   | { type: "mafw_commands_changed" }
+  | { type: "goal_node"; goalId?: string; projectDir?: string; loop?: number; node?: string; [key: string]: any }
   | { type: `plugin:${string}`; [key: string]: any }
 
 /** /api/events 上一帧的完整 union（剥壳前） */

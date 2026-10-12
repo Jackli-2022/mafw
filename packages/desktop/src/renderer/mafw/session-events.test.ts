@@ -150,8 +150,17 @@ describe("shell event coverage guard", () => {
     expect(isTailAccountedAtShell("session.idle")).toBe(true)
     expect(isTailAccountedAtShell("plugin:myplug:done")).toBe(true)
     expect(isTailAccountedAtShell("session.next.tool.updated")).toBe(true)
-    expect(isTailAccountedAtShell("goal_created")).toBe(true)
+    expect(isTailAccountedAtShell("user_feedback")).toBe(true)
     expect(isTailAccountedAtShell(undefined)).toBe(true)
+  })
+
+  test("isTailAccountedAtShell: dispatcher-consumed goal events are no longer tail-accounted", () => {
+    // goal_node / goal_created / phase_transition 在 dispatcher sid 分发前被
+    // 消费（goalsRev），不会走到 missTrace——isTailAccountedAtShell 对它们
+    // 返回 false 只是反映清单归属，运行期不可能到达。
+    expect(isTailAccountedAtShell("goal_created")).toBe(false)
+    expect(isTailAccountedAtShell("phase_transition")).toBe(false)
+    expect(isTailAccountedAtShell("goal_node")).toBe(false)
   })
 
   test("isTailAccountedAtShell: unknown future types are NOT accounted (miss detection)", () => {

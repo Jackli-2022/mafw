@@ -104,7 +104,7 @@ import type { UnwrappedEvent } from "@mafw/sdk"
 
 /** MafwShell onmessage 显式不消费的事件（有意 ignore，非遗漏）。 */
 export const IGNORED_AT_SHELL = [
-  "user_feedback", "goal_created", "state_change", "phase_transition",
+  "user_feedback", "state_change",
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting",
@@ -131,6 +131,7 @@ export function isTailAccountedAtShell(type: string | undefined): boolean {
 /** MafwShell 有分支消费的事件（与 onmessage 分支一一对应，改分支必须同步）。 */
 type ShellHandledType =
   | "user_question" | "project_registered" | "runtime_switched"
+  | "goal_node" | "goal_created" | "phase_transition"
   | "session.created" | "session.updated" | "session.deleted"
   | "question.asked" | "question.replied" | "question.rejected"
   | "permission.asked" | "permission.replied" | "session.compacted"
@@ -150,6 +151,9 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "user_question":
     case "project_registered":
     case "runtime_switched":
+    case "goal_node":
+    case "goal_created":
+    case "phase_transition":
     case "session.created":
     case "session.updated":
     case "session.deleted":

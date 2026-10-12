@@ -65,9 +65,9 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   // ---- 扁平顶层广播 ----
   'user_question':              R([], 'passthrough', 'handled', 'ignore', 'desktop setActiveQuestion + 通知'),
   'user_feedback':              R([], 'passthrough', 'ignore', 'ignore', ''),
-  'goal_created':               R([], 'passthrough', 'ignore', 'ignore', 'desktop Goals 页 15s 轮询'),
-  'state_change':               R([], 'passthrough', 'ignore', 'ignore', '同上'),
-  'phase_transition':           R([], 'passthrough', 'ignore', 'ignore', '同上'),
+  'goal_created':               R([], 'passthrough', 'handled', 'ignore', 'desktop goalsRev（dispatcher goal 分支，P2 起消费）'),
+  'state_change':               R([], 'passthrough', 'ignore', 'ignore', ''),
+  'phase_transition':           R([], 'passthrough', 'handled', 'ignore', 'desktop goalsRev（dispatcher goal 分支，P2 起消费）'),
   'memory_written':             R([], 'passthrough', 'ignore', 'ignore', ''),
   'memory_energy_changed':      R([], 'passthrough', 'ignore', 'ignore', ''),
   'memory_distillation_complete':R([], 'passthrough', 'ignore', 'ignore', ''),
@@ -76,6 +76,7 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   'project_registered':         R([], 'passthrough', 'handled', 'ignore', 'desktop projectsRev++ 重拉 Rail'),
   'runtime_switched':           R([], 'passthrough', 'handled', 'ignore', 'desktop 重置 chat workspace'),
   'mafw_commands_changed':      R([], 'passthrough', 'ignore', 'ignore', 'desktop ChatPane 另行消费补全'),
+  'goal_node':                  R([], 'passthrough', 'handled', 'ignore', 'goal 编排节点事件（无 sessionID，sid 分发前消费）；desktop goalsRev 泳道刷新'),
 };
 
 const VALID_MODE_A = new Set(['passthrough', 'rewrite', 'drop']);

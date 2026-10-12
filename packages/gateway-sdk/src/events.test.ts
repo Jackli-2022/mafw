@@ -6,12 +6,12 @@ import {
 
 test("runtime event list has no duplicates", () => {
   expect(new Set(RUNTIME_EVENT_TYPES).size).toBe(RUNTIME_EVENT_TYPES.length)
-  expect(RUNTIME_EVENT_TYPES.length).toBe(25)
+  expect(RUNTIME_EVENT_TYPES.length).toBe(27)
 })
 
 test("flat event list has no duplicates", () => {
   expect(new Set(FLAT_EVENT_TYPES).size).toBe(FLAT_EVENT_TYPES.length)
-  expect(FLAT_EVENT_TYPES.length).toBe(13)
+  expect(FLAT_EVENT_TYPES.length).toBe(14)
 })
 
 test("assertNever throws with context", () => {
@@ -27,6 +27,6 @@ test("GatewayEvent accepts envelope and flat shapes (compile-time)", () => {
   expect(c.type).toBe("opencode_event")
 })
 
-test("every runtime type is a dotted name", () => {
-  for (const t of RUNTIME_EVENT_TYPES) expect(t).toContain(".")
+test("every runtime type is a dotted name (permission_mode is the sole flat exception)", () => {
+  for (const t of RUNTIME_EVENT_TYPES) expect(t === "permission_mode" || t.includes(".")).toBe(true)
 })
