@@ -500,6 +500,20 @@ export class HarmonicIndexManager {
       scored = resolveSupersededHeads(scored, (id) => this.index.entries.find(e => e.id === id));
     }
 
+    // ── V2 L2: read-time near-duplicate collapse (presentation only) ──
+    if (config.memory.dedup?.readCollapse !== false && scored.length > 1) {
+      try {
+        const { collapseNearDuplicates } = require('../../memory/dedup-guard');
+        let vectorFor: ((id: string) => number[] | null) | undefined;
+        try {
+          const { getEmbeddingRuntime } = require('../../memory/embedding-runtime');
+          const rt = getEmbeddingRuntime();
+          if (rt) vectorFor = (id: string) => rt.vectors.get(id) ?? null;
+        } catch { /* fail-open: token Jaccard */ }
+        scored = collapseNearDuplicates(scored, { vectorFor });
+      } catch { /* fail-open: no collapse */ }
+    }
+
     const cutoffRatio = options.cutoffRatio ?? 0;
     if (cutoffRatio > 0 && scored.length > 0) {
       const threshold = scored[0].score * cutoffRatio;
