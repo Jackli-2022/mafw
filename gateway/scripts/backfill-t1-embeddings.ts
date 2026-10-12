@@ -11,6 +11,12 @@ import { initEmbeddingRuntime } from '../src/memory/embedding-runtime';
 import { t1VectorKey } from '../src/recall/verbatim-recall';
 
 const apply = process.argv.includes('--apply');
+// The t1 dense layer is a BOUNDED fast buffer (hippocampal analog: recent
+// detail, decaying/evicted), not full-history storage. A single JSON vector
+// file hits V8's max string length around ~50k rows (~1GB), so the backfill
+// caps at the most recent --limit rows (default 12000 ≈ 250MB).
+const limitArg = process.argv.find(a => a.startsWith('--limit='));
+const limit = limitArg ? Math.max(1, parseInt(limitArg.split('=')[1], 10) || 12000) : 12000;
 const mafwDir = path.join(os.homedir(), '.mafw');
 const db = new Database(path.join(mafwDir, 'memory', 'gateway.db'), { readonly: true });
 
@@ -23,8 +29,9 @@ if (!rt || !rt.t1Indexer) {
 interface Row { session_id: string; turn_id: number; source: string; content: string }
 
 const rows = db
-  .prepare('SELECT session_id, turn_id, source, content FROM t1_archive WHERE length(trim(content)) > 0')
-  .all() as Row[];
+  .prepare('SELECT session_id, turn_id, source, content FROM t1_archive WHERE length(trim(content)) > 0 ORDER BY created_at DESC LIMIT ?')
+  .all(limit) as Row[];
+console.log(`[backfill] window: most recent ${rows.length} rows (limit ${limit})`);
 
 let missing = 0;
 let skipped = 0;
