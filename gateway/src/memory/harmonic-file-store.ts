@@ -12,7 +12,6 @@ import { WriteQueue } from './write-queue';
 import { AnchorGraph } from '../graph/anchor-graph';
 import { CoactivationGraphStore } from '../graph/coactivation-store';
 import { tokenize, extractDerivedTerms, extractAnchors } from './derived-terms';
-import { MinHashMerger } from '../core/memory/minhash-merger';
 
 const globalWriteQueues = new Map<string, WriteQueue>();
 
@@ -29,7 +28,6 @@ export class HarmonicUnitFileStore {
   private eventLog: EventLog;
   private writeQueue: WriteQueue;
   private anchorGraph: AnchorGraph;
-  private minHashMerger: MinHashMerger;
   private anchorGraphStore: import('../graph/anchor-graph-store').AnchorGraphStore | undefined;
   private coactivationStore: CoactivationGraphStore | undefined;
 
@@ -50,7 +48,6 @@ export class HarmonicUnitFileStore {
     }
     this.writeQueue = queue;
     this.anchorGraph = new AnchorGraph();
-    this.minHashMerger = new MinHashMerger();
     this.anchorGraphStore = anchorGraphStore;
     this.coactivationStore = coactivationStore;
   }
@@ -86,16 +83,14 @@ export class HarmonicUnitFileStore {
       // is itself the product of a merge, or the caller opts out 鈥?e.g. the
       // LongMemEval benchmark ingests one deterministic unit per round and must
       // not be collapsed).
-      let targetUnit = unit;
-      if (!opts?.skipMerge) {
-        const merged = await this.minHashMerger.merge(unit, this.indexManager, {
-          read: (id) => this.read(id),
-          deleteSync: (id) => this.deleteSync(id),
-          markSuperseded: (id, byId) => this.markSuperseded(id, byId),
-        });
-        targetUnit = merged.merged_from?.length ? merged : unit;
-      }
-      writtenUnit = targetUnit;
+      // V2 ①a (2026-10-12): write-path MinHash merge RETIRED. The brain's
+      // write-time operation is pattern SEPARATION; dedup moved to three
+      // tiers (exact-hash at write / read-time collapse / consolidation).
+      // `opts.skipMerge` is a deprecated no-op kept one cleanup cycle
+      // (noReply precedent) so evaluation callers keep compiling.
+      void opts;
+      const targetUnit = unit;
+      writtenUnit = unit;
 
       fileName = writeOKFFile(this.baseDir, targetUnit);
 
