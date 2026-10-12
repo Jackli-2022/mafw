@@ -1,7 +1,7 @@
 import type { AgentRuntime, RuntimeCapabilities, CompletionRequest, CompletionResult } from '../contract';
 import type { RuntimePluginContext } from '../loader';
 import { PiSessionRegistry } from '../pi/pi-session';
-import { translatePiMessages } from '../pi/pi-messages';
+import { normalizePiMessages } from '../pi/pi-message-normalize';
 import { PiEventStream } from '../pi/pi-events';
 import { translateProviders, translateAgents, translateConfigGet, translateConfigUpdate } from '../pi/pi-provider';
 import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../auth';
@@ -173,8 +173,11 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     },
     messages: async (opts: { sessionID: string }) => {
       const { data } = await registry.messages(opts.sessionID);
-      return { data: translatePiMessages(data, opts.sessionID), nextCursor: undefined };
+      return { data, nextCursor: undefined };
     },
+    // 原生 pi 消息 → opencode {info, parts} DTO（gateway messages 路由经
+    // applyNormalizeMessages 应用；直接消费者拿到原始 pi 形状）。
+    normalizeMessages: (raw: any[]) => normalizePiMessages(raw),
     get: async (opts: { sessionID: string }) => registry.get(opts.sessionID),
     delete: async (opts: { sessionID: string }) => { await registry.delete(opts.sessionID); },
     abort: async (opts: { sessionID: string }) => { await registry.abort(opts.sessionID); },
