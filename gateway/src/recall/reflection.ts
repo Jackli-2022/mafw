@@ -307,18 +307,11 @@ export class ReflectionPipeline {
       }
       // Step 3: distill insights with evidence context
       const evidenceBlock = evidence.length > 0 ? `\n\n### Related Historical Memories\n${evidence.join('\n')}` : '';
-      // Step 3.5: Extract entities from episodes for cross-session linking
+      // V2 ①c: shared mechanical harvester (was inlined regex here).
+      const { extractEntities } = require('../memory/entity-harvest');
       const episodeEntities = new Set<string>();
       for (const ep of episodes) {
-        // Extract camelCase/PascalCase identifiers
-        const camelPascal = ep.text.match(/\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b/g);
-        if (camelPascal) camelPascal.forEach(e => episodeEntities.add(e));
-        // Extract ALL_CAPS words
-        const allCaps = ep.text.match(/\b[A-Z]{2,}\b/g);
-        if (allCaps) allCaps.forEach(e => { if (e.length >= 3) episodeEntities.add(e); });
-        // Extract quoted strings
-        const quoted = ep.text.match(/['"]([^'"]+)['"]/g);
-        if (quoted) quoted.forEach(q => episodeEntities.add(q.slice(1, -1).trim()));
+        for (const e of extractEntities(ep.text, { max: 40 })) episodeEntities.add(e);
       }
       // Inject entity context into evidence block for cross-session linking
       const entityBlock = episodeEntities.size > 0
