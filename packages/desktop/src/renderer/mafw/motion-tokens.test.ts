@@ -5,7 +5,7 @@ import { join } from "node:path"
 const css = readFileSync(join(import.meta.dir, "mafw.css"), "utf8")
 
 /** 取 .mafw-shell 基础块（第一个不带 html[] 前缀的 .mafw-shell 规则）到 --font-ui 结束。 */
-const shellBlock = css.slice(css.indexOf(".mafw-shell {"), css.indexOf("/* 亮色：手动覆盖"))
+const shellBlock = css.slice(css.indexOf(".mafw-shell, body {"), css.indexOf("/* 亮色：手动覆盖"))
 
 describe("v7 semantic motion tokens", () => {
   test("two-tier duration + easing tokens exist with the agreed values", () => {

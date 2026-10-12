@@ -19,9 +19,9 @@ export function cssBlock(selector: string): string {
   return css.slice(open + 1, i - 1)
 }
 
-const dark = cssBlock(".mafw-shell {")
-const light = cssBlock('html[data-theme="light"] .mafw-shell')
-const sysLight = cssBlock("html:not([data-theme]) .mafw-shell")
+const dark = cssBlock(".mafw-shell, body {")
+const light = cssBlock('html[data-theme="light"] .mafw-shell,')
+const sysLight = cssBlock("html:not([data-theme]) .mafw-shell,")
 
 const V4_TOKENS = [
   "--bg-inset", "--accent-strong", "--accent-soft", "--accent-border", "--info",
@@ -51,13 +51,12 @@ describe("token v3 回归守卫（变量名必须保留）", () => {
   test.each(V3_GUARD)("保留 %s", (t) => expect(dark).toContain(`${t}:`))
 })
 
-// ══ Portal 令牌镜像（body 级）══
-// ConfirmOverlay（Config.tsx）与 SearchSelect 列表经 <Portal> 渲染到 document.body，
-// 不在 .mafw-shell 内——令牌若只在 shell 作用域定义，var(--bg-float) 等解析失败，
-// 弹窗卡片背景透明（2026-09-22「弹窗背景透明」事故根因）。
-const bodyDark = cssBlock("\nbody {")
-const bodyLight = cssBlock('html[data-theme="light"] body')
-const bodySysLight = cssBlock("html:not([data-theme]) body")
+// ══ Portal 令牌（2026-10-12 起与 shell 合并为同一选择器块）══
+// `<Portal>` 弹层挂 document.body，token 由 `.mafw-shell, body` 合并块覆盖；
+// 原独立 body 镜像块已删除，此处别名指向同一合并块。
+const bodyDark = dark
+const bodyLight = light
+const bodySysLight = sysLight
 
 const PORTAL_TOKENS = [
   "--bg-float", "--bg-overlay", "--border-subtle", "--shadow-float",
@@ -513,7 +512,7 @@ describe("token v5.1 — 双字体契约", () => {
     expect(light).toMatch(/--font-data:\s*var\(--font-family-mono/)
   })
   test("mafw-shell 应用 --font-ui", () =>
-    expect(cssBlock(".mafw-shell {")).toContain("font-family: var(--font-ui)"))
+    expect(cssBlock(".mafw-shell, body {")).toContain("font-family: var(--font-ui)"))
   test("无硬编码 mono 栈（全部走 var(--font-data)）", () => {
     const raw = css.match(/font-family:\s*(ui-monospace|SFMono|monospace\s*;)/g) || []
     expect(raw).toEqual([])

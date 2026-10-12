@@ -18,9 +18,9 @@ function cssBlock(selector: string): string {
   return css.slice(open + 1, i - 1)
 }
 
-const dark = cssBlock(".mafw-shell {")
-const light = cssBlock('html[data-theme="light"] .mafw-shell')
-const sysLight = cssBlock("html:not([data-theme]) .mafw-shell")
+const dark = cssBlock(".mafw-shell, body {")
+const light = cssBlock('html[data-theme="light"] .mafw-shell,')
+const sysLight = cssBlock("html:not([data-theme]) .mafw-shell,")
 
 // Shiki OpenCode 主题（packages/ui/src/context/marked.tsx）消费的全部语法 token。
 // 上游 ui/theme.css 只在 :root 定义它们且暗色值由 OS 级 media 门控——不响应 app 主题切换；
