@@ -2106,6 +2106,42 @@ class MafwScheduler {
           this.heartbeat?.record('memory:reflect', { ok: false, error: err.message });
           log.warn(`[Reflection] run failed: ${err.message}`);
         }
+        // V2 ④: grace-period re-visit phase — same cron, budget-gated, PE-
+        // gated candidate selection; shadow mode (default) logs verdicts
+        // only, live executes (user-authority entries stay observe-only).
+        try {
+          if (!this.memoryService) return;
+          const mode = config.recall?.graceRevisit ?? 'shadow';
+          if (mode === 'off') return;
+          const { GraceRevisitPipeline, createGraceWriteOps } = require('./recall/grace-revisit');
+          const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
+          const logsDir = path.join(config.resolvePath(), 'logs');
+          const grace = new GraceRevisitPipeline({
+            index: this.memoryService.harmonicIndex,
+            readMemory: (id: string) => store.read(id),
+            worker: {
+              prompt: (t: string, s: string) =>
+                this.getPool().getWorker('grace', 'reflect').prompt(t, s, config.recall.workerModel, 'memory-curator'),
+            },
+            ...createGraceWriteOps(store),
+            mode: mode === 'live' ? 'live' : 'shadow',
+            onVerdict: (v: any) => {
+              try {
+                fs.mkdirSync(logsDir, { recursive: true });
+                fs.appendFileSync(path.join(logsDir, 'grace-verdicts.jsonl'), JSON.stringify({ ...v, ts: Date.now() }) + '\n', 'utf-8');
+              } catch { /* fail-open */ }
+            },
+            budget: this.getPipelineBudget(),
+          });
+          const r = await grace.runOnce();
+          if (r.selected > 0) {
+            log.info(`[GraceRevisit] mode=${mode} selected=${r.selected} kept=${r.kept} updated=${r.updated} merged=${r.merged} demoted=${r.demoted} skipped=${r.skipped}`);
+          }
+          this.heartbeat?.record('memory:graceRevisit', { ok: true, counts: { ...r, mode } });
+        } catch (err: any) {
+          this.heartbeat?.record('memory:graceRevisit', { ok: false, error: err.message });
+          log.warn(`[GraceRevisit] phase failed: ${err.message}`);
+        }
       });
     });
     // memory:review — overrides the module-level stub (which only logged the

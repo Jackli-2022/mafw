@@ -63,6 +63,67 @@ export interface GraceRevisitResult {
   selected: number; kept: number; updated: number; merged: number; demoted: number; skipped: number;
 }
 
+/** Write ops for the grace phase against a real HarmonicUnitFileStore
+ * (factory keeps index.ts wiring thin and the ops unit-testable). */
+export function createGraceWriteOps(store: {
+  read(id: string): Promise<HarmonicUnit | null>;
+  write(unit: HarmonicUnit): Promise<string>;
+  markSuperseded(id: string, byId: string): boolean | void | Promise<void>;
+}): Pick<GraceRevisitDeps, 'writeSuperseding' | 'writeMerged' | 'markRejected'> {
+  return {
+    writeSuperseding: async (oldId, content) => {
+      const { generateHarmonicId } = require('../core/memory/harmonic-types');
+      const old = await store.read(oldId);
+      const id = generateHarmonicId();
+      const now = new Date().toISOString();
+      await store.write({
+        id,
+        type: old?.type ?? 'semantic',
+        primary_abstraction: content.slice(0, 80),
+        cue_anchors: [...(old?.cue_anchors ?? []), 'revisited'],
+        memory_value: content,
+        energy: Math.max(0.75, old?.energy ?? 0.75),
+        created_at: now,
+        updated_at: now,
+      } as any);
+      await store.markSuperseded(oldId, id);
+      return id;
+    },
+    writeMerged: async (aId, bId, content) => {
+      const { generateHarmonicId } = require('../core/memory/harmonic-types');
+      const a = await store.read(aId);
+      const b = await store.read(bId);
+      const id = generateHarmonicId();
+      const now = new Date().toISOString();
+      const cues = [...new Set([...(a?.cue_anchors ?? []), ...(b?.cue_anchors ?? [])])].slice(0, 8);
+      await store.write({
+        id,
+        type: a?.type ?? 'semantic',
+        primary_abstraction: content.slice(0, 80),
+        cue_anchors: cues,
+        memory_value: content,
+        energy: Math.max(a?.energy ?? 0.75, b?.energy ?? 0.75),
+        merged_from: [aId, bId],
+        created_at: now,
+        updated_at: now,
+      } as any);
+      await store.markSuperseded(aId, id);
+      if (bId !== aId) await store.markSuperseded(bId, id);
+      return id;
+    },
+    markRejected: async (id) => {
+      const u = await store.read(id);
+      if (!u) return;
+      await store.write({
+        ...u,
+        energy: 0.05,
+        cue_anchors: [...new Set([...(u.cue_anchors ?? []), 'rejected'])],
+        updated_at: new Date().toISOString(),
+      } as any);
+    },
+  };
+}
+
 export class GraceRevisitPipeline {
   constructor(private opts: GraceRevisitDeps) {}
 
