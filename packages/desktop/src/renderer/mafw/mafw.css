@@ -1,4 +1,5 @@
-/* ══ 主题变量层（作用域 .mafw-shell，暗色默认，v5 暖纸色板） ══ */
+/* ══ 主题变量层（选择器合并：.mafw-shell + body 双作用域单一源，暗色默认，v5 暖纸色板）
+     三主题态键集一致 + 悬空引用闭集由 theme-merge-css.test.ts 钉扎（2026-10-12） ══ */
 .mafw-shell, body {
   color-scheme: dark;
   font-family: var(--font-ui);
@@ -247,7 +248,7 @@ html[data-theme="light"] body {
   html:not([data-theme]) .mafw-shell,
     html:not([data-theme]) body {
     color-scheme: light;
-    /* 与上面 [data-theme="light"] 完全相同的亮色变量块（复制，勿引用选择器） */
+    /* 与上面 [data-theme="light"] 块相同的亮色变量（两种亮色态各自成块；键集一致性由契约测试钉扎） */
     --bg-base: #FAF9F5; --bg-raised: #F3F1EB; --bg-overlay: #FFFFFF; --bg-float: #FFFFFF;
     --bg-hover: rgba(0,0,0,.04); --border-subtle: rgba(0,0,0,.09);
     --accent: #17804C; --accent-dim: rgba(23,128,76,.10); --accent-text: #14663C; --on-accent: #FFFFFF;
