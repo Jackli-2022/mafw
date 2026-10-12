@@ -1,6 +1,6 @@
 # 自研事件词汇 v2（mafw_event）设计 spec
 
-日期：2026-10-12 · 状态：待用户评审 · 前置调研：`docs/research/2026-10-12-native-event-vocabulary-refactor-research.md`（含三路勘察证据与六平台兼容矩阵）· 基线：`docs/research/2026-10-12-runtime-event-consumption-survey.md`
+日期：2026-10-12 · 状态：**已实施**（`mafw-event-v2` 分支：Phase 0 `33be5c76..e39332ee` 六笔独立修复 / commit A `b15ed63e` gateway+SDK 源 / commit B `a646108a` desktop / commit C `93f353ff` TUI；gateway 2085 + desktop 1028 + TUI 219 测试绿；gateway 已自更新至 v2 并通过 live dry-event 验证）· 前置调研：`docs/research/2026-10-12-native-event-vocabulary-refactor-research.md`（含三路勘察证据与六平台兼容矩阵）· 基线：`docs/research/2026-10-12-runtime-event-consumption-survey.md`
 
 ## 1. 目标与非目标
 

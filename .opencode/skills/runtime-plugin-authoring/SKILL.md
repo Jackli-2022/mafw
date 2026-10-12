@@ -242,10 +242,12 @@ module.exports = {
 >     ├─ isMalformedEvent 限频 warn（畸形防护）
 >     ├─ gateway 内部消费（trajectory / step-inject 记忆注入 / BudgetGuard / turnCompress flush / 自更新定位）
 >     ├─ Mode B：per-session chat 流（delta/complete/error → ChatPane/TUI Chat）
->     └─ Mode A：全局广播 opencode_event 信封 → desktop renderer / TUI
+>     └─ Mode A：全局广播 mafw_event 信封 → desktop renderer / TUI
 > ```
 
 ### 3.1 什么格式的事件被接受（输入契约）
+
+> **词汇 v2（2026-10-12）**：canonical 词汇所有权归 MAFW（spec `2026-10-12-native-event-vocabulary-design.md`）——`turn.completed/failed/aborted` 三元组统一回合终态、`part.*`（原 message.part.*）、`plan.updated`（原 todo.updated）、新增 `usage.updated`；`session.next.*` 已除名（gateway 翻译层丢弃）。词汇单源 = SDK `events.ts` ↔ `gateway/src/runtime/mafw-vocabulary.ts`（交叉测试钉扎）。
 
 `normalizeOpencodeEvent()` 接受两种信封形状（字段提取按序回退）：
 
@@ -265,15 +267,15 @@ module.exports = {
 
 | type | 必需 properties | 提取结果 | 缺字段后果 |
 |---|---|---|---|
-| `message.part.updated` | `part.{sessionID,type:'text',text}` 或 `delta` | step（step-finish part 结算）+ chatSignal:'delta' + deltaText | 无 delta 文本则仅 step 判定 |
+| `part.updated` | `part.{sessionID,type:'text',text}` 或 `delta` | step（step-finish part 结算）+ chatSignal:'delta' + deltaText；tool part 快照 → toolCommand | 无 delta 文本则仅 step 判定 |
 | `message.updated` | `info.{sessionID,role:'assistant',...完成消息}` | step（completed message）+ chatSignal:'complete' | 缺 info → 无 step |
-| `session.idle` | `sessionID` | chatSignal:'complete' + broadcast:'idle' | 缺 sessionID → 不触发记忆注入 drain |
-| `session.error` / `message.error` | `error`（可序列化） | chatSignal:'error' + broadcast:'error' | error 缺省为 'Unknown error' |
-| `session.next.step.ended`（legacy 兜底） | `sessionID, assistantMessageID, finish` | step（旧版 opencode step 结算） | 仅做 step 判定，无 chatSignal |
+| `turn.completed` | `sessionID` | chatSignal:'complete' → goalDriver/记忆 drain/回合收束 | 缺 sessionID → 不触发记忆注入 drain |
+| `turn.failed` | `error`（可序列化） | chatSignal:'error' | error 缺省为 'Unknown error' |
+| `turn.aborted` | `sessionID` | 回合中止（无 chatSignal） | — |
 | `session.created` / `session.updated` / `session.deleted` | `info.{id,title?,directory?,projectID?,parentID?,time.updated?}`（created/updated）| 直接 passthrough（desktop 靠它刷新 Rail） | 缺 info → desktop 判 none 忽略 |
 | `session.compacting` / `session.compacted` | `sessionID` | compaction:'start'/'end' → 触发 turnCompress flush | — |
-| `*tool*`（类型名含 "tool"） | `args.command`（string） | toolCommand → 自更新调用者定位 | 仅记账，无副作用 |
-| `permission.asked` / `replied`、`question.asked` | `sessionID, requestId, toolName, args`（asked） | passthrough → desktop FlowCard | — |
+| `part.updated`（tool part） | `part.{type:'tool', state.input.command}` | toolCommand → 自更新调用者定位 | 仅记账，无副作用 |
+| `permission.asked` / `replied`、`question.asked` | `sessionID, requestId, toolName, args`（asked；asked 载荷可选 `options[]`/`suggestedRule`） | passthrough → desktop FlowCard | — |
 | 任意其他 type | 无要求 | passthrough → Mode A 原样广播 | 未知 type 消费方忽略（合法） |
 
 ### 3.2 gateway 如何消费（内部矩阵）
@@ -281,25 +283,24 @@ module.exports = {
 | Facets 切面 | 消费者 | 行为 |
 |---|---|---|
 | 畸形（type+props 全空） | `isMalformedEvent` | 限频 warn（诊断），不阻断 |
-| `internal` 会话（memory worker 角色） | internalSessionRoles 过滤 | token 级噪音丢弃；idle/error 仍广播并打 `internal:true` 标 |
+| `internal` 会话（memory worker 角色） | internalSessionRoles 过滤 | token 级噪音丢弃；turn 三元组仍广播并打 `internal:true` 标 |
 | 任意 type+props+directory | TrajectoryCollector | 累积 SQLite；产出 `trajectory.event` / `trajectory.turn` 广播 |
-| `step` 切面 | step-inject | 已结算 step → 高显著度记忆注入（markStepSeen 去重） |
-| `step` + sessionID | BudgetGuard | goal 会话回合/成本计数，超限 abort |
+| `step` 切面 | BudgetGuard | 已结算 step → goal 会话回合/成本计数，超限 abort |
 | `compaction` 切面 | TurnPipeline | 压缩发生 → 该 session pending T1 回合立即 flush |
 | `chatSignal` | Mode B chatSessions | delta/complete/error 推给订阅该 session 的 SSE 客户端 |
-| `broadcast` 切面 | Mode A sseClients + wsClients + 移动端推送 | idle→`message.complete`、error→`message.error`、其余→`opencode_event` 信封原样 |
+| `turn.completed`（type） | Mode A + Trajectory | 回合聚合（trajectory.turn + usage.updated 合成）→ mafw_event 信封 passthrough 广播（v2：Mode A 改写已删除） |
 | `toolCommand` | 自更新定位 | 含 `pending-restart` 的命令钉住写令牌的会话 |
 
 ### 3.3 Mode A wire 契约（→ desktop / TUI）
 
-广播信封（`event-broadcast.ts` 固化）：
+广播信封（`event-broadcast.ts` 固化；v2 信封名 `mafw_event`）：
 
 ```json
-{ "type": "opencode_event", "data": { "type": "...", "properties": {...}, "sessionID": "...", "directory": "...", "internal": true? } }
+{ "type": "mafw_event", "data": { "type": "...", "properties": {...}, "sessionID": "...", "directory": "...", "internal": true? } }
 ```
 
 - **可选字段缺失时不得出现在 data 上**（key 稳定性——消费方用 `'x' in data` 判定）
-- 顶层非 `opencode_event` 广播（如 `runtime_switched`、`project_registered`、`user_question`、插件自定义事件）**必须扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`
+- 顶层非 `mafw_event` 广播（如 `runtime_switched`、`project_registered`、`user_question`、插件自定义事件）**必须扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`
 - 信封出口有形状守卫：`data.type` 非字符串 → console.error 诊断（fail-open 照发）
 - 插件包 / 外部程序发布：`ctx.emit(event)` 或 `POST /api/events`（顶层扁平或信封二选一）
 
@@ -321,12 +322,13 @@ module.exports = {
 | `question.replied`/`rejected`、`permission.replied` | FlowCard 收卡 | requestId, decision |
 | `session.compacted` | 触发历史重拉 | sessionID |
 | `trajectory.event` / `trajectory.turn` | RightDock 任务/轨迹 | (turnID, seq) 去重 |
-| `message.complete` / `message.error` | ChatPane 回合收尾 | sessionID, error? |
-| `todo.updated` | TaskList 实时刷新 | sessionID, todo |
+| `turn.completed` / `turn.failed` / `turn.aborted` | ChatPane 回合收尾 | sessionID, error? |
+| `part.updated` / `part.delta` | 流式渲染 + 工具卡 | part / delta |
+| `plan.updated` | TaskList 实时刷新 | sessionID, todo |
 
 ### 3.5 TUI 如何消费
 
-TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`）：`message.part.updated`、`session.idle`、`message.complete`、`message.error`、`session.error`、`permission.asked`、`question.asked`——白名单外的 type 不注册监听器（SSE 规范：无监听器即丢弃）。ChatStore 把 gateway 广播的 `message.complete` 与原生 `session.idle` 同等处理（回合收尾）。断线由 ConnectionStore 监督（BACKOFF 1/2/5/15s 阶梯重订阅）。
+TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`，v2：`part.updated`、`part.delta`、`turn.completed`、`turn.failed`、`turn.aborted`、`permission.asked`、`question.asked`）——白名单外的 type 不注册监听器（SSE 规范：无监听器即丢弃）；`tests/event-coverage.test.ts` 与 SDK union 交叉校验防漂移。ChatStore 对 turn 三元组做回合收尾。断线由 ConnectionStore 监督（BACKOFF 1/2/5/15s 阶梯重订阅）。
 
 ### 3.6 自定义事件（两条合法路径）
 
@@ -337,7 +339,7 @@ TUI 是**订阅白名单**模式（`connection.ts` 的 `KNOWN_EVENTS`）：`mess
 
 - [ ] 信封形状 A 或 B 之一；至少有非空 `type`
 - [ ] 需要 desktop 有反应 → 对照 3.4 契约表选 type 并给全必需字段（尤其 `sessionID` 与 `properties.info`）
-- [ ] 需要 ChatPane/TUI 跟随流式输出 → 必须产出 opencode 兼容的 `message.part.updated`（`part.text`）与 `session.idle`
+- [ ] 需要 ChatPane/TUI 跟随流式输出 → 必须产出 `part.updated`（`part.text` 或 `delta`）与 `turn.completed`
 - [ ] 新 type 用 `plugin:<name>:<event>` 命名空间；消费端（你自己的 renderer 逻辑）负责分发
 - [ ] 事件样本过一遍试衣间：`curl -X POST http://localhost:3000/api/runtime/dry-event -H 'Content-Type: application/json' -d '{"event": {...}}'` → 响应 `warnings` 为空
 - [ ] 用 `ctx.events.make()` 构造事件（未知 type 在构造点即打 warn，第一时间可见）
@@ -363,7 +365,7 @@ Gateway 侧（契约自动获得）                 宿主侧（runtime 自己�
 
 | 功能 | 机制 | 你要做的 |
 |---|---|---|
-| 步进注入（per-step 记忆追加进会话） | 事件产出 step 切面（3.1 契约表）→ gateway markStepSeen 去重 → `promptAsync` 追加注入消息 | **依赖 `promptWhileBusy`**（Tier 0 已有）；`session.idle` 必须带 sessionID（触发 drain） |
+| 步进注入（per-step 记忆追加进会话） | 事件产出 step 切面（3.1 契约表）→ gateway markStepSeen 去重 → `promptAsync` 追加注入消息 | **依赖 `promptWhileBusy`**（Tier 0 已有）；`turn.completed` 必须带 sessionID（触发 drain） |
 | 记忆 worker 会话 | gateway 经你的 `session.create`/`promptAsync` 创建；自动注册 internal（递归防护，runtime 无需参与标记） | 无；`summarize` 缺失 → worker idle 后 dispose 轮换（fail-open 不阻塞） |
 | Trajectory / 反思 / stale-verify | 事件累积 + worker 会话 | 无 |
 
@@ -406,8 +408,8 @@ Gateway 侧（契约自动获得）                 宿主侧（runtime 自己�
 
 ### 4.6 事件形状对记忆质量的影响
 
-- **用户文本必须以 text part 进 `message.part.updated`**（`part.{type:'text', text, sessionID, messageID}`）——trajectory curator 的回合 transcript 与成败信号（goal grade）都从 text parts 捕获；`message.updated` 的 summary/body 是空的，不能替代
-- 工具事件类型名含 `tool` 且带 `args.command` 才能被自更新调用者定位（3.1 契约表）
+- **用户文本必须以 text part 进 `part.updated`**（`part.{type:'text', text, sessionID, messageID}`）——trajectory curator 的回合 transcript 与成败信号（goal grade）都从 text parts 捕获；`message.updated` 的 summary/body 是空的，不能替代
+- 工具事件需以 tool part 快照进 `part.updated`（`part.{type:'tool', state.input.command}`）才能被自更新调用者定位（3.1 契约表）
 
 ### 4.7 记忆接入验证清单
 
@@ -749,10 +751,10 @@ canonical 集 = `@mafw/sdk` 的 `RUNTIME_EVENT_TYPES`（gateway 侧镜像：`EVE
 ```bash
 curl -X POST http://localhost:3000/api/runtime/dry-event \
   -H 'Content-Type: application/json' \
-  -d '{"event": {"type": "session.idle", "properties": {"sessionID": "s1"}}}'
+  -d '{"event": {"type": "turn.completed", "properties": {"sessionID": "s1"}}}'
 ```
 
-响应：`known`（是否 canonical）+ `facets`（normalize 后会被哪些切面消费：step/chatSignal/broadcast/compaction）+ `flow`（Mode A 处置 modeA / desktop / tui 各跳）+ `warnings`（缺字段警告，来自字段契约的可执行版）。`warnings: []` = 事件会被正确消费。
+响应：`known`（是否 canonical）+ `facets`（normalize 后会被哪些切面消费：step/chatSignal/compaction/toolCommand）+ `flow`（Mode A 处置 modeA / desktop / tui 各跳）+ `warnings`（缺字段警告，来自字段契约的可执行版）。`warnings: []` = 事件会被正确消费。
 
 ### 3. ctx.events 构造助手（把错误提前到 emit 调用点）
 
@@ -760,7 +762,7 @@ curl -X POST http://localhost:3000/api/runtime/dry-event \
 
 ```javascript
 // make：构造形状 A 信封（sessionID 合并进 properties）；未知 type 构造点即 warn（不阻断）
-const evt = ctx.events.make('session.idle', {}, sessionID);
+const evt = ctx.events.make('turn.completed', {}, sessionID);
 // check：字段契约检查，返回 warnings 数组（同试衣间响应）
 const problems = ctx.events.check(evt);
 ```

@@ -217,7 +217,7 @@ onMount → gateway.info() 等 ready
 - **事件规划器**（`session-events.ts`，纯函数可测）：`planSessionEvent()` 把 SSE 生命周期事件映射为 patch/remove/invalidate/none——隐藏口径对齐 gateway `isHiddenSession`（`core/session-visibility.ts`：parentID / legacy worker 标题前缀 / `agent==='memory-curator'` / `internal` 角色表——agent 判定是确定性的，kv 角色表 7 天 TTL 剪枝后老 worker 会话不会复活到列表）；patch 走字段白名单（title/time/directory/projectID），**绝不 spread info**（SSE info 无 `metadata.mafw.role`，防止抹掉本地 manager 标记）；pi 的 `session.updated` 空壳（agent_start，无 info）忽略，防每回合 invalidate 风暴
 - **MafwShell onmessage 三分支**：`created`→invalidate；`updated`→patch + tab 标题双写（`sessions()` + `store.session`）；`deleted`→remove + `closeSession`（外部删除已打开 tab 自动关闭，split view/active 回退复用）
 - **gateway 配套**（`runtime/event-broadcast.ts` 纯函数 + jest）：Mode A 广播封装收敛 `opencodeBroadcast()`，passthrough 事件透传 `directory`（normalize 已提取）；两个项目注册点（HTTP `/register` + registry 目录 watcher）广播 `project_registered`，desktop `projectsRev` 信号触发 Rail/MafwShell 项目列表重拉
-- **wire 契约**：gateway 顶层广播（非 `opencode_event` 类型）必须**扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`；形状由 `event-broadcast.test.ts` 固化
+- **wire 契约**：gateway 顶层广播（非 `mafw_event` 类型）必须**扁平无 `data` 键**——desktop 剥壳 `event = raw?.data || raw` 会把 `data` 当内层载荷吞掉 `type`；形状由 `event-broadcast.test.ts` 固化（信封名 v2 起为 `mafw_event`，原 `opencode_event`）
 - **顺手修复**：Rail 删除调用 `sessions.remove`（不存在）→ `delete`（原删除必弹失败 toast）；Rail 删除后 tab 残留（`onSessionDeleted` 接 `closeSession`）；tab 双击改名纯本地 → 接 gateway rename
 - **pi runtime 固有降级**：pi 无 created/deleted/标题事件（SessionManager 无 hook），invalidate 兜底；测试 desktop +23 / gateway +6
 
@@ -265,7 +265,7 @@ MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立�
 
 **Chat 本体**：
 - **Markdown 渲染**：assistant 文本走 pi-tui `Markdown` 组件（`message-blocks.ts` 的 `markdownTheme`，标题/列表/代码块/表格；无 cli-highlight 依赖，代码块不着色）；user 文本保持纯文本 `>` 前缀
-- **busy 消息排队**：`ChatStore.send()` streaming 时入 `queuedTurns`（turn 标 `queued`，渲染 `⏳` dim），`session.idle` 后 `flushQueue()` 每次续发一条（复用 turn 不重复）
+- **busy 消息排队**：`ChatStore.send()` streaming 时入 `queuedTurns`（turn 标 `queued`，渲染 `⏳` dim），`turn.completed` 后 `flushQueue()` 每次续发一条（复用 turn 不重复；v2 词汇）
 - **`!` shell 模式**（`src/shell-mode.ts`）：`! <cmd>` 本地 exec（30s 超时、128KB buffer、输出截 50 行），渲染进 transcript 本地块（`RawLines`，跨 rebuild 保留），**不进模型上下文**（Hermes 同款零成本语义）
 - **外部编辑器**（`src/external-editor.ts`）：Ctrl+G / `/editor` → `tui.stop()` → `$VISUAL/$EDITOR`（win 默认 notepad）编辑临时文件 → `tui.start()`（pi coding agent 同款模式；Windows 禁 spawnSync 防输入缓冲争抢）
 - **会话切换**：`/sessions`（别名 `/resume` `/switch`）→ SelectList picker（★manager 标记）→ `ChatStore.switchSession()` + `ConnectionStore.setSession()` 重订 SSE + `chatTab.rebuild()`（localBlocks 保留——loadHistory 与本地块的竞态曾清空 shell 结果，测试抓出）
@@ -851,7 +851,7 @@ opencode LLM                              Gateway（3000）                  .ve
 
 **绑定**：`registerInternalSession(sid, role, identity?)` 登记 session 级绑定（manager 全路径 +
 worker `onSessionCreated` → memory-curator）；用户经桌面/TUI 选身份 = 回合级绑定
-（`/api/session/:id/promptAsync` 路由登记，`session.idle` 清除）；manager rotate 降级解绑。
+（`/api/session/:id/promptAsync` 路由登记，`turn.completed` 清除）；manager rotate 降级解绑。
 `injectManagerIdentity`（旧一次性 `[SYSTEM]` 消息）**已删除**——身份经车道 1 到达，修复 compaction 稀释。
 
 **网关策略层**（`ApprovalPolicyService.evaluate` 身份维度，**先于 internal blanket-deny**——
@@ -1023,7 +1023,7 @@ runtime 能力集 + 插件扫描状态。能力门：缺能力的 runtime 对应
 - 认证链：`ctx.credentials.getApiKey` → auth.json 回退 → ModelRuntime.setRuntimeApiKey（单例共享）
 - 会话：`PiSessionRegistry`（Map<sessionID, AgentSession>，忙时 followUp 队列）
 - 存储：`pi-session-storage.ts`（调用 pi SessionManager.list(cwd) 列出持久化会话，映射为 gateway SessionInfo 格式）
-- 事件：`PiEventStream`（subscribe → RawRuntimeEvent → normalize.ts 四信号 session.idle/session.error/message.part.updated/message.updated）
+- 事件：`PiEventStream`（subscribe → RawRuntimeEvent → normalize.ts 四信号 turn.completed/turn.failed/part.updated/message.updated；v2 词汇）
 - external=true：gateway 不 spawn；外部 runtime 的事件订阅与 serveReady 解耦（不等 opencode serve）
 - 媒体 agent 消费 AgentRuntime（Phase 2，见 `docs/superpowers/specs/2026-08-27-pi-runtime-design.md`）
 
@@ -1037,11 +1037,12 @@ runtime 插件用**纯数据表**把原生事件接入 canonical 管线，不再
   - `from` = 原生类型（string|string[]）；`to` = canonical 类型或 `'drop'`；`when` 为纯数据条件（`{path, equals?|exists?}`，`typePath` 可指嵌套判别字段如 Claude `$.event.type`）
   - `fields` 值三选一：`{path,default?}` / `{const}` / `{template}`（`'pi_step_{$.sessionID}'` 式插值，覆盖 ID 物化）；路径 = 裁剪 JSONPath 子集（点号+下标，**无 eval**）
   - **匹配优先级**：eventMappings（数组序）→ canonical 直发 passthrough → transformEvent（返回 null=丢弃，数组=扇出）→ 丢弃 + 未知遥测
-- **gateway 侧**：`CANONICAL_FACET_RULES`（`runtime/canonical-facets.ts`）把 canonical type → EventFacets 表化（原 `normalizeOpencodeEvent` if 链；`normalize-oracle.test.ts` 逐事件钉扎新旧等价）；`toolCommand`（`type.includes('tool')` + 信封依赖）与 approval metadata 构造为执行器内置特例
+- **gateway 侧**：`CANONICAL_FACET_RULES`（`runtime/canonical-facets.ts`）把 canonical type → EventFacets 表化（原 `normalizeOpencodeEvent` if 链；`normalize-oracle.test.ts` 逐事件钉扎表驱动 ≡ v2 手写参照）；v2 起 `toolCommand` 升为规则行（tool part 快照载体），仅 approval metadata 构造为执行器内置特例
 - **执行器**：`runtime/path-expr.ts`（安全路径求值）+ `runtime/event-mapper.ts`（applyEventMappings / validateEventMappings / wrapGlobalEventStream）
 - **加载期校验**（`loader.ts`）：未知 canonical `to` / 坏路径 → 插件 `eventStream` 能力降级 + error 状态（fail-open，仍注册）
 - **dry-event 试衣间**：`POST /api/runtime/dry-event { plugin, event }` 输出 映射→facet→矩阵→字段契约 每跳（含 approval facet 回显 + 工具三原语的 assembler 跳回显 `assembled`）
-- **已迁入**：pi（`PI_EVENT_MAPPINGS`，`translatePiEvent` 由 switch 表化——**turn_end 改 `part.messageID`，修复 BudgetGuard step facet 在 pi 上从未触发的 bug**）；opencode 原生事件即 canonical（不包装）；词汇表沿用 opencode 形状（25+15 类型，2026-10-08 补登 permission_mode/session.diff 两个暗契约漏洞）
+- **已迁入**：pi（`PI_EVENT_MAPPINGS`，`translatePiEvent` 由 switch 表化——**turn_end 改 `part.messageID`，修复 BudgetGuard step facet 在 pi 上从未触发的 bug**）；opencode 原生事件即 canonical（不包装）；~~词汇表沿用 opencode 形状~~（**2026-10-12 v2 已反转**，见下）
+- **词汇 v2（2026-10-12，`docs/superpowers/specs/2026-10-12-native-event-vocabulary-design.md`）**：canonical 词汇所有权归 MAFW——`turn.completed/failed/aborted` 三元组统一回合终态（原 session.idle/message.complete/message.error/message.aborted 五终态双轨 + Mode A 改写 hack 全部删除，广播统一 passthrough）；`message.part.*` → `part.*`；`todo.updated` → `plan.updated`；新增 `usage.updated`（gateway 从 TrajectoryTurn tokens/cost 合成）与 permission.asked 载荷可选 `options[]`/`suggestedRule`；`session.next.*` 六条除名（唯一消费者 v1 宿主插件在进程内吃原生事件）；信封 `opencode_event` → `mafw_event`（SDK 类型 `MafwEventEnvelope`）。**强制翻译接线**：opencode 经 `registerBuiltin` 携 `OPENCODE_EVENT_MAPPINGS`（`runtime/opencode-events.ts`：8 差异行 + transformEvent 前缀丢弃 session.next.*/sync）接入，与文件插件同一注册接口；三分支（plugin/builtin/direct）共用 `wrapGlobalEventStream`（强制）→ `wrapToolPartAssembly` 序列，无声明 = 警告 + 恒等透传。**词汇单源**：SDK `events.ts`（客户端契约）↔ `runtime/mafw-vocabulary.ts`（gateway 常量 `MAFW`，交叉测试 `vocabulary-sync.test.ts` 钉扎）；三层守卫链不变（SDK union ↔ 矩阵测试 ↔ desktop `assertShellEventCoverage`）+ TUI 第四道弱守卫（KNOWN_EVENTS ⊆ union，`tests/event-coverage.test.ts`）。**toolCommand facet 载体迁移**：原 `session.next.tool.*`（`type.includes('tool')` 特例）→ `part.updated` + `part.type='tool'` 规则行（`$.part.state.input.command`），自更新调用者定位行为保持。**eventBus 扁平发射注册表化**：`runtime/flat-emit-registry.ts`（10 类型）替换 setupEventBus if 链；goal_node 已正式登记 SDK union/矩阵/穷尽守卫。oracle 重立为 v2 手写参照（`normalize-oracle.test.ts`）；replay 升级为全链路 golden（opencode raw → 翻译 → normalize，`event-replay.test.ts`）
 - **工具 part 合帧（2026-10-12）**：`runtime/tool-part-assembler.ts` 的 `ToolPartAssembler`（per-session、callID 键控状态机）把「call/result 分离」runtime 的三原语（`tool.call`/`tool.delta`/`tool.result`，**内部类型**：进 `CANONICAL_TYPE_SET` 校验但不进公开词汇表/矩阵、不广播）合帧为 opencode 形状 ToolPart 快照（part.id = `toolpart_<callID>`，live 与历史同 id 去重）。`wrapToolPartAssembly` 在 `wrapGlobalEventStream` 之后接线（plugin + builtin 两分支；opencode 无三原语 → 恒等直通），`handleOpencodeEvent` 有三原语防漏底线。历史路径：契约可选 `session.normalizeMessages`（缺省恒等），gateway messages 路由经 `applyNormalizeMessages` 统一过；pi 实现 `runtime/pi/pi-message-normalize.ts`（ToolCall block + toolResult 按 toolCallId 归并）——修复「pi 工具卡桌面从不渲染 + 历史空」。spec：`docs/superpowers/specs/2026-10-12-tool-part-compat-design.md`
 
 #### nativeApprovals 翻译层（pi runtime）
@@ -1108,7 +1109,7 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（graph/checkpointer/interrupt/Command-resume）退役**，换为 state 文件 + 事件驱动的 `NodeDriver`（`gateway/src/core/goal/`）。spec `docs/superpowers/specs/2026-10-08-goal-orchestration-p1-design.md`；plan `docs/superpowers/plans/2026-10-08-goal-orchestration-p1.md`。
 
 - **NodeDriver**（`driver.ts`）：每 goal 一个互斥状态机实例。`advance(goalId)` 读 state v3 → `routing.ts` 纯函数定下一节点（从 `graph.ts:4-15` 逐字移植）→ 建会话（`agent: 'mafw-'+node` 绑定身份）→ `void promptAsync`（**不 await**——pi 的 promptAsync 在 idle 会话阻塞到回合结束，pi-session.ts:117-120）→ 注册 per-session 完成监听 → `writeGoalState(nodeSession)`。完成由 `handleOpencodeEvent` 的 idle/error 分支分发（`goalDriver?.onSessionIdle/onSessionError`）。
-- **双门完成判定**：`session.idle` + 产物文件（`node-prompts.ts:nodeArtifactPaths`：waves.json / `receipts/{goalId}/loop-{N}-receipt.json`（per-loop 不再覆盖）/ `reviews/{goalId}-loop{N}.md`）存在且可解析；缺失/非法 → `failNode`（artifact_missing/artifact_invalid）→ archive_fail。
+- **双门完成判定**：`turn.completed` + 产物文件（`node-prompts.ts:nodeArtifactPaths`：waves.json / `receipts/{goalId}/loop-{N}-receipt.json`（per-loop 不再覆盖）/ `reviews/{goalId}-loop{N}.md`）存在且可解析；缺失/非法 → `failNode`（artifact_missing/artifact_invalid）→ archive_fail。
 - **三节点身份**：`IdentityRegistry` 内置 `mafw-plan`（deny file-edit/shell/web）/ `mafw-execute`（全开）/ `mafw-review`（deny file-edit/web，allowlist 含 shell）——复用 v4.21.0 物化车道，替换旧 `/skill mafw-*` 裸文本。
 - **W4 goal 级先验（2026-10-08）**：plan 节点 prompt 注入 L1 能力账本 + L2 失败谱（`capabilityPriorBlock`，`DriverDeps.capabilityPrior` → `NodePromptCtx.priorBlock`）——规划时看到同类任务历史 PASS 率/均轮数与反复失败模式，主动规避。闭环：L1/L2（Plan 2）产出 → W4 消费。
 - **state v3**（`state-v3.ts`，NodeDriver 唯一写入方）：`round` 为规范名 + `loop` 双写别名（旧读方兼容）；新增 `nodeSession`/`nextNode`/`nextAction`。原子写（.tmp+rename）。

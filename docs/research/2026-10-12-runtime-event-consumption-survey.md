@@ -1,5 +1,7 @@
 # Agent Runtime 事件消费面与注册/翻译层调研（gateway × desktop）
 
+> **勘误注（2026-10-12 晚）**：本文为词汇 v2 切换**前**的快照——当日已实施 `mafw-event-v2`（turn 三元组 / part.* / mafw_event 信封 / session.next.* 除名 / goal_node 补登 / connected 消费 / question_answered 删除），现状以 `docs/superpowers/specs/2026-10-12-native-event-vocabulary-design.md` 为准。本文缺口清单中的 #1-#5 已全部修复。
+
 日期：2026-10-12 · 方法：三路并行代码勘察（gateway 消费面 / desktop 消费面 / 注册接口与翻译层）+ 关键结论人工抽查验证（event-flow-matrix.ts、gateway-sdk/events.ts、sse/dispatcher.ts 逐行核对）
 
 ## 0. 问题与一句话结论
