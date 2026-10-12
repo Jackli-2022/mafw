@@ -88,3 +88,25 @@ describe('POST /api/runtime/dry-event with plugin mapping hop', () => {
     expect(json.available).toEqual(['fake']);
   });
 });
+
+describe('POST /api/runtime/dry-event tool primitive hop', () => {
+  const entry = {
+    eventSource: { typePath: '$.type', sessionIdPath: '$.sessionID' },
+    eventMappings: [
+      { from: 'tc', to: 'tool.call', fields: { callID: { path: '$.id' }, tool: { path: '$.name' }, input: { path: '$.args' } } },
+    ],
+  };
+  const deps = { getPluginEventEntry: (n: string) => (n === 'fake2' ? entry : null), listPlugins: () => ['fake2'] };
+
+  it('映射到 tool.call → assembled 回显 ToolPart 快照，facets 跳过', async () => {
+    const { status, json } = await post({ plugin: 'fake2', event: { type: 'tc', sessionID: 's1', id: 'tc1', name: 'bash', args: { command: 'ls' } } }, deps);
+    expect(status).toBe(200);
+    expect(json.mapping).toEqual({ matched: true, to: 'tool.call' });
+    expect(json.known).toBe(true);
+    expect(json.facets).toBeNull();
+    const part = json.assembled.find((e: any) => e.payload?.type === 'message.part.updated')?.payload?.properties?.part;
+    expect(part?.id).toBe('toolpart_tc1');
+    expect(part?.type).toBe('tool');
+    expect(part?.state.status).toBe('running');
+  });
+});

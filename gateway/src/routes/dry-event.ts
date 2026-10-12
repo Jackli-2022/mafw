@@ -11,6 +11,7 @@ import { EVENT_FLOW_MATRIX } from '../runtime/event-flow-matrix';
 import { isKnownEventType } from '../runtime/event-telemetry';
 import { checkEventFields } from '../runtime/event-field-contract';
 import { applyEventMappings, EventMappingEntry } from '../runtime/event-mapper';
+import { ToolPartAssembler, TOOL_PRIMITIVE_TYPES } from '../runtime/tool-part-assembler';
 
 export interface DryEventDeps {
   /** 按 runtime 名取事件映射声明（loader meta）。 */
@@ -72,6 +73,27 @@ export async function handleDryEvent(
     }
     mapped = out[0];
     mapping = { matched: true, to: mapped?.payload?.type ?? mapped?.type };
+  }
+
+  // 工具三原语：走 assembler 跳，回显合成后的 ToolPart 快照（不进 facet/矩阵）。
+  const mappedType: string = mapped?.payload?.type ?? mapped?.type ?? '';
+  if (TOOL_PRIMITIVE_TYPES.has(mappedType)) {
+    const assembler = new ToolPartAssembler();
+    const props = mapped.payload?.properties ?? {};
+    const p = { ...props, sessionID: props.sessionID ?? mapped.sessionID ?? 'dry' };
+    const assembled =
+      mappedType === 'tool.call' ? assembler.applyCall(p)
+        : mappedType === 'tool.delta' ? assembler.applyDelta(p)
+          : assembler.applyResult(p);
+    send(200, {
+      ...(body?.plugin ? { plugin: body.plugin, mapping } : {}),
+      type: mappedType,
+      known: true,
+      facets: null,
+      warnings: [],
+      assembled,
+    });
+    return;
   }
 
   const type: string = mapped?.payload?.type || mapped?.type || '';
