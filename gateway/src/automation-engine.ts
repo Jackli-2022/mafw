@@ -122,6 +122,25 @@ export function runEnergyDecay(
       decayed++;
     }
   }
+
+  // V2 ⑦ graduation: capped pipeline writes whose 48h window elapsed with
+  // no interference graduate to 0.75 (mechanical — no LLM, independent of
+  // the graceRevisit verdict phase). "Survived without PE = stabilized".
+  try {
+    const { selectGraduations, COMMITMENT_GRADUATE_TO, commitmentStats } = require('./recall/commitment');
+    const grads = selectGraduations(indexManager.getIndex().entries, now);
+    for (const id of grads) {
+      const entry = indexManager.getIndex().entries.find(e => e.id === id);
+      if (!entry) continue;
+      indexManager.updateEnergy(id, COMMITMENT_GRADUATE_TO - entry.energy);
+      delete (entry as any).commitment_capped_at;
+    }
+    if (grads.length > 0) {
+      commitmentStats.graduated += grads.length;
+      indexManager.save();
+    }
+  } catch { /* fail-open */ }
+
   indexManager.save();
   return { migrated: 0, decayed, bonused };
 }

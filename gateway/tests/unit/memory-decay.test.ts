@@ -57,7 +57,6 @@ describe('memory:decay incremental decay', () => {
         last_decay_at: new Date(now - 2 * DAY).toISOString(),
       })],
     });
-
     await runDecay();
 
     const entry = readIndex(tmpDir).entries[0];
@@ -296,5 +295,37 @@ describe('memory:decay incremental decay', () => {
     } as any, 'semantic');
 
     expect(mgr.getIndex().entries[0].created_at).toBeDefined();
+  });
+
+  test('V2 ⑦ graduation: capped entry past 48h lifts to 0.75 and clears the stamp', async () => {
+    const now = Date.now();
+    writeIndex(tmpDir, {
+      version: 2,
+      updated_at: new Date(now).toISOString(),
+      entries: [
+        makeEntry({
+          id: 'grad1',
+          energy: 0.6,
+          commitment_capped_at: new Date(now - 49 * 3600 * 1000).toISOString(),
+        }),
+        makeEntry({
+          id: 'stay1',
+          energy: 0.6,
+          commitment_capped_at: new Date(now - 5 * 3600 * 1000).toISOString(),
+        }),
+        makeEntry({ id: 'plain1', energy: 0.55 }),
+      ],
+    });
+    await runDecay();
+    const idx = readIndex(tmpDir);
+    const grad1 = idx.entries.find((e: any) => e.id === 'grad1');
+    const stay1 = idx.entries.find((e: any) => e.id === 'stay1');
+    const plain1 = idx.entries.find((e: any) => e.id === 'plain1');
+    expect(grad1.energy).toBeCloseTo(0.75, 2);
+    expect(grad1.commitment_capped_at).toBeUndefined();
+    expect(stay1.energy).toBeLessThanOrEqual(0.6);
+    expect(stay1.commitment_capped_at).toBeDefined();
+    expect(plain1.commitment_capped_at).toBeUndefined();
+    expect(plain1.energy).toBeLessThanOrEqual(0.55);
   });
 });
