@@ -99,7 +99,7 @@ S 层: 读新 episodic+宽限期 gist+交错 prior → 蒸馏/A2/A4/D1b/A5
 
 | 相位 | 内容 | 规模 | 状态 |
 |---|---|---|---|
-| **V1** | ① t1 嵌入（fire-and-forget + 51k 回填）② t1 向量命名空间 ③ H dense NN 进 R8 快照融合 + `<recall>` #t1 指针 ④ provenance 修复（worker source 指回源会话）⑤ 边界路径不动 | 2-3 天，零新 LLM | **定案待实施** |
+| **V1** | ① t1 嵌入（fire-and-forget + 12k 滚动窗回填）② t1 向量命名空间 ③ H dense NN 进 R8 快照融合 + `<recall>` #t1 指针 ④ provenance 修复（worker source 指回源会话）⑤ 边界路径不动 | 2-3 天，零新 LLM | **✅ 已部署 v4.26.0（2026-10-12）**：11791 向量，1933 测试绿 |
 | **V2** | ① 机械捕获升级（GLiNER 实体收割 + novelty 接线 + MinHash 标记化）② TCM 话题分段替换小时批（吸收 N3）③ F 层读事件段原文重定位（吸收 D6）④ 宽限期重访 48-72h ⑤ reflection 交错注入 ⑥ 机械 salience observe-first | 1-2 周 | 设计定案 |
 | **V3** | ① 分系统检索通道（09-23 C4）② N1 实体概念层（identity 判合并）③ index-scan LLM 裁判迁巩固层（砍 83% 成本路径）④ D5 测量门 + LongMemEval 双层消融 | 2-4 周+基准 | 依赖 V1/V2 |
 | 远期 | N2 REM 生成性重组（D6/D7 线）· N4 自适应分化 · N6 双时间戳查询面 · N7 已并入 V2 · N8 结构骨架 · laya 批微调通道 · 小脑式误差学习器缺位 | — | 触发条件见 roadmap §7 |
@@ -109,6 +109,7 @@ S 层: 读新 episodic+宽限期 gist+交错 prior → 蒸馏/A2/A4/D1b/A5
 | 债 | 归还相位 |
 |---|---|
 | H 层标识符/精确串查询盲区（dense 已知盲点，R7 教训） | V2 键增广（GLiNER+regex 收割进键）；C0 LIKE 兜底 |
+| **t1 dense 存储格式上限**：JSON 向量文件撞 V8 字符串限（~24k 行/~500MB）；当前回填 12k 滚动窗（244MB）。全量 dense 需紧凑格式（Float32 base64/二进制）+ **运行期窗口淘汰**（否则数月后再次撞墙） | V1.5 / V2 |
 | REM 修剪算子缺位（沉底/衰减是弱版本） | N2 |
 | reflection 单遍定稿的历史存量 | V2 宽限期重访只覆盖新增；存量一次性回扫可选 |
 | 小脑式监督误差学习器 | 远期（reranker 校准勉强算监督式但不同层） |
