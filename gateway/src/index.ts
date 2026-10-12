@@ -94,13 +94,6 @@ import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/iden
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { isHiddenSession } from './core/session-visibility';
 
-/** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
- *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（见 handleOpencodeEvent 底线）。 */
-const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
-  ...Object.keys(EVENT_FLOW_MATRIX),
-  ...RUNTIME_NATIVE_DROPPED,
-  ...TOOL_PRIMITIVE_TYPES,
-]);
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
 import { ApprovalPolicyService } from './core/approval/policy-service';
@@ -133,6 +126,16 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent } from './runtime/pi/pi-events';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
+
+/** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
+ *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（有 handleOpencodeEvent 底线）。
+ *  注意：必须位于全部 import 之后——tsc CJS 产物按源码位置生成 require，
+ *  顶部使用尚未 require 的模块会 TDZ 崩溃（2026-10-12 全局 dist 启动事故）。*/
+const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
+  ...Object.keys(EVENT_FLOW_MATRIX),
+  ...RUNTIME_NATIVE_DROPPED,
+  ...TOOL_PRIMITIVE_TYPES,
+]);
 import { wrapRuntimeMessages } from './runtime/normalize-messages';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
