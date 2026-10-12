@@ -4507,14 +4507,12 @@ class MafwScheduler {
           if (data.type === 'cancel') {
             // NodeDriver 写 ledger cancelled + state → archive_fail（不再依赖 langgraph）
             this.goalDriver?.handleCancel(goalId, questionId);
-            eventBus.emit('question_cancelled', { questionId, goalId });
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'accepted', action: 'cancelled' }));
             return;
           }
           // answer or redirect —— NodeDriver（state 驱动，langgraph Command 退役）
           this.goalDriver?.handleAnswer(goalId, questionId, data.answer || '');
-          eventBus.emit('question_answered', { questionId, goalId, answer: data.answer });
           res.writeHead(200);
           res.end(JSON.stringify({ status: 'accepted' }));
           return;
