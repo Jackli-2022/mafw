@@ -72,6 +72,13 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
     return
   }
 
+  // SSE 问候帧（建连/重连首帧，gateway /api/events 直发）：静默消费防 miss
+  // 告警刷屏；连接状态机由 EventSource onopen 驱动，此帧仅作到达确认。
+  if (event.type === "connected") {
+    deps.core.trace(event, "conn:greeting")
+    return
+  }
+
   if (event.type === "user_question") {
     deps.core.trace(event, "notify:question")
     deps.core.setActiveQuestion(event)

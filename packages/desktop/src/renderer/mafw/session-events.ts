@@ -132,6 +132,7 @@ export function isTailAccountedAtShell(type: string | undefined): boolean {
 type ShellHandledType =
   | "user_question" | "project_registered" | "runtime_switched"
   | "goal_node" | "goal_created" | "phase_transition"
+  | "connected"
   | "session.created" | "session.updated" | "session.deleted"
   | "question.asked" | "question.replied" | "question.rejected"
   | "permission.asked" | "permission.replied" | "session.compacted"
@@ -154,6 +155,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "goal_node":
     case "goal_created":
     case "phase_transition":
+    case "connected":
     case "session.created":
     case "session.updated":
     case "session.deleted":

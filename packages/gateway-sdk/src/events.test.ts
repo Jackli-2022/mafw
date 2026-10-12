@@ -11,7 +11,7 @@ test("runtime event list has no duplicates", () => {
 
 test("flat event list has no duplicates", () => {
   expect(new Set(FLAT_EVENT_TYPES).size).toBe(FLAT_EVENT_TYPES.length)
-  expect(FLAT_EVENT_TYPES.length).toBe(14)
+  expect(FLAT_EVENT_TYPES.length).toBe(15)
 })
 
 test("assertNever throws with context", () => {

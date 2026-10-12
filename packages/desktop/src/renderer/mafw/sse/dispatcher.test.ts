@@ -128,6 +128,13 @@ describe("dispatchShellEvent: tail", () => {
     expect(calls.map(c => c.name)).toEqual(["trace"])
     expect(calls[0].args[1]).toBe("sync-envelope")
   })
+
+  test("connected greeting frame → consumed silently (no more miss warn)", () => {
+    const { deps, calls } = makeDeps()
+    dispatchShellEvent({ type: "connected", timestamp: "2026-10-12T00:00:00Z" }, deps)
+    expect(calls.map(c => c.name)).toEqual(["trace"])
+    expect(calls[0].args[1]).toBe("conn:greeting")
+  })
 })
 
 describe("dispatchShellEvent: goal events", () => {

@@ -77,6 +77,7 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   'runtime_switched':           R([], 'passthrough', 'handled', 'ignore', 'desktop 重置 chat workspace'),
   'mafw_commands_changed':      R([], 'passthrough', 'ignore', 'ignore', 'desktop ChatPane 另行消费补全'),
   'goal_node':                  R([], 'passthrough', 'handled', 'ignore', 'goal 编排节点事件（无 sessionID，sid 分发前消费）；desktop goalsRev 泳道刷新'),
+  'connected':                  R([], 'passthrough', 'handled', 'ignore', 'SSE 建连/重连问候帧（gateway 直发，非 runtime 事件）；desktop dispatcher 消费防 miss'),
 };
 
 const VALID_MODE_A = new Set(['passthrough', 'rewrite', 'drop']);
