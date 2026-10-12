@@ -18,6 +18,19 @@ import { PipelineBudgetLike } from './pipeline-budget';
 /** Session key for episodic memories with no source_session_id (legacy data). */
 export const ORPHAN_SESSION = '__orphan__';
 
+/** V2 ⑤: stable sort surfacing grace-window slow-system entries (age ≤ 48h
+ * semantic/procedural) before the rest — tonight's reconcile targets first.
+ * Pure + exported for tests. */
+export function gracePrioritySort<T extends { entry: { type?: string; created_at?: string } }>(hits: T[], now: number): T[] {
+  const inGrace = (h: T) => {
+    const e = h.entry;
+    if (e.type !== 'semantic' && e.type !== 'procedural') return false;
+    const created = e.created_at ? Date.parse(e.created_at) : 0;
+    return created > 0 && now - created <= 48 * 3600 * 1000;
+  };
+  return [...hits].sort((a, b) => Number(inGrace(b)) - Number(inGrace(a)));
+}
+
 export interface ReflectionOptions {
   index: HarmonicIndexManager;
   baseDir: string;
@@ -294,15 +307,27 @@ export class ReflectionPipeline {
       // Step 1: generate salient questions
       const qText = await worker.prompt(prompt, QUESTIONS_SYSTEM, this.opts.workerModel, 'memory-curator');
       const questions = parseQuestions(qText);
-      // Step 2: retrieve evidence per question (bm25, no graph expansion)
+      // Step 2: retrieve evidence per question. V2 ⑤: dense channel fused
+      // via RRF when the embedding runtime is available (fail-open → bm25
+      // only), and grace-window gists surface first — they are tonight's
+      // reconcile targets, not just passive evidence.
       const evidence: string[] = [];
       if (questions.length > 0) {
+        const seen = new Map<string, { entry: any }>();
         for (const q of questions) {
-          const hits = this.opts.index.searchScored(q, 5, { retriever: 'bm25', graphExpand: false });
+          let searchOpts: any = { retriever: 'bm25', graphExpand: false };
+          try {
+            const { computeDenseScores } = require('../memory/embedding-runtime');
+            const dense = await computeDenseScores(q, 20, this.opts.index as any);
+            if (dense) searchOpts = { retriever: 'bm25', graphExpand: false, denseScores: dense };
+          } catch { /* fail-open: bm25 only */ }
+          const hits = this.opts.index.searchScored(q, 5, searchOpts);
           for (const hit of hits) {
-            const line = `- [${hit.entry.id}] ${hit.entry.primary_abstraction}`;
-            if (!evidence.includes(line)) evidence.push(line);
+            if (!seen.has(hit.entry.id)) seen.set(hit.entry.id, hit);
           }
+        }
+        for (const hit of gracePrioritySort([...seen.values()], Date.now())) {
+          evidence.push(`- [${hit.entry.id}] ${hit.entry.primary_abstraction}`);
         }
       }
       // Step 3: distill insights with evidence context
