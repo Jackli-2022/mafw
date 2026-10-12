@@ -15,12 +15,19 @@ export interface EventMapping {
   /** canonical 类型，或 'drop' 显式丢弃 */
   to: string;
   when?: Condition[];
+  /**
+   * 整段透传原语：输出 properties 从该路径对象深拷贝起步，`fields` 在其上覆写。
+   * 用于「改类型名 + 保留富载荷」（如 opencode message.part.updated → part.updated）：
+   * fields 逐字段枚举在富载荷上不可维护。
+   */
+  passProperties?: string;
   fields?: Record<string, FieldValue>;
 }
 
 export interface EventSourceShape {
   typePath: string;
-  sessionIdPath?: string;
+  /** 多路径回退（取首个 truthy）——sessionID 的承载位置因事件而异时用数组。 */
+  sessionIdPath?: string | string[];
   directoryPath?: string;
 }
 
@@ -56,7 +63,10 @@ export function applyEventMappings(
   // 下游 normalize/畸形诊断各自处理。
   if (typeof nativeType !== 'string' || !nativeType) return [raw];
 
-  const sessionID = source?.sessionIdPath ? getPath(raw, source.sessionIdPath) : undefined;
+  const sidPaths = !source?.sessionIdPath
+    ? []
+    : Array.isArray(source.sessionIdPath) ? source.sessionIdPath : [source.sessionIdPath];
+  const sessionID = sidPaths.map((p) => getPath(raw, p)).find((v) => v) as string | undefined;
   const directory = source?.directoryPath ? getPath(raw, source.directoryPath) : undefined;
 
   for (const m of entry.eventMappings ?? []) {
@@ -64,7 +74,14 @@ export function applyEventMappings(
     if (!froms.includes(nativeType)) continue;
     if (!evalConditions(m.when, raw)) continue;
     if (m.to === 'drop') return [];
-    const properties: Record<string, any> = {};
+    let properties: Record<string, any> = {};
+    if (m.passProperties) {
+      const src = getPath(raw, m.passProperties);
+      if (src && typeof src === 'object') {
+        // 深拷贝防 aliasing：输出事件与 raw 输入不共享可变子树。
+        properties = JSON.parse(JSON.stringify(src)) as Record<string, any>;
+      }
+    }
     for (const [key, fv] of Object.entries(m.fields ?? {})) {
       const v = evalField(fv, raw);
       if (v !== undefined) setPath(properties, key, v); // 路径不存在 → 字段不创建
@@ -102,12 +119,18 @@ export function validateEventMappings(entry: EventMappingEntry, canonicalTypes: 
       sessionIdPath: entry.eventSource.sessionIdPath,
       directoryPath: entry.eventSource.directoryPath,
     })) {
-      if (p !== undefined && !/^\$/.test(p)) issues.push(`eventSource.${k}: bad path '${p}' (must start with '$')`);
+      const paths = Array.isArray(p) ? p : [p];
+      for (const pp of paths) {
+        if (pp !== undefined && !/^\$/.test(pp)) issues.push(`eventSource.${k}: bad path '${pp}' (must start with '$')`);
+      }
     }
   }
   for (const m of entry.eventMappings ?? []) {
     if (!m.from || (Array.isArray(m.from) && m.from.length === 0)) issues.push(`mapping to '${m.to}': empty from`);
     if (m.to !== 'drop' && !canonicalTypes.has(m.to)) issues.push(`mapping '${m.from}' → unknown canonical type '${m.to}'`);
+    if (m.passProperties !== undefined && !/^\$/.test(m.passProperties)) {
+      issues.push(`mapping '${m.from}': bad passProperties path '${m.passProperties}' (must start with '$')`);
+    }
     for (const [key, fv] of Object.entries(m.fields ?? {})) {
       if ('path' in fv && !/^\$/.test(fv.path)) issues.push(`mapping '${m.from}' field '${key}': bad path '${fv.path}'`);
       if ('template' in fv && !/\{\$[^}]*\}/.test(fv.template)) issues.push(`mapping '${m.from}' field '${key}': template has no interpolation`);

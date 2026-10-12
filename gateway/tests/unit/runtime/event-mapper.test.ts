@@ -78,6 +78,64 @@ test('无 top-level type（已 canonical 信封）→ 原样 passthrough', () =>
   expect(applyEventMappings(pushed, PI, isCanonical)).toEqual([pushed]);
 });
 
+test('passProperties：整段拷贝 properties + fields 覆写（兄弟字段保留）', () => {
+  const entry: EventMappingEntry = {
+    eventSource: { typePath: '$.payload.type', sessionIdPath: ['$.payload.sessionID', '$.payload.properties.sessionID'] },
+    eventMappings: [
+      { from: 'message.part.updated', to: 'message.part.updated',
+        passProperties: '$.payload.properties',
+        fields: { 'part.type': { const: 'step-finish' } } },
+    ],
+  };
+  const out = applyEventMappings({
+    directory: '/proj',
+    payload: {
+      type: 'message.part.updated',
+      properties: { part: { type: 'text', text: 'hi', messageID: 'm1' }, keep: 1 },
+    },
+  }, entry, isCanonical);
+  expect(out).toEqual([{
+    payload: {
+      type: 'message.part.updated',
+      properties: { part: { type: 'step-finish', text: 'hi', messageID: 'm1' }, keep: 1 },
+    },
+    sessionID: undefined,
+    directory: '/proj',
+  }]);
+});
+
+test('sessionIdPath 数组多路径回退（取首个 truthy）', () => {
+  const entry: EventMappingEntry = {
+    eventSource: { typePath: '$.payload.type', sessionIdPath: ['$.payload.sessionID', '$.payload.properties.sessionID'] },
+    eventMappings: [{ from: 'session.idle', to: 'session.idle' }],
+  };
+  // sessionID 在 properties 里（第二路径命中）
+  const out = applyEventMappings({ payload: { type: 'session.idle', properties: { sessionID: 's9' } } }, entry, isCanonical);
+  expect((out[0] as any).sessionID).toBe('s9');
+  expect((out[0] as any).payload.properties.sessionID).toBe('s9');
+  // sessionID 在 payload 顶层（第一路径命中，优先）
+  const out2 = applyEventMappings({ payload: { type: 'session.idle', sessionID: 'top', properties: {} } }, entry, isCanonical);
+  expect((out2[0] as any).sessionID).toBe('top');
+});
+
+test('passProperties 路径不存在 → 空对象起步（不抛）', () => {
+  const entry: EventMappingEntry = {
+    eventSource: { typePath: '$.type' },
+    eventMappings: [{ from: 'x', to: 'session.idle', passProperties: '$.missing.deep' }],
+  };
+  const out = applyEventMappings({ type: 'x' }, entry, isCanonical);
+  expect(out[0].payload.properties).toEqual({});
+});
+
+test('校验：passProperties 坏路径 + sessionIdPath 数组成员坏路径', () => {
+  const issues = validateEventMappings({
+    eventSource: { typePath: '$.type', sessionIdPath: ['$.ok', 'bad.path'] },
+    eventMappings: [{ from: 'x', to: 'session.idle', passProperties: 'no-dollar' }],
+  }, CANONICAL);
+  expect(issues.some((i) => i.includes("sessionIdPath: bad path 'bad.path'"))).toBe(true);
+  expect(issues.some((i) => i.includes('bad path') && i.includes('no-dollar'))).toBe(true);
+});
+
 test('message_end 精确形状（properties.sessionID + info 无 sessionID）', () => {
   const out = applyEventMappings({ type: 'message_end', sessionID: 's1' }, PI, isCanonical);
   expect((out[0] as any).payload.properties).toEqual({ sessionID: 's1', info: { role: 'assistant' } });
