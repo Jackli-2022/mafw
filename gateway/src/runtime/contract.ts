@@ -214,6 +214,8 @@ export interface RuntimeClient {
     promptAsync(opts: SessionPromptOpts): Promise<{ error?: any; response?: any } | void>;
     prompt(opts: SessionPromptOpts): Promise<PromptResultEnvelope & { [k: string]: any }>;
     messages(opts: SessionMessagesOpts): Promise<{ data: any[]; nextCursor?: string }>;
+    /** 可选：原生历史消息 → opencode {info, parts} DTO（缺省恒等；pi 等分离模型 runtime 用）。 */
+    normalizeMessages?(raw: any[]): Array<{ info: any; parts: any[] }>;
     get(opts: { sessionID: string }): Promise<any>;
     delete(opts: { sessionID: string }): Promise<void>;
     /** Rename a session (flat { sessionID, title }); optional — opencode/pi implement it. */

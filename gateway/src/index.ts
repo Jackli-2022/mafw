@@ -133,6 +133,7 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent } from './runtime/pi/pi-events';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
+import { applyNormalizeMessages } from './runtime/normalize-messages';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
@@ -5627,9 +5628,10 @@ class MafwScheduler {
               ...(before ? { before } : {}),
             });
             const rawData = result.data || [];
+            const data = applyNormalizeMessages(this.runtime, Array.isArray(rawData) ? rawData : []);
             const nextCursor = result.nextCursor || null;
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [], nextCursor }));
+            res.end(JSON.stringify({ data: Array.isArray(data) ? data : [], nextCursor }));
           } catch (err: any) {
             log.warn(`[Scheduler] Failed to fetch messages (serve may not be ready): ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
