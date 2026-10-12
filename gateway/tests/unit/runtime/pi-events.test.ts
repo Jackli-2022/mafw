@@ -30,6 +30,25 @@ describe('translatePiEvent', () => {
   it('unknown event types return null', () => {
     expect(translatePiEvent({ type: 'queue_update' }, 'pi_x')).toBeNull();
   });
+
+  it('tool_call → tool.call 原语（callID/tool/input 抽取 + sessionID 注入）', () => {
+    const out = translatePiEvent({ type: 'tool_call', toolCallId: 'tc1', toolName: 'bash', input: { command: 'ls' } }, 'pi_x');
+    expect(out).toEqual({
+      payload: { type: 'tool.call', properties: { callID: 'tc1', tool: 'bash', input: { command: 'ls' }, sessionID: 'pi_x' } },
+      sessionID: 'pi_x',
+      directory: undefined,
+    });
+  });
+
+  it('tool_result → tool.result 原语（content 数组原样过，assembler coerce）', () => {
+    const content = [{ type: 'text', text: 'ok' }];
+    const out = translatePiEvent({ type: 'tool_result', toolCallId: 'tc1', toolName: 'bash', input: {}, content, isError: false }, 'pi_x');
+    expect(out).toEqual({
+      payload: { type: 'tool.result', properties: { callID: 'tc1', tool: 'bash', isError: false, output: content, sessionID: 'pi_x' } },
+      sessionID: 'pi_x',
+      directory: undefined,
+    });
+  });
 });
 
 describe('permission events', () => {
