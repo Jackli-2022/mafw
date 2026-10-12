@@ -1,40 +1,22 @@
 ;(function () {
-  var key = "opencode-theme-id"
-  var themeId = localStorage.getItem(key) || "oc-2"
-
-  if (themeId === "oc-1") {
-    themeId = "oc-2"
-    localStorage.setItem(key, themeId)
-    localStorage.removeItem("opencode-theme-css-light")
-    localStorage.removeItem("opencode-theme-css-dark")
+  // 与 MafwShell 同源：读 mafw-theme（light/dark/缺省=跟随系统）。
+  // 无保存值时删除 data-theme，让 mafw.css 的跟随系统媒体查询从首帧生效
+  //（旧实现无条件写 oc-2，使 html:not([data-theme]) 亮色块死代码化 → 亮 OS 首帧闪暗）。
+  var saved = localStorage.getItem("mafw-theme")
+  var root = document.documentElement
+  var isDark
+  if (saved === "light" || saved === "dark") {
+    root.dataset.theme = saved
+    isDark = saved === "dark"
+  } else {
+    root.removeAttribute("data-theme")
+    isDark = !matchMedia("(prefers-color-scheme: light)").matches
   }
-
-  var scheme = localStorage.getItem("opencode-color-scheme") || "system"
-  var isDark = scheme === "dark" || (scheme === "system" && matchMedia("(prefers-color-scheme: dark)").matches)
   var mode = isDark ? "dark" : "light"
-
-  document.documentElement.dataset.theme = themeId
-  document.documentElement.dataset.colorScheme = mode
-  document.documentElement.style.backgroundColor = isDark ? "#080808" : "#fafafa"
+  root.dataset.colorScheme = mode
+  root.style.backgroundColor = isDark ? "#100F0E" : "#FAF9F5"
 
   // Update theme-color meta tag to match app color scheme
   var metas = document.querySelectorAll("meta[name='theme-color']")
-  if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#080808" : "#fafafa")
-
-  if (themeId === "oc-2") return
-
-  var css = localStorage.getItem("opencode-theme-css-" + mode)
-  if (css) {
-    var style = document.createElement("style")
-    style.id = "oc-theme-preload"
-    style.textContent =
-      ":root{color-scheme:" +
-      mode +
-      ";--text-mix-blend-mode:" +
-      (isDark ? "plus-lighter" : "multiply") +
-      ";" +
-      css +
-      "}"
-    document.head.appendChild(style)
-  }
+  if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#100F0E" : "#FAF9F5")
 })()

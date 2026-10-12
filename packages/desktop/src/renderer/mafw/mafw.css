@@ -59,6 +59,29 @@
   --text-strong: #EDECE9;
   --border-weak-base: rgba(255,255,255,.07);
   --border-base: rgba(255,255,255,.10);
+  /* 代码块主题令牌：上游 :root 的 var() 别名在定义处冻结（OS media 门控、不响应 app 主题），
+     必须在本作用域就地重声明/定义（「白主题黑底代码块」修复，2026-10-12） */
+  --color-background-stronger: var(--background-stronger);
+  --syntax-comment: var(--text-weak);
+  --syntax-regexp: var(--text-base);
+  --syntax-string: #00ceb9;
+  --syntax-keyword: var(--text-weak);
+  --syntax-primitive: #ffba92;
+  --syntax-operator: var(--text-weak);
+  --syntax-variable: var(--text-strong);
+  --syntax-property: #ff9ae2;
+  --syntax-type: #ecf58c;
+  --syntax-constant: #93e9f6;
+  --syntax-punctuation: var(--text-weak);
+  --syntax-object: var(--text-strong);
+  --syntax-success: #35c02d;
+  --syntax-warning: #f5b238;
+  --syntax-critical: #f54f36;
+  --syntax-info: #93e9f6;
+  --syntax-diff-add: #9bcd97;
+  --syntax-diff-delete: #faa494;
+  --syntax-diff-unknown: #ff0000;
+  --syntax-unknown: var(--text-base);
   /* v2 token 覆盖（限定本作用域，防泄漏到非 MAFW 区） */
   --v2-background-bg-base: #100F0E;
   --v2-background-bg-layer-01: #1D1B18;
@@ -149,6 +172,28 @@ html[data-theme="light"] .mafw-shell {
   --text-strong: #1A1917;
   --border-weak-base: rgba(0,0,0,.09);
   --border-base: rgba(0,0,0,.12);
+  /* 代码块主题令牌（亮色板，修复见暗色块注释） */
+  --color-background-stronger: var(--background-stronger);
+  --syntax-comment: var(--text-weak);
+  --syntax-regexp: var(--text-base);
+  --syntax-string: #006656;
+  --syntax-keyword: var(--text-weak);
+  --syntax-primitive: #fb4804;
+  --syntax-operator: var(--text-base);
+  --syntax-variable: var(--text-strong);
+  --syntax-property: #ed6dc8;
+  --syntax-type: #596600;
+  --syntax-constant: #007b80;
+  --syntax-punctuation: var(--text-base);
+  --syntax-object: var(--text-strong);
+  --syntax-success: #2dba26;
+  --syntax-warning: #efa72e;
+  --syntax-critical: #ed4831;
+  --syntax-info: #0092a8;
+  --syntax-diff-add: #3a8437;
+  --syntax-diff-delete: #ca2d17;
+  --syntax-diff-unknown: #ff0000;
+  --syntax-unknown: var(--text-base);
   --v2-background-bg-base: #FAF9F5;
   --v2-background-bg-layer-01: #FFFFFF;
   --v2-background-bg-layer-02: #FFFFFF;
@@ -200,6 +245,15 @@ html[data-theme="light"] .mafw-shell {
     --surface-base: #FFFFFF; --surface-base-hover: rgba(0,0,0,.04); --surface-base-active: rgba(0,0,0,.05); --surface-raised-base: #FFFFFF;
     --text-base: #605D57; --text-weak: #8F8C85; --text-strong: #1A1917;
     --border-weak-base: rgba(0,0,0,.09); --border-base: rgba(0,0,0,.12);
+    /* 代码块主题令牌（亮色板，修复见暗色块注释） */
+    --color-background-stronger: var(--background-stronger);
+    --syntax-comment: var(--text-weak); --syntax-regexp: var(--text-base); --syntax-string: #006656;
+    --syntax-keyword: var(--text-weak); --syntax-primitive: #fb4804; --syntax-operator: var(--text-base);
+    --syntax-variable: var(--text-strong); --syntax-property: #ed6dc8; --syntax-type: #596600;
+    --syntax-constant: #007b80; --syntax-punctuation: var(--text-base); --syntax-object: var(--text-strong);
+    --syntax-success: #2dba26; --syntax-warning: #efa72e; --syntax-critical: #ed4831; --syntax-info: #0092a8;
+    --syntax-diff-add: #3a8437; --syntax-diff-delete: #ca2d17; --syntax-diff-unknown: #ff0000;
+    --syntax-unknown: var(--text-base);
     --v2-background-bg-base: #FAF9F5; --v2-background-bg-layer-01: #FFFFFF; --v2-background-bg-layer-02: #FFFFFF; --v2-background-bg-layer-03: #EAE7E0;
     --v2-border-border-muted: rgba(0,0,0,.09);
     --v2-text-text-base: #35332F; --v2-text-text-muted: #605D57; --v2-text-text-faint: #8F8C85;

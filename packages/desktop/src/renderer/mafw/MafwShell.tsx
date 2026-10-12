@@ -710,11 +710,12 @@ export function MafwShell() {
     if (!showConfig()) setConfigSection(undefined)
   })
 
-  // Theme: MafwShell owns documentElement.dataset.theme (the theme preload
-  // unconditionally sets "oc-2", which would otherwise dead-code the CSS
-  // follow-system media block). A saved 'light'/'dark' override wins; otherwise
-  // delete the marker and keep data-color-scheme (the v2 gate) synced to the OS
-  // via matchMedia so chrome and session-ui flip together.
+  // Theme: MafwShell owns documentElement.dataset.theme. The preload script
+  // (public/oc-theme-preload.js) reads the same `mafw-theme` key for first paint;
+  // here we re-assert it post-mount. A saved 'light'/'dark' override wins;
+  // otherwise the attribute stays absent and the CSS follow-system media block
+  // applies; data-color-scheme (the v2 gate) is kept synced to the OS via
+  // matchMedia so chrome and session-ui flip together.
   onMount(() => {
     const root = document.documentElement
     const saved = localStorage.getItem('mafw-theme')
