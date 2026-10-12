@@ -80,7 +80,11 @@ test('无 top-level type（已 canonical 信封）→ 原样 passthrough', () =>
 
 test('passProperties：整段拷贝 properties + fields 覆写（兄弟字段保留）', () => {
   const entry: EventMappingEntry = {
-    eventSource: { typePath: '$.payload.type', sessionIdPath: ['$.payload.sessionID', '$.payload.properties.sessionID'] },
+    eventSource: {
+      typePath: '$.payload.type',
+      sessionIdPath: ['$.payload.sessionID', '$.payload.properties.sessionID'],
+      directoryPath: '$.directory',
+    },
     eventMappings: [
       { from: 'message.part.updated', to: 'message.part.updated',
         passProperties: '$.payload.properties',
@@ -133,7 +137,7 @@ test('校验：passProperties 坏路径 + sessionIdPath 数组成员坏路径', 
     eventMappings: [{ from: 'x', to: 'session.idle', passProperties: 'no-dollar' }],
   }, CANONICAL);
   expect(issues.some((i) => i.includes("sessionIdPath: bad path 'bad.path'"))).toBe(true);
-  expect(issues.some((i) => i.includes('bad path') && i.includes('no-dollar'))).toBe(true);
+  expect(issues.some((i) => i.includes('passProperties') && i.includes('no-dollar'))).toBe(true);
 });
 
 test('message_end 精确形状（properties.sessionID + info 无 sessionID）', () => {
