@@ -1,4 +1,4 @@
-import { selectGraceCandidates, GraceRevisitPipeline, GraceVerdict, createGraceWriteOps } from '../../../src/recall/grace-revisit';
+import { selectGraceCandidates, GraceRevisitPipeline, GraceVerdict, createGraceWriteOps, computeSalienceV2 } from '../../../src/recall/grace-revisit';
 import { HarmonicIndexEntry } from '../../../src/core/memory/harmonic-types';
 
 const T0 = Date.parse('2026-10-12T00:00:00.000Z');
@@ -106,6 +106,51 @@ describe('GraceRevisitPipeline verdict execution', () => {
     const r = await new GraceRevisitPipeline(deps as any).runOnce();
     expect(r.kept).toBe(1);
     expect(log).toEqual([{ id: 'g1', verdict: 'keep', executed: false }]);
+  });
+});
+
+describe('V2 ⑥ computeSalienceV2 (observe-only)', () => {
+  it('weighted composite with clamped static, normalized need, authority rank, novelty default', () => {
+    const out = computeSalienceV2(
+      { id: 's1', salience: 1.5, authority: 'user', novelty: 0.8 },
+      { needFor: () => 10 }, // clamped to 1
+    );
+    expect(out.static).toBe(1);          // clamped
+    expect(out.need).toBe(1);            // 10/5 clamped
+    expect(out.authority).toBe(1);       // user = 3/3
+    expect(out.novelty).toBe(0.8);
+    expect(out.value).toBeCloseTo(0.5 * 1 + 0.25 * 1 + 0.15 * 1 + 0.1 * 0.8, 5);
+  });
+
+  it('legacy entry: absent salience/authority/novelty → neutral defaults', () => {
+    const out = computeSalienceV2({ id: 's2' }, {});
+    expect(out.static).toBe(0.5);
+    expect(out.need).toBe(0);
+    expect(out.authority).toBeCloseTo(1 / 3, 5); // pipeline
+    expect(out.novelty).toBe(0.5);
+    expect(out.value).toBeCloseTo(0.5 * 0.5 + 0.15 / 3 + 0.05, 5);
+  });
+
+  it('onSalience rides the selection pass (candidate + related each once)', async () => {
+    const entries: HarmonicIndexEntry[] = [
+      mkEntry('g9', 5, ['bm25']),
+      mkEntry('n9', 1, ['bm25']),
+    ];
+    const seen: string[] = [];
+    const deps = {
+      index: { getIndex: () => ({ entries }) },
+      readMemory: async (id: string) => ({ id, memory_value: 'v' } as any),
+      worker: { prompt: async () => '{"revisits":[]}' },
+      writeSuperseding: async () => 'x',
+      writeMerged: async () => 'x',
+      markRejected: async () => undefined,
+      mode: 'shadow' as const,
+      onVerdict: () => undefined,
+      onSalience: (l: any) => seen.push(l.id),
+      needFor: () => 0,
+    };
+    await new GraceRevisitPipeline(deps as any).runOnce();
+    expect(seen.sort()).toEqual(['g9', 'n9']);
   });
 });
 

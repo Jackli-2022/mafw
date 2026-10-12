@@ -2131,6 +2131,21 @@ class MafwScheduler {
                 fs.appendFileSync(path.join(logsDir, 'grace-verdicts.jsonl'), JSON.stringify({ ...v, ts: Date.now() }) + '\n', 'utf-8');
               } catch { /* fail-open */ }
             },
+            // V2 ⑥: salience-v2 observe — components to jsonl, never written
+            // back to entries or ranking.
+            onSalience: (l: any) => {
+              try {
+                fs.mkdirSync(logsDir, { recursive: true });
+                fs.appendFileSync(path.join(logsDir, 'salience-v2.jsonl'), JSON.stringify(l) + '\n', 'utf-8');
+              } catch { /* fail-open */ }
+            },
+            needFor: (() => {
+              try {
+                const { getRetrievalEventBuffer } = require('./core/memory/retrieval-events');
+                const buf = getRetrievalEventBuffer();
+                return (id: string) => buf.needFor(id);
+              } catch { return undefined; }
+            })(),
             budget: this.getPipelineBudget(),
           });
           const r = await grace.runOnce();

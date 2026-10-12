@@ -53,8 +53,33 @@ export interface GraceRevisitDeps {
   mode: 'shadow' | 'live';
   /** Observe sink — every verdict lands here (jsonl in production). */
   onVerdict: (v: GraceVerdict & { executed: boolean }) => void;
+  /** V2 ⑥: salience-v2 observe sink — called once per selected/related entry
+   *  during the selection pass; components land in salience-v2.jsonl. */
+  onSalience?: (line: { id: string; components: SalienceV2Components; ts: number }) => void;
+  /** 7d retrieval-hit proxy per id (RetrievalEventBuffer.needFor). */
+  needFor?: (id: string) => number;
   budget?: PipelineBudgetLike;
   maxPerRun?: number;
+}
+
+export interface SalienceV2Components { static: number; need: number; authority: number; novelty: number; value: number }
+
+/** V2 ⑥: mechanical salience composite (neuromodulator scalar for
+ * consolidation ranking) — OBSERVE ONLY, never written back to entries or
+ * ranking. static clamped to [0,1] (live salience can exceed 1); need
+ * normalized against a 5-hit ceiling; authority per G1 rank; novelty
+ * defaults 0.5 when absent (embedding off). */
+export function computeSalienceV2(
+  entry: { id: string; salience?: number; authority?: string; novelty?: number },
+  deps: { needFor?: (id: string) => number },
+): SalienceV2Components {
+  const staticS = Math.min(1, Math.max(0, entry.salience ?? 0.5));
+  const need = deps.needFor ? Math.min(1, Math.max(0, deps.needFor(entry.id)) / 5) : 0;
+  const rank: Record<string, number> = { pipeline: 1, tool: 2, agent: 2, user: 3 };
+  const authority = (rank[entry.authority ?? 'pipeline'] ?? 1) / 3;
+  const novelty = entry.novelty ?? 0.5;
+  const value = 0.5 * staticS + 0.25 * need + 0.15 * authority + 0.1 * novelty;
+  return { static: staticS, need, authority, novelty, value };
 }
 
 export const GRACE_SYSTEM = `You re-visit young long-term memories that have received newer related evidence. For each memory decide: "keep" (evidence adds nothing), "update" (evidence evolves or contradicts it — provide the merged updated full text), "merge" (a distinct memory listed in mergeWith says the same thing — provide the combined full text), or "demote" (the memory is wrong or worthless now). Reply with ONLY JSON: {"revisits":[{"id":"...","verdict":"keep|update|merge|demote","content":"<full merged text when update/merge>","mergeWith":"<related id when merge>"}]}`;
@@ -135,6 +160,21 @@ export class GraceRevisitPipeline {
     const candidates = selectGraceCandidates(entries, now, { maxPerRun: this.opts.maxPerRun ?? 20 });
     if (candidates.length === 0) return r;
     r.selected = candidates.length;
+
+    // V2 ⑥: salience-v2 observation rides the selection pass (zero extra
+    // scheduling) — candidates AND their related evidence get one line each.
+    if (this.opts.onSalience) {
+      const observed = new Set<string>();
+      for (const c of candidates) {
+        for (const e of [entries.find(x => x.id === c.id), ...c.related]) {
+          if (!e || observed.has(e.id)) continue;
+          observed.add(e.id);
+          try {
+            this.opts.onSalience({ id: e.id, components: computeSalienceV2(e, { needFor: this.opts.needFor }), ts: now });
+          } catch { /* fail-open */ }
+        }
+      }
+    }
 
     const blocks: string[] = [];
     for (const c of candidates) {
