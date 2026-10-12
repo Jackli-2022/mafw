@@ -1,15 +1,18 @@
 // SSE chat-stream 处理器：消息流主链（message.updated / part.delta /
-// part.updated / complete / idle / error / session.next.tool.*）。
-// 分支语义逐字迁移自 MafwShell.tsx onmessage（commit 13ad8348 行 1460-1527）。
+// part.updated / part.complete / turn 三元组终态）。
+// 分支语义逐字迁移自 MafwShell.tsx onmessage（commit 13ad8348 行 1460-1527）；
+// 词汇 v2（2026-10-12）：turn 三元组取代五终态双轨 + Mode A 改写（session.idle
+// 防御分支与 session.next.tool.* 前缀 ensure 已删——该族在 gateway 边界 drop，
+// opencode part 自带 messageID、pi 由 assembler 锚点兜底）。
 //
 // 消费语义（精确保留原落穿行为）：
-// - message.updated / message.part.delta 原分支提前 return → 消费（true），
+// - message.updated / part.delta 原分支提前 return → 消费（true），
 //   后续 handler（media_speak）不跑；
-// - 流式主链与 session.next.tool.* 原本不 return、继续落到 media_speak
-//   检查 → 做完副作用后返回 false（未消费），链继续。
+// - 流式主链原本不 return、继续落到 media_speak 检查 → 做完副作用后
+//   返回 false（未消费），链继续。
 import {
   applyUserMessageArrival, applyAssistantMessage, applyPartDelta,
-  applyPartUpsert, ensureAssistantMessage, extractMediaSpeak,
+  applyPartUpsert, extractMediaSpeak,
   sealUnfinishedAssistantMessages,
 } from "../chat-reducers"
 import type { SidHandler, ShellEventDeps } from "../dispatcher"
@@ -52,10 +55,10 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     }
     return true
   }
-  // opencode ≥1.18 streams assistant text via message.part.delta
+  // opencode ≥1.18 streams assistant text via part.delta
   // ({partID, field: "text", delta}); accumulate it into the part record so
-  // the reply renders incrementally (message.part.updated only fires once).
-  if (event.type === "message.part.delta") {
+  // the reply renders incrementally (part.updated only fires once).
+  if (event.type === "part.delta") {
     d.trace(event, "chat:delta")
     const props = event.properties || {}
     const msgId = props.messageID
@@ -69,41 +72,32 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     return true
   }
 
-  // 流式主链：part 更新 / complete / idle / error 共用一段（不消费，落穿 media_speak）
-  const CHAIN_TYPES = new Set(["message.part.updated", "message.complete", "message.part.complete", "session.idle", "session.error", "message.error", "message.aborted"])
+  // 流式主链：part 更新 / complete / turn 终态共用一段（不消费，落穿 media_speak）
+  const CHAIN_TYPES = new Set(["part.updated", "part.complete", "turn.completed", "turn.failed", "turn.aborted"])
   // 回合级终态：缺 time.completed 的 assistant 消息盖章（session-ui 流式光标
   // 只认 message.time.completed，abort/终帧缺失会永久闪绿色方块）。
-  // message.part.complete 是 per-part 帧，同一消息后续 part 仍可能流式，不在此列。
-  const TURN_END_TYPES = new Set(["message.complete", "session.idle", "session.error", "message.error", "message.aborted"])
-  const isNextTool = typeof event.type === "string" && event.type.startsWith("session.next.tool.")
-  if (!CHAIN_TYPES.has(event.type) && !isNextTool) return false
+  // part.complete 是 per-part 帧，同一消息后续 part 仍可能流式，不在此列。
+  const TURN_END_TYPES = new Set(["turn.completed", "turn.failed", "turn.aborted"])
+  if (!CHAIN_TYPES.has(event.type)) return false
   d.trace(event, "chat:stream")
 
-  if (event.type === "message.part.updated") {
+  if (event.type === "part.updated") {
     const part = event.payload?.part || event.properties?.part
     if (part && part.messageID) {
       d.phase(sid, "writing")
       d.setSessionStatus(sid, { type: "busy" })
       d.patchStore(applyPartUpsert(d.getStore(), sid, part))
     }
-  } else if (event.type === "message.complete") {
-    d.setSessionStatus(sid, { type: "idle" })
-    d.markSessionDone(sid)
-    d.onTurnSettled(sid, { expireCards: true })
-  } else if (event.type === "message.part.complete") {
-    d.setSessionStatus(sid, { type: "idle" })
-    d.markSessionDone(sid)
-    d.onTurnSettled(sid, { expireCards: false })
-  } else if (event.type === "session.idle") {
-    // Defensive fallback: the gateway rewrites session.idle into
-    // message.complete before broadcasting (index.ts broadcast facet), so
-    // this branch is unreachable in Mode A — it only guards against
-    // future/direct senders. Without it the sending flag would never reset.
+  } else if (event.type === "turn.completed") {
     d.setSessionStatus(sid, { type: "idle" })
     d.markSessionDone(sid)
     d.onTurnSettled(sid, { expireCards: true })
     d.notifyIdle(sid)
-  } else if (event.type === "session.error" || event.type === "message.error" || event.type === "message.aborted") {
+  } else if (event.type === "part.complete") {
+    d.setSessionStatus(sid, { type: "idle" })
+    d.markSessionDone(sid)
+    d.onTurnSettled(sid, { expireCards: false })
+  } else if (event.type === "turn.failed" || event.type === "turn.aborted") {
     d.setSessionStatus(sid, { type: "idle" })
     d.onTurnSettled(sid, { expireCards: true })
   }
@@ -111,10 +105,6 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   if (TURN_END_TYPES.has(event.type)) {
     const seal = sealUnfinishedAssistantMessages(d.getStore(), sid)
     if (seal) d.patchStore(seal)
-  }
-  if (isNextTool && event.assistantMessageID) {
-    const out = ensureAssistantMessage(d.getStore(), sid, event.assistantMessageID, d.parentFallback(sid))
-    if (out) d.patchStore(out)
   }
   return false
 }

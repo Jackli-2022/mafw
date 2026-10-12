@@ -107,18 +107,17 @@ export const IGNORED_AT_SHELL = [
   "user_feedback", "state_change",
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
-  "mafw_commands_changed", "session.compacting",
-  "session.next.step.ended", "session.next.reasoning.ended", "session.next.tool.failed",
+  "mafw_commands_changed", "session.compacting", "usage.updated",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
 const TAIL_ACCOUNTED_TYPES = new Set<string>([
-  "message.part.updated", "message.complete", "message.part.complete",
-  "session.idle", "session.error", "message.error", "message.aborted",
+  "part.updated", "part.complete",
+  "turn.completed", "turn.failed", "turn.aborted",
 ])
 
-/** onmessage 尾部合法放行的前缀类（plugin 自定义 / legacy tool 事件族）。 */
-const TAIL_ACCOUNTED_PREFIXES = ["plugin:", "session.next.tool."]
+/** onmessage 尾部合法放行的前缀类（plugin 自定义命名空间）。 */
+const TAIL_ACCOUNTED_PREFIXES = ["plugin:"]
 
 /** 尾部未见过的类型 = 漏接线（返回 false）。显式忽略清单并入合法放行。 */
 export function isTailAccountedAtShell(type: string | undefined): boolean {
@@ -128,7 +127,8 @@ export function isTailAccountedAtShell(type: string | undefined): boolean {
   return TAIL_ACCOUNTED_PREFIXES.some((p) => type.startsWith(p))
 }
 
-/** MafwShell 有分支消费的事件（与 onmessage 分支一一对应，改分支必须同步）。 */
+/** MafwShell 有分支消费的事件（与 onmessage 分支一一对应，改分支必须同步）。
+ * 词汇 v2（2026-10-12）：turn 三元组 / part.* / plan.updated / mafw_event 信封。 */
 type ShellHandledType =
   | "user_question" | "project_registered" | "runtime_switched"
   | "goal_node" | "goal_created" | "phase_transition"
@@ -136,10 +136,9 @@ type ShellHandledType =
   | "session.created" | "session.updated" | "session.deleted"
   | "question.asked" | "question.replied" | "question.rejected"
   | "permission.asked" | "permission.replied" | "session.compacted"
-  | "trajectory.event" | "trajectory.turn" | "todo.updated"
-  | "message.updated" | "message.part.delta" | "message.part.updated"
-  | "message.complete" | "message.part.complete"
-  | "session.idle" | "session.error" | "message.error" | "message.aborted"
+  | "trajectory.event" | "trajectory.turn" | "plan.updated"
+  | "message.updated" | "part.delta" | "part.updated" | "part.complete"
+  | "turn.completed" | "turn.failed" | "turn.aborted"
   | "session.diff" | "permission_mode"
 
 /**
@@ -149,6 +148,7 @@ type ShellHandledType =
  */
 export function assertShellEventCoverage(e: UnwrappedEvent): void {
   switch (e.type) {
+    // ---- dispatcher core ----
     case "user_question":
     case "project_registered":
     case "runtime_switched":
@@ -156,31 +156,35 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "goal_created":
     case "phase_transition":
     case "connected":
+    // ---- session lifecycle ----
     case "session.created":
     case "session.updated":
     case "session.deleted":
+    // ---- flow cards ----
     case "question.asked":
     case "question.replied":
     case "question.rejected":
     case "permission.asked":
     case "permission.replied":
     case "session.compacted":
+    case "permission_mode":
+    // ---- dock ----
     case "trajectory.event":
     case "trajectory.turn":
-    case "todo.updated":
+    case "plan.updated":
+    // ---- chat stream ----
     case "message.updated":
-    case "message.part.delta":
-    case "message.part.updated":
-    case "message.complete":
-    case "message.part.complete":
-    case "session.idle":
-    case "session.error":
-    case "message.error":
-    case "message.aborted":
+    case "part.delta":
+    case "part.updated":
+    case "part.complete":
+    case "turn.completed":
+    case "turn.failed":
+    case "turn.aborted":
+    // ---- diff ----
+    case "session.diff":
+    // ---- 显式忽略（有意，非遗漏） ----
     case "user_feedback":
-    case "goal_created":
     case "state_change":
-    case "phase_transition":
     case "memory_written":
     case "memory_energy_changed":
     case "memory_distillation_complete":
@@ -188,11 +192,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "automation_completed":
     case "mafw_commands_changed":
     case "session.compacting":
-    case "session.next.step.ended":
-    case "session.next.reasoning.ended":
-    case "session.next.tool.failed":
-    case "session.diff":
-    case "permission_mode":
+    case "usage.updated":
       return
     default: {
       // 残余必须恰好是 plugin:* 模板；出现任何其他字面量 = 有事件未归类。

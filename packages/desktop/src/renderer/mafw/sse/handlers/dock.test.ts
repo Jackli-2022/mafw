@@ -31,14 +31,14 @@ describe("handleDockEvent", () => {
     }
     return { deps: { dock } as unknown as ShellEventDeps, calls }
   }
-  test("todo.updated with array → setTodos", () => {
+  test("plan.updated with array → setTodos", () => {
     const { deps, calls } = makeDeps()
-    expect(handleDockEvent({ type: "todo.updated", properties: { todos: [{ content: "x" }] } }, "s1", deps)).toBe(true)
+    expect(handleDockEvent({ type: "plan.updated", properties: { todos: [{ content: "x" }] } }, "s1", deps)).toBe(true)
     expect(calls.find(c => c.name === "setTodos")!.args[0]).toBe("s1")
   })
-  test("todo.updated non-array → consumed, no setTodos", () => {
+  test("plan.updated non-array → consumed, no setTodos", () => {
     const { deps, calls } = makeDeps()
-    expect(handleDockEvent({ type: "todo.updated", properties: {} }, "s1", deps)).toBe(true)
+    expect(handleDockEvent({ type: "plan.updated", properties: {} }, "s1", deps)).toBe(true)
     expect(calls.some(c => c.name === "setTodos")).toBe(false)
   })
   test("trajectory.turn → setTrajectoryTurn", () => {
@@ -56,6 +56,6 @@ describe("handleDockEvent", () => {
   })
   test("unrelated → false", () => {
     const { deps } = makeDeps()
-    expect(handleDockEvent({ type: "session.idle" }, "s1", deps)).toBe(false)
+    expect(handleDockEvent({ type: "turn.completed" }, "s1", deps)).toBe(false)
   })
 })

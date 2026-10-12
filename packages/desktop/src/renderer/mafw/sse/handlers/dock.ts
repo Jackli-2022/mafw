@@ -39,7 +39,7 @@ export const handleDockEvent: SidHandler = (event, sid, deps) => {
     d.setTrajectoryTurn(sid, event.properties || {})
     return true
   }
-  if (event.type === "todo.updated") {
+  if (event.type === "plan.updated") {
     d.trace(event, "dock:todos")
     const list = event.properties?.todos
     if (Array.isArray(list)) d.setTodos(sid, list)

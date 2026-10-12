@@ -145,12 +145,14 @@ describe("shell event coverage guard", () => {
   })
 
   test("isTailAccountedAtShell: else-if chain types and prefixes accounted", () => {
-    expect(isTailAccountedAtShell("message.part.updated")).toBe(true)
-    expect(isTailAccountedAtShell("message.complete")).toBe(true)
-    expect(isTailAccountedAtShell("session.idle")).toBe(true)
+    expect(isTailAccountedAtShell("part.updated")).toBe(true)
+    expect(isTailAccountedAtShell("part.complete")).toBe(true)
+    expect(isTailAccountedAtShell("turn.completed")).toBe(true)
+    expect(isTailAccountedAtShell("turn.failed")).toBe(true)
+    expect(isTailAccountedAtShell("turn.aborted")).toBe(true)
     expect(isTailAccountedAtShell("plugin:myplug:done")).toBe(true)
-    expect(isTailAccountedAtShell("session.next.tool.updated")).toBe(true)
     expect(isTailAccountedAtShell("user_feedback")).toBe(true)
+    expect(isTailAccountedAtShell("session.compacting")).toBe(true)
     expect(isTailAccountedAtShell(undefined)).toBe(true)
   })
 
@@ -163,6 +165,12 @@ describe("shell event coverage guard", () => {
     expect(isTailAccountedAtShell("goal_node")).toBe(false)
   })
 
+  test("isTailAccountedAtShell: v2 已除名类型不再是合法放行（gateway 边界已丢弃）", () => {
+    expect(isTailAccountedAtShell("session.idle")).toBe(false)
+    expect(isTailAccountedAtShell("message.complete")).toBe(false)
+    expect(isTailAccountedAtShell("session.next.tool.updated")).toBe(false)
+  })
+
   test("isTailAccountedAtShell: unknown future types are NOT accounted (miss detection)", () => {
     expect(isTailAccountedAtShell("session.somehow.new")).toBe(false)
     expect(isTailAccountedAtShell("message.chunk.merged")).toBe(false)
@@ -170,7 +178,7 @@ describe("shell event coverage guard", () => {
 
   test("coverage function runs without throwing on a known type (compile-time is the real guard)", () => {
     expect(() =>
-      assertShellEventCoverage({ type: "opencode_event", data: { type: "session.idle", sessionID: "s1" } as any }),
+      assertShellEventCoverage({ type: "mafw_event", data: { type: "turn.completed", sessionID: "s1" } as any }),
     ).not.toThrow()
   })
 })

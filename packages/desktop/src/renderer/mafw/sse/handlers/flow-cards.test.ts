@@ -76,7 +76,7 @@ describe("handleFlowCardEvent", () => {
 
   test("unrelated type → not consumed", () => {
     const { deps } = makeDeps()
-    expect(handleFlowCardEvent({ type: "todo.updated", properties: {} }, "s1", deps)).toBe(false)
+    expect(handleFlowCardEvent({ type: "plan.updated", properties: {} }, "s1", deps)).toBe(false)
   })
 })
 

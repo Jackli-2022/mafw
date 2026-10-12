@@ -32,6 +32,6 @@ describe("handleDiffEvent", () => {
 
   test("其他类型 → false", () => {
     const { deps } = makeDeps()
-    expect(handleDiffEvent({ type: "session.idle" }, "s1", deps)).toBe(false)
+    expect(handleDiffEvent({ type: "turn.completed" }, "s1", deps)).toBe(false)
   })
 })
