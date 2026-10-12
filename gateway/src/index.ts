@@ -94,10 +94,12 @@ import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/iden
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { isHiddenSession } from './core/session-visibility';
 
-/** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。 */
+/** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
+ *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（见 handleOpencodeEvent 底线）。 */
 const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...Object.keys(EVENT_FLOW_MATRIX),
   ...RUNTIME_NATIVE_DROPPED,
+  ...TOOL_PRIMITIVE_TYPES,
 ]);
 import { opencodeBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { BudgetGuard } from './core/budget-guard';
@@ -130,6 +132,7 @@ import { validateRuntimeShape } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent } from './runtime/pi/pi-events';
+import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
@@ -1068,6 +1071,9 @@ class MafwScheduler {
     // 边界丢弃（处置登记于 event-flow-matrix.ts RUNTIME_NATIVE_DROPPED）。
     // 放行会重复处理 + desktop miss 告警 + [SSE] 日志刷屏。
     if (RUNTIME_NATIVE_DROPPED.has(f.type)) return;
+    // 工具三原语属 assembler 内部入口：正常路径已被 wrapToolPartAssembly 消费，
+    // 漏到这里说明装配层未接线——丢弃防广播污染（tool part 只能以合成快照形态出站）。
+    if (TOOL_PRIMITIVE_TYPES.has(f.type)) return;
     // 畸形事件诊断（限频）：runtime 插件发来的事件 type/properties 全空时
     // 静默穿过会污染 trajectory 与桌面 SSE——这里给可定位诊断。
     if (isMalformedEvent(evt)) {
@@ -1273,6 +1279,8 @@ class MafwScheduler {
               } catch { /* fail-open */ }
             });
           }
+          // 工具三原语合帧：必须在 eventMappings 包装之后（消费映射后的 canonical 流）。
+          wrapToolPartAssembly(rt);
           log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
           return this.wrapRuntimeIdentity(rt);
         } catch (err: any) {
@@ -1284,13 +1292,17 @@ class MafwScheduler {
     }
     const builtin = this.runtimeLoader?.get('opencode');
     if (builtin) {
-      return this.wrapRuntimeIdentity(await builtin.createRuntime(createRuntimePluginContext(undefined)));
+      const rt = await builtin.createRuntime(createRuntimePluginContext(undefined));
+      wrapToolPartAssembly(rt); // opencode 无三原语，恒等直通
+      return this.wrapRuntimeIdentity(rt);
     }
     // 最终安全网：loader 未注册时直连（不应发生）
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
-    return this.wrapRuntimeIdentity(await createOpencodeRuntime({
+    const fallbackRt = await createOpencodeRuntime({
       ...sdkConfig,
-    }));
+    });
+    wrapToolPartAssembly(fallbackRt);
+    return this.wrapRuntimeIdentity(fallbackRt);
   }
 
   /** 物化循环：遍历注册表 install；成功与否记入 IdentityState（驱动车道选择）。幂等可重跑（热切换后重物化）。 */

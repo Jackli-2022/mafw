@@ -155,3 +155,35 @@ export class ToolPartAssembler {
     this.sessions.delete(sessionID);
   }
 }
+
+/** 从映射后的 canonical 事件取原语载荷（sessionID 注入在 properties，兼容 evt.sessionID 兜底）。 */
+function primitiveOf(evt: any): any {
+  const props = evt?.payload?.properties ?? {};
+  return { ...props, sessionID: props.sessionID ?? evt?.sessionID };
+}
+
+/**
+ * 包装 runtime.global.event()：三原语进 assembler 合成 ToolPart 快照，其余透传。
+ * 必须在 wrapGlobalEventStream 之后应用（消费映射后的事件流）。
+ * opencode 无三原语 → 恒等直通。
+ */
+export function wrapToolPartAssembly(rt: any): void {
+  const assembler = new ToolPartAssembler();
+  const orig = rt.global.event.bind(rt.global);
+  rt.global.event = async () => {
+    const result = await orig();
+    const stream = result?.stream ?? result;
+    if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') return result;
+    const mapped = (async function* () {
+      for await (const raw of stream) {
+        const t = raw?.payload?.type;
+        if (t === 'tool.call') { yield* assembler.applyCall(primitiveOf(raw)); continue; }
+        if (t === 'tool.delta') { yield* assembler.applyDelta(primitiveOf(raw)); continue; }
+        if (t === 'tool.result') { yield* assembler.applyResult(primitiveOf(raw)); continue; }
+        assembler.observeAnchor(raw);
+        yield raw;
+      }
+    })();
+    return result?.stream ? { ...result, stream: mapped } : mapped;
+  };
+}
