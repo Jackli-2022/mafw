@@ -86,6 +86,7 @@ export const handleAddMemory: ToolHandler = async (args, { memory, mafwDir }) =>
       memory_value: content,
       energy,
       salience,
+      novelty,
       abstraction_level: abstractionLevelFor(memoryType),
       created_at: now,
       updated_at: now,

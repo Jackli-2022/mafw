@@ -614,7 +614,10 @@ function defaults(projectDir: string): GatewayConfig {
       segmentation: 'shadow',
       eventSegmentInput: false,
       graceRevisit: 'shadow',
-      entityHarvest: true,
+      // V2 ①c: GLiNER entity harvest — DEFAULT OFF (2026-10-12 decision):
+      // its only consumer is the V3 N1 entity layer; enable (with a real-
+      // model smoke run) when N1 lands. Fail-open regardless.
+      entityHarvest: false,
     },
     usage: {
       pollIntervalMs: 60000,

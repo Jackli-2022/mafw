@@ -360,14 +360,17 @@ export class TurnPipeline {
 
       // V2 ② shadow + V2 ③ event-segment input share one segmentation pass
       // over the sampled turns (the exact input this hourly batch processed).
+      // Tier0 structural breaks (tool failure / directory switch) are derived
+      // mechanically and forced before lexical-cohesion boundaries.
       let eventSegBlock = '';
       const segMode = this.opts.segmentation ?? 'off';
       if (segMode === 'shadow' || (this.opts.eventSegmentInput && abAssignment(sessionID, Date.now()))) {
         try {
-          const { segmentTurns } = require('./topic-segmentation');
+          const { segmentTurns, deriveStructuralBreaks } = require('./topic-segmentation');
           const segText = (x: { obs: T1Observation[] }) =>
             x.obs.map((o) => o.content ?? '').join(' ').slice(0, 2000);
-          const segs = segmentTurns(sampledTurns.map((x) => ({ text: segText(x) })));
+          const breaks = deriveStructuralBreaks(sampledTurns.map((x) => x.obs));
+          const segs = segmentTurns(sampledTurns.map((x, i) => ({ text: segText(x), structuralBreak: breaks[i] })));
           if (segMode === 'shadow') {
             const line = JSON.stringify({
               ts: Date.now(), sessionID, batchTurns: sampledTurns.length,

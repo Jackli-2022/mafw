@@ -1,4 +1,33 @@
-import { segmentTurns } from '../../../src/recall/topic-segmentation';
+import { segmentTurns, deriveStructuralBreaks } from '../../../src/recall/topic-segmentation';
+
+describe('V2 ② Tier0 structural breaks (deriveStructuralBreaks)', () => {
+  const obs = (source: string, content: string) => ({ source, content });
+
+  it('tool failure in a turn forces a break', () => {
+    const turns = [
+      [obs('user_input', 'continue work in src/core/a.ts')],
+      [obs('tool_result', 'Error: ENOENT src/core/a.ts — command failed with exit code 1')],
+    ];
+    expect(deriveStructuralBreaks(turns as any)).toEqual([false, true]);
+  });
+
+  it('directory switch between turns forces a break; same directory does not', () => {
+    const turns = [
+      [obs('user_input', 'edit gateway/src/memory/store.ts please')],
+      [obs('user_input', 'now fix gateway/src/memory/index.ts too')],      // same dir
+      [obs('user_input', 'switch to packages/desktop/src/main.ts next')],  // new dir
+    ];
+    expect(deriveStructuralBreaks(turns as any)).toEqual([false, false, true]);
+  });
+
+  it('turns without paths or failures never break', () => {
+    const turns = [
+      [obs('assistant_reply', 'sounds good')],
+      [obs('assistant_reply', 'agreed')],
+    ];
+    expect(deriveStructuralBreaks(turns as any)).toEqual([false, false]);
+  });
+});
 
 describe('V2 ② TCM topic segmentation', () => {
   it('topic drift creates a boundary; same topic stays one segment', () => {

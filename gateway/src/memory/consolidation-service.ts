@@ -53,6 +53,11 @@ export interface ConsolidationDeps {
   /** B1: fired once per judge invocation with the (new, candidates, verdict)
    *  triple — the audit data source. Synchronous, fail-open. */
   onPair?: (pair: JudgedPair) => void;
+  /** V2 ①b L3 observability: fired when the verdict is CREATE yet live
+   *  near-duplicate candidates existed (cos ≥ minCosine) — the write kept
+   *  both versions; consumers stamp a dupCandidate anchor (graceRevisit
+   *  merge is the executor). Fail-open. */
+  onCreate?: (unit: HarmonicUnit, candidates: Array<{ id: string; cosine: number }>) => void;
   /** Fired on every consolidate() terminal state (stats persistence seam). */
   onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
   /** Restore persisted counters on startup (so stats survive restarts). */
@@ -122,6 +127,7 @@ export class ConsolidationService {
   private model?: { providerID: string; modelID: string };
   private onJudge?: (result: { ok: boolean; error?: string }) => void;
   private onPair?: (pair: JudgedPair) => void;
+  private onCreate?: (unit: HarmonicUnit, candidates: Array<{ id: string; cosine: number }>) => void;
   private onStats?: (s: { judged: number; updates: number; creates: number; skipped: number }) => void;
   private laya?: ConsolidationDeps['laya'];
   private budget?: ConsolidationDeps['budget'];
@@ -138,6 +144,7 @@ export class ConsolidationService {
     this.model = deps.model;
     this.onJudge = deps.onJudge;
     this.onPair = deps.onPair;
+    this.onCreate = deps.onCreate;
     this.onStats = deps.onStats;
     this.laya = deps.laya;
     this.budget = deps.budget;
@@ -248,6 +255,7 @@ export class ConsolidationService {
         this.stats.layaCreated++;
         this.stats.creates++;
         this.emitPair(unit, liveCandidates, 'create', 'laya-low', layaScores);
+        this.fireCreate(unit, liveCandidates);
         return { action: 'create' };
       }
       this.stats.layaEscalated++;
@@ -276,6 +284,7 @@ export class ConsolidationService {
       // disambiguation surface, so it behaves as create here; route-write (S4)
       // handles the distinction anchors.
       this.stats.creates++;
+      this.fireCreate(unit, liveCandidates);
       return { action: 'create' };
     }
 
@@ -313,6 +322,16 @@ export class ConsolidationService {
       if (!best || p > best.p) best = { id: c.id, p };
     }
     return { scores, adoptedTargetId: best && best.p >= laya.tauHigh ? best.id : undefined };
+  }
+
+  /** V2 ①b L3: create-with-candidates observability seam (fail-open). */
+  private fireCreate(
+    unit: HarmonicUnit,
+    candidates: Array<{ id: string; cosine: number }>,
+  ): void {
+    try {
+      this.onCreate?.(unit, candidates);
+    } catch { /* fail-open */ }
   }
 
   private emitPair(

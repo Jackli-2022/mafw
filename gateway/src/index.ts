@@ -1466,6 +1466,24 @@ class MafwScheduler {
             fs.appendFileSync(path.join(logsDir, 'consolidation-pairs.jsonl'), JSON.stringify(pair) + '\n', 'utf-8');
           } catch { /* fail-open */ }
         },
+        // V2 ①b L3: create-with-candidates observability — stamp a
+        // dupCandidate anchor on the new entry's cue_anchors (top candidate
+        // only, cap 1). graceRevisit's merge verdict is the executor.
+        onCreate: (u, candidates) => {
+          try {
+            const entry = this.memoryService?.harmonicIndex?.getIndex()?.entries
+              .find((e: any) => e.id === u.id) as any;
+            if (!entry || entry.superseded_by) return;
+            const anchor = `dupCandidate:${candidates[0]?.id ?? ''}`;
+            if (!anchor.endsWith(':')) {
+              const merged = [...new Set([...(entry.cue_anchors ?? []), anchor])].slice(0, 10);
+              if (merged.length !== (entry.cue_anchors ?? []).length) {
+                entry.cue_anchors = merged;
+                this.memoryService!.harmonicIndex.save();
+              }
+            }
+          } catch { /* fail-open */ }
+        },
         // Persist stats across service rebuilds (initEmbeddingServices is
         // re-entrant on hot-swap) so updateRatio/skipped survive restarts.
         onStats: (s) => { try { this.getGatewayDb().kvSet('consolidation-stats', 'latest', s); } catch { /* fail-open */ } },

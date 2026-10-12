@@ -45,6 +45,58 @@ const vecProvider: EmbeddingProvider = {
   embed: async (texts) => texts.map(() => [1, 0]),
 };
 
+describe('V2 ①b L3 onCreate (dupCandidate seam)', () => {
+  test('create verdict with live candidates fires onCreate; update does not', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]); // cosine ≈ 0.995
+
+    const creates: Array<{ id: string; cands: number }> = [];
+    const mkFetch = (action: string) => (async () => ({
+      ok: true, status: 200,
+      json: async () => ({ choices: [{ message: { content: action === 'update' ? '{"action":"update","target_id":"old"}' : `{"action":"${action}"}` } }] }),
+    })) as any;
+
+    const svcCreate = new ConsolidationService({
+      store: stubStore([unit('old', 'Existing memory', 'existing value')]) as any,
+      vectors, provider: vecProvider,
+      llm: { baseUrl: 'http://stub', apiKey: 'k', model: 'm', fetchFn: mkFetch('create') },
+      onCreate: (u, cands) => creates.push({ id: u.id, cands: cands.length }),
+    });
+    const r1 = await svcCreate.consolidate(unit('u1', 'New memory', 'new value'));
+    expect(r1.action).toBe('create');
+    expect(creates).toEqual([{ id: 'u1', cands: 1 }]);
+
+    // update verdict → onCreate NOT fired
+    const svcUpdate = new ConsolidationService({
+      store: stubStore([unit('old', 'Existing memory', 'existing value')]) as any,
+      vectors, provider: vecProvider,
+      llm: { baseUrl: 'http://stub', apiKey: 'k', model: 'm', fetchFn: mkFetch('update') },
+      onCreate: (u, cands) => creates.push({ id: u.id, cands: cands.length }),
+    });
+    const r2 = await svcUpdate.consolidate(unit('u1', 'New memory', 'new value'));
+    expect(r2.action).toBe('update');
+    expect(creates).toHaveLength(1); // unchanged
+  });
+
+  test('no candidates → no onCreate', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('solo', [1, 0]);
+    let fired = 0;
+    const svc = new ConsolidationService({
+      store: stubStore([]) as any,
+      vectors, provider: vecProvider,
+      onCreate: () => fired++,
+    });
+    // no llm → 'no-judge' skip path; and no candidates → early create return
+    const r = await svc.consolidate(unit('solo', 'Lone memory', 'lone value'));
+    expect(r.action).toBe('create');
+    expect(fired).toBe(0);
+  });
+});
+
 describe('ConsolidationService judged-pair logging', () => {
   test('emits a JudgedPair for every judged call with candidates and cosines', async () => {
     const dir = tmpDir();

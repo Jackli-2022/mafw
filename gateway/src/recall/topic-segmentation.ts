@@ -55,6 +55,55 @@ export interface Segment<T> {
   sealedVector?: Map<number, number>;
 }
 
+// ── Tier0 structural signals (place / arousal) ──────────────────────────────
+// Coding-agent situation-model components are mechanically available before
+// any segmentation: tool failures (arousal) and file-directory switches
+// (place). Pure + injected per turn alongside the text.
+
+const PATH_RE = /(?:[\w.\-]+[/\\])+[\w.\-]+\.\w{1,5}/g; // src/core/a.ts, pkg\lib\mod.js
+const FAIL_RE = /\b(error|failed|failure)\b|exit code [1-9]/i;
+
+function dirsOf(content: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of content.match(PATH_RE) ?? []) {
+    const norm = m.replace(/\\/g, '/');
+    const i = norm.lastIndexOf('/');
+    if (i > 0) out.add(norm.slice(0, i));
+  }
+  return out;
+}
+
+/** Per-turn Tier0 break flags: any tool failure (arousal) OR a file-directory
+ * switch relative to the previous path-bearing turn (place). Turns without
+ * paths keep the previous reference frame. Pure + exported for tests. */
+export function deriveStructuralBreaks(
+  turns: Array<Array<{ source?: string; content?: string }>>,
+): boolean[] {
+  const out: boolean[] = [];
+  let prevDirs: Set<string> | null = null;
+  for (let i = 0; i < turns.length; i++) {
+    let brk = false;
+    let dirs: Set<string> | null = null;
+    for (const o of turns[i]) {
+      const c = String(o?.content ?? '');
+      if (o?.source === 'tool_result' && FAIL_RE.test(c)) brk = true;
+      const d = dirsOf(c);
+      if (d.size > 0) {
+        if (!dirs) dirs = new Set();
+        for (const x of d) dirs.add(x);
+      }
+    }
+    if (i > 0 && dirs && prevDirs && dirs.size > 0 && prevDirs.size > 0) {
+      let shared = false;
+      for (const d of dirs) if (prevDirs.has(d)) { shared = true; break; }
+      if (!shared) brk = true; // place switched
+    }
+    out.push(brk);
+    if (dirs && dirs.size > 0) prevDirs = dirs;
+  }
+  return out;
+}
+
 /** Boundary = CURRENT item dissimilar to the accumulated context (TCM drift
  * semantics; running-vs-running is too weak — an orthogonal shift only
  * drops the cosine to ~(1-α)). Threshold 0.2: same-topic unit cosine lands
