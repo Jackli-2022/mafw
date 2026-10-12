@@ -27,6 +27,7 @@ import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/Cha
 import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
 import { isNarrowViewport, railAutoAction } from "./layout-breakpoints"
+import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { NotesDock } from "./components/NotesDock"
 import { ChangesDock } from "./components/ChangesDock"
@@ -710,26 +711,17 @@ export function MafwShell() {
     if (!showConfig()) setConfigSection(undefined)
   })
 
-  // Theme: MafwShell owns documentElement.dataset.theme. The preload script
-  // (public/oc-theme-preload.js) reads the same `mafw-theme` key for first paint;
-  // here we re-assert it post-mount. A saved 'light'/'dark' override wins;
-  // otherwise the attribute stays absent and the CSS follow-system media block
-  // applies; data-color-scheme (the v2 gate) is kept synced to the OS via
-  // matchMedia so chrome and session-ui flip together.
+  // Theme: 逻辑在 ./theme.ts（与 preload 同源的 mafw-theme 键契约见其文件头注释）。
   onMount(() => {
     const root = document.documentElement
-    const saved = localStorage.getItem('mafw-theme')
+    const saved = readSavedTheme(localStorage)
     const mq = window.matchMedia('(prefers-color-scheme: light)')
-    if (saved === 'light' || saved === 'dark') {
-      root.dataset.theme = saved
-      root.dataset.colorScheme = saved
-      setTheme(saved)
-    } else {
-      delete root.dataset.theme
-      root.dataset.colorScheme = mq.matches ? 'light' : 'dark'
+    applyTheme(root, saved, mq.matches)
+    if (saved) setTheme(saved)
+    else {
       const onMq = () => {
-        const cur = localStorage.getItem('mafw-theme')
-        if (cur === 'light' || cur === 'dark') return
+        const cur = readSavedTheme(localStorage)
+        if (cur) return
         root.dataset.colorScheme = mq.matches ? 'light' : 'dark'
       }
       mq.addEventListener('change', onMq)
@@ -740,9 +732,8 @@ export function MafwShell() {
     const mq = window.matchMedia('(prefers-color-scheme: light)')
     const root = document.documentElement
     const cur = root.dataset.theme === 'light' ? 'light' : root.dataset.theme === 'dark' ? 'dark' : (mq.matches ? 'light' : 'dark')
-    const next = cur === 'light' ? 'dark' : 'light'
-    root.dataset.theme = next
-    root.dataset.colorScheme = next
+    const next = nextTheme(cur)
+    applyTheme(root, next, mq.matches)
     localStorage.setItem('mafw-theme', next)
     setTheme(next)
   }
