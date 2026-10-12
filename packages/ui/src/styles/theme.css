@@ -357,7 +357,11 @@
   --avatar-text-lime: #5d770d;
   --text-stronger: #171717;
 
-  @media (prefers-color-scheme: dark) {
+  /* app 主题驱动（与 v2 一致）：desktop 的 preload/theme.ts 必写 html[data-color-scheme]。
+     旧实现用 OS 级 @media(prefers-color-scheme:dark) 门控，导致 app 主题与 OS 不一致时
+     这些 token（及 tailwind colors.css 在 :root 冻结的 --color-* 别名）解析错误
+     → 亮底白字/暗底暗字（2026-10-12 修复）。 */
+  &[data-color-scheme="dark"] {
     color-scheme: dark;
     --text-mix-blend-mode: plus-lighter;
 
