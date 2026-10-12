@@ -69,3 +69,25 @@ describe("悬空 token 兜底别名（值 = 现行 fallback 生效值，零视�
     })
   }
 })
+
+describe("悬空引用扫描 — mafw.css 引用的 token 必须有定义", () => {
+  test("var(--x) 引用闭集", () => {
+    const upstream = [
+      "../../../../ui/src/styles/theme.css",
+      "../../../../ui/src/styles/tailwind/colors.css",
+      "../../../../ui/src/v2/styles/theme.css",
+      "../../../../session-ui/src/components/markdown.css",
+    ]
+      .map((p) => readFileSync(join(import.meta.dir, p), "utf8"))
+      .join("\n")
+    const defined = new Set(
+      [...(css + "\n" + upstream).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]),
+    )
+    const referenced = [...css.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1])
+    const missing = [...new Set(referenced.filter((t) => !defined.has(t)))]
+    // --border（NoteCard 3831/3832）无 fallback：当前声明失效 → 不渲染边框。
+    // 定义它会凭空显示边框（视觉变化），故记债白名单，留后续单独修。
+    const allowed = new Set(["--border"])
+    expect(missing.filter((t) => !allowed.has(t))).toEqual([])
+  })
+})
