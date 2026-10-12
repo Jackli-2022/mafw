@@ -26,6 +26,17 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
 ];
 
 /**
+ * pi 未知原生事件遥测：translatePiEvent 的丢弃路径（transformEvent fallthrough）
+ * 静默丢弃 unmapped 原生类型——gateway 侧 wrap 的 onUnknown 对 pi 永不触发
+ * （事件到达时已信封化走 passthrough 短路），此处补一个模块级 recorder，
+ * 由 index.ts 在注册 pi 时接 UnknownEventTracker（source='pi'）。
+ */
+let piUnknownRecorder: ((type: string) => void) | undefined;
+export function setPiUnknownRecorder(fn: ((type: string) => void) | undefined): void {
+  piUnknownRecorder = fn;
+}
+
+/**
  * 逃逸口：permission.asked/replied 已 canonical 形状（带顶层 type 时命中此处；
  * 已信封化的事件走执行器 passthrough），逐字保留现输出。
  */
@@ -56,6 +67,11 @@ export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent 
         },
       },
     };
+  }
+  // fallthrough = unmapped 原生类型（applyEventMappings 的 onUnknown 因 transformEvent
+  // 存在而不可达，见 :86 早于 :90）——此处记遥测后丢弃。
+  if (typeof t === 'string' && t) {
+    try { piUnknownRecorder?.(t); } catch { /* fail-open：热路径不抛 */ }
   }
   return null;
 };

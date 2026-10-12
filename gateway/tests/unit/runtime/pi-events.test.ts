@@ -1,4 +1,4 @@
-import { translatePiEvent } from '../../../src/runtime/pi/pi-events';
+import { translatePiEvent, setPiUnknownRecorder } from '../../../src/runtime/pi/pi-events';
 import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
 
 describe('translatePiEvent', () => {
@@ -90,5 +90,35 @@ describe('permission events', () => {
 
     expect(result!.payload.type).toBe('permission.replied');
     expect(result!.payload.properties.approved).toBe(true);
+  });
+});
+
+describe('pi unknown native telemetry', () => {
+  afterEach(() => setPiUnknownRecorder(undefined));
+
+  it('unmapped native type → recorded and dropped', () => {
+    const seen: string[] = [];
+    setPiUnknownRecorder((t) => seen.push(t));
+    expect(translatePiEvent({ type: 'queue_update' }, 'pi_x')).toBeNull();
+    expect(seen).toEqual(['queue_update']);
+  });
+
+  it('no recorder installed → still drops, no throw', () => {
+    expect(translatePiEvent({ type: 'lifecycle_event' }, 'pi_x')).toBeNull();
+  });
+
+  it('mapped types never hit the recorder', () => {
+    const seen: string[] = [];
+    setPiUnknownRecorder((t) => seen.push(t));
+    translatePiEvent({ type: 'agent_end' }, 'pi_x');
+    translatePiEvent({ type: 'tool_call', toolCallId: 'tc', toolName: 'bash' }, 'pi_x');
+    expect(seen).toEqual([]);
+  });
+
+  it('permission transform path never hits the recorder', () => {
+    const seen: string[] = [];
+    setPiUnknownRecorder((t) => seen.push(t));
+    translatePiEvent({ payload: { type: 'permission.asked', properties: { sessionID: 's', requestId: 'r', toolName: 'bash' } } }, 's');
+    expect(seen).toEqual([]);
   });
 });

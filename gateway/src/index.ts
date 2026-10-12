@@ -124,7 +124,7 @@ import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntim
 import { validateRuntime, RuntimeValidation } from './runtime/validate';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
-import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent } from './runtime/pi/pi-events';
+import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
@@ -503,6 +503,9 @@ class MafwScheduler {
       eventMappings: PI_EVENT_MAPPINGS,
       transformEvent: piTransformEvent,
     });
+    // pi 内部翻译路径的未知原生事件 → 统一遥测（gateway 侧 wrap 的 onUnknown
+    // 对 pi 不可达——事件到达时已信封化；recorder 挂在 transformEvent fallthrough）。
+    setPiUnknownRecorder((t) => { try { this.unknownEventTracker.record('pi', t); } catch { /* fail-open */ } });
 
     // 2b. 统一插件包宿主（必须在 createRuntime 之前 init——包 runtime 贡献要先注册）
     this.pluginHost = new PluginHost(
