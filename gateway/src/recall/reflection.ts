@@ -6,7 +6,6 @@
 import { HarmonicIndexManager } from '../core/memory/harmonic-index';
 import { HarmonicUnitFileStore } from '../memory/harmonic-file-store';
 import { MemoryWorker } from './memory-worker';
-import { MinHashMerger } from '../core/memory/minhash-merger';
 import { ReflectCursor } from './reflect-cursor';
 import { generateHarmonicId, HarmonicUnit } from '../core/memory/harmonic-types';
 import { HarmonicIndexEntry } from '../core/memory/harmonic-types';
@@ -262,55 +261,9 @@ export async function applyTentativeVerdicts(
 
 export class ReflectionPipeline {
   private store: HarmonicUnitFileStore;
-  private merger = new MinHashMerger();
 
   constructor(private opts: ReflectionOptions) {
     this.store = new HarmonicUnitFileStore(opts.baseDir, opts.index);
-  }
-
-  /**
-   * Three-way classification for a new insight against existing memories:
-   * - 'duplicate': MinHash > 0.6 → skip (same content)
-   * - 'conflict': MinHash 0.4-0.6 + shared cue_anchors → supersede old entry
-   * - 'novel': no significant overlap → write normally
-   *
-   * The conflict band (0.4-0.6) catches "same topic, different value" cases
-   * that MinHash dedup misses — e.g., "deploy to us-east-1" vs "deploy to
-   * eu-west-1" share structure but differ in the critical detail.
-   */
-  private classifyInsight(content: string, cueAnchors: string[]): { kind: 'duplicate' | 'conflict' | 'novel'; conflictTarget?: string } {
-    const sig = this.merger.generateSignature(content);
-    let bestMatch: { id: string; sim: number } | null = null;
-
-    for (const entry of this.opts.index.getIndex().entries) {
-      if (entry.type !== 'semantic' && entry.type !== 'procedural') continue;
-      if ((entry as any).superseded_by) continue; // skip already-superseded entries
-      // Merged blobs concatenate segments with ' | ' — compare per segment
-      // so a true duplicate of one segment is not diluted by the rest.
-      let sim = 0;
-      for (const seg of MinHashMerger.segmentsOf(entry.primary_abstraction)) {
-        const other = `${seg} ${(entry.cue_anchors ?? []).join(' ')}`;
-        const s = this.merger.similarity(sig, this.merger.generateSignature(other));
-        if (s > sim) sim = s;
-      }
-
-      if (sim > 0.6) return { kind: 'duplicate' };
-      if (sim > 0.4 && sim > (bestMatch?.sim ?? 0)) {
-        bestMatch = { id: entry.id, sim };
-      }
-    }
-
-    // Conflict requires both MinHash in the 0.4-0.6 band AND at least one shared cue_anchor
-    if (bestMatch && bestMatch.sim > 0.4) {
-      const targetEntry = this.opts.index.getIndex().entries.find(e => e.id === bestMatch!.id);
-      const targetAnchors = targetEntry?.cue_anchors ?? [];
-      const sharedAnchors = cueAnchors.filter(a => targetAnchors.includes(a));
-      if (sharedAnchors.length > 0) {
-        return { kind: 'conflict', conflictTarget: bestMatch.id };
-      }
-    }
-
-    return { kind: 'novel' };
   }
 
   /**
@@ -394,22 +347,12 @@ export class ReflectionPipeline {
     const maxInsights = this.opts.maxInsights ?? 10;
     const distilledGistIds: string[] = [];
     for (const insight of insights.slice(0, maxInsights)) {
-      const classification = this.classifyInsight(insight.content, insight.cue_anchors ?? []);
-
-      if (classification.kind === 'duplicate') {
-        result.deduped++;
-        continue;
-      }
-
       const now = new Date().toISOString();
       const unit = buildInsightUnit(insight, sessionID, now);
+      // V2 ①a: MinHash classifyInsight retired — routeAndWrite (laya + G2)
+      // is the single judge; its conflict-supersede duty moved to the
+      // graceRevisit phase (48h × PE-gated).
       try {
-        // If this insight conflicts with an existing memory, supersede the old one
-        if (classification.kind === 'conflict' && classification.conflictTarget) {
-          this.store.markSuperseded(classification.conflictTarget, unit.id);
-          result.superseded++;
-        }
-        // S1 write-time routing: dedup/update against existing memories when wired.
         const routeDeps = getRouteWriteDeps();
         if (routeDeps) {
           const routed = await routeAndWrite(unit, this.store as any, routeDeps);
