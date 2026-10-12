@@ -35,7 +35,7 @@
 │  嵌入(定案:dense检索)│            │ 权重=文本条目/energy/边权/锚点/向量   │
 │  +实体收割(V2)      │            │ 模型全冻结: embedding/laya/reranker │
 │  +novelty+机械sal. │            │                                     │
-│  +MinHash标记不合并 │            │                                     │
+│  +MinHash退役·三层去重│            │                                     │
 │  +TCM边界→事件段    │            │                                     │
 └────────────────────┘            └────────────────────────────────────┘
       ▲ raw 供读（链式子序列，按事件段）         ▲
@@ -64,7 +64,7 @@
 插件 hooks → /api/obs/capture（脱敏）→ t1_observations
 每轮: 嵌入(fire-and-forget→dense 检索面) + novelty + 机械 salience
       TCM 运行向量 → 余弦跌破阈=事件边界 → 段分组（段键=封存 TCM 向量）
-MinHash 标记不合并（判定迁巩固层——修假合并+保学习标签）
+MinHash 退役（2026-10-12：写路径摘除合并调用；去重三层化——写时 exact-hash / 读时近重复折叠 / 巩固层语义合并；判定迁巩固层。依据 brain-memory-update-mechanisms 调研：脑写时是反合并[模式分离]，Lei 2024 更新为加法式，LightMem 延迟合并 +15pt）
 完成轮 → t1_archive（verbatim，51k 轮已在，V1 回填嵌入）
 ```
 
@@ -100,7 +100,7 @@ S 层: 读新 episodic+宽限期 gist+交错 prior → 蒸馏/A2/A4/D1b/A5
 | 相位 | 内容 | 规模 | 状态 |
 |---|---|---|---|
 | **V1** | ① t1 嵌入（fire-and-forget + 12k 滚动窗回填）② t1 向量命名空间 ③ H dense NN 进 R8 快照融合 + `<recall>` #t1 指针 ④ provenance 修复（worker source 指回源会话）⑤ 边界路径不动 | 2-3 天，零新 LLM | **✅ 已部署 v4.26.0（2026-10-12）**：11791 向量，1933 测试绿 |
-| **V2** | ① 机械捕获升级（GLiNER 实体收割 + novelty 接线 + MinHash 标记化）② TCM 话题分段替换小时批（吸收 N3）③ F 层读事件段原文重定位（吸收 D6）④ 宽限期重访 48-72h ⑤ reflection 交错注入 ⑥ 机械 salience observe-first | 1-2 周 | 设计定案 |
+| **V2** | ① 机械捕获升级（GLiNER 实体收割 + novelty 接线 + MinHash 退役 + 三层去重）② TCM 话题分段替换小时批（吸收 N3）③ F 层读事件段原文重定位（吸收 D6）④ 宽限期重访 48-72h ⑤ reflection 交错注入 ⑥ 机械 salience observe-first | 1-2 周 | 设计定案；① 项 2026-10-12 修订（退役版），风险姿态 A 拆分版（加性 live / 管线 observe-first） |
 | **V3** | ① 分系统检索通道（09-23 C4）② N1 实体概念层（identity 判合并）③ index-scan LLM 裁判迁巩固层（砍 83% 成本路径）④ D5 测量门 + LongMemEval 双层消融 | 2-4 周+基准 | 依赖 V1/V2 |
 | 远期 | N2 REM 生成性重组（D6/D7 线）· N4 自适应分化 · N6 双时间戳查询面 · N7 已并入 V2 · N8 结构骨架 · laya 批微调通道 · 小脑式误差学习器缺位 | — | 触发条件见 roadmap §7 |
 
@@ -125,4 +125,4 @@ S 层: 读新 episodic+宽限期 gist+交错 prior → 蒸馏/A2/A4/D1b/A5
 | decay/CATD/ACT-R/reconsolidate/stale-verify | 不动 |
 | R8 快照 + BM25/dense/PPR + FOK + arbiter | 快照融合加入 H 层命中 |
 | laya 三值门 + G2 + 影子日志（pairs jsonl 235 对） | 校准分析（门槛已达标）→ 后续批微调通道 |
-| MinHash 写时合并 | 改标记不合并（V2） |
+| MinHash 写时合并 | 退役 + 三层去重（V2，2026-10-12 修订；依据 `2026-10-12-brain-memory-update-mechanisms.md`） |
