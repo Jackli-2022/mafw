@@ -201,6 +201,9 @@ export interface GatewayConfig {
      * body identifier of a memory unreachable (hit@50 53% vs 30% before).
      */
     harvestMaxCues: number;
+    /** V2 three-tier dedup. exactHash: skip verbatim re-submits at write (L1);
+     * readCollapse: fold near-duplicates among top-k at the searchScored exit (L2). */
+    dedup?: { exactHash?: boolean; readCollapse?: boolean };
     abstractionMaxLength: number;
     defaultPrimaryAbstractionLength: number;
     defaultSalience: number;
@@ -518,6 +521,7 @@ function defaults(projectDir: string): GatewayConfig {
       maxCueAnchors: 8,
       harvestIdentifierCues: true,
       harvestMaxCues: 8,
+      dedup: { exactHash: true, readCollapse: true },
       abstractionMaxLength: 200,
       defaultPrimaryAbstractionLength: 80,
       defaultSalience: 1.0,

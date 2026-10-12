@@ -6992,6 +6992,14 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
         if (!content || !['episodic', 'semantic', 'procedural', 'global'].includes(memoryType)) {
           return { success: false, error: 'content and valid memoryType required' };
         }
+        // V2 ①b L1: exact-content guard — skip verbatim re-submits (worker
+        // double-writes). LRU is in-memory; read-time collapse backstops.
+        if (config.memory.dedup?.exactHash !== false) {
+          const { exactHashOf, seenExactHash } = require('./memory/dedup-guard.js');
+          if (seenExactHash(exactHashOf(content))) {
+            return { success: true, deduped: true, reason: 'exact-hash' };
+          }
+        }
         const { normalizeAuthority } = require('./core/memory/harmonic-types.js');
         const authority = normalizeAuthority(data?.authority);
         if (authority === null) {
