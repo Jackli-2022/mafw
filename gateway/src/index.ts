@@ -4167,6 +4167,14 @@ class MafwScheduler {
               },
               consolidation,
               routing: (() => { try { return getRouteStats(); } catch { return null; } })(),
+              dedup: (() => { try { const { getDedupStats } = require('./memory/dedup-guard'); return getDedupStats(); } catch { return null; } })(),
+              commitment: (() => {
+                try {
+                  const { commitmentStats } = require('./recall/commitment');
+                  const inWindow = indexEntries.filter((e: any) => e.commitment_capped_at).length;
+                  return { ...commitmentStats, inWindow };
+                } catch { return null; }
+              })(),
               reconsolidation: (() => {
                 try { return { eligible: getReconsolidationQueue().listEligible().length }; } catch { return null; }
               })(),
@@ -7035,6 +7043,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           memory_value: content.slice(0, 4000),
           energy: 0.8,
           salience,
+          novelty,
           abstraction_level: abstractionLevelFor(memoryType),
           created_at: now,
           updated_at: now,

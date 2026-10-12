@@ -267,6 +267,14 @@ export class HarmonicIndexManager {
       created_at: unit.created_at || new Date().toISOString(),
       source_session_id: unit.source_session_id,
       abstraction_level: (unit as any).abstraction_level,
+      // V2 passthrough fix: these fields were passed by the store but silently
+      // dropped here — G1's agent-priors reads entry.authority (pipeline ×0.7
+      // penalty never fired in production), A5 reads entry.distilled_by, and
+      // V2's commitment gradient + novelty depend on the same route.
+      authority: (unit as any).authority,
+      distilled_by: (unit as any).distilled_by,
+      commitment_capped_at: (unit as any).commitment_capped_at,
+      novelty: (unit as any).novelty,
     });
     this.save();
     this.hookManager?.execute('memory.write', {

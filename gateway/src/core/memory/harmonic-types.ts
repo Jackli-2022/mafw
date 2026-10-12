@@ -60,6 +60,10 @@ export interface HarmonicUnit {
    * pass) after the 48h grace window. Index-level bookkeeping — never
    * persisted to OKF frontmatter (mirrors last_decay_at). */
   commitment_capped_at?: string;
+  /** V2 ①c: 1 − maxCos to the nearest existing vector at write time
+   * (neuromodulator-scalar feed for consolidation ranking); absent when the
+   * embedding runtime is off. */
+  novelty?: number;
 }
 
 export interface HarmonicIndex {
@@ -102,6 +106,10 @@ export interface HarmonicIndexEntry {
   authority?: Authority;
   /** A5: gist ids distilled from this entry (schema write-back pointer). */
   distilled_by?: string[];
+  /** V2 ⑦: commitment-gradient bookkeeping (see HarmonicUnit). */
+  commitment_capped_at?: string;
+  /** V2 ①c: novelty scalar (see HarmonicUnit). */
+  novelty?: number;
 }
 
 export function generateHarmonicId(): string {
