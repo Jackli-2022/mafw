@@ -1,7 +1,7 @@
 # 跨 runtime 工具 part 兼容设计（ToolPartAssembler + MessageNormalizer）
 
 日期：2026-10-12
-状态：草稿（待逐节批准）
+状态：已批准并实施（2026-10-12）
 前置调研：`docs/research/2026-10-12-tool-call-result-model-compat.md`（各家 call/result 模型 + MAFW 断层实证）；相关：`docs/superpowers/specs/2026-10-08-event-mapping-registration-design.md`（事件映射注册，本设计是其延续而非 reopen）
 
 ## 1. 问题

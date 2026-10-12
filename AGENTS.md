@@ -1039,8 +1039,9 @@ runtime 插件用**纯数据表**把原生事件接入 canonical 管线，不再
 - **gateway 侧**：`CANONICAL_FACET_RULES`（`runtime/canonical-facets.ts`）把 canonical type → EventFacets 表化（原 `normalizeOpencodeEvent` if 链；`normalize-oracle.test.ts` 逐事件钉扎新旧等价）；`toolCommand`（`type.includes('tool')` + 信封依赖）与 approval metadata 构造为执行器内置特例
 - **执行器**：`runtime/path-expr.ts`（安全路径求值）+ `runtime/event-mapper.ts`（applyEventMappings / validateEventMappings / wrapGlobalEventStream）
 - **加载期校验**（`loader.ts`）：未知 canonical `to` / 坏路径 → 插件 `eventStream` 能力降级 + error 状态（fail-open，仍注册）
-- **dry-event 试衣间**：`POST /api/runtime/dry-event { plugin, event }` 输出 映射→facet→矩阵→字段契约 每跳（含 approval facet 回显）
+- **dry-event 试衣间**：`POST /api/runtime/dry-event { plugin, event }` 输出 映射→facet→矩阵→字段契约 每跳（含 approval facet 回显 + 工具三原语的 assembler 跳回显 `assembled`）
 - **已迁入**：pi（`PI_EVENT_MAPPINGS`，`translatePiEvent` 由 switch 表化——**turn_end 改 `part.messageID`，修复 BudgetGuard step facet 在 pi 上从未触发的 bug**）；opencode 原生事件即 canonical（不包装）；词汇表沿用 opencode 形状（25+15 类型，2026-10-08 补登 permission_mode/session.diff 两个暗契约漏洞）
+- **工具 part 合帧（2026-10-12）**：`runtime/tool-part-assembler.ts` 的 `ToolPartAssembler`（per-session、callID 键控状态机）把「call/result 分离」runtime 的三原语（`tool.call`/`tool.delta`/`tool.result`，**内部类型**：进 `CANONICAL_TYPE_SET` 校验但不进公开词汇表/矩阵、不广播）合帧为 opencode 形状 ToolPart 快照（part.id = `toolpart_<callID>`，live 与历史同 id 去重）。`wrapToolPartAssembly` 在 `wrapGlobalEventStream` 之后接线（plugin + builtin 两分支；opencode 无三原语 → 恒等直通），`handleOpencodeEvent` 有三原语防漏底线。历史路径：契约可选 `session.normalizeMessages`（缺省恒等），gateway messages 路由经 `applyNormalizeMessages` 统一过；pi 实现 `runtime/pi/pi-message-normalize.ts`（ToolCall block + toolResult 按 toolCallId 归并）——修复「pi 工具卡桌面从不渲染 + 历史空」。spec：`docs/superpowers/specs/2026-10-12-tool-part-compat-design.md`
 
 #### nativeApprovals 翻译层（pi runtime）
 
