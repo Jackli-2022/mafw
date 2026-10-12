@@ -1612,6 +1612,7 @@ class MafwScheduler {
           ? { eventSource: e.eventSource, eventMappings: e.eventMappings, transformEvent: e.transformEvent }
           : null;
       },
+      hasPlugin: (name: string) => !!this.runtimeLoader?.get(name),
       listPlugins: () =>
         (this.runtimeLoader?.getState() ?? [])
           .filter((s) => s.status === 'ok' && s.name)

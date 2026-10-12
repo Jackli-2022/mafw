@@ -18,6 +18,8 @@ export interface DryEventDeps {
   getPluginEventEntry?: (name: string) => EventMappingEntry | null;
   /** 已知 runtime 名（400 响应列出）。 */
   listPlugins?: () => string[];
+  /** 插件是否已注册（区分「已注册但无映射声明」与「未知插件」；缺省回退 listPlugins 包含性判断）。 */
+  hasPlugin?: (name: string) => boolean;
   /** canonical 词汇表判定（缺省 isKnownEventType）。 */
   isCanonicalType?: (t: string) => boolean;
 }
@@ -62,6 +64,16 @@ export async function handleDryEvent(
   if (typeof body?.plugin === 'string' && body.plugin) {
     const entry = deps.getPluginEventEntry?.(body.plugin) ?? null;
     if (!entry) {
+      // 区分「已注册但无映射声明」（如 builtin opencode——恒等直通无表可试）
+      // 与「未知插件」：前者不是拼写错误，错误信息不能误导（opencode 明明在
+      // listPlugins 里，报 unknown 会让插件作者怀疑人生）。
+      const exists = deps.hasPlugin
+        ? deps.hasPlugin(body.plugin)
+        : (deps.listPlugins?.() ?? []).includes(body.plugin);
+      if (exists) {
+        send(400, { error: `plugin '${body.plugin}' is registered but declares no event mappings — nothing to dry-run (identity-passthrough runtime)` });
+        return;
+      }
       send(400, { error: `unknown plugin '${body.plugin}'`, available: deps.listPlugins?.() ?? [] });
       return;
     }

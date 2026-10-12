@@ -87,6 +87,22 @@ describe('POST /api/runtime/dry-event with plugin mapping hop', () => {
     expect(status).toBe(400);
     expect(json.available).toEqual(['fake']);
   });
+
+  it('400 distinguishes registered-but-no-mappings from unknown plugin', async () => {
+    const deps2 = {
+      getPluginEventEntry: (name: string) => (name === 'fake' ? entry : null),
+      listPlugins: () => ['fake', 'bare'],
+      hasPlugin: (name: string) => name === 'fake' || name === 'bare',
+    };
+    const bare = await post({ plugin: 'bare', event: { type: 'x' } }, deps2);
+    expect(bare.status).toBe(400);
+    expect(bare.json.error).toContain("declares no event mappings");
+    expect(bare.json.available).toBeUndefined();
+    const unknown = await post({ plugin: 'nope', event: { type: 'x' } }, deps2);
+    expect(unknown.status).toBe(400);
+    expect(unknown.json.error).toContain("unknown plugin 'nope'");
+    expect(unknown.json.available).toEqual(['fake', 'bare']);
+  });
 });
 
 describe('POST /api/runtime/dry-event tool primitive hop', () => {
