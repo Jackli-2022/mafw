@@ -7063,6 +7063,18 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           const { capTentativeEnergy } = require('./recall/turn-pipeline');
           Object.assign(unit, capTentativeEnergy(unit as any));
         } catch { /* fail-open */ }
+        // V2 ⑦: commitment gradient — pipeline worker first-pass writes cap
+        // at 0.6; manual/user writes are exempt. Worker detection via the
+        // V1 origin registry (registered = pipeline worker session).
+        try {
+          const { capCommitment } = require('./recall/commitment');
+          const isPipelineWorker = Boolean(
+            data?.sessionID && require('./recall/worker-origin').resolveWorkerOrigin(String(data.sessionID)));
+          Object.assign(unit, capCommitment(unit as any, {
+            isPipeline: isPipelineWorker,
+            enabled: config.recall?.commitmentGradient !== false,
+          }));
+        } catch { /* fail-open */ }
         const routeDeps = getRouteWriteDeps();
         if (routeDeps) {
           const routed = await routeAndWrite(unit as any, store as any, routeDeps);

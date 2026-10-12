@@ -323,6 +323,20 @@ export interface GatewayConfig {
     sourceEvidence: { enabled: boolean; k: number; maxChars: number };
     /** V1 verbatim dense layer: fuse t1 round hits into R8 snapshots. */
     t1Recall: { enabled: boolean; k: number; maxChars: number };
+    /** V2 ⑦: commitment gradient — pipeline first-pass semantic/procedural
+     *  writes cap at 0.6, graduate to 0.75 after the 48h window. */
+    commitmentGradient?: boolean;
+    /** V2 ②: event-segmentation trigger. 'shadow' = log boundaries next to
+     *  the hourly batch without touching the trigger. */
+    segmentation?: 'off' | 'shadow' | 'live';
+    /** V2 ③: turnCompress reads event-segment verbatim (A/B day parity). */
+    eventSegmentInput?: boolean;
+    /** V2 ④: grace-period re-visit of young gists with PE signal.
+     *  'shadow' = verdicts logged only; 'live' = executed (user-authority
+     *  entries always observe-only). */
+    graceRevisit?: 'off' | 'shadow' | 'live';
+    /** V2 ①c: GLiNER entity harvest into cue_anchors (fail-open). */
+    entityHarvest?: boolean;
   };
   usage: {
     pollIntervalMs: number;
@@ -596,6 +610,11 @@ function defaults(projectDir: string): GatewayConfig {
       pipelineBudgetUsdPerDay: 0,
       sourceEvidence: { enabled: true, k: 5, maxChars: 1500 },
       t1Recall: { enabled: true, k: 3, maxChars: 600 },
+      commitmentGradient: true,
+      segmentation: 'shadow',
+      eventSegmentInput: false,
+      graceRevisit: 'shadow',
+      entityHarvest: true,
     },
     usage: {
       pollIntervalMs: 60000,

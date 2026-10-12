@@ -349,19 +349,23 @@ export class ReflectionPipeline {
     for (const insight of insights.slice(0, maxInsights)) {
       const now = new Date().toISOString();
       const unit = buildInsightUnit(insight, sessionID, now);
+      // V2 ⑦: reflection insights are pipeline writes — same gradient cap
+      // (config.recall.commitmentGradient, default on).
+      const { capCommitment } = require('./commitment');
+      const cappedUnit = capCommitment(unit, { isPipeline: true, enabled: (this.opts as any).commitmentGradient !== false });
       // V2 ①a: MinHash classifyInsight retired — routeAndWrite (laya + G2)
       // is the single judge; its conflict-supersede duty moved to the
       // graceRevisit phase (48h × PE-gated).
       try {
         const routeDeps = getRouteWriteDeps();
         if (routeDeps) {
-          const routed = await routeAndWrite(unit, this.store as any, routeDeps);
+          const routed = await routeAndWrite(cappedUnit, this.store as any, routeDeps);
           if (routed.action === 'skip') result.deduped++;
           else { result.distilled++; distilledGistIds.push(routed.id); }
         } else {
-          await this.store.write(unit);
+          await this.store.write(cappedUnit);
           result.distilled++;
-          distilledGistIds.push(unit.id);
+          distilledGistIds.push(cappedUnit.id);
         }
       } catch {
         result.failed++;

@@ -53,8 +53,13 @@ export interface HarmonicUnit {
   /** G1: provenance authority. Absent = legacy → treated as 'pipeline' (lowest). */
   authority?: Authority;
   /** A5: ids of gist units distilled FROM this entry. NOT a supersede chain —
-   *  the member stays live & retrievable (multiple gists may share members). */
+   * the member stays live & retrievable (multiple gists may share members). */
   distilled_by?: string[];
+  /** V2 ⑦: set at write when the commitment gradient capped this entry
+   * (pipeline-origin semantic/procedural). Cleared by graduation (decay
+   * pass) after the 48h grace window. Index-level bookkeeping — never
+   * persisted to OKF frontmatter (mirrors last_decay_at). */
+  commitment_capped_at?: string;
 }
 
 export interface HarmonicIndex {

@@ -121,6 +121,7 @@ export class HarmonicUnitFileStore {
         source_session_id: targetUnit.source_session_id,
         authority: targetUnit.authority,
         distilled_by: targetUnit.distilled_by,
+        commitment_capped_at: (targetUnit as any).commitment_capped_at,
       } as any, entryTier);
 
       // 閿氱偣鍥撅紙澶氳烦妫€绱級澧為噺鏇存柊鈥斺€斿け璐ヤ笉褰卞搷璁板繂鍐欏叆锛堥檷绾э級
