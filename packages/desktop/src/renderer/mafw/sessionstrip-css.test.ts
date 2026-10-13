@@ -46,4 +46,13 @@ describe("sessionstrip industry-tab contract", () => {
     expect(title).toMatch(/min-width:\s*0/)
     expect(title).toMatch(/text-overflow:\s*ellipsis/)
   })
+
+  test("窄 tab 先藏关闭钮保标题（Chrome 语义，container query）", () => {
+    expect(css).toMatch(/^\.mafw-session-tab\s*\{[^}]*container-type:\s*inline-size/m)
+    // 窄（≤120px）非活跃 tab：× 消失，标题拿回宽度
+    expect(css).toMatch(/@container\s*\(max-width:\s*120px\)\s*\{[^@]*\.mafw-session-tab:not\(\.active\)\s+\.mafw-session-close\s*\{\s*display:\s*none/)
+    // 悬停换回 ×（藏圆点）——Chrome 窄 tab 悬停语义
+    expect(css).toMatch(/@container\s*\(max-width:\s*120px\)\s*\{[^@]*\.mafw-session-tab:not\(\.active\):hover\s+\.mafw-session-close\s*\{\s*display:\s*flex/)
+    expect(css).toMatch(/@container\s*\(max-width:\s*120px\)\s*\{[^@]*\.mafw-session-tab:not\(\.active\):hover\s+\.mafw-agent-dot\s*\{\s*display:\s*none/)
+  })
 })

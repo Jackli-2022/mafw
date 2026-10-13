@@ -639,7 +639,15 @@ html[data-theme="light"] body {
      给标题留 ≥48px 可读宽——低于此值标题不可读，等于"假装装得下" */
   flex-shrink: 1;
   min-width: 104px;
+  /* 窄 tab 藏 × 的 container query 容器（Chrome：先藏关闭钮保标题） */
+  container-type: inline-size;
   transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+/* 窄（≤120px）非活跃 tab：× 消失保标题；悬停换回 ×（藏圆点）——Chrome 窄 tab 语义 */
+@container (max-width: 120px) {
+  .mafw-session-tab:not(.active) .mafw-session-close { display: none; }
+  .mafw-session-tab:not(.active):hover .mafw-session-close { display: flex; }
+  .mafw-session-tab:not(.active):hover .mafw-agent-dot { display: none; }
 }
 .mafw-session-tab:hover { background: var(--hover); color: var(--text-2); }
 .mafw-session-tab.active { background: var(--bg-overlay); color: var(--text-1); }

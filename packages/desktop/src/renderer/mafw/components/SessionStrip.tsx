@@ -6,6 +6,7 @@ import { Icon } from "@mafw/ui/icon"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { stripOverflowed } from "./session-strip-overflow"
+import { freezeTabs } from "./session-strip-slinky"
 
 export function SessionStrip(props: {
   sessions: () => { id: string; title: string; manager?: boolean }[]
@@ -21,7 +22,6 @@ export function SessionStrip(props: {
   const [renameDraft, setRenameDraft] = createSignal("")
   const [overflowed, setOverflowed] = createSignal(false)
   let scrollEl: HTMLDivElement | undefined
-  const tabEls = new Map<string, HTMLElement>()
 
   const recheckOverflow = () => setOverflowed(stripOverflowed(scrollEl))
 
@@ -50,15 +50,27 @@ export function SessionStrip(props: {
     }, { passive: false })
   })
 
-  // 激活 tab 切换时滚入视野（overflow 场景下点击 Rail/外部选中也要可见）
+  // 激活 tab 切换时滚入视野（overflow 场景下点击 Rail/外部选中也要可见）。
+  // DOM 查询 .active 而非 ref map——不依赖 Kobalte Trigger 的 ref 转发。
   createEffect(() => {
     const id = props.activeViewId()
     if (!id) return
-    tabEls.get(id)?.scrollIntoView({ block: "nearest", inline: "nearest" })
+    scrollEl?.querySelector(".mafw-session-tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" })
   })
 
+  // Tab slinky（Chrome）：关闭后其余 tab 冻结当前像素宽，指针离开 strip 才恢复——
+  // 连续点 × 时下一个 tab 的 × 总在光标原位置
+  let slinkyRestore: (() => void) | null = null
+  const endSlinky = () => { slinkyRestore?.(); slinkyRestore = null }
+  const handleClose = (id: string) => {
+    if (!slinkyRestore && scrollEl) {
+      slinkyRestore = freezeTabs([...scrollEl.querySelectorAll<HTMLElement>(".mafw-session-tab")])
+    }
+    props.onClose(id)
+  }
+
   return (
-    <div class="mafw-sessionstrip">
+    <div class="mafw-sessionstrip" onPointerLeave={endSlinky}>
       <div class="mafw-sessionstrip-scroll" ref={scrollEl}>
         {props.sessions().map(s => (
           <ContextMenu>
@@ -66,7 +78,6 @@ export function SessionStrip(props: {
               as="div"
               class="mafw-session-tab"
               classList={{ active: props.activeViewId() === s.id }}
-              ref={(el: HTMLElement) => tabEls.set(s.id, el)}
               onClick={() => props.onSelect(s.id)}
             >
               <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
@@ -92,7 +103,7 @@ export function SessionStrip(props: {
                   />
                 }>{s.title}</Show>
               </span>
-              <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClose(s.id) }}>✕</ButtonV2>
+              <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
             </ContextMenu.Trigger>
             <ContextMenu.Portal>
               <ContextMenu.Content>
