@@ -577,8 +577,8 @@ describe("titlebar 收缩契约 — 标题过长只压缩 text，按钮不变形
     expect(t).toContain("flex-shrink: 1")
   })
   test("text 保留 ellipsis + min-width: 0（收缩前提）", () => {
-    // 原块在 shrink:1 规则之后，indexOf 从该锚起找，避开前缀截胡
-    const anchor = css.indexOf(".mafw-session-titlebar-text {", css.indexOf("flex-shrink: 1"))
+    // 原块是独立规则（行首锚定），复合选择器 .inner > .text 不能截胡
+    const anchor = css.indexOf("\n.mafw-session-titlebar-text {")
     const t = css.slice(anchor, css.indexOf("}", anchor))
     expect(t).toContain("overflow: hidden")
     expect(t).toContain("text-overflow: ellipsis")

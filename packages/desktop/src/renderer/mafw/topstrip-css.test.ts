@@ -17,12 +17,14 @@ describe("topstrip overflow guards", () => {
     expect(css).toMatch(/\.mafw-topstrip\s*\{[^}]*min-width:\s*0/)
   })
 
-  test("sessionstrip 可缩且内滚（flex 收缩 + min-width:0 + overflow-x:auto）", () => {
-    const block = css.match(/\.mafw-sessionstrip\s*\{([^}]*)\}/)
+  test("sessionstrip 可缩、滚动内层接管溢出（wrapper 收缩 + scroll 层内滚）", () => {
+    const block = css.match(/^\.mafw-sessionstrip\s*\{([^}]*)\}/m)
     expect(block).not.toBeNull()
     expect(block![1]).toMatch(/min-width:\s*0/)
-    expect(block![1]).toMatch(/overflow-x:\s*auto/)
     expect(block![1]).toMatch(/flex:\s*1 1 auto/)
+    const scroll = css.match(/^\.mafw-sessionstrip-scroll\s*\{([^}]*)\}/m)
+    expect(scroll).not.toBeNull()
+    expect(scroll![1]).toMatch(/overflow-x:\s*auto/)
   })
 
   test("窗口控制永不收缩", () => {

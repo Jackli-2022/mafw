@@ -12,10 +12,14 @@ export const MEMORY_CURATOR_TOOLS: Record<string, boolean> = {
   // repo before writing (propose–probe–commit). Mutation surface unchanged:
   // edit/write/bash remain denied — the hard layer that stopped the
   // 2026-08-31 transcript-execution incident stays intact.
+  // 并集名单（跨 runtime 可移植）：read/grep 两家同名；glob=list 只在 opencode、
+  // find=ls 只在 pi——不认识的名字在对应 runtime 只是无效白名单项，无副作用。
   'read': true,
   'grep': true,
   'glob': true,
+  'list': true,
   'ls': true,
+  'find': true,
 };
 
 export const HARD_BOUNDARIES = `

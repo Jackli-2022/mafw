@@ -37,6 +37,9 @@ test('chatSignal: turn 三元组终态（v2：broadcast 切面已删除）', () 
 test('toolCommand: tool part 快照载体（v2 从 session.next.tool.* 迁移）', () => {
   const r = ev('part.updated', { part: { type: 'tool', state: { input: { command: 'npm test' }, status: 'running' } } }, 's1');
   expect(r.toolCommand).toBe('npm test');
+  // 多 key 候选链：新 runtime 的 shell 工具换 key 不失明（bug 3b）
+  const alt = ev('part.updated', { part: { type: 'tool', state: { input: { cmd: 'alt' }, status: 'running' } } }, 's1');
+  expect(alt.toolCommand).toBe('alt');
   // 非 tool part / 无 command → 不产
   expect(ev('part.updated', { part: { type: 'text', text: 'hi' } }, 's1').toolCommand).toBeUndefined();
   expect(ev('part.updated', { part: { type: 'tool', state: { status: 'pending' } } }, 's1').toolCommand).toBeUndefined();

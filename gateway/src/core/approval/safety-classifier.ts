@@ -1,5 +1,7 @@
-// auto 模式安全判定（纯函数）：只读白名单直接 safe；写类工具按危险正则
+// auto 模式安全判定（纯函数）：只读/搜索类工具直接 safe；写类工具按危险正则
 // 匹配命令文本；其余 safe。spec §6.1 —— 单一真相源，desktop/TUI 不再自判。
+// 工具类别经 tool-classes.ts 并集单表（跨 runtime 名字归一，v2026-10-13）。
+import { toolClassOf, isReadOnlyClass } from '../../runtime/tool-classes';
 
 export interface ApprovalCandidate {
   toolName: string;
@@ -9,11 +11,9 @@ export interface ApprovalCandidate {
 
 export type SafetyVerdict = 'safe' | 'dangerous';
 
-const READ_ONLY_TOOLS = new Set(['read', 'grep', 'glob', 'ls', 'find']);
-
 /** 只读工具判定（read-only 档放行依据；导出供 policy-service 消费）。 */
 export function isReadOnlyTool(toolName: string): boolean {
-  return READ_ONLY_TOOLS.has(String(toolName).toLowerCase());
+  return isReadOnlyClass(toolClassOf(toolName));
 }
 
 const DANGER_COMMAND_RE: RegExp[] = [
@@ -29,17 +29,23 @@ const DANGER_COMMAND_RE: RegExp[] = [
   /\bformat\s+[a-z]:/i,
 ];
 
+/** shell 工具 input 的命令文本 key 候选链（opencode/pi=command；防新 runtime 换 key 失明）。 */
+const COMMAND_KEYS = ['command', 'cmd', 'script', 'text'];
+
 export function commandTextOf(candidate: ApprovalCandidate): string {
   const args = candidate.metadata?.args;
   if (typeof args === 'string') return args;
-  if (args && typeof args === 'object' && typeof (args as any).command === 'string') {
-    return (args as any).command as string;
+  if (args && typeof args === 'object') {
+    for (const k of COMMAND_KEYS) {
+      const v = (args as any)[k];
+      if (typeof v === 'string' && v) return v;
+    }
   }
   return candidate.patterns.join(' ');
 }
 
 export function classifySafety(candidate: ApprovalCandidate): SafetyVerdict {
-  if (READ_ONLY_TOOLS.has(candidate.toolName.toLowerCase())) return 'safe';
+  if (isReadOnlyTool(candidate.toolName)) return 'safe';
   const text = commandTextOf(candidate);
   return DANGER_COMMAND_RE.some((re) => re.test(text)) ? 'dangerous' : 'safe';
 }

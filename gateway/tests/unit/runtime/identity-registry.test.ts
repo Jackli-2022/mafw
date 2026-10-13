@@ -67,13 +67,30 @@ describe('resolveToolCategory', () => {
     expect(resolveToolCategory('webfetch', 'opencode')).toBe('web');
     expect(resolveToolCategory('read', 'opencode')).toBe('readonly');
     expect(resolveToolCategory('glob', 'opencode')).toBe('readonly');
+    expect(resolveToolCategory('list', 'opencode')).toBe('readonly');
     expect(resolveToolCategory('mafw_set_goal', 'opencode')).toBeNull();
   });
 
-  it('pi names + unknown runtime', () => {
+  it('pi names（含此前漏登的 find——bug 修复：manager 身份不再误 auto-deny）', () => {
     expect(resolveToolCategory('bash', 'pi')).toBe('shell');
     expect(resolveToolCategory('grep', 'pi')).toBe('readonly');
-    expect(resolveToolCategory('bash', 'claude')).toBeNull();
+    expect(resolveToolCategory('find', 'pi')).toBe('readonly');
+    expect(resolveToolCategory('ls', 'pi')).toBe('readonly');
+  });
+
+  it('并集单表（v2026-10-13）：未知 runtime / Claude PascalCase / codex 条目类型均可解析', () => {
+    // 旧 per-runtime 双表对未知 runtime 整表 miss（allowlist 语义反转为 deny）——
+    // 并集表消除该缺陷；runtimeName 参数保留兼容
+    expect(resolveToolCategory('bash', 'claude')).toBe('shell');
+    expect(resolveToolCategory('Read', 'claude')).toBe('readonly');
+    expect(resolveToolCategory('Glob', 'claude')).toBe('readonly');
+    expect(resolveToolCategory('Agent', 'claude')).toBe('subagent');
+    expect(resolveToolCategory('command_execution', 'codex')).toBe('shell');
+    expect(resolveToolCategory('file_change', 'codex')).toBe('file-edit');
+    expect(resolveToolCategory('web_search', 'codex')).toBe('web');
+    // plan/other 落穿（由裸名/前缀规则裁决）
+    expect(resolveToolCategory('todowrite', 'opencode')).toBeNull();
+    expect(resolveToolCategory('some_mcp_tool', 'pi')).toBeNull();
   });
 });
 

@@ -21,8 +21,8 @@ export interface FacetRule {
   deltaText?: string;
   chatError?: string;
   compaction?: 'start' | 'end';
-  /** tool part 快照携带的 shell command 路径（自更新调用者定位用） */
-  toolCommand?: string;
+  /** tool part 快照携带的 shell command 路径（自更新调用者定位用；多路径回退取首个） */
+  toolCommand?: string | string[];
   approval?: { requestId: string | string[]; toolName: string | string[]; patterns?: string };
 }
 
@@ -40,8 +40,10 @@ export const CANONICAL_FACET_RULES: FacetRule[] = [
   { type: 'message.updated', chatSignal: 'complete' },
   { type: 'turn.failed', chatSignal: 'error', chatError: '$.error' },
   // toolCommand：载体从 session.next.tool.*（随 v2 除名）迁到 tool part 快照
-  // （opencode ToolPart 与 assembler 合成快照都携带 state.input.command）
-  { type: 'part.updated', when: [{ path: '$.part.type', equals: 'tool' }], toolCommand: '$.part.state.input.command' },
+  // （opencode ToolPart 与 assembler 合成快照都携带 state.input.command）。
+  // 多 key 候选链：opencode/pi=command；防新 runtime 的 shell 工具换 key 失明。
+  { type: 'part.updated', when: [{ path: '$.part.type', equals: 'tool' }],
+    toolCommand: ['$.part.state.input.command', '$.part.state.input.cmd', '$.part.state.input.script'] },
   // compaction
   { type: 'session.compacting', compaction: 'start' },
   { type: 'session.compacted', compaction: 'end' },
@@ -83,7 +85,7 @@ export function evaluateFacetRules(rules: FacetRule[], type: string, props: any,
     }
     if (!out.compaction && r.compaction) out.compaction = r.compaction;
     if (out.toolCommand === undefined && r.toolCommand) {
-      const c = getPath(props, r.toolCommand);
+      const c = firstTruthy(r.toolCommand, props);
       if (typeof c === 'string' && c) out.toolCommand = c;
     }
     if (!out.approval && r.approval && chainSessionID) {

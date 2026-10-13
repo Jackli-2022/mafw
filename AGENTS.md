@@ -536,6 +536,8 @@ sticky=OptMem wake（近期可见）、BM25=archival（按需检索）。桌面�
 - **D1b**：reflection 成功蒸馏后对源 episodes 按 factor（默认 0.3）降能（`demoteSourceEpisodes`）——Fuzzy-Trace：细节先淡、要点存活；降能非 supersede（多 gist 共享 episode，1:1 链会过度重定向）。
 - **L1/L2/A4（自我认知反馈闭环）**：`orchestration/capability-ledger.ts` 的 `buildCapabilityLedger`（goal_outcomes 聚合：PASS 率/均轮数/均成本/thumbs/failure_kind 分布）+ `buildFailureTaxonomy`（`cat:failure`/`cat:correction` 蒸馏产物按 primary_abstraction 聚类），经 `GET /api/agent/capabilities`（`routes/capability.ts`，deps 注入）暴露；**A4 选择压力回流**：reflection prompt 追加 `selectionFeedbackBlock`（本会话既有 insights 的 7 天 need 命中，未被检索的提示合并/删除；`needFor` 注入 `getReflectPipeline`）。已知缺口：goal 无任务类型维度（L1 只到 verdict/failure_kind 粒度）。
 
+**工具语义类别层（2026-10-13）**：`runtime/tool-classes.ts` 并集单表（工具名 → `TOOL_CLASS`：readonly/search/file-edit/shell/subagent/web/plan/other，大小写不敏感——opencode/pi 小写名 + Claude PascalCase + codex 条目类型名统一解析；spec `docs/superpowers/specs/2026-10-13-tool-class-layer-design.md`，调研 `docs/research/2026-10-13-tool-identity-layer-research.md`）。消费方：审批 `isReadOnlyTool`（read-only 档放行 = readonly+search，修 opencode `list` 漏登）；identity `resolveToolCategory`（per-runtime 双表收敛为单表查询，修 pi `find` 漏登致 manager 误 auto-deny）；`commandTextOf`/facet `toolCommand` 多 key 候选链（command→cmd→script，防新 runtime 换 key 失明）；curator 白名单并集（read/grep/glob/list/ls/find）；handleOpencodeEvent 单点 enrich `part.toolClass`（additive 可选字段，desktop/TUI 渲染迁移留后续）。
+
 ### 5.13a 数据目录与统一数据库
 
 **MAFW 数据根固定为 `os.homedir()/.mafw`**（`config.resolvePath()`，与启动 cwd / MAFW_PROJECT_DIR 完全解耦；`paths.mafwDir` 配置覆盖失效）。启动时自动迁移 gateway 包目录旁的旧数据（`gateway/src/recall/data-dir-migrate.ts`，幂等，删除旧位置）——注意迁移源是 `<gateway包>/../.mafw`，**不是** project-relative `.mafw`；插件侧仍会在项目目录重建 `.mafw/`（日志与请求文件等）。

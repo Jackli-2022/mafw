@@ -274,7 +274,7 @@ module.exports = {
 | `turn.aborted` | `sessionID` | 回合中止（无 chatSignal） | — |
 | `session.created` / `session.updated` / `session.deleted` | `info.{id,title?,directory?,projectID?,parentID?,time.updated?}`（created/updated）| 直接 passthrough（desktop 靠它刷新 Rail） | 缺 info → desktop 判 none 忽略 |
 | `session.compacting` / `session.compacted` | `sessionID` | compaction:'start'/'end' → 触发 turnCompress flush | — |
-| `part.updated`（tool part） | `part.{type:'tool', state.input.command}` | toolCommand → 自更新调用者定位 | 仅记账，无副作用 |
+| `part.updated`（tool part） | `part.{type:'tool', state.input.command}` | toolCommand → 自更新调用者定位；**gateway 单点 enrich `part.toolClass`**（语义类别：readonly/search/file-edit/shell/subagent/web/plan/other，`runtime/tool-classes.ts` 并集单表——跨 runtime 名字归一） | 仅记账，无副作用 |
 | `permission.asked` / `replied`、`question.asked` | `sessionID, requestId, toolName, args`（asked；asked 载荷可选 `options[]`/`suggestedRule`） | passthrough → desktop FlowCard | — |
 | 任意其他 type | 无要求 | passthrough → Mode A 原样广播 | 未知 type 消费方忽略（合法） |
 

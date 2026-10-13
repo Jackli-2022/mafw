@@ -39,26 +39,27 @@ export interface IdentityRegistry {
 
 export type ToolCategory = 'file-edit' | 'shell' | 'subagent' | 'web' | 'readonly';
 
-/** v1 内置类别表：opencode + pi（工具名 → 中立类别）。未来 runtime 经 loader extras 声明。 */
-const TOOL_CATEGORY_TABLES: Record<string, Record<string, ToolCategory>> = {
-  opencode: {
-    edit: 'file-edit', write: 'file-edit', apply_patch: 'file-edit', multiedit: 'file-edit',
-    bash: 'shell',
-    task: 'subagent',
-    webfetch: 'web',
-    read: 'readonly', grep: 'readonly', glob: 'readonly', ls: 'readonly', list: 'readonly',
-  },
-  pi: {
-    edit: 'file-edit', write: 'file-edit', apply_patch: 'file-edit',
-    bash: 'shell',
-    task: 'subagent',
-    webfetch: 'web',
-    read: 'readonly', grep: 'readonly', glob: 'readonly', ls: 'readonly', list: 'readonly',
-  },
+/**
+ * 工具类别解析（v2026-10-13 收敛）：并集单表 tool-classes.ts（跨 runtime 名字
+ * 归一：opencode/pi 小写名、Claude PascalCase、codex 条目类型名）——原 per-runtime
+ * 双表已删（pi 表漏 find 曾致 manager 误 auto-deny；未知 runtime 整表 miss 的
+ * allowlist 语义反转一并消除）。ToolClass → ToolCategory 映射：search→readonly
+ * （同为无副作用面）；plan/other → null（落穿 policy，由裸名/前缀规则裁决）。
+ */
+import { toolClassOf, TOOL_CLASS } from './tool-classes';
+
+const CLASS_TO_CATEGORY: Partial<Record<TOOL_CLASS, ToolCategory>> = {
+  readonly: 'readonly',
+  search: 'readonly',
+  'file-edit': 'file-edit',
+  shell: 'shell',
+  subagent: 'subagent',
+  web: 'web',
 };
 
-export function resolveToolCategory(toolName: string, runtimeName: string): ToolCategory | null {
-  return TOOL_CATEGORY_TABLES[runtimeName]?.[toolName] ?? null;
+/** runtimeName 参数保留兼容（并集表无需分 runtime；未来 per-runtime 覆盖再启用）。 */
+export function resolveToolCategory(toolName: string, _runtimeName?: string): ToolCategory | null {
+  return CLASS_TO_CATEGORY[toolClassOf(toolName)] ?? null;
 }
 
 /** deny 类别 → 原生权限键（无 nativePermissions 逃生舱时的派生用） */

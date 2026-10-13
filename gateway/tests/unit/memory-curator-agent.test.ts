@@ -8,7 +8,8 @@ describe('memory-curator agent definition', () => {
     }
     // Environment-probing curation: least-privilege read-only tools so the
     // curator can verify candidate memories against the repo before writing.
-    for (const t of ['read', 'grep', 'glob', 'ls']) {
+    // 并集名单（跨 runtime 可移植）：opencode=glob/list、pi=find/ls。
+    for (const t of ['read', 'grep', 'glob', 'list', 'ls', 'find']) {
       expect(MEMORY_CURATOR_TOOLS[t]).toBe(true);
     }
     const allowed = new Set([
@@ -19,7 +20,9 @@ describe('memory-curator agent definition', () => {
       'read',
       'grep',
       'glob',
+      'list',
       'ls',
+      'find',
     ]);
     for (const [k, v] of Object.entries(MEMORY_CURATOR_TOOLS)) {
       if (!allowed.has(k)) expect(v).toBe(false);

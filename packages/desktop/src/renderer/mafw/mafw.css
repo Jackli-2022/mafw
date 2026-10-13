@@ -598,10 +598,30 @@ html[data-theme="light"] body {
   height: 38px;
   padding: 0 8px;
   background: var(--bg-base);
-  overflow-x: auto;
+  /* wrapper 不滚：⋯ 溢出菜单按钮与 + 固定在此，溢出检测读内层 scroll */
   flex: 1 1 auto;
   min-width: 0;
 }
+/* 业界 tab 条（Chrome/VS Code/Firefox）：永不显示滚动条；
+   tab 收缩到下限后由滚轮横向滚动承接溢出 */
+.mafw-sessionstrip-scroll {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* 0 1 auto：只占内容宽（+ 紧跟最后一个 tab，Chrome 语义），溢出时才收缩 */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.mafw-sessionstrip-scroll::-webkit-scrollbar { display: none; }
+/* ⋯ 溢出菜单（Chrome「list all tabs」/VS Code ›）：仅溢出时出现 */
+.mafw-session-overflow { flex-shrink: 0; color: var(--text-3); }
+.mafw-session-overflow:hover { color: var(--text-1); }
+.mafw-session-overflow-menu { max-height: 60vh; overflow-y: auto; min-width: 200px; }
+.mafw-session-overflow-item { display: flex; align-items: center; gap: 6px; }
+.mafw-session-overflow-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-session-tab {
   display: flex;
   align-items: center;
@@ -614,7 +634,11 @@ html[data-theme="light"] body {
   background: transparent;
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
+  /* 收缩到下限（Chrome ~76px 语义），再溢出才走内滚 + ⋯ 菜单。
+     地板 104px：padding(20)+dot(8)+close(~16)+gap(12) 固定占 ~56px，
+     给标题留 ≥48px 可读宽——低于此值标题不可读，等于"假装装得下" */
+  flex-shrink: 1;
+  min-width: 104px;
   transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 .mafw-session-tab:hover { background: var(--hover); color: var(--text-2); }
@@ -625,7 +649,7 @@ html[data-theme="light"] body {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.mafw-session-title { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.mafw-session-title { max-width: 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .mafw-session-close { background: none; border: none; cursor: pointer; color: var(--text-weak); padding: 0; line-height: 1; opacity: 0; transition: opacity var(--dur-1) var(--ease); font-size: 10px; }
 .mafw-session-tab:hover .mafw-session-close { opacity: 1; }
 .mafw-session-close:hover { color: var(--text-strong); }
