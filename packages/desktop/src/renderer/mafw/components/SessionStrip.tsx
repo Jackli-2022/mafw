@@ -1,8 +1,11 @@
 // @ts-nocheck
-import { createSignal, Show } from "solid-js"
+import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js"
 import { ContextMenu } from "@mafw/ui/context-menu"
+import { DropdownMenu } from "@mafw/ui/dropdown-menu"
+import { Icon } from "@mafw/ui/icon"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { stripOverflowed } from "./session-strip-overflow"
 
 export function SessionStrip(props: {
   sessions: () => { id: string; title: string; manager?: boolean }[]
@@ -16,56 +19,124 @@ export function SessionStrip(props: {
 }) {
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
+  const [overflowed, setOverflowed] = createSignal(false)
+  let scrollEl: HTMLDivElement | undefined
+  const tabEls = new Map<string, HTMLElement>()
+
+  const recheckOverflow = () => setOverflowed(stripOverflowed(scrollEl))
+
+  // 溢出检测：尺寸变化（ResizeObserver）+ tab 集合变化都重算
+  let ro: ResizeObserver | undefined
+  onMount(() => {
+    if (scrollEl) {
+      ro = new ResizeObserver(recheckOverflow)
+      ro.observe(scrollEl)
+    }
+    recheckOverflow()
+  })
+  onCleanup(() => ro?.disconnect())
+  createEffect(() => {
+    props.sessions().length // 依赖：tab 增删后下一帧重算（DOM 已更新）
+    requestAnimationFrame(recheckOverflow)
+  })
+
+  // 业界 tab 条：纵向滚轮 → 横向滚动（无可见滚动条，Chrome/VS Code 同款）
+  onMount(() => {
+    scrollEl?.addEventListener("wheel", (e) => {
+      if (!e.deltaY || !scrollEl) return
+      if (scrollEl.scrollWidth <= scrollEl.clientWidth) return
+      e.preventDefault()
+      scrollEl.scrollLeft += e.deltaY
+    }, { passive: false })
+  })
+
+  // 激活 tab 切换时滚入视野（overflow 场景下点击 Rail/外部选中也要可见）
+  createEffect(() => {
+    const id = props.activeViewId()
+    if (!id) return
+    tabEls.get(id)?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  })
+
   return (
     <div class="mafw-sessionstrip">
-      {props.sessions().map(s => (
-        <ContextMenu>
-          <ContextMenu.Trigger
-            as="div"
-            class="mafw-session-tab"
-            classList={{ active: props.activeViewId() === s.id }}
-            onClick={() => props.onSelect(s.id)}
-          >
-            <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
-            <span
-              class="mafw-session-title"
-              onDblClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameDraft(s.title || "") }}
+      <div class="mafw-sessionstrip-scroll" ref={scrollEl}>
+        {props.sessions().map(s => (
+          <ContextMenu>
+            <ContextMenu.Trigger
+              as="div"
+              class="mafw-session-tab"
+              classList={{ active: props.activeViewId() === s.id }}
+              ref={(el: HTMLElement) => tabEls.set(s.id, el)}
+              onClick={() => props.onSelect(s.id)}
             >
-              <Show when={renamingId() !== s.id} fallback={
-                <TextInputV2
-                  value={renameDraft()}
-                  onInput={e => setRenameDraft(e.currentTarget.value)}
-                  onKeyDown={e => {
-                    e.stopPropagation()
-                    if (e.key === "Enter") {
-                      const next = renameDraft().trim()
-                      if (next && next !== s.title) props.onRename(s.id, next)
-                      setRenamingId(null)
-                    }
-                    if (e.key === "Escape") setRenamingId(null)
-                  }}
-                  onBlur={() => setRenamingId(null)}
-                  style={{ width: 120, height: 22, fontSize: 12 }}
-                />
-              }>{s.title}</Show>
-            </span>
-            <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClose(s.id) }}>✕</ButtonV2>
-          </ContextMenu.Trigger>
-          <ContextMenu.Portal>
-            <ContextMenu.Content>
-              <ContextMenu.Item onSelect={() => props.onClose(s.id)}>
-                <ContextMenu.ItemLabel>Close</ContextMenu.ItemLabel>
-              </ContextMenu.Item>
-              <ContextMenu.Item onSelect={() => props.onExport(s.id)}>
-                <ContextMenu.ItemLabel>导出 Markdown…</ContextMenu.ItemLabel>
-              </ContextMenu.Item>
-              <ContextMenu.Item onSelect={() => props.onCopyId(s.id)}>
-                <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
-              </ContextMenu.Item>
-            </ContextMenu.Content>
-          </ContextMenu.Portal>
-        </ContextMenu>
-      ))}
+              <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
+              <span
+                class="mafw-session-title"
+                onDblClick={e => { e.stopPropagation(); setRenamingId(s.id); setRenameDraft(s.title || "") }}
+              >
+                <Show when={renamingId() !== s.id} fallback={
+                  <TextInputV2
+                    value={renameDraft()}
+                    onInput={e => setRenameDraft(e.currentTarget.value)}
+                    onKeyDown={e => {
+                      e.stopPropagation()
+                      if (e.key === "Enter") {
+                        const next = renameDraft().trim()
+                        if (next && next !== s.title) props.onRename(s.id, next)
+                        setRenamingId(null)
+                      }
+                      if (e.key === "Escape") setRenamingId(null)
+                    }}
+                    onBlur={() => setRenamingId(null)}
+                    style={{ width: 120, height: 22, fontSize: 12 }}
+                  />
+                }>{s.title}</Show>
+              </span>
+              <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); props.onClose(s.id) }}>✕</ButtonV2>
+            </ContextMenu.Trigger>
+            <ContextMenu.Portal>
+              <ContextMenu.Content>
+                <ContextMenu.Item onSelect={() => props.onClose(s.id)}>
+                  <ContextMenu.ItemLabel>Close</ContextMenu.ItemLabel>
+                </ContextMenu.Item>
+                <ContextMenu.Item onSelect={() => props.onExport(s.id)}>
+                  <ContextMenu.ItemLabel>导出 Markdown…</ContextMenu.ItemLabel>
+                </ContextMenu.Item>
+                <ContextMenu.Item onSelect={() => props.onCopyId(s.id)}>
+                  <ContextMenu.ItemLabel>Copy session ID</ContextMenu.ItemLabel>
+                </ContextMenu.Item>
+              </ContextMenu.Content>
+            </ContextMenu.Portal>
+          </ContextMenu>
+        ))}
+      </div>
+      {/* ⋯ 溢出菜单（Chrome「list all tabs」/VS Code ›）：仅溢出时出现，固定在滚动层外 */}
+      <Show when={overflowed()}>
+        <DropdownMenu placement="bottom-end">
+          <DropdownMenu.Trigger as="div">
+            <ButtonV2 variant="ghost" size="small" class="mafw-session-overflow" aria-label="全部会话">
+              <Icon name="chevron-down" size="small" />
+            </ButtonV2>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content class="mafw-session-overflow-menu">
+              <For each={props.sessions()}>
+                {s => (
+                  <DropdownMenu.Item onSelect={() => props.onSelect(s.id)}>
+                    <DropdownMenu.ItemLabel class="mafw-session-overflow-item">
+                      <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
+                      <span class="mafw-session-overflow-title">{s.title}</span>
+                      <Show when={props.activeViewId() === s.id}>
+                        <Icon name="check-small" size="small" />
+                      </Show>
+                    </DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                )}
+              </For>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu>
+      </Show>
       <ButtonV2 variant="ghost" size="small" class="mafw-session-new" onClick={() => props.onNew()}>+</ButtonV2>
     </div>
   )
