@@ -64,6 +64,8 @@ describe('GraceRevisitPipeline verdict execution', () => {
       markRejected: async (id: string) => { calls.rejected.push(id); },
       mode,
       onVerdict: (v: any) => log.push(v),
+      // 时钟注入：种子锚 T0（2026-10-12），48h 窗口判定确定性——不受真实日期漂移影响
+      now: () => T0,
     };
     return { deps, log, calls };
   }
@@ -148,6 +150,7 @@ describe('V2 ⑥ computeSalienceV2 (observe-only)', () => {
       onVerdict: () => undefined,
       onSalience: (l: any) => seen.push(l.id),
       needFor: () => 0,
+      now: () => T0,
     };
     await new GraceRevisitPipeline(deps as any).runOnce();
     expect(seen.sort()).toEqual(['g9', 'n9']);

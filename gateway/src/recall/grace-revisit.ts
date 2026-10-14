@@ -60,6 +60,8 @@ export interface GraceRevisitDeps {
   needFor?: (id: string) => number;
   budget?: PipelineBudgetLike;
   maxPerRun?: number;
+  /** 时钟注入（48h 窗口判定的确定性测试用）；缺省 Date.now()——生产行为不变。 */
+  now?: () => number;
 }
 
 export interface SalienceV2Components { static: number; need: number; authority: number; novelty: number; value: number }
@@ -156,7 +158,7 @@ export class GraceRevisitPipeline {
     const r: GraceRevisitResult = { selected: 0, kept: 0, updated: 0, merged: 0, demoted: 0, skipped: 0 };
     if (this.opts.budget && !this.opts.budget.allow('reflect')) return r;
     const entries = this.opts.index.getIndex().entries;
-    const now = Date.now();
+    const now = this.opts.now?.() ?? Date.now();
     const candidates = selectGraceCandidates(entries, now, { maxPerRun: this.opts.maxPerRun ?? 20 });
     if (candidates.length === 0) return r;
     r.selected = candidates.length;
