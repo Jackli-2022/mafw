@@ -96,6 +96,7 @@ import { isHiddenSession } from './core/session-visibility';
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { MAFW } from './runtime/mafw-vocabulary';
+import { activateRuntimeTools } from './runtime/mafw-tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolClass } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
@@ -1318,6 +1319,8 @@ class MafwScheduler {
           // 声明 vs 实现一致性校验：必选面缺失 → 回退；能力位虚报 → 强制降级
           // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
           this.applyRuntimeValidation(rt, pluginName, true);
+          // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
+          await activateRuntimeTools(rt, pluginName, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
           // v2 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
           // 映射表（差异行）→ canonical passthrough → transformEvent → 未知遥测。
           wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
@@ -1352,6 +1355,7 @@ class MafwScheduler {
       const rt = await builtin.createRuntime(createRuntimePluginContext(undefined));
       // 内置件同样过校验（dogfood）：不回退（无处可退），但缺口要暴露。
       this.applyRuntimeValidation(rt, 'builtin:opencode', false);
+      await activateRuntimeTools(rt, 'builtin:opencode', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
       // v2：opencode 注册时携带 OPENCODE_EVENT_MAPPINGS（差异行 + 前缀丢弃），
       // builtin 分支与插件分支走同一 wrap 序列。
       wrapGlobalEventStream(rt, builtin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
@@ -1366,6 +1370,7 @@ class MafwScheduler {
       ...sdkConfig,
     });
     this.applyRuntimeValidation(fallbackRt, 'builtin:opencode(direct)', false);
+    await activateRuntimeTools(fallbackRt, 'builtin:opencode(direct)', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
     wrapGlobalEventStream(fallbackRt, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_EVENT_MAPPINGS,
