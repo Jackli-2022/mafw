@@ -1,5 +1,6 @@
 import {
   toolClassOf, isReadOnlyClass, enrichToolClass, TOOL_CLASS,
+  setToolClassOverlay, clearToolClassOverlay,
 } from '../../../src/runtime/tool-classes';
 
 describe('toolClassOf（并集单表，大小写不敏感）', () => {
@@ -74,5 +75,52 @@ describe('enrichToolClass（wire additive 字段）', () => {
     const evt = { payload: { type: 'part.updated', properties: { part: { type: 'tool' } } } };
     expect(() => enrichToolClass(evt)).not.toThrow();
     expect(evt.payload.properties.part.toolClass).toBe('other');
+  });
+});
+
+describe('toolClassOverlay（runtime 声明优先于并集表）', () => {
+  afterEach(() => clearToolClassOverlay());
+
+  it('overlay 优先于并集表', () => {
+    setToolClassOverlay([{ name: 'list', toolClass: 'shell' }]);
+    expect(toolClassOf('list')).toBe('shell');
+  });
+
+  it('声明表外新名字生效（大小写归一）', () => {
+    setToolClassOverlay([{ name: 'InspectFile', toolClass: 'readonly' }]);
+    expect(toolClassOf('inspectfile')).toBe('readonly');
+    expect(toolClassOf('InspectFile')).toBe('readonly');
+  });
+
+  it('无效条目跳过并报告，好条目照常应用', () => {
+    const r = setToolClassOverlay([
+      { name: 'good_tool', toolClass: 'web' },
+      { name: '', toolClass: 'web' },
+      { name: 42, toolClass: 'web' },
+      { name: 'bad_class', toolClass: 'nonsense' },
+    ]);
+    expect(r.applied).toBe(1);
+    expect(r.invalid).toHaveLength(3);
+    expect(toolClassOf('good_tool')).toBe('web');
+  });
+
+  it('重复 set 整体替换（热切换语义）', () => {
+    setToolClassOverlay([{ name: 'a', toolClass: 'web' }]);
+    setToolClassOverlay([{ name: 'b', toolClass: 'shell' }]);
+    expect(toolClassOf('a')).toBe('other');
+    expect(toolClassOf('b')).toBe('shell');
+  });
+
+  it('clear 后回落并集表', () => {
+    setToolClassOverlay([{ name: 'list', toolClass: 'shell' }]);
+    clearToolClassOverlay();
+    expect(toolClassOf('list')).toBe('search');
+  });
+
+  it('enrichToolClass 经 overlay 生效（消费方零改动）', () => {
+    setToolClassOverlay([{ name: 'my_read', toolClass: 'readonly' }]);
+    const evt = { payload: { type: 'part.updated', properties: { part: { type: 'tool', tool: 'my_read' } } } };
+    enrichToolClass(evt);
+    expect(evt.payload.properties.part.toolClass).toBe('readonly');
   });
 });

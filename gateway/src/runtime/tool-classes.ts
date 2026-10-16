@@ -40,10 +40,18 @@ const TOOL_CLASS_TABLE: Record<string, TOOL_CLASS> = {
   todowrite: 'plan', todo_list: 'plan',
 };
 
-/** 工具名 → 语义类别（未知/自定义 → 'other'；大小写不敏感）。 */
+/** runtime 声明的工具类别 overlay（优先于并集表；小写归一）。 */
+const toolClassOverlay = new Map<string, TOOL_CLASS>();
+
+const TOOL_CLASS_VALUES = new Set<string>([
+  'readonly', 'search', 'file-edit', 'shell', 'subagent', 'web', 'plan', 'other',
+]);
+
+/** 工具名 → 语义类别（未知/自定义 → 'other'；大小写不敏感；runtime 声明 overlay 优先）。 */
 export function toolClassOf(toolName: string | undefined | null): TOOL_CLASS {
   if (!toolName) return 'other';
-  return TOOL_CLASS_TABLE[String(toolName).toLowerCase()] ?? 'other';
+  const lower = String(toolName).toLowerCase();
+  return toolClassOverlay.get(lower) ?? TOOL_CLASS_TABLE[lower] ?? 'other';
 }
 
 /** 只读判定（审批 read-only 档放行依据）：readonly + search 同为无副作用面。 */
@@ -62,4 +70,30 @@ export function enrichToolClass(evt: { type?: string; payload?: { type?: string;
   const part = evt?.payload?.properties?.part;
   if (!part || part.type !== 'tool' || part.toolClass !== undefined) return;
   part.toolClass = toolClassOf(part.tool);
+}
+
+/**
+ * 激活期注入 runtime 声明的工具类别（整体替换——热切换语义）。无效条目
+ * （空名/非法 class）跳过并报告，由调用方 warning。spec 2026-10-15 §7。
+ */
+export function setToolClassOverlay(entries: Array<{ name: unknown; toolClass: unknown }>): { applied: number; invalid: string[] } {
+  toolClassOverlay.clear();
+  const invalid: string[] = [];
+  let applied = 0;
+  for (const e of entries ?? []) {
+    const name = typeof e?.name === 'string' ? e.name.trim().toLowerCase() : '';
+    const cls = e?.toolClass;
+    if (!name || typeof cls !== 'string' || !TOOL_CLASS_VALUES.has(cls)) {
+      invalid.push(JSON.stringify(e));
+      continue;
+    }
+    toolClassOverlay.set(name, cls as TOOL_CLASS);
+    applied++;
+  }
+  return { applied, invalid };
+}
+
+/** 清空 overlay（回落并集表；测试隔离用）。 */
+export function clearToolClassOverlay(): void {
+  toolClassOverlay.clear();
 }
