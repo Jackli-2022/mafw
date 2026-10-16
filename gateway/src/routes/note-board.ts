@@ -1,11 +1,17 @@
 import { HarmonicUnit } from '../core/memory/harmonic-types';
+import { NOTE_BOARD_BUDGET } from '../recall/inject-format';
 
 export interface NoteBoardDeps {
   getIndex(): { entries: any[] };
   readUnit(id: string): Promise<HarmonicUnit | null>;
 }
 
-export { NOTE_BOARD_BUDGET } from '../recall/inject-format';
+export { NOTE_BOARD_BUDGET };
+
+/** 空板预算（端点 503 / 降级兜底专用）——单一来源，避免与渲染预算漂移。 */
+export function emptyNoteBoardBudget(): { max: number; maxChars: number; used: number } {
+  return { max: NOTE_BOARD_BUDGET.max, maxChars: NOTE_BOARD_BUDGET.maxChars, used: 0 };
+}
 
 /**
  * Scan the harmonic index for sticky (not expired, not superseded) entries,

@@ -4364,7 +4364,8 @@ class MafwScheduler {
           try {
             if (!this.memoryService) {
               res.writeHead(503, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ entries: [], budget: { max: 10, maxChars: 800, used: 0 } }));
+              const { emptyNoteBoardBudget } = require('./routes/note-board');
+              res.end(JSON.stringify({ entries: [], budget: emptyNoteBoardBudget() }));
               return;
             }
             const { handleNoteBoard } = require('./routes/note-board');
@@ -4379,7 +4380,8 @@ class MafwScheduler {
           } catch (err: any) {
             log.warn(`[Scheduler] /api/memory/sticky failed: ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ entries: [], budget: { max: 10, maxChars: 800, used: 0 } }));
+            const { emptyNoteBoardBudget } = require('./routes/note-board');
+            res.end(JSON.stringify({ entries: [], budget: emptyNoteBoardBudget() }));
           }
           return;
         }

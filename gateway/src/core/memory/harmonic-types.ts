@@ -87,6 +87,8 @@ export interface HarmonicIndexEntry {
   abstraction_level?: number;
   superseded_by?: string;
   merged_from?: string[];
+  /** S4: ids this unit was deliberately pattern-separated from (see HarmonicUnit). */
+  distinct_from?: string[];
   pinned?: boolean;
   sticky_until?: string;
   /** Baseline for incremental energy decay (index v2+). Stamped when a decay

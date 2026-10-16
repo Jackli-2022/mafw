@@ -1,4 +1,4 @@
-import { handleNoteBoard, NOTE_BOARD_BUDGET } from '../../src/routes/note-board';
+import { handleNoteBoard, NOTE_BOARD_BUDGET, emptyNoteBoardBudget } from '../../src/routes/note-board';
 import { formatNoteBoard } from '../../src/recall/inject-format';
 
 const NOW = new Date('2026-09-07T00:00:00Z');
@@ -24,6 +24,14 @@ function deps(entries: any[], units: Record<string, any> = {}) {
 }
 
 describe('handleNoteBoard', () => {
+  test('emptyNoteBoardBudget 源自 NOTE_BOARD_BUDGET（消除 503/降级兜底 800 漂移）', () => {
+    const b = emptyNoteBoardBudget();
+    expect(b.max).toBe(NOTE_BOARD_BUDGET.max);
+    expect(b.maxChars).toBe(NOTE_BOARD_BUDGET.maxChars);
+    expect(b.maxChars).toBe(1600);
+    expect(b.used).toBe(0);
+  });
+
   test('active sticky on board; expired and superseded excluded', async () => {
     const result = await handleNoteBoard(deps([
       entry({ id: 'mem_active', sticky_until: inDays(5) }),

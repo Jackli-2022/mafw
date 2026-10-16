@@ -144,6 +144,48 @@ describe('ConsolidationService', () => {
     expect(svc.getStats().creates).toBe(1);
   });
 
+  test('candidate listed in unit.distinct_from → filtered before judge (no merge)', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]);
+    const store = stubStore([unit('old', 'Existing', 'val')]);
+
+    const fetchFn = jest.fn(async () => { throw new Error('judge must not be called'); }) as any;
+    const svc = new ConsolidationService({
+      store: store as any,
+      vectors,
+      provider: vecProvider({}),
+      llm: { baseUrl: 'http://x', apiKey: 'k', model: 'm', fetchFn },
+    });
+
+    const outcome = await svc.consolidate(unit('u1', 'New', 'val2') && Object.assign(unit('u1', 'New', 'val2'), { distinct_from: ['old'] }));
+    expect(outcome.action).toBe('create');
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(store.superseded).toHaveLength(0);
+  });
+
+  test('candidate whose distinct_from names the incoming unit → also filtered (symmetric)', async () => {
+    const dir = tmpDir();
+    const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);
+    vectors.upsert('u1', [1, 0]);
+    vectors.upsert('old', [0.99, 0.1]);
+    const target = Object.assign(unit('old', 'Existing', 'val'), { distinct_from: ['u1'] });
+    const store = stubStore([target]);
+
+    const fetchFn = jest.fn(async () => { throw new Error('judge must not be called'); }) as any;
+    const svc = new ConsolidationService({
+      store: store as any,
+      vectors,
+      provider: vecProvider({}),
+      llm: { baseUrl: 'http://x', apiKey: 'k', model: 'm', fetchFn },
+    });
+
+    const outcome = await svc.consolidate(unit('u1', 'New', 'val2'));
+    expect(outcome.action).toBe('create');
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   test('LLM failure → skip (fail-open)', async () => {
     const dir = tmpDir();
     const vectors = new MemoryVectorStore(path.join(dir, 'v.json'), 2);

@@ -17,6 +17,8 @@ export function buildOKF(unit: HarmonicUnit): string {
   if (unit.salience !== undefined) frontmatter.salience = unit.salience;
   if (unit.abstraction_level !== undefined) frontmatter.abstraction_level = unit.abstraction_level;
   if (unit.merged_from?.length) frontmatter.merged_from = unit.merged_from;
+  // S4 pattern separation: "kept apart from these similar entries (do not merge)".
+  if (unit.distinct_from?.length) frontmatter.distinct_from = unit.distinct_from;
   if (unit.superseded_by) frontmatter.superseded_by = unit.superseded_by;
   if (unit.pinned !== undefined) frontmatter.pinned = unit.pinned;
   if (unit.sticky_until) frontmatter.sticky_until = unit.sticky_until;

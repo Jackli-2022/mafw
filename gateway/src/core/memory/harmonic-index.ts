@@ -260,6 +260,8 @@ export class HarmonicIndexManager {
       pinned: unit.pinned,
       sticky_until: (unit as any).sticky_until,
       merged_from: unit.merged_from,
+      // S4 pattern-separation marker (was written by route-write but dropped here).
+      distinct_from: (unit as any).distinct_from,
       filePath: (unit as any).filePath,
       // Always stamp created_at: it is the decay baseline fallback for entries
       // that predate (or miss) last_decay_at. Omitting it left every index

@@ -226,10 +226,16 @@ export class ConsolidationService {
     // (dead versions) and orphan vectors (unit file gone, index pruned) are
     // filtered before the judge. Merging into a dead entry would resurrect it.
     const liveCandidates: Array<{ id: string; cosine: number }> = [];
+    // S4 pattern separation: an explicit distinct_from on either side forbids
+    // merging this pair (the separation was deliberate — respect it).
+    const distinctFrom = new Set(unit.distinct_from ?? []);
     for (const c of candidates) {
       try {
         const u = await this.store.read(c.id);
-        if (u && !u.superseded_by) liveCandidates.push(c);
+        if (!u || u.superseded_by) continue;
+        if (distinctFrom.has(c.id)) continue;
+        if ((u.distinct_from ?? []).includes(unit.id)) continue;
+        liveCandidates.push(c);
       } catch { /* treat unreadable as dead */ }
     }
     if (liveCandidates.length === 0) return { action: 'create' };

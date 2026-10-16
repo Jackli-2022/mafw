@@ -16,11 +16,12 @@ interface HarmonicUnit {
   cue_anchors: string[];          // 多跳线索
   memory_value: string;           // 完整内容
   energy: number;
-  salience?: number;              // 参与排序（写路径计算并存 OKF，检索 ×energy×salience，缺失按 1）
+  salience?: number;              // 参与排序（**入口**计算：judgeSalience/importanceToSalience，write() 不算；检索 ×energy×salience，缺失按 1）
   abstraction_level?: number;     // 0=T1, 1=T2, 2=T3/T4, 3=L5；写路径统一映射（episodic→1，semantic/procedural→2，global→3）
   review_count?: number;          // A1：stale-verify 调度状态（验证后 stampReview 盖章；21 天排除窗 + 无记录优先）
   last_reviewed?: string;         // A1：同上
-  merged_from?: string[];         // MinHash 合并来源 id（写路径 merge 时填充）
+  merged_from?: string[];         // 合并来源 id（consolidation UPDATE / route-write update / 跨 worktree 融合填充；MinHash 写路径合并已退役）
+  distinct_from?: string[];       // S4 模式分离：与这些相似条目**刻意保持区分**（route-write separate 分支写入；consolidation 候选池尊重，双向禁止合并）
   superseded_by?: string;         // soft-supersede：指向取代本条的新 id（披露注入排除；检索命中改写为其 supersede 链头）
   pinned?: boolean;               // 披露层：每轮注入 <user-profile>（superseded 后失效）；与 type 正交
   sticky_until?: string;          // 便签板：每轮注入 <note-board> 直到该 ISO 日期（板级过期，记忆本体保留；坏日期 fail-open 在板）
@@ -33,7 +34,8 @@ interface HarmonicUnit {
 
 > 注：`goal_id` 为历史兼容字段，当前写路径不填充。
 > `top_associations` 已删（2026-09-29）：预存静态联想链接被新证据反对（SYNTHESIS arXiv:2601.02744 主张 relevance 来自动态激活；query-blind 链接是噪音源 arXiv:2606.30133），未来多跳走 query-aware 动态激活——见 docs/research/2026-09-29-memory-gap-abc-survey.md §A2。
-> MinHash 合并采用 **soft supersede**：相似旧条目标记 `superseded_by` 并降低 energy（×0.5），不物理删除，便于 knowledge-update 场景保留历史版本。检索出口由 `resolveSupersededHeads()`（`harmonic-index.ts`，`searchScored` 末尾单点）**强制撤销**：命中 superseded 条目改写到其 supersede 链头（保分数、按链头去重取最高分），悬空/成环/超深（默认 5）链直接丢弃——仅靠排序惩罚不够，被撤销事实仍会返回并压过替代项（arXiv:2609.08258）。
+> **MinHash 写路径合并已退役（V2 ①a，2026-10-12）**：`HarmonicUnitFileStore.write()` 不再做合并检查（`skipMerge` 为 deprecated no-op），`MinHashMerger.merge()` 无消费者；`MinHashMerger` 仅剩跨 worktree 融合复用其 `generateSignature/similarity`。去重改为三层：**写时 exact-hash（仅 HTTP）/ 读时近重折叠（cos≥0.92 或 token-Jaccard≥0.8）/ 巩固层语义合并**（consolidation + route-write）。
+> **soft supersede** 现由 `markSuperseded()` 承担（consolidation UPDATE / route-write update / grace / reconsolidate / worktree 融合）：相似旧条目标记 `superseded_by` 并降低 energy（×0.5），不物理删除，便于 knowledge-update 场景保留历史版本。检索出口由 `resolveSupersededHeads()`（`harmonic-index.ts`，`searchScored` 末尾单点）**强制撤销**：命中 superseded 条目改写到其 supersede 链头（保分数、按链头去重取最高分），悬空/成环/超深（默认 5）链直接丢弃——仅靠排序惩罚不够，被撤销事实仍会返回并压过替代项（arXiv:2609.08258）。
 
 ### 3.2 检索
 
@@ -57,11 +59,13 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 ### 3.3 压缩
 
 `HarmonicUnitFileStore.write()` 输出 `HarmonicUnit` 并自动：
-1. 计算显著度
-2. 写入对应 tier 文件（`concepts/{semantic|episodic|procedural|global|knowledge}/`）
-3. 更新 `.harmonic_index.json`
-4. 触发 MinHash 跨层合并检查（`MinHashMerger.merge()`，阈值 0.7、32 签名、3-gram shingle、FNV-1a 双哈希 Kirsch–Mitzenmacher；段级匹配——合体按 ` | ` 切段取 max sim 防稀释；合并不加 energy；`memory_value` 合并上限 2000 字符截断于段边界；合并产物带 `merged_from` 防递归；`skipMerge` 选项供 LongMemEval 基准等确定性摄入场景关闭）
-5. 触发静态 `onMemoryWritten` 监听器（dense 嵌入索引 + LLM 合并裁判，见 §3.5）
+1. `cue_anchors` 兜底（空则 `extractAnchors(primary_abstraction)`）+ **标识符收割**（`harvestIdentifierCues`，预算 `harvestMaxCues`=8）——**salience 不在此计算**，由入口（HTTP/MCP）算好传入
+2. 写入对应 tier 文件（`concepts/{semantic|episodic|procedural|global|knowledge}/`，OKF frontmatter 白名单见 `okf-writer.ts`）
+3. 更新 `.harmonic_index.json`（index v2）
+4. 锚点图/共激活图 upsert + `[[link]]` 边
+5. 触发静态 `onMemoryWritten` 监听器（dense 嵌入索引 + consolidation 入队 + GLiNER 实体收割[默认关]）
+
+> 去重三层（写路径无合并）：**L1 写时 exact-hash**（`dedup-guard.ts`，SHA1 LRU，仅 HTTP `/api/memory/add`）；**L2 读时近重折叠**（`searchScored`，cos≥0.92 或 token-Jaccard≥0.8）；**L3 巩固层语义合并**（consolidation + route-write，见 §3.5）。`merged_from` 的 2000 字符合并截断随 MinHash 退役一并消失（HTTP content 另有 4000 上限）。
 
 > 注：`HybridCompressor`（会话压缩管线）只挂在 deprecated legacy 插件路径，当前 gateway 运行时写路径是 `/api/memory/add` + MCP handler + turnCompress worker，均经 `HarmonicUnitFileStore.write()`。
 
@@ -72,7 +76,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - **EmbeddingRuntime**（`gateway/src/memory/embedding-runtime.ts`）：进程单例（provider + `MemoryVectorStore` + `EmbeddingIndexer`）。向量文件 `~/.mafw/memory/vectors-<model>.json`（按 provider.name 打标签，GGUF 与 ONNX 嵌入不共享）；写路径 fire-and-forget 嵌入（2s 防抖批量 flush，失败丢弃不阻塞）
 - **本地引擎双实现**（`memory.embedding.engine`）：`onnx`（transformers.js 进程内，`threads` 线程帽默认 2）/ `llamacpp`（`llamacpp-provider.ts`：llama-server sidecar 子进程，官方二进制自动下载含 ghfast.top 镜像回退，`gpu: cpu|vulkan|cuda` 变体切换、GPU 变体自动 `-ngl 99`）。**llama-server embedding 必备旗标**（踩坑实证）：`-fa on`（否则非因果注意力物化 L² 矩阵，ctx4096 时 RSS 3GB）、`-np 1 --no-warmup`（否则 np=auto 多槽 KV + warmup 全量缓冲 → 2.8GB）、`-cram 0`（prompt cache 对 embedding 任务只写不读涨到 8GB 上限，llama.cpp #26293）、`-c/-b/-ub ≥ 文本 token 上限`（超长输入 HTTP 400 被静默丢弃会拖垮 dense 通道，provider 有 400→截断重试兜底）
 - **检索**：`computeDenseScores(query)` → `searchScored({denseScores})` → RRF 融合；`mafw_search_hybrid` 的 `retriever:'hybrid'` 与 `/api/memory/search?retriever=hybrid` 已接线；boundary recall 同步路径**不**嵌查询（100ms 契约）
-- **ConsolidationService**（`gateway/src/memory/consolidation-service.ts`）：写入后 cosine≥0.8 候选召回 → worker 模型 LLM 判 UPDATE/CREATE（Memora 式）；UPDATE 合入新条目 + soft-supersede 旧条目 + 删除旧向量；裁判不可达时 skip（fail-open）；`GET /api/memory/stats` 暴露 update ratio。**候选池过滤（2026-09-29 审计 H4）**：判官前剔除 superseded 与孤儿候选（向量在但 unit 不可读）——合并进死条目会复活它；**判定对审计日志** `~/.mafw/logs/consolidation-pairs.jsonl`（每次判官调用一行：new/候选/cosine/verdict）——update ratio 0% 的根因审计见 `docs/research/2026-09-29-consolidation-audit.md`（H2 判官偏置待 pair 数据终判，16-22% 健康带对个人库可能需重定义）
+- **ConsolidationService**（`gateway/src/memory/consolidation-service.ts`）：写入后 cosine≥0.8 候选召回 → worker 模型 LLM 判 UPDATE/CREATE（Memora 式）；UPDATE 合入新条目 + soft-supersede 旧条目 + 删除旧向量；裁判不可达时 skip（fail-open）；`GET /api/memory/stats` 暴露 update ratio。**候选池过滤（2026-09-29 审计 H4 + S4）**：判官前剔除 superseded 与孤儿候选（向量在但 unit 不可读）——合并进死条目会复活它；**`distinct_from` 双向尊重**（unit 标记的候选、候选标记 unit 的，都禁止合并——模式分离是刻意决定）；**判定对审计日志** `~/.mafw/logs/consolidation-pairs.jsonl`（每次判官调用一行：new/候选/cosine/verdict）——update ratio 0% 的根因审计见 `docs/research/2026-09-29-consolidation-audit.md`（H2 判官偏置待 pair 数据终判，16-22% 健康带对个人库可能需重定义）
 - **laya 三值分流门（D3，2026-10-09）**：级联升级为三值——p≥tauHigh→UPDATE、全部候选 p≤tauLow→直接 CREATE（跳过 LLM；CREATE 本就是判官 fail-open 行为）、中间带→转 LLM。`tauLow` 默认 0=关闭；开闸需 `gateway/scripts/calibrate-laya.ts` 对 pairs jsonl 提议（≥50 scored + ≥5 update 对 + create/update 带不重叠 + 0.3 上限）并经用户批准；tauHigh 保持 0.99（separate 失明带永不自动 UPDATE）。审计 `decidedBy:'laya-low'`，stats 增 `layaCreated`。首跑真实数据（187 对）：8 条 create 落 0.9-1.0（失明确证）+ 仅 3 条 update → 正确返回无安全线
 
 ### 3.4 能量衰减
@@ -81,7 +85,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - 默认自动化规则 `memory-decay`（每日 UTC 3:30，`recall/pipeline-rules.ts` 供给）：**增量衰减**——按 entry `last_decay_at`（缺失回退 `created_at`）计算流逝天数做纯时间衰减（无事件加成）；`last_decay_at` 仅在实际写入衰减时盖章（低于 0.005 写入阈值时天数继续累积，防低 salience 条目饥饿）
 - **检索访问结算（ACT-R 式，2026-09-29）**：recall 路由 / 快照 serve / `mafw_search_hybrid` 三个生产出口把命中（id + 概率 + 时间戳）记入 `RetrievalEventBuffer`（内存环形缓冲 + 7 天 need 索引，`core/memory/retrieval-events.ts`，fail-open；eval 不经这些出口天然隔离）；每日衰减 pass **同一趟** drain 并按 `actrBonus()`（`B=ln(1+Σ(Δt+24h)^-0.5·w)`，`core/memory/retrieval-bonus.ts`）结算——k=0.03 均衡点使"一次新鲜检索 ≈ 一天衰减"，cap 0.02，重复曝光折扣防 rich-get-richer；bonus 先于衰减应用并 clamp 1.0。线性 `+0.02` 直写已删（无界/正反馈，access-bonus.ts 移除）
 - **goal 奖励调制（B4，2026-09-29）**：`archiveGoal(verdict=PASS)` → goal_sessions 关联且未 superseded 的记忆 energy +0.08（clamp 1.0；**不对称：失败不降权**，防错误归因）——`core/manager/goal-reward.ts`，fail-open
-- 事件加成（`useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，属于反馈路径的语义，**不在**衰减 pass 中混用
+- 事件加成（`useful_feedback` +0.1 等）由 `EnergySystem.calculateEnergy` 提供，只作用于 **L3 参数化 `ParametricStore`**（`core/memory/store.ts`），**不作用于谐波单位**，也不在衰减 pass 中混用；谐波单位的检索加成走 ACT-R（上一条）、goal 奖励走上一条
 - index v1→v2 一次性迁移：全部 entry 盖 `last_decay_at`=迁移时刻、**不补扣历史衰减**（旧实现按 `created_at` 每次运行重复扣全龄衰减，累计 r·n(n+1)/2 平方损失，历史已过度衰减故豁免）；迁移由 `HarmonicIndexManager.migrateDecayBaseline()` 执行
 
 ### 3.6 管线心跳（Pipeline Heartbeat）
@@ -106,7 +110,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 | `mafw_ask_user` | 非阻塞向用户提问 |
 | `mafw_record_feedback` | 记录用户点赞/点踩 |
 | `mafw_get_model_route` | 动态模型选择（基于预算） |
-| `mafw_add_memory` | 写入记忆单元（`supersedes` 显式取代旧条目；`pinned` 披露层；`sticky`/`stickyDays` 便签板；`cueAnchors` 多跳线索） |
+| `mafw_add_memory` | 写入记忆单元（`supersedes` 显式取代旧条目——HTTP 表单串 / MCP 收数组，仅 create 后标记；`pinned` 披露层；`sticky`/`stickyDays` 便签板；`cueAnchors` 多跳线索；`authority` 权威标签） |
 | `mafw_get_memory` | 按 id 取记忆全文（支持 `<recall>` 指针尾 6 位；superseded 自动附 supersede 链最新版） |
 | `mafw_supersede_memory` | 标记已有记忆为 superseded（不写新条目，仅降能+惩罚检索排序） |
 | `mafw_pin_memory` | pin/unpin 披露层（`<user-profile>` 每轮注入）；`sticky`/`stickyDays` 上板/续期/下架便签板 |
@@ -170,7 +174,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - `CostEstimator.ToolCallRecord.goalId` 改为可选
 
 ### 5.3 记忆融合系统（git worktree）
-- `mafw_merge_memory` MCP 工具：MinHash 比对，提取独有记忆（energy=0.4）
+- `mafw_merge_memory` MCP 工具：MinHash 签名比对（相似度阈值 **0.6**），提取独有记忆（energy=0.4）
 - 冲突处理支持 `manual` / `higher_energy` / `newer` 策略
 - 存档时自动触发：`archive-worktree.ts` 在 git merge 前调用 `mergeMemoryFromWorktree()`（读源 worktree 的 harmonic index + OKF，非 legacy memories.json）
 - 融合记录写入 `~/.mafw/fusion-log.jsonl`
@@ -506,7 +510,7 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
 （`<memory-guide>` 之后，半稳定内容靠后保前缀缓存；fail-open 150ms 超时）。预算
 20 条/2000 字符，按 energy×salience 截断（salience 缺失按 1），溢出记
 `[Recall] pinned overflow` 日志。知识更新：`mafw_add_memory { supersedes: 旧id }` 显式取代
-（复用 MinHash soft-supersede 链，新条目 energy 继承 max(0.8, 旧条目) 且 pinned 不继承）；
+（复用 `markSuperseded()` soft-supersede 链，新条目 energy 继承 max(0.8, 旧条目) 且 pinned 不继承）；
 纠错正门 `mafw_pin_memory`。渲染收敛在 `inject-format.ts:formatPinnedProfile()`，
 路由逻辑在 `routes/pinned-recall.ts`（deps 注入可单测）。
 不加独立 update/delete 工具（业界实践：记忆变异属后台管线——下期 turnCompress 矛盾检测）。
@@ -518,7 +522,7 @@ pointer 块与全量内容块分别收敛在 `inject-format.ts` 的 `formatRecal
 渲染 `inject-format.ts:formatNoteBoard()`），解决"用户说'记下来'但只有 BM25 词面匹配才能想起"
 的缺口——检索条件化之外的有保质期保证送达层。语义对齐业界调研（mem0 expiration/
 Graphiti invalidation）：**板级过期 ≠ 记忆删除**，到期仅下架，本体照常可被 BM25 检索；
-坏日期 fail-open 留在板上并排最后；排序按到期近者优先（紧急提醒前置）。预算 10 条/800 字符，
+坏日期 fail-open 留在板上并排最后；排序按到期近者优先（紧急提醒前置）。预算 10 条/1600 字符（单条 240 截断；`NOTE_BOARD_BUDGET` 单一来源，端点 503/降级兜底经 `emptyNoteBoardBudget()` 复用，勿硬编码），
 溢出记 `[Recall] note-board overflow` 日志。写入：`mafw_add_memory { sticky: true, stickyDays? }`
 （默认 7 天）；管理：`mafw_pin_memory { id, sticky, stickyDays? }` 上板/续期/下架。
 `mafw_get_memory` 补齐指针兑现：按全 id 或 `<recall>` 尾 6 位取全文，superseded 自动沿链附最新版；
