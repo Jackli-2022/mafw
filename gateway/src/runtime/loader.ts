@@ -297,7 +297,9 @@ to the builtin opencode runtime (fail-open).
 \`\`\`js
 module.exports = {
   name: "my-runtime",
-  // merged over Tier-0 defaults (sessionApi + promptWhileBusy already true)
+  // merged over Tier-0 defaults (sessionApi + promptWhileBusy already true;
+  // the tools registration channel is REQUIRED — hard validation rejects
+  // plugins without it)
   capabilities: {
     eventStream: false,
     nativeApprovals: false,
@@ -332,6 +334,19 @@ module.exports = {
       provider: { async list() { return { all: [], connected: [], default: {} }; } },
       app: { async agents() { return []; } },
       config: { async get() { return {}; }, async update(c) { return c; } },
+      // REQUIRED (Tier-0): tool registration channel — MAFW basic tools reach
+      // your agents through this. Store the factory; call it per session and
+      // register each {name, label, description, parameters, execute} into
+      // your runtime's native tool registry (parameters is JSON Schema).
+      tools: {
+        async registerTools(factory) { myRuntime.toolFactory = factory; },
+        nativeTools() {
+          return [
+            { name: 'my_read', toolClass: 'readonly' },
+            // toolClass: readonly|search|file-edit|shell|subagent|web|plan
+          ];
+        },
+      },
       getBaseUrl() { return "http://127.0.0.1:4096"; },
       async healthCheck() { return true; },
       // optional:

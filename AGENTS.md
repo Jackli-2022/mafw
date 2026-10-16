@@ -887,6 +887,20 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   agentProcessApi）
   + `RuntimeClient` 接口面 + `AgentRuntime`。能力分级：Tier 0（协作协议 + per-turn 记忆）
   → Tier 1（+ 自治执行 + per-step 记忆）→ Tier 2（+ 桌面完整，opencode 形状 DTO 归一化输出）
+- `RuntimeClient.tools`（**Tier-0 必选**，无能力位，spec `2026-10-15-runtime-tool-registration-contract-design.md`）：
+  `registerTools(factory)`——gateway 激活期推送六件套 factory（spec+execute 单源
+  `runtime/mafw-tools.ts`，execute 闭包随 spec 走，runtime 只做 plumbing：按会话
+  factory(sessionId) 取注册项、parameters JSON Schema 翻译为自家类型系统、execute 透传）；
+  `nativeTools()`——runtime 原生工具声明（name + TOOL_CLASS），激活期经
+  `tool-classes.ts` overlay（**声明优先于并集表**，热切换整体替换，坏条目 warning 跳过）
+  生效，审批 `isReadOnlyTool`/身份 `resolveToolCategory`/事件 `enrichToolClass` 零改动受益。
+  缺实现 = `validate.ts` hard 拒绝 → 插件回退 opencode。out-of-process 通道：
+  `GET /api/tools`（spec 清单）+ `POST /api/tools/execute {name, params, sessionID}`
+  （loopback 门）。opencode 实现 = adapter ack no-op（六件套由 v1 插件承载 + MCP 自接线）；
+  pi 实现 = registry `setToolFactory` stash → host extension `T.Unsafe(jsonSchema)` 包
+  JSON Schema（`~unsafe` 键 non-enumerable 不入 wire，spike 实证 typebox 1.3.7 +
+  pi-ai openai-completions 原样透传）+ execute 桥接（`{text,isError}` → pi ToolResult）。
+  已知文档债：六件套描述文本在 v1 插件（`src/tools/`）与 gateway 单源两处暂存（v2 迁移统一）
 - `normalize.ts` — runtime 原生事件 → `EventFacets`（正交切面：step/chatSignal/
   broadcast/toolCommand）；opencode 版本知识（≥1.18 step-finish part 结算）只存在于
   本文件（step facet 喂 BudgetGuard 回合计数）

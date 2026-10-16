@@ -21,8 +21,9 @@ MAFW Gateway 通过**能力契约**（Runtime Capability Contract）与 agent ru
 |------|------|
 | `sessionApi` | 会话 CRUD（create/prompt/messages/get/delete/abort/list） |
 | `promptWhileBusy` | 会话忙碌时仍可追加输入（promptAsync） |
+| `tools` 注册通道 | `registerTools`（六件套 spec+execute factory）+ `nativeTools`（原生工具类别声明）——**必须实现**，缺 = hard 校验拒绝（见 4.8） |
 
-Tier 0 是 `minimalCapabilities()` 默认值，插件无需声明即可获得。
+Tier 0 是 `minimalCapabilities()` 默认值，插件无需声明即可获得（能力位如此）；但 `tools` 是**必选接口实现**，不是自动获得的能力位。
 
 ### Tier 1（自治执行）
 | 能力 | 说明 | 缺省行为 |
@@ -405,6 +406,7 @@ Gateway 侧（契约自动获得）                 宿主侧（runtime 自己�
 
 - runtime 的 MCP client 必须自己配置 remote HTTP 指向 `http://127.0.0.1:<gatewayPort>/mcp`（端口取 `ctx.gatewayPort`，缺省 3000；也读 `MAFW_SERVER_API_PORT`）
 - opencode 有 self-wiring（激活时自动补配置）；**自定义 runtime 没有这层**——不接 MCP，被动注入照常，但 agent 主动写入/检索/取代（supersedes）全失效
+- **六件套替代通道**（MCP 之外的基础工具面）：`tools.registerTools`（见 4.8）推送 `mafw_add_memory`/`mafw_python`×2/`mafw_media_*`×3——无 MCP client 的 runtime 经此获得记忆/Python/媒体工具
 
 ### 4.6 事件形状对记忆质量的影响
 
@@ -417,6 +419,38 @@ Gateway 侧（契约自动获得）                 宿主侧（runtime 自己�
 - [ ] 对 agent 说"记住 X" → `mafw_search_hybrid` 能检索到（MCP 接线通）
 - [ ] 新会话首条消息触发 recall（日志无阻塞；断开 gateway 后 agent 仍能正常回复 = fail-open 生效）
 - [ ] pinned 一条记忆（`mafw_add_memory { pinned: true }`）→ 下一轮 agent 回答能引用
+
+### 4.8 工具注册通道（tools.registerTools——Tier-0 必选）
+
+runtime 必须实现 `tools` 接口（缺 = 激活期 hard 校验拒绝，回退 opencode）：
+
+```js
+tools: {
+  // gateway 激活期推送六件套 factory（mafw_add_memory / mafw_python /
+  // mafw_python_restart / mafw_media_speak / mafw_media_upload / mafw_media_ask）
+  async registerTools(factory) {
+    // 存储 factory；在每个会话创建时调用 factory(sessionId) 得到注册项数组，
+    // 每项 = { name, label?, description, parameters(JSON Schema), execute(params, signal) }
+    // 把 parameters 翻译为自家类型系统后注册进会话的工具面，execute 直接透传调用。
+    runtimeState.toolFactory = factory;
+  },
+  // 声明 runtime 原生工具（喂审批只读档/身份策略/桌面渲染的类别解析）
+  nativeTools() {
+    return [
+      { name: 'my_read', toolClass: 'readonly' },
+      { name: 'my_shell', toolClass: 'shell' },
+      // toolClass: readonly|search|file-edit|shell|subagent|web|plan（空数组合法）
+    ];
+  },
+},
+```
+
+要点：
+
+- **execute 闭包随 spec 走**——执行逻辑全部封装在 gateway（loopback HTTP），runtime 侧零工具逻辑
+- **factory 按会话惰性调用**（python 内核/记忆归因有会话亲和性）
+- **out-of-process runtime**（agent 进程无法持有 in-process 闭包）：`GET /api/tools` 取 spec 清单 + `POST /api/tools/execute {name, params, sessionID}` 执行（loopback）
+- 参考实现：pi 的 `pi-mafw-host-extension.ts`（T.Unsafe 包 JSON Schema + execute 桥接，~30 行）
 
 ## 第五步：激活与测试
 
