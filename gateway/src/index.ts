@@ -96,7 +96,8 @@ import { isHiddenSession } from './core/session-visibility';
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
 import { MAFW } from './runtime/mafw-vocabulary';
-import { activateRuntimeTools } from './runtime/mafw-tools';
+import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
+import { handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolClass } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
@@ -4006,6 +4007,22 @@ class MafwScheduler {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err?.message || String(err) }));
           }
+          return;
+        }
+
+        // GET /api/tools — MAFW 基础工具 spec 清单（out-of-process runtime 的注册面）
+        if (req.url === "/api/tools" && req.method === "GET") {
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          handleToolsList(res);
+          return;
+        }
+
+        // POST /api/tools/execute — 通用工具执行（out-of-process runtime 通道；同 /api/python/* 信任域）
+        if (req.url === "/api/tools/execute" && req.method === "POST") {
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          await handleToolsExecute(req, res, {
+            buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
+          });
           return;
         }
 
