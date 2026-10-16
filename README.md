@@ -93,6 +93,13 @@ Gateway 与 Agent runtime 之间是能力自声明契约（Tier 0-2）：内置 
 external 托管模式可热切换，无需重启。契约能力面覆盖会话分支（fork / revert）、回合预算、
 结果信封（usage / finish）、三值审批回复（once / always / reject）、原生 question 通道等。
 
+**工具注册通道（Tier-0 必选）**：每个 runtime 必须实现 `tools.registerTools` / `tools.nativeTools`——
+缺实现 = 激活期 hard 校验拒绝。gateway 在激活期把**六件套基础工具**（记忆写入 / Python 内核 ×2 /
+语音合成 / 媒体上传 / 媒体追问）的 spec + 执行器工厂推给 runtime（execute 闭包随 spec 走，
+第三方 runtime 只做 ~15 行 plumbing）；runtime 同时声明自己的原生工具语义类别
+（read / write / agent… → readonly / file-edit / subagent…），即时生效于审批只读档、
+身份策略与桌面渲染。out-of-process runtime 经 `GET /api/tools` + `POST /api/tools/execute` 取 spec / 执行。
+
 **声明式事件映射**：runtime 插件用**纯数据表**把原生事件接入统一事件流，不再手写翻译层——
 `eventMappings`（`{from → to, when?, fields}`，字段 = 路径 / 常量 / `{$.path}` 模板）+ 可选的
 `transformEvent` 逃逸口（状态机 / 扇出 / 副作用）；gateway 侧 canonical facet 规则表化，

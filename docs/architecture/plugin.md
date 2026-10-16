@@ -3,8 +3,9 @@
 > opencode 插件（`src/`）：**注入点 + 观察捕获 + 原生工具 + MCP 自接线**。
 > 记忆的存储、检索与维护都在 Gateway 侧——本文只描述插件作为"宿主接入层"的职责。
 >
-> 时效：2026-09-14 对照源码重写。权威细节见根 `AGENTS.md`；
-> Gateway 侧架构见 `docs/architecture/gateway.md`。
+> 时效：2026-10-16 更新（六件套 gateway 单源注记 + Goal 编排分工）。权威细节见根 `AGENTS.md`；
+> Gateway 侧架构见 `docs/architecture/gateway.md`；pi 等第三方 runtime 的同类宿主实现
+> 见 `gateway/src/runtime/host-adapter.ts`（认知面契约）与 `.opencode/skills/runtime-plugin-authoring/SKILL.md`。
 
 ## 目录
 
@@ -104,6 +105,13 @@ opencode 加载插件（plugin.ts）
 其余 40 个 `mafw_*` 工具（记忆检索、Goal、自动化、桌面控制…）经 gateway MCP
 （`/mcp`）提供，不在此列。
 
+> **六件套 gateway 单源注记（2026-10-15 起）**：runtime 契约新增必选工具注册通道
+> （`tools.registerTools`），六件套的 spec 与执行逻辑单源在
+> `gateway/src/runtime/mafw-tools.ts`——pi / 第三方 runtime 经契约 factory 获得同集合同
+> 语义工具（pi 侧 `T.Unsafe` 包 JSON Schema 桥接）。本插件（`src/tools/`）是 opencode
+> 宿主的**独立实现**（生产宿主，刻意不重构），描述文本两处暂存为已知文档债，
+> v2 插件迁移时统一。
+
 ## 命令与 Gateway 联动
 
 斜杠命令（`/btw` 支线问答、`/new-topic` 开新话题）由插件捕获后转发
@@ -125,7 +133,7 @@ opencode 加载插件（plugin.ts）
 | 观察捕获 | 插件 hooks → gateway 入库（t1_observations） |
 | 记忆存储/检索/合并/衰减/重验 | **Gateway**（HarmonicUnitFileStore + 管线，见 gateway.md） |
 | 媒体/Python/TTS 执行 | 插件工具发 HTTP/A2A，Gateway 承载服务 |
-| Goal 编排 | Gateway LangGraph（manager agent 经 MCP 驱动） |
+| Goal 编排 | Gateway NodeDriver（state v3 + 事件驱动双门判定，见 gateway.md） |
 | opencode 权限/agent 定义安装 | Gateway `runtime.agents.install`（agentConfigApi） |
 
 ## Legacy 附录（v6.x 插件内记忆路径，已废弃）
