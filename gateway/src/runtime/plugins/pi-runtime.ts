@@ -1,4 +1,4 @@
-import type { AgentRuntime, RuntimeCapabilities, CompletionRequest, CompletionResult } from '../contract';
+import type { AgentRuntime, RuntimeCapabilities, CompletionRequest, CompletionResult, NativeToolDeclaration, MafwToolRegistration } from '../contract';
 import type { RuntimePluginContext } from '../loader';
 import { PiSessionRegistry } from '../pi/pi-session';
 import { normalizePiMessages } from '../pi/pi-message-normalize';
@@ -22,6 +22,17 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   completionApi: true,
   sessionBranchApi: true,
 };
+
+/** pi 原生工具清单（pi-coding-agent dist/core/tools：read/grep/find/ls/write/edit/bash）。 */
+const PI_NATIVE_TOOLS: NativeToolDeclaration[] = [
+  { name: 'read', toolClass: 'readonly' },
+  { name: 'grep', toolClass: 'search' },
+  { name: 'find', toolClass: 'search' },
+  { name: 'ls', toolClass: 'search' },
+  { name: 'write', toolClass: 'file-edit' },
+  { name: 'edit', toolClass: 'file-edit' },
+  { name: 'bash', toolClass: 'shell' },
+];
 
 /**
  * Convert runtime prompt parts into pi prompt input. File parts carrying
@@ -289,6 +300,12 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
       },
     },
     registry,
+    tools: {
+      registerTools: async (factory: (sessionId: string) => MafwToolRegistration[]) => {
+        registry.setToolFactory(factory);
+      },
+      nativeTools: () => PI_NATIVE_TOOLS,
+    },
     getBaseUrl: () => `http://127.0.0.1:${ctx.gatewayPort ?? config.server.apiPort ?? 3000}`,
     healthCheck: async () => { try { await modelRuntime(); return true; } catch { return false; } },
     dispose: async () => {

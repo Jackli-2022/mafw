@@ -3,7 +3,7 @@
  *
  * 设计原则：能力自声明 + fail-open 降级。runtime 加载时声明 capabilities，
  * gateway 按能力集开关功能：
- *   Tier 0（sessionApi + promptWhileBusy）→ 协作协议（Goal/问答/反馈）+ per-turn 记忆
+ *   Tier 0（sessionApi + promptWhileBusy + tools 注册通道）→ 协作协议（Goal/问答/反馈）+ per-turn 记忆
  *   Tier 1（+ eventStream）→ 自治执行（Goal plan/execute/review）+ per-step 记忆
  *   Tier 2（+ opencode 形状 DTO 归一化输出）→ 桌面聊天面完整
  * 降级是声明式的：缺能力的 runtime 只影响功能丰富度，永不阻塞 agent 基本工作。
@@ -19,6 +19,7 @@
  *   external + getBaseUrl() — runtime 声明托管模式
  */
 import type { AgentDefinition } from './agent-definition';
+import type { TOOL_CLASS } from './tool-classes';
 
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
@@ -172,6 +173,37 @@ export interface RuntimeCredentials {
   getApiKey(provider: string): string | null;
 }
 
+// ─── 工具注册通道（Tier-0 必选；spec 2026-10-15） ────────────────────────────
+
+/** MAFW 基础工具注册项：spec（JSON Schema）+ runtime 中性执行器。 */
+export interface MafwToolRegistration {
+  /** 工具名（如 'mafw_add_memory'）——runtime 原样注册 */
+  name: string;
+  label?: string;
+  description: string;
+  /** JSON Schema（object 形态）；runtime 翻译为自家类型系统（pi typebox T.Unsafe / MCP inputSchema / Claude tool use） */
+  parameters: Record<string, any>;
+  /** 执行器（gateway loopback HTTP 已封装）。isError=true 时 runtime 应向 agent 报工具错误。 */
+  execute(params: any, signal?: AbortSignal): Promise<{ text: string; isError?: boolean }>;
+}
+
+/** runtime 原生工具声明（激活期注入 tool-classes overlay，优先于并集表）。 */
+export interface NativeToolDeclaration {
+  name: string;
+  toolClass: TOOL_CLASS;
+}
+
+/**
+ * 工具注册通道——Tier-0 必选，无能力位（无工具通道的 runtime 里 agent 没有
+ * 记忆工具，核心闭环断裂；缺实现 = 激活期 hard 校验拒绝，回退内置 runtime）。
+ */
+export interface RuntimeTools {
+  /** 注册 MAFW 基础工具集。factory 按会话惰性调用（python 内核/记忆归因有会话亲和性）；幂等（重复调用替换）。 */
+  registerTools(factory: (sessionId: string) => MafwToolRegistration[]): Promise<void>;
+  /** runtime 原生工具清单；空数组合法（= 无并集表之外的工具）。 */
+  nativeTools(): NativeToolDeclaration[];
+}
+
 // ─── 无状态补全通道（completionApi 能力） ──────────────────────────────────
 // 契约语义：无状态——请求不携带 sessionID，实现方不得跨调用保留对话状态。
 // cacheable 是提示非承诺：实现方映射到 provider 的 prompt-cache 机制
@@ -289,6 +321,8 @@ export interface RuntimeClient {
     get(): Promise<any>;
     update(config: any): Promise<any>;
   };
+  /** 工具注册通道（Tier-0 必选，无能力位——缺 = hard 校验拒绝）。 */
+  tools: RuntimeTools;
   /** 无状态补全通道（capabilities.completionApi = true 时必须提供） */
   completion?: CompletionChannel;
   credentials?: RuntimeCredentials;

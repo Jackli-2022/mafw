@@ -3,6 +3,7 @@ import { ApprovalBridge } from './pi-approval-bridge';
 import { createMafwApprovalExtension, type ApprovalPolicy, type PermissionEvaluator } from './pi-approval-extension';
 import { createMafwHostExtension } from './pi-mafw-host-extension';
 import type { RawRuntimeEvent } from '../normalize';
+import type { MafwToolRegistration } from '../contract';
 
 export interface PiSessionDeps {
   /** 注入 createAgentSession（ESM 桥在 pi-runtime.ts 传入） */
@@ -26,6 +27,8 @@ export interface PiSessionRegistryOptions {
   hostBaseUrl?: string;
   /** ESM 桥取 pi 同实例 typebox（pi-runtime 注入；host 工具注册用） */
   getType?: () => Promise<any>;
+  /** MAFW 基础工具 factory（runtime tools.registerTools 注入；host extension 按会话消费） */
+  toolFactory?: (sessionId: string) => MafwToolRegistration[];
 }
 
 export class PiSessionRegistry {
@@ -44,6 +47,10 @@ export class PiSessionRegistry {
   ) {
     this.emitEvent = opts.emitEvent ?? (() => {});
     this.policy = opts.policy;
+  }
+
+  setToolFactory(f: (sessionId: string) => MafwToolRegistration[]): void {
+    this.opts = { ...this.opts, toolFactory: f };
   }
 
   async create(cwd: string, createOpts: any, agentExtensions: Array<{ name: string; factory: (pi: any) => void }> = []): Promise<{ id: string }> {

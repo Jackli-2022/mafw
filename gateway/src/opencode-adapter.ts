@@ -16,6 +16,7 @@ import type {
   SessionPromptOpts,
   SessionMessagesOpts,
   SessionSummarizeOpts,
+  NativeToolDeclaration,
 } from './runtime/contract';
 export type {
   SessionCreateOpts,
@@ -26,6 +27,21 @@ export type {
 
 /** @deprecated 等价于 RuntimeClient；保留别名避免下游改动。 */
 export type OpencodeAdapter = RuntimeClient;
+
+/** opencode 原生工具清单（tool-classes overlay 声明；调研表 2026-10-13）。 */
+const OPENCODE_NATIVE_TOOLS: NativeToolDeclaration[] = [
+  { name: 'read', toolClass: 'readonly' },
+  { name: 'grep', toolClass: 'search' },
+  { name: 'glob', toolClass: 'search' },
+  { name: 'list', toolClass: 'search' },
+  { name: 'write', toolClass: 'file-edit' },
+  { name: 'edit', toolClass: 'file-edit' },
+  { name: 'bash', toolClass: 'shell' },
+  { name: 'shell', toolClass: 'shell' },
+  { name: 'task', toolClass: 'subagent' },
+  { name: 'webfetch', toolClass: 'web' },
+  { name: 'todowrite', toolClass: 'plan' },
+];
 
 // ─── 工具函数 ───────────────────────────────────────────────
 
@@ -351,6 +367,15 @@ export async function createOpencodeAdapter(config: { baseUrl: string; directory
         });
         return unwrap(result);
       },
+    },
+
+    // 工具注册通道（Tier-0 必选）：六件套由 v1 宿主插件承载（plugin-native 工具）
+    // + MCP 面由自接线覆盖——通道已存在，spec 推送 = 通道确认（no-op ack）。
+    tools: {
+      async registerTools() {
+        /* ack — tools hosted by v1 plugin + MCP self-wiring */
+      },
+      nativeTools() { return OPENCODE_NATIVE_TOOLS; },
     },
   };
 }

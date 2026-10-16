@@ -34,6 +34,10 @@ const OK_RT = (over: any = {}) => {
     global: { event: async function* () {} },
     getBaseUrl: () => 'http://127.0.0.1:4096',
     healthCheck: async () => true,
+    tools: {
+      registerTools: async () => {},
+      nativeTools: () => [],
+    },
     ...rest,
   };
 };
@@ -226,5 +230,32 @@ describe('validateRuntime — warnings (non-blocking)', () => {
     const rt = OK_RT({ caps: { turnBudgetApi: true } });
     const v = validateRuntime(rt as any, 'my-rt');
     expect(v.warnings.some((i) => i.includes('turnBudgetApi') && i.includes('BudgetGuard'))).toBe(true);
+  });
+});
+
+describe('validateRuntime — tools 通道（Tier-0 必选，无条件 hard）', () => {
+  it('tools 缺失 → 两条 hard（registerTools + nativeTools）', () => {
+    const rt = OK_RT(); delete (rt as any).tools;
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect(v.hard.some((i) => i.includes('tools.registerTools'))).toBe(true);
+    expect(v.hard.some((i) => i.includes('tools.nativeTools'))).toBe(true);
+  });
+
+  it('registerTools 存在但 nativeTools 非函数 → hard', () => {
+    const rt = OK_RT({ tools: { registerTools: async () => {} } });
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect(v.hard.some((i) => i.includes('tools.nativeTools'))).toBe(true);
+  });
+
+  it('nativeTools 存在但 registerTools 非函数 → hard', () => {
+    const rt = OK_RT({ tools: { nativeTools: () => [] } });
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect(v.hard.some((i) => i.includes('tools.registerTools'))).toBe(true);
+  });
+
+  it('nativeTools 返回 [] 合法（不算 issue）', () => {
+    const rt = OK_RT();
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect(v.hard).toEqual([]);
   });
 });

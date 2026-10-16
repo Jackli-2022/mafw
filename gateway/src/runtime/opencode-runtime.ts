@@ -255,8 +255,7 @@ export interface OpencodeRuntimeConfig {
 }
 
 export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Promise<AgentRuntime> {
-  const client = await createOpencodeAdapter(config);
-  const isExternal = !!process.env.MAFW_SERVER_SERVE_URL;
+  const client = await createOpencodeAdapter(config);  const isExternal = !!process.env.MAFW_SERVER_SERVE_URL;
   const caps = fullCapabilities();
   if (isExternal) {
     // External runtimes only probe; they don't manage the serve process.
@@ -299,6 +298,8 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
       log.info(`[ManagerAgent] ${existed ? 'updated' : 'wrote'} ${filePath}`);
     },
   };
+  // 工具注册通道（tools）由 adapter 提供（Tier-0 必选面的一部分——ack no-op +
+  // OPENCODE_NATIVE_TOOLS 清单，见 opencode-adapter.ts）。
 
   // completionApi: stateless single-shot completion over the shared direct-HTTP
   // transport. Endpoint/key resolution mirrors index-scan's chain (opencode

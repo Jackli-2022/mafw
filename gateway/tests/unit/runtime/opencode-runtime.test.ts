@@ -18,6 +18,15 @@ jest.mock('../../../src/opencode-adapter', () => ({
     provider: { list: jest.fn() },
     app: { agents: jest.fn() },
     config: { get: jest.fn(), update: jest.fn() },
+    tools: {
+      registerTools: jest.fn(async () => {}),
+      nativeTools: () => [
+        { name: 'read', toolClass: 'readonly' },
+        { name: 'bash', toolClass: 'shell' },
+        { name: 'edit', toolClass: 'file-edit' },
+        { name: 'task', toolClass: 'subagent' },
+      ],
+    },
   })),
 }));
 jest.mock('../../../src/core/utils/logger', () => ({
@@ -41,6 +50,21 @@ import { startServeSidecar, killServePort } from '../../../src/runtime/serve-sid
 
 const mockStartServe = startServeSidecar as jest.Mock;
 const mockKillServePort = killServePort as jest.Mock;
+
+describe('opencode-runtime tools 通道（Tier-0 必选）', () => {
+  it('registerTools = ack no-op + nativeTools 声明合法条目', async () => {
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    await expect(rt.tools.registerTools(async () => [])).resolves.toBeUndefined();
+    const decls = rt.tools.nativeTools();
+    expect(decls.length).toBeGreaterThan(0);
+    for (const d of decls) {
+      expect(typeof d.name).toBe('string');
+      expect(d.name.length).toBeGreaterThan(0);
+      expect(['readonly', 'search', 'file-edit', 'shell', 'subagent', 'web', 'plan', 'other']).toContain(d.toolClass);
+    }
+    expect(decls.map((d) => d.name)).toEqual(expect.arrayContaining(['read', 'bash', 'edit', 'task']));
+  });
+});
 
 describe('createOpencodeRuntime', () => {
   const saved = process.env.MAFW_SERVER_SERVE_URL;

@@ -7,7 +7,8 @@
  * 三级语义：
  *   hard       — 契约必选面缺失（session 全套 11 方法 / eventStream 的
  *                global.event / providerConfigApi 的 provider.list、app.agents、
- *                config.get|update）。调用方据此回退内置 runtime。
+ *                config.get|update / tools 注册通道 registerTools+nativeTools）。
+ *                调用方据此回退内置 runtime。
  *   downgraded — 声明了能力位但缺对应可选实现（nativeApprovals→permissionReply、
  *                completionApi→completion.complete 等）。能力位被强制写回 false
  *                （作用于 rt.capabilities 的拷贝，不改插件共享对象），对应功能
@@ -95,6 +96,14 @@ export function validateRuntime(rt: AgentRuntime, source: string): RuntimeValida
     if (!isFn((rt as any).config?.get) || !isFn((rt as any).config?.update)) {
       out.hard.push(`${source}: declares providerConfigApi but config.get/config.update is missing (not a function)`);
     }
+  }
+  // ── hard：工具注册通道（Tier-0 必选，无条件——非能力门控） ─────────────
+  const tools = (rt as any).tools;
+  if (!isObject(tools) || !isFn(tools.registerTools)) {
+    out.hard.push(`${source}: tools.registerTools is missing (not a function) — MAFW basic tools have no path to your agents (Tier-0 required)`);
+  }
+  if (!isObject(tools) || !isFn(tools.nativeTools)) {
+    out.hard.push(`${source}: tools.nativeTools is missing (not a function; returning [] is valid) — tool classification falls back to the static union table`);
   }
   if (out.hard.length > 0) return out; // 必选面已破，能力降级无意义
 

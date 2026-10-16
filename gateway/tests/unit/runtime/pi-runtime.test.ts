@@ -315,3 +315,20 @@ describe('approval policy configuration', () => {
   });
 });
 
+describe('pi-runtime tools 通道（Tier-0 必选）', () => {
+  it('registerTools stash 进 registry + nativeTools 声明 pi 清单', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    const factory = (_sid: string) => [];
+    await rt.tools.registerTools(factory);
+    expect(((rt as any).registry as any).opts.toolFactory).toBe(factory);
+    const decls = rt.tools.nativeTools();
+    expect(decls.map((d: any) => d.name).sort()).toEqual(['bash', 'edit', 'find', 'grep', 'ls', 'read', 'write']);
+    for (const d of decls) {
+      expect(['readonly', 'search', 'file-edit', 'shell', 'subagent', 'web', 'plan', 'other']).toContain(d.toolClass);
+    }
+  });
+});
+
