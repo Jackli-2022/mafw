@@ -74,7 +74,7 @@ export class PiSessionRegistry {
     const mediaExtension = this.makeMediaExtension(id);
     // 认知面宿主扩展（Phase 2）：observe / injectContext / injectSystem / tools
     const hostExtension = this.opts.hostBaseUrl
-      ? createMafwHostExtension({ sessionId: id, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType })
+      ? createMafwHostExtension({ sessionId: id, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType, toolFactory: this.opts.toolFactory })
       : null;
     // Combine approval extension with agent-specific extensions
     // These will be passed to createAgentSession via extensionFactories
@@ -308,7 +308,7 @@ export class PiSessionRegistry {
     const compactionExtension = this.makeCompactionExtension(newId);
     const mediaExtension = this.makeMediaExtension(newId);
     const forkHostExtension = this.opts.hostBaseUrl
-      ? createMafwHostExtension({ sessionId: newId, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType })
+      ? createMafwHostExtension({ sessionId: newId, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType, toolFactory: this.opts.toolFactory })
       : null;
     try {
       const { session } = await this.deps.createSession({
