@@ -194,6 +194,8 @@ export interface MafwToolRegistration {
 export interface NativeToolDeclaration {
   name: string;
   toolClass: TOOL_CLASS;
+  /** opencode canonical 名（如 ls→list / find→glob）；缺省 = 名字本身即 canonical 或未声明。 */
+  canonical?: string;
 }
 
 /**

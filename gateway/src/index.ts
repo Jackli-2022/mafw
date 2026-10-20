@@ -99,7 +99,7 @@ import { MAFW } from './runtime/mafw-vocabulary';
 import { activateRuntimeTools, buildMafwToolFactory } from './runtime/mafw-tools';
 import { handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
-import { enrichToolClass } from './runtime/tool-classes';
+import { enrichToolIdentity, enrichHistoryParts } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
@@ -1158,10 +1158,10 @@ class MafwScheduler {
       } catch { /* fail-open */ }
     }
     const { type, properties: props, sessionID } = f;
-    // 工具语义类别 enrich（additive 可选字段 part.toolClass；并集单表
-    // tool-classes.ts——审批 read-only 档 / 身份类别 / 未来渲染分组共用此维度）。
+    // 工具语义类别 enrich（additive 可选字段 part.toolClass + part.canonicalTool；
+    // tool-classes.ts 单源——审批 read-only 档 / 身份类别 / 渲染四级查找链共用此维度）。
     // 单点 enrich 保证 eventTaps / trajectory / broadcast 全下游可见。
-    try { enrichToolClass(evt); } catch { /* fail-open：enrich 绝不阻断事件链 */ }
+    try { enrichToolIdentity(evt); } catch { /* fail-open：enrich 绝不阻断事件链 */ }
     // Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。
     // 放在 internal 过滤之前——tap 要看到该会话的全量事件（fail-open 不阻断主链）。
     if (sessionID) {
@@ -5859,6 +5859,9 @@ class MafwScheduler {
             });
             const rawData = result.data || [];
             const nextCursor = result.nextCursor || null;
+            // A 切片历史 enrich：全 runtime 的 tool parts 补 toolClass/canonicalTool
+            //（与 live 的 enrichToolIdentity 同单源；幂等，fail-open）
+            try { enrichHistoryParts(rawData); } catch { /* fail-open：历史 enrich 不阻断加载 */ }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [], nextCursor }));
           } catch (err: any) {

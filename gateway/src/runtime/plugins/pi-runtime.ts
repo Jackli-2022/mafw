@@ -28,8 +28,8 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
 const PI_NATIVE_TOOLS: NativeToolDeclaration[] = [
   { name: 'read', toolClass: 'readonly' },
   { name: 'grep', toolClass: 'search' },
-  { name: 'find', toolClass: 'search' },
-  { name: 'ls', toolClass: 'search' },
+  { name: 'find', toolClass: 'search', canonical: 'glob' },
+  { name: 'ls', toolClass: 'search', canonical: 'list' },
   { name: 'write', toolClass: 'file-edit' },
   { name: 'edit', toolClass: 'file-edit' },
   { name: 'bash', toolClass: 'shell' },

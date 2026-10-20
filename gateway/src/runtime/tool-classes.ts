@@ -43,6 +43,26 @@ const TOOL_CLASS_TABLE: Record<string, TOOL_CLASS> = {
 /** runtime 声明的工具类别 overlay（优先于并集表；小写归一）。 */
 const toolClassOverlay = new Map<string, TOOL_CLASS>();
 
+/** 跨 runtime 工具别名 → opencode canonical 名（形状兼容才准入——调研 §2.2 矩阵；
+ * opencode 自有名（bash/read/…）不进表，经 TOOL_CLASS_TABLE 小写命中返回自身）。 */
+const TOOL_CANONICAL_TABLE: Record<string, string> = {
+  // shell 域（input.command 键收敛）
+  command_execution: 'bash', powershell: 'bash',
+  // search/列举域（pattern+path / path 键收敛）
+  ls: 'list', find: 'glob',
+  // file-edit 域
+  file_change: 'edit',
+  // subagent 域
+  collab_tool_call: 'task',
+  // web 域
+  web_search: 'websearch',
+  // plan 域
+  todo_list: 'todowrite',
+};
+
+/** runtime 声明的 canonical 覆盖（优先于静态表；小写归一）。 */
+const toolCanonicalOverlay = new Map<string, string>();
+
 const TOOL_CLASS_VALUES = new Set<string>([
   'readonly', 'search', 'file-edit', 'shell', 'subagent', 'web', 'plan', 'other',
 ]);
@@ -59,25 +79,49 @@ export function isReadOnlyClass(cls: TOOL_CLASS): boolean {
   return cls === 'readonly' || cls === 'search';
 }
 
+/** 工具名 → opencode canonical 名（undefined = 未知名不硬猜）。解析链：overlay 声明 → 静态别名表 → 已是 opencode 名（并集表命中）→ undefined。 */
+export function canonicalToolOf(toolName: string | undefined | null): string | undefined {
+  if (!toolName) return undefined;
+  const lower = String(toolName).toLowerCase();
+  return toolCanonicalOverlay.get(lower) ?? TOOL_CANONICAL_TABLE[lower]
+    ?? (TOOL_CLASS_TABLE[lower] ? lower : undefined);
+}
+
 /**
- * wire enrich（additive）：tool part 快照补 `part.toolClass` 可选字段。
+ * wire enrich（additive）：tool part 快照补 `part.toolClass` + `part.canonicalTool`。
  * 纯函数（原地补缺省 key，已有值不覆写）——handleOpencodeEvent 单点调用；
  * opencode 路径 passProperties 深拷贝 / pi 路径 assembler 新建对象，无 aliasing。
  */
-export function enrichToolClass(evt: { type?: string; payload?: { type?: string; properties?: any } }): void {
+export function enrichToolIdentity(evt: { type?: string; payload?: { type?: string; properties?: any } }): void {
   const type = evt?.payload?.type ?? evt?.type;
   if (type !== 'part.updated') return;
   const part = evt?.payload?.properties?.part;
-  if (!part || part.type !== 'tool' || part.toolClass !== undefined) return;
-  part.toolClass = toolClassOf(part.tool);
+  if (!part || part.type !== 'tool') return;
+  if (part.toolClass === undefined) part.toolClass = toolClassOf(part.tool);
+  if (part.canonicalTool === undefined) part.canonicalTool = canonicalToolOf(part.tool);
+}
+
+/** 历史 enrich（messages 路由出口，全 runtime）：tool parts 补两字段，幂等，fail-open 由调用方包裹。 */
+export function enrichHistoryParts(messages: any[]): void {
+  if (!Array.isArray(messages)) return;
+  for (const m of messages) {
+    const parts = m?.parts;
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      if (part?.type !== 'tool') continue;
+      if (part.toolClass === undefined) part.toolClass = toolClassOf(part.tool);
+      if (part.canonicalTool === undefined) part.canonicalTool = canonicalToolOf(part.tool);
+    }
+  }
 }
 
 /**
  * 激活期注入 runtime 声明的工具类别（整体替换——热切换语义）。无效条目
  * （空名/非法 class）跳过并报告，由调用方 warning。spec 2026-10-15 §7。
  */
-export function setToolClassOverlay(entries: Array<{ name: unknown; toolClass: unknown }>): { applied: number; invalid: string[] } {
+export function setToolClassOverlay(entries: Array<{ name: unknown; toolClass: unknown; canonical?: unknown }>): { applied: number; invalid: string[] } {
   toolClassOverlay.clear();
+  toolCanonicalOverlay.clear();
   const invalid: string[] = [];
   let applied = 0;
   for (const e of entries ?? []) {
@@ -86,6 +130,13 @@ export function setToolClassOverlay(entries: Array<{ name: unknown; toolClass: u
     if (!name || typeof cls !== 'string' || !TOOL_CLASS_VALUES.has(cls)) {
       invalid.push(JSON.stringify(e));
       continue;
+    }
+    if (e.canonical !== undefined) {
+      if (typeof e.canonical !== 'string' || !e.canonical.trim()) {
+        invalid.push(JSON.stringify(e));
+        continue;
+      }
+      toolCanonicalOverlay.set(name, e.canonical.trim().toLowerCase());
     }
     toolClassOverlay.set(name, cls as TOOL_CLASS);
     applied++;
@@ -96,4 +147,5 @@ export function setToolClassOverlay(entries: Array<{ name: unknown; toolClass: u
 /** 清空 overlay（回落并集表；测试隔离用）。 */
 export function clearToolClassOverlay(): void {
   toolClassOverlay.clear();
+  toolCanonicalOverlay.clear();
 }

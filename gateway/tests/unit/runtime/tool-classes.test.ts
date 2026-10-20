@@ -1,6 +1,6 @@
 import {
-  toolClassOf, isReadOnlyClass, enrichToolClass, TOOL_CLASS,
-  setToolClassOverlay, clearToolClassOverlay,
+  toolClassOf, isReadOnlyClass, enrichToolIdentity, enrichHistoryParts, TOOL_CLASS,
+  setToolClassOverlay, clearToolClassOverlay, canonicalToolOf,
 } from '../../../src/runtime/tool-classes';
 
 describe('toolClassOf（并集单表，大小写不敏感）', () => {
@@ -46,34 +46,43 @@ describe('isReadOnlyClass', () => {
   });
 });
 
-describe('enrichToolClass（wire additive 字段）', () => {
-  it('tool part 快照补 part.toolClass', () => {
+describe('enrichToolIdentity（wire additive 双字段）', () => {
+  it('tool part 快照补 part.toolClass + part.canonicalTool', () => {
     const evt = { payload: { type: 'part.updated', properties: { part: { type: 'tool', tool: 'bash', state: { status: 'running', input: { command: 'ls' } } } } } };
-    enrichToolClass(evt);
+    enrichToolIdentity(evt);
     expect(evt.payload.properties.part.toolClass).toBe('shell');
+    expect(evt.payload.properties.part.canonicalTool).toBe('bash');
   });
 
-  it('未知工具 → other（MCP/插件自由名）', () => {
+  it('未知工具 → other + canonicalTool 不硬猜（undefined）', () => {
     const evt = { payload: { type: 'part.updated', properties: { part: { type: 'tool', tool: 'mafw_mafw_search_hybrid' } } } };
-    enrichToolClass(evt);
+    enrichToolIdentity(evt);
     expect(evt.payload.properties.part.toolClass).toBe('other');
+    expect(evt.payload.properties.part.canonicalTool).toBeUndefined();
   });
 
-  it('已有 toolClass 不覆写；非 tool part / 非 part.updated 不动；text part 不加字段', () => {
-    const preset = { payload: { type: 'part.updated', properties: { part: { type: 'tool', tool: 'bash', toolClass: 'file-edit' } } } };
-    enrichToolClass(preset);
+  it('别名工具 → canonicalTool 翻译（command_execution → bash）', () => {
+    const evt = { payload: { type: 'part.updated', properties: { part: { type: 'tool', tool: 'command_execution', state: { input: { command: 'ls' } } } } } };
+    enrichToolIdentity(evt);
+    expect(evt.payload.properties.part.canonicalTool).toBe('bash');
+  });
+
+  it('已有 toolClass/canonicalTool 不覆写；非 tool part / 非 part.updated 不动', () => {
+    const preset = { payload: { type: 'part.updated', properties: { part: { type: 'tool', tool: 'bash', toolClass: 'file-edit', canonicalTool: 'keep' } } } };
+    enrichToolIdentity(preset);
     expect(preset.payload.properties.part.toolClass).toBe('file-edit');
+    expect(preset.payload.properties.part.canonicalTool).toBe('keep');
     const text = { payload: { type: 'part.updated', properties: { part: { type: 'text', text: 'hi' } } } };
-    enrichToolClass(text);
+    enrichToolIdentity(text);
     expect(text.payload.properties.part.toolClass).toBeUndefined();
     const idle = { payload: { type: 'turn.completed', properties: {} } };
-    enrichToolClass(idle);
+    enrichToolIdentity(idle);
     expect(idle.payload.properties).toEqual({});
   });
 
   it('part.tool 缺席（畸形）→ other 且不抛', () => {
     const evt = { payload: { type: 'part.updated', properties: { part: { type: 'tool' } } } };
-    expect(() => enrichToolClass(evt)).not.toThrow();
+    expect(() => enrichToolIdentity(evt)).not.toThrow();
     expect(evt.payload.properties.part.toolClass).toBe('other');
   });
 });
@@ -117,10 +126,57 @@ describe('toolClassOverlay（runtime 声明优先于并集表）', () => {
     expect(toolClassOf('list')).toBe('search');
   });
 
-  it('enrichToolClass 经 overlay 生效（消费方零改动）', () => {
+  it('enrichToolIdentity 经 overlay 生效（消费方零改动）', () => {
     setToolClassOverlay([{ name: 'my_read', toolClass: 'readonly' }]);
     const evt = { payload: { type: 'part.updated', properties: { part: { type: 'tool', tool: 'my_read' } } } };
-    enrichToolClass(evt);
+    enrichToolIdentity(evt);
     expect(evt.payload.properties.part.toolClass).toBe('readonly');
+  });
+});
+
+describe('A canonical 翻译层', () => {
+  afterEach(() => clearToolClassOverlay());
+
+  it('canonicalToolOf 解析链：overlay > 静态别名表 > opencode 名小写 > undefined', () => {
+    expect(canonicalToolOf('command_execution')).toBe('bash');
+    expect(canonicalToolOf('ls')).toBe('list');
+    expect(canonicalToolOf('find')).toBe('glob');
+    expect(canonicalToolOf('file_change')).toBe('edit');
+    expect(canonicalToolOf('collab_tool_call')).toBe('task');
+    expect(canonicalToolOf('web_search')).toBe('websearch');
+    expect(canonicalToolOf('todo_list')).toBe('todowrite');
+    expect(canonicalToolOf('powershell')).toBe('bash');
+    expect(canonicalToolOf('Bash')).toBe('bash');   // 大小写归一
+    expect(canonicalToolOf('Read')).toBe('read');
+    expect(canonicalToolOf('bash')).toBe('bash');   // 已是 opencode 名 → 恒等
+    expect(canonicalToolOf('mafw_python')).toBeUndefined(); // 未知名不硬猜
+    setToolClassOverlay([{ name: 'my_search', toolClass: 'search', canonical: 'grep' }]);
+    expect(canonicalToolOf('my_search')).toBe('grep'); // overlay 优先
+  });
+
+  it('enrichHistoryParts：历史消息 tool parts 补两字段（幂等、非 tool 跳过）', () => {
+    const msgs: any[] = [
+      { info: { id: 'm1' }, parts: [{ type: 'tool', tool: 'ls', state: { input: { path: '/x' } } }, { type: 'text', text: 'hi' }] },
+    ];
+    enrichHistoryParts(msgs);
+    expect(msgs[0].parts[0].toolClass).toBe('search');
+    expect(msgs[0].parts[0].canonicalTool).toBe('list');
+    expect(msgs[0].parts[1].toolClass).toBeUndefined();
+    enrichHistoryParts(msgs); // 幂等
+    expect(msgs[0].parts[0].canonicalTool).toBe('list');
+    expect(enrichHistoryParts(undefined as any)).toBeUndefined(); // 非数组不抛
+  });
+
+  it('setToolClassOverlay 接受 canonical 声明（非法 canonical 忽略并报 invalid）', () => {
+    const { applied, invalid } = setToolClassOverlay([
+      { name: 'ls', toolClass: 'search', canonical: 'list' },
+      { name: 'bad', toolClass: 'search', canonical: 42 },
+    ]);
+    expect(applied).toBe(1);
+    expect(invalid).toHaveLength(1);
+    expect(canonicalToolOf('ls')).toBe('list');
+    // 无 canonical 声明的条目照常（名字本身即 canonical）
+    setToolClassOverlay([{ name: 'my_tool', toolClass: 'other' }]);
+    expect(canonicalToolOf('my_tool')).toBeUndefined();
   });
 });

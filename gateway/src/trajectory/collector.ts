@@ -199,7 +199,7 @@ export class TrajectoryCollector {
           if (s.toolCallIDs.has(part.callID)) return null;
           s.toolCallIDs.add(part.callID);
           const evt = this.emit(sessionID, s, 'tool_start', {
-            toolName: part.tool,
+            toolName: part.canonicalTool ?? part.tool,
             callID: part.callID,
             inputSummary: truncate(summarizeInput(st.input), SUMMARY_MAX),
           }, projectID);
@@ -210,7 +210,7 @@ export class TrajectoryCollector {
           if (st.status === 'error') s.toolErrorCount++;
           const duration = st.time ? st.time.end - st.time.start : undefined;
           const evt = this.emit(sessionID, s, 'tool_end', {
-            toolName: part.tool,
+            toolName: part.canonicalTool ?? part.tool,
             callID: part.callID,
             toolState: st.status,
             outputSummary: truncate(st.output || st.error, SUMMARY_MAX),
