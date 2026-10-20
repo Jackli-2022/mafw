@@ -1,5 +1,18 @@
-import { translatePiEvent, setPiUnknownRecorder } from '../../../src/runtime/pi/pi-events';
+import { translatePiEvent, setPiUnknownRecorder, PI_EVENT_MAPPINGS, PI_EVENT_SOURCE, piTransformEvent } from '../../../src/runtime/pi/pi-events';
+import { hasEventDeclarations } from '../../../src/runtime/event-mapper';
 import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
+
+describe('pi 事件翻译覆盖 audit（B1）', () => {
+  it('pi 注册面有声明；已知原生类型全部在映射表，不依赖 canonical 直发', () => {
+    const entry = { eventSource: PI_EVENT_SOURCE, eventMappings: PI_EVENT_MAPPINGS, transformEvent: piTransformEvent };
+    expect(hasEventDeclarations(entry)).toBe(true);
+    // pi 原生名均非 canonical（translatePiEvent 的 isCanonical 为词汇表判定）——不存在直发依赖
+    const mapped = new Set(PI_EVENT_MAPPINGS.flatMap((m) => (Array.isArray(m.from) ? m.from : [m.from])));
+    for (const t of ['agent_start', 'message_start', 'message_update', 'message_end', 'tool_call', 'tool_result', 'turn_start', 'turn_end', 'agent_end', 'agent_settled']) {
+      expect(mapped.has(t)).toBe(true);
+    }
+  });
+});
 
 describe('translatePiEvent', () => {
   it('agent_end maps to turn.completed (v2: not session.updated)', () => {

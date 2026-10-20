@@ -19,9 +19,13 @@ function writePlugin(dir: string, filename: string, content: string): void {
   fs.writeFileSync(path.join(dir, filename), content);
 }
 
+// B1 default-deny 起：声明 eventStream 的合法插件必须携带翻译声明
+// （映射行或 transformEvent），否则加载期降级——见 loader-event-mappings.test.ts
 const validPlugin = `module.exports = {
   name: "test-runtime",
   capabilities: { eventStream: true },
+  eventSource: { typePath: "$.type" },
+  eventMappings: [{ from: "heartbeat", to: "drop" }],
   async createRuntime(ctx) { return { name: "test-runtime", capabilities: {} }; },
 };`;
 

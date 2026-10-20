@@ -13,7 +13,7 @@ import { config } from '../config';
 import { AgentRuntime, RuntimeCapabilities, RuntimeCredentials, minimalCapabilities } from './contract';
 import { isKnownEventType } from './event-telemetry';
 import { checkEventFields } from './event-field-contract';
-import { EventMappingEntry, validateEventMappings } from './event-mapper';
+import { EventMappingEntry, validateEventMappings, hasEventDeclarations } from './event-mapper';
 import type { RuntimePackageEntry } from '../plugins/package-types';
 
 export interface RuntimePluginContext {
@@ -153,6 +153,12 @@ export class RuntimePluginLoader {
         mappingIssues = validateEventMappings(eventExtras, this.canonicalTypes);
       } catch (err: any) {
         mappingIssues = [`event mapping validation threw: ${err.message}`];
+      }
+      // B1 default-deny 前置：声明 eventStream 却无任何翻译声明 → 原生流会被整条拦截，
+      // 与其静默全灭不如加载期降级（声明翻译行或 canonicalIdentity() 恒等行后再开）。
+      if (capabilities.eventStream && !hasEventDeclarations(eventExtras)) {
+        capabilities.eventStream = false;
+        mappingIssues.push('eventStream capability declared but no eventMappings/transformEvent — default-deny would drop the entire native stream; capability downgraded (declare translations or identity rows via canonicalIdentity())');
       }
       if (mappingIssues.length > 0) {
         for (const i of mappingIssues) log.warn(`[RuntimePluginLoader] ${file}: ${i}`);
@@ -389,8 +395,13 @@ module.exports = {
 };
 \`\`\`
 
-Match priority: eventMappings (array order) → already-canonical passthrough →
-transformEvent → drop + unknown telemetry. Load-time validation rejects unknown
-canonical targets / malformed paths (plugin's eventStream capability degrades,
-fail-open). Test offline with POST /api/runtime/dry-event { plugin, event }.
+Match priority: eventMappings (array order — includes \`drop\` rows and
+\`canonicalIdentity()\`-derived identity rows) → transformEvent (guarded) →
+dropped + unmatched counter. There is NO canonical passthrough branch: a
+runtime emitting same-named canonical events registers identity rows via
+canonicalIdentity('$.payload.properties') (vocabulary single source).
+Load-time validation rejects unknown canonical targets / malformed paths /
+eventStream-without-declarations (plugin's eventStream capability degrades,
+fail-open). Drop counters: GET /api/runtime .translationDrops (unmatched =
+monitoring signal; suppressed = declared drop / transformEvent null).
 `;

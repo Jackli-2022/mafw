@@ -186,6 +186,11 @@ export function validateEventMappings(entry: EventMappingEntry, canonicalTypes: 
   return issues;
 }
 
+/** 是否携带任何翻译声明（映射行或 transformEvent）——无声明 runtime 在 default-deny 下原生流全灭。 */
+export function hasEventDeclarations(entry: EventMappingEntry): boolean {
+  return (entry.eventMappings?.length ?? 0) > 0 || !!entry.transformEvent;
+}
+
 /**
  * 包装 runtime.global.event()：原生流在此过翻译表（v2 强制接线）。
  * 匹配优先级：eventMappings（数组序，含 identity/drop 行）→ transformEvent → 拦截+计数

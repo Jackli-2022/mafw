@@ -35,6 +35,20 @@ test('声明 eventMappings 的插件：加载后 meta 带映射；未知 canonic
   expect(state?.status).toBe('error');
 });
 
+test('无声明 runtime：eventStream 能力降级 + error 状态（default-deny 前置）', async () => {
+  const dir = makePluginDir({
+    'bare.js': `module.exports = { name: 'bare', capabilities: { eventStream: true },
+      async createRuntime() { return { name: 'bare', capabilities: { eventStream: true } }; } };`,
+  });
+  const loader = new RuntimePluginLoader(dir);
+  loader.setCanonicalTypes(CANON);
+  await loader.scan();
+  expect(loader.get('bare')?.capabilities.eventStream).toBe(false); // 降级
+  const state = loader.getState().find((s) => s.name === 'bare');
+  expect(state?.status).toBe('error');
+  expect(state?.error).toContain('no eventMappings');
+});
+
 test('wrapGlobalEventStream 端到端：原生进 canonical 出，drop/未知/passthrough 各就各位', async () => {
   const natives = [
     { type: 'done', sessionID: 's1' },

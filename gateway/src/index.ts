@@ -89,7 +89,7 @@ import { startTokenWatcher, readRestartInfo, markRestartNotified } from './self-
 import { normalizeOpencodeEvent, isMalformedEvent } from './runtime/normalize';
 import { UnknownEventTracker, isKnownEventType } from './runtime/event-telemetry';
 import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-matrix';
-import { wrapGlobalEventStream } from './runtime/event-mapper';
+import { wrapGlobalEventStream, hasEventDeclarations } from './runtime/event-mapper';
 import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { isHiddenSession } from './core/session-visibility';
@@ -1326,6 +1326,11 @@ class MafwScheduler {
           // 声明 vs 实现一致性校验：必选面缺失 → 回退；能力位虚报 → 强制降级
           // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
           this.applyRuntimeValidation(rt, pluginName, true);
+          // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径
+          if ((rt.capabilities as any)?.eventStream && !hasEventDeclarations(plugin)) {
+            (rt.capabilities as any).eventStream = false;
+            log.error(`[Runtime] '${rt.name}' declares no event translations — eventStream downgraded (default-deny would drop the entire native stream)`);
+          }
           // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
           await activateRuntimeTools(rt, pluginName, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
           // v2 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
