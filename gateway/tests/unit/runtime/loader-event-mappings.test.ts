@@ -48,7 +48,7 @@ test('wrapGlobalEventStream 端到端：原生进 canonical 出，drop/未知/pa
   wrapGlobalEventStream(rt, {
     eventSource: { typePath: '$.type', sessionIdPath: '$.sessionID' },
     eventMappings: [{ from: 'done', to: 'session.idle' }, { from: 'noise', to: 'drop' }],
-  }, (t) => mini.has(t), (t) => unknown.push(t));
+  }, (t) => mini.has(t), { onUnmatched: (t) => unknown.push(t) });
   const { stream } = await rt.global.event();
   const out: any[] = [];
   for await (const e of stream) out.push(e);

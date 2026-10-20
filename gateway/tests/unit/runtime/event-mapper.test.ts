@@ -50,18 +50,18 @@ test('when 条件不满足 → 跳过该行', () => {
   expect(applyEventMappings({ type: 'x', ok: false }, entry, isCanonical)[0].payload.type).toBe('session.updated');
 });
 
-test('drop + 未命中 canonical passthrough + 未知丢弃并遥测', () => {
-  expect(applyEventMappings({ type: 'queue_update', sessionID: 's1' }, PI, isCanonical)).toEqual([]);
-  // canonical 原生直发 → passthrough
-  const raw = { type: 'turn.completed', properties: { sessionID: 's1' } };
-  expect(applyEventMappings(raw, PI, isCanonical)).toEqual([raw]);
-  // 未知 → drop + onUnknown
-  const unknown: string[] = [];
-  expect(applyEventMappings({ type: 'mystery' }, PI, isCanonical, (t) => unknown.push(t))).toEqual([]);
-  expect(unknown).toEqual(['mystery']);
+test('drop 行计 suppressed；canonical 形状未注册 → 拦截（default-deny）；未知 → 拦截 + onUnmatched', () => {
+  const suppressed: string[] = [];
+  expect(applyEventMappings({ type: 'queue_update', sessionID: 's1' }, PI, isCanonical, { onSuppressed: (t) => suppressed.push(t) })).toEqual([]);
+  expect(suppressed).toEqual(['queue_update']);
+  // default-deny：canonical 形状但无注册翻译（PI 无 identity 行）→ 不再透传
+  const unmatched: string[] = [];
+  expect(applyEventMappings({ type: 'turn.completed', properties: { sessionID: 's1' } }, PI, isCanonical, { onUnmatched: (t) => unmatched.push(t) })).toEqual([]);
+  expect(applyEventMappings({ type: 'mystery' }, PI, isCanonical, { onUnmatched: (t) => unmatched.push(t) })).toEqual([]);
+  expect(unmatched).toEqual(['turn.completed', 'mystery']);
 });
 
-test('transformEvent 逃逸口：未匹配时调用；null=丢弃，数组=扇出', () => {
+test('transformEvent 逃逸口：未匹配时调用；null=suppressed 丢弃，数组=扇出', () => {
   const entry: EventMappingEntry = {
     eventSource: { typePath: '$.type' },
     eventMappings: [],
@@ -69,13 +69,21 @@ test('transformEvent 逃逸口：未匹配时调用；null=丢弃，数组=扇�
       ? [{ payload: { type: 'session.idle', properties: {} } }]
       : null,
   };
-  expect(applyEventMappings({ type: 'other' }, entry, isCanonical)).toEqual([]);
+  const suppressed: string[] = [];
+  expect(applyEventMappings({ type: 'other' }, entry, isCanonical, { onSuppressed: (t) => suppressed.push(t) })).toEqual([]);
+  expect(suppressed).toEqual(['other']);
   expect(applyEventMappings({ type: 'fan' }, entry, isCanonical)).toHaveLength(1);
 });
 
-test('无 top-level type（已 canonical 信封）→ 原样 passthrough', () => {
+test('信封形态：canonical 类型放行（pi 已翻译流）；未知类型入口拦截；畸形透传给下游诊断', () => {
   const pushed = { payload: { type: 'permission.asked', properties: { sessionID: 's1', requestId: 'r1' } } };
   expect(applyEventMappings(pushed, PI, isCanonical)).toEqual([pushed]);
+  const bad = { payload: { type: 'not.a.type', properties: {} } };
+  const unmatched: string[] = [];
+  expect(applyEventMappings(bad, PI, isCanonical, { onUnmatched: (t) => unmatched.push(t) })).toEqual([]);
+  expect(unmatched).toEqual(['not.a.type']);
+  const malformed = { foo: 1 };
+  expect(applyEventMappings(malformed, PI, isCanonical)).toEqual([malformed]);
 });
 
 test('passProperties：整段拷贝 properties + fields 覆写（兄弟字段保留）', () => {

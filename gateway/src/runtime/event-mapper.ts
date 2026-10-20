@@ -1,7 +1,7 @@
 /**
  * 插件事件映射执行器 —— 原生事件 → canonical 事件（纯数据表驱动）。
- * 设计：docs/superpowers/specs/2026-10-08-event-mapping-registration-design.md
- * 匹配优先级：eventMappings（数组顺序）→ canonical 直发 passthrough → transformEvent → 丢弃+遥测。
+ * 设计：docs/superpowers/specs/2026-10-08-event-mapping-registration-design.md（B1 rev2 起强制 default-deny）
+ * 匹配优先级：eventMappings（数组序，含 drop 行与 canonicalIdentity() 恒等行）→ transformEvent → 拦截+计数。
  */
 import { getPath, evalConditions, renderTemplate, setPath, Condition } from './path-expr';
 import { MAFW_RUNTIME_EVENT_NAMES } from './mafw-vocabulary';
@@ -34,6 +34,16 @@ export interface EventSourceShape {
 }
 
 export type TransformEventFn = (raw: any) => any | any[] | null;
+
+/** 翻译执行 hooks（B1/B2/B3 可观测面；全部可选、fail-open）。 */
+export interface TranslationHooks {
+  /** 未命中任何注册翻译（词汇漂移/漏声明——监控信号，进 unmatched 计数）。 */
+  onUnmatched?: (type: string) => void;
+  /** 声明式压制：drop 行命中 / transformEvent 显式返回 null（作者意图，单独计）。 */
+  onSuppressed?: (type: string) => void;
+  /** transformEvent 抛错或输出非法形状（B2 守卫接入）。 */
+  onTranslationError?: (raw: any, reason: string) => void;
+}
 
 export interface EventMappingEntry {
   eventSource?: EventSourceShape;
@@ -77,13 +87,20 @@ export function applyEventMappings(
   raw: any,
   entry: EventMappingEntry,
   isCanonicalType: (t: string) => boolean,
-  onUnknown?: (t: string) => void,
+  hooks?: TranslationHooks,
 ): any[] {
   const source = entry.eventSource;
   const nativeType: unknown = source ? getPath(raw, source.typePath) : undefined;
-  // 已 canonical 信封（如 pi push 的 permission.asked）或畸形事件 → 原样透传，
-  // 下游 normalize/畸形诊断各自处理。
-  if (typeof nativeType !== 'string' || !nativeType) return [raw];
+  if (typeof nativeType !== 'string' || !nativeType) {
+    // typePath 不可解析：信封形态（pi 已翻译流）或畸形事件。
+    // 信封 canonical（含工具三原语）→ 放行（已声明翻译的产物）；未知类型 → 入口拦截；
+    // 畸形（无可解析类型）→ 原样透传给下游畸形诊断（isMalformedEvent）。
+    const envelopeType = typeof raw?.payload?.type === 'string' ? raw.payload.type : '';
+    if (!envelopeType) return [raw];
+    if (isCanonicalType(envelopeType)) return [raw];
+    hooks?.onUnmatched?.(envelopeType);
+    return [];
+  }
 
   const sidPaths = !source?.sessionIdPath
     ? []
@@ -95,7 +112,10 @@ export function applyEventMappings(
     const froms = Array.isArray(m.from) ? m.from : [m.from];
     if (!froms.includes(nativeType)) continue;
     if (!evalConditions(m.when, raw)) continue;
-    if (m.to === 'drop') return [];
+    if (m.to === 'drop') {
+      hooks?.onSuppressed?.(nativeType);
+      return [];
+    }
     let properties: Record<string, any> = {};
     if (m.passProperties) {
       const src = getPath(raw, m.passProperties);
@@ -118,15 +138,17 @@ export function applyEventMappings(
     return [{ payload: { type: m.to, properties }, sessionID: sessionID as any, directory: directory as any }];
   }
 
-  if (isCanonicalType(nativeType)) return [raw]; // 插件直发 canonical 类型
-
+  // canonical 直发分支已删除（B1 default-deny）：同名收编经 canonicalIdentity() 恒等行。
   if (entry.transformEvent) {
     const out = entry.transformEvent(raw);
-    if (out === null || out === undefined) return [];
+    if (out === null || out === undefined) {
+      hooks?.onSuppressed?.(nativeType);
+      return [];
+    }
     return Array.isArray(out) ? out : [out];
   }
 
-  onUnknown?.(nativeType);
+  hooks?.onUnmatched?.(nativeType);
   return [];
 }
 
@@ -165,19 +187,19 @@ export function validateEventMappings(entry: EventMappingEntry, canonicalTypes: 
 }
 
 /**
- * 包装 runtime.global.event()：原生流在此过翻译表（v2 强制接线——不再有
- * 「免翻译特权」；无声明的 runtime 恒等透传 + onNoMappings 警告一次）。
- * 声明了 eventMappings/transformEvent 的 runtime，其原生流映射为 canonical。
+ * 包装 runtime.global.event()：原生流在此过翻译表（v2 强制接线）。
+ * 匹配优先级：eventMappings（数组序，含 identity/drop 行）→ transformEvent → 拦截+计数
+ * （B1 default-deny——canonical 直发分支已删除，同名收编经 canonicalIdentity() 恒等行；
+ * 无声明的 runtime 由加载期 eventStream 降级拦截，onNoMappings 为运行时兜底信号）。
  */
 export function wrapGlobalEventStream(
   rt: any,
   entry: EventMappingEntry,
   isCanonicalType: (t: string) => boolean,
-  onUnknown?: (t: string) => void,
-  onNoMappings?: () => void,
+  hooks?: TranslationHooks & { onNoMappings?: () => void },
 ): void {
   const hasDeclarations = (entry.eventMappings?.length ?? 0) > 0 || !!entry.transformEvent;
-  if (!hasDeclarations) onNoMappings?.();
+  if (!hasDeclarations) hooks?.onNoMappings?.();
   const orig = rt.global.event.bind(rt.global);
   rt.global.event = async () => {
     const result = await orig();
@@ -185,7 +207,7 @@ export function wrapGlobalEventStream(
     if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') return result;
     const mapped = (async function* () {
       for await (const raw of stream) {
-        for (const evt of applyEventMappings(raw, entry, isCanonicalType, onUnknown)) yield evt;
+        for (const evt of applyEventMappings(raw, entry, isCanonicalType, hooks)) yield evt;
       }
     })();
     return result?.stream ? { ...result, stream: mapped } : mapped;

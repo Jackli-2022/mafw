@@ -1331,21 +1331,24 @@ class MafwScheduler {
           await activateRuntimeTools(rt, pluginName, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
           // v2 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
           // 映射表（差异行）→ canonical passthrough → transformEvent → 未知遥测。
-          wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
-            try {
-              const { firstSeen } = this.unknownEventTracker.record(rt.name, t);
-              if (firstSeen) {
-                log.warn(
-                  `[SSE] runtime '${rt.name}' native event '${t}' unmapped — dropped ` +
-                  `(declare it in eventMappings or handle via transformEvent)`,
-                );
-              }
-            } catch { /* fail-open */ }
-          }, () => {
-            log.warn(
-              `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
-              `native stream passes through untranslated (OK only for canonical-identity runtimes)`,
-            );
+          wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), {
+            onUnmatched: (t) => {
+              try {
+                const { firstSeen } = this.unknownEventTracker.record(rt.name, t);
+                if (firstSeen) {
+                  log.warn(
+                    `[SSE] runtime '${rt.name}' native event '${t}' unmapped — dropped ` +
+                    `(declare it in eventMappings or handle via transformEvent)`,
+                  );
+                }
+              } catch { /* fail-open */ }
+            },
+            onNoMappings: () => {
+              log.warn(
+                `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
+                `native stream passes through untranslated (OK only for canonical-identity runtimes)`,
+              );
+            },
           });
           // 工具三原语合帧：必须在翻译包装之后（消费映射后的 canonical 流）。
           wrapToolPartAssembly(rt);
@@ -1366,8 +1369,10 @@ class MafwScheduler {
       await activateRuntimeTools(rt, 'builtin:opencode', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
       // v2：opencode 注册时携带 OPENCODE_EVENT_MAPPINGS（差异行 + 前缀丢弃），
       // builtin 分支与插件分支走同一 wrap 序列。
-      wrapGlobalEventStream(rt, builtin, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
-        try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
+      wrapGlobalEventStream(rt, builtin, (t) => CANONICAL_TYPE_SET.has(t), {
+        onUnmatched: (t) => {
+          try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
+        },
       });
       wrapToolPartAssembly(rt); // opencode 无三原语，恒等直通
       return this.wrapRuntimeIdentity(rt);
@@ -1383,8 +1388,10 @@ class MafwScheduler {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_EVENT_MAPPINGS,
       transformEvent: opencodeTransformEvent,
-    }, (t) => CANONICAL_TYPE_SET.has(t), (t) => {
-      try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
+    }, (t) => CANONICAL_TYPE_SET.has(t), {
+      onUnmatched: (t) => {
+        try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
+      },
     });
     wrapToolPartAssembly(fallbackRt);
     return this.wrapRuntimeIdentity(fallbackRt);

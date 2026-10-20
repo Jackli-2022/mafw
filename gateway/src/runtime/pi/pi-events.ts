@@ -1,8 +1,20 @@
 import type { RawRuntimeEvent } from '../normalize';
 import { applyEventMappings, EventMapping, EventSourceShape, TransformEventFn } from '../event-mapper';
+import { EVENT_FLOW_MATRIX } from '../event-flow-matrix';
+import { TOOL_PRIMITIVE_TYPES } from '../tool-part-assembler';
 
 /** pi 原生事件源形状：session.subscribe 事件顶层 type；sessionID 由 PiEventStream 解析后附上。 */
 export const PI_EVENT_SOURCE: EventSourceShape = { typePath: '$.type', sessionIdPath: '$.sessionID' };
+
+/**
+ * 信封 canonical 判定（B1 链）：旧执行器对 typePath 不可解析的事件恒 early-passthrough；
+ * 新链改为「canonical 信封放行 / 未知拦截」——此处传入真实词汇集保持 pi 已翻译产物
+ * （permission.push / 三原语）原样通过，等价旧语义。
+ */
+const PI_ENVELOPE_CANONICAL: ReadonlySet<string> = new Set([
+  ...Object.keys(EVENT_FLOW_MATRIX),
+  ...TOOL_PRIMITIVE_TYPES,
+]);
 
 /**
  * pi 原生事件 → canonical（声明式，原 translatePiEvent switch 的表化）。
@@ -78,14 +90,15 @@ export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent 
 };
 
 /**
- * pi 事件翻译（表驱动）。isCanonical 恒 false：pi 原生事件名不在 canonical 词汇表，
- * permission 由 transformEvent 兜底——保持输出形状与旧 switch 逐字一致。
+ * pi 事件翻译（表驱动）。isCanonical = 词汇表成员判定：pi 原生名均不在 canonical
+ * 词汇表（经 transformEvent 兜底），信封形态的已翻译产物（permission.push/三原语）
+ * 原样放行——保持输出形状与旧 switch 逐字一致。
  */
 export function translatePiEvent(event: any, sessionID: string): RawRuntimeEvent | null {
   const out = applyEventMappings(
     { ...event, sessionID },
     { eventSource: PI_EVENT_SOURCE, eventMappings: PI_EVENT_MAPPINGS, transformEvent: piTransformEvent },
-    () => false,
+    (t) => PI_ENVELOPE_CANONICAL.has(t),
   );
   return (out[0] as RawRuntimeEvent) ?? null;
 }
