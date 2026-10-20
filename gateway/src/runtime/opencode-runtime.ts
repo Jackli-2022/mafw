@@ -250,7 +250,6 @@ function opencodeAgentDir(): string {
 
 export interface OpencodeRuntimeConfig {
   baseUrl: string;
-  directory?: string;
   headers?: Record<string, string>;
 }
 

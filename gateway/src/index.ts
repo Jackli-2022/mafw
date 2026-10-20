@@ -531,7 +531,6 @@ class MafwScheduler {
     // 3. 创建 SDK 客户端（auth），用于健康检查和后续通信
     const sdkConfig = {
       baseUrl: this.serveUrl,
-      directory: this.projectDir,
       headers: {} as Record<string, string>,
     };
     const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
@@ -890,7 +889,6 @@ class MafwScheduler {
             log.info(`[Scheduler] Runtime plugin changed: '${prevPlugin ?? 'builtin'}' → '${newPlugin ?? 'builtin'}'; hot-switching...`);
             const sdkConfig = {
               baseUrl: this.serveUrl,
-              directory: this.projectDir,
               headers: {} as Record<string, string>,
             };
             const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
@@ -1699,7 +1697,6 @@ class MafwScheduler {
       createRuntime: async () => {
         const sdkConfig = {
           baseUrl: this.serveUrl,
-          directory: this.projectDir,
           headers: {} as Record<string, string>,
         };
         const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;

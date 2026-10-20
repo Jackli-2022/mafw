@@ -58,7 +58,7 @@ function messageToParts(message?: string, parts?: any[]): any[] {
 
 // ─── 适配层实现 ─────────────────────────────────────────────
 
-export async function createOpencodeAdapter(config: { baseUrl: string; directory?: string; headers?: Record<string, string> }): Promise<OpencodeAdapter> {
+export async function createOpencodeAdapter(config: { baseUrl: string; headers?: Record<string, string> }): Promise<OpencodeAdapter> {
   const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
   let current = createOpencodeClient(config);
   let clientBaseUrl = config.baseUrl;
