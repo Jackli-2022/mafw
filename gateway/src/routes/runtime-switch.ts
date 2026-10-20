@@ -73,7 +73,8 @@ export async function handleRuntimeSwitch(
   }
 
   const plugin = typeof body?.plugin === 'string' ? body.plugin.trim() : '';
-  if (plugin && plugin !== 'opencode') {
+  if (plugin) {
+    // D 收敛：opencode 与其他 runtime 同走 loader 校验（注册表成员语义，特判已删）
     const found = deps.loader?.get(plugin);
     if (!found) {
       res.writeHead(400, { 'Content-Type': 'application/json' });

@@ -15,11 +15,13 @@ describe('session directory wiring', () => {
   });
 
   test('plugin-path ctx gets the absolute resolved project dir', () => {
-    expect(src).toContain('createRuntimePluginContext(creds, {\n            projectDir: this.resolvedProjectDir(),');
+    expect(src).toContain('createRuntimePluginContext(creds, {');
+    expect(src).toContain('projectDir: this.resolvedProjectDir(),');
   });
 
-  test('builtin-path ctx also gets projectDir (was missing entirely)', () => {
-    expect(src).toContain('createRuntimePluginContext(undefined, { projectDir: this.resolvedProjectDir() })');
+  test('builtin-path ctx also gets projectDir (D 收敛后与插件同一激活路径)', () => {
+    // activatePluginRuntime 单路径：builtin opencode creds=undefined，projectDir 恒传
+    expect(src).toContain("const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();");
   });
 
   test('internal session sites use resolvedProjectDir (pool / compress / btw)', () => {

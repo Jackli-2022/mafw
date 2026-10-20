@@ -1348,71 +1348,20 @@ class MafwScheduler {
   }
 
   /**
-   * Runtime 选择：config.runtime.plugin 指定 ~/.mafw/runtime-plugins/ 中的插件；
-   * 未配置/找不到/加载失败一律回退内置 opencode（fail-open，行为与现状一致）。
+   * Runtime 选择（D 收敛）：单查找路径——config.runtime.plugin 缺省 'opencode'
+   * （loader 注册表成员，文件>包>内置统一优先级）；失败/缺失回退 opencode；
+   * loader 未注册 opencode 时 direct import 安全网（不应发生）。
    */
   private async createRuntime(sdkConfig: { baseUrl: string; directory?: string; headers: Record<string, string> }): Promise<AgentRuntime> {
-    const pluginName = config.runtime?.plugin;
-    if (pluginName) {
-      const plugin = this.runtimeLoader?.get(pluginName);
-      if (plugin) {
-        try {
-          const creds = await this.runtimeCredentialsForPlugin();
-          const rt = await plugin.createRuntime(createRuntimePluginContext(creds, {
-            projectDir: this.resolvedProjectDir(),
-            gatewayPort: config.server.apiPort,
-          }));
-          // 声明 vs 实现一致性校验：必选面缺失 → 回退；能力位虚报 → 强制降级
-          // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
-          this.applyRuntimeValidation(rt, pluginName, true);
-          // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径
-          if ((rt.capabilities as any)?.eventStream && !hasEventDeclarations(plugin)) {
-            (rt.capabilities as any).eventStream = false;
-            log.error(`[Runtime] '${rt.name}' declares no event translations — eventStream downgraded (default-deny would drop the entire native stream)`);
-          }
-          // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
-          await activateRuntimeTools(rt, pluginName, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
-          // v2 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
-          // 映射表（差异行）→ canonical passthrough → transformEvent → 未知遥测。
-          wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), {
-            onUnmatched: (t) => this.recordTranslationDrop(rt.name, t, 'unmatched'),
-            onSuppressed: (t) => this.recordTranslationDrop(rt.name, t, 'suppressed'),
-            onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
-            onNoMappings: () => {
-              log.warn(
-                `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
-                `native stream passes through untranslated (OK only for canonical-identity runtimes)`,
-              );
-            },
-          });
-          // 工具三原语合帧：必须在翻译包装之后（消费映射后的 canonical 流）。
-          wrapToolPartAssembly(rt);
-          log.info(`[Runtime] using plugin runtime '${rt.name}' (capabilities: ${JSON.stringify(rt.capabilities)})`);
-          return this.wrapRuntimeIdentity(rt);
-        } catch (err: any) {
-          log.warn(`[Runtime] plugin '${pluginName}' createRuntime failed: ${err.message} — falling back to opencode`);
-        }
-      } else {
-        log.warn(`[Runtime] plugin '${pluginName}' not found — falling back to opencode`);
-      }
+    const wanted = config.runtime?.plugin || 'opencode';
+    const rt = await this.activatePluginRuntime(wanted, true);
+    if (rt) return rt;
+    if (wanted !== 'opencode') {
+      log.warn(`[Runtime] plugin '${wanted}' unavailable — falling back to opencode`);
+      const fallback = await this.activatePluginRuntime('opencode', false);
+      if (fallback) return fallback;
     }
-    const builtin = this.runtimeLoader?.get('opencode');
-    if (builtin) {
-      const rt = await builtin.createRuntime(createRuntimePluginContext(undefined, { projectDir: this.resolvedProjectDir() }));
-      // 内置件同样过校验（dogfood）：不回退（无处可退），但缺口要暴露。
-      this.applyRuntimeValidation(rt, 'builtin:opencode', false);
-      await activateRuntimeTools(rt, 'builtin:opencode', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
-      // v2：opencode 注册时携带 OPENCODE_EVENT_MAPPINGS（差异行 + 前缀丢弃），
-      // builtin 分支与插件分支走同一 wrap 序列。
-      wrapGlobalEventStream(rt, builtin, (t) => CANONICAL_TYPE_SET.has(t), {
-        onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
-        onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
-        onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
-      });
-      wrapToolPartAssembly(rt); // opencode 无三原语，恒等直通
-      return this.wrapRuntimeIdentity(rt);
-    }
-    // 最终安全网：loader 未注册时直连（不应发生）
+    // 最终安全网：loader 未注册 opencode 时直连（不应发生）
     const { createOpencodeRuntime } = await import('./runtime/opencode-runtime.js');
     const fallbackRt = await createOpencodeRuntime({
       ...sdkConfig,
@@ -1429,6 +1378,50 @@ class MafwScheduler {
     });
     wrapToolPartAssembly(fallbackRt);
     return this.wrapRuntimeIdentity(fallbackRt);
+  }
+
+  /** 单激活路径（D 收敛）：plugin/builtin/package 同一序列。fatal=true 时校验失败抛错触发回退。 */
+  private async activatePluginRuntime(name: string, fatal: boolean): Promise<AgentRuntime | null> {
+    const plugin = this.runtimeLoader?.get(name);
+    if (!plugin) return null;
+    try {
+      // builtin opencode 无凭据需求；插件走当前 runtime 凭据链（pi 认证消费）
+      const creds = name === 'opencode' ? undefined : await this.runtimeCredentialsForPlugin();
+      const rt = await plugin.createRuntime(createRuntimePluginContext(creds, {
+        projectDir: this.resolvedProjectDir(),
+        gatewayPort: config.server.apiPort,
+      }));
+      // 声明 vs 实现一致性校验：必选面缺失 → 回退（fatal）；能力位虚报 → 强制降级
+      // （写回 capabilities 拷贝），缺口在激活期可见而非运行时深处才炸。
+      this.applyRuntimeValidation(rt, name, fatal);
+      // B1 D2 兜底：包贡献 runtime 不经 loader.loadFile 的无声明降级路径
+      if ((rt.capabilities as any)?.eventStream && !hasEventDeclarations(plugin)) {
+        (rt.capabilities as any).eventStream = false;
+        log.error(`[Runtime] '${rt.name}' declares no event translations — eventStream downgraded (default-deny would drop the entire native stream)`);
+      }
+      // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
+      await activateRuntimeTools(rt, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
+      // 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
+      // 映射表（差异/drop/identity 行）→ transformEvent（守卫）→ 拦截+计数。
+      wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), {
+        onUnmatched: (t) => this.recordTranslationDrop(rt.name, t, 'unmatched'),
+        onSuppressed: (t) => this.recordTranslationDrop(rt.name, t, 'suppressed'),
+        onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
+        onNoMappings: () => {
+          log.warn(
+            `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
+            `eventStream should have been downgraded`,
+          );
+        },
+      });
+      // 工具三原语合帧：必须在翻译包装之后（消费映射后的 canonical 流）。
+      wrapToolPartAssembly(rt);
+      log.info(`[Runtime] using runtime '${rt.name}' (${name}, capabilities: ${JSON.stringify(rt.capabilities)})`);
+      return this.wrapRuntimeIdentity(rt);
+    } catch (err: any) {
+      log.warn(`[Runtime] '${name}' createRuntime failed: ${err.message}${fatal ? ' — falling back' : ''}`);
+      return null;
+    }
   }
 
   /** 物化循环：遍历注册表 install；成功与否记入 IdentityState（驱动车道选择）。幂等可重跑（热切换后重物化）。 */
