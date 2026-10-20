@@ -274,3 +274,77 @@ export async function activateRuntimeTools(
     logger.warn(`[RuntimeTools] ${source}: nativeTools failed (overlay cleared): ${err?.message ?? err}`);
   }
 }
+
+// ─── 显示链：合成 tool part 事件（spec 2026-10-20；调研 2026-10-20 §4） ────────
+
+export interface ToolPartEventFrame {
+  type: 'part.updated';
+  properties: {
+    sessionID: string;
+    part: {
+      id: string;
+      type: 'tool';
+      tool: string;
+      state: { status: 'running' | 'completed' | 'error'; input: any; output?: string; error?: string };
+    };
+  };
+}
+
+export function buildToolPartEvent(args: {
+  sessionID: string; partId: string; tool: string;
+  status: 'running' | 'completed' | 'error'; input: any; output?: string; error?: string;
+}): ToolPartEventFrame {
+  const state: ToolPartEventFrame['properties']['part']['state'] = { status: args.status, input: args.input };
+  if (args.output !== undefined) state.output = args.output;
+  if (args.error !== undefined) state.error = args.error;
+  return {
+    type: 'part.updated',
+    properties: {
+      sessionID: args.sessionID,
+      part: { id: args.partId, type: 'tool', tool: args.tool, state },
+    },
+  };
+}
+
+/**
+ * 单源执行核（D8）：emit running → execute → emit 终态（isError → error 态，D5）。
+ * emission fail-open（D6）——渲染增强不得破坏工具执行；execute 抛错发 error 帧后重抛。
+ */
+export async function executeWithToolFrames(
+  reg: MafwToolRegistration,
+  params: any,
+  sessionId: string,
+  emit: (evt: ToolPartEventFrame) => void,
+  signal?: AbortSignal,
+): Promise<{ text: string; isError?: boolean }> {
+  const partId = `toolpart_${randomUUID()}`;
+  const fire = (frame: ToolPartEventFrame) => { try { emit(frame); } catch { /* fail-open */ } };
+  fire(buildToolPartEvent({ sessionID: sessionId, partId, tool: reg.name, status: 'running', input: params }));
+  let out: { text: string; isError?: boolean };
+  try {
+    out = await reg.execute(params, signal);
+  } catch (err: any) {
+    fire(buildToolPartEvent({ sessionID: sessionId, partId, tool: reg.name, status: 'error', input: params, error: err?.message ?? String(err) }));
+    throw err;
+  }
+  if (out?.isError) {
+    fire(buildToolPartEvent({ sessionID: sessionId, partId, tool: reg.name, status: 'error', input: params, error: out.text }));
+  } else {
+    fire(buildToolPartEvent({ sessionID: sessionId, partId, tool: reg.name, status: 'completed', input: params, output: out?.text ?? '' }));
+  }
+  return out;
+}
+
+/** opt-in 包装：无事件映射的 in-process runtime 用——emit 指向其 global.event() 流（进 wrapGlobalEventStream 同管线）。 */
+export function wrapRegistrationsWithEvents(
+  regs: MafwToolRegistration[],
+  sessionId: string,
+  emit: (evt: unknown) => void,
+): MafwToolRegistration[] {
+  return regs.map((reg) => ({
+    ...reg,
+    async execute(params: any, signal?: AbortSignal) {
+      return executeWithToolFrames(reg, params, sessionId, emit, signal);
+    },
+  }));
+}

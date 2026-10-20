@@ -1,5 +1,6 @@
 import {
   MAFW_TOOL_SPECS, buildMafwToolFactory, activateRuntimeTools,
+  buildToolPartEvent, executeWithToolFrames, wrapRegistrationsWithEvents,
 } from '../../../src/runtime/mafw-tools';
 import { toolClassOf, clearToolClassOverlay } from '../../../src/runtime/tool-classes';
 import { hashText } from '../../../src/runtime/host-adapter';
@@ -150,5 +151,61 @@ describe('activateRuntimeTools（激活期接线）', () => {
     const rt2 = makeRt({ nativeTools: jest.fn(() => { throw new Error('boom'); }) });
     await activateRuntimeTools(rt2, 'test:rt2', { baseUrl: 'http://gw' });
     expect(toolClassOf('my_read')).toBe('other');
+  });
+});
+
+describe('显示链：合成 tool part 事件（spec 2026-10-20）', () => {
+  it('buildToolPartEvent 形状：扁平 part.updated + tool part + state 按序携带 output/error', () => {
+    const r = buildToolPartEvent({ sessionID: 's1', partId: 'toolpart_x', tool: 'mafw_python', status: 'running', input: { code: '1' } });
+    expect(r).toEqual({
+      type: 'part.updated',
+      properties: { sessionID: 's1', part: { id: 'toolpart_x', type: 'tool', tool: 'mafw_python', state: { status: 'running', input: { code: '1' } } } },
+    });
+    const c = buildToolPartEvent({ sessionID: 's1', partId: 'toolpart_x', tool: 't', status: 'completed', input: {}, output: 'ok' });
+    expect(c.properties.part.state).toEqual({ status: 'completed', input: {}, output: 'ok' });
+    const e = buildToolPartEvent({ sessionID: 's1', partId: 'toolpart_x', tool: 't', status: 'error', input: {}, error: 'boom' });
+    expect(e.properties.part.state).toEqual({ status: 'error', input: {}, error: 'boom' });
+  });
+
+  function makeReg(over: any = {}): any {
+    return { name: 'mafw_probe', description: 'd', parameters: { type: 'object', properties: {} }, execute: jest.fn(async () => ({ text: 'done' })), ...over };
+  }
+
+  it('executeWithToolFrames：running→completed 两帧同 part.id；isError → error 帧（D5）', async () => {
+    const frames: any[] = [];
+    const reg = makeReg();
+    const out = await executeWithToolFrames(reg, { x: 1 }, 's1', (f) => frames.push(f));
+    expect(out).toEqual({ text: 'done' });
+    expect(frames.map((f) => f.properties.part.state.status)).toEqual(['running', 'completed']);
+    expect(frames[0].properties.part.id).toBe(frames[1].properties.part.id);
+    expect(frames[0].properties.part.id).toMatch(/^toolpart_/);
+    expect(frames[1].properties.part.state.output).toBe('done');
+
+    const frames2: any[] = [];
+    const reg2 = makeReg({ execute: jest.fn(async () => ({ text: 'bad', isError: true })) });
+    await executeWithToolFrames(reg2, {}, 's1', (f) => frames2.push(f));
+    expect(frames2[1].properties.part.state.status).toBe('error');
+    expect(frames2[1].properties.part.state.error).toBe('bad');
+  });
+
+  it('execute 抛错 → error 帧 + 重抛；emit 抛错不阻断（D6）；signal 透传', async () => {
+    const frames: any[] = [];
+    const boom = new Error('kaboom');
+    const reg = makeReg({ execute: jest.fn(async () => { throw boom; }) });
+    await expect(executeWithToolFrames(reg, {}, 's1', (f) => { frames.push(f); if (frames.length === 1) throw new Error('emit broken'); }, 'sig' as any)).rejects.toThrow('kaboom');
+    expect(frames.map((f) => f.properties.part.state.status)).toEqual(['running', 'error']);
+    expect(frames[1].properties.part.state.error).toBe('kaboom');
+    expect(reg.execute).toHaveBeenCalledWith({}, 'sig');
+  });
+
+  it('wrapRegistrationsWithEvents：包装后 execute 自发两帧，原结果保留', async () => {
+    const frames: any[] = [];
+    const wrapped = wrapRegistrationsWithEvents([makeReg()], 's9', (f) => frames.push(f));
+    expect(wrapped).toHaveLength(1);
+    const out = await wrapped[0].execute({ a: 1 });
+    expect(out).toEqual({ text: 'done' });
+    expect(frames.map((f) => f.properties.part.state.status)).toEqual(['running', 'completed']);
+    expect(frames[0].properties.sessionID).toBe('s9');
+    expect(frames[0].properties.part.tool).toBe('mafw_probe');
   });
 });
