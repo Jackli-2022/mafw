@@ -4621,7 +4621,7 @@ class MafwScheduler {
             const body = JSON.parse(await readBody(req));
             const evalHandler = handleEvalChatCompletion({
               runtime: this.runtime,
-              directory: this.projectDir,
+              directory: config.raw.paths.projectDir,
               providerID: 'opencode-go',
               modelID: 'deepseek-v4-flash',
               timeoutMs: 300_000,
@@ -5637,7 +5637,8 @@ class MafwScheduler {
                 kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
                 kvSet: (key, id, v) => this.getGatewayDb().kvSet(key, id, v),
                 kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
-                createSession: (directory, metadata) => this.sdkSession.create(directory, metadata),
+                // 目录必填（Task 4 收口到 resolvedProjectDir 助手）
+                createSession: (directory, metadata) => this.sdkSession.create(directory ?? config.raw.paths.projectDir, metadata),
               },
               opts,
             );

@@ -23,7 +23,8 @@ import * as path from 'path';
 
 export interface EvalEndpointOptions {
   runtime: any;
-  directory?: string;
+  /** 会话工作目录（绝对路径，必填；调用方显式提供）。 */
+  directory: string;
   /** Main agent model. */
   providerID: string;
   modelID: string;
@@ -155,7 +156,7 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
       }
 
       // 1. fresh session for isolation
-      const session = await opts.runtime.session.create({ directory: opts.directory || '.' });
+      const session = await opts.runtime.session.create({ directory: opts.directory });
       sessionId = session.id;
       if (!sessionId) throw new Error('Failed to create eval session');
 

@@ -55,33 +55,33 @@ export class SdkSessionResource {
     });
   }
 
-  async create(directory?: string, metadata?: Record<string, unknown>): Promise<SessionRecord> {
+  async create(directory: string, metadata?: Record<string, unknown>): Promise<SessionRecord> {
+    // 目录必填且不得静默替换为 '.'（spec 2026-10-20-session-directory-contract-design）。
+    if (!directory) throw new Error('SdkSessionResource.create: directory is required');
     let id: string;
     let projectID: string;
     let title: string;
     if (this.client) {
       try {
-        const created = await this.client.session.create({
-          directory: directory || '.',
-        });
+        const created = await this.client.session.create({ directory });
         id = created.id;
         projectID = created.projectID || '';
         title = created.title || '';
       } catch {
         // SDK unavailable — create local-only session
         id = crypto.randomUUID();
-        projectID = directory || '';
+        projectID = directory;
         title = '';
       }
     } else {
       id = crypto.randomUUID();
-      projectID = directory || '';
+      projectID = directory;
       title = '';
     }
     const record: SessionRecord = {
       id,
       projectID,
-      directory: directory || '.',
+      directory,
       title,
       metadata,
       time: { created: Date.now(), updated: Date.now() },
