@@ -328,7 +328,7 @@ function isInjectionBlock(text: string): boolean {
   return INJECTION_TAGS.some((tag) => t.startsWith(tag))
 }
 
-function historyPart(p: any): ChatPart | null {
+export function historyPart(p: any): ChatPart | null {
   if (p.type === 'tool') {
     const st = p.state?.status
     const cmd = String(p.state?.input?.command ?? p.state?.input?.description ?? p.tool ?? '')
@@ -336,7 +336,7 @@ function historyPart(p: any): ChatPart | null {
     return {
       id: p.id,
       type: 'tool',
-      toolName: p.tool,
+      toolName: p.canonicalTool ?? p.tool,
       state: st === 'completed' ? 'completed' : st === 'error' ? 'error' : st === 'running' ? 'running' : 'completed',
       text: out ? `${cmd}\n${out}` : cmd,
     }
@@ -346,7 +346,7 @@ function historyPart(p: any): ChatPart | null {
   return { id: p.id, type: p.type ?? 'text', text, state: 'completed' }
 }
 
-function livePart(part: any): ChatPart | null {
+export function livePart(part: any): ChatPart | null {
   if (part.type === 'tool') {
     const st = part.state?.status
     const cmd = String(part.state?.input?.command ?? part.state?.input?.description ?? part.tool ?? '')
@@ -354,7 +354,7 @@ function livePart(part: any): ChatPart | null {
     return {
       id: part.id,
       type: 'tool',
-      toolName: part.tool,
+      toolName: part.canonicalTool ?? part.tool,
       state: st === 'completed' ? 'completed' : st === 'error' ? 'error' : 'running',
       text: out ? `${cmd}\n${out}` : cmd,
     }
