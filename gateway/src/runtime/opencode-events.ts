@@ -11,6 +11,7 @@
  *   wrap 均适用。
  * - transformEvent 前缀丢弃 session.next.* legacy 族与 sync 信封。
  */
+import { canonicalIdentity } from './event-mapper';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 
 /** opencode 原生事件信封：GlobalEvent { directory, payload: { type, properties, sessionID? } } */
@@ -33,6 +34,8 @@ export const OPENCODE_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'message.part.complete', to: 'part.complete', passProperties: '$.payload.properties' },
   // ---- plan 域（ACP plan / codex todo_list 同域） ----
   { from: 'todo.updated', to: 'plan.updated', passProperties: '$.payload.properties' },
+  // ---- canonical identity（词汇单源派生，B1：同名收编词的显式注册） ----
+  ...canonicalIdentity('$.payload.properties'),
 ];
 
 /**

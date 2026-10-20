@@ -1,6 +1,8 @@
-import { applyEventMappings } from '../../../src/runtime/event-mapper';
+import { applyEventMappings, canonicalIdentity, RUNTIME_IDENTITY_TYPES } from '../../../src/runtime/event-mapper';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, opencodeTransformEvent } from '../../../src/runtime/opencode-events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
+import { MAFW_RUNTIME_EVENT_NAMES } from '../../../src/runtime/mafw-vocabulary';
+import { TOOL_PRIMITIVE_TYPES } from '../../../src/runtime/tool-part-assembler';
 
 const ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
@@ -38,10 +40,14 @@ describe('OPENCODE_EVENT_MAPPINGS（opencode → MAFW 词汇 v2）', () => {
     expect(out[0].directory).toBe('/p');
   });
 
-  it('同名收编词经 canonical passthrough 机制通过（不进差异行）', () => {
+  it('同名收编词经 identity 行放行（恒等翻译，载荷 passProperties 重建）', () => {
     for (const t of ['session.created', 'message.updated', 'permission.asked', 'question.asked', 'session.diff']) {
-      const evt = raw(t, { sessionID: 's1' });
-      expect(applyEventMappings(evt, ENTRY, isCanonical)).toEqual([evt]);
+      const out = applyEventMappings(raw(t, { sessionID: 's1', keep: 1 }), ENTRY, isCanonical);
+      expect(out).toHaveLength(1);
+      expect(out[0].payload.type).toBe(t);
+      expect(out[0].payload.properties.keep).toBe(1);
+      expect(out[0].sessionID).toBe('s1');
+      expect(out[0].directory).toBe('/p');
     }
   });
 
@@ -58,8 +64,32 @@ describe('OPENCODE_EVENT_MAPPINGS（opencode → MAFW 词汇 v2）', () => {
     expect(applyEventMappings(raw('sync', { seq: 1 }), ENTRY, isCanonical)).toEqual([]);
   });
 
-  it('差异行不劫持 canonical 直发：opencode 若直接发新词（未来版本）走 passthrough', () => {
-    const evt = raw('turn.completed', { sessionID: 's1' });
-    expect(applyEventMappings(evt, ENTRY, isCanonical)).toEqual([evt]);
+  it('差异行不劫持 identity：opencode 直接发 canonical 词走恒等行', () => {
+    const out = applyEventMappings(raw('turn.completed', { sessionID: 's1' }), ENTRY, isCanonical);
+    expect(out).toHaveLength(1);
+    expect(out[0].payload.type).toBe('turn.completed');
+    expect(out[0].payload.properties.sessionID).toBe('s1');
+  });
+});
+
+describe('canonicalIdentity 恒等行（B1 identity 声明）', () => {
+  it('词汇完备性：runtime 事件词汇 ∪ 工具三原语 逐类型经 opencode 注册面全部命中', () => {
+    expect([...RUNTIME_IDENTITY_TYPES]).toEqual(expect.arrayContaining([...MAFW_RUNTIME_EVENT_NAMES]));
+    for (const t of ['tool.call', 'tool.delta', 'tool.result']) expect(RUNTIME_IDENTITY_TYPES).toContain(t);
+    for (const t of RUNTIME_IDENTITY_TYPES) {
+      const out = applyEventMappings(raw(t, { sessionID: 's1', keep: { deep: 1 } }), ENTRY, isCanonical);
+      expect(out).toHaveLength(1);
+      expect(out[0].payload.type).toBe(t);
+      expect(out[0].payload.properties.keep).toEqual({ deep: 1 }); // passProperties 恒等重建
+      expect(out[0].sessionID).toBe('s1');
+    }
+  });
+
+  it('identity 行是词汇单源派生：canonicalIdentity() 逐条 from===to', () => {
+    for (const m of canonicalIdentity('$.payload.properties')) {
+      expect(m.from).toBe(m.to);
+      expect(m.passProperties).toBe('$.payload.properties');
+    }
+    expect(canonicalIdentity().every((m) => m.passProperties === undefined)).toBe(true);
   });
 });

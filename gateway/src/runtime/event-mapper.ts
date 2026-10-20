@@ -4,6 +4,8 @@
  * 匹配优先级：eventMappings（数组顺序）→ canonical 直发 passthrough → transformEvent → 丢弃+遥测。
  */
 import { getPath, evalConditions, renderTemplate, setPath, Condition } from './path-expr';
+import { MAFW_RUNTIME_EVENT_NAMES } from './mafw-vocabulary';
+import { TOOL_PRIMITIVE_TYPES } from './tool-part-assembler';
 
 export type FieldValue =
   | { path: string; default?: unknown }
@@ -37,6 +39,26 @@ export interface EventMappingEntry {
   eventSource?: EventSourceShape;
   eventMappings?: EventMapping[];
   transformEvent?: TransformEventFn;
+}
+
+/** 入口恒等翻译词汇：runtime 契约事件面（= SDK RUNTIME_EVENT_TYPES）∪ 工具三原语。 */
+export const RUNTIME_IDENTITY_TYPES: readonly string[] = [
+  ...MAFW_RUNTIME_EVENT_NAMES,
+  ...TOOL_PRIMITIVE_TYPES,
+];
+
+/**
+ * 词汇单源派生的恒等翻译行（B1 identity 声明）。
+ * 恒等行 = 「该类型已注册翻译，翻译是恒等」——default-deny 下同名事件经此放行；
+ * 词汇表加新类型自动覆盖（契约内类型即放行），runtime 私货类型被拦逼显式注册。
+ * passProperties 传 runtime 信封的 properties 路径（opencode '$.payload.properties'）。
+ */
+export function canonicalIdentity(passProperties?: string): EventMapping[] {
+  return RUNTIME_IDENTITY_TYPES.map((t) => ({
+    from: t,
+    to: t,
+    ...(passProperties ? { passProperties } : {}),
+  }));
 }
 
 /** sessionID 注入约定：与 pi 现状输出逐字节对齐（part.updated 进 part，其余进 properties）。 */
