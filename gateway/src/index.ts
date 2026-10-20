@@ -1130,7 +1130,7 @@ class MafwScheduler {
     if (sessionID) {
       const taps = this.eventTaps.get(sessionID);
       if (taps && taps.size) {
-        const snap = { type: f.type, sessionID, at: Date.now() };
+        const snap = { type: f.type, sessionID, at: Date.now(), ...(props?.part ? { part: props.part } : {}) };
         for (const t of taps) { try { t(snap); } catch { /* fail-open */ } }
       }
     }
@@ -1654,6 +1654,7 @@ class MafwScheduler {
       getRecallCalledAt: (sessionID: string) => this.recallCalledBySession.get(sessionID) ?? null,
       bindIdentity: (sessionID: string, identity: string) => this.identityState.bind(sessionID, identity, 'session'),
       evaluatePolicy: (sessionID, candidate) => this.approvalPolicy.evaluate(sessionID, candidate),
+      injectEvent: (evt) => this.handleOpencodeEvent(evt),
     };
   }
 

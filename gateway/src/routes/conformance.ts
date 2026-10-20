@@ -6,6 +6,7 @@
  */
 import * as http from 'http';
 import { SCENARIOS, evaluateScenario, ObservedEvent } from '../runtime/conformance-scenarios';
+import { buildToolPartEvent } from '../runtime/mafw-tools';
 
 export interface ConformanceDeps {
   runtimeName(): string;
@@ -23,6 +24,8 @@ export interface ConformanceDeps {
   bindIdentity(sessionID: string, identity: string): void;
   /** S5：直接评估合成候选项的网关审批策略。 */
   evaluatePolicy(sessionID: string, candidate: { toolName: string; patterns: string[]; metadata: Record<string, unknown> }): { action: string };
+  /** tool-visibility：注入点（与 /api/tools/execute 同一管线 = handleOpencodeEvent）。 */
+  injectEvent(evt: unknown): void;
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -124,6 +127,19 @@ export async function handleConformance(
         };
         const r = evaluateScenario(sc.id, [], undefined, undefined, identity);
         await deps.deleteSession(sess.id).catch(() => {});
+        results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
+      } else if (sc.id === 'tool-visibility') {
+        // 确定性、零副作用（不执行真工具、不耗 LLM）：经与 /api/tools/execute 同一
+        // 注入点喂探针帧对，tap 断言 canonical 管线产出（spec §4.3）。
+        const sid = `conformance_probe_${Date.now()}`;
+        const partId = `toolpart_conformance_${Date.now()}`;
+        const events: ObservedEvent[] = [];
+        const stop = deps.registerEventTap(sid, (e) => events.push(e));
+        deps.injectEvent(buildToolPartEvent({ sessionID: sid, partId, tool: 'mafw_conformance_probe', status: 'running', input: {} }));
+        deps.injectEvent(buildToolPartEvent({ sessionID: sid, partId, tool: 'mafw_conformance_probe', status: 'completed', input: {}, output: 'probe' }));
+        await sleep(300);
+        stop();
+        const r = evaluateScenario(sc.id, events);
         results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
       } else {
         const sess = await deps.createSession({});

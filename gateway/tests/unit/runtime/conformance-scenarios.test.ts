@@ -45,7 +45,7 @@ describe('S2 session-lifecycle evaluator', () => {
 
 describe('catalog', () => {
   it('has 5 scenarios with prompts and timeouts', () => {
-    expect(SCENARIOS.length).toBe(5);
+    expect(SCENARIOS.length).toBe(6);
     for (const s of SCENARIOS) {
       expect(s.id).toBeTruthy();
       expect(s.timeoutMs).toBeGreaterThan(1000);
@@ -170,5 +170,39 @@ describe('S5 identity-roundtrip evaluator', () => {
     });
     expect(r.pass).toBe(false);
     expect(r.failures.join()).toContain('bash');
+  });
+});
+
+describe('tool-visibility evaluator（spec 2026-10-20）', () => {
+  const frame = (status: string, id = 'toolpart_p', toolClass?: string) => ({
+    type: 'part.updated', sessionID: 'p1', at: 1,
+    part: { id, type: 'tool', tool: 'mafw_conformance_probe', toolClass, state: { status, input: {}, ...(status === 'completed' ? { output: 'ok' } : {}) } },
+  });
+
+  it('两帧 running→completed 同 id + toolClass enrich → pass', () => {
+    const r = evaluateScenario('tool-visibility', [frame('running'), frame('completed', 'toolpart_p', 'other')] as any);
+    expect(r).toEqual({ pass: true, failures: [] });
+  });
+
+  it('零帧 → fail（显示链断）', () => {
+    const r = evaluateScenario('tool-visibility', []);
+    expect(r.pass).toBe(false);
+    expect(r.failures[0]).toMatch(/2 tool part frames/);
+  });
+
+  it('缺 toolClass → fail；id 不一致 → fail；终态非 completed/error → fail', () => {
+    const noClass = evaluateScenario('tool-visibility', [frame('running'), frame('completed')] as any);
+    expect(noClass.failures.some((f) => f.includes('toolClass'))).toBe(true);
+    const diffId = evaluateScenario('tool-visibility', [frame('running', 'a', 'other'), frame('completed', 'b', 'other')] as any);
+    expect(diffId.failures.some((f) => f.includes('part.id'))).toBe(true);
+    const badTerminal = evaluateScenario('tool-visibility', [frame('running'), frame('running', 'toolpart_p', 'other')] as any);
+    expect(badTerminal.failures.some((f) => f.includes('terminal'))).toBe(true);
+  });
+
+  it('SCENARIOS 注册表含 tool-visibility（零 LLM 依赖）', () => {
+    const sc = SCENARIOS.find((s) => s.id === 'tool-visibility');
+    expect(sc).toBeDefined();
+    expect(sc!.requires.eventStream).toBeFalsy();
+    expect(sc!.timeoutMs).toBeLessThanOrEqual(15_000);
   });
 });

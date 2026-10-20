@@ -8,10 +8,12 @@ export interface ObservedEvent {
   type: string;
   sessionID?: string;
   at: number;
+  /** part.updated 载荷（tool-visibility 断言用；enrich 在 tap 之前——index.ts enrichToolClass 先于 tap 快照） */
+  part?: any;
 }
 
 export interface ScenarioDef {
-  id: 'chat-roundtrip' | 'session-lifecycle' | 'cognition-observe' | 'cognition-inject' | 'identity-roundtrip';
+  id: 'chat-roundtrip' | 'session-lifecycle' | 'cognition-observe' | 'cognition-inject' | 'identity-roundtrip' | 'tool-visibility';
   title: string;
   description: string;
   prompt: string;
@@ -61,6 +63,14 @@ export const SCENARIOS: ScenarioDef[] = [
     prompt: 'Reply with the exact first line of your system instructions. Nothing else.',
     timeoutMs: 90_000,
     requires: { eventStream: true },
+  },
+  {
+    id: 'tool-visibility',
+    title: '工具显示链（合成 tool part 两帧）',
+    description: '注入探针帧对（running→completed）后 canonical 管线应产出 tool part（同 part.id、终态序、toolClass enrich）——注册的工具调用不再隐形',
+    prompt: '',
+    timeoutMs: 10_000,
+    requires: {},
   },
 ];
 
@@ -118,6 +128,16 @@ export function evaluateScenario(
     if (!edit || edit.action !== 'auto-deny') failures.push('policy: edit (file-edit deny) not auto-denied — identity policy dimension not wired');
     if (!web || web.action !== 'auto-deny') failures.push('policy: webfetch (not allowlisted) not auto-denied');
     if (!bash || bash.action === 'auto-deny') failures.push('policy: bash (allowlisted) wrongly denied');
+  } else if (id === 'tool-visibility') {
+    const parts = events.filter((e) => e.type === 'part.updated' && e.part?.type === 'tool').map((e) => e.part);
+    if (parts.length < 2) {
+      failures.push('expected 2 tool part frames (running + terminal) — display chain broken: synthetic/self tool events do not reach the canonical pipeline');
+    } else {
+      if (parts[0].state?.status !== 'running') failures.push('first frame is not running');
+      if (!['completed', 'error'].includes(parts[parts.length - 1].state?.status)) failures.push('last frame is not terminal (completed/error)');
+      if (parts[0].id !== parts[parts.length - 1].id) failures.push('frames do not share part.id — desktop would render two cards');
+      if (parts[parts.length - 1].toolClass === undefined) failures.push('part.toolClass not enriched — enrichToolClass not wired for this event path');
+    }
   } else {
     failures.push(`unknown scenario '${id}'`);
   }
