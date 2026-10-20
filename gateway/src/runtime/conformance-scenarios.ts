@@ -98,6 +98,7 @@ export function evaluateScenario(
   apiResult?: { created: boolean; deleted: boolean; history?: any[] },
   cognition?: CognitionObservation,
   identity?: IdentityObservation,
+  drops?: { unmatched: Record<string, number> },
 ): { pass: boolean; failures: string[] } {
   const failures: string[] = [];
   if (id === 'chat-roundtrip') {
@@ -107,6 +108,10 @@ export function evaluateScenario(
     if (terminal.length === 0) failures.push('no terminal event observed (turn.completed/turn.failed) — turn never settles, UI stays busy');
     const errored = events.some((e) => e.type === 'turn.failed');
     if (errored) failures.push('turn ended in error state');
+    // B3：场景窗口 unmatched 差分 > 0 = 词汇漂移（default-deny 漏网探测器）
+    if (drops && Object.keys(drops.unmatched ?? {}).length > 0) {
+      failures.push(`unmatched native drops during scenario: ${JSON.stringify(drops.unmatched)} — vocabulary drift (update eventMappings)`);
+    }
   } else if (id === 'session-lifecycle') {
     if (!apiResult?.created) failures.push('created session not visible in session.list');
     if (!apiResult?.deleted) failures.push('deleted session still visible in session.list (leak)');

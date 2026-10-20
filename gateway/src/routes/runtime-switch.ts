@@ -32,13 +32,15 @@ export interface RuntimeSwitchDeps {
   validationNotes?: () => string[];
   /** B2 翻译守卫失败计数（transformEvent/normalizeMessages per-runtime）；缺省空对象。 */
   translationErrors?: () => Record<string, unknown>;
+  /** B3 入口拦截计数（unmatched/suppressed per-runtime per-type）；缺省空对象。 */
+  translationDrops?: () => Record<string, unknown>;
 }
 
 // ─── GET /api/runtime ─── active runtime identity + capabilities + plugin scan state
 export async function handleRuntimeGet(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
-  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes' | 'translationErrors'>,
+  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes' | 'translationErrors' | 'translationDrops'>,
 ): Promise<void> {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -51,6 +53,7 @@ export async function handleRuntimeGet(
     unknownEvents: deps.unknownEvents ? deps.unknownEvents() : {},
     validation: deps.validationNotes ? deps.validationNotes() : [],
     translationErrors: deps.translationErrors ? deps.translationErrors() : {},
+    translationDrops: deps.translationDrops ? deps.translationDrops() : {},
   }));
 }
 

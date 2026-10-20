@@ -40,6 +40,10 @@ function makeDeps(overrides: Partial<ConformanceDeps> = {}): ConformanceDeps {
     evaluatePolicy: (_sid: string, c: { toolName: string }) => ({
       action: c.toolName === 'bash' ? 'human' : 'auto-deny',
     }),
+    // B2：历史形状断言的数据面（合法 {info,parts[]}）
+    getMessages: async () => [{ info: { id: 'm1' }, parts: [] }],
+    // B3：无 unmatched 差分（健康基线）
+    translationDrops: () => ({}),
     ...overrides,
   } as ConformanceDeps;
 }

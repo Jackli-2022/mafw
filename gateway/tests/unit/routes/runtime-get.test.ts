@@ -79,4 +79,27 @@ describe('GET /api/runtime (unknownEvents exposure)', () => {
     } as any);
     expect(JSON.parse(body()).translationErrors).toEqual({});
   });
+
+  it('exposes translationDrops snapshot (B3: unmatched/suppressed per-type) when provided', async () => {
+    const { res, body } = fakeRes();
+    await handleRuntimeGet({} as http.IncomingMessage, res, {
+      runtimeName: () => 'pi',
+      runtimeCaps: () => ({}),
+      envOverride: () => false,
+      translationDrops: () => ({ pi: { unmatched: { 'turn.completed': 3 }, suppressed: { sync: 7 } } }),
+    } as any);
+    const parsed = JSON.parse(body());
+    expect(parsed.translationDrops.pi.unmatched['turn.completed']).toBe(3);
+    expect(parsed.translationDrops.pi.suppressed.sync).toBe(7);
+  });
+
+  it('translationDrops defaults to empty object', async () => {
+    const { res, body } = fakeRes();
+    await handleRuntimeGet({} as http.IncomingMessage, res, {
+      runtimeName: () => 'opencode',
+      runtimeCaps: () => ({}),
+      envOverride: () => false,
+    } as any);
+    expect(JSON.parse(body()).translationDrops).toEqual({});
+  });
 });

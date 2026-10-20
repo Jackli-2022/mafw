@@ -375,6 +375,8 @@ class MafwScheduler {
   private unknownEventTracker = new UnknownEventTracker();
   /** B2 翻译守卫失败计数（transformEvent 抛错/非法输出、normalizeMessages 违规）。 */
   private translationErrors = new Map<string, { transformEvent: number; normalizeMessages: number; lastError?: string; lastAt?: string; lastWarnAt?: number }>();
+  /** B3 入口拦截计数：unmatched（监控信号）/ suppressed（声明式压制），per-runtime per-type。 */
+  private translationDrops = new Map<string, { unmatched: Record<string, number>; suppressed: Record<string, number> }>();
   /** Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。 */
   private eventTaps = new Map<string, Set<(e: { type: string; sessionID?: string; at: number }) => void>>();
   private serveSupervisor: ServeSupervisor;
@@ -1101,6 +1103,25 @@ class MafwScheduler {
     } catch { /* fail-open */ }
   }
 
+  /** B3 入口拦截计数：unmatched（监控信号）/ suppressed（声明式压制）；turn 终态 unmatched 每次 loud warn。 */
+  private recordTranslationDrop(runtime: string, type: string, kind: 'unmatched' | 'suppressed'): void {
+    try {
+      const cur = this.translationDrops.get(runtime) ?? { unmatched: {}, suppressed: {} };
+      cur[kind][type] = (cur[kind][type] ?? 0) + 1;
+      this.translationDrops.set(runtime, cur);
+      if (kind === 'unmatched') {
+        if (type === 'turn.completed' || type === 'turn.failed' || type === 'turn.aborted') {
+          log.warn(`[SSE] runtime '${runtime}' unmatched TERMINAL event '${type}' — turn pipeline broken (vocabulary drift? update eventMappings); this warns on EVERY occurrence`);
+        } else {
+          const { firstSeen } = this.unknownEventTracker.record(runtime, type);
+          if (firstSeen) {
+            log.warn(`[SSE] runtime '${runtime}' unmatched event type '${type}' — dropped (declare in eventMappings/transformEvent); counters: GET /api/runtime .translationDrops`);
+          }
+        }
+      }
+    } catch { /* fail-open */ }
+  }
+
   private handleOpencodeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
     // opencode v2 sync 信封：与 legacy 事件双发的状态重同步噪声，gateway
@@ -1354,17 +1375,8 @@ class MafwScheduler {
           // v2 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
           // 映射表（差异行）→ canonical passthrough → transformEvent → 未知遥测。
           wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), {
-            onUnmatched: (t) => {
-              try {
-                const { firstSeen } = this.unknownEventTracker.record(rt.name, t);
-                if (firstSeen) {
-                  log.warn(
-                    `[SSE] runtime '${rt.name}' native event '${t}' unmapped — dropped ` +
-                    `(declare it in eventMappings or handle via transformEvent)`,
-                  );
-                }
-              } catch { /* fail-open */ }
-            },
+            onUnmatched: (t) => this.recordTranslationDrop(rt.name, t, 'unmatched'),
+            onSuppressed: (t) => this.recordTranslationDrop(rt.name, t, 'suppressed'),
             onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
             onNoMappings: () => {
               log.warn(
@@ -1393,9 +1405,8 @@ class MafwScheduler {
       // v2：opencode 注册时携带 OPENCODE_EVENT_MAPPINGS（差异行 + 前缀丢弃），
       // builtin 分支与插件分支走同一 wrap 序列。
       wrapGlobalEventStream(rt, builtin, (t) => CANONICAL_TYPE_SET.has(t), {
-        onUnmatched: (t) => {
-          try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
-        },
+        onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
+        onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
         onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
       });
       wrapToolPartAssembly(rt); // opencode 无三原语，恒等直通
@@ -1412,9 +1423,8 @@ class MafwScheduler {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_EVENT_MAPPINGS,
     }, (t) => CANONICAL_TYPE_SET.has(t), {
-      onUnmatched: (t) => {
-        try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
-      },
+      onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
+      onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
       onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
     });
     wrapToolPartAssembly(fallbackRt);
@@ -1696,6 +1706,7 @@ class MafwScheduler {
       evaluatePolicy: (sessionID, candidate) => this.approvalPolicy.evaluate(sessionID, candidate),
       injectEvent: (evt) => this.handleOpencodeEvent(evt),
       getMessages: async (sessionID) => ((await this.runtime?.session.messages({ sessionID, limit: 5 })) as any)?.data ?? [],
+      translationDrops: () => Object.fromEntries(this.translationDrops),
     };
   }
 
@@ -1744,6 +1755,7 @@ class MafwScheduler {
         this.runtimeName = rt.name;
         // B2/B3：翻译守卫与拦截计数随 runtime 切换清空（per-runtime 快照语义）
         this.translationErrors.clear();
+        this.translationDrops.clear();
         // Re-materialize identities on the freshly switched runtime (fire-and-forget).
         void this.materializeIdentities().catch(() => {});
         // Switching onto a runtime that owns serve (builtin opencode) must
@@ -1769,6 +1781,7 @@ class MafwScheduler {
       unknownEvents: () => this.unknownEventTracker.snapshot(),
       validationNotes: () => this.runtimeValidationNotes,
       translationErrors: () => Object.fromEntries(this.translationErrors),
+      translationDrops: () => Object.fromEntries(this.translationDrops),
     };
   }
 

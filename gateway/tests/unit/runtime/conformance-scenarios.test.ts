@@ -51,6 +51,29 @@ describe('S2 session-lifecycle evaluator', () => {
   });
 });
 
+describe('B3 unmatched drops 断言（chat-roundtrip 词汇漂移探测器）', () => {
+  it('场景窗口内 unmatched drops > 0 → fail', () => {
+    const bad = evaluateScenario('chat-roundtrip', [
+      { type: 'part.updated', sessionID: 's' },
+      { type: 'turn.completed', sessionID: 's' },
+    ], undefined, undefined, undefined, { unmatched: { 'some.future.word': 2 } });
+    expect(bad.pass).toBe(false);
+    expect(bad.failures.some((f) => f.includes('unmatched'))).toBe(true);
+  });
+  it('drops 为空或缺席 → 不影响判定', () => {
+    const ok = evaluateScenario('chat-roundtrip', [
+      { type: 'part.updated', sessionID: 's' },
+      { type: 'turn.completed', sessionID: 's' },
+    ], undefined, undefined, undefined, { unmatched: {} });
+    expect(ok.pass).toBe(true);
+    const ok2 = evaluateScenario('chat-roundtrip', [
+      { type: 'part.updated', sessionID: 's' },
+      { type: 'turn.completed', sessionID: 's' },
+    ]);
+    expect(ok2.pass).toBe(true);
+  });
+});
+
 describe('catalog', () => {
   it('has 5 scenarios with prompts and timeouts', () => {
     expect(SCENARIOS.length).toBe(6);

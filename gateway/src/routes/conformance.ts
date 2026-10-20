@@ -28,6 +28,8 @@ export interface ConformanceDeps {
   injectEvent(evt: unknown): void;
   /** B2：拉会话历史（session-lifecycle 历史形状断言用）。 */
   getMessages(sessionID: string): Promise<any[]>;
+  /** B3：入口拦截计数快照（chat-roundtrip unmatched 差分断言用）；缺省不判。 */
+  translationDrops?: () => Record<string, { unmatched?: Record<string, number>; suppressed?: Record<string, number> }>;
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -40,6 +42,21 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** B3：场景窗口内 unmatched 差分（after - before）。 */
+function diffUnmatched(
+  before: Record<string, { unmatched?: Record<string, number> }> | undefined,
+  after: Record<string, { unmatched?: Record<string, number> }> | undefined,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [src, d] of Object.entries(after ?? {})) {
+    for (const [t, n] of Object.entries(d.unmatched ?? {})) {
+      const delta = n - (before?.[src]?.unmatched?.[t] ?? 0);
+      if (delta > 0) out[t] = (out[t] ?? 0) + delta;
+    }
+  }
+  return out;
+}
 
 /** 等 tap 攒出终态事件或超时；返回该窗口内全部观测。 */
 async function collectUntilTerminal(
@@ -93,10 +110,13 @@ export async function handleConformance(
     try {
       if (sc.id === 'chat-roundtrip') {
         const sess = await deps.createSession({});
+        const dropsBefore = deps.translationDrops?.();
         const p = collectUntilTerminal(deps.registerEventTap, sess.id, perTimeout ?? sc.timeoutMs);
         await deps.promptAsync({ sessionID: sess.id, message: sc.prompt });
         const events = await p;
-        const r = evaluateScenario(sc.id, events);
+        // B3：场景窗口 unmatched 差分 > 0 = 词汇漂移（升级 runtime 后跑 conformance 即暴露）
+        const drops = diffUnmatched(deps.translationDrops?.(), dropsBefore as any);
+        const r = evaluateScenario(sc.id, events, undefined, undefined, undefined, { unmatched: drops });
         await deps.deleteSession(sess.id).catch(() => {});
         results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
       } else if (sc.id === 'cognition-observe' || sc.id === 'cognition-inject') {
