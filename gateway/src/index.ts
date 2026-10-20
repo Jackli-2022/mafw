@@ -2973,7 +2973,7 @@ class MafwScheduler {
               // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
               if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.runtime) {
                 void this.mediaRuntimeExecutor?.dispose().catch(() => {});
-                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime);
+                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, { projectDir: config.raw.paths.projectDir });
                 this.mediaRuntimeExecutorRt = this.runtime;
               }
               return this.mediaRuntimeExecutor.prompt;

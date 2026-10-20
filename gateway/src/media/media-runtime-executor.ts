@@ -14,6 +14,8 @@ export interface MediaRuntimeExecutorOptions {
   completeFn?: (parts: PromptPart[], opts: PromptOptions) => Promise<string>;
   /** auth.json 路径（默认 DEFAULT_AUTH_PATH） */
   authPath?: string;
+  /** 会话工作目录（绝对路径，必填；gateway 注入 resolvedProjectDir()）。 */
+  projectDir: string;
 }
 
 interface SessionEntry {
@@ -37,7 +39,7 @@ export class MediaRuntimeExecutor {
 
   constructor(
     private readonly rt: AgentRuntime,
-    private readonly opts: MediaRuntimeExecutorOptions = {},
+    private readonly opts: MediaRuntimeExecutorOptions,
     private readonly completeFn: (parts: PromptPart[], opts: PromptOptions) => Promise<string>,
   ) {
     this.ttlMs = opts.sessionTtlMs ?? 24 * 60 * 60 * 1000;
@@ -71,7 +73,7 @@ export class MediaRuntimeExecutor {
     this.inflight.add(key);
     try {
       if (!entry) {
-        const { id } = await this.rt.session.create({ directory: undefined });
+        const { id } = await this.rt.session.create({ directory: this.opts.projectDir });
         entry = { sessionID: id, kind, dataUrl, providerID: opts.providerID, modelID: opts.modelID, createdAt: Date.now() };
         this.sessions.set(key, entry);
         await this.rt.session.promptAsync({
@@ -193,7 +195,7 @@ export class MediaRuntimeExecutor {
 
 export function createMediaRuntimeExecutor(
   rt: AgentRuntime,
-  opts: MediaRuntimeExecutorOptions = {},
+  opts: MediaRuntimeExecutorOptions,
 ): MediaRuntimeExecutor {
   const authPath = opts.authPath ?? DEFAULT_AUTH_PATH();
   // Contract path: stateless single-shot completion over rt.completion

@@ -20,7 +20,7 @@ describe('MediaRuntimeExecutor default completeFn', () => {
       },
       session: {},
     };
-    const executor = createMediaRuntimeExecutor(fakeRt);
+    const executor = createMediaRuntimeExecutor(fakeRt, { projectDir: '/tmp/proj' });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('a cat jumps');
     expect(completeCalls.length).toBe(1);
@@ -33,6 +33,7 @@ describe('MediaRuntimeExecutor default completeFn', () => {
   it('falls back to opts.completeFn when the runtime lacks completionApi', async () => {
     const fakeRt: any = { capabilities: {}, session: {} };
     const executor = createMediaRuntimeExecutor(fakeRt, {
+      projectDir: '/tmp/proj',
       completeFn: async () => 'legacy adapter result',
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
@@ -46,18 +47,20 @@ describe('MediaRuntimeExecutor default completeFn', () => {
       session: {},
     };
     const executor = createMediaRuntimeExecutor(fakeRt, {
+      projectDir: '/tmp/proj',
       completeFn: async () => 'fallback result',
     });
     const out = await executor.prompt([videoPart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('fallback result');
   });
 
-  it('image 路径：从归一 DTO（{info, parts}）提取最新 assistant 文本', async () => {
+  it('image 路径：从归一 DTO（{info, parts}）提取最�?assistant 文本', async () => {
     const imagePart = { type: 'file', url: 'data:image/png;base64,AAAA', mime: 'image/png' };
+    const created: any[] = [];
     const fakeRt: any = {
       capabilities: {},
       session: {
-        create: async () => ({ id: 's1' }),
+        create: async (opts: any) => { created.push(opts); return { id: 's1' }; },
         promptAsync: async () => {},
         messages: async () => ({
           data: [
@@ -67,8 +70,10 @@ describe('MediaRuntimeExecutor default completeFn', () => {
         }),
       },
     };
-    const executor = createMediaRuntimeExecutor(fakeRt);
+    const executor = createMediaRuntimeExecutor(fakeRt, { projectDir: '/tmp/proj' });
     const out = await executor.prompt([imagePart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
     expect(out).toBe('a cat');
+    // 会话创建必须带显式目录（此前是 { directory: undefined }）
+    expect(created).toEqual([{ directory: '/tmp/proj' }]);
   });
 });
