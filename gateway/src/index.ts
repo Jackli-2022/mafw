@@ -127,6 +127,7 @@ function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicy
 
 import { RuntimeCapabilities, fullCapabilities, minimalCapabilities, AgentRuntime, RuntimeCredentials } from './runtime/contract';
 import { validateRuntime, RuntimeValidation } from './runtime/validate';
+import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
@@ -1303,6 +1304,14 @@ class MafwScheduler {
   }
 
   /**
+   * 会话 cwd 与插件 ctx 默认值的唯一解析点：UI 当前项目优先，否则 config 项目根（绝对）。
+   * 见 spec docs/superpowers/specs/2026-10-20-session-directory-contract-design.md
+   */
+  private resolvedProjectDir(): string {
+    return resolvePluginProjectDir(this.currentProjectDir, config.raw.paths.projectDir);
+  }
+
+  /**
    * Runtime 选择：config.runtime.plugin 指定 ~/.mafw/runtime-plugins/ 中的插件；
    * 未配置/找不到/加载失败一律回退内置 opencode（fail-open，行为与现状一致）。
    */
@@ -1314,7 +1323,7 @@ class MafwScheduler {
         try {
           const creds = await this.runtimeCredentialsForPlugin();
           const rt = await plugin.createRuntime(createRuntimePluginContext(creds, {
-            projectDir: this.projectDir,
+            projectDir: this.resolvedProjectDir(),
             gatewayPort: config.server.apiPort,
           }));
           // 声明 vs 实现一致性校验：必选面缺失 → 回退；能力位虚报 → 强制降级
@@ -1353,7 +1362,7 @@ class MafwScheduler {
     }
     const builtin = this.runtimeLoader?.get('opencode');
     if (builtin) {
-      const rt = await builtin.createRuntime(createRuntimePluginContext(undefined));
+      const rt = await builtin.createRuntime(createRuntimePluginContext(undefined, { projectDir: this.resolvedProjectDir() }));
       // 内置件同样过校验（dogfood）：不回退（无处可退），但缺口要暴露。
       this.applyRuntimeValidation(rt, 'builtin:opencode', false);
       await activateRuntimeTools(rt, 'builtin:opencode', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
@@ -1438,7 +1447,7 @@ class MafwScheduler {
       if (!this.runtime) throw new Error('runtime not available');
       this.workerPool = new SessionWorkerPool({
         client: this.runtime,
-        directory: this.projectDir,
+        directory: this.resolvedProjectDir(),
         ttlMs: config.recall.sessionWorkerTtlMs,
         compactIdleMs: config.recall.workerCompactIdleMs,
         promptTimeoutMs: config.recall.workerPromptTimeoutMs,
@@ -1642,7 +1651,9 @@ class MafwScheduler {
     return {
       runtimeName: () => this.runtimeName,
       caps: () => this.runtimeCaps as any,
-      createSession: async (opts) => this.runtime!.session.create(opts || {}),
+      createSession: async (opts) => this.runtime!.session.create({
+        directory: opts?.directory ?? this.resolvedProjectDir(),
+      }),
       promptAsync: async (opts) => { await this.runtime!.session.promptAsync(opts); },
       deleteSession: async (id) => { await this.runtime!.session.delete({ sessionID: id }); },
       listSessions: async () => {
@@ -2973,7 +2984,7 @@ class MafwScheduler {
               // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
               if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.runtime) {
                 void this.mediaRuntimeExecutor?.dispose().catch(() => {});
-                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, { projectDir: config.raw.paths.projectDir });
+                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir() });
                 this.mediaRuntimeExecutorRt = this.runtime;
               }
               return this.mediaRuntimeExecutor.prompt;
@@ -4621,7 +4632,7 @@ class MafwScheduler {
             const body = JSON.parse(await readBody(req));
             const evalHandler = handleEvalChatCompletion({
               runtime: this.runtime,
-              directory: config.raw.paths.projectDir,
+              directory: this.resolvedProjectDir(),
               providerID: 'opencode-go',
               modelID: 'deepseek-v4-flash',
               timeoutMs: 300_000,
@@ -5637,8 +5648,8 @@ class MafwScheduler {
                 kvGet: (key, id) => this.getGatewayDb().kvGet<any>(key, id),
                 kvSet: (key, id, v) => this.getGatewayDb().kvSet(key, id, v),
                 kvDel: (key, id) => this.getGatewayDb().kvDelete(key, id),
-                // 目录必填（Task 4 收口到 resolvedProjectDir 助手）
-                createSession: (directory, metadata) => this.sdkSession.create(directory ?? config.raw.paths.projectDir, metadata),
+                // 目录必填：缺省时回退到 gateway 的单点解析（绝对路径）
+                createSession: (directory, metadata) => this.sdkSession.create(directory ?? this.resolvedProjectDir(), metadata),
               },
               opts,
             );
@@ -7067,7 +7078,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
 
     let sessionId: string | null = null;
     try {
-      const session = await this.runtime.session.create({ directory: this.projectDir });
+      const session = await this.runtime.session.create({ directory: this.resolvedProjectDir() });
       sessionId = session.id;
       if (!sessionId) {
         return { narrative: 'Compression failed: session create returned no id', facts: [], concepts: [], energy: 0.3 };
@@ -7500,7 +7511,7 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   // once → discard. Internal role keeps its output out of T1.
   private async btwAsk(question: string): Promise<string> {
     if (!this.runtime) throw new Error('runtime not available');
-    const session = await this.runtime.session.create({ directory: this.projectDir });
+    const session = await this.runtime.session.create({ directory: this.resolvedProjectDir() });
     const sessionId = session.id;
     if (!sessionId) throw new Error('Failed to create btw session: no id returned');
     this.registerInternalSession(sessionId, 'btw');

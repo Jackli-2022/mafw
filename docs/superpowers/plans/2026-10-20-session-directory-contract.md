@@ -317,28 +317,34 @@ git commit -m "fix(gateway): eval/sdk-session 目录必填——去 '|| .' 静�
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-// gateway/tests/unit/runtime/session-dir.test.ts 追加（覆盖接线用的纯规则已存在）；
-// 本任务的核心可测面是"内部会话目录不再是字面量 '.'"，用源码契约测试钉扎：
 // gateway/tests/unit/runtime/session-dir-wiring.test.ts（新）
+// 正向断言本任务的 6 个接线点；负断言"死通道不再出现"归 Task 7（届时才删干净）。
+// 读文件后先 `.replace(/\r\n/g, '\n')` 归一换行，避免 CRLF 误伤多行断言。
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-describe('session directory wiring', () => {
-  const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
+const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  test('resolvedProjectDir helper exists and is the single source', () => {
+describe('session directory wiring', () => {
+  test('resolvedProjectDir helper exists and is the single resolution point', () => {
     expect(src).toContain('private resolvedProjectDir(): string');
     expect(src).toContain('resolvePluginProjectDir(this.currentProjectDir, config.raw.paths.projectDir)');
   });
-
-  test('no session/ctx site passes the raw "." Scheduler field', () => {
-    // projectDir: this.projectDir 只允许出现在非 session-cwd 的用途里（trajectory 等），
-    // 会话创建与 ctx 注入必须走 resolvedProjectDir()
-    expect(src).not.toContain('directory: this.projectDir');
+  test('plugin-path ctx gets the absolute resolved project dir', () => {
+    expect(src).toContain('createRuntimePluginContext(creds, {\n            projectDir: this.resolvedProjectDir(),');
   });
-
-  test('builtin runtime ctx also gets projectDir', () => {
+  test('builtin-path ctx also gets projectDir (was missing entirely)', () => {
     expect(src).toContain('createRuntimePluginContext(undefined, { projectDir: this.resolvedProjectDir() })');
+  });
+  test('internal session sites use resolvedProjectDir (pool / compress / btw)', () => {
+    expect(src).toContain('directory: this.resolvedProjectDir(),');
+    expect(src).toContain('session.create({ directory: this.resolvedProjectDir() })');
+  });
+  test('conformance harness defaults to resolvedProjectDir', () => {
+    expect(src).toContain('directory: opts?.directory ?? this.resolvedProjectDir(),');
+  });
+  test('media executor is injected with resolvedProjectDir', () => {
+    expect(src).toContain('createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir() })');
   });
 });
 ```

@@ -48,7 +48,9 @@
      return this.currentProjectDir ?? config.raw.paths.projectDir;
    }
    ```
-2. **`ctx.projectDir` 三处注入**改传 `resolvedProjectDir()`：插件路径 `index.ts:1316-1318`、内置路径 `:1356`（新增传参）、最终兜底直连（`:1359` 附近，同样新增）。
+2. **`ctx.projectDir` 注入**改传 `resolvedProjectDir()`：插件路径 `index.ts:1316-1318`、内置路径 `:1356`（新增传参）。
+   > 勘误（2026-10-20 实施时核对）：注入点是 **2 处**——"最终兜底直连"经 `createOpencodeRuntime(sdkConfig)` 创建、
+   > 不经 `createRuntimePluginContext`，没有 ctx。
 3. **会话创建点（4 处，`. ` → 绝对）**：
    - `index.ts:1441`（`SessionWorkerPool.directory`）
    - `index.ts:4621`（eval handler `directory`）
