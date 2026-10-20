@@ -131,7 +131,7 @@ import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, opencodeTransformEvent } from './runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS } from './runtime/opencode-events';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
@@ -552,7 +552,6 @@ class MafwScheduler {
       {
         eventSource: OPENCODE_EVENT_SOURCE,
         eventMappings: OPENCODE_EVENT_MAPPINGS,
-        transformEvent: opencodeTransformEvent,
       },
     );
     const runtime = await this.createRuntime(sdkConfig);
@@ -1387,7 +1386,6 @@ class MafwScheduler {
     wrapGlobalEventStream(fallbackRt, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_EVENT_MAPPINGS,
-      transformEvent: opencodeTransformEvent,
     }, (t) => CANONICAL_TYPE_SET.has(t), {
       onUnmatched: (t) => {
         try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }

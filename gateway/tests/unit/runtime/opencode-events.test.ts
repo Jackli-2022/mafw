@@ -1,5 +1,5 @@
 import { applyEventMappings, canonicalIdentity, RUNTIME_IDENTITY_TYPES } from '../../../src/runtime/event-mapper';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, opencodeTransformEvent } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { MAFW_RUNTIME_EVENT_NAMES } from '../../../src/runtime/mafw-vocabulary';
 import { TOOL_PRIMITIVE_TYPES } from '../../../src/runtime/tool-part-assembler';
@@ -7,7 +7,6 @@ import { TOOL_PRIMITIVE_TYPES } from '../../../src/runtime/tool-part-assembler';
 const ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
   eventMappings: OPENCODE_EVENT_MAPPINGS,
-  transformEvent: opencodeTransformEvent,
 };
 const isCanonical = (t: string) => !!EVENT_FLOW_MATRIX[t];
 
@@ -51,17 +50,31 @@ describe('OPENCODE_EVENT_MAPPINGS（opencode → MAFW 词汇 v2）', () => {
     }
   });
 
-  it('session.next.* legacy 族（含词汇外成员）被 transformEvent 前缀丢弃', () => {
+  it('session.next.* legacy 族经显式 drop 行丢弃（词汇外新成员同样被拦——default-deny 漏网探测器）', () => {
     for (const t of [
       'session.next.step.ended', 'session.next.reasoning.ended',
       'session.next.tool.started', 'session.next.tool.updated', 'session.next.tool.ended', 'session.next.tool.failed',
     ]) {
-      expect(applyEventMappings(raw(t, { sessionID: 's1' }), ENTRY, isCanonical)).toEqual([]);
+      const suppressed: string[] = [];
+      expect(applyEventMappings(raw(t, { sessionID: 's1' }), ENTRY, isCanonical, { onSuppressed: (x) => suppressed.push(x) })).toEqual([]);
+      expect(suppressed).toEqual([t]);
     }
+    // 家族新成员（未来 opencode 新增）→ unmatched 拦截 + 计数，不再静默穿过
+    const unmatched: string[] = [];
+    expect(applyEventMappings(raw('session.next.tool.created', {}), ENTRY, isCanonical, { onUnmatched: (x) => unmatched.push(x) })).toEqual([]);
+    expect(unmatched).toEqual(['session.next.tool.created']);
   });
 
-  it('sync 信封也被 transformEvent 丢弃（RUNTIME_NATIVE_DROPPED 之外的翻译层兜底）', () => {
-    expect(applyEventMappings(raw('sync', { seq: 1 }), ENTRY, isCanonical)).toEqual([]);
+  it('sync 信封经 drop 行丢弃', () => {
+    const suppressed: string[] = [];
+    expect(applyEventMappings(raw('sync', { seq: 1 }), ENTRY, isCanonical, { onSuppressed: (x) => suppressed.push(x) })).toEqual([]);
+    expect(suppressed).toEqual(['sync']);
+  });
+
+  it('词汇外新词（未来 opencode 事件）→ unmatched 拦截 + 计数（不再 transformEvent 返 raw 穿过）', () => {
+    const unmatched: string[] = [];
+    expect(applyEventMappings(raw('session.forked', { sessionID: 's1' }), ENTRY, isCanonical, { onUnmatched: (x) => unmatched.push(x) })).toEqual([]);
+    expect(unmatched).toEqual(['session.forked']);
   });
 
   it('差异行不劫持 identity：opencode 直接发 canonical 词走恒等行', () => {

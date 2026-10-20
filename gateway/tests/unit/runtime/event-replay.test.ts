@@ -3,14 +3,13 @@ import { join } from 'path';
 import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
 import { mafwBroadcast } from '../../../src/runtime/event-broadcast';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, opencodeTransformEvent } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 
 /** v2 全链路 golden：opencode 原生（GlobalEvent 信封）→ 翻译表 → canonical → facets。 */
 const OC_ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
   eventMappings: OPENCODE_EVENT_MAPPINGS,
-  transformEvent: opencodeTransformEvent,
 };
 
 describe('event replay (golden, v2 pipeline: opencode raw → translate → normalize)', () => {
@@ -35,7 +34,7 @@ describe('event replay (golden, v2 pipeline: opencode raw → translate → norm
     expect((canonical[4] as any).directory).toBe('/p');
   });
 
-  it('session.next.* legacy family is dropped by the transformEvent prefix rule', () => {
+  it('session.next.* legacy family is dropped by the explicit drop rows', () => {
     const dropped = applyEventMappings(
       { directory: '/p', payload: { type: 'session.next.tool.started', properties: { sessionID: 's1' } } },
       OC_ENTRY,

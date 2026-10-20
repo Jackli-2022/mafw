@@ -2,17 +2,16 @@
  * opencode 原生事件 → MAFW 词汇 v2 的翻译声明。
  *
  * v2（2026-10-12）起 opencode 不再拥有「免翻译特权」：经 registerBuiltin
- * 携 eventSource + eventMappings + transformEvent 接入，与文件插件同一
- * 注册接口（加载期校验 + dry-event 试衣间 + 流包装）。
+ * 携 eventSource + eventMappings 接入，与文件插件同一注册接口（加载期
+ * 校验 + dry-event 试衣间 + 流包装）。B1（rev2）起 transformEvent 退役——
+ * legacy 族与 sync 信封改为显式 drop 行（声明式压制计 suppressed），词汇外
+ * 新词经 unmatched 拦截 + 计数（漏网探测器，升级后跑 conformance 即暴露）。
  *
  * 设计：docs/superpowers/specs/2026-10-12-native-event-vocabulary-design.md §4.2
- * - 差异行显式声明（改名/合并）；同名收编词（session.created 等）经
- *   canonical passthrough 机制通过——机制非特权，任何 runtime 走统一
- *   wrap 均适用。
- * - transformEvent 前缀丢弃 session.next.* legacy 族与 sync 信封。
+ * + docs/superpowers/specs/2026-10-20-runtime-unification-batch-design.md B1
  */
 import { canonicalIdentity } from './event-mapper';
-import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
+import type { EventMapping, EventSourceShape } from './event-mapper';
 
 /** opencode 原生事件信封：GlobalEvent { directory, payload: { type, properties, sessionID? } } */
 export const OPENCODE_EVENT_SOURCE: EventSourceShape = {
@@ -34,19 +33,14 @@ export const OPENCODE_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'message.part.complete', to: 'part.complete', passProperties: '$.payload.properties' },
   // ---- plan 域（ACP plan / codex todo_list 同域） ----
   { from: 'todo.updated', to: 'plan.updated', passProperties: '$.payload.properties' },
+  // ---- legacy 族 + sync 信封：显式 drop 行（原 transformEvent 前缀丢弃的表化，B1） ----
+  ...([
+    'session.next.step.ended', 'session.next.reasoning.ended',
+    'session.next.tool.started', 'session.next.tool.updated',
+    'session.next.tool.ended', 'session.next.tool.failed',
+    'sync',
+  ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
   // ---- canonical identity（词汇单源派生，B1：同名收编词的显式注册） ----
   ...canonicalIdentity('$.payload.properties'),
 ];
 
-/**
- * legacy 族 + sync 信封前缀丢弃：
- * - session.next.* 六条（step.ended / reasoning.ended / tool.{started,updated,ended,failed}）
- *   ——唯一 MAFW 侧消费者是 v1 宿主插件（opencode 进程内原生 hook，不经 gateway）。
- * - sync：opencode v2 事件溯源信封，与 legacy 双发（RUNTIME_NATIVE_DROPPED
- *   的边界防御之外，翻译层再兜一层）。
- */
-export const opencodeTransformEvent: TransformEventFn = (raw) => {
-  const t = raw?.payload?.type || raw?.type;
-  if (typeof t === 'string' && (t.startsWith('session.next.') || t === 'sync')) return null;
-  return raw;
-};
