@@ -107,8 +107,9 @@ describe('POST /api/runtime/switch (hot-swap)', () => {
     expect(deps.createRuntime).not.toHaveBeenCalled();
   });
 
-  it('accepts opencode and empty plugin (builtin default) without loader check', async () => {
+  it('opencode 走 loader 校验路径（D 收敛：特判已删，注册表成员语义）', async () => {
     const deps = makeDeps();
+    deps.loader.get.mockImplementation((n: string) => (n === 'opencode' || n === 'pi' ? {} : undefined));
     deps.createRuntime.mockResolvedValue(makeRuntime('opencode'));
     server = createServer(deps);
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -116,8 +117,18 @@ describe('POST /api/runtime/switch (hot-swap)', () => {
     const res = await postJson(server, '/api/runtime/switch', { plugin: 'opencode' });
     expect(res.status).toBe(200);
     expect(res.body.active.name).toBe('opencode');
-    expect(deps.loader.get).not.toHaveBeenCalled();
+    expect(deps.loader.get).toHaveBeenCalledWith('opencode'); // 现在过 loader 校验
     expect(deps.persist).toHaveBeenCalledWith({ runtime: { plugin: 'opencode' } });
+  });
+
+  it('opencode 未注册（loader 缺席）→ 400（不再绕过校验）', async () => {
+    const deps = makeDeps(); // fake loader 只注册 pi
+    server = createServer(deps);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+
+    const res = await postJson(server, '/api/runtime/switch', { plugin: 'opencode' });
+    expect(res.status).toBe(400);
+    expect(deps.persist).not.toHaveBeenCalled();
   });
 
 it('reports envOverride when MAFW_RUNTIME_PLUGIN is set', async () => {
