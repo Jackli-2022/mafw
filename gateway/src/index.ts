@@ -4017,11 +4017,13 @@ class MafwScheduler {
           return;
         }
 
-        // POST /api/tools/execute — 通用工具执行（out-of-process runtime 通道；同 /api/python/* 信任域）
+        // POST /api/tools/execute — 通用工具执行（out-of-process runtime 通道；同 /api/python/* 信任域）。
+        // 执行自动合成两帧 tool part（running→completed/error）经 handleOpencodeEvent 全管线广播（spec 2026-10-20）。
         if (req.url === "/api/tools/execute" && req.method === "POST") {
           if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
           await handleToolsExecute(req, res, {
             buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
+            emitEvent: (evt) => this.handleOpencodeEvent(evt),
           });
           return;
         }

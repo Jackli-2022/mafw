@@ -3,11 +3,13 @@
 //   POST /api/tools/execute —— 通用执行（name+params+sessionID；复用 buildMafwToolFactory）
 // 信任域与 /api/python/* 一致（挂载点 isLoopback 门）。
 import * as http from 'http';
-import { MAFW_TOOL_SPECS } from '../runtime/mafw-tools';
+import { MAFW_TOOL_SPECS, executeWithToolFrames } from '../runtime/mafw-tools';
 import type { MafwToolRegistration } from '../runtime/contract';
 
 export interface ToolsExecuteDeps {
   buildFactory: () => (sessionId: string) => MafwToolRegistration[];
+  /** 合成事件出口（index.ts 接 handleOpencodeEvent——与 runtime 事件同管线：enrich/trajectory/广播） */
+  emitEvent: (evt: unknown) => void;
 }
 
 export function handleToolsList(res: http.ServerResponse): void {
@@ -48,7 +50,7 @@ export async function handleToolsExecute(req: http.IncomingMessage, res: http.Se
     return;
   }
   try {
-    const out = await reg.execute(body.params ?? {}, undefined);
+    const out = await executeWithToolFrames(reg, body.params ?? {}, sessionID, deps.emitEvent);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(out));
   } catch (err: any) {
