@@ -88,7 +88,7 @@ module.exports = {
       // ─── 必需：会话 API（Tier 0）──────────────────────
       session: {
         async create(opts) {
-          // opts: { directory?: string }
+          // opts: { directory: string }  ← 必填（绝对路径），见「会话目录规则」
           // 返回: { id: string, ... }
           const res = await ctx.fetch('http://localhost:8080/sessions', {
             method: 'POST',
@@ -232,6 +232,26 @@ module.exports = {
   },
 };
 ```
+
+## 会话目录规则（必读）
+
+**建会话用 `opts.directory`**：契约字段**必填**，由 gateway 每次显式传入**绝对路径**，
+不得自行猜测/拼接来源（缺传是 gateway 的 bug——`tsc` 会拦；运行时缺失抛
+`directory is required`，不要静默兜底）。
+
+**`ctx.projectDir` 只作启动期信息**（绝对路径；runtime 实例创建时的当前项目快照）：
+用于插件初始化（读项目配置/扫描仓库）或 `opts.directory` 缺失时的防御性兜底；
+**不要**用它决定会话工作目录（多项目/worktree 下它不是目标项目）。
+
+```js
+async create(opts) {
+  const dir = opts.directory ?? ctx.projectDir;
+  if (!dir) throw new Error('directory is required');
+  // …用 dir 作为会话工作目录
+}
+```
+
+依据：`docs/superpowers/specs/2026-10-20-session-directory-contract-design.md`
 
 ## 第三步：SSE 事件——产出契约与三方消费
 

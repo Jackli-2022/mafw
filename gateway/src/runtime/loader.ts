@@ -24,7 +24,8 @@ export interface RuntimePluginContext {
   pluginConfig(name: string): Record<string, any>;
   /** runtime 凭据（media/pi 认证链优先走这里） */
   credentials?: RuntimeCredentials;
-  /** 当前项目目录（pi 等内置件此前直读 config.raw.paths.projectDir） */
+  /** 项目根（**绝对路径**；runtime 实例创建时的当前项目快照）。
+   *  **启动期信息**，不用于 session cwd —— 建会话一律用 opts.directory（契约必填）。 */
   projectDir?: string;
   /** gateway API 端口（pi getBaseUrl 此前直读 config.server.apiPort） */
   gatewayPort?: number;
