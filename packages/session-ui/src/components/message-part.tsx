@@ -35,7 +35,7 @@ import { useData } from "../context"
 import { useFileComponent } from "@mafw/ui/context/file"
 import { useDialog } from "@mafw/ui/context/dialog"
 import { type UiI18n, useI18n } from "@mafw/ui/context/i18n"
-import { BasicTool, GenericTool } from "./basic-tool"
+import { BasicTool } from "./basic-tool"
 import { Accordion } from "@mafw/ui/accordion"
 import { StickyAccordionHeader } from "@mafw/ui/sticky-accordion-header"
 import { Collapsible } from "@mafw/ui/collapsible"
@@ -490,7 +490,7 @@ export function getToolInfo(
       return {
         icon: "glasses",
         title: i18n.t("ui.tool.read"),
-        subtitle: input.filePath ? getFilename(input.filePath) : undefined,
+        subtitle: readPathInput(input) ? getFilename(readPathInput(input)!) : undefined,
       }
     case "list":
       return {
@@ -543,13 +543,13 @@ export function getToolInfo(
       return {
         icon: "code-lines",
         title: i18n.t("ui.messagePart.title.edit"),
-        subtitle: input.filePath ? getFilename(input.filePath) : undefined,
+        subtitle: readPathInput(input) ? getFilename(readPathInput(input)!) : undefined,
       }
     case "write":
       return {
         icon: "code-lines",
         title: i18n.t("ui.messagePart.title.write"),
-        subtitle: input.filePath ? getFilename(input.filePath) : undefined,
+        subtitle: readPathInput(input) ? getFilename(readPathInput(input)!) : undefined,
       }
     case "apply_patch":
       return {
@@ -743,7 +743,7 @@ function toolDefaultOpen(tool: string, shell = false, edit = false) {
 
 export function partDefaultOpen(part: PartType, shell = false, edit = false) {
   if (part.type !== "tool") return
-  return toolDefaultOpen(part.tool, shell, edit)
+  return toolDefaultOpen(displayToolOf(part), shell, edit)
 }
 
 export function AssistantParts(props: {
@@ -860,7 +860,7 @@ export function AssistantParts(props: {
 }
 
 function isContextGroupTool(part: PartType): part is ToolPart {
-  return part.type === "tool" && CONTEXT_GROUP_TOOLS.has(part.tool)
+  return part.type === "tool" && CONTEXT_GROUP_TOOLS.has(displayToolOf(part))
 }
 
 function contextToolDetail(part: ToolPart): string | undefined {
@@ -881,13 +881,13 @@ function contextToolDetail(part: ToolPart): string | undefined {
 function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
   const input = (part.state.input ?? {}) as Record<string, unknown>
   const path = typeof input.path === "string" ? input.path : "/"
-  const filePath = typeof input.filePath === "string" ? input.filePath : undefined
+  const filePath = readPathInput(input)
   const pattern = typeof input.pattern === "string" ? input.pattern : undefined
   const include = typeof input.include === "string" ? input.include : undefined
   const offset = typeof input.offset === "number" ? input.offset : undefined
   const limit = typeof input.limit === "number" ? input.limit : undefined
 
-  switch (part.tool) {
+  switch (displayToolOf(part)) {
     case "read": {
       const args: string[] = []
       if (offset !== undefined) args.push("offset=" + offset)
@@ -920,7 +920,7 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
       }
     }
     default: {
-      const info = getToolInfo(part.tool, input, "metadata" in part.state ? part.state.metadata : undefined)
+      const info = getToolInfo(displayToolOf(part), input, "metadata" in part.state ? part.state.metadata : undefined)
       return {
         title: info.title,
         subtitle: info.subtitle || contextToolDetail(part),
@@ -931,9 +931,9 @@ function contextToolTrigger(part: ToolPart, i18n: ReturnType<typeof useI18n>) {
 }
 
 function contextToolSummary(parts: ToolPart[]) {
-  const read = parts.filter((part) => part.tool === "read").length
-  const search = parts.filter((part) => part.tool === "glob" || part.tool === "grep").length
-  const list = parts.filter((part) => part.tool === "list").length
+  const read = parts.filter((part) => displayToolOf(part) === "read").length
+  const search = parts.filter((part) => ["glob", "grep"].includes(displayToolOf(part))).length
+  const list = parts.filter((part) => displayToolOf(part) === "list").length
   return { read, search, list }
 }
 
@@ -1548,27 +1548,13 @@ export interface ToolProps {
 
 export type ToolComponent = Component<ToolProps>
 
-const state: Record<
-  string,
-  {
-    name: string
-    render?: ToolComponent
-  }
-> = {}
-
-export function registerTool(input: { name: string; render?: ToolComponent }) {
-  state[input.name] = input
-  return input
-}
-
-export function getTool(name: string) {
-  return state[name]?.render
-}
-
-export const ToolRegistry = {
-  register: registerTool,
-  render: getTool,
-}
+// 工具卡注册表与 canonical 解析层已迁至轻依赖模块（bun test 可直接导入）；
+// 此处转发保持既有导入方（desktop tool-cards 等）零改动。
+export { registerTool, getTool, ToolRegistry } from "./tool-registry"
+export { resolveToolRender, CLASS_FAMILY, readPathInput } from "./tool-canonical"
+import { ToolRegistry } from "./tool-registry"
+import { resolveToolRender, readPathInput } from "./tool-canonical"
+import { displayToolOf } from "./parts-rules"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
   const value = createMemo(() => props.path || "tool-file")
@@ -1638,7 +1624,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return taskId()
   })
 
-  const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
+  const render = createMemo(() => resolveToolRender(part()))
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
@@ -1881,6 +1867,7 @@ ToolRegistry.register({
     const args: string[] = []
     if (props.input.offset) args.push("offset=" + props.input.offset)
     if (props.input.limit) args.push("limit=" + props.input.limit)
+    const subtitlePath = readPathInput(props.input)
     const loaded = createMemo(() => {
       if (props.status !== "completed") return []
       const value = props.metadata.loaded
@@ -1894,7 +1881,7 @@ ToolRegistry.register({
           icon="glasses"
           trigger={{
             title: i18n.t("ui.tool.read"),
-            subtitle: props.input.filePath ? getFilename(props.input.filePath) : "",
+            subtitle: subtitlePath ? getFilename(subtitlePath) : "",
             args,
           }}
         />

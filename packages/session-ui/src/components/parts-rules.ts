@@ -4,6 +4,7 @@
 export interface PartLike {
   type: string
   tool?: string
+  canonicalTool?: string
   callID?: string
   text?: string
   state?: { status?: string }
@@ -12,10 +13,15 @@ export interface PartLike {
 export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 export const HIDDEN_TOOLS = new Set(["todowrite"])
 
+/** canonical 翻译层（gateway enrich 的 additive 字段）：显示/分组/聚合统一用解析名。 */
+export function displayToolOf(part: PartLike): string {
+  return typeof part.canonicalTool === "string" && part.canonicalTool ? part.canonicalTool : part.tool ?? ""
+}
+
 export function renderable(part: PartLike, showReasoningSummaries = true): boolean {
   if (part.type === "tool") {
     if (!part.tool) return false
-    if (HIDDEN_TOOLS.has(part.tool)) return false
+    if (HIDDEN_TOOLS.has(displayToolOf(part))) return false
     if (part.tool === "question") return part.state?.status !== "pending" && part.state?.status !== "running"
     return true
   }
@@ -27,8 +33,8 @@ export function renderable(part: PartLike, showReasoningSummaries = true): boole
 /** 该 part 是否会作为 AssistantParts 的顶层「part」条目渲染（renderAfterPart 会触发）。 */
 export function isTopLevelToolEntry(part: PartLike): boolean {
   if (part.type !== "tool" || !part.tool) return false
-  if (HIDDEN_TOOLS.has(part.tool)) return false
-  if (CONTEXT_GROUP_TOOLS.has(part.tool)) return false
+  if (HIDDEN_TOOLS.has(displayToolOf(part))) return false
+  if (CONTEXT_GROUP_TOOLS.has(displayToolOf(part))) return false
   if (part.tool === "question") {
     const s = part.state?.status
     if (s === "pending" || s === "running") return false
