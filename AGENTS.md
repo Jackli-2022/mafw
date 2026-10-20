@@ -896,7 +896,9 @@ gateway 与 agent runtime 之间是**能力自声明契约**（`gateway/src/runt
   生效，审批 `isReadOnlyTool`/身份 `resolveToolCategory`/事件 `enrichToolClass` 零改动受益。
   缺实现 = `validate.ts` hard 拒绝 → 插件回退 opencode。out-of-process 通道：
   `GET /api/tools`（spec 清单）+ `POST /api/tools/execute {name, params, sessionID}`
-  （loopback 门）。opencode 实现 = adapter ack no-op（六件套由 v1 插件承载 + MCP 自接线）；
+  （loopback 门；执行自动合成两帧 tool part（running→completed/error，`toolpart_<uuid>`）
+  经 handleOpencodeEvent 同管线广播（enrich/trajectory/Mode A），spec 2026-10-20；
+  in-process opt-in 合成 = `wrapRegistrationsWithEvents`）。opencode 实现 = adapter ack no-op（六件套由 v1 插件承载 + MCP 自接线）；
   pi 实现 = registry `setToolFactory` stash → host extension `T.Unsafe(jsonSchema)` 包
   JSON Schema（`~unsafe` 键 non-enumerable 不入 wire，spike 实证 typebox 1.3.7 +
   pi-ai openai-completions 原样透传）+ execute 桥接（`{text,isError}` → pi ToolResult）。

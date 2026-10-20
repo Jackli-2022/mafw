@@ -452,6 +452,15 @@ tools: {
 - **out-of-process runtime**（agent 进程无法持有 in-process 闭包）：`GET /api/tools` 取 spec 清单 + `POST /api/tools/execute {name, params, sessionID}` 执行（loopback）
 - 参考实现：pi 的 `pi-mafw-host-extension.ts`（T.Unsafe 包 JSON Schema + execute 桥接，~30 行）
 
+**显示链（注册 ≠ 显示）**——工具能执行不等于前端能看到，三路径任选其一：
+
+1. **runtime 自发**（pi/opencode 现状）：把原生工具事件映射到 `tool.call`/`tool.result` 三原语（gateway `ToolPartAssembler` 合帧）或直映 `part.updated` tool part——见 3.1 契约表
+2. **gateway 合成 opt-in**（无事件映射的 in-process runtime）：`wrapRegistrationsWithEvents(regs, sessionId, emit)` 包装 factory 注册项，emit 接你 `global.event()` 流——两帧自动广播
+3. **out-of-process 自动**：`POST /api/tools/execute` 自动合成两帧（running→completed/error）经全管线广播；**调用方 = 放弃自发 canonical 工具事件**（防双卡，conformance 校验）
+
+历史渲染：不实现 `session.normalizeMessages` 则历史消息里的工具块不渲染（契约可选方法，pi 有参考实现）。
+验证：`POST /api/runtime/conformance {"scenarios":["tool-visibility"]}`。
+
 ## 第五步：激活与测试
 
 ### 激活方式
