@@ -41,6 +41,14 @@ describe('S2 session-lifecycle evaluator', () => {
     const r = evaluateScenario('session-lifecycle', [], { created: true, deleted: false });
     expect(r.pass).toBe(false);
   });
+  it('B2 历史形状断言：{info,parts[]} 合法通过；缺 parts fail；history 缺席 fail-open', () => {
+    const ok = evaluateScenario('session-lifecycle', [], { created: true, deleted: true, history: [{ info: { id: 'm1' }, parts: [] }] });
+    expect(ok.pass).toBe(true);
+    const bad = evaluateScenario('session-lifecycle', [], { created: true, deleted: true, history: [{ info: {} }] });
+    expect(bad.failures.some((f) => f.includes('history'))).toBe(true);
+    const none = evaluateScenario('session-lifecycle', [], { created: true, deleted: true, history: undefined });
+    expect(none.pass).toBe(true); // getMessages 失败不判死（fail-open）
+  });
 });
 
 describe('catalog', () => {

@@ -95,7 +95,7 @@ export interface IdentityObservation {
 export function evaluateScenario(
   id: string,
   events: ObservedEvent[],
-  apiResult?: { created: boolean; deleted: boolean },
+  apiResult?: { created: boolean; deleted: boolean; history?: any[] },
   cognition?: CognitionObservation,
   identity?: IdentityObservation,
 ): { pass: boolean; failures: string[] } {
@@ -110,6 +110,10 @@ export function evaluateScenario(
   } else if (id === 'session-lifecycle') {
     if (!apiResult?.created) failures.push('created session not visible in session.list');
     if (!apiResult?.deleted) failures.push('deleted session still visible in session.list (leak)');
+    // B2：历史形状断言（{info,parts[]} DTO）；history 缺席 = getMessages 失败，fail-open 不判死
+    if (apiResult?.history && !apiResult.history.every((m: any) => m && typeof m === 'object' && Array.isArray(m.parts))) {
+      failures.push('history messages are not {info, parts[]} shaped — normalizeMessages output invalid');
+    }
   } else if (id === 'cognition-observe') {
     const sources = new Set(cognition?.sources ?? []);
     for (const need of ['user_input', 'tool_result', 'assistant_reply']) {

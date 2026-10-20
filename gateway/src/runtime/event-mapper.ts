@@ -6,6 +6,7 @@
 import { getPath, evalConditions, renderTemplate, setPath, Condition } from './path-expr';
 import { MAFW_RUNTIME_EVENT_NAMES } from './mafw-vocabulary';
 import { TOOL_PRIMITIVE_TYPES } from './tool-part-assembler';
+import type { RawRuntimeEvent } from './normalize';
 
 export type FieldValue =
   | { path: string; default?: unknown }
@@ -33,7 +34,7 @@ export interface EventSourceShape {
   directoryPath?: string;
 }
 
-export type TransformEventFn = (raw: any) => any | any[] | null;
+export type TransformEventFn = (raw: any) => RawRuntimeEvent | RawRuntimeEvent[] | null | undefined;
 
 /** 翻译执行 hooks（B1/B2/B3 可观测面；全部可选、fail-open）。 */
 export interface TranslationHooks {
@@ -140,12 +141,25 @@ export function applyEventMappings(
 
   // canonical 直发分支已删除（B1 default-deny）：同名收编经 canonicalIdentity() 恒等行。
   if (entry.transformEvent) {
-    const out = entry.transformEvent(raw);
+    let out: unknown;
+    try {
+      out = entry.transformEvent(raw);
+    } catch (err: any) {
+      hooks?.onTranslationError?.(raw, `transformEvent threw: ${err?.message ?? String(err)}`);
+      return [];
+    }
     if (out === null || out === undefined) {
       hooks?.onSuppressed?.(nativeType);
       return [];
     }
-    return Array.isArray(out) ? out : [out];
+    const arr = Array.isArray(out) ? out : [out];
+    const ok = arr.every((e: any) =>
+      e && typeof e === 'object' && typeof (e.payload?.type ?? e.type) === 'string' && !!(e.payload?.type ?? e.type));
+    if (!ok) {
+      hooks?.onTranslationError?.(raw, 'transformEvent returned malformed event(s) — expected {payload:{type,...}}/{type,...} objects, null, or array thereof');
+      return [];
+    }
+    return arr as any[];
   }
 
   hooks?.onUnmatched?.(nativeType);

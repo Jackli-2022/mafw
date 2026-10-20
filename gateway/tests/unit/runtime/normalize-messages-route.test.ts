@@ -66,3 +66,35 @@ describe('wrapRuntimeMessages', () => {
     expect(await rt.session.messages({})).toEqual({ data: undefined });
   });
 });
+
+describe('B2 normalizeMessages 输出守卫', () => {
+  test('返回非数组 → onViolation + 回退原文', () => {
+    const raw = [{ a: 1 }];
+    const rt = { session: { normalizeMessages: () => 'nope' } } as any;
+    const violations: string[] = [];
+    expect(applyNormalizeMessages(rt, raw, (r) => violations.push(r))).toBe(raw);
+    expect(violations[0]).toContain('non-array');
+  });
+
+  test('返回缺 parts 数组的成员 → onViolation + 回退原文', () => {
+    const raw = [{ a: 1 }];
+    const rt = { session: { normalizeMessages: () => [{ info: {}, parts: 'x' }] } } as any;
+    const violations: string[] = [];
+    expect(applyNormalizeMessages(rt, raw, (r) => violations.push(r))).toBe(raw);
+    expect(violations[0]).toContain('info, parts[]');
+  });
+
+  test('wrapRuntimeMessages 透传 onViolation（抛错路径）', async () => {
+    const rt = {
+      session: {
+        normalizeMessages: () => { throw new Error('bad'); },
+        messages: async () => ({ data: [{ id: 'm1' }] }),
+      },
+    } as any;
+    const violations: string[] = [];
+    wrapRuntimeMessages(rt, (r) => violations.push(r));
+    const out = await rt.session.messages({});
+    expect(out.data).toEqual([{ id: 'm1' }]);
+    expect(violations[0]).toContain('bad');
+  });
+});

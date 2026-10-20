@@ -30,13 +30,15 @@ export interface RuntimeSwitchDeps {
   unknownEvents?: () => Record<string, Record<string, number>>;
   /** 激活期"声明 vs 实现"校验记录（降级 + 警告）；缺省空数组。 */
   validationNotes?: () => string[];
+  /** B2 翻译守卫失败计数（transformEvent/normalizeMessages per-runtime）；缺省空对象。 */
+  translationErrors?: () => Record<string, unknown>;
 }
 
 // ─── GET /api/runtime ─── active runtime identity + capabilities + plugin scan state
 export async function handleRuntimeGet(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
-  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes'>,
+  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes' | 'translationErrors'>,
 ): Promise<void> {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -48,6 +50,7 @@ export async function handleRuntimeGet(
     plugins: deps.loader?.getState() ?? [],
     unknownEvents: deps.unknownEvents ? deps.unknownEvents() : {},
     validation: deps.validationNotes ? deps.validationNotes() : [],
+    translationErrors: deps.translationErrors ? deps.translationErrors() : {},
   }));
 }
 

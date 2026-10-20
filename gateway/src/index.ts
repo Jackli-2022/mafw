@@ -373,6 +373,8 @@ class MafwScheduler {
   private runtimeLoader?: RuntimePluginLoader;
   /** 未知事件遥测（L1）：per-source（runtime 名 / 'api'）per-type 计数。 */
   private unknownEventTracker = new UnknownEventTracker();
+  /** B2 翻译守卫失败计数（transformEvent 抛错/非法输出、normalizeMessages 违规）。 */
+  private translationErrors = new Map<string, { transformEvent: number; normalizeMessages: number; lastError?: string; lastAt?: string; lastWarnAt?: number }>();
   /** Conformance event tap：per-session 临时观察者（POST /api/runtime/conformance 用）。 */
   private eventTaps = new Map<string, Set<(e: { type: string; sessionID?: string; at: number }) => void>>();
   private serveSupervisor: ServeSupervisor;
@@ -1083,6 +1085,22 @@ class MafwScheduler {
     await this.subscribeToEvents();
   }
 
+  /** B2 守卫失败记录：限频 ERROR（30s per-runtime，isMalformedEvent 同模式）+ 计数。 */
+  private recordTranslationError(runtime: string, kind: 'transformEvent' | 'normalizeMessages', reason: string): void {
+    try {
+      const now = Date.now();
+      const cur = this.translationErrors.get(runtime) ?? { transformEvent: 0, normalizeMessages: 0 };
+      cur[kind]++;
+      cur.lastError = reason;
+      cur.lastAt = new Date().toISOString();
+      if (!cur.lastWarnAt || now - cur.lastWarnAt > 30_000) {
+        cur.lastWarnAt = now;
+        log.error(`[Runtime] translation error (${runtime}.${kind}): ${reason}`);
+      }
+      this.translationErrors.set(runtime, cur);
+    } catch { /* fail-open */ }
+  }
+
   private handleOpencodeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
     // opencode v2 sync 信封：与 legacy 事件双发的状态重同步噪声，gateway
@@ -1347,6 +1365,7 @@ class MafwScheduler {
                 }
               } catch { /* fail-open */ }
             },
+            onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
             onNoMappings: () => {
               log.warn(
                 `[Runtime] '${rt.name}' declares no event mappings/transformEvent — ` +
@@ -1377,6 +1396,7 @@ class MafwScheduler {
         onUnmatched: (t) => {
           try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
         },
+        onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
       });
       wrapToolPartAssembly(rt); // opencode 无三原语，恒等直通
       return this.wrapRuntimeIdentity(rt);
@@ -1395,6 +1415,7 @@ class MafwScheduler {
       onUnmatched: (t) => {
         try { this.unknownEventTracker.record('opencode', t); } catch { /* fail-open */ }
       },
+      onTranslationError: (_raw, reason) => this.recordTranslationError('opencode', 'transformEvent', reason),
     });
     wrapToolPartAssembly(fallbackRt);
     return this.wrapRuntimeIdentity(fallbackRt);
@@ -1425,7 +1446,7 @@ class MafwScheduler {
   private wrapRuntimeIdentity(rt: AgentRuntime): AgentRuntime {
     // 历史消息归一收口：声明 normalizeMessages 的 runtime 在 session.messages 出口
     // 统一转 opencode {info, parts} DTO（所有消费者形状一致）。必须先于身份包装。
-    wrapRuntimeMessages(rt);
+    wrapRuntimeMessages(rt, (reason) => this.recordTranslationError(rt.name, 'normalizeMessages', reason));
     const registry = this.identityRegistry;
     (rt.session as any) = withIdentityPrompt(
       rt.session as any,
@@ -1674,6 +1695,7 @@ class MafwScheduler {
       bindIdentity: (sessionID: string, identity: string) => this.identityState.bind(sessionID, identity, 'session'),
       evaluatePolicy: (sessionID, candidate) => this.approvalPolicy.evaluate(sessionID, candidate),
       injectEvent: (evt) => this.handleOpencodeEvent(evt),
+      getMessages: async (sessionID) => ((await this.runtime?.session.messages({ sessionID, limit: 5 })) as any)?.data ?? [],
     };
   }
 
@@ -1720,6 +1742,8 @@ class MafwScheduler {
         wirePiPermissionEvaluator(rt, this.approvalPolicy);
         this.runtimeCaps = rt.capabilities;
         this.runtimeName = rt.name;
+        // B2/B3：翻译守卫与拦截计数随 runtime 切换清空（per-runtime 快照语义）
+        this.translationErrors.clear();
         // Re-materialize identities on the freshly switched runtime (fire-and-forget).
         void this.materializeIdentities().catch(() => {});
         // Switching onto a runtime that owns serve (builtin opencode) must
@@ -1744,6 +1768,7 @@ class MafwScheduler {
       },
       unknownEvents: () => this.unknownEventTracker.snapshot(),
       validationNotes: () => this.runtimeValidationNotes,
+      translationErrors: () => Object.fromEntries(this.translationErrors),
     };
   }
 

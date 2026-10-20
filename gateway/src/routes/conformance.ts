@@ -26,6 +26,8 @@ export interface ConformanceDeps {
   evaluatePolicy(sessionID: string, candidate: { toolName: string; patterns: string[]; metadata: Record<string, unknown> }): { action: string };
   /** tool-visibility：注入点（与 /api/tools/execute 同一管线 = handleOpencodeEvent）。 */
   injectEvent(evt: unknown): void;
+  /** B2：拉会话历史（session-lifecycle 历史形状断言用）。 */
+  getMessages(sessionID: string): Promise<any[]>;
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -145,10 +147,13 @@ export async function handleConformance(
         const sess = await deps.createSession({});
         const listAfterCreate = await deps.listSessions();
         const created = listAfterCreate.some((s) => s.id === sess.id);
+        // B2：历史形状断言——create 后拉 messages，normalizeMessages 输出须为 {info,parts[]}。
+        // 拉取失败（serve 未就绪等）不判死（fail-open，history 传 undefined）。
+        const history = await deps.getMessages(sess.id).catch(() => null);
         await deps.deleteSession(sess.id);
         const listAfterDelete = await deps.listSessions();
         const deleted = !listAfterDelete.some((s) => s.id === sess.id);
-        const r = evaluateScenario(sc.id, [], { created, deleted });
+        const r = evaluateScenario(sc.id, [], { created, deleted, history: history ?? undefined });
         results.push({ id: sc.id, title: sc.title, ...r, durationMs: Date.now() - t0 });
       }
     } catch (err: any) {

@@ -56,4 +56,27 @@ describe('GET /api/runtime (unknownEvents exposure)', () => {
     } as any);
     expect(JSON.parse(body()).validation).toEqual([]);
   });
+
+  it('exposes translationErrors snapshot (B2) when provided', async () => {
+    const { res, body } = fakeRes();
+    await handleRuntimeGet({} as http.IncomingMessage, res, {
+      runtimeName: () => 'pi',
+      runtimeCaps: () => ({}),
+      envOverride: () => false,
+      translationErrors: () => ({ pi: { transformEvent: 2, normalizeMessages: 0, lastError: 'boom', lastAt: 't' } }),
+    } as any);
+    const parsed = JSON.parse(body());
+    expect(parsed.translationErrors.pi.transformEvent).toBe(2);
+    expect(parsed.translationErrors.pi.lastError).toBe('boom');
+  });
+
+  it('translationErrors defaults to empty object', async () => {
+    const { res, body } = fakeRes();
+    await handleRuntimeGet({} as http.IncomingMessage, res, {
+      runtimeName: () => 'opencode',
+      runtimeCaps: () => ({}),
+      envOverride: () => false,
+    } as any);
+    expect(JSON.parse(body()).translationErrors).toEqual({});
+  });
 });

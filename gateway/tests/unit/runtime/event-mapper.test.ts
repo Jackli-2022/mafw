@@ -167,3 +167,31 @@ describe('validateEventMappings', () => {
     expect(validateEventMappings({ eventMappings: [{ from: 'a', to: 'turn.completed' }] }, CANONICAL)).toHaveLength(1);
   });
 });
+
+describe('B2 transformEvent 守卫', () => {
+  const entry = (fn: any): EventMappingEntry => ({ eventSource: { typePath: '$.type' }, eventMappings: [], transformEvent: fn });
+
+  test('抛错 → drop + onTranslationError，不断流', () => {
+    const errs: string[] = [];
+    const out = applyEventMappings({ type: 'x' }, entry(() => { throw new Error('boom'); }), isCanonical, { onTranslationError: (_r, reason) => errs.push(reason) });
+    expect(out).toEqual([]);
+    expect(errs[0]).toContain('boom');
+  });
+
+  test('返回字符串（非法形状）→ drop + onTranslationError', () => {
+    const errs: string[] = [];
+    expect(applyEventMappings({ type: 'x' }, entry(() => 'garbage'), isCanonical, { onTranslationError: (_r, reason) => errs.push(reason) })).toEqual([]);
+    expect(errs[0]).toContain('malformed');
+  });
+
+  test('数组含非对象成员 → drop + onTranslationError', () => {
+    const errs: string[] = [];
+    expect(applyEventMappings({ type: 'x' }, entry(() => [{ payload: { type: 'session.updated', properties: {} } }, 42]), isCanonical, { onTranslationError: (_r, reason) => errs.push(reason) })).toEqual([]);
+    expect(errs).toHaveLength(1);
+  });
+
+  test('合法输出（裸事件/信封/数组）照常通过', () => {
+    expect(applyEventMappings({ type: 'x' }, entry(() => ({ type: 'session.updated' })), isCanonical)).toHaveLength(1);
+    expect(applyEventMappings({ type: 'x' }, entry(() => [{ payload: { type: 'session.updated', properties: {} } }]), isCanonical)).toHaveLength(1);
+  });
+});
