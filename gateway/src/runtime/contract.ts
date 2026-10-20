@@ -99,7 +99,10 @@ export function minimalCapabilities(): RuntimeCapabilities {
 // ─── 会话接口面（与现 OpencodeAdapter 方法面 1:1 一致） ─────────────────────
 
 export interface SessionCreateOpts {
-  directory?: string;
+  /** 会话工作目录。**必填、绝对路径**——由 gateway 每次显式提供（spec:
+   *  2026-10-20-session-directory-contract-design）。runtime 不得猜测来源
+   *  （缺传即编译错误；运行时缺失走 `requireSessionDir` fail-loud）。 */
+  directory: string;
 }
 
 export interface SessionPromptOpts {
