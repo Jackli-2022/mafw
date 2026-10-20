@@ -43,7 +43,9 @@ const fakePi = {
       },
     }),
   },
-  createAgentSession: async () => ({
+  createAgentSession: async (sessionOpts: any) => {
+    (globalThis as any).__piCwds = [...((globalThis as any).__piCwds || []), sessionOpts?.cwd];
+    return {
     session: {
       prompt: async () => {},
       waitForIdle: async () => {},
@@ -57,7 +59,8 @@ const fakePi = {
         (globalThis as any).__piRenames = [...((globalThis as any).__piRenames || []), name];
       },
     },
-  }),
+    };
+  },
   SessionManager: {
     list: async (_cwd: string) => fakeSessionList,
     open: (path: string) => ({
@@ -106,6 +109,28 @@ describe('pi-runtime', () => {
     const { data } = await rt.session.messages({ sessionID: id });
     expect(Array.isArray(data)).toBe(true);
     expect(msgCount).toBe(0);
+  });
+});
+
+describe('pi session.create directory contract', () => {
+  afterEach(() => { delete (globalThis as any).__piCwds; });
+
+  it('missing directory (and no ctx.projectDir) → fail-loud', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}) } as any,
+      { loadPi: async () => fakePi },
+    );
+    await expect((rt.session as any).create({})).rejects.toThrow(/directory is required/);
+  });
+
+  it('ctx.projectDir is the defensive fallback when opts.directory is missing', async () => {
+    const rt = await createPiRuntime(
+      { fetch, log: console, pluginConfig: () => ({}), projectDir: '/proj/from-ctx' } as any,
+      { loadPi: async () => fakePi },
+    );
+    const { id } = await (rt.session as any).create({});
+    expect(id.startsWith('pi_')).toBe(true);
+    expect((globalThis as any).__piCwds.at(-1)).toBe('/proj/from-ctx');
   });
 });
 

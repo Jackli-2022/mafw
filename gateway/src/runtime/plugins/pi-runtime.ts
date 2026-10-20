@@ -9,6 +9,7 @@ import { config } from '../../config';
 import { listByDirectory } from '../pi/pi-session-storage';
 import { fixMediaPayload } from '../../media/pi-adapter';
 import * as piAgentConfig from '../pi/pi-agent-config';
+import { requireSessionDir } from '../session-dir';
 
 export const PI_CAPABILITIES: RuntimeCapabilities = {
   sessionApi: true,
@@ -167,7 +168,10 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
 
   const sessionAPI = {
     create: async (opts: { directory?: string }) => {
-      const { id } = await registry.create(opts?.directory ?? ctx.projectDir ?? config.raw.paths.projectDir, { model: { provider, modelID } });
+      // 目录契约：opts.directory 权威（gateway 必传）；ctx.projectDir 仅防御性兜底；
+      // 两者都缺 → fail-loud（不再回退 gateway 内部 config，那是插件不可见的信息）。
+      const dir = requireSessionDir(opts?.directory, ctx.projectDir);
+      const { id } = await registry.create(dir, { model: { provider, modelID } });
       return { id };
     },
     promptAsync: async (opts: { sessionID: string; message?: string; parts?: any[]; system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup' }) => {
