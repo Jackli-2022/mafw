@@ -51,9 +51,11 @@ describe('OPENCODE_EVENT_MAPPINGS（opencode → MAFW 词汇 v2）', () => {
   });
 
   it('session.next.* legacy 族经显式 drop 行丢弃（词汇外新成员同样被拦——default-deny 漏网探测器）', () => {
+    // N3 修正（2026-10-21）：drop 行用 SDK 真名（tool.called/progress/success——
+    // 旧的 tool.started/updated/ended 是不存在的幽灵名，快照测试钉扎）
     for (const t of [
       'session.next.step.ended', 'session.next.reasoning.ended',
-      'session.next.tool.started', 'session.next.tool.updated', 'session.next.tool.ended', 'session.next.tool.failed',
+      'session.next.tool.called', 'session.next.tool.progress', 'session.next.tool.success', 'session.next.tool.failed',
     ]) {
       const suppressed: string[] = [];
       expect(applyEventMappings(raw(t, { sessionID: 's1' }), ENTRY, isCanonical, { onSuppressed: (x) => suppressed.push(x) })).toEqual([]);

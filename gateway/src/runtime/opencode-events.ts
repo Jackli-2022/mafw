@@ -1,5 +1,5 @@
 /**
- * opencode 原生事件 → MAFW 词汇 v2 的翻译声明。
+ * opencode 原生事件 → MAFW 词汇 v2 的翻译声明（@v1 方言表）。
  *
  * v2（2026-10-12）起 opencode 不再拥有「免翻译特权」：经 registerBuiltin
  * 携 eventSource + eventMappings 接入，与文件插件同一注册接口（加载期
@@ -7,8 +7,16 @@
  * legacy 族与 sync 信封改为显式 drop 行（声明式压制计 suppressed），词汇外
  * 新词经 unmatched 拦截 + 计数（漏网探测器，升级后跑 conformance 即暴露）。
  *
+ * canonical v3 / Plan 2（2026-10-21）：@v1 方言表全量处置刷新——
+ *  - N3 修正：`session.next.tool.started/updated/ended` 是不存在的幽灵名
+ *    （SDK union 无此词），真名是 tool.called/progress/success；
+ *  - F6 落地：SDK Event union 89 成员全量处置（next 族 32 + 遥测 41 显式
+ *    drop，零 unmatched 漏网），由 opencode-vocabulary-snapshot.test.ts
+ *    以 89 基线钉扎——SDK 升级漂移先红快照，强制重审方言表。
+ *  - @v2 方言表（混合消费）见 OPENCODE_V2_EVENT_MAPPINGS（Task 2）。
+ *
  * 设计：docs/superpowers/specs/2026-10-12-native-event-vocabulary-design.md §4.2
- * + docs/superpowers/specs/2026-10-20-runtime-unification-batch-design.md B1
+ * + 2026-10-21-runtime-canonical-v3-design.md §3.3 / §3.7.1
  */
 import { canonicalIdentity } from './event-mapper';
 import type { EventMapping, EventSourceShape } from './event-mapper';
@@ -21,26 +29,64 @@ export const OPENCODE_EVENT_SOURCE: EventSourceShape = {
   directoryPath: '$.directory',
 };
 
-export const OPENCODE_EVENT_MAPPINGS: EventMapping[] = [
-  // ---- 回合终态三元组（v2 语义修正：五终态双轨合并） ----
+/**
+ * @v1 方言表：消费 legacy 家族（2.x serve 双发中的 legacy 侧；v1-only serve 的全部）。
+ * @v2 方言的差集见 OPENCODE_V2_EVENT_MAPPINGS——两表互斥（双发防双计）。
+ */
+export const OPENCODE_V1_EVENT_MAPPINGS: EventMapping[] = [
+  // ---- 回合终态（v2 语义修正：五终态双轨合并） ----
   { from: 'session.idle', to: 'turn.completed', passProperties: '$.payload.properties' },
   { from: 'session.error', to: 'turn.failed', passProperties: '$.payload.properties' },
+  // 防御行（不在 SDK union，legacy 兼容——2026-10-12 spec :30-31）
   { from: 'message.error', to: 'turn.failed', passProperties: '$.payload.properties' },
   { from: 'message.aborted', to: 'turn.aborted', passProperties: '$.payload.properties' },
   // ---- part.* 去冗余前缀 ----
   { from: 'message.part.updated', to: 'part.updated', passProperties: '$.payload.properties' },
   { from: 'message.part.delta', to: 'part.delta', passProperties: '$.payload.properties' },
+  // 防御行（不在 SDK union，legacy 兼容）
   { from: 'message.part.complete', to: 'part.complete', passProperties: '$.payload.properties' },
   // ---- plan 域（ACP plan / codex todo_list 同域） ----
   { from: 'todo.updated', to: 'plan.updated', passProperties: '$.payload.properties' },
-  // ---- legacy 族 + sync 信封：显式 drop 行（原 transformEvent 前缀丢弃的表化，B1） ----
+  // ---- @v1 方言显式 drop：next 族全 32（2.x 双发的 next 侧不消费——@v2 表独占） ----
   ...([
-    'session.next.step.ended', 'session.next.reasoning.ended',
-    'session.next.tool.started', 'session.next.tool.updated',
-    'session.next.tool.ended', 'session.next.tool.failed',
-    'sync',
+    'session.next.agent.switched', 'session.next.model.switched', 'session.next.moved',
+    'session.next.prompted', 'session.next.prompt.admitted', 'session.next.context.updated',
+    'session.next.synthetic', 'session.next.shell.started', 'session.next.shell.ended',
+    'session.next.step.started', 'session.next.step.ended', 'session.next.step.failed',
+    'session.next.text.started', 'session.next.text.delta', 'session.next.text.ended',
+    'session.next.reasoning.started', 'session.next.reasoning.delta', 'session.next.reasoning.ended',
+    'session.next.tool.input.started', 'session.next.tool.input.delta', 'session.next.tool.input.ended',
+    'session.next.tool.called', 'session.next.tool.progress', 'session.next.tool.success',
+    'session.next.tool.failed', 'session.next.retried',
+    'session.next.compaction.started', 'session.next.compaction.delta', 'session.next.compaction.ended',
+    'session.next.revert.staged', 'session.next.revert.cleared', 'session.next.revert.committed',
   ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
+  // ---- @v1 方言显式 drop：v2 专有名（双发的 v2 侧不消费——@v2 表独占） ----
+  ...([
+    'permission.v2.asked', 'permission.v2.replied',
+    'question.v2.asked', 'question.v2.replied', 'question.v2.rejected',
+  ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
+  // ---- F6 遥测族 drop（无 MAFW 消费方；显式声明保 suppressed 计数纯净） ----
+  ...([
+    'models-dev.refreshed', 'integration.updated', 'integration.connection.updated', 'catalog.updated',
+    'message.removed', 'message.part.removed',
+    'installation.updated', 'installation.update-available',
+    'file.edited', 'reference.updated', 'plugin.added',
+    'project.directories.updated', 'project.updated',
+    'file.watcher.updated', 'lsp.updated', 'vcs.branch.updated',
+    'pty.created', 'pty.updated', 'pty.exited', 'pty.deleted',
+    'tui.prompt.append', 'tui.command.execute', 'tui.toast.show', 'tui.session.select',
+    'mcp.tools.changed', 'mcp.browser.open.failed', 'command.executed',
+    'session.status',
+    'workspace.ready', 'workspace.failed', 'workspace.status',
+    'worktree.ready', 'worktree.failed',
+    'server.connected', 'server.instance.disposed', 'global.disposed',
+  ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
+  // ---- runtime 原生信封（非 SDK union；RUNTIME_NATIVE_DROPPED 同款，显式行保计数） ----
+  { from: 'sync', to: 'drop' },
   // ---- canonical identity（词汇单源派生，B1：同名收编词的显式注册） ----
   ...canonicalIdentity('$.payload.properties'),
 ];
 
+/** 兼容 alias（index.ts 渐进切换到方言名；Plan 2 Task 3 重接线后收敛） */
+export const OPENCODE_EVENT_MAPPINGS: EventMapping[] = OPENCODE_V1_EVENT_MAPPINGS;
