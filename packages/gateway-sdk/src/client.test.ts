@@ -719,10 +719,10 @@ test("event.publish sends POST /api/events with body", async () => {
   expect(JSON.parse((init as any).body)).toEqual({ type: "plugin:acme:quota", level: "warn" })
 })
 
-test("event.publish passes opencode_event envelope through", async () => {
+test("event.publish passes mafw_event envelope through", async () => {
   fetchMock.mockResolvedValue(okJson({ ok: true }))
   const c = new MafwClient()
-  const envelope = { type: "opencode_event", data: { type: "session.idle", sessionID: "s1" } }
+  const envelope = { type: "mafw_event", data: { type: "session.idle", sessionID: "s1" } }
   await c.event.publish(envelope)
   const [, init] = fetchMock.mock.calls[0]
   expect(JSON.parse((init as any).body)).toEqual(envelope)

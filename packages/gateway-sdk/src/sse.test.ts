@@ -146,16 +146,16 @@ test("SSEConnection.onmessage ignores invalid JSON", () => {
   sse.disconnect()
 })
 
-test("SSEConnection.onmessage unwraps gateway 'opencode_event' envelope", () => {
+test("SSEConnection.onmessage unwraps gateway 'mafw_event' envelope", () => {
   const es = mockEventSource()
   const sse = new SSEConnection()
   const cb = mock()
   sse.on("message.part.updated", cb)
   sse.connect("http://localhost:3000")
-  // Mode A 全局流 wire 格式：{ type: 'opencode_event', data: { type, properties, sessionID } }
+  // Mode A 全局流 wire 格式（v2 词汇）：{ type: 'mafw_event', data: { type, properties, sessionID } }
   es.onmessage({
     data: JSON.stringify({
-      type: "opencode_event",
+      type: "mafw_event",
       data: { type: "message.part.updated", properties: { part: { id: "p1" } }, sessionID: "s1" },
       timestamp: "t",
     }),
@@ -181,7 +181,7 @@ test("SSEConnection.onmessage tolerates malformed envelope (data not object)", (
   const wild = mock()
   sse.on("*", wild)
   sse.connect("http://localhost:3000")
-  es.onmessage({ data: JSON.stringify({ type: "opencode_event", data: "oops" }) })
-  expect(wild).toHaveBeenCalledWith({ type: "opencode_event", data: "oops" })
+  es.onmessage({ data: JSON.stringify({ type: "mafw_event", data: "oops" }) })
+  expect(wild).toHaveBeenCalledWith({ type: "mafw_event", data: "oops" })
   sse.disconnect()
 })
