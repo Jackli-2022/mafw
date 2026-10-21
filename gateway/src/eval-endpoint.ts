@@ -94,11 +94,12 @@ function extractText(content: string | Array<Record<string, any>>): { text: stri
   return { text: text.join('\n').trim(), media };
 }
 
-function assistantText(messages: Array<{ info: any; parts: any[] }>): string {
+function assistantText(messages: any[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (msg?.info?.role !== 'assistant') continue;
-    const text = (msg.parts || [])
+    if ((msg?.info ?? msg)?.role !== 'assistant') continue;
+    const parts: any[] = msg?.content ?? msg?.parts ?? msg?.info?.parts ?? [];
+    const text = parts
       .filter((p: any) => p?.type === 'text' && typeof p.text === 'string')
       .map((p: any) => p.text)
       .join('\n')
@@ -180,7 +181,7 @@ export function handleEvalChatCompletion(opts: EvalEndpointOptions) {
 
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, pollMs));
-        let messages: Array<{ info: any; parts: any[] }> = [];
+        let messages: any[] = [];
         try {
           const res = await opts.runtime.session.messages({ sessionID: sessionId });
           messages = res.data ?? [];

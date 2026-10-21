@@ -144,6 +144,7 @@ const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
   ...TOOL_PRIMITIVE_TYPES,
 ]);
 import { wrapRuntimeMessages } from './runtime/normalize-messages';
+import { toWireHistory } from './runtime/wire-compat';
 import { handlePermissionReply } from './routes/permission';
 import { deriveAlwaysRule } from './core/approval/rules-store';
 import { handleRulesGet, handleRulesPost, handleRulesDelete } from './routes/rules';
@@ -5850,13 +5851,17 @@ class MafwScheduler {
               limit,
               ...(before ? { before } : {}),
             });
-            const rawData = result.data || [];
+            const flatData = result.data || [];
             const nextCursor = result.nextCursor || null;
+            // canonical v3：历史管线内部恒 flat（wrap 默认归一），egress 出口
+            // 还原 wire {info, parts}——shim 是唯一转换点（B2 违例回退的原文
+            // 经 shim 的 wire 形状放行防御原样通过）
+            const wireData = toWireHistory(flatData as any);
             // A 切片历史 enrich：全 runtime 的 tool parts 补 toolClass/canonicalTool
             //（与 live 的 enrichToolIdentity 同单源；幂等，fail-open）
-            try { enrichHistoryParts(rawData); } catch { /* fail-open：历史 enrich 不阻断加载 */ }
+            try { enrichHistoryParts(wireData); } catch { /* fail-open：历史 enrich 不阻断加载 */ }
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ data: Array.isArray(rawData) ? rawData : [], nextCursor }));
+            res.end(JSON.stringify({ data: Array.isArray(wireData) ? wireData : [], nextCursor }));
           } catch (err: any) {
             log.warn(`[Scheduler] Failed to fetch messages (serve may not be ready): ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -41,7 +41,7 @@ function makeDeps(overrides: Partial<ConformanceDeps> = {}): ConformanceDeps {
       action: c.toolName === 'bash' ? 'human' : 'auto-deny',
     }),
     // B2：历史形状断言的数据面（合法 {info,parts[]}）
-    getMessages: async () => [{ info: { id: 'm1' }, parts: [] }],
+    getMessages: async () => [{ id: 'm1', role: 'user', content: [] }],
     // B3：无 unmatched 差分（健康基线）
     translationDrops: () => ({}),
     ...overrides,

@@ -1,16 +1,18 @@
 import { normalizePiMessages } from '../../../src/runtime/pi/pi-message-normalize';
+import { isMafwMessage } from '../../../src/runtime/canonical-types';
 
 const T = 1_700_000_000_000;
 
-describe('normalizePiMessages', () => {
-  test('user 文本 → text part', () => {
+describe('normalizePiMessages（flat 输出，canonical v3）', () => {
+  test('user 文本 → flat 消息 + text part content', () => {
     const out = normalizePiMessages([{ role: 'user', content: 'hi', timestamp: T }]);
     expect(out).toHaveLength(1);
-    expect(out[0].info.role).toBe('user');
-    expect(out[0].parts[0]).toMatchObject({ type: 'text', text: 'hi' });
+    expect(isMafwMessage(out[0])).toBe(true);
+    expect(out[0].role).toBe('user');
+    expect(out[0].content![0]).toMatchObject({ type: 'text', text: 'hi' });
   });
 
-  test('assistant text + thinking + toolCall（有 result）→ 三 part', () => {
+  test('assistant text + thinking + toolCall（有 result）→ 三 part content', () => {
     const out = normalizePiMessages([
       { role: 'assistant', timestamp: T, content: [
         { type: 'thinking', thinking: 'hmm' },
@@ -20,9 +22,10 @@ describe('normalizePiMessages', () => {
       { role: 'toolResult', toolCallId: 'tc1', toolName: 'bash', content: [{ type: 'text', text: 'file.txt' }], isError: false, timestamp: T + 5 },
     ]);
     expect(out).toHaveLength(1);
-    const parts = out[0].parts;
+    expect(isMafwMessage(out[0])).toBe(true);
+    const parts = out[0].content!;
     expect(parts.map((p) => p.type)).toEqual(['reasoning', 'text', 'tool']);
-    const tool = parts[2];
+    const tool = parts[2] as any;
     expect(tool.id).toBe('toolpart_tc1');
     expect(tool.callID).toBe('tc1');
     expect(tool.tool).toBe('bash');
@@ -36,7 +39,7 @@ describe('normalizePiMessages', () => {
     const out = normalizePiMessages([
       { role: 'assistant', timestamp: T, content: [{ type: 'toolCall', id: 'tc1', name: 'read', arguments: {} }] },
     ]);
-    expect(out[0].parts[0].state.status).toBe('running');
+    expect((out[0].content![0] as any).state.status).toBe('running');
   });
 
   test('toolResult isError → error part', () => {
@@ -44,7 +47,7 @@ describe('normalizePiMessages', () => {
       { role: 'assistant', timestamp: T, content: [{ type: 'toolCall', id: 'tc1', name: 'bash', arguments: {} }] },
       { role: 'toolResult', toolCallId: 'tc1', toolName: 'bash', content: [{ type: 'text', text: 'boom' }], isError: true, timestamp: T + 1 },
     ]);
-    expect(out[0].parts[0].state).toMatchObject({ status: 'error', error: 'boom' });
+    expect((out[0].content![0] as any).state).toMatchObject({ status: 'error', error: 'boom' });
   });
 
   test('多 tool 混杂文本保持顺序；孤儿 toolResult 丢弃', () => {
@@ -58,11 +61,14 @@ describe('normalizePiMessages', () => {
       { role: 'toolResult', toolCallId: 'orphan', toolName: 'x', content: [], isError: false, timestamp: T },
     ]);
     expect(out).toHaveLength(1);
-    expect(out[0].parts.map((p) => p.type)).toEqual(['text', 'tool', 'text', 'tool']);
+    expect(out[0].content!.map((p) => p.type)).toEqual(['text', 'tool', 'text', 'tool']);
   });
 
-  test('id 稳定性：同输入同输出（幂等）', () => {
+  test('id 稳定性：同输入同输出（幂等）；time 为顶层字段', () => {
     const raw = [{ role: 'assistant', timestamp: T, content: [{ type: 'text', text: 'x' }] }];
     expect(normalizePiMessages(raw)).toEqual(normalizePiMessages(raw));
+    const [msg] = normalizePiMessages(raw);
+    expect(msg.time).toEqual({ created: T, completed: T });
+    expect(msg.id).toMatch(/^pia_\d+_\d+$/);
   });
 });

@@ -7,8 +7,11 @@
 // (desktop / TUI / opencode) sees the answer inline via the event stream.
 
 export interface WaitwhatMessage {
+  /** legacy wire 形状（info/parts）或 canonical flat（role/content）——消费方双读 */
   info?: { role?: string };
   parts?: Array<{ type?: string; text?: string }>;
+  role?: string;
+  content?: Array<{ type?: string; text?: string }>;
 }
 
 export interface WaitwhatDeps {
@@ -42,8 +45,9 @@ export async function runWaitwhat(sessionID: string, deps: WaitwhatDeps): Promis
   const messages = await deps.listMessages(sessionID);
   const lastAssistant = [...(Array.isArray(messages) ? messages : [])]
     .reverse()
-    .find((m) => m?.info?.role === 'assistant');
-  const original = (lastAssistant?.parts || [])
+    .find((m) => (m?.info ?? m)?.role === 'assistant');
+  const parts = (lastAssistant?.content ?? lastAssistant?.parts ?? []) as Array<{ type?: string; text?: string }>;
+  const original = parts
     .filter((p) => p?.type === 'text' && typeof p?.text === 'string')
     .map((p) => p.text!)
     .join('\n')

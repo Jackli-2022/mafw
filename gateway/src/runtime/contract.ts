@@ -20,6 +20,7 @@
  */
 import type { AgentDefinition } from './agent-definition';
 import type { TOOL_CLASS } from './tool-classes';
+import type { MafwMessage } from './canonical-types';
 
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
@@ -251,8 +252,9 @@ export interface RuntimeClient {
     promptAsync(opts: SessionPromptOpts): Promise<{ error?: any; response?: any } | void>;
     prompt(opts: SessionPromptOpts): Promise<PromptResultEnvelope & { [k: string]: any }>;
     messages(opts: SessionMessagesOpts): Promise<{ data: any[]; nextCursor?: string }>;
-    /** 可选：原生历史消息 → opencode {info, parts} DTO（缺省恒等；pi 等分离模型 runtime 用）。 */
-    normalizeMessages?(raw: any[]): Array<{ info: any; parts: any[] }>;
+    /** 可选：原生历史消息 → flat MafwMessage[]（canonical v3；缺省走默认 wire→flat
+     *  翻译 normalizeOpencodeHistory——出口形状恒 flat，egress 出口经 wire-compat 还原）。 */
+    normalizeMessages?(raw: any[]): MafwMessage[];
     get(opts: { sessionID: string }): Promise<any>;
     delete(opts: { sessionID: string }): Promise<void>;
     /** Rename a session (flat { sessionID, title }); optional — opencode/pi implement it. */

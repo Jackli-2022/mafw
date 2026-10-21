@@ -4,6 +4,8 @@
  * 场景评估器是纯函数（事件序列 / API 观测 → pass/fail），
  * jest 可离线测；路由层只负责驱动真实 runtime 并收集观测。
  */
+import { isMafwMessage } from './canonical-types';
+
 export interface ObservedEvent {
   type: string;
   sessionID?: string;
@@ -115,9 +117,9 @@ export function evaluateScenario(
   } else if (id === 'session-lifecycle') {
     if (!apiResult?.created) failures.push('created session not visible in session.list');
     if (!apiResult?.deleted) failures.push('deleted session still visible in session.list (leak)');
-    // B2：历史形状断言（{info,parts[]} DTO）；history 缺席 = getMessages 失败，fail-open 不判死
-    if (apiResult?.history && !apiResult.history.every((m: any) => m && typeof m === 'object' && Array.isArray(m.parts))) {
-      failures.push('history messages are not {info, parts[]} shaped — normalizeMessages output invalid');
+    // B2：历史形状断言（flat MafwMessage，canonical v3）；history 缺席 = getMessages 失败，fail-open 不判死
+    if (apiResult?.history && !apiResult.history.every((m: any) => isMafwMessage(m))) {
+      failures.push('history messages are not flat MafwMessage shaped — normalizeMessages output invalid');
     }
   } else if (id === 'cognition-observe') {
     const sources = new Set(cognition?.sources ?? []);

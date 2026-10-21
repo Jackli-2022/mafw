@@ -68,13 +68,13 @@ function rebuildFromMessages(
     let userText = '';
 
     // user text
-    const userPart = (um.parts || um?.info?.parts || []).find((p: any) => p.type === 'text' && typeof p.text === 'string');
+    const userPart = (um?.content ?? um?.parts ?? um?.info?.parts ?? []).find((p: any) => p.type === 'text' && typeof p.text === 'string');
     if (userPart) userText = String(userPart.text).slice(0, 300);
     if (!userText && info?.summary?.body) userText = String(info.summary.body).slice(0, 300);
 
     for (const am of assistantMessages) {
       const ai = am.info || am;
-      const parts = (am.parts || ai?.parts || []) as any[];
+      const parts = (am?.content ?? am?.parts ?? ai?.parts ?? []) as any[];
       model = ai?.modelID || model;
       if (ai?.tokens) {
         tokens.input += ai.tokens.input || 0;

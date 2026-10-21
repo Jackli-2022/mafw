@@ -167,7 +167,7 @@ export async function handleConformance(
         const sess = await deps.createSession({});
         const listAfterCreate = await deps.listSessions();
         const created = listAfterCreate.some((s) => s.id === sess.id);
-        // B2：历史形状断言——create 后拉 messages，normalizeMessages 输出须为 {info,parts[]}。
+        // B2：历史形状断言——create 后拉 messages，出口须为 flat MafwMessage（canonical v3）。
         // 拉取失败（serve 未就绪等）不判死（fail-open，history 传 undefined）。
         const history = await deps.getMessages(sess.id).catch(() => null);
         await deps.deleteSession(sess.id);

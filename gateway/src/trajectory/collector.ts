@@ -308,7 +308,7 @@ export class TrajectoryCollector {
         return info.id === messageID;
       });
       if (!msg) return;
-      const parts = (msg.parts || msg?.info?.parts || []) as any[];
+      const parts = (msg?.content ?? msg?.parts ?? msg?.info?.parts ?? []) as any[];
       const textPart = parts.find((p: any) => p.type === 'text' && typeof p.text === 'string');
       if (textPart && !s.userText) {
         s.userText = truncate(textPart.text, USER_TEXT_MAX) || '';
