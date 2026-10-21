@@ -1,0 +1,22 @@
+{
+  "name": "@mafw/test-shim",
+  "version": "1.0.0",
+  "private": true,
+  "description": "bun:test compatibility shim so the test suites can run on node --test",
+  "type": "module",
+  "exports": {
+    "./register.mjs": "./register.mjs",
+    "./require-hook.cjs": "./require-hook.cjs",
+    "./bun-test.d.ts": "./bun-test.d.ts",
+    "./bun-test-shim.mjs": "./bun-test-shim.mjs",
+    "./bun-test-shim.cjs": "./bun-test-shim.cjs"
+  },
+  "scripts": {
+    "test": "node --import tsx --import ./register.mjs --test smoke/smoke.test.mjs && node --import tsx --require ./require-hook.cjs --test smoke/smoke-cjs.test.cjs"
+  },
+  "devDependencies": {
+    "expect": "^29.7.0",
+    "jest-mock": "^29.7.0",
+    "tsx": "^4.23.15"
+  }
+}
