@@ -7,11 +7,11 @@ import type { PcmChunk, TtsEngine, TtsOpts } from './types';
  * 行为与原 tts-service 完全一致，仅适配 TtsEngine 接口。
  */
 export function createMimoEngine(deps: {
-  authPath?: string;
   provider?: string;
   config: () => { media?: { tts?: { baseUrl?: string; model?: string; defaultVoice?: string }; provider?: string } };
   fetchImpl?: typeof fetch;
-  credentials?: RuntimeCredentials;
+  /** 凭据 seam（Plan 3 Task 5）：注入式 getApiKey（auth.json 解析在 index.ts 单点接线）。 */
+  getApiKey?: (provider: string) => string | null;
 }): TtsEngine {
   const svc = createTtsService(deps);
   return {

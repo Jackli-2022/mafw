@@ -2,7 +2,6 @@ import { createHash } from 'crypto';
 import type { PromptFn, PromptPart, PromptOptions } from './media-service';
 import type { AgentRuntime } from '../runtime/contract';
 import { fixMediaPayload } from './pi-adapter';
-import { DEFAULT_AUTH_PATH } from '../runtime/auth';
 import { log } from '../core/utils/logger';
 
 export interface MediaRuntimeExecutorOptions {
@@ -12,8 +11,8 @@ export interface MediaRuntimeExecutorOptions {
   timeoutMs?: number;
   /** video/audio 单次路径（默认内部 complete 实现） */
   completeFn?: (parts: PromptPart[], opts: PromptOptions) => Promise<string>;
-  /** auth.json 路径（默认 DEFAULT_AUTH_PATH） */
-  authPath?: string;
+  /** 凭据 seam（Plan 3 Task 5）：注入式 getApiKey（auth.json 解析在 index.ts 单点接线） */
+  getApiKey?: (provider: string) => string | null;
   /** 会话工作目录（绝对路径，必填；gateway 注入 resolvedProjectDir()）。 */
   projectDir: string;
 }
@@ -198,8 +197,7 @@ export function createMediaRuntimeExecutor(
   rt: AgentRuntime,
   opts: MediaRuntimeExecutorOptions,
 ): MediaRuntimeExecutor {
-  const authPath = opts.authPath ?? DEFAULT_AUTH_PATH();
-  // Contract path: stateless single-shot completion over rt.completion
+    // Contract path: stateless single-shot completion over rt.completion
   // (completionApi capability). Media parts ride the contract's image carrier;
   // wire-format rewriting (video_url/input_audio) is the implementing
   // runtime's internal concern (pi: fixMediaPayload via onPayload).
@@ -224,7 +222,7 @@ export function createMediaRuntimeExecutor(
   };
   const legacyComplete = opts.completeFn ?? (async (parts: PromptPart[], po: PromptOptions) => {
     const { createPiPromptAdapter } = await import('./pi-adapter.js');
-    const adapter = createPiPromptAdapter({ fixPayload: fixMediaPayload, authPath });
+    const adapter = createPiPromptAdapter({ fixPayload: fixMediaPayload, getApiKey: opts.getApiKey });
     return adapter(parts, po);
   });
   // Explicit opts.completeFn wins outright (tests / custom engines); the

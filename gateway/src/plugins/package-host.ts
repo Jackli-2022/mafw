@@ -190,7 +190,7 @@ export class PluginHost {
       if (hasCreatePrompt === hasPiEngine) throw new Error('media: createPrompt and engine:"pi" are mutually exclusive');
       const prompt = hasCreatePrompt
         ? await spec.createPrompt!(ctx)
-        : createPiPromptAdapter({ fixPayload: spec.fixPayload, credentials: ctx.credentials });
+        : createPiPromptAdapter({ fixPayload: spec.fixPayload, getApiKey: (p) => ctx.apiKey(p) });
       if (typeof prompt !== 'function') throw new Error('media: createPrompt did not return a function');
       media = { name: spec.name ?? modName, prompt, modalities: spec.modalities, source: desc.mainFile };
       kinds.push('media');

@@ -1,4 +1,3 @@
-import { DEFAULT_AUTH_PATH, readOpencodeAuth } from '../runtime/auth';
 import type { PromptFn, PromptPart } from './media-service';
 
 /**
@@ -60,12 +59,8 @@ export function fixMediaPayload(payload: unknown): unknown {
 }
 
 export interface PiAdapterDeps {
-  /** opencode auth.json path (default ~/.local/share/opencode/auth.json). */
-  authPath?: string;
-  /** Overrides auth.json lookup (tests). */
-  getApiKey?: (provider: string) => string | undefined;
-  /** Runtime credentials (preferred over auth.json when provided). */
-  credentials?: { getApiKey(provider: string): string | null };
+  /** 凭据 seam（Plan 3 Task 5）：注入式 getApiKey（auth.json 解析在 index.ts 单点接线）。 */
+  getApiKey?: (provider: string) => string | null;
   /** Model registry hook (tests) — default uses ModelRuntime. */
   getModel?: (provider: string, model: string) => unknown | undefined;
   timeoutMs?: number;
@@ -74,8 +69,7 @@ export interface PiAdapterDeps {
 }
 
 export function createPiPromptAdapter(deps: PiAdapterDeps = {}): PromptFn {
-  const authPath = deps.authPath ?? DEFAULT_AUTH_PATH();
-  const timeoutMs = deps.timeoutMs ?? 180_000;
+    const timeoutMs = deps.timeoutMs ?? 180_000;
   let runtimePromise: Promise<any> | undefined;
 
   function runtime(): Promise<any> {
@@ -108,10 +102,7 @@ export function createPiPromptAdapter(deps: PiAdapterDeps = {}): PromptFn {
   }
 
   return async function piPrompt(parts: PromptPart[], opts: { providerID: string; modelID: string }): Promise<string> {
-    const apiKey = deps.getApiKey
-      ? deps.getApiKey(opts.providerID)
-      : deps.credentials?.getApiKey(opts.providerID)
-        ?? readOpencodeAuth(authPath)[opts.providerID]?.key;
+    const apiKey = deps.getApiKey?.(opts.providerID) ?? null;
     if (!apiKey) {
       throw new Error(`No API key for provider "${opts.providerID}" — connect it in opencode first (auth.json)`);
     }

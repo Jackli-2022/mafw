@@ -1,5 +1,3 @@
-import { getProviderApiKey } from '../runtime/auth';
-import type { RuntimeCredentials } from '../runtime/contract';
 
 /**
  * TtsService — MiMo-V2.5-TTS 语音合成客户端（直连小米 OpenAI 兼容端点）。
@@ -65,25 +63,22 @@ export function resolveVoice(cfg: TtsConfig, voice?: string): string {
 }
 
 export function createTtsService(deps: {
-  /** opencode auth.json path（默认 ~/.local/share/opencode/auth.json）。 */
-  authPath?: string;
   /** provider 名（默认 xiaomi）。 */
   provider?: string;
   /** 获取配置（含 tts 段）。 */
   config: () => { media?: { tts?: TtsConfig; provider?: string } };
   /** 直连 fetch（测试注入）。 */
   fetchImpl?: typeof fetch;
-  /** Runtime credentials（优先于 auth.json）。 */
-  credentials?: RuntimeCredentials;
+  /** 凭据 seam（Plan 3 Task 5）：注入式 getApiKey（auth.json 解析在 index.ts 单点接线）。 */
+  getApiKey?: (provider: string) => string | null;
 }) {
-  const authPath = deps.authPath;
-  const fetchImpl = deps.fetchImpl ?? fetch;
+    const fetchImpl = deps.fetchImpl ?? fetch;
   const provider = () => deps.config().media?.provider || 'xiaomi';
   const ttsCfg = (): TtsConfig => deps.config().media?.tts ?? {};
 
   async function synthesize(input: TtsSynthesizeInput): Promise<TtsSynthesizeResult> {
     const cfg = ttsCfg();
-    const key = getProviderApiKey(provider(), authPath, deps.credentials);
+    const key = deps.getApiKey?.(provider()) ?? null;
     if (!key) {
       throw new Error(`No API key for provider "${provider()}" — connect it in opencode first (auth.json)`);
     }
@@ -142,7 +137,7 @@ export function createTtsService(deps: {
     opts?: { signal?: AbortSignal },
   ): AsyncGenerator<{ data: string; voice: string }> {
     const cfg = ttsCfg();
-    const key = getProviderApiKey(provider(), authPath, deps.credentials);
+    const key = deps.getApiKey?.(provider()) ?? null;
     if (!key) {
       throw new Error(`No API key for provider "${provider()}" — connect it in opencode first (auth.json)`);
     }

@@ -1,9 +1,7 @@
 import { config } from '../config';
 import { log } from '../core/utils/logger';
-import { getProviderApiKey } from '../runtime/auth';
 import { ExternalAdapter } from './types';
 import { UsageProvider, Severity } from './types';
-import type { RuntimeCredentials } from '../runtime/contract';
 import type { ModelUsageRow } from '../trajectory/types';
 import type { TrajectoryStore } from '../trajectory/trajectory-store';
 
@@ -42,13 +40,14 @@ export interface PluginContext {
 
 export function createPluginContext(
   pluginName: string,
-  credentials?: RuntimeCredentials,
+  getApiKey?: (name: string) => string | null,
   usageStats?: UsageStatsProvider,
   inlineApiKey?: string,
 ): PluginContext {
   return {
+    // 注入式凭据 seam（Plan 3 Task 5）：getApiKey 动词优先，inlineApiKey 兜底
     apiKey: (name: string) =>
-      getProviderApiKey(name, undefined, credentials)
+      getApiKey?.(name)
       ?? (inlineApiKey != null && name === pluginName ? inlineApiKey : null),
     cookie: (name: string) => {
       const c = config.usage?.cookies?.[name];

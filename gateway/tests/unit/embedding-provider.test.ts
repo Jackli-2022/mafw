@@ -133,15 +133,14 @@ describe('DashScopeEmbeddingProvider', () => {
     const provider = createEmbeddingProvider({
       ...baseCfg,
       fetchFn,
-      credentials: { getApiKey: (p: string) => (p === 'alibaba-cn' ? 'sk-cred' : null) },
+      getApiKeyFn: (p: string) => (p === 'alibaba-cn' ? 'sk-cred' : null),
     }) as EmbeddingProvider;
 
     await provider.embed(['x'], 'document');
     expect(calls[0].init.headers.Authorization).toBe('Bearer sk-cred');
   });
 
-  test('falls back to auth.json at authPath', async () => {
-    const authPath = tmpAuthJson('sk-file');
+  test('falls back to injected getApiKeyFn seam (legacy auth.json path moves to index wiring)', async () => {
     const calls: any[] = [];
     const fetchFn = (async (url: any, init: any) => {
       calls.push({ init });
@@ -151,7 +150,7 @@ describe('DashScopeEmbeddingProvider', () => {
     const provider = createEmbeddingProvider({
       ...baseCfg,
       fetchFn,
-      authPath,
+      getApiKeyFn: () => 'sk-file',
     }) as EmbeddingProvider;
 
     await provider.embed(['x'], 'document');
@@ -159,8 +158,7 @@ describe('DashScopeEmbeddingProvider', () => {
   });
 
   test('no key resolvable → throws with clear message', async () => {
-    const authPath = tmpAuthJson(null);
-    const provider = createEmbeddingProvider({ ...baseCfg, authPath, fetchFn: (async () => { throw new Error('should not fetch'); }) as any }) as EmbeddingProvider;
+    const provider = createEmbeddingProvider({ ...baseCfg, getApiKeyFn: () => null, fetchFn: (async () => { throw new Error('should not fetch'); }) as any }) as EmbeddingProvider;
     await expect(provider.embed(['x'], 'document')).rejects.toThrow(/api key/i);
   });
 

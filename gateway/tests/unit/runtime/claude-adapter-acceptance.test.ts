@@ -117,9 +117,22 @@ describe('claude adapter 验收（零核心 diff）', () => {
     }
   });
 
-  it('⑤ 验收线：gateway/src 零未提交改动（新增 SDK = 只交付 plugin 文件）', () => {
-    const status = execSync('git status --porcelain -- gateway/src', { cwd: REPO_ROOT, encoding: 'utf8' });
-    expect(status.trim()).toBe('');
+  it('⑤ 验收线：adapter 自包含——bundle 构建输入零 gateway/src 引用（新增 SDK 不依赖核心改动）', async () => {
+    // 真不变量：esbuild metafile 的全部输入不包含 gateway/src（adapter 全部
+    // 依赖住在 adapters/claude + 自身 node_modules）。git-diff 检查会撞上
+    // 同期合法的核心清洗提交（预检 Row 4），故以构建输入为准。
+    const tmp = mkdtempSync(join(tmpdir(), 'claude-meta-'));
+    const outfile = join(tmp, 'claude.js');
+    const result = await build({
+      entryPoints: [join(REPO_ROOT, 'adapters/claude/src/index.ts')],
+      bundle: true, platform: 'node', target: 'node22', format: 'cjs',
+      define: { 'import.meta.url': '__filename' },
+      outfile, sourcemap: false, logLevel: 'silent', metafile: true,
+    });
+    const inputs = Object.keys(result.metafile.inputs);
+    const gatewayRefs = inputs.filter((f) => f.includes('gateway/src') || f.includes('gateway\\src'));
+    expect(gatewayRefs).toEqual([]);
+    rmSync(tmp, { recursive: true, force: true });
   });
 });
 

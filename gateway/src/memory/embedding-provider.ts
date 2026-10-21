@@ -14,7 +14,6 @@
 // get an `Instruct:` task prefix, document inputs are embedded verbatim.
 
 import { log } from '../core/utils/logger';
-import { getProviderApiKey } from '../runtime/auth';
 
 // Mirror + cache home for local ONNX model downloads (same policy as reranker).
 import * as path from 'path';
@@ -39,8 +38,7 @@ export interface EmbeddingProviderConfig {
   /** Explicit endpoint override (dashscope). */
   baseUrl?: string;
   apiKey?: string;
-  authPath?: string;
-  credentials?: { getApiKey(provider: string): string | null };
+  getApiKeyFn?: (provider: string) => string | null;
   fetchFn?: typeof fetch;
   /** Local ONNX intra-op thread cap (default 2). ORT defaults to all cores. */
   threads?: number;
@@ -102,8 +100,7 @@ class DashScopeEmbeddingProvider implements EmbeddingProvider {
   name: string;
   dims: number;
   private apiKey?: string;
-  private authPath?: string;
-  private credentials?: { getApiKey(provider: string): string | null };
+  private getApiKeyFn?: (provider: string) => string | null;
   private fetchFn: typeof fetch;
   private baseUrl: string;
   private maxBatch: number;
@@ -113,8 +110,8 @@ class DashScopeEmbeddingProvider implements EmbeddingProvider {
     this.name = `dashscope:${cfg.model || 'text-embedding-v4'}`;
     this.dims = cfg.dimensions || 1024;
     this.apiKey = cfg.apiKey;
-    this.authPath = cfg.authPath;
-    this.credentials = cfg.credentials;
+    this.getApiKeyFn = cfg.getApiKeyFn;
+    
     this.fetchFn = cfg.fetchFn ?? globalThis.fetch.bind(globalThis);
     this.baseUrl = cfg.baseUrl || DASHSCOPE_EMBEDDING_URL;
     // v4 batch limit is 10 rows; qwen3.7-text-embedding allows 20.
@@ -124,7 +121,7 @@ class DashScopeEmbeddingProvider implements EmbeddingProvider {
   private resolveKey(): string | null {
     if (this.apiKey) return this.apiKey;
     const providerID = 'alibaba-cn';
-    return getProviderApiKey(providerID, this.authPath, this.credentials) ?? null;
+    return this.getApiKeyFn?.(providerID) ?? null;
   }
 
   async embed(texts: string[], kind: EmbeddingKind): Promise<number[][]> {

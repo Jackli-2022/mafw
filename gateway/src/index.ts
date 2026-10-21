@@ -524,7 +524,7 @@ class MafwScheduler {
     this.pluginHost = new PluginHost(
       process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins'),
       (name) => createPluginPackageContext(name, {
-        getCredentials: () => this.runtime?.credentials ?? undefined,
+        getApiKey: (p: string) => getProviderApiKey(p, undefined, this.runtime?.credentials) ?? null,
         usageStats: () => this.usageStatsProvider,
         projectDir: this.projectDir,
         gatewayPort: config.server.apiPort,
@@ -3017,7 +3017,7 @@ class MafwScheduler {
     }
 
     this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
-      getCredentials: () => this.runtime?.credentials ?? undefined,
+      getApiKey: (p: string) => getProviderApiKey(p, undefined, this.runtime?.credentials) ?? null,
     });
     await this.mediaPluginLoader.init();
     this.pluginHost?.bindMedia((entries) => this.mediaPluginLoader?.setPackageEntries(entries));
@@ -3033,9 +3033,7 @@ class MafwScheduler {
 
     this.mediaService = new MediaService({
       prompt: createPiPromptAdapter({
-        getApiKey: (provider) => {
-          return this.runtime?.credentials?.getApiKey(provider) ?? undefined;
-        },
+        getApiKey: (provider: string) => getProviderApiKey(provider, undefined, this.runtime?.credentials) ?? null,
       }),
       config: () => config.raw.media,
       resolvePrompt: (kind, cfg) => {
@@ -3078,11 +3076,11 @@ class MafwScheduler {
     const self = this;
     this.ttsService = createTtsService({
       config: () => config.raw,
-      get credentials() { return self.runtime?.credentials; },
+      getApiKey: (p: string) => getProviderApiKey(p, undefined, self.runtime?.credentials) ?? null,
     });
     this.ttsRegistry.registerBuiltin(createMimoEngine({
       config: () => config.raw as any,
-      get credentials() { return self.runtime?.credentials; },
+      getApiKey: (p: string) => getProviderApiKey(p, undefined, self.runtime?.credentials) ?? null,
     }));
     this.ttsRegistry.registerBuiltin(createKokoroEngine({ modelsDir: path.join(mafwDir, 'models') }));
     const pyBin = process.env.MAFW_PYTHON_BIN

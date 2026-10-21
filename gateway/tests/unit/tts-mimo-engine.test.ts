@@ -1,6 +1,6 @@
 import { createMimoEngine } from '../../src/tts/mimo-engine';
 
-const TEST_CREDENTIALS = { getApiKey: () => 'test-key' };
+const GET_KEY = (p: string) => (p === 'xiaomi' ? 'test-key' : null);
 
 function sseBody(lines: string[]): Response {
   const text = lines.map(l => `data: ${l}\n\n`).join('');
@@ -11,7 +11,7 @@ function sseBody(lines: string[]): Response {
 
 describe('mimo engine', () => {
   test('capabilities declare native streaming at 24kHz with style control', () => {
-    const engine = createMimoEngine({ config: () => ({}), credentials: TEST_CREDENTIALS as any });
+    const engine = createMimoEngine({ config: () => ({}), getApiKey: (p) => (p === 'xiaomi' ? 'sk-test' : null) });
     expect(engine.name).toBe('mimo');
     expect(engine.capabilities.streaming).toBe('native');
     expect(engine.capabilities.sampleRate).toBe(24000);
@@ -25,7 +25,7 @@ describe('mimo engine', () => {
       JSON.stringify({ choices: [{ delta: { audio: { data: b64 } } }] }),
       '[DONE]',
     ]) as any;
-    const engine = createMimoEngine({ config: () => ({}), fetchImpl: fetchImpl as any, credentials: TEST_CREDENTIALS as any });
+    const engine = createMimoEngine({ config: () => ({}), fetchImpl: fetchImpl as any, getApiKey: GET_KEY });
     const chunks: { pcm: Buffer; sampleRate: number }[] = [];
     for await (const c of engine.synthesizeStream('你好', {}, new AbortController().signal)) chunks.push(c);
     expect(chunks).toHaveLength(1);
@@ -38,7 +38,7 @@ describe('mimo engine', () => {
     const fetchImpl = async () => new Response(JSON.stringify({
       choices: [{ message: { audio: { data: wav.toString('base64') } } }],
     }), { status: 200 }) as any;
-    const engine = createMimoEngine({ config: () => ({}), fetchImpl: fetchImpl as any, credentials: TEST_CREDENTIALS as any });
+    const engine = createMimoEngine({ config: () => ({}), fetchImpl: fetchImpl as any, getApiKey: GET_KEY });
     const out = await engine.synthesize('你好', {});
     expect(out.equals(wav)).toBe(true);
   });

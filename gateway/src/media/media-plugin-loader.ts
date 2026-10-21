@@ -4,7 +4,6 @@ import { log } from '../core/utils/logger';
 import { PromptFn } from './media-service';
 import { createPiPromptAdapter } from './pi-adapter';
 import { createMediaPluginContext } from './plugin-context';
-import type { RuntimeCredentials } from '../runtime/contract';
 import type { MediaPackageEntry } from '../plugins/package-types';
 
 export interface MediaEngine {
@@ -26,8 +25,8 @@ export interface MediaPluginState {
 const VALID_MODALITIES = new Set(['image', 'video', 'audio']);
 
 export interface MediaPluginLoaderOpts {
-  /** Lazy credentials getter (resolved at plugin-load time, not construction time). */
-  getCredentials?: () => RuntimeCredentials | undefined;
+  /** ƾ�� seam��Plan 3 Task 5����ע��ʽ getApiKey��auth.json ������ index.ts ������ߣ��� */
+  getApiKey?: (provider: string) => string | null;
 }
 
 export class MediaPluginLoader {
@@ -38,11 +37,11 @@ export class MediaPluginLoader {
   private packageEngines = new Map<string, MediaPackageEntry>();
   private watcher?: fs.FSWatcher;
   private debounceTimer?: NodeJS.Timeout;
-  private getCredentials?: () => RuntimeCredentials | undefined;
+  private getApiKey?: (provider: string) => string | null;
 
   constructor(pluginsDir: string, opts?: MediaPluginLoaderOpts) {
     this.pluginsDir = pluginsDir;
-    this.getCredentials = opts?.getCredentials;
+    this.getApiKey = opts?.getApiKey;
   }
 
   async init(): Promise<void> {
@@ -113,9 +112,9 @@ export class MediaPluginLoader {
       }
 
       let prompt: PromptFn;
-      const creds = this.getCredentials?.();
+      const getApiKey = (p: string) => this.getApiKey?.(p) ?? null;
       if (hasCreatePrompt) {
-        const ctx = createMediaPluginContext(name, creds);
+        const ctx = createMediaPluginContext(name, getApiKey);
         prompt = await mod.createPrompt(ctx);
         if (typeof prompt !== 'function') {
           this.state.set(file, { file, name, status: 'error', error: 'createPrompt did not return a function' });
@@ -123,7 +122,7 @@ export class MediaPluginLoader {
         }
       } else {
         const fixPayload = typeof mod.fixPayload === 'function' ? mod.fixPayload : undefined;
-        prompt = createPiPromptAdapter({ fixPayload, credentials: creds });
+        prompt = createPiPromptAdapter({ fixPayload, getApiKey });
       }
 
       loadedNames.add(name);
