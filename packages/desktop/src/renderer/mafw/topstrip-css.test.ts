@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const css = readFileSync(join(import.meta.dir, "mafw.css"), "utf8")
+const css = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
 /** 样式契约：顶行溢出护栏——session tab 增多时 strip 内滚，
  *  窗口控制按钮（flex-shrink:0）绝不被推出可视列宽。

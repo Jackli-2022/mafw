@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const css = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "mafw.css"), "utf8")
+const css = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "mafw.css"), "utf8")
 
 /** 取选择器（首次出现）的规则体；找不到返回空串 */
 export function cssBlock(selector: string): string {
@@ -104,7 +104,7 @@ describe("token v6 — 字体分层", () => {
     expect(css).toMatch(/--font-data:[^;]*"JetBrains Mono Variable"/)
   })
   test("渲染入口打包 Inter + JetBrains Mono woff2", () => {
-    const entry = readFileSync(join(import.meta.dir, "..", "src", "renderer", "index.tsx"), "utf8")
+    const entry = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "index.tsx"), "utf8")
     expect(entry).toContain("@fontsource-variable/inter")
     expect(entry).toContain("@fontsource-variable/jetbrains-mono")
   })
@@ -240,12 +240,12 @@ describe("token v5 — v1/v2 兼容覆盖层跟随", () => {
 
 describe("Rail 主导航 + 会话树（v6 §0b）", () => {
   test("Rail 消费 nav-tab 导航表", () => {
-    const rail = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
+    const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
     expect(rail).toContain("nav-tab")
     expect(rail).toContain("buildSessionTree")
   })
   test("MafwShell 不再引用 TabStrip", () => {
-    const shell = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "MafwShell.tsx"), "utf8")
+    const shell = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "MafwShell.tsx"), "utf8")
     expect(shell).not.toContain("TabStrip")
   })
   test("导航项与项目树样式存在", () => {
@@ -253,7 +253,7 @@ describe("Rail 主导航 + 会话树（v6 §0b）", () => {
     expect(cssBlock(".mafw-rail-project-head {")).not.toBe("")
   })
   test("单项目树：只加载当前项目，manager 不入树", () => {
-    const rail = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
+    const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
     expect(rail).toContain("sessionsFor(projectID())")
     expect(rail).not.toContain("renderNode(p.manager")
     expect(rail).not.toContain("collapsedUnsearched")
@@ -606,7 +606,7 @@ describe("token v5.2 — bento 基建", () => {
 })
 
 describe("token v5.2 — 组件接线", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("WelcomeHome 保持居中单列（v4 语义，bento 不用于欢迎页）", () => {
     const b = cssBlock(".mafw-welcome {")
     expect(b).toContain("max-width: 720px")
@@ -640,7 +640,7 @@ describe("DiffReviewPanel 抽屉化（业界对齐：无全屏遮罩）", () => 
 })
 
 describe("DiffReviewPanel 接线", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("MafwShell：审阅改动 toggle（再点关闭）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
     expect(src).toContain('applyRightDock(true, "changes")')
@@ -656,7 +656,7 @@ describe("DiffReviewPanel 接线", () => {
 })
 
 describe("Dock changes tab（改动列表常驻入口）", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("RightDock 含 changes trigger（tab 条归位于 dock 内部）", () => {
     expect(read("src/renderer/mafw/components/RightDock.tsx")).toContain('"changes"')
   })
@@ -679,7 +679,7 @@ describe("Dock changes tab（改动列表常驻入口）", () => {
 })
 
 describe("DiffReviewPanel 两栏（B2：文件树 + 单文件预览）", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("面板含左文件列表栏", () => {
     const src = read("src/renderer/mafw/components/DiffReviewPanel.tsx")
     expect(src).toContain("mafw-diff-files")
@@ -694,7 +694,7 @@ describe("DiffReviewPanel 两栏（B2：文件树 + 单文件预览）", () => {
 })
 
 describe("审批卡汇总为一行（v6 追加）", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("ChatPane 不再内联审批卡（仅提问卡内联）", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
     expect(src).toContain('c?.kind !== "permission"')
@@ -720,7 +720,7 @@ describe("审批卡汇总为一行（v6 追加）", () => {
     }
   })
   test("汇总块放进 SessionTurn children（在 </SessionTurn> 之前）", () => {
-    const src = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
+    const src = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
     const open = src.indexOf("<SessionTurn")
     const close = src.indexOf("</SessionTurn>", open)
     expect(open).toBeGreaterThan(-1)
@@ -729,17 +729,17 @@ describe("审批卡汇总为一行（v6 追加）", () => {
     expect(inner).toContain("ApprovalSummaryLine")
   })
   test("细节档位：SessionTurn shell/edit 默认展开由 detailsMode 驱动", () => {
-    const src = readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
+    const src = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "ChatPane.tsx"), "utf8")
     expect(src).toContain("shellToolDefaultOpen={detailsMode()}")
     expect(src).toContain("editToolDefaultOpen={detailsMode()}")
   })
   test("过程元数据不再有独立 summary 行（由内联折叠工具卡承载）", () => {
-    expect(() => readFileSync(join(import.meta.dir, "..", "src", "renderer", "mafw", "components", "ToolSummaryBlock.tsx"), "utf8")).toThrow()
+    expect(() => readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "ToolSummaryBlock.tsx"), "utf8")).toThrow()
   })
 })
 
 describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("面板含评论输入 UI", () => {
     const src = read("src/renderer/mafw/components/DiffReviewPanel.tsx")
     expect(src).toContain("mafw-diff-comment")
@@ -756,7 +756,7 @@ describe("DiffReviewPanel 行级评论回喂（opencode onLineComment 模式）"
 })
 
 describe("changed files 数据源：message.summary.diffs 聚合", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("chat 回合 diffs 块隐藏（由 dock/抽屉承载）", () => {
     expect(cssBlock('.mafw-shell [data-component="session-turn-diffs-group"]')).toContain("display: none")
   })
@@ -771,7 +771,7 @@ describe("changed files 数据源：message.summary.diffs 聚合", () => {
 })
 
 describe("topframe — SessionStrip 组件提取", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("SessionStrip 组件文件存在且导出", () => {
     const src = read("src/renderer/mafw/components/SessionStrip.tsx")
     expect(src).toContain("export function SessionStrip")
@@ -784,7 +784,7 @@ describe("topframe — SessionStrip 组件提取", () => {
 })
 
 describe("topframe — 顶行框架", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("无 .mafw-titlebar 移除；WindowControls 入顶行", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).not.toContain('class="mafw-titlebar"')
@@ -817,7 +817,7 @@ describe("topframe — 顶行框架", () => {
 })
 
 describe("topframe — Rail 品牌行", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("Rail 渲染 brand slot（项目切换行之上）", () => {
     const rail = read("src/renderer/mafw/components/Rail.tsx")
     expect(rail).toContain("mafw-rail-brand")
@@ -835,7 +835,7 @@ describe("topframe — Rail 品牌行", () => {
 })
 
 describe("layout-toggles — dock tabs 归位", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("RightDock 内部恢复 TabsV2 五 tab + onTab", () => {
     const src = read("src/renderer/mafw/components/RightDock.tsx")
     expect(src).toContain("TabsV2")
@@ -854,7 +854,7 @@ describe("layout-toggles — dock tabs 归位", () => {
 })
 
 describe("layout-toggles — 顶行两端开关", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("顶行左端=侧边栏开关，右端=面板开关（填充/描边成对图标）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toContain("layout-left-full")
@@ -882,7 +882,7 @@ describe("layout-toggles — 顶行两端开关", () => {
 })
 
 describe("layout-toggles — Rail 瘦身", () => {
-  const read = (p: string) => readFileSync(join(import.meta.dir, "..", p), "utf8")
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("Rail 不再有折叠箭头与轨迹入口", () => {
     const rail = read("src/renderer/mafw/components/Rail.tsx")
     expect(rail).not.toContain("mafw-rail-collapse")

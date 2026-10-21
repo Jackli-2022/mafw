@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const css = readFileSync(join(import.meta.dir, "mafw.css"), "utf8")
+const css = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
 /** 取 .mafw-shell 基础块（第一个不带 html[] 前缀的 .mafw-shell 规则）到 --font-ui 结束。 */
 const shellBlock = css.slice(css.indexOf(".mafw-shell, body {"), css.indexOf("/* 亮色：手动覆盖"))

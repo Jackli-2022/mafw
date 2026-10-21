@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const css = readFileSync(join(import.meta.dir, "mafw.css"), "utf8")
+const css = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
 /** 样式契约：session strip 对齐业界 tab 条（Chrome/VS Code/Firefox）——
  *  永不出现可见滚动条；tab 收缩到最小宽后由内滚（滚轮横向化）承接溢出；

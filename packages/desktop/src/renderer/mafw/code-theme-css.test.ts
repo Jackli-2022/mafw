@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const css = readFileSync(join(import.meta.dir, "mafw.css"), "utf8")
+const css = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
 function cssBlock(selector: string): string {
   const start = css.indexOf(selector)

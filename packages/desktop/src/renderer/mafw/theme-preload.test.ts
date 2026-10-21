@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 const preload = readFileSync(
-  join(import.meta.dir, "..", "..", "..", "public", "oc-theme-preload.js"),
+  join(import.meta.dirname, "..", "..", "..", "public", "oc-theme-preload.js"),
   "utf8",
 )
 

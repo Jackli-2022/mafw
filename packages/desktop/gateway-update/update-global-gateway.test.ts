@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { mkdtempSync, writeFileSync } from "node:fs"
+import * as nodeFs from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { compareVersions, decide, readPkgVersion, readPidFile, runUpdate, shouldKill, stopGatewayDaemon, NPM_BIN } from "./update-global-gateway.cjs"
@@ -36,23 +37,23 @@ describe("readPkgVersion", () => {
     const dir = mkdtempSync(join(tmpdir(), "gwupd-"))
     const pkg = join(dir, "package.json")
     writeFileSync(pkg, JSON.stringify({ name: "x", version: "4.10.1" }))
-    expect(readPkgVersion(require("node:fs"), pkg)).toBe("4.10.1")
+    expect(readPkgVersion(nodeFs, pkg)).toBe("4.10.1")
   })
   test("null on missing file or bad json or empty version", () => {
     const dir = mkdtempSync(join(tmpdir(), "gwupd-"))
-    expect(readPkgVersion(require("node:fs"), join(dir, "absent.json"))).toBeNull()
+    expect(readPkgVersion(nodeFs, join(dir, "absent.json"))).toBeNull()
     const bad = join(dir, "bad.json")
     writeFileSync(bad, "{oops")
-    expect(readPkgVersion(require("node:fs"), bad)).toBeNull()
+    expect(readPkgVersion(nodeFs, bad)).toBeNull()
     const empty = join(dir, "empty.json")
     writeFileSync(empty, JSON.stringify({ name: "x" }))
-    expect(readPkgVersion(require("node:fs"), empty)).toBeNull()
+    expect(readPkgVersion(nodeFs, empty)).toBeNull()
   })
   test("tolerates UTF-8 BOM (PowerShell Set-Content trap)", () => {
     const dir = mkdtempSync(join(tmpdir(), "gwupd-"))
     const pkg = join(dir, "package.json")
     writeFileSync(pkg, "\uFEFF" + JSON.stringify({ version: "4.10.1" }))
-    expect(readPkgVersion(require("node:fs"), pkg)).toBe("4.10.1")
+    expect(readPkgVersion(nodeFs, pkg)).toBe("4.10.1")
   })
 })
 
@@ -61,10 +62,10 @@ describe("readPidFile", () => {
     const dir = mkdtempSync(join(tmpdir(), "gwupd-"))
     const pidPath = join(dir, "gateway.pid")
     writeFileSync(pidPath, "4242\n")
-    expect(readPidFile(require("node:fs"), pidPath)).toBe("4242")
+    expect(readPidFile(nodeFs, pidPath)).toBe("4242")
     writeFileSync(pidPath, "not-a-pid")
-    expect(readPidFile(require("node:fs"), pidPath)).toBeNull()
-    expect(readPidFile(require("node:fs"), join(dir, "absent.pid"))).toBeNull()
+    expect(readPidFile(nodeFs, pidPath)).toBeNull()
+    expect(readPidFile(nodeFs, join(dir, "absent.pid"))).toBeNull()
   })
 })
 
@@ -83,7 +84,7 @@ describe("stopGatewayDaemon", () => {
     if (pidContent !== null) writeFileSync(pidPath, pidContent)
     return {
       deps: {
-        fs: require("node:fs"),
+        fs: nodeFs,
         pidFilePath: pidPath,
         pidImageName: (pid) => {
           calls.push(["image", pid])
@@ -125,7 +126,7 @@ describe("stopGatewayDaemon", () => {
 })
 
 describe("runUpdate", () => {
-  const realFs = require("node:fs")
+  const realFs = nodeFs
   function fixture(over = {}) {
     const { installError = null, ...depsOver } = over
     const dir = mkdtempSync(join(tmpdir(), "gwupd-run-"))

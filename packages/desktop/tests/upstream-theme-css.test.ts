@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 // packages/desktop/tests → ../../ = packages/
-const uiV1 = readFileSync(join(import.meta.dir, "..", "..", "ui", "src", "styles", "theme.css"), "utf8")
+const uiV1 = readFileSync(join(import.meta.dirname, "..", "..", "ui", "src", "styles", "theme.css"), "utf8")
 const sessionPart = readFileSync(
-  join(import.meta.dir, "..", "..", "session-ui", "src", "components", "message-part.css"),
+  join(import.meta.dirname, "..", "..", "session-ui", "src", "components", "message-part.css"),
   "utf8",
 )
 

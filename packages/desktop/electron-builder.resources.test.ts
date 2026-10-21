@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { $ } from "bun"
+import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import type { Configuration } from "electron-builder"
 
 type ResourceEntry = { from: string; to: string; filter?: string[] }
@@ -15,9 +15,9 @@ test("omits native/ extra resource when the directory is absent", async () => {
 })
 
 test("includes native/ extra resource when the directory exists", async () => {
-  await $`mkdir -p native`.quiet()
+  mkdirSync("native", { recursive: true })
   try {
-    await Bun.write("native/index.js", "// marker\n")
+    writeFileSync("native/index.js", "// marker\n")
     const module = await import("./electron-builder.config.ts?native-present=1")
     const resources = await listResources(module.default as Configuration)
     expect(resources).toContainEqual({
@@ -26,6 +26,6 @@ test("includes native/ extra resource when the directory exists", async () => {
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
     })
   } finally {
-    await $`rm -rf native`.quiet()
+    rmSync("native", { recursive: true, force: true })
   }
 })

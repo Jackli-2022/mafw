@@ -6,7 +6,7 @@ import { join } from "path"
 import { planSessionEvent, type RawSessionEvent } from "./session-events"
 
 test("broadcast replay: lifecycle sequence produces invalidate→patch→remove", () => {
-  const lines = readFileSync(join(__dirname, "fixtures/broadcast-session.jsonl"), "utf8")
+  const lines = readFileSync(join(import.meta.dirname, "fixtures/broadcast-session.jsonl"), "utf8")
     .trim()
     .split("\n")
     .map(l => JSON.parse(l) as RawSessionEvent)

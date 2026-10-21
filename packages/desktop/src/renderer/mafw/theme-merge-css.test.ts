@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const css = readFileSync(join(import.meta.dir, "mafw.css"), "utf8")
+const css = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
 function block(selector: string): string {
   const i = css.indexOf(selector)
@@ -92,7 +92,7 @@ describe("悬空引用扫描 — mafw.css 引用的 token 必须有定义", () =
       "../../../../ui/src/v2/styles/theme.css",
       "../../../../session-ui/src/components/markdown.css",
     ]
-      .map((p) => readFileSync(join(import.meta.dir, p), "utf8"))
+      .map((p) => readFileSync(join(import.meta.dirname, p), "utf8"))
       .join("\n")
     const defined = new Set(
       [...(css + "\n" + upstream).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]),

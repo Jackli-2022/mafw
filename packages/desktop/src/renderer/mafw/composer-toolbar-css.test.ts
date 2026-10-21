@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-const css = readFileSync(join(import.meta.dir, "mafw.css"), "utf8")
+const css = readFileSync(join(import.meta.dirname, "mafw.css"), "utf8")
 
 /** 样式契约：composer toolbar 靠这些规则保证窄宽不溢出（无法在 bun 里做真实布局，故断言规则存在）。 */
 describe("composer toolbar overflow guards", () => {
