@@ -1,4 +1,4 @@
-import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
+﻿import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
 
 describe('normalizeOpencodeEvent', () => {
   it('unwraps GlobalEvent envelope and classifies turn.completed', () => {
@@ -29,7 +29,7 @@ describe('normalizeOpencodeEvent', () => {
     const f = normalizeOpencodeEvent({
       payload: {
         type: 'message.updated',
-        properties: { info: { id: 'm1', role: 'assistant', sessionID: 's1', time: { completed: 123 }, finish: 'stop' } },
+        properties: { message: { id: 'm1', role: 'assistant', sessionID: 's1', time: { completed: 123 }, finish: 'stop' } },
       },
     });
     expect(f.step).toEqual({ sessionID: 's1', assistantMessageID: 'm1', finish: 'stop' });
@@ -38,7 +38,7 @@ describe('normalizeOpencodeEvent', () => {
 
   it('ignores in-flight assistant message (no time.completed)', () => {
     const f = normalizeOpencodeEvent({
-      payload: { type: 'message.updated', properties: { info: { id: 'm1', role: 'assistant', sessionID: 's1', time: {} } } },
+      payload: { type: 'message.updated', properties: { message: { id: 'm1', role: 'assistant', sessionID: 's1', time: {} } } },
     });
     expect(f.step).toBeNull();
   });
@@ -86,7 +86,7 @@ describe('normalizeOpencodeEvent', () => {
     });
     expect(viaPart.sessionID).toBe('via-part');
     const viaInfo = normalizeOpencodeEvent({
-      payload: { type: 'message.updated', properties: { info: { role: 'user', sessionID: 'via-info', time: {} } } },
+      payload: { type: 'message.updated', properties: { message: { role: 'user', sessionID: 'via-info', time: {} } } },
     });
     expect(viaInfo.sessionID).toBe('via-info');
   });

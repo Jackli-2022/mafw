@@ -19,7 +19,7 @@
  * + 2026-10-21-runtime-canonical-v3-design.md §3.3 / §3.7.1
  */
 import { canonicalIdentity } from './event-mapper';
-import type { EventMapping, EventSourceShape } from './event-mapper';
+import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 
 /** opencode 原生事件信封：GlobalEvent { directory, payload: { type, properties, sessionID? } } */
 export const OPENCODE_EVENT_SOURCE: EventSourceShape = {
@@ -84,8 +84,9 @@ export const OPENCODE_V1_EVENT_MAPPINGS: EventMapping[] = [
   ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
   // ---- runtime 原生信封（非 SDK union；RUNTIME_NATIVE_DROPPED 同款，显式行保计数） ----
   { from: 'sync', to: 'drop' },
-  // ---- canonical identity（词汇单源派生，B1：同名收编词的显式注册） ----
-  ...canonicalIdentity('$.payload.properties'),
+  // ---- canonical identity（词汇单源派生，B1：同名收编词的显式注册；
+  //      message.updated 除外——经 OPENCODE_TRANSFORM_EVENT 产 flat {message}） ----
+  ...canonicalIdentity('$.payload.properties').filter((m) => m.from !== 'message.updated'),
 ];
 
 /** 兼容 alias（index.ts 渐进切换到方言名；Plan 2 Task 3 重接线后收敛） */
@@ -198,6 +199,31 @@ export const OPENCODE_V2_EVENT_MAPPINGS: EventMapping[] = [
     'worktree.ready', 'worktree.failed',
     'server.connected', 'server.instance.disposed', 'global.disposed',
   ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
-  // ---- canonical identity（词汇单源派生，恒等行殿后） ----
-  ...canonicalIdentity('$.payload.properties'),
+  // ---- canonical identity（词汇单源派生，恒等行殿后；message.updated 除外——
+  //      经 OPENCODE_TRANSFORM_EVENT 产 flat {message}，见下） ----
+  ...canonicalIdentity('$.payload.properties').filter((m) => m.from !== 'message.updated'),
 ];
+
+/**
+ * message.updated 载荷 flat 翻转（Plan 2 Task 6，@v1/@v2 共享）：
+ * 原生载荷 `{info: {...}}` → canonical `{message: {...}}`（零换名信封搬移——
+ * info 字段全量展开为 message 值；spread 未来防漏，字段枚举不可维护）。
+ * identity 行已排除 message.updated（映射优先级在前会拦截 transform）。
+ * SSE wire 出口经 event-broadcast → toWireEventPayload 还原 {info}（桌面零改动）。
+ */
+export const OPENCODE_TRANSFORM_EVENT: TransformEventFn = (event: any) => {
+  const t = event?.payload?.type;
+  if (t !== 'message.updated') return undefined;
+  const props = event?.payload?.properties ?? {};
+  // transform 输出不经 mapper 的 sessionID 注入（映射行专用）——自行提取
+  // （与 eventSource.sessionIdPath 同路径集：payload 顶层 / properties）
+  const sid = event?.sessionID ?? event?.payload?.sessionID ?? props?.sessionID;
+  return {
+    payload: {
+      type: 'message.updated',
+      properties: { ...(sid ? { sessionID: sid } : {}), message: props?.info ?? {} },
+    },
+    ...(sid ? { sessionID: sid } : {}),
+    ...(event?.directory !== undefined ? { directory: event.directory } : {}),
+  };
+};

@@ -41,3 +41,22 @@ export function toWireHistory(
     return { info: toWireInfo(msg), parts: Array.isArray(m?.content) ? m.content : [] };
   });
 }
+
+/**
+ * 事件级 egress：canonical message.updated 载荷 `{message}` → wire `{info}`
+ * （SSE 广播出口唯一事件转换点，挂 mafwBroadcast）；其他事件类型载荷
+ * 原样引用透传（part、permission、plugin 命名空间零改写）。
+ * B2 违例回退路径（载荷无 message 键）原样放行。
+ */
+export function toWireEventPayload(
+  type: string,
+  properties: Record<string, unknown>,
+): Record<string, unknown> {
+  if (type === 'message.updated'
+    && properties && typeof properties === 'object'
+    && 'message' in properties && !('info' in properties)) {
+    const { message, ...rest } = properties as { message?: unknown } & Record<string, unknown>;
+    return { ...rest, info: message };
+  }
+  return properties;
+}

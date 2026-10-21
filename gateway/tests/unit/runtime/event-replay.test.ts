@@ -3,13 +3,14 @@ import { join } from 'path';
 import { normalizeOpencodeEvent } from '../../../src/runtime/normalize';
 import { mafwBroadcast } from '../../../src/runtime/event-broadcast';
 import { applyEventMappings } from '../../../src/runtime/event-mapper';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 
 /** v2 全链路 golden：opencode 原生（GlobalEvent 信封）→ 翻译表 → canonical → facets。 */
 const OC_ENTRY = {
   eventSource: OPENCODE_EVENT_SOURCE,
   eventMappings: OPENCODE_EVENT_MAPPINGS,
+  transformEvent: OPENCODE_TRANSFORM_EVENT, // Task 6：message.updated 载荷 flat（identity 行已排除）
 };
 
 describe('event replay (golden, v2 pipeline: opencode raw → translate → normalize)', () => {

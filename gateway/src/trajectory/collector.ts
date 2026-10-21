@@ -118,11 +118,12 @@ export class TrajectoryCollector {
   handleEvent(type: string, props: any, directory?: string): TrajectoryEvent | null {
     const projectID = directory || this.projectID;
 
-    const sessionID = props?.info?.sessionID || props?.part?.sessionID || props?.sessionID;
+    const sessionID = props?.message?.sessionID || props?.info?.sessionID || props?.part?.sessionID || props?.sessionID;
     if (!sessionID) return null;
 
     if (type === 'message.updated') {
-      const info = props?.info;
+      // canonical v3：flat {message}（legacy {info} 双读兜底——插件容忍）
+      const info = props?.message ?? props?.info;
       if (!info) return null;
       log.info(`[Trajectory] message.updated: sessionID=${sessionID}, role=${info.role}, id=${info.id}, projectID=${projectID}`);
       if (info.role === 'user') {

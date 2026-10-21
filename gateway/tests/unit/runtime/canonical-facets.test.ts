@@ -15,9 +15,9 @@ test('step: legacy session.next.step.ended 载体已随词汇 v2 除名（不再
 });
 
 test('step: completed assistant message', () => {
-  const r = ev('message.updated', { info: { role: 'assistant', time: { completed: 1 }, sessionID: 's1', id: 'm1', finish: 'stop' } }, 's1');
+  const r = ev('message.updated', { message: { role: 'assistant', time: { completed: 1 }, sessionID: 's1', id: 'm1', finish: 'stop' } }, 's1');
   expect(r.step).toEqual({ sessionID: 's1', assistantMessageID: 'm1', finish: 'stop' });
-  expect(ev('message.updated', { info: { role: 'user', time: { completed: 1 } } }, 's1').step).toBeNull();
+  expect(ev('message.updated', { message: { role: 'user', time: { completed: 1 } } }, 's1').step).toBeNull();
 });
 
 test('chatSignal: delta 双路径（part.text 优先于 delta；空串不算）', () => {
@@ -31,7 +31,7 @@ test('chatSignal: turn 三元组终态（v2：broadcast 切面已删除）', () 
   expect(ev('turn.failed', { error: 'x' }, 's1')).toMatchObject({ chatSignal: 'error', chatError: 'x' });
   expect(ev('turn.failed', {}, 's1').chatError).toBe('Unknown error');
   expect(ev('turn.aborted', {}, 's1').chatSignal).toBeNull(); // 保旧 message.aborted 无信号
-  expect(ev('message.updated', { info: { id: 'm' } }, 's1').chatSignal).toBe('complete');
+  expect(ev('message.updated', { message: { id: 'm' } }, 's1').chatSignal).toBe('complete');
 });
 
 test('toolCommand: tool part 快照载体（v2 从 session.next.tool.* 迁移）', () => {

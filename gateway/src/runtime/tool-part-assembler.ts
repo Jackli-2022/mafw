@@ -70,8 +70,9 @@ export class ToolPartAssembler {
       const mid = props?.part?.messageID;
       if (typeof mid === 'string' && mid) s.lastAssistantMessageID = mid;
     } else if (type === MAFW.messageUpdated) {
-      const info = props?.info;
-      if (info?.role === 'assistant' && typeof info?.id === 'string' && info.id) s.lastAssistantMessageID = info.id;
+      // canonical v3：flat {message}（legacy {info} 双读兜底——插件容忍）
+      const message = props?.message ?? props?.info;
+      if (message?.role === 'assistant' && typeof message?.id === 'string' && message.id) s.lastAssistantMessageID = message.id;
     }
   }
 
@@ -82,8 +83,9 @@ export class ToolPartAssembler {
     if (s.lastAssistantMessageID) return { messageID: s.lastAssistantMessageID, pre: [] };
     if (!s.syntheticAnchorID) {
       s.syntheticAnchorID = `asst_${sessionID}_synth`;
-      const info = { id: s.syntheticAnchorID, role: 'assistant', sessionID, parentID: null, time: { created: this.now() } };
-      return { messageID: s.syntheticAnchorID, pre: [{ payload: { type: MAFW.messageUpdated, properties: { info } }, sessionID } as any] };
+      // canonical v3：合成锚 flat {message}（桌面经 SSE egress 的 toWireEventPayload 还原 {info}）
+      const message = { id: s.syntheticAnchorID, role: 'assistant', sessionID, parentID: null, time: { created: this.now() } };
+      return { messageID: s.syntheticAnchorID, pre: [{ payload: { type: MAFW.messageUpdated, properties: { message } }, sessionID } as any] };
     }
     return { messageID: s.syntheticAnchorID, pre: [] };
   }

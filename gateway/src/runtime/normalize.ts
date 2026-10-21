@@ -74,7 +74,7 @@ export function normalizeOpencodeEvent(evt: RawRuntimeEvent): EventFacets {
   const props = payload?.properties || evt?.properties || {};
   // sessionID 五层提取链：信封约定（非 facet 规则），执行器内置。
   const sessionID =
-    props?.sessionID || props?.part?.sessionID || props?.info?.sessionID || payload?.sessionID || evt?.sessionID;
+    props?.sessionID || props?.part?.sessionID || props?.message?.sessionID || props?.info?.sessionID || payload?.sessionID || evt?.sessionID;
 
   const facets = evaluateFacetRules(CANONICAL_FACET_RULES, type, props, sessionID);
 

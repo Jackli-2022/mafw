@@ -207,8 +207,10 @@ describe('pi N1/N2��live ������ + ��ɫ�޸���', () =>
   it('N2: message_end ��ɫ�� $.message.role ȡֵ��user ��Ϣ������� assistant��', () => {
     const user = translatePiEvent({ type: 'message_end', message: { role: 'user', content: 'hi', timestamp: 1 } }, 'pi_x');
     expect(user?.payload.type).toBe('message.updated');
-    expect(user?.payload.properties.info.role).toBe('user');
-    const assistant = translatePiEvent({ type: 'message_end', message: { role: 'assistant', content: [], timestamp: 2 } }, 'pi_x');
-    expect(assistant?.payload.properties.info.role).toBe('assistant');
+    expect(user?.payload.properties.message.role).toBe('user');
+    const assistant = translatePiEvent({ type: 'message_end', message: { role: 'assistant', content: [], timestamp: 2, stopReason: 'stop' } }, 'pi_x');
+    expect(assistant?.payload.properties.message.role).toBe('assistant');
+    expect(assistant?.payload.properties.message.time).toMatchObject({ completed: 2 });
+    expect(assistant?.payload.properties.message.finish).toBe('stop');
   });
 });

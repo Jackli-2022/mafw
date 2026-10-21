@@ -11,6 +11,7 @@
  * 规则：可选字段缺失时不得出现在 data 上（key 稳定性，消费方用
  * `'x' in data` 判定时不受缺省值污染）。
  */
+import { toWireEventPayload } from './wire-compat';
 
 export interface MafwEventBroadcast {
   type: 'mafw_event';
@@ -43,10 +44,16 @@ export function mafwBroadcast(data: BroadcastEventData, internal?: boolean): Maf
       `— downstream (desktop/TUI) will ignore this event`,
     );
   }
+  // 事件级 egress（canonical v3 / Plan 2）：内部 message.updated 载荷为
+  // {message}（flat），wire 出口还原 {info}——唯一事件载荷转换点，其余零改写。
+  const properties = (data.type === 'message.updated' && data.properties && typeof data.properties === 'object')
+    ? toWireEventPayload(data.type, data.properties as Record<string, unknown>)
+    : data.properties;
   return {
     type: 'mafw_event',
     data: {
       ...data,
+      ...(properties !== undefined ? { properties } : {}),
       ...(data.directory === undefined ? {} : { directory: data.directory }),
       ...(internal ? { internal: true } : {}),
     },

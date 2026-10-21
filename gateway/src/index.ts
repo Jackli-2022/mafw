@@ -131,7 +131,7 @@ import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS } from './runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
 import { wrapDialectEventStream } from './runtime/event-stream-wiring';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
@@ -561,15 +561,18 @@ class MafwScheduler {
     this.runtimeLoader.registerBuiltin('opencode', opencodeFactory(true), fullCapabilities(), external, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+      transformEvent: OPENCODE_TRANSFORM_EVENT,
     });
     // 钉死方言：映射表由注册 extras 直接携带（无 resolveEventEntry，探测跳过）
     this.runtimeLoader.registerBuiltin('opencode@v1', opencodeFactory(false), fullCapabilities(), external, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+      transformEvent: OPENCODE_TRANSFORM_EVENT,
     });
     this.runtimeLoader.registerBuiltin('opencode@v2', opencodeFactory(false), fullCapabilities(), external, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V2_EVENT_MAPPINGS,
+      transformEvent: OPENCODE_TRANSFORM_EVENT,
     });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;

@@ -31,8 +31,8 @@ export const CANONICAL_FACET_RULES: FacetRule[] = [
   { type: 'part.updated', when: [{ path: '$.part.type', equals: 'step-finish' }],
     step: { sessionID: '$.part.sessionID', assistantMessageID: '$.part.messageID', finish: '$.part.reason' } },
   { type: 'message.updated',
-    when: [{ path: '$.info.role', equals: 'assistant' }, { path: '$.info.time.completed', exists: true }],
-    step: { sessionID: '$.info.sessionID', assistantMessageID: '$.info.id', finish: '$.info.finish' } },
+    when: [{ path: '$.message.role', equals: 'assistant' }, { path: '$.message.time.completed', exists: true }],
+    step: { sessionID: '$.message.sessionID', assistantMessageID: '$.message.id', finish: '$.message.finish' } },
   // chatSignal（delta 双路径：part.text 优先）
   { type: 'part.updated', when: [{ path: '$.part.text', exists: true }], chatSignal: 'delta', deltaText: '$.part.text' },
   { type: 'part.updated', when: [{ path: '$.delta', exists: true }], chatSignal: 'delta', deltaText: '$.delta' },

@@ -1,5 +1,5 @@
 import { applyEventMappings, canonicalIdentity, RUNTIME_IDENTITY_TYPES } from '../../../src/runtime/event-mapper';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS } from '../../../src/runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from '../../../src/runtime/opencode-events';
 import { EVENT_FLOW_MATRIX } from '../../../src/runtime/event-flow-matrix';
 import { MAFW_RUNTIME_EVENT_NAMES } from '../../../src/runtime/mafw-vocabulary';
 import { TOOL_PRIMITIVE_TYPES, ToolPartAssembler } from '../../../src/runtime/tool-part-assembler';
@@ -46,7 +46,7 @@ describe('OPENCODE_EVENT_MAPPINGS（opencode → MAFW 词汇 v2）', () => {
   });
 
   it('同名收编词经 identity 行放行（恒等翻译，载荷 passProperties 重建）', () => {
-    for (const t of ['session.created', 'message.updated', 'permission.asked', 'question.asked', 'session.diff']) {
+    for (const t of ['session.created', 'permission.asked', 'question.asked', 'session.diff']) {
       const out = applyEventMappings(raw(t, { sessionID: 's1', keep: 1 }), ENTRY, isCanonical);
       expect(out).toHaveLength(1);
       expect(out[0].payload.type).toBe(t);
@@ -98,6 +98,7 @@ describe('canonicalIdentity 恒等行（B1 identity 声明）', () => {
     expect([...RUNTIME_IDENTITY_TYPES]).toEqual(expect.arrayContaining([...MAFW_RUNTIME_EVENT_NAMES]));
     for (const t of ['tool.call', 'tool.delta', 'tool.result']) expect(RUNTIME_IDENTITY_TYPES).toContain(t);
     for (const t of RUNTIME_IDENTITY_TYPES) {
+      if (t === 'message.updated') continue; // Task 6：经 OPENCODE_TRANSFORM_EVENT 承载（identity 排除）
       const out = applyEventMappings(raw(t, { sessionID: 's1', keep: { deep: 1 } }), ENTRY, isCanonical);
       expect(out).toHaveLength(1);
       expect(out[0].payload.type).toBe(t);
@@ -255,8 +256,18 @@ describe('OPENCODE_V2_EVENT_MAPPINGS（@v2 混合消费表——next 族为主 +
     expect(todo.payload.type).toBe('plan.updated');
     const [created] = applyEventMappings(raw('session.created', { sessionID: 's1' }), ENTRY_V2, isCanonicalAll);
     expect(created.payload.type).toBe('session.created');
-    const [msg] = applyEventMappings(raw('message.updated', { sessionID: 's1', info: { id: 'm1', role: 'user' } }), ENTRY_V2, isCanonicalAll);
-    expect(msg.payload.type).toBe('message.updated');
+  });
+
+  it('⑬ message.updated 载荷 flat（Plan 2 Task 6）：identity 行排除，transformEvent 产 {message}——@v1/@v2 同款', () => {
+    const nativeInfo = { id: 'm1', sessionID: 's1', role: 'user', time: { created: 1 }, modelID: 'glm-5.3' };
+    for (const mappings of [OPENCODE_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS]) {
+      const entryWithTransform = { eventSource: OPENCODE_EVENT_SOURCE, eventMappings: mappings, transformEvent: OPENCODE_TRANSFORM_EVENT };
+      const out = applyEventMappings(raw('message.updated', { sessionID: 's1', info: nativeInfo }), entryWithTransform, isCanonicalAll);
+      expect(out).toHaveLength(1);
+      expect(out[0].payload.type).toBe('message.updated');
+      expect(out[0].payload.properties.message).toEqual(nativeInfo); // 零换名信封搬移
+      expect(out[0].sessionID).toBe('s1');
+    }
   });
 
   it('@v2 表 drop 集防幽灵：全部 ∈ SDK union 真名（sync 豁免——runtime 原生信封）', () => {

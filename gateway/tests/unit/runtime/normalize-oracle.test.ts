@@ -9,7 +9,7 @@ function v2ReferenceNormalize(evt: any): EventFacets {
   const type = payload?.type || evt?.type || '';
   const props = payload?.properties || evt?.properties || {};
   const sessionID =
-    props?.sessionID || props?.part?.sessionID || props?.info?.sessionID || payload?.sessionID || evt?.sessionID;
+    props?.sessionID || props?.part?.sessionID || props?.message?.sessionID || props?.info?.sessionID || payload?.sessionID || evt?.sessionID;
 
   // step 双载体（legacy session.next.step.ended 载体已随词汇 v2 除名）
   let step: any = null;
@@ -17,8 +17,8 @@ function v2ReferenceNormalize(evt: any): EventFacets {
     const part = props?.part;
     if (part && part.type === 'step-finish') step = { sessionID: part.sessionID, assistantMessageID: part.messageID, finish: part.reason };
   } else if (type === 'message.updated') {
-    const info = props?.info;
-    if (info && info.role === 'assistant' && info.time?.completed) step = { sessionID: info.sessionID, assistantMessageID: info.id, finish: info.finish };
+    const message = props?.message;
+    if (message && message.role === 'assistant' && message.time?.completed) step = { sessionID: message.sessionID, assistantMessageID: message.id, finish: message.finish };
   }
 
   // chatSignal（delta 双路径：part.text 优先）
@@ -66,9 +66,9 @@ const FIXTURES: Array<[string, any]> = [
   ['text part', { payload: { type: 'part.updated', properties: { part: { type: 'text', sessionID: 's1', text: 'hello' } } } }],
   ['text part 空串 + delta 回退', { payload: { type: 'part.updated', properties: { part: { type: 'text', text: '' }, delta: 'd' } } }],
   ['part.updated 无文本', { payload: { type: 'part.updated', properties: { part: { type: 'tool-call', sessionID: 's1' } } } }],
-  ['completed assistant', { payload: { type: 'message.updated', properties: { info: { role: 'assistant', time: { completed: 1 }, sessionID: 's1', id: 'm1', finish: 'stop' } } } }],
-  ['incomplete assistant', { payload: { type: 'message.updated', properties: { info: { role: 'assistant', sessionID: 's1', id: 'm1' } } } }],
-  ['user message.updated', { payload: { type: 'message.updated', properties: { info: { role: 'user', sessionID: 's1' } } } }],
+  ['completed assistant', { payload: { type: 'message.updated', properties: { message: { role: 'assistant', time: { completed: 1 }, sessionID: 's1', id: 'm1', finish: 'stop' } } } }],
+  ['incomplete assistant', { payload: { type: 'message.updated', properties: { message: { role: 'assistant', sessionID: 's1', id: 'm1' } } } }],
+  ['user message.updated', { payload: { type: 'message.updated', properties: { message: { role: 'user', sessionID: 's1' } } } }],
   ['turn.completed', { payload: { type: 'turn.completed', properties: { sessionID: 's1' } } }],
   ['turn.failed', { payload: { type: 'turn.failed', properties: { sessionID: 's1', error: 'boom' } } }],
   ['turn.failed 无 error', { payload: { type: 'turn.failed', properties: { sessionID: 's1' } } }],

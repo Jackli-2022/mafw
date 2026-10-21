@@ -9,7 +9,7 @@
  * 任何换名都破坏 round-trip；flat ↔ wire 是纯信封搬移，全部字段同名透传。
  */
 import { MafwMessage } from '../../../src/runtime/canonical-types';
-import { toWireInfo, toWireHistory } from '../../../src/runtime/wire-compat';
+import { toWireInfo, toWireHistory, toWireEventPayload } from '../../../src/runtime/wire-compat';
 
 /** AssistantMessage 风格（modelID/providerID 扁平、cost 数字）。 */
 const assistantStyle: MafwMessage = {
@@ -100,5 +100,31 @@ describe('wire-compat egress 转换（零换名）', () => {
       { id: 'b', role: 'assistant', content: [] },
     ];
     expect(toWireHistory(msgs).map((m) => (m.info as { id: string }).id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('toWireEventPayload（事件级 egress——SSE message.updated 载荷还原）', () => {
+  it('message.updated 的 {message} → {info}（零换名；兄弟键保留）', () => {
+    const message = { id: 'm1', sessionID: 's1', role: 'assistant', modelID: 'glm-5.3' };
+    const out = toWireEventPayload('message.updated', { message, sessionID: 's1' });
+    expect(out).toEqual({ info: message, sessionID: 's1' });
+    expect('message' in out).toBe(false);
+  });
+
+  it('message.updated 无 message 键（B2 违例回退路径）→ 原样放行', () => {
+    const props = { info: { id: 'x' }, sessionID: 's1' };
+    expect(toWireEventPayload('message.updated', props)).toBe(props); // 同引用
+  });
+
+  it('其他事件类型载荷原样引用透传，零改写（Review Focus 3）', () => {
+    for (const [type, props] of [
+      ['part.updated', { part: { id: 'p', type: 'text', text: 'hi' } }],
+      ['part.delta', { partID: 'p', delta: 'x' }],
+      ['permission.asked', { permission: 'bash' }],
+      ['turn.completed', { sessionID: 's1' }],
+      ['plugin:custom:thing', { anything: { deep: 1 } }],
+    ] as Array<[string, Record<string, unknown>]>) {
+      expect(toWireEventPayload(type, props)).toBe(props); // 同引用直通
+    }
   });
 });

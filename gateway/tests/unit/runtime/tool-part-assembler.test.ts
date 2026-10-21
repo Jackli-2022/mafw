@@ -108,9 +108,9 @@ describe('ToolPartAssembler', () => {
     const a = mk();
     const evts = a.applyCall({ sessionID: 's1', callID: 'c1', tool: 'bash', input: {} });
     expect(evts[0].payload.type).toBe('message.updated');
-    expect(evts[0].payload.properties.info.role).toBe('assistant');
+    expect(evts[0].payload.properties.message.role).toBe('assistant');
     const partMsgId = partOf(evts).messageID;
-    expect(partMsgId).toBe(evts[0].payload.properties.info.id);
+    expect(partMsgId).toBe(evts[0].payload.properties.message.id);
     const evts2 = a.applyCall({ sessionID: 's1', callID: 'c2', tool: 'bash', input: {} });
     expect(evts2.every((e) => e.payload.type === 'part.updated')).toBe(true);
     expect(partOf(evts2).messageID).toBe(partMsgId);
@@ -125,7 +125,7 @@ describe('ToolPartAssembler', () => {
 
   test('message.updated(assistant) 也供锚点', () => {
     const a = mk();
-    a.observeAnchor({ payload: { type: 'message.updated', properties: { info: { id: 'a7', role: 'assistant' } } }, sessionID: 's1' } as any);
+    a.observeAnchor({ payload: { type: 'message.updated', properties: { message: { id: 'a7', role: 'assistant' } } }, sessionID: 's1' } as any);
     expect(partOf(a.applyCall({ sessionID: 's1', callID: 'c1', tool: 'bash', input: {} })).messageID).toBe('a7');
   });
 

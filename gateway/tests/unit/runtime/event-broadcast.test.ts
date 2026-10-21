@@ -75,3 +75,17 @@ describe('flat-emit-registry（v2 发射注册表）', () => {
     }
   });
 });
+
+describe('mafwBroadcast message.updated egress (Plan 2 Task 6)', () => {
+  it('message.updated payload {message} -> {info} at the wire boundary (sole event egress)', () => {
+    const message = { id: 'm1', sessionID: 's1', role: 'user', modelID: 'glm-5.3' };
+    const out = mafwBroadcast({ type: 'message.updated', properties: { message, sessionID: 's1' }, sessionID: 's1' });
+    expect(out.data.properties).toEqual({ info: message, sessionID: 's1' });
+  });
+
+  it('non-message.updated payloads pass through untouched (reference)', () => {
+    const props = { part: { id: 'p', type: 'text', text: 'hi' } };
+    const out = mafwBroadcast({ type: 'part.updated', properties: props, sessionID: 's1' });
+    expect(out.data.properties).toBe(props);
+  });
+});

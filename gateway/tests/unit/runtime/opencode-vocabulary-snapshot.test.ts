@@ -50,6 +50,10 @@ const DEFENSIVE_FROMS = new Set([
 /** N3 幽灵名：drop 行写过的不存在事件（2026-10-21 审计埋葬证明）。 */
 const N3_GHOSTS = ['session.next.tool.started', 'session.next.tool.updated', 'session.next.tool.ended'];
 
+/** 经 transformEvent 处理的类型（identity 行排除、映射行不承载——Plan 2 Task 6
+ *  message.updated 载荷 flat 翻转经 OPENCODE_TRANSFORM_EVENT 产 {message}）。 */
+const TRANSFORM_HANDLED = new Set(['message.updated']);
+
 describe('opencode SDK 词表快照（89 基线）', () => {
   const union = parseSdkEventUnion();
 
@@ -84,7 +88,7 @@ describe('opencode SDK 词表快照（89 基线）', () => {
         (row.to === 'drop' ? dropped : consumed).add(f);
       }
     }
-    const undispositioned = union.filter((w) => !consumed.has(w) && !dropped.has(w));
+    const undispositioned = union.filter((w) => !consumed.has(w) && !dropped.has(w) && !TRANSFORM_HANDLED.has(w));
     expect(undispositioned).toEqual([]);
   });
 });

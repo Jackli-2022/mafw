@@ -52,11 +52,12 @@ export function checkEventFields(evt: RawEvt | null | undefined): string[] {
       break;
     }
     case 'message.updated': {
-      const info = props?.info;
-      if (!info) {
-        warnings.push('message.updated without properties.info — no message skeleton on desktop, no step settlement');
-      } else if (!info.id) {
-        warnings.push('message.updated without info.id — desktop cannot dedupe message skeleton');
+      // canonical v3：flat {message}（legacy {info} 双读兜底）
+      const message = props?.message ?? props?.info;
+      if (!message) {
+        warnings.push('message.updated without properties.message — no message skeleton on desktop, no step settlement');
+      } else if (!message.id) {
+        warnings.push('message.updated without message.id — desktop cannot dedupe message skeleton');
       }
       break;
     }
