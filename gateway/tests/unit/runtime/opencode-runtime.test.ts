@@ -1,4 +1,4 @@
-jest.mock('../../../src/opencode-adapter', () => ({
+jest.mock('../../../src/runtime/opencode-adapter', () => ({
   createOpencodeAdapter: jest.fn(async () => ({
     __clientMarker: true,
     session: {
@@ -136,7 +136,7 @@ describe('createOpencodeRuntime', () => {
 
   it('complete resolves endpoint from opencode provider config baseURL', async () => {
     delete process.env.MAFW_SERVER_SERVE_URL;
-    const { createOpencodeAdapter } = require('../../../src/opencode-adapter') as any;
+    const { createOpencodeAdapter } = require('../../../src/runtime/opencode-adapter') as any;
     const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
     const lastResult = (createOpencodeAdapter as jest.Mock).mock.results[(createOpencodeAdapter as jest.Mock).mock.results.length - 1];
     const adapter = await lastResult.value;
@@ -204,24 +204,24 @@ describe('createOpencodeRuntime', () => {
   });
 });
 
-describe('opencode-runtime ·½ÑÔÈë¿ÚÓëÕæÊµ×éºÏ£¨ÖÕÉó Critical #1 »Ø¹é¶¤Ôú£©', () => {
-  it('×ÔÊÊÓ¦ resolveEventEntry ½âÎö²úÎï±£Áô transformEvent ÇÒ message.updated ¶Ëµ½¶Ë´æ»î', async () => {
+describe('opencode-runtime ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½ï¿½Ï£ï¿½ï¿½ï¿½ï¿½ï¿½ Critical #1 ï¿½Ø¹é¶¤ï¿½ï¿½ï¿½ï¿½', () => {
+  it('ï¿½ï¿½ï¿½ï¿½Ó¦ resolveEventEntry ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï±£ï¿½ï¿½ transformEvent ï¿½ï¿½ message.updated ï¿½Ëµï¿½ï¿½Ë´ï¿½ï¿½', async () => {
     const { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } = await import('../../../src/runtime/opencode-events');
     const { EVENT_FLOW_MATRIX } = await import('../../../src/runtime/event-flow-matrix');
     const { TOOL_PRIMITIVE_TYPES } = await import('../../../src/runtime/tool-part-assembler');
     const { applyEventMappings } = await import('../../../src/runtime/event-mapper');
     const isCanonicalAll = (t: string) => !!EVENT_FLOW_MATRIX[t] || TOOL_PRIMITIVE_TYPES.has(t);
 
-    // ×ÔÊÊÓ¦ runtime£¨dialectProbe: true£©£»Ì½²âÄ¿±ê 127.0.0.1:1 ±Ø¾Ü ¡ú fail-safe v1
+    // ï¿½ï¿½ï¿½ï¿½Ó¦ runtimeï¿½ï¿½dialectProbe: trueï¿½ï¿½ï¿½ï¿½Ì½ï¿½ï¿½Ä¿ï¿½ï¿½ 127.0.0.1:1 ï¿½Ø¾ï¿½ ï¿½ï¿½ fail-safe v1
     const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:1', dialectProbe: true });
     expect(typeof (rt as any).resolveEventEntry).toBe('function');
 
     const resolved = await (rt as any).resolveEventEntry();
-    expect(resolved.eventMappings).toBe(OPENCODE_V1_EVENT_MAPPINGS); // fail-safe Ì½²â ¡ú v1 ±í
+    expect(resolved.eventMappings).toBe(OPENCODE_V1_EVENT_MAPPINGS); // fail-safe Ì½ï¿½ï¿½ ï¿½ï¿½ v1 ï¿½ï¿½
     expect((rt as any).activeDialect).toBe('v1');
-    expect(typeof resolved.transformEvent).toBe('function'); // ÖÕÉó Critical£ºÈ±Ê§¼´ message.updated È«Ãð
+    expect(typeof resolved.transformEvent).toBe('function'); // ï¿½ï¿½ï¿½ï¿½ Criticalï¿½ï¿½È±Ê§ï¿½ï¿½ message.updated È«ï¿½ï¿½
 
-    // ¾­¸Ã entry ·­Òë message.updated ´æ»î£¨Áã»»Ãû {message} ÐÅ·â°áÒÆ£©
+    // ï¿½ï¿½ï¿½ï¿½ entry ï¿½ï¿½ï¿½ï¿½ message.updated ï¿½ï¿½î£¨ï¿½ã»»ï¿½ï¿½ {message} ï¿½Å·ï¿½ï¿½ï¿½Æ£ï¿½
     const raw = { directory: '/p', payload: { type: 'message.updated', properties: { sessionID: 's1', info: { id: 'm1', role: 'user', sessionID: 's1' } } } };
     const out = applyEventMappings(raw, resolved, isCanonicalAll);
     expect(out).toHaveLength(1);
@@ -229,7 +229,7 @@ describe('opencode-runtime ·½ÑÔÈë¿ÚÓëÕæÊµ×éºÏ£¨ÖÕÉó Critical #1 »Ø¹é¶¤Ôú£©', () 
     expect(resolved.eventSource).toBe(OPENCODE_EVENT_SOURCE);
   });
 
-  it('¶¤ËÀ·½ÑÔ£¨dialectProbe È±Ê¡£©²»¹Ò resolveEventEntry', async () => {
+  it('ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô£ï¿½dialectProbe È±Ê¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ resolveEventEntry', async () => {
     const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
     expect((rt as any).resolveEventEntry).toBeUndefined();
     expect((rt as any).activeDialect).toBeUndefined();

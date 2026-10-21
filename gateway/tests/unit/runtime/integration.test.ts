@@ -22,7 +22,7 @@ jest.mock('../../../src/config', () => ({
   config: { raw: { runtime: { pluginConfig: {} } } },
 }));
 
-jest.mock('../../../src/opencode-adapter', () => ({
+jest.mock('../../../src/runtime/opencode-adapter', () => ({
   createOpencodeAdapter: jest.fn(async () => ({
     session: {
       create: jest.fn(),

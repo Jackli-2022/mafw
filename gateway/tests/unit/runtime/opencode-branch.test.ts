@@ -1,4 +1,4 @@
-import { createOpencodeAdapter } from '../../../src/opencode-adapter';
+import { createOpencodeAdapter } from '../../../src/runtime/opencode-adapter';
 
 const mockClient = {
   // 形状对齐真实 SDK 1.18.x（OpencodeClient）：question 是顶层命名空间，

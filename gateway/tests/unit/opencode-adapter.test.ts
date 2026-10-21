@@ -3,7 +3,7 @@
  * directory 路由。SDK 经 jest.mock 工厂注入（@opencode-ai/sdk/v2 是 ESM-only，
  * jest CJS 无法直接解析——见 tests/mocks/opencode-sdk-v2-stub.ts）。
  */
-import { createOpencodeAdapter } from '../../src/opencode-adapter';
+import { createOpencodeAdapter } from '../../src/runtime/opencode-adapter';
 
 const sdkCalls: Array<{ method: string; args: any }> = [];
 // 形状对齐真实 SDK 1.18.x：question 是顶层命名空间，session 上没有

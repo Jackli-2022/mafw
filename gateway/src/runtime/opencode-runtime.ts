@@ -17,7 +17,7 @@ import * as path from 'path';
 import { AgentRuntime, SessionInfo, fullCapabilities, CompletionRequest, CompletionResult } from './contract';
 import { AgentDefinition } from './agent-definition';
 import { startServeSidecar, killServePort } from './serve-sidecar';
-import { createOpencodeAdapter } from '../opencode-adapter';
+import { createOpencodeAdapter } from './opencode-adapter';
 import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
 import { httpComplete } from './completion-http';
