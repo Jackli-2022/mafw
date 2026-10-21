@@ -98,6 +98,8 @@ export function useSendMessage(deps: SendMessageDeps) {
       // messages queue for the next idle boundary instead of being dropped.
       if (!hasVoice) {
         setQueuedItems(prev => enqueueTurn(prev, { text, atts, agents }))
+        // 排队发出的消息同样进输入历史（↑ 可召回——与即时发送路径一致）
+        history.push(text)
         setInput("")
         setAttachments([])
         setMentionedAgents(() => [])

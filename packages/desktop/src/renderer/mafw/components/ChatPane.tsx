@@ -49,7 +49,7 @@ const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
   auto: "审批模式：自动 — 安全命令免审，高危仍需确认，25 次后回落只读。点击切到全开",
   "full-access": "审批模式：全开 — 不再审批（危险命令也直接执行）。点击切回只读",
 }
-import { createInputHistory } from "./input-history"
+import { createInputHistory, shouldNavigateHistory } from "./input-history"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
@@ -1428,12 +1428,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 cyclePlanBuild()
               }
               else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } sendMessage() }
-              else if (e.key === "ArrowUp" && !e.currentTarget.value) {
-                const prev = history.up(input())
-                if (prev !== null) { e.preventDefault(); setInput(prev); queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) }) }
-              }
-              else if (e.key === "ArrowDown" && !e.currentTarget.value) {
-                const next = history.down()
+              // ↑/↓ 输入历史（readline 语义，2026-10-21 修复"仅空框生效"缺陷）：
+              // caret 在首行/末行才翻历史（多行中间让位光标移动）；遍历态下直通；
+              // IME 组合中不抢键（↑↓ 留给候选词导航）；picker 打开时已在上面的分支消费。
+              else if (!e.isComposing && (history.browsing() || shouldNavigateHistory(e.key, e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length))) {
+                const next = e.key === "ArrowUp" ? history.up(input()) : history.down()
                 if (next !== null) { e.preventDefault(); setInput(next); queueMicrotask(() => { const ta = textareaEl(); if (ta) autoGrow(ta) }) }
               }
               else if (e.key === "Backspace" && !e.currentTarget.value && mentionedFiles().length > 0 && mentionedAgents().length === 0) {

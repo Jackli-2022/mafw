@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { parseSlashShape, buildOptimisticParts } from "./use-send-message"
+import { parseSlashShape, buildOptimisticParts, useSendMessage } from "./use-send-message"
+import { createInputHistory } from "../components/input-history"
 
 describe("parseSlashShape", () => {
   test("解析 /cmd args", () => {
@@ -36,5 +37,46 @@ describe("buildOptimisticParts", () => {
       visionThumbs: [], fileParts: [], agentParts: [],
     })
     expect(parts).toEqual([])
+  })
+})
+
+describe("sendMessage busy 排队路径", () => {
+  test("排队消息也进输入历史（↑ 可召回）", async () => {
+    const history = createInputHistory()
+    let inputVal = "排队的消息"
+    let queued: any[] = []
+    const deps: any = {
+      sid: () => "s_test_session",
+      onCreateSession: async () => null,
+      onSetUserMsgId: () => {},
+      input: () => inputVal,
+      setInput: (v: string) => { inputVal = v },
+      sending: () => true, // busy → queue branch
+      setSending: () => {},
+      setPhase: () => {},
+      attachments: () => [],
+      setAttachments: () => {},
+      mentionedAgents: () => [],
+      setMentionedAgents: () => {},
+      mentionedFiles: () => [],
+      setMentionedFiles: () => {},
+      queuedItems: () => queued,
+      setQueuedItems: (fn: (prev: any[]) => any[]) => { queued = fn(queued) },
+      textareaEl: () => null,
+      history,
+      clearDraft: () => {},
+      matchSlash: () => null,
+      agentSel: () => null,
+      model: () => null,
+      setStore: () => {},
+      forceAnchor: () => {},
+      imageToDataUrl: async () => undefined,
+      uploadMediaBinary: async () => "",
+      encodeFilePath: (p: string) => p,
+    }
+    const { sendMessage } = useSendMessage(deps)
+    await sendMessage()
+    expect(queued.length).toBe(1) // 确认真的走了排队分支
+    expect(history.up("")).toBe("排队的消息")
   })
 })
