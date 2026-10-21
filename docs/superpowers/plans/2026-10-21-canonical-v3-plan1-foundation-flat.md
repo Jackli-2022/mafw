@@ -144,7 +144,7 @@ Expected: PASS
 - Produces:
 
 ```ts
-/** flat 消息 → v1 wire info（缺省字段不输出键；不造 id） */
+/** flat 消息 → v1 wire info（缺省字段不输出键；不造 id；model → modelID 是唯一换名——与 opencode 历史翻译的 modelID→model 互逆） */
 export function toWireInfo(msg: MafwMessage): Record<string, unknown>;
 /** flat 历史 → v1 wire 历史（parts 原样直通——shim 绝不改 part 载荷与 part.id） */
 export function toWireHistory(messages: MafwMessage[]): Array<{ info: Record<string, unknown>; parts: unknown[] }>;
@@ -152,7 +152,7 @@ export function toWireHistory(messages: MafwMessage[]): Array<{ info: Record<str
 
 - [ ] **Step 1: 写失败测试（含 Review Focus 1/2/3）**
 
-断言：①字段完整往返：构造带 id/sessionID/role/time/finish/model/providerID/tokens/cost/parentID 的消息 → `toWireInfo` 输出含全部同名字段（model 同名直传，不改 modelID——换名在 opencode 历史翻译层做，不在 shim）；②空 content → `toWireHistory` 输出 `parts: []` 不炸；③无 id 消息 → 输出 info 无 id 键、不炸；④透传部件（compaction part 带自定义字段）→ parts 数组原样引用直通、字段零丢失；⑤`toWireInfo` 对缺省字段不输出键（`{role:'user'}` → `{role:'user'}`，仅此一键）。
+断言：①字段完整往返：构造带 id/sessionID/role/time/finish/model/providerID/tokens/cost/parentID 的消息 → `toWireInfo` 输出含全部同名字段、**model 输出为 modelID**（shim 侧唯一换名点，与 Task 4 的 opencode 历史翻译互逆）；②空 content → `toWireHistory` 输出 `parts: []` 不炸；③无 id 消息 → 输出 info 无 id 键、不炸；④透传部件（compaction part 带自定义字段）→ parts 数组原样引用直通、字段零丢失；⑤`toWireInfo` 对缺省字段不输出键（`{role:'user'}` → `{role:'user'}`，仅此一键）。
 
 Run: `cd gateway && npx jest tests/unit/runtime/wire-compat.test.ts`
 Expected: FAIL
