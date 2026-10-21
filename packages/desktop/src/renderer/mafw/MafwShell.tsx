@@ -19,7 +19,9 @@ import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
-import { ingestSubagentEvent, subagentRows } from "./subagent-store"
+import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
+import { childrenNeedingProbe, isTrackedChildSession } from "./subagent-tracker"
+import { buildTerminalNotice, createNotifyGate } from "./subagent-notify"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
 import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
@@ -599,6 +601,27 @@ export function MafwShell() {
     }).catch(e => console.warn("[mafw] questions reconcile:", e))
   }
 
+  // ── Subagent reconcile（spec §4.1/§4.6）：children 快照补历史行 +
+  // 对 running 行探最后一条消息自愈（SSE 断线漏终态不留假活行）。fail-open。
+  async function reconcileSubagents(): Promise<void> {
+    const sid = activeSessionId()
+    if (sid) {
+      try {
+        const children = await window.api.mafw.sessions.children(sid)
+        ingestSubagentEvent({ kind: "children-snapshot", parentID: sid, children: Array.isArray(children) ? children : [] })
+      } catch { /* fail-open */ }
+    }
+    for (const childID of childrenNeedingProbe(subagentRows())) {
+      try {
+        const data: any = await window.api.mafw.sessions.messages(childID, 1)
+        const items = Array.isArray(data) ? data : data?.data
+        const last = items?.[items.length - 1]
+        const info = last?.info || last
+        ingestSubagentEvent({ kind: "child-last-message", childID, message: info ? { role: info.role, time: info.time, error: info.error } : null })
+      } catch { /* fail-open */ }
+    }
+  }
+
   // ── Flow card actions ──
 
   const askSubmit = async (card: AskCardData, answers: Record<string, string[]>, customText: Record<string, string>) => {
@@ -850,6 +873,8 @@ export function MafwShell() {
         queueFlushers[sid]?.()
       },
       notifyIdle: (sid) => {
+        // 子代理终态由 subagents 新通道通知（带标题+跳转语义）；旧泛化通道让位（spec §4.5，rev2 行为变更）
+        if (isTrackedChildSession(subagentRows(), sid)) return
         if (document.hidden && Date.now() - (lastIdleNotify[sid] || 0) > 60_000) {
           lastIdleNotify[sid] = Date.now()
           const title = sessions().find(x => x.id === sid)?.title || "会话"
@@ -890,6 +915,7 @@ export function MafwShell() {
       // signal that the cached session list is stale.
       sessionStore.invalidate()
       reconcileFlowCards()
+      void reconcileSubagents()
     }
     source.onerror = () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
@@ -922,6 +948,18 @@ export function MafwShell() {
   // only becomes available after this window loaded.
   onMount(() => {
     const reconcileTimer = setInterval(reconcileFlowCards, 60000)
+    // 子代理终态通知（spec §4.5）：toast 恒发；OS 通知走 10s 全局门（限洪泛）
+    const subagentNotifyGate = createNotifyGate(10_000)
+    const offSubagentNotify = onSubagentTerminal((row) => {
+      const notice = buildTerminalNotice(row, { hidden: document.hidden })
+      if (!notice) return
+      showToastV2({ description: notice.toast, duration: 3000 })
+      if (notice.os && subagentNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
+    })
+    // 子代理对账轮询（spec §4.6）：有 running 行或面板开着才跑
+    const subagentTimer = setInterval(() => {
+      if (rightDockTab() === "subagents" || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
+    }, 15_000)
     // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
     const onInspectorKey = (ev: KeyboardEvent) => {
       if (ev.ctrlKey && ev.shiftKey && (ev.key === "E" || ev.key === "e")) {
@@ -933,6 +971,8 @@ export function MafwShell() {
     onCleanup(() => {
       window.removeEventListener("keydown", onInspectorKey)
       clearInterval(reconcileTimer)
+      clearInterval(subagentTimer)
+      offSubagentNotify()
       if (esRetry) { clearTimeout(esRetry); esRetry = null }
       if (es) { console.log("[mafw] SSE closing"); es.close(); es = null }
     })
@@ -945,6 +985,12 @@ export function MafwShell() {
     if (!sid) return
     if (store.message[sid]?.length > 0) return
     loadSessionHistory(sid)
+  })
+
+  // 会话切换即时 bootstrap 子代理历史行（fetch 廉价、fail-open；spec §4.6）
+  createEffect(() => {
+    activeSessionId()
+    void reconcileSubagents()
   })
 
   // Load session message history from the gateway
