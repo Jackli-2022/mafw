@@ -4,6 +4,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { createRequire } from "node:module"
 import { validateCard, type PluginEntry, type RenderRequest, type RenderResponse, type UserCard } from "../shared/ui-plugins"
 
 export interface RenderContext {
@@ -26,9 +27,11 @@ export function uiPluginsDir(): string {
   return process.env.MAFW_UI_PLUGINS_DIR || path.join(os.homedir(), ".mafw", "ui-plugins")
 }
 
-// electron-vite main 构建为 CJS，运行时 require 可加载任意磁盘文件。
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const loadModule = (file: string): any => require(file)
+// electron-vite main 构建为 CJS；createRequire 在 CJS 与 ESM（node --test）
+// 两态下均可用，取代裸 require（ESM 下裸 require 抛 ReferenceError，且被
+// fail-open 加载器吞掉导致插件静默加载为空——2026-10-21 迁移暴露）。
+const req = createRequire(import.meta.url)
+const loadModule = (file: string): any => req(file)
 
 export class UiPluginManager {
   private tools = new Map<string, ToolEntry>()
@@ -93,8 +96,8 @@ export class UiPluginManager {
     for (const file of files) {
       const full = path.join(dir, file)
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        delete require.cache[require.resolve(full)]
+        // 清模块缓存：改文件后 reload 能拿到新版本
+        delete req.cache[req.resolve(full)]
         const mod = loadModule(full)
         const p = this.parsePlugin(mod)
         if (!p) throw new Error("module.exports must be { name, tools }")
