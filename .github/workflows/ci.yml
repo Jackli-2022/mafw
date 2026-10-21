@@ -53,5 +53,8 @@ jobs:
       - name: Test TUI
         run: npm run test:tui
 
+      - name: Test gateway-sdk
+        run: npm test -w @mafw/sdk
+
       - name: Test desktop
         run: npm run test:desktop

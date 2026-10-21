@@ -17,6 +17,6 @@
   "devDependencies": {
     "expect": "^29.7.0",
     "jest-mock": "^29.7.0",
-    "tsx": "^4.23.15"
+    "tsx": "^4.20.3"
   }
 }
