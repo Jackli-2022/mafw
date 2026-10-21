@@ -23,7 +23,9 @@ const PI_ENVELOPE_CANONICAL: ReadonlySet<string> = new Set([
  * （session.idle→turn.completed；message.part.updated→part.updated）。
  */
 export const PI_EVENT_MAPPINGS: EventMapping[] = [
-  { from: 'agent_start', to: 'session.updated' },
+  // F8（Plan 2）：agent_start 每 prompt 触发（agent-loop.js:43-56）→ 回合起始
+  // （原映 session.updated 为 per-turn 空壳，桌面 planner 本就忽略——撤壳）
+  { from: 'agent_start', to: 'turn.started' },
   { from: ['message_start', 'message_update'], to: 'part.updated',
     fields: { 'part.type': { const: 'text' }, 'part.text': { path: '$.delta', default: '' } } },
   { from: 'message_end', to: 'message.updated', fields: { 'info.role': { const: 'assistant' } } },
@@ -35,7 +37,10 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'turn_start', to: 'part.updated', fields: { 'part.type': { const: 'step-start' } } },
   { from: 'turn_end', to: 'part.updated',
     fields: { 'part.type': { const: 'step-finish' }, 'part.messageID': { template: 'pi_step_{$.sessionID}' } } },
-  { from: ['agent_end', 'agent_settled'], to: 'turn.completed' },
+  // F1（Plan 2）：agent_end/agent_settled 迁往 piTransformEvent——事件自带
+  // messages 数组，按最后 assistant 消息的 stopReason 三分类（error→turn.failed
+  // / aborted→turn.aborted / 其余→turn.completed）；此前无条件映 turn.completed
+  // 导致 pi 引擎错误被误归因为 artifact_missing（audit F1）。
 ];
 
 /**
@@ -55,6 +60,26 @@ export function setPiUnknownRecorder(fn: ((type: string) => void) | undefined): 
  */
 export const piTransformEvent: TransformEventFn = (event: any): RawRuntimeEvent | null => {
   const t = event?.type ?? event?.payload?.type;
+  // F1（Plan 2）：回合终态三分类——agent_end 自带 messages 数组
+  // （pi-agent-core types.d.ts:377-379），最后 assistant 消息的 stopReason 判别；
+  // 总是返回终态（不落 fallthrough 的 null——那是 suppressed 语义）。
+  if (t === 'agent_end' || t === 'agent_settled') {
+    const messages = Array.isArray(event?.messages) ? event.messages : [];
+    const lastAssistant = [...messages].reverse().find((m: any) => m?.role === 'assistant');
+    const stop = lastAssistant?.stopReason;
+    const sid = event?.sessionID;
+    const base = sid ? { sessionID: sid } : {};
+    if (stop === 'error') {
+      return {
+        payload: { type: 'turn.failed', properties: { ...base, error: String(lastAssistant?.errorMessage ?? 'pi engine error') } },
+        ...(sid ? { sessionID: sid } : {}),
+      };
+    }
+    if (stop === 'aborted') {
+      return { payload: { type: 'turn.aborted', properties: { ...base } }, ...(sid ? { sessionID: sid } : {}) };
+    }
+    return { payload: { type: 'turn.completed', properties: { ...base } }, ...(sid ? { sessionID: sid } : {}) };
+  }
   if (t === 'permission.asked') {
     return {
       payload: {
