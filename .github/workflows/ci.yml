@@ -56,5 +56,11 @@ jobs:
       - name: Test gateway-sdk
         run: npm test -w @mafw/sdk
 
+      - name: Test session-ui
+        run: npm test -w @mafw/session-ui
+
+      - name: Test ui
+        run: npm test -w @mafw/ui
+
       - name: Test desktop
         run: npm run test:desktop

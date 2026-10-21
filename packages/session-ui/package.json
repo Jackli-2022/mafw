@@ -23,14 +23,15 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "bun test src --only-failures"
+    "test": "node --import tsx --import ../../packages/test-shim/register.mjs --test \"src/**/*.test.ts\""
   },
   "devDependencies": {
+    "@mafw/test-shim": "*",
     "@tsconfig/node22": "22.0.2",
-    "@types/bun": "1.3.13",
     "@types/katex": "0.16.7",
     "@types/luxon": "3.7.1",
     "@typescript/native-preview": "7.0.0-dev.20251207.1",
+    "tsx": "4.20.3",
     "typescript": "5.8.2",
     "vite": "7.1.4"
   },

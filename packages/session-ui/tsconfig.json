@@ -13,7 +13,10 @@
     "noEmit": true,
     "lib": ["es2023", "dom", "dom.iterable"],
     "strict": true,
-    "types": ["vite/client", "bun"]
+    "types": ["vite/client"],
+    "paths": {
+      "bun:test": ["../../packages/test-shim/bun-test.d.ts"]
+    }
   },
   "exclude": ["**/*.stories.*", "**/*.mdx"]
 }
