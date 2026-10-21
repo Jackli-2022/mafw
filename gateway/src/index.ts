@@ -133,10 +133,11 @@ import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
 import { wrapDialectEventStream } from './runtime/event-stream-wiring';
+import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
- *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（有 handleOpencodeEvent 底线）。
+ *  三原语是 assembler 内部入口类型：可校验、可映射，但不广播（有 handleRuntimeEvent 底线）。
  *  注意：必须位于全部 import 之后——tsc CJS 产物按源码位置生成 require，
  *  顶部使用尚未 require 的模块会 TDZ 崩溃（2026-10-12 全局 dist 启动事故）。*/
 const CANONICAL_TYPE_SET: ReadonlySet<string> = new Set([
@@ -539,7 +540,7 @@ class MafwScheduler {
       baseUrl: this.serveUrl,
       headers: {} as Record<string, string>,
     };
-    const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
+    const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
     if (opencodePassword) {
       sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
     }
@@ -834,7 +835,7 @@ class MafwScheduler {
     });
   }
 
-  // Deterministic: the token writer's session is pinned by handleOpencodeEvent
+  // Deterministic: the token writer's session is pinned by handleRuntimeEvent
   // when a tool command touching pending-restart.json was observed; fall back
   // to the most recently active session.
   private locateCallerSession(): string | null {
@@ -910,7 +911,7 @@ class MafwScheduler {
               baseUrl: this.serveUrl,
               headers: {} as Record<string, string>,
             };
-            const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
+            const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
             if (opencodePassword) {
               sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
             }
@@ -1087,7 +1088,7 @@ class MafwScheduler {
         try {
           for await (const evt of stream) {
             if (signal.aborted) break;
-            this.handleOpencodeEvent(evt);
+            this.handleRuntimeEvent(evt);
           }
           if (!signal.aborted) log.info('[Scheduler] OpenCode event stream ended gracefully');
         } catch (err: any) {
@@ -1144,7 +1145,7 @@ class MafwScheduler {
     } catch { /* fail-open */ }
   }
 
-  private handleOpencodeEvent(evt: any): void {
+  private handleRuntimeEvent(evt: any): void {
     const f = normalizeOpencodeEvent(evt);
     // opencode v2 sync 信封：与 legacy 事件双发的状态重同步噪声，gateway
     // 边界丢弃（处置登记于 event-flow-matrix.ts RUNTIME_NATIVE_DROPPED）。
@@ -1720,7 +1721,7 @@ class MafwScheduler {
       getRecallCalledAt: (sessionID: string) => this.recallCalledBySession.get(sessionID) ?? null,
       bindIdentity: (sessionID: string, identity: string) => this.identityState.bind(sessionID, identity, 'session'),
       evaluatePolicy: (sessionID, candidate) => this.approvalPolicy.evaluate(sessionID, candidate),
-      injectEvent: (evt) => this.handleOpencodeEvent(evt),
+      injectEvent: (evt) => this.handleRuntimeEvent(evt),
       getMessages: async (sessionID) => ((await this.runtime?.session.messages({ sessionID, limit: 5 })) as any)?.data ?? [],
       translationDrops: () => Object.fromEntries(this.translationDrops),
     };
@@ -1758,7 +1759,7 @@ class MafwScheduler {
           baseUrl: this.serveUrl,
           headers: {} as Record<string, string>,
         };
-        const opencodePassword = process.env.MAFW_OPENCODE_PASSWORD;
+        const opencodePassword = (process.env.MAFW_RUNTIME_PASSWORD ?? process.env.MAFW_OPENCODE_PASSWORD);
         if (opencodePassword) {
           sdkConfig.headers = { Authorization: 'Basic ' + Buffer.from(`opencode:${opencodePassword}`).toString('base64') };
         }
@@ -4094,12 +4095,12 @@ class MafwScheduler {
         }
 
         // POST /api/tools/execute — 通用工具执行（out-of-process runtime 通道；同 /api/python/* 信任域）。
-        // 执行自动合成两帧 tool part（running→completed/error）经 handleOpencodeEvent 全管线广播（spec 2026-10-20）。
+        // 执行自动合成两帧 tool part（running→completed/error）经 handleRuntimeEvent 全管线广播（spec 2026-10-20）。
         if (req.url === "/api/tools/execute" && req.method === "POST") {
           if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
           await handleToolsExecute(req, res, {
             buildFactory: () => buildMafwToolFactory({ baseUrl: `http://127.0.0.1:${config.server.apiPort}` }),
-            emitEvent: (evt) => this.handleOpencodeEvent(evt),
+            emitEvent: (evt) => this.handleRuntimeEvent(evt),
           });
           return;
         }
@@ -5348,7 +5349,7 @@ class MafwScheduler {
         // 鈹€鈹€ OpenCode config (Settings page 鈹€ proxy to native opencode /config) 鈹€鈹€
 
         // GET /api/opencode-config 鈹€ return the effective opencode Config
-        if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'GET') {
+        if (matchRuntimeConfigRoute(req.url, 'GET') && req.method === 'GET') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
@@ -5363,7 +5364,7 @@ class MafwScheduler {
         }
 
         // PATCH /api/opencode-config 鈹€ merge-update the opencode Config (native merge semantics)
-        if (req.url?.match(/^\/api\/opencode-config(?:\?|$)/) && req.method === 'PATCH') {
+        if (matchRuntimeConfigRoute(req.url, 'PATCH') && req.method === 'PATCH') {
           if (this.capGuard(res, 'providerConfigApi')) return;
           try {
             if (!this.runtime) { res.writeHead(503); res.end(JSON.stringify({ error: 'LLM client not available' })); return; }
