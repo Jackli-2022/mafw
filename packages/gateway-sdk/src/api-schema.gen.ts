@@ -732,6 +732,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runtime-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["runtime.config.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["runtime.config.update"];
+        trace?: never;
+    };
     "/api/opencode-config": {
         parameters: {
             query?: never;
@@ -3374,6 +3390,42 @@ export interface operations {
         };
     };
     "config.set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "runtime.config.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "runtime.config.update": {
         parameters: {
             query?: never;
             header?: never;

@@ -861,6 +861,30 @@
         }
       }
     },
+    "/api/runtime-config": {
+      "get": {
+        "operationId": "runtime.config.get",
+        "tags": [
+          "runtime"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "runtime.config.update",
+        "tags": [
+          "runtime"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/opencode-config": {
       "get": {
         "operationId": "opencodeConfig.get",

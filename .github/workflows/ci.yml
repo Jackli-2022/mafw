@@ -28,6 +28,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             gateway/package-lock.json
+            adapters/claude/package-lock.json
 
       - name: Install root deps
         run: npm ci
@@ -36,10 +37,18 @@ jobs:
         working-directory: gateway
         run: npm ci
 
+      - name: Install claude adapter deps
+        working-directory: adapters/claude
+        run: npm ci
+
       - name: Build (plugin + gateway + tui)
         run: npm run build
 
       - name: Test gateway
+        run: npm test
+
+      - name: Test claude adapter
+        working-directory: adapters/claude
         run: npm test
 
       - name: Test TUI

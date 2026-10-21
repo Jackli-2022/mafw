@@ -71,6 +71,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/plugins/delete', operationId: 'plugins.delete', tags: ['plugins'] },
   { method: 'GET', path: '/api/config', operationId: 'config.get', tags: ['config'] },
   { method: 'PUT', path: '/api/config', operationId: 'config.set', tags: ['config'] },
+  { method: 'GET', path: '/api/runtime-config', operationId: 'runtime.config.get', tags: ['runtime'] },
+  { method: 'PATCH', path: '/api/runtime-config', operationId: 'runtime.config.update', tags: ['runtime'] },
   { method: 'GET', path: '/api/opencode-config', operationId: 'opencodeConfig.get', tags: ['opencodeConfig'] },
   { method: 'PATCH', path: '/api/opencode-config', operationId: 'opencodeConfig.update', tags: ['opencodeConfig'] },
   { method: 'GET', path: '/api/goals', operationId: 'goals.list', tags: ['goals'] },

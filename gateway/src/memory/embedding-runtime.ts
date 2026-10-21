@@ -41,6 +41,8 @@ export interface InitEmbeddingRuntimeOptions {
   getTextForId?: (id: string) => Promise<string | null>;
   /** Config override for tests (defaults to config.memory.embedding). */
   cfg?: { provider: 'off' | 'local' | 'dashscope'; model?: string; dimensions?: number; baseUrl?: string; threads?: number; engine?: 'onnx' | 'llamacpp'; llamacpp?: any };
+  /** ƾ�� seam��Plan 3 ���� #2����ע��ʽ getApiKeyFn��index.ts ������ߣ��� */
+  getApiKeyFn?: (provider: string) => string | null;
   /** Test seam: override the provider factory (fake providers). */
   createProviderFn?: typeof createEmbeddingProvider;
 }
@@ -56,6 +58,7 @@ export function initEmbeddingRuntime(opts: InitEmbeddingRuntimeOptions): Embeddi
       baseUrl: cfg.baseUrl || undefined,
       threads: (cfg as any).threads,
       engine: (cfg as any).engine,
+      getApiKeyFn: opts.getApiKeyFn,
       llamacpp: (cfg as any).llamacpp,
     });
     if (!provider) return null;

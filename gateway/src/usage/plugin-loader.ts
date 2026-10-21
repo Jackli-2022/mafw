@@ -51,6 +51,8 @@ export interface PluginLoaderOptions {
   builtinPluginsDir?: string;
   disabledPlugins?: string[];
   usageStats?: UsageStatsProvider;
+  /** ƾ�� seam��Plan 3 ���� #1����ע��ʽ getApiKey��index.ts ������ߣ��� */
+  getApiKey?: (provider: string) => string | null;
   /** inline provider key 兜底（opencode.jsonc provider.<id>.options.apiKey），auth.json 缺条目时用。 */
   resolveInlineApiKey?: (providerID: string) => Promise<string | null>;
 }
@@ -71,6 +73,7 @@ export class PluginLoader {
   private builtinNames: Set<string>;
   private usageStats?: UsageStatsProvider;
   private resolveInlineApiKey?: (providerID: string) => Promise<string | null>;
+  private getApiKey?: (provider: string) => string | null;
   private packageEntries: UsagePackageEntry[] = [];
 
   constructor(pluginsDir: string, builtinNames: string[], opts?: PluginLoaderOptions) {
@@ -80,6 +83,7 @@ export class PluginLoader {
     this.disabledPlugins = new Set(opts?.disabledPlugins ?? []);
     this.usageStats = opts?.usageStats;
     this.resolveInlineApiKey = opts?.resolveInlineApiKey;
+    this.getApiKey = opts?.getApiKey;
   }
 
   async init(): Promise<void> {
@@ -167,7 +171,7 @@ export class PluginLoader {
     this.state.clear();
     for (const [name, entry] of byName) {
       const overridden = !entry.builtin && builtinNameSet.has(name);
-      const adapter = makeAdapter(entry.mod, entry.file, this.usageStats, this.resolveInlineApiKey);
+      const adapter = makeAdapter(entry.mod, entry.file, this.usageStats, this.resolveInlineApiKey, this.getApiKey);
       const configSchema = validateConfigSchema((entry.mod as any).configSchema);
       const disabled = this.disabledPlugins.has(name);
       const pluginType = typeof (entry.mod as any).type === 'string' ? (entry.mod as any).type : undefined;
@@ -191,7 +195,7 @@ export class PluginLoader {
     }
     for (const e of this.packageEntries) {
       if (this.disabledPlugins.has(e.mod.name)) continue;
-      adapters.push(makeAdapter(e.mod, e.source, this.usageStats, this.resolveInlineApiKey));
+      adapters.push(makeAdapter(e.mod, e.source, this.usageStats, this.resolveInlineApiKey, this.getApiKey));
     }
     return adapters;
   }

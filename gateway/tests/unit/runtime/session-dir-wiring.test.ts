@@ -34,6 +34,6 @@ describe('session directory wiring', () => {
   });
 
   test('media executor is injected with resolvedProjectDir', () => {
-    expect(src).toContain('createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir() })');
+    expect(src).toContain('createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir(), getApiKey: this.runtimeGetApiKey.bind(this) })');
   });
 });

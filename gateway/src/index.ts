@@ -525,7 +525,7 @@ class MafwScheduler {
     this.pluginHost = new PluginHost(
       process.env.MAFW_PLUGINS_DIR || config.resolvePath('plugins'),
       (name) => createPluginPackageContext(name, {
-        getApiKey: (p: string) => getProviderApiKey(p, undefined, this.runtime?.credentials) ?? null,
+        getApiKey: this.runtimeGetApiKey.bind(this),
         usageStats: () => this.usageStatsProvider,
         projectDir: this.projectDir,
         gatewayPort: config.server.apiPort,
@@ -1082,7 +1082,7 @@ class MafwScheduler {
         log.warn('[Scheduler] SDK event subscribe returned no async stream');
         return;
       }
-      log.info(`[Scheduler] Subscribed to OpenCode events (runtime=${this.runtimeName})`);
+      log.info(`[Scheduler] Subscribed to runtime events (runtime=${this.runtimeName})`);
       const signal = controller.signal;
       void (async () => {
         try {
@@ -1090,10 +1090,10 @@ class MafwScheduler {
             if (signal.aborted) break;
             this.handleRuntimeEvent(evt);
           }
-          if (!signal.aborted) log.info('[Scheduler] OpenCode event stream ended gracefully');
+          if (!signal.aborted) log.info('[Scheduler] Runtime event stream ended gracefully');
         } catch (err: any) {
           if (signal.aborted) return; // Expected during hot-switch
-          log.warn(`[Scheduler] OpenCode event stream ended: ${err.message}`);
+          log.warn(`[Scheduler] Runtime event stream ended: ${err.message}`);
         }
       })();
     } catch (err: any) {
@@ -1490,6 +1490,12 @@ class MafwScheduler {
     return undefined;
   }
 
+  /** 凭据单点接线（Plan 3 终审 #10）：active runtime credentials → legacy auth.json → null。
+   *  全部消费方构造点的唯一凭据来源——链变更只改这里。 */
+  private runtimeGetApiKey(provider: string): string | null {
+    return getProviderApiKey(provider, undefined, this.runtime?.credentials) ?? null;
+  }
+
   // ── Memory pipelines (turn compress / reflection) ───────────────────────
 
   private registerInternalSession(sessionId: string, role: string, identity?: string): void {
@@ -1535,6 +1541,7 @@ class MafwScheduler {
     // Fires on every memory write (static listener) — BM25 stays instant,
     // vectors converge asynchronously; all failures degrade to BM25-only.
     const embeddingRuntime = initEmbeddingRuntime({
+      getApiKeyFn: this.runtimeGetApiKey.bind(this),
       baseDir: mafwDir,
       getTextForId: async (id) => {
         try {
@@ -3018,7 +3025,7 @@ class MafwScheduler {
     }
 
     this.mediaPluginLoader = new MediaPluginLoader(path.join(mafwDir, 'media-plugins'), {
-      getApiKey: (p: string) => getProviderApiKey(p, undefined, this.runtime?.credentials) ?? null,
+      getApiKey: this.runtimeGetApiKey.bind(this),
     });
     await this.mediaPluginLoader.init();
     this.pluginHost?.bindMedia((entries) => this.mediaPluginLoader?.setPackageEntries(entries));
@@ -3034,7 +3041,7 @@ class MafwScheduler {
 
     this.mediaService = new MediaService({
       prompt: createPiPromptAdapter({
-        getApiKey: (provider: string) => getProviderApiKey(provider, undefined, this.runtime?.credentials) ?? null,
+        getApiKey: this.runtimeGetApiKey.bind(this),
       }),
       config: () => config.raw.media,
       resolvePrompt: (kind, cfg) => {
@@ -3049,7 +3056,7 @@ class MafwScheduler {
               // runtime 引用，必须重建（dispose 尽力而为，不阻塞 prompt）。
               if (!this.mediaRuntimeExecutor || this.mediaRuntimeExecutorRt !== this.runtime) {
                 void this.mediaRuntimeExecutor?.dispose().catch(() => {});
-                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir() });
+                this.mediaRuntimeExecutor = createMediaRuntimeExecutor(this.runtime, { projectDir: this.resolvedProjectDir(), getApiKey: this.runtimeGetApiKey.bind(this) });
                 this.mediaRuntimeExecutorRt = this.runtime;
               }
               return this.mediaRuntimeExecutor.prompt;
@@ -3077,11 +3084,11 @@ class MafwScheduler {
     const self = this;
     this.ttsService = createTtsService({
       config: () => config.raw,
-      getApiKey: (p: string) => getProviderApiKey(p, undefined, self.runtime?.credentials) ?? null,
+      getApiKey: this.runtimeGetApiKey.bind(this),
     });
     this.ttsRegistry.registerBuiltin(createMimoEngine({
       config: () => config.raw as any,
-      getApiKey: (p: string) => getProviderApiKey(p, undefined, self.runtime?.credentials) ?? null,
+      getApiKey: this.runtimeGetApiKey.bind(this),
     }));
     this.ttsRegistry.registerBuiltin(createKokoroEngine({ modelsDir: path.join(mafwDir, 'models') }));
     const pyBin = process.env.MAFW_PYTHON_BIN
@@ -3218,6 +3225,7 @@ class MafwScheduler {
       const statsProvider = createUsageStatsProvider(trajStore);
       this.usageStatsProvider = statsProvider;
       const pluginLoader = new PluginLoader(pluginsDir, [], {
+        getApiKey: this.runtimeGetApiKey.bind(this),
         builtinPluginsDir,
         disabledPlugins,
         usageStats: statsProvider,

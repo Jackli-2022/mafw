@@ -101,12 +101,12 @@ const resultRow = (
 ): EventMapping => ({
   from: 'result', to, when,
   fields: {
-    sessionID: { path: '$.payload.session_id' },
-    usage: { path: '$.payload.usage' },
-    cost: { path: '$.payload.total_cost_usd' },
-    turns: { path: '$.payload.num_turns' },
-    durationMs: { path: '$.payload.duration_ms' },
-    finishReason: { path: '$.payload.terminal_reason' },
+    sessionID: { path: '$.session_id' },
+    usage: { path: '$.usage' },
+    cost: { path: '$.total_cost_usd' },
+    turns: { path: '$.num_turns' },
+    durationMs: { path: '$.duration_ms' },
+    finishReason: { path: '$.terminal_reason' },
   },
 });
 
@@ -114,31 +114,31 @@ export const CLAUDE_EVENT_MAPPINGS: EventMapping[] = [
   // ---- system 族 ----
   {
     from: 'system', to: 'session.created',
-    when: [{ path: '$.payload.subtype', equals: 'init' }],
+    when: [{ path: '$.subtype', equals: 'init' }],
     fields: {
-      sessionID: { path: '$.payload.session_id' },
-      model: { path: '$.payload.model' },
-      permissionMode: { path: '$.payload.permissionMode' },
+      sessionID: { path: '$.session_id' },
+      model: { path: '$.model' },
+      permissionMode: { path: '$.permissionMode' },
     },
   },
   {
     from: 'system', to: 'session.compacting',
-    when: [{ path: '$.payload.subtype', equals: 'status' }, { path: '$.payload.status', equals: 'compacting' }],
-    fields: { sessionID: { path: '$.payload.session_id' } },
+    when: [{ path: '$.subtype', equals: 'status' }, { path: '$.status', equals: 'compacting' }],
+    fields: { sessionID: { path: '$.session_id' } },
   },
   {
     from: 'system', to: 'session.compacted',
-    when: [{ path: '$.payload.subtype', equals: 'compact_boundary' }],
-    fields: { sessionID: { path: '$.payload.session_id' } },
+    when: [{ path: '$.subtype', equals: 'compact_boundary' }],
+    fields: { sessionID: { path: '$.session_id' } },
   },
   // ---- result 三终态（行序敏感：aborted 判别先于 error 兜底） ----
-  resultRow('turn.aborted', [{ path: '$.payload.terminal_reason', equals: 'aborted_streaming' }]),
-  resultRow('turn.aborted', [{ path: '$.payload.terminal_reason', equals: 'aborted_tools' }]),
-  resultRow('turn.completed', [{ path: '$.payload.subtype', equals: 'success' }]),
-  resultRow('turn.failed', [{ path: '$.payload.subtype', equals: 'error_max_turns' }]),
-  resultRow('turn.failed', [{ path: '$.payload.subtype', equals: 'error_during_execution' }]),
-  resultRow('turn.failed', [{ path: '$.payload.subtype', equals: 'error_max_budget_usd' }]),
-  resultRow('turn.failed', [{ path: '$.payload.subtype', equals: 'error_max_structured_output_retries' }]),
+  resultRow('turn.aborted', [{ path: '$.terminal_reason', equals: 'aborted_streaming' }]),
+  resultRow('turn.aborted', [{ path: '$.terminal_reason', equals: 'aborted_tools' }]),
+  resultRow('turn.completed', [{ path: '$.subtype', equals: 'success' }]),
+  resultRow('turn.failed', [{ path: '$.subtype', equals: 'error_max_turns' }]),
+  resultRow('turn.failed', [{ path: '$.subtype', equals: 'error_during_execution' }]),
+  resultRow('turn.failed', [{ path: '$.subtype', equals: 'error_max_budget_usd' }]),
+  resultRow('turn.failed', [{ path: '$.subtype', equals: 'error_max_structured_output_retries' }]),
   // system 其他 subtype（informational/api_retry/…）与 result 未知组合 → 不声明，
   // transformEvent 不处理 → suppressed（可观测计数；词汇漂移探测器同款）
 ];
@@ -146,6 +146,7 @@ export const CLAUDE_EVENT_MAPPINGS: EventMapping[] = [
 // ─── turn.started 合成状态（每回合首条 user；result 后复位） ─────────────────
 
 const turnStartedBySession = new Map<string, boolean>();
+export { turnStartedBySession };
 export function __resetClaudeTurnState(): void {
   turnStartedBySession.clear();
 }
@@ -292,21 +293,21 @@ export function translateClaudeEvent(event: any, fallbackSessionID?: string): Ra
   for (const m of CLAUDE_EVENT_MAPPINGS) {
     const froms = Array.isArray(m.from) ? m.from : [m.from];
     if (!froms.includes(type)) continue;
-    if (!matchWhen(m.when, { payload: event })) continue;
+    if (!matchWhen(m.when, event)) continue;
     if (m.to === 'drop') return [];
     // result 命中（任一终态行）= 回合结束：复位 turn.started 合成状态
     if (type === 'result') {
-      const resultSid = (getPath({ payload: event }, '$.payload.session_id') as string) ?? fallbackSessionID;
+      const resultSid = (getPath(event, '$.session_id') as string) ?? fallbackSessionID;
       if (resultSid) turnStartedBySession.delete(resultSid);
     }
     const properties: Record<string, any> = {};
-    const source = m.passProperties ? (getPath({ payload: event }, m.passProperties) as Record<string, any>) : undefined;
+    const source = m.passProperties ? (getPath(event, m.passProperties) as Record<string, any>) : undefined;
     if (source && typeof source === 'object') Object.assign(properties, JSON.parse(JSON.stringify(source)));
     for (const [key, spec] of Object.entries(m.fields ?? {})) {
-      const v = evalField(spec, { payload: event });
+      const v = evalField(spec, event);
       if (v !== undefined) setPath(properties, key, v);
     }
-    const sid = (getPath({ payload: event }, '$.payload.session_id') as string) ?? fallbackSessionID;
+    const sid = (getPath(event, '$.session_id') as string) ?? fallbackSessionID;
     return [makeEvent(m.to, properties, sid)];
   }
 

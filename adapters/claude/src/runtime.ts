@@ -10,7 +10,7 @@
  *  - tools.registerTools：factory stash；prompt 时经 options.mcpServers 透传
  *    （入口 index.ts 决定具体承载形态——SDK in-process MCP server）
  */
-import { translateClaudeEvent } from './events.ts';
+import { translateClaudeEvent, __resetClaudeTurnState, turnStartedBySession } from './events.ts';
 import { normalizeClaudeHistory } from './history.ts';
 
 export interface ClaudeQueryLike extends AsyncIterable<any> {
@@ -85,6 +85,8 @@ export function createClaudeRuntime(deps: ClaudeRuntimeDeps): any {
 
   function failEvent(sid: string, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
+    // 失败终态同样复位 turn.started 合成状态（终审 #8——下回合首条 user 仍能发出）
+    turnStartedBySession.delete(sid);
     bus.push({ payload: { type: 'turn.failed', properties: { sessionID: sid, error: message } }, sessionID: sid });
   }
 

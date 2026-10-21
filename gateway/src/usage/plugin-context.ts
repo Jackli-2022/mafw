@@ -100,6 +100,7 @@ export function makeAdapter(
   file: string,
   usageStats?: UsageStatsProvider,
   resolveInlineApiKey?: (providerID: string) => Promise<string | null>,
+  getApiKey?: (provider: string) => string | null,
 ): ExternalAdapter {
   return {
     name: mod.name,
@@ -111,7 +112,7 @@ export function makeAdapter(
       if (resolveInlineApiKey) {
         try { inlineApiKey = (await resolveInlineApiKey(mod.name)) ?? undefined; } catch { /* fail-open */ }
       }
-      const ctx = createPluginContext(mod.name, undefined, usageStats, inlineApiKey);
+      const ctx = createPluginContext(mod.name, getApiKey, usageStats, inlineApiKey);
       try {
         const result = await mod.fetch(ctx);
         if (result === null) return null;

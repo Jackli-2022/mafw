@@ -1,5 +1,4 @@
 import { createTtsService, TTS_VOICES } from '../media/tts-service';
-import type { RuntimeCredentials } from '../runtime/contract';
 import type { PcmChunk, TtsEngine, TtsOpts } from './types';
 
 /**
