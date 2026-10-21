@@ -90,3 +90,114 @@ export const OPENCODE_V1_EVENT_MAPPINGS: EventMapping[] = [
 
 /** 兼容 alias（index.ts 渐进切换到方言名；Plan 2 Task 3 重接线后收敛） */
 export const OPENCODE_EVENT_MAPPINGS: EventMapping[] = OPENCODE_V1_EVENT_MAPPINGS;
+
+/**
+ * @v2 方言表（混合消费）：2.x serve 的 next 族为主 + 非 next 的 legacy 继续消费，
+ * 重叠 legacy 显式 drop（双发防双计——@v1 表与 @v2 表互斥独占各自家族）。
+ *
+ * 行序敏感：specific 行（判别/drop）在前，canonicalIdentity 恒等行殿后
+ * （mappings 数组序 first-match）。载荷字段形状以 SDK types.gen.d.ts 实测为准
+ * （Plan 2 调研钉死：tool.called{assistantMessageID, callID, tool, input}、
+ *  text.delta{textID, delta}、reasoning.delta{reasoningID, delta} 等）。
+ */
+export const OPENCODE_V2_EVENT_MAPPINGS: EventMapping[] = [
+  // ---- 回合生命周期（next 族原生） ----
+  { from: 'session.next.prompted', to: 'turn.started', passProperties: '$.payload.properties' },
+  // ---- 工具三原语（原语组——经 gateway 侧 assembler 合帧为 part.updated 快照） ----
+  { from: 'session.next.tool.called', to: 'tool.call', fields: {
+      callID: { path: '$.payload.properties.callID' },
+      tool: { path: '$.payload.properties.tool' },
+      input: { path: '$.payload.properties.input' },
+      messageID: { path: '$.payload.properties.assistantMessageID' },
+    } },
+  { from: 'session.next.tool.input.delta', to: 'tool.delta', fields: {
+      callID: { path: '$.payload.properties.callID' },
+      kind: { const: 'input' },
+      text: { path: '$.payload.properties.delta' },
+    } },
+  { from: 'session.next.tool.progress', to: 'tool.delta', fields: {
+      callID: { path: '$.payload.properties.callID' },
+      kind: { const: 'output' },
+    } },
+  { from: 'session.next.tool.success', to: 'tool.result', fields: {
+      callID: { path: '$.payload.properties.callID' },
+      output: { path: '$.payload.properties.content' },
+      messageID: { path: '$.payload.properties.assistantMessageID' },
+    } },
+  { from: 'session.next.tool.failed', to: 'tool.result', fields: {
+      callID: { path: '$.payload.properties.callID' },
+      isError: { const: true },
+      output: { path: '$.payload.properties.error' },
+      messageID: { path: '$.payload.properties.assistantMessageID' },
+    } },
+  // ---- 文本/推理流（part.delta 载荷 = {partID, messageID, field, delta}——desktop chat-stream 契约） ----
+  { from: 'session.next.text.delta', to: 'part.delta', fields: {
+      partID: { path: '$.payload.properties.textID' },
+      messageID: { path: '$.payload.properties.assistantMessageID' },
+      field: { const: 'text' },
+      delta: { path: '$.payload.properties.delta' },
+    } },
+  { from: 'session.next.reasoning.delta', to: 'part.delta', fields: {
+      partID: { path: '$.payload.properties.reasoningID' },
+      messageID: { path: '$.payload.properties.assistantMessageID' },
+      field: { const: 'text' },
+      delta: { path: '$.payload.properties.delta' },
+    } },
+  // ---- 压缩（原生对，替代 legacy session.compacted 单发） ----
+  { from: 'session.next.compaction.started', to: 'session.compacting', passProperties: '$.payload.properties' },
+  { from: 'session.next.compaction.ended', to: 'session.compacted', passProperties: '$.payload.properties' },
+  // ---- 审批/问答 v2 名（收编 canonical 名） ----
+  { from: 'permission.v2.asked', to: 'permission.asked', passProperties: '$.payload.properties' },
+  { from: 'permission.v2.replied', to: 'permission.replied', passProperties: '$.payload.properties' },
+  { from: 'question.v2.asked', to: 'question.asked', passProperties: '$.payload.properties' },
+  { from: 'question.v2.replied', to: 'question.replied', passProperties: '$.payload.properties' },
+  { from: 'question.v2.rejected', to: 'question.rejected', passProperties: '$.payload.properties' },
+  // ---- session.error 判别（行序敏感：aborted 判别行在前） ----
+  { from: 'session.error', to: 'turn.aborted',
+    when: [{ path: '$.payload.properties.error.name', equals: 'MessageAbortedError' }],
+    passProperties: '$.payload.properties' },
+  { from: 'session.error', to: 'turn.failed', passProperties: '$.payload.properties' },
+  // ---- 非 next 的 legacy 继续消费（next 族不覆盖的语义） ----
+  { from: 'session.idle', to: 'turn.completed', passProperties: '$.payload.properties' },
+  { from: 'todo.updated', to: 'plan.updated', passProperties: '$.payload.properties' },
+  { from: 'message.aborted', to: 'turn.aborted', passProperties: '$.payload.properties' }, // 防御行（不在 union）
+  // ---- 重叠 legacy 显式 drop（双发防双计——@v2 方言不消费） ----
+  ...([
+    'message.part.updated', 'message.part.delta', 'message.part.complete',
+    'permission.asked', 'permission.replied',
+    'question.asked', 'question.replied', 'question.rejected',
+    'session.compacted',
+    'sync', // runtime 原生信封（非 union）
+  ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
+  // ---- next 孤儿族 drop（F6 处置：本期无 canonical 家） ----
+  ...([
+    'session.next.prompt.admitted', 'session.next.context.updated', 'session.next.synthetic',
+    'session.next.moved', 'session.next.agent.switched', 'session.next.model.switched',
+    'session.next.retried',
+    'session.next.shell.started', 'session.next.shell.ended',
+    'session.next.step.started', 'session.next.step.ended', 'session.next.step.failed',
+    'session.next.text.started', 'session.next.text.ended',
+    'session.next.reasoning.started', 'session.next.reasoning.ended',
+    'session.next.tool.input.started', 'session.next.tool.input.ended',
+    'session.next.compaction.delta',
+    'session.next.revert.staged', 'session.next.revert.cleared', 'session.next.revert.committed',
+  ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
+  // ---- F6 遥测族 drop（与 @v1 表同款） ----
+  ...([
+    'models-dev.refreshed', 'integration.updated', 'integration.connection.updated', 'catalog.updated',
+    'message.removed', 'message.part.removed',
+    'installation.updated', 'installation.update-available',
+    'file.edited', 'reference.updated', 'plugin.added',
+    'project.directories.updated', 'project.updated',
+    'file.watcher.updated', 'lsp.updated', 'vcs.branch.updated',
+    'pty.created', 'pty.updated', 'pty.exited', 'pty.deleted',
+    'tui.prompt.append', 'tui.command.execute', 'tui.toast.show', 'tui.session.select',
+    'mcp.tools.changed', 'mcp.browser.open.failed', 'command.executed',
+    'session.status',
+    'workspace.ready', 'workspace.failed', 'workspace.status',
+    'worktree.ready', 'worktree.failed',
+    'server.connected', 'server.instance.disposed', 'global.disposed',
+  ] as const).map((t): EventMapping => ({ from: t, to: 'drop' })),
+  // ---- canonical identity（词汇单源派生，恒等行殿后） ----
+  ...canonicalIdentity('$.payload.properties'),
+];
