@@ -19,6 +19,7 @@ import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
+import { ingestSubagentEvent } from "./subagent-store"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
 import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
@@ -859,6 +860,10 @@ export function MafwShell() {
     diff: {
       trace: traceEvent,
       setSessionDiff: (sid, files) => setStore(prev => ({ ...prev, session_diff: { ...prev.session_diff, [sid]: files } })),
+    },
+    // 子代理 tracker：既有事件旁路入 store（渲染与通知在后续接线消费）。
+    subagents: {
+      onEvent: (ev) => ingestSubagentEvent(ev),
     },
   }
 

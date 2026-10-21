@@ -6,6 +6,8 @@ import { handleFlowCardEvent, type FlowCardDeps } from "./handlers/flow-cards"
 import { handleDockEvent, type DockDeps } from "./handlers/dock"
 import { handleChatStreamEvent, handleMediaSpeakEvent, type ChatDeps } from "./handlers/chat-stream"
 import { handleDiffEvent, type DiffDeps } from "./handlers/diff"
+import { handleSubagentEvent, mapSessionLifecycleEvent } from "./handlers/subagents"
+import type { TrackerEvent } from "../subagent-tracker"
 
 export interface CoreDeps {
   trace(event: { type?: string }, channel: string): void
@@ -27,6 +29,11 @@ export interface LifecycleDeps {
   closeIfOpen(id: string): void
 }
 
+/** 子代理 tracker 旁路（spec §4.3）：消费既有事件，零词汇改动。 */
+export interface SubagentDeps {
+  onEvent(ev: TrackerEvent): void
+}
+
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
@@ -34,6 +41,7 @@ export interface ShellEventDeps {
   dock: DockDeps
   chat: ChatDeps
   diff: DiffDeps
+  subagents: SubagentDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
@@ -44,6 +52,7 @@ EXTRA_HANDLERS.push(handleDockEvent)
 EXTRA_HANDLERS.push(handleChatStreamEvent)
 EXTRA_HANDLERS.push(handleMediaSpeakEvent)
 EXTRA_HANDLERS.push(handleDiffEvent)
+EXTRA_HANDLERS.push(handleSubagentEvent)
 
 /** 语义与 MafwShell.tsx:1356-1360 一致：sid 可多形态承载。 */
 export function sessionIdOf(event: any): string {
@@ -107,6 +116,11 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
 
   if (event.type === "session.created" || event.type === "session.updated" || event.type === "session.deleted") {
     deps.core.trace(event, "rail:planner")
+    // 子代理 tracker 旁路（既有行为不变，只加转发）：child 事件在这里被
+    // lifecycle 分支消化前先喂给 subagents 组（session.created 的 child 会被
+    // planner 判 none，不产生 Rail 变化；subagents 组负责行跟踪）。
+    const subEv = mapSessionLifecycleEvent(event)
+    if (subEv) deps.subagents.onEvent(subEv)
     const action = planSessionEvent(event as RawSessionEvent)
     if (action.kind === "invalidate") {
       deps.lifecycle.invalidate()

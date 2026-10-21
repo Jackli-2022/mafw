@@ -4,6 +4,7 @@ import { dispatchShellEvent, type ShellEventDeps } from "./dispatcher"
 function makeDeps() {
   const calls: { name: string; args: unknown[] }[] = []
   const rec = (name: string) => (...args: unknown[]) => { calls.push({ name, args }) }
+  const subagentEvents: unknown[] = []
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
@@ -56,8 +57,11 @@ function makeDeps() {
       trace: rec("trace"),
       setSessionDiff: rec("setSessionDiff"),
     },
+    subagents: {
+      onEvent: (ev: unknown) => { subagentEvents.push(ev) },
+    },
   }
-  return { deps, calls }
+  return { deps, calls, subagentEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -150,5 +154,33 @@ describe("dispatchShellEvent: goal events", () => {
       dispatchShellEvent({ type, goalId: "g1" }, deps)
       expect(calls.some(c => c.name === "onGoalEvent")).toBe(true)
     }
+  })
+})
+
+describe("dispatchShellEvent: subagents 组", () => {
+  test("session.created 带 parentID → 转发（且既有 lifecycle 行为不变：child 被 planner 隐藏）", () => {
+    const { deps, calls, subagentEvents } = makeDeps()
+    dispatchShellEvent({ type: "session.created", properties: { info: { id: "c1", parentID: "p1", title: "t @a" } } }, deps)
+    expect(subagentEvents).toEqual([{ kind: "session-created", info: { id: "c1", parentID: "p1", title: "t @a" } }])
+    expect(calls.some(c => c.name === "invalidate")).toBe(false) // 子会话不进 Rail 列表
+  })
+  test("session.updated 子会话 → 转发 title；session.deleted → 转发", () => {
+    const { deps, subagentEvents } = makeDeps()
+    dispatchShellEvent({ type: "session.updated", properties: { info: { id: "c1", parentID: "p1", title: "新 @b" } } }, deps)
+    dispatchShellEvent({ type: "session.deleted", properties: { sessionID: "c1" } }, deps)
+    expect(subagentEvents).toEqual([
+      { kind: "session-updated", sessionID: "c1", title: "新 @b" },
+      { kind: "session-deleted", sessionID: "c1" },
+    ])
+  })
+  test("turn 三元组 → onEvent turn-terminal（sid=child）", () => {
+    const { deps, subagentEvents } = makeDeps()
+    dispatchShellEvent({ type: "turn.completed", properties: { sessionID: "c1" } }, deps)
+    expect(subagentEvents).toEqual([{ kind: "turn-terminal", sessionID: "c1", terminal: "completed" }])
+  })
+  test("非子会话事件不产生 subagent 转发（session.created 无 parentID）", () => {
+    const { deps, subagentEvents } = makeDeps()
+    dispatchShellEvent({ type: "session.created", properties: { info: { id: "s1", title: "普通" } } }, deps)
+    expect(subagentEvents).toEqual([])
   })
 })
