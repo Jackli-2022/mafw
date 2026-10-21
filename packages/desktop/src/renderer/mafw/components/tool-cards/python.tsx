@@ -113,7 +113,7 @@ export function MafwPythonRestartCard(props: ToolProps) {
   const out = () => props.output || ""
   return (
     <BasicTool
-      icon="rotate-ccw"
+      icon="reset"
       trigger={{ title: "Python 内核重启", subtitle: out() ? out().slice(0, 60) : undefined }}
       status={props.status}
       defaultOpen
