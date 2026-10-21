@@ -1,4 +1,7 @@
-﻿import { $ } from "bun"
+﻿import { execFileSync } from "node:child_process"
 
-await $`bun ./scripts/copy-icons.ts ${process.env.OPENCODE_CHANNEL ?? "dev"}`
-
+execFileSync(
+  process.execPath,
+  ["--import", "tsx", "./scripts/copy-icons.ts", process.env.OPENCODE_CHANNEL ?? "dev"],
+  { stdio: "inherit" },
+)

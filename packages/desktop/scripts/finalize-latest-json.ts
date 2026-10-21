@@ -1,11 +1,12 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
-import { $ } from "bun"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { parseArgs } from "node:util"
+import { run } from "./utils"
 
 const { values } = parseArgs({
-  args: Bun.argv.slice(2),
+  args: process.argv.slice(2),
   options: {
     "dry-run": { type: "boolean", default: false },
   },
@@ -93,9 +94,9 @@ function parse(text: string): Yml {
 }
 
 async function read(sub: string, file: string) {
-  const item = Bun.file(path.join(root, sub, file))
-  if (!(await item.exists())) return undefined
-  return parse(await item.text())
+  const full = path.join(root, sub, file)
+  if (!existsSync(full)) return undefined
+  return parse(readFileSync(full, "utf8"))
 }
 
 function pick(list: Item[], exts: string[]) {
@@ -125,11 +126,11 @@ async function sign(url: string, key: string) {
 
   const tmp = process.env.RUNNER_TEMP ?? "/tmp"
   const file = path.join(tmp, name)
-  await Bun.write(file, await res.arrayBuffer())
-  await $`bunx @tauri-apps/cli signer sign ${file}`
-  const sigFile = Bun.file(`${file}.sig`)
-  if (!(await sigFile.exists())) throw new Error(`Signature file not found for ${name}`)
-  return (await sigFile.text()).trim()
+  writeFileSync(file, Buffer.from(await res.arrayBuffer()))
+  run("npx", ["--yes", "@tauri-apps/cli", "signer", "sign", file])
+  const sigPath = `${file}.sig`
+  if (!existsSync(sigPath)) throw new Error(`Signature file not found for ${name}`)
+  return readFileSync(sigPath, "utf8").trim()
 }
 
 const add = async (data: Record<string, { url: string; signature: string }>, key: string, raw: string | undefined) => {
@@ -206,7 +207,7 @@ const data = {
 
 const tmp = process.env.RUNNER_TEMP ?? "/tmp"
 const file = path.join(tmp, "latest.json")
-await Bun.write(file, JSON.stringify(data, null, 2))
+writeFileSync(file, JSON.stringify(data, null, 2))
 
 const tag = `v${version}`
 
@@ -214,6 +215,6 @@ if (dryRun) {
   console.log(`dry-run: wrote latest.json for ${tag} to ${file}`)
   process.exit(0)
 }
-await $`gh release upload ${tag} ${file} --clobber --repo ${repo}`
+run("gh", ["release", "upload", tag, file, "--clobber", "--repo", repo])
 
 console.log(`finalized latest.json for ${tag}`)

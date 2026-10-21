@@ -1,7 +1,7 @@
-import { $ } from "bun"
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import * as path from "node:path"
+import { run } from "./utils"
 
 /**
  * Stage the MAFW gateway into packages/desktop/gateway-bundle/ so electron-builder
@@ -21,7 +21,7 @@ import * as path from "node:path"
  * Requires `npm run build` at the repo root first (gateway/dist must exist).
  */
 
-const packageDir = path.resolve(import.meta.dir, "..")
+const packageDir = path.resolve(import.meta.dirname, "..")
 const rootDir = path.resolve(packageDir, "../..")
 const gatewayDir = path.join(rootDir, "gateway")
 const outDir = path.join(packageDir, "gateway-bundle")
@@ -58,7 +58,7 @@ const bundlePkg = {
 await writeFile(path.join(outDir, "package.json"), JSON.stringify(bundlePkg, null, 2))
 
 console.log("[stage-gateway] installing production dependencies (this can take a while)...")
-await $`npm install --omit=dev --no-audit --no-fund --loglevel=error`.cwd(outDir)
+run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: outDir })
 
 // better-sqlite3 must match the Electron ABI: try the published electron
 // prebuild first, then rebuild from source against Electron headers.
@@ -66,11 +66,21 @@ const bsqlDir = path.join(outDir, "node_modules", "better-sqlite3")
 if (existsSync(bsqlDir)) {
   console.log(`[stage-gateway] rebuilding better-sqlite3 for electron ${electronVersion}...`)
   try {
-    await $`npx --yes prebuild-install -r electron -t ${electronVersion}`.cwd(bsqlDir)
+    run("npx", ["--yes", "prebuild-install", "-r", "electron", "-t", electronVersion], { cwd: bsqlDir })
   } catch {
     console.log("[stage-gateway] no electron prebuild published; compiling from source...")
-    await $`npx --yes node-gyp rebuild --release --runtime=electron --target=${electronVersion} --dist-url=https://electronjs.org/headers`.cwd(
-      bsqlDir,
+    run(
+      "npx",
+      [
+        "--yes",
+        "node-gyp",
+        "rebuild",
+        "--release",
+        "--runtime=electron",
+        `--target=${electronVersion}`,
+        "--dist-url=https://electronjs.org/headers",
+      ],
+      { cwd: bsqlDir },
     )
   }
   if (!existsSync(path.join(bsqlDir, "build", "Release", "better_sqlite3.node"))) {

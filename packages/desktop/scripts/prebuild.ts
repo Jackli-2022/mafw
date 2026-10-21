@@ -1,9 +1,10 @@
-﻿#!/usr/bin/env bun
-import { $ } from "bun"
+﻿import { execFileSync } from "node:child_process"
 
 import { resolveChannel } from "./utils"
 
 const channel = resolveChannel()
-await $`bun ./scripts/copy-icons.ts ${channel}`
-await $`bun ./scripts/copy-metainfo.ts ${channel}`
+const run = (script: string, arg: string) =>
+  execFileSync(process.execPath, ["--import", "tsx", script, arg], { stdio: "inherit" })
 
+run("./scripts/copy-icons.ts", channel)
+run("./scripts/copy-metainfo.ts", channel)

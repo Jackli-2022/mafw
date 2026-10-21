@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs"
 import { resolveChannel } from "./utils"
 
 const arg = process.argv[2]
@@ -37,5 +38,5 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
 </component>
 `
 
-await Bun.write(`resources/${appId}.metainfo.xml`, xml)
+writeFileSync(`resources/${appId}.metainfo.xml`, xml)
 console.log(`Generated metainfo for ${channel} at resources/${appId}.metainfo.xml`)

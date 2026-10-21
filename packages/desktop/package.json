@@ -12,16 +12,16 @@
   "scripts": {
     "typecheck": "tsgo -b",
     "test": "node --import tsx --import ../../packages/test-shim/register.mjs --test \"src/**/*.test.ts\" \"tests/*.test.ts\" \"electron-builder.config.test.ts\" \"electron-builder.resources.test.ts\" \"gateway-update/*.test.ts\"",
-    "predev": "bun ./scripts/predev.ts",
+    "predev": "node --import tsx ./scripts/predev.ts",
     "dev": "electron-vite dev",
-    "prebuild": "bun ./scripts/prebuild.ts",
+    "prebuild": "node --import tsx ./scripts/prebuild.ts",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "package": "bun ./scripts/stage-gateway.ts && electron-builder --config electron-builder.config.ts",
-    "package:mac": "bun ./scripts/stage-gateway.ts && electron-builder --mac --config electron-builder.config.ts",
-    "package:win": "bun ./scripts/stage-gateway.ts && electron-builder --win --config electron-builder.config.ts",
-    "package:linux": "bun ./scripts/stage-gateway.ts && electron-builder --linux --config electron-builder.config.ts",
-    "native:build": "bun install --cwd native"
+    "package": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --config electron-builder.config.ts",
+    "package:mac": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --mac --config electron-builder.config.ts",
+    "package:win": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --win --config electron-builder.config.ts",
+    "package:linux": "node --import tsx ./scripts/stage-gateway.ts && electron-builder --linux --config electron-builder.config.ts",
+    "native:build": "npm install --prefix native"
   },
   "main": "./out/main/index.js",
   "dependencies": {
