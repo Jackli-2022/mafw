@@ -14,7 +14,8 @@ export const MAFW = {
   sessionCreated: 'session.created',
   sessionUpdated: 'session.updated',
   sessionDeleted: 'session.deleted',
-  // 回合终态（v2 一等公民；原 session.idle/message.complete 双轨合并）
+  // 回合生命周期（v3 增 turn.started；终态三元组 v2 起为一等公民，原双轨合并）
+  turnStarted: 'turn.started',
   turnCompleted: 'turn.completed',
   turnFailed: 'turn.failed',
   turnAborted: 'turn.aborted',

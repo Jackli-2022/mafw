@@ -108,6 +108,7 @@ export const IGNORED_AT_SHELL = [
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting", "usage.updated",
+  "turn.started",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
@@ -193,6 +194,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "mafw_commands_changed":
     case "session.compacting":
     case "usage.updated":
+    case "turn.started":
       return
     default: {
       // 残余必须恰好是 plugin:* 模板；出现任何其他字面量 = 有事件未归类。

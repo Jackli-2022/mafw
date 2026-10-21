@@ -14,7 +14,7 @@
 /** mafw_event 信封内层 data.type 全集（runtime 原生事件经翻译层后的 canonical 名） */
 export const RUNTIME_EVENT_TYPES = [
   "session.created", "session.updated", "session.deleted",
-  "turn.completed", "turn.failed", "turn.aborted",
+  "turn.started", "turn.completed", "turn.failed", "turn.aborted",
   "session.compacting", "session.compacted",
   "message.updated", "part.updated", "part.delta", "part.complete",
   "question.asked", "question.replied", "question.rejected",

@@ -38,7 +38,8 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   'session.created':      R([], 'passthrough', 'handled', 'ignore', 'desktop 走 planSessionEvent invalidate'),
   'session.updated':      R([], 'passthrough', 'handled', 'ignore', 'desktop patch 标题/时间；pi agent_start 映射为此（空壳无 info，planner 忽略）'),
   'session.deleted':      R([], 'passthrough', 'handled', 'ignore', 'desktop remove + closeSession'),
-  // ---- 回合终态（v2 一等公民；Mode A 改写已删除，统一 passthrough） ----
+  // ---- 回合生命周期（v3 增 turn.started；终态三元组 v2 起统一 passthrough） ----
+  'turn.started':        R([], 'passthrough', 'ignore', 'ignore', 'v3 新增：回合起始（opencode@v2 session.next.prompted / pi agent_start / codex turn/started / dsh turn/start）；消费方接线下再升 handled'),
   'turn.completed':       R(['chatSignal'], 'passthrough', 'handled', 'handled', 'opencode session.idle / pi agent_end 翻译而来；trajectory turn 聚合 + usage 合成挂此'),
   'turn.failed':          R(['chatSignal'], 'passthrough', 'handled', 'handled', 'session.error + message.error 双发合并到此；广播带 error 字段提取（消费方错误展示契约）'),
   'turn.aborted':         R([], 'passthrough', 'handled', 'ignore', '原 message.aborted'),
