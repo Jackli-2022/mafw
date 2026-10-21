@@ -191,7 +191,7 @@ Index scan 传输（`recall/index-scan.ts`）优先走 runtime 契约的 `comple
 - Electron + SolidJS + `@mafw/ui`（fork 自 @opencode-ai/ui，含 MAFW v2 组件）+ `@mafw/session-ui` + `@mafw/sdk`（packages/gateway-sdk）
 - **Gateway 捆绑（模式 A，2026-09-10）**：desktop 安装包自带 gateway——`scripts/stage-gateway.ts` 把 `gateway/dist` + 生产依赖 stage 到 `gateway-bundle/`（better-sqlite3 重构建为 Electron ABI：先试 `prebuild-install -r electron`，失败回退 node-gyp 按 Electron headers 源码编译；zeromq 是 Node-API 免重构建），electron-builder `extraResources` 打进 `resources/gateway/`。`package*` 四条 npm script 已串 staging；`gateway-bundle/` 已 gitignore。启动决策收敛在纯函数 `src/main/mafw-gateway-plan.ts`：adopt（探测已有）→ bundle（`ELECTRON_RUN_AS_NODE` spawn 自带副本，desktop 退出时树杀）→ cli（dev 回退 `mafw daemon`）→ failed；`stopGateway` 只杀自己 spawn 的（收养的不再误杀）
 - 主 UI：左侧 Rail(200px) + 上部 TabStrip + 内容区
-- 构建：`cd packages/desktop && npx electron-vite build`（main/preload/renderer 三段）；dev 用 bun 脚本（predev 仅拷图标，不再构建 opencode CLI）
+- 构建：`cd packages/desktop && npx electron-vite build`（main/preload/renderer 三段）；dev 用 node 脚本（predev 仅拷图标，不再构建 opencode CLI）
 - 根 npm workspaces：`packages/*`；opencode-dev/ 已移除（2026-09-09），全部源码以 packages/ 为准
 - **Tray 系统托盘**（2026-09-17 重构，对齐 MS 通知区域指南 + Slack/Discord 惯例）：`src/main/tray.ts`（Electron 耦合层）+ 三个纯模块——`tray-toggle.ts`（单击 toggle：无窗口→create / 可见且聚焦→hide / 否则 show；双击=Open 防 toggle 双击抖动）、`tray-status.ts`（`countPending`/`trayTooltip`/`trayMenuStatusLabel` 纯函数 + 30s 轮询 `/api/approvals`+`/api/permissions` 的 fail-open poller，tooltip 与菜单状态行动态反映待审批数）、`close-decision.ts`（close 决策新增 `trayAvailable` 输入：无托盘图标时 hide-to-tray 会让窗口不可达，降级为真关）。`tray-prefs.ts`：closeToTray/trayIconEnabled/两个一次性提示标志。菜单 = 状态行(disabled) + Open MAFW + Close to tray 复选 + Quit MAFW；取消勾选 close-to-tray 首次弹窗告知"关最后窗口=退出应用并树杀 bundle gateway"（P0 静默杀栈修复）；首次 hide-to-tray 弹一次性 OS 通知（`tray-hint.ts`，windows.ts→tray-hint 单向 import 防循环）。Windows 用 icon.ico（不传 GUID——未签名 exe 下 GUID 绑死 exe 路径，换路径会让托盘创建失败）；macOS 不接 click handler（setContextMenu 后左键本就弹菜单，接了会双触发）。Config 页新增 Desktop 区块镜像两个开关（IPC `get-tray-prefs`/`set-tray-prefs` → `syncTrayPresence()` 热创建/销毁）
 - **小窗口响应式**（2026-10-09，对齐业界共识）：主窗口加 `minWidth:720/minHeight:480`（`src/main/window-bounds.ts` 纯函数 `mainWindowOptions`——恢复的过小尺寸抬到下限、缺省坐标不下发）；跨 1200px 断点时 Rail 自动折叠（`src/renderer/mafw/layout-breakpoints.ts` `railAutoAction`——wide→narrow 收起、narrow→wide 仅撤销自动收起、同侧不动；自动折叠不持久化、`untrack` 防拉锯；mount 时窄窗口先收）；**composer toolbar 溢出修复**：结构护栏（`.mafw-composer-toolbar`/组 `min-width:0`；left `flex:1 1 auto; overflow:hidden` 裁切自身不外溢；right `flex:0 0 auto` 保发送恒显）+ 分档容器查询 `@container`——**≤720** 隐藏次要图标（`mafw-composer-optional`：审阅/语音播报/录音）+ composer-meta、model-name ≤120；**≤620** 隐藏分隔线、model-name ≤96；**≤520** 隐藏上下文 pill、model-name ≤72；`mafw-model-name` 恒 ellipsis；`@media (max-width:680px)` 侧 padding 64→32。样式契约测试 `composer-toolbar-css.test.ts`（2）。业界共识见调研文档 §5（工具条单行、按优先级降级、用 @container、发送恒显；溢出菜单/chips 分行留后续）。**收起态零宽**：`railCollapsed` 时 rail 内容不渲染、列宽 0（列保留为 grid 占位以保证 topstrip/main 仍落 column 2；v7 起改为 `--rail-w` 变量 + 过渡，见下）。调研 `docs/research/2026-10-09-desktop-small-window-layout.md`；桌面测试 872（+8）
@@ -229,10 +229,10 @@ onMount → gateway.info() 等 ready
 
 MafwShell 的 onmessage（原 ~350 行 if-else）与工作区状态抽为独立模块，shell 收敛为布局壳（spec：`docs/superpowers/specs/2026-09-20-desktop-ux-refactor-design.md`）：
 
-- **SSE dispatcher**（`renderer/mafw/sse/dispatcher.ts`）：`dispatchShellEvent(event, deps)` 纯路由——core/lifecycle 内联，其余经 `EXTRA_HANDLERS` 链（flow-cards / dock / chat-stream / media-speak，`sse/handlers/*`）；一切副作用经注入 `ShellEventDeps`（core/lifecycle/flowCards/dock/chat 五组），逐分支 bun 可测；消费语义精确保留原落穿行为（`message.updated`/`part.delta` 提前消费，流式主链与未知事件落穿到 media_speak 检查后 missTrace）；漏接线检测（`isTailAccountedAtShell`）在 dispatcher 尾部
+- **SSE dispatcher**（`renderer/mafw/sse/dispatcher.ts`）：`dispatchShellEvent(event, deps)` 纯路由——core/lifecycle 内联，其余经 `EXTRA_HANDLERS` 链（flow-cards / dock / chat-stream / media-speak，`sse/handlers/*`）；一切副作用经注入 `ShellEventDeps`（core/lifecycle/flowCards/dock/chat 五组），逐分支可单测；消费语义精确保留原落穿行为（`message.updated`/`part.delta` 提前消费，流式主链与未知事件落穿到 media_speak 检查后 missTrace）；漏接线检测（`isTailAccountedAtShell`）在 dispatcher 尾部
 - **纯 reducer**（`sse/chat-reducers.ts`）：乐观 user 消息替换 / assistant 合并 / part delta 累积 / part upsert（含乐观 text 吸收）/ `session.next.tool.*` 承载消息确保 / media_speak 参数提取，全部无 Solid 依赖可测
 - **会话工作区单例**（`workspace/session-workspace.ts`）：`workspace` 拥有 tabs signal（`sessions`/`activeId`）、消息 store（`store`/`setStore`）与五个回调注册表（anchor/sendingReset/queueFlush/phase/mediaSpeak，Record 形态 + register/unregister/call API）；MafwShell 以别名引用（`const store = workspace.store` 等），调用点语法零改动
-- 测试：desktop 测试已入 CI（root `test:desktop`；desktop 包 `bun test`）；desktop +53（dispatcher 9 / flow-cards 9 / dock 8 / chat-reducers+chat-stream 27 / workspace 5，含已知坏 legacy launcher 测试移除 -1）
+- 测试：desktop 测试已入 CI（root `test:desktop`；desktop 包 `npm test` = node --test + `@mafw/test-shim`，2026-10-21 自 bun 迁移）；desktop +53（dispatcher 9 / flow-cards 9 / dock 8 / chat-reducers+chat-stream 27 / workspace 5，含已知坏 legacy launcher 测试移除 -1）
 
 #### plan/build 模式引导（2026-09-20，切片 3）
 
@@ -1120,7 +1120,7 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 ### 5.21 语音管道（Voice Pipeline，2026-09-17 重构）
 
 **Desktop 核心（`packages/desktop/src/renderer/mafw/voice/`，UI 无关纯 TS）**：
-- **VadAnalyzer**（`silero.ts`）：Silero VAD v5 单实例 + 单 getUserMedia 流（echoCancellation/noiseSuppression/autoGainControl），事件 hub 多播 `speech_started/speech_stopped/misfire`——不再有 monitor/recording 模式切换；参数 `media.tts.vad.*`（confidence 0.5/stopSecs 1.2/minSpeechMs 500）可配，fail-open 默认值；`?url` 资产导入带 typeof 守卫（bun test 可导入）
+- **VadAnalyzer**（`silero.ts`）：Silero VAD v5 单实例 + 单 getUserMedia 流（echoCancellation/noiseSuppression/autoGainControl），事件 hub 多播 `speech_started/speech_stopped/misfire`——不再有 monitor/recording 模式切换；参数 `media.tts.vad.*`（confidence 0.5/stopSecs 1.2/minSpeechMs 500）可配，fail-open 默认值；`?url` 资产导入带 typeof 守卫（node --test 经 test-shim loader 可导入）
 - **TurnStopStrategy**（`turn.ts`）：轮次边界与 VAD 分层（Pipecat 模式）；v1 `SilenceTimeoutStrategy` 直通（静音宽限已由 Silero redemptionMs 在引擎内），未来语义 turn detector 挂此接口
 - **AudioWorkletPlayer**（`worklet-player.ts` + `public/voice/pcm-worklet.js`）：环形缓冲流式 PCM 播放，起步缓冲 200ms 抗抖动，`flush()` = 清缓冲即时静音（barge-in），`playCursorMs` 播放游标（v1 仅日志）；采样率取 SSE `x-tts-sample-rate` 响应头（不再硬编码 24kHz）；**无 BufferSource 回退**（Electron Chromium 必有 AudioWorklet，显式报错）
 - **VoiceSession**（`session.ts`）：桌面语音唯一入口，显式状态机 `idle|recording|speaking|interrupted`；VAD 信号按状态路由（recording→分段/ speaking→barge-in）；barge-in = flush + `POST /api/tts/interrupt`（fire-and-forget）+ 状态 interrupted；`speakFromTool` djb2 hash TTL 去重（与 gateway media-speak 工具同实现）；`playUrl` artifact 短播放也走会话（互斥/barge-in 一致）；`speak` 流式失败回退整段 wav（barge-in abort 不回退）；ChatPane 只留绑定层（事件→UI 信号、segment→upload helper）
@@ -1133,7 +1133,7 @@ pi runtime 声明 `nativeApprovals: true`，通过 MafwApprovalExtension 拦截 
 - **插件接口**（legacy 形态）：`module.exports = { name, capabilities?, voices(), synthesize(text,opts,ctx)→wav Buffer, synthesizeStream? }`；统一插件包新增 `tts` 贡献类型（`TtsContributionSpec`，PluginHost bindTts 原子推送）
 - **打断传播**：`POST /api/tts/interrupt { sessionId }` → abort 该 session 全部在途合成（`ttsInflight` Map 登记，stream 路由 close 时清理）；`/api/tts/stream` body 新增可选 `sessionId`，响应头带 `x-tts-sample-rate`
 - **许可红线**（内置只从安全档选）：ChatTTS/F5-TTS/Fish S2（非商用/研究许可）、IndexTTS（商用需授权）、edge-tts（微软 ToS）、Piper（GPL）**不内置**，仅可作用户自装插件；CosyVoice/GPT-SoVITS 等经 tts-plugins 接入
-- 测试：gateway jest 27 个 TTS 单测（registry/adapter/mimo/interrupt/loader/kokoro）；desktop bun 12 个 voice 单测（turn/silero hub/pcm-align/session 状态机）
+- 测试：gateway jest 27 个 TTS 单测（registry/adapter/mimo/interrupt/loader/kokoro）；desktop 12 个 voice 单测（turn/silero hub/pcm-align/session 状态机）
 
 ### 5.22 Goal 编排 P1：NodeDriver + 节点级 Trace（2026-10-08）
 
@@ -1154,12 +1154,12 @@ goal 编排从「装配完成未接线」正式启用：**langgraph 三件套（
 
 **P2 前端节点泳道图（2026-10-09，仅 Desktop）**：Goal 详情 `GoalDetailOverlay` 从「charter + 会话列表」升级为**节点级执行可视化**——泳道（行=plan/execute/review，列=loop）+ 点格子内联明细（起止/耗时/token/成本/verdict/错误/产物 chips/打开会话/重跑）。
 
-- **纯逻辑** `packages/desktop/src/renderer/mafw/goal-timeline.ts`：`buildGoalLanes(nodes, maxRounds)`（行×列矩阵 + 每格 attempts 归并）、`cellTone`（review verdict 覆盖）、`formatDuration`、`cellSummary`、`artifactRef`（per-loop 相对路径引用）——bun 单测
+- **纯逻辑** `packages/desktop/src/renderer/mafw/goal-timeline.ts`：`buildGoalLanes(nodes, maxRounds)`（行×列矩阵 + 每格 attempts 归并）、`cellTone`（review verdict 覆盖）、`formatDuration`、`cellSummary`、`artifactRef`（per-loop 相对路径引用）——单测
 - **组件** `GoalTimelineLane.tsx`（props 驱动，泳道网格 + 内联展开）→ `GoalDetailOverlay.tsx` 接 `window.api.mafw.goals.timeline/retryNode`；会话下钻经 `onOpenSession(sessionId)`（节点 run 自带 sessionId）
 - **实时**：dispatcher 顶层消费 `goal_node`/`goal_created`/`phase_transition` → `CoreDeps.onGoalEvent` → 模块单例 `goals-rev.ts` 的 `goalsRev` signal bump；GoalDetailOverlay/Dashboard 依赖该 signal 重拉，保留 15s 轮询兜底（`goal_node` 无 sessionID，必须在 sid 分发前消费，否则 missTrace 刷屏）
 - **preload** `mafw-api.ts`/`mafw-types.ts` goals 段补 `timeline`/`retryNode`（SDK P1 已有方法 + `GoalTimeline` 类型）
 - **产物**：桌面无 mafwDir，产物以相对路径 chips 展示、点击复制（OS 打开留后续）
-- 测试：desktop `bun test` 864 用例全绿（goal-timeline 10 + dispatcher 增量 2）；`electron-vite build` 成功。手工冒烟（真实 goal 观察泳道实时变化）留待 GUI 环境
+- 测试：desktop `npm test`（node --test + test-shim）864 用例全绿（goal-timeline 10 + dispatcher 增量 2）；`electron-vite build` 成功。手工冒烟（真实 goal 观察泳道实时变化）留待 GUI 环境
 
 ### 5.23 脑启发记忆演化第二批（2026-10-09）
 
@@ -1253,8 +1253,8 @@ Gateway API 路由使用正则匹配，query string 会导致 `$` 锚定不匹�
 ### 6.6 GitHub Actions CI（2026-09-14）
 
 三个独立 workflow（`.github/workflows/`）：
-- `ci.yml`：push(main)/PR → 双 OS（ubuntu/windows）× Node 22 验证——root+gateway 两段 `npm ci`、root build、gateway jest、TUI node --test；concurrency 按 ref 取消旧跑
-- `desktop-release.yml`：tag `v*` → Win(nsis)+Linux(AppImage/deb/rpm) 打包（bun stage-gateway + electron-builder `--publish never`，`OPENCODE_CHANNEL=prod` 走 env 块）→ release job 汇总挂 **draft release**（softprops）；workflow_dispatch = 构建-only 干跑；electron 缓存按 OS 分路径
+- `ci.yml`：push(main)/PR → 双 OS（ubuntu/windows）× Node 22 验证——root+gateway 两段 `npm ci`、root build、gateway jest、TUI node --test、gateway-sdk / session-ui / ui / desktop 四包 node --test（2026-10-21 起，经 `@mafw/test-shim`）；concurrency 按 ref 取消旧跑
+- `desktop-release.yml`：tag `v*` → Win(nsis)+Linux(AppImage/deb/rpm) 打包（node stage-gateway + electron-builder `--publish never`，`OPENCODE_CHANNEL=prod` 走 env 块）→ release job 汇总挂 **draft release**（softprops）；workflow_dispatch = 构建-only 干跑；electron 缓存按 OS 分路径
 - `npm-publish.yml`：仅手动 dispatch；`NPM_TOKEN` 缺失时绿 skip，配置后 `npm publish --provenance`
 
 注意：desktop `electron-builder.config.ts` 的 `native/` extraResource 有 `existsSync` 守卫（仓库不携带该目录）；`electron-builder.config.test.ts` 的 legacy launcher 测试已知坏（引用不存在的 `resources/linux/opencode-desktop.desktop`），desktop 无 test script、不在 CI 内。

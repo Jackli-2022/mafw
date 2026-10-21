@@ -36,14 +36,6 @@ jobs:
         working-directory: gateway
         run: npm ci
 
-      # Pin bun to the version local dev/tests run against (reproducible CI).
-      # Unpinned "latest" broke Test desktop on 2026-10-11: a newer bun
-      # changed solid-js export resolution (jsxDEV missing from the resolved
-      # dist) while 1.3.14 runs the suite green locally.
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-
       - name: Build (plugin + gateway + tui)
         run: npm run build
 
