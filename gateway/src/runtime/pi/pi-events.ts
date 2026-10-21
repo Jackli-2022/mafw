@@ -28,12 +28,22 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'agent_start', to: 'turn.started' },
   { from: ['message_start', 'message_update'], to: 'part.updated',
     fields: { 'part.type': { const: 'text' }, 'part.text': { path: '$.delta', default: '' } } },
-  { from: 'message_end', to: 'message.updated', fields: { 'info.role': { const: 'assistant' } } },
-  { from: 'tool_call', to: 'tool.call',
-    fields: { callID: { path: '$.toolCallId' }, tool: { path: '$.toolName' }, input: { path: '$.input' } } },
-  { from: 'tool_result', to: 'tool.result',
+  // N2（Plan 2）：角色从 $.message.role 取值（原 const 'assistant' 把 user 消息
+  // 也误标——trajectory turn_start 对 pi 从不触发，audit N2）
+  { from: 'message_end', to: 'message.updated', fields: { 'info.role': { path: '$.message.role' } } },
+  // N1（Plan 2）：live 流真事件（session.subscribe 可达）→ 工具三原语，
+  // 经 gateway 侧 assembler 合帧——pi live 工具卡此前从不渲染的根因修复
+  { from: 'tool_execution_start', to: 'tool.call',
+    fields: { callID: { path: '$.toolCallId' }, tool: { path: '$.toolName' }, input: { path: '$.args' } } },
+  { from: 'tool_execution_update', to: 'tool.delta',
+    fields: { callID: { path: '$.toolCallId' }, kind: { const: 'output' }, text: { path: '$.partialResult' } } },
+  { from: 'tool_execution_end', to: 'tool.result',
     fields: { callID: { path: '$.toolCallId' }, tool: { path: '$.toolName' },
-              isError: { path: '$.isError' }, output: { path: '$.content' } } },
+              output: { path: '$.result' }, isError: { path: '$.isError' } } },
+  // N1 退役：tool_call/tool_result 是 extension 钩子事件（agent-session.js:223-272
+  // 只路由给扩展，session.subscribe 不可达）——live 死代码，显式 drop 保 suppressed 计数
+  { from: 'tool_call', to: 'drop' },
+  { from: 'tool_result', to: 'drop' },
   { from: 'turn_start', to: 'part.updated', fields: { 'part.type': { const: 'step-start' } } },
   { from: 'turn_end', to: 'part.updated',
     fields: { 'part.type': { const: 'step-finish' }, 'part.messageID': { template: 'pi_step_{$.sessionID}' } } },

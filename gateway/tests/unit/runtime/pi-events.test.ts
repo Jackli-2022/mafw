@@ -45,23 +45,9 @@ describe('translatePiEvent', () => {
     expect(translatePiEvent({ type: 'queue_update' }, 'pi_x')).toBeNull();
   });
 
-  it('tool_call â†’ tool.call åŽŸè¯­ï¼ˆcallID/tool/input æŠ½å– + sessionID æ³¨å…¥ï¼‰', () => {
-    const out = translatePiEvent({ type: 'tool_call', toolCallId: 'tc1', toolName: 'bash', input: { command: 'ls' } }, 'pi_x');
-    expect(out).toEqual({
-      payload: { type: 'tool.call', properties: { callID: 'tc1', tool: 'bash', input: { command: 'ls' }, sessionID: 'pi_x' } },
-      sessionID: 'pi_x',
-      directory: undefined,
-    });
-  });
-
-  it('tool_result â†’ tool.result åŽŸè¯­ï¼ˆcontent æ•°ç»„åŽŸæ ·è¿‡ï¼Œassembler coerceï¼‰', () => {
-    const content = [{ type: 'text', text: 'ok' }];
-    const out = translatePiEvent({ type: 'tool_result', toolCallId: 'tc1', toolName: 'bash', input: {}, content, isError: false }, 'pi_x');
-    expect(out).toEqual({
-      payload: { type: 'tool.result', properties: { callID: 'tc1', tool: 'bash', isError: false, output: content, sessionID: 'pi_x' } },
-      sessionID: 'pi_x',
-      directory: undefined,
-    });
+  it('N1 é€€å½¹ï¼štool_call/tool_resultï¼ˆextension é’©å­äº‹ä»¶ï¼‰â†’ drop æ— è¾“å‡ºï¼ˆåŽŸè¯­æ”¹ç”± tool_execution_* æ‰¿è½½ï¼‰', () => {
+    expect(translatePiEvent({ type: 'tool_call', toolCallId: 'tc1', toolName: 'bash', input: { command: 'ls' } }, 'pi_x')).toBeNull();
+    expect(translatePiEvent({ type: 'tool_result', toolCallId: 'tc1', toolName: 'bash', content: [{ type: 'text', text: 'ok' }], isError: false }, 'pi_x')).toBeNull();
   });
 });
 
@@ -136,8 +122,8 @@ describe('pi unknown native telemetry', () => {
     expect(seen).toEqual([]);
   });
 });
-describe('pi F1/F8£¨canonical v3 Plan 2£ºÖÕÌ¬·ÖÀà + agent_start ÖØÓ³£©', () => {
-  it('F1: agent_end ×îºó assistant ÏûÏ¢ stopReason=error ¡ú turn.failed£¨errorMessage Í¸´«£©', () => {
+describe('pi F1/F8ï¿½ï¿½canonical v3 Plan 2ï¿½ï¿½ï¿½ï¿½Ì¬ï¿½ï¿½ï¿½ï¿½ + agent_start ï¿½ï¿½Ó³ï¿½ï¿½', () => {
+  it('F1: agent_end ï¿½ï¿½ï¿½ assistant ï¿½ï¿½Ï¢ stopReason=error ï¿½ï¿½ turn.failedï¿½ï¿½errorMessage Í¸ï¿½ï¿½ï¿½ï¿½', () => {
     const out = translatePiEvent({ type: 'agent_end', messages: [
       { role: 'user', content: 'q' },
       { role: 'assistant', stopReason: 'error', errorMessage: 'boom' },
@@ -147,14 +133,14 @@ describe('pi F1/F8£¨canonical v3 Plan 2£ºÖÕÌ¬·ÖÀà + agent_start ÖØÓ³£©', () => {
     expect(out?.payload.properties.sessionID).toBe('pi_x');
   });
 
-  it('F1: stopReason=aborted ¡ú turn.aborted', () => {
+  it('F1: stopReason=aborted ï¿½ï¿½ turn.aborted', () => {
     const out = translatePiEvent({ type: 'agent_end', messages: [
       { role: 'assistant', stopReason: 'aborted' },
     ] }, 'pi_x');
     expect(out?.payload.type).toBe('turn.aborted');
   });
 
-  it('F1: Õý³£ stopReason£¨stop/undefined£©¡ú turn.completed', () => {
+  it('F1: ï¿½ï¿½ï¿½ï¿½ stopReasonï¿½ï¿½stop/undefinedï¿½ï¿½ï¿½ï¿½ turn.completed', () => {
     const normal = translatePiEvent({ type: 'agent_end', messages: [
       { role: 'assistant', stopReason: 'stop' },
     ] }, 'pi_x');
@@ -165,29 +151,64 @@ describe('pi F1/F8£¨canonical v3 Plan 2£ºÖÕÌ¬·ÖÀà + agent_start ÖØÓ³£©', () => {
     expect(noReason?.payload.type).toBe('turn.completed');
   });
 
-  it('F1: ¿Õ messages / ÎÞ messages ×Ö¶Î ¡ú turn.completed ²»Õ¨£¨Review Focus 1£©', () => {
+  it('F1: ï¿½ï¿½ messages / ï¿½ï¿½ messages ï¿½Ö¶ï¿½ ï¿½ï¿½ turn.completed ï¿½ï¿½Õ¨ï¿½ï¿½Review Focus 1ï¿½ï¿½', () => {
     expect(translatePiEvent({ type: 'agent_end', messages: [] }, 'pi_x')?.payload.type).toBe('turn.completed');
     expect(translatePiEvent({ type: 'agent_end' }, 'pi_x')?.payload.type).toBe('turn.completed');
   });
 
-  it('F1: agent_settled£¨·ÀÓùÃû£©Í¬·ÖÀàÂß¼­', () => {
+  it('F1: agent_settledï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¬ï¿½ï¿½ï¿½ï¿½ï¿½ß¼ï¿½', () => {
     const out = translatePiEvent({ type: 'agent_settled', messages: [
       { role: 'assistant', stopReason: 'error', errorMessage: 'x' },
     ] }, 'pi_x');
     expect(out?.payload.type).toBe('turn.failed');
   });
 
-  it('F8: agent_start ¡ú turn.started£¨²»ÔÙ²ú session.updated ¿Õ¿Ç£©', () => {
+  it('F8: agent_start ï¿½ï¿½ turn.startedï¿½ï¿½ï¿½ï¿½ï¿½Ù²ï¿½ session.updated ï¿½Õ¿Ç£ï¿½', () => {
     const out = translatePiEvent({ type: 'agent_start' }, 'pi_x');
     expect(out?.payload.type).toBe('turn.started');
     expect(out?.payload.properties.sessionID).toBe('pi_x');
   });
 
-  it('F1 È«Á´£ºerror ÖÕÌ¬¾­ normalize ²ú³ö chatSignal=error£¨goalDriver onSessionError Â·¾¶£©', () => {
+  it('F1 È«ï¿½ï¿½ï¿½ï¿½error ï¿½ï¿½Ì¬ï¿½ï¿½ normalize ï¿½ï¿½ï¿½ï¿½ chatSignal=errorï¿½ï¿½goalDriver onSessionError Â·ï¿½ï¿½ï¿½ï¿½', () => {
     const mapped = translatePiEvent({ type: 'agent_end', messages: [
       { role: 'assistant', stopReason: 'error', errorMessage: 'boom' },
     ] }, 'pi_x');
     const facets = normalizeOpencodeEvent(mapped!);
     expect(facets.chatSignal).toBe('error');
+  });
+});
+
+describe('pi N1/N2ï¿½ï¿½live ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ + ï¿½ï¿½É«ï¿½Þ¸ï¿½ï¿½ï¿½', () => {
+  it('N1: tool_execution_start ï¿½ï¿½ tool.callï¿½ï¿½live ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½assembler ï¿½Ëµï¿½ï¿½ï¿½ running partï¿½ï¿½', () => {
+    const out = translatePiEvent({ type: 'tool_execution_start', toolCallId: 'te1', toolName: 'bash', args: { command: 'ls' } }, 'pi_x');
+    expect(out?.payload.type).toBe('tool.call');
+    expect(out?.payload.properties).toMatchObject({ callID: 'te1', tool: 'bash', input: { command: 'ls' }, sessionID: 'pi_x' });
+  });
+
+  it('N1: tool_execution_update ï¿½ï¿½ tool.deltaï¿½ï¿½kind outputï¿½ï¿½assembler ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¨ï¿½ï¿½', () => {
+    const out = translatePiEvent({ type: 'tool_execution_update', toolCallId: 'te1', toolName: 'bash', args: {}, partialResult: 'half' }, 'pi_x');
+    expect(out?.payload.type).toBe('tool.delta');
+    expect(out?.payload.properties).toMatchObject({ callID: 'te1', kind: 'output' });
+  });
+
+  it('N1: tool_execution_end ï¿½ï¿½ tool.resultï¿½ï¿½isError ï¿½ï¿½ï¿½Ý£ï¿½', () => {
+    const ok = translatePiEvent({ type: 'tool_execution_end', toolCallId: 'te1', toolName: 'bash', result: 'done', isError: false }, 'pi_x');
+    expect(ok?.payload.type).toBe('tool.result');
+    expect(ok?.payload.properties).toMatchObject({ callID: 'te1', output: 'done', isError: false });
+    const err = translatePiEvent({ type: 'tool_execution_end', toolCallId: 'te2', toolName: 'bash', result: 'boom', isError: true }, 'pi_x');
+    expect(err?.payload.properties.isError).toBe(true);
+  });
+
+  it('N1: ï¿½ï¿½ tool_call/tool_result ï¿½ï¿½ï¿½ï¿½ï¿½Û¡ï¿½ï¿½ï¿½extension ï¿½ï¿½ï¿½ï¿½ï¿½Â¼ï¿½ï¿½ï¿½Ê½ dropï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½', () => {
+    expect(translatePiEvent({ type: 'tool_call', toolCallId: 'x', toolName: 'bash', input: {} }, 'pi_x')).toBeNull();
+    expect(translatePiEvent({ type: 'tool_result', toolCallId: 'x', toolName: 'bash', content: [], isError: false }, 'pi_x')).toBeNull();
+  });
+
+  it('N2: message_end ï¿½ï¿½É«ï¿½ï¿½ $.message.role È¡Öµï¿½ï¿½user ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ assistantï¿½ï¿½', () => {
+    const user = translatePiEvent({ type: 'message_end', message: { role: 'user', content: 'hi', timestamp: 1 } }, 'pi_x');
+    expect(user?.payload.type).toBe('message.updated');
+    expect(user?.payload.properties.info.role).toBe('user');
+    const assistant = translatePiEvent({ type: 'message_end', message: { role: 'assistant', content: [], timestamp: 2 } }, 'pi_x');
+    expect(assistant?.payload.properties.info.role).toBe('assistant');
   });
 });
