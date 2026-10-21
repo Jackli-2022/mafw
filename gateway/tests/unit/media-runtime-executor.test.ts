@@ -54,7 +54,7 @@ describe('MediaRuntimeExecutor default completeFn', () => {
     expect(out).toBe('fallback result');
   });
 
-  it('image 路径：从归一 DTO（{info, parts}）提取最�?assistant 文本', async () => {
+  it('image 路径：从 flat 历史（canonical v3，含 reasoning part）提取最后 assistant 文本', async () => {
     const imagePart = { type: 'file', url: 'data:image/png;base64,AAAA', mime: 'image/png' };
     const created: any[] = [];
     const fakeRt: any = {
@@ -64,15 +64,15 @@ describe('MediaRuntimeExecutor default completeFn', () => {
         promptAsync: async () => {},
         messages: async () => ({
           data: [
-            { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'q' }] },
-            { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'text', text: 'a cat' }, { type: 'tool', tool: 'x' }] },
+            { id: 'u1', role: 'user', content: [{ type: 'text', text: 'q' }] },
+            { id: 'a1', role: 'assistant', content: [{ type: 'reasoning', text: 'hmm' }, { type: 'text', text: 'a cat' }, { type: 'tool' as any, tool: 'x' }] },
           ],
         }),
       },
     };
     const executor = createMediaRuntimeExecutor(fakeRt, { projectDir: '/tmp/proj' });
     const out = await executor.prompt([imagePart, textPart], { providerID: 'xiaomi', modelID: 'mimo-v2.5' });
-    expect(out).toBe('a cat');
+    expect(out).toBe('a cat'); // reasoning 不泄漏（type==='text' 过滤必须作用于 flat content）
     // 会话创建必须带显式目录（此前是 { directory: undefined }）
     expect(created).toEqual([{ directory: '/tmp/proj' }]);
   });

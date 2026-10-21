@@ -26,6 +26,16 @@ export function applyNormalizeMessages(
       return rawData;
     }
     if (!out.every((m: any) => isMafwMessage(m))) {
+      // 二次翻译：老契约插件（flat 契约发布前的 {info,parts} wire 输出）救回——
+      // 直接回退 native raw 会在 egress 出口被拍碎（content 键被 shim 跳过）。
+      // 可观测：onViolation 计数提示插件作者迁移，但不阻断数据。
+      try {
+        const rescued = normalizeOpencodeHistory(out);
+        if (Array.isArray(rescued) && rescued.every((m: any) => isMafwMessage(m))) {
+          onViolation?.('normalizeMessages returned wire-shaped legacy output — second-chance translated to flat (migrate plugin to flat contract)');
+          return rescued;
+        }
+      } catch { /* fall through to raw fallback */ }
       onViolation?.('normalizeMessages returned non-flat MafwMessage shapes — falling back to raw data');
       return rawData;
     }

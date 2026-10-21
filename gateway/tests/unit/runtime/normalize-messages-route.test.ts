@@ -97,20 +97,51 @@ describe('wrapRuntimeMessages（无声明也包装——默认翻译保证出口
 });
 
 describe('B2 normalizeMessages 输出守卫（flat 契约）', () => {
+  test('声明式 normalizer 返回旧契约 wire 形状 → 二次翻译救回（老插件兼容）', () => {
+    const raw = [{ native: 'pi-raw' }];
+    const rt = {
+      session: {
+        // 旧契约插件（2026-10-21 前发布）：返回 {info, parts} wire
+        normalizeMessages: () => [{ info: { id: 'm1', role: 'user' }, parts: [{ id: 'p1', type: 'text', text: 'q' }] }],
+      },
+    } as any;
+    const violations: string[] = [];
+    const out = applyNormalizeMessages(rt, raw, (r) => violations.push(r));
+    // 二次翻译后 flat 合法 → 采用（不回退 native raw——那会在 egress 被拍碎）
+    expect(out).toEqual([{ id: 'm1', role: 'user', content: [{ id: 'p1', type: 'text', text: 'q' }] }]);
+    expect(violations[0]).toContain('wire-shaped'); // 可观测：插件作者应迁移到 flat 契约
+  });
+
+  test('声明式 normalizer 返回 wire 且二次翻译仍非法 → 回退原文', () => {
+    const raw = [{ native: 1 }];
+    const rt = {
+      session: {
+        normalizeMessages: () => [{ garbage: true }], // 非 wire 非 flat
+      },
+    } as any;
+    const violations: string[] = [];
+    expect(applyNormalizeMessages(rt, raw, (r) => violations.push(r))).toBe(raw);
+    expect(violations.length).toBeGreaterThan(0);
+  });
+
+  test('wrap 转发分页参数（before/limit 原样到达 runtime——Review Focus 5）', async () => {
+    const received: any[] = [];
+    const rt = {
+      session: {
+        messages: async (opts: any) => { received.push(opts); return { data: [], nextCursor: 'c2' }; },
+      },
+    } as any;
+    wrapRuntimeMessages(rt);
+    await rt.session.messages({ sessionID: 's1', limit: 50, before: 'cursor-1' });
+    expect(received[0]).toEqual({ sessionID: 's1', limit: 50, before: 'cursor-1' });
+  });
+
   test('返回非数组 → onViolation + 回退原文', () => {
     const raw = [{ a: 1 }];
     const rt = { session: { normalizeMessages: () => 'nope' } } as any;
     const violations: string[] = [];
     expect(applyNormalizeMessages(rt, raw, (r) => violations.push(r))).toBe(raw);
     expect(violations[0]).toContain('non-array');
-  });
-
-  test('返回非 flat 形状成员（{info,parts} 信封）→ onViolation + 回退原文', () => {
-    const raw = [{ a: 1 }];
-    const rt = { session: { normalizeMessages: () => [{ info: { role: 'user' }, parts: [] }] } } as any;
-    const violations: string[] = [];
-    expect(applyNormalizeMessages(rt, raw, (r) => violations.push(r))).toBe(raw);
-    expect(violations[0]).toContain('flat');
   });
 
   test('wrapRuntimeMessages 透传 onViolation（抛错路径）', async () => {
