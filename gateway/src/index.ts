@@ -131,7 +131,8 @@ import { resolvePluginProjectDir } from './runtime/session-dir';
 import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loader';
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_EVENT_MAPPINGS } from './runtime/opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS } from './runtime/opencode-events';
+import { wrapDialectEventStream } from './runtime/event-stream-wiring';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
 
 /** canonical 词汇表全集（事件映射加载期校验 + 插件流包装用）。
@@ -545,20 +546,31 @@ class MafwScheduler {
     // opencode 注册为正式内置插件（与用户插件同一接口；同名文件/包可覆盖）。
     // v2：携带事件翻译声明——opencode 不再有「免翻译特权」，原生流经同一
     // wrap 序列（映射差异行 + transformEvent 前缀丢弃）进 canonical 管线。
+    // canonical v3 / Plan 2：方言寻址——裸 `opencode`（自适应：SSE peek 探测，
+    // fail-safe @v1）+ 钉死 `opencode@v1` / `opencode@v2`；三个名字共享同一
+    // runtime 工厂（serve/adapter/凭据全同），差异仅在事件映射表。
     const sdkSnapshot = { ...sdkConfig, headers: { ...sdkConfig.headers } };
-    this.runtimeLoader.registerBuiltin(
-      'opencode',
-      async () => (await import('./runtime/opencode-runtime.js')).createOpencodeRuntime({
+    const opencodeFactory = (dialectProbe: boolean) => async () =>
+      (await import('./runtime/opencode-runtime.js')).createOpencodeRuntime({
         ...sdkSnapshot,
         headers: { ...sdkSnapshot.headers },
-      }),
-      fullCapabilities(),
-      !!process.env.MAFW_SERVER_SERVE_URL,
-      {
-        eventSource: OPENCODE_EVENT_SOURCE,
-        eventMappings: OPENCODE_EVENT_MAPPINGS,
-      },
-    );
+        dialectProbe,
+      });
+    const external = !!process.env.MAFW_SERVER_SERVE_URL;
+    // 裸名 = 自适应方言（resolveEventEntry 探测覆盖静态 @v1 fail-safe）
+    this.runtimeLoader.registerBuiltin('opencode', opencodeFactory(true), fullCapabilities(), external, {
+      eventSource: OPENCODE_EVENT_SOURCE,
+      eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+    });
+    // 钉死方言：映射表由注册 extras 直接携带（无 resolveEventEntry，探测跳过）
+    this.runtimeLoader.registerBuiltin('opencode@v1', opencodeFactory(false), fullCapabilities(), external, {
+      eventSource: OPENCODE_EVENT_SOURCE,
+      eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+    });
+    this.runtimeLoader.registerBuiltin('opencode@v2', opencodeFactory(false), fullCapabilities(), external, {
+      eventSource: OPENCODE_EVENT_SOURCE,
+      eventMappings: OPENCODE_V2_EVENT_MAPPINGS,
+    });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
     wirePiPermissionEvaluator(runtime, this.approvalPolicy);
@@ -1050,6 +1062,12 @@ class MafwScheduler {
     const controller = new AbortController();
     this.eventStreamAbort = controller;
     try {
+      // 方言感知（重）接线：自适应 runtime（裸 opencode）在 serve 就绪后重探测
+      // （激活期 serve 未起，探测必然 fail-safe 落 @v1；此处是升级 @v2 的时机）；
+      // 无 resolveEventEntry 的 runtime 为幂等重包（同表重建，无叠加）。
+      if (this.runtime && (this.runtime as any).__mafwRawGlobalEvent) {
+        await wrapDialectEventStream(this.runtime);
+      }
       // Use /global/event (GlobalEvent = { directory, payload }) so we receive
       // events from ALL workspaces — /event only delivers the current
       // request-scoped workspace, missing sessions in other project dirs.
@@ -1371,7 +1389,7 @@ class MafwScheduler {
     await activateRuntimeTools(fallbackRt, 'builtin:opencode(direct)', { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
     wrapGlobalEventStream(fallbackRt, {
       eventSource: OPENCODE_EVENT_SOURCE,
-      eventMappings: OPENCODE_EVENT_MAPPINGS,
+      eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
     }, (t) => CANONICAL_TYPE_SET.has(t), {
       onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
       onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),
@@ -1402,9 +1420,11 @@ class MafwScheduler {
       }
       // 工具注册通道接线（Tier-0）：推送六件套 factory + nativeTools → 类别 overlay
       await activateRuntimeTools(rt, name, { baseUrl: `http://127.0.0.1:${config.server.apiPort}` });
-      // 强制翻译接线：所有 runtime 的原生流过同一 wrap 序列——
+      // 方言感知接线：所有 runtime 的原生流过同一 wrap 序列——
       // 映射表（差异/drop/identity 行）→ transformEvent（守卫）→ 拦截+计数。
-      wrapGlobalEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), {
+      // resolveEventEntry（自适应 opencode 裸名）存在时经探测覆盖静态表；
+      // assembler 合帧在 mapper 之后（wrapDialectEventStream 内部序列）。
+      await wrapDialectEventStream(rt, plugin, (t) => CANONICAL_TYPE_SET.has(t), {
         onUnmatched: (t) => this.recordTranslationDrop(rt.name, t, 'unmatched'),
         onSuppressed: (t) => this.recordTranslationDrop(rt.name, t, 'suppressed'),
         onTranslationError: (_raw, reason) => this.recordTranslationError(rt.name, 'transformEvent', reason),
@@ -1415,8 +1435,6 @@ class MafwScheduler {
           );
         },
       });
-      // 工具三原语合帧：必须在翻译包装之后（消费映射后的 canonical 流）。
-      wrapToolPartAssembly(rt);
       log.info(`[Runtime] using runtime '${rt.name}' (${name}, capabilities: ${JSON.stringify(rt.capabilities)})`);
       return this.wrapRuntimeIdentity(rt);
     } catch (err: any) {
@@ -1776,6 +1794,11 @@ class MafwScheduler {
       validationNotes: () => this.runtimeValidationNotes,
       translationErrors: () => Object.fromEntries(this.translationErrors),
       translationDrops: () => Object.fromEntries(this.translationDrops),
+      activeDialect: () => {
+        const name = this.runtimeName;
+        if (name.includes('@')) return name.split('@')[1]; // 钉死方言名（opencode@v2 → 'v2'）
+        return (this.runtime as any)?.activeDialect ?? null; // 自适应探测结果
+      },
     };
   }
 

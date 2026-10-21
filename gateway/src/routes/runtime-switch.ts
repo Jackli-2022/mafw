@@ -34,13 +34,15 @@ export interface RuntimeSwitchDeps {
   translationErrors?: () => Record<string, unknown>;
   /** B3 入口拦截计数（unmatched/suppressed per-runtime per-type）；缺省空对象。 */
   translationDrops?: () => Record<string, unknown>;
+  /** canonical v3：当前方言标签（'v1'|'v2'|…；钉死名取 @ 后缀，自适应取探测结果）；缺省 null。 */
+  activeDialect?: () => string | null;
 }
 
 // ─── GET /api/runtime ─── active runtime identity + capabilities + plugin scan state
 export async function handleRuntimeGet(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
-  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes' | 'translationErrors' | 'translationDrops'>,
+  deps: Pick<RuntimeSwitchDeps, 'runtimeName' | 'runtimeCaps' | 'envOverride' | 'loader' | 'unknownEvents' | 'validationNotes' | 'translationErrors' | 'translationDrops' | 'activeDialect'>,
 ): Promise<void> {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -48,6 +50,7 @@ export async function handleRuntimeGet(
       name: deps.runtimeName(),
       capabilities: deps.runtimeCaps(),
       envOverride: deps.envOverride(),
+      dialect: deps.activeDialect ? deps.activeDialect() : null,
     },
     plugins: deps.loader?.getState() ?? [],
     unknownEvents: deps.unknownEvents ? deps.unknownEvents() : {},

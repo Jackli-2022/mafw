@@ -21,6 +21,9 @@ import { createOpencodeAdapter } from '../opencode-adapter';
 import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
 import { httpComplete } from './completion-http';
+import { probeOpencodeDialect } from './opencode-dialect-probe';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS } from './opencode-events';
+import type { EventMappingEntry } from './event-mapper';
 import { log } from '../core/utils/logger';
 
 // Re-export auth utilities for consumers (single implementation source)
@@ -251,6 +254,10 @@ function opencodeAgentDir(): string {
 export interface OpencodeRuntimeConfig {
   baseUrl: string;
   headers?: Record<string, string>;
+  /** 裸 `opencode`（自适应方言）置 true：runtime 挂 resolveEventEntry，gateway
+   *  在（重）接线事件流时经 SSE peek 探测选 @v1/@v2 表（fail-safe 恒 @v1）。
+   *  钉死方言（opencode@v1/@v2）不置——其映射表由注册 extras 直接携带。 */
+  dialectProbe?: boolean;
 }
 
 export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Promise<AgentRuntime> {
@@ -264,6 +271,22 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
     name: 'opencode' as const,
     capabilities: caps,
     external: isExternal,
+    ...(config.dialectProbe
+      ? {
+          /** 自适应方言入口（contract.resolveEventEntry）：探测 serve 的 v2 面
+           *  可见性（sync/next 事件），v2 → @v2 混合消费表，否则/失败 → @v1。 */
+          async resolveEventEntry(): Promise<EventMappingEntry> {
+            const dialect = await probeOpencodeDialect(
+              (rt as unknown as { getBaseUrl(): string }).getBaseUrl(),
+            );
+            (rt as AgentRuntime & { activeDialect?: string }).activeDialect = dialect;
+            return {
+              eventSource: OPENCODE_EVENT_SOURCE,
+              eventMappings: dialect === 'v2' ? OPENCODE_V2_EVENT_MAPPINGS : OPENCODE_V1_EVENT_MAPPINGS,
+            };
+          },
+        }
+      : {}),
     credentials: {
       getApiKey(provider: string): string | null {
         return getProviderApiKey(provider) ?? null;

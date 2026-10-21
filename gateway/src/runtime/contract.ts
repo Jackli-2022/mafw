@@ -21,6 +21,7 @@
 import type { AgentDefinition } from './agent-definition';
 import type { TOOL_CLASS } from './tool-classes';
 import type { MafwMessage } from './canonical-types';
+import type { EventMappingEntry } from './event-mapper';
 
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
@@ -374,6 +375,15 @@ export interface AgentRuntime extends RuntimeClient {
      *  gateway 不感知端口号——动态端口下"按配置端口杀"由 runtime 收敛。 */
     killServe?(): void;
   };
+  /**
+   * 方言感知的事件流入口（canonical v3 / Plan 2）：存在时 gateway 在（重）
+   * 接线事件流（激活 + 每次（重）订阅）经此解析该用的 EventMappingEntry，
+   * 覆盖注册时的静态 fail-safe 表。opencode 裸名（自适应方言）实现；
+   * 钉死方言（opencode@v1/@v2）与无方言 runtime 不实现。
+   */
+  resolveEventEntry?(): Promise<EventMappingEntry>;
+  /** resolveEventEntry 解析出的当前方言标签（'v1'|'v2'|…）；静态接线为 undefined。 */
+  activeDialect?: string;
 }
 
 /** 拉起 runtime 自带 server 进程的选项。host/port 缺省 = runtime 自定。 */
