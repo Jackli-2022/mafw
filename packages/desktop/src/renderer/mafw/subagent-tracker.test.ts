@@ -58,6 +58,21 @@ describe("applySubagentEvent", () => {
     rows = applySubagentEvent(rows, { kind: "child-last-message", childID: "c1", message: { role: "assistant", time: { completed: 2500 } } }, 3000)
     expect(rows[0]).toMatchObject({ status: "completed", endedAt: 2500 })
   })
+  test("child-last-message：MessageAbortedError 无 completed 也收敛 aborted（静默，reviewer Imp2）", () => {
+    let rows = applySubagentEvent([], created("c1", "p1"), 1000)
+    rows = applySubagentEvent(rows, { kind: "child-last-message", childID: "c1", message: { role: "assistant", error: { name: "MessageAbortedError" } } }, 2000)
+    expect(rows[0]).toMatchObject({ status: "aborted", endedAt: 2000 })
+  })
+  test("child-last-message：中止带 completed 也落 aborted（不得误报 failed）", () => {
+    let rows = applySubagentEvent([], created("c1", "p1"), 1000)
+    rows = applySubagentEvent(rows, { kind: "child-last-message", childID: "c1", message: { role: "assistant", time: { completed: 2500 }, error: { name: "MessageAbortedError" } } }, 3000)
+    expect(rows[0]).toMatchObject({ status: "aborted", endedAt: 2500 })
+  })
+  test("child-last-message：非中止 error 无 completed 也落 failed（防漏报僵尸）", () => {
+    let rows = applySubagentEvent([], created("c1", "p1"), 1000)
+    rows = applySubagentEvent(rows, { kind: "child-last-message", childID: "c1", message: { role: "assistant", error: { name: "APIError" } } }, 2600)
+    expect(rows[0]).toMatchObject({ status: "failed", endedAt: 2600 })
+  })
   test("排序：startedAt 倒序", () => {
     let rows = applySubagentEvent([], created("c1", "p1"), 1000)
     rows = applySubagentEvent(rows, created("c2", "p1"), 2000)

@@ -31,3 +31,20 @@ export function createNotifyGate(windowMs = 10_000): (now: number) => boolean {
     return true
   }
 }
+
+/**
+ * 回合完成 OS 通知（notifyIdle）的决策（spec §4.5/§6，行为变更的回归钉扎）：
+ * 被 tracker 追踪的子会话 → 旧泛化通道让位（由 subagents 新通道通知）；
+ * 其余保持既有语义：窗口隐藏 + 60s 节流。
+ */
+export function shouldNotifyIdle(opts: {
+  trackedChild: boolean
+  hidden: boolean
+  lastNotifyAt: number
+  now: number
+  throttleMs?: number
+}): boolean {
+  if (opts.trackedChild) return false
+  if (!opts.hidden) return false
+  return opts.now - opts.lastNotifyAt > (opts.throttleMs ?? 60_000)
+}

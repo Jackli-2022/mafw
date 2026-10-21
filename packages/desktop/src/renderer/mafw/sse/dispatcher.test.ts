@@ -178,6 +178,15 @@ describe("dispatchShellEvent: subagents 组", () => {
     dispatchShellEvent({ type: "turn.completed", properties: { sessionID: "c1" } }, deps)
     expect(subagentEvents).toEqual([{ kind: "turn-terminal", sessionID: "c1", terminal: "completed" }])
   })
+  test("turn.failed / turn.aborted 同样转发（六事件覆盖补齐）", () => {
+    const { deps, subagentEvents } = makeDeps()
+    dispatchShellEvent({ type: "turn.failed", properties: { sessionID: "c1" } }, deps)
+    dispatchShellEvent({ type: "turn.aborted", properties: { sessionID: "c2" } }, deps)
+    expect(subagentEvents).toEqual([
+      { kind: "turn-terminal", sessionID: "c1", terminal: "failed" },
+      { kind: "turn-terminal", sessionID: "c2", terminal: "aborted" },
+    ])
+  })
   test("非子会话事件不产生 subagent 转发（session.created 无 parentID）", () => {
     const { deps, subagentEvents } = makeDeps()
     dispatchShellEvent({ type: "session.created", properties: { info: { id: "s1", title: "普通" } } }, deps)

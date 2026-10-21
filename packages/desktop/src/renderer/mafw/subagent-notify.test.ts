@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildTerminalNotice, createNotifyGate } from "./subagent-notify"
+import { buildTerminalNotice, createNotifyGate, shouldNotifyIdle } from "./subagent-notify"
 
 const row = (status: any, title = "调研登录 @explore") => ({ childID: "c1", parentID: "p", title, agent: "explore", status, startedAt: 0, endedAt: 1 })
 
@@ -24,5 +24,20 @@ describe("createNotifyGate（OS 通知 10s 全局门）", () => {
     expect(gate(9_999)).toBe(false)
     expect(gate(10_000)).toBe(true)
     expect(gate(10_001)).toBe(false)
+  })
+})
+
+describe("shouldNotifyIdle（notifyIdle 决策，spec §4.5/§6）", () => {
+  test("被追踪的子会话 → 恒 false（旧通道被新通道取代）", () => {
+    expect(shouldNotifyIdle({ trackedChild: true, hidden: true, lastNotifyAt: 0, now: 999_999 })).toBe(false)
+  })
+  test("窗口可见 → false（不打扰）", () => {
+    expect(shouldNotifyIdle({ trackedChild: false, hidden: false, lastNotifyAt: 0, now: 999_999 })).toBe(false)
+  })
+  test("隐藏 + 60s 内已通知过 → false（节流）", () => {
+    expect(shouldNotifyIdle({ trackedChild: false, hidden: true, lastNotifyAt: 990_000, now: 1_000_000 })).toBe(false)
+  })
+  test("隐藏 + 超 60s → true", () => {
+    expect(shouldNotifyIdle({ trackedChild: false, hidden: true, lastNotifyAt: 900_000, now: 1_000_000 })).toBe(true)
   })
 })

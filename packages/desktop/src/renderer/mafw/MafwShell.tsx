@@ -21,7 +21,8 @@ import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
 import { childrenNeedingProbe, isTrackedChildSession } from "./subagent-tracker"
-import { buildTerminalNotice, createNotifyGate } from "./subagent-notify"
+import { reconcileSubagentsOnce } from "./subagent-reconcile"
+import { buildTerminalNotice, createNotifyGate, shouldNotifyIdle } from "./subagent-notify"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
 import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
@@ -601,25 +602,19 @@ export function MafwShell() {
     }).catch(e => console.warn("[mafw] questions reconcile:", e))
   }
 
-  // ── Subagent reconcile（spec §4.1/§4.6）：children 快照补历史行 +
-  // 对 running 行探最后一条消息自愈（SSE 断线漏终态不留假活行）。fail-open。
+  // ── Subagent reconcile（spec §4.1/§4.6）：编排在 subagent-reconcile.ts（可测），
+  // 这里只注入真实 fetchers。children 快照补历史行 + running 行探针收敛漏终态。fail-open。
   async function reconcileSubagents(): Promise<void> {
-    const sid = activeSessionId()
-    if (sid) {
-      try {
-        const children = await window.api.mafw.sessions.children(sid)
-        ingestSubagentEvent({ kind: "children-snapshot", parentID: sid, children: Array.isArray(children) ? children : [] })
-      } catch { /* fail-open */ }
-    }
-    for (const childID of childrenNeedingProbe(subagentRows())) {
-      try {
-        const data: any = await window.api.mafw.sessions.messages(childID, 1)
-        const items = Array.isArray(data) ? data : data?.data
-        const last = items?.[items.length - 1]
-        const info = last?.info || last
-        ingestSubagentEvent({ kind: "child-last-message", childID, message: info ? { role: info.role, time: info.time, error: info.error } : null })
-      } catch { /* fail-open */ }
-    }
+    await reconcileSubagentsOnce({
+      activeSessionId: activeSessionId(),
+      runningChildIDs: childrenNeedingProbe(subagentRows()),
+      fetchers: {
+        children: (parentID) => window.api.mafw.sessions.children(parentID),
+        messages: (childID, limit) => window.api.mafw.sessions.messages(childID, limit),
+        getSession: (childID) => window.api.mafw.sessions.get(childID),
+      },
+      ingest: (ev) => ingestSubagentEvent(ev),
+    })
   }
 
   // ── Flow card actions ──
@@ -873,13 +868,16 @@ export function MafwShell() {
         queueFlushers[sid]?.()
       },
       notifyIdle: (sid) => {
-        // 子代理终态由 subagents 新通道通知（带标题+跳转语义）；旧泛化通道让位（spec §4.5，rev2 行为变更）
-        if (isTrackedChildSession(subagentRows(), sid)) return
-        if (document.hidden && Date.now() - (lastIdleNotify[sid] || 0) > 60_000) {
-          lastIdleNotify[sid] = Date.now()
-          const title = sessions().find(x => x.id === sid)?.title || "会话"
-          notifyIfHidden("MAFW：回合完成", `「${title}」已回复`)
-        }
+        // 决策抽 shouldNotifyIdle（spec §4.5 rev2：被追踪子会话让位给 subagents 新通道）
+        if (!shouldNotifyIdle({
+          trackedChild: isTrackedChildSession(subagentRows(), sid),
+          hidden: document.hidden,
+          lastNotifyAt: lastIdleNotify[sid] || 0,
+          now: Date.now(),
+        })) return
+        lastIdleNotify[sid] = Date.now()
+        const title = sessions().find(x => x.id === sid)?.title || "会话"
+        notifyIfHidden("MAFW：回合完成", `「${title}」已回复`)
       },
       mediaSpeak: (sid, text, voice) => mediaSpeakHandlers[sid]?.(text, voice),
     },

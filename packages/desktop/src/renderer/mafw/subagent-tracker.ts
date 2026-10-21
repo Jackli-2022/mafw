@@ -44,7 +44,8 @@ export function applySubagentEvent(rows: SubagentRow[], ev: TrackerEvent, now: n
       const { id, parentID, title } = ev.info
       if (!parentID || rows.some(r => r.childID === id)) return rows
       const t = title ?? ""
-      return [...rows, { childID: id, parentID, title: t, agent: parseAgentFromTitle(t), status: "running", startedAt: now }].sort(byStartedDesc)
+      const row: SubagentRow = { childID: id, parentID, title: t, agent: parseAgentFromTitle(t), status: "running", startedAt: now }
+      return [...rows, row].sort(byStartedDesc)
     }
     case "session-updated": {
       return rows.map(r => r.childID === ev.sessionID ? { ...r, title: ev.title, agent: parseAgentFromTitle(ev.title) } : r)
@@ -80,11 +81,30 @@ export function applySubagentEvent(rows: SubagentRow[], ev: TrackerEvent, now: n
       return [...rows, ...added].sort(byStartedDesc)
     }
     case "child-last-message": {
-      const completed = ev.message?.time?.completed
-      if (ev.message?.role !== "assistant" || typeof completed !== "number") return rows
-      const terminal: SubagentStatus = ev.message.error ? "failed" : "completed"
+      const msg = ev.message
+      if (!msg || msg.role !== "assistant") return rows
+      const completed = msg.time?.completed
+      const errName = typeof (msg.error as any)?.name === "string" ? (msg.error as any).name : undefined
+      // 中止类错误静默落 aborted（spec §4.5）：即使缺 time.completed 也收敛
+      // （opencode 的 abort 消息常无 completed 且被 sealUnfinishedAssistantMessages
+      // 才补章——probe 不能依赖它，reviewer Imp2）。
+      const aborted = errName === "MessageAbortedError" || errName === "Aborted"
+      let terminal: SubagentStatus
+      let endedAt: number
+      if (aborted) {
+        terminal = "aborted"
+        endedAt = typeof completed === "number" ? completed : now
+      } else if (typeof completed === "number") {
+        terminal = msg.error ? "failed" : "completed"
+        endedAt = completed
+      } else if (msg.error) {
+        terminal = "failed"
+        endedAt = now
+      } else {
+        return rows
+      }
       return rows.map(r => (r.childID === ev.childID && r.status === "running")
-        ? { ...r, status: terminal, endedAt: completed }
+        ? { ...r, status: terminal, endedAt }
         : r)
     }
   }
