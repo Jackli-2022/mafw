@@ -30,10 +30,13 @@ export const PI_EVENT_MAPPINGS: EventMapping[] = [
     fields: { 'part.type': { const: 'text' }, 'part.text': { path: '$.delta', default: '' } } },
   // N2（Plan 2）：角色从 $.message.role 取值（原 const 'assistant' 把 user 消息
   // 也误标——trajectory turn_start 对 pi 从不触发，audit N2）。
-  // Task 6：载荷 flat——message.* 顶层字段（time.completed/finish 随带，step facet 供给了）
+  // Task 6：载荷 flat——message.* 顶层字段。
+  // 注意：不带 time.completed（终审 Minor #8 裁决）——pi 的 step 结算保持
+  // turn_end step-finish 单载体（Plan 2 前即如此），防止 BudgetGuard 步数翻倍；
+  // finish 照常到达（step_finish 的 info.finish 消费路径）。opencode 的
+  // message.updated+step-finish 双载体是否双计是既有问题，不在本期裁决。
   { from: 'message_end', to: 'message.updated', fields: {
       'message.role': { path: '$.message.role' },
-      'message.time.completed': { path: '$.message.timestamp' },
       'message.finish': { path: '$.message.stopReason' },
     } },
   // N1（Plan 2）：live 流真事件（session.subscribe 可达）→ 工具三原语，

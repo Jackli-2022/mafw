@@ -1393,6 +1393,7 @@ class MafwScheduler {
     wrapGlobalEventStream(fallbackRt, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
+      transformEvent: OPENCODE_TRANSFORM_EVENT, // 终审 Important #2：@v1 identity 已排除 message.updated，缺转换器即全灭
     }, (t) => CANONICAL_TYPE_SET.has(t), {
       onUnmatched: (t) => this.recordTranslationDrop('opencode', t, 'unmatched'),
       onSuppressed: (t) => this.recordTranslationDrop('opencode', t, 'suppressed'),

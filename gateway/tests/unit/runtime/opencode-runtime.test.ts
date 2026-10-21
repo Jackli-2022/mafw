@@ -203,3 +203,35 @@ describe('createOpencodeRuntime', () => {
     expect(mockKillServePort).toHaveBeenCalledWith(4096);
   });
 });
+
+describe('opencode-runtime 方言入口与真实组合（终审 Critical #1 回归钉扎）', () => {
+  it('自适应 resolveEventEntry 解析产物保留 transformEvent 且 message.updated 端到端存活', async () => {
+    const { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS } = await import('../../../src/runtime/opencode-events');
+    const { EVENT_FLOW_MATRIX } = await import('../../../src/runtime/event-flow-matrix');
+    const { TOOL_PRIMITIVE_TYPES } = await import('../../../src/runtime/tool-part-assembler');
+    const { applyEventMappings } = await import('../../../src/runtime/event-mapper');
+    const isCanonicalAll = (t: string) => !!EVENT_FLOW_MATRIX[t] || TOOL_PRIMITIVE_TYPES.has(t);
+
+    // 自适应 runtime（dialectProbe: true）；探测目标 127.0.0.1:1 必拒 → fail-safe v1
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:1', dialectProbe: true });
+    expect(typeof (rt as any).resolveEventEntry).toBe('function');
+
+    const resolved = await (rt as any).resolveEventEntry();
+    expect(resolved.eventMappings).toBe(OPENCODE_V1_EVENT_MAPPINGS); // fail-safe 探测 → v1 表
+    expect((rt as any).activeDialect).toBe('v1');
+    expect(typeof resolved.transformEvent).toBe('function'); // 终审 Critical：缺失即 message.updated 全灭
+
+    // 经该 entry 翻译 message.updated 存活（零换名 {message} 信封搬移）
+    const raw = { directory: '/p', payload: { type: 'message.updated', properties: { sessionID: 's1', info: { id: 'm1', role: 'user', sessionID: 's1' } } } };
+    const out = applyEventMappings(raw, resolved, isCanonicalAll);
+    expect(out).toHaveLength(1);
+    expect(out[0].payload.properties.message).toEqual({ id: 'm1', role: 'user', sessionID: 's1' });
+    expect(resolved.eventSource).toBe(OPENCODE_EVENT_SOURCE);
+  });
+
+  it('钉死方言（dialectProbe 缺省）不挂 resolveEventEntry', async () => {
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    expect((rt as any).resolveEventEntry).toBeUndefined();
+    expect((rt as any).activeDialect).toBeUndefined();
+  });
+});

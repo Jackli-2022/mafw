@@ -54,12 +54,16 @@ export async function wrapDialectEventStream(
   const raw = rt.__mafwRawGlobalEvent;
   if (!wiring || !raw) return 'none';
 
-  // 方言解析：resolveEventEntry（自适应）→ 静态 fail-safe；解析抛错回退静态
+  // 方言解析：resolveEventEntry（自适应）→ 静态 fail-safe；解析抛错回退静态。
+  // 合并语义（终审 Critical #1 双保险）：解析产物**展开覆盖**静态 entry 而非
+  // 整体替换——解析方漏带 transformEvent 等成员时静态兜底仍在。
   let entry: EventMappingEntry = wiring.staticEntry;
   if (typeof rt.resolveEventEntry === 'function') {
     try {
       const resolved = await rt.resolveEventEntry();
-      if (resolved && Array.isArray((resolved as any).eventMappings)) entry = resolved;
+      if (resolved && Array.isArray((resolved as any).eventMappings)) {
+        entry = { ...wiring.staticEntry, ...resolved };
+      }
     } catch {
       // fail-safe：探测失败保持静态 entry（@v1）
     }

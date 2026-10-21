@@ -22,7 +22,7 @@ import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
 import { httpComplete } from './completion-http';
 import { probeOpencodeDialect } from './opencode-dialect-probe';
-import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS } from './opencode-events';
+import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './opencode-events';
 import type { EventMappingEntry } from './event-mapper';
 import { log } from '../core/utils/logger';
 
@@ -274,7 +274,9 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
     ...(config.dialectProbe
       ? {
           /** 自适应方言入口（contract.resolveEventEntry）：探测 serve 的 v2 面
-           *  可见性（sync/next 事件），v2 → @v2 混合消费表，否则/失败 → @v1。 */
+           *  可见性（sync/next 事件），v2 → @v2 混合消费表，否则/失败 → @v1。
+           *  返回完整 entry（含 transformEvent——终审 Critical #1：遗漏会使
+           *  wrapDialectEventStream 的整体替换丢掉转换器，message.updated 全灭）。 */
           async resolveEventEntry(): Promise<EventMappingEntry> {
             const dialect = await probeOpencodeDialect(
               (rt as unknown as { getBaseUrl(): string }).getBaseUrl(),
@@ -283,6 +285,7 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
             return {
               eventSource: OPENCODE_EVENT_SOURCE,
               eventMappings: dialect === 'v2' ? OPENCODE_V2_EVENT_MAPPINGS : OPENCODE_V1_EVENT_MAPPINGS,
+              transformEvent: OPENCODE_TRANSFORM_EVENT,
             };
           },
         }

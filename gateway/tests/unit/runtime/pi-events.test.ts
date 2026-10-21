@@ -210,7 +210,8 @@ describe('pi N1/N2��live ������ + ��ɫ�޸���', () =>
     expect(user?.payload.properties.message.role).toBe('user');
     const assistant = translatePiEvent({ type: 'message_end', message: { role: 'assistant', content: [], timestamp: 2, stopReason: 'stop' } }, 'pi_x');
     expect(assistant?.payload.properties.message.role).toBe('assistant');
-    expect(assistant?.payload.properties.message.time).toMatchObject({ completed: 2 });
     expect(assistant?.payload.properties.message.finish).toBe('stop');
+    // 不带 time.completed（终审 Minor #8 裁决）：pi step 结算保持 turn_end 单载体，防 BudgetGuard 步数翻倍
+    expect(assistant?.payload.properties.message.time).toBeUndefined();
   });
 });
