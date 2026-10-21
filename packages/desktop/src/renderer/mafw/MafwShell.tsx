@@ -19,7 +19,7 @@ import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
-import { ingestSubagentEvent } from "./subagent-store"
+import { ingestSubagentEvent, subagentRows } from "./subagent-store"
 import { mapAskCard as mapAskCardPure } from "./sse/handlers/flow-cards"
 import { EventInspector } from "./components/EventInspector"
 import { conn, useConnPhase } from "./connection-state"
@@ -31,6 +31,7 @@ import { isNarrowViewport, railAutoAction } from "./layout-breakpoints"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { NotesDock } from "./components/NotesDock"
+import { SubagentDock } from "./components/SubagentDock"
 import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
@@ -1848,6 +1849,7 @@ export function MafwShell() {
               open={dockPresent()}
               tab={rightDockTab()}
               width={rightDockWidth()}
+              subagentBadge={subagentRows().filter(r => r.status === "running").length}
               onClose={() => applyRightDock(false)}
               onTab={(t) => applyRightDock(true, t)}
             >
@@ -1889,6 +1891,12 @@ export function MafwShell() {
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
+                />
+              </div>
+              <div style={{ display: rightDockTab() === "subagents" ? "contents" : "none" }}>
+                <SubagentDock
+                  activeSessionId={currentSessionID() || null}
+                  onOpenSession={(id) => void openSubagentSession(id)}
                 />
               </div>
             </RightDock>
