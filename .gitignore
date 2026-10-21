@@ -48,3 +48,6 @@ gateway/src/src/
 scheduler/
 *.db
 tsconfig.tsbuildinfo
+
+# spike/probe artifacts
+**/.spike-*.txt

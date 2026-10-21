@@ -1257,7 +1257,7 @@ Gateway API 路由使用正则匹配，query string 会导致 `$` 锚定不匹�
 - `desktop-release.yml`：tag `v*` → Win(nsis)+Linux(AppImage/deb/rpm) 打包（node stage-gateway + electron-builder `--publish never`，`OPENCODE_CHANNEL=prod` 走 env 块）→ release job 汇总挂 **draft release**（softprops）；workflow_dispatch = 构建-only 干跑；electron 缓存按 OS 分路径
 - `npm-publish.yml`：仅手动 dispatch；`NPM_TOKEN` 缺失时绿 skip，配置后 `npm publish --provenance`
 
-注意：desktop `electron-builder.config.ts` 的 `native/` extraResource 有 `existsSync` 守卫（仓库不携带该目录）；`electron-builder.config.test.ts` 的 legacy launcher 测试已知坏（引用不存在的 `resources/linux/opencode-desktop.desktop`），desktop 无 test script、不在 CI 内。
+注意：desktop `electron-builder.config.ts` 的 `native/` extraResource 有 `existsSync` 守卫（仓库不携带该目录）；desktop `npm test` = node --test + `@mafw/test-shim`（2026-10-21 自 bun 迁移），已入 CI（root `npm run test:desktop`）；已知坏的 legacy launcher 用例已随迁移移除。
 
 ## 7. LongMemEval 记忆基准（evaluation/longmemeval/）
 

@@ -6,8 +6,8 @@ memory, goal orchestration and agent sessions), built with Electron + SolidJS.
 ## Development
 
 ```bash
-bun install
-bun dev
+npm install
+npm run dev
 ```
 
 ## Build
@@ -19,5 +19,5 @@ bundle the assets as an application. The resulting app will be in `dist/`.
 no gateway is already running).
 
 ```bash
-bun run build && bun run package
+npm run build && npm run package
 ```
