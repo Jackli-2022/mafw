@@ -1,0 +1,13 @@
+{
+  "name": "@mafw/adapter-claude",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.305"
+  }
+}
