@@ -3,32 +3,56 @@
  *
  * spec: docs/superpowers/specs/2026-10-21-runtime-canonical-v3-design.md §3.4
  * shim 是唯一 flat→wire 转换点；parts 原样引用直通（绝不改 part 载荷与
- * part.id——@v1 原生 part.id 直通不变量）；model → modelID 是唯一换名
- * （与 opencode-history 的 modelID → model 互逆，ledger pre-flight Row 1）。
+ * part.id）。**零换名**（ledger Task 4 修正裁决，推翻 pre-flight Row 1 的
+ * model→modelID 方案）：SDK 真实形状是 UserMessage.model 为对象
+ * {providerID, modelID, variant?}、AssistantMessage.modelID 为字符串——
+ * 任何换名都破坏 round-trip；flat ↔ wire 是纯信封搬移，全部字段同名透传。
  */
 import { MafwMessage } from '../../../src/runtime/canonical-types';
 import { toWireInfo, toWireHistory } from '../../../src/runtime/wire-compat';
 
-const fullMessage: MafwMessage = {
+/** AssistantMessage 风格（modelID/providerID 扁平、cost 数字）。 */
+const assistantStyle: MafwMessage = {
   id: 'm1', sessionID: 'ses_1', role: 'assistant',
   content: [{ id: 'p1', type: 'text', text: 'hi' }],
   time: { created: 1, updated: 2, completed: 3 },
-  finish: 'stop', model: 'glm-5.3', providerID: 'gateway',
-  tokens: { input: 10 }, cost: { total: 0.01 }, parentID: 'm0',
+  finish: 'stop', providerID: 'gateway',
+  tokens: { input: 10 }, cost: 0.01, parentID: 'm0',
 };
 
-describe('wire-compat egress 转换', () => {
-  it('字段完整往返：已知字段全量输出，model 输出为 modelID（shim 侧唯一换名）', () => {
-    expect(toWireInfo(fullMessage)).toEqual({
+/** UserMessage 风格（model 为对象——SDK types.gen.d.ts 真实形状）。 */
+const userStyle = {
+  id: 'm2', sessionID: 'ses_1', role: 'user' as const,
+  content: [],
+  time: { created: 4 },
+  agent: 'build',
+  model: { providerID: 'gateway', modelID: 'glm-5.3', variant: 'max' },
+  summary: { title: 't', diffs: [] },
+};
+
+describe('wire-compat egress 转换（零换名）', () => {
+  it('assistant 风格：全部字段恒等输出，cost(number)/finish/tokens 原样', () => {
+    expect(toWireInfo(assistantStyle)).toEqual({
       id: 'm1', sessionID: 'ses_1', role: 'assistant',
       time: { created: 1, updated: 2, completed: 3 },
-      finish: 'stop', modelID: 'glm-5.3', providerID: 'gateway',
-      tokens: { input: 10 }, cost: { total: 0.01 }, parentID: 'm0',
+      finish: 'stop', providerID: 'gateway',
+      tokens: { input: 10 }, cost: 0.01, parentID: 'm0',
+    });
+  });
+
+  it('user 风格：model 对象透传不改名（换名方案会破坏 UserMessage round-trip）', () => {
+    const info = toWireInfo(userStyle as unknown as MafwMessage);
+    expect(info).toEqual({
+      id: 'm2', sessionID: 'ses_1', role: 'user',
+      time: { created: 4 },
+      agent: 'build',
+      model: { providerID: 'gateway', modelID: 'glm-5.3', variant: 'max' },
+      summary: { title: 't', diffs: [] },
     });
   });
 
   it('未知附加字段透传不丢（字段保真兜底）', () => {
-    const msg = { ...fullMessage, retries: 2 } as MafwMessage;
+    const msg = { ...assistantStyle, retries: 2 } as MafwMessage;
     expect((toWireInfo(msg) as Record<string, unknown>).retries).toBe(2);
   });
 
@@ -58,6 +82,12 @@ describe('wire-compat egress 转换', () => {
     expect(out.parts[0]).toBe(compaction); // 同引用直通
     expect(out.parts[1]).toBe(toolPart);
     expect((out.parts[0] as Record<string, unknown>).tokensBefore).toBe(100);
+  });
+
+  it('已是 wire 形状的项原样放行（B2 违例回退路径的防御——info+parts 键共存判定）', () => {
+    const wireItem = { info: { id: 'w1', role: 'user' }, parts: [{ id: 'p', type: 'text', text: 'x' }] };
+    const [out] = toWireHistory([wireItem as unknown as MafwMessage]);
+    expect(out).toBe(wireItem); // 原样引用，不二次包装
   });
 
   it('缺省字段不输出键：最小消息 → info 仅 role 一键', () => {

@@ -29,12 +29,12 @@ export interface MafwMessage {
   time?: { created?: number; updated?: number; completed?: number };
   /** runtime 原生 finish reason（opencode finish / pi stopReason）。 */
   finish?: string;
-  /** opencode wire 为 modelID——翻译层（opencode-history / wire-compat）负责换名。 */
-  model?: string;
+  /** 平台特有字段（modelID / model 对象 / agent / mode / summary 等）经全量
+   *  拷贝同名透传，不在本接口枚举——零换名是 round-trip 保真的硬约束。 */
   providerID?: string;
-  /** trajectory / usage 统计主干字段（原样透传，结构由 runtime 决定）。 */
+  /** trajectory / usage 统计主干字段（opencode wire：cost 为 number、tokens 为对象；原样透传）。 */
   tokens?: Record<string, unknown>;
-  cost?: Record<string, unknown>;
+  cost?: number | Record<string, unknown>;
   parentID?: string;
 }
 
