@@ -104,6 +104,9 @@ import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
 import { SessionQueue } from './core/session-queue';
 import { shouldFlush } from './core/queue-flush';
+import { createCognitionGate } from './core/cognition/cognition-gate';
+import { validateRules, type CognitionRule } from './core/cognition/rules';
+import { handleCognitionGate, handleCognitionRewrite, handleCognitionRules } from './routes/cognition';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -373,7 +376,25 @@ class MafwScheduler {
   /** busy 追踪（spec §5.1 v2）：value = busy 起始 ms；turn.started 置位、三终态清除；15min TTL 防楔死。 */
   private busySessions = new Map<string, number>();
   /** 会话队列 inbox（spec 2026-10-22-session-queue-inbox）。 */
-  private sessionQueue = new SessionQueue(); // P0-2：per-prompt 预算来源标记（goal guard 优先，回合终态清理）
+  private sessionQueue = new SessionQueue();
+
+  /** 认知面 gate/rewrite（spec 2026-10-22-cognition-gate-rewrite）。规则现读 + 引用比较缓存（热重载免费 C9）。 */
+  private cognitionGateCache: { raw: unknown; valid: CognitionRule[] } = { raw: undefined, valid: [] };
+  private cognitionGate = createCognitionGate({
+    getRules: () => {
+      const raw = config.cognition?.rules;
+      if (raw !== this.cognitionGateCache.raw) {
+        const { valid } = validateRules(raw);
+        this.cognitionGateCache = { raw, valid };
+      }
+      return this.cognitionGateCache.valid;
+    },
+    isInternalSession: (sid) => this.internalSessionRoles.has(sid),
+    onEvent: (e) => {
+      // cognition_gate 扁平事件（runtime_switched 先例；经 broadcast → event_log 持久化）
+      this.broadcast({ type: 'cognition_gate', sessionID: e.sessionID, rule: e.rule, action: e.action, tool: e.tool, reason: e.reason } as any);
+    },
+  }); // P0-2：per-prompt 预算来源标记（goal guard 优先，回合终态清理）
   private approvalPolicy!: ApprovalPolicyService; // asked 事件策略评估（manual/auto + 预算 + 内部 fail-safe）
   private allowlistStore!: AllowlistStore; // legacy 白名单（config.yaml approval 段，双读过渡）
   private permissionRules!: PermissionRulesStore; // 持久规则（~/.mafw/permission-rules.json）
@@ -6064,6 +6085,26 @@ class MafwScheduler {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
+          return;
+        }
+
+        // ── 认知面 HTTP 动词（spec 2026-10-22-cognition-gate-rewrite §5.4；loopback-only）──
+        if (req.url?.startsWith('/api/cognition/gate') && req.method === 'POST') {
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          const body = await readBody(req);
+          await handleCognitionGate({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
+          return;
+        }
+        if (req.url?.startsWith('/api/cognition/rewrite') && req.method === 'POST') {
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          const body = await readBody(req);
+          await handleCognitionRewrite({ body: body ? JSON.parse(body) : null, gate: this.cognitionGate, res });
+          return;
+        }
+        if (req.url?.startsWith('/api/cognition/rules') && req.method === 'GET') {
+          if (!isLoopback) { res.writeHead(403); res.end(JSON.stringify({ error: 'forbidden' })); return; }
+          const raw = config.cognition?.rules;
+          await handleCognitionRules({ res, getRules: () => validateRules(raw) });
           return;
         }
 

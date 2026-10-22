@@ -166,6 +166,27 @@ export class MafwClient implements IMafwClient {
       return this.request<{ cleared: number }>(`/api/session/${params.path.id}/queue`, { method: 'DELETE' })
     },
 
+    // ── 认知面 gate/rewrite（spec 2026-10-22-cognition-gate-rewrite）──
+    cognitionGate: async (params: { body: Record<string, unknown> }): Promise<unknown> => {
+      return this.request('/api/cognition/gate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
+      })
+    },
+
+    cognitionRewrite: async (params: { body: Record<string, unknown> }): Promise<{ content: unknown[] }> => {
+      return this.request<{ content: unknown[] }>('/api/cognition/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
+      })
+    },
+
+    cognitionRules: async (): Promise<{ rules: unknown[]; errors: string[] }> => {
+      return this.request<{ rules: unknown[]; errors: string[] }>('/api/cognition/rules')
+    },
+
     fork: async (params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ session: Session }> => {
       return this.request<{ session: Session }>(`/api/sessions/${params.path.id}/fork`, {
         method: 'POST',

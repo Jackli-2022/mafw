@@ -19,6 +19,45 @@
         }
       }
     },
+    "/api/cognition/gate": {
+      "post": {
+        "operationId": "cognition.gate",
+        "tags": [
+          "cognition"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/cognition/rewrite": {
+      "post": {
+        "operationId": "cognition.rewrite",
+        "tags": [
+          "cognition"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/cognition/rules": {
+      "get": {
+        "operationId": "cognition.rules",
+        "tags": [
+          "cognition"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session/{id}/queue": {
       "get": {
         "operationId": "session.queue.list",
