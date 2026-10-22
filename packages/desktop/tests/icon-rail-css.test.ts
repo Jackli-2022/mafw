@@ -16,6 +16,12 @@ describe("icon rail CSS 契约", () => {
     const block = css.match(/\.mafw-icon-rail-icon\.active \{[\s\S]*?\}/)?.[0] ?? ""
     expect(block).toContain("inset 2px 0 0")
   })
+  test("图标按钮固定 32×32（压过 ButtonV2 small 的 24px 高度）", () => {
+    const block = css.match(/\.mafw-icon-rail \.mafw-icon-rail-icon[^{]*\{[\s\S]*?\}/)?.[0] ?? ""
+    expect(block).toContain("width: 32px")
+    expect(block).toContain("height: 32px")
+    expect(block).toContain("min-height: 32px")
+  })
   test("徽标与连接状态点存在", () => {
     expect(css).toContain(".mafw-icon-rail-badge")
     expect(css).toContain(".mafw-icon-rail-conn-dot")

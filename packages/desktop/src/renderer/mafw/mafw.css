@@ -2720,6 +2720,13 @@ html[data-theme="light"] body {
   transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 .mafw-icon-rail-icon:hover { background: var(--bg-hover); color: var(--text-1); }
+/* ButtonV2 small 自带宽高会把 32×32 压成 32×24；用带属性选择器的更高特异性钉死。 */
+.mafw-icon-rail .mafw-icon-rail-icon[data-component="button-v2"] {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
 .mafw-icon-rail-icon.active {
   color: var(--text-1);
   background: var(--bg-hover);
