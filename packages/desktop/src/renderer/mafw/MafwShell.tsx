@@ -1740,6 +1740,9 @@ export function MafwShell() {
           onToggleTheme={toggleTheme}
           approvals={pendingPermissionCount()}
           connPhase={connPhaseLabel()}
+          gatewayState={gwStatus()?.state ?? null}
+          dashboardActive={activeTab() === "goals" && !showConfig()}
+          configActive={showConfig()}
           theme={theme()}
         />
       </div>

@@ -15,6 +15,9 @@ export type IconRailProps = {
   onToggleTheme: () => void
   approvals: number
   connPhase: string // connected | reconnecting | down | initial
+  gatewayState?: string | null // stopped | starting | ready | failed（stopped 用中性色，不报红）
+  dashboardActive?: boolean
+  configActive?: boolean
   theme: string // light | dark | system
 }
 
@@ -44,8 +47,8 @@ export function IconRail(props: IconRailProps) {
     { key: "search", icon: "magnifying-glass", label: "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
   ]
   const bottomItems = (): RailItem[] => [
-    { key: "dashboard", icon: "status", label: "Dashboard", onClick: props.onDashboard, badge: props.approvals },
-    { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, connDot: true },
+    { key: "dashboard", icon: "status", label: "Dashboard", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
+    { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
     // 主题图标沿用旧 Rail 品牌块：亮色 ☀ / 暗色月亮 SVG（图标集无 sun/moon）
     { key: "theme", label: "切换主题", onClick: props.onToggleTheme },
   ]
