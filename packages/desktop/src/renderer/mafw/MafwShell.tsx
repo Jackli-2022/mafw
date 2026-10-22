@@ -43,6 +43,7 @@ import { NotesDock } from "./components/NotesDock"
 import { SubagentDock } from "./components/SubagentDock"
 import { BackgroundDock } from "./components/BackgroundDock"
 import { FilesDock } from "./components/FilesDock"
+import { EditorDock } from "./components/EditorDock"
 import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
@@ -2020,7 +2021,23 @@ export function MafwShell() {
                 />
               </div>
               <div style={{ display: rightDockTab() === "editor" ? "contents" : "none" }}>
-                <div class="mafw-file-tree-empty">从「文件」tab 选择文件打开</div>
+                <EditorDock
+                  sessionID={currentSessionID() || null}
+                  sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                  diffs={aggregateSessionDiffs((store.message as any)[currentSessionID()] || [])}
+                  onSendAnnotation={(text) => {
+                    const sid = currentSessionID()
+                    if (!sid) return
+                    void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                      .then(() => showToastV2({ description: "批注已发送给 agent", duration: 2000 } as any))
+                      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                  }}
+                  onSendComment={(sid, text) => {
+                    void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                      .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
+                      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                  }}
+                />
               </div>
             </RightDock>
             )}

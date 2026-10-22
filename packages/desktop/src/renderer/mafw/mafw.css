@@ -4039,6 +4039,52 @@ html[data-theme="light"] body {
 .mafw-file-tree-row-dir .mafw-file-tree-name { color: var(--text-1); }
 .mafw-file-tree-empty { padding: 24px 10px; text-align: center; font-size: 11px; color: var(--text-4); }
 .mafw-file-tree-loading { padding: 8px 10px; font-size: 10px; color: var(--text-4); }
+
+/* ── Editor dock（协同编辑器，spec 2026-10-22 §5.2） ── */
+.mafw-editor-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.mafw-editor-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.mafw-editor-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.mafw-editor-tab:hover { background: var(--bg-overlay, transparent); }
+.mafw-editor-tab-active { background: var(--bg-overlay, transparent); }
+.mafw-editor-tab-name { font-size: 11px; color: var(--text-2); }
+.mafw-editor-tab-active .mafw-editor-tab-name { color: var(--text-1); }
+.mafw-editor-tab-dot { font-size: 8px; color: var(--accent); }
+.mafw-editor-tab-ro { font-size: 9px; color: var(--text-4); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
+.mafw-editor-tab-close { font-size: 11px; color: var(--text-4); padding: 0 2px; cursor: pointer; }
+.mafw-editor-tab-close:hover { color: var(--text-1); }
+.mafw-editor-tab-actions { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; }
+.mafw-editor-conflict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-overlay, transparent);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.mafw-editor-conflict-text { font-size: 10px; color: var(--text-2); }
+.mafw-editor-conflict-actions { display: flex; gap: 4px; }
+.mafw-editor-note { padding: 6px 10px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.mafw-editor-host { flex: 1; min-height: 0; overflow: hidden; }
 .mafw-notes-card {
   display: flex;
   flex-direction: column;

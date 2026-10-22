@@ -1,0 +1,97 @@
+// CodeMirror 6 装配（动态 import：编辑器内核按需分包，不进主 bundle）。
+// 主题与语法色全部走 CSS token（三主题自适应），禁止硬编码色值。
+import { langForFile } from "./cm-lang"
+
+export interface MountedEditor {
+  setDoc(s: string): void
+  getDoc(): string
+  destroy(): void
+}
+
+// “编辑器语言 id → LanguageDescription”匹配：先按名称（大小写不敏感），再按扩展名。
+async function loadLanguageSupport(lang: string | null) {
+  if (!lang) return []
+  const { languages } = await import("@codemirror/language-data")
+  const byName = languages.find(d => d.name.toLowerCase() === lang)
+  if (byName) return byName.load()
+  const byExt = languages.find(d => d.extensions.includes(lang))
+  return byExt ? byExt.load() : []
+}
+
+export async function mountEditor(host: HTMLElement, opts: {
+  doc: string
+  readOnly: boolean
+  lang: string | null
+  onDocChanged: () => void
+  onSave: () => void
+}): Promise<MountedEditor> {
+  const [{ EditorView, basicSetup }, { EditorState }, { keymap }, { HighlightStyle, syntaxHighlighting }, { tags }, support] =
+    await Promise.all([
+      import("codemirror"),
+      import("@codemirror/state"),
+      import("@codemirror/view"),
+      import("@codemirror/language"),
+      import("@lezer/highlight"),
+      loadLanguageSupport(opts.lang),
+    ])
+
+  const theme = EditorView.theme({
+    "&": {
+      height: "100%",
+      backgroundColor: "transparent",
+      color: "var(--text-1)",
+      fontSize: "12px",
+    },
+    ".cm-scroller": { fontFamily: "var(--font-data, monospace)", lineHeight: "1.5" },
+    ".cm-gutters": { backgroundColor: "transparent", color: "var(--text-4)", border: "none" },
+    ".cm-activeLine": { backgroundColor: "var(--bg-overlay, transparent)" },
+    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text-3)" },
+    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+      backgroundColor: "var(--bg-selected, var(--accent-soft, rgba(80, 140, 255, 0.22)))",
+    },
+    ".cm-cursor": { borderLeftColor: "var(--text-1)" },
+    ".cm-content": { caretColor: "var(--text-1)" },
+  })
+
+  const highlight = syntaxHighlighting(HighlightStyle.define([
+    { tag: tags.keyword, color: "var(--accent)" },
+    { tag: [tags.string, tags.special(tags.string)], color: "var(--success, var(--accent-success, var(--text-1)))" },
+    { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "var(--text-4)", fontStyle: "italic" },
+    { tag: [tags.number, tags.bool, tags.null], color: "var(--accent-warning, var(--accent))" },
+    { tag: [tags.typeName, tags.className], color: "var(--accent-text, var(--accent))" },
+    { tag: [tags.tagName, tags.attributeName], color: "var(--danger-text, var(--text-2))" },
+    { tag: [tags.function(tags.variableName), tags.propertyName], color: "var(--text-1)" },
+    { tag: tags.heading, color: "var(--text-1)", fontWeight: "600" },
+  ]))
+
+  const saveKeymap = keymap.of([{
+    key: "Mod-s",
+    preventDefault: true,
+    run: () => { opts.onSave(); return true },
+  }])
+
+  const state = EditorState.create({
+    doc: opts.doc,
+    extensions: [
+      basicSetup,
+      theme,
+      highlight,
+      saveKeymap,
+      ...(Array.isArray(support) ? support : [support]),
+      EditorState.readOnly.of(opts.readOnly),
+      EditorView.editable.of(!opts.readOnly),
+      EditorView.updateListener.of(u => { if (u.docChanged) opts.onDocChanged() }),
+    ],
+  })
+
+  const view = new EditorView({ state, parent: host })
+
+  return {
+    setDoc(s: string) {
+      if (s === view.state.doc.toString()) return
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: s } })
+    },
+    getDoc: () => view.state.doc.toString(),
+    destroy: () => view.destroy(),
+  }
+}
