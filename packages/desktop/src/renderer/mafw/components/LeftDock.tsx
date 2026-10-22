@@ -61,6 +61,8 @@ export function LeftDock(props: Props) {
   const [renameDraft, setRenameDraft] = createSignal("")
   const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
   let searchRef: HTMLDivElement | undefined
+  let dockRef: HTMLDivElement | undefined
+  let previouslyFocused: HTMLElement | null = null
 
   const gwReady = createMemo(() => gwStatus()?.state === "ready")
   const connPhase = useConnPhase()
@@ -72,6 +74,22 @@ export function LeftDock(props: Props) {
   onMount(() => {
     window.api.mafw.gateway.info().then(setGwStatus)
     onCleanup(window.api.mafw.gateway.onStateChange((s) => setGwStatus(s)))
+  })
+
+  // 浮层焦点管理：打开时移入（搜索面进输入框；会话面进容器），关闭时还原触发元素。
+  onMount(() => {
+    if (props.mode !== "overlay") return
+    previouslyFocused = document.activeElement as HTMLElement | null
+    queueMicrotask(() => {
+      const root = dockRef
+      if (!root) return
+      const target = root.querySelector<HTMLElement>("input") ?? root
+      target.focus()
+    })
+  })
+  onCleanup(() => {
+    if (props.mode !== "overlay") return
+    previouslyFocused?.focus?.()
   })
 
   createEffect(() => {
@@ -279,7 +297,7 @@ export function LeftDock(props: Props) {
   )
 
   return (
-    <div class="mafw-left-dock" classList={{ overlay: props.mode === "overlay", push: props.mode === "push" }} style={{ width: `${props.width}px` }}>
+    <div ref={dockRef} tabIndex={-1} class="mafw-left-dock" classList={{ overlay: props.mode === "overlay", push: props.mode === "push" }} style={{ width: `${props.width}px` }}>
       <div class="mafw-left-dock-head">
         {projectSwitcher()}
         <TooltipV2 value="关闭" openDelay={300}>

@@ -34,6 +34,12 @@ describe("workbench 终审修复接线", () => {
     const dock = read("src/renderer/mafw/components/LeftDock.tsx")
     expect(dock).toMatch(/props\.face !== "search"[\s\S]{0,160}setQuery\(""\)/)
   })
+  test("浮层打开时接管焦点、关闭后还原（overlay 专属）", () => {
+    const dock = read("src/renderer/mafw/components/LeftDock.tsx")
+    expect(dock).toContain("previouslyFocused")
+    expect(dock).toMatch(/props\.mode !== "overlay"[\s\S]{0,120}return/)
+    expect(dock).toMatch(/previouslyFocused\?\.focus\?\.\(\)/)
+  })
   test("rail 的 + 新建会话揭示 chat（复用 openSessionTab）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toMatch(/createSession\(\)\.then\(\(sid\)/)

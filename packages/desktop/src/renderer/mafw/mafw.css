@@ -2779,6 +2779,8 @@ html[data-theme="light"] body {
 }
 .mafw-left-dock.push { grid-column: 1; }
 .mafw-left-dock-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px; }
+/* 浮层容器用 tabindex=-1 接管焦点（a11y），不画整块焦点环。 */
+.mafw-left-dock:focus { outline: none; }
 .mafw-left-dock-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .mafw-left-dock-backdrop { position: absolute; inset: 0; z-index: 60; background: transparent; }
 .mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
