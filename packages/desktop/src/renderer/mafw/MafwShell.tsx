@@ -1590,6 +1590,17 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
+  // Ctrl/Cmd+K: 打开左栏搜索面（全局搜索入口）。
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return
+      e.preventDefault()
+      toggleLeftDock("search")
+    }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
   // Ctrl/Cmd+T: toggle unified right dock. Skip when typing.
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {

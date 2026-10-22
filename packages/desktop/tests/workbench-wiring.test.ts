@@ -25,6 +25,11 @@ describe("workbench 终审修复接线", () => {
     expect(preload).toContain("onExpandedChange")
     expect(shell).toContain("onExpandedChange")
   })
+  test("Ctrl+K 打开左栏搜索面（全局快捷键）", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toMatch(/key\.toLowerCase\(\) !== "k"/)
+    expect(shell).toContain('toggleLeftDock("search")')
+  })
   test("rail 的 + 新建会话揭示 chat（复用 openSessionTab）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toMatch(/createSession\(\)\.then\(\(sid\)/)
