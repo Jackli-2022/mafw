@@ -19,7 +19,9 @@ export function enrichBroadcastFrame(
   const out: { type: string; [k: string]: any } = { ...event, timestamp: now };
   if (seq !== null) {
     out.seq = seq;
-    if (event.data !== null && typeof event.data === 'object') {
+    // 纯 object 才注入 data.seq——数组 spread 会破坏成索引对象（plugin POST /api/events
+    // 通路可达；终审 #1）；data 为数组/字符串/null 时只放顶层。
+    if (event.data !== null && typeof event.data === 'object' && !Array.isArray(event.data)) {
       out.data = { ...event.data, seq };
     }
   }

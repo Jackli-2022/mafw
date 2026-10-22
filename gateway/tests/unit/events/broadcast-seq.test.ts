@@ -25,6 +25,12 @@ describe('enrichBroadcastFrame（spec §5.2 v2 Q2：双层放置）', () => {
     expect((out2 as any).seq).toBe(2);
     expect((out2 as any).data).toBe('str');
   });
+  it('data 为数组：保持数组原样（不注入 data.seq——数组 spread 会破坏成索引对象）', () => {
+    const out = enrichBroadcastFrame({ type: 'plugin:x:y', data: [1, 2, 3] }, 9, 'T');
+    expect(out.seq).toBe(9);
+    expect(Array.isArray(out.data)).toBe(true);
+    expect(out.data).toEqual([1, 2, 3]);
+  });
   it('不改变原事件对象（浅拷贝，无副作用）', () => {
     const event = { type: 'x', data: { type: 'y' } };
     enrichBroadcastFrame(event, 3, 'T');
