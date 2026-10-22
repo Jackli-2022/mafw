@@ -2691,6 +2691,17 @@ html[data-theme="light"] body {
   border: none;
   background: transparent;
 }
+/* tabs-v2 库根是 height:100% + overflow:clip：只给 tab-list 加 wrap 会把第二行
+   裁掉（2026-10-22 实证：9 个 tab 视觉只剩 5 个）。header 内放开高度与裁切，
+   list 允许换行且不横向滚动。 */
+.mafw-right-dock-head [data-component="tabs-v2"] {
+  height: auto;
+  overflow: visible;
+}
+.mafw-right-dock-head [data-slot="tabs-v2-list"] {
+  flex-wrap: wrap;
+  overflow: visible;
+}
 .mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
   height: 28px;
   border-radius: 6px;
