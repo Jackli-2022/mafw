@@ -378,6 +378,7 @@ html[data-theme="light"] body {
 .mafw-topstrip {
   display: flex; align-items: center; gap: 4px;
   height: 38px; padding: 0 0 0 8px;
+  grid-column: 1 / -1;
   min-width: 0; /* grid item 的 auto 最小尺寸必须可压到 0，strip 内滚接管溢出 */
   background: var(--bg-base);
   border-bottom: 1px solid var(--border-subtle);
@@ -432,10 +433,10 @@ html[data-theme="light"] body {
 .mafw-theme-toggle:hover { color: var(--text-2); background: var(--hover); }
 
 /* ── Body（仅 main | dock 两列，列宽由 inline style 接管的右列） ── */
-.mafw-body { display: grid; grid-template-columns: 1fr; overflow: hidden; min-height: 0; transition: grid-template-columns var(--dur-surface) var(--ease-surface); }
+.mafw-body { display: grid; grid-template-columns: 1fr; overflow: hidden; min-height: 0; transition: grid-template-columns var(--dur-surface) var(--ease-surface); grid-row: 2; grid-column: 2; }
 
 /* ── Rail column（通高：跨顶行与 body 行） ── */
-.mafw-rail-col { grid-row: 1 / -1; display: flex; min-height: 0; overflow: hidden; }
+.mafw-rail-col { grid-row: 2; grid-column: 1; display: flex; min-height: 0; overflow: hidden; }
 
 /* ── Rail ── */
 .mafw-rail {
