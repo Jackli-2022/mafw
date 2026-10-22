@@ -17,4 +17,12 @@ describe("right dock tab 换行可见性契约", () => {
     expect(css).toContain('.mafw-right-dock-head [data-slot="tabs-v2-list"]')
     expect(css).toContain("flex-wrap: wrap")
   })
+  test("换行后列表高度自适应（压过库的 pill 固定 32px 规则）", () => {
+    // 2026-10-22 冒烟实证：库规则 specificity 0,4,0 固定 height:32px，列表纵向滚动，
+    // 第一行 tab 被滚出可视区（只看到 文件/编辑器）。
+    const block = css.match(/\.mafw-right-dock-head \[data-component="tabs-v2"\]\[data-variant="pill"\]\[data-orientation="horizontal"\] \[data-slot="tabs-v2-list"\] \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(block).toContain("height: auto")
+    expect(block).toContain("flex-wrap: wrap")
+    expect(block).toContain("overflow: visible")
+  })
 })

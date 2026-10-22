@@ -1485,7 +1485,7 @@ export function MafwShell() {
   const [leftDockWidth, setLeftDockWidth] = createSignal(
     Number(localStorage.getItem("mafw-left-dock-width")) || legacyLeftDockWidth || 264,
   )
-  const leftDockMode = () => resolveMode(leftDock().open, winMaximized(), viewportNarrow())
+  const leftDockMode = () => resolveMode(leftDock().open, winMaximized())
   const toggleLeftDock = (face: LeftDockFace) => {
     const next = toggleFace(leftDock(), face)
     setLeftDock(next)

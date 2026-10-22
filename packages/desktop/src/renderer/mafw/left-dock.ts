@@ -14,11 +14,11 @@ export function toggleFace(s: LeftDockState, face: LeftDockFace): LeftDockState 
   return { face, open: true }
 }
 
-// 窗口化（非最大化）恒浮层；最大化/全屏且非窄视口才推挤（窄窗口恒浮层）。
-export function resolveMode(open: boolean, maximized: boolean, narrow: boolean): LeftDockMode {
+// 窗口化（非最大化）恒浮层；最大化/全屏推挤（用户决策：由窗口状态决定，
+// 不再用窄宽度断点劫持——高分屏缩放下最大化窗口 CSS 宽可能 <1200）。
+export function resolveMode(open: boolean, maximized: boolean): LeftDockMode {
   if (!open) return "closed"
-  if (maximized && !narrow) return "push"
-  return "overlay"
+  return maximized ? "push" : "overlay"
 }
 
 // 旧 Rail 宽度键一次性迁移；非法值返回 null（由新键默认值决定）。

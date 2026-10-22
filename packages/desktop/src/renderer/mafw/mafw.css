@@ -517,7 +517,7 @@ html[data-theme="light"] body {
 .mafw-shell :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
 /* ── Main ── */
-.mafw-main { display: grid; grid-template-rows: 1fr; overflow: hidden; min-width: 0; position: relative; }
+.mafw-main { display: grid; grid-template-rows: 1fr; overflow: hidden; min-width: 0; position: relative; grid-column: 2; }
 .mafw-chat-resize { position: absolute; top: 0; bottom: 0; right: 0; z-index: 5; }
 
 .mafw-tab-count {
@@ -2648,6 +2648,7 @@ html[data-theme="light"] body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  grid-column: 3;
 }
 .mafw-dock-slot.overlay {
   position: fixed;
@@ -2680,6 +2681,13 @@ html[data-theme="light"] body {
   overflow: visible;
 }
 .mafw-right-dock-head [data-slot="tabs-v2-list"] {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+/* 库的 pill 横向列表固定 height:32px（specificity 0,4,0）——换行后必须放开高度，
+   否则列表纵向滚动、第一行 tab 被滚出可视区（2026-10-22 冒烟实证）。 */
+.mafw-right-dock-head [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-list"] {
+  height: auto;
   flex-wrap: wrap;
   overflow: visible;
 }
@@ -2762,8 +2770,9 @@ html[data-theme="light"] body {
   z-index: 61;
   box-shadow: var(--elev-panel);
 }
+.mafw-left-dock.push { grid-column: 1; }
 .mafw-left-dock-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px; }
-.mafw-left-dock-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.mafw-left-dock-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .mafw-left-dock-backdrop { position: absolute; inset: 0; z-index: 60; background: transparent; }
 .mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
   height: 28px;

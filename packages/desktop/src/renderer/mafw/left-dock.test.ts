@@ -14,18 +14,15 @@ describe("left-dock 状态模型", () => {
     })
   })
 
-  describe("resolveMode（窗口状态 × 窄断点）", () => {
-    test("open + 最大化 + 非窄 → push", () => {
-      expect(resolveMode(true, true, false)).toBe("push")
+  describe("resolveMode（窗口状态决定；窄断点不再劫持推挤）", () => {
+    test("open + 最大化 → push", () => {
+      expect(resolveMode(true, true)).toBe("push")
     })
     test("open + 非最大化 → overlay", () => {
-      expect(resolveMode(true, false, false)).toBe("overlay")
-    })
-    test("open + 窄窗口即使最大化 → overlay（窄窗口恒浮层）", () => {
-      expect(resolveMode(true, true, true)).toBe("overlay")
+      expect(resolveMode(true, false)).toBe("overlay")
     })
     test("closed → closed（无视窗口状态）", () => {
-      expect(resolveMode(false, true, false)).toBe("closed")
+      expect(resolveMode(false, true)).toBe("closed")
     })
   })
 
