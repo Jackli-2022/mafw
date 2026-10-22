@@ -38,7 +38,7 @@ export interface Services {
 export type ToolHandler = (
   args: Record<string, unknown>,
   services: Services
-) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
+) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean; structuredContent?: Record<string, unknown> }>;
 
 export interface ToolDefinition {
   name: string;

@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { toCallToolResult } from "./call-result";
 import { IncomingMessage, ServerResponse } from "http";
 import { ToolRegistry } from "./tool-registry";
 import { Services } from "../types";
@@ -60,7 +61,7 @@ export class McpSSEEndpoint {
         throw new Error(`Unknown tool: ${req.params.name}`);
       }
       const args = req.params.arguments ?? {};
-      return handler(args as Record<string, unknown>, this.services);
+      return toCallToolResult(await handler(args as Record<string, unknown>, this.services));
     });
 
     return server;
