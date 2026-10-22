@@ -1466,12 +1466,6 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch {}
     if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
   }
-  const applyRightDockWidth = (w: number) => {
-    // clamp 策略纯函数化（dock-width.ts）：普通 tab 480 上限，files/editor = 窗口 50%
-    const clamped = clampDockWidth(rightDockTab(), w, window.innerWidth)
-    setRightDockWidth(clamped)
-    try { localStorage.setItem("mafw-right-dock-width", String(clamped)) } catch {}
-  }
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
   // （manager 会话的 directory 可能指向 home 等外部目录，实证 2026-10-22）
   const benchRoot = () =>
