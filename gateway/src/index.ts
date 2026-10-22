@@ -3287,22 +3287,47 @@ class MafwScheduler {
     }
 
     // Anchor graph for multi-hop retrieval (SQLite-backed, write-path synced).
+    //
+    // Startup budget matters: MCP clients (OpenCode) make ~3 connect attempts in
+    // ~2s at boot and then mark a remote server failed permanently. A full graph
+    // rebuild here is expensive (minutes once the DB has hundreds of thousands
+    // of edges), so it must not run on every boot while :3000 is still unbound.
+    // The write path keeps both graphs current; rebuild only when the tables are
+    // empty or explicitly forced (MAFW_REBUILD_GRAPHS=1).
     try {
       const { AnchorGraphStore } = require('./graph/anchor-graph-store');
       const anchorStore = new AnchorGraphStore(this.getGatewayDb());
       const index = this.memoryService?.harmonicIndex?.getIndex();
-      anchorStore.rebuild(index ?? { entries: [] });
+      const rawDb = (this.getGatewayDb() as any).db;
+      const rowCount = (table: string): number => {
+        try {
+          return (rawDb.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
+        } catch {
+          return 0;
+        }
+      };
+      const forceRebuild = process.env.MAFW_REBUILD_GRAPHS === '1';
+
+      if (forceRebuild || rowCount('anchor_units') === 0) {
+        anchorStore.rebuild(index ?? { entries: [] });
+        log.info('[AnchorGraph] store initialized & rebuilt');
+      } else {
+        log.info(`[AnchorGraph] store reused (${rowCount('anchor_units')} units / ${rowCount('anchor_edges')} edges; set MAFW_REBUILD_GRAPHS=1 to rebuild)`);
+      }
       this.anchorGraphStore = anchorStore;
       this.memoryService?.harmonicIndex?.setAnchorGraphStore(anchorStore);
-      log.info('[AnchorGraph] store initialized & rebuilt');
 
       const { CoactivationGraphStore } = require('./graph/coactivation-store');
       const coactStore = new CoactivationGraphStore(this.getGatewayDb());
-      coactStore.rebuild(index ?? { entries: [] });
+      if (forceRebuild || rowCount('coactivation_units') === 0) {
+        coactStore.rebuild(index ?? { entries: [] });
+        log.info('[Coactivation] store initialized & rebuilt');
+      } else {
+        log.info(`[Coactivation] store reused (${rowCount('coactivation_units')} units / ${rowCount('coactivation_edges')} edges)`);
+      }
       this.coactivationGraphStore = coactStore;
       this.memoryService?.harmonicIndex?.setCoactivationGraphStore(coactStore);
       try { this.heartbeat?.record('coactivation-rebuild', { ok: true, counts: coactStore.stats() }); } catch { /* non-fatal */ }
-      log.info('[Coactivation] store initialized & rebuilt');
     } catch (err: any) {
       log.warn(`[AnchorGraph] init failed (non-fatal): ${err.message}`);
     }
