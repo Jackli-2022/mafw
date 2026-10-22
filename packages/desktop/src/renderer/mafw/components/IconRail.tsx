@@ -3,6 +3,7 @@ import { Icon } from "@mafw/ui/icon"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import type { LeftDockFace } from "../left-dock"
+import { railAriaLabel } from "../left-dock"
 
 type IconName = ComponentProps<typeof Icon>["name"]
 
@@ -60,7 +61,7 @@ export function IconRail(props: IconRailProps) {
         size="small"
         class="mafw-icon-rail-icon"
         classList={{ active: !!item.active }}
-        aria-label={item.label}
+        aria-label={railAriaLabel(item.label, item.badge)}
         aria-pressed={item.active}
         onClick={item.onClick}
       >

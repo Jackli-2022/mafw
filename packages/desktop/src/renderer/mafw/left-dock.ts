@@ -49,3 +49,8 @@ export function resolveLeftDockWidth(
   }
   return { width: LEFT_DOCK_WIDTH.default, migrated: false }
 }
+
+// 徽标数字必须进入无障碍名称（否则读屏只听到 "Dashboard"，审批数不可见）。
+export function railAriaLabel(label: string, badge?: number): string {
+  return badge !== undefined && badge > 0 ? `${label}（${badge} 项待处理）` : label
+}

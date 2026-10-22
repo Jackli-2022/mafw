@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
+import { railAriaLabel, resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -49,6 +49,16 @@ describe("left-dock 状态模型", () => {
     test("都缺失/非法 → 默认 264 且不迁移", () => {
       expect(resolveLeftDockWidth(null, null)).toEqual({ width: 264, migrated: false })
       expect(resolveLeftDockWidth("abc", "abc")).toEqual({ width: 264, migrated: false })
+    })
+  })
+
+  describe("railAriaLabel（徽标进入无障碍名称）", () => {
+    test("无徽标 → 原 label", () => {
+      expect(railAriaLabel("Dashboard", 0)).toBe("Dashboard")
+      expect(railAriaLabel("Dashboard", undefined)).toBe("Dashboard")
+    })
+    test("有徽标 → 附带待处理数", () => {
+      expect(railAriaLabel("Dashboard", 3)).toBe("Dashboard（3 项待处理）")
     })
   })
 })
