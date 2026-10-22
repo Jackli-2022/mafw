@@ -1,0 +1,93 @@
+// 后台任务检测：既有 SSE 事件/历史水合数据 → BackgroundEvent（纯函数，无 Solid/DOM）。
+//
+// 数据契约（opencode v2.1.0 实证 + 源码钉扎，见 docs/research/2026-10-22-background-wire-probe.md）：
+// - 出现：工具 part `state.status:"completed"` + `state.metadata.status:"running"`
+//   （前台 blocking 的 part 是 state.status:"running"，绝不能误判为后台）；
+// - 完成：synthetic 消息 `metadata.source: "shell"|"subagent"`。
+//   wire 形状以源码为据，检测写宽容判定（type==="synthetic" 或 缺 role 且
+//   metadata.source 存在）——实证未覆盖的字段差异按"完成"方向兜底。
+import type { BackgroundEvent, BgType } from "./background-tracker"
+
+const TARGET_TOOLS = new Set(["shell", "subagent"])
+
+/** 工具 part → bg-observed；前台/非目标/形状不足 → null。 */
+export function detectBackgroundPart(part: any, sessionID: string): BackgroundEvent | null {
+  if (!part || part.type !== "tool" || !TARGET_TOOLS.has(String(part.tool))) return null
+  const state = part.state
+  if (state?.status !== "completed" || state?.metadata?.status !== "running") return null
+  const type: BgType = part.tool === "shell" ? "shell" : "subagent"
+  const id = type === "shell" ? state.metadata.shellID : state.metadata.sessionID
+  if (typeof id !== "string" || !id) return null
+  const label = type === "shell" ? state.input?.command : state.input?.description
+  return {
+    kind: "bg-observed",
+    row: { id, type, sessionID, label: typeof label === "string" ? label : "" },
+  }
+}
+
+/** synthetic 完成消息 → bg-terminal（宽容判定）；其余 → null。 */
+export function detectSyntheticTerminal(info: any, sessionID: string): BackgroundEvent | null {
+  if (!info || typeof info !== "object") return null
+  const isSynthetic = info.type === "synthetic" || (!info.role && info.metadata?.source)
+  if (!isSynthetic) return null
+  const md = info.metadata ?? {}
+  const source = md.source
+  if (source !== "shell" && source !== "subagent") return null
+  const id = source === "shell"
+    ? (typeof md.shellID === "string" ? md.shellID : md.jobID)
+    : md.childID
+  if (typeof id !== "string" || !id) return null
+  const terminal: "completed" | "failed" | "cancelled" =
+    md.state === "cancelled" ? "cancelled"
+      : md.state === "error" || md.error != null ? "failed"
+        : "completed"
+  const label = md.command ?? md.description ?? info.description
+  return {
+    kind: "bg-terminal",
+    id,
+    terminal,
+    source: "synthetic",
+    meta: { type: source, sessionID, label: typeof label === "string" ? label : "" },
+  }
+}
+
+/**
+ * 历史水合回放：items=[{info, parts}]（可乱序）→ 按 time.created 升序的事件流。
+ * 与 live 事件幂等（tracker 的重复观察/终态不回退规则兜底）。
+ */
+export function scanHistoryForBackground(items: any[], sessionID: string): BackgroundEvent[] {
+  if (!Array.isArray(items)) return []
+  const ordered = [...items].sort((a, b) =>
+    (a?.info?.time?.created ?? 0) - (b?.info?.time?.created ?? 0))
+  const out: BackgroundEvent[] = []
+  for (const item of ordered) {
+    for (const part of item?.parts ?? []) {
+      const ev = detectBackgroundPart(part, sessionID)
+      if (ev) out.push(ev)
+    }
+    const done = detectSyntheticTerminal(item?.info, sessionID)
+    if (done) out.push(done)
+  }
+  return out
+}
+
+/** 前台 blocking 工作：最新一条未完成 assistant 消息中 running 的 shell/subagent part。 */
+export function findBlockingWork(
+  messages: any[],
+  parts: Record<string, any[]>,
+): Array<{ type: BgType; label: string }> {
+  if (!Array.isArray(messages)) return []
+  let latest: any = null
+  for (const m of messages) {
+    if (m?.role === "assistant") latest = m
+  }
+  if (!latest || typeof latest.time?.completed === "number") return []
+  const out: Array<{ type: BgType; label: string }> = []
+  for (const part of parts?.[latest.id] ?? []) {
+    if (part?.type !== "tool" || !TARGET_TOOLS.has(String(part.tool))) continue
+    if (part.state?.status !== "running") continue
+    const label = part.tool === "shell" ? part.state?.input?.command : part.state?.input?.description
+    out.push({ type: part.tool === "shell" ? "shell" : "subagent", label: typeof label === "string" ? label : "" })
+  }
+  return out
+}
