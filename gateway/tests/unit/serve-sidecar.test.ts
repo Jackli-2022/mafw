@@ -64,6 +64,17 @@ describe('serve-sidecar spawn options', () => {
     expect(chunks.join('')).toContain('opencode server listening');
   });
 
+  test('opencode 2.1.0 banner "server listening on <url>" (no "opencode" prefix) also resolves ready', async () => {
+    // 2026-10-22 生产事故根因：opencode 2.1.0 改了启动横幅（丢 "opencode" 前缀），
+    // startsWith('opencode server listening') 不再命中 → 健康 serve 被 30s 超时 treeKill。
+    const pending = startServeSidecar({ host: '127.0.0.1', port: 4096, timeoutMs: 5000 });
+    const child = crossSpawnMock.__lastChild();
+    const stdoutHandler = child.stdout.on.mock.calls.find((c: any[]) => c[0] === 'data')[1];
+    stdoutHandler(Buffer.from('server listening on http://127.0.0.1:4096\n'));
+    const result = await pending;
+    expect(result.url).toBe('http://127.0.0.1:4096');
+  });
+
   test('tree-kills the child on close (taskkill on win32, SIGKILL elsewhere)', async () => {
     const execSyncSpy = jest.spyOn(require('child_process'), 'execSync').mockReturnValue(Buffer.from(''));
     const pending = startServeSidecar({ host: '127.0.0.1', port: 4096, timeoutMs: 5000 });

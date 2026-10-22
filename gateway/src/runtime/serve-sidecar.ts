@@ -118,7 +118,10 @@ export function startServeSidecar(opts: ServeSidecarOptions): Promise<ServeSidec
       opts.onOutput?.(text);
       if (settled) return;
       for (const line of output.split('\n')) {
-        if (line.startsWith('opencode server listening')) {
+        // opencode ≤2.0 横幅 "opencode server listening on <url>"；2.1.0 起丢前缀
+        // "server listening on <url>"（2026-10-22 生产事故：旧匹配 30s 超时 treeKill
+        // 健康 serve）。endsWith 匹配两种格式，前缀噪声行不命中。
+        if (/(?:^|\s)server listening on\s+https?:\/\//.test(line)) {
           const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
           if (match) {
             url = match[1];
