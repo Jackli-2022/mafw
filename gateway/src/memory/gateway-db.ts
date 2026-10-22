@@ -76,6 +76,11 @@ export interface NodeRunRow {
 export class GatewayDatabase {
   private db: Database.Database;
 
+  /** 原始 better-sqlite3 句柄（2026-10-22：EventStore 等新模块注入用；既有表请走本类方法）。 */
+  getStore(): Database.Database {
+    return this.db;
+  }
+
   constructor(dbPath: string) {
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
