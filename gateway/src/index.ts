@@ -102,6 +102,11 @@ import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolIdentity, enrichHistoryParts } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
+import { SessionQueue } from './core/session-queue';
+
+/** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
+const BUSY_STALE_MS = 15 * 60_000;
+const QUEUE_ITEM_TTL_MS = 24 * 3600_000;
 import { EventStore } from './events/event-store';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
 import { parseSince, attachGlobalSse } from './events/sse-attach';
@@ -346,6 +351,7 @@ class MafwScheduler {
     return this.pipelineBudget;
   }
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private queueSweepTimer: ReturnType<typeof setInterval> | null = null;
   // Internal worker sessions (memory pipelines) — their output must never be
   // captured back into T1 (recursion guard A). Maps sessionID → worker role
   // (manager, turn-compress, index-scan, reflect) for token usage tracking.
@@ -362,7 +368,11 @@ class MafwScheduler {
   }
   private pipelineGuard = new (require('./recall/pipeline-guard').PipelineGuard)({ timeoutMs: 30 * 60_000, log: (m: string) => log.warn(m) }); // action-level in-flight guards, keyed by action name
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
-  private promptBudgetSessions = new Set<string>(); // P0-2：per-prompt 预算来源标记（goal guard 优先，回合终态清理）
+  private promptBudgetSessions = new Set<string>();
+  /** busy 追踪（spec §5.1 v2）：value = busy 起始 ms；turn.started 置位、三终态清除；15min TTL 防楔死。 */
+  private busySessions = new Map<string, number>();
+  /** 会话队列 inbox（spec 2026-10-22-session-queue-inbox）。 */
+  private sessionQueue = new SessionQueue(); // P0-2：per-prompt 预算来源标记（goal guard 优先，回合终态清理）
   private approvalPolicy!: ApprovalPolicyService; // asked 事件策略评估（manual/auto + 预算 + 内部 fail-safe）
   private allowlistStore!: AllowlistStore; // legacy 白名单（config.yaml approval 段，双读过渡）
   private permissionRules!: PermissionRulesStore; // 持久规则（~/.mafw/permission-rules.json）
@@ -1220,6 +1230,9 @@ class MafwScheduler {
       if (type === MAFW.turnFailed) {
         this.goalDriver?.onSessionError(sessionID, String(props?.error ?? 'session error'));
       }
+      // busy 追踪（spec 2026-10-22-session-queue-inbox §5.1 v2）：turn.started 置位；
+      // 本词汇的首个消费者——配对可靠性由 15min TTL 清扫兜底（防楔死，v2 Q2）。
+      if (type === MAFW.turnStarted) this.busySessions.set(sessionID, Date.now());
     }
     // Approval policy：asked 事件先于 internal 过滤与 Mode A 广播评估（内部会话
     // fail-safe 需在 memoryWorker drop 之前生效）；决策附在广播 properties.mafwPolicy，
@@ -1233,6 +1246,8 @@ class MafwScheduler {
     // 后续无预算 prompt。goal guard 不在此列——其生命周期是整个 goal）。
     if ((type === MAFW.turnCompleted || type === MAFW.turnFailed || type === MAFW.turnAborted) && sessionID) {
       if (this.promptBudgetSessions.delete(sessionID)) this.budgetGuards.delete(sessionID);
+      // busy 清除（三终态；flush 续发挂 Task 4 补一行）
+      this.busySessions.delete(sessionID);
     }
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
@@ -2305,6 +2320,31 @@ class MafwScheduler {
     }
   }
 
+  /** 队列防楔死清扫（spec §5.1 v2 Q2，60s 周期）：
+   *  busy 超 BUSY_STALE_MS 清除（假 busy——如 noReply prompt 触发 prompted-无回合——
+   *  最坏损害限制为 15 分钟排队延迟）+ 队列项超 QUEUE_ITEM_TTL_MS 摘除（孤儿消息不无限堆积）。
+   *  事件发射（queue.updated expire）与 flush 续发在 Task 4/5 接线。 */
+  private sweepBusyAndQueue(): void {
+    try {
+      const now = Date.now();
+      for (const [sid, startedAt] of [...this.busySessions]) {
+        if (now - startedAt >= BUSY_STALE_MS) {
+          this.busySessions.delete(sid);
+          log.warn(`[Queue] busy state stale-cleared for ${sid} (>= ${BUSY_STALE_MS}ms without terminal)`);
+        }
+      }
+      // 队列项 TTL：逐会话摘除（只扫有队的会话）
+      for (const sid of this.sessionQueue.sessions()) {
+        const expired = this.sessionQueue.expireOlderThan(sid, QUEUE_ITEM_TTL_MS);
+        for (const item of expired) {
+          log.warn(`[Queue] item ${item.id} expired (TTL ${QUEUE_ITEM_TTL_MS}ms) in ${sid}`);
+        }
+      }
+    } catch (err: any) {
+      log.warn(`[Queue] sweep failed (non-fatal): ${err.message}`);
+    }
+  }
+
   private registerMemoryPipelineActions(): void {
     actionRegistry.set('memory:turnCompress', async () => {
       await this.runPipelineGuarded('memory:turnCompress', async () => {
@@ -3172,6 +3212,11 @@ class MafwScheduler {
       if (!this.heartbeatTimer) {
         this.heartbeatTimer = setInterval(() => this.heartbeat?.sweep(), 30 * 60 * 1000);
         this.heartbeatTimer.unref?.();
+      }
+      // 队列防楔死清扫（spec §5.1 v2 Q2）：busy 15min TTL + 队列项 24h TTL。
+      if (!this.queueSweepTimer) {
+        this.queueSweepTimer = setInterval(() => this.sweepBusyAndQueue(), 60_000);
+        this.queueSweepTimer.unref?.();
       }
     }
     // memory:decay must mutate the gateway's LIVE index instance — a throwaway

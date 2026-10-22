@@ -89,6 +89,11 @@ export class SessionQueue {
     return this.queues.get(sessionID)?.length ?? 0;
   }
 
+  /** 当前有队列项的会话集合（清扫遍历用）。 */
+  sessions(): string[] {
+    return [...this.queues.keys()];
+  }
+
   /** TTL 过期摘除（防楔死清扫用；now 注入供测试时钟控制）。返回被摘项。 */
   expireOlderThan(sessionID: string, ttlMs: number, now: number = Date.now()): QueuedItem[] {
     const arr = this.queues.get(sessionID);
