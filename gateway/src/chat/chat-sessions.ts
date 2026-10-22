@@ -1,5 +1,12 @@
 import * as http from 'http';
 
+/**
+ * @deprecated Mode B per-session delta 通道（message_delta/complete/error）——
+ * 2026-10-22 侦察确认零源码消费方（desktop/TUI 均走 Mode A 全局流；
+ * spec 2026-10-22-persistent-event-replay-design §5.5）。
+ * 保留是兼容赌注；新消费方请用 Mode A（GET /api/events，支持
+ * Last-Event-ID / ?since 断点续传）。
+ */
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream',
   'Cache-Control': 'no-cache',
