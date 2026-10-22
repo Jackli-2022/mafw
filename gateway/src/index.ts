@@ -102,6 +102,8 @@ import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolIdentity, enrichHistoryParts } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
+import { EventStore } from './events/event-store';
+import { enrichBroadcastFrame } from './events/broadcast-frame';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
@@ -294,6 +296,16 @@ class MafwScheduler {
   private getGatewayDb(): GatewayDatabase {
     if (!this.gatewayDbInstance) {
       this.gatewayDbInstance = new GatewayDatabase(config.resolvePath(config.recall.obsCapturePath));
+      // 持久事件日志（spec 2026-10-22 §5.2 接线时机）：GatewayDatabase 打开后立即构造，
+      // startApiServer 之前。persist=false 或构造抛错 → 保持 null，broadcast 全路径
+      // fail-open（G7：启动永不被事件日志卡死）。
+      if (config.events.persist) {
+        try {
+          this.eventStore = new EventStore(this.gatewayDbInstance.getStore());
+        } catch (err: any) {
+          log.warn(`[Events] EventStore init failed (replay disabled, non-fatal): ${err.message}`);
+        }
+      }
     }
     return this.gatewayDbInstance;
   }
@@ -389,6 +401,8 @@ class MafwScheduler {
   /** Abort controller for the active event stream subscription. Cancelled
    *  before re-subscribing to prevent orphaned async iterator loops. */
   private eventStreamAbort: AbortController | null = null;
+  /** 持久事件日志（spec 2026-10-22；null = 纯直播 fail-open）。 */
+  private eventStore: EventStore | null = null;
   private sseClients: Set<http.ServerResponse> = new Set();
   /** WebSocket clients (mobile app): same events as SSE, JSON frames. */
   private wsClients: Set<WebSocket> = new Set();
@@ -2781,21 +2795,27 @@ class MafwScheduler {
 
   private broadcast(event: { type: string; [key: string]: any }): void {
     log.info(`[SSE] broadcast ${event.type} clients=${this.sseClients.size}`);
-    const data = `data: ${JSON.stringify({ ...event, timestamp: new Date().toISOString() })}\n\n`;
+    // 持久事件日志（spec 2026-10-22）：同步分配单调 seq（part.delta 不入库不占 seq）。
+    // append 失败/缺席 → seq null → 无 id: 行（现状形状，fail-open）。
+    const seq = this.eventStore?.append(event) ?? null;
+    const enriched = enrichBroadcastFrame(event, seq, new Date().toISOString());
+    const data = (seq !== null ? `id: ${seq}\n` : '') + `data: ${JSON.stringify(enriched)}\n\n`;
     for (const client of this.sseClients) {
       try { client.write(data); } catch { this.sseClients.delete(client); }
     }
-    // WebSocket clients receive the same events as JSON frames.
-    const frame = JSON.stringify({ ...event, timestamp: new Date().toISOString() });
+    // WebSocket clients receive the same events as JSON frames (seq additive).
+    const frame = JSON.stringify(enriched);
     for (const ws of this.wsClients) {
       if (ws.readyState === WebSocket.OPEN) {
         try { ws.send(frame); } catch { this.wsClients.delete(ws); }
       }
     }
     // Push to registered mobile devices via PushGateway (online WS + offline fallback)
-    this.pushGateway?.onBroadcast(event).catch((err: any) => {
+    this.pushGateway?.onBroadcast(enriched).catch((err: any) => {
       log.warn(`[PushGateway] broadcast failed: ${err.message}`);
     });
+    // 摊销裁剪（每 pruneEveryN 次 append 检查一次；异常吞掉 fail-open）
+    this.eventStore?.maybePrune(config.events.logRetention, config.events.pruneEveryN);
   }
 
   /** Upstream WebSocket messages: { type: 'send', sessionID?, message, parts?, agent?, model? }. */

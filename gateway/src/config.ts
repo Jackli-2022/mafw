@@ -382,6 +382,16 @@ export interface GatewayConfig {
       voices?: string[];
     };
   };
+  events: {
+    /** 持久事件日志开关（false = 纯直播现状行为；测试/最小部署用）。 */
+    persist: boolean;
+    /** 留存行数（按 seq 裁剪；AUTOINCREMENT 保证裁后 seq 不重用）。 */
+    logRetention: number;
+    /** 单次回放上限（newest-window：超限取最新 limit 行 + truncated 信号）。 */
+    replayLimit: number;
+    /** 摊销裁剪间隔（每 N 次 append 检查一次）。 */
+    pruneEveryN: number;
+  };
   runtime: {
     /** 激活的 runtime 插件名（~/.mafw/runtime-plugins/*.js 的 module.exports.name）；空 = 内置 opencode。 */
     plugin?: string;
@@ -653,6 +663,12 @@ function defaults(projectDir: string): GatewayConfig {
         voices: ['冰糖', '茉莉', '苏打', '白桦', 'Mia', 'Chloe', 'Milo', 'Dean'],
       },
     },
+    events: {
+      persist: true,
+      logRetention: 20000,
+      replayLimit: 2000,
+      pruneEveryN: 1000,
+    },
     runtime: {
       // 空串默认值让 MAFW_RUNTIME_PLUGIN 环境变量覆盖生效
       // （applyEnvOverrides 只遍历 defaults 里存在的 key）。
@@ -752,6 +768,7 @@ export class Config {
   get timeouts() { return this.data.timeouts; }
   get loop() { return this.data.loop; }
   get search() { return this.data.search; }
+  get events() { return this.data.events; }
   get memory() { return this.data.memory; }
   get decay() { return this.data.decay; }
   get llm() { return this.data.llm; }
