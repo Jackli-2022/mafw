@@ -188,6 +188,10 @@ export interface MafwToolRegistration {
   description: string;
   /** JSON Schema（object 形态）；runtime 翻译为自家类型系统（pi typebox T.Unsafe / MCP inputSchema / Claude tool use） */
   parameters: Record<string, any>;
+  /** MCP stable spec 工具注解（hints, not guarantees；2026-10-22 spec §5.1）——六件套由 factory 从 mafw 专属表物化，插件可声明覆盖 */
+  annotations?: import('./tool-classes').MafwToolAnnotations;
+  /** MCP stable spec 结构化输出声明（JSON Schema，顶层 object）；缺省 = 无声明。runtime 不识别时 fail-open 忽略 */
+  outputSchema?: Record<string, any>;
   /** 执行器（gateway loopback HTTP 已封装）。isError=true 时 runtime 应向 agent 报工具错误。 */
   execute(params: any, signal?: AbortSignal): Promise<{ text: string; isError?: boolean }>;
 }

@@ -15,7 +15,7 @@ import type { AgentRuntime, MafwToolRegistration } from './contract';
 import {
   hashText, postToolJson, a2aRequest, taskAnswer, makeMediaPointer, mediaDataFromSource,
 } from './host-adapter';
-import { setToolClassOverlay, clearToolClassOverlay } from './tool-classes';
+import { setToolClassOverlay, clearToolClassOverlay, annotationsForTool } from './tool-classes';
 import { log } from '../core/utils/logger';
 
 export interface MafwToolSpec {
@@ -23,6 +23,10 @@ export interface MafwToolSpec {
   label?: string;
   description: string;
   parameters: Record<string, any>;
+  /** MCP stable spec 注解（可选；factory 物化时 spec 自带值走声明覆盖级） */
+  annotations?: import('./tool-classes').MafwToolAnnotations;
+  /** MCP stable spec 结构化输出声明（本批六件套不产出 structured，字段为将来/runtime 插件作者预留） */
+  outputSchema?: Record<string, any>;
 }
 
 const ok = (text: string): { text: string } => ({ text });
@@ -244,7 +248,13 @@ export const MAFW_TOOL_SPECS: MafwToolSpec[] = TOOL_DEFS.map((d) => d.spec);
 export function buildMafwToolFactory(opts: { baseUrl: string; fetchImpl?: typeof fetch }): (sessionId: string) => MafwToolRegistration[] {
   const f = (opts.fetchImpl ?? fetch) as typeof fetch;
   const base = opts.baseUrl;
-  return (sessionId: string) => TOOL_DEFS.map((d) => ({ ...d.spec, execute: d.makeExecute({ sessionId, f, base }) }));
+  // 注解物化（spec §5.5）：单源 = MAFW_TOOL_ANNOTATIONS 表；spec 自带 annotations 走声明覆盖级。
+  // pi stash 透传携带（typebox 通道今日只消费 parameters，fail-open 忽略——将来支持零改动）。
+  return (sessionId: string) => TOOL_DEFS.map((d) => ({
+    ...d.spec,
+    annotations: annotationsForTool(d.spec.name, d.spec.annotations),
+    execute: d.makeExecute({ sessionId, f, base }),
+  }));
 }
 
 /**
