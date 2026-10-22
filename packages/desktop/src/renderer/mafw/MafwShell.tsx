@@ -21,6 +21,7 @@ import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
 import { backgroundRows, ingestBackgroundEvent, onBackgroundTerminal } from "./background-store"
+import { countRunning } from "./background-tracker"
 import { scanHistoryForBackground } from "./background-detect"
 import { reconcileBackgroundOnce } from "./background-reconcile"
 import { buildBackgroundNotice } from "./background-notify"
@@ -39,6 +40,7 @@ import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { NotesDock } from "./components/NotesDock"
 import { SubagentDock } from "./components/SubagentDock"
+import { BackgroundDock } from "./components/BackgroundDock"
 import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
@@ -1808,6 +1810,7 @@ export function MafwShell() {
                           parentID={store.session.find((s: any) => s.id === activeSessionId()!)?.parentID ?? null}
                           onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
+                          onOpenBackgroundDock={() => applyRightDock(true, "background")}
                           currentProject={currentProject()}
                           onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
                           onToggleTheme={toggleTheme}
@@ -1936,6 +1939,7 @@ export function MafwShell() {
               tab={rightDockTab()}
               width={rightDockWidth()}
               subagentBadge={subagentRows().filter(r => r.status === "running").length}
+              backgroundBadge={countRunning(backgroundRows())}
               onClose={() => applyRightDock(false)}
               onTab={(t) => applyRightDock(true, t)}
             >
@@ -1981,6 +1985,12 @@ export function MafwShell() {
               </div>
               <div style={{ display: rightDockTab() === "subagents" ? "contents" : "none" }}>
                 <SubagentDock
+                  activeSessionId={currentSessionID() || null}
+                  onOpenSession={(id) => void openSubagentSession(id)}
+                />
+              </div>
+              <div style={{ display: rightDockTab() === "background" ? "contents" : "none" }}>
+                <BackgroundDock
                   activeSessionId={currentSessionID() || null}
                   onOpenSession={(id) => void openSubagentSession(id)}
                 />

@@ -13,6 +13,8 @@ export function RightDock(props: {
   onTab: (tab: DockTab) => void
   /** 全局 running 子代理数（徽标；0/缺省不显示）。 */
   subagentBadge?: number
+  /** 全局 running 后台任务数（徽标；0/缺省不显示）。 */
+  backgroundBadge?: number
   children: any
 }) {
   return (
@@ -27,6 +29,7 @@ export function RightDock(props: {
               <TabsV2.Trigger value="notes">📝 便签</TabsV2.Trigger>
               <TabsV2.Trigger value="changes">🗒 改动</TabsV2.Trigger>
               <TabsV2.Trigger value="subagents">🤖 子代理{props.subagentBadge ? ` ${props.subagentBadge}` : ""}</TabsV2.Trigger>
+              <TabsV2.Trigger value="background">⚡ 后台{props.backgroundBadge ? ` ${props.backgroundBadge}` : ""}</TabsV2.Trigger>
             </TabsV2.List>
           </TabsV2>
           <div class="mafw-right-dock-spacer" />

@@ -8,6 +8,7 @@ import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { SessionTurn } from "@mafw/session-ui/session-turn"
 import { TaskBar } from "./TaskBar"
+import { BackgroundWorkBar } from "./BackgroundWorkBar"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
@@ -120,6 +121,8 @@ export type ChatPaneProps = {
   onAskCancel: (card: AskCardData) => void
   /** 打开改动审阅面板（切片 2；SessionTurn actions + composer 工具条双入口） */
   onOpenDiffReview?: () => void
+  /** 打开 RightDock「后台」tab（work bar 点击；P0-3） */
+  onOpenBackgroundDock?: () => void
   /** plan/build 模式三态循环（切片 3；'default' = 清除 picks 回 runtime 默认） */
   onPlanBuildToggle?: (next: "plan" | "build" | "default") => void
   /** worktree 并行隔离（切片 4）：能力门由 MafwShell 传（runtime worktreeApi） */
@@ -1327,6 +1330,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           read-only (subagent) sessions: subagents are not user-facing chats. */}
       <Show when={!props.readOnly}>
       <div class="mafw-input-area">
+        <BackgroundWorkBar sessionID={props.sessionID} onOpenDock={() => props.onOpenBackgroundDock?.()} />
         <Show when={sidProp() && props.sessionPending(sidProp()) > 0 && jumpVisible()}>
           <ButtonV2 variant="outline" size="small" class="mafw-pending-pill" onClick={jumpToLatest} aria-label="有待回答卡片">
             <span class="mafw-flow-pulse" />

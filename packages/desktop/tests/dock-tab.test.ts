@@ -23,14 +23,17 @@ describe("normalizeDockTab", () => {
 })
 
 describe("DOCK_TABS", () => {
-  test("六栏且不含 quota", () => {
-    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes", "subagents"])
+  test("七栏且不含 quota", () => {
+    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background"])
   })
   test("changes 合法值直通", () => {
     expect(normalizeDockTab("changes")).toBe("changes")
   })
   test("subagents 合法值直通", () => {
     expect(normalizeDockTab("subagents")).toBe("subagents")
+  })
+  test("background 合法值直通", () => {
+    expect(normalizeDockTab("background")).toBe("background")
   })
 })
 
