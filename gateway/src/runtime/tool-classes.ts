@@ -21,8 +21,11 @@ export type TOOL_CLASS =
   | 'plan'       // 任务清单/计划（todowrite、TodoWrite、todo_list）
   | 'other';     // 未知/自定义工具（MCP、插件注册）——消费方自行兜底
 
-/** 并集表（小写 key；查询大小写不敏感——Claude PascalCase 归一命中）。 */
-const TOOL_CLASS_TABLE: Record<string, TOOL_CLASS> = {
+/** 并集表（小写 key；查询大小写不敏感——Claude PascalCase 归一命中）。
+ *  ⚠️ mafw_* 网关工具**禁止**进本表（2026-10-22 design Q1 裁决）——审批的类
+ *  deny 会压过身份 allowlist；其注解走 MAFW_TOOL_ANNOTATIONS 专属表。
+ *  钉扎：tests/unit/runtime/approval-flip-pin.test.ts。 */
+export const TOOL_CLASS_TABLE: Record<string, TOOL_CLASS> = {
   // readonly
   read: 'readonly',
   // search
