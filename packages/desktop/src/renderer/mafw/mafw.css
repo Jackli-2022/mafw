@@ -447,30 +447,17 @@ html[data-theme="light"] body {
   background: var(--bg-base);
   border-right: 1px solid var(--border-subtle);
 }
-/* ── Brand row（38px，与顶行同高对齐；logo + 状态点 + 主题切换） ── */
-.mafw-rail-brand {
-  display: flex; align-items: center; gap: 8px;
-  height: 38px; padding: 0 8px 0 12px; flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  -webkit-app-region: drag; user-select: none;
-}
-.mafw-rail-brand button { -webkit-app-region: no-drag; }
-.mafw-rail-brand-name { font-size: 13px; font-weight: 600; color: var(--text-2); }
-/* ── Header: project switcher (left) + collapse arrow (right) ── */
-.mafw-rail-head { display: flex; align-items: center; gap: 4px; padding: 8px 8px 2px; flex-shrink: 0; }
+/* ── Header: project switcher (left) ── */
 .mafw-rail-switcher { flex: 1; display: flex; align-items: center; gap: 5px; min-width: 0; height: 28px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--r-md); cursor: pointer; color: var(--text-2); font-size: 13px; font-weight: 500; }
 .mafw-rail-switcher:hover { background: var(--hover); color: var(--text-1); border-color: var(--border-subtle); }
 .mafw-rail-switcher-caret { flex-shrink: 0; opacity: .55; }
 .mafw-rail-switcher-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-rail-check { margin-left: auto; opacity: .8; }
 .mafw-rail-switcher-menu { max-height: 320px; overflow-y: auto; }
-.mafw-rail-search-toggle { flex-shrink: 0; opacity: .75; }
-.mafw-rail-search-toggle:hover { opacity: 1; }
-.mafw-rail-search-toggle[data-size="small"] { min-height: 24px; height: 24px; padding: 0; }
-/* ── New session + search ── */
-.mafw-rail-search { padding: 8px 8px 8px; flex-shrink: 0; }
+/* ── Search（左 dock 搜索面） ── */
+.mafw-left-dock-search { padding: 0 8px 6px; flex-shrink: 0; }
 /* Swiss search: flat borderless surface; focus signal = leading icon brightens. */
-.mafw-rail-search div[data-component="text-input-v2"] {
+.mafw-left-dock-search div[data-component="text-input-v2"] {
   width: 100%;
   background: transparent;
   box-shadow: none;
@@ -480,15 +467,13 @@ html[data-theme="light"] body {
   height: 30px;
   padding-left: 0;
 }
-.mafw-rail-search div[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] { color: var(--text-4); }
-.mafw-rail-search div[data-component="text-input-v2"]:focus-within [data-slot="text-input-v2-leading-icon"] { color: var(--text-1); }
-.mafw-rail-search input { width: 100%; font-size: 13px; }
+.mafw-left-dock-search div[data-component="text-input-v2"] [data-slot="text-input-v2-leading-icon"] { color: var(--text-4); }
+.mafw-left-dock-search div[data-component="text-input-v2"]:focus-within [data-slot="text-input-v2-leading-icon"] { color: var(--text-1); }
+.mafw-left-dock-search input { width: 100%; font-size: 13px; }
 /* ── Scroll area: Swiss folio date groups + flat session rows ── */
-.mafw-rail-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 8px; }
 .mafw-rail-date-group { display: flex; align-items: baseline; gap: 6px; padding: 10px 12px 4px; background: var(--bg-base); color: var(--text-5); font-size: 11px; font-weight: 500; letter-spacing: .04em; user-select: none; }
 .mafw-rail-date-group::after { content: ""; order: 3; flex: 1; height: 1px; background: var(--border-subtle); transform: translateY(-2px); }
 .mafw-rail-date-count { order: 2; margin-left: auto; font-variant-numeric: tabular-nums; font-size: 10px; opacity: .8; }
-.mafw-rail-scroll > .mafw-rail-date-group:first-child { padding-top: 6px; }
 .mafw-rail-session { display: flex; align-items: center; gap: 6px; height: 32px; margin: 1px 6px; padding: 0 8px 0 12px; border-radius: 4px; cursor: pointer; color: var(--text-2); font-size: 13px; transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard); }
 .mafw-rail-session:hover { background: var(--hover); color: var(--text-1); }
 .mafw-rail-session.active { background: var(--hover); color: var(--text-1); box-shadow: inset 2px 0 0 var(--accent); }
@@ -502,9 +487,7 @@ html[data-theme="light"] body {
 .mafw-rail-load-more { margin: 10px auto 4px; width: fit-content; padding: 2px 6px; color: var(--text-4); font-size: 12px; cursor: pointer; user-select: none; border-radius: 4px; }
 .mafw-rail-load-more:hover { color: var(--text-1); background: var(--hover); }
 .mafw-rail-empty { padding: 16px 12px; color: var(--text-5); font-size: 13px; }
-/* ── Pinned bottom area: footer, never scrolls ── */
-.mafw-rail-fixed { flex-shrink: 0; background: var(--bg-base); border-top: 1px solid var(--border-subtle); }
-/* ── Manager command card (below rail head) ── */
+/* ── Manager command card (below dock head) ── */
 .mafw-manager-card { margin: 8px 10px 4px; padding: 8px 10px; border-radius: var(--r-md); border: 1px solid var(--border-subtle); border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); cursor: pointer; user-select: none; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
 .mafw-manager-card:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--text-5); }
 .mafw-manager-card.offline { border-left-color: var(--border-subtle); background: transparent; }
@@ -519,9 +502,6 @@ html[data-theme="light"] body {
 .mafw-manager-card-progress > span { display: block; height: 100%; background: var(--accent); }
 .mafw-manager-card-meta { margin-top: 3px; font-size: 10px; opacity: .6; color: var(--text-3); }
 .mafw-manager-card-idle { margin-top: 4px; font-size: 11px; opacity: .6; color: var(--text-3); }
-.mafw-rail-footer { display: flex; flex-direction: column; }
-.mafw-rail-settings-bar { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font-size: 13px; color: var(--text-3); background: var(--bg-base); cursor: pointer; flex-shrink: 0; transition: color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard); }
-.mafw-rail-settings-bar:hover { color: var(--text-1); background: var(--bg-overlay); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.72; }
@@ -2783,7 +2763,6 @@ html[data-theme="light"] body {
   box-shadow: var(--elev-panel);
 }
 .mafw-left-dock-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px; }
-.mafw-left-dock-search { padding: 0 8px 6px; }
 .mafw-left-dock-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .mafw-left-dock-backdrop { position: absolute; inset: 0; z-index: 60; background: transparent; }
 .mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
@@ -3108,10 +3087,6 @@ html[data-theme="light"] body {
 .mafw-welcome-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-welcome-empty { color: var(--text-weak); font-size: 13px; padding: 8px 0; }
 
-/* ── Rail (new: wrap/scroll/footer/collapse) ── */
-.mafw-rail-wrap { position: relative; min-width: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; flex: 0 0 auto; }
-.mafw-rail-footer { background: var(--bg-base); }
-/* 收起态：整列不渲染（0 宽），无残留细条 */
 /* ── Chat panes (single pane since v6; mafw-pane keeps the artifact-column hook) ── */
 .mafw-chat-panes { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
 .mafw-pane {
@@ -3876,10 +3851,6 @@ html[data-theme="light"] body {
   height: 2px;
   border-radius: 1px;
   opacity: .8;
-}
-
-.mafw-rail-footer [data-component="tooltip-v2-trigger"] {
-  width: 100%;
 }
 
 .mafw-usage-pill-dot {
@@ -5030,31 +5001,7 @@ html[data-theme="light"] body {
 .mafw-page-title, .mafw-welcome-title { font-family: var(--font-display); font-weight: 600; }
 /* 用户气泡与回复统一 sans 16px/1.7（见上方 user-message-text 规则）；等宽只留给代码/diff/工具卡。 */
 
-/* ── Rail 主导航 + 多项目会话树（v6 §0b）────────────────────────── */
-.mafw-rail-nav { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; flex-shrink: 0; }
-.mafw-rail-new {
-  display: flex; align-items: center; justify-content: flex-start; gap: 6px;
-  height: 30px; padding: 0 9px; margin-bottom: 4px;
-  font: 500 13px/1.4 var(--font-ui);
-  color: var(--accent-text); background: var(--accent-soft);
-  border: 1px solid var(--accent-border); border-radius: var(--r-md);
-  cursor: pointer; text-align: left;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
-}
-.mafw-rail-new:hover { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-.mafw-rail-new:active { background: var(--accent-strong); color: var(--on-accent); border-color: transparent; }
-.mafw-rail-nav-item {
-  display: flex; align-items: center; gap: 8px;
-  height: 30px; padding: 0 10px;
-  font: 13px/1.4 var(--font-ui); color: var(--text-3);
-  background: none; border: none; border-radius: var(--r-md);
-  cursor: pointer; text-align: left;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
-}
-.mafw-rail-nav-item:hover { background: var(--hover); color: var(--text-2); }
-.mafw-rail-nav-item.active { background: var(--bg-overlay); color: var(--text-1); }
-.mafw-rail-nav-item.active svg { color: var(--accent); }
-.mafw-rail-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ── Rail 会话树（v6 §0b；左 dock 复用）────────────────────────── */
 .mafw-rail-project { margin-top: 2px; }
 .mafw-rail-project-head {
   display: flex; align-items: center; gap: 6px;
@@ -5063,9 +5010,7 @@ html[data-theme="light"] body {
 }
 .mafw-rail-project-head:hover { color: var(--text-3); }
 .mafw-rail-project-head.current { color: var(--text-3); }
-.mafw-rail-project-caret { width: 10px; flex-shrink: 0; font-size: 9px; }
 .mafw-rail-project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
-.mafw-rail-manager-star { color: var(--accent); margin-right: 4px; }
 
 /* ── dock 内嵌审阅（v6 W4）：单列 + 返回钮 ── */
 .mafw-diff-panel.embedded { border: none; border-radius: 0; height: 100%; }
@@ -5127,9 +5072,6 @@ html[data-theme="light"] body {
 
 /* ── v7 微交互：按压下沉半像素（无缩放抖动）；hover/press 统一 fast 档 ── */
 .mafw-rail-session:active,
-.mafw-rail-settings-bar:active,
-.mafw-rail-nav-item:active,
-.mafw-rail-new:active,
 .mafw-tts-row:active,
 .mafw-changes-row:active,
 .mafw-diff-file-row:active,

@@ -240,23 +240,24 @@ describe("token v5 — v1/v2 兼容覆盖层跟随", () => {
 
 describe("Rail 主导航 + 会话树（v6 §0b）", () => {
   test("Rail 消费 nav-tab 导航表", () => {
-    const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
-    expect(rail).toContain("nav-tab")
-    expect(rail).toContain("buildSessionTree")
+    const dock = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "LeftDock.tsx"), "utf8")
+    expect(dock).toContain("buildSessionTree")
+    const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "IconRail.tsx"), "utf8")
+    expect(rail).toContain("onDashboard")
   })
   test("MafwShell 不再引用 TabStrip", () => {
     const shell = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "MafwShell.tsx"), "utf8")
     expect(shell).not.toContain("TabStrip")
   })
-  test("导航项与项目树样式存在", () => {
-    expect(cssBlock(".mafw-rail-nav {")).not.toBe("")
+  test("项目树样式存在；旧主导航样式已删除", () => {
     expect(cssBlock(".mafw-rail-project-head {")).not.toBe("")
+    expect(cssBlock(".mafw-rail-nav {")).toBe("")
   })
   test("单项目树：只加载当前项目，manager 不入树", () => {
-    const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "Rail.tsx"), "utf8")
-    expect(rail).toContain("sessionsFor(projectID())")
-    expect(rail).not.toContain("renderNode(p.manager")
-    expect(rail).not.toContain("collapsedUnsearched")
+    const dock = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "LeftDock.tsx"), "utf8")
+    expect(dock).toContain("sessionsFor(projectID())")
+    expect(dock).not.toContain("renderNode(p.manager")
+    expect(dock).not.toContain("collapsedUnsearched")
   })
 })
 
@@ -325,14 +326,12 @@ describe("用量指标行 v4", () => {
   })
 })
 
-describe("Rail CTA + UsagePill v4", () => {
-  test("New session 主 CTA：accent-soft 底 + accent-border 描边", () => {
-    const b = cssBlock(".mafw-rail-new {")
-    expect(b).toContain("background: var(--accent-soft)")
-    expect(b).toContain("border: 1px solid var(--accent-border)")
+describe("IconRail CTA + UsagePill v4", () => {
+  test("新建会话在 IconRail（+ 图标，Tooltip 可达）", () => {
+    const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "IconRail.tsx"), "utf8")
+    expect(rail).toContain("新建会话")
+    expect(rail).toContain("plus-small")
   })
-  test("New session hover 实心绿", () =>
-    expect(cssBlock(".mafw-rail-new:hover {")).toContain("background: var(--accent)"))
   test("UsagePill 细线进度条 2px", () =>
     expect(cssBlock(".mafw-usage-pill-progress {")).toContain("height: 2px"))
   test("UsagePill 数字 tabular", () =>
@@ -879,13 +878,11 @@ describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接�
   })
 })
 
-describe("layout-toggles — Rail 瘦身", () => {
+describe("layout-toggles — 旧 Rail 拆除", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("Rail 不再有折叠箭头与轨迹入口", () => {
-    const rail = read("src/renderer/mafw/components/Rail.tsx")
-    expect(rail).not.toContain("mafw-rail-collapse")
-    expect(rail).not.toContain("onOpenTrajectory")
-    expect(rail).not.toContain("onToggleCollapsed")
+  test("Rail.tsx 已删除（IconRail + LeftDock 取代）", () => {
+    expect(() => read("src/renderer/mafw/components/Rail.tsx")).toThrow()
+    expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("components/Rail")
   })
   test("MafwShell 不再传 onOpenTrajectory / onToggleCollapsed，折叠态无展开按钮", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
