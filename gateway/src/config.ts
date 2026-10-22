@@ -382,6 +382,8 @@ export interface GatewayConfig {
       voices?: string[];
     };
   };
+  /** 认知面 gate/rewrite 声明式规则（spec 2026-10-22；宽松类型——validateRules 是权威）。 */
+  cognition?: { rules?: unknown[] };
   events: {
     /** 持久事件日志开关（false = 纯直播现状行为；测试/最小部署用）。 */
     persist: boolean;
@@ -663,6 +665,7 @@ function defaults(projectDir: string): GatewayConfig {
         voices: ['冰糖', '茉莉', '苏打', '白桦', 'Mia', 'Chloe', 'Milo', 'Dean'],
       },
     },
+    cognition: { rules: [] },
     events: {
       persist: true,
       logRetention: 20000,
@@ -769,6 +772,7 @@ export class Config {
   get loop() { return this.data.loop; }
   get search() { return this.data.search; }
   get events() { return this.data.events; }
+  get cognition() { return (this.data as any).cognition ?? { rules: [] }; }
   get memory() { return this.data.memory; }
   get decay() { return this.data.decay; }
   get llm() { return this.data.llm; }
