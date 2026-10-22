@@ -23,8 +23,8 @@ describe("normalizeDockTab", () => {
 })
 
 describe("DOCK_TABS", () => {
-  test("七栏且不含 quota", () => {
-    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background"])
+  test("九栏且不含 quota", () => {
+    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background", "files", "editor"])
   })
   test("changes 合法值直通", () => {
     expect(normalizeDockTab("changes")).toBe("changes")
@@ -34,6 +34,10 @@ describe("DOCK_TABS", () => {
   })
   test("background 合法值直通", () => {
     expect(normalizeDockTab("background")).toBe("background")
+  })
+  test("files / editor 合法值直通", () => {
+    expect(normalizeDockTab("files")).toBe("files")
+    expect(normalizeDockTab("editor")).toBe("editor")
   })
 })
 

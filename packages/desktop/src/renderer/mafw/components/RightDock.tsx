@@ -30,6 +30,8 @@ export function RightDock(props: {
               <TabsV2.Trigger value="changes">🗒 改动</TabsV2.Trigger>
               <TabsV2.Trigger value="subagents">🤖 子代理{props.subagentBadge ? ` ${props.subagentBadge}` : ""}</TabsV2.Trigger>
               <TabsV2.Trigger value="background">⚡ 后台{props.backgroundBadge ? ` ${props.backgroundBadge}` : ""}</TabsV2.Trigger>
+              <TabsV2.Trigger value="files">📁 文件</TabsV2.Trigger>
+              <TabsV2.Trigger value="editor">📝 编辑器</TabsV2.Trigger>
             </TabsV2.List>
           </TabsV2>
           <div class="mafw-right-dock-spacer" />

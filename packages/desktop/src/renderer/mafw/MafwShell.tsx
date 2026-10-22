@@ -42,6 +42,8 @@ import { createPresence, SURFACE_MS } from "./components/presence"
 import { NotesDock } from "./components/NotesDock"
 import { SubagentDock } from "./components/SubagentDock"
 import { BackgroundDock } from "./components/BackgroundDock"
+import { FilesDock } from "./components/FilesDock"
+import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
@@ -2005,6 +2007,20 @@ export function MafwShell() {
                   sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                   onOpenSession={(id) => void openSubagentSession(id)}
                 />
+              </div>
+              <div style={{ display: rightDockTab() === "files" ? "contents" : "none" }}>
+                <FilesDock
+                  sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                  onOpenFile={(rel) => {
+                    const root = store.session.find((s: any) => s.id === currentSessionID())?.directory
+                    if (!root) return
+                    requestOpenEditor(root, rel)
+                    applyRightDock(true, "editor")
+                  }}
+                />
+              </div>
+              <div style={{ display: rightDockTab() === "editor" ? "contents" : "none" }}>
+                <div class="mafw-file-tree-empty">从「文件」tab 选择文件打开</div>
               </div>
             </RightDock>
             )}

@@ -1,5 +1,5 @@
-export type DockTab = "tasks" | "trajectory" | "usage" | "notes" | "changes" | "subagents" | "background"
-export const DOCK_TABS: DockTab[] = ["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background"]
+export type DockTab = "tasks" | "trajectory" | "usage" | "notes" | "changes" | "subagents" | "background" | "files" | "editor"
+export const DOCK_TABS: DockTab[] = ["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background", "files", "editor"]
 
 /** 持久化 tab 值归一化：v4.13 五栏并四栏，quota 迁移到 usage */
 export function normalizeDockTab(v: string | null | undefined, fallback: DockTab = "usage"): DockTab {
