@@ -103,6 +103,7 @@ import { enrichToolIdentity, enrichHistoryParts } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
 import { SessionQueue } from './core/session-queue';
+import { shouldFlush } from './core/queue-flush';
 
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
@@ -1246,8 +1247,9 @@ class MafwScheduler {
     // 后续无预算 prompt。goal guard 不在此列——其生命周期是整个 goal）。
     if ((type === MAFW.turnCompleted || type === MAFW.turnFailed || type === MAFW.turnAborted) && sessionID) {
       if (this.promptBudgetSessions.delete(sessionID)) this.budgetGuards.delete(sessionID);
-      // busy 清除（三终态；flush 续发挂 Task 4 补一行）
+      // busy 清除 + 队列续发（每终态一条，fire-and-forget）
       this.busySessions.delete(sessionID);
+      this.flushSessionQueue(sessionID);
     }
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
@@ -1518,8 +1520,61 @@ class MafwScheduler {
       this.identityState,
       () => rt.name,
       (n: string) => !!registry.get(n),
+      // 队列拦截咽喉（spec §5.3 v2 Q1）：显式 opt-in——仅 delivery:'queue' 且 busy 时入队，
+      // 其余（含 conformance/eval/media harness 的普通调用）零影响。
+      (opts: any) => this.interceptQueuePrompt(opts),
     );
     return rt;
+  }
+
+  /** 队列拦截判定：busy + 显式 queue 交付 → 入队短路；否则 undefined 透传。 */
+  private interceptQueuePrompt(opts: any): Promise<unknown> | undefined {
+    if (!opts || opts.delivery !== 'queue' || typeof opts.sessionID !== 'string') return undefined;
+    if (!this.busySessions.has(opts.sessionID)) return undefined;
+    return this.enqueueQueuedPrompt(opts, typeof opts.source === 'string' ? opts.source : 'runtime');
+  }
+
+  /** 入队编排（spec §5.2/§5.3）：幂等 duplicate 透传；上限 throw 400 形错（HTTP 层转译）。
+   *  事件发射（queue.updated）在 Task 5 接线——本版 log 占位。 */
+  private async enqueueQueuedPrompt(
+    opts: { sessionID: string; text?: string; parts?: any[]; agent?: string; model?: any; idempotencyKey?: string },
+    source: string,
+  ): Promise<{ queued: true; itemId: string; position: number } | { queued: true; duplicate: true; itemId: string }> {
+    const r = this.sessionQueue.enqueue(opts.sessionID, {
+      ...(opts.text !== undefined ? { text: opts.text } : {}),
+      ...(Array.isArray(opts.parts) ? { parts: opts.parts } : {}),
+      ...(opts.agent ? { agent: opts.agent } : {}),
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
+      source,
+    });
+    if ('duplicate' in r) {
+      log.info(`[Queue] duplicate idempotent enqueue for ${opts.sessionID} (key=${opts.idempotencyKey ?? '-'})`);
+      return { queued: true, duplicate: true, itemId: r.duplicate.id };
+    }
+    if ('rejected' in r) {
+      throw Object.assign(new Error('session queue limit reached (32)'), { statusCode: 400 });
+    }
+    log.info(`[Queue] enqueued ${r.item.id} for ${opts.sessionID} (source=${source}, size=${this.sessionQueue.size(opts.sessionID)})`);
+    return { queued: true, itemId: r.item.id, position: this.sessionQueue.size(opts.sessionID) };
+  }
+
+  /** 回合终态续发（spec §5.4）：每终态一条（串行）；fire-and-forget——pi promptAsync
+   *  在 idle 会话 await 到回合结束，事件处理器内 await 会互锁（C3）。发送经 sdkSession
+   *  facade（identity apply 生效）；剥离 delivery/idempotencyKey/source。 */
+  private flushSessionQueue(sessionID: string): void {
+    const item = shouldFlush(this.sessionQueue, this.busySessions, sessionID);
+    if (!item) return;
+    log.info(`[Queue] flushing ${item.id} for ${sessionID} (remaining=${this.sessionQueue.size(sessionID)})`);
+    void this.sdkSession.promptAsync(
+      sessionID,
+      item.text ?? (Array.isArray(item.parts) ? '' : ''),
+      item.parts as any,
+      item.agent,
+      item.model,
+    ).catch((err: any) => {
+      log.warn(`[Queue] flush send failed for ${item.id} (non-fatal): ${err?.message ?? err}`);
+    });
   }
 
   /** 插件 ctx 的凭据来源：当前 opencode runtime 的 credentials（若实现），否则 undefined。 */
@@ -2331,6 +2386,7 @@ class MafwScheduler {
         if (now - startedAt >= BUSY_STALE_MS) {
           this.busySessions.delete(sid);
           log.warn(`[Queue] busy state stale-cleared for ${sid} (>= ${BUSY_STALE_MS}ms without terminal)`);
+          this.flushSessionQueue(sid);  // 防楔死恢复后续发
         }
       }
       // 队列项 TTL：逐会话摘除（只扫有队的会话）
@@ -5870,7 +5926,7 @@ class MafwScheduler {
           try {
             const sessionID = promptAsyncMatch[1];
             const body = await readBody(req);
-            const { message, parts, agent, model, maxTurns, maxCostUsd } = body ? JSON.parse(body) : {};
+            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey } = body ? JSON.parse(body) : {};
             if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
             // Identity-aware (spec §3.2): picking a registry identity binds it for
             // this turn — the policy layer evaluates the turn's tool calls against it.
@@ -5880,6 +5936,18 @@ class MafwScheduler {
             }
             // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出）
             this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
+            // 队列交付（spec §5.3）：busy + delivery:'queue' → 入队短路响应
+            if (delivery === 'queue' && this.busySessions.has(sessionID)) {
+              try {
+                const q = await this.enqueueQueuedPrompt({ sessionID, text: message, parts, agent, model, idempotencyKey }, 'http');
+                res.writeHead(200);
+                res.end(JSON.stringify({ status: 'ok', ...q }));
+              } catch (qerr: any) {
+                res.writeHead(qerr?.statusCode ?? 500);
+                res.end(JSON.stringify({ error: qerr.message }));
+              }
+              return;
+            }
             await this.sdkSession.promptAsync(sessionID, message, parts, agent, model);
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));

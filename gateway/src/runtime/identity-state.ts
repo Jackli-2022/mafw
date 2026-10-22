@@ -67,6 +67,10 @@ export function withIdentityPrompt<
   state: IdentityState,
   runtimeName: () => string,
   isRegistryIdentity: (name: string) => boolean,
+  /** 队列拦截（spec 2026-10-22-session-queue-inbox §5.3 v2）：返回 Promise 时短路
+   *  promptAsync（入队响应直达调用方）；undefined 透传。显式 opt-in——不传则行为
+   *  与现状 byte-for-byte 一致（C2：conformance/eval/media harness 零影响）。 */
+  intercept?: (opts: S) => Promise<unknown> | undefined,
 ): T {
   const apply = (opts: S): S => {
     if (opts.agent) {
@@ -84,7 +88,12 @@ export function withIdentityPrompt<
   };
   return new Proxy(session as any, {
     get(target, prop, receiver) {
-      if (prop === 'promptAsync') return (o: S) => target.promptAsync(apply(o));
+      if (prop === 'promptAsync') return (o: S) => {
+        const applied = apply(o);
+        const short = intercept?.(applied);
+        if (short !== undefined) return short;
+        return target.promptAsync(applied);
+      };
       if (prop === 'prompt') return (o: S) => target.prompt(apply(o));
       const v = Reflect.get(target, prop, receiver);
       return typeof v === 'function' ? v.bind(target) : v;

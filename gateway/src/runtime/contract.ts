@@ -118,9 +118,15 @@ export interface SessionPromptOpts {
   model?: { providerID: string; modelID: string };
   variant?: string;
   system?: string;
-  /** busy 会话的消息投递时机：'steer'=当前工具批后送达（纠偏），'followup'=全部完成后。
-   *  opencode 无原生概念（忽略声明）；pi 映射 streamingBehavior（busy 时生效）。 */
-  delivery?: 'steer' | 'followup';
+  /** busy 会话的消息投递时机：'steer'=当前工具批后送达（纠偏），'followup'=全部完成后，
+   *  'queue'=**gateway 拦截**——busy 时入 gateway 队列（可见/可取消/幂等），回合终态自动
+   *  串行续发；idle 时等价直发（spec 2026-10-22-session-queue-inbox §5.6）。
+   *  opencode 忽略 steer/followup 声明（'queue' 在 gateway 层消费，不达 runtime）；pi 映射
+   *  streamingBehavior（busy 时生效）。 */
+  delivery?: 'steer' | 'followup' | 'queue';
+  /** 排队窗口内幂等键（spec §7 裁决 5）：同 key 已在队 → 返回既有 item；
+   *  flush 后失效——不承诺跨回合幂等。 */
+  idempotencyKey?: string;
   /** 期望本条消息触发 LLM 回复。false = 落历史免回复（opencode noReply 语义）。
    *  pi 无原生等价——全路径降级为普通消息（busy 时 followUp），每会话 warn 一次。 */
   expectReply?: boolean;
