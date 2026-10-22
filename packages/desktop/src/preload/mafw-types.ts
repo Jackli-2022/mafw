@@ -43,6 +43,7 @@ export type MafwAPI = {
     fork: (sessionID: string, messageID?: string) => Promise<{ session: { id: string } }>
     revert: (sessionID: string, messageID: string) => Promise<void>
     unrevert: (sessionID: string) => Promise<void>
+    background: (sessionID: string) => Promise<void>
     diff: (sessionID: string, messageID?: string) => Promise<{ files: Array<{ file?: string; patch?: string; additions?: number; deletions?: number; status?: string }> }>
     revertDiff: (sessionID: string, patches: Array<{ file?: string; patch: string; hunkIndices: number[] }>) => Promise<{ reverted: number }>
     delete: (id: string) => Promise<void>
@@ -218,6 +219,14 @@ export type MafwAPI = {
     get: () => Promise<{ active: { name: string; capabilities: Record<string, boolean> }; plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[] }>
     switch: (plugin: string) => Promise<{ success: boolean; active: { name: string; capabilities: Record<string, boolean> }; envOverride: boolean }>
     restartAgent: () => Promise<{ success: boolean; mode: string }>
+  }
+
+  /** opencode v2 原生 shell 命令（/api/shell*，经 gateway 兜底反代；不可达时抛错） */
+  shells: {
+    list: () => Promise<Array<{ id: string; status: string; command: string; metadata?: { sessionID?: string } }>>
+    get: (id: string) => Promise<{ id: string; status: string; command: string; exit?: number; metadata?: { sessionID?: string } } | null>
+    output: (id: string) => Promise<{ output: string }>
+    remove: (id: string) => Promise<void>
   }
 
   plugins: {

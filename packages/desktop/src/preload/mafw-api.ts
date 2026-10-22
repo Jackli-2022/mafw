@@ -87,6 +87,7 @@ export function createMafwApi(): MafwAPI {
       fork: (sessionID, messageID?) => invoke("session", "fork", { path: { id: sessionID }, body: { messageID } }),
       revert: (sessionID, messageID) => invoke("session", "revert", { path: { id: sessionID }, body: { messageID } }),
       unrevert: (sessionID) => invoke("session", "unrevert", { path: { id: sessionID } }),
+      background: (sessionID) => invoke("session", "background", { path: { id: sessionID } }),
       diff: (sessionID, messageID?) => invoke("session", "diff", { path: { id: sessionID }, query: { messageID } }),
       revertDiff: (sessionID, patches) => invoke("session", "revertDiff", { path: { id: sessionID }, body: { patches } }),
       delete: (id) => invoke("session", "delete", { path: { id } }),
@@ -251,6 +252,14 @@ export function createMafwApi(): MafwAPI {
       get: () => invoke("runtime", "get"),
       switch: (plugin: string) => invoke("runtime", "switch", plugin),
       restartAgent: () => invoke("runtime", "restartAgent"),
+    },
+
+    // opencode v2 原生 shell 命令（经 gateway 兜底反代；不可达时调用方 fail-open）
+    shells: {
+      list: () => invoke("shells", "list"),
+      get: (id) => invoke("shells", "get", { path: { id } }),
+      output: (id) => invoke("shells", "output", { path: { id } }),
+      remove: (id) => invoke("shells", "remove", { path: { id } }),
     },
 
     plugins: {

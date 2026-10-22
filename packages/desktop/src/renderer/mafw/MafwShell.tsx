@@ -20,8 +20,10 @@ import { sessionStore } from "./session-store"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
-import { ingestBackgroundEvent } from "./background-store"
+import { backgroundRows, ingestBackgroundEvent, onBackgroundTerminal } from "./background-store"
 import { scanHistoryForBackground } from "./background-detect"
+import { reconcileBackgroundOnce } from "./background-reconcile"
+import { buildBackgroundNotice } from "./background-notify"
 import { childrenNeedingProbe, isTrackedChildSession } from "./subagent-tracker"
 import { reconcileSubagentsOnce } from "./subagent-reconcile"
 import { buildTerminalNotice, createNotifyGate, shouldNotifyIdle } from "./subagent-notify"
@@ -619,6 +621,19 @@ export function MafwShell() {
     })
   }
 
+  // ── Background reconcile（spec §5）：REST 三件是可选能力（Gate Ruling A）——
+  // /api/shell 经 gateway 反代，401/不可达时整轮 fail-open（不建假行、不误杀）。
+  async function reconcileBackground(): Promise<void> {
+    await reconcileBackgroundOnce({
+      fetchers: {
+        listShells: () => window.api.mafw.shells.list(),
+        getShell: (id) => window.api.mafw.shells.get(id),
+      },
+      trackedRunningShellIds: () => backgroundRows().filter(r => r.type === "shell" && r.status === "running").map(r => r.id),
+      ingest: (ev) => ingestBackgroundEvent(ev),
+    })
+  }
+
   // ── Flow card actions ──
 
   const askSubmit = async (card: AskCardData, answers: Record<string, string[]>, customText: Record<string, string>) => {
@@ -952,17 +967,32 @@ export function MafwShell() {
   // only becomes available after this window loaded.
   onMount(() => {
     const reconcileTimer = setInterval(reconcileFlowCards, 60000)
-    // 子代理终态通知（spec §4.5）：toast 恒发；OS 通知走 10s 全局门（限洪泛）
-    const subagentNotifyGate = createNotifyGate(10_000)
+    // 子代理 + 后台任务终态通知（spec §4.5/§6.3）：toast 恒发；OS 通知共享同一个
+    // 10s 全局门（两类合计限频，防 #11716 洪泛）
+    const bgWorkNotifyGate = createNotifyGate(10_000)
     const offSubagentNotify = onSubagentTerminal((row) => {
       const notice = buildTerminalNotice(row, { hidden: document.hidden })
       if (!notice) return
       showToastV2({ description: notice.toast, duration: 3000 })
-      if (notice.os && subagentNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
+      if (notice.os && bgWorkNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
+    })
+    // 后台任务终态通知：只发 shell 类——subagent 终态归 P0-1 子代理通道（防双响）
+    const offBackgroundNotify = onBackgroundTerminal((row) => {
+      if (row.type !== "shell") return
+      const notice = buildBackgroundNotice(row, { hidden: document.hidden })
+      if (!notice) return
+      showToastV2({ description: notice.toast, duration: 3000 })
+      if (notice.os && bgWorkNotifyGate(Date.now())) notifyIfHidden(notice.os.title, notice.os.body)
     })
     // 子代理对账轮询（spec §4.6）：有 running 行或面板开着才跑
     const subagentTimer = setInterval(() => {
       if (rightDockTab() === "subagents" || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
+    }, 15_000)
+    // 后台任务对账轮询（spec §5）：后台 tab 开着或 shell 行还在跑才跑（REST 面是可选能力）
+    const backgroundTimer = setInterval(() => {
+      if (rightDockTab() === "background" || backgroundRows().some(r => r.type === "shell" && r.status === "running")) {
+        void reconcileBackground()
+      }
     }, 15_000)
     // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
     const onInspectorKey = (ev: KeyboardEvent) => {
@@ -976,7 +1006,9 @@ export function MafwShell() {
       window.removeEventListener("keydown", onInspectorKey)
       clearInterval(reconcileTimer)
       clearInterval(subagentTimer)
+      clearInterval(backgroundTimer)
       offSubagentNotify()
+      offBackgroundNotify()
       if (esRetry) { clearTimeout(esRetry); esRetry = null }
       if (es) { console.log("[mafw] SSE closing"); es.close(); es = null }
     })
@@ -991,10 +1023,11 @@ export function MafwShell() {
     loadSessionHistory(sid)
   })
 
-  // 会话切换即时 bootstrap 子代理历史行（fetch 廉价、fail-open；spec §4.6）
+  // 会话切换即时 bootstrap 子代理/后台任务历史行（fetch 廉价、fail-open）
   createEffect(() => {
     activeSessionId()
     void reconcileSubagents()
+    void reconcileBackground()
   })
 
   // Load session message history from the gateway

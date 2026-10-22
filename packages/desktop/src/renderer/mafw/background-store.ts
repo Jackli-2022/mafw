@@ -21,6 +21,8 @@ export function ingestBackgroundEvent(ev: BackgroundEvent, now?: number): void {
   if (next === prev) return
   const terminals = collectNewTerminals(prev, next)
   setRows(next)
+  // 对账收敛（probe）静默：行照常落终态，但不触发通知回调（spec §5.1）
+  if (ev.kind === "bg-terminal" && ev.source === "probe") return
   for (const row of terminals) {
     for (const cb of terminalCallbacks) cb(row)
   }

@@ -12,6 +12,23 @@ import {
 import { SSEConnection } from './sse'
 import type { ApiPath } from './api-path'
 
+/** opencode v2 Shell.Info（/api/shell* 响应 data 的按需子集；形状见 wire probe 文档）。 */
+export interface ShellInfo {
+  id: string
+  status: 'running' | 'exited'
+  command: string
+  cwd?: string
+  exit?: number
+  metadata?: { sessionID?: string } & Record<string, unknown>
+  time?: { started?: number; completed?: number }
+}
+
+/** /api/shell* 的统一信封（v2 实证：{location, data}）。 */
+interface Envelope<T> {
+  location?: { directory: string }
+  data?: T
+}
+
 export class MafwClient implements IMafwClient {
   private baseUrl: string
   private _sse: SSEConnection
@@ -46,6 +63,22 @@ export class MafwClient implements IMafwClient {
    */
   private fetchPath(path: ApiPath, init?: RequestInit): Promise<Response> {
     return this.fetchImpl(`${this.baseUrl}${path}`, init)
+  }
+
+  /**
+   * 运行时透传出口（gateway 兜底反代）：不属于 MAFW OpenAPI 契约的原生 v2 路由
+   * （/api/shell*、/api/session/:id/background）走此处，不参与 ApiPath 漂移守卫。
+   * 非 2xx 一律抛错，由调用方 fail-open（后台面板的 REST 三件是可选能力）。
+   */
+  private async requestRuntime<T>(path: string, init?: RequestInit): Promise<T> {
+    const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...init,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    const ct = (res.headers as any)?.get?.('content-type') ?? ''
+    if (ct.includes('text/html')) throw new Error(`Received HTML instead of JSON from ${path}`)
+    return res.json()
   }
 
   // 鈹€鈹€ Session 鈹€鈹€
@@ -286,6 +319,35 @@ export class MafwClient implements IMafwClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params.body),
       })
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    },
+
+    /** 把该会话全部 blocking 工具转后台（opencode v2 `session.background`，经反代透传） */
+    background: async (params: { path: { id: string } }): Promise<void> => {
+      const res = await this.fetchPath(`/api/session/${params.path.id}/background`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    },
+  }
+
+  // ── Runtime shell commands (opencode v2 /api/shell*, proxied by the gateway) ──
+  // 非 MAFW OpenAPI 契约路径：走 requestRuntime 旁路（不可达时抛错，调用方 fail-open）。
+  // 响应形状已实证（docs/research/2026-10-22-background-wire-probe.md）：{location,data}
+
+  shells = {
+    list: async (): Promise<ShellInfo[]> => {
+      const body = await this.requestRuntime<Envelope<ShellInfo[]>>('/api/shell')
+      return Array.isArray(body?.data) ? body.data : []
+    },
+    get: async (params: { path: { id: string } }): Promise<ShellInfo | null> => {
+      const body = await this.requestRuntime<Envelope<ShellInfo>>(`/api/shell/${encodeURIComponent(params.path.id)}`)
+      return body?.data ?? null
+    },
+    output: async (params: { path: { id: string } }): Promise<{ output: string }> => {
+      const body = await this.requestRuntime<Envelope<{ output?: string }>>(`/api/shell/${encodeURIComponent(params.path.id)}/output`)
+      return { output: typeof body?.data?.output === 'string' ? body.data.output : '' }
+    },
+    remove: async (params: { path: { id: string } }): Promise<void> => {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/shell/${encodeURIComponent(params.path.id)}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
   }

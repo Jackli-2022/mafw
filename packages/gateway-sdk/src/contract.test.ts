@@ -38,6 +38,19 @@ function isInternal(path: string): boolean {
 }
 
 /**
+ * 运行时透传路径豁免：`/api/shell*` 与 `/api/session/:id/background` 由 gateway
+ * 兜底反代直通 v2 runtime，不属于 MAFW OpenAPI contract（后台面板 Gate Ruling A：
+ * REST 面是可选能力）。响应形状由 wire probe 钉扎
+ * （docs/research/2026-10-22-background-wire-probe.md），不走 contract 漂移守卫。
+ */
+const RUNTIME_PROXY_EXEMPT = new Set([
+  "/api/shell",
+  "/api/shell/{}",
+  "/api/shell/{}/output",
+  "/api/session/{}/background",
+])
+
+/**
  * 模板串内容 → 归一化路径。
  * - 剥离 `${this.baseUrl}`/`${baseUrl}` 前缀
  * - `${...}` 洞 → {}（结尾洞若为 query 变量/含 ? 则剥掉）
@@ -195,6 +208,7 @@ test("SDK 调用 ⊆ contract（无漂移）", () => {
   const ops = contractOps()
   const drift: string[] = []
   for (const c of calls) {
+    if (RUNTIME_PROXY_EXEMPT.has(c.path)) continue
     const methods = ops.get(c.path)
     if (!methods) { drift.push(`${c.file}:${c.line} ${c.method} ${c.path} 不在 contract`); continue }
     if (!methods.includes(c.method)) {

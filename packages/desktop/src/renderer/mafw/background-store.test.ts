@@ -24,4 +24,12 @@ describe("background store", () => {
     expect(seen).toEqual([])
     expect(backgroundRows()[0]).toMatchObject({ id: "sh9", status: "running" })
   })
+  test("对账收敛（source: probe）落终态但不触发回调（静默，spec §5.1）", () => {
+    const seen: string[] = []
+    onBackgroundTerminal(r => seen.push(r.id))
+    ingestBackgroundEvent({ kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "t" } }, 1)
+    ingestBackgroundEvent({ kind: "bg-terminal", id: "sh1", terminal: "completed", source: "probe" }, 2)
+    expect(backgroundRows()[0]!.status).toBe("completed")
+    expect(seen).toEqual([])
+  })
 })
