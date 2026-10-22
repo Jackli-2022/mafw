@@ -1533,13 +1533,24 @@ class MafwScheduler {
   private interceptQueuePrompt(opts: any): Promise<unknown> | undefined {
     if (!opts || opts.delivery !== 'queue' || typeof opts.sessionID !== 'string') return undefined;
     if (!this.busySessions.has(opts.sessionID)) return undefined;
-    return this.enqueueQueuedPrompt(opts, typeof opts.source === 'string' ? opts.source : 'runtime');
+    return this.enqueueQueuedPrompt(
+      {
+        sessionID: opts.sessionID,
+        ...(opts.text !== undefined ? { text: opts.text } : {}),
+        ...(Array.isArray(opts.parts) ? { parts: opts.parts } : {}),
+        ...(opts.agent ? { agent: opts.agent } : {}),
+        ...(opts.model ? { model: opts.model } : {}),
+        ...(opts.expectReply !== undefined ? { expectReply: opts.expectReply } : {}),
+        ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
+      },
+      typeof opts.source === 'string' ? opts.source : 'runtime',
+    );
   }
 
   /** 入队编排（spec §5.2/§5.3）：幂等 duplicate 透传；上限 throw 400 形错（HTTP 层转译）。
    *  事件发射（queue.updated）在 Task 5 接线——本版 log 占位。 */
   private async enqueueQueuedPrompt(
-    opts: { sessionID: string; text?: string; parts?: any[]; agent?: string; model?: any; idempotencyKey?: string },
+    opts: { sessionID: string; text?: string; parts?: any[]; agent?: string; model?: any; idempotencyKey?: string; expectReply?: boolean },
     source: string,
   ): Promise<{ queued: true; itemId: string; position: number } | { queued: true; duplicate: true; itemId: string }> {
     const r = this.sessionQueue.enqueue(opts.sessionID, {
@@ -1547,6 +1558,7 @@ class MafwScheduler {
       ...(Array.isArray(opts.parts) ? { parts: opts.parts } : {}),
       ...(opts.agent ? { agent: opts.agent } : {}),
       ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.expectReply !== undefined ? { expectReply: opts.expectReply } : {}),
       ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
       source,
     });
@@ -1578,21 +1590,33 @@ class MafwScheduler {
   }
 
   /** 回合终态续发（spec §5.4）：每终态一条（串行）；fire-and-forget——pi promptAsync
-   *  在 idle 会话 await 到回合结束，事件处理器内 await 会互锁（C3）。发送经 sdkSession
-   *  facade（identity apply 生效）；剥离 delivery/idempotencyKey/source。 */
+   *  在 idle 会话 await 到回合结束，事件处理器内 await 会互锁（C3）。
+   *  终审 #1：改经 this.runtime.session.promptAsync 对象形参直发——identity 包装代理
+   *  仍在（apply 照跑、无 delivery 不触发拦截），且对象形参能携带 expectReply
+   *  （facade 位置形参会丢该字段——BudgetGuard/milestone 的 noReply 通知必须保全）。 */
   private flushSessionQueue(sessionID: string): void {
     const item = shouldFlush(this.sessionQueue, this.busySessions, sessionID);
     if (!item) return;
     log.info(`[Queue] flushing ${item.id} for ${sessionID} (remaining=${this.sessionQueue.size(sessionID)})`);
     this.emitQueueUpdated(sessionID, 'dequeue', this.sessionQueue.list(sessionID), item.id);
-    void this.sdkSession.promptAsync(
+    const sendOpts: any = {
       sessionID,
-      item.text ?? (Array.isArray(item.parts) ? '' : ''),
-      item.parts as any,
-      item.agent,
-      item.model,
-    ).catch((err: any) => {
+      parts: Array.isArray(item.parts) && item.parts.length > 0
+        ? item.parts
+        : [{ type: 'text', text: item.text ?? '' }],
+      ...(item.agent ? { agent: item.agent } : {}),
+      ...(item.model ? { model: item.model } : {}),
+      ...(item.expectReply !== undefined ? { expectReply: item.expectReply } : {}),
+    };
+    void this.runtime!.session.promptAsync(sendOpts).catch((err: any) => {
       log.warn(`[Queue] flush send failed for ${item.id} (non-fatal): ${err?.message ?? err}`);
+      // 终审 #3：flush 失败重入队（队首）而非静默丢——里程碑/预算通知的 markNotified
+      // 已在 enqueue ack 时落盘，丢失即永久（dedupe key 挡住重发）。重入队保底一次投递。
+      const requeued = this.sessionQueue.requeueHead(sessionID, item);
+      if (requeued) {
+        log.info(`[Queue] item ${item.id} re-queued at head for retry`);
+        this.emitQueueUpdated(sessionID, 'enqueue', this.sessionQueue.list(sessionID), item.id);
+      }
     });
   }
 
@@ -5958,10 +5982,20 @@ class MafwScheduler {
             }
             // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出）
             this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
-            // 队列交付（spec §5.3）：busy + delivery:'queue' → 入队短路响应
+            // 队列交付（spec §5.3）：busy + delivery:'queue' → 入队短路响应。
+            // 终审 #4：budget 字段与 queue 组合无强制语义（guard 只护当前回合，flush 后无保护）——显式 400 拒绝。
+            if (delivery === 'queue' && (typeof maxTurns === 'number' || typeof maxCostUsd === 'number')) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: 'delivery:queue cannot be combined with maxTurns/maxCostUsd (budget guards the current turn only; queued send would be unbudgeted)' }));
+              return;
+            }
             if (delivery === 'queue' && this.busySessions.has(sessionID)) {
               try {
-                const q = await this.enqueueQueuedPrompt({ sessionID, text: message, parts, agent, model, idempotencyKey }, 'http');
+                const parsedBody = body ? JSON.parse(body) : {};
+                const q = await this.enqueueQueuedPrompt({
+                  sessionID, text: message, parts, agent, model, idempotencyKey,
+                  ...(parsedBody.expectReply !== undefined ? { expectReply: parsedBody.expectReply } : {}),
+                }, 'http');
                 res.writeHead(200);
                 res.end(JSON.stringify({ status: 'ok', ...q }));
               } catch (qerr: any) {

@@ -69,6 +69,25 @@ describe('SessionQueue（spec §5.2）', () => {
     expect(q.expireOlderThan('s1', 24 * 3600_000)).toHaveLength(0);
     expect(q.size('s1')).toBe(1);
   });
+  it('requeueHead：flush 失败重入队首（终审 #3——不静默丢）', () => {
+    const q = new SessionQueue();
+    q.enqueue('s1', base({ text: 'a' }));
+    q.enqueue('s1', base({ text: 'b' }));
+    const flushed = q.dequeue('s1')!;          // flush 取走 a
+    expect(q.requeueHead('s1', flushed)).toBe(true);
+    expect(q.dequeue('s1')!.text).toBe('a');   // 队首重试
+    expect(q.dequeue('s1')!.text).toBe('b');
+  });
+  it('requeueHead：幂等 key 不复活冲突（同 key 已在队时拒绝重入）', () => {
+    const q = new SessionQueue();
+    q.enqueue('s1', base({ idempotencyKey: 'k1', text: 'a' }));
+    const flushed = q.dequeue('s1')!;
+    q.enqueue('s1', base({ idempotencyKey: 'k2', text: 'new' }));
+    expect(q.requeueHead('s1', flushed)).toBe(true);  // 无冲突——重入成功
+    const flushed2 = q.dequeue('s1')!;
+    // 同 key 项已在队（k2 在队）时另一 k2 项重入 → 拒绝
+    expect(q.requeueHead('s1', { ...flushed2, idempotencyKey: 'k2' })).toBe(false);
+  });
   it('list 只读快照（内部数组不可外泄）', () => {
     const q = new SessionQueue();
     q.enqueue('s1', base());

@@ -19,6 +19,8 @@ export interface QueuedItem {
   parts?: Array<{ type: string; text?: string; [k: string]: unknown }>;
   agent?: string;
   model?: { providerID: string; modelID: string };
+  /** 终审 #1：noReply 语义保全——flush 后仍是落历史免 LLM 回合（BudgetGuard/milestone 通知的硬依赖） */
+  expectReply?: boolean;
   idempotencyKey?: string;
   enqueuedAt: string;  // ISO
   source: string;      // 'http' | 'runtime' | 'milestone' | 'self-update' | 'budget' | ...
@@ -87,6 +89,18 @@ export class SessionQueue {
 
   size(sessionID: string): number {
     return this.queues.get(sessionID)?.length ?? 0;
+  }
+
+  /** flush 失败重入队首（终审 #3）：队首插入保重试顺序；同 idempotencyKey 已在队 → false（不复活冲突）。 */
+  requeueHead(sessionID: string, item: QueuedItem): boolean {
+    const arr = this.queues.get(sessionID) ?? [];
+    if (item.idempotencyKey && arr.some(i => i.idempotencyKey === item.idempotencyKey)) {
+      return false;
+    }
+    if (arr.some(i => i.id === item.id)) return false; // 已在队（防双入）
+    arr.unshift(item);
+    this.queues.set(sessionID, arr);
+    return true;
   }
 
   /** 当前有队列项的会话集合（清扫遍历用）。 */
