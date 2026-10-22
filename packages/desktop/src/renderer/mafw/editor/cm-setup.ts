@@ -105,6 +105,11 @@ export async function mountEditor(host: HTMLElement, opts: {
   })
 
   const view = new EditorView({ state, parent: host })
+  // 挂载时容器可能仍隐藏（先请求打开、后切 tab）：可见后的首帧强制重新测量，
+  // 否则 CM6 会保留 0 尺寸视图直到下一次交互（2026-10-22 冒烟实证）。
+  requestAnimationFrame(() => {
+    try { view.requestMeasure() } catch { /* view 已销毁 */ }
+  })
 
   return {
     setDoc(s: string) {

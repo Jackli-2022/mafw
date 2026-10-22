@@ -176,6 +176,7 @@ export function EditorDock(props: {
         void window.api.fs.watch(root, f.rel)
       }
     } catch (e: any) {
+      console.warn("[editor] mount failed", e)
       showToastV2({ description: `编辑器加载失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
     }
   }
