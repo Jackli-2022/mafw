@@ -379,6 +379,7 @@ html[data-theme="light"] body {
   display: flex; align-items: center; gap: 4px;
   height: 38px; padding: 0 0 0 8px;
   grid-column: 1 / -1;
+  grid-row: 1;
   min-width: 0; /* grid item 的 auto 最小尺寸必须可压到 0，strip 内滚接管溢出 */
   background: var(--bg-base);
   border-bottom: 1px solid var(--border-subtle);

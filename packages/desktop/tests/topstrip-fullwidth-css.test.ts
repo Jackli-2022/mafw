@@ -6,9 +6,10 @@ import { join } from "node:path"
 const css = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "mafw.css"), "utf8")
 
 describe("topstrip 整窗宽度", () => {
-  test("topstrip 跨全部列", () => {
+  test("topstrip 跨全部列且固定第 1 行（禁止自动排布到底部隐式行）", () => {
     const block = css.match(/\.mafw-topstrip \{[\s\S]*?\}/)?.[0] ?? ""
     expect(block).toContain("grid-column: 1 / -1")
+    expect(block).toContain("grid-row: 1")
   })
   test("图标轨只占第 2 行（顶条下方），不占顶行", () => {
     const block = css.match(/\.mafw-rail-col \{[\s\S]*?\}/)?.[0] ?? ""
