@@ -154,6 +154,18 @@ export class MafwClient implements IMafwClient {
       await this.request(`/api/session/${params.path.id}/abort`, { method: 'POST' })
     },
 
+    queueList: async (params: { path: { id: string } }): Promise<{ items: unknown[] }> => {
+      return this.request<{ items: unknown[] }>(`/api/session/${params.path.id}/queue`)
+    },
+
+    queueCancel: async (params: { path: { id: string; itemId: string } }): Promise<{ cancelled: string }> => {
+      return this.request<{ cancelled: string }>(`/api/session/${params.path.id}/queue/${params.path.itemId}`, { method: 'DELETE' })
+    },
+
+    queueClear: async (params: { path: { id: string } }): Promise<{ cleared: number }> => {
+      return this.request<{ cleared: number }>(`/api/session/${params.path.id}/queue`, { method: 'DELETE' })
+    },
+
     fork: async (params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ session: Session }> => {
       return this.request<{ session: Session }>(`/api/sessions/${params.path.id}/fork`, {
         method: 'POST',
@@ -527,6 +539,20 @@ export class MafwClient implements IMafwClient {
       plugins: { file: string; name?: string; status: string; error?: string; capabilities?: Record<string, boolean> }[];
     }> => {
       return this.request('/api/runtime')
+    },
+
+    /** Get runtime configuration (Plan 3 dual-name route; opencode-config alias). */
+    getConfig: async (): Promise<unknown> => {
+      return this.request('/api/runtime-config')
+    },
+
+    /** Update runtime configuration. */
+    updateConfig: async (params: { body: Record<string, unknown> }): Promise<unknown> => {
+      return this.request('/api/runtime-config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
+      })
     },
 
     /**

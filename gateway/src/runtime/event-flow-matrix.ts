@@ -59,6 +59,7 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
   // ---- 数据面 ----
   'plan.updated':         R([], 'passthrough', 'handled', 'ignore', '原 todo.updated；ACP plan / codex todo_list 同域'),
   'usage.updated':        R([], 'passthrough', 'ignore', 'ignore', 'v2 新增：gateway 在 turn 聚合后从 TrajectoryTurn tokens/cost 合成'),
+'queue.updated':        R([], 'passthrough', 'ignore', 'ignore', 'v2 新增：gateway 在 turn 聚合后从 TrajectoryTurn tokens/cost 合成'),
   'trajectory.event':     R([], 'passthrough', 'handled', 'ignore', 'desktop 滚动窗口 200'),
   'trajectory.turn':      R([], 'passthrough', 'handled', 'ignore', ''),
   // ---- 能力面 ----

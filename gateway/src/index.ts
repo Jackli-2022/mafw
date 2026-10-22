@@ -1556,7 +1556,23 @@ class MafwScheduler {
       throw Object.assign(new Error('session queue limit reached (32)'), { statusCode: 400 });
     }
     log.info(`[Queue] enqueued ${r.item.id} for ${opts.sessionID} (source=${source}, size=${this.sessionQueue.size(opts.sessionID)})`);
+    this.emitQueueUpdated(opts.sessionID, 'enqueue', this.sessionQueue.list(opts.sessionID), r.item.id);
     return { queued: true, itemId: r.item.id, position: this.sessionQueue.size(opts.sessionID) };
+  }
+
+  /** queue.updated 广播（spec §5.5）：items 全量快照（UI 单事件自足）；
+   *  经 broadcast → event_log 持久化（骑回放地基，C8）。 */
+  private emitQueueUpdated(
+    sessionID: string,
+    action: 'enqueue' | 'dequeue' | 'cancel' | 'clear' | 'expire',
+    items: unknown[],
+    itemId?: string,
+  ): void {
+    this.broadcast(mafwBroadcast({
+      type: MAFW.queueUpdated,
+      properties: { sessionID, items, action, ...(itemId ? { itemId } : {}) },
+      sessionID,
+    }, false));
   }
 
   /** 回合终态续发（spec §5.4）：每终态一条（串行）；fire-and-forget——pi promptAsync
@@ -1566,6 +1582,7 @@ class MafwScheduler {
     const item = shouldFlush(this.sessionQueue, this.busySessions, sessionID);
     if (!item) return;
     log.info(`[Queue] flushing ${item.id} for ${sessionID} (remaining=${this.sessionQueue.size(sessionID)})`);
+    this.emitQueueUpdated(sessionID, 'dequeue', this.sessionQueue.list(sessionID), item.id);
     void this.sdkSession.promptAsync(
       sessionID,
       item.text ?? (Array.isArray(item.parts) ? '' : ''),
@@ -2394,6 +2411,7 @@ class MafwScheduler {
         const expired = this.sessionQueue.expireOlderThan(sid, QUEUE_ITEM_TTL_MS);
         for (const item of expired) {
           log.warn(`[Queue] item ${item.id} expired (TTL ${QUEUE_ITEM_TTL_MS}ms) in ${sid}`);
+          this.emitQueueUpdated(sid, 'expire', this.sessionQueue.list(sid), item.id);
         }
       }
     } catch (err: any) {
@@ -6008,6 +6026,42 @@ class MafwScheduler {
             res.writeHead(500);
             res.end(JSON.stringify({ error: err.message }));
           }
+          return;
+        }
+
+        // ── 会话队列 inbox 管理面（spec 2026-10-22-session-queue-inbox §5.5）──
+        // GET /api/session/{id}/queue — 列队
+        const queueListMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue(?:\?|$)/);
+        if (queueListMatch && req.method === 'GET') {
+          const sessionID = queueListMatch[1];
+          res.writeHead(200);
+          res.end(JSON.stringify({ items: this.sessionQueue.list(sessionID) }));
+          return;
+        }
+        // DELETE /api/session/{id}/queue — 清空
+        const queueClearMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue$/);
+        if (queueClearMatch && req.method === 'DELETE') {
+          const sessionID = queueClearMatch[1];
+          const cleared = this.sessionQueue.clear(sessionID);
+          this.emitQueueUpdated(sessionID, 'clear', this.sessionQueue.list(sessionID));
+          res.writeHead(200);
+          res.end(JSON.stringify({ cleared: cleared.length }));
+          return;
+        }
+        // DELETE /api/session/{id}/queue/{itemId} — 取消单条
+        const queueCancelMatch = req.url?.match(/^\/api\/session\/([^/]+)\/queue\/([^/]+)$/);
+        if (queueCancelMatch && req.method === 'DELETE') {
+          const sessionID = queueCancelMatch[1];
+          const itemId = queueCancelMatch[2];
+          const cancelled = this.sessionQueue.cancel(sessionID, itemId);
+          if (!cancelled) {
+            res.writeHead(404);
+            res.end(JSON.stringify({ error: `queue item not found: ${itemId}` }));
+            return;
+          }
+          this.emitQueueUpdated(sessionID, 'cancel', this.sessionQueue.list(sessionID), itemId);
+          res.writeHead(200);
+          res.end(JSON.stringify({ cancelled: itemId }));
           return;
         }
 

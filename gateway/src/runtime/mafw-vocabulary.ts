@@ -36,6 +36,7 @@ export const MAFW = {
   // 数据面（plan.updated 原 todo.updated；usage.updated v2 新增）
   planUpdated: 'plan.updated',
   usageUpdated: 'usage.updated',
+  queueUpdated: 'queue.updated',
   trajectoryEvent: 'trajectory.event',
   trajectoryTurn: 'trajectory.turn',
   // 能力面

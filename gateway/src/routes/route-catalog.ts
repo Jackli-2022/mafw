@@ -21,6 +21,9 @@ import type { RouteDef } from './registry';
 /** SDK-facing 端点（openapi.json 全量 94 条 operation，权威转录，勿手改——改请先改 openapi.json 再同步）。 */
 const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/session', operationId: 'session.create', tags: ['session'] },
+  { method: 'GET', path: '/api/session/{id}/queue', operationId: 'session.queue.list', tags: ['session'] },
+  { method: 'DELETE', path: '/api/session/{id}/queue', operationId: 'session.queue.clear', tags: ['session'] },
+  { method: 'DELETE', path: '/api/session/{id}/queue/{itemId}', operationId: 'session.queue.cancel', tags: ['session'] },
   { method: 'GET', path: '/api/sessions', operationId: 'session.list', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id', operationId: 'session.get', tags: ['session'] },
   { method: 'DELETE', path: '/api/sessions/:id', operationId: 'session.delete', tags: ['session'] },

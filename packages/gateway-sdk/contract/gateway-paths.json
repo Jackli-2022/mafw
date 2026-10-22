@@ -14,6 +14,43 @@
         }
       }
     },
+    "/api/session/{id}/queue": {
+      "get": {
+        "operationId": "session.queue.list",
+        "tags": [
+          "session"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "session.queue.clear",
+        "tags": [
+          "session"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/session/{id}/queue/{itemId}": {
+      "delete": {
+        "operationId": "session.queue.cancel",
+        "tags": [
+          "session"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/sessions": {
       "get": {
         "operationId": "session.list",
