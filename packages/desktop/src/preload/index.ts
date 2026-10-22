@@ -148,6 +148,21 @@ const api: ElectronAPI = {
 
   mafw: mafwApi,
 
+  // 文件原语（agent workbench；main 侧 jail + 原语，见 fs-workspace.ts）
+  fs: {
+    listDir: (root, rel) => ipcRenderer.invoke("fs-list-dir", root, rel),
+    readFile: (root, rel) => ipcRenderer.invoke("fs-read-file", root, rel),
+    writeFile: (root, rel, content, opts) => ipcRenderer.invoke("fs-write-file", root, rel, content, opts),
+    watch: (root, rel) => ipcRenderer.invoke("fs-watch", root, rel),
+    unwatch: (root, rel) => ipcRenderer.invoke("fs-unwatch", root, rel),
+    onChanged: (cb) => {
+      const handler = (_: unknown, e: { root: string; rel: string }) => cb(e)
+      ipcRenderer.on("fs-file-changed", handler)
+      return () => ipcRenderer.removeListener("fs-file-changed", handler)
+    },
+    openExternal: (root, rel) => ipcRenderer.invoke("fs-open-external", root, rel),
+  },
+
   onNavigateMafw: (cb) => {
     const handler = () => cb()
     ipcRenderer.on("navigate-mafw", handler)

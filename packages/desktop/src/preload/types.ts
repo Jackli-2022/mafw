@@ -22,6 +22,24 @@ export type ServerReadyData = {
 }
 
 export type WslServersAPI = WslServersPlatform
+
+/** fs 原语 DTO（与 src/main/fs-workspace.ts 形状一致；preload 不 import main）。 */
+export type FsEntryDTO = { name: string; kind: "file" | "dir" }
+export type FsReadResult =
+  | { ok: true; content: string; mtimeMs: number }
+  | { ok: false; reason: "too-large" | "binary" | "not-found" | "io" }
+export type FsWriteResult =
+  | { ok: true }
+  | { ok: false; reason: "jail" | "not-found" | "conflict" | "io" }
+export type FsAPI = {
+  listDir(root: string, rel: string): Promise<FsEntryDTO[] | null>
+  readFile(root: string, rel: string): Promise<FsReadResult>
+  writeFile(root: string, rel: string, content: string, opts?: { ifMtimeMs?: number }): Promise<FsWriteResult>
+  watch(root: string, rel: string): Promise<void>
+  unwatch(root: string, rel: string): Promise<void>
+  onChanged(cb: (e: { root: string; rel: string }) => void): () => void
+  openExternal(root: string, rel: string): Promise<{ ok: boolean }>
+}
 export type UpdaterAPI = {
   subscribe: (cb: (state: UpdaterState) => void) => Promise<() => void>
   check: () => Promise<UpdaterState>
@@ -55,6 +73,7 @@ export type ElectronAPI = {
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI
   updater: UpdaterAPI
+  fs: FsAPI
   consumeInitialDeepLinks: () => Promise<string[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>

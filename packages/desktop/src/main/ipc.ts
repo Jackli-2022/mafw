@@ -1,5 +1,5 @@
 ﻿import { execFile } from "node:child_process"
-import { stat } from "node:fs/promises"
+import { readdir, readFile, writeFile, stat } from "node:fs/promises"
 import { basename } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -7,6 +7,8 @@ import type { DesktopMenuAction } from "../types/desktop-menu"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { registerMafwIpcHandlers } from "./mafw-ipc"
+import { listDir, readTextFile, resolveInRoot, writeTextFile, type FsIO } from "./fs-workspace"
+import { FsWatchRegistry } from "./fs-watcher"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
@@ -48,6 +50,41 @@ type Deps = {
 export function registerIpcHandlers(deps: Deps) {
   const updaterSubscriptions = createUpdaterSubscriptions()
   app.once("will-quit", updaterSubscriptions.clear)
+
+  // ── fs 原语（agent workbench：文件浏览/编辑器）──────────────────────────
+  // renderer 传入 (root, rel)，全部经 fs-workspace 的 jail/原语；handler 自身无逻辑。
+  const fsIo: FsIO = {
+    readdir: (abs) => readdir(abs, { withFileTypes: true }),
+    readFile: (abs) => readFile(abs),
+    writeFile: (abs, data) => writeFile(abs, data, "utf8"),
+    stat: async (abs) => ({ mtimeMs: (await stat(abs)).mtimeMs }),
+  }
+  const fsWatchRegistry = new FsWatchRegistry(({ root, rel }) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("fs-file-changed", { root, rel })
+    }
+  })
+  app.once("will-quit", () => fsWatchRegistry.unwatchAll())
+
+  ipcMain.handle("fs-list-dir", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
+    listDir(fsIo, root, rel))
+  ipcMain.handle("fs-read-file", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
+    readTextFile(fsIo, root, rel))
+  ipcMain.handle("fs-write-file", (
+    _event: IpcMainInvokeEvent, root: string, rel: string, content: string, opts?: { ifMtimeMs?: number },
+  ) => writeTextFile(fsIo, root, rel, content, opts))
+  ipcMain.handle("fs-watch", (_event: IpcMainInvokeEvent, root: string, rel: string) => {
+    const abs = resolveInRoot(root, rel)
+    if (abs) fsWatchRegistry.watch(root, rel, abs)
+  })
+  ipcMain.handle("fs-unwatch", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
+    fsWatchRegistry.unwatch(root, rel))
+  ipcMain.handle("fs-open-external", async (_event: IpcMainInvokeEvent, root: string, rel: string) => {
+    const abs = resolveInRoot(root, rel)
+    if (!abs) return { ok: false }
+    const err = await shell.openPath(abs)
+    return { ok: err === "" }
+  })
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
