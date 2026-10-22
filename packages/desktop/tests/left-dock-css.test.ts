@@ -14,6 +14,12 @@ describe("left dock CSS 契约", () => {
     const z = Number(block.match(/z-index:\s*(\d+)/)?.[1] ?? 0)
     expect(z).toBeGreaterThanOrEqual(60)
   })
+  test("overlay 有进场动效（surface 档），reduced-motion 下关闭", () => {
+    const block = css.match(/\.mafw-left-dock\.overlay \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(block).toContain("animation: mafw-dock-in")
+    expect(css).toContain("@keyframes mafw-dock-in")
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}\.mafw-left-dock\.overlay[^{]*\{[^}]*animation:\s*none/)
+  })
   test("基础容器是纵向 flex（push 模式下作为正常 grid 列）", () => {
     const block = css.match(/\.mafw-left-dock \{[\s\S]*?\}/)?.[0] ?? ""
     expect(block).toContain("flex-direction: column")

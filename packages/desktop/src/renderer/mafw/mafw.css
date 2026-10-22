@@ -2768,6 +2768,14 @@ html[data-theme="light"] body {
   left: 0;
   z-index: 61;
   box-shadow: var(--elev-panel);
+  animation: mafw-dock-in var(--dur-surface) var(--ease-surface);
+}
+@keyframes mafw-dock-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mafw-left-dock.overlay { animation: none; }
 }
 .mafw-left-dock.push { grid-column: 1; }
 .mafw-left-dock-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px; }
