@@ -1,5 +1,7 @@
 ﻿// @ts-nocheck
-import { createSignal, createEffect, onCleanup } from "solid-js"
+import { createSignal, createEffect, For, onCleanup } from "solid-js"
+import { Icon } from "@mafw/ui/icon"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { MafwContextMenu } from "../components/MafwContextMenu"
 import type { ContextMenuItem } from "../components/MafwContextMenu"
 import { GoalDetailOverlay } from "../components/GoalDetailOverlay"
@@ -7,8 +9,10 @@ import { PageHeader } from "../components/PageHeader"
 import { EmptyState } from "../components/EmptyState"
 import { SkeletonRows } from "../components/Skeleton"
 import { goalsRev } from "../goals-rev"
+import { PAGE_LINKS } from "../page-links"
+import type { NavTab } from "../components/nav-tab"
 
-export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) {
+export function DashboardPage(props: { onOpenSession?: (sid: string) => void; onNavigate?: (tab: NavTab) => void }) {
   const [goals, setGoals] = createSignal<any[]>([])
   const [loading, setLoading] = createSignal(true)
   const [detailGoalId, setDetailGoalId] = createSignal<string | null>(null)
@@ -51,6 +55,18 @@ export function DashboardPage(props: { onOpenSession?: (sid: string) => void }) 
   return (
     <div>
       <PageHeader title="Goals" subtitle="目标编排总览" />
+      {/* 枢纽卡：五页面入口（spec D6） */}
+      <div class="mafw-card" style={{ display: "flex", "align-items": "center", gap: 8, "flex-wrap": "wrap", "margin-bottom": "16px" }}>
+        <span style={{ color: "var(--text-3)", "font-size": 11, "margin-right": 4 }}>页面</span>
+        <For each={PAGE_LINKS}>
+          {(link) => (
+            <ButtonV2 variant="ghost" size="small" onClick={() => props.onNavigate?.(link.id)}>
+              <Icon name={link.icon} size="small" />
+              <span style={{ "margin-left": 6 }}>{link.label}</span>
+            </ButtonV2>
+          )}
+        </For>
+      </div>
       <div class="mafw-bento" style={{ "margin-bottom": "24px" }}>
         {kpis.map(kpi => (
           <div class="mafw-kpi-card">

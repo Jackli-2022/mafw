@@ -1935,7 +1935,7 @@ export function MafwShell() {
                 </Show>
               </div>
             ) : activeTab() === "goals" ? (
-              <DashboardPage onOpenSession={openSessionTab} />
+              <DashboardPage onOpenSession={openSessionTab} onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }} />
             ) : activeTab() === "memory" ? (
               <MemoryPage />
             ) : activeTab() === "approvals" ? (
