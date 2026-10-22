@@ -7,7 +7,9 @@ import { handleDockEvent, type DockDeps } from "./handlers/dock"
 import { handleChatStreamEvent, handleMediaSpeakEvent, type ChatDeps } from "./handlers/chat-stream"
 import { handleDiffEvent, type DiffDeps } from "./handlers/diff"
 import { handleSubagentEvent, mapSessionLifecycleEvent } from "./handlers/subagents"
+import { handleBackgroundEvent } from "./handlers/background"
 import type { TrackerEvent } from "../subagent-tracker"
+import type { BackgroundEvent } from "../background-tracker"
 
 export interface CoreDeps {
   trace(event: { type?: string }, channel: string): void
@@ -34,6 +36,11 @@ export interface SubagentDeps {
   onEvent(ev: TrackerEvent): void
 }
 
+/** 后台任务 tracker 旁路（spec §5）：消费既有事件，零词汇改动。 */
+export interface BackgroundDeps {
+  onEvent(ev: BackgroundEvent): void
+}
+
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
@@ -42,6 +49,7 @@ export interface ShellEventDeps {
   chat: ChatDeps
   diff: DiffDeps
   subagents: SubagentDeps
+  background: BackgroundDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
@@ -49,6 +57,7 @@ export type SidHandler = (event: any, sid: string, deps: ShellEventDeps) => bool
 export const EXTRA_HANDLERS: SidHandler[] = []
 EXTRA_HANDLERS.push(handleFlowCardEvent)
 EXTRA_HANDLERS.push(handleDockEvent)
+EXTRA_HANDLERS.push(handleBackgroundEvent) // 必须在 chat-stream 之前（message.updated 会被它消费）
 EXTRA_HANDLERS.push(handleChatStreamEvent)
 EXTRA_HANDLERS.push(handleMediaSpeakEvent)
 EXTRA_HANDLERS.push(handleDiffEvent)

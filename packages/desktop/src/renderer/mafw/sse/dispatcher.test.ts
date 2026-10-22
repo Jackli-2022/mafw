@@ -5,6 +5,7 @@ function makeDeps() {
   const calls: { name: string; args: unknown[] }[] = []
   const rec = (name: string) => (...args: unknown[]) => { calls.push({ name, args }) }
   const subagentEvents: unknown[] = []
+  const backgroundEvents: unknown[] = []
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
@@ -60,8 +61,11 @@ function makeDeps() {
     subagents: {
       onEvent: (ev: unknown) => { subagentEvents.push(ev) },
     },
+    background: {
+      onEvent: (ev: unknown) => { backgroundEvents.push(ev) },
+    },
   }
-  return { deps, calls, subagentEvents }
+  return { deps, calls, subagentEvents, backgroundEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -191,5 +195,32 @@ describe("dispatchShellEvent: subagents 组", () => {
     const { deps, subagentEvents } = makeDeps()
     dispatchShellEvent({ type: "session.created", properties: { info: { id: "s1", title: "普通" } } }, deps)
     expect(subagentEvents).toEqual([])
+  })
+})
+
+describe("dispatchShellEvent: background 组", () => {
+  const bgPart = { type: "tool", tool: "shell", state: { status: "completed", metadata: { status: "running", shellID: "sh1" }, input: { command: "npm run dev" } } }
+
+  test("part.updated 后台 shell part → 转发 bg-observed", () => {
+    const { deps, backgroundEvents } = makeDeps()
+    dispatchShellEvent({ type: "part.updated", sessionID: "s1", properties: { part: { ...bgPart, messageID: "m1", sessionID: "s1" } } }, deps)
+    expect(backgroundEvents).toEqual([{ kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "npm run dev" } }])
+  })
+  test("synthetic message.updated（无 role）→ 转发 bg-terminal；chat-stream 既有消费逻辑不炸", () => {
+    const { deps, backgroundEvents, calls } = makeDeps()
+    dispatchShellEvent({ type: "message.updated", sessionID: "s1", properties: { info: { id: "m1", type: "synthetic", metadata: { source: "shell", shellID: "sh1", command: "npm run dev" } } } }, deps)
+    expect(backgroundEvents).toHaveLength(1)
+    expect(backgroundEvents[0]).toMatchObject({ kind: "bg-terminal", id: "sh1", terminal: "completed" })
+    expect(calls.some(c => c.name === "trace")).toBe(true)
+  })
+  test("turn.completed（sid=child1）→ 转发 turn 来源终态", () => {
+    const { deps, backgroundEvents } = makeDeps()
+    dispatchShellEvent({ type: "turn.completed", properties: { sessionID: "child1" } }, deps)
+    expect(backgroundEvents).toEqual([{ kind: "bg-terminal", id: "child1", terminal: "completed", source: "turn" }])
+  })
+  test("普通 part.updated（非后台工具）→ 零转发", () => {
+    const { deps, backgroundEvents } = makeDeps()
+    dispatchShellEvent({ type: "part.updated", sessionID: "s1", properties: { part: { type: "tool", tool: "edit", state: { status: "running" }, messageID: "m1" } } }, deps)
+    expect(backgroundEvents).toEqual([])
   })
 })

@@ -20,6 +20,8 @@ import { sessionStore } from "./session-store"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
+import { ingestBackgroundEvent } from "./background-store"
+import { scanHistoryForBackground } from "./background-detect"
 import { childrenNeedingProbe, isTrackedChildSession } from "./subagent-tracker"
 import { reconcileSubagentsOnce } from "./subagent-reconcile"
 import { buildTerminalNotice, createNotifyGate, shouldNotifyIdle } from "./subagent-notify"
@@ -889,6 +891,10 @@ export function MafwShell() {
     subagents: {
       onEvent: (ev) => ingestSubagentEvent(ev),
     },
+    // 后台任务 tracker：既有事件旁路入 store（work bar / dock / 通知消费）。
+    background: {
+      onEvent: (ev) => ingestBackgroundEvent(ev),
+    },
   }
 
   async function connectSse() {
@@ -1015,6 +1021,9 @@ export function MafwShell() {
       // <For>-keyed SessionTurn list doesn't fully remount on reload; avoids clobbering
       // live SSE / optimistic messages that arrived while the fetch was in flight).
       const mergeRaw = (pageItems: any[]) => {
+        // 水合摄取（spec §5 双摄取点）：历史 parts/synthetic → 后台任务 tracker。
+        // tracker 幂等（重复观察/终态不回退），与 live SSE 竞争安全。
+        for (const ev of scanHistoryForBackground(pageItems, sessionID)) ingestBackgroundEvent(ev)
         const rawExisting = store.message[sessionID]
         const existing = Array.isArray(rawExisting) ? rawExisting : []
         if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
