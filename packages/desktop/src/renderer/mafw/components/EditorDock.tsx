@@ -2,22 +2,35 @@
 // - 打开文件（来自「文件」tab 的 editor-open 请求）→ CodeMirror 6；
 // - VSCode 式保存（Ctrl+S / 保存按钮，显式写盘；dirty 缓冲不自动落盘）；
 // - 外部改动（agent 改了同一文件）：干净 → 静默刷新；dirty → 冲突横幅（绝不静默覆盖）；
-// - 保存时 mtime 版本校验（调研 §3 防线②）：磁盘已变 → 冲突，覆盖需显式选择。
+// - 保存时 mtime 版本校验（调研 §3 防线②）：磁盘已变 → 冲突，覆盖需显式选择；
+// - 草稿/基准存 editor-drafts（root-scoped 模块单例）：卸载（关 dock/connDown）不丢。
 import { createSignal, createEffect, onCleanup, onMount, untrack, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import {
   createEditorModel, onRootChange, openFile, closeFile, setActive,
-  markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload,
+  markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
   type EditorModel, type OpenFile,
 } from "../editor-state"
+import {
+  clearDraft, getDraft, getEol, getMtime, setDraft, setEol, setMtime,
+} from "../editor-drafts"
 import { consumeEditorOpen, pendingEditorOpen } from "../editor-open"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
-import { buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
+import { annotationApplies, buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
 import { diffEntryFor } from "../editor-diff"
 import { LineCommentEditorV2 } from "@mafw/ui/v2/line-comment-v2"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
+
+interface SelectionState {
+  rel: string
+  from: number
+  to: number
+  text: string
+  left: number
+  top: number
+}
 
 export function EditorDock(props: {
   sessionID: string | null
@@ -29,35 +42,49 @@ export function EditorDock(props: {
   const [model, setModel] = createSignal<EditorModel>(createEditorModel())
   const [readNotes, setReadNotes] = createSignal<Record<string, string>>({})
   const [saving, setSaving] = createSignal(false)
-  /** 选区（编辑器内坐标）→ 批注浮钮/浮层 */
-  const [sel, setSel] = createSignal<{ from: number; to: number; text: string; left: number; top: number } | null>(null)
+  const [sel, setSel] = createSignal<SelectionState | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
   const [annotDraft, setAnnotDraft] = createSignal("")
-  /** 编辑 / 改动（diff 原地验收；pi 下无 diff 数据 → 按钮隐藏） */
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
   let mountToken = 0
-  /** 未保存草稿（切 tab 不丢）；保存/重载后清。 */
-  const drafts = new Map<string, string>()
-  /** 打开/保存时的磁盘 mtime（保存版本校验基准）。 */
-  const mtimes = new Map<string, number>()
-  /** 已 watch 的文件（root 变化/切换时统一退订）。 */
-  const watchedRels = new Set<string>()
   /** setDoc 程序化写入期间抑制 markDirty。 */
   let applyingExternal = false
+  /** 已 watch 的 (root, rel)；root 变化时用旧 root 退订。 */
+  const watched = new Set<string>() // `${root}\u0000${rel}`
 
   const activeFile = (): OpenFile | null =>
     model().files.find(f => f.rel === model().active) ?? null
 
   const noteFor = (rel: string) => readNotes()[rel]
 
-  // ── root 跟随（切会话/worktree → 清空打开文件并卸载编辑器）──────────
+  function clearSelection() {
+    setSel(null)
+    setAnnotOpen(false)
+    setAnnotDraft("")
+  }
+
+  async function unwatchAll() {
+    for (const entry of watched) {
+      const i = entry.indexOf("\u0000")
+      const root = entry.slice(0, i)
+      const rel = entry.slice(i + 1)
+      void window.api.fs.unwatch(root, rel)
+    }
+    watched.clear()
+  }
+
+  // ── root 跟随（切会话/worktree）：模型清空、退订旧 watch、清选区 ─────
   createEffect(() => {
     const root = props.sessionDirectory
+    if (root === model().root) return
     setModel(m => onRootChange(m, root))
     setReadNotes({})
+    clearSelection()
+    setMode("edit")
+    void unwatchAll()
     untrack(() => { void mountActive() })
   })
 
@@ -76,34 +103,40 @@ export function EditorDock(props: {
     if (model().files.some(f => f.rel === rel)) {
       setModel(m => setActive(m, rel))
       setMode("edit")
+      clearSelection()
       void mountActive()
       return
     }
     try {
       const res = await window.api.fs.readFile(root, rel)
+      if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果（Important 2）
       if (res.ok) {
-        mtimes.set(rel, res.mtimeMs)
+        setMtime(root, rel, res.mtimeMs)
+        setEol(root, rel, res.eol)
         setModel(m => openFile(m, rel, res.content))
-        setMode("edit")
-        void mountActive()
-      } else if (res.reason === "too-large" || res.reason === "binary") {
-        setReadNotes(prev => ({ ...prev, [rel]: res.reason === "binary" ? "二进制文件（只读）" : "文件超过 1MB（只读）" }))
+      } else if (res.reason === "too-large" || res.reason === "binary" || res.reason === "encoding") {
+        const note = res.reason === "binary" ? "二进制文件（只读）"
+          : res.reason === "too-large" ? "文件超过 1MB（只读）"
+            : "非 UTF-8 编码（只读，防保存损坏）"
+        setReadNotes(prev => ({ ...prev, [rel]: note }))
         setModel(m => openFile(m, rel, "", true))
-        setMode("edit")
-        void mountActive()
       } else {
         showToastV2({
           description: res.reason === "not-found" ? "文件不存在（可能已被移动/删除）" : "读取文件失败",
           variant: "error",
           duration: 3000,
         } as any)
+        return
       }
+      setMode("edit")
+      clearSelection()
+      void mountActive()
     } catch (e: any) {
       showToastV2({ description: `读取文件失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
     }
   }
 
-  // ── 挂载编排（事件驱动，不用 effect：避免 markDirty 每个键重挂载）────
+  // ── 挂载编排（事件驱动；不用 effect：避免 markDirty 每个键重挂载）────
   async function mountActive() {
     const f = activeFile()
     const el = host
@@ -115,32 +148,32 @@ export function EditorDock(props: {
     const token = ++mountToken
     editor?.destroy()
     editor = null
+    await unwatchAll() // 先退订（含 f=null 的情形，防旧 watch 泄漏）
     if (!f) return
     const root = props.sessionDirectory
+    if (!root) return
     try {
       const h = await mountEditor(el, {
-        doc: drafts.get(f.rel) ?? f.savedContent,
+        doc: getDraft(root, f.rel) ?? f.savedContent,
         readOnly: f.readOnly,
         lang: langForFile(f.rel),
         onDocChanged: () => {
-          if (!applyingExternal) drafts.set(f.rel, h.getDoc())
+          if (applyingExternal) return // 程序化 setDoc 不算用户编辑（Critical 1）
+          setDraft(root, f.rel, h.getDoc())
           setModel(m => markDirty(m, f.rel))
         },
         onSave: () => void saveActive(),
         onSelectionChange: (s) => {
-          setSel(s)
-          if (!s) setAnnotOpen(false)
+          if (!s) { clearSelection(); return }
+          setSel({ rel: f.rel, ...s })
         },
       })
       if (token !== mountToken) { h.destroy(); return }
       editor = h
-      if (root) {
-        for (const old of watchedRels) void window.api.fs.unwatch(root, old)
-        watchedRels.clear()
-        if (!f.readOnly) {
-          watchedRels.add(f.rel)
-          void window.api.fs.watch(root, f.rel)
-        }
+      if (!f.readOnly) {
+        const key = `${root}\u0000${f.rel}`
+        watched.add(key)
+        void window.api.fs.watch(root, f.rel)
       }
     } catch (e: any) {
       showToastV2({ description: `编辑器加载失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
@@ -157,9 +190,7 @@ export function EditorDock(props: {
     })
     onCleanup(() => {
       off()
-      const root = props.sessionDirectory
-      if (root) for (const rel of watchedRels) void window.api.fs.unwatch(root, rel)
-      watchedRels.clear()
+      void unwatchAll()
       editor?.destroy()
       editor = null
     })
@@ -170,16 +201,19 @@ export function EditorDock(props: {
     if (!root) return
     try {
       const res = await window.api.fs.readFile(root, rel)
-      if (!res.ok) return
-      mtimes.set(rel, res.mtimeMs)
-      drafts.delete(rel)
+      if (root !== props.sessionDirectory || !res.ok) return
+      // await 期间用户可能开始输入 → 禁止静默覆盖（Critical 1）
+      if (!canApplyCleanReload(model(), rel)) return
+      setMtime(root, rel, res.mtimeMs)
+      setEol(root, rel, res.eol)
+      clearDraft(root, rel)
       setModel(m => applyCleanReload(m, rel, res.content))
       if (model().active === rel && editor) {
         applyingExternal = true
         editor.setDoc(res.content)
         applyingExternal = false
       }
-    } catch { /* watch 触发的重读失败：保留 staleClean，等下次事件 */ }
+    } catch { /* 重读失败：保留 staleClean，等下次事件 */ }
   }
 
   function setDocs(content: string) {
@@ -188,23 +222,31 @@ export function EditorDock(props: {
     applyingExternal = false
   }
 
-  // ── 保存（显式 + mtime 版本校验）─────────────────────────────────────
+  // ── 保存（显式 + mtime 版本校验 + EOL 保真）─────────────────────────
   async function saveActive(force = false) {
     const f = activeFile()
     const root = props.sessionDirectory
     if (!f || !root || f.readOnly || saving()) return
-    const content = drafts.get(f.rel) ?? editor?.getDoc() ?? f.savedContent
+    const content = getDraft(root, f.rel) ?? editor?.getDoc() ?? f.savedContent
     setSaving(true)
     try {
-      const res = await window.api.fs.writeFile(root, f.rel, content, force ? undefined : { ifMtimeMs: mtimes.get(f.rel) })
+      const res = await window.api.fs.writeFile(root, f.rel, content, {
+        ...(force ? {} : { ifMtimeMs: getMtime(root, f.rel) }),
+        eol: getEol(root, f.rel) ?? "\n",
+      })
+      if (root !== props.sessionDirectory) return
       if (res.ok) {
-        drafts.delete(f.rel)
+        clearDraft(root, f.rel)
         setModel(m => markSaved(m, f.rel, content))
         const after = await window.api.fs.readFile(root, f.rel)
-        if (after.ok) mtimes.set(f.rel, after.mtimeMs)
+        if (after.ok) {
+          setMtime(root, f.rel, after.mtimeMs)
+          setEol(root, f.rel, after.eol)
+          // 写后读：若内容已变（agent 紧随其后写入），不把我们的 mtime 当基准
+          if (after.content !== content) setModel(m => onExternalChange(m, f.rel))
+        }
         showToastV2({ description: "已保存", duration: 1200 } as any)
       } else if (res.reason === "conflict") {
-        // 保存时磁盘已变（watch 防抖窗口外，典型是 agent 刚写了同一文件）
         setModel(m => onExternalChange(m, f.rel))
       } else if (res.reason === "not-found") {
         showToastV2({ description: "文件已被删除，无法保存", variant: "error", duration: 3000 } as any)
@@ -220,18 +262,36 @@ export function EditorDock(props: {
     const root = props.sessionDirectory
     if (!root) return
     const res = await window.api.fs.readFile(root, rel)
+    if (root !== props.sessionDirectory) return
     if (!res.ok) {
       showToastV2({ description: res.reason === "not-found" ? "文件已被删除" : "读取失败", variant: "error", duration: 3000 } as any)
       return
     }
-    mtimes.set(rel, res.mtimeMs)
-    drafts.delete(rel)
+    setMtime(root, rel, res.mtimeMs)
+    setEol(root, rel, res.eol)
+    clearDraft(root, rel)
     setModel(m => resolveConflict(m, rel, "reload", res.content))
     if (model().active === rel) setDocs(res.content)
   }
 
   function keepMine(rel: string) {
     setModel(m => resolveConflict(m, rel, "keep-mine"))
+  }
+
+  function closeRel(rel: string) {
+    const root = props.sessionDirectory
+    if (root) clearDraft(root, rel)
+    setModel(m => closeFile(m, rel))
+    setMode("edit")
+    clearSelection()
+    void mountActive()
+  }
+
+  async function openExternal(rel: string) {
+    const root = props.sessionDirectory
+    if (!root) return
+    const res = await window.api.fs.openExternal(root, rel)
+    if (!res.ok) showToastV2({ description: "无法在外部编辑器打开", variant: "error", duration: 3000 } as any)
   }
 
   const selRange = () => {
@@ -245,23 +305,9 @@ export function EditorDock(props: {
     const f = activeFile()
     const range = selRange()
     if (!s || !f || !range || !comment.trim() || !props.onSendAnnotation) return
+    if (!annotationApplies(f.rel, s.rel)) { clearSelection(); return }
     props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
-    setAnnotOpen(false)
-    setSel(null)
-  }
-
-  function closeRel(rel: string) {
-    drafts.delete(rel)
-    setModel(m => closeFile(m, rel))
-    setMode("edit")
-    void mountActive()
-  }
-
-  async function openExternal(rel: string) {
-    const root = props.sessionDirectory
-    if (!root) return
-    const res = await window.api.fs.openExternal(root, rel)
-    if (!res.ok) showToastV2({ description: "无法在外部编辑器打开", variant: "error", duration: 3000 } as any)
+    clearSelection()
   }
 
   return (
@@ -279,8 +325,8 @@ export function EditorDock(props: {
                 role="button"
                 tabIndex={0}
                 title={f.rel}
-                onClick={() => { setModel(m => setActive(m, f.rel)); setMode("edit"); void mountActive() }}
-                onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); void mountActive() } }}
+                onClick={() => { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() }}
+                onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); clearSelection(); void mountActive() } }}
               >
                 <span class="mafw-editor-tab-name">{f.rel.split("/").pop()}</span>
                 <Show when={f.dirty}><span class="mafw-editor-tab-dot" title="未保存">●</span></Show>
@@ -313,7 +359,7 @@ export function EditorDock(props: {
               <ButtonV2
                 variant={mode() === "diff" ? "contrast" : "ghost"}
                 size="small"
-                onClick={() => setMode(mode() === "diff" ? "edit" : "diff")}
+                onClick={() => { setMode(mode() === "diff" ? "edit" : "diff"); clearSelection() }}
               >改动</ButtonV2>
             </Show>
           </div>
@@ -331,34 +377,35 @@ export function EditorDock(props: {
           </div>
         </Show>
 
-        {/* 只读原因（binary/超大） */}
+        {/* 只读原因（binary/超大/非 UTF-8） */}
         <Show when={activeFile() && noteFor(activeFile()!.rel)}>
           <div class="mafw-editor-note">{noteFor(activeFile()!.rel)}</div>
         </Show>
 
-        {/* 选区批注入口（人标出 → agent 改）：浮钮 → 浮层 */}
-        <Show when={sel() && !annotOpen() && props.onSendAnnotation}>
-          <div class="mafw-editor-annot-anchor" style={{ left: `${Math.max(8, sel()!.left)}px`, top: `${sel()!.top + 4}px` }}>
-            <ButtonV2 variant="outline" size="small" onClick={() => { setAnnotDraft(""); setAnnotOpen(true) }}>批注</ButtonV2>
-          </div>
-        </Show>
-        <Show when={annotOpen() && sel()}>
-          <div class="mafw-editor-annot-pop" style={{ left: `${Math.max(8, Math.min(sel()!.left, 420))}px`, top: `${sel()!.top + 4}px` }}>
-            <LineCommentEditorV2
-              value={annotDraft()}
-              onInput={setAnnotDraft}
-              onCancel={() => setAnnotOpen(false)}
-              onSubmit={(value: string) => submitAnnotation(value)}
-              selection={<span>{activeFile()?.rel}:L{selRange()?.startLine}-{selRange()?.endLine}</span>}
-              placeholder="对这一段的批注…"
-              submitLabel="发送"
-              cancelLabel="取消"
-            />
-          </div>
-        </Show>
-
         <div class="mafw-editor-body">
           <div class="mafw-editor-host" ref={(el) => { host = el }} style={{ display: mode() === "diff" ? "none" : "block" }} />
+
+          {/* 选区批注入口（人标出 → agent 改）：浮钮 → 浮层（仅编辑模式） */}
+          <Show when={mode() === "edit" && sel() && !annotOpen() && props.onSendAnnotation}>
+            <div class="mafw-editor-annot-anchor" style={{ left: `${Math.max(8, sel()!.left)}px`, top: `${sel()!.top + 4}px` }}>
+              <ButtonV2 variant="outline" size="small" onClick={() => { setAnnotDraft(""); setAnnotOpen(true) }}>批注</ButtonV2>
+            </div>
+          </Show>
+          <Show when={mode() === "edit" && annotOpen() && sel()}>
+            <div class="mafw-editor-annot-pop" style={{ left: `${Math.max(8, Math.min(sel()!.left, 420))}px`, top: `${sel()!.top + 4}px` }}>
+              <LineCommentEditorV2
+                value={annotDraft()}
+                onInput={setAnnotDraft}
+                onCancel={() => setAnnotOpen(false)}
+                onSubmit={(value: string) => submitAnnotation(value)}
+                selection={<span>{sel()!.rel}:L{selRange()?.startLine}-{selRange()?.endLine}</span>}
+                placeholder="对这一段的批注…"
+                submitLabel="发送"
+                cancelLabel="取消"
+              />
+            </div>
+          </Show>
+
           <Show when={mode() === "diff" && activeFile() && props.sessionID}>
             <div class="mafw-editor-diff">
               <DiffReviewPanel
@@ -366,7 +413,7 @@ export function EditorDock(props: {
                 sessionID={props.sessionID!}
                 diffs={props.diffs}
                 initialFile={activeFile()!.rel}
-                onBack={() => setMode("edit")}
+                onBack={() => { setMode("edit"); clearSelection() }}
                 onSendComment={props.onSendComment}
               />
             </div>

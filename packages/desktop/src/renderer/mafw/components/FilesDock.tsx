@@ -47,6 +47,8 @@ export function FilesDock(props: {
     if (!children()[row.rel]) {
       try {
         const entries = await window.api.fs.listDir(root, row.rel)
+        // root 已切换：丢弃迟到结果（终审 Important 2 同类）
+        if (root !== props.sessionDirectory) return
         if (entries === null) {
           showToastV2({ description: "无法读取该目录", variant: "error", duration: 2000 } as any)
           return

@@ -1,5 +1,5 @@
 ﻿import { describe, expect, test } from "bun:test"
-import { createEditorModel as create, onRootChange, openFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload } from "./editor-state"
+import { createEditorModel as create, onRootChange, openFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload } from "./editor-state"
 
 describe("editor-state", () => {
   test("openFile 建行并激活；重复打开仅激活不重置内容", () => {
@@ -42,5 +42,11 @@ describe("editor-state", () => {
     m = closeFile(m, "b.ts")
     expect(m.active).toBe("a.ts")
     expect(closeFile(m, "a.ts").active).toBeNull()
+  })
+  test("canApplyCleanReload：仅干净且存在的文件可静默刷新（防 await 期间用户输入被覆盖）", () => {
+    let m = openFile(create(), "a.ts", "v1")
+    expect(canApplyCleanReload(m, "a.ts")).toBe(true)
+    expect(canApplyCleanReload(markDirty(m, "a.ts"), "a.ts")).toBe(false)
+    expect(canApplyCleanReload(m, "missing.ts")).toBe(false)
   })
 })

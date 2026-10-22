@@ -26,15 +26,15 @@ export type WslServersAPI = WslServersPlatform
 /** fs 原语 DTO（与 src/main/fs-workspace.ts 形状一致；preload 不 import main）。 */
 export type FsEntryDTO = { name: string; kind: "file" | "dir" }
 export type FsReadResult =
-  | { ok: true; content: string; mtimeMs: number }
-  | { ok: false; reason: "too-large" | "binary" | "not-found" | "io" }
+  | { ok: true; content: string; mtimeMs: number; eol: "\n" | "\r\n" }
+  | { ok: false; reason: "too-large" | "binary" | "encoding" | "not-found" | "io" }
 export type FsWriteResult =
   | { ok: true }
   | { ok: false; reason: "jail" | "not-found" | "conflict" | "io" }
 export type FsAPI = {
   listDir(root: string, rel: string): Promise<FsEntryDTO[] | null>
   readFile(root: string, rel: string): Promise<FsReadResult>
-  writeFile(root: string, rel: string, content: string, opts?: { ifMtimeMs?: number }): Promise<FsWriteResult>
+  writeFile(root: string, rel: string, content: string, opts?: { ifMtimeMs?: number; eol?: "\n" | "\r\n" }): Promise<FsWriteResult>
   watch(root: string, rel: string): Promise<void>
   unwatch(root: string, rel: string): Promise<void>
   onChanged(cb: (e: { root: string; rel: string }) => void): () => void

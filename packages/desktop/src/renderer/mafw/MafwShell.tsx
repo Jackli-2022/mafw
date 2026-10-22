@@ -50,6 +50,7 @@ import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
+import { clampDockWidth, dockMaxWidth, suggestDockWidth } from "./dock-width"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -1416,12 +1417,13 @@ export function MafwShell() {
   )
   // 宽度全局统一：所有 tab 共用一个记忆宽度（旧版按 tab 记忆，点 tab 会跳宽）。
   const [rightDockWidth, setRightDockWidth] = createSignal<number>((() => {
+    const tab = rightDockTab()
     const v = Number(localStorage.getItem("mafw-right-dock-width"))
-    if (v > 0) return v
+    if (v > 0) return clampDockWidth(tab, v, window.innerWidth)
     try {
       const old = JSON.parse(localStorage.getItem("mafw-right-dock-widths") || "{}")
       const oldVal = Number(old[localStorage.getItem("mafw-right-dock-tab") || ""])
-      if (oldVal > 0) return oldVal
+      if (oldVal > 0) return clampDockWidth(tab, oldVal, window.innerWidth)
     } catch { /* ignore */ }
     return DOCK_DEFAULT_WIDTH
   })())
@@ -1429,10 +1431,10 @@ export function MafwShell() {
   const applyRightDock = (open: boolean, tab?: DockTab) => {
     setRightDockOpen(open)
     if (tab !== undefined) setRightDockTab(tab)
-    // workbench tab（files/editor）首次进入自动加宽到阅读宽度（用户可再拖）
+    // workbench tab（files/editor）首次进入只增不减地加宽（终审 Important 6）
     if (tab === "files" || tab === "editor") {
-      if (rightDockWidth() < 480) {
-        const next = Math.min(560, Math.floor(window.innerWidth / 2))
+      const next = suggestDockWidth(tab, rightDockWidth(), window.innerWidth)
+      if (next !== rightDockWidth()) {
         setRightDockWidth(next)
         try { localStorage.setItem("mafw-right-dock-width", String(next)) } catch {}
       }
@@ -1441,11 +1443,8 @@ export function MafwShell() {
     if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
   }
   const applyRightDockWidth = (w: number) => {
-    // workbench tab 放宽上限到窗口 50%（编辑器/diff 需要横向空间），其余 tab 保持窄栏
-    const max = rightDockTab() === "files" || rightDockTab() === "editor"
-      ? Math.max(480, Math.floor(window.innerWidth * 0.5))
-      : 640
-    const clamped = Math.max(280, Math.min(Math.round(w), max))
+    // clamp 策略纯函数化（dock-width.ts）：普通 tab 480 上限，files/editor = 窗口 50%
+    const clamped = clampDockWidth(rightDockTab(), w, window.innerWidth)
     setRightDockWidth(clamped)
     try { localStorage.setItem("mafw-right-dock-width", String(clamped)) } catch {}
   }
@@ -1968,7 +1967,6 @@ export function MafwShell() {
               backgroundBadge={countRunning(backgroundRows())}
               onClose={() => applyRightDock(false)}
               onTab={(t) => applyRightDock(true, t)}
-              onResize={applyRightDockWidth}
             >
               <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
                     <TaskList
@@ -2061,7 +2059,7 @@ export function MafwShell() {
                 edge="start"
                 size={rightDockWidth()}
                 min={240}
-                max={480}
+                max={dockMaxWidth(rightDockTab(), window.innerWidth)}
                 collapseThreshold={140}
                 onResize={applyRightDockWidth}
                 onCollapse={() => applyRightDock(false)}

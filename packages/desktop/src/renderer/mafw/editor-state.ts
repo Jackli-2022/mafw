@@ -91,6 +91,12 @@ export function applyCleanReload(m: EditorModel, rel: string, diskContent: strin
   return update(m, rel, f => ({ ...f, savedContent: diskContent, staleClean: false }))
 }
 
+/** 读盘 await 结束后再确认一次：期间用户开始输入 → 禁止静默覆盖（终审 Critical 1）。 */
+export function canApplyCleanReload(m: EditorModel, rel: string): boolean {
+  const f = m.files.find(x => x.rel === rel)
+  return !!f && !f.dirty && !f.readOnly
+}
+
 function update(m: EditorModel, rel: string, fn: (f: OpenFile) => OpenFile): EditorModel {
   let changed = false
   const files = m.files.map(f => {

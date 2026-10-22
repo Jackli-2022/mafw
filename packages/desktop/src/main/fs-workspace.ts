@@ -3,6 +3,9 @@
 // 安全边界（spec Anti-goal A1 的前置）：所有 renderer 传入的相对路径必须经
 // resolveInRoot jail —— 越界/绝对路径/盘符跳转一律拒绝且不抛异常。
 // 平台：Windows 与 POSIX 双 OS（CI 双跑），路径归一为正斜杠 rel，落地用 path.resolve。
+//
+// 数据保真（终审修复）：stat 先行（超大文件不读）、UTF-8 fatal 解码（非 UTF-8
+// 拒绝而非写坏）、EOL 记录（CRLF 文件保存回写 CRLF，防整文件换行重写）。
 import { resolve as pathResolve, sep } from "node:path"
 import { IGNORED_DIRS } from "./file-listing"
 
@@ -15,7 +18,7 @@ export interface FsIO {
   readdir(abs: string): Promise<{ name: string; isDirectory(): boolean }[]>
   readFile(abs: string): Promise<Buffer>
   writeFile(abs: string, data: string): Promise<void>
-  stat(abs: string): Promise<{ mtimeMs: number }>
+  stat(abs: string): Promise<{ mtimeMs: number; size: number }>
 }
 
 const DRIVE_PREFIX = /^[A-Za-z]:\//
@@ -65,9 +68,11 @@ export function sniffBinary(buf: Buffer): boolean {
   return false
 }
 
+export type Eol = "\n" | "\r\n"
+
 export type ReadResult =
-  | { ok: true; content: string; mtimeMs: number }
-  | { ok: false; reason: "too-large" | "binary" | "not-found" | "io" }
+  | { ok: true; content: string; mtimeMs: number; eol: Eol }
+  | { ok: false; reason: "too-large" | "binary" | "encoding" | "not-found" | "io" }
 
 export type WriteResult =
   | { ok: true }
@@ -75,6 +80,15 @@ export type WriteResult =
 
 function isNotFound(e: unknown): boolean {
   return (e as any)?.code === "ENOENT"
+}
+
+/** UTF-8 严格解码：非法序列 → null（避免显示乱码并在保存时写坏文件）。 */
+function decodeUtf8Strict(buf: Buffer): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf)
+  } catch {
+    return null
+  }
 }
 
 /** 单层列目录；rel="" 为 root 自身。jail 外或不可读 → null。 */
@@ -91,34 +105,42 @@ export async function listDir(io: FsIO, root: string, rel: string): Promise<FsEn
 export async function readTextFile(io: FsIO, root: string, rel: string): Promise<ReadResult> {
   const abs = resolveInRoot(root, rel)
   if (!abs) return { ok: false, reason: "not-found" } // 不向 renderer 泄露越界细节
-  let buf: Buffer
-  let stat: { mtimeMs: number }
+  let stat: { mtimeMs: number; size: number }
   try {
-    buf = await io.readFile(abs)
-    stat = await io.stat(abs)
+    stat = await io.stat(abs) // stat 先行：超大文件不进入 readFile（防主进程 OOM/卡死）
   } catch (e) {
     return { ok: false, reason: isNotFound(e) ? "not-found" : "io" }
   }
-  if (buf.length > MAX_READ_BYTES) return { ok: false, reason: "too-large" }
+  if (stat.size > MAX_READ_BYTES) return { ok: false, reason: "too-large" }
+  let buf: Buffer
+  try {
+    buf = await io.readFile(abs)
+  } catch (e) {
+    return { ok: false, reason: isNotFound(e) ? "not-found" : "io" }
+  }
   if (sniffBinary(buf)) return { ok: false, reason: "binary" }
-  return { ok: true, content: buf.toString("utf8"), mtimeMs: stat.mtimeMs }
+  const text = decodeUtf8Strict(buf)
+  if (text === null) return { ok: false, reason: "encoding" }
+  const eol: Eol = text.includes("\r\n") ? "\r\n" : "\n"
+  return { ok: true, content: text.replace(/\r\n/g, "\n"), mtimeMs: stat.mtimeMs, eol }
 }
 
 /**
  * 覆盖写已存在文件；不创建新文件（防 agent 诱导写任意新路径）。
  * ifMtimeMs 提供时先 stat 比对：磁盘 mtime 不同 → conflict（不覆盖）——
  * 保存时版本校验，补死 watch 防抖窗口内的静默覆盖（调研 §3 防线②）。
+ * eol="\r\n" 时把 \n 回写为 \r\n（编辑器内部统一用 \n）。
  */
 export async function writeTextFile(
   io: FsIO,
   root: string,
   rel: string,
   content: string,
-  opts?: { ifMtimeMs?: number },
+  opts?: { ifMtimeMs?: number; eol?: Eol },
 ): Promise<WriteResult> {
   const abs = resolveInRoot(root, rel)
   if (!abs) return { ok: false, reason: "jail" }
-  let stat: { mtimeMs: number }
+  let stat: { mtimeMs: number; size: number }
   try {
     stat = await io.stat(abs)
   } catch (e) {
@@ -127,8 +149,9 @@ export async function writeTextFile(
   if (typeof opts?.ifMtimeMs === "number" && stat.mtimeMs !== opts.ifMtimeMs) {
     return { ok: false, reason: "conflict" }
   }
+  const data = opts?.eol === "\r\n" ? content.replace(/\r?\n/g, "\r\n") : content
   try {
-    await io.writeFile(abs, content)
+    await io.writeFile(abs, data)
     return { ok: true }
   } catch {
     return { ok: false, reason: "io" }

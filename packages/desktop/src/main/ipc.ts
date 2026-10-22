@@ -57,7 +57,10 @@ export function registerIpcHandlers(deps: Deps) {
     readdir: (abs) => readdir(abs, { withFileTypes: true }),
     readFile: (abs) => readFile(abs),
     writeFile: (abs, data) => writeFile(abs, data, "utf8"),
-    stat: async (abs) => ({ mtimeMs: (await stat(abs)).mtimeMs }),
+    stat: async (abs) => {
+      const s = await stat(abs)
+      return { mtimeMs: s.mtimeMs, size: s.size }
+    },
   }
   const fsWatchRegistry = new FsWatchRegistry(({ root, rel }) => {
     for (const win of BrowserWindow.getAllWindows()) {

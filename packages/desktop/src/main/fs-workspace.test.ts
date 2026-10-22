@@ -8,12 +8,18 @@ import {
 // 跨平台：CI 双 OS 跑同一套测试，根路径用平台原生绝对路径构造
 const root = resolve("proj")
 
-function mkIo(files: Record<string, { buf: Buffer; mtime: number }>, dirs: Record<string, { name: string; isDirectory(): boolean }[]> = {}): FsIO {
+function mkIo(
+  files: Record<string, { buf: Buffer; mtime: number }>,
+  dirs: Record<string, { name: string; isDirectory(): boolean }[]> = {},
+): FsIO {
   return {
     readdir: async (abs) => dirs[abs] ?? [],
     readFile: async (abs) => { if (!files[abs]) throw Object.assign(new Error("x"), { code: "ENOENT" }); return files[abs].buf },
     writeFile: async (abs, data) => { files[abs] = { buf: Buffer.from(data), mtime: 999 } },
-    stat: async (abs) => { if (!files[abs]) throw Object.assign(new Error("x"), { code: "ENOENT" }); return { mtimeMs: files[abs].mtime } },
+    stat: async (abs) => {
+      if (!files[abs]) throw Object.assign(new Error("x"), { code: "ENOENT" })
+      return { mtimeMs: files[abs].mtime, size: files[abs].buf.length }
+    },
   }
 }
 
@@ -64,15 +70,28 @@ describe("sniffBinary / MAX_READ_BYTES", () => {
 })
 
 describe("readTextFile / listDir", () => {
-  test("文本读取 → content + mtimeMs；二进制 / 超大 → 拒绝原因", async () => {
+  test("文本读取 → content + mtimeMs + eol；二进制 / 非 UTF-8 / 超大 → 拒绝原因", async () => {
     const a = join(root, "a.ts")
     const io = mkIo({ [a]: { buf: Buffer.from("hi"), mtime: 5 } })
-    expect(await readTextFile(io, root, "a.ts")).toEqual({ ok: true, content: "hi", mtimeMs: 5 })
+    expect(await readTextFile(io, root, "a.ts")).toEqual({ ok: true, content: "hi", mtimeMs: 5, eol: "\n" })
     const bin = mkIo({ [join(root, "b.bin")]: { buf: Buffer.from([0x00, 0x01]), mtime: 1 } })
     expect(await readTextFile(bin, root, "b.bin")).toEqual({ ok: false, reason: "binary" })
-    const big = mkIo({ [join(root, "c.txt")]: { buf: Buffer.alloc(MAX_READ_BYTES + 1, 0x61), mtime: 1 } })
-    expect(await readTextFile(big, root, "c.txt")).toEqual({ ok: false, reason: "too-large" })
+    // 非 UTF-8 字节（GBK「你」= C4 E3）→ 拒绝解码，防保存时写坏
+    const gbk = mkIo({ [join(root, "c.txt")]: { buf: Buffer.from([0xC4, 0xE3]), mtime: 1 } })
+    expect(await readTextFile(gbk, root, "c.txt")).toEqual({ ok: false, reason: "encoding" })
+    // 超大：stat 先行拒绝（readFile 不应被调用）
+    const huge: FsIO = {
+      readdir: async () => [],
+      readFile: async () => { throw new Error("should not read") },
+      writeFile: async () => {},
+      stat: async () => ({ mtimeMs: 1, size: MAX_READ_BYTES + 1 }),
+    }
+    expect(await readTextFile(huge, root, "huge.log")).toEqual({ ok: false, reason: "too-large" })
     expect(await readTextFile(mkIo({}), root, "nope.ts")).toEqual({ ok: false, reason: "not-found" })
+  })
+  test("CRLF 文件：内容归一为 \\n 显示，eol 记录 \\r\\n", async () => {
+    const io = mkIo({ [join(root, "w.txt")]: { buf: Buffer.from("a\r\nb\r\n"), mtime: 7 } })
+    expect(await readTextFile(io, root, "w.txt")).toEqual({ ok: true, content: "a\nb\n", mtimeMs: 7, eol: "\r\n" })
   })
   test("listDir：root 自身可列（rel=\"\"）；jail 外 → null；按 shapeEntries 形状返回", async () => {
     const io = mkIo({}, { [root]: [
@@ -84,11 +103,17 @@ describe("readTextFile / listDir", () => {
   })
 })
 
-describe("writeTextFile（保存时版本校验，调研 §3）", () => {
+describe("writeTextFile（保存时版本校验 + EOL 保真，调研 §3）", () => {
   test("ifMtimeMs 匹配 → 写入；不匹配 → conflict 不落盘", async () => {
     const io = mkIo({ [join(root, "a.ts")]: { buf: Buffer.from("v1"), mtime: 100 } })
     expect(await writeTextFile(io, root, "a.ts", "v2", { ifMtimeMs: 100 })).toEqual({ ok: true })
     expect(await writeTextFile(io, root, "a.ts", "v3", { ifMtimeMs: 100 })).toEqual({ ok: false, reason: "conflict" })
+  })
+  test("CRLF 文件保存回写 \\r\\n（防整文件换行重写）", async () => {
+    const files: Record<string, { buf: Buffer; mtime: number }> = { [join(root, "w.txt")]: { buf: Buffer.from("a\r\nb"), mtime: 1 } }
+    const io = mkIo(files)
+    await writeTextFile(io, root, "w.txt", "a\nb\n", { eol: "\r\n" })
+    expect(files[join(root, "w.txt")]!.buf.toString()).toBe("a\r\nb\r\n")
   })
   test("目标不存在 → not-found（不创建新文件）；jail 外 → jail", async () => {
     const io = mkIo({})
