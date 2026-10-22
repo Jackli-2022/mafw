@@ -12,6 +12,7 @@ import { FsWatchRegistry } from "./fs-watcher"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import { getStore, removeStoreFileIfEmpty } from "./store"
+import { windowExpanded } from "../shared/window-state"
 import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar } from "./windows"
 import { isCloseToTrayEnabled, isTrayIconEnabled, setCloseToTray, setTrayIconEnabled } from "./tray-prefs"
 import { syncTrayPresence } from "./tray"
@@ -293,6 +294,11 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.handle("window-is-maximized", (event: IpcMainInvokeEvent) => {
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false
+  })
+
+  ipcMain.handle("window-is-expanded", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return win ? windowExpanded(win.isMaximized(), win.isFullScreen()) : false
   })
 
   ipcMain.on("relaunch", () => {

@@ -137,6 +137,8 @@ export type ElectronAPI = {
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
     onMaximizedChange: (cb: (maximized: boolean) => void) => () => void
+    isExpanded: () => Promise<boolean>
+    onExpandedChange: (cb: (expanded: boolean) => void) => () => void
   }
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
   runDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>

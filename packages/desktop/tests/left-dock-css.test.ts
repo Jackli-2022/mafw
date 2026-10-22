@@ -22,6 +22,15 @@ describe("left dock CSS 契约", () => {
   test("浮层点外关闭的 backdrop 存在", () => {
     expect(css).toContain(".mafw-left-dock-backdrop")
   })
+  test("左 dock 自身是定位容器（resize handle 贴它右缘，而不是 body 右缘）", () => {
+    const block = css.match(/\.mafw-left-dock \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(block).toContain("position: relative")
+  })
+  test("项目切换下拉的 z-index 高于浮层/遮罩（默认窗口化下可用）", () => {
+    const block = css.match(/\.mafw-rail-switcher-menu \{[\s\S]*?\}/)?.[0] ?? ""
+    const z = Number(block.match(/z-index:\s*(\d+)/)?.[1] ?? 0)
+    expect(z).toBeGreaterThan(61)
+  })
   test("shell 左列默认 46px（图标轨），不再给 264px 旧 rail", () => {
     expect(css).toContain("var(--rail-w, 46px)")
   })

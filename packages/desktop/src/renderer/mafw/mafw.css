@@ -453,7 +453,7 @@ html[data-theme="light"] body {
 .mafw-rail-switcher-caret { flex-shrink: 0; opacity: .55; }
 .mafw-rail-switcher-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-rail-check { margin-left: auto; opacity: .8; }
-.mafw-rail-switcher-menu { max-height: 320px; overflow-y: auto; }
+.mafw-rail-switcher-menu { max-height: 320px; overflow-y: auto; z-index: 80; }
 /* ── Search（左 dock 搜索面） ── */
 .mafw-left-dock-search { padding: 0 8px 6px; flex-shrink: 0; }
 /* Swiss search: flat borderless surface; focus signal = leading icon brightens. */
@@ -2758,6 +2758,7 @@ html[data-theme="light"] body {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  position: relative;
   background: var(--bg-base);
   border-right: 1px solid var(--border-subtle);
   overflow: hidden;

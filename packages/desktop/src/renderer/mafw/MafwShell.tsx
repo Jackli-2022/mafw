@@ -15,7 +15,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
-import { migrateLegacyRailWidth, resolveMode, toggleFace, type LeftDockFace } from "./left-dock"
+import { migrateLegacyRailWidth, resolveMode, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
@@ -245,6 +245,7 @@ export function MafwShell() {
     setActiveSessionId(sid)
     setActiveViewId(sid)
     syncPermissionMode(sid) // 🛡 徽标初始态（kv 真相源拉取）
+    closeLeftDockIfOverlay()
   }
 
   // Single resolution path for the manager session: authoritative gateway DB
@@ -1151,6 +1152,8 @@ export function MafwShell() {
   async function createSession(opts?: { noReveal?: boolean }) {
     console.log("[mafw] createSession")
     setShowWelcome(false)
+    setShowConfig(false)
+    setActiveTab("chat")
     try {
       const result = await window.api.mafw.sessions.create() as any
       const id = result.id || result.sessionID || `sess-${Date.now()}`
@@ -1362,8 +1365,8 @@ export function MafwShell() {
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
   const [winMaximized, setWinMaximized] = createSignal(false)
   onMount(() => {
-    void window.api.windowControls.isMaximized().then(setWinMaximized)
-    const unsub = window.api.windowControls.onMaximizedChange(setWinMaximized)
+    void window.api.windowControls.isExpanded().then(setWinMaximized)
+    const unsub = window.api.windowControls.onExpandedChange(setWinMaximized)
     onCleanup(unsub)
   })
   // Anchor for the TaskList popover: the titlebar of the pane whose TaskBar the
@@ -1498,29 +1501,15 @@ export function MafwShell() {
     setLeftDock(s => ({ ...s, open: false }))
     try { localStorage.setItem("mafw-left-dock-open", "0") } catch { /* ignore */ }
   }
+  // 浮层模式下，选中会话/导航离开 chat 时自动关；推挤列保持。
+  const closeLeftDockIfOverlay = () => {
+    if (shouldCloseOnSelect(leftDockMode())) closeLeftDock()
+  }
   const applyLeftDockWidth = (w: number) => {
     setLeftDockWidth(w)
     try { localStorage.setItem("mafw-left-dock-width", String(w)) } catch { /* ignore */ }
   }
-  // 会话选中：写 tab/store 并切到 chat；浮层模式下选中即关（push 不关）。
-  const handleSelectSession = (id: string, title?: string, manager?: boolean) => {
-    setShowConfig(false)
-    setActiveTab("chat")
-    setShowWelcome(false)
-    if (!sessions().find(s => s.id === id)) {
-      const tabTitle = title || `Chat ${sessions().length + 1}`
-      setSessions(prev => [...prev, { id, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager }])
-      setStore(prev => ({
-        ...prev,
-        session: [...prev.session, { id, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
-        session_status: { ...prev.session_status, [id]: { type: "idle" } },
-        message: { ...prev.message, [id]: [] },
-      }))
-    }
-    setActiveSessionId(id)
-    setActiveViewId(id)
-    if (leftDockMode() === "overlay") closeLeftDock()
-  }
+  // 会话选中统一走 openSessionTab（含 syncPermissionMode 与浮层关闭）。
   const connPhaseLabel = () =>
     connPhase() === "connected" ? "connected"
     : connPhase() === "reconnecting" ? "reconnecting"
@@ -1728,9 +1717,9 @@ export function MafwShell() {
         <IconRail
           face={leftDock().open ? leftDock().face : null}
           onToggleFace={toggleLeftDock}
-          onNewSession={() => void createSession()}
-          onDashboard={() => { setShowConfig(false); setActiveTab("goals") }}
-          onConfig={() => { setConfigSection(undefined); setShowConfig(true) }}
+          onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
+          onDashboard={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("goals") }}
+          onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
           onToggleTheme={toggleTheme}
           approvals={pendingPermissionCount()}
           connPhase={connPhaseLabel()}
@@ -1749,7 +1738,7 @@ export function MafwShell() {
         <SessionStrip
           sessions={sessions}
           activeViewId={activeViewId}
-          onSelect={(id) => { setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
+          onSelect={(id) => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("chat"); setShowWelcome(false); setActiveSessionId(id); setActiveViewId(id) }}
           onClose={closeSession}
           onRename={(id, next) => {
             setSessions(prev => prev.map(x => x.id === id ? { ...x, title: next } : x))
@@ -1762,18 +1751,20 @@ export function MafwShell() {
           onNew={createSession}
         />
         <div class="mafw-topstrip-spacer" />
-        <TooltipV2 value={`${rightDockOpen() ? "隐藏" : "显示"}面板 (Ctrl+Alt+B)`} openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            class="mafw-layout-toggle"
-            aria-label="切换面板"
-            aria-pressed={rightDockOpen()}
-            onClick={() => applyRightDock(!rightDockOpen())}
-          >
-            <Icon name={rightDockOpen() ? "layout-right-full" : "layout-right-partial"} size="small" />
-          </ButtonV2>
-        </TooltipV2>
+        <Show when={chatActive()}>
+          <TooltipV2 value={`${rightDockOpen() ? "隐藏" : "显示"}面板 (Ctrl+Alt+B)`} openDelay={300}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-layout-toggle"
+              aria-label="切换面板"
+              aria-pressed={rightDockOpen()}
+              onClick={() => applyRightDock(!rightDockOpen())}
+            >
+              <Icon name={rightDockOpen() ? "layout-right-full" : "layout-right-partial"} size="small" />
+            </ButtonV2>
+          </TooltipV2>
+        </Show>
         <WindowControls />
       </div>
       {/* 右列下行：left dock(push 列) | main | dock */}
@@ -1791,7 +1782,7 @@ export function MafwShell() {
             activeSessionId={activeSessionId()}
             managerSessionId={managerSessionId()}
             projectsRev={projectsRev}
-            onSelectSession={handleSelectSession}
+            onSelectSession={openSessionTab}
             onSessionDeleted={closeSession}
           />
         </Show>
@@ -1968,7 +1959,7 @@ export function MafwShell() {
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
               <RightDock
-              open={dockPresent()}
+              open={dockPresent() && chatActive()}
               tab={rightDockTab()}
               width={rightDockWidth()}
               fill={chatSplit()}

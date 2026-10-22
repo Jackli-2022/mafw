@@ -242,13 +242,21 @@ function registerWindow(win: BrowserWindow, id: string) {
     }
   })
   const notifyMaximized = () => {
-    if (!win.isDestroyed()) win.webContents.send("window-maximized-changed", windowExpanded(win.isMaximized(), win.isFullScreen()))
+    if (!win.isDestroyed()) win.webContents.send("window-maximized-changed", win.isMaximized())
+  }
+  // 布局用的“大窗口”语义（最大化或全屏）单独一条通道，避免 WindowControls 的
+  // 最大化图标被 fullscreen 误驱动（终审修复）。
+  const notifyExpanded = () => {
+    if (!win.isDestroyed()) win.webContents.send("window-expanded-changed", windowExpanded(win.isMaximized(), win.isFullScreen()))
   }
   win.on("maximize", notifyMaximized)
   win.on("unmaximize", notifyMaximized)
   win.on("restore", notifyMaximized)
-  win.on("enter-full-screen", notifyMaximized)
-  win.on("leave-full-screen", notifyMaximized)
+  win.on("maximize", notifyExpanded)
+  win.on("unmaximize", notifyExpanded)
+  win.on("restore", notifyExpanded)
+  win.on("enter-full-screen", notifyExpanded)
+  win.on("leave-full-screen", notifyExpanded)
   // Windows never emits before-quit on OS shutdown/logoff, but each window
   // gets session-end before it closes; flag the quit so ids stay persisted.
   win.on("session-end", () => registry.setQuitting())

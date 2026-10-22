@@ -368,8 +368,7 @@ export function LeftDock(props: Props) {
           collapseThreshold={120}
           onResize={props.onResize}
           onCollapse={props.onClose}
-        />
-      </Show>
+        />      </Show>
 
       <ConfirmOverlay
         open={deleteConfirmId() !== null}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { migrateLegacyRailWidth, resolveMode, toggleFace } from "./left-dock"
+import { migrateLegacyRailWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -23,6 +23,16 @@ describe("left-dock 状态模型", () => {
     })
     test("closed → closed（无视窗口状态）", () => {
       expect(resolveMode(false, true)).toBe("closed")
+    })
+  })
+
+  describe("shouldCloseOnSelect（浮层选中即关；推挤保持）", () => {
+    test("overlay → true", () => {
+      expect(shouldCloseOnSelect("overlay")).toBe(true)
+    })
+    test("push / closed → false", () => {
+      expect(shouldCloseOnSelect("push")).toBe(false)
+      expect(shouldCloseOnSelect("closed")).toBe(false)
     })
   })
 

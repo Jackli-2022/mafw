@@ -21,6 +21,11 @@ export function resolveMode(open: boolean, maximized: boolean): LeftDockMode {
   return maximized ? "push" : "overlay"
 }
 
+// 浮层模式下，选中会话/导航离开 chat 时自动关；推挤列保持。
+export function shouldCloseOnSelect(mode: LeftDockMode): boolean {
+  return mode === "overlay"
+}
+
 // 旧 Rail 宽度键一次性迁移；非法值返回 null（由新键默认值决定）。
 // 左 dock 默认关闭是新布局的既定默认（spec mockup），旧收起/展开状态不再沿用。
 export function migrateLegacyRailWidth(railWidth: string | null): number | null {

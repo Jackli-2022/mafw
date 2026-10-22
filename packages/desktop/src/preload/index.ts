@@ -139,6 +139,12 @@ const api: ElectronAPI = {
       ipcRenderer.on("window-maximized-changed", handler)
       return () => ipcRenderer.removeListener("window-maximized-changed", handler)
     },
+    isExpanded: () => ipcRenderer.invoke("window-is-expanded"),
+    onExpandedChange: (cb) => {
+      const handler = (_: unknown, expanded: boolean) => cb(expanded)
+      ipcRenderer.on("window-expanded-changed", handler)
+      return () => ipcRenderer.removeListener("window-expanded-changed", handler)
+    },
   },
   setTitlebar: (theme) => ipcRenderer.invoke("set-titlebar", theme),
   runDesktopMenuAction: (action) => ipcRenderer.invoke("run-desktop-menu-action", action),
