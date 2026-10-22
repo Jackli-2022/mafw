@@ -17,6 +17,7 @@ import { mainWindowOptions } from "./window-bounds"
 import { windowCloseAction } from "./close-decision"
 import { isCloseToTrayEnabled, isTrayIconEnabled } from "./tray-prefs"
 import { notifyHiddenToTray } from "./tray-hint"
+import { windowExpanded } from "../shared/window-state"
 
 const root = dirname(fileURLToPath(import.meta.url))
 const rendererRoot = join(root, "../renderer")
@@ -241,11 +242,13 @@ function registerWindow(win: BrowserWindow, id: string) {
     }
   })
   const notifyMaximized = () => {
-    if (!win.isDestroyed()) win.webContents.send("window-maximized-changed", win.isMaximized())
+    if (!win.isDestroyed()) win.webContents.send("window-maximized-changed", windowExpanded(win.isMaximized(), win.isFullScreen()))
   }
   win.on("maximize", notifyMaximized)
   win.on("unmaximize", notifyMaximized)
   win.on("restore", notifyMaximized)
+  win.on("enter-full-screen", notifyMaximized)
+  win.on("leave-full-screen", notifyMaximized)
   // Windows never emits before-quit on OS shutdown/logoff, but each window
   // gets session-end before it closes; flag the quit so ids stay persisted.
   win.on("session-end", () => registry.setQuitting())

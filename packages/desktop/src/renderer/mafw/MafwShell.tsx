@@ -1359,7 +1359,6 @@ export function MafwShell() {
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
   const [winMaximized, setWinMaximized] = createSignal(false)
   onMount(() => {
-    if (window.api.platform !== "win32") return
     void window.api.windowControls.isMaximized().then(setWinMaximized)
     const unsub = window.api.windowControls.onMaximizedChange(setWinMaximized)
     onCleanup(unsub)
