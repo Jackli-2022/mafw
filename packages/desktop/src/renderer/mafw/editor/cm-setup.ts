@@ -24,6 +24,8 @@ export async function mountEditor(host: HTMLElement, opts: {
   lang: string | null
   onDocChanged: () => void
   onSave: () => void
+  /** 选区变化（编辑器内坐标，供浮层定位）；零宽/折叠 → null。 */
+  onSelectionChange?: (sel: { from: number; to: number; text: string; left: number; top: number } | null) => void
 }): Promise<MountedEditor> {
   const [{ EditorView, basicSetup }, { EditorState }, { keymap }, { HighlightStyle, syntaxHighlighting }, { tags }, support] =
     await Promise.all([
@@ -80,7 +82,25 @@ export async function mountEditor(host: HTMLElement, opts: {
       ...(Array.isArray(support) ? support : [support]),
       EditorState.readOnly.of(opts.readOnly),
       EditorView.editable.of(!opts.readOnly),
-      EditorView.updateListener.of(u => { if (u.docChanged) opts.onDocChanged() }),
+      EditorView.updateListener.of(u => {
+        if (u.docChanged) opts.onDocChanged()
+        if ((u.selectionSet || u.docChanged) && opts.onSelectionChange) {
+          const sel = u.state.selection.main
+          if (sel.from === sel.to) {
+            opts.onSelectionChange(null)
+          } else {
+            const coords = u.view.coordsAtPos(sel.to)
+            const rect = host.getBoundingClientRect()
+            opts.onSelectionChange({
+              from: sel.from,
+              to: sel.to,
+              text: u.state.sliceDoc(sel.from, sel.to),
+              left: coords ? coords.left - rect.left : 0,
+              top: coords ? coords.bottom - rect.top : 0,
+            })
+          }
+        }
+      }),
     ],
   })
 

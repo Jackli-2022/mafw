@@ -14,6 +14,8 @@ import {
 import { consumeEditorOpen, pendingEditorOpen } from "../editor-open"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
+import { buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
+import { LineCommentEditorV2 } from "@mafw/ui/v2/line-comment-v2"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 
 export function EditorDock(props: {
@@ -26,6 +28,10 @@ export function EditorDock(props: {
   const [model, setModel] = createSignal<EditorModel>(createEditorModel())
   const [readNotes, setReadNotes] = createSignal<Record<string, string>>({})
   const [saving, setSaving] = createSignal(false)
+  /** 选区（编辑器内坐标）→ 批注浮钮/浮层 */
+  const [sel, setSel] = createSignal<{ from: number; to: number; text: string; left: number; top: number } | null>(null)
+  const [annotOpen, setAnnotOpen] = createSignal(false)
+  const [annotDraft, setAnnotDraft] = createSignal("")
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
@@ -115,6 +121,10 @@ export function EditorDock(props: {
           setModel(m => markDirty(m, f.rel))
         },
         onSave: () => void saveActive(),
+        onSelectionChange: (s) => {
+          setSel(s)
+          if (!s) setAnnotOpen(false)
+        },
       })
       if (token !== mountToken) { h.destroy(); return }
       editor = h
@@ -218,6 +228,22 @@ export function EditorDock(props: {
     setModel(m => resolveConflict(m, rel, "keep-mine"))
   }
 
+  const selRange = () => {
+    const s = sel()
+    if (!s) return null
+    return lineRangeOf(editor?.getDoc() ?? "", s.from, s.to)
+  }
+
+  function submitAnnotation(comment: string) {
+    const s = sel()
+    const f = activeFile()
+    const range = selRange()
+    if (!s || !f || !range || !comment.trim() || !props.onSendAnnotation) return
+    props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
+    setAnnotOpen(false)
+    setSel(null)
+  }
+
   function closeRel(rel: string) {
     drafts.delete(rel)
     setModel(m => closeFile(m, rel))
@@ -294,6 +320,27 @@ export function EditorDock(props: {
         {/* 只读原因（binary/超大） */}
         <Show when={activeFile() && noteFor(activeFile()!.rel)}>
           <div class="mafw-editor-note">{noteFor(activeFile()!.rel)}</div>
+        </Show>
+
+        {/* 选区批注入口（人标出 → agent 改）：浮钮 → 浮层 */}
+        <Show when={sel() && !annotOpen() && props.onSendAnnotation}>
+          <div class="mafw-editor-annot-anchor" style={{ left: `${Math.max(8, sel()!.left)}px`, top: `${sel()!.top + 4}px` }}>
+            <ButtonV2 variant="outline" size="small" onClick={() => { setAnnotDraft(""); setAnnotOpen(true) }}>批注</ButtonV2>
+          </div>
+        </Show>
+        <Show when={annotOpen() && sel()}>
+          <div class="mafw-editor-annot-pop" style={{ left: `${Math.max(8, Math.min(sel()!.left, 420))}px`, top: `${sel()!.top + 4}px` }}>
+            <LineCommentEditorV2
+              value={annotDraft()}
+              onInput={setAnnotDraft}
+              onCancel={() => setAnnotOpen(false)}
+              onSubmit={(value: string) => submitAnnotation(value)}
+              selection={<span>{activeFile()?.rel}:L{selRange()?.startLine}-{selRange()?.endLine}</span>}
+              placeholder="对这一段的批注…"
+              submitLabel="发送"
+              cancelLabel="取消"
+            />
+          </div>
         </Show>
 
         <div class="mafw-editor-host" ref={(el) => { host = el }} />
