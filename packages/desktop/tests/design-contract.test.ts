@@ -816,21 +816,17 @@ describe("topframe — 顶行框架", () => {
   })
 })
 
-describe("topframe — Rail 品牌行", () => {
+describe("topframe — 左栏从 Rail 品牌行收为 IconRail", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("Rail 渲染 brand slot（项目切换行之上）", () => {
-    const rail = read("src/renderer/mafw/components/Rail.tsx")
-    expect(rail).toContain("mafw-rail-brand")
-    expect(rail.indexOf("mafw-rail-brand")).toBeLessThan(rail.indexOf("mafw-rail-head"))
-  })
-  test("MafwShell 传入品牌内容（logo+状态点+主题切换）", () => {
+  test("IconRail 承接主题切换（旧 Rail 品牌块退役）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toContain("brand=")
-    expect(shell).toContain("mafw-theme-toggle")
+    const rail = read("src/renderer/mafw/components/IconRail.tsx")
+    expect(shell).not.toContain("brand=")
+    expect(rail).toContain("切换主题")
+    expect(rail).toContain("theme")
   })
-  test("CSS：品牌行 38px 与顶行同高且可拖拽", () => {
-    expect(css).toMatch(/\.mafw-rail-brand\s*\{[^}]*height:\s*38px/)
-    expect(css).toMatch(/\.mafw-rail-brand\s*\{[^}]*-webkit-app-region:\s*drag/)
+  test("CSS：图标轨 46px（旧品牌行 38px 规则仅存于未删样式，由 Task 7 清理）", () => {
+    expect(css).toMatch(/\.mafw-icon-rail\s*\{[^}]*width:\s*46px/)
   })
 })
 
@@ -853,26 +849,28 @@ describe("layout-toggles — dock tabs 归位", () => {
   })
 })
 
-describe("layout-toggles — 顶行两端开关", () => {
+describe("layout-toggles — 顶行右端面板开关（左端由 IconRail 接管）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("顶行左端=侧边栏开关，右端=面板开关（填充/描边成对图标）", () => {
+  test("顶行右端=面板开关；左端 rail 折叠按钮已退役", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toContain("layout-left-full")
-    expect(shell).toContain("layout-left-partial")
+    expect(shell).not.toMatch(/applyRailCollapsed/)
+    expect(shell).not.toContain("layout-left-full")
     expect(shell).toContain("layout-right-full")
     expect(shell).toContain("layout-right-partial")
-    expect(shell).toMatch(/applyRailCollapsed\(!railCollapsed\(\)\)/)
     expect(shell).toMatch(/applyRightDock\(!rightDockOpen\(\)\)/)
   })
-  test("两个开关都带 aria-pressed 与 tooltip 快捷键提示", () => {
+  test("面板开关带 aria-pressed；Ctrl+B 提示移到 IconRail", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect((shell.match(/aria-pressed/g) || []).length).toBeGreaterThanOrEqual(2)
-    expect(shell).toContain("Ctrl+B")
+    const rail = read("src/renderer/mafw/components/IconRail.tsx")
+    expect(shell).toMatch(/aria-pressed=\{rightDockOpen\(\)\}/)
     expect(shell).toContain("Ctrl+Alt+B")
+    expect(rail).toContain("Ctrl+B")
+    expect(rail).toContain("aria-pressed")
   })
-  test("快捷键分支：Ctrl+B 切侧边栏、Ctrl+Alt+B 切面板（跳过输入框）", () => {
+  test("快捷键分支：Ctrl+B 切左 dock、Ctrl+Alt+B 切面板（跳过输入框）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toMatch(/e\.altKey[\s\S]{0,300}applyRightDock/)
+    expect(shell).toMatch(/toggleLeftDock\("sessions"\)/)
     expect(shell).toContain("isContentEditable")
   })
   test("CSS：布局开关样式存在，no-drag 由 topstrip button 规则覆盖", () => {

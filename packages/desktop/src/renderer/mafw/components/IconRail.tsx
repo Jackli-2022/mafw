@@ -37,7 +37,7 @@ export function IconRail(props: IconRailProps) {
     : "starting"
 
   const topItems = (): RailItem[] => [
-    { key: "sessions", icon: "bubble-5", label: "会话", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
+    { key: "sessions", icon: "bubble-5", label: "会话 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
     { key: "new", icon: "plus-small", label: "新建会话", onClick: props.onNewSession },
   ]
   const middleItems = (): RailItem[] => [

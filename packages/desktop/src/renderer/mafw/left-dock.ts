@@ -21,13 +21,10 @@ export function resolveMode(open: boolean, maximized: boolean, narrow: boolean):
   return "overlay"
 }
 
-// 旧 Rail 键一次性迁移：老用户显式收起过（"1"）→ 左 dock 保持收起；
-// 旧键不存在 → 不表态（null），由新键默认值决定。
-export function migrateLegacyRail(
-  railCollapsed: string | null,
-  railWidth: string | null,
-): { open: boolean | null; width: number | null } {
-  const width = railWidth === null ? null : Number(railWidth)
-  if (railCollapsed === null) return { open: null, width: Number.isFinite(width) ? width : null }
-  return { open: railCollapsed === "0", width: Number.isFinite(width) ? width : null }
+// 旧 Rail 宽度键一次性迁移；非法值返回 null（由新键默认值决定）。
+// 左 dock 默认关闭是新布局的既定默认（spec mockup），旧收起/展开状态不再沿用。
+export function migrateLegacyRailWidth(railWidth: string | null): number | null {
+  if (railWidth === null) return null
+  const width = Number(railWidth)
+  return Number.isFinite(width) ? width : null
 }

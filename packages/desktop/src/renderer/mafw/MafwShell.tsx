@@ -13,7 +13,9 @@ import { DialogProvider } from "@mafw/ui/context/dialog"
 import { MarkedProvider } from "@mafw/ui/context/marked"
 import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
-import { Rail } from "./components/Rail"
+import { IconRail } from "./components/IconRail"
+import { LeftDock } from "./components/LeftDock"
+import { migrateLegacyRailWidth, resolveMode, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
@@ -36,7 +38,7 @@ import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
 import { RightDock } from "./components/RightDock"
-import { isNarrowViewport, railAutoAction } from "./layout-breakpoints"
+import { isNarrowViewport } from "./layout-breakpoints"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { NotesDock } from "./components/NotesDock"
@@ -1457,20 +1459,57 @@ export function MafwShell() {
   const [trajectoryLive, setTrajectoryLive] = createSignal<Record<string, any[]>>({})
   const [trajectoryTurnLive, setTrajectoryTurnLive] = createSignal<Record<string, any>>({})
 
-  const [railCollapsed, setRailCollapsed] = createSignal(localStorage.getItem("mafw-rail-collapsed") === "1")
-  const [railWidth, setRailWidth] = createSignal(Number(localStorage.getItem("mafw-rail-width")) || 264)
-
-  const applyRailCollapsed = (c: boolean, persist = true) => {
-    setRailCollapsed(c)
-    if (persist) {
-      try { localStorage.setItem("mafw-rail-collapsed", c ? "1" : "0") } catch { /* ignore */ }
+  // 左栏：IconRail（46px 常驻）+ LeftDock（会话/搜索两面，spec 2026-10-22-workbench-layout）。
+  // 双模态：窗口化=浮层覆盖；最大化/全屏且非窄=推挤列。旧 Rail 键一次性迁宽度。
+  const legacyLeftDockWidth = migrateLegacyRailWidth(localStorage.getItem("mafw-rail-width"))
+  const [leftDock, setLeftDock] = createSignal<{ face: LeftDockFace; open: boolean }>({
+    face: (localStorage.getItem("mafw-left-dock-face") as LeftDockFace | null) ?? "sessions",
+    open: localStorage.getItem("mafw-left-dock-open") === "1",
+  })
+  const [leftDockWidth, setLeftDockWidth] = createSignal(
+    Number(localStorage.getItem("mafw-left-dock-width")) || legacyLeftDockWidth || 264,
+  )
+  const leftDockMode = () => resolveMode(leftDock().open, winMaximized(), viewportNarrow())
+  const toggleLeftDock = (face: LeftDockFace) => {
+    const next = toggleFace(leftDock(), face)
+    setLeftDock(next)
+    try {
+      localStorage.setItem("mafw-left-dock-open", next.open ? "1" : "0")
+      localStorage.setItem("mafw-left-dock-face", next.face)
+    } catch { /* ignore */ }
+  }
+  const closeLeftDock = () => {
+    setLeftDock(s => ({ ...s, open: false }))
+    try { localStorage.setItem("mafw-left-dock-open", "0") } catch { /* ignore */ }
+  }
+  const applyLeftDockWidth = (w: number) => {
+    setLeftDockWidth(w)
+    try { localStorage.setItem("mafw-left-dock-width", String(w)) } catch { /* ignore */ }
+  }
+  // 会话选中：写 tab/store 并切到 chat；浮层模式下选中即关（push 不关）。
+  const handleSelectSession = (id: string, title?: string, manager?: boolean) => {
+    setShowConfig(false)
+    setActiveTab("chat")
+    setShowWelcome(false)
+    if (!sessions().find(s => s.id === id)) {
+      const tabTitle = title || `Chat ${sessions().length + 1}`
+      setSessions(prev => [...prev, { id, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager }])
+      setStore(prev => ({
+        ...prev,
+        session: [...prev.session, { id, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
+        session_status: { ...prev.session_status, [id]: { type: "idle" } },
+        message: { ...prev.message, [id]: [] },
+      }))
     }
+    setActiveSessionId(id)
+    setActiveViewId(id)
+    if (leftDockMode() === "overlay") closeLeftDock()
   }
-  const applyRailWidth = (w: number) => {
-    setRailWidth(w)
-    try { localStorage.setItem("mafw-rail-width", String(w)) } catch { /* ignore */ }
-  }
-  const railPresent = createPresence(() => !railCollapsed(), SURFACE_MS)
+  const connPhaseLabel = () =>
+    connPhase() === "connected" ? "connected"
+    : connPhase() === "reconnecting" ? "reconnecting"
+    : connPhase() === "down" ? "down"
+    : "initial"
   const dockPresent = createPresence(() => rightDockOpen(), SURFACE_MS)
 
   const applyTasksPlacement = (p: "bar" | "dock") => {
@@ -1537,7 +1576,7 @@ export function MafwShell() {
       if (e.key !== "b" && e.key !== "B") return
       e.preventDefault()
       if (e.altKey) applyRightDock(!rightDockOpen())
-      else applyRailCollapsed(!railCollapsed())
+      else toggleLeftDock("sessions")
     }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
@@ -1556,25 +1595,18 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // Dock → overlay + Rail 自动折叠：跨越 1200px 断点时动作（不持久化自动折叠，避免覆盖用户偏好）。
+  // 窄视口断点跟踪（工作台 overlay 化与左 dock 恒浮层共用 viewportNarrow）。
   createEffect(() => {
-    let lastWidth = window.innerWidth
-    let autoCollapsed = false
-    // 启动即在窄窗口时先收起 Rail（本轮会话内；untrack 避免 railCollapsed 变更重跑本 effect 造成拉锯）
-    if (isNarrowViewport(lastWidth) && !untrack(railCollapsed)) {
-      applyRailCollapsed(true, false)
-      autoCollapsed = true
-    }
-    const onResize = () => {
-      const next = window.innerWidth
-      const action = railAutoAction(lastWidth, next, autoCollapsed)
-      if (action === "collapse") { applyRailCollapsed(true, false); autoCollapsed = true }
-      else if (action === "expand") { applyRailCollapsed(false, false); autoCollapsed = false }
-      lastWidth = next
-      setViewportNarrow(isNarrowViewport(next))
-    }
+    const onResize = () => setViewportNarrow(isNarrowViewport(window.innerWidth))
     window.addEventListener("resize", onResize)
     onCleanup(() => window.removeEventListener("resize", onResize))
+  })
+  // 浮层模式：Esc 关闭（点外关闭由 backdrop 承担）。
+  createEffect(() => {
+    if (leftDockMode() !== "overlay") return
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeLeftDock() }
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
   const subagentRunning = (id: string) => store.session_status[id]?.type === "busy"
@@ -1660,7 +1692,7 @@ export function MafwShell() {
         <MarkedProvider>
           <FileComponentProvider component={FileSSR}>
             <DataProvider data={store} directory="." onNavigateToSession={(id) => void openSubagentSession(id)}>
-              <div class="mafw-shell" classList={{ maximized: winMaximized() }} style={{ "--rail-w": railCollapsed() ? "0px" : `${railWidth()}px` }}>
+              <div class="mafw-shell" classList={{ maximized: winMaximized() }}>
       <ToastV2.Region />
       <CommandPalette
         open={paletteOpen()}
@@ -1675,80 +1707,19 @@ export function MafwShell() {
         onConfirm={() => { const req = confirmReq(); setConfirmReq(null); req?.onConfirm() }}
         onCancel={() => setConfirmReq(null)}
       />
-      {/* 左列：rail 通高（grid-row 1/-1）；收起时整列不渲染（0 宽，靠顶栏按钮 / Ctrl+B 再展开） */}
+      {/* 左列：IconRail 通高（grid-row 1/-1），常驻 46px */}
       <div class="mafw-rail-col">
-        <Show when={railPresent()}>
-          <div class="mafw-rail-wrap" style={{ width: `${railWidth()}px` }}>
-            <Rail
-              brand={
-                <>
-                  <Icon name="logo" size="small" />
-                  <span class="mafw-rail-brand-name">MAFW</span>
-                  <TooltipV2
-                    value={
-                      connPhase() === "down" ? "Gateway 已断开，正在自动重启…" :
-                      connPhase() === "reconnecting" ? `Gateway 正在重连（第 ${conn.attempts()} 次尝试）` :
-                      connPhase() === "connected" ? "Gateway 已连接" :
-                      gwStatus()?.state === "starting" ? "Gateway 启动中" :
-                      gwStatus()?.state === "failed" ? "Gateway 启动失败" :
-                      gwStatus()?.state === "stopped" ? "Gateway 已停止" :
-                      "Gateway 启动中"
-                    }
-                    openDelay={300}
-                  >
-                    <div class="mafw-titlebar-dot" classList={{
-                      ready: connPhase() === "connected" && gwStatus()?.state !== "starting",
-                      reconnecting: connPhase() === "reconnecting",
-                      failed: connPhase() === "down" || gwStatus()?.state === "failed",
-                      starting: connPhase() === "initial" || gwStatus()?.state === "starting",
-                      stopped: connPhase() !== "down" && connPhase() !== "reconnecting" && connPhase() !== "connected" && gwStatus()?.state === "stopped",
-                    }} style={{ "margin-left": 4 }} />
-                  </TooltipV2>
-                  <div style={{ flex: 1 }} />
-                  <TooltipV2 value="切换主题" openDelay={300}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
-                      {theme() === 'light' ? '☀' : (
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                          <path d="M11.2 8.9A5 5 0 1 1 5.1 2.8a4 4 0 0 0 6.1 6.1Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                      )}
-                    </ButtonV2>
-                  </TooltipV2>
-                </>
-              }
-              activeSessionId={activeSessionId()} managerSessionId={managerSessionId()} onSessionDeleted={closeSession} projectsRev={projectsRev} onSelectSession={(id, title, manager) => {
-              setShowConfig(false)
-              setActiveTab("chat")
-              setShowWelcome(false)
-              // Ensure session exists in local tabs and store
-              if (!sessions().find(s => s.id === id)) {
-                const tabTitle = title || `Chat ${sessions().length + 1}`
-                setSessions(prev => [...prev, { id, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager }])
-                setStore(prev => ({
-                  ...prev,
-                  session: [...prev.session, { id, title: tabTitle, directory: ".", time: { created: Date.now() }, projectID: "." }],
-                  session_status: { ...prev.session_status, [id]: { type: "idle" } },
-                  message: { ...prev.message, [id]: [] },
-                }))
-              }
-              setActiveSessionId(id)
-              setActiveViewId(id)
-            }} onSettings={() => { setConfigSection(undefined); setShowConfig(true) }} onOpenUsage={() => applyRightDock(true, "usage")}
-              activeTab={activeTab()}
-              tabCounts={{ approvals: pendingPermissionCount() }}
-              onTabChange={(t) => { setActiveTab(t); setConfigSection(undefined); setShowConfig(false) }} />
-            <ResizeHandle
-              direction="horizontal"
-              edge="end"
-              size={railWidth()}
-              min={180}
-              max={400}
-              collapseThreshold={120}
-              onResize={applyRailWidth}
-              onCollapse={() => applyRailCollapsed(true)}
-            />
-          </div>
-        </Show>
+        <IconRail
+          face={leftDock().open ? leftDock().face : null}
+          onToggleFace={toggleLeftDock}
+          onNewSession={() => void createSession()}
+          onDashboard={() => { setShowConfig(false); setActiveTab("goals") }}
+          onConfig={() => { setConfigSection(undefined); setShowConfig(true) }}
+          onToggleTheme={toggleTheme}
+          approvals={pendingPermissionCount()}
+          connPhase={connPhaseLabel()}
+          theme={theme()}
+        />
       </div>
       {/* 顶行：strip（会话 tab 恒显）+ dock 图标组 + 窗口控制 */}
       <div
@@ -1759,18 +1730,6 @@ export function MafwShell() {
           void window.api.windowControls.toggleMaximize()
         }}
       >
-        <TooltipV2 value={`${railCollapsed() ? "显示" : "隐藏"}侧边栏 (Ctrl+B)`} openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            class="mafw-layout-toggle"
-            aria-label="切换侧边栏"
-            aria-pressed={!railCollapsed()}
-            onClick={() => applyRailCollapsed(!railCollapsed())}
-          >
-            <Icon name={railCollapsed() ? "layout-left-partial" : "layout-left-full"} size="small" />
-          </ButtonV2>
-        </TooltipV2>
         <SessionStrip
           sessions={sessions}
           activeViewId={activeViewId}
@@ -1801,8 +1760,25 @@ export function MafwShell() {
         </TooltipV2>
         <WindowControls />
       </div>
-      {/* 右列下行：main | dock */}
-      <div class="mafw-body" style={{ "grid-template-columns": `1fr ${rightDockOpen() && !viewportNarrow() ? `${rightDockWidth()}px` : "0px"}` }}>
+      {/* 右列下行：left dock(push 列) | main | dock */}
+      <div class="mafw-body" style={{ "grid-template-columns": `${leftDockMode() === "push" ? `${leftDockWidth()}px` : "0px"} minmax(0, 1fr) ${rightDockOpen() && !viewportNarrow() ? `${rightDockWidth()}px` : "0px"}` }}>
+        <Show when={leftDockMode() !== "closed"}>
+          <Show when={leftDockMode() === "overlay"}>
+            <div class="mafw-left-dock-backdrop" onClick={closeLeftDock} />
+          </Show>
+          <LeftDock
+            mode={leftDockMode()}
+            face={leftDock().face}
+            width={leftDockWidth()}
+            onClose={closeLeftDock}
+            onResize={applyLeftDockWidth}
+            activeSessionId={activeSessionId()}
+            managerSessionId={managerSessionId()}
+            projectsRev={projectsRev}
+            onSelectSession={handleSelectSession}
+            onSessionDeleted={closeSession}
+          />
+        </Show>
         <div class="mafw-main">
           <div class="mafw-content" classList={{ "mafw-chat-content": activeTab() === "chat" }}>
             <Show when={connDown()}><ConnBanner /></Show>

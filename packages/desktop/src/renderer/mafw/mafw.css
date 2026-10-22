@@ -362,12 +362,12 @@ html[data-theme="light"] body {
 /* ── Shell Layout ── */
 .mafw-shell {
   display: grid;
-  grid-template-columns: var(--rail-w, 264px) minmax(0, 1fr);
+  grid-template-columns: var(--rail-w, 46px) minmax(0, 1fr);
   /* minmax(0,·)：1fr=minmax(auto,1fr) 会让顶行 session tab 的 min-content
      撑破轨道，把窗口控制按钮推出可视区 */
   grid-template-rows: 38px 1fr;
   height: 100vh;
-  --rail-w: 264px;
+  --rail-w: 46px;
   transition: grid-template-columns var(--dur-surface) var(--ease-surface);
   background: var(--background-base);
   color: var(--text-strong);
@@ -2762,6 +2762,29 @@ html[data-theme="light"] body {
 .mafw-icon-rail-conn-dot.reconnecting { background: var(--text-3); animation: mafw-breathe 1s ease-in-out infinite; }
 .mafw-icon-rail-conn-dot.failed { background: var(--danger); }
 .mafw-icon-rail-conn-dot.starting { background: var(--text-4); animation: mafw-breathe 1s ease-in-out infinite; }
+/* ── LeftDock（左 dock；spec D2 双模态）────────────────────────────── */
+.mafw-body { position: relative; }
+.mafw-left-dock {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+.mafw-left-dock.overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 61;
+  box-shadow: var(--elev-panel);
+}
+.mafw-left-dock-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px; }
+.mafw-left-dock-search { padding: 0 8px 6px; }
+.mafw-left-dock-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.mafw-left-dock-backdrop { position: absolute; inset: 0; z-index: 60; background: transparent; }
 .mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
   height: 28px;
   border-radius: 6px;

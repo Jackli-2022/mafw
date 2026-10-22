@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { migrateLegacyRail, resolveMode, toggleFace } from "./left-dock"
+import { migrateLegacyRailWidth, resolveMode, toggleFace } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -29,15 +29,15 @@ describe("left-dock 状态模型", () => {
     })
   })
 
-  describe("migrateLegacyRail（旧键一次性迁移）", () => {
-    test("旧 rail 收起过 → 左 dock 尊重收起", () => {
-      expect(migrateLegacyRail("1", "264")).toEqual({ open: false, width: 264 })
+  describe("migrateLegacyRailWidth（旧宽度键一次性迁移）", () => {
+    test("旧宽度存在 → 采用", () => {
+      expect(migrateLegacyRailWidth("264")).toBe(264)
     })
-    test("旧 rail 展开且无宽度 → 展开、宽度沿用 null", () => {
-      expect(migrateLegacyRail("0", null)).toEqual({ open: true, width: null })
+    test("旧宽度缺失 → null（由新键默认值决定）", () => {
+      expect(migrateLegacyRailWidth(null)).toBeNull()
     })
-    test("无旧键 → 不表态（null）", () => {
-      expect(migrateLegacyRail(null, null)).toEqual({ open: null, width: null })
+    test("旧宽度非法 → null", () => {
+      expect(migrateLegacyRailWidth("abc")).toBeNull()
     })
   })
 })
