@@ -1,11 +1,12 @@
 ﻿import { ToolDefinition, ToolHandler } from "../types";
+import { annotationsForTool } from "../runtime/tool-classes";
 
 export interface ToolRegistry {
   definitions: ToolDefinition[];
   handlers: Record<string, ToolHandler>;
 }
 
-const DEFINITIONS: ToolDefinition[] = [
+export const DEFINITIONS: ToolDefinition[] = [
   {
     name: "mafw_create_goal",
     description: "Create a new MAFW goal with charter and request files",
@@ -550,6 +551,13 @@ const DEFINITIONS: ToolDefinition[] = [
     },
   },
 ];
+
+// MCP stable spec 注解物化（2026-10-22 spec §5.3）：模块加载期一次性从 mafw 专属表
+// 派生（第二级，registry 定义无手工声明）——ListTools 请求路径零运行时开销。
+// title 本批不填（registry 定义无 label 字段，YAGNI）。
+for (const def of DEFINITIONS) {
+  if (!def.annotations) def.annotations = annotationsForTool(def.name);
+}
 
 import { handleCreateGoal } from "./handlers/create-goal";
 import { handleUpdateState } from "./handlers/update-state";

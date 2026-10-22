@@ -43,6 +43,10 @@ export type ToolHandler = (
 export interface ToolDefinition {
   name: string;
   description: string;
+  /** MCP stable spec 工具注解（hints, not guarantees）——registry 构造期从 mafw 专属表物化（2026-10-22 spec §5.3） */
+  annotations?: import("./runtime/tool-classes").MafwToolAnnotations;
+  /** MCP stable spec 结构化输出声明（JSON Schema，顶层 object；schema 照实原则） */
+  outputSchema?: Record<string, unknown>;
   inputSchema: {
     type: "object";
     properties: Record<string, unknown>;
