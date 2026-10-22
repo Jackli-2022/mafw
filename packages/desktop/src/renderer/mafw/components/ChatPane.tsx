@@ -9,6 +9,8 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { SessionTurn } from "@mafw/session-ui/session-turn"
 import { TaskBar } from "./TaskBar"
 import { BackgroundWorkBar } from "./BackgroundWorkBar"
+import { scanHistoryForBackground } from "../background-detect"
+import { ingestHydratedBackgroundEvents } from "../background-store"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
@@ -873,6 +875,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         nextCursor = data?.nextCursor ?? null
         pageCount++
         if (rawItems && Array.isArray(rawItems) && rawItems.length > 0) {
+          // 水合摄取（P0-3 后台任务，reviewer Minor 12：loadOlder 是第二条历史入口）
+          ingestHydratedBackgroundEvents(scanHistoryForBackground(rawItems, sessionID))
           const rawExisting = store.message[sessionID]
           const existing = Array.isArray(rawExisting) ? rawExisting : []
           if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)

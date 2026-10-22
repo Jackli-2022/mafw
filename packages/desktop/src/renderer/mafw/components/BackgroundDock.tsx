@@ -1,11 +1,12 @@
 // RightDock「后台」面板（spec §6.2）：本会话后台任务列表（shell + 后台子代理）。
-// - shell 行：点击展开输出预览（按需拉取，不自动轮播）+ 终止（REST 可用时，内联二次确认）；
+// - shell 行：点击展开输出预览（按需拉取**尾部** 4KB）+ 终止
+//   （REST 可用时；内联二次确认；成功后本地落 cancelled——spec §5.1）；
 // - subagent 行：点击跳子会话（复用 P0-1 的 openSubagentSession）；
 // - running 行 1s 计时跳；空态给引导文案。
 import { createSignal, createEffect, onCleanup, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { backgroundRows } from "../background-store"
+import { backgroundRows, ingestBackgroundEvent } from "../background-store"
 import { rowsForSession, type BackgroundRow, type BgStatus } from "../background-tracker"
 import { formatDuration } from "../goal-timeline"
 import { backgroundRestAvailable } from "../background-capability"
@@ -17,8 +18,12 @@ const STATUS_LABEL: Record<BgStatus, string> = {
   cancelled: "已取消",
 }
 
+const TAIL_BYTES = 4096
+
 export function BackgroundDock(props: {
   activeSessionId: string | null
+  /** 当前会话目录（shell REST location-scoped；reviewer Important 5） */
+  sessionDirectory?: string | null
   onOpenSession: (id: string) => void
 }) {
   const [now, setNow] = createSignal(Date.now())
@@ -28,6 +33,7 @@ export function BackgroundDock(props: {
   const [confirming, setConfirming] = createSignal<string | null>(null)
 
   const rows = () => rowsForSession(backgroundRows(), props.activeSessionId ?? "")
+  const dir = () => props.sessionDirectory ?? undefined
 
   createEffect(() => { void backgroundRestAvailable().then(setRestOk) })
   createEffect(() => {
@@ -47,8 +53,18 @@ export function BackgroundDock(props: {
 
   const refreshOutput = async (r: BackgroundRow) => {
     try {
-      const res = await window.api.mafw.shells.output(r.id)
-      setOutputs(prev => ({ ...prev, [r.id]: res.output }))
+      const first = await window.api.mafw.shells.output(r.id, { directory: dir() })
+      let text = first.output
+      // 长输出默认返回头部；截断时按 size 再取尾部（reviewer Important 9）
+      if (first.truncated === true && typeof first.size === "number") {
+        const tail = await window.api.mafw.shells.output(r.id, {
+          directory: dir(),
+          cursor: Math.max(0, first.size - TAIL_BYTES),
+          limit: TAIL_BYTES,
+        })
+        text = `…（已截断，显示末尾 ${TAIL_BYTES / 1024}KB）\n${tail.output}`
+      }
+      setOutputs(prev => ({ ...prev, [r.id]: text }))
     } catch (e: any) {
       showToastV2({ description: `读取输出失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
     }
@@ -58,7 +74,9 @@ export function BackgroundDock(props: {
     if (confirming() !== r.id) { setConfirming(r.id); return }
     setConfirming(null)
     try {
-      await window.api.mafw.shells.remove(r.id)
+      await window.api.mafw.shells.remove(r.id, dir())
+      // 本地落终态（spec §5.1：不等事件；builder 对 cancelled 静默）
+      ingestBackgroundEvent({ kind: "bg-terminal", id: r.id, terminal: "cancelled", source: "user" })
       showToastV2({ description: "已终止后台任务", duration: 2000 } as any)
     } catch (e: any) {
       showToastV2({ description: `终止失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)

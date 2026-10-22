@@ -45,7 +45,9 @@ function isInternal(path: string): boolean {
  */
 const RUNTIME_PROXY_EXEMPT = new Set([
   "/api/shell",
+  "/api/shell{}",
   "/api/shell/{}",
+  "/api/shell/{}{}",
   "/api/shell/{}/output",
   "/api/session/{}/background",
 ])

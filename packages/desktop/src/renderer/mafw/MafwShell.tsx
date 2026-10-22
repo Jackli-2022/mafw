@@ -20,7 +20,8 @@ import { sessionStore } from "./session-store"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
-import { backgroundRows, ingestBackgroundEvent, onBackgroundTerminal } from "./background-store"
+import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal } from "./background-store"
+import { backgroundRestAvailable, resetBackgroundCapability } from "./background-capability"
 import { countRunning } from "./background-tracker"
 import { scanHistoryForBackground } from "./background-detect"
 import { reconcileBackgroundOnce } from "./background-reconcile"
@@ -625,13 +626,19 @@ export function MafwShell() {
 
   // ── Background reconcile（spec §5）：REST 三件是可选能力（Gate Ruling A）——
   // /api/shell 经 gateway 反代，401/不可达时整轮 fail-open（不建假行、不误杀）。
+  // location-scoped：探针带当前会话 directory，只收敛该会话的行（reviewer Important 5）。
   async function reconcileBackground(): Promise<void> {
+    const sid = activeSessionId()
+    const directory = store.session.find((s: any) => s.id === sid)?.directory
     await reconcileBackgroundOnce({
       fetchers: {
-        listShells: () => window.api.mafw.shells.list(),
-        getShell: (id) => window.api.mafw.shells.get(id),
+        listShells: (dir) => window.api.mafw.shells.list(dir),
+        getShell: (id, dir) => window.api.mafw.shells.get(id, dir),
       },
-      trackedRunningShellIds: () => backgroundRows().filter(r => r.type === "shell" && r.status === "running").map(r => r.id),
+      directory,
+      trackedRunningShellIds: () => backgroundRows()
+        .filter(r => r.type === "shell" && r.status === "running" && r.sessionID === sid)
+        .map(r => r.id),
       ingest: (ev) => ingestBackgroundEvent(ev),
     })
   }
@@ -841,6 +848,7 @@ export function MafwShell() {
         sessionStore.invalidate()
         void refreshMenus()
         resetChatWorkspace()
+        resetBackgroundCapability()
         if (currentProject()) reloadManagerSession(currentProject()!)
       },
     },
@@ -937,6 +945,8 @@ export function MafwShell() {
       sessionStore.invalidate()
       reconcileFlowCards()
       void reconcileSubagents()
+      resetBackgroundCapability()
+      void reconcileBackground()
     }
     source.onerror = () => {
       console.log("[mafw] SSE error (will auto-reconnect)")
@@ -990,11 +1000,11 @@ export function MafwShell() {
     const subagentTimer = setInterval(() => {
       if (rightDockTab() === "subagents" || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
     }, 15_000)
-    // 后台任务对账轮询（spec §5）：后台 tab 开着或 shell 行还在跑才跑（REST 面是可选能力）
+    // 后台任务对账轮询（spec §5）：后台 tab 开着或 shell 行还在跑才跑；
+    // REST 不可达（Gate Ruling A）时跳过，不空转打网关（reviewer Important 6）
     const backgroundTimer = setInterval(() => {
-      if (rightDockTab() === "background" || backgroundRows().some(r => r.type === "shell" && r.status === "running")) {
-        void reconcileBackground()
-      }
+      if (!(rightDockTab() === "background" || backgroundRows().some(r => r.type === "shell" && r.status === "running"))) return
+      void backgroundRestAvailable().then(ok => { if (ok) void reconcileBackground() })
     }, 15_000)
     // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
     const onInspectorKey = (ev: KeyboardEvent) => {
@@ -1057,8 +1067,8 @@ export function MafwShell() {
       // live SSE / optimistic messages that arrived while the fetch was in flight).
       const mergeRaw = (pageItems: any[]) => {
         // 水合摄取（spec §5 双摄取点）：历史 parts/synthetic → 后台任务 tracker。
-        // tracker 幂等（重复观察/终态不回退），与 live SSE 竞争安全。
-        for (const ev of scanHistoryForBackground(pageItems, sessionID)) ingestBackgroundEvent(ev)
+        // 回放期间静默（不因历史完成发通知）；tracker 幂等，与 live SSE 竞争安全。
+        ingestHydratedBackgroundEvents(scanHistoryForBackground(pageItems, sessionID))
         const rawExisting = store.message[sessionID]
         const existing = Array.isArray(rawExisting) ? rawExisting : []
         if (!Array.isArray(rawExisting)) console.warn("[mafw] store.message non-array for", sessionID, typeof rawExisting)
@@ -1992,6 +2002,7 @@ export function MafwShell() {
               <div style={{ display: rightDockTab() === "background" ? "contents" : "none" }}>
                 <BackgroundDock
                   activeSessionId={currentSessionID() || null}
+                  sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                   onOpenSession={(id) => void openSubagentSession(id)}
                 />
               </div>

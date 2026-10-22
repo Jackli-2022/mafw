@@ -26,10 +26,12 @@
 // 注意：POST /api/shell 直建时 metadata 为空；shell 工具路径由工具写入 metadata:{sessionID}
 
 // GET /api/shell/:id（exited 后）→ 200
-{"location":{...},"data":{ ...同上, "status":"exited","exit":0,"time":{"started":...,"completed":1792638451895} }}
+{"location":{...},"data":{ ...同上, "status":"exited","exit":0,"signal":undefined,"time":{"started":...,"completed":1792638451895} }}
+// 状态枚举（v2.1.0 bundle 复核）：running | exited | timeout | killed
 
 // GET /api/shell/:id/output → 200
-{"location":{...},"data":{"output":"<组合 stdout+stderr 文本>"}}
+{"location":{...},"data":{"output":"<组合 stdout+stderr 文本>","cursor":<起始字节>,"size":<总字节>,"truncated":<bool>}}
+// 默认 cursor=0/limit=64KB；取尾部需按 size 传 cursor（reviewer Important 9 补正）
 
 // DELETE /api/shell/:id → 204；再 GET → 404（空 body）
 ```

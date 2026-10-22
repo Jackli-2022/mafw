@@ -15,12 +15,23 @@ import type { ApiPath } from './api-path'
 /** opencode v2 Shell.Info（/api/shell* 响应 data 的按需子集；形状见 wire probe 文档）。 */
 export interface ShellInfo {
   id: string
-  status: 'running' | 'exited'
+  /** v2 状态枚举（bundle 实证）：running | exited | timeout | killed */
+  status: 'running' | 'exited' | 'timeout' | 'killed'
   command: string
   cwd?: string
   exit?: number
+  signal?: string
   metadata?: { sessionID?: string } & Record<string, unknown>
   time?: { started?: number; completed?: number }
+}
+
+/** v2 反代路径的 404 判定（requestRuntime 的错误格式：`HTTP 404: ...`）。 */
+function isHttp404(e: unknown): boolean {
+  return /^HTTP 404\b/.test(String((e as any)?.message ?? ''))
+}
+
+function shellQuery(params?: { directory?: string }): string {
+  return params?.directory ? `?directory=${encodeURIComponent(params.directory)}` : ''
 }
 
 /** /api/shell* 的统一信封（v2 实证：{location, data}）。 */
@@ -334,21 +345,45 @@ export class MafwClient implements IMafwClient {
   // 响应形状已实证（docs/research/2026-10-22-background-wire-probe.md）：{location,data}
 
   shells = {
-    list: async (): Promise<ShellInfo[]> => {
-      const body = await this.requestRuntime<Envelope<ShellInfo[]>>('/api/shell')
-      return Array.isArray(body?.data) ? body.data : []
+    /** 运行中列表（location-scoped：directory 缺省 = serve 默认位置）。形状不符 → 抛错（fail-open 由调用方处理）。 */
+    list: async (params?: { directory?: string }): Promise<ShellInfo[]> => {
+      const body = await this.requestRuntime<Envelope<ShellInfo[]>>(`/api/shell${shellQuery(params)}`)
+      if (!Array.isArray(body?.data)) throw new Error('Unexpected /api/shell response shape')
+      return body.data
     },
-    get: async (params: { path: { id: string } }): Promise<ShellInfo | null> => {
-      const body = await this.requestRuntime<Envelope<ShellInfo>>(`/api/shell/${encodeURIComponent(params.path.id)}`)
-      return body?.data ?? null
+    /** 单个 shell；**404 → null**（已删除/不存在——对账把 null 映射为 cancelled）。 */
+    get: async (params: { path: { id: string }; directory?: string }): Promise<ShellInfo | null> => {
+      try {
+        const body = await this.requestRuntime<Envelope<ShellInfo>>(`/api/shell/${encodeURIComponent(params.path.id)}${shellQuery(params)}`)
+        return body?.data ?? null
+      } catch (e) {
+        if (isHttp404(e)) return null
+        throw e
+      }
     },
-    output: async (params: { path: { id: string } }): Promise<{ output: string }> => {
-      const body = await this.requestRuntime<Envelope<{ output?: string }>>(`/api/shell/${encodeURIComponent(params.path.id)}/output`)
-      return { output: typeof body?.data?.output === 'string' ? body.data.output : '' }
+    /** 输出分页：默认返回头 64KB；用 cursor/limit 取尾巴（对账/预览）。 */
+    output: async (params: {
+      path: { id: string }; directory?: string; cursor?: number; limit?: number
+    }): Promise<{ output: string; cursor?: number; size?: number; truncated?: boolean }> => {
+      const qs: string[] = []
+      if (params.directory) qs.push(`directory=${encodeURIComponent(params.directory)}`)
+      if (typeof params.cursor === 'number') qs.push(`cursor=${params.cursor}`)
+      if (typeof params.limit === 'number') qs.push(`limit=${params.limit}`)
+      const q = qs.length ? `?${qs.join('&')}` : ''
+      const body = await this.requestRuntime<Envelope<{ output?: string; cursor?: number; size?: number; truncated?: boolean }>>(
+        `/api/shell/${encodeURIComponent(params.path.id)}/output${q}`)
+      const d = body?.data ?? {}
+      return {
+        output: typeof d.output === 'string' ? d.output : '',
+        cursor: d.cursor,
+        size: d.size,
+        truncated: d.truncated,
+      }
     },
-    remove: async (params: { path: { id: string } }): Promise<void> => {
-      const res = await this.fetchImpl(`${this.baseUrl}/api/shell/${encodeURIComponent(params.path.id)}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    /** 终止；404 = 已不存在 → 幂等成功。 */
+    remove: async (params: { path: { id: string }; directory?: string }): Promise<void> => {
+      const res = await this.fetchImpl(`${this.baseUrl}/api/shell/${encodeURIComponent(params.path.id)}${shellQuery(params)}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
     },
   }
 

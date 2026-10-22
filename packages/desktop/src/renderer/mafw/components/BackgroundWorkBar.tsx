@@ -1,13 +1,14 @@
 // composer 上方 work bar（spec §6.1）：后台任务存在感层。
 // - 空态整条不渲染（零占位）；
 // - 有运行中任务：⏳ 后台 N · <最近任务>，点击打开 RightDock「后台」tab；
-// - 有前台 blocking 且 REST+opencode 可用：「前台运行中」+ 全部转后台（不乐观改态）；
-// - 完成瞬间 ✅/❌ 短闪 5s 后卸载（createPresence 语义，reduced-motion 见 CSS）。
-import { createSignal, createEffect, onCleanup, For, Show } from "solid-js"
+// - 前台 blocking：runtime=opencode 即显示检测（Ruling A 核心面）；按钮仅在
+//   REST 可用时出现（不误给死按钮）；
+// - 完成短闪来自 store 终态回调（仅当前会话、非 cancelled/probe/水合），5s 卸载。
+import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { backgroundRows } from "../background-store"
-import { rowsForSession } from "../background-tracker"
+import { backgroundRows, onBackgroundTerminal } from "../background-store"
+import { rowsForSession, type BackgroundRow } from "../background-tracker"
 import { findBlockingWork } from "../background-detect"
 import { workspace } from "../workspace/session-workspace"
 import { backgroundRestAvailable, canUseBackgroundApi } from "../background-capability"
@@ -16,29 +17,27 @@ export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => 
   const [restOk, setRestOk] = createSignal(false)
   const [opencodeOk, setOpencodeOk] = createSignal(false)
   const [flash, setFlash] = createSignal<string | null>(null)
+  let flashTimer: ReturnType<typeof setTimeout> | null = null
 
   const rows = () => rowsForSession(backgroundRows(), props.sessionID)
-  const running = () => rows().filter(r => r.status === "running")
+  const running = () => rows().filter((r: BackgroundRow) => r.status === "running")
   const store = workspace.store
-  const blocking = () =>
-    findBlockingWork(store.message[props.sessionID] || [], store.part)
+  const blocking = () => findBlockingWork(store.message[props.sessionID] || [], store.part)
 
   createEffect(() => { void backgroundRestAvailable().then(setRestOk) })
   createEffect(() => { void canUseBackgroundApi().then(setOpencodeOk) })
 
-  // 完成短闪：running 计数从 >0 落到 0 时，显示最近一条终态行 5s。
-  let wasRunning = false
-  createEffect(() => {
-    const has = running().length > 0
-    if (wasRunning && !has) {
-      const last = rows().find(r => r.status !== "running")
-      if (last) {
-        setFlash(`${last.status === "failed" ? "❌" : "✅"} ${last.label || last.id}`)
-        const t = setTimeout(() => setFlash(null), 5000)
-        onCleanup(() => clearTimeout(t))
-      }
-    }
-    wasRunning = has
+  onMount(() => {
+    const off = onBackgroundTerminal((row) => {
+      if (row.sessionID !== props.sessionID || row.status === "cancelled") return
+      if (flashTimer) clearTimeout(flashTimer)
+      setFlash(`${row.status === "failed" ? "❌" : "✅"} ${row.label || row.id}`)
+      flashTimer = setTimeout(() => setFlash(null), 5000)
+    })
+    onCleanup(() => {
+      off()
+      if (flashTimer) clearTimeout(flashTimer)
+    })
   })
 
   const backgroundAll = async () => {
@@ -51,24 +50,31 @@ export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => 
   }
 
   return (
-    <Show when={running().length > 0 || (blocking().length > 0 && restOk() && opencodeOk()) || flash()}>
+    <Show when={running().length > 0 || (blocking().length > 0 && opencodeOk()) || (running().length === 0 && blocking().length === 0 && flash())}>
       <div class="mafw-bg-bar">
         <Show when={running().length > 0}>
-          <div class="mafw-bg-bar-row" role="button" tabIndex={0} onClick={() => props.onOpenDock()}
-               onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onOpenDock() } }}>
+          <div
+            class="mafw-bg-bar-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => props.onOpenDock()}
+            onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onOpenDock() } }}
+          >
             <span class="mafw-bg-bar-count">⏳ 后台 {running().length}</span>
             <span class="mafw-bg-bar-label">{running()[0]?.label || running()[0]?.id}</span>
             <span class="mafw-bg-bar-chevron">›</span>
           </div>
         </Show>
-        <Show when={running().length === 0 && blocking().length > 0 && restOk() && opencodeOk()}>
+        <Show when={blocking().length > 0 && opencodeOk()}>
           <div class="mafw-bg-bar-row mafw-bg-bar-blocking">
             <span class="mafw-bg-bar-count">⏳ 前台运行中</span>
             <span class="mafw-bg-bar-label">{blocking()[0]?.label || "任务"}</span>
-            <ButtonV2 variant="ghost" size="small" onClick={() => void backgroundAll()}>全部转后台</ButtonV2>
+            <Show when={restOk()}>
+              <ButtonV2 variant="ghost" size="small" onClick={() => void backgroundAll()}>全部转后台</ButtonV2>
+            </Show>
           </div>
         </Show>
-        <Show when={running().length === 0 && flash()}>
+        <Show when={running().length === 0 && blocking().length === 0 && flash()}>
           <div class="mafw-bg-bar-row mafw-bg-bar-flash">
             <span class="mafw-bg-bar-label">{flash()}</span>
           </div>

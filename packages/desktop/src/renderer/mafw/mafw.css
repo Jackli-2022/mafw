@@ -2685,6 +2685,7 @@ html[data-theme="light"] body {
 }
 .mafw-right-dock-tab-list {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 0;
   border: none;

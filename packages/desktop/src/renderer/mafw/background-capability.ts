@@ -1,37 +1,52 @@
 // 后台任务 REST 能力探测（Gate Ruling A：REST 面是可选能力）。
 //
-// 两个门，均模块级缓存（一次探测；失败 fail-closed 隐藏对应按钮，不反复打网关）：
+// 两个门：
 // - backgroundRestAvailable：`GET /api/shell` 可达（v2 鉴权桥就绪）→
-//   终止按钮 / 对账轮询 / 「全部转后台」可用；
+//   终止按钮 / 对账轮询可用；
 // - canUseBackgroundApi：当前 runtime 为 opencode（`/api/runtime`）→
 //   「全部转后台」端点存在（pi 无 session.background）。
 //
-// 环境实证（2026-10-22）：gateway 反代不注入 v2 Basic 鉴权 → 当前环境
-// backgroundRestAvailable 为 false，UI 自动降级；鉴权桥落地后无需改动自动点亮。
+// 缓存语义（reviewer Important 6）：**成功粘住**（鉴权桥就绪后不会退回），
+// **失败 60s 后重试**（启动竞态/网关未就绪不永久禁用）；runtime 热切换与
+// SSE 重连时调用 resetBackgroundCapability() 强制重探。
+const RETRY_MS = 60_000
 
-let restProbe: Promise<boolean> | null = null
-let runtimeProbe: Promise<boolean> | null = null
+type Probe = { at: number; ok: boolean; known: boolean }
+let rest: Probe = { at: 0, ok: false, known: false }
+let runtime: Probe = { at: 0, ok: false, known: false }
+let restInflight: Promise<boolean> | null = null
+let runtimeInflight: Promise<boolean> | null = null
+
+function fresh(p: Probe, now: number): boolean {
+  return p.known && (p.ok || now - p.at < RETRY_MS)
+}
 
 export function backgroundRestAvailable(): Promise<boolean> {
-  if (!restProbe) {
-    restProbe = window.api.mafw.shells.list()
-      .then(() => true)
-      .catch(() => false)
-  }
-  return restProbe
+  if (fresh(rest, Date.now())) return Promise.resolve(rest.ok)
+  if (restInflight) return restInflight
+  restInflight = window.api.mafw.shells.list()
+    .then(() => { rest = { at: Date.now(), ok: true, known: true }; return true })
+    .catch(() => { rest = { at: Date.now(), ok: false, known: true }; return false })
+    .finally(() => { restInflight = null })
+  return restInflight
 }
 
 export function canUseBackgroundApi(): Promise<boolean> {
-  if (!runtimeProbe) {
-    runtimeProbe = window.api.mafw.runtime.get()
-      .then((info: any) => info?.active?.name === "opencode")
-      .catch(() => false)
-  }
-  return runtimeProbe
+  if (fresh(runtime, Date.now())) return Promise.resolve(runtime.ok)
+  if (runtimeInflight) return runtimeInflight
+  runtimeInflight = window.api.mafw.runtime.get()
+    .then((info: any) => {
+      const ok = info?.active?.name === "opencode"
+      runtime = { at: Date.now(), ok, known: true }
+      return ok
+    })
+    .catch(() => { runtime = { at: Date.now(), ok: false, known: true }; return false })
+    .finally(() => { runtimeInflight = null })
+  return runtimeInflight
 }
 
-/** 测试/热切换后重置探测缓存。 */
+/** runtime 热切换 / SSE 重连 / 测试后重置探测缓存。 */
 export function resetBackgroundCapability(): void {
-  restProbe = null
-  runtimeProbe = null
+  rest = { at: 0, ok: false, known: false }
+  runtime = { at: 0, ok: false, known: false }
 }

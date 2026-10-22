@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from "bun:test"
-import { backgroundRows, ingestBackgroundEvent, onBackgroundTerminal, resetBackgroundStore } from "./background-store"
+import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal, resetBackgroundStore } from "./background-store"
 
 beforeEach(() => resetBackgroundStore())
 
@@ -30,6 +30,16 @@ describe("background store", () => {
     ingestBackgroundEvent({ kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "t" } }, 1)
     ingestBackgroundEvent({ kind: "bg-terminal", id: "sh1", terminal: "completed", source: "probe" }, 2)
     expect(backgroundRows()[0]!.status).toBe("completed")
+    expect(seen).toEqual([])
+  })
+  test("水合回放（observed+synthetic 同批）→ 行落终态但零通知（reviewer Critical 2）", () => {
+    const seen: string[] = []
+    onBackgroundTerminal(r => seen.push(r.id))
+    ingestHydratedBackgroundEvents([
+      { kind: "bg-observed", row: { id: "sh1", type: "shell", sessionID: "s1", label: "npm run dev" } },
+      { kind: "bg-terminal", id: "sh1", terminal: "completed", at: 5, source: "synthetic", meta: { type: "shell", sessionID: "s1", label: "npm run dev" } },
+    ] as any, 10)
+    expect(backgroundRows()[0]).toMatchObject({ id: "sh1", status: "completed" })
     expect(seen).toEqual([])
   })
 })

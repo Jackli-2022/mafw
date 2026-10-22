@@ -9,6 +9,8 @@ import { applyBackgroundEvent, collectNewTerminals, type BackgroundEvent, type B
 
 const [rows, setRows] = createSignal<BackgroundRow[]>([])
 const terminalCallbacks = new Set<(row: BackgroundRow) => void>()
+/** 水合回放期间抑制终态通知（历史完成不是 live 事件，spec §6.3）。 */
+let suppressTerminalNotify = false
 
 /** 全部后台任务行（全局；按 sessionID 过滤由消费方做）。 */
 export function backgroundRows(): BackgroundRow[] {
@@ -21,10 +23,26 @@ export function ingestBackgroundEvent(ev: BackgroundEvent, now?: number): void {
   if (next === prev) return
   const terminals = collectNewTerminals(prev, next)
   setRows(next)
+  if (suppressTerminalNotify) return
   // 对账收敛（probe）静默：行照常落终态，但不触发通知回调（spec §5.1）
   if (ev.kind === "bg-terminal" && ev.source === "probe") return
   for (const row of terminals) {
     for (const cb of terminalCallbacks) cb(row)
+  }
+}
+
+/**
+ * 历史水合批次摄取：回放期间不触发终态通知。
+ * 典型场景：重启后首页同时含 background part 与其 synthetic 完成消息——
+ * 逐条 ingest 会制造「几小时前的任务刚完成」的假 toast（reviewer Critical 2）。
+ */
+export function ingestHydratedBackgroundEvents(events: BackgroundEvent[], now?: number): void {
+  if (events.length === 0) return
+  suppressTerminalNotify = true
+  try {
+    for (const ev of events) ingestBackgroundEvent(ev, now)
+  } finally {
+    suppressTerminalNotify = false
   }
 }
 

@@ -37,18 +37,23 @@ export function detectSyntheticTerminal(info: any, sessionID: string): Backgroun
     ? (typeof md.shellID === "string" ? md.shellID : md.jobID)
     : md.childID
   if (typeof id !== "string" || !id) return null
+  // 失败语义（bundle 实证）：后台命令非零退出走 metadata.exit（不是 state:"error"），
+  // signal/timeout 同理——"完成"只留给真正干净的退出。
   const terminal: "completed" | "failed" | "cancelled" =
     md.state === "cancelled" ? "cancelled"
       : md.state === "error" || md.error != null ? "failed"
-        : "completed"
+        : typeof md.exit === "number" && md.exit !== 0 ? "failed"
+          : md.signal ? "failed"
+            : md.timeout === true ? "failed"
+              : "completed"
   const label = md.command ?? md.description ?? info.description
-  return {
-    kind: "bg-terminal",
-    id,
-    terminal,
-    source: "synthetic",
-    meta: { type: source, sessionID, label: typeof label === "string" ? label : "" },
-  }
+  // 行创建判别（reviewer #13）：后台 shell 完成总带 jobID；用户手动 shell 的 synthetic
+  // 没有 jobID——那种只收敛已追踪行，不新建行（防 dock 噪音）。
+  const canCreateRow = source === "subagent" || typeof md.jobID === "string"
+  const meta = canCreateRow
+    ? { type: source, sessionID, label: typeof label === "string" ? label : "" }
+    : undefined
+  return { kind: "bg-terminal", id, terminal, source: "synthetic", meta }
 }
 
 /**
