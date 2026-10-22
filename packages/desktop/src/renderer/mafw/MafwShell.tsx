@@ -51,6 +51,7 @@ import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
 import { clampDockWidth, dockMaxWidth, suggestDockWidth } from "./dock-width"
+import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
 import { WindowControls } from "./components/WindowControls"
@@ -1448,6 +1449,10 @@ export function MafwShell() {
     setRightDockWidth(clamped)
     try { localStorage.setItem("mafw-right-dock-width", String(clamped)) } catch {}
   }
+  // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
+  // （manager 会话的 directory 可能指向 home 等外部目录，实证 2026-10-22）
+  const benchRoot = () =>
+    resolveWorkbenchRoot(currentProject(), store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null)
 
   // SSE live trajectory signals
   const [trajectoryLive, setTrajectoryLive] = createSignal<Record<string, any[]>>({})
@@ -2023,9 +2028,9 @@ export function MafwShell() {
               </div>
               <div style={{ display: rightDockTab() === "files" ? "contents" : "none" }}>
                 <FilesDock
-                  sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                  sessionDirectory={benchRoot()}
                   onOpenFile={(rel) => {
-                    const root = store.session.find((s: any) => s.id === currentSessionID())?.directory
+                    const root = benchRoot()
                     if (!root) return
                     requestOpenEditor(root, rel)
                     applyRightDock(true, "editor")
@@ -2035,7 +2040,7 @@ export function MafwShell() {
               <div style={{ display: rightDockTab() === "editor" ? "contents" : "none" }}>
                 <EditorDock
                   sessionID={currentSessionID() || null}
-                  sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                  sessionDirectory={benchRoot()}
                   diffs={aggregateSessionDiffs((store.message as any)[currentSessionID()] || [])}
                   onSendAnnotation={(text) => {
                     const sid = currentSessionID()
