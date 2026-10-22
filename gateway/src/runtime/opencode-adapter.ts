@@ -17,13 +17,13 @@ import type {
   SessionMessagesOpts,
   SessionSummarizeOpts,
   NativeToolDeclaration,
-} from './runtime/contract';
+} from './contract';
 export type {
   SessionCreateOpts,
   SessionPromptOpts,
   SessionMessagesOpts,
   SessionSummarizeOpts,
-} from './runtime/contract';
+} from './contract';
 
 /** @deprecated 等价于 RuntimeClient；保留别名避免下游改动。 */
 export type OpencodeAdapter = RuntimeClient;
@@ -283,8 +283,9 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         reply: 'once' | 'always' | 'reject',
         message?: string,
       ): Promise<boolean> {
-        const result = await (client.session as any).permission.reply({
-          sessionID,
+        // v2 SDK：Permission 是 client 顶层命名空间（/permission/{requestID}/reply），
+        // session 上没有 permission 成员；requestID 全局唯一定位，sessionID 仅契约签名兼容保留。
+        const result = await client.permission.reply({
           requestID: requestId,
           reply,
           ...(message ? { message } : {}),

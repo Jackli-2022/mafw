@@ -64,7 +64,7 @@ test('⑦ assistant 拆分：message.updated(flat) + text/thinking part + tool_u
       id: 'msg_01', role: 'assistant', model: 'claude-opus-4-6', stop_reason: 'tool_use',
       usage: { input_tokens: 10, output_tokens: 5 },
       content: [
-        { type: 'thinking', thinking: 'hmm' },
+        { type: 'thinking', thinking: 'hmm', signature: 'sig_abc123' },
         { type: 'text', text: '看一下' },
         { type: 'tool_use', id: 'toolu_01', name: 'Bash', input: { command: 'ls' } },
       ],
@@ -79,6 +79,8 @@ test('⑦ assistant 拆分：message.updated(flat) + text/thinking part + tool_u
   assert.ok(types.includes('part.updated'));
   const parts = out.filter((e: any) => e.payload.type === 'part.updated').map((e: any) => e.payload.properties.part);
   assert.deepEqual(parts.map((p: any) => p.type), ['reasoning', 'text']);
+  // P0-3: thinking signature passthrough (multi-turn replay API correctness)
+  assert.equal(parts[0].signature, 'sig_abc123');
   const toolCall = out.find((e: any) => e.payload.type === 'tool.call');
   assert.ok(toolCall, 'tool.call emitted');
   assert.equal(toolCall.payload.properties.callID, 'toolu_01');

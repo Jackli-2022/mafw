@@ -101,6 +101,7 @@ import { handleToolsList, handleToolsExecute } from './routes/tools';
 import { FLAT_EMITTERS } from './runtime/flat-emit-registry';
 import { enrichToolIdentity, enrichHistoryParts } from './runtime/tool-classes';
 import { BudgetGuard } from './core/budget-guard';
+import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
@@ -348,6 +349,7 @@ class MafwScheduler {
   }
   private pipelineGuard = new (require('./recall/pipeline-guard').PipelineGuard)({ timeoutMs: 30 * 60_000, log: (m: string) => log.warn(m) }); // action-level in-flight guards, keyed by action name
   private budgetGuards = new Map<string, BudgetGuard>(); // per-goal-session turn/cost hard stop
+  private promptBudgetSessions = new Set<string>(); // P0-2：per-prompt 预算来源标记（goal guard 优先，回合终态清理）
   private approvalPolicy!: ApprovalPolicyService; // asked 事件策略评估（manual/auto + 预算 + 内部 fail-safe）
   private allowlistStore!: AllowlistStore; // legacy 白名单（config.yaml approval 段，双读过渡）
   private permissionRules!: PermissionRulesStore; // 持久规则（~/.mafw/permission-rules.json）
@@ -1211,6 +1213,11 @@ class MafwScheduler {
     }
     // Turn-level identity binding cleanup: a user-picked identity lasts one turn.
     if (type === MAFW.turnCompleted && sessionID) this.identityState.clearTurnBindings(sessionID);
+    // P0-2：per-prompt 预算 guard 回合终态清理（三终态；防上次预算泄漏到
+    // 后续无预算 prompt。goal guard 不在此列——其生命周期是整个 goal）。
+    if ((type === MAFW.turnCompleted || type === MAFW.turnFailed || type === MAFW.turnAborted) && sessionID) {
+      if (this.promptBudgetSessions.delete(sessionID)) this.budgetGuards.delete(sessionID);
+    }
     // Only memory-system sessions (index-scan / extract / reflect workers) are
     // internal: their token-level deltas flooded the desktop renderer (per-delta
     // store writes + re-render storms froze the UI). Tiered policy for them:
@@ -2249,6 +2256,36 @@ class MafwScheduler {
       log.info(`[BudgetGuard] attached for goal ${goalId} session=${sessionID} (maxTurns=${maxTurns ?? '-'} maxCostUsd=${maxCostUsd ?? '-'})`);
     } catch (err: any) {
       log.warn(`[BudgetGuard] attach failed for ${sessionID} (non-fatal): ${err.message}`);
+    }
+  }
+
+  /** Per-prompt 预算挂载（P0-2，2026-10-22）：普通会话经 HTTP promptAsync body
+   *  传入 maxTurns/maxCostUsd 的兜底路径。裁决走 resolvePromptBudget（纯函数）：
+   *  goal guard 优先不顶掉；上次 per-prompt 预算不泄漏（replace）。回合终态
+   *  （turn.completed/failed/aborted）由 handleOpencodeEvent 清理。 */
+  private attachBudgetGuardForPrompt(sessionID: string, maxTurns?: number, maxCostUsd?: number): void {
+    try {
+      if (!this.runtime || this.runtimeCaps.turnBudgetApi) return;
+      const existing: PromptBudgetExisting = this.promptBudgetSessions.has(sessionID)
+        ? 'prompt'
+        : this.budgetGuards.has(sessionID) ? 'goal' : 'none';
+      const decision = resolvePromptBudget(existing, maxTurns, maxCostUsd);
+      if (decision === 'skip-empty' || decision === 'skip-goal') return;
+      this.budgetGuards.set(sessionID, new BudgetGuard({
+        sessionID,
+        maxTurns,
+        maxCostUsd,
+        getCostUsd: (sid) => this.trajectoryStore?.getSessionTokenSummary(sid).totalCost ?? 0,
+        abort: (sid) => this.runtime!.session.abort({ sessionID: sid }),
+        notify: async (sid, text) => {
+          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
+        },
+        log: (msg) => log.info(msg),
+      }));
+      this.promptBudgetSessions.add(sessionID);
+      log.info(`[BudgetGuard] attached for prompt session=${sessionID} (maxTurns=${maxTurns ?? '-'} maxCostUsd=${maxCostUsd ?? '-'})`);
+    } catch (err: any) {
+      log.warn(`[BudgetGuard] prompt attach failed for ${sessionID} (non-fatal): ${err.message}`);
     }
   }
 
@@ -5741,7 +5778,7 @@ class MafwScheduler {
           try {
             const sessionID = promptAsyncMatch[1];
             const body = await readBody(req);
-            const { message, parts, agent, model } = body ? JSON.parse(body) : {};
+            const { message, parts, agent, model, maxTurns, maxCostUsd } = body ? JSON.parse(body) : {};
             if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
             // Identity-aware (spec §3.2): picking a registry identity binds it for
             // this turn — the policy layer evaluates the turn's tool calls against it.
@@ -5749,6 +5786,8 @@ class MafwScheduler {
             if (agent && this.identityRegistry.get(agent)) {
               this.identityState.bind(sessionID, agent, 'turn');
             }
+            // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出）
+            this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
             await this.sdkSession.promptAsync(sessionID, message, parts, agent, model);
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));

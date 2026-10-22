@@ -20,9 +20,11 @@ const mockClient = {
       parts: [{ type: 'text', text: 'done' }],
     })),
     promptAsync: jest.fn(async () => ({})),
-    permission: {
-      reply: jest.fn(async () => ({})),
-    },
+  },
+  permission: {
+    // v2 SDK 真实形状：Permission 是 client 顶层命名空间（/permission/{requestID}/reply），
+    // session 上没有 permission 成员（Session2 只有 24 个方法）。此前 mock 挂在 session 下 = 假形状假绿。
+    reply: jest.fn(async () => ({})),
   },
 };
 
@@ -66,11 +68,12 @@ describe('opencode adapter branch + envelope', () => {
     expect(res.usage).toBeUndefined();
   });
 
-  it('permissionReply maps tri-state to SDK', async () => {
+  it('permissionReply maps tri-state to SDK top-level permission namespace', async () => {
     const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
     const ok = await client.session.permissionReply!('ses_1', 'req_1', 'always', 'ok for session');
-    expect(mockClient.session.permission.reply).toHaveBeenCalledWith({
-      sessionID: 'ses_1', requestID: 'req_1', reply: 'always', message: 'ok for session',
+    // v2 SDK：Permission.reply({requestID, reply, message?})——无 sessionID（requestID 全局唯一定位）
+    expect(mockClient.permission.reply).toHaveBeenCalledWith({
+      requestID: 'req_1', reply: 'always', message: 'ok for session',
     });
     expect(ok).toBe(true);
   });

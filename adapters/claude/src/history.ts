@@ -92,7 +92,7 @@ export function normalizeClaudeHistory(raw: any[]): MafwMessage[] {
         if (b?.type === 'text' && typeof b.text === 'string') {
           parts.push({ id: `${id}_t${j}`, type: 'text', text: b.text });
         } else if (b?.type === 'thinking' && (b.thinking || b.text)) {
-          parts.push({ id: `${id}_r${j}`, type: 'reasoning', text: b.thinking ?? b.text });
+          parts.push({ id: `${id}_r${j}`, type: 'reasoning', text: b.thinking ?? b.text, ...(typeof b.signature === 'string' ? { signature: b.signature } : {}) });
         } else if (b?.type === 'tool_use' && typeof b.id === 'string') {
           const res = results.get(b.id);
           const input = b.input ?? {};

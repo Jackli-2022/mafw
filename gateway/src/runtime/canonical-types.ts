@@ -46,7 +46,7 @@ export interface MafwPartBase {
 
 export type MafwPart =
   | (MafwPartBase & { type: 'text'; text: string })
-  | (MafwPartBase & { type: 'reasoning'; text: string })
+  | (MafwPartBase & { type: 'reasoning'; text: string; signature?: string })
   | (MafwPartBase & {
       type: 'tool';
       callID: string;

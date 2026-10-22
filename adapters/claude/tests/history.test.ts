@@ -23,7 +23,7 @@ test('assistant text+thinking → 对应 parts；finish/model/tokens 透传', ()
       uuid: 'a1', role: 'assistant', model: 'claude-opus-4-6', stop_reason: 'end_turn',
       usage: { input_tokens: 10, output_tokens: 5 },
       content: [
-        { type: 'thinking', thinking: 'hmm' },
+        { type: 'thinking', thinking: 'hmm', signature: 'sig_hist9' },
         { type: 'text', text: '答案' },
       ],
     },
@@ -32,6 +32,9 @@ test('assistant text+thinking → 对应 parts；finish/model/tokens 透传', ()
   assert.equal(out[0].role, 'assistant');
   assert.equal(out[0].finish, 'end_turn');
   assert.equal(out[0].model, 'claude-opus-4-6');
+  // P0-3: thinking signature passthrough
+  const rPart = out[0].content.find((x: any) => x.type === 'reasoning');
+  assert.equal(rPart?.signature, 'sig_hist9');
   assert.deepEqual(out[0].content?.map((p: any) => p.type), ['reasoning', 'text']);
   assert.deepEqual(out[0].tokens, { input_tokens: 10, output_tokens: 5 });
 });

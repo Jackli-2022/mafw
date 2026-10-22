@@ -196,7 +196,7 @@ export const claudeTransformEvent: TransformEventFn = (event: any) => {
       } else if (block?.type === 'thinking' && (block.thinking || block.text)) {
         out.push(makeEvent('part.updated', {
           ...(sid ? { sessionID: sid } : {}),
-          part: { id: `cla_${uuid}_r${i}`, type: 'reasoning', text: block.thinking ?? block.text, ...(sid ? { sessionID: sid } : {}), messageID: `cla_${uuid}` },
+          part: { id: `cla_${uuid}_r${i}`, type: 'reasoning', text: block.thinking ?? block.text, ...(typeof block.signature === 'string' ? { signature: block.signature } : {}), ...(sid ? { sessionID: sid } : {}), messageID: `cla_${uuid}` },
         }, sid));
       } else if (block?.type === 'tool_use' && typeof block.id === 'string') {
         out.push(makeEvent('tool.call', {
