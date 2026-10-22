@@ -40,6 +40,100 @@ const TOOL_CLASS_TABLE: Record<string, TOOL_CLASS> = {
   todowrite: 'plan', todo_list: 'plan',
 };
 
+// ── 工具注解（MCP stable spec 对齐，2026-10-22 spec：2026-10-22-tool-face-mcp-alignment-design.md §5.2）──
+// annotations 是 hints, not guarantees（展示/启发式用，非安全边界）——审批权威仍是 TOOL_CLASS/身份 policy。
+
+/** MCP stable spec 对齐的工具注解（readOnlyHint=false 时 destructiveHint/idempotentHint 才有意义）。 */
+export interface MafwToolAnnotations {
+  /** 展示名（human-readable title） */
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
+/** TOOL_CLASS → 注解派生表（第三级：runtime 原生工具用；mafw_* 永不走这级）。 */
+const TOOL_CLASS_ANNOTATIONS: Record<TOOL_CLASS, MafwToolAnnotations> = {
+  readonly:    { readOnlyHint: true, idempotentHint: true },
+  search:      { readOnlyHint: true, idempotentHint: true },
+  'file-edit': { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+  shell:       { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+  subagent:    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  web:         { readOnlyHint: false, openWorldHint: true },
+  plan:        { readOnlyHint: true, idempotentHint: true },
+  other:       {},
+};
+
+/** mafw_* 网关工具专属注解表（第二级；**不进** TOOL_CLASS_TABLE——设计 Q1 裁决：
+ *  审批消费的类 deny 不可波及网关工具，manager/curator 身份授权按名字 allowlist 走）。
+ *  两表输入域不相交（runtime 原生 vs 网关内部），无第二权威漂移。 */
+export const MAFW_TOOL_ANNOTATIONS: Record<string, MafwToolAnnotations> = {
+  // search：只读检索
+  mafw_search_hybrid: { readOnlyHint: true, idempotentHint: true },
+  mafw_get_deltas: { readOnlyHint: true, idempotentHint: true },
+  mafw_get_axioms: { readOnlyHint: true, idempotentHint: true },
+  // readonly：读查询
+  mafw_get_memory: {}, mafw_get_goal_status: {}, mafw_list_goals: {},
+  mafw_list_automation_rules: {}, mafw_get_automation_rule: {},
+  mafw_get_automation_history: {}, mafw_list_triage_items: {},
+  mafw_get_triage_item: {}, mafw_list_pending_questions: {}, mafw_get_evidence: {},
+  mafw_load_state: { readOnlyHint: true }, // 读态文件
+  mafw_validate_rule: { readOnlyHint: true, idempotentHint: true },
+  mafw_get_model_route: { readOnlyHint: true, idempotentHint: true },
+  // 写网关内部状态（非破坏：soft 语义不删不改既有条目）
+  mafw_add_memory: { readOnlyHint: false, destructiveHint: false },
+  mafw_update_state: { readOnlyHint: false, destructiveHint: false },
+  mafw_commit_heuristic: { readOnlyHint: false, destructiveHint: false },
+  mafw_merge_memory: { readOnlyHint: false, destructiveHint: false },
+  mafw_resolve_merge: { readOnlyHint: false, destructiveHint: false },
+  mafw_supersede_memory: { readOnlyHint: false, destructiveHint: false },
+  mafw_pin_memory: { readOnlyHint: false, destructiveHint: false },
+  mafw_record_feedback: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  mafw_answer_question: { readOnlyHint: false, destructiveHint: false },
+  mafw_propose_triage_decision: { readOnlyHint: false, destructiveHint: false },
+  mafw_draft_automation_rule: { readOnlyHint: false, destructiveHint: false },
+  // 编排触发
+  mafw_create_goal: { readOnlyHint: false, destructiveHint: false },
+  mafw_set_goal: { readOnlyHint: false, destructiveHint: false },
+  mafw_run_automation: { readOnlyHint: false, destructiveHint: false },
+  mafw_ask_user: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  // 破坏性（进程/生命周期终止）
+  mafw_cancel_goal: { readOnlyHint: false, destructiveHint: true },
+  mafw_restart_agent: { readOnlyHint: false, destructiveHint: true },
+  // shell 等价（任意代码执行）
+  mafw_python: { readOnlyHint: false, destructiveHint: true },
+  mafw_python_restart: { readOnlyHint: false, destructiveHint: true },
+  // 媒体（loopback A2A，不改用户环境）
+  mafw_media_ask: { readOnlyHint: true, idempotentHint: false },
+  mafw_media_upload: { readOnlyHint: false, destructiveHint: false },
+  mafw_media_speak: { readOnlyHint: false, destructiveHint: false },
+  // 桌面 UI 自动化（动作破坏性视目标而定）
+  mafw_desktop_screenshot: { readOnlyHint: true },
+  mafw_desktop_navigate: { readOnlyHint: false, destructiveHint: false },
+  mafw_desktop_get_ui_state: { readOnlyHint: true },
+  mafw_desktop_click: { readOnlyHint: false, destructiveHint: true },
+  mafw_desktop_type: { readOnlyHint: false, destructiveHint: true },
+  mafw_desktop_scroll: { readOnlyHint: false, destructiveHint: false },
+};
+
+/** 三级注解解析（spec §5.2）：声明覆盖 > mafw 专属表 > TOOL_CLASS 派生。
+ *  全 miss → 声明非空返回声明，否则 undefined（不硬猜）。 */
+export function annotationsForTool(
+  name: string,
+  declared?: MafwToolAnnotations,
+  toolClass?: TOOL_CLASS,
+): MafwToolAnnotations | undefined {
+  const tableEntry = MAFW_TOOL_ANNOTATIONS[name];
+  if (tableEntry) return { ...tableEntry, ...declared };
+  if (toolClass) {
+    const derived = TOOL_CLASS_ANNOTATIONS[toolClass];
+    if (derived) return { ...derived, ...declared };
+    return declared && Object.keys(declared).length > 0 ? { ...declared } : {};
+  }
+  return declared && Object.keys(declared).length > 0 ? { ...declared } : undefined;
+}
+
 /** runtime 声明的工具类别 overlay（优先于并集表；小写归一）。 */
 const toolClassOverlay = new Map<string, TOOL_CLASS>();
 
