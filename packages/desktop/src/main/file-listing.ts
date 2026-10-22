@@ -1,7 +1,7 @@
 // Walks the current project directory for the @file mention picker.
 // `io` is injected (readdir with dirent-like {name, isDirectory}) so the
 // traversal logic stays testable without touching the real filesystem.
-const IGNORED_DIRS = new Set([
+export const IGNORED_DIRS = new Set([
   "node_modules",
   ".git",
   "dist",
