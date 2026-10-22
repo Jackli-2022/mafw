@@ -16,11 +16,17 @@ export function applyApprovalPolicy(
   props: Record<string, any>,
 ): void {
   try {
-    const decision = policy.evaluate(sessionID, {
-      toolName: facet.toolName,
-      patterns: facet.patterns,
-      metadata: facet.metadata,
-    });
+    // 认知面 ask 强制 human（终审 #4）：gate 规则 action:'ask' 的意图是"问人"——
+    // 政策环在 auto/full-access 模式会自动答复（ask 规则变成 no-op + 卡片闪烁）。
+    // forceHuman 标记（permission.asked 载荷携带）使政策环让路，保 ask 语义。
+    const forceHuman = facet.metadata?.forceHuman === true || props?.forceHuman === true;
+    const decision = forceHuman
+      ? { action: 'human' as const, reason: 'cognition rule requested human confirmation' }
+      : policy.evaluate(sessionID, {
+        toolName: facet.toolName,
+        patterns: facet.patterns,
+        metadata: facet.metadata,
+      });
     props.mafwPolicy = decision;
     // P1.5: record the verdict for later offline calibration (fail-open).
     appendApprovalRecord({

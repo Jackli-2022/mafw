@@ -137,14 +137,12 @@ function wirePiCognition(runtime: AgentRuntime, gate: ReturnType<typeof createCo
       return gate.gateToolCall(sessionID, payload);
     });
   }
-  if (typeof registry?.opts?.constructor === 'function' || true) {
-    // 宿主钩经 opts.cognitionHost（pi-session 构造期读取）——registry 暴露 opts 或 setter
-    if (typeof registry?.setCognitionHost === 'function') {
-      registry.setCognitionHost({
-        gatePrompt: (sid: string, text: string) => gate.gatePrompt(sid, text),
-        applyToolResultRedact: (sid: string, tool: string, content: any[]) => gate.applyToolResultRedact(sid, tool, content),
-      });
-    }
+  // 宿主钩经 opts.cognitionHost（pi-session 构造期读取）
+  if (typeof registry?.setCognitionHost === 'function') {
+    registry.setCognitionHost({
+      gatePrompt: (sid: string, text: string) => gate.gatePrompt(sid, text),
+      applyToolResultRedact: (sid: string, tool: string, content: any[]) => gate.applyToolResultRedact(sid, tool, content),
+    });
   }
 }
 
@@ -403,7 +401,9 @@ class MafwScheduler {
     getRules: () => {
       const raw = config.cognition?.rules;
       if (raw !== this.cognitionGateCache.raw) {
-        const { valid } = validateRules(raw);
+        const { valid, errors } = validateRules(raw);
+        // 有声 fail-open（终审 #3）：坏规则跳过但必须让用户知道——静默解除武装是反模式
+        if (errors.length > 0) log.warn(`[Cognition] rule errors (skipped, fail-open): ${errors.join('; ')}`);
         this.cognitionGateCache = { raw, valid };
       }
       return this.cognitionGateCache.valid;
@@ -413,7 +413,7 @@ class MafwScheduler {
       // cognition_gate 扁平事件（runtime_switched 先例；经 broadcast → event_log 持久化）
       this.broadcast({ type: 'cognition_gate', sessionID: e.sessionID, rule: e.rule, action: e.action, tool: e.tool, reason: e.reason } as any);
     },
-  }); // P0-2：per-prompt 预算来源标记（goal guard 优先，回合终态清理）
+  });
   private approvalPolicy!: ApprovalPolicyService; // asked 事件策略评估（manual/auto + 预算 + 内部 fail-safe）
   private allowlistStore!: AllowlistStore; // legacy 白名单（config.yaml approval 段，双读过渡）
   private permissionRules!: PermissionRulesStore; // 持久规则（~/.mafw/permission-rules.json）

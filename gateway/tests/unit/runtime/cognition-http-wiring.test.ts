@@ -48,10 +48,10 @@ describe('index.ts cognition 接线', () => {
     expect(src).toMatch(/\/api\/cognition\/gate/);
   });
 });
-// desktop：TAIL_ACCOUNTED_PREFIXES 含 cognition:
+// desktop：TAIL_ACCOUNTED_PREFIXES 含 cognition_（终审 #1 修正：前缀匹配 cognition_gate 事件类型）
 const desktopSrc = readFileSync(join(__dirname, '../../../../packages/desktop/src/renderer/mafw/session-events.ts'), 'utf8');
-describe('desktop cognition_gate 消费（builder check D 裁定）', () => {
-  it('TAIL_ACCOUNTED_PREFIXES 含 cognition: 前缀', () => {
-    expect(desktopSrc).toMatch(/TAIL_ACCOUNTED_PREFIXES = \["plugin:", "cognition:"\]/);
+describe('desktop cognition_gate 消费（builder check D 裁定；终审 #1 修正为 cognition_ 前缀）', () => {
+  it('TAIL_ACCOUNTED_PREFIXES 含 cognition_ 前缀（匹配 cognition_gate 事件类型）', () => {
+    expect(desktopSrc).toMatch(/TAIL_ACCOUNTED_PREFIXES = \["plugin:", "cognition_"\]/);
   });
 });

@@ -51,6 +51,7 @@ export function createMafwApprovalExtension(
         // rewrite = Object.assign 逐键改（C2：整体重赋值被 pi 静默丢弃）→ 不 return，
         // 改写产物交下方政策链复评（C3）。ask → 落 human（跳过政策直评）。
         let gateAsk = false;
+        let gateAskReason: string | undefined;
         if (evaluateGate) {
           try {
             const d = evaluateGate(gatewaySessionId, { tool: toolName, input: event.input ?? {} });
@@ -62,6 +63,7 @@ export function createMafwApprovalExtension(
               // 继续走 3——改写后的 input 复评（规范化不能绕过政策）
             } else if (d && d.decision === 'ask') {
               gateAsk = true;
+              gateAskReason = (d as any).reason;
             }
           } catch { /* gate 异常 → 放行继续链（fail-open） */ }
         }
@@ -98,6 +100,9 @@ export function createMafwApprovalExtension(
               toolName,
               args: event.input,
               risk: 'medium',
+              // 认知面 ask（终审 #4/#5）：forceHuman 使政策环让路（auto 模式不再自动
+              // 答复成 no-op）；reason 上卡（人知道为什么被问）。
+              ...(gateAsk ? { forceHuman: true, cognitionAsk: (gateAskReason ?? 'cognition rule requested confirmation') } : {}),
             },
           },
         });
@@ -107,7 +112,7 @@ export function createMafwApprovalExtension(
           sessionID,
           permission: toolName,
           patterns: [],
-          metadata: { args: event.input, risk: 'medium' },
+          metadata: { args: event.input, risk: 'medium', ...(gateAsk ? { forceHuman: true } : {}) },
         });
         const record = bridge.lastDecision(requestId);
         const decision = record?.decision ?? (approved ? 'once' : 'reject');

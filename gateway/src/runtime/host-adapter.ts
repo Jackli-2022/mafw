@@ -16,6 +16,14 @@
  *   tools         六件套（add_memory / python ×2 / media ×3）经
  *                 /api/memory/add、/api/python/*、/api/tts、/a2a
  *
+ *   gate          拦截点同步问询（2026-10-22 六动词扩展，spec 2026-10-22-cognition-gate-rewrite）
+ *                 → POST /api/cognition/gate {sessionID, kind:'tool_call'|'prompt', tool?, input?, text?}
+ *                 → {decision:'allow'|'deny'|'ask'|'rewrite', reason?, input?}
+ *                 gateTimeoutMs 2s fail-open allow；'ask' 仅 tool_call 类（prompt+ask 加载期拒绝）
+ *   rewrite       工具输出回模型前 → POST /api/cognition/rewrite
+ *                 {sessionID, tool, input, output:{content,isError}} → {content?}
+ *                 rewriteTimeoutMs 2s fail-open 原样透传；非文本部件透传（图片防丢）
+ *
  * 时序契约（COGNITION_CONTRACT）与一致性验证（S3/S4 场景，
  * POST /api/runtime/conformance）对全部宿主一致。
  *
@@ -29,6 +37,10 @@ export const COGNITION_CONTRACT = {
   obsTimeoutMs: 5_000,
   recallTimeoutMs: 100,
   pinnedTimeoutMs: 150,
+  /** gate/rewrite（2026-10-22 六动词扩展）：out-of-process 宿主的 loopback 预算——
+   *  超时 fail-open（gate→allow / rewrite→原样透传），不 brick agent。 */
+  gateTimeoutMs: 2_000,
+  rewriteTimeoutMs: 2_000,
   shortIncrementMin: 50,
   assistantTailMax: 300,
 } as const;

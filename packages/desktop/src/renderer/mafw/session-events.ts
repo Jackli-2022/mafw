@@ -118,7 +118,7 @@ const TAIL_ACCOUNTED_TYPES = new Set<string>([
 ])
 
 /** onmessage 尾部合法放行的前缀类（plugin 自定义命名空间）。 */
-const TAIL_ACCOUNTED_PREFIXES = ["plugin:", "cognition:"]
+const TAIL_ACCOUNTED_PREFIXES = ["plugin:", "cognition_"]
 
 /** 尾部未见过的类型 = 漏接线（返回 false）。显式忽略清单并入合法放行。 */
 export function isTailAccountedAtShell(type: string | undefined): boolean {
