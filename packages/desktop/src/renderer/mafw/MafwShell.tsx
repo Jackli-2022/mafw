@@ -1429,12 +1429,25 @@ export function MafwShell() {
   const applyRightDock = (open: boolean, tab?: DockTab) => {
     setRightDockOpen(open)
     if (tab !== undefined) setRightDockTab(tab)
+    // workbench tab（files/editor）首次进入自动加宽到阅读宽度（用户可再拖）
+    if (tab === "files" || tab === "editor") {
+      if (rightDockWidth() < 480) {
+        const next = Math.min(560, Math.floor(window.innerWidth / 2))
+        setRightDockWidth(next)
+        try { localStorage.setItem("mafw-right-dock-width", String(next)) } catch {}
+      }
+    }
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch {}
     if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
   }
   const applyRightDockWidth = (w: number) => {
-    setRightDockWidth(w)
-    try { localStorage.setItem("mafw-right-dock-width", String(w)) } catch {}
+    // workbench tab 放宽上限到窗口 50%（编辑器/diff 需要横向空间），其余 tab 保持窄栏
+    const max = rightDockTab() === "files" || rightDockTab() === "editor"
+      ? Math.max(480, Math.floor(window.innerWidth * 0.5))
+      : 640
+    const clamped = Math.max(280, Math.min(Math.round(w), max))
+    setRightDockWidth(clamped)
+    try { localStorage.setItem("mafw-right-dock-width", String(clamped)) } catch {}
   }
 
   // SSE live trajectory signals
@@ -1955,6 +1968,7 @@ export function MafwShell() {
               backgroundBadge={countRunning(backgroundRows())}
               onClose={() => applyRightDock(false)}
               onTab={(t) => applyRightDock(true, t)}
+              onResize={applyRightDockWidth}
             >
               <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
                     <TaskList

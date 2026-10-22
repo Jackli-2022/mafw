@@ -15,8 +15,9 @@ import { consumeEditorOpen, pendingEditorOpen } from "../editor-open"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
+import { diffEntryFor } from "../editor-diff"
 import { LineCommentEditorV2 } from "@mafw/ui/v2/line-comment-v2"
-import type { FileDiffEntry } from "./DiffReviewPanel"
+import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
 export function EditorDock(props: {
   sessionID: string | null
@@ -32,6 +33,8 @@ export function EditorDock(props: {
   const [sel, setSel] = createSignal<{ from: number; to: number; text: string; left: number; top: number } | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
   const [annotDraft, setAnnotDraft] = createSignal("")
+  /** 编辑 / 改动（diff 原地验收；pi 下无 diff 数据 → 按钮隐藏） */
+  const [mode, setMode] = createSignal<"edit" | "diff">("edit")
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
@@ -72,6 +75,7 @@ export function EditorDock(props: {
     if (!root) return
     if (model().files.some(f => f.rel === rel)) {
       setModel(m => setActive(m, rel))
+      setMode("edit")
       void mountActive()
       return
     }
@@ -80,10 +84,12 @@ export function EditorDock(props: {
       if (res.ok) {
         mtimes.set(rel, res.mtimeMs)
         setModel(m => openFile(m, rel, res.content))
+        setMode("edit")
         void mountActive()
       } else if (res.reason === "too-large" || res.reason === "binary") {
         setReadNotes(prev => ({ ...prev, [rel]: res.reason === "binary" ? "二进制文件（只读）" : "文件超过 1MB（只读）" }))
         setModel(m => openFile(m, rel, "", true))
+        setMode("edit")
         void mountActive()
       } else {
         showToastV2({
@@ -247,6 +253,7 @@ export function EditorDock(props: {
   function closeRel(rel: string) {
     drafts.delete(rel)
     setModel(m => closeFile(m, rel))
+    setMode("edit")
     void mountActive()
   }
 
@@ -272,8 +279,8 @@ export function EditorDock(props: {
                 role="button"
                 tabIndex={0}
                 title={f.rel}
-                onClick={() => { setModel(m => setActive(m, f.rel)); void mountActive() }}
-                onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); void mountActive() } }}
+                onClick={() => { setModel(m => setActive(m, f.rel)); setMode("edit"); void mountActive() }}
+                onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { setModel(m => setActive(m, f.rel)); setMode("edit"); void mountActive() } }}
               >
                 <span class="mafw-editor-tab-name">{f.rel.split("/").pop()}</span>
                 <Show when={f.dirty}><span class="mafw-editor-tab-dot" title="未保存">●</span></Show>
@@ -302,6 +309,13 @@ export function EditorDock(props: {
               disabled={!activeFile()}
               onClick={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
             >外部编辑器</ButtonV2>
+            <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
+              <ButtonV2
+                variant={mode() === "diff" ? "contrast" : "ghost"}
+                size="small"
+                onClick={() => setMode(mode() === "diff" ? "edit" : "diff")}
+              >改动</ButtonV2>
+            </Show>
           </div>
         </div>
 
@@ -343,7 +357,21 @@ export function EditorDock(props: {
           </div>
         </Show>
 
-        <div class="mafw-editor-host" ref={(el) => { host = el }} />
+        <div class="mafw-editor-body">
+          <div class="mafw-editor-host" ref={(el) => { host = el }} style={{ display: mode() === "diff" ? "none" : "block" }} />
+          <Show when={mode() === "diff" && activeFile() && props.sessionID}>
+            <div class="mafw-editor-diff">
+              <DiffReviewPanel
+                embedded
+                sessionID={props.sessionID!}
+                diffs={props.diffs}
+                initialFile={activeFile()!.rel}
+                onBack={() => setMode("edit")}
+                onSendComment={props.onSendComment}
+              />
+            </div>
+          </Show>
+        </div>
       </Show>
     </div>
   )
