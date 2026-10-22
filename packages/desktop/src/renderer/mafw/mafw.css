@@ -2702,6 +2702,66 @@ html[data-theme="light"] body {
   flex-wrap: wrap;
   overflow: visible;
 }
+/* ── IconRail（左栏图标轨，spec 2026-10-22-workbench-layout D3）────────── */
+.mafw-icon-rail {
+  width: 46px;
+  flex: 0 0 46px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  background: var(--bg-inset);
+  border-right: 1px solid var(--border-subtle);
+}
+.mafw-icon-rail-spacer { flex: 1; }
+.mafw-icon-rail-icon {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  color: var(--text-3);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.mafw-icon-rail-icon:hover { background: var(--bg-hover); color: var(--text-1); }
+.mafw-icon-rail-icon.active {
+  color: var(--text-1);
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.mafw-icon-rail-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.mafw-icon-rail-conn-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+.mafw-icon-rail-conn-dot.ready { background: var(--accent); box-shadow: var(--glow-accent); animation: mafw-breathe 2s ease-in-out infinite; }
+.mafw-icon-rail-conn-dot.reconnecting { background: var(--text-3); animation: mafw-breathe 1s ease-in-out infinite; }
+.mafw-icon-rail-conn-dot.failed { background: var(--danger); }
+.mafw-icon-rail-conn-dot.starting { background: var(--text-4); animation: mafw-breathe 1s ease-in-out infinite; }
 .mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
   height: 28px;
   border-radius: 6px;
