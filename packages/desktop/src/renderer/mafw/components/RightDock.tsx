@@ -9,6 +9,8 @@ export function RightDock(props: {
   open: boolean
   tab: DockTab
   width: number
+  /** 填充模式：正常三列布局下吃 grid 剩余宽度（overlay 仍按 width）。 */
+  fill?: boolean
   onClose: () => void
   onTab: (tab: DockTab) => void
   /** 全局 running 子代理数（徽标；0/缺省不显示）。 */
@@ -19,7 +21,7 @@ export function RightDock(props: {
 }) {
   return (
     <Show when={props.open}>
-      <div class="mafw-right-dock" style={{ width: `${props.width}px` }}>
+      <div class="mafw-right-dock" style={{ width: props.fill ? "100%" : `${props.width}px` }}>
         <div class="mafw-right-dock-head">
           <TabsV2 value={props.tab} onChange={props.onTab} variant="pill">
             <TabsV2.List class="mafw-right-dock-tab-list">

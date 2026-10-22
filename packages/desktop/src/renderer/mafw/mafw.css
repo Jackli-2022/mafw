@@ -537,7 +537,8 @@ html[data-theme="light"] body {
 .mafw-shell :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
 /* ── Main ── */
-.mafw-main { display: grid; grid-template-rows: 1fr; overflow: hidden; min-width: 0; }
+.mafw-main { display: grid; grid-template-rows: 1fr; overflow: hidden; min-width: 0; position: relative; }
+.mafw-chat-resize { position: absolute; top: 0; bottom: 0; right: 0; z-index: 5; }
 
 .mafw-tab-count {
   min-width: 16px;

@@ -52,7 +52,8 @@ import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
-import { clampDockWidth, dockMaxWidth, suggestDockWidth } from "./dock-width"
+import { clampDockWidth, suggestDockWidth } from "./dock-width"
+import { CHAT_WIDTH, clampChatWidth, defaultDockOpen, defaultDockTab } from "./workbench-defaults"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -1413,10 +1414,25 @@ export function MafwShell() {
   }
 
   // ── Unified right dock (tasks / trajectory / usage / notes / changes) ──
-  const [rightDockOpen, setRightDockOpen] = createSignal(localStorage.getItem("mafw-right-dock-open") === "1")
+  const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
   const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
-    normalizeDockTab(localStorage.getItem("mafw-right-dock-tab"), "tasks")
+    normalizeDockTab(defaultDockTab(localStorage.getItem("mafw-right-dock-tab")), "files")
   )
+  // chat 定宽列（280-480 可拖）；工作台吃剩余（spec D1）。
+  const [chatWidth, setChatWidth] = createSignal(clampChatWidth(Number(localStorage.getItem("mafw-chat-width")) || CHAT_WIDTH.default))
+  const applyChatWidth = (w: number) => {
+    const clamped = clampChatWidth(w)
+    setChatWidth(clamped)
+    try { localStorage.setItem("mafw-chat-width", String(clamped)) } catch { /* ignore */ }
+  }
+  const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
+  const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
+  const chatSplit = () => chatActive() && rightDockOpen() && !viewportNarrow()
+  const bodyColumns = () => {
+    const left = leftDockMode() === "push" ? `${leftDockWidth()}px` : "0px"
+    if (chatSplit()) return `${left} ${chatWidth()}px minmax(0, 1fr)`
+    return `${left} minmax(0, 1fr) 0px`
+  }
   // 宽度全局统一：所有 tab 共用一个记忆宽度（旧版按 tab 记忆，点 tab 会跳宽）。
   const [rightDockWidth, setRightDockWidth] = createSignal<number>((() => {
     const tab = rightDockTab()
@@ -1761,7 +1777,7 @@ export function MafwShell() {
         <WindowControls />
       </div>
       {/* 右列下行：left dock(push 列) | main | dock */}
-      <div class="mafw-body" style={{ "grid-template-columns": `${leftDockMode() === "push" ? `${leftDockWidth()}px` : "0px"} minmax(0, 1fr) ${rightDockOpen() && !viewportNarrow() ? `${rightDockWidth()}px` : "0px"}` }}>
+      <div class="mafw-body" style={{ "grid-template-columns": bodyColumns() }}>
         <Show when={leftDockMode() !== "closed"}>
           <Show when={leftDockMode() === "overlay"}>
             <div class="mafw-left-dock-backdrop" onClick={closeLeftDock} />
@@ -1930,6 +1946,18 @@ export function MafwShell() {
               <AutomationsPage />
             ) : null}
           </div>
+          <Show when={chatSplit()}>
+            <ResizeHandle
+              direction="horizontal"
+              edge="end"
+              class="mafw-chat-resize"
+              size={chatWidth()}
+              min={CHAT_WIDTH.min}
+              max={CHAT_WIDTH.max}
+              onResize={applyChatWidth}
+              onCollapse={() => applyRightDock(false)}
+            />
+          </Show>
         </div>
         {/* Unified right dock (tasks / trajectory tabs): real sidebar on wide
             viewports (third grid column), overlay on narrow (<1200px) */}
@@ -1939,10 +1967,11 @@ export function MafwShell() {
             {connDown() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
-            <RightDock
+              <RightDock
               open={dockPresent()}
               tab={rightDockTab()}
               width={rightDockWidth()}
+              fill={chatSplit()}
               subagentBadge={subagentRows().filter(r => r.status === "running").length}
               backgroundBadge={countRunning(backgroundRows())}
               onClose={() => applyRightDock(false)}
@@ -2033,18 +2062,6 @@ export function MafwShell() {
               </div>
             </RightDock>
             )}
-            <Show when={!viewportNarrow()}>
-              <ResizeHandle
-                direction="horizontal"
-                edge="start"
-                size={rightDockWidth()}
-                min={240}
-                max={dockMaxWidth(rightDockTab(), window.innerWidth)}
-                collapseThreshold={140}
-                onResize={applyRightDockWidth}
-                onCollapse={() => applyRightDock(false)}
-              />
-            </Show>
           </Show>
         </div>
       </div>
