@@ -3,7 +3,7 @@ import { Icon } from "@mafw/ui/icon"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import type { LeftDockFace } from "../left-dock"
-import { railAriaLabel } from "../left-dock"
+import { connDotState, railAriaLabel } from "../left-dock"
 
 type IconName = ComponentProps<typeof Icon>["name"]
 
@@ -34,11 +34,7 @@ type RailItem = {
 
 // 左栏图标轨：顶部=高频导航，中部=搜索，底部=meta（spec D3）。
 export function IconRail(props: IconRailProps) {
-  const connClass = () =>
-    props.connPhase === "connected" ? "ready"
-    : props.connPhase === "reconnecting" ? "reconnecting"
-    : props.connPhase === "down" ? "failed"
-    : "starting"
+  const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
   const topItems = (): RailItem[] => [
     { key: "sessions", icon: "bubble-5", label: "会话 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },

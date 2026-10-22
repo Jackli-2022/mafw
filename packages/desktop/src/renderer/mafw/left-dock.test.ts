@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { railAriaLabel, resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
+import { connDotState, railAriaLabel, resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -59,6 +59,19 @@ describe("left-dock 状态模型", () => {
     })
     test("有徽标 → 附带待处理数", () => {
       expect(railAriaLabel("Dashboard", 3)).toBe("Dashboard（3 项待处理）")
+    })
+  })
+
+  describe("connDotState（连接点：stopped 用中性色，不冒充故障）", () => {
+    test("常规 phase 映射", () => {
+      expect(connDotState("connected", "ready")).toBe("ready")
+      expect(connDotState("reconnecting", "ready")).toBe("reconnecting")
+      expect(connDotState("down", "failed")).toBe("failed")
+      expect(connDotState("initial", "starting")).toBe("starting")
+      expect(connDotState("initial", null)).toBe("starting")
+    })
+    test("gateway 明确 stopped → stopped", () => {
+      expect(connDotState("down", "stopped")).toBe("stopped")
     })
   })
 })

@@ -28,5 +28,6 @@ describe("icon rail CSS 契约", () => {
     expect(css).toContain(".mafw-icon-rail-conn-dot.ready")
     expect(css).toContain(".mafw-icon-rail-conn-dot.reconnecting")
     expect(css).toContain(".mafw-icon-rail-conn-dot.failed")
+    expect(css).toContain(".mafw-icon-rail-conn-dot.stopped")
   })
 })

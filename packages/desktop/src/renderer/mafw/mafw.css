@@ -2749,6 +2749,7 @@ html[data-theme="light"] body {
 .mafw-icon-rail-conn-dot.reconnecting { background: var(--text-3); animation: mafw-breathe 1s ease-in-out infinite; }
 .mafw-icon-rail-conn-dot.failed { background: var(--danger); }
 .mafw-icon-rail-conn-dot.starting { background: var(--text-4); animation: mafw-breathe 1s ease-in-out infinite; }
+.mafw-icon-rail-conn-dot.stopped { background: var(--text-5); opacity: .7; }
 /* ── LeftDock（左 dock；spec D2 双模态）────────────────────────────── */
 .mafw-body { position: relative; }
 .mafw-left-dock {

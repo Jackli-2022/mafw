@@ -54,3 +54,12 @@ export function resolveLeftDockWidth(
 export function railAriaLabel(label: string, badge?: number): string {
   return badge !== undefined && badge > 0 ? `${label}（${badge} 项待处理）` : label
 }
+
+// 连接点状态：网关被用户明确停止（stopped）是中性态，不能红点冒充故障。
+export function connDotState(phase: string, gatewayState?: string | null): string {
+  if (gatewayState === "stopped") return "stopped"
+  return phase === "connected" ? "ready"
+    : phase === "reconnecting" ? "reconnecting"
+    : phase === "down" ? "failed"
+    : "starting"
+}
