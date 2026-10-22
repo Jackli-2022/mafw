@@ -536,7 +536,7 @@ html[data-theme="light"] body {
 }
 
 /* ── Content ── */
-.mafw-content { grid-row: 2; overflow: auto; padding: 16px; }
+.mafw-content { grid-row: 1 / -1; overflow: auto; padding: 16px; }
 .mafw-content:only-child { grid-row: 1 / -1; }
 .mafw-chat-content { overflow: hidden; padding: 0; }
 /* 非 chat 页：tab 切换时组件重挂载触发首帧淡入 */
