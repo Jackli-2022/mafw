@@ -53,7 +53,7 @@ import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
 import { clampDockWidth, suggestDockWidth } from "./dock-width"
-import { CHAT_WIDTH, clampChatWidth, defaultDockOpen, defaultDockTab } from "./workbench-defaults"
+import { CHAT_WIDTH, clampChatWidth, defaultChatWidth, defaultDockOpen, defaultDockTab } from "./workbench-defaults"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -1421,8 +1421,11 @@ export function MafwShell() {
   const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
     normalizeDockTab(defaultDockTab(localStorage.getItem("mafw-right-dock-tab")), "files")
   )
-  // chat 定宽列（280-480 可拖）；工作台吃剩余（spec D1）。
-  const [chatWidth, setChatWidth] = createSignal(clampChatWidth(Number(localStorage.getItem("mafw-chat-width")) || CHAT_WIDTH.default))
+  // chat 定宽列（黄金分割默认 38.2% 可用宽，clamp 360-520；可拖 320-560）
+  const storedChatWidth = Number(localStorage.getItem("mafw-chat-width"))
+  const [chatWidth, setChatWidth] = createSignal(
+    clampChatWidth(storedChatWidth > 0 ? storedChatWidth : defaultChatWidth(window.innerWidth - 46)),
+  )
   const applyChatWidth = (w: number) => {
     const clamped = clampChatWidth(w)
     setChatWidth(clamped)

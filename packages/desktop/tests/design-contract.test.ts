@@ -288,7 +288,7 @@ describe("Composer v4", () => {
     expect(b).toContain("box-shadow: 0 0 0 4px var(--accent-soft)")
   })
   test("composer 圆角 r-xl", () => expect(cssBlock(".mafw-composer {")).toContain("border-radius: var(--r-xl)"))
-  test("chat 面板圆角 r-xl", () => expect(cssBlock(".mafw-chat {")).toContain("border-radius: var(--r-xl)"))
+  test("chat 面板 flush（C 案：无圆角/无阴影）", () => { const b = cssBlock(".mafw-chat {"); expect(b).toContain("border-radius: 0"); expect(b).toContain("box-shadow: none") })
   test("发送钮 hover 上移 + accent-strong", () => {
     const b = cssBlock('.mafw-composer [data-component="button-v2"].mafw-send:hover:not(.mafw-send-disabled)')
     expect(b).toContain("background: var(--accent-strong)")
@@ -300,7 +300,7 @@ describe("Composer v4", () => {
 describe("Sticky header + phase bar v4", () => {
   test("sticky header 实底 + hairline", () => {
     const b = cssBlock(".mafw-session-titlebar {")
-    expect(b).toContain("background: var(--bg-raised)")
+    expect(b).toContain("background: var(--bg-base)")
     expect(b).toContain("border-bottom: 1px solid var(--border-subtle)")
   })
   test("phase bar 28px", () => expect(cssBlock(".mafw-phase-bar {")).toContain("height: 28px"))
@@ -892,11 +892,11 @@ describe("layout-toggles — 旧 Rail 拆除", () => {
   })
 })
 
-describe("chat card fills the content area (v7 bottom-gap fix)", () => {
-  test(".mafw-chat has symmetric vertical margins (no vestigial 16px bottom)", () => {
+describe("chat 面板填满内容区（C 案 flush）", () => {
+  test(".mafw-chat 贴边填满（无 legacy 边距）", () => {
     const b = cssBlock(".mafw-chat {")
-    expect(b).toContain("height: calc(100% - 8px)")
-    expect(b).toContain("margin: 4px 8px 4px")
+    expect(b).toContain("height: 100%")
+    expect(b).toContain("margin: 0")
     expect(b).not.toContain("margin: 4px 8px 16px")
   })
 })

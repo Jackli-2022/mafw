@@ -547,12 +547,12 @@ html[data-theme="light"] body {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: calc(100% - 8px);
-  margin: 4px 8px 4px;
-  border-radius: var(--r-xl);
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
   overflow: hidden;
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-float);
+  background: var(--bg-base);
+  box-shadow: none;
 }
 
 .mafw-titlebar-dot {
@@ -827,7 +827,7 @@ html[data-theme="light"] body {
   z-index: 30;
   margin: 0 -32px;
   padding: 8px 32px 10px;
-  background: var(--bg-raised);
+  background: var(--bg-base);
   border-bottom: 1px solid var(--border-subtle);
 }
 .mafw-session-titlebar-inner {
@@ -2662,7 +2662,7 @@ html[data-theme="light"] body {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 10px;
+  padding: 7px 10px;
   flex: none;
 }
 .mafw-right-dock-tab-list {
@@ -3109,6 +3109,7 @@ html[data-theme="light"] body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto auto;
+  background: var(--bg-base);
 }
 
 

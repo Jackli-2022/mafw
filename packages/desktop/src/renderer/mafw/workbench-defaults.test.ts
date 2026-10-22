@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { CHAT_WIDTH, clampChatWidth, defaultDockOpen, defaultDockTab } from "./workbench-defaults"
+import { CHAT_WIDTH, clampChatWidth, defaultChatWidth, defaultDockOpen, defaultDockTab } from "./workbench-defaults"
 
 // spec 2026-10-22-workbench-layout：工作台默认打开（尊重显式关闭）、默认文件 tab、chat 定宽。
 describe("workbench 默认值", () => {
@@ -12,10 +12,17 @@ describe("workbench 默认值", () => {
     expect(defaultDockTab(null)).toBe("files")
     expect(defaultDockTab("usage")).toBe("usage")
   })
-  test("chat 宽度 clamp 280-480，默认 340", () => {
-    expect(CHAT_WIDTH.default).toBe(340)
-    expect(clampChatWidth(200)).toBe(280)
-    expect(clampChatWidth(340)).toBe(340)
-    expect(clampChatWidth(999)).toBe(480)
+  test("chat 宽度 clamp 320-560", () => {
+    expect(CHAT_WIDTH.min).toBe(320)
+    expect(CHAT_WIDTH.max).toBe(560)
+    expect(clampChatWidth(200)).toBe(320)
+    expect(clampChatWidth(420)).toBe(420)
+    expect(clampChatWidth(999)).toBe(560)
+  })
+  test("chat 默认宽度 = 38.2% 可用宽，clamp 360-520（黄金分割）", () => {
+    expect(defaultChatWidth(1092)).toBe(417)
+    expect(defaultChatWidth(1234)).toBe(471)
+    expect(defaultChatWidth(700)).toBe(360)
+    expect(defaultChatWidth(2000)).toBe(520)
   })
 })

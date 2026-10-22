@@ -8,6 +8,16 @@ const css = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "maf
 const shell = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "MafwShell.tsx"), "utf8")
 
 describe("workbench 三列布局契约", () => {
+  test("chat 面板 flush：无外边距/圆角/阴影（C 案：面板贴边，内容居中）", () => {
+    const block = css.match(/\.mafw-chat \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(block).toContain("margin: 0")
+    expect(block).toContain("border-radius: 0")
+    expect(block).toContain("box-shadow: none")
+  })
+  test("chat 面板与工作台同底色（视觉同一层级）", () => {
+    const block = css.match(/\.mafw-pane\[data-layout="chat"\] \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(block).toContain("background: var(--bg-base)")
+  })
   test("chat 列可拖：main 为定位容器，分隔条绝对贴右缘", () => {
     const main = css.match(/\.mafw-main \{[\s\S]*?\}/)?.[0] ?? ""
     expect(main).toContain("position: relative")
