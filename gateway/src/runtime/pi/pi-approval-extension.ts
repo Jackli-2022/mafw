@@ -23,6 +23,12 @@ export function createMafwApprovalExtension(
   policy: ApprovalPolicy = DEFAULT_POLICY,
   gatewaySessionId: string,
   evaluatePermission?: PermissionEvaluator,
+  /** 认知面 gate（spec 2026-10-22-cognition-gate-rewrite）：autoDeny 后、政策链前；
+   *  deny 更严终局 / rewrite 逐键改 input 后复评 / ask 直落 human / allow 非终局。 */
+  evaluateGate?: (sessionID: string, payload: { tool: string; input: Record<string, unknown> }) =>
+    { decision: 'allow' } | { decision: 'deny'; reason?: string; rule?: string }
+    | { decision: 'rewrite'; input: Record<string, unknown>; rule?: string }
+    | { decision: 'ask'; reason?: string; rule?: string } | null,
 ) {
   return {
     name: 'mafw-approval',
@@ -40,8 +46,29 @@ export function createMafwApprovalExtension(
           return { block: true, reason: 'auto-denied by policy' };
         }
 
+        // 2.5 认知面 gate（spec §5.3）：全 try/catch 自包——pi 的 tool_call handler
+        // 异常 = fail-CLOSED（agent-loop catch 后 block），我方哲学 fail-open（C1）。
+        // rewrite = Object.assign 逐键改（C2：整体重赋值被 pi 静默丢弃）→ 不 return，
+        // 改写产物交下方政策链复评（C3）。ask → 落 human（跳过政策直评）。
+        let gateAsk = false;
+        if (evaluateGate) {
+          try {
+            const d = evaluateGate(gatewaySessionId, { tool: toolName, input: event.input ?? {} });
+            if (d && d.decision === 'deny') {
+              return { block: true, reason: (d as any).reason ?? 'denied by cognition rule' };
+            }
+            if (d && d.decision === 'rewrite') {
+              Object.assign(event.input, (d as any).input);
+              // 继续走 3——改写后的 input 复评（规范化不能绕过政策）
+            } else if (d && d.decision === 'ask') {
+              gateAsk = true;
+            }
+          } catch { /* gate 异常 → 放行继续链（fail-open） */ }
+        }
+
         // 3. gateway 三档政策（同步直评——auto 路径不 emit，避免卡片闪烁）
-        if (evaluatePermission) {
+        //    （gate ask 跳过政策直评，直落 human）
+        if (!gateAsk && evaluatePermission) {
           try {
             const decision = evaluatePermission(gatewaySessionId, {
               toolName,

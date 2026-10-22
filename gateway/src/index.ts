@@ -129,6 +129,25 @@ import { mergeBudgetIntoSnapshot } from './core/goal-budget';
  * （auto 路径不 emit permission.asked，避免桌面卡片闪烁），human 落回
  * ask→applyApprovalPolicy 政策环。非 pi runtime（无 registry）静默跳过。
  */
+/** 认知面注入（spec 2026-10-22-cognition-gate-rewrite）：gate（审批扩展）+ 宿主钩（input 门/redact）。 */
+function wirePiCognition(runtime: AgentRuntime, gate: ReturnType<typeof createCognitionGate>): void {
+  const registry = (runtime as any).registry;
+  if (typeof registry?.setCognitionGate === 'function') {
+    registry.setCognitionGate((sessionID: string, payload: { tool: string; input: Record<string, unknown> }) => {
+      return gate.gateToolCall(sessionID, payload);
+    });
+  }
+  if (typeof registry?.opts?.constructor === 'function' || true) {
+    // 宿主钩经 opts.cognitionHost（pi-session 构造期读取）——registry 暴露 opts 或 setter
+    if (typeof registry?.setCognitionHost === 'function') {
+      registry.setCognitionHost({
+        gatePrompt: (sid: string, text: string) => gate.gatePrompt(sid, text),
+        applyToolResultRedact: (sid: string, tool: string, content: any[]) => gate.applyToolResultRedact(sid, tool, content),
+      });
+    }
+  }
+}
+
 function wirePiPermissionEvaluator(runtime: AgentRuntime, policy: ApprovalPolicyService): void {
   const registry = (runtime as any).registry;
   if (typeof registry?.setPermissionEvaluator === 'function') {
@@ -628,6 +647,7 @@ class MafwScheduler {
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;
     wirePiPermissionEvaluator(runtime, this.approvalPolicy);
+    wirePiCognition(runtime, this.cognitionGate);
     this.runtimeCaps = runtime.capabilities;
     this.runtimeName = runtime.name;
     this.sdkSession.setClient(this.runtime);
@@ -970,6 +990,7 @@ class MafwScheduler {
               const runtime = await this.createRuntime(sdkConfig);
               this.runtime = runtime;
               wirePiPermissionEvaluator(runtime, this.approvalPolicy);
+              wirePiCognition(runtime, this.cognitionGate);
               this.runtimeCaps = runtime.capabilities;
               this.runtimeName = runtime.name;
               // Re-materialize identities on the new runtime (fire-and-forget).
@@ -1932,6 +1953,7 @@ class MafwScheduler {
       onSwitched: async (rt: AgentRuntime, prev: AgentRuntime | null) => {
         this.runtime = rt;
         wirePiPermissionEvaluator(rt, this.approvalPolicy);
+        wirePiCognition(rt, this.cognitionGate);
         this.runtimeCaps = rt.capabilities;
         this.runtimeName = rt.name;
         // B2/B3：翻译守卫与拦截计数随 runtime 切换清空（per-runtime 快照语义）

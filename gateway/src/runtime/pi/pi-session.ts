@@ -29,6 +29,16 @@ export interface PiSessionRegistryOptions {
   getType?: () => Promise<any>;
   /** MAFW 基础工具 factory（runtime tools.registerTools 注入；host extension 按会话消费） */
   toolFactory?: (sessionId: string) => MafwToolRegistration[];
+  /** 认知面 gate（spec 2026-10-22；审批扩展 tool_call 步消费） */
+  evaluateGate?: (sessionID: string, payload: { tool: string; input: Record<string, unknown> }) =>
+    { decision: 'allow' } | { decision: 'deny'; reason?: string; rule?: string }
+    | { decision: 'rewrite'; input: Record<string, unknown>; rule?: string }
+    | { decision: 'ask'; reason?: string; rule?: string } | null;
+  /** 认知面宿主钩（input 门 prompt 决策 + tool_result redact；缺省两钩零行为） */
+  cognitionHost?: {
+    gatePrompt: (sessionID: string, text: string) => any;
+    applyToolResultRedact: (sessionID: string, tool: string, content: any[]) => any[];
+  };
 }
 
 export class PiSessionRegistry {
@@ -63,7 +73,7 @@ export class PiSessionRegistry {
     const sessionPolicy: ApprovalPolicy | undefined = this.policy
       ? { autoApprove: [...(this.policy.autoApprove ?? [])], autoDeny: [...(this.policy.autoDeny ?? [])] }
       : undefined;
-    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, sessionPolicy as any, id, this.opts.evaluatePermission);
+    const approvalExtension = createMafwApprovalExtension(bridge, this.emitEvent, sessionPolicy as any, id, this.opts.evaluatePermission, (this.opts as any).evaluateGate);
     // Compaction listener: pi fires session_before_compact / session_compact to
     // extensions; re-emit as normalized runtime events (compaction facet).
     const compactionExtension = this.makeCompactionExtension(id);
@@ -73,8 +83,12 @@ export class PiSessionRegistry {
     // 出 wire 前合并。
     const mediaExtension = this.makeMediaExtension(id);
     // 认知面宿主扩展（Phase 2）：observe / injectContext / injectSystem / tools
+    // gate/rewrite（2026-10-22）：gatePrompt + applyToolResultRedact 注入（内部豁免在服务层）
     const hostExtension = this.opts.hostBaseUrl
-      ? createMafwHostExtension({ sessionId: id, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType, toolFactory: this.opts.toolFactory })
+      ? createMafwHostExtension({
+          sessionId: id, baseUrl: this.opts.hostBaseUrl, getType: this.opts.getType, toolFactory: this.opts.toolFactory,
+          ...(this.opts.cognitionHost ? { cognition: this.opts.cognitionHost } : {}),
+        })
       : null;
     // Combine approval extension with agent-specific extensions
     // These will be passed to createAgentSession via extensionFactories
@@ -279,6 +293,16 @@ export class PiSessionRegistry {
   /** index.ts 注入 gateway 三档政策评估器（运行时采纳后调用）。 */
   setPermissionEvaluator(fn: NonNullable<PiSessionRegistryOptions['evaluatePermission']>): void {
     this.opts.evaluatePermission = fn;
+  }
+
+  /** index.ts 注入认知面 gate（spec 2026-10-22-cognition-gate-rewrite；审批扩展消费）。 */
+  setCognitionGate(fn: (sessionID: string, payload: { tool: string; input: Record<string, unknown> }) => any): void {
+    (this.opts as any).evaluateGate = fn;
+  }
+
+  /** index.ts 注入认知面宿主钩（input 门 prompt 决策 + tool_result redact）。 */
+  setCognitionHost(host: NonNullable<PiSessionRegistryOptions['cognitionHost']>): void {
+    this.opts.cognitionHost = host;
   }
 
   async abort(id: string): Promise<void> {

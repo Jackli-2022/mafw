@@ -26,6 +26,13 @@ export interface MafwHostDeps {
   getType?: () => Promise<any>;
   /** MAFW 基础工具 factory（runtime tools.registerTools 注入；gateway 单源） */
   toolFactory?: (sessionId: string) => MafwToolRegistration[];
+  /** 认知面 gate/rewrite（spec 2026-10-22-cognition-gate-rewrite）：
+   *  gatePrompt（input 门——内部豁免在服务层）/ applyToolResultRedact（输出脱敏）。
+   *  缺省 = 两钩零行为（向后兼容）。gateToolCall 走审批扩展 registry 通道，不经此。 */
+  cognition?: {
+    gatePrompt: (sessionID: string, text: string) => { decision: 'allow' } | { decision: 'deny'; reason?: string; rule?: string } | { decision: 'transform'; text: string; rule?: string };
+    applyToolResultRedact: (sessionID: string, tool: string, content: any[]) => any[];
+  };
 }
 
 /** 注入到 pi user 消息的 content（string→array 转换是 pi 形状特有）。 */
@@ -47,6 +54,20 @@ export function createMafwHostExtension(deps: MafwHostDeps) {
   return {
     name: 'mafw-host' as const,
     on: (pi: any) => {
+      // === gate：用户 prompt 门（spec §5.3 v2 Q1——内部豁免在服务层）===
+      // deny → handled（pi 语义：吞掉，消息不进 transcript——cognition_gate 事件保 UI 可见）
+      // transform → 插值改写；allow/无 cognition → continue（input handler 异常 pi runner 天然吞）
+      pi.on('input', async (event: any) => {
+        if (!deps.cognition) return { action: 'continue' };
+        try {
+          const d = deps.cognition.gatePrompt(deps.sessionId, typeof event?.text === 'string' ? event.text : '');
+          if (d.decision === 'deny') return { action: 'handled' };
+          if (d.decision === 'transform') return { action: 'transform', text: d.text };
+          return { action: 'continue' };
+        } catch {
+          return { action: 'continue' };
+        }
+      });
       // === observe：user/assistant 文本 + thinking ===
       pi.on('message_end', async (event: any) => {
         const msg = event?.message;
@@ -63,6 +84,14 @@ export function createMafwHostExtension(deps: MafwHostDeps) {
       });
       // === observe：工具结果（含 isError） ===
       pi.on('tool_result', async (event: any) => {
+        // 认知面 rewrite：输出回模型前 redact（命中 on:tool_result 规则才变换；
+        // 非文本部件透传 C7）——原地替换 event.content，observe 收到脱敏后文本
+        if (deps.cognition && Array.isArray(event?.content)) {
+          try {
+            const red = deps.cognition.applyToolResultRedact(deps.sessionId, event.toolName, event.content);
+            if (red && red !== event.content) event.content = red;
+          } catch { /* fail-open 原样 */ }
+        }
         const raw = event?.content;
         const text = Array.isArray(raw)
           ? raw.map((c: any) => (typeof c?.text === 'string' ? c.text : '')).join('\n')
