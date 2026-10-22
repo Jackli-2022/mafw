@@ -30,6 +30,10 @@ describe("workbench 终审修复接线", () => {
     expect(shell).toMatch(/key\.toLowerCase\(\) !== "k"/)
     expect(shell).toContain('toggleLeftDock("search")')
   })
+  test("切回会话面清空搜索词（避免残留过滤把会话列表藏起来）", () => {
+    const dock = read("src/renderer/mafw/components/LeftDock.tsx")
+    expect(dock).toMatch(/props\.face !== "search"[\s\S]{0,160}setQuery\(""\)/)
+  })
   test("rail 的 + 新建会话揭示 chat（复用 openSessionTab）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toMatch(/createSession\(\)\.then\(\(sid\)/)

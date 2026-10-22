@@ -83,6 +83,12 @@ export function LeftDock(props: Props) {
 
   const searching = createMemo(() => props.face === "search" || query().trim().length > 0)
 
+  // 切回会话面时清空搜索词：否则残留 query 会让会话列表保持过滤，
+  // 而搜索框已随 face 卸载，用户无法清除（deferred minor）。
+  createEffect(() => {
+    if (props.face !== "search") { setQuery(""); setHi(-1) }
+  })
+
   const currentSessions = createMemo(() => (projectID() ? sessionStore.sessionsFor(projectID()) : []))
 
   const currentEntry = createMemo<{ id: string; name?: string; worktree?: string } | null>(() => {
