@@ -191,7 +191,8 @@ export const handleSearchHybrid: ToolHandler = async (args, { memory, mafwDir })
         ? '已无更多可扩展的相关记忆。'
         : '已达最大扩展轮数。';
 
-    return { content: [{ type: "text", text: JSON.stringify({ results: enriched, canExpand, state, round, count: enriched.length, fok, hint: `${hint}${fokNote ? ' ' + fokNote : ''}` }) }] };
+    const searchPayload = { results: enriched, canExpand, state, round, count: enriched.length, fok, hint: `${hint}${fokNote ? ' ' + fokNote : ''}` };
+    return { content: [{ type: "text", text: JSON.stringify(searchPayload) }], structuredContent: searchPayload };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ error: err.message }) }], isError: true };
   }

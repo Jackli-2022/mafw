@@ -49,6 +49,20 @@ export const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_search_hybrid",
+    // schema ��ʵ��2026-10-22 spec §5.6�������� handler �����������أ�������Э���ֶΣ�
+    outputSchema: {
+      type: "object",
+      properties: {
+        results: { type: "array", items: { type: "object" } },
+        canExpand: { type: "boolean" },
+        state: { type: ["string", "null"] },
+        round: { type: "number" },
+        count: { type: "number" },
+        fok: { type: "object" },
+        hint: { type: "string" },
+      },
+      required: ["results", "canExpand", "round", "count", "hint"],
+    },
     description: "Search memory units using BM25 (脳energy) with optional iterative expansion. If results are insufficient and canExpand=true, call again with the returned state to expand via shared cue anchors. Stop when memories suffice; max 2 expansion rounds (3 calls total).",
     inputSchema: {
       type: "object",
@@ -176,6 +190,18 @@ export const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_get_memory",
+    // schema ��ʵ��{success, memory} �ŷ� + ��ѡ latest/source��t1 ��֧��״��ͬ��success + t1��
+    outputSchema: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        memory: { type: "object" },
+        latest: { type: "object" },
+        source: { type: "object" },
+        t1: { type: "object" },
+      },
+      required: ["success"],
+    },
     description: "Fetch a memory's full content by id. Accepts the full id (mem_...) or the 6-char pointer tail shown in <recall> blocks (#mem-xxxxxx). Superseded memories include the supersede chain with the latest version attached. Use this to expand a recall pointer into the full note before relying on it.",
     inputSchema: {
       type: "object",
@@ -270,6 +296,27 @@ export const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "mafw_list_goals",
+    outputSchema: {
+      type: "object",
+      properties: {
+        success: { type: "boolean" },
+        goals: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              goalId: { type: "string" },
+              phase: { type: "string" },
+              round: {},
+              verdict: {},
+              updatedAt: {},
+            },
+            required: ["goalId"],
+          },
+        },
+      },
+      required: ["success", "goals"],
+    },
     description: "List all active goals with their phase and verdict",
     inputSchema: { type: "object", properties: {} },
   },

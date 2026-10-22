@@ -25,14 +25,15 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
       if (!rows.length) {
         return { content: [{ type: "text", text: JSON.stringify({ success: false, error: `no t1 rows for session tail ${tail} turn ${turnId}` }) }], isError: true };
       }
-      return { content: [{ type: "text", text: JSON.stringify({
+      const t1Payload = {
         success: true,
         t1: {
           sessionId: rows[0].session_id,
           turnId,
           rows: rows.map(r => ({ source: r.source, content: r.content })),
         },
-      }) }] };
+      };
+      return { content: [{ type: "text", text: JSON.stringify(t1Payload) }], structuredContent: t1Payload };
     }
 
     const id = String(args.id || '').trim().replace(/^#?(?:mem-)?/, '');
@@ -101,12 +102,13 @@ export const handleGetMemory: ToolHandler = async (args, { memory, mafwDir, sear
       } catch { /* fail-open */ }
     }
 
-    return { content: [{ type: "text", text: JSON.stringify({
-      success: true,
+    const memPayload = {
+      success: true as const,
       memory: unit,
       ...(latest ? { latest } : {}),
       ...(source ? { source } : {}),
-    }) }] };
+    };
+    return { content: [{ type: "text", text: JSON.stringify(memPayload) }], structuredContent: memPayload as Record<string, unknown> };
   } catch (err: any) {
     return { content: [{ type: "text", text: JSON.stringify({ success: false, error: err.message }) }], isError: true };
   }
