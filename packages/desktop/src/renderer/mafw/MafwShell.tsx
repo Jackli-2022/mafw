@@ -15,7 +15,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
-import { migrateLegacyRailWidth, resolveMode, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
+import { clampLeftDockWidth, resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
   import { traceEvent } from "./event-trace"
@@ -1483,14 +1483,22 @@ export function MafwShell() {
 
   // 左栏：IconRail（46px 常驻）+ LeftDock（会话/搜索两面，spec 2026-10-22-workbench-layout）。
   // 双模态：窗口化=浮层覆盖；最大化/全屏且非窄=推挤列。旧 Rail 键一次性迁宽度。
-  const legacyLeftDockWidth = migrateLegacyRailWidth(localStorage.getItem("mafw-rail-width"))
+  const initialLeftDockWidth = resolveLeftDockWidth(
+    localStorage.getItem("mafw-left-dock-width"),
+    localStorage.getItem("mafw-rail-width"),
+  )
+  const [leftDockWidth, setLeftDockWidth] = createSignal(initialLeftDockWidth.width)
+  if (initialLeftDockWidth.migrated) {
+    // 严格一次性：写入新键后删除旧键，之后启动不再读取。
+    try {
+      localStorage.setItem("mafw-left-dock-width", String(initialLeftDockWidth.width))
+      localStorage.removeItem("mafw-rail-width")
+    } catch { /* ignore */ }
+  }
   const [leftDock, setLeftDock] = createSignal<{ face: LeftDockFace; open: boolean }>({
     face: (localStorage.getItem("mafw-left-dock-face") as LeftDockFace | null) ?? "sessions",
     open: localStorage.getItem("mafw-left-dock-open") === "1",
   })
-  const [leftDockWidth, setLeftDockWidth] = createSignal(
-    Number(localStorage.getItem("mafw-left-dock-width")) || legacyLeftDockWidth || 264,
-  )
   const leftDockMode = () => resolveMode(leftDock().open, winMaximized())
   const toggleLeftDock = (face: LeftDockFace) => {
     const next = toggleFace(leftDock(), face)
@@ -1509,8 +1517,9 @@ export function MafwShell() {
     if (shouldCloseOnSelect(leftDockMode())) closeLeftDock()
   }
   const applyLeftDockWidth = (w: number) => {
-    setLeftDockWidth(w)
-    try { localStorage.setItem("mafw-left-dock-width", String(w)) } catch { /* ignore */ }
+    const clamped = clampLeftDockWidth(w)
+    setLeftDockWidth(clamped)
+    try { localStorage.setItem("mafw-left-dock-width", String(clamped)) } catch { /* ignore */ }
   }
   // 会话选中统一走 openSessionTab（含 syncPermissionMode 与浮层关闭）。
   const connPhaseLabel = () =>

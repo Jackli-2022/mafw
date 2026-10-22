@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { migrateLegacyRailWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
+import { resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -36,15 +36,19 @@ describe("left-dock 状态模型", () => {
     })
   })
 
-  describe("migrateLegacyRailWidth（旧宽度键一次性迁移）", () => {
-    test("旧宽度存在 → 采用", () => {
-      expect(migrateLegacyRailWidth("264")).toBe(264)
+  describe("resolveLeftDockWidth（新键优先；旧键一次性迁移；加载即 clamp）", () => {
+    test("新键有效 → 采用并 clamp 180-400", () => {
+      expect(resolveLeftDockWidth("320", null)).toEqual({ width: 320, migrated: false })
+      expect(resolveLeftDockWidth("999", null)).toEqual({ width: 400, migrated: false })
+      expect(resolveLeftDockWidth("120", null)).toEqual({ width: 180, migrated: false })
     })
-    test("旧宽度缺失 → null（由新键默认值决定）", () => {
-      expect(migrateLegacyRailWidth(null)).toBeNull()
+    test("新键缺失 → 旧键迁移并 clamp", () => {
+      expect(resolveLeftDockWidth(null, "264")).toEqual({ width: 264, migrated: true })
+      expect(resolveLeftDockWidth(null, "999")).toEqual({ width: 400, migrated: true })
     })
-    test("旧宽度非法 → null", () => {
-      expect(migrateLegacyRailWidth("abc")).toBeNull()
+    test("都缺失/非法 → 默认 264 且不迁移", () => {
+      expect(resolveLeftDockWidth(null, null)).toEqual({ width: 264, migrated: false })
+      expect(resolveLeftDockWidth("abc", "abc")).toEqual({ width: 264, migrated: false })
     })
   })
 })

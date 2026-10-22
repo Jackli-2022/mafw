@@ -26,10 +26,26 @@ export function shouldCloseOnSelect(mode: LeftDockMode): boolean {
   return mode === "overlay"
 }
 
-// 旧 Rail 宽度键一次性迁移；非法值返回 null（由新键默认值决定）。
-// 左 dock 默认关闭是新布局的既定默认（spec mockup），旧收起/展开状态不再沿用。
-export function migrateLegacyRailWidth(railWidth: string | null): number | null {
-  if (railWidth === null) return null
-  const width = Number(railWidth)
-  return Number.isFinite(width) ? width : null
+// 左 dock 宽度（加载即 clamp；ResizeHandle 也用同一上下限）。
+export const LEFT_DOCK_WIDTH = { min: 180, max: 400, default: 264 } as const
+
+export function clampLeftDockWidth(w: number): number {
+  return Math.min(LEFT_DOCK_WIDTH.max, Math.max(LEFT_DOCK_WIDTH.min, w))
+}
+
+// 旧 Rail 宽度键严格一次性迁移：新键有效则忽略旧键；否则采用旧键。
+// migrated=true 时调用方负责写入新键并删除旧键（旧键此后不再参与）。
+export function resolveLeftDockWidth(
+  current: string | null,
+  legacy: string | null,
+): { width: number; migrated: boolean } {
+  const cur = Number(current)
+  if (current !== null && Number.isFinite(cur) && cur > 0) {
+    return { width: clampLeftDockWidth(cur), migrated: false }
+  }
+  const old = Number(legacy)
+  if (legacy !== null && Number.isFinite(old) && old > 0) {
+    return { width: clampLeftDockWidth(old), migrated: true }
+  }
+  return { width: LEFT_DOCK_WIDTH.default, migrated: false }
 }
