@@ -104,6 +104,7 @@ import { BudgetGuard } from './core/budget-guard';
 import { resolvePromptBudget, type PromptBudgetExisting } from './core/prompt-budget';
 import { EventStore } from './events/event-store';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
+import { parseSince, attachGlobalSse } from './events/sse-attach';
 import { ApprovalPolicyService } from './core/approval/policy-service';
 import { AUTO_APPROVE_BUDGET } from './core/approval/policy-service';
 import { AllowlistStore } from './core/approval/allowlist-store';
@@ -403,7 +404,8 @@ class MafwScheduler {
   private eventStreamAbort: AbortController | null = null;
   /** 持久事件日志（spec 2026-10-22；null = 纯直播 fail-open）。 */
   private eventStore: EventStore | null = null;
-  private sseClients: Set<http.ServerResponse> = new Set();
+  /** Mode A SSE 连接：per-connection write 闭包（attachGlobalSse 返回——回放/直播统一入口）。 */
+  private sseClients = new Map<http.ServerResponse, (frame: string, seq: number | null) => void>();
   /** WebSocket clients (mobile app): same events as SSE, JSON frames. */
   private wsClients: Set<WebSocket> = new Set();
   private chatSessions: ChatSessionManager;
@@ -2800,8 +2802,8 @@ class MafwScheduler {
     const seq = this.eventStore?.append(event) ?? null;
     const enriched = enrichBroadcastFrame(event, seq, new Date().toISOString());
     const data = (seq !== null ? `id: ${seq}\n` : '') + `data: ${JSON.stringify(enriched)}\n\n`;
-    for (const client of this.sseClients) {
-      try { client.write(data); } catch { this.sseClients.delete(client); }
+    for (const [client, write] of this.sseClients) {
+      try { write(data, seq); } catch { this.sseClients.delete(client); }
     }
     // WebSocket clients receive the same events as JSON frames (seq additive).
     const frame = JSON.stringify(enriched);
@@ -6572,14 +6574,18 @@ class MafwScheduler {
             this.chatSessions.register(sessionID, res);
           } else {
             // Mode A: subscribe to global event stream (Dashboard)
-            res.writeHead(200, {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              'Connection': 'keep-alive',
-              'Access-Control-Allow-Origin': '*'
+            // 2026-10-22 持久回放（spec 2026-10-22-persistent-event-replay-design §5.3）：
+            // Last-Event-ID 头（原生 EventSource 重连自动携带）/ ?since 参数 → 重放后直播
+            // （newest-window + firstReplayedSeq 截断信号）。
+            const since = parseSince(parsedUrl.searchParams, req.headers['last-event-id'] as string | undefined);
+            const conn = attachGlobalSse({
+              res,
+              store: this.eventStore,
+              replayLimit: config.events.replayLimit,
+              writeFrame: (r, frame) => { if (frame) r.write(frame); },
+              since,
             });
-            res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString(), vocab: 'v2' })}\n\n`);
-            this.sseClients.add(res);
+            this.sseClients.set(res, conn.write);
             req.on('close', () => { this.sseClients.delete(res); });
           }
           return;
