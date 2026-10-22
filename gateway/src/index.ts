@@ -905,6 +905,8 @@ class MafwScheduler {
         await this.runtime.session.promptAsync({
           sessionID: sid,
           parts: [{ type: 'text', text: message }],
+          delivery: 'queue',
+          idempotencyKey: 'self-update-notify',
         });
         notified = true;
         log.info(`[SelfUpdate] notified session ${sid} of update completion`);
@@ -2352,7 +2354,8 @@ class MafwScheduler {
         getCostUsd: (sid) => this.trajectoryStore?.getSessionTokenSummary(sid).totalCost ?? 0,
         abort: (sid) => this.runtime!.session.abort({ sessionID: sid }),
         notify: async (sid, text) => {
-          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
+          // G6 迁移：预算硬停通知走队列交付 + 幂等键（同会话不双发）
+          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false, delivery: 'queue', idempotencyKey: `budget-stop-${sid}` });
         },
         log: (msg) => log.info(msg),
       }));
@@ -2381,7 +2384,8 @@ class MafwScheduler {
         getCostUsd: (sid) => this.trajectoryStore?.getSessionTokenSummary(sid).totalCost ?? 0,
         abort: (sid) => this.runtime!.session.abort({ sessionID: sid }),
         notify: async (sid, text) => {
-          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
+          // G6 迁移：预算硬停通知走队列交付 + 幂等键（同会话不双发）
+          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false, delivery: 'queue', idempotencyKey: `budget-stop-${sid}` });
         },
         log: (msg) => log.info(msg),
       }));
@@ -7886,8 +7890,9 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
           } catch { return null; }
         },
         // Hard no-reply: message lands in session history, no LLM run.
-        promptNoReply: async (sid, text) => {
-          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false });
+        promptNoReply: async (sid, text, key) => {
+          // G6 迁移（spec §2 v2 Q3）：notify 型调用走队列交付——busy 边界不丢，幂等键防 watchdog/事件重放双发
+          await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], expectReply: false, delivery: 'queue', ...(key ? { idempotencyKey: key } : {}) });
         },
       });
     }

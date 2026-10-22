@@ -17,7 +17,7 @@ export interface MilestonePushDeps {
   wasNotified: (key: string) => boolean;
   markNotified: (key: string) => void;
   readGoalState: (goalId: string, projectDir: string) => GoalStateInfo | null;
-  promptNoReply: (sessionId: string, text: string) => Promise<void>;
+  promptNoReply: (sessionId: string, text: string, idempotencyKey?: string) => Promise<void>;
 }
 
 // Langgraph replays node side effects on crash recovery, so the same
@@ -75,7 +75,8 @@ export class MilestonePushNotifier {
     }
     const text = `[MAFW GOAL 里程碑]\n${items.map((i) => i.line).join('\n')}\n(系统通知)`;
     try {
-      await this.deps.promptNoReply(session.sessionId, text);
+      // 幂等键 = 本批首个 milestone 的 dedupe key（同一里程碑重放不双发——G6）
+      await this.deps.promptNoReply(session.sessionId, text, items.length > 0 ? `milestone-${items[0].key}` : undefined);
       for (const item of items) this.deps.markNotified(item.key);
     } catch (err: any) {
       log.warn(`[MilestonePush] push failed (fail-open): ${err.message}`);
