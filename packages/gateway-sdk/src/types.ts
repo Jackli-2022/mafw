@@ -307,6 +307,8 @@ export interface SessionNamespace {
   messages(params: { path: { id: string }; query?: { limit?: number; before?: string } }): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }>
   todo(params: { path: { id: string } }): Promise<{ data: Todo[] }>
   children(params: { path: { id: string } }): Promise<any[]>
+  switchAgent(params: { path: { id: string }; body: { agent: string } }): Promise<void>
+  switchModel(params: { path: { id: string }; body: { model: { providerID: string; modelID: string }; variant?: string } }): Promise<void>
   abort(params: { path: { id: string } }): Promise<void>
   prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
   promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>

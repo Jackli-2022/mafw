@@ -34,6 +34,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/api/sessions/:id/messages', operationId: 'session.messages', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/todo', operationId: 'session.todo', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/children', operationId: 'session.children', tags: ['session'] },
+  { method: 'POST', path: '/api/sessions/:id/agent', operationId: 'session.switchAgent', tags: ['session'] },
+  { method: 'POST', path: '/api/sessions/:id/model', operationId: 'session.switchModel', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/trajectory', operationId: 'session.trajectory', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/token-summary', operationId: 'session.tokenSummary', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/fork', operationId: 'session.fork', tags: ['session'] },

@@ -91,6 +91,24 @@ test("session.rename sends PATCH /api/sessions/:id with title body", async () =>
   )
 })
 
+test("session.switchAgent/switchModel POST the thin 2.1 routes", async () => {
+  fetchMock.mockResolvedValue(okJson({ ok: true }))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.switchAgent({ path: { id: "s1" }, body: { agent: "plan" } })
+  await c.session.switchModel({ path: { id: "s1" }, body: { model: { providerID: "gateway", modelID: "deepseek-v4-flash" } } })
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://gw:3000/api/sessions/s1/agent",
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ agent: "plan" }) }),
+  )
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://gw:3000/api/sessions/s1/model",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ model: { providerID: "gateway", modelID: "deepseek-v4-flash" } }),
+    }),
+  )
+})
+
 test("session.messages sends GET with query params", async () => {
   fetchMock.mockResolvedValue(okJson({ data: [] }))
   const c = new MafwClient("http://gw:3000")

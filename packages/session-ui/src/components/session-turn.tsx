@@ -10,6 +10,7 @@ import { useFileComponent } from "@mafw/ui/context/file"
 
 import { Binary } from "../util/binary"
 import { getDirectory, getFilename } from "../util/path"
+import { isAbnormalStop, normalizeStopReason, stopReasonLabel } from "../util/stop-reason"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -328,6 +329,30 @@ export function SessionTurn(
     return unwrap(String(msg))
   })
 
+  // 2.1 的 stop reason：历史 message.finish 与 live step-finish.reason 都可能是来源。
+  const stopReason = createMemo(() => {
+    const messages = assistantMessages()
+    const last = messages[messages.length - 1]
+    if (!last) return ""
+    const direct = (last as any).stopReason ?? (last as any).finish
+    if (typeof direct === "string" && direct) return direct
+    const parts = list(data.store.part?.[last.id], emptyParts)
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const part = parts[i]
+      if (part?.type === "step-finish" && typeof (part as any).reason === "string") {
+        return (part as any).reason
+      }
+    }
+    return ""
+  })
+  const stopHint = createMemo(() => {
+    const reason = stopReason()
+    if (!isAbnormalStop(reason)) return ""
+    // interrupted divider 已经表达“已中止”，不再重复一行。
+    if (interrupted() && normalizeStopReason(reason) === "cancelled") return ""
+    return stopReasonLabel(reason)
+  })
+
   const status = createMemo(() => {
     if (props.status !== undefined) return props.status
     if (typeof props.active === "boolean" && !props.active) return idle
@@ -539,6 +564,9 @@ export function SessionTurn(
                 <Card variant="error" class="error-card">
                   {errorText()}
                 </Card>
+              </Show>
+              <Show when={stopHint()}>
+                <div data-slot="session-turn-stop-reason">{stopHint()}</div>
               </Show>
             </div>
           </Show>

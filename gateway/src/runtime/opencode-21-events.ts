@@ -23,6 +23,7 @@
  * 未识别类型原样透传（unknownEvents 计数，升级漂移可见）。
  */
 import { MAFW } from './mafw-vocabulary';
+import { stopReasonOf } from './contract';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 import type { RawRuntimeEvent } from './normalize';
 
@@ -52,11 +53,8 @@ const NOISE_TYPES = [
   'mcp.status.changed',
   'mcp.resources.changed',
   'session.instructions.updated',
-  'session.inbox.enqueued',
-  'session.inbox.delivered',
   'session.step.streamed',
   'session.step.failed',
-  'session.retry.scheduled',
   'session.revert.staged',
   'session.revert.cleared',
   'session.revert.committed',
@@ -76,9 +74,6 @@ export const OPENCODE_21_EVENT_MAPPINGS: EventMapping[] = [
   { from: 'session.deleted', to: MAFW.sessionDeleted, passProperties: '$.data' },
   // 回合终态 / step
   { from: 'session.execution.started', to: MAFW.turnStarted, passProperties: '$.data' },
-  { from: 'session.execution.succeeded', to: MAFW.turnCompleted, passProperties: '$.data' },
-  { from: 'session.execution.failed', to: MAFW.turnFailed, passProperties: '$.data',
-    fields: { error: { path: '$.data.error.message', default: 'turn failed' } } },
   { from: 'session.usage.updated', to: MAFW.usageUpdated, passProperties: '$.data' },
   // 压缩
   { from: 'session.compaction.started', to: MAFW.sessionCompacting, passProperties: '$.data' },
@@ -119,6 +114,9 @@ function partIdOf(data: any): string {
 const toolState = new Map<string, { name?: string; input?: any; started?: number }>();
 const TOOL_STATE_CAP = 500;
 
+/** per-session last step finish：execution.succeeded 事件本身未必带 finish。 */
+const lastFinish = new Map<string, string>();
+
 function rememberTool(id: string, patch: { name?: string; input?: any; started?: number }) {
   if (!id) return;
   const cur = toolState.get(id) ?? {};
@@ -157,6 +155,74 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
   if (!type) return raw;
 
   switch (type) {
+    case 'session.execution.succeeded': {
+      const finish = typeof data.finish === 'string' ? data.finish : lastFinish.get(data.sessionID);
+      if (data.sessionID) lastFinish.delete(data.sessionID);
+      return eventOf(raw, MAFW.turnCompleted, {
+        sessionID: data.sessionID,
+        stopReason: stopReasonOf(finish),
+        ...(finish ? { finish } : {}),
+      });
+    }
+
+    case 'session.execution.failed': {
+      if (data.sessionID) lastFinish.delete(data.sessionID);
+      return eventOf(raw, MAFW.turnFailed, {
+        sessionID: data.sessionID,
+        error: data.error?.message ?? 'turn failed',
+        errorCode: data.error?.type ?? 'unknown',
+        stopReason: 'error',
+      });
+    }
+
+    case 'session.execution.interrupted':
+      return eventOf(raw, MAFW.turnAborted, {
+        sessionID: data.sessionID,
+        stopReason: 'cancelled',
+      });
+
+    case 'session.diff':
+      return eventOf(raw, MAFW.sessionDiff, {
+        sessionID: data.sessionID,
+        diff: data.diff ?? data.files ?? [],
+      });
+
+    case 'session.compaction.failed':
+      return eventOf(raw, MAFW.sessionCompacted, {
+        sessionID: data.sessionID,
+        status: 'failed',
+        error: data.error?.message ?? data.error ?? 'compaction failed',
+        reason: data.reason,
+      });
+
+    case 'session.retry.scheduled':
+      return eventOf(raw, MAFW.messageUpdated, {
+        info: {
+          id: data.assistantMessageID ?? data.messageID,
+          sessionID: data.sessionID,
+          role: 'assistant',
+          retry: {
+            attempt: data.attempt,
+            at: data.at ?? raw.created,
+            error: data.error,
+          },
+        },
+      });
+
+    case 'session.inbox.enqueued':
+    case 'session.inbox.delivered':
+    case 'session.inbox.update':
+    case 'session.inbox.cancel':
+    case 'session.inbox.cancelled':
+    case 'session.inbox.delivery.changed':
+      return eventOf(raw, MAFW.queueUpdated, {
+        sessionID: data.sessionID,
+        action: type.slice('session.inbox.'.length),
+        ...(data.item ? { item: data.item } : {}),
+        ...(data.entry ? { item: data.entry } : {}),
+        ...(data.id ? { id: data.id } : {}),
+      });
+
     case 'session.renamed':
       return eventOf(raw, MAFW.sessionUpdated, { info: { id: data.sessionID, title: data.title } });
 
@@ -183,6 +249,7 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
       });
 
     case 'session.step.ended':
+      if (data.sessionID && data.finish) lastFinish.set(data.sessionID, data.finish);
       return eventOf(raw, MAFW.partUpdated, {
         part: {
           id: `${data.assistantMessageID ?? 'msg'}-p-step`,

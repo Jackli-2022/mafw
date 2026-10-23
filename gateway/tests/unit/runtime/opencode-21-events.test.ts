@@ -196,3 +196,72 @@ describe('@2.1 抑制与未知事件', () => {  test('遥测/无消费者事件 
     expect(apply(raw)[0]).toBe(raw);
   });
 });
+
+describe('@2.1 终态 stopReason 与补漏事件', () => {
+  test('succeeded 带 finish=length → stopReason=max_tokens', () => {
+    const out = apply(evt('session.execution.succeeded', { sessionID: 's-len', finish: 'length' }))[0].payload;
+    expect(out).toMatchObject({
+      type: 'turn.completed',
+      properties: { sessionID: 's-len', stopReason: 'max_tokens', finish: 'length' },
+    });
+  });
+
+  test('先 step.ended(finish=stop) 再 succeeded（无 finish）→ end_turn', () => {
+    apply(evt('session.step.ended', { sessionID: 's-stop', assistantMessageID: 'm1', finish: 'stop' }));
+    const out = apply(evt('session.execution.succeeded', { sessionID: 's-stop' }))[0].payload;
+    expect(out.properties.stopReason).toBe('end_turn');
+  });
+
+  test('succeeded 无 finish 且无 step → unknown', () => {
+    const out = apply(evt('session.execution.succeeded', { sessionID: 's-unknown' }))[0].payload;
+    expect(out.properties.stopReason).toBe('unknown');
+  });
+
+  test('failed 带 errorCode；interrupted → turn.aborted cancelled', () => {
+    const failed = apply(evt('session.execution.failed', {
+      sessionID: 's-fail', error: { type: 'provider.auth', message: 'forbidden' },
+    }))[0].payload;
+    expect(failed).toMatchObject({
+      type: 'turn.failed',
+      properties: { error: 'forbidden', errorCode: 'provider.auth', stopReason: 'error' },
+    });
+    const aborted = apply(evt('session.execution.interrupted', { sessionID: 's-int' }))[0].payload;
+    expect(aborted).toMatchObject({
+      type: 'turn.aborted',
+      properties: { sessionID: 's-int', stopReason: 'cancelled' },
+    });
+  });
+
+  test('session.diff → canonical（diff 与 files 两种形状）', () => {
+    const a = apply(evt('session.diff', { sessionID: 's1', diff: [{ file: 'a.ts' }] }))[0].payload;
+    expect(a).toMatchObject({ type: 'session.diff', properties: { sessionID: 's1', diff: [{ file: 'a.ts' }] } });
+    const b = apply(evt('session.diff', { sessionID: 's2', files: [{ file: 'b.ts' }] }))[0].payload;
+    expect(b.properties.diff).toEqual([{ file: 'b.ts' }]);
+  });
+
+  test('compaction.failed / retry.scheduled / inbox → canonical', () => {
+    const comp = apply(evt('session.compaction.failed', {
+      sessionID: 's1', error: { message: 'budget' }, reason: 'auto',
+    }))[0].payload;
+    expect(comp).toMatchObject({
+      type: 'session.compacted',
+      properties: { status: 'failed', error: 'budget', reason: 'auto' },
+    });
+
+    const retry = apply(evt('session.retry.scheduled', {
+      sessionID: 's1', assistantMessageID: 'm1', attempt: 2, at: 123, error: { message: 'rate limit' },
+    }))[0].payload;
+    expect(retry).toMatchObject({
+      type: 'message.updated',
+      properties: { info: { id: 'm1', sessionID: 's1', retry: { attempt: 2, at: 123 } } },
+    });
+
+    const queue = apply(evt('session.inbox.enqueued', {
+      sessionID: 's1', item: { id: 'q1', text: 'later' },
+    }))[0].payload;
+    expect(queue).toMatchObject({
+      type: 'queue.updated',
+      properties: { sessionID: 's1', action: 'enqueued', item: { id: 'q1' } },
+    });
+  });
+});

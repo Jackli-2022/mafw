@@ -83,6 +83,8 @@ export function createMafwApi(): MafwAPI {
       messages: (sessionID, limit?, before?) => invoke("session", "messages", { path: { id: sessionID }, query: { limit, before } }),
       todo: (sessionID) => invoke("session", "todo", { path: { id: sessionID } }),
       children: (sessionID) => invoke("session", "children", { path: { id: sessionID } }),
+      switchAgent: (id, agent) => invoke("session", "switchAgent", { path: { id }, body: { agent } }),
+      switchModel: (id, model) => invoke("session", "switchModel", { path: { id }, body: { model } }),
       abort: (sessionID) => invoke("session", "abort", { path: { id: sessionID } }),
       fork: (sessionID, messageID?) => invoke("session", "fork", { path: { id: sessionID }, body: { messageID } }),
       revert: (sessionID, messageID) => invoke("session", "revert", { path: { id: sessionID }, body: { messageID } }),

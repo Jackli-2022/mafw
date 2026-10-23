@@ -11,6 +11,7 @@
 // ─── 接口定义（单源在 runtime/contract.ts，此处仅转发保持兼容） ─────────────
 
 import { serveAuthHeaders } from './serve-sidecar';
+import { stopReasonOf } from './contract';
 import type {
   RuntimeClient,
   SessionCreateOpts,
@@ -323,6 +324,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
             (p && typeof p === 'object' && typeof p.id !== 'string' ? { ...p, id: `${info?.id ?? 'msg'}-p${i}` } : p),
           ) : [],
           finish: info?.finish,
+          stopReason: stopReasonOf(info?.finish),
           usage: t
             ? {
                 input: t.input ?? 0,
@@ -460,6 +462,18 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         } catch {
           return [] as any[];
         }
+      },
+
+      async switchAgent(opts: { sessionID: string; agent: string }) {
+        await directNative(`/session/${opts.sessionID}/agent`, 'POST', { agent: opts.agent });
+      },
+
+      async switchModel(opts: {
+        sessionID: string;
+        model: { providerID: string; modelID: string };
+        variant?: string;
+      }) {
+        await switchModel(opts.sessionID, opts.model, opts.variant);
       },
 
       async summarize(opts: SessionSummarizeOpts) {

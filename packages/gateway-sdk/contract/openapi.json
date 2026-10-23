@@ -345,6 +345,52 @@
         }
       }
     },
+    "/api/sessions/{id}/agent": {
+      "post": {
+        "operationId": "session.switchAgent",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/model": {
+      "post": {
+        "operationId": "session.switchModel",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/trajectory": {
       "get": {
         "operationId": "session.trajectory",

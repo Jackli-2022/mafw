@@ -148,10 +148,42 @@ export interface SessionPromptOpts {
  * 回合结果信封——session.prompt() 的返回超集。字段取不到 = undefined
  * （不是错误）；error 存在时 parts 原样返回（不抛异常，与现状一致）。
  */
+export type StopReason =
+  | 'end_turn'
+  | 'max_tokens'
+  | 'tool_use'
+  | 'refusal'
+  | 'cancelled'
+  | 'error'
+  | 'unknown';
+
+/** runtime finish（opencode AssistantMessage.finish）→ canonical StopReason。 */
+export function stopReasonOf(finish?: string | null): StopReason {
+  switch (finish) {
+    case 'stop': return 'end_turn';
+    case 'length': return 'max_tokens';
+    case 'tool-calls': return 'tool_use';
+    case 'content-filter': return 'refusal';
+    case 'error': return 'error';
+    case 'cancelled': return 'cancelled';
+    case 'interrupted': return 'cancelled';
+    case 'end_turn':
+    case 'max_tokens':
+    case 'tool_use':
+    case 'refusal':
+    case 'unknown':
+      return finish;
+    default:
+      return 'unknown';
+  }
+}
+
 export interface PromptResultEnvelope {
   parts: any[];
   /** runtime 原生 finish reason（opencode AssistantMessage.finish） */
   finish?: string;
+  /** canonical 终态分类（由 finish 映射；缺失 = unknown） */
+  stopReason?: StopReason;
   /** undefined = runtime 未回传；消费方据此跳过记账 */
   usage?: {
     input: number;
@@ -281,6 +313,13 @@ export interface RuntimeClient {
     listByDirectory?(directory: string, limit?: number): Promise<SessionInfo[]>;
     todo(opts: { sessionID: string }): Promise<any[]>;
     children(opts: { sessionID: string }): Promise<any[]>;
+    /** 2.1 sticky 即时切换（缺实现 = 能力门 503）。 */
+    switchAgent?(opts: { sessionID: string; agent: string }): Promise<void>;
+    switchModel?(opts: {
+      sessionID: string;
+      model: { providerID: string; modelID: string };
+      variant?: string;
+    }): Promise<void>;
     summarize(opts: SessionSummarizeOpts): Promise<any>;
     /** 回复权限请求。'once'=仅本次放行；'always'=放行并持久化规则（opencode 原生规则 /
      *  pi session 级动态 allowlist）；'reject'=拒绝。message 为给 agent 的可选说明。

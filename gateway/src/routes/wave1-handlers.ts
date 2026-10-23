@@ -22,6 +22,7 @@ import { handleSessionBranch } from './session-branch';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { cleanupWorktreeForSession } from './session-worktree';
 import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
+import { handleSessionSwitch } from './session-switch';
 import { handleSessionSummarize } from './session-summarize';
 import { handleEventPublish } from './event-publish';
 import { handleMediaSwitch } from './media-switch';
@@ -111,6 +112,16 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
   registry.attachHandler('session.rename', H(async (req, res) =>
     handleSessionMutations(req, res, {
       getCapabilities: () => gw.runtimeCaps,
+      getClient: () => (gw.runtime ?? null) as any,
+    })));
+
+  registry.attachHandler('session.switchAgent', H(async (req, res, params) =>
+    handleSessionSwitch(req, res, params.id, 'agent', {
+      getClient: () => (gw.runtime ?? null) as any,
+    })));
+
+  registry.attachHandler('session.switchModel', H(async (req, res, params) =>
+    handleSessionSwitch(req, res, params.id, 'model', {
       getClient: () => (gw.runtime ?? null) as any,
     })));
 

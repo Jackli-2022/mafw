@@ -370,3 +370,73 @@ describe('opencode adapter 2.1.0 children/parentID', () => {
     }
   });
 });
+
+describe('opencode adapter 2.1.0 sticky switch', () => {
+  it('switchAgent posts /session/:id/agent', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 204, json: async () => null };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      await client.session.switchAgent!({ sessionID: 's1', agent: 'plan' });
+      expect(calls[0].url).toBe('http://x/api/session/s1/agent');
+      expect(calls[0].method).toBe('POST');
+      expect(JSON.parse(calls[0].body)).toEqual({ agent: 'plan' });
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+
+  it('switchModel posts Model.Ref {id, providerID}', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 204, json: async () => null };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      await client.session.switchModel!({
+        sessionID: 's1',
+        model: { providerID: 'gateway', modelID: 'deepseek-v4-flash' },
+        variant: 'fast',
+      });
+      expect(calls[0].url).toBe('http://x/api/session/s1/model');
+      expect(JSON.parse(calls[0].body)).toEqual({
+        model: { id: 'deepseek-v4-flash', providerID: 'gateway', variant: 'fast' },
+      });
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+});
+
+describe('opencode adapter 2.1.0 stopReason', () => {
+  it('prompt maps finish=length to max_tokens', async () => {
+    const savedFetch = globalThis.fetch;
+    (globalThis as any).fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes('/message?limit=20')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [{ id: 'm1', type: 'assistant', finish: 'length', content: [] }],
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      const out = await client.session.prompt({ sessionID: 's1', message: 'hi' });
+      expect(out.finish).toBe('length');
+      expect(out.stopReason).toBe('max_tokens');
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+});

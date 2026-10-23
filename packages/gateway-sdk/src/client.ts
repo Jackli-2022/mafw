@@ -132,6 +132,23 @@ export class MafwClient implements IMafwClient {
       })
     },
 
+    switchAgent: async (params: { path: { id: string }; body: { agent: string } }): Promise<void> => {
+      await this.request(`/api/sessions/${params.path.id}/agent`, {
+        method: 'POST',
+        body: JSON.stringify(params.body),
+      })
+    },
+
+    switchModel: async (params: {
+      path: { id: string }
+      body: { model: { providerID: string; modelID: string }; variant?: string }
+    }): Promise<void> => {
+      await this.request(`/api/sessions/${params.path.id}/model`, {
+        method: 'POST',
+        body: JSON.stringify(params.body),
+      })
+    },
+
     messages: async (
       params: { path: { id: string }; query?: { limit?: number; before?: string } },
     ): Promise<{ data: SessionMessagePart[]; nextCursor: string | null }> => {

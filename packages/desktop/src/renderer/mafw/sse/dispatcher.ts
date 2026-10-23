@@ -6,6 +6,7 @@ import { handleFlowCardEvent, type FlowCardDeps } from "./handlers/flow-cards"
 import { handleDockEvent, type DockDeps } from "./handlers/dock"
 import { handleChatStreamEvent, handleMediaSpeakEvent, type ChatDeps } from "./handlers/chat-stream"
 import { handleDiffEvent, type DiffDeps } from "./handlers/diff"
+import { handleQueueEvent } from "./handlers/queue"
 import { handleSubagentEvent, mapSessionLifecycleEvent } from "./handlers/subagents"
 import { handleBackgroundEvent } from "./handlers/background"
 import type { TrackerEvent } from "../subagent-tracker"
@@ -61,6 +62,7 @@ EXTRA_HANDLERS.push(handleBackgroundEvent) // 必须在 chat-stream 之前（mes
 EXTRA_HANDLERS.push(handleChatStreamEvent)
 EXTRA_HANDLERS.push(handleMediaSpeakEvent)
 EXTRA_HANDLERS.push(handleDiffEvent)
+EXTRA_HANDLERS.push(handleQueueEvent)
 EXTRA_HANDLERS.push(handleSubagentEvent)
 
 /** 语义与 MafwShell.tsx:1356-1360 一致：sid 可多形态承载。 */

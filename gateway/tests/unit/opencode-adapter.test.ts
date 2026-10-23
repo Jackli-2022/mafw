@@ -150,7 +150,7 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     expect(agents).toEqual([{ name: 'build' }]);
   });
 
-  it('todo/children 在 2.1.0 无路由 → 历史回放 / 空数组 fail-open', async () => {
+  it('todo 历史回放 / children 走 2.1.0 list parentID 过滤', async () => {
     routeFetch();
     const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
     // todo: 2.1 没有 /todo 路由——从历史消息的 todowrite 工具 part 回放
@@ -165,8 +165,13 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     }) as any);
     await expect(rt.session.todo!({ sessionID: 'ses_1' })).resolves.toEqual([{ content: 'a', status: 'pending' }]);
     fetchSpy.mockClear();
+    fetchSpy.mockImplementation((async (url: any) => {
+      if (String(url).includes('/api/session?parentID=ses_1')) return json({ data: [] });
+      return json({ data: {} });
+    }) as any);
     await expect(rt.session.children!({ sessionID: 'ses_1' })).resolves.toEqual([]);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('/api/session?parentID=ses_1');
   });
 
   it('todo 历史回放：取最后一条 todowrite（工具名大小写/下划线变体）', async () => {
