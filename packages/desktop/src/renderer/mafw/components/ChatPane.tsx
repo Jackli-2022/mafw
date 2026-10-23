@@ -56,6 +56,7 @@ const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
   "full-access": "审批模式：全开 — 不再审批（危险命令也直接执行）。点击切回只读",
 }
 import { createInputHistory, shouldNavigateHistory } from "./input-history"
+import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
@@ -256,7 +257,18 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [queuedItems, setQueuedItems] = createSignal<QueuedTurn[]>([])
 
   // Composer input loop: ↑/↓ history, per-session draft, @file mentions.
-  const history = createInputHistory(50)
+  // History persists per session (localStorage, bounded); `replace` on sid
+  // switch; `onChange` writes through after every push.
+  const history = createInputHistory(50, {
+    onChange: (entries) => {
+      const sid = sidProp()
+      if (sid) saveInputHistory(localStorage, sid, entries)
+    },
+  })
+  createEffect(() => {
+    const sid = sidProp()
+    history.replace(sid ? loadInputHistory(localStorage, sid) : [])
+  })
   const [mentionedFiles, setMentionedFiles] = createSignal<{ rel: string }[]>([])
   const [projectFiles, setProjectFiles] = createSignal<string[]>([])
   const [fileHi, setFileHi] = createSignal(0)

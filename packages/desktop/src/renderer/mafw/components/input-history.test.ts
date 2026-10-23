@@ -52,6 +52,22 @@ describe("input history", () => {
     expect(h.up("c")).toBe("b")
     expect(h.up("b")).toBe(null) // "a" was dropped
   })
+
+  test("replace loads entries and resets browsing; does not fire onChange", () => {
+    let fired = 0
+    const h = createInputHistory(50, { onChange: () => fired++ })
+    h.replace(["x", "y"])
+    expect(h.up("draft")).toBe("y")
+    expect(h.up("y")).toBe("x")
+    expect(fired).toBe(0)
+  })
+
+  test("push fires onChange with a copy", () => {
+    let seen: string[] = []
+    const h = createInputHistory(50, { onChange: (e) => { seen = e } })
+    h.push("a")
+    expect(seen).toEqual(["a"])
+  })
 })
 
 describe("shouldNavigateHistory（↑↓ 翻历史门判定，readline 语义）", () => {
