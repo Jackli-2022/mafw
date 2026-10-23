@@ -47,8 +47,17 @@ const OPENCODE_NATIVE_TOOLS: NativeToolDeclaration[] = [
 // ─── 工具函数 ───────────────────────────────────────────────
 
 function unwrap<T>(result: any): T {
-  if (result?.data !== undefined) return result.data;
-  return result;
+  const body = result?.data !== undefined ? result.data : result;
+  // 2.1.0 统一响应信封 {data: X}（有时带 location 伴键）——body 仍是信封时再剥一层。
+  // 判定收窄（键集 ⊆ {data, location}）避免误伤恰好有 data 键的业务对象。
+  if (
+    body && typeof body === 'object' && !Array.isArray(body) &&
+    body.data !== undefined &&
+    Object.keys(body).every(k => k === 'data' || k === 'location')
+  ) {
+    return body.data as T;
+  }
+  return body as T;
 }
 
 function messageToParts(message?: string, parts?: any[]): any[] {

@@ -62,6 +62,15 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
     expect(mockClient.event.subscribe).toHaveBeenCalled();
     expect(mockClient.global.event).not.toHaveBeenCalled();
   });
+  it('2.1.0 响应信封 {data:X} 双层剥——unwrap 后直接可用（messages 场景）', async () => {
+    // 2.1.0 统一响应形状 {"data":[...]}（有时带 location）；SDK 的 result.data = body，
+    // body 仍是信封 → unwrap 需再剥一层，否则 messages 拿到对象而非数组
+    mockClient.session.messages = jest.fn(async () => ({ data: { data: [{ id: 'msg_1', info: {}, parts: [] }] } }));
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    const out = await client.session.messages!({ sessionID: 'ses_1' });
+    expect(Array.isArray(out.data)).toBe(true);
+    expect(out.data).toHaveLength(1);
+  });
 });
 
 describe('opencode adapter branch + envelope', () => {
