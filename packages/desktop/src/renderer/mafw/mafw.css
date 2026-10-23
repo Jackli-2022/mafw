@@ -4084,6 +4084,8 @@ html[data-theme="light"] body {
 .mafw-bg-bar-flash .mafw-bg-bar-label { color: var(--accent-success, var(--text-2)); }
 .mafw-bg-dock { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
 .mafw-bg-dock-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
+.mafw-bg-dock-rest-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
+.mafw-bg-bar-rest-hint { font-size: 10px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mafw-bg-dock-empty {
   display: flex;
   flex-direction: column;

@@ -11,10 +11,10 @@ import { backgroundRows, onBackgroundTerminal } from "../background-store"
 import { rowsForSession, type BackgroundRow } from "../background-tracker"
 import { findBlockingWork } from "../background-detect"
 import { workspace } from "../workspace/session-workspace"
-import { backgroundRestAvailable, canUseBackgroundApi } from "../background-capability"
+import { backgroundRestState, probeBackgroundRest, canUseBackgroundApi, shouldShowRestUnavailableHint, type BackgroundRestState } from "../background-capability"
 
 export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => void }) {
-  const [restOk, setRestOk] = createSignal(false)
+  const [restState, setRestState] = createSignal<BackgroundRestState>(backgroundRestState())
   const [opencodeOk, setOpencodeOk] = createSignal(false)
   const [flash, setFlash] = createSignal<string | null>(null)
   let flashTimer: ReturnType<typeof setTimeout> | null = null
@@ -24,8 +24,13 @@ export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => 
   const store = workspace.store
   const blocking = () => findBlockingWork(store.message[props.sessionID] || [], store.part)
 
-  createEffect(() => { void backgroundRestAvailable().then(setRestOk) })
+  createEffect(() => { void probeBackgroundRest().then(setRestState) })
   createEffect(() => { void canUseBackgroundApi().then(setOpencodeOk) })
+  createEffect(() => {
+    if (!rows().some(r => r.type === "shell") && blocking().length === 0) return
+    const t = setInterval(() => { void probeBackgroundRest().then(setRestState) }, 60_000)
+    onCleanup(() => clearInterval(t))
+  })
 
   onMount(() => {
     const off = onBackgroundTerminal((row) => {
@@ -69,8 +74,11 @@ export function BackgroundWorkBar(props: { sessionID: string; onOpenDock: () => 
           <div class="mafw-bg-bar-row mafw-bg-bar-blocking">
             <span class="mafw-bg-bar-count">⏳ 前台运行中</span>
             <span class="mafw-bg-bar-label">{blocking()[0]?.label || "任务"}</span>
-            <Show when={restOk()}>
+            <Show when={restState() === "available"}>
               <ButtonV2 variant="ghost" size="small" onClick={() => void backgroundAll()}>全部转后台</ButtonV2>
+            </Show>
+            <Show when={shouldShowRestUnavailableHint(restState(), blocking().length > 0)}>
+              <span class="mafw-bg-bar-rest-hint">REST 未就绪，转后台暂不可用</span>
             </Show>
           </div>
         </Show>

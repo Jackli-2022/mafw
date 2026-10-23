@@ -9,7 +9,7 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { backgroundRows, ingestBackgroundEvent } from "../background-store"
 import { rowsForSession, type BackgroundRow, type BgStatus } from "../background-tracker"
 import { formatDuration } from "../goal-timeline"
-import { backgroundRestAvailable } from "../background-capability"
+import { backgroundRestState, probeBackgroundRest, shouldShowRestUnavailableHint, type BackgroundRestState } from "../background-capability"
 
 const STATUS_LABEL: Record<BgStatus, string> = {
   running: "运行中",
@@ -29,13 +29,18 @@ export function BackgroundDock(props: {
   const [now, setNow] = createSignal(Date.now())
   const [expanded, setExpanded] = createSignal<string | null>(null)
   const [outputs, setOutputs] = createSignal<Record<string, string>>({})
-  const [restOk, setRestOk] = createSignal(false)
+  const [restState, setRestState] = createSignal<BackgroundRestState>(backgroundRestState())
   const [confirming, setConfirming] = createSignal<string | null>(null)
 
   const rows = () => rowsForSession(backgroundRows(), props.activeSessionId ?? "")
   const dir = () => props.sessionDirectory ?? undefined
 
-  createEffect(() => { void backgroundRestAvailable().then(setRestOk) })
+  createEffect(() => { void probeBackgroundRest().then(setRestState) })
+  createEffect(() => {
+    if (!rows().some(r => r.type === "shell")) return
+    const t = setInterval(() => { void probeBackgroundRest().then(setRestState) }, 60_000)
+    onCleanup(() => clearInterval(t))
+  })
   createEffect(() => {
     if (!rows().some(r => r.status === "running")) return
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -86,6 +91,9 @@ export function BackgroundDock(props: {
   return (
     <div class="mafw-bg-dock">
       <div class="mafw-bg-dock-hint">本会话后台任务：shell 可看输出/终止，子代理点击进入子会话。</div>
+      <Show when={shouldShowRestUnavailableHint(restState(), rows().some(r => r.type === "shell"))}>
+        <div class="mafw-bg-dock-rest-hint">网关未注入 v2 鉴权或 serve 未就绪：输出/终止/全部转后台暂不可用</div>
+      </Show>
       <Show when={rows().length > 0} fallback={
         <div class="mafw-bg-dock-empty">
           <div class="mafw-bg-dock-empty-icon">⚡</div>
@@ -120,8 +128,10 @@ export function BackgroundDock(props: {
                 <div class="mafw-bg-detail">
                   <pre class="mafw-bg-output">{outputs()[r.id] ?? "（点「刷新」拉取输出）"}</pre>
                   <div class="mafw-bg-actions">
-                    <ButtonV2 variant="ghost" size="small" onClick={() => void refreshOutput(r)}>刷新</ButtonV2>
-                    <Show when={restOk() && r.status === "running"}>
+                    <Show when={restState() === "available"}>
+                      <ButtonV2 variant="ghost" size="small" onClick={() => void refreshOutput(r)}>刷新</ButtonV2>
+                    </Show>
+                    <Show when={restState() === "available" && r.status === "running"}>
                       <ButtonV2 variant="outline" size="small" onClick={() => void terminate(r)}>
                         {confirming() === r.id ? "确认终止" : "终止"}
                       </ButtonV2>
