@@ -150,12 +150,63 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     expect(agents).toEqual([{ name: 'build' }]);
   });
 
-  it('todo/children 在 2.1.0 无路由 → 空数组 fail-open', async () => {
+  it('todo/children 在 2.1.0 无路由 → 历史回放 / 空数组 fail-open', async () => {
     routeFetch();
     const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
-    await expect(rt.session.todo!({ sessionID: 'ses_1' })).resolves.toEqual([]);
+    // todo: 2.1 没有 /todo 路由——从历史消息的 todowrite 工具 part 回放
+    fetchSpy.mockImplementation((async (url: any) => {
+      if (String(url).includes('/message')) {
+        return json({ data: [{
+          id: 'm1', type: 'assistant',
+          content: [{ type: 'tool', id: 'call_1', name: 'todowrite', state: { status: 'completed', input: { todos: [{ content: 'a', status: 'pending' }] } } }],
+        }], cursor: { previous: null, next: null } });
+      }
+      return json({ data: {} });
+    }) as any);
+    await expect(rt.session.todo!({ sessionID: 'ses_1' })).resolves.toEqual([{ content: 'a', status: 'pending' }]);
+    fetchSpy.mockClear();
     await expect(rt.session.children!({ sessionID: 'ses_1' })).resolves.toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('todo 历史回放：取最后一条 todowrite（工具名大小写/下划线变体）', async () => {
+    const todos = [{ content: 'latest', status: 'in_progress', priority: 'high' }];
+    const make = (name: string, list: any[]) => ({
+      id: 'm1', type: 'assistant',
+      content: [{ type: 'tool', id: 'c1', name, state: { input: { todos: list } } }],
+    });
+    fetchSpy.mockImplementation((async () => json({
+      data: [
+        // API order=desc：新 → 旧；最新一条 todo_write 应优先命中
+        make('todo_write', todos),
+        make('TodoWrite', [{ content: 'older', status: 'completed' }]),
+      ],
+      cursor: { previous: null, next: null },
+    })) as any);
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await expect(rt.session.todo!({ sessionID: 'ses_1' })).resolves.toEqual(todos);
+  });
+
+  it('todo 历史回放：首页没有 todowrite 时按 cursor.next 翻页（硬帽 3 页）', async () => {
+    const urls: string[] = [];
+    let page = 0;
+    fetchSpy.mockImplementation((async (url: any) => {
+      urls.push(String(url));
+      page++;
+      if (page === 1) return json({ data: [{ id: 'm1', type: 'assistant', content: [] }], cursor: { next: 'c2' } });
+      if (page === 2) return json({ data: [{ id: 'm0', type: 'assistant', content: [{ type: 'tool', name: 'todowrite', state: { input: { todos: [{ content: 'found', status: 'pending' }] } } }] }], cursor: { next: 'c3' } });
+      return json({ data: [], cursor: { next: 'c4' } });
+    }) as any);
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await expect(rt.session.todo!({ sessionID: 'ses_1' })).resolves.toEqual([{ content: 'found', status: 'pending' }]);
+    expect(urls[0]).toContain('/session/ses_1/message?limit=100&order=desc');
+    expect(urls[1]).toContain('cursor=c2');
+
+    // 连续 3 页都没有 → 返回 []，且最多 3 次请求
+    fetchSpy.mockClear();
+    fetchSpy.mockImplementation((async () => json({ data: [], cursor: { next: 'again' } })) as any);
+    await expect(rt.session.todo!({ sessionID: 'ses_1' })).resolves.toEqual([]);
+    expect(fetchSpy.mock.calls).toHaveLength(3);
   });
 
   it('provider.list 重建 legacy {all,connected,default}（2.1.0 /provider 不再内嵌 models/connected）', async () => {

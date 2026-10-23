@@ -396,12 +396,40 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       async todo(opts: { sessionID: string }) {
-        // 2.1.0 无 /session/{id}/todo 路由——旧 serve 走 SDK，404/缺方法一律 fail-open 空列表
-        try {
-          return unwrap<any[]>(await client.session.todo({ sessionID: opts.sessionID })) ?? [];
-        } catch {
-          return [] as any[];
+        // 2.1.0 没有 /todo 路由（todo 是会话内内存态）。业界做法（Claude
+        // Agent SDK）是客户端从消息流的 tool_use 重建——这里回放历史：
+        // 最后一条 todowrite 工具 part 的 state.input.todos 即权威列表，
+        // 重启/压缩后仍然可从历史消息恢复。
+        const TODO_TOOL_NAMES = new Set(['todowrite', 'todo_write']);
+        const isTodoPart = (p: any) => {
+          if (!p || p.type !== 'tool') return false;
+          const name = String(p.name ?? p.tool ?? '').toLowerCase();
+          return TODO_TOOL_NAMES.has(name);
+        };
+        let cursor: string | undefined;
+        for (let page = 0; page < 3; page++) {
+          const path = `/session/${opts.sessionID}/message?limit=100&order=desc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+          let body: any;
+          try {
+            body = await directNative(path, 'GET');
+          } catch {
+            return [] as any[];
+          }
+          const list = unwrapNative<any[]>(body) ?? [];
+          for (const m of list) {
+            const content = Array.isArray(m?.content) ? m.content : [];
+            for (let i = content.length - 1; i >= 0; i--) {
+              const p = content[i];
+              if (!isTodoPart(p)) continue;
+              const todos = p?.state?.input?.todos ?? p?.input?.todos;
+              if (Array.isArray(todos)) return todos;
+            }
+          }
+          const next = body?.cursor?.next;
+          if (typeof next !== 'string' || !next) return [] as any[];
+          cursor = next;
         }
+        return [] as any[];
       },
 
       async children(opts: { sessionID: string }) {
