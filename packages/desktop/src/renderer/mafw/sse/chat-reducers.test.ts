@@ -54,6 +54,10 @@ describe("applyPartDelta", () => {
     const out = applyPartDelta({ message: {}, part: {} } as any, "s1", "m1", "p1", "hi")!
     expect(out.part.m1[0]).toMatchObject({ id: "p1", type: "text", text: "hi", sessionID: "s1" })
   })
+  test("reasoning 流：partType=reasoning 时创建 reasoning part（2.1 方言）", () => {
+    const out = applyPartDelta({ message: {}, part: {} } as any, "s1", "m1", "m1-p0", "think", "reasoning")!
+    expect(out.part.m1[0]).toMatchObject({ id: "m1-p0", type: "reasoning", text: "think" })
+  })
   test("non-text existing part → null", () => {
     const state = { message: {}, part: { m1: [{ id: "p1", type: "tool" }] } }
     expect(applyPartDelta(state as any, "s1", "m1", "p1", "x")).toBeNull()

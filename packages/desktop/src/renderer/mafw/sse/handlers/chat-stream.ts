@@ -56,18 +56,19 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     return true
   }
   // opencode ≥1.18 streams assistant text via part.delta
-  // ({partID, field: "text", delta}); accumulate it into the part record so
-  // the reply renders incrementally (part.updated only fires once).
+  // ({partID, field: "text", delta}); 2.1 reasoning streams via field
+  // "reasoning"（@2.1 方言映射），两者都累积进 part 记录。
   if (event.type === "part.delta") {
     d.trace(event, "chat:delta")
     const props = event.properties || {}
     const msgId = props.messageID
     const partID = props.partID
-    if (!msgId || !partID || props.field !== "text") return true
+    const field = props.field
+    if (!msgId || !partID || (field !== "text" && field !== "reasoning")) return true
     const delta = props.delta
     if (!delta) return true
     d.phase(sid, "writing")
-    const out = applyPartDelta(d.getStore(), sid, msgId, partID, delta)
+    const out = applyPartDelta(d.getStore(), sid, msgId, partID, delta, field)
     if (out) d.patchStore(out)
     return true
   }

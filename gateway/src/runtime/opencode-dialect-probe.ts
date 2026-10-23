@@ -14,12 +14,14 @@ import { serveAuthHeaders } from './serve-sidecar';
  */
 
 const V2_SIGNALS = ['"type":"sync"', '"type":"session.next.'] as const;
+/** 2.1.0 durable 信封的信号：连接握手事件只有 2.1 发（顶层 type + data）。 */
+const V21_SIGNALS = ['"type":"server.connected"', '"type":"session.execution.'] as const;
 
 export async function probeOpencodeDialect(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   timeoutMs = 2500,
-): Promise<'v1' | 'v2'> {
+): Promise<'v1' | 'v2' | 'v21'> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   // 硬超时竞速：不依赖 body reader 在 abort 时 reject（传输层行为不可假设）；
@@ -44,6 +46,10 @@ export async function probeOpencodeDialect(
       const { done, value } = await Promise.race([reader.read(), abortPromise]);
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      // 2.1 first: its envelope is top-level type/data, not payload.*.
+      for (const signal of V21_SIGNALS) {
+        if (buffer.includes(signal)) return 'v21';
+      }
       for (const signal of V2_SIGNALS) {
         if (buffer.includes(signal)) return 'v2';
       }

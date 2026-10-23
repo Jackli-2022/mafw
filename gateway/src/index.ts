@@ -162,6 +162,7 @@ import { RuntimePluginLoader, createRuntimePluginContext } from './runtime/loade
 import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
+import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
 import { wrapDialectEventStream } from './runtime/event-stream-wiring';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
@@ -643,6 +644,12 @@ class MafwScheduler {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V2_EVENT_MAPPINGS,
       transformEvent: OPENCODE_TRANSFORM_EVENT,
+    });
+    // 钉死 2.1.0 方言（顶层 type/data + session.* 富事件；dry-event/一致性测试用）
+    this.runtimeLoader.registerBuiltin('opencode@v21', opencodeFactory(false), fullCapabilities(), external, {
+      eventSource: OPENCODE_21_EVENT_SOURCE,
+      eventMappings: OPENCODE_21_EVENT_MAPPINGS,
+      transformEvent: translateOpencode21Event,
     });
     const runtime = await this.createRuntime(sdkConfig);
     this.runtime = runtime;

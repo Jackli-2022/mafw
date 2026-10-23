@@ -143,8 +143,8 @@ const toolClassOverlay = new Map<string, TOOL_CLASS>();
 /** 跨 runtime 工具别名 → opencode canonical 名（形状兼容才准入——调研 §2.2 矩阵；
  * opencode 自有名（bash/read/…）不进表，经 TOOL_CLASS_TABLE 小写命中返回自身）。 */
 const TOOL_CANONICAL_TABLE: Record<string, string> = {
-  // shell 域（input.command 键收敛）
-  command_execution: 'bash', powershell: 'bash',
+  // shell 域（input.command 键收敛）：opencode 2.1 把 bash 更名为 shell
+  command_execution: 'bash', powershell: 'bash', shell: 'bash',
   // search/列举域（pattern+path / path 键收敛）
   ls: 'list', find: 'glob',
   // file-edit 域

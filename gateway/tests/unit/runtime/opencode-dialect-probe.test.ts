@@ -41,6 +41,11 @@ describe('probeOpencodeDialect 2.1.0 连接面（/api/event + Basic auth）', ()
     expect(seenUrl).toBe('http://127.0.0.1:4096/api/event');
     expect(seenAuth).toMatch(/^Basic /);
   });
+
+  it('顶层 type + server.connected（durable 信封）→ v21', async () => {
+    const fetchImpl = ok(['data: {"id":"e1","type":"server.connected","data":{}}\n\n']);
+    expect(await probeOpencodeDialect('http://x', fetchImpl, 1000)).toBe('v21');
+  });
 });
 
 describe('probeOpencodeDialect（SSE peek，fail-safe 恒 v1）', () => {

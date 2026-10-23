@@ -74,6 +74,7 @@ export function applyPartDelta(
   msgId: string,
   partID: string,
   delta: string,
+  partType: "text" | "reasoning" = "text",
 ): { part: Record<string, any[]> } | null {
   const parts = { ...state.part }
   const existing = parts[msgId] || []
@@ -86,7 +87,7 @@ export function applyPartDelta(
     parts[msgId] = existing.map((p, i) => (i === idx ? { ...p, text } : p))
     return { part: parts }
   }
-  parts[msgId] = [...existing, { id: partID, type: "text", text: delta, sessionID: sid, messageID: msgId }]
+  parts[msgId] = [...existing, { id: partID, type: partType, text: delta, sessionID: sid, messageID: msgId }]
   return { part: parts }
 }
 

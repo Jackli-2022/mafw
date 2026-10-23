@@ -23,6 +23,7 @@ import { getProviderApiKey } from './auth';
 import { httpComplete } from './completion-http';
 import { probeOpencodeDialect } from './opencode-dialect-probe';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './opencode-events';
+import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './opencode-21-events';
 import type { EventMappingEntry } from './event-mapper';
 import { log } from '../core/utils/logger';
 
@@ -282,6 +283,14 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
               (rt as unknown as { getBaseUrl(): string }).getBaseUrl(),
             );
             (rt as AgentRuntime & { activeDialect?: string }).activeDialect = dialect;
+            // 2.1.0：顶层 type/data 信封 + session.* 富事件流 → @2.1 合成表
+            if (dialect === 'v21') {
+              return {
+                eventSource: OPENCODE_21_EVENT_SOURCE,
+                eventMappings: OPENCODE_21_EVENT_MAPPINGS,
+                transformEvent: translateOpencode21Event,
+              };
+            }
             return {
               eventSource: OPENCODE_EVENT_SOURCE,
               eventMappings: dialect === 'v2' ? OPENCODE_V2_EVENT_MAPPINGS : OPENCODE_V1_EVENT_MAPPINGS,

@@ -38,6 +38,13 @@ describe("handleChatStreamEvent", () => {
     expect(calls.map(c => c.name)).toContain("patchStore")
   })
 
+  test("part.delta field=reasoning 也被消费（2.1 方言 reasoning 流）", () => {
+    const { deps, calls } = makeDeps()
+    const ok = handleChatStreamEvent({ type: "part.delta", sessionID: "s1", properties: { messageID: "m1", partID: "m1-p0", field: "reasoning", delta: "think" } }, "s1", deps)
+    expect(ok).toBe(true)
+    expect(calls.map(c => c.name)).toContain("patchStore")
+  })
+
   test("part.updated → busy + phase + patchStore（落穿：不消费，media_speak 仍需检查）", () => {
     const { deps, calls } = makeDeps()
     const ok = handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part: { id: "p1", type: "text", text: "x", messageID: "m1" } } }, "s1", deps)
