@@ -1771,6 +1771,12 @@ export function MafwShell() {
           onExport={(id) => void exportSession(id)}
           onCopyId={copyText}
           onNew={createSession}
+          onHome={() => {
+            closeLeftDockIfOverlay()
+            setShowConfig(false)
+            setActiveTab("chat")
+            setShowWelcome(true)
+          }}
         />
         <div class="mafw-topstrip-spacer" />
         <Show when={chatActive()}>

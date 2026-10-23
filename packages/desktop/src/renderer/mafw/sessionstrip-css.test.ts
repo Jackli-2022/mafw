@@ -80,4 +80,18 @@ describe("sessionstrip industry-tab contract", () => {
     expect(word).toMatch(/color:\s*var\(--text-3\)/)
     expect(word).toMatch(/letter-spacing:/)
   })
+
+  // 分段 2：窄窗口只留标志；分段 3：点击回 Welcome
+  test("窄窗口（≤900px）隐藏字标，只留 18px 标志", () => {
+    expect(css).toMatch(/@media\s*\(max-width:\s*900px\)\s*\{[^@]*\.mafw-sessionstrip-brand-word\s*\{\s*display:\s*none/)
+  })
+
+  test("点击 logo 回 Welcome 页（SessionStrip onHome → MafwShell setShowWelcome）", () => {
+    const strip = readFileSync(join(import.meta.dirname, "components/SessionStrip.tsx"), "utf8")
+    expect(strip).toMatch(/onHome/)
+    expect(strip).toMatch(/onClick=\{props\.onHome\}/)
+    const shell = readFileSync(join(import.meta.dirname, "MafwShell.tsx"), "utf8")
+    expect(shell).toMatch(/onHome=\{/)
+    expect(shell).toMatch(/setShowWelcome\(true\)/)
+  })
 })

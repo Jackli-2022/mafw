@@ -583,6 +583,12 @@ html[data-theme="light"] body {
   flex: none;
   padding-right: 2px;
 }
+/* ButtonV2 尺寸契约覆盖（small = 24px/0 9px；logo 更紧凑） */
+.mafw-sessionstrip [data-component="button-v2"].mafw-sessionstrip-brand {
+  height: 24px;
+  padding: 0 4px;
+  border-radius: 5px;
+}
 .mafw-sessionstrip-brand-mark {
   width: 18px;
   height: 18px;
@@ -607,6 +613,10 @@ html[data-theme="light"] body {
   height: 16px;
   background: var(--border-subtle);
   margin: 0 2px;
+}
+/* 窄窗口（≥720 min-width 的窗口下）只留 18px 标志，字标让位给 tab */
+@media (max-width: 900px) {
+  .mafw-sessionstrip-brand-word { display: none; }
 }
 /* 业界 tab 条（Chrome/VS Code/Firefox）：永不显示滚动条；
    tab 收缩到下限后由滚轮横向滚动承接溢出 */

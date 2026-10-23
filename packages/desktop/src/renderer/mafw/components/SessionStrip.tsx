@@ -5,6 +5,7 @@ import { DropdownMenu } from "@mafw/ui/dropdown-menu"
 import { Icon } from "@mafw/ui/icon"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { stripOverflowed } from "./session-strip-overflow"
 import { freezeTabs } from "./session-strip-slinky"
 
@@ -17,6 +18,8 @@ export function SessionStrip(props: {
   onExport: (id: string) => void
   onCopyId: (id: string) => void
   onNew: () => void
+  /** 点击左侧品牌位回 Welcome 首页 */
+  onHome: () => void
 }) {
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [renameDraft, setRenameDraft] = createSignal("")
@@ -72,11 +75,19 @@ export function SessionStrip(props: {
   return (
     <div class="mafw-sessionstrip" onPointerLeave={endSlinky}>
       {/* 左侧品牌位（2026-10-23 裁决 B2：线框暖灰 monogram + 小字标）——
-          放在滚动层之外：tab 再多、横向滚动时 logo 不动 */}
-      <div class="mafw-sessionstrip-brand" role="img" aria-label="MAFW">
-        <span class="mafw-sessionstrip-brand-mark" aria-hidden="true">M</span>
-        <span class="mafw-sessionstrip-brand-word" aria-hidden="true">MAFW</span>
-      </div>
+          放在滚动层之外：tab 再多、横向滚动时 logo 不动；点击回 Welcome 首页 */}
+      <TooltipV2 value="回到 Welcome 页" openDelay={300}>
+        <ButtonV2
+          variant="ghost"
+          size="small"
+          class="mafw-sessionstrip-brand"
+          aria-label="回到 Welcome 页"
+          onClick={props.onHome}
+        >
+          <span class="mafw-sessionstrip-brand-mark" aria-hidden="true">M</span>
+          <span class="mafw-sessionstrip-brand-word" aria-hidden="true">MAFW</span>
+        </ButtonV2>
+      </TooltipV2>
       <div class="mafw-sessionstrip-divider" aria-hidden="true" />
       <div class="mafw-sessionstrip-scroll" ref={scrollEl}>
         {props.sessions().map(s => (
