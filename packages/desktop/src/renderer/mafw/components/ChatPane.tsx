@@ -58,6 +58,7 @@ const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
 import { createInputHistory, shouldNavigateHistory } from "./input-history"
 import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
+import { shouldFocusComposerFromClick } from "./composer-focus"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -494,6 +495,26 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const autoGrow = (el: HTMLTextAreaElement) => {
     el.style.height = "auto"
     el.style.height = Math.min(el.scrollHeight, 200) + "px"
+  }
+
+  // 点击聊天区（非交互目标、无拖选/双击选词）→ 聚焦 composer。
+  const focusComposerFromView = (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null
+    const selection = window.getSelection()
+    const interactive = !!target?.closest?.(
+      'a,button,input,textarea,select,[role="button"],[role="tab"],[contenteditable="true"]',
+    )
+    if (!shouldFocusComposerFromClick({
+      button: e.button,
+      detail: e.detail,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
+      altKey: e.altKey,
+      shiftKey: e.shiftKey,
+      selectionCollapsed: selection ? selection.isCollapsed : null,
+      interactive,
+    })) return
+    textareaEl()?.focus({ preventScroll: true })
   }
 
   // ── 发送管线（sendMessage 五合一 → ../chat/use-send-message.ts）──
@@ -1126,7 +1147,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   return (
     <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
-        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll}>
+        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll} onClick={focusComposerFromView}>
           <Show when={sidProp()}>
             <div class="mafw-session-titlebar">
               <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
