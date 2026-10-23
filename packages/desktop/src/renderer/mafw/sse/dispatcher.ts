@@ -59,11 +59,11 @@ export const EXTRA_HANDLERS: SidHandler[] = []
 EXTRA_HANDLERS.push(handleFlowCardEvent)
 EXTRA_HANDLERS.push(handleDockEvent)
 EXTRA_HANDLERS.push(handleBackgroundEvent) // 必须在 chat-stream 之前（message.updated 会被它消费）
+EXTRA_HANDLERS.push(handleSubagentEvent) // 必须在 chat-stream 之前：part.updated 会被 chat-stream 消费；本 handler 恒 return false
 EXTRA_HANDLERS.push(handleChatStreamEvent)
 EXTRA_HANDLERS.push(handleMediaSpeakEvent)
 EXTRA_HANDLERS.push(handleDiffEvent)
 EXTRA_HANDLERS.push(handleQueueEvent)
-EXTRA_HANDLERS.push(handleSubagentEvent)
 
 /** 语义与 MafwShell.tsx:1356-1360 一致：sid 可多形态承载。 */
 export function sessionIdOf(event: any): string {

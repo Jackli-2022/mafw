@@ -89,6 +89,32 @@ describe("dispatchShellEvent: core events", () => {
   })
 })
 
+describe("dispatchShellEvent: subagent tool part", () => {
+  test("part.updated subagent metadata.sessionID reaches tracker before chat-stream consumes it", () => {
+    const { deps, subagentEvents } = makeDeps()
+    dispatchShellEvent({
+      type: "part.updated",
+      properties: {
+        sessionID: "parent1",
+        part: {
+          type: "tool",
+          tool: "subagent",
+          sessionID: "parent1",
+          state: {
+            status: "running",
+            input: { description: "Builder check", agent: "general" },
+            metadata: { sessionID: "child1" },
+          },
+        },
+      },
+    }, deps)
+    expect(subagentEvents).toContainEqual({
+      kind: "session-created",
+      info: { id: "child1", parentID: "parent1", title: "Builder check", agent: "general" },
+    })
+  })
+})
+
 describe("dispatchShellEvent: session lifecycle", () => {
   test("session.created → lifecycle.invalidate", () => {
     const { deps, calls } = makeDeps()

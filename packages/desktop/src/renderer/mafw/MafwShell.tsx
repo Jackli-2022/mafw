@@ -1956,7 +1956,18 @@ export function MafwShell() {
                           projectDirectory={currentProject()}
                           onPlanBuildToggle={(next) => {
                             if (next === "default") {
-                              setAgentPicks(activeSessionId()!, undefined as any)
+                              const sid = activeSessionId()
+                              if (!sid) return
+                              const prev = agentPicks[sid]
+                              setAgentPicks(sid, undefined as any)
+                              // 2.1 没有“清除回默认”的端点；默认 driver 是 build。
+                              const fallback = primaryAgents().find(a => isAgentKey(a, "build"))
+                              if (fallback) {
+                                void window.api.mafw.sessions.switchAgent(sid, agentKey(fallback)).catch(() => {
+                                  setAgentPicks(sid, prev as any)
+                                  showToastV2({ description: "切换 agent 失败", duration: 2000 })
+                                })
+                              }
                               return
                             }
                             const entry = primaryAgents().find(a => isAgentKey(a, next))
