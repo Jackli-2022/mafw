@@ -67,6 +67,15 @@ describe("annotation-store", () => {
     expect(pendingFor("s1")).toEqual([])
   })
 
+  test("hydrate 与本地新增竞态：不吞掉水合期间加入的批注", async () => {
+    const pending = hydrateAnnotations("s1")
+    addPending({ sessionID: "s1", rel: "local.ts", startLine: 1, endLine: 1, code: "z", comment: "水合中" })
+    await pending
+    const items = pendingFor("s1")
+    expect(items.some(a => a.comment === "水合中")).toBe(true)
+    expect(items.length).toBe(3) // 磁盘 2 条 + 本地 1 条
+  })
+
   test("会话隔离", async () => {
     await hydrateAnnotations("s1")
     expect(pendingFor("s2")).toEqual([])

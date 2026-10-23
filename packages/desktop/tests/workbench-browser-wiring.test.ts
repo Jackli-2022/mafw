@@ -36,6 +36,8 @@ describe("浏览器 tab 接线", () => {
     expect(main).toContain("web-contents-created")
     expect(main).toContain("will-attach-webview")
     expect(main).toContain("setWindowOpenHandler")
+    // 初始页 about:blank 必须放行（否则 webview 永远挂不上）
+    expect(main).toContain("guestAttachAllowed")
   })
   test("preload 暴露 browser.onOpenUrl 事件", () => {
     const api = read("src/preload/index.ts")

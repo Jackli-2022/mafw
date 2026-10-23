@@ -1,7 +1,7 @@
 // 浏览器 guest 的 main 侧加固：权限全拒、window.open 转 dock 内导航、非 http(s) 导航拦截、
 // will-attach-webview 强制安全基线。渲染层只负责 UI；决策纯函数在 browser-policy.ts。
-import { app, session, shell, type WebContents } from "electron"
-import { BROWSER_PARTITION, navigationDecision, windowOpenDecision } from "../shared/browser-policy"
+import { app, BrowserWindow, session, shell, type WebContents } from "electron"
+import { BROWSER_PARTITION, guestAttachAllowed, navigationDecision, windowOpenDecision } from "../shared/browser-policy"
 
 let configured = false
 
@@ -9,7 +9,7 @@ function hardenGuest(contents: WebContents) {
   contents.setWindowOpenHandler(({ url }) => {
     const decision = windowOpenDecision(url)
     if (decision.action === "navigate") {
-      const host = contents.hostWebContents
+      const host = contents.hostWebContents ?? BrowserWindow.getFocusedWindow()?.webContents
       if (host && !host.isDestroyed()) host.send("browser-open-url", decision.url)
     } else if (decision.action === "external") {
       void shell.openExternal(decision.url)
@@ -51,6 +51,6 @@ export function wireWebviewAttach(host: WebContents) {
       event.preventDefault()
       return
     }
-    if (navigationDecision(params.src) === "deny") event.preventDefault()
+    if (!guestAttachAllowed(params.src)) event.preventDefault()
   })
 }

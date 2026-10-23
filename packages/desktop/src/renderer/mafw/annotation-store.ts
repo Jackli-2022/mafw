@@ -31,7 +31,11 @@ export async function hydrateAnnotations(sessionID: string): Promise<void> {
   hydrated.add(sessionID)
   try {
     const list = (await api()?.list(sessionID)) ?? []
-    db = { ...db, [sessionID]: Array.isArray(list) ? list : [] }
+    const fromDisk = Array.isArray(list) ? list : []
+    // 水合期间用户可能已加入批注：按 id 合并，磁盘项不覆盖本地新项
+    const local = db[sessionID] ?? []
+    const merged = [...fromDisk.filter((x) => !local.some((y) => y.id === x.id)), ...local]
+    db = { ...db, [sessionID]: merged }
     bump()
   } catch {
     /* fail-open：保持空表，下次可重试 */

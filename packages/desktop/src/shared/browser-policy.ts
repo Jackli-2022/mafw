@@ -46,6 +46,13 @@ export type WindowOpenDecision =
   | { action: "external"; url: string }
   | { action: "deny" }
 
+/** guest 挂载允许的 src：空白初始页放行；其余必须 http(s)（javascript:/file:/data: 一律拒绝）。 */
+export function guestAttachAllowed(raw: string): boolean {
+  const value = raw.trim()
+  if (!value || value === "about:blank") return true
+  return navigationDecision(value) === "allow"
+}
+
 /** target=_blank / window.open 决策：http(s) 转 dock 内导航（用户拍板：链接 dock 内开）。 */
 export function windowOpenDecision(raw: string): WindowOpenDecision {
   const value = raw.trim()

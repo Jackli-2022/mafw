@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   BROWSER_PARTITION,
+  guestAttachAllowed,
   isHttpUrl,
   mainWindowWebPreferences,
   navigationDecision,
@@ -53,8 +54,20 @@ describe("windowOpenDecision（target=_blank / window.open）", () => {
   })
 })
 
-describe("normalizeAddress（地址栏输入）", () => {
-  test("裸域名补 https://", () => {
+describe("guestAttachAllowed（will-attach-webview 的 src 门）", () => {
+  test("空白初始页放行（否则 webview 永远挂不上）", () => {
+    expect(guestAttachAllowed("")).toBe(true)
+    expect(guestAttachAllowed("about:blank")).toBe(true)
+  })
+  test("http(s) 放行；危险协议拒绝", () => {
+    expect(guestAttachAllowed("https://a.com")).toBe(true)
+    expect(guestAttachAllowed("javascript:alert(1)")).toBe(false)
+    expect(guestAttachAllowed("file:///C:/x")).toBe(false)
+    expect(guestAttachAllowed("data:text/html,x")).toBe(false)
+  })
+})
+
+describe("normalizeAddress（地址栏输入）", () => {  test("裸域名补 https://", () => {
     expect(normalizeAddress("example.com")).toBe("https://example.com")
     expect(normalizeAddress("localhost:5173")).toBe("https://localhost:5173")
   })
