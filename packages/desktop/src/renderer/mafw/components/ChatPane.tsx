@@ -60,6 +60,8 @@ import { createInputHistory, shouldNavigateHistory } from "./input-history"
 import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
+import { appendQuote, formatQuote } from "./quote-format"
+import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
@@ -499,6 +501,54 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     el.style.height = Math.min(el.scrollHeight, 200) + "px"
   }
 
+  // ── 选中聊天文本 → 引用进 composer ──────────────────────────────────
+  const [quoteAnchor, setQuoteAnchor] = createSignal<QuoteAnchor | null>(null)
+  const [quoteText, setQuoteText] = createSignal("")
+  const dismissQuote = () => {
+    setQuoteAnchor(null)
+    setQuoteText("")
+  }
+  const updateQuoteSelection = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      dismissQuote()
+      return
+    }
+    const text = sel.toString()
+    const scroller = containerRef()
+    const range = sel.getRangeAt(0)
+    if (!text.trim() || !scroller || !scroller.contains(range.commonAncestorContainer)) {
+      dismissQuote()
+      return
+    }
+    const rect = range.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) {
+      dismissQuote()
+      return
+    }
+    setQuoteText(text)
+    setQuoteAnchor({ left: rect.left, top: rect.top, width: rect.width, height: rect.height })
+  }
+  const insertQuote = () => {
+    const block = formatQuote(quoteText())
+    if (!block) {
+      dismissQuote()
+      return
+    }
+    const next = appendQuote(input(), block)
+    setInput(next)
+    setDraft(sidProp(), next)
+    dismissQuote()
+    window.getSelection()?.removeAllRanges()
+    queueMicrotask(() => {
+      const ta = textareaEl()
+      if (!ta) return
+      ta.focus({ preventScroll: true })
+      ta.setSelectionRange(next.length, next.length)
+      autoGrow(ta)
+    })
+  }
+
   // 点击聊天区（非交互目标、无拖选/双击选词）→ 延迟 220ms 聚焦 composer。
   // 延迟是为了让双击的第一击不先把焦点抢走（第二击/双击会 cancel）。
   const viewFocus = createFocusScheduler({
@@ -567,12 +617,38 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (sid) void hydrateAnnotations(sid)
   })
 
+  createEffect(() => {
+    sidProp()
+    dismissQuote()
+  })
+
   // ESC / Ctrl+C interrupts this pane only when it is focused and sending.
   onMount(() => {
     workspace.register("queueFlush", sidProp(), flushQueue)
     onCleanup(() => workspace.unregister("queueFlush", sidProp()))
+    const onQuoteSelection = () => updateQuoteSelection()
+    const onQuoteSelectionChange = () => {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) dismissQuote()
+    }
+    document.addEventListener("mouseup", onQuoteSelection)
+    document.addEventListener("keyup", onQuoteSelection)
+    document.addEventListener("selectionchange", onQuoteSelectionChange)
+    window.addEventListener("resize", dismissQuote)
+    onCleanup(() => {
+      document.removeEventListener("mouseup", onQuoteSelection)
+      document.removeEventListener("keyup", onQuoteSelection)
+      document.removeEventListener("selectionchange", onQuoteSelectionChange)
+      window.removeEventListener("resize", dismissQuote)
+    })
     const onKey = (e: KeyboardEvent) => {
-      if (!props.focused || !sending()) return
+      if (!props.focused) return
+      if (e.key === "Escape" && quoteAnchor()) {
+        e.preventDefault()
+        dismissQuote()
+        return
+      }
+      if (!sending()) return
       const isEsc = e.key === "Escape"
       const isCtrlC = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c"
       if (!isEsc && !isCtrlC) return
@@ -1165,7 +1241,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   return (
     <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
-        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll} onClick={focusComposerFromView} onDblClick={() => viewFocus.cancel()}>
+        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={() => { handleScroll(); dismissQuote() }} onClick={focusComposerFromView} onDblClick={() => viewFocus.cancel()}>
           <Show when={sidProp()}>
             <div class="mafw-session-titlebar">
               <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
@@ -1723,6 +1799,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </div>
           </div>
         </div>
+        <QuoteToolbar anchor={quoteAnchor()} onQuote={insertQuote} />
         {/* Pickers */}
         <ModelPicker
           open={pickerOpen() === "model"}

@@ -5162,3 +5162,15 @@ html[data-theme="light"] body {
 .mafw-pending-annotation + .mafw-pending-annotation { border-top: 1px dashed var(--border); }
 .mafw-pending-annotation-where { color: var(--accent); flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-pending-annotation-text { color: var(--text-2); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 选中引用浮层（B2）──────────────────────────────────────────────── */
+.mafw-quote-toolbar {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: var(--bg-float);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-float);
+}
