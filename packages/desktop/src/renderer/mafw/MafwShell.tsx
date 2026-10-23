@@ -819,12 +819,15 @@ export function MafwShell() {
   // worktree 并行隔离（切片 4）：runtime 能力缓存 + 创建入口
   const [rtCaps, setRtCaps] = createSignal<Record<string, boolean>>({})
   const [rtName, setRtName] = createSignal("")
-  createEffect(() => {
-    if (gwStatus()?.state !== "ready") return
+  const loadRuntimeInfo = () => {
     void window.api.mafw.runtime.get().then((r: any) => {
       setRtCaps(r?.active?.capabilities ?? {})
       setRtName(r?.active?.name ?? "")
     }).catch(() => {})
+  }
+  createEffect(() => {
+    if (gwStatus()?.state !== "ready") return
+    loadRuntimeInfo()
   })
   const worktreeEnabled = () => rtCaps().worktreeApi === true
   const revertUndoEnabled = () => rtCaps().revertUndoApi === true
@@ -875,6 +878,7 @@ export function MafwShell() {
         void refreshMenus()
         resetChatWorkspace()
         resetBackgroundCapability()
+        loadRuntimeInfo()
         if (currentProject()) reloadManagerSession(currentProject()!)
       },
     },

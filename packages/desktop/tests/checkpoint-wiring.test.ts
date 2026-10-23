@@ -12,6 +12,8 @@ describe("checkpoint wiring", () => {
     expect(pane).toContain("checkpointsOpen")
     expect(pane).toContain("revertCodeTo")
     expect(pane).toContain("allHunksPatches")
+    expect(pane).toContain("isInvertiblePatch")
+    expect(pane).not.toContain("sessions.diff")
     expect(pane).toContain("revertWarning")
     expect(pane).toContain("runtimeCaps")
     expect(pane).toContain("runtimeName")

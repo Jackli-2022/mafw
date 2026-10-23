@@ -18,6 +18,8 @@ export interface Checkpoint {
   createdAt: number | null
   prompt: string
   files: CheckpointFile[]
+  /** 该回合是否带可用的回合级文件摘要（summary.diffs） */
+  filesKnown: boolean
 }
 
 export function promptTextOf(message: any, parts: Record<string, any[]>): string {
@@ -35,10 +37,10 @@ export function promptTextOf(message: any, parts: Record<string, any[]>): string
   return "(无文本)"
 }
 
-function checkpointFiles(message: any): CheckpointFile[] {
+function checkpointFiles(message: any): { files: CheckpointFile[]; known: boolean } {
   const diffs = message?.summary?.diffs
-  if (!Array.isArray(diffs)) return []
-  const out: CheckpointFile[] = []
+  if (!Array.isArray(diffs)) return { files: [], known: false }
+  const files: CheckpointFile[] = []
   for (const d of diffs) {
     if (!d || typeof d.file !== "string" || !d.file) continue
     const file: CheckpointFile = { file: d.file }
@@ -46,9 +48,9 @@ function checkpointFiles(message: any): CheckpointFile[] {
     if (typeof d.deletions === "number") file.deletions = d.deletions
     if (typeof d.status === "string") file.status = d.status
     if (typeof d.patch === "string" && d.patch) file.patch = d.patch
-    out.push(file)
+    files.push(file)
   }
-  return out
+  return { files, known: true }
 }
 
 export function buildCheckpoints(
@@ -65,11 +67,13 @@ export function buildCheckpoints(
     if (!id || isLocalMessageId(id)) continue
     const createdAt = typeof m.time?.created === "number" ? m.time.created : null
     if (createdAt !== null && createdAt < cutoff) continue
+    const { files, known } = checkpointFiles(m)
     out.push({
       messageID: id,
       createdAt,
       prompt: promptTextOf(m, parts),
-      files: checkpointFiles(m),
+      files,
+      filesKnown: known,
     })
   }
   out.sort((a, b) => {

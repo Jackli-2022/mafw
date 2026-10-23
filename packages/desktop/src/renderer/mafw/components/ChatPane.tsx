@@ -64,7 +64,7 @@ import { appendQuote, formatQuote } from "./quote-format"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
 import { CheckpointOverlay } from "./CheckpointOverlay"
 import type { Checkpoint } from "./checkpoint-model"
-import { allHunksPatches, revertWarning } from "./checkpoint-revert"
+import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { normalizeToolPart } from "../tool-part"
@@ -410,6 +410,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const revertTo = async (messageID: string): Promise<boolean> => {
     const sid = sidProp()
     if (!sid) return false
+    if (sending() || store.session_status[sid]?.type === "busy") {
+      showToastV2({ title: "会话运行中", description: "结束后再回滚", variant: "error", duration: 2500 } as any)
+      return false
+    }
     try {
       await window.api.mafw.sessions.revert(sid, messageID)
       setCanUnrevert(props.revertUndoEnabled === true)
@@ -432,33 +436,56 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const revertCodeTo = async (targets: Checkpoint[]): Promise<boolean> => {
     const sid = sidProp()
     if (!sid || targets.length === 0) return false
-    let completed = 0
+    if (props.runtimeCaps?.diffApi !== true) {
+      showToastV2({ title: "代码回滚不可用", description: "当前 runtime 不提供文件回滚。", variant: "error", duration: 3000 } as any)
+      return false
+    }
+    const safe = targets.every((cp) =>
+      cp.filesKnown && cp.files.every((f) => typeof f.patch === "string" && isInvertiblePatch(f.patch))
+    )
+    if (!safe) {
+      showToastV2({
+        title: "代码回滚不可用",
+        description: "该检查点缺少可安全回滚的回合级文件数据（新增/删除文件或摘要缺失）。",
+        variant: "error",
+        duration: 5000,
+      } as any)
+      return false
+    }
+    let applied = 0
+    let noChanges = 0
     try {
       for (const cp of targets) {
-        const summaryComplete = cp.files.length > 0
-          && cp.files.every((f) => typeof f.patch === "string" && f.patch.trim())
-        let patches = summaryComplete ? allHunksPatches(cp.files) : []
-        if (patches.length === 0 && props.runtimeCaps?.diffApi === true) {
-          const res: any = await window.api.mafw.sessions.diff(sid, cp.messageID)
-          patches = allHunksPatches(Array.isArray(res?.files) ? res.files : [])
+        if (cp.files.length === 0) {
+          noChanges++
+          continue
         }
+        const patches = allHunksPatches(cp.files)
         if (patches.length === 0) {
-          completed++
+          noChanges++
           continue
         }
         await window.api.mafw.sessions.revertDiff(sid, patches)
-        completed++
+        applied++
       }
-      showToastV2({
-        title: "已回滚代码",
-        description: `已回滚到该检查点（${targets.length} 个回合）`,
-        variant: "success",
-      } as any)
+      if (applied === 0) {
+        showToastV2({
+          title: "没有可回滚的代码改动",
+          description: `目标检查点及之后 ${targets.length} 个回合均无文件改动。`,
+          duration: 3000,
+        } as any)
+      } else {
+        showToastV2({
+          title: "已回滚代码",
+          description: `已应用 ${applied} 个回合${noChanges > 0 ? `，${noChanges} 个回合无文件改动` : ""}`,
+          variant: "success",
+        } as any)
+      }
       return true
     } catch (e: any) {
       showToastV2({
         title: "回滚代码失败",
-        description: `已完成 ${completed}/${targets.length} 个回合；工作树可能处于中间态。${String(e?.message || e)}`,
+        description: `已应用 ${applied}/${targets.length} 个回合；工作树可能处于中间态。${String(e?.message || e)}`,
         variant: "error",
         duration: 6000,
       } as any)
@@ -1971,11 +1998,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         <Show when={revertConfirm()}>
           <div class="mafw-confirm-backdrop">
             <div class="mafw-confirm">
-              <div class="mafw-confirm-title">回滚到这条消息之前？</div>
+              <div class="mafw-confirm-title">确认回滚？</div>
               <div class="mafw-confirm-text">{revertWarning(props.runtimeName, props.revertUndoEnabled === true, props.runtimeCaps?.diffApi === true)}</div>
               <div class="mafw-confirm-actions">
                 <ButtonV2 variant="ghost" size="small" onClick={() => setRevertConfirm(null)}>取消</ButtonV2>
-                <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" onClick={doRevert}>确认回滚</ButtonV2>
+                <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" disabled={sending() || store.session_status[sidProp()]?.type === "busy"} onClick={doRevert}>确认回滚</ButtonV2>
               </div>
             </div>
           </div>

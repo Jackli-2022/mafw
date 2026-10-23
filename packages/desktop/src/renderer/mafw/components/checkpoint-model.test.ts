@@ -37,6 +37,18 @@ test("copies summary.diffs and skips malformed entries", () => {
     ] } },
   ], {}, NOW)
   expect(out[0].files).toEqual([{ file: "a.ts", additions: 2, deletions: 1, status: "modified", patch: "P" }])
+  expect(out[0].filesKnown).toBe(true)
+})
+
+test("filesKnown distinguishes missing summary from known-empty", () => {
+  const out = buildCheckpoints([
+    { id: "a", role: "user", time: { created: NOW } },
+    { id: "b", role: "user", time: { created: NOW - 1 }, summary: { diffs: [] } },
+  ], {}, NOW)
+  const by = Object.fromEntries(out.map(c => [c.messageID, c]))
+  expect(by.a.filesKnown).toBe(false)
+  expect(by.b.filesKnown).toBe(true)
+  expect(by.b.files).toEqual([])
 })
 
 test("excludes local/optimistic/queued ids", () => {

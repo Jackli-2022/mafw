@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { allHunksPatches, checkpointsToRewind, revertWarning } from "./checkpoint-revert"
+import { allHunksPatches, canRewindCode, checkpointsToRewind, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 
 const PATCH = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n@@ -3 +3 @@\n-c\n+d"
 
@@ -20,6 +20,24 @@ test("checkpointsToRewind includes target and newer, newest first", () => {
   expect(checkpointsToRewind(cps, "b").map(c => c.messageID)).toEqual(["c", "b"])
   expect(checkpointsToRewind(cps, "c").map(c => c.messageID)).toEqual(["c"])
   expect(checkpointsToRewind(cps, "missing")).toEqual([])
+})
+
+test("isInvertiblePatch rejects added/deleted files and empty hunks", () => {
+  expect(isInvertiblePatch(PATCH)).toBe(true)
+  expect(isInvertiblePatch("new file mode 100644\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+x")).toBe(false)
+  expect(isInvertiblePatch("deleted file mode 100644\n--- a/del\n+++ /dev/null\n@@ -1 +0,0 @@\n-x")).toBe(false)
+  expect(isInvertiblePatch("no hunks")).toBe(false)
+})
+
+test("canRewindCode requires known, complete, invertible turn data", () => {
+  const cp = (id: string, filesKnown: boolean, files: any[]) => ({ messageID: id, createdAt: 0, prompt: "", files, filesKnown })
+  const safe = cp("a", true, [{ file: "x", patch: PATCH }])
+  const missing = cp("b", false, [])
+  const added = cp("c", true, [{ file: "new", patch: "new file mode 100644\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+x" }])
+  expect(canRewindCode([safe], "a")).toBe(true)
+  expect(canRewindCode([safe, missing], "b")).toBe(false)
+  expect(canRewindCode([added], "c")).toBe(false)
+  expect(canRewindCode([cp("d", true, [])], "d")).toBe(false)
 })
 
 test("revertWarning is runtime-aware", () => {
