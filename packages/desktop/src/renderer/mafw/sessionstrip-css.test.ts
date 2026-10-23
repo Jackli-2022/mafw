@@ -55,4 +55,29 @@ describe("sessionstrip industry-tab contract", () => {
     expect(css).toMatch(/@container\s*\(max-width:\s*120px\)\s*\{[^@]*\.mafw-session-tab:not\(\.active\):hover\s+\.mafw-session-close\s*\{\s*display:\s*flex/)
     expect(css).toMatch(/@container\s*\(max-width:\s*120px\)\s*\{[^@]*\.mafw-session-tab:not\(\.active\):hover\s+\.mafw-agent-dot\s*\{\s*display:\s*none/)
   })
+
+  // 左侧品牌位（2026-10-23，设计裁决 B2：线框暖灰 monogram + 小字标）
+  test("品牌位固定不收缩（在滚动层之外，tab 滚动不带走 logo）", () => {
+    const brand = css.match(/^\.mafw-sessionstrip-brand\s*\{([^}]*)\}/m)?.[1]
+    expect(brand).toBeDefined()
+    expect(brand).toMatch(/flex:\s*none/)
+    expect(brand).toMatch(/align-items:\s*center/)
+    const src = readFileSync(join(import.meta.dirname, "components/SessionStrip.tsx"), "utf8")
+    const brandIdx = src.indexOf("mafw-sessionstrip-brand")
+    const scrollIdx = src.indexOf("mafw-sessionstrip-scroll")
+    expect(brandIdx).toBeGreaterThan(-1)
+    expect(brandIdx).toBeLessThan(scrollIdx)
+  })
+
+  test("B2 配色走主题 token（暗/亮主题自动适配）：M 与字标暖灰线框", () => {
+    const mark = css.match(/^\.mafw-sessionstrip-brand-mark\s*\{([^}]*)\}/m)?.[1]
+    expect(mark).toBeDefined()
+    expect(mark).toMatch(/border:\s*1\.5px solid var\(--text-2\)/)
+    expect(mark).toMatch(/color:\s*var\(--text-2\)/)
+    expect(mark).toMatch(/border-radius:\s*5px/)
+    const word = css.match(/^\.mafw-sessionstrip-brand-word\s*\{([^}]*)\}/m)?.[1]
+    expect(word).toBeDefined()
+    expect(word).toMatch(/color:\s*var\(--text-3\)/)
+    expect(word).toMatch(/letter-spacing:/)
+  })
 })

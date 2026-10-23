@@ -71,6 +71,13 @@ export function SessionStrip(props: {
 
   return (
     <div class="mafw-sessionstrip" onPointerLeave={endSlinky}>
+      {/* 左侧品牌位（2026-10-23 裁决 B2：线框暖灰 monogram + 小字标）——
+          放在滚动层之外：tab 再多、横向滚动时 logo 不动 */}
+      <div class="mafw-sessionstrip-brand" role="img" aria-label="MAFW">
+        <span class="mafw-sessionstrip-brand-mark" aria-hidden="true">M</span>
+        <span class="mafw-sessionstrip-brand-word" aria-hidden="true">MAFW</span>
+      </div>
+      <div class="mafw-sessionstrip-divider" aria-hidden="true" />
       <div class="mafw-sessionstrip-scroll" ref={scrollEl}>
         {props.sessions().map(s => (
           <ContextMenu>

@@ -574,6 +574,40 @@ html[data-theme="light"] body {
   flex: 1 1 auto;
   min-width: 0;
 }
+/* 左侧品牌位（2026-10-23 设计裁决 B2：线框暖灰 monogram + 小字标）——
+   固定在滚动层之外，tab 溢出滚动时 logo 不动；配色走主题 token，亮/暗自动适配 */
+.mafw-sessionstrip-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding-right: 2px;
+}
+.mafw-sessionstrip-brand-mark {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--text-2);
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-2);
+}
+.mafw-sessionstrip-brand-word {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: .12em;
+  color: var(--text-3);
+}
+.mafw-sessionstrip-divider {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: var(--border-subtle);
+  margin: 0 2px;
+}
 /* 业界 tab 条（Chrome/VS Code/Firefox）：永不显示滚动条；
    tab 收缩到下限后由滚轮横向滚动承接溢出 */
 .mafw-sessionstrip-scroll {
