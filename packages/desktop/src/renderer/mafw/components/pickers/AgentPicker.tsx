@@ -1,12 +1,16 @@
 // @ts-nocheck
 import { createSignal, createEffect, Show, For } from "solid-js"
 import { PopoverShell } from "./PopoverShell"
+import { agentKey, isAgentKey } from "../../agent-identity"
 
 export type AgentEntry = {
+  /** opencode 2.1.0 稳定 id（build/plan/…）；MAFW 注册表身份只有 name */
+  id?: string
   name: string
   description?: string
   mode?: string
   color?: string
+  source?: string
   isManager?: boolean
 }
 
@@ -40,7 +44,7 @@ export function AgentPicker(props: {
   const selectableRows = () => {
     if (props.mode === "switch" && props.lockedManager) {
       // Manager sessions can only use the manager agent.
-      return props.primaryAgents.filter(a => a.name === "manager")
+      return props.primaryAgents.filter(a => isAgentKey(a, "manager"))
     }
     if (props.mode === "switch") return props.primaryAgents
     return [...props.primaryAgents, ...props.subagentAgents]
@@ -72,7 +76,7 @@ export function AgentPicker(props: {
             {(a, i) => (
               <div
                 class="mafw-agent-row"
-                classList={{ hi: hi() === i(), current: props.mode === "switch" && a.name === props.currentName }}
+                classList={{ hi: hi() === i(), current: props.mode === "switch" && agentKey(a) === props.currentName }}
                 onClick={() => props.onSelect(a)}
               >
                 <span class="mafw-agent-avatar" style={{ background: tintOf(a.name), color: "var(--on-accent)" }}>
@@ -86,7 +90,7 @@ export function AgentPicker(props: {
                     <span class="mafw-agent-row-role">{a.description}</span>
                   </Show>
                 </span>
-                <Show when={props.mode === "switch" && a.name === props.currentName}>
+                <Show when={props.mode === "switch" && agentKey(a) === props.currentName}>
                   <span class="mafw-picker-row-check">✓</span>
                 </Show>
               </div>

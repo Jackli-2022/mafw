@@ -86,15 +86,20 @@ function unwrapNative<T>(body: any): T {
 function promptInputBody(parts: any[], opts?: { delivery?: string }): Record<string, unknown> {
   const texts: string[] = [];
   const files: Array<Record<string, unknown>> = [];
+  const agents: Array<{ name: string }> = [];
   for (const p of parts ?? []) {
     if (!p || typeof p !== 'object') continue;
     if (p.type === 'text' && typeof p.text === 'string') texts.push(p.text);
     else if (p.type === 'file' && typeof p.url === 'string') {
       files.push({ uri: p.url, ...(p.filename ? { name: p.filename } : {}) });
+    } else if (p.type === 'agent' && typeof p.name === 'string' && p.name) {
+      // 2.1.0 PromptInput.agents：@agent 提及载体（旧代码直接丢弃该部件）
+      if (!agents.some((a) => a.name === p.name)) agents.push({ name: p.name });
     }
   }
   const body: Record<string, unknown> = { text: texts.join('\n') };
   if (files.length > 0) body.files = files;
+  if (agents.length > 0) body.agents = agents;
   // gateway delivery 词汇 → 2.1.0 Session.Inbox.Delivery（steer|queue）
   if (opts?.delivery === 'steer') body.delivery = 'steer';
   else if (opts?.delivery === 'followup' || opts?.delivery === 'queue') body.delivery = 'queue';

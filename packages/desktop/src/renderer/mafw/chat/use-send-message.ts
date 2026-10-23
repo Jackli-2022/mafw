@@ -4,6 +4,7 @@
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { mimeOf } from "./use-attachments"
 import { enqueueTurn, takeFirstTurn } from "../components/turn-queue"
+import { agentKey } from "../agent-identity"
 import type { Annotation } from "../../../shared/annotation-types"
 
 /** 解析 "/cmd args" 形态（不做命令表匹配——那由 deps.matchSlash 注入）。 */
@@ -64,7 +65,7 @@ export interface SendMessageDeps {
   history: { push(t: string): void }
   clearDraft: (sid: string) => void
   matchSlash: (text: string) => { name: string; group: "mafw" | "custom" } | null
-  agentSel: () => { name: string } | null | undefined
+  agentSel: () => { id?: string; name: string } | null | undefined
   model: () => { providerID: string; modelID: string } | null | undefined
   setStore: (fn: (prev: any) => any) => void
   forceAnchor: () => void
@@ -309,7 +310,7 @@ export function useSendMessage(deps: SendMessageDeps) {
         message: [filePrefix, text.trim(), annotationBlock, failureNote].filter(Boolean).join("\n"),
         sessionID: sid,
         parts: visionParts.length || fileParts.length || agentParts.length ? [...visionParts, ...fileParts, ...agentParts] : undefined,
-        agent: agentSel()?.name === "manager" ? undefined : agentSel()?.name,
+        agent: agentKey(agentSel()) === "manager" ? undefined : (agentKey(agentSel()) || undefined),
         model: model() ? { providerID: model()!.providerID, modelID: model()!.modelID } : undefined,
       }) as any
       if (result?.sessionID) {

@@ -18,6 +18,7 @@ import { LeftDock } from "./components/LeftDock"
 import { clampLeftDockWidth, resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
+import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
@@ -165,7 +166,7 @@ export function MafwShell() {
 
   // All project sessions. Served by the shared session store
   // (cached, invalidated on SSE reconnect / mutations).
-  const [historySessions, setHistorySessions] = createSignal<{ id: string; title?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]>([])
+  const [historySessions, setHistorySessions] = createSignal<{ id: string; title?: string; agent?: string; time?: { updated?: number }; metadata?: { mafw?: { role?: string } } }[]>([])
   createEffect(() => {
     const pd = currentProject()
     if (gwStatus()?.state !== "ready") return
@@ -1651,7 +1652,8 @@ export function MafwShell() {
   const applyAgentSwitch = (a: AgentEntry, sidOverride?: string) => {
     const sid = sidOverride ?? currentSessionID()
     if (sid) {
-      setAgentPicks(sid, a.name)
+      // 2.1.0：稳定键是 id（build/plan），显示名只用于展示
+      setAgentPicks(sid, agentKey(a))
       setSwitchLogs(prev => ({ ...prev, [sid]: [...(prev[sid] || []), `已切换到 ${a.name}`] }))
     }
   }
@@ -1661,8 +1663,23 @@ export function MafwShell() {
     if (!sid) return null
     const name = agentPicks[sid]
     if (!name) return null
-    return primaryAgents().find(a => a.name === name) ?? null
+    return primaryAgents().find(a => agentKey(a) === name) ?? null
   }
+
+  // 2.1.0 sticky agent：session.agent 是运行时真值（build/plan/…）——
+  // 应用重启后用它把 agent 药丸补回来；本地已有选择时不覆盖
+  // （用户刚点的选择先于服务端旧值，直到下一条消息把切换写入会话）。
+  createEffect(() => {
+    const list = historySessions() as Array<{ id?: string; agent?: string }>
+    const agents = primaryAgents()
+    if (!Array.isArray(list) || list.length === 0 || agents.length === 0) return
+    for (const s of list) {
+      if (!s?.id || !s.agent) continue
+      if (agentPicks[s.id]) continue
+      const hit = resolveSessionAgent(agents, s.agent)
+      if (hit) setAgentPicks(s.id, agentKey(hit))
+    }
+  })
 
   // TaskList metrics: tokens + start time of the current (last) turn
   const taskMetrics = (sid: string) => {
@@ -1880,7 +1897,7 @@ export function MafwShell() {
                               setAgentPicks(activeSessionId()!, undefined as any)
                               return
                             }
-                            const entry = primaryAgents().find(a => a.name === next)
+                            const entry = primaryAgents().find(a => isAgentKey(a, next))
                             if (entry) applyAgentSwitch(entry, activeSessionId()!)
                           }}
                           onCreateSession={createSession}
@@ -1913,9 +1930,9 @@ export function MafwShell() {
                      onNavigate={(t) => { setActiveTab(t); setShowConfig(false) }}
                      onNewGoal={handleNewGoal}
                      onOpenManager={handleOpenManager}
-                     hasPlanAgent={primaryAgents().some(a => a.name === "plan")}
+                     hasPlanAgent={primaryAgents().some(a => isAgentKey(a, "plan"))}
                      onStartWithPlan={() => {
-                       const planEntry = primaryAgents().find(a => a.name === "plan")
+                       const planEntry = primaryAgents().find(a => isAgentKey(a, "plan"))
                        if (!planEntry) return
                        void createSession().then((sid) => { if (sid) applyAgentSwitch(planEntry, sid) })
                      }}

@@ -235,8 +235,32 @@ describe('opencode adapter branch + envelope', () => {
     }
   });
 
-  it('model switch posts 2.1.0 Model.Ref {id, providerID}（旧 {modelID} 会 400，导致发送失败）', async () => {
+  it('agent 提及部件映射为 2.1.0 PromptInput.agents（旧代码丢弃该部件）', async () => {
     const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      await client.session.promptAsync({
+        sessionID: 's1', message: 'hi',
+        parts: [
+          { type: 'text', text: 'hi' },
+          { type: 'agent', name: 'Explore' },
+          { type: 'agent', name: 'Explore' },
+          { type: 'agent', name: 'Plan' },
+        ],
+      });
+      const promptCall = calls.find((c) => c.url.endsWith('/session/s1/prompt'));
+      expect(JSON.parse(promptCall.body)).toEqual({ text: 'hi', agents: [{ name: 'Explore' }, { name: 'Plan' }] });
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+
+  it('model switch posts 2.1.0 Model.Ref {id, providerID}（旧 {modelID} 会 400，导致发送失败）', async () => {    const savedFetch = globalThis.fetch;
     const calls: any[] = [];
     (globalThis as any).fetch = (async (url: any, init: any) => {
       calls.push({ url: String(url), method: init?.method, body: init?.body });

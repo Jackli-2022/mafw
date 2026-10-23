@@ -17,6 +17,7 @@ import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
+import { agentKey, isAgentKey } from "../agent-identity"
 import { CommandPicker, type CommandItem } from "./pickers/CommandPicker"
 import { PopoverShell } from "./pickers/PopoverShell"
 import { AudioReply, cachedArtifactUrl } from "./AudioReply"
@@ -345,9 +346,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // 能力门：primaryAgents 列表内容含 plan/build 才启用（pi 列表恒空 → 自动隐藏）；
   // manager 会话锁不适用。
   const planBuildGate = () =>
-    !isManager() && (props.primaryAgents() || []).some((a: any) => a?.name === "plan" || a?.name === "build")
+    !isManager() && (props.primaryAgents() || []).some((a: any) => isAgentKey(a, "plan") || isAgentKey(a, "build"))
   const planBuildState = (): "plan" | "build" | "default" => {
-    const n = props.agentSel()?.name
+    const n = agentKey(props.agentSel())
     return n === "plan" || n === "build" ? n : "default"
   }
   const cyclePlanBuild = () => {
@@ -1741,7 +1742,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           subagents={subagents()}
           isRunning={props.subagentRunning}
           lockedManager={isManager()}
-          currentName={agentSelName()}
+          currentName={agentKey(props.agentSel())}
           onSelect={(a) => {
             if (pickerOpen() === "agent-mention") {
               addAgent(a.name)

@@ -9,6 +9,8 @@ export interface Session {
   title: string
   time: { created: number; updated: number }
   parentID?: string
+  /** opencode 2.1.0：会话级 sticky agent id（build/plan/…） */
+  agent?: string
 }
 
 export interface Project {

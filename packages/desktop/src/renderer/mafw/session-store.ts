@@ -11,6 +11,8 @@ type SessionInfo = {
   metadata?: { mafw?: { role?: string } }
   time?: { created?: number; updated?: number }
   parentID?: string
+  /** opencode 2.1.0 sticky agent id（build/plan/…）——用于恢复 agent 药丸 */
+  agent?: string
 }
 
 const cache = new Map<string, { list: SessionInfo[]; fetchedAt: number; failed: boolean }>()
