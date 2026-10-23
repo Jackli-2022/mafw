@@ -99,6 +99,22 @@ export function changedDiffPaths(
   return out
 }
 
+export interface PulseStep {
+  seen: boolean
+  prev: FileDiffEntry[]
+  changed: Set<string>
+}
+
+/** 首份快照只建基线（含空数组）；之后才按 diff 产生脉冲。 */
+export function nextPulseState(
+  prev: FileDiffEntry[] | null,
+  seen: boolean,
+  live: FileDiffEntry[],
+): PulseStep {
+  if (!seen) return { seen: true, prev: live, changed: new Set() }
+  return { seen: true, prev: live, changed: changedDiffPaths(prev, live) }
+}
+
 export function changeStatusLetter(status: string | undefined): string {
   if (!status) return ""
   const s = status.toLowerCase()

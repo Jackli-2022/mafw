@@ -27,6 +27,12 @@ test("truncates with a visible marker", () => {
   expect(out.length).toBeGreaterThan(QUOTE_MAX_CHARS)
 })
 
+test("truncation never splits a surrogate pair", () => {
+  const out = formatQuote("a😀😀", { maxChars: 2 })
+  expect(out.startsWith("> a😀")).toBe(true)
+  expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
+})
+
 test("Chinese text", () => {
   expect(formatQuote("为什么这样写？")).toBe("> 为什么这样写？")
 })

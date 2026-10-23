@@ -640,7 +640,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   createEffect(() => {
     sidProp()
-    dismissQuote()
+    suppressQuote()
   })
 
   // ESC / Ctrl+C interrupts this pane only when it is focused and sending.

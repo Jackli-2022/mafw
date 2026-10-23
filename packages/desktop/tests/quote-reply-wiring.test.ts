@@ -15,8 +15,13 @@ describe("quote reply wiring", () => {
     expect(pane).toContain("selectionchange")
     expect(pane).toContain('"mouseup"')
     expect(pane).toContain("dismissQuote")
-    // Esc hides the toolbar before the interrupt branch
-    expect(pane).toMatch(/e\.key === "Escape" && quoteAnchor\(\)[\s\S]*dismissQuote\(\)[\s\S]*return/)
+    expect(pane).toContain("suppressQuote")
+    expect(pane).toContain("sameQuoteSelection")
+    expect(pane).toContain("onQuoteEsc")
+    expect(pane).toContain("stopImmediatePropagation")
+    expect(pane).toContain("readOnly")
+    expect(pane).toContain("[data-message]")
+    expect(pane).toContain("handleScroll(); suppressQuote()")
   })
 
   test("QuoteToolbar portals to body and preserves the selection on mousedown", () => {

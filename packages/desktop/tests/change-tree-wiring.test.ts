@@ -9,7 +9,7 @@ describe("live changes tree wiring", () => {
   test("ChangesDock builds a tree and pulses live diffs with a per-session baseline", () => {
     const dock = read("src/renderer/mafw/components/ChangesDock.tsx")
     expect(dock).toContain("buildChangeTree")
-    expect(dock).toContain("changedDiffPaths")
+    expect(dock).toContain("nextPulseState")
     expect(dock).toContain("liveDiffs")
     expect(dock).toContain("prevLive")
     expect(dock).toContain("mafw-change-pulse")

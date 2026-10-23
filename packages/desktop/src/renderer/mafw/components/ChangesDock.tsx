@@ -4,7 +4,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
-import { buildChangeTree, changedDiffPaths, changeStatusLetter, type ChangeTreeNode } from "./change-tree"
+import { buildChangeTree, nextPulseState, changeStatusLetter, type ChangeTreeNode } from "./change-tree"
 
 function ChangeNode(props: {
   node: ChangeTreeNode
@@ -120,15 +120,11 @@ export function ChangesDock(props: {
       setOpenFile(null)
     }
     if (!Array.isArray(live)) return
-    if (!seen) {
-      seen = true
-      prevLive = live
-      return
-    }
-    const changed = changedDiffPaths(prevLive, live)
-    prevLive = live
-    if (changed.size === 0) return
-    setPulse(changed)
+    const step = nextPulseState(prevLive, seen, live)
+    seen = step.seen
+    prevLive = step.prev
+    if (step.changed.size === 0) return
+    setPulse(step.changed)
     if (pulseTimer) clearTimeout(pulseTimer)
     pulseTimer = setTimeout(() => setPulse(new Set<string>()), 1200)
   })

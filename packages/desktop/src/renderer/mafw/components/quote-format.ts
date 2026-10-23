@@ -15,7 +15,7 @@ export function formatQuote(text: string, opts?: { maxChars?: number }): string 
   if (!body) return ""
 
   const truncated = body.length > maxChars
-  if (truncated) body = body.slice(0, maxChars)
+  if (truncated) body = Array.from(body).slice(0, maxChars).join("")
 
   const out = body.split("\n").map((line) => (line.length > 0 ? `> ${line}` : ">"))
   if (truncated) out.push("> …（引用已截断）")

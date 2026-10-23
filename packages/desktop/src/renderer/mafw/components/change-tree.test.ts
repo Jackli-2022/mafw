@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { buildChangeTree, changedDiffPaths, changeStatusLetter, normalizeDiffPath } from "./change-tree"
+import { buildChangeTree, changedDiffPaths, changeStatusLetter, nextPulseState, normalizeDiffPath } from "./change-tree"
 
 test("nested dirs aggregate counts and sort dirs before files", () => {
   const tree = buildChangeTree([
@@ -34,4 +34,23 @@ test("changedDiffPaths: null baseline is silent, new/count changes pulse, unchan
   const next = [{ file: "a", additions: 1 }, { file: "b", additions: 3 }, { file: "c", additions: 1 }]
   expect(changedDiffPaths(prev, next)).toEqual(new Set(["b", "c"]))
   expect(changedDiffPaths(prev, prev)).toEqual(new Set())
+})
+
+test("changedDiffPaths: removed files don't pulse", () => {
+  expect(changedDiffPaths([{ file: "a" }, { file: "b" }], [{ file: "a" }])).toEqual(new Set())
+})
+
+test("nextPulseState: first snapshot is silent, later change pulses", () => {
+  const first = nextPulseState(null, false, [{ file: "a", additions: 1 }])
+  expect(first.changed).toEqual(new Set())
+  expect(first.seen).toBe(true)
+  const second = nextPulseState(first.prev, first.seen, [{ file: "a", additions: 2 }])
+  expect(second.changed).toEqual(new Set(["a"]))
+})
+
+test("nextPulseState: empty baseline allows the first file to pulse", () => {
+  const first = nextPulseState(null, false, [])
+  expect(first.changed).toEqual(new Set())
+  const second = nextPulseState(first.prev, first.seen, [{ file: "a" }])
+  expect(second.changed).toEqual(new Set(["a"]))
 })
