@@ -228,16 +228,18 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       __fields: fields,
     };
   };
-  const loadForms = async (): Promise<any[]> => {
-    const body = await directNative('/form', 'GET');
+  const loadForms = async (directory?: string): Promise<any[]> => {
+    // forms 列表按 location 过滤（location[directory] / x-opencode-directory）；
+    // 无 directory 时 serve 只回默认 location 的 forms（通常为空）。
+    const body = await directNative('/form', 'GET', undefined, directory);
     const list = unwrapNative<any[]>(body) ?? [];
     for (const f of list) if (f?.id) formCache.set(f.id, f);
     return list;
   };
-  const findForm = async (id: string): Promise<any | undefined> => {
+  const findForm = async (id: string, directory?: string): Promise<any | undefined> => {
     const cached = formCache.get(id);
     if (cached) return cached;
-    const list = await loadForms();
+    const list = await loadForms(directory);
     return list.find((f: any) => f?.id === id);
   };
   const formAnswerOf = (form: any, answers: string[][]): Record<string, unknown> => {
@@ -478,19 +480,19 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       question: {
-        async list(_opts?: { directory?: string }) {
+        async list(opts?: { directory?: string }) {
           // 2.1.0 移除了 /question 路由：问询机制 = 全局 pending forms
           // （GET /api/form，形状与 /permission/request 同构）。映射成 desktop
           // AskCard 的 questions[] 契约；轮询 reconcile 仍然有效。
           try {
-            const forms = await loadForms();
+            const forms = await loadForms(opts?.directory);
             return forms.map(formToQuestion);
           } catch {
             return [] as any[];
           }
         },
         async reply(opts: { requestID: string; answers: string[][]; directory?: string }) {
-          const form = await findForm(opts.requestID);
+          const form = await findForm(opts.requestID, opts.directory);
           if (!form?.id || !form?.sessionID) throw new Error(`form ${opts.requestID} not found`);
           await directNative(`/session/${form.sessionID}/form/${form.id}/reply`, 'POST', {
             answer: formAnswerOf(form, opts.answers),
@@ -498,7 +500,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
           formCache.delete(form.id);
         },
         async reject(opts: { requestID: string; directory?: string }) {
-          const form = await findForm(opts.requestID);
+          const form = await findForm(opts.requestID, opts.directory);
           if (!form?.id || !form?.sessionID) return;
           await directNative(`/session/${form.sessionID}/form/${form.id}`, 'DELETE');
           formCache.delete(form.id);

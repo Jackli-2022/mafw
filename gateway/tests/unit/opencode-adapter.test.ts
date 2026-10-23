@@ -238,6 +238,10 @@ describe('opencode-adapter permission/question contract surface', () => {
         expect.objectContaining({ id: 'env', question: 'Environment', multiple: false, custom: true }),
         expect.objectContaining({ id: 'tags', question: 'Tags', multiple: true }),
       ]);
+      // forms 列表按 location 过滤（2.1 实测：无 directory 只回默认 location）
+      await rt.session.question!.list({ directory: '/proj' });
+      expect(fetchSpy.mock.calls[1][0]).toBe('http://127.0.0.1:4096/api/form?directory=%2Fproj');
+      expect((fetchSpy.mock.calls[1][1].headers as any)['x-opencode-directory']).toBe(encodeURIComponent('/proj'));
     });
 
     it('reply → POST /session/{sid}/form/{id}/reply，answers 按字段类型编码为 answer 对象', async () => {
