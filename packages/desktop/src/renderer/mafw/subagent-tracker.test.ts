@@ -9,6 +9,9 @@ describe("parseAgentFromTitle", () => {
     expect(parseAgentFromTitle("调研登录流程 @explore")).toBe("explore")
   })
   test("无 @ 缺省", () => { expect(parseAgentFromTitle("随便写写")).toBe("子代理") })
+  test("2.1 标题 (@general subagent) 解析", () => {
+    expect(parseAgentFromTitle("调研闭源 CUA 架构 (@general subagent)")).toBe("general")
+  })
 })
 
 describe("applySubagentEvent", () => {
@@ -17,6 +20,15 @@ describe("applySubagentEvent", () => {
     expect(rows).toEqual([{ childID: "c1", parentID: "p1", title: "任务 @a", agent: "a", status: "running", startedAt: 1000 }])
     rows = applySubagentEvent(rows, { kind: "session-created", info: { id: "x", parentID: "" } }, 1000)
     expect(rows.length).toBe(1)
+  })
+  test("session-created 显式 agent 覆盖标题解析", () => {
+    const rows = applySubagentEvent([], {
+      kind: "session-created",
+      info: { id: "c1", parentID: "p1", title: "Builder check B3.1 spec", agent: "general" },
+    }, 1000)
+    expect(rows[0]).toMatchObject({
+      childID: "c1", parentID: "p1", title: "Builder check B3.1 spec", agent: "general",
+    })
   })
   test("session-updated 刷新标题与 agent，不动其他行", () => {
     let rows = applySubagentEvent([], created("c1", "p1", "旧 @a"), 1000)

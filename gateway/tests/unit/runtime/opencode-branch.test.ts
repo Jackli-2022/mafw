@@ -325,3 +325,48 @@ describe('opencode adapter branch + envelope', () => {
     }
   });
 });
+
+describe('opencode adapter 2.1.0 children/parentID', () => {
+  it('children 走 /api/session?parentID= 并解包 {data}', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [{ id: 'c1', parentID: 'p1', title: 'child', time: { created: 1, updated: 2 } }],
+        }),
+      };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      const out = await client.session.children({ sessionID: 'p1' });
+      expect(calls[0].url).toBe('http://x/api/session?parentID=p1&limit=100');
+      expect(calls[0].method).toBe('GET');
+      expect(out).toEqual([{ id: 'c1', parentID: 'p1', title: 'child', time: { created: 1, updated: 2 } }]);
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+
+  it('create 把 parentID 写进 body', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ data: { id: 'c1' } }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      await client.session.create({ directory: 'C:/work', parentID: 'p1' });
+      expect(JSON.parse(calls[0].body)).toEqual({
+        location: { directory: 'C:/work' },
+        parentID: 'p1',
+      });
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+});

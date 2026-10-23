@@ -281,6 +281,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // Manager session 创建因 id 缺失而失败（2026-10-23 实测）。
         const body = await directNative('/session', 'POST', {
           location: { directory: opts.directory },
+          ...(opts.parentID ? { parentID: opts.parentID } : {}),
         });
         return unwrapNative(body);
       },
@@ -448,9 +449,14 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       async children(opts: { sessionID: string }) {
-        // 2.1.0 无 /session/{id}/children 路由——fail-open 空列表
+        // 2.1.0 无 /session/{id}/children 路由；list 的 parentID 过滤是原生面。
+        // 走 directNative 而非 SDK：SDK 的 session.list 映射可能丢 parentID 字段。
         try {
-          return unwrap<any[]>(await client.session.children({ sessionID: opts.sessionID })) ?? [];
+          const body = await directNative(
+            `/session?parentID=${encodeURIComponent(opts.sessionID)}&limit=100`,
+            'GET',
+          );
+          return unwrapNative<any[]>(body) ?? [];
         } catch {
           return [] as any[];
         }

@@ -21,7 +21,7 @@ export interface SubagentRow {
 }
 
 export type TrackerEvent =
-  | { kind: "session-created"; info: { id: string; parentID: string; title?: string } }
+  | { kind: "session-created"; info: { id: string; parentID: string; title?: string; agent?: string } }
   | { kind: "session-updated"; sessionID: string; title: string }
   | { kind: "turn-terminal"; sessionID: string; terminal: "completed" | "failed" | "aborted" }
   | { kind: "session-deleted"; sessionID: string }
@@ -32,6 +32,8 @@ const DEFAULT_AGENT = "子代理"
 
 /** opencode 子会话标题形如 "<description> @<agent>"；取尾部 @ 段，缺省「子代理」。 */
 export function parseAgentFromTitle(title: string): string {
+  const paren = /\(@([^\s)]+)\s+subagent\)/i.exec(title)
+  if (paren) return paren[1]
   const m = /@([^\s@]+)\s*$/.exec(title)
   return m ? m[1] : DEFAULT_AGENT
 }
@@ -41,10 +43,17 @@ const byStartedDesc = (a: SubagentRow, b: SubagentRow) => b.startedAt - a.starte
 export function applySubagentEvent(rows: SubagentRow[], ev: TrackerEvent, now: number = Date.now()): SubagentRow[] {
   switch (ev.kind) {
     case "session-created": {
-      const { id, parentID, title } = ev.info
+      const { id, parentID, title, agent } = ev.info
       if (!parentID || rows.some(r => r.childID === id)) return rows
       const t = title ?? ""
-      const row: SubagentRow = { childID: id, parentID, title: t, agent: parseAgentFromTitle(t), status: "running", startedAt: now }
+      const row: SubagentRow = {
+        childID: id,
+        parentID,
+        title: t,
+        agent: agent || parseAgentFromTitle(t),
+        status: "running",
+        startedAt: now,
+      }
       return [...rows, row].sort(byStartedDesc)
     }
     case "session-updated": {

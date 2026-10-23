@@ -109,6 +109,8 @@ export interface SessionCreateOpts {
    *  2026-10-20-session-directory-contract-design）。runtime 不得猜测来源
    *  （缺传即编译错误；运行时缺失走 `requireSessionDir` fail-loud）。 */
   directory: string;
+  /** 2.1 原生父子会话（subagent / goal wave）；缺省顶层会话。 */
+  parentID?: string;
 }
 
 export interface SessionPromptOpts {
