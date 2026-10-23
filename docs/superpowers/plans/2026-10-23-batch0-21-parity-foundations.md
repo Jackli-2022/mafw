@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-23-batch0-21-parity-foundations-design.md`
 
+**Status:** Implemented in `830000cd` (children tree), `613e3703` (sticky switch / StopReason / SSE gaps), `9a4740a1` (tracker ordering + default agent reset). Verification: gateway 2536/2536, desktop 1403/1403, session-ui 89/89, SDK 141/141, TUI 224 (1 smoke skip), root build rc=0.
+
 ## Global Constraints
 
 - 2.1 API base is `/api` + Basic auth (`serveAuthHeaders()`); never bypass `directNative`.
