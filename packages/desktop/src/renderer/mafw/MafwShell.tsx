@@ -815,6 +815,7 @@ export function MafwShell() {
     }).catch(() => {})
   })
   const worktreeEnabled = () => rtCaps().worktreeApi === true
+  const revertUndoEnabled = () => rtCaps().revertUndoApi === true
   const createWorktreeSession = () => {
     const dir = currentProject()
     if (!dir) { showToastV2({ description: "未选择项目，无法开并行任务", duration: 2500 }); return }
@@ -1890,6 +1891,7 @@ export function MafwShell() {
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
                           onOpenDiffReview={() => applyRightDock(true, "changes")}
                           worktreeEnabled={worktreeEnabled()}
+                          revertUndoEnabled={revertUndoEnabled()}
                           onCreateWorktreeSession={createWorktreeSession}
                           projectDirectory={currentProject()}
                           onPlanBuildToggle={(next) => {

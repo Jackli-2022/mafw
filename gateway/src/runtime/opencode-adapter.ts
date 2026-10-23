@@ -373,23 +373,20 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       async revert(opts: { sessionID: string; messageID: string; partID?: string }) {
-        const result = await client.session.revert({
-          sessionID: opts.sessionID,
+        // 2.1.0：revert 改为两段式——stage（暂存边界，可 clear 撤销）+
+        // commit（真正截断历史，不可逆）。旧 POST /session/{id}/revert 已 404。
+        // files:true 对齐 v1 revert 的文件回滚语义（stage 响应列出将回滚的文件）。
+        await directNative(`/session/${opts.sessionID}/revert/stage`, 'POST', {
           messageID: opts.messageID,
-          partID: opts.partID,
+          files: true,
         });
-        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
-          throw new Error(String((result as any).error));
-        }
+        await directNative(`/session/${opts.sessionID}/revert/commit`, 'POST');
       },
 
       async unrevert(opts: { sessionID: string }) {
-        const result = await client.session.unrevert({
-          sessionID: opts.sessionID,
-        });
-        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
-          throw new Error(String((result as any).error));
-        }
+        // 2.1.0 无 unrevert（commit 不可逆）；DELETE /revert 只清未提交的暂存。
+        // 桌面侧由 revertUndoApi=false 隐藏撤销入口，这里保留兼容调用。
+        await directNative(`/session/${opts.sessionID}/revert`, 'DELETE');
       },
 
       async diff(opts: { sessionID: string; messageID?: string }) {

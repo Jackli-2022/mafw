@@ -62,6 +62,7 @@ import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
 import { appendQuote, formatQuote } from "./quote-format"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
+import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
@@ -140,6 +141,8 @@ export type ChatPaneProps = {
   onPlanBuildToggle?: (next: "plan" | "build" | "default") => void
   /** worktree 并行隔离（切片 4）：能力门由 MafwShell 传（runtime worktreeApi） */
   worktreeEnabled?: boolean
+  /** revert 后可撤销能力（opencode 2.1 commit 不可逆 → false，隐藏 undo 入口） */
+  revertUndoEnabled?: boolean
   onCreateWorktreeSession?: () => void
   /** 当前项目主目录（worktree 徽标判定的对照基准） */
   projectDirectory?: string | null
@@ -331,7 +334,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (!sidProp()) return
     try {
       const info: any = await window.api.mafw.sessions.get(sidProp())
-      setCanUnrevert(!!info?.revert)
+      setCanUnrevert(props.revertUndoEnabled === true && !!info?.revert)
     } catch { /* fail-open */ }
   })
 
@@ -400,7 +403,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setRevertConfirm(null)
     try {
       await window.api.mafw.sessions.revert(sidProp(), target.messageID)
-      setCanUnrevert(true)
+      setCanUnrevert(props.revertUndoEnabled === true)
       refreshAfterRevert()
       showToastV2({ title: "已回滚", description: "该消息之后的历史已撤回", variant: "success" } as any)
     } catch (e: any) {
@@ -504,20 +507,38 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // ── 选中聊天文本 → 引用进 composer ──────────────────────────────────
   const [quoteAnchor, setQuoteAnchor] = createSignal<QuoteAnchor | null>(null)
   const [quoteText, setQuoteText] = createSignal("")
+  let suppressedQuote: QuoteSelectionSnapshot | null = null
   const dismissQuote = () => {
     setQuoteAnchor(null)
     setQuoteText("")
   }
+  const suppressQuote = () => {
+    const sel = window.getSelection()
+    suppressedQuote = sel ? snapshotQuoteSelection(sel) : null
+    dismissQuote()
+  }
   const updateQuoteSelection = () => {
     const sel = window.getSelection()
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+    if (!sel || sel.isCollapsed) {
+      suppressedQuote = null
       dismissQuote()
       return
     }
+    if (props.readOnly) {
+      dismissQuote()
+      return
+    }
+    // Esc/滚动关闭后，同一选区不能被 keyup/mouseup 立刻重新弹出。
+    if (sameQuoteSelection(sel, suppressedQuote)) return
+    suppressedQuote = null
+
     const text = sel.toString()
     const scroller = containerRef()
     const range = sel.getRangeAt(0)
-    if (!text.trim() || !scroller || !scroller.contains(range.commonAncestorContainer)) {
+    const container = range.commonAncestorContainer
+    const element = container.nodeType === 1 ? (container as Element) : container.parentElement
+    const message = element?.closest?.("[data-message]")
+    if (!text.trim() || !scroller || !message || !scroller.contains(message)) {
       dismissQuote()
       return
     }
@@ -629,25 +650,31 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const onQuoteSelection = () => updateQuoteSelection()
     const onQuoteSelectionChange = () => {
       const sel = window.getSelection()
-      if (!sel || sel.isCollapsed) dismissQuote()
+      if (!sel || sel.isCollapsed) {
+        suppressedQuote = null
+        dismissQuote()
+      }
+    }
+    const onQuoteEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !props.focused || !quoteAnchor()) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      suppressQuote()
     }
     document.addEventListener("mouseup", onQuoteSelection)
     document.addEventListener("keyup", onQuoteSelection)
     document.addEventListener("selectionchange", onQuoteSelectionChange)
-    window.addEventListener("resize", dismissQuote)
+    window.addEventListener("resize", suppressQuote)
+    window.addEventListener("keydown", onQuoteEsc, true)
     onCleanup(() => {
       document.removeEventListener("mouseup", onQuoteSelection)
       document.removeEventListener("keyup", onQuoteSelection)
       document.removeEventListener("selectionchange", onQuoteSelectionChange)
-      window.removeEventListener("resize", dismissQuote)
+      window.removeEventListener("resize", suppressQuote)
+      window.removeEventListener("keydown", onQuoteEsc, true)
     })
     const onKey = (e: KeyboardEvent) => {
       if (!props.focused) return
-      if (e.key === "Escape" && quoteAnchor()) {
-        e.preventDefault()
-        dismissQuote()
-        return
-      }
       if (!sending()) return
       const isEsc = e.key === "Escape"
       const isCtrlC = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c"
@@ -1241,7 +1268,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   return (
     <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
-        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={() => { handleScroll(); dismissQuote() }} onClick={focusComposerFromView} onDblClick={() => viewFocus.cancel()}>
+        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={() => { handleScroll(); suppressQuote() }} onClick={focusComposerFromView} onDblClick={() => viewFocus.cancel()}>
           <Show when={sidProp()}>
             <div class="mafw-session-titlebar">
               <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>
@@ -1878,7 +1905,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           </div>
         </Show>
         {/* Unrevert entry (session in reverted state) */}
-        <Show when={canUnrevert() && !revertConfirm()}>
+        <Show when={props.revertUndoEnabled === true && canUnrevert() && !revertConfirm()}>
           <div class="mafw-confirm-backdrop" style={{ "pointer-events": "none", background: "transparent", position: "relative" }}>
             <div class="mafw-confirm" style={{ position: "relative", "max-width": "420px", margin: "0 auto" }}>
               <div class="mafw-confirm-text">会话处于回滚状态。</div>

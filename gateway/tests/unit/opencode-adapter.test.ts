@@ -118,8 +118,30 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     expect(JSON.parse(init.body as string)).toEqual({ decision: 'always', message: 'fine' });
   });
 
-  it('app.agents → GET /api/agent?directory=（2.1.0 无 /app/agent）', async () => {
-    routeFetch({ '/api/agent': () => json({ location: { directory: '/proj' }, data: [{ name: 'build' }] }) });
+  it('revert 走 2.1.0 两段式：stage(messageID,files:true) + commit', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.revert!({ sessionID: 'ses_1', messageID: 'msg_9', partID: 'prt_1' });
+    const stage = callsFor('/api/session/ses_1/revert/stage')[0];
+    expect(stage).toBeDefined();
+    expect(stage[1].method).toBe('POST');
+    expect(JSON.parse(stage[1].body as string)).toEqual({ messageID: 'msg_9', files: true });
+    const commit = callsFor('/api/session/ses_1/revert/commit')[0];
+    expect(commit).toBeDefined();
+    expect(commit[1].method).toBe('POST');
+  });
+
+  it('unrevert 走 2.1.0 DELETE /revert（只清暂存；commit 不可逆）', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.unrevert!({ sessionID: 'ses_1' });
+    const clear = callsFor('/api/session/ses_1/revert')[0];
+    expect(clear).toBeDefined();
+    expect(String(clear[0])).toBe('http://127.0.0.1:4096/api/session/ses_1/revert');
+    expect(clear[1].method).toBe('DELETE');
+  });
+
+  it('app.agents → GET /api/agent?directory=（2.1.0 无 /app/agent）', async () => {    routeFetch({ '/api/agent': () => json({ location: { directory: '/proj' }, data: [{ name: 'build' }] }) });
     const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
     const agents = await rt.app!.agents();
     const [url, init] = callsFor('/api/agent')[0];

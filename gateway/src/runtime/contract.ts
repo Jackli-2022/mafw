@@ -46,6 +46,8 @@ export interface RuntimeCapabilities {
   completionApi?: boolean;
   /** runtime 提供会话分支原语（fork/revert；unrevert 视实现可选——pi 不提供） */
   sessionBranchApi?: boolean;
+  /** revert 后可撤销（unrevert）。opencode 2.1 的 revert commit 不可逆 → false */
+  revertUndoApi?: boolean;
   /** runtime 原生强制执行 SessionPromptOpts.maxTurns/maxCostUsd（声明后 gateway 不再挂 BudgetGuard） */
   turnBudgetApi?: boolean;
   /** runtime 提供原生 question API（question.list/reply/reject） */
@@ -69,6 +71,8 @@ export function fullCapabilities(): RuntimeCapabilities {
     agentProcessApi: true,
     completionApi: true,
     sessionBranchApi: true,
+    // opencode 2.1 的 revert 是 stage+commit，commit 后不可逆（无 unrevert）
+    revertUndoApi: false,
     diffApi: true,
     worktreeApi: true,
     // opencode 适配器不转发 maxTurns/maxCostUsd（SDK 无对应字段）——预算由

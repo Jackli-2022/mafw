@@ -122,7 +122,9 @@ describe('Runtime contract integration', () => {
     // All gates open — except turnBudgetApi（预算由 gateway 侧 BudgetGuard 承担，
     // opencode adapter 无 maxTurns 字段，声明 true 会让 goal 预算守卫失效）
     for (const cap of Object.keys(rt.capabilities) as (keyof RuntimeCapabilities)[]) {
-      if (cap === 'turnBudgetApi') {
+      // 设计上声明为 false 的能力（gate 关闭是预期）：turnBudget 由 gateway
+      // BudgetGuard 承担；revertUndo 在 opencode 2.1（commit 不可逆）无实现。
+      if (cap === 'turnBudgetApi' || cap === 'revertUndoApi') {
         expect(capGuard(rt.capabilities, cap)).toBe(true);
         continue;
       }

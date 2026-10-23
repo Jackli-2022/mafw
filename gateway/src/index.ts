@@ -163,6 +163,8 @@ import { createPiRuntime, PI_CAPABILITIES } from './runtime/plugins/pi-runtime';
 import { PI_EVENT_SOURCE, PI_EVENT_MAPPINGS, piTransformEvent, setPiUnknownRecorder } from './runtime/pi/pi-events';
 import { OPENCODE_EVENT_SOURCE, OPENCODE_V1_EVENT_MAPPINGS, OPENCODE_V2_EVENT_MAPPINGS, OPENCODE_TRANSFORM_EVENT } from './runtime/opencode-events';
 import { OPENCODE_21_EVENT_SOURCE, OPENCODE_21_EVENT_MAPPINGS, translateOpencode21Event } from './runtime/opencode-21-events';
+import { injectServeAuth } from './runtime/proxy-auth';
+import { serveAuthHeaders } from './runtime/serve-sidecar';
 import { wrapDialectEventStream } from './runtime/event-stream-wiring';
 import { matchRuntimeConfigRoute } from './routes/runtime-config-route';
 import { wrapToolPartAssembly, TOOL_PRIMITIVE_TYPES } from './runtime/tool-part-assembler';
@@ -6880,7 +6882,8 @@ class MafwScheduler {
           const proxyUrl = new URL(req.url || '/', serveUrl);
           const proxyReq = http.request(proxyUrl, {
             method: req.method,
-            headers: { ...req.headers, host: proxyUrl.host },
+            // 2.1.0：serve 强制 Basic——剔除入站 Authorization 后注入 serve 凭证
+            headers: { ...injectServeAuth(req.headers, serveAuthHeaders()), host: proxyUrl.host },
           }, (proxyRes) => {
             res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
             proxyRes.pipe(res);

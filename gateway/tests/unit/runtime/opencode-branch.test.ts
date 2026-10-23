@@ -117,12 +117,27 @@ describe('opencode adapter branch + envelope', () => {
     expect(out).toEqual({ id: 'ses_forked' });
   });
 
-  it('revert/unrevert pass through', async () => {
-    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
-    await client.session.revert!({ sessionID: 'ses_1', messageID: 'msg_9', partID: 'prt_1' });
-    expect(mockClient.session.revert).toHaveBeenCalledWith({ sessionID: 'ses_1', messageID: 'msg_9', partID: 'prt_1' });
-    await client.session.unrevert!({ sessionID: 'ses_1' });
-    expect(mockClient.session.unrevert).toHaveBeenCalledWith({ sessionID: 'ses_1' });
+  it('revert = 2.1.0 stage+commit；unrevert = DELETE /revert', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      await client.session.revert!({ sessionID: 'ses_1', messageID: 'msg_9', partID: 'prt_1' });
+      const stage = calls.find((c) => c.url.endsWith('/revert/stage'));
+      expect(stage.method).toBe('POST');
+      expect(JSON.parse(stage.body)).toEqual({ messageID: 'msg_9', files: true });
+      const commit = calls.find((c) => c.url.endsWith('/revert/commit'));
+      expect(commit.method).toBe('POST');
+      await client.session.unrevert!({ sessionID: 'ses_1' });
+      const clear = calls.filter((c) => c.url.endsWith('/session/ses_1/revert')).pop();
+      expect(clear.method).toBe('DELETE');
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
   });
 
   it('prompt uses 2.1.0 prompt+wait+message chain and returns envelope superset', async () => {
