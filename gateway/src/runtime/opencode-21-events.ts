@@ -92,6 +92,12 @@ export const OPENCODE_21_EVENT_MAPPINGS: EventMapping[] = [
     } },
   { from: 'permission.v2.replied', to: MAFW.permissionReplied, passProperties: '$.data',
     fields: { requestId: { path: '$.data.requestID' } } },
+  // 问询（原生 v2 question；若 serve 发事件则桌面卡实时可见）
+  { from: 'question.v2.asked', to: MAFW.questionAsked, passProperties: '$.data' },
+  { from: 'question.v2.replied', to: MAFW.questionReplied, passProperties: '$.data' },
+  { from: 'question.v2.rejected', to: MAFW.questionRejected, passProperties: '$.data' },
+  // 计划/todo（2.1 保留 todo.updated 事件；初始水合仍无 /todo 路由）
+  { from: 'todo.updated', to: MAFW.planUpdated, passProperties: '$.data' },
   // 显式压制
   { from: NOISE_TYPES as unknown as string[], to: 'drop' },
 ];

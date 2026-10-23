@@ -210,27 +210,35 @@ describe('opencode adapter branch + envelope', () => {
     }
   });
 
-  it('question list/reply/reject route to the SDK top-level question namespace', async () => {
-    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
-    const items = await client.session.question!.list();
-    expect(mockClient.question.list).toHaveBeenCalledWith(undefined);
-    expect(items).toEqual([{ id: 'q1' }]);
-    await client.session.question!.list({ directory: 'C:\\proj' });
-    expect(mockClient.question.list).toHaveBeenLastCalledWith({ directory: 'C:\\proj' });
-    await client.session.question!.reply({ requestID: 'q1', answers: [['a', 'b']] });
-    expect(mockClient.question.reply).toHaveBeenCalledWith({ requestID: 'q1', answers: [['a', 'b']] });
-    // directory 变体走 directNative（x-opencode-directory header）——mock fetch 验证不抛
+  it('question 走 2.1.0 全局 forms：list GET /form，reply/reject 打到 session form 路由', async () => {
     const savedFetch = globalThis.fetch;
-    (globalThis as any).fetch = (async () => ({ ok: true, status: 200, json: async () => ({}) })) as any;
+    const calls: any[] = [];
+    const form = {
+      id: 'f1', sessionID: 's1', title: 'Ask',
+      fields: [{ key: 'env', title: 'Env', type: 'string', custom: true }],
+    };
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      const u = String(url);
+      calls.push({ url: u, method: init?.method, body: init?.body });
+      if (u.endsWith('/api/form')) return { ok: true, status: 200, json: async () => ({ data: [form] }) };
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as any;
     try {
-      await client.session.question!.reply({ requestID: 'q1', answers: [['a']], directory: 'C:\\proj' });
-      await client.session.question!.reject({ requestID: 'q1' });
-      expect(mockClient.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
-      await client.session.question!.reject({ requestID: 'q1', directory: 'C:\\proj' });
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      const items = await client.session.question!.list();
+      expect(calls[0].url).toBe('http://x/api/form');
+      expect(items[0]).toMatchObject({ id: 'f1', sessionID: 's1' });
+      expect(items[0].questions).toEqual([expect.objectContaining({ id: 'env', question: 'Env' })]);
+      await client.session.question!.reply({ requestID: 'f1', answers: [['prod']] });
+      const reply = calls.find((c) => c.url.endsWith('/form/f1/reply'));
+      expect(reply.url).toBe('http://x/api/session/s1/form/f1/reply');
+      expect(JSON.parse(reply.body)).toEqual({ answer: { env: 'prod' } });
+      await client.session.question!.reject({ requestID: 'f1' });
+      const del = calls.filter((c) => c.url.endsWith('/api/session/s1/form/f1')).pop();
+      expect(del.method).toBe('DELETE');
     } finally {
       (globalThis as any).fetch = savedFetch;
     }
-    expect(mockClient.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
   });
 
   it('promptAsync posts 2.1.0 prompt body {text} (no prompt_async route)', async () => {

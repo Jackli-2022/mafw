@@ -202,6 +202,60 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     });
   };
 
+  /** 2.1.0 form → desktop AskCard 契约（properties.questions[]）。 */
+  const formCache = new Map<string, any>();
+  const formToQuestion = (f: any) => {
+    const fields = Array.isArray(f?.fields) ? f.fields.filter((x: any) => x && !x.hidden) : [];
+    return {
+      id: f?.id,
+      sessionID: f?.sessionID,
+      title: f?.title,
+      metadata: f?.metadata,
+      tool: f?.metadata?.tool,
+      form: f,
+      questions: fields.map((x: any) => ({
+        id: x.key,
+        question: x.title || x.key || 'Input',
+        header: x.title,
+        multiple: x.type === 'multiselect',
+        custom: x.type === 'string' ? x.custom !== false : undefined,
+        options: Array.isArray(x.options)
+          ? x.options.map((o: any) => ({ label: o.label ?? o.value, value: o.value ?? o.label, description: o.description }))
+          : x.type === 'boolean'
+            ? [{ label: '是', value: 'true' }, { label: '否', value: 'false' }]
+            : undefined,
+      })),
+      __fields: fields,
+    };
+  };
+  const loadForms = async (): Promise<any[]> => {
+    const body = await directNative('/form', 'GET');
+    const list = unwrapNative<any[]>(body) ?? [];
+    for (const f of list) if (f?.id) formCache.set(f.id, f);
+    return list;
+  };
+  const findForm = async (id: string): Promise<any | undefined> => {
+    const cached = formCache.get(id);
+    if (cached) return cached;
+    const list = await loadForms();
+    return list.find((f: any) => f?.id === id);
+  };
+  const formAnswerOf = (form: any, answers: string[][]): Record<string, unknown> => {
+    const fields: any[] = Array.isArray(form?.fields) ? form.fields.filter((x: any) => x && !x.hidden) : [];
+    const out: Record<string, unknown> = {};
+    fields.forEach((f: any, i: number) => {
+      const vals = Array.isArray(answers?.[i]) ? answers[i] : [];
+      if (!f?.key) return;
+      if (f.type === 'multiselect') out[f.key] = vals;
+      else if (f.type === 'boolean') out[f.key] = /^(true|yes|on|1|是)$/i.test(vals[0] ?? '');
+      else if (f.type === 'number' || f.type === 'integer') {
+        const n = Number(vals[0]);
+        out[f.key] = Number.isFinite(n) ? n : 0;
+      } else out[f.key] = vals[0] ?? '';
+    });
+    return out;
+  };
+
   return {
     session: {
       async create(opts: SessionCreateOpts) {
@@ -424,41 +478,30 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       question: {
-        async list(opts?: { directory?: string }) {
-          // 2.1.0 移除了 /question 路由（问询机制改为 session form）——旧 serve
-          // 走 SDK，404/缺方法 fail-open 空列表，避免每轮轮询刷错误日志。
+        async list(_opts?: { directory?: string }) {
+          // 2.1.0 移除了 /question 路由：问询机制 = 全局 pending forms
+          // （GET /api/form，形状与 /permission/request 同构）。映射成 desktop
+          // AskCard 的 questions[] 契约；轮询 reconcile 仍然有效。
           try {
-            const result = await client.question.list(
-              opts?.directory ? { directory: opts.directory } : undefined,
-            );
-            const data = unwrap<any>(result);
-            return Array.isArray(data) ? data : data?.items ?? [];
+            const forms = await loadForms();
+            return forms.map(formToQuestion);
           } catch {
             return [] as any[];
           }
         },
         async reply(opts: { requestID: string; answers: string[][]; directory?: string }) {
-          if (opts.directory) {
-            await directNative(`/question/${opts.requestID}/reply`, 'POST', { answers: opts.answers }, opts.directory);
-            return;
-          }
-          const result = await client.question.reply({
-            requestID: opts.requestID,
-            answers: opts.answers,
+          const form = await findForm(opts.requestID);
+          if (!form?.id || !form?.sessionID) throw new Error(`form ${opts.requestID} not found`);
+          await directNative(`/session/${form.sessionID}/form/${form.id}/reply`, 'POST', {
+            answer: formAnswerOf(form, opts.answers),
           });
-          if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
-            throw new Error(String((result as any).error));
-          }
+          formCache.delete(form.id);
         },
         async reject(opts: { requestID: string; directory?: string }) {
-          if (opts.directory) {
-            await directNative(`/question/${opts.requestID}/reject`, 'POST', undefined, opts.directory);
-            return;
-          }
-          const result = await client.question.reject({ requestID: opts.requestID });
-          if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
-            throw new Error(String((result as any).error));
-          }
+          const form = await findForm(opts.requestID);
+          if (!form?.id || !form?.sessionID) return;
+          await directNative(`/session/${form.sessionID}/form/${form.id}`, 'DELETE');
+          formCache.delete(form.id);
         },
       },
 

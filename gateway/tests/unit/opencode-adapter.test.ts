@@ -217,40 +217,61 @@ describe('opencode-adapter permission/question contract surface', () => {
     });
   });
 
-  describe('question reply/reject directory routing', () => {
-    it('no directory → SDK path (unchanged)', async () => {
+  describe('question = 2.1.0 global forms bridge', () => {
+    const form = {
+      id: 'f1', sessionID: 's1', title: 'Deploy?',
+      fields: [
+        { key: 'env', title: 'Environment', type: 'string', custom: true },
+        { key: 'tags', title: 'Tags', type: 'multiselect', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }] },
+        { key: 'hiddenField', type: 'string', hidden: true },
+      ],
+    };
+
+    it('list → GET /api/form，映射为 AskCard questions[]（hidden 字段剔除）', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify({ location: {}, data: [form] }), { status: 200 }));
       const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
-      await rt.session.question!.reply({ requestID: 'q1', answers: [['a']] });
-      expect(mockClient.question.reply).toHaveBeenCalledWith({ requestID: 'q1', answers: [['a']] });
-      expect(fetchSpy).not.toHaveBeenCalled();
+      const items = await rt.session.question!.list();
+      expect(fetchSpy.mock.calls[0][0]).toBe('http://127.0.0.1:4096/api/form');
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ id: 'f1', sessionID: 's1', title: 'Deploy?' });
+      expect(items[0].questions).toEqual([
+        expect.objectContaining({ id: 'env', question: 'Environment', multiple: false, custom: true }),
+        expect.objectContaining({ id: 'tags', question: 'Tags', multiple: true }),
+      ]);
     });
 
-    it('with directory → direct native fetch, not SDK', async () => {
-      fetchSpy.mockResolvedValue(new Response('{}', { status: 200 }));
-      const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096', directory: '/proj' });
-      await rt.session.question!.reply({ requestID: 'q1', answers: [['a']], directory: '/other' });
-      expect(mockClient.question.reply).not.toHaveBeenCalled();
-      const [url, init]: [string, RequestInit] = fetchSpy.mock.calls[0];
-      expect(url).toBe('http://127.0.0.1:4096/api/question/q1/reply?directory=%2Fother');
-      expect(init.method).toBe('POST');
-      expect(JSON.parse(init.body as string)).toEqual({ answers: [['a']] });
-      expect((init.headers as any)['x-opencode-directory']).toBe(encodeURIComponent('/other'));
+    it('reply → POST /session/{sid}/form/{id}/reply，answers 按字段类型编码为 answer 对象', async () => {
+      fetchSpy.mockImplementation(async (url: any) => {
+        const u = String(url);
+        if (u.endsWith('/api/form')) return new Response(JSON.stringify({ data: [form] }), { status: 200 });
+        return new Response(null, { status: 204 });
+      });
+      const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+      await rt.session.question!.list();
+      await rt.session.question!.reply({ requestID: 'f1', answers: [['prod'], ['a', 'b']] });
+      const call = fetchSpy.mock.calls.find(([u]: any[]) => String(u).includes('/form/f1/reply'));
+      expect(call[0]).toBe('http://127.0.0.1:4096/api/session/s1/form/f1/reply');
+      expect(call[1].method).toBe('POST');
+      expect(JSON.parse(call[1].body as string)).toEqual({ answer: { env: 'prod', tags: ['a', 'b'] } });
     });
 
-    it('reject with directory → direct native fetch', async () => {
-      fetchSpy.mockResolvedValue(new Response('{}', { status: 200 }));
+    it('reject → DELETE /session/{sid}/form/{id}', async () => {
+      fetchSpy.mockImplementation(async (url: any) => {
+        const u = String(url);
+        if (u.endsWith('/api/form')) return new Response(JSON.stringify({ data: [form] }), { status: 200 });
+        return new Response('{}', { status: 200 });
+      });
       const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
-      await rt.session.question!.reject({ requestID: 'q2', directory: '/w2' });
-      expect(mockClient.question.reject).not.toHaveBeenCalled();
-      const [url, init]: [string, RequestInit] = fetchSpy.mock.calls[0];
-      expect(url).toBe('http://127.0.0.1:4096/api/question/q2/reject?directory=%2Fw2');
-      expect(init.method).toBe('POST');
+      await rt.session.question!.list();
+      await rt.session.question!.reject({ requestID: 'f1' });
+      const call = fetchSpy.mock.calls.find(([u]: any[]) => String(u).endsWith('/api/session/s1/form/f1'));
+      expect(call[1].method).toBe('DELETE');
     });
 
-    it('direct fetch failure throws (caller retries next directory)', async () => {
-      fetchSpy.mockResolvedValue(new Response('nope', { status: 404 }));
+    it('reply failure（form 已不存在）抛错', async () => {
+      fetchSpy.mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 }));
       const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
-      await expect(rt.session.question!.reject({ requestID: 'q3', directory: '/w2' })).rejects.toThrow('404');
+      await expect(rt.session.question!.reply({ requestID: 'gone', answers: [[]] })).rejects.toThrow('not found');
     });
   });
 });

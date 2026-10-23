@@ -149,8 +149,26 @@ describe('@2.1 step 与工具卡', () => {
   });
 });
 
-describe('@2.1 抑制与未知事件', () => {
-  test('遥测/无消费者事件 → drop（suppressed）', () => {
+describe('@2.1 问询与 todo', () => {
+  test('question.v2.asked/replied/rejected → question.*（载荷透传）', () => {
+    const asked = apply(evt('question.v2.asked', {
+      id: 'q1', sessionID: 's1',
+      questions: [{ question: 'Pick', options: [{ label: 'a' }, { label: 'b' }] }],
+    }))[0].payload;
+    expect(asked.type).toBe('question.asked');
+    expect(asked.properties.questions).toHaveLength(1);
+    expect(apply(evt('question.v2.replied', { sessionID: 's1', id: 'q1' }))[0].payload.type).toBe('question.replied');
+    expect(apply(evt('question.v2.rejected', { sessionID: 's1', id: 'q1' }))[0].payload.type).toBe('question.rejected');
+  });
+
+  test('todo.updated → plan.updated（桌面任务面板）', () => {
+    const out = apply(evt('todo.updated', { sessionID: 's1', todos: [{ content: 'x', status: 'pending' }] }))[0].payload;
+    expect(out.type).toBe('plan.updated');
+    expect(out.properties.todos).toHaveLength(1);
+  });
+});
+
+describe('@2.1 抑制与未知事件', () => {  test('遥测/无消费者事件 → drop（suppressed）', () => {
     const suppressed: string[] = [];
     const out = applyEventMappings(evt('server.connected', {}), entry, (t) => canonical.has(t), {
       onSuppressed: (t) => suppressed.push(t),
