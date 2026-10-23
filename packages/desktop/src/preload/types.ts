@@ -40,6 +40,11 @@ export type FsAPI = {
   onChanged(cb: (e: { root: string; rel: string }) => void): () => void
   openExternal(root: string, rel: string): Promise<{ ok: boolean }>
 }
+/** 内嵌浏览器（main 侧策略在 browser-session.ts；渲染层只接 window.open → dock 内导航事件）。 */
+export type BrowserAPI = {
+  onOpenUrl(cb: (url: string) => void): () => void
+  openExternal(url: string): Promise<{ ok: boolean }>
+}
 export type UpdaterAPI = {
   subscribe: (cb: (state: UpdaterState) => void) => Promise<() => void>
   check: () => Promise<UpdaterState>
@@ -74,6 +79,7 @@ export type ElectronAPI = {
   wslServers: WslServersAPI
   updater: UpdaterAPI
   fs: FsAPI
+  browser: BrowserAPI
   consumeInitialDeepLinks: () => Promise<string[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>

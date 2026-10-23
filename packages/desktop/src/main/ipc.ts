@@ -18,6 +18,7 @@ import { isCloseToTrayEnabled, isTrayIconEnabled, setCloseToTray, setTrayIconEna
 import { syncTrayPresence } from "./tray"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
+import { isHttpUrl } from "../shared/browser-policy"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -88,6 +89,17 @@ export function registerIpcHandlers(deps: Deps) {
     if (!abs) return { ok: false }
     const err = await shell.openPath(abs)
     return { ok: err === "" }
+  })
+
+  // 内嵌浏览器：仅 http(s) 允许交给系统浏览器（危险协议绝不 openExternal）
+  ipcMain.handle("browser-open-external", async (_event: IpcMainInvokeEvent, url: string) => {
+    if (!isHttpUrl(url)) return { ok: false }
+    try {
+      await shell.openExternal(url)
+      return { ok: true }
+    } catch {
+      return { ok: false }
+    }
   })
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())

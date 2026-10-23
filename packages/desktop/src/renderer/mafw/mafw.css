@@ -5098,3 +5098,13 @@ html[data-theme="light"] body {
 .mafw-rail-load-more:active { background: var(--active); }
 .mafw-session-tab:active { background: var(--active); transform: translateY(.5px); }
 .mafw-rail-session:active { transform: translateY(.5px); }
+
+/* ── Browser dock（内嵌浏览器，spec 2026-10-22 §4） ── */
+.mafw-browser-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.mafw-browser-bar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.mafw-browser-address { flex: 1 1 auto; min-width: 0; }
+.mafw-browser-status { padding: 2px 8px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mafw-browser-title { display: block; overflow: hidden; text-overflow: ellipsis; }
+.mafw-browser-error { padding: 8px 10px; font-size: 11px; color: var(--red-9, #e08a8a); background: var(--bg-inset); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.mafw-browser-host { flex: 1 1 auto; min-height: 0; display: flex; }
+.mafw-browser-view { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #fff; }

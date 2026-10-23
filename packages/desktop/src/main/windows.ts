@@ -14,6 +14,8 @@ import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowRegistry } from "./window-registry"
 import { mainWindowOptions } from "./window-bounds"
+import { mainWindowWebPreferences } from "../shared/browser-policy"
+import { configureBrowserSession, wireWebviewAttach } from "./browser-session"
 import { windowCloseAction } from "./close-decision"
 import { isCloseToTrayEnabled, isTrayIconEnabled } from "./tray-prefs"
 import { notifyHiddenToTray } from "./tray-hint"
@@ -187,14 +189,11 @@ export function createMainWindow(id: string = randomUUID()) {
           titleBarStyle: "hidden" as const,
         }
       : {}),
-    webPreferences: {
-      preload: join(root, "../preload/index.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
+    webPreferences: mainWindowWebPreferences(join(root, "../preload/index.js")),
   })
 
+  configureBrowserSession()
+  wireWebviewAttach(win.webContents)
   allowRendererPermissions(win)
   wireWindowRecovery(win, id)
 

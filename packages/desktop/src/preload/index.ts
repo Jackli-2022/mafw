@@ -169,6 +169,16 @@ const api: ElectronAPI = {
     openExternal: (root, rel) => ipcRenderer.invoke("fs-open-external", root, rel),
   },
 
+  // 内嵌浏览器：window.open / target=_blank 被 main 拦截后转 dock 内导航
+  browser: {
+    onOpenUrl: (cb) => {
+      const handler = (_: unknown, url: string) => cb(url)
+      ipcRenderer.on("browser-open-url", handler)
+      return () => ipcRenderer.removeListener("browser-open-url", handler)
+    },
+    openExternal: (url) => ipcRenderer.invoke("browser-open-external", url),
+  },
+
   onNavigateMafw: (cb) => {
     const handler = () => cb()
     ipcRenderer.on("navigate-mafw", handler)

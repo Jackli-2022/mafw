@@ -46,6 +46,7 @@ import { SubagentDock } from "./components/SubagentDock"
 import { BackgroundDock } from "./components/BackgroundDock"
 import { FilesDock } from "./components/FilesDock"
 import { EditorDock } from "./components/EditorDock"
+import { BrowserDock } from "./components/BrowserDock"
 import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { aggregateSessionDiffs } from "./components/session-diffs"
@@ -2070,6 +2071,9 @@ export function MafwShell() {
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
                 />
+              </div>
+              <div style={{ display: rightDockTab() === "browser" ? "contents" : "none" }}>
+                <BrowserDock />
               </div>
             </RightDock>
             )}
