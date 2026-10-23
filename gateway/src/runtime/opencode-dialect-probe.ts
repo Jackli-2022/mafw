@@ -17,11 +17,32 @@ const V2_SIGNALS = ['"type":"sync"', '"type":"session.next.'] as const;
 /** 2.1.0 durable 信封的信号：连接握手事件只有 2.1 发（顶层 type + data）。 */
 const V21_SIGNALS = ['"type":"server.connected"', '"type":"session.execution.'] as const;
 
+/** 2.1 的确定性探针：/api/session 是 2.1 新增的真 API 面（旧 serve 根路径落 SPA）。 */
+async function isV21Api(baseUrl: string, fetchImpl: typeof fetch): Promise<boolean> {
+  try {
+    const res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/api/session?limit=1`, {
+      headers: { accept: 'application/json', ...serveAuthHeaders() },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res?.ok) return false;
+    const ct = typeof res.headers?.get === 'function' ? (res.headers.get('content-type') ?? '') : '';
+    if (ct && !ct.includes('json')) return false;
+    if (typeof res.text !== 'function') return false;
+    const body = await res.text();
+    return body.trimStart().startsWith('{');
+  } catch {
+    return false;
+  }
+}
+
 export async function probeOpencodeDialect(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
   timeoutMs = 2500,
 ): Promise<'v1' | 'v2' | 'v21'> {
+  // 2.1 优先走确定性 API 检测（SSE peek 在 serve 未就绪时会误判 v1，
+  // 2026-10-23 实测：启动竞态让 gateway 落在 v1 表，2.1 事件全部不翻译）。
+  if (await isV21Api(baseUrl, fetchImpl)) return 'v21';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   // 硬超时竞速：不依赖 body reader 在 abort 时 reject（传输层行为不可假设）；
@@ -54,9 +75,10 @@ export async function probeOpencodeDialect(
         if (buffer.includes(signal)) return 'v2';
       }
     }
-    return 'v1';
+    return (await isV21Api(baseUrl, fetchImpl)) ? 'v21' : 'v1';
   } catch {
-    return 'v1'; // fail-safe：超时（idle serve）/ 连接失败 / 流错误
+    // peek 期间 serve 可能刚好就绪——返回前再确定性确认一次
+    return (await isV21Api(baseUrl, fetchImpl)) ? 'v21' : 'v1';
   } finally {
     clearTimeout(timer);
     controller.abort(); // 无论结果，断开 peek 连接

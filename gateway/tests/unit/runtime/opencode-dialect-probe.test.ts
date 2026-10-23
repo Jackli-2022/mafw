@@ -46,6 +46,16 @@ describe('probeOpencodeDialect 2.1.0 连接面（/api/event + Basic auth）', ()
     const fetchImpl = ok(['data: {"id":"e1","type":"server.connected","data":{}}\n\n']);
     expect(await probeOpencodeDialect('http://x', fetchImpl, 1000)).toBe('v21');
   });
+
+  it('2.1 API 可用（/api/session 返回 JSON）→ 直接 v21，不依赖 SSE peek', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    expect(await probeOpencodeDialect('http://x', fetchImpl, 1000)).toBe('v21');
+    expect(calls).toBe(1);
+  });
 });
 
 describe('probeOpencodeDialect（SSE peek，fail-safe 恒 v1）', () => {
