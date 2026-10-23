@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { allHunksPatches, canRewindCode, checkpointsToRewind, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
+import { allHunksPatches, canRewindCode, checkpointsToRewind, isFileRevertible, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { checkpointsWithTurnDiffs } from "./checkpoint-model"
 
 const PATCH = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n@@ -3 +3 @@\n-c\n+d"
@@ -28,6 +28,12 @@ test("isInvertiblePatch rejects added/deleted files and empty hunks", () => {
   expect(isInvertiblePatch("new file mode 100644\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+x")).toBe(false)
   expect(isInvertiblePatch("deleted file mode 100644\n--- a/del\n+++ /dev/null\n@@ -1 +0,0 @@\n-x")).toBe(false)
   expect(isInvertiblePatch("no hunks")).toBe(false)
+})
+
+test("isFileRevertible gates non-invertible patches only in strict mode", () => {
+  expect(isFileRevertible({ patch: PATCH }, false)).toBe(true)
+  expect(isFileRevertible({ patch: "new file mode 100644\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+x" }, false)).toBe(false)
+  expect(isFileRevertible({ patch: "new file mode 100644\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+x" }, true)).toBe(true)
 })
 
 test("per-turn diffs feed canRewindCode without weakening the gate", () => {

@@ -33,6 +33,11 @@ export function isInvertiblePatch(patch: string): boolean {
   return /^@@ /m.test(patch)
 }
 
+/** Embedded review panels forbid hunk revert for non-invertible files. */
+export function isFileRevertible(file: { patch?: string }, allowNonInvertible = true): boolean {
+  return allowNonInvertible || isInvertiblePatch(file.patch ?? "")
+}
+
 /** checkpoints 为 newest-first；返回目标行及其所有更新行（目标在最后）。 */
 export function checkpointsToRewind(checkpoints: Checkpoint[], targetMessageID: string): Checkpoint[] {
   const idx = checkpoints.findIndex((c) => c.messageID === targetMessageID)

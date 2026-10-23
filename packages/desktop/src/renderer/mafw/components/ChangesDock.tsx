@@ -154,6 +154,8 @@ export function ChangesDock(props: {
           onBack={() => setOpenFile(null)}
           onSendComment={props.onSendComment}
           onAddAnnotation={props.onAddAnnotation}
+          allowSessionFallback={false}
+          allowNonInvertibleRevert={false}
         />
       </Show>
       <Show when={!openFile()}>

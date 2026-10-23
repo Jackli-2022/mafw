@@ -54,6 +54,8 @@ import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
 import { aggregateSessionDiffs } from "./components/session-diffs"
+import { collectTurnDiffCandidates, loadTurnDiffs, mergeDiffLists, turnDiffRequestKey } from "./components/turn-diffs"
+import type { FileDiffEntry } from "./components/DiffReviewPanel"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
@@ -1443,6 +1445,29 @@ export function MafwShell() {
   const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
     normalizeDockTab(defaultDockTab(localStorage.getItem("mafw-right-dock-tab")), "files")
   )
+  // Per-turn diff data for the B2 changes/editor docks (B3.1). The overlay owns
+  // its own fetch; this memo is only for the dock consumers.
+  const [sessionTurnDiffs, setSessionTurnDiffs] = createSignal<Record<string, Record<string, FileDiffEntry[] | null>>>({})
+  const requestedTurnDiffs = new Set<string>()
+  const sessionMessages = createMemo(() => (store.message as any)[currentSessionID()] || [])
+  const mergedSessionDiffs = createMemo(() => mergeDiffLists(
+    aggregateSessionDiffs(sessionMessages()),
+    sessionTurnDiffs()[currentSessionID() || ""] || {},
+  ))
+  createEffect(() => {
+    const sid = currentSessionID()
+    const tab = rightDockTab()
+    if (!sid || rtCaps().diffApi !== true || (tab !== "changes" && tab !== "editor")) return
+    const msgs = sessionMessages()
+    const candidates = collectTurnDiffCandidates(msgs)
+    if (!candidates.length) return
+    const key = turnDiffRequestKey(rtName(), sid, candidates)
+    if (requestedTurnDiffs.has(key)) return
+    requestedTurnDiffs.add(key)
+    void loadTurnDiffs(sid, msgs, (s, m) => window.api.mafw.sessions.diff(s, m))
+      .then(map => setSessionTurnDiffs(prev => ({ ...prev, [sid]: map })))
+      .catch(() => { /* fail-open; per-turn data stays absent */ })
+  })
   // chat 定宽列（黄金分割默认 38.2% 可用宽，clamp 360-520；可拖 320-560）
   const storedChatWidth = Number(localStorage.getItem("mafw-chat-width"))
   const [chatWidth, setChatWidth] = createSignal(
@@ -1660,7 +1685,16 @@ export function MafwShell() {
   const onModelSelect = (m: ModelEntry, sid?: string) => {
     const target = sid || currentSessionID()
     if (!target) return
+    const prev = modelPicks()[target]
     setModelPicks({ ...modelPicks(), [target]: { providerID: m.providerID, modelID: m.id, label: m.name } })
+    // 2.1 sticky 即时切换：不等待下一条消息；失败回滚本地 pick，防假状态。
+    void window.api.mafw.sessions.switchModel(target, { providerID: m.providerID, modelID: m.id }).catch(() => {
+      const next = { ...modelPicks() }
+      if (prev) next[target] = prev
+      else delete next[target]
+      setModelPicks(next)
+      showToastV2({ description: "切换模型失败", duration: 2000 })
+    })
   }
 
   // Manager sessions are locked to the manager agent — switching to another
@@ -1671,8 +1705,14 @@ export function MafwShell() {
     const sid = sidOverride ?? currentSessionID()
     if (sid) {
       // 2.1.0：稳定键是 id（build/plan），显示名只用于展示
+      const prev = agentPicks[sid]
       setAgentPicks(sid, agentKey(a))
       setSwitchLogs(prev => ({ ...prev, [sid]: [...(prev[sid] || []), `已切换到 ${a.name}`] }))
+      // sticky 即时切换：失败回滚本地 pick，防“显示已切换但服务端没切”。
+      void window.api.mafw.sessions.switchAgent(sid, agentKey(a)).catch(() => {
+        setAgentPicks(sid, prev as any)
+        showToastV2({ description: "切换 agent 失败", duration: 2000 })
+      })
     }
   }
 
@@ -2076,7 +2116,7 @@ export function MafwShell() {
               <div style={{ display: rightDockTab() === "changes" ? "contents" : "none" }}>
                 <ChangesDock
                   sessionID={currentSessionID() || null}
-                  diffs={aggregateSessionDiffs((store.message as any)[currentSessionID()] || [])}
+                  diffs={mergedSessionDiffs()}
                   liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
                   onSendComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
@@ -2119,7 +2159,7 @@ export function MafwShell() {
                 <EditorDock
                   sessionID={currentSessionID() || null}
                   sessionDirectory={benchRoot()}
-                  diffs={aggregateSessionDiffs((store.message as any)[currentSessionID()] || [])}
+                  diffs={mergedSessionDiffs()}
                   onSendAnnotation={(text) => {
                     const sid = currentSessionID()
                     if (!sid) return

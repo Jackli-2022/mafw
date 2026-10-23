@@ -433,6 +433,8 @@ export function EditorDock(props: {
                 onBack={() => { setMode("edit"); clearSelection() }}
                 onSendComment={props.onSendComment}
                 onAddAnnotation={props.onAddAnnotation}
+                allowSessionFallback={false}
+                allowNonInvertibleRevert={false}
               />
             </div>
           </Show>

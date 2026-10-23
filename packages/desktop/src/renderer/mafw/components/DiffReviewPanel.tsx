@@ -5,6 +5,8 @@ import { Show, For, createSignal, createMemo, createEffect } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, type DiffHunk } from "./diff-hunks"
+import { isFileRevertible } from "./checkpoint-revert"
+import { shouldFetchSessionDiff } from "./turn-diffs"
 import type { FileDiffInfo } from "@mafw/sdk"
 
 export interface FileDiffEntry {
@@ -29,6 +31,10 @@ export function DiffReviewPanel(props: {
   /** 初始选中的文件（从 dock 文件列表进入时预选） */
   initialFile?: string | null
   onBack?: () => void
+  /** 嵌入 dock 时禁止回退到 session-wide VCS diff（默认允许，保留旧行为） */
+  allowSessionFallback?: boolean
+  /** 嵌入 dock 时只允许可反转的修改型 patch（默认允许，保留旧行为） */
+  allowNonInvertibleRevert?: boolean
 }) {
   const [fetched, setFetched] = createSignal<FileDiffEntry[]>([])
   const [loading, setLoading] = createSignal(false)
@@ -52,7 +58,12 @@ export function DiffReviewPanel(props: {
   const currentFile = createMemo(() => files().find((f) => fileName(f) === selectedFile()))
 
   const refresh = () => {
-    if (props.diffs && props.diffs.length > 0) return
+    const hasDiffs = (props.diffs?.length ?? 0) > 0
+    if (!shouldFetchSessionDiff(hasDiffs, props.allowSessionFallback !== false)) {
+      setFetched([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     window.api.mafw.sessions.diff(props.sessionID)
       .then((r) => setFetched((r as any)?.files ?? []))
@@ -73,6 +84,7 @@ export function DiffReviewPanel(props: {
     const patches: Array<{ file?: string; patch: string; hunkIndices: number[] }> = []
     for (const f of files()) {
       if (!f.patch) continue
+      if (!isFileRevertible(f, props.allowNonInvertibleRevert !== false)) continue
       const { hunks } = splitHunks(f.patch)
       const idx: number[] = []
       hunks.forEach((_, i) => { if (selected().has(keyed(fileName(f), i))) idx.push(i) })
@@ -126,7 +138,9 @@ export function DiffReviewPanel(props: {
         </Show>
         <h2>审阅改动</h2>
         <div class="mafw-diff-panel-actions">
-          <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => void refresh()}>刷新</ButtonV2>
+          <Show when={props.allowSessionFallback !== false}>
+            <ButtonV2 variant="ghost" size="small" disabled={busy()} onClick={() => void refresh()}>刷新</ButtonV2>
+          </Show>
           <Show when={!props.embedded}>
             <ButtonV2 variant="ghost" size="small" onClick={() => props.onClose?.()}>关闭</ButtonV2>
           </Show>
@@ -168,6 +182,7 @@ export function DiffReviewPanel(props: {
                 {(f) => {
                   const file = fileName(f())
                   const { hunks } = splitHunks(f().patch ?? "")
+                  const revertible = isFileRevertible(f(), props.allowNonInvertibleRevert !== false)
                   return (
                     <section class="mafw-diff-file">
                       <header class="mafw-diff-file-header">
@@ -179,6 +194,9 @@ export function DiffReviewPanel(props: {
                           <span class="mafw-diff-stat del">-{f().deletions}</span>
                         </Show>
                       </header>
+                      <Show when={!revertible}>
+                        <p class="mafw-diff-panel-hint">新增/删除文件不支持回退</p>
+                      </Show>
                       <For each={hunks}>
                         {(h: DiffHunk, i) => {
                           const key = keyed(file, i())
@@ -189,7 +207,8 @@ export function DiffReviewPanel(props: {
                               <input
                                 type="checkbox"
                                 checked={checked()}
-                                onChange={() => toggle(key)}
+                                disabled={!revertible}
+                                onChange={() => { if (revertible) toggle(key) }}
                               />
                               <span class="mafw-diff-hunk-header">{h.header}</span>
                               <span class="mafw-diff-stat add">+{stats.added}</span>
