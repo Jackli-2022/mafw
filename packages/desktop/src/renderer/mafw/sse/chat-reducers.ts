@@ -3,6 +3,7 @@
 // 约定：返回 null = 无变化（调用方跳过 patchStore，保持 Solid 引用语义）。
 import { mergeAssistantMessage } from "../message-model"
 import { isLocalMessageId } from "../chat/local-id"
+import { normalizeToolPart } from "../tool-part"
 
 export type ChatStoreState = {
   message: Record<string, any[]>
@@ -97,14 +98,16 @@ export function applyPartUpsert(
 ): { part: Record<string, any[]> } {
   const parts = { ...state.part }
   const existing = parts[part.messageID] || []
-  const partObj = { ...part, id: part.id || `${part.messageID}-${part.type}`, sessionID: sid, messageID: part.messageID }
+  // v2.1.0 wire: tool parts carry `name` (e.g. "subagent"), not `tool`.
+  const normalized = normalizeToolPart(part)
+  const partObj = { ...normalized, id: normalized.id || `${normalized.messageID}-${normalized.type}`, sessionID: sid, messageID: normalized.messageID }
   let idx = existing.findIndex(p => p.id === partObj.id)
-  if (idx < 0 && part.type === "text") {
+  if (idx < 0 && normalized.type === "text") {
     // absorb the optimistic user text part (id `user-...-text`) when the
     // real user part with identical text arrives
-    idx = existing.findIndex(p => p.type === "text" && isLocalMessageId(p.id) && (p.text || "") === (part.text || ""))
+    idx = existing.findIndex(p => p.type === "text" && isLocalMessageId(p.id) && (p.text || "") === (normalized.text || ""))
   }
-  parts[part.messageID] = idx >= 0
+  parts[partObj.messageID] = idx >= 0
     ? existing.map((p, i) => (i === idx ? { ...p, ...partObj } : p))
     : [...existing, partObj]
   return { part: parts }

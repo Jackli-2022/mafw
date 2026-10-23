@@ -72,6 +72,14 @@ describe("applyPartUpsert", () => {
     const out = applyPartUpsert(state as any, "s1", { id: "p1", type: "text", text: "new", messageID: "m1" })!
     expect(out.part.m1[0].text).toBe("new")
   })
+  test("normalizes v2.1.0 name to tool (subagent)", () => {
+    const state = { message: {}, part: { m1: [] } }
+    const out = applyPartUpsert(state as any, "s1", {
+      id: "p2", type: "tool", name: "subagent", messageID: "m1", state: { status: "completed" },
+    })!
+    expect(out.part.m1[0].tool).toBe("subagent")
+    expect(out.part.m1[0].name).toBe("subagent")
+  })
 })
 
 describe("ensureAssistantMessage", () => {

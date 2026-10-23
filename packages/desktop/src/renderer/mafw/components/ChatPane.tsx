@@ -56,6 +56,7 @@ const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
   "full-access": "审批模式：全开 — 不再审批（危险命令也直接执行）。点击切回只读",
 }
 import { createInputHistory, shouldNavigateHistory } from "./input-history"
+import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
 import { fuzzyMatchFiles } from "./file-fuzzy"
@@ -903,7 +904,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             msgs.push(msg)
             let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
             if (Array.isArray(itemParts) && itemParts.length > 0) {
-              parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+              parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => normalizeToolPart({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
             }
           }
           if (msgs.length > 0) {

@@ -18,6 +18,7 @@ describe("canonical 翻译层（session-ui 消费面）", () => {
     registerTool({ name: "zz_native_probe", render: marker })
     registerTool({ name: "zz_canonical_probe", render: marker })
     registerTool({ name: "bash", render: marker }) // CLASS_FAMILY['shell'] 的家族目标卡
+    registerTool({ name: "task", render: marker }) // v2.1.0 name:"subagent" 的别名目标卡
     // 原生名直命中
     expect(resolveToolRender({ type: "tool", tool: "zz_native_probe" } as any)).toBe(marker)
     // canonical 命中：别名 → canonical（ls → list 需真实 list 卡，此处用探针对验证机制）
@@ -26,6 +27,9 @@ describe("canonical 翻译层（session-ui 消费面）", () => {
     expect(resolveToolRender({ type: "tool", tool: "zz_canonical_probe", canonicalTool: "zz_canonical_probe" } as any)).toBe(marker)
     // class 家族兜底（未注册名 + toolClass=shell → bash 卡）
     expect(resolveToolRender({ type: "tool", tool: "my_shell", toolClass: "shell" } as any)).toBe(marker)
+    // v2.1.0 名称别名（part 只有 name，归一化后 tool 仍是 runtime 名）
+    expect(resolveToolRender({ type: "tool", tool: "subagent" } as any)).toBe(marker)
+    expect(resolveToolRender({ type: "tool", tool: "shell" } as any)).toBe(marker)
     expect(CLASS_FAMILY["shell"]).toBe("bash")
     expect(CLASS_FAMILY["readonly"]).toBe("read")
     expect(CLASS_FAMILY["search"]).toBe("grep")

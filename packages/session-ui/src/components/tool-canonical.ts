@@ -17,17 +17,26 @@ export const CLASS_FAMILY: Record<string, string> = {
   plan: "todowrite",
 }
 
+/** v2.1.0 runtime 工具名 → MAFW 卡片名（part 只有 name，归一化后 tool 仍是 runtime 名）。 */
+export const TOOL_NAME_ALIASES: Record<string, string> = {
+  subagent: "task",
+  shell: "bash",
+}
+
 function toolClassOfPart(part: any): string | undefined {
   const v = part?.toolClass
   return typeof v === "string" && v ? v : undefined
 }
 
-/** 四级渲染解析（纯函数可测）：原生名 > canonical > class 家族 > GenericTool。 */
+/** 四级渲染解析（纯函数可测）：原生名 > runtime 别名 > canonical > class 家族 > GenericTool。 */
 export function resolveToolRender(part: any): ToolComponent {
+  const name = typeof part?.tool === "string" ? part.tool : ""
+  const alias = TOOL_NAME_ALIASES[name]
   const canonical = displayToolOf(part)
   const family = toolClassOfPart(part)
   return (
-    ToolRegistry.render(part.tool)
+    ToolRegistry.render(name)
+    ?? (alias ? ToolRegistry.render(alias) : undefined)
     ?? (canonical && canonical !== part.tool ? ToolRegistry.render(canonical) : undefined)
     ?? (family ? ToolRegistry.render(CLASS_FAMILY[family]) : undefined)
     ?? GenericTool

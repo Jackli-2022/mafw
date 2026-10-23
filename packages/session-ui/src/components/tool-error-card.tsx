@@ -16,6 +16,7 @@ export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "c
   onOpenChange?: (open: boolean) => void
   subtitle?: string
   href?: string
+  onNavigate?: () => void
 }
 
 export function ToolErrorCard(props: ToolErrorCardProps) {
@@ -35,6 +36,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     "onOpenChange",
     "subtitle",
     "href",
+    "onNavigate",
   ])
   const setOpen = (value: boolean) => {
     if (props.open === undefined) setState("open", value)
@@ -104,14 +106,23 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
                   <div data-slot="basic-tool-tool-info-main">
                     <span data-slot="basic-tool-tool-title">{name()}</span>
                     <Show
-                      when={split.href && split.subtitle}
+                      when={(split.href || split.onNavigate) && split.subtitle}
                       fallback={<span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>}
                     >
                       <a
                         data-slot="basic-tool-tool-subtitle"
                         class="clickable subagent-link"
-                        href={split.href!}
-                        onClick={(e) => e.stopPropagation()}
+                        href={split.href}
+                        role={!split.href ? "button" : undefined}
+                        tabIndex={!split.href ? 0 : undefined}
+                        onClick={(e) => { e.stopPropagation(); split.onNavigate?.() }}
+                        onKeyDown={(e) => {
+                          if (split.href) return
+                          if (e.key !== "Enter" && e.key !== " ") return
+                          e.preventDefault()
+                          e.stopPropagation()
+                          split.onNavigate?.()
+                        }}
                       >
                         {subtitle()}
                       </a>

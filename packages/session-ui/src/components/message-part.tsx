@@ -1551,10 +1551,11 @@ export type ToolComponent = Component<ToolProps>
 // 工具卡注册表与 canonical 解析层已迁至轻依赖模块（bun test 可直接导入）；
 // 此处转发保持既有导入方（desktop tool-cards 等）零改动。
 export { registerTool, getTool, ToolRegistry } from "./tool-registry"
-export { resolveToolRender, CLASS_FAMILY, readPathInput } from "./tool-canonical"
+export { resolveToolRender, CLASS_FAMILY, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { ToolRegistry } from "./tool-registry"
-import { resolveToolRender, readPathInput } from "./tool-canonical"
+import { resolveToolRender, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { displayToolOf } from "./parts-rules"
+import { taskChildSessionID } from "./task-session"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
   const value = createMemo(() => props.path || "tool-file")
@@ -1609,9 +1610,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
   const taskId = createMemo(() => {
-    if (part().tool !== "task") return
-    const value = partMetadata().sessionId
-    if (typeof value === "string" && value) return value
+    if (part().tool !== "task" && part().tool !== "subagent") return
+    return taskChildSessionID(partMetadata())
   })
   const taskHref = createMemo(() => {
     if (part().tool !== "task") return
@@ -1646,7 +1646,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               }
               return (
                 <ToolErrorCard
-                  tool={part().tool}
+                  tool={TOOL_NAME_ALIASES[part().tool] ?? part().tool}
                   error={error()}
                   title={part().tool === "websearch" ? webSearchProviderLabel(partMetadata().provider) : undefined}
                   defaultOpen={props.defaultOpen}
@@ -1654,6 +1654,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
                   subtitle={taskSubtitle()}
                   href={taskHref()}
+                  onNavigate={() => {
+                    const id = taskChildSessionID(partMetadata())
+                    if (id) data.navigateToSession?.(id)
+                  }}
                 />
               )
             }}
@@ -1662,7 +1666,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
             <Dynamic
               component={render()}
               input={input()}
-              tool={part().tool}
+              tool={TOOL_NAME_ALIASES[part().tool] ?? part().tool}
               sessionID={part().sessionID}
               metadata={partMetadata()}
               // @ts-expect-error
@@ -2068,9 +2072,8 @@ ToolRegistry.register({
     const i18n = useI18n()
     const location = useLocation()
     const childSessionId = createMemo(() => {
-      const value = props.metadata.sessionId
-      if (typeof value === "string" && value) return value
-      return taskSession(props.input, location.pathname, data.store.session, data.store.agent)
+      return taskChildSessionID(props.metadata)
+        ?? taskSession(props.input, location.pathname, data.store.session, data.store.agent)
     })
     const agent = createMemo(() => taskAgent(props.input.subagent_type, data.store.agent))
     const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))

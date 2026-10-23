@@ -7,15 +7,18 @@
 //   wire 形状以源码为据，检测写宽容判定（type==="synthetic" 或 缺 role 且
 //   metadata.source 存在）——实证未覆盖的字段差异按"完成"方向兜底。
 import type { BackgroundEvent, BgType } from "./background-tracker"
+import { toolNameOf } from "./tool-part"
 
-const TARGET_TOOLS = new Set(["shell", "subagent"])
+const TARGET_TOOLS = new Set(["shell", "subagent", "task"])
 
 /** 工具 part → bg-observed；前台/非目标/形状不足 → null。 */
 export function detectBackgroundPart(part: any, sessionID: string): BackgroundEvent | null {
-  if (!part || part.type !== "tool" || !TARGET_TOOLS.has(String(part.tool))) return null
+  if (!part || part.type !== "tool") return null
+  const tool = toolNameOf(part)
+  if (!tool || !TARGET_TOOLS.has(tool)) return null
   const state = part.state
   if (state?.status !== "completed" || state?.metadata?.status !== "running") return null
-  const type: BgType = part.tool === "shell" ? "shell" : "subagent"
+  const type: BgType = tool === "shell" ? "shell" : "subagent"
   const id = type === "shell" ? state.metadata.shellID : state.metadata.sessionID
   if (typeof id !== "string" || !id) return null
   const label = type === "shell" ? state.input?.command : state.input?.description
@@ -89,10 +92,13 @@ export function findBlockingWork(
   if (!latest || typeof latest.time?.completed === "number") return []
   const out: Array<{ type: BgType; label: string }> = []
   for (const part of parts?.[latest.id] ?? []) {
-    if (part?.type !== "tool" || !TARGET_TOOLS.has(String(part.tool))) continue
+    if (part?.type !== "tool") continue
+    const tool = toolNameOf(part)
+    if (!tool || !TARGET_TOOLS.has(tool)) continue
     if (part.state?.status !== "running") continue
-    const label = part.tool === "shell" ? part.state?.input?.command : part.state?.input?.description
-    out.push({ type: part.tool === "shell" ? "shell" : "subagent", label: typeof label === "string" ? label : "" })
+    const type: BgType = tool === "shell" ? "shell" : "subagent"
+    const label = type === "shell" ? part.state?.input?.command : part.state?.input?.description
+    out.push({ type, label: typeof label === "string" ? label : "" })
   }
   return out
 }

@@ -25,6 +25,7 @@ import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagen
 import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal } from "./background-store"
 import { backgroundRestAvailable, resetBackgroundCapability } from "./background-capability"
 import { countRunning } from "./background-tracker"
+import { normalizeToolPart } from "./tool-part"
 import { scanHistoryForBackground } from "./background-detect"
 import { reconcileBackgroundOnce } from "./background-reconcile"
 import { buildBackgroundNotice } from "./background-notify"
@@ -1095,7 +1096,7 @@ export function MafwShell() {
           msgs.push(msg)
           let itemParts = Array.isArray(item.parts) ? item.parts : (Array.isArray(info.parts) ? info.parts : [])
           if (Array.isArray(itemParts) && itemParts.length > 0) {
-            parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => ({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
+            parts[msgId] = mergeLocalParts(store.part[msgId], itemParts.map((p: any) => normalizeToolPart({ ...p, id: p.id || `p-${Date.now()}-${Math.random()}`, sessionID, messageID: msgId })))
           }
         }
         if (msgs.length > 0) {
