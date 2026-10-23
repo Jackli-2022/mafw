@@ -71,6 +71,37 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
     expect(Array.isArray(out.data)).toBe(true);
     expect(out.data).toHaveLength(1);
   });
+  it('2.1.0 分页信封 {data, cursor}——剥 data 且 cursor 迁移到 nextCursor', async () => {
+    // 实测 2.1.0 messages 响应：{"data":[...],"cursor":"..."}——游标在 body（旧面在
+    // X-Next-Cursor 响应头）。键集判定漏掉 cursor 导致整个信封未剥（2026-10-23 复现）。
+    mockClient.session.messages = jest.fn(async () => ({
+      data: { data: [{ id: 'msg_2' }], cursor: 'cur-next' },
+      response: { headers: { get: () => null } },
+    }));
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    const out = await client.session.messages!({ sessionID: 'ses_1' });
+    expect(Array.isArray(out.data)).toBe(true);
+    expect(out.data).toHaveLength(1);
+    expect(out.nextCursor).toBe('cur-next');
+  });
+  it('2.1.0 消息 role 归一：type:user/assistant → role（desktop 缺 role 直接丢消息）', async () => {
+    mockClient.session.messages = jest.fn(async () => ({
+      data: { data: [
+        { id: 'm1', type: 'user', content: [] },
+        { id: 'm2', type: 'assistant', content: [] },
+        { id: 'm3', role: 'user', type: 'user', content: [] },        // 已有 role 不覆盖
+        { id: 'm4', type: 'system', content: [] },                    // 非角色型不硬映射
+      ] },
+      response: { headers: { get: () => null } },
+    }));
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    const out = await client.session.messages!({ sessionID: 'ses_1' });
+    const byId = Object.fromEntries((out.data as any[]).map((m: any) => [m.id, m]));
+    expect(byId.m1.role).toBe('user');
+    expect(byId.m2.role).toBe('assistant');
+    expect(byId.m3.role).toBe('user');
+    expect(byId.m4.role).toBeUndefined();
+  });
 });
 
 describe('opencode adapter branch + envelope', () => {

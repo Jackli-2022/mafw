@@ -48,16 +48,26 @@ const OPENCODE_NATIVE_TOOLS: NativeToolDeclaration[] = [
 
 function unwrap<T>(result: any): T {
   const body = result?.data !== undefined ? result.data : result;
-  // 2.1.0 统一响应信封 {data: X}（有时带 location 伴键）——body 仍是信封时再剥一层。
-  // 判定收窄（键集 ⊆ {data, location}）避免误伤恰好有 data 键的业务对象。
+  // 2.1.0 统一响应信封 {data: X}（分页消息带 cursor；部分带 location）——body 仍是
+  // 信封时再剥一层。判定收窄（键集 ⊆ {data, cursor, location}）避免误伤业务对象。
+  // 2026-10-23 复现：漏掉 cursor 键 → messages 返回整信封对象而非数组 → 历史空。
   if (
     body && typeof body === 'object' && !Array.isArray(body) &&
     body.data !== undefined &&
-    Object.keys(body).every(k => k === 'data' || k === 'location')
+    Object.keys(body).every(k => k === 'data' || k === 'cursor' || k === 'location')
   ) {
     return body.data as T;
   }
   return body as T;
+}
+
+/** 2.1.0 分页游标（body.cursor）——旧面在 X-Next-Cursor 响应头。 */
+function unwrapCursor(result: any): string | undefined {
+  const body = result?.data !== undefined ? result.data : result;
+  if (body && typeof body === 'object' && typeof body.cursor === 'string' && body.cursor) {
+    return body.cursor;
+  }
+  return undefined;
 }
 
 function messageToParts(message?: string, parts?: any[]): any[] {
@@ -182,8 +192,19 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
           limit: opts.limit,
           before: opts.before,
         });
-        const data = unwrap<any[]>(result);
-        const nextCursor = result?.response?.headers?.get('X-Next-Cursor') || undefined;
+        const raw = unwrap<any[]>(result);
+        // 2.1.0 消息角色在 `type`（user/assistant）而非 `role`——desktop 对缺 role 的
+        // message.updated 直接丢弃（chat-stream: !info?.role → return）。出口归一：
+        // 仅补缺失 role，不覆盖既有；非角色型（system/compaction…）不硬映射。
+        const data = Array.isArray(raw)
+          ? raw.map((m: any) => {
+              if (!m || typeof m !== 'object' || m.role !== undefined) return m;
+              if (m.type === 'user' || m.type === 'assistant') return { ...m, role: m.type };
+              return m;
+            })
+          : raw;
+        // 2.1.0：游标在 body.cursor；旧面在 X-Next-Cursor 响应头——双读兜底
+        const nextCursor = unwrapCursor(result) || result?.response?.headers?.get('X-Next-Cursor') || undefined;
         return { data, nextCursor };
       },
 
