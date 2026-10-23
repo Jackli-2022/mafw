@@ -39,6 +39,14 @@ describe("detectBackgroundPart", () => {
     expect(detectBackgroundPart({ ...bgShellPart, state: { status: "running", input: { command: "x" } } }, "s1")).toBeNull()
   })
 
+  test("v1 task part reads metadata.sessionId", () => {
+    const ev = detectBackgroundPart({
+      type: "tool", tool: "task",
+      state: { status: "completed", metadata: { status: "running", sessionId: "child-v1" }, input: { description: "legacy" } },
+    }, "s1")
+    expect(ev?.row).toEqual({ id: "child-v1", type: "subagent", sessionID: "s1", label: "legacy" })
+  })
+
   test("completed without metadata.status=running → null; non-target tool → null", () => {
     expect(detectBackgroundPart({ ...bgShellPart, state: { status: "completed", input: {} } }, "s1")).toBeNull()
     expect(detectBackgroundPart({ type: "tool", tool: "edit", state: bgShellPart.state }, "s1")).toBeNull()

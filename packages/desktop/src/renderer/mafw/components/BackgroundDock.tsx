@@ -9,7 +9,7 @@ import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { backgroundRows, ingestBackgroundEvent } from "../background-store"
 import { rowsForSession, type BackgroundRow, type BgStatus } from "../background-tracker"
 import { formatDuration } from "../goal-timeline"
-import { backgroundRestState, probeBackgroundRest, shouldShowRestUnavailableHint, type BackgroundRestState } from "../background-capability"
+import { backgroundRestState, probeBackgroundRest, outputPlaceholder, shouldShowRestUnavailableHint, type BackgroundRestState } from "../background-capability"
 
 const STATUS_LABEL: Record<BgStatus, string> = {
   running: "运行中",
@@ -126,7 +126,7 @@ export function BackgroundDock(props: {
               </div>
               <Show when={r.type === "shell" && expanded() === r.id}>
                 <div class="mafw-bg-detail">
-                  <pre class="mafw-bg-output">{outputs()[r.id] ?? "（点「刷新」拉取输出）"}</pre>
+                  <pre class="mafw-bg-output">{outputs()[r.id] ?? outputPlaceholder(restState())}</pre>
                   <div class="mafw-bg-actions">
                     <Show when={restState() === "available"}>
                       <ButtonV2 variant="ghost" size="small" onClick={() => void refreshOutput(r)}>刷新</ButtonV2>

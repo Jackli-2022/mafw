@@ -6,6 +6,7 @@ import { Icon } from "@mafw/ui/icon"
 import { IconButton } from "@mafw/ui/icon-button"
 import { Tooltip } from "@mafw/ui/tooltip"
 import { useI18n } from "@mafw/ui/context/i18n"
+import { shouldInvokeNavigate } from "./tool-error-link"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   tool: string
@@ -115,7 +116,19 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
                         href={split.href}
                         role={!split.href ? "button" : undefined}
                         tabIndex={!split.href ? 0 : undefined}
-                        onClick={(e) => { e.stopPropagation(); split.onNavigate?.() }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (!shouldInvokeNavigate({
+                            href: split.href,
+                            button: e.button,
+                            ctrlKey: e.ctrlKey,
+                            metaKey: e.metaKey,
+                            altKey: e.altKey,
+                            shiftKey: e.shiftKey,
+                          })) return
+                          e.preventDefault()
+                          split.onNavigate?.()
+                        }}
                         onKeyDown={(e) => {
                           if (split.href) return
                           if (e.key !== "Enter" && e.key !== " ") return

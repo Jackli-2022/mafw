@@ -81,36 +81,66 @@ export function shouldShowRestUnavailableHint(state: BackgroundRestState, hasShe
   return state === "unavailable" && hasShellRows
 }
 
-// ── runtime（opencode?）探测：沿用既有缓存语义 ──────────────────────────
-
-type Probe = { at: number; ok: boolean; known: boolean }
-let runtime: Probe = { at: 0, ok: false, known: false }
-let runtimeInflight: Promise<boolean> | null = null
-
-function fresh(p: Probe, now: number): boolean {
-  return p.known && (p.ok || now - p.at < RETRY_MS)
+/** 输出预览占位文案：REST 不可用时不要提示用户点一个已隐藏的按钮。 */
+export function outputPlaceholder(state: BackgroundRestState): string {
+  return state === "available" ? "（点「刷新」拉取输出）" : "（REST 不可用，无法拉取输出）"
 }
 
+// ── runtime（opencode?）探测：沿用既有缓存语义 ──────────────────────────
+
+export interface RuntimeInfo {
+  active?: { name?: string }
+}
+
+export function createRuntimeProbe(
+  probe: () => Promise<RuntimeInfo | null | undefined>,
+  now: () => number = Date.now,
+): { available(): Promise<boolean>; reset(): void } {
+  type RuntimeState = { at: number; ok: boolean; known: boolean }
+  let state: RuntimeState = { at: 0, ok: false, known: false }
+  let inflight: Promise<boolean> | null = null
+  let generation = 0
+
+  const fresh = () => state.known && (state.ok || now() - state.at < RETRY_MS)
+
+  const run = (): Promise<boolean> => {
+    if (inflight) return inflight
+    const gen = generation
+    const started = now()
+    inflight = probe()
+      .then((info) => {
+        const ok = info?.active?.name === "opencode"
+        if (gen === generation) state = { at: started, ok, known: true }
+        return ok
+      })
+      .catch(() => {
+        if (gen === generation) state = { at: started, ok: false, known: true }
+        return false
+      })
+      .finally(() => {
+        if (gen === generation) inflight = null
+      })
+    return inflight
+  }
+
+  return {
+    available: () => (fresh() ? Promise.resolve(state.ok) : run()),
+    reset: () => {
+      generation++
+      state = { at: 0, ok: false, known: false }
+      inflight = null
+    },
+  }
+}
+
+const runtimeProbe = createRuntimeProbe(() => window.api.mafw.runtime.get())
+
 export function canUseBackgroundApi(): Promise<boolean> {
-  if (fresh(runtime, Date.now())) return Promise.resolve(runtime.ok)
-  if (runtimeInflight) return runtimeInflight
-  runtimeInflight = window.api.mafw.runtime.get()
-    .then((info: any) => {
-      const ok = info?.active?.name === "opencode"
-      runtime = { at: Date.now(), ok, known: true }
-      return ok
-    })
-    .catch(() => {
-      runtime = { at: Date.now(), ok: false, known: true }
-      return false
-    })
-    .finally(() => { runtimeInflight = null })
-  return runtimeInflight
+  return runtimeProbe.available()
 }
 
 /** runtime 热切换 / SSE 重连 / 测试后重置探测缓存。 */
 export function resetBackgroundCapability(): void {
   restProbe.reset()
-  runtime = { at: 0, ok: false, known: false }
-  runtimeInflight = null
+  runtimeProbe.reset()
 }

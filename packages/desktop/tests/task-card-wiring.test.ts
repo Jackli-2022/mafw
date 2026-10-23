@@ -34,11 +34,13 @@ describe("task card + v2.1.0 tool identity wiring", () => {
     expect(canonical).toContain("TOOL_NAME_ALIASES")
     expect(canonical).toContain("subagent: \"task\"")
     expect(canonical).toContain("shell: \"bash\"")
+    expect(part).toContain("taskAgentName")
   })
 
   test("failed task card wires onNavigate", () => {
     const errorCard = read("../session-ui/src/components/tool-error-card.tsx")
     expect(errorCard).toContain("onNavigate?:")
     expect(errorCard).toContain("split.onNavigate?.()")
+    expect(errorCard).toContain("shouldInvokeNavigate")
   })
 })

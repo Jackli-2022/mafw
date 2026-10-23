@@ -11,6 +11,11 @@ import { toolNameOf } from "./tool-part"
 
 const TARGET_TOOLS = new Set(["shell", "subagent", "task"])
 
+function subagentID(metadata: any): string | undefined {
+  const value = metadata?.sessionID ?? metadata?.sessionId ?? metadata?.childSessionID
+  return typeof value === "string" && value ? value : undefined
+}
+
 /** 工具 part → bg-observed；前台/非目标/形状不足 → null。 */
 export function detectBackgroundPart(part: any, sessionID: string): BackgroundEvent | null {
   if (!part || part.type !== "tool") return null
@@ -19,7 +24,7 @@ export function detectBackgroundPart(part: any, sessionID: string): BackgroundEv
   const state = part.state
   if (state?.status !== "completed" || state?.metadata?.status !== "running") return null
   const type: BgType = tool === "shell" ? "shell" : "subagent"
-  const id = type === "shell" ? state.metadata.shellID : state.metadata.sessionID
+  const id = type === "shell" ? state.metadata.shellID : subagentID(state.metadata)
   if (typeof id !== "string" || !id) return null
   const label = type === "shell" ? state.input?.command : state.input?.description
   return {

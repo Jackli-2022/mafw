@@ -523,10 +523,8 @@ export function getToolInfo(
         subtitle: input.query,
       }
     case "task": {
-      const type =
-        typeof input.subagent_type === "string" && input.subagent_type
-          ? input.subagent_type[0]!.toUpperCase() + input.subagent_type.slice(1)
-          : undefined
+      const raw = taskAgentName(input)
+      const type = raw ? raw[0]!.toUpperCase() + raw.slice(1) : undefined
       return {
         icon: "task",
         title: agentTitle(i18n, type),
@@ -618,7 +616,7 @@ function taskSession(
   const parentID = currentSession(path)
   if (!parentID) return
   const description = typeof input.description === "string" ? input.description : ""
-  const agent = taskAgent(input.subagent_type, agents).name
+  const agent = taskAgent(taskAgentName(input), agents).name
   return (sessions ?? [])
     .filter((session) => session.parentID === parentID && !session.time?.archived)
     .filter((session) => (description ? session.title.startsWith(description) : true))
@@ -1555,7 +1553,7 @@ export { resolveToolRender, CLASS_FAMILY, readPathInput, TOOL_NAME_ALIASES } fro
 import { ToolRegistry } from "./tool-registry"
 import { resolveToolRender, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { displayToolOf } from "./parts-rules"
-import { taskChildSessionID, isTaskTool } from "./task-session"
+import { taskChildSessionID, taskAgentName, isTaskTool } from "./task-session"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
   const value = createMemo(() => props.path || "tool-file")
@@ -2072,7 +2070,7 @@ ToolRegistry.register({
       return taskChildSessionID(props.metadata)
         ?? taskSession(props.input, location.pathname, data.store.session, data.store.agent)
     })
-    const agent = createMemo(() => taskAgent(props.input.subagent_type, data.store.agent))
+    const agent = createMemo(() => taskAgent(taskAgentName(props.input), data.store.agent))
     const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))
     const tone = createMemo(() => agent().color)
     const v2Tone = createMemo(() => agent().v2Color)

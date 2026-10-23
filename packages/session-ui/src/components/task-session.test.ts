@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isTaskTool, taskChildSessionID } from "./task-session"
+import { isTaskTool, taskAgentName, taskChildSessionID } from "./task-session"
 
 describe("taskChildSessionID", () => {
   test("accepts camelCase sessionId", () => {
@@ -24,5 +24,13 @@ describe("taskChildSessionID", () => {
     expect(isTaskTool("subagent")).toBe(true)
     expect(isTaskTool("bash")).toBe(false)
     expect(isTaskTool(undefined)).toBe(false)
+  })
+  test("taskAgentName reads subagent_type then v2 agent", () => {
+    expect(taskAgentName({ subagent_type: "general" })).toBe("general")
+    expect(taskAgentName({ agent: "general" })).toBe("general")
+    expect(taskAgentName({ subagent_type: "x", agent: "y" })).toBe("x")
+    expect(taskAgentName({ subagent_type: "", agent: "y" })).toBe("y")
+    expect(taskAgentName({})).toBeUndefined()
+    expect(taskAgentName(null)).toBeUndefined()
   })
 })
