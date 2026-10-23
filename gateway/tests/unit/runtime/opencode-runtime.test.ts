@@ -35,6 +35,8 @@ jest.mock('../../../src/core/utils/logger', () => ({
 jest.mock('../../../src/runtime/serve-sidecar', () => ({
   startServeSidecar: jest.fn(),
   killServePort: jest.fn(),
+  resolveServePassword: () => 'test-serve-password',
+  serveAuthHeaders: () => ({ Authorization: 'Basic dGVzdA==' }),
 }));
 jest.mock('../../../src/config', () => ({
   config: { server: { serveUrl: 'http://127.0.0.1:4096', servePort: 4096 } },
@@ -63,6 +65,38 @@ describe('opencode-runtime tools 通道（Tier-0 必选）', () => {
       expect(['readonly', 'search', 'file-edit', 'shell', 'subagent', 'web', 'plan', 'other']).toContain(d.toolClass);
     }
     expect(decls.map((d) => d.name)).toEqual(expect.arrayContaining(['read', 'bash', 'edit', 'task']));
+  });
+});
+
+describe('opencode-runtime 2.1.0 修复接线', () => {
+  it('spawnServe 注入 password（resolveServePassword 单源——serve 侧 OPENCODE_SERVER_PASSWORD）', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    mockStartServe.mockResolvedValueOnce({ url: 'http://127.0.0.1:4096', close: () => {}, password: 'x' });
+    const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+    await (rt as any).agentProcess.spawnServe({});
+    const call = mockStartServe.mock.calls.at(-1)?.[0] ?? {};
+    expect(typeof call.password).toBe('string');
+    expect(call.password.length).toBeGreaterThan(0);
+  });
+
+  it('healthCheck 打 /api/session?limit=1 且带 Basic auth（2.1.0：真 API 面 + 认证）', async () => {
+    delete process.env.MAFW_SERVER_SERVE_URL;
+    let seenUrl = '';
+    let seenAuth = '';
+    const realFetch = global.fetch;
+    (global as any).fetch = (async (url: any, init: any) => {
+      seenUrl = String(url); seenAuth = init?.headers?.Authorization ?? '';
+      return { ok: true, status: 200 };
+    });
+    try {
+      const rt = await createOpencodeRuntime({ baseUrl: 'http://127.0.0.1:4096' });
+      const healthy = await (rt as any).healthCheck();
+      expect(healthy).toBe(true);
+      expect(seenUrl).toBe('http://127.0.0.1:4096/api/session?limit=1');
+      expect(seenAuth).toMatch(/^Basic /);
+    } finally {
+      (global as any).fetch = realFetch;
+    }
   });
 });
 
@@ -187,7 +221,9 @@ describe('createOpencodeRuntime', () => {
     }) as any;
     try {
       await expect(rt.healthCheck!()).resolves.toBe(true);
-      expect(calls[0]).toBe('http://127.0.0.1:5555/global/health');
+      // 2.1.0（2026-10-22 修复）：healthCheck 改打真 API 面 /api/session?limit=1
+      // （旧 /global/health 在 2.1.0 落 SPA HTML——200 假阳性）
+      expect(calls[0]).toBe('http://127.0.0.1:5555/api/session?limit=1');
     } finally {
       (globalThis as any).fetch = savedFetch;
     }

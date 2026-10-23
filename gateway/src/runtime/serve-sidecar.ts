@@ -48,11 +48,35 @@ export interface ServeSidecarOptions {
   onOutput?: (chunk: string) => void;
   /** Fired when the serve process exits after startup completed. */
   onExit?: (code: number | null) => void;
+  /** 2.1.0 serve 强制 Basic auth——gateway 主动设 OPENCODE_SERVER_PASSWORD（双方已知，
+   *  adapter 据此注入 Authorization 头；不设则 serve 随机生成密码、gateway 无法访问 API）。 */
+  password?: string;
 }
 
 export interface ServeSidecar {
   url: string;
   close: () => void;
+  /** 透传 spawn 时的密码（adapter 构造 Basic header 用）。 */
+  password?: string;
+}
+
+/** 密码单源（2026-10-22 修复）：env 显式优先（MAFW_RUNTIME_PASSWORD / MAFW_OPENCODE_PASSWORD /
+ *  OPENCODE_SERVER_PASSWORD——外部 serve 模式用户自管），全缺省时进程内生成稳定随机值
+ *  （owned sidecar 与 gateway 同生命周期，spawn 注入 + adapter 认证同源）。 */
+let cachedServePassword: string | null = null;
+export function resolveServePassword(): string {
+  if (cachedServePassword) return cachedServePassword;
+  cachedServePassword =
+    process.env.MAFW_RUNTIME_PASSWORD ??
+    process.env.MAFW_OPENCODE_PASSWORD ??
+    process.env.OPENCODE_SERVER_PASSWORD ??
+    `mafw-${require('crypto').randomUUID()}`;
+  return cachedServePassword;
+}
+
+/** serve API 的 Basic auth 头（用户名恒为 opencode——2.1.0 官方约定）。 */
+export function serveAuthHeaders(): Record<string, string> {
+  return { Authorization: 'Basic ' + Buffer.from(`opencode:${resolveServePassword()}`).toString('base64') };
 }
 
 // cross-spawn resolves npm .cmd shims on Windows (plain child_process.spawn
@@ -80,7 +104,12 @@ function treeKill(pid: number | undefined, child: any): void {
 export function startServeSidecar(opts: ServeSidecarOptions): Promise<ServeSidecar> {
   return new Promise((resolve, reject) => {
     const child = crossSpawn('opencode', ['serve', `--hostname=${opts.host}`, `--port=${opts.port}`], {
-      env: { ...process.env, OPENCODE_CONFIG_CONTENT: '{}' },
+      env: {
+        ...process.env,
+        OPENCODE_CONFIG_CONTENT: '{}',
+        // 2.1.0：显式密码 = gateway 与 serve 双方已知（不设则 serve 随机生成，API 不可达）
+        ...(opts.password ? { OPENCODE_SERVER_PASSWORD: opts.password } : {}),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -103,6 +132,7 @@ export function startServeSidecar(opts: ServeSidecarOptions): Promise<ServeSidec
             treeKill(child.pid, child);
             try { child.kill(); } catch { /* already gone */ }
           },
+          ...(opts.password ? { password: opts.password } : {}),
         });
       }
     };

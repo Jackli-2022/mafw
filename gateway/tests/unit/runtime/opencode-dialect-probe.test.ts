@@ -28,6 +28,21 @@ function sseBody(chunks: string[], readDelayMs = 0) {
 const ok = (chunks: string[], readDelayMs = 0) =>
   (async () => ({ ok: true, status: 200, body: sseBody(chunks, readDelayMs) })) as unknown as typeof fetch;
 
+describe('probeOpencodeDialect 2.1.0 连接面（/api/event + Basic auth）', () => {
+  it('peek 打 /api/event 且带 Basic auth（根路径无认证全落 SPA）', async () => {
+    let seenUrl = '';
+    let seenAuth = '';
+    const fetchImpl = (async (url: any, init: any) => {
+      seenUrl = String(url);
+      seenAuth = init?.headers?.Authorization ?? '';
+      return { ok: true, status: 200, body: sseBody(['data: {"id":"e1","type":"server.connected","data":{}}\n\n']) };
+    }) as unknown as typeof fetch;
+    await probeOpencodeDialect('http://127.0.0.1:4096', fetchImpl, 1000);
+    expect(seenUrl).toBe('http://127.0.0.1:4096/api/event');
+    expect(seenAuth).toMatch(/^Basic /);
+  });
+});
+
 describe('probeOpencodeDialect（SSE peek，fail-safe 恒 v1）', () => {
   it('sync 信封可见 → v2', async () => {
     const fetchImpl = ok(['data: {"directory":"/p","payload":{"type":"sync","syncEvent":{"type":"session.1"}}}\n\n']);

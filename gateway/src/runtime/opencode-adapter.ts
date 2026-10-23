@@ -10,6 +10,7 @@
 
 // ─── 接口定义（单源在 runtime/contract.ts，此处仅转发保持兼容） ─────────────
 
+import { serveAuthHeaders } from './serve-sidecar';
 import type {
   RuntimeClient,
   SessionCreateOpts,
@@ -60,7 +61,15 @@ function messageToParts(message?: string, parts?: any[]): any[] {
 
 export async function createOpencodeAdapter(config: { baseUrl: string; headers?: Record<string, string> }): Promise<OpencodeAdapter> {
   const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
-  let current = createOpencodeClient(config);
+  // 2.1.0 兼容（2026-10-22 事故第三层修复）：
+  // ① API 全挂 /api 前缀——SDK 模板（/session/...）拼上 /api 后命中 2.1.0 路由；
+  // ② serve 强制 Basic auth——headers 补 Authorization（serveAuthHeaders 单源，
+  //    与 sidecar spawn 的 OPENCODE_SERVER_PASSWORD 同值；外部传入 headers 优先合并）。
+  const buildSdkConfig = (base: string) => ({
+    baseUrl: base.replace(/\/+$/, '') + '/api',
+    headers: { ...serveAuthHeaders(), ...(config.headers ?? {}) },
+  });
+  let current = createOpencodeClient(buildSdkConfig(config.baseUrl));
   let clientBaseUrl = config.baseUrl;
   // URL 吸收：runtime 的 spawnServe 会把 sidecar 实际地址写回 config.baseUrl
   // （动态端口前提）。SDK 客户端内部持有构造期 config 快照，感知不到变更——
@@ -70,7 +79,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     get(_t, prop) {
       if (config.baseUrl !== clientBaseUrl) {
         clientBaseUrl = config.baseUrl;
-        current = createOpencodeClient({ ...config, baseUrl: config.baseUrl });
+        current = createOpencodeClient(buildSdkConfig(config.baseUrl));
       }
       return Reflect.get(current as object, prop, current as object);
     },
@@ -78,16 +87,18 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
 
   // opencode 原生 V1 路由的 workspace 路由细节收敛在 adapter 内（契约保持
   // runtime 中立）——带 directory 的调用直连 fetch（V2 SDK 调用不带 workspace 语义）。
+  // 2.1.0：directNative 同样走 /api 前缀 + Basic auth。
   const directNative = async (
     path: string,
     method: string,
     body?: any,
     directory?: string,
   ): Promise<any> => {
-    const url = `${config.baseUrl}${path}${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`;
+    const url = `${config.baseUrl}/api${path}${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`;
     const res = await fetch(url, {
       method,
       headers: {
+        ...serveAuthHeaders(),
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(directory ? { 'x-opencode-directory': encodeURIComponent(directory) } : {}),
         ...(config.headers ?? {}),
@@ -331,14 +342,18 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       async permissionList(opts?: { directory?: string }) {
-        const data = await directNative('/permission', 'GET', undefined, opts?.directory);
-        return Array.isArray(data) ? data : data?.items ?? [];
+        // 2.1.0：permission 列表路由在 /api/permission/request（+directory query）；
+        // 旧 /permission 已 404。返回形状 {location, data[]} — data 兼容提取。
+        const data = await directNative('/permission/request', 'GET', undefined, opts?.directory);
+        return Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
       },
     },
 
     global: {
       event() {
-        return client.global.event();
+        // 2.1.0：SSE 流在 Event class（/event → /api/event，实测 200）；
+        // Global class 的 /global/event 已 404（2026-10-22 事故第三层）
+        return client.event.subscribe();
       },
     },
 

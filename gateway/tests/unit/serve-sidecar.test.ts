@@ -75,6 +75,31 @@ describe('serve-sidecar spawn options', () => {
     expect(result.url).toBe('http://127.0.0.1:4096');
   });
 
+  test('password opt injects OPENCODE_SERVER_PASSWORD env (2.1.0 serve auth)', async () => {
+    // 2026-10-22 第三层根因：2.1.0 serve 强制 Basic auth（未设 OPENCODE_SERVER_PASSWORD
+    // 时随机生成密码打在横幅里，gateway 无从得知）→ API 请求全被喂 SPA HTML。
+    // gateway 主动设密码 = 双方已知 → adapter 可注入 Authorization。
+    const pending = startServeSidecar({ host: '127.0.0.1', port: 4096, timeoutMs: 5000, password: 'test-serve-pw' });
+    const child = crossSpawnMock.__lastChild();
+    const opts = crossSpawnMock.mock.calls[0][2];
+    expect(opts.env.OPENCODE_SERVER_PASSWORD).toBe('test-serve-pw');
+    const stdoutHandler = child.stdout.on.mock.calls.find((c: any[]) => c[0] === 'data')[1];
+    stdoutHandler(Buffer.from('server listening on http://127.0.0.1:4096\n'));
+    const result = await pending;
+    expect(result.password).toBe('test-serve-pw');  // 回传供 adapter 构造 Basic header
+  });
+
+  test('no password opt → OPENCODE_SERVER_PASSWORD 不注入（外部 serve 模式兼容）', async () => {
+    const pending = startServeSidecar({ host: '127.0.0.1', port: 4096, timeoutMs: 5000 });
+    crossSpawnMock.__lastChild();
+    const opts = crossSpawnMock.mock.calls[0][2];
+    expect(opts.env.OPENCODE_SERVER_PASSWORD).toBeUndefined();
+    const child = crossSpawnMock.__lastChild();
+    const stdoutHandler = child.stdout.on.mock.calls.find((c: any[]) => c[0] === 'data')[1];
+    stdoutHandler(Buffer.from('server listening on http://127.0.0.1:4096\n'));
+    await pending;
+  });
+
   test('tree-kills the child on close (taskkill on win32, SIGKILL elsewhere)', async () => {
     const execSyncSpy = jest.spyOn(require('child_process'), 'execSync').mockReturnValue(Buffer.from(''));
     const pending = startServeSidecar({ host: '127.0.0.1', port: 4096, timeoutMs: 5000 });

@@ -1,3 +1,4 @@
+import { serveAuthHeaders } from './serve-sidecar';
 /**
  * probeOpencodeDialect —— opencode 方言探测（SSE peek）。
  *
@@ -28,8 +29,10 @@ export async function probeOpencodeDialect(
   });
   abortPromise.catch(() => { /* 被竞速消费或有意丢弃 */ });
   try {
-    const res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/global/event`, {
-      headers: { accept: 'text/event-stream' },
+    // 2.1.0（2026-10-22 修复）：API 全挂 /api 前缀 + 强制 Basic auth——根路径
+    // /global/event 无认证落 SPA HTML（res.ok true 但无事件流，静默 fail-safe）。
+    const res = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/api/event`, {
+      headers: { accept: 'text/event-stream', ...serveAuthHeaders() },
       signal: controller.signal,
     });
     if (!res.ok || !res.body) return 'v1';

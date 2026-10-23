@@ -16,7 +16,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { AgentRuntime, SessionInfo, fullCapabilities, CompletionRequest, CompletionResult } from './contract';
 import { AgentDefinition } from './agent-definition';
-import { startServeSidecar, killServePort } from './serve-sidecar';
+import { startServeSidecar, killServePort, resolveServePassword, serveAuthHeaders } from './serve-sidecar';
 import { createOpencodeAdapter } from './opencode-adapter';
 import { config as gatewayConfig } from '../config';
 import { getProviderApiKey } from './auth';
@@ -302,8 +302,10 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
     },
     async healthCheck(): Promise<boolean> {
       try {
-        const res = await fetch(`${config.baseUrl}/global/health`, {
-          headers: config.headers,
+        // 2.1.0（2026-10-22 修复）：真 API 面 + 认证探测——旧 /global/health 在 2.1.0
+        // 落 SPA（HTML 200 假阳性）；/api/session?limit=1 实测 200 且验证 auth 链路。
+        const res = await fetch(`${config.baseUrl.replace(/\/+$/, '')}/api/session?limit=1`, {
+          headers: { ...serveAuthHeaders(), ...(config.headers ?? {}) },
           signal: AbortSignal.timeout(3000),
         } as any);
         return res.ok;
@@ -370,6 +372,10 @@ export async function createOpencodeRuntime(config: OpencodeRuntimeConfig): Prom
           timeoutMs: opts.timeoutMs,
           onOutput: opts.onOutput,
           onExit: opts.onExit,
+          // 2.1.0（2026-10-22 修复）：serve 强制 Basic auth——gateway 主动设密码
+          // （resolveServePassword 单源：env 显式优先，缺省进程内生成——adapter
+          // 认证头同源）。不设则 serve 随机生成，gateway API 不可达。
+          password: resolveServePassword(),
         });
         // 吸收 sidecar 报告的实际地址（可能与请求端口不同，如动态分配）：
         // 之后 getBaseUrl/healthCheck/adapter 请求全部跟随实际 URL。

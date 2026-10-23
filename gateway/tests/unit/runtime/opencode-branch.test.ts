@@ -26,11 +26,43 @@ const mockClient = {
     // session 上没有 permission 成员（Session2 只有 24 个方法）。此前 mock 挂在 session 下 = 假形状假绿。
     reply: jest.fn(async () => ({})),
   },
+  event: {
+    // 2.1.0：SSE 流在 Event class（/event → /api/event）；Global class 的
+    // /global/event 在 2.1.0 已 404（2026-10-22 事故第三层）
+    subscribe: jest.fn(async () => ({ ok: true })),
+  },
+  global: {
+    event: jest.fn(async () => ({ ok: true })),
+  },
 };
 
+const createClientMock = jest.fn(() => mockClient);
 jest.mock('@opencode-ai/sdk/v2', () => ({
-  createOpencodeClient: () => mockClient,
+  createOpencodeClient: (cfg: any) => createClientMock(cfg),
 }));
+
+describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', () => {
+  beforeEach(() => { createClientMock.mockClear(); mockClient.event.subscribe.mockClear(); mockClient.global.event.mockClear(); });
+
+  it('SDK client 挂在 baseUrl + /api 前缀（2.1.0 全 API 面），且带 Basic auth 头', async () => {
+    await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const cfg = createClientMock.mock.calls[0][0];
+    expect(cfg.baseUrl).toBe('http://127.0.0.1:4096/api');
+    expect(cfg.headers?.Authorization).toMatch(/^Basic /);
+  });
+  it('外部传入 headers 优先合并且 Basic 兜底存在', async () => {
+    await createOpencodeAdapter({ baseUrl: 'http://x:1', headers: { 'x-custom': '1' } });
+    const cfg = createClientMock.mock.calls[0][0];
+    expect(cfg.headers['x-custom']).toBe('1');
+    expect(cfg.headers.Authorization).toMatch(/^Basic /);
+  });
+  it('SSE 流走 event.subscribe（/api/event）——global.event 在 2.1.0 已 404', async () => {
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    await client.global.event!();
+    expect(mockClient.event.subscribe).toHaveBeenCalled();
+    expect(mockClient.global.event).not.toHaveBeenCalled();
+  });
+});
 
 describe('opencode adapter branch + envelope', () => {
   it('fork maps flat params and returns new session id', async () => {
