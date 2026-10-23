@@ -7,6 +7,7 @@ import { basename } from 'node:path'
 import { TabStrip, TABS, type TabId } from './tab-strip.ts'
 import { StatusBar, type StatusState } from './status-bar.ts'
 import { AppModel } from './app-model.ts'
+import { agentSelectItems } from './agent-items.ts'
 import { ConnectionStore, type ConnState } from '../store/connection.ts'
 import { ChatStore } from '../store/chat-store.ts'
 import { ChatTab, selectListTheme } from './chat-tab.ts'
@@ -309,9 +310,9 @@ export async function runApp(opts: AppOptions): Promise<void> {
       agents = (r as any)?.items ?? []
     } catch { return '无法获取 agent 列表' }
     const items: SelectItem[] = [{ value: '__default__', label: '默认', description: 'runtime 默认 agent' }]
-    for (const a of agents) {
-      if (a?.hidden) continue
-      items.push({ value: String(a.name), label: String(a.name), description: a.description || String(a.mode ?? '') })
+    // 2.1.0：value 用稳定 id（Build→build），label 显示 name
+    for (const it of agentSelectItems(agents)) {
+      items.push({ value: it.value, label: it.label, description: it.description })
     }
     if (items.length === 1) return '无可用 agent（runtime 未提供）'
     const list = new SelectList(items, 10, selectListTheme)
