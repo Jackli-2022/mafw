@@ -120,34 +120,74 @@ describe('opencode adapter branch + envelope', () => {
     expect(mockClient.session.unrevert).toHaveBeenCalledWith({ sessionID: 'ses_1' });
   });
 
-  it('prompt returns result envelope superset', async () => {
-    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
-    const res: any = await client.session.prompt({ sessionID: 'ses_1', message: 'hi' });
-    expect(res.parts).toEqual([{ type: 'text', text: 'done' }]);
-    expect(res.finish).toBe('stop');
-    expect(res.usage).toEqual({ input: 100, output: 50, cached: 80, reasoning: 10, costUsd: 0.0042 });
-    expect(res.error).toBeUndefined();
+  it('prompt uses 2.1.0 prompt+wait+message chain and returns envelope superset', async () => {
+    const savedFetch = globalThis.fetch;
+    (globalThis as any).fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes('/wait')) return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+      if (u.includes('/message')) return {
+        ok: true, status: 200,
+        json: async () => ({
+          data: [{
+            id: 'msg_1', type: 'assistant', content: [{ type: 'text', text: 'done' }],
+            tokens: { input: 100, output: 50, reasoning: 10, cache: { read: 80 } }, cost: 0.0042,
+          }],
+        }),
+      };
+      return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      const res: any = await client.session.prompt({ sessionID: 'ses_1', message: 'hi' });
+      expect(res.parts).toMatchObject([{ type: 'text', text: 'done' }]);
+      expect(res.finish).toBeUndefined();
+      expect(res.usage).toEqual({ input: 100, output: 50, cached: 80, reasoning: 10, costUsd: 0.0042 });
+      expect(res.error).toBeUndefined();
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
   });
 
   it('prompt envelope maps assistant error', async () => {
-    mockClient.session.prompt.mockResolvedValueOnce({
-      info: { role: 'assistant', error: { name: 'MessageAbortedError', data: { message: 'aborted' } } },
-      parts: [],
-    });
-    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
-    const res: any = await client.session.prompt({ sessionID: 'ses_1', message: 'hi' });
-    expect(res.error).toEqual({ name: 'MessageAbortedError', message: 'aborted' });
-    expect(res.usage).toBeUndefined();
+    const savedFetch = globalThis.fetch;
+    (globalThis as any).fetch = (async (url: any) => {
+      const u = String(url);
+      if (u.includes('/wait')) return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+      if (u.includes('/message')) return {
+        ok: true, status: 200,
+        json: async () => ({
+          data: [{ id: 'msg_1', type: 'assistant', content: [], error: { name: 'MessageAbortedError', data: { message: 'aborted' } } }],
+        }),
+      };
+      return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      const res: any = await client.session.prompt({ sessionID: 'ses_1', message: 'hi' });
+      expect(res.error).toEqual({ name: 'MessageAbortedError', message: 'aborted' });
+      expect(res.usage).toBeUndefined();
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
   });
 
-  it('permissionReply maps tri-state to SDK top-level permission namespace', async () => {
-    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
-    const ok = await client.session.permissionReply!('ses_1', 'req_1', 'always', 'ok for session');
-    // v2 SDK：Permission.reply({requestID, reply, message?})——无 sessionID（requestID 全局唯一定位）
-    expect(mockClient.permission.reply).toHaveBeenCalledWith({
-      requestID: 'req_1', reply: 'always', message: 'ok for session',
-    });
-    expect(ok).toBe(true);
+  it('permissionReply posts decision to the 2.1.0 session-scoped reply route', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      const ok = await client.session.permissionReply!('ses_1', 'req_1', 'always', 'ok for session');
+      expect(calls[0].url).toBe('http://x/api/session/ses_1/permission/req_1/reply');
+      expect(calls[0].method).toBe('POST');
+      expect(JSON.parse(calls[0].body)).toEqual({ decision: 'always', message: 'ok for session' });
+      expect(ok).toBe(true);
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
   });
 
   it('question list/reply/reject route to the SDK top-level question namespace', async () => {
@@ -173,11 +213,20 @@ describe('opencode adapter branch + envelope', () => {
     expect(mockClient.question.reject).toHaveBeenCalledWith({ requestID: 'q1' });
   });
 
-  it('promptAsync maps expectReply=false to noReply', async () => {
-    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
-    await client.session.promptAsync({ sessionID: 's1', message: 'hi', expectReply: false });
-    expect(mockClient.session.promptAsync).toHaveBeenCalledWith(expect.objectContaining({ noReply: true }));
-    await client.session.promptAsync({ sessionID: 's1', message: 'hi', expectReply: true });
-    expect(mockClient.session.promptAsync).toHaveBeenLastCalledWith(expect.objectContaining({ noReply: undefined }));
+  it('promptAsync posts 2.1.0 prompt body {text} (no prompt_async route)', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      await client.session.promptAsync({ sessionID: 's1', message: 'hi', expectReply: false });
+      expect(calls[0].url).toBe('http://x/api/session/s1/prompt');
+      expect(JSON.parse(calls[0].body)).toEqual({ text: 'hi' });
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
   });
 });

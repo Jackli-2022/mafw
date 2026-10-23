@@ -70,6 +70,51 @@ function unwrapCursor(result: any): string | undefined {
   return undefined;
 }
 
+/** directNative 响应体解包：2.1.0 统一 {data:X}（可伴 cursor/location）信封。 */
+function unwrapNative<T>(body: any): T {
+  if (
+    body && typeof body === 'object' && !Array.isArray(body) &&
+    body.data !== undefined &&
+    Object.keys(body).every((k) => k === 'data' || k === 'cursor' || k === 'location')
+  ) {
+    return body.data as T;
+  }
+  return body as T;
+}
+
+/** 契约 parts → 2.1.0 PromptInput body（text 必填；file 部件映射到 files.uri）。 */
+function promptInputBody(parts: any[], opts?: { delivery?: string }): Record<string, unknown> {
+  const texts: string[] = [];
+  const files: Array<Record<string, unknown>> = [];
+  for (const p of parts ?? []) {
+    if (!p || typeof p !== 'object') continue;
+    if (p.type === 'text' && typeof p.text === 'string') texts.push(p.text);
+    else if (p.type === 'file' && typeof p.url === 'string') {
+      files.push({ uri: p.url, ...(p.filename ? { name: p.filename } : {}) });
+    }
+  }
+  const body: Record<string, unknown> = { text: texts.join('\n') };
+  if (files.length > 0) body.files = files;
+  // gateway delivery 词汇 → 2.1.0 Session.Inbox.Delivery（steer|queue）
+  if (opts?.delivery === 'steer') body.delivery = 'steer';
+  else if (opts?.delivery === 'followup' || opts?.delivery === 'queue') body.delivery = 'queue';
+  return body;
+}
+
+/** 2.1.0 消息部件补 id（text/reasoning 无 id；canonical flat 契约要求 isMafwPart）。 */
+function ensurePartIds(message: any): any {
+  if (!message || typeof message !== 'object' || !Array.isArray(message.content)) return message;
+  let changed = false;
+  const content = message.content.map((p: any, i: number) => {
+    if (p && typeof p === 'object' && typeof p.id !== 'string') {
+      changed = true;
+      return { ...p, id: `${message.id ?? 'msg'}-p${i}` };
+    }
+    return p;
+  });
+  return changed ? { ...message, content } : message;
+}
+
 function messageToParts(message?: string, parts?: any[]): any[] {
   if (parts && parts.length > 0) return parts;
   if (message) return [{ type: 'text', text: message }];
@@ -131,42 +176,51 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
   return {
     session: {
       async create(opts: SessionCreateOpts) {
-        const result = await client.session.create({
-          directory: opts.directory,
+        // 2.1.0：POST /api/session 必须带 JSON body（无 body = 400），目录在
+        // location 里；旧 SDK Session2.create 发 ?directory= 无 body → 400，
+        // Manager session 创建因 id 缺失而失败（2026-10-23 实测）。
+        const body = await directNative('/session', 'POST', {
+          location: { directory: opts.directory },
         });
-        return unwrap(result);
+        return unwrapNative(body);
       },
 
       async promptAsync(opts: SessionPromptOpts) {
+        // 2.1.0：POST /api/session/{id}/prompt（无 prompt_async），顶层 {text}
+        // 立即返回（入队），回合进度走 /api/event。
         const parts = messageToParts(opts.message, opts.parts);
-        await client.session.promptAsync({
-          sessionID: opts.sessionID,
-          parts,
-          agent: opts.agent,
-          model: opts.model,
-          variant: opts.variant,
-          system: opts.system,
-          noReply: opts.noReply ?? (opts.expectReply === false ? true : undefined),
-        });
+        if (opts.agent) await directNative(`/session/${opts.sessionID}/agent`, 'POST', { agent: opts.agent });
+        if (opts.model) await directNative(`/session/${opts.sessionID}/model`, 'POST', { model: opts.model });
+        await directNative(
+          `/session/${opts.sessionID}/prompt`,
+          'POST',
+          promptInputBody(parts, { delivery: opts.delivery }),
+        );
       },
 
       async prompt(opts: SessionPromptOpts) {
         const parts = messageToParts(opts.message, opts.parts);
-        const result = await client.session.prompt({
-          sessionID: opts.sessionID,
-          parts,
-          agent: opts.agent,
-          model: opts.model,
-          variant: opts.variant,
-          system: opts.system,
-          noReply: opts.noReply,
-        });
-        const data = unwrap<any>(result);
-        const info = data?.info;
+        if (opts.agent) await directNative(`/session/${opts.sessionID}/agent`, 'POST', { agent: opts.agent });
+        if (opts.model) await directNative(`/session/${opts.sessionID}/model`, 'POST', { model: opts.model });
+        await directNative(
+          `/session/${opts.sessionID}/prompt`,
+          'POST',
+          promptInputBody(parts, { delivery: opts.delivery }),
+        );
+        // 2.1.0：无阻塞式 prompt 响应；/wait 阻塞到会话 idle（204），再读最新
+        // assistant 消息组装 PromptResultEnvelope。
+        await directNative(`/experimental/session/${opts.sessionID}/wait`, 'POST');
+        const listBody = await directNative(`/session/${opts.sessionID}/message?limit=20&order=desc`, 'GET');
+        const list = unwrapNative<any[]>(listBody);
+        const info = Array.isArray(list)
+          ? list.find((m: any) => m?.type === 'assistant' || m?.role === 'assistant')
+          : undefined;
         const t = info?.tokens;
         return {
-          ...data,
-          parts: data?.parts ?? [],
+          info,
+          parts: Array.isArray(info?.content) ? info.content.map((p: any, i: number) =>
+            (p && typeof p === 'object' && typeof p.id !== 'string' ? { ...p, id: `${info?.id ?? 'msg'}-p${i}` } : p),
+          ) : [],
           finish: info?.finish,
           usage: t
             ? {
@@ -198,9 +252,13 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // 仅补缺失 role，不覆盖既有；非角色型（system/compaction…）不硬映射。
         const data = Array.isArray(raw)
           ? raw.map((m: any) => {
-              if (!m || typeof m !== 'object' || m.role !== undefined) return m;
-              if (m.type === 'user' || m.type === 'assistant') return { ...m, role: m.type };
-              return m;
+              if (!m || typeof m !== 'object') return m;
+              // role：仅补缺失（2.1.0 角色在 type；非角色型 system/compaction 不硬映射）
+              const withRole = m.role !== undefined
+                ? m
+                : (m.type === 'user' || m.type === 'assistant' ? { ...m, role: m.type } : m);
+              // canonical flat 契约：part 必须有 id（2.1.0 text/reasoning 部件无 id）
+              return ensurePartIds(withRole);
             })
           : raw;
         // 2.1.0：游标在 body.cursor；旧面在 X-Next-Cursor 响应头——双读兜底
@@ -236,9 +294,8 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       async abort(opts: { sessionID: string }) {
-        await client.session.abort({
-          sessionID: opts.sessionID,
-        });
+        // 2.1.0：/session/{id}/abort 已移除，中断路由为 /interrupt
+        await directNative(`/session/${opts.sessionID}/interrupt`, 'POST');
       },
 
       async list(opts?: { directory?: string }) {
@@ -249,26 +306,27 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
 
       async todo(opts: { sessionID: string }) {
-        const result = await client.session.todo({
-          sessionID: opts.sessionID,
-        });
-        return unwrap<any[]>(result);
+        // 2.1.0 无 /session/{id}/todo 路由——旧 serve 走 SDK，404/缺方法一律 fail-open 空列表
+        try {
+          return unwrap<any[]>(await client.session.todo({ sessionID: opts.sessionID })) ?? [];
+        } catch {
+          return [] as any[];
+        }
       },
 
       async children(opts: { sessionID: string }) {
-        const result = await client.session.children({
-          sessionID: opts.sessionID,
-        });
-        return unwrap<any[]>(result);
+        // 2.1.0 无 /session/{id}/children 路由——fail-open 空列表
+        try {
+          return unwrap<any[]>(await client.session.children({ sessionID: opts.sessionID })) ?? [];
+        } catch {
+          return [] as any[];
+        }
       },
 
       async summarize(opts: SessionSummarizeOpts) {
-        const result = await client.session.summarize({
-          sessionID: opts.sessionID,
-          providerID: opts.providerID,
-          modelID: opts.modelID,
-        });
-        return unwrap(result);
+        // 2.1.0：summarize → /compact（shape: {id?, delivery?}）
+        const result = await directNative(`/session/${opts.sessionID}/compact`, 'POST', {});
+        return unwrapNative(result);
       },
 
       async fork(opts: { sessionID: string; messageID?: string }) {
@@ -324,27 +382,29 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         reply: 'once' | 'always' | 'reject',
         message?: string,
       ): Promise<boolean> {
-        // v2 SDK：Permission 是 client 顶层命名空间（/permission/{requestID}/reply），
-        // session 上没有 permission 成员；requestID 全局唯一定位，sessionID 仅契约签名兼容保留。
-        const result = await client.permission.reply({
-          requestID: requestId,
-          reply,
-          ...(message ? { message } : {}),
-        });
-        if (result && typeof result === 'object' && 'error' in result && (result as any).error) {
-          throw new Error(String((result as any).error));
-        }
+        // 2.1.0：应答挂在 session 级（/api/session/{sid}/permission/{requestID}/reply，
+        // body {decision, message?}，204）；旧顶层 /permission/{id}/reply 已 404。
+        await directNative(
+          `/session/${sessionID}/permission/${requestId}/reply`,
+          'POST',
+          { decision: reply, ...(message ? { message } : {}) },
+        );
         return true;
       },
 
       question: {
         async list(opts?: { directory?: string }) {
-          // SDK 1.18.x：question 是 OpencodeClient 顶层命名空间（session 上没有）
-          const result = await client.question.list(
-            opts?.directory ? { directory: opts.directory } : undefined,
-          );
-          const data = unwrap<any>(result);
-          return Array.isArray(data) ? data : data?.items ?? [];
+          // 2.1.0 移除了 /question 路由（问询机制改为 session form）——旧 serve
+          // 走 SDK，404/缺方法 fail-open 空列表，避免每轮轮询刷错误日志。
+          try {
+            const result = await client.question.list(
+              opts?.directory ? { directory: opts.directory } : undefined,
+            );
+            const data = unwrap<any>(result);
+            return Array.isArray(data) ? data : data?.items ?? [];
+          } catch {
+            return [] as any[];
+          }
         },
         async reply(opts: { requestID: string; answers: string[][]; directory?: string }) {
           if (opts.directory) {
@@ -396,8 +456,9 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
 
     app: {
       async agents() {
-        const result = await client.app.agents();
-        return unwrap<any[]>(result);
+        // 2.1.0：agent 列表路由为 /api/agent（旧 /app/agent 404），返回 {location,data}
+        const body = await directNative('/agent', 'GET');
+        return unwrapNative<any[]>(body) ?? [];
       },
     },
 

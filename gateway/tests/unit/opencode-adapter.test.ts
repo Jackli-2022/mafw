@@ -24,6 +24,119 @@ jest.mock('@opencode-ai/sdk/v2', () => ({
   createOpencodeClient: jest.fn(() => mockClient),
 }));
 
+describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
+  let fetchSpy: jest.SpyInstance;
+  const json = (body: any, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+  const routeFetch = (overrides: Record<string, any> = {}) => {
+    fetchSpy.mockImplementation((async (url: any, init: any) => {
+      const u = String(url);
+      const key = Object.keys(overrides).find((k) => u.includes(k));
+      if (key) return overrides[key](init);
+      if (u.includes('/wait')) return new Response(null, { status: 204 });
+      if (u.includes('/message')) {
+        return json({
+          data: [
+            { id: 'msg_idle', type: 'idle', outcome: 'succeeded' },
+            {
+              id: 'msg_asst', type: 'assistant', content: [{ type: 'text', text: 'ok' }],
+              tokens: { input: 10, output: 5, reasoning: 1, cache: { read: 2, write: 0 } },
+              cost: 0.02,
+            },
+          ],
+          cursor: { previous: null, next: null },
+        });
+      }
+      return json({ data: { id: 'ses_new', projectID: 'p1' } });
+    }) as any);
+  };
+
+  beforeEach(() => { jest.clearAllMocks(); fetchSpy = jest.spyOn(global, 'fetch'); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  const callsFor = (part: string) =>
+    fetchSpy.mock.calls.filter(([u]: any[]) => String(u).includes(part)) as Array<[string, RequestInit]>;
+
+  it('create 发 POST /api/session，body {location:{directory}}（2.1.0 无 body=400）', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const created = await rt.session.create({ directory: 'C:/proj' });
+    const [url, init] = callsFor('/api/session')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/session');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ location: { directory: 'C:/proj' } });
+    expect((created as any).id).toBe('ses_new');
+  });
+
+  it('promptAsync 发 POST /api/session/{id}/prompt 顶层 {text}，不等待回合结束', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.promptAsync({ sessionID: 'ses_1', parts: [{ type: 'text', text: 'hi' }, { type: 'text', text: 'there' }] });
+    const [url, init] = callsFor('/api/session/ses_1/prompt')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/session/ses_1/prompt');
+    expect(JSON.parse(init.body as string)).toEqual({ text: 'hi\nthere' });
+    expect(callsFor('/wait')).toHaveLength(0);
+  });
+
+  it('prompt 先发 prompt 再 POST /wait，返回最后 assistant 消息的 parts/usage/cost', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const out = await rt.session.prompt({ sessionID: 'ses_1', message: 'hi' });
+    expect(callsFor('/api/session/ses_1/prompt')).toHaveLength(1);
+    expect(callsFor('/api/experimental/session/ses_1/wait')).toHaveLength(1);
+    expect(out.parts[0]).toMatchObject({ type: 'text', text: 'ok' });
+    expect(out.usage).toMatchObject({ input: 10, output: 5, reasoning: 1, cached: 2, costUsd: 0.02 });
+    expect(out.finish).toBeUndefined();
+  });
+
+  it('abort → POST /api/session/{id}/interrupt', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.abort({ sessionID: 'ses_1' });
+    const [url, init] = callsFor('/interrupt')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/session/ses_1/interrupt');
+    expect(init.method).toBe('POST');
+  });
+
+  it('summarize → POST /api/session/{id}/compact', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await rt.session.summarize!({ sessionID: 'ses_1' });
+    const [url, init] = callsFor('/compact')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/session/ses_1/compact');
+    expect(init.method).toBe('POST');
+  });
+
+  it('permissionReply → POST /api/session/{sid}/permission/{req}/reply，body {decision}', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const ok = await rt.session.permissionReply!('ses_1', 'req_9', 'always', 'fine');
+    expect(ok).toBe(true);
+    const [url, init] = callsFor('/permission/req_9/reply')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/session/ses_1/permission/req_9/reply');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ decision: 'always', message: 'fine' });
+  });
+
+  it('app.agents → GET /api/agent?directory=（2.1.0 无 /app/agent）', async () => {
+    routeFetch({ '/api/agent': () => json({ location: { directory: '/proj' }, data: [{ name: 'build' }] }) });
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const agents = await rt.app!.agents();
+    const [url, init] = callsFor('/api/agent')[0];
+    expect(url).toBe('http://127.0.0.1:4096/api/agent');
+    expect(init.method).toBe('GET');
+    expect(agents).toEqual([{ name: 'build' }]);
+  });
+
+  it('todo/children 在 2.1.0 无路由 → 空数组 fail-open', async () => {
+    routeFetch();
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    await expect(rt.session.todo!({ sessionID: 'ses_1' })).resolves.toEqual([]);
+    await expect(rt.session.children!({ sessionID: 'ses_1' })).resolves.toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('opencode-adapter permission/question contract surface', () => {
   let fetchSpy: jest.SpyInstance;
 
