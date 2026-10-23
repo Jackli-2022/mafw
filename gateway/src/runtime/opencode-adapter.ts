@@ -181,6 +181,22 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     try { return await res.json(); } catch { return null; }
   };
 
+  /** 2.1.0 模型切换：Model.Ref = {id, providerID, variant?}（旧 {providerID,modelID} 会 400）。 */
+  const switchModel = async (
+    sessionID: string,
+    model?: { providerID: string; modelID: string },
+    variant?: string,
+  ) => {
+    if (!model) return;
+    await directNative(`/session/${sessionID}/model`, 'POST', {
+      model: {
+        id: model.modelID,
+        providerID: model.providerID,
+        ...(variant ? { variant } : {}),
+      },
+    });
+  };
+
   return {
     session: {
       async create(opts: SessionCreateOpts) {
@@ -198,7 +214,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // 立即返回（入队），回合进度走 /api/event。
         const parts = messageToParts(opts.message, opts.parts);
         if (opts.agent) await directNative(`/session/${opts.sessionID}/agent`, 'POST', { agent: opts.agent });
-        if (opts.model) await directNative(`/session/${opts.sessionID}/model`, 'POST', { model: opts.model });
+        await switchModel(opts.sessionID, opts.model, opts.variant);
         await directNative(
           `/session/${opts.sessionID}/prompt`,
           'POST',
@@ -209,7 +225,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       async prompt(opts: SessionPromptOpts) {
         const parts = messageToParts(opts.message, opts.parts);
         if (opts.agent) await directNative(`/session/${opts.sessionID}/agent`, 'POST', { agent: opts.agent });
-        if (opts.model) await directNative(`/session/${opts.sessionID}/model`, 'POST', { model: opts.model });
+        await switchModel(opts.sessionID, opts.model, opts.variant);
         await directNative(
           `/session/${opts.sessionID}/prompt`,
           'POST',
@@ -462,8 +478,52 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
 
     provider: {
       async list() {
-        const result = await client.provider.list();
-        return unwrap(result);
+        // 2.1.0：/api/provider 只剩 integration 元数据（无 models/connected），
+        // /api/model 独立返回模型清单、/api/credential 才是「已连接」权威、
+        // /api/model/default 是默认模型。重建 desktop/SDK 期望的 legacy 信封
+        // { all: [{...provider, models: {id: model}}], connected, default }。
+        const [provBody, modelBody, credBody, defBody] = await Promise.all([
+          directNative('/provider', 'GET').catch(() => null),
+          directNative('/model', 'GET').catch(() => null),
+          directNative('/credential', 'GET').catch(() => null),
+          directNative('/model/default', 'GET').catch(() => null),
+        ]);
+        const providers = unwrapNative<any[]>(provBody) ?? [];
+        const models = unwrapNative<any[]>(modelBody) ?? [];
+        const creds: any[] = Array.isArray((credBody as any)?.data) ? (credBody as any).data : [];
+        const def = unwrapNative<any>(defBody);
+
+        const byProvider = new Map<string, Record<string, any>>();
+        for (const m of models) {
+          const pid = m?.providerID;
+          const mid = m?.modelID ?? m?.id;
+          if (!pid || !mid) continue;
+          const bucket = byProvider.get(pid) ?? {};
+          const input: string[] = Array.isArray(m.capabilities?.input) ? m.capabilities.input : [];
+          const output: string[] = Array.isArray(m.capabilities?.output) ? m.capabilities.output : [];
+          bucket[mid] = {
+            id: mid,
+            name: m.name || mid,
+            limit: m.limit,
+            capabilities: {
+              input: { image: input.includes('image') },
+              output: { image: output.includes('image') },
+              reasoning:
+                m.capabilities?.reasoning === true ||
+                (Array.isArray(m.variants) && m.variants.some((v: any) => v?.settings?.reasoningEffort)),
+            },
+          };
+          byProvider.set(pid, bucket);
+        }
+
+        const all = providers.map((p: any) => ({ ...p, models: byProvider.get(p?.id) ?? {} }));
+        const connected = [...new Set(creds.filter((c) => c?.active !== false).map((c) => c?.integrationID))]
+          .filter((id): id is string => typeof id === 'string' && all.some((p: any) => p?.id === id));
+        const defaultRef = def && (def.modelID || def.id) && def.providerID
+          ? { providerID: def.providerID, modelID: def.modelID ?? def.id }
+          : undefined;
+
+        return { all, connected, default: defaultRef ?? {} };
       },
     },
 

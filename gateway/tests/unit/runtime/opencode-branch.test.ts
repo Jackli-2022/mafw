@@ -234,4 +234,30 @@ describe('opencode adapter branch + envelope', () => {
       (globalThis as any).fetch = savedFetch;
     }
   });
+
+  it('model switch posts 2.1.0 Model.Ref {id, providerID}（旧 {modelID} 会 400，导致发送失败）', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      await client.session.promptAsync({
+        sessionID: 's1', message: 'hi',
+        model: { providerID: 'gateway', modelID: 'deepseek-v4-flash' },
+        variant: 'fast',
+      });
+      const modelCall = calls.find((c) => c.url.endsWith('/session/s1/model'));
+      expect(modelCall).toBeDefined();
+      expect(JSON.parse(modelCall.body)).toEqual({
+        model: { id: 'deepseek-v4-flash', providerID: 'gateway', variant: 'fast' },
+      });
+      const promptCall = calls.find((c) => c.url.endsWith('/session/s1/prompt'));
+      expect(JSON.parse(promptCall.body)).toEqual({ text: 'hi' });
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
 });

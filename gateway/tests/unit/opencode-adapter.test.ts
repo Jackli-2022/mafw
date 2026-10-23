@@ -135,6 +135,27 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
     await expect(rt.session.children!({ sessionID: 'ses_1' })).resolves.toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('provider.list 重建 legacy {all,connected,default}（2.1.0 /provider 不再内嵌 models/connected）', async () => {
+    routeFetch({
+      '/api/provider': () => json({ location: {}, data: [{ id: 'gateway', name: '蓝区统一网关' }, { id: 'unused', name: 'Unused' }] }),
+      '/api/model/default': () => json({ data: { id: 'm1', modelID: 'm1', providerID: 'gateway' } }),
+      '/api/model': () => json({ data: [
+        { id: 'm1', modelID: 'm1', providerID: 'gateway', name: 'Model One', capabilities: { input: ['text', 'image'], output: ['text'] }, limit: { context: 1000000 } },
+        { id: 'm2', modelID: 'm2', providerID: 'gateway', name: 'Model Two', capabilities: { input: ['text'], output: ['text'] } },
+      ] }),
+      '/api/credential': () => json({ data: [{ integrationID: 'gateway', active: true }, { integrationID: 'stale', active: false }] }),
+    });
+    const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
+    const out = await rt.provider.list();
+    expect(out.connected).toEqual(['gateway']);
+    expect(out.all).toHaveLength(2);
+    expect(out.all[0].models.m1).toMatchObject({ name: 'Model One', limit: { context: 1000000 } });
+    expect(out.all[0].models.m1.capabilities.input.image).toBe(true);
+    expect(out.all[0].models.m2.capabilities.input.image).toBe(false);
+    expect(out.all[1].models).toEqual({});
+    expect(out.default).toEqual({ providerID: 'gateway', modelID: 'm1' });
+  });
 });
 
 describe('opencode-adapter permission/question contract surface', () => {
