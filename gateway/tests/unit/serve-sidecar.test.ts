@@ -15,6 +15,36 @@ jest.mock('cross-spawn', () => {
   return mock;
 });
 
+describe('resolveOpencodeBin（2.1.0 二进制解析）', () => {
+  let resolveOpencodeBin: any;
+  beforeEach(() => { jest.resetModules(); resolveOpencodeBin = require('../../src/runtime/serve-sidecar').resolveOpencodeBin; });
+
+  test('显式 MAFW_OPENCODE_BIN / OPENCODE_BIN 优先', () => {
+    const exists = () => false;
+    expect(resolveOpencodeBin({ env: { MAFW_OPENCODE_BIN: 'C:/x/opencode.exe' }, platform: 'win32', exists }))
+      .toBe('C:/x/opencode.exe');
+    expect(resolveOpencodeBin({ env: { OPENCODE_BIN: '/usr/local/bin/opencode' }, platform: 'linux', exists }))
+      .toBe('/usr/local/bin/opencode');
+  });
+
+  test('跳过 PATH 中的 node_modules/.bin dev shim（本地旧版 opencode 会拒绝 2.1.0 配置）', () => {
+    const exists = (p: string) => p === 'C:\\work\\repo\\node_modules\\.bin\\opencode.cmd' || p === 'C:\\home\\bin\\opencode.cmd';
+    const bin = resolveOpencodeBin({
+      env: { Path: 'C:\\work\\repo\\node_modules\\.bin;C:\\home\\bin' },
+      platform: 'win32',
+      exists,
+    });
+    expect(bin).toBe('C:\\home\\bin\\opencode.cmd');
+  });
+
+  test('PATH 顺序取第一个存在的候选；全缺省回退裸名交由 cross-spawn', () => {
+    const exists = (p: string) => p === '/opt/bin/opencode';
+    expect(resolveOpencodeBin({ env: { PATH: '/none:/opt/bin' }, platform: 'linux', exists })).toBe('/opt/bin/opencode');
+    expect(resolveOpencodeBin({ env: { PATH: '/none' }, platform: 'linux', exists })).toBe('opencode');
+    expect(resolveOpencodeBin({ env: {}, platform: 'linux', exists })).toBe('opencode');
+  });
+});
+
 describe('serve-sidecar spawn options', () => {
   let startServeSidecar: any;
   let crossSpawnMock: any;
@@ -29,7 +59,7 @@ describe('serve-sidecar spawn options', () => {
   test('spawns opencode serve with windowsHide (no black console window)', async () => {
     await spawnAndGetChild();
     expect(crossSpawnMock).toHaveBeenCalledWith(
-      'opencode',
+      expect.any(String),   // resolveOpencodeBin 解析出的绝对路径或回退裸名
       expect.arrayContaining(['serve', '--hostname=127.0.0.1', '--port=4096']),
       expect.objectContaining({ windowsHide: true }),
     );

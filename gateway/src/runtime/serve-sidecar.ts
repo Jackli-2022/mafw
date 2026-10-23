@@ -79,6 +79,40 @@ export function serveAuthHeaders(): Record<string, string> {
   return { Authorization: 'Basic ' + Buffer.from(`opencode:${resolveServePassword()}`).toString('base64') };
 }
 
+/** opencode 可执行文件解析（2026-10-23 事故：desktop dev 启动的 gateway PATH 首位是
+ *  仓库 node_modules/.bin，cross-spawn('opencode') 解析到旧版 1.17.9，拒绝 2.1.0 配置
+ *  键 websearch/permissions → serve 启动失败）。规则：
+ *  ① MAFW_OPENCODE_BIN / OPENCODE_BIN 显式覆盖；② PATH 中跳过 node_modules/.bin
+ *  （dev shim 不是用户安装的 opencode）；③ 取第一个存在的候选；④ 全缺省回退裸名。 */
+export function resolveOpencodeBin(deps?: {
+  env?: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
+  exists?: (p: string) => boolean;
+}): string {
+  const env = deps?.env ?? (process.env as Record<string, string | undefined>);
+  const platform = deps?.platform ?? process.platform;
+  const exists = deps?.exists ?? ((p: string) => require('fs').existsSync(p));
+  const explicit = env.MAFW_OPENCODE_BIN || env.OPENCODE_BIN;
+  if (explicit) return explicit;
+
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path');
+  const dirs = pathKey ? (env[pathKey] ?? '').split(platform === 'win32' ? ';' : ':') : [];
+  const sep = platform === 'win32' ? '\\' : '/';
+  const names = platform === 'win32'
+    ? ['opencode.exe', 'opencode.cmd', 'opencode.bat', 'opencode']
+    : ['opencode'];
+
+  for (const dir of dirs) {
+    if (!dir) continue;
+    if (/[\\/]node_modules[\\/]\.bin[\\/]?$/i.test(dir)) continue;
+    for (const name of names) {
+      const candidate = `${dir.replace(/[\\/]+$/, '')}${sep}${name}`;
+      if (exists(candidate)) return candidate;
+    }
+  }
+  return 'opencode';
+}
+
 // cross-spawn resolves npm .cmd shims on Windows (plain child_process.spawn
 // throws EINVAL for .cmd targets on Node >= 18.20). Shipped as an
 // @opencode-ai/sdk dependency (hoisted); no direct type declarations needed.
@@ -103,7 +137,8 @@ function treeKill(pid: number | undefined, child: any): void {
 
 export function startServeSidecar(opts: ServeSidecarOptions): Promise<ServeSidecar> {
   return new Promise((resolve, reject) => {
-    const child = crossSpawn('opencode', ['serve', `--hostname=${opts.host}`, `--port=${opts.port}`], {
+    const bin = resolveOpencodeBin();
+    const child = crossSpawn(bin, ['serve', `--hostname=${opts.host}`, `--port=${opts.port}`], {
       env: {
         ...process.env,
         OPENCODE_CONFIG_CONTENT: '{}',
