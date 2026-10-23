@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createSignal, createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { activeTodoIndex } from "../todo-presenter"
 
 const formatDuration = (ms: number): string => {
   if (!ms || ms < 0) return "0s"
@@ -13,6 +14,7 @@ const formatDuration = (ms: number): string => {
 
 export function TaskBar(props: {
   todos: any[]
+  hiddenCount?: number
   tokens: number
   started: number
   open: boolean
@@ -22,7 +24,11 @@ export function TaskBar(props: {
 }) {
   const total = () => props.todos.length
   const done = () => props.todos.filter(t => t.status === "completed").length
-  const running = () => props.todos.filter(t => t.status === "in_progress")
+  // 单 in_progress：只让第一个进入 running（模型写多个时其余按 pending 展示）
+  const running = () => {
+    const i = activeTodoIndex(props.todos)
+    return i >= 0 ? [props.todos[i]] : []
+  }
   const [now, setNow] = createSignal(Date.now())
 
   const allDone = () => total() > 0 && done() === total()
@@ -65,6 +71,9 @@ export function TaskBar(props: {
             <span class="mafw-taskbar-priority">HIGH</span>
           </Show>
           <span class="mafw-taskbar-num">{done()}/{total()}</span>
+          <Show when={(props.hiddenCount || 0) > 0}>
+            <span class="mafw-taskbar-hidden" title="已移出当前列表但未完成的任务">+{props.hiddenCount} 未列出</span>
+          </Show>
           <span class="mafw-taskbar-time">{formatDuration(elapsedMs())}</span>
         </Show>
       </Show>

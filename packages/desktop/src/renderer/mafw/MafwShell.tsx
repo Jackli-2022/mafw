@@ -19,6 +19,7 @@ import { clampLeftDockWidth, resolveLeftDockWidth, resolveMode, shouldCloseOnSel
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
+import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
@@ -330,6 +331,15 @@ export function MafwShell() {
 
   // Todo list per session (drives the TaskList; updated live via SSE todo.updated)
   const [todos, setTodos] = createStore<Record<string, any[]>>({})
+  // 整表重写时被"藏掉"的未完成项（只做提示，不改模型当前列表）
+  const [hiddenTodos, setHiddenTodos] = createStore<Record<string, any[]>>({})
+  const applyTodos = (sid: string, list: any[]) => {
+    const next = Array.isArray(list) ? list : []
+    const prev = todos[sid] || []
+    setTodos(sid, next)
+    setHiddenTodos(sid, mergeHiddenTodos(hiddenTodos[sid] || [], prev, next))
+  }
+  const clearHiddenTodos = (sid: string) => setHiddenTodos(sid, [])
 
   // Scroll anchors / sending-reset per session, keyed by sid. Used by
   // loadHistory to scroll the pane showing a session, and by the SSE lifecycle
@@ -894,7 +904,7 @@ export function MafwShell() {
       getTrajectoryEvents: (sid) => trajectoryLive()[sid] || [],
       setTrajectoryEvents: (sid, events) => setTrajectoryLive({ ...trajectoryLive(), [sid]: events }),
       setTrajectoryTurn: (sid, turn) => setTrajectoryTurnLive({ ...trajectoryTurnLive(), [sid]: turn }),
-      setTodos: (sid, list) => setTodos(sid, list),
+      setTodos: (sid, list) => applyTodos(sid, list),
     },
     chat: {
       trace: traceEvent,
@@ -1069,7 +1079,7 @@ export function MafwShell() {
       // Fetch the todo list for the TaskList (also updated live via SSE)
       window.api.mafw.sessions.todo(sessionID).then((t: any) => {
         const arr = Array.isArray(t) ? t : t?.data
-        if (Array.isArray(arr)) setTodos(sessionID, arr)
+        if (Array.isArray(arr)) applyTodos(sessionID, arr)
       }).catch(() => {})
       const rawItems = Array.isArray(data) ? data : data?.data
       let nextCursor: string | null = data?.nextCursor ?? null
@@ -1296,6 +1306,7 @@ export function MafwShell() {
     setActiveSessionId(null)
     setSubagentStack(reconcile({}))
     setTodos(reconcile({}))
+    setHiddenTodos(reconcile({}))
     setModelPicks({})
     setDefaultModel(null)
     setStore("message", reconcile({}))
@@ -1856,6 +1867,7 @@ export function MafwShell() {
                           focused
                           canClosePane={false}
                           todos={todos}
+                          hiddenTodos={hiddenTodos}
                           switchLogs={switchLogs}
                           sessionCards={sessionCards}
                           sessionPending={sessionPending}
@@ -1957,6 +1969,8 @@ export function MafwShell() {
                   >
                     <TaskList
                       todos={todos[taskListSid() ?? currentSessionID()] || []}
+                      hiddenTodos={hiddenTodos[taskListSid() ?? currentSessionID()] || []}
+                      onClearHidden={() => clearHiddenTodos(taskListSid() ?? currentSessionID())}
                       tokens={taskMetrics(taskListSid() ?? currentSessionID()).tokens}
                       started={taskMetrics(taskListSid() ?? currentSessionID()).started}
                       placement="popover"
@@ -1970,6 +1984,8 @@ export function MafwShell() {
                   <div ref={setDockRef}>
                     <TaskList
                       todos={todos[currentSessionID()] || []}
+                      hiddenTodos={hiddenTodos[currentSessionID()] || []}
+                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       tokens={taskMetrics(currentSessionID()).tokens}
                       started={taskMetrics(currentSessionID()).started}
                       placement={viewportNarrow() ? "overlay" : "dock"}
@@ -2025,6 +2041,8 @@ export function MafwShell() {
               <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
                     <TaskList
                       todos={todos[currentSessionID()] || []}
+                      hiddenTodos={hiddenTodos[currentSessionID()] || []}
+                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       tokens={taskMetrics(currentSessionID()).tokens}
                       started={taskMetrics(currentSessionID()).started}
                       placement={viewportNarrow() ? "overlay" : "dock"}

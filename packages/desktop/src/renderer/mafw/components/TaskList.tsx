@@ -1,6 +1,7 @@
 ﻿// @ts-nocheck
 import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { activeTodoIndex, displayStatus } from "../todo-presenter"
 
 const formatDuration = (ms: number): string => {
   if (!ms || ms < 0) return "0s"
@@ -42,6 +43,9 @@ function StatusSlot(props: { status: string }) {
 
 export function TaskList(props: {
   todos: any[]
+  /** 整表重写时被移出的未完成项（只读提示） */
+  hiddenTodos?: any[]
+  onClearHidden?: () => void
   tokens: number
   started: number
   placement: "popover" | "dock" | "overlay"
@@ -50,9 +54,17 @@ export function TaskList(props: {
   }) {
   const total = () => props.todos.length
   const done = () => props.todos.filter(t => t.status === "completed").length
-  const running = () => props.todos.filter(t => t.status === "in_progress")
+  const activeTodo = () => {
+    const i = activeTodoIndex(props.todos)
+    return i >= 0 ? props.todos[i] : null
+  }
+  // 单 in_progress：只有第一个算运行中；其余 in_progress 归入待执行分组
+  const running = () => {
+    const a = activeTodo()
+    return a ? [a] : []
+  }
   const failed = () => props.todos.filter(t => t.status === "cancelled")
-  const pending = () => props.todos.filter(t => t.status === "pending")
+  const pending = () => props.todos.filter(t => t.status === "pending" || (t.status === "in_progress" && t !== activeTodo()))
 
   const [now, setNow] = createSignal(Date.now())
   const [completedExpanded, setCompletedExpanded] = createSignal(false)
@@ -114,7 +126,10 @@ export function TaskList(props: {
         <For each={visibleRows()}>
           {(t) => (
             <div class="mafw-task-row" data-slot="task-row">
-              <StatusSlot status={t.status} />
+              <StatusSlot status={(() => {
+                const i = props.todos.indexOf(t)
+                return i >= 0 ? displayStatus(props.todos, i) : t.status
+              })()} />
               <p
                 class="mafw-task-content"
                 classList={{ done: t.status === "completed", failed: t.status === "cancelled" }}
@@ -131,6 +146,25 @@ export function TaskList(props: {
           <ButtonV2 variant="ghost" size="small" class="mafw-tasklist-collapse" onClick={() => setOverflowExpanded(true)}>
             还有 {pendingOverflow()} 个待执行
           </ButtonV2>
+        </Show>
+        <Show when={(props.hiddenTodos || []).length > 0}>
+          <div class="mafw-task-hidden">
+            <div class="mafw-task-hidden-head">
+              <span>已移出计划 · 未完成 {props.hiddenTodos!.length}</span>
+              <ButtonV2 variant="ghost" size="small" class="mafw-task-hidden-clear" onClick={() => props.onClearHidden?.()}>清除</ButtonV2>
+            </div>
+            <For each={props.hiddenTodos}>
+              {(t) => (
+                <div class="mafw-task-hidden-row">
+                  <span class="mafw-task-hidden-dot" />
+                  <span class="mafw-task-hidden-text">{t.content}</span>
+                  <Show when={t.priority === "high"}>
+                    <span class="mafw-task-priority">HIGH</span>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
         </Show>
       </div>
     </div>

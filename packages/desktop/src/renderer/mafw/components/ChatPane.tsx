@@ -110,6 +110,8 @@ export type ChatPaneProps = {
   store: StoreShape
   setStore: (fn: (prev: StoreShape) => StoreShape) => void
   todos: Record<string, any[]>
+  /** 整表重写时被移出的未完成项（只读提示，不并入当前列表） */
+  hiddenTodos?: Record<string, any[]>
   switchLogs: () => Record<string, string[]>
   sessionCards: (sid: string) => { visible: FlowCardRecord[]; queueLength: number; keyboardOwnerId: string | null }
   sessionPending: (sid: string) => number
@@ -1344,6 +1346,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </Show>
                 <TaskBar
                   todos={props.todos[sidProp()] || []}
+                  hiddenCount={(props.hiddenTodos?.[sidProp()] || []).length}
                   tokens={props.taskMetrics(sidProp()).tokens}
                   started={props.taskMetrics(sidProp()).started}
                   open={props.taskListOpen && props.tasksPlacement === "bar"}

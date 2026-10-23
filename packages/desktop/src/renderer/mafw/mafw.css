@@ -965,6 +965,13 @@ html[data-theme="light"] body {
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
+/* 整表重写时被移出的未完成项（只读提示） */
+.mafw-taskbar-hidden {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--warning);
+  white-space: nowrap;
+}
 .mafw-taskbar-progress {
   width: 64px;
   height: 4px;
@@ -2624,6 +2631,51 @@ html[data-theme="light"] body {
 }
 .mafw-task-status.done { color: var(--accent); }
 .mafw-task-status.failed { color: var(--danger); }
+/* 已移出计划（未完成）——整表重写提示区 */
+.mafw-task-hidden {
+  margin: 8px 4px 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+}
+.mafw-task-hidden-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--warning);
+  margin-bottom: 4px;
+}
+.mafw-task-hidden-clear {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--text-4);
+}
+.mafw-task-hidden-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 2px 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.mafw-task-hidden-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-4);
+}
+.mafw-task-hidden-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .mafw-task-content {
   display: flex;
   align-items: center;
