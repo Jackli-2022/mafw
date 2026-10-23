@@ -56,6 +56,7 @@ const PERMISSION_MODE_HINT: Record<PermissionMode, string> = {
   "full-access": "审批模式：全开 — 不再审批（危险命令也直接执行）。点击切回只读",
 }
 import { createInputHistory, shouldNavigateHistory } from "./input-history"
+import { applyReadlineKey } from "./composer-readline"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -536,6 +537,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     // replaced; only while this pane is focused and no picker is open).
     const onSearchKey = (e: KeyboardEvent) => {
       if (!props.focused || pickerOpen()) return
+      // composer 聚焦时 Ctrl+F 归 readline（前移一字符），不打开会话内搜索。
+      if ((e.target as HTMLElement | null)?.closest?.(".mafw-composer")) return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault()
         setSearchOpen(o => !o)
@@ -1432,6 +1435,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               } else if (pickerOpen() === "file") setPickerOpen(p => p === "file" ? null : p)
             }}
             onKeyDown={e => {
+              const readlineEdit = !e.isComposing && !pickerOpen()
+                ? applyReadlineKey(
+                    { value: e.currentTarget.value, start: e.currentTarget.selectionStart ?? 0, end: e.currentTarget.selectionEnd ?? 0 },
+                    e.key,
+                    { ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey, shift: e.shiftKey },
+                  )
+                : null
               if (pickerOpen() === "file" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
                 e.preventDefault()
                 const n = filePickerItems().length
@@ -1450,6 +1460,21 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 cyclePlanBuild()
               }
               else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } sendMessage() }
+              // readline 编辑键（Ctrl+A/E/B/F/K/U/W/T、Alt+B/F）；命中即消费，
+              // 不落入下方 ↑/↓ 历史分支。
+              else if (readlineEdit) {
+                e.preventDefault()
+                e.stopPropagation()
+                setInput(readlineEdit.value)
+                setDraft(sidProp(), readlineEdit.value)
+                queueMicrotask(() => {
+                  const ta = textareaEl()
+                  if (!ta) return
+                  ta.focus()
+                  ta.setSelectionRange(readlineEdit.start, readlineEdit.end)
+                  autoGrow(ta)
+                })
+              }
               // ↑/↓ 输入历史（readline 语义，2026-10-21 修复"仅空框生效"缺陷）：
               // caret 在首行/末行才翻历史（多行中间让位光标移动）；遍历态下直通；
               // IME 组合中不抢键（↑↓ 留给候选词导航）；picker 打开时已在上面的分支消费。
