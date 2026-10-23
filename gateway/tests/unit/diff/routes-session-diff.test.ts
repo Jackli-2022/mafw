@@ -47,6 +47,20 @@ describe('GET /api/sessions/:sid/diff', () => {
     expect(calls.some((c) => c[0] === 'diff')).toBe(false);
   });
 
+  it('blank messageID does not fall back to session-wide diff', async () => {
+    const { deps, calls } = makeDeps();
+    const turnCalls: any[] = [];
+    deps.turnDiff = async (a) => {
+      turnCalls.push(a);
+      throw new TurnDiffUnavailableError('per-turn diff unavailable: user message  not found');
+    };
+    const res = makeRes();
+    await handleSessionDiff(res, 's1', '', deps);
+    expect(res.statusCode).toBe(404);
+    expect(turnCalls).toHaveLength(1);
+    expect(calls.some((c) => c[0] === 'diff')).toBe(false);
+  });
+
   it('no messageID still calls the session-wide runtime diff', async () => {
     const { deps, calls } = makeDeps();
     const res = makeRes();

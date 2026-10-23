@@ -76,6 +76,9 @@ export async function loadTurnDiffs(
 ): Promise<Record<string, FileDiffEntry[] | null>> {
   const candidates = collectTurnDiffCandidates(messages)
   const result: Record<string, FileDiffEntry[] | null> = {}
+  // Preseed in chronological candidate order: map insertion order must not
+  // depend on which HTTP/git request finishes first (latest turn must win).
+  for (const candidate of candidates) result[candidate.messageID] = null
   if (candidates.length === 0) return result
 
   let cursor = 0

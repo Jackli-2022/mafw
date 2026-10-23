@@ -40,6 +40,19 @@ test("fetch is per-turn, failures become null, and merge keeps per-turn wins", a
   expect(merged.some(f => f.file === "base")).toBe(true)
 })
 
+test("latest turn wins even when its fetch resolves first", async () => {
+  const msgs = [user("u1", 1), asst("a1", 2, { start: "s1", end: "e1" }), user("u2", 3), asst("a2", 4, { start: "s2", end: "e2" })]
+  const map = await loadTurnDiffs("s1", msgs, async (_sid, mid) => {
+    if (mid === "u1") {
+      await new Promise((resolve) => setTimeout(resolve, 15))
+      return { files: [{ file: "x", patch: "OLD" }] }
+    }
+    return { files: [{ file: "x", patch: "NEW" }] }
+  })
+  const merged = mergeDiffLists([], map)
+  expect(merged.find((f) => f.file === "x")!.patch).toBe("NEW")
+})
+
 test("applyTurnDiffsToCheckpoints distinguishes known-empty from unavailable", () => {
   const cps = [
     { messageID: "u1", createdAt: 0, prompt: "", files: [], filesKnown: false },

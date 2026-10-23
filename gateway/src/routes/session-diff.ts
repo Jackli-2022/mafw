@@ -49,7 +49,7 @@ export async function handleSessionDiff(
     json(res, 503, { error: "capability 'diffApi' not available on this runtime" });
     return;
   }
-  if (messageID) {
+  if (messageID !== undefined) {
     const run = deps.turnDiff
       ?? ((args) => computeTurnDiffForRuntime(args.runtime, args.sessionID, args.messageID));
     try {
