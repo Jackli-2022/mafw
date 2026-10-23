@@ -101,9 +101,17 @@ function promptInputBody(parts: any[], opts?: { delivery?: string }): Record<str
   return body;
 }
 
-/** 2.1.0 消息部件补 id（text/reasoning 无 id；canonical flat 契约要求 isMafwPart）。 */
-function ensurePartIds(message: any): any {
-  if (!message || typeof message !== 'object' || !Array.isArray(message.content)) return message;
+/** 2.1.0 用户消息的正文在 info.text（parts 恒空）——合成 text part 供 desktop 渲染。 */
+function ensureUserTextPart(message: any): any {
+  if (!message || typeof message !== 'object' || message.role !== 'user') return message;
+  if (Array.isArray(message.content) && message.content.length > 0) return message;
+  const text = typeof message.text === 'string'
+    ? message.text
+    : (typeof message.payload?.text === 'string' ? message.payload.text : undefined);
+  if (typeof text !== 'string' || text.length === 0) return message;
+  return { ...message, content: [{ type: 'text', text }] };
+}
+function ensurePartIds(message: any): any {  if (!message || typeof message !== 'object' || !Array.isArray(message.content)) return message;
   let changed = false;
   const content = message.content.map((p: any, i: number) => {
     if (p && typeof p === 'object' && typeof p.id !== 'string') {
@@ -258,8 +266,9 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
                 const withRole = m.role !== undefined
                   ? m
                   : (m.type === 'user' || m.type === 'assistant' ? { ...m, role: m.type } : m);
+                // 2.1.0 用户消息正文在 text（parts 空）→ 合成 text part；
                 // canonical flat 契约：part 必须有 id（2.1.0 text/reasoning 部件无 id）
-                return ensurePartIds(withRole);
+                return ensurePartIds(ensureUserTextPart(withRole));
               })
               // canonical 历史只允许 user|assistant：2.1.0 会混入 idle/synthetic 等
               // 非对话标记，混入会让 normalizeMessages 的 flat 守卫整体回退。

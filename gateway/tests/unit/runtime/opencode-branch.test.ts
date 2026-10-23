@@ -87,7 +87,7 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
   it('2.1.0 消息 role 归一：type:user/assistant → role（desktop 缺 role 直接丢消息）', async () => {
     mockClient.session.messages = jest.fn(async () => ({
       data: { data: [
-        { id: 'm1', type: 'user', content: [] },
+        { id: 'm1', type: 'user', text: 'hello user' },               // 2.1.0 用户消息：text 在 info，无 content
         { id: 'm2', type: 'assistant', content: [] },
         { id: 'm3', role: 'user', type: 'user', content: [] },        // 已有 role 不覆盖
         { id: 'm4', type: 'idle', outcome: 'succeeded' },             // 非角色标记 → 过滤
@@ -99,6 +99,8 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
     const out = await client.session.messages!({ sessionID: 'ses_1' });
     const byId = Object.fromEntries((out.data as any[]).map((m: any) => [m.id, m]));
     expect(byId.m1.role).toBe('user');
+    // 用户消息 text → 合成 text part（desktop 从 parts 渲染，2.1.0 用户消息 parts 为空）
+    expect(byId.m1.content).toEqual([{ id: 'm1-p0', type: 'text', text: 'hello user' }]);
     expect(byId.m2.role).toBe('assistant');
     expect(byId.m3.role).toBe('user');
     // canonical flat 契约只允许 user|assistant——idle/synthetic 等标记不得混入历史
