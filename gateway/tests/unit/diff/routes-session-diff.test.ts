@@ -1,5 +1,6 @@
 // GET /api/sessions/:sid/diff + POST /api/sessions/:sid/diff/revert（deps 注入可单测）。
 import { handleSessionDiff, handleSessionDiffRevert, SessionDiffDeps } from '../../../src/routes/session-diff';
+import { TurnDiffUnavailableError } from '../../../src/core/diff/turn-diff';
 import { ServerResponse, IncomingMessage } from 'http';
 import { EventEmitter } from 'events';
 
@@ -34,13 +35,39 @@ function makeDeps(overrides: Partial<SessionDiffDeps> = {}) {
 }
 
 describe('GET /api/sessions/:sid/diff', () => {
-  it('透传 diff 列表（messageID 可选）', async () => {
+  it('messageID goes to per-turn diff and never calls session.diff', async () => {
     const { deps, calls } = makeDeps();
+    const turnCalls: any[] = [];
+    deps.turnDiff = async (a) => { turnCalls.push(a); return FILES; };
     const res = makeRes();
     await handleSessionDiff(res, 's1', 'm1', deps);
     expect(res.statusCode).toBe(200);
     expect(JSON.parse((res as any).body)).toEqual({ files: FILES });
-    expect(calls[0]).toEqual(['diff', { sessionID: 's1', messageID: 'm1' }]);
+    expect(turnCalls).toEqual([{ runtime: deps.runtime, sessionID: 's1', messageID: 'm1' }]);
+    expect(calls.some((c) => c[0] === 'diff')).toBe(false);
+  });
+
+  it('no messageID still calls the session-wide runtime diff', async () => {
+    const { deps, calls } = makeDeps();
+    const res = makeRes();
+    await handleSessionDiff(res, 's1', undefined, deps);
+    expect(res.statusCode).toBe(200);
+    expect(calls[0]).toEqual(['diff', { sessionID: 's1' }]);
+  });
+
+  it('maps unavailable to 404 and git/other errors to 502', async () => {
+    const unavailable = makeDeps();
+    unavailable.deps.turnDiff = async () => { throw new TurnDiffUnavailableError('per-turn diff unavailable: no snapshots'); };
+    const r1 = makeRes();
+    await handleSessionDiff(r1, 's1', 'm1', unavailable.deps);
+    expect(r1.statusCode).toBe(404);
+
+    const failed = makeDeps();
+    failed.deps.turnDiff = async () => { throw new Error('git failed'); };
+    const r2 = makeRes();
+    await handleSessionDiff(r2, 's1', 'm1', failed.deps);
+    expect(r2.statusCode).toBe(502);
+    expect(JSON.parse((r2 as any).body).error).toContain('git failed');
   });
 
   it('diffApi 能力缺失 → 503', async () => {

@@ -5,6 +5,11 @@
 import * as http from 'http';
 import { AgentRuntime } from '../runtime/contract';
 import { buildRevertPatch } from '../core/diff/hunk-patch';
+import {
+  computeTurnDiffForRuntime,
+  TurnDiffUnavailableError,
+  type FileDiffInfo,
+} from '../core/diff/turn-diff';
 
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -22,6 +27,12 @@ function json(res: http.ServerResponse, status: number, payload: any): void {
 
 export interface SessionDiffDeps {
   runtime: AgentRuntime | null;
+  /** Test seam; production resolves the user turn from live snapshots. */
+  turnDiff?: (args: {
+    runtime: AgentRuntime;
+    sessionID: string;
+    messageID: string;
+  }) => Promise<FileDiffInfo[]>;
 }
 
 function hasDiffApi(rt: SessionDiffDeps['runtime']): boolean {
@@ -38,11 +49,27 @@ export async function handleSessionDiff(
     json(res, 503, { error: "capability 'diffApi' not available on this runtime" });
     return;
   }
+  if (messageID) {
+    const run = deps.turnDiff
+      ?? ((args) => computeTurnDiffForRuntime(args.runtime, args.sessionID, args.messageID));
+    try {
+      const files = await run({
+        runtime: deps.runtime!,
+        sessionID,
+        messageID,
+      });
+      json(res, 200, { files: Array.isArray(files) ? files : [] });
+    } catch (err: any) {
+      if (err instanceof TurnDiffUnavailableError) {
+        json(res, 404, { error: err.message });
+      } else {
+        json(res, 502, { error: err?.message ?? String(err) });
+      }
+    }
+    return;
+  }
   try {
-    const files = await deps.runtime!.session.diff!({
-      sessionID,
-      ...(messageID ? { messageID } : {}),
-    });
+    const files = await deps.runtime!.session.diff!({ sessionID });
     json(res, 200, { files: Array.isArray(files) ? files : [] });
   } catch (err: any) {
     json(res, 502, { error: err?.message ?? String(err) });
