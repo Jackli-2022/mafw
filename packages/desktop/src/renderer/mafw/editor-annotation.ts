@@ -21,6 +21,8 @@ export function annotationApplies(activeRel: string | null, selRel: string | nul
   return !!activeRel && !!selRel && activeRel === selRel
 }
 
+import type { Annotation } from "../../shared/annotation-types"
+
 export function buildAnnotationPrompt(
   rel: string,
   startLine: number,
@@ -39,5 +41,31 @@ export function buildAnnotationPrompt(
     `我的批注：${comment}`,
     "",
     "请结合批注查看这段代码并回应。",
+  ].join("\n")
+}
+
+function annotationBlock(item: Annotation, index: number): string {
+  const range = item.startLine === item.endLine ? `第 ${item.startLine} 行` : `第 ${item.startLine}-${item.endLine} 行`
+  return [
+    `【批注 ${index + 1}】`,
+    `文件 \`${item.rel}\` ${range}：`,
+    "",
+    "```",
+    item.code,
+    "```",
+    "",
+    `我的批注：${item.comment}`,
+  ].join("\n")
+}
+
+/** 多条批注打包为一条消息块（草稿批量提交）。 */
+export function buildAnnotationBatch(items: Annotation[]): string {
+  if (items.length === 0) return ""
+  return [
+    `以下是 ${items.length} 条代码批注：`,
+    "",
+    items.map(annotationBlock).join("\n\n"),
+    "",
+    "请逐条结合批注查看这段代码并回应。",
   ].join("\n")
 }

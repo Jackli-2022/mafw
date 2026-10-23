@@ -22,6 +22,8 @@ describe('splitHunks', () => {
     expect(hunks).toHaveLength(2)
     expect(hunks[0].oldCount).toBe(3)
     expect(hunks[0].newCount).toBe(4)
+    expect(hunks[0].newStart).toBe(1)
+    expect(hunks[1].newStart).toBe(11)
     expect(hunks[1].header).toContain('section?')
     expect(hunks[1].oldCount).toBe(1) // 省略 ,1 形式
     expect(hunks[1].newCount).toBe(1)

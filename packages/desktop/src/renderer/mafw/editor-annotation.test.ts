@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { lineRangeOf, buildAnnotationPrompt, annotationApplies } from "./editor-annotation"
+import { lineRangeOf, buildAnnotationPrompt, buildAnnotationBatch, annotationApplies } from "./editor-annotation"
 
 describe("lineRangeOf", () => {
   const doc = "l1\nl2\nl3" // 末尾无换行
@@ -43,5 +43,44 @@ describe("buildAnnotationPrompt", () => {
   })
   test("单行范围不写成 M-N", () => {
     expect(buildAnnotationPrompt("a.ts", 3, 3, "x()", "问")).toContain("第 3 行：")
+  })
+})
+
+describe("buildAnnotationBatch（多条批注打包随消息发送）", () => {
+  const item = (over: any = {}) => ({
+    id: "a1", sessionID: "s1", rel: "src/a.ts", startLine: 3, endLine: 5,
+    code: "x()\ny()", comment: "问 1", createdAt: 1, ...over,
+  })
+  test("空数组 → 空串", () => {
+    expect(buildAnnotationBatch([])).toBe("")
+  })
+  test("两条批注：编号块 + 统一行动指令，代码与批注逐字保留", () => {
+    expect(buildAnnotationBatch([
+      item(),
+      item({ id: "a2", rel: "b.ts", startLine: 7, endLine: 7, code: "y()", comment: "问 2" }),
+    ])).toBe([
+      "以下是 2 条代码批注：",
+      "",
+      "【批注 1】",
+      "文件 `src/a.ts` 第 3-5 行：",
+      "",
+      "```",
+      "x()",
+      "y()",
+      "```",
+      "",
+      "我的批注：问 1",
+      "",
+      "【批注 2】",
+      "文件 `b.ts` 第 7 行：",
+      "",
+      "```",
+      "y()",
+      "```",
+      "",
+      "我的批注：问 2",
+      "",
+      "请逐条结合批注查看这段代码并回应。",
+    ].join("\n"))
   })
 })

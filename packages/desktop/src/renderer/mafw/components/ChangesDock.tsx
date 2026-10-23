@@ -8,6 +8,8 @@ export function ChangesDock(props: {
   sessionID: string | null
   diffs: FileDiffEntry[] | undefined
   onSendComment?: (sessionID: string, text: string) => void
+  /** 加入批注草稿（同一批注池） */
+  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
 }) {
   const [openFile, setOpenFile] = createSignal<string | null>(null)
   const files = () => props.diffs ?? []
@@ -24,6 +26,7 @@ export function ChangesDock(props: {
           initialFile={openFile()}
           onBack={() => setOpenFile(null)}
           onSendComment={props.onSendComment}
+          onAddAnnotation={props.onAddAnnotation}
         />
       </Show>
       <Show when={!openFile()}>

@@ -45,6 +45,13 @@ export type BrowserAPI = {
   onOpenUrl(cb: (url: string) => void): () => void
   openExternal(url: string): Promise<{ ok: boolean }>
 }
+/** 批注草稿（main 侧 electron-store JSON；形状与 shared/annotation-types.ts 一致）。 */
+export type AnnotationsAPI = {
+  list(sessionID: string): Promise<import("../shared/annotation-types").Annotation[]>
+  add(a: import("../shared/annotation-types").Annotation): Promise<unknown>
+  remove(sessionID: string, id: string): Promise<unknown>
+  clear(sessionID: string): Promise<unknown>
+}
 export type UpdaterAPI = {
   subscribe: (cb: (state: UpdaterState) => void) => Promise<() => void>
   check: () => Promise<UpdaterState>
@@ -80,6 +87,7 @@ export type ElectronAPI = {
   updater: UpdaterAPI
   fs: FsAPI
   browser: BrowserAPI
+  annotations: AnnotationsAPI
   consumeInitialDeepLinks: () => Promise<string[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>

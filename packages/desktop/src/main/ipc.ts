@@ -19,6 +19,7 @@ import { syncTrayPresence } from "./tray"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { isHttpUrl } from "../shared/browser-policy"
+import { createAnnotationRepo } from "../shared/annotations"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -101,6 +102,15 @@ export function registerIpcHandlers(deps: Deps) {
       return { ok: false }
     }
   })
+
+  // ── 批注草稿（桌面端 JSON 持久；不占 gateway）──────────────────────────
+  const annotations = createAnnotationRepo(getStore("mafw-annotations"))
+  ipcMain.handle("annotations-list", (_event: IpcMainInvokeEvent, sessionID: string) => annotations.list(sessionID))
+  ipcMain.handle("annotations-add", (_event: IpcMainInvokeEvent, a: Parameters<typeof annotations.add>[0]) => annotations.add(a))
+  ipcMain.handle("annotations-remove", (_event: IpcMainInvokeEvent, sessionID: string, id: string) =>
+    annotations.remove(sessionID, id),
+  )
+  ipcMain.handle("annotations-clear", (_event: IpcMainInvokeEvent, sessionID: string) => annotations.clear(sessionID))
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())

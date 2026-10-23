@@ -71,6 +71,9 @@ export interface LineCommentEditorV2Props extends Omit<ComponentProps<"div">, "c
   rows?: number
   cancelLabel?: string
   submitLabel?: string
+  /** 次级动作（如「加入批注」之外的「立即发送」）；与主提交同值校验。 */
+  secondaryLabel?: string
+  onSecondary?: (value: string) => void
   autofocus?: boolean
   mention?: LineCommentEditorV2Mention
 }
@@ -100,6 +103,8 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
     "rows",
     "cancelLabel",
     "submitLabel",
+    "secondaryLabel",
+    "onSecondary",
     "autofocus",
     "mention",
     "class",
@@ -293,6 +298,20 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
             <ButtonV2 type="button" size="normal" variant="neutral" onClick={() => local.onCancel()}>
               {local.cancelLabel ?? "Cancel"}
             </ButtonV2>
+            <Show when={local.secondaryLabel && local.onSecondary}>
+              <ButtonV2
+                type="button"
+                size="normal"
+                variant="neutral"
+                disabled={!canSubmit()}
+                onClick={() => {
+                  const v = local.value.trim()
+                  if (v) local.onSecondary?.(v)
+                }}
+              >
+                {local.secondaryLabel}
+              </ButtonV2>
+            </Show>
             <ButtonV2 type="button" size="normal" variant="contrast" disabled={!canSubmit()} onClick={submit}>
               {local.submitLabel ?? "Comment"}
             </ButtonV2>

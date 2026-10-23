@@ -22,6 +22,8 @@ export function DiffReviewPanel(props: {
   onClose?: () => void
   /** 行级评论回喂（可选）：组装好的评论 prompt 发到会话 */
   onSendComment?: (sessionID: string, text: string) => void
+  /** 加入批注草稿（可选）：同一批注池，随下一条消息打包 */
+  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   /** 嵌入 RightDock changes tab（隐藏自带文件列表栏与关闭钮，改显返回钮） */
   embedded?: boolean
   /** 初始选中的文件（从 dock 文件列表进入时预选） */
@@ -97,6 +99,21 @@ export function DiffReviewPanel(props: {
     const text = commentDraft().trim()
     if (!text || !props.onSendComment) return
     props.onSendComment(props.sessionID, buildDiffCommentPrompt(file, h.header, h.lines, text))
+    setCommentDraft("")
+    setCommentingOn(null)
+  }
+
+  // 加入批注草稿：hunk 的 new 侧行号范围 + 新侧代码（上下文 + 新增行）
+  const submitDraftComment = (file: string, h: DiffHunk) => {
+    const text = commentDraft().trim()
+    if (!text || !props.onAddAnnotation) return
+    const code = h.lines
+      .filter((l) => l.startsWith("+") || l.startsWith(" "))
+      .map((l) => l.slice(1))
+      .join("\n")
+      .trim()
+    const endLine = h.newStart + Math.max(0, h.newCount - 1)
+    props.onAddAnnotation({ rel: file, startLine: h.newStart, endLine, code, comment: text })
     setCommentDraft("")
     setCommentingOn(null)
   }
@@ -209,12 +226,22 @@ export function DiffReviewPanel(props: {
                                   />
                                   <div class="mafw-diff-comment-actions">
                                     <ButtonV2 variant="ghost" size="small" onClick={() => setCommentingOn(null)}>取消</ButtonV2>
-                                    <ButtonV2
-                                      variant="contrast"
-                                      size="small"
-                                      disabled={!commentDraft().trim()}
-                                      onClick={() => submitComment(file, h)}
-                                    >发送给 agent</ButtonV2>
+                                    <Show when={props.onAddAnnotation}>
+                                      <ButtonV2
+                                        variant="outline"
+                                        size="small"
+                                        disabled={!commentDraft().trim()}
+                                        onClick={() => submitDraftComment(file, h)}
+                                      >加入批注</ButtonV2>
+                                    </Show>
+                                    <Show when={props.onSendComment}>
+                                      <ButtonV2
+                                        variant="contrast"
+                                        size="small"
+                                        disabled={!commentDraft().trim()}
+                                        onClick={() => submitComment(file, h)}
+                                      >发送给 agent</ButtonV2>
+                                    </Show>
                                   </div>
                                 </div>
                               </Show>

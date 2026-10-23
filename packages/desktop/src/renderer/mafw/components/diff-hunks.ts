@@ -5,6 +5,8 @@
 export interface DiffHunk {
   header: string
   lines: string[]
+  /** new 侧起始行（header +n 的 n；批注锚点用） */
+  newStart: number
   /** 反转前 old 侧行数（header -n,m 的 m，缺省 1） */
   oldCount: number
   /** 反转前 new 侧行数（header +n,m 的 m，缺省 1） */
@@ -25,6 +27,7 @@ export function splitHunks(patch: string): { header: string[]; hunks: DiffHunk[]
       current = {
         header: line,
         lines: [],
+        newStart: parseInt(m[3], 10),
         oldCount: m[2] === undefined ? 1 : parseInt(m[2], 10),
         newCount: m[4] === undefined ? 1 : parseInt(m[4], 10),
       }

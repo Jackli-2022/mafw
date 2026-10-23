@@ -37,6 +37,8 @@ export function EditorDock(props: {
   sessionDirectory: string | null
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string) => void
+  /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
+  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
   onSendComment?: (sid: string, text: string) => void
 }) {
   const [model, setModel] = createSignal<EditorModel>(createEditorModel())
@@ -301,13 +303,25 @@ export function EditorDock(props: {
     return lineRangeOf(editor?.getDoc() ?? "", s.from, s.to)
   }
 
-  function submitAnnotation(comment: string) {
+  function submitAnnotation(comment: string, action: "draft" | "send" = "draft") {
     const s = sel()
     const f = activeFile()
     const range = selRange()
-    if (!s || !f || !range || !comment.trim() || !props.onSendAnnotation) return
+    if (!s || !f || !range || !comment.trim()) return
     if (!annotationApplies(f.rel, s.rel)) { clearSelection(); return }
-    props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
+    if (action === "send") {
+      if (!props.onSendAnnotation) return
+      props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
+    } else {
+      if (!props.onAddAnnotation) return
+      props.onAddAnnotation({
+        rel: f.rel,
+        startLine: range.startLine,
+        endLine: range.endLine,
+        code: s.text,
+        comment: comment.trim(),
+      })
+    }
     clearSelection()
   }
 
@@ -398,10 +412,12 @@ export function EditorDock(props: {
                 value={annotDraft()}
                 onInput={setAnnotDraft}
                 onCancel={() => setAnnotOpen(false)}
-                onSubmit={(value: string) => submitAnnotation(value)}
+                onSubmit={(value: string) => submitAnnotation(value, "draft")}
                 selection={<span>{sel()!.rel}:L{selRange()?.startLine}-{selRange()?.endLine}</span>}
                 placeholder="对这一段的批注…"
-                submitLabel="发送"
+                submitLabel="加入批注"
+                secondaryLabel={props.onSendAnnotation ? "立即发送" : undefined}
+                onSecondary={props.onSendAnnotation ? (value: string) => submitAnnotation(value, "send") : undefined}
                 cancelLabel="取消"
               />
             </div>
@@ -416,6 +432,7 @@ export function EditorDock(props: {
                 initialFile={activeFile()!.rel}
                 onBack={() => { setMode("edit"); clearSelection() }}
                 onSendComment={props.onSendComment}
+                onAddAnnotation={props.onAddAnnotation}
               />
             </div>
           </Show>

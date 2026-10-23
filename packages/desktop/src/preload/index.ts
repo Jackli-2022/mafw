@@ -179,6 +179,14 @@ const api: ElectronAPI = {
     openExternal: (url) => ipcRenderer.invoke("browser-open-external", url),
   },
 
+  // 批注草稿（main 侧 electron-store）
+  annotations: {
+    list: (sessionID) => ipcRenderer.invoke("annotations-list", sessionID),
+    add: (a) => ipcRenderer.invoke("annotations-add", a),
+    remove: (sessionID, id) => ipcRenderer.invoke("annotations-remove", sessionID, id),
+    clear: (sessionID) => ipcRenderer.invoke("annotations-clear", sessionID),
+  },
+
   onNavigateMafw: (cb) => {
     const handler = () => cb()
     ipcRenderer.on("navigate-mafw", handler)

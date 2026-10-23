@@ -49,6 +49,7 @@ import { EditorDock } from "./components/EditorDock"
 import { BrowserDock } from "./components/BrowserDock"
 import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
+import { addPending } from "./annotation-store"
 import { aggregateSessionDiffs } from "./components/session-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
@@ -2027,6 +2028,12 @@ export function MafwShell() {
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
+                  onAddAnnotation={(a) => {
+                    const sid = currentSessionID()
+                    if (!sid) return
+                    addPending({ sessionID: sid, ...a })
+                    showToastV2({ description: "已加入批注", duration: 1600 } as any)
+                  }}
                 />
               </div>
               <div style={{ display: rightDockTab() === "subagents" ? "contents" : "none" }}>
@@ -2064,6 +2071,12 @@ export function MafwShell() {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "批注已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                  }}
+                  onAddAnnotation={(a) => {
+                    const sid = currentSessionID()
+                    if (!sid) return
+                    addPending({ sessionID: sid, ...a })
+                    showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
                   onSendComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
