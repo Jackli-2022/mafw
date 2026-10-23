@@ -251,15 +251,19 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // message.updated 直接丢弃（chat-stream: !info?.role → return）。出口归一：
         // 仅补缺失 role，不覆盖既有；非角色型（system/compaction…）不硬映射。
         const data = Array.isArray(raw)
-          ? raw.map((m: any) => {
-              if (!m || typeof m !== 'object') return m;
-              // role：仅补缺失（2.1.0 角色在 type；非角色型 system/compaction 不硬映射）
-              const withRole = m.role !== undefined
-                ? m
-                : (m.type === 'user' || m.type === 'assistant' ? { ...m, role: m.type } : m);
-              // canonical flat 契约：part 必须有 id（2.1.0 text/reasoning 部件无 id）
-              return ensurePartIds(withRole);
-            })
+          ? raw
+              .map((m: any) => {
+                if (!m || typeof m !== 'object') return m;
+                // role：仅补缺失（2.1.0 角色在 type；非角色型 system/compaction 不硬映射）
+                const withRole = m.role !== undefined
+                  ? m
+                  : (m.type === 'user' || m.type === 'assistant' ? { ...m, role: m.type } : m);
+                // canonical flat 契约：part 必须有 id（2.1.0 text/reasoning 部件无 id）
+                return ensurePartIds(withRole);
+              })
+              // canonical 历史只允许 user|assistant：2.1.0 会混入 idle/synthetic 等
+              // 非对话标记，混入会让 normalizeMessages 的 flat 守卫整体回退。
+              .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant'))
           : raw;
         // 2.1.0：游标在 body.cursor；旧面在 X-Next-Cursor 响应头——双读兜底
         const nextCursor = unwrapCursor(result) || result?.response?.headers?.get('X-Next-Cursor') || undefined;

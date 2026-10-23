@@ -65,7 +65,7 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
   it('2.1.0 响应信封 {data:X} 双层剥——unwrap 后直接可用（messages 场景）', async () => {
     // 2.1.0 统一响应形状 {"data":[...]}（有时带 location）；SDK 的 result.data = body，
     // body 仍是信封 → unwrap 需再剥一层，否则 messages 拿到对象而非数组
-    mockClient.session.messages = jest.fn(async () => ({ data: { data: [{ id: 'msg_1', info: {}, parts: [] }] } }));
+    mockClient.session.messages = jest.fn(async () => ({ data: { data: [{ id: 'msg_1', type: 'user', content: [] }] } }));
     const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
     const out = await client.session.messages!({ sessionID: 'ses_1' });
     expect(Array.isArray(out.data)).toBe(true);
@@ -75,7 +75,7 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
     // 实测 2.1.0 messages 响应：{"data":[...],"cursor":"..."}——游标在 body（旧面在
     // X-Next-Cursor 响应头）。键集判定漏掉 cursor 导致整个信封未剥（2026-10-23 复现）。
     mockClient.session.messages = jest.fn(async () => ({
-      data: { data: [{ id: 'msg_2' }], cursor: 'cur-next' },
+      data: { data: [{ id: 'msg_2', type: 'assistant', content: [] }], cursor: 'cur-next' },
       response: { headers: { get: () => null } },
     }));
     const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
@@ -90,7 +90,8 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
         { id: 'm1', type: 'user', content: [] },
         { id: 'm2', type: 'assistant', content: [] },
         { id: 'm3', role: 'user', type: 'user', content: [] },        // 已有 role 不覆盖
-        { id: 'm4', type: 'system', content: [] },                    // 非角色型不硬映射
+        { id: 'm4', type: 'idle', outcome: 'succeeded' },             // 非角色标记 → 过滤
+        { id: 'm5', type: 'synthetic', text: 'instructions' },        // 合成指令 → 过滤
       ] },
       response: { headers: { get: () => null } },
     }));
@@ -100,7 +101,9 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
     expect(byId.m1.role).toBe('user');
     expect(byId.m2.role).toBe('assistant');
     expect(byId.m3.role).toBe('user');
-    expect(byId.m4.role).toBeUndefined();
+    // canonical flat 契约只允许 user|assistant——idle/synthetic 等标记不得混入历史
+    expect(byId.m4).toBeUndefined();
+    expect(byId.m5).toBeUndefined();
   });
 });
 
