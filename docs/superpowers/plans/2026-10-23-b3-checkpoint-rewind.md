@@ -391,3 +391,12 @@ git commit -m "docs: B3 checkpoint/rewind ship notes"
 - **Interface consistency:** `Checkpoint` used by overlay/rewind; `allHunksPatches`/`checkpointsToRewind`/`revertWarning` used only in overlay/ChatPane; `runtimeName`/`runtimeCaps` flow MafwShell → ChatPane → overlay.
 - **Review Focus tests:** irreversible copy (Task 2/4), ordering (Task 2), runtime gates (Task 3), data honesty/local ids (Task 1/3), newest actionable (Task 3).
 - **Proportion:** two pure modules + overlay + one wiring task; no transcript.
+
+## Final Review Corrections (2026-10-23)
+
+- **Code rewind is gated off in current opencode 2.1.** Real-user probe showed user/assistant messages have no `summary.diffs`, and `sessions.diff(messageID)` returns the same session-wide patch for any/all message IDs. The planned `sessions.diff` fallback was removed; `canRewindCode` requires `filesKnown` + complete invertible per-turn patches. The UI hides the code action and labels file chips "文件记录不可用".
+- **Added/deleted files are not invertible** by the gateway hunk inverter (`/dev/null`, `new file mode`, `deleted file mode`); `isInvertiblePatch` rejects them, disabling code rewind for those turns.
+- **Confirmation split:** row buttons only request; the confirmation panel is the sole executor; row buttons disable while their confirm is open (double-click safe).
+- **Honest counters:** `applied` vs `noChanges`; failure toast reports applied/N; no skipped turn is reported as reverted.
+- **Safety:** inline revert now shares the busy gate and runtime-aware copy; `runtime_switched` refreshes caps/name.
+- **Gates:** desktop 1388/1388, tsgo rc=0, build ok.

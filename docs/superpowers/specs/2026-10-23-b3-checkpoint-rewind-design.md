@@ -16,7 +16,7 @@ Checkpoint 时间线把**每个 user 回合**变成一个可检查的点：时�
 - opencode 2.1 的 `session.revert` 是 **stage+commit**，`contract.ts` 明确 `revertUndoApi: false`（commit 后不可逆）。
 - 现有 `ChatPane` 的 revert 确认文案仍写「可通过撤销回滚恢复」——对 2.1 是**错误承诺**，本批必须按 runtime/`revertUndoEnabled` 改写。
 - **边界差异（builder check 实证）**：opencode 的 revert 撤回目标 user 消息及其后所有内容（含文件改动）；pi 的 `SessionManager.branch(messageID)` **保留**目标消息、只丢弃其后的回复，且**不回滚文件**。同一 `messageID` 在两个 runtime 语义不同，UI 文案必须区分，不能统一写「回到这里」。
-- **`session.diff(messageID)` 是「该 user 消息这一回合产生的 diff」，不是「该时点的工作树快照」**（SDK 文档实证）。所以「只回滚代码到 checkpoint N」必须收集 N 及之后所有回合的 `summary.diffs`，按 **newest → oldest** 逐回合反向应用；单次 `revertDiff(diff(N))` 只会撤销第 N 回合。
+- **代码回滚数据源（2026-10-23 终审实测修正）**：当前 opencode 2.1 adapter 的 `session.diff(messageID)` **不按 messageID 过滤**（同一会话所有 messageID/无 messageID/不存在 messageID 返回同一份全会话 diff），且 user/assistant 消息没有 `summary.diffs`。因此 code rewind **不再回退使用 `sessions.diff`**；只在每个目标回合都有 `filesKnown` + 完整、可反转的回合级 patch 时显示；当前环境默认隐藏（见 §6/§7）。
 - `session.revertDiff` 接收 `{patches:[{file?,patch,hunkIndices}]}`；单回合全 hunk 反转用 `patch + 0..@@-1`。多回合顺序应用，避免同一文件跨回合 patch 拼接冲突。
 - `summary.diffs` 是 per-turn 历史快照（不是 VCS 当前态），随 user 消息携带；时间线用它展示"该回合改了哪些文件"，缺失时回退 `sessions.diff(messageID)` 拉取。
 - pi runtime：`diffApi:false` → 隐藏「只回滚代码」；`sessionBranchApi:true`（有 revert）→ 仅对话回滚，且保留目标 prompt。
@@ -42,6 +42,7 @@ export interface Checkpoint {
   createdAt: number | null
   prompt: string
   files: CheckpointFile[]
+  filesKnown: boolean
 }
 export function buildCheckpoints(
   messages: any[],
@@ -54,7 +55,7 @@ export function buildCheckpoints(
 - 只取 `role === "user"` 的消息；按 `time.created` **倒序**（最新在前）。
 - **排除未持久化消息**：`isLocalMessageId(id)`（`user-`/`local-`/`queued-` 前缀）不建 checkpoint；否则会拿一个不存在的 messageID 去 revert（404）。
 - prompt：`message.text`（2.1 info.text）→ 否则 `parts[message.id]` 的 text parts 拼接 → 否则「(无文本)」；UI 截断显示。
-- files：`message.summary.diffs` 中合法条目（`file` 非空字符串），复制 `additions/deletions/status/patch`（patch 供代码回滚使用，UI 不展示）。
+- files：`message.summary.diffs` 中合法条目（`file` 非空字符串），复制 `additions/deletions/status/patch`（patch 供代码回滚使用，UI 不展示）；`filesKnown=false` 表示该 runtime/消息没有提供回合级摘要（区别于"有摘要但无改动"）。
 - 30 天过滤：`createdAt != null && createdAt >= now - retentionDays*86400000`；`createdAt == null` 保留（时间未知，不静默丢）。
 - 跳过非 user、缺 id、畸形 diffs。
 
@@ -79,16 +80,16 @@ export function allHunksPatches(files: FileDiffEntry[]): Array<{ file?: string; 
 
 ### 5.2 只回滚代码（回到该检查点之前）
 
-- 仅 `caps.diffApi === true` 显示。
-- 语义：**撤销目标 checkpoint 及其之后所有回合的文件改动，对话与消息保留**（即工作树回到"发出目标 prompt 之前"）。
-- 计算目标集合：`checkpointsToRewind(checkpoints, targetMessageID)` = 目标行及所有更新行（newest-first 顺序，目标在最后）。二次确认显示「将撤销 N 个回合的文件改动」。
-- 逐回合 **newest → oldest** 执行（顺序应用，避免同文件跨回合 patch 拼接冲突）：
-  1. 该回合若 `files` 非空且**每条**都带非空 `patch`，直接用 `summary.diffs`；否则 `sessions.diff(sessionID, { messageID })` 回退拉取完整回合 diff；
-  2. `allHunksPatches(files)`；空则跳过该回合（该回合没有可回滚的代码）；
-  3. `sessions.revertDiff(sessionID, patches)`；await 成功后再处理下一回合。
-- 二次确认文案：「将撤销该消息及之后 N 个回合的文件改动；对话保留。不可自动撤销；patch 冲突时可能停在中间态。」
-- 成功后：关闭 overlay → toast（含 N）；`session.diff` SSE 会刷新 ChangesDock（若无事件，用户手动刷新）。
-- **部分失败**：立即停止，toast「回滚到 X 失败（已完成 M/N 回合）；工作树可能处于中间态」，overlay 保持打开。不自动重试、不回滚已应用的部分。
+- 仅 `caps.diffApi === true` **且** `canRewindCode(targets)` 为真时显示；否则隐藏，并在顶部提示数据不可用。
+- **前置门 `canRewindCode`**：目标及之后每个回合 `filesKnown === true`；有文件的回合每条 `patch` 非空且 `isInvertiblePatch`（拒绝 `/dev/null`、`new file mode`、`deleted file mode`——gateway 的 hunk 反转不支持新增/删除文件）；至少一个回合有文件改动。
+- 语义：撤销目标 checkpoint 及其之后所有回合的文件改动，对话与消息保留（工作树回到"发出目标 prompt 之前"）。
+- 计算目标集合：`checkpointsToRewind(checkpoints, targetMessageID)` = 目标行及所有更新行（newest-first，目标在最后）。二次确认显示「将撤销这条消息所在的回合及之后 N 个回合的文件改动」。
+- 逐回合 **newest → oldest** 执行：
+  1. 该回合 `files` 为空 → 计入 `noChanges`，跳过；
+  2. `allHunksPatches(files)` → `sessions.revertDiff(sessionID, patches)`；await 成功后再处理下一回合；
+  3. **不调用 `sessions.diff`**（2026-10-23 实测为全会话 diff，不是回合级）。
+- 计数器：`applied` / `noChanges`；成功 toast 写「已应用 X 个回合，Y 个回合无文件改动」；`applied===0` 提示「没有可回滚的代码改动」；失败 toast 写「已应用 X/N 个回合；工作树可能处于中间态」。绝不把跳过的回合算作已应用。
+- **当前 opencode 2.1**：没有 `summary.diffs` → `filesKnown=false` → 代码回滚按钮隐藏；文件 chips 显示「文件记录不可用（当前 runtime 不提供回合级摘要）」。对话回滚仍可用。
 - 不做「只撤销目标这一回合」的另一种语义（由 ChangesDock 的 hunk 级操作覆盖）。
 
 ### 5.3 运行时门与文案
@@ -159,3 +160,12 @@ export function allHunksPatches(files: FileDiffEntry[]): Array<{ file?: string; 
 | 加载窗口不是完整 30 天 | 副标题写「已加载的历史（最多 30 天）」+ footer 提示先加载更早 |
 | 30 天过滤本地时钟偏差 | 仅 UI 过滤，不删数据；时间未知保留 |
 | 大量 checkpoint 渲染卡顿 | 已加载窗口有限；不做独立分页/虚拟滚动（YAGNI） |
+
+## 11. Final review correction（2026-10-23 终审实测）
+
+1. **代码回滚数据源**：当前 opencode 2.1 的 `session.diff(messageID)` 不按 messageID 过滤，返回全会话 diff；user/assistant 消息也没有 `summary.diffs`。因此 **code rewind 不使用 `sessions.diff` fallback**；只有 `filesKnown + 完整可反转 patch` 时才显示；当前环境默认隐藏（对话回滚不受影响）。
+2. **新增/删除文件**：gateway `invertHunks` 不交换 `---/+++` 头，无法反转 `new file mode`/`deleted file mode`；`isInvertiblePatch` 拒绝这类 patch，含此类文件的回合禁用代码回滚。
+3. **确认防双击**：行按钮只 requestConfirm；只有确认面板的「确认」按钮执行；行按钮在确认态打开时禁用。
+4. **Busy gate**：`revertTo` 与 inline 确认按钮都按 `sending`/session busy 禁用；overlay 同步禁用。
+5. **Runtime 刷新**：`runtime_switched` 事件触发 `loadRuntimeInfo()`，避免热切换后沿用旧 caps/name。
+6. **文件 chips 诚实**：`filesKnown=false` → 「文件记录不可用」；`filesKnown=true && files=[]` → 「无文件改动」。
