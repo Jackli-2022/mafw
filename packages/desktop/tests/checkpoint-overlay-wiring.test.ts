@@ -8,7 +8,9 @@ const read = (p: string) => readFileSync(join(root, p), "utf8")
 describe("checkpoint overlay wiring", () => {
   test("overlay builds checkpoints, gates actions, and confirms", () => {
     const src = read("src/renderer/mafw/components/CheckpointOverlay.tsx")
-    expect(src).toContain("buildCheckpoints")
+    expect(src).toContain("checkpointsWithTurnDiffs")
+    expect(src).toContain("collectTurnDiffCandidates")
+    expect(src).toContain("loadTurnDiffs")
     expect(src).toContain("checkpointsToRewind")
     expect(src).toContain("revertWarning")
     expect(src).toContain("canRewindCode")
