@@ -1,6 +1,7 @@
 ﻿import { type ComponentProps, createMemo, Show, splitProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Card, CardDescription } from "@mafw/ui/card"
+import { errorText } from "../util/error-text"
 import { Collapsible } from "@mafw/ui/collapsible"
 import { Icon } from "@mafw/ui/icon"
 import { IconButton } from "@mafw/ui/icon-button"
@@ -62,7 +63,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     if (!key.includes(".")) return key
     return i18n.t(key)
   })
-  const cleaned = createMemo(() => split.error.replace(/^Error:\s*/, "").trim())
+  const cleaned = createMemo(() => errorText(split.error).replace(/^Error:\s*/, "").trim())
   const tail = createMemo(() => {
     const value = cleaned()
     const prefix = `${split.tool} `

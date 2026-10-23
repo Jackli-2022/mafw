@@ -84,8 +84,25 @@ describe('opencode adapter 2.1.0 compat (apiBase + Basic auth + event stream)', 
     expect(out.data).toHaveLength(1);
     expect(out.nextCursor).toBe('cur-next');
   });
-  it('2.1.0 消息 role 归一：type:user/assistant → role（desktop 缺 role 直接丢消息）', async () => {
+  it('2.1.0 tool 失败态 state.error 对象 → 字符串（session-ui 直接 .replace）', async () => {
     mockClient.session.messages = jest.fn(async () => ({
+      data: { data: [{
+        id: 'm1', type: 'assistant',
+        content: [{
+          id: 'call_1', type: 'tool', name: 'edit',
+          state: { status: 'error', error: { type: 'tool.execution', message: 'Could not find oldString' } },
+        }],
+      }] },
+      response: { headers: { get: () => null } },
+    }));
+    const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+    const out = await client.session.messages!({ sessionID: 'ses_1' });
+    const part: any = (out.data as any[])[0].content[0];
+    expect(part.state.error).toBe('Could not find oldString');
+    expect(typeof part.state.error).toBe('string');
+  });
+
+  it('2.1.0 消息 role 归一：type:user/assistant → role（desktop 缺 role 直接丢消息）', async () => {    mockClient.session.messages = jest.fn(async () => ({
       data: { data: [
         { id: 'm1', type: 'user', text: 'hello user' },               // 2.1.0 用户消息：text 在 info，无 content
         { id: 'm2', type: 'assistant', content: [] },

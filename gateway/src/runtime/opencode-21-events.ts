@@ -271,11 +271,15 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
     case 'session.tool.failed': {
       const st = toolState.get(data.id);
       toolState.delete(data.id);
+      const errText = typeof data.error?.message === 'string'
+        ? data.error.message
+        : (typeof data.error === 'string' ? data.error : 'tool failed');
       return eventOf(raw, MAFW.partUpdated, {
         part: toolPart(data, {
           status: 'error',
           input: st?.input ?? {},
-          output: data.error?.message ?? data.error ?? 'tool failed',
+          error: errText,
+          output: errText,
           ...(data.metadata ? { metadata: data.metadata } : {}),
           time: { start: st?.started ?? raw.created, end: raw.created },
         }, { tool: st?.name }),

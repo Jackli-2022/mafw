@@ -116,14 +116,29 @@ function ensureUserTextPart(message: any): any {
   if (typeof text !== 'string' || text.length === 0) return message;
   return { ...message, content: [{ type: 'text', text }] };
 }
-function ensurePartIds(message: any): any {  if (!message || typeof message !== 'object' || !Array.isArray(message.content)) return message;
+/** 2.1.0 tool 失败态 `state.error` 是 {type,message} 对象；canonical/桌面契约是字符串。 */
+function normalizeToolError(part: any): any {
+  if (!part || part.type !== 'tool' || !part.state || part.state.status !== 'error') return part;
+  const err = part.state.error;
+  if (!err || typeof err !== 'object') return part;
+  const text = typeof err.message === 'string'
+    ? err.message
+    : (typeof err.type === 'string' ? err.type : 'tool error');
+  return { ...part, state: { ...part.state, error: text } };
+}
+
+function ensurePartIds(message: any): any {
+  if (!message || typeof message !== 'object' || !Array.isArray(message.content)) return message;
   let changed = false;
   const content = message.content.map((p: any, i: number) => {
+    let out = p;
     if (p && typeof p === 'object' && typeof p.id !== 'string') {
       changed = true;
-      return { ...p, id: `${message.id ?? 'msg'}-p${i}` };
+      out = { ...p, id: `${message.id ?? 'msg'}-p${i}` };
     }
-    return p;
+    const normalized = normalizeToolError(out);
+    if (normalized !== out) changed = true;
+    return normalized;
   });
   return changed ? { ...message, content } : message;
 }

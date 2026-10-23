@@ -50,6 +50,7 @@ import { getDirectory as _getDirectory, getFilename } from "../util/path"
 import { AttachmentCardV2 } from "../v2/components/attachment-card-v2"
 import { CommentCardV2 } from "../v2/components/comment-card-v2"
 import { checksum } from "../util/encode"
+import { errorText } from "../util/error-text"
 import { Tooltip } from "@mafw/ui/tooltip"
 import { IconButton } from "@mafw/ui/icon-button"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
@@ -1632,7 +1633,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
         <Switch>
           <Match when={part().state.status === "error" && (part().state as any).error}>
             {(error) => {
-              const cleaned = error().replace("Error: ", "")
+              const cleaned = errorText(error()).replace(/^Error: /, "")
               if (part().tool === "question" && cleaned.includes("dismissed this question")) {
                 return (
                   <div style="width: 100%; display: flex; justify-content: flex-end;">

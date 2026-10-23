@@ -147,6 +147,19 @@ describe('@2.1 step 与工具卡', () => {
     });
     expect(success.properties.part.tool).toBe('shell');
   });
+
+  test('tool.failed → state.error 归一为字符串（2.1 是 {type,message} 对象）', () => {
+    const out = apply(evt('session.tool.failed', {
+      sessionID: 's1', assistantMessageID: 'm1', id: 'call_9',
+      error: { type: 'tool.execution', message: 'Could not find oldString' },
+    }))[0].payload;
+    expect(out.properties.part.state).toMatchObject({
+      status: 'error',
+      error: 'Could not find oldString',
+      output: 'Could not find oldString',
+    });
+    expect(typeof out.properties.part.state.error).toBe('string');
+  });
 });
 
 describe('@2.1 问询与 todo', () => {
