@@ -25,6 +25,8 @@ describe("task card + v2.1.0 tool identity wiring", () => {
   test("session-ui task card accepts sessionID metadata + aliases subagent/shell", () => {
     const part = read("../session-ui/src/components/message-part.tsx")
     expect(part).toContain("taskChildSessionID(partMetadata())")
+    expect(part).toContain("isTaskTool(part().tool)")
+    expect(part).toContain("taskChildID() ?")
     expect(part).toContain("taskChildSessionID(props.metadata)")
     expect(part).toContain("TOOL_NAME_ALIASES")
     expect(part).toContain("onNavigate={")

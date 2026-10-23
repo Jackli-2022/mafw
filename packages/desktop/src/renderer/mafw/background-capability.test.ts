@@ -28,6 +28,20 @@ test("failure -> unavailable; retries after 60s", async () => {
   expect(await p.probe()).toBe("available")
 })
 
+test("retry window starts at probe start (first 60s tick re-probes)", async () => {
+  let t = 0
+  let calls = 0
+  const p = createRestProbe(async () => {
+    calls++
+    t = 50 // probe completes 50ms after start
+    throw new Error("502")
+  }, () => t)
+  await p.probe()
+  t = 60_000
+  await p.probe()
+  expect(calls).toBe(2)
+})
+
 test("in-flight dedupe", async () => {
   let calls = 0
   const p = createRestProbe(async () => {

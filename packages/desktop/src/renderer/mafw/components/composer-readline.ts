@@ -24,7 +24,8 @@ const clamp = (n: number, len: number) => Math.max(0, Math.min(len, n))
 const isSpace = (ch: string) => /\s/.test(ch)
 
 function lineStart(value: string, caret: number): number {
-  return value.lastIndexOf("\n", Math.max(0, caret - 1)) + 1
+  if (caret <= 0) return 0
+  return value.lastIndexOf("\n", caret - 1) + 1
 }
 
 function lineEnd(value: string, caret: number): number {

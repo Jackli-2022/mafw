@@ -10,11 +10,13 @@ describe("composer readline wiring", () => {
     const pane = read("src/renderer/mafw/components/ChatPane.tsx")
     expect(pane).toContain("applyReadlineKey(")
     expect(pane).toContain("readlineEdit")
+    expect(pane).toContain("e.ctrlKey && !e.metaKey")
     expect(pane).toContain('closest?.(".mafw-composer")')
   })
 
   test("MafwShell guards Ctrl+K inside composer", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toContain("e.ctrlKey && !e.metaKey")
     expect(shell).toContain('closest?.(".mafw-composer")')
     expect(shell).toContain('toggleLeftDock("search")')
   })

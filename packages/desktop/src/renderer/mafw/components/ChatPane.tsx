@@ -59,6 +59,7 @@ import { createInputHistory, shouldNavigateHistory } from "./input-history"
 import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
+import { createFocusScheduler } from "./composer-focus-scheduler"
 import { normalizeToolPart } from "../tool-part"
 import { mergeRemoteCommands } from "./command-merge"
 import { getDraft, setDraft, clearDraft } from "./session-drafts"
@@ -497,12 +498,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     el.style.height = Math.min(el.scrollHeight, 200) + "px"
   }
 
-  // 点击聊天区（非交互目标、无拖选/双击选词）→ 聚焦 composer。
+  // 点击聊天区（非交互目标、无拖选/双击选词）→ 延迟 220ms 聚焦 composer。
+  // 延迟是为了让双击的第一击不先把焦点抢走（第二击/双击会 cancel）。
+  const viewFocus = createFocusScheduler({
+    schedule: (fn, ms) => setTimeout(fn, ms),
+    cancel: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    focus: () => textareaEl()?.focus({ preventScroll: true }),
+    selectionCollapsed: () => {
+      const s = window.getSelection()
+      return !s || s.isCollapsed
+    },
+    delayMs: 220,
+  })
+  onCleanup(() => viewFocus.cancel())
+
   const focusComposerFromView = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null
     const selection = window.getSelection()
     const interactive = !!target?.closest?.(
-      'a,button,input,textarea,select,[role="button"],[role="tab"],[contenteditable="true"]',
+      'a,button,input,textarea,select,video,audio,[role="button"],[role="tab"],[contenteditable="true"]',
     )
     if (!shouldFocusComposerFromClick({
       button: e.button,
@@ -513,8 +527,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       shiftKey: e.shiftKey,
       selectionCollapsed: selection ? selection.isCollapsed : null,
       interactive,
-    })) return
-    textareaEl()?.focus({ preventScroll: true })
+    })) {
+      viewFocus.cancel()
+      return
+    }
+    viewFocus.request()
   }
 
   // ── 发送管线（sendMessage 五合一 → ../chat/use-send-message.ts）──
@@ -570,8 +587,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     // replaced; only while this pane is focused and no picker is open).
     const onSearchKey = (e: KeyboardEvent) => {
       if (!props.focused || pickerOpen()) return
-      // composer 聚焦时 Ctrl+F 归 readline（前移一字符），不打开会话内搜索。
-      if ((e.target as HTMLElement | null)?.closest?.(".mafw-composer")) return
+      // composer 聚焦时 Ctrl+F 归 readline（前移一字符）；Meta/Cmd 保持原生/全局。
+      if (e.ctrlKey && !e.metaKey && (e.target as HTMLElement | null)?.closest?.(".mafw-composer")) return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault()
         setSearchOpen(o => !o)
@@ -1147,7 +1164,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   return (
     <div class="mafw-pane" data-layout="chat" onClick={props.onFocus}>
       <div class="mafw-chat-scroll-wrap">
-        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll} onClick={focusComposerFromView}>
+        <div class="mafw-session-turn-container" ref={setContainerRef} onScroll={handleScroll} onClick={focusComposerFromView} onDblClick={() => viewFocus.cancel()}>
           <Show when={sidProp()}>
             <div class="mafw-session-titlebar">
               <div class="mafw-session-titlebar-inner" ref={setTitlebarEl}>

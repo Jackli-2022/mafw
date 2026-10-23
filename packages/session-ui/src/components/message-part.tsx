@@ -1555,7 +1555,7 @@ export { resolveToolRender, CLASS_FAMILY, readPathInput, TOOL_NAME_ALIASES } fro
 import { ToolRegistry } from "./tool-registry"
 import { resolveToolRender, readPathInput, TOOL_NAME_ALIASES } from "./tool-canonical"
 import { displayToolOf } from "./parts-rules"
-import { taskChildSessionID } from "./task-session"
+import { taskChildSessionID, isTaskTool } from "./task-session"
 
 function ToolFileAccordion(props: { path: string; actions?: JSX.Element; children: JSX.Element }) {
   const value = createMemo(() => props.path || "tool-file")
@@ -1609,19 +1609,19 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const input = () => part().state?.input ?? emptyInput
   // @ts-expect-error
   const partMetadata = () => part().state?.metadata ?? emptyMetadata
-  const taskId = createMemo(() => {
-    if (part().tool !== "task" && part().tool !== "subagent") return
+  const taskChildID = createMemo(() => {
+    if (!isTaskTool(part().tool)) return
     return taskChildSessionID(partMetadata())
   })
   const taskHref = createMemo(() => {
-    if (part().tool !== "task") return
-    return sessionLink(taskId(), useLocation().pathname, data.sessionHref)
+    if (!isTaskTool(part().tool)) return
+    return sessionLink(taskChildID(), useLocation().pathname, data.sessionHref)
   })
   const taskSubtitle = createMemo(() => {
-    if (part().tool !== "task") return undefined
+    if (!isTaskTool(part().tool)) return undefined
     const value = input().description
     if (typeof value === "string" && value) return value
-    return taskId()
+    return taskChildID()
   })
 
   const render = createMemo(() => resolveToolRender(part()))
@@ -1654,10 +1654,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
                   subtitle={taskSubtitle()}
                   href={taskHref()}
-                  onNavigate={() => {
-                    const id = taskChildSessionID(partMetadata())
-                    if (id) data.navigateToSession?.(id)
-                  }}
+                  onNavigate={taskChildID() ? () => data.navigateToSession?.(taskChildID()!) : undefined}
                 />
               )
             }}

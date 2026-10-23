@@ -58,6 +58,11 @@ test("Alt+B/F move by word", () => {
   expect(applyReadlineKey(S("abc def ghi", 4), "f", { alt: true })).toEqual(S("abc def ghi", 7))
 })
 
+test("Ctrl+A / Ctrl+U at caret 0 with a leading newline do not duplicate it", () => {
+  expect(applyReadlineKey(S("\nabc", 0), "a", { ctrl: true })).toEqual(S("\nabc", 0))
+  expect(applyReadlineKey(S("\nabc", 0), "u", { ctrl: true })).toEqual(S("\nabc", 0))
+})
+
 test("returns null without ctrl/alt, or with meta/shift/ctrl+alt", () => {
   expect(applyReadlineKey(S("abc", 1), "a", {})).toBeNull()
   expect(applyReadlineKey(S("abc", 1), "a", { ctrl: true, meta: true })).toBeNull()

@@ -1600,8 +1600,8 @@ export function MafwShell() {
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "k") return
-      // composer 聚焦时 Ctrl+K 归 readline（kill 到行尾），不打开左栏搜索。
-      if ((e.target as HTMLElement | null)?.closest?.(".mafw-composer")) return
+      // composer 聚焦时 Ctrl+K 归 readline（kill 到行尾）；Meta/Cmd 保持全局搜索。
+      if (e.ctrlKey && !e.metaKey && (e.target as HTMLElement | null)?.closest?.(".mafw-composer")) return
       e.preventDefault()
       toggleLeftDock("search")
     }

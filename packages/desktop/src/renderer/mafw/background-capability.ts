@@ -30,13 +30,14 @@ export function createRestProbe(
   const run = (): Promise<BackgroundRestState> => {
     if (inflight) return inflight
     const gen = generation
+    const started = now()
     inflight = probe()
       .then(() => {
-        if (gen === generation) { state = "available"; at = now() }
+        if (gen === generation) { state = "available"; at = started }
         return state
       })
       .catch(() => {
-        if (gen === generation) { state = "unavailable"; at = now() }
+        if (gen === generation) { state = "unavailable"; at = started }
         return state
       })
       .finally(() => {
