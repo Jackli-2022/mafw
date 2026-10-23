@@ -1,5 +1,5 @@
 // ChangesDock（dock changes tab）：当前会话改动文件的常驻入口。
-// B2：平铺列表 → 可折叠目录树；树/统计来自 aggregateSessionDiffs（per-turn 汇总），
+// B2：平铺列表 → 可折叠目录树；树/统计来自 summary + per-turn snapshot 合并数据，
 // 实时脉冲来自 store.session_diff（SSE session.diff）；每会话第一份 live 快照只建基线。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { Icon } from "@mafw/ui/icon"

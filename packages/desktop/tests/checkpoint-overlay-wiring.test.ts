@@ -25,6 +25,17 @@ describe("checkpoint overlay wiring", () => {
     expect(src).toContain('role="dialog"')
   })
 
+  test("embedded docks forbid session fallback and non-invertible revert", () => {
+    for (const path of [
+      "src/renderer/mafw/components/ChangesDock.tsx",
+      "src/renderer/mafw/components/EditorDock.tsx",
+    ]) {
+      const src = read(path)
+      expect(src).toContain("allowSessionFallback={false}")
+      expect(src).toContain("allowNonInvertibleRevert={false}")
+    }
+  })
+
   test("checkpoint CSS exists", () => {
     const css = read("src/renderer/mafw/mafw.css")
     expect(css).toContain(".mafw-checkpoint-panel")

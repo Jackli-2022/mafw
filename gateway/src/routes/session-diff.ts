@@ -1,5 +1,6 @@
 // 会话 diff 端点（切片 2，deps 注入可单测）。
-// GET /api/sessions/:sid/diff?messageID= → runtime.session.diff（opencode v2 快照 diff）
+// GET /api/sessions/:sid/diff?messageID= → 用户回合的 snapshot 树 diff；
+// 无 messageID → runtime.session.diff（会话级 VCS 快照）。
 // POST /api/sessions/:sid/diff/revert → buildRevertPatch（选中 hunk 反转）→ runtime.session.vcs.apply
 // 能力门：runtime 缺 diffApi → 503；apply/dec 失败 → 502 带原始错误消息（不静默）。
 import * as http from 'http';

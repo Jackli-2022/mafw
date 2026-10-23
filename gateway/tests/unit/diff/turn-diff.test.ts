@@ -91,6 +91,22 @@ describe('parseGitDiff', () => {
   });
 });
 
+it('returns [] for a same-tree turn without invoking git', async () => {
+  let called = false;
+  const git: GitRunner = { async run() {
+    called = true;
+    return { code: 0, stdout: '', stderr: '' };
+  } };
+  const files = await computeTurnDiff({
+    messages: [user('u1', 1), asst('a1', 2, { start: 's', end: 's' })],
+    messageID: 'u1',
+    snapshotRoot: path.join(os.tmpdir(), 'mafw-turn-diff-unused'),
+    git,
+  });
+  expect(files).toEqual([]);
+  expect(called).toBe(false);
+});
+
 it('findSnapshotRepo scans other project dirs and returns null for non-trees', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-snapshot-scan-'));
   fs.mkdirSync(path.join(root, 'other', 'repo'), { recursive: true });

@@ -20,7 +20,7 @@ export interface Checkpoint {
   createdAt: number | null
   prompt: string
   files: CheckpointFile[]
-  /** 该回合是否带可用的回合级文件摘要（summary.diffs） */
+  /** 该回合是否有可用的回合级文件数据（summary 或 snapshot 树） */
   filesKnown: boolean
 }
 

@@ -151,7 +151,7 @@ export function CheckpointOverlay(props: {
                   <div class="mafw-checkpoint-files">
                     <Show
                       when={cp.filesKnown}
-                      fallback={<span class="mafw-checkpoint-no-files">文件记录不可用（当前 runtime 不提供回合级摘要）</span>}
+                      fallback={<span class="mafw-checkpoint-no-files">文件记录不可用（本回合未取得快照数据）</span>}
                     >
                       <Show when={cp.files.length > 0} fallback={<span class="mafw-checkpoint-no-files">无文件改动</span>}>
                         <For each={cp.files.slice(0, 5)}>
