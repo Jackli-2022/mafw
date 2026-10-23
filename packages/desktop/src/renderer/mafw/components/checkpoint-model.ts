@@ -2,6 +2,8 @@
 // 只覆盖已加载的消息窗口；30 天为 UI 过滤，不删数据。
 // 本地/乐观消息（user-/local-/queued-）不建 checkpoint，避免拿不存在的 messageID 回滚。
 import { isLocalMessageId } from "../chat/local-id"
+import type { FileDiffEntry } from "./DiffReviewPanel"
+import { applyTurnDiffsToCheckpoints } from "./turn-diffs"
 
 export const CHECKPOINT_RETENTION_DAYS = 30
 
@@ -83,4 +85,14 @@ export function buildCheckpoints(
     return b.createdAt - a.createdAt
   })
   return out
+}
+
+/** Build checkpoints, then overlay successfully fetched per-turn files. */
+export function checkpointsWithTurnDiffs(
+  messages: any[],
+  parts: Record<string, any[]>,
+  now: number,
+  turnDiffs: Record<string, FileDiffEntry[] | null> = {},
+): Checkpoint[] {
+  return applyTurnDiffsToCheckpoints(buildCheckpoints(messages, parts, now), turnDiffs)
 }

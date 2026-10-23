@@ -1,10 +1,12 @@
 // Checkpoint / rewind 时间线模态（B3）。
 // 只展示已加载窗口的 user 回合；对话回滚与代码回滚都走二次确认。
-// 代码回滚仅在 runtime 提供完整、可安全反转的回合级 patch 时出现（当前 opencode 2.1 无 summary → 隐藏）。
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+// 代码回滚仅在 runtime 提供完整、可安全反转的回合级 patch 时出现（2.1 从 snapshot 树计算）。
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { buildCheckpoints, type Checkpoint } from "./checkpoint-model"
+import { checkpointsWithTurnDiffs, type Checkpoint } from "./checkpoint-model"
 import { canRewindCode, checkpointsToRewind, revertWarning } from "./checkpoint-revert"
+import { collectTurnDiffCandidates, loadTurnDiffs } from "./turn-diffs"
+import type { FileDiffEntry } from "./DiffReviewPanel"
 
 export function CheckpointOverlay(props: {
   sessionID: string
@@ -17,9 +19,32 @@ export function CheckpointOverlay(props: {
   onRevert: (messageID: string) => Promise<boolean>
   onRevertCode: (targets: Checkpoint[]) => Promise<boolean>
 }) {
-  const checkpoints = createMemo(() => buildCheckpoints(props.messages, props.parts, Date.now()))
+  const [turnFiles, setTurnFiles] = createSignal<Record<string, FileDiffEntry[] | null>>({})
+  const [loadingTurnFiles, setLoadingTurnFiles] = createSignal(false)
+  const checkpoints = createMemo(() =>
+    checkpointsWithTurnDiffs(props.messages, props.parts, Date.now(), turnFiles()),
+  )
   const [confirming, setConfirming] = createSignal<{ mode: "revert" | "code"; messageID: string } | null>(null)
   const [working, setWorking] = createSignal(false)
+
+  let lastTurnDiffKey = ""
+  let disposed = false
+  createEffect(() => {
+    const sid = props.sessionID
+    if (!sid || props.caps?.diffApi !== true) return
+    const candidates = collectTurnDiffCandidates(props.messages)
+    if (candidates.length === 0) return
+    const key = sid + "|" + candidates.map(c => c.messageID + ":" + c.snapshotKey).join(",")
+    if (key === lastTurnDiffKey) return
+    lastTurnDiffKey = key
+    setLoadingTurnFiles(true)
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    void loadTurnDiffs(sid, props.messages, (s, m) => window.api.mafw.sessions.diff(s, m))
+      .then((map) => { if (!cancelled && !disposed) setTurnFiles(map) })
+      .finally(() => { if (!cancelled && !disposed) setLoadingTurnFiles(false) })
+  })
+  onCleanup(() => { disposed = true })
 
   const busy = () => props.busy === true || working()
   const conversationAvailable = () => props.caps?.sessionBranchApi !== false
@@ -95,8 +120,11 @@ export function CheckpointOverlay(props: {
         <Show when={props.caps && props.caps.diffApi === false}>
           <div class="mafw-checkpoint-note">当前 runtime 的回滚只影响对话，不改文件。</div>
         </Show>
-        <Show when={props.caps?.diffApi === true && !filesDataAvailable()}>
-          <div class="mafw-checkpoint-note">当前 runtime 未提供回合级文件摘要，代码回滚不可用。</div>
+        <Show when={loadingTurnFiles()}>
+          <div class="mafw-checkpoint-note">正在加载回合级文件数据…</div>
+        </Show>
+        <Show when={!loadingTurnFiles() && props.caps?.diffApi === true && !filesDataAvailable()}>
+          <div class="mafw-checkpoint-note">当前会话没有可用的回合级文件数据（需要 git 仓库快照）。</div>
         </Show>
         <Show when={!conversationAvailable() && props.caps?.diffApi !== true}>
           <div class="mafw-checkpoint-note">当前 runtime 不支持回滚。</div>

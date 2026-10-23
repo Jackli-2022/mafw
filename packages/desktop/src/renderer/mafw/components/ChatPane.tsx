@@ -446,7 +446,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (!safe) {
       showToastV2({
         title: "代码回滚不可用",
-        description: "该检查点缺少可安全回滚的回合级文件数据（新增/删除文件或摘要缺失）。",
+        description: "该检查点缺少可安全回滚的回合级文件数据（新增/删除文件或数据不可用）。",
         variant: "error",
         duration: 5000,
       } as any)

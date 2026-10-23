@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { allHunksPatches, canRewindCode, checkpointsToRewind, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
+import { checkpointsWithTurnDiffs } from "./checkpoint-model"
 
 const PATCH = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n@@ -3 +3 @@\n-c\n+d"
 
@@ -27,6 +28,21 @@ test("isInvertiblePatch rejects added/deleted files and empty hunks", () => {
   expect(isInvertiblePatch("new file mode 100644\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+x")).toBe(false)
   expect(isInvertiblePatch("deleted file mode 100644\n--- a/del\n+++ /dev/null\n@@ -1 +0,0 @@\n-x")).toBe(false)
   expect(isInvertiblePatch("no hunks")).toBe(false)
+})
+
+test("per-turn diffs feed canRewindCode without weakening the gate", () => {
+  const NOW = 1_700_000_000_000
+  const cpFor = (id: string, files: any[] | null) =>
+    checkpointsWithTurnDiffs([{ id, role: "user", time: { created: NOW } }], {}, NOW, { [id]: files })
+  const safe = cpFor("u1", [{ file: "x", patch: PATCH }])
+  expect(canRewindCode(safe, "u1")).toBe(true)
+  const added = cpFor("u2", [{
+    file: "new",
+    patch: "new file mode 100644\n--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+x",
+  }])
+  expect(canRewindCode(added, "u2")).toBe(false)
+  const missing = cpFor("u3", null)
+  expect(canRewindCode(missing, "u3")).toBe(false)
 })
 
 test("canRewindCode requires known, complete, invertible turn data", () => {
