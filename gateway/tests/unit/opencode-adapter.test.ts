@@ -143,17 +143,23 @@ describe('opencode-adapter 2.1.0 native session routes (directNative)', () => {
       '/api/model': () => json({ data: [
         { id: 'm1', modelID: 'm1', providerID: 'gateway', name: 'Model One', capabilities: { input: ['text', 'image'], output: ['text'] }, limit: { context: 1000000 } },
         { id: 'm2', modelID: 'm2', providerID: 'gateway', name: 'Model Two', capabilities: { input: ['text'], output: ['text'] } },
+        { id: 'm3', modelID: 'm3', providerID: 'catalog-only', name: 'Catalog Model', capabilities: { input: ['text'], output: ['text'] } },
       ] }),
-      '/api/credential': () => json({ data: [{ integrationID: 'gateway', active: true }, { integrationID: 'stale', active: false }] }),
+      '/api/integration': () => json({ data: [{ id: 'gateway', name: '蓝区统一网关' }, { id: 'catalog-only', name: 'Catalog Provider' }] }),
+      '/api/credential': () => json({ data: [{ integrationID: 'gateway', active: true }, { integrationID: 'catalog-only', active: true }, { integrationID: 'stale', active: false }] }),
     });
     const rt = await createOpencodeAdapter({ baseUrl: 'http://127.0.0.1:4096' });
     const out = await rt.provider.list();
-    expect(out.connected).toEqual(['gateway']);
-    expect(out.all).toHaveLength(2);
+    expect(out.connected).toEqual(['gateway', 'catalog-only']);
+    expect(out.all).toHaveLength(3);
     expect(out.all[0].models.m1).toMatchObject({ name: 'Model One', limit: { context: 1000000 } });
     expect(out.all[0].models.m1.capabilities.input.image).toBe(true);
     expect(out.all[0].models.m2.capabilities.input.image).toBe(false);
     expect(out.all[1].models).toEqual({});
+    // /api/provider 为空时（OPENCODE_CONFIG_CONTENT={} 的 sidecar），从模型目录派生 provider
+    const catalog = out.all.find((p) => p.id === 'catalog-only');
+    expect(catalog).toMatchObject({ name: 'Catalog Provider' });
+    expect(catalog.models.m3.name).toBe('Catalog Model');
     expect(out.default).toEqual({ providerID: 'gateway', modelID: 'm1' });
   });
 });

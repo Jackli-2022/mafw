@@ -482,16 +482,20 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // /api/model 独立返回模型清单、/api/credential 才是「已连接」权威、
         // /api/model/default 是默认模型。重建 desktop/SDK 期望的 legacy 信封
         // { all: [{...provider, models: {id: model}}], connected, default }。
-        const [provBody, modelBody, credBody, defBody] = await Promise.all([
+        const [provBody, modelBody, credBody, defBody, integBody] = await Promise.all([
           directNative('/provider', 'GET').catch(() => null),
           directNative('/model', 'GET').catch(() => null),
           directNative('/credential', 'GET').catch(() => null),
           directNative('/model/default', 'GET').catch(() => null),
+          directNative('/integration', 'GET').catch(() => null),
         ]);
         const providers = unwrapNative<any[]>(provBody) ?? [];
         const models = unwrapNative<any[]>(modelBody) ?? [];
+        const integrations = unwrapNative<any[]>(integBody) ?? [];
         const creds: any[] = Array.isArray((credBody as any)?.data) ? (credBody as any).data : [];
         const def = unwrapNative<any>(defBody);
+        const integrationName = new Map<string, string>();
+        for (const i of integrations) if (i?.id) integrationName.set(i.id, i.name || i.id);
 
         const byProvider = new Map<string, Record<string, any>>();
         for (const m of models) {
@@ -517,13 +521,28 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         }
 
         const all = providers.map((p: any) => ({ ...p, models: byProvider.get(p?.id) ?? {} }));
+        // sidecar 以 OPENCODE_CONFIG_CONTENT='{}' 启动时 /api/provider 为空
+        // （2.1.0 用 inline config 覆盖了 config 定义，但模型目录仍在）——
+        // 从 /api/model 的 providerID ∪ /api/integration 名称补齐。
+        const known = new Map<string, any>();
+        for (const p of all) if (p?.id) known.set(p.id, p);
+        for (const pid of byProvider.keys()) {
+          if (!known.has(pid)) {
+            known.set(pid, { id: pid, name: integrationName.get(pid) ?? pid, models: byProvider.get(pid) });
+          }
+        }
+        const merged = [...known.values()].map((p: any) => ({
+          ...p,
+          name: p.name || integrationName.get(p.id) || p.id,
+          models: p.models ?? byProvider.get(p.id) ?? {},
+        }));
         const connected = [...new Set(creds.filter((c) => c?.active !== false).map((c) => c?.integrationID))]
-          .filter((id): id is string => typeof id === 'string' && all.some((p: any) => p?.id === id));
+          .filter((id): id is string => typeof id === 'string' && merged.some((p: any) => p?.id === id));
         const defaultRef = def && (def.modelID || def.id) && def.providerID
           ? { providerID: def.providerID, modelID: def.modelID ?? def.id }
           : undefined;
 
-        return { all, connected, default: defaultRef ?? {} };
+        return { all: merged, connected, default: defaultRef ?? {} };
       },
     },
 
