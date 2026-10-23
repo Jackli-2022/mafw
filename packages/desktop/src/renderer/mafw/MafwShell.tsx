@@ -808,10 +808,12 @@ export function MafwShell() {
   const [showInspector, setShowInspector] = createSignal(false)
   // worktree 并行隔离（切片 4）：runtime 能力缓存 + 创建入口
   const [rtCaps, setRtCaps] = createSignal<Record<string, boolean>>({})
+  const [rtName, setRtName] = createSignal("")
   createEffect(() => {
     if (gwStatus()?.state !== "ready") return
     void window.api.mafw.runtime.get().then((r: any) => {
       setRtCaps(r?.active?.capabilities ?? {})
+      setRtName(r?.active?.name ?? "")
     }).catch(() => {})
   })
   const worktreeEnabled = () => rtCaps().worktreeApi === true
@@ -1892,6 +1894,8 @@ export function MafwShell() {
                           onOpenDiffReview={() => applyRightDock(true, "changes")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
+                          runtimeName={rtName()}
+                          runtimeCaps={rtCaps()}
                           onCreateWorktreeSession={createWorktreeSession}
                           projectDirectory={currentProject()}
                           onPlanBuildToggle={(next) => {

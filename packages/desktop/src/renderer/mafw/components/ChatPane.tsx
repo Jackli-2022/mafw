@@ -62,6 +62,9 @@ import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
 import { appendQuote, formatQuote } from "./quote-format"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
+import { CheckpointOverlay } from "./CheckpointOverlay"
+import type { Checkpoint } from "./checkpoint-model"
+import { allHunksPatches, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
 import { createFocusScheduler } from "./composer-focus-scheduler"
 import { normalizeToolPart } from "../tool-part"
@@ -143,6 +146,10 @@ export type ChatPaneProps = {
   worktreeEnabled?: boolean
   /** revert 后可撤销能力（opencode 2.1 commit 不可逆 → false，隐藏 undo 入口） */
   revertUndoEnabled?: boolean
+  /** 当前 runtime 名称（checkpoint 文案） */
+  runtimeName?: string
+  /** 当前 runtime 能力（checkpoint 门控） */
+  runtimeCaps?: Record<string, boolean>
   onCreateWorktreeSession?: () => void
   /** 当前项目主目录（worktree 徽标判定的对照基准） */
   projectDirectory?: string | null
@@ -259,6 +266,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
   const [canUnrevert, setCanUnrevert] = createSignal(false)
+  const [checkpointsOpen, setCheckpointsOpen] = createSignal(false)
 
   // Busy-turn queue: regular messages sent while a turn is running are held
   // here and dispatched on the next idle boundary (steering without abort).
@@ -397,17 +405,62 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     diffReview: () => props.onOpenDiffReview?.(),
   })
 
+  const revertTo = async (messageID: string): Promise<boolean> => {
+    const sid = sidProp()
+    if (!sid) return false
+    try {
+      await window.api.mafw.sessions.revert(sid, messageID)
+      setCanUnrevert(props.revertUndoEnabled === true)
+      refreshAfterRevert()
+      showToastV2({ title: "已回滚", description: "该消息之后的历史已撤回", variant: "success" } as any)
+      return true
+    } catch (e: any) {
+      showToastV2({ title: "回滚失败", description: String(e?.message || e), variant: "error" } as any)
+      return false
+    }
+  }
+
   const doRevert = async () => {
     const target = revertConfirm()
     if (!target) return
     setRevertConfirm(null)
+    await revertTo(target.messageID)
+  }
+
+  const revertCodeTo = async (targets: Checkpoint[]): Promise<boolean> => {
+    const sid = sidProp()
+    if (!sid || targets.length === 0) return false
+    let completed = 0
     try {
-      await window.api.mafw.sessions.revert(sidProp(), target.messageID)
-      setCanUnrevert(props.revertUndoEnabled === true)
-      refreshAfterRevert()
-      showToastV2({ title: "已回滚", description: "该消息之后的历史已撤回", variant: "success" } as any)
+      for (const cp of targets) {
+        const summaryComplete = cp.files.length > 0
+          && cp.files.every((f) => typeof f.patch === "string" && f.patch.trim())
+        let patches = summaryComplete ? allHunksPatches(cp.files) : []
+        if (patches.length === 0 && props.runtimeCaps?.diffApi === true) {
+          const res: any = await window.api.mafw.sessions.diff(sid, cp.messageID)
+          patches = allHunksPatches(Array.isArray(res?.files) ? res.files : [])
+        }
+        if (patches.length === 0) {
+          completed++
+          continue
+        }
+        await window.api.mafw.sessions.revertDiff(sid, patches)
+        completed++
+      }
+      showToastV2({
+        title: "已回滚代码",
+        description: `已回滚到该检查点（${targets.length} 个回合）`,
+        variant: "success",
+      } as any)
+      return true
     } catch (e: any) {
-      showToastV2({ title: "回滚失败", description: String(e?.message || e), variant: "error" } as any)
+      showToastV2({
+        title: "回滚代码失败",
+        description: `已完成 ${completed}/${targets.length} 个回合；工作树可能处于中间态。${String(e?.message || e)}`,
+        variant: "error",
+        duration: 6000,
+      } as any)
+      return false
     }
   }
 
@@ -1325,6 +1378,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     <ButtonV2 variant="ghost" size="small" onClick={(e: MouseEvent) => { e.stopPropagation(); props.onCreateWorktreeSession?.() }} aria-label="并行任务"><Icon name="branch" size="small" /> 并行</ButtonV2>
                   </TooltipV2>
                 </Show>
+                <TooltipV2 value="检查点 / 回滚时间线" openDelay={300}>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    onClick={(e: MouseEvent) => { e.stopPropagation(); setCheckpointsOpen(true) }}
+                  >时间线</ButtonV2>
+                </TooltipV2>
                 <TooltipV2 value="展开全部细节：工具/编辑卡默认展开 (Ctrl+O)" openDelay={300}>
                   <ButtonV2
                     variant={detailsMode() ? "outline" : "ghost"}
@@ -1891,12 +1951,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
           stopActivePlayback={stopActivePlayback}
           previewSpeak={(text, voice) => voiceSession.speak(text, voice)}
         />
+        <Show when={checkpointsOpen() && sidProp()}>
+          <CheckpointOverlay
+            sessionID={sidProp()!}
+            messages={store.message[sidProp()] || []}
+            parts={store.part}
+            runtimeName={props.runtimeName}
+            caps={props.runtimeCaps}
+            busy={sending() || store.session_status[sidProp()]?.type === "busy"}
+            onClose={() => setCheckpointsOpen(false)}
+            onRevert={revertTo}
+            onRevertCode={revertCodeTo}
+          />
+        </Show>
         {/* Revert confirm */}
         <Show when={revertConfirm()}>
           <div class="mafw-confirm-backdrop">
             <div class="mafw-confirm">
               <div class="mafw-confirm-title">回滚到这条消息之前？</div>
-              <div class="mafw-confirm-text">该消息之后的历史将撤回，且文件改动回滚到该时点（opencode runtime 语义）。此操作可通过"撤销回滚"恢复对话内容。</div>
+              <div class="mafw-confirm-text">{revertWarning(props.runtimeName, props.revertUndoEnabled === true, props.runtimeCaps?.diffApi === true)}</div>
               <div class="mafw-confirm-actions">
                 <ButtonV2 variant="ghost" size="small" onClick={() => setRevertConfirm(null)}>取消</ButtonV2>
                 <ButtonV2 variant="contrast" size="small" class="mafw-confirm-ok" onClick={doRevert}>确认回滚</ButtonV2>
