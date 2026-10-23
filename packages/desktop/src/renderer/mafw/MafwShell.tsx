@@ -2049,6 +2049,7 @@ export function MafwShell() {
                 <ChangesDock
                   sessionID={currentSessionID() || null}
                   diffs={aggregateSessionDiffs((store.message as any)[currentSessionID()] || [])}
+                  liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
                   onSendComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
