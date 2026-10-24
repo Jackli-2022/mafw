@@ -5,7 +5,7 @@ describe('六件套 factory 注解物化（spec G1/G3，§5.5）', () => {
   it('六件套全部携带 annotations（factory 构造期，单源 = MAFW_TOOL_ANNOTATIONS）', () => {
     const factory = buildMafwToolFactory({ baseUrl: 'http://127.0.0.1:3000' });
     const regs = factory('ses_test');
-    expect(regs).toHaveLength(6);
+    expect(regs).toHaveLength(7);
     for (const r of regs) {
       expect(r.annotations).toBeDefined();
       expect(r.annotations).toEqual(MAFW_TOOL_ANNOTATIONS[r.name]);

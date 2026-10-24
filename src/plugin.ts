@@ -35,6 +35,7 @@ import { agentPriorsSystemHook } from './hooks/agent-priors';
 import { voiceGuideMessagesHook, voiceGuideSystemHook } from './hooks/voice-guide';
 import { pushObservation, toolFailureText } from './utils/obs-capture';
 import { addMemoryTool } from './tools/add-memory';
+import { submitResultTool } from './tools/submit-result';
 import { ensureMcpWiring, resolveGatewayApiUrl } from './utils/self-wiring';
 import {
   zodToJsonSchema,
@@ -92,6 +93,7 @@ const V1_TOOLS: Record<string, { description: string; args: any; execute: (args:
   mafw_python: pythonExecTool,
   mafw_python_restart: pythonRestartTool,
   mafw_add_memory: addMemoryTool,
+  mafw_submit_result: submitResultTool,
 };
 
 /** V1 工具结果 → V2 `{ content, metadata }`。 */
@@ -107,7 +109,11 @@ async function adaptToolExecute(
   if (result == null) return { content: '' };
   if (typeof result === 'string') return { content: result };
   const content = result.content ?? result.output ?? result.text ?? JSON.stringify(result);
-  return { content, ...(result.metadata ? { metadata: result.metadata } : {}) };
+  return {
+    content,
+    ...(result.metadata ? { metadata: result.metadata } : {}),
+    ...(result.isError ? { isError: true } : {}),
+  };
 }
 
 export default {

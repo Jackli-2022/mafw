@@ -21,12 +21,12 @@ function makeFakeFetch(routes: Array<{ match: (r: Req) => boolean; res: Res }>) 
   return { calls, fetchImpl };
 }
 
-const SIX = ['mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart'];
+const SEVEN = ['mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart', 'mafw_submit_result'];
 
 describe('MAFW_TOOL_SPECS（六件套静态清单）', () => {
   it('6 条、名字唯一、parameters 为 object 形状 JSON Schema', () => {
-    expect(MAFW_TOOL_SPECS.map((s) => s.name).sort()).toEqual([...SIX].sort());
-    expect(new Set(MAFW_TOOL_SPECS.map((s) => s.name)).size).toBe(6);
+    expect(MAFW_TOOL_SPECS.map((s) => s.name).sort()).toEqual([...SEVEN].sort());
+    expect(new Set(MAFW_TOOL_SPECS.map((s) => s.name)).size).toBe(7);
     for (const s of MAFW_TOOL_SPECS) {
       expect((s.parameters as any).type).toBe('object');
       expect(typeof (s.parameters as any).properties).toBe('object');
@@ -41,7 +41,7 @@ describe('buildMafwToolFactory（会话亲和闭包）', () => {
       { match: (r) => r.url.includes('/api/memory/add'), res: { ok: true, json: { success: true, id: 'mem_1' } } },
     ]);
     const regs = buildMafwToolFactory({ baseUrl: 'http://gw', fetchImpl })('pi_s9');
-    expect(regs.map((r) => r.name).sort()).toEqual([...SIX].sort());
+    expect(regs.map((r) => r.name).sort()).toEqual([...SEVEN].sort());
     const add = regs.find((r) => r.name === 'mafw_add_memory')!;
     const out = await add.execute({ content: '测试', cueAnchors: ['a'] });
     expect(out.isError).toBeUndefined();
@@ -57,6 +57,24 @@ describe('buildMafwToolFactory（会话亲和闭包）', () => {
     const out = await regs.find((r) => r.name === 'mafw_add_memory')!.execute({ content: 'x' });
     expect(out.isError).toBe(true);
     expect(out.text).toContain('记忆写入失败');
+  });
+
+  it('submit_result 携带 sessionID；校验失败 → isError + errors', async () => {
+    const okFetch = makeFakeFetch([
+      { match: (r) => r.url.includes('/api/structured/submit'), res: { ok: true, json: { ok: true, errors: [] } } },
+    ]);
+    const okReg = buildMafwToolFactory({ baseUrl: 'http://gw', fetchImpl: okFetch.fetchImpl })('pi_s1')
+      .find((r) => r.name === 'mafw_submit_result')!;
+    expect(await okReg.execute({ data: { ok: true } })).toEqual({ text: '结构化结果已提交' });
+    expect(okFetch.calls[0].body).toEqual({ sessionID: 'pi_s1', data: { ok: true } });
+
+    const badFetch = makeFakeFetch([
+      { match: (r) => r.url.includes('/api/structured/submit'), res: { ok: true, json: { ok: false, errors: ['$.ok: must be of type boolean'] } } },
+    ]);
+    const bad = await buildMafwToolFactory({ baseUrl: 'http://gw', fetchImpl: badFetch.fetchImpl })('pi_s1')
+      .find((r) => r.name === 'mafw_submit_result')!.execute({ data: { ok: 'yes' } });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toContain('$.ok');
   });
 
   it('python 输出文本化（stdout/kernelRestarted/图片数）；错误带 traceback 尾部', async () => {
@@ -140,7 +158,7 @@ describe('activateRuntimeTools（激活期接线）', () => {
     const rt = makeRt();
     await activateRuntimeTools(rt, 'test:rt', { baseUrl: 'http://gw' });
     const factory = (rt.tools.registerTools as jest.Mock).mock.calls[0][0] as (sid: string) => any[];
-    expect(factory('s1').map((r) => r.name).sort()).toEqual([...SIX].sort());
+    expect(factory('s1').map((r) => r.name).sort()).toEqual([...SEVEN].sort());
     expect(toolClassOf('my_read')).toBe('readonly');
     expect(toolClassOf('bad')).toBe('other');
   });

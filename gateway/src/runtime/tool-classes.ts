@@ -86,6 +86,7 @@ export const MAFW_TOOL_ANNOTATIONS: Record<string, MafwToolAnnotations> = {
   mafw_get_model_route: { readOnlyHint: true, idempotentHint: true },
   // 写网关内部状态（非破坏：soft 语义不删不改既有条目）
   mafw_add_memory: { readOnlyHint: false, destructiveHint: false },
+  mafw_submit_result: { readOnlyHint: false, destructiveHint: false },
   mafw_update_state: { readOnlyHint: false, destructiveHint: false },
   mafw_commit_heuristic: { readOnlyHint: false, destructiveHint: false },
   mafw_merge_memory: { readOnlyHint: false, destructiveHint: false },

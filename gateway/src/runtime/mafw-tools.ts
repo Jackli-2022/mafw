@@ -240,6 +240,34 @@ const TOOL_DEFS: ToolDef[] = [
         } catch (err: any) { return fail(`Media Agent 调用失败：${err?.message ?? err}`); }
       };
     },
+  {
+    spec: {
+      name: 'mafw_submit_result',
+      label: 'MAFW 结构化交卷',
+      description: '结构化输出交卷。只有 prompt 中出现 [MAFW STRUCTURED OUTPUT] 时调用：把最终结果作为 data 对象提交，gateway 按当前 JSON Schema 校验；失败时按返回的路径错误修正后再次调用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          data: { type: 'object', description: '符合当前回合 JSON Schema 的结构化结果对象' },
+        },
+        required: ['data'],
+      },
+    },
+    makeExecute({ sessionId: sid, f, base }) {
+      return async (params, signal) => {
+        const r = await postToolJson(f, base, '/api/structured/submit', {
+          sessionID: sid,
+          data: params.data,
+        }, 10_000, signal);
+        if (!r.ok || r.body?.ok === false) {
+          const errors = Array.isArray(r.body?.errors)
+            ? r.body.errors
+            : [r.text ?? 'validation failed'];
+          return fail(`结构化结果未通过校验：\n${errors.join('\n')}`);
+        }
+        return ok('结构化结果已提交');
+      };
+    },
   },
 ];
 
