@@ -1,6 +1,6 @@
 # Batch 1 — 回合级结构化输出（outputSchema，Portable）Design
 
-> 日期：2026-10-24 · 状态：待实施（用户已批准 tool-based 方案）
+> 日期：2026-10-24 · 状态：已实施（Batch 1；commits `d2404f60` / `69034573` / `01be52f7` / `c8d2b5f6`）
 > 上游：`docs/superpowers/specs/2026-10-23-batch0-21-parity-foundations-design.md` 之后的 Batch 1。
 
 ## 1. 意图与为什么

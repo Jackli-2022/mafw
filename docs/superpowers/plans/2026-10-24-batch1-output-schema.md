@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-24-batch1-output-schema-design.md`
 
+**Status:** Implemented in `d2404f60` (validator), `69034573` (service/routes/SDK), `01be52f7` (plugin + pi tool), `c8d2b5f6` (prompt wiring, sync retry, goal schemas). Verification: gateway 2568/2568, desktop 1405/1405, session-ui 89/89, SDK 142/142, TUI 224 (1 smoke skip), root build rc=0. Live async smoke: model called `mafw_submit_result`, `/api/sessions/:id/structured` returned `submitted:{ok:true}`.
+
 ## Global Constraints
 
 - No new npm dependency; use the hand-written validator subset in the spec.
