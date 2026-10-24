@@ -345,6 +345,29 @@
         }
       }
     },
+    "/api/sessions/{id}/structured": {
+      "get": {
+        "operationId": "session.structured",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/agent": {
       "post": {
         "operationId": "session.switchAgent",
@@ -383,6 +406,19 @@
               "type": "string"
             }
           }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/structured/submit": {
+      "post": {
+        "operationId": "structured.submit",
+        "tags": [
+          "session"
         ],
         "responses": {
           "200": {

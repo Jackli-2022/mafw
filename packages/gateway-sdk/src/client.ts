@@ -167,6 +167,17 @@ export class MafwClient implements IMafwClient {
       return data.items || []
     },
 
+    structured: async (params: { path: { id: string } }): Promise<any> => {
+      return this.request(`/api/sessions/${params.path.id}/structured`)
+    },
+
+    submitStructured: async (params: { body: { sessionID: string; data: unknown } }): Promise<{ ok: boolean; errors: string[] }> => {
+      return this.request(`/api/structured/submit`, {
+        method: 'POST',
+        body: JSON.stringify(params.body),
+      })
+    },
+
     abort: async (params: { path: { id: string } }): Promise<void> => {
       await this.request(`/api/session/${params.path.id}/abort`, { method: 'POST' })
     },

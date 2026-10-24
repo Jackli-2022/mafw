@@ -109,6 +109,18 @@ test("session.switchAgent/switchModel POST the thin 2.1 routes", async () => {
   )
 })
 
+test("session.structured / submitStructured hit their routes", async () => {
+  fetchMock.mockResolvedValue(okJson({ ok: true }))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.structured({ path: { id: "s1" } })
+  await c.session.submitStructured({ body: { sessionID: "s1", data: { ok: true } } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/structured", expect.anything())
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://gw:3000/api/structured/submit",
+    expect.objectContaining({ method: "POST", body: JSON.stringify({ sessionID: "s1", data: { ok: true } }) }),
+  )
+})
+
 test("session.messages sends GET with query params", async () => {
   fetchMock.mockResolvedValue(okJson({ data: [] }))
   const c = new MafwClient("http://gw:3000")

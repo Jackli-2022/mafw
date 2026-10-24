@@ -23,6 +23,8 @@ import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { cleanupWorktreeForSession } from './session-worktree';
 import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
 import { handleSessionSwitch } from './session-switch';
+import { handleStructuredGet, handleStructuredSubmit } from './structured';
+import { structuredOutput } from '../runtime/structured-output';
 import { handleSessionSummarize } from './session-summarize';
 import { handleEventPublish } from './event-publish';
 import { handleMediaSwitch } from './media-switch';
@@ -124,6 +126,12 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     handleSessionSwitch(req, res, params.id, 'model', {
       getClient: () => (gw.runtime ?? null) as any,
     })));
+
+  registry.attachHandler('structured.submit', H(async (req, res) =>
+    handleStructuredSubmit(req, res, { service: structuredOutput })));
+
+  registry.attachHandler('session.structured', H(async (_req, res, params) =>
+    handleStructuredGet(res, params.id, { service: structuredOutput })));
 
   registry.attachHandler('session.summarize', H(async (req, res) =>
     handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.runtime })));
