@@ -261,6 +261,12 @@ export class NodeDriver {
       await this.failNode(goalId, sessionID, 'artifact_missing', `expected ${artifactPath}`);
       return;
     }
+    // 结构化交卷优先时把结果落成同一份文件产物：下一个节点（execute/review）
+    // 仍按文件路径读取；已有文件不覆盖（模型写的更详细版本优先）。
+    if (submitted && !fs.existsSync(artifactPath)) {
+      fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+      fs.writeFileSync(artifactPath, JSON.stringify(submitted, null, 2), 'utf-8');
+    }
 
     // —— 解析（移植 NODE_CONFIGS.parseResult + plan.node/review.node 语义）——
     let patch: Partial<GoalStateV3>;

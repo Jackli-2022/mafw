@@ -44,6 +44,7 @@ describe('completeNode 产物双门', () => {
     const st = h.load('g9')!;
     expect(st.nextNode).toBe('execute');
     expect(h.nodeRuns[0].status).toBe('succeeded');
+    expect(fs.existsSync(nodeArtifactPaths(h.mafwDir, 'g9', 1).waves)).toBe(true);
   });
 
   it('review structured 有效但 review 文件缺失 → PASS', async () => {
