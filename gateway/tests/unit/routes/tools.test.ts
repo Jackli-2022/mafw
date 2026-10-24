@@ -27,7 +27,7 @@ describe('GET /api/tools（spec 清单）', () => {
     handleToolsList(res);
     expect(status()).toBe(200);
     const parsed = JSON.parse(body());
-    expect(parsed.tools).toHaveLength(6);
+    expect(parsed.tools).toHaveLength(7);
     for (const t of parsed.tools) {
       expect(t.execute).toBeUndefined();
       expect(t.parameters.type).toBe('object');

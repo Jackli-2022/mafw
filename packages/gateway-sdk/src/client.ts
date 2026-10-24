@@ -262,9 +262,9 @@ export class MafwClient implements IMafwClient {
     },
 
     prompt: async (
-      params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } },
-    ): Promise<{ parts: TextPart[] }> => {
-      return this.request<{ parts: TextPart[] }>(`/api/session/${params.path.id}/prompt`, {
+      params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } },
+    ): Promise<{ parts: TextPart[]; structured?: unknown; structuredError?: string }> => {
+      return this.request<{ parts: TextPart[]; structured?: unknown; structuredError?: string }>(`/api/session/${params.path.id}/prompt`, {
         method: 'POST',
         body: JSON.stringify(params.body),
       })
@@ -273,7 +273,7 @@ export class MafwClient implements IMafwClient {
     promptAsync: async (
       params: {
         path: { id: string }
-        body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }
+        body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } }
       },
     ): Promise<void> => {
       const res = await this.fetchPath(`/api/session/${params.path.id}/promptAsync`, {

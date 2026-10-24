@@ -8,10 +8,11 @@ import {
   GoalStateV3, loadGoalState, writeGoalState, isTerminalState, effectiveRound,
 } from './state-v3';
 import { routeNext, GoalNodeName } from './routing';
-import { renderNodePrompt, nodeArtifactPaths } from './node-prompts';
+import { renderNodePrompt, nodeArtifactPaths, nodeOutputSchema } from './node-prompts';
 import { isTaskType } from '../../orchestration/capability-ledger';
 import { parseReviewVerdict } from '../langgraph/review-parser';
 import { matchesSignature } from '../langgraph/signature-detector';
+import type { OutputSchemaSpec } from '../../runtime/structured-output';
 
 export interface GoalRuntimeClient {
   create(directory: string): Promise<{ id: string }>;
@@ -19,9 +20,12 @@ export interface GoalRuntimeClient {
     sessionID: string;
     parts: Array<{ type: string; text: string }>;
     agent?: string;
+    outputSchema?: OutputSchemaSpec;
   }): Promise<void>;
   delete(sessionID: string): Promise<void>;
   abort?(sessionID: string): Promise<void>;
+  /** Batch 1：已通过 JSON Schema 校验的交卷（缺省 = 只走文件 fallback）。 */
+  structured?(sessionID: string): Promise<unknown | null>;
 }
 
 export interface DriverDeps {
@@ -152,6 +156,7 @@ export class NodeDriver {
     // 不 await——pi 的 promptAsync 在 idle 会话阻塞到回合结束，await 会卡死 advance（spec §7）
     void this.deps.client.promptAsync({
       sessionID: sessionId, parts: [{ type: 'text', text: prompt }], agent: `mafw-${node}`,
+      outputSchema: nodeOutputSchema(node),
     }).catch((err: any) => {
       this.onSessionError(sessionId, `promptAsync: ${err?.message ?? err}`);
     });
@@ -249,9 +254,10 @@ export class NodeDriver {
     const round = effectiveRound(state);
     const a = nodeArtifactPaths(mafwDir, goalId, round);
 
-    // —— 双门之二：产物校验 ——
+    // —— Batch 1：已校验的结构化交卷优先；文件产物 fallback ——
+    const submitted = await this.deps.client.structured?.(sessionID) ?? null;
     const artifactPath = node === 'plan' ? a.waves : node === 'execute' ? a.receipt : a.review;
-    if (!fs.existsSync(artifactPath)) {
+    if (!submitted && !fs.existsSync(artifactPath)) {
       await this.failNode(goalId, sessionID, 'artifact_missing', `expected ${artifactPath}`);
       return;
     }
@@ -261,7 +267,7 @@ export class NodeDriver {
     let outcome: string;
     try {
       if (node === 'plan') {
-        const waves = JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
+        const waves: any = submitted ?? JSON.parse(fs.readFileSync(a.waves, 'utf-8'));
         if (waves.status === 'need_clarification') {
           patch = {
             pendingQuestion: {
@@ -280,15 +286,19 @@ export class NodeDriver {
           outcome = `waves=${(waves.waves || []).length}${isTaskType(waves.taskType) ? ` taskType=${waves.taskType}` : ''}`;
         }
       } else if (node === 'execute') {
-        const receipt = JSON.parse(fs.readFileSync(a.receipt, 'utf-8'));
+        const receipt: any = submitted ?? JSON.parse(fs.readFileSync(a.receipt, 'utf-8'));
         patch = { receiptPath: a.receipt };
         outcome = `receipts=${(receipt.receipts || []).length}`;
       } else {
-        const content = fs.readFileSync(a.review, 'utf-8');
-        const verdict = parseReviewVerdict(content); // 既有共享模块
+        const verdict = submitted
+          ? {
+              verdict: String((submitted as any).verdict) as 'PASS' | 'FAIL',
+              feedback: String((submitted as any).feedback ?? ''),
+            }
+          : parseReviewVerdict(fs.readFileSync(a.review, 'utf-8')); // 既有共享模块
         const p: Partial<GoalStateV3> = {
           reviewVerdict: verdict.verdict,
-          reviewReportPath: a.review,
+          ...(fs.existsSync(a.review) ? { reviewReportPath: a.review } : {}),
           reviewFeedback: verdict.feedback,
           round: round + 1,
         };

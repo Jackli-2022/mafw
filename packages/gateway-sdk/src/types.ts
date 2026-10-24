@@ -312,8 +312,8 @@ export interface SessionNamespace {
   switchAgent(params: { path: { id: string }; body: { agent: string } }): Promise<void>
   switchModel(params: { path: { id: string }; body: { model: { providerID: string; modelID: string }; variant?: string } }): Promise<void>
   abort(params: { path: { id: string } }): Promise<void>
-  prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string } }): Promise<{ parts: TextPart[] }>
-  promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>
+  prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } }): Promise<{ parts: TextPart[]; structured?: unknown; structuredError?: string }>
+  promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } }): Promise<void>
   trajectory(params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } }): Promise<TrajectoryResponse>
   events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
   command(params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>

@@ -31,6 +31,29 @@ describe('completeNode 产物双门', () => {
     expect(st.phase).toBe('ASKING_USER');
   });
 
+  it('plan structured 有效但 waves.json 缺失 → 成功（结构化优先）', async () => {
+    const h = makeHarness({
+      structured: async () => ({
+        status: 'ready', taskType: 'feature',
+        waves: [{ id: 'w1', title: 't', tasks: ['a'], riskNote: 'r' }],
+      }),
+    });
+    seedGoal(h, 'g9');
+    const sid = await h.startAndIdle('g9');
+    await h.fireIdle(sid);
+    const st = h.load('g9')!;
+    expect(st.nextNode).toBe('execute');
+    expect(h.nodeRuns[0].status).toBe('succeeded');
+  });
+
+  it('review structured 有效但 review 文件缺失 → PASS', async () => {
+    const h = makeHarness({ structured: async () => ({ verdict: 'PASS', feedback: 'ok' }) });
+    seedGoal(h, 'g9', { patch: { nextNode: 'review', wavePlanPath: 'x' } });
+    const sid = await h.startAndIdle('g9');
+    await h.fireIdle(sid);
+    expect(h.calls.find((c) => c.op === 'archiveGoal')).toMatchObject({ verdict: 'PASS' });
+  });
+
   it('idle 但产物缺失 → artifact_missing → archive_fail', async () => {
     const h = makeHarness();
     seedGoal(h, 'g9');

@@ -240,6 +240,7 @@ const TOOL_DEFS: ToolDef[] = [
         } catch (err: any) { return fail(`Media Agent 调用失败：${err?.message ?? err}`); }
       };
     },
+  },
   {
     spec: {
       name: 'mafw_submit_result',

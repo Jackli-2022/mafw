@@ -2,6 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { MemoryFact, withMemoryInjection } from '../interceptors/memory-injector';
+import {
+  structuredOutput,
+  structuredInstruction,
+  type OutputSchemaSpec,
+} from '../runtime/structured-output';
 
 export interface SessionRecord {
   id: string;
@@ -12,12 +17,24 @@ export interface SessionRecord {
   time: { created: number; updated: number };
 }
 
+/** 从最终回复里取 JSON：优先 ```json 围栏，否则整段；解析失败返回 undefined。 */
+function parseLooseJson(text: string): unknown | undefined {
+  const trimmed = text.trim();
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed);
+  const candidate = (fenced ? fenced[1] : trimmed).trim();
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return undefined;
+  }
+}
+
 export class SdkSessionResource {
   private client: any;
   private sessions: Map<string, SessionRecord> = new Map();
   private sessionsDir: string;
-  public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }) => Promise<void>;
-  public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }> }>;
+  public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }, outputSchema?: OutputSchemaSpec) => Promise<void>;
+  public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string, outputSchema?: OutputSchemaSpec) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }>; structured?: unknown; structuredError?: string }>;
 
   constructor(client?: any, mafwDir?: string) {
     this.client = client;
@@ -121,12 +138,17 @@ export class SdkSessionResource {
     parts?: Array<{ type: string; [key: string]: any }>,
     agent?: string,
     model?: { providerID: string; modelID: string },
+    outputSchema?: OutputSchemaSpec,
   ): Promise<void> {
     if (!this.client) throw new Error('Runtime client not available');
     if (!sessionID) return;
     const promptParts: Array<{ type: string; [key: string]: any }> = [];
     if (message) promptParts.push({ type: 'text', text: message });
     if (Array.isArray(parts) && parts.length > 0) promptParts.push(...parts);
+    if (outputSchema) {
+      structuredOutput.register(sessionID, outputSchema);
+      promptParts.push({ type: 'text', text: structuredInstruction(outputSchema) });
+    }
     const promptOpts: any = { sessionID, parts: promptParts };
     if (agent) promptOpts.agent = agent;
     if (model?.providerID && model?.modelID) promptOpts.model = model;
@@ -137,24 +159,77 @@ export class SdkSessionResource {
     sessionID: string,
     parts: Array<{ type: string; text: string }>,
     system?: string,
-  ): Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }> }> {
+    outputSchema?: OutputSchemaSpec,
+  ): Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }>; structured?: unknown; structuredError?: string }> {
     if (!this.client) throw new Error('Runtime client not available');
-    if (!sessionID) {
-      return { parts: [] };
-    }
-    const result = await this.client.session.prompt({
-      sessionID,
-      parts,
-      system,
-    });
+    if (!sessionID) return { parts: [] };
 
-    const responseText = result.parts
-      ?.filter((p: any) => p.type === 'text')
-      .map((p: any) => p.text)
-      .join('\n') || '';
+    const retryCount = outputSchema
+      ? Math.max(0, Math.min(3, Math.floor(outputSchema.retryCount ?? 0)))
+      : 0;
+    if (outputSchema) structuredOutput.register(sessionID, outputSchema);
+
+    let promptParts = outputSchema
+      ? [...parts, { type: 'text', text: structuredInstruction(outputSchema) }]
+      : parts;
+    let lastText = '';
+    let lastError = '';
+
+    for (let attempt = 0; attempt <= retryCount; attempt++) {
+      const result = await this.client.session.prompt({
+        sessionID,
+        parts: promptParts,
+        system,
+      });
+      lastText = result.parts
+        ?.filter((p: any) => p.type === 'text')
+        .map((p: any) => p.text)
+        .join('\n') || '';
+
+      if (!outputSchema) {
+        return { parts: [{ id: '', sessionID, messageID: '', type: 'text', text: lastText }] };
+      }
+
+      const submitted = structuredOutput.submitted(sessionID);
+      if (submitted !== undefined) {
+        return {
+          parts: [{ id: '', sessionID, messageID: '', type: 'text', text: lastText }],
+          structured: submitted,
+        };
+      }
+
+      const parsed = parseLooseJson(lastText);
+      if (parsed !== undefined) {
+        const check = structuredOutput.submit(sessionID, parsed);
+        if (check.ok) {
+          return {
+            parts: [{ id: '', sessionID, messageID: '', type: 'text', text: lastText }],
+            structured: parsed,
+          };
+        }
+        lastError = check.errors.join('\n');
+      } else {
+        lastError = 'no JSON object found in the final response';
+      }
+
+      if (attempt < retryCount) {
+        promptParts = [
+          ...parts,
+          {
+            type: 'text',
+            text: [
+              '[MAFW STRUCTURED OUTPUT] Your previous result failed validation:',
+              lastError,
+              'Call mafw_submit_result again with corrected data. Do not answer in prose.',
+            ].join('\n'),
+          },
+        ];
+      }
+    }
 
     return {
-      parts: [{ id: '', sessionID, messageID: '', type: 'text', text: responseText }],
+      parts: [{ id: '', sessionID, messageID: '', type: 'text', text: lastText }],
+      structuredError: lastError || 'structured output validation failed',
     };
   }
 
@@ -162,6 +237,7 @@ export class SdkSessionResource {
     if (this.client && sessionID) {
       await this.client.session.delete({ sessionID }).catch(() => {});
     }
+    structuredOutput.clear(sessionID);
     this.sessions.delete(sessionID);
     if (this.sessionsDir) {
       const filePath = path.join(this.sessionsDir, `${sessionID}.json`);

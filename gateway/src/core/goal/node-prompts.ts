@@ -2,6 +2,82 @@
 // 节点用户 prompt 模板——替换旧 '/skill mafw-*' 裸文本（opencode 无对应物）。
 // 角色纪律在身份 systemPrompt（Task 4）；这里只注入每 goal/loop 的实例上下文与产物契约。
 import * as path from 'path';
+import type { OutputSchemaSpec } from '../../runtime/structured-output';
+
+const TASK_TYPES = ['feature', 'bugfix', 'refactor', 'research', 'docs', 'test', 'other'] as const;
+
+const PLAN_OUTPUT_SCHEMA = {
+  anyOf: [
+    {
+      type: 'object',
+      required: ['status', 'taskType', 'waves'],
+      properties: {
+        status: { const: 'ready' },
+        taskType: { type: 'string', enum: [...TASK_TYPES] },
+        waves: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            required: ['id', 'title', 'tasks', 'riskNote'],
+            properties: {
+              id: { type: 'string' },
+              title: { type: 'string' },
+              tasks: { type: 'array', items: { type: 'string' } },
+              riskNote: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    {
+      type: 'object',
+      required: ['status', 'ambiguities'],
+      properties: {
+        status: { const: 'need_clarification' },
+        ambiguities: { type: 'array', minItems: 1, items: { type: 'string' } },
+      },
+    },
+  ],
+} as const;
+
+const EXECUTE_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['goalId', 'receipts'],
+  properties: {
+    goalId: { type: 'string' },
+    timestamp: { type: 'string' },
+    receipts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['taskId', 'status', 'summary'],
+        properties: {
+          taskId: { type: 'string' },
+          status: { type: 'string', enum: ['done', 'failed', 'skipped'] },
+          summary: { type: 'string' },
+          files: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+  },
+} as const;
+
+const REVIEW_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'feedback'],
+  properties: {
+    verdict: { type: 'string', enum: ['PASS', 'FAIL'] },
+    feedback: { type: 'string' },
+  },
+} as const;
+
+/** Goal 节点结构化交卷 schema（与文件产物同字段；structured 优先、文件 fallback）。 */
+export function nodeOutputSchema(node: 'plan' | 'execute' | 'review'): OutputSchemaSpec {
+  if (node === 'plan') return { name: 'goal.plan', schema: PLAN_OUTPUT_SCHEMA as unknown as Record<string, any> };
+  if (node === 'execute') return { name: 'goal.execute', schema: EXECUTE_OUTPUT_SCHEMA as unknown as Record<string, any> };
+  return { name: 'goal.review', schema: REVIEW_OUTPUT_SCHEMA as unknown as Record<string, any> };
+}
 
 export interface NodeArtifactPaths {
   waves: string;

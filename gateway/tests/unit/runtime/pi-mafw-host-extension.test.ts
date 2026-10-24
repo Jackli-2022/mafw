@@ -226,7 +226,7 @@ describe('pi-mafw-host tools（gateway 单源 factory 消费）', () => {
     }).on(pi);
     await new Promise((r) => setTimeout(r, 10));
     expect(tools.map((t: any) => t.name).sort()).toEqual([
-      'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart',
+      'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart', 'mafw_submit_result',
     ]);
   });
 

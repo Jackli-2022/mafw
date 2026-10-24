@@ -23,6 +23,7 @@ import { McpSSEEndpoint } from "./mcp/sse-transport";
 import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
 import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
+import { structuredOutput } from './runtime/structured-output';
 import { createToolRegistry } from "./mcp/tool-registry";
 import { abstractionLevelFor } from './core/memory/abstraction-level';
 import { MemoryService } from "./memory/service";
@@ -808,10 +809,11 @@ class MafwScheduler {
         },
         promptAsync: async (opts) => {
           const text = opts.parts.find((p) => p.type === 'text')?.text ?? '';
-          await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent);
+          await this.sdkSession.promptAsync(opts.sessionID, text, undefined, opts.agent, undefined, opts.outputSchema);
         },
         delete: (sessionID: string) => this.sdkSession.delete(sessionID),
         abort: async (sessionID: string) => { await this.runtime!.session.abort({ sessionID }); },
+        structured: async (sessionID: string) => structuredOutput.submitted(sessionID) ?? null,
       },
       db: {
         insertNodeRun: (i) => this.getGatewayDb().insertNodeRun(i),
@@ -6024,7 +6026,7 @@ class MafwScheduler {
           try {
             const sessionID = promptAsyncMatch[1];
             const body = await readBody(req);
-            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey } = body ? JSON.parse(body) : {};
+            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, outputSchema } = body ? JSON.parse(body) : {};
             if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
             // Identity-aware (spec §3.2): picking a registry identity binds it for
             // this turn — the policy layer evaluates the turn's tool calls against it.
@@ -6056,7 +6058,7 @@ class MafwScheduler {
               }
               return;
             }
-            await this.sdkSession.promptAsync(sessionID, message, parts, agent, model);
+            await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema);
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {
@@ -6073,7 +6075,7 @@ class MafwScheduler {
             const sessionID = promptMatch[1];
             const body = await readBody(req);
             const opts = body ? JSON.parse(body) : {};
-            const result = await this.sdkSession.prompt(sessionID, opts.parts || [], opts.system);
+            const result = await this.sdkSession.prompt(sessionID, opts.parts || [], opts.system, opts.outputSchema);
             res.writeHead(200);
             res.end(JSON.stringify(result));
           } catch (err: any) {

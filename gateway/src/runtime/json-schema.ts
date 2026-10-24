@@ -76,6 +76,8 @@ export function validateJsonSchema(schema: any, value: any, path = '$'): Validat
     const results = schema.anyOf.map((sub: any) => validateJsonSchema(sub, value, path));
     if (results.every((r: ValidationError[]) => r.length > 0)) {
       errors.push(err(path, `does not match anyOf (${results[0]?.[0]?.message ?? 'no branch'})`));
+      // Surface the first branch's concrete paths so the model can self-correct.
+      if (results[0]?.length) errors.push(...results[0]);
     }
   }
   if (Array.isArray(schema.oneOf)) {

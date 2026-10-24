@@ -22,6 +22,7 @@ import type { AgentDefinition } from './agent-definition';
 import type { TOOL_CLASS } from './tool-classes';
 import type { MafwMessage } from './canonical-types';
 import type { EventMappingEntry } from './event-mapper';
+import type { OutputSchemaSpec } from './structured-output';
 
 export interface RuntimeCapabilities {
   /** session.create/prompt/promptAsync/messages/... 全套会话 API */
@@ -142,6 +143,8 @@ export interface SessionPromptOpts {
   maxTurns?: number;
   /** 本次 prompt 的美元成本上限；超出即中止。原生支持见 turnBudgetApi。 */
   maxCostUsd?: number;
+  /** 回合级结构化输出（portable；2.1 v2 prompt 无原生 format）。 */
+  outputSchema?: OutputSchemaSpec;
 }
 
 /**
@@ -184,6 +187,10 @@ export interface PromptResultEnvelope {
   finish?: string;
   /** canonical 终态分类（由 finish 映射；缺失 = unknown） */
   stopReason?: StopReason;
+  /** 已通过 schema 校验的结构化结果（同步 prompt；异步走 structuredOutput 服务）。 */
+  structured?: unknown;
+  /** 重试耗尽/无有效交卷时的校验错误。 */
+  structuredError?: string;
   /** undefined = runtime 未回传；消费方据此跳过记账 */
   usage?: {
     input: number;

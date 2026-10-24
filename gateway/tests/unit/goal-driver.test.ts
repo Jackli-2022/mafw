@@ -10,6 +10,7 @@ describe('NodeDriver advance（启动侧）', () => {
     expect(pa.agent).toBe('mafw-plan');            // 身份绑定
     expect(pa.parts[0].text).toContain('waves.json');
     expect(pa.parts[0].text).not.toContain('/skill');
+    expect(pa.outputSchema?.name).toBe('goal.plan');
     const st = h.load('g1')!;
     expect(st.nodeSession).not.toBeNull();
     expect(st.nodeSession!.phase).toBe('plan');
