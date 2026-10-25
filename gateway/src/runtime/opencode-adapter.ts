@@ -12,6 +12,7 @@
 
 import { serveAuthHeaders } from './serve-sidecar';
 import { stopReasonOf } from './contract';
+import { formToQuestion, formAnswerOf } from './form-question';
 import type {
   RuntimeClient,
   SessionCreateOpts,
@@ -220,30 +221,6 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
 
   /** 2.1.0 form → desktop AskCard 契约（properties.questions[]）。 */
   const formCache = new Map<string, any>();
-  const formToQuestion = (f: any) => {
-    const fields = Array.isArray(f?.fields) ? f.fields.filter((x: any) => x && !x.hidden) : [];
-    return {
-      id: f?.id,
-      sessionID: f?.sessionID,
-      title: f?.title,
-      metadata: f?.metadata,
-      tool: f?.metadata?.tool,
-      form: f,
-      questions: fields.map((x: any) => ({
-        id: x.key,
-        question: x.title || x.key || 'Input',
-        header: x.title,
-        multiple: x.type === 'multiselect',
-        custom: x.type === 'string' ? x.custom !== false : undefined,
-        options: Array.isArray(x.options)
-          ? x.options.map((o: any) => ({ label: o.label ?? o.value, value: o.value ?? o.label, description: o.description }))
-          : x.type === 'boolean'
-            ? [{ label: '是', value: 'true' }, { label: '否', value: 'false' }]
-            : undefined,
-      })),
-      __fields: fields,
-    };
-  };
   const loadForms = async (directory?: string): Promise<any[]> => {
     // forms 列表按 location 过滤（location[directory] / x-opencode-directory）；
     // 无 directory 时 serve 只回默认 location 的 forms（通常为空）。
@@ -257,21 +234,6 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     if (cached) return cached;
     const list = await loadForms(directory);
     return list.find((f: any) => f?.id === id);
-  };
-  const formAnswerOf = (form: any, answers: string[][]): Record<string, unknown> => {
-    const fields: any[] = Array.isArray(form?.fields) ? form.fields.filter((x: any) => x && !x.hidden) : [];
-    const out: Record<string, unknown> = {};
-    fields.forEach((f: any, i: number) => {
-      const vals = Array.isArray(answers?.[i]) ? answers[i] : [];
-      if (!f?.key) return;
-      if (f.type === 'multiselect') out[f.key] = vals;
-      else if (f.type === 'boolean') out[f.key] = /^(true|yes|on|1|是)$/i.test(vals[0] ?? '');
-      else if (f.type === 'number' || f.type === 'integer') {
-        const n = Number(vals[0]);
-        out[f.key] = Number.isFinite(n) ? n : 0;
-      } else out[f.key] = vals[0] ?? '';
-    });
-    return out;
   };
 
   return {

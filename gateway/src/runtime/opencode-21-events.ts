@@ -24,6 +24,7 @@
  */
 import { MAFW } from './mafw-vocabulary';
 import { stopReasonOf } from './contract';
+import { formToQuestion } from './form-question';
 import type { EventMapping, EventSourceShape, TransformEventFn } from './event-mapper';
 import type { RawRuntimeEvent } from './normalize';
 
@@ -87,8 +88,7 @@ export const OPENCODE_21_EVENT_MAPPINGS: EventMapping[] = [
     } },
   { from: 'permission.v2.replied', to: MAFW.permissionReplied, passProperties: '$.data',
     fields: { requestId: { path: '$.data.requestID' } } },
-  // 问询（原生 v2 question；若 serve 发事件则桌面卡实时可见）
-  { from: 'question.v2.asked', to: MAFW.questionAsked, passProperties: '$.data' },
+  // 问询（原生 v2 question；form 载荷走 transform 归一，legacy questions[] 原样透传）
   { from: 'question.v2.replied', to: MAFW.questionReplied, passProperties: '$.data' },
   { from: 'question.v2.rejected', to: MAFW.questionRejected, passProperties: '$.data' },
   // 计划/todo（2.1 保留 todo.updated 事件；初始水合仍无 /todo 路由）
@@ -155,6 +155,11 @@ export const translateOpencode21Event: TransformEventFn = (raw: any) => {
   if (!type) return raw;
 
   switch (type) {
+    case 'question.v2.asked': {
+      const form = data?.form?.fields ? data.form : (Array.isArray(data?.fields) ? data : null);
+      return eventOf(raw, MAFW.questionAsked, form ? formToQuestion(form) : data);
+    }
+
     case 'session.execution.succeeded': {
       const finish = typeof data.finish === 'string' ? data.finish : lastFinish.get(data.sessionID);
       if (data.sessionID) lastFinish.delete(data.sessionID);

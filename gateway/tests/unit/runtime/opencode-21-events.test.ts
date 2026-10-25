@@ -179,6 +179,31 @@ describe('@2.1 问询与 todo', () => {
     expect(out.type).toBe('plan.updated');
     expect(out.properties.todos).toHaveLength(1);
   });
+
+  test('question.v2.asked 带 form 载荷 → typed questions + mode=url', () => {
+    const out = apply(evt('question.v2.asked', {
+      sessionID: 's1',
+      form: {
+        id: 'f1', sessionID: 's1', title: 'T',
+        fields: [
+          { key: 'name', type: 'string', title: 'Name', required: true },
+          { key: 'link', type: 'external', title: 'Link', url: 'https://x' },
+        ],
+      },
+    }))[0].payload;
+    expect(out.type).toBe('question.asked');
+    expect(out.properties.questions).toHaveLength(2);
+    expect(out.properties.questions[0]).toMatchObject({ id: 'name', type: 'string', required: true });
+    expect(out.properties.mode).toBe('url');
+  });
+
+  test('question.v2.asked 旧 questions[] 原样透传', () => {
+    const out = apply(evt('question.v2.asked', {
+      sessionID: 's1', questions: [{ question: 'Q', options: [{ label: 'A' }] }],
+    }))[0].payload;
+    expect(out.type).toBe('question.asked');
+    expect(out.properties.questions).toHaveLength(1);
+  });
 });
 
 describe('@2.1 抑制与未知事件', () => {  test('遥测/无消费者事件 → drop（suppressed）', () => {
