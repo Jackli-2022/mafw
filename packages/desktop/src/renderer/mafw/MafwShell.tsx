@@ -598,7 +598,7 @@ export function MafwShell() {
   const questionsDirectory = () => {
     const sid = activeSessionId()
     const dir = store.session.find((s: any) => s.id === sid)?.directory
-    return dir && dir !== "." ? dir : undefined
+    return dir && dir !== "." ? dir : (currentProject() || undefined)
   }
 
   const reconcileFlowCards = () => {

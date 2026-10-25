@@ -86,6 +86,8 @@ export function isQuestionComplete(q: FormQuestionLike, values: string[]): boole
 
 /** 可选字段空值算满足；external 无论 required 都必须确认。 */
 export function isQuestionSatisfied(q: FormQuestionLike, values: string[]): boolean {
+  // Legacy questions (no `type`) were always required by the old AskCard.
+  if (q.type === undefined) return isQuestionComplete(q, values)
   if (q.type === 'external') return values.includes('true')
   if (!q.required && (values.length === 0 || !isNonEmpty(values[0]))) return true
   return isQuestionComplete(q, values)

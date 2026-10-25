@@ -128,6 +128,9 @@ export function formAnswerOf(form: any, answers: string[][]): Record<string, unk
   fields.forEach((f: any, i: number) => {
     const vals = Array.isArray(answers?.[i]) ? answers[i] : [];
     if (!f?.key) return;
+    // Optional empty fields are omitted; the form schema treats absent = unanswered.
+    const empty = vals.length === 0 || (vals.length === 1 && String(vals[0] ?? '').trim() === '');
+    if (!f.required && f.type !== 'external' && empty) return;
     switch (f.type) {
       case 'multiselect':
         out[f.key] = vals;

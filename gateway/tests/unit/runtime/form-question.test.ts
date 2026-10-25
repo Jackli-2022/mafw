@@ -58,6 +58,17 @@ describe('formAnswerOf', () => {
     ]);
     expect(out.link).toBe(false);
   });
+
+  it('omits optional empty fields', () => {
+    const optional = {
+      id: 'f3', sessionID: 's3', title: 'Optional',
+      fields: [
+        { key: 'note', type: 'string', title: 'Note' },
+        { key: 'count', type: 'integer', title: 'Count' },
+      ],
+    };
+    expect(formAnswerOf(optional, [[], ['']])).toEqual({});
+  });
 });
 
 describe('expiresAtOf', () => {

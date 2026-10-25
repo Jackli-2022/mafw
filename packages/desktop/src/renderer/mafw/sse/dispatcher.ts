@@ -127,7 +127,7 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
 
   if (event.type === "form.created" || event.type === "form.updated" || event.type === "form.replied" || event.type === "form.cancelled") {
     deps.core.trace(event, "card:form-refresh")
-    deps.flowCards.scheduleReconcile(0)
+    deps.flowCards.scheduleReconcile(50)
     return
   }
 

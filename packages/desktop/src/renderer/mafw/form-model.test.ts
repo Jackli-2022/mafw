@@ -41,6 +41,8 @@ describe("completeness", () => {
     expect(isQuestionComplete(q({ id: "n", type: "integer" }), ["3.5"])).toBe(false)
     expect(isQuestionSatisfied(q({ id: "e", type: "external", required: false }), [])).toBe(false)
     expect(isQuestionSatisfied(q({ id: "e", type: "external" }), ["true"])).toBe(true)
+    expect(isQuestionSatisfied(q({ id: "legacy" }), [])).toBe(false)
+    expect(isQuestionSatisfied(q({ id: "legacy" }), ["x"])).toBe(true)
   })
 
   test("string pattern/length", () => {

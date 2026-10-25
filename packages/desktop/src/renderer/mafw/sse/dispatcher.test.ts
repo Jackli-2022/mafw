@@ -93,7 +93,7 @@ describe("dispatchShellEvent: form refresh", () => {
   test("form.created triggers an immediate reconcile", () => {
     const { deps, calls } = makeDeps()
     dispatchShellEvent({ type: "form.created" }, deps)
-    expect(calls.some(c => c.name === "scheduleReconcile" && c.args[0] === 0)).toBe(true)
+    expect(calls.some(c => c.name === "scheduleReconcile" && c.args[0] === 50)).toBe(true)
   })
 })
 
