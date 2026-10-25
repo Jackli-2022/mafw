@@ -21,12 +21,12 @@ function makeFakeFetch(routes: Array<{ match: (r: Req) => boolean; res: Res }>) 
   return { calls, fetchImpl };
 }
 
-const SEVEN = ['mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart', 'mafw_submit_result'];
+const TEN = ['mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart', 'mafw_submit_result', 'mafw_spawn_subagent', 'mafw_message_subagent', 'mafw_subagent_result'];
 
 describe('MAFW_TOOL_SPECS（六件套静态清单）', () => {
   it('6 条、名字唯一、parameters 为 object 形状 JSON Schema', () => {
-    expect(MAFW_TOOL_SPECS.map((s) => s.name).sort()).toEqual([...SEVEN].sort());
-    expect(new Set(MAFW_TOOL_SPECS.map((s) => s.name)).size).toBe(7);
+    expect(MAFW_TOOL_SPECS.map((s) => s.name).sort()).toEqual([...TEN].sort());
+    expect(new Set(MAFW_TOOL_SPECS.map((s) => s.name)).size).toBe(10);
     for (const s of MAFW_TOOL_SPECS) {
       expect((s.parameters as any).type).toBe('object');
       expect(typeof (s.parameters as any).properties).toBe('object');
@@ -41,12 +41,27 @@ describe('buildMafwToolFactory（会话亲和闭包）', () => {
       { match: (r) => r.url.includes('/api/memory/add'), res: { ok: true, json: { success: true, id: 'mem_1' } } },
     ]);
     const regs = buildMafwToolFactory({ baseUrl: 'http://gw', fetchImpl })('pi_s9');
-    expect(regs.map((r) => r.name).sort()).toEqual([...SEVEN].sort());
+    expect(regs.map((r) => r.name).sort()).toEqual([...TEN].sort());
     const add = regs.find((r) => r.name === 'mafw_add_memory')!;
     const out = await add.execute({ content: '测试', cueAnchors: ['a'] });
     expect(out.isError).toBeUndefined();
     expect(out.text).toContain('mem_1');
     expect(calls[0].body).toMatchObject({ content: '测试', sessionID: 'pi_s9', cueAnchors: ['a'] });
+  });
+
+  it('spawn_subagent uses the parent session URL; result fetches typed body', async () => {
+    const { calls, fetchImpl } = makeFakeFetch([
+      { match: (r) => r.url.includes('/api/sessions/pi_s1/subagents') && r.method === 'POST', res: { ok: true, json: { id: 'c1', parentID: 'pi_s1', depth: 1, status: 'running' } } },
+      { match: (r) => r.url.includes('/api/sessions/pi_s1/subagents/c1/result'), res: { ok: true, json: { status: 'completed', structured: { ok: true } } } },
+    ]);
+    const regs = buildMafwToolFactory({ baseUrl: 'http://gw', fetchImpl })('pi_s1');
+    const spawn = await regs.find((r) => r.name === 'mafw_spawn_subagent')!.execute({ prompt: 'do it', agent: 'general' });
+    expect(spawn.text).toContain('c1');
+    expect(calls.find((c) => c.url.includes('/subagents'))!.url).toContain('/api/sessions/pi_s1/subagents');
+    expect(calls.find((c) => c.url.includes('/subagents'))!.body).toMatchObject({ prompt: 'do it', agent: 'general' });
+
+    const result = await regs.find((r) => r.name === 'mafw_subagent_result')!.execute({ sessionID: 'c1' });
+    expect(result.text).toContain('"structured":{"ok":true}');
   });
 
   it('add_memory 失败 → isError + 错误文本', async () => {
@@ -158,7 +173,7 @@ describe('activateRuntimeTools（激活期接线）', () => {
     const rt = makeRt();
     await activateRuntimeTools(rt, 'test:rt', { baseUrl: 'http://gw' });
     const factory = (rt.tools.registerTools as jest.Mock).mock.calls[0][0] as (sid: string) => any[];
-    expect(factory('s1').map((r) => r.name).sort()).toEqual([...SEVEN].sort());
+    expect(factory('s1').map((r) => r.name).sort()).toEqual([...TEN].sort());
     expect(toolClassOf('my_read')).toBe('readonly');
     expect(toolClassOf('bad')).toBe('other');
   });

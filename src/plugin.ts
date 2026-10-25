@@ -36,6 +36,9 @@ import { voiceGuideMessagesHook, voiceGuideSystemHook } from './hooks/voice-guid
 import { pushObservation, toolFailureText } from './utils/obs-capture';
 import { addMemoryTool } from './tools/add-memory';
 import { submitResultTool } from './tools/submit-result';
+import { spawnSubagentTool } from './tools/spawn-subagent';
+import { messageSubagentTool } from './tools/message-subagent';
+import { subagentResultTool } from './tools/subagent-result';
 import { ensureMcpWiring, resolveGatewayApiUrl } from './utils/self-wiring';
 import {
   zodToJsonSchema,
@@ -94,6 +97,9 @@ const V1_TOOLS: Record<string, { description: string; args: any; execute: (args:
   mafw_python_restart: pythonRestartTool,
   mafw_add_memory: addMemoryTool,
   mafw_submit_result: submitResultTool,
+  mafw_spawn_subagent: spawnSubagentTool,
+  mafw_message_subagent: messageSubagentTool,
+  mafw_subagent_result: subagentResultTool,
 };
 
 /** V1 工具结果 → V2 `{ content, metadata }`。 */

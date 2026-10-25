@@ -270,6 +270,90 @@ const TOOL_DEFS: ToolDef[] = [
       };
     },
   },
+  {
+    spec: {
+      name: 'mafw_spawn_subagent',
+      label: 'MAFW 子代理派生',
+      description: '派生一个 gateway 追踪的子代理会话（parentID/depth）；异步返回 child sessionID。用 mafw_subagent_result 取结果、mafw_message_subagent 续聊、mafw_subagent_cancel 取消。需要前台等待时优先用 runtime 原生 subagent。',
+      parameters: {
+        type: 'object',
+        properties: {
+          agent: { type: 'string', description: '子代理 agent 名（如 general/explore）' },
+          description: { type: 'string', description: '任务简述' },
+          prompt: { type: 'string', description: '发给子代理的任务 prompt' },
+          background: { type: 'boolean', description: '标记为后台子代理' },
+          model: { type: 'object', properties: { providerID: { type: 'string' }, modelID: { type: 'string' } } },
+          outputSchema: { type: 'object', description: '可选结构化输出 schema' },
+        },
+        required: ['prompt'],
+      },
+    },
+    makeExecute({ sessionId: sid, f, base }) {
+      return async (params, signal) => {
+        const r = await postToolJson(f, base, `/api/sessions/${encodeURIComponent(sid)}/subagents`, {
+          agent: params.agent,
+          description: params.description,
+          prompt: params.prompt,
+          background: params.background,
+          model: params.model,
+          outputSchema: params.outputSchema,
+        }, 30_000, signal);
+        if (!r.ok || r.body?.status === 'failed') {
+          return fail(`子代理创建失败：${r.body?.error ?? r.text ?? 'unknown'}`);
+        }
+        return ok(`子代理已创建：${r.body?.id ?? ''} (depth=${r.body?.depth ?? '?'}, status=${r.body?.status ?? 'running'})`);
+      };
+    },
+  },
+  {
+    spec: {
+      name: 'mafw_message_subagent',
+      label: 'MAFW 子代理消息',
+      description: '给当前父会话派生的子代理发一条消息（进入子会话队列）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          sessionID: { type: 'string', description: '子代理 sessionID' },
+          message: { type: 'string', description: '消息内容' },
+        },
+        required: ['sessionID', 'message'],
+      },
+    },
+    makeExecute({ sessionId: sid, f, base }) {
+      return async (params, signal) => {
+        const r = await postToolJson(f, base,
+          `/api/sessions/${encodeURIComponent(sid)}/subagents/${encodeURIComponent(params.sessionID)}/message`,
+          { message: params.message }, 10_000, signal);
+        return r.ok ? ok('消息已发送') : fail(`消息发送失败：${r.body?.error ?? r.text ?? 'unknown'}`);
+      };
+    },
+  },
+  {
+    spec: {
+      name: 'mafw_subagent_result',
+      label: 'MAFW 子代理结果',
+      description: '读取当前父会话派生的子代理结果：优先结构化交卷，否则最后一条 assistant 文本。',
+      parameters: {
+        type: 'object',
+        properties: {
+          sessionID: { type: 'string', description: '子代理 sessionID' },
+        },
+        required: ['sessionID'],
+      },
+    },
+    makeExecute({ sessionId: sid, f, base }) {
+      return async (params, signal) => {
+        try {
+          const res = await f(`${base}/api/sessions/${encodeURIComponent(sid)}/subagents/${encodeURIComponent(params.sessionID)}/result`, { signal });
+          const body: any = await res.json().catch(() => ({}));
+          if (!res.ok) return fail(`结果读取失败：${body?.error ?? `HTTP ${res.status}`}`);
+          return ok(JSON.stringify(body));
+        } catch (err: any) {
+          return fail(`结果读取失败：${err?.message ?? err}`);
+        }
+      };
+    },
+  },
 ];
 
 export const MAFW_TOOL_SPECS: MafwToolSpec[] = TOOL_DEFS.map((d) => d.spec);
