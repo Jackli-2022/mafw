@@ -19,7 +19,7 @@ export interface SpawnSubagentTool {
 
 export const spawnSubagentTool: SpawnSubagentTool = {
   description:
-    '派生一个 gateway 追踪的子代理会话（带 parentID/depth，父会话可用 mafw_subagent_result 取结果、mafw_message_subagent 续聊、mafw_subagent_cancel 取消）。异步返回 child sessionID；需要前台等待时优先用 opencode 原生 subagent 工具。',
+    '派生一个 gateway 追踪的子代理会话（带 parentID/depth，父会话可用 mafw_subagent_result 取结果、mafw_message_subagent 续聊；取消走网关 cancel API）。异步返回 child sessionID；需要前台等待时优先用 opencode 原生 subagent 工具。',
   args: {
     agent: z.string().optional().describe('子代理 agent 名（如 general/explore）'),
     description: z.string().optional().describe('任务简述（用于子代理标题）'),

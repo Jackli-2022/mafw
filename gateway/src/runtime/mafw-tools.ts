@@ -274,7 +274,7 @@ const TOOL_DEFS: ToolDef[] = [
     spec: {
       name: 'mafw_spawn_subagent',
       label: 'MAFW 子代理派生',
-      description: '派生一个 gateway 追踪的子代理会话（parentID/depth）；异步返回 child sessionID。用 mafw_subagent_result 取结果、mafw_message_subagent 续聊、mafw_subagent_cancel 取消。需要前台等待时优先用 runtime 原生 subagent。',
+      description: '派生一个 gateway 追踪的子代理会话（parentID/depth）；异步返回 child sessionID。用 mafw_subagent_result 取结果、mafw_message_subagent 续聊（取消走网关 cancel API）。需要前台等待时优先用 runtime 原生 subagent。',
       parameters: {
         type: 'object',
         properties: {
