@@ -47,7 +47,12 @@ export function mapSessionLifecycleEvent(raw: any): TrackerEvent | null {
     if (!info?.id || !info.parentID) return null
     return {
       kind: "session-created",
-      info: { id: info.id, parentID: info.parentID, title: typeof info.title === "string" ? info.title : undefined },
+      info: {
+        id: info.id,
+        parentID: info.parentID,
+        title: typeof info.title === "string" ? info.title : undefined,
+        ...(typeof info.depth === "number" ? { depth: info.depth } : {}),
+      },
     }
   }
   if (raw?.type === "session.updated") {

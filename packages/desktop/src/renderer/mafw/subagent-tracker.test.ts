@@ -17,9 +17,25 @@ describe("parseAgentFromTitle", () => {
 describe("applySubagentEvent", () => {
   test("session-created 建 running 行；无 parentID 不建", () => {
     let rows = applySubagentEvent([], created("c1", "p1", "任务 @a"), 1000)
-    expect(rows).toEqual([{ childID: "c1", parentID: "p1", title: "任务 @a", agent: "a", status: "running", startedAt: 1000 }])
+    expect(rows).toEqual([{ childID: "c1", parentID: "p1", depth: 1, title: "任务 @a", agent: "a", status: "running", startedAt: 1000 }])
     rows = applySubagentEvent(rows, { kind: "session-created", info: { id: "x", parentID: "" } }, 1000)
     expect(rows.length).toBe(1)
+  })
+  test("session-created 显式 depth 透传，缺省 1", () => {
+    let rows = applySubagentEvent([], {
+      kind: "session-created",
+      info: { id: "c2", parentID: "p1", title: "nested", depth: 2 },
+    }, 1000)
+    expect(rows[0].depth).toBe(2)
+    rows = applySubagentEvent([], created("c3", "p1", "flat"), 1000)
+    expect(rows[0].depth).toBe(1)
+  })
+  test("children-snapshot 透传 depth", () => {
+    const rows = applySubagentEvent([], {
+      kind: "children-snapshot", parentID: "p1",
+      children: [{ id: "c1", title: "old", depth: 3, time: { created: 1, updated: 2 } }],
+    }, 5000)
+    expect(rows[0].depth).toBe(3)
   })
   test("session-created 显式 agent 覆盖标题解析", () => {
     const rows = applySubagentEvent([], {

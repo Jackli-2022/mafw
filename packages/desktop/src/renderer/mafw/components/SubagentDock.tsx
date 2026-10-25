@@ -3,6 +3,7 @@
 // 数据来自 subagent-store 全局单例（tracker 全局；这里按 activeSessionId 过滤显示）。
 import { createSignal, createEffect, onCleanup, For, Show } from "solid-js"
 import { subagentRows } from "../subagent-store"
+import { descendantRows } from "../subagent-tree"
 import { formatDuration } from "../goal-timeline"
 import type { SubagentRow, SubagentStatus } from "../subagent-tracker"
 
@@ -18,7 +19,7 @@ export function SubagentDock(props: {
   onOpenSession: (id: string) => void
 }) {
   const [now, setNow] = createSignal(Date.now())
-  const rows = () => subagentRows().filter(r => r.parentID === props.activeSessionId)
+  const rows = () => descendantRows(subagentRows(), props.activeSessionId ?? "")
 
   // 存在 running 行时每秒推进计时（模式同 ChatPane metaNow）。
   createEffect(() => {
@@ -49,6 +50,7 @@ export function SubagentDock(props: {
               role="button"
               tabIndex={0}
               title={r.title}
+              style={{ "padding-left": `${8 + Math.max(0, (r.depth ?? 1) - 1) * 12}px` }}
               onClick={() => open(r.childID)}
               onKeyDown={(e: KeyboardEvent) => {
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(r.childID) }

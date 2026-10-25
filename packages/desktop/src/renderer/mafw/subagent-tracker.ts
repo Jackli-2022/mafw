@@ -13,6 +13,7 @@ export type SubagentStatus = "running" | "completed" | "failed" | "aborted"
 export interface SubagentRow {
   childID: string
   parentID: string
+  depth?: number
   title: string
   agent: string
   status: SubagentStatus
@@ -21,11 +22,11 @@ export interface SubagentRow {
 }
 
 export type TrackerEvent =
-  | { kind: "session-created"; info: { id: string; parentID: string; title?: string; agent?: string } }
+  | { kind: "session-created"; info: { id: string; parentID: string; title?: string; agent?: string; depth?: number } }
   | { kind: "session-updated"; sessionID: string; title: string }
   | { kind: "turn-terminal"; sessionID: string; terminal: "completed" | "failed" | "aborted" }
   | { kind: "session-deleted"; sessionID: string }
-  | { kind: "children-snapshot"; parentID: string; children: Array<{ id: string; title?: string; time?: { created?: number; updated?: number } }> }
+  | { kind: "children-snapshot"; parentID: string; children: Array<{ id: string; title?: string; depth?: number; time?: { created?: number; updated?: number } }> }
   | { kind: "child-last-message"; childID: string; message: { role: string; time?: { completed?: number }; error?: unknown } | null }
 
 const DEFAULT_AGENT = "子代理"
@@ -43,12 +44,13 @@ const byStartedDesc = (a: SubagentRow, b: SubagentRow) => b.startedAt - a.starte
 export function applySubagentEvent(rows: SubagentRow[], ev: TrackerEvent, now: number = Date.now()): SubagentRow[] {
   switch (ev.kind) {
     case "session-created": {
-      const { id, parentID, title, agent } = ev.info
+      const { id, parentID, title, agent, depth } = ev.info
       if (!parentID || rows.some(r => r.childID === id)) return rows
       const t = title ?? ""
       const row: SubagentRow = {
         childID: id,
         parentID,
+        depth: typeof depth === "number" ? depth : 1,
         title: t,
         agent: agent || parseAgentFromTitle(t),
         status: "running",
@@ -79,6 +81,7 @@ export function applySubagentEvent(rows: SubagentRow[], ev: TrackerEvent, now: n
         added.push({
           childID: c.id,
           parentID: ev.parentID,
+          depth: typeof c.depth === "number" ? c.depth : 1,
           title: t,
           agent: parseAgentFromTitle(t),
           status: "completed",
