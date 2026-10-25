@@ -221,6 +221,8 @@ export interface SessionInfo {
   title: string;
   /** Present on subagent/child sessions (Task tool dispatches); absent for top-level sessions. */
   parentID?: string;
+  /** Derived lineage depth (root 0, direct child 1); gateway enrichment, optional. */
+  depth?: number;
   metadata?: Record<string, unknown>;
   time: { created: number; updated: number };
 }

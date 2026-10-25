@@ -24,6 +24,11 @@ import { McpStreamableEndpoint } from "./mcp/streamable-endpoint";
 import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
+import { SubagentService } from './runtime/subagent-service';
+import {
+  handleSubagentCancel, handleSubagentList, handleSubagentMessage,
+  handleSubagentResult, handleSubagentSpawn,
+} from './routes/subagents';
 import { createToolRegistry } from "./mcp/tool-registry";
 import { abstractionLevelFor } from './core/memory/abstraction-level';
 import { MemoryService } from "./memory/service";
@@ -465,6 +470,7 @@ class MafwScheduler {
   private wsClients: Set<WebSocket> = new Set();
   private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
+  private subagentService!: SubagentService;
   private memoryService?: MemoryService;
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
@@ -3192,6 +3198,19 @@ class MafwScheduler {
     });
 
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
+    this.subagentService = new SubagentService({
+      createSession: (o) => this.runtime!.session.create(o),
+      getSession: (sid) => this.runtime!.session.get({ sessionID: sid }),
+      children: (parentID) => this.runtime!.session.children({ sessionID: parentID }),
+      promptChild: (o) => this.sdkSession.promptAsync(o.sessionID, o.prompt, undefined, o.agent, o.model, o.outputSchema),
+      messageChild: async (sid, text) => {
+        await this.runtime!.session.promptAsync({ sessionID: sid, parts: [{ type: 'text', text }], delivery: 'queue' });
+      },
+      abortChild: (sid) => this.runtime!.session.abort({ sessionID: sid }),
+      messages: (sid, limit) => this.runtime!.session.messages({ sessionID: sid, limit }),
+      submitted: (sid) => structuredOutput.submitted(sid),
+      broadcast: (e) => this.broadcast(e),
+    });
     this.memoryService = new MemoryService(mafwDir);
 
     // P1/P2: dense embedding runtime + consolidation. initEmbeddingServices is
@@ -6451,6 +6470,32 @@ class MafwScheduler {
           return;
         }
 
+        // ── Subagent spawn/list/message/cancel/result (gateway-owned) ──
+        const subagentMsg = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/message(?:\?|$)/);
+        if (subagentMsg && req.method === 'POST') {
+          await handleSubagentMessage(req, res, subagentMsg[1], subagentMsg[2], { service: this.subagentService });
+          return;
+        }
+        const subagentCancel = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/cancel(?:\?|$)/);
+        if (subagentCancel && req.method === 'POST') {
+          await handleSubagentCancel(res, subagentCancel[1], subagentCancel[2], { service: this.subagentService });
+          return;
+        }
+        const subagentResult = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents\/([^/]+)\/result(?:\?|$)/);
+        if (subagentResult && req.method === 'GET') {
+          await handleSubagentResult(res, subagentResult[1], subagentResult[2], { service: this.subagentService });
+          return;
+        }
+        const subagentsMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/subagents(?:\?|$)/);
+        if (subagentsMatch && req.method === 'POST') {
+          await handleSubagentSpawn(req, res, subagentsMatch[1], { service: this.subagentService });
+          return;
+        }
+        if (subagentsMatch && req.method === 'GET') {
+          await handleSubagentList(res, subagentsMatch[1], { service: this.subagentService });
+          return;
+        }
+
         // GET /api/sessions/{id}/children —subagent sessions of this run (AgentPicker)
         const childrenMatch = req.url?.match(/^\/api\/sessions\/([^/]+)\/children(?:\?|$)/);
         if (childrenMatch && req.method === 'GET') {
@@ -6463,8 +6508,12 @@ class MafwScheduler {
             }
             const result = await this.runtime.session.children({ sessionID: id });
             const items = Array.isArray(result) ? result : [];
+            const parentDepth = await this.subagentService.depthOf(id);
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ items: Array.isArray(items) ? items : [] }));
+            res.end(JSON.stringify({ items: items.map((item: any) => ({
+              ...item,
+              depth: typeof item?.depth === 'number' ? item.depth : parentDepth + 1,
+            })) }));
           } catch (err: any) {
             log.warn(`[Scheduler] Failed to fetch children for ${id}: ${err.message}`);
             res.writeHead(200, { 'Content-Type': 'application/json' });
