@@ -1,7 +1,8 @@
 ﻿// @ts-nocheck
-import { createSignal, createMemo, createEffect, Show, For } from "solid-js"
+import { createSignal, createMemo, createEffect, Show, For, onCleanup } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { flowCardInitialExpanded } from "./flow-card-placement"
+import { initialAnswers, isQuestionSatisfied, visibleQuestions } from "../form-model"
 
 export type AskQuestionData = {
   id: string
@@ -9,6 +10,18 @@ export type AskQuestionData = {
   mode: "single" | "multi"
   options: { id: string; title: string; description?: string; recommended?: boolean }[]
   allowCustom?: boolean
+  type?: "string" | "number" | "integer" | "boolean" | "multiselect" | "external"
+  required?: boolean
+  placeholder?: string
+  format?: string
+  minimum?: number
+  maximum?: number
+  minLength?: number
+  maxLength?: number
+  pattern?: string
+  when?: Array<{ key: string; op: "eq" | "neq"; value: string | number | boolean }>
+  url?: string
+  defaultValue?: unknown
 }
 
 export type AskCardData = {
@@ -24,6 +37,11 @@ export type AskCardData = {
   messageID?: string
   /** The tool call id (ToolPart.callID) that triggered this request — inline anchor. */
   callID?: string
+  /** 2.1 Form payload (fields/state/metadata). */
+  form?: any
+  mode?: "form" | "url"
+  /** Optional metadata expiry (ms). */
+  expiresAt?: number
 }
 
 const CUSTOM_ID = "__custom__"
@@ -49,7 +67,7 @@ export function AskCard(props: {
   onSubmit?: (answers: Record<string, string[]>, customText: Record<string, string>) => void
   onCancel?: () => void
 }) {
-  const [selected, setSelected] = createSignal<Record<string, string[]>>({})
+  const [selected, setSelected] = createSignal<Record<string, string[]>>(initialAnswers(props.data.questions))
   const [customVals, setCustomVals] = createSignal<Record<string, string>>({})
   const customRefs: Record<string, HTMLInputElement | undefined> = {}
   // 已处理的卡默认收起为一行；pending→resolved 迁移自动收起（一行摘要保留在原地，
@@ -60,6 +78,23 @@ export function AskCard(props: {
   })
 
   const questions = () => props.data.questions
+  const shown = createMemo(() => visibleQuestions(questions(), selected()))
+  const [now, setNow] = createSignal(Date.now())
+  createEffect(() => {
+    if (!props.data.expiresAt) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const expired = () => !!props.data.expiresAt && now() >= props.data.expiresAt
+  const isTypedInput = (q: AskQuestionData) =>
+    q.type === "number" || q.type === "integer" || (q.type === "string" && (!q.options || q.options.length === 0))
+  const showOptions = (q: AskQuestionData) => q.type !== "external" && !isTypedInput(q)
+  const inputTypeFor = (q: AskQuestionData) =>
+    q.format === "email" ? "email"
+      : q.format === "uri" ? "url"
+        : q.format === "date" ? "date"
+          : q.format === "date-time" ? "datetime-local"
+            : "text"
 
   // Auto-focus the custom input when the "其他" option is selected.
   createEffect(() => {
@@ -72,14 +107,11 @@ export function AskCard(props: {
   })
 
   const answeredCount = createMemo(() =>
-    questions().filter(q => {
-      const sel = selected()[q.id] || []
-      if (sel.length === 0) return false
-      if (sel.includes(CUSTOM_ID)) return (customVals()[q.id] || "").trim().length > 0
-      return true
-    }).length,
+    shown().filter(q => isQuestionSatisfied(q, selected()[q.id] || [])).length,
   )
-  const submittable = createMemo(() => props.data.status === "pending" && answeredCount() === questions().length)
+  const submittable = createMemo(() =>
+    props.data.status === "pending" && !expired() && answeredCount() === shown().length,
+  )
 
   const toggleOption = (q: AskQuestionData, optId: string) => {
     if (props.data.status !== "pending") return
@@ -176,6 +208,11 @@ export function AskCard(props: {
         <span class="mafw-flow-title">{props.data.agentName || "Agent"} 需要你的决策</span>
         <div class="mafw-flow-badge-wrap">
           <StatusBadge status={props.data.status} />
+          <Show when={props.data.expiresAt}>
+            <span class="mafw-flow-badge mafw-flow-badge-muted">
+              {expired() ? "已过期" : `剩余 ${Math.max(0, Math.ceil((props.data.expiresAt! - now()) / 1000))}s`}
+            </span>
+          </Show>
           <Show when={props.data.status !== "pending"}>
             <span
               class="mafw-flow-collapse-toggle"
@@ -208,10 +245,37 @@ export function AskCard(props: {
         </div>
       }>
         {/* Questions */}
-        <For each={questions()}>
+        <For each={shown()}>
           {(q) => (
             <div class="mafw-flow-question">
               <h3 class="mafw-flow-qtitle">{q.title}</h3>
+              <Show when={q.type === "external"}>
+                <div class="mafw-flow-external">
+                  <Show when={q.url}>
+                    <a class="mafw-flow-url" href={q.url} target="_blank" rel="noreferrer">{q.url}</a>
+                  </Show>
+                  <label class="mafw-flow-consent">
+                    <input
+                      type="checkbox"
+                      checked={(selected()[q.id] || []).includes("true")}
+                      onChange={(e) => setSelected(prev => ({ ...prev, [q.id]: e.currentTarget.checked ? ["true"] : [] }))}
+                    />
+                    我已打开并同意
+                  </label>
+                </div>
+              </Show>
+              <Show when={isTypedInput(q)}>
+                <input
+                  class="mafw-flow-custom-input mafw-flow-typed-input"
+                  type={q.type === "number" || q.type === "integer" ? "number" : inputTypeFor(q)}
+                  min={q.minimum}
+                  max={q.maximum}
+                  placeholder={q.placeholder || (q.type === "number" || q.type === "integer" ? "输入数字…" : "输入…")}
+                  value={selected()[q.id]?.[0] || ""}
+                  onInput={(e) => setSelected(prev => ({ ...prev, [q.id]: [e.currentTarget.value] }))}
+                />
+              </Show>
+              <Show when={showOptions(q)}>
               <div class="mafw-flow-opts">
                 <For each={q.options}>
                   {(opt) => {
@@ -278,6 +342,7 @@ export function AskCard(props: {
                   </div>
                 </Show>
               </div>
+              </Show>
             </div>
           )}
         </For>

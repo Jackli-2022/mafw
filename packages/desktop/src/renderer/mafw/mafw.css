@@ -2404,6 +2404,10 @@ html[data-theme="light"] body {
 }
 .mafw-flow-custom-input::placeholder { color: var(--text-4); }
 .mafw-flow-custom-input:focus { border-color: var(--composer-focus); box-shadow: 0 0 0 3px var(--composer-halo); }
+.mafw-flow-typed-input { margin: 0 16px 14px; width: calc(100% - 32px); }
+.mafw-flow-external { margin: 0 16px 14px; display: flex; flex-direction: column; gap: 8px; }
+.mafw-flow-url { color: var(--text-1); font-size: 12px; word-break: break-all; }
+.mafw-flow-consent { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
 
 /* Payload block (permission) */
 .mafw-flow-payload {

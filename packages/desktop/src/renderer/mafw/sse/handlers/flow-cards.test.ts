@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { handleFlowCardEvent, answersToRecord, type FlowCardDeps } from "./flow-cards"
+import { handleFlowCardEvent, answersToRecord, mapAskCard, type FlowCardDeps } from "./flow-cards"
 import type { ShellEventDeps } from "../dispatcher"
 
 function makeDeps() {
@@ -15,6 +15,23 @@ function makeDeps() {
   const deps = { flowCards } as unknown as ShellEventDeps
   return { deps, calls }
 }
+
+describe("mapAskCard typed form", () => {
+  test("preserves form/mode and typed field metadata", () => {
+    const card = mapAskCard({
+      id: "f1", sessionID: "s1", form: { id: "f1", fields: [{ type: "external" }] },
+      questions: [
+        { id: "count", question: "Count", type: "integer", required: true, minimum: 1, default: 2 },
+        { id: "link", question: "Link", type: "external", url: "https://x" },
+      ],
+    }, 1, "Agent")
+    expect(card.mode).toBe("url")
+    expect(card.questions[0]).toMatchObject({
+      id: "count", type: "integer", required: true, minimum: 1, defaultValue: 2,
+    })
+    expect(card.questions[1]).toMatchObject({ type: "external", url: "https://x", allowCustom: false })
+  })
+})
 
 describe("handleFlowCardEvent", () => {
   test("question.asked → upsertCard(ask) + notify", () => {
