@@ -593,6 +593,14 @@ export function MafwShell() {
   // longer knows about were resolved elsewhere (approval-bridge timeout,
   // session end) while an SSE gap swallowed the reply event — without this,
   // ghost pending cards inflate the approvals badge forever.
+  // 2.1 forms are location-scoped. Use the active session's directory so
+  // questions created in C:/work are not hidden behind the default location.
+  const questionsDirectory = () => {
+    const sid = activeSessionId()
+    const dir = store.session.find((s: any) => s.id === sid)?.directory
+    return dir && dir !== "." ? dir : undefined
+  }
+
   const reconcileFlowCards = () => {
     // 顺带补拉各会话审批模式（覆盖非 tab 打开路径，如全局 Approvals 页；60s 对账周期）
     for (const sid of Object.keys(flowCards())) syncPermissionMode(sid)
@@ -614,7 +622,7 @@ export function MafwShell() {
         return changed ? next : prev
       })
     }).catch(e => console.warn("[mafw] permissions reconcile:", e))
-    window.api.mafw.questions.list().then((items: any[]) => {
+    window.api.mafw.questions.list(questionsDirectory()).then((items: any[]) => {
       const live = new Set<string>((items || []).map((r: any) => String(r.id)))
       for (const req of items || []) upsertCard(req.sessionID, { kind: "ask", data: mapAskCard(req, Date.now()) })
       setFlowCards(prev => {
@@ -995,7 +1003,7 @@ export function MafwShell() {
     window.api.mafw.permissions.list().then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "permission", data: mapPermissionCard(req, Date.now()) })
     }).catch(e => console.warn("[mafw] permissions.list seed:", e))
-    window.api.mafw.questions.list().then((items: any[]) => {
+    window.api.mafw.questions.list(questionsDirectory()).then((items: any[]) => {
       for (const req of items || []) upsertCard(req.sessionID, { kind: "ask", data: mapAskCard(req, Date.now()) })
     }).catch(e => console.warn("[mafw] questions.list seed:", e))
     es.onmessage = (e: MessageEvent) => {

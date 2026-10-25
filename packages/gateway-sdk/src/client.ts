@@ -906,8 +906,9 @@ export class MafwClient implements IMafwClient {
   // 鈹€鈹€ Questions (AskCard 鈥?proxies the native opencode Question API) 鈹€鈹€
 
   questions = {
-    list: async (): Promise<QuestionRequest[]> => {
-      const data = await this.request<{ items: QuestionRequest[] }>('/api/questions')
+    list: async (directory?: string): Promise<QuestionRequest[]> => {
+      const q = directory ? `?directory=${encodeURIComponent(directory)}` : ''
+      const data = await this.request<{ items: QuestionRequest[] }>(`/api/questions${q}`)
       return data.items || []
     },
 

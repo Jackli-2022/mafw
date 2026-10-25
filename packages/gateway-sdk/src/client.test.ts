@@ -927,3 +927,10 @@ test("permissions.removeRule sends DELETE rule", async () => {
   expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/approvals/rules",
     expect.objectContaining({ method: "DELETE" }))
 })
+
+test("questions.list passes the session directory to /api/questions", async () => {
+  fetchMock.mockResolvedValue(okJson({ items: [] }))
+  const c = new MafwClient("http://gw:3000")
+  await c.questions.list("C:/work")
+  expect(fetchMock.mock.calls[0][0]).toBe("http://gw:3000/api/questions?directory=C%3A%2Fwork")
+})

@@ -163,7 +163,7 @@ export function createMafwApi(): MafwAPI {
     },
 
     questions: {
-      list: () => invoke("questions", "list"),
+      list: (directory?: string) => invoke("questions", "list", directory),
       reply: (id, answers) => invoke("questions", "reply", id, answers),
       reject: (id) => invoke("questions", "reject", id),
     },

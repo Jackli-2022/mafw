@@ -665,7 +665,7 @@ export interface AutomationsNamespace {
 }
 
 export interface QuestionsNamespace {
-  list(): Promise<QuestionRequest[]>
+  list(directory?: string): Promise<QuestionRequest[]>
   reply(id: string, answers: string[][]): Promise<void>
   reject(id: string): Promise<void>
 }

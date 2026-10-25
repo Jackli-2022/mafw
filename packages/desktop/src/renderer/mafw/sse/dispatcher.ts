@@ -125,6 +125,12 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
     return
   }
 
+  if (event.type === "form.created" || event.type === "form.updated" || event.type === "form.replied" || event.type === "form.cancelled") {
+    deps.core.trace(event, "card:form-refresh")
+    deps.flowCards.scheduleReconcile(0)
+    return
+  }
+
   if (event.type === "session.created" || event.type === "session.updated" || event.type === "session.deleted") {
     deps.core.trace(event, "rail:planner")
     // 子代理 tracker 旁路（既有行为不变，只加转发）：child 事件在这里被
