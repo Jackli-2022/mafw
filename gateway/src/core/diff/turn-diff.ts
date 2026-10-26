@@ -49,18 +49,18 @@ export function isSnapshotId(value: unknown): value is string {
   return typeof value === 'string' && (/^[0-9a-f]{40}$/i.test(value) || /^[0-9a-f]{64}$/i.test(value));
 }
 
-function roleOf(message: any): string | undefined {
+export function roleOf(message: any): string | undefined {
   if (!message || typeof message !== 'object') return undefined;
   if (typeof message.role === 'string') return message.role;
   if (message.type === 'user' || message.type === 'assistant') return message.type;
   return undefined;
 }
 
-function unwrapMessage(item: any): any {
+export function unwrapMessage(item: any): any {
   return item && typeof item === 'object' && item.info ? item.info : item;
 }
 
-function createdOf(message: any): number {
+export function createdOf(message: any): number {
   const value = message?.time?.created;
   return typeof value === 'number' ? value : Number.MAX_SAFE_INTEGER;
 }
