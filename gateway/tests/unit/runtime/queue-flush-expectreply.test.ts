@@ -10,7 +10,7 @@ describe('终审 #1 修复：flush 保真 expectReply（noReply 通知不得变 
   });
   it('flush 发送带 expectReply（经 runtime.session.promptAsync 对象形参——不经丢字段的 facade）', () => {
     const i = src.indexOf('private flushSessionQueue(');
-    const seg = src.slice(i, i + 900);
+    const seg = src.slice(i, i + 1400);
     expect(seg).toContain('expectReply');
     expect(seg).toMatch(/this\.runtime!\.session\.promptAsync\(sendOpts\)/);
     expect(seg).toMatch(/sendOpts: any = \{/);

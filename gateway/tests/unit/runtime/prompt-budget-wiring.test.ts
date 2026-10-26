@@ -8,7 +8,7 @@ const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
 
 describe('prompt 预算接线（wiring 源码断言）', () => {
   it('promptAsync 路由解构 maxTurns/maxCostUsd', () => {
-    expect(src).toContain('const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, outputSchema } = body ? JSON.parse(body) : {};');
+    expect(src).toContain('const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, thinkingLevel, variant, outputSchema } = body ? JSON.parse(body) : {};');
   });
 
   it('promptAsync 调用前挂 per-prompt 预算（顺序：attach 先于 promptAsync）', () => {
