@@ -105,6 +105,11 @@ export function createMafwApi(): MafwAPI {
       background: (sessionID) => invoke("session", "background", { path: { id: sessionID } }),
       diff: (sessionID, messageID?) => invoke("session", "diff", { path: { id: sessionID }, query: { messageID } }),
       revertDiff: (sessionID, patches) => invoke("session", "revertDiff", { path: { id: sessionID }, body: { patches } }),
+      checkpoint: (sessionID, messageID?) => invoke("session", "checkpoint", { path: { id: sessionID }, body: { messageID } }),
+      checkpoints: (sessionID) => invoke("session", "checkpoints", { path: { id: sessionID } }),
+      restoreCheckpoint: (sessionID, checkpointId, scope) => invoke("session", "restoreCheckpoint", {
+        path: { id: sessionID, checkpointId }, body: { scope, confirm: true },
+      }),
       delete: (id) => invoke("session", "delete", { path: { id } }),
       rename: (id, title) => invoke("session", "rename", { path: { id }, body: { title } }),
       trajectory: (sessionID, query?) => invoke("session", "trajectory", { path: { id: sessionID }, query: query || {} }),

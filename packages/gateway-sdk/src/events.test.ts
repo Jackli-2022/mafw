@@ -6,7 +6,7 @@ import {
 
 test("runtime event list has no duplicates", () => {
   expect(new Set(RUNTIME_EVENT_TYPES).size).toBe(RUNTIME_EVENT_TYPES.length)
-  expect(RUNTIME_EVENT_TYPES.length).toBe(27)
+  expect(RUNTIME_EVENT_TYPES.length).toBe(28)
 })
 
 test("flat event list has no duplicates", () => {

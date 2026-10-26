@@ -190,6 +190,44 @@ test("session.revertDiff sends POST patches body", async () => {
   expect(r.reverted).toBe(1)
 })
 
+// ── T2-1 checkpoints ──────────────────────────────────────────────────────
+
+test("session.checkpoint sends POST with optional messageID", async () => {
+  fetchMock.mockResolvedValue(okJson({ checkpoint: { id: "ckpt_1", kind: "manual" } }))
+  const c = new MafwClient("http://gw:3000")
+
+  const r = await c.session.checkpoint({ path: { id: "s1" }, body: { messageID: "u1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/checkpoint",
+    expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse((fetchMock as any).mock.calls[0][1].body)).toEqual({ messageID: "u1" })
+  expect(r.checkpoint.id).toBe("ckpt_1")
+
+  await c.session.checkpoint({ path: { id: "s1" } })
+  expect(JSON.parse((fetchMock as any).mock.calls[1][1].body)).toEqual({})
+})
+
+test("session.checkpoints GETs the list", async () => {
+  fetchMock.mockResolvedValue(okJson({ checkpoints: [{ id: "ckpt_1" }] }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.checkpoints({ path: { id: "s1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/checkpoints",
+    expect.anything())
+  expect(r.checkpoints).toHaveLength(1)
+})
+
+test("session.restoreCheckpoint POSTs scope + confirm:true", async () => {
+  fetchMock.mockResolvedValue(okJson({ scope: "files", leftoverUntracked: ["x.txt"] }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.restoreCheckpoint({
+    path: { id: "s1", checkpointId: "ckpt_1" },
+    body: { scope: "files", confirm: true },
+  })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/checkpoints/ckpt_1/restore",
+    expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse((fetchMock as any).mock.calls[0][1].body)).toEqual({ scope: "files", confirm: true })
+  expect(r.leftoverUntracked).toEqual(["x.txt"])
+})
+
 test("session.create passes worktree option in body", async () => {
   fetchMock.mockResolvedValue(okJson({ id: "s_wt", worktree: { dir: "C:/p-wt-x", branch: "mafw/x" } }))
   const c = new MafwClient("http://gw:3000")

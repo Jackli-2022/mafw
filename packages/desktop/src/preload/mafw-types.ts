@@ -7,6 +7,7 @@ import type {
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
+  SessionCheckpoint, CheckpointScope, CheckpointRestoreResult,
 } from "@mafw/sdk"
 import type { PluginEntry, RenderRequest, RenderResponse } from "../shared/ui-plugins"
 
@@ -54,6 +55,9 @@ export type MafwAPI = {
     background: (sessionID: string) => Promise<void>
     diff: (sessionID: string, messageID?: string) => Promise<{ files: Array<{ file?: string; patch?: string; additions?: number; deletions?: number; status?: string }> }>
     revertDiff: (sessionID: string, patches: Array<{ file?: string; patch: string; hunkIndices: number[] }>) => Promise<{ reverted: number }>
+    checkpoint: (sessionID: string, messageID?: string) => Promise<{ checkpoint: SessionCheckpoint }>
+    checkpoints: (sessionID: string) => Promise<{ checkpoints: SessionCheckpoint[] }>
+    restoreCheckpoint: (sessionID: string, checkpointId: string, scope: CheckpointScope) => Promise<CheckpointRestoreResult>
     delete: (id: string) => Promise<void>
     rename: (id: string, title: string) => Promise<void>
     trajectory: (sessionID: string, query?: { limit?: number; before_turn?: number; rebuild?: boolean }) => Promise<{ turns: any[]; events: any[] }>

@@ -361,6 +361,12 @@ export interface SessionNamespace {
   diff(params: { path: { id: string }; query?: { messageID?: string } }): Promise<{ files: FileDiffInfo[] }>
   /** 逐 hunk 回退：传原 patch + 选中 hunk 下标（0-based），gateway 反转后 vcs.apply */
   revertDiff(params: { path: { id: string }; body: { patches: Array<{ file?: string; patch: string; hunkIndices: number[] }> } }): Promise<{ reverted: number }>
+  /** T2-1：手动创建检查点（messageID 缺省=最后一条已持久化消息；tree=最后已知 snapshot.end） */
+  checkpoint(params: { path: { id: string }; body?: { messageID?: string } }): Promise<{ checkpoint: SessionCheckpoint }>
+  /** T2-1：检查点列表（倒序） */
+  checkpoints(params: { path: { id: string } }): Promise<{ checkpoints: SessionCheckpoint[] }>
+  /** T2-1：三态恢复（session=截断历史 / files=回工作区 / both=全部；confirm 必填） */
+  restoreCheckpoint(params: { path: { id: string; checkpointId: string }; body: { scope: CheckpointScope; confirm: true } }): Promise<CheckpointRestoreResult>
   /** 手动压缩会话（TUI /compact；runtime summarize 薄代理）。 */
   summarize(params: { path: { id: string }; body?: { providerID?: string; modelID?: string } }): Promise<void>
 }
@@ -372,6 +378,35 @@ export interface FileDiffInfo {
   additions?: number
   deletions?: number
   status?: string
+}
+
+// ── T2-1 checkpoints ──
+
+export type CheckpointScope = 'session' | 'files' | 'both'
+
+/** gateway 服务端检查点（auto=turn 完成时记录 / manual=用户手动）。 */
+export interface SessionCheckpoint {
+  id: string
+  sessionID: string
+  projectDir: string
+  /** restore 后历史保留到该消息（含）为止。 */
+  anchorMessageID: string
+  /** checkpoint 工作区树；null=该边界无文件状态（仅对话可恢复）。 */
+  snapshotTree: string | null
+  /** 创建时的 untracked 清单（restore 残留报告的基线）。 */
+  untracked: string[]
+  kind: 'auto' | 'manual'
+  createdAt: string
+}
+
+export interface CheckpointRestoreResult {
+  scope: CheckpointScope
+  /** both + 无文件状态：降级为仅对话截断。 */
+  filesSkipped?: boolean
+  /** restore 后仍不在 checkpoint 清单里的 untracked（只报告不删除）。 */
+  leftoverUntracked?: string[]
+  /** files restore 的后悔药 checkpoint id。 */
+  preRestoreCheckpointId?: string
 }
 
 // ── Commands & skills (opencode serve shapes) ──

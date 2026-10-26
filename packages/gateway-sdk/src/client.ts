@@ -7,6 +7,7 @@ import {
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
+  SessionCheckpoint, CheckpointScope, CheckpointRestoreResult,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
@@ -264,6 +265,38 @@ export class MafwClient implements IMafwClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params.body),
       })
+    },
+
+    /** T2-1：手动创建检查点 */
+    checkpoint: async (
+      params: { path: { id: string }; body?: { messageID?: string } },
+    ): Promise<{ checkpoint: SessionCheckpoint }> => {
+      return this.request<{ checkpoint: SessionCheckpoint }>(`/api/sessions/${params.path.id}/checkpoint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body ?? {}),
+      })
+    },
+
+    /** T2-1：检查点列表（倒序） */
+    checkpoints: async (
+      params: { path: { id: string } },
+    ): Promise<{ checkpoints: SessionCheckpoint[] }> => {
+      return this.request<{ checkpoints: SessionCheckpoint[] }>(`/api/sessions/${params.path.id}/checkpoints`)
+    },
+
+    /** T2-1：三态恢复（destructive——confirm 必填） */
+    restoreCheckpoint: async (
+      params: { path: { id: string; checkpointId: string }; body: { scope: CheckpointScope; confirm: true } },
+    ): Promise<CheckpointRestoreResult> => {
+      return this.request<CheckpointRestoreResult>(
+        `/api/sessions/${params.path.id}/checkpoints/${params.path.checkpointId}/restore`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params.body),
+        },
+      )
     },
 
     summarize: async (
