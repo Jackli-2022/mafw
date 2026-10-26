@@ -41,7 +41,6 @@ import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/Cha
 import { TaskList } from "./components/TaskList"
 import { WorkbenchShell } from "./components/WorkbenchShell"
 import { ExecutionView } from "./components/ExecutionView"
-import { isNarrowViewport } from "./layout-breakpoints"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
 import { taskRows, fetchTasks, ingestTask } from "./task-store"
@@ -1402,11 +1401,7 @@ export function MafwShell() {
   const [agentPicks, setAgentPicks] = createStore<Record<string, string>>({})
   const [switchLogs, setSwitchLogs] = createSignal<Record<string, string[]>>({})
   const [taskListOpen, setTaskListOpen] = createSignal(false)
-  const [tasksPlacement, setTasksPlacement] = createSignal<"bar" | "dock">(
-    (localStorage.getItem("mafw-tasks-placement") as "bar" | "dock") || "bar"
-  )
   const [viewportWidth, setViewportWidth] = createSignal(window.innerWidth)
-  const [viewportNarrow, setViewportNarrow] = createSignal(isNarrowViewport(window.innerWidth))
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
   const [winMaximized, setWinMaximized] = createSignal(false)
   onMount(() => {
@@ -1419,8 +1414,6 @@ export function MafwShell() {
   const [taskAnchor, setTaskAnchor] = createSignal<HTMLElement | null>(null)
   // Session whose todos the TaskList popover shows.
   const [taskListSid, setTaskListSid] = createSignal<string | null>(null)
-  const [dockRef, setDockRef] = createSignal<HTMLDivElement | null>(null)
-
   // Hover-intent for the TaskList popover: opening on TaskBar hover, closing a
   // short delay after the mouse leaves (canceled while inside the popover).
   const [taskHover, setTaskHover] = createSignal(false)
@@ -1632,39 +1625,14 @@ export function MafwShell() {
     : "initial"
   const dockPresent = createPresence(() => rightDockOpen(), SURFACE_MS)
 
-  const applyTasksPlacement = (p: "bar" | "dock") => {
-    setTasksPlacement(p)
-    try { localStorage.setItem("mafw-tasks-placement", p) } catch { /* ignore */ }
-  }
-
-  // Legacy task-dock overlay cleanup is handled in Task 8; right dock is no longer width-overlaid.
-  createEffect(() => {
-    if (!(tasksPlacement() === "dock" && viewportNarrow())) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") applyTasksPlacement("bar")
-    }
-    const onDown = (e: MouseEvent) => {
-      const el = dockRef()
-      if (el && el.contains(e.target as Node)) return
-      applyTasksPlacement("bar")
-    }
-    window.addEventListener("keydown", onKey)
-    document.addEventListener("mousedown", onDown)
-    onCleanup(() => {
-      window.removeEventListener("keydown", onKey)
-      document.removeEventListener("mousedown", onDown)
-    })
-  })
-
-  // Ctrl/Cmd+J: toggle task list (bar) / return to bar (dock). Skip when typing.
+  // Ctrl/Cmd+J: toggle the TaskBar popover. Skip when typing.
   createEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "j") return
       const el = document.activeElement as HTMLElement | null
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return
       e.preventDefault()
-      if (tasksPlacement() === "dock") applyTasksPlacement("bar")
-      else setTaskListOpen(o => !o)
+      setTaskListOpen(o => !o)
     }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
@@ -1711,12 +1679,9 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // 宽度跟踪：左 dock 的 push/overlay 由 viewportWidth 决定；窄屏 overlay 仍看 viewportNarrow。
+  // 宽度跟踪：左 dock 的 push/overlay 由 viewportWidth 决定。
   createEffect(() => {
-    const onResize = () => {
-      setViewportWidth(window.innerWidth)
-      setViewportNarrow(isNarrowViewport(window.innerWidth))
-    }
+    const onResize = () => setViewportWidth(window.innerWidth)
     window.addEventListener("resize", onResize)
     onCleanup(() => window.removeEventListener("resize", onResize))
   })
@@ -1989,7 +1954,6 @@ export function MafwShell() {
                           onAskCancel={askCancel}
                           onTitlebarRef={(el) => setTitlebarRef(el)}
                           taskListOpen={taskListOpen()}
-                          tasksPlacement={tasksPlacement()}
                           onTaskToggle={(el, sid) => toggleTasks(el, sid ?? null)}
                           onTaskHoverOpen={(el, sid) => openTasksHover(el, sid ?? null)}
                           onTaskHoverLeave={scheduleTaskClose}
@@ -2059,10 +2023,10 @@ export function MafwShell() {
                      }}
                    />
                 </Show>
-                {/* TaskList: popover (bar state) - kept for inline TaskBar popover */}
-                <Show when={taskListOpen() && tasksPlacement() === "bar"}>
+                {/* TaskList: inline TaskBar popover */}
+                <Show when={taskListOpen()}>
                   <PopoverShell
-                    open={taskListOpen() && tasksPlacement() === "bar"}
+                    open={taskListOpen()}
                     trigger={taskAnchor()}
                     anchor="below-center"
                     onClose={() => setTaskListOpen(false)}
@@ -2081,21 +2045,6 @@ export function MafwShell() {
                       onPin={() => { setTaskListOpen(false); openWorkbench("execution", "todos") }}
                     />
                   </PopoverShell>
-                </Show>
-                {/* Legacy dock fallback: tasksPlacement=dock when right dock is closed */}
-                <Show when={tasksPlacement() === "dock" && !rightDockOpen()}>
-                  <div ref={setDockRef}>
-                    <TaskList
-                      todos={todos[currentSessionID()] || []}
-                      hiddenTodos={hiddenTodos[currentSessionID()] || []}
-                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
-                      tokens={taskMetrics(currentSessionID()).tokens}
-                      started={taskMetrics(currentSessionID()).started}
-                      placement={viewportNarrow() ? "overlay" : "dock"}
-                      onClose={() => applyTasksPlacement("bar")}
-                      onPin={() => { applyTasksPlacement("bar"); openWorkbench("execution", "todos") }}
-                    />
-                  </div>
                 </Show>
               </div>
             ) : activeTab() === "goals" ? (
@@ -2135,7 +2084,7 @@ export function MafwShell() {
           </Show>
         </div>
         {/* B1 右工作台：工作台/执行/审阅 + 常驻终端 */}
-        <div class="mafw-dock-slot" ref={setDockRef}>
+        <div class="mafw-dock-slot">
           <Show when={dockPresent()}>
             <Show when={connDown()}><ConnBanner /></Show>
             {connDown() ? (

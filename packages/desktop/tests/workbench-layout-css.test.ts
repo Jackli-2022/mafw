@@ -28,7 +28,7 @@ describe("workbench 三列布局契约", () => {
   test("工作台吃剩余宽度（第三列 + flex）", () => {
     const slot = css.match(/\.mafw-dock-slot \{[\s\S]*?\}/)?.[0] ?? ""
     expect(slot).toContain("grid-column: 3")
-    const wb = css.match(/\.mafw-workbench \{[\s\S]*?\}/)?.[0] ?? ""
+    const wb = css.match(/\.mafw-rw-shell \{[\s\S]*?\}/)?.[0] ?? ""
     expect(wb).toContain("flex: 1")
   })
   test("MafwShell 接 defaultDockOpen + 绝对档位（旧 clampChatWidth 退役）", () => {

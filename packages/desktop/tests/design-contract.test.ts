@@ -432,8 +432,8 @@ describe("动效基建 v4", () => {
   })
   test("tab 内容淡入 160ms", () =>
     expect(cssBlock(".mafw-content:not(.mafw-chat-content) > *")).toContain("mafw-fade-in"))
-  test("dock 进场 200ms", () =>
-    expect(cssBlock(".mafw-dock-slot.overlay {")).toContain("mafw-dock-in"))
+  test("左 dock 浮层进场 200ms", () =>
+    expect(cssBlock(".mafw-left-dock.overlay {")).toContain("mafw-dock-in"))
   test("模态 scale 进场", () =>
     expect(cssBlock(".mafw-confirm {")).toContain("mafw-modal-in"))
 })
@@ -864,10 +864,10 @@ describe("workbench merge — 档位与尺寸", () => {
     expect(src).toContain("migrateDockKeys")
     expect(src).toContain("onDblClick")
   })
-  test("CSS：树 200px / 终端 280px / 会话轨 44px（对齐 opencode 默认值）", () => {
-    expect(cssBlock(".mafw-wb-files {")).toContain("width: 200px")
-    expect(cssBlock(".mafw-wb-terminal {")).toContain("height: 280px")
-    expect(cssBlock(".mafw-session-rail {")).toContain("width: 44px")
+  test("CSS：树 200px / 终端 280px / 无第二右轨", () => {
+    expect(cssBlock(".mafw-rw-files {")).toContain("width: 200px")
+    expect(cssBlock(".mafw-rw-terminal {")).toContain("height: 280px")
+    expect(css).not.toContain(".mafw-session-rail {")
   })
 })
 
@@ -991,8 +991,8 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     expect(read("src/renderer/mafw/components/ScreenshotCropper.tsx")).toContain("stopImmediatePropagation")
     expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("hasSendableContent")
     expect(cssBlock(".mafw-dock-shell.is-hidden {")).toContain("display: none")
-    expect(cssBlock(".mafw-wb-terminal.is-collapsed {")).toContain("display: none")
-    expect(cssBlock(".mafw-session-float-body {")).toContain("overflow-y: auto")
+    expect(cssBlock(".mafw-rw-terminal.is-collapsed {")).toContain("display: none")
+    expect(cssBlock(".mafw-left-dock-notes {")).toContain("overflow-y: auto")
   })
 })
 

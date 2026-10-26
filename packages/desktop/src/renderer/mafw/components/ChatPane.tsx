@@ -167,7 +167,6 @@ export type ChatPaneProps = {
   projectDirectory?: string | null
   onTitlebarRef: (el: HTMLElement | null) => void
   taskListOpen: boolean
-  tasksPlacement: "bar" | "dock"
   onTaskToggle: (el: HTMLElement | null, sid?: string | null) => void
   onTaskHoverOpen: (el: HTMLElement | null, sid?: string | null) => void
   onTaskHoverLeave: () => void
@@ -1586,7 +1585,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   hiddenCount={(props.hiddenTodos?.[sidProp()] || []).length}
                   tokens={props.taskMetrics(sidProp()).tokens}
                   started={props.taskMetrics(sidProp()).started}
-                  open={props.taskListOpen && props.tasksPlacement === "bar"}
+                  open={props.taskListOpen}
                   onToggle={() => props.onTaskToggle(titlebarEl, sidProp())}
                   onHoverOpen={() => props.onTaskHoverOpen(titlebarEl, sidProp())}
                   onHoverLeave={props.onTaskHoverLeave}

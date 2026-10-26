@@ -2779,8 +2779,8 @@ html[data-theme="light"] body {
 }
 .mafw-tasklist-collapse:hover { background: var(--hover); color: var(--text-2); }
 
-/* ── Workbench 合并（spec 2026-10-26-workbench-merge-design）──
-   宽屏第三列 = 工作台（吃剩余）+ 会话图标轨（44px）；窄屏 overlay。 */
+/* ── B1 右工作台（spec 2026-10-26-agent-workbench-layout-ia）──
+   一级：工作台/执行/审阅；工作台二级：代码/浏览器；执行二级固定下拉；终端常驻底部。 */
 .mafw-dock-slot {
   position: relative;
   min-width: 0;
@@ -2790,19 +2790,9 @@ html[data-theme="light"] body {
   overflow: hidden;
   grid-column: 3;
 }
-.mafw-dock-slot.overlay {
-  position: fixed;
-  top: 38px;
-  right: 0;
-  bottom: 0;
-  width: min(560px, calc(100vw - 80px));
-  z-index: 70;
-  box-shadow: var(--elev-panel);
-  animation: mafw-dock-in var(--dur-surface) var(--ease-surface);
-}
 .mafw-dock-shell { display: flex; height: 100%; min-width: 0; min-height: 0; }
 .mafw-dock-shell.is-hidden { display: none; }
-.mafw-workbench {
+.mafw-rw-shell {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -2810,65 +2800,105 @@ html[data-theme="light"] body {
   flex-direction: column;
   background: var(--bg-base);
   border-left: 1px solid var(--border-subtle);
+  container-type: inline-size;
 }
-.mafw-wb-top { display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); flex: none; }
-.mafw-wb-tab { gap: 4px; }
-.mafw-wb-top-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; }
-.mafw-wb-body { flex: 1; min-height: 0; display: flex; }
-.mafw-wb-files { width: 200px; flex: none; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border-subtle); }
-.mafw-wb-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.mafw-wb-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.mafw-wb-terminal { height: 280px; max-height: 45%; flex: none; min-height: 0; border-top: 1px solid var(--border); }
-.mafw-wb-terminal.is-collapsed { display: none; }
-.mafw-session-rail {
-  position: relative;
-  width: 44px;
-  flex: 0 0 44px;
+.mafw-rw-l1 {
+  height: 38px;
+  flex: none;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 6px 0;
-  background: var(--bg-inset);
-  border-left: 1px solid var(--border-subtle);
+  gap: 3px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-base);
 }
-.mafw-session-rail-icons { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; z-index: 81; }
-.mafw-session-rail-btn { position: relative; width: 32px; height: 32px; min-height: 32px; padding: 0; }
-.mafw-session-rail-badge {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 4px;
-  border-radius: 7px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 9px;
-  line-height: 14px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
+.mafw-rw-tab { gap: 4px; }
+.mafw-rw-l1-spacer { flex: 1; }
+.mafw-rw-l2 {
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
 }
-/* 浮层面板：从图标轨左缘展开，盖在工作台上；点击外部/Esc 关闭 */
-.mafw-session-float-mask { position: fixed; inset: 0; z-index: 79; background: transparent; }
-.mafw-session-float {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 44px;
-  z-index: 80;
-  width: min(420px, calc(100vw - 120px));
+.mafw-rw-l2-tab { padding-left: 7px; padding-right: 7px; }
+.mafw-rw-exec-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+.mafw-rw-exec-trigger:hover { background: var(--bg-hover); }
+.mafw-rw-check { margin-left: auto; color: var(--accent); }
+.mafw-rw-content { flex: 1; min-height: 0; min-width: 0; display: flex; position: relative; }
+.mafw-rw-pane { display: none; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.mafw-rw-pane.is-active { display: flex; }
+.mafw-rw-code { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }
+.mafw-rw-files {
+  width: 200px;
+  flex: none;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-float);
-  border: 1px solid var(--border-subtle);
-  border-right: none;
-  box-shadow: var(--shadow-float);
-  border-radius: var(--r-md) 0 0 var(--r-md);
-  overflow: hidden;
-  animation: mafw-dock-in var(--dur-fast) var(--ease-surface);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-base);
 }
-.mafw-session-float-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+.mafw-rw-code-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mafw-rw-code-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mafw-rw-files-toggle { display: none; }
+.mafw-rw-terminal { height: 280px; max-height: 45%; flex: none; min-height: 0; border-top: 1px solid var(--border); }
+.mafw-rw-terminal.is-collapsed { display: none; }
+.mafw-rw-execution { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.mafw-rw-exec-section { min-height: 0; flex: 1; }
+.mafw-rw-overview { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.mafw-rw-overview-head { display: flex; align-items: baseline; gap: 8px; }
+.mafw-rw-overview-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
+.mafw-rw-overview-note { font-size: 11px; color: var(--text-3); }
+.mafw-rw-overview-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.mafw-rw-overview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-height: 74px;
+  padding: 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  color: var(--text-1);
+  text-align: left;
+}
+.mafw-rw-overview-card:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.mafw-rw-overview-label { font-size: 11px; color: var(--text-3); }
+.mafw-rw-overview-card strong { font-size: 15px; color: var(--text-1); }
+.mafw-rw-overview-card span:last-child { font-size: 10px; color: var(--text-3); }
+.mafw-rw-overview-attention { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); }
+.mafw-rw-usage-toggle { align-self: flex-start; }
+.mafw-rw-usage { border-top: 1px solid var(--border-subtle); padding-top: 8px; min-height: 0; }
+@container (max-width: 599px) {
+  .mafw-rw-files {
+    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 3;
+    width: min(240px, 82%);
+    border-right: 1px solid var(--border);
+    box-shadow: var(--elev-panel);
+  }
+  .mafw-rw-code.files-open .mafw-rw-files { display: flex; }
+  .mafw-rw-files-toggle { display: inline-flex; position: absolute; top: 6px; left: 6px; z-index: 4; }
+  .mafw-rw-overview-cards { grid-template-columns: 1fr; }
+}
 /* ── IconRail（左栏图标轨，spec 2026-10-22-workbench-layout D3）────────── */
 .mafw-icon-rail {
   width: 46px;

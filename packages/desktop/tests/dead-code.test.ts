@@ -10,10 +10,8 @@ describe("dead code 清理", () => {
   test("UsagePill 组件已删除（右 dock「用量」tab 取代）", () => {
     expect(existsSync(join(root, "src/renderer/mafw/components/UsagePill.tsx"))).toBe(false)
   })
-  test("railAutoAction（旧 Rail 自动折叠）已删除", () => {
-    const lb = read("src/renderer/mafw/layout-breakpoints.ts")
-    expect(lb).not.toContain("railAutoAction")
-    expect(lb).not.toContain("RailAutoAction")
+  test("旧窄屏断点文件已删除（右 dock 不再自动 overlay）", () => {
+    expect(existsSync(join(root, "src/renderer/mafw/layout-breakpoints.ts"))).toBe(false)
   })
   test("applyRightDockWidth 死函数已删除", () => {
     expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("applyRightDockWidth")
