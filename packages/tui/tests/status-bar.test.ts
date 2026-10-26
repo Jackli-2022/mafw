@@ -54,6 +54,13 @@ test('status bar truncates to narrow width without error', () => {
   assert.ok(visibleWidth(lines[0]) <= 40)
 })
 
+test('status bar shows gateway inbox count', () => {
+  const bar = new StatusBar()
+  bar.setState({ project: 'demo', session: 's', conn: 'ok', gatewayQueued: 3 })
+  const clean = bar.render(120)[0].replace(/\x1b\[[0-9;]*m/g, '')
+  assert.ok(clean.includes('inbox 3'), 'gateway queue count')
+})
+
 test('status bar shows queued count, stash badge, and per-prompt timer', () => {
   const bar = new StatusBar()
   bar.setState({

@@ -20,8 +20,10 @@ export interface StatusState {
   usage?: UsageState
   /** agent 流式中（交互状态机 busy 态） */
   busy?: boolean
-  /** busy 期间排队的消息数 */
+  /** busy 期间排队的消息数（客户端本地队列） */
   queued?: number
+  /** gateway 服务端 inbox 数量（batch 5） */
+  gatewayQueued?: number
   /** prompt stash 深度（📌 徽标） */
   stashed?: number
   /** /focus 静视图开启（◉ 徽标） */
@@ -71,6 +73,7 @@ export class StatusBar implements Component {
     if (s.permLabel) segs.push({ text: theme.warn(s.permLabel), prio: 75 })
     else if (s.permAuto) segs.push({ text: theme.warn('🛡 auto'), prio: 75 })
     if (typeof s.queued === 'number' && s.queued > 0) segs.push({ text: theme.warn(`queued ${s.queued}`), prio: 60 })
+    if (typeof s.gatewayQueued === 'number' && s.gatewayQueued > 0) segs.push({ text: theme.warn(`inbox ${s.gatewayQueued}`), prio: 58 })
     if (typeof s.stashed === 'number' && s.stashed > 0) segs.push({ text: theme.dim(`📌${s.stashed}`), prio: 55 })
     if (s.focus) segs.push({ text: theme.accent('◉ focus'), prio: 65 })
     const u = s.usage

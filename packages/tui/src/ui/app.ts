@@ -215,12 +215,22 @@ export async function runApp(opts: AppOptions): Promise<void> {
     return conn
   }
 
+  async function refreshGatewayQueue(sessionID: string): Promise<void> {
+    try {
+      const { items } = await client.session.queueList({ path: { id: sessionID } })
+      setStatus({ gatewayQueued: items.length })
+    } catch {
+      setStatus({ gatewayQueued: 0 })
+    }
+  }
+
   async function switchToSession(sessionID: string): Promise<void> {
     await chatStore.switchSession(sessionID)
     chatTab.rebuild()
     ensureConn(sessionID)
     setStatus({ session: sessionID })
     void refreshUsage()
+    void refreshGatewayQueue(sessionID)
   }
 
   async function showSessionPicker(): Promise<void> {
@@ -633,11 +643,18 @@ export async function runApp(opts: AppOptions): Promise<void> {
         const m = permStore.get(sid)
         setStatus({ permAuto: m !== 'read-only', permLabel: m !== 'read-only' ? (m === 'full-access' ? '🛡 全开' : '🛡 auto') : undefined })
       }
+    } else if (type === 'queue.updated') {
+      const p = data?.properties ?? data
+      const sid = p?.sessionID ?? data?.sessionID
+      if (!sid || sid === chatStore.sessionID) {
+        setStatus({ gatewayQueued: Array.isArray(p?.items) ? p.items.length : 0 })
+      }
     } else if (type === 'turn.completed') {
       void refreshUsage()
     }
   }
   if (managerSessionID) ensureConn(managerSessionID)
+  if (managerSessionID) void refreshGatewayQueue(managerSessionID)
 
   function applyTab(): void {
     contentHost.removeChild(currentBody)
