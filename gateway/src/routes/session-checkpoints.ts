@@ -2,8 +2,10 @@
  * T2-1 session checkpoint 路由（能力门 checkpointApi）：
  *   POST /api/sessions/:id/checkpoint                   手动创建
  *   GET  /api/sessions/:id/checkpoints                  列表
- *   POST /api/sessions/:id/checkpoints/:cid/restore     三�?restore（confirm:true�? *
- * 返回 handled=false 表示路径不匹配，交给后续路由（对�?session-branch 约定）�? */
+ *   POST /api/sessions/:id/checkpoints/:cid/restore     三态 restore（confirm:true）
+ *
+ * 返回 handled=false 表示路径不匹配，交给后续路由（对齐 session-branch 约定）。
+ */
 import * as http from 'http';
 import type { AgentRuntime } from '../runtime/contract';
 import {
