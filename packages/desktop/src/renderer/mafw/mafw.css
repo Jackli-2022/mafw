@@ -5237,6 +5237,20 @@ html[data-theme="light"] body {
 .mafw-browser-host { flex: 1 1 auto; min-height: 0; display: flex; }
 .mafw-browser-view { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #fff; }
 
+/* ── 统一面板骨架（DockPanelHeader / DockEmpty / DockBanner）── */
+.mafw-panel-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; min-height: 32px; flex: none; border-bottom: 1px solid var(--border); }
+.mafw-panel-head-title { font-size: 12px; font-weight: 600; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-panel-head-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
+.mafw-panel-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 16px; text-align: center; }
+.mafw-panel-empty-icon { color: var(--text-4); }
+.mafw-panel-empty-text { margin: 0; font-size: 12px; color: var(--text-3); line-height: 1.5; }
+.mafw-panel-empty-hint { margin: 0; font-size: 11px; color: var(--text-4); line-height: 1.5; }
+.mafw-panel-banner { display: flex; align-items: center; gap: 8px; padding: 8px 10px; flex: none; border-bottom: 1px solid var(--border); font-size: 11.5px; line-height: 1.5; }
+.mafw-panel-banner-info { background: var(--bg-overlay); color: var(--text-2); }
+.mafw-panel-banner-warn { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+.mafw-panel-banner-error { background: var(--danger-dim); color: var(--danger-text); }
+.mafw-panel-banner-text { flex: 1 1 auto; min-width: 0; }
+
 /* ── Terminal dock（内嵌终端，spec 2026-10-26：目录级 persistent PTY）── */
 .mafw-terminal-dock { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-inset); }
 .mafw-terminal-host { flex: 1 1 auto; min-height: 0; padding: 6px 4px 4px 8px; overflow: hidden; }
