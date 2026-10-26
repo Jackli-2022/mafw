@@ -22,6 +22,8 @@ export interface AutoCheckpointHookDeps {
   internalRoleOf(sessionID: string): string | undefined;
   isHidden(info: any, roleFor: (id: string) => string | undefined): boolean;
   porcelainOf(projectDir: string): Promise<string>;
+  /** 重试等待（测试注入 no-op；生产 setTimeout）。 */
+  wait?(ms: number): Promise<void>;
   create(input: {
     sessionID: string;
     projectDir: string;
@@ -56,8 +58,17 @@ export async function runAutoCheckpoint(
   const projectDir = info.directory ?? info.location?.directory;
   if (typeof projectDir !== 'string' || !projectDir) return null;
 
-  const result = await rt.session.messages({ sessionID, limit: 200 });
-  const plan = planAutoCheckpoint(Array.isArray(result?.data) ? result.data : []);
+  // turn.completed 可能先于 assistant 消息在 messages 视图可见（serve 读后写
+  // 竞态，重启后首回合尤甚）——短暂重试，避免当回合检查点静默丢失。
+  const wait = deps.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let plan: ReturnType<typeof planAutoCheckpoint> = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await rt.session.messages({ sessionID, limit: 200 });
+    const messages = Array.isArray(result?.data) ? result.data : [];
+    plan = planAutoCheckpoint(messages);
+    if (plan) break;
+    if (attempt < 2) await wait(300);
+  }
   if (!plan) return null;
 
   let untracked: string[] = [];

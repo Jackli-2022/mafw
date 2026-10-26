@@ -21,6 +21,7 @@ function harness(opts: {
   role?: string;
   info?: any;
   messages?: any[];
+  messagesSeq?: any[][];
   porcelain?: string;
   porcelainThrows?: boolean;
 } = {}) {
@@ -29,6 +30,7 @@ function harness(opts: {
     messages: [] as Array<{ sid: string; limit?: number }>,
     create: [] as any[],
   };
+  let seqIdx = 0;
   const created: SessionCheckpoint = {
     id: 'ckpt_1', sessionID: 's1', projectDir: '/tmp/proj', anchorMessageID: 'u1',
     snapshotTree: T1, untracked: [], kind: 'auto', createdAt: '2026-10-26T00:00:00Z',
@@ -46,6 +48,9 @@ function harness(opts: {
         },
         messages: async ({ sessionID, limit }) => {
           calls.messages.push({ sid: sessionID, limit });
+          if (opts.messagesSeq) {
+            return { data: opts.messagesSeq[Math.min(seqIdx++, opts.messagesSeq.length - 1)] };
+          }
           return { data: opts.messages ?? assistantTurn() };
         },
       },
@@ -56,6 +61,7 @@ function harness(opts: {
       if (opts.porcelainThrows) throw new Error('git unavailable');
       return opts.porcelain ?? '?? scratch.txt\n';
     },
+    wait: async () => {}, // 测试不真等 300ms
     create: (input) => { calls.create.push(input); return created; },
   };
 
@@ -124,6 +130,21 @@ describe('runAutoCheckpoint', () => {
     const h = harness({ messages: [{ info: { id: 'u1', role: 'user', time: { created: 1 } } }] });
     expect(await runAutoCheckpoint(h.deps, 's1')).toBeNull();
     expect(h.calls.create).toEqual([]);
+    expect(h.calls.messages).toHaveLength(3); // 3 次有界重试后放弃
+  });
+
+  it('retries when turn.completed races ahead of message persistence', async () => {
+    // 第一次只看到 user（assistant 尚未可见），第二次完整回合 → 仍能记录
+    const h = harness({
+      messagesSeq: [
+        [{ info: { id: 'u1', role: 'user', time: { created: 1 } } }],
+        assistantTurn(),
+      ],
+    });
+    const cp = await runAutoCheckpoint(h.deps, 's1');
+    expect(cp).toEqual(h.created);
+    expect(h.calls.messages).toHaveLength(2);
+    expect(h.calls.create).toHaveLength(1);
   });
 
   it('treats git status failure as empty untracked (still records)', async () => {
