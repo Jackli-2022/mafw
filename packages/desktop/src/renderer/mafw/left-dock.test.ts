@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { connDotState, railAriaLabel, resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace } from "./left-dock"
+import { connDotState, railAriaLabel, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldCloseOnSelect, toggleFace } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -14,15 +14,29 @@ describe("left-dock 状态模型", () => {
     })
   })
 
-  describe("resolveMode（窗口状态决定；窄断点不再劫持推挤）", () => {
-    test("open + 最大化 → push", () => {
-      expect(resolveMode(true, true)).toBe("push")
+  describe("resolveMode（窗口宽度决定；不再看最大化）", () => {
+    test("open + 宽度达到 1366 → push", () => {
+      expect(resolveMode(true, 1366)).toBe("push")
     })
-    test("open + 非最大化 → overlay", () => {
-      expect(resolveMode(true, false)).toBe("overlay")
+    test("open + 宽度低于 1366 → overlay", () => {
+      expect(resolveMode(true, 1365)).toBe("overlay")
     })
-    test("closed → closed（无视窗口状态）", () => {
-      expect(resolveMode(false, true)).toBe("closed")
+    test("closed → closed（无视宽度）", () => {
+      expect(resolveMode(false, 1600)).toBe("closed")
+    })
+  })
+
+  describe("restoreLeftDockOpen（启动时浮层态不自动展开）", () => {
+    test("存储为 open 且宽度不足 → false", () => {
+      expect(restoreLeftDockOpen("1", 1088)).toBe(false)
+      expect(restoreLeftDockOpen("1", 1365)).toBe(false)
+    })
+    test("存储为 open 且宽度足够 → true", () => {
+      expect(restoreLeftDockOpen("1", 1366)).toBe(true)
+    })
+    test("关闭/非法存储 → false", () => {
+      expect(restoreLeftDockOpen("0", 1600)).toBe(false)
+      expect(restoreLeftDockOpen("bogus", 1600)).toBe(false)
     })
   })
 

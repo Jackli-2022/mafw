@@ -15,7 +15,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
-import { clampLeftDockWidth, resolveLeftDockWidth, resolveMode, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
+import { clampLeftDockWidth, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
@@ -1405,6 +1405,7 @@ export function MafwShell() {
   const [tasksPlacement, setTasksPlacement] = createSignal<"bar" | "dock">(
     (localStorage.getItem("mafw-tasks-placement") as "bar" | "dock") || "bar"
   )
+  const [viewportWidth, setViewportWidth] = createSignal(window.innerWidth)
   const [viewportNarrow, setViewportNarrow] = createSignal(isNarrowViewport(window.innerWidth))
   const [titlebarRef, setTitlebarRef] = createSignal<HTMLElement | null>(null)
   const [winMaximized, setWinMaximized] = createSignal(false)
@@ -1587,9 +1588,9 @@ export function MafwShell() {
   }
   const [leftDock, setLeftDock] = createSignal<{ face: LeftDockFace; open: boolean }>({
     face: (localStorage.getItem("mafw-left-dock-face") as LeftDockFace | null) ?? "sessions",
-    open: localStorage.getItem("mafw-left-dock-open") === "1",
+    open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth),
   })
-  const leftDockMode = () => resolveMode(leftDock().open, winMaximized())
+  const leftDockMode = () => resolveMode(leftDock().open, viewportWidth())
   const toggleLeftDock = (face: LeftDockFace) => {
     const next = toggleFace(leftDock(), face)
     setLeftDock(next)
@@ -1715,9 +1716,12 @@ export function MafwShell() {
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })
 
-  // 窄视口断点跟踪（工作台 overlay 化与左 dock 恒浮层共用 viewportNarrow）。
+  // 宽度跟踪：左 dock 的 push/overlay 由 viewportWidth 决定；窄屏 overlay 仍看 viewportNarrow。
   createEffect(() => {
-    const onResize = () => setViewportNarrow(isNarrowViewport(window.innerWidth))
+    const onResize = () => {
+      setViewportWidth(window.innerWidth)
+      setViewportNarrow(isNarrowViewport(window.innerWidth))
+    }
     window.addEventListener("resize", onResize)
     onCleanup(() => window.removeEventListener("resize", onResize))
   })

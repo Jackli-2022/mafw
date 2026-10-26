@@ -14,11 +14,17 @@ export function toggleFace(s: LeftDockState, face: LeftDockFace): LeftDockState 
   return { face, open: true }
 }
 
-// 窗口化（非最大化）恒浮层；最大化/全屏推挤（用户决策：由窗口状态决定，
-// 不再用窄宽度断点劫持——高分屏缩放下最大化窗口 CSS 宽可能 <1200）。
-export function resolveMode(open: boolean, maximized: boolean): LeftDockMode {
+// 宽度决定模态：≥1366 推挤，以下浮层。窗口最大化与否不再改变布局。
+export const LEFT_DOCK_PUSH_MIN_WIDTH = 1366
+
+export function resolveMode(open: boolean, width: number): LeftDockMode {
   if (!open) return "closed"
-  return maximized ? "push" : "overlay"
+  return width >= LEFT_DOCK_PUSH_MIN_WIDTH ? "push" : "overlay"
+}
+
+/** 启动时存储为 open 的左 dock 只在可推挤宽度恢复；浮层态不自动展开。 */
+export function restoreLeftDockOpen(stored: string | null, width: number): boolean {
+  return stored === "1" && width >= LEFT_DOCK_PUSH_MIN_WIDTH
 }
 
 // 浮层模式下，选中会话/导航离开 chat 时自动关；推挤列保持。
