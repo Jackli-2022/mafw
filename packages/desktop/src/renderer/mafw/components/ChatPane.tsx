@@ -35,6 +35,7 @@ import { useSendMessage } from "../chat/use-send-message"
 import { TtsPicker } from "../chat/TtsPicker"
 import { MessageNav } from "./MessageNav"
 import { enqueueTurn, removeTurnAt, takeFirstTurn, type QueuedTurn } from "./turn-queue"
+import { queueForSession, fetchQueue, cancelQueueItem, clearGatewayQueue, queueItemText } from "../queue-store"
 import { countUserTurns, shouldKeepPaging } from "./history-paging"
 import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
@@ -273,6 +274,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   // Busy-turn queue: regular messages sent while a turn is running are held
   // here and dispatched on the next idle boundary (steering without abort).
   const [queuedItems, setQueuedItems] = createSignal<QueuedTurn[]>([])
+  const gwQueue = () => sidProp() ? queueForSession(sidProp()) : []
+  createEffect(() => {
+    const sid = sidProp()
+    if (sid) void fetchQueue(sid)
+  })
 
   // Composer input loop: ↑/↓ history, per-session draft, @file mentions.
   // History persists per session (localStorage, bounded); `replace` on sid
@@ -1601,6 +1607,42 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <span class="mafw-flow-pulse" />
             有 {props.sessionPending(sidProp())} 个待回答 ↓
           </ButtonV2>
+        </Show>
+        <Show when={gwQueue().length > 0}>
+          <div class="mafw-queue-bar mafw-gw-queue">
+            <span class="mafw-queue-count">⏳ {gwQueue().length} 条网关队列 · 回合结束后自动发送</span>
+            <For each={gwQueue()}>
+              {(q) => (
+                <span class="mafw-chip" title={`${q.source} · ${q.enqueuedAt}`}>
+                  <span class="mafw-chip-label">{queueItemText(q, 60)}</span>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    class="mafw-chip-x"
+                    aria-label="取消网关排队消息"
+                    onClick={async () => {
+                      if (!sidProp()) return
+                      const ok = await cancelQueueItem(sidProp(), q.id)
+                      if (!ok) showToastV2({ description: "取消排队消息失败", duration: 3000 })
+                    }}
+                  >
+                    <Icon name="close" size="small" />
+                  </ButtonV2>
+                </span>
+              )}
+            </For>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              onClick={async () => {
+                if (!sidProp()) return
+                const cleared = await clearGatewayQueue(sidProp())
+                if (cleared === null) showToastV2({ description: "清空网关队列失败", duration: 3000 })
+              }}
+            >
+              清空
+            </ButtonV2>
+          </div>
         </Show>
         <Show when={queuedItems().length > 0}>
           <div class="mafw-queue-bar">
