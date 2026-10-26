@@ -1479,7 +1479,7 @@ export function MafwShell() {
   const [workbenchTerminalOpen, setWorkbenchTerminalOpen] = createSignal(
     storedTerminal !== null ? storedTerminal !== "0" : workbenchBoot.terminalOpen,
   )
-  // 绝对 px 三档（420/520/640）
+  // 绝对 px 三档（520/640/760，默认 640）
   const [detent, setDetent] = createSignal<WorkbenchDetent>(workbenchBoot.detent)
   /** 拖动中的连续预览（松手吸附后清空）。 */
   const [chatPreview, setChatPreview] = createSignal<number | null>(null)
@@ -2111,7 +2111,7 @@ export function MafwShell() {
             <div
               class="mafw-chat-resize-wrap"
               onDblClick={() => applyDetent(WORKBENCH_DEFAULT_DETENT)}
-              title="拖动调宽（松手吸附 420/520/640）；双击回默认档"
+              title="拖动调宽（松手吸附 520/640/760）；双击回默认档 640"
             >
               <ResizeHandle
                 direction="horizontal"

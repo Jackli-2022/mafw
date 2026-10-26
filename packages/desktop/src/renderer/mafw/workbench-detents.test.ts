@@ -13,56 +13,60 @@ import {
   snapDetent,
 } from "./workbench-detents"
 
-describe("workbench absolute px detents (spec 2026-10-26, res-2026-10-26-detent)", () => {
+describe("workbench absolute px detents (spec 2026-10-26, rev: default 640)", () => {
   test("constants", () => {
-    assert.deepEqual(WORKBENCH_DETENTS, [420, 520, 640])
-    assert.equal(WORKBENCH_DEFAULT_DETENT, 520)
+    assert.deepEqual(WORKBENCH_DETENTS, [520, 640, 760])
+    assert.equal(WORKBENCH_DEFAULT_DETENT, 640)
     assert.equal(CHAT_PX_FLOOR, 320)
     assert.equal(CHAT_PX_CEIL, 760)
     assert.equal(WORKBENCH_MIN_WIDTH, 520)
   })
 
   test("chatPxForDetent：绝对档 + 护栏（工作台下限 520 / 墙 320-760）", () => {
-    assert.equal(chatPxForDetent(420, 1394), 420)
     assert.equal(chatPxForDetent(520, 1394), 520)
     assert.equal(chatPxForDetent(640, 1394), 640)
-    assert.equal(chatPxForDetent(640, 1154), 634) // available − 520
-    assert.equal(chatPxForDetent(420, 674), 320) // 窄窗退化（<1200 走 overlay）
-    assert.equal(chatPxForDetent(420, 2000), 420) // 上限墙不误伤小档
+    assert.equal(chatPxForDetent(760, 1394), 760)
+    assert.equal(chatPxForDetent(760, 1154), 634) // available − 520
+    assert.equal(chatPxForDetent(520, 674), 320) // 窄窗退化（<1200 走 overlay）
+    assert.equal(chatPxForDetent(520, 2000), 520) // 上限墙不误伤小档
   })
 
   test("snapDetent：按实际像素距离吸附（无比例语义）", () => {
-    assert.equal(snapDetent(430, 1394), 420)
+    assert.equal(snapDetent(430, 1394), 520)
     assert.equal(snapDetent(500, 1394), 520)
     assert.equal(snapDetent(600, 1394), 640)
-    assert.equal(snapDetent(200, 1394), 420)
-    assert.equal(snapDetent(1000, 1394), 640)
-    // 护栏生效时按钳制后的像素比较：1154 下 640 档实际 = 634
+    assert.equal(snapDetent(700, 1394), 640) // 640/760 等距，取先出现档
+    assert.equal(snapDetent(720, 1394), 760)
+    assert.equal(snapDetent(200, 1394), 520)
+    assert.equal(snapDetent(1000, 1394), 760)
+    // 护栏生效时按钳制后的像素比较：1154 下 640/760 档实际都 = 634
     assert.equal(snapDetent(600, 1154), 640)
   })
 
   test("ratioPercentFromDrag：px → 可用宽百分比（一位小数，仅显示）", () => {
     assert.equal(ratioPercentFromDrag(520, 1394), 37.3)
-    assert.equal(ratioPercentFromDrag(420, 1394), 30.1)
+    assert.equal(ratioPercentFromDrag(760, 1394), 54.5)
     assert.equal(ratioPercentFromDrag(100, 0), 0)
   })
 
-  test("migrateLegacyChatWidth：旧 px → 像素最近档（缺失/非法→520）", () => {
-    assert.equal(migrateLegacyChatWidth(417, 1394), 420)
+  test("migrateLegacyChatWidth：旧 px → 像素最近档（缺失/非法→640）", () => {
+    assert.equal(migrateLegacyChatWidth(417, 1394), 520)
     assert.equal(migrateLegacyChatWidth(558, 1394), 520)
     assert.equal(migrateLegacyChatWidth(697, 1394), 640)
-    assert.equal(migrateLegacyChatWidth(null, 1394), 520)
-    assert.equal(migrateLegacyChatWidth(Number.NaN, 1394), 520)
-    assert.equal(migrateLegacyChatWidth(-5, 1394), 520)
-    assert.equal(migrateLegacyChatWidth(400, 0), 520)
+    assert.equal(migrateLegacyChatWidth(750, 1394), 760)
+    assert.equal(migrateLegacyChatWidth(null, 1394), 640)
+    assert.equal(migrateLegacyChatWidth(Number.NaN, 1394), 640)
+    assert.equal(migrateLegacyChatWidth(-5, 1394), 640)
+    assert.equal(migrateLegacyChatWidth(400, 0), 640)
   })
 
-  test("normalizeDetent：持久化值归一（非法回默认）", () => {
-    assert.equal(normalizeDetent("420"), 420)
-    assert.equal(normalizeDetent(640), 640)
+  test("normalizeDetent：持久化值归一（旧 420 / 非法回默认 640）", () => {
     assert.equal(normalizeDetent("520"), 520)
-    assert.equal(normalizeDetent("999"), 520)
-    assert.equal(normalizeDetent("abc"), 520)
-    assert.equal(normalizeDetent(null), 520)
+    assert.equal(normalizeDetent(640), 640)
+    assert.equal(normalizeDetent("760"), 760)
+    assert.equal(normalizeDetent("420"), 640)
+    assert.equal(normalizeDetent("999"), 640)
+    assert.equal(normalizeDetent("abc"), 640)
+    assert.equal(normalizeDetent(null), 640)
   })
 })

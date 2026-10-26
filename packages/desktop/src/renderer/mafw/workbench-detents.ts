@@ -1,11 +1,12 @@
-// Workbench 三档绝对 px（spec 2026-10-26-workbench-merge-design §已确认决策 4/5；
+// Workbench 三档绝对 px（spec 2026-10-26-workbench-merge-design；2026-10-26 rev2：
+// 默认档 640、去掉过窄的 420、640 外新增 760）。
 // 依据 docs/research/2026-10-26-detent-ratio-vs-absolute.md：业界桌面 IDE/Agent 全部绝对 px，
-// 比例档位只属固定画布；比例档在 1920+ 撞 760 墙会塌缩）。
+// 比例档位只属固定画布；比例档在 1920+ 撞 760 墙会塌缩。
 // 护栏：chat = clamp(detent, 320, min(760, availableWidth − 520 工作台下限))。
-export type WorkbenchDetent = 420 | 520 | 640
+export type WorkbenchDetent = 520 | 640 | 760
 
-export const WORKBENCH_DETENTS: WorkbenchDetent[] = [420, 520, 640]
-export const WORKBENCH_DEFAULT_DETENT: WorkbenchDetent = 520
+export const WORKBENCH_DETENTS: WorkbenchDetent[] = [520, 640, 760]
+export const WORKBENCH_DEFAULT_DETENT: WorkbenchDetent = 640
 export const CHAT_PX_FLOOR = 320
 export const CHAT_PX_CEIL = 760
 export const WORKBENCH_MIN_WIDTH = 520
@@ -33,7 +34,7 @@ export function ratioPercentFromDrag(px: number, availableWidth: number): number
   return Math.round((px / availableWidth) * 1000) / 10
 }
 
-/** 旧版 `mafw-chat-width`（自由 px）→ 档位；缺失/非法/不可用宽 → 默认 520。 */
+/** 旧版 `mafw-chat-width`（自由 px）→ 档位；缺失/非法/不可用宽 → 默认 640。 */
 export function migrateLegacyChatWidth(storedPx: number | null, availableWidth: number): WorkbenchDetent {
   if (storedPx === null || !Number.isFinite(storedPx) || storedPx <= 0 || !(availableWidth > 0)) {
     return WORKBENCH_DEFAULT_DETENT
@@ -41,7 +42,7 @@ export function migrateLegacyChatWidth(storedPx: number | null, availableWidth: 
   return snapDetent(storedPx, availableWidth)
 }
 
-/** localStorage 值归一：仅接受 420/520/640。 */
+/** localStorage 值归一：仅接受 520/640/760（旧 420 等非法值回默认 640）。 */
 export function normalizeDetent(stored: string | number | null): WorkbenchDetent {
   const n = typeof stored === "number" ? stored : Number(stored)
   return (WORKBENCH_DETENTS as number[]).includes(n) ? (n as WorkbenchDetent) : WORKBENCH_DEFAULT_DETENT

@@ -8,12 +8,13 @@ describe("workbench layout pure functions", () => {
     assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: false }), "0px minmax(0, 1fr) 0px")
   })
 
-  test("detentFromLegacy：旧 chat 宽度 px → 绝对档位（缺失/非法 → 520）", () => {
-    assert.equal(detentFromLegacy("417", 1394), 420)
+  test("detentFromLegacy：旧 chat 宽度 px → 绝对档位（缺失/非法 → 640）", () => {
+    assert.equal(detentFromLegacy("417", 1394), 520)
     assert.equal(detentFromLegacy("558", 1394), 520)
     assert.equal(detentFromLegacy("697", 1394), 640)
-    assert.equal(detentFromLegacy(null, 1394), 520)
-    assert.equal(detentFromLegacy("abc", 1394), 520)
+    assert.equal(detentFromLegacy("750", 1394), 760)
+    assert.equal(detentFromLegacy(null, 1394), 640)
+    assert.equal(detentFromLegacy("abc", 1394), 640)
   })
 
   test("migrateDockKeys：一次性迁移（新键优先 / 旧 tab 映射 / 旧键删除）", () => {
@@ -40,6 +41,11 @@ describe("workbench layout pure functions", () => {
     // 旧 files → editor
     const m3 = new Map<string, string>([["mafw-right-dock-tab", "files"]])
     assert.equal(migrateDockKeys((k) => m3.get(k) ?? null, (k) => m3.delete(k), 1394).workbenchTab, "editor")
+
+    // 旧 420 档（新键已存在）→ 新默认 640；无任何存储 → 640
+    const m4 = new Map<string, string>([["mafw-workbench-detent", "420"]])
+    assert.equal(migrateDockKeys((k) => m4.get(k) ?? null, (k) => m4.delete(k), 1394).detent, 640)
+    assert.equal(migrateDockKeys(() => null, () => {}, 1394).detent, 640)
   })
 
   test("workbenchShellHidden：非 chat 视图隐藏（窄屏 overlay 不得盖住其他页）", () => {
@@ -49,6 +55,7 @@ describe("workbench layout pure functions", () => {
 
   test("formatResizePreview：拖动实时 px + 实际比例", () => {
     assert.equal(formatResizePreview(520, 1394), "520px · 37.3%")
+    assert.equal(formatResizePreview(760, 1394), "760px · 54.5%")
     assert.equal(formatResizePreview(437, 1092), "437px · 40%")
     assert.equal(formatResizePreview(100, 0), "100px · 0%")
   })

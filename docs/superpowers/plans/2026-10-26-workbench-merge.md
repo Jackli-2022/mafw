@@ -6,6 +6,8 @@
 
 **Architecture:** 先立共享面板骨架（Header/Empty/Banner + lucide 换装）治「割裂」，再合并布局（新 `Workbench.tsx` 吃掉 11-tab RightDock、四件套进 IDE 骨架、七个会话面板收浮层图标轨、对话:工作台三档吸附 420/520/640），最后在合并后的 composer/浏览器面上叠 G1/G2 两个「圈选即上下文」捕获管线（新 pending-capture 类型，与既有代码批注共用发送打包）。
 
+> **Rev2（2026-10-26）**：档位改为 **520 / 640 / 760**，默认 **640**，旧 420 迁移到 640；本文件其余处的 420/520/640 为实现时历史值，以 `workbench-detents.ts` 与 spec 为准。
+
 **Tech Stack:** SolidJS + `@mafw/ui/v2` 原语；Electron main（`desktopCapturer`、frameless 选区遮罩窗、webview `executeJavaScript`）；xterm/webview 现有设施零行为回退。
 
 **Spec:** `docs/superpowers/specs/2026-10-26-workbench-merge-design.md`（设计已定稿；本 plan 从其论证）
