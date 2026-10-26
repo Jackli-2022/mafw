@@ -52,7 +52,7 @@ export async function runAutoCheckpoint(
   } catch { hidden = false; }
   if (hidden) return null;
 
-  const projectDir = info.directory;
+  const projectDir = info.directory ?? info.location?.directory;
   if (typeof projectDir !== 'string' || !projectDir) return null;
 
   const result = await rt.session.messages({ sessionID, limit: 50 });

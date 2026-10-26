@@ -100,6 +100,13 @@ describe('runAutoCheckpoint', () => {
     expect(noDir.calls.messages).toEqual([]);
   });
 
+  it('reads opencode 2.1 location.directory when directory is absent', async () => {
+    const h = harness({ info: { id: 's1', location: { directory: '/tmp/oc21' } } });
+    const cp = await runAutoCheckpoint(h.deps, 's1');
+    expect(cp).toEqual(h.created);
+    expect(h.calls.create[0].projectDir).toBe('/tmp/oc21');
+  });
+
   it('skips when the message window has no complete turn', async () => {
     const h = harness({ messages: [{ info: { id: 'u1', role: 'user', time: { created: 1 } } }] });
     expect(await runAutoCheckpoint(h.deps, 's1')).toBeNull();

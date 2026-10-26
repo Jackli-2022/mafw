@@ -148,7 +148,7 @@ export class CheckpointService {
   /** 手动检查点：锚点=显式 messageID 或最后一条已持久化消息；树=最后已知 end。 */
   async createManual(input: { sessionID: string; messageID?: string }): Promise<SessionCheckpoint> {
     const session = await this.deps.runtime.session.get({ sessionID: input.sessionID });
-    const projectDir = session?.directory;
+    const projectDir = session?.directory ?? session?.location?.directory;
     if (typeof projectDir !== 'string' || !projectDir) {
       throw new CheckpointRestoreError(400, 'session directory unavailable');
     }

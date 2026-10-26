@@ -179,6 +179,19 @@ describe('CheckpointService.createManual', () => {
       .rejects.toMatchObject({ status: 400 });
   });
 
+  it('reads opencode 2.1 location.directory when directory is absent', async () => {
+    const h = harness();
+    (h.deps.runtime.session as any).get = async () => ({
+      id: 's1',
+      location: { directory: '/tmp/oc21' },
+    });
+    (h.deps.runtime.session as any).messages = async () => ({
+      data: [{ id: 'u1', role: 'user', time: { created: 1 } }],
+    });
+    const cp = await h.service.createManual({ sessionID: 's1' });
+    expect(cp.projectDir).toBe('/tmp/oc21');
+  });
+
   it('400 when there are no persisted messages', async () => {
     const h = manualHarness({ messages: [] });
     await expect(h.service.createManual({ sessionID: 's1' }))
