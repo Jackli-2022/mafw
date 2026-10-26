@@ -886,6 +886,7 @@ html[data-theme="light"] body {
   gap: 10px;
   max-width: var(--msg-col-width);
   margin-inline: auto;
+  container-type: inline-size;
 }
 /* 标题过长时只允许 text 收缩（ellipsis）；flex 收缩按 basis 比例分配，
    按钮不设 shrink:0 会被同步压缩变形（并行按钮被顶变形根因） */
@@ -897,26 +898,14 @@ html[data-theme="light"] body {
   background: var(--border-subtle);
   flex-shrink: 0;
 }
-.mafw-chat-header-done {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--bg-overlay);
-  color: var(--text-3);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
 /* TaskBar */
 .mafw-taskbar {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 88px;
+  overflow: hidden;
   height: 28px;
   padding: 0 8px;
   border: none;
@@ -961,7 +950,14 @@ html[data-theme="light"] body {
   border-radius: 50%;
   animation: none;
 }
-.mafw-taskbar-check { color: var(--accent-text); font-size: 13px; white-space: nowrap; }
+.mafw-taskbar-check {
+  color: var(--accent-text);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .mafw-taskbar-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1057,6 +1053,14 @@ html[data-theme="light"] body {
   white-space: nowrap;
   cursor: default;
   flex-shrink: 0;
+}
+/* 窄标题栏：任务条收成「计数 + 箭头」，给标题与操作按钮留出空间（不重叠） */
+@container (max-width: 600px) {
+  .mafw-session-token-badge { display: none; }
+  .mafw-taskbar { flex-basis: 96px; }
+  .mafw-taskbar-text,
+  .mafw-taskbar-time,
+  .mafw-taskbar-progress { display: none; }
 }
 .mafw-session-token-cost {
   opacity: 0.7;

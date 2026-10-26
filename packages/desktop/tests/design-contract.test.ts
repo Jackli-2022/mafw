@@ -1024,3 +1024,28 @@ describe("窄 composer：更多菜单 + 断点收拢（最小宽度不裁切）"
     expect(shell).toContain("overlay: viewportNarrow() && dockPresent()")
   })
 })
+
+describe("chat titlebar — 任务条不与其他按钮重叠", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
+  test("任务条自身裁剪 + 最小宽度；标题栏是容器", () => {
+    const bar = cssBlock(".mafw-taskbar {")
+    expect(bar).toContain("overflow: hidden")
+    expect(bar).toContain("min-width: 88px")
+    expect(bar).toContain("flex: 1 1 auto")
+    expect(cssBlock(".mafw-session-titlebar-inner {")).toContain("container-type: inline-size")
+  })
+  test("窄标题栏收拢：token 徽标 / 进度条 / 耗时 / 当前任务文本进隐藏档", () => {
+    const narrow = cssBlock("@container (max-width: 600px)")
+    expect(narrow).toContain(".mafw-session-token-badge")
+    expect(narrow).toContain(".mafw-taskbar-progress")
+    expect(narrow).toContain(".mafw-taskbar-time")
+    expect(narrow).toContain(".mafw-taskbar-text")
+    expect(narrow).toContain("flex-basis: 96px")
+    expect(narrow).toContain("display: none")
+  })
+  test("不再重复渲染 done/total；全完成态用紧凑标签", () => {
+    expect(read("src/renderer/mafw/components/ChatPane.tsx")).not.toContain("mafw-chat-header-done")
+    expect(css).not.toContain(".mafw-chat-header-done")
+    expect(read("src/renderer/mafw/components/TaskBar.tsx")).toContain("✔ {done()}/{total()}")
+  })
+})

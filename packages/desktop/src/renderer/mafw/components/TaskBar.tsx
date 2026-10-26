@@ -59,10 +59,10 @@ export function TaskBar(props: {
       onMouseEnter={props.onHoverOpen}
       onMouseLeave={props.onHoverLeave}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onToggle() } }}
-      aria-label="任务列表"
+      aria-label={allDone() ? `任务列表：全部完成（${done()}/${total()}）` : "任务列表"}
     >
       <Show when={hasTasks()} fallback={<span class="mafw-taskbar-empty">任务</span>}>
-        <Show when={!allDone()} fallback={<span class="mafw-taskbar-check">✔ 全部完成（{done()}/{total()}）</span>}>
+        <Show when={!allDone()} fallback={<span class="mafw-taskbar-check">✔ {done()}/{total()}</span>}>
           <Show when={running().length > 0} fallback={<span class="mafw-taskbar-spinner pending" />}>
             <span class="mafw-taskbar-spinner running" />
           </Show>

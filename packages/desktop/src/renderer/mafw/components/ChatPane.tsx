@@ -1519,12 +1519,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   onHoverOpen={() => props.onTaskHoverOpen(titlebarEl, sidProp())}
                   onHoverLeave={props.onTaskHoverLeave}
                 />
-                <Show when={(props.todos[sidProp()] || []).length > 0 && !props.tasksAllDone(sidProp())}>
-                  <span class="mafw-chat-header-done">
-                    {(props.todos[sidProp()] || []).filter(t => t.status === "completed").length}/
-                    {(props.todos[sidProp()] || []).length}
-                  </span>
-                </Show>
                 <Show when={store.session_status[sidProp()]?.type === "busy"}>
                   <span class="mafw-session-status">
                     <span class="mafw-session-status-dot" />
