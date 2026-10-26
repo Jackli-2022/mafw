@@ -114,6 +114,8 @@ export interface SessionCreateOpts {
   parentID?: string;
 }
 
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface SessionPromptOpts {
   sessionID: string;
   /** 消息部件。{type:'file', url, mime?, filename?} 为一等媒体附件载体（dataURL 或
@@ -124,6 +126,8 @@ export interface SessionPromptOpts {
   agent?: string;
   model?: { providerID: string; modelID: string };
   variant?: string;
+  /** Pi 原生推理档位；opencode 不消费（用 variant）。 */
+  thinkingLevel?: ThinkingLevel;
   system?: string;
   /** busy 会话的消息投递时机：'steer'=当前工具批后送达（纠偏），'followup'=全部完成后，
    *  'queue'=**gateway 拦截**——busy 时入 gateway 队列（可见/可取消/幂等），回合终态自动

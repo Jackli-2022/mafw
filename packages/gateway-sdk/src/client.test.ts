@@ -324,6 +324,17 @@ test("session queue list/cancel/clear hit the existing routes", async () => {
   expect(calls[2][1].method).toBe("DELETE")
 })
 
+test("session.promptAsync forwards thinkingLevel and variant", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.promptAsync({
+    path: { id: "s1" },
+    body: { message: "hello", thinkingLevel: "high", variant: "max" },
+  })
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toMatchObject({ thinkingLevel: "high", variant: "max" })
+})
+
 test("session.events connects SSE to session-specific endpoint (uses own connection)", async () => {
   const connectSpy = mock()
   const orig = SSEConnection.prototype.connectToSession

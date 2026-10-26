@@ -117,7 +117,7 @@ export function createMafwApi(): MafwAPI {
       usagePluginDelete: (name) => invoke("session", "usagePluginDelete", name),
       usagePluginTest: (name) => invoke("session", "usagePluginTest", name),
       openUsagePluginsDir: () => ipcRenderer.invoke("mafw-openUsagePluginsDir"),
-      promptAsync: ({ sessionID, message, parts, agent, model, delivery, idempotencyKey, expectReply }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model, delivery, idempotencyKey, expectReply } }),
+      promptAsync: ({ sessionID, message, parts, agent, model, delivery, idempotencyKey, expectReply, thinkingLevel, variant }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model, delivery, idempotencyKey, expectReply, thinkingLevel, variant } }),
       command: ({ sessionID, command, arguments: args, agent, model }) => invoke("session", "command", { path: { id: sessionID }, body: { command, arguments: args, agent, model } }),
     },
 

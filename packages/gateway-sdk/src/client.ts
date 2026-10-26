@@ -274,7 +274,7 @@ export class MafwClient implements IMafwClient {
     promptAsync: async (
       params: {
         path: { id: string }
-        body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } }
+        body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'; variant?: string; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } }
       },
     ): Promise<void> => {
       const res = await this.fetchPath(`/api/session/${params.path.id}/promptAsync`, {
@@ -288,6 +288,8 @@ export class MafwClient implements IMafwClient {
           ...(params.body.delivery ? { delivery: params.body.delivery } : {}),
           ...(params.body.idempotencyKey ? { idempotencyKey: params.body.idempotencyKey } : {}),
           ...(params.body.expectReply !== undefined ? { expectReply: params.body.expectReply } : {}),
+          ...(params.body.thinkingLevel ? { thinkingLevel: params.body.thinkingLevel } : {}),
+          ...(params.body.variant ? { variant: params.body.variant } : {}),
         }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
