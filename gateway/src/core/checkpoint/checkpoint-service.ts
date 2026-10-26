@@ -13,6 +13,7 @@ import type { SessionCheckpointRow } from '../../memory/gateway-db';
 import {
   defaultSnapshotRoot,
   findSnapshotRepo,
+  isSnapshotId,
   type GitRunner,
 } from '../diff/turn-diff';
 import { latestSnapshotTree, manualAnchor, parseUntrackedLines } from './auto-recorder';
@@ -73,6 +74,10 @@ export interface CheckpointServiceDeps {
   git: GitRunner;
   /** `git status --porcelain` 原文（注入以便测试；生产走 simple-git）。 */
   porcelainOf(projectDir: string): Promise<string>;
+  /** 每会话「当前工作区树」记忆：files 恢复后工作区不再等于历史最新树，
+   *  下一次恢复（含后悔药）必须以此为补丁基线；新回合/全量恢复时清空。 */
+  readWorkspaceTree(sessionID: string): string | null;
+  writeWorkspaceTree(sessionID: string, tree: string | null): void;
   snapshotRoot?: string;
   broadcast(event: { type: string; [key: string]: any }): void;
   now(): string;
@@ -182,6 +187,7 @@ export class CheckpointService {
     if (input.scope === 'session') {
       await this.revertTo(ckpt, false);
       this.rewindTimeline(ckpt);
+      this.deps.writeWorkspaceTree(ckpt.sessionID, null);
       return { scope: 'session' };
     }
 
@@ -189,6 +195,7 @@ export class CheckpointService {
       if (ckpt.snapshotTree === null) {
         await this.revertTo(ckpt, false);
         this.rewindTimeline(ckpt);
+        this.deps.writeWorkspaceTree(ckpt.sessionID, null);
         return {
           scope: 'both',
           filesSkipped: true,
@@ -197,6 +204,7 @@ export class CheckpointService {
       }
       await this.revertTo(ckpt, true);
       this.rewindTimeline(ckpt);
+      this.deps.writeWorkspaceTree(ckpt.sessionID, null);
       return { scope: 'both', leftoverUntracked: await this.leftover(ckpt) };
     }
 
@@ -237,8 +245,13 @@ export class CheckpointService {
       throw new CheckpointRestoreError(404, 'no current snapshot tree');
     }
 
-    if (latest === tree) {
-      // 已在目标树（幂等）：不动工作区、不造 pre-restore，只报告残留。
+    // 补丁基线：优先「上次 files 恢复后的工作区树」（后悔药/连续恢复），
+    // 否则历史最新树（正常路径）。两者都可能已是目标树 = 真幂等。
+    const remembered = this.deps.readWorkspaceTree(ckpt.sessionID);
+    const base = isSnapshotId(remembered) ? remembered : latest;
+
+    if (base === tree) {
+      // 工作区已在该检查点状态（幂等）：不动文件、不造 pre-restore，只报告残留。
       return { scope: 'files', leftoverUntracked: await this.leftover(ckpt) };
     }
 
@@ -247,16 +260,16 @@ export class CheckpointService {
       root: this.deps.snapshotRoot ?? defaultSnapshotRoot(),
       projectID: session?.projectID,
       start: tree,
-      end: latest,
+      end: base,
       git: this.deps.git,
     });
     if (!repo) {
       throw new CheckpointRestoreError(404, 'snapshot trees not found (pruned?)');
     }
 
-    // 正向补丁：latest → checkpoint（git 直接生成新增/删除/binary 的正确形态）。
+    // 正向补丁：base → checkpoint（git 直接生成新增/删除/binary 的正确形态）。
     const diff = await this.deps.git.run([
-      '--git-dir', repo, '-c', 'core.quotePath=false', 'diff', '--binary', latest, tree,
+      '--git-dir', repo, '-c', 'core.quotePath=false', 'diff', '--binary', base, tree,
     ]);
     if (diff.code !== 0) {
       throw new CheckpointRestoreError(
@@ -274,7 +287,7 @@ export class CheckpointService {
       sessionID: ckpt.sessionID,
       projectDir: ckpt.projectDir,
       anchorMessageID: manualAnchor(messages)?.anchorMessageID ?? ckpt.anchorMessageID,
-      snapshotTree: latest,
+      snapshotTree: base,
       untracked: parseUntrackedLines(await this.deps.porcelainOf(ckpt.projectDir)),
       kind: 'auto',
     });
@@ -282,6 +295,7 @@ export class CheckpointService {
     if (patch.trim()) {
       await this.deps.runtime.session.vcs.apply({ patch });
     }
+    this.deps.writeWorkspaceTree(ckpt.sessionID, tree);
 
     return {
       scope: 'files',

@@ -36,6 +36,7 @@ function harness(opts: {
   preCheckCode?: number;
   porcelain?: string;
   repoFound?: boolean;
+  rememberedTree?: string;
 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-ckpt-restore-'));
   if (opts.repoFound !== false) {
@@ -54,7 +55,10 @@ function harness(opts: {
     gitDiffs: [] as string[][],
     checks: [] as string[][],
     broadcasts: [] as any[],
+    workspaceWrites: [] as Array<{ sid: string; tree: string | null }>,
   };
+  const workspaceTrees = new Map<string, string>();
+  if (opts.rememberedTree) workspaceTrees.set('s1', opts.rememberedTree);
 
   const git: CheckpointServiceDeps['git'] = {
     run: async (args) => {
@@ -104,6 +108,12 @@ function harness(opts: {
     },
     git,
     porcelainOf: async () => opts.porcelain ?? '',
+    readWorkspaceTree: (sid) => workspaceTrees.get(sid) ?? null,
+    writeWorkspaceTree: (sid, tree) => {
+      calls.workspaceWrites.push({ sid, tree });
+      if (tree) workspaceTrees.set(sid, tree);
+      else workspaceTrees.delete(sid);
+    },
     snapshotRoot: root,
     broadcast: (event) => { log.push('broadcast'); calls.broadcasts.push(event); },
     now: () => '2026-10-26T01:00:00Z',
@@ -133,6 +143,7 @@ describe('restore: lookup + session scope', () => {
     expect(h.calls.deleteAfter).toEqual([{ sessionId: 's1', at: '2026-10-26T00:00:00Z' }]);
     expect(h.calls.broadcasts).toEqual([]); // 不可逆操作不造 pre-restore 后悔药
     expect(h.calls.applies).toEqual([]);
+    expect(h.calls.workspaceWrites).toEqual([{ sid: 's1', tree: null }]);
   });
 });
 
@@ -146,6 +157,7 @@ describe('restore: both scope', () => {
 
     expect(h.calls.reverts).toEqual([{ sessionID: 's1', messageID: 'u1', files: true }]);
     expect(h.calls.deleteAfter).toHaveLength(1);
+    expect(h.calls.workspaceWrites).toEqual([{ sid: 's1', tree: null }]);
     expect(result).toEqual({ scope: 'both', leftoverUntracked: ['new.txt'] });
   });
 
@@ -194,16 +206,39 @@ describe('restore: files scope', () => {
     expect(h.calls.applies).toEqual(['diff --git a/f b/f\n--- a/f\n+++ b/f\n']);
     expect(result.scope).toBe('files');
     expect(result.preRestoreCheckpointId).toBe('ckpt_new_1');
-    // pre-restore 树 = 最新树（恢复前状态）
+    // pre-restore 树 = 补丁基线（正常路径 = 最新树，即恢复前状态）
     const pre = h.rows.get('ckpt_new_1')!;
     expect(pre.snapshot_tree).toBe(T2);
     expect(pre.kind).toBe('auto');
-    // diff 参数：latest → ckpt（正向补丁），带 --binary
+    // diff 参数：base(latest) → ckpt（正向补丁），带 --binary
     const diffArgs = h.calls.gitDiffs[0];
     expect(diffArgs).toEqual(expect.arrayContaining(['diff', '--binary', T2, T1]));
     // 预检走 -C 项目目录（git apply 相对路径按 cwd 解析）
     const checkArgs = h.calls.checks[0];
     expect(checkArgs).toEqual(expect.arrayContaining(['-C', '/tmp/does-not-matter', 'apply', '--check']));
+    // 成功恢复后记住工作区树 = 目标树（供后悔药/连续恢复使用）
+    expect(h.calls.workspaceWrites).toEqual([{ sid: 's1', tree: T1 }]);
+  });
+
+  it('undo path: restores back to the pre-restore tree using the remembered workspace base', async () => {
+    // 上次 files 恢复把工作区留在 T1；历史最新树仍是 T2。现在恢复到「恢复前」检查点（树=T2）。
+    const h = harness({ rememberedTree: T1, latestTree: T2 });
+    h.rows.set('ckpt_pre', baseRow({ id: 'ckpt_pre', snapshot_tree: T2 }));
+
+    const result = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_pre', scope: 'files' });
+
+    const diffArgs = h.calls.gitDiffs[0];
+    expect(diffArgs).toEqual(expect.arrayContaining(['diff', '--binary', T1, T2]));
+    expect(h.calls.applies).toHaveLength(1);
+    expect(h.calls.workspaceWrites).toEqual([{ sid: 's1', tree: T2 }]);
+    const pre = h.rows.get(result.preRestoreCheckpointId!)!;
+    expect(pre.snapshot_tree).toBe(T1); // 当前工作区（基线）
+  });
+
+  it('ignores an invalid remembered tree (falls back to the latest history tree)', async () => {
+    const h = harness({ rememberedTree: 'not-a-tree', latestTree: T2 });
+    await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
+    expect(h.calls.gitDiffs[0]).toEqual(expect.arrayContaining(['diff', '--binary', T2, T1]));
   });
 
   it('400 on pre-check failure and never applies', async () => {

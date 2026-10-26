@@ -46,6 +46,8 @@ function harness() {
     },
     git: { run: async () => ({ code: 0, stdout: '', stderr: '' }) },
     porcelainOf: async () => '',
+    readWorkspaceTree: () => null,
+    writeWorkspaceTree: () => {},
     broadcast: (event) => { calls.broadcasts.push(event); },
     now: () => '2026-10-26T00:00:00Z',
     newId: () => `ckpt_${++seq}`,

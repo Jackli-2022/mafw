@@ -70,6 +70,7 @@ function harness(fx: Fixture, checkpointTree: string | null, untracked: string[]
     kind: 'auto',
     created_at: '2026-10-26T00:00:00Z',
   });
+  const workspaceTrees = new Map<string, string>();
 
   const deps: CheckpointServiceDeps = {
     db: {
@@ -111,6 +112,11 @@ function harness(fx: Fixture, checkpointTree: string | null, untracked: string[]
     },
     git: defaultGit,
     porcelainOf: async (projectDir) => git(projectDir, ['status', '--porcelain']).then((s) => s, () => ''),
+    readWorkspaceTree: (sid) => workspaceTrees.get(sid) ?? null,
+    writeWorkspaceTree: (sid, tree) => {
+      if (tree) workspaceTrees.set(sid, tree);
+      else workspaceTrees.delete(sid);
+    },
     snapshotRoot: fx.root,
     broadcast: () => {},
     now: () => '2026-10-26T01:00:00Z',
@@ -164,17 +170,33 @@ describe('restore files (real git)', () => {
     expect(fs.readFileSync(path.join(fx.project, 'file1.txt'), 'utf8')).toBe('A\n');
   });
 
-  it('second identical restore fails honestly once the workspace is already at the target tree', async () => {
+  it('second identical restore is a true no-op (workspace memory)', async () => {
     const fx = await makeFixture();
-    await git(fx.project, ['checkout', '-q', 'HEAD~1', '--', '.']);
     const h = harness(fx, fx.tree1);
 
-    // messages 仍报 latest=tree2，但服务端幂等判据是 latest===ckptTree；
-    // 这里 latest 仍为 tree2，因此不会走幂等分支——改为验证「重复 restore」的
-    // 诚实失败语义：第二次相同 restore 因工作区已是 tree1 而 400。
-    await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' }).catch(() => {});
-    await expect(
-      h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' }),
-    ).rejects.toMatchObject({ status: 400 });
+    await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
+    // 第一次恢复把工作区留在 tree1（记忆=tree1）；第二次 base=tree1=target → 幂等成功
+    const second = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
+    expect(second.scope).toBe('files');
+    expect(second.preRestoreCheckpointId).toBeUndefined();
+  });
+
+  it('undo: restores back to the pre-restore checkpoint (file re-added, content restored)', async () => {
+    const fx = await makeFixture();
+    const h = harness(fx, fx.tree1);
+
+    const first = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
+    expect(fs.existsSync(path.join(fx.project, 'file2.txt'))).toBe(false);
+
+    // 后悔药：恢复到 pre-restore（tree2）
+    const undo = await h.service.restore({
+      sessionID: 's1',
+      checkpointId: first.preRestoreCheckpointId!,
+      scope: 'files',
+    });
+
+    expect(undo.scope).toBe('files');
+    expect(fs.readFileSync(path.join(fx.project, 'file1.txt'), 'utf8')).toBe('B\n');
+    expect(fs.readFileSync(path.join(fx.project, 'file2.txt'), 'utf8')).toBe('NEW\n');
   });
 });

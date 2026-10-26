@@ -3287,6 +3287,11 @@ class MafwScheduler {
       },
       git: defaultGit,
       porcelainOf: (dir) => this.checkpointPorcelainOf(dir),
+      readWorkspaceTree: (sid) => this.getGatewayDb().kvGet<string>('checkpoint-workspace', sid) ?? null,
+      writeWorkspaceTree: (sid, tree) => {
+        if (tree) this.getGatewayDb().kvSet('checkpoint-workspace', sid, tree);
+        else this.getGatewayDb().kvDelete('checkpoint-workspace', sid);
+      },
       broadcast: (e) => this.broadcast(e),
       now: () => new Date().toISOString(),
       newId: () => `ckpt_${randomUUID()}`,
@@ -8169,7 +8174,12 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
       internalRoleOf: (sid) => this.internalSessionRoles.get(sid),
       isHidden: (info, roleFor) => isHiddenSession(info, roleFor),
       porcelainOf: (dir) => this.checkpointPorcelainOf(dir),
-      create: (input) => this.checkpointService.create(input),
+      create: (input) => {
+        const cp = this.checkpointService.create(input);
+        // 新回合完成 = 工作区已由该回合快照重新锚定 → 上次 files 恢复的基线失效。
+        this.getGatewayDb().kvDelete('checkpoint-workspace', input.sessionID);
+        return cp;
+      },
     }, sessionID);
   }
 
