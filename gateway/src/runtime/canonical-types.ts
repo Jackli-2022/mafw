@@ -74,6 +74,12 @@ export type MafwPart =
       cost?: Record<string, unknown>;
       tokens?: Record<string, unknown>;
     })
+  /** T2-3：类型化自定义数据（AI SDK 6 `data-<name>` 语义；id 调和 + transient）。 */
+  | (MafwPartBase & {
+      type: `data-${string}`;
+      data: unknown;
+      transient?: boolean;
+    })
   /** 透传变体：未枚举的 part 类型原样保留（含全部自定义字段）。 */
   | (MafwPartBase & { type: string; [k: string]: unknown });
 

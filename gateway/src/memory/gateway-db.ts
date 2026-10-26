@@ -99,6 +99,17 @@ export interface RunStateRow {
   finished_at: string | null;
 }
 
+/** T2-3：data part overlay（session 作用域；message 归属）。 */
+export interface SessionDataPartRow {
+  session_id: string;
+  id: string;
+  message_id: string;
+  type: string;
+  data_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export class GatewayDatabase {
   private db: Database.Database;
 
@@ -336,6 +347,18 @@ export class GatewayDatabase {
         finished_at TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_run_states ON run_states(session_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS session_data_parts (
+        session_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (session_id, id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_data_parts ON session_data_parts(session_id, message_id, created_at);
     `);
 
     // Migration: add assistant_text column to trajectory_turns if not exists
@@ -873,6 +896,71 @@ export class GatewayDatabase {
 
   deleteRunStates(sessionId: string): void {
     this.db.prepare('DELETE FROM run_states WHERE session_id = ?').run(sessionId);
+  }
+
+  // ── T2-3 session data parts ──────────────────────────────────────────
+
+  upsertSessionDataPart(row: SessionDataPartRow): void {
+    this.db.prepare(
+      `INSERT INTO session_data_parts
+         (session_id, id, message_id, type, data_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, id) DO UPDATE SET
+         message_id = excluded.message_id,
+         type = excluded.type,
+         data_json = excluded.data_json,
+         updated_at = excluded.updated_at`,
+    ).run(
+      row.session_id, row.id, row.message_id, row.type,
+      row.data_json, row.created_at, row.updated_at,
+    );
+  }
+
+  getSessionDataPart(sessionId: string, id: string): SessionDataPartRow | undefined {
+    return this.db.prepare(
+      'SELECT * FROM session_data_parts WHERE session_id = ? AND id = ?',
+    ).get(sessionId, id) as SessionDataPartRow | undefined;
+  }
+
+  listSessionDataParts(
+    sessionId: string,
+    opts?: { messageIds?: string[] },
+  ): SessionDataPartRow[] {
+    const ids = opts?.messageIds;
+    if (Array.isArray(ids)) {
+      if (ids.length === 0) return [];
+      const placeholders = ids.map(() => '?').join(',');
+      return this.db.prepare(
+        `SELECT * FROM session_data_parts
+         WHERE session_id = ? AND message_id IN (${placeholders})
+         ORDER BY created_at ASC, rowid ASC`,
+      ).all(sessionId, ...ids) as SessionDataPartRow[];
+    }
+    return this.db.prepare(
+      'SELECT * FROM session_data_parts WHERE session_id = ? ORDER BY created_at ASC, rowid ASC',
+    ).all(sessionId) as SessionDataPartRow[];
+  }
+
+  deleteSessionDataPart(sessionId: string, id: string): void {
+    this.db.prepare(
+      'DELETE FROM session_data_parts WHERE session_id = ? AND id = ?',
+    ).run(sessionId, id);
+  }
+
+  /** 每会话保留最新 keep 行（按 created_at；rowid 兜底同刻）。 */
+  pruneSessionDataParts(sessionId: string, keep: number): number {
+    const result = this.db.prepare(
+      `DELETE FROM session_data_parts
+       WHERE session_id = ? AND rowid NOT IN (
+         SELECT rowid FROM session_data_parts
+         WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?
+       )`,
+    ).run(sessionId, sessionId, keep);
+    return result.changes;
+  }
+
+  deleteSessionDataParts(sessionId: string): void {
+    this.db.prepare('DELETE FROM session_data_parts WHERE session_id = ?').run(sessionId);
   }
 
   close(): void {
