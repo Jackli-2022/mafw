@@ -6,6 +6,7 @@ function makeDeps() {
   const rec = (name: string) => (...args: unknown[]) => { calls.push({ name, args }) }
   const subagentEvents: unknown[] = []
   const backgroundEvents: unknown[] = []
+  const taskEvents: unknown[] = []
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
@@ -64,8 +65,11 @@ function makeDeps() {
     background: {
       onEvent: (ev: unknown) => { backgroundEvents.push(ev) },
     },
+    tasks: {
+      onEvent: (task: unknown) => { taskEvents.push(task) },
+    },
   }
-  return { deps, calls, subagentEvents, backgroundEvents }
+  return { deps, calls, subagentEvents, backgroundEvents, taskEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -86,6 +90,16 @@ describe("dispatchShellEvent: core events", () => {
     const { deps, calls } = makeDeps()
     dispatchShellEvent({ type: "runtime_switched", runtime: "pi" }, deps)
     expect(calls.map(c => c.name)).toContain("onRuntimeSwitched")
+  })
+})
+
+describe("dispatchShellEvent: task updated", () => {
+  test("task.updated forwards the task and consumes the event", () => {
+    const { deps, taskEvents, calls } = makeDeps()
+    const task = { id: "t1", status: "working", parentSessionID: "p1" }
+    dispatchShellEvent({ type: "task.updated", properties: { task } }, deps)
+    expect(taskEvents).toEqual([task])
+    expect(calls.some(c => c.name === "trace" && c.args[1] === "task:updated")).toBe(true)
   })
 })
 

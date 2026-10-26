@@ -4,6 +4,7 @@ import type {
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows, MemoryStats,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
+  TaskEntity, TaskSubmitInput, TaskOutput,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
 } from "@mafw/sdk"
@@ -137,6 +138,15 @@ export type MafwAPI = {
     list: (directory?: string) => Promise<QuestionRequest[]>
     reply: (id: string, answers: string[][]) => Promise<void>
     reject: (id: string) => Promise<void>
+  }
+
+  tasks: {
+    submit: (input: TaskSubmitInput) => Promise<TaskEntity>
+    list: (query?: { parentSessionID?: string; status?: string }) => Promise<TaskEntity[]>
+    get: (id: string) => Promise<TaskEntity>
+    cancel: (id: string) => Promise<TaskEntity>
+    message: (id: string, message: string) => Promise<void>
+    output: (id: string, query?: { cursor?: number; limit?: number }) => Promise<TaskOutput>
   }
 
   permissions: {

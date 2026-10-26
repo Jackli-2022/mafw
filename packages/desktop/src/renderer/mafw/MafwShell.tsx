@@ -47,6 +47,7 @@ import { createPresence, SURFACE_MS } from "./components/presence"
 import { NotesDock } from "./components/NotesDock"
 import { SubagentDock } from "./components/SubagentDock"
 import { BackgroundDock } from "./components/BackgroundDock"
+import { taskRows, fetchTasks, ingestTask } from "./task-store"
 import { FilesDock } from "./components/FilesDock"
 import { EditorDock } from "./components/EditorDock"
 import { BrowserDock } from "./components/BrowserDock"
@@ -602,6 +603,7 @@ export function MafwShell() {
   }
 
   const reconcileFlowCards = () => {
+    void fetchTasks()
     // 顺带补拉各会话审批模式（覆盖非 tab 打开路径，如全局 Approvals 页；60s 对账周期）
     for (const sid of Object.keys(flowCards())) syncPermissionMode(sid)
     window.api.mafw.permissions.list().then((items: any[]) => {
@@ -959,6 +961,9 @@ export function MafwShell() {
     // 后台任务 tracker：既有事件旁路入 store（work bar / dock / 通知消费）。
     background: {
       onEvent: (ev) => ingestBackgroundEvent(ev),
+    },
+    tasks: {
+      onEvent: (task) => ingestTask(task as any),
     },
   }
 

@@ -168,6 +168,15 @@ export function createMafwApi(): MafwAPI {
       reject: (id) => invoke("questions", "reject", id),
     },
 
+    tasks: {
+      submit: (input) => invoke("tasks", "submit", input),
+      list: (query) => invoke("tasks", "list", query),
+      get: (id) => invoke("tasks", "get", id),
+      cancel: (id) => invoke("tasks", "cancel", id),
+      message: (id, message) => invoke("tasks", "message", id, message),
+      output: (id, query) => invoke("tasks", "output", id, query),
+    },
+
     permissions: {
       list: () => invoke("permissions", "list"),
       reply: (id, reply, message?, persist?) => invoke("permissions", "reply", id, reply, message, persist),

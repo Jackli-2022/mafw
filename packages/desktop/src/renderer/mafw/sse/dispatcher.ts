@@ -42,6 +42,11 @@ export interface BackgroundDeps {
   onEvent(ev: BackgroundEvent): void
 }
 
+/** Durable task 事件（Batch 4）：task.updated 顶层广播。 */
+export interface TaskDeps {
+  onEvent(task: unknown): void
+}
+
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
@@ -51,6 +56,7 @@ export interface ShellEventDeps {
   diff: DiffDeps
   subagents: SubagentDeps
   background: BackgroundDeps
+  tasks: TaskDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
@@ -128,6 +134,13 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "form.created" || event.type === "form.updated" || event.type === "form.replied" || event.type === "form.cancelled") {
     deps.core.trace(event, "card:form-refresh")
     deps.flowCards.scheduleReconcile(50)
+    return
+  }
+
+  if (event.type === "task.updated") {
+    deps.core.trace(event, "task:updated")
+    const task = event.properties?.task ?? event.task
+    if (task) deps.tasks.onEvent(task)
     return
   }
 
