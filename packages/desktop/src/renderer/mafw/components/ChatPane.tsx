@@ -41,7 +41,7 @@ import { worktreeBadge } from "./worktree-label"
 import { ApprovalSummaryLine } from "./ApprovalSummaryLine"
 import { formatComposerMeta } from "./composer-meta"
 import { type PermissionMode } from "./permission-card-mapping"
-import { aggregateSessionDiffs } from "./session-diffs"
+import { getSessionTurnDiffs } from "../session-turn-diffs"
 import { PendingAnnotations } from "./PendingAnnotations"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { hydrateAnnotations, pendingFor, takeForSend } from "../annotation-store"
@@ -1287,7 +1287,25 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const agentSelName = () => props.agentSel()?.name || "manager"
 
   // 会话改动文件数（message.summary.diffs 聚合，含 patch）——composer 审阅按钮的常驻计数徽标
-  const diffCount = () => aggregateSessionDiffs((store.message as any)[sidProp()] || []).length
+  const diffCount = () => {
+    const sid = sidProp()
+    const msgs = (store.message as any)[sid] || []
+    return getSessionTurnDiffs().count(sid, msgs)
+  }
+
+  // 预热本 pane 会话的 per-turn 数据：badge 与 ChangesDock 使用同一份合并结果
+  // （split view 的非活动 pane 也一致；store 内部按 key 去重）。
+  createEffect(() => {
+    const sid = sidProp()
+    if (!sid) return
+    getSessionTurnDiffs().ensure({
+      sid,
+      messages: (store.message as any)[sid] || [],
+      runtimeName: props.runtimeName ?? "",
+      busy: store.session_status[sid]?.type === "busy",
+      diffApi: props.runtimeCaps?.diffApi === true,
+    })
+  })
 
   // Real model name of the last assistant message (fallback: agent → "default")
   const modelName = createMemo(() => {

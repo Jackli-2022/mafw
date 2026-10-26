@@ -761,11 +761,11 @@ describe("changed files 数据源：message.summary.diffs 聚合", () => {
   })
   test("MafwShell 抽屉/停靠数据来自 aggregateSessionDiffs", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain("aggregateSessionDiffs")
+    expect(src).toContain("getSessionTurnDiffs")
     expect(src).not.toContain("store.session_diff as any)[diffPanelFor()")
   })
   test("ChatPane 徽标计数来自 aggregateSessionDiffs", () => {
-    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("aggregateSessionDiffs")
+    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("getSessionTurnDiffs")
   })
 })
 

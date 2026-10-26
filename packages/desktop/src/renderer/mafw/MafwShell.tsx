@@ -56,9 +56,7 @@ import { TerminalDock } from "./components/TerminalDock"
 import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
-import { aggregateSessionDiffs } from "./components/session-diffs"
-import { collectTurnDiffCandidates, loadTurnDiffs, mergeDiffLists, turnDiffRequestKey } from "./components/turn-diffs"
-import type { FileDiffEntry } from "./components/DiffReviewPanel"
+import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
@@ -1467,44 +1465,25 @@ export function MafwShell() {
   )
   // Per-turn diff data for the B2 changes/editor docks (B3.1). The overlay owns
   // its own fetch; this memo is only for the dock consumers.
-  const [sessionTurnDiffs, setSessionTurnDiffs] = createSignal<Record<string, Record<string, FileDiffEntry[] | null>>>({})
-  const requestedTurnDiffs = new Set<string>()
-  // 每会话请求代际：旧请求（含 in-flight 回合的 step 快照）不得覆盖新数据。
-  const turnDiffGenerations = new Map<string, number>()
   const sessionMessages = createMemo(() => (store.message as any)[currentSessionID()] || [])
   const sessionBusy = () => {
     const sid = currentSessionID()
     return !!(sid && store.session_status?.[sid]?.type === "busy")
   }
-  const mergedSessionDiffs = createMemo(() => mergeDiffLists(
-    aggregateSessionDiffs(sessionMessages()),
-    sessionTurnDiffs()[currentSessionID() || ""] || {},
-  ))
+  const mergedSessionDiffs = createMemo(() =>
+    getSessionTurnDiffs().entries(currentSessionID() || "", sessionMessages()),
+  )
   createEffect(() => {
     const sid = currentSessionID()
-    const tab = rightDockTab()
-    if (!sid || rtCaps().diffApi !== true || (tab !== "changes" && tab !== "editor")) return
-    const msgs = sessionMessages()
-    // busy 时排除在飞回合：其 snapshotKey 每 assistant step 变化 → 否则全量重拉（storm）。
-    const candidates = collectTurnDiffCandidates(msgs, { excludeLastTurn: sessionBusy() })
-    if (!candidates.length) return
-    const key = turnDiffRequestKey(rtName(), sid, candidates)
-    if (requestedTurnDiffs.has(key)) return
-    requestedTurnDiffs.add(key)
-    if (requestedTurnDiffs.size > 50) {
-      const oldest = requestedTurnDiffs.values().next().value
-      if (oldest) requestedTurnDiffs.delete(oldest)
-    }
-    const generation = (turnDiffGenerations.get(sid) ?? 0) + 1
-    turnDiffGenerations.set(sid, generation)
-    void loadTurnDiffs(sid, msgs, (s, m) => window.api.mafw.sessions.diff(s, m))
-      .then(map => {
-        if ((turnDiffGenerations.get(sid) ?? 0) !== generation) return // 代际守卫：旧响应丢弃
-        // 单回合失败（null）→ 移除 key，允许下次重试；成功 key 保留防重复拉取。
-        if (Object.values(map).some(v => v === null)) requestedTurnDiffs.delete(key)
-        setSessionTurnDiffs(prev => ({ ...prev, [sid]: map }))
-      })
-      .catch(() => { requestedTurnDiffs.delete(key) }) // fail-open：下次可重试
+    if (!sid) return
+    // 始终为活动会话预热 per-turn 数据：composer badge 与 changes tree 共用同一份合并结果。
+    getSessionTurnDiffs().ensure({
+      sid,
+      messages: sessionMessages(),
+      runtimeName: rtName(),
+      busy: sessionBusy(),
+      diffApi: rtCaps().diffApi === true,
+    })
   })
   // chat 定宽列（黄金分割默认 38.2% 可用宽，clamp 360-520；可拖 320-560）
   const storedChatWidth = Number(localStorage.getItem("mafw-chat-width"))

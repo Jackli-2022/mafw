@@ -83,8 +83,9 @@ export async function loadTurnDiffs(
   messages: any[],
   fetchDiff: (sessionID: string, messageID: string) => Promise<{ files: FileDiffEntry[] }>,
   concurrency = 4,
+  opts: { excludeLastTurn?: boolean } = {},
 ): Promise<Record<string, FileDiffEntry[] | null>> {
-  const candidates = collectTurnDiffCandidates(messages)
+  const candidates = collectTurnDiffCandidates(messages, opts)
   const result: Record<string, FileDiffEntry[] | null> = {}
   // Preseed in chronological candidate order: map insertion order must not
   // depend on which HTTP/git request finishes first (latest turn must win).

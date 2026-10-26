@@ -45,6 +45,19 @@ test("excludeLastTurn：在飞回合不参与候选，step 快照变化不改变
   expect(collectTurnDiffCandidates(pending, { excludeLastTurn: true }).map(c => c.messageID)).toEqual(["u1"])
 })
 
+test("loadTurnDiffs 尊重 excludeLastTurn（在飞回合不发请求）", async () => {
+  const called: string[] = []
+  const msgs = [
+    user("u0", 1), asst("a0", 2, { start: "s0", end: "e0" }),
+    user("u1", 3), asst("a1", 4, { start: "s1", end: "e1" }),
+  ]
+  await loadTurnDiffs("s", msgs, async (_sid, mid) => {
+    called.push(mid)
+    return { files: [] }
+  }, 4, { excludeLastTurn: true })
+  expect(called).toEqual(["u0"])
+})
+
 test("fetch is per-turn, failures become null, and merge keeps per-turn wins", async () => {
   const msgs = [user("u1", 1), asst("a1", 2, { start: "s", end: "e" }), user("u2", 3), asst("a2", 4, { start: "s2", end: "e2" })]
   const called: string[] = []

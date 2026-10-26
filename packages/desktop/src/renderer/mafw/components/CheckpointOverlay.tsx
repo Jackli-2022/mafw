@@ -47,7 +47,7 @@ export function CheckpointOverlay(props: {
     setLoadingTurnFiles(true)
     let cancelled = false
     onCleanup(() => { cancelled = true })
-    void loadTurnDiffs(sid, props.messages, (s, m) => window.api.mafw.sessions.diff(s, m))
+    void loadTurnDiffs(sid, props.messages, (s, m) => window.api.mafw.sessions.diff(s, m), 4, { excludeLastTurn: props.busy === true })
       .then((map) => { if (!cancelled && !disposed) setTurnFiles(map) })
       .catch(() => { if (!cancelled && !disposed) lastTurnDiffKey = "" }) // 意外失败：允许下次重试
       .finally(() => { if (!cancelled && !disposed) setLoadingTurnFiles(false) })
