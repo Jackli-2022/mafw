@@ -72,4 +72,30 @@ describe("terminal-view", () => {
     sched.cancel()
     assert.equal(runs, 2)
   })
+
+  test("默认 timers 以 globalThis 为 receiver（浏览器裸 setTimeout/clearTimeout 会 Illegal invocation）", () => {
+    const g = globalThis as any
+    const origSet = g.setTimeout
+    const origClear = g.clearTimeout
+    const seen: Array<{ fn: string; self: any }> = []
+    g.setTimeout = function (this: any, fn: () => void, ms?: number) {
+      seen.push({ fn: "set", self: this })
+      return origSet(fn, ms)
+    }
+    g.clearTimeout = function (this: any, handle: any) {
+      seen.push({ fn: "clear", self: this })
+      return origClear(handle)
+    }
+    try {
+      const sched = createResizeScheduler(1000, () => {})
+      sched.schedule()
+      sched.cancel()
+      assert.deepEqual(seen.map((s) => s.fn), ["set", "clear"])
+      assert.equal(seen[0].self, globalThis)
+      assert.equal(seen[1].self, globalThis)
+    } finally {
+      g.setTimeout = origSet
+      g.clearTimeout = origClear
+    }
+  })
 })

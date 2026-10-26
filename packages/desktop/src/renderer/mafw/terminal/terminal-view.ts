@@ -77,8 +77,10 @@ export function createResizeScheduler(
   intervalMs: number,
   run: () => void,
   timers: { set: (fn: () => void, ms: number) => any; clear: (h: any) => void } = {
-    set: setTimeout as any,
-    clear: clearTimeout as any,
+    // 不能把 setTimeout/clearTimeout 裸引用塞进对象：调用时 this 会变成 timers，
+    // Chromium 抛 "Illegal invocation"（ResizeObserver → schedule 实测）。
+    set: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms),
+    clear: (h: any) => globalThis.clearTimeout(h),
   },
 ) {
   let handle: any = null
