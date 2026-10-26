@@ -19,4 +19,12 @@ describe('toCallToolResult（CallTool 出口单一映射，spec G4）', () => {
     const out = toCallToolResult({ content: [{ type: 'text', text: 'x' }] });
     expect('structuredContent' in out).toBe(false);
   });
+  it('JSON object text 自动提升 structuredContent（同源）', () => {
+    const out = toCallToolResult({ content: [{ type: 'text', text: '{"success":true,"count":2}' }] });
+    expect(out.structuredContent).toEqual({ success: true, count: 2 });
+  });
+  it('JSON array/primitive 包成 object 形 structuredContent', () => {
+    expect(toCallToolResult({ content: [{ type: 'text', text: '[1,2]' }] }).structuredContent).toEqual({ items: [1, 2] });
+    expect(toCallToolResult({ content: [{ type: 'text', text: '42' }] }).structuredContent).toEqual({ value: 42 });
+  });
 });

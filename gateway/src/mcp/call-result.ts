@@ -9,7 +9,22 @@ import type { ToolHandler } from '../types';
 
 export type ToolHandlerResult = Awaited<ReturnType<ToolHandler>>;
 
-/** 恒等映射（含 structuredContent 透传）——单一出口的意义是两 transport 不再各自内联拼装。 */
+/** 出口映射：handler 可直接给 structuredContent；否则把 JSON text content
+ *  自动提升为 object 形 structuredContent（数组/标量包一层），与 tool-registry
+ *  的 generic outputSchema 配对。文本非 JSON 时保持原样。 */
 export function toCallToolResult(handlerResult: ToolHandlerResult): ToolHandlerResult {
-  return handlerResult;
+  if (!handlerResult || handlerResult.structuredContent !== undefined) return handlerResult;
+  const text = Array.isArray(handlerResult.content)
+    ? handlerResult.content.find((p: any) => p?.type === 'text' && typeof p.text === 'string')?.text
+    : undefined;
+  if (typeof text !== 'string') return handlerResult;
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return handlerResult; }
+  const structuredContent =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : Array.isArray(parsed)
+        ? { items: parsed }
+        : { value: parsed };
+  return { ...handlerResult, structuredContent };
 }

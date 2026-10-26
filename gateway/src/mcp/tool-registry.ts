@@ -647,8 +647,9 @@ import { handleManagerCancelGoal } from "./handlers/manager-cancel-goal";
 import { handleManagerListPendingQuestions } from "./handlers/manager-list-pending-questions";
 
 export function createToolRegistry(): ToolRegistry {
+  const genericOutputSchema = { type: 'object', additionalProperties: true };
   return {
-    definitions: DEFINITIONS,
+    definitions: DEFINITIONS.map((d) => d.outputSchema ? d : { ...d, outputSchema: genericOutputSchema }),
     handlers: {
       mafw_create_goal: handleCreateGoal,
       mafw_update_state: handleUpdateState,
