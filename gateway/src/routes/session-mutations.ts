@@ -18,6 +18,8 @@ export interface SessionMutationDeps {
   deleteCheckpoints?: (sessionID: string) => void;
   /** T2-2：session 删除后清理 run 状态（fail-open；缺省跳过）。 */
   deleteRuns?: (sessionID: string) => void;
+  /** T2-3：session 删除后清理 data part overlay（fail-open；缺省跳过）。 */
+  deleteDataParts?: (sessionID: string) => void;
 }
 
 /**
@@ -66,6 +68,10 @@ export async function handleSessionMutations(
       // T2-2：run 状态随会话删除（fail-open）
       try { deps.deleteRuns?.(sessionID); } catch (e: any) {
         console.warn(`[Session] run cleanup failed for ${sessionID} (non-fatal): ${e?.message}`);
+      }
+      // T2-3：data part overlay 随会话删除（fail-open）
+      try { deps.deleteDataParts?.(sessionID); } catch (e: any) {
+        console.warn(`[Session] data part cleanup failed for ${sessionID} (non-fatal): ${e?.message}`);
       }
       json(200, { ok: true });
       return true;

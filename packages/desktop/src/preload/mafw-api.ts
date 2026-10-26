@@ -114,6 +114,7 @@ export function createMafwApi(): MafwAPI {
       resume: (sessionID, runId?) => invoke("session", "resume", { path: { id: sessionID }, body: { runId } }),
       run: (sessionID) => invoke("session", "run", { path: { id: sessionID } }),
       discardRun: (sessionID, runId?) => invoke("session", "discardRun", { path: { id: sessionID }, body: { runId } }),
+      data: (sessionID, body) => invoke("session", "data", { path: { id: sessionID }, body }),
       delete: (id) => invoke("session", "delete", { path: { id } }),
       rename: (id, title) => invoke("session", "rename", { path: { id }, body: { title } }),
       trajectory: (sessionID, query?) => invoke("session", "trajectory", { path: { id: sessionID }, query: query || {} }),

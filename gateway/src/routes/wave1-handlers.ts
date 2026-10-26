@@ -21,6 +21,7 @@ import { handleModelConfigGet, handleModelConfigUpdate, type ModelConfigDeps } f
 import { handleSessionBranch } from './session-branch';
 import { handleSessionCheckpoints } from './session-checkpoints';
 import { handleSessionRun } from './session-run';
+import { handleSessionData } from './session-data';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { cleanupWorktreeForSession } from './session-worktree';
 import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
@@ -63,6 +64,7 @@ export interface Wave1Gateway {
   sessionConfig?: SessionConfigService | null;
   checkpointService?: import('../core/checkpoint/checkpoint-service').CheckpointService | null;
   runCoordinator?: import('../core/run/run-coordinator').RunCoordinator | null;
+  dataPartService?: import('../core/data-parts/data-part-service').DataPartService | null;
   /** T2-1：回合进行中禁止检查点 restore/create（gateway-side apply 无 serve busy 保护）。 */
   isCheckpointBusy?(sessionID: string): boolean;
 }
@@ -128,6 +130,12 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       })));
   }
 
+  registry.attachHandler('session.data', H(async (req, res) =>
+    handleSessionData(req, res, req.url || '', {
+      getRuntime: () => gw.runtime,
+      data: gw.dataPartService ?? undefined,
+    })));
+
   registry.attachHandler('session.delete', H(async (req, res) =>
     handleSessionMutations(req, res, {
       getCapabilities: () => gw.runtimeCaps,
@@ -144,6 +152,7 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       },
       deleteCheckpoints: (sid) => gw.checkpointService?.deleteForSession(sid),
       deleteRuns: (sid) => gw.runCoordinator?.deleteForSession(sid),
+      deleteDataParts: (sid) => gw.dataPartService?.deleteForSession(sid),
     })));
   registry.attachHandler('session.rename', H(async (req, res) =>
     handleSessionMutations(req, res, {

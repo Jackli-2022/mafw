@@ -375,6 +375,8 @@ export interface SessionNamespace {
   run(params: { path: { id: string } }): Promise<{ run: RunState | null }>
   /** T2-2：放弃暂停（清闸门并续发队列） */
   discardRun(params: { path: { id: string }; body?: { runId?: string } }): Promise<{ run: RunState }>
+  /** T2-3：注入类型化 data part（`data-<name>`；同 id 渐进更新；transient 不入历史） */
+  data(params: { path: { id: string }; body: { name: string; id?: string; data: unknown; transient?: boolean; messageID?: string } }): Promise<{ part: DataPart }>
   /** 手动压缩会话（TUI /compact；runtime summarize 薄代理）。 */
   summarize(params: { path: { id: string }; body?: { providerID?: string; modelID?: string } }): Promise<void>
 }
@@ -439,6 +441,19 @@ export interface RunState {
   suspendedAt: string
   resumedAt?: string
   finishedAt?: string
+}
+
+// ── T2-3 data parts ──
+
+/** AI SDK 6 data part：type 为 `data-<name>`；同 id 调和；transient 不入历史。 */
+export interface DataPart {
+  id: string
+  type: `data-${string}`
+  data: unknown
+  transient?: boolean
+  sessionID?: string
+  messageID?: string
+  native?: Record<string, unknown>
 }
 
 // ── Commands & skills (opencode serve shapes) ──

@@ -7,7 +7,7 @@ import {
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
-  SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState,
+  SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState, DataPart,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
@@ -355,6 +355,17 @@ export class MafwClient implements IMafwClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params.body ?? {}),
+      })
+    },
+
+    /** T2-3：注入类型化 data part（同 id 渐进更新；transient 不入历史） */
+    data: async (
+      params: { path: { id: string }; body: { name: string; id?: string; data: unknown; transient?: boolean; messageID?: string } },
+    ): Promise<{ part: DataPart }> => {
+      return this.request<{ part: DataPart }>(`/api/sessions/${params.path.id}/data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
       })
     },
 

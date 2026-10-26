@@ -278,6 +278,21 @@ test("session.discardRun POSTs to /run/discard", async () => {
   expect(r.run.status).toBe("cancelled")
 })
 
+test("session.data POSTs the data part body", async () => {
+  fetchMock.mockResolvedValue(okJson({ part: { id: "data_swarm", type: "data-swarm", data: { v: 1 } } }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.data({
+    path: { id: "s1" },
+    body: { name: "swarm", id: "swarm", data: { v: 1 }, transient: true },
+  })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/data",
+    expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse((fetchMock as any).mock.calls[0][1].body)).toEqual({
+    name: "swarm", id: "swarm", data: { v: 1 }, transient: true,
+  })
+  expect(r.part.type).toBe("data-swarm")
+})
+
 test("session.create passes worktree option in body", async () => {
   fetchMock.mockResolvedValue(okJson({ id: "s_wt", worktree: { dir: "C:/p-wt-x", branch: "mafw/x" } }))
   const c = new MafwClient("http://gw:3000")

@@ -136,6 +136,8 @@ import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { RunStateService } from './core/run/run-state-service';
 import { RunCoordinator } from './core/run/run-coordinator';
+import { DataPartService } from './core/data-parts/data-part-service';
+import { mergeDataPartsIntoWire } from './core/data-parts/merge';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
@@ -487,6 +489,7 @@ class MafwScheduler {
   private checkpointService!: CheckpointService;
   private runStateService!: RunStateService;
   private runCoordinator!: RunCoordinator;
+  private dataPartService!: DataPartService;
   private memoryService?: MemoryService;
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
@@ -3339,6 +3342,16 @@ class MafwScheduler {
     });
     // 启动恢复：suspended 重挂闸门；resumed 僵尸 → cancelled。
     this.runCoordinator.reconcile();
+    this.dataPartService = new DataPartService({
+      db: this.getGatewayDb(),
+      runtime: () => this.runtime,
+      broadcast: (e) => this.broadcast(mafwBroadcast({
+        type: e.type,
+        properties: e.properties,
+        sessionID: e.sessionID,
+      })),
+      now: () => new Date().toISOString(),
+    });
     this.subagentService = new SubagentService({
       createSession: (o) => this.runtime!.session.create(o),
       getSession: (sid) => this.runtime!.session.get({ sessionID: sid }),
@@ -4076,6 +4089,7 @@ class MafwScheduler {
         get sessionConfig() { return gwSelf.sessionConfigService; },
         get checkpointService() { return gwSelf.checkpointService; },
         get runCoordinator() { return gwSelf.runCoordinator; },
+        get dataPartService() { return gwSelf.dataPartService; },
         isCheckpointBusy: (sid) => gwSelf.busySessions.has(sid),
       });
       attachWave2Handlers(this.routeRegistry, {
@@ -6495,6 +6509,18 @@ class MafwScheduler {
             // A 切片历史 enrich：全 runtime 的 tool parts 补 toolClass/canonicalTool
             //（与 live 的 enrichToolIdentity 同单源；幂等，fail-open）
             try { enrichHistoryParts(wireData); } catch { /* fail-open：历史 enrich 不阻断加载 */ }
+            // T2-3：data part overlay 合并（只并入本页现存消息；runtime 同 id 优先）
+            try {
+              const messageIds = (wireData as any[])
+                .map((m) => m?.info?.id)
+                .filter((x): x is string => typeof x === 'string' && !!x);
+              if (messageIds.length > 0) {
+                mergeDataPartsIntoWire(
+                  wireData as any,
+                  this.getGatewayDb().listSessionDataParts(id, { messageIds }),
+                );
+              }
+            } catch { /* fail-open：data part 合并不阻断历史 */ }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ data: Array.isArray(wireData) ? wireData : [], nextCursor }));
           } catch (err: any) {

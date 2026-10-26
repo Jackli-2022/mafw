@@ -60,6 +60,7 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/sessions/:id/resume', operationId: 'session.resume', tags: ['session'] },
   { method: 'GET', path: '/api/sessions/:id/run', operationId: 'session.run', tags: ['session'] },
   { method: 'POST', path: '/api/sessions/:id/run/discard', operationId: 'session.discardRun', tags: ['session'] },
+  { method: 'POST', path: '/api/sessions/:id/data', operationId: 'session.data', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/abort', operationId: 'session.abort', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/summarize', operationId: 'session.summarize', tags: ['session'] },
   { method: 'POST', path: '/api/session/:id/prompt', operationId: 'session.prompt', tags: ['session'] },
