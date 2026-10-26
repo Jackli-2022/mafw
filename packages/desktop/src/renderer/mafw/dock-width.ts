@@ -6,7 +6,7 @@ export const DOCK_MIN_WIDTH = 240
 export const DOCK_STANDARD_MAX = 480
 const WORKBENCH_WIDEN_TARGET = 560
 
-const WORKBENCH_TABS = new Set<DockTab>(["files", "editor", "browser"])
+const WORKBENCH_TABS = new Set<DockTab>(["files", "editor", "browser", "terminal"])
 
 export function dockMaxWidth(tab: DockTab, innerWidth: number): number {
   if (WORKBENCH_TABS.has(tab)) {

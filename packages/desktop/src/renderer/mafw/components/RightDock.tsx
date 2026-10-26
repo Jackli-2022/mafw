@@ -35,6 +35,7 @@ export function RightDock(props: {
               <TabsV2.Trigger value="files">📁 文件</TabsV2.Trigger>
               <TabsV2.Trigger value="editor">📝 编辑器</TabsV2.Trigger>
               <TabsV2.Trigger value="browser">🌐 浏览</TabsV2.Trigger>
+              <TabsV2.Trigger value="terminal">&gt;_ 终端</TabsV2.Trigger>
             </TabsV2.List>
           </TabsV2>
           <div class="mafw-right-dock-spacer" />

@@ -52,6 +52,7 @@ import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { FilesDock } from "./components/FilesDock"
 import { EditorDock } from "./components/EditorDock"
 import { BrowserDock } from "./components/BrowserDock"
+import { TerminalDock } from "./components/TerminalDock"
 import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
@@ -2212,6 +2213,9 @@ export function MafwShell() {
               </div>
               <div style={{ display: rightDockTab() === "browser" ? "contents" : "none" }}>
                 <BrowserDock />
+              </div>
+              <div style={{ display: rightDockTab() === "terminal" ? "contents" : "none" }}>
+                <TerminalDock directory={benchRoot()} />
               </div>
             </RightDock>
             )}

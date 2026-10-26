@@ -6,6 +6,7 @@ describe("dock-width（按 tab 的宽度策略，纯函数）", () => {
     expect(dockMaxWidth("tasks", 1600)).toBe(480)
     expect(dockMaxWidth("editor", 1600)).toBe(800)
     expect(dockMaxWidth("files", 1600)).toBe(800)
+    expect(dockMaxWidth("terminal", 1600)).toBe(800)
     expect(dockMaxWidth("editor", 720)).toBe(360) // 50% 而非 Math.max(480)
   })
   test("clamp：min 240、上限按 tab", () => {
