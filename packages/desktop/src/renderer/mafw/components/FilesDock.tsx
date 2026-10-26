@@ -1,9 +1,14 @@
-// FilesDock：RightDock「文件」tab —— 当前会话目录的懒加载文件树。
+// FilesDock：工作台文件树 —— 当前会话目录的懒加载树（只读导航）。
 // 语义（spec §5.1）：只读导航（不建/删/改），目录懒加载（不递归预取）；
 // 文件点击 → 交给编辑器打开（onOpenFile）。root 跟随活动会话 directory。
+// 骨架（spec 2026-10-26）：DockPanelHeader 统一头 + DockEmpty/DockBanner 空/错态，
+// 图标走 @mafw/ui/icon（禁 emoji/几何字形）。
 import { createSignal, createEffect, For, Show } from "solid-js"
-import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { Icon } from "@mafw/ui/icon"
 import { visibleRows, type FsEntry, type TreeRow } from "../file-tree"
+import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 
 export function FilesDock(props: {
   sessionDirectory: string | null
@@ -13,23 +18,31 @@ export function FilesDock(props: {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set())
   const [children, setChildren] = createSignal<Record<string, FsEntry[]>>({})
   const [loading, setLoading] = createSignal(false)
+  const [error, setError] = createSignal<string | null>(null)
+  /** root 加载代际：重试/切目录时丢弃迟到结果。 */
+  let loadToken = 0
 
-  // root 变化（切会话/切 worktree）→ 整树重置（Review Focus #4）
-  createEffect(() => {
+  const loadRoot = () => {
     const root = props.sessionDirectory
+    const token = ++loadToken
     setExpanded(new Set<string>())
     setChildren({})
     setRootEntries([])
-    if (!root) return
-    let cancelled = false
+    setError(null)
+    if (!root) { setLoading(false); return }
     setLoading(true)
     window.api.fs.listDir(root, "")
-      .then(entries => { if (!cancelled) setRootEntries(entries ?? []) })
+      .then(entries => { if (token === loadToken) setRootEntries(entries ?? []) })
       .catch((e: any) => {
-        if (!cancelled) showToastV2({ description: `读取目录失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
+        if (token === loadToken) setError(`读取目录失败：${String(e?.message ?? e).slice(0, 60)}`)
       })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+      .finally(() => { if (token === loadToken) setLoading(false) })
+  }
+
+  // root 变化（切会话/切 worktree）→ 整树重置（Review Focus #4）
+  createEffect(() => {
+    props.sessionDirectory
+    loadRoot()
   })
 
   const rows = () => visibleRows(rootEntries(), expanded(), children())
@@ -50,12 +63,13 @@ export function FilesDock(props: {
         // root 已切换：丢弃迟到结果（终审 Important 2 同类）
         if (root !== props.sessionDirectory) return
         if (entries === null) {
-          showToastV2({ description: "无法读取该目录", variant: "error", duration: 2000 } as any)
+          setError("无法读取该目录")
           return
         }
         setChildren(prev => ({ ...prev, [row.rel]: entries }))
       } catch (e: any) {
-        showToastV2({ description: `读取目录失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
+        if (root !== props.sessionDirectory) return
+        setError(`读取目录失败：${String(e?.message ?? e).slice(0, 60)}`)
         return
       }
     }
@@ -68,39 +82,60 @@ export function FilesDock(props: {
   }
 
   return (
-    <div class="mafw-file-tree">
-      <Show
-        when={props.sessionDirectory}
-        fallback={<div class="mafw-file-tree-empty">没有打开的会话</div>}
-      >
-        <Show when={loading()}>
-          <div class="mafw-file-tree-loading">加载中…</div>
-        </Show>
-        <Show when={!loading() && rows().length === 0}>
-          <div class="mafw-file-tree-empty">目录为空（或被忽略规则过滤）</div>
-        </Show>
-        <For each={rows()}>
-          {(row) => (
-            <div
-              class="mafw-file-tree-row"
-              classList={{ "mafw-file-tree-row-dir": row.kind === "dir" }}
-              style={{ "padding-left": `${8 + row.depth * 14}px` }}
-              role="button"
-              tabIndex={0}
-              title={row.rel}
-              onClick={() => activate(row)}
-              onKeyDown={(e: KeyboardEvent) => {
-                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(row) }
-              }}
-            >
-              <span class="mafw-file-tree-icon">
-                {row.kind === "dir" ? (expanded().has(row.rel) ? "▾" : "▸") : "📄"}
-              </span>
-              <span class="mafw-file-tree-name">{row.name}</span>
-            </div>
-          )}
-        </For>
+    <div class="mafw-files-panel">
+      <DockPanelHeader title="文件">
+        <TooltipV2 value="刷新" openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            aria-label="刷新文件树"
+            disabled={!props.sessionDirectory || loading()}
+            onClick={() => loadRoot()}
+          >
+            <Icon name="refresh" size="small" />
+          </ButtonV2>
+        </TooltipV2>
+      </DockPanelHeader>
+      <Show when={error()}>
+        <DockBanner kind="error" text={error()!} action={{ label: "重试", onClick: () => loadRoot() }} />
       </Show>
+      <div class="mafw-file-tree">
+        <Show
+          when={props.sessionDirectory}
+          fallback={<DockEmpty icon="file-tree" text="没有打开的会话" hint="打开会话后此处显示项目文件" />}
+        >
+          <Show when={loading()}>
+            <DockBanner kind="info" busy text="加载中…" />
+          </Show>
+          <Show when={!loading() && !error() && rows().length === 0}>
+            <DockEmpty icon="file-tree" text="目录为空" hint="可能被忽略规则过滤" />
+          </Show>
+          <For each={rows()}>
+            {(row) => (
+              <div
+                class="mafw-file-tree-row"
+                classList={{ "mafw-file-tree-row-dir": row.kind === "dir" }}
+                style={{ "padding-left": `${8 + row.depth * 14}px` }}
+                role="button"
+                tabIndex={0}
+                title={row.rel}
+                onClick={() => activate(row)}
+                onKeyDown={(e: KeyboardEvent) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(row) }
+                }}
+              >
+                <span class="mafw-file-tree-icon">
+                  <Icon
+                    name={row.kind === "dir" ? (expanded().has(row.rel) ? "chevron-down" : "chevron-right") : "file"}
+                    size="small"
+                  />
+                </span>
+                <span class="mafw-file-tree-name">{row.name}</span>
+              </div>
+            )}
+          </For>
+        </Show>
+      </div>
     </div>
   )
 }

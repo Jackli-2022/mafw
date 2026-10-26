@@ -900,3 +900,37 @@ describe("chat 面板填满内容区（C 案 flush）", () => {
     expect(b).not.toContain("margin: 4px 8px 16px")
   })
 })
+
+describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
+  const panels = [
+    "src/renderer/mafw/components/FilesDock.tsx",
+    "src/renderer/mafw/components/EditorDock.tsx",
+    "src/renderer/mafw/components/BrowserDock.tsx",
+    "src/renderer/mafw/components/TerminalDock.tsx",
+    "src/renderer/mafw/components/ChangesDock.tsx",
+  ]
+  test("五个面板都走共享骨架（DockPanelHeader）", () => {
+    for (const f of panels) expect(read(f)).toContain("DockPanelHeader")
+  })
+  test("面板内禁 emoji / 几何字形图标", () => {
+    for (const f of panels) {
+      expect(read(f)).not.toMatch(/📁|📝|🌐|📄|▸|▾|⟳|↗/u)
+    }
+  })
+  test("浏览器空态主题化、不预建 about:blank webview", () => {
+    const src = read("src/renderer/mafw/components/BrowserDock.tsx")
+    expect(src).toContain("DockEmpty")
+    expect(src).not.toContain('setAttribute("src", "about:blank")')
+    expect(css).not.toMatch(/\.mafw-browser-view \{[^}]*background:\s*#fff/)
+  })
+  test("死 CSS 清理 + files 单一滚动所有者", () => {
+    expect(css).not.toContain(".mafw-right-dock-resizer")
+    expect(cssBlock(".mafw-file-tree {")).toContain("height: 100%")
+  })
+  test("icon map 补齐 globe / refresh（内容补齐，非组件面扩张）", () => {
+    const icons = read("../ui/src/components/icon.tsx")
+    expect(icons).toContain("globe:")
+    expect(icons).toContain("refresh:")
+  })
+})

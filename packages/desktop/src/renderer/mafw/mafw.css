@@ -4205,7 +4205,8 @@ html[data-theme="light"] body {
 @media (prefers-reduced-motion: reduce) { .mafw-bg-spinner { animation: none; opacity: 0.8; } }
 
 /* ── Files dock（文件树，spec 2026-10-22 §5.1） ── */
-.mafw-file-tree { display: flex; flex-direction: column; padding: 6px 4px; overflow: auto; }
+.mafw-files-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.mafw-file-tree { display: flex; flex-direction: column; padding: 6px 4px; overflow: auto; height: 100%; min-height: 0; flex: 1; }
 .mafw-file-tree-row {
   display: flex;
   align-items: center;
@@ -4216,7 +4217,7 @@ html[data-theme="light"] body {
   min-width: 0;
 }
 .mafw-file-tree-row:hover { background: var(--bg-overlay, transparent); }
-.mafw-file-tree-icon { flex-shrink: 0; width: 14px; font-size: 10px; color: var(--text-4); text-align: center; }
+.mafw-file-tree-icon { flex-shrink: 0; width: 14px; color: var(--text-4); display: inline-flex; align-items: center; justify-content: center; }
 .mafw-file-tree-name {
   font-size: 12px;
   color: var(--text-2);
@@ -4225,8 +4226,6 @@ html[data-theme="light"] body {
   white-space: nowrap;
 }
 .mafw-file-tree-row-dir .mafw-file-tree-name { color: var(--text-1); }
-.mafw-file-tree-empty { padding: 24px 10px; text-align: center; font-size: 11px; color: var(--text-4); }
-.mafw-file-tree-loading { padding: 8px 10px; font-size: 10px; color: var(--text-4); }
 
 /* ── Editor dock（协同编辑器，spec 2026-10-22 §5.2） ── */
 .mafw-editor-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
@@ -4257,37 +4256,12 @@ html[data-theme="light"] body {
 .mafw-editor-tab-active .mafw-editor-tab-name { color: var(--text-1); }
 .mafw-editor-tab-dot { font-size: 8px; color: var(--accent); }
 .mafw-editor-tab-ro { font-size: 9px; color: var(--text-4); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
-.mafw-editor-tab-close { font-size: 11px; color: var(--text-4); padding: 0 2px; cursor: pointer; }
+.mafw-editor-tab-close { font-size: 11px; color: var(--text-4); padding: 0 2px; cursor: pointer; display: inline-flex; align-items: center; }
 .mafw-editor-tab-close:hover { color: var(--text-1); }
-.mafw-editor-tab-actions { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; }
-.mafw-editor-conflict {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-overlay, transparent);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-.mafw-editor-conflict-text { font-size: 10px; color: var(--text-2); }
-.mafw-editor-conflict-actions { display: flex; gap: 4px; }
-.mafw-editor-note { padding: 6px 10px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .mafw-editor-host { flex: 1; min-height: 0; overflow: hidden; }
 .mafw-editor-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .mafw-editor-diff { flex: 1; min-height: 0; overflow: auto; }
 .mafw-right-dock { position: relative; }
-.mafw-right-dock-resizer {
-  position: absolute;
-  left: -3px;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  cursor: col-resize;
-  z-index: 10;
-}
-.mafw-right-dock-resizer:hover { background: var(--border); }
 .mafw-notes-card {
   display: flex;
   flex-direction: column;
@@ -5053,12 +5027,9 @@ html[data-theme="light"] body {
 /* composer 按钮改动计数徽标（审阅改动常驻入口，对齐 Amp Changes pane 常驻可见性） */
 .mafw-composer-badge { position: absolute; top: -4px; right: -4px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 9px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
 /* ── ChangesDock（改动列表常驻入口，文件级；hunk 级在抽屉） ── */
-.mafw-changes-dock { padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; height: 100%; }
-.mafw-changes-dock-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 6px; }
-.mafw-changes-dock-title { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.mafw-changes-dock { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .mafw-changes-dock-stats { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.mafw-changes-dock-empty { font-size: 12px; color: var(--text-4); padding: 24px 8px; text-align: center; }
-.mafw-changes-dock-list { display: flex; flex-direction: column; gap: 2px; }
+.mafw-changes-dock-list { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 12px; overflow-y: auto; flex: 1; min-height: 0; }
 .mafw-changes-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text-2); transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
 .mafw-changes-row:hover { background: var(--hover); color: var(--text-1); }
 .mafw-changes-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-data); }
@@ -5231,17 +5202,14 @@ html[data-theme="light"] body {
 .mafw-browser-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .mafw-browser-bar { display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .mafw-browser-address { flex: 1 1 auto; min-width: 0; }
-.mafw-browser-status { padding: 2px 8px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); flex-shrink: 0; min-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mafw-browser-title { display: block; overflow: hidden; text-overflow: ellipsis; }
-.mafw-browser-error { padding: 8px 10px; font-size: 11px; color: var(--red-9, #e08a8a); background: var(--bg-inset); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .mafw-browser-host { flex: 1 1 auto; min-height: 0; display: flex; }
-.mafw-browser-view { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: #fff; }
+.mafw-browser-view { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: var(--bg-inset); }
 
 /* ── 统一面板骨架（DockPanelHeader / DockEmpty / DockBanner）── */
 .mafw-panel-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; min-height: 32px; flex: none; border-bottom: 1px solid var(--border); }
 .mafw-panel-head-title { font-size: 12px; font-weight: 600; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-panel-head-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
-.mafw-panel-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 16px; text-align: center; }
+.mafw-panel-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 16px; text-align: center; flex: 1 1 auto; min-height: 0; }
 .mafw-panel-empty-icon { color: var(--text-4); }
 .mafw-panel-empty-text { margin: 0; font-size: 12px; color: var(--text-3); line-height: 1.5; }
 .mafw-panel-empty-hint { margin: 0; font-size: 11px; color: var(--text-4); line-height: 1.5; }
@@ -5256,10 +5224,6 @@ html[data-theme="light"] body {
 .mafw-terminal-host { flex: 1 1 auto; min-height: 0; padding: 6px 4px 4px 8px; overflow: hidden; }
 .mafw-terminal-host .xterm { height: 100%; }
 .mafw-terminal-host .xterm-viewport { background: transparent !important; }
-.mafw-terminal-actions { position: absolute; top: 3px; right: 6px; z-index: 2; }
-.mafw-terminal-banner { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; padding: 16px; background: color-mix(in srgb, var(--bg-inset) 84%, transparent); }
-.mafw-terminal-banner-card { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 18px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-float); box-shadow: var(--shadow-float); max-width: 280px; text-align: center; }
-.mafw-terminal-banner-text { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-3); }
 
 /* ── 批注草稿（composer 上方，spec 2026-10-22 §5） ── */
 .mafw-pending-annotations { margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-inset); overflow: hidden; }

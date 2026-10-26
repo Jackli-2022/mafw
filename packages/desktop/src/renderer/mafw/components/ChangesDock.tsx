@@ -3,6 +3,7 @@
 // 实时脉冲来自 store.session_diff（SSE session.diff）；每会话第一份 live 快照只建基线。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
+import { DockEmpty, DockPanelHeader } from "./dock-panel"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { buildChangeTree, nextPulseState, changeStatusLetter, type ChangeTreeNode } from "./change-tree"
 
@@ -159,19 +160,18 @@ export function ChangesDock(props: {
         />
       </Show>
       <Show when={!openFile()}>
-        <div class="mafw-changes-dock-head">
-          <span class="mafw-changes-dock-title">改动</span>
+        <DockPanelHeader title="改动">
           <Show when={files().length > 0}>
             <span class="mafw-changes-dock-stats">
               {files().length} 个文件 <span class="mafw-diff-stat add">+{totalAdd()}</span>{" "}
               <span class="mafw-diff-stat del">-{totalDel()}</span>
             </span>
           </Show>
-        </div>
-        <Show when={props.sessionID} fallback={<p class="mafw-changes-dock-empty">没有打开的会话。</p>}>
+        </DockPanelHeader>
+        <Show when={props.sessionID} fallback={<DockEmpty icon="review" text="没有打开的会话" hint="打开会话后此处显示待审改动" />}>
           <Show
             when={files().length > 0}
-            fallback={<p class="mafw-changes-dock-empty">当前会话没有待审的文件改动。</p>}
+            fallback={<DockEmpty icon="review" text="当前会话没有待审的文件改动" hint="agent 修改文件后会实时出现在这里" />}
           >
             <div class="mafw-changes-dock-list">
               <For each={tree()}>

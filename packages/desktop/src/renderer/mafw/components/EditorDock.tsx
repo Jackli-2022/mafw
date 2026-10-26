@@ -6,7 +6,10 @@
 // - 草稿/基准存 editor-drafts（root-scoped 模块单例）：卸载（关 dock/connDown）不丢。
 import { createSignal, createEffect, onCleanup, onMount, untrack, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { Icon } from "@mafw/ui/icon"
+import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
   createEditorModel, onRootChange, openFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
@@ -48,6 +51,8 @@ export function EditorDock(props: {
   const [annotOpen, setAnnotOpen] = createSignal(false)
   const [annotDraft, setAnnotDraft] = createSignal("")
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
+  /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
+  const [ioError, setIoError] = createSignal<string | null>(null)
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
@@ -123,18 +128,15 @@ export function EditorDock(props: {
         setReadNotes(prev => ({ ...prev, [rel]: note }))
         setModel(m => openFile(m, rel, "", true))
       } else {
-        showToastV2({
-          description: res.reason === "not-found" ? "文件不存在（可能已被移动/删除）" : "读取文件失败",
-          variant: "error",
-          duration: 3000,
-        } as any)
+        setIoError(res.reason === "not-found" ? "文件不存在（可能已被移动/删除）" : "读取文件失败")
         return
       }
       setMode("edit")
       clearSelection()
+      setIoError(null)
       void mountActive()
     } catch (e: any) {
-      showToastV2({ description: `读取文件失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
+      setIoError(`读取文件失败：${String(e?.message ?? e).slice(0, 60)}`)
     }
   }
 
@@ -179,7 +181,7 @@ export function EditorDock(props: {
       }
     } catch (e: any) {
       console.warn("[editor] mount failed", e)
-      showToastV2({ description: `编辑器加载失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
+      setIoError(`编辑器加载失败：${String(e?.message ?? e).slice(0, 60)}`)
     }
   }
 
@@ -249,12 +251,13 @@ export function EditorDock(props: {
           if (after.content !== content) setModel(m => onExternalChange(m, f.rel))
         }
         showToastV2({ description: "已保存", duration: 1200 } as any)
+        setIoError(null)
       } else if (res.reason === "conflict") {
         setModel(m => onExternalChange(m, f.rel))
       } else if (res.reason === "not-found") {
-        showToastV2({ description: "文件已被删除，无法保存", variant: "error", duration: 3000 } as any)
+        setIoError("文件已被删除，无法保存")
       } else {
-        showToastV2({ description: "保存失败", variant: "error", duration: 3000 } as any)
+        setIoError("保存失败")
       }
     } finally {
       setSaving(false)
@@ -267,7 +270,7 @@ export function EditorDock(props: {
     const res = await window.api.fs.readFile(root, rel)
     if (root !== props.sessionDirectory) return
     if (!res.ok) {
-      showToastV2({ description: res.reason === "not-found" ? "文件已被删除" : "读取失败", variant: "error", duration: 3000 } as any)
+      setIoError(res.reason === "not-found" ? "文件已被删除" : "读取失败")
       return
     }
     setMtime(root, rel, res.mtimeMs)
@@ -294,7 +297,7 @@ export function EditorDock(props: {
     const root = props.sessionDirectory
     if (!root) return
     const res = await window.api.fs.openExternal(root, rel)
-    if (!res.ok) showToastV2({ description: "无法在外部编辑器打开", variant: "error", duration: 3000 } as any)
+    if (!res.ok) setIoError("无法在外部编辑器打开")
   }
 
   const selRange = () => {
@@ -327,9 +330,50 @@ export function EditorDock(props: {
 
   return (
     <div class="mafw-editor-dock">
+      <DockPanelHeader title="编辑器">
+        <TooltipV2 value="保存（Ctrl+S）" openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            aria-label="保存"
+            disabled={!activeFile() || !!activeFile()?.readOnly || saving()}
+            onClick={() => void saveActive()}
+          >
+            <Icon name="save" size="small" />
+          </ButtonV2>
+        </TooltipV2>
+        <TooltipV2 value="在外部编辑器打开" openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            aria-label="外部编辑器"
+            disabled={!activeFile()}
+            onClick={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
+          >
+            <Icon name="square-arrow-top-right" size="small" />
+          </ButtonV2>
+        </TooltipV2>
+        <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
+          <TooltipV2 value={mode() === "diff" ? "返回编辑" : "查看改动"} openDelay={300}>
+            <ButtonV2
+              variant={mode() === "diff" ? "contrast" : "ghost"}
+              size="small"
+              aria-label="改动"
+              onClick={() => { setMode(mode() === "diff" ? "edit" : "diff"); clearSelection() }}
+            >
+              <Icon name="review" size="small" />
+            </ButtonV2>
+          </TooltipV2>
+        </Show>
+      </DockPanelHeader>
+
+      <Show when={ioError()}>
+        <DockBanner kind="error" text={ioError()!} action={{ label: "关闭", onClick: () => setIoError(null) }} />
+      </Show>
+
       <Show
         when={model().files.length > 0}
-        fallback={<div class="mafw-file-tree-empty">从「文件」tab 选择文件打开</div>}
+        fallback={<DockEmpty icon="file-tree" text="从「文件」面板选择文件打开" hint="单击文件即可在此编辑" />}
       >
         <div class="mafw-editor-tabs">
           <For each={model().files}>
@@ -353,48 +397,24 @@ export function EditorDock(props: {
                   title="关闭"
                   onClick={(e) => { e.stopPropagation(); closeRel(f.rel) }}
                   onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") { e.stopPropagation(); closeRel(f.rel) } }}
-                >×</span>
+                ><Icon name="close-small" size="small" /></span>
               </div>
             )}
           </For>
-          <div class="mafw-editor-tab-actions">
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              disabled={!activeFile() || !!activeFile()?.readOnly || saving()}
-              onClick={() => void saveActive()}
-            >保存</ButtonV2>
-            <ButtonV2
-              variant="ghost"
-              size="small"
-              disabled={!activeFile()}
-              onClick={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
-            >外部编辑器</ButtonV2>
-            <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
-              <ButtonV2
-                variant={mode() === "diff" ? "contrast" : "ghost"}
-                size="small"
-                onClick={() => { setMode(mode() === "diff" ? "edit" : "diff"); clearSelection() }}
-              >改动</ButtonV2>
-            </Show>
-          </div>
         </div>
 
         {/* 冲突横幅：dirty + 磁盘已变（watch 或保存校验）→ 绝不静默覆盖 */}
         <Show when={activeFile()?.conflict}>
-          <div class="mafw-editor-conflict">
-            <span class="mafw-editor-conflict-text">磁盘已被改动（可能被 agent 修改）</span>
-            <div class="mafw-editor-conflict-actions">
-              <ButtonV2 variant="outline" size="small" onClick={() => { const f = activeFile(); if (f) void saveActive(true) }}>覆盖保存</ButtonV2>
-              <ButtonV2 variant="ghost" size="small" onClick={() => { const f = activeFile(); if (f) keepMine(f.rel) }}>保留我的修改</ButtonV2>
-              <ButtonV2 variant="ghost" size="small" onClick={() => { const f = activeFile(); if (f) void reloadFromDisk(f.rel) }}>重新加载</ButtonV2>
-            </div>
-          </div>
+          <DockBanner kind="warn" text="磁盘已被改动（可能被 agent 修改）">
+            <ButtonV2 variant="outline" size="small" onClick={() => { const f = activeFile(); if (f) void saveActive(true) }}>覆盖保存</ButtonV2>
+            <ButtonV2 variant="ghost" size="small" onClick={() => { const f = activeFile(); if (f) keepMine(f.rel) }}>保留我的修改</ButtonV2>
+            <ButtonV2 variant="ghost" size="small" onClick={() => { const f = activeFile(); if (f) void reloadFromDisk(f.rel) }}>重新加载</ButtonV2>
+          </DockBanner>
         </Show>
 
         {/* 只读原因（binary/超大/非 UTF-8） */}
         <Show when={activeFile() && noteFor(activeFile()!.rel)}>
-          <div class="mafw-editor-note">{noteFor(activeFile()!.rel)}</div>
+          <DockBanner kind="info" text={noteFor(activeFile()!.rel)!} />
         </Show>
 
         <div class="mafw-editor-body">

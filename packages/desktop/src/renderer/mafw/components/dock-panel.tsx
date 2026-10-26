@@ -20,8 +20,13 @@ export function DockPanelHeader(props: { title: string; children?: JSX.Element }
   )
 }
 
-/** 统一空态：居中图标 + 说明 + 可选下一步提示。 */
-export function DockEmpty(props: { icon?: string; text: string; hint?: string }) {
+/** 统一空态：居中图标 + 说明 + 可选下一步提示（welcome view 式动作）。 */
+export function DockEmpty(props: {
+  icon?: string
+  text: string
+  hint?: string
+  action?: { label: string; onClick: () => void }
+}) {
   return (
     <div class="mafw-panel-empty">
       <Show when={props.icon}>
@@ -31,16 +36,25 @@ export function DockEmpty(props: { icon?: string; text: string; hint?: string })
       <Show when={props.hint}>
         <p class="mafw-panel-empty-hint">{props.hint}</p>
       </Show>
+      <Show when={props.action}>
+        {(action) => (
+          <ButtonV2 variant="outline" size="small" onClick={action().onClick}>
+            {action().label}
+          </ButtonV2>
+        )}
+      </Show>
     </div>
   )
 }
 
-/** 统一常驻条：info/warn/error + 可选 loading + 恢复动作。 */
+/** 统一常驻条：info/warn/error + 可选 loading + 恢复动作；
+ *  children = 多动作场景（如编辑器冲突的三选一）。 */
 export function DockBanner(props: {
   kind: DockBannerKind
   text: string
   action?: { label: string; onClick: () => void }
   busy?: boolean
+  children?: JSX.Element
 }) {
   return (
     <div class={dockBannerClass(props.kind)} role={props.kind === "error" ? "alert" : "status"}>
@@ -48,6 +62,7 @@ export function DockBanner(props: {
         <LoaderV2 width={16} height={16} />
       </Show>
       <span class="mafw-panel-banner-text">{props.text}</span>
+      {props.children}
       <Show when={props.action}>
         {(action) => (
           <ButtonV2 variant="outline" size="small" onClick={action().onClick}>

@@ -1,11 +1,16 @@
-// BrowserDock：RightDock「浏览」tab —— 内嵌浏览器（webview 简单版，spec §4）。
+// BrowserDock：工作台内嵌浏览器（webview，spec §4）。
 // 安全基线全部在 main（browser-session.ts）：权限全拒、非 http(s) 导航拦截、
 // window.open 转 dock 内导航、will-attach-webview 加固。这里只做 UI + 导航状态。
+// 骨架（spec 2026-10-26）：DockPanelHeader 统一头（标题=页面标题）+ 常驻错误条 +
+// 主题化空态；webview 懒挂载（首次真实导航才创建，不再预建 about:blank）。
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { Icon } from "@mafw/ui/icon"
 import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../../shared/browser-policy"
+import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 
 export function BrowserDock() {
   const [address, setAddress] = createSignal("")
@@ -23,11 +28,36 @@ export function BrowserDock() {
     if (!view) return
     try {
       const url = String(view.getURL?.() ?? "")
-      if (url && url !== "about:blank") { setAddress(url); setStarted(true) }
+      if (url) { setAddress(url); setStarted(true) }
       setCanBack(!!view.canGoBack?.())
       setCanForward(!!view.canGoForward?.())
       setTitle(String(view.getTitle?.() ?? ""))
     } catch { /* 未 attach 时方法不可用 */ }
+  }
+
+  /** 首次真实导航才创建 webview（懒挂载）；返回是否可用。 */
+  const ensureView = (url: string): boolean => {
+    if (view) return true
+    if (!host) return false
+    // 用 createElement 而非 JSX：webview 是 Electron 自定义元素，JSX 类型面不认。
+    const el = document.createElement("webview") as any
+    el.setAttribute("partition", BROWSER_PARTITION)
+    el.className = "mafw-browser-view"
+    el.addEventListener("did-navigate", sync)
+    el.addEventListener("did-navigate-in-page", sync)
+    el.addEventListener("did-start-loading", () => setLoading(true))
+    el.addEventListener("did-stop-loading", () => { setLoading(false); sync() })
+    el.addEventListener("page-title-updated", (e: any) => setTitle(String(e?.title ?? "")))
+    el.addEventListener("dom-ready", sync)
+    el.addEventListener("did-fail-load", (e: any) => {
+      if (e?.errorCode === -3 || !e?.isMainFrame) return
+      setFailed(`加载失败：${String(e?.errorDescription ?? e?.errorCode ?? "unknown")}`)
+    })
+    host.appendChild(el)
+    view = el
+    // src 属性导航：webview 尚未 attach 时 loadURL 会抛「must be attached」，src 会被排队。
+    try { el.setAttribute("src", url) } catch { /* ignore */ }
+    return true
   }
 
   const load = (raw: string) => {
@@ -39,56 +69,46 @@ export function BrowserDock() {
     setFailed(null)
     setAddress(url)
     setStarted(true)
-    try { view?.loadURL?.(url) } catch { /* not attached yet */ }
+    if (!ensureView(url)) {
+      try { view?.loadURL?.(url) } catch { /* not attached yet */ }
+    }
+  }
+
+  const retry = () => {
+    if (address()) load(address())
+    else try { view?.reload?.() } catch { /* ignore */ }
   }
 
   onMount(() => {
-    // 用 createElement 而非 JSX：webview 是 Electron 自定义元素，JSX 类型面不认。
-    const el = document.createElement("webview") as any
-    el.setAttribute("partition", BROWSER_PARTITION)
-    el.setAttribute("src", "about:blank")
-    el.className = "mafw-browser-view"
-    host?.appendChild(el)
-    view = el
-
-    el.addEventListener("did-navigate", sync)
-    el.addEventListener("did-navigate-in-page", sync)
-    el.addEventListener("did-start-loading", () => setLoading(true))
-    el.addEventListener("did-stop-loading", () => { setLoading(false); sync() })
-    el.addEventListener("page-title-updated", (e: any) => setTitle(String(e?.title ?? "")))
-    el.addEventListener("dom-ready", sync)
-    el.addEventListener("did-fail-load", (e: any) => {
-      if (e?.errorCode === -3 || !e?.isMainFrame) return
-      setFailed(`加载失败：${String(e?.errorDescription ?? e?.errorCode ?? "unknown")}`)
-    })
-
     const off = window.api.browser.onOpenUrl((url) => load(url))
     onCleanup(() => {
       off()
-      try { el.remove() } catch { /* ignore */ }
+      try { view?.remove?.() } catch { /* ignore */ }
       view = null
     })
   })
 
   return (
     <div class="mafw-browser-dock">
-      <div class="mafw-browser-bar">
+      <DockPanelHeader title={title() || "浏览器"}>
         <TooltipV2 value="后退" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" disabled={!canBack()} aria-label="后退" onClick={() => { try { view?.goBack?.() } catch { /* ignore */ } }}>←</ButtonV2>
+          <ButtonV2 variant="ghost" size="small" disabled={!canBack()} aria-label="后退" onClick={() => { try { view?.goBack?.() } catch { /* ignore */ } }}>
+            <Icon name="arrow-left" size="small" />
+          </ButtonV2>
         </TooltipV2>
         <TooltipV2 value="前进" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" disabled={!canForward()} aria-label="前进" onClick={() => { try { view?.goForward?.() } catch { /* ignore */ } }}>→</ButtonV2>
+          <ButtonV2 variant="ghost" size="small" disabled={!canForward()} aria-label="前进" onClick={() => { try { view?.goForward?.() } catch { /* ignore */ } }}>
+            <Icon name="arrow-right" size="small" />
+          </ButtonV2>
         </TooltipV2>
         <TooltipV2 value="刷新" openDelay={300}>
-          <ButtonV2 variant="ghost" size="small" aria-label="刷新" onClick={() => { try { view?.reload?.() } catch { /* ignore */ } }}>⟳</ButtonV2>
+          <ButtonV2 variant="ghost" size="small" aria-label="刷新" disabled={!started()} onClick={retry}>
+            <Icon name="refresh" size="small" />
+          </ButtonV2>
         </TooltipV2>
-        <TextInputV2
-          class="mafw-browser-address"
-          value={address()}
-          placeholder="输入网址（Enter 打开）"
-          onInput={(e) => setAddress(e.currentTarget.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); load(address()) } }}
-        />
+        <Show when={loading()}>
+          <LoaderV2 width={14} height={14} />
+        </Show>
         <TooltipV2 value="在系统浏览器打开" openDelay={300}>
           <ButtonV2
             variant="ghost"
@@ -96,14 +116,25 @@ export function BrowserDock() {
             aria-label="在系统浏览器打开"
             disabled={!started()}
             onClick={() => { const url = address(); if (url) void window.api.browser.openExternal(url) }}
-          >↗</ButtonV2>
+          >
+            <Icon name="square-arrow-top-right" size="small" />
+          </ButtonV2>
         </TooltipV2>
-      </div>
-      <div class="mafw-browser-status">
-        <span class="mafw-browser-title" title={title()}>{loading() ? "加载中…" : title()}</span>
+      </DockPanelHeader>
+      <div class="mafw-browser-bar">
+        <TextInputV2
+          class="mafw-browser-address"
+          value={address()}
+          placeholder="输入网址（Enter 打开）"
+          onInput={(e) => setAddress(e.currentTarget.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); load(address()) } }}
+        />
       </div>
       <Show when={failed()}>
-        <div class="mafw-browser-error">{failed()}</div>
+        <DockBanner kind="error" text={failed()!} action={{ label: "重试", onClick: retry }} />
+      </Show>
+      <Show when={!started() && !failed()}>
+        <DockEmpty icon="globe" text="输入网址开始浏览" hint="Enter 打开；会话内链接会在此面板打开" />
       </Show>
       <div class="mafw-browser-host" ref={(el) => { host = el }} />
     </div>

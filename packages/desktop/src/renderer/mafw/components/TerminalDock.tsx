@@ -9,9 +9,10 @@ import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
-import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
+import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { viewFor, planAttach, buildTerminalTheme, createResizeScheduler, type TerminalViewKind } from "../terminal/terminal-view"
+import { DockBanner, DockPanelHeader } from "./dock-panel"
+import { viewFor, planAttach, buildTerminalTheme, createResizeScheduler, type TerminalViewKind, type TerminalView } from "../terminal/terminal-view"
 import { nextConnState, type ConnState } from "../../../shared/terminal"
 
 export function TerminalDock(props: { directory: string | null; active: boolean }) {
@@ -28,6 +29,7 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
   const [lastError, setLastError] = createSignal<string | null>(null)
 
   const view = () => viewFor(kind() as TerminalViewKind, { hasDirectory: !!props.directory, error: lastError() })
+  const dirLabel = () => dirLabelFor(props.directory)
 
   const themeFrom = (el: HTMLElement) => {
     const css = getComputedStyle(el)
@@ -207,35 +209,43 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
 
   return (
     <div class="mafw-terminal-dock">
-      <Show when={kind() === "live"}>
-        <div class="mafw-terminal-actions">
+      <DockPanelHeader title={dirLabel()}>
+        <Show when={kind() === "live"}>
           <ButtonV2 variant="ghost" size="small" onClick={requestKill} aria-label="结束终端">
             {killArmed() ? "确认结束？" : "结束终端"}
           </ButtonV2>
-        </div>
+        </Show>
+      </DockPanelHeader>
+      <Show when={kind() !== "live" && view().banner}>
+        <DockBanner
+          kind={bannerKind(view())}
+          busy={view().busy}
+          text={view().banner!}
+          action={view().action ? { label: actionLabel(view().action!), onClick: primary } : undefined}
+        />
       </Show>
       <div class="mafw-terminal-host" ref={host} />
-      <Show when={view().banner}>
-        <div class="mafw-terminal-banner">
-          <div class="mafw-terminal-banner-card">
-            <Show when={view().busy}>
-              <LoaderV2 width={18} height={18} />
-            </Show>
-            <p class="mafw-terminal-banner-text">{view().banner}</p>
-            <Show when={view().action}>
-              <ButtonV2 variant="outline" size="small" onClick={primary}>
-                {view().action === "external"
-                  ? "打开外部终端"
-                  : view().action === "reconnect"
-                    ? "重新连接"
-                    : view().action === "reopen"
-                      ? "重新打开"
-                      : "打开终端"}
-              </ButtonV2>
-            </Show>
-          </div>
-        </div>
-      </Show>
     </div>
   )
+}
+
+/** 目录 basename（面板标题）；无会话 → 终端。 */
+function dirLabelFor(directory: string | null): string {
+  if (!directory) return "终端"
+  const parts = directory.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] || "终端"
+}
+
+/** 终态语义 → banner 色调：连接中 info、服务不可用 error、其余 warn。 */
+function bannerKind(view: TerminalView): "info" | "warn" | "error" {
+  if (view.busy) return "info"
+  if (view.kind === "unavailable") return "error"
+  return "warn"
+}
+
+function actionLabel(action: "open" | "reconnect" | "reopen" | "external"): string {
+  return action === "external" ? "打开外部终端"
+    : action === "reconnect" ? "重新连接"
+      : action === "reopen" ? "重新打开"
+        : "打开终端"
 }
