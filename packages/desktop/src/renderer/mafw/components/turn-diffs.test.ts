@@ -24,6 +24,27 @@ test("collects user turns with assistant snapshots and excludes local ids", () =
   expect(out[0].snapshotKey).toContain("e1")
 })
 
+test("excludeLastTurn：在飞回合不参与候选，step 快照变化不改变已完成回合的请求 key", () => {
+  const u1 = user("u1", 1)
+  const a1 = asst("a1", 2, { start: "s1", end: "e1" })
+  const u2 = user("u2", 3)
+  const a2 = asst("a2", 4, { start: "s2", end: "e2" })
+  const msgs = [u1, a1, u2, a2]
+  expect(collectTurnDiffCandidates(msgs).map(c => c.messageID)).toEqual(["u1", "u2"])
+  expect(collectTurnDiffCandidates(msgs, { excludeLastTurn: true }).map(c => c.messageID)).toEqual(["u1"])
+
+  // 在飞回合每完成一个 assistant step，snapshot end/files 都会变；
+  // 排除最后回合后 key 必须稳定（否则每次 step 全量重拉 = refetch storm）。
+  const a2nextStep = asst("a3", 5, { start: "s3", end: "e3", files: ["x"] })
+  const k1 = turnDiffRequestKey("opencode", "s", collectTurnDiffCandidates(msgs, { excludeLastTurn: true }))
+  const k2 = turnDiffRequestKey("opencode", "s", collectTurnDiffCandidates([...msgs, a2nextStep], { excludeLastTurn: true }))
+  expect(k1).toBe(k2)
+
+  // 最后一个 user 还没有任何 assistant 快照时，excludeLastTurn 仍保留更早回合
+  const pending = [u1, a1, user("u3", 9)]
+  expect(collectTurnDiffCandidates(pending, { excludeLastTurn: true }).map(c => c.messageID)).toEqual(["u1"])
+})
+
 test("fetch is per-turn, failures become null, and merge keeps per-turn wins", async () => {
   const msgs = [user("u1", 1), asst("a1", 2, { start: "s", end: "e" }), user("u2", 3), asst("a2", 4, { start: "s2", end: "e2" })]
   const called: string[] = []

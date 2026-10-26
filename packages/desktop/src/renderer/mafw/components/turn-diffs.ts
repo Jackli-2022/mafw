@@ -34,13 +34,23 @@ function chronological(messages: any[]): any[] {
     .map((entry) => entry.message)
 }
 
-/** User turns whose assistant range has at least one snapshot.start. */
-export function collectTurnDiffCandidates(messages: any[]): TurnDiffCandidate[] {
+/** User turns whose assistant range has at least one snapshot.start.
+ *  `excludeLastTurn` drops the newest user turn (in-flight): its snapshot key
+ *  changes on every assistant step, which would refetch all turns per step. */
+export function collectTurnDiffCandidates(
+  messages: any[],
+  opts: { excludeLastTurn?: boolean } = {},
+): TurnDiffCandidate[] {
   const items = chronological(messages)
+  let lastUserIndex = -1
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (roleOf(items[i]) === "user") { lastUserIndex = i; break }
+  }
   const out: TurnDiffCandidate[] = []
   for (let i = 0; i < items.length; i++) {
     const message = items[i]
     if (roleOf(message) !== "user") continue
+    if (opts.excludeLastTurn && i === lastUserIndex) continue
     const id = typeof message.id === "string" ? message.id : ""
     if (!id || isLocalMessageId(id)) continue
 

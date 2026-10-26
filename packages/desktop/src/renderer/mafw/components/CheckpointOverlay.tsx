@@ -32,8 +32,15 @@ export function CheckpointOverlay(props: {
   createEffect(() => {
     const sid = props.sessionID
     if (!sid || props.caps?.diffApi !== true) return
-    const candidates = collectTurnDiffCandidates(props.messages)
-    if (candidates.length === 0) return
+    // busy 时排除最后一个（在飞）回合：其 snapshot 每 step 变化会导致全量重拉。
+    const candidates = collectTurnDiffCandidates(props.messages, { excludeLastTurn: props.busy === true })
+    if (candidates.length === 0) {
+      // 上一轮请求可能被 cancel（其 finally 因 cancelled 跳过）——这里必须收掉 loading，
+      // 否则 banner 永远转圈（B3.1 历史 minor：overlay loading 卡住）。
+      lastTurnDiffKey = ""
+      setLoadingTurnFiles(false)
+      return
+    }
     const key = sid + "|" + candidates.map(c => c.messageID + ":" + c.snapshotKey).join(",")
     if (key === lastTurnDiffKey) return
     lastTurnDiffKey = key
@@ -42,6 +49,7 @@ export function CheckpointOverlay(props: {
     onCleanup(() => { cancelled = true })
     void loadTurnDiffs(sid, props.messages, (s, m) => window.api.mafw.sessions.diff(s, m))
       .then((map) => { if (!cancelled && !disposed) setTurnFiles(map) })
+      .catch(() => { if (!cancelled && !disposed) lastTurnDiffKey = "" }) // 意外失败：允许下次重试
       .finally(() => { if (!cancelled && !disposed) setLoadingTurnFiles(false) })
   })
   onCleanup(() => { disposed = true })
