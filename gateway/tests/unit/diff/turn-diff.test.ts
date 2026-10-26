@@ -15,6 +15,9 @@ import {
 
 const user = (id: string, created: number) => ({ id, role: 'user', time: { created } });
 const asst = (id: string, created: number, snapshot: any) => ({ id, role: 'assistant', time: { created }, snapshot });
+/** Valid 40-hex snapshot ids (validation requires real object ids). */
+const hex = (n: number) => n.toString(16).padStart(40, '0');
+const H1 = hex(1), H2 = hex(2), H3 = hex(3), H4 = hex(4), H5 = hex(5), H6 = hex(6), H7 = hex(7);
 const PATCH = [
   'diff --git a/x.txt b/x.txt',
   '--- a/x.txt',
@@ -29,45 +32,45 @@ const PATCH = [
 describe('selectTurnSnapshot', () => {
   it('uses the first start and last end inside the user turn', () => {
     const messages = [
-      user('u0', 1), asst('a0', 2, { start: 's0', end: 'e0' }),
-      user('u1', 10), asst('a1', 11, { start: 's1', end: 'm1' }), asst('a2', 12, { start: 'm1', end: 'e1' }),
-      user('u2', 20), asst('a3', 21, { start: 's2', end: 'e2' }),
+      user('u0', 1), asst('a0', 2, { start: H1, end: H2 }),
+      user('u1', 10), asst('a1', 11, { start: H3, end: H4 }), asst('a2', 12, { start: H4, end: H5 }),
+      user('u2', 20), asst('a3', 21, { start: H6, end: H7 }),
     ];
-    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: 's1', end: 'e1' });
+    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: H3, end: H5 });
   });
 
   it('throws when the last snapshot has no end and files are non-empty', () => {
-    const messages = [user('u1', 1), asst('a1', 2, { start: 's1', files: ['x'] })];
+    const messages = [user('u1', 1), asst('a1', 2, { start: H1, files: ['x'] })];
     expect(() => selectTurnSnapshot(messages, 'u1')).toThrow(TurnDiffUnavailableError);
   });
 
   it('treats a missing end with empty files as no final change', () => {
-    const messages = [user('u1', 1), asst('a1', 2, { start: 's1', files: [] })];
-    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: 's1', end: 's1' });
+    const messages = [user('u1', 1), asst('a1', 2, { start: H1, files: [] })];
+    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: H1, end: H1 });
   });
 
   it('keeps earlier changes when only the last assistant lacks an end', () => {
     const messages = [
       user('u1', 1),
-      asst('a1', 2, { start: 's', end: 'e1' }),
-      asst('a2', 3, { start: 'e1', files: [] }),
+      asst('a1', 2, { start: H1, end: H2 }),
+      asst('a2', 3, { start: H2, files: [] }),
     ];
-    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: 's', end: 'e1' });
+    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: H1, end: H2 });
   });
 
   it('throws for no assistant snapshot, a missing user, and an assistant id', () => {
     expect(() => selectTurnSnapshot([user('u1', 1), asst('a1', 2, {})], 'u1')).toThrow(TurnDiffUnavailableError);
     expect(() => selectTurnSnapshot([user('u1', 1)], 'missing')).toThrow(TurnDiffUnavailableError);
-    expect(() => selectTurnSnapshot([user('u1', 1), asst('a1', 2, { start: 's', end: 'e' })], 'a1')).toThrow(TurnDiffUnavailableError);
+    expect(() => selectTurnSnapshot([user('u1', 1), asst('a1', 2, { start: H1, end: H2 })], 'a1')).toThrow(TurnDiffUnavailableError);
   });
 
   it('handles wrapped items and unsorted input', () => {
     const messages = [
-      { info: asst('a2', 12, { start: 'm', end: 'e' }) },
+      { info: asst('a2', 12, { start: H2, end: H3 }) },
       { info: user('u1', 10) },
-      { info: asst('a1', 11, { start: 's', end: 'm' }) },
+      { info: asst('a1', 11, { start: H1, end: H2 }) },
     ];
-    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: 's', end: 'e' });
+    expect(selectTurnSnapshot(messages, 'u1')).toEqual({ start: H1, end: H3 });
   });
 });
 
@@ -98,7 +101,7 @@ it('returns [] for a same-tree turn without invoking git', async () => {
     return { code: 0, stdout: '', stderr: '' };
   } };
   const files = await computeTurnDiff({
-    messages: [user('u1', 1), asst('a1', 2, { start: 's', end: 's' })],
+    messages: [user('u1', 1), asst('a1', 2, { start: H1, end: H1 })],
     messageID: 'u1',
     snapshotRoot: path.join(os.tmpdir(), 'mafw-turn-diff-unused'),
     git,
@@ -152,10 +155,77 @@ it('computeTurnDiffForRuntime fetches limit 200 and passes projectID', async () 
   const runtime = {
     session: {
       get: async () => ({ projectID: 'p' }),
-      messages: async (o: { limit?: number }) => { limit = o.limit ?? -1; return { data: [user('u1', 1), asst('a1', 2, { start: 's', end: 'e' })] }; },
+      messages: async (o: { limit?: number }) => { limit = o.limit ?? -1; return { data: [user('u1', 1), asst('a1', 2, { start: H1, end: H2 })] }; },
     },
   };
   const files = await computeTurnDiffForRuntime(runtime as any, 's1', 'u1', { snapshotRoot: root, git });
   expect(limit).toBe(200);
   expect(files[0].file).toBe('x.txt');
+});
+
+// ── B3.1 历史 minors：snapshot id 校验 / 引号路径 / missing tree ──────────────
+describe('snapshot id validation', () => {
+  it('rejects non-hex and option-like snapshot ids', () => {
+    const u = user('u1', 1);
+    expect(() => selectTurnSnapshot(
+      [u, asst('a1', 2, { start: '--output=/tmp/x', end: hex(2) })],
+      'u1',
+    )).toThrow(TurnDiffUnavailableError);
+    expect(() => selectTurnSnapshot(
+      [u, asst('a1', 2, { start: hex(1), end: '"--output=/tmp/x"', files: ['x'] })],
+      'u1',
+    )).toThrow(TurnDiffUnavailableError);
+  });
+
+  it('treats an invalid end with no files as no final change', () => {
+    expect(selectTurnSnapshot(
+      [user('u1', 1), asst('a1', 2, { start: hex(1), end: 'not-an-id', files: [] })],
+      'u1',
+    )).toEqual({ start: hex(1), end: hex(1) });
+  });
+});
+
+describe('parseGitDiff quoted paths', () => {
+  it('decodes C-quoted paths (tab) instead of leaking escapes', () => {
+    const patch = [
+      'diff --git "a/tab\\there.txt" "b/tab\\there.txt"',
+      '--- "a/tab\\there.txt"',
+      '+++ "b/tab\\there.txt"',
+      '@@ -1 +1 @@',
+      '-x',
+      '+y',
+      '',
+    ].join('\n');
+    expect(parseGitDiff(patch)[0].file).toBe('tab\there.txt');
+  });
+
+  it('keeps unicode/space paths raw when quotePath=false', () => {
+    const patch = 'diff --git a/中文 文件.txt b/中文 文件.txt\n--- a/中文 文件.txt\n+++ b/中文 文件.txt\n@@ -1 +1 @@\n-x\n+y\n';
+    expect(parseGitDiff(patch)[0].file).toBe('中文 文件.txt');
+  });
+
+  it('decodes quoted binary header paths', () => {
+    const patch = 'diff --git "a/bin\\tfile.bin" "b/bin\\tfile.bin"\nBinary files "a/bin\\tfile.bin" and "b/bin\\tfile.bin" differ\n';
+    expect(parseGitDiff(patch)[0].file).toBe('bin\tfile.bin');
+  });
+});
+
+it('findSnapshotRepo returns null when the trees are missing (pruned snapshot)', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-turn-diff-missing-'));
+  fs.mkdirSync(path.join(root, 'p', 'r'), { recursive: true });
+  const git: GitRunner = { async run() { return { code: 1, stdout: '', stderr: 'missing' }; } };
+  expect(await findSnapshotRepo({ root, projectID: 'p', start: hex(1), end: hex(2), git })).toBeNull();
+});
+
+it('computeTurnDiff throws unavailable when snapshot trees are missing', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mafw-turn-diff-missing2-'));
+  fs.mkdirSync(path.join(root, 'p', 'r'), { recursive: true });
+  const git: GitRunner = { async run() { return { code: 1, stdout: '', stderr: 'missing' }; } };
+  await expect(computeTurnDiff({
+    messages: [user('u1', 1), asst('a1', 2, { start: hex(1), end: hex(2) })],
+    messageID: 'u1',
+    projectID: 'p',
+    snapshotRoot: root,
+    git,
+  })).rejects.toBeInstanceOf(TurnDiffUnavailableError);
 });

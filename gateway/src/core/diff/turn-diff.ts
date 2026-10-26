@@ -43,6 +43,12 @@ export class TurnDiffUnavailableError extends Error {
 const TURN_DIFF_TIMEOUT_MS = 30_000;
 const TURN_DIFF_MAX_BUFFER = 32 * 1024 * 1024;
 
+/** Snapshot tree/commit ids must be hex object ids. Never pass raw message data
+ *  to git as an argument without this check (git option injection, e.g. --output). */
+export function isSnapshotId(value: unknown): value is string {
+  return typeof value === 'string' && (/^[0-9a-f]{40}$/i.test(value) || /^[0-9a-f]{64}$/i.test(value));
+}
+
 function roleOf(message: any): string | undefined {
   if (!message || typeof message !== 'object') return undefined;
   if (typeof message.role === 'string') return message.role;
@@ -90,7 +96,7 @@ export function selectTurnSnapshot(
     .slice(userIndex + 1, nextUserIndex)
     .filter((message) => roleOf(message) === 'assistant')
     .map((message) => message?.snapshot)
-    .filter((snapshot) => snapshot && typeof snapshot.start === 'string' && snapshot.start);
+    .filter((snapshot) => isSnapshotId(snapshot?.start));
 
   if (snapshots.length === 0) {
     throw new TurnDiffUnavailableError('no assistant snapshot in this turn');
@@ -98,7 +104,7 @@ export function selectTurnSnapshot(
 
   const start = snapshots[0].start as string;
   const last = snapshots[snapshots.length - 1];
-  let end: string | null = typeof last.end === 'string' && last.end ? last.end : null;
+  let end: string | null = isSnapshotId(last.end) ? last.end : null;
   if (!end) {
     const files = Array.isArray(last.files) ? last.files : [];
     if (files.length > 0) {
@@ -106,7 +112,7 @@ export function selectTurnSnapshot(
       throw new TurnDiffUnavailableError('incomplete turn snapshot (missing end after file changes)');
     }
     // No changes in the final step: the previous end (this step's start) is final.
-    end = typeof last.start === 'string' ? last.start : null;
+    end = isSnapshotId(last.start) ? last.start : null;
   }
   if (!end) {
     throw new TurnDiffUnavailableError('invalid snapshot range');
@@ -114,8 +120,48 @@ export function selectTurnSnapshot(
   return { start, end };
 }
 
+/** Decode git's C-style path escaping (inside quotes): \t \n \\ \" and octal. */
+function decodeGitEscapes(body: string): string {
+  let out = '';
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch !== '\\') { out += ch; continue; }
+    const next = body[++i];
+    if (next === undefined) break;
+    switch (next) {
+      case 'a': out += '\x07'; break;
+      case 'b': out += '\b'; break;
+      case 't': out += '\t'; break;
+      case 'n': out += '\n'; break;
+      case 'v': out += '\v'; break;
+      case 'f': out += '\f'; break;
+      case 'r': out += '\r'; break;
+      case '"': out += '"'; break;
+      case '\\': out += '\\'; break;
+      default: {
+        if (/[0-7]/.test(next)) {
+          let oct = next;
+          while (oct.length < 3 && /[0-7]/.test(body[i + 1] ?? '')) oct += body[++i];
+          out += String.fromCharCode(parseInt(oct, 8));
+        } else {
+          out += next;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** git wraps paths containing quotes/tabs/newlines/backslashes in double quotes. */
+function unquoteGitPath(value: string): string {
+  const v = value.trim();
+  return v.length >= 2 && v.startsWith('"') && v.endsWith('"')
+    ? decodeGitEscapes(v.slice(1, -1))
+    : v;
+}
+
 function cleanPath(value: string): string {
-  let result = value.trim();
+  let result = unquoteGitPath(value);
   if (result.startsWith('a/') || result.startsWith('b/')) result = result.slice(2);
   return result;
 }
@@ -141,6 +187,11 @@ function fileFromBlock(lines: string[]): string | undefined {
   }
 
   const header = lines[0] ?? '';
+  const quoted = /^diff --git "a\/((?:[^"\\]|\\.)*)" "b\/((?:[^"\\]|\\.)*)"$/.exec(header);
+  if (quoted) {
+    const value = decodeGitEscapes(quoted[2]).trim();
+    if (value) return value;
+  }
   const match = /^diff --git a\/(.+) b\/(.+)$/.exec(header);
   if (match) {
     const value = match[2].trim();
