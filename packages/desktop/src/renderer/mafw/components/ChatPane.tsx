@@ -43,8 +43,10 @@ import { formatComposerMeta } from "./composer-meta"
 import { type PermissionMode } from "./permission-card-mapping"
 import { getSessionTurnDiffs } from "../session-turn-diffs"
 import { PendingAnnotations } from "./PendingAnnotations"
+import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { hydrateAnnotations, pendingFor, takeForSend } from "../annotation-store"
+import { formatCaptureBatch, getPendingCaptures } from "../chat/pending-captures"
 
 /** 🛡 三档按钮文案与提示（切片 1）；图标由 shield 承担，文案不带 emoji。 */
 const PERMISSION_MODE_LABEL: Record<PermissionMode, string> = {
@@ -718,6 +720,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     takeAnnotations: (sid) => takeForSend(sid),
     formatAnnotations: (items) => buildAnnotationBatch(items),
+    pendingCaptureCount: (sid) => getPendingCaptures().pendingFor(sid).length,
+    takeCaptures: (sid) => getPendingCaptures().take(sid),
+    formatCaptures: (items) => formatCaptureBatch(items),
   })
 
   // 批注草稿：会话首次打开时从磁盘水合（重启不丢）
@@ -1620,6 +1625,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       <div class="mafw-input-area">
         <BackgroundWorkBar sessionID={props.sessionID} onOpenDock={() => props.onOpenBackgroundDock?.()} />
         <PendingAnnotations sessionID={sidProp()} />
+        <PendingCaptures sessionID={sidProp()} />
         <Show when={sidProp() && props.sessionPending(sidProp()) > 0 && jumpVisible()}>
           <ButtonV2 variant="outline" size="small" class="mafw-pending-pill" onClick={jumpToLatest} aria-label="有待回答卡片">
             <span class="mafw-flow-pulse" />

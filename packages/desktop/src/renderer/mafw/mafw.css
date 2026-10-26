@@ -5234,6 +5234,13 @@ html[data-theme="light"] body {
 .mafw-pending-annotation + .mafw-pending-annotation { border-top: 1px dashed var(--border); }
 .mafw-pending-annotation-where { color: var(--accent); flex: 0 0 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mafw-pending-annotation-text { color: var(--text-2); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mafw-pending-captures { margin: 0 0 6px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--bg-inset); overflow: hidden; }
+.mafw-pending-captures-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; font-size: 10px; color: var(--text-4); border-bottom: 1px solid var(--border); }
+.mafw-pending-capture-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; }
+.mafw-pending-capture-row + .mafw-pending-capture-row { border-top: 1px dashed var(--border); }
+.mafw-pending-capture-thumb { width: 40px; height: 28px; object-fit: cover; border-radius: 3px; border: 1px solid var(--border); flex: 0 0 auto; background: var(--bg-base); }
+.mafw-pending-capture-kind { color: var(--accent); flex: 0 0 auto; }
+.mafw-pending-capture-comment { flex: 1 1 auto; min-width: 0; }
 
 /* ── 选中引用浮层（B2）──────────────────────────────────────────────── */
 .mafw-quote-toolbar {

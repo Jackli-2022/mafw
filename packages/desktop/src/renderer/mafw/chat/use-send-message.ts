@@ -6,6 +6,7 @@ import { mimeOf } from "./use-attachments"
 import { enqueueTurn, takeFirstTurn } from "../components/turn-queue"
 import { agentKey } from "../agent-identity"
 import type { Annotation } from "../../../shared/annotation-types"
+import type { PendingCapture } from "./pending-captures"
 
 /** 解析 "/cmd args" 形态（不做命令表匹配——那由 deps.matchSlash 注入）。 */
 export function parseSlashShape(text: string): { name: string; args: string } | null {
@@ -78,6 +79,10 @@ export interface SendMessageDeps {
   pendingAnnotationCount?: (sid: string) => number
   takeAnnotations?: (sid: string) => Annotation[]
   formatAnnotations?: (items: Annotation[]) => string
+  /** 截屏/元素点选草稿（可选注入；缺省视为无 capture） */
+  pendingCaptureCount?: (sid: string) => number
+  takeCaptures?: (sid: string) => PendingCapture[]
+  formatCaptures?: (items: PendingCapture[]) => string
 }
 
 export function useSendMessage(deps: SendMessageDeps) {
@@ -92,13 +97,17 @@ export function useSendMessage(deps: SendMessageDeps) {
   const pendingAnnotationCount = deps.pendingAnnotationCount ?? (() => 0)
   const takeAnnotations = deps.takeAnnotations ?? (() => [])
   const formatAnnotations = deps.formatAnnotations ?? (() => "")
+  const pendingCaptureCount = deps.pendingCaptureCount ?? (() => 0)
+  const takeCaptures = deps.takeCaptures ?? (() => [])
+  const formatCaptures = deps.formatCaptures ?? (() => "")
 
   async function sendMessage() {
     const text = input()
     const atts = attachments()
     const agents = mentionedAgents()
     const pendingCount = sidProp() ? pendingAnnotationCount(sidProp()) : 0
-    if (!text.trim() && atts.length === 0 && pendingCount === 0) return
+    const captureCount = sidProp() && pendingCaptureCount ? pendingCaptureCount(sidProp()) : 0
+    if (!text.trim() && atts.length === 0 && pendingCount === 0 && captureCount === 0) return
     let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
@@ -109,7 +118,9 @@ export function useSendMessage(deps: SendMessageDeps) {
       if (!hasVoice) {
         // Review Focus 4：入队时打包批注快照；入队后新增的批注不跟这条。
         const queuedAnnotations = takeAnnotations(sidProp())
-        const queuedText = [text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : ""]
+        const queuedCaptures = takeCaptures ? takeCaptures(sidProp()) : []
+        const queuedCaptureBlock = queuedCaptures.length > 0 && formatCaptures ? formatCaptures(queuedCaptures) : ""
+        const queuedText = [text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", queuedCaptureBlock]
           .filter(Boolean)
           .join("\n\n")
         setQueuedItems(prev => enqueueTurn(prev, { text: queuedText, atts, agents }))
@@ -174,6 +185,9 @@ export function useSendMessage(deps: SendMessageDeps) {
     // 批注草稿随本条消息打包（slash 命令不消耗批注；纯批注消息 text 为空）
     const pendingAnnotations = takeAnnotations(sid)
     const annotationBlock = pendingAnnotations.length > 0 ? formatAnnotations(pendingAnnotations) : ""
+    // 截屏/元素点选草稿同批打包（G1/G2）
+    const pendingCaptures = takeCaptures ? takeCaptures(sid) : []
+    const captureBlock = pendingCaptures.length > 0 && formatCaptures ? formatCaptures(pendingCaptures) : ""
     // @file mentions ride as text references — the model reads them with its
     // own read tool (Claude Code semantics, no file part expansion).
     const filePrefix = fileMentions.map(f => "@" + f.rel).join(" ")
@@ -289,7 +303,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     // empty user message. Pointers still reach the server via `parts` only.
     const pointerTexts = visionParts.map(p => p.text)
     const failureNote = visionFailed.length > 0 ? `[媒体附件未送达 Media Agent] ${visionFailed.join("; ")}` : ""
-    const bodyMessage = [filePrefix, text.trim(), annotationBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
+    const bodyMessage = [filePrefix, text.trim(), annotationBlock, captureBlock, ...pointerTexts, failureNote].filter(Boolean).join("\n\n")
     const optimisticParts = buildOptimisticParts({ userMsgId, ts, sid, bodyMessage, visionThumbs, fileParts, agentParts })
     setStore(prev => {
       const msgs = { ...prev.message }
@@ -307,7 +321,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     console.log("[mafw] sendMessage", sid)
     try {
       const result = await window.api.mafw.chat.sendEnriched({
-        message: [filePrefix, text.trim(), annotationBlock, failureNote].filter(Boolean).join("\n"),
+        message: [filePrefix, text.trim(), annotationBlock, captureBlock, failureNote].filter(Boolean).join("\n"),
         sessionID: sid,
         parts: visionParts.length || fileParts.length || agentParts.length ? [...visionParts, ...fileParts, ...agentParts] : undefined,
         agent: agentKey(agentSel()) === "manager" ? undefined : (agentKey(agentSel()) || undefined),
