@@ -1,4 +1,4 @@
-import type { AgentRuntime, RuntimeCapabilities, CompletionRequest, CompletionResult, NativeToolDeclaration, MafwToolRegistration } from '../contract';
+import type { AgentRuntime, RuntimeCapabilities, CompletionRequest, CompletionResult, NativeToolDeclaration, MafwToolRegistration, ThinkingLevel } from '../contract';
 import type { RuntimePluginContext } from '../loader';
 import { PiSessionRegistry } from '../pi/pi-session';
 import { normalizePiMessages } from '../pi/pi-message-normalize';
@@ -194,6 +194,7 @@ export async function createPiRuntime(ctx: RuntimePluginContext, deps: PiRuntime
     // applyNormalizeMessages 应用；直接消费者拿到原始 pi 形状）。
     normalizeMessages: (raw: any[]) => normalizePiMessages(raw),
     get: async (opts: { sessionID: string }) => registry.get(opts.sessionID),
+    setThinkingLevel: async (opts: { sessionID: string; level: ThinkingLevel }) => registry.setThinkingLevel(opts.sessionID, opts.level),
     delete: async (opts: { sessionID: string }) => { await registry.delete(opts.sessionID); },
     // 重命名：live 会话走 AgentSession.setSessionName（内部 appendSessionInfo
     // 落盘）；已持久化会话定位 SessionManager 文件后 appendSessionInfo。

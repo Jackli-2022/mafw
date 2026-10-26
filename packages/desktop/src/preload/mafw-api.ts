@@ -97,6 +97,8 @@ export function createMafwApi(): MafwAPI {
       queueList: (sessionID) => invoke("session", "queueList", { path: { id: sessionID } }),
       queueCancel: (sessionID, itemId) => invoke("session", "queueCancel", { path: { id: sessionID, itemId } }),
       queueClear: (sessionID) => invoke("session", "queueClear", { path: { id: sessionID } }),
+      config: (sessionID) => invoke("session", "config", { path: { id: sessionID } }),
+      setConfig: (sessionID, body) => invoke("session", "setConfig", { path: { id: sessionID }, body }),
       fork: (sessionID, messageID?) => invoke("session", "fork", { path: { id: sessionID }, body: { messageID } }),
       revert: (sessionID, messageID) => invoke("session", "revert", { path: { id: sessionID }, body: { messageID } }),
       unrevert: (sessionID) => invoke("session", "unrevert", { path: { id: sessionID } }),

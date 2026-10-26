@@ -333,6 +333,8 @@ export interface RuntimeClient {
       model: { providerID: string; modelID: string };
       variant?: string;
     }): Promise<void>;
+    /** Pi 原生推理档位；缺实现 = 不支持（opencode 用 model variant）。 */
+    setThinkingLevel?(opts: { sessionID: string; level: ThinkingLevel }): Promise<void>;
     summarize(opts: SessionSummarizeOpts): Promise<any>;
     /** 回复权限请求。'once'=仅本次放行；'always'=放行并持久化规则（opencode 原生规则 /
      *  pi session 级动态 allowlist）；'reject'=拒绝。message 为给 agent 的可选说明。

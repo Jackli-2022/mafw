@@ -383,6 +383,11 @@ export class PiSessionRegistry {
     return { id, directory: '', title: '', time: { created: 0, updated: this.lastUsed.get(id) ?? 0 } };
   }
 
+  async setThinkingLevel(id: string, level: ThinkingLevel): Promise<void> {
+    const s = this.requireSession(id);
+    s.setThinkingLevel(level);
+  }
+
   async todo(): Promise<any[]> { return []; }
   async children(): Promise<any[]> { return []; }
 

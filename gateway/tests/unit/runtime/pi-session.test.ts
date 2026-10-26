@@ -56,6 +56,14 @@ describe('PiSessionRegistry', () => {
     expect(s.setThinkingLevel).toHaveBeenCalledWith('off');
   });
 
+  it('setThinkingLevel applies to the live session', async () => {
+    const s = fakeSession();
+    const registry = new PiSessionRegistry({ createSession: async () => ({ session: s }) });
+    const { id } = await registry.create('/tmp/proj', {} as any);
+    await registry.setThinkingLevel(id, 'max');
+    expect(s.setThinkingLevel).toHaveBeenCalledWith('max');
+  });
+
   it('abort and delete dispose the session', async () => {
     const s = fakeSession();
     const registry = new PiSessionRegistry({ createSession: async () => ({ session: s }) });

@@ -82,6 +82,50 @@
         }
       }
     },
+    "/api/session/{id}/config": {
+      "get": {
+        "operationId": "session.config",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "session.config.set",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session/{id}/queue/{itemId}": {
       "delete": {
         "operationId": "session.queue.cancel",

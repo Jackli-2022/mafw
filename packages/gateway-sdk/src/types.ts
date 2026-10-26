@@ -318,6 +318,16 @@ export interface QueueItem {
   source: string
 }
 
+export type SessionConfigCategory = 'mode' | 'agent' | 'model' | 'model_config' | 'thought_level'
+
+export interface SessionConfigState {
+  mode: 'read-only' | 'auto' | 'full-access'
+  agent?: string
+  model?: { providerID: string; modelID: string }
+  variant?: string
+  thinkingLevel?: ThinkingLevel
+}
+
 export interface SessionNamespace {
   /** worktree: true|'<slug>' → git worktree add + 会话绑定隔离目录（切片 4；worktreeApi runtime-only） */
   create(params?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }): Promise<Session & { worktree?: { dir: string; branch: string } }>
@@ -337,6 +347,8 @@ export interface SessionNamespace {
   queueList(params: { path: { id: string } }): Promise<{ items: QueueItem[] }>
   queueCancel(params: { path: { id: string; itemId: string } }): Promise<{ cancelled: string }>
   queueClear(params: { path: { id: string } }): Promise<{ cleared: number }>
+  config(params: { path: { id: string } }): Promise<SessionConfigState>
+  setConfig(params: { path: { id: string }; body: { category: SessionConfigCategory; value: unknown } }): Promise<SessionConfigState>
   prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } }): Promise<{ parts: TextPart[]; structured?: unknown; structuredError?: string }>
   promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: ThinkingLevel; variant?: string } }): Promise<void>
   trajectory(params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } }): Promise<TrajectoryResponse>

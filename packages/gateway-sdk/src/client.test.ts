@@ -335,6 +335,18 @@ test("session.promptAsync forwards thinkingLevel and variant", async () => {
   expect(body).toMatchObject({ thinkingLevel: "high", variant: "max" })
 })
 
+test("session config get/set hit the config route", async () => {
+  fetchMock.mockResolvedValue(okJson({ mode: "auto", thinkingLevel: "high" }))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.config({ path: { id: "s1" } })
+  await c.session.setConfig({ path: { id: "s1" }, body: { category: "thought_level", value: "high" } })
+  const calls = (fetchMock as any).mock.calls
+  expect(calls[0][0]).toBe("http://gw:3000/api/session/s1/config")
+  expect(calls[1][0]).toBe("http://gw:3000/api/session/s1/config")
+  expect(calls[1][1].method).toBe("POST")
+  expect(JSON.parse(calls[1][1].body)).toEqual({ category: "thought_level", value: "high" })
+})
+
 test("session.events connects SSE to session-specific endpoint (uses own connection)", async () => {
   const connectSpy = mock()
   const orig = SSEConnection.prototype.connectToSession

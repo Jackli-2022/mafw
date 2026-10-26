@@ -26,6 +26,7 @@ export const KNOWN_EVENTS = [
   'permission_mode',
   'question.asked',
   'queue.updated',
+  'session.config',
 ]
 
 /**

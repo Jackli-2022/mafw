@@ -7,6 +7,7 @@ const WAVE1_OPIDS = [
   'embedding.get', 'embedding.update', 'models.get', 'models.update',
   'session.fork', 'session.revert', 'session.unrevert', 'session.delete', 'session.rename', 'session.switchAgent', 'session.switchModel', 'session.summarize', 'session.structured', 'structured.submit',
   'tasks.submit', 'tasks.list', 'tasks.get', 'tasks.cancel', 'tasks.message', 'tasks.output',
+  'session.config', 'session.config.set',
   'session.diff', 'session.revertDiff',
   'event.publish', 'media.switch',
   'session.usagePluginsList', 'session.usagePluginsReload', 'session.usagePluginsCreate',

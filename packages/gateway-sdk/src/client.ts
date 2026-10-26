@@ -8,6 +8,7 @@ import {
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
+  SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -193,6 +194,18 @@ export class MafwClient implements IMafwClient {
 
     queueClear: async (params: { path: { id: string } }): Promise<{ cleared: number }> => {
       return this.request<{ cleared: number }>(`/api/session/${params.path.id}/queue`, { method: 'DELETE' })
+    },
+
+    config: async (params: { path: { id: string } }): Promise<SessionConfigState> => {
+      return this.request<SessionConfigState>(`/api/session/${params.path.id}/config`)
+    },
+
+    setConfig: async (params: { path: { id: string }; body: { category: SessionConfigCategory; value: unknown } }): Promise<SessionConfigState> => {
+      return this.request<SessionConfigState>(`/api/session/${params.path.id}/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body),
+      })
     },
 
     // ── 认知面 gate/rewrite（spec 2026-10-22-cognition-gate-rewrite）──

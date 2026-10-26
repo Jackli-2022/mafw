@@ -130,6 +130,8 @@ import { PermissionRulesStore } from './core/approval/rules-store';
 import { normalizeMode, SessionPermissionMode } from './core/approval/policy-service';
 import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
+import { SessionConfigService, SessionConfigError } from './core/session-config';
+import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
 
@@ -475,6 +477,7 @@ class MafwScheduler {
   private sdkSession!: SdkSessionResource;
   private subagentService!: SubagentService;
   private taskService!: TaskService;
+  private sessionConfigService!: SessionConfigService;
   private memoryService?: MemoryService;
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
@@ -3212,6 +3215,38 @@ class MafwScheduler {
     });
 
     this.sdkSession = new SdkSessionResource(undefined, mafwDir);
+    this.sessionConfigService = new SessionConfigService({
+      load: (sid) => this.getGatewayDb().kvGet('session-config', sid) ?? undefined,
+      save: (sid, state) => { this.getGatewayDb().kvSet('session-config', sid, state); },
+      getMode: (sid) => this.approvalPolicy.getMode(sid),
+      setMode: (sid, mode) => this.approvalPolicy.setMode(sid, mode),
+      getSession: async (sid) => {
+        if (!this.runtime) throw new SessionConfigError(503, 'runtime not available');
+        return this.runtime.session.get({ sessionID: sid });
+      },
+      switchAgent: async (sid, agent) => {
+        const fn = this.runtime?.session.switchAgent;
+        if (!fn) throw new SessionConfigError(503, 'runtime does not implement session.switchAgent');
+        await fn({ sessionID: sid, agent });
+      },
+      switchModel: async (sid, model, variant) => {
+        const fn = this.runtime?.session.switchModel;
+        if (!fn) throw new SessionConfigError(503, 'runtime does not implement session.switchModel');
+        await fn({ sessionID: sid, model, ...(variant ? { variant } : {}) });
+      },
+      setThinkingLevel: async (sid, level) => {
+        const fn = this.runtime?.session.setThinkingLevel;
+        if (!fn) throw new SessionConfigError(400, 'runtime does not support session thought_level; use model_config.variant');
+        await fn({ sessionID: sid, level });
+      },
+      emit: (sid, state, category) => {
+        this.broadcast(mafwBroadcast({
+          type: MAFW.sessionConfig,
+          properties: { sessionID: sid, config: state, category },
+          sessionID: sid,
+        }));
+      },
+    });
     this.subagentService = new SubagentService({
       createSession: (o) => this.runtime!.session.create(o),
       getSession: (sid) => this.runtime!.session.get({ sessionID: sid }),
@@ -3946,6 +3981,7 @@ class MafwScheduler {
         broadcast: (e) => this.broadcast(e),
         get runtimeCaps() { return gwSelf.runtimeCaps; },
         get taskService() { return gwSelf.taskService; },
+        get sessionConfig() { return gwSelf.sessionConfigService; },
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),

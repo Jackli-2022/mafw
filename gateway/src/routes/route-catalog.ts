@@ -25,6 +25,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'POST', path: '/api/cognition/rewrite', operationId: 'cognition.rewrite', tags: ['cognition'] },
   { method: 'GET', path: '/api/cognition/rules', operationId: 'cognition.rules', tags: ['cognition'] },
   { method: 'GET', path: '/api/session/{id}/queue', operationId: 'session.queue.list', tags: ['session'] },
+  { method: 'GET', path: '/api/session/:id/config', operationId: 'session.config', tags: ['session'] },
+  { method: 'POST', path: '/api/session/:id/config', operationId: 'session.config.set', tags: ['session'] },
   { method: 'DELETE', path: '/api/session/{id}/queue', operationId: 'session.queue.clear', tags: ['session'] },
   { method: 'DELETE', path: '/api/session/{id}/queue/{itemId}', operationId: 'session.queue.cancel', tags: ['session'] },
   { method: 'GET', path: '/api/sessions', operationId: 'session.list', tags: ['session'] },

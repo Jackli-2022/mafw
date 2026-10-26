@@ -26,6 +26,8 @@ import { handleSessionSwitch } from './session-switch';
 import { handleStructuredGet, handleStructuredSubmit } from './structured';
 import { structuredOutput } from '../runtime/structured-output';
 import type { TaskService } from '../runtime/task-service';
+import type { SessionConfigService } from '../core/session-config';
+import { handleSessionConfigGet, handleSessionConfigSet } from './session-config';
 import {
   handleTaskCancel, handleTaskGet, handleTaskList, handleTaskMessage,
   handleTaskOutput, handleTaskSubmit, parseTaskOutputQuery,
@@ -56,6 +58,7 @@ export interface Wave1Gateway {
   recordUnknownEvent?(type: string): void;
   runtimeCaps: SessionMutationDeps['getCapabilities'] extends () => infer C ? C : never;
   taskService?: TaskService | null;
+  sessionConfig?: SessionConfigService | null;
 }
 
 type Handler = NonNullable<RouteDef['handler']>;
@@ -155,6 +158,12 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
     const u = new URL(req.url || '/', 'http://x');
     await handleTaskOutput(res, params.id, parseTaskOutputQuery(u.searchParams), taskDeps());
   }));
+
+  const configDeps = () => ({ service: gw.sessionConfig ?? null });
+  registry.attachHandler('session.config', H(async (_req, res, params) =>
+    handleSessionConfigGet(res, params.id, configDeps())));
+  registry.attachHandler('session.config.set', H(async (req, res, params) =>
+    handleSessionConfigSet(req, res, params.id, configDeps())));
 
   registry.attachHandler('session.summarize', H(async (req, res) =>
     handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.runtime })));

@@ -4,7 +4,7 @@ import type {
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows, MemoryStats,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
-  TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
+  TaskEntity, TaskSubmitInput, TaskOutput, QueueItem, SessionConfigState, SessionConfigCategory,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
 } from "@mafw/sdk"
@@ -46,6 +46,8 @@ export type MafwAPI = {
     queueList: (sessionID: string) => Promise<{ items: QueueItem[] }>
     queueCancel: (sessionID: string, itemId: string) => Promise<{ cancelled: string }>
     queueClear: (sessionID: string) => Promise<{ cleared: number }>
+    config: (sessionID: string) => Promise<SessionConfigState>
+    setConfig: (sessionID: string, body: { category: SessionConfigCategory; value: unknown }) => Promise<SessionConfigState>
     fork: (sessionID: string, messageID?: string) => Promise<{ session: { id: string } }>
     revert: (sessionID: string, messageID: string) => Promise<void>
     unrevert: (sessionID: string) => Promise<void>
