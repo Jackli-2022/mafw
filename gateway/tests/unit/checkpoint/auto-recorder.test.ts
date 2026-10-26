@@ -107,9 +107,9 @@ describe('manualAnchor', () => {
     expect(manualAnchor(messages)).toEqual({ anchorMessageID: 'a1' });
   });
 
-  it('explicit id not in the window falls back to the last message', () => {
+  it('explicit id not in the window => null (no silent fallback)', () => {
     const messages = [u('u1', 1)];
-    expect(manualAnchor(messages, 'missing')).toEqual({ anchorMessageID: 'u1' });
+    expect(manualAnchor(messages, 'missing')).toBeNull();
   });
 
   it('null on empty messages', () => {

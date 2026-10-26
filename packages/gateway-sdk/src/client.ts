@@ -37,6 +37,27 @@ function shellQuery(params?: { directory?: string }): string {
   return params?.directory ? `?directory=${encodeURIComponent(params.directory)}` : ''
 }
 
+/** 非 2xx → Error：优先 surface gateway 的 JSON `error`/`message`（桌面 toast
+ *  的可操作文案），读不到 body 时回退 statusText。`isHttp404` 依赖 `HTTP <n>` 前缀。 */
+async function httpError(res: Response): Promise<Error> {
+  let detail = ''
+  try {
+    if (typeof (res as any).text === 'function') {
+      const raw = await res.text()
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          detail = String((parsed as any)?.error ?? (parsed as any)?.message ?? raw)
+        } catch {
+          detail = raw
+        }
+      }
+    }
+  } catch { /* body unreadable → status only */ }
+  const suffix = detail ? `: ${detail}` : `: ${res.statusText}`
+  return new Error(`HTTP ${res.status}${suffix}`.slice(0, 500))
+}
+
 /** /api/shell* 的统一信封（v2 实证：{location, data}）。 */
 interface Envelope<T> {
   location?: { directory: string }
@@ -61,7 +82,7 @@ export class MafwClient implements IMafwClient {
       headers: { 'Content-Type': 'application/json' },
       ...init,
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    if (!res.ok) throw await httpError(res)
     // Old gateways serve dashboard HTML for unknown routes (SPA fallback).
     // Surface a clean, actionable error instead of a JSON parse SyntaxError.
     const ct = (res.headers as any)?.get?.('content-type') ?? ''
@@ -89,7 +110,7 @@ export class MafwClient implements IMafwClient {
       headers: { 'Content-Type': 'application/json' },
       ...init,
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)
+    if (!res.ok) throw await httpError(res)
     const ct = (res.headers as any)?.get?.('content-type') ?? ''
     if (ct.includes('text/html')) throw new Error(`Received HTML instead of JSON from ${path}`)
     return res.json()

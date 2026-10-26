@@ -20,6 +20,14 @@ function notOk(status: number) {
   } as Response)
 }
 
+function notOkWithBody(status: number, body: unknown) {
+  return Promise.resolve({
+    ok: false, status, statusText: `HTTP ${status}`,
+    text: () => Promise.resolve(JSON.stringify(body)),
+    json: () => Promise.resolve(body),
+  } as Response)
+}
+
 // ── Constructor ──
 
 test("MafwClient constructor accepts string URL", () => {
@@ -270,6 +278,29 @@ test("session.get throws on 500", async () => {
   fetchMock.mockResolvedValue(notOk(500))
   const c = new MafwClient()
   await expect(c.session.get({ path: { id: "x" } })).rejects.toThrow("HTTP 500")
+})
+
+test("error responses surface the gateway's JSON error message (not just the status)", async () => {
+  fetchMock.mockResolvedValue(notOkWithBody(400, { error: "confirm:true required" }))
+  const c = new MafwClient()
+  await expect(
+    c.session.restoreCheckpoint({
+      path: { id: "s1", checkpointId: "c1" },
+      body: { scope: "files", confirm: true },
+    }),
+  ).rejects.toThrow(/HTTP 400.*confirm:true required/)
+})
+
+test("error responses with plain-text bodies are surfaced too", async () => {
+  fetchMock.mockResolvedValue(Promise.resolve({
+    ok: false, status: 502, statusText: "Bad Gateway",
+    text: () => Promise.resolve("git apply failed: patch does not apply"),
+  } as Response))
+  const c = new MafwClient()
+  await expect(c.session.restoreCheckpoint({
+    path: { id: "s1", checkpointId: "c1" },
+    body: { scope: "files", confirm: true },
+  })).rejects.toThrow(/git apply failed: patch does not apply/)
 })
 
 test("session.promptAsync throws on 400", async () => {

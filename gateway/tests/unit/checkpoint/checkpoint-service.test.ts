@@ -202,6 +202,12 @@ describe('CheckpointService.createManual', () => {
     expect(cp.projectDir).toBe('/tmp/oc21');
   });
 
+  it('400 when an explicit messageID is not found (no silent fallback)', async () => {
+    const h = manualHarness();
+    await expect(h.service.createManual({ sessionID: 's1', messageID: 'missing' }))
+      .rejects.toMatchObject({ status: 400, message: expect.stringContaining('messageID') });
+  });
+
   it('400 when there are no persisted messages', async () => {
     const h = manualHarness({ messages: [] });
     await expect(h.service.createManual({ sessionID: 's1' }))

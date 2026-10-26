@@ -163,7 +163,12 @@ export class CheckpointService {
     const messages = Array.isArray(result?.data) ? result.data : [];
     const anchor = manualAnchor(messages, input.messageID);
     if (!anchor) {
-      throw new CheckpointRestoreError(400, 'no persisted messages');
+      throw new CheckpointRestoreError(
+        400,
+        input.messageID
+          ? `messageID not found in recent messages: ${input.messageID}`
+          : 'no persisted messages',
+      );
     }
 
     return this.create({

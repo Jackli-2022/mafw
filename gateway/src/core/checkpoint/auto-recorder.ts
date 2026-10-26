@@ -64,14 +64,15 @@ export function latestSnapshotTree(messages: any[]): string | null {
   return null;
 }
 
-/** 手动检查点锚点：显式 id（若在窗口内）否则最后一条已持久化消息。 */
+/** 手动检查点锚点：显式 id 必须命中窗口（否则 null → 路由 400，不静默换锚）；
+ *  未显式指定时取最后一条已持久化消息。 */
 export function manualAnchor(
   messages: any[],
   explicit?: string,
 ): { anchorMessageID: string } | null {
   const norm = normalize(messages);
-  if (typeof explicit === 'string' && explicit && norm.some((m) => m?.id === explicit)) {
-    return { anchorMessageID: explicit };
+  if (typeof explicit === 'string' && explicit) {
+    return norm.some((m) => m?.id === explicit) ? { anchorMessageID: explicit } : null;
   }
   for (let i = norm.length - 1; i >= 0; i--) {
     const id = norm[i]?.id;
