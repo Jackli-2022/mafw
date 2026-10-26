@@ -56,9 +56,11 @@ test('prune keeps newest N rows; delete one and all', () => {
   for (let i = 0; i < 5; i++) {
     d.upsertSessionDataPart(row('s', `data_${i}`, 'm', `2026-10-26T0${i}:00:00Z`));
   }
+  // 热更新最老一行：prune 必须按 updated_at 保它（review minor）
+  d.upsertSessionDataPart({ ...row('s', 'data_0', 'm', '2026-10-26T00:00:00Z'), updated_at: '2026-10-26T09:00:00Z' });
   expect(d.pruneSessionDataParts('s', 3)).toBe(2);
-  expect(d.listSessionDataParts('s').map((r) => r.id)).toEqual(['data_2', 'data_3', 'data_4']);
-  d.deleteSessionDataPart('s', 'data_2');
+  expect(d.listSessionDataParts('s').map((r) => r.id)).toEqual(['data_0', 'data_3', 'data_4']);
+  d.deleteSessionDataPart('s', 'data_0');
   expect(d.listSessionDataParts('s').map((r) => r.id)).toEqual(['data_3', 'data_4']);
   d.deleteSessionDataParts('s');
   expect(d.listSessionDataParts('s')).toHaveLength(0);

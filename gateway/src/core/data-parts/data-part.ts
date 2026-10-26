@@ -56,6 +56,10 @@ export function isDataPartName(name: unknown): name is string {
   return typeof name === 'string' && NAME_RE.test(name);
 }
 
+export function isDataPartId(id: unknown): id is string {
+  return typeof id === 'string' && ID_RE.test(id);
+}
+
 /** JSON 序列化后的 UTF-8 字节数（不可序列化按 Infinity）。 */
 export function dataSizeBytes(data: unknown): number {
   if (data === undefined) return 0;

@@ -9,6 +9,7 @@ import type { SessionDataPartRow } from '../../memory/gateway-db';
 import {
   DATA_PART_MAX_BYTES,
   dataSizeBytes,
+  isDataPartId,
   isDataPartName,
   normalizeDataPartId,
   type DataPart,
@@ -68,12 +69,21 @@ export class DataPartService {
       throw new DataPartError(400, `data must be JSON-serializable and <= ${DATA_PART_MAX_BYTES} bytes`);
     }
 
-    const messageID = await this.resolveMessage(input.sessionID, input.messageID);
-    const id = normalizeDataPartId(typeof input.id === 'string' ? input.id : undefined);
+    const resolved = await this.resolveMessage(input.sessionID, input.messageID);
+    const messageID = resolved.messageID;
+    const normalizedId = typeof input.id === 'string' && input.id ? input.id : undefined;
+    if (normalizedId && !isDataPartId(normalizedId)) {
+      throw new DataPartError(400, 'id must match [A-Za-z0-9._:-]{1,64}');
+    }
+    const id = normalizeDataPartId(normalizedId);
 
     const existing = this.deps.db.getSessionDataPart(input.sessionID, id);
     if (existing && existing.message_id !== messageID) {
-      throw new DataPartError(409, `data part id already bound to message ${existing.message_id}`);
+      // 目标消息已被 revert/压缩时允许重新绑定；仍存在则禁止跨消息移动。
+      if (resolved.messageIds.has(existing.message_id)) {
+        throw new DataPartError(409, `data part id already bound to message ${existing.message_id}`);
+      }
+      this.deps.db.deleteSessionDataPart(input.sessionID, id);
     }
 
     const now = this.deps.now();
@@ -98,7 +108,8 @@ export class DataPartService {
       id,
       type: `data-${input.name}` as `data-${string}`,
       data: input.data ?? null,
-      ...(transient ? { transient: true } : {}),
+      // 显式布尔：transient→persistent 的同 id 更新必须清掉旧的 true（review #1）。
+      transient,
       sessionID: input.sessionID,
       messageID,
     };
@@ -115,28 +126,33 @@ export class DataPartService {
     this.deps.db.deleteSessionDataParts(sessionID);
   }
 
-  private async resolveMessage(sessionID: string, explicit: unknown): Promise<string> {
+  private async resolveMessage(
+    sessionID: string,
+    explicit: unknown,
+  ): Promise<{ messageID: string; messageIds: Set<string> }> {
+    const rt = this.deps.runtime();
+    if (!rt) throw new DataPartError(503, 'runtime not available');
+    const res = await rt.session.messages({ sessionID, limit: 200 });
+    const messages = Array.isArray(res?.data) ? res.data : [];
+    const messageIds = new Set(
+      messages.map((m) => m?.id).filter((id): id is string => typeof id === 'string' && !!id),
+    );
+
     if (typeof explicit === 'string' && explicit) {
-      const rt = this.deps.runtime();
-      if (!rt) throw new DataPartError(503, 'runtime not available');
-      const res = await rt.session.messages({ sessionID, limit: 200 });
-      const found = (res?.data ?? []).find((m) => m?.id === explicit);
+      const found = messages.find((m) => m?.id === explicit);
       if (!found) throw new DataPartError(404, `message not found: ${explicit}`);
       if (roleOf(found) !== 'assistant') {
         throw new DataPartError(400, 'data parts can only attach to assistant messages');
       }
-      return explicit;
+      return { messageID: explicit, messageIds };
     }
 
-    const rt = this.deps.runtime();
-    if (!rt) throw new DataPartError(503, 'runtime not available');
-    const res = await rt.session.messages({ sessionID, limit: 200 });
-    const assistants = (res?.data ?? [])
+    const assistants = messages
       .filter((m) => m && typeof m === 'object' && roleOf(m) === 'assistant' && typeof m.id === 'string')
       .sort((a, b) => createdOf(b) - createdOf(a));
     if (assistants.length === 0) {
       throw new DataPartError(400, 'session has no assistant message to attach to');
     }
-    return assistants[0].id;
+    return { messageID: assistants[0].id, messageIds };
   }
 }

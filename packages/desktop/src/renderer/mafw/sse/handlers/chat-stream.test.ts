@@ -53,6 +53,15 @@ describe("handleChatStreamEvent", () => {
     expect(calls.map(c => c.name)).toContain("patchStore")
   })
 
+  test("part.updated data-* → patchStore but NO busy/phase（带外注入不钉忙）", () => {
+    const { deps, calls } = makeDeps()
+    const ok = handleChatStreamEvent({ type: "part.updated", sessionID: "s1", properties: { part: { id: "data_x", type: "data-swarm", data: { v: 1 }, messageID: "m1" } } }, "s1", deps)
+    expect(ok).toBe(false)
+    expect(calls.map(c => c.name)).toContain("patchStore")
+    expect(calls.map(c => c.name)).not.toContain("setSessionStatus")
+    expect(calls.map(c => c.name)).not.toContain("phase")
+  })
+
   test("turn.completed → idle + done + onTurnSettled(expireCards: true) + notifyIdle", () => {
     const { deps, calls } = makeDeps()
     handleChatStreamEvent({ type: "turn.completed", sessionID: "s1" }, "s1", deps)

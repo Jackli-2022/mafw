@@ -20,6 +20,20 @@ describe('EventStore（spec §5.1）', () => {
     const a = s.append({ type: 'part.updated' })!;
     expect(a).toBe(1); // delta 没消耗 seq
   });
+  it('T2-3：transient data part 的 part.updated 不入库不占 seq（重连不重放）', () => {
+    const s = makeStore();
+    const transient = {
+      type: 'mafw_event',
+      data: { type: 'part.updated', properties: { part: { id: 'data_x', type: 'data-x', transient: true } } },
+    };
+    expect(s.append(transient as any)).toBeNull();
+    // 持久 data part 正常入库
+    const persistent = {
+      type: 'mafw_event',
+      data: { type: 'part.updated', properties: { part: { id: 'data_y', type: 'data-y' } } },
+    };
+    expect(s.append(persistent as any)).toBe(1);
+  });
   it('replaySince：全量 / 尾窗 / 空', () => {
     const s = makeStore();
     for (let i = 0; i < 5; i++) s.append({ type: 't' + i });

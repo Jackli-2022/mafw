@@ -947,13 +947,13 @@ export class GatewayDatabase {
     ).run(sessionId, id);
   }
 
-  /** 每会话保留最新 keep 行（按 created_at；rowid 兜底同刻）。 */
+  /** 每会话保留最新 keep 行（按 updated_at：同 id 热更新不得被旧 created_at 淘汰）。 */
   pruneSessionDataParts(sessionId: string, keep: number): number {
     const result = this.db.prepare(
       `DELETE FROM session_data_parts
        WHERE session_id = ? AND rowid NOT IN (
          SELECT rowid FROM session_data_parts
-         WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?
+         WHERE session_id = ? ORDER BY updated_at DESC, rowid DESC LIMIT ?
        )`,
     ).run(sessionId, sessionId, keep);
     return result.changes;

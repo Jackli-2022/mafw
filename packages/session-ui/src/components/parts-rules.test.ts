@@ -23,6 +23,11 @@ describe("parts-rules", () => {
     expect(renderable({ type: "text", text: "  " })).toBe(false)
     expect(renderable({ type: "text", text: "hi" })).toBe(true)
   })
+  test("renderable: data-* 渲染（含空 data）", () => {
+    expect(renderable({ type: "data-swarm", data: { v: 1 } })).toBe(true)
+    expect(renderable({ type: "data-swarm" })).toBe(true)
+    expect(renderable({ type: "data-BAD" })).toBe(false)
+  })
   test("isTopLevelToolEntry: 排除 hidden/context-group/question-pending", () => {
     expect(isTopLevelToolEntry({ type: "tool", tool: "bash" })).toBe(true)
     expect(isTopLevelToolEntry({ type: "tool", tool: "todowrite" })).toBe(false)

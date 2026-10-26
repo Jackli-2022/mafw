@@ -45,6 +45,14 @@ export class EventStore {
   /** 同步插入，返回分配的 seq；非持久类型或异常 → null（fail-open）。 */
   append(envelope: { type: string; [k: string]: any }): number | null {
     if (NON_PERSISTED_EVENT_TYPES.has(envelope.type)) return null;
+    // T2-3：transient data part 只直播——不占 seq、不入 event_log（重连不重放）。
+    const inner = (envelope as any)?.data ?? envelope;
+    const part = inner?.properties?.part;
+    if (inner?.type === 'part.updated'
+      && typeof part?.type === 'string' && part.type.startsWith('data-')
+      && part.transient === true) {
+      return null;
+    }
     try {
       const row = this.db
         .prepare('INSERT INTO event_log (ts, type, session_id, envelope) VALUES (?, ?, ?, ?) RETURNING seq')

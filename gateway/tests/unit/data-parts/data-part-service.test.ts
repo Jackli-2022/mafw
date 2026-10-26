@@ -55,7 +55,7 @@ describe('DataPartService.create', () => {
       sessionID: 's1',
       messageID: 'a2',
     });
-    expect(part.transient).toBeUndefined();
+    expect(part.transient).toBe(false); // 显式 false：同 id transient→persistent 更新会覆盖旧 true
     expect([...h.rows.values()]).toHaveLength(1);
     expect(h.calls.pruned).toEqual([200]);
     expect(h.calls.broadcasts).toEqual([{
@@ -108,6 +108,23 @@ describe('DataPartService.create', () => {
     await expect(
       h.service.create({ sessionID: 's1', name: 'x', id: 'job', data: {}, messageID: 'a1' }),
     ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('rejects invalid ids instead of silently coalescing them', async () => {
+    const h = harness();
+    await expect(h.service.create({ sessionID: 's1', name: 'x', id: 'a b/c', data: {} }))
+      .rejects.toMatchObject({ status: 400 });
+  });
+
+  it('rebinds an id whose bound message no longer exists (revert/compact)', async () => {
+    const h = harness();
+    h.rows.set('s1|data_job', {
+      session_id: 's1', id: 'data_job', message_id: 'gone', type: 'data-x',
+      data_json: '{}', created_at: '2026-10-26T00:00:00Z', updated_at: '2026-10-26T00:00:00Z',
+    });
+    const part = await h.service.create({ sessionID: 's1', name: 'x', id: 'job', data: { v: 2 } });
+    expect(part.messageID).toBe('a2');
+    expect(h.rows.get('s1|data_job')!.message_id).toBe('a2');
   });
 
   it('uses explicit assistant messageID when provided', async () => {

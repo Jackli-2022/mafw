@@ -174,4 +174,13 @@ describe("applyPartUpsert data parts", () => {
     expect(out.part.a1).toHaveLength(1)
     expect(out.part.a1[0].data).toEqual({ v: 2 })
   })
+
+  test("transient -> persistent update clears the transient flag", () => {
+    const state = { part: { a1: [{ id: "data_x", type: "data-x", data: { v: 1 }, transient: true, sessionID: "s1", messageID: "a1" }] } }
+    const out = applyPartUpsert(state as any, "s1", {
+      id: "data_x", type: "data-x", data: { v: 2 }, transient: false, sessionID: "s1", messageID: "a1",
+    })
+    expect(out.part.a1[0].transient).toBe(false)
+    expect(clearTransientDataParts({ part: out.part } as any, "s1")).toBeNull()
+  })
 })

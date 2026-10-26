@@ -11,12 +11,27 @@ export interface SessionDataDeps {
   data?: DataPartService | null;
 }
 
-function readBody(req: http.IncomingMessage): Promise<any> {
+const MAX_BODY_BYTES = 256 * 1024;
+
+/** Buffer 分块拼接（避免逐块 toString 切断多字节 UTF-8）+ 硬体积帽。 */
+function readBody(req: http.IncomingMessage): Promise<{ raw: string; tooLarge: boolean }> {
   return new Promise((resolve) => {
-    let body = '';
-    req.on('data', (c: any) => (body += c));
-    req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { resolve({}); } });
-    req.on('error', () => resolve({}));
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let tooLarge = false;
+    req.on('data', (c: any) => {
+      if (tooLarge) return;
+      const b = Buffer.isBuffer(c) ? c : Buffer.from(c);
+      size += b.length;
+      if (size > MAX_BODY_BYTES) {
+        tooLarge = true;
+        chunks.length = 0;
+        return;
+      }
+      chunks.push(b);
+    });
+    req.on('end', () => resolve({ raw: tooLarge ? '' : Buffer.concat(chunks).toString('utf8'), tooLarge }));
+    req.on('error', () => resolve({ raw: '', tooLarge: false }));
   });
 }
 
@@ -41,7 +56,13 @@ export async function handleSessionData(
   }
 
   try {
-    const body = await readBody(req);
+    const { raw, tooLarge } = await readBody(req);
+    if (tooLarge) {
+      json(res, 413, { error: 'request body too large' });
+      return true;
+    }
+    let body: any = {};
+    try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
     const part = await service.create({
       sessionID: m[1],
       name: body?.name,
