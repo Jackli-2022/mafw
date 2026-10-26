@@ -23,7 +23,7 @@ describe("normalizeDockTab", () => {
 })
 
 describe("DOCK_TABS", () => {
-  test("十栏且不含 quota", () => {
+  test("十一栏且不含 quota", () => {
     expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background", "files", "editor", "browser", "terminal"])
   })
   test("terminal 合法值直通", () => {

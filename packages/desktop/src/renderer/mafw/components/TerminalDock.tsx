@@ -2,23 +2,27 @@
 // TerminalDock：右 dock「终端」tab（spec 2026-10-26-terminal-dock-design）。
 // 目录级 persistent 终端（serve 托管 PTY）；xterm 前端；agent 不可见（不共享）。
 // 组件常挂载（MafwShell display:none 切换），xterm 实例不随隐藏销毁。
+// 终审修复：仅在 tab 可见时 attach（不后台建 shell）；in-flight 切目录排队；
+// attach 返回结构化结果（gone/unavailable）；重挂载走 main 的 scrollback replay。
 import { createSignal, createEffect, onMount, onCleanup, Show } from "solid-js"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
-import { viewFor, type TerminalViewKind } from "../terminal/terminal-view"
+import { viewFor, planAttach, type TerminalViewKind } from "../terminal/terminal-view"
+import { nextConnState, type ConnState } from "../../../shared/terminal"
 
-export function TerminalDock(props: { directory: string | null }) {
+export function TerminalDock(props: { directory: string | null; active: boolean }) {
   let host!: HTMLDivElement
   let term: Terminal | null = null
   let fit: FitAddon | null = null
   let currentDir: string | null = null
   let attaching = false
+  let pendingDir: string | null = null
   let killedDir: string | null = null
   let disarmTimer: ReturnType<typeof setTimeout> | null = null
-  const [kind, setKind] = createSignal<TerminalViewKind>("idle")
+  const [kind, setKind] = createSignal<ConnState>("idle")
   const [killArmed, setKillArmed] = createSignal(false)
 
   const themeFrom = (el: HTMLElement) => {
@@ -29,7 +33,7 @@ export function TerminalDock(props: { directory: string | null }) {
       foreground: v("--text-1", "#e6edf3"),
       cursor: v("--accent", "#7aa2f7"),
       cursorAccent: v("--bg-inset", "#0d1117"),
-      selectionBackground: v("--bg-selected", "#264f78"),
+      selectionBackground: v("--selection", "#264f78"),
       fontFamily: v("--font-data", "ui-monospace, monospace"),
     }
   }
@@ -58,43 +62,59 @@ export function TerminalDock(props: { directory: string | null }) {
     term.onData((d) => { if (currentDir) void window.api.mafw.terminal.input(currentDir, d) })
   }
 
-  const attach = async (dir: string) => {
-    if (attaching) return
+  const attach = async (dir: string, reopen = false) => {
+    if (attaching) {
+      pendingDir = dir
+      return
+    }
     attaching = true
     currentDir = dir
-    setKind("probing")
+    setKind((k) => nextConnState(k, "retry"))
+    setKillArmed(false)
     try {
       ensureTerm()
       const probe = await window.api.mafw.terminal.probe()
       if (!probe.available) {
-        setKind("unavailable")
+        setKind((k) => nextConnState(k, "probeFail"))
         return
       }
+      // reset 必须在 attach 之前：main 会向新订阅者重放 scrollback，
+      // 若在 invoke 返回后 reset 会把刚到达的 replay 抹掉（终审 Critical-1）。
       term?.reset()
-      await window.api.mafw.terminal.attach(dir)
-      setKind("live")
-      requestAnimationFrame(() => {
-        try { fit?.fit() } catch { /* hidden */ }
-        if (currentDir && term) void window.api.mafw.terminal.resize(currentDir, term.cols, term.rows)
-        term?.focus()
-      })
+      const res = await window.api.mafw.terminal.attach(dir, { reopen })
+      if (res.ok) {
+        setKind((k) => nextConnState(k, "attachOk"))
+        requestAnimationFrame(() => {
+          try { fit?.fit() } catch { /* hidden */ }
+          if (currentDir && term) void window.api.mafw.terminal.resize(currentDir, term.cols, term.rows)
+          term?.focus()
+        })
+      } else {
+        setKind((k) => nextConnState(k, res.reason === "gone" ? "ptyGone" : "probeFail"))
+      }
     } catch {
-      setKind("closed")
+      setKind((k) => nextConnState(k, "probeFail"))
     } finally {
       attaching = false
+      const next = pendingDir
+      pendingDir = null
+      // 最新目录胜：in-flight 期间的切目录不得丢（终审 Important-4）
+      if (next && next !== currentDir) void attach(next)
     }
   }
 
-  // 目录跟随（普通会话=项目目录，worktree 会话=worktree 目录；与文件树根同规则）。
+  // 可见时才 attach：不可见不创建 PTY（不后台起 shell）。
   createEffect(() => {
     const dir = props.directory
+    const active = props.active
     if (!dir) {
       currentDir = null
       setKind("idle")
       return
     }
-    if (dir === currentDir) return
-    void attach(dir)
+    const plan = planAttach({ active, attaching, requestedDir: dir, currentDir })
+    if (plan === "start") void attach(dir)
+    else if (plan === "queue") pendingDir = dir
   })
 
   // 可见性/尺寸变化 → 首次 open + fit + resize（切回 tab 时补一次 fit）。
@@ -116,10 +136,10 @@ export function TerminalDock(props: { directory: string | null }) {
       if (ev.type === "data") {
         term?.write(ev.data ?? "")
       } else if (ev.type === "gone") {
-        setKind("gone")
+        setKind((k) => nextConnState(k, "ptyGone"))
       } else {
         if (ev.directory === killedDir) return // 主动结束触发的关闭不弹「已断开」
-        setKind("closed")
+        setKind((k) => nextConnState(k, "wsClosed"))
       }
     })
     onCleanup(off)
@@ -127,6 +147,9 @@ export function TerminalDock(props: { directory: string | null }) {
 
   onCleanup(() => {
     if (disarmTimer) clearTimeout(disarmTimer)
+    const dir = currentDir
+    currentDir = null
+    if (dir) void window.api.mafw.terminal.detach(dir) // 释放本窗口订阅；PTY 仍存活
     term?.dispose()
     term = null
   })
@@ -140,13 +163,14 @@ export function TerminalDock(props: { directory: string | null }) {
       void window.api.mafw.terminal.openExternal(dir)
       return
     }
-    // open / reconnect / reopen 都走 attach（list 有活终端则重用，无则新建）
-    void attach(dir)
+    // open / reconnect = 复用活终端；reopen = 显式重建（越过 gone）
+    void attach(dir, v.action === "reopen")
   }
 
   const requestKill = () => {
     if (!killArmed()) {
       setKillArmed(true)
+      if (disarmTimer) clearTimeout(disarmTimer)
       disarmTimer = setTimeout(() => setKillArmed(false), 3000)
       return
     }
@@ -155,12 +179,14 @@ export function TerminalDock(props: { directory: string | null }) {
     const dir = currentDir
     if (!dir) return
     killedDir = dir
-    void window.api.mafw.terminal.kill(dir).finally(() => {
-      setTimeout(() => { if (killedDir === dir) killedDir = null }, 1000)
-      term?.reset()
-      currentDir = null
-      setKind("idle")
-    })
+    window.api.mafw.terminal.kill(dir)
+      .catch(() => { /* 服务端可能已不在；UI 仍回落 idle */ })
+      .finally(() => {
+        setTimeout(() => { if (killedDir === dir) killedDir = null }, 1000)
+        term?.reset()
+        currentDir = null
+        setKind("idle")
+      })
   }
 
   return (
@@ -173,20 +199,20 @@ export function TerminalDock(props: { directory: string | null }) {
         </div>
       </Show>
       <div class="mafw-terminal-host" ref={host} />
-      <Show when={viewFor(kind()).banner}>
+      <Show when={viewFor(kind() as TerminalViewKind).banner}>
         <div class="mafw-terminal-banner">
           <div class="mafw-terminal-banner-card">
-            <Show when={viewFor(kind()).busy}>
+            <Show when={viewFor(kind() as TerminalViewKind).busy}>
               <LoaderV2 width={18} height={18} />
             </Show>
-            <p class="mafw-terminal-banner-text">{viewFor(kind()).banner}</p>
-            <Show when={viewFor(kind()).action}>
+            <p class="mafw-terminal-banner-text">{viewFor(kind() as TerminalViewKind).banner}</p>
+            <Show when={viewFor(kind() as TerminalViewKind).action}>
               <ButtonV2 variant="outline" size="small" onClick={primary}>
-                {viewFor(kind()).action === "external"
+                {viewFor(kind() as TerminalViewKind).action === "external"
                   ? "打开外部终端"
-                  : viewFor(kind()).action === "reconnect"
+                  : viewFor(kind() as TerminalViewKind).action === "reconnect"
                     ? "重新连接"
-                    : viewFor(kind()).action === "reopen"
+                    : viewFor(kind() as TerminalViewKind).action === "reopen"
                       ? "重新打开"
                       : "打开终端"}
               </ButtonV2>

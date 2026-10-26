@@ -11,6 +11,20 @@ export type TerminalView = {
   action?: TerminalAction
 }
 
+/** 是否在可见时启动 attach：不可见不建 PTY；in-flight 中切目录排队（最新目录胜）。 */
+export type AttachPlan = "start" | "queue" | "ignore"
+
+export function planAttach(input: {
+  active: boolean
+  attaching: boolean
+  requestedDir: string | null
+  currentDir: string | null
+}): AttachPlan {
+  if (!input.active || !input.requestedDir) return "ignore"
+  if (input.requestedDir === input.currentDir) return "ignore"
+  return input.attaching ? "queue" : "start"
+}
+
 export function viewFor(kind: TerminalViewKind): TerminalView {
   switch (kind) {
     case "probing":

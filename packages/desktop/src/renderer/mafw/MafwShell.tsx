@@ -2215,7 +2215,7 @@ export function MafwShell() {
                 <BrowserDock />
               </div>
               <div style={{ display: rightDockTab() === "terminal" ? "contents" : "none" }}>
-                <TerminalDock directory={benchRoot()} />
+                <TerminalDock directory={benchRoot()} active={rightDockTab() === "terminal"} />
               </div>
             </RightDock>
             )}

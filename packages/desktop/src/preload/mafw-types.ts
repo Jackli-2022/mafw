@@ -247,7 +247,7 @@ export type MafwAPI = {
   /** 内嵌终端（spec 2026-10-26）：目录级 persistent PTY，不共享给 agent。 */
   terminal: {
     probe: () => Promise<{ available: boolean; serveUrl?: string; reason?: string }>
-    attach: (directory: string) => Promise<{ ptyId: string }>
+    attach: (directory: string, opts?: { reopen?: boolean }) => Promise<{ ok: true; ptyId: string; replayed: boolean } | { ok: false; reason: 'gone' | 'unavailable' | 'closed' }>
     detach: (directory: string) => Promise<void>
     input: (directory: string, data: string) => Promise<void>
     resize: (directory: string, cols: number, rows: number) => Promise<void>

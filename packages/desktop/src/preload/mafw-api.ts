@@ -311,7 +311,7 @@ export function createMafwApi(): MafwAPI {
 
     terminal: {
       probe: () => ipcRenderer.invoke("mafw-terminal-probe") as Promise<{ available: boolean; serveUrl?: string; reason?: string }>,
-      attach: (directory: string) => ipcRenderer.invoke("mafw-terminal-attach", { directory }) as Promise<{ ptyId: string }>,
+      attach: (directory: string, opts?: { reopen?: boolean }) => ipcRenderer.invoke("mafw-terminal-attach", { directory, reopen: opts?.reopen === true }) as Promise<{ ok: true; ptyId: string; replayed: boolean } | { ok: false; reason: 'gone' | 'unavailable' | 'closed' }>,
       detach: (directory: string) => ipcRenderer.invoke("mafw-terminal-detach", { directory }) as Promise<void>,
       input: (directory: string, data: string) => ipcRenderer.invoke("mafw-terminal-input", { directory, data }) as Promise<void>,
       resize: (directory: string, cols: number, rows: number) => ipcRenderer.invoke("mafw-terminal-resize", { directory, cols, rows }) as Promise<void>,

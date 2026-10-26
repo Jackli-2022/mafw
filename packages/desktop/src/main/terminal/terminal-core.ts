@@ -6,7 +6,7 @@
 // `{cursor}`，入站原始文本即 stdin。**Enter = `\r`**（禁止翻译成 `\n`——
 // PowerShell PSReadLine 把裸 `\n` 当续行，上游 PR #23794 review 实证）。
 
-export type ConnState = "idle" | "probing" | "live" | "closed" | "gone" | "unavailable"
+export { type ConnState, nextConnState } from "../../shared/terminal"
 
 /** 解 opencode pty 响应信封 `{location, data}`；裸对象原样返回。 */
 export function unwrapData(json: any): any {
@@ -34,22 +34,6 @@ export function parseMetaFrame(data: ArrayBuffer | string): { cursor: number } |
     return typeof parsed?.cursor === "number" ? { cursor: parsed.cursor } : null
   } catch {
     return null
-  }
-}
-
-/** 连接状态机（spec §3：closed→重连；gone→重新打开；probeFail→不可用）。 */
-export function nextConnState(s: ConnState, ev: "attachOk" | "wsClosed" | "ptyGone" | "probeFail" | "retry"): ConnState {
-  switch (ev) {
-    case "attachOk":
-      return "live"
-    case "wsClosed":
-      return "closed"
-    case "ptyGone":
-      return "gone"
-    case "probeFail":
-      return "unavailable"
-    case "retry":
-      return s === "closed" || s === "gone" || s === "unavailable" ? "probing" : s
   }
 }
 
