@@ -26,7 +26,8 @@ test("toServerRows sorts newest first and labels kind/file availability", () => 
   assert.equal(rows[0].kindBadge, "手动")
   assert.equal(rows[1].kindBadge, "自动")
   assert.equal(rows[0].filesAvailable, true)
-  assert.equal(rows[0].filesLabel, "代码+对话")
+  assert.equal(rows[0].filesLabel, "仅代码")
+  assert.equal(rows[1].filesLabel, "代码+对话")
   assert.equal(rows[2].filesAvailable, false)
   assert.equal(rows[2].filesLabel, "仅对话")
 })
@@ -37,7 +38,7 @@ test("toServerRows tolerates empty collections", () => {
 
 test("restoreWarning is scope- and runtime-aware", () => {
   const session = restoreWarning("session", "opencode", false)
-  assert.match(session, /只截断历史/)
+  assert.match(session, /撤回该消息及其后内容/)
   assert.match(session, /不动文件/)
 
   const files = restoreWarning("files", "opencode", false)

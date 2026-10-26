@@ -41,7 +41,13 @@ export function CheckpointOverlay(props: {
   let disposed = false
   createEffect(() => {
     const sid = props.sessionID
-    if (!sid || props.caps?.diffApi !== true) return
+    if (!sid) return
+    // 服务端检查点模式：列表来自 gateway，不需要逐回合拉 diff（B3 本地时间线仅作旧会话回退）。
+    if (serverMode()) {
+      setLoadingTurnFiles(false)
+      return
+    }
+    if (props.caps?.diffApi !== true) return
     // busy 时排除最后一个（在飞）回合：其 snapshot 每 step 变化会导致全量重拉。
     const candidates = collectTurnDiffCandidates(props.messages, { excludeLastTurn: props.busy === true })
     if (candidates.length === 0) {
@@ -172,7 +178,7 @@ export function CheckpointOverlay(props: {
           <div>
             <div class="mafw-checkpoint-title">时间线</div>
             <div class="mafw-checkpoint-sub">
-              {serverMode() ? "服务端检查点（自动记录 + 手动）" : "已加载的历史（最多 30 天）"}
+              {serverMode() && serverRows().length > 0 ? "服务端检查点（自动记录 + 手动）" : "已加载的历史（最多 30 天）"}
             </div>
           </div>
           <div class="mafw-checkpoint-head-actions">
@@ -191,13 +197,13 @@ export function CheckpointOverlay(props: {
         <Show when={props.caps && props.caps.diffApi === false}>
           <div class="mafw-checkpoint-note">当前 runtime 的回滚只影响对话，不改文件。</div>
         </Show>
-        <Show when={loadingTurnFiles()}>
+        <Show when={!serverMode() && loadingTurnFiles()}>
           <div class="mafw-checkpoint-note">正在加载回合级文件数据…</div>
         </Show>
-        <Show when={!loadingTurnFiles() && props.caps?.diffApi === true && !filesDataAvailable()}>
+        <Show when={!serverMode() && !loadingTurnFiles() && props.caps?.diffApi === true && !filesDataAvailable()}>
           <div class="mafw-checkpoint-note">当前会话没有可用的回合级文件数据（需要 git 仓库快照）。</div>
         </Show>
-        <Show when={!conversationAvailable() && props.caps?.diffApi !== true}>
+        <Show when={!serverMode() && !conversationAvailable() && props.caps?.diffApi !== true}>
           <div class="mafw-checkpoint-note">当前 runtime 不支持回滚。</div>
         </Show>
         <Show when={props.busy}>
@@ -216,7 +222,7 @@ export function CheckpointOverlay(props: {
 
         <div class="mafw-checkpoint-list">
           <Show
-            when={serverMode()}
+            when={serverMode() && serverRows().length > 0}
             fallback={
               <Show when={checkpoints().length > 0} fallback={<div class="mafw-checkpoint-empty">本会话还没有可回滚的检查点</div>}>
                 <For each={checkpoints()}>
@@ -303,7 +309,7 @@ export function CheckpointOverlay(props: {
                       检查点 {row.checkpoint.id.slice(-6)} · {row.filesLabel}
                     </div>
                     <div class="mafw-checkpoint-actions">
-                      <Show when={conversationAvailable()}>
+                      <Show when={conversationAvailable() && row.checkpoint.kind !== "manual"}>
                         <ScopeButton checkpointId={row.checkpoint.id} scope="session" label="只回对话" />
                       </Show>
                       <ScopeButton
@@ -312,7 +318,7 @@ export function CheckpointOverlay(props: {
                         label="只回代码"
                         disabled={!row.filesAvailable}
                       />
-                      <Show when={conversationAvailable()}>
+                      <Show when={conversationAvailable() && row.checkpoint.kind !== "manual"}>
                         <ScopeButton checkpointId={row.checkpoint.id} scope="both" label="全部恢复" />
                       </Show>
                     </div>
@@ -342,7 +348,9 @@ export function CheckpointOverlay(props: {
         </div>
 
         <div class="mafw-checkpoint-foot">
-          {serverMode() ? "检查点由 gateway 记录；untracked 文件只报告不自动删除。" : "更早的检查点请先在聊天中加载更早历史。"}
+          {serverMode() && serverRows().length > 0
+            ? "检查点由 gateway 记录；untracked 文件只报告不自动删除。"
+            : "更早的检查点请先在聊天中加载更早历史。"}
         </div>
       </div>
     </div>

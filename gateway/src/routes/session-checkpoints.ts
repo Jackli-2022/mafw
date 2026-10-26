@@ -15,6 +15,8 @@ import {
 export interface SessionCheckpointDeps {
   getRuntime(): AgentRuntime | null;
   checkpoints?: CheckpointService;
+  /** 回合进行中禁止 restore/create（gateway-side files apply 没有 serve 的 busy 保护）。 */
+  isBusy?(sessionID: string): boolean;
 }
 
 function readBody(req: http.IncomingMessage): Promise<any> {
@@ -58,6 +60,12 @@ export async function handleSessionCheckpoints(
   const svc = deps.checkpoints;
   if (!svc) {
     json(res, 503, { error: 'checkpoint service unavailable' });
+    return true;
+  }
+
+  const sessionID = restore?.[1] ?? list?.[1] ?? (create as RegExpMatchArray)[1];
+  if (deps.isBusy?.(sessionID)) {
+    json(res, 409, { error: 'session is busy; retry after the current turn completes' });
     return true;
   }
 

@@ -61,6 +61,8 @@ export interface Wave1Gateway {
   taskService?: TaskService | null;
   sessionConfig?: SessionConfigService | null;
   checkpointService?: import('../core/checkpoint/checkpoint-service').CheckpointService | null;
+  /** T2-1：回合进行中禁止检查点 restore/create（gateway-side apply 无 serve busy 保护）。 */
+  isCheckpointBusy?(sessionID: string): boolean;
 }
 
 type Handler = NonNullable<RouteDef['handler']>;
@@ -112,6 +114,7 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       handleSessionCheckpoints(req, res, req.url || '', {
         getRuntime: () => gw.runtime,
         checkpoints: gw.checkpointService ?? undefined,
+        isBusy: (sid) => gw.isCheckpointBusy?.(sid) ?? false,
       })));
   }
 

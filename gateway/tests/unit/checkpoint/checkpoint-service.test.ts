@@ -34,6 +34,8 @@ function harness() {
         calls.deletedAfter.push({ sessionId, at });
         return 0;
       },
+      deleteSessionCheckpointsFrom: () => 0,
+      deleteSessionCheckpoint: () => {},
       deleteSessionCheckpoints: () => {},
     },
     runtime: {
@@ -171,6 +173,14 @@ describe('CheckpointService.createManual', () => {
     const h = manualHarness();
     const cp = await h.service.createManual({ sessionID: 's1', messageID: 'u1' });
     expect(cp.anchorMessageID).toBe('u1');
+  });
+
+  it('snapshots the remembered workspace tree (after a files restore), not the stale history end', async () => {
+    const h = manualHarness();
+    // 上次 files 恢复把工作区留在 T1；历史最新 end 仍是 T2
+    (h.deps as any).readWorkspaceTree = () => T1;
+    const cp = await h.service.createManual({ sessionID: 's1' });
+    expect(cp.snapshotTree).toBe(T1);
   });
 
   it('400 when the session directory is unavailable', async () => {

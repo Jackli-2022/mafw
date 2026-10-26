@@ -764,6 +764,20 @@ export class GatewayDatabase {
     return result.changes;
   }
 
+  /** 截断型 restore：opencode revert 会删除 anchor 消息本身 → 目标条目也失效。
+   *  删除 created_at >= 给定 ISO 的全部检查点（含目标自身）。 */
+  deleteSessionCheckpointsFrom(sessionId: string, createdAtIso: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM session_checkpoints WHERE session_id = ? AND created_at >= ?',
+    ).run(sessionId, createdAtIso);
+    return result.changes;
+  }
+
+  /** 单条删除（files restore 失败时回收 pre-restore 行）。 */
+  deleteSessionCheckpoint(id: string): void {
+    this.db.prepare('DELETE FROM session_checkpoints WHERE id = ?').run(id);
+  }
+
   deleteSessionCheckpoints(sessionId: string): void {
     this.db.prepare('DELETE FROM session_checkpoints WHERE session_id = ?').run(sessionId);
   }

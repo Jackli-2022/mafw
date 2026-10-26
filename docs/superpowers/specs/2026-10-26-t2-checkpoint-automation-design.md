@@ -55,10 +55,10 @@ created_at TEXT NOT NULL
 - 保留策略：auto 每会话上限 100（创建同事务修剪最老），manual 不限
 - 会话删除路径（wave1 `session.delete` cleanup 链）增删该会话检查点
 
-**锚点不变量**（builder check #1 修正）：`restore('session'/'both')` = 现有 revert(anchor) 语义——历史保留至 anchor（含）、截断其后；`snapshot_tree` = `restore('files')` 要回到的工作区树。三态因此指向**同一时刻**而非错开一轮：
+**锚点不变量**（builder check #1 + 2026-10-26 活体实证修正）：opencode 2.1 的 `revert` **删除 anchor 消息本身及其后全部内容**（不是"保留至 anchor"）；`snapshot_tree` = `restore('files')` 要回到的工作区树。三态指向同一时刻：
 
-- **auto**（turn N 完成时记录）＝「回到发送 user_N 的时刻」：anchor = user_N（该回合 user 消息），tree = `A_N.snapshot.start`（**pre-turn 树**——与 B3 `checkpointsToRewind`「目标+更新回合全撤」语义一致，`both` = 对话+代码叠加而非错位一轮）
-- **manual**（空闲时手动）＝「回到现在」：anchor = 最后一条已持久化消息（通常 A_N，截断为空操作），tree = 最后已知 `snapshot.end`（当前工作区）
+- **auto**（turn N 完成时记录）＝「回到发送 user_N 之前的时刻」：anchor = user_N，tree = `A_N.snapshot.start`（**pre-turn 树**——与 opencode 独占删除语义一致）
+- **manual**（空闲时手动）＝「保存当前文件状态」：anchor = 最后一条已持久化消息（仅作记录），tree = 当前工作区树（`checkpoint-workspace` 记忆 ?? 最后已知 `snapshot.end`）；**manual 只支持 files 恢复**（anchor=末尾消息，会话截断会删掉最后一条回复，不存在"回到现在"的会话恢复）
 
 ### 5.2 CheckpointService（`gateway/src/core/checkpoint/`）
 
@@ -79,7 +79,8 @@ created_at TEXT NOT NULL
 
 - **补丁基线** = 每会话记住的「当前工作区树」（`checkpoint-workspace` kv）：正常路径为最后一条带 `snapshot.end` 的 assistant 树的 end；files 恢复成功后更新为目标树；新回合完成或 session/both 恢复时清空。基线 === 目标树 → 真幂等成功（不 apply、不造 pre-restore）
 - `files` restore 前记录 pre-restore `auto` checkpoint（anchor=最新消息、**tree=补丁基线**，即恢复前工作区）——撤销本次代码恢复的后悔药；`files` 不删任何 checkpoint
-- `session`/`both` restore（历史截断）**删除创建时间晚于目标 checkpoint 的全部 checkpoint**——时间线随回退一起倒带（Claude Code 同款；留死条目比删更糟），也不为不可逆操作记录 pre-restore checkpoint
+- `session`/`both` restore（历史截断）**删除目标 checkpoint 及其后全部 checkpoint**——opencode revert 删除 anchor 消息本身，目标条目同样失效（时间线随回退一起倒带），也不为不可逆操作记录 pre-restore checkpoint
+- `files` 恢复的幂等判定必须用**临时 index 的 tree↔worktree diff-files**证实工作区确实在目标树（`fail-open` 到"报成功但没恢复"不可接受）；回合外编辑 → 400，不猜
 - 正向补丁由 git 直接生成新增/删除/二进制（GIT binary patch）的正确形态——**B3.1 桌面路径「新增/删除/二进制不可回退」的限制（`isInvertiblePatch` 排除）在本路径消失**
 - `leftoverUntracked`：当前 `git status --porcelain` untracked − checkpoint.untracked → restore 响应字段（`files`/`both` scope 返回）
 - 锚点语义跟随现有 `sessions.revert`（与桌面 `revertTo` 同一 messageID 口径，B3 行为为准）
@@ -147,14 +148,17 @@ v4.37.0；本机全局安装 + gateway 重启验收；push/发布仍需用户确
 | snapshot repo 被 opencode prune | `findSnapshotRepo` 失败 → 该 checkpoint 的 files scope 404（session scope 不受影响） |
 | `turn.completed` 载荷缺 snapshot | 回退一次 `session.messages`；再缺则记 null 树 |
 
-## 9. 我的裁量（builder check 后更新）
+## 9. 我的裁量（builder check + final review 后更新）
 
-- **auto checkpoint 语义对齐 B3**：「回到发送该 prompt 的时刻」——anchor=user_N、tree=pre-turn 树（`A_N.snapshot.start`）。桌面现有两按钮行为不变，`both` = 两者叠加而非错位一轮；manual =「回到现在」（anchor=最后消息、tree=当前树）
-- **files 用正向补丁**（`git diff <base> <ckpt>` 直接 apply），不用 `buildRevertPatch` 反转——新增/删除/二进制回退从不可变可
-- **工作区树记忆**（冒烟推演发现的修正）：files 恢复后工作区不再等于历史最新树，第二次恢复（后悔药）必须用「上次恢复目标树」作基线；否则 `latest===target` 会误判幂等、撤销失效。新回合/全量恢复清空记忆
-- pre-restore checkpoint 只救 files 恢复；session/both 改为删除更新 checkpoint（时间线随回退倒带），不为不可逆操作造假后悔药
-- auto 上限 100/会话（对齐桌面 50 条抓取上限的量级余量）
+- **auto checkpoint 语义对齐 opencode revert 的独占删除**：「回到发送该 prompt 之前的时刻」——anchor=user_N、tree=pre-turn 树；会话恢复会删除 prompt 本身（不可回头编辑），UI 文案如实说明
+- **manual = 文件快照（files-only）**：anchor 是末尾消息，不存在"回到现在"的会话恢复；会话级恢复只对 auto 检查点开放，API 对 manual 的 session/both 返回 400
+- **files 用正向补丁**（`git diff <base> <ckpt>` 直接 apply）——新增/删除/二进制回退从不可变可
+- **工作区树记忆**（冒烟推演发现的修正）：files 恢复后工作区不再等于历史最新树，第二次恢复（后悔药）必须用「上次恢复目标树」作基线；`session`（files:false）保留记忆，`both`（files:true）同步为目标树，纯对话回合不清记忆
+- **幂等判定必须证实工作区**：临时 index（`read-tree` + `update-index --refresh` + `diff-files --quiet`）；回合外编辑 → 400，绝不静默报成功
+- **时间线倒带含目标自身**：opencode 删除 anchor 消息 → 目标条目失效
+- pre-restore checkpoint 只救 files 恢复；apply 失败时回收该行
+- auto 上限 100/会话
 - `session.checkpoint` 事件只覆盖创建，restore 靠既有事件族
-- manual checkpoint 不设 DELETE/改名/备注（列表可忽略，减攻击面）
 - untracked 残留不提供删除按钮（v1 报告即止）
-- 内部会话（worker/curator/btw/media）不记录 auto checkpoint；manager 等可见会话记录
+- 内部 worker（worker/curator/btw/media）不记录 auto checkpoint；**manager 等可见会话记录**
+- 回合进行中（busy）禁止 checkpoint restore/create（gateway-side apply 无 serve busy 保护）

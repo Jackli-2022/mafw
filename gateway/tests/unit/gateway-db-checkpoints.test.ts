@@ -102,6 +102,28 @@ test('deleteAfter removes strictly newer rows (all kinds), keeps target and olde
   expect(d.listSessionCheckpoints('other')).toHaveLength(1);
 });
 
+test('deleteFrom removes the boundary row and everything newer (all kinds)', () => {
+  const d = db();
+  d.insertSessionCheckpoint(row('s', 'older', 'auto', '2026-10-26T01:00:00Z'));
+  d.insertSessionCheckpoint(row('s', 'target', 'auto', '2026-10-26T02:00:00Z'));
+  d.insertSessionCheckpoint(row('s', 'newer', 'manual', '2026-10-26T03:00:00Z'));
+  d.insertSessionCheckpoint(row('other', 'other_ckpt', 'auto', '2026-10-26T02:00:00Z'));
+
+  expect(d.deleteSessionCheckpointsFrom('s', '2026-10-26T02:00:00Z')).toBe(2);
+
+  expect(d.listSessionCheckpoints('s').map((r) => r.id)).toEqual(['older']);
+  expect(d.listSessionCheckpoints('other')).toHaveLength(1);
+});
+
+test('deleteOne removes a single checkpoint (pre-restore rollback on failed apply)', () => {
+  const d = db();
+  d.insertSessionCheckpoint(row('s', 'a', 'auto', '2026-10-26T01:00:00Z'));
+  d.insertSessionCheckpoint(row('s', 'b', 'auto', '2026-10-26T02:00:00Z'));
+  d.deleteSessionCheckpoint('a');
+  expect(d.listSessionCheckpoints('s').map((r) => r.id)).toEqual(['b']);
+  expect(() => d.deleteSessionCheckpoint('missing')).not.toThrow();
+});
+
 test('delete removes all checkpoints of a session only', () => {
   const d = db();
   d.insertSessionCheckpoint(row('s', 'a', 'auto', '2026-10-26T01:00:00Z'));

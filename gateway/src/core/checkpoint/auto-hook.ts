@@ -39,9 +39,10 @@ export async function runAutoCheckpoint(
   const rt = deps.runtime();
   if (rt?.capabilities?.checkpointApi !== true) return null;
 
-  // 内部会话（turnCompress worker / curator / btw / media）：不记录，免
-  // per-turn git status 噪音与行膨胀（manager 等可见会话照记）。
-  if (deps.internalRoleOf(sessionID)) return null;
+  // 内部 worker（turnCompress / curator / btw / media）不记录；**manager 是可见会话**，
+  // 照常记录（设计明确）。历史 kv 角色表里的 manager 同样放行。
+  const role = deps.internalRoleOf(sessionID);
+  if (role && role !== 'manager') return null;
 
   const info = await rt.session.get({ sessionID });
   if (!info) return null;
@@ -55,7 +56,7 @@ export async function runAutoCheckpoint(
   const projectDir = info.directory ?? info.location?.directory;
   if (typeof projectDir !== 'string' || !projectDir) return null;
 
-  const result = await rt.session.messages({ sessionID, limit: 50 });
+  const result = await rt.session.messages({ sessionID, limit: 200 });
   const plan = planAutoCheckpoint(Array.isArray(result?.data) ? result.data : []);
   if (!plan) return null;
 

@@ -27,7 +27,7 @@ export interface GitRunResult {
 export interface GitRunner {
   run(
     args: string[],
-    opts?: { timeoutMs?: number; maxBuffer?: number },
+    opts?: { timeoutMs?: number; maxBuffer?: number; env?: Record<string, string> },
   ): Promise<GitRunResult>;
 }
 
@@ -264,6 +264,7 @@ export const defaultGit: GitRunner = {
           windowsHide: true,
           timeout: opts?.timeoutMs ?? TURN_DIFF_TIMEOUT_MS,
           maxBuffer: opts?.maxBuffer ?? TURN_DIFF_MAX_BUFFER,
+          ...(opts?.env ? { env: { ...process.env, ...opts.env } } : {}),
         },
         (error: any, stdout, stderr) => {
           // Spawn errors (git missing, timeout with killed=true) reject; normal

@@ -120,6 +120,17 @@ describe('session checkpoint routes', () => {
     expect(res.status).toBe(200);
   });
 
+  it('409 while the session is busy (gateway-side apply has no serve busy guard)', async () => {
+    const createManual = jest.fn(async () => ({ id: 'ckpt_1' }));
+    const res = mockRes();
+    const handled = await handleSessionCheckpoints(mockReq('POST', {}), res,
+      '/api/sessions/s1/checkpoint',
+      { getRuntime: () => caps, checkpoints: { createManual } as any, isBusy: () => true });
+    expect(handled).toBe(true);
+    expect(res.status).toBe(409);
+    expect(createManual).not.toHaveBeenCalled();
+  });
+
   it('returns handled=false for non-matching paths', async () => {
     for (const url of ['/api/sessions/s1/messages', '/api/sessions/s1/checkpointsX', '/api/sessions/s1/diff']) {
       const res = mockRes();

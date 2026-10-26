@@ -79,6 +79,8 @@ function harness(fx: Fixture, checkpointTree: string | null, untracked: string[]
       listSessionCheckpoints: (sid) => [...rows.values()].filter((r) => r.session_id === sid),
       pruneSessionAutoCheckpoints: () => 0,
       deleteSessionCheckpointsAfter: () => 0,
+      deleteSessionCheckpointsFrom: () => 0,
+      deleteSessionCheckpoint: (id) => { rows.delete(id); },
       deleteSessionCheckpoints: () => {},
     },
     runtime: {
@@ -186,5 +188,20 @@ describe('restore files (real git)', () => {
     expect(undo.scope).toBe('files');
     expect(fs.readFileSync(path.join(fx.project, 'file1.txt'), 'utf8')).toBe('B\n');
     expect(fs.readFileSync(path.join(fx.project, 'file2.txt'), 'utf8')).toBe('NEW\n');
+  });
+
+  it('rejects (400) when the worktree was edited after reaching the target tree', async () => {
+    const fx = await makeFixture();
+    const h = harness(fx, fx.tree1);
+
+    await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
+    expect(fs.readFileSync(path.join(fx.project, 'file1.txt'), 'utf8')).toBe('A\n');
+
+    // 回合外编辑：现在工作区 ≠ tree1，但记忆仍是 tree1 → 不得静默报成功
+    fs.writeFileSync(path.join(fx.project, 'file1.txt'), 'C\n');
+    await expect(
+      h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(fs.readFileSync(path.join(fx.project, 'file1.txt'), 'utf8')).toBe('C\n');
   });
 });

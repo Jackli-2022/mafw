@@ -26,7 +26,7 @@ function harness(opts: {
 } = {}) {
   const calls = {
     get: [] as string[],
-    messages: [] as string[],
+    messages: [] as Array<{ sid: string; limit?: number }>,
     create: [] as any[],
   };
   const created: SessionCheckpoint = {
@@ -44,8 +44,8 @@ function harness(opts: {
             ? { id: 's1', directory: '/tmp/proj', title: 'chat' }
             : opts.info;
         },
-        messages: async ({ sessionID }) => {
-          calls.messages.push(sessionID);
+        messages: async ({ sessionID, limit }) => {
+          calls.messages.push({ sid: sessionID, limit });
           return { data: opts.messages ?? assistantTurn() };
         },
       },
@@ -88,6 +88,19 @@ describe('runAutoCheckpoint', () => {
     const h = harness({ role: 'extract' });
     expect(await runAutoCheckpoint(h.deps, 's1')).toBeNull();
     expect(h.calls.get).toEqual([]);
+  });
+
+  it('records for manager sessions (visible, not a worker)', async () => {
+    const h = harness({ role: 'manager' });
+    const cp = await runAutoCheckpoint(h.deps, 's1');
+    expect(cp).toEqual(h.created);
+    expect(h.calls.get).toEqual(['s1']);
+  });
+
+  it('reads a 200-message window (long agentic turns must still find the anchor)', async () => {
+    const h = harness();
+    await runAutoCheckpoint(h.deps, 's1');
+    expect(h.calls.messages).toEqual([{ sid: 's1', limit: 200 }]);
   });
 
   it('skips hidden sessions and sessions without a directory', async () => {

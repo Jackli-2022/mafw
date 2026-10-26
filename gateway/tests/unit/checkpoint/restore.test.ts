@@ -35,6 +35,7 @@ function harness(opts: {
   patch?: string;
   preCheckCode?: number;
   applyCode?: number;
+  quietCode?: number;
   porcelain?: string;
   repoFound?: boolean;
   rememberedTree?: string;
@@ -53,8 +54,11 @@ function harness(opts: {
     reverts: [] as Array<{ sessionID: string; messageID: string; files?: boolean }>,
     applies: [] as string[],
     deleteAfter: [] as Array<{ sessionId: string; at: string }>,
+    deletedFrom: [] as Array<{ sessionId: string; at: string }>,
+    deletedOne: [] as string[],
     gitDiffs: [] as string[][],
     checks: [] as string[][],
+    quiet: [] as string[][],
     broadcasts: [] as any[],
     workspaceWrites: [] as Array<{ sid: string; tree: string | null }>,
   };
@@ -64,6 +68,14 @@ function harness(opts: {
   const git: CheckpointServiceDeps['git'] = {
     run: async (args) => {
       if (args.includes('cat-file')) return { code: 0, stdout: 'tree', stderr: '' };
+      if (args.includes('diff-files')) {
+        calls.quiet.push(args);
+        return { code: opts.quietCode ?? 0, stdout: '', stderr: '' };
+      }
+      if (args.includes('diff') && args.includes('--quiet')) {
+        calls.quiet.push(args);
+        return { code: opts.quietCode ?? 0, stdout: '', stderr: '' };
+      }
       if (args.includes('diff') && args.includes('--binary')) {
         calls.gitDiffs.push(args);
         return { code: 0, stdout: opts.patch ?? 'diff --git a/f b/f\n--- a/f\n+++ b/f\n', stderr: '' };
@@ -93,6 +105,14 @@ function harness(opts: {
       deleteSessionCheckpointsAfter: (sessionId, at) => {
         calls.deleteAfter.push({ sessionId, at });
         return 0;
+      },
+      deleteSessionCheckpointsFrom: (sessionId, at) => {
+        calls.deletedFrom.push({ sessionId, at });
+        return 0;
+      },
+      deleteSessionCheckpoint: (id) => {
+        calls.deletedOne.push(id);
+        rows.delete(id);
       },
       deleteSessionCheckpoints: () => {},
     },
@@ -147,10 +167,21 @@ describe('restore: lookup + session scope', () => {
 
     expect(result).toEqual({ scope: 'session' });
     expect(h.calls.reverts).toEqual([{ sessionID: 's1', messageID: 'u1', files: false }]);
-    expect(h.calls.deleteAfter).toEqual([{ sessionId: 's1', at: '2026-10-26T00:00:00Z' }]);
+    // 目标 checkpoint 的 anchor 消息会被 revert 删除 → 目标自身也失效
+    expect(h.calls.deletedFrom).toEqual([{ sessionId: 's1', at: '2026-10-26T00:00:00Z' }]);
     expect(h.calls.broadcasts).toEqual([]); // 不可逆操作不造 pre-restore 后悔药
     expect(h.calls.applies).toEqual([]);
-    expect(h.calls.workspaceWrites).toEqual([{ sid: 's1', tree: null }]);
+    // files:false 不动工作区 → 保留工作区树记忆
+    expect(h.calls.workspaceWrites).toEqual([]);
+  });
+
+  it('rejects session scope on manual checkpoints (files-only)', async () => {
+    const h = harness({ row: baseRow({ kind: 'manual' }) });
+    await expect(h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'session' }))
+      .rejects.toMatchObject({ status: 400 });
+    await expect(h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'both' }))
+      .rejects.toMatchObject({ status: 400 });
+    expect(h.calls.reverts).toEqual([]);
   });
 });
 
@@ -163,8 +194,9 @@ describe('restore: both scope', () => {
     const result = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'both' });
 
     expect(h.calls.reverts).toEqual([{ sessionID: 's1', messageID: 'u1', files: true }]);
-    expect(h.calls.deleteAfter).toHaveLength(1);
-    expect(h.calls.workspaceWrites).toEqual([{ sid: 's1', tree: null }]);
+    expect(h.calls.deletedFrom).toHaveLength(1);
+    // files:true 把工作区回滚到 checkpoint 树 → 记忆同步目标树
+    expect(h.calls.workspaceWrites).toEqual([{ sid: 's1', tree: T1 }]);
     expect(result).toEqual({ scope: 'both', leftoverUntracked: ['new.txt'] });
   });
 
@@ -173,6 +205,7 @@ describe('restore: both scope', () => {
     const result = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'both' });
 
     expect(h.calls.reverts).toEqual([{ sessionID: 's1', messageID: 'u1', files: false }]);
+    expect(h.calls.workspaceWrites).toEqual([]); // 文件侧未动
     expect(result).toEqual({ scope: 'both', filesSkipped: true, leftoverUntracked: [] });
   });
 });
@@ -184,10 +217,17 @@ describe('restore: files scope', () => {
       .rejects.toMatchObject({ status: 400 });
   });
 
-  it('404 when there is no current snapshot tree', async () => {
+  it('404 when there is no current snapshot tree and no remembered workspace', async () => {
     const h = harness({ latestTree: null });
     await expect(h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' }))
       .rejects.toMatchObject({ status: 404 });
+  });
+
+  it('uses the remembered workspace tree when history was truncated (latest missing)', async () => {
+    const h = harness({ latestTree: null, rememberedTree: T2 });
+    const result = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
+    expect(result.scope).toBe('files');
+    expect(h.calls.gitDiffs[0]).toEqual(expect.arrayContaining(['diff', '--binary', T2, T1]));
   });
 
   it('404 when snapshot repo cannot be located (pruned)', async () => {
@@ -196,13 +236,31 @@ describe('restore: files scope', () => {
       .rejects.toMatchObject({ status: 404 });
   });
 
-  it('is a no-op (no pre-restore, no apply) when already at the checkpoint tree', async () => {
+  it('is a no-op only after verifying the worktree matches (git diff --quiet)', async () => {
     const h = harness({ latestTree: T1, porcelain: '?? new.txt\n' });
     const result = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
 
     expect(result).toEqual({ scope: 'files', leftoverUntracked: ['new.txt'] });
     expect(h.calls.applies).toEqual([]);
     expect(h.calls.broadcasts).toEqual([]);
+    expect(h.calls.quiet).toHaveLength(1);
+  });
+
+  it('400 (not a silent no-op) when the worktree has out-of-turn edits at the target tree', async () => {
+    const h = harness({ latestTree: T1, quietCode: 1 });
+    await expect(h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' }))
+      .rejects.toMatchObject({ status: 400 });
+    expect(h.calls.applies).toEqual([]);
+  });
+
+  it('502 on apply failure and removes the just-created pre-restore row', async () => {
+    const h = harness({ applyCode: 1 });
+    await expect(h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' }))
+      .rejects.toMatchObject({ status: 502 });
+    expect(h.calls.deletedOne).toEqual(['ckpt_new_1']);
+    expect(h.rows.has('ckpt_new_1')).toBe(false);
+    // 失败不更新工作区记忆
+    expect(h.calls.workspaceWrites).toEqual([]);
   });
 
   it('creates pre-restore checkpoint AFTER pre-check and BEFORE apply; applies forward patch', async () => {
@@ -217,9 +275,11 @@ describe('restore: files scope', () => {
     const pre = h.rows.get('ckpt_new_1')!;
     expect(pre.snapshot_tree).toBe(T2);
     expect(pre.kind).toBe('auto');
-    // diff 参数：base(latest) → ckpt（正向补丁），带 --binary
+    // diff 参数：base(latest) → ckpt（正向补丁），带 --binary 与同 turn-diff 的硬化旗标
     const diffArgs = h.calls.gitDiffs[0];
-    expect(diffArgs).toEqual(expect.arrayContaining(['diff', '--binary', T2, T1]));
+    expect(diffArgs).toEqual(expect.arrayContaining([
+      'diff', '--binary', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', T2, T1,
+    ]));
     // 预检走 -C 项目目录（git apply 相对路径按 cwd 解析）
     const checkArgs = h.calls.checks[0];
     expect(checkArgs).toEqual(expect.arrayContaining(['-C', '/tmp/does-not-matter', 'apply', '--check']));
