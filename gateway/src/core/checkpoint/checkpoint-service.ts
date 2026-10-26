@@ -135,6 +135,39 @@ export class CheckpointService {
     return this.deps.db.listSessionCheckpoints(sessionID).map(toDto);
   }
 
+  /** 会话删除联动（wave1 session.delete cleanup 链，fail-open 由调用侧兜底）。 */
+  deleteForSession(sessionID: string): void {
+    this.deps.db.deleteSessionCheckpoints(sessionID);
+  }
+
+  /** 手动检查点：锚点=显式 messageID 或最后一条已持久化消息；树=最后已知 end。 */
+  async createManual(input: { sessionID: string; messageID?: string }): Promise<SessionCheckpoint> {
+    const session = await this.deps.runtime.session.get({ sessionID: input.sessionID });
+    const projectDir = session?.directory;
+    if (typeof projectDir !== 'string' || !projectDir) {
+      throw new CheckpointRestoreError(400, 'session directory unavailable');
+    }
+
+    const result = await this.deps.runtime.session.messages({
+      sessionID: input.sessionID,
+      limit: 50,
+    });
+    const messages = Array.isArray(result?.data) ? result.data : [];
+    const anchor = manualAnchor(messages, input.messageID);
+    if (!anchor) {
+      throw new CheckpointRestoreError(400, 'no persisted messages');
+    }
+
+    return this.create({
+      sessionID: input.sessionID,
+      projectDir,
+      anchorMessageID: anchor.anchorMessageID,
+      snapshotTree: latestSnapshotTree(messages),
+      untracked: parseUntrackedLines(await this.deps.porcelainOf(projectDir)),
+      kind: 'manual',
+    });
+  }
+
   async restore(input: {
     sessionID: string;
     checkpointId: string;

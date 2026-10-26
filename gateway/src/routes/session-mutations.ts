@@ -14,6 +14,8 @@ export interface SessionMutationDeps {
   getClient: () => SessionClientLike | null;
   /** 切片 4：session 删除成功后的 worktree 联动清理（fail-open；缺省跳过）。 */
   cleanupWorktree?: (sessionID: string) => Promise<void>;
+  /** T2-1：session 删除后清理检查点（fail-open；缺省跳过）。 */
+  deleteCheckpoints?: (sessionID: string) => void;
 }
 
 /**
@@ -54,6 +56,10 @@ export async function handleSessionMutations(
         await deps.cleanupWorktree(sessionID).catch((e: any) => {
           console.warn(`[Session] worktree cleanup failed for ${sessionID} (non-fatal): ${e?.message}`);
         });
+      }
+      // T2-1：检查点随会话删除（fail-open）
+      try { deps.deleteCheckpoints?.(sessionID); } catch (e: any) {
+        console.warn(`[Session] checkpoint cleanup failed for ${sessionID} (non-fatal): ${e?.message}`);
       }
       json(200, { ok: true });
       return true;

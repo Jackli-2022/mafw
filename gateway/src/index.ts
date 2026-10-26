@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { randomUUID } from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import * as yaml from 'js-yaml';
@@ -131,6 +132,8 @@ import { normalizeMode, SessionPermissionMode } from './core/approval/policy-ser
 import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { SessionConfigService, SessionConfigError } from './core/session-config';
+import { CheckpointService } from './core/checkpoint/checkpoint-service';
+import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
 import { mergeBudgetIntoSnapshot } from './core/goal-budget';
@@ -478,6 +481,7 @@ class MafwScheduler {
   private subagentService!: SubagentService;
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
+  private checkpointService!: CheckpointService;
   private memoryService?: MemoryService;
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
@@ -3247,6 +3251,41 @@ class MafwScheduler {
         }));
       },
     });
+    this.checkpointService = new CheckpointService({
+      db: this.getGatewayDb(),
+      runtime: {
+        session: {
+          get: async (o) => {
+            if (!this.runtime) throw new Error('runtime not available');
+            return this.runtime.session.get(o);
+          },
+          messages: async (o) => {
+            if (!this.runtime) throw new Error('runtime not available');
+            return this.runtime.session.messages(o);
+          },
+          revert: async (o) => {
+            const fn = this.runtime?.session.revert;
+            if (!fn) throw new Error('runtime does not implement session.revert');
+            return fn(o);
+          },
+          vcs: {
+            apply: async (o) => {
+              const vcs = this.runtime?.session.vcs;
+              if (!vcs?.apply) throw new Error('runtime does not implement vcs.apply');
+              return vcs.apply(o);
+            },
+          },
+        },
+      },
+      git: defaultGit,
+      porcelainOf: async (dir) => {
+        const r = await defaultGit.run(['-C', dir, 'status', '--porcelain']);
+        return r.code === 0 ? r.stdout : '';
+      },
+      broadcast: (e) => this.broadcast(e),
+      now: () => new Date().toISOString(),
+      newId: () => `ckpt_${randomUUID()}`,
+    });
     this.subagentService = new SubagentService({
       createSession: (o) => this.runtime!.session.create(o),
       getSession: (sid) => this.runtime!.session.get({ sessionID: sid }),
@@ -3982,6 +4021,7 @@ class MafwScheduler {
         get runtimeCaps() { return gwSelf.runtimeCaps; },
         get taskService() { return gwSelf.taskService; },
         get sessionConfig() { return gwSelf.sessionConfigService; },
+        get checkpointService() { return gwSelf.checkpointService; },
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),

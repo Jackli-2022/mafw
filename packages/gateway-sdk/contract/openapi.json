@@ -748,6 +748,83 @@
         }
       }
     },
+    "/api/sessions/{id}/checkpoint": {
+      "post": {
+        "operationId": "session.checkpoint",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/checkpoints": {
+      "get": {
+        "operationId": "session.checkpoints",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/checkpoints/{checkpointId}/restore": {
+      "post": {
+        "operationId": "session.restoreCheckpoint",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkpointId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session/{id}/abort": {
       "post": {
         "operationId": "session.abort",

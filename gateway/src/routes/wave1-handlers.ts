@@ -19,6 +19,7 @@ import { handleManagerRotate, type ManagerRotateDeps } from './manager-rotate';
 import { handleEmbeddingConfigGet, handleEmbeddingConfigUpdate, type EmbeddingConfigDeps } from './embedding-config';
 import { handleModelConfigGet, handleModelConfigUpdate, type ModelConfigDeps } from './model-config';
 import { handleSessionBranch } from './session-branch';
+import { handleSessionCheckpoints } from './session-checkpoints';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { cleanupWorktreeForSession } from './session-worktree';
 import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
@@ -59,6 +60,7 @@ export interface Wave1Gateway {
   runtimeCaps: SessionMutationDeps['getCapabilities'] extends () => infer C ? C : never;
   taskService?: TaskService | null;
   sessionConfig?: SessionConfigService | null;
+  checkpointService?: import('../core/checkpoint/checkpoint-service').CheckpointService | null;
 }
 
 type Handler = NonNullable<RouteDef['handler']>;
@@ -105,6 +107,14 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
   registry.attachHandler('session.revertDiff', H(async (req, res, params) =>
     handleSessionDiffRevert(req, res, params.id, { runtime: gw.runtime })));
 
+  for (const op of ['session.checkpoint', 'session.checkpoints', 'session.restoreCheckpoint'] as const) {
+    registry.attachHandler(op, H(async (req, res) =>
+      handleSessionCheckpoints(req, res, req.url || '', {
+        getRuntime: () => gw.runtime,
+        checkpoints: gw.checkpointService ?? undefined,
+      })));
+  }
+
   registry.attachHandler('session.delete', H(async (req, res) =>
     handleSessionMutations(req, res, {
       getCapabilities: () => gw.runtimeCaps,
@@ -119,6 +129,7 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
           createSession: async () => ({ id: '' }),
         }, sid);
       },
+      deleteCheckpoints: (sid) => gw.checkpointService?.deleteForSession(sid),
     })));
   registry.attachHandler('session.rename', H(async (req, res) =>
     handleSessionMutations(req, res, {

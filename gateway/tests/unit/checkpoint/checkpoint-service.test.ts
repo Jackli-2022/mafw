@@ -129,3 +129,57 @@ describe('CheckpointService.list', () => {
     expect(list[1].snapshotTree).toBeNull();
   });
 });
+
+describe('CheckpointService.createManual', () => {
+  const T1 = 'a'.repeat(40);
+  const T2 = 'b'.repeat(40);
+
+  function manualHarness(opts: {
+    directory?: string | null;
+    messages?: any[];
+    porcelain?: string;
+  } = {}) {
+    const h = harness();
+    (h.deps.runtime.session as any).get = async () => ({
+      id: 's1',
+      directory: opts.directory === undefined ? '/tmp/proj' : opts.directory,
+    });
+    (h.deps.runtime.session as any).messages = async () => ({
+      data: opts.messages ?? [
+        { id: 'u1', role: 'user', time: { created: 1 } },
+        { id: 'a1', role: 'assistant', time: { created: 2 }, snapshot: { start: T1, end: T2 } },
+      ],
+    });
+    h.deps.porcelainOf = async () => opts.porcelain ?? '?? scratch.txt\n';
+    return h;
+  }
+
+  it('manual checkpoint anchors at the last persisted message and current tree', async () => {
+    const h = manualHarness();
+    const cp = await h.service.createManual({ sessionID: 's1' });
+
+    expect(cp.kind).toBe('manual');
+    expect(cp.anchorMessageID).toBe('a1');
+    expect(cp.snapshotTree).toBe(T2);
+    expect(cp.projectDir).toBe('/tmp/proj');
+    expect(cp.untracked).toEqual(['scratch.txt']);
+  });
+
+  it('honors an explicit messageID anchor', async () => {
+    const h = manualHarness();
+    const cp = await h.service.createManual({ sessionID: 's1', messageID: 'u1' });
+    expect(cp.anchorMessageID).toBe('u1');
+  });
+
+  it('400 when the session directory is unavailable', async () => {
+    const h = manualHarness({ directory: null });
+    await expect(h.service.createManual({ sessionID: 's1' }))
+      .rejects.toMatchObject({ status: 400 });
+  });
+
+  it('400 when there are no persisted messages', async () => {
+    const h = manualHarness({ messages: [] });
+    await expect(h.service.createManual({ sessionID: 's1' }))
+      .rejects.toMatchObject({ status: 400 });
+  });
+});
