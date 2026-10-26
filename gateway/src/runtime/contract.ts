@@ -49,6 +49,8 @@ export interface RuntimeCapabilities {
   sessionBranchApi?: boolean;
   /** revert 后可撤销（unrevert）。opencode 2.1 的 revert commit 不可逆 → false */
   revertUndoApi?: boolean;
+  /** checkpoint 记录/三态 restore 依赖 snapshot 树 + staged revert（opencode-only；缺省=503） */
+  checkpointApi?: boolean;
   /** runtime 原生强制执行 SessionPromptOpts.maxTurns/maxCostUsd（声明后 gateway 不再挂 BudgetGuard） */
   turnBudgetApi?: boolean;
   /** runtime 提供原生 question API（question.list/reply/reject） */
@@ -74,6 +76,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     sessionBranchApi: true,
     // opencode 2.1 的 revert 是 stage+commit，commit 后不可逆（无 unrevert）
     revertUndoApi: false,
+    checkpointApi: true,
     diffApi: true,
     worktreeApi: true,
     // opencode 适配器不转发 maxTurns/maxCostUsd（SDK 无对应字段）——预算由
@@ -366,8 +369,10 @@ export interface RuntimeClient {
      * 消息级回退。opencode：撤回该点之后的消息并回滚文件改动（可 unrevert 恢复）；
      * pi：映射为 SessionManager.branch() 原地移动 leaf——不回滚文件、不可逆，
      * 语义弱于 opencode，调用方不得假设文件回滚。
+     * files（opencode 2.1 stage body）：缺省 true=连同工作区文件回滚；
+     * false=只截断历史、不动工作区（T2-1 三态 restore 的 session 档）。
      */
-    revert?(opts: { sessionID: string; messageID: string; partID?: string }): Promise<void>;
+    revert?(opts: { sessionID: string; messageID: string; partID?: string; files?: boolean }): Promise<void>;
     /** 撤销 revert（仅 opencode；pi 不实现——方法缺席即能力缺失） */
     unrevert?(opts: { sessionID: string }): Promise<void>;
     /**

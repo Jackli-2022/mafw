@@ -18,6 +18,7 @@ describe('runtime contract capabilities', () => {
       completionApi: true,
       sessionBranchApi: true,
       revertUndoApi: false,
+      checkpointApi: true,
       turnBudgetApi: false,
       questionApi: true,
       diffApi: true,

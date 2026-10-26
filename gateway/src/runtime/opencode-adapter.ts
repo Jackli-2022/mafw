@@ -454,15 +454,23 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         return { id: session?.id };
       },
 
-      async revert(opts: { sessionID: string; messageID: string; partID?: string }) {
+      async revert(opts: { sessionID: string; messageID: string; partID?: string; files?: boolean }) {
         // 2.1.0：revert 改为两段式——stage（暂存边界，可 clear 撤销）+
         // commit（真正截断历史，不可逆）。旧 POST /session/{id}/revert 已 404。
-        // files:true 对齐 v1 revert 的文件回滚语义（stage 响应列出将回滚的文件）。
+        // files 缺省 true 对齐 v1 revert 的文件回滚语义；false = 只截断历史
+        // （T2-1 session 档，stage 响应列出将回滚的文件）。
         await directNative(`/session/${opts.sessionID}/revert/stage`, 'POST', {
           messageID: opts.messageID,
-          files: true,
+          files: opts.files !== false,
         });
-        await directNative(`/session/${opts.sessionID}/revert/commit`, 'POST');
+        try {
+          await directNative(`/session/${opts.sessionID}/revert/commit`, 'POST');
+        } catch (err) {
+          // commit 失败会留下未提交 stage（后续 revert/事件语义被污染）——
+          // DELETE /revert 清暂存后再抛，保持「失败=无副作用」。
+          await directNative(`/session/${opts.sessionID}/revert`, 'DELETE').catch(() => {});
+          throw err;
+        }
       },
 
       async unrevert(opts: { sessionID: string }) {
