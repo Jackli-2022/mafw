@@ -540,6 +540,40 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
       },
     },
 
+    shell: {
+      async create(opts: {
+        command: string; cwd?: string; timeout?: number; metadata?: Record<string, unknown>; directory?: string;
+      }) {
+        const body = await directNative('/shell', 'POST', {
+          command: opts.command,
+          ...(opts.cwd ? { cwd: opts.cwd } : {}),
+          ...(typeof opts.timeout === 'number' ? { timeout: opts.timeout } : {}),
+          ...(opts.metadata ? { metadata: opts.metadata } : {}),
+        }, opts.directory);
+        return unwrapNative(body);
+      },
+      async get(opts: { shellID: string; directory?: string }) {
+        const body = await directNative(`/shell/${encodeURIComponent(opts.shellID)}`, 'GET', undefined, opts.directory);
+        return unwrapNative(body);
+      },
+      async output(opts: { shellID: string; directory?: string; cursor?: number; limit?: number }) {
+        const q = new URLSearchParams();
+        if (typeof opts.cursor === 'number') q.set('cursor', String(opts.cursor));
+        if (typeof opts.limit === 'number') q.set('limit', String(opts.limit));
+        const suffix = q.toString() ? `?${q.toString()}` : '';
+        const body = await directNative(
+          `/shell/${encodeURIComponent(opts.shellID)}/output${suffix}`,
+          'GET',
+          undefined,
+          opts.directory,
+        );
+        return unwrapNative(body);
+      },
+      async remove(opts: { shellID: string; directory?: string }) {
+        await directNative(`/shell/${encodeURIComponent(opts.shellID)}`, 'DELETE', undefined, opts.directory);
+      },
+    },
+
     global: {
       event() {
         // 2.1.0：SSE 流在 Event class（/event → /api/event，实测 200）；

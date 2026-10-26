@@ -414,6 +414,42 @@ describe('opencode adapter 2.1.0 sticky switch', () => {
   });
 });
 
+describe('opencode adapter 2.1.0 shell tasks', () => {
+  it('create/get/output/remove use the background shell routes', async () => {
+    const savedFetch = globalThis.fetch;
+    const calls: any[] = [];
+    (globalThis as any).fetch = (async (url: any, init: any) => {
+      calls.push({ url: String(url), method: init?.method, body: init?.body, headers: init?.headers });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { id: 'sh1', status: 'running', output: 'ok', cursor: 1, size: 2, truncated: false } }),
+      };
+    }) as any;
+    try {
+      const client = await createOpencodeAdapter({ baseUrl: 'http://x' });
+      const created = await client.shell!.create({
+        command: 'echo hi', cwd: 'C:/work', timeout: 5, metadata: { taskID: 't1' }, directory: 'C:/work',
+      });
+      expect(created).toMatchObject({ id: 'sh1', status: 'running' });
+      expect(calls[0].url).toContain('/api/shell?directory=C%3A%2Fwork');
+      expect(JSON.parse(calls[0].body)).toMatchObject({ command: 'echo hi', cwd: 'C:/work', timeout: 5, metadata: { taskID: 't1' } });
+
+      await client.shell!.get({ shellID: 'sh1', directory: 'C:/work' });
+      expect(calls[1].url).toContain('/api/shell/sh1');
+
+      const out = await client.shell!.output({ shellID: 'sh1', directory: 'C:/work', cursor: 10, limit: 20 });
+      expect(calls[2].url).toContain('/api/shell/sh1/output?cursor=10&limit=20');
+      expect(out).toMatchObject({ output: 'ok', cursor: 1, size: 2 });
+
+      await client.shell!.remove({ shellID: 'sh1', directory: 'C:/work' });
+      expect(calls[3].method).toBe('DELETE');
+    } finally {
+      (globalThis as any).fetch = savedFetch;
+    }
+  });
+});
+
 describe('opencode adapter 2.1.0 stopReason', () => {
   it('prompt maps finish=length to max_tokens', async () => {
     const savedFetch = globalThis.fetch;

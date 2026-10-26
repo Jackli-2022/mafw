@@ -380,6 +380,16 @@ export interface RuntimeClient {
       apply?(opts: { patch: string }): Promise<void>;
     };
   };
+  shell?: {
+    create(opts: {
+      command: string; cwd?: string; timeout?: number; metadata?: Record<string, unknown>; directory?: string;
+    }): Promise<any>;
+    get(opts: { shellID: string; directory?: string }): Promise<any>;
+    output(opts: {
+      shellID: string; directory?: string; cursor?: number; limit?: number;
+    }): Promise<any>;
+    remove(opts: { shellID: string; directory?: string }): Promise<void>;
+  };
   global: {
     event(): Promise<any>;
   };
