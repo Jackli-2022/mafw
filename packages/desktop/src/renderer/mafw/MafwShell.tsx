@@ -48,6 +48,7 @@ import { NotesDock } from "./components/NotesDock"
 import { SubagentDock } from "./components/SubagentDock"
 import { BackgroundDock } from "./components/BackgroundDock"
 import { taskRows, fetchTasks, ingestTask } from "./task-store"
+import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { FilesDock } from "./components/FilesDock"
 import { EditorDock } from "./components/EditorDock"
 import { BrowserDock } from "./components/BrowserDock"
@@ -604,6 +605,8 @@ export function MafwShell() {
 
   const reconcileFlowCards = () => {
     void fetchTasks()
+    const activeSid = activeSessionId()
+    if (activeSid) void fetchQueue(activeSid)
     // 顺带补拉各会话审批模式（覆盖非 tab 打开路径，如全局 Approvals 页；60s 对账周期）
     for (const sid of Object.keys(flowCards())) syncPermissionMode(sid)
     window.api.mafw.permissions.list().then((items: any[]) => {
@@ -964,6 +967,9 @@ export function MafwShell() {
     },
     tasks: {
       onEvent: (task) => ingestTask(task as any),
+    },
+    queue: {
+      onEvent: (sid, event) => ingestQueueEvent(sid, event),
     },
   }
 

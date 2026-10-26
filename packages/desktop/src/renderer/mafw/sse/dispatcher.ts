@@ -47,6 +47,11 @@ export interface TaskDeps {
   onEvent(task: unknown): void
 }
 
+/** Gateway 服务端队列快照（Batch 5）：queue.updated。 */
+export interface QueueDeps {
+  onEvent(sid: string, event: unknown): void
+}
+
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
@@ -57,6 +62,7 @@ export interface ShellEventDeps {
   subagents: SubagentDeps
   background: BackgroundDeps
   tasks: TaskDeps
+  queue: QueueDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */

@@ -7,6 +7,7 @@ function makeDeps() {
   const subagentEvents: unknown[] = []
   const backgroundEvents: unknown[] = []
   const taskEvents: unknown[] = []
+  const queueEvents: unknown[] = []
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
@@ -68,8 +69,11 @@ function makeDeps() {
     tasks: {
       onEvent: (task: unknown) => { taskEvents.push(task) },
     },
+    queue: {
+      onEvent: (sid: string, ev: unknown) => { queueEvents.push({ sid, ev }) },
+    },
   }
-  return { deps, calls, subagentEvents, backgroundEvents, taskEvents }
+  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -100,6 +104,16 @@ describe("dispatchShellEvent: task updated", () => {
     dispatchShellEvent({ type: "task.updated", properties: { task } }, deps)
     expect(taskEvents).toEqual([task])
     expect(calls.some(c => c.name === "trace" && c.args[1] === "task:updated")).toBe(true)
+  })
+})
+
+describe("dispatchShellEvent: queue updated", () => {
+  test("queue.updated forwards session id and event to the queue dep", () => {
+    const { deps, queueEvents } = makeDeps()
+    const event = { type: "queue.updated", properties: { sessionID: "s1", items: [], action: "enqueue" } }
+    dispatchShellEvent(event as any, deps)
+    expect(queueEvents).toHaveLength(1)
+    expect(queueEvents[0]).toMatchObject({ sid: "s1" })
   })
 })
 
