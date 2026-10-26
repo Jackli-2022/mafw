@@ -1698,8 +1698,8 @@ class MafwScheduler {
    *  仍在（apply 照跑、无 delivery 不触发拦截），且对象形参能携带 expectReply
    *  （facade 位置形参会丢该字段——BudgetGuard/milestone 的 noReply 通知必须保全）。 */
   private flushSessionQueue(sessionID: string): void {
-    // T2-2：暂停中不续发（suspend 在 abort 前置位；discard/resume 清位）。
-    if (this.runCoordinator?.isSuspended(sessionID)) return;
+    // T2-2：暂停中 / resume 等待回合启动时不续发（防延迟 abort 终态续命暂停）。
+    if (this.runCoordinator?.shouldHoldQueue(sessionID)) return;
     const item = shouldFlush(this.sessionQueue, this.busySessions, sessionID);
     if (!item) return;
     log.info(`[Queue] flushing ${item.id} for ${sessionID} (remaining=${this.sessionQueue.size(sessionID)})`);
@@ -3083,6 +3083,10 @@ class MafwScheduler {
       const { sessionID, message, parts, agent, model } = msg;
       if (typeof message !== 'string' && !Array.isArray(parts)) {
         ws.send(JSON.stringify({ type: 'ws_error', error: 'message or parts required' }));
+        return;
+      }
+      if (sessionID && this.runCoordinator?.shouldHoldQueue(sessionID)) {
+        ws.send(JSON.stringify({ type: 'ws_error', error: 'session is suspended; resume or discard the run first' }));
         return;
       }
       try {
@@ -4729,6 +4733,11 @@ class MafwScheduler {
             const body = await readBody(req);
             const { message, sessionID: existingID, parts, agent, model } = JSON.parse(body);
             if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
+            if (existingID && this.runCoordinator?.shouldHoldQueue(existingID)) {
+              res.writeHead(409);
+              res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
+              return;
+            }
 
             const firstProject = this.registeredProjects.values().next().value;
             const projectDir = firstProject?.projectDir || this.projectDir;
@@ -4782,12 +4791,19 @@ class MafwScheduler {
 
         // POST /api/mafw-commands/run — 注册表派发（内置+自定义命令，UI-driven 不进 MCP）
         if (req.url === "/api/mafw-commands/run" && req.method === "POST") {
+          const cmdBody = JSON.parse(await readBody(req));
+          const cmdSessionID = typeof cmdBody?.sessionID === 'string' ? cmdBody.sessionID : '';
+          if (cmdSessionID && this.runCoordinator?.shouldHoldQueue(cmdSessionID)) {
+            res.writeHead(409, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
+            return;
+          }
           const reply = await handleMafwCommandRun(
             {
               registry: this.getMafwCommandRegistry(),
               resolveProjectDir: () => this.registeredProjects.values().next().value?.projectDir || this.projectDir,
             },
-            JSON.parse(await readBody(req)),
+            cmdBody,
           );
           res.writeHead(reply.status, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(reply.body));
@@ -6230,17 +6246,16 @@ class MafwScheduler {
             if (agent && this.identityRegistry.get(agent)) {
               this.identityState.bind(sessionID, agent, 'turn');
             }
-            // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出）
-            this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
             // 队列交付（spec §5.3）：busy + delivery:'queue' → 入队短路响应。
-            // 终审 #4：budget 字段与 queue 组合无强制语义（guard 只护当前回合，flush 后无保护）——显式 400 拒绝。
-            if (delivery === 'queue' && (typeof maxTurns === 'number' || typeof maxCostUsd === 'number')) {
+            // 终审 #4：budget 字段与 queue/暂停入队组合无强制语义（guard 只护当前回合，flush 后无保护）——显式 400 拒绝。
+            const holdsQueue = this.runCoordinator?.shouldHoldQueue(sessionID) === true;
+            if ((delivery === 'queue' || holdsQueue) && (typeof maxTurns === 'number' || typeof maxCostUsd === 'number')) {
               res.writeHead(400);
-              res.end(JSON.stringify({ error: 'delivery:queue cannot be combined with maxTurns/maxCostUsd (budget guards the current turn only; queued send would be unbudgeted)' }));
+              res.end(JSON.stringify({ error: 'queued/suspended send cannot carry maxTurns/maxCostUsd (budget guards the current turn only)' }));
               return;
             }
             // 暂停中（T2-2）一律入队：会话已 idle，普通直发会绕过暂停。
-            if (this.runCoordinator?.isSuspended(sessionID) || (delivery === 'queue' && this.busySessions.has(sessionID))) {
+            if (holdsQueue || (delivery === 'queue' && this.busySessions.has(sessionID))) {
               try {
                 const parsedBody = body ? JSON.parse(body) : {};
                 const q = await this.enqueueQueuedPrompt({
@@ -6257,6 +6272,9 @@ class MafwScheduler {
               }
               return;
             }
+            // P0-2：per-prompt 预算（guard 须先于 promptAsync 挂载——step 事件在回合执行中流出；
+            // 放在队列短路口之后：入队/暂停分支不挂 guard）。
+            this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);
             await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema, {
               ...(delivery ? { delivery } : {}),
               ...(idempotencyKey ? { idempotencyKey } : {}),
@@ -6278,7 +6296,7 @@ class MafwScheduler {
         if (promptMatch && req.method === 'POST') {
           try {
             const sessionID = promptMatch[1];
-            if (this.runCoordinator?.isSuspended(sessionID)) {
+            if (this.runCoordinator?.shouldHoldQueue(sessionID)) {
               res.writeHead(409);
               res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
               return;

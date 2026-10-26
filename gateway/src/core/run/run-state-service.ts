@@ -108,9 +108,11 @@ export class RunStateService {
     return run;
   }
 
-  /** 恢复发送失败回滚：resumed → suspended（可再次恢复）。 */
+  /** 恢复发送失败回滚：resumed → suspended（可再次恢复）。
+   *  仅当仍处于 resumed 时生效——run 已被 discard/finish 时是 no-op（review #3）。 */
   reopen(id: string, reason?: string): RunState {
     const row = this.require(id);
+    if (row.status !== 'resumed') return toRunDto(row);
     this.deps.db.updateRunState(id, {
       status: 'suspended',
       resumed_at: null,

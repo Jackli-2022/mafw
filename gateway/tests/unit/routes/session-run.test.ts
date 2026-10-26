@@ -36,21 +36,30 @@ function deps(run: any, runtime: any = rt) {
 const runDto = { id: 'run_1', sessionID: 's1', status: 'suspended' };
 
 describe('session run routes', () => {
-  it('503 without runStateApi or coordinator', async () => {
+  it('503 without runStateApi for suspend/resume, but GET run and discard still work', async () => {
     for (const [method, url] of [
       ['POST', '/api/sessions/s1/suspend'],
       ['POST', '/api/sessions/s1/resume'],
-      ['GET', '/api/sessions/s1/run'],
-      ['POST', '/api/sessions/s1/run/discard'],
     ] as const) {
       const res = mockRes();
       const handled = await handleSessionRun(mockReq(method, {}), res, url, deps({}, { capabilities: {} }));
       expect(handled).toBe(true);
       expect(res.status).toBe(503);
     }
-    const res2 = mockRes();
-    await handleSessionRun(mockReq('POST', {}), res2, '/api/sessions/s1/suspend', deps(null));
-    expect(res2.status).toBe(503);
+
+    const get = mockRes();
+    await handleSessionRun(mockReq('GET'), get, '/api/sessions/s1/run',
+      deps({ active: () => null }, { capabilities: {} }));
+    expect(get.status).toBe(200);
+
+    const discard = mockRes();
+    await handleSessionRun(mockReq('POST', {}), discard, '/api/sessions/s1/run/discard',
+      deps({ discard: async () => ({ ...runDto, status: 'cancelled' }) }, { capabilities: {} }));
+    expect(discard.status).toBe(200);
+
+    const noRun = mockRes();
+    await handleSessionRun(mockReq('POST', {}), noRun, '/api/sessions/s1/suspend', deps(null));
+    expect(noRun.status).toBe(503);
   });
 
   it('suspend passes the optional reason and returns the run', async () => {

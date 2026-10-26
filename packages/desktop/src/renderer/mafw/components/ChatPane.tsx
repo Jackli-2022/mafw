@@ -856,7 +856,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (!sid) return
     if (props.runtimeCaps?.runStateApi !== true) { clearRun(sid); return }
     window.api.mafw.sessions.run(sid)
-      .then((r) => { if (sidProp() === sid) setRunStore(r.run) })
+      .then((r) => {
+        if (sidProp() !== sid) return
+        if (r.run) setRunStore(r.run)
+        else clearRun(sid)
+      })
       .catch(() => { /* fail-open */ })
   }))
 
@@ -2194,6 +2198,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
                 <Icon name="photo" size="small" /><span>截屏批注</span>
               </ButtonV2>
+              <Show when={sessionBusy() && props.runtimeCaps?.runStateApi === true}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void pauseSession() }}>
+                  <Icon name="stop" size="small" /><span>暂停回合</span>
+                </ButtonV2>
+              </Show>
               <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (input() === "") setInput("/"); openCommandPicker() }}>
                 <Icon name="console" size="small" /><span>命令</span><span class="mafw-more-key">/</span>
               </ButtonV2>

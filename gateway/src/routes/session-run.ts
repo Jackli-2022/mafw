@@ -50,7 +50,9 @@ export async function handleSessionRun(
 
   const rt = deps.getRuntime();
   const run = deps.run;
-  if (!rt?.capabilities?.runStateApi || !run) {
+  // GET /run 与 discard 不需要 runtime（能力热切换后仍可清理暂停）；suspend/resume 需要。
+  const needsRuntime = Boolean(suspend || resume);
+  if (!run || (needsRuntime && !rt?.capabilities?.runStateApi)) {
     json(res, 503, {
       error: `capability 'runStateApi' not available on runtime '${rt?.name ?? 'none'}'`,
     });

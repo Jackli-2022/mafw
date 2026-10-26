@@ -17,6 +17,7 @@ function harness(opts: {
   abortThrows?: boolean;
   promptThrows?: boolean;
   messagesSeq?: any[][];
+  runtimeName?: string;
 } = {}) {
   const rows = new Map<string, RunStateRow>();
   let seq = 0;
@@ -55,6 +56,7 @@ function harness(opts: {
 
   const deps: RunCoordinatorDeps = {
     runtime: () => ({
+      name: opts.runtimeName ?? 'opencode',
       capabilities: opts.capabilities ?? { runStateApi: true },
       session: {
         abort: async () => {
@@ -114,10 +116,35 @@ describe('suspend', () => {
     await expect(h.coord.suspend('s1')).rejects.toMatchObject({ status: 409 });
   });
 
+  it('rejects a concurrent second suspend (single-flight)', async () => {
+    const h = harness();
+    const first = h.coord.suspend('s1');
+    await expect(h.coord.suspend('s1')).rejects.toMatchObject({ status: 409 });
+    await first;
+  });
+
   it('409 + gate cleared when abort reports the session is idle', async () => {
     const h = harness({ abortThrows: true });
     await expect(h.coord.suspend('s1')).rejects.toMatchObject({ status: 409 });
     expect(h.coord.isSuspended('s1')).toBe(false);
+  });
+
+  it('pi requires a busy session (abort swallows idle errors)', async () => {
+    const h = harness({ runtimeName: 'pi' });
+    h.setBusy(false);
+    await expect(h.coord.suspend('s1')).rejects.toMatchObject({ status: 409 });
+    h.setBusy(true);
+    const run = await h.coord.suspend('s1');
+    expect(run.status).toBe('suspended');
+  });
+
+  it('hold queue during awaitingStart and release after turn.started', async () => {
+    const h = harness();
+    await h.coord.suspend('s1');
+    await h.coord.resume('s1');
+    expect(h.coord.shouldHoldQueue('s1')).toBe(true);
+    h.coord.onTurnStarted('s1');
+    expect(h.coord.shouldHoldQueue('s1')).toBe(false);
   });
 
   it('does not abort when there is no user anchor to resume from', async () => {

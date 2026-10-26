@@ -109,6 +109,15 @@ describe('RunStateService transitions', () => {
     expect(reopened.resumedAt).toBeUndefined();
   });
 
+  it('reopen is a no-op once the run is terminal (discard wins the race)', () => {
+    const h = harness();
+    const run = h.service.suspend(input);
+    h.service.resume(run.id);
+    h.service.discard(run.id);
+    const reopened = h.service.reopen(run.id, 'late send failure');
+    expect(reopened.status).toBe('cancelled');
+  });
+
   it('finish only applies to resumed runs and maps the outcome', () => {
     const h = harness();
     const run = h.service.suspend(input);
