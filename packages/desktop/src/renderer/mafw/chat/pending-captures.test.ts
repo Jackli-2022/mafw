@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { createPendingCaptureStore, formatCaptureBatch, type PendingCapture } from "./pending-captures"
+import { captureAttachmentName, createPendingCaptureStore, formatCaptureBatch, type PendingCapture } from "./pending-captures"
 
 const base = (over: Partial<PendingCapture> = {}): Omit<PendingCapture, "id" | "createdAt"> => ({
   sessionID: "s1",
@@ -70,5 +70,31 @@ describe("formatCaptureBatch", () => {
 
   test("空列表 → 空串", () => {
     assert.equal(formatCaptureBatch([]), "")
+  })
+
+  test("capture 附件名带 id（删除联动用）", () => {
+    assert.equal(captureAttachmentName("cap-123"), "capture-cap-123.png")
+  })
+
+  test("元素信息字段透传", () => {
+    const items: PendingCapture[] = [{
+      id: "cap-1",
+      sessionID: "s",
+      kind: "element",
+      comment: "链接要对齐",
+      dataUrl: "",
+      createdAt: 1,
+      meta: {
+        tag: "a",
+        selector: "a.nav-link",
+        text: "文档",
+        attrs: { href: "/docs", title: "文档中心" },
+        outerHTML: '<a class="nav-link" href="/docs">文档</a>',
+      },
+    }]
+    assert.equal(
+      formatCaptureBatch(items),
+      "【元素点选 1】a a.nav-link「文档」 — 链接要对齐\n  href=/docs title=文档中心",
+    )
   })
 })

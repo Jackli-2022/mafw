@@ -36,7 +36,7 @@ export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
   const topItems = (): RailItem[] => [
-    { key: "sessions", icon: "bubble-5", label: "工作", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
+    { key: "sessions", icon: "bubble-5", label: "工作 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
   ]
   const middleItems = (): RailItem[] => [
     { key: "search", icon: "magnifying-glass", label: "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },

@@ -7,18 +7,15 @@ const root = join(import.meta.dirname, "..")
 const read = (p: string) => readFileSync(join(root, p), "utf8")
 
 describe("浏览器 tab 接线（2026-10-26 工作台合并后）", () => {
-  test("浏览器是 Workbench 主区 tab（不再是 dock tab）", () => {
-    const tabs = read("src/renderer/mafw/components/dock-tab.ts")
-    expect(tabs).not.toContain('"browser"')
-    const wb = read("src/renderer/mafw/components/Workbench.tsx")
+  test("浏览器是工作台二级视图", () => {
+    const wb = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
     expect(wb).toContain("BrowserDock")
-    expect(wb).toContain("浏览器")
+    expect(read("src/renderer/mafw/workbench-views.ts")).toContain('id: "browser", label: "浏览器"')
   })
-  test("MafwShell 经 Workbench 渲染 BrowserDock", () => {
+  test("MafwShell 经 WorkbenchShell 渲染 BrowserDock", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toContain("<Workbench")
-    const wb = read("src/renderer/mafw/components/Workbench.tsx")
-    expect(wb).toContain("BrowserDock")
+    expect(shell).toContain("<WorkbenchShell")
+    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).toContain("WorkbenchCodeView")
   })
   test("BrowserDock 使用独立 partition 且无 preload/allowpopups", () => {
     const dock = read("src/renderer/mafw/components/BrowserDock.tsx")

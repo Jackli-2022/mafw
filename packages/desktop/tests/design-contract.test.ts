@@ -327,10 +327,10 @@ describe("用量指标行 v4", () => {
 })
 
 describe("IconRail CTA + UsagePill v4", () => {
-  test("新建会话在 IconRail（+ 图标，Tooltip 可达）", () => {
-    const rail = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "IconRail.tsx"), "utf8")
-    expect(rail).toContain("新建会话")
-    expect(rail).toContain("plus-small")
+  test("新建会话在左 dock 头部（+ 图标，Tooltip 可达）", () => {
+    const dock = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "LeftDock.tsx"), "utf8")
+    expect(dock).toContain("新建会话")
+    expect(dock).toContain("plus-small")
   })
   test("UsagePill 细线进度条 2px", () =>
     expect(cssBlock(".mafw-usage-pill-progress {")).toContain("height: 2px"))
@@ -640,9 +640,9 @@ describe("DiffReviewPanel 抽屉化（业界对齐：无全屏遮罩）", () => 
 
 describe("DiffReviewPanel 接线", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("MafwShell：审阅改动 toggle（再点关闭）", () => {
+  test("MafwShell：审阅改动打开 review 一级", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
-    expect(src).toContain('applyRightDock(true, "changes")')
+    expect(src).toContain('openWorkbench("review")')
   })
   test("ChatPane：composer 审阅按钮带改动计数徽标", () => {
     const src = read("src/renderer/mafw/components/ChatPane.tsx")
@@ -656,18 +656,15 @@ describe("DiffReviewPanel 接线", () => {
 
 describe("Dock changes tab（改动列表常驻入口）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("SessionRail 起 changes 入口（图标轨归位于 dock 内部）", () => {
-    expect(read("src/renderer/mafw/components/session-rail-model.ts")).toContain('id: "changes"')
-  })
-  test("MafwShell 挂载 ChangesDock 到 dock 内容区", () => {
+  test("审阅一级渲染 ChangesDock", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
     expect(src).toContain("ChangesDock")
-    expect(src).toContain('rightDockTab() === "changes"')
+    expect(src).toContain("reviewView=")
+    expect(src).toContain('openWorkbench("review")')
   })
-  test("两级视图：dock 内嵌 DiffReviewPanel（无 shell 级抽屉）", () => {
+  test("两级视图：审阅内嵌 DiffReviewPanel（无 shell 级抽屉）", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
     expect(src).not.toContain("diffPanelFor")
-    expect(src).toContain('applyRightDock(true, "changes")')
     const dock = read("src/renderer/mafw/components/ChangesDock.tsx")
     expect(dock).toContain("embedded")
     expect(dock).toContain("<DiffReviewPanel")
@@ -797,14 +794,15 @@ describe("topframe — 顶行框架", () => {
     expect(shell.indexOf("<SessionStrip", stripIdx)).toBeGreaterThan(stripIdx)
     expect(shell).not.toContain("DockTabButtons")
   })
-  test("SessionRail 七图标 + 浮层（Esc 可关）", () => {
-    const src = read("src/renderer/mafw/components/SessionRail.tsx")
-    const model = read("src/renderer/mafw/components/session-rail-model.ts")
-    for (const t of ["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background"]) {
-      expect(model).toContain(`id: "${t}"`)
+  test("B1 右工作台一级/二级结构（无第二套浮层轨）", () => {
+    const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
+    const views = read("src/renderer/mafw/workbench-views.ts")
+    for (const t of ["workbench", "execution", "review"]) expect(views).toContain(`id: "${t}"`)
+    for (const t of ["overview", "todos", "subagents", "background", "trajectory"]) {
+      expect(views).toContain(`id: "${t}"`)
     }
-    expect(src).toContain("mafw-session-float")
-    expect(src).toContain("Escape")
+    expect(shell).toContain("DropdownMenu")
+    expect(shell).not.toContain("mafw-session-float")
   })
   test("CSS：topstrip 拖拽契约", () => {
     expect(css).toMatch(/\.mafw-topstrip\s*\{[^}]*-webkit-app-region:\s*drag/)
@@ -835,16 +833,16 @@ describe("topframe — 左栏从 Rail 品牌行收为 IconRail", () => {
 
 describe("layout-toggles — workbench + session rail", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("Workbench 四件套同屏（树/编辑器/浏览器/终端）+ 顶栏 tab", () => {
-    const src = read("src/renderer/mafw/components/Workbench.tsx")
-    for (const c of ["FilesDock", "EditorDock", "BrowserDock", "TerminalDock"]) expect(src).toContain(c)
-    expect(src).toContain("mafw-wb-top")
+  test("Workbench 四件套同屏（树/编辑器/浏览器/终端）", () => {
+    const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
+    for (const c of ["FilesDock", "EditorDock", "BrowserDock"]) expect(code).toContain(c)
+    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).toContain("TerminalDock")
   })
-  test("MafwShell 不再挂 RightDock；RightDock 组件删除", () => {
+  test("MafwShell 不再挂 RightDock；SessionRail 删除", () => {
     expect(() => read("src/renderer/mafw/components/RightDock.tsx")).toThrow()
     expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("<RightDock")
-    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("<Workbench")
-    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("<SessionRail")
+    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("<WorkbenchShell")
+    expect(() => read("src/renderer/mafw/components/SessionRail.tsx")).toThrow()
   })
   test("DockTabButtons 组件删除且 MafwShell 不再引用", () => {
     expect(() => read("src/renderer/mafw/components/DockTabButtons.tsx")).toThrow()
@@ -976,7 +974,7 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     expect(dock).toContain("capture.windowRegion")
     expect(dock).not.toContain("view.capturePage")
     expect(dock).toContain('kind: "element"')
-    expect(read("src/renderer/mafw/components/Workbench.tsx")).toContain("<BrowserDock sessionID={props.sessionID}")
+    expect(read("src/renderer/mafw/components/WorkbenchCodeView.tsx")).toContain("<BrowserDock sessionID={props.sessionID}")
     expect(read("src/preload/index.ts")).toContain('ipcRenderer.invoke("mafw-capture-window-region"')
     expect(read("src/main/capture/screenshot-capture.ts")).toContain("captureWindowRegion")
   })
@@ -984,8 +982,8 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     expect(shell).toContain("is-hidden")
     expect(shell).toContain("migrateDockKeys")
-    expect(shell).toContain('placement="dock"')
-    expect(read("src/renderer/mafw/components/Workbench.tsx")).not.toContain("when={props.terminalOpen}")
+    expect(read("src/renderer/mafw/components/ExecutionView.tsx")).toContain('placement="dock"')
+    expect(read("src/renderer/mafw/components/WorkbenchShell.tsx")).not.toContain("when={props.terminalOpen}")
     expect(read("src/renderer/mafw/components/PendingCaptures.tsx")).toContain("<Index")
     expect(read("src/renderer/mafw/components/PendingCaptures.tsx")).toContain("onRemove")
     expect(read("src/renderer/mafw/components/BrowserDock.tsx")).toContain("buildPickCancelScript")
@@ -1019,9 +1017,10 @@ describe("窄 composer：更多菜单 + 断点收拢（最小宽度不裁切）"
     expect(css).toMatch(/@container \(max-width: 720px\)[\s\S]*?tooltip-v2-trigger[^\n]*:has\(\.mafw-composer-optional\)/)
     expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?tooltip-v2-trigger[^\n]*:has\(\.mafw-composer-collapse\)/)
   })
-  test("窄屏 dock overlay 只在它存在时固定覆盖（关闭后不再挡住聊天/发送键）", () => {
+  test("右工作台不再按窄屏自动 overlay（只有显式开关）", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toContain("overlay: viewportNarrow() && dockPresent()")
+    expect(shell).not.toContain("overlay: viewportNarrow() && dockPresent()")
+    expect(shell).not.toContain("rightDockOpen() && viewportNarrow()")
   })
 })
 

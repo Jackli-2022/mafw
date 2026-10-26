@@ -11,7 +11,7 @@ test("notes opens as a left-dock face, not a right rail", () => {
   const css = read("src/renderer/mafw/mafw.css")
 
   assert.match(rail, /"notes"/)
-  assert.match(rail, /label:\s*"工作"/)
+  assert.match(rail, /label:\s*"工作/)
   assert.doesNotMatch(rail, /key:\s*"new"/)
   assert.match(left, /NotesDock/)
   assert.match(left, /face === "notes"/)

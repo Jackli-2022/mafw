@@ -26,7 +26,6 @@ import { bumpGoalsRev } from "./goals-rev"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
 import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal } from "./background-store"
 import { backgroundRestAvailable, resetBackgroundCapability } from "./background-capability"
-import { countRunning } from "./background-tracker"
 import { normalizeToolPart } from "./tool-part"
 import { scanHistoryForBackground } from "./background-detect"
 import { reconcileBackgroundOnce } from "./background-reconcile"
@@ -40,14 +39,11 @@ import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
-import { Workbench } from "./components/Workbench"
-import { SessionRail } from "./components/SessionRail"
+import { WorkbenchShell } from "./components/WorkbenchShell"
+import { ExecutionView } from "./components/ExecutionView"
 import { isNarrowViewport } from "./layout-breakpoints"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
-import { NotesDock } from "./components/NotesDock"
-import { SubagentDock } from "./components/SubagentDock"
-import { BackgroundDock } from "./components/BackgroundDock"
 import { taskRows, fetchTasks, ingestTask } from "./task-store"
 import { fetchQueue, ingestQueueEvent } from "./queue-store"
 import { setRun } from "./run-store"
@@ -55,10 +51,14 @@ import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
-import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
-import { type DockTab, normalizeDockTab } from "./components/dock-tab"
 import { defaultDockOpen } from "./workbench-defaults"
+import {
+  workbenchStateFromStorage,
+  type ExecutionSection,
+  type WorkbenchSurface,
+  type WorkbenchView,
+} from "./workbench-views"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
 import { migrateDockKeys, workbenchColumns, workbenchShellHidden, formatResizePreview } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
@@ -1050,12 +1050,12 @@ export function MafwShell() {
     })
     // 子代理对账轮询（spec §4.6）：有 running 行或面板开着才跑
     const subagentTimer = setInterval(() => {
-      if ((sessionRailOpen() && rightDockTab() === "subagents") || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
+      if ((workbenchView() === "execution" && executionSection() === "subagents") || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
     }, 15_000)
     // 后台任务对账轮询（spec §5）：后台 tab 开着或 shell 行还在跑才跑；
     // REST 不可达（Gate Ruling A）时跳过，不空转打网关（reviewer Important 6）
     const backgroundTimer = setInterval(() => {
-      if (!((sessionRailOpen() && rightDockTab() === "background") || backgroundRows().some(r => r.type === "shell" && r.status === "running"))) return
+      if (!((workbenchView() === "execution" && executionSection() === "background") || backgroundRows().some(r => r.type === "shell" && r.status === "running"))) return
       void backgroundRestAvailable().then(ok => { if (ok) void reconcileBackground() })
     }, 15_000)
     // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
@@ -1470,16 +1470,17 @@ export function MafwShell() {
   )
   try { localStorage.setItem("mafw-workbench-detent", String(workbenchBoot.detent)) } catch { /* ignore */ }
   const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
-  // 会话数据面板（7 个）：图标轨浮层，默认关闭
-  const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
-    normalizeDockTab(localStorage.getItem("mafw-right-dock-tab")),
-  )
-  const [sessionRailOpen, setSessionRailOpen] = createSignal(false)
-  // 工作台主区 tab（编辑器/浏览器）
-  const storedWbTab = (() => { try { return localStorage.getItem("mafw-workbench-tab") } catch { return null } })()
-  const [workbenchTab, setWorkbenchTab] = createSignal<"editor" | "browser">(
-    storedWbTab === "browser" ? "browser" : storedWbTab === "editor" ? "editor" : workbenchBoot.workbenchTab,
-  )
+  const bootView = workbenchStateFromStorage((k) => {
+    try { return localStorage.getItem(k) } catch { return null }
+  })
+  const [workbenchView, setWorkbenchView] = createSignal<WorkbenchView>(bootView.view)
+  const [workbenchSurface, setWorkbenchSurface] = createSignal<WorkbenchSurface>(bootView.surface)
+  const [executionSection, setExecutionSection] = createSignal<ExecutionSection>(bootView.executionSection)
+  try {
+    localStorage.setItem("mafw-workbench-view", bootView.view)
+    localStorage.setItem("mafw-workbench-surface", bootView.surface)
+    localStorage.setItem("mafw-execution-section", bootView.executionSection)
+  } catch { /* ignore */ }
   const storedTerminal = (() => { try { return localStorage.getItem("mafw-workbench-terminal") } catch { return null } })()
   const [workbenchTerminalOpen, setWorkbenchTerminalOpen] = createSignal(
     storedTerminal !== null ? storedTerminal !== "0" : workbenchBoot.terminalOpen,
@@ -1532,7 +1533,7 @@ export function MafwShell() {
   })
   const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
-  const chatSplit = () => chatActive() && rightDockOpen() && !viewportNarrow()
+  const chatSplit = () => chatActive() && rightDockOpen()
   const bodyColumns = () =>
     workbenchColumns({
       leftPx: leftDockMode() === "push" ? leftDockWidth() : 0,
@@ -1540,23 +1541,34 @@ export function MafwShell() {
       split: chatSplit(),
     })
 
-  const applyRightDock = (open: boolean, tab?: DockTab) => {
+  const applyRightDock = (open: boolean) => {
     setRightDockOpen(open)
-    if (!open) setSessionRailOpen(false)
-    if (tab !== undefined) {
-      setRightDockTab(tab)
-      setSessionRailOpen(true)
-    }
-    try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch {}
-    if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
+    try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch { /* ignore */ }
   }
-  const openWorkbenchTab = (tab: "editor" | "browser") => {
-    setWorkbenchTab(tab)
+  const applyWorkbenchView = (view: WorkbenchView) => {
+    setWorkbenchView(view)
+    try { localStorage.setItem("mafw-workbench-view", view) } catch { /* ignore */ }
+  }
+  const applyWorkbenchSurface = (surface: WorkbenchSurface) => {
+    setWorkbenchSurface(surface)
+    applyWorkbenchView("workbench")
+    try { localStorage.setItem("mafw-workbench-surface", surface) } catch { /* ignore */ }
+  }
+  const applyExecutionSection = (section: ExecutionSection) => {
+    setExecutionSection(section)
+    applyWorkbenchView("execution")
+    try { localStorage.setItem("mafw-execution-section", section) } catch { /* ignore */ }
+  }
+  const openWorkbench = (view: WorkbenchView, section?: ExecutionSection) => {
+    if (section) applyExecutionSection(section)
+    else applyWorkbenchView(view)
     setRightDockOpen(true)
-    try {
-      localStorage.setItem("mafw-workbench-tab", tab)
-      localStorage.setItem("mafw-right-dock-open", "1")
-    } catch { /* ignore */ }
+    try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
+  }
+  const openWorkbenchSurface = (surface: WorkbenchSurface) => {
+    applyWorkbenchSurface(surface)
+    setRightDockOpen(true)
+    try { localStorage.setItem("mafw-right-dock-open", "1") } catch { /* ignore */ }
   }
   const toggleWorkbenchTerminal = () => {
     const next = !workbenchTerminalOpen()
@@ -1625,24 +1637,7 @@ export function MafwShell() {
     try { localStorage.setItem("mafw-tasks-placement", p) } catch { /* ignore */ }
   }
 
-  // Narrow-viewport overlay: right dock + legacy dock fallback.
-  createEffect(() => {
-    if (!(rightDockOpen() && viewportNarrow())) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") applyRightDock(false)
-    }
-    const onDown = (e: MouseEvent) => {
-      const el = dockRef()
-      if (el && el.contains(e.target as Node)) return
-      applyRightDock(false)
-    }
-    window.addEventListener("keydown", onKey)
-    document.addEventListener("mousedown", onDown)
-    onCleanup(() => {
-      window.removeEventListener("keydown", onKey)
-      document.removeEventListener("mousedown", onDown)
-    })
-  })
+  // Legacy task-dock overlay cleanup is handled in Task 8; right dock is no longer width-overlaid.
   createEffect(() => {
     if (!(tasksPlacement() === "dock" && viewportNarrow())) return
     const onKey = (e: KeyboardEvent) => {
@@ -1982,7 +1977,7 @@ export function MafwShell() {
                           parentID={store.session.find((s: any) => s.id === activeSessionId()!)?.parentID ?? null}
                           onBackToParent={() => backToParent(activeSessionId()!)}
                           onOpenSubagent={(id) => void openSubagentSession(id)}
-                          onOpenBackgroundDock={() => applyRightDock(true, "background")}
+                          onOpenBackgroundDock={() => openWorkbench("execution", "background")}
                           currentProject={currentProject()}
                           onNavigateTab={(t) => { setActiveTab(t as any); setShowConfig(false) }}
                           onToggleTheme={toggleTheme}
@@ -2000,7 +1995,7 @@ export function MafwShell() {
                           onTaskHoverLeave={scheduleTaskClose}
                           onFocus={() => { setShowConfig(false); setActiveTab("chat") }}
                           onOpenForkedSession={(forkedSid) => openSessionTab(forkedSid)}
-                          onOpenDiffReview={() => applyRightDock(true, "changes")}
+                          onOpenDiffReview={() => openWorkbench("review")}
                           worktreeEnabled={worktreeEnabled()}
                           revertUndoEnabled={revertUndoEnabled()}
                           runtimeName={rtName()}
@@ -2083,7 +2078,7 @@ export function MafwShell() {
                       started={taskMetrics(taskListSid() ?? currentSessionID()).started}
                       placement="popover"
                       onClose={() => setTaskListOpen(false)}
-                      onPin={() => { setTaskListOpen(false); applyRightDock(true, "tasks") }}
+                      onPin={() => { setTaskListOpen(false); openWorkbench("execution", "todos") }}
                     />
                   </PopoverShell>
                 </Show>
@@ -2098,7 +2093,7 @@ export function MafwShell() {
                       started={taskMetrics(currentSessionID()).started}
                       placement={viewportNarrow() ? "overlay" : "dock"}
                       onClose={() => applyTasksPlacement("bar")}
-                      onPin={() => { applyTasksPlacement("bar"); applyRightDock(true, "tasks") }}
+                      onPin={() => { applyTasksPlacement("bar"); openWorkbench("execution", "todos") }}
                     />
                   </div>
                 </Show>
@@ -2139,18 +2134,22 @@ export function MafwShell() {
             </div>
           </Show>
         </div>
-        {/* Workbench（合并四件套）+ 会话面板图标轨：宽屏第三列，窄屏 overlay */}
-        <div class="mafw-dock-slot" classList={{ overlay: viewportNarrow() && dockPresent() }} ref={setDockRef}>
+        {/* B1 右工作台：工作台/执行/审阅 + 常驻终端 */}
+        <div class="mafw-dock-slot" ref={setDockRef}>
           <Show when={dockPresent()}>
             <Show when={connDown()}><ConnBanner /></Show>
             {connDown() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
               <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden(chatActive()) }}>
-                <Workbench
+                <WorkbenchShell
                   open={dockPresent() && chatActive()}
-                  tab={workbenchTab()}
-                  onTab={openWorkbenchTab}
+                  view={workbenchView()}
+                  surface={workbenchSurface()}
+                  executionSection={executionSection()}
+                  onView={applyWorkbenchView}
+                  onSurface={applyWorkbenchSurface}
+                  onExecutionSection={applyExecutionSection}
                   sessionID={currentSessionID() || null}
                   sessionDirectory={benchRoot()}
                   diffs={mergedSessionDiffs()}
@@ -2160,7 +2159,7 @@ export function MafwShell() {
                     const root = benchRoot()
                     if (!root) return
                     requestOpenEditor(root, rel)
-                    openWorkbenchTab("editor")
+                    openWorkbenchSurface("code")
                   }}
                   onSendAnnotation={(text) => {
                     const sid = currentSessionID()
@@ -2180,51 +2179,33 @@ export function MafwShell() {
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
-                />
-                <SessionRail
-                  openTab={sessionRailOpen() ? rightDockTab() : null}
-                  onSelect={(t) => {
-                    if (sessionRailOpen() && rightDockTab() === t) { setSessionRailOpen(false); return }
-                    setRightDockTab(t)
-                    setSessionRailOpen(true)
-                    try { localStorage.setItem("mafw-right-dock-tab", t) } catch { /* ignore */ }
-                  }}
-                  onClose={() => setSessionRailOpen(false)}
-                  subagentBadge={subagentRows().filter(r => r.status === "running").length}
-                  backgroundBadge={countRunning(backgroundRows())}
-                >
-                  <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
-                    <TaskList
+                  executionView={
+                    <ExecutionView
+                      section={executionSection()}
+                      sessionID={currentSessionID() || null}
+                      sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                       todos={todos[currentSessionID()] || []}
                       hiddenTodos={hiddenTodos[currentSessionID()] || []}
-                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       tokens={taskMetrics(currentSessionID()).tokens}
                       started={taskMetrics(currentSessionID()).started}
-                      placement="dock"
-                      onClose={() => setSessionRailOpen(false)}
-                      onPin={() => setSessionRailOpen(false)}
+                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
+                      onClosePanel={() => applyRightDock(false)}
+                      onOpenSubagent={(id) => void openSubagentSession(id)}
+                      onOpenSection={applyExecutionSection}
+                      trajectoryLive={trajectoryLive()[currentSessionID()] || []}
+                      trajectoryTurnLive={trajectoryTurnLive()[currentSessionID()] || null}
+                      usage={
+                        <UsageDock
+                          sessionID={currentSessionID()}
+                          projectID={currentProject()}
+                          store={store}
+                          model={() => sessionModel(currentSessionID())}
+                          modelGroups={modelGroups}
+                        />
+                      }
                     />
-                  </div>
-                  <div style={{ display: rightDockTab() === "trajectory" ? "contents" : "none" }}>
-                    <TrajectoryDock
-                      sessionID={currentSessionID()}
-                      liveEvents={trajectoryLive()[currentSessionID()] || []}
-                      liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
-                    />
-                  </div>
-                  <div style={{ display: rightDockTab() === "usage" ? "contents" : "none" }}>
-                    <UsageDock
-                      sessionID={currentSessionID()}
-                      projectID={currentProject()}
-                      store={store}
-                      model={() => sessionModel(currentSessionID())}
-                      modelGroups={modelGroups}
-                    />
-                  </div>
-                  <div style={{ display: rightDockTab() === "notes" ? "contents" : "none" }}>
-                    <NotesDock />
-                  </div>
-                  <div style={{ display: rightDockTab() === "changes" ? "contents" : "none" }}>
+                  }
+                  reviewView={
                     <ChangesDock
                       sessionID={currentSessionID() || null}
                       diffs={mergedSessionDiffs()}
@@ -2241,21 +2222,8 @@ export function MafwShell() {
                         showToastV2({ description: "已加入批注", duration: 1600 } as any)
                       }}
                     />
-                  </div>
-                  <div style={{ display: rightDockTab() === "subagents" ? "contents" : "none" }}>
-                    <SubagentDock
-                      activeSessionId={currentSessionID() || null}
-                      onOpenSession={(id) => void openSubagentSession(id)}
-                    />
-                  </div>
-                  <div style={{ display: rightDockTab() === "background" ? "contents" : "none" }}>
-                    <BackgroundDock
-                      activeSessionId={currentSessionID() || null}
-                      sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
-                      onOpenSession={(id) => void openSubagentSession(id)}
-                    />
-                  </div>
-                </SessionRail>
+                  }
+                />
               </div>
             )}
           </Show>
