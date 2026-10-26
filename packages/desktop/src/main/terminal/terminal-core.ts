@@ -57,3 +57,21 @@ export function nextConnState(s: ConnState, ev: "attachOk" | "wsClosed" | "ptyGo
 export function encodeInput(data: string): string {
   return data
 }
+
+export type ExternalTerminal = {
+  cmd: string
+  args: string[]
+  cwd?: string
+  fallback?: { cmd: string; args: string[]; cwd?: string }
+}
+
+/** 无终端面板时打开系统终端（unavailable 态的出口）；wt 优先，缺则 cmd start。 */
+export function externalTerminalCommand(dir: string, platform: string): ExternalTerminal {
+  if (platform === "win32") {
+    return { cmd: "wt.exe", args: ["-d", dir], fallback: { cmd: "cmd.exe", args: ["/c", "start", "cmd"], cwd: dir } }
+  }
+  if (platform === "darwin") {
+    return { cmd: "open", args: ["-a", "Terminal", dir] }
+  }
+  return { cmd: "x-terminal-emulator", args: [], cwd: dir }
+}

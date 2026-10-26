@@ -13,6 +13,8 @@ import {
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
 import { installTerminalBridge } from "./terminal/terminal-bridge"
+import { externalTerminalCommand } from "./terminal/terminal-core"
+import { spawn } from "node:child_process"
 import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
 import { writeFile } from "node:fs/promises"
 import { UiPluginManager } from "./ui-plugins"
@@ -86,6 +88,25 @@ function startHealthMonitor() {
   health.start()
 }
 
+// 外部终端出口（终端面板 unavailable 时）：wt 优先，缺则 cmd start（Win）。
+function spawnDetached(cmd: string, args: string[], cwd?: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true, ...(cwd ? { cwd } : {}) })
+    child.once("error", reject)
+    child.once("spawn", () => { child.unref(); resolve() })
+  })
+}
+
+async function openExternalTerminal(directory: string): Promise<void> {
+  const plan = externalTerminalCommand(directory, process.platform)
+  try {
+    await spawnDetached(plan.cmd, plan.args, plan.cwd)
+  } catch (err) {
+    if (!plan.fallback) throw err
+    await spawnDetached(plan.fallback.cmd, plan.fallback.args, plan.fallback.cwd)
+  }
+}
+
 // ── IPC Handlers ──
 
 export function registerMafwIpcHandlers() {
@@ -94,6 +115,7 @@ export function registerMafwIpcHandlers() {
   installTerminalBridge(ipcMain, {
     gatewayBase: () => `http://127.0.0.1:${getGatewayPort() ?? 3000}`,
     log: (m) => writeLog("utility", m, {}, "warn"),
+    openExternal: openExternalTerminal,
   })
   onGatewayStateChange((state) => {
     if (state === "ready") {

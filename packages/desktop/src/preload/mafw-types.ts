@@ -244,6 +244,18 @@ export type MafwAPI = {
     remove: (id: string, directory?: string) => Promise<void>
   }
 
+  /** 内嵌终端（spec 2026-10-26）：目录级 persistent PTY，不共享给 agent。 */
+  terminal: {
+    probe: () => Promise<{ available: boolean; serveUrl?: string; reason?: string }>
+    attach: (directory: string) => Promise<{ ptyId: string }>
+    detach: (directory: string) => Promise<void>
+    input: (directory: string, data: string) => Promise<void>
+    resize: (directory: string, cols: number, rows: number) => Promise<void>
+    kill: (directory: string) => Promise<void>
+    openExternal: (directory: string) => Promise<void>
+    onEvent: (cb: (ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void) => () => void
+  }
+
   plugins: {
     list(): Promise<{ plugins: { type: 'runtime' | 'media' | 'usage' | 'ui'; name: string; file: string; status: 'enabled' | 'disabled' | 'error' | 'config-disabled'; error?: string; size: number; mtime: string; builtin?: boolean; overridden?: boolean; pluginType?: string }[] }>
     install(input: { filename: string; type?: 'runtime' | 'media' | 'usage' | 'ui'; bytes: Uint8Array; overwrite?: boolean }): Promise<any>

@@ -27,6 +27,14 @@ export function createMafwApi(): MafwAPI {
     for (const cb of healthCallbacks) cb(health)
   }
 
+  // 终端事件（spec 2026-10-26）：同样单监听器多播，防 HMR remount 堆监听器。
+  ipcRenderer.removeAllListeners("mafw-terminal-event")
+  const terminalCallbacks = new Set<(ev: { directory: string; type: 'data' | 'closed' | 'gone'; data?: string }) => void>()
+  let terminalChannelActive = false
+  const terminalRelay = (_event: any, ev: any) => {
+    for (const cb of terminalCallbacks) cb(ev)
+  }
+
   return {
     notify: (opts: { title: string; body: string }) => ipcRenderer.invoke("mafw-notify", opts) as Promise<boolean>,
 
@@ -298,6 +306,30 @@ export function createMafwApi(): MafwAPI {
         const handler = () => cb()
         ipcRenderer.on("mafw-ui-plugins-changed", handler)
         return () => ipcRenderer.removeListener("mafw-ui-plugins-changed", handler)
+      },
+    },
+
+    terminal: {
+      probe: () => ipcRenderer.invoke("mafw-terminal-probe") as Promise<{ available: boolean; serveUrl?: string; reason?: string }>,
+      attach: (directory: string) => ipcRenderer.invoke("mafw-terminal-attach", { directory }) as Promise<{ ptyId: string }>,
+      detach: (directory: string) => ipcRenderer.invoke("mafw-terminal-detach", { directory }) as Promise<void>,
+      input: (directory: string, data: string) => ipcRenderer.invoke("mafw-terminal-input", { directory, data }) as Promise<void>,
+      resize: (directory: string, cols: number, rows: number) => ipcRenderer.invoke("mafw-terminal-resize", { directory, cols, rows }) as Promise<void>,
+      kill: (directory: string) => ipcRenderer.invoke("mafw-terminal-kill", { directory }) as Promise<void>,
+      openExternal: (directory: string) => ipcRenderer.invoke("mafw-terminal-open-external", { directory }) as Promise<void>,
+      onEvent: (cb) => {
+        terminalCallbacks.add(cb)
+        if (!terminalChannelActive) {
+          ipcRenderer.on("mafw-terminal-event", terminalRelay)
+          terminalChannelActive = true
+        }
+        return () => {
+          terminalCallbacks.delete(cb)
+          if (terminalCallbacks.size === 0 && terminalChannelActive) {
+            ipcRenderer.removeListener("mafw-terminal-event", terminalRelay)
+            terminalChannelActive = false
+          }
+        }
       },
     },
 

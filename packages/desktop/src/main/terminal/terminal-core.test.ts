@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { unwrapData, pickActivePty, parseMetaFrame, nextConnState, encodeInput } from "./terminal-core"
+import { unwrapData, pickActivePty, parseMetaFrame, nextConnState, encodeInput, externalTerminalCommand } from "./terminal-core"
 
 describe("terminal-core", () => {
   test("unwrapData 解 {location,data} 信封，裸对象原样", () => {
@@ -29,5 +29,21 @@ describe("terminal-core", () => {
   })
   test("encodeInput 恒等透传（\\r 不改 \\n）", () => {
     assert.equal(encodeInput("echo hi\r"), "echo hi\r")
+  })
+  test("externalTerminalCommand：win32 优先 wt，回退 cmd start；darwin open -a Terminal；linux x-terminal-emulator", () => {
+    const win = externalTerminalCommand("C:\\p", "win32")
+    assert.equal(win.cmd, "wt.exe")
+    assert.deepEqual(win.args, ["-d", "C:\\p"])
+    assert.equal(win.fallback?.cmd, "cmd.exe")
+    assert.deepEqual(win.fallback?.args, ["/c", "start", "cmd"])
+    assert.equal(win.fallback?.cwd, "C:\\p")
+
+    const mac = externalTerminalCommand("/Users/x/p", "darwin")
+    assert.equal(mac.cmd, "open")
+    assert.deepEqual(mac.args, ["-a", "Terminal", "/Users/x/p"])
+
+    const linux = externalTerminalCommand("/home/x/p", "linux")
+    assert.equal(linux.cmd, "x-terminal-emulator")
+    assert.equal(linux.cwd, "/home/x/p")
   })
 })
