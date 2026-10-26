@@ -133,6 +133,7 @@ import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { SessionConfigService, SessionConfigError } from './core/session-config';
 import { CheckpointService } from './core/checkpoint/checkpoint-service';
+import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
@@ -1318,6 +1319,13 @@ class MafwScheduler {
     }
     // Turn-level identity binding cleanup: a user-picked identity lasts one turn.
     if (type === MAFW.turnCompleted && sessionID) this.identityState.clearTurnBindings(sessionID);
+    // T2-1：自动检查点（fail-open；门控在 runAutoCheckpoint 内——内部会话/隐藏会话/
+    // 非 checkpointApi runtime 全跳过）。挂在 memoryWorker 早退之前，role 门兜底。
+    if (type === MAFW.turnCompleted && sessionID) {
+      void this.recordAutoCheckpoint(sessionID).catch((err: any) => {
+        log.warn(`[Checkpoint] auto record failed for ${sessionID} (non-fatal): ${err?.message ?? err}`);
+      });
+    }
     // P0-2：per-prompt 预算 guard 回合终态清理（三终态；防上次预算泄漏到
     // 后续无预算 prompt。goal guard 不在此列——其生命周期是整个 goal）。
     if ((type === MAFW.turnCompleted || type === MAFW.turnFailed || type === MAFW.turnAborted) && sessionID) {
@@ -3278,10 +3286,7 @@ class MafwScheduler {
         },
       },
       git: defaultGit,
-      porcelainOf: async (dir) => {
-        const r = await defaultGit.run(['-C', dir, 'status', '--porcelain']);
-        return r.code === 0 ? r.stdout : '';
-      },
+      porcelainOf: (dir) => this.checkpointPorcelainOf(dir),
       broadcast: (e) => this.broadcast(e),
       now: () => new Date().toISOString(),
       newId: () => `ckpt_${randomUUID()}`,
@@ -8147,6 +8152,26 @@ ${observations.map((o, i) => `[${i + 1}] ${o}`).join('\n')}`;
   }
 
   private customCommandWatcherDispose: (() => void) | null = null;
+
+  // ── T2-1 checkpoints ──────────────────────────────────────────────────
+
+  /** `git status --porcelain`（checkpoint 的 untracked 快照单一来源；失败返回 ''）。 */
+  private async checkpointPorcelainOf(dir: string): Promise<string> {
+    const r = await defaultGit.run(['-C', dir, 'status', '--porcelain']);
+    return r.code === 0 ? r.stdout : '';
+  }
+
+  /** turn.completed → 自动检查点（门控与失败语义见 core/checkpoint/auto-hook.ts）。 */
+  private async recordAutoCheckpoint(sessionID: string): Promise<void> {
+    if (!this.checkpointService) return;
+    await runAutoCheckpoint({
+      runtime: () => this.runtime,
+      internalRoleOf: (sid) => this.internalSessionRoles.get(sid),
+      isHidden: (info, roleFor) => isHiddenSession(info, roleFor),
+      porcelainOf: (dir) => this.checkpointPorcelainOf(dir),
+      create: (input) => this.checkpointService.create(input),
+    }, sessionID);
+  }
 
   // One-off side-question session (user-driven /btw command): create → prompt
   // once → discard. Internal role keeps its output out of T1.

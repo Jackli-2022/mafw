@@ -9,6 +9,7 @@ const WAVE1_OPIDS = [
   'tasks.submit', 'tasks.list', 'tasks.get', 'tasks.cancel', 'tasks.message', 'tasks.output',
   'session.config', 'session.config.set',
   'session.diff', 'session.revertDiff',
+  'session.checkpoint', 'session.checkpoints', 'session.restoreCheckpoint',
   'event.publish', 'media.switch',
   'session.usagePluginsList', 'session.usagePluginsReload', 'session.usagePluginsCreate',
   'session.usagePluginSourceGet', 'session.usagePluginSourcePut', 'session.usagePluginTest', 'session.usagePluginsDelete',
@@ -39,7 +40,7 @@ function buildAttached(gw?: Partial<Wave1Gateway>) {
 }
 
 describe('wave1-handlers: 迁移覆盖率', () => {
-  it('22 条 Wave 1 路由全部 attach', () => {
+  it('Wave 1 路由全部 attach', () => {
     const attached = buildAttached().attachedOperationIds();
     expect(attached.size).toBe(WAVE1_OPIDS.length);
     for (const id of WAVE1_OPIDS) expect(attached.has(id)).toBe(true);
