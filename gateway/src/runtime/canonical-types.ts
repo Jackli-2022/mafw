@@ -42,6 +42,10 @@ export interface MafwPartBase {
   id: string;
   sessionID?: string;
   messageID?: string;
+  /** Runtime/provider opaque signature (reasoning/thinking continuity). */
+  signature?: string;
+  /** Runtime-native opaque payload, passed through for future signatures. */
+  native?: Record<string, unknown>;
 }
 
 export type MafwPart =
