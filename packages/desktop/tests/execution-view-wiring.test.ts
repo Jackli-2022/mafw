@@ -11,5 +11,6 @@ test("execution view reuses all existing panels and has no run controls", () => 
   assert.match(src, /BackgroundDock/)
   assert.match(src, /TrajectoryDock/)
   assert.match(src, /summarizeExecution/)
+  assert.match(src, /todos: props\.todos/)
   assert.doesNotMatch(src, /resumeRun|suspendRun|discardRun|pauseRun/)
 })

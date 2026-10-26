@@ -79,7 +79,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             when={props.view === "workbench"}
             fallback={
               <DropdownMenu>
-                <DropdownMenu.Trigger as="div" class="mafw-rw-exec-trigger">
+                <DropdownMenu.Trigger as={ButtonV2} variant="ghost" size="small" class="mafw-rw-exec-trigger">
                   <span>{executionSectionLabel(props.executionSection)}</span>
                   <Icon name="chevron-down" size="small" />
                 </DropdownMenu.Trigger>

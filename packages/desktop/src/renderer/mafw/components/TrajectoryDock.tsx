@@ -1,6 +1,6 @@
 ﻿// @ts-nocheck
 import { createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 
@@ -52,28 +52,35 @@ export function TrajectoryDock(props: {
 
   let loadedFor = ""
 
-  const load = async (rebuild?: boolean) => {
-    if (!props.sessionID) return
+  const load = async (rebuild?: boolean, requestedSid = props.sessionID) => {
+    const sid = requestedSid
+    if (!sid) return
     setLoading(true)
     try {
-      const r = await window.api.mafw.sessions.trajectory(props.sessionID, { limit: 50, rebuild })
+      const r = await window.api.mafw.sessions.trajectory(sid, { limit: 50, rebuild })
+      if (props.sessionID !== sid) return
       setApiEvents(r.events || [])
       setApiTurns(r.turns || [])
       setError(null)
     } catch (e: any) {
-      setError(e?.message || "\u52a0\u8f7d\u5931\u8d25")
+      if (props.sessionID === sid) setError(e?.message || "\u52a0\u8f7d\u5931\u8d25")
     } finally {
-      setLoading(false)
+      if (props.sessionID === sid) setLoading(false)
     }
   }
 
   createEffect(() => {
     const sid = props.sessionID
-    if (!sid) return
-    if (loadedFor !== sid) {
-      loadedFor = sid
-      void load()
+    setApiEvents([])
+    setApiTurns([])
+    setError(null)
+    setExpanded(reconcile({}))
+    if (!sid) {
+      loadedFor = ""
+      return
     }
+    loadedFor = sid
+    void load(false, sid)
   })
 
   const displayedEvents = createMemo(() => {

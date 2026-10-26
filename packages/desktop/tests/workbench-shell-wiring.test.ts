@@ -16,9 +16,11 @@ test("right workbench owns L1/L2 and a persistent terminal", () => {
   assert.match(shell, /reviewView/)
   assert.match(shell, /role="tablist"/)
   assert.match(shell, /role="tab"/)
+  assert.match(shell, /DropdownMenu\.Trigger as=\{ButtonV2\}/)
   assert.doesNotMatch(shell, /SessionRail/)
 
   assert.match(code, /FilesDock/)
+  assert.match(code, /setFilesOpen\(false\)/)
   assert.match(code, /EditorDock/)
   assert.match(code, /BrowserDock/)
   assert.match(code, /mafw-rw-files-toggle/)

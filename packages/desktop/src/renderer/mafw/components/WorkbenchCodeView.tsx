@@ -21,6 +21,10 @@ export function WorkbenchCodeView(props: {
   onSendComment?: (sid: string, text: string) => void
 }) {
   const [filesOpen, setFilesOpen] = createSignal(false)
+  const openFile = (rel: string) => {
+    setFilesOpen(false)
+    props.onOpenFile(rel)
+  }
 
   return (
     <div class="mafw-rw-code" classList={{ "files-open": filesOpen() }}>
@@ -38,7 +42,7 @@ export function WorkbenchCodeView(props: {
           </ButtonV2>
         </TooltipV2>
         <div class="mafw-rw-files">
-          <FilesDock sessionDirectory={props.sessionDirectory} onOpenFile={props.onOpenFile} />
+          <FilesDock sessionDirectory={props.sessionDirectory} onOpenFile={openFile} />
         </div>
       </Show>
       <div class="mafw-rw-code-main">

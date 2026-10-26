@@ -39,12 +39,17 @@ export function ExecutionView(props: ExecutionViewProps) {
     taskRows().filter((t) => !props.sessionID || t.parentSessionID === props.sessionID),
   )
   const summary = createMemo(() =>
-    summarizeExecution({ subagents: subagents(), background: background(), tasks: tasks() }),
+    summarizeExecution({
+      subagents: subagents(),
+      background: background(),
+      todos: props.todos,
+      tasks: tasks(),
+    }),
   )
 
   return (
     <div class="mafw-rw-execution">
-      <div class="mafw-rw-exec-section" style={{ display: props.section === "overview" ? "contents" : "none" }}>
+      <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "overview" }}>
         <div class="mafw-rw-overview">
           <div class="mafw-rw-overview-head">
             <span class="mafw-rw-overview-title">当前 run</span>
@@ -72,8 +77,8 @@ export function ExecutionView(props: ExecutionViewProps) {
           <Show when={summary().waitingForInput > 0}>
             <div class="mafw-rw-overview-attention">
               <Icon name="status" size="small" />
-              <span>{summary().waitingForInput} 个任务等待输入</span>
-              <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenSection("todos")}>查看</ButtonV2>
+              <span>{summary().waitingForInput} 个后台任务等待输入</span>
+              <ButtonV2 variant="ghost" size="small" onClick={() => props.onOpenSection("background")}>查看</ButtonV2>
             </div>
           </Show>
 
@@ -93,7 +98,7 @@ export function ExecutionView(props: ExecutionViewProps) {
         </div>
       </div>
 
-      <div class="mafw-rw-exec-section" style={{ display: props.section === "todos" ? "contents" : "none" }}>
+      <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "todos" }}>
         <TaskList
           todos={props.todos}
           hiddenTodos={props.hiddenTodos}
@@ -106,11 +111,11 @@ export function ExecutionView(props: ExecutionViewProps) {
         />
       </div>
 
-      <div class="mafw-rw-exec-section" style={{ display: props.section === "subagents" ? "contents" : "none" }}>
+      <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "subagents" }}>
         <SubagentDock activeSessionId={props.sessionID} onOpenSession={props.onOpenSubagent} />
       </div>
 
-      <div class="mafw-rw-exec-section" style={{ display: props.section === "background" ? "contents" : "none" }}>
+      <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "background" }}>
         <BackgroundDock
           activeSessionId={props.sessionID}
           sessionDirectory={props.sessionDirectory}
@@ -118,7 +123,7 @@ export function ExecutionView(props: ExecutionViewProps) {
         />
       </div>
 
-      <div class="mafw-rw-exec-section" style={{ display: props.section === "trajectory" ? "contents" : "none" }}>
+      <div class="mafw-rw-exec-section" classList={{ "is-active": props.section === "trajectory" }}>
         <TrajectoryDock
           sessionID={props.sessionID ?? ""}
           liveEvents={props.trajectoryLive}

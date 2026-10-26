@@ -38,6 +38,7 @@ describe("workbench-views", () => {
       ["background", "execution", "background"],
       ["changes", "review", "overview"],
       ["usage", "execution", "overview"],
+      ["quota", "execution", "overview"],
       ["notes", "workbench", "overview"],
     ]
     for (const [legacy, view, executionSection] of cases) {

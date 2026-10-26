@@ -25,7 +25,6 @@ export function formatResizePreview(px: number, availableWidth: number): string 
 
 export type MigratedWorkbench = {
   detent: WorkbenchDetent
-  workbenchTab: "editor" | "browser"
   terminalOpen: boolean
 }
 
@@ -40,12 +39,11 @@ export function migrateDockKeys(
     ? normalizeDetent(storedDetent)
     : detentFromLegacy(read("mafw-chat-width"), availableWidth)
 
-  const legacyTab = read("mafw-right-dock-tab")
-  const workbenchTab: "editor" | "browser" = legacyTab === "browser" ? "browser" : "editor"
-  const terminalOpen = legacyTab === "terminal"
+  // 终端默认展开；显式关闭由 mafw-workbench-terminal 覆盖。
+  const terminalOpen = true
 
   for (const key of ["mafw-chat-width", "mafw-right-dock-width", "mafw-right-dock-widths"]) {
     remove(key)
   }
-  return { detent, workbenchTab, terminalOpen }
+  return { detent, terminalOpen }
 }

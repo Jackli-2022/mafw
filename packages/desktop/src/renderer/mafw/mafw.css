@@ -2857,7 +2857,8 @@ html[data-theme="light"] body {
 .mafw-rw-terminal { height: 280px; max-height: 45%; flex: none; min-height: 0; border-top: 1px solid var(--border); }
 .mafw-rw-terminal.is-collapsed { display: none; }
 .mafw-rw-execution { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.mafw-rw-exec-section { min-height: 0; flex: 1; }
+.mafw-rw-exec-section { display: none; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; }
+.mafw-rw-exec-section.is-active { display: flex; }
 .mafw-rw-overview { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .mafw-rw-overview-head { display: flex; align-items: baseline; gap: 8px; }
 .mafw-rw-overview-title { font-size: 13px; font-weight: 650; color: var(--text-1); }
@@ -4151,7 +4152,7 @@ html[data-theme="light"] body {
 .mafw-notes-dock-empty-hint { font-size: 10px; }
 
 /* ── Subagent dock（子代理面板，spec 2026-10-21 §4.4） ── */
-.mafw-subagent-dock { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+.mafw-subagent-dock { display: flex; flex-direction: column; gap: 6px; padding: 10px; min-height: 0; overflow-y: auto; }
 .mafw-subagent-dock-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
 .mafw-subagent-dock-empty {
   display: flex;
@@ -4235,7 +4236,7 @@ html[data-theme="light"] body {
 .mafw-bg-bar-blocking { cursor: default; }
 .mafw-bg-bar-flash { border-color: transparent; background: transparent; cursor: default; }
 .mafw-bg-bar-flash .mafw-bg-bar-label { color: var(--accent-success, var(--text-2)); }
-.mafw-bg-dock { display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+.mafw-bg-dock { display: flex; flex-direction: column; gap: 6px; padding: 10px; min-height: 0; overflow-y: auto; }
 .mafw-bg-dock-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
 .mafw-bg-dock-rest-hint { font-size: 10px; color: var(--text-4); line-height: 1.5; }
 .mafw-bg-bar-rest-hint { font-size: 10px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

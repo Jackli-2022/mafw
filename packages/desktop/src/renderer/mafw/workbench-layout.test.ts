@@ -17,7 +17,7 @@ describe("workbench layout pure functions", () => {
     assert.equal(detentFromLegacy("abc", 1394), 640)
   })
 
-  test("migrateDockKeys：一次性迁移（新键优先 / 旧 tab 映射 / 旧键删除）", () => {
+  test("migrateDockKeys：一次性迁移（新键优先 / 旧键删除 / 终端默认开）", () => {
     const m = new Map<string, string>([
       ["mafw-chat-width", "558"],
       ["mafw-right-dock-width", "520"],
@@ -25,27 +25,23 @@ describe("workbench layout pure functions", () => {
       ["mafw-right-dock-tab", "browser"],
     ])
     const out = migrateDockKeys((k) => m.get(k) ?? null, (k) => m.delete(k), 1394)
-    assert.deepEqual(out, { detent: 520, workbenchTab: "browser", terminalOpen: false })
+    assert.deepEqual(out, { detent: 520, terminalOpen: true })
     assert.equal(m.has("mafw-chat-width"), false)
     assert.equal(m.has("mafw-right-dock-width"), false)
     assert.equal(m.has("mafw-right-dock-widths"), false)
 
-    // 新键已存在 → 不覆盖；旧 editor/files/terminal 映射
     const m2 = new Map<string, string>([
       ["mafw-workbench-detent", "640"],
       ["mafw-right-dock-tab", "terminal"],
     ])
     const out2 = migrateDockKeys((k) => m2.get(k) ?? null, (k) => m2.delete(k), 1394)
-    assert.deepEqual(out2, { detent: 640, workbenchTab: "editor", terminalOpen: true })
+    assert.deepEqual(out2, { detent: 640, terminalOpen: true })
 
-    // 旧 files → editor
-    const m3 = new Map<string, string>([["mafw-right-dock-tab", "files"]])
-    assert.equal(migrateDockKeys((k) => m3.get(k) ?? null, (k) => m3.delete(k), 1394).workbenchTab, "editor")
-
-    // 旧 420 档（新键已存在）→ 新默认 640；无任何存储 → 640
+    // 旧 420 档（新键已存在）→ 新默认 640；无任何存储 → 640 / 终端开
     const m4 = new Map<string, string>([["mafw-workbench-detent", "420"]])
     assert.equal(migrateDockKeys((k) => m4.get(k) ?? null, (k) => m4.delete(k), 1394).detent, 640)
-    assert.equal(migrateDockKeys(() => null, () => {}, 1394).detent, 640)
+    const fresh = migrateDockKeys(() => null, () => {}, 1394)
+    assert.deepEqual(fresh, { detent: 640, terminalOpen: true })
   })
 
   test("workbenchShellHidden：非 chat 视图隐藏（窄屏 overlay 不得盖住其他页）", () => {

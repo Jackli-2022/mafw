@@ -68,6 +68,7 @@ const LEGACY_TABS: Record<string, LegacyTab> = {
   background: { view: "execution", executionSection: "background" },
   changes: { view: "review", executionSection: "overview" },
   usage: { view: "execution", executionSection: "overview" },
+  quota: { view: "execution", executionSection: "overview" },
   notes: { view: "workbench", executionSection: "overview" },
   // pre-merge workbench tabs
   files: { view: "workbench", executionSection: "overview", surface: "code" },
