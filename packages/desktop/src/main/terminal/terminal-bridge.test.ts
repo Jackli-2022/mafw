@@ -212,9 +212,10 @@ describe("terminal-bridge install layer（订阅生命周期）", () => {
     const handlers: Record<string, (...a: any[]) => any> = {}
     const ipcMain = { handle: (ch: string, fn: any) => { handlers[ch] = fn } }
     const sent: any[] = []
-    const sender = { id: 7, isDestroyed: () => false, send: (_ch: string, payload: any) => sent.push(payload), once: () => {} }
+    let onceCalls = 0
+    const sender = { id: 7, isDestroyed: () => false, send: (_ch: string, payload: any) => sent.push(payload), once: () => { onceCalls++ } }
     installTerminalBridge(ipcMain, { gatewayBase: () => GW, fetchImpl: f.impl, wsFactory: w.factory })
-    return { handlers, sender, sent, w, f }
+    return { handlers, sender, sent, w, f, onceCalls: () => onceCalls }
   }
 
   test("同窗口重复 attach 只注册一个订阅者（Critical-2 install 层）", async () => {
@@ -231,5 +232,13 @@ describe("terminal-bridge install layer（订阅生命周期）", () => {
     handlers["mafw-terminal-detach"]({ sender }, { directory: D })
     w.sockets[0].onmessage({ data: "x" })
     assert.equal(sent.filter((p) => p.type === "data").length, 0)
+  })
+
+  test("同一 webContents 只挂一个 destroyed 清理钩（HMR/多目录不泄漏监听器）", async () => {
+    const { handlers, sender, onceCalls } = installWith(baseRoutes({ data: [{ id: "p1", status: "running" }] }))
+    await handlers["mafw-terminal-attach"]({ sender }, { directory: D })
+    await handlers["mafw-terminal-attach"]({ sender }, { directory: D })
+    await handlers["mafw-terminal-attach"]({ sender }, { directory: "C:\\work\\other" })
+    assert.equal(onceCalls(), 1)
   })
 })

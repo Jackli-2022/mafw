@@ -253,6 +253,8 @@ export function installTerminalBridge(ipcMain: any, deps: TerminalBridgeInstallD
   // 每个窗口每目录一个订阅者（key = sender.id）：重挂载替换而非追加，
   // 窗口销毁时释放。PTY 属于目录，不随窗口死。
   const bySender = new Map<number, Map<string, TerminalSubscriber>>()
+  // 每个 webContents 只挂一次 destroyed 清理钩（HMR/多目录 attach 不累积监听器）
+  const destroyHooked = new Set<number>()
 
   const subFor = (sender: any, directory: string): TerminalSubscriber => {
     const m = bySender.get(sender.id) ?? new Map<string, TerminalSubscriber>()
@@ -263,13 +265,17 @@ export function installTerminalBridge(ipcMain: any, deps: TerminalBridgeInstallD
       try { if (!sender.isDestroyed?.()) sender.send("mafw-terminal-event", ev) } catch { /* window gone */ }
     }
     m.set(directory, sub)
-    try {
-      sender.once?.("destroyed", () => {
-        const dirs = bySender.get(sender.id)
-        bySender.delete(sender.id)
-        if (dirs) for (const dir of dirs.keys()) ops.detach(dir, String(sender.id))
-      })
-    } catch { /* fake sender */ }
+    if (!destroyHooked.has(sender.id)) {
+      destroyHooked.add(sender.id)
+      try {
+        sender.once?.("destroyed", () => {
+          destroyHooked.delete(sender.id)
+          const dirs = bySender.get(sender.id)
+          bySender.delete(sender.id)
+          if (dirs) for (const dir of dirs.keys()) ops.detach(dir, String(sender.id))
+        })
+      } catch { /* fake sender */ }
+    }
     return sub
   }
 
