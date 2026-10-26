@@ -1015,5 +1015,12 @@ describe("窄 composer：更多菜单 + 断点收拢（最小宽度不裁切）"
     expect(css).toMatch(/@container \(max-width: 520px\)[\s\S]*?\.mafw-composer-agent-pill \{ display: none/)
     expect(css).toMatch(/@container \(max-width: 420px\)[\s\S]*?\.mafw-composer-model-pill \{ display: none/)
     expect(cssBlock(".mafw-composer-more-menu {")).toContain("position: absolute")
+    // 菜单挂在 composer 上而不是 overflow:hidden 的左组里；Tooltip 包装层按子按钮状态整层隐藏（不吃 gap）
+    expect(css).toMatch(/@container \(max-width: 720px\)[\s\S]*?tooltip-v2-trigger[^\n]*:has\(\.mafw-composer-optional\)/)
+    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?tooltip-v2-trigger[^\n]*:has\(\.mafw-composer-collapse\)/)
+  })
+  test("窄屏 dock overlay 只在它存在时固定覆盖（关闭后不再挡住聊天/发送键）", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toContain("overlay: viewportNarrow() && dockPresent()")
   })
 })

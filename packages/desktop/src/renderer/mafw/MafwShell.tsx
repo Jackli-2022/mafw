@@ -2132,7 +2132,7 @@ export function MafwShell() {
           </Show>
         </div>
         {/* Workbench（合并四件套）+ 会话面板图标轨：宽屏第三列，窄屏 overlay */}
-        <div class="mafw-dock-slot" classList={{ overlay: viewportNarrow() }} ref={setDockRef}>
+        <div class="mafw-dock-slot" classList={{ overlay: viewportNarrow() && dockPresent() }} ref={setDockRef}>
           <Show when={dockPresent()}>
             <Show when={connDown()}><ConnBanner /></Show>
             {connDown() ? (

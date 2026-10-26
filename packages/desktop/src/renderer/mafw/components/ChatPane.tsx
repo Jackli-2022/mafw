@@ -1947,43 +1947,6 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <IconV2 name="outline-dots" size="small" />
                 </ButtonV2>
               </TooltipV2>
-              <Show when={moreOpen()}>
-                <div class="mafw-composer-more-menu" ref={(el) => { moreMenuEl = el }} role="menu">
-                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
-                    <Icon name="photo" size="small" /><span>截屏批注</span>
-                  </ButtonV2>
-                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (input() === "") setInput("/"); openCommandPicker() }}>
-                    <Icon name="console" size="small" /><span>命令</span><span class="mafw-more-key">/</span>
-                  </ButtonV2>
-                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}>
-                    <Icon name="subagent" size="small" /><span>引用 Agent</span><span class="mafw-more-key">@</span>
-                  </ButtonV2>
-                  <Show when={props.onOpenDiffReview}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); props.onOpenDiffReview?.() }}>
-                      <Icon name="review" size="small" /><span>审阅改动{diffCount() > 0 ? ` (${diffCount()})` : ""}</span>
-                    </ButtonV2>
-                  </Show>
-                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
-                    <Icon name="volume" size="small" /><span>语音播报</span>
-                  </ButtonV2>
-                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => {
-                    setMoreOpen(false)
-                    if (voiceRecording()) { voiceSession.stopRecording(); return }
-                    stopActivePlayback()
-                    void voiceSession.startRecording()
-                  }}>
-                    <Icon name={voiceRecording() ? "stop" : "microphone"} size="small" /><span>{voiceRecording() ? "停止录音" : "语音输入"}</span>
-                  </ButtonV2>
-                  <Show when={(props.primaryAgents() || []).length > 0 || isManager()}>
-                    <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-switch"); refreshSubagents() }}>
-                      <Icon name="task" size="small" /><span>切换 Agent</span>
-                    </ButtonV2>
-                  </Show>
-                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("model") }}>
-                    <Icon name="models" size="small" /><span>切换模型</span>
-                  </ButtonV2>
-                </div>
-              </Show>
               <TooltipV2 value="截屏批注" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-optional" aria-label="截屏批注" onClick={() => void captureScreen()}>
                   <Icon name="photo" size="small" />
@@ -2155,6 +2118,43 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
               </Show>
             </div>
           </div>
+          <Show when={moreOpen()}>
+            <div class="mafw-composer-more-menu" ref={(el) => { moreMenuEl = el }} role="menu">
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
+                <Icon name="photo" size="small" /><span>截屏批注</span>
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (input() === "") setInput("/"); openCommandPicker() }}>
+                <Icon name="console" size="small" /><span>命令</span><span class="mafw-more-key">/</span>
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}>
+                <Icon name="subagent" size="small" /><span>引用 Agent</span><span class="mafw-more-key">@</span>
+              </ButtonV2>
+              <Show when={props.onOpenDiffReview}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); props.onOpenDiffReview?.() }}>
+                  <Icon name="review" size="small" /><span>审阅改动{diffCount() > 0 ? ` (${diffCount()})` : ""}</span>
+                </ButtonV2>
+              </Show>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
+                <Icon name="volume" size="small" /><span>语音播报</span>
+              </ButtonV2>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => {
+                setMoreOpen(false)
+                if (voiceRecording()) { voiceSession.stopRecording(); return }
+                stopActivePlayback()
+                void voiceSession.startRecording()
+              }}>
+                <Icon name={voiceRecording() ? "stop" : "microphone"} size="small" /><span>{voiceRecording() ? "停止录音" : "语音输入"}</span>
+              </ButtonV2>
+              <Show when={(props.primaryAgents() || []).length > 0 || isManager()}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-switch"); refreshSubagents() }}>
+                  <Icon name="task" size="small" /><span>切换 Agent</span>
+                </ButtonV2>
+              </Show>
+              <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("model") }}>
+                <Icon name="models" size="small" /><span>切换模型</span>
+              </ButtonV2>
+            </div>
+          </Show>
         </div>
         <Show when={shot()}>
         <ScreenshotCropper shot={shot()!} onCancel={() => setShot(null)} onConfirm={confirmShot} />
