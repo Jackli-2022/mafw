@@ -251,7 +251,9 @@ function defaultSnapshotRoot(): string {
   return path.join(os.homedir(), '.local', 'share', 'opencode', 'snapshot');
 }
 
-const defaultGit: GitRunner = {
+export { defaultSnapshotRoot };
+
+export const defaultGit: GitRunner = {
   run(args, opts) {
     return new Promise((resolve, reject) => {
       execFile(
