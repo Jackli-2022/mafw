@@ -7,6 +7,7 @@ import {
   structuredInstruction,
   type OutputSchemaSpec,
 } from '../runtime/structured-output';
+import type { ThinkingLevel } from '../runtime/contract';
 
 export interface SessionRecord {
   id: string;
@@ -33,8 +34,8 @@ export class SdkSessionResource {
   private client: any;
   private sessions: Map<string, SessionRecord> = new Map();
   private sessionsDir: string;
-  public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }, outputSchema?: OutputSchemaSpec, opts?: { delivery?: 'steer' | 'followup' | 'queue'; idempotencyKey?: string; expectReply?: boolean }) => Promise<void>;
-  public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string, outputSchema?: OutputSchemaSpec) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }>; structured?: unknown; structuredError?: string }>;
+  public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }, outputSchema?: OutputSchemaSpec, opts?: { delivery?: 'steer' | 'followup' | 'queue'; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: ThinkingLevel; variant?: string }) => Promise<void>;
+  public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string, outputSchema?: OutputSchemaSpec, opts?: { thinkingLevel?: ThinkingLevel; variant?: string }) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }>; structured?: unknown; structuredError?: string }>;
 
   constructor(client?: any, mafwDir?: string) {
     this.client = client;
@@ -139,7 +140,7 @@ export class SdkSessionResource {
     agent?: string,
     model?: { providerID: string; modelID: string },
     outputSchema?: OutputSchemaSpec,
-    opts?: { delivery?: 'steer' | 'followup' | 'queue'; idempotencyKey?: string; expectReply?: boolean },
+    opts?: { delivery?: 'steer' | 'followup' | 'queue'; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: ThinkingLevel; variant?: string },
   ): Promise<void> {
     if (!this.client) throw new Error('Runtime client not available');
     if (!sessionID) return;
@@ -156,6 +157,8 @@ export class SdkSessionResource {
     if (opts?.delivery) promptOpts.delivery = opts.delivery;
     if (opts?.idempotencyKey) promptOpts.idempotencyKey = opts.idempotencyKey;
     if (opts?.expectReply !== undefined) promptOpts.expectReply = opts.expectReply;
+    if (opts?.thinkingLevel) promptOpts.thinkingLevel = opts.thinkingLevel;
+    if (opts?.variant) promptOpts.variant = opts.variant;
     await this.client.session.promptAsync(promptOpts);
   }
 
@@ -164,6 +167,7 @@ export class SdkSessionResource {
     parts: Array<{ type: string; text: string }>,
     system?: string,
     outputSchema?: OutputSchemaSpec,
+    opts?: { thinkingLevel?: ThinkingLevel; variant?: string },
   ): Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }>; structured?: unknown; structuredError?: string }> {
     if (!this.client) throw new Error('Runtime client not available');
     if (!sessionID) return { parts: [] };
@@ -184,6 +188,8 @@ export class SdkSessionResource {
         sessionID,
         parts: promptParts,
         system,
+        ...(opts?.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
+        ...(opts?.variant ? { variant: opts.variant } : {}),
       });
       lastText = result.parts
         ?.filter((p: any) => p.type === 'text')

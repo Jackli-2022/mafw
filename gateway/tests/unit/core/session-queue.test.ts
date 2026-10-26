@@ -35,6 +35,13 @@ describe('SessionQueue（spec §5.2）', () => {
     const r = q.enqueue('s1', base({ idempotencyKey: 'k1' }));
     expect('item' in r).toBe(true);
   });
+
+  it('保留 thinkingLevel/variant 到队列项', () => {
+    const q = new SessionQueue();
+    const r = q.enqueue('s1', base({ thinkingLevel: 'high', variant: 'max' }));
+    expect('item' in r).toBe(true);
+    expect((r as any).item).toMatchObject({ thinkingLevel: 'high', variant: 'max' });
+  });
   it('上限 32：超限 rejected（C5）', () => {
     const q = new SessionQueue();
     for (let i = 0; i < 32; i++) q.enqueue('s1', base({ text: String(i) }));

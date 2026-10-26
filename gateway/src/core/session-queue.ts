@@ -22,6 +22,8 @@ export interface QueuedItem {
   /** 终审 #1：noReply 语义保全——flush 后仍是落历史免 LLM 回合（BudgetGuard/milestone 通知的硬依赖） */
   expectReply?: boolean;
   idempotencyKey?: string;
+  thinkingLevel?: string;
+  variant?: string;
   enqueuedAt: string;  // ISO
   source: string;      // 'http' | 'runtime' | 'milestone' | 'self-update' | 'budget' | ...
 }

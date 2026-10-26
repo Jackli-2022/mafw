@@ -118,6 +118,8 @@ import { handleCognitionGate, handleCognitionRewrite, handleCognitionRules } fro
 /** 队列防楔死（spec 2026-10-22-session-queue-inbox §5.1 v2 Q2）：busy 陈旧清扫 + 队列项 TTL。 */
 const BUSY_STALE_MS = 15 * 60_000;
 const QUEUE_ITEM_TTL_MS = 24 * 3600_000;
+const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const isThinkingLevel = (v: unknown): v is string => typeof v === 'string' && THINKING_LEVELS.has(v);
 import { EventStore } from './events/event-store';
 import { enrichBroadcastFrame } from './events/broadcast-frame';
 import { parseSince, attachGlobalSse } from './events/sse-attach';
@@ -1606,6 +1608,8 @@ class MafwScheduler {
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.expectReply !== undefined ? { expectReply: opts.expectReply } : {}),
         ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
+        ...(opts.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
+        ...(opts.variant ? { variant: opts.variant } : {}),
       },
       typeof opts.source === 'string' ? opts.source : 'runtime',
     );
@@ -1614,7 +1618,7 @@ class MafwScheduler {
   /** 入队编排（spec §5.2/§5.3）：幂等 duplicate 透传；上限 throw 400 形错（HTTP 层转译）。
    *  事件发射（queue.updated）在 Task 5 接线——本版 log 占位。 */
   private async enqueueQueuedPrompt(
-    opts: { sessionID: string; text?: string; parts?: any[]; agent?: string; model?: any; idempotencyKey?: string; expectReply?: boolean },
+    opts: { sessionID: string; text?: string; parts?: any[]; agent?: string; model?: any; idempotencyKey?: string; expectReply?: boolean; thinkingLevel?: string; variant?: string },
     source: string,
   ): Promise<{ queued: true; itemId: string; position: number } | { queued: true; duplicate: true; itemId: string }> {
     const r = this.sessionQueue.enqueue(opts.sessionID, {
@@ -1624,6 +1628,8 @@ class MafwScheduler {
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.expectReply !== undefined ? { expectReply: opts.expectReply } : {}),
       ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
+      ...(opts.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
+      ...(opts.variant ? { variant: opts.variant } : {}),
       source,
     });
     if ('duplicate' in r) {
@@ -1671,6 +1677,8 @@ class MafwScheduler {
       ...(item.agent ? { agent: item.agent } : {}),
       ...(item.model ? { model: item.model } : {}),
       ...(item.expectReply !== undefined ? { expectReply: item.expectReply } : {}),
+      ...(item.thinkingLevel ? { thinkingLevel: item.thinkingLevel } : {}),
+      ...(item.variant ? { variant: item.variant } : {}),
     };
     void this.runtime!.session.promptAsync(sendOpts).catch((err: any) => {
       log.warn(`[Queue] flush send failed for ${item.id} (non-fatal): ${err?.message ?? err}`);
@@ -6082,8 +6090,13 @@ class MafwScheduler {
           try {
             const sessionID = promptAsyncMatch[1];
             const body = await readBody(req);
-            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, outputSchema } = body ? JSON.parse(body) : {};
+            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, thinkingLevel, variant, outputSchema } = body ? JSON.parse(body) : {};
             if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
+            if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel)) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(thinkingLevel)}` }));
+              return;
+            }
             // Identity-aware (spec §3.2): picking a registry identity binds it for
             // this turn — the policy layer evaluates the turn's tool calls against it.
             // The agent param itself is injected/stripped by withIdentityPrompt at the runtime.
@@ -6105,6 +6118,8 @@ class MafwScheduler {
                 const q = await this.enqueueQueuedPrompt({
                   sessionID, text: message, parts, agent, model, idempotencyKey,
                   ...(parsedBody.expectReply !== undefined ? { expectReply: parsedBody.expectReply } : {}),
+                  ...(thinkingLevel ? { thinkingLevel } : {}),
+                  ...(variant ? { variant } : {}),
                 }, 'http');
                 res.writeHead(200);
                 res.end(JSON.stringify({ status: 'ok', ...q }));
@@ -6118,6 +6133,8 @@ class MafwScheduler {
               ...(delivery ? { delivery } : {}),
               ...(idempotencyKey ? { idempotencyKey } : {}),
               ...(expectReply !== undefined ? { expectReply } : {}),
+              ...(thinkingLevel ? { thinkingLevel } : {}),
+              ...(variant ? { variant } : {}),
             });
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));
@@ -6135,7 +6152,15 @@ class MafwScheduler {
             const sessionID = promptMatch[1];
             const body = await readBody(req);
             const opts = body ? JSON.parse(body) : {};
-            const result = await this.sdkSession.prompt(sessionID, opts.parts || [], opts.system, opts.outputSchema);
+            if (opts.thinkingLevel !== undefined && !isThinkingLevel(opts.thinkingLevel)) {
+              res.writeHead(400);
+              res.end(JSON.stringify({ error: `invalid thinkingLevel: ${String(opts.thinkingLevel)}` }));
+              return;
+            }
+            const result = await this.sdkSession.prompt(sessionID, opts.parts || [], opts.system, opts.outputSchema, {
+              ...(opts.thinkingLevel ? { thinkingLevel: opts.thinkingLevel } : {}),
+              ...(opts.variant ? { variant: opts.variant } : {}),
+            });
             res.writeHead(200);
             res.end(JSON.stringify(result));
           } catch (err: any) {
