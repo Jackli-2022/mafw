@@ -7,6 +7,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { SessionTurn } from "@mafw/session-ui/session-turn"
+import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
 import { TaskBar } from "./TaskBar"
 import { BackgroundWorkBar } from "./BackgroundWorkBar"
 import { scanHistoryForBackground } from "../background-detect"
@@ -277,6 +278,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
   const [canUnrevert, setCanUnrevert] = createSignal(false)
   const [checkpointsOpen, setCheckpointsOpen] = createSignal(false)
+  const [serverCheckpoints, setServerCheckpoints] = createSignal<SessionCheckpoint[]>([])
 
   // Busy-turn queue: regular messages sent while a turn is running are held
   // here and dispatched on the next idle boundary (steering without abort).
@@ -368,6 +370,51 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       part: { ...prev.part, [sidProp()]: [] },
     }))
     props.setPageState(sidProp(), { cursor: null, hasMore: true, loading: false })
+  }
+
+  // ── T2-1 服务端检查点（caps.checkpointApi=true 的 runtime）──────────
+  const loadServerCheckpoints = async () => {
+    const sid = sidProp()
+    if (!sid) return
+    try {
+      const r = await window.api.mafw.sessions.checkpoints(sid)
+      setServerCheckpoints(r.checkpoints ?? [])
+    } catch {
+      setServerCheckpoints([])
+    }
+  }
+
+  const createServerCheckpoint = async (): Promise<boolean> => {
+    const sid = sidProp()
+    if (!sid) return false
+    try {
+      await window.api.mafw.sessions.checkpoint(sid)
+      showToastV2({ title: "已创建检查点", variant: "success" } as any)
+      await loadServerCheckpoints()
+      return true
+    } catch (e: any) {
+      showToastV2({ title: "创建检查点失败", description: String(e?.message || e), variant: "error" } as any)
+      return false
+    }
+  }
+
+  const restoreServerCheckpoint = async (
+    checkpointId: string,
+    scope: CheckpointScope,
+  ): Promise<CheckpointRestoreResult | null> => {
+    const sid = sidProp()
+    if (!sid) return null
+    try {
+      const r = await window.api.mafw.sessions.restoreCheckpoint(sid, checkpointId, scope)
+      // session/both 截断历史 → 重拉消息；files 只动工作区不动历史
+      if (scope !== "files") refreshAfterRevert()
+      await loadServerCheckpoints()
+      showToastV2({ title: "已恢复检查点", variant: "success" } as any)
+      return r
+    } catch (e: any) {
+      showToastV2({ title: "恢复失败", description: String(e?.message || e), variant: "error" } as any)
+      return null
+    }
   }
 
   // ── plan/build 模式循环（切片 3）──────────────────────────────
@@ -1474,7 +1521,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <ButtonV2
                     variant="ghost"
                     size="small"
-                    onClick={(e: MouseEvent) => { e.stopPropagation(); setCheckpointsOpen(true) }}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation()
+                      setCheckpointsOpen(true)
+                      void loadServerCheckpoints()
+                    }}
                   >时间线</ButtonV2>
                 </TooltipV2>
                 <TooltipV2 value="展开全部细节：工具/编辑卡默认展开 (Ctrl+O)" openDelay={300}>
@@ -2099,6 +2150,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             onClose={() => setCheckpointsOpen(false)}
             onRevert={revertTo}
             onRevertCode={revertCodeTo}
+            serverCheckpoints={serverCheckpoints()}
+            onRestoreCheckpoint={restoreServerCheckpoint}
+            onCreateCheckpoint={createServerCheckpoint}
           />
         </Show>
         {/* Revert confirm */}

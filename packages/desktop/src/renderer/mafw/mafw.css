@@ -5288,6 +5288,7 @@ html[data-theme="light"] body {
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-subtle);
 }
+.mafw-checkpoint-head-actions { display: flex; align-items: center; gap: 6px; }
 .mafw-checkpoint-title { font-size: 13px; color: var(--text-1); }
 .mafw-checkpoint-sub { margin-top: 2px; font-size: 10px; color: var(--text-4); }
 .mafw-checkpoint-note {
@@ -5308,6 +5309,13 @@ html[data-theme="light"] body {
   border-radius: 999px;
   font-size: 9px;
   color: var(--accent);
+}
+.mafw-checkpoint-kind {
+  padding: 0 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-size: 9px;
+  color: var(--text-3);
 }
 .mafw-checkpoint-prompt {
   margin-top: 3px;

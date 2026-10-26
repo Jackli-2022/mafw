@@ -3,8 +3,10 @@
 // 代码回滚仅在 runtime 提供完整、可安全反转的回合级 patch 时出现（2.1 从 snapshot 树计算）。
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
+import type { CheckpointRestoreResult, CheckpointScope, SessionCheckpoint } from "@mafw/sdk"
 import { checkpointsWithTurnDiffs, type Checkpoint } from "./checkpoint-model"
 import { canRewindCode, checkpointsToRewind, revertWarning } from "./checkpoint-revert"
+import { leftoverNotice, restoreWarning, toServerRows } from "./server-checkpoints"
 import { collectTurnDiffCandidates, loadTurnDiffs } from "./turn-diffs"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 
@@ -18,12 +20,20 @@ export function CheckpointOverlay(props: {
   onClose: () => void
   onRevert: (messageID: string) => Promise<boolean>
   onRevertCode: (targets: Checkpoint[]) => Promise<boolean>
+  /** T2-1：服务端检查点模式（caps.checkpointApi=true 时启用）。 */
+  serverCheckpoints?: SessionCheckpoint[]
+  onRestoreCheckpoint?: (checkpointId: string, scope: CheckpointScope) => Promise<CheckpointRestoreResult | null>
+  onCreateCheckpoint?: () => Promise<boolean>
 }) {
   const [turnFiles, setTurnFiles] = createSignal<Record<string, FileDiffEntry[] | null>>({})
   const [loadingTurnFiles, setLoadingTurnFiles] = createSignal(false)
+  const [restoring, setRestoring] = createSignal<{ checkpointId: string; scope: CheckpointScope } | null>(null)
+  const [notices, setNotices] = createSignal<string[] | null>(null)
   const checkpoints = createMemo(() =>
     checkpointsWithTurnDiffs(props.messages, props.parts, Date.now(), turnFiles()),
   )
+  const serverMode = () => props.caps?.checkpointApi === true
+  const serverRows = createMemo(() => toServerRows(props.serverCheckpoints ?? []))
   const [confirming, setConfirming] = createSignal<{ mode: "revert" | "code"; messageID: string } | null>(null)
   const [working, setWorking] = createSignal(false)
 
@@ -96,6 +106,47 @@ export function CheckpointOverlay(props: {
     }
   }
 
+  // ── T2-1 服务端检查点（三态） ─────────────────────────────────
+  const requestRestore = (checkpointId: string, scope: CheckpointScope) => {
+    if (busy()) return
+    setNotices(null)
+    setRestoring({ checkpointId, scope })
+  }
+
+  const confirmRestore = async (checkpointId: string, scope: CheckpointScope) => {
+    if (busy()) return
+    const current = restoring()
+    if (!current || current.checkpointId !== checkpointId || current.scope !== scope) return
+    setWorking(true)
+    try {
+      const result = await props.onRestoreCheckpoint?.(checkpointId, scope)
+      if (result) setNotices(leftoverNotice(result))
+      setRestoring(null)
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const createServerCheckpoint = async () => {
+    if (busy() || !props.onCreateCheckpoint) return
+    setWorking(true)
+    try { await props.onCreateCheckpoint() } finally { setWorking(false) }
+  }
+
+  const ScopeButton = (p: {
+    checkpointId: string
+    scope: CheckpointScope
+    label: string
+    disabled?: boolean
+  }) => (
+    <ButtonV2
+      variant="outline"
+      size="small"
+      disabled={busy() || p.disabled}
+      onClick={() => requestRestore(p.checkpointId, p.scope)}
+    >{p.label}</ButtonV2>
+  )
+
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return
@@ -120,9 +171,21 @@ export function CheckpointOverlay(props: {
         <div class="mafw-checkpoint-head">
           <div>
             <div class="mafw-checkpoint-title">时间线</div>
-            <div class="mafw-checkpoint-sub">已加载的历史（最多 30 天）</div>
+            <div class="mafw-checkpoint-sub">
+              {serverMode() ? "服务端检查点（自动记录 + 手动）" : "已加载的历史（最多 30 天）"}
+            </div>
           </div>
-          <ButtonV2 variant="ghost" size="small" disabled={working()} onClick={close} aria-label="关闭时间线">关闭</ButtonV2>
+          <div class="mafw-checkpoint-head-actions">
+            <Show when={serverMode()}>
+              <ButtonV2
+                variant="outline"
+                size="small"
+                disabled={working() || props.busy === true}
+                onClick={() => void createServerCheckpoint()}
+              >立即检查点</ButtonV2>
+            </Show>
+            <ButtonV2 variant="ghost" size="small" disabled={working()} onClick={close} aria-label="关闭时间线">关闭</ButtonV2>
+          </div>
         </div>
 
         <Show when={props.caps && props.caps.diffApi === false}>
@@ -143,79 +206,144 @@ export function CheckpointOverlay(props: {
         <Show when={working()}>
           <div class="mafw-checkpoint-note">正在回滚……</div>
         </Show>
+        <Show when={notices()}>
+          {(lines) => (
+            <div class="mafw-checkpoint-note">
+              <For each={lines()}>{(line) => <div>{line}</div>}</For>
+            </div>
+          )}
+        </Show>
 
         <div class="mafw-checkpoint-list">
-          <Show when={checkpoints().length > 0} fallback={<div class="mafw-checkpoint-empty">本会话还没有可回滚的检查点</div>}>
-            <For each={checkpoints()}>
-              {(cp, index) => (
-                <div class="mafw-checkpoint-row">
-                  <div class="mafw-checkpoint-row-head">
-                    <span class="mafw-checkpoint-time">{timeLabel(cp)}</span>
-                    <Show when={index() === 0}>
-                      <span class="mafw-checkpoint-latest">最新回合</span>
-                    </Show>
-                  </div>
-                  <div class="mafw-checkpoint-prompt" aria-label={cp.prompt}>{cp.prompt}</div>
-                  <div class="mafw-checkpoint-files">
-                    <Show
-                      when={cp.filesKnown}
-                      fallback={<span class="mafw-checkpoint-no-files">文件记录不可用（本回合未取得快照数据）</span>}
-                    >
-                      <Show when={cp.files.length > 0} fallback={<span class="mafw-checkpoint-no-files">无文件改动</span>}>
-                        <For each={cp.files.slice(0, 5)}>
-                          {(f) => <span class="mafw-checkpoint-chip" aria-label={f.file}>{baseName(f.file)}</span>}
-                        </For>
-                        <Show when={cp.files.length > 5}>
-                          <span class="mafw-checkpoint-chip">+{cp.files.length - 5}</span>
+          <Show
+            when={serverMode()}
+            fallback={
+              <Show when={checkpoints().length > 0} fallback={<div class="mafw-checkpoint-empty">本会话还没有可回滚的检查点</div>}>
+                <For each={checkpoints()}>
+                  {(cp, index) => (
+                    <div class="mafw-checkpoint-row">
+                      <div class="mafw-checkpoint-row-head">
+                        <span class="mafw-checkpoint-time">{timeLabel(cp)}</span>
+                        <Show when={index() === 0}>
+                          <span class="mafw-checkpoint-latest">最新回合</span>
                         </Show>
-                      </Show>
-                    </Show>
-                  </div>
-                  <div class="mafw-checkpoint-actions">
-                    <Show when={conversationAvailable()}>
-                      <ButtonV2
-                        variant="outline"
-                        size="small"
-                        disabled={busy() || modeOf(cp.messageID) !== null}
-                        onClick={() => request(cp, "revert")}
-                      >回到这里</ButtonV2>
-                    </Show>
-                    <Show when={canCode(cp)}>
-                      <ButtonV2
-                        variant="ghost"
-                        size="small"
-                        disabled={busy() || modeOf(cp.messageID) !== null}
-                        onClick={() => request(cp, "code")}
-                      >只回滚代码</ButtonV2>
-                    </Show>
-                  </div>
-                  <Show when={modeOf(cp.messageID)}>
-                    {(mode) => (
-                      <div class="mafw-checkpoint-confirm">
-                        <div class="mafw-checkpoint-confirm-text">
-                          {mode() === "revert"
-                            ? revertWarning(props.runtimeName, props.caps?.revertUndoApi === true, props.caps?.diffApi === true)
-                            : `将撤销这条消息所在的回合及之后 ${checkpointsToRewind(checkpoints(), cp.messageID).length} 个回合的文件改动；对话保留。不可自动撤销；patch 冲突时可能停在中间态。`}
-                        </div>
-                        <div class="mafw-checkpoint-confirm-actions">
-                          <ButtonV2 variant="ghost" size="small" disabled={working()} onClick={() => setConfirming(null)}>取消</ButtonV2>
-                          <ButtonV2
-                            variant="contrast"
-                            size="small"
-                            disabled={working()}
-                            onClick={() => void confirm(cp, mode())}
-                          >确认</ButtonV2>
-                        </div>
                       </div>
-                    )}
-                  </Show>
-                </div>
-              )}
-            </For>
+                      <div class="mafw-checkpoint-prompt" aria-label={cp.prompt}>{cp.prompt}</div>
+                      <div class="mafw-checkpoint-files">
+                        <Show
+                          when={cp.filesKnown}
+                          fallback={<span class="mafw-checkpoint-no-files">文件记录不可用（本回合未取得快照数据）</span>}
+                        >
+                          <Show when={cp.files.length > 0} fallback={<span class="mafw-checkpoint-no-files">无文件改动</span>}>
+                            <For each={cp.files.slice(0, 5)}>
+                              {(f) => <span class="mafw-checkpoint-chip" aria-label={f.file}>{baseName(f.file)}</span>}
+                            </For>
+                            <Show when={cp.files.length > 5}>
+                              <span class="mafw-checkpoint-chip">+{cp.files.length - 5}</span>
+                            </Show>
+                          </Show>
+                        </Show>
+                      </div>
+                      <div class="mafw-checkpoint-actions">
+                        <Show when={conversationAvailable()}>
+                          <ButtonV2
+                            variant="outline"
+                            size="small"
+                            disabled={busy() || modeOf(cp.messageID) !== null}
+                            onClick={() => request(cp, "revert")}
+                          >回到这里</ButtonV2>
+                        </Show>
+                        <Show when={canCode(cp)}>
+                          <ButtonV2
+                            variant="ghost"
+                            size="small"
+                            disabled={busy() || modeOf(cp.messageID) !== null}
+                            onClick={() => request(cp, "code")}
+                          >只回滚代码</ButtonV2>
+                        </Show>
+                      </div>
+                      <Show when={modeOf(cp.messageID)}>
+                        {(mode) => (
+                          <div class="mafw-checkpoint-confirm">
+                            <div class="mafw-checkpoint-confirm-text">
+                              {mode() === "revert"
+                                ? revertWarning(props.runtimeName, props.caps?.revertUndoApi === true, props.caps?.diffApi === true)
+                                : `将撤销这条消息所在的回合及之后 ${checkpointsToRewind(checkpoints(), cp.messageID).length} 个回合的文件改动；对话保留。不可自动撤销；patch 冲突时可能停在中间态。`}
+                            </div>
+                            <div class="mafw-checkpoint-confirm-actions">
+                              <ButtonV2 variant="ghost" size="small" disabled={working()} onClick={() => setConfirming(null)}>取消</ButtonV2>
+                              <ButtonV2
+                                variant="contrast"
+                                size="small"
+                                disabled={working()}
+                                onClick={() => void confirm(cp, mode())}
+                              >确认</ButtonV2>
+                            </div>
+                          </div>
+                        )}
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </Show>
+            }
+          >
+            <Show when={serverRows().length > 0} fallback={<div class="mafw-checkpoint-empty">本会话还没有检查点（回合结束后自动记录，或点「立即检查点」）</div>}>
+              <For each={serverRows()}>
+                {(row, index) => (
+                  <div class="mafw-checkpoint-row">
+                    <div class="mafw-checkpoint-row-head">
+                      <span class="mafw-checkpoint-time">{row.timeLabel}</span>
+                      <span class="mafw-checkpoint-kind">{row.kindBadge}</span>
+                      <Show when={index() === 0}>
+                        <span class="mafw-checkpoint-latest">最新</span>
+                      </Show>
+                    </div>
+                    <div class="mafw-checkpoint-prompt" aria-label={row.checkpoint.anchorMessageID}>
+                      检查点 {row.checkpoint.id.slice(-6)} · {row.filesLabel}
+                    </div>
+                    <div class="mafw-checkpoint-actions">
+                      <Show when={conversationAvailable()}>
+                        <ScopeButton checkpointId={row.checkpoint.id} scope="session" label="只回对话" />
+                      </Show>
+                      <ScopeButton
+                        checkpointId={row.checkpoint.id}
+                        scope="files"
+                        label="只回代码"
+                        disabled={!row.filesAvailable}
+                      />
+                      <Show when={conversationAvailable()}>
+                        <ScopeButton checkpointId={row.checkpoint.id} scope="both" label="全部恢复" />
+                      </Show>
+                    </div>
+                    <Show when={restoring()?.checkpointId === row.checkpoint.id ? restoring() : null}>
+                      {(current) => (
+                        <div class="mafw-checkpoint-confirm">
+                          <div class="mafw-checkpoint-confirm-text">
+                            {restoreWarning(current().scope, props.runtimeName, props.caps?.revertUndoApi === true)}
+                          </div>
+                          <div class="mafw-checkpoint-confirm-actions">
+                            <ButtonV2 variant="ghost" size="small" disabled={working()} onClick={() => setRestoring(null)}>取消</ButtonV2>
+                            <ButtonV2
+                              variant="contrast"
+                              size="small"
+                              disabled={working()}
+                              onClick={() => void confirmRestore(row.checkpoint.id, current().scope)}
+                            >确认</ButtonV2>
+                          </div>
+                        </div>
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Show>
           </Show>
         </div>
 
-        <div class="mafw-checkpoint-foot">更早的检查点请先在聊天中加载更早历史。</div>
+        <div class="mafw-checkpoint-foot">
+          {serverMode() ? "检查点由 gateway 记录；untracked 文件只报告不自动删除。" : "更早的检查点请先在聊天中加载更早历史。"}
+        </div>
       </div>
     </div>
   )
