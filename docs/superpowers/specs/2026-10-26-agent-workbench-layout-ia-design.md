@@ -105,7 +105,7 @@
 - 头部：项目切换、新建、搜索。
 - **本批保留现有项目/会话树与时间分组**；`待你处理 / 运行中 / 最近` 的注意力分组与筛选是独立后续，不进入本批实现和验收。
 - Manager 卡片保持现有位置。
-- `便签` 作为左侧全局工具入口（左 dock footer 打开 `notes` face），不进入右工作台。
+- `便签` 作为左侧全局工具入口：左 rail 底部图标打开左 dock 的 `notes` face，不进入右工作台。
 - 不新增 gateway 查询，不伪造会话运行状态。
 - 左侧列表的注意力模型需要单独定义数据来源、失败/审批判定与分页搜索交互，避免在布局 spec 中夹带一个未经验证的状态系统。
 
@@ -174,8 +174,8 @@ RightWorkbench
 - 代码视图：文件树 200px；右工作台内容宽 <600px 时文件树默认收起，用户可展开（覆盖/抽屉均可，plan 定）。
 - 浏览器视图不强制显示文件树；优先给页面宽度。
 - 终端高度 280px、max-height 45%；收起只 `display:none`/高度 0，实例与会话保持。
-- 各执行子视图首次按需挂载，切换过即保留滚动/展开状态；隐藏视图停止高频轮询与计时器，显示时恢复。terminal 例外，始终挂载。
-- `执行` 一级 badge 只表达“需要用户行动”的数量（approval/question/blocked），不显示单纯 running 数；running 状态在概览和下拉菜单内显示。
+- 五个执行子视图都保持挂载（用 `display:none` 隐藏），保留滚动/展开状态；隐藏视图的高频轮询暂停留后续性能优化，不阻塞本批；terminal 始终挂载。
+- 本批不实现 `执行` 一级数字 badge；因为没有可靠“按当前会话归属”的审批/阻塞计数，禁止用全局审批数冒充当前 run。执行概览显示已知的 running / input_required；审批、提问仍由 ChatView 与左侧状态负责。待有按会话可靠数据后再加 badge。
 - `审阅` 不常驻数字 badge；有改动时可用中性小点，plan 裁量。
 - `工作台` 不显示 badge。
 
@@ -273,7 +273,7 @@ RightWorkbench
 - `Workbench` 现有 `FilesDock`/`EditorDock`/`BrowserDock` 复用；代码/浏览器两级切换替代原内部 tab。
 - `Execution` 组合现有 `TaskList`/`SubagentDock`/`BackgroundDock`/`TrajectoryDock`/`UsageDock`；不复制数据逻辑。
 - `审阅` 复用 `ChangesDock`。
-- `NotesDock` 移入左 dock 的 `notes` face（`LeftDockFace` 扩展）或左 dock footer 打开的独立面；不得留在右工作台。
+- `NotesDock` 移入左 dock 的 `notes` face（`LeftDockFace` 扩展）；左 rail 底部增加便签入口；不得留在右工作台。
 - `left-dock.ts`：`resolveMode(open, width)` 取代 `resolveMode(open, maximized)`；更新单测。
 - `main/window-bounds.ts`：最小尺寸常量改为 1088×720；`main/windows.ts` 默认尺寸改为自适应 1600×1000。
 - 移除右 dock 的 `viewportNarrow` 自动 overlay 判断；保留 `Ctrl+Alt+B` 显式开关。
@@ -327,11 +327,11 @@ RightWorkbench
 
 ## 13. 留给 plan 的裁量
 
-- 左 dock `notes` face 的具体 UI、footer 位置与是否增加图标。
+- 左 dock `notes` face 的容器样式与空态（入口固定为左 rail 底部便签图标）。
 - 文件树在右工作台 <600px 时的展开形态（抽屉/浮层/临时覆盖）；默认收起已定。
 - `审阅` 是否显示中性 changed-file dot。
-- 执行一级 badge 的具体计数来源与上限（必须是“需要用户行动”，不能回退为 running 计数）。
-- 执行各子视图的懒挂载/轮询暂停细节。
+- 执行一级 badge 的后续数据来源与上限（本批不做；必须先有按会话可靠归属的审批/阻塞计数）。
+- 执行子视图隐藏时的高频轮询暂停（本批不阻塞；五个子视图保持挂载以保状态）。
 - 默认 `工作台›代码`、`执行›概览` 的首次启动与迁移顺序。
 - 标题栏 `新话题/并行/细节` 的后续收敛（不在本 spec）。
 
