@@ -15,7 +15,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
-import { clampLeftDockWidth, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
+import { clampLeftDockWidth, effectiveLeftDockWidth, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
@@ -53,6 +53,7 @@ import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { UsageDock } from "./components/UsageDock"
 import { defaultDockOpen } from "./workbench-defaults"
 import {
+  clearLegacyWorkbenchKeys,
   workbenchStateFromStorage,
   type ExecutionSection,
   type WorkbenchSurface,
@@ -1473,6 +1474,7 @@ export function MafwShell() {
     localStorage.setItem("mafw-workbench-view", bootView.view)
     localStorage.setItem("mafw-workbench-surface", bootView.surface)
     localStorage.setItem("mafw-execution-section", bootView.executionSection)
+    clearLegacyWorkbenchKeys((key) => localStorage.removeItem(key))
   } catch { /* ignore */ }
   const storedTerminal = (() => { try { return localStorage.getItem("mafw-workbench-terminal") } catch { return null } })()
   const [workbenchTerminalOpen, setWorkbenchTerminalOpen] = createSignal(
@@ -1482,7 +1484,7 @@ export function MafwShell() {
   const [detent, setDetent] = createSignal<WorkbenchDetent>(workbenchBoot.detent)
   /** 拖动中的连续预览（松手吸附后清空）。 */
   const [chatPreview, setChatPreview] = createSignal<number | null>(null)
-  const availableWidth = () => Math.max(0, window.innerWidth - 46 - (leftDockMode() === "push" ? leftDockWidth() : 0))
+  const availableWidth = () => Math.max(0, window.innerWidth - 46 - (leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0))
   const chatPx = () => chatPreview() ?? chatPxForDetent(detent(), availableWidth())
   const applyDetent = (d: WorkbenchDetent) => {
     setDetent(d)
@@ -1529,7 +1531,7 @@ export function MafwShell() {
   const chatSplit = () => chatActive() && rightDockOpen()
   const bodyColumns = () =>
     workbenchColumns({
-      leftPx: leftDockMode() === "push" ? leftDockWidth() : 0,
+      leftPx: leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : 0,
       chatPx: chatPx(),
       split: chatSplit(),
     })
@@ -1684,6 +1686,12 @@ export function MafwShell() {
     const onResize = () => setViewportWidth(window.innerWidth)
     window.addEventListener("resize", onResize)
     onCleanup(() => window.removeEventListener("resize", onResize))
+  })
+  // 启动时因窄幅被抑制的 open 偏好，在拉宽到 push 阈值后恢复。
+  createEffect(() => {
+    const width = viewportWidth()
+    if (!shouldAutoRestoreLeftDock(localStorage.getItem("mafw-left-dock-open"), leftDock().open, width)) return
+    setLeftDock((s) => ({ ...s, open: true }))
   })
   // 浮层模式：Esc 关闭（点外关闭由 backdrop 承担）。
   createEffect(() => {
@@ -1894,7 +1902,7 @@ export function MafwShell() {
           <LeftDock
             mode={leftDockMode()}
             face={leftDock().face}
-            width={leftDockWidth()}
+            width={leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : leftDockWidth()}
             onClose={closeLeftDock}
             onResize={applyLeftDockWidth}
             activeSessionId={activeSessionId()}
@@ -2133,6 +2141,9 @@ export function MafwShell() {
                       section={executionSection()}
                       sessionID={currentSessionID() || null}
                       sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                      agentLabel={sessionAgent(currentSessionID())?.name ?? "默认 Agent"}
+                      modelLabel={sessionModel(currentSessionID() || "")?.label ?? "默认模型"}
+                      runStatus={sessionBusy() ? "运行中" : "空闲"}
                       todos={todos[currentSessionID()] || []}
                       hiddenTodos={hiddenTodos[currentSessionID()] || []}
                       tokens={taskMetrics(currentSessionID()).tokens}

@@ -39,6 +39,21 @@ export function clampLeftDockWidth(w: number): number {
   return Math.min(LEFT_DOCK_WIDTH.max, Math.max(LEFT_DOCK_WIDTH.min, w))
 }
 
+const LEFT_RAIL_WIDTH = 46
+const CORE_CHAT_MIN_WIDTH = 520
+const RIGHT_WORKBENCH_MIN_WIDTH = 520
+
+/** 推挤时给 Chat + 右工作台留够最小宽度；左 dock 宽用户偏好可保留，布局宽度在此夹紧。 */
+export function effectiveLeftDockWidth(width: number, viewportWidth: number): number {
+  const maxForViewport = viewportWidth - LEFT_RAIL_WIDTH - CORE_CHAT_MIN_WIDTH - RIGHT_WORKBENCH_MIN_WIDTH
+  return Math.min(clampLeftDockWidth(width), clampLeftDockWidth(maxForViewport))
+}
+
+/** 启动时因窄幅被抑制的 open 偏好，在拉宽到 push 阈值后恢复。 */
+export function shouldAutoRestoreLeftDock(stored: string | null, open: boolean, viewportWidth: number): boolean {
+  return stored === "1" && !open && viewportWidth >= LEFT_DOCK_PUSH_MIN_WIDTH
+}
+
 // 旧 Rail 宽度键严格一次性迁移：新键有效则忽略旧键；否则采用旧键。
 // migrated=true 时调用方负责写入新键并删除旧键（旧键此后不再参与）。
 export function resolveLeftDockWidth(

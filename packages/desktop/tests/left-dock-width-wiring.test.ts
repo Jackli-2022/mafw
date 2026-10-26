@@ -9,4 +9,6 @@ test("MafwShell uses width for left dock mode", () => {
   assert.match(src, /resolveMode\(leftDock\(\)\.open,\s*viewportWidth\(\)\)/)
   assert.doesNotMatch(src, /resolveMode\(leftDock\(\)\.open,\s*winMaximized\(\)\)/)
   assert.match(src, /restoreLeftDockOpen\(/)
+  assert.match(src, /effectiveLeftDockWidth\(/)
+  assert.match(src, /shouldAutoRestoreLeftDock\(/)
 })

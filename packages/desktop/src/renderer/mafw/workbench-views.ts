@@ -55,6 +55,37 @@ export function executionSectionLabel(section: ExecutionSection): string {
   return EXECUTION_SECTIONS.find((s) => s.id === section)?.label ?? "概览"
 }
 
+export const LEGACY_WORKBENCH_KEYS = [
+  "mafw-right-dock-tab",
+  "mafw-workbench-tab",
+  "mafw-tasks-placement",
+] as const
+
+/** 新键写好后一次性清掉旧键；失败由调用方 fail-open。 */
+export function clearLegacyWorkbenchKeys(remove: (key: string) => void): void {
+  for (const key of LEGACY_WORKBENCH_KEYS) remove(key)
+}
+
+export function nextWorkbenchView(current: WorkbenchView, key: string): WorkbenchView | null {
+  const order = WORKBENCH_VIEWS.map((v) => v.id)
+  const index = order.indexOf(current)
+  if (key === "ArrowRight") return order[index + 1] ?? null
+  if (key === "ArrowLeft") return order[index - 1] ?? null
+  if (key === "Home") return order[0]
+  if (key === "End") return order[order.length - 1]
+  return null
+}
+
+export function nextWorkbenchSurface(current: WorkbenchSurface, key: string): WorkbenchSurface | null {
+  const order = WORKBENCH_SURFACES.map((v) => v.id)
+  const index = order.indexOf(current)
+  if (key === "ArrowRight") return order[index + 1] ?? null
+  if (key === "ArrowLeft") return order[index - 1] ?? null
+  if (key === "Home") return order[0]
+  if (key === "End") return order[order.length - 1]
+  return null
+}
+
 type LegacyTab = {
   view: WorkbenchView
   executionSection: ExecutionSection

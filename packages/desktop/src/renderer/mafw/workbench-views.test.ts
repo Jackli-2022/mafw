@@ -3,7 +3,12 @@ import assert from "node:assert/strict"
 import {
   DEFAULT_WORKBENCH_STATE,
   EXECUTION_SECTIONS,
+  WORKBENCH_SURFACES,
+  WORKBENCH_VIEWS,
+  clearLegacyWorkbenchKeys,
   executionSectionLabel,
+  nextWorkbenchSurface,
+  nextWorkbenchView,
   normalizeExecutionSection,
   normalizeWorkbenchSurface,
   normalizeWorkbenchView,
@@ -22,12 +27,31 @@ describe("workbench-views", () => {
     assert.equal(normalizeExecutionSection("bogus"), "overview")
   })
 
-  test("B1 execution labels are exact and ordered", () => {
+  test("B1 labels are exact and ordered", () => {
+    assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.label), ["工作台", "执行", "审阅"])
+    assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["代码", "浏览器"])
     assert.deepEqual(
       EXECUTION_SECTIONS.map((s) => s.label),
       ["概览", "待办", "子代理", "后台", "轨迹"],
     )
     assert.equal(executionSectionLabel("background"), "后台")
+  })
+
+  test("keyboard helpers move within L1 and L2 without wrapping", () => {
+    assert.equal(nextWorkbenchView("workbench", "ArrowRight"), "execution")
+    assert.equal(nextWorkbenchView("execution", "ArrowRight"), "review")
+    assert.equal(nextWorkbenchView("review", "ArrowRight"), null)
+    assert.equal(nextWorkbenchView("review", "ArrowLeft"), "execution")
+    assert.equal(nextWorkbenchView("execution", "Home"), "workbench")
+    assert.equal(nextWorkbenchView("workbench", "End"), "review")
+    assert.equal(nextWorkbenchSurface("code", "ArrowRight"), "browser")
+    assert.equal(nextWorkbenchSurface("browser", "ArrowRight"), null)
+  })
+
+  test("legacy keys are removed after one-time migration", () => {
+    const keys = new Set(["mafw-right-dock-tab", "mafw-workbench-tab", "mafw-tasks-placement", "keep"])
+    clearLegacyWorkbenchKeys((k) => keys.delete(k))
+    assert.deepEqual([...keys], ["keep"])
   })
 
   test("legacy right-dock tabs map to B1 state", () => {
@@ -55,6 +79,10 @@ describe("workbench-views", () => {
       key === "mafw-workbench-tab" ? "browser" : null,
     )
     assert.equal(legacy.surface, "browser")
+    const editor = workbenchStateFromStorage((key) =>
+      key === "mafw-workbench-tab" ? "editor" : null,
+    )
+    assert.equal(editor.surface, "code")
 
     const fresh = workbenchStateFromStorage((key) => {
       if (key === "mafw-workbench-view") return "review"

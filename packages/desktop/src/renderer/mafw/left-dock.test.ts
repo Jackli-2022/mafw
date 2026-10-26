@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { connDotState, railAriaLabel, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldCloseOnSelect, toggleFace } from "./left-dock"
+import { connDotState, effectiveLeftDockWidth, railAriaLabel, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace } from "./left-dock"
 
 describe("left-dock 状态模型", () => {
   describe("toggleFace（VS Code toggle 语义）", () => {
@@ -47,6 +47,20 @@ describe("left-dock 状态模型", () => {
     test("push / closed → false", () => {
       expect(shouldCloseOnSelect("push")).toBe(false)
       expect(shouldCloseOnSelect("closed")).toBe(false)
+    })
+  })
+
+  describe("宽度预算与拉宽恢复", () => {
+    test("1366 推挤时左 dock 夹到 280，保住 Chat ≥520", () => {
+      expect(effectiveLeftDockWidth(400, 1366)).toBe(280)
+      expect(effectiveLeftDockWidth(264, 1366)).toBe(264)
+      expect(effectiveLeftDockWidth(400, 1600)).toBe(400)
+    })
+    test("启动抑制后拉宽到 1366 恢复存储为 open 的左 dock", () => {
+      expect(shouldAutoRestoreLeftDock("1", false, 1366)).toBe(true)
+      expect(shouldAutoRestoreLeftDock("1", true, 1600)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("0", false, 1600)).toBe(false)
+      expect(shouldAutoRestoreLeftDock("1", false, 1365)).toBe(false)
     })
   })
 

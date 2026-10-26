@@ -18,6 +18,9 @@ export type ExecutionViewProps = {
   section: ExecutionSection
   sessionID: string | null
   sessionDirectory: string | null
+  agentLabel?: string | null
+  modelLabel?: string | null
+  runStatus?: string | null
   todos: any[]
   hiddenTodos: any[]
   tokens: number
@@ -53,6 +56,9 @@ export function ExecutionView(props: ExecutionViewProps) {
         <div class="mafw-rw-overview">
           <div class="mafw-rw-overview-head">
             <span class="mafw-rw-overview-title">当前 run</span>
+            <span class="mafw-rw-overview-meta">
+              {props.runStatus ?? "空闲"} · {props.agentLabel ?? "默认 Agent"} · {props.modelLabel ?? "默认模型"}
+            </span>
             <span class="mafw-rw-overview-note">只读概览 · 控制在对话区</span>
           </div>
 
