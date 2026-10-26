@@ -60,6 +60,21 @@
 
 **与业界对齐**：420（聊天舒适下限，> 现 340 旧默认）／520（≈ 现 760 墙前的常规值，opencode 600 的保守侧）／640（Zed 640 同值）。三档间距 100/120px，拖拽手感与 30/40/50 比例档在 1440 窗下几乎同构（420/520/640 vs 418/558/697）。
 
+## 五、四家逐项（按用户追问补全）
+
+| 产品 | 宽度机制 | 公开数值 | 跨窗行为 | 证据 |
+|---|---|---|---|---|
+| **opencode desktop** | **绝对 px + 持久化**（`layout.v6`） | 对话列 **600**（DEFAULT_SESSION_WIDTH）/ 文件树 200 / 终端高 280 / 左栏 344 | 对话固定 600：1200 窗占 50% → 1440 约 43% → 1920 约 31% → 2560 约 23%。**clamp 极值出过 bug**：review 面板无法缩到窗宽 ~55% 以下（对话列 max-width 帽，issue #30618）；窄窗拖拽把手失效、chat 被压到最小（#30560） | 源码 `packages/app/src/context/layout.tsx`；issues #30618 / #30560 |
+| **Codex desktop** | **内容限宽绝对 + 面板绝对 px 持久化** | 对话内容 `--thread-content-max-width` ≈ **768**；右侧 browser 面板可拖、宽度**跨项目全局共享**（issue #20236） | 对话内容固定 768 居中，窗口再宽只增两侧留白（用户长期抱怨，#16669/#10516，社区靠改 CSS 变量绕过）；面板宽度不按项目记忆；多 pane 平铺仍是 feature request（#33301）；TUI 另案提案 50/50 分屏（#38073，≥120 列） | issues #16669 / #10516 / #20236 / #33301 / #38073 |
+| **Claude desktop** | **自由 pane**：拖 pane 边改宽、可 pop out；**未公布默认宽度/比例** | 无公开数字 | 跨窗行为官方未文档化，不能断言。另：claude.ai 的 Artifact 分屏约 50/50 属 Web 聊天产品面，不等于 Claude Code Desktop 的 pane 默认值 | code.claude.com/docs/en/desktop（只描述交互） |
+| **dsh**（DeepSeek Harness） | **dockkit 停靠面**：每会话一个 right sidebar，pane 可 split / float / collapse；**布局仅内存**（不持久化），无公开宽度数值 | 无 | 跨窗行为未定义（无数字可依）；dsh-tauri v0.25.0 给右栏加了「在新窗口全屏打开」 | 2026-09-29 面板调研；dsh-tauri v0.25.0 release notes |
+
+**四家的共同点与教训**：
+1. **没有一家在可缩放的桌面窗口上做「比例档位」**——比例只出现在固定画布（iPad/Windows Snap）和 Web 聊天分屏默认值。
+2. opencode 与 Codex 都选了**绝对锚定 + clamp**，且都在**极值/窄窗**处出过真实 bug（opencode 的 max-width 帽把 review 顶到 55%+；Codex 的宽度全局共享被抱怨）。
+3. Claude/dsh 干脆**不给档位**（自由拖/仅内存）——把复杂度留给用户，也躲开了档位语义。
+4. 对我们：绝对 px 档位的方向与业界一致，但必须把 **min/max 钳制语义**当成一等公民测试（这正是计划 Review Focus #1/#3 覆盖的）；档位标签用绝对语义（紧凑/标准/宽阔），比例只作实时显示。
+
 ## 影响范围
 
 - spec §已确认决策 4/5 与「Builder check 裁定（档位精确语义）」需改写为 px 档位
