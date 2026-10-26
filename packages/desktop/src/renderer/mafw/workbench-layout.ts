@@ -1,7 +1,6 @@
 // Workbench 布局纯函数（spec 2026-10-26-workbench-merge-design）。
 // 三列：左推挤栏 | 对话列（绝对 px 档位）| 工作台（吃剩余）；工作台关闭/窄屏 overlay 时两列。
-import { migrateLegacyChatWidth, normalizeDetent, type WorkbenchDetent } from "./workbench-detents"
-
+import { migrateLegacyChatWidth, normalizeDetent, ratioPercentFromDrag, type WorkbenchDetent } from "./workbench-detents"
 /** grid-template-columns：split=三列，否则对话满宽 + 0 宽 dock 列。 */
 export function workbenchColumns(input: { leftPx: number; chatPx: number; split: boolean }): string {
   const left = `${input.leftPx}px`
@@ -17,6 +16,11 @@ export function detentFromLegacy(storedChatWidth: string | null, availableWidth:
 /** 非 chat 视图隐藏整个 dock 壳（窄屏 overlay 不得盖住 Dashboard/Config 等页）。 */
 export function workbenchShellHidden(chatActive: boolean): boolean {
   return !chatActive
+}
+
+/** 拖动中的实时提示：px + 当前实际比例（比例是结果，不是定义）。 */
+export function formatResizePreview(px: number, availableWidth: number): string {
+  return `${Math.round(px)}px · ${ratioPercentFromDrag(px, availableWidth)}%`
 }
 
 export type MigratedWorkbench = {

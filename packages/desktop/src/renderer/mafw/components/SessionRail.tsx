@@ -22,7 +22,7 @@ export function SessionRail(props: {
 
   createEffect(() => {
     if (!props.openTab) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") props.onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); props.onClose() } }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
   })

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { normalizeDockTab, DOCK_TABS, DOCK_DEFAULT_WIDTH } from "../src/renderer/mafw/components/dock-tab"
+import { normalizeDockTab, DOCK_TABS } from "../src/renderer/mafw/components/dock-tab"
 
 describe("normalizeDockTab（2026-10-26 工作台合并后：仅会话数据面板）", () => {
   test("合法值直通", () => {
@@ -38,11 +38,11 @@ describe("DOCK_TABS（会话数据面板七栏）", () => {
   })
 })
 
-describe("dock 宽度（overlay 用）", () => {
-  test("overlay 默认宽度 520（工作台骨架需要更宽）", () => expect(DOCK_DEFAULT_WIDTH).toBe(520))
-  test("不再导出按 tab 宽度函数", async () => {
+describe("dock 宽度（overlay 由 CSS 固定，无 JS 常量）", () => {
+  test("不再导出按 tab 宽度函数与 DOCK_DEFAULT_WIDTH", async () => {
     const mod = await import("../src/renderer/mafw/components/dock-tab")
     expect("dockTabWidth" in mod).toBe(false)
     expect("DOCK_WIDE_TABS" in mod).toBe(false)
+    expect("DOCK_DEFAULT_WIDTH" in mod).toBe(false)
   })
 })

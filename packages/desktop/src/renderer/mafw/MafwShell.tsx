@@ -56,10 +56,10 @@ import { addPending } from "./annotation-store"
 import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
-import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
+import { type DockTab, normalizeDockTab } from "./components/dock-tab"
 import { defaultDockOpen } from "./workbench-defaults"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
-import { migrateDockKeys, workbenchColumns, workbenchShellHidden } from "./workbench-layout"
+import { migrateDockKeys, workbenchColumns, workbenchShellHidden, formatResizePreview } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -1051,7 +1051,7 @@ export function MafwShell() {
     // 后台任务对账轮询（spec §5）：后台 tab 开着或 shell 行还在跑才跑；
     // REST 不可达（Gate Ruling A）时跳过，不空转打网关（reviewer Important 6）
     const backgroundTimer = setInterval(() => {
-      if (!(rightDockTab() === "background" || backgroundRows().some(r => r.type === "shell" && r.status === "running"))) return
+      if (!((sessionRailOpen() && rightDockTab() === "background") || backgroundRows().some(r => r.type === "shell" && r.status === "running"))) return
       void backgroundRestAvailable().then(ok => { if (ok) void reconcileBackground() })
     }, 15_000)
     // Dev 事件检查器开关：Ctrl+Shift+E（SSE trace 浮层，漏接线事件红色高亮）
@@ -2123,6 +2123,11 @@ export function MafwShell() {
                 onResize={(px) => setChatPreview(px)}
                 onCollapse={() => applyRightDock(false)}
               />
+              <Show when={chatPreview() !== null}>
+                <span class="mafw-chat-resize-badge">
+                  {formatResizePreview(chatPreview()!, availableWidth())}
+                </span>
+              </Show>
             </div>
           </Show>
         </div>

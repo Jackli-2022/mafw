@@ -1,7 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { detentFromLegacy, migrateDockKeys, workbenchColumns, workbenchShellHidden } from "./workbench-layout"
-
+import { detentFromLegacy, formatResizePreview, migrateDockKeys, workbenchColumns, workbenchShellHidden } from "./workbench-layout"
 describe("workbench layout pure functions", () => {
   test("workbenchColumns：split 三列 / 关闭两列", () => {
     assert.equal(workbenchColumns({ leftPx: 0, chatPx: 520, split: true }), "0px 520px minmax(0, 1fr)")
@@ -46,5 +45,11 @@ describe("workbench layout pure functions", () => {
   test("workbenchShellHidden：非 chat 视图隐藏（窄屏 overlay 不得盖住其他页）", () => {
     assert.equal(workbenchShellHidden(false), true)
     assert.equal(workbenchShellHidden(true), false)
+  })
+
+  test("formatResizePreview：拖动实时 px + 实际比例", () => {
+    assert.equal(formatResizePreview(520, 1394), "520px · 37.3%")
+    assert.equal(formatResizePreview(437, 1092), "437px · 40%")
+    assert.equal(formatResizePreview(100, 0), "100px · 0%")
   })
 })

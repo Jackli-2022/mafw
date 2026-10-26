@@ -8,6 +8,3 @@ export function normalizeDockTab(v: string | null | undefined, fallback: DockTab
   if (v === "quota") return "usage"
   return (DOCK_TABS as string[]).includes(v || "") ? (v as DockTab) : fallback
 }
-
-/** overlay（<1200px）下工作台浮层默认宽度。 */
-export const DOCK_DEFAULT_WIDTH = 520

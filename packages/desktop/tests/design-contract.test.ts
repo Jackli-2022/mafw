@@ -970,12 +970,15 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("ScreenshotCropper")
     expect(cssBlock(".mafw-shot-crop {")).toContain("position: fixed")
   })
-  test("G2 元素点选：注入脚本 + 区域截图 + capture 草稿（会话透传）", () => {
+  test("G2 元素点选：注入脚本 + 窗口区域截屏 + capture 草稿（会话透传）", () => {
     const dock = read("src/renderer/mafw/components/BrowserDock.tsx")
     expect(dock).toContain("buildPickScript")
-    expect(dock).toContain("capturePage")
+    expect(dock).toContain("capture.windowRegion")
+    expect(dock).not.toContain("view.capturePage")
     expect(dock).toContain('kind: "element"')
     expect(read("src/renderer/mafw/components/Workbench.tsx")).toContain("<BrowserDock sessionID={props.sessionID}")
+    expect(read("src/preload/index.ts")).toContain('ipcRenderer.invoke("mafw-capture-window-region"')
+    expect(read("src/main/capture/screenshot-capture.ts")).toContain("captureWindowRegion")
   })
   test("终审修复：非 chat 隐藏壳 / 终端常挂载 / 浮层滚动 / 迁移 / 发送门 / 取消", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")

@@ -1915,7 +1915,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 </ButtonV2>
               </TooltipV2>
               <TooltipV2 value="截屏批注" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="截屏批注" onClick={() => void captureScreen()}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-optional" aria-label="截屏批注" onClick={() => void captureScreen()}>
                   <Icon name="photo" size="small" />
                 </ButtonV2>
               </TooltipV2>

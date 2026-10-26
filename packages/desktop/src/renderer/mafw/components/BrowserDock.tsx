@@ -57,7 +57,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
     el.className = "mafw-browser-view"
     el.addEventListener("did-navigate", sync)
     el.addEventListener("did-navigate-in-page", sync)
-    el.addEventListener("did-start-loading", () => setLoading(true))
+    el.addEventListener("did-start-loading", () => { setLoading(true); setFailed(null) })
     el.addEventListener("did-stop-loading", () => { setLoading(false); sync() })
     el.addEventListener("page-title-updated", (e: any) => setTitle(String(e?.title ?? "")))
     el.addEventListener("dom-ready", sync)
@@ -120,8 +120,15 @@ export function BrowserDock(props: { sessionID: string | null }) {
         const rr = clampRect(payload.rect, { x: 0, y: 0, width: view.clientWidth, height: view.clientHeight })
         if (rr.width > 0 && rr.height > 0) {
           try {
-            const img = await view.capturePage({ x: rr.x, y: rr.y, width: rr.width, height: rr.height })
-            shot = img?.toDataURL?.() ?? ""
+            // capturePage 在本机 Electron 42 对 guest 悬挂（UnknownVizError）→ 用窗口区域截屏
+            const box = view.getBoundingClientRect()
+            const cap = await window.api.capture.windowRegion({
+              x: box.left + rr.x,
+              y: box.top + rr.y,
+              width: rr.width,
+              height: rr.height,
+            })
+            shot = cap?.dataUrl ?? ""
           } catch { /* 截图失败：仅元素信息 */ }
         }
       }
