@@ -73,6 +73,17 @@ describe('normalizePiMessages（flat 输出，canonical v3）', () => {
     expect((out[0].content![0] as any)).toMatchObject({ type: 'reasoning', text: 'opaque', signature: 'sig-abc' });
   });
 
+  test('redacted thinking (empty text) and tool thoughtSignature keep signature', () => {
+    const out = normalizePiMessages([
+      { role: 'assistant', timestamp: T, content: [
+        { type: 'thinking', thinking: '', thinkingSignature: 'sig-redacted' },
+        { type: 'toolCall', id: 'tc-sig', name: 'read', arguments: {}, thoughtSignature: 'sig-tool' },
+      ] },
+    ]);
+    expect((out[0].content![0] as any)).toMatchObject({ type: 'reasoning', text: '', signature: 'sig-redacted' });
+    expect((out[0].content![1] as any)).toMatchObject({ type: 'tool', callID: 'tc-sig', signature: 'sig-tool' });
+  });
+
   test('id 稳定性：同输入同输出（幂等）；time 为顶层字段', () => {
     const raw = [{ role: 'assistant', timestamp: T, content: [{ type: 'text', text: 'x' }] }];
     expect(normalizePiMessages(raw)).toEqual(normalizePiMessages(raw));

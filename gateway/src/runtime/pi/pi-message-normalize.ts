@@ -34,9 +34,9 @@ export function normalizePiMessages(raw: any[]): MafwMessage[] {
         j++;
         if (c?.type === 'text' && c.text) {
           parts.push({ id: `${id}_t${j}`, type: 'text', text: c.text });
-        } else if (c?.type === 'thinking' && c.thinking) {
+        } else if (c?.type === 'thinking' && (c.thinking || c.thinkingSignature)) {
           parts.push({
-            id: `${id}_r${j}`, type: 'reasoning', text: c.thinking,
+            id: `${id}_r${j}`, type: 'reasoning', text: c.thinking ?? '',
             ...(typeof c.thinkingSignature === 'string' && c.thinkingSignature ? { signature: c.thinkingSignature } : {}),
           });
         } else if (c?.type === 'toolCall' && typeof c.id === 'string') {
@@ -44,6 +44,7 @@ export function normalizePiMessages(raw: any[]): MafwMessage[] {
           const input = c.arguments ?? {};
           parts.push({
             id: `toolpart_${c.id}`, type: 'tool', tool: c.name, callID: c.id,
+            ...(typeof c.thoughtSignature === 'string' && c.thoughtSignature ? { signature: c.thoughtSignature } : {}),
             state: res
               ? (res.isError
                   ? { status: 'error', input, error: coerceOutput(res.content), time: { start: ts, end: typeof res.timestamp === 'number' ? res.timestamp : ts } }
