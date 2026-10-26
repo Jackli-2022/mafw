@@ -70,6 +70,22 @@ dock:    953x1060  @38..    ← 正常
 3. header 统一高度 token（44px），让 chat titlebar 与工作台 tab 行基线对齐。
 4. 工作台内容左右内边距与 chat 内容内边距统一（16px）。
 
+## 六、2026-10-26 增补：各家桌面端配比实测（工作台合并讨论）
+
+数字均为源码 / 一手 issue 实证（MAFW 现状：chat = 38.2% × 可用宽 clamp 360–520、工作台吃剩余，`workbench-defaults.ts` 测试钉扎 1092→417 / 1234→471 / 700→360）：
+
+| 产品 | 对话:工作台 | 依据 |
+|---|---|---|
+| **opencode desktop**（anomalyco/opencode v2） | 对话列**固定默认 600px**、review 吃剩余 → @1440 ≈ 42/58、@1920 ≈ 31/69 | 源码 `packages/app/src/context/layout.tsx`：`DEFAULT_SIDEBAR_WIDTH=344`（左栏，默认收起）/ `DEFAULT_SESSION_WIDTH=600` / `DEFAULT_FILE_TREE_WIDTH=200` / `DEFAULT_TERMINAL_HEIGHT=280`；issue #30618（对话列 max-width 帽把 review 最小顶到 ~55% 窗宽，用户抱怨） |
+| **Zed** | Agent Panel 默认右 dock **640px 固定** → @1440 ≈ 44/56 | 2026-09-28 美学调研实测 |
+| **Codex desktop** | 无固定比例：对话**内容**限宽 ~768px 居中（`--thread-content-max-width`），右 browser 面板 flush 可拖（宽度跨项目全局共享，#20236 被抱怨）；TUI 分屏提案 = **50/50**（#38073，codex-rs `SideContentWidth::Half`） | issues #16669 / #10516 / #20236 / #38073 |
+| **Kimi Code desktop** | 默认 ≈ **50/50**（右预览默认 = 剩余一半、对话 min 320、左栏默认 270） | 官方文档（结构：右面板 tab 随会话 + 底部终端 + 顶栏中部 panel tabs）+ 社区逆向 spec `spec-kimi-code`（数字，非官方） |
+| **Claude desktop** | pane 开 ≈ 50/50；无常驻右栏（自由 pane 可拖重排/弹出） | 2026-09-29 面板开关调研 |
+| **dsh**（DeepSeek Harness） | 未公布数字；右栏 = dockkit 停靠面（files/browser/guide/text/subagentchat），pane 可分栏/浮出/收回，布局仅内存 | 官方 reference（只有编程接口 `ctx.sidebarRight`） |
+| **VS Code** | sidebar 300px ≈ 21%（导航性质，仅参照）；编辑器吃剩余 | 官方文档 |
+
+**两派收敛**：对等派 50/50（Kimi / Claude / Codex TUI 提案 / Cursor 用户手拖）vs 工作台派（opencode 600 固定 / Zed 640 固定 / Codex 内容限宽 768 / VS Code）。MAFW 现状 38/62 属工作台派且更激进（宽屏 clamp 后 28/72）。**同派内我们的对话列 clamp 520 也窄于 opencode 600 / Zed 640**——若对话区显挤，先抬 cap 到 600 比改整体比例更贴业界。
+
 ## 来源
 
 - VS Code: code.visualstudio.com/docs/editing/getting-started/userinterface（activity bar 48 / sidebar 默认 300）
