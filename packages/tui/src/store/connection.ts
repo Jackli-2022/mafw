@@ -27,6 +27,7 @@ export const KNOWN_EVENTS = [
   'question.asked',
   'queue.updated',
   'session.config',
+  'session.checkpoint',
 ]
 
 /**

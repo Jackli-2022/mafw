@@ -62,6 +62,7 @@ export const EVENT_FLOW_MATRIX: Record<string, EventFlowRow> = {
 'queue.updated':        R([], 'passthrough', 'ignore', 'ignore', '队列 inbox 事件：gateway 在 enqueue/dequeue/cancel/clear/expire 时广播（items 全量快照，经 event_log 持久化）'),
   'task.updated':         R([], 'passthrough', 'handled', 'ignore', 'Batch 4：gateway 持久任务状态变化（顶层广播，desktop task-store/BackgroundDock 消费）'),
   'session.config':       R([], 'passthrough', 'ignore', 'ignore', 'Batch 7：会话配置选项变更（mode/agent/model/model_config/thought_level；gateway 顶层广播）'),
+  'session.checkpoint':   R([], 'passthrough', 'ignore', 'ignore', 'T2-1：检查点创建（ gateway 自发，auto/manual；desktop overlay 拉取式消费）'),
   'trajectory.event':     R([], 'passthrough', 'handled', 'ignore', 'desktop 滚动窗口 200'),
   'trajectory.turn':      R([], 'passthrough', 'handled', 'ignore', ''),
   // ---- 能力面 ----
