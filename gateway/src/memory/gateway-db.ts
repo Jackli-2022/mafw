@@ -85,6 +85,20 @@ export interface SessionCheckpointRow {
   created_at: string;
 }
 
+/** T2-2：回合软暂停运行状态。 */
+export interface RunStateRow {
+  id: string;
+  session_id: string;
+  project_dir: string;
+  status: string;
+  reason: string | null;
+  brief_json: string;
+  created_at: string;
+  suspended_at: string;
+  resumed_at: string | null;
+  finished_at: string | null;
+}
+
 export class GatewayDatabase {
   private db: Database.Database;
 
@@ -308,6 +322,20 @@ export class GatewayDatabase {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_session_checkpoints ON session_checkpoints(session_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS run_states (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        project_dir TEXT NOT NULL,
+        status TEXT NOT NULL,
+        reason TEXT,
+        brief_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        suspended_at TEXT NOT NULL,
+        resumed_at TEXT,
+        finished_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_run_states ON run_states(session_id, created_at);
     `);
 
     // Migration: add assistant_text column to trajectory_turns if not exists
@@ -780,6 +808,71 @@ export class GatewayDatabase {
 
   deleteSessionCheckpoints(sessionId: string): void {
     this.db.prepare('DELETE FROM session_checkpoints WHERE session_id = ?').run(sessionId);
+  }
+
+  // ── T2-2 run states ───────────────────────────────────────────────────
+
+  insertRunState(row: RunStateRow): void {
+    this.db.prepare(
+      `INSERT INTO run_states
+         (id, session_id, project_dir, status, reason, brief_json, created_at, suspended_at, resumed_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      row.id, row.session_id, row.project_dir, row.status, row.reason, row.brief_json,
+      row.created_at, row.suspended_at, row.resumed_at, row.finished_at,
+    );
+  }
+
+  getRunState(id: string): RunStateRow | undefined {
+    return this.db.prepare('SELECT * FROM run_states WHERE id = ?').get(id) as RunStateRow | undefined;
+  }
+
+  getActiveRunState(sessionId: string): RunStateRow | undefined {
+    return this.db.prepare(
+      `SELECT * FROM run_states
+       WHERE session_id = ? AND status IN ('suspended','resumed')
+       ORDER BY created_at DESC LIMIT 1`,
+    ).get(sessionId) as RunStateRow | undefined;
+  }
+
+  listActiveRunStates(): RunStateRow[] {
+    return this.db.prepare(
+      `SELECT * FROM run_states WHERE status IN ('suspended','resumed') ORDER BY created_at DESC`,
+    ).all() as RunStateRow[];
+  }
+
+  updateRunState(
+    id: string,
+    patch: Partial<Pick<RunStateRow, 'status' | 'resumed_at' | 'finished_at' | 'reason'>>,
+  ): void {
+    const current = this.getRunState(id);
+    if (!current) return;
+    this.db.prepare(
+      `UPDATE run_states SET status = ?, reason = ?, resumed_at = ?, finished_at = ? WHERE id = ?`,
+    ).run(
+      patch.status ?? current.status,
+      patch.reason !== undefined ? patch.reason : current.reason,
+      patch.resumed_at !== undefined ? patch.resumed_at : current.resumed_at,
+      patch.finished_at !== undefined ? patch.finished_at : current.finished_at,
+      id,
+    );
+  }
+
+  /** 仅修剪终态 run（活跃 run 永不删除）；保留最新 keep 条终态。 */
+  pruneRunStates(sessionId: string, keep: number): number {
+    const result = this.db.prepare(
+      `DELETE FROM run_states
+       WHERE session_id = ? AND status NOT IN ('suspended','resumed') AND id NOT IN (
+         SELECT id FROM run_states
+         WHERE session_id = ? AND status NOT IN ('suspended','resumed')
+         ORDER BY created_at DESC LIMIT ?
+       )`,
+    ).run(sessionId, sessionId, keep);
+    return result.changes;
+  }
+
+  deleteRunStates(sessionId: string): void {
+    this.db.prepare('DELETE FROM run_states WHERE session_id = ?').run(sessionId);
   }
 
   close(): void {
