@@ -1,6 +1,6 @@
 // 左 dock 状态模型（纯函数，无 Solid 依赖）。
 // spec: docs/superpowers/specs/2026-10-22-workbench-layout-design.md D2/D3/Builder 已决项
-export type LeftDockFace = "sessions" | "search"
+export type LeftDockFace = "sessions" | "search" | "notes"
 export type LeftDockMode = "closed" | "overlay" | "push"
 
 export interface LeftDockState {

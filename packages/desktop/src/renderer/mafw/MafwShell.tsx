@@ -1867,7 +1867,6 @@ export function MafwShell() {
         <IconRail
           face={leftDock().open ? leftDock().face : null}
           onToggleFace={toggleLeftDock}
-          onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
           onDashboard={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("goals") }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
           onToggleTheme={toggleTheme}
@@ -1941,6 +1940,7 @@ export function MafwShell() {
             activeSessionId={activeSessionId()}
             managerSessionId={managerSessionId()}
             projectsRev={projectsRev}
+            onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then(sid => { if (sid) openSessionTab(sid) }) }}
             onSelectSession={openSessionTab}
             onSessionDeleted={closeSession}
           />

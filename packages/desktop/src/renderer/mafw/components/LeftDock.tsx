@@ -12,6 +12,7 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { ManagerCard } from "./ManagerCard"
+import { NotesDock } from "./NotesDock"
 import { ConfirmOverlay } from "./ConfirmOverlay"
 import { sessionStore } from "../session-store"
 import { useConnPhase } from "../connection-state"
@@ -47,6 +48,7 @@ type Props = {
   activeSessionId: string | null
   managerSessionId?: string | null
   projectsRev?: () => number
+  onNewSession: () => void
   onSelectSession: (id: string, title?: string, manager?: boolean) => void
   onSessionDeleted?: (id: string) => void
 }
@@ -300,10 +302,19 @@ export function LeftDock(props: Props) {
     <div ref={dockRef} tabIndex={-1} class="mafw-left-dock" classList={{ overlay: props.mode === "overlay", push: props.mode === "push" }} style={{ width: `${props.width}px` }}>
       <div class="mafw-left-dock-head">
         {projectSwitcher()}
+        <TooltipV2 value="新建会话" openDelay={300}>
+          <ButtonV2 variant="ghost" size="small" icon="plus-small" aria-label="新建会话" onClick={props.onNewSession} />
+        </TooltipV2>
         <TooltipV2 value="关闭" openDelay={300}>
           <ButtonV2 variant="ghost" size="small" icon="x" aria-label="关闭左栏" onClick={props.onClose} />
         </TooltipV2>
       </div>
+
+      <Show when={props.face === "notes"}>
+        <div class="mafw-left-dock-notes"><NotesDock /></div>
+      </Show>
+
+      <Show when={props.face !== "notes"}>
 
       <Show when={props.face === "search"}>
         <div class="mafw-left-dock-search" ref={searchRef}>
@@ -381,6 +392,8 @@ export function LeftDock(props: Props) {
           <div class="mafw-rail-load-more">仅显示前 {SEARCH_CAP} 条结果</div>
         </Show>
       </div>
+
+      </Show>
 
       <Show when={props.mode === "push"}>
         <ResizeHandle

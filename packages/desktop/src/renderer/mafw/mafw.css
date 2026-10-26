@@ -2970,6 +2970,7 @@ html[data-theme="light"] body {
 /* 浮层容器用 tabindex=-1 接管焦点（a11y），不画整块焦点环。 */
 .mafw-left-dock:focus { outline: none; }
 .mafw-left-dock-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.mafw-left-dock-notes { flex: 1; min-height: 0; overflow-y: auto; }
 .mafw-left-dock-backdrop { position: absolute; inset: 0; z-index: 60; background: transparent; }
 .mafw-trajectory-dock { height: 100%; display: flex; flex-direction: column; }
 .mafw-trajectory-summary {

@@ -10,7 +10,6 @@ type IconName = ComponentProps<typeof Icon>["name"]
 export type IconRailProps = {
   face: LeftDockFace | null
   onToggleFace: (face: LeftDockFace) => void
-  onNewSession: () => void
   onDashboard: () => void
   onConfig: () => void
   onToggleTheme: () => void
@@ -37,13 +36,13 @@ export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
   const topItems = (): RailItem[] => [
-    { key: "sessions", icon: "bubble-5", label: "会话 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
-    { key: "new", icon: "plus-small", label: "新建会话", onClick: props.onNewSession },
+    { key: "sessions", icon: "bubble-5", label: "工作", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
   ]
   const middleItems = (): RailItem[] => [
     { key: "search", icon: "magnifying-glass", label: "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
   ]
   const bottomItems = (): RailItem[] => [
+    { key: "notes", icon: "pencil-line", label: "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
     { key: "dashboard", icon: "status", label: "Dashboard", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
     // 主题图标沿用旧 Rail 品牌块：亮色 ☀ / 暗色月亮 SVG（图标集无 sun/moon）
