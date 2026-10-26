@@ -78,7 +78,7 @@ export function Workbench(props: {
             />
           </div>
           <div class="mafw-wb-pane" style={{ display: props.tab === "browser" ? "contents" : "none" }}>
-            <BrowserDock />
+            <BrowserDock sessionID={props.sessionID} />
           </div>
         </div>
       </div>

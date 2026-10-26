@@ -67,6 +67,7 @@ import { appendQuote, formatQuote } from "./quote-format"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
 import { ScreenshotCropper, type CaptureShot } from "./ScreenshotCropper"
 import { dataUrlToFile } from "../capture/data-url"
+import { registerCaptureSink } from "../capture/attach-sink"
 import { CheckpointOverlay } from "./CheckpointOverlay"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
@@ -757,6 +758,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       .then((f) => addPastedFile(f))
       .catch(() => { /* 附件失败仍保留 pending capture 缩略图 */ })
   }
+  // G2：BrowserDock 的元素截图经 sink 进 attachments（与 G1 同一媒体管道）
+  onMount(() => {
+    const off = registerCaptureSink((f) => void addPastedFile(f))
+    onCleanup(off)
+  })
 
   createEffect(() => {
     sidProp()

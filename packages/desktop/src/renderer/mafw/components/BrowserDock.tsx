@@ -9,10 +9,16 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { Icon } from "@mafw/ui/icon"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../../shared/browser-policy"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
+import { buildPickScript, type ElementPickPayload } from "../browser/element-pick"
+import { getPendingCaptures } from "../chat/pending-captures"
+import { clampRect } from "../capture/crop-math"
+import { dataUrlToFile } from "../capture/data-url"
+import { pushCaptureFile } from "../capture/attach-sink"
 
-export function BrowserDock() {
+export function BrowserDock(props: { sessionID: string | null }) {
   const [address, setAddress] = createSignal("")
   const [title, setTitle] = createSignal("")
   const [loading, setLoading] = createSignal(false)
@@ -20,6 +26,7 @@ export function BrowserDock() {
   const [canForward, setCanForward] = createSignal(false)
   const [failed, setFailed] = createSignal<string | null>(null)
   const [started, setStarted] = createSignal(false)
+  const [picking, setPicking] = createSignal(false)
 
   let host: HTMLDivElement | undefined
   let view: any = null
@@ -79,6 +86,46 @@ export function BrowserDock() {
     else try { view?.reload?.() } catch { /* ignore */ }
   }
 
+  /** G2：点选元素 → 元素信息 + 区域截图 → capture 草稿（+ 图片进媒体管道）。 */
+  const startPick = async () => {
+    if (!view || picking()) return
+    setPicking(true)
+    try {
+      const payload = (await view.executeJavaScript(buildPickScript(), true)) as ElementPickPayload | null
+      if (!payload) return
+      let shot = ""
+      if (payload.rect && view.clientWidth > 0 && view.clientHeight > 0) {
+        const rr = clampRect(payload.rect, { x: 0, y: 0, width: view.clientWidth, height: view.clientHeight })
+        if (rr.width > 0 && rr.height > 0) {
+          try {
+            const img = await view.capturePage({ x: rr.x, y: rr.y, width: rr.width, height: rr.height })
+            shot = img?.toDataURL?.() ?? ""
+          } catch { /* 截图失败：仅元素信息 */ }
+        }
+      }
+      if (!props.sessionID) {
+        showToastV2({ description: "先打开一个会话再点选元素", variant: "error", duration: 2500 } as any)
+        return
+      }
+      getPendingCaptures().add({
+        sessionID: props.sessionID,
+        kind: "element",
+        comment: "",
+        dataUrl: shot,
+        meta: { tag: payload.tag, selector: payload.selector, text: payload.text, rect: payload.rect },
+      })
+      if (shot) {
+        void dataUrlToFile(shot, `element-${Date.now()}.png`)
+          .then((f) => pushCaptureFile(f))
+          .catch(() => { /* 保留 pending 草稿 */ })
+      }
+    } catch {
+      showToastV2({ description: "页面不支持点选（可能被 CSP 限制）", variant: "error", duration: 3000 } as any)
+    } finally {
+      setPicking(false)
+    }
+  }
+
   onMount(() => {
     const off = window.api.browser.onOpenUrl((url) => load(url))
     onCleanup(() => {
@@ -109,6 +156,18 @@ export function BrowserDock() {
         <Show when={loading()}>
           <LoaderV2 width={14} height={14} />
         </Show>
+        <TooltipV2 value="点选元素（点击后捕获元素信息 + 截图）" openDelay={300}>
+          <ButtonV2
+            variant="ghost"
+            size="small"
+            aria-label="点选元素"
+            aria-pressed={picking()}
+            disabled={!started() || picking()}
+            onClick={() => void startPick()}
+          >
+            <Icon name="selector" size="small" />
+          </ButtonV2>
+        </TooltipV2>
         <TooltipV2 value="在系统浏览器打开" openDelay={300}>
           <ButtonV2
             variant="ghost"

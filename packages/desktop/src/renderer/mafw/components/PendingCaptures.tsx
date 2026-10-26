@@ -20,7 +20,9 @@ export function PendingCaptures(props: { sessionID: string | null }) {
         <For each={items()}>
           {(c) => (
             <div class="mafw-pending-capture-row">
-              <img class="mafw-pending-capture-thumb" src={c.dataUrl} alt="" />
+              <Show when={c.dataUrl}>
+                <img class="mafw-pending-capture-thumb" src={c.dataUrl} alt="" />
+              </Show>
               <span class="mafw-pending-capture-kind">{c.kind === "element" ? "元素点选" : "截屏"}</span>
               <TextInputV2
                 class="mafw-pending-capture-comment"
