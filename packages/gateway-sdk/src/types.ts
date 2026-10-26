@@ -297,6 +297,19 @@ export interface GatewayStatus {
 // Namespace interfaces (aligned with @opencode-ai/sdk v2)
 // ============================================================
 
+export interface QueueItem {
+  id: string
+  sessionID: string
+  text?: string
+  parts?: Array<{ type: string; text?: string; [k: string]: unknown }>
+  agent?: string
+  model?: { providerID: string; modelID: string }
+  expectReply?: boolean
+  idempotencyKey?: string
+  enqueuedAt: string
+  source: string
+}
+
 export interface SessionNamespace {
   /** worktree: true|'<slug>' → git worktree add + 会话绑定隔离目录（切片 4；worktreeApi runtime-only） */
   create(params?: { directory?: string; metadata?: Record<string, unknown>; worktree?: boolean | string }): Promise<Session & { worktree?: { dir: string; branch: string } }>
@@ -312,8 +325,12 @@ export interface SessionNamespace {
   switchAgent(params: { path: { id: string }; body: { agent: string } }): Promise<void>
   switchModel(params: { path: { id: string }; body: { model: { providerID: string; modelID: string }; variant?: string } }): Promise<void>
   abort(params: { path: { id: string } }): Promise<void>
+  /** Gateway 服务端 inbox（batch 5 UI）：busy 会话的排队快照/取消/清空。 */
+  queueList(params: { path: { id: string } }): Promise<{ items: QueueItem[] }>
+  queueCancel(params: { path: { id: string; itemId: string } }): Promise<{ cancelled: QueueItem }>
+  queueClear(params: { path: { id: string } }): Promise<{ cleared: number }>
   prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } }): Promise<{ parts: TextPart[]; structured?: unknown; structuredError?: string }>
-  promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } }): Promise<void>
+  promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean } }): Promise<void>
   trajectory(params: { path: { id: string }; query?: { limit?: number; before_turn?: number; rebuild?: boolean } }): Promise<TrajectoryResponse>
   events(params: { path: { id: string } }): Promise<{ on(event: string, cb: (data: any) => void): void }>
   command(params: { path: { id: string }; body: { command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } } }): Promise<void>

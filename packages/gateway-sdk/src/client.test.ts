@@ -298,6 +298,31 @@ test("session.promptAsync sends POST /api/session/:id/promptAsync", async () => 
   expect(body.message).toBe("hello")
 })
 
+test("session.promptAsync forwards delivery/idempotencyKey/expectReply", async () => {
+  fetchMock.mockResolvedValue(okJson({}))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.promptAsync({
+    path: { id: "s1" },
+    body: { message: "hello", delivery: "queue", idempotencyKey: "k1", expectReply: false },
+  })
+  const body = JSON.parse((fetchMock as any).mock.calls[0][1].body)
+  expect(body).toMatchObject({ delivery: "queue", idempotencyKey: "k1", expectReply: false })
+})
+
+test("session queue list/cancel/clear hit the existing routes", async () => {
+  fetchMock.mockResolvedValue(okJson({ items: [], cancelled: { id: "q1" }, cleared: 0 }))
+  const c = new MafwClient("http://gw:3000")
+  await c.session.queueList({ path: { id: "s1" } })
+  await c.session.queueCancel({ path: { id: "s1", itemId: "q1" } })
+  await c.session.queueClear({ path: { id: "s1" } })
+  const calls = (fetchMock as any).mock.calls
+  expect(calls[0][0]).toBe("http://gw:3000/api/session/s1/queue")
+  expect(calls[1][0]).toBe("http://gw:3000/api/session/s1/queue/q1")
+  expect(calls[1][1].method).toBe("DELETE")
+  expect(calls[2][0]).toBe("http://gw:3000/api/session/s1/queue")
+  expect(calls[2][1].method).toBe("DELETE")
+})
+
 test("session.events connects SSE to session-specific endpoint (uses own connection)", async () => {
   const connectSpy = mock()
   const orig = SSEConnection.prototype.connectToSession

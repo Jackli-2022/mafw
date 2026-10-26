@@ -7,7 +7,7 @@ import {
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
-  TaskEntity, TaskSubmitInput, TaskOutput,
+  TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -183,12 +183,12 @@ export class MafwClient implements IMafwClient {
       await this.request(`/api/session/${params.path.id}/abort`, { method: 'POST' })
     },
 
-    queueList: async (params: { path: { id: string } }): Promise<{ items: unknown[] }> => {
-      return this.request<{ items: unknown[] }>(`/api/session/${params.path.id}/queue`)
+    queueList: async (params: { path: { id: string } }): Promise<{ items: QueueItem[] }> => {
+      return this.request<{ items: QueueItem[] }>(`/api/session/${params.path.id}/queue`)
     },
 
-    queueCancel: async (params: { path: { id: string; itemId: string } }): Promise<{ cancelled: string }> => {
-      return this.request<{ cancelled: string }>(`/api/session/${params.path.id}/queue/${params.path.itemId}`, { method: 'DELETE' })
+    queueCancel: async (params: { path: { id: string; itemId: string } }): Promise<{ cancelled: QueueItem }> => {
+      return this.request<{ cancelled: QueueItem }>(`/api/session/${params.path.id}/queue/${params.path.itemId}`, { method: 'DELETE' })
     },
 
     queueClear: async (params: { path: { id: string } }): Promise<{ cleared: number }> => {
@@ -274,7 +274,7 @@ export class MafwClient implements IMafwClient {
     promptAsync: async (
       params: {
         path: { id: string }
-        body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } }
+        body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } }
       },
     ): Promise<void> => {
       const res = await this.fetchPath(`/api/session/${params.path.id}/promptAsync`, {
@@ -285,6 +285,9 @@ export class MafwClient implements IMafwClient {
           parts: params.body.parts,
           agent: params.body.agent,
           model: params.body.model,
+          ...(params.body.delivery ? { delivery: params.body.delivery } : {}),
+          ...(params.body.idempotencyKey ? { idempotencyKey: params.body.idempotencyKey } : {}),
+          ...(params.body.expectReply !== undefined ? { expectReply: params.body.expectReply } : {}),
         }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`)

@@ -86,6 +86,9 @@ export function createMafwApi(): MafwAPI {
       switchAgent: (id, agent) => invoke("session", "switchAgent", { path: { id }, body: { agent } }),
       switchModel: (id, model) => invoke("session", "switchModel", { path: { id }, body: { model } }),
       abort: (sessionID) => invoke("session", "abort", { path: { id: sessionID } }),
+      queueList: (sessionID) => invoke("session", "queueList", { path: { id: sessionID } }),
+      queueCancel: (sessionID, itemId) => invoke("session", "queueCancel", { path: { id: sessionID, itemId } }),
+      queueClear: (sessionID) => invoke("session", "queueClear", { path: { id: sessionID } }),
       fork: (sessionID, messageID?) => invoke("session", "fork", { path: { id: sessionID }, body: { messageID } }),
       revert: (sessionID, messageID) => invoke("session", "revert", { path: { id: sessionID }, body: { messageID } }),
       unrevert: (sessionID) => invoke("session", "unrevert", { path: { id: sessionID } }),
@@ -106,7 +109,7 @@ export function createMafwApi(): MafwAPI {
       usagePluginDelete: (name) => invoke("session", "usagePluginDelete", name),
       usagePluginTest: (name) => invoke("session", "usagePluginTest", name),
       openUsagePluginsDir: () => ipcRenderer.invoke("mafw-openUsagePluginsDir"),
-      promptAsync: ({ sessionID, message, parts, agent, model }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model } }),
+      promptAsync: ({ sessionID, message, parts, agent, model, delivery, idempotencyKey, expectReply }) => invoke("session", "promptAsync", { path: { id: sessionID }, body: { message, parts, agent, model, delivery, idempotencyKey, expectReply } }),
       command: ({ sessionID, command, arguments: args, agent, model }) => invoke("session", "command", { path: { id: sessionID }, body: { command, arguments: args, agent, model } }),
     },
 

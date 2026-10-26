@@ -4,7 +4,7 @@ import type {
   EnergyDistribution, Axiom, L5Heuristic, StickyNote, ModelUsageWindows, MemoryStats,
   Approval, TriageItem, AutomationRule, GatewayStatus,
   QuestionRequest, PermissionRequest,
-  TaskEntity, TaskSubmitInput, TaskOutput,
+  TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   ModelConfigState, ModelConfigUpdate,
   EmbeddingConfigState, EmbeddingConfigGetResponse, EmbeddingRuntimeState, EmbeddingConfigUpdate,
 } from "@mafw/sdk"
@@ -43,6 +43,9 @@ export type MafwAPI = {
     switchAgent: (id: string, agent: string) => Promise<void>
     switchModel: (id: string, model: { providerID: string; modelID: string }) => Promise<void>
     abort: (sessionID: string) => Promise<void>
+    queueList: (sessionID: string) => Promise<{ items: QueueItem[] }>
+    queueCancel: (sessionID: string, itemId: string) => Promise<{ cancelled: QueueItem }>
+    queueClear: (sessionID: string) => Promise<{ cleared: number }>
     fork: (sessionID: string, messageID?: string) => Promise<{ session: { id: string } }>
     revert: (sessionID: string, messageID: string) => Promise<void>
     unrevert: (sessionID: string) => Promise<void>
@@ -77,7 +80,7 @@ export type MafwAPI = {
     usagePluginDelete: (name: string) => Promise<{ ok: boolean; error?: string }>
     usagePluginTest: (name: string) => Promise<{ ok: boolean; result?: any; error?: string }>
     openUsagePluginsDir: () => Promise<void>
-    promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
+    promptAsync: (opts: { sessionID: string; message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean }) => Promise<void>
     command: (opts: { sessionID: string; command: string; arguments?: string; agent?: string; model?: { providerID: string; modelID: string } }) => Promise<void>
   }
 
