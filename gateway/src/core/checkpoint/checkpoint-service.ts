@@ -296,7 +296,7 @@ export class CheckpointService {
           { env },
         );
         const check = await this.deps.git.run(
-          ['--git-dir', repo, '--work-tree', ckpt.projectDir, 'diff-files', '--quiet', '--'],
+          ['--git-dir', repo, '--work-tree', ckpt.projectDir, 'diff-files', '--quiet', '--', '.', ':(exclude).mafw'],
           { env },
         );
         dirty = check.code !== 0;
@@ -314,12 +314,13 @@ export class CheckpointService {
     }
 
     // 正向补丁：base → checkpoint（git 直接生成新增/删除/binary 的正确形态）。
-    // 与 turn-diff 同款硬化：禁外部 diff/文本转换/颜色/重命名检测。
+    // 与 turn-diff 同款硬化；`:(exclude).mafw` = gateway 自身数据目录永不参与
+    // 工作区恢复（日志实时追加会让补丁 context 永久失配，冒烟实证）。
     const diff = await this.deps.git.run([
       '--git-dir', repo,
       '-c', 'core.quotePath=false', '-c', 'core.autocrlf=false',
       'diff', '--binary', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames',
-      base, tree,
+      base, tree, '--', '.', ':(exclude).mafw',
     ]);
     if (diff.code !== 0) {
       throw new CheckpointRestoreError(

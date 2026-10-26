@@ -1,7 +1,5 @@
 /**
- * T2-1 Task 7: turn.completed 自动检查点编排（deps 注入，可测）。
- * 门控顺序：能力位 → 内部角色 → session.get → isHiddenSession → messages → plan → create。
- */
+ * T2-1 Task 7: turn.completed 自动检查点编排（deps 注入，可测）�? * 门控顺序：能力位 �?内部角色 �?session.get �?isHiddenSession �?messages �?plan �?create�? */
 import { runAutoCheckpoint, type AutoCheckpointHookDeps } from '../../../src/core/checkpoint/auto-hook';
 import { isHiddenSession } from '../../../src/core/session-visibility';
 import type { SessionCheckpoint } from '../../../src/core/checkpoint/checkpoint-service';
@@ -61,7 +59,7 @@ function harness(opts: {
       if (opts.porcelainThrows) throw new Error('git unavailable');
       return opts.porcelain ?? '?? scratch.txt\n';
     },
-    wait: async () => {}, // 测试不真等 300ms
+    wait: async () => {}, // 测试不真�?300ms
     create: (input) => { calls.create.push(input); return created; },
   };
 
@@ -130,11 +128,11 @@ describe('runAutoCheckpoint', () => {
     const h = harness({ messages: [{ info: { id: 'u1', role: 'user', time: { created: 1 } } }] });
     expect(await runAutoCheckpoint(h.deps, 's1')).toBeNull();
     expect(h.calls.create).toEqual([]);
-    expect(h.calls.messages).toHaveLength(3); // 3 次有界重试后放弃
+    expect(h.calls.messages).toHaveLength(8); // 8 次有界重试后放弃
   });
 
   it('retries when turn.completed races ahead of message persistence', async () => {
-    // 第一次只看到 user（assistant 尚未可见），第二次完整回合 → 仍能记录
+    // 第一次只看到 user（assistant 尚未可见），第二次完整回�?�?仍能记录
     const h = harness({
       messagesSeq: [
         [{ info: { id: 'u1', role: 'user', time: { created: 1 } } }],
@@ -171,3 +169,4 @@ describe('runAutoCheckpoint', () => {
     expect(await runAutoCheckpoint(h.deps, 's1')).toBeNull();
   });
 });
+

@@ -41,13 +41,16 @@ async function makeFixture(): Promise<Fixture> {
   await git(project, ['config', 'core.autocrlf', 'false']);
 
   fs.writeFileSync(path.join(project, 'file1.txt'), 'A\n');
-  await git(project, ['add', '.']);
+  fs.mkdirSync(path.join(project, '.mafw', 'logs'), { recursive: true });
+  fs.writeFileSync(path.join(project, '.mafw', 'logs', 'mafw.log'), 'log1\n');
+  await git(project, ['add', '-A']);
   await git(project, ['commit', '-q', '-m', 'base']);
   const tree1 = await git(project, ['rev-parse', 'HEAD^{tree}']);
 
   fs.writeFileSync(path.join(project, 'file1.txt'), 'B\n');
   fs.writeFileSync(path.join(project, 'file2.txt'), 'NEW\n');
-  await git(project, ['add', '.']);
+  fs.writeFileSync(path.join(project, '.mafw', 'logs', 'mafw.log'), 'log2\n');
+  await git(project, ['add', '-A']);
   await git(project, ['commit', '-q', '-m', 'change']);
   const tree2 = await git(project, ['rev-parse', 'HEAD^{tree}']);
 
@@ -188,6 +191,19 @@ describe('restore files (real git)', () => {
     expect(undo.scope).toBe('files');
     expect(fs.readFileSync(path.join(fx.project, 'file1.txt'), 'utf8')).toBe('B\n');
     expect(fs.readFileSync(path.join(fx.project, 'file2.txt'), 'utf8')).toBe('NEW\n');
+  });
+
+  it('never touches the gateway data dir (.mafw) even when its live content differs', async () => {
+    const fx = await makeFixture();
+    // .mafw/logs/mafw.log 在两棵树里是 log1/log2；工作区被 gateway 持续写到 log3
+    fs.writeFileSync(path.join(fx.project, '.mafw', 'logs', 'mafw.log'), 'log3\n');
+    const h = harness(fx, fx.tree1);
+
+    const result = await h.service.restore({ sessionID: 's1', checkpointId: 'ckpt_1', scope: 'files' });
+
+    expect(result.scope).toBe('files');
+    expect(fs.readFileSync(path.join(fx.project, '.mafw', 'logs', 'mafw.log'), 'utf8')).toBe('log3\n');
+    expect(fs.readFileSync(path.join(fx.project, 'file1.txt'), 'utf8')).toBe('A\n');
   });
 
   it('rejects (400) when the worktree was edited after reaching the target tree', async () => {

@@ -62,12 +62,12 @@ export async function runAutoCheckpoint(
   // 竞态，重启后首回合尤甚）——短暂重试，避免当回合检查点静默丢失。
   const wait = deps.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let plan: ReturnType<typeof planAutoCheckpoint> = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     const result = await rt.session.messages({ sessionID, limit: 200 });
     const messages = Array.isArray(result?.data) ? result.data : [];
     plan = planAutoCheckpoint(messages);
     if (plan) break;
-    if (attempt < 2) await wait(300);
+    if (attempt < 7) await wait(400);
   }
   if (!plan) return null;
 
