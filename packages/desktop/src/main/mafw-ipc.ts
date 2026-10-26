@@ -12,6 +12,7 @@ import {
 } from "./mafw-sidecar"
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
+import { installTerminalBridge } from "./terminal/terminal-bridge"
 import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
 import { writeFile } from "node:fs/promises"
 import { UiPluginManager } from "./ui-plugins"
@@ -88,6 +89,12 @@ function startHealthMonitor() {
 // ── IPC Handlers ──
 
 export function registerMafwIpcHandlers() {
+  // 内嵌终端（spec 2026-10-26）：目录级 persistent PTY；HTTP 经 gateway 反代、
+  // WS 由 main 持有（窗口只经 preload 订阅）。gateway 未就绪时端口回落默认 3000。
+  installTerminalBridge(ipcMain, {
+    gatewayBase: () => `http://127.0.0.1:${getGatewayPort() ?? 3000}`,
+    log: (m) => writeLog("utility", m, {}, "warn"),
+  })
   onGatewayStateChange((state) => {
     if (state === "ready") {
       restartScheduler.reset()
