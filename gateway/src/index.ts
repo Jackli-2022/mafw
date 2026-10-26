@@ -1313,7 +1313,10 @@ class MafwScheduler {
       }
       // busy 追踪（spec 2026-10-22-session-queue-inbox §5.1 v2）：turn.started 置位；
       // 本词汇的首个消费者——配对可靠性由 15min TTL 清扫兜底（防楔死，v2 Q2）。
-      if (type === MAFW.turnStarted) this.busySessions.set(sessionID, Date.now());
+      if (type === MAFW.turnStarted) {
+        this.busySessions.set(sessionID, Date.now());
+        this.runCoordinator?.onTurnStarted(sessionID);
+      }
     }
     // Approval policy：asked 事件先于 internal 过滤与 Mode A 广播评估（内部会话
     // fail-safe 需在 memoryWorker drop 之前生效）；决策附在广播 properties.mafwPolicy，

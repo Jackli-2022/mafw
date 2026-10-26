@@ -7,7 +7,7 @@ const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
 describe('busy 追踪 wiring（spec §5.1 v2）', () => {
   it('busySessions Map 字段 + turn.started 置位 + 三终态清除', () => {
     expect(src).toMatch(/busySessions = new Map<string, number>/);
-    expect(src).toMatch(/type === MAFW\.turnStarted\)[^\n]*busySessions\.set/);
+    expect(src).toMatch(/type === MAFW\.turnStarted\)[\s\S]{0,120}busySessions\.set/);
     expect(src).toMatch(/MAFW\.turnCompleted \|\| type === MAFW\.turnFailed \|\| type === MAFW\.turnAborted/);
     expect(src).toMatch(/busySessions\.delete/);
   });

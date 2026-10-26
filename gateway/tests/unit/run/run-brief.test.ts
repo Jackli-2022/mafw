@@ -83,6 +83,22 @@ describe('buildResumeBrief', () => {
     );
     expect(brief!.lastUserText).toBe('bare');
   });
+
+  it('handles runtime flat messages with content parts (opencode 2.1 normalized)', () => {
+    const brief = buildResumeBrief([
+      { id: 'u1', role: 'user', time: t(1), content: [text('flat request')] },
+      { id: 'a1', role: 'assistant', time: t(2), content: [text('flat output')] },
+    ], 0);
+    expect(brief!.lastUserText).toBe('flat request');
+    expect(brief!.lastAssistantTail).toBe('flat output');
+  });
+
+  it('falls back to message.text when there are no parts', () => {
+    const brief = buildResumeBrief([
+      { id: 'u1', role: 'user', time: t(1), text: 'text-only' },
+    ], 0);
+    expect(brief!.lastUserText).toBe('text-only');
+  });
 });
 
 describe('composeResumePrompt', () => {

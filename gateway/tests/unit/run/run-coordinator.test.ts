@@ -184,13 +184,18 @@ describe('discard / terminal / reconcile', () => {
     expect(h.calls.flush).toBe(1);
   });
 
-  it('onTerminal finishes a resumed run and only settles a suspended one', async () => {
+  it('onTerminal finishes a resumed run only after turn.started', async () => {
     const h = harness();
     await h.coord.suspend('s1');
     h.coord.onTerminal('s1', 'aborted'); // abort 终态：只 settle
     expect(h.service.active('s1')!.status).toBe('suspended');
 
     await h.coord.resume('s1');
+    // resume 发送后、回合尚未开始的延迟终态不得结束 run
+    h.coord.onTerminal('s1', 'aborted');
+    expect(h.service.active('s1')!.status).toBe('resumed');
+
+    h.coord.onTurnStarted('s1');
     h.coord.onTerminal('s1', 'completed');
     expect(h.service.active('s1')).toBeNull();
   });

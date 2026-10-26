@@ -318,13 +318,22 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // 仅补缺失 role，不覆盖既有；非角色型（system/compaction…）不硬映射。
         const data = Array.isArray(raw)
           ? raw
-              .map((m: any) => {
-                if (!m || typeof m !== 'object') return m;
+              .map((item: any) => {
+                if (!item || typeof item !== 'object') return item;
+                // SDK v2 已把历史包成 wire {info, parts}；adapter 出口约定 flat。
+                // parts → content（toWireHistory 在 HTTP 出口再还原 parts）。
+                const wireInfo = item.info && typeof item.info === 'object' ? item.info : null;
+                const base = wireInfo
+                  ? {
+                      ...wireInfo,
+                      ...(Array.isArray(item.parts) && item.parts.length > 0 ? { content: item.parts } : {}),
+                    }
+                  : item;
                 // role：仅补缺失（2.1.0 角色在 type；非角色型 system/compaction 不硬映射）
-                const withRole = m.role !== undefined
-                  ? m
-                  : (m.type === 'user' || m.type === 'assistant' ? { ...m, role: m.type } : m);
-                // 2.1.0 用户消息正文在 text（parts 空）→ 合成 text part；
+                const withRole = base.role !== undefined
+                  ? base
+                  : (base.type === 'user' || base.type === 'assistant' ? { ...base, role: base.type } : base);
+                // 2.1.0 用户消息正文在 text（parts 空）→ 合成 content text part；
                 // canonical flat 契约：part 必须有 id（2.1.0 text/reasoning 部件无 id）
                 return ensurePartIds(ensureUserTextPart(withRole));
               })

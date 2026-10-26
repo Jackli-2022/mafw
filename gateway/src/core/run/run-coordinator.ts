@@ -35,11 +35,19 @@ export class RunCoordinator {
   private suspended = new Set<string>();
   /** abort 终态已观察（或超时视为落定）——resume 的前置条件。 */
   private settled = new Set<string>();
+  /** resume 已发送、等待 resumed 回合真正 started；期间到达的终态不结束 run
+   *  （延迟的 abort 终态会把刚恢复的回合误标 cancelled——builder check #4）。 */
+  private awaitingStart = new Set<string>();
 
   constructor(private deps: RunCoordinatorDeps) {}
 
   isSuspended(sessionID: string): boolean {
     return this.suspended.has(sessionID);
+  }
+
+  /** 活跃 run（路由 GET /run 用）。 */
+  active(sessionID: string): RunState | null {
+    return this.deps.service.active(sessionID);
   }
 
   async suspend(sessionID: string, reason?: string): Promise<RunState> {
@@ -106,11 +114,13 @@ export class RunCoordinator {
     // 若早于状态写入会被 finish 忽略（builder check #2）。
     const resumed = this.deps.service.resume(active.id);
     this.suspended.delete(sessionID);
+    this.awaitingStart.add(sessionID);
 
     void rt.session
       .promptAsync({ sessionID, parts: [{ type: 'text', text: composeResumePrompt(resumed.brief) }] })
       .catch((err: any) => {
         this.deps.log?.(`[Run] resume send failed for ${sessionID} (reopening): ${err?.message ?? err}`);
+        this.awaitingStart.delete(sessionID);
         try { this.deps.service.reopen(active.id, 'resume send failed'); } catch { /* fail-open */ }
         this.suspended.add(sessionID);
       });
@@ -129,14 +139,21 @@ export class RunCoordinator {
     const run = this.deps.service.discard(active.id);
     this.suspended.delete(sessionID);
     this.settled.delete(sessionID);
+    this.awaitingStart.delete(sessionID);
     // 放弃暂停不吞用户已排队的消息。
     this.deps.flushQueue(sessionID);
     return run;
   }
 
+  /** resumed 回合真正开始：此后到达的终态才代表本 run。 */
+  onTurnStarted(sessionID: string): void {
+    this.awaitingStart.delete(sessionID);
+  }
+
   /** turn 终态：settle 标记；resumed run → 对应终态（suspended run 不动）。 */
   onTerminal(sessionID: string, type: 'completed' | 'failed' | 'aborted'): void {
     this.settled.add(sessionID);
+    if (this.awaitingStart.has(sessionID)) return;
     const outcome = type === 'completed' ? 'completed' : type === 'failed' ? 'failed' : 'cancelled';
     this.deps.service.finish(sessionID, outcome);
   }
@@ -157,6 +174,7 @@ export class RunCoordinator {
     this.deps.service.deleteForSession(sessionID);
     this.suspended.delete(sessionID);
     this.settled.delete(sessionID);
+    this.awaitingStart.delete(sessionID);
   }
 
   private async waitSettled(sessionID: string): Promise<void> {

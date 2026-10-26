@@ -20,26 +20,36 @@ const USER_MAX = 600;
 const ASSISTANT_MAX = 1200;
 
 function partsOf(message: any): any[] {
-  return Array.isArray(message?.parts) ? message.parts : [];
+  if (Array.isArray(message?.parts)) return message.parts;
+  // runtime 扁平消息（opencode 2.1 归一化）把文本部件放在 content。
+  if (Array.isArray(message?.content)) return message.content;
+  return [];
 }
 
 function textOf(message: any): string {
-  return partsOf(message)
+  const joined = partsOf(message)
     .filter((p: any) => p?.type === 'text' && typeof p.text === 'string')
     .map((p: any) => p.text as string)
     .join('\n')
     .trim();
+  if (joined) return joined;
+  return typeof message?.text === 'string' ? message.text.trim() : '';
 }
 
 function normalize(messages: any[]): any[] {
   return (Array.isArray(messages) ? messages : [])
     .filter((item) => item && typeof item === 'object')
     .map((item, index) => {
-      // 兼容两种形态：{info, parts} 信封（session.messages）与裸消息。
+      // 兼容三种形态：{info, parts} 信封（HTTP 历史）、扁平 {role, content}
+      // （runtime.session.messages 归一化）与裸消息。
       const info = item.info && typeof item.info === 'object' ? item.info : item;
       const parts = Array.isArray(item.parts)
         ? item.parts
-        : Array.isArray(info.parts) ? info.parts : [];
+        : Array.isArray(info.parts)
+          ? info.parts
+          : Array.isArray(item.content)
+            ? item.content
+            : Array.isArray(info.content) ? info.content : [];
       return { m: { ...info, parts }, index };
     })
     .sort((x, y) => createdOf(x.m) - createdOf(y.m) || x.index - y.index)
