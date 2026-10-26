@@ -118,7 +118,11 @@ export interface RunState { id; sessionID; projectDir; status; reason?; brief; c
 
 **discard**：允许 suspended 或"resumed 但当前 idle"；→ cancelled + 清闸门 + **`flushSessionQueue`**（不吞用户已排队消息）；resumed 且 busy → 409。
 
-**settle 竞态**（builder #4）：resume 前必须 settled（内存标记，suspend 的 abort 终态到达或 5s 超时置位）。避免延迟的 abort 终态把刚恢复的新回合成 `cancelled`。
+**settle 竞态**（builder #4）：resume 前必须 settled（内存标记，suspend 的 abort 终态到达或 5s 超时置位）。`awaitingStart`：resume 发送后、`turn.started` 前到达的终态只清 settled、不 finish——避免延迟的 abort 终态把刚恢复的新回合成 `cancelled`。
+
+**历史出口修复（冒烟实证）**：opencode SDK v2 的 `session.messages` 已返回 wire `{info, parts}`；adapter 归一化必须拆信封（parts→content），并在 `info.text` + 空 parts（runtime 生成的续跑/队列提示）时合成文本 part——否则桌面/历史读不到正文。
+
+**final review 修复**：suspend 单飞（abort/settle 窗口防并发清闸门）；pi 的 `abort` 吞错 → 以 busy 闸门判定空闲；`reopen` 仅对 resumed 生效（discard 后不得复活）；`awaitingStart` 带 30s TTL 且队列闸门同时保持；`/api/mafw-commands/run`、`/api/chat/enriched`、WS send 在暂停中拒绝/入队；budget guard 移到队列短路口之后；能力位消失后 GET/discard 仍可清理（仅 suspend/resume 503）；暂停按钮进更多菜单（窄窗可达）。
 
 ### 5.4 HTTP API
 
