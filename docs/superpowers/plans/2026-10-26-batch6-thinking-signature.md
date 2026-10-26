@@ -118,10 +118,10 @@ signature?: string; native?: Record<string, unknown>
 
 ## Verification (v4.34.0, 2026-10-26)
 
-- gateway **2616**; SDK **147**; TUI **225** (224 pass / 1 smoke skip); session-ui **89**; desktop full **1445** (shared workspace includes parallel TerminalDock tests).
+- gateway **2617**; SDK **147**; TUI **225** (224 pass / 1 smoke skip); session-ui **89**; desktop full **1445** (shared workspace includes parallel TerminalDock tests).
 - gateway tsc rc=0; SDK build ok; desktop tsgo rc=0; electron-vite build ok; root build ok.
 - live: opencode promptAsync with `variant:'max'` returns 200; invalid `thinkingLevel` returns 400.
-- commits: `52526e8b` (contract/SDK), `83ad6730` (Pi), `16f782d1` (gateway/queue), `9d5f437c` (canonical signature), release v4.34.0.
+- commits: `52526e8b` (contract/SDK), `83ad6730` (Pi), `16f782d1` (gateway/queue), `9d5f437c` (canonical signature), `e6bf3c32` (redacted/tool signatures), release v4.34.0.
 
 ## Self-Review
 

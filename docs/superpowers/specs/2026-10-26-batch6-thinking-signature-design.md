@@ -83,5 +83,5 @@ interface SessionPromptOpts {
 - Pi：`setThinkingLevel` + prompt opts；`thinkingSignature` → reasoning part.signature。
 - Gateway：promptAsync/prompt 校验并透传；queue 入队/flush 保留；opencode 走既有 model `variant`，pi 走 `thinkingLevel`。
 - Canonical：`MafwPartBase.signature/native` additive。
-- 单测：gateway 2616、SDK 147、TUI 225（224 pass / 1 skip）、session-ui 89；desktop 全量 1445（共享工作区含并行 TerminalDock 用例）。
+- 单测：gateway 2617、SDK 147、TUI 225（224 pass / 1 skip）、session-ui 89；desktop 全量 1445（共享工作区含并行 TerminalDock 用例）。
 - 已知边界：本批不做 UI 档位选择器；opencode 的 `thinkingLevel` 不映射（用 variant）；signature 只做保真不做校验。
