@@ -4,7 +4,7 @@
 
 **Goal:** 把右 dock 的 files/editor/browser/terminal 四 tab 合并为单一宽工作台面（IDE 骨架 + 三档比例），统一面板骨架，并交付 G1 全屏截屏批注（轻版）与 G2 网页元素点选。
 
-**Architecture:** 先立共享面板骨架（Header/Empty/Banner + lucide 换装）治「割裂」，再合并布局（新 `Workbench.tsx` 吃掉 11-tab RightDock、四件套进 IDE 骨架、七个会话面板收浮层图标轨、对话:工作台三档吸附 30/40/50），最后在合并后的 composer/浏览器面上叠 G1/G2 两个「圈选即上下文」捕获管线（新 pending-capture 类型，与既有代码批注共用发送打包）。
+**Architecture:** 先立共享面板骨架（Header/Empty/Banner + lucide 换装）治「割裂」，再合并布局（新 `Workbench.tsx` 吃掉 11-tab RightDock、四件套进 IDE 骨架、七个会话面板收浮层图标轨、对话:工作台三档吸附 420/520/640），最后在合并后的 composer/浏览器面上叠 G1/G2 两个「圈选即上下文」捕获管线（新 pending-capture 类型，与既有代码批注共用发送打包）。
 
 **Tech Stack:** SolidJS + `@mafw/ui/v2` 原语；Electron main（`desktopCapturer`、frameless 选区遮罩窗、webview `executeJavaScript`）；xterm/webview 现有设施零行为回退。
 
@@ -84,52 +84,61 @@ test("DockBanner kind→tone class 映射（info/warn/error）", () => { /* */ }
 - [ ] **Step 4: `npm test` 全量 PASS（预期 desktop 1463+新增）**
 - [ ] **Step 5: Commit** `feat(desktop): workbench panels adopt shared skeleton (header/empty/banner, lucide, lazy webview)`
 
-### Task 3: 三档比例纯函数（spec 精确语义）
+### Task 3: 绝对 px 档位纯函数（420/520/640 + 护栏）
 
 **Files:**
-- Create: `src/renderer/mafw/workbench-ratio.ts`
-- Test: `src/renderer/mafw/workbench-ratio.test.ts`（同目录）
+- Create: `src/renderer/mafw/workbench-detents.ts`
+- Test: `src/renderer/mafw/workbench-detents.test.ts`（同目录）
 
 **Interfaces:**
 - Produces（Task 4 消费）:
-  - `type WorkbenchDetent = 30 | 40 | 50`
-  - `export const WORKBENCH_DETENTS: WorkbenchDetent[] = [30, 40, 50]`
-  - `export const WORKBENCH_DEFAULT_DETENT: WorkbenchDetent = 40`
-  - `export function chatPxForDetent(detent: WorkbenchDetent, availableWidth: number): number` —— 比例→px（px 墙 320/760 优先）
-  - `export function snapDetent(ratioPercent: number): WorkbenchDetent` —— 吸附最近档（全域 [25,55]）
-  - `export function ratioPercentFromDrag(px: number, availableWidth: number): number` —— 拖动 px→百分比（供实时预览，可出带外值给 UI 提示）
-  - `export function migrateLegacyChatWidth(storedPx: number | null, availableWidth: number): WorkbenchDetent` —— 存量 px→档位（就近映射，缺失/非法→40）
+  - `type WorkbenchDetent = 420 | 520 | 640`
+  - `export const WORKBENCH_DETENTS: WorkbenchDetent[] = [420, 520, 640]`
+  - `export const WORKBENCH_DEFAULT_DETENT: WorkbenchDetent = 520`
+  - `export const CHAT_PX_FLOOR = 320` / `CHAT_PX_CEIL = 760` / `WORKBENCH_MIN_WIDTH = 520`
+  - `export function chatPxForDetent(detent: WorkbenchDetent, availableWidth: number): number` —— `clamp(detent, 320, min(760, availableWidth − 520))`
+  - `export function snapDetent(px: number, availableWidth: number): WorkbenchDetent` —— 按**实际像素距离**吸附
+  - `export function ratioPercentFromDrag(px: number, availableWidth: number): number` —— 实时比例显示（一位小数）
+  - `export function migrateLegacyChatWidth(storedPx: number | null, availableWidth: number): WorkbenchDetent` —— 存量 px → 像素最近档
+  - `export function normalizeDetent(stored: string | number | null): WorkbenchDetent` —— localStorage 值归一（合法 420/520/640，其余→520）
 
-- [ ] **Step 1: 失败测试**（spec 数值表全钉）：
+- [ ] **Step 1: 写失败测试**（spec 数值表全钉）：
 
 ```ts
-test("chatPxForDetent：比例 + px 墙优先", () => {
-  // 1138 窗（可用 1092）：30→360（触 320 墙内但 30%*1092=328→墙 320? 见 spec 频谱表：1138 窗 30 档=360*）
-  expect(chatPxForDetent(30, 1092)).toBe(360)   // 328 → clamp 至 CHAT_WIDTH.min? spec 表 1138/30 档=360
-  expect(chatPxForDetent(40, 1092)).toBe(437)   // 40% = 437
-  expect(chatPxForDetent(50, 1092)).toBe(546)
-  expect(chatPxForDetent(50, 1874)).toBe(760)   // 1920 窗 50% = 937 → 墙 760（频谱表 760*）
-  expect(chatPxForDetent(30, 700)).toBe(320)    // 墙下限
+test("chatPxForDetent：绝对档 + 护栏（工作台下限 520 / 墙 320-760）", () => {
+  expect(chatPxForDetent(420, 1394)).toBe(420)
+  expect(chatPxForDetent(520, 1394)).toBe(520)
+  expect(chatPxForDetent(640, 1394)).toBe(640)
+  expect(chatPxForDetent(640, 1154)).toBe(634) // 护栏：available − 520
+  expect(chatPxForDetent(420, 674)).toBe(320) // 窄窗退化（<1200 走 overlay，不参与布局）
 })
-test("snapDetent 全域吸附", () => {
-  expect(snapDetent(27)).toBe(30); expect(snapDetent(34.9)).toBe(30)
-  expect(snapDetent(35.1)).toBe(40); expect(snapDetent(44)).toBe(40)
-  expect(snapDetent(46)).toBe(50); expect(snapDetent(25)).toBe(30); expect(snapDetent(55)).toBe(50)
+test("snapDetent：按实际像素距离吸附（无比例语义）", () => {
+  expect(snapDetent(430, 1394)).toBe(420)
+  expect(snapDetent(500, 1394)).toBe(520)
+  expect(snapDetent(600, 1394)).toBe(640)
+  expect(snapDetent(200, 1394)).toBe(420)
+  expect(snapDetent(1000, 1394)).toBe(640)
 })
-test("migrateLegacyChatWidth：px→档位", () => {
-  expect(migrateLegacyChatWidth(417, 1092)).toBe(40)   // 旧黄金 38.2% 值
-  expect(migrateLegacyChatWidth(null, 1092)).toBe(40)  // 缺失→默认
-  expect(migrateLegacyChatWidth(700, 1092)).toBe(50)
+test("migrateLegacyChatWidth：旧 px → 像素最近档（缺失/非法→520）", () => {
+  expect(migrateLegacyChatWidth(417, 1394)).toBe(420)
+  expect(migrateLegacyChatWidth(558, 1394)).toBe(520)
+  expect(migrateLegacyChatWidth(697, 1394)).toBe(640)
+  expect(migrateLegacyChatWidth(null, 1394)).toBe(520)
+  expect(migrateLegacyChatWidth(Number.NaN, 1394)).toBe(520)
+  expect(migrateLegacyChatWidth(400, 0)).toBe(520)
+})
+test("normalizeDetent：持久化值归一", () => {
+  expect(normalizeDetent("420")).toBe(420)
+  expect(normalizeDetent("640")).toBe(640)
+  expect(normalizeDetent("999")).toBe(520)
+  expect(normalizeDetent(null)).toBe(520)
 })
 ```
 
-  （注：1138 窗 30 档 = `max(320, round(1092*0.30))` = 328；spec 频谱表标注 360* 是因为演示页把 1138 窗的 30 档算作 clamp(360)。**以本测试为准：墙 = 320**，`chatPxForDetent(30,1092)===328`。实施时以此修正测试值并同步 spec 频谱表脚注。）
-
 - [ ] **Step 2: 跑测试 FAIL**（模块不存在）
-- [ ] **Step 3: 实现**（纯函数，无 Solid 依赖）：`chatPxForDetent = clamp(round(aw*detent/100), 320, 760)`；`snapDetent` 就近档；`migrateLegacyChatWidth` 用 `snapDetent(px/aw*100)`
-- [ ] **Step 3.5: 同步修正 spec 频谱表 1138 行脚注**（`docs/superpowers/specs/2026-10-26-workbench-merge-design.md`）
+- [ ] **Step 3: 实现**（纯函数，无 Solid 依赖）：`chatPxForDetent` 用显式 `cap = max(320, min(760, available − 520))`；`snapDetent` 比较各档**钳制后**的像素值与入参距离；`migrateLegacyChatWidth` 复用 `snapDetent`；`normalizeDetent` 白名单。
 - [ ] **Step 4: 跑测试 PASS**
-- [ ] **Step 5: Commit** `feat(desktop): workbench detent ratio pure functions (30/40/50, px walls 320/760)`
+- [ ] **Step 5: Commit** `feat(desktop): workbench absolute px detents (420/520/640, guard rails)`
 
 ### Task 4: Workbench 布局合并（Workbench.tsx + 会话图标轨 + 迁移）
 
@@ -142,15 +151,15 @@ test("migrateLegacyChatWidth：px→档位", () => {
 - Test: `src/renderer/mafw/workbench-layout.test.ts`（纯函数：布局列/迁移）+ `tests/design-contract.test.ts`（结构契约）+ 既有 `tests/main-content-geometry.test.ts` 必须保持绿
 
 - [ ] **Step 1: 失败测试**（workbench-layout.test.ts）：
-  - `bodyColumnsFor(detent, availableWidth, { narrow, leftPush })` → 列串 `"0px 437px minmax(0, 1fr)"`（40 档/1092 可用）
+  - `bodyColumnsFor(detent, availableWidth, { narrow, leftPush })` → 列串 `"0px 520px minmax(0, 1fr)"`（默认档/1092 可用）
   - 窄视口：`"overlay"` 模式返回不推挤（workbench 浮层）
-  - `migrateDockKeys()`：`mafw-chat-width=417` + `mafw-right-dock-width=520` → `mafw-workbench-detent="40"`（写新键、旧键删除）
+  - `migrateDockKeys()`：`mafw-chat-width=417` + `mafw-right-dock-width=520` → `mafw-workbench-detent="420"`（写新键、旧键删除）
 - [ ] **Step 2: 跑 FAIL**
 - [ ] **Step 3: 实现 `Workbench.tsx`**：
   - 骨架 = `DockPanelHeader`（工作台标题/目录名）+ 主体 flex：左 `FilesDock`（定宽树，可收）+ 右主区（`EditorDock`/`BrowserDock` tab 切换，内容常挂载 display 切换）+ 底部 `TerminalDock`（可收起，`active` 语义 = 底部区展开）
   - 分隔条 = ResizeHandle 包装（desktop 侧 `WorkbenchDivider` 内组件：拖动中 `ratioPercentFromDrag` 实时预览 + 松手 `snapDetent` + 双击回 `WORKBENCH_DEFAULT_DETENT`；不向 ResizeHandle 传 collapseThreshold 防 collapse 误触）
   - 窄视口（`viewportNarrow()`）：沿用 `.mafw-dock-slot.overlay` 机制
-  - localStorage：新键 `mafw-workbench-detent`（枚举 "30"|"40"|"50"）；迁移读旧 `mafw-chat-width`（MafwShell.tsx:1489）
+  - localStorage：新键 `mafw-workbench-detent`（枚举 "420"|"520"|"640"）；迁移读旧 `mafw-chat-width`（MafwShell.tsx:1489）
 - [ ] **Step 4: 实现 `SessionRail.tsx`**：右侧 44px 图标轨（lucide，无 emoji）；七个会话面板图标（tasks/trajectory/usage/notes/changes/subagents/background，badge 保留沿用现有信号）；点击 → 浮层面板（`createPresence` 过渡挂载，`Portal` 到 dock 层，Esc/点外关闭）；面板内容 = 现有七组件原样挂进浮层（不重构面板内部）
 - [ ] 旧 RightDock 的 11-tab 结构退役：`dock-tab.ts` 的 `DockTab` union 缩为会话面板七值 + `files`/`editor`/`browser`/`terminal` 移入 Workbench 内部 tab 类型；`normalizeDockTab` 迁移旧值（"files"→workbench 打开+files tab）
 - [ ] **Step 5: design-contract 增契约**：MafwShell 源码 `not.toContain("<RightDock")`、`toContain("<Workbench")` + `toContain("<SessionRail")`；`RightDock.tsx` 文件删除
