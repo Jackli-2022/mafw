@@ -13,6 +13,7 @@ import {
 import { getLastFocusedWindow, trayIconPath, createMainWindow } from "./windows"
 import { walkProjectFiles } from "./file-listing"
 import { installTerminalBridge } from "./terminal/terminal-bridge"
+import { installCaptureIpc } from "./capture/screenshot-capture"
 import { externalTerminalCommand } from "./terminal/terminal-core"
 import { spawn } from "node:child_process"
 import { buildUpdateToken, pendingRestartPath, atomicWriteToken } from "./pending-update"
@@ -110,6 +111,8 @@ async function openExternalTerminal(directory: string): Promise<void> {
 // ── IPC Handlers ──
 
 export function registerMafwIpcHandlers() {
+  // G1 截屏（spec 2026-10-26）：整屏捕获 → renderer 裁剪浮层。
+  installCaptureIpc(ipcMain)
   // 内嵌终端（spec 2026-10-26）：目录级 persistent PTY；HTTP 经 gateway 反代、
   // WS 由 main 持有（窗口只经 preload 订阅）。gateway 未就绪时端口回落默认 3000。
   installTerminalBridge(ipcMain, {

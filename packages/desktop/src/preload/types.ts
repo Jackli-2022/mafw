@@ -52,6 +52,10 @@ export type AnnotationsAPI = {
   remove(sessionID: string, id: string): Promise<unknown>
   clear(sessionID: string): Promise<unknown>
 }
+/** G1 截屏：整屏捕获（裁剪在 renderer 浮层）。 */
+export type CaptureAPI = {
+  start(): Promise<{ dataUrl: string; width: number; height: number } | null>
+}
 export type UpdaterAPI = {
   subscribe: (cb: (state: UpdaterState) => void) => Promise<() => void>
   check: () => Promise<UpdaterState>
@@ -88,6 +92,7 @@ export type ElectronAPI = {
   fs: FsAPI
   browser: BrowserAPI
   annotations: AnnotationsAPI
+  capture: CaptureAPI
   consumeInitialDeepLinks: () => Promise<string[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>

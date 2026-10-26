@@ -65,6 +65,8 @@ import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
 import { appendQuote, formatQuote } from "./quote-format"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
+import { ScreenshotCropper, type CaptureShot } from "./ScreenshotCropper"
+import { dataUrlToFile } from "../capture/data-url"
 import { CheckpointOverlay } from "./CheckpointOverlay"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
@@ -268,6 +270,8 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [ttsVoiceSel, setTtsVoiceSel] = createSignal<string | null>(null)
   const [ttsEngine, setTtsEngine] = createSignal<string>("mimo")
   const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
+  /** G1 截屏：待裁剪的整屏图（null = 浮层关闭） */
+  const [shot, setShot] = createSignal<CaptureShot | null>(null)
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
   const [canUnrevert, setCanUnrevert] = createSignal(false)
@@ -730,6 +734,29 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     const sid = sidProp()
     if (sid) void hydrateAnnotations(sid)
   })
+
+  // ── G1 截屏批注（轻版：框选 + 侧车文字评注；图片走既有媒体管道）──
+  const captureScreen = async () => {
+    try {
+      const res = await window.api.capture.start()
+      if (!res) {
+        showToastV2({ description: "截屏失败（当前平台可能不支持）", variant: "error", duration: 3000 } as any)
+        return
+      }
+      setShot(res)
+    } catch (e: any) {
+      showToastV2({ description: `截屏失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 3000 } as any)
+    }
+  }
+  const confirmShot = (dataUrl: string) => {
+    setShot(null)
+    const sid = sidProp()
+    if (!sid) return
+    getPendingCaptures().add({ sessionID: sid, kind: "screenshot", comment: "", dataUrl })
+    void dataUrlToFile(dataUrl, `screenshot-${Date.now()}.png`)
+      .then((f) => addPastedFile(f))
+      .catch(() => { /* 附件失败仍保留 pending capture 缩略图 */ })
+  }
 
   createEffect(() => {
     sidProp()
@@ -1815,6 +1842,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <Icon name="paperclip" size="small" />
                 </ButtonV2>
               </TooltipV2>
+              <TooltipV2 value="截屏批注" openDelay={300}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="截屏批注" onClick={() => void captureScreen()}>
+                  <Icon name="photo" size="small" />
+                </ButtonV2>
+              </TooltipV2>
               <TooltipV2 value="命令 (/)" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>
                   <Icon name="console" size="small" />
@@ -1982,7 +2014,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             </div>
           </div>
         </div>
-        <QuoteToolbar anchor={quoteAnchor()} onQuote={insertQuote} />
+        <Show when={shot()}>
+        <ScreenshotCropper shot={shot()!} onCancel={() => setShot(null)} onConfirm={confirmShot} />
+      </Show>
+      <QuoteToolbar anchor={quoteAnchor()} onQuote={insertQuote} />
         {/* Pickers */}
         <ModelPicker
           open={pickerOpen() === "model"}

@@ -179,6 +179,11 @@ const api: ElectronAPI = {
     openExternal: (url) => ipcRenderer.invoke("browser-open-external", url),
   },
 
+  // G1 截屏：整屏捕获（裁剪在 renderer）
+  capture: {
+    start: () => ipcRenderer.invoke("mafw-capture-start"),
+  },
+
   // 批注草稿（main 侧 electron-store）
   annotations: {
     list: (sessionID) => ipcRenderer.invoke("annotations-list", sessionID),
