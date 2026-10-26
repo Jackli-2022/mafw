@@ -6082,7 +6082,7 @@ class MafwScheduler {
           try {
             const sessionID = promptAsyncMatch[1];
             const body = await readBody(req);
-            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, outputSchema } = body ? JSON.parse(body) : {};
+            const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, outputSchema } = body ? JSON.parse(body) : {};
             if (!message && !Array.isArray(parts)) { res.writeHead(400); res.end(JSON.stringify({ error: 'message or parts required' })); return; }
             // Identity-aware (spec §3.2): picking a registry identity binds it for
             // this turn — the policy layer evaluates the turn's tool calls against it.
@@ -6114,7 +6114,11 @@ class MafwScheduler {
               }
               return;
             }
-            await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema);
+            await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema, {
+              ...(delivery ? { delivery } : {}),
+              ...(idempotencyKey ? { idempotencyKey } : {}),
+              ...(expectReply !== undefined ? { expectReply } : {}),
+            });
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));
           } catch (err: any) {

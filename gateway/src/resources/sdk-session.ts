@@ -33,7 +33,7 @@ export class SdkSessionResource {
   private client: any;
   private sessions: Map<string, SessionRecord> = new Map();
   private sessionsDir: string;
-  public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }, outputSchema?: OutputSchemaSpec) => Promise<void>;
+  public promptAsync: (sessionID: string, message: string, parts?: Array<{ type: string; [key: string]: any }>, agent?: string, model?: { providerID: string; modelID: string }, outputSchema?: OutputSchemaSpec, opts?: { delivery?: 'steer' | 'followup' | 'queue'; idempotencyKey?: string; expectReply?: boolean }) => Promise<void>;
   public prompt: (sessionID: string, parts: Array<{ type: string; text: string }>, system?: string, outputSchema?: OutputSchemaSpec) => Promise<{ parts: Array<{ id: string; sessionID: string; messageID: string; type: string; text: string }>; structured?: unknown; structuredError?: string }>;
 
   constructor(client?: any, mafwDir?: string) {
@@ -139,6 +139,7 @@ export class SdkSessionResource {
     agent?: string,
     model?: { providerID: string; modelID: string },
     outputSchema?: OutputSchemaSpec,
+    opts?: { delivery?: 'steer' | 'followup' | 'queue'; idempotencyKey?: string; expectReply?: boolean },
   ): Promise<void> {
     if (!this.client) throw new Error('Runtime client not available');
     if (!sessionID) return;
@@ -152,6 +153,9 @@ export class SdkSessionResource {
     const promptOpts: any = { sessionID, parts: promptParts };
     if (agent) promptOpts.agent = agent;
     if (model?.providerID && model?.modelID) promptOpts.model = model;
+    if (opts?.delivery) promptOpts.delivery = opts.delivery;
+    if (opts?.idempotencyKey) promptOpts.idempotencyKey = opts.idempotencyKey;
+    if (opts?.expectReply !== undefined) promptOpts.expectReply = opts.expectReply;
     await this.client.session.promptAsync(promptOpts);
   }
 

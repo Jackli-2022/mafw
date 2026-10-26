@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { QueueItem } from "@mafw/sdk"
-import { applyQueueSnapshot, extractQueueSnapshot, queueItemText } from "./queue-store"
+import { applyQueueSnapshot, extractQueueSnapshot, ingestQueueEvent, queueForSession, queueItemText, replaceQueue } from "./queue-store"
 
 const item = (id: string, at: string, text = id): QueueItem => ({
   id, sessionID: "s1", text, enqueuedAt: at, source: "http",
@@ -49,6 +49,17 @@ describe("extractQueueSnapshot", () => {
   test("stale session events keep their own key", () => {
     const out = extractQueueSnapshot("active", { properties: { sessionID: "other", items: [] } })
     expect(out?.sessionID).toBe("other")
+  })
+})
+
+describe("ingestQueueEvent", () => {
+  test("replaces the signal and ignores missing items", () => {
+    replaceQueue("s1", [item("a", "2026-01-01T00:00:00Z")])
+    ingestQueueEvent("s1", { properties: { sessionID: "s1", items: [] } })
+    expect(queueForSession("s1")).toEqual([])
+    replaceQueue("s1", [item("b", "2026-01-01T00:00:00Z")])
+    ingestQueueEvent("s1", { properties: { sessionID: "s1" } })
+    expect(queueForSession("s1").map(i => i.id)).toEqual(["b"])
   })
 })
 

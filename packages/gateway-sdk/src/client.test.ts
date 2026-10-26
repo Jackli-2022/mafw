@@ -310,10 +310,11 @@ test("session.promptAsync forwards delivery/idempotencyKey/expectReply", async (
 })
 
 test("session queue list/cancel/clear hit the existing routes", async () => {
-  fetchMock.mockResolvedValue(okJson({ items: [], cancelled: { id: "q1" }, cleared: 0 }))
+  fetchMock.mockResolvedValue(okJson({ items: [], cancelled: "q1", cleared: 0 }))
   const c = new MafwClient("http://gw:3000")
   await c.session.queueList({ path: { id: "s1" } })
-  await c.session.queueCancel({ path: { id: "s1", itemId: "q1" } })
+  const cancel = await c.session.queueCancel({ path: { id: "s1", itemId: "q1" } })
+  expect(cancel.cancelled).toBe("q1")
   await c.session.queueClear({ path: { id: "s1" } })
   const calls = (fetchMock as any).mock.calls
   expect(calls[0][0]).toBe("http://gw:3000/api/session/s1/queue")

@@ -1613,7 +1613,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             <span class="mafw-queue-count">⏳ {gwQueue().length} 条网关队列 · 回合结束后自动发送</span>
             <For each={gwQueue()}>
               {(q) => (
-                <span class="mafw-chip" title={`${q.source} · ${q.enqueuedAt}`}>
+                <span class="mafw-chip">
                   <span class="mafw-chip-label">{queueItemText(q, 60)}</span>
                   <ButtonV2
                     variant="ghost"

@@ -37,7 +37,7 @@ export function extractQueueSnapshot(
 }
 
 export function queueForSession(sessionID: string): QueueItem[] {
-  return queueBySession()[sessionID] ?? []
+  return [...(queueBySession()[sessionID] ?? [])]
 }
 
 export function ingestQueueEvent(fallbackSid: string, event: unknown): void {

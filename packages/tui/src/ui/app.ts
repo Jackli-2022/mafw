@@ -209,18 +209,21 @@ export async function runApp(opts: AppOptions): Promise<void> {
       onState: (s) => {
         setStatus({ conn: s })
         tabStrip.setConnected(s === 'ok')
+        if (s === 'ok') void refreshGatewayQueue(chatStore.sessionID)
       },
     })
     conn.start()
     return conn
   }
 
+  let queueFetchSeq = 0
   async function refreshGatewayQueue(sessionID: string): Promise<void> {
+    const seq = ++queueFetchSeq
     try {
       const { items } = await client.session.queueList({ path: { id: sessionID } })
-      setStatus({ gatewayQueued: items.length })
+      if (seq === queueFetchSeq && sessionID === chatStore.sessionID) setStatus({ gatewayQueued: items.length })
     } catch {
-      setStatus({ gatewayQueued: 0 })
+      if (seq === queueFetchSeq && sessionID === chatStore.sessionID) setStatus({ gatewayQueued: 0 })
     }
   }
 
@@ -646,9 +649,9 @@ export async function runApp(opts: AppOptions): Promise<void> {
     } else if (type === 'queue.updated') {
       const p = data?.properties ?? data
       const sid = p?.sessionID ?? data?.sessionID
-      if (!sid || sid === chatStore.sessionID) {
-        setStatus({ gatewayQueued: Array.isArray(p?.items) ? p.items.length : 0 })
-      }
+      if (!Array.isArray(p?.items)) return
+      if (sid && sid !== chatStore.sessionID) return
+      setStatus({ gatewayQueued: p.items.length })
     } else if (type === 'turn.completed') {
       void refreshUsage()
     }

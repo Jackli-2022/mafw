@@ -187,8 +187,8 @@ export class MafwClient implements IMafwClient {
       return this.request<{ items: QueueItem[] }>(`/api/session/${params.path.id}/queue`)
     },
 
-    queueCancel: async (params: { path: { id: string; itemId: string } }): Promise<{ cancelled: QueueItem }> => {
-      return this.request<{ cancelled: QueueItem }>(`/api/session/${params.path.id}/queue/${params.path.itemId}`, { method: 'DELETE' })
+    queueCancel: async (params: { path: { id: string; itemId: string } }): Promise<{ cancelled: string }> => {
+      return this.request<{ cancelled: string }>(`/api/session/${params.path.id}/queue/${params.path.itemId}`, { method: 'DELETE' })
     },
 
     queueClear: async (params: { path: { id: string } }): Promise<{ cleared: number }> => {

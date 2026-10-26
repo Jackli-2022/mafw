@@ -8,12 +8,12 @@ const src = readFileSync(join(__dirname, '../../../src/index.ts'), 'utf8');
 
 describe('prompt 预算接线（wiring 源码断言）', () => {
   it('promptAsync 路由解构 maxTurns/maxCostUsd', () => {
-    expect(src).toContain('const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, outputSchema } = body ? JSON.parse(body) : {};');
+    expect(src).toContain('const { message, parts, agent, model, maxTurns, maxCostUsd, delivery, idempotencyKey, expectReply, outputSchema } = body ? JSON.parse(body) : {};');
   });
 
   it('promptAsync 调用前挂 per-prompt 预算（顺序：attach 先于 promptAsync）', () => {
     const attach = src.indexOf('this.attachBudgetGuardForPrompt(sessionID, maxTurns, maxCostUsd);');
-    const send = src.indexOf('await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema);');
+    const send = src.indexOf('await this.sdkSession.promptAsync(sessionID, message, parts, agent, model, outputSchema, {');
     expect(attach).toBeGreaterThan(0);
     expect(send).toBeGreaterThan(0);
     expect(attach).toBeLessThan(send); // step 事件在 prompt 执行中流出，guard 必须先挂

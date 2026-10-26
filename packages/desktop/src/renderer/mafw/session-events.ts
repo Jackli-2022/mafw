@@ -108,7 +108,7 @@ export const IGNORED_AT_SHELL = [
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting", "usage.updated",
-  "turn.started", "queue.updated",
+  "turn.started",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
@@ -173,6 +173,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "trajectory.event":
     case "trajectory.turn":
     case "plan.updated":
+    case "queue.updated":
     // ---- chat stream ----
     case "message.updated":
     case "part.delta":
@@ -195,7 +196,6 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "session.compacting":
     case "usage.updated":
     case "turn.started":
-    case "queue.updated":
     case "task.updated":
       return
     default: {

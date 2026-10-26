@@ -327,7 +327,7 @@ export interface SessionNamespace {
   abort(params: { path: { id: string } }): Promise<void>
   /** Gateway 服务端 inbox（batch 5 UI）：busy 会话的排队快照/取消/清空。 */
   queueList(params: { path: { id: string } }): Promise<{ items: QueueItem[] }>
-  queueCancel(params: { path: { id: string; itemId: string } }): Promise<{ cancelled: QueueItem }>
+  queueCancel(params: { path: { id: string; itemId: string } }): Promise<{ cancelled: string }>
   queueClear(params: { path: { id: string } }): Promise<{ cleared: number }>
   prompt(params: { path: { id: string }; body: { parts: Array<{ type: 'text'; text: string }>; system?: string; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number } } }): Promise<{ parts: TextPart[]; structured?: unknown; structuredError?: string }>
   promptAsync(params: { path: { id: string }; body: { message?: string; parts?: Record<string, unknown>[]; agent?: string; model?: { providerID: string; modelID: string }; outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number }; delivery?: 'queue' | 'steer' | 'followup'; idempotencyKey?: string; expectReply?: boolean } }): Promise<void>
