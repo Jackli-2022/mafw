@@ -74,7 +74,7 @@ created_at TEXT NOT NULL
 | scope | 行为 | 失败语义 |
 |---|---|---|
 | `session`（对话） | opencode `revert/stage {messageID, files:false}` + commit——截断历史，**不动工作区** | stage 成功后 commit 失败 → `DELETE /revert` 清 stage，返回 502 |
-| `files`（代码） | `git --git-dir <snapRepo> diff --binary <latestTurnTree> <ckptTree>`（**正向补丁** latest→ckpt，免 hunk 反转）→ `vcs.apply`——**不动历史** | apply 失败 502，历史与其余文件不受影响（git apply 原子性） |
+| `files`（代码） | `git --git-dir <snapRepo> diff --binary <base> <ckptTree>`（**正向补丁** base→ckpt，免 hunk 反转）→ **gateway-side `git apply`**（`core/diff/apply-patch.ts`；serve 2.1 无 `/api/vcs/apply`，SDK 静默吞 404）——**不动历史** | apply 失败 502，历史与其余文件不受影响（预检 `--check` 通过才 apply） |
 | `both`（全部） | `revert/stage {messageID, files:true}` + commit（= 现有 revert 全语义） | 同 session |
 
 - **补丁基线** = 每会话记住的「当前工作区树」（`checkpoint-workspace` kv）：正常路径为最后一条带 `snapshot.end` 的 assistant 树的 end；files 恢复成功后更新为目标树；新回合完成或 session/both 恢复时清空。基线 === 目标树 → 真幂等成功（不 apply、不造 pre-restore）
@@ -85,7 +85,7 @@ created_at TEXT NOT NULL
 - 锚点语义跟随现有 `sessions.revert`（与桌面 `revertTo` 同一 messageID 口径，B3 行为为准）
 - body 必须 `confirm:true`（destructive 门，对齐 goals retry 路由）
 
-**实现期验证点**（不通过则降级，见 §8）：① opencode stage body 是否接受 `files:false`——对 repo 锁定的 serve 2.1 是**静态事实，一次性验证**（不做运行时探测；外部 serve 异版本直接走 502 失败语义）；不支持 → `session` 选项隐藏，三态降级二态（files / both）。② `vcs.apply` 是否接受含整文件新增/删除/GIT binary 补丁的全量 patch；不支持 → 退化为仅 modified 文件 + 跳过清单报告（等价 B3.1 现状）。
+**实现期验证点**（已解决）：① opencode stage body 接受 `files:false`（活体 200，files:[] 零回滚）→ 三态成立。② serve 2.1 **没有** `/api/vcs/apply`（404，SDK `throwOnError=false` 静默吞掉）→ 改为 gateway 侧 `git apply`（`core/diff/apply-patch.ts`，`-C projectDir [--git-dir snapRepo]`，强制 autocrlf=false），B3.1 的 `revertDiff` 一并修复。
 
 ### 5.4 自动记录钩子
 
