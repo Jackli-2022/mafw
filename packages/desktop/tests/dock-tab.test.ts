@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test"
 import { normalizeDockTab, DOCK_TABS, DOCK_DEFAULT_WIDTH } from "../src/renderer/mafw/components/dock-tab"
 
-describe("normalizeDockTab", () => {
+describe("normalizeDockTab（2026-10-26 工作台合并后：仅会话数据面板）", () => {
   test("合法值直通", () => {
     expect(normalizeDockTab("tasks")).toBe("tasks")
     expect(normalizeDockTab("usage")).toBe("usage")
@@ -10,42 +10,36 @@ describe("normalizeDockTab", () => {
   test("quota 迁移到 usage（v4.13 五栏并四栏）", () => {
     expect(normalizeDockTab("quota")).toBe("usage")
   })
-  test("非法值回退默认", () => {
-    expect(normalizeDockTab("bogus")).toBe("usage")
+  test("非法值回退默认（tasks）", () => {
+    expect(normalizeDockTab("bogus")).toBe("tasks")
   })
-  test("null/undefined 回退", () => {
-    expect(normalizeDockTab(null)).toBe("usage")
-    expect(normalizeDockTab(undefined)).toBe("usage")
+  test("null/undefined 回退（tasks）", () => {
+    expect(normalizeDockTab(null)).toBe("tasks")
+    expect(normalizeDockTab(undefined)).toBe("tasks")
+  })
+  test("旧工作台四 tab（files/editor/browser/terminal）不再是 dock tab → 回退", () => {
+    for (const legacy of ["files", "editor", "browser", "terminal"]) {
+      expect(normalizeDockTab(legacy)).toBe("tasks")
+    }
   })
   test("自定义 fallback", () => {
     expect(normalizeDockTab("bogus", "tasks")).toBe("tasks")
   })
 })
 
-describe("DOCK_TABS", () => {
-  test("十一栏且不含 quota", () => {
-    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background", "files", "editor", "browser", "terminal"])
+describe("DOCK_TABS（会话数据面板七栏）", () => {
+  test("七栏且不含 quota / 工作台四件套", () => {
+    expect(DOCK_TABS).toEqual(["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background"])
   })
-  test("terminal 合法值直通", () => {
-    expect(normalizeDockTab("terminal")).toBe("terminal")
-  })
-  test("changes 合法值直通", () => {
+  test("changes / subagents / background 合法值直通", () => {
     expect(normalizeDockTab("changes")).toBe("changes")
-  })
-  test("subagents 合法值直通", () => {
     expect(normalizeDockTab("subagents")).toBe("subagents")
-  })
-  test("background 合法值直通", () => {
     expect(normalizeDockTab("background")).toBe("background")
-  })
-  test("files / editor 合法值直通", () => {
-    expect(normalizeDockTab("files")).toBe("files")
-    expect(normalizeDockTab("editor")).toBe("editor")
   })
 })
 
-describe("dock 宽度全局统一（撤销 v6 W4 按 tab 记忆）", () => {
-  test("默认宽度 320", () => expect(DOCK_DEFAULT_WIDTH).toBe(320))
+describe("dock 宽度（overlay 用）", () => {
+  test("overlay 默认宽度 520（工作台骨架需要更宽）", () => expect(DOCK_DEFAULT_WIDTH).toBe(520))
   test("不再导出按 tab 宽度函数", async () => {
     const mod = await import("../src/renderer/mafw/components/dock-tab")
     expect("dockTabWidth" in mod).toBe(false)

@@ -40,7 +40,8 @@ import { conn, useConnPhase } from "./connection-state"
 import { ConnBanner } from "./components/ConnBanner"
 import { ChatPane, mergeLocalParts, type FlowCardRecord } from "./components/ChatPane"
 import { TaskList } from "./components/TaskList"
-import { RightDock } from "./components/RightDock"
+import { Workbench } from "./components/Workbench"
+import { SessionRail } from "./components/SessionRail"
 import { isNarrowViewport } from "./layout-breakpoints"
 import { readSavedTheme, nextTheme, applyTheme } from "./theme"
 import { createPresence, SURFACE_MS } from "./components/presence"
@@ -49,10 +50,6 @@ import { SubagentDock } from "./components/SubagentDock"
 import { BackgroundDock } from "./components/BackgroundDock"
 import { taskRows, fetchTasks, ingestTask } from "./task-store"
 import { fetchQueue, ingestQueueEvent } from "./queue-store"
-import { FilesDock } from "./components/FilesDock"
-import { EditorDock } from "./components/EditorDock"
-import { BrowserDock } from "./components/BrowserDock"
-import { TerminalDock } from "./components/TerminalDock"
 import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
@@ -60,8 +57,9 @@ import { getSessionTurnDiffs } from "./session-turn-diffs"
 import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
-import { clampDockWidth, suggestDockWidth } from "./dock-width"
-import { CHAT_WIDTH, clampChatWidth, defaultChatWidth, defaultDockOpen, defaultDockTab } from "./workbench-defaults"
+import { defaultDockOpen } from "./workbench-defaults"
+import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, normalizeDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
+import { detentFromLegacy, workbenchColumns } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -417,7 +415,7 @@ export function MafwShell() {
       },
       {
         id: "toggle-rightdock", label: "切换右侧面板", hint: "RightDock (Ctrl+T)", group: "导航",
-        run: () => applyRightDock(!rightDockOpen(), rightDockTab()),
+        run: () => applyRightDock(!rightDockOpen()),
       },
       {
         id: "toggle-theme", label: "切换主题", hint: "Theme", group: "导航",
@@ -1048,7 +1046,7 @@ export function MafwShell() {
     })
     // 子代理对账轮询（spec §4.6）：有 running 行或面板开着才跑
     const subagentTimer = setInterval(() => {
-      if (rightDockTab() === "subagents" || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
+      if ((sessionRailOpen() && rightDockTab() === "subagents") || subagentRows().some(r => r.status === "running")) void reconcileSubagents()
     }, 15_000)
     // 后台任务对账轮询（spec §5）：后台 tab 开着或 shell 行还在跑才跑；
     // REST 不可达（Gate Ruling A）时跳过，不空转打网关（reviewer Important 6）
@@ -1458,11 +1456,49 @@ export function MafwShell() {
     setTaskListOpen(o => !o)
   }
 
-  // ── Unified right dock (tasks / trajectory / usage / notes / changes) ──
+  // ── Workbench + 会话图标轨（spec 2026-10-26-workbench-merge-design）──
   const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
+  // 会话数据面板（7 个）：图标轨浮层，默认关闭
   const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
-    normalizeDockTab(defaultDockTab(localStorage.getItem("mafw-right-dock-tab")), "files")
+    normalizeDockTab(localStorage.getItem("mafw-right-dock-tab")),
   )
+  const [sessionRailOpen, setSessionRailOpen] = createSignal(false)
+  // 工作台主区 tab（编辑器/浏览器）
+  const [workbenchTab, setWorkbenchTab] = createSignal<"editor" | "browser">(
+    localStorage.getItem("mafw-workbench-tab") === "browser" ? "browser" : "editor",
+  )
+  const [workbenchTerminalOpen, setWorkbenchTerminalOpen] = createSignal(
+    localStorage.getItem("mafw-workbench-terminal") !== "0",
+  )
+  // 绝对 px 三档（420/520/640）；旧 mafw-chat-width 一次性迁移
+  const storedDetent = localStorage.getItem("mafw-workbench-detent")
+  const [detent, setDetent] = createSignal<WorkbenchDetent>(
+    storedDetent !== null
+      ? normalizeDetent(storedDetent)
+      : detentFromLegacy(localStorage.getItem("mafw-chat-width"), window.innerWidth - 46),
+  )
+  /** 拖动中的连续预览（松手吸附后清空）。 */
+  const [chatPreview, setChatPreview] = createSignal<number | null>(null)
+  const availableWidth = () => Math.max(0, window.innerWidth - 46 - (leftDockMode() === "push" ? leftDockWidth() : 0))
+  const chatPx = () => chatPreview() ?? chatPxForDetent(detent(), availableWidth())
+  const applyDetent = (d: WorkbenchDetent) => {
+    setDetent(d)
+    setChatPreview(null)
+    try {
+      localStorage.setItem("mafw-workbench-detent", String(d))
+      localStorage.removeItem("mafw-chat-width")
+    } catch { /* ignore */ }
+  }
+  // 松手吸附（ResizeHandle 无 release 钩子，window pointerup 统一收口）
+  onMount(() => {
+    const onUp = () => {
+      const preview = chatPreview()
+      if (preview === null) return
+      applyDetent(snapDetent(preview, availableWidth()))
+    }
+    window.addEventListener("pointerup", onUp)
+    onCleanup(() => window.removeEventListener("pointerup", onUp))
+  })
   // Per-turn diff data for the B2 changes/editor docks (B3.1). The overlay owns
   // its own fetch; this memo is only for the dock consumers.
   const sessionMessages = createMemo(() => (store.message as any)[currentSessionID()] || [])
@@ -1485,50 +1521,38 @@ export function MafwShell() {
       diffApi: rtCaps().diffApi === true,
     })
   })
-  // chat 定宽列（黄金分割默认 38.2% 可用宽，clamp 360-520；可拖 320-560）
-  const storedChatWidth = Number(localStorage.getItem("mafw-chat-width"))
-  const [chatWidth, setChatWidth] = createSignal(
-    clampChatWidth(storedChatWidth > 0 ? storedChatWidth : defaultChatWidth(window.innerWidth - 46)),
-  )
-  const applyChatWidth = (w: number) => {
-    const clamped = clampChatWidth(w)
-    setChatWidth(clamped)
-    try { localStorage.setItem("mafw-chat-width", String(clamped)) } catch { /* ignore */ }
-  }
   const welcomeFull = () => activeTab() === "chat" && !showConfig() && (showWelcome() || !activeSessionId())
   const chatActive = () => activeTab() === "chat" && !showConfig() && !welcomeFull()
   const chatSplit = () => chatActive() && rightDockOpen() && !viewportNarrow()
-  const bodyColumns = () => {
-    const left = leftDockMode() === "push" ? `${leftDockWidth()}px` : "0px"
-    if (chatSplit()) return `${left} ${chatWidth()}px minmax(0, 1fr)`
-    return `${left} minmax(0, 1fr) 0px`
-  }
-  // 宽度全局统一：所有 tab 共用一个记忆宽度（旧版按 tab 记忆，点 tab 会跳宽）。
-  const [rightDockWidth, setRightDockWidth] = createSignal<number>((() => {
-    const tab = rightDockTab()
-    const v = Number(localStorage.getItem("mafw-right-dock-width"))
-    if (v > 0) return clampDockWidth(tab, v, window.innerWidth)
-    try {
-      const old = JSON.parse(localStorage.getItem("mafw-right-dock-widths") || "{}")
-      const oldVal = Number(old[localStorage.getItem("mafw-right-dock-tab") || ""])
-      if (oldVal > 0) return clampDockWidth(tab, oldVal, window.innerWidth)
-    } catch { /* ignore */ }
-    return DOCK_DEFAULT_WIDTH
-  })())
+  const bodyColumns = () =>
+    workbenchColumns({
+      leftPx: leftDockMode() === "push" ? leftDockWidth() : 0,
+      chatPx: chatPx(),
+      split: chatSplit(),
+    })
 
   const applyRightDock = (open: boolean, tab?: DockTab) => {
     setRightDockOpen(open)
-    if (tab !== undefined) setRightDockTab(tab)
-    // workbench tab（files/editor）首次进入只增不减地加宽（终审 Important 6）
-    if (tab === "files" || tab === "editor") {
-      const next = suggestDockWidth(tab, rightDockWidth(), window.innerWidth)
-      if (next !== rightDockWidth()) {
-        setRightDockWidth(next)
-        try { localStorage.setItem("mafw-right-dock-width", String(next)) } catch {}
-      }
+    if (!open) setSessionRailOpen(false)
+    if (tab !== undefined) {
+      setRightDockTab(tab)
+      setSessionRailOpen(true)
     }
     try { localStorage.setItem("mafw-right-dock-open", open ? "1" : "0") } catch {}
     if (tab !== undefined) { try { localStorage.setItem("mafw-right-dock-tab", tab) } catch {} }
+  }
+  const openWorkbenchTab = (tab: "editor" | "browser") => {
+    setWorkbenchTab(tab)
+    setRightDockOpen(true)
+    try {
+      localStorage.setItem("mafw-workbench-tab", tab)
+      localStorage.setItem("mafw-right-dock-open", "1")
+    } catch { /* ignore */ }
+  }
+  const toggleWorkbenchTerminal = () => {
+    const next = !workbenchTerminalOpen()
+    setWorkbenchTerminalOpen(next)
+    try { localStorage.setItem("mafw-workbench-terminal", next ? "1" : "0") } catch { /* ignore */ }
   }
   // 文件/编辑器根：会话目录属于项目（含 worktree）才采用，否则回退项目目录
   // （manager 会话的 directory 可能指向 home 等外部目录，实证 2026-10-22）
@@ -2080,114 +2104,47 @@ export function MafwShell() {
             ) : null}
           </div>
           <Show when={chatSplit()}>
-            <ResizeHandle
-              direction="horizontal"
-              edge="end"
-              class="mafw-chat-resize"
-              size={chatWidth()}
-              min={CHAT_WIDTH.min}
-              max={CHAT_WIDTH.max}
-              onResize={applyChatWidth}
-              onCollapse={() => applyRightDock(false)}
-            />
+            <div
+              class="mafw-chat-resize-wrap"
+              onDblClick={() => applyDetent(WORKBENCH_DEFAULT_DETENT)}
+              title="拖动调宽（松手吸附 420/520/640）；双击回默认档"
+            >
+              <ResizeHandle
+                direction="horizontal"
+                edge="end"
+                class="mafw-chat-resize"
+                size={chatPx()}
+                min={CHAT_PX_FLOOR}
+                max={Math.max(CHAT_PX_FLOOR, Math.min(CHAT_PX_CEIL, availableWidth() - WORKBENCH_MIN_WIDTH))}
+                onResize={(px) => setChatPreview(px)}
+                onCollapse={() => applyRightDock(false)}
+              />
+            </div>
           </Show>
         </div>
-        {/* Unified right dock (tasks / trajectory tabs): real sidebar on wide
-            viewports (third grid column), overlay on narrow (<1200px) */}
+        {/* Workbench（合并四件套）+ 会话面板图标轨：宽屏第三列，窄屏 overlay */}
         <div class="mafw-dock-slot" classList={{ overlay: viewportNarrow() }} ref={setDockRef}>
           <Show when={dockPresent()}>
             <Show when={connDown()}><ConnBanner /></Show>
             {connDown() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
-              <RightDock
-              open={dockPresent() && chatActive()}
-              tab={rightDockTab()}
-              width={rightDockWidth()}
-              fill={chatSplit()}
-              subagentBadge={subagentRows().filter(r => r.status === "running").length}
-              backgroundBadge={countRunning(backgroundRows())}
-              onClose={() => applyRightDock(false)}
-              onTab={(t) => applyRightDock(true, t)}
-            >
-              <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
-                    <TaskList
-                      todos={todos[currentSessionID()] || []}
-                      hiddenTodos={hiddenTodos[currentSessionID()] || []}
-                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
-                      tokens={taskMetrics(currentSessionID()).tokens}
-                      started={taskMetrics(currentSessionID()).started}
-                      placement={viewportNarrow() ? "overlay" : "dock"}
-                      onClose={() => applyRightDock(false)}
-                      onPin={() => applyRightDock(false)}
-                    />
-              </div>
-              <div style={{ display: rightDockTab() === "trajectory" ? "contents" : "none" }}>
-                <TrajectoryDock
-                  sessionID={currentSessionID()}
-                  liveEvents={trajectoryLive()[currentSessionID()] || []}
-                  liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
-                />
-              </div>
-              <div style={{ display: rightDockTab() === "usage" ? "contents" : "none" }}>
-                <UsageDock
-                  sessionID={currentSessionID()}
-                  projectID={currentProject()}
-                  store={store}
-                  model={() => sessionModel(currentSessionID())}
-                  modelGroups={modelGroups}
-                />
-              </div>
-              <div style={{ display: rightDockTab() === "notes" ? "contents" : "none" }}>
-                <NotesDock />
-              </div>
-              <div style={{ display: rightDockTab() === "changes" ? "contents" : "none" }}>
-                <ChangesDock
+              <div class="mafw-dock-shell">
+                <Workbench
+                  open={dockPresent() && chatActive()}
+                  tab={workbenchTab()}
+                  onTab={openWorkbenchTab}
                   sessionID={currentSessionID() || null}
-                  diffs={mergedSessionDiffs()}
-                  liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
-                  onSendComment={(sid, text) => {
-                    void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
-                      .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
-                      .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
-                  }}
-                  onAddAnnotation={(a) => {
-                    const sid = currentSessionID()
-                    if (!sid) return
-                    addPending({ sessionID: sid, ...a })
-                    showToastV2({ description: "已加入批注", duration: 1600 } as any)
-                  }}
-                />
-              </div>
-              <div style={{ display: rightDockTab() === "subagents" ? "contents" : "none" }}>
-                <SubagentDock
-                  activeSessionId={currentSessionID() || null}
-                  onOpenSession={(id) => void openSubagentSession(id)}
-                />
-              </div>
-              <div style={{ display: rightDockTab() === "background" ? "contents" : "none" }}>
-                <BackgroundDock
-                  activeSessionId={currentSessionID() || null}
-                  sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
-                  onOpenSession={(id) => void openSubagentSession(id)}
-                />
-              </div>
-              <div style={{ display: rightDockTab() === "files" ? "contents" : "none" }}>
-                <FilesDock
                   sessionDirectory={benchRoot()}
+                  diffs={mergedSessionDiffs()}
+                  terminalOpen={workbenchTerminalOpen()}
+                  onToggleTerminal={toggleWorkbenchTerminal}
                   onOpenFile={(rel) => {
                     const root = benchRoot()
                     if (!root) return
                     requestOpenEditor(root, rel)
-                    applyRightDock(true, "editor")
+                    openWorkbenchTab("editor")
                   }}
-                />
-              </div>
-              <div style={{ display: rightDockTab() === "editor" ? "contents" : "none" }}>
-                <EditorDock
-                  sessionID={currentSessionID() || null}
-                  sessionDirectory={benchRoot()}
-                  diffs={mergedSessionDiffs()}
                   onSendAnnotation={(text) => {
                     const sid = currentSessionID()
                     if (!sid) return
@@ -2207,14 +2164,82 @@ export function MafwShell() {
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}
                 />
+                <SessionRail
+                  openTab={sessionRailOpen() ? rightDockTab() : null}
+                  onSelect={(t) => {
+                    if (sessionRailOpen() && rightDockTab() === t) { setSessionRailOpen(false); return }
+                    setRightDockTab(t)
+                    setSessionRailOpen(true)
+                    try { localStorage.setItem("mafw-right-dock-tab", t) } catch { /* ignore */ }
+                  }}
+                  onClose={() => setSessionRailOpen(false)}
+                  subagentBadge={subagentRows().filter(r => r.status === "running").length}
+                  backgroundBadge={countRunning(backgroundRows())}
+                >
+                  <div style={{ display: rightDockTab() === "tasks" ? "contents" : "none" }}>
+                    <TaskList
+                      todos={todos[currentSessionID()] || []}
+                      hiddenTodos={hiddenTodos[currentSessionID()] || []}
+                      onClearHidden={() => clearHiddenTodos(currentSessionID())}
+                      tokens={taskMetrics(currentSessionID()).tokens}
+                      started={taskMetrics(currentSessionID()).started}
+                      placement={viewportNarrow() ? "overlay" : "dock"}
+                      onClose={() => setSessionRailOpen(false)}
+                      onPin={() => setSessionRailOpen(false)}
+                    />
+                  </div>
+                  <div style={{ display: rightDockTab() === "trajectory" ? "contents" : "none" }}>
+                    <TrajectoryDock
+                      sessionID={currentSessionID()}
+                      liveEvents={trajectoryLive()[currentSessionID()] || []}
+                      liveTurn={trajectoryTurnLive()[currentSessionID()] || null}
+                    />
+                  </div>
+                  <div style={{ display: rightDockTab() === "usage" ? "contents" : "none" }}>
+                    <UsageDock
+                      sessionID={currentSessionID()}
+                      projectID={currentProject()}
+                      store={store}
+                      model={() => sessionModel(currentSessionID())}
+                      modelGroups={modelGroups}
+                    />
+                  </div>
+                  <div style={{ display: rightDockTab() === "notes" ? "contents" : "none" }}>
+                    <NotesDock />
+                  </div>
+                  <div style={{ display: rightDockTab() === "changes" ? "contents" : "none" }}>
+                    <ChangesDock
+                      sessionID={currentSessionID() || null}
+                      diffs={mergedSessionDiffs()}
+                      liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
+                      onSendComment={(sid, text) => {
+                        void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                          .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))
+                          .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
+                      }}
+                      onAddAnnotation={(a) => {
+                        const sid = currentSessionID()
+                        if (!sid) return
+                        addPending({ sessionID: sid, ...a })
+                        showToastV2({ description: "已加入批注", duration: 1600 } as any)
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: rightDockTab() === "subagents" ? "contents" : "none" }}>
+                    <SubagentDock
+                      activeSessionId={currentSessionID() || null}
+                      onOpenSession={(id) => void openSubagentSession(id)}
+                    />
+                  </div>
+                  <div style={{ display: rightDockTab() === "background" ? "contents" : "none" }}>
+                    <BackgroundDock
+                      activeSessionId={currentSessionID() || null}
+                      sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
+                      onOpenSession={(id) => void openSubagentSession(id)}
+                    />
+                  </div>
+                </SessionRail>
               </div>
-              <div style={{ display: rightDockTab() === "browser" ? "contents" : "none" }}>
-                <BrowserDock />
-              </div>
-              <div style={{ display: rightDockTab() === "terminal" ? "contents" : "none" }}>
-                <TerminalDock directory={benchRoot()} active={rightDockTab() === "terminal"} />
-              </div>
-            </RightDock>
             )}
           </Show>
         </div>

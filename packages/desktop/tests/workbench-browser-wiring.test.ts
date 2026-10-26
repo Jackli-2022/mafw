@@ -6,22 +6,19 @@ import { join } from "node:path"
 const root = join(import.meta.dirname, "..")
 const read = (p: string) => readFileSync(join(root, p), "utf8")
 
-describe("浏览器 tab 接线", () => {
-  test("DockTab 含 browser，RightDock 有入口", () => {
+describe("浏览器 tab 接线（2026-10-26 工作台合并后）", () => {
+  test("浏览器是 Workbench 主区 tab（不再是 dock tab）", () => {
     const tabs = read("src/renderer/mafw/components/dock-tab.ts")
-    expect(tabs).toContain('"browser"')
-    const dock = read("src/renderer/mafw/components/RightDock.tsx")
-    expect(dock).toContain('value="browser"')
-    expect(dock).toContain("🌐 浏览")
+    expect(tabs).not.toContain('"browser"')
+    const wb = read("src/renderer/mafw/components/Workbench.tsx")
+    expect(wb).toContain("BrowserDock")
+    expect(wb).toContain("浏览器")
   })
-  test("MafwShell 渲染 BrowserDock 分支", () => {
+  test("MafwShell 经 Workbench 渲染 BrowserDock", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
-    expect(shell).toContain("BrowserDock")
-    expect(shell).toContain('rightDockTab() === "browser"')
-  })
-  test("dock 宽度策略把 browser 当 workbench tab（可拉宽）", () => {
-    const width = read("src/renderer/mafw/dock-width.ts")
-    expect(width).toMatch(/WORKBENCH_TABS[\s\S]*"browser"/)
+    expect(shell).toContain("<Workbench")
+    const wb = read("src/renderer/mafw/components/Workbench.tsx")
+    expect(wb).toContain("BrowserDock")
   })
   test("BrowserDock 使用独立 partition 且无 preload/allowpopups", () => {
     const dock = read("src/renderer/mafw/components/BrowserDock.tsx")

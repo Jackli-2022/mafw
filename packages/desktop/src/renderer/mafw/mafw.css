@@ -2718,20 +2718,8 @@ html[data-theme="light"] body {
 }
 .mafw-tasklist-collapse:hover { background: var(--hover); color: var(--text-2); }
 
-/* ── Unified right dock (tasks / trajectory tabs) ──
-   Wide viewports: in-flow third grid column of .mafw-body (real sidebar).
-   Narrow (<1200px, JS class .overlay): fixed overlay so chat stays full width. */
-.mafw-right-dock {
-  width: 100%;
-  height: 100%;
-  background: var(--bg-base);
-  border-left: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  animation: mafw-dock-in var(--dur-surface) var(--ease-surface);
-}
+/* ── Workbench 合并（spec 2026-10-26-workbench-merge-design）──
+   宽屏第三列 = 工作台（吃剩余）+ 会话图标轨（44px）；窄屏 overlay。 */
 .mafw-dock-slot {
   position: relative;
   min-width: 0;
@@ -2746,42 +2734,78 @@ html[data-theme="light"] body {
   top: 38px;
   right: 0;
   bottom: 0;
+  width: min(560px, calc(100vw - 80px));
   z-index: 70;
   box-shadow: var(--elev-panel);
+  animation: mafw-dock-in var(--dur-surface) var(--ease-surface);
 }
-.mafw-right-dock-head {
+.mafw-dock-shell { display: flex; height: 100%; min-width: 0; min-height: 0; }
+.mafw-workbench {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  border-left: 1px solid var(--border-subtle);
+}
+.mafw-wb-top { display: flex; align-items: center; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--border); flex: none; }
+.mafw-wb-tab { gap: 4px; }
+.mafw-wb-top-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.mafw-wb-body { flex: 1; min-height: 0; display: flex; }
+.mafw-wb-files { width: 200px; flex: none; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border-subtle); }
+.mafw-wb-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mafw-wb-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mafw-wb-terminal { height: 280px; max-height: 45%; flex: none; min-height: 0; border-top: 1px solid var(--border); }
+.mafw-session-rail {
+  position: relative;
+  width: 44px;
+  flex: 0 0 44px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 7px 10px;
-  flex: none;
+  padding: 6px 0;
+  background: var(--bg-inset);
+  border-left: 1px solid var(--border-subtle);
 }
-.mafw-right-dock-tab-list {
+.mafw-session-rail-icons { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; z-index: 81; }
+.mafw-session-rail-btn { position: relative; width: 32px; height: 32px; min-height: 32px; padding: 0; }
+.mafw-session-rail-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 浮层面板：从图标轨左缘展开，盖在工作台上；点击外部/Esc 关闭 */
+.mafw-session-float-mask { position: fixed; inset: 0; z-index: 79; background: transparent; }
+.mafw-session-float {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 44px;
+  z-index: 80;
+  width: min(420px, calc(100vw - 120px));
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 0;
-  border: none;
-  background: transparent;
+  flex-direction: column;
+  background: var(--bg-float);
+  border: 1px solid var(--border-subtle);
+  border-right: none;
+  box-shadow: var(--shadow-float);
+  border-radius: var(--r-md) 0 0 var(--r-md);
+  overflow: hidden;
+  animation: mafw-dock-in var(--dur-fast) var(--ease-surface);
 }
-/* tabs-v2 库根是 height:100% + overflow:clip：只给 tab-list 加 wrap 会把第二行
-   裁掉（2026-10-22 实证：9 个 tab 视觉只剩 5 个）。header 内放开高度与裁切，
-   list 允许换行且不横向滚动。 */
-.mafw-right-dock-head [data-component="tabs-v2"] {
-  height: auto;
-  overflow: visible;
-}
-.mafw-right-dock-head [data-slot="tabs-v2-list"] {
-  flex-wrap: wrap;
-  overflow: visible;
-}
-/* 库的 pill 横向列表固定 height:32px（specificity 0,4,0）——换行后必须放开高度，
-   否则列表纵向滚动、第一行 tab 被滚出可视区（2026-10-22 冒烟实证）。 */
-.mafw-right-dock-head [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-list"] {
-  height: auto;
-  flex-wrap: wrap;
-  overflow: visible;
-}
+.mafw-session-float-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* ── IconRail（左栏图标轨，spec 2026-10-22-workbench-layout D3）────────── */
 .mafw-icon-rail {
   width: 46px;
@@ -2884,27 +2908,6 @@ html[data-theme="light"] body {
 .mafw-left-dock:focus { outline: none; }
 .mafw-left-dock-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .mafw-left-dock-backdrop { position: absolute; inset: 0; z-index: 60; background: transparent; }
-.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"] {
-  height: 28px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: var(--text-3);
-  background: transparent;
-  border: 0.5px solid transparent;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
-}
-.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"]:hover:not(:disabled):not(:has([data-selected])) {
-  background: var(--hover);
-  color: var(--text-1);
-  border-color: var(--border-subtle);
-}
-.mafw-right-dock [data-component="tabs-v2"][data-variant="pill"][data-orientation="horizontal"] [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
-  background: var(--accent-dim);
-  color: var(--accent-text);
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
-}
-.mafw-right-dock-spacer { flex: 1; }
-.mafw-right-dock-body { flex: 1; overflow-y: auto; min-height: 0; }
 .mafw-trajectory-dock { height: 100%; display: flex; flex-direction: column; }
 .mafw-trajectory-summary {
   display: flex;
@@ -4261,7 +4264,6 @@ html[data-theme="light"] body {
 .mafw-editor-host { flex: 1; min-height: 0; overflow: hidden; }
 .mafw-editor-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .mafw-editor-diff { flex: 1; min-height: 0; overflow: auto; }
-.mafw-right-dock { position: relative; }
 .mafw-notes-card {
   display: flex;
   flex-direction: column;

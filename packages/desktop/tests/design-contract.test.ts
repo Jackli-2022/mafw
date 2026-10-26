@@ -433,7 +433,7 @@ describe("动效基建 v4", () => {
   test("tab 内容淡入 160ms", () =>
     expect(cssBlock(".mafw-content:not(.mafw-chat-content) > *")).toContain("mafw-fade-in"))
   test("dock 进场 200ms", () =>
-    expect(cssBlock(".mafw-right-dock {")).toContain("mafw-dock-in"))
+    expect(cssBlock(".mafw-dock-slot.overlay {")).toContain("mafw-dock-in"))
   test("模态 scale 进场", () =>
     expect(cssBlock(".mafw-confirm {")).toContain("mafw-modal-in"))
 })
@@ -656,8 +656,8 @@ describe("DiffReviewPanel 接线", () => {
 
 describe("Dock changes tab（改动列表常驻入口）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("RightDock 含 changes trigger（tab 条归位于 dock 内部）", () => {
-    expect(read("src/renderer/mafw/components/RightDock.tsx")).toContain('"changes"')
+  test("SessionRail 起 changes 入口（图标轨归位于 dock 内部）", () => {
+    expect(read("src/renderer/mafw/components/SessionRail.tsx")).toContain('id: "changes"')
   })
   test("MafwShell 挂载 ChangesDock 到 dock 内容区", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
@@ -797,10 +797,13 @@ describe("topframe — 顶行框架", () => {
     expect(shell.indexOf("<SessionStrip", stripIdx)).toBeGreaterThan(stripIdx)
     expect(shell).not.toContain("DockTabButtons")
   })
-  test("RightDock 重新渲染内部 tab 条（五 tab），保留关闭按钮", () => {
-    const src = read("src/renderer/mafw/components/RightDock.tsx")
-    expect(src).toContain("TabsV2")
-    expect(src).toContain("mafw-right-dock-close")
+  test("SessionRail 七图标 + 浮层（Esc 可关）", () => {
+    const src = read("src/renderer/mafw/components/SessionRail.tsx")
+    for (const t of ["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background"]) {
+      expect(src).toContain(`id: "${t}"`)
+    }
+    expect(src).toContain("mafw-session-float")
+    expect(src).toContain("Escape")
   })
   test("CSS：topstrip 拖拽契约", () => {
     expect(css).toMatch(/\.mafw-topstrip\s*\{[^}]*-webkit-app-region:\s*drag/)
@@ -829,22 +832,43 @@ describe("topframe — 左栏从 Rail 品牌行收为 IconRail", () => {
   })
 })
 
-describe("layout-toggles — dock tabs 归位", () => {
+describe("layout-toggles — workbench + session rail", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("RightDock 内部恢复 TabsV2 五 tab + onTab", () => {
-    const src = read("src/renderer/mafw/components/RightDock.tsx")
-    expect(src).toContain("TabsV2")
-    expect(src).toContain("onTab")
-    for (const t of ["tasks", "trajectory", "usage", "notes", "changes"]) expect(src).toContain(`value="${t}"`)
-    expect(src).toContain("mafw-right-dock-close")
+  test("Workbench 四件套同屏（树/编辑器/浏览器/终端）+ 顶栏 tab", () => {
+    const src = read("src/renderer/mafw/components/Workbench.tsx")
+    for (const c of ["FilesDock", "EditorDock", "BrowserDock", "TerminalDock"]) expect(src).toContain(c)
+    expect(src).toContain("mafw-wb-top")
+  })
+  test("MafwShell 不再挂 RightDock；RightDock 组件删除", () => {
+    expect(() => read("src/renderer/mafw/components/RightDock.tsx")).toThrow()
+    expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("<RightDock")
+    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("<Workbench")
+    expect(read("src/renderer/mafw/MafwShell.tsx")).toContain("<SessionRail")
   })
   test("DockTabButtons 组件删除且 MafwShell 不再引用", () => {
     expect(() => read("src/renderer/mafw/components/DockTabButtons.tsx")).toThrow()
     expect(read("src/renderer/mafw/MafwShell.tsx")).not.toContain("DockTabButtons")
   })
-  test("CSS：恢复 dock 内 tabs-v2 规则，删除 .mafw-dock-button 规则", () => {
-    expect(css).toContain('.mafw-right-dock [data-component="tabs-v2"]')
+  test("CSS：旧 right-dock tab 条规则与 dock-button 删除", () => {
+    expect(css).not.toContain(".mafw-right-dock")
     expect(css).not.toContain(".mafw-dock-button")
+  })
+})
+
+describe("workbench merge — 档位与尺寸", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
+  test("MafwShell 用绝对档位 + 松手吸附 + 双击回默认；旧键迁移", () => {
+    const src = read("src/renderer/mafw/MafwShell.tsx")
+    expect(src).toContain("chatPxForDetent")
+    expect(src).toContain("snapDetent")
+    expect(src).toContain("mafw-workbench-detent")
+    expect(src).toContain("detentFromLegacy")
+    expect(src).toContain("onDblClick")
+  })
+  test("CSS：树 200px / 终端 280px / 会话轨 44px（对齐 opencode 默认值）", () => {
+    expect(cssBlock(".mafw-wb-files {")).toContain("width: 200px")
+    expect(cssBlock(".mafw-wb-terminal {")).toContain("height: 280px")
+    expect(cssBlock(".mafw-session-rail {")).toContain("width: 44px")
   })
 })
 

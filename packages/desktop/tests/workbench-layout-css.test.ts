@@ -25,14 +25,15 @@ describe("workbench 三列布局契约", () => {
     expect(handle).toContain("position: absolute")
     expect(handle).toContain("right: 0")
   })
-  test("RightDock 支持填充模式（正常布局吃剩余宽度，overlay 仍用固定宽）", () => {
-    const dock = readFileSync(join(import.meta.dirname, "..", "src", "renderer", "mafw", "components", "RightDock.tsx"), "utf8")
-    expect(dock).toContain("fill")
-    expect(dock).toContain("100%")
+  test("工作台吃剩余宽度（第三列 + flex）", () => {
+    const slot = css.match(/\.mafw-dock-slot \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(slot).toContain("grid-column: 3")
+    const wb = css.match(/\.mafw-workbench \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(wb).toContain("flex: 1")
   })
-  test("MafwShell 接 defaultDockOpen/defaultDockTab（默认打开+文件 tab）", () => {
+  test("MafwShell 接 defaultDockOpen + 绝对档位（旧 clampChatWidth 退役）", () => {
     expect(shell).toContain("defaultDockOpen")
-    expect(shell).toContain("defaultDockTab")
-    expect(shell).toContain("clampChatWidth")
+    expect(shell).toContain("chatPxForDetent")
+    expect(shell).not.toContain("clampChatWidth")
   })
 })
