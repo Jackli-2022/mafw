@@ -87,7 +87,7 @@ const check = (name, cond, extra = '') => {
 
     await post(`/api/session/${sid}/promptAsync`, { message: 'Reply with exactly: two' });
     const assistants = await waitAssistant(sid, 2);
-    const a2 = assistants.find((m) => m.info.id !== a1.info.id)!;
+    const a2 = assistants.find((m) => m.info.id !== a1.info.id);
     const moved = await post(`/api/sessions/${sid}/data`, {
       name: 'probe', id: 'job', data: { v: 3 }, messageID: a2.info.id,
     });
