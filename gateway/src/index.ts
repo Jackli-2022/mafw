@@ -25,6 +25,7 @@ import { ChatSessionManager } from "./chat/chat-sessions";
 import { SdkSessionResource } from "./resources/sdk-session";
 import { structuredOutput } from './runtime/structured-output';
 import { SubagentService } from './runtime/subagent-service';
+import { TaskService, TaskError } from './runtime/task-service';
 import {
   handleSubagentCancel, handleSubagentList, handleSubagentMessage,
   handleSubagentResult, handleSubagentSpawn,
@@ -471,6 +472,7 @@ class MafwScheduler {
   private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
   private subagentService!: SubagentService;
+  private taskService!: TaskService;
   private memoryService?: MemoryService;
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
@@ -665,6 +667,9 @@ class MafwScheduler {
     wirePiPermissionEvaluator(runtime, this.approvalPolicy);
     wirePiCognition(runtime, this.cognitionGate);
     this.runtimeCaps = runtime.capabilities;
+    try { await this.taskService.start(); } catch (err: any) {
+      log.warn(`[Tasks] start failed (non-fatal): ${err?.message ?? err}`);
+    }
     this.runtimeName = runtime.name;
     this.sdkSession.setClient(this.runtime);
     if (this.trajectoryCollector) {
@@ -3095,6 +3100,7 @@ class MafwScheduler {
 
   stop() {
     this.running = false;
+    this.taskService?.dispose();
     this.kernels?.disposeAll();
     try { this.layaSidecar?.kill(); } catch { /* best effort */ }
     this.milestonePush?.dispose();
@@ -3210,6 +3216,36 @@ class MafwScheduler {
       messages: (sid, limit) => this.runtime!.session.messages({ sessionID: sid, limit }),
       submitted: (sid) => structuredOutput.submitted(sid),
       broadcast: (e) => this.broadcast(e),
+    });
+
+    const lazyShell = () => {
+      const shell = this.runtime?.shell;
+      if (!shell) throw new TaskError(503, 'shell task API not available on this runtime');
+      return shell;
+    };
+    this.taskService = new TaskService({
+      storeDir: path.join(mafwDir, 'tasks'),
+      shell: {
+        create: (o) => lazyShell().create(o),
+        get: (o) => lazyShell().get(o),
+        output: (o) => lazyShell().output(o),
+        remove: (o) => lazyShell().remove(o),
+      },
+      spawnSubagent: (o) => this.subagentService.spawn(o),
+      cancelSubagent: (parentID, childID) => this.subagentService.cancel(parentID, childID),
+      messageSubagent: (parentID, childID, text) => this.subagentService.message(parentID, childID, text),
+      getSession: (sid) => this.runtime!.session.get({ sessionID: sid }),
+      pendingInput: async (sessionID, directory) => {
+        try {
+          const qs = await (this.runtime?.session as any)?.question?.list?.(directory ? { directory } : undefined) ?? [];
+          if (Array.isArray(qs) && qs.some((q: any) => q?.sessionID === sessionID)) return true;
+          const ps = await (this.runtime?.session as any)?.permissionList?.(directory ? { directory } : undefined) ?? [];
+          return Array.isArray(ps) && ps.some((p: any) => p?.sessionID === sessionID);
+        } catch {
+          return false;
+        }
+      },
+      emit: (task) => this.broadcast({ type: 'task.updated', task, sessionID: task.parentSessionID }),
     });
     this.memoryService = new MemoryService(mafwDir);
 

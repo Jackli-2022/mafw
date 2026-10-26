@@ -319,6 +319,122 @@
         }
       }
     },
+    "/api/tasks": {
+      "post": {
+        "operationId": "tasks.submit",
+        "tags": [
+          "task"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "tasks.list",
+        "tags": [
+          "task"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}": {
+      "get": {
+        "operationId": "tasks.get",
+        "tags": [
+          "task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/cancel": {
+      "post": {
+        "operationId": "tasks.cancel",
+        "tags": [
+          "task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/message": {
+      "post": {
+        "operationId": "tasks.message",
+        "tags": [
+          "task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/output": {
+      "get": {
+        "operationId": "tasks.output",
+        "tags": [
+          "task"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/trajectory": {
       "get": {
         "operationId": "session.trajectory",

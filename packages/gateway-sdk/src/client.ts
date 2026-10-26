@@ -7,6 +7,7 @@ import {
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
+  TaskEntity, TaskSubmitInput, TaskOutput,
   MethodNotSupportedError,
 } from './types'
 import { SSEConnection } from './sse'
@@ -921,6 +922,47 @@ export class MafwClient implements IMafwClient {
 
     reject: async (id: string): Promise<void> => {
       await this.request(`/api/questions/${id}/reject`, { method: 'POST' })
+    },
+  }
+
+  // ── Durable tasks (Batch 4) ──────────────────────────────────────────────
+
+  tasks = {
+    submit: async (input: TaskSubmitInput): Promise<TaskEntity> => {
+      return this.request<TaskEntity>('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+    },
+
+    list: async (query?: { parentSessionID?: string; status?: string }): Promise<TaskEntity[]> => {
+      const q = new URLSearchParams()
+      if (query?.parentSessionID) q.set('parentSessionID', query.parentSessionID)
+      if (query?.status) q.set('status', query.status)
+      const data = await this.request<{ items: TaskEntity[] }>(`/api/tasks${q.toString() ? `?${q}` : ''}`)
+      return data.items || []
+    },
+
+    get: async (id: string): Promise<TaskEntity> => {
+      return this.request<TaskEntity>(`/api/tasks/${encodeURIComponent(id)}`)
+    },
+
+    cancel: async (id: string): Promise<TaskEntity> => {
+      return this.request<TaskEntity>(`/api/tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+    },
+
+    message: async (id: string, message: string): Promise<void> => {
+      await this.request(`/api/tasks/${encodeURIComponent(id)}/message`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      })
+    },
+
+    output: async (id: string, query?: { cursor?: number; limit?: number }): Promise<TaskOutput> => {
+      const q = new URLSearchParams()
+      if (typeof query?.cursor === 'number') q.set('cursor', String(query.cursor))
+      if (typeof query?.limit === 'number') q.set('limit', String(query.limit))
+      return this.request<TaskOutput>(`/api/tasks/${encodeURIComponent(id)}/output${q.toString() ? `?${q}` : ''}`)
     },
   }
 

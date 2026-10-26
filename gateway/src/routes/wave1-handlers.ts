@@ -25,6 +25,11 @@ import { handleSessionMutations, type SessionMutationDeps } from './session-muta
 import { handleSessionSwitch } from './session-switch';
 import { handleStructuredGet, handleStructuredSubmit } from './structured';
 import { structuredOutput } from '../runtime/structured-output';
+import type { TaskService } from '../runtime/task-service';
+import {
+  handleTaskCancel, handleTaskGet, handleTaskList, handleTaskMessage,
+  handleTaskOutput, handleTaskSubmit,
+} from './tasks';
 import { handleSessionSummarize } from './session-summarize';
 import { handleEventPublish } from './event-publish';
 import { handleMediaSwitch } from './media-switch';
@@ -50,6 +55,7 @@ export interface Wave1Gateway {
   /** 未知事件遥测（扁平非 plugin:* 发布；缺省不采集）。 */
   recordUnknownEvent?(type: string): void;
   runtimeCaps: SessionMutationDeps['getCapabilities'] extends () => infer C ? C : never;
+  taskService?: TaskService | null;
 }
 
 type Handler = NonNullable<RouteDef['handler']>;
@@ -132,6 +138,28 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
 
   registry.attachHandler('session.structured', H(async (_req, res, params) =>
     handleStructuredGet(res, params.id, { service: structuredOutput })));
+
+  const taskDeps = () => ({ service: gw.taskService ?? null });
+  registry.attachHandler('tasks.submit', H(async (req, res) => handleTaskSubmit(req, res, taskDeps())));
+  registry.attachHandler('tasks.list', H(async (req, res) => {
+    const u = new URL(req.url || '/', 'http://x');
+    handleTaskList(res, {
+      ...(u.searchParams.get('parentSessionID') ? { parentSessionID: u.searchParams.get('parentSessionID')! } : {}),
+      ...(u.searchParams.get('status') ? { status: u.searchParams.get('status')! } : {}),
+    }, taskDeps());
+  }));
+  registry.attachHandler('tasks.get', H(async (_req, res, params) => handleTaskGet(res, params.id, taskDeps())));
+  registry.attachHandler('tasks.cancel', H(async (_req, res, params) => handleTaskCancel(res, params.id, taskDeps())));
+  registry.attachHandler('tasks.message', H(async (req, res, params) => handleTaskMessage(req, res, params.id, taskDeps())));
+  registry.attachHandler('tasks.output', H(async (req, res, params) => {
+    const u = new URL(req.url || '/', 'http://x');
+    const cursor = Number(u.searchParams.get('cursor'));
+    const limit = Number(u.searchParams.get('limit'));
+    await handleTaskOutput(res, params.id, {
+      ...(Number.isFinite(cursor) ? { cursor } : {}),
+      ...(Number.isFinite(limit) ? { limit } : {}),
+    }, taskDeps());
+  }));
 
   registry.attachHandler('session.summarize', H(async (req, res) =>
     handleSessionSummarize(req, res, req.url || '', { getRuntime: () => gw.runtime })));

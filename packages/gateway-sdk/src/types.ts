@@ -670,6 +670,58 @@ export interface QuestionsNamespace {
   reject(id: string): Promise<void>
 }
 
+// ── Durable tasks (Batch 4) ────────────────────────────────────────────────
+
+export type TaskKind = 'shell' | 'subagent'
+export type TaskStatus = 'working' | 'input_required' | 'completed' | 'failed' | 'cancelled'
+
+export interface TaskEntity {
+  id: string
+  kind: TaskKind
+  parentSessionID: string
+  childSessionID?: string
+  shellID?: string
+  title: string
+  status: TaskStatus
+  directory?: string
+  createdAt: number
+  updatedAt: number
+  finishedAt?: number
+  exitCode?: number
+  error?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface TaskSubmitInput {
+  kind: TaskKind
+  parentSessionID: string
+  title?: string
+  command?: string
+  cwd?: string
+  timeout?: number
+  prompt?: string
+  agent?: string
+  description?: string
+  model?: { providerID: string; modelID: string }
+  outputSchema?: { name?: string; schema: Record<string, unknown>; retryCount?: number }
+}
+
+export interface TaskOutput {
+  output: string
+  cursor: number
+  size: number
+  truncated: boolean
+}
+
+export interface TasksNamespace {
+  submit(input: TaskSubmitInput): Promise<TaskEntity>
+  list(query?: { parentSessionID?: string; status?: string }): Promise<TaskEntity[]>
+  get(id: string): Promise<TaskEntity>
+  cancel(id: string): Promise<TaskEntity>
+  message(id: string, message: string): Promise<void>
+  output(id: string, query?: { cursor?: number; limit?: number }): Promise<TaskOutput>
+}
+
 /** 持久审批规则（切片 1：~/.mafw/permission-rules.json）。 */
 export interface PermissionRule {
   tool: string
@@ -716,6 +768,7 @@ export interface MafwClient {
   memory: MemoryNamespace
   approvals: ApprovalsNamespace
   questions: QuestionsNamespace
+  tasks: TasksNamespace
   permissions: PermissionsNamespace
   providers: ProvidersNamespace
   agents: AgentsNamespace
