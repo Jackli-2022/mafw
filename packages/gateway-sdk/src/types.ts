@@ -367,6 +367,14 @@ export interface SessionNamespace {
   checkpoints(params: { path: { id: string } }): Promise<{ checkpoints: SessionCheckpoint[] }>
   /** T2-1：三态恢复（session=截断历史 / files=回工作区 / both=全部；confirm 必填） */
   restoreCheckpoint(params: { path: { id: string; checkpointId: string }; body: { scope: CheckpointScope; confirm: true } }): Promise<CheckpointRestoreResult>
+  /** T2-2：暂停当前回合（忙时；abort + 续跑简报） */
+  suspend(params: { path: { id: string }; body?: { reason?: string } }): Promise<{ run: RunState }>
+  /** T2-2：恢复暂停的回合（合成续跑提示） */
+  resume(params: { path: { id: string }; body?: { runId?: string } }): Promise<{ run: RunState; prompted: true }>
+  /** T2-2：查询活跃 run（无则 null） */
+  run(params: { path: { id: string } }): Promise<{ run: RunState | null }>
+  /** T2-2：放弃暂停（清闸门并续发队列） */
+  discardRun(params: { path: { id: string }; body?: { runId?: string } }): Promise<{ run: RunState }>
   /** 手动压缩会话（TUI /compact；runtime summarize 薄代理）。 */
   summarize(params: { path: { id: string }; body?: { providerID?: string; modelID?: string } }): Promise<void>
 }
@@ -407,6 +415,30 @@ export interface CheckpointRestoreResult {
   leftoverUntracked?: string[]
   /** files restore 的后悔药 checkpoint id。 */
   preRestoreCheckpointId?: string
+}
+
+// ── T2-2 runs (soft suspend) ──
+
+export type RunStatus = 'suspended' | 'resumed' | 'completed' | 'failed' | 'cancelled'
+
+export interface ResumeBrief {
+  lastUserText: string
+  lastAssistantTail: string
+  anchorMessageID: string
+  queuedCount: number
+}
+
+export interface RunState {
+  id: string
+  sessionID: string
+  projectDir: string
+  status: RunStatus
+  reason?: string
+  brief: ResumeBrief
+  createdAt: string
+  suspendedAt: string
+  resumedAt?: string
+  finishedAt?: string
 }
 
 // ── Commands & skills (opencode serve shapes) ──

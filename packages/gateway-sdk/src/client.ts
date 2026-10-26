@@ -7,7 +7,7 @@ import {
   CommandInfo, SkillInfo, MafwCommandResult, MafwCommandDef, ManagerSessionInfo, ManagerRotateResult,
   Approval, TriageItem, AutomationRule, SessionMessagePart, Todo,
   QuestionRequest, PermissionRequest, MediaPluginState, PermissionRule, FileDiffInfo,
-  SessionCheckpoint, CheckpointScope, CheckpointRestoreResult,
+  SessionCheckpoint, CheckpointScope, CheckpointRestoreResult, RunState,
   TaskEntity, TaskSubmitInput, TaskOutput, QueueItem,
   SessionConfigState, SessionConfigCategory,
   MethodNotSupportedError,
@@ -318,6 +318,44 @@ export class MafwClient implements IMafwClient {
           body: JSON.stringify(params.body),
         },
       )
+    },
+
+    /** T2-2：暂停当前回合 */
+    suspend: async (
+      params: { path: { id: string }; body?: { reason?: string } },
+    ): Promise<{ run: RunState }> => {
+      return this.request<{ run: RunState }>(`/api/sessions/${params.path.id}/suspend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body ?? {}),
+      })
+    },
+
+    /** T2-2：恢复暂停的回合（服务端先落 resumed 再 fire-and-forget 发送） */
+    resume: async (
+      params: { path: { id: string }; body?: { runId?: string } },
+    ): Promise<{ run: RunState; prompted: true }> => {
+      return this.request<{ run: RunState; prompted: true }>(`/api/sessions/${params.path.id}/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body ?? {}),
+      })
+    },
+
+    /** T2-2：活跃 run */
+    run: async (params: { path: { id: string } }): Promise<{ run: RunState | null }> => {
+      return this.request<{ run: RunState | null }>(`/api/sessions/${params.path.id}/run`)
+    },
+
+    /** T2-2：放弃暂停 */
+    discardRun: async (
+      params: { path: { id: string }; body?: { runId?: string } },
+    ): Promise<{ run: RunState }> => {
+      return this.request<{ run: RunState }>(`/api/sessions/${params.path.id}/run/discard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params.body ?? {}),
+      })
     },
 
     summarize: async (

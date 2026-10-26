@@ -236,6 +236,48 @@ test("session.restoreCheckpoint POSTs scope + confirm:true", async () => {
   expect(r.leftoverUntracked).toEqual(["x.txt"])
 })
 
+// ── T2-2 runs ───────────────────────────────────────────────────────────
+
+test("session.suspend POSTs optional reason", async () => {
+  fetchMock.mockResolvedValue(okJson({ run: { id: "run_1", status: "suspended" } }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.suspend({ path: { id: "s1" }, body: { reason: "lunch" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/suspend",
+    expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse((fetchMock as any).mock.calls[0][1].body)).toEqual({ reason: "lunch" })
+  expect(r.run.status).toBe("suspended")
+
+  await c.session.suspend({ path: { id: "s1" } })
+  expect(JSON.parse((fetchMock as any).mock.calls[1][1].body)).toEqual({})
+})
+
+test("session.resume POSTs runId or {} and returns prompted", async () => {
+  fetchMock.mockResolvedValue(okJson({ run: { id: "run_1", status: "resumed" }, prompted: true }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.resume({ path: { id: "s1" }, body: { runId: "run_1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/resume",
+    expect.objectContaining({ method: "POST" }))
+  expect(JSON.parse((fetchMock as any).mock.calls[0][1].body)).toEqual({ runId: "run_1" })
+  expect(r.prompted).toBe(true)
+})
+
+test("session.run GETs the active run", async () => {
+  fetchMock.mockResolvedValue(okJson({ run: null }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.run({ path: { id: "s1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/run", expect.anything())
+  expect(r.run).toBeNull()
+})
+
+test("session.discardRun POSTs to /run/discard", async () => {
+  fetchMock.mockResolvedValue(okJson({ run: { id: "run_1", status: "cancelled" } }))
+  const c = new MafwClient("http://gw:3000")
+  const r = await c.session.discardRun({ path: { id: "s1" } })
+  expect(fetchMock).toHaveBeenCalledWith("http://gw:3000/api/sessions/s1/run/discard",
+    expect.objectContaining({ method: "POST" }))
+  expect(r.run.status).toBe("cancelled")
+})
+
 test("session.create passes worktree option in body", async () => {
   fetchMock.mockResolvedValue(okJson({ id: "s_wt", worktree: { dir: "C:/p-wt-x", branch: "mafw/x" } }))
   const c = new MafwClient("http://gw:3000")

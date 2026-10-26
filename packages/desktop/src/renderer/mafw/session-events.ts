@@ -198,6 +198,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "turn.started":
     case "session.config":
     case "session.checkpoint":
+    case "run.updated":
     case "task.updated":
       return
     default: {
