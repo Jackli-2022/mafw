@@ -73,6 +73,18 @@ export interface NodeRunRow {
   cost_usd: number | null;
 }
 
+/** T2-1：会话检查点（gateway 服务端一等实体；auto/manual）。 */
+export interface SessionCheckpointRow {
+  id: string;
+  session_id: string;
+  project_dir: string;
+  anchor_message_id: string;
+  snapshot_tree: string | null;
+  untracked_json: string;
+  kind: string;
+  created_at: string;
+}
+
 export class GatewayDatabase {
   private db: Database.Database;
 
@@ -284,6 +296,18 @@ export class GatewayDatabase {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS session_checkpoints (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        project_dir TEXT NOT NULL,
+        anchor_message_id TEXT NOT NULL,
+        snapshot_tree TEXT,
+        untracked_json TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_checkpoints ON session_checkpoints(session_id, created_at);
     `);
 
     // Migration: add assistant_text column to trajectory_turns if not exists
@@ -693,6 +717,55 @@ export class GatewayDatabase {
       'SELECT * FROM goal_outcomes WHERE goal_id = ? ORDER BY archived_at DESC LIMIT 1',
     ).get(goalId) as GoalOutcome | undefined;
     return row ?? null;
+  }
+
+  // ── T2-1 session checkpoints ──────────────────────────────────────────
+
+  insertSessionCheckpoint(row: SessionCheckpointRow): void {
+    this.db.prepare(
+      `INSERT INTO session_checkpoints
+         (id, session_id, project_dir, anchor_message_id, snapshot_tree, untracked_json, kind, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      row.id, row.session_id, row.project_dir, row.anchor_message_id,
+      row.snapshot_tree, row.untracked_json, row.kind, row.created_at,
+    );
+  }
+
+  getSessionCheckpoint(id: string): SessionCheckpointRow | undefined {
+    return this.db.prepare('SELECT * FROM session_checkpoints WHERE id = ?').get(id) as
+      SessionCheckpointRow | undefined;
+  }
+
+  listSessionCheckpoints(sessionId: string): SessionCheckpointRow[] {
+    return this.db.prepare(
+      'SELECT * FROM session_checkpoints WHERE session_id = ? ORDER BY created_at DESC',
+    ).all(sessionId) as SessionCheckpointRow[];
+  }
+
+  /** auto 检查点按会话保留最新 keep 条，返回删除数（manual 不受影响）。 */
+  pruneSessionAutoCheckpoints(sessionId: string, keep: number): number {
+    const result = this.db.prepare(
+      `DELETE FROM session_checkpoints
+       WHERE session_id = ? AND kind = 'auto' AND id NOT IN (
+         SELECT id FROM session_checkpoints
+         WHERE session_id = ? AND kind = 'auto'
+         ORDER BY created_at DESC LIMIT ?
+       )`,
+    ).run(sessionId, sessionId, keep);
+    return result.changes;
+  }
+
+  /** 时间线倒带：删除 created_at 严格晚于给定 ISO 的全部检查点（含 manual）。 */
+  deleteSessionCheckpointsAfter(sessionId: string, createdAtIso: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM session_checkpoints WHERE session_id = ? AND created_at > ?',
+    ).run(sessionId, createdAtIso);
+    return result.changes;
+  }
+
+  deleteSessionCheckpoints(sessionId: string): void {
+    this.db.prepare('DELETE FROM session_checkpoints WHERE session_id = ?').run(sessionId);
   }
 
   close(): void {
