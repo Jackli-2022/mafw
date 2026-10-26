@@ -64,6 +64,15 @@ describe('normalizePiMessages（flat 输出，canonical v3）', () => {
     expect(out[0].content!.map((p) => p.type)).toEqual(['text', 'tool', 'text', 'tool']);
   });
 
+  test('assistant thinkingSignature → reasoning part.signature', () => {
+    const out = normalizePiMessages([
+      { role: 'assistant', timestamp: T, content: [
+        { type: 'thinking', thinking: 'opaque', thinkingSignature: 'sig-abc' },
+      ] },
+    ]);
+    expect((out[0].content![0] as any)).toMatchObject({ type: 'reasoning', text: 'opaque', signature: 'sig-abc' });
+  });
+
   test('id 稳定性：同输入同输出（幂等）；time 为顶层字段', () => {
     const raw = [{ role: 'assistant', timestamp: T, content: [{ type: 'text', text: 'x' }] }];
     expect(normalizePiMessages(raw)).toEqual(normalizePiMessages(raw));

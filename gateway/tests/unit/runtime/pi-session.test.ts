@@ -7,6 +7,7 @@ const fakeSession = (overrides: any = {}) => ({
   dispose: jest.fn(),
   get isStreaming() { return overrides.streaming ?? false; },
   sendUserMessage: jest.fn(async () => {}),
+  setThinkingLevel: jest.fn(),
   get messages() { return overrides.messages ?? []; },
   get sessionId() { return overrides.id ?? 'fake'; },
   compact: jest.fn(async () => ({})),
@@ -36,6 +37,23 @@ describe('PiSessionRegistry', () => {
     const { id } = await registry.create('/tmp/proj', {} as any);
     await registry.promptAsync(id, 'hello');
     expect(s.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining('hello'), expect.objectContaining({ deliverAs: 'followUp' }));
+  });
+
+  it('promptAsync forwards thinkingLevel and applies it to the live session', async () => {
+    const s = fakeSession();
+    const registry = new PiSessionRegistry({ createSession: async () => ({ session: s }) });
+    const { id } = await registry.create('/tmp/proj', {} as any);
+    await registry.promptAsync(id, 'think', { thinkingLevel: 'high' });
+    expect(s.setThinkingLevel).toHaveBeenCalledWith('high');
+    expect(s.prompt).toHaveBeenCalledWith('think', expect.objectContaining({ thinkingLevel: 'high' }));
+  });
+
+  it('promptAsync while streaming still applies thinkingLevel', async () => {
+    const s = fakeSession({ streaming: true });
+    const registry = new PiSessionRegistry({ createSession: async () => ({ session: s }) });
+    const { id } = await registry.create('/tmp/proj', {} as any);
+    await registry.promptAsync(id, 'steer', { thinkingLevel: 'off', delivery: 'steer' });
+    expect(s.setThinkingLevel).toHaveBeenCalledWith('off');
   });
 
   it('abort and delete dispose the session', async () => {

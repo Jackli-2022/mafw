@@ -35,7 +35,10 @@ export function normalizePiMessages(raw: any[]): MafwMessage[] {
         if (c?.type === 'text' && c.text) {
           parts.push({ id: `${id}_t${j}`, type: 'text', text: c.text });
         } else if (c?.type === 'thinking' && c.thinking) {
-          parts.push({ id: `${id}_r${j}`, type: 'reasoning', text: c.thinking });
+          parts.push({
+            id: `${id}_r${j}`, type: 'reasoning', text: c.thinking,
+            ...(typeof c.thinkingSignature === 'string' && c.thinkingSignature ? { signature: c.thinkingSignature } : {}),
+          });
         } else if (c?.type === 'toolCall' && typeof c.id === 'string') {
           const res = results.get(c.id);
           const input = c.arguments ?? {};

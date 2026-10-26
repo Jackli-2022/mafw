@@ -3,7 +3,7 @@ import { ApprovalBridge } from './pi-approval-bridge';
 import { createMafwApprovalExtension, type ApprovalPolicy, type PermissionEvaluator } from './pi-approval-extension';
 import { createMafwHostExtension } from './pi-mafw-host-extension';
 import type { RawRuntimeEvent } from '../normalize';
-import type { MafwToolRegistration } from '../contract';
+import type { MafwToolRegistration, ThinkingLevel } from '../contract';
 
 export interface PiSessionDeps {
   /** 注入 createAgentSession（ESM 桥在 pi-runtime.ts 传入） */
@@ -116,10 +116,11 @@ export class PiSessionRegistry {
 
   sessionIdFor(session: any): string | undefined { return this.bySession.get(session); }
 
-  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {
+  async promptAsync(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<void> {
     const s = this.requireSession(id);
     this.touch(id);
     this.warnNoReplyOnce(id, opts);
+    if (opts?.thinkingLevel) s.setThinkingLevel(opts.thinkingLevel);
     const piOpts = this.buildPiPromptOpts(opts);
     if (s.isStreaming) {
       const images = opts?.images ?? [];
@@ -141,10 +142,11 @@ export class PiSessionRegistry {
     }
   }
 
-  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[]; finish?: string; usage?: { input: number; output: number; cached?: number; reasoning?: number; costUsd?: number } }> {
+  async prompt(id: string, text: string, opts?: { system?: string; agent?: string; noReply?: boolean; expectReply?: boolean; delivery?: 'steer' | 'followup'; thinkingLevel?: ThinkingLevel; logWarn?: (m: string) => void; images?: Array<{ data: string; mimeType: string }> }): Promise<{ parts: any[]; finish?: string; usage?: { input: number; output: number; cached?: number; reasoning?: number; costUsd?: number } }> {
     const s = this.requireSession(id);
     this.touch(id);
     this.warnNoReplyOnce(id, opts);
+    if (opts?.thinkingLevel) s.setThinkingLevel(opts.thinkingLevel);
     const piOpts = this.buildPiPromptOpts(opts);
     piOpts.streamingBehavior = this.resolveDelivery(opts);
     const before = (s.messages || []).length;
@@ -169,13 +171,14 @@ export class PiSessionRegistry {
     };
   }
 
-  private buildPiPromptOpts(opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }> }): Record<string, any> {
+  private buildPiPromptOpts(opts?: { system?: string; agent?: string; noReply?: boolean; images?: Array<{ data: string; mimeType: string }>; thinkingLevel?: ThinkingLevel }): Record<string, any> {
     if (!opts) return {};
     const piOpts: Record<string, any> = {};
     if (opts.system) piOpts.system = opts.system;
     if (opts.agent) piOpts.agent = opts.agent;
     if (opts.noReply) piOpts.noReply = opts.noReply;
     if (opts.images?.length) piOpts.images = opts.images;
+    if (opts.thinkingLevel) piOpts.thinkingLevel = opts.thinkingLevel;
     return piOpts;
   }
 
