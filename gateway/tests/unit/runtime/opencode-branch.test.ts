@@ -439,7 +439,8 @@ describe('opencode adapter 2.1.0 shell tasks', () => {
       expect(calls[1].url).toContain('/api/shell/sh1');
 
       const out = await client.shell!.output({ shellID: 'sh1', directory: 'C:/work', cursor: 10, limit: 20 });
-      expect(calls[2].url).toContain('/api/shell/sh1/output?cursor=10&limit=20');
+      expect(calls[2].url).toContain('/api/shell/sh1/output?cursor=10&limit=20&directory=C%3A%2Fwork');
+      expect(calls[2].url).not.toContain('?directory=');
       expect(out).toMatchObject({ output: 'ok', cursor: 1, size: 2 });
 
       await client.shell!.remove({ shellID: 'sh1', directory: 'C:/work' });

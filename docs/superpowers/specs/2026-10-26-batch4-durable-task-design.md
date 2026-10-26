@@ -1,6 +1,6 @@
 # Batch 4 — Durable Task 实体（Design）
 
-> 日期：2026-10-26 · 状态：待实施
+> 日期：2026-10-26 · 状态：已实施（v4.32.0）
 > 上游：Batch 3 的子代理 parent/depth；Batch 1 的 structured output；Batch 2 的 input_required 表单。
 
 ## 1. 意图与为什么
@@ -113,7 +113,7 @@ opencode adapter 用 `directNative('/shell',...)` + `x-opencode-directory`；缺
 - 重复 task.id：时间戳+随机；写文件覆盖前检查。
 - subagent pendingInput 查询失败：fail-open 保持 working。
 - shell output 超出：cursor/size/truncated 透传；不整段读入内存。
-- 任务 API 被非父会话调用：message/cancel 校验 parentSessionID；不信任 body。
+- 任务 API 无 per-session auth（gateway 仅 loopback）；v1 以不可猜 task id + list 按 parentSessionID 过滤 + 工具传 parent 作为边界，接入 gateway auth 后再强制 message/cancel 所有者校验。
 - 旧 desktop 本地 rows 与网关任务重复：separate section，不合并去重（v1）。
 
 ## 6. 验收
@@ -124,3 +124,11 @@ opencode adapter 用 `directNative('/shell',...)` + `x-opencode-directory`；缺
 4. gateway 重启后 list 仍含终态任务；active 任务 reconcile 为真实状态或 failed(lost)。
 5. `task.updated` 在 submit/终态/cancel 时到达桌面；BackgroundDock 显示并可取消。
 6. 单测：store atomic/load、service 状态机/五态/reconcile/cancel/message/output、routes、SDK、dispatcher、task-store；全量不回归。
+
+## 7. 实施记录（2026-10-26）
+
+- **提交**：`05b4d781`（shell adapter）→ `b2d8e640`（store/service）→ `ea86d227`（API/SDK）→ `6b0e61dc`（desktop task.updated/BackgroundDock）→ `a8a5c997`（plugin/pi 工具）→ v4.32.0 收尾。
+- **额外落地（实施中发现）**：① `directNative` 已有 query 时用 `&` 追加 directory（修 shell output 参数被 `?` 吞掉）；② terminal shell 持久化 64KB 尾输出快照，serve 清理/重启后 `GET /tasks/:id/output` 仍可读；③ subagent 续聊设 `resumeAt`，防止旧 `time.idle` 把新回合误判 completed。
+- **单测**：gateway 2607（364 suites）、desktop 1421（344 suites）、SDK 144、session-ui 89、TUI 224（223 pass / 1 smoke skip）；desktop tsgo rc=0、electron-vite build ok、根 build ok。
+- **真机**：shell `echo durable-final` → completed + output `durable-final`（gateway 重启后仍可读）；`sleep 30` cancel → cancelled；subagent completed 后续聊 `task-child-3` → working→completed，child result 更新；`sleep 60` 跨 gateway 重启 → failed(`lost_after_restart`)；全局 SSE 收到 submit/terminal/cancel 的 `task.updated`；`GET /api/tools` 14 条，`POST /api/tools/execute mafw_task_submit` 可建任务并完成。
+- **已知边界**：本地 API 无 per-session auth；任务历史不清理；shell output 快照为最后 64KB；旧任务（快照前）在 serve 清理后 output 404。

@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import {
   handleTaskCancel, handleTaskGet, handleTaskList, handleTaskMessage,
-  handleTaskOutput, handleTaskSubmit,
+  handleTaskOutput, handleTaskSubmit, parseTaskOutputQuery,
 } from '../../../src/routes/tasks';
 
 function fakeRes() {
@@ -28,6 +28,12 @@ function fakeService() {
 }
 
 describe('task routes', () => {
+  it('parseTaskOutputQuery omits absent params (no Number(null)=0)', () => {
+    expect(parseTaskOutputQuery(new URLSearchParams(''))).toEqual({});
+    expect(parseTaskOutputQuery(new URLSearchParams('limit=1000'))).toEqual({ limit: 1000 });
+    expect(parseTaskOutputQuery(new URLSearchParams('cursor=5&limit=10'))).toEqual({ cursor: 5, limit: 10 });
+  });
+
   it('submit forwards body and returns task', async () => {
     const service = fakeService();
     const res = fakeRes();

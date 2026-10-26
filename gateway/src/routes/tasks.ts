@@ -100,6 +100,18 @@ export async function handleTaskMessage(
   } catch (err) { fail(res, err); }
 }
 
+/** 解析 output 查询参数：缺省/空值不得变成 0（Number(null) === 0）。 */
+export function parseTaskOutputQuery(search: URLSearchParams): { cursor?: number; limit?: number } {
+  const out: { cursor?: number; limit?: number } = {};
+  for (const key of ['cursor', 'limit'] as const) {
+    const raw = search.get(key);
+    if (raw === null || raw.trim() === '') continue;
+    const value = Number(raw);
+    if (Number.isFinite(value)) out[key] = value;
+  }
+  return out;
+}
+
 /** GET /api/tasks/:id/output?cursor=&limit= */
 export async function handleTaskOutput(
   res: http.ServerResponse,

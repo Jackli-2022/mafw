@@ -20,6 +20,13 @@ export interface TaskEntity {
   exitCode?: number;
   error?: string;
   metadata?: Record<string, unknown>;
+  /** 终态 shell 的有界输出快照（内部持久化，API/SSE 不返回全文）。 */
+  output?: string;
+  outputCursor?: number;
+  outputSize?: number;
+  outputTruncated?: boolean;
+  /** 续聊后等待新回合完成的门槛（child idleAt >= resumeAt 才算完成）。 */
+  resumeAt?: number;
 }
 
 export interface TaskSubmitOpts {
@@ -157,7 +164,7 @@ export class TaskService {
     this.tasks.set(task.id, task);
     this.persist(task);
     this.emit(task);
-    return { ...task };
+    return this.publicTask(task);
   }
 
   list(query?: { parentSessionID?: string; status?: string }): TaskEntity[] {
@@ -165,18 +172,18 @@ export class TaskService {
       .filter((t) => !query?.parentSessionID || t.parentSessionID === query.parentSessionID)
       .filter((t) => !query?.status || t.status === query.status)
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((t) => ({ ...t }));
+      .map((t) => this.publicTask(t));
   }
 
   get(id: string): TaskEntity | undefined {
     const task = this.tasks.get(id);
-    return task ? { ...task } : undefined;
+    return task ? this.publicTask(task) : undefined;
   }
 
   async cancel(id: string): Promise<TaskEntity> {
     const task = this.tasks.get(id);
     if (!task) throw new TaskError(404, `task not found: ${id}`);
-    if (!ACTIVE.includes(task.status)) return { ...task };
+    if (!ACTIVE.includes(task.status)) return this.publicTask(task);
     this.transition(task, 'cancelled');
     try {
       if (task.kind === 'shell' && task.shellID && this.deps.shell) {
@@ -188,7 +195,7 @@ export class TaskService {
       task.error = err?.message ?? String(err);
       this.persist(task);
     }
-    return { ...task };
+    return this.publicTask(task);
   }
 
   async message(id: string, message: string): Promise<void> {
@@ -199,12 +206,26 @@ export class TaskService {
       throw new TaskError(400, 'message is only supported for subagent tasks');
     }
     await this.deps.messageSubagent(task.parentSessionID, task.childSessionID, message);
+    // 续聊 = 同一 child 的新回合：终态任务回到 working，poller 继续跟踪。
+    // resumeAt 防「message 刚入队、child 仍是旧 idle」被误判 completed。
+    if (!ACTIVE.includes(task.status)) {
+      task.resumeAt = this.now();
+      this.transition(task, 'working');
+    }
   }
 
   async output(id: string, opts?: { cursor?: number; limit?: number }): Promise<any> {
     const task = this.tasks.get(id);
     if (!task) throw new TaskError(404, `task not found: ${id}`);
     if (task.kind !== 'shell' || !task.shellID) throw new TaskError(400, 'output is only supported for shell tasks');
+    if (!ACTIVE.includes(task.status) && typeof task.output === 'string') {
+      return {
+        output: task.output,
+        cursor: task.outputCursor ?? task.output.length,
+        size: task.outputSize ?? task.output.length,
+        truncated: task.outputTruncated ?? false,
+      };
+    }
     if (!this.deps.shell) throw new TaskError(503, 'shell task API not available on this runtime');
     return this.deps.shell.output({
       shellID: task.shellID,
@@ -236,10 +257,17 @@ export class TaskService {
       }
       const status = info?.status;
       if (!status || status === 'running') return this.transition(task, 'working');
-      if (status === 'killed') return this.transition(task, 'cancelled');
-      if (status === 'timeout') return this.transition(task, 'failed', 'timeout');
+      if (status === 'killed') {
+        await this.captureShellOutput(task);
+        return this.transition(task, 'cancelled');
+      }
+      if (status === 'timeout') {
+        await this.captureShellOutput(task);
+        return this.transition(task, 'failed', 'timeout');
+      }
       if (status === 'exited') {
         const exit = Number(info.exit);
+        await this.captureShellOutput(task);
         if (Number.isFinite(exit) && exit === 0) return this.transition(task, 'completed');
         task.exitCode = Number.isFinite(exit) ? exit : undefined;
         return this.transition(task, 'failed', Number.isFinite(exit) ? `exit ${exit}` : 'exited without exit code');
@@ -255,7 +283,9 @@ export class TaskService {
       info = null;
     }
     if (!info) return this.transition(task, 'failed', 'lost_after_restart');
-    const idle = info.time?.idle || info.time?.completed;
+    const idleAt = Number(info.time?.idle ?? info.time?.completed ?? 0);
+    const hasIdle = Boolean(info.time?.idle || info.time?.completed);
+    const idle = hasIdle && (!task.resumeAt || idleAt >= task.resumeAt);
     if (!idle) {
       const pending = this.deps.pendingInput
         ? await this.deps.pendingInput(task.childSessionID, task.directory).catch(() => false)
@@ -268,12 +298,44 @@ export class TaskService {
     return this.transition(task, 'completed');
   }
 
+  /** 终态前抓取有界输出尾快照，shell 记录被 serve 清理后仍可查。 */
+  private async captureShellOutput(task: TaskEntity): Promise<void> {
+    if (!task.shellID || !this.deps.shell) return;
+    const limit = 65536;
+    try {
+      let out = await this.deps.shell.output({
+        shellID: task.shellID,
+        ...(task.directory ? { directory: task.directory } : {}),
+        limit,
+      });
+      if (out && Number(out.size) > limit) {
+        const tail = await this.deps.shell.output({
+          shellID: task.shellID,
+          ...(task.directory ? { directory: task.directory } : {}),
+          cursor: Math.max(0, Number(out.size) - limit),
+          limit,
+        });
+        if (tail && typeof tail.output === 'string') out = { ...tail, truncated: true };
+      }
+      if (out && typeof out.output === 'string') {
+        const captured = out.output.slice(-limit);
+        task.output = captured;
+        task.outputCursor = Number.isFinite(Number(out.cursor)) ? Number(out.cursor) : captured.length;
+        task.outputSize = Number.isFinite(Number(out.size)) ? Number(out.size) : captured.length;
+        task.outputTruncated = out.truncated === true || Number(out.size) > captured.length;
+      }
+    } catch {
+      // Output is best-effort; task status remains authoritative.
+    }
+  }
+
   private transition(task: TaskEntity, status: TaskStatus, error?: string): void {
     if (task.status === status && (error === undefined || task.error === error)) return;
     const terminal = !ACTIVE.includes(status);
     task.status = status;
     task.updatedAt = this.now();
     if (terminal) task.finishedAt = task.updatedAt;
+    else task.finishedAt = undefined;
     if (error !== undefined) task.error = error;
     else if (ACTIVE.includes(status)) task.error = undefined;
     this.persist(task);
@@ -284,7 +346,12 @@ export class TaskService {
     try { this.store.save(task); } catch { /* fail-open: task stays in memory */ }
   }
 
+  private publicTask(task: TaskEntity): TaskEntity {
+    const { output: _output, resumeAt: _resumeAt, ...rest } = task;
+    return { ...rest };
+  }
+
   private emit(task: TaskEntity): void {
-    try { this.deps.emit({ ...task }); } catch { /* fail-open */ }
+    try { this.deps.emit(this.publicTask(task)); } catch { /* fail-open */ }
   }
 }

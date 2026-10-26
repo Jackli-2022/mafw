@@ -28,7 +28,7 @@ import { structuredOutput } from '../runtime/structured-output';
 import type { TaskService } from '../runtime/task-service';
 import {
   handleTaskCancel, handleTaskGet, handleTaskList, handleTaskMessage,
-  handleTaskOutput, handleTaskSubmit,
+  handleTaskOutput, handleTaskSubmit, parseTaskOutputQuery,
 } from './tasks';
 import { handleSessionSummarize } from './session-summarize';
 import { handleEventPublish } from './event-publish';
@@ -153,12 +153,7 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
   registry.attachHandler('tasks.message', H(async (req, res, params) => handleTaskMessage(req, res, params.id, taskDeps())));
   registry.attachHandler('tasks.output', H(async (req, res, params) => {
     const u = new URL(req.url || '/', 'http://x');
-    const cursor = Number(u.searchParams.get('cursor'));
-    const limit = Number(u.searchParams.get('limit'));
-    await handleTaskOutput(res, params.id, {
-      ...(Number.isFinite(cursor) ? { cursor } : {}),
-      ...(Number.isFinite(limit) ? { limit } : {}),
-    }, taskDeps());
+    await handleTaskOutput(res, params.id, parseTaskOutputQuery(u.searchParams), taskDeps());
   }));
 
   registry.attachHandler('session.summarize', H(async (req, res) =>

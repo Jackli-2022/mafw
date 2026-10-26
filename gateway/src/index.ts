@@ -3937,6 +3937,7 @@ class MafwScheduler {
         mediaPluginLoader: this.mediaPluginLoader,
         broadcast: (e) => this.broadcast(e),
         get runtimeCaps() { return gwSelf.runtimeCaps; },
+        get taskService() { return gwSelf.taskService; },
       });
       attachWave2Handlers(this.routeRegistry, {
         runtimeDeps: () => this.runtimeDeps(),

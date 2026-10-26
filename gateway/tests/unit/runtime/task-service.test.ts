@@ -42,6 +42,8 @@ describe('TaskService shell tasks', () => {
     await ctx.svc.refreshOnce();
     expect(ctx.svc.get(task.id)).toMatchObject({ status: 'completed' });
     expect(ctx.deps.emit).toHaveBeenCalledWith(expect.objectContaining({ id: task.id, status: 'completed' }));
+    expect((ctx.deps.emit as jest.Mock).mock.calls.at(-1)[0].output).toBeUndefined();
+    expect(await ctx.svc.output(task.id)).toEqual({ output: 'ok', cursor: 2, size: 2, truncated: false });
   });
 
   it('maps exit/timeout/killed/lost', async () => {
@@ -107,6 +109,23 @@ describe('TaskService subagent tasks', () => {
     await ctx.svc.cancel(t.id);
     expect(ctx.deps.cancelSubagent).toHaveBeenCalledWith('p1', 'c1');
     await expect(ctx.svc.output(t.id)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('message reopens a terminal subagent task', async () => {
+    const t = await ctx.svc.submit({ kind: 'subagent', parentSessionID: 'p1', prompt: 'x' });
+    ctx.sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, idle: 2 }, outcome: 'succeeded' });
+    await ctx.svc.refreshOnce();
+    expect(ctx.svc.get(t.id)?.status).toBe('completed');
+    await ctx.svc.message(t.id, 'again');
+    expect(ctx.svc.get(t.id)).toMatchObject({ status: 'working' });
+    expect(ctx.svc.get(t.id)?.finishedAt).toBeUndefined();
+    expect(ctx.svc.get(t.id)).not.toHaveProperty('resumeAt');
+    ctx.sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, idle: 2 }, outcome: 'succeeded' });
+    await ctx.svc.refreshOnce();
+    expect(ctx.svc.get(t.id)?.status).toBe('working');
+    ctx.sessions.set('c1', { id: 'c1', parentID: 'p1', time: { created: 1, idle: 2000 }, outcome: 'succeeded' });
+    await ctx.svc.refreshOnce();
+    expect(ctx.svc.get(t.id)?.status).toBe('completed');
   });
 
   it('missing child session → failed lost', async () => {

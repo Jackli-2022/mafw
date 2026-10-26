@@ -188,7 +188,8 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     body?: any,
     directory?: string,
   ): Promise<any> => {
-    const url = `${config.baseUrl}/api${path}${directory ? `?directory=${encodeURIComponent(directory)}` : ''}`;
+    const sep = path.includes('?') ? '&' : '?';
+    const url = `${config.baseUrl}/api${path}${directory ? `${sep}directory=${encodeURIComponent(directory)}` : ''}`;
     const res = await fetch(url, {
       method,
       headers: {
