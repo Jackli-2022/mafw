@@ -176,9 +176,9 @@ test("migrateLegacyChatWidth：px→档位", () => {
 
 - [ ] **Step 1: 失败测试**（对齐 annotation-store 现有测试模式）：add/remove/take/格式化批（含 element meta 渲染成引用块：截图评注 + 元素信息行）
 - [ ] **Step 2: FAIL**
-- [ ] **Step 4: 实现三件套** + use-send-message 发送路径接入（`bodyMessage` 组装处，annotationBlock 之后追加 captureBlock；queue 路径同 annotations 一样打包）+ ChatPane 渲染 `PendingCaptures` 列表（缩略图 + 评注 chip，✕ 移除）+ 截图作为附件：`dataUrl` 直接走 `useAttachments` 的 `addPastedFile` 语义（构造 File 对象 `new File([blob], "screenshot-<ts>.png", { type: "image/png" })`）→ 图片走既有媒体管道（uploadBinary → createTask → 指针）
-- [ ] **Step 5: `npm test` PASS（预期 +6~8 用例）**
-- [ ] **Step 6: Commit** `feat(desktop): pending-capture pipeline (screenshot/element annotations queued above composer)`
+- [ ] **Step 3: 实现三件套** + use-send-message 发送路径接入（`bodyMessage` 组装处，annotationBlock 之后追加 captureBlock；queue 路径同 annotations 一样打包）+ ChatPane 渲染 `PendingCaptures` 列表（缩略图 + 评注 chip，✕ 移除）+ 截图作为附件：`dataUrl` 直接走 `useAttachments` 的 `addPastedFile` 语义（构造 File 对象 `new File([blob], "screenshot-<ts>.png", { type: "image/png" })`）→ 图片走既有媒体管道（uploadBinary → createTask → 指针）
+- [ ] **Step 4: `npm test` PASS（预期 +6~8 用例）**
+- [ ] **Step 5: Commit** `feat(desktop): pending-capture pipeline (screenshot/element annotations queued above composer)`
 
 ### Task 6: G1 截屏批注 — 全屏框选（main 进程）
 
