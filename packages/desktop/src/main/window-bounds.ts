@@ -1,6 +1,23 @@
-/** 主窗口尺寸下限：低于此值布局会压坏（自定义 titlebar 38 + chat header 38 + composer ~98 + 边距）。 */
-export const MAIN_WINDOW_MIN_WIDTH = 720
-export const MAIN_WINDOW_MIN_HEIGHT = 480
+/** 主窗口尺寸下限：46 rail + 520 ChatView + 520 右工作台 + 边框。 */
+export const MAIN_WINDOW_MIN_WIDTH = 1088
+export const MAIN_WINDOW_MIN_HEIGHT = 720
+export const MAIN_WINDOW_DEFAULT_WIDTH = 1600
+export const MAIN_WINDOW_DEFAULT_HEIGHT = 1000
+export const MAIN_WINDOW_WORKAREA_MARGIN = 80
+
+/** 首次启动的默认窗口：目标 1600×1000，按主屏工作区收缩；不小于最小尺寸。 */
+export function fitDefaultWindowSize(workArea: { width: number; height: number }): { width: number; height: number } {
+  return {
+    width: Math.max(
+      MAIN_WINDOW_MIN_WIDTH,
+      Math.min(MAIN_WINDOW_DEFAULT_WIDTH, workArea.width - MAIN_WINDOW_WORKAREA_MARGIN),
+    ),
+    height: Math.max(
+      MAIN_WINDOW_MIN_HEIGHT,
+      Math.min(MAIN_WINDOW_DEFAULT_HEIGHT, workArea.height - MAIN_WINDOW_WORKAREA_MARGIN),
+    ),
+  }
+}
 
 export interface RestoredWindowBounds {
   x?: number

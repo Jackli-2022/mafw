@@ -4,7 +4,7 @@ import type { DesktopTheme } from "@mafw/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
 import { randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
+import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, screen } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -13,7 +13,7 @@ import { getStore, removeStoreFile } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowRegistry } from "./window-registry"
-import { mainWindowOptions } from "./window-bounds"
+import { fitDefaultWindowSize, mainWindowOptions } from "./window-bounds"
 import { mainWindowWebPreferences } from "../shared/browser-policy"
 import { configureBrowserSession, wireWebviewAttach } from "./browser-session"
 import { windowCloseAction } from "./close-decision"
@@ -164,10 +164,11 @@ export function setDockIcon() {
 }
 
 export function createMainWindow(id: string = randomUUID()) {
+  const preferred = fitDefaultWindowSize(screen.getPrimaryDisplay().workAreaSize)
   const state = windowState({
     file: windowStateFile(id),
-    defaultWidth: 1280,
-    defaultHeight: 800,
+    defaultWidth: preferred.width,
+    defaultHeight: preferred.height,
   })
 
   const win = new BrowserWindow({
