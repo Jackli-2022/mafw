@@ -28,6 +28,7 @@ export const KNOWN_EVENTS = [
   'queue.updated',
   'session.config',
   'session.checkpoint',
+  'run.updated',
 ]
 
 /**

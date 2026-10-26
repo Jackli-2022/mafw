@@ -40,6 +40,7 @@ export const MAFW = {
   taskUpdated: 'task.updated',
   sessionConfig: 'session.config',
   sessionCheckpoint: 'session.checkpoint',
+  runUpdated: 'run.updated',
   trajectoryEvent: 'trajectory.event',
   trajectoryTurn: 'trajectory.turn',
   // 能力面
