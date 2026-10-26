@@ -825,6 +825,98 @@
         }
       }
     },
+    "/api/sessions/{id}/suspend": {
+      "post": {
+        "operationId": "session.suspend",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/resume": {
+      "post": {
+        "operationId": "session.resume",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/run": {
+      "get": {
+        "operationId": "session.run",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/run/discard": {
+      "post": {
+        "operationId": "session.discardRun",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session/{id}/abort": {
       "post": {
         "operationId": "session.abort",

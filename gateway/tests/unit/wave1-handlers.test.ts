@@ -10,6 +10,7 @@ const WAVE1_OPIDS = [
   'session.config', 'session.config.set',
   'session.diff', 'session.revertDiff',
   'session.checkpoint', 'session.checkpoints', 'session.restoreCheckpoint',
+  'session.suspend', 'session.resume', 'session.run', 'session.discardRun',
   'event.publish', 'media.switch',
   'session.usagePluginsList', 'session.usagePluginsReload', 'session.usagePluginsCreate',
   'session.usagePluginSourceGet', 'session.usagePluginSourcePut', 'session.usagePluginTest', 'session.usagePluginsDelete',

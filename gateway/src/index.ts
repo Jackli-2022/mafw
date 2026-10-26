@@ -134,6 +134,8 @@ import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permi
 import { SessionConfigService, SessionConfigError } from './core/session-config';
 import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
+import { RunStateService } from './core/run/run-state-service';
+import { RunCoordinator } from './core/run/run-coordinator';
 import { defaultGit } from './core/diff/turn-diff';
 import { handleSessionConfigGet, handleSessionConfigSet } from './routes/session-config';
 import { handleAllowlistGet, handleAllowlistPost, handleAllowlistDelete } from './routes/allowlist';
@@ -483,6 +485,8 @@ class MafwScheduler {
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
   private checkpointService!: CheckpointService;
+  private runStateService!: RunStateService;
+  private runCoordinator!: RunCoordinator;
   private memoryService?: MemoryService;
   private mediaService?: MediaService;
   private mediaAgent?: MediaAgent;
@@ -1332,6 +1336,15 @@ class MafwScheduler {
       if (this.promptBudgetSessions.delete(sessionID)) this.budgetGuards.delete(sessionID);
       // busy 清除 + 队列续发（每终态一条，fire-and-forget）
       this.busySessions.delete(sessionID);
+      // T2-2：run 状态收尾/落定（resumed 才 finish；suspend 的 abort 终态只 settle）
+      try {
+        this.runCoordinator?.onTerminal(
+          sessionID,
+          type === MAFW.turnCompleted ? 'completed' : type === MAFW.turnFailed ? 'failed' : 'aborted',
+        );
+      } catch (err: any) {
+        log.warn(`[Run] terminal handling failed for ${sessionID} (non-fatal): ${err?.message ?? err}`);
+      }
       this.flushSessionQueue(sessionID);
     }
     // Only memory-system sessions (index-scan / extract / reflect workers) are
@@ -1351,6 +1364,8 @@ class MafwScheduler {
     // touches the restart token file pin the exact session that wrote it.
     if (sessionID) {
       this.lastActiveBySession.set(sessionID, Date.now());
+      // T2-2：长回合只要有事件就刷新 busy 时间戳（15min 清扫不得误删活跃回合）。
+      if (this.busySessions.has(sessionID)) this.busySessions.set(sessionID, Date.now());
       if (f.toolCommand) {
         if (/pending-restart/i.test(f.toolCommand)) {
           this.tokenWriterSession = { sessionID, at: Date.now() };
@@ -1680,6 +1695,8 @@ class MafwScheduler {
    *  仍在（apply 照跑、无 delivery 不触发拦截），且对象形参能携带 expectReply
    *  （facade 位置形参会丢该字段——BudgetGuard/milestone 的 noReply 通知必须保全）。 */
   private flushSessionQueue(sessionID: string): void {
+    // T2-2：暂停中不续发（suspend 在 abort 前置位；discard/resume 清位）。
+    if (this.runCoordinator?.isSuspended(sessionID)) return;
     const item = shouldFlush(this.sessionQueue, this.busySessions, sessionID);
     if (!item) return;
     log.info(`[Queue] flushing ${item.id} for ${sessionID} (remaining=${this.sessionQueue.size(sessionID)})`);
@@ -3293,6 +3310,28 @@ class MafwScheduler {
       now: () => new Date().toISOString(),
       newId: () => `ckpt_${randomUUID()}`,
     });
+    this.runStateService = new RunStateService({
+      db: this.getGatewayDb(),
+      broadcast: (e) => this.broadcast(mafwBroadcast({
+        type: e.type,
+        properties: e.properties,
+        sessionID: e.sessionID,
+      })),
+      now: () => new Date().toISOString(),
+      newId: () => `run_${randomUUID()}`,
+      eventName: MAFW.runUpdated,
+    });
+    this.runCoordinator = new RunCoordinator({
+      runtime: () => this.runtime,
+      service: this.runStateService,
+      isBusy: (sid) => this.busySessions.has(sid),
+      queueSize: (sid) => this.sessionQueue.size(sid),
+      flushQueue: (sid) => this.flushSessionQueue(sid),
+      wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      log: (message) => log.info(message),
+    });
+    // 启动恢复：suspended 重挂闸门；resumed 僵尸 → cancelled。
+    this.runCoordinator.reconcile();
     this.subagentService = new SubagentService({
       createSession: (o) => this.runtime!.session.create(o),
       getSession: (sid) => this.runtime!.session.get({ sessionID: sid }),
@@ -4029,6 +4068,7 @@ class MafwScheduler {
         get taskService() { return gwSelf.taskService; },
         get sessionConfig() { return gwSelf.sessionConfigService; },
         get checkpointService() { return gwSelf.checkpointService; },
+        get runCoordinator() { return gwSelf.runCoordinator; },
         isCheckpointBusy: (sid) => gwSelf.busySessions.has(sid),
       });
       attachWave2Handlers(this.routeRegistry, {
@@ -6196,7 +6236,8 @@ class MafwScheduler {
               res.end(JSON.stringify({ error: 'delivery:queue cannot be combined with maxTurns/maxCostUsd (budget guards the current turn only; queued send would be unbudgeted)' }));
               return;
             }
-            if (delivery === 'queue' && this.busySessions.has(sessionID)) {
+            // 暂停中（T2-2）一律入队：会话已 idle，普通直发会绕过暂停。
+            if (this.runCoordinator?.isSuspended(sessionID) || (delivery === 'queue' && this.busySessions.has(sessionID))) {
               try {
                 const parsedBody = body ? JSON.parse(body) : {};
                 const q = await this.enqueueQueuedPrompt({
@@ -6234,6 +6275,11 @@ class MafwScheduler {
         if (promptMatch && req.method === 'POST') {
           try {
             const sessionID = promptMatch[1];
+            if (this.runCoordinator?.isSuspended(sessionID)) {
+              res.writeHead(409);
+              res.end(JSON.stringify({ error: 'session is suspended; resume or discard the run first' }));
+              return;
+            }
             const body = await readBody(req);
             const opts = body ? JSON.parse(body) : {};
             if (opts.thinkingLevel !== undefined && !isThinkingLevel(opts.thinkingLevel)) {

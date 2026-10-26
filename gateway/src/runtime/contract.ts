@@ -51,6 +51,8 @@ export interface RuntimeCapabilities {
   revertUndoApi?: boolean;
   /** checkpoint 记录/三态 restore 依赖 snapshot 树 + staged revert（opencode-only；缺省=503） */
   checkpointApi?: boolean;
+  /** 回合软暂停（suspend/resume）依赖 session.abort + messages（缺省=503） */
+  runStateApi?: boolean;
   /** runtime 原生强制执行 SessionPromptOpts.maxTurns/maxCostUsd（声明后 gateway 不再挂 BudgetGuard） */
   turnBudgetApi?: boolean;
   /** runtime 提供原生 question API（question.list/reply/reject） */
@@ -77,6 +79,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     // opencode 2.1 的 revert 是 stage+commit，commit 后不可逆（无 unrevert）
     revertUndoApi: false,
     checkpointApi: true,
+    runStateApi: true,
     diffApi: true,
     worktreeApi: true,
     // opencode 适配器不转发 maxTurns/maxCostUsd（SDK 无对应字段）——预算由

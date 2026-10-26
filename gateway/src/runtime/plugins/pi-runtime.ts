@@ -22,6 +22,7 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   agentConfigApi: true,
   completionApi: true,
   sessionBranchApi: true,
+  runStateApi: true,
 };
 
 /** pi 原生工具清单（pi-coding-agent dist/core/tools：read/grep/find/ls/write/edit/bash）。 */
