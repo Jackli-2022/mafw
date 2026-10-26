@@ -8,6 +8,7 @@ function makeDeps() {
   const backgroundEvents: unknown[] = []
   const taskEvents: unknown[] = []
   const queueEvents: unknown[] = []
+  const runEvents: unknown[] = []
   const deps: ShellEventDeps = {
     core: {
       trace: rec("trace"),
@@ -72,8 +73,11 @@ function makeDeps() {
     queue: {
       onEvent: (sid: string, ev: unknown) => { queueEvents.push({ sid, ev }) },
     },
+    run: {
+      onEvent: (run: unknown) => { runEvents.push(run) },
+    },
   }
-  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents }
+  return { deps, calls, subagentEvents, backgroundEvents, taskEvents, queueEvents, runEvents }
 }
 
 describe("dispatchShellEvent: core events", () => {
@@ -104,6 +108,16 @@ describe("dispatchShellEvent: task updated", () => {
     dispatchShellEvent({ type: "task.updated", properties: { task } }, deps)
     expect(taskEvents).toEqual([task])
     expect(calls.some(c => c.name === "trace" && c.args[1] === "task:updated")).toBe(true)
+  })
+})
+
+describe("dispatchShellEvent: run updated", () => {
+  test("run.updated forwards the run payload and consumes the event", () => {
+    const { deps, runEvents, calls } = makeDeps()
+    const run = { id: "run_1", sessionID: "s1", status: "suspended" }
+    dispatchShellEvent({ type: "run.updated", properties: { sessionID: "s1", run } }, deps)
+    expect(runEvents).toEqual([run])
+    expect(calls.some(c => c.name === "trace" && c.args[1] === "run:updated")).toBe(true)
   })
 })
 

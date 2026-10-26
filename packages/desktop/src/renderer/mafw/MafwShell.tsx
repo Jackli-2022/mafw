@@ -50,6 +50,7 @@ import { SubagentDock } from "./components/SubagentDock"
 import { BackgroundDock } from "./components/BackgroundDock"
 import { taskRows, fetchTasks, ingestTask } from "./task-store"
 import { fetchQueue, ingestQueueEvent } from "./queue-store"
+import { setRun } from "./run-store"
 import { requestOpenEditor } from "./editor-open"
 import { ChangesDock } from "./components/ChangesDock"
 import { addPending } from "./annotation-store"
@@ -967,6 +968,9 @@ export function MafwShell() {
     },
     queue: {
       onEvent: (sid, event) => ingestQueueEvent(sid, event),
+    },
+    run: {
+      onEvent: (run) => setRun(run as any),
     },
   }
 

@@ -52,6 +52,11 @@ export interface QueueDeps {
   onEvent(sid: string, event: unknown): void
 }
 
+/** T2-2：回合软暂停状态（run.updated）。 */
+export interface RunDeps {
+  onEvent(run: unknown): void
+}
+
 export interface ShellEventDeps {
   core: CoreDeps
   lifecycle: LifecycleDeps
@@ -63,6 +68,7 @@ export interface ShellEventDeps {
   background: BackgroundDeps
   tasks: TaskDeps
   queue: QueueDeps
+  run: RunDeps
 }
 
 /** sid 级处理器挂这里；返回 true = 已消费。 */
@@ -147,6 +153,13 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
     deps.core.trace(event, "task:updated")
     const task = event.properties?.task ?? event.task
     if (task) deps.tasks.onEvent(task)
+    return
+  }
+
+  if (event.type === "run.updated") {
+    deps.core.trace(event, "run:updated")
+    const run = event.properties?.run ?? event.run
+    if (run) deps.run.onEvent(run)
     return
   }
 

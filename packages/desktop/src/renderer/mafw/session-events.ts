@@ -108,7 +108,7 @@ export const IGNORED_AT_SHELL = [
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting", "usage.updated",
-  "turn.started", "session.config", "session.checkpoint", "run.updated",
+  "turn.started", "session.config", "session.checkpoint",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
@@ -138,6 +138,7 @@ type ShellHandledType =
   | "question.asked" | "question.replied" | "question.rejected"
   | "permission.asked" | "permission.replied" | "session.compacted"
   | "trajectory.event" | "trajectory.turn" | "plan.updated"
+  | "queue.updated" | "run.updated"
   | "message.updated" | "part.delta" | "part.updated" | "part.complete"
   | "turn.completed" | "turn.failed" | "turn.aborted"
   | "session.diff" | "permission_mode"
@@ -174,6 +175,7 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "trajectory.turn":
     case "plan.updated":
     case "queue.updated":
+    case "run.updated":
     // ---- chat stream ----
     case "message.updated":
     case "part.delta":
@@ -198,7 +200,6 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "turn.started":
     case "session.config":
     case "session.checkpoint":
-    case "run.updated":
     case "task.updated":
       return
     default: {

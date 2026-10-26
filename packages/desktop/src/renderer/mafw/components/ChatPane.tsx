@@ -12,6 +12,8 @@ import { TaskBar } from "./TaskBar"
 import { BackgroundWorkBar } from "./BackgroundWorkBar"
 import { scanHistoryForBackground } from "../background-detect"
 import { ingestHydratedBackgroundEvents } from "../background-store"
+import { runForSession, setRun as setRunStore, clearRun } from "../run-store"
+import { runBanner } from "../run-banner"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
@@ -844,6 +846,55 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     sidProp()
     suppressQuote()
   })
+
+  // ── T2-2 软暂停 ────────────────────────────────────────────────
+  const sessionBusy = () => sending() || busy()
+  const activeRun = () => (sidProp() ? runForSession(sidProp()!) : null)
+  const banner = () => runBanner(activeRun(), sessionBusy())
+
+  createEffect(on(() => sidProp(), (sid) => {
+    if (!sid) return
+    if (props.runtimeCaps?.runStateApi !== true) { clearRun(sid); return }
+    window.api.mafw.sessions.run(sid)
+      .then((r) => { if (sidProp() === sid) setRunStore(r.run) })
+      .catch(() => { /* fail-open */ })
+  }))
+
+  const pauseSession = async () => {
+    const sid = sidProp()
+    if (!sid) return
+    try {
+      const r = await window.api.mafw.sessions.suspend(sid)
+      setRunStore(r.run)
+      showToastV2({ title: "已暂停", description: "可在输入框上方恢复", variant: "success" } as any)
+    } catch (e: any) {
+      showToastV2({ title: "暂停失败", description: String(e?.message || e), variant: "error" } as any)
+    }
+  }
+
+  const resumeSession = async () => {
+    const sid = sidProp()
+    if (!sid) return
+    try {
+      const r = await window.api.mafw.sessions.resume(sid)
+      setRunStore(r.run)
+      showToastV2({ title: "已恢复", description: "续跑提示已发送", variant: "success" } as any)
+    } catch (e: any) {
+      showToastV2({ title: "恢复失败", description: String(e?.message || e), variant: "error" } as any)
+    }
+  }
+
+  const discardSessionRun = async () => {
+    const sid = sidProp()
+    if (!sid) return
+    try {
+      const r = await window.api.mafw.sessions.discardRun(sid)
+      setRunStore(r.run)
+      showToastV2({ title: "已放弃暂停", variant: "success" } as any)
+    } catch (e: any) {
+      showToastV2({ title: "放弃失败", description: String(e?.message || e), variant: "error" } as any)
+    }
+  }
 
   // ESC / Ctrl+C interrupts this pane only when it is focused and sending.
   onMount(() => {
@@ -1745,6 +1796,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
             有 {props.sessionPending(sidProp())} 个待回答 ↓
           </ButtonV2>
         </Show>
+        <Show when={banner()}>
+          {(view) => (
+            <div class="mafw-queue-bar mafw-run-bar">
+              <span class="mafw-run-count" aria-label="暂停的回合">{view().text}</span>
+              <Show when={view().canResume}>
+                <ButtonV2 variant="outline" size="small" onClick={() => void resumeSession()}>恢复</ButtonV2>
+              </Show>
+              <Show when={view().canDiscard}>
+                <ButtonV2 variant="ghost" size="small" onClick={() => void discardSessionRun()}>放弃</ButtonV2>
+              </Show>
+            </div>
+          )}
+        </Show>
         <Show when={gwQueue().length > 0}>
           <div class="mafw-queue-bar mafw-gw-queue">
             <span class="mafw-queue-count">⏳ {gwQueue().length} 条网关队列 · 回合结束后自动发送</span>
@@ -2086,6 +2150,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                     </TooltipV2>
                   )
                 }}
+              </Show>
+              <Show when={sessionBusy() && props.runtimeCaps?.runStateApi === true}>
+                <TooltipV2 value="暂停当前回合并保存续跑摘要" openDelay={300}>
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    onClick={() => void pauseSession()}
+                    aria-label="暂停"
+                    class="mafw-composer-optional"
+                  >
+                    <span class="mafw-pause-icon">II</span>
+                  </ButtonV2>
+                </TooltipV2>
               </Show>
               <Show when={sending()} fallback={
                 <ButtonV2
