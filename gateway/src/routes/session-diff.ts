@@ -1,13 +1,17 @@
 // 会话 diff 端点（切片 2，deps 注入可单测）。
 // GET /api/sessions/:sid/diff?messageID= → 用户回合的 snapshot 树 diff；
 // 无 messageID → runtime.session.diff（会话级 VCS 快照）。
-// POST /api/sessions/:sid/diff/revert → buildRevertPatch（选中 hunk 反转）→ runtime.session.vcs.apply
-// 能力门：runtime 缺 diffApi → 503；apply/dec 失败 → 502 带原始错误消息（不静默）。
+// POST /api/sessions/:sid/diff/revert → buildRevertPatch（选中 hunk 反转）→ gateway-side git apply
+//   （2026-10-26 实证：serve 2.1 无 /api/vcs/apply，SDK vcs.apply 静默吞 404；
+//    改由 gateway 在会话目录直接 git apply，见 core/diff/apply-patch.ts）
+// 能力门：runtime 缺 diffApi → 503；apply 失败 → 502 带原始错误消息（不静默）。
 import * as http from 'http';
 import { AgentRuntime } from '../runtime/contract';
 import { buildRevertPatch } from '../core/diff/hunk-patch';
+import { applyPatchToWorktree } from '../core/diff/apply-patch';
 import {
   computeTurnDiffForRuntime,
+  defaultGit,
   TurnDiffUnavailableError,
   type FileDiffInfo,
 } from '../core/diff/turn-diff';
@@ -34,6 +38,9 @@ export interface SessionDiffDeps {
     sessionID: string;
     messageID: string;
   }) => Promise<FileDiffInfo[]>;
+  /** Test seam; production runs git apply in the session directory. */
+  applyPatch?: (opts: { projectDir: string; patch: string }) => Promise<{ code: number; stderr: string }>;
+  git?: import('../core/diff/turn-diff').GitRunner;
 }
 
 function hasDiffApi(rt: SessionDiffDeps['runtime']): boolean {
@@ -103,7 +110,7 @@ export async function handleSessionDiffRevert(
   sessionID: string,
   deps: SessionDiffDeps,
 ): Promise<void> {
-  if (!hasDiffApi(deps.runtime) || typeof (deps.runtime!.session as any)?.vcs?.apply !== 'function') {
+  if (!hasDiffApi(deps.runtime)) {
     json(res, 503, { error: "capability 'diffApi' not available on this runtime" });
     return;
   }
@@ -121,7 +128,20 @@ export async function handleSessionDiffRevert(
   if (!patch) { json(res, 400, { error: 'no valid hunks selected' }); return; }
 
   try {
-    await deps.runtime!.session.vcs!.apply!({ patch });
+    const session = await deps.runtime!.session.get({ sessionID });
+    const projectDir = session?.directory ?? session?.location?.directory;
+    if (typeof projectDir !== 'string' || !projectDir) {
+      json(res, 400, { error: 'session directory unavailable' });
+      return;
+    }
+    const apply = deps.applyPatch
+      ?? ((o: { projectDir: string; patch: string }) =>
+        applyPatchToWorktree(deps.git ?? defaultGit, o));
+    const applied = await apply({ projectDir, patch });
+    if (applied.code !== 0) {
+      json(res, 502, { error: `git apply failed: ${applied.stderr.trim().slice(0, 300) || `code ${applied.code}`}` });
+      return;
+    }
     json(res, 200, { reverted: parsed.entries.length });
   } catch (err: any) {
     json(res, 502, { error: err?.message ?? String(err) });

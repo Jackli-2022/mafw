@@ -96,18 +96,6 @@ function harness(fx: Fixture, checkpointTree: string | null, untracked: string[]
           ],
         }),
         revert: async () => { throw new Error('revert must not be called in files scope'); },
-        vcs: {
-          apply: async ({ patch }) => {
-            // 与生产一致：把 patch 交给项目工作区的 git apply（stdin 不便于跨平台，写临时文件）
-            const f = path.join(fx.root, `apply-${Date.now()}.patch`);
-            fs.writeFileSync(f, patch, 'utf-8');
-            try {
-              await git(fx.project, ['apply', f]);
-            } finally {
-              fs.rmSync(f, { force: true });
-            }
-          },
-        },
       },
     },
     git: defaultGit,

@@ -34,6 +34,7 @@ function harness(opts: {
   latestTree?: string | null;
   patch?: string;
   preCheckCode?: number;
+  applyCode?: number;
   porcelain?: string;
   repoFound?: boolean;
   rememberedTree?: string;
@@ -67,9 +68,16 @@ function harness(opts: {
         calls.gitDiffs.push(args);
         return { code: 0, stdout: opts.patch ?? 'diff --git a/f b/f\n--- a/f\n+++ b/f\n', stderr: '' };
       }
-      if (args.includes('apply') && args.includes('--check')) {
-        calls.checks.push(args);
-        return { code: opts.preCheckCode ?? 0, stdout: '', stderr: '' };
+      if (args.includes('apply')) {
+        const file = args[args.length - 1];
+        const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '';
+        if (args.includes('--check')) {
+          calls.checks.push(args);
+          return { code: opts.preCheckCode ?? 0, stdout: '', stderr: '' };
+        }
+        log.push('apply');
+        calls.applies.push(text);
+        return { code: opts.applyCode ?? 0, stdout: '', stderr: '' };
       }
       return { code: 0, stdout: '', stderr: '' };
     },
@@ -103,7 +111,6 @@ function harness(opts: {
           ],
         }),
         revert: async (o) => { calls.reverts.push(o); },
-        vcs: { apply: async ({ patch }) => { log.push('apply'); calls.applies.push(patch); } },
       },
     },
     git,

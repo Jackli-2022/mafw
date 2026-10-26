@@ -5,10 +5,6 @@
  * snapshot git、porcelain 读取、事件广播与时钟。create/list 路径只触碰
  * db/broadcast/now/newId——restore 成员由 Task 5 使用。
  */
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-
 import type { SessionCheckpointRow } from '../../memory/gateway-db';
 import {
   defaultSnapshotRoot,
@@ -16,6 +12,7 @@ import {
   isSnapshotId,
   type GitRunner,
 } from '../diff/turn-diff';
+import { applyPatchToWorktree } from '../diff/apply-patch';
 import { latestSnapshotTree, manualAnchor, parseUntrackedLines } from './auto-recorder';
 
 export interface SessionCheckpoint {
@@ -68,7 +65,6 @@ export interface CheckpointServiceDeps {
       get(opts: { sessionID: string }): Promise<any>;
       messages(opts: { sessionID: string; limit?: number }): Promise<{ data: any[] }>;
       revert(opts: { sessionID: string; messageID: string; files?: boolean }): Promise<void>;
-      vcs: { apply(opts: { patch: string }): Promise<void> };
     };
   };
   git: GitRunner;
@@ -293,7 +289,17 @@ export class CheckpointService {
     });
 
     if (patch.trim()) {
-      await this.deps.runtime.session.vcs.apply({ patch });
+      const applied = await applyPatchToWorktree(this.deps.git, {
+        projectDir: ckpt.projectDir,
+        gitDir: repo,
+        patch,
+      });
+      if (applied.code !== 0) {
+        throw new CheckpointRestoreError(
+          502,
+          `git apply failed: ${applied.stderr.trim().slice(0, 200) || `code ${applied.code}`}`,
+        );
+      }
     }
     this.deps.writeWorkspaceTree(ckpt.sessionID, tree);
 
@@ -307,23 +313,17 @@ export class CheckpointService {
   /** git apply --check 预检（-C 项目目录：apply 的相对路径按 cwd 解析，--work-tree 不生效）：
    *  上下文失配 → 400，绝不部分应用。 */
   private async assertPatchApplies(repo: string, projectDir: string, patch: string): Promise<void> {
-    const patchFile = path.join(
-      os.tmpdir(),
-      `mafw-ckpt-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`,
-    );
-    fs.writeFileSync(patchFile, patch, 'utf-8');
-    try {
-      const check = await this.deps.git.run([
-        '-C', projectDir, '--git-dir', repo, 'apply', '--check', patchFile,
-      ]);
-      if (check.code !== 0) {
-        throw new CheckpointRestoreError(
-          400,
-          'workspace has out-of-turn changes; patch context mismatch',
-        );
-      }
-    } finally {
-      try { fs.rmSync(patchFile, { force: true }); } catch { /* best effort */ }
+    const check = await applyPatchToWorktree(this.deps.git, {
+      projectDir,
+      gitDir: repo,
+      patch,
+      check: true,
+    });
+    if (check.code !== 0) {
+      throw new CheckpointRestoreError(
+        400,
+        'workspace has out-of-turn changes; patch context mismatch',
+      );
     }
   }
 }

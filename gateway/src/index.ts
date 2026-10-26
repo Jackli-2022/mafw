@@ -3276,13 +3276,6 @@ class MafwScheduler {
             if (!fn) throw new Error('runtime does not implement session.revert');
             return fn(o);
           },
-          vcs: {
-            apply: async (o) => {
-              const vcs = this.runtime?.session.vcs;
-              if (!vcs?.apply) throw new Error('runtime does not implement vcs.apply');
-              return vcs.apply(o);
-            },
-          },
         },
       },
       git: defaultGit,

@@ -26,9 +26,10 @@ function makeDeps(overrides: Partial<SessionDiffDeps> = {}) {
       capabilities: { diffApi: true },
       session: {
         diff: async (o: any) => { calls.push(['diff', o]); return FILES; },
-        vcs: { apply: async (o: any) => { calls.push(['apply', o]); } },
+        get: async (o: any) => { calls.push(['get', o]); return { id: 's1', location: { directory: '/tmp/proj' } }; },
       },
     } as any,
+    applyPatch: async (o: any) => { calls.push(['apply', o]); return { code: 0, stderr: '' }; },
     ...overrides,
   };
   return { deps, calls };
@@ -102,15 +103,16 @@ describe('GET /api/sessions/:sid/diff', () => {
 });
 
 describe('POST /api/sessions/:sid/diff/revert', () => {
-  it('合法 body → buildRevertPatch → vcs.apply', async () => {
+  it('合法 body → buildRevertPatch → gateway-side git apply（带 session 目录）', async () => {
     const { deps, calls } = makeDeps();
     const res = makeRes();
     await handleSessionDiffRevert(makeReq({ patches: [{ file: 'x.txt', patch: FILES[0].patch, hunkIndices: [0] }] }), res, 's1', deps);
     expect(res.statusCode).toBe(200);
     expect(JSON.parse((res as any).body).reverted).toBe(1);
-    expect(calls[0][0]).toBe('apply');
-    expect(calls[0][1].patch).toContain('+a');
-    expect(calls[0][1].patch).toContain('-b');
+    const apply = calls.find((c) => c[0] === 'apply');
+    expect(apply[1].projectDir).toBe('/tmp/proj');
+    expect(apply[1].patch).toContain('+a');
+    expect(apply[1].patch).toContain('-b');
   });
 
   it('非法 body（空 patches / 缺 hunkIndices / hunk 越界）→ 400', async () => {
@@ -122,18 +124,28 @@ describe('POST /api/sessions/:sid/diff/revert', () => {
     }
   });
 
-  it('能力缺失 → 503；apply 抛错 → 502', async () => {
+  it('能力缺失 → 503；apply 失败 → 502；目录缺失 → 400', async () => {
     const { deps } = makeDeps({ runtime: { capabilities: {} } as any });
     const res = makeRes();
     await handleSessionDiffRevert(makeReq({ patches: [{ file: 'x', patch: FILES[0].patch, hunkIndices: [0] }] }), res, 's1', deps);
     expect(res.statusCode).toBe(503);
 
     const d2 = makeDeps({
-      runtime: { capabilities: { diffApi: true }, session: { vcs: { apply: async () => { throw new Error('conflict'); } } } } as any,
+      applyPatch: async () => ({ code: 1, stderr: 'patch does not apply' }),
     });
     const res2 = makeRes();
     await handleSessionDiffRevert(makeReq({ patches: [{ file: 'x', patch: FILES[0].patch, hunkIndices: [0] }] }), res2, 's1', d2.deps);
     expect(res2.statusCode).toBe(502);
-    expect(JSON.parse((res2 as any).body).error).toContain('conflict');
+    expect(JSON.parse((res2 as any).body).error).toContain('patch does not apply');
+
+    const d3 = makeDeps({
+      runtime: {
+        capabilities: { diffApi: true },
+        session: { get: async () => ({ id: 's1' }) },
+      } as any,
+    });
+    const res3 = makeRes();
+    await handleSessionDiffRevert(makeReq({ patches: [{ file: 'x', patch: FILES[0].patch, hunkIndices: [0] }] }), res3, 's1', d3.deps);
+    expect(res3.statusCode).toBe(400);
   });
 });

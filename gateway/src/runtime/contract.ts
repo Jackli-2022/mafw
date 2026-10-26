@@ -388,6 +388,9 @@ export interface RuntimeClient {
      */
     vcs?: {
       diff?(opts?: { mode?: 'git' | 'branch' }): Promise<any[]>;
+      /** 应用 raw patch 到工作区。opencode 2.1 serve 未实现 /api/vcs/apply（404，
+       *  SDK 默认 throwOnError=false 会静默成功）——调用方应使用
+       *  gateway 侧 `core/diff/apply-patch.ts`；本方法保留给未来 runtime。 */
       apply?(opts: { patch: string }): Promise<void>;
     };
   };
