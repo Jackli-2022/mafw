@@ -155,3 +155,13 @@ preload 同步 `window.api.mafw.sessions.data(sessionID, body)`。
 - overlay 不做独立 GET API（历史合并即读路径）；不做删除 API
 - id 跨消息移动禁止；revert 孤儿不级联（不可见 + 200 行修剪）
 - 鉴权沿用 wave1 现状（已登记架构债）
+
+## 8. final review 修复（2026-10-26）
+
+- persistent part 广播/返回恒带 `transient:false`：同 id transient→persistent 更新会覆盖旧 `true`，否则终态清理会误删已持久化卡
+- 注入路由 `Buffer.concat` + 256KB body 帽：逐块 `toString` 会切断多字节 UTF-8；超大 body 413
+- overlay prune 按 `updated_at`：同 id 热更新保留原 `created_at`，按 created_at 会淘汰刚更新行
+- 显式 id 非法 → 400（不再静默清洗合并）；绑定消息已被 revert/压缩时允许 rebind
+- transient data part 的 `part.updated` 不入 `event_log`（seq 不占、重连不重放）
+- session-ui 数据卡测试对齐 bun:test（typecheck 通过）；补 data-* 不置忙 / renderable / transient→persistent 用例
+- 已知边界：`resolveMessage` 只看最新 200 条；smoke 未观察 SSE 直播腿；TUI 不渲染 data part（v1 非目标）
