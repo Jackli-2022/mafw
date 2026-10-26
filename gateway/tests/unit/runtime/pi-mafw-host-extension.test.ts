@@ -217,7 +217,7 @@ const FakeType: any = {
 };
 
 describe('pi-mafw-host tools（gateway 单源 factory 消费）', () => {
-  it('注册 6 个工具——toolFactory 接 buildMafwToolFactory（端到端）', async () => {
+  it('注册 14 个工具——toolFactory 接 buildMafwToolFactory（端到端）', async () => {
     const { fetchImpl } = makeFakeFetch([]);
     const { pi, tools } = makeFakePi();
     createMafwHostExtension({
@@ -228,6 +228,7 @@ describe('pi-mafw-host tools（gateway 单源 factory 消费）', () => {
     expect(tools.map((t: any) => t.name).sort()).toEqual([
       'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_message_subagent',
       'mafw_python', 'mafw_python_restart', 'mafw_spawn_subagent', 'mafw_subagent_result', 'mafw_submit_result',
+      'mafw_task_cancel', 'mafw_task_list', 'mafw_task_message', 'mafw_task_submit',
     ]);
   });
 

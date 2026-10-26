@@ -22,12 +22,12 @@ function fakeReq(body: any): http.IncomingMessage {
 }
 
 describe('GET /api/tools（spec 清单）', () => {
-  it('返回六件套 spec（无 execute）', () => {
+  it('返回 14 件套 spec（无 execute）', () => {
     const { res, status, body } = fakeRes();
     handleToolsList(res);
     expect(status()).toBe(200);
     const parsed = JSON.parse(body());
-    expect(parsed.tools).toHaveLength(10);
+    expect(parsed.tools).toHaveLength(14);
     for (const t of parsed.tools) {
       expect(t.execute).toBeUndefined();
       expect(t.parameters.type).toBe('object');

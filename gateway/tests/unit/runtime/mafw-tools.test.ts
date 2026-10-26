@@ -21,12 +21,17 @@ function makeFakeFetch(routes: Array<{ match: (r: Req) => boolean; res: Res }>) 
   return { calls, fetchImpl };
 }
 
-const TEN = ['mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload', 'mafw_python', 'mafw_python_restart', 'mafw_submit_result', 'mafw_spawn_subagent', 'mafw_message_subagent', 'mafw_subagent_result'];
+const TOOL_NAMES = [
+  'mafw_add_memory', 'mafw_media_ask', 'mafw_media_speak', 'mafw_media_upload',
+  'mafw_python', 'mafw_python_restart', 'mafw_submit_result',
+  'mafw_spawn_subagent', 'mafw_message_subagent', 'mafw_subagent_result',
+  'mafw_task_submit', 'mafw_task_list', 'mafw_task_cancel', 'mafw_task_message',
+];
 
-describe('MAFW_TOOL_SPECS（六件套静态清单）', () => {
-  it('6 条、名字唯一、parameters 为 object 形状 JSON Schema', () => {
-    expect(MAFW_TOOL_SPECS.map((s) => s.name).sort()).toEqual([...TEN].sort());
-    expect(new Set(MAFW_TOOL_SPECS.map((s) => s.name)).size).toBe(10);
+describe('MAFW_TOOL_SPECS（14 件套静态清单）', () => {
+  it('14 条、名字唯一、parameters 为 object 形状 JSON Schema', () => {
+    expect(MAFW_TOOL_SPECS.map((s) => s.name).sort()).toEqual([...TOOL_NAMES].sort());
+    expect(new Set(MAFW_TOOL_SPECS.map((s) => s.name)).size).toBe(14);
     for (const s of MAFW_TOOL_SPECS) {
       expect((s.parameters as any).type).toBe('object');
       expect(typeof (s.parameters as any).properties).toBe('object');
@@ -36,12 +41,12 @@ describe('MAFW_TOOL_SPECS（六件套静态清单）', () => {
 });
 
 describe('buildMafwToolFactory（会话亲和闭包）', () => {
-  it('factory(sid) 产 6 个注册项；add_memory POST body 携带 sessionID', async () => {
+  it('factory(sid) 产 14 个注册项；add_memory POST body 携带 sessionID', async () => {
     const { calls, fetchImpl } = makeFakeFetch([
       { match: (r) => r.url.includes('/api/memory/add'), res: { ok: true, json: { success: true, id: 'mem_1' } } },
     ]);
     const regs = buildMafwToolFactory({ baseUrl: 'http://gw', fetchImpl })('pi_s9');
-    expect(regs.map((r) => r.name).sort()).toEqual([...TEN].sort());
+    expect(regs.map((r) => r.name).sort()).toEqual([...TOOL_NAMES].sort());
     const add = regs.find((r) => r.name === 'mafw_add_memory')!;
     const out = await add.execute({ content: '测试', cueAnchors: ['a'] });
     expect(out.isError).toBeUndefined();
@@ -173,7 +178,7 @@ describe('activateRuntimeTools（激活期接线）', () => {
     const rt = makeRt();
     await activateRuntimeTools(rt, 'test:rt', { baseUrl: 'http://gw' });
     const factory = (rt.tools.registerTools as jest.Mock).mock.calls[0][0] as (sid: string) => any[];
-    expect(factory('s1').map((r) => r.name).sort()).toEqual([...TEN].sort());
+    expect(factory('s1').map((r) => r.name).sort()).toEqual([...TOOL_NAMES].sort());
     expect(toolClassOf('my_read')).toBe('readonly');
     expect(toolClassOf('bad')).toBe('other');
   });
@@ -184,6 +189,36 @@ describe('activateRuntimeTools（激活期接线）', () => {
     const rt2 = makeRt({ nativeTools: jest.fn(() => { throw new Error('boom'); }) });
     await activateRuntimeTools(rt2, 'test:rt2', { baseUrl: 'http://gw' });
     expect(toolClassOf('my_read')).toBe('other');
+  });
+});
+
+describe('task tools（Batch 4）', () => {
+  it('submit/list/cancel/message hit the durable task routes', async () => {
+    const { calls, fetchImpl } = makeFakeFetch([
+      { match: (r) => r.method === 'POST' && r.url.endsWith('/api/tasks'), res: { ok: true, json: { id: 't1', kind: 'shell', status: 'working' } } },
+      { match: (r) => r.method === 'GET' && r.url.includes('/api/tasks?'), res: { ok: true, json: { items: [{ id: 't1' }] } } },
+      { match: (r) => r.url.endsWith('/api/tasks/t1/cancel'), res: { ok: true, json: { id: 't1', status: 'cancelled' } } },
+      { match: (r) => r.url.endsWith('/api/tasks/t1/message'), res: { ok: true, json: { ok: true } } },
+    ]);
+    const regs = buildMafwToolFactory({ baseUrl: 'http://gw', fetchImpl })('s1');
+    const submit = regs.find((r) => r.name === 'mafw_task_submit')!;
+    const list = regs.find((r) => r.name === 'mafw_task_list')!;
+    const cancel = regs.find((r) => r.name === 'mafw_task_cancel')!;
+    const message = regs.find((r) => r.name === 'mafw_task_message')!;
+
+    const submitted = await submit.execute({ kind: 'shell', command: 'echo ok' });
+    expect(submitted.isError).toBeUndefined();
+    expect(calls[0].body).toMatchObject({ kind: 'shell', command: 'echo ok', parentSessionID: 's1' });
+
+    await list.execute({ status: 'working' });
+    expect(calls[1].url).toContain('parentSessionID=s1');
+    expect(calls[1].url).toContain('status=working');
+
+    await cancel.execute({ taskID: 't1' });
+    expect(calls[2].method).toBe('POST');
+
+    await message.execute({ taskID: 't1', message: 'continue' });
+    expect(calls[3].body).toMatchObject({ message: 'continue' });
   });
 });
 

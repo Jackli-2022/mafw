@@ -354,6 +354,110 @@ const TOOL_DEFS: ToolDef[] = [
       };
     },
   },
+  {
+    spec: {
+      name: 'mafw_task_submit',
+      label: 'MAFW 持久任务提交',
+      description: '提交 gateway 持久任务：shell=后台命令（跨重启可查、可取消），subagent=后台子代理。用 mafw_task_list 查状态、mafw_task_cancel 取消、mafw_task_message 给子代理续聊。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['shell', 'subagent'], description: '任务类型' },
+          command: { type: 'string', description: 'shell 任务命令' },
+          prompt: { type: 'string', description: 'subagent 任务 prompt' },
+          title: { type: 'string', description: '任务标题' },
+          cwd: { type: 'string', description: 'shell 工作目录' },
+          timeout: { type: 'number', description: 'shell 超时毫秒' },
+          agent: { type: 'string', description: '子代理 agent 名' },
+          description: { type: 'string', description: '子代理任务简述' },
+          model: { type: 'object', properties: { providerID: { type: 'string' }, modelID: { type: 'string' } } },
+          outputSchema: { type: 'object', description: '可选结构化输出 schema' },
+        },
+        required: ['kind'],
+      },
+    },
+    makeExecute({ sessionId: sid, f, base }) {
+      return async (params, signal) => {
+        const r = await postToolJson(f, base, '/api/tasks', {
+          ...params,
+          parentSessionID: sid,
+        }, 30_000, signal);
+        if (!r.ok) return fail(`任务提交失败：${r.body?.error ?? r.text ?? 'unknown'}`);
+        return ok(JSON.stringify({ id: r.body?.id, kind: r.body?.kind, status: r.body?.status }));
+      };
+    },
+  },
+  {
+    spec: {
+      name: 'mafw_task_list',
+      label: 'MAFW 持久任务列表',
+      description: '列出当前会话的 gateway 持久任务（五态），可按状态过滤。',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['working', 'input_required', 'completed', 'failed', 'cancelled'], description: '可选状态过滤' },
+        },
+      },
+    },
+    makeExecute({ sessionId: sid, f, base }) {
+      return async (params, signal) => {
+        const q = new URLSearchParams({ parentSessionID: sid });
+        if (params.status) q.set('status', String(params.status));
+        try {
+          const res = await f(`${base}/api/tasks?${q.toString()}`, { signal });
+          const body: any = await res.json().catch(() => ({}));
+          if (!res.ok) return fail(`任务列表读取失败：${body?.error ?? `HTTP ${res.status}`}`);
+          return ok(JSON.stringify(body));
+        } catch (err: any) {
+          return fail(`任务列表读取失败：${err?.message ?? err}`);
+        }
+      };
+    },
+  },
+  {
+    spec: {
+      name: 'mafw_task_cancel',
+      label: 'MAFW 持久任务取消',
+      description: '取消一个 gateway 持久任务；shell 终止后台命令，subagent 中止子会话。幂等。',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskID: { type: 'string', description: '任务 id' },
+        },
+        required: ['taskID'],
+      },
+    },
+    makeExecute({ f, base }) {
+      return async (params, signal) => {
+        const r = await postToolJson(f, base, `/api/tasks/${encodeURIComponent(params.taskID)}/cancel`, {}, 15_000, signal);
+        if (!r.ok) return fail(`任务取消失败：${r.body?.error ?? r.text ?? 'unknown'}`);
+        return ok(JSON.stringify({ id: r.body?.id, status: r.body?.status }));
+      };
+    },
+  },
+  {
+    spec: {
+      name: 'mafw_task_message',
+      label: 'MAFW 持久任务消息',
+      description: '给 gateway 持久子代理任务发消息（仅 subagent；shell 不支持 stdin）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskID: { type: 'string', description: '任务 id' },
+          message: { type: 'string', description: '消息内容' },
+        },
+        required: ['taskID', 'message'],
+      },
+    },
+    makeExecute({ f, base }) {
+      return async (params, signal) => {
+        const r = await postToolJson(f, base, `/api/tasks/${encodeURIComponent(params.taskID)}/message`, {
+          message: params.message,
+        }, 10_000, signal);
+        return r.ok ? ok('消息已发送') : fail(`消息发送失败：${r.body?.error ?? r.text ?? 'unknown'}`);
+      };
+    },
+  },
 ];
 
 export const MAFW_TOOL_SPECS: MafwToolSpec[] = TOOL_DEFS.map((d) => d.spec);

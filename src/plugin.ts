@@ -39,6 +39,10 @@ import { submitResultTool } from './tools/submit-result';
 import { spawnSubagentTool } from './tools/spawn-subagent';
 import { messageSubagentTool } from './tools/message-subagent';
 import { subagentResultTool } from './tools/subagent-result';
+import { taskSubmitTool } from './tools/task-submit';
+import { taskListTool } from './tools/task-list';
+import { taskCancelTool } from './tools/task-cancel';
+import { taskMessageTool } from './tools/task-message';
 import { ensureMcpWiring, resolveGatewayApiUrl } from './utils/self-wiring';
 import {
   zodToJsonSchema,
@@ -100,6 +104,10 @@ const V1_TOOLS: Record<string, { description: string; args: any; execute: (args:
   mafw_spawn_subagent: spawnSubagentTool,
   mafw_message_subagent: messageSubagentTool,
   mafw_subagent_result: subagentResultTool,
+  mafw_task_submit: taskSubmitTool,
+  mafw_task_list: taskListTool,
+  mafw_task_cancel: taskCancelTool,
+  mafw_task_message: taskMessageTool,
 };
 
 /** V1 工具结果 → V2 `{ content, metadata }`。 */
