@@ -1,6 +1,6 @@
 # Workbench 合并实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把右 dock 的 files/editor/browser/terminal 四 tab 合并为单一宽工作台面（IDE 骨架 + 三档比例），统一面板骨架，并交付 G1 全屏截屏批注（轻版）与 G2 网页元素点选。
 
@@ -44,7 +44,7 @@
   - `DockEmpty(props: { icon?: string; text: string; hint?: string })` —— `.mafw-panel-empty`（居中灰字，替代四种私产空态）
   - `DockBanner(props: { kind: "info" | "warn" | "error"; text: string; action?: { label: string; onClick: () => void }; busy?: boolean })` —— `.mafw-panel-banner`（常驻内联 + 恢复动作 + 可选 LoaderV2；泛化 TerminalDock banner 卡片）
 
-- [ ] **Step 1: 写失败测试**（`dock-panel.test.ts`）
+- [x] **Step 1: 写失败测试**（`dock-panel.test.ts`）
 
 ```ts
 import { describe, test, expect } from "vitest-safe-import-see-testshim" // 按仓内现有测试头（node:test）
@@ -57,10 +57,10 @@ test("DockEmpty renders centered text", () => { /* */ })
 test("DockBanner kind→tone class 映射（info/warn/error）", () => { /* */ })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**：`node --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/components/dock-panel.test.ts` → 模块不存在 FAIL
-- [ ] **Step 3: 实现三组件**（`dock-panel.tsx`）：结构对齐 TerminalDock banner 卡片视觉（`--bg-float` 卡、`--r-md`、`--shadow-float`）；Header 高度基准 32px、padding 8px 12px；图标走 `@mafw/ui/icon` v2 `Icon`
-- [ ] **Step 4: 跑测试确认通过**（同 Step 2 命令 → PASS）
-- [ ] **Step 5: Commit** `feat(desktop): shared dock panel primitives (header/empty/banner)`
+- [x] **Step 2: 跑测试确认失败**：`node --import tsx --import ../../packages/test-shim/register.mjs --test src/renderer/mafw/components/dock-panel.test.ts` → 模块不存在 FAIL
+- [x] **Step 3: 实现三组件**（`dock-panel.tsx`）：结构对齐 TerminalDock banner 卡片视觉（`--bg-float` 卡、`--r-md`、`--shadow-float`）；Header 高度基准 32px、padding 8px 12px；图标走 `@mafw/ui/icon` v2 `Icon`
+- [x] **Step 4: 跑测试确认通过**（同 Step 2 命令 → PASS）
+- [x] **Step 5: Commit** `feat(desktop): shared dock panel primitives (header/empty/banner)`
 
 ### Task 2: 工作台面换骨架 + lucide 换装 + 结构清理
 
@@ -74,15 +74,15 @@ test("DockBanner kind→tone class 映射（info/warn/error）", () => { /* */ }
 - Consumes: Task 1 三原语
 - Produces: 五面板的「骨架统一」事实（后续视觉契约依赖）；icon map 新条目名（Task 4 会话轨直接用）
 
-- [ ] **Step 1: 失败契约测试**（design-contract 增三条）：
+- [x] **Step 1: 失败契约测试**（design-contract 增三条）：
   - files/editor/browser/terminal/changes 五组件源码 `toContain("DockPanelHeader")`
   - `BrowserDock.tsx` `not.toContain("#fff")` 且 `toContain("mafw-browser-blank")`（主题化空态类）
   - `mafw.css` `not.toContain(".mafw-right-dock-resizer")`（死代码删除）；`FilesDock` 无自有 overflow（`.mafw-file-tree` 无 `overflow`）
-- [ ] **Step 2: 跑 `npm test` 确认新契约 FAIL**
-- [ ] **Step 3: 实施换装**：每面板接入 Header（标题+动作收进统一头）；空态/加载/错误换 DockEmpty/DockBanner（editor 错误从 toast 改内联 Banner；browser 空态 = webview 懒挂载 + `DockEmpty`（未启动时））；FilesDock loading→LoaderV2；emoji 图标全部换 lucide `Icon`；dock-width 对称化（`suggestDockWidth` 对 browser/terminal 生效——改 `applyRightDock` 的 tab 门为四个 workbench tab）
-- [ ] **Step 3.5: webview 懒挂载**：BrowserDock onMount 建 webview → 改「首次 `started()` 才建」；`src/main/browser-session.ts` 加固逻辑不动
-- [ ] **Step 4: `npm test` 全量 PASS（预期 desktop 1463+新增）**
-- [ ] **Step 5: Commit** `feat(desktop): workbench panels adopt shared skeleton (header/empty/banner, lucide, lazy webview)`
+- [x] **Step 2: 跑 `npm test` 确认新契约 FAIL**
+- [x] **Step 3: 实施换装**：每面板接入 Header（标题+动作收进统一头）；空态/加载/错误换 DockEmpty/DockBanner（editor 错误从 toast 改内联 Banner；browser 空态 = webview 懒挂载 + `DockEmpty`（未启动时））；FilesDock loading→LoaderV2；emoji 图标全部换 lucide `Icon`；dock-width 对称化（`suggestDockWidth` 对 browser/terminal 生效——改 `applyRightDock` 的 tab 门为四个 workbench tab）
+- [x] **Step 3.5: webview 懒挂载**：BrowserDock onMount 建 webview → 改「首次 `started()` 才建」；`src/main/browser-session.ts` 加固逻辑不动
+- [x] **Step 4: `npm test` 全量 PASS（预期 desktop 1463+新增）**
+- [x] **Step 5: Commit** `feat(desktop): workbench panels adopt shared skeleton (header/empty/banner, lucide, lazy webview)`
 
 ### Task 3: 绝对 px 档位纯函数（420/520/640 + 护栏）
 
@@ -102,7 +102,7 @@ test("DockBanner kind→tone class 映射（info/warn/error）", () => { /* */ }
   - `export function migrateLegacyChatWidth(storedPx: number | null, availableWidth: number): WorkbenchDetent` —— 存量 px → 像素最近档
   - `export function normalizeDetent(stored: string | number | null): WorkbenchDetent` —— localStorage 值归一（合法 420/520/640，其余→520）
 
-- [ ] **Step 1: 写失败测试**（spec 数值表全钉）：
+- [x] **Step 1: 写失败测试**（spec 数值表全钉）：
 
 ```ts
 test("chatPxForDetent：绝对档 + 护栏（工作台下限 520 / 墙 320-760）", () => {
@@ -135,10 +135,10 @@ test("normalizeDetent：持久化值归一", () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试 FAIL**（模块不存在）
-- [ ] **Step 3: 实现**（纯函数，无 Solid 依赖）：`chatPxForDetent` 用显式 `cap = max(320, min(760, available − 520))`；`snapDetent` 比较各档**钳制后**的像素值与入参距离；`migrateLegacyChatWidth` 复用 `snapDetent`；`normalizeDetent` 白名单。
-- [ ] **Step 4: 跑测试 PASS**
-- [ ] **Step 5: Commit** `feat(desktop): workbench absolute px detents (420/520/640, guard rails)`
+- [x] **Step 2: 跑测试 FAIL**（模块不存在）
+- [x] **Step 3: 实现**（纯函数，无 Solid 依赖）：`chatPxForDetent` 用显式 `cap = max(320, min(760, available − 520))`；`snapDetent` 比较各档**钳制后**的像素值与入参距离；`migrateLegacyChatWidth` 复用 `snapDetent`；`normalizeDetent` 白名单。
+- [x] **Step 4: 跑测试 PASS**
+- [x] **Step 5: Commit** `feat(desktop): workbench absolute px detents (420/520/640, guard rails)`
 
 ### Task 4: Workbench 布局合并（Workbench.tsx + 会话图标轨 + 迁移）
 
@@ -150,22 +150,22 @@ test("normalizeDetent：持久化值归一", () => {
 - Modify: `src/renderer/mafw/workbench-defaults.ts`（`CHAT_WIDTH.max` 520→760；`defaultChatWidth` 改档位语义）→ 由 Task 3 函数替代，保留旧导出做迁移期兼容
 - Test: `src/renderer/mafw/workbench-layout.test.ts`（纯函数：布局列/迁移）+ `tests/design-contract.test.ts`（结构契约）+ 既有 `tests/main-content-geometry.test.ts` 必须保持绿
 
-- [ ] **Step 1: 失败测试**（workbench-layout.test.ts）：
+- [x] **Step 1: 失败测试**（workbench-layout.test.ts）：
   - `bodyColumnsFor(detent, availableWidth, { narrow, leftPush })` → 列串 `"0px 520px minmax(0, 1fr)"`（默认档/1092 可用）
   - 窄视口：`"overlay"` 模式返回不推挤（workbench 浮层）
   - `migrateDockKeys()`：`mafw-chat-width=417` + `mafw-right-dock-width=520` → `mafw-workbench-detent="420"`（写新键、旧键删除）
-- [ ] **Step 2: 跑 FAIL**
-- [ ] **Step 3: 实现 `Workbench.tsx`**：
+- [x] **Step 2: 跑 FAIL**
+- [x] **Step 3: 实现 `Workbench.tsx`**：
   - 骨架 = `DockPanelHeader`（工作台标题/目录名）+ 主体 flex：左 `FilesDock`（定宽树，可收）+ 右主区（`EditorDock`/`BrowserDock` tab 切换，内容常挂载 display 切换）+ 底部 `TerminalDock`（可收起，`active` 语义 = 底部区展开）
   - 分隔条 = ResizeHandle 包装（desktop 侧 `WorkbenchDivider` 内组件：拖动中 `ratioPercentFromDrag` 实时预览 + 松手 `snapDetent` + 双击回 `WORKBENCH_DEFAULT_DETENT`；不向 ResizeHandle 传 collapseThreshold 防 collapse 误触）
   - 窄视口（`viewportNarrow()`）：沿用 `.mafw-dock-slot.overlay` 机制
   - localStorage：新键 `mafw-workbench-detent`（枚举 "420"|"520"|"640"）；迁移读旧 `mafw-chat-width`（MafwShell.tsx:1489）
-- [ ] **Step 4: 实现 `SessionRail.tsx`**：右侧 44px 图标轨（lucide，无 emoji）；七个会话面板图标（tasks/trajectory/usage/notes/changes/subagents/background，badge 保留沿用现有信号）；点击 → 浮层面板（`createPresence` 过渡挂载，`Portal` 到 dock 层，Esc/点外关闭）；面板内容 = 现有七组件原样挂进浮层（不重构面板内部）
-- [ ] 旧 RightDock 的 11-tab 结构退役：`dock-tab.ts` 的 `DockTab` union 缩为会话面板七值 + `files`/`editor`/`browser`/`terminal` 移入 Workbench 内部 tab 类型；`normalizeDockTab` 迁移旧值（"files"→workbench 打开+files tab）
-- [ ] **Step 5: design-contract 增契约**：MafwShell 源码 `not.toContain("<RightDock")`、`toContain("<Workbench")` + `toContain("<SessionRail")`；`RightDock.tsx` 文件删除
-- [ ] **Step 5.5: 保持既有契约绿**：`tests/main-content-geometry.test.ts`（content/main 几何）、`workbench-defaults.test.ts`（老用例改档位语义）、design-contract 旧 RightDock 契约更新
-- [ ] **Step 6: 全量 `npm test` PASS + `npx tsgo -b` rc=0 + `npx electron-vite build` rc=0**
-- [ ] **Step 7: Commit** `feat(desktop): merge files/editor/browser/terminal into wide workbench with detent ratios and session rail`
+- [x] **Step 4: 实现 `SessionRail.tsx`**：右侧 44px 图标轨（lucide，无 emoji）；七个会话面板图标（tasks/trajectory/usage/notes/changes/subagents/background，badge 保留沿用现有信号）；点击 → 浮层面板（`createPresence` 过渡挂载，`Portal` 到 dock 层，Esc/点外关闭）；面板内容 = 现有七组件原样挂进浮层（不重构面板内部）
+- [x] 旧 RightDock 的 11-tab 结构退役：`dock-tab.ts` 的 `DockTab` union 缩为会话面板七值 + `files`/`editor`/`browser`/`terminal` 移入 Workbench 内部 tab 类型；`normalizeDockTab` 迁移旧值（"files"→workbench 打开+files tab）
+- [x] **Step 5: design-contract 增契约**：MafwShell 源码 `not.toContain("<RightDock")`、`toContain("<Workbench")` + `toContain("<SessionRail")`；`RightDock.tsx` 文件删除
+- [x] **Step 5.5: 保持既有契约绿**：`tests/main-content-geometry.test.ts`（content/main 几何）、`workbench-defaults.test.ts`（老用例改档位语义）、design-contract 旧 RightDock 契约更新
+- [x] **Step 6: 全量 `npm test` PASS + `npx tsgo -b` rc=0 + `npx electron-vite build` rc=0**
+- [x] **Step 7: Commit** `feat(desktop): merge files/editor/browser/terminal into wide workbench with detent ratios and session rail`
 
 ### Task 5: G1 截屏批注 —「pending capture」管线（renderer 侧）
 
@@ -183,11 +183,11 @@ test("normalizeDetent：持久化值归一", () => {
   - `pendingCaptures: (sid) => PendingCapture[]` / `addPendingCapture(input: Omit<PendingCapture, "id"|"createdAt">) / removePendingCapture(sid, id) / clearPendingCaptures(sid) / takeCapturesForSend(sid) / formatCaptureBatch(items): string`（对齐 annotation-store.ts 模式；内存态 + 不落盘——截屏是易失草稿）
   - `useSendMessage` deps 新增（可选）：`takeCaptures?: (sid) => PendingCapture[]`、`formatCaptures?: (items) => string`
 
-- [ ] **Step 1: 失败测试**（对齐 annotation-store 现有测试模式）：add/remove/take/格式化批（含 element meta 渲染成引用块：截图评注 + 元素信息行）
-- [ ] **Step 2: FAIL**
-- [ ] **Step 3: 实现三件套** + use-send-message 发送路径接入（`bodyMessage` 组装处，annotationBlock 之后追加 captureBlock；queue 路径同 annotations 一样打包）+ ChatPane 渲染 `PendingCaptures` 列表（缩略图 + 评注 chip，✕ 移除）+ 截图作为附件：`dataUrl` 直接走 `useAttachments` 的 `addPastedFile` 语义（构造 File 对象 `new File([blob], "screenshot-<ts>.png", { type: "image/png" })`）→ 图片走既有媒体管道（uploadBinary → createTask → 指针）
-- [ ] **Step 4: `npm test` PASS（预期 +6~8 用例）**
-- [ ] **Step 5: Commit** `feat(desktop): pending-capture pipeline (screenshot/element annotations queued above composer)`
+- [x] **Step 1: 失败测试**（对齐 annotation-store 现有测试模式）：add/remove/take/格式化批（含 element meta 渲染成引用块：截图评注 + 元素信息行）
+- [x] **Step 2: FAIL**
+- [x] **Step 3: 实现三件套** + use-send-message 发送路径接入（`bodyMessage` 组装处，annotationBlock 之后追加 captureBlock；queue 路径同 annotations 一样打包）+ ChatPane 渲染 `PendingCaptures` 列表（缩略图 + 评注 chip，✕ 移除）+ 截图作为附件：`dataUrl` 直接走 `useAttachments` 的 `addPastedFile` 语义（构造 File 对象 `new File([blob], "screenshot-<ts>.png", { type: "image/png" })`）→ 图片走既有媒体管道（uploadBinary → createTask → 指针）
+- [x] **Step 4: `npm test` PASS（预期 +6~8 用例）**
+- [x] **Step 5: Commit** `feat(desktop): pending-capture pipeline (screenshot/element annotations queued above composer)`
 
 ### Task 6: G1 截屏批注 — 全屏框选（main 进程）
 
@@ -202,18 +202,18 @@ test("normalizeDetent：持久化值归一", () => {
 - Consumes: Task 5 的 `addPendingCapture`（renderer 消费结果）
 - Produces: preload `capture.start()` → `{ dataUrl, rect } | null`（null = 用户取消）
 
-- [ ] **Step 1: 失败测试**（screenshot-region 纯函数）：
+- [x] **Step 1: 失败测试**（screenshot-region 纯函数）：
   - 跨屏坐标：`cropRectForScreen({ x: -300, y: 100, width: 800, height: 500 }, screenBoundsA, captureBitmapSizeA)` → 裁剪参数正确（负 x 截到屏内部分）
   - `normalizeSelection(start, end)`（拖动方向任意 → 正向 rect）
   - `scaleForDpi(rect, scaleFactor)` → 位图像素坐标
-- [ ] **Step 2: FAIL**
-- [ ] **Step 3: 实现编排**：每显示器一个 frameless 透明遮罩窗（`desktopCapturer.getSources({ types: ["screen"], thumbnailSize: 全分辨率 })` 预取 → 遮罩窗显示暗化缩略/主题暗层 + 拖框 UI）→ 确认（Enter/双击松手）→ 裁剪 `nativeImage.crop(rect)` → dataUrl → `mafw-capture-result` push 到 renderer → 遮罩窗全关。Esc = 取消（返回 null）。捕获失败（Linux Wayland）→ resolve null + toast（renderer 侧提示改用系统截图+粘贴）
-- [ ] **Step 4: 跑纯函数测试 PASS**
-- [ ] **Step 5: 接 preload + IPC（`mafw-capture-start` / `mafw-capture-result` push）**
-- [ ] **Step 5.5: renderer 侧接按钮**：composer 工具条 📷 → `Icon "camera"` ButtonV2（TooltipV2「截屏批注」）→ `window.api.capture.start()` → 结果 `addPendingCapture({ kind: "screenshot", dataUrl, comment: "" })` → 用户在 PendingCaptures 列表补评注（轻版：文字侧车，无画布）
-- [ ] **Step 6: `npm test` + tsgo + build 全绿**
-- [ ] **Step 6.5: 手动冒烟**（dev app）：多显示器框选、Esc 取消、app 外内容可截、评注→发送→媒体指针到达 agent
-- [ ] **Step 7: Commit** `feat(desktop): fullscreen screenshot capture with region selection (G1 light)`
+- [x] **Step 2: FAIL**
+- [x] **Step 3: 实现编排**：每显示器一个 frameless 透明遮罩窗（`desktopCapturer.getSources({ types: ["screen"], thumbnailSize: 全分辨率 })` 预取 → 遮罩窗显示暗化缩略/主题暗层 + 拖框 UI）→ 确认（Enter/双击松手）→ 裁剪 `nativeImage.crop(rect)` → dataUrl → `mafw-capture-result` push 到 renderer → 遮罩窗全关。Esc = 取消（返回 null）。捕获失败（Linux Wayland）→ resolve null + toast（renderer 侧提示改用系统截图+粘贴）
+- [x] **Step 4: 跑纯函数测试 PASS**
+- [x] **Step 5: 接 preload + IPC（`mafw-capture-start` / `mafw-capture-result` push）**
+- [x] **Step 5.5: renderer 侧接按钮**：composer 工具条 📷 → `Icon "camera"` ButtonV2（TooltipV2「截屏批注」）→ `window.api.capture.start()` → 结果 `addPendingCapture({ kind: "screenshot", dataUrl, comment: "" })` → 用户在 PendingCaptures 列表补评注（轻版：文字侧车，无画布）
+- [x] **Step 6: `npm test` + tsgo + build 全绿**
+- [x] **Step 6.5: 手动冒烟**（dev app）：多显示器框选、Esc 取消、app 外内容可截、评注→发送→媒体指针到达 agent
+- [x] **Step 7: Commit** `feat(desktop): fullscreen screenshot capture with region selection (G1 light)`
 
 ### Task 7: G2 网页元素点选（浏览器面板）
 
@@ -227,11 +227,11 @@ test("normalizeDetent：持久化值归一", () => {
 - Consumes: Task 5 `addPendingCapture`；Task 6 的截图能力（webview `capturePage`，非 desktopCapturer）
 - Produces: 浏览器面板「点选」模式（用户点按钮 → webview 进入 pick 模式 → 悬停高亮 → 点击捕获 → 评注 → 待发）
 
-- [ ] **Step 1: 失败测试**（element-pick 纯逻辑）：
+- [x] **Step 1: 失败测试**（element-pick 纯逻辑）：
   - `pickPayloadFromElement(el)`（DOM 语义的纯映射，测试用 jsdom-free 的对象模拟或抽取逻辑拆为 `buildElementInfo({ tagName, id, className, textContent, href, value, src, title, placeholder, ariaLabel, rect })` → `{ tag, selector, outerHTML(截短 500), text(截短 200), rect, attrs }`；selector = `tag#id.class1.class2`（无 id 时生成 nth-of-type 路径，深度 cap 4）
   - `buildPickScript(highlightClass, onSelectExpr)` → 注入脚本字符串（try/catch 包裹、双击/右键取消语义由脚本内处理）
-- [ ] **Step 2: FAIL**
-- [ ] **Step 3: 实现注入脚本**（算法钉死）：
+- [x] **Step 2: FAIL**
+- [x] **Step 3: 实现注入脚本**（算法钉死）：
 
 ```js
 // 注入 webview 的 IIFE（properties 序列化约定见 buildPickScript 测试）
@@ -252,10 +252,10 @@ test("normalizeDetent：持久化值归一", () => {
 })("mafw-pick-highlight", null /* renderer 经 executeJavaScript 桥接 */)
 ```
 
-- [ ] **Step 4: BrowserDock 接线**：`pickMode` signal（`Icon "mouse-pointer-square-dashed"` ButtonV2 toggle）；开启 → `webview.executeJavaScript(buildPickScript(...))`；点击事件经 `window消息`（`postMessage` 或 executeJavaScript 返回值轮询——用 `webview.executeJavaScript` 的 Promise 返回 payload，一次一 pick，pick 后自动退出模式）；**try/catch：注入失败 → toast「页面不支持点选」+ 退出模式**（Review Focus #5）；捕获 payload + `webview.capturePage()` 区域截图 → `addPendingCapture({ kind: "element", comment: "", meta: payload })`
-- [ ] **Step 5: `npm test` + tsgo + build 全绿**
-- [ ] **Step 5.5: 手动冒烟**：localhost 页点选按钮/输入框/链接 → 元素信息正确、悬停高亮、Esc 退出、CSP 严格页降级 toast
-- [ ] **Step 6: Commit** `feat(desktop): browser element picking (G2) with element info + region capture`
+- [x] **Step 4: BrowserDock 接线**：`pickMode` signal（`Icon "mouse-pointer-square-dashed"` ButtonV2 toggle）；开启 → `webview.executeJavaScript(buildPickScript(...))`；点击事件经 `window消息`（`postMessage` 或 executeJavaScript 返回值轮询——用 `webview.executeJavaScript` 的 Promise 返回 payload，一次一 pick，pick 后自动退出模式）；**try/catch：注入失败 → toast「页面不支持点选」+ 退出模式**（Review Focus #5）；捕获 payload + `webview.capturePage()` 区域截图 → `addPendingCapture({ kind: "element", comment: "", meta: payload })`
+- [x] **Step 5: `npm test` + tsgo + build 全绿**
+- [x] **Step 5.5: 手动冒烟**：localhost 页点选按钮/输入框/链接 → 元素信息正确、悬停高亮、Esc 退出、CSP 严格页降级 toast
+- [x] **Step 6: Commit** `feat(desktop): browser element picking (G2) with element info + region capture`
 
 ### Task 8: 收尾 — AGENTS.md 记录 + 全量门禁
 
@@ -263,9 +263,9 @@ test("normalizeDetent：持久化值归一", () => {
 - Modify: `AGENTS.md`（§5.5 增交付记录：feature 名、commits、测试计数、门禁）
 - Modify: `docs/superpowers/plans/2026-10-26-workbench-merge.md`（本文件勾选完成）
 
-- [ ] **Step 1: 全量门禁**：desktop `npm test`、`npx tsgo -b`、`npx electron-vite build`、（涉及 ui 包改动）`packages/ui` 测试 + root `npm run test:desktop`
-- [ ] **Step 2: AGENTS.md 交付记录**（版本号 + commit 哈希 + 新增测试数/全量数——用户要求显式记录）
-- [ ] **Step 3: Commit** `docs: workbench merge delivery record`
+- [x] **Step 1: 全量门禁**：desktop `npm test`、`npx tsgo -b`、`npx electron-vite build`、（涉及 ui 包改动）`packages/ui` 测试 + root `npm run test:desktop`
+- [x] **Step 2: AGENTS.md 交付记录**（版本号 + commit 哈希 + 新增测试数/全量数——用户要求显式记录）
+- [x] **Step 3: Commit** `docs: workbench merge delivery record`
 
 ## 验收冒烟清单（GUI，dev app）
 
