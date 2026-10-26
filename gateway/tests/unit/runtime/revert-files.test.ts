@@ -3,7 +3,7 @@
  * 活体已证：serve 2.1 stage body 接受 files:boolean|null（计划头部验证点①）。
  */
 import { createOpencodeAdapter } from '../../../src/runtime/opencode-adapter';
-import { fullCapabilities, type RuntimeClient } from '../../../src/runtime/contract';
+import { fullCapabilities, minimalCapabilities, type RuntimeClient } from '../../../src/runtime/contract';
 
 jest.mock('@opencode-ai/sdk/v2', () => ({
   createOpencodeClient: () => ({}),
@@ -29,7 +29,7 @@ describe('T2-1 checkpoint contract', () => {
 
   it('minimalCapabilities leaves checkpointApi off', () => {
     // 缺省 undefined = 能力门 503（pi / 最小 runtime）
-    expect((fullCapabilities() as any).checkpointApi).toBe(true);
+    expect((minimalCapabilities() as any).checkpointApi).toBeUndefined();
   });
 
   it('session.revert accepts files:false (type-level contract)', () => {
