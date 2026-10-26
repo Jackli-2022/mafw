@@ -1,0 +1,59 @@
+// terminal-core：内嵌终端的纯逻辑（无 Electron / 无网络），供 main 的
+// terminal-bridge 与测试复用。spec `2026-10-26-terminal-dock-design.md` §4。
+//
+// Wire 契约（2026-10-26 2.1.0 live 实证）：HTTP 经 gateway 兜底反代（自动注入
+// serve Basic）；WS 直连 serve，出站为原始文本 + 0x00 前缀 JSON meta 帧
+// `{cursor}`，入站原始文本即 stdin。**Enter = `\r`**（禁止翻译成 `\n`——
+// PowerShell PSReadLine 把裸 `\n` 当续行，上游 PR #23794 review 实证）。
+
+export type ConnState = "idle" | "probing" | "live" | "closed" | "gone" | "unavailable"
+
+/** 解 opencode pty 响应信封 `{location, data}`；裸对象原样返回。 */
+export function unwrapData(json: any): any {
+  return json?.data ?? json
+}
+
+/** 从 pty list 取「活动终端」：最后一个 running（实证 list 为创建序）。 */
+export function pickActivePty(list: any[]): { id: string } | null {
+  if (!Array.isArray(list)) return null
+  for (let i = list.length - 1; i >= 0; i--) {
+    const it = list[i]
+    if (it && it.status === "running" && typeof it.id === "string") return it
+  }
+  return null
+}
+
+/** 解析 0x00 前缀 meta 帧（replay 后由 serve 发送，携带绝对字节游标）。 */
+export function parseMetaFrame(data: ArrayBuffer | string): { cursor: number } | null {
+  if (typeof data === "string") return null
+  const bytes = new Uint8Array(data)
+  if (bytes.length < 2 || bytes[0] !== 0) return null
+  try {
+    const text = new TextDecoder().decode(bytes.subarray(1))
+    const parsed = JSON.parse(text)
+    return typeof parsed?.cursor === "number" ? { cursor: parsed.cursor } : null
+  } catch {
+    return null
+  }
+}
+
+/** 连接状态机（spec §3：closed→重连；gone→重新打开；probeFail→不可用）。 */
+export function nextConnState(s: ConnState, ev: "attachOk" | "wsClosed" | "ptyGone" | "probeFail" | "retry"): ConnState {
+  switch (ev) {
+    case "attachOk":
+      return "live"
+    case "wsClosed":
+      return "closed"
+    case "ptyGone":
+      return "gone"
+    case "probeFail":
+      return "unavailable"
+    case "retry":
+      return s === "closed" || s === "gone" || s === "unavailable" ? "probing" : s
+  }
+}
+
+/** 输入恒等透传——xterm 默认已把 Enter 编码为 `\r`；这里禁止任何改写。 */
+export function encodeInput(data: string): string {
+  return data
+}
