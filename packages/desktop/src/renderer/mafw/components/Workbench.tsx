@@ -1,7 +1,6 @@
 // Workbench：合并后的工作台面（spec 2026-10-26-workbench-merge-design）。
 // IDE 骨架：文件树固定左（200px，对齐 opencode 默认）+ 主区 tab（编辑器/浏览器）+ 底部终端（可收起）。
 // 面板各自带统一骨架（DockPanelHeader/DockEmpty/DockBanner）；本组件只负责分区与 tab。
-import { Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Icon } from "@mafw/ui/icon"
@@ -82,11 +81,10 @@ export function Workbench(props: {
           </div>
         </div>
       </div>
-      <Show when={props.terminalOpen}>
-        <div class="mafw-wb-terminal">
-          <TerminalDock directory={props.sessionDirectory} active={props.open && props.terminalOpen} />
-        </div>
-      </Show>
+      {/* 常挂载（收起仅 display:none）：保留 xterm 实例与 scrollback */}
+      <div class="mafw-wb-terminal" classList={{ "is-collapsed": !props.terminalOpen }}>
+        <TerminalDock directory={props.sessionDirectory} active={props.open && props.terminalOpen} />
+      </div>
     </div>
   )
 }

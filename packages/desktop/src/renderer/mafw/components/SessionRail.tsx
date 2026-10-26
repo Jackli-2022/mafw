@@ -3,19 +3,10 @@
 import { For, Show, createEffect, onCleanup, type JSX } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
-import { Icon, type IconProps } from "@mafw/ui/icon"
+import { Icon } from "@mafw/ui/icon"
 import { DockPanelHeader } from "./dock-panel"
 import { type DockTab } from "./dock-tab"
-
-export const RAIL_ITEMS: { id: DockTab; label: string; icon: IconProps["name"] }[] = [
-  { id: "tasks", label: "任务", icon: "checklist" },
-  { id: "trajectory", label: "轨迹", icon: "dot-grid" },
-  { id: "usage", label: "用量", icon: "chart" },
-  { id: "notes", label: "便签", icon: "pencil-line" },
-  { id: "changes", label: "改动", icon: "review" },
-  { id: "subagents", label: "子代理", icon: "subagent" },
-  { id: "background", label: "后台", icon: "console" },
-]
+import { RAIL_ITEMS, railBadgeFor } from "./session-rail-model"
 
 export function SessionRail(props: {
   /** null = 浮层关闭 */
@@ -27,6 +18,7 @@ export function SessionRail(props: {
   children: JSX.Element
 }) {
   const labelOf = (tab: DockTab | null) => RAIL_ITEMS.find((t) => t.id === tab)?.label ?? ""
+  const badgeFor = (tab: DockTab) => railBadgeFor(tab, props.subagentBadge, props.backgroundBadge)
 
   createEffect(() => {
     if (!props.openTab) return
@@ -50,10 +42,8 @@ export function SessionRail(props: {
                 onClick={() => props.onSelect(item.id)}
               >
                 <Icon name={item.icon} size="small" />
-                <Show when={item.id === "subagents" ? (props.subagentBadge ?? 0) > 0 : (props.backgroundBadge ?? 0) > 0}>
-                  <span class="mafw-session-rail-badge">
-                    {item.id === "subagents" ? props.subagentBadge : props.backgroundBadge}
-                  </span>
+                <Show when={badgeFor(item.id) > 0}>
+                  <span class="mafw-session-rail-badge">{badgeFor(item.id)}</span>
                 </Show>
               </ButtonV2>
             </TooltipV2>

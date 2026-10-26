@@ -3,7 +3,7 @@
 // window.open 转 dock 内导航、will-attach-webview 加固。这里只做 UI + 导航状态。
 // 骨架（spec 2026-10-26）：DockPanelHeader 统一头（标题=页面标题）+ 常驻错误条 +
 // 主题化空态；webview 懒挂载（首次真实导航才创建，不再预建 about:blank）。
-import { createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
@@ -12,8 +12,9 @@ import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../../shared/browser-policy"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
-import { buildPickScript, type ElementPickPayload } from "../browser/element-pick"
-import { getPendingCaptures } from "../chat/pending-captures"
+import { buildPickCancelScript, buildPickScript, PICK_TIMEOUT_MS, type ElementPickPayload } from "../browser/element-pick"
+import { navigationPlan } from "../browser/navigation-plan"
+import { getPendingCaptures, captureAttachmentName } from "../chat/pending-captures"
 import { clampRect } from "../capture/crop-math"
 import { dataUrlToFile } from "../capture/data-url"
 import { pushCaptureFile } from "../capture/attach-sink"
@@ -42,10 +43,14 @@ export function BrowserDock(props: { sessionID: string | null }) {
     } catch { /* 未 attach 时方法不可用 */ }
   }
 
-  /** 首次真实导航才创建 webview（懒挂载）；返回是否可用。 */
-  const ensureView = (url: string): boolean => {
-    if (view) return true
-    if (!host) return false
+  /** 首次真实导航才创建 webview（懒挂载）；已有 view 时必须走 loadURL。 */
+  const ensureView = (url: string): void => {
+    const plan = navigationPlan(!!view)
+    if (!plan.create) {
+      try { view?.loadURL?.(url) } catch { /* 下一帧由用户重试 */ }
+      return
+    }
+    if (!host) return
     // 用 createElement 而非 JSX：webview 是 Electron 自定义元素，JSX 类型面不认。
     const el = document.createElement("webview") as any
     el.setAttribute("partition", BROWSER_PARTITION)
@@ -64,7 +69,6 @@ export function BrowserDock(props: { sessionID: string | null }) {
     view = el
     // src 属性导航：webview 尚未 attach 时 loadURL 会抛「must be attached」，src 会被排队。
     try { el.setAttribute("src", url) } catch { /* ignore */ }
-    return true
   }
 
   const load = (raw: string) => {
@@ -76,9 +80,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
     setFailed(null)
     setAddress(url)
     setStarted(true)
-    if (!ensureView(url)) {
-      try { view?.loadURL?.(url) } catch { /* not attached yet */ }
-    }
+    ensureView(url)
   }
 
   const retry = () => {
@@ -87,11 +89,31 @@ export function BrowserDock(props: { sessionID: string | null }) {
   }
 
   /** G2：点选元素 → 元素信息 + 区域截图 → capture 草稿（+ 图片进媒体管道）。 */
+  let pickToken = 0
+  const cancelPick = () => {
+    pickToken++
+    setPicking(false)
+    try { void view?.executeJavaScript?.(buildPickCancelScript()) } catch { /* ignore */ }
+  }
+  // app 级 Esc 取消（页面侧 Esc 收不到时兜底）；捕获阶段阻断其他 Esc 处理
+  createEffect(() => {
+    if (!picking()) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      e.stopPropagation()
+      cancelPick()
+    }
+    window.addEventListener("keydown", onKey, true)
+    onCleanup(() => window.removeEventListener("keydown", onKey, true))
+  })
   const startPick = async () => {
     if (!view || picking()) return
+    const token = ++pickToken
     setPicking(true)
+    const timer = setTimeout(() => { if (token === pickToken) cancelPick() }, PICK_TIMEOUT_MS)
     try {
       const payload = (await view.executeJavaScript(buildPickScript(), true)) as ElementPickPayload | null
+      if (token !== pickToken) return // 已取消/超时
       if (!payload) return
       let shot = ""
       if (payload.rect && view.clientWidth > 0 && view.clientHeight > 0) {
@@ -107,22 +129,30 @@ export function BrowserDock(props: { sessionID: string | null }) {
         showToastV2({ description: "先打开一个会话再点选元素", variant: "error", duration: 2500 } as any)
         return
       }
-      getPendingCaptures().add({
+      const item = getPendingCaptures().add({
         sessionID: props.sessionID,
         kind: "element",
         comment: "",
         dataUrl: shot,
-        meta: { tag: payload.tag, selector: payload.selector, text: payload.text, rect: payload.rect },
+        meta: {
+          tag: payload.tag,
+          selector: payload.selector,
+          text: payload.text,
+          rect: payload.rect,
+          outerHTML: payload.outerHTML,
+          attrs: payload.attrs,
+        },
       })
       if (shot) {
-        void dataUrlToFile(shot, `element-${Date.now()}.png`)
+        void dataUrlToFile(shot, captureAttachmentName(item.id))
           .then((f) => pushCaptureFile(f))
           .catch(() => { /* 保留 pending 草稿 */ })
       }
     } catch {
-      showToastV2({ description: "页面不支持点选（可能被 CSP 限制）", variant: "error", duration: 3000 } as any)
+      if (token === pickToken) showToastV2({ description: "页面不支持点选（可能被 CSP 限制）", variant: "error", duration: 3000 } as any)
     } finally {
-      setPicking(false)
+      clearTimeout(timer)
+      if (token === pickToken) setPicking(false)
     }
   }
 

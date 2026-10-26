@@ -60,14 +60,16 @@ export function ScreenshotCropper(props: {
       img.src = props.shot.dataUrl
       await img.decode()
       const r = toImageRect(s, display(), { width: img.naturalWidth, height: img.naturalHeight })
-      if (!r) { setBusy(false); return }
+      if (!r) return
       const canvas = document.createElement("canvas")
       canvas.width = r.width
       canvas.height = r.height
       const ctx = canvas.getContext("2d")
-      if (!ctx) { setBusy(false); return }
+      if (!ctx) return
       ctx.drawImage(img, r.x, r.y, r.width, r.height, 0, 0, r.width, r.height)
       props.onConfirm(canvas.toDataURL("image/png"))
+    } catch {
+      /* 解码/裁剪失败：保留浮层，用户可重试或取消 */
     } finally {
       setBusy(false)
     }
@@ -75,12 +77,17 @@ export function ScreenshotCropper(props: {
 
   onMount(() => {
     measure()
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") props.onCancel() }
+    host?.focus()
+    // 模态：捕获阶段吞掉所有键盘事件（防全局快捷键/Esc 双触发）
+    const onKey = (e: KeyboardEvent) => {
+      e.stopImmediatePropagation()
+      if (e.key === "Escape") { e.preventDefault(); props.onCancel() }
+    }
     window.addEventListener("resize", measure)
-    window.addEventListener("keydown", onKey)
+    window.addEventListener("keydown", onKey, true)
     onCleanup(() => {
       window.removeEventListener("resize", measure)
-      window.removeEventListener("keydown", onKey)
+      window.removeEventListener("keydown", onKey, true)
     })
   })
 
@@ -88,6 +95,7 @@ export function ScreenshotCropper(props: {
     <div
       class="mafw-shot-crop"
       ref={host}
+      tabIndex={-1}
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}

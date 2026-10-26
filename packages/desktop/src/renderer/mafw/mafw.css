@@ -2740,6 +2740,7 @@ html[data-theme="light"] body {
   animation: mafw-dock-in var(--dur-surface) var(--ease-surface);
 }
 .mafw-dock-shell { display: flex; height: 100%; min-width: 0; min-height: 0; }
+.mafw-dock-shell.is-hidden { display: none; }
 .mafw-workbench {
   flex: 1;
   min-width: 0;
@@ -2757,6 +2758,7 @@ html[data-theme="light"] body {
 .mafw-wb-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .mafw-wb-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .mafw-wb-terminal { height: 280px; max-height: 45%; flex: none; min-height: 0; border-top: 1px solid var(--border); }
+.mafw-wb-terminal.is-collapsed { display: none; }
 .mafw-session-rail {
   position: relative;
   width: 44px;
@@ -2805,7 +2807,7 @@ html[data-theme="light"] body {
   overflow: hidden;
   animation: mafw-dock-in var(--dur-fast) var(--ease-surface);
 }
-.mafw-session-float-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mafw-session-float-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
 /* ── IconRail（左栏图标轨，spec 2026-10-22-workbench-layout D3）────────── */
 .mafw-icon-rail {
   width: 46px;

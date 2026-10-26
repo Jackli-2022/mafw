@@ -8,6 +8,8 @@ export type PendingCaptureMeta = {
   selector?: string
   text?: string
   rect?: { x: number; y: number; width: number; height: number }
+  outerHTML?: string
+  attrs?: Record<string, string>
 }
 
 export type PendingCapture = {
@@ -73,9 +75,17 @@ export function formatCaptureBatch(items: PendingCapture[]): string {
     if (c.kind === "element") {
       const label = [c.meta?.tag, c.meta?.selector].filter(Boolean).join(" ") || "元素"
       const text = c.meta?.text ? `「${c.meta.text}」` : ""
-      return `【元素点选 ${no}】${label}${text} — ${comment}`
+      const attrs = c.meta?.attrs
+        ? Object.entries(c.meta.attrs).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(" ")
+        : ""
+      return `【元素点选 ${no}】${label}${text} — ${comment}${attrs ? `\n  ${attrs}` : ""}`
     }
     return `【截屏批注 ${no}】${comment}`
   })
   return lines.join("\n")
+}
+
+/** capture 附件名（带 id，删除 capture 时联动移除附件）。 */
+export function captureAttachmentName(id: string): string {
+  return `capture-${id}.png`
 }

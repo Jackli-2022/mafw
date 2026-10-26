@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { buildPickScript } from "./element-pick"
+import { buildPickCancelScript, buildPickScript } from "./element-pick"
 
 describe("element pick script", () => {
   const script = buildPickScript()
@@ -26,6 +26,11 @@ describe("element pick script", () => {
   test("Esc 取消 + 清理监听", () => {
     assert.ok(script.includes("Escape"))
     assert.ok(script.includes("removeEventListener"))
+  })
+
+  test("取消钩子：window.__mafwPickCleanup + 取消脚本", () => {
+    assert.ok(script.includes("__mafwPickCleanup"))
+    assert.ok(buildPickCancelScript().includes("__mafwPickCleanup()"))
   })
 
   test("脚本可被解析（语法有效）", () => {

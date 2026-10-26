@@ -86,7 +86,8 @@ export function buildPickScript(): string {
   function onClick(e) {
     e.preventDefault();
     e.stopPropagation();
-    var payload = infoOf(e.target);
+    var payload = null;
+    try { payload = infoOf(e.target); } catch (err) { payload = null; }
     cleanup();
     if (resolve) resolve(payload);
   }
@@ -96,6 +97,20 @@ export function buildPickScript(): string {
   document.addEventListener("mousemove", onMove, true);
   document.addEventListener("click", onClick, true);
   document.addEventListener("keydown", onKey, true);
+  window.__mafwPickCleanup = cleanup;
   return new Promise(function (res) { resolve = res; });
 })()`
 }
+
+/** 外部取消（app 侧 Esc / 超时）：清理页面内监听与高亮。 */
+export function buildPickCancelScript(): string {
+  return `(function () {
+  try {
+    if (window.__mafwPickCleanup) { window.__mafwPickCleanup(); window.__mafwPickCleanup = null; }
+  } catch (e) {}
+  return true;
+})()`
+}
+
+/** 点选模式最长等待（超时自动取消，防悬挂）。 */
+export const PICK_TIMEOUT_MS = 60_000

@@ -58,8 +58,8 @@ import { TrajectoryDock } from "./components/TrajectoryDock"
 import { UsageDock } from "./components/UsageDock"
 import { type DockTab, normalizeDockTab, DOCK_DEFAULT_WIDTH } from "./components/dock-tab"
 import { defaultDockOpen } from "./workbench-defaults"
-import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, normalizeDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
-import { detentFromLegacy, workbenchColumns } from "./workbench-layout"
+import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
+import { migrateDockKeys, workbenchColumns, workbenchShellHidden } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
 import { PopoverShell } from "./components/pickers/PopoverShell"
 import { type NavTab } from "./components/nav-tab"
@@ -1457,6 +1457,13 @@ export function MafwShell() {
   }
 
   // ── Workbench + 会话图标轨（spec 2026-10-26-workbench-merge-design）──
+  // 旧键一次性迁移：写新档位键、清旧宽度键、旧 workbench tab 映射（新键优先）
+  const workbenchBoot = migrateDockKeys(
+    (k) => { try { return localStorage.getItem(k) } catch { return null } },
+    (k) => { try { localStorage.removeItem(k) } catch { /* ignore */ } },
+    window.innerWidth - 46,
+  )
+  try { localStorage.setItem("mafw-workbench-detent", String(workbenchBoot.detent)) } catch { /* ignore */ }
   const [rightDockOpen, setRightDockOpen] = createSignal(defaultDockOpen(localStorage.getItem("mafw-right-dock-open")))
   // 会话数据面板（7 个）：图标轨浮层，默认关闭
   const [rightDockTab, setRightDockTab] = createSignal<DockTab>(
@@ -1464,19 +1471,16 @@ export function MafwShell() {
   )
   const [sessionRailOpen, setSessionRailOpen] = createSignal(false)
   // 工作台主区 tab（编辑器/浏览器）
+  const storedWbTab = (() => { try { return localStorage.getItem("mafw-workbench-tab") } catch { return null } })()
   const [workbenchTab, setWorkbenchTab] = createSignal<"editor" | "browser">(
-    localStorage.getItem("mafw-workbench-tab") === "browser" ? "browser" : "editor",
+    storedWbTab === "browser" ? "browser" : storedWbTab === "editor" ? "editor" : workbenchBoot.workbenchTab,
   )
+  const storedTerminal = (() => { try { return localStorage.getItem("mafw-workbench-terminal") } catch { return null } })()
   const [workbenchTerminalOpen, setWorkbenchTerminalOpen] = createSignal(
-    localStorage.getItem("mafw-workbench-terminal") !== "0",
+    storedTerminal !== null ? storedTerminal !== "0" : workbenchBoot.terminalOpen,
   )
-  // 绝对 px 三档（420/520/640）；旧 mafw-chat-width 一次性迁移
-  const storedDetent = localStorage.getItem("mafw-workbench-detent")
-  const [detent, setDetent] = createSignal<WorkbenchDetent>(
-    storedDetent !== null
-      ? normalizeDetent(storedDetent)
-      : detentFromLegacy(localStorage.getItem("mafw-chat-width"), window.innerWidth - 46),
-  )
+  // 绝对 px 三档（420/520/640）
+  const [detent, setDetent] = createSignal<WorkbenchDetent>(workbenchBoot.detent)
   /** 拖动中的连续预览（松手吸附后清空）。 */
   const [chatPreview, setChatPreview] = createSignal<number | null>(null)
   const availableWidth = () => Math.max(0, window.innerWidth - 46 - (leftDockMode() === "push" ? leftDockWidth() : 0))
@@ -2129,7 +2133,7 @@ export function MafwShell() {
             {connDown() ? (
               <div class="mafw-rail-empty" style={{ padding: "48px 0" }}>Gateway 已断开——数据将在恢复后自动刷新</div>
             ) : (
-              <div class="mafw-dock-shell">
+              <div class="mafw-dock-shell" classList={{ "is-hidden": workbenchShellHidden(chatActive()) }}>
                 <Workbench
                   open={dockPresent() && chatActive()}
                   tab={workbenchTab()}
@@ -2183,7 +2187,7 @@ export function MafwShell() {
                       onClearHidden={() => clearHiddenTodos(currentSessionID())}
                       tokens={taskMetrics(currentSessionID()).tokens}
                       started={taskMetrics(currentSessionID()).started}
-                      placement={viewportNarrow() ? "overlay" : "dock"}
+                      placement="dock"
                       onClose={() => setSessionRailOpen(false)}
                       onPin={() => setSessionRailOpen(false)}
                     />

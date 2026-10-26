@@ -212,7 +212,7 @@ test("normalizeDetent：持久化值归一", () => {
 - [x] **Step 5: 接 preload + IPC（`mafw-capture-start` / `mafw-capture-result` push）**
 - [x] **Step 5.5: renderer 侧接按钮**：composer 工具条 📷 → `Icon "camera"` ButtonV2（TooltipV2「截屏批注」）→ `window.api.capture.start()` → 结果 `addPendingCapture({ kind: "screenshot", dataUrl, comment: "" })` → 用户在 PendingCaptures 列表补评注（轻版：文字侧车，无画布）
 - [x] **Step 6: `npm test` + tsgo + build 全绿**
-- [x] **Step 6.5: 手动冒烟**（dev app）：多显示器框选、Esc 取消、app 外内容可截、评注→发送→媒体指针到达 agent
+- [ ] **Step 6.5: 手动冒烟（GUI 待 dev app）**（dev app）：多显示器框选、Esc 取消、app 外内容可截、评注→发送→媒体指针到达 agent
 - [x] **Step 7: Commit** `feat(desktop): fullscreen screenshot capture with region selection (G1 light)`
 
 ### Task 7: G2 网页元素点选（浏览器面板）
@@ -254,7 +254,7 @@ test("normalizeDetent：持久化值归一", () => {
 
 - [x] **Step 4: BrowserDock 接线**：`pickMode` signal（`Icon "mouse-pointer-square-dashed"` ButtonV2 toggle）；开启 → `webview.executeJavaScript(buildPickScript(...))`；点击事件经 `window消息`（`postMessage` 或 executeJavaScript 返回值轮询——用 `webview.executeJavaScript` 的 Promise 返回 payload，一次一 pick，pick 后自动退出模式）；**try/catch：注入失败 → toast「页面不支持点选」+ 退出模式**（Review Focus #5）；捕获 payload + `webview.capturePage()` 区域截图 → `addPendingCapture({ kind: "element", comment: "", meta: payload })`
 - [x] **Step 5: `npm test` + tsgo + build 全绿**
-- [x] **Step 5.5: 手动冒烟**：localhost 页点选按钮/输入框/链接 → 元素信息正确、悬停高亮、Esc 退出、CSP 严格页降级 toast
+- [ ] **Step 5.5: 手动冒烟（GUI 待 dev app）**：localhost 页点选按钮/输入框/链接 → 元素信息正确、悬停高亮、Esc 退出、CSP 严格页降级 toast
 - [x] **Step 6: Commit** `feat(desktop): browser element picking (G2) with element info + region capture`
 
 ### Task 8: 收尾 — AGENTS.md 记录 + 全量门禁

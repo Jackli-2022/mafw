@@ -657,7 +657,7 @@ describe("DiffReviewPanel 接线", () => {
 describe("Dock changes tab（改动列表常驻入口）", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
   test("SessionRail 起 changes 入口（图标轨归位于 dock 内部）", () => {
-    expect(read("src/renderer/mafw/components/SessionRail.tsx")).toContain('id: "changes"')
+    expect(read("src/renderer/mafw/components/session-rail-model.ts")).toContain('id: "changes"')
   })
   test("MafwShell 挂载 ChangesDock 到 dock 内容区", () => {
     const src = read("src/renderer/mafw/MafwShell.tsx")
@@ -799,8 +799,9 @@ describe("topframe — 顶行框架", () => {
   })
   test("SessionRail 七图标 + 浮层（Esc 可关）", () => {
     const src = read("src/renderer/mafw/components/SessionRail.tsx")
+    const model = read("src/renderer/mafw/components/session-rail-model.ts")
     for (const t of ["tasks", "trajectory", "usage", "notes", "changes", "subagents", "background"]) {
-      expect(src).toContain(`id: "${t}"`)
+      expect(model).toContain(`id: "${t}"`)
     }
     expect(src).toContain("mafw-session-float")
     expect(src).toContain("Escape")
@@ -862,7 +863,7 @@ describe("workbench merge — 档位与尺寸", () => {
     expect(src).toContain("chatPxForDetent")
     expect(src).toContain("snapDetent")
     expect(src).toContain("mafw-workbench-detent")
-    expect(src).toContain("detentFromLegacy")
+    expect(src).toContain("migrateDockKeys")
     expect(src).toContain("onDblClick")
   })
   test("CSS：树 200px / 终端 280px / 会话轨 44px（对齐 opencode 默认值）", () => {
@@ -975,5 +976,21 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     expect(dock).toContain("capturePage")
     expect(dock).toContain('kind: "element"')
     expect(read("src/renderer/mafw/components/Workbench.tsx")).toContain("<BrowserDock sessionID={props.sessionID}")
+  })
+  test("终审修复：非 chat 隐藏壳 / 终端常挂载 / 浮层滚动 / 迁移 / 发送门 / 取消", () => {
+    const shell = read("src/renderer/mafw/MafwShell.tsx")
+    expect(shell).toContain("is-hidden")
+    expect(shell).toContain("migrateDockKeys")
+    expect(shell).toContain('placement="dock"')
+    expect(read("src/renderer/mafw/components/Workbench.tsx")).not.toContain("when={props.terminalOpen}")
+    expect(read("src/renderer/mafw/components/PendingCaptures.tsx")).toContain("<Index")
+    expect(read("src/renderer/mafw/components/PendingCaptures.tsx")).toContain("onRemove")
+    expect(read("src/renderer/mafw/components/BrowserDock.tsx")).toContain("buildPickCancelScript")
+    expect(read("src/renderer/mafw/components/BrowserDock.tsx")).toContain("PICK_TIMEOUT_MS")
+    expect(read("src/renderer/mafw/components/ScreenshotCropper.tsx")).toContain("stopImmediatePropagation")
+    expect(read("src/renderer/mafw/components/ChatPane.tsx")).toContain("hasSendableContent")
+    expect(cssBlock(".mafw-dock-shell.is-hidden {")).toContain("display: none")
+    expect(cssBlock(".mafw-wb-terminal.is-collapsed {")).toContain("display: none")
+    expect(cssBlock(".mafw-session-float-body {")).toContain("overflow-y: auto")
   })
 })

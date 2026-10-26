@@ -47,7 +47,7 @@ import { PendingAnnotations } from "./PendingAnnotations"
 import { PendingCaptures } from "./PendingCaptures"
 import { buildAnnotationBatch } from "../editor-annotation"
 import { hydrateAnnotations, pendingFor, takeForSend } from "../annotation-store"
-import { formatCaptureBatch, getPendingCaptures } from "../chat/pending-captures"
+import { formatCaptureBatch, captureAttachmentName, getPendingCaptures } from "../chat/pending-captures"
 
 /** 🛡 三档按钮文案与提示（切片 1）；图标由 shield 承担，文案不带 emoji。 */
 const PERMISSION_MODE_LABEL: Record<PermissionMode, string> = {
@@ -800,10 +800,19 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     setShot(null)
     const sid = sidProp()
     if (!sid) return
-    getPendingCaptures().add({ sessionID: sid, kind: "screenshot", comment: "", dataUrl })
-    void dataUrlToFile(dataUrl, `screenshot-${Date.now()}.png`)
+    const item = getPendingCaptures().add({ sessionID: sid, kind: "screenshot", comment: "", dataUrl })
+    void dataUrlToFile(dataUrl, captureAttachmentName(item.id))
       .then((f) => addPastedFile(f))
       .catch(() => { /* 附件失败仍保留 pending capture 缩略图 */ })
+  }
+  // 切会话时关闭裁剪浮层（避免把上一会话的截图发给新会话）
+  createEffect(on(sidProp, () => setShot(null), { defer: true }))
+  /** 可发送内容：文本 / 附件 / 代码批注 / capture 草稿任一存在（G2 无图也要能发）。 */
+  const hasSendableContent = () => {
+    if (input().trim() || attachments().length > 0) return true
+    const sid = sidProp()
+    if (!sid) return false
+    return pendingFor(sid).length > 0 || getPendingCaptures().pendingFor(sid).length > 0
   }
   // G2：BrowserDock 的元素截图经 sink 进 attachments（与 G1 同一媒体管道）
   onMount(() => {
@@ -1709,7 +1718,13 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
       <div class="mafw-input-area">
         <BackgroundWorkBar sessionID={props.sessionID} onOpenDock={() => props.onOpenBackgroundDock?.()} />
         <PendingAnnotations sessionID={sidProp()} />
-        <PendingCaptures sessionID={sidProp()} />
+        <PendingCaptures
+          sessionID={sidProp()}
+          onRemove={(c) => {
+            const idx = attachments().findIndex((a) => a.name === captureAttachmentName(c.id))
+            if (idx >= 0) removeAttachment(idx)
+          }}
+        />
         <Show when={sidProp() && props.sessionPending(sidProp()) > 0 && jumpVisible()}>
           <ButtonV2 variant="outline" size="small" class="mafw-pending-pill" onClick={jumpToLatest} aria-label="有待回答卡片">
             <span class="mafw-flow-pulse" />
@@ -2050,9 +2065,9 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   variant="contrast"
                   size="small"
                   onClick={sendMessage}
-                  disabled={connPhase() === "down" || (!input().trim() && attachments().length === 0)}
+                  disabled={connPhase() === "down" || !hasSendableContent()}
                   class="mafw-send"
-                  classList={{ "mafw-send-disabled": !input().trim() && attachments().length === 0 }}
+                  classList={{ "mafw-send-disabled": !hasSendableContent() }}
                   aria-label={connPhase() === "down" ? "Gateway 已断开" : "发送"}
                 >
                   <Icon name="arrow-up" size="small" />
