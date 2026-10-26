@@ -85,8 +85,12 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   if (event.type === "part.updated") {
     const part = event.payload?.part || event.properties?.part
     if (part && part.messageID) {
-      d.phase(sid, "writing")
-      d.setSessionStatus(sid, { type: "busy" })
+      // T2-3：data-* 是带外结构化数据（可离线注入）——不得把空闲会话钉在 busy。
+      const dataPart = typeof part.type === "string" && part.type.startsWith("data-")
+      if (!dataPart) {
+        d.phase(sid, "writing")
+        d.setSessionStatus(sid, { type: "busy" })
+      }
       d.patchStore(applyPartUpsert(d.getStore(), sid, part))
     }
   } else if (event.type === "turn.completed") {

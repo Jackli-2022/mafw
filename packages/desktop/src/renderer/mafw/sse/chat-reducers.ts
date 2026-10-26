@@ -114,6 +114,28 @@ export function applyPartUpsert(
   return { part: parts }
 }
 
+/** T2-3：清理某会话的 transient data part（回合终态 / 切会话时）。 */
+export function clearTransientDataParts(
+  state: ChatStoreState,
+  sid: string,
+): { part: Record<string, any[]> } | null {
+  const parts = { ...state.part }
+  let changed = false
+  for (const [msgId, list] of Object.entries(parts)) {
+    const current = list ?? []
+    const filtered = current.filter((p: any) => !(
+      p?.sessionID === sid
+      && typeof p?.type === "string" && p.type.startsWith("data-")
+      && p.transient === true
+    ))
+    if (filtered.length !== current.length) {
+      parts[msgId] = filtered
+      changed = true
+    }
+  }
+  return changed ? { part: parts } : null
+}
+
 /** session.next.tool.*：确保 assistant 承载消息存在（工具卡的父消息）。 */
 export function ensureAssistantMessage(
   state: ChatStoreState,

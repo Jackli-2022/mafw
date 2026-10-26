@@ -626,6 +626,8 @@ function taskSession(
 }
 
 import { CONTEXT_GROUP_TOOLS, HIDDEN_TOOLS, renderable as renderableCore } from "./parts-rules"
+import { isDataPartType } from "./data-part-model"
+import { DataPartCard } from "./data-part"
 
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
@@ -732,7 +734,7 @@ export function renderable(part: PartType, showReasoningSummaries = true) {
   if (part.type === "tool" || part.type === "text" || part.type === "reasoning") {
     return renderableCore(part as any, showReasoningSummaries)
   }
-  return !!PART_MAPPING[part.type]
+  return !!PART_MAPPING[part.type] || isDataPartType(part.type)
 }
 
 function toolDefaultOpen(tool: string, shell = false, edit = false) {
@@ -1504,7 +1506,9 @@ function HighlightedText(props: { text: string; references: FilePart[]; agents: 
 }
 
 export function Part(props: MessagePartProps) {
-  const component = createMemo(() => PART_MAPPING[props.part.type])
+  const component = createMemo(() =>
+    PART_MAPPING[props.part.type]
+    ?? (isDataPartType(props.part.type) ? DataPartCard : undefined))
   return (
     <Show when={component()}>
       <Dynamic

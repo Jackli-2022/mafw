@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { applyUserMessageArrival, applyPartDelta, applyPartUpsert, applyAssistantMessage, ensureAssistantMessage, extractMediaSpeak, sealUnfinishedAssistantMessages } from "./chat-reducers"
+import { applyUserMessageArrival, applyPartDelta, applyPartUpsert, applyAssistantMessage, ensureAssistantMessage, extractMediaSpeak, sealUnfinishedAssistantMessages, clearTransientDataParts } from "./chat-reducers"
 
 describe("applyUserMessageArrival", () => {
   test("replaces optimistic user message, remaps parentIDs, migrates parts", () => {
@@ -142,5 +142,36 @@ describe("extractMediaSpeak", () => {
   })
   test("no text → null", () => {
     expect(extractMediaSpeak({ properties: {} }, {})).toBeNull()
+  })
+})
+
+describe("clearTransientDataParts", () => {
+  test("removes only transient data parts of the given session", () => {
+    const state = {
+      part: {
+        a1: [
+          { id: "data_t", type: "data-swarm", data: { v: 1 }, transient: true, sessionID: "s1" },
+          { id: "data_p", type: "data-swarm", data: { v: 2 }, sessionID: "s1" },
+          { id: "data_other", type: "data-other", data: {}, transient: true, sessionID: "s2" },
+          { id: "t1", type: "text", text: "keep", sessionID: "s1" },
+        ],
+      },
+    }
+    const out = clearTransientDataParts(state as any, "s1")!
+    expect(out.part.a1.map((p: any) => p.id)).toEqual(["data_p", "data_other", "t1"])
+  })
+
+  test("returns null when nothing changes", () => {
+    const state = { part: { a1: [{ id: "t1", type: "text", text: "x", sessionID: "s1" }] } }
+    expect(clearTransientDataParts(state as any, "s1")).toBeNull()
+  })
+})
+
+describe("applyPartUpsert data parts", () => {
+  test("same id replaces the data payload in place", () => {
+    const state = { part: { a1: [{ id: "data_x", type: "data-x", data: { v: 1 }, sessionID: "s1", messageID: "a1" }] } }
+    const out = applyPartUpsert(state as any, "s1", { id: "data_x", type: "data-x", data: { v: 2 }, sessionID: "s1", messageID: "a1" })
+    expect(out.part.a1).toHaveLength(1)
+    expect(out.part.a1[0].data).toEqual({ v: 2 })
   })
 })

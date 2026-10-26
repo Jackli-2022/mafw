@@ -10,6 +10,7 @@ import { useFileComponent } from "@mafw/ui/context/file"
 
 import { Binary } from "../util/binary"
 import { getDirectory, getFilename } from "../util/path"
+import { isDataPartType } from "./data-part-model"
 import { isAbnormalStop, normalizeStopReason, stopReasonLabel } from "../util/stop-reason"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -111,6 +112,7 @@ function partState(part: PartType, showReasoningSummaries: boolean) {
     return
   }
   if (PART_MAPPING[part.type]) return "visible" as const
+  if (isDataPartType(part.type)) return "visible" as const
   return
 }
 

@@ -1,5 +1,6 @@
 // 会话 part 渲染规则单一真相源：AssistantParts 渲染与 desktop flow-card 内联锚定共用。
 // 禁止在其他包再镜像这些常量与判定（原 desktop flow-card-placement.ts 的镜像已收编至此）。
+import { isDataPartType } from "./data-part-model"
 
 export interface PartLike {
   type: string
@@ -7,6 +8,7 @@ export interface PartLike {
   canonicalTool?: string
   callID?: string
   text?: string
+  data?: unknown
   state?: { status?: string }
 }
 
@@ -27,6 +29,7 @@ export function renderable(part: PartLike, showReasoningSummaries = true): boole
   }
   if (part.type === "text") return !!part.text?.trim()
   if (part.type === "reasoning") return showReasoningSummaries && !!part.text?.trim()
+  if (isDataPartType(part.type)) return true
   return false
 }
 

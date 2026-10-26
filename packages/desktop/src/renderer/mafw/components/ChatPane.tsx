@@ -14,6 +14,7 @@ import { scanHistoryForBackground } from "../background-detect"
 import { ingestHydratedBackgroundEvents } from "../background-store"
 import { runForSession, setRun as setRunStore, clearRun } from "../run-store"
 import { runBanner } from "../run-banner"
+import { clearTransientDataParts } from "../sse/chat-reducers"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
@@ -854,6 +855,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
 
   createEffect(on(() => sidProp(), (sid) => {
     if (!sid) return
+    // T2-3：切会话清掉 transient data part（历史只恢复持久行）。
+    setStore((prev) => {
+      const out = clearTransientDataParts(prev, sid)
+      return out ? { ...prev, ...out } : prev
+    })
     if (props.runtimeCaps?.runStateApi !== true) { clearRun(sid); return }
     window.api.mafw.sessions.run(sid)
       .then((r) => {
@@ -862,6 +868,17 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
         else clearRun(sid)
       })
       .catch(() => { /* fail-open */ })
+  }))
+
+  // T2-3：回合终态清 transient（busy true → false）。
+  createEffect(on(sessionBusy, (busyNow, prev) => {
+    if (prev !== true || busyNow) return
+    const sid = sidProp()
+    if (!sid) return
+    setStore((state) => {
+      const out = clearTransientDataParts(state, sid)
+      return out ? { ...state, ...out } : state
+    })
   }))
 
   const pauseSession = async () => {

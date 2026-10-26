@@ -1534,6 +1534,14 @@ html[data-theme="light"] body {
 .mafw-run-bar { border-style: dashed; }
 .mafw-run-count { font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; max-width: 60ch; white-space: nowrap; }
 
+/* T2-3 data part 卡 */
+.mafw-data-part { margin: 6px 0; border: 0.5px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-inset); overflow: hidden; }
+.mafw-data-part-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 0.5px solid var(--border-subtle); }
+.mafw-data-part-badge { font-size: 9px; padding: 0 5px; border: 1px solid var(--accent-border); border-radius: 999px; color: var(--accent); }
+.mafw-data-part-name { font-size: 11px; color: var(--text-2); font-family: var(--font-data); }
+.mafw-data-part-transient { font-size: 9px; color: var(--text-4); border: 1px solid var(--border-subtle); border-radius: 999px; padding: 0 5px; }
+.mafw-data-part-body { margin: 0; padding: 6px 8px; max-height: 240px; overflow: auto; font-family: var(--font-data); font-size: 11px; color: var(--text-2); white-space: pre-wrap; word-break: break-all; }
+
 /* ── Composer chips (attachments / @agent) + menus ── */
 .mafw-composer-chips {
   display: flex;
