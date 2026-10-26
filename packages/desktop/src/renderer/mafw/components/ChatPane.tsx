@@ -272,6 +272,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [ttsVoiceSel, setTtsVoiceSel] = createSignal<string | null>(null)
   const [ttsEngine, setTtsEngine] = createSignal<string>("mimo")
   const [pickerTrigger, setPickerTrigger] = createSignal<HTMLElement | null>(null)
+  /** 窄 composer 的「更多」菜单（截屏/命令/引用/审阅/语音/切换 Agent）。 */
+  const [moreOpen, setMoreOpen] = createSignal(false)
+  let moreBtnEl: HTMLElement | undefined
+  let moreMenuEl: HTMLElement | undefined
   /** G1 截屏：待裁剪的整屏图（null = 浮层关闭） */
   const [shot, setShot] = createSignal<CaptureShot | null>(null)
   const [switchConfirm, setSwitchConfirm] = createSignal<AgentEntry | null>(null)
@@ -807,6 +811,22 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   }
   // 切会话时关闭裁剪浮层（避免把上一会话的截图发给新会话）
   createEffect(on(sidProp, () => setShot(null), { defer: true }))
+  // 「更多」菜单：点外部/Esc 关闭
+  createEffect(() => {
+    if (!moreOpen()) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (moreMenuEl?.contains(t) || moreBtnEl?.contains(t)) return
+      setMoreOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMoreOpen(false) }
+    document.addEventListener("mousedown", onDown)
+    window.addEventListener("keydown", onKey)
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onDown)
+      window.removeEventListener("keydown", onKey)
+    })
+  })
   /** 可发送内容：文本 / 附件 / 代码批注 / capture 草稿任一存在（G2 无图也要能发）。 */
   const hasSendableContent = () => {
     if (input().trim() || attachments().length > 0) return true
@@ -1914,13 +1934,63 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <Icon name="paperclip" size="small" />
                 </ButtonV2>
               </TooltipV2>
+              <TooltipV2 value="更多" openDelay={300}>
+                <ButtonV2
+                  variant="ghost"
+                  size="small"
+                  class="mafw-composer-icon mafw-composer-more"
+                  aria-label="更多"
+                  aria-expanded={moreOpen()}
+                  ref={(el: any) => { moreBtnEl = el }}
+                  onClick={() => setMoreOpen(o => !o)}
+                >
+                  <IconV2 name="outline-dots" size="small" />
+                </ButtonV2>
+              </TooltipV2>
+              <Show when={moreOpen()}>
+                <div class="mafw-composer-more-menu" ref={(el) => { moreMenuEl = el }} role="menu">
+                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); void captureScreen() }}>
+                    <Icon name="photo" size="small" /><span>截屏批注</span>
+                  </ButtonV2>
+                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (input() === "") setInput("/"); openCommandPicker() }}>
+                    <Icon name="console" size="small" /><span>命令</span><span class="mafw-more-key">/</span>
+                  </ButtonV2>
+                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}>
+                    <Icon name="subagent" size="small" /><span>引用 Agent</span><span class="mafw-more-key">@</span>
+                  </ButtonV2>
+                  <Show when={props.onOpenDiffReview}>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); props.onOpenDiffReview?.() }}>
+                      <Icon name="review" size="small" /><span>审阅改动{diffCount() > 0 ? ` (${diffCount()})` : ""}</span>
+                    </ButtonV2>
+                  </Show>
+                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); if (pickerOpen() === "tts") { setPickerOpen(null); return } void openTtsPicker() }}>
+                    <Icon name="volume" size="small" /><span>语音播报</span>
+                  </ButtonV2>
+                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => {
+                    setMoreOpen(false)
+                    if (voiceRecording()) { voiceSession.stopRecording(); return }
+                    stopActivePlayback()
+                    void voiceSession.startRecording()
+                  }}>
+                    <Icon name={voiceRecording() ? "stop" : "microphone"} size="small" /><span>{voiceRecording() ? "停止录音" : "语音输入"}</span>
+                  </ButtonV2>
+                  <Show when={(props.primaryAgents() || []).length > 0 || isManager()}>
+                    <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("agent-switch"); refreshSubagents() }}>
+                      <Icon name="task" size="small" /><span>切换 Agent</span>
+                    </ButtonV2>
+                  </Show>
+                  <ButtonV2 variant="ghost" size="small" class="mafw-more-item" role="menuitem" onClick={() => { setMoreOpen(false); setPickerTrigger(moreBtnEl as HTMLElement); setPickerOpen("model") }}>
+                    <Icon name="models" size="small" /><span>切换模型</span>
+                  </ButtonV2>
+                </div>
+              </Show>
               <TooltipV2 value="截屏批注" openDelay={300}>
                 <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-optional" aria-label="截屏批注" onClick={() => void captureScreen()}>
                   <Icon name="photo" size="small" />
                 </ButtonV2>
               </TooltipV2>
               <TooltipV2 value="命令 (/)" openDelay={300}>
-                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>
+                <ButtonV2 variant="ghost" size="small" class="mafw-composer-icon mafw-composer-collapse" aria-label="命令" onClick={() => { if (input() === "") setInput("/"); openCommandPicker() }}>
                   <Icon name="console" size="small" />
                 </ButtonV2>
               </TooltipV2>
@@ -1928,7 +1998,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <ButtonV2
                   variant="ghost"
                   size="small"
-                  class="mafw-composer-icon"
+                  class="mafw-composer-icon mafw-composer-collapse"
                   aria-label="引用 Agent"
                   ref={(el: any) => { if (pickerOpen() === "agent-mention") setPickerTrigger(el) }}
                   onClick={() => { setPickerTrigger(document.activeElement as HTMLElement); setPickerOpen("agent-mention"); refreshSubagents() }}
@@ -2005,7 +2075,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                   <ButtonV2
                     variant="ghost"
                     size="small"
-                    class="mafw-model-pill"
+                    class="mafw-model-pill mafw-composer-agent-pill"
                     aria-label="切换 Agent"
                     ref={(el: any) => { if (pickerOpen() === "agent-switch") setPickerTrigger(el) }}
                     onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("agent-switch"); refreshSubagents() }}
@@ -2018,7 +2088,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 <ButtonV2
                   variant="ghost"
                   size="small"
-                  class="mafw-model-pill"
+                  class="mafw-model-pill mafw-composer-model-pill"
                   aria-label="模型"
                   ref={(el: any) => { if (pickerOpen() === "model") setPickerTrigger(el) }}
                   onClick={(e: any) => { setPickerTrigger(e.currentTarget); setPickerOpen("model") }}

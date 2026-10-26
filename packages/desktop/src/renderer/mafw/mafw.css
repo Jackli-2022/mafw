@@ -1345,8 +1345,27 @@ html[data-theme="light"] body {
   min-width: 0;
 }
 /* 左侧可收缩（空间不足时裁切自身，绝不外溢到输入框外）；右侧（含发送）恒完整可见 */
-.mafw-composer-left { flex: 1 1 auto; overflow: hidden; }
+.mafw-composer-left { flex: 1 1 auto; overflow: hidden; position: relative; }
 .mafw-composer-right { flex: 0 0 auto; }
+/* 窄 composer：次要动作收进「更多」菜单（≤720 显示入口；≤620 隐藏命令/引用按钮） */
+.mafw-composer-more { display: none; }
+.mafw-composer-more-menu {
+  position: absolute;
+  left: 2px;
+  bottom: 38px;
+  z-index: 40;
+  min-width: 188px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--bg-float);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+}
+.mafw-more-item { justify-content: flex-start; gap: 8px; width: 100%; font-size: 12px; }
+.mafw-more-item .mafw-more-key { margin-left: auto; color: var(--text-4); font-size: 10px; }
 .mafw-composer [data-component="button-v2"].mafw-composer-icon {
   width: 28px;
   height: 28px;
@@ -1403,17 +1422,30 @@ html[data-theme="light"] body {
 .mafw-input-area { container-type: inline-size; }
 @container (max-width: 720px) {
   .mafw-composer-optional { display: none; }
+  /* Tooltip 包装层仍是 flex item（0 宽但吃 gap）——按子按钮状态把整层隐藏 */
+  .mafw-composer-left [data-component="tooltip-v2-trigger"]:has(.mafw-composer-optional) { display: none; }
   .mafw-composer-meta { display: none; }
+  .mafw-composer-more { display: inline-flex; }
   .mafw-model-name { max-width: 120px; }
 }
 @container (max-width: 620px) {
   .mafw-composer-divider { display: none; }
+  .mafw-composer-collapse { display: none; }
+  .mafw-composer-left [data-component="tooltip-v2-trigger"]:has(.mafw-composer-collapse) { display: none; }
+  .mafw-composer .mafw-mode-pill > span { display: none; }
   .mafw-model-name { max-width: 96px; }
 }
 @container (max-width: 520px) {
   .mafw-context-pill { display: none; }
+  .mafw-composer-agent-pill { display: none; }
   .mafw-model-pill { padding: 0 8px; }
   .mafw-model-name { max-width: 72px; }
+}
+@container (max-width: 420px) {
+  .mafw-composer-left { gap: 4px; }
+  .mafw-composer-right { gap: 4px; }
+  .mafw-composer-model-pill { display: none; }
+  .mafw-model-name { max-width: 48px; }
 }
 .mafw-context-pill {
   display: inline-flex;

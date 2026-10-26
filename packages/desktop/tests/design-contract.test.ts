@@ -997,3 +997,23 @@ describe("工作台面板骨架统一（workbench merge spec 2026-10-26）", () 
     expect(cssBlock(".mafw-session-float-body {")).toContain("overflow-y: auto")
   })
 })
+
+describe("窄 composer：更多菜单 + 断点收拢（最小宽度不裁切）", () => {
+  const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
+  test("更多菜单入口 + 菜单项（截屏/命令/引用/审阅/语音/Agent/模型）", () => {
+    const src = read("src/renderer/mafw/components/ChatPane.tsx")
+    expect(src).toContain("mafw-composer-more")
+    expect(src).toContain("mafw-composer-more-menu")
+    for (const label of ["截屏批注", "命令", "引用 Agent", "审阅改动", "语音播报", "语音输入", "切换 Agent", "切换模型"]) {
+      expect(src).toContain(label)
+    }
+  })
+  test("断点：≤720 显示更多入口；≤620 收命令/引用、模式 pill 图标化；≤520 收 Agent；≤420 收模型", () => {
+    expect(css).toMatch(/@container \(max-width: 720px\)[\s\S]*?\.mafw-composer-more \{ display: inline-flex/)
+    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?\.mafw-composer-collapse \{ display: none/)
+    expect(css).toMatch(/@container \(max-width: 620px\)[\s\S]*?\.mafw-mode-pill > span \{ display: none/)
+    expect(css).toMatch(/@container \(max-width: 520px\)[\s\S]*?\.mafw-composer-agent-pill \{ display: none/)
+    expect(css).toMatch(/@container \(max-width: 420px\)[\s\S]*?\.mafw-composer-model-pill \{ display: none/)
+    expect(cssBlock(".mafw-composer-more-menu {")).toContain("position: absolute")
+  })
+})
