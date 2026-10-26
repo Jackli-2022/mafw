@@ -8,6 +8,18 @@
 
 export { type ConnState, nextConnState } from "../../shared/terminal"
 
+/** 目录键：win32 归一分隔符+折大小写，darwin 折大小写；linux 保持大小写敏感。 */
+export function dirKey(dir: string, platform: string = process.platform): string {
+  const normalized = platform === "win32" ? dir.replace(/\\/g, "/") : dir
+  return platform === "win32" || platform === "darwin" ? normalized.toLowerCase() : normalized
+}
+
+/** 0x00 前缀帧一律视为 meta（即使 JSON 非法也只消费、绝不当输出）。 */
+export function isMetaFrame(data: ArrayBuffer | string): boolean {
+  if (typeof data === "string") return false
+  return data.byteLength > 0 && new Uint8Array(data)[0] === 0
+}
+
 /** 解 opencode pty 响应信封 `{location, data}`；裸对象原样返回。 */
 export function unwrapData(json: any): any {
   return json?.data ?? json
@@ -25,9 +37,8 @@ export function pickActivePty(list: any[]): { id: string } | null {
 
 /** 解析 0x00 前缀 meta 帧（replay 后由 serve 发送，携带绝对字节游标）。 */
 export function parseMetaFrame(data: ArrayBuffer | string): { cursor: number } | null {
-  if (typeof data === "string") return null
-  const bytes = new Uint8Array(data)
-  if (bytes.length < 2 || bytes[0] !== 0) return null
+  if (!isMetaFrame(data)) return null
+  const bytes = new Uint8Array(data as ArrayBuffer)
   try {
     const text = new TextDecoder().decode(bytes.subarray(1))
     const parsed = JSON.parse(text)

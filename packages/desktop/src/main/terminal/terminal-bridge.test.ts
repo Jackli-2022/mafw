@@ -192,6 +192,17 @@ describe("terminal-bridge ops", () => {
     ops.input(D, "x")
     assert.equal(w.sockets[0].sent.length, 1)
   })
+
+  test("minor：非法 0x00 meta 帧被消费而非当输出；Uint8Array view 按 byteOffset 解码", async () => {
+    const { ops, w } = opsWith(baseRoutes({ data: [{ id: "p1", status: "running" }] }))
+    const evs: TerminalEvent[] = []
+    await ops.attach(D, (e) => evs.push(e))
+    w.sockets[0].onmessage({ data: new Uint8Array([0, 123, 98, 97, 100]).buffer }) // \0{bad
+    assert.equal(evs.filter((e) => e.type === "data").length, 0, "非法 meta 不得进终端")
+    const raw = new TextEncoder().encode("XhelloY")
+    w.sockets[0].onmessage({ data: new Uint8Array(raw.buffer, 1, 5) })
+    assert.equal(evs.at(-1)?.data, "hello", "view 必须按 byteOffset/byteLength 切片")
+  })
 })
 
 describe("terminal-bridge install layer（订阅生命周期）", () => {

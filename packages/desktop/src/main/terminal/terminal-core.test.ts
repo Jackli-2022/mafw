@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { unwrapData, pickActivePty, parseMetaFrame, nextConnState, encodeInput, externalTerminalCommand } from "./terminal-core"
+import { unwrapData, pickActivePty, parseMetaFrame, nextConnState, encodeInput, externalTerminalCommand, dirKey, isMetaFrame } from "./terminal-core"
 
 describe("terminal-core", () => {
   test("unwrapData 解 {location,data} 信封，裸对象原样", () => {
@@ -45,5 +45,16 @@ describe("terminal-core", () => {
     const linux = externalTerminalCommand("/home/x/p", "linux")
     assert.equal(linux.cmd, "x-terminal-emulator")
     assert.equal(linux.cwd, "/home/x/p")
+  })
+  test("dirKey：win32 分隔符归一+小写；darwin 折大小写；linux 原样（大小写敏感）", () => {
+    assert.equal(dirKey("C:\\Proj\\App", "win32"), "c:/proj/app")
+    assert.equal(dirKey("/Proj/App", "darwin"), "/proj/app")
+    assert.equal(dirKey("/Proj/App", "linux"), "/Proj/App")
+  })
+  test("isMetaFrame：0x00 前缀（含非法 JSON）为 meta；普通二进制/文本不是", () => {
+    const bad = new Uint8Array([0, ...new TextEncoder().encode("{bad")]).buffer
+    assert.equal(isMetaFrame(bad), true)
+    assert.equal(isMetaFrame(new TextEncoder().encode("plain").buffer), false)
+    assert.equal(isMetaFrame("text"), false)
   })
 })

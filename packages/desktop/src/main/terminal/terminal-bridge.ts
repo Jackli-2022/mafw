@@ -11,7 +11,7 @@
 // - 订阅者按 key（窗口 id）替换而非追加（否则输出 2×/N×）；
 // - attach 返回结构化结果；PTY 消失（serve 重启/exit）= gone，reopen 才重建；
 // - WS close 4404 = terminal gone（serve 语义），其余 close = closed。
-import { unwrapData, pickActivePty, parseMetaFrame, encodeInput } from "./terminal-core"
+import { unwrapData, pickActivePty, parseMetaFrame, encodeInput, dirKey, isMetaFrame } from "./terminal-core"
 
 export type TerminalEvent = { directory: string; type: "data" | "closed" | "gone"; data?: string }
 export type TerminalSubscriber = (ev: TerminalEvent) => void
@@ -31,6 +31,7 @@ interface Session {
   directory: string
   ptyId: string
   ws: any
+  cursor: number
   buffer: string
   subscribers: Map<unknown, TerminalSubscriber>
 }
@@ -47,7 +48,6 @@ export interface TerminalOps {
 }
 
 const MAX_BUFFER_CHARS = 200_000
-const dirKey = (dir: string) => dir.replace(/\\/g, "/").toLowerCase()
 const q = (dir: string) => `?directory=${encodeURIComponent(dir)}`
 
 /** 有界 scrollback 缓冲：超限时从整行边界裁剪，避免截断 ANSI 序列。 */
@@ -111,14 +111,19 @@ export function createTerminalOps(deps: TerminalBridgeDeps): TerminalOps {
       return
     }
     const handleBuffer = (buf: ArrayBuffer) => {
-      const meta = parseMetaFrame(buf)
-      if (meta) return // meta 帧（cursor）永不进终端
+      if (isMetaFrame(buf)) {
+        // 0x00 前缀一律消费（含非法 JSON）：meta 永不进终端
+        const meta = parseMetaFrame(buf)
+        if (meta) session.cursor = meta.cursor
+        return
+      }
       const text = new TextDecoder().decode(buf)
       appendBuffer(session, text)
       fanout(session, { directory: session.directory, type: "data", data: text })
     }
     if (data instanceof ArrayBuffer) return handleBuffer(data)
-    if (ArrayBuffer.isView(data)) return handleBuffer(data.buffer as ArrayBuffer)
+    // 视图必须按 byteOffset/byteLength 切片，不能直接取 .buffer
+    if (ArrayBuffer.isView(data)) return handleBuffer((data.buffer as ArrayBuffer).slice(data.byteOffset, data.byteOffset + data.byteLength))
     if (typeof Blob !== "undefined" && data instanceof Blob) {
       void data.arrayBuffer().then(handleBuffer).catch(() => {})
     }
@@ -126,7 +131,7 @@ export function createTerminalOps(deps: TerminalBridgeDeps): TerminalOps {
 
   function openSession(directory: string, ptyId: string, wsUrl: string, subscriber: TerminalSubscriber, key: unknown): Session {
     const ws = wsFactory(wsUrl)
-    const session: Session = { directory, ptyId, ws, buffer: "", subscribers: new Map([[key, subscriber]]) }
+    const session: Session = { directory, ptyId, ws, cursor: 0, buffer: "", subscribers: new Map([[key, subscriber]]) }
     sessions.set(dirKey(directory), session)
     try { ws.binaryType = "arraybuffer" } catch { /* fake ws */ }
     ws.onmessage = (ev: any) => onMessage(session, ev?.data)

@@ -10,7 +10,8 @@ import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
-import { viewFor, planAttach, type TerminalViewKind } from "../terminal/terminal-view"
+import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { viewFor, planAttach, buildTerminalTheme, createResizeScheduler, type TerminalViewKind } from "../terminal/terminal-view"
 import { nextConnState, type ConnState } from "../../../shared/terminal"
 
 export function TerminalDock(props: { directory: string | null; active: boolean }) {
@@ -24,36 +25,26 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
   let disarmTimer: ReturnType<typeof setTimeout> | null = null
   const [kind, setKind] = createSignal<ConnState>("idle")
   const [killArmed, setKillArmed] = createSignal(false)
+  const [lastError, setLastError] = createSignal<string | null>(null)
+
+  const view = () => viewFor(kind() as TerminalViewKind, { hasDirectory: !!props.directory, error: lastError() })
 
   const themeFrom = (el: HTMLElement) => {
     const css = getComputedStyle(el)
-    const v = (name: string, fb: string) => css.getPropertyValue(name).trim() || fb
-    return {
-      background: v("--bg-inset", "#0d1117"),
-      foreground: v("--text-1", "#e6edf3"),
-      cursor: v("--accent", "#7aa2f7"),
-      cursorAccent: v("--bg-inset", "#0d1117"),
-      selectionBackground: v("--selection", "#264f78"),
-      fontFamily: v("--font-data", "ui-monospace, monospace"),
-    }
+    return buildTerminalTheme((name) => css.getPropertyValue(name))
   }
 
   // xterm open 必须等到容器有实际尺寸（dock 隐藏时 display:none 宽高为 0）。
   const ensureTerm = () => {
     if (term || !host || host.clientWidth === 0) return
     const t = themeFrom(host)
+    const { fontFamily, ...theme } = t
     term = new Terminal({
       fontSize: 12.5,
       scrollback: 5000,
       cursorBlink: true,
-      fontFamily: t.fontFamily,
-      theme: {
-        background: t.background,
-        foreground: t.foreground,
-        cursor: t.cursor,
-        cursorAccent: t.cursorAccent,
-        selectionBackground: t.selectionBackground,
-      },
+      fontFamily,
+      theme,
     })
     fit = new FitAddon()
     term.loadAddon(fit)
@@ -71,6 +62,7 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
     currentDir = dir
     setKind((k) => nextConnState(k, "retry"))
     setKillArmed(false)
+    setLastError(null)
     try {
       ensureTerm()
       const probe = await window.api.mafw.terminal.probe()
@@ -83,6 +75,7 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
       term?.reset()
       const res = await window.api.mafw.terminal.attach(dir, { reopen })
       if (res.ok) {
+        setLastError(null)
         setKind((k) => nextConnState(k, "attachOk"))
         requestAnimationFrame(() => {
           try { fit?.fit() } catch { /* hidden */ }
@@ -92,8 +85,10 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
       } else {
         setKind((k) => nextConnState(k, res.reason === "gone" ? "ptyGone" : "probeFail"))
       }
-    } catch {
-      setKind((k) => nextConnState(k, "probeFail"))
+    } catch (e: any) {
+      // 区分「环境不支持」（probe 明确返回 false）与「服务不可用」（IPC/fetch 异常）
+      setLastError(String(e?.message ?? e))
+      setKind((k) => nextConnState(k, "wsClosed"))
     } finally {
       attaching = false
       const next = pendingDir
@@ -117,16 +112,35 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
     else if (plan === "queue") pendingDir = dir
   })
 
-  // 可见性/尺寸变化 → 首次 open + fit + resize（切回 tab 时补一次 fit）。
+  // 可见性/尺寸变化 → 首次 open + fit + resize（切回 tab 时补一次 fit；
+  // 120ms 防抖：拖 dock 宽度不连发 resize PUT）。
   onMount(() => {
-    const ro = new ResizeObserver(() => {
+    const resizer = createResizeScheduler(120, () => {
       if (!host || host.clientWidth === 0) return
       ensureTerm()
       try { fit?.fit() } catch { /* hidden */ }
       if (currentDir && term) void window.api.mafw.terminal.resize(currentDir, term.cols, term.rows)
     })
+    const ro = new ResizeObserver(() => {
+      if (!host || host.clientWidth === 0) return
+      ensureTerm()
+      resizer.schedule()
+    })
     ro.observe(host)
-    onCleanup(() => ro.disconnect())
+    onCleanup(() => { resizer.cancel(); ro.disconnect() })
+  })
+
+  // 主题切换（data-theme / data-color-scheme）→ 重建 xterm 主题（不再采样一次就冻住）。
+  onMount(() => {
+    const mo = new MutationObserver(() => {
+      if (!term) return
+      const t = themeFrom(host)
+      const { fontFamily, ...theme } = t
+      term.options.fontFamily = fontFamily
+      term.options.theme = theme
+    })
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-color-scheme"] })
+    onCleanup(() => mo.disconnect())
   })
 
   // 终端事件订阅（一次，多路复用）；只处理当前目录。
@@ -155,12 +169,14 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
   })
 
   const primary = () => {
-    const v = viewFor(kind())
+    const v = view()
     if (!v.action) return
     const dir = props.directory
     if (!dir) return
     if (v.action === "external") {
-      void window.api.mafw.terminal.openExternal(dir)
+      window.api.mafw.terminal.openExternal(dir).catch(() => {
+        showToastV2({ description: "打开外部终端失败", variant: "error", duration: 3000 } as any)
+      })
       return
     }
     // open / reconnect = 复用活终端；reopen = 显式重建（越过 gone）
@@ -199,20 +215,20 @@ export function TerminalDock(props: { directory: string | null; active: boolean 
         </div>
       </Show>
       <div class="mafw-terminal-host" ref={host} />
-      <Show when={viewFor(kind() as TerminalViewKind).banner}>
+      <Show when={view().banner}>
         <div class="mafw-terminal-banner">
           <div class="mafw-terminal-banner-card">
-            <Show when={viewFor(kind() as TerminalViewKind).busy}>
+            <Show when={view().busy}>
               <LoaderV2 width={18} height={18} />
             </Show>
-            <p class="mafw-terminal-banner-text">{viewFor(kind() as TerminalViewKind).banner}</p>
-            <Show when={viewFor(kind() as TerminalViewKind).action}>
+            <p class="mafw-terminal-banner-text">{view().banner}</p>
+            <Show when={view().action}>
               <ButtonV2 variant="outline" size="small" onClick={primary}>
-                {viewFor(kind() as TerminalViewKind).action === "external"
+                {view().action === "external"
                   ? "打开外部终端"
-                  : viewFor(kind() as TerminalViewKind).action === "reconnect"
+                  : view().action === "reconnect"
                     ? "重新连接"
-                    : viewFor(kind() as TerminalViewKind).action === "reopen"
+                    : view().action === "reopen"
                       ? "重新打开"
                       : "打开终端"}
               </ButtonV2>
