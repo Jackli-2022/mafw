@@ -2172,10 +2172,23 @@ export function MafwShell() {
                     requestOpenEditor(root, rel)
                     openWorkbenchSurface("code")
                   }}
-                  onSendAnnotation={(text) => {
+                  onSendAnnotation={(text, opts) => {
                     const sid = currentSessionID()
                     if (!sid) return
-                    void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                    const run = opts?.imageDataUrl
+                      ? window.api.mafw.chat.sendEnriched({
+                          sessionID: sid,
+                          message: text,
+                          parts: [{
+                            type: "file",
+                            id: `prt_annot_${Date.now()}`,
+                            mime: "image/png",
+                            filename: "annotation.png",
+                            url: opts.imageDataUrl,
+                          }],
+                        })
+                      : window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                    void run
                       .then(() => showToastV2({ description: "批注已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))
                   }}

@@ -33,6 +33,7 @@ import { diffEntryFor } from "../editor-diff"
 import { AnnotationPopover } from "./AnnotationPopover"
 import { buildQuoteAnchor } from "../quote-anchor"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
+import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
@@ -49,7 +50,7 @@ export function EditorDock(props: {
   sessionID: string | null
   sessionDirectory: string | null
   diffs?: FileDiffEntry[]
-  onSendAnnotation?: (text: string) => void
+  onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
   onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
   onSendComment?: (sid: string, text: string) => void
@@ -63,8 +64,11 @@ export function EditorDock(props: {
   const [quoteSel, setQuoteSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number } | null>(null)
   const [quoteOpen, setQuoteOpen] = createSignal(false)
   /** 预览锚点批注（json 节点 / 表格单元格 / 图片区域 / pptx 图钉）：标记即输入。 */
-  const [anchorSel, setAnchorSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number } | null>(null)
+  const [anchorSel, setAnchorSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number; imageDataUrl?: string } | null>(null)
   const [anchorOpen, setAnchorOpen] = createSignal(false)
+  /** 图片拖框（region 批注）：px 坐标 + 图片盒尺寸。 */
+  const [drag, setDrag] = createSignal<{ x0: number; y0: number; x1: number; y1: number; w: number; h: number } | null>(null)
+  let dragStart: { x: number; y: number } | null = null
   let bodyEl: HTMLDivElement | undefined
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
   /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
@@ -532,6 +536,65 @@ export function EditorDock(props: {
     setAnchorOpen(true)
   }
 
+  /** 图片拖框：pointerdown/move/up（相对 region layer）。 */
+  function onRegionDown(e: PointerEvent) {
+    if (mode() !== "edit" || e.button !== 0) return
+    const layer = e.currentTarget as HTMLElement
+    const rect = layer.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    layer.setPointerCapture(e.pointerId)
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    dragStart = { x, y }
+    setDrag({ x0: x, y0: y, x1: x, y1: y, w: rect.width, h: rect.height })
+  }
+
+  function onRegionMove(e: PointerEvent) {
+    if (!dragStart) return
+    const layer = e.currentTarget as HTMLElement
+    const rect = layer.getBoundingClientRect()
+    setDrag((d) =>
+      d ? { ...d, x1: e.clientX - rect.left, y1: e.clientY - rect.top, w: rect.width, h: rect.height } : d,
+    )
+  }
+
+  async function onRegionUp(e: PointerEvent) {
+    if (!dragStart || !drag()) return
+    const layer = e.currentTarget as HTMLElement
+    const rect = layer.getBoundingClientRect()
+    const px = dragRectPx(drag()!.x0, drag()!.y0, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height)
+    dragStart = null
+    if (!px) {
+      setDrag(null)
+      return
+    }
+    const norm: Rect01 = {
+      x: px.left / rect.width,
+      y: px.top / rect.height,
+      w: px.w / rect.width,
+      h: px.h / rect.height,
+    }
+    const img = layer.parentElement?.querySelector("img") as HTMLImageElement | null
+    let imageDataUrl: string | undefined
+    if (img) {
+      try {
+        imageDataUrl = await cropImageDataUrl(img, norm)
+      } catch {
+        /* 裁剪失败不阻塞文字批注 */
+      }
+    }
+    const host = bodyEl?.getBoundingClientRect()
+    setDrag(null)
+    if (!host) return
+    setAnchorSel({
+      anchor: { kind: "region", ...norm },
+      left: Math.max(8, Math.min(rect.left - host.left + px.left + px.w + 6, 420)),
+      top: Math.max(8, rect.top - host.top + px.top + px.h + 6),
+      imageDataUrl,
+    })
+    setAnchorOpen(true)
+  }
+
   const selRange = () => {
     const s = sel()
     if (!s) return null
@@ -539,13 +602,18 @@ export function EditorDock(props: {
   }
 
   /** 统一批注出口：anchor=undefined 走 CodeMirror 行号锚；有 anchor 走预览锚点。 */
-  function submitAnnotationAnchored(anchor: AnnotationAnchor | undefined, comment: string, action: "draft" | "send") {
+  function submitAnnotationAnchored(
+    anchor: AnnotationAnchor | undefined,
+    comment: string,
+    action: "draft" | "send",
+    extra?: { imageDataUrl?: string },
+  ) {
     const f = activeFile()
     if (!f || !comment.trim()) return
     if (anchor) {
       if (action === "send") {
         if (!props.onSendAnnotation) return
-        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim()))
+        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim()), extra)
       } else {
         props.onAddAnnotation?.({
           rel: f.rel,
@@ -554,6 +622,7 @@ export function EditorDock(props: {
           code: "",
           comment: comment.trim(),
           anchor,
+          imageDataUrl: extra?.imageDataUrl,
         })
       }
       setAnnotOpen(false)
@@ -707,12 +776,36 @@ export function EditorDock(props: {
           {/* 文件预览（图片只读 / SVG 预览态）：host 保持挂载，仅隐藏 */}
           <Show when={previewing() && activeFile() && activeFile()!.kind !== "table" && activeFile()!.kind !== "markdown" && activeFile()!.kind !== "json" && !officeKind()}>
             <div class="mafw-file-preview">
-              <img
-                class="mafw-file-preview-img"
-                src={previewUrl(activeFile()!.rel)}
-                alt={activeFile()!.rel}
-                onLoad={(e) => recordImageDims(activeFile()!.rel, e.currentTarget)}
-              />
+              <div class="mafw-file-preview-canvas">
+                <img
+                  class="mafw-file-preview-img"
+                  crossOrigin="anonymous"
+                  src={previewUrl(activeFile()!.rel)}
+                  alt={activeFile()!.rel}
+                  onLoad={(e) => recordImageDims(activeFile()!.rel, e.currentTarget)}
+                />
+                <Show when={mode() === "edit"}>
+                  <div
+                    class="mafw-region-layer"
+                    aria-label="拖框批注区域"
+                    onPointerDown={onRegionDown}
+                    onPointerMove={onRegionMove}
+                    onPointerUp={onRegionUp}
+                  >
+                    <Show when={drag()}>
+                      <div
+                        class="mafw-region-rect"
+                        style={{
+                          left: `${Math.min(drag()!.x0, drag()!.x1)}px`,
+                          top: `${Math.min(drag()!.y0, drag()!.y1)}px`,
+                          width: `${Math.abs(drag()!.x1 - drag()!.x0)}px`,
+                          height: `${Math.abs(drag()!.y1 - drag()!.y0)}px`,
+                        }}
+                      />
+                    </Show>
+                  </div>
+                </Show>
+              </div>
               <div class="mafw-file-preview-meta">{previewMeta(activeFile()!)}</div>
             </div>
           </Show>
@@ -844,7 +937,7 @@ export function EditorDock(props: {
               meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(anchorSel()!.anchor)}`}
               placeholder="这处要改成什么…"
               onSubmit={(comment, action) => {
-                submitAnnotationAnchored(anchorSel()?.anchor, comment, action)
+                submitAnnotationAnchored(anchorSel()?.anchor, comment, action, { imageDataUrl: anchorSel()?.imageDataUrl })
                 setAnchorOpen(false)
                 setAnchorSel(null)
               }}

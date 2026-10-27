@@ -5680,3 +5680,23 @@ html[data-theme="light"] body {
 .mafw-json-annot { opacity: 0; margin-left: auto; flex: none; }
 .mafw-json-entry:hover .mafw-json-annot,
 .mafw-json-annot:focus-visible { opacity: 1; }
+
+/* 图片预览拖框批注（2026-10-27）：渲染盒 + 选择层 */
+.mafw-file-preview-canvas {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  max-height: 100%;
+}
+.mafw-region-layer {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.mafw-region-rect {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+}

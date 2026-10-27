@@ -51,7 +51,9 @@ export function addPending(input: Omit<Annotation, "id" | "createdAt">): Annotat
   }
   db = { ...db, [item.sessionID]: [...(db[item.sessionID] ?? []), item] }
   bump()
-  void api()?.add(item).catch(() => {})
+  // imageDataUrl 仅内存（dataURL 体积大）；落盘剥离，避免 electron-store 膨胀。
+  const { imageDataUrl: _img, ...persisted } = item
+  void api()?.add(persisted as Annotation).catch(() => {})
   return item
 }
 

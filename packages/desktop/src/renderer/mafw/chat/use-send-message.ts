@@ -123,7 +123,11 @@ export function useSendMessage(deps: SendMessageDeps) {
         const queuedText = [text.trim(), queuedAnnotations.length > 0 ? formatAnnotations(queuedAnnotations) : "", queuedCaptureBlock]
           .filter(Boolean)
           .join("\n\n")
-        setQueuedItems(prev => enqueueTurn(prev, { text: queuedText, atts, agents }))
+        // region 批注截图随队列入列（同即时路径）
+        const queuedAnnotationImages = queuedAnnotations
+          .filter(a => a.imageDataUrl)
+          .map((a, i) => ({ name: `annotation-${i + 1}.png`, mime: "image/png", dataUrl: a.imageDataUrl }))
+        setQueuedItems(prev => enqueueTurn(prev, { text: queuedText, atts: [...atts, ...queuedAnnotationImages], agents }))
         // 排队发出的消息同样进输入历史（↑ 可召回——与即时发送路径一致）
         history.push(text)
         setInput("")
@@ -293,6 +297,11 @@ export function useSendMessage(deps: SendMessageDeps) {
     const fileParts = nonVision.map((a, i) => a.dataUrl
       ? { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || "image/png", filename: a.name, url: a.dataUrl }
       : { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path || "") })
+    // 区域批注的裁剪截图（内存 dataURL）→ 同 file part 管道
+    const annotationImageParts = pendingAnnotations
+      .filter(a => a.imageDataUrl)
+      .map((a, i) => ({ type: "file", id: `prt_annot_${ts}_${i}`, mime: "image/png", filename: `annotation-${i + 1}.png`, url: a.imageDataUrl! }))
+    fileParts.push(...annotationImageParts)
     const agentParts = agents.map(a => ({ type: "agent", id: `prt_agent_${ts}_${a.name}`, name: a.name }))
     // Release picker tokens only after the vision reads above consumed the
     // image bytes (releasing first invalidates read-picked-file).

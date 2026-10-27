@@ -81,3 +81,23 @@ describe("annotation-store", () => {
     expect(pendingFor("s2")).toEqual([])
   })
 })
+
+describe("region 批注 imageDataUrl（仅内存，不落盘）", () => {
+  test("addPending：内存保留截图，IPC 载荷剥离", () => {
+    addPending({
+      sessionID: "s1",
+      rel: "a.png",
+      startLine: 1,
+      endLine: 1,
+      code: "",
+      comment: "改这里",
+      anchor: { kind: "region", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      imageDataUrl: "data:image/png;base64,AAAA",
+    })
+    const item = pendingFor("s1")[0]
+    expect(item.imageDataUrl).toBe("data:image/png;base64,AAAA")
+    const persisted = calls.find(c => c.m === "add")!.args[0]
+    expect(persisted.imageDataUrl).toBeUndefined()
+    expect(persisted.anchor.kind).toBe("region")
+  })
+})

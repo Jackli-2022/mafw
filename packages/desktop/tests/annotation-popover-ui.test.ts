@@ -69,3 +69,16 @@ test("CSV/XLSX 单元格批注：data-cell-ref + a1Ref + sheet 透传", () => {
   assert.match(office, /data-cell-ref/)
   assert.match(office, /a1Ref/)
 })
+
+test("图片拖框批注：region layer + 裁剪 + 发送带图", () => {
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /mafw-region-layer/)
+  assert.match(editor, /dragRectPx/)
+  assert.match(editor, /cropImageDataUrl/)
+  assert.match(editor, /crossOrigin="anonymous"/)
+  assert.match(editor, /imageDataUrl/)
+  const shell = read("src/renderer/mafw/MafwShell.tsx")
+  assert.match(shell, /sendEnriched/)
+  const send = read("src/renderer/mafw/chat/use-send-message.ts")
+  assert.match(send, /annotationImageParts/)
+})
