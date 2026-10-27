@@ -2156,7 +2156,7 @@ export function MafwShell() {
                       void (async () => {
                         const token = await fileProtocol.ensureRootToken(root)
                         if (!token) {
-                          showToastV2({ description: "无法打开本地 HTML（文件协议注册失败）", variant: "error", duration: 4000 } as any)
+                          showToastV2({ description: "无法打开本地文件（文件协议注册失败）", variant: "error", duration: 4000 } as any)
                           return
                         }
                         if (root !== benchRoot()) return // 根已切换：丢弃迟到结果

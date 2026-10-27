@@ -124,9 +124,17 @@ describe("registerRootDir（IPC 入参校验）", () => {
     assert.equal(t1, "ab12cd34")
     assert.equal(t2, t1)
   })
-  test("相对路径 / 非目录 / 空 → null", async () => {
+  test("相对路径按 cwd 归一（project id 可能是 \".\"）", async () => {
     const reg = createRootRegistry(() => "ab12cd34")
-    assert.equal(await registerRootDir(reg, io(true) as any, "relative/dir"), null)
+    let seen = ""
+    const io = { stat: async (abs: string) => { seen = abs; return { isDirectory: () => true } } }
+    const t = await registerRootDir(reg, io as any, ".")
+    assert.equal(t, "ab12cd34")
+    assert.equal(seen, resolve("."))
+    assert.equal(reg.rootForToken("ab12cd34"), resolve("."))
+  })
+  test("空 / 非目录 → null", async () => {
+    const reg = createRootRegistry(() => "ab12cd34")
     assert.equal(await registerRootDir(reg, io(true) as any, ""), null)
     assert.equal(await registerRootDir(reg, io(false) as any, "C:/proj/file.txt"), null)
   })

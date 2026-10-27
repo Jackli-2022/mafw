@@ -88,17 +88,19 @@ export function registerMafwFileProtocol(
   }
 }
 
-/** IPC `fs-register-root` 的校验层：绝对路径 + 必须是目录；失败 null。 */
+/** IPC `fs-register-root` 的校验层：相对路径按 main cwd 归一为绝对路径（project id 可能是 "."），
+ *  必须是目录；失败 null。 */
 export async function registerRootDir(
   registry: RootRegistry,
   io: { stat(abs: string): Promise<{ isDirectory(): boolean }> },
   dir: string,
 ): Promise<string | null> {
-  if (typeof dir !== "string" || !dir.trim() || !isAbsolute(dir)) return null
+  if (typeof dir !== "string" || !dir.trim()) return null
+  const abs = resolve(dir)
   try {
-    const st = await io.stat(dir)
+    const st = await io.stat(abs)
     if (!st.isDirectory()) return null
-    return registry.tokenForRoot(dir)
+    return registry.tokenForRoot(abs)
   } catch {
     return null
   }
