@@ -96,3 +96,31 @@ describe("mainWindowWebPreferences（Review Focus 6：多窗口统一 webviewTag
     expect(BROWSER_PARTITION).toBe("persist:workbench-browser")
   })
 })
+
+// 2026-10-27 文件预览：mafw-file: 进放行面（我们自己产出的本地文件协议）；
+// file:/data:/javascript: 禁令不动（本地 HTML 渲染只走 mafw-file://）。
+describe("mafw-file 放行（文件预览协议，2026-10-27）", () => {
+  test("navigationDecision：mafw-file 允许；危险协议仍拒", () => {
+    expect(navigationDecision("mafw-file://ab12cd34/index.html")).toBe("allow")
+    expect(navigationDecision("mafw-file://ab12cd34/assets/a.png")).toBe("allow")
+    expect(navigationDecision("file:///C:/a.html")).toBe("deny")
+    expect(navigationDecision("data:text/html,<h1>x</h1>")).toBe("deny")
+    expect(navigationDecision("javascript:alert(1)")).toBe("deny")
+  })
+  test("windowOpenDecision：mafw-file 转 dock 内导航", () => {
+    expect(windowOpenDecision("mafw-file://ab12cd34/app.js")).toEqual({
+      action: "navigate",
+      url: "mafw-file://ab12cd34/app.js",
+    })
+  })
+  test("guestAttachAllowed：mafw-file 放行；file: 仍拒", () => {
+    expect(guestAttachAllowed("mafw-file://ab12cd34/index.html")).toBe(true)
+    expect(guestAttachAllowed("file:///C:/x.html")).toBe(false)
+  })
+  test("normalizeAddress：显式 mafw-file:// 原样保留", () => {
+    expect(normalizeAddress("mafw-file://ab12cd34/a.html")).toBe("mafw-file://ab12cd34/a.html")
+  })
+  test("isHttpUrl 语义不变（mafw-file 不是 http）", () => {
+    expect(isHttpUrl("mafw-file://ab12cd34/a.png")).toBe(false)
+  })
+})

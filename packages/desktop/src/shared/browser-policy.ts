@@ -1,9 +1,11 @@
 // 内嵌浏览器策略（纯函数，main 侧单测钉扎；Electron 耦合在 browser-session.ts）。
-// 设计：http(s) 是唯一放行面；mailto/tel 外抛系统；其余一律拒绝（javascript:/file:/data:
-// 绝不 openExternal——openExternal 对危险协议等于把攻击面交给 OS）。
+// 设计：http(s) + mafw-file（本地文件预览，我们自己产出的 URL）是放行面；mailto/tel 外抛系统；
+// 其余一律拒绝（javascript:/file:/data: 绝不 openExternal——openExternal 对危险协议等于把攻击面交给 OS）。
+import { MAFW_FILE_SCHEME } from "./mafw-file"
 
 export const BROWSER_PARTITION = "persist:workbench-browser"
 
+const MAFW_FILE_PROTOCOL = `${MAFW_FILE_SCHEME}:`
 const EXTERNAL_PROTOCOLS = new Set(["mailto:", "tel:"])
 
 /** 主窗口 webPreferences 单一来源（所有窗口统一：webviewTag 开、guest 侧仍由加固面锁死）。 */
@@ -37,6 +39,7 @@ export function navigationDecision(raw: string): NavigationDecision {
   const url = parse(raw)
   if (!url) return "deny"
   if (url.protocol === "https:" || url.protocol === "http:") return "allow"
+  if (url.protocol === MAFW_FILE_PROTOCOL) return "allow"
   if (EXTERNAL_PROTOCOLS.has(url.protocol)) return "external"
   return "deny"
 }
@@ -46,19 +49,20 @@ export type WindowOpenDecision =
   | { action: "external"; url: string }
   | { action: "deny" }
 
-/** guest 挂载允许的 src：空白初始页放行；其余必须 http(s)（javascript:/file:/data: 一律拒绝）。 */
+/** guest 挂载允许的 src：空白初始页放行；其余必须 http(s)/mafw-file（javascript:/file:/data: 一律拒绝）。 */
 export function guestAttachAllowed(raw: string): boolean {
   const value = raw.trim()
   if (!value || value === "about:blank") return true
   return navigationDecision(value) === "allow"
 }
 
-/** target=_blank / window.open 决策：http(s) 转 dock 内导航（用户拍板：链接 dock 内开）。 */
+/** target=_blank / window.open 决策：http(s)/mafw-file 转 dock 内导航（用户拍板：链接 dock 内开）。 */
 export function windowOpenDecision(raw: string): WindowOpenDecision {
   const value = raw.trim()
   const url = parse(value)
   if (!url) return { action: "deny" }
   if (url.protocol === "https:" || url.protocol === "http:") return { action: "navigate", url: value }
+  if (url.protocol === MAFW_FILE_PROTOCOL) return { action: "navigate", url: value }
   if (EXTERNAL_PROTOCOLS.has(url.protocol)) return { action: "external", url: value }
   return { action: "deny" }
 }
