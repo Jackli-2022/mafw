@@ -23,7 +23,7 @@ export const WORKBENCH_VIEWS: readonly { id: WorkbenchView; label: string }[] = 
 ]
 
 export const WORKBENCH_SURFACES: readonly { id: WorkbenchSurface; label: string }[] = [
-  { id: "code", label: "代码" },
+  { id: "code", label: "文件" },
   { id: "browser", label: "浏览器" },
 ]
 

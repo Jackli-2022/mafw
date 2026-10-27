@@ -31,7 +31,7 @@ describe("workbench-views", () => {
 
   test("B1 labels are exact and ordered", () => {
     assert.deepEqual(WORKBENCH_VIEWS.map((v) => v.label), ["工作台", "执行", "审阅"])
-    assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["代码", "浏览器"])
+    assert.deepEqual(WORKBENCH_SURFACES.map((v) => v.label), ["文件", "浏览器"])
     assert.deepEqual(
       EXECUTION_SECTIONS.map((s) => s.label),
       ["概览", "待办", "子代理", "后台", "轨迹"],
