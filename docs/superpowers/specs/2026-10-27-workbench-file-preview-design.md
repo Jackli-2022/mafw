@@ -10,7 +10,7 @@
 **目标**：
 - G1：工作台 L2「代码」tab 改名「**文件**」——该 surface 不再只看代码（用户原话：变成文件 tab）。
 - G2：图片文件（png/jpg/jpeg/gif/webp/ico/bmp/avif）在文件 surface 内开**只读预览 tab**（复用编辑器 tab 条）。
-- G3：SVG 默认开**文本源码**（可编辑），编辑器头部提供显式「预览/源码」切换（VS Code 1.97 / Zed #10403 教训：默认预览遭 backlash）。
+- G3：SVG **默认打开预览**（打开即看，2026-10-27 rev 用户裁决 + VS Code 1.97 默认；Zed 的文本默认是少数派且社区讨论 #52255 正在请求改预览），编辑器头部提供一键「源码」切换回文本编辑（比 VS Code 的 Reopen With 更轻）。
 - G4：HTML/HTM 文件在**浏览器 surface** 打开（单 webview 导航 + 自动切 surface），经 `mafw-file://` 自定义协议——不向 `file://` 开口子（browser-policy 既有禁令不动）。
 
 **非目标（v2+）**：图片缩放/拖拽平移；SVG 进浏览器渲染；Markdown/PDF/CSV/JSON 统一预览层（Kimi 式，留独立立项）；图片批注（与 G1/G2 管线交汇，另案）；浏览器多文件 tab（多 webview，大改）。
@@ -35,7 +35,7 @@
 
 - **模型**：`editor-state.ts` `OpenFile` 增加 `kind: FileKind`（默认 `"text"`）；`openFile(m, rel, content, opts)` 扩展。图片 tab **无 text**、恒 `readOnly`、永不 dirty、不参与保存/备份/冲突流程；外部变更 → 重新加载（URL 加 `?v=<mtimeMs>` buster 刷新 `<img>`）。
 - **渲染**：EditorDock 内容区按 active tab kind 分流——`text/svg(源码)` → CodeMirror 现状；`image` / `svg(预览态)` → `<img src={mafwFileUrl(...)}>` 只读预览（`object-fit: contain`、居中、`--bg-inset` 底、下方一行 metadata：尺寸 naturalWidth×naturalHeight + 文件大小 + 相对路径）。
-- **SVG 切换**：active tab 为 svg 时编辑器头部出现「预览/源码」toggle（ButtonV2 ghost，状态仅内存、per-tab）；预览态编辑器只读。
+- **SVG 切换**：默认预览（缺省即渲染）；active tab 为 svg 时编辑器头部显示「源码/预览」toggle（ButtonV2 ghost，状态仅内存、per-tab）。首次打开会先注册协议 token（失败则退回源码态）；源码态 CodeMirror 可编辑，切回源码时强制重测防 0 尺寸视图。
 - **tab 条**：图片/svg tab 与文本 tab 同款（图标用 `image`/`file-code` 区分）；关闭/外部变更监听语义一致。
 - **fs 通道**：预览不经 `readFile`（二进制会被拒）；图片只需要 `stat`（大小/mtime）+ protocol URL。preload `window.api.fs` 增加 `statFile(root, rel)` 薄封装（如已有则复用）。
 
@@ -60,7 +60,7 @@
 ## 8. 验收清单
 
 1. 文件树点 png/jpg/webp → 文件 tab 内只读预览（contain + metadata）；切换 tab 再回来仍正常。
-2. 点 svg → 文本源码可编辑；头部「预览」→ 渲染图；「源码」→ 返回可编辑。
+2. 点 svg → **直接预览**（图）；头部「源码」→ 可编辑源码；「预览」→ 回到渲染图。
 3. 点 html → 自动切浏览器 surface，页面渲染、相对子资源加载、地址栏显示友好路径。
 4. html 内 http(s) 链接 window.open → dock 内导航（既有语义不回归）；`file:`/`javascript:` 仍拒。
 5. L2 tab 显示「文件」；旧 localStorage 值/键位导航不回归。
