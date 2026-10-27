@@ -19,6 +19,8 @@ import {
   clearDraft, getDraft, getEol, getMtime, setDraft, setEol, setMtime,
 } from "../editor-drafts"
 import { consumeEditorOpen, pendingEditorOpen } from "../editor-open"
+import { fileKindFor } from "../file-kind"
+import { fileProtocol } from "../file-protocol-client"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
@@ -53,6 +55,12 @@ export function EditorDock(props: {
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
   /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
   const [ioError, setIoError] = createSignal<string | null>(null)
+  /** mafw-file:// 版本（mtime / 变更时刻）——图片与 SVG 预览的缓存破坏参数。 */
+  const [fileVersion, setFileVersion] = createSignal<Record<string, number>>({})
+  /** 图片/SVG 预览元数据（natural 尺寸 + 文件大小）。 */
+  const [imageMeta, setImageMeta] = createSignal<Record<string, { w: number; h: number; size?: number }>>({})
+  /** SVG 每-tab 预览态（缺省 = 源码；spec：默认文本 + 显式预览动作）。 */
+  const [svgPreview, setSvgPreview] = createSignal<Record<string, boolean>>({})
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
@@ -66,6 +74,50 @@ export function EditorDock(props: {
     model().files.find(f => f.rel === model().active) ?? null
 
   const noteFor = (rel: string) => readNotes()[rel]
+
+  /** mafw-file:// URL（带版本号破缓存）；token 未就绪 → 空串（<img> 不渲染）。 */
+  const previewUrl = (rel: string): string => {
+    const root = props.sessionDirectory
+    return (root && fileProtocol.urlFor(root, rel, fileVersion()[rel])) ?? ""
+  }
+
+  /** 预览态：图片恒预览；SVG 仅在显式切到预览时。diff 模式不预览。 */
+  const previewing = (): boolean => {
+    const f = activeFile()
+    if (!f || mode() !== "edit") return false
+    if (f.kind === "image") return true
+    return f.kind === "svg" && !!svgPreview()[f.rel]
+  }
+
+  const toggleSvgPreview = () => {
+    const f = activeFile()
+    if (!f) return
+    setSvgPreview(prev => ({ ...prev, [f.rel]: !prev[f.rel] }))
+    clearSelection()
+    // 预览期间 CodeMirror 宿主 display:none；切回源码后强制重测（防 0 尺寸视图）。
+    queueMicrotask(() => {
+      if (!previewing()) editor?.measure()
+    })
+  }
+
+  const recordImageDims = (rel: string, img: HTMLImageElement) => {
+    const w = img.naturalWidth
+    const h = img.naturalHeight
+    if (!w || !h) return
+    setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], w, h } }))
+  }
+
+  const previewMeta = (f: OpenFile): string => {
+    const meta = imageMeta()[f.rel]
+    const parts: string[] = []
+    if (meta?.w) parts.push(`${meta.w}×${meta.h}`)
+    if (meta?.size !== undefined) {
+      const size = meta.size >= 1048576 ? `${(meta.size / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(meta.size / 1024))} KB`
+      parts.push(size)
+    }
+    parts.push(f.rel)
+    return parts.join(" · ")
+  }
 
   function clearSelection() {
     setSel(null)
@@ -89,6 +141,9 @@ export function EditorDock(props: {
     if (root === model().root) return
     setModel(m => onRootChange(m, root))
     setReadNotes({})
+    setFileVersion({})
+    setImageMeta({})
+    setSvgPreview({})
     clearSelection()
     setMode("edit")
     void unwatchAll()
@@ -114,19 +169,48 @@ export function EditorDock(props: {
       void mountActive()
       return
     }
+    const kind = fileKindFor(rel)
+    // 图片：不走 readFile（二进制闸），只需 root token + stat（元数据/版本）。
+    if (kind === "image") {      const token = await fileProtocol.ensureRootToken(root)
+      if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果
+      if (!token) {
+        setIoError("图片预览不可用（文件协议注册失败）")
+        return
+      }
+      let version = Date.now()
+      let size: number | undefined
+      try {
+        const st = await window.api.fs.statFile(root, rel)
+        if (root !== props.sessionDirectory) return
+        if (st.ok) {
+          version = st.mtimeMs
+          size = st.size
+        }
+      } catch { /* 元数据可选，失败仍可预览 */ }
+      setFileVersion(prev => ({ ...prev, [rel]: version }))
+      setImageMeta(prev => ({ ...prev, [rel]: { w: 0, h: 0, size } }))
+      setModel(m => openFile(m, rel, "", true, "image"))
+      setMode("edit")
+      clearSelection()
+      setIoError(null)
+      void mountActive()
+      return
+    }
     try {
       const res = await window.api.fs.readFile(root, rel)
       if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果（Important 2）
+      const editorKind = kind === "svg" ? "svg" : "text"
       if (res.ok) {
         setMtime(root, rel, res.mtimeMs)
         setEol(root, rel, res.eol)
-        setModel(m => openFile(m, rel, res.content))
+        setFileVersion(prev => ({ ...prev, [rel]: res.mtimeMs }))
+        setModel(m => openFile(m, rel, res.content, false, editorKind))
       } else if (res.reason === "too-large" || res.reason === "binary" || res.reason === "encoding") {
         const note = res.reason === "binary" ? "二进制文件（只读）"
           : res.reason === "too-large" ? "文件超过 1MB（只读）"
             : "非 UTF-8 编码（只读，防保存损坏）"
         setReadNotes(prev => ({ ...prev, [rel]: note }))
-        setModel(m => openFile(m, rel, "", true))
+        setModel(m => openFile(m, rel, "", true, editorKind))
       } else {
         setIoError(res.reason === "not-found" ? "文件不存在（可能已被移动/删除）" : "读取文件失败")
         return
@@ -156,6 +240,13 @@ export function EditorDock(props: {
     if (!f) return
     const root = props.sessionDirectory
     if (!root) return
+    // 图片没有 CodeMirror：只挂外部变更 watch（变更 → 版本号刷新 <img>）。
+    if (f.kind === "image") {
+      const key = `${root}\u0000${f.rel}`
+      watched.add(key)
+      void window.api.fs.watch(root, f.rel)
+      return
+    }
     try {
       const h = await mountEditor(el, {
         doc: getDraft(root, f.rel) ?? f.savedContent,
@@ -189,7 +280,18 @@ export function EditorDock(props: {
     const off = window.api.fs.onChanged(({ root, rel }) => {
       if (root !== props.sessionDirectory) return
       const f = model().files.find(x => x.rel === rel)
-      if (!f || f.readOnly) return
+      if (!f) return
+      // 版本号对所有 kind 生效（图片/SVG 预览的缓存破坏；文本也会顺带更新预览图）
+      setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
+      if (f.kind === "image") {
+        // 图片只读：不读盘，重新 stat 拿新大小即可（<img> 由版本号触发重载）
+        void window.api.fs.statFile(root, rel).then((st) => {
+          if (root !== props.sessionDirectory || !st.ok) return
+          setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], size: st.size } }))
+        })
+        return
+      }
+      if (f.readOnly) return
       setModel(m => onExternalChange(m, rel))
       if (!f.dirty) void reloadClean(rel)
     })
@@ -288,6 +390,9 @@ export function EditorDock(props: {
     const root = props.sessionDirectory
     if (root) clearDraft(root, rel)
     setModel(m => closeFile(m, rel))
+    setSvgPreview(prev => { const next = { ...prev }; delete next[rel]; return next })
+    setImageMeta(prev => { const next = { ...prev }; delete next[rel]; return next })
+    setFileVersion(prev => { const next = { ...prev }; delete next[rel]; return next })
     setMode("edit")
     clearSelection()
     void mountActive()
@@ -353,6 +458,19 @@ export function EditorDock(props: {
             <Icon name="square-arrow-top-right" size="small" />
           </ButtonV2>
         </TooltipV2>
+        <Show when={activeFile()?.kind === "svg"}>
+          <TooltipV2 value={previewing() ? "查看源码" : "预览 SVG"} openDelay={300}>
+            <ButtonV2
+              variant={previewing() ? "contrast" : "ghost"}
+              size="small"
+              aria-label="SVG 预览"
+              aria-pressed={previewing()}
+              onClick={toggleSvgPreview}
+            >
+              {previewing() ? "源码" : "预览"}
+            </ButtonV2>
+          </TooltipV2>
+        </Show>
         <Show when={activeFile() && diffEntryFor(props.diffs, activeFile()!.rel)}>
           <TooltipV2 value={mode() === "diff" ? "返回编辑" : "查看改动"} openDelay={300}>
             <ButtonV2
@@ -418,7 +536,24 @@ export function EditorDock(props: {
         </Show>
 
         <div class="mafw-editor-body">
-          <div class="mafw-editor-host" ref={(el) => { host = el }} style={{ display: mode() === "diff" ? "none" : "block" }} />
+          <div
+            class="mafw-editor-host"
+            ref={(el) => { host = el }}
+            style={{ display: mode() === "diff" || previewing() ? "none" : "block" }}
+          />
+
+          {/* 文件预览（图片只读 / SVG 显式预览态）：host 保持挂载，仅隐藏 */}
+          <Show when={previewing() && activeFile()}>
+            <div class="mafw-file-preview">
+              <img
+                class="mafw-file-preview-img"
+                src={previewUrl(activeFile()!.rel)}
+                alt={activeFile()!.rel}
+                onLoad={(e) => recordImageDims(activeFile()!.rel, e.currentTarget)}
+              />
+              <div class="mafw-file-preview-meta">{previewMeta(activeFile()!)}</div>
+            </div>
+          </Show>
 
           {/* 选区批注入口（人标出 → agent 改）：浮钮 → 浮层（仅编辑模式） */}
           <Show when={mode() === "edit" && sel() && !annotOpen() && props.onSendAnnotation}>

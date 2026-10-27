@@ -158,6 +158,7 @@ const api: ElectronAPI = {
   fs: {
     listDir: (root, rel) => ipcRenderer.invoke("fs-list-dir", root, rel),
     readFile: (root, rel) => ipcRenderer.invoke("fs-read-file", root, rel),
+    statFile: (root, rel) => ipcRenderer.invoke("fs-stat-file", root, rel),
     writeFile: (root, rel, content, opts) => ipcRenderer.invoke("fs-write-file", root, rel, content, opts),
     registerRoot: (absDir) => ipcRenderer.invoke("fs-register-root", absDir),
     watch: (root, rel) => ipcRenderer.invoke("fs-watch", root, rel),

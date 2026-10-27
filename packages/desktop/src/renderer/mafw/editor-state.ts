@@ -5,17 +5,21 @@
 //   缓冲区干净时 → staleClean，由消费方读盘后 applyCleanReload 静默刷新；
 // - 保存成功（markSaved）清 dirty/conflict/staleClean 并换磁盘基准；
 // - root 变化（切会话/worktree）→ 全清，不展示别树旧内容。
+export type OpenFileKind = "text" | "image" | "svg"
+
 export interface OpenFile {
   rel: string
-  /** 磁盘基准（加载或上次保存时的内容） */
+  /** 磁盘基准（加载或上次保存时的内容）；image 恒空串 */
   savedContent: string
   dirty: boolean
-  /** too-large/binary 打开降级 */
+  /** too-large/binary 打开降级；image 恒 true */
   readOnly: boolean
   /** dirty 时收到外部改动 → 冲突横幅 */
   conflict: boolean
   /** 干净时收到外部改动 → 待静默刷新 */
   staleClean: boolean
+  /** 文件预览 kind（2026-10-27）：image=只读预览 tab；svg=文本默认+预览切换 */
+  kind: OpenFileKind
 }
 
 export interface EditorModel {
@@ -33,13 +37,19 @@ export function onRootChange(m: EditorModel, root: string | null): EditorModel {
   return { root, files: [], active: null }
 }
 
-/** 幂等：已打开仅激活（保留 savedContent/dirty/readOnly 等一切状态）。 */
-export function openFile(m: EditorModel, rel: string, content: string, readOnly = false): EditorModel {
+/** 幂等：已打开仅激活（保留 savedContent/dirty/readOnly/kind 等一切状态）。 */
+export function openFile(
+  m: EditorModel,
+  rel: string,
+  content: string,
+  readOnly = false,
+  kind: OpenFileKind = "text",
+): EditorModel {
   if (m.files.some(f => f.rel === rel)) return { ...m, active: rel }
   return {
     ...m,
     active: rel,
-    files: [...m.files, { rel, savedContent: content, dirty: false, readOnly, conflict: false, staleClean: false }],
+    files: [...m.files, { rel, savedContent: content, dirty: false, readOnly, conflict: false, staleClean: false, kind }],
   }
 }
 
@@ -56,17 +66,19 @@ export function setActive(m: EditorModel, rel: string): EditorModel {
 }
 
 export function markDirty(m: EditorModel, rel: string): EditorModel {
-  return update(m, rel, f => f.dirty ? f : { ...f, dirty: true })
+  return update(m, rel, f => f.kind === "image" || f.dirty ? f : { ...f, dirty: true })
 }
 
 export function markSaved(m: EditorModel, rel: string, content: string): EditorModel {
-  return update(m, rel, f => ({ ...f, savedContent: content, dirty: false, conflict: false, staleClean: false }))
+  return update(m, rel, f => f.kind === "image" ? f : ({ ...f, savedContent: content, dirty: false, conflict: false, staleClean: false }))
 }
 
 export function onExternalChange(m: EditorModel, rel: string): EditorModel {
-  return update(m, rel, f => f.dirty
-    ? { ...f, conflict: true, staleClean: false }
-    : { ...f, staleClean: true, conflict: false })
+  return update(m, rel, f => f.kind === "image"
+    ? f
+    : f.dirty
+      ? { ...f, conflict: true, staleClean: false }
+      : { ...f, staleClean: true, conflict: false })
 }
 
 export function resolveConflict(
@@ -75,7 +87,7 @@ export function resolveConflict(
   action: "keep-mine" | "reload",
   diskContent?: string,
 ): EditorModel {
-  return update(m, rel, f => action === "keep-mine"
+  return update(m, rel, f => f.kind === "image" ? f : action === "keep-mine"
     ? { ...f, conflict: false }
     : {
         ...f,
@@ -88,13 +100,13 @@ export function resolveConflict(
 
 /** staleClean 消费：换基准并清标记（调用方负责把磁盘内容 setDoc 进编辑器）。 */
 export function applyCleanReload(m: EditorModel, rel: string, diskContent: string): EditorModel {
-  return update(m, rel, f => ({ ...f, savedContent: diskContent, staleClean: false }))
+  return update(m, rel, f => f.kind === "image" ? f : { ...f, savedContent: diskContent, staleClean: false })
 }
 
 /** 读盘 await 结束后再确认一次：期间用户开始输入 → 禁止静默覆盖（终审 Critical 1）。 */
 export function canApplyCleanReload(m: EditorModel, rel: string): boolean {
   const f = m.files.find(x => x.rel === rel)
-  return !!f && !f.dirty && !f.readOnly
+  return !!f && !f.dirty && !f.readOnly && f.kind !== "image"
 }
 
 function update(m: EditorModel, rel: string, fn: (f: OpenFile) => OpenFile): EditorModel {

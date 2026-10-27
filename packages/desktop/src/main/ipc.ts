@@ -7,7 +7,7 @@ import type { DesktopMenuAction } from "../types/desktop-menu"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { registerMafwIpcHandlers } from "./mafw-ipc"
-import { listDir, readTextFile, resolveInRoot, writeTextFile, type FsIO } from "./fs-workspace"
+import { listDir, readTextFile, resolveInRoot, statFile, writeTextFile, type FsIO } from "./fs-workspace"
 import { mafwFileRoots, registerRootDir } from "./mafw-file-protocol"
 import { FsWatchRegistry } from "./fs-watcher"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
@@ -77,6 +77,8 @@ export function registerIpcHandlers(deps: Deps) {
     listDir(fsIo, root, rel))
   ipcMain.handle("fs-read-file", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
     readTextFile(fsIo, root, rel))
+  ipcMain.handle("fs-stat-file", (_event: IpcMainInvokeEvent, root: string, rel: string) =>
+    statFile(fsIo, root, rel))
   // 文件预览协议 mafw-file:// 的 root 注册（幂等；返回不透明 token，token↔绝对路径只存在 main）。
   ipcMain.handle("fs-register-root", (_event: IpcMainInvokeEvent, dir: string) =>
     registerRootDir(mafwFileRoots, { stat }, dir))

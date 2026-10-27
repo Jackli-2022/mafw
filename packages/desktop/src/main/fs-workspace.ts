@@ -58,7 +58,6 @@ export function shapeEntries(entries: { name: string; isDirectory(): boolean }[]
 }
 
 export const MAX_READ_BYTES = 1_048_576
-
 /** 前 512 字节含 NUL → 视为二进制。 */
 export function sniffBinary(buf: Buffer): boolean {
   const n = Math.min(buf.length, 512)
@@ -69,6 +68,22 @@ export function sniffBinary(buf: Buffer): boolean {
 }
 
 export type Eol = "\n" | "\r\n"
+
+/** 图片预览元数据（2026-10-27）：只 stat 不读内容。 */
+export type StatResult =
+  | { ok: true; size: number; mtimeMs: number }
+  | { ok: false; reason: "jail" | "not-found" | "io" }
+
+export async function statFile(io: FsIO, root: string, rel: string): Promise<StatResult> {
+  const abs = resolveInRoot(root, rel)
+  if (!abs) return { ok: false, reason: "jail" }
+  try {
+    const st = await io.stat(abs)
+    return { ok: true, size: st.size, mtimeMs: st.mtimeMs }
+  } catch (e) {
+    return { ok: false, reason: isNotFound(e) ? "not-found" : "io" }
+  }
+}
 
 export type ReadResult =
   | { ok: true; content: string; mtimeMs: number; eol: Eol }

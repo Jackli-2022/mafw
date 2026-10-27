@@ -6,6 +6,8 @@ export interface MountedEditor {
   setDoc(s: string): void
   getDoc(): string
   destroy(): void
+  /** 容器从隐藏变可见后强制重测（SVG 预览切回源码等场景）。 */
+  measure(): void
 }
 
 // “编辑器语言 id → LanguageDescription”匹配：先按名称（大小写不敏感），再按扩展名。
@@ -118,5 +120,8 @@ export async function mountEditor(host: HTMLElement, opts: {
     },
     getDoc: () => view.state.doc.toString(),
     destroy: () => view.destroy(),
+    measure() {
+      try { view.requestMeasure() } catch { /* view 已销毁 */ }
+    },
   }
 }

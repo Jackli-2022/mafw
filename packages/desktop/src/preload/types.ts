@@ -31,9 +31,14 @@ export type FsReadResult =
 export type FsWriteResult =
   | { ok: true }
   | { ok: false; reason: "jail" | "not-found" | "conflict" | "io" }
+/** 图片预览元数据（只 stat，不读二进制）。 */
+export type FsStatResult =
+  | { ok: true; size: number; mtimeMs: number }
+  | { ok: false; reason: "jail" | "not-found" | "io" }
 export type FsAPI = {
   listDir(root: string, rel: string): Promise<FsEntryDTO[] | null>
   readFile(root: string, rel: string): Promise<FsReadResult>
+  statFile(root: string, rel: string): Promise<FsStatResult>
   writeFile(root: string, rel: string, content: string, opts?: { ifMtimeMs?: number; eol?: "\n" | "\r\n" }): Promise<FsWriteResult>
   /** 为 mafw-file:// 预览协议注册会话根（幂等）；返回不透明 token，失败 null。 */
   registerRoot(absDir: string): Promise<string | null>

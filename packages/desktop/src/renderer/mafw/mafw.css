@@ -5475,3 +5475,30 @@ html[data-theme="light"] body {
   font-size: 10px;
   color: var(--text-4);
 }
+
+/* 文件预览（图片只读 / SVG 显式预览，spec 2026-10-27-workbench-file-preview） */
+.mafw-file-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  overflow: auto;
+  background: var(--bg-inset);
+}
+.mafw-file-preview-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.mafw-file-preview-meta {
+  flex: none;
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--font-data, ui-monospace, monospace);
+  text-align: center;
+  word-break: break-all;
+}
