@@ -100,6 +100,9 @@ import { EVENT_FLOW_MATRIX, RUNTIME_NATIVE_DROPPED } from './runtime/event-flow-
 import { wrapGlobalEventStream, hasEventDeclarations } from './runtime/event-mapper';
 import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/identity-registry';
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
+import { withInstructionSync } from './runtime/instruction-wrapper';
+import { InstructionSyncService } from './core/instructions/instruction-sync-service';
+import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
 import { isHiddenSession } from './core/session-visibility';
 
 import { mafwBroadcast, projectRegisteredEvent } from './runtime/event-broadcast';
@@ -483,6 +486,7 @@ class MafwScheduler {
   private wsClients: Set<WebSocket> = new Set();
   private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
+  private instructionSync?: InstructionSyncService;
   private subagentService!: SubagentService;
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
@@ -1614,14 +1618,54 @@ class MafwScheduler {
     }
   }
 
+  /** T2-4: one renderer shared by prompt-time sync and the fallback endpoint. */
+  private async buildInstructionBlocks(): Promise<InstructionBlocks> {
+    const { handleRecallPinned } = require('./routes/pinned-recall');
+    const { handleAgentPriors } = require('./routes/agent-priors');
+    return renderInstructionBlocks({
+      getPinnedProfile: async () => {
+        if (!this.memoryService) return null;
+        const { HarmonicUnitFileStore } = require('./memory/harmonic-file-store.js');
+        const store = new HarmonicUnitFileStore(config.resolvePath(), this.memoryService.harmonicIndex);
+        const result = await handleRecallPinned({
+          getIndex: () => this.memoryService!.harmonicIndex.getIndex(),
+          readUnit: (id: string) => store.read(id),
+        });
+        return result.profile ?? null;
+      },
+      getAgentPriors: async () => {
+        const result = await handleAgentPriors({
+          l5: new L5Store(),
+          getIndex: () => this.memoryService?.harmonicIndex.getIndex() ?? { entries: [] },
+          needFor: (id: string) => getRetrievalEventBuffer().needFor(id),
+        });
+        return result.block ?? null;
+      },
+    });
+  }
+
+  private ensureInstructionSync(): InstructionSyncService {
+    if (!this.instructionSync) {
+      this.instructionSync = new InstructionSyncService({
+        render: () => this.buildInstructionBlocks(),
+        getRuntime: () => this.runtime,
+        isEnabled: () => config.recall.instructions?.enabled !== false,
+        log: { info: (msg) => log.info(msg), warn: (msg) => log.warn(msg) },
+      });
+    }
+    return this.instructionSync;
+  }
+
   /** 包装 runtime 的 prompt 面：按绑定+物化状态注入/剥离 agent 参数（物化车道 1 执行点）。 */
   private wrapRuntimeIdentity(rt: AgentRuntime): AgentRuntime {
     // 历史消息归一收口：声明 normalizeMessages 的 runtime 在 session.messages 出口
     // 统一转 opencode {info, parts} DTO（所有消费者形状一致）。必须先于身份包装。
     wrapRuntimeMessages(rt, (reason) => this.recordTranslationError(rt.name, 'normalizeMessages', reason));
+    this.ensureInstructionSync().reset();
+    const synced = withInstructionSync(rt.session as any, (sid) => this.instructionSync!.sync(sid));
     const registry = this.identityRegistry;
     (rt.session as any) = withIdentityPrompt(
-      rt.session as any,
+      synced as any,
       this.identityState,
       () => rt.name,
       (n: string) => !!registry.get(n),

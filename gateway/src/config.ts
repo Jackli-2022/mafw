@@ -297,6 +297,8 @@ export interface GatewayConfig {
     reportIntervalMin: number;
   };
   recall: {
+    /** T2-4: write the three memory blocks as opencode 2.1 instruction entries. */
+    instructions: { enabled: boolean };
     turnStaleMs: number;
     obsCapturePath: string;
     sessionWorkerTtlMs: number;
@@ -608,6 +610,7 @@ function defaults(projectDir: string): GatewayConfig {
       reportIntervalMin: parseInt(process.env.MAFW_MANAGER_REPORT_INTERVAL || '') || 5,
     },
     recall: {
+      instructions: { enabled: true },
       turnStaleMs: 30 * 60 * 1000,
       obsCapturePath: 'memory/gateway.db',
       sessionWorkerTtlMs: 24 * 60 * 60 * 1000,
