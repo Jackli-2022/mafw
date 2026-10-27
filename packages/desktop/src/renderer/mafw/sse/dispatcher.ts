@@ -20,6 +20,8 @@ export interface CoreDeps {
   bumpProjectsRev(): void
   onRuntimeSwitched(): void
   onGoalEvent(event: unknown): void
+  /** W0-1：session.checkpoint → bump checkpointRev（overlay 打开时重拉）。 */
+  onCheckpointEvent(): void
 }
 
 export interface LifecycleDeps {
@@ -140,6 +142,13 @@ export function dispatchShellEvent(event: any, deps: ShellEventDeps): void {
   if (event.type === "goal_node" || event.type === "goal_created" || event.type === "phase_transition") {
     deps.core.trace(event, "goals:rev")
     deps.core.onGoalEvent(event)
+    return
+  }
+
+  // W0-1：服务端检查点事件 → bump checkpointRev，打开中的 CheckpointOverlay 重拉。
+  if (event.type === "session.checkpoint") {
+    deps.core.trace(event, "checkpoint:rev")
+    deps.core.onCheckpointEvent()
     return
   }
 

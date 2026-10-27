@@ -108,7 +108,7 @@ export const IGNORED_AT_SHELL = [
   "memory_written", "memory_energy_changed", "memory_distillation_complete",
   "automation_triggered", "automation_completed",
   "mafw_commands_changed", "session.compacting", "usage.updated",
-  "turn.started", "session.config", "session.checkpoint",
+  "turn.started", "session.config",
 ] as const
 
 /** onmessage 尾部合法放行：else-if 链处理（分支不 return 落到尾部）的类型。 */
@@ -142,6 +142,7 @@ type ShellHandledType =
   | "message.updated" | "part.delta" | "part.updated" | "part.complete"
   | "turn.completed" | "turn.failed" | "turn.aborted"
   | "session.diff" | "permission_mode"
+  | "session.checkpoint"
 
 /**
  * 类型级穷尽检查（永不抛错，编译失败即守卫生效）：
@@ -186,6 +187,8 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "turn.aborted":
     // ---- diff ----
     case "session.diff":
+    // ---- checkpoint（dispatcher 顶层消费 → checkpointRev bump） ----
+    case "session.checkpoint":
     // ---- 显式忽略（有意，非遗漏） ----
     case "user_feedback":
     case "state_change":
@@ -199,7 +202,6 @@ export function assertShellEventCoverage(e: UnwrappedEvent): void {
     case "usage.updated":
     case "turn.started":
     case "session.config":
-    case "session.checkpoint":
     case "task.updated":
       return
     default: {

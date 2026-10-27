@@ -74,6 +74,7 @@ import { ScreenshotCropper, type CaptureShot } from "./ScreenshotCropper"
 import { dataUrlToFile } from "../capture/data-url"
 import { registerCaptureSink } from "../capture/attach-sink"
 import { CheckpointOverlay } from "./CheckpointOverlay"
+import { checkpointRev } from "../checkpoint-rev"
 import type { Checkpoint } from "./checkpoint-model"
 import { allHunksPatches, isInvertiblePatch, revertWarning } from "./checkpoint-revert"
 import { sameQuoteSelection, snapshotQuoteSelection, type QuoteSelectionSnapshot } from "./quote-selection"
@@ -285,6 +286,12 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
   const [revertConfirm, setRevertConfirm] = createSignal<{ messageID: string } | null>(null)
   const [canUnrevert, setCanUnrevert] = createSignal(false)
   const [checkpointsOpen, setCheckpointsOpen] = createSignal(false)
+
+  // W0-1：session.checkpoint SSE → checkpointRev bump；overlay 打开期间重拉
+  // 服务端检查点列表（关着不拉——打开按钮本身会拉一次）。
+  createEffect(on(checkpointRev, () => {
+    if (checkpointsOpen()) void loadServerCheckpoints()
+  }, { defer: true }))
   const [serverCheckpoints, setServerCheckpoints] = createSignal<SessionCheckpoint[]>([])
 
   // Busy-turn queue: regular messages sent while a turn is running are held

@@ -165,6 +165,13 @@ describe("shell event coverage guard", () => {
     expect(isTailAccountedAtShell("goal_node")).toBe(false)
   })
 
+  test("session.checkpoint 已由 dispatcher 消费（checkpointRev），不再显式忽略", () => {
+    // W0-1（2026-10-28）：overlay 打开期间 gateway 自动落的新检查点要实时出现，
+    // 事件经 dispatcher 顶层消费 → bump checkpointRev → overlay 重拉。
+    expect(IGNORED_AT_SHELL).not.toContain("session.checkpoint")
+    expect(isTailAccountedAtShell("session.checkpoint")).toBe(false)
+  })
+
   test("isTailAccountedAtShell: v2 已除名类型不再是合法放行（gateway 边界已丢弃）", () => {
     expect(isTailAccountedAtShell("session.idle")).toBe(false)
     expect(isTailAccountedAtShell("message.complete")).toBe(false)

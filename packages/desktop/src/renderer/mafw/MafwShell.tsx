@@ -24,6 +24,7 @@ import { mergeHiddenTodos } from "./todo-presenter"
   import { traceEvent } from "./event-trace"
 import { dispatchShellEvent, type ShellEventDeps } from "./sse/dispatcher"
 import { bumpGoalsRev } from "./goals-rev"
+import { bumpCheckpointRev } from "./checkpoint-rev"
 import { ingestSubagentEvent, onSubagentTerminal, subagentRows } from "./subagent-store"
 import { backgroundRows, ingestBackgroundEvent, ingestHydratedBackgroundEvents, onBackgroundTerminal } from "./background-store"
 import { backgroundRestAvailable, resetBackgroundCapability } from "./background-capability"
@@ -893,6 +894,7 @@ export function MafwShell() {
       setActiveQuestion: (q) => setActiveQuestion(q as QuestionData),
       bumpProjectsRev: () => setProjectsRev(v => v + 1),
       onGoalEvent: () => bumpGoalsRev(),
+      onCheckpointEvent: () => bumpCheckpointRev(),
       onRuntimeSwitched: () => {
         sessionStore.invalidate()
         void refreshMenus()

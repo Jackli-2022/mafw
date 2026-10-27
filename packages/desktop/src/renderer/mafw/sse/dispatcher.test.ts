@@ -18,6 +18,7 @@ function makeDeps() {
       bumpProjectsRev: rec("bumpProjectsRev"),
       onRuntimeSwitched: rec("onRuntimeSwitched"),
       onGoalEvent: rec("onGoalEvent"),
+      onCheckpointEvent: rec("onCheckpointEvent"),
     },
     lifecycle: {
       invalidate: rec("invalidate"),
@@ -234,6 +235,16 @@ describe("dispatchShellEvent: goal events", () => {
       dispatchShellEvent({ type, goalId: "g1" }, deps)
       expect(calls.some(c => c.name === "onGoalEvent")).toBe(true)
     }
+  })
+})
+
+describe("dispatchShellEvent: session.checkpoint", () => {
+  test("session.checkpoint 顶层消费 → onCheckpointEvent，不 missTrace", () => {
+    // W0-1（2026-10-28）：overlay 打开期间 auto checkpoint 实时出现。
+    const { deps, calls } = makeDeps()
+    dispatchShellEvent({ type: "session.checkpoint", sessionID: "s1", properties: {} }, deps)
+    expect(calls.some(c => c.name === "onCheckpointEvent")).toBe(true)
+    expect(calls.filter(c => c.name === "warn").length).toBe(0)
   })
 })
 
