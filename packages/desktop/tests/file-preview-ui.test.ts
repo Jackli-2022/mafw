@@ -13,12 +13,15 @@ test("EditorDock renders image preview tabs read-only", () => {
   assert.match(src, /display:[^\n]*(image|preview)/)
 })
 
-test("SVG preview is an explicit toggle (default source)", () => {
+test("SVG opens in preview by default; source is one click", () => {
   const src = read("src/renderer/mafw/components/EditorDock.tsx")
+  // 默认预览：缺省（undefined）= 预览，仅显式 false 才是源码态
+  assert.match(src, /svgPreview\(\)\[f\.rel\] !== false/)
   assert.match(src, /预览/)
   assert.match(src, /源码/)
-  // 默认态 = 源码（预览状态表缺省 false）
-  assert.doesNotMatch(src, /defaultPreview:\s*true/)
+  // 默认预览需要协议 token：svg 打开前先 ensure（否则首开 src 为空）
+  const openRel = src.slice(src.indexOf("async function openRel"), src.indexOf("async function mountActive"))
+  assert.match(openRel, /kind === "svg"[\s\S]{0,160}ensureRootToken/)
 })
 
 test("image preview CSS exists", () => {

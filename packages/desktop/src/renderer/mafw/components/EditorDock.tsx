@@ -59,7 +59,8 @@ export function EditorDock(props: {
   const [fileVersion, setFileVersion] = createSignal<Record<string, number>>({})
   /** 图片/SVG 预览元数据（natural 尺寸 + 文件大小）。 */
   const [imageMeta, setImageMeta] = createSignal<Record<string, { w: number; h: number; size?: number }>>({})
-  /** SVG 每-tab 预览态（缺省 = 源码；spec：默认文本 + 显式预览动作）。 */
+  /** SVG 每-tab 预览态：缺省（undefined）= 预览；显式 false = 源码态。
+   *  2026-10-27 rev（用户裁决 + VS Code 1.97 默认）：打开即看，源码是一键动作。 */
   const [svgPreview, setSvgPreview] = createSignal<Record<string, boolean>>({})
 
   let host: HTMLDivElement | undefined
@@ -81,18 +82,19 @@ export function EditorDock(props: {
     return (root && fileProtocol.urlFor(root, rel, fileVersion()[rel])) ?? ""
   }
 
-  /** 预览态：图片恒预览；SVG 仅在显式切到预览时。diff 模式不预览。 */
+  /** 预览态：图片恒预览；SVG 默认预览，仅显式切到源码时例外。diff 模式不预览。 */
+  const svgShowsPreview = (f: OpenFile): boolean => svgPreview()[f.rel] !== false
   const previewing = (): boolean => {
     const f = activeFile()
     if (!f || mode() !== "edit") return false
     if (f.kind === "image") return true
-    return f.kind === "svg" && !!svgPreview()[f.rel]
+    return f.kind === "svg" && svgShowsPreview(f)
   }
 
   const toggleSvgPreview = () => {
     const f = activeFile()
     if (!f) return
-    setSvgPreview(prev => ({ ...prev, [f.rel]: !prev[f.rel] }))
+    setSvgPreview(prev => ({ ...prev, [f.rel]: !svgShowsPreview(f) }))
     clearSelection()
     // 预览期间 CodeMirror 宿主 display:none；切回源码后强制重测（防 0 尺寸视图）。
     queueMicrotask(() => {
@@ -195,6 +197,12 @@ export function EditorDock(props: {
       setIoError(null)
       void mountActive()
       return
+    }
+    // SVG 默认预览需要协议 token（首次打开即渲染）；注册失败退回源码态。
+    if (kind === "svg") {
+      const token = await fileProtocol.ensureRootToken(root)
+      if (root !== props.sessionDirectory) return
+      if (!token) setSvgPreview(prev => ({ ...prev, [rel]: false }))
     }
     try {
       const res = await window.api.fs.readFile(root, rel)
