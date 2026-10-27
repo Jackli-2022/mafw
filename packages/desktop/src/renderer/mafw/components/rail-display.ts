@@ -5,6 +5,7 @@
 export function formatRailTitle(title: string | null | undefined): string {
   const raw = (title ?? "").trim()
   if (!raw) return "未命名"
+  if (/^New conversation$/i.test(raw)) return "未命名" // runtime 空会话占位
   const m = raw.match(/^New session - (\d{4})-(\d{2})-(\d{2})T/)
   if (m) return `未命名 · ${Number(m[2])}月${Number(m[3])}日`
   return raw
