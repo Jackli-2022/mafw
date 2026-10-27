@@ -22,10 +22,22 @@
 | — | PDF | — | — | **v1 缺席**（Chromium PDF viewer 是 plugin，无法注入事件层） |
 | — | HTML | — | — | 已有 G2 元素点选覆盖，不重复 |
 
-统一交互细节：
-- 批注输入框复用 `LineCommentEditorV2`（源码批注同款，「加入批注」草稿 /「立即发送」直发两个动作）。
+统一交互细节（**2026-10-27 rev：交互逻辑重写**，调研 §6）：
+- **标记即输入**：拖框/落点类标记（图片/SVG/PPTX）动作完成 → 输入框**直接在标记旁打开**（拖框本身就是明确的批注意图，无误触）；文本划选（源码/Markdown/DOCX）保留一个浮钮作发现性入口，但 **`Ctrl+M` 一键直达**（键盘路径零点击）；JSON 节点/表格单元格 hover 显现批注入口 → 点击 → 输入框就地打开。
+- **Enter = 立即发送**（最快路径，默认）；**Ctrl+Enter = 加入批注草稿**（批量审阅的次要路径，PendingAnnotations 保留）。消灭"每条二选一"。
+- **回路闭合在原地**：发送后锚点处留「处理中」标记（文本=高亮底色、像素=编号钉/框）；本会话回合结束（turn.completed）→ 标记变「已回应」；点击标记 → 跳审阅面板/重新定位锚点。
 - Esc / 点击外部取消；选区/框选随预览切换/文件切换清空。
 - 批注卡在 `PendingAnnotations` 中按 anchor 类型渲染标签：`rel:L12-18`（现有）/ `rel › $.a.b` / `rel › B2` / `rel › 区域` / `rel › 节选"…"`。
+
+## 视觉设计（2026-10-27 增补，用户要求）
+
+- **标记高亮**：文本锚 = `--accent` 12% 底色 + 2px 底部波浪线（`text-decoration: wavy underline`，与语法错误红线区分用 accent）；区域锚 = accent 1.5px 虚线框 + 8% 填充。
+- **编号钉**（PPTX/图片可选点模式）：18px 圆形 accent 实心、白色序号、2px `--bg-base` 描边（防融进图里）。
+- **输入框浮层**：贴标记下方（空间不足翻上），`--bg-overlay` + `--border` + `--r-md` + 阴影，280px 宽；右下角 hint `Enter 发送 · Ctrl+Enter 攒草稿`（`--text-4` 10px）。
+- **反馈态**：处理中 = 标记脉冲（opacity-only 呼吸动画，走 `--dur-surface` token，respects reduced-motion）；已回应 = 实心 + ✓ 角标。
+- **动效**：浮层进场 140ms `--dur-fast` fade+translateY(2px)；全部走既有 motion tokens，不引入新曲线。
+- **批注卡**：PendingAnnotations 每条带 anchor 类型图标（文本/节点/单元格/区域），标签静音色、批注正文正常色。
+- 所有新样式入 `mafw.css`，禁 emoji（设计契约），主题变量全走 token（三主题适配由 token 保证）。
 
 ## 数据模型
 
