@@ -4351,7 +4351,11 @@ html[data-theme="light"] body {
 
 /* ── Editor dock（协同编辑器，spec 2026-10-22 §5.2） ── */
 .mafw-editor-dock { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
-.mafw-editor-annot-anchor { position: absolute; z-index: 5; }
+.mafw-editor-annot-anchor { position: absolute; z-index: 5; animation: mafw-annot-pill-in 120ms var(--ease-standard, ease-out); }
+@keyframes mafw-annot-pill-in {
+  from { opacity: 0; transform: translateY(-2px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
 .mafw-editor-annot-pop { position: absolute; z-index: 6; width: 280px; max-width: calc(100% - 16px); }
 .mafw-editor-tabs {
   display: flex;
@@ -5633,34 +5637,98 @@ html[data-theme="light"] body {
   color: var(--text-1);
 }
 
-/* 批注输入浮层（2026-10-27 预览批注交互） */
-.mafw-annot-pop {
-  position: absolute;
+/* 批注抽屉（rev2）：参与布局的底部停靠——内容自动让位，不遮挡锚点 */
+.mafw-annot-sheet {
+  position: relative;
+  flex: none;
+  margin: 8px 12px 12px;
   z-index: 40;
-  width: 300px;
-  background: var(--bg-overlay);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  animation: mafw-annot-pop-in var(--dur-fast, 140ms) var(--ease-standard, ease-out);
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--r-lg, var(--r-md));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+  animation: mafw-annot-sheet-in var(--dur-fast, 160ms) var(--ease-standard, ease-out);
 }
-@keyframes mafw-annot-pop-in {
-  from { opacity: 0; transform: translateY(2px); }
+@keyframes mafw-annot-sheet-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.99); }
   to { opacity: 1; transform: none; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .mafw-annot-pop { animation: none; }
+.mafw-annot-sheet-head { display: flex; align-items: center; gap: 8px; }
+.mafw-annot-sheet-title { font-size: 12px; font-weight: 600; color: var(--text-1); flex: none; }
+.mafw-annot-sheet-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-4);
+  font-family: var(--font-data, ui-monospace, monospace);
 }
-.mafw-annot-pop-head { font-size: 11px; color: var(--text-3); }
-.mafw-annot-pop-foot { display: flex; justify-content: space-between; gap: 8px; min-height: 12px; }
-.mafw-annot-pop-meta { font-size: 10px; color: var(--text-3); }
-.mafw-annot-pop-hint { font-size: 10px; color: var(--text-4); margin-left: auto; }
-.mafw-annot-pop-actions { display: flex; gap: 4px; justify-content: flex-end; align-items: center; }
-.mafw-annot-pop-spacer { flex: 1; }
+.mafw-annot-sheet-input { max-height: 30vh; overflow: auto; }
+.mafw-annot-sheet-foot { display: flex; align-items: center; gap: 8px; }
+.mafw-annot-sheet-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-4);
+}
+.mafw-annot-sheet-actions { display: flex; gap: 6px; flex: none; }
+@media (prefers-reduced-motion: reduce) {
+  .mafw-annot-sheet { animation: none; }
+}
+
+/* 锚点原地标记层（rev2）：文字高亮 / 点标记，锚点处直接反馈状态 */
+.mafw-annot-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.mafw-annot-rect {
+  position: absolute;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: mafw-annot-rect-in 180ms var(--ease-standard, ease-out);
+}
+.mafw-annot-rect[data-status="pending"] {
+  animation: mafw-annot-rect-in 180ms var(--ease-standard, ease-out), mafw-annot-pulse 1.6s ease-in-out infinite;
+}
+.mafw-annot-rect[data-status="responded"] {
+  background: color-mix(in srgb, var(--text-4) 14%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--text-4) 55%, transparent);
+}
+@keyframes mafw-annot-rect-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.mafw-annot-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-overlay);
+  animation: mafw-annot-dot-in 160ms var(--ease-standard, ease-out);
+}
+.mafw-annot-dot[data-status="pending"] {
+  animation: mafw-annot-dot-in 160ms var(--ease-standard, ease-out), mafw-annot-pulse 1.6s ease-in-out infinite;
+}
+.mafw-annot-dot[data-status="responded"] { background: var(--text-4); }
+@keyframes mafw-annot-dot-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mafw-annot-rect,
+  .mafw-annot-dot,
+  .mafw-annot-rect[data-status="pending"],
+  .mafw-annot-dot[data-status="pending"] { animation: none; }
+}
 
 /* 批注卡锚点类型点 */
 .mafw-pending-annotation-kind {
@@ -5742,6 +5810,10 @@ html[data-theme="light"] body {
 }
 .mafw-annot-pin-pending { animation: mafw-annot-pulse 1.6s ease-in-out infinite; }
 
-/* M6：窄工作台浮层宽度约束 */
-.mafw-annot-pop { max-width: calc(100% - 16px); }
-.mafw-annot-pop .mafw-annot-pop-input { max-height: 40vh; overflow: auto; }
+
+/* rev2：抽屉输入框自适应高度（1 行起步，随内容长高，上限 30vh） */
+.mafw-annot-sheet-input textarea {
+  field-sizing: content;
+  min-height: 36px;
+  max-height: 30vh;
+}

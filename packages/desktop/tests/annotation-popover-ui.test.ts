@@ -7,11 +7,11 @@ import { dirname, join } from "node:path"
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const read = (rel: string) => readFileSync(join(root, rel), "utf8")
 
-test("AnnotationPopover: v2 组件 + Enter 发送 / Ctrl+Enter 攒草稿", () => {
-  const src = read("src/renderer/mafw/components/AnnotationPopover.tsx")
+test("AnnotationSheet: 底部抽屉 + Enter 发送 / Ctrl+Enter 攒草稿", () => {
+  const src = read("src/renderer/mafw/components/AnnotationSheet.tsx")
   assert.match(src, /TextareaV2/)
   assert.match(src, /ButtonV2/)
-  assert.match(src, /mafw-annot-pop/)
+  assert.match(src, /mafw-annot-sheet/)
   assert.match(src, /ctrlKey \|\| e\.metaKey/)
   assert.match(src, /Enter 发送 · Ctrl\+Enter 攒草稿/)
   assert.match(src, /"draft"/)
@@ -28,9 +28,9 @@ test("PendingAnnotations: anchor 标签 + kind 标记", () => {
   assert.match(src, /mafw-pending-annotation-kind/)
 })
 
-test("源码面交互：Ctrl+M 直达 + AnnotationPopover + 双按钮退役", () => {
+test("源码面交互：Ctrl+M 直达 + AnnotationSheet + 双按钮退役", () => {
   const src = read("src/renderer/mafw/components/EditorDock.tsx")
-  assert.match(src, /AnnotationPopover/)
+  assert.match(src, /AnnotationSheet/)
   assert.match(src, /isAnnotationHotkey/)
   assert.ok(!src.includes("LineCommentEditorV2"))
   assert.ok(!src.includes('submitLabel="加入批注"'))
@@ -134,7 +134,22 @@ test("minors 修复：M1 删死代码 / M2 clearMarks / M4 pptx 钉 / M5 页码 
   const office = read("src/renderer/mafw/components/OfficePreview.tsx")
   assert.match(office, /mafw-pptx-pin/)
   assert.match(office, /slideIndexOf/)
-  const pop = read("src/renderer/mafw/components/AnnotationPopover.tsx")
-  assert.match(pop, /popoverTop/)
-  assert.ok(!pop.includes('setValue("")'))
+  const sheet = read("src/renderer/mafw/components/AnnotationSheet.tsx")
+  assert.ok(!sheet.includes('setValue("")'))
+})
+
+test("rev2 交互：批注模式 + 选中即输入 + 锚点原地标记", () => {
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /annotMode/)
+  assert.match(editor, /mafw-annot-layer/)
+  assert.match(editor, /mafw-annot-rect/)
+  assert.match(editor, /mafw-annot-dot/)
+  assert.match(editor, /if \(annotMode\(\)\) \{[\s\S]{0,120}setQuoteOpen\(true\)/)
+  assert.match(editor, /revealAboveSheet/)
+  const json = read("src/renderer/mafw/components/JsonPreview.tsx")
+  assert.match(json, /annotMode/)
+  const css = read("src/renderer/mafw/mafw.css")
+  assert.match(css, /\.mafw-annot-sheet/)
+  assert.match(css, /\.mafw-annot-rect/)
+  assert.match(css, /mafw-annot-sheet-in/)
 })

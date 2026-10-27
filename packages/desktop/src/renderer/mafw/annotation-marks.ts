@@ -4,6 +4,11 @@ import { createSignal } from "solid-js"
 import type { AnnotationAnchor } from "../../shared/annotation-types"
 
 export type AnnotationMarkStatus = "pending" | "responded"
+/** 锚点原地标记（rev2）：文字高亮矩形 / 单点标记（相对 editor-body 的 px）。 */
+export type MarkVisual = {
+  rects?: { x: number; y: number; w: number; h: number }[]
+  point?: { x: number; y: number }
+}
 export type AnnotationMark = {
   id: string
   rel: string
@@ -12,6 +17,7 @@ export type AnnotationMark = {
   createdAt: number
   /** 创建时所属回合序号（I4：只翻转早于本回合起点创建的 mark）。 */
   seq: number
+  visual?: MarkVisual
 }
 
 const [rev, setRev] = createSignal(0)
@@ -28,7 +34,7 @@ export function noteTurnActivity(sessionID: string): void {
   turnSeq.set(sessionID, (turnSeq.get(sessionID) ?? 0) + 1)
 }
 
-export function addMark(sessionID: string, rel: string, anchor?: AnnotationAnchor): AnnotationMark {
+export function addMark(sessionID: string, rel: string, anchor?: AnnotationAnchor, visual?: MarkVisual): AnnotationMark {
   const mark: AnnotationMark = {
     id: `mk-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     rel,
@@ -36,6 +42,7 @@ export function addMark(sessionID: string, rel: string, anchor?: AnnotationAncho
     status: "pending",
     createdAt: Date.now(),
     seq: turnSeq.get(sessionID) ?? 0,
+    visual,
   }
   bySession.set(sessionID, [...(bySession.get(sessionID) ?? []), mark].slice(-50))
   bump()

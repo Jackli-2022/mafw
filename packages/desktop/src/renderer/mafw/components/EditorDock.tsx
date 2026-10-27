@@ -30,11 +30,11 @@ import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored, lineRangeOf } from "../editor-annotation"
 import { diffEntryFor } from "../editor-diff"
-import { AnnotationPopover } from "./AnnotationPopover"
+import { AnnotationSheet } from "./AnnotationSheet"
 import { buildQuoteAnchor } from "../quote-anchor"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
-import { addMark, clearMarks, marksFor } from "../annotation-marks"
+import { addMark, clearMarks, marksFor, type MarkVisual } from "../annotation-marks"
 import { isAnnotationHotkey } from "../annotation-hotkey"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
@@ -64,8 +64,15 @@ export function EditorDock(props: {
   const [saving, setSaving] = createSignal(false)
   const [sel, setSel] = createSignal<SelectionState | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
+  /** 批注模式（rev2）：选中/落点即打开底部批注抽屉，不再需要先点浮钮。 */
+  const [annotMode, setAnnotMode] = createSignal(false)
   /** 预览划选批注（md/docx）：锚点 + 浮层坐标（相对 editor-body）。 */
-  const [quoteSel, setQuoteSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number } | null>(null)
+  const [quoteSel, setQuoteSel] = createSignal<{
+    anchor: AnnotationAnchor
+    left: number
+    top: number
+    rects: { x: number; y: number; w: number; h: number }[]
+  } | null>(null)
   const [quoteOpen, setQuoteOpen] = createSignal(false)
   /** 预览锚点批注（json 节点 / 表格单元格 / 图片区域 / pptx 图钉）：标记即输入。 */
   const [anchorSel, setAnchorSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number; imageDataUrl?: string } | null>(null)
@@ -535,21 +542,45 @@ export function EditorDock(props: {
     const rect = range.getBoundingClientRect()
     const host = bodyEl?.getBoundingClientRect()
     if (!host) return false
+    const rects = Array.from(range.getClientRects()).map((r) => ({
+      x: r.left - host.left,
+      y: r.top - host.top,
+      w: r.width,
+      h: r.height,
+    }))
     setQuoteSel({
       anchor,
       left: Math.max(8, rect.left - host.left),
       top: Math.max(8, rect.bottom - host.top + 4),
+      rects,
     })
+    // 批注模式：选中即输入（rev2）——不再需要先点浮钮。
+    if (annotMode()) {
+      setQuoteOpen(true)
+      // 抽屉占据底部空间后，把锚点滚回视野。
+      const anchorEl = (container as HTMLElement)
+      requestAnimationFrame(() => anchorEl.scrollIntoView({ block: "nearest" }))
+    }
     return true
   }
 
   function handlePreviewSelection(_e: MouseEvent) {
-    captureQuoteFromSelection()
+    const gotQuote = captureQuoteFromSelection()
+    // 批注模式：源码选区 mouseup 即打开抽屉（rev2）。
+    if (!gotQuote && !previewing() && annotMode() && sel() && !annotOpen() && props.onSendAnnotation) {
+      setAnnotOpen(true)
+    }
   }
 
   // I1：预览面焦点不在 editor-body 内 —— 键盘路径挂 document；选区变化（含 Shift+方向键）也走同一捕获。
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && annotMode() && !annotOpen() && !quoteOpen() && !anchorOpen()) {
+        e.preventDefault()
+        e.stopPropagation()
+        setAnnotMode(false)
+        return
+      }
       if (!isAnnotationHotkey(e, IS_MAC) || mode() !== "edit") return
       if (sel() && !annotOpen()) {
         e.preventDefault()
@@ -676,11 +707,33 @@ export function EditorDock(props: {
   }
 
   /** 统一批注出口：anchor=undefined 走 CodeMirror 行号锚；有 anchor 走预览锚点。 */
+  /** 抽屉打开时把锚点滚到抽屉上方（rev2：抽屉停靠底部，但锚点必须仍可见）。 */
+  function revealAboveSheet(anchorTop: number) {
+    const body = bodyEl
+    if (!body) return
+    const sheet = body.querySelector(".mafw-annot-sheet") as HTMLElement | null
+    if (!sheet) return
+    const container = body.querySelector(
+      ".mafw-md-preview, .mafw-json-preview-wrap, .mafw-table-preview, .mafw-office-host",
+    ) as HTMLElement | null
+    if (!container) return
+    const limit = sheet.offsetTop - 24
+    if (anchorTop > limit) container.scrollTop += anchorTop - limit
+  }
+
+  createEffect(() => {
+    const open = annotOpen() || quoteOpen() || anchorOpen()
+    if (!open) return
+    const top = annotOpen() ? sel()?.top : quoteOpen() ? quoteSel()?.top : anchorSel()?.top
+    if (typeof top !== "number") return
+    requestAnimationFrame(() => revealAboveSheet(top))
+  })
+
   function submitAnnotationAnchored(
     anchor: AnnotationAnchor | undefined,
     comment: string,
     action: "draft" | "send",
-    extra?: { imageDataUrl?: string },
+    extra?: { imageDataUrl?: string; visual?: MarkVisual },
   ) {
     const f = activeFile()
     if (!f || !comment.trim()) return
@@ -688,7 +741,7 @@ export function EditorDock(props: {
       if (action === "send") {
         if (!props.onSendAnnotation) return
         props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim(), { hasImage: !!extra?.imageDataUrl }), extra)
-        if (props.sessionID) addMark(props.sessionID, f.rel, anchor)
+        if (props.sessionID) addMark(props.sessionID, f.rel, anchor, extra?.visual)
       } else {
         props.onAddAnnotation?.({
           rel: f.rel,
@@ -710,7 +763,7 @@ export function EditorDock(props: {
     if (action === "send") {
       if (!props.onSendAnnotation) return
       props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
-      if (props.sessionID) addMark(props.sessionID, f.rel)
+      if (props.sessionID) addMark(props.sessionID, f.rel, undefined, { point: { x: s.left, y: s.top } })
     } else {
       if (!props.onAddAnnotation) return
       props.onAddAnnotation({
@@ -749,6 +802,17 @@ export function EditorDock(props: {
             <Icon name="square-arrow-top-right" size="small" />
           </ButtonV2>
         </TooltipV2>
+        <Show when={activeFile() && mode() === "edit" && !isReadOnlyPreview(activeFile()!.kind)}>
+          <TooltipV2 value={annotMode() ? "退出批注模式（Esc）" : "批注模式：选中即批注"} openDelay={300}>
+            <ButtonV2
+              variant={annotMode() ? "contrast" : "ghost"}
+              size="small"
+              aria-label="批注模式"
+              aria-pressed={annotMode()}
+              onClick={() => { setAnnotMode(v => !v); clearSelection() }}
+            >批注</ButtonV2>
+          </TooltipV2>
+        </Show>
         <Show when={activeFile()?.kind === "svg" || activeFile()?.kind === "table" || activeFile()?.kind === "markdown" || activeFile()?.kind === "json"}>
           <TooltipV2 value={previewing() ? "查看源码" : activeFile()?.kind === "table" ? "表格视图" : activeFile()?.kind === "markdown" ? "渲染 Markdown" : activeFile()?.kind === "json" ? "JSON 树视图" : "预览 SVG"} openDelay={300}>
             <ButtonV2
@@ -937,6 +1001,7 @@ export function EditorDock(props: {
             <div class="mafw-json-preview-wrap">
               <JsonPreview
                 text={activeSourceText()}
+                annotMode={annotMode()}
                 onAnnotate={(path, summary, rect) => {
                   const host = bodyEl?.getBoundingClientRect()
                   if (!host) return
@@ -1007,53 +1072,74 @@ export function EditorDock(props: {
             </div>
           </Show>
 
-          {/* 选区批注入口（人标出 → agent 改）：浮钮为发现性入口，Ctrl+M 直达 */}
-          <Show when={mode() === "edit" && sel() && !annotOpen() && props.onSendAnnotation}>
+          {/* 批注标记层（rev2）：锚点原地反馈（文字高亮 / 点标记），不再只靠角落条 */}
+          <div class="mafw-annot-layer" aria-hidden="true">
+            <For each={fileMarks()}>
+              {(m) => (
+                <div class="mafw-annot-mark-group">
+                  <For each={m.visual?.rects ?? []}>
+                    {(r) => (
+                      <div
+                        class="mafw-annot-rect"
+                        data-status={m.status}
+                        style={{ left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` }}
+                      />
+                    )}
+                  </For>
+                  <Show when={m.visual?.point}>
+                    <div
+                      class="mafw-annot-dot"
+                      data-status={m.status}
+                      style={{ left: `${m.visual!.point!.x}px`, top: `${m.visual!.point!.y}px` }}
+                    />
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+
+          {/* 普通模式：浮钮（发现性入口）；批注模式隐藏——选中即输入 */}
+          <Show when={mode() === "edit" && !annotMode() && sel() && !annotOpen() && props.onSendAnnotation}>
             <div class="mafw-editor-annot-anchor" style={{ left: `${Math.max(8, sel()!.left)}px`, top: `${sel()!.top + 4}px` }}>
-              <ButtonV2 variant="outline" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setAnnotOpen(true)}>批注</ButtonV2>
+              <ButtonV2 variant="contrast" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setAnnotOpen(true)}>批注</ButtonV2>
             </div>
           </Show>
+          <Show when={mode() === "edit" && !annotMode() && quoteSel() && !quoteOpen() && props.onSendAnnotation}>
+            <div class="mafw-editor-annot-anchor" style={{ left: `${quoteSel()!.left}px`, top: `${quoteSel()!.top}px` }}>
+              <ButtonV2 variant="contrast" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setQuoteOpen(true)}>批注</ButtonV2>
+            </div>
+          </Show>
+
+          {/* 底部批注抽屉（rev2）：不遮挡被批注内容 */}
           <Show when={mode() === "edit" && annotOpen() && sel()}>
-            <AnnotationPopover
-              left={Math.max(8, Math.min(sel()!.left, 420))}
-              top={sel()!.top + 4}
+            <AnnotationSheet
               meta={`${sel()!.rel}:L${selRange()?.startLine}-${selRange()?.endLine}`}
-              placeholder="说明要改什么…"
               onSubmit={(comment, action) => submitAnnotationAnchored(undefined, comment, action)}
               onCancel={() => setAnnotOpen(false)}
             />
           </Show>
-
-          {/* 预览划选批注（md/docx）：浮钮 → 就地输入 → Enter 发送 */}
-          <Show when={mode() === "edit" && quoteSel() && !quoteOpen() && props.onSendAnnotation}>
-            <div class="mafw-editor-annot-anchor" style={{ left: `${quoteSel()!.left}px`, top: `${quoteSel()!.top}px` }}>
-              <ButtonV2 variant="outline" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setQuoteOpen(true)}>批注</ButtonV2>
-            </div>
-          </Show>
           <Show when={mode() === "edit" && quoteOpen() && quoteSel()}>
-            <AnnotationPopover
-              left={Math.min(quoteSel()!.left, 420)}
-              top={quoteSel()!.top}
-              meta={`${activeFile()?.rel ?? ""}: 节选`}
+            <AnnotationSheet
+              meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(quoteSel()!.anchor)}`}
               placeholder="这段要改成什么…"
               onSubmit={(comment, action) => {
-                submitAnnotationAnchored(quoteSel()?.anchor, comment, action)
+                submitAnnotationAnchored(quoteSel()?.anchor, comment, action, { visual: { rects: quoteSel()?.rects } })
                 setQuoteOpen(false)
                 setQuoteSel(null)
               }}
               onCancel={() => { setQuoteOpen(false); setQuoteSel(null) }}
             />
           </Show>
-
           <Show when={mode() === "edit" && anchorOpen() ? anchorSel() : null} keyed>
             {(sel) => (
-              <AnnotationPopover
-                left={Math.min(sel.left, 420)}
-                top={sel.top}
+              <AnnotationSheet
                 meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(sel.anchor)}`}
                 placeholder="这处要改成什么…"
                 onSubmit={(comment, action) => {
-                  submitAnnotationAnchored(sel.anchor, comment, action, { imageDataUrl: sel.imageDataUrl })
+                  submitAnnotationAnchored(sel.anchor, comment, action, {
+                    imageDataUrl: sel.imageDataUrl,
+                    visual: sel.imageDataUrl ? undefined : { point: { x: sel.left, y: sel.top } },
+                  })
                   setAnchorOpen(false)
                   setAnchorSel(null)
                 }}
