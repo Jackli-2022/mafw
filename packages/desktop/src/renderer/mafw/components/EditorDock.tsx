@@ -34,6 +34,7 @@ import { AnnotationPopover } from "./AnnotationPopover"
 import { buildQuoteAnchor } from "../quote-anchor"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
+import { addMark, marksFor } from "../annotation-marks"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
@@ -54,6 +55,8 @@ export function EditorDock(props: {
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
   onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
   onSendComment?: (sid: string, text: string) => void
+  /** 批注标记点击 → 切到审阅面（回路闭合）。 */
+  onOpenReview?: () => void
 }) {
   const [model, setModel] = createSignal<EditorModel>(createEditorModel())
   const [readNotes, setReadNotes] = createSignal<Record<string, string>>({})
@@ -170,6 +173,12 @@ export function EditorDock(props: {
   })
 
   /** djb2：Markdown 缓存键随内容变化（避免同 tab 内旧渲染被缓存命中）。 */
+  /** 当前文件的批注反馈标记（pending → responded）。 */
+  const fileMarks = () => {
+    const f = activeFile()
+    return props.sessionID && f ? marksFor(props.sessionID, f.rel) : []
+  }
+
   /** 当前 Office kind（非 Office → null）。 */
   const officeKind = (): "xlsx" | "docx" | "pptx" | null => {
     const k = activeFile()?.kind
@@ -614,6 +623,7 @@ export function EditorDock(props: {
       if (action === "send") {
         if (!props.onSendAnnotation) return
         props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim()), extra)
+        if (props.sessionID) addMark(props.sessionID, f.rel, anchor)
       } else {
         props.onAddAnnotation?.({
           rel: f.rel,
@@ -635,6 +645,7 @@ export function EditorDock(props: {
     if (action === "send") {
       if (!props.onSendAnnotation) return
       props.onSendAnnotation(buildAnnotationPrompt(f.rel, range.startLine, range.endLine, s.text, comment.trim()))
+      if (props.sessionID) addMark(props.sessionID, f.rel)
     } else {
       if (!props.onAddAnnotation) return
       props.onAddAnnotation({
@@ -805,6 +816,20 @@ export function EditorDock(props: {
                     </Show>
                   </div>
                 </Show>
+                <For each={fileMarks().filter((m) => m.anchor?.kind === "region")}>
+                  {(m) => {
+                    const a = m.anchor as Extract<AnnotationAnchor, { kind: "region" }>
+                    return (
+                      <div
+                        class="mafw-annot-pin"
+                        classList={{ "mafw-annot-pin-pending": m.status === "pending" }}
+                        style={{ left: `${(a.x + a.w / 2) * 100}%`, top: `${(a.y + a.h / 2) * 100}%` }}
+                        aria-label={m.status === "pending" ? "批注处理中" : "批注已回应"}
+                        onClick={() => props.onOpenReview?.()}
+                      />
+                    )
+                  }}
+                </For>
               </div>
               <div class="mafw-file-preview-meta">{previewMeta(activeFile()!)}</div>
             </div>
@@ -900,6 +925,25 @@ export function EditorDock(props: {
                 setAnchorOpen(true)
               }}
             />
+          </Show>
+
+          {/* 批注反馈标记条（回路闭合：待回应 → 已回应，点击进审阅） */}
+          <Show when={fileMarks().length > 0}>
+            <div class="mafw-annot-marks">
+              <For each={fileMarks()}>
+                {(m) => (
+                  <ButtonV2
+                    variant="ghost"
+                    size="small"
+                    class="mafw-annot-mark"
+                    onClick={() => props.onOpenReview?.()}
+                  >
+                    <span class="mafw-annot-mark-dot" data-status={m.status} aria-hidden="true" />
+                    <span>{m.anchor ? describeAnchor(m.anchor) : "文本批注"} · {m.status === "pending" ? "待回应" : "已回应"}</span>
+                  </ButtonV2>
+                )}
+              </For>
+            </div>
           </Show>
 
           {/* 选区批注入口（人标出 → agent 改）：浮钮为发现性入口，Ctrl+M 直达 */}

@@ -16,6 +16,7 @@ import {
   sealUnfinishedAssistantMessages,
 } from "../chat-reducers"
 import type { SidHandler, ShellEventDeps } from "../dispatcher"
+import { markResponded } from "../../annotation-marks"
 
 export interface ChatDeps {
   trace(event: { type?: string }, channel: string): void
@@ -98,6 +99,7 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
     d.markSessionDone(sid)
     d.onTurnSettled(sid, { expireCards: true })
     d.notifyIdle(sid)
+    markResponded(sid)
   } else if (event.type === "part.complete") {
     d.setSessionStatus(sid, { type: "idle" })
     d.markSessionDone(sid)
@@ -105,6 +107,7 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   } else if (event.type === "turn.failed" || event.type === "turn.aborted") {
     d.setSessionStatus(sid, { type: "idle" })
     d.onTurnSettled(sid, { expireCards: true })
+    markResponded(sid)
   }
 
   if (TURN_END_TYPES.has(event.type)) {

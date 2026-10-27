@@ -91,3 +91,15 @@ test("PPTX 图钉批注：slide wrapper 识别 + 页码锚", () => {
   const editor = read("src/renderer/mafw/components/EditorDock.tsx")
   assert.match(editor, /onAnnotateRegion/)
 })
+
+test("批注反馈态：发送登记 mark + 会话回合结束翻已回应 + 本地面板条", () => {
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /addMark/)
+  assert.match(editor, /marksFor/)
+  assert.match(editor, /mafw-annot-marks/)
+  assert.match(editor, /onOpenReview/)
+  const stream = read("src/renderer/mafw/sse/handlers/chat-stream.ts")
+  assert.match(stream, /markResponded/)
+  const shell = read("src/renderer/mafw/MafwShell.tsx")
+  assert.match(shell, /onOpenReview/)
+})

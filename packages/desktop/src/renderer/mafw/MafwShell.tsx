@@ -2198,6 +2198,7 @@ export function MafwShell() {
                     addPending({ sessionID: sid, ...a })
                     showToastV2({ description: "已加入批注", duration: 1600 } as any)
                   }}
+                  onOpenReview={() => applyWorkbenchView("review")}
                   onSendComment={(sid, text) => {
                     void window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
                       .then(() => showToastV2({ description: "评论已发送给 agent", duration: 2000 } as any))

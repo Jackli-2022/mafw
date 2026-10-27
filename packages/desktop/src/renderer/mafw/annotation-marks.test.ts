@@ -1,0 +1,32 @@
+import { describe, test } from "node:test"
+import assert from "node:assert/strict"
+import { addMark, clearMarks, markResponded, marksFor, resetMarks } from "./annotation-marks"
+
+describe("annotation-marks（批注反馈态）", () => {
+  test("按 sessionID 隔离 + 按 rel 过滤", () => {
+    resetMarks()
+    addMark("s1", "a.md", { kind: "quote", quote: "x" })
+    addMark("s1", "b.png", { kind: "region", x: 0, y: 0, w: 0.1, h: 0.1 })
+    addMark("s2", "a.md")
+    assert.equal(marksFor("s1", "a.md").length, 1)
+    assert.equal(marksFor("s1", "b.png").length, 1)
+    assert.equal(marksFor("s2", "a.md").length, 1)
+    assert.equal(marksFor("s2", "b.png").length, 0)
+  })
+
+  test("markResponded 只翻本会话 pending", () => {
+    resetMarks()
+    addMark("s1", "a.md")
+    addMark("s2", "a.md")
+    markResponded("s1")
+    assert.equal(marksFor("s1", "a.md")[0].status, "responded")
+    assert.equal(marksFor("s2", "a.md")[0].status, "pending")
+  })
+
+  test("clearMarks / resetMarks", () => {
+    resetMarks()
+    addMark("s1", "a.md")
+    clearMarks("s1")
+    assert.equal(marksFor("s1", "a.md").length, 0)
+  })
+})
