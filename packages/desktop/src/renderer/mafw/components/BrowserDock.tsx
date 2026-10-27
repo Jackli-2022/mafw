@@ -11,6 +11,7 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { Icon } from "@mafw/ui/icon"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
 import { BROWSER_PARTITION, navigationDecision, normalizeAddress } from "../../../shared/browser-policy"
+import { displayMafwFilePath } from "../../../shared/mafw-file"
 import { browserNavRequest } from "../browser-nav"
 import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import { buildPickCancelScript, buildPickScript, PICK_TIMEOUT_MS, type ElementPickPayload } from "../browser/element-pick"
@@ -88,6 +89,21 @@ export function BrowserDock(props: { sessionID: string | null }) {
     if (address()) load(address())
     else try { view?.reload?.() } catch { /* ignore */ }
   }
+
+  // renderer 内部导航请求（文件预览：html → 浏览器 surface，2026-10-27）
+  createEffect(() => {
+    const req = browserNavRequest()
+    if (!req) return
+    load(req.url)
+  })
+
+  /** 本地文件（mafw-file://）地址栏友好显示：📄 rel；远程 URL 原样。系统浏览器按钮对本地文件不适用。 */
+  const localFilePath = () => displayMafwFilePath(address())
+  const displayAddress = () => {
+    const rel = localFilePath()
+    return rel ? `📄 ${rel}` : address()
+  }
+  const isRemote = () => !localFilePath()
 
   /** G2：点选元素 → 元素信息 + 区域截图 → capture 草稿（+ 图片进媒体管道）。 */
   let pickToken = 0
@@ -211,7 +227,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
             variant="ghost"
             size="small"
             aria-label="在系统浏览器打开"
-            disabled={!started()}
+            disabled={!started() || !isRemote()}
             onClick={() => { const url = address(); if (url) void window.api.browser.openExternal(url) }}
           >
             <Icon name="square-arrow-top-right" size="small" />
@@ -221,7 +237,7 @@ export function BrowserDock(props: { sessionID: string | null }) {
       <div class="mafw-browser-bar">
         <TextInputV2
           class="mafw-browser-address"
-          value={address()}
+          value={displayAddress()}
           placeholder="输入网址（Enter 打开）"
           onInput={(e) => setAddress(e.currentTarget.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); load(address()) } }}

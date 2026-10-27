@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import {
   MAFW_FILE_SCHEME,
   buildMafwFileUrl,
+  displayMafwFilePath,
   mimeForPath,
   parseMafwFileUrl,
 } from "../src/shared/mafw-file"
@@ -78,5 +79,17 @@ describe("MAFW_FILE_SCHEME", () => {
   test("scheme 常量与 URL 前缀一致", () => {
     assert.equal(MAFW_FILE_SCHEME, "mafw-file")
     assert.ok(buildMafwFileUrl("ab12cd34", "a.png").startsWith("mafw-file://"))
+  })
+})
+
+describe("displayMafwFilePath（地址栏友好显示）", () => {
+  test("mafw-file URL → 解码后的相对路径", () => {
+    assert.equal(displayMafwFilePath("mafw-file://ab12cd34/docs/my%20page.html"), "docs/my page.html")
+    assert.equal(displayMafwFilePath("mafw-file://ab12cd34/a.png?v=1"), "a.png")
+  })
+  test("非本 scheme / 坏 URL → null", () => {
+    assert.equal(displayMafwFilePath("https://example.com/a.html"), null)
+    assert.equal(displayMafwFilePath("mafw-file://ab12cd34/../x"), null)
+    assert.equal(displayMafwFilePath(""), null)
   })
 })

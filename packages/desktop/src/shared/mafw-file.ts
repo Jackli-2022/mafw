@@ -89,3 +89,9 @@ export function mimeForPath(rel: string): string {
   if (dot <= 0) return "application/octet-stream"
   return MIME[base.slice(dot + 1).toLowerCase()] ?? "application/octet-stream"
 }
+
+/** 地址栏友好显示：mafw-file URL → 解码后的相对路径；其他/null → null。 */
+export function displayMafwFilePath(raw: string): string | null {
+  const parsed = parseMafwFileUrl(raw)
+  return parsed ? parsed.rel : null
+}

@@ -14,8 +14,8 @@ test("MafwShell dispatches file opens by fileOpenPlan (html → browser)", () =>
 
 test("BrowserDock consumes the browser nav store", () => {
   const src = read("src/renderer/mafw/components/BrowserDock.tsx")
-  assert.match(src, /browserNavRequest/)
-  assert.match(src, /createEffect/)
+  // 必须是 effect 里真正读取信号并导航（import 不算）
+  assert.match(src, /createEffect\(\(\) => \{\s*const req = browserNavRequest\(\)\s*if \(!req\) return\s*load\(req\.url\)/)
 })
 
 test("browser nav store delivers a navigate request", async () => {
