@@ -15,6 +15,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
+import { formatRailTitle } from "./components/rail-display"
 import { clampLeftDockWidth, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
@@ -240,7 +241,7 @@ export function MafwShell() {
     setActiveTab("chat")
     setShowWelcome(false)
     if (!sessions().some(s => s.id === sid)) {
-      const tabTitle = title || `Chat ${sessions().length + 1}`
+      const tabTitle = formatRailTitle(title || `Chat ${sessions().length + 1}`)
       setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager, metadata }])
       setStore(prev => ({
         ...prev,
@@ -899,8 +900,9 @@ export function MafwShell() {
       invalidate: () => sessionStore.invalidate(),
       patch: (id, patch) => sessionStore.patch(id, patch),
       retitleOpenTab: (id, title) => {
-        setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s))
-        setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title } : x) }))
+        const next = formatRailTitle(title)
+        setSessions(prev => prev.map(s => s.id === id ? { ...s, title: next } : s))
+        setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title: next } : x) }))
       },
       remove: (id) => sessionStore.remove(id),
       closeIfOpen: (id) => { if (sessions().some(s => s.id === id)) closeSession(id) },

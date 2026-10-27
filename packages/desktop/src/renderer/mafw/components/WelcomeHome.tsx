@@ -6,6 +6,7 @@ import { TextInputV2 } from "@mafw/ui/v2/text-input-v2"
 import { Icon as IconV2 } from "@mafw/ui/v2/icon"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@mafw/ui/v2/switch-v2"
+import { formatRailTitle } from "./rail-display"
 
 /**
  * Startup welcome pane ("今天要做什么？"). Rendered when the app launches
@@ -84,13 +85,13 @@ export function WelcomeHome(props: {
       if (!s?.id || seen.has(s.id)) continue
       if (s?.metadata?.mafw?.role === "manager") continue
       seen.add(s.id)
-      merged.push({ id: s.id, title: s.title || s.id })
+      merged.push({ id: s.id, title: formatRailTitle(s.title) })
     }
     for (const s of props.historySessions) {
       if (!s?.id || seen.has(s.id)) continue
       if (s?.metadata?.mafw?.role === "manager") continue
       seen.add(s.id)
-      merged.push({ id: s.id, title: s.title || s.id, time: s.time?.updated })
+      merged.push({ id: s.id, title: formatRailTitle(s.title), time: s.time?.updated })
     }
     return merged.slice(0, 12)
   })
