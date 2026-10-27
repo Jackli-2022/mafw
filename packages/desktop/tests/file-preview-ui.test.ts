@@ -49,3 +49,10 @@ test("PDF opens in browser surface via Chromium PDF viewer", () => {
   const dock = read("src/renderer/mafw/components/BrowserDock.tsx")
   assert.match(dock, /setAttribute\("plugins"/)
 })
+
+test("Markdown preview: default rendered, source one click", () => {
+  const src = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(src, /@mafw\/session-ui\/markdown/)
+  assert.match(src, /mafw-md-preview/)
+  assert.match(src, /"markdown"/)
+})

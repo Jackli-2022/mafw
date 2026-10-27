@@ -5541,3 +5541,13 @@ html[data-theme="light"] body {
   font-size: 10px;
   color: var(--text-3);
 }
+
+/* Markdown 文件预览（2026-10-27 增补）：排版沿用 session-ui markdown 样式 */
+.mafw-md-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 26px 28px;
+  background: var(--bg-base);
+}
+.mafw-md-preview > *:first-child { margin-top: 0; }

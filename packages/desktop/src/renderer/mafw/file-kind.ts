@@ -1,6 +1,6 @@
 // 文件种类与点击分流（spec 2026-10-27-workbench-file-preview §2）。
 // 图片 → 文件 surface 内只读预览 tab；svg 默认文本（预览为显式动作）；html → 浏览器 surface。
-export type FileKind = "image" | "svg" | "html" | "text" | "pdf" | "table"
+export type FileKind = "image" | "svg" | "html" | "text" | "pdf" | "table" | "markdown"
 
 export const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "avif"] as const
 
@@ -21,6 +21,7 @@ export function fileKindFor(rel: string): FileKind {
   if (ext === "html" || ext === "htm") return "html"
   if (ext === "pdf") return "pdf"
   if (ext === "csv" || ext === "tsv") return "table"
+  if (ext === "md" || ext === "markdown") return "markdown"
   return "text"
 }
 

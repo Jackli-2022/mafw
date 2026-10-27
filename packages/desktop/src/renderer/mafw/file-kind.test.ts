@@ -54,3 +54,12 @@ describe("pdf / table（2026-10-27 增补）", () => {
     assert.equal(fileOpenPlan("data.tsv"), "editor")
   })
 })
+
+describe("markdown（2026-10-27 增补）", () => {
+  test("md/markdown → markdown 种类，仍进文件 surface", () => {
+    assert.equal(fileKindFor("README.md"), "markdown")
+    assert.equal(fileKindFor("docs/Guide.MARKDOWN"), "markdown")
+    assert.equal(fileKindFor("a.mdx"), "text")
+    assert.equal(fileOpenPlan("README.md"), "editor")
+  })
+})
