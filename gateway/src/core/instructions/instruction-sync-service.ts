@@ -117,8 +117,6 @@ export class InstructionSyncService {
 
     const rt = this.deps.getRuntime();
     if (!this.canManage(rt)) return { managed: false, error: 'capability_absent' };
-    const dialect = (rt as { activeDialect?: string }).activeDialect;
-    if (dialect && dialect !== 'v21') return { managed: false, error: 'capability_absent' };
 
     if (this.now() < this.breakerUntil) {
       return { managed: false, error: this.breakerReason ?? 'breaker' };
@@ -141,8 +139,6 @@ export class InstructionSyncService {
 
     const rt = this.deps.getRuntime();
     if (!this.canManage(rt)) return this.allMissing('capability_absent');
-    const dialect = (rt as { activeDialect?: string }).activeDialect;
-    if (dialect && dialect !== 'v21') return this.allMissing('capability_absent');
     if (this.now() < this.breakerUntil) return this.allMissing('breaker');
 
     const controller = new AbortController();

@@ -220,6 +220,14 @@ describe('InstructionSyncService.sync', () => {
     await svc.sync('s1');
     expect((instructions.list as jest.Mock).mock.calls.length).toBe(before + 1);
   });
+
+  it('does not gate on the lagging event dialect when the capability is declared', async () => {
+    const { rt, calls } = makeRt();
+    rt.activeDialect = 'v1'; // gateway restart probe fail-safe; serve is still 2.1
+    const { svc } = makeSvc(rt);
+    expect((await svc.sync('s1')).managed).toBe(true);
+    expect(calls[0]).toBe('list');
+  });
 });
 
 describe('InstructionSyncService.inspect', () => {
