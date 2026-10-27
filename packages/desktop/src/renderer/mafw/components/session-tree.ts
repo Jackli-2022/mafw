@@ -43,7 +43,7 @@ const groupLabel = (ts: number, now: number): string => {
 
 const toNode = (s: SessionInfo, projectDir: string, manager: boolean): SessionNode => ({
   id: s.id,
-  title: s.title?.trim() || "New conversation",
+  title: s.title?.trim() || "",
   updated: s.time?.updated || s.time?.created || 0,
   manager,
   worktree: worktreeBadge(s.directory, projectDir),

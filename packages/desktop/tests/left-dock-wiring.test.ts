@@ -11,6 +11,9 @@ test("LeftDock: formatted titles, raw rename seed", () => {
   const rename = src.match(/const startRename = \(node: SessionNode\) => \{([^}]*)\}/)?.[1] ?? ""
   assert.match(rename, /node\.title/)
   assert.doesNotMatch(rename, /formatRailTitle/)
+  // 空标题不得在数据层兜底成英文占位（格式化为「未命名」）
+  const tree = read("src/renderer/mafw/components/session-tree.ts")
+  assert.doesNotMatch(tree, /New conversation/)
 })
 
 test("LeftDock: project name fallback at three sites; chevron after name", () => {
