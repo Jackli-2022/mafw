@@ -1,6 +1,6 @@
 import { describe, test } from "node:test"
 import assert from "node:assert/strict"
-import { addMark, clearMarks, markResponded, marksFor, resetMarks } from "./annotation-marks"
+import { addMark, clearMarks, markResponded, marksFor, noteTurnActivity, resetMarks } from "./annotation-marks"
 
 describe("annotation-marks（批注反馈态）", () => {
   test("按 sessionID 隔离 + 按 rel 过滤", () => {
@@ -28,5 +28,20 @@ describe("annotation-marks（批注反馈态）", () => {
     addMark("s1", "a.md")
     clearMarks("s1")
     assert.equal(marksFor("s1", "a.md").length, 0)
+  })
+})
+
+describe("回合归属（I4）", () => {
+  test("回合开始前的 mark 才被本次完成翻转", () => {
+    resetMarks()
+    addMark("s1", "a.md")            // 空闲期创建（属于下一个回合）
+    noteTurnActivity("s1")           // 回合开始
+    addMark("s1", "b.md")            // 回合进行中创建（属于下一个回合）
+    markResponded("s1")
+    assert.equal(marksFor("s1", "a.md")[0].status, "responded")
+    assert.equal(marksFor("s1", "b.md")[0].status, "pending")
+    noteTurnActivity("s1")
+    markResponded("s1")
+    assert.equal(marksFor("s1", "b.md")[0].status, "responded")
   })
 })

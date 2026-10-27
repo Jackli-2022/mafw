@@ -106,3 +106,13 @@ describe("anchor 批注打包（预览批注 T10）", () => {
     expect(batch).toContain("路径 `$.a`（当前值：`1`）")
   })
 })
+
+describe("region 无截图时文案（I5）", () => {
+  test("hasImage=false → 不再声称截图见附件", () => {
+    const text = buildAnnotationPromptAnchored("a.png", { kind: "region", x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, "改这里", { hasImage: false })
+    expect(text).toContain("截图未保存")
+    expect(text).not.toContain("截图见附件")
+    const withImg = buildAnnotationPromptAnchored("a.png", { kind: "region", x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, "改这里", { hasImage: true })
+    expect(withImg).toContain("截图见附件")
+  })
+})

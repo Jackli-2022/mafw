@@ -21,7 +21,7 @@ export function describeAnchor(a: AnnotationAnchor): string {
 }
 
 /** 发送打包时的位置描述行（不含「我的批注」）。 */
-export function anchorBlockLines(rel: string, a: AnnotationAnchor): string[] {
+export function anchorBlockLines(rel: string, a: AnnotationAnchor, opts?: { hasImage?: boolean }): string[] {
   switch (a.kind) {
     case "quote":
       return [`文件 \`${rel}\` 节选（渲染预览）：`, "", `> ${a.quote.replace(/\r?\n/g, "\n> ")}`]
@@ -37,6 +37,8 @@ export function anchorBlockLines(rel: string, a: AnnotationAnchor): string[] {
       const size = a.w > 0 || a.h > 0 ? `, ${fmtPct(a.w)}×${fmtPct(a.h)}` : ""
       const pos = `(${fmtPct(a.x)}, ${fmtPct(a.y)}${size})`
       if (a.slide) return [`文件 \`${rel}\` 第 ${a.slide} 页 ${pos}：`]
+      // I5：草稿重启后截图不落盘——没图就不能声称「见附件」。
+      if (opts?.hasImage === false) return [`图片 \`${rel}\` 区域 ${pos}：（截图未保存，仅坐标）`]
       return [`图片 \`${rel}\` 区域 ${pos}：截图见附件`]
     }
   }

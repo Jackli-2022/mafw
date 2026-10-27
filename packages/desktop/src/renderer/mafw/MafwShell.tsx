@@ -2175,19 +2175,19 @@ export function MafwShell() {
                   onSendAnnotation={(text, opts) => {
                     const sid = currentSessionID()
                     if (!sid) return
-                    const run = opts?.imageDataUrl
-                      ? window.api.mafw.chat.sendEnriched({
-                          sessionID: sid,
-                          message: text,
-                          parts: [{
-                            type: "file",
-                            id: `prt_annot_${Date.now()}`,
-                            mime: "image/png",
-                            filename: "annotation.png",
-                            url: opts.imageDataUrl,
-                          }],
-                        })
-                      : window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                    // I2：区域截图走 A2A 媒体管道（与输入框附件同路），消息只带任务指针。
+                    const run = (async () => {
+                      if (!opts?.imageDataUrl) {
+                        return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: text })
+                      }
+                      const task = await window.api.mafw.media.createTask({
+                        dataUrl: opts.imageDataUrl,
+                        mediaType: "image/png",
+                        question: text,
+                      })
+                      const pointer = `[媒体附件 taskID: ${task.taskID} contextID: ${task.contextId}（媒体: annotation.png），这是用户批注的区域截图——调用 mafw_media_ask 工具获取其内容后直接回应（taskID 填 ${task.taskID}）]`
+                      return window.api.mafw.sessions.promptAsync({ sessionID: sid, message: `${text}\n\n${pointer}` })
+                    })()
                     void run
                       .then(() => showToastV2({ description: "批注已发送给 agent", duration: 2000 } as any))
                       .catch((e: any) => showToastV2({ description: `发送失败：${String(e?.message ?? e).slice(0, 60)}`, variant: "error", duration: 4000 } as any))

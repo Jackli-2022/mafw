@@ -192,6 +192,11 @@ export function useSendMessage(deps: SendMessageDeps) {
     // 截屏/元素点选草稿同批打包（G1/G2）
     const pendingCaptures = takeCaptures ? takeCaptures(sid) : []
     const captureBlock = pendingCaptures.length > 0 && formatCaptures ? formatCaptures(pendingCaptures) : ""
+    // I2：区域批注截图与普通图片附件同路（A2A 媒体任务 → 文本指针），绝不把裸图片塞给文本模型。
+    const annotationAtts = pendingAnnotations
+      .filter(a => a.imageDataUrl)
+      .map((a, i) => ({ name: `annotation-${i + 1}.png`, mime: "image/png", dataUrl: a.imageDataUrl! }))
+    const attsForSend = [...atts, ...annotationAtts]
     // @file mentions ride as text references — the model reads them with its
     // own read tool (Claude Code semantics, no file part expansion).
     const filePrefix = fileMentions.map(f => "@" + f.rel).join(" ")
@@ -210,7 +215,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     const visionParts: any[] = []
     const visionFailed: string[] = []
     const visionThumbs: { name: string; mime: string; dataUrl: string }[] = []
-    const visionable = atts.filter(a => { const m = a.mime || mimeOf(a.name); return m.startsWith("image/") || m.startsWith("video/") || m.startsWith("audio/") })
+    const visionable = attsForSend.filter(a => { const m = a.mime || mimeOf(a.name); return m.startsWith("image/") || m.startsWith("video/") || m.startsWith("audio/") })
     for (const a of visionable) {
       try {
         // Pre-uploaded attachment (voice segments): reuse the A2A task pointer
@@ -293,19 +298,15 @@ export function useSendMessage(deps: SendMessageDeps) {
         visionFailed.push(`${a.name}: ${err?.message || String(err)}`)
       }
     }
-    const nonVision = atts.filter(a => { const m = a.mime || mimeOf(a.name); return !(m.startsWith("image/") || m.startsWith("video/") || m.startsWith("audio/")) })
+    const nonVision = attsForSend.filter(a => { const m = a.mime || mimeOf(a.name); return !(m.startsWith("image/") || m.startsWith("video/") || m.startsWith("audio/")) })
     const fileParts = nonVision.map((a, i) => a.dataUrl
       ? { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || "image/png", filename: a.name, url: a.dataUrl }
       : { type: "file", id: `prt_att_${ts}_${i}`, mime: a.mime || mimeOf(a.name), filename: a.name, url: "file://" + encodeFilePath(a.path || "") })
-    // 区域批注的裁剪截图（内存 dataURL）→ 同 file part 管道
-    const annotationImageParts = pendingAnnotations
-      .filter(a => a.imageDataUrl)
-      .map((a, i) => ({ type: "file", id: `prt_annot_${ts}_${i}`, mime: "image/png", filename: `annotation-${i + 1}.png`, url: a.imageDataUrl! }))
-    fileParts.push(...annotationImageParts)
+    // 区域批注截图已并入 attsForSend 走媒体管道（I2）——file part 仅非媒体附件。
     const agentParts = agents.map(a => ({ type: "agent", id: `prt_agent_${ts}_${a.name}`, name: a.name }))
     // Release picker tokens only after the vision reads above consumed the
     // image bytes (releasing first invalidates read-picked-file).
-    for (const a of atts) if (a.token) (window as any).api?.releasePickedFiles?.(a.token)
+    for (const a of attsForSend) if (a.token) (window as any).api?.releasePickedFiles?.(a.token)
     // Front-end display text: merge user text + vision pointers + failure notes
     // into a single non-synthetic text part. Message only renders the first
     // non-synthetic text part, so synthetic pointers alone would render an

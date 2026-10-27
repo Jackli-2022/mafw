@@ -20,6 +20,7 @@ import {
 import { WorkbenchCodeView } from "./WorkbenchCodeView"
 import { TerminalDock } from "./TerminalDock"
 import type { FileDiffEntry } from "./DiffReviewPanel"
+import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
 export type WorkbenchShellProps = {
   open: boolean
@@ -35,9 +36,11 @@ export type WorkbenchShellProps = {
   terminalOpen: boolean
   onToggleTerminal: () => void
   onOpenFile: (rel: string) => void
-  onSendAnnotation?: (text: string) => void
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
+  onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
+  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
   onSendComment?: (sid: string, text: string) => void
+  /** 批注反馈标记点击 → 切审阅面。 */
+  onOpenReview?: () => void
   executionView: JSX.Element
   reviewView: JSX.Element
 }
@@ -180,6 +183,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
+            onOpenReview={props.onOpenReview}
           />
         </div>
         <div class="mafw-rw-pane" classList={{ "is-active": props.view === "execution" }}>

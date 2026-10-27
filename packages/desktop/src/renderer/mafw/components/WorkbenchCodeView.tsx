@@ -9,6 +9,7 @@ import { EditorDock } from "./EditorDock"
 import { BrowserDock } from "./BrowserDock"
 import type { FileDiffEntry } from "./DiffReviewPanel"
 import type { WorkbenchSurface } from "../workbench-views"
+import type { AnnotationAnchor } from "../../../shared/annotation-types"
 
 export function WorkbenchCodeView(props: {
   surface: WorkbenchSurface
@@ -16,9 +17,10 @@ export function WorkbenchCodeView(props: {
   sessionDirectory: string | null
   diffs: FileDiffEntry[]
   onOpenFile: (rel: string) => void
-  onSendAnnotation?: (text: string) => void
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
+  onSendAnnotation?: (text: string, opts?: { imageDataUrl?: string }) => void
+  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
   onSendComment?: (sid: string, text: string) => void
+  onOpenReview?: () => void
 }) {
   const [filesOpen, setFilesOpen] = createSignal(false)
   const openFile = (rel: string) => {
@@ -54,6 +56,7 @@ export function WorkbenchCodeView(props: {
             onSendAnnotation={props.onSendAnnotation}
             onAddAnnotation={props.onAddAnnotation}
             onSendComment={props.onSendComment}
+            onOpenReview={props.onOpenReview}
           />
         </div>
         <div class="mafw-rw-code-pane" style={{ display: props.surface === "browser" ? "contents" : "none" }}>

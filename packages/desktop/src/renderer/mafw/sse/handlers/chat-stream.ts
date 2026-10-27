@@ -16,7 +16,7 @@ import {
   sealUnfinishedAssistantMessages,
 } from "../chat-reducers"
 import type { SidHandler, ShellEventDeps } from "../dispatcher"
-import { markResponded } from "../../annotation-marks"
+import { markResponded, noteTurnActivity } from "../../annotation-marks"
 
 export interface ChatDeps {
   trace(event: { type?: string }, channel: string): void
@@ -82,6 +82,8 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   const TURN_END_TYPES = new Set(["turn.completed", "turn.failed", "turn.aborted"])
   if (!CHAIN_TYPES.has(event.type)) return false
   d.trace(event, "chat:stream")
+  // I4：回合起点 = 本回合首个非终态帧（终态帧不参与，防把进行中批注误归属上一回合）。
+  if (!TURN_END_TYPES.has(event.type)) noteTurnActivity(sid)
 
   if (event.type === "part.updated") {
     const part = event.payload?.part || event.properties?.part
@@ -107,7 +109,6 @@ export const handleChatStreamEvent: SidHandler = (event, sid, deps) => {
   } else if (event.type === "turn.failed" || event.type === "turn.aborted") {
     d.setSessionStatus(sid, { type: "idle" })
     d.onTurnSettled(sid, { expireCards: true })
-    markResponded(sid)
   }
 
   if (TURN_END_TYPES.has(event.type)) {

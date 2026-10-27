@@ -505,33 +505,73 @@ export function EditorDock(props: {
   }
 
   /** 预览面划选（md/docx）：选区落在 [data-annotatable="quote"] 内 → quote 锚 + 浮钮。 */
-  function handlePreviewSelection(e: MouseEvent) {
-    if (mode() !== "edit") return
-    if (quoteOpen()) return
+  function captureQuoteFromSelection(): boolean {
+    if (mode() !== "edit" || quoteOpen()) return false
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
       setQuoteSel(null)
-      return
+      return false
     }
     const range = selection.getRangeAt(0)
-    const target = e.target as HTMLElement | null
-    const container = target?.closest?.('[data-annotatable="quote"]') as HTMLElement | null
-    if (!container || !container.contains(range.commonAncestorContainer)) return
+    const node = range.commonAncestorContainer
+    const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement
+    const container = el?.closest?.('[data-annotatable="quote"]') as HTMLElement | null
+    if (!container || !container.contains(node)) return false
     const anchor = buildQuoteAnchor(container.innerText ?? "", selection.toString())
-    if (!anchor) return
+    if (!anchor) return false
     const rect = range.getBoundingClientRect()
     const host = bodyEl?.getBoundingClientRect()
-    if (!host) return
+    if (!host) return false
     setQuoteSel({
       anchor,
       left: Math.max(8, rect.left - host.left),
       top: Math.max(8, rect.bottom - host.top + 4),
     })
+    return true
   }
+
+  function handlePreviewSelection(_e: MouseEvent) {
+    captureQuoteFromSelection()
+  }
+
+  // I1：预览面焦点不在 editor-body 内 —— 键盘路径挂 document；选区变化（含 Shift+方向键）也走同一捕获。
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.code !== "KeyM" || mode() !== "edit") return
+      if (sel() && !annotOpen()) {
+        e.preventDefault()
+        e.stopPropagation()
+        setAnnotOpen(true)
+        return
+      }
+      const hasQuote = !!quoteSel() || captureQuoteFromSelection()
+      if (hasQuote && !quoteOpen()) {
+        e.preventDefault()
+        e.stopPropagation()
+        setQuoteOpen(true)
+      }
+    }
+    let timer: number | undefined
+    const onSelectionChange = () => {
+      if (mode() !== "edit") return
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => captureQuoteFromSelection(), 150)
+    }
+    document.addEventListener("keydown", onKey, true)
+    document.addEventListener("selectionchange", onSelectionChange)
+    onCleanup(() => {
+      document.removeEventListener("keydown", onKey, true)
+      document.removeEventListener("selectionchange", onSelectionChange)
+      window.clearTimeout(timer)
+    })
+  })
 
   /** 表格单元格批注（csv/tsv）：事件委托，data-cell-ref 定位。 */
   function handleCellClick(e: MouseEvent) {
     if (mode() !== "edit") return
+    // I6：拖选用户在复制单元格文字 —— 有非折叠 DOM 选区时不当批注点击。
+    const domSel = window.getSelection()
+    if (domSel && !domSel.isCollapsed && domSel.toString().trim()) return
     const el = (e.target as HTMLElement)?.closest?.("[data-cell-ref]") as HTMLElement | null
     if (!el || !el.dataset.cellRef) return
     const host = bodyEl?.getBoundingClientRect()
@@ -622,7 +662,7 @@ export function EditorDock(props: {
     if (anchor) {
       if (action === "send") {
         if (!props.onSendAnnotation) return
-        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim()), extra)
+        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim(), { hasImage: !!extra?.imageDataUrl }), extra)
         if (props.sessionID) addMark(props.sessionID, f.rel, anchor)
       } else {
         props.onAddAnnotation?.({
@@ -984,19 +1024,21 @@ export function EditorDock(props: {
             />
           </Show>
 
-          <Show when={mode() === "edit" && anchorOpen() && anchorSel()}>
-            <AnnotationPopover
-              left={Math.min(anchorSel()!.left, 420)}
-              top={anchorSel()!.top}
-              meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(anchorSel()!.anchor)}`}
-              placeholder="这处要改成什么…"
-              onSubmit={(comment, action) => {
-                submitAnnotationAnchored(anchorSel()?.anchor, comment, action, { imageDataUrl: anchorSel()?.imageDataUrl })
-                setAnchorOpen(false)
-                setAnchorSel(null)
-              }}
-              onCancel={() => { setAnchorOpen(false); setAnchorSel(null) }}
-            />
+          <Show when={mode() === "edit" && anchorOpen() ? anchorSel() : null} keyed>
+            {(sel) => (
+              <AnnotationPopover
+                left={Math.min(sel.left, 420)}
+                top={sel.top}
+                meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(sel.anchor)}`}
+                placeholder="这处要改成什么…"
+                onSubmit={(comment, action) => {
+                  submitAnnotationAnchored(sel.anchor, comment, action, { imageDataUrl: sel.imageDataUrl })
+                  setAnchorOpen(false)
+                  setAnchorSel(null)
+                }}
+                onCancel={() => { setAnchorOpen(false); setAnchorSel(null) }}
+              />
+            )}
           </Show>
 
           <Show when={mode() === "diff" && activeFile() && props.sessionID}>

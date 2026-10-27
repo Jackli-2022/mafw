@@ -80,7 +80,7 @@ test("图片拖框批注：region layer + 裁剪 + 发送带图", () => {
   const shell = read("src/renderer/mafw/MafwShell.tsx")
   assert.match(shell, /sendEnriched/)
   const send = read("src/renderer/mafw/chat/use-send-message.ts")
-  assert.match(send, /annotationImageParts/)
+  assert.match(send, /annotationAtts/)
 })
 
 test("PPTX 图钉批注：slide wrapper 识别 + 页码锚", () => {
@@ -102,4 +102,22 @@ test("批注反馈态：发送登记 mark + 会话回合结束翻已回应 + 本
   assert.match(stream, /markResponded/)
   const shell = read("src/renderer/mafw/MafwShell.tsx")
   assert.match(shell, /onOpenReview/)
+})
+
+test("review 修复：C1 接线 / I1 键盘路径 / I2 媒体管道 / I3 只在 completed 翻转", () => {
+  const code = read("src/renderer/mafw/components/WorkbenchCodeView.tsx")
+  assert.match(code, /onOpenReview/)
+  const shell = read("src/renderer/mafw/components/WorkbenchShell.tsx")
+  assert.match(shell, /onOpenReview=\{props\.onOpenReview\}/)
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /selectionchange/)
+  assert.match(editor, /document\.addEventListener\("keydown"/)
+  const send = read("src/renderer/mafw/chat/use-send-message.ts")
+  assert.match(send, /annotationAtts/)
+  const mafw = read("src/renderer/mafw/MafwShell.tsx")
+  assert.match(mafw, /media\.createTask/)
+  const stream = read("src/renderer/mafw/sse/handlers/chat-stream.ts")
+  const count = (stream.match(/markResponded\(/g) ?? []).length
+  assert.equal(count, 1)
+  assert.match(stream, /noteTurnActivity/)
 })
