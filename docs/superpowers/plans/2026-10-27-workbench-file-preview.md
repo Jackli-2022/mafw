@@ -84,3 +84,17 @@ Spec：`docs/superpowers/specs/2026-10-27-workbench-file-preview-design.md`
 - CSP：renderer `img-src` 需含 `mafw-file:`（dev 5173 与生产 rendererProtocol 两路都验，T8 冒烟覆盖）。
 - 本地 HTML 脚本执行：partition 权限全拒不变；不向 `file:` 开口。
 - rootToken 生命周期：root 切换注销旧 token（T3 registry + MafwShell effect）。
+
+## T9（增补）PDF → 浏览器 surface
+
+- `shared/mafw-file.ts` MIME 增 `pdf → application/pdf`；
+- `BrowserDock.tsx` webview 元素加 `plugins` 属性（Chromium PDF 查看器）；`file-kind.ts` 增 `pdf` 种类 + `fileOpenPlan(pdf) → "browser"`；
+- RED：MIME 断言 + file-kind 矩阵 + 分流；GUI 冒烟：真 PDF 在 webview 渲染（`document.contentType === "application/pdf"`）。
+
+## T10（增补）CSV/TSV 表格预览
+
+- `src/renderer/mafw/csv-parse.ts`：`parseCsv(text, { maxRows, maxCols, maxCell })` → `{ rows, delimiter, truncated }`（RFC4180：引号字段、`""` 转义、CRLF；分隔符嗅探 `,` `;` `\t`；行/列/单元格上限）；
+- `editor-state.ts`：`OpenFileKind` 增 `table`；
+- `EditorDock.tsx`：svg 的 source 切换泛化为 `sourceMode`（svg/table 共享，默认预览）；table kind 渲染只读表格（首行表头、sticky、截断提示），tab 头「源码/表格」；
+- RED：csv-parse 矩阵（引号/转义/CRLF/嗅探/不均行/上限/空）；UI 契约（表格渲染、切换标签）；editor-state kind 传播。
+- GUI 冒烟：真 CSV 打开即表格 + 源码往返；TSV 嗅探。

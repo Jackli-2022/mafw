@@ -12,8 +12,10 @@
 - G2：图片文件（png/jpg/jpeg/gif/webp/ico/bmp/avif）在文件 surface 内开**只读预览 tab**（复用编辑器 tab 条）。
 - G3：SVG **默认打开预览**（打开即看，2026-10-27 rev 用户裁决 + VS Code 1.97 默认；Zed 的文本默认是少数派且社区讨论 #52255 正在请求改预览），编辑器头部提供一键「源码」切换回文本编辑（比 VS Code 的 Reopen With 更轻）。
 - G4：HTML/HTM 文件在**浏览器 surface** 打开（单 webview 导航 + 自动切 surface），经 `mafw-file://` 自定义协议——不向 `file://` 开口子（browser-policy 既有禁令不动）。
+- **G5（2026-10-27 增补）**：PDF 文件在**浏览器 surface** 直接渲染（Chromium PDF 查看器，webview 开 `plugins`；MIME `application/pdf`；调研 `docs/research/2026-10-27-pdf-csv-preview-research.md`）。
+- **G6（2026-10-27 增补）**：CSV/TSV 在文件 surface 默认**表格预览**（行 500/列 50/单元格 200 字符上限，超限截断提示），tab 头「源码」一键回文本编辑（与 SVG 同模式）；纯函数 CSV 解析（RFC4180 + 分隔符嗅探）。
 
-**非目标（v2+）**：图片缩放/拖拽平移；SVG 进浏览器渲染；Markdown/PDF/CSV/JSON 统一预览层（Kimi 式，留独立立项）；图片批注（与 G1/G2 管线交汇，另案）；浏览器多文件 tab（多 webview，大改）。
+**非目标（v2+）**：图片缩放/拖拽平移；SVG 进浏览器渲染；Markdown 预览（可复用 session-ui 渲染器，另案）；JSON 树视图；XLSX/Office 预览；图片批注（与 G1/G2 管线交汇，另案）；浏览器多文件 tab（多 webview，大改）。
 
 ## 2. IA 与词汇
 
@@ -39,9 +41,10 @@
 - **tab 条**：图片/svg tab 与文本 tab 同款（图标用 `image`/`file-code` 区分）；关闭/外部变更监听语义一致。
 - **fs 通道**：预览不经 `readFile`（二进制会被拒）；图片只需要 `stat`（大小/mtime）+ protocol URL。preload `window.api.fs` 增加 `statFile(root, rel)` 薄封装（如已有则复用）。
 
-## 5. HTML → 浏览器 surface
+## 5. HTML / PDF → 浏览器 surface
 
-- **分流**：MafwShell `onOpenFile(rel)` 改为经纯函数 `fileOpenPlan(rel)`： `"browser"`（html/htm）/ `"editor"`（其余全部——含图片与 svg，编辑器内部再按 kind 渲）。
+- **分流**：MafwShell `onOpenFile(rel)` 改为经纯函数 `fileOpenPlan(rel)`： `"browser"`（html/htm/**pdf**）/ `"editor"`（其余全部——含图片、svg、csv/tsv，编辑器内部再按 kind 渲）。
+- **PDF**：`mafw-file://` 直连 Chromium PDF 查看器——MIME `application/pdf` + 浏览器 webview 开 `plugins` 属性（仅工作台 guest；partition  hardening 不变）。
 - **导航链路**：`fileOpenPlan = "browser"` → 经 IPC 注册 root（幂等）得 token → 拼 `mafw-file://` URL → renderer store `browser-nav.ts`（`requestBrowserNavigate(url)` signal）→ BrowserDock 订阅并 `load(url)`（`load` 既有 policy 闸生效）+ `openWorkbenchSurface("browser")` 切 surface。既有 `browser-open-url` 通道（main→preload→BrowserDock 直连订阅，`BrowserDock.tsx:167`）保持不动。
 - **browser-policy 放行**：`navigationDecision`/`windowOpenDecision`/`isAllowedSrc` 增加 `mafw-file:` → allow/navigate（该 scheme 只有我们自己能产出 URL）；`file:`/`data:`/`javascript:` 禁令原样不动。地址栏对 `mafw-file://` URL 显示解码后的相对路径（面板设计契约禁 emoji，不用图标前缀），手动编辑地址仍走 `normalizeAddress` 现状规则。
 - **边界**：root 注销后旧 URL 全部 404（token 失效）；跨 root 的 html 文件先注册对应 root。
