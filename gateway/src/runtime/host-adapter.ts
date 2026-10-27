@@ -153,6 +153,12 @@ export interface CognitionClient {
   fetchRecallPointers(query: string): Promise<string | null>;
   /** injectSystem 动词的取数：GET /api/recall/pinned（150ms fail-open）。 */
   fetchPinnedProfile(): Promise<string | null>;
+  /** T2-4：GET /api/recall/instructions（missing/full blocks；150ms fail-open）。 */
+  fetchInstructionBlocks(): Promise<{
+    memoryGuide: string;
+    userProfile: string | null;
+    agentPriors: string | null;
+  } | null>;
   /** 工具执行用的通用 POST（fail-open 返回 {ok:false,text}）。 */
   postJson(path: string, body: unknown, timeoutMs: number, signal?: AbortSignal): Promise<{ ok: boolean; body?: any; text?: string }>;
   /** 通用 GET（fail-open 返回 null）。 */
@@ -203,6 +209,14 @@ export function createCognitionClient(opts: CognitionClientOptions): CognitionCl
     async fetchPinnedProfile() {
       const j = await getJson('/api/recall/pinned', COGNITION_CONTRACT.pinnedTimeoutMs);
       return typeof j?.profile === 'string' && j.profile.trim() ? j.profile : null;
+    },
+    async fetchInstructionBlocks() {
+      const j = await getJson(
+        `/api/recall/instructions?sessionID=${encodeURIComponent(sessionId)}`,
+        COGNITION_CONTRACT.pinnedTimeoutMs,
+      );
+      const blocks = j?.blocks;
+      return blocks && typeof blocks.memoryGuide === 'string' ? blocks : null;
     },
     postJson,
     getJson,

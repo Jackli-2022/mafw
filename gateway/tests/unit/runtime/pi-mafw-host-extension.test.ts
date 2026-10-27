@@ -185,25 +185,40 @@ describe('pi-mafw-host injectContext', () => {
 });
 
 describe('pi-mafw-host injectSystem', () => {
-  it('before_agent_start 返回原 prompt + memory-guide + pinned', async () => {
+  it('before_agent_start 返回原 prompt + memory-guide + profile + priors', async () => {
     const { fetchImpl } = makeFakeFetch([
-      { match: (r) => r.url.includes('/api/recall/pinned'), res: { ok: true, json: { profile: '<user-profile>- 偏好 TDD</user-profile>' } } },
+      {
+        match: (r) => r.url.includes('/api/recall/instructions'),
+        res: {
+          ok: true,
+          json: {
+            managed: false,
+            blocks: {
+              memoryGuide: '<memory-guide>G</memory-guide>',
+              userProfile: '<user-profile>- 偏好 TDD</user-profile>',
+              agentPriors: '<agent-priors>A</agent-priors>',
+            },
+          },
+        },
+      },
     ]);
     const { pi, fire } = makeFakePi();
     createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl }).on(pi);
     const ret = await fire('before_agent_start', { systemPrompt: 'BASE' });
     expect(ret[0].systemPrompt).toContain('BASE');
-    expect(ret[0].systemPrompt).toContain('<memory-guide>');
-    expect(ret[0].systemPrompt).toContain('<user-profile>');
+    expect(ret[0].systemPrompt).toContain('<memory-guide>G</memory-guide>');
+    expect(ret[0].systemPrompt).toContain('<user-profile>- 偏好 TDD</user-profile>');
+    expect(ret[0].systemPrompt).toContain('<agent-priors>A</agent-priors>');
   });
 
-  it('pinned 超时 → 只有 guide（fail-open）', async () => {
+  it('instructions 端点超时 → 只有 guide（fail-open）', async () => {
     const fetchImpl: any = async () => { throw new Error('timeout'); };
     const { pi, fire } = makeFakePi();
     createMafwHostExtension({ sessionId: 'pi_s1', baseUrl: 'http://gw', fetchImpl }).on(pi);
     const ret = await fire('before_agent_start', { systemPrompt: 'BASE' });
     expect(ret[0].systemPrompt).toContain('<memory-guide>');
     expect(ret[0].systemPrompt).not.toContain('<user-profile>');
+    expect(ret[0].systemPrompt).not.toContain('<agent-priors>');
   });
 });
 

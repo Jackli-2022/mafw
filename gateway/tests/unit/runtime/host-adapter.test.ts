@@ -78,6 +78,29 @@ describe('createCognitionClient', () => {
     expect(await c.fetchRecallPointers('q')).toBeNull();
   });
 
+  it('fetchInstructionBlocks GETs the session endpoint and returns blocks', async () => {
+    const calls: string[] = [];
+    const fetchImpl: any = async (url: string) => {
+      calls.push(String(url));
+      return {
+        ok: true,
+        json: async () => ({
+          managed: false,
+          blocks: { memoryGuide: 'G', userProfile: 'P', agentPriors: 'A' },
+        }),
+      };
+    };
+    const c = createCognitionClient({ sessionId: 's1', baseUrl: 'http://gw', fetchImpl });
+    expect(await c.fetchInstructionBlocks()).toEqual({ memoryGuide: 'G', userProfile: 'P', agentPriors: 'A' });
+    expect(calls[0]).toContain('/api/recall/instructions?sessionID=s1');
+  });
+
+  it('fetchInstructionBlocks fail-open -> null', async () => {
+    const fetchImpl: any = async () => { throw new Error('down'); };
+    const c = createCognitionClient({ sessionId: 's1', baseUrl: 'http://gw', fetchImpl });
+    expect(await c.fetchInstructionBlocks()).toBeNull();
+  });
+
   it('fetchPinnedProfile 命中返回 profile 文本', async () => {
     const fetchImpl: any = async () => ({ ok: true, json: async () => ({ profile: '<user-profile>p</user-profile>' }) });
     const c = createCognitionClient({ sessionId: 's1', baseUrl: 'http://gw', fetchImpl });

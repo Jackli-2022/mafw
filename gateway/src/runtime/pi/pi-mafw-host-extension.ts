@@ -115,11 +115,17 @@ export function createMafwHostExtension(deps: MafwHostDeps) {
         cursor.advance(real);
         return { messages };
       });
-      // === injectSystem：memory-guide（静态）+ pinned profile（150ms fail-open） ===
+      // === injectSystem：instruction blocks（memory-guide + profile + priors；
+      //     150ms fail-open）。pi 没有 instruction entries，endpoint 恒返回
+      //     managed:false + full blocks；失败时保留静态 guide。 ===
       pi.on('before_agent_start', async (event: any) => {
         let extra = MEMORY_GUIDE;
-        const profile = await client.fetchPinnedProfile();
-        if (profile) extra += '\n\n' + profile;
+        const blocks = await client.fetchInstructionBlocks();
+        if (blocks) {
+          const parts = [blocks.memoryGuide, blocks.userProfile, blocks.agentPriors]
+            .filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+          if (parts.length > 0) extra = parts.join('\n\n');
+        }
         return { systemPrompt: `${event?.systemPrompt ?? ''}\n\n${extra}` };
       });
       // === tools：六件套（gateway 单源 factory；T.Unsafe 包 JSON Schema——Clone 产生
