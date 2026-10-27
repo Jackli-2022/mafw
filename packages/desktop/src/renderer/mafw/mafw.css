@@ -2810,6 +2810,20 @@ html[data-theme="light"] body {
 }
 .mafw-rw-tabs { display: flex; align-items: center; gap: 3px; min-width: 0; }
 .mafw-rw-tab { gap: 4px; }
+/* 选中态与左 rail 统一（spec 2026-10-27 §6.1 1a）：accent 12% 填充块 + accent 前景。
+   用 aria 属性选择器：ButtonV2 的 classList 对多 token class 不可靠（会把整串当 classList key）。 */
+.mafw-rw-tab[aria-selected="true"],
+.mafw-rw-l2-tab[aria-selected="true"],
+.mafw-rw-terminal-toggle[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.mafw-rw-tab[aria-selected="true"]:hover,
+.mafw-rw-l2-tab[aria-selected="true"]:hover,
+.mafw-rw-terminal-toggle[aria-pressed="true"]:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
 .mafw-rw-l1-spacer { flex: 1; }
 .mafw-rw-l2 {
   height: 32px;

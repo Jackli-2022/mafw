@@ -87,7 +87,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           <For each={WORKBENCH_VIEWS}>
             {(item) => (
               <ButtonV2
-                variant={props.view === item.id ? "contrast" : "ghost"}
+                variant="ghost"
                 size="small"
                 class={`mafw-rw-tab mafw-rw-tab-${item.id}`}
                 role="tab"
@@ -104,8 +104,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <div class="mafw-rw-l1-spacer" />
         <TooltipV2 value={props.terminalOpen ? "收起终端" : "打开终端"} openDelay={300}>
           <ButtonV2
-            variant={props.terminalOpen ? "contrast" : "ghost"}
+            variant="ghost"
             size="small"
+            class="mafw-rw-terminal-toggle"
             aria-label={props.terminalOpen ? "收起终端" : "打开终端"}
             aria-pressed={props.terminalOpen}
             onClick={props.onToggleTerminal}
@@ -150,7 +151,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             <For each={WORKBENCH_SURFACES}>
               {(surface) => (
                 <ButtonV2
-                  variant={props.surface === surface.id ? "contrast" : "ghost"}
+                  variant="ghost"
                   size="small"
                   class={`mafw-rw-l2-tab mafw-rw-l2-tab-${surface.id}`}
                   role="tab"
