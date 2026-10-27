@@ -1,6 +1,6 @@
 # T2-4 系统提示分段 + 每会话 instruction entries Design
 
-> 日期：2026-10-27 · 状态：已交付 v4.40.0（builder check 已过，按反馈修订；smoke 15/15）
+> 日期：2026-10-27 · 状态：已交付 v4.40.1（v4.40.0 初审 + review minors 补丁；smoke 18/18）
 > 上游：`docs/superpowers/specs/2026-10-22-contract-gap-research/06-gap-synthesis.md` §3 Tier 2「系统提示分段/快照 + 每会话 instruction 条目」
 > 目标：把 memory-guide / user-profile / agent-priors 从「每轮 system.transform 注入」迁到 opencode 2.1 原生 per-session instruction entries；动态 recall 保持 per-turn。
 
@@ -571,7 +571,9 @@ Pi（jest）：
 - fork：`POST /api/sessions/<sid>/fork {"messageID":"<msg>"}`；新 session GET entries 包含原 entries。
 - 注意：临时 session / entries 用完必须 DELETE，避免把 70KB 探针值留在用户库。
 
-## 9. 交付记录（v4.40.0）
+## 9. 交付记录（v4.40.1）
+
+v4.40.0 为初交付；v4.40.1 收 review Important + deferred minors（`c024a41f` / `04b9ea3d`），行为与测试计数以本节为准。
 
 ### 提交
 
@@ -588,10 +590,11 @@ Pi（jest）：
 - `ff3e4c6a` fix(gateway): list instruction entries every sync
 - `814ab105` test(instructions): live smoke for instruction entries
 - `c024a41f` fix(instructions): review pass (fallback guide, cache cap, compaction smoke)
+- `04b9ea3d` fix(instructions): close deferred review minors
 
 ### 测试与构建
 
-- gateway：394 suites / **2848 passed**（T2-4 新增约 40 个用例；`--forceExit` 后 rc=0）
+- gateway：395 suites / **2851 passed**（T2-4 新增约 44 个用例；`--forceExit` 后 rc=0）
 - root plugin：**29 passed**
 - SDK：**158 passed**
 - session-ui：**94 passed**
@@ -612,7 +615,7 @@ Pi（jest）：
 ### 最终 review（gateway/glm-5.3）
 
 - 0 Critical；3 Important 已修：`render_failed` fail-closed → 返回 bundled guide；插件 last-good 缓存无界 → TTL + 200 session cap；compaction smoke 缺失 → 已加入并 live 通过。
-- 4 Minor 记录为 deferred：bundled guide 文案未同步「常驻」、`forget()` 无 session.deleted 调用点、`inspect` 对 render-error key 的诊断语义、插件测试 mock 带了 non-missing block。
+- 4 Minor 已修（`04b9ea3d`）：bundled guide 文案同步「常驻披露层/常驻可见」；DELETE session 路由接上 `instructionSync.forget()`；`inspect` 新增 `erroredKeys` 并让 render-error session 不标记 managed；插件测试 mock 改为只返回 missing block。
 - review 的 declined-to-judge 17 项全部按 spec 记录为接受/边界，未作为新 finding。
 
 ### 已知边界
