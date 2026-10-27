@@ -62,6 +62,10 @@ import {
   type WorkbenchView,
 } from "./workbench-views"
 import { isTerminalToggleKey } from "./terminal-hotkey"
+import { fileOpenPlan } from "./file-kind"
+import { fileProtocol } from "./file-protocol-client"
+import { requestBrowserNavigate } from "./browser-nav"
+import { buildMafwFileUrl } from "../../shared/mafw-file"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
 import { migrateDockKeys, workbenchColumns, workbenchShellHidden, formatResizePreview } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
@@ -2146,6 +2150,25 @@ export function MafwShell() {
                   onOpenFile={(rel) => {
                     const root = benchRoot()
                     if (!root) return
+                    // 分流（2026-10-27 文件预览）：html → 浏览器 surface（mafw-file:// 单 webview 导航）；
+                    // 图片/SVG/文本 → 文件 surface（编辑器内部按 kind 渲染）。
+                    if (fileOpenPlan(rel) === "browser") {
+                      void (async () => {
+                        const token = await fileProtocol.ensureRootToken(root)
+                        if (!token) {
+                          showToastV2({ description: "无法打开本地 HTML（文件协议注册失败）", variant: "error", duration: 4000 } as any)
+                          return
+                        }
+                        if (root !== benchRoot()) return // 根已切换：丢弃迟到结果
+                        try {
+                          requestBrowserNavigate(buildMafwFileUrl(token, rel))
+                          openWorkbenchSurface("browser")
+                        } catch {
+                          showToastV2({ description: "无法打开该文件路径", variant: "error", duration: 4000 } as any)
+                        }
+                      })()
+                      return
+                    }
                     requestOpenEditor(root, rel)
                     openWorkbenchSurface("code")
                   }}
