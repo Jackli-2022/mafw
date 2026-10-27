@@ -583,11 +583,12 @@ Pi（jest）：
 - `d84fb063` fix(gateway): gate instruction sync on capability, not lagging dialect
 - `ff3e4c6a` fix(gateway): list instruction entries every sync
 - `814ab105` test(instructions): live smoke for instruction entries
+- `c024a41f` fix(instructions): review pass (fallback guide, cache cap, compaction smoke)
 
 ### 测试与构建
 
-- gateway：394 suites / **2847 passed**（T2-4 新增约 40 个用例；Jest 测试结束后因既有 open handle 不退出，结果已完成）
-- root plugin：**28 passed**
+- gateway：394 suites / **2848 passed**（T2-4 新增约 40 个用例；`--forceExit` 后 rc=0）
+- root plugin：**29 passed**
 - SDK：**158 passed**
 - session-ui：**94 passed**
 - desktop：**1573 passed**
@@ -596,14 +597,19 @@ Pi（jest）：
 
 ### 真机 smoke
 
-`node gateway/scripts/smoke-instruction-entries.mjs` → **15/15 PASS**（runtime capability、三块 entries、endpoint managed/missing/revision、DB 三条、第二轮零写、外部删除后 missing-only、下一轮恢复、fork 复制三块）。
+`node gateway/scripts/smoke-instruction-entries.mjs` → **18/18 PASS**（runtime capability、三块 entries、endpoint managed/missing/revision、DB 三条、第二轮零写、外部删除后 missing-only、下一轮恢复、compaction 后 entries/managed 保持、fork 复制三块）。
 
 人工/单测覆盖未 live 执行：
 
 - pinned 变更：不 live 写真实记忆（避免污染）；pinned 渲染与 user-profile 块由 renderer/route 单测覆盖。
-- compaction：未 live 跑 summarize；list-every-sync 与 entries durable 语义在 service 单测覆盖，下一次 prompt 会补回。
 - pi 回退：单测覆盖；切 runtime 需重启/切换，未在本批 live 执行。
 - `enabled=false`：单测覆盖懒删除 + 全量 blocks；未改真实 config 重启。
+
+### 最终 review（gateway/glm-5.3）
+
+- 0 Critical；3 Important 已修：`render_failed` fail-closed → 返回 bundled guide；插件 last-good 缓存无界 → TTL + 200 session cap；compaction smoke 缺失 → 已加入并 live 通过。
+- 4 Minor 记录为 deferred：bundled guide 文案未同步「常驻」、`forget()` 无 session.deleted 调用点、`inspect` 对 render-error key 的诊断语义、插件测试 mock 带了 non-missing block。
+- review 的 declined-to-judge 17 项全部按 spec 记录为接受/边界，未作为新 finding。
 
 ### 已知边界
 
