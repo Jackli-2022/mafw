@@ -12,6 +12,8 @@ import {
   normalizeExecutionSection,
   normalizeWorkbenchSurface,
   normalizeWorkbenchView,
+  terminalHotkeyAction,
+  terminalStripVisible,
   workbenchStateFromStorage,
 } from "./workbench-views"
 
@@ -92,5 +94,30 @@ describe("workbench-views", () => {
       return null
     })
     assert.deepEqual(fresh, { view: "review", surface: "code", executionSection: "subagents" })
+  })
+})
+
+describe("terminalStripVisible（终端只属工作台视图，2026-10-27 裁决）", () => {
+  test("workbench 视图按用户开关显示", () => {
+    assert.equal(terminalStripVisible("workbench", true), true)
+    assert.equal(terminalStripVisible("workbench", false), false)
+  })
+  test("execution/review 视图即使用户开着也不显示", () => {
+    assert.equal(terminalStripVisible("execution", true), false)
+    assert.equal(terminalStripVisible("review", true), false)
+  })
+})
+
+describe("terminalHotkeyAction（Ctrl+` 意图：可见即隐藏，否则跳到工作台并打开）", () => {
+  test("条可见 → hide", () => {
+    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "workbench", terminalOpen: true }), "hide")
+  })
+  test("dock 关着 / 终端关着 → show", () => {
+    assert.equal(terminalHotkeyAction({ dockOpen: false, view: "workbench", terminalOpen: true }), "show")
+    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "workbench", terminalOpen: false }), "show")
+  })
+  test("非工作台视图（条被视图抑制）→ show（跳到工作台开终端）", () => {
+    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "execution", terminalOpen: true }), "show")
+    assert.equal(terminalHotkeyAction({ dockOpen: true, view: "review", terminalOpen: false }), "show")
   })
 })

@@ -12,6 +12,7 @@ import {
   executionSectionLabel,
   nextWorkbenchSurface,
   nextWorkbenchView,
+  terminalStripVisible,
   type ExecutionSection,
   type WorkbenchSurface,
   type WorkbenchView,
@@ -102,18 +103,20 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           </For>
         </div>
         <div class="mafw-rw-l1-spacer" />
-        <TooltipV2 value={props.terminalOpen ? "收起终端" : "打开终端"} openDelay={300}>
-          <ButtonV2
-            variant="ghost"
-            size="small"
-            class="mafw-rw-terminal-toggle"
-            aria-label={props.terminalOpen ? "收起终端" : "打开终端"}
-            aria-pressed={props.terminalOpen}
-            onClick={props.onToggleTerminal}
-          >
-            <Icon name="terminal" size="small" />
-          </ButtonV2>
-        </TooltipV2>
+        <Show when={props.view === "workbench"}>
+          <TooltipV2 value={props.terminalOpen ? "收起终端 (Ctrl+`)" : "打开终端 (Ctrl+`)"} openDelay={300}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-rw-terminal-toggle"
+              aria-label={props.terminalOpen ? "收起终端" : "打开终端"}
+              aria-pressed={props.terminalOpen}
+              onClick={props.onToggleTerminal}
+            >
+              <Icon name="terminal" size="small" />
+            </ButtonV2>
+          </TooltipV2>
+        </Show>
       </div>
 
       <Show when={props.view !== "review"}>
@@ -187,8 +190,14 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         </div>
       </div>
 
-      <div class="mafw-rw-terminal" classList={{ "is-collapsed": !props.terminalOpen }}>
-        <TerminalDock directory={props.sessionDirectory} active={props.open && props.terminalOpen} />
+      <div
+        class="mafw-rw-terminal"
+        classList={{ "is-collapsed": !terminalStripVisible(props.view, props.terminalOpen) }}
+      >
+        <TerminalDock
+          directory={props.sessionDirectory}
+          active={props.open && terminalStripVisible(props.view, props.terminalOpen)}
+        />
       </div>
     </div>
   )

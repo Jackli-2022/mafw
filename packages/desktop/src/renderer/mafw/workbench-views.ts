@@ -76,6 +76,18 @@ export function nextWorkbenchView(current: WorkbenchView, key: string): Workbenc
   return null
 }
 
+/** 终端条只属工作台视图（2026-10-27 用户裁决，推翻 10-26「跨视图持久」）：执行/审阅一律不显示。 */
+export function terminalStripVisible(view: WorkbenchView, terminalOpen: boolean): boolean {
+  return terminalOpen && view === "workbench"
+}
+
+export type TerminalHotkeyState = { dockOpen: boolean; view: WorkbenchView; terminalOpen: boolean }
+
+/** Ctrl+` 意图：条当前可见 → 收；其余（dock 关/终端关/被视图抑制）→ 跳到工作台并开终端。 */
+export function terminalHotkeyAction(s: TerminalHotkeyState): "hide" | "show" {
+  return s.dockOpen && s.view === "workbench" && s.terminalOpen ? "hide" : "show"
+}
+
 export function nextWorkbenchSurface(current: WorkbenchSurface, key: string): WorkbenchSurface | null {
   const order = WORKBENCH_SURFACES.map((v) => v.id)
   const index = order.indexOf(current)

@@ -55,11 +55,13 @@ import { UsageDock } from "./components/UsageDock"
 import { defaultDockOpen } from "./workbench-defaults"
 import {
   clearLegacyWorkbenchKeys,
+  terminalHotkeyAction,
   workbenchStateFromStorage,
   type ExecutionSection,
   type WorkbenchSurface,
   type WorkbenchView,
 } from "./workbench-views"
+import { isTerminalToggleKey } from "./terminal-hotkey"
 import { CHAT_PX_CEIL, CHAT_PX_FLOOR, WORKBENCH_DEFAULT_DETENT, WORKBENCH_MIN_WIDTH, chatPxForDetent, snapDetent, type WorkbenchDetent } from "./workbench-detents"
 import { migrateDockKeys, workbenchColumns, workbenchShellHidden, formatResizePreview } from "./workbench-layout"
 import { resolveWorkbenchRoot } from "./workbench-root"
@@ -1680,6 +1682,32 @@ export function MafwShell() {
     }
     window.addEventListener("keydown", onKey)
     onCleanup(() => window.removeEventListener("keydown", onKey))
+  })
+
+  // Ctrl/Cmd+`：终端开合（VS Code/Zed 惯例，2026-10-27）。
+  // capture 阶段消费——xterm 聚焦时也要先生效（否则 Ctrl+` 以 \x00 落进 PTY）；
+  // 条可见即收起，否则跳到工作台视图并打开（终端只属工作台，见 terminalStripVisible）。
+  createEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isTerminalToggleKey(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      const action = terminalHotkeyAction({
+        dockOpen: rightDockOpen(),
+        view: workbenchView(),
+        terminalOpen: workbenchTerminalOpen(),
+      })
+      if (action === "hide") {
+        setWorkbenchTerminalOpen(false)
+        try { localStorage.setItem("mafw-workbench-terminal", "0") } catch { /* ignore */ }
+      } else {
+        openWorkbench("workbench")
+        setWorkbenchTerminalOpen(true)
+        try { localStorage.setItem("mafw-workbench-terminal", "1") } catch { /* ignore */ }
+      }
+    }
+    window.addEventListener("keydown", onKey, true)
+    onCleanup(() => window.removeEventListener("keydown", onKey, true))
   })
 
   // 宽度跟踪：左 dock 的 push/overlay 由 viewportWidth 决定。
