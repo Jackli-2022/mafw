@@ -25,7 +25,7 @@ interface ConfigSection {
 export { isNavKey }
 export type { NavKey }
 
-export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey }) {
+export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey; theme?: string; onToggleTheme?: () => void }) {
   const [activeNav, setActiveNav] = createSignal<NavKey>(isNavKey(props.initialSection) ? props.initialSection : "gateway")
 
   // ── MAFW raw config ──
@@ -768,6 +768,24 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
 
           {/* ═══ Desktop ═══*/}
           <Show when={activeNav() === "desktop"}>
+            <div class="mafw-config-section">
+              <div class="mafw-config-section-header">
+                <span class="mafw-config-section-icon">🎨</span>
+                <span class="mafw-config-section-title">外观</span>
+              </div>
+              <div class="mafw-config-section-body" style={{ "padding-top": 12 }}>
+                <div class="mafw-config-section-desc">
+                  明暗主题（spec 2026-10-27：主题从左侧 rail 迁入 Config）。也可在命令面板用 /theme 切换。
+                </div>
+                <div class="mafw-card" style={{ "margin-bottom": 6 }}>
+                  <div style={{ flex: 1 }}>
+                    <div class="mafw-card-title">主题</div>
+                    <div class="mafw-card-meta">当前：{{ light: "亮色", dark: "暗色", system: "跟随系统" }[props.theme ?? "system"] ?? "跟随系统"}</div>
+                  </div>
+                  <ButtonV2 variant="outline" size="small" onClick={() => props.onToggleTheme?.()}>切换主题</ButtonV2>
+                </div>
+              </div>
+            </div>
             <div class="mafw-config-section">
               <div class="mafw-config-section-header">
                 <span class="mafw-config-section-icon">🖥️</span>
