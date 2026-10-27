@@ -81,7 +81,7 @@
 |---|---|---|---|---|---|---|
 | 1 | **执行沙箱/隔离**（约束 agent 子进程，不影响本机桌面） | ❌（仅审批） | Claude / Codex / DSH | 5 | 5 | **P0** |
 | 2 | **Plan 审阅工作流**（计划文档 + 批注 + 批准/拒绝/继续规划） | 🟡（有 plan agent/编排，无计划审阅 UI） | Claude / Codex / DSH / Kimi | 5 | 3 | **P0** |
-| 3 | 桌面端会话导出/分享（Markdown/JSON/链接） | ❌（仅 TUI /export） | opencode / Kimi / Pi / Claude(artifact) | 4 | 2 | **P1** |
+| 3 | 桌面端会话导出/分享 | 🟡 **导出已有**（命令面板 + SessionStrip 右键 + save dialog，`export-markdown.ts`）；缺复制到剪贴板/链接分享 | opencode / Kimi / Pi / Claude(artifact) | 3 | 1 | **P1**（缩小为分享/可见性） |
 | 4 | 多面板分屏 + pane 弹出/拖动 | ❌（固定档位布局） | Claude / Codex / opencode / DSH | 4 | 4 | **P1** |
 | 5 | 运行中 steer（插话转向，区别排队） | 🟡（队列+暂停，无 steer） | Claude / Codex / opencode / Kimi / Pi | 4 | 3 | **P1** |
 | 6 | 自定义快捷键（录制/冲突检查/恢复默认） | ❌（固定） | 全部五家 | 4 | 2 | **P1** |
