@@ -50,6 +50,9 @@ const CAPABILITY_REQUIREMENTS: Array<{ cap: keyof RuntimeCapabilities; label: st
   { cap: 'agentConfigApi', label: 'agents.install', satisfied: (rt) => isFn(rt.agents?.install) },
   { cap: 'agentProcessApi', label: 'agentProcess.restart', satisfied: (rt) => isFn(rt.agentProcess?.restart) },
   { cap: 'sessionStorageApi', label: 'session.listByDirectory', satisfied: (rt) => isFn(rt.session?.listByDirectory) },
+  { cap: 'instructionsApi', label: 'session.instructions.{list,put,remove}', satisfied: (rt) =>
+      isObject(rt.session?.instructions) && isFn(rt.session.instructions.list) &&
+      isFn(rt.session.instructions.put) && isFn(rt.session.instructions.remove) },
 ];
 
 export function validateRuntime(rt: AgentRuntime, source: string): RuntimeValidation {

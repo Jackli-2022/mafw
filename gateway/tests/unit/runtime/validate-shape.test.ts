@@ -146,6 +146,13 @@ describe('validateRuntime — capability downgrade (declared bit, missing implem
     expect((rt as any).capabilities.diffApi).toBe(false);
   });
 
+  it('instructionsApi without session.instructions.{list,put,remove} -> downgraded', () => {
+    const rt = OK_RT({ caps: { instructionsApi: true } });
+    const v = validateRuntime(rt as any, 'my-rt');
+    expect(v.downgraded.some((i) => i.includes('instructionsApi'))).toBe(true);
+    expect((rt as any).capabilities.instructionsApi).toBe(false);
+  });
+
   it('completionApi without completion.complete -> downgraded', () => {
     const rt = OK_RT({ caps: { completionApi: true } });
     const v = validateRuntime(rt as any, 'my-rt');

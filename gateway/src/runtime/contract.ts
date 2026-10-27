@@ -61,6 +61,8 @@ export interface RuntimeCapabilities {
   diffApi?: boolean;
   /** runtime 支持按 directory 创建会话（worktree 并行隔离前提；opencode 天然支持） */
   worktreeApi?: boolean;
+  /** runtime 提供 per-session instruction entries（opencode 2.1 experimental）。 */
+  instructionsApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -87,6 +89,7 @@ export function fullCapabilities(): RuntimeCapabilities {
     // 跳过挂载，goal 预算在默认 runtime 上完全失效。
     turnBudgetApi: false,
     questionApi: true,
+    instructionsApi: true,
   };
 }
 
@@ -106,6 +109,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     questionApi: false,
     diffApi: false,
     worktreeApi: false,
+    instructionsApi: false,
   };
 }
 
@@ -395,6 +399,12 @@ export interface RuntimeClient {
        *  SDK 默认 throwOnError=false 会静默成功）——调用方应使用
        *  gateway 侧 `core/diff/apply-patch.ts`；本方法保留给未来 runtime。 */
       apply?(opts: { patch: string }): Promise<void>;
+    };
+    /** opencode 2.1 per-session instruction entries（experimental；instructionsApi）。 */
+    instructions?: {
+      list(sessionID: string, opts?: { signal?: AbortSignal }): Promise<Array<{ key: string; value: unknown }>>;
+      put(sessionID: string, key: string, value: unknown, opts?: { signal?: AbortSignal }): Promise<void>;
+      remove(sessionID: string, key: string, opts?: { signal?: AbortSignal }): Promise<void>;
     };
   };
   shell?: {

@@ -187,6 +187,7 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
     method: string,
     body?: any,
     directory?: string,
+    opts?: { signal?: AbortSignal },
   ): Promise<any> => {
     const sep = path.includes('?') ? '&' : '?';
     const url = `${config.baseUrl}/api${path}${directory ? `${sep}directory=${encodeURIComponent(directory)}` : ''}`;
@@ -199,8 +200,13 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         ...(config.headers ?? {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(opts?.signal ? { signal: opts.signal } : {}),
     } as any);
-    if (!res.ok) throw new Error(`opencode native ${path} failed: ${res.status}`);
+    if (!res.ok) {
+      const err: any = new Error(`opencode native ${path} failed: ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
     try { return await res.json(); } catch { return null; }
   };
 
@@ -555,6 +561,39 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // 旧 /permission 已 404。返回形状 {location, data[]} — data 兼容提取。
         const data = await directNative('/permission/request', 'GET', undefined, opts?.directory);
         return Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
+      },
+
+      // opencode 2.1 experimental per-session instruction entries. The sync
+      // service owns change detection; this adapter is a thin HTTP surface.
+      instructions: {
+        async list(sessionID: string, opts?: { signal?: AbortSignal }) {
+          const body = await directNative(
+            `/experimental/session/${sessionID}/instructions/entries`,
+            'GET',
+            undefined,
+            undefined,
+            opts,
+          );
+          return unwrapNative<Array<{ key: string; value: unknown }>>(body) ?? [];
+        },
+        async put(sessionID: string, key: string, value: unknown, opts?: { signal?: AbortSignal }) {
+          await directNative(
+            `/experimental/session/${sessionID}/instructions/entries/${encodeURIComponent(key)}`,
+            'PUT',
+            { value },
+            undefined,
+            opts,
+          );
+        },
+        async remove(sessionID: string, key: string, opts?: { signal?: AbortSignal }) {
+          await directNative(
+            `/experimental/session/${sessionID}/instructions/entries/${encodeURIComponent(key)}`,
+            'DELETE',
+            undefined,
+            undefined,
+            opts,
+          );
+        },
       },
     },
 
