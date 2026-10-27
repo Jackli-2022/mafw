@@ -63,6 +63,14 @@
 
 **保持现状（A）**：底部横条是 IDE 参照系在窄栏语境的一致解，且承载三条既定需求（同屏/跨视图/默认开）；B 的实质收益只有「全高」，可由 C3 点对点解决，不值得付出同屏与跨视图回归。若痛点是开关钮突兀或缺键盘入口，走 C1/C2 增量。
 
+## 五、落地 rev（2026-10-27 当日，commit `019357d0`）
+
+用户裁决后实施两项，**部分修订上文既定需求**：
+
+- **C1 快捷键已交付**：Ctrl/Cmd+\` 开合终端——条可见即收起，否则跳工作台视图并打开；capture 阶段消费（xterm 聚焦时先生效，防 Ctrl+\` 以 `\x00` 落进 PTY）；localStorage `mafw-workbench-terminal` 持久化不变。纯逻辑 `terminal-hotkey.ts`（`isTerminalToggleKey`）+ `workbench-views.ts`（`terminalHotkeyAction`）。
+- **「跨视图持久」被用户推翻**：终端改为**只属工作台视图**（`terminalStripVisible(view, open)` = `open && view==="workbench"`）——执行（含概览/待办/子代理/后台/轨迹）与审阅一律不显示终端条，L1 行尾开关钮也只在工作台视图渲染。10-26 B/B1 的「终端跨视图持久」验收项自此作废。
+- desktop **1573/1573**（+12）、tsgo rc=0、build rc=0；CDP 冒烟：执行/审阅无条无钮、审阅按 Ctrl+\` 跳工作台并开条（持久 1）、再按收起（持久 0）、再按重开。
+
 ## 来源
 
 - VS Code Terminal Basics /「Move Terminal into Editor Area」（1.84+）：<https://code.visualstudio.com/docs/terminal/basics>、SO/Reddit 相关问答
