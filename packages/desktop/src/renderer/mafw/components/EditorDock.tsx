@@ -72,10 +72,17 @@ export function EditorDock(props: {
     left: number
     top: number
     rects: { x: number; y: number; w: number; h: number }[]
+    box: { left: number; top: number; width: number; height: number }
   } | null>(null)
   const [quoteOpen, setQuoteOpen] = createSignal(false)
   /** 预览锚点批注（json 节点 / 表格单元格 / 图片区域 / pptx 图钉）：标记即输入。 */
-  const [anchorSel, setAnchorSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number; imageDataUrl?: string } | null>(null)
+  const [anchorSel, setAnchorSel] = createSignal<{
+    anchor: AnnotationAnchor
+    left: number
+    top: number
+    box: { left: number; top: number; width: number; height: number }
+    imageDataUrl?: string
+  } | null>(null)
   const [anchorOpen, setAnchorOpen] = createSignal(false)
   /** 图片拖框（region 批注）：px 坐标 + 图片盒尺寸。 */
   const [drag, setDrag] = createSignal<{ x0: number; y0: number; x1: number; y1: number; w: number; h: number } | null>(null)
@@ -548,11 +555,16 @@ export function EditorDock(props: {
       w: r.width,
       h: r.height,
     }))
+    const minX = Math.min(...rects.map((r) => r.x))
+    const minY = Math.min(...rects.map((r) => r.y))
+    const maxX = Math.max(...rects.map((r) => r.x + r.w))
+    const maxY = Math.max(...rects.map((r) => r.y + r.h))
     setQuoteSel({
       anchor,
       left: Math.max(8, rect.left - host.left),
       top: Math.max(8, rect.bottom - host.top + 4),
       rects,
+      box: { left: minX, top: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) },
     })
     // 批注模式：选中即输入（rev2）——不再需要先点浮钮。
     if (annotMode()) {
@@ -625,6 +637,7 @@ export function EditorDock(props: {
       anchor: { kind: "cell", ref: el.dataset.cellRef, value: el.textContent ?? "" },
       left: Math.max(8, rect.left - host.left),
       top: Math.max(8, rect.bottom - host.top + 4),
+      box: { left: rect.left - host.left, top: rect.top - host.top, width: rect.width, height: rect.height },
     })
     setAnchorOpen(true)
   }
@@ -689,6 +702,7 @@ export function EditorDock(props: {
       anchor: { kind: "region", ...norm },
       left: Math.max(8, Math.min(rect.left - host.left + px.left + px.w + 6, 420)),
       top: Math.max(8, rect.top - host.top + px.top + px.h + 6),
+      box: { left: rect.left - host.left + px.left, top: rect.top - host.top + px.top, width: px.w, height: px.h },
       imageDataUrl,
     })
     setAnchorOpen(true)
@@ -707,26 +721,30 @@ export function EditorDock(props: {
   }
 
   /** 统一批注出口：anchor=undefined 走 CodeMirror 行号锚；有 anchor 走预览锚点。 */
-  /** 抽屉打开时把锚点滚到抽屉上方（rev2：抽屉停靠底部，但锚点必须仍可见）。 */
-  function revealAboveSheet(anchorTop: number) {
+  /** 批注浮层打开时把锚点滚进视野（rev3：浮层在锚点旁，锚点必须在可视区）。 */
+  function revealAnchor(box: { left: number; top: number; width: number; height: number }) {
     const body = bodyEl
     if (!body) return
-    const sheet = body.querySelector(".mafw-annot-sheet") as HTMLElement | null
-    if (!sheet) return
     const container = body.querySelector(
       ".mafw-md-preview, .mafw-json-preview-wrap, .mafw-table-preview, .mafw-office-host",
     ) as HTMLElement | null
     if (!container) return
-    const limit = sheet.offsetTop - 24
-    if (anchorTop > limit) container.scrollTop += anchorTop - limit
+    if (box.top < container.scrollTop) container.scrollTop = Math.max(0, box.top - 24)
+    else if (box.top + box.height > container.scrollTop + container.clientHeight) {
+      container.scrollTop = box.top + box.height - container.clientHeight + 24
+    }
   }
 
   createEffect(() => {
     const open = annotOpen() || quoteOpen() || anchorOpen()
     if (!open) return
-    const top = annotOpen() ? sel()?.top : quoteOpen() ? quoteSel()?.top : anchorSel()?.top
-    if (typeof top !== "number") return
-    requestAnimationFrame(() => revealAboveSheet(top))
+    const box = annotOpen()
+      ? (sel() ? { left: sel()!.left, top: sel()!.top, width: 8, height: 18 } : null)
+      : quoteOpen()
+        ? quoteSel()?.box
+        : anchorSel()?.box
+    if (!box) return
+    requestAnimationFrame(() => revealAnchor(box))
   })
 
   function submitAnnotationAnchored(
@@ -1009,6 +1027,7 @@ export function EditorDock(props: {
                     anchor: { kind: "jsonPath", path: jsonPathOf(path), valueSummary: summary },
                     left: Math.max(8, rect.left - host.left),
                     top: Math.max(8, rect.bottom - host.top + 4),
+                    box: { left: rect.left - host.left, top: rect.top - host.top, width: rect.width, height: rect.height },
                   })
                   setAnchorOpen(true)
                 }}
@@ -1029,7 +1048,8 @@ export function EditorDock(props: {
                 setAnchorSel({
                   anchor: { kind: "cell", ...a },
                   left: Math.max(8, rect.left - host.left),
-                  top: Math.max(8, rect.bottom - host.top + 4),
+                  top: Math.max(8, rect.top + rect.height - host.top + 4),
+                  box: { left: rect.left - host.left, top: rect.top - host.top, width: rect.width, height: rect.height },
                 })
                 setAnchorOpen(true)
               }}
@@ -1040,6 +1060,7 @@ export function EditorDock(props: {
                   anchor: { kind: "region", ...a },
                   left: Math.max(8, point.clientX - host.left),
                   top: Math.max(8, point.clientY - host.top),
+                  box: { left: point.clientX - host.left, top: point.clientY - host.top, width: 1, height: 1 },
                 })
                 setAnchorOpen(true)
               }}
@@ -1113,6 +1134,7 @@ export function EditorDock(props: {
           {/* 底部批注抽屉（rev2）：不遮挡被批注内容 */}
           <Show when={mode() === "edit" && annotOpen() && sel()}>
             <AnnotationSheet
+              anchor={{ left: Math.max(8, sel()!.left), top: sel()!.top, width: 8, height: 18 }}
               meta={`${sel()!.rel}:L${selRange()?.startLine}-${selRange()?.endLine}`}
               onSubmit={(comment, action) => submitAnnotationAnchored(undefined, comment, action)}
               onCancel={() => setAnnotOpen(false)}
@@ -1120,6 +1142,7 @@ export function EditorDock(props: {
           </Show>
           <Show when={mode() === "edit" && quoteOpen() && quoteSel()}>
             <AnnotationSheet
+              anchor={quoteSel()!.box}
               meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(quoteSel()!.anchor)}`}
               placeholder="这段要改成什么…"
               onSubmit={(comment, action) => {
@@ -1133,6 +1156,7 @@ export function EditorDock(props: {
           <Show when={mode() === "edit" && anchorOpen() ? anchorSel() : null} keyed>
             {(sel) => (
               <AnnotationSheet
+                anchor={sel.box}
                 meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(sel.anchor)}`}
                 placeholder="这处要改成什么…"
                 onSubmit={(comment, action) => {

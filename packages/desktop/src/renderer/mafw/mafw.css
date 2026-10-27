@@ -5637,12 +5637,12 @@ html[data-theme="light"] body {
   color: var(--text-1);
 }
 
-/* 批注抽屉（rev2）：参与布局的底部停靠——内容自动让位，不遮挡锚点 */
+/* 批注浮层（rev3）：锚点旁智能定位（下方→上方→右侧→左侧，clamp 到容器） */
 .mafw-annot-sheet {
-  position: relative;
-  flex: none;
-  margin: 8px 12px 12px;
+  position: absolute;
   z-index: 40;
+  width: min(420px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -5654,7 +5654,7 @@ html[data-theme="light"] body {
   animation: mafw-annot-sheet-in var(--dur-fast, 160ms) var(--ease-standard, ease-out);
 }
 @keyframes mafw-annot-sheet-in {
-  from { opacity: 0; transform: translateY(14px) scale(0.99); }
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
 .mafw-annot-sheet-head { display: flex; align-items: center; gap: 8px; }

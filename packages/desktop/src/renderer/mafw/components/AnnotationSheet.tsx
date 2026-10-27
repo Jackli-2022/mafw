@@ -1,9 +1,12 @@
 // 批注抽屉（2026-10-27 rev2）：停靠在工作台底部，不遮挡被批注内容；Enter 发送 / Ctrl+Enter 攒草稿。
-import { Show, createSignal, onMount } from "solid-js"
+import { createSignal, onCleanup, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
+import { placeAnnotationBox, type BoxRect } from "../annotation-placement"
 
 export function AnnotationSheet(props: {
+  /** 锚点矩形（相对 editor-body）：用于锚点旁定位 */
+  anchor: BoxRect
   /** 锚点描述（文件 › 引文/路径/单元格/区域） */
   meta: string
   placeholder?: string
@@ -11,6 +14,7 @@ export function AnnotationSheet(props: {
   onCancel: () => void
 }) {
   const [value, setValue] = createSignal("")
+  const [pos, setPos] = createSignal({ left: props.anchor.left, top: props.anchor.top + props.anchor.height + 8 })
   let host: HTMLDivElement | undefined
 
   const canSubmit = () => value().trim().length > 0
@@ -20,12 +24,32 @@ export function AnnotationSheet(props: {
     props.onSubmit(v, mode)
   }
 
-  onMount(() => requestAnimationFrame(() => host?.querySelector("textarea")?.focus()))
+  const place = () => {
+    const el = host
+    const parent = el?.offsetParent as HTMLElement | null
+    if (!el || !parent) return
+    const p = placeAnnotationBox(
+      props.anchor,
+      { w: el.offsetWidth, h: el.offsetHeight },
+      { w: parent.clientWidth, h: parent.clientHeight },
+    )
+    setPos({ left: p.left, top: p.top })
+  }
+
+  onMount(() => {
+    requestAnimationFrame(() => {
+      place()
+      host?.querySelector("textarea")?.focus()
+    })
+    window.addEventListener("resize", place)
+    onCleanup(() => window.removeEventListener("resize", place))
+  })
 
   return (
     <div
       class="mafw-annot-sheet"
       ref={(el) => { host = el }}
+      style={{ left: `${pos().left}px`, top: `${pos().top}px` }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {

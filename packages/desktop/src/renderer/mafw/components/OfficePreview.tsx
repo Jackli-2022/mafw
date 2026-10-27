@@ -17,7 +17,7 @@ export function OfficePreview(props: {
   rel: string
   onOpenExternal: () => void
   /** xlsx 单元格批注（预览批注 T6）：sheet + A1 + 当前值。 */
-  onAnnotateCell?: (a: { sheet?: string; ref: string; value: string }, rect: { left: number; top: number; bottom: number }) => void
+  onAnnotateCell?: (a: { sheet?: string; ref: string; value: string }, rect: { left: number; top: number; width: number; height: number }) => void
   /** pptx 图钉批注（预览批注 T8）：页码 + 归一化坐标 + 点击点（viewport）。 */
   onAnnotateRegion?: (a: { x: number; y: number; w: number; h: number; slide: number }, point: { clientX: number; clientY: number }) => void
   /** 已有批注标记（M4）：pptx 页面上渲染编号钉。 */
@@ -163,9 +163,10 @@ export function OfficePreview(props: {
                           const ref = () => a1Ref(ri() + 1, ci() + 1)
                           const click = (e: MouseEvent) => {
                             const el = e.currentTarget as HTMLElement
+                            const r = el.getBoundingClientRect()
                             props.onAnnotateCell?.(
                               { sheet: active()?.name, ref: el.dataset.cellRef ?? "", value: el.textContent ?? "" },
-                              el.getBoundingClientRect(),
+                              { left: r.left, top: r.top, width: r.width, height: r.height },
                             )
                           }
                           return ri() === 0

@@ -7,7 +7,7 @@ import { jsonEntries, jsonSummary, parseJsonSafe, isJsonContainer } from "../jso
 
 const MAX_CHILDREN = 500
 
-type AnnotateFn = (path: (string | number)[], summary: string, rect: { left: number; top: number; bottom: number }) => void
+type AnnotateFn = (path: (string | number)[], summary: string, rect: { left: number; top: number; bottom: number; width: number; height: number }) => void
 
 function JsonValue(props: {
   value: unknown
