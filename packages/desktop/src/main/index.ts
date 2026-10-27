@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, globalShortcut, nativeTheme } from "electron"
+import { app, globalShortcut, nativeTheme, net, session } from "electron"
 
 import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
@@ -19,6 +19,8 @@ import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as 
 import { startMafwGw } from "./mafw-bootstrap"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
+import { registerMafwFileProtocol, mafwFileRoots } from "./mafw-file-protocol"
+import { BROWSER_PARTITION } from "../shared/browser-policy"
 import {
   finishFirstLaunchOnboarding,
   initializeOldLayoutEligibility,
@@ -272,6 +274,13 @@ const main = Effect.gen(function* () {
   )
   app.setAsDefaultProtocolClient("mafw")
   registerRendererProtocol()
+  // mafw-file://：文件预览（图片 <img> 走 defaultSession）+ 本地 HTML（webview 走浏览器 partition）。
+  // Electron protocol 是 per-session，两边都要挂；scheme privileges 已在 windows.ts 模块加载期注册（ready 前）。
+  registerMafwFileProtocol(
+    [session.defaultSession, session.fromPartition(BROWSER_PARTITION)],
+    mafwFileRoots,
+    (url, opts) => net.fetch(url, opts),
+  )
   setDockIcon()
   createTray()
 

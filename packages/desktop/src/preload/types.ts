@@ -35,6 +35,8 @@ export type FsAPI = {
   listDir(root: string, rel: string): Promise<FsEntryDTO[] | null>
   readFile(root: string, rel: string): Promise<FsReadResult>
   writeFile(root: string, rel: string, content: string, opts?: { ifMtimeMs?: number; eol?: "\n" | "\r\n" }): Promise<FsWriteResult>
+  /** 为 mafw-file:// 预览协议注册会话根（幂等）；返回不透明 token，失败 null。 */
+  registerRoot(absDir: string): Promise<string | null>
   watch(root: string, rel: string): Promise<void>
   unwatch(root: string, rel: string): Promise<void>
   onChanged(cb: (e: { root: string; rel: string }) => void): () => void

@@ -15,6 +15,7 @@ import { createUnresponsiveSampler } from "./unresponsive"
 import { createWindowRegistry } from "./window-registry"
 import { fitDefaultWindowSize, mainWindowOptions } from "./window-bounds"
 import { mainWindowWebPreferences } from "../shared/browser-policy"
+import { MAFW_FILE_SCHEME } from "../shared/mafw-file"
 import { configureBrowserSession, wireWebviewAttach } from "./browser-session"
 import { windowCloseAction } from "./close-decision"
 import { isCloseToTrayEnabled, isTrayIconEnabled } from "./tray-prefs"
@@ -40,6 +41,15 @@ const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 protocol.registerSchemesAsPrivileged([
   {
     scheme: rendererProtocol,
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+  {
+    scheme: MAFW_FILE_SCHEME,
     privileges: {
       secure: true,
       standard: true,
