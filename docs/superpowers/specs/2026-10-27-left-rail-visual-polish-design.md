@@ -100,14 +100,19 @@ Config               静音连接点
 - 纯函数 `railProjectName(raw)`：basename 解析后为空 / `.` / 纯分隔符 → 当前项目显示 `当前项目`，**非当前项目显示 `未命名项目`**。
 - 接入**三处**：切换器触发条（`LeftDock.tsx:278`）、切换器下拉菜单项（`LeftDock.tsx:285`，builder 发现同样会露 `.`）、`.mafw-rail-project-head`。
 
-### 6.5 左 dock 推挤阈值上调：1366 → 1470（产品定稿）
+### 6.5 左 dock 推挤判定：默认档 50:50 预算（产品定稿，取代初稿静态 1470）
 
-- **规则形状不变**：宽度驱动、与最大化无关（B1 已定架构，本条只改数字）——窗口化和全屏/最大化一视同仁，**小于阈值即漂浮**（浮层盖在内容上，chat/右 dock 一像素不动）。
-- **新阈值 1470 = 46 rail + 264 默认 dock + 640 默认 chat 档 + 520 右工作台下限**。旧值 1366 只保最小值（520+520），不保 chat 的 640 档位——1366–1469 区间开 dock 会把 chat 压到 ~560、右 dock 压到 520 下限（用户实测 1390 窗口确认）。
-- 效果：1390 窗口 → 漂浮；1366/1440 笔记本全屏 → 漂浮；≥1470（含 2048 最大化）→ 推挤。
-- **刻意不做动态阈值**（随 chat 档位/实际 dock 宽浮动）：档位切换会引发"开着的 dock 突然浮起来盖住刚拉宽的 chat"这类坏迁移；dock 拖宽到 400 时中途翻模式还会让 resize 手柄消失。静态 1470 可预期、无坏过渡。
-- 改动点：`LEFT_DOCK_PUSH_MIN_WIDTH` 常量 + 注释；`left-dock.test.ts` 的 resolveMode / shouldAutoRestoreLeftDock 用例改用新阈值；`effectiveLeftDockWidth` 夹紧函数保留（对 1470–1529 窗口里 400 宽的 dock 仍有效）；B1 调研文档 §6.1 的 1366 数字为历史记录不回改。
-- 验收补充：1366/1390 窗口开 dock = overlay（chat 宽度不变）；1470+ 开 dock = push 且 chat 保 640；拉宽跨阈值时存储的 open 偏好自动恢复逻辑用同一新阈值。
+- **规则三句话（产品定稿）**：
+  1. 右侧工作台下限 520 太小，提到 **640**——与 chat 默认档拉平，这就是「50:50」；
+  2. dock 推挤仅当默认配置下双方都保得住：`W ≥ 46 + dockWidth + 640 + 640`，否则**浮层**（宽度驱动、与最大化无关，B1 架构不变）；
+  3. **只保证默认档**：阈值不随 chat 档位（520/760）联动——用户拉大 chat 由既有护栏钳制，不做动态阈值。
+- **纯函数**：`leftDockPushBudget(dockWidth) = 46 + dockWidth + 1280`（1280 = 640 chat 默认档 + 640 工作台下限）；`WORKBENCH_MIN_WIDTH: 520 → 640`（workbench-detents.ts，chatPxForDetent 护栏随动）。旧 `LEFT_DOCK_PUSH_MIN_WIDTH` 删除。
+- 数字表（dock 宽 → 阈值）：264 → **1590**；400 → 1726；180 → 1506。产品窗口 1390 → 浮层；2048 最大化 → 推挤（chat 640 / 工作台 1098 ≥ 640）；1590 恰好 640/640。
+- `resolveMode` / `restoreLeftDockOpen` / `shouldAutoRestoreLeftDock` 签名改收 `dockWidth`（不收 chatDetent），budget 为单一真相；拉宽跨阈值自动恢复 open 偏好用同一 budget。
+- **ResizeHandle max**：push 态拖宽上限 `leftDockPushDragMax(viewportWidth) = clamp(min(400, W − 46 − 1280), 180, 400)`，防止拖过预算点模式翻转、手柄消失。
+- `effectiveLeftDockWidth` 夹紧保留为纵深防御（新规则下 push 恒满足预算，实际不再触发）。
+- **预期行为变化（intended）**：①窄窗下 chat 护栏改保工作台 640（1200 窗：chat 514 / 工作台 640；旧规则 chat 634 / 工作台 520）；②chat 拉到 760 而窗口不足时被钳回 640（只保默认档）。
+- 验收：1390 开 dock = 浮层且 chat 一像素不变；≥1590 开 dock = 推挤且工作台 ≥ 640；1366 全屏 = 浮层；拉宽跨 1590 自动恢复 open；workbench-detents 测试随 640 更新。
 
 ## 7. 留给 builder 的
 
