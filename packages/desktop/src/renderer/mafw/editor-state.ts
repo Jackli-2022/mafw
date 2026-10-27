@@ -5,7 +5,7 @@
 //   缓冲区干净时 → staleClean，由消费方读盘后 applyCleanReload 静默刷新；
 // - 保存成功（markSaved）清 dirty/conflict/staleClean 并换磁盘基准；
 // - root 变化（切会话/worktree）→ 全清，不展示别树旧内容。
-export type OpenFileKind = "text" | "image" | "svg"
+export type OpenFileKind = "text" | "image" | "svg" | "table"
 
 export interface OpenFile {
   rel: string

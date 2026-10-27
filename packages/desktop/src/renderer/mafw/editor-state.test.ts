@@ -81,3 +81,14 @@ describe("files preview kinds（2026-10-27：图片预览 tab）", () => {
     expect(m.files[0].kind).toBe("image")
   })
 })
+
+describe("table kind（CSV/TSV 表格预览，2026-10-27 增补）", () => {
+  test("table 照常 dirty/保存（源码态可编辑），外部变更走冲突语义", () => {
+    let m = openFile(create(), "data.csv", "a,b", false, "table")
+    expect(m.files[0].kind).toBe("table")
+    m = markDirty(m, "data.csv")
+    expect(m.files[0].dirty).toBe(true)
+    m = onExternalChange(m, "data.csv")
+    expect(m.files[0].conflict).toBe(true)
+  })
+})

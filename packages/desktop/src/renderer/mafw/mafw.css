@@ -5502,3 +5502,42 @@ html[data-theme="light"] body {
   text-align: center;
   word-break: break-all;
 }
+
+/* CSV/TSV 表格预览（2026-10-27 增补） */
+.mafw-table-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-inset);
+}
+.mafw-table {
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: var(--font-data, ui-monospace, monospace);
+  min-width: 100%;
+}
+.mafw-table th,
+.mafw-table td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  white-space: pre;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mafw-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-overlay);
+  color: var(--text-2);
+  font-weight: 600;
+}
+.mafw-table td { color: var(--text-1); }
+.mafw-table-note {
+  padding: 6px 10px;
+  font-size: 10px;
+  color: var(--text-3);
+}

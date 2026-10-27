@@ -40,3 +40,17 @@ describe("fileOpenPlan（点击分流：html 进浏览器，其余进文件 surf
     assert.equal(fileOpenPlan("README"), "editor")
   })
 })
+
+describe("pdf / table（2026-10-27 增补）", () => {
+  test("pdf 分类 + 进浏览器 surface", () => {
+    assert.equal(fileKindFor("doc.pdf"), "pdf")
+    assert.equal(fileKindFor("Docs/A.PDF"), "pdf")
+    assert.equal(fileOpenPlan("doc.pdf"), "browser")
+  })
+  test("csv/tsv 分类为 table（文件 surface 表格预览）", () => {
+    assert.equal(fileKindFor("data.csv"), "table")
+    assert.equal(fileKindFor("DATA.TSV"), "table")
+    assert.equal(fileOpenPlan("data.csv"), "editor")
+    assert.equal(fileOpenPlan("data.tsv"), "editor")
+  })
+})

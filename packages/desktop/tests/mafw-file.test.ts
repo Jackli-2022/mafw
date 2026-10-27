@@ -93,3 +93,10 @@ describe("displayMafwFilePath（地址栏友好显示）", () => {
     assert.equal(displayMafwFilePath(""), null)
   })
 })
+
+describe("pdf / tsv MIME（2026-10-27 增补）", () => {
+  test("pdf → application/pdf；tsv → text/tab-separated-values", () => {
+    assert.equal(mimeForPath("doc.pdf"), "application/pdf")
+    assert.equal(mimeForPath("data.tsv"), "text/tab-separated-values; charset=utf-8")
+  })
+})

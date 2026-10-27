@@ -4,7 +4,7 @@
 // - 外部改动（agent 改了同一文件）：干净 → 静默刷新；dirty → 冲突横幅（绝不静默覆盖）；
 // - 保存时 mtime 版本校验（调研 §3 防线②）：磁盘已变 → 冲突，覆盖需显式选择；
 // - 草稿/基准存 editor-drafts（root-scoped 模块单例）：卸载（关 dock/connDown）不丢。
-import { createSignal, createEffect, onCleanup, onMount, untrack, For, Show } from "solid-js"
+import { createSignal, createEffect, createMemo, onCleanup, onMount, untrack, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
@@ -21,6 +21,7 @@ import {
 import { consumeEditorOpen, pendingEditorOpen } from "../editor-open"
 import { fileKindFor } from "../file-kind"
 import { fileProtocol } from "../file-protocol-client"
+import { parseCsv } from "../csv-parse"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
@@ -59,9 +60,9 @@ export function EditorDock(props: {
   const [fileVersion, setFileVersion] = createSignal<Record<string, number>>({})
   /** 图片/SVG 预览元数据（natural 尺寸 + 文件大小）。 */
   const [imageMeta, setImageMeta] = createSignal<Record<string, { w: number; h: number; size?: number }>>({})
-  /** SVG 每-tab 预览态：缺省（undefined）= 预览；显式 false = 源码态。
-   *  2026-10-27 rev（用户裁决 + VS Code 1.97 默认）：打开即看，源码是一键动作。 */
-  const [svgPreview, setSvgPreview] = createSignal<Record<string, boolean>>({})
+  /** 源码/预览切换（svg、csv/tsv 共用）：缺省 = 预览态；显式 true = 源码态。
+   *  2026-10-27：打开即看（用户裁决 + VS Code/JetBrains 主流），源码是一键动作。 */
+  const [sourceMode, setSourceMode] = createSignal<Record<string, boolean>>({})
 
   let host: HTMLDivElement | undefined
   let editor: MountedEditor | null = null
@@ -82,19 +83,30 @@ export function EditorDock(props: {
     return (root && fileProtocol.urlFor(root, rel, fileVersion()[rel])) ?? ""
   }
 
-  /** 预览态：图片恒预览；SVG 默认预览，仅显式切到源码时例外。diff 模式不预览。 */
-  const svgShowsPreview = (f: OpenFile): boolean => svgPreview()[f.rel] !== false
+  /** 预览态：图片恒预览；svg / csv-tsv 默认预览（仅显式源码态例外）。diff 模式不预览。 */
+  const showsPreview = (f: OpenFile): boolean => {
+    if (f.kind === "svg" || f.kind === "table") return sourceMode()[f.rel] !== true
+    return false
+  }
   const previewing = (): boolean => {
     const f = activeFile()
     if (!f || mode() !== "edit") return false
     if (f.kind === "image") return true
-    return f.kind === "svg" && svgShowsPreview(f)
+    return showsPreview(f)
   }
 
-  const toggleSvgPreview = () => {
+  /** tab 头切换按钮文案：预览中 → 「源码」；源码态 → 「表格」（csv/tsv）或「预览」（svg）。 */
+  const previewToggleLabel = (): string => {
     const f = activeFile()
-    if (!f) return
-    setSvgPreview(prev => ({ ...prev, [f.rel]: !svgShowsPreview(f) }))
+    if (!f) return "预览"
+    if (previewing()) return "源码"
+    return f.kind === "table" ? "表格" : "预览"
+  }
+
+  const togglePreview = () => {
+    const f = activeFile()
+    if (!f || (f.kind !== "svg" && f.kind !== "table")) return
+    setSourceMode(prev => ({ ...prev, [f.rel]: prev[f.rel] !== true }))
     clearSelection()
     // 预览期间 CodeMirror 宿主 display:none；切回源码后强制重测（防 0 尺寸视图）。
     queueMicrotask(() => {
@@ -121,6 +133,15 @@ export function EditorDock(props: {
     return parts.join(" · ")
   }
 
+  /** CSV/TSV 表格数据（含草稿缓冲；行/列/单元格上限在解析器内截断）。 */
+  const tableData = createMemo(() => {
+    const f = activeFile()
+    if (!f || f.kind !== "table") return null
+    const root = props.sessionDirectory
+    const text = (root ? getDraft(root, f.rel) : undefined) ?? f.savedContent
+    return parseCsv(text)
+  })
+
   function clearSelection() {
     setSel(null)
     setAnnotOpen(false)
@@ -145,7 +166,7 @@ export function EditorDock(props: {
     setReadNotes({})
     setFileVersion({})
     setImageMeta({})
-    setSvgPreview({})
+    setSourceMode({})
     clearSelection()
     setMode("edit")
     void unwatchAll()
@@ -202,12 +223,12 @@ export function EditorDock(props: {
     if (kind === "svg") {
       const token = await fileProtocol.ensureRootToken(root)
       if (root !== props.sessionDirectory) return
-      if (!token) setSvgPreview(prev => ({ ...prev, [rel]: false }))
+      if (!token) setSourceMode(prev => ({ ...prev, [rel]: true }))
     }
     try {
       const res = await window.api.fs.readFile(root, rel)
       if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果（Important 2）
-      const editorKind = kind === "svg" ? "svg" : "text"
+      const editorKind = kind === "svg" ? "svg" : kind === "table" ? "table" : "text"
       if (res.ok) {
         setMtime(root, rel, res.mtimeMs)
         setEol(root, rel, res.eol)
@@ -398,7 +419,7 @@ export function EditorDock(props: {
     const root = props.sessionDirectory
     if (root) clearDraft(root, rel)
     setModel(m => closeFile(m, rel))
-    setSvgPreview(prev => { const next = { ...prev }; delete next[rel]; return next })
+    setSourceMode(prev => { const next = { ...prev }; delete next[rel]; return next })
     setImageMeta(prev => { const next = { ...prev }; delete next[rel]; return next })
     setFileVersion(prev => { const next = { ...prev }; delete next[rel]; return next })
     setMode("edit")
@@ -466,16 +487,16 @@ export function EditorDock(props: {
             <Icon name="square-arrow-top-right" size="small" />
           </ButtonV2>
         </TooltipV2>
-        <Show when={activeFile()?.kind === "svg"}>
-          <TooltipV2 value={previewing() ? "查看源码" : "预览 SVG"} openDelay={300}>
+        <Show when={activeFile()?.kind === "svg" || activeFile()?.kind === "table"}>
+          <TooltipV2 value={previewing() ? "查看源码" : activeFile()?.kind === "table" ? "表格视图" : "预览 SVG"} openDelay={300}>
             <ButtonV2
               variant={previewing() ? "contrast" : "ghost"}
               size="small"
-              aria-label="SVG 预览"
+              aria-label={activeFile()?.kind === "table" ? "表格预览" : "SVG 预览"}
               aria-pressed={previewing()}
-              onClick={toggleSvgPreview}
+              onClick={togglePreview}
             >
-              {previewing() ? "源码" : "预览"}
+              {previewToggleLabel()}
             </ButtonV2>
           </TooltipV2>
         </Show>
@@ -550,8 +571,8 @@ export function EditorDock(props: {
             style={{ display: mode() === "diff" || previewing() ? "none" : "block" }}
           />
 
-          {/* 文件预览（图片只读 / SVG 显式预览态）：host 保持挂载，仅隐藏 */}
-          <Show when={previewing() && activeFile()}>
+          {/* 文件预览（图片只读 / SVG 预览态）：host 保持挂载，仅隐藏 */}
+          <Show when={previewing() && activeFile() && activeFile()!.kind !== "table"}>
             <div class="mafw-file-preview">
               <img
                 class="mafw-file-preview-img"
@@ -561,6 +582,38 @@ export function EditorDock(props: {
               />
               <div class="mafw-file-preview-meta">{previewMeta(activeFile()!)}</div>
             </div>
+          </Show>
+
+          {/* CSV/TSV 表格预览（只读；源码一键切换） */}
+          <Show when={previewing() && activeFile()?.kind === "table"}>
+            <Show
+              when={tableData()?.rows.length}
+              fallback={<DockEmpty icon="file-tree" text="空表格" hint="源码态可直接编辑" />}
+            >
+              <div class="mafw-table-preview">
+                <table class="mafw-table">
+                  <thead>
+                    <tr>
+                      <For each={tableData()!.rows[0]}>{(cell) => <th>{cell}</th>}</For>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={tableData()!.rows.slice(1)}>
+                      {(r) => (
+                        <tr>
+                          <For each={tableData()!.rows[0]}>
+                            {(_, i) => <td>{r[i()] ?? ""}</td>}
+                          </For>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+                <Show when={tableData()!.truncated}>
+                  <div class="mafw-table-note">已截断（上限：行 500 / 列 50 / 单元格 200 字符）</div>
+                </Show>
+              </div>
+            </Show>
           </Show>
 
           {/* 选区批注入口（人标出 → agent 改）：浮钮 → 浮层（仅编辑模式） */}

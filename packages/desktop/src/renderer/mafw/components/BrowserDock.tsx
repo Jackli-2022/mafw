@@ -56,6 +56,8 @@ export function BrowserDock(props: { sessionID: string | null }) {
     // 用 createElement 而非 JSX：webview 是 Electron 自定义元素，JSX 类型面不认。
     const el = document.createElement("webview") as any
     el.setAttribute("partition", BROWSER_PARTITION)
+    // Chromium 内置 PDF 查看器（PDF 走 mafw-file:// 直接渲染；仅工作台 guest 开，主窗口不动）
+    el.setAttribute("plugins", "")
     el.className = "mafw-browser-view"
     el.addEventListener("did-navigate", sync)
     el.addEventListener("did-navigate-in-page", sync)

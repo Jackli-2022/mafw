@@ -15,8 +15,8 @@ test("EditorDock renders image preview tabs read-only", () => {
 
 test("SVG opens in preview by default; source is one click", () => {
   const src = read("src/renderer/mafw/components/EditorDock.tsx")
-  // 默认预览：缺省（undefined）= 预览，仅显式 false 才是源码态
-  assert.match(src, /svgPreview\(\)\[f\.rel\] !== false/)
+  // 默认预览：缺省（undefined）= 预览，仅显式源码态（true）例外
+  assert.match(src, /sourceMode\(\)\[f\.rel\] !== true/)
   assert.match(src, /预览/)
   assert.match(src, /源码/)
   // 默认预览需要协议 token：svg 打开前先 ensure（否则首开 src 为空）
@@ -35,4 +35,17 @@ test("openRel branches image before readFile (binary gate)", () => {
   const openRel = src.slice(src.indexOf("async function openRel"), src.indexOf("async function mountActive"))
   assert.match(openRel, /statFile/)
   assert.match(openRel, /fileKindFor/)
+})
+
+test("CSV/TSV table preview: default table, source one click", () => {
+  const src = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(src, /parseCsv/)
+  assert.match(src, /mafw-table-preview/)
+  assert.match(src, /表格/)
+  assert.match(src, /sourceMode/)
+})
+
+test("PDF opens in browser surface via Chromium PDF viewer", () => {
+  const dock = read("src/renderer/mafw/components/BrowserDock.tsx")
+  assert.match(dock, /setAttribute\("plugins"/)
 })

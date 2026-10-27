@@ -1,6 +1,6 @@
 // 文件种类与点击分流（spec 2026-10-27-workbench-file-preview §2）。
 // 图片 → 文件 surface 内只读预览 tab；svg 默认文本（预览为显式动作）；html → 浏览器 surface。
-export type FileKind = "image" | "svg" | "html" | "text"
+export type FileKind = "image" | "svg" | "html" | "text" | "pdf" | "table"
 
 export const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "avif"] as const
 
@@ -19,10 +19,13 @@ export function fileKindFor(rel: string): FileKind {
   if (IMAGE_SET.has(ext)) return "image"
   if (ext === "svg") return "svg"
   if (ext === "html" || ext === "htm") return "html"
+  if (ext === "pdf") return "pdf"
+  if (ext === "csv" || ext === "tsv") return "table"
   return "text"
 }
 
-/** 点击分流：html/htm 进浏览器 surface（单 webview 导航），其余全部进文件 surface。 */
+/** 点击分流：html/pdf 进浏览器 surface（单 webview 导航），其余全部进文件 surface。 */
 export function fileOpenPlan(rel: string): "browser" | "editor" {
-  return fileKindFor(rel) === "html" ? "browser" : "editor"
+  const kind = fileKindFor(rel)
+  return kind === "html" || kind === "pdf" ? "browser" : "editor"
 }
