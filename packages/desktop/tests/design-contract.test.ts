@@ -819,12 +819,14 @@ describe("topframe — 顶行框架", () => {
 
 describe("topframe — 左栏从 Rail 品牌行收为 IconRail", () => {
   const read = (p: string) => readFileSync(join(import.meta.dirname, "..", p), "utf8")
-  test("IconRail 承接主题切换（旧 Rail 品牌块退役）", () => {
+  test("IconRail 不再承接主题（主题迁 Config）；rail 提供新建/并行入口", () => {
     const shell = read("src/renderer/mafw/MafwShell.tsx")
     const rail = read("src/renderer/mafw/components/IconRail.tsx")
     expect(shell).not.toContain("brand=")
-    expect(rail).toContain("切换主题")
-    expect(rail).toContain("theme")
+    expect(rail).not.toContain("切换主题")
+    expect(rail).not.toContain("onToggleTheme")
+    expect(rail).toContain("新建会话")
+    expect(rail).toContain("onNewWorktreeSession")
   })
   test("CSS：图标轨 46px（旧品牌行 38px 规则仅存于未删样式，由 Task 7 清理）", () => {
     expect(css).toMatch(/\.mafw-icon-rail\s*\{[^}]*width:\s*46px/)

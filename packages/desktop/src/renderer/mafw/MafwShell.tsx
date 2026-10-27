@@ -1837,13 +1837,14 @@ export function MafwShell() {
           onToggleFace={toggleLeftDock}
           onDashboard={() => { closeLeftDockIfOverlay(); setShowConfig(false); setActiveTab("goals") }}
           onConfig={() => { closeLeftDockIfOverlay(); setConfigSection(undefined); setShowConfig(true) }}
-          onToggleTheme={toggleTheme}
+          onNewSession={() => { closeLeftDockIfOverlay(); void createSession().then((sid: any) => { if (sid) openSessionTab(sid) }) }}
+          onNewWorktreeSession={() => createWorktreeSession()}
+          worktreeEnabled={worktreeEnabled()}
           approvals={pendingPermissionCount()}
           connPhase={connPhaseLabel()}
           gatewayState={gwStatus()?.state ?? null}
           dashboardActive={activeTab() === "goals" && !showConfig()}
           configActive={showConfig()}
-          theme={theme()}
         />
       </div>
       {/* 顶行：strip（会话 tab 恒显）+ dock 图标组 + 窗口控制 */}

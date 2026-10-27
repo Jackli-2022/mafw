@@ -2910,7 +2910,7 @@ html[data-theme="light"] body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 8px 0;
   background: var(--bg-inset);
   border-right: 1px solid var(--border-subtle);
@@ -2918,28 +2918,38 @@ html[data-theme="light"] body {
 .mafw-icon-rail-spacer { flex: 1; }
 .mafw-icon-rail-icon {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--r-md);
+  border-radius: 9px;
   color: var(--text-3);
   background: transparent;
   transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 .mafw-icon-rail-icon:hover { background: var(--bg-hover); color: var(--text-1); }
-/* ButtonV2 small 自带宽高会把 32×32 压成 32×24；用带属性选择器的更高特异性钉死。 */
+/* ButtonV2 small 自带宽高会把命中区压扁；用带属性选择器的更高特异性钉死。 */
 .mafw-icon-rail .mafw-icon-rail-icon[data-component="button-v2"] {
-  width: 32px;
-  height: 32px;
-  min-height: 32px;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
   padding: 0;
 }
+/* 1a 填充块激活（spec §6.1）：accent 12% 圆角块 + accent 图标，替代旧的 4% 底 + inset 左条。 */
 .mafw-icon-rail-icon.active {
-  color: var(--text-1);
-  background: var(--bg-hover);
-  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* 顶部「新建」动作：虚线描边 + accent 底，与目的地按钮区分（动作 ≠ 目的地）。 */
+.mafw-icon-rail-icon.new-action {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.mafw-icon-rail-icon.new-action:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
 }
 .mafw-icon-rail-badge {
   position: absolute;
@@ -2960,15 +2970,16 @@ html[data-theme="light"] body {
   position: absolute;
   bottom: 2px;
   right: 2px;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--text-4);
 }
-.mafw-icon-rail-conn-dot.ready { background: var(--accent); box-shadow: var(--glow-accent); animation: mafw-breathe 2s ease-in-out infinite; }
-.mafw-icon-rail-conn-dot.reconnecting { background: var(--text-3); animation: mafw-breathe 1s ease-in-out infinite; }
+/* 静音连接点：颜色语义保留，去辉光与呼吸动画（rail 是静态轨道）。 */
+.mafw-icon-rail-conn-dot.ready { background: var(--accent); }
+.mafw-icon-rail-conn-dot.reconnecting { background: var(--text-3); }
 .mafw-icon-rail-conn-dot.failed { background: var(--danger); }
-.mafw-icon-rail-conn-dot.starting { background: var(--text-4); animation: mafw-breathe 1s ease-in-out infinite; }
+.mafw-icon-rail-conn-dot.starting { background: var(--text-4); }
 .mafw-icon-rail-conn-dot.stopped { background: var(--text-5); opacity: .7; }
 /* ── LeftDock（左 dock；spec D2 双模态）────────────────────────────── */
 .mafw-body { position: relative; }

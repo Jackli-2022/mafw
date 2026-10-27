@@ -2,6 +2,7 @@ import { For, Show, type ComponentProps } from "solid-js"
 import { Icon } from "@mafw/ui/icon"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { ContextMenu } from "@mafw/ui/context-menu"
 import type { LeftDockFace } from "../left-dock"
 import { connDotState, railAriaLabel } from "../left-dock"
 
@@ -12,18 +13,20 @@ export type IconRailProps = {
   onToggleFace: (face: LeftDockFace) => void
   onDashboard: () => void
   onConfig: () => void
-  onToggleTheme: () => void
+  /** 顶部动作：新建会话（单击）；右键菜单含「并行 worktree」 */
+  onNewSession: () => void
+  onNewWorktreeSession?: () => void
+  worktreeEnabled?: boolean
   approvals: number
   connPhase: string // connected | reconnecting | down | initial
   gatewayState?: string | null // stopped | starting | ready | failed（stopped 用中性色，不报红）
   dashboardActive?: boolean
   configActive?: boolean
-  theme: string // light | dark | system
 }
 
 type RailItem = {
   key: string
-  icon?: IconName
+  icon: IconName
   label: string
   onClick: () => void
   active?: boolean
@@ -31,22 +34,20 @@ type RailItem = {
   connDot?: boolean
 }
 
-// 左栏图标轨：顶部=高频导航，中部=搜索，底部=meta（spec D3）。
+// 左栏图标轨（spec 2026-10-27 §6.1）：
+// 顶部动作（新建）→ 目的地组连排（工作/搜索/便签）→ spacer → meta 组（Dashboard/Config）。
+// 主题切换已迁 Config（业界六家无一放 rail）。
 export function IconRail(props: IconRailProps) {
   const connClass = () => connDotState(props.connPhase, props.gatewayState)
 
-  const topItems = (): RailItem[] => [
+  const destinationItems = (): RailItem[] => [
     { key: "sessions", icon: "bubble-5", label: "工作 (Ctrl+B)", onClick: () => props.onToggleFace("sessions"), active: props.face === "sessions" },
-  ]
-  const middleItems = (): RailItem[] => [
     { key: "search", icon: "magnifying-glass", label: "搜索", onClick: () => props.onToggleFace("search"), active: props.face === "search" },
+    { key: "notes", icon: "sticky-note", label: "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
   ]
-  const bottomItems = (): RailItem[] => [
-    { key: "notes", icon: "pencil-line", label: "便签", onClick: () => props.onToggleFace("notes"), active: props.face === "notes" },
-    { key: "dashboard", icon: "status", label: "Dashboard", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
+  const metaItems = (): RailItem[] => [
+    { key: "dashboard", icon: "layout-grid", label: "Dashboard", onClick: props.onDashboard, active: props.dashboardActive, badge: props.approvals },
     { key: "config", icon: "settings-gear", label: "Config", onClick: props.onConfig, active: props.configActive, connDot: true },
-    // 主题图标沿用旧 Rail 品牌块：亮色 ☀ / 暗色月亮 SVG（图标集无 sun/moon）
-    { key: "theme", label: "切换主题", onClick: props.onToggleTheme },
   ]
 
   const renderItem = (item: RailItem) => (
@@ -60,15 +61,7 @@ export function IconRail(props: IconRailProps) {
         aria-pressed={item.active}
         onClick={item.onClick}
       >
-        <Show when={item.icon} fallback={
-          props.theme === "light" ? "☀" : (
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <path d="M11.2 8.9A5 5 0 1 1 5.1 2.8a4 4 0 0 0 6.1 6.1Z" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          )
-        }>
-          <Icon name={item.icon!} size="small" />
-        </Show>
+        <Icon name={item.icon} size="small" />
         <Show when={(item.badge ?? 0) > 0}>
           <span class="mafw-icon-rail-badge">{item.badge}</span>
         </Show>
@@ -81,11 +74,36 @@ export function IconRail(props: IconRailProps) {
 
   return (
     <nav class="mafw-icon-rail" aria-label="主导航">
-      <For each={topItems()}>{renderItem}</For>
+      <ContextMenu>
+        <ContextMenu.Trigger as="div">
+          <TooltipV2 value="新建会话" openDelay={300}>
+            <ButtonV2
+              variant="ghost"
+              size="small"
+              class="mafw-icon-rail-icon new-action"
+              aria-label="新建会话"
+              onClick={props.onNewSession}
+            >
+              <Icon name="plus-small" size="small" />
+            </ButtonV2>
+          </TooltipV2>
+        </ContextMenu.Trigger>
+        <ContextMenu.Portal>
+          <ContextMenu.Content>
+            <ContextMenu.Item onSelect={props.onNewSession}>
+              <ContextMenu.ItemLabel>新建会话</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            <Show when={props.worktreeEnabled && props.onNewWorktreeSession}>
+              <ContextMenu.Item onSelect={() => props.onNewWorktreeSession?.()}>
+                <ContextMenu.ItemLabel>⎇ 并行 worktree</ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+            </Show>
+          </ContextMenu.Content>
+        </ContextMenu.Portal>
+      </ContextMenu>
+      <For each={destinationItems()}>{renderItem}</For>
       <div class="mafw-icon-rail-spacer" />
-      <For each={middleItems()}>{renderItem}</For>
-      <div class="mafw-icon-rail-spacer" />
-      <For each={bottomItems()}>{renderItem}</For>
+      <For each={metaItems()}>{renderItem}</For>
     </nav>
   )
 }
