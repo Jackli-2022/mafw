@@ -1,6 +1,7 @@
-// OptMem-style memory guide: injected into the system prompt (every turn) so
-// the agent actively operates the harmonic memory system instead of relying on
-// passive recall injection alone. Modeled on OptMem's `## Memory` block
+// OptMem-style memory guide. Since T2-4 the canonical carrier is the gateway
+// instruction-blocks endpoint + opencode per-session entries; this local copy
+// is only the gateway-unreachable fallback used by instruction-blocks.ts.
+// Modeled on OptMem's `## Memory` block
 // (https://github.com/VictorTaelin/OptMem): mandatory write-on-learning,
 // search-when-unsure, and subagents never touch memory tools.
 

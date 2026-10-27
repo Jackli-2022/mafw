@@ -29,9 +29,7 @@ import { mediaUploadTool } from './tools/media-upload';
 import { mediaSpeakTool } from './tools/media-speak';
 import { pythonExecTool } from './tools/python-exec';
 import { pythonRestartTool } from './tools/python-restart';
-import { memoryGuideHook } from './hooks/memory-guide';
-import { userProfileSystemHook } from './hooks/user-profile';
-import { agentPriorsSystemHook } from './hooks/agent-priors';
+import { instructionBlocksSystemHook } from './hooks/instruction-blocks';
 import { voiceGuideMessagesHook, voiceGuideSystemHook } from './hooks/voice-guide';
 import { pushObservation, toolFailureText } from './utils/obs-capture';
 import { addMemoryTool } from './tools/add-memory';
@@ -196,9 +194,7 @@ export default {
         const sysTexts: string[] = (Array.isArray(event?.system) ? event.system : [])
           .map((p: any) => (typeof p === 'string' ? p : p?.text || ''));
         const sysOut = { system: sysTexts };
-        memoryGuideHook({}, sysOut);
-        await userProfileSystemHook({}, sysOut);
-        await agentPriorsSystemHook({}, sysOut);
+        await instructionBlocksSystemHook({ sessionID }, sysOut);
         voiceGuideSystemHook({ sessionID }, sysOut);
         if (sysTexts.length && Array.isArray(event.system)) {
           event.system.length = 0;

@@ -236,11 +236,19 @@ describe('setup(ctx) registration', () => {
 // ------------------------------------------------------------- context hook
 
 describe('session context hook', () => {
-  it('appends memory-guide, pinned profile and agent priors to event.system as text parts', async () => {
+  it('managed=false injects only the missing blocks in guide -> profile -> priors order', async () => {
     const dir = mkdtempDir();
     const { fetchMock } = makeFetch([
-      ['/api/recall/pinned', { profile: '<user-profile>P</user-profile>' }],
-      ['/api/recall/priors', { block: '<agent-priors>A</agent-priors>' }],
+      ['/api/recall/instructions', {
+        managed: false,
+        missing: ['mafw.user-profile'],
+        staleKeys: [],
+        blocks: {
+          memoryGuide: '<memory-guide>G</memory-guide>',
+          userProfile: '<user-profile>P</user-profile>',
+          agentPriors: null,
+        },
+      }],
       ['/api/recall/context', { pointers: null }],
     ]);
     global.fetch = fetchMock as any;
@@ -248,16 +256,99 @@ describe('session context hook', () => {
     await (mafwPlugin as any).setup(ctx);
 
     const event = {
-      sessionID: 'ses_ctx',
+      sessionID: 'ses_missing',
       system: [{ type: 'text', text: 'base system' }],
       messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
     };
     await regs.sessionHooks.context(event);
     const texts = event.system.map((p: any) => p.text);
     expect(texts[0]).toBe('base system');
-    expect(texts.some((t: string) => t.includes('<memory-guide>'))).toBe(true);
+    expect(texts).toContain('<memory-guide>G</memory-guide>');
     expect(texts).toContain('<user-profile>P</user-profile>');
-    expect(texts).toContain('<agent-priors>A</agent-priors>');
+    expect(texts.some((t: string) => t.includes('<agent-priors>'))).toBe(false);
+  });
+
+  it('managed=false with all three missing appends guide -> profile -> priors', async () => {
+    const dir = mkdtempDir();
+    const { fetchMock } = makeFetch([
+      ['/api/recall/instructions', {
+        managed: false,
+        missing: ['mafw.memory-guide', 'mafw.user-profile', 'mafw.agent-priors'],
+        staleKeys: [],
+        blocks: {
+          memoryGuide: '<memory-guide>G</memory-guide>',
+          userProfile: '<user-profile>P</user-profile>',
+          agentPriors: '<agent-priors>A</agent-priors>',
+        },
+      }],
+      ['/api/recall/context', { pointers: null }],
+    ]);
+    global.fetch = fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+    const event = { sessionID: 'ses_all_missing', system: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }] };
+    await regs.sessionHooks.context(event);
+    const texts = event.system.map((p: any) => p.text);
+    expect(texts).toEqual([
+      '<memory-guide>G</memory-guide>',
+      '<user-profile>P</user-profile>',
+      '<agent-priors>A</agent-priors>',
+    ]);
+  });
+
+  it('managed=true injects none of the three blocks', async () => {
+    const dir = mkdtempDir();
+    const { fetchMock } = makeFetch([
+      ['/api/recall/instructions', { managed: true, missing: [], staleKeys: [], blocks: {} }],
+      ['/api/recall/context', { pointers: null }],
+    ]);
+    global.fetch = fetchMock as any;
+    const { ctx, regs } = makeCtx(dir);
+    await (mafwPlugin as any).setup(ctx);
+    const event = { sessionID: 'ses_managed', system: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }] };
+    await regs.sessionHooks.context(event);
+    const texts = event.system.map((p: any) => String(p.text));
+    expect(texts.some((t) => t.includes('<memory-guide>'))).toBe(false);
+    expect(texts.some((t) => t.includes('<user-profile>'))).toBe(false);
+    expect(texts.some((t) => t.includes('<agent-priors>'))).toBe(false);
+  });
+
+  it('gateway unavailable after managed=true does not inject blocks', async () => {
+    const realNow = Date.now();
+    let now = realNow;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const { fetchMock } = makeFetch([
+      ['/api/recall/instructions', { managed: true, missing: [], staleKeys: [], blocks: {} }],
+      ['/api/recall/context', { pointers: null }],
+    ]);
+    global.fetch = fetchMock as any;
+    const { ctx, regs } = makeCtx(mkdtempDir());
+    await (mafwPlugin as any).setup(ctx);
+    const first = { sessionID: 'ses_cached_true', system: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }] };
+    await regs.sessionHooks.context(first);
+    now += 6000; // bypass the 5s fresh cache, stay inside the 10min last-good window
+    global.fetch = jest.fn(async () => { throw new Error('gateway down'); }) as any;
+    const second = { sessionID: 'ses_cached_true', system: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'y' }] }] };
+    await regs.sessionHooks.context(second);
+    nowSpy.mockRestore();
+    const texts = second.system.map((p: any) => String(p.text));
+    expect(texts.some((t) => t.includes('<memory-guide>'))).toBe(false);
+    expect(texts.some((t) => t.includes('<user-profile>'))).toBe(false);
+    expect(texts.some((t) => t.includes('<agent-priors>'))).toBe(false);
+  });
+
+  it('caches the endpoint for 5s per session', async () => {
+    const { fetchMock, calls } = makeFetch([
+      ['/api/recall/instructions', { managed: true, missing: [], staleKeys: [], blocks: {} }],
+      ['/api/recall/context', { pointers: null }],
+    ]);
+    global.fetch = fetchMock as any;
+    const { ctx, regs } = makeCtx(mkdtempDir());
+    await (mafwPlugin as any).setup(ctx);
+    for (const text of ['a', 'b']) {
+      await regs.sessionHooks.context({ sessionID: 'ses_cache', system: [], messages: [{ role: 'user', content: [{ type: 'text', text }] }] });
+    }
+    expect(calls.filter((c) => c.url.includes('/api/recall/instructions'))).toHaveLength(1);
   });
 
   it('injects <recall> pointers into the last user message content in place', async () => {
