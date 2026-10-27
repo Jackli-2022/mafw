@@ -7013,6 +7013,17 @@ class MafwScheduler {
           return;
         }
 
+        // GET /api/recall/instructions — T2-4 fallback: which of the three
+        // instruction blocks are missing from the session's opencode entries.
+        if (req.url?.startsWith('/api/recall/instructions') && req.method === 'GET') {
+          const { handleRecallInstructions } = require('./routes/recall-instructions');
+          const handled = await handleRecallInstructions(req, res, req.url, {
+            getBlocks: () => this.buildInstructionBlocks(),
+            getSync: () => this.instructionSync ?? null,
+          });
+          if (handled) return;
+        }
+
         // GET /api/recall/pinned — disclosure layer for system prompt injection.
         // Pinned memories appear every turn regardless of retrieval; fail-open.
         if (req.url?.startsWith('/api/recall/pinned') && req.method === 'GET') {
