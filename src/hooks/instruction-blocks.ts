@@ -15,6 +15,7 @@ const GATEWAY_PORT = process.env.MAFW_SERVER_API_PORT || process.env.MAFW_GATEWA
 const INSTRUCTIONS_URL = `http://127.0.0.1:${GATEWAY_PORT}/api/recall/instructions`
 const CACHE_TTL_MS = 5_000
 const LAST_GOOD_TTL_MS = 10 * 60 * 1000
+const MAX_RECORDS = 200
 
 interface InstructionBlocks {
   memoryGuide?: string | null
@@ -29,6 +30,18 @@ interface Record {
 }
 
 const records = new Map<string, Record>()
+
+/** Lazy TTL + hard cap: the plugin lives in a long-lived serve process. */
+function pruneRecords(now: number): void {
+  for (const [sessionID, record] of records) {
+    if (now - record.at > LAST_GOOD_TTL_MS) records.delete(sessionID)
+  }
+  while (records.size > MAX_RECORDS) {
+    const oldest = records.keys().next().value as string | undefined
+    if (oldest === undefined) break
+    records.delete(oldest)
+  }
+}
 
 function appendBlocks(output: { system?: string[] }, blocks: InstructionBlocks | undefined): void {
   if (!blocks) return
@@ -67,6 +80,7 @@ export async function instructionBlocksSystemHook(
       blocks: body?.blocks ?? {},
     }
     records.set(sessionID, record)
+    pruneRecords(now)
     if (!record.managed) appendBlocks(output, record.blocks)
     return output
   } catch {

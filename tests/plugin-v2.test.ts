@@ -351,6 +351,24 @@ describe('session context hook', () => {
     expect(calls.filter((c) => c.url.includes('/api/recall/instructions'))).toHaveLength(1);
   });
 
+  it('bounds the last-good cache and evicts the oldest session', async () => {
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const { fetchMock, calls } = makeFetch([
+      ['/api/recall/instructions', { managed: true, missing: [], staleKeys: [], blocks: {} }],
+      ['/api/recall/context', { pointers: null }],
+    ]);
+    global.fetch = fetchMock as any;
+    const { ctx, regs } = makeCtx(mkdtempDir());
+    await (mafwPlugin as any).setup(ctx);
+    for (let i = 0; i < 201; i++) {
+      await regs.sessionHooks.context({ sessionID: `ses_lru_${i}`, system: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }] });
+    }
+    const before = calls.filter((c) => c.url.includes('/api/recall/instructions')).length;
+    await regs.sessionHooks.context({ sessionID: 'ses_lru_0', system: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'y' }] }] });
+    nowSpy.mockRestore();
+    expect(calls.filter((c) => c.url.includes('/api/recall/instructions')).length).toBe(before + 1);
+  });
+
   it('injects <recall> pointers into the last user message content in place', async () => {
     const dir = mkdtempDir();
     const { fetchMock } = makeFetch([

@@ -7,7 +7,7 @@
  * config returns the full block set for the legacy injection path.
  */
 import * as http from 'http';
-import { INSTRUCTION_KEYS, type InstructionBlocks } from '../recall/instruction-blocks';
+import { INSTRUCTION_KEYS, MEMORY_GUIDE, type InstructionBlocks } from '../recall/instruction-blocks';
 import type { InstructionInspectResult, InstructionSyncService } from '../core/instructions/instruction-sync-service';
 
 export interface RecallInstructionsDeps {
@@ -79,13 +79,17 @@ export async function handleRecallInstructions(
     const inspected = sessionID && sync ? await sync.inspect(sessionID, blocks) : null;
     body = buildRecallInstructionsResponse(blocks, inspected);
   } catch {
-    // Fail-open: the legacy path still gets the whole memory guide.
-    try {
-      const blocks = await deps.getBlocks();
-      body = buildRecallInstructionsResponse(blocks, null);
-    } catch {
-      body = { managed: false, revision: '', missing: ALL_KEYS, staleKeys: [], reason: 'render_failed', blocks: {} };
-    }
+    // Fail-open even if the renderer itself is unavailable: the plugin must
+    // still receive the static guide, otherwise a 200 with empty blocks makes
+    // it inject nothing (a fail-closed path).
+    body = {
+      managed: false,
+      revision: '',
+      missing: ALL_KEYS,
+      staleKeys: [],
+      reason: 'render_failed',
+      blocks: { memoryGuide: MEMORY_GUIDE },
+    };
   }
 
   res.writeHead(200, { 'Content-Type': 'application/json' });

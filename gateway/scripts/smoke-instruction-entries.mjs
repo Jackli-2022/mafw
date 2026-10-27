@@ -153,6 +153,16 @@ function readEntryTimes(sid) {
     const managed3 = await get(`/api/recall/instructions?sessionID=${encodeURIComponent(sid)}`);
     check('endpoint managed=true after restore', managed3.body?.managed === true, JSON.stringify(managed3.body)?.slice(0, 200));
 
+    // Compaction must preserve the instruction snapshot (spec §5.2/§6.5).
+    const compact = await post(`/api/session/${sid}/summarize`, {});
+    check('compaction accepted', compact.status === 200, `status=${compact.status} ${JSON.stringify(compact.body).slice(0, 160)}`);
+    if (compact.status === 200) {
+      const rowsC = await waitEntries(sid, 3);
+      check('compaction preserves three entries', KEYS.every((k) => rowsC.some((e) => e.key === k && typeof e.value === 'string' && e.value.length > 0)), rowsC.map((e) => e.key).join(','));
+      const managedC = await get(`/api/recall/instructions?sessionID=${encodeURIComponent(sid)}`);
+      check('endpoint managed=true after compaction', managedC.body?.managed === true, JSON.stringify(managedC.body)?.slice(0, 200));
+    }
+
     // Fork copies entries (opencode owns this; the smoke pins the behavior we rely on).
     const msgs = await get(`/api/sessions/${sid}/messages?limit=20`);
     const list = Array.isArray(msgs.body?.data) ? msgs.body.data : [];

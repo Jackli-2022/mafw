@@ -80,6 +80,28 @@ describe('handleRecallInstructions', () => {
     expect(JSON.parse(writes[0])).toMatchObject({ managed: true, revision: 'r1', blocks: {} });
   });
 
+  it('render failure returns the bundled guide instead of empty blocks', async () => {
+    const writes: string[] = [];
+    const res: any = {
+      writeHead: jest.fn(),
+      end: jest.fn((body: string) => writes.push(body)),
+    };
+    const handled = await handleRecallInstructions(
+      { method: 'GET' } as any,
+      res,
+      '/api/recall/instructions?sessionID=s1',
+      {
+        getBlocks: async () => { throw new Error('store unavailable'); },
+        getSync: () => null,
+      },
+    );
+    expect(handled).toBe(true);
+    const body = JSON.parse(writes[0]);
+    expect(body.managed).toBe(false);
+    expect(body.reason).toBe('render_failed');
+    expect(body.blocks.memoryGuide).toContain('<memory-guide>');
+  });
+
   it('returns false for a non-matching path', async () => {
     const res: any = { writeHead: jest.fn(), end: jest.fn() };
     await expect(handleRecallInstructions({ method: 'GET' } as any, res, '/api/health', {
