@@ -889,6 +889,16 @@ export function EditorDock(props: {
                 })
                 setAnchorOpen(true)
               }}
+              onAnnotateRegion={(a, point) => {
+                const host = bodyEl?.getBoundingClientRect()
+                if (!host) return
+                setAnchorSel({
+                  anchor: { kind: "region", ...a },
+                  left: Math.max(8, point.clientX - host.left),
+                  top: Math.max(8, point.clientY - host.top),
+                })
+                setAnchorOpen(true)
+              }}
             />
           </Show>
 

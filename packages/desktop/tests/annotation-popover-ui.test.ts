@@ -82,3 +82,12 @@ test("图片拖框批注：region layer + 裁剪 + 发送带图", () => {
   const send = read("src/renderer/mafw/chat/use-send-message.ts")
   assert.match(send, /annotationImageParts/)
 })
+
+test("PPTX 图钉批注：slide wrapper 识别 + 页码锚", () => {
+  const office = read("src/renderer/mafw/components/OfficePreview.tsx")
+  assert.match(office, /pptx-preview-slide-wrapper/)
+  assert.match(office, /onAnnotateRegion/)
+  assert.match(office, /slide:/)
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /onAnnotateRegion/)
+})

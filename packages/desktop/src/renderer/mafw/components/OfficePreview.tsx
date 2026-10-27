@@ -17,6 +17,8 @@ export function OfficePreview(props: {
   onOpenExternal: () => void
   /** xlsx 单元格批注（预览批注 T6）：sheet + A1 + 当前值。 */
   onAnnotateCell?: (a: { sheet?: string; ref: string; value: string }, rect: { left: number; top: number; bottom: number }) => void
+  /** pptx 图钉批注（预览批注 T8）：页码 + 归一化坐标 + 点击点（viewport）。 */
+  onAnnotateRegion?: (a: { x: number; y: number; w: number; h: number; slide: number }, point: { clientX: number; clientY: number }) => void
 }) {
   const [phase, setPhase] = createSignal<"idle" | "loading" | "ready" | "error">("idle")
   const [error, setError] = createSignal("")
@@ -159,6 +161,20 @@ export function OfficePreview(props: {
         ref={(el) => { host = el }}
         data-annotatable={props.kind === "docx" ? "quote" : undefined}
         style={{ display: props.kind === "xlsx" ? "none" : "block" }}
+        onClick={(e: MouseEvent) => {
+          if (props.kind !== "pptx" || !props.onAnnotateRegion || !host) return
+          const slideEl = (e.target as HTMLElement)?.closest?.(".pptx-preview-slide-wrapper") as HTMLElement | null
+          if (!slideEl) return
+          const slides = Array.from(host.querySelectorAll(".pptx-preview-slide-wrapper"))
+          const slide = slides.indexOf(slideEl) + 1
+          if (slide <= 0) return
+          const rect = slideEl.getBoundingClientRect()
+          if (rect.width <= 0 || rect.height <= 0) return
+          const x = (e.clientX - rect.left) / rect.width
+          const y = (e.clientY - rect.top) / rect.height
+          if (x < 0 || x > 1 || y < 0 || y > 1) return
+          props.onAnnotateRegion({ x, y, w: 0, h: 0, slide }, { clientX: e.clientX, clientY: e.clientY })
+        }}
       />
     </div>
   )
