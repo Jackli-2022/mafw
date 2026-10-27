@@ -97,11 +97,11 @@ export function BrowserDock(props: { sessionID: string | null }) {
     load(req.url)
   })
 
-  /** 本地文件（mafw-file://）地址栏友好显示：📄 rel；远程 URL 原样。系统浏览器按钮对本地文件不适用。 */
+  /** 本地文件（mafw-file://）地址栏友好显示：解码后的相对路径；远程 URL 原样。设计契约禁 emoji。 */
   const localFilePath = () => displayMafwFilePath(address())
   const displayAddress = () => {
     const rel = localFilePath()
-    return rel ? `📄 ${rel}` : address()
+    return rel ? rel : address()
   }
   const isRemote = () => !localFilePath()
 

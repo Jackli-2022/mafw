@@ -43,7 +43,7 @@
 
 - **分流**：MafwShell `onOpenFile(rel)` 改为经纯函数 `fileOpenPlan(rel)`： `"browser"`（html/htm）/ `"editor"`（其余全部——含图片与 svg，编辑器内部再按 kind 渲）。
 - **导航链路**：`fileOpenPlan = "browser"` → 经 IPC 注册 root（幂等）得 token → 拼 `mafw-file://` URL → renderer store `browser-nav.ts`（`requestBrowserNavigate(url)` signal）→ BrowserDock 订阅并 `load(url)`（`load` 既有 policy 闸生效）+ `openWorkbenchSurface("browser")` 切 surface。既有 `browser-open-url` 通道（main→preload→BrowserDock 直连订阅，`BrowserDock.tsx:167`）保持不动。
-- **browser-policy 放行**：`navigationDecision`/`windowOpenDecision`/`isAllowedSrc` 增加 `mafw-file:` → allow/navigate（该 scheme 只有我们自己能产出 URL）；`file:`/`data:`/`javascript:` 禁令原样不动。地址栏对 `mafw-file://` URL 显示友好态（`📄 <relPath>`，解码），手动编辑地址仍走 `normalizeAddress` 现状规则。
+- **browser-policy 放行**：`navigationDecision`/`windowOpenDecision`/`isAllowedSrc` 增加 `mafw-file:` → allow/navigate（该 scheme 只有我们自己能产出 URL）；`file:`/`data:`/`javascript:` 禁令原样不动。地址栏对 `mafw-file://` URL 显示解码后的相对路径（面板设计契约禁 emoji，不用图标前缀），手动编辑地址仍走 `normalizeAddress` 现状规则。
 - **边界**：root 注销后旧 URL 全部 404（token 失效）；跨 root 的 html 文件先注册对应 root。
 
 ## 6. 样式
