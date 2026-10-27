@@ -5,7 +5,12 @@
 //   缓冲区干净时 → staleClean，由消费方读盘后 applyCleanReload 静默刷新；
 // - 保存成功（markSaved）清 dirty/conflict/staleClean 并换磁盘基准；
 // - root 变化（切会话/worktree）→ 全清，不展示别树旧内容。
-export type OpenFileKind = "text" | "image" | "svg" | "table" | "markdown" | "json"
+export type OpenFileKind = "text" | "image" | "svg" | "table" | "markdown" | "json" | "xlsx" | "docx" | "pptx"
+
+/** 只读预览 tab（图片 / Office）：不参与 dirty/保存/冲突，外部变更走版本刷新。 */
+export function isReadOnlyPreview(kind: OpenFileKind): boolean {
+  return kind === "image" || kind === "xlsx" || kind === "docx" || kind === "pptx"
+}
 
 export interface OpenFile {
   rel: string
@@ -66,15 +71,15 @@ export function setActive(m: EditorModel, rel: string): EditorModel {
 }
 
 export function markDirty(m: EditorModel, rel: string): EditorModel {
-  return update(m, rel, f => f.kind === "image" || f.dirty ? f : { ...f, dirty: true })
+  return update(m, rel, f => isReadOnlyPreview(f.kind) || f.dirty ? f : { ...f, dirty: true })
 }
 
 export function markSaved(m: EditorModel, rel: string, content: string): EditorModel {
-  return update(m, rel, f => f.kind === "image" ? f : ({ ...f, savedContent: content, dirty: false, conflict: false, staleClean: false }))
+  return update(m, rel, f => isReadOnlyPreview(f.kind) ? f : ({ ...f, savedContent: content, dirty: false, conflict: false, staleClean: false }))
 }
 
 export function onExternalChange(m: EditorModel, rel: string): EditorModel {
-  return update(m, rel, f => f.kind === "image"
+  return update(m, rel, f => isReadOnlyPreview(f.kind)
     ? f
     : f.dirty
       ? { ...f, conflict: true, staleClean: false }
@@ -87,7 +92,7 @@ export function resolveConflict(
   action: "keep-mine" | "reload",
   diskContent?: string,
 ): EditorModel {
-  return update(m, rel, f => f.kind === "image" ? f : action === "keep-mine"
+  return update(m, rel, f => isReadOnlyPreview(f.kind) ? f : action === "keep-mine"
     ? { ...f, conflict: false }
     : {
         ...f,
@@ -100,7 +105,7 @@ export function resolveConflict(
 
 /** staleClean 消费：换基准并清标记（调用方负责把磁盘内容 setDoc 进编辑器）。 */
 export function applyCleanReload(m: EditorModel, rel: string, diskContent: string): EditorModel {
-  return update(m, rel, f => f.kind === "image" ? f : { ...f, savedContent: diskContent, staleClean: false })
+  return update(m, rel, f => isReadOnlyPreview(f.kind) ? f : { ...f, savedContent: diskContent, staleClean: false })
 }
 
 /** 读盘 await 结束后再确认一次：期间用户开始输入 → 禁止静默覆盖（终审 Critical 1）。 */

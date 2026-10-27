@@ -83,6 +83,8 @@ export function registerMafwFileProtocol(
       if (res.status >= 400) return res
       const headers = new Headers(res.headers)
       headers.set("content-type", hit.mime)
+      // 自定义协议跨源 fetch（dev 是 http://localhost:5173）：放行只读 GET
+      headers.set("access-control-allow-origin", "*")
       return new Response(res.body, { status: res.status, headers })
     })
   }

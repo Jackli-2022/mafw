@@ -94,6 +94,7 @@ describe("registerMafwFileProtocol（注入 session/fetch，可单测）", () =>
     const res = await s1.handlers.get("mafw-file")!(new Request(buildMafwFileUrl("ab12cd34", "a.png")))
     assert.equal(res.status, 200)
     assert.equal(res.headers.get("content-type"), "image/png")
+    assert.equal(res.headers.get("access-control-allow-origin"), "*")
   })
   test("未命中 → 404", async () => {
     const reg = createRootRegistry(() => "ab12cd34")
@@ -146,9 +147,10 @@ describe("接线契约", () => {
     const head = src.slice(0, src.indexOf("protocol.registerSchemesAsPrivileged"))
     assert.ok(head.includes("mafw-file"))
     const block = src.slice(src.indexOf("protocol.registerSchemesAsPrivileged"), src.indexOf("])", src.indexOf("protocol.registerSchemesAsPrivileged")) + 2)
-    assert.ok(/scheme:\s*(MAFW_FILE_SCHEME|"mafw-file")/.test(block))
+    assert.match(src, /scheme:\s*(MAFW_FILE_SCHEME|"mafw-file")/)
     assert.ok(/standard:\s*true/.test(block))
     assert.ok(/stream:\s*true/.test(block))
+    assert.ok(/corsEnabled:\s*true/.test(block))
   })
   test("index.ts ready 后对 default session + 浏览器 partition 双注册", () => {
     const src = read("main/index.ts")

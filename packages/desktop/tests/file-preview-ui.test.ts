@@ -64,3 +64,13 @@ test("JSON tree preview with source toggle", () => {
   const comp = read("src/renderer/mafw/components/JsonPreview.tsx")
   assert.match(comp, /mafw-json-preview/)
 })
+
+test("Office preview: lazy libs + read-only tabs", () => {
+  const office = read("src/renderer/mafw/components/OfficePreview.tsx")
+  assert.match(office, /import\("exceljs\/dist\/exceljs\.min\.js"\)/)
+  assert.match(office, /import\("docx-preview"\)/)
+  assert.match(office, /import\("pptx-preview"\)/)
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /OfficePreview/)
+  assert.match(editor, /isReadOnlyPreview/)
+})

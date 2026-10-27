@@ -13,6 +13,7 @@ import { DockBanner, DockEmpty, DockPanelHeader } from "./dock-panel"
 import {
   createEditorModel, onRootChange, openFile, closeFile, setActive,
   markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload,
+  isReadOnlyPreview,
   type EditorModel, type OpenFile,
 } from "../editor-state"
 import {
@@ -24,6 +25,7 @@ import { fileProtocol } from "../file-protocol-client"
 import { parseCsv } from "../csv-parse"
 import { Markdown } from "@mafw/session-ui/markdown"
 import { JsonPreview } from "./JsonPreview"
+import { OfficePreview } from "./OfficePreview"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
@@ -93,7 +95,7 @@ export function EditorDock(props: {
   const previewing = (): boolean => {
     const f = activeFile()
     if (!f || mode() !== "edit") return false
-    if (f.kind === "image") return true
+    if (isReadOnlyPreview(f.kind)) return true
     return showsPreview(f)
   }
 
@@ -146,9 +148,6 @@ export function EditorDock(props: {
     return parseCsv(text)
   })
 
-  /** Markdown 预览内容（含草稿缓冲，切回预览时反映最新源码）。 */
-  const markdownText = createMemo(() => activeSourceText())
-
   /** 当前文件源码文本（草稿优先，回退磁盘基准）——markdown/json 预览共用。 */
   const activeSourceText = createMemo(() => {
     const f = activeFile()
@@ -158,6 +157,12 @@ export function EditorDock(props: {
   })
 
   /** djb2：Markdown 缓存键随内容变化（避免同 tab 内旧渲染被缓存命中）。 */
+  /** 当前 Office kind（非 Office → null）。 */
+  const officeKind = (): "xlsx" | "docx" | "pptx" | null => {
+    const k = activeFile()?.kind
+    return k === "xlsx" || k === "docx" || k === "pptx" ? k : null
+  }
+
   const textHash = (s: string): number => {
     let h = 5381
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
@@ -241,6 +246,22 @@ export function EditorDock(props: {
       void mountActive()
       return
     }
+    // Office（xlsx/docx/pptx）：只读预览 tab；数据集走 mafw-file:// + fetch，不读文本。
+    if (kind === "xlsx" || kind === "docx" || kind === "pptx") {
+      const token = await fileProtocol.ensureRootToken(root)
+      if (root !== props.sessionDirectory) return
+      if (!token) {
+        setIoError("Office 预览不可用（文件协议注册失败）")
+        return
+      }
+      setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
+      setModel(m => openFile(m, rel, "", true, kind))
+      setMode("edit")
+      clearSelection()
+      setIoError(null)
+      void mountActive()
+      return
+    }
     // SVG 默认预览需要协议 token（首次打开即渲染）；注册失败退回源码态。
     if (kind === "svg") {
       const token = await fileProtocol.ensureRootToken(root)
@@ -291,8 +312,8 @@ export function EditorDock(props: {
     if (!f) return
     const root = props.sessionDirectory
     if (!root) return
-    // 图片没有 CodeMirror：只挂外部变更 watch（变更 → 版本号刷新 <img>）。
-    if (f.kind === "image") {
+    // 图片/Office 没有 CodeMirror：只挂外部变更 watch（变更 → 版本号刷新）。
+    if (isReadOnlyPreview(f.kind)) {
       const key = `${root}\u0000${f.rel}`
       watched.add(key)
       void window.api.fs.watch(root, f.rel)
@@ -334,12 +355,14 @@ export function EditorDock(props: {
       if (!f) return
       // 版本号对所有 kind 生效（图片/SVG 预览的缓存破坏；文本也会顺带更新预览图）
       setFileVersion(prev => ({ ...prev, [rel]: Date.now() }))
-      if (f.kind === "image") {
-        // 图片只读：不读盘，重新 stat 拿新大小即可（<img> 由版本号触发重载）
-        void window.api.fs.statFile(root, rel).then((st) => {
-          if (root !== props.sessionDirectory || !st.ok) return
-          setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], size: st.size } }))
-        })
+      if (isReadOnlyPreview(f.kind)) {
+        // 图片/Office 只读：不读盘；图片重新 stat 大小，Office 仅版本号触发重解析
+        if (f.kind === "image") {
+          void window.api.fs.statFile(root, rel).then((st) => {
+            if (root !== props.sessionDirectory || !st.ok) return
+            setImageMeta(prev => ({ ...prev, [rel]: { ...prev[rel], size: st.size } }))
+          })
+        }
         return
       }
       if (f.readOnly) return
@@ -594,7 +617,7 @@ export function EditorDock(props: {
           />
 
           {/* 文件预览（图片只读 / SVG 预览态）：host 保持挂载，仅隐藏 */}
-          <Show when={previewing() && activeFile() && activeFile()!.kind !== "table" && activeFile()!.kind !== "markdown" && activeFile()!.kind !== "json"}>
+          <Show when={previewing() && activeFile() && activeFile()!.kind !== "table" && activeFile()!.kind !== "markdown" && activeFile()!.kind !== "json" && !officeKind()}>
             <div class="mafw-file-preview">
               <img
                 class="mafw-file-preview-img"
@@ -642,8 +665,8 @@ export function EditorDock(props: {
           <Show when={previewing() && activeFile()?.kind === "markdown"}>
             <div class="mafw-md-preview">
               <Markdown
-                text={markdownText()}
-                cacheKey={`md:${activeFile()!.rel}:${textHash(markdownText())}`}
+                text={activeSourceText()}
+                cacheKey={`md:${activeFile()!.rel}:${textHash(activeSourceText())}`}
                 streaming={false}
               />
             </div>
@@ -654,6 +677,16 @@ export function EditorDock(props: {
             <div class="mafw-json-preview-wrap">
               <JsonPreview text={activeSourceText()} />
             </div>
+          </Show>
+
+          {/* Office 预览（xlsx/docx/pptx；解析库懒加载） */}
+          <Show when={previewing() && activeFile() && officeKind()}>
+            <OfficePreview
+              kind={officeKind()!}
+              url={previewUrl(activeFile()!.rel)}
+              rel={activeFile()!.rel}
+              onOpenExternal={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
+            />
           </Show>
 
           {/* 选区批注入口（人标出 → agent 改）：浮钮 → 浮层（仅编辑模式） */}

@@ -72,3 +72,14 @@ describe("json（2026-10-27 增补）", () => {
     assert.equal(fileKindFor("data.jsonc"), "text")
   })
 })
+
+describe("office 格式（2026-10-27 增补）", () => {
+  test("xlsx/docx/pptx 分类；legacy 走 text（二进制提示）", () => {
+    assert.equal(fileKindFor("book.xlsx"), "xlsx")
+    assert.equal(fileKindFor("DOC/Letter.DOCX"), "docx")
+    assert.equal(fileKindFor("deck.pptx"), "pptx")
+    assert.equal(fileKindFor("old.xls"), "text")
+    assert.equal(fileKindFor("old.doc"), "text")
+    assert.equal(fileKindFor("old.ppt"), "text")
+  })
+})

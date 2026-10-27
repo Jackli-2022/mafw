@@ -1,5 +1,5 @@
 ﻿import { describe, expect, test } from "bun:test"
-import { createEditorModel as create, onRootChange, openFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload } from "./editor-state"
+import { createEditorModel as create, onRootChange, openFile, closeFile, markDirty, markSaved, onExternalChange, resolveConflict, applyCleanReload, canApplyCleanReload, isReadOnlyPreview } from "./editor-state"
 
 describe("editor-state", () => {
   test("openFile 建行并激活；重复打开仅激活不重置内容", () => {
@@ -90,5 +90,20 @@ describe("table kind（CSV/TSV 表格预览，2026-10-27 增补）", () => {
     expect(m.files[0].dirty).toBe(true)
     m = onExternalChange(m, "data.csv")
     expect(m.files[0].conflict).toBe(true)
+  })
+})
+
+describe("office kinds（只读预览，2026-10-27 增补）", () => {
+  test("xlsx/docx/pptx 不参与 dirty/保存/冲突", () => {
+    for (const kind of ["xlsx", "docx", "pptx"] as const) {
+      let m = openFile(create(), `f.${kind}`, "", true, kind)
+      expect(m.files[0].kind).toBe(kind)
+      expect(isReadOnlyPreview(kind)).toBe(true)
+      m = markDirty(m, `f.${kind}`)
+      expect(m.files[0].dirty).toBe(false)
+      m = onExternalChange(m, `f.${kind}`)
+      expect(m.files[0].conflict).toBe(false)
+    }
+    expect(isReadOnlyPreview("text")).toBe(false)
   })
 })

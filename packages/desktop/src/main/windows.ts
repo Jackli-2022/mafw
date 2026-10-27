@@ -55,6 +55,8 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       supportFetchAPI: true,
       stream: true,
+      // renderer（http://localhost:5173 dev / 自定义渲染协议 prod）需要 fetch 二进制做 Office 预览
+      corsEnabled: true,
     },
   },
 ])
