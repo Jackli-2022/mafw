@@ -119,3 +119,90 @@ A 全部 + 三处：
 
 - A or B（本文档完成后由产品在 mockup 上挑）；
 - 置顶 Manager 行的 phase 文案是否显示英文 phase 还是映射中文（当前 phase 为英文枚举）。
+
+## 8. 业界左导航功能按钮调研（六家，2026-10-27）
+
+> 用户指定对标：Claude / opencode / dsh / Kimi / Codex / pi desktop。所有条目来自官方文档、官方公告或一手 hands-on，来源见各小节。
+
+### 8.1 六家逐个盘点
+
+**Claude Code Desktop**（2026-04-14 重建 + 10-14 更新，多会话 sidebar 形态）
+
+- New session：recent folders 一键、saved environments（多文件夹 + SSH/云端 + 每文件夹独立 worktree）、环境下拉（Local / Cloud / SSH / WSL）
+- 会话列表：active + recent；按 status / project / environment 筛选；按项目分组（跨 4 仓的 refactor 折叠为一个可展开簇）；**working / needs-attention 状态指示**；PR 合并自动归档（opt-in）
+- **Routines 页**（sidebar 内）：Cloud（Anthropic 基础设施）/ Local（桌面定时任务，间隔可到 1 分钟）；routine run 以会话身份落进 sidebar
+- **Usage 按钮**（sidebar 内）：context window + 会话用量一眼可见
+- Side chat（Cmd+; / `/btw`，读主线程不回流）；task chips（follow-up 工作一键开新会话新 worktree）
+- 来源：https://claude.com/blog/claude-code-desktop-redesign 、https://code.claude.com/docs/en/desktop 、https://aicatchup.com/news/claude-code-desktop-redesign
+
+**opencode Desktop**（去 sidebar 化，Tabs 为中心）
+
+- 官方公告："OpenCode Desktop is now built around **tabs**. Start a new session in a tab, or open an existing session from any of your projects."
+- Home 视图列项目；旧 sidebar（跨项目会话分组）被移除，社区在 GitHub issue #29902 / Reddit 追悼（"legacy GUI with sidebar much easier for managing multiple sessions across different projects"）
+- tabs 可配：scope=cwd / layout=horizontal / indicators=status；session.sidebar=auto
+- 来源：https://x.com/opencode/status/2077148766092558570 、https://github.com/anomalyco/opencode/issues/29902 、https://opencode.ai/v2/docs/cli/config/
+
+**dsh Desktop**（DeepSeek Harness 2.0，左 sidebar + 右 workspace files）
+
+- sidebar **＋ 添加项目文件夹**；active workspace 选择器在 composer 上方
+- per-task：模型 / thinking 档 / 权限（read-only / workspace-write / full-access）/ 预设（Standard / PTC / Minimal / Creator）
+- 右侧 workspace files 面板（HTML 报告内嵌预览 + 全屏）；顶右动作菜单：session log / chat / trajectory
+- **plugins tab**（官方 bundles + installed + creator mode 自建面板装进 sidebar）；**automation tasks**（一次性/循环定时任务 + delivery records tab）；agent teams（实验）
+- "Show coding view" 设置：coding trajectory、file diffs、agent presets
+- 来源：https://github.com/dataelement/dsh-desktop 、https://www.mindstudio.ai/blog/deepseek-harness-2-desktop-app 、https://www.deepseek.com/en/harness/ 、https://github.com/deepseek-ai/deepseek-harness/discussions/2669
+
+**Kimi Code Desktop**（单栏 sidebar，ChatGPT 式）
+
+- 顶部常驻：**New chat / Search**
+- Sessions 按项目分组（landing-page / kimi-code-app / api-server）；任务式标题 + 相对时间（"Hero copy polish 26m"）
+- CLI 侧另有 subagents（coder/explore/plan）、插件 marketplace、生命周期 hooks（桌面导航未暴露）
+- 来源：https://www.kimi.com/code/en （landing 桌面截图文字）、https://github.com/MoonshotAI/kimi-code
+
+**Codex（OpenAI）**（sidebar = Projects + Threads）
+
+- 新建 thread；**Projects**（文件夹）+ Recents/threads；"Move to project" 行内动作
+- 已知弱点：projects 与 threads 视觉区分弱（issue #29161）；多项目时 sidebar 可扩展性被吐槽；sidebar 跨设备同步
+- 来源：https://github.com/openai/codex/issues/54661 、https://github.com/openai/codex/issues/29161
+
+**pi-gui**（pi coding agent 的桌面壳，thread sidebar 状态驱动）
+
+- 新建 thread：checkout 或全新 git worktree
+- sidebar 显示每个 thread 的 **running / finished / needs you** 状态（"The sidebar shows what is running, what finished and what needs you"）
+- ⌘K palette（chats + workspaces + actions）、⌘P 文件、Ctrl-Tab 近期线程、⌘1–⌘9 跳线程
+- Review tab（diff 分文件 staging）；workbench（真终端 + 文件 + worktrees tabs）；queue & steer；scheduled tasks；skills/extensions 开关 + 独立 tabs；fork/rewind
+- 来源：https://www.pi-gui.com/ 、https://github.com/minghinmatthewlam/pi-gui
+
+### 8.2 横向对照表
+
+| 能力 | Claude | opencode | dsh | Kimi | Codex | pi-gui | 我们现状 |
+|---|---|---|---|---|---|---|---|
+| 新建常驻导航区 | ✅ New session（含环境/worktree） | ✅ New tab | ✅ ＋ 项目 | ✅ New chat | ✅ New thread | ✅ New thread | ❌（收起态无，仅 dock 头/标题栏） |
+| 搜索常驻 | ✅ | ✅（palette） | ✅ | ✅ | ✅ | ✅ ⌘K | ✅ 搜索 face |
+| 会话列表项目分组 | ✅ | ✅（Home/projects） | ✅ | ✅ | ✅ | ✅（workspaces） | ✅ |
+| 会话状态维度（running/待你处理） | ✅ 筛选+指示 | ✅ indicators=status | ✅（trajectory/log） | 部分（任务式标题） | ❌ | ✅ running/finished/needs you | ❌（仅日期分组） |
+| 定时任务/自动化进导航 | ✅ Routines 页 | ❌ | ✅ automation tasks | ❌ | ❌ | ✅ scheduled | ❌（在 Dashboard 里） |
+| 用量进导航 | ✅ usage 按钮 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌（在执行概览，上次 IA 决定） |
+| 插件/扩展管理 | ✅（plugin manager） | ❌ | ✅ plugins tab | ✅（marketplace，CLI） | ❌ | ✅ skills/extensions | ✅（Config 插件中心） |
+| worktree/并行 | ✅ per-session | ❌ | ❌ | ❌ | ❌ | ✅ 新 thread 选 worktree | ✅（chat 标题栏"并行"） |
+| 主题切换 | ✅（设置内） | ✅ | ✅（设置内） | ✅ | ✅ | ✅ presets | ✅ rail 按钮（业界唯一在 rail 的） |
+
+### 8.3 对我们左 rail 的结论
+
+1. **新建常驻是 6/6 共识**——直接验证 C2（新建钮）；Claude/dsh/pi-gui 还把"新 worktree/环境"挂进新建流程，我们右键出「并行」与 pi-gui 同构。
+2. **状态维度是业界普遍而我们缺的**（4/6）：Claude 的 working/needs-attention 筛选、pi-gui 的 running/finished/needs-you。我们上次 IA 调研 §5.1 写过「待你处理 → 运行中 → 最近」分组但实现时未做——这是展开态列表功能，不是 rail 按钮，记录为后续项。
+3. **定时任务/自动化**：3/6 给了导航位（Claude Routines 页、dsh automation、pi-gui scheduled）。我们自动化规则在 Dashboard 里；维持现状可行，但这是唯一值得重新审视归属的候选。
+4. **用量**：仅 Claude（1/6）放进 sidebar；我们放执行概览符合多数派，维持。
+5. **主题**：六家全部放设置/预设里，没有一家放常驻导航轨——我们的 rail 主题按钮是孤例。结合用户此前的"难看"抱怨（☀ emoji），**建议把主题切换降级进 Config**（或 rail 底部溢出菜单），rail 底部 meta 组收敛为 Dashboard + Config 两件。
+6. **形态启示**：opencode 去 sidebar 转 tabs 是激进反例（社区反弹说明 sidebar 对跨项目多会话仍有价值）；Claude/pi-gui 的"状态驱动列表"是正例方向。
+
+### 8.4 收敛后的收起态 rail 目标（供 spec 用）
+
+```text
+顶部动作区    ＋ 新建会话（右键：并行 worktree）
+目的地组      工作 / 搜索 / 便签
+（spacer）
+meta 组       Dashboard（badge）/ Config（静音连接点）
+```
+
+- 主题切换移入 Config（业界 6/6 无一放 rail；rail 收两件 meta 更干净）
+- 1a 填充块激活 + 统一 1.5px 图标家族（上一屏已选）
