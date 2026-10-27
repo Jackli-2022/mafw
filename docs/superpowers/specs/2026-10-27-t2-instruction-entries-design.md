@@ -1,6 +1,6 @@
 # T2-4 系统提示分段 + 每会话 instruction entries Design
 
-> 日期：2026-10-27 · 状态：草案（builder check 已过，按反馈修订）
+> 日期：2026-10-27 · 状态：已交付 v4.40.0（builder check 已过，按反馈修订；smoke 15/15）
 > 上游：`docs/superpowers/specs/2026-10-22-contract-gap-research/06-gap-synthesis.md` §3 Tier 2「系统提示分段/快照 + 每会话 instruction 条目」
 > 目标：把 memory-guide / user-profile / agent-priors 从「每轮 system.transform 注入」迁到 opencode 2.1 原生 per-session instruction entries；动态 recall 保持 per-turn。
 
@@ -566,3 +566,48 @@ Pi（jest）：
 - 模型可见性：写入 `mafw.obj={"text":"OBJ-777","n":3}` / `mafw.arr=[1,2,"three"]`，发 prompt 要求复述；模型能读到两个 key 的值。
 - fork：`POST /api/sessions/<sid>/fork {"messageID":"<msg>"}`；新 session GET entries 包含原 entries。
 - 注意：临时 session / entries 用完必须 DELETE，避免把 70KB 探针值留在用户库。
+
+## 9. 交付记录（v4.40.0）
+
+### 提交
+
+- `9add0cc5` docs: T2-4 instruction entries spec and plan
+- `8f9cea6c` feat(runtime): instruction entries capability and adapter
+- `0d21e412` feat(recall): render instruction blocks from one source
+- `764233da` feat(gateway): instruction sync service
+- `96d35974` fix(gateway): bound instruction sync cache（后被 `ff3e4c6a` 的 list-every-sync 取代）
+- `d7b3b71e` feat(gateway): sync instruction entries before prompts
+- `8897d5b3` feat(gateway): recall instructions endpoint
+- `acf8636a` feat(plugin): instruction blocks fallback
+- `67e7718e` feat(pi): instruction blocks fallback
+- `d84fb063` fix(gateway): gate instruction sync on capability, not lagging dialect
+- `ff3e4c6a` fix(gateway): list instruction entries every sync
+- `814ab105` test(instructions): live smoke for instruction entries
+
+### 测试与构建
+
+- gateway：394 suites / **2847 passed**（T2-4 新增约 40 个用例；Jest 测试结束后因既有 open handle 不退出，结果已完成）
+- root plugin：**28 passed**
+- SDK：**158 passed**
+- session-ui：**94 passed**
+- desktop：**1573 passed**
+- TUI：225（**224 passed / 1 skipped**）
+- `npm run build` rc=0；gateway/desktop/session-ui typecheck rc=0
+
+### 真机 smoke
+
+`node gateway/scripts/smoke-instruction-entries.mjs` → **15/15 PASS**（runtime capability、三块 entries、endpoint managed/missing/revision、DB 三条、第二轮零写、外部删除后 missing-only、下一轮恢复、fork 复制三块）。
+
+人工/单测覆盖未 live 执行：
+
+- pinned 变更：不 live 写真实记忆（避免污染）；pinned 渲染与 user-profile 块由 renderer/route 单测覆盖。
+- compaction：未 live 跑 summarize；list-every-sync 与 entries durable 语义在 service 单测覆盖，下一次 prompt 会补回。
+- pi 回退：单测覆盖；切 runtime 需重启/切换，未在本批 live 执行。
+- `enabled=false`：单测覆盖懒删除 + 全量 blocks；未改真实 config 重启。
+
+### 已知边界
+
+- 直接 opencode CLI/TUI 且不走 gateway prompt 时，pinned/priors 更新可能滞后到下一次 gateway prompt（endpoint 报 `staleKeys`，插件不注入旧/新两份）。
+- gateway + 旧插件混装可能重复注入；`recall.instructions.enabled=false` 停止 sync 并在下一次 gateway prompt 懒删本 session 三 key。
+- session export/import 不携带 entries；导入后首次 gateway prompt 会重新 sync。
+- 本机部署本次只替换了全局包 `gateway/dist` 并重启 gateway；当前 agent serve 内的 opencode 插件仍可能是旧实例，`mafw restart-agent` 后加载新插件（新会话/重启后生效）。
