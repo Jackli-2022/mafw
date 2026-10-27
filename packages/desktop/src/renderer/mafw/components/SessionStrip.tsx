@@ -8,6 +8,7 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { stripOverflowed } from "./session-strip-overflow"
 import { freezeTabs } from "./session-strip-slinky"
+import { formatRailTitle } from "./rail-display"
 
 export function SessionStrip(props: {
   sessions: () => { id: string; title: string; manager?: boolean }[]
@@ -119,7 +120,7 @@ export function SessionStrip(props: {
                     onBlur={() => setRenamingId(null)}
                     style={{ width: 120, height: 22, fontSize: 12 }}
                   />
-                }>{s.title}</Show>
+                }>{formatRailTitle(s.title)}</Show>
               </span>
               <ButtonV2 variant="ghost" size="small" class="mafw-session-close" onClick={e => { e.stopPropagation(); handleClose(s.id) }}>✕</ButtonV2>
             </ContextMenu.Trigger>
@@ -154,7 +155,7 @@ export function SessionStrip(props: {
                   <DropdownMenu.Item onSelect={() => props.onSelect(s.id)}>
                     <DropdownMenu.ItemLabel class="mafw-session-overflow-item">
                       <span class="mafw-agent-dot" style={{ background: s.manager ? "var(--accent)" : "var(--text-4)" }} />
-                      <span class="mafw-session-overflow-title">{s.title}</span>
+                      <span class="mafw-session-overflow-title">{formatRailTitle(s.title)}</span>
                       <Show when={props.activeViewId() === s.id}>
                         <Icon name="check-small" size="small" />
                       </Show>

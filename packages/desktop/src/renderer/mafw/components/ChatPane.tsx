@@ -18,6 +18,7 @@ import { clearTransientDataParts } from "../sse/chat-reducers"
 import { AskCard, type AskCardData } from "./AskCard"
 import { PermissionCard, type PermissionCardData } from "./PermissionCard"
 import { ModelPicker, type ModelEntry } from "./pickers/ModelPicker"
+import { formatRailTitle } from "./rail-display"
 import { messageModel } from "../message-model"
 import { useConnPhase } from "../connection-state"
 import { AgentPicker, type AgentEntry } from "./pickers/AgentPicker"
@@ -1381,7 +1382,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     if (el.scrollTop < 100) { if (hiddenTurnCount() > 0) { expandRendered() } else { void loadOlder(sid) } }
   }
 
-  const title = () => store.session.find(s => s.id === sidProp())?.title || "Chat"
+  const title = () => formatRailTitle(store.session.find(s => s.id === sidProp())?.title || "Chat")
 
   // Render window: mount only the newest N turns; scrolling up expands locally
   // first (no network) and falls through to cursor pagination once the

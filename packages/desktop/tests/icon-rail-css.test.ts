@@ -28,6 +28,10 @@ describe("icon rail CSS 契约", () => {
     expect(block).toContain("height: 34px")
     expect(block).toContain("min-height: 34px")
   })
+  test("icon 命中区 box-sizing: border-box（虚线边框不把新建钮撑成 36px）", () => {
+    const icon = css.match(/\.mafw-icon-rail-icon \{[\s\S]*?\}/)?.[0] ?? ""
+    expect(icon).toContain("box-sizing: border-box")
+  })
   test("徽标与静音连接状态点存在（无辉光/呼吸动画引用）", () => {
     expect(css).toContain(".mafw-icon-rail-badge")
     expect(css).toContain(".mafw-icon-rail-conn-dot")

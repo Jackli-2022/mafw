@@ -241,7 +241,7 @@ export function MafwShell() {
     setActiveTab("chat")
     setShowWelcome(false)
     if (!sessions().some(s => s.id === sid)) {
-      const tabTitle = formatRailTitle(title || `Chat ${sessions().length + 1}`)
+      const tabTitle = title || `Chat ${sessions().length + 1}`
       setSessions(prev => [...prev, { id: sid, title: tabTitle, userMsgId: `user-${Date.now()}`, assistantMsgId: null, done: false, manager, metadata }])
       setStore(prev => ({
         ...prev,
@@ -900,9 +900,8 @@ export function MafwShell() {
       invalidate: () => sessionStore.invalidate(),
       patch: (id, patch) => sessionStore.patch(id, patch),
       retitleOpenTab: (id, title) => {
-        const next = formatRailTitle(title)
-        setSessions(prev => prev.map(s => s.id === id ? { ...s, title: next } : s))
-        setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title: next } : x) }))
+        setSessions(prev => prev.map(s => s.id === id ? { ...s, title } : s))
+        setStore(prev => ({ ...prev, session: prev.session.map((x: any) => x.id === id ? { ...x, title } : x) }))
       },
       remove: (id) => sessionStore.remove(id),
       closeIfOpen: (id) => { if (sessions().some(s => s.id === id)) closeSession(id) },
