@@ -67,7 +67,50 @@
 2. v1 范围：先做哪些类型的批注？（建议：文本划选 + 图片图钉 两类起步）
 3. PDF/HTML（webview 内）批注是否接受 v1 缺席？
 
-## 来源
+## 六、交互逻辑深挖：「人标出 → agent 改」的回路（2026-10-27 增补）
+
+用户反馈：现有批注交互逻辑难受。先解剖现状链路，再对照业界。
+
+### 现状链路（我们的）
+
+```
+选中文本 → 浮动「批注」按钮出现 → 点击按钮 → 弹出输入框 → 输入
+  → 二选一：「加入批注」（草稿卡攒在 composer 上方）/「立即发送」
+  →（草稿路径）再去 composer 点发送
+```
+
+**5-6 步、每步都有决策点**：浮钮要等要点、发送前要做"攒还是发"的选择题、草稿路径还要多一次发送动作。且发送后锚点处无任何反馈——人要去聊天流/审阅面板自己找 agent 改没改。
+
+### 业界对照（四种交互逻辑）
+
+| 工具 | 链路 | 步数 | 关键设计 |
+|---|---|---|---|
+| **Cursor Cmd+K** | 选中 → Cmd+K → 就地输入框（出现在选区正上方）→ **Enter = 直接执行** → inline diff → Cmd+Enter 接受 / Esc 拒绝 | 3 | 输入框贴着选区；无草稿概念；执行结果原地 diff |
+| **VS Code Copilot** | 选中 → Ctrl+I → inline chat | 3 | 同上 |
+| **GitHub PR review** | 行槽 + → 评论框 → 显式二选一：**Add single comment**（立即）/ **Start a review**（攒批量统一提交） | 3 | 二选一存在但**语义清晰**（单条 vs 审阅批次），且 review 模式一旦开始后续评论自动并入 |
+| **Figma 评论** | 点击落钉 → **就地输入框直接打开** → Enter 发布 | 3 | 落钉动作完成即输入，没有中间按钮 |
+
+共同模式：**标记动作完成 = 输入框已经在标记旁等着了**；中间没有一个"点按钮召唤输入框"的步骤。GitHub 证明了"立即发 vs 攒批量"可以并存，但它的二选一是**模式级**（一旦进 review 模式，后续自动攒），不是**每条都要选**。
+
+### 提炼的交互逻辑原则
+
+1. **标记即输入**：选区/落点完成 → 输入框就地打开。砍掉中间浮钮（或浮钮降级为键盘不熟用户的发现性入口）。
+2. **Enter = 最快路径**：默认立即发送给 agent；**Ctrl+Enter = 加入草稿**（批量审阅场景的显式次要动作）。消灭"每条都要选"的决策疲劳。
+3. **回路闭合在原地**：发送后锚点处留「处理中」标记（点/高亮）；agent 回合结束 → 标记变「已回应」，点击跳到审阅面板对应 diff。人不用去别处找结果。
+4. **键盘可达**：选中后 `Ctrl+M`（或直接开始打字）打开输入框；Esc 取消。
+
+### 对现状的改造点（与预览批注 spec 合并）
+
+- 源码面与预览面**同一套交互**：标记 → 就地输入 → Enter 发送。
+- 「加入批注/立即发送」双按钮 → Enter / Ctrl+Enter 分工；PendingAnnotations 草稿卡保留（批量场景），但变成次要路径。
+- 新增锚点反馈态（pending → responded），点击跳审阅。
+
+### 来源补充
+
+- Cursor Docs / cursor.com/docs/inline-edit：Cmd+K inline edit、Cmd+Enter accept / Esc reject
+- VS Code Docs：Inline chat (Ctrl+I)
+- GitHub Docs：Commenting on a pull request（single comment vs review 双路径）
+- anthropics/claude-code#62180：社区明确把 Cursor 式 inline edit 列为更快的工作流
 
 - Hypothesis Fuzzy Anchoring（web.hypothes.is/blog/fuzzy-anchoring）——生产级重锚策略
 - W3C Web Annotation Data Model（TextQuoteSelector/TextPositionSelector/RangeSelector/FragmentSelector/refinedBy）
