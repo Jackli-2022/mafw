@@ -69,6 +69,7 @@ import { loadInputHistory, saveInputHistory } from "./input-history-persist"
 import { applyReadlineKey } from "./composer-readline"
 import { shouldFocusComposerFromClick } from "./composer-focus"
 import { appendQuote, formatQuote } from "./quote-format"
+import { branchActionsVisible } from "./branch-actions"
 import { QuoteToolbar, type QuoteAnchor } from "./QuoteToolbar"
 import { ScreenshotCropper, type CaptureShot } from "./ScreenshotCropper"
 import { dataUrlToFile } from "../capture/data-url"
@@ -465,7 +466,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     store.session.find((s: any) => s.id === sidProp())?.directory
   const worktreeBadgeOf = () => worktreeBadge(sessionDirectory(), props.projectDirectory)
 
-  const userActions = () => ({
+  const userActions = () => {
+    // W0-2：sessionBranchApi=false 的 runtime 不渲染 fork/revert（隐藏而非失败 toast）。
+    const branch = branchActionsVisible(props.runtimeCaps)
+    return {
+    ...(branch ? {
     fork: async ({ sessionID, messageID }: { sessionID: string; messageID: string }) => {
       try {
         const out: any = await window.api.mafw.sessions.fork(sessionID, messageID)
@@ -478,8 +483,10 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     revert: async ({ messageID }: { sessionID: string; messageID: string }) => {
       setRevertConfirm({ messageID })
     },
+    } : {}),
     diffReview: () => props.onOpenDiffReview?.(),
-  })
+  }
+  }
 
   const revertTo = async (messageID: string): Promise<boolean> => {
     const sid = sidProp()
