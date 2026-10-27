@@ -125,6 +125,26 @@
 4. 打开后若锚点已在可视区外，滚动容器把锚点带入视野（而不是移动输入框）。
 5. 底部停靠仅保留给移动端/窄 overlay 场景。
 
+## 八、业界批注模式调研（rev4，2026-10-27）
+
+用户问：codex / dsh / kimi / opencode / claude 有「批注模式」吗？结论：**常驻的批注模式按钮在编码 agent 里几乎不存在**；模式只出现在两类场景——点击语义有冲突，或按需打开的审阅工作区。
+
+| 产品 | 批注/评论能力 | 入口 | 有模式吗 |
+|---|---|---|---|
+| **Claude**（Science artifacts） | 选中文本/PDF → Comment；图片点选；HTML 报告可 **开 Comment 模式**点元素；评论攒在输入框上方、随下一条消息发送；文本高亮 badge / 图片编号钉；无线程、无 resolve；1000 字上限 | 选区/点选 | **仅 HTML 元素点选需要模式**（点击本身有交互语义） |
+| **opencode**（desktop/web） | 文件内点击 → “Add comment” 弹窗，评论作为附件进 agent 上下文 | 点击文件 | 无模式；**反例**：点代码区就弹窗，挡浏览/复制（issue #11502，closed not planned），提交按钮还有 bug |
+| **Codex app** | 内置浏览器页面评论/标注（Enter 提交）；文件本身无批注 | 浏览器点选 | 无模式；code review 是 “Review with Codex” |
+| **Kimi** | Kimi Work 3.2.14：选中对话文本引用到会话；**对 agent 回复的可视化批注仍是 feature request**（kimi-cli #2642）；Kimi Code Desktop 无批注 | 选区 | 无 |
+| **DSH** | 原生 select-to-quote + 插件生态（dsh-plugin-annotate / dsh-message-annotator / dsh-select-quote）：选中→批注→随消息发送 | 选区 | 无 |
+| **Pi** | `pi-slopchop`：`/slopchop` `/diff` 打开**临时审阅工作区**，按行/文件/整体标注，FIX vs DISCUSS，生成 prompt 暂存编辑器 | 命令打开 | **有临时审阅模式**（不是常驻开关） |
+| **Cursor / VS Code** | 选中 → 浮条 Add to Chat / Cmd+K | 选区 | 无 |
+
+**设计结论**：
+1. rev4「无模式、选中即批注」与 Claude / DSH / opencode 的主流一致；模式只在「点击会误触」的 HTML 元素场景有价值（我们已有 G2 的显式元素点选入口）。
+2. opencode 的反例要避免：**任意点击弹评论框**会阻挡浏览/复制；我们的触发限定在非空选区 / 拖框 / 单元格点击，且点击外部关闭，风险更低。
+3. Claude 的「先攒评论、随下一条消息发送」= 我们的 Ctrl+Enter 草稿；Pi 的 **FIX / DISCUSS 意图区分**值得后续借鉴（批注是"要改"还是"要解释"）。
+4. 我们相对业界多出的部分：预览矩阵全覆盖（md/json/csv/xlsx/docx/pptx/图片/SVG）+ 锚点原地高亮/图钉 + 回合状态反馈。
+
 ## 来源补充
 
 - Cursor Docs / cursor.com/docs/inline-edit：Cmd+K inline edit、Cmd+Enter accept / Esc reject
