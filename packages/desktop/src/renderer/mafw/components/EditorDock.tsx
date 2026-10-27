@@ -32,7 +32,7 @@ import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored
 import { diffEntryFor } from "../editor-diff"
 import { AnnotationPopover } from "./AnnotationPopover"
 import { buildQuoteAnchor } from "../quote-anchor"
-import { describeAnchor, jsonPathOf } from "../annotation-anchor"
+import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
@@ -516,6 +516,22 @@ export function EditorDock(props: {
     })
   }
 
+  /** 表格单元格批注（csv/tsv）：事件委托，data-cell-ref 定位。 */
+  function handleCellClick(e: MouseEvent) {
+    if (mode() !== "edit") return
+    const el = (e.target as HTMLElement)?.closest?.("[data-cell-ref]") as HTMLElement | null
+    if (!el || !el.dataset.cellRef) return
+    const host = bodyEl?.getBoundingClientRect()
+    if (!host) return
+    const rect = el.getBoundingClientRect()
+    setAnchorSel({
+      anchor: { kind: "cell", ref: el.dataset.cellRef, value: el.textContent ?? "" },
+      left: Math.max(8, rect.left - host.left),
+      top: Math.max(8, rect.bottom - host.top + 4),
+    })
+    setAnchorOpen(true)
+  }
+
   const selRange = () => {
     const s = sel()
     if (!s) return null
@@ -707,19 +723,19 @@ export function EditorDock(props: {
               when={tableData()?.rows.length}
               fallback={<DockEmpty icon="file-tree" text="空表格" hint="源码态可直接编辑" />}
             >
-              <div class="mafw-table-preview">
+              <div class="mafw-table-preview" onClick={handleCellClick}>
                 <table class="mafw-table">
                   <thead>
                     <tr>
-                      <For each={tableData()!.rows[0]}>{(cell) => <th>{cell}</th>}</For>
+                      <For each={tableData()!.rows[0]}>{(cell, i) => <th data-cell-ref={a1Ref(1, i() + 1)}>{cell}</th>}</For>
                     </tr>
                   </thead>
                   <tbody>
                     <For each={tableData()!.rows.slice(1)}>
-                      {(r) => (
+                      {(r, ri) => (
                         <tr>
                           <For each={tableData()!.rows[0]}>
-                            {(_, i) => <td>{r[i()] ?? ""}</td>}
+                            {(_, i) => <td data-cell-ref={a1Ref(ri() + 2, i() + 1)}>{r[i()] ?? ""}</td>}
                           </For>
                         </tr>
                       )}
@@ -770,6 +786,16 @@ export function EditorDock(props: {
               url={previewUrl(activeFile()!.rel)}
               rel={activeFile()!.rel}
               onOpenExternal={() => { const f = activeFile(); if (f) void openExternal(f.rel) }}
+              onAnnotateCell={(a, rect) => {
+                const host = bodyEl?.getBoundingClientRect()
+                if (!host) return
+                setAnchorSel({
+                  anchor: { kind: "cell", ...a },
+                  left: Math.max(8, rect.left - host.left),
+                  top: Math.max(8, rect.bottom - host.top + 4),
+                })
+                setAnchorOpen(true)
+              }}
             />
           </Show>
 

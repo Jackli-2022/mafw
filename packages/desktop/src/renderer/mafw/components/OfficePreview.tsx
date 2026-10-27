@@ -4,12 +4,20 @@ import { Show, createEffect, createMemo, createSignal, onCleanup, For } from "so
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { extractSheetRows, type SheetTable } from "../office-table"
+import { a1Ref } from "../annotation-anchor"
 
 export type OfficeKind = "xlsx" | "docx" | "pptx"
 
 type SheetState = { name: string; table: SheetTable }
 
-export function OfficePreview(props: { kind: OfficeKind; url: string; rel: string; onOpenExternal: () => void }) {
+export function OfficePreview(props: {
+  kind: OfficeKind
+  url: string
+  rel: string
+  onOpenExternal: () => void
+  /** xlsx 单元格批注（预览批注 T6）：sheet + A1 + 当前值。 */
+  onAnnotateCell?: (a: { sheet?: string; ref: string; value: string }, rect: { left: number; top: number; bottom: number }) => void
+}) {
   const [phase, setPhase] = createSignal<"idle" | "loading" | "ready" | "error">("idle")
   const [error, setError] = createSignal("")
   const [sheets, setSheets] = createSignal<SheetState[]>([])
@@ -120,7 +128,19 @@ export function OfficePreview(props: { kind: OfficeKind; url: string; rel: strin
                   {(row, ri) => (
                     <tr>
                       <For each={row}>
-                        {(cell) => (ri() === 0 ? <th>{cell}</th> : <td>{cell}</td>)}
+                        {(cell, ci) => {
+                          const ref = () => a1Ref(ri() + 1, ci() + 1)
+                          const click = (e: MouseEvent) => {
+                            const el = e.currentTarget as HTMLElement
+                            props.onAnnotateCell?.(
+                              { sheet: active()?.name, ref: el.dataset.cellRef ?? "", value: el.textContent ?? "" },
+                              el.getBoundingClientRect(),
+                            )
+                          }
+                          return ri() === 0
+                            ? <th data-cell-ref={ref()} onClick={click}>{cell}</th>
+                            : <td data-cell-ref={ref()} onClick={click}>{cell}</td>
+                        }}
                       </For>
                     </tr>
                   )}

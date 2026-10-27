@@ -58,3 +58,14 @@ test("JSON 树节点批注：onAnnotate + 路径锚 + 就地输入", () => {
   assert.match(editor, /jsonPathOf/)
   assert.match(editor, /"jsonPath"/)
 })
+
+test("CSV/XLSX 单元格批注：data-cell-ref + a1Ref + sheet 透传", () => {
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /a1Ref/)
+  assert.match(editor, /data-cell-ref/)
+  assert.match(editor, /handleCellClick/)
+  const office = read("src/renderer/mafw/components/OfficePreview.tsx")
+  assert.match(office, /onAnnotateCell/)
+  assert.match(office, /data-cell-ref/)
+  assert.match(office, /a1Ref/)
+})
