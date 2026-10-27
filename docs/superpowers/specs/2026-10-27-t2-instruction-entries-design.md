@@ -204,23 +204,22 @@ export class InstructionSyncService {
 1. `isEnabled()` 为 false：
    - best-effort 删除本 session 的三个 key（短超时；清理混合版本遗留）。
    - 返回 `{managed:false, error:'disabled'}`；不做其他写入。
-2. `rt = getRuntime()`；无 `rt?.capabilities.instructionsApi` 或 `!rt.session.instructions` → `{managed:false, error:'capability_absent'}`。
-3. 若 `rt.activeDialect` 存在且 ≠ `'v21'` → `{managed:false}`（默认 `opencode` 裸名走方言探测；v1/v2 不进）。
-4. 若熔断未过期（`now < disabledUntil`）→ `{managed:false, error:disabledReason}`；不访问 API。
-5. 单飞：同 session 并发 prompt 共用一次 sync（`Map<sessionID, Promise>`）。
-6. 创建 `AbortController`；`setTimeout(abort, syncTimeoutMs)`；**整个 sync（render + list + PUT/DELETE）共用这个 signal**。
-7. 渲染 blocks（`render(signal)`；render 内部只读本地 store，signal 用于提前退出）。
-8. 首次 sync 先 `list(sessionID, {signal})` seeded cache：把已有 `{key,value}` 按字符串值求哈希，避免 fork/重启后无谓 PUT。后续 sync 用 cache。
-9. 对每个目标 key：
+2. `rt = getRuntime()`；无 `rt?.capabilities.instructionsApi` 或 `!rt.session.instructions` → `{managed:false, error:'capability_absent'}`。**能力位是唯一闸门**：`activeDialect` 探测在 gateway 重启后可能 fail-safe 成 v1，不能据此禁用；`@v1/@v2` 已声明 false，真 404/405 走熔断。
+3. 若熔断未过期（`now < disabledUntil`）→ `{managed:false, error:disabledReason}`；不访问 API。
+4. 单飞：同 session 并发 prompt 共用一次 sync（`Map<sessionID, Promise>`）。
+5. 创建 `AbortController`；`setTimeout(abort, syncTimeoutMs)`；**整个 sync（render + list + PUT/DELETE）共用这个 signal**。
+6. 渲染 blocks（`render(signal)`；render 内部只读本地 store，signal 用于提前退出）。
+7. **每次 sync 先 `list(sessionID, {signal})`**，用实际 entries 构建 key→value 视图。不保留 write cache：外部删除/revert/compaction/fork/CLI 写入都会让缓存撒谎；list 是 presence 权威（本机一次 GET，250ms 预算内）。smoke 已实证：外部删 `mafw.user-profile` 后，仅靠 cache 的下一轮不会补回。
+8. 对每个目标 key：
    - `errors.<key>` 存在 → **skip**（保留旧 entry；不删）。
-   - `value` 非空：哈希与 cache 相同 → skip；不同 → `put(sessionID, key, value, {signal})`。
-   - `value` 为空/null 且无 error：cache 有该 key 或 list 显示存在 → `remove(sessionID, key, {signal})`。
+   - `value` 非空：与 list 值相同 → skip；不同/缺失 → `put(sessionID, key, value, {signal})`。
+   - `value` 为空/null 且无 error：list 显示存在 → `remove(sessionID, key, {signal})`。
    - 超过 `maxBlockBytes` → 截断到上限 + warn。
-10. `signal.aborted` → 返回 `{managed:false, error:'timeout'}`，**不更新 cache**（避免半套写入被当成已同步）。
-11. 全部成功 → cache 更新，返回 `{managed:true, revision}`。
-12. 任一操作失败 → 不更新 cache，warn（每 session 每 5 分钟最多一次），返回 unmanaged；下一次 prompt 重试。
-13. `err.status === 404 || 405` → `disabledUntil = now + disabledCooldownMs`，`disabledReason`，warn 一次；后续 sync 在窗口内直接 unmanaged。窗口过期后自动重试；成功后清空熔断。
-14. session 删除/`session.deleted` 事件 → `forget(sessionID)`；cache TTL 24h + 上限 1000 条兜底。
+9. `signal.aborted` → 返回 `{managed:false, error:'timeout'}`，不更新任何 sync 状态。
+10. 全部成功 → 返回 `{managed:true, revision}`。
+11. 任一操作失败 → warn（每 session 每 5 分钟最多一次），返回 unmanaged；下一次 prompt 重试。
+12. `err.status === 404 || 405` → `disabledUntil = now + disabledCooldownMs`，`disabledReason`，warn 一次；后续 sync 在窗口内直接 unmanaged。窗口过期后自动重试；成功后清空熔断。
+13. session 删除/`session.deleted` 事件 → `forget(sessionID)`（只清单飞表；无内容缓存）。
 
 **inspect(sessionID, blocks)**（endpoint 用；只读）：
 
@@ -235,7 +234,7 @@ export class InstructionSyncService {
 4. `managed = missing.length === 0`（present-but-stale 仍算 managed，避免回退注入与 entry 重复；stale 只做诊断）。
 5. `missing` 的 blocks 只返回对应块；`managed=false` 时插件只补这些块。
 
-**为什么 `managed` 用实际 list 而不是内存 flag**：entries 是 durable 的，内存 flag 在 gateway 重启、TTL、fork、compaction/revert 后都可能与实际状态脱节。list 是唯一事实源；代价是每 session 每 5 秒一次本地 GET（插件缓存），可接受。
+**为什么 `managed` 用实际 list 而不是内存 flag**：entries 是 durable 的，内存 flag 在 gateway 重启、fork、compaction/revert 后都可能与实际状态脱节。list 是唯一事实源；代价是每 session 每 5 秒一次本地 GET（插件缓存），可接受。
 
 **为什么 stale 不注入**：同一 key 的 entry 已存在时再注入 fallback 会让模型看到新旧两份；宁可保留旧值到下一次 gateway prompt 更新。直接 opencode CLI/TUI 的 pinned 更新可能滞后一轮，作为已记录限制。
 
@@ -282,7 +281,7 @@ export interface RuntimeClient {
   ```
 - `directNative` 增加第 5 个可选参数 `opts?: { signal?: AbortSignal }`，透传给 `fetch`；非 2xx 时抛出的 Error 带 `status` 属性（供熔断判定）。现有调用零改动。
 - `pi-runtime.ts` 不实现 `instructions`，能力保持 false（`minimalCapabilities` 基线）。
-- 插件热切换：`wrapRuntimeIdentity` 每次 runtime 创建/切换都会重新套 sync 包装，并调用 `instructionSync.reset()` 清熔断/缓存 key；sync service 每次 `sync` 现读 runtime，无需重启。
+- 插件热切换：`wrapRuntimeIdentity` 每次 runtime 创建/切换都会重新套 sync 包装，并调用 `instructionSync.reset()` 清熔断/最后错误；sync service 每次 `sync` 现读 runtime，无需重启。
 
 ### 4.5 Prompt 包装与生命周期
 
@@ -415,9 +414,9 @@ const synced = this.instructionSync
 | 实验 API 404/405 | 60s 熔断；endpoint `managed=false` + 全量 blocks；插件回退；熔断过期自动重试，成功后清空 |
 | 单块渲染抛错 | 该块保留旧 entry（skip）；其余块照常 PUT/DELETE；endpoint 对该块返回 null；session 不标记 managed（下次重试） |
 | 单块内容为空（非错误） | DELETE 对应 key；模型不再看到旧块 |
-| sync 超时/网络错 | AbortController 中止；不阻塞 prompt；不更新 cache；endpoint 若 list 仍齐全则 managed=true；否则回退 missing |
+| sync 超时/网络错 | AbortController 中止；不阻塞 prompt；不更新 sync 状态；endpoint 若 list 仍齐全则 managed=true；否则回退 missing |
 | 部分 sync 失败（如 profile PUT 失败） | 成功块已写，失败块保持旧值；endpoint 只补缺失块；不重复整块 |
-| fork | entries 已由 opencode 复制；新 session cache 空 → 首次 sync 先 list 再按需 PUT；endpoint list 齐全 → managed=true |
+| fork | entries 已由 opencode 复制；每次 sync list 实际 entries，值一致 → 零 PUT；endpoint list 齐全 → managed=true |
 | revert/compaction | entries 若保留 → managed=true；若被清空 → endpoint missing → 插件只补缺失；下一次 gateway prompt sync 补回 |
 | session 删除 | opencode FK 级联；gateway `forget(sessionID)` |
 | 用户在 opencode CLI/TUI 直接 prompt | 无 gateway sync；endpoint list：齐全 → managed=true（stale 不注入）；缺失 → 只补 missing。pinned/priors 更新可能滞后到下一次 gateway prompt |
@@ -456,13 +455,13 @@ Gateway（jest）：
    - pinned/priors 为空 → null（无 error）。
    - 单块抛错 → 该块 null + errors；其余仍返回。
 2. `instruction-sync-service.test.ts`
-   - 首次 sync：list + PUT 缺失/不同 key；cache 建立。
-   - 第二次相同内容：零 PUT / 零 DELETE。
+   - 每次 sync：list + PUT 缺失/不同 key；无 write cache。
+   - 第二次相同内容：list 出现，但零 PUT / 零 DELETE。
    - 单块变化：只 PUT 该 key。
    - 空块（无 error）：DELETE；已有 key 被移除。
    - 渲染抛错：保留旧 entry，不 DELETE；其余 key 正常。
    - list 返回已有相同值：不 PUT（fork/重启场景）。
-   - 整个 sync 超时：AbortController 触发；返回 unmanaged；不更新 cache；prompt 不被阻塞（wrapper 测试）。
+   - 整个 sync 超时：AbortController 触发；返回 unmanaged；不更新 sync 状态；prompt 不被阻塞（wrapper 测试）。
    - 并发 sync 单飞。
    - 404/405 → 60s 熔断；窗口内不再访问 API；过期后重试成功清熔断；`reset()` 立即清。
    - `enabled=false` → best-effort DELETE 三 key + unmanaged；endpoint 返回全量 blocks。
@@ -535,7 +534,7 @@ Pi（jest）：
 
 1. **managed 语义**：不用内存 TTL flag；endpoint 每次 `list` 实际 entries，`managed = 所有期望非空 key 都存在`。缺失块才回退注入；present-but-stale 只报 `staleKeys`、不注入（避免新旧两份）。gateway 重启/fork/compaction 后以实际 entries 为准。
 2. **gateway 不可达**：插件保留内置 `MEMORY_GUIDE` + 10min last-good endpoint 缓存；last-good managed=true 不注入，managed=false 注入 last-good blocks，无 last-good 只注入 guide。明确“可能重复”只在 last-good 与 entries 脱节的窄窗口发生。
-3. **超时**：250ms 是整个 sync 的硬预算（render + list + PUT/DELETE），AbortSignal 贯穿 adapter；超时 abort、不更新 cache、prompt 继续。正常路径 p95 < 50ms。
+3. **超时**：250ms 是整个 sync 的硬预算（render + list + PUT/DELETE），AbortSignal 贯穿 adapter；超时 abort、不更新 sync 状态、prompt 继续。正常路径 p95 < 50ms。
 4. **enabled=false**：停止 sync + 下一次 gateway prompt 对本 session best-effort 删除三 key + endpoint 返回全量 blocks；无 gateway prompt 的旧 session 可能残留，已记录。
 5. **404/405**：60s 熔断（非永久），窗口内不访问 API；过期自动重试，成功清熔断；runtime switch/serve recovery 调 `reset()` 立即清。
 

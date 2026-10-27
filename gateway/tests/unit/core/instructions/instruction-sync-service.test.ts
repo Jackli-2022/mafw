@@ -64,7 +64,7 @@ describe('InstructionSyncService.sync', () => {
     ]);
     calls.length = 0;
     expect(await svc.sync('s1')).toEqual({ managed: true, revision: 'r1' });
-    expect(calls).toEqual([]);
+    expect(calls.filter((c) => c.startsWith('put:') || c.startsWith('remove:'))).toEqual([]);
   });
 
   it('changed profile only puts profile', async () => {
@@ -74,7 +74,8 @@ describe('InstructionSyncService.sync', () => {
     calls.length = 0;
     rendered.mockResolvedValue(blocks({ userProfile: '<user-profile>P2</user-profile>', revision: 'r2' }));
     expect(await svc.sync('s1')).toEqual({ managed: true, revision: 'r2' });
-    expect(calls).toEqual([`put:${INSTRUCTION_KEYS.userProfile}`]);
+    expect(calls.filter((c) => c.startsWith('put:') || c.startsWith('remove:')))
+      .toEqual([`put:${INSTRUCTION_KEYS.userProfile}`]);
   });
 
   it('null profile and priors delete their entries', async () => {
@@ -84,7 +85,7 @@ describe('InstructionSyncService.sync', () => {
     calls.length = 0;
     rendered.mockResolvedValue(blocks({ userProfile: null, agentPriors: null, revision: 'r2' }));
     await svc.sync('s1');
-    expect(calls.sort()).toEqual([
+    expect(calls.filter((c) => c.startsWith('remove:')).sort()).toEqual([
       `remove:${INSTRUCTION_KEYS.agentPriors}`,
       `remove:${INSTRUCTION_KEYS.userProfile}`,
     ].sort());
@@ -116,6 +117,17 @@ describe('InstructionSyncService.sync', () => {
     const { svc } = makeSvc(rt);
     expect(await svc.sync('s1')).toEqual({ managed: true, revision: 'r1' });
     expect(calls).toEqual(['list']);
+  });
+
+  it('restores an externally deleted entry on the next sync', async () => {
+    const { rt, calls, store } = makeRt();
+    const { svc } = makeSvc(rt);
+    await svc.sync('s1');
+    store.delete(INSTRUCTION_KEYS.userProfile); // external delete / revert / compaction
+    calls.length = 0;
+    await svc.sync('s1');
+    expect(calls).toContain(`put:${INSTRUCTION_KEYS.userProfile}`);
+    expect(store.get(INSTRUCTION_KEYS.userProfile)).toBe(blocks().userProfile);
   });
 
   it('aborts the whole sync on timeout, returns unmanaged, and retries next time', async () => {
@@ -198,27 +210,6 @@ describe('InstructionSyncService.sync', () => {
     rendered.mockResolvedValue(blocks({ memoryGuide: 'x'.repeat(50) }));
     await svc.sync('s1');
     expect(String(store.get(INSTRUCTION_KEYS.memoryGuide)).length).toBeLessThanOrEqual(10);
-  });
-
-  it('expires a session cache after 24h and re-lists', async () => {
-    const { rt, instructions } = makeRt();
-    const { svc, advance } = makeSvc(rt);
-    await svc.sync('s1');
-    const before = (instructions.list as jest.Mock).mock.calls.length;
-    advance(24 * 60 * 60 * 1000 + 1);
-    await svc.sync('s1');
-    expect((instructions.list as jest.Mock).mock.calls.length).toBe(before + 1);
-  });
-
-  it('caps the session cache and evicts the oldest', async () => {
-    const { rt, instructions } = makeRt();
-    const { svc } = makeSvc(rt, { maxSessions: 2 });
-    await svc.sync('s1');
-    await svc.sync('s2');
-    await svc.sync('s3');
-    const before = (instructions.list as jest.Mock).mock.calls.length;
-    await svc.sync('s1');
-    expect((instructions.list as jest.Mock).mock.calls.length).toBe(before + 1);
   });
 
   it('does not gate on the lagging event dialect when the capability is declared', async () => {
