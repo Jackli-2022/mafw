@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { lineRangeOf, buildAnnotationPrompt, buildAnnotationBatch, annotationApplies } from "./editor-annotation"
+import { lineRangeOf, buildAnnotationPrompt, buildAnnotationPromptAnchored, buildAnnotationBatch, annotationApplies } from "./editor-annotation"
 
 describe("lineRangeOf", () => {
   const doc = "l1\nl2\nl3" // 末尾无换行
@@ -82,5 +82,27 @@ describe("buildAnnotationBatch（多条批注打包随消息发送）", () => {
       "",
       "请逐条结合批注查看这段代码并回应。",
     ].join("\n"))
+  })
+})
+
+describe("anchor 批注打包（预览批注 T10）", () => {
+  test("buildAnnotationPromptAnchored：quote / cell / region", () => {
+    const quote = buildAnnotationPromptAnchored("a.md", { kind: "quote", quote: "原文" }, "改成新文")
+    expect(quote).toContain("文件 `a.md` 节选（渲染预览）")
+    expect(quote).toContain("> 原文")
+    expect(quote).toContain("我的批注：改成新文")
+    const cell = buildAnnotationPromptAnchored("book.xlsx", { kind: "cell", sheet: "销售", ref: "B2", value: "1200" }, "改成 1500")
+    expect(cell).toContain("工作表「销售」单元格 `B2`")
+    const region = buildAnnotationPromptAnchored("a.png", { kind: "region", x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, "换掉这块")
+    expect(region).toContain("图片 `a.png` 区域 (10%, 20%, 30%×40%)：截图见附件")
+  })
+  test("buildAnnotationBatch：anchor 项走新格式，旧行号项不变", () => {
+    const batch = buildAnnotationBatch([
+      { id: "1", sessionID: "s", rel: "a.ts", startLine: 2, endLine: 3, code: "x", comment: "旧", createdAt: 1 },
+      { id: "2", sessionID: "s", rel: "b.json", startLine: 1, endLine: 1, code: "", comment: "新", createdAt: 2, anchor: { kind: "jsonPath", path: "$.a", valueSummary: "1" } },
+    ])
+    expect(batch).toContain("【批注 1】")
+    expect(batch).toContain("第 2-3 行")
+    expect(batch).toContain("路径 `$.a`（当前值：`1`）")
   })
 })

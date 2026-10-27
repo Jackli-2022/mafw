@@ -21,10 +21,11 @@ describe("批注草稿接线", () => {
     const chat = read("src/renderer/mafw/components/ChatPane.tsx")
     expect(chat).toContain("PendingAnnotations")
   })
-  test("编辑器批注双动作（加入批注 / 立即发送）", () => {
+  test("编辑器批注交互（Enter 发送 / Ctrl+Enter 攒草稿）", () => {
     const editor = read("src/renderer/mafw/components/EditorDock.tsx")
     expect(editor).toContain("onAddAnnotation")
-    expect(editor).toContain("secondaryLabel")
+    expect(editor).toContain("AnnotationPopover")
+    expect(editor).toContain("submitAnnotationAnchored")
   })
   test("diff 行评论同样可加入草稿", () => {
     const diff = read("src/renderer/mafw/components/DiffReviewPanel.tsx")
