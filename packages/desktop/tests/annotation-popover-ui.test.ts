@@ -39,3 +39,12 @@ test("源码面交互：Ctrl+M 直达 + AnnotationPopover + 双按钮退役", ()
   assert.match(ea, /buildAnnotationPromptAnchored/)
   assert.match(ea, /item\.anchor/)
 })
+
+test("Markdown/DOCX 划选批注：annotatable 容器 + buildQuoteAnchor 接线", () => {
+  const src = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(src, /buildQuoteAnchor/)
+  assert.match(src, /data-annotatable="quote"/)
+  assert.match(src, /quoteSel/)
+  const office = read("src/renderer/mafw/components/OfficePreview.tsx")
+  assert.match(office, /data-annotatable=\{props\.kind === "docx" \? "quote" : undefined\}/)
+})

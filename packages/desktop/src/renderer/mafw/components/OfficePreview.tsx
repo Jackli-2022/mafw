@@ -137,6 +137,7 @@ export function OfficePreview(props: { kind: OfficeKind; url: string; rel: strin
       <div
         class="mafw-office-host"
         ref={(el) => { host = el }}
+        data-annotatable={props.kind === "docx" ? "quote" : undefined}
         style={{ display: props.kind === "xlsx" ? "none" : "block" }}
       />
     </div>

@@ -31,6 +31,7 @@ import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored, lineRangeOf } from "../editor-annotation"
 import { diffEntryFor } from "../editor-diff"
 import { AnnotationPopover } from "./AnnotationPopover"
+import { buildQuoteAnchor } from "../quote-anchor"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
@@ -57,6 +58,10 @@ export function EditorDock(props: {
   const [saving, setSaving] = createSignal(false)
   const [sel, setSel] = createSignal<SelectionState | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
+  /** 预览划选批注（md/docx）：锚点 + 浮层坐标（相对 editor-body）。 */
+  const [quoteSel, setQuoteSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number } | null>(null)
+  const [quoteOpen, setQuoteOpen] = createSignal(false)
+  let bodyEl: HTMLDivElement | undefined
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
   /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
   const [ioError, setIoError] = createSignal<string | null>(null)
@@ -172,6 +177,8 @@ export function EditorDock(props: {
   function clearSelection() {
     setSel(null)
     setAnnotOpen(false)
+    setQuoteSel(null)
+    setQuoteOpen(false)
   }
 
   async function unwatchAll() {
@@ -478,6 +485,31 @@ export function EditorDock(props: {
     if (!res.ok) setIoError("无法在外部编辑器打开")
   }
 
+  /** 预览面划选（md/docx）：选区落在 [data-annotatable="quote"] 内 → quote 锚 + 浮钮。 */
+  function handlePreviewSelection(e: MouseEvent) {
+    if (mode() !== "edit") return
+    if (quoteOpen()) return
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      setQuoteSel(null)
+      return
+    }
+    const range = selection.getRangeAt(0)
+    const target = e.target as HTMLElement | null
+    const container = target?.closest?.('[data-annotatable="quote"]') as HTMLElement | null
+    if (!container || !container.contains(range.commonAncestorContainer)) return
+    const anchor = buildQuoteAnchor(container.innerText ?? "", selection.toString())
+    if (!anchor) return
+    const rect = range.getBoundingClientRect()
+    const host = bodyEl?.getBoundingClientRect()
+    if (!host) return
+    setQuoteSel({
+      anchor,
+      left: Math.max(8, rect.left - host.left),
+      top: Math.max(8, rect.bottom - host.top + 4),
+    })
+  }
+
   const selRange = () => {
     const s = sel()
     if (!s) return null
@@ -629,11 +661,18 @@ export function EditorDock(props: {
 
         <div
           class="mafw-editor-body"
+          ref={(el) => { bodyEl = el }}
+          onMouseUp={handlePreviewSelection}
           onKeyDown={(e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.code === "KeyM" && mode() === "edit" && sel() && !annotOpen()) {
+            if (!(e.ctrlKey || e.metaKey) || e.code !== "KeyM" || mode() !== "edit") return
+            if (sel() && !annotOpen()) {
               e.preventDefault()
               e.stopPropagation()
               setAnnotOpen(true)
+            } else if (quoteSel() && !quoteOpen()) {
+              e.preventDefault()
+              e.stopPropagation()
+              setQuoteOpen(true)
             }
           }}
         >
@@ -690,7 +729,7 @@ export function EditorDock(props: {
 
           {/* Markdown 渲染预览（聊天同款 renderer：sanitize + 代码高亮） */}
           <Show when={previewing() && activeFile()?.kind === "markdown"}>
-            <div class="mafw-md-preview">
+            <div class="mafw-md-preview" data-annotatable="quote">
               <Markdown
                 text={activeSourceText()}
                 cacheKey={`md:${activeFile()!.rel}:${textHash(activeSourceText())}`}
@@ -730,6 +769,27 @@ export function EditorDock(props: {
               placeholder="说明要改什么…"
               onSubmit={(comment, action) => submitAnnotationAnchored(undefined, comment, action)}
               onCancel={() => setAnnotOpen(false)}
+            />
+          </Show>
+
+          {/* 预览划选批注（md/docx）：浮钮 → 就地输入 → Enter 发送 */}
+          <Show when={mode() === "edit" && quoteSel() && !quoteOpen() && props.onSendAnnotation}>
+            <div class="mafw-editor-annot-anchor" style={{ left: `${quoteSel()!.left}px`, top: `${quoteSel()!.top}px` }}>
+              <ButtonV2 variant="outline" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setQuoteOpen(true)}>批注</ButtonV2>
+            </div>
+          </Show>
+          <Show when={mode() === "edit" && quoteOpen() && quoteSel()}>
+            <AnnotationPopover
+              left={Math.min(quoteSel()!.left, 420)}
+              top={quoteSel()!.top}
+              meta={`${activeFile()?.rel ?? ""}: 节选`}
+              placeholder="这段要改成什么…"
+              onSubmit={(comment, action) => {
+                submitAnnotationAnchored(quoteSel()?.anchor, comment, action)
+                setQuoteOpen(false)
+                setQuoteSel(null)
+              }}
+              onCancel={() => { setQuoteOpen(false); setQuoteSel(null) }}
             />
           </Show>
 
