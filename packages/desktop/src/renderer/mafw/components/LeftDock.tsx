@@ -14,6 +14,7 @@ import { ResizeHandle } from "@mafw/ui/resize-handle"
 import { ManagerCard } from "./ManagerCard"
 import { NotesDock } from "./NotesDock"
 import { ConfirmOverlay } from "./ConfirmOverlay"
+import { formatRailTitle, railProjectName } from "./rail-display"
 import { sessionStore } from "../session-store"
 import { useConnPhase } from "../connection-state"
 import { ConnBanner } from "./ConnBanner"
@@ -245,7 +246,7 @@ export function LeftDock(props: Props) {
               <Show when={node.worktree}>
                 <span class="mafw-rail-wt-badge">⎇ {node.worktree}</span>
               </Show>
-              {node.title}
+              {formatRailTitle(node.title)}
             </span>
           </TooltipV2>
           <span
@@ -276,15 +277,15 @@ export function LeftDock(props: Props) {
   const projectSwitcher = () => (
     <DropdownMenu placement="bottom-start">
       <DropdownMenu.Trigger as="div" class="mafw-rail-switcher">
+        <span class="mafw-rail-switcher-name">{railProjectName(currentProject()?.worktree, true)}</span>
         <Icon name="chevron-down" size="small" class="mafw-rail-switcher-caret" />
-        <span class="mafw-rail-switcher-name">{currentProject()?.worktree?.split(/[/\\]/).pop() || "No project"}</span>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content class="mafw-rail-switcher-menu">
           <For each={projects()}>
             {(p) => (
               <DropdownMenu.Item onSelect={() => selectProject(p)}>
-                <DropdownMenu.ItemLabel>{p.worktree?.split(/[/\\]/).pop() || p.id}</DropdownMenu.ItemLabel>
+                <DropdownMenu.ItemLabel>{railProjectName(p.worktree || p.id, (p.worktree || p.id) === projectID())}</DropdownMenu.ItemLabel>
                 {currentProject()?.worktree === p.worktree && <Icon name="check-small" size="small" class="mafw-rail-check" />}
               </DropdownMenu.Item>
             )}
@@ -357,7 +358,7 @@ export function LeftDock(props: Props) {
           <Show when={props.face === "search"} fallback={
             <div class="mafw-rail-project">
               <div class="mafw-rail-project-head current">
-                <span class="mafw-rail-project-name">{(projectNode()!.name || projectNode()!.projectID).split(/[/\\]/).pop()}</span>
+                <span class="mafw-rail-project-name">{railProjectName(projectNode()!.name || projectNode()!.projectID, true)}</span>
                 <Show when={totalCount() > 0}>
                   <span class="mafw-rail-project-count">{totalCount()}</span>
                 </Show>
@@ -368,7 +369,6 @@ export function LeftDock(props: Props) {
                     <>
                       <div class="mafw-rail-date-group">
                         <span>{g.label}</span>
-                        <span class="mafw-rail-date-count">{g.items.length}</span>
                       </div>
                       <For each={g.items}>{(node) => renderNode(node)}</For>
                     </>
