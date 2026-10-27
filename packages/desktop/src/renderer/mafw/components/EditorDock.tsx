@@ -747,6 +747,29 @@ export function EditorDock(props: {
     requestAnimationFrame(() => revealAnchor(box))
   })
 
+  /** 点击批注框以外的任意位置 → 关闭（Esc/取消之外的第三条退出路径）。 */
+  function closeAnnotationUi() {
+    setAnnotOpen(false)
+    setQuoteOpen(false)
+    setAnchorOpen(false)
+    setQuoteSel(null)
+    setAnchorSel(null)
+  }
+
+  createEffect(() => {
+    const open = annotOpen() || quoteOpen() || anchorOpen()
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null
+      if (!target) return
+      const sheet = bodyEl?.querySelector(".mafw-annot-sheet")
+      if (sheet && sheet.contains(target)) return
+      closeAnnotationUi()
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    onCleanup(() => document.removeEventListener("pointerdown", onPointerDown, true))
+  })
+
   function submitAnnotationAnchored(
     anchor: AnnotationAnchor | undefined,
     comment: string,

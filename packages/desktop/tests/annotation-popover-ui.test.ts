@@ -147,6 +147,8 @@ test("rev3 交互：批注模式 + 选中即输入 + 锚点旁定位 + 原地标
   assert.match(editor, /if \(annotMode\(\)\) \{[\s\S]{0,120}setQuoteOpen\(true\)/)
   assert.match(editor, /revealAnchor/)
   assert.match(editor, /anchor=\{quoteSel\(\)!\.box\}/)
+  assert.match(editor, /document\.addEventListener\("pointerdown"/)
+  assert.match(editor, /closeAnnotationUi/)
   const sheet = read("src/renderer/mafw/components/AnnotationSheet.tsx")
   assert.match(sheet, /placeAnnotationBox/)
   assert.match(sheet, /anchor: BoxRect/)
