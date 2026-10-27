@@ -230,7 +230,12 @@ describe('InstructionSyncService.inspect', () => {
     ]);
     const { rt } = makeRt(store);
     const { svc } = makeSvc(rt);
-    expect(await svc.inspect('s1', blocks())).toEqual({ managed: true, missing: [], staleKeys: [] });
+    expect(await svc.inspect('s1', blocks())).toEqual({
+      managed: true,
+      missing: [],
+      staleKeys: [],
+      erroredKeys: [],
+    });
   });
 
   it('missing profile -> managed false and only that key missing', async () => {
@@ -244,6 +249,7 @@ describe('InstructionSyncService.inspect', () => {
       managed: false,
       missing: [INSTRUCTION_KEYS.userProfile],
       staleKeys: [],
+      erroredKeys: [],
     });
   });
 
@@ -259,7 +265,26 @@ describe('InstructionSyncService.inspect', () => {
       managed: true,
       missing: [],
       staleKeys: [INSTRUCTION_KEYS.userProfile],
+      erroredKeys: [],
     });
+  });
+
+  it('render-error key -> unmanaged, surfaced as erroredKeys, not injected', async () => {
+    const store = new Map<string, unknown>([
+      [INSTRUCTION_KEYS.memoryGuide, blocks().memoryGuide],
+      [INSTRUCTION_KEYS.userProfile, '<user-profile>OLD</user-profile>'],
+      [INSTRUCTION_KEYS.agentPriors, blocks().agentPriors],
+    ]);
+    const { rt } = makeRt(store);
+    const { svc } = makeSvc(rt);
+    const r = await svc.inspect('s1', blocks({
+      userProfile: null,
+      errors: { userProfile: 'disk' },
+    }));
+    expect(r.managed).toBe(false);
+    expect(r.missing).toEqual([]);
+    expect(r.staleKeys).toEqual([]);
+    expect(r.erroredKeys).toEqual([INSTRUCTION_KEYS.userProfile]);
   });
 
   it('capability absent -> unmanaged, all keys missing', async () => {

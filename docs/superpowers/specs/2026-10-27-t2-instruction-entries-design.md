@@ -227,6 +227,7 @@ export class InstructionSyncService {
 2. `list(sessionID, {signal})`（150ms 超时；不写）：
    - 失败 → `{managed:false, missing: allNonEmptyKeys, staleKeys:[], reason:'list_failed'}`。
 3. 对三个目标 key：
+   - 期望块有 `errors.<key>` → `erroredKeys`（保留旧 entry；**不注入**；`managed=false`，下一次 prompt 重试）。
    - 期望非空且 present 且字符串值相同 → current。
    - 期望非空且 absent → `missing`。
    - 期望非空且 present 但值不同 → `staleKeys`（**不注入**；下一次 gateway prompt 会更新）。
@@ -334,6 +335,7 @@ const synced = this.instructionSync
   "revision": "<sha256>",
   "missing": [],
   "staleKeys": [],
+  "erroredKeys": [],
   "blocks": {}
 }
 
@@ -343,6 +345,7 @@ const synced = this.instructionSync
   "revision": "<sha256>",
   "missing": ["mafw.user-profile"],
   "staleKeys": [],
+  "erroredKeys": [],
   "reason": "capability_absent" | "list_failed" | "breaker" | "disabled",
   "blocks": {
     "memoryGuide": "<memory-guide>...</memory-guide>",
@@ -353,6 +356,7 @@ const synced = this.instructionSync
 ```
 
 - `blocks` 只含 `missing` 对应的非空块；`managed=true` 时为空对象。
+- `erroredKeys` 只做诊断：对应块保留旧 entry、不注入，`managed=false`；下一次 sync 重试渲染。
 - pi / 无 instructions API / 熔断 / list 失败：`missing=allNonEmptyKeys`，`blocks=all`（回退全量；list 失败时可能产生重复，作为降级语义记录）。
 - 渲染失败：对应块 `null`/缺席；HTTP 200 fail-open。
 - 不新增 SDK 方法（插件/pi 走 loopback HTTP；桌面不需要）。

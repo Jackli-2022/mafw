@@ -6386,6 +6386,7 @@ class MafwScheduler {
           try {
             const sessionID = deleteMatch[1];
             await this.sdkSession.delete(sessionID);
+            this.instructionSync?.forget(sessionID);
             try { this.trajectoryStore?.deleteSession(sessionID); } catch (err: any) { log.warn(`[Trajectory] delete failed: ${err.message}`); }
             res.writeHead(200);
             res.end(JSON.stringify({ status: 'ok' }));

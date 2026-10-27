@@ -244,9 +244,7 @@ describe('session context hook', () => {
         missing: ['mafw.user-profile'],
         staleKeys: [],
         blocks: {
-          memoryGuide: '<memory-guide>G</memory-guide>',
           userProfile: '<user-profile>P</user-profile>',
-          agentPriors: null,
         },
       }],
       ['/api/recall/context', { pointers: null }],
@@ -263,8 +261,8 @@ describe('session context hook', () => {
     await regs.sessionHooks.context(event);
     const texts = event.system.map((p: any) => p.text);
     expect(texts[0]).toBe('base system');
-    expect(texts).toContain('<memory-guide>G</memory-guide>');
     expect(texts).toContain('<user-profile>P</user-profile>');
+    expect(texts.some((t: string) => t.includes('<memory-guide>'))).toBe(false);
     expect(texts.some((t: string) => t.includes('<agent-priors>'))).toBe(false);
   });
 
@@ -406,7 +404,10 @@ describe('session context hook', () => {
       messages: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
     };
     await expect(regs.sessionHooks.context(event)).resolves.toBeUndefined();
-    expect(event.system.some((p: any) => String(p.text).includes('<memory-guide>'))).toBe(true);
+    const guide = event.system.map((p: any) => String(p.text)).find((t: string) => t.includes('<memory-guide>')) || '';
+    expect(guide).toContain('<memory-guide>');
+    expect(guide).toContain('常驻披露层');
+    expect(guide).not.toContain('每轮保证注入');
   });
 });
 

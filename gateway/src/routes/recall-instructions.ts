@@ -20,6 +20,7 @@ export interface RecallInstructionsResponse {
   revision: string;
   missing: string[];
   staleKeys: string[];
+  erroredKeys: string[];
   reason?: string;
   blocks: Partial<Pick<InstructionBlocks, 'memoryGuide' | 'userProfile' | 'agentPriors'>>;
 }
@@ -47,6 +48,7 @@ export function buildRecallInstructionsResponse(
     revision: blocks.revision,
     missing,
     staleKeys: inspected?.staleKeys ?? [],
+    erroredKeys: inspected?.erroredKeys ?? [],
     ...(inspected?.reason ? { reason: inspected.reason } : {}),
     blocks: {},
   };
@@ -87,6 +89,7 @@ export async function handleRecallInstructions(
       revision: '',
       missing: ALL_KEYS,
       staleKeys: [],
+      erroredKeys: [],
       reason: 'render_failed',
       blocks: { memoryGuide: MEMORY_GUIDE },
     };

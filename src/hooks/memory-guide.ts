@@ -26,13 +26,13 @@ const GUIDE_BODY = `## 记忆
 - <recall> 指针（#mem-xxxxxx）要依据其内容行动前 → 调用 mafw_get_memory(id 用 #mem- 后 6 位) 取全文
 
 ### 披露层（pinned）
-- 用户身份/画像、长期偏好与约束 → mafw_add_memory 时 pinned: true（每轮保证注入）；任务相关、易变内容不要 pin
+- 用户身份/画像、长期偏好与约束 → mafw_add_memory 时 pinned: true（常驻披露层，instruction entries 持久注入）；任务相关、易变内容不要 pin
 - 偏好/事实变了 → 新写一条并带 supersedes: 旧id（旧版自动失效，历史保留）
 - 需要 pin/unpin 已有记忆 → mafw_pin_memory
 
 ### 便签板（sticky）
 - 用户说"记下来 / 记住 / 别忘了" → mafw_add_memory 时带 sticky: true（默认 7 天，stickyDays 可调）
-  → 便签板上每轮必见，到期自动下架（记忆本体保留可检索）
+  → 便签板常驻可见，到期自动下架（记忆本体保留可检索）
 - 事已办完 → mafw_pin_memory { id, sticky: false } 下架；需要延期 → sticky: true + stickyDays 续期
 
 ### 子代理

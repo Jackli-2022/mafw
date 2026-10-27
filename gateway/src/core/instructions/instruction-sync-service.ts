@@ -37,6 +37,8 @@ export interface InstructionInspectResult {
   managed: boolean;
   missing: string[];
   staleKeys: string[];
+  /** Keys whose render failed; the old entry is kept but the session is not managed. */
+  erroredKeys: string[];
   reason?: InstructionInspectReason;
 }
 
@@ -145,8 +147,14 @@ export class InstructionSyncService {
 
       const missing: string[] = [];
       const staleKeys: string[] = [];
+      const erroredKeys: string[] = [];
       for (const desired of this.desired(blocks)) {
-        if (desired.error) continue; // unknown value: neither missing nor stale
+        if (desired.error) {
+          // Keep the old entry, but do not claim the session is fully managed:
+          // the renderer will retry on the next prompt.
+          erroredKeys.push(desired.key);
+          continue;
+        }
         const current = stored.get(desired.key);
         if (desired.value === null) {
           if (current !== undefined) staleKeys.push(desired.key);
@@ -158,7 +166,12 @@ export class InstructionSyncService {
           staleKeys.push(desired.key);
         }
       }
-      return { managed: missing.length === 0, missing, staleKeys };
+      return {
+        managed: missing.length === 0 && erroredKeys.length === 0,
+        missing,
+        staleKeys,
+        erroredKeys,
+      };
     } catch {
       return this.allMissing('list_failed');
     } finally {
@@ -280,7 +293,7 @@ export class InstructionSyncService {
   }
 
   private allMissing(reason: InstructionInspectReason): InstructionInspectResult {
-    return { managed: false, missing: [...ALL_KEYS], staleKeys: [], reason };
+    return { managed: false, missing: [...ALL_KEYS], staleKeys: [], erroredKeys: [], reason };
   }
 
   private canManage(rt: AgentRuntime | null): rt is AgentRuntime {

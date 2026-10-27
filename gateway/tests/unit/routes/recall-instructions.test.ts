@@ -38,6 +38,21 @@ describe('buildRecallInstructionsResponse', () => {
     expect(r.blocks).toEqual({});
   });
 
+  it('errored key -> unmanaged + erroredKeys, no fallback block', () => {
+    const r = buildRecallInstructionsResponse(
+      { ...blocks, userProfile: null, errors: { userProfile: 'disk' } },
+      {
+        managed: false,
+        missing: [],
+        staleKeys: [],
+        erroredKeys: [INSTRUCTION_KEYS.userProfile],
+      },
+    );
+    expect(r.managed).toBe(false);
+    expect(r.erroredKeys).toEqual([INSTRUCTION_KEYS.userProfile]);
+    expect(r.blocks).toEqual({});
+  });
+
   it('no sync -> all non-null blocks', () => {
     const r = buildRecallInstructionsResponse(blocks, null);
     expect(r.managed).toBe(false);
@@ -71,7 +86,7 @@ describe('handleRecallInstructions', () => {
       {
         getBlocks: async () => blocks,
         getSync: () => ({
-          inspect: async () => ({ managed: true, missing: [], staleKeys: [] }),
+          inspect: async () => ({ managed: true, missing: [], staleKeys: [], erroredKeys: [] }),
         }),
       },
     );
