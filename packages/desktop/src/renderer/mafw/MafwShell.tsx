@@ -15,7 +15,7 @@ import { FileComponentProvider } from "@mafw/ui/context/file"
 import { FileSSR } from "@mafw/session-ui/file-ssr"
 import { IconRail } from "./components/IconRail"
 import { LeftDock } from "./components/LeftDock"
-import { clampLeftDockWidth, effectiveLeftDockWidth, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
+import { clampLeftDockWidth, effectiveLeftDockWidth, leftDockPushDragMax, resolveLeftDockWidth, resolveMode, restoreLeftDockOpen, shouldAutoRestoreLeftDock, shouldCloseOnSelect, toggleFace, type LeftDockFace } from "./left-dock"
 import { SessionStrip } from "./components/SessionStrip"
 import { sessionStore } from "./session-store"
 import { agentKey, isAgentKey, resolveSessionAgent } from "./agent-identity"
@@ -1595,9 +1595,9 @@ export function MafwShell() {
   }
   const [leftDock, setLeftDock] = createSignal<{ face: LeftDockFace; open: boolean }>({
     face: (localStorage.getItem("mafw-left-dock-face") as LeftDockFace | null) ?? "sessions",
-    open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth),
+    open: restoreLeftDockOpen(localStorage.getItem("mafw-left-dock-open"), window.innerWidth, initialLeftDockWidth.width),
   })
-  const leftDockMode = () => resolveMode(leftDock().open, viewportWidth())
+  const leftDockMode = () => resolveMode(leftDock().open, viewportWidth(), leftDockWidth())
   const toggleLeftDock = (face: LeftDockFace) => {
     const next = toggleFace(leftDock(), face)
     setLeftDock(next)
@@ -1690,7 +1690,7 @@ export function MafwShell() {
   // 启动时因窄幅被抑制的 open 偏好，在拉宽到 push 阈值后恢复。
   createEffect(() => {
     const width = viewportWidth()
-    if (!shouldAutoRestoreLeftDock(localStorage.getItem("mafw-left-dock-open"), leftDock().open, width)) return
+    if (!shouldAutoRestoreLeftDock(localStorage.getItem("mafw-left-dock-open"), leftDock().open, width, leftDockWidth())) return
     setLeftDock((s) => ({ ...s, open: true }))
   })
   // 浮层模式：Esc 关闭（点外关闭由 backdrop 承担）。
@@ -1903,6 +1903,7 @@ export function MafwShell() {
             mode={leftDockMode()}
             face={leftDock().face}
             width={leftDockMode() === "push" ? effectiveLeftDockWidth(leftDockWidth(), viewportWidth()) : leftDockWidth()}
+            resizeMax={leftDockPushDragMax(viewportWidth())}
             onClose={closeLeftDock}
             onResize={applyLeftDockWidth}
             activeSessionId={activeSessionId()}

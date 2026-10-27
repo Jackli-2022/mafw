@@ -43,6 +43,8 @@ type Props = {
   mode: LeftDockMode
   face: LeftDockFace
   width: number
+  /** push 态拖宽上限（预算内钳制；默认 400） */
+  resizeMax?: number
   onClose: () => void
   onResize: (w: number) => void
   activeSessionId: string | null
@@ -401,7 +403,7 @@ export function LeftDock(props: Props) {
           edge="end"
           size={props.width}
           min={180}
-          max={400}
+          max={props.resizeMax ?? 400}
           collapseThreshold={120}
           onResize={props.onResize}
           onCollapse={props.onClose}

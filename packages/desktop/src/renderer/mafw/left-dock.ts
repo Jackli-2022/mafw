@@ -14,17 +14,30 @@ export function toggleFace(s: LeftDockState, face: LeftDockFace): LeftDockState 
   return { face, open: true }
 }
 
-// 宽度决定模态：≥1366 推挤，以下浮层。窗口最大化与否不再改变布局。
-export const LEFT_DOCK_PUSH_MIN_WIDTH = 1366
+// 宽度决定模态：推挤必须保住默认档 50:50（chat 640 + 工作台 640，spec 2026-10-27 §6.5）。
+// 只保证默认档：chat 拉 520/760 不参与阈值，由 workbench-detents 护栏钳制。
+export const LEFT_RAIL_WIDTH = 46
+export const PUSH_PAIR_BUDGET = 1280 // 640 chat 默认档 + 640 工作台下限
 
-export function resolveMode(open: boolean, width: number): LeftDockMode {
+/** 推挤预算：窗口宽 ≥ 此值才 push（默认 dock 264 → 1590）。 */
+export function leftDockPushBudget(dockWidth: number): number {
+  return LEFT_RAIL_WIDTH + dockWidth + PUSH_PAIR_BUDGET
+}
+
+/** push 态拖宽上限：钳在预算内，防止拖过预算点模式翻转、手柄消失。 */
+export function leftDockPushDragMax(viewportWidth: number): number {
+  const budgeted = Math.min(LEFT_DOCK_WIDTH.max, viewportWidth - LEFT_RAIL_WIDTH - PUSH_PAIR_BUDGET)
+  return Math.max(LEFT_DOCK_WIDTH.min, budgeted)
+}
+
+export function resolveMode(open: boolean, width: number, dockWidth: number): LeftDockMode {
   if (!open) return "closed"
-  return width >= LEFT_DOCK_PUSH_MIN_WIDTH ? "push" : "overlay"
+  return width >= leftDockPushBudget(dockWidth) ? "push" : "overlay"
 }
 
 /** 启动时存储为 open 的左 dock 只在可推挤宽度恢复；浮层态不自动展开。 */
-export function restoreLeftDockOpen(stored: string | null, width: number): boolean {
-  return stored === "1" && width >= LEFT_DOCK_PUSH_MIN_WIDTH
+export function restoreLeftDockOpen(stored: string | null, width: number, dockWidth: number): boolean {
+  return stored === "1" && width >= leftDockPushBudget(dockWidth)
 }
 
 // 浮层模式下，选中会话/导航离开 chat 时自动关；推挤列保持。
@@ -39,19 +52,19 @@ export function clampLeftDockWidth(w: number): number {
   return Math.min(LEFT_DOCK_WIDTH.max, Math.max(LEFT_DOCK_WIDTH.min, w))
 }
 
-const LEFT_RAIL_WIDTH = 46
+const LEFT_RAIL_WIDTH_LEGACY = 46
 const CORE_CHAT_MIN_WIDTH = 520
 const RIGHT_WORKBENCH_MIN_WIDTH = 520
 
-/** 推挤时给 Chat + 右工作台留够最小宽度；左 dock 宽用户偏好可保留，布局宽度在此夹紧。 */
+/** 推挤时给 Chat + 右工作台留够最小宽度；新预算规则下 push 恒满足，此处为纵深防御。 */
 export function effectiveLeftDockWidth(width: number, viewportWidth: number): number {
-  const maxForViewport = viewportWidth - LEFT_RAIL_WIDTH - CORE_CHAT_MIN_WIDTH - RIGHT_WORKBENCH_MIN_WIDTH
+  const maxForViewport = viewportWidth - LEFT_RAIL_WIDTH_LEGACY - CORE_CHAT_MIN_WIDTH - RIGHT_WORKBENCH_MIN_WIDTH
   return Math.min(clampLeftDockWidth(width), clampLeftDockWidth(maxForViewport))
 }
 
-/** 启动时因窄幅被抑制的 open 偏好，在拉宽到 push 阈值后恢复。 */
-export function shouldAutoRestoreLeftDock(stored: string | null, open: boolean, viewportWidth: number): boolean {
-  return stored === "1" && !open && viewportWidth >= LEFT_DOCK_PUSH_MIN_WIDTH
+/** 启动时因窄幅被抑制的 open 偏好，在拉宽到推挤预算点后恢复。 */
+export function shouldAutoRestoreLeftDock(stored: string | null, open: boolean, viewportWidth: number, dockWidth: number): boolean {
+  return stored === "1" && !open && viewportWidth >= leftDockPushBudget(dockWidth)
 }
 
 // 旧 Rail 宽度键严格一次性迁移：新键有效则忽略旧键；否则采用旧键。
