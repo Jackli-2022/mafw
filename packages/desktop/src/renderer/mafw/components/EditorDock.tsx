@@ -32,6 +32,7 @@ import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored
 import { diffEntryFor } from "../editor-diff"
 import { AnnotationPopover } from "./AnnotationPopover"
 import { buildQuoteAnchor } from "../quote-anchor"
+import { describeAnchor, jsonPathOf } from "../annotation-anchor"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
@@ -61,6 +62,9 @@ export function EditorDock(props: {
   /** 预览划选批注（md/docx）：锚点 + 浮层坐标（相对 editor-body）。 */
   const [quoteSel, setQuoteSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number } | null>(null)
   const [quoteOpen, setQuoteOpen] = createSignal(false)
+  /** 预览锚点批注（json 节点 / 表格单元格 / 图片区域 / pptx 图钉）：标记即输入。 */
+  const [anchorSel, setAnchorSel] = createSignal<{ anchor: AnnotationAnchor; left: number; top: number } | null>(null)
+  const [anchorOpen, setAnchorOpen] = createSignal(false)
   let bodyEl: HTMLDivElement | undefined
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
   /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
@@ -179,6 +183,8 @@ export function EditorDock(props: {
     setAnnotOpen(false)
     setQuoteSel(null)
     setQuoteOpen(false)
+    setAnchorSel(null)
+    setAnchorOpen(false)
   }
 
   async function unwatchAll() {
@@ -741,7 +747,19 @@ export function EditorDock(props: {
           {/* JSON 树预览（可折叠；源码一键切换） */}
           <Show when={previewing() && activeFile()?.kind === "json"}>
             <div class="mafw-json-preview-wrap">
-              <JsonPreview text={activeSourceText()} />
+              <JsonPreview
+                text={activeSourceText()}
+                onAnnotate={(path, summary, rect) => {
+                  const host = bodyEl?.getBoundingClientRect()
+                  if (!host) return
+                  setAnchorSel({
+                    anchor: { kind: "jsonPath", path: jsonPathOf(path), valueSummary: summary },
+                    left: Math.max(8, rect.left - host.left),
+                    top: Math.max(8, rect.bottom - host.top + 4),
+                  })
+                  setAnchorOpen(true)
+                }}
+              />
             </div>
           </Show>
 
@@ -790,6 +808,21 @@ export function EditorDock(props: {
                 setQuoteSel(null)
               }}
               onCancel={() => { setQuoteOpen(false); setQuoteSel(null) }}
+            />
+          </Show>
+
+          <Show when={mode() === "edit" && anchorOpen() && anchorSel()}>
+            <AnnotationPopover
+              left={Math.min(anchorSel()!.left, 420)}
+              top={anchorSel()!.top}
+              meta={`${activeFile()?.rel ?? ""} › ${describeAnchor(anchorSel()!.anchor)}`}
+              placeholder="这处要改成什么…"
+              onSubmit={(comment, action) => {
+                submitAnnotationAnchored(anchorSel()?.anchor, comment, action)
+                setAnchorOpen(false)
+                setAnchorSel(null)
+              }}
+              onCancel={() => { setAnchorOpen(false); setAnchorSel(null) }}
             />
           </Show>
 

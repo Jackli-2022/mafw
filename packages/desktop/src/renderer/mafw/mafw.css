@@ -5675,3 +5675,8 @@ html[data-theme="light"] body {
 .mafw-pending-annotation-kind[data-kind="jsonPath"],
 .mafw-pending-annotation-kind[data-kind="cell"],
 .mafw-pending-annotation-kind[data-kind="region"] { background: var(--accent); }
+
+/* JSON 节点批注入口（hover 显现） */
+.mafw-json-annot { opacity: 0; margin-left: auto; flex: none; }
+.mafw-json-entry:hover .mafw-json-annot,
+.mafw-json-annot:focus-visible { opacity: 1; }

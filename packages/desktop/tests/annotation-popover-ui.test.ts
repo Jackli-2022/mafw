@@ -48,3 +48,13 @@ test("Markdown/DOCX 划选批注：annotatable 容器 + buildQuoteAnchor 接线"
   const office = read("src/renderer/mafw/components/OfficePreview.tsx")
   assert.match(office, /data-annotatable=\{props\.kind === "docx" \? "quote" : undefined\}/)
 })
+
+test("JSON 树节点批注：onAnnotate + 路径锚 + 就地输入", () => {
+  const json = read("src/renderer/mafw/components/JsonPreview.tsx")
+  assert.match(json, /onAnnotate/)
+  assert.match(json, /mafw-json-annot/)
+  assert.match(json, /path:/)
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /jsonPathOf/)
+  assert.match(editor, /"jsonPath"/)
+})
