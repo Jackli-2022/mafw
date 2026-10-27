@@ -37,7 +37,7 @@ export function addMark(sessionID: string, rel: string, anchor?: AnnotationAncho
     createdAt: Date.now(),
     seq: turnSeq.get(sessionID) ?? 0,
   }
-  bySession.set(sessionID, [...(bySession.get(sessionID) ?? []), mark])
+  bySession.set(sessionID, [...(bySession.get(sessionID) ?? []), mark].slice(-50))
   bump()
   return mark
 }

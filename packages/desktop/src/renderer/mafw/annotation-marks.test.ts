@@ -45,3 +45,13 @@ describe("回合归属（I4）", () => {
     assert.equal(marksFor("s1", "b.md")[0].status, "responded")
   })
 })
+
+describe("上限（M2）", () => {
+  test("每会话最多保留 50 条（丢最旧）", () => {
+    resetMarks()
+    for (let i = 0; i < 60; i++) addMark("s1", "a.md")
+    const marks = marksFor("s1", "a.md")
+    assert.equal(marks.length, 50)
+    assert.notEqual(marks[0].id, "")
+  })
+})

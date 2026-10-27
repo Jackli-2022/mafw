@@ -77,14 +77,11 @@ function annotationBlock(item: Annotation, index: number): string {
   ].join("\n")
 }
 
-/** 多条批注打包为一条消息块（草稿批量提交）。 */
+/** 多条批注打包为一条消息块（草稿批量提交）。M7：混入预览锚点时切换措辞。 */
 export function buildAnnotationBatch(items: Annotation[]): string {
   if (items.length === 0) return ""
-  return [
-    `以下是 ${items.length} 条代码批注：`,
-    "",
-    items.map(annotationBlock).join("\n\n"),
-    "",
-    "请逐条结合批注查看这段代码并回应。",
-  ].join("\n")
+  const hasPreviewAnchor = items.some((item) => !!item.anchor)
+  const header = hasPreviewAnchor ? `以下是 ${items.length} 条批注：` : `以下是 ${items.length} 条代码批注：`
+  const footer = hasPreviewAnchor ? "请逐条结合批注查看对应内容并回应。" : "请逐条结合批注查看这段代码并回应。"
+  return [header, "", items.map(annotationBlock).join("\n\n"), "", footer].join("\n")
 }

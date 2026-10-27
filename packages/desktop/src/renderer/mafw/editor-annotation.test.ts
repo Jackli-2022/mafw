@@ -116,3 +116,18 @@ describe("region 无截图时文案（I5）", () => {
     expect(withImg).toContain("截图见附件")
   })
 })
+
+describe("批量文案（M7）", () => {
+  test("含预览锚点 → 不称「代码批注」；纯行号锚保持原文案", () => {
+    const preview = buildAnnotationBatch([
+      { id: "1", sessionID: "s", rel: "a.png", startLine: 1, endLine: 1, code: "", comment: "x", createdAt: 1, anchor: { kind: "region", x: 0, y: 0, w: 0.1, h: 0.1 } },
+    ])
+    expect(preview).toContain("以下是 1 条批注：")
+    expect(preview).toContain("查看对应内容并回应")
+    const lines = buildAnnotationBatch([
+      { id: "2", sessionID: "s", rel: "a.ts", startLine: 2, endLine: 2, code: "y", comment: "z", createdAt: 2 },
+    ])
+    expect(lines).toContain("以下是 1 条代码批注：")
+    expect(lines).toContain("查看这段代码并回应")
+  })
+})

@@ -5741,3 +5741,7 @@ html[data-theme="light"] body {
   z-index: 5;
 }
 .mafw-annot-pin-pending { animation: mafw-annot-pulse 1.6s ease-in-out infinite; }
+
+/* M6：窄工作台浮层宽度约束 */
+.mafw-annot-pop { max-width: calc(100% - 16px); }
+.mafw-annot-pop .mafw-annot-pop-input { max-height: 40vh; overflow: auto; }

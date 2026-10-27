@@ -1,6 +1,6 @@
 /** 预览面批注锚点（2026-10-27 预览批注 spec）。缺省（undefined）= 旧行号锚。 */
 export type AnnotationAnchor =
-  | { kind: "quote"; quote: string; context?: string }
+  | { kind: "quote"; quote: string }
   | { kind: "jsonPath"; path: string; valueSummary: string }
   | { kind: "cell"; sheet?: string; ref: string; value: string }
   | { kind: "region"; x: number; y: number; w: number; h: number; slide?: number }

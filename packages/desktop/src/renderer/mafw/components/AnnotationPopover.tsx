@@ -3,6 +3,7 @@
 import { Show, createSignal, onMount } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TextareaV2 } from "@mafw/ui/v2/textarea-v2"
+import { popoverTop } from "../popover-pos"
 
 export function AnnotationPopover(props: {
   left: number
@@ -15,27 +16,40 @@ export function AnnotationPopover(props: {
   meta?: string
 }) {
   const [value, setValue] = createSignal("")
+  const [top, setTop] = createSignal(props.top)
   let host: HTMLDivElement | undefined
 
   const canSubmit = () => value().trim().length > 0
   const submit = (mode: "send" | "draft") => {
     const v = value().trim()
     if (!v) return
+    // M9：不清空输入——父层成功后会卸载浮层；父层忽略提交时用户输入仍在。
     props.onSubmit(v, mode)
-    setValue("")
   }
 
   onMount(() => {
-    requestAnimationFrame(() => host?.querySelector("textarea")?.focus())
+    requestAnimationFrame(() => {
+      host?.querySelector("textarea")?.focus()
+      // M6：下方空间不足时翻到锚点上方。
+      const parentH = (host?.offsetParent as HTMLElement | null)?.clientHeight ?? 0
+      setTop(popoverTop(props.top, host?.offsetHeight ?? 0, parentH))
+    })
   })
 
   return (
     <div
       class="mafw-annot-pop"
-      style={{ left: `${Math.max(8, props.left)}px`, top: `${Math.max(8, props.top)}px` }}
+      style={{ left: `${Math.max(8, props.left)}px`, top: `${top()}px` }}
       ref={(el) => { host = el }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          e.stopPropagation()
+          props.onCancel()
+        }
+      }}
     >
       <div class="mafw-annot-pop-head">批注</div>
       <TextareaV2
@@ -47,11 +61,6 @@ export function AnnotationPopover(props: {
         onKeyDown={(e) => {
           e.stopPropagation()
           if (e.isComposing || e.keyCode === 229) return
-          if (e.key === "Escape") {
-            e.preventDefault()
-            props.onCancel()
-            return
-          }
           if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
             e.preventDefault()
             submit("draft")

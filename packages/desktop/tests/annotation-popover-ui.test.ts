@@ -31,7 +31,7 @@ test("PendingAnnotations: anchor 标签 + kind 标记", () => {
 test("源码面交互：Ctrl+M 直达 + AnnotationPopover + 双按钮退役", () => {
   const src = read("src/renderer/mafw/components/EditorDock.tsx")
   assert.match(src, /AnnotationPopover/)
-  assert.match(src, /KeyM/)
+  assert.match(src, /isAnnotationHotkey/)
   assert.ok(!src.includes("LineCommentEditorV2"))
   assert.ok(!src.includes('submitLabel="加入批注"'))
   const ea = read("src/renderer/mafw/editor-annotation.ts")
@@ -120,4 +120,21 @@ test("review 修复：C1 接线 / I1 键盘路径 / I2 媒体管道 / I3 只在 
   const count = (stream.match(/markResponded\(/g) ?? []).length
   assert.equal(count, 1)
   assert.match(stream, /noteTurnActivity/)
+})
+
+test("minors 修复：M1 删死代码 / M2 clearMarks / M4 pptx 钉 / M5 页码 / M6 翻边 / M8 pointercancel / M9 不清空 / M10 热键", () => {
+  const anchor = read("src/renderer/mafw/annotation-anchor.ts")
+  assert.ok(!anchor.includes("normalizeRect"))
+  assert.ok(!anchor.includes("letterboxRect"))
+  const editor = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(editor, /clearMarks/)
+  assert.match(editor, /onPointerCancel/)
+  assert.match(editor, /isAnnotationHotkey/)
+  assert.match(editor, /activeFile\(\)\?\.rel !== rel/)
+  const office = read("src/renderer/mafw/components/OfficePreview.tsx")
+  assert.match(office, /mafw-pptx-pin/)
+  assert.match(office, /slideIndexOf/)
+  const pop = read("src/renderer/mafw/components/AnnotationPopover.tsx")
+  assert.match(pop, /popoverTop/)
+  assert.ok(!pop.includes('setValue("")'))
 })

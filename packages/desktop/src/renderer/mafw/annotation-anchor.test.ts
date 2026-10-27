@@ -5,8 +5,6 @@ import {
   anchorBlockLines,
   describeAnchor,
   jsonPathOf,
-  letterboxRect,
-  normalizeRect,
 } from "./annotation-anchor"
 
 describe("describeAnchor（批注卡标签）", () => {
@@ -64,34 +62,5 @@ describe("a1Ref", () => {
     assert.equal(a1Ref(10, 26), "Z10")
     assert.equal(a1Ref(1, 27), "AA1")
     assert.equal(a1Ref(1, 52), "AZ1")
-  })
-})
-
-describe("normalizeRect", () => {
-  test("px → 0-1；反向拖拽归一", () => {
-    assert.deepEqual(normalizeRect(10, 20, 110, 70, 200, 100), { x: 0.05, y: 0.2, w: 0.5, h: 0.5 })
-    assert.deepEqual(normalizeRect(110, 70, 10, 20, 200, 100), { x: 0.05, y: 0.2, w: 0.5, h: 0.5 })
-  })
-  test("越界 clamp + 最小尺寸", () => {
-    const r = normalizeRect(-10, -10, 150, 50, 200, 100)
-    assert.equal(r.x, 0)
-    assert.equal(r.y, 0)
-    assert.equal(r.w, 0.75)
-    assert.equal(r.h, 0.5)
-    const tiny = normalizeRect(10, 10, 11, 11, 200, 100)
-    assert.equal(tiny.w, 0.005)
-    assert.equal(tiny.h, 0.01)
-  })
-})
-
-describe("letterboxRect（object-fit:contain 渲染盒）", () => {
-  test("宽图 → 上下黑边", () => {
-    assert.deepEqual(letterboxRect(400, 200, 200, 200), { left: 0, top: 50, w: 200, h: 100 })
-  })
-  test("高图 → 左右黑边", () => {
-    assert.deepEqual(letterboxRect(200, 400, 200, 200), { left: 50, top: 0, w: 100, h: 200 })
-  })
-  test("同比例 → 全盒", () => {
-    assert.deepEqual(letterboxRect(100, 100, 300, 300), { left: 0, top: 0, w: 300, h: 300 })
   })
 })

@@ -34,7 +34,8 @@ import { AnnotationPopover } from "./AnnotationPopover"
 import { buildQuoteAnchor } from "../quote-anchor"
 import { describeAnchor, jsonPathOf, a1Ref } from "../annotation-anchor"
 import { dragRectPx, cropImageDataUrl, type Rect01 } from "../region-capture"
-import { addMark, marksFor } from "../annotation-marks"
+import { addMark, clearMarks, marksFor } from "../annotation-marks"
+import { isAnnotationHotkey } from "../annotation-hotkey"
 import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
@@ -73,6 +74,8 @@ export function EditorDock(props: {
   const [drag, setDrag] = createSignal<{ x0: number; y0: number; x1: number; y1: number; w: number; h: number } | null>(null)
   let dragStart: { x: number; y: number } | null = null
   let bodyEl: HTMLDivElement | undefined
+  const IS_MAC = /Mac/.test(globalThis.navigator?.platform ?? "")
+  let marksOwner: string | null = null
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
   /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
   const [ioError, setIoError] = createSignal<string | null>(null)
@@ -198,6 +201,8 @@ export function EditorDock(props: {
     setQuoteOpen(false)
     setAnchorSel(null)
     setAnchorOpen(false)
+    setDrag(null)
+    dragStart = null
   }
 
   async function unwatchAll() {
@@ -223,6 +228,14 @@ export function EditorDock(props: {
     setMode("edit")
     void unwatchAll()
     untrack(() => { void mountActive() })
+  })
+
+  // M2：会话切换时清掉上一会话的批注标记，防止 renderer 生命周期内累积。
+  createEffect(() => {
+    const sid = props.sessionID
+    if (sid === marksOwner) return
+    if (marksOwner) clearMarks(marksOwner)
+    marksOwner = sid
   })
 
   // ── 打开请求（FilesDock → editor-open）───────────────────────────────
@@ -517,7 +530,7 @@ export function EditorDock(props: {
     const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement
     const container = el?.closest?.('[data-annotatable="quote"]') as HTMLElement | null
     if (!container || !container.contains(node)) return false
-    const anchor = buildQuoteAnchor(container.innerText ?? "", selection.toString())
+    const anchor = buildQuoteAnchor(selection.toString())
     if (!anchor) return false
     const rect = range.getBoundingClientRect()
     const host = bodyEl?.getBoundingClientRect()
@@ -537,7 +550,7 @@ export function EditorDock(props: {
   // I1：预览面焦点不在 editor-body 内 —— 键盘路径挂 document；选区变化（含 Shift+方向键）也走同一捕获。
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.code !== "KeyM" || mode() !== "edit") return
+      if (!isAnnotationHotkey(e, IS_MAC) || mode() !== "edit") return
       if (sel() && !annotOpen()) {
         e.preventDefault()
         e.stopPropagation()
@@ -609,6 +622,7 @@ export function EditorDock(props: {
 
   async function onRegionUp(e: PointerEvent) {
     if (!dragStart || !drag()) return
+    const rel = activeFile()?.rel
     const layer = e.currentTarget as HTMLElement
     const rect = layer.getBoundingClientRect()
     const px = dragRectPx(drag()!.x0, drag()!.y0, e.clientX - rect.left, e.clientY - rect.top, rect.width, rect.height)
@@ -632,6 +646,11 @@ export function EditorDock(props: {
         /* 裁剪失败不阻塞文字批注 */
       }
     }
+    // M8：await 期间可能切了文件 —— 旧图坐标/截图绝不能挂到新文件上。
+    if (!rel || activeFile()?.rel !== rel) {
+      setDrag(null)
+      return
+    }
     const host = bodyEl?.getBoundingClientRect()
     setDrag(null)
     if (!host) return
@@ -642,6 +661,12 @@ export function EditorDock(props: {
       imageDataUrl,
     })
     setAnchorOpen(true)
+  }
+
+  /** M8：pointercancel（系统手势/失焦）时清掉拖框状态。 */
+  function onRegionCancel() {
+    dragStart = null
+    setDrag(null)
   }
 
   const selRange = () => {
@@ -805,18 +830,6 @@ export function EditorDock(props: {
           class="mafw-editor-body"
           ref={(el) => { bodyEl = el }}
           onMouseUp={handlePreviewSelection}
-          onKeyDown={(e: KeyboardEvent) => {
-            if (!(e.ctrlKey || e.metaKey) || e.code !== "KeyM" || mode() !== "edit") return
-            if (sel() && !annotOpen()) {
-              e.preventDefault()
-              e.stopPropagation()
-              setAnnotOpen(true)
-            } else if (quoteSel() && !quoteOpen()) {
-              e.preventDefault()
-              e.stopPropagation()
-              setQuoteOpen(true)
-            }
-          }}
         >
           <div
             class="mafw-editor-host"
@@ -842,6 +855,7 @@ export function EditorDock(props: {
                     onPointerDown={onRegionDown}
                     onPointerMove={onRegionMove}
                     onPointerUp={onRegionUp}
+                    onPointerCancel={onRegionCancel}
                   >
                     <Show when={drag()}>
                       <div
@@ -964,6 +978,13 @@ export function EditorDock(props: {
                 })
                 setAnchorOpen(true)
               }}
+              pins={fileMarks()
+                .filter((m) => m.anchor?.kind === "region" && !!m.anchor.slide)
+                .map((m) => {
+                  const a = m.anchor as Extract<AnnotationAnchor, { kind: "region" }>
+                  return { x: a.x, y: a.y, slide: a.slide, status: m.status }
+                })}
+              onOpenReview={props.onOpenReview}
             />
           </Show>
 

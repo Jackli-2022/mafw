@@ -5,6 +5,7 @@ import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { extractSheetRows, type SheetTable } from "../office-table"
 import { a1Ref } from "../annotation-anchor"
+import { slideIndexOf } from "../pptx-slide"
 
 export type OfficeKind = "xlsx" | "docx" | "pptx"
 
@@ -19,6 +20,9 @@ export function OfficePreview(props: {
   onAnnotateCell?: (a: { sheet?: string; ref: string; value: string }, rect: { left: number; top: number; bottom: number }) => void
   /** pptx 图钉批注（预览批注 T8）：页码 + 归一化坐标 + 点击点（viewport）。 */
   onAnnotateRegion?: (a: { x: number; y: number; w: number; h: number; slide: number }, point: { clientX: number; clientY: number }) => void
+  /** 已有批注标记（M4）：pptx 页面上渲染编号钉。 */
+  pins?: { x: number; y: number; slide?: number; status: "pending" | "responded" }[]
+  onOpenReview?: () => void
 }) {
   const [phase, setPhase] = createSignal<"idle" | "loading" | "ready" | "error">("idle")
   const [error, setError] = createSignal("")
@@ -89,6 +93,31 @@ export function OfficePreview(props: {
   onCleanup(() => {
     runToken++
     if (host) host.innerHTML = ""
+  })
+
+  // M4：把已有批注钉到 pptx 对应页（pptx-preview 自绘 DOM，用覆盖层追加节点）。
+  createEffect(() => {
+    const pins = props.pins ?? []
+    phase() // 渲染完成后重画
+    if (props.kind !== "pptx" || !host) return
+    host.querySelectorAll(".mafw-pptx-pin").forEach((el) => el.remove())
+    if (pins.length === 0) return
+    const slides = Array.from(host.querySelectorAll(".pptx-preview-slide-wrapper")) as HTMLElement[]
+    for (const pin of pins) {
+      const slide = slides[(pin.slide ?? 1) - 1]
+      if (!slide) continue
+      if (getComputedStyle(slide).position === "static") slide.style.position = "relative"
+      const el = document.createElement("div")
+      el.className = `mafw-annot-pin mafw-pptx-pin${pin.status === "pending" ? " mafw-annot-pin-pending" : ""}`
+      el.style.left = `${pin.x * 100}%`
+      el.style.top = `${pin.y * 100}%`
+      el.setAttribute("aria-label", pin.status === "pending" ? "批注处理中" : "批注已回应")
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        props.onOpenReview?.()
+      })
+      slide.appendChild(el)
+    }
   })
 
   return (
@@ -165,8 +194,8 @@ export function OfficePreview(props: {
           if (props.kind !== "pptx" || !props.onAnnotateRegion || !host) return
           const slideEl = (e.target as HTMLElement)?.closest?.(".pptx-preview-slide-wrapper") as HTMLElement | null
           if (!slideEl) return
-          const slides = Array.from(host.querySelectorAll(".pptx-preview-slide-wrapper"))
-          const slide = slides.indexOf(slideEl) + 1
+          const slides = Array.from(host.querySelectorAll(".pptx-preview-slide-wrapper")) as HTMLElement[]
+          const slide = slideIndexOf(slideEl, slides)
           if (slide <= 0) return
           const rect = slideEl.getBoundingClientRect()
           if (rect.width <= 0 || rect.height <= 0) return
