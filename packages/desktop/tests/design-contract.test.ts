@@ -412,8 +412,8 @@ describe("WelcomeHome v4", () => {
 describe("Rail 尾巴 v4", () => {
   test("切换器 hover 边框", () =>
     expect(cssBlock(".mafw-rail-switcher:hover {")).toContain("border-color: var(--border-subtle)"))
-  test("ManagerCard hover 边框提亮", () =>
-    expect(cssBlock(".mafw-manager-card:hover {")).toContain("border-color"))
+  test("Manager 单行 hover 提亮（spec 2026-10-27：卡→置顶行）", () =>
+    expect(cssBlock(".mafw-manager-row:hover {")).toContain("background: color-mix(in srgb, var(--accent) 11%"))
 })
 
 describe("动效基建 v4", () => {

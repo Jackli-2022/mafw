@@ -477,20 +477,18 @@ html[data-theme="light"] body {
 .mafw-rail-load-more:hover { color: var(--text-1); background: var(--hover); }
 .mafw-rail-empty { padding: 16px 12px; color: var(--text-5); font-size: 13px; }
 /* ── Manager command card (below dock head) ── */
-.mafw-manager-card { margin: 8px 10px 4px; padding: 8px 10px; border-radius: var(--r-md); border: 1px solid var(--border-subtle); border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); cursor: pointer; user-select: none; transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
-.mafw-manager-card:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--text-5); }
-.mafw-manager-card.offline { border-left-color: var(--border-subtle); background: transparent; }
-.mafw-manager-card-head { display: flex; align-items: center; gap: 6px; }
-.mafw-manager-card-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success, #3fb950); flex-shrink: 0; }
-.mafw-manager-card.offline .mafw-manager-card-dot { background: var(--text-5); }
-.mafw-manager-card-name { font-size: 12px; font-weight: 600; color: var(--text-1); }
-.mafw-manager-card-badge { margin-left: auto; padding: 1px 7px; border-radius: 999px; background: var(--danger, #f85149); color: #fff; font-size: 11px; font-weight: 600; line-height: 16px; }
-.mafw-manager-card-goal { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
-.mafw-manager-card-phase { font-size: 11px; opacity: .85; color: var(--text-2); }
-.mafw-manager-card-progress { flex: 1; height: 3px; border-radius: 2px; background: var(--border-subtle); overflow: hidden; }
-.mafw-manager-card-progress > span { display: block; height: 100%; background: var(--accent); }
-.mafw-manager-card-meta { margin-top: 3px; font-size: 10px; opacity: .6; color: var(--text-3); }
-.mafw-manager-card-idle { margin-top: 4px; font-size: 11px; opacity: .6; color: var(--text-3); }
+/* Manager 置顶单行（spec 2026-10-27 §6.2-3）：普通行 + accent 左条，不是彩卡。 */
+.mafw-manager-row { position: relative; display: flex; align-items: center; gap: 6px; height: 32px; margin: 2px 6px; padding: 0 8px 0 10px; border-radius: 4px; color: var(--text-2); font-size: 12.5px; cursor: pointer; user-select: none; background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 2px 0 0 var(--accent); transition: background var(--dur-fast) var(--ease-standard); }
+.mafw-manager-row:hover { background: color-mix(in srgb, var(--accent) 11%, transparent); }
+.mafw-manager-row.offline { background: transparent; box-shadow: inset 2px 0 0 var(--border-subtle); }
+.mafw-manager-row-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success, #3fb950); flex-shrink: 0; }
+.mafw-manager-row.offline .mafw-manager-row-dot { background: var(--text-5); }
+.mafw-manager-row-name { font-weight: 500; color: var(--text-1); }
+.mafw-manager-row-phase { font-size: 11px; color: var(--text-3); }
+.mafw-manager-row-badge { padding: 0 6px; border-radius: 999px; background: var(--danger, #f85149); color: #fff; font-size: 10px; font-weight: 600; line-height: 15px; }
+.mafw-manager-row-ago { margin-left: auto; font-size: 10.5px; color: var(--text-4); }
+.mafw-manager-row-progress { position: absolute; left: 10px; right: 8px; bottom: 1px; height: 2px; border-radius: 1px; background: var(--border-subtle); overflow: hidden; }
+.mafw-manager-row-progress > span { display: block; height: 100%; background: var(--accent); }
 @keyframes mafw-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.72; }

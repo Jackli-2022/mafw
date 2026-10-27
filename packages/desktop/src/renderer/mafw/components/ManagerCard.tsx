@@ -1,6 +1,7 @@
 ﻿// @ts-nocheck
 import { createSignal, createEffect, onMount, onCleanup, Show } from "solid-js"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
+import { managerPhaseLabel } from "./rail-display"
 
 const POLL_MS = 15000
 
@@ -21,6 +22,7 @@ type Props = {
   onOpenQuestions?: () => void
 }
 
+// 置顶单行（spec 2026-10-27 §6.2-3）：Manager 本质是"置顶会话"，不是仪表盘卡。
 export function ManagerCard(props: Props) {
   const [goal, setGoal] = createSignal<any>(null)
   const [pending, setPending] = createSignal(0)
@@ -60,30 +62,21 @@ export function ManagerCard(props: Props) {
 
   return (
     <Show when={props.managerSessionId}>
-      <div class="mafw-manager-card" classList={{ offline: !props.online }} onClick={openManager}>
-        <div class="mafw-manager-card-head">
-          <span class="mafw-manager-card-dot" />
-          <span class="mafw-manager-card-name">Manager</span>
-          <Show when={pending() > 0}>
-            <TooltipV2 value={`${pending()} 个待决问题`} openDelay={300}>
-              <span
-                class="mafw-manager-card-badge"
-                onClick={e => { e.stopPropagation(); openQuestions() }}
-              >{pending()}</span>
-            </TooltipV2>
-          </Show>
-        </div>
-        <Show
-          when={goal()}
-          fallback={<div class="mafw-manager-card-idle">Idle · {relTime(props.managerUpdatedAt)}</div>}
-        >
-          <div class="mafw-manager-card-goal">
-            <span class="mafw-manager-card-phase">{goal().phase}</span>
-            <Show when={progress() !== null}>
-              <span class="mafw-manager-card-progress"><span style={{ width: `${progress()}%` }} /></span>
-            </Show>
-          </div>
-          <div class="mafw-manager-card-meta">{relTime(props.managerUpdatedAt)}</div>
+      <div class="mafw-manager-row" classList={{ offline: !props.online }} onClick={openManager}>
+        <span class="mafw-manager-row-dot" />
+        <span class="mafw-manager-row-name">Manager</span>
+        <span class="mafw-manager-row-phase">{goal() ? managerPhaseLabel(goal().phase) : "空闲"}</span>
+        <Show when={pending() > 0}>
+          <TooltipV2 value={`${pending()} 个待决问题`} openDelay={300}>
+            <span
+              class="mafw-manager-row-badge"
+              onClick={e => { e.stopPropagation(); openQuestions() }}
+            >{pending()}</span>
+          </TooltipV2>
+        </Show>
+        <span class="mafw-manager-row-ago">{relTime(props.managerUpdatedAt)}</span>
+        <Show when={progress() !== null}>
+          <span class="mafw-manager-row-progress"><span style={{ width: `${progress()}%` }} /></span>
         </Show>
       </div>
     </Show>
