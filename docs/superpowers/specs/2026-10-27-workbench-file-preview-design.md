@@ -14,6 +14,7 @@
 - G4：HTML/HTM 文件在**浏览器 surface** 打开（单 webview 导航 + 自动切 surface），经 `mafw-file://` 自定义协议——不向 `file://` 开口子（browser-policy 既有禁令不动）。
 - **G5（2026-10-27 增补）**：PDF 文件在**浏览器 surface** 直接渲染（Chromium PDF 查看器，webview 开 `plugins`；MIME `application/pdf`；调研 `docs/research/2026-10-27-pdf-csv-preview-research.md`）。
 - **G6（2026-10-27 增补）**：CSV/TSV 在文件 surface 默认**表格预览**（行 500/列 50/单元格 200 字符上限，超限截断提示），tab 头「源码」一键回文本编辑（与 SVG 同模式）；纯函数 CSV 解析（RFC4180 + 分隔符嗅探）。
+- **G7（2026-10-27 增补）**：Markdown（md/markdown）在文件 surface 默认**渲染预览**（复用 `@mafw/session-ui/markdown`——sanitize + 代码高亮 + 表格，与聊天同款），tab 头「源码」一键回文本编辑；预览内容取草稿缓冲（切回预览反映最新源码）。
 
 **非目标（v2+）**：图片缩放/拖拽平移；SVG 进浏览器渲染；Markdown 预览（可复用 session-ui 渲染器，另案）；JSON 树视图；XLSX/Office 预览；图片批注（与 G1/G2 管线交汇，另案）；浏览器多文件 tab（多 webview，大改）。
 

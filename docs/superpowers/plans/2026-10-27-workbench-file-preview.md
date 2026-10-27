@@ -98,3 +98,10 @@ Spec：`docs/superpowers/specs/2026-10-27-workbench-file-preview-design.md`
 - `EditorDock.tsx`：svg 的 source 切换泛化为 `sourceMode`（svg/table 共享，默认预览）；table kind 渲染只读表格（首行表头、sticky、截断提示），tab 头「源码/表格」；
 - RED：csv-parse 矩阵（引号/转义/CRLF/嗅探/不均行/上限/空）；UI 契约（表格渲染、切换标签）；editor-state kind 传播。
 - GUI 冒烟：真 CSV 打开即表格 + 源码往返；TSV 嗅探。
+
+## T11（增补）Markdown 预览
+
+- `file-kind.ts`：`md/markdown → "markdown"`（仍 editor surface）；`OpenFileKind` 增 markdown；
+- `EditorDock.tsx`：markdown 默认预览（`Markdown` from `@mafw/session-ui/markdown`，cacheKey 用 djb2 内容哈希防同 tab 缓存命中旧渲染），tab 头「源码/预览」；预览内容含草稿缓冲；
+- RED：file-kind 矩阵 + UI 契约（Markdown import / mafw-md-preview / markdown kind）。
+- GUI 冒烟：真 README.md（标题/列表/表格/加粗/行内代码/代码块）渲染 + 源码↔预览往返。
