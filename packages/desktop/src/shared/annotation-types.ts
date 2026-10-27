@@ -1,3 +1,10 @@
+/** 预览面批注锚点（2026-10-27 预览批注 spec）。缺省（undefined）= 旧行号锚。 */
+export type AnnotationAnchor =
+  | { kind: "quote"; quote: string; context?: string }
+  | { kind: "jsonPath"; path: string; valueSummary: string }
+  | { kind: "cell"; sheet?: string; ref: string; value: string }
+  | { kind: "region"; x: number; y: number; w: number; h: number; slide?: number }
+
 /** 批注草稿（桌面端持久；main 与 renderer 共用同一形状）。 */
 export type Annotation = {
   id: string
@@ -10,6 +17,10 @@ export type Annotation = {
   code: string
   comment: string
   createdAt: number
+  /** 预览面锚点；缺省 = 行号锚（旧数据兼容）。 */
+  anchor?: AnnotationAnchor
+  /** region 批注的裁剪截图（仅内存，不落 electron-store；发送时转附件）。 */
+  imageDataUrl?: string
 }
 
 /** 持久化形状：sessionID → 批注列表。 */
