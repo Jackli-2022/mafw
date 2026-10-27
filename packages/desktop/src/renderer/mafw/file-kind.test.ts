@@ -63,3 +63,12 @@ describe("markdown（2026-10-27 增补）", () => {
     assert.equal(fileOpenPlan("README.md"), "editor")
   })
 })
+
+describe("json（2026-10-27 增补）", () => {
+  test("json → json 种类，仍进文件 surface", () => {
+    assert.equal(fileKindFor("data.json"), "json")
+    assert.equal(fileKindFor("Config.JSON"), "json")
+    assert.equal(fileOpenPlan("data.json"), "editor")
+    assert.equal(fileKindFor("data.jsonc"), "text")
+  })
+})

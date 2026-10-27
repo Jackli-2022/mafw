@@ -23,6 +23,7 @@ import { fileKindFor } from "../file-kind"
 import { fileProtocol } from "../file-protocol-client"
 import { parseCsv } from "../csv-parse"
 import { Markdown } from "@mafw/session-ui/markdown"
+import { JsonPreview } from "./JsonPreview"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
 import { annotationApplies, buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
@@ -84,9 +85,9 @@ export function EditorDock(props: {
     return (root && fileProtocol.urlFor(root, rel, fileVersion()[rel])) ?? ""
   }
 
-  /** 预览态：图片恒预览；svg / csv-tsv / markdown 默认预览（仅显式源码态例外）。diff 模式不预览。 */
+  /** 预览态：图片恒预览；svg / csv-tsv / markdown / json 默认预览（仅显式源码态例外）。diff 模式不预览。 */
   const showsPreview = (f: OpenFile): boolean => {
-    if (f.kind === "svg" || f.kind === "table" || f.kind === "markdown") return sourceMode()[f.rel] !== true
+    if (f.kind === "svg" || f.kind === "table" || f.kind === "markdown" || f.kind === "json") return sourceMode()[f.rel] !== true
     return false
   }
   const previewing = (): boolean => {
@@ -96,17 +97,19 @@ export function EditorDock(props: {
     return showsPreview(f)
   }
 
-  /** tab 头切换按钮文案：预览中 → 「源码」；源码态 → 「表格」（csv/tsv）或「预览」（svg/markdown）。 */
+  /** tab 头切换按钮文案：预览中 → 「源码」；源码态 → 「表格」（csv/tsv）/「树」（json）/「预览」（svg/markdown）。 */
   const previewToggleLabel = (): string => {
     const f = activeFile()
     if (!f) return "预览"
     if (previewing()) return "源码"
-    return f.kind === "table" ? "表格" : "预览"
+    if (f.kind === "table") return "表格"
+    if (f.kind === "json") return "树"
+    return "预览"
   }
 
   const togglePreview = () => {
     const f = activeFile()
-    if (!f || (f.kind !== "svg" && f.kind !== "table" && f.kind !== "markdown")) return
+    if (!f || (f.kind !== "svg" && f.kind !== "table" && f.kind !== "markdown" && f.kind !== "json")) return
     setSourceMode(prev => ({ ...prev, [f.rel]: prev[f.rel] !== true }))
     clearSelection()
     // 预览期间 CodeMirror 宿主 display:none；切回源码后强制重测（防 0 尺寸视图）。
@@ -144,9 +147,12 @@ export function EditorDock(props: {
   })
 
   /** Markdown 预览内容（含草稿缓冲，切回预览时反映最新源码）。 */
-  const markdownText = createMemo(() => {
+  const markdownText = createMemo(() => activeSourceText())
+
+  /** 当前文件源码文本（草稿优先，回退磁盘基准）——markdown/json 预览共用。 */
+  const activeSourceText = createMemo(() => {
     const f = activeFile()
-    if (!f || f.kind !== "markdown") return ""
+    if (!f) return ""
     const root = props.sessionDirectory
     return (root ? getDraft(root, f.rel) : undefined) ?? f.savedContent
   })
@@ -244,7 +250,7 @@ export function EditorDock(props: {
     try {
       const res = await window.api.fs.readFile(root, rel)
       if (root !== props.sessionDirectory) return // root 已切换：丢弃迟到的结果（Important 2）
-      const editorKind = kind === "svg" ? "svg" : kind === "table" ? "table" : kind === "markdown" ? "markdown" : "text"
+      const editorKind = kind === "svg" ? "svg" : kind === "table" ? "table" : kind === "markdown" ? "markdown" : kind === "json" ? "json" : "text"
       if (res.ok) {
         setMtime(root, rel, res.mtimeMs)
         setEol(root, rel, res.eol)
@@ -503,12 +509,12 @@ export function EditorDock(props: {
             <Icon name="square-arrow-top-right" size="small" />
           </ButtonV2>
         </TooltipV2>
-        <Show when={activeFile()?.kind === "svg" || activeFile()?.kind === "table" || activeFile()?.kind === "markdown"}>
-          <TooltipV2 value={previewing() ? "查看源码" : activeFile()?.kind === "table" ? "表格视图" : activeFile()?.kind === "markdown" ? "渲染 Markdown" : "预览 SVG"} openDelay={300}>
+        <Show when={activeFile()?.kind === "svg" || activeFile()?.kind === "table" || activeFile()?.kind === "markdown" || activeFile()?.kind === "json"}>
+          <TooltipV2 value={previewing() ? "查看源码" : activeFile()?.kind === "table" ? "表格视图" : activeFile()?.kind === "markdown" ? "渲染 Markdown" : activeFile()?.kind === "json" ? "JSON 树视图" : "预览 SVG"} openDelay={300}>
             <ButtonV2
               variant={previewing() ? "contrast" : "ghost"}
               size="small"
-              aria-label={activeFile()?.kind === "table" ? "表格预览" : activeFile()?.kind === "markdown" ? "Markdown 预览" : "SVG 预览"}
+              aria-label={activeFile()?.kind === "table" ? "表格预览" : activeFile()?.kind === "markdown" ? "Markdown 预览" : activeFile()?.kind === "json" ? "JSON 树" : "SVG 预览"}
               aria-pressed={previewing()}
               onClick={togglePreview}
             >
@@ -588,7 +594,7 @@ export function EditorDock(props: {
           />
 
           {/* 文件预览（图片只读 / SVG 预览态）：host 保持挂载，仅隐藏 */}
-          <Show when={previewing() && activeFile() && activeFile()!.kind !== "table" && activeFile()!.kind !== "markdown"}>
+          <Show when={previewing() && activeFile() && activeFile()!.kind !== "table" && activeFile()!.kind !== "markdown" && activeFile()!.kind !== "json"}>
             <div class="mafw-file-preview">
               <img
                 class="mafw-file-preview-img"
@@ -640,6 +646,13 @@ export function EditorDock(props: {
                 cacheKey={`md:${activeFile()!.rel}:${textHash(markdownText())}`}
                 streaming={false}
               />
+            </div>
+          </Show>
+
+          {/* JSON 树预览（可折叠；源码一键切换） */}
+          <Show when={previewing() && activeFile()?.kind === "json"}>
+            <div class="mafw-json-preview-wrap">
+              <JsonPreview text={activeSourceText()} />
             </div>
           </Show>
 

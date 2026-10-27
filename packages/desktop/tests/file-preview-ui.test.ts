@@ -56,3 +56,11 @@ test("Markdown preview: default rendered, source one click", () => {
   assert.match(src, /mafw-md-preview/)
   assert.match(src, /"markdown"/)
 })
+
+test("JSON tree preview with source toggle", () => {
+  const src = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(src, /JsonPreview/)
+  assert.match(src, /"json"/)
+  const comp = read("src/renderer/mafw/components/JsonPreview.tsx")
+  assert.match(comp, /mafw-json-preview/)
+})
