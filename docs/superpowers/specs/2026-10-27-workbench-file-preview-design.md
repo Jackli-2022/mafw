@@ -15,6 +15,8 @@
 - **G5（2026-10-27 增补）**：PDF 文件在**浏览器 surface** 直接渲染（Chromium PDF 查看器，webview 开 `plugins`；MIME `application/pdf`；调研 `docs/research/2026-10-27-pdf-csv-preview-research.md`）。
 - **G6（2026-10-27 增补）**：CSV/TSV 在文件 surface 默认**表格预览**（行 500/列 50/单元格 200 字符上限，超限截断提示），tab 头「源码」一键回文本编辑（与 SVG 同模式）；纯函数 CSV 解析（RFC4180 + 分隔符嗅探）。
 - **G7（2026-10-27 增补）**：Markdown（md/markdown）在文件 surface 默认**渲染预览**（复用 `@mafw/session-ui/markdown`——sanitize + 代码高亮 + 表格，与聊天同款），tab 头「源码」一键回文本编辑；预览内容取草稿缓冲（切回预览反映最新源码）。
+- **G8（2026-10-27 增补）**：JSON 默认**树视图**（可折叠、默认展开两层、每层 500 项上限、解析失败显式报错），tab 头「源码/树」切换。
+- **G9-G11（2026-10-27 增补）**：XLSX/DOCX/PPTX 只读预览 tab（同图片：不 dirty/不参与保存冲突）——xlsx = exceljs 表格 + sheet 切换（行 200/列 50 上限，公式不执行）；docx = docx-preview 渲染；pptx = pptx-preview 幻灯片渲染。三个解析库全部**动态 import 懒加载**；数据走 `mafw-file://` + `fetch(arrayBuffer)`（协议加 `corsEnabled` + ACAO 头）。`.xls/.doc/.ppt` legacy → 只读提示 + 外部应用打开；解析失败 → 错误横幅 + 外部打开。
 
 **非目标（v2+）**：图片缩放/拖拽平移；SVG 进浏览器渲染；Markdown 预览（可复用 session-ui 渲染器，另案）；JSON 树视图；XLSX/Office 预览；图片批注（与 G1/G2 管线交汇，另案）；浏览器多文件 tab（多 webview，大改）。
 

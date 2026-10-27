@@ -105,3 +105,13 @@ Spec：`docs/superpowers/specs/2026-10-27-workbench-file-preview-design.md`
 - `EditorDock.tsx`：markdown 默认预览（`Markdown` from `@mafw/session-ui/markdown`，cacheKey 用 djb2 内容哈希防同 tab 缓存命中旧渲染），tab 头「源码/预览」；预览内容含草稿缓冲；
 - RED：file-kind 矩阵 + UI 契约（Markdown import / mafw-md-preview / markdown kind）。
 - GUI 冒烟：真 README.md（标题/列表/表格/加粗/行内代码/代码块）渲染 + 源码↔预览往返。
+
+## T12-T15（增补）JSON + Office（xlsx/docx/pptx）
+
+- T12 JSON：`json-tree.ts`（parseJsonSafe/jsonSummary/jsonEntries 上限）+ `JsonPreview.tsx`（递归折叠树）+ file-kind json + EditorDock 树/源码切换；RED：json-tree 矩阵 + file-kind + UI 契约。
+- T13 XLSX：`office-table.ts`（extractSheetRows，行列上限）+ `OfficePreview.tsx`（exceljs 懒加载、sheet tab、表格）；RED：office-table 矩阵。
+- T14 DOCX：OfficePreview docx 分支（docx-preview renderAsync，懒加载）。
+- T15 PPTX：OfficePreview pptx 分支（pptx-preview init/preview，懒加载）。
+- 通道：`mafw-file://` scheme 加 `corsEnabled` + handler ACAO（renderer fetch arrayBuffer）；MIME 补 xlsx/docx/pptx；二进制读取不新增 IPC。
+- 回退：legacy `.xls/.doc/.ppt` 只读提示 + 外部打开；解析失败错误横幅 + 外部打开。
+- GUI 冒烟（真文件）：book.xlsx（双 sheet/中文/引号）、report.docx（标题/正文/表格）、deck.pptx（真实幻灯片）、data.json（树/源码切换）全通过。
