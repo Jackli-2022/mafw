@@ -2,14 +2,15 @@
 // 默认档 640、去掉过窄的 420、640 外新增 760）。
 // 依据 docs/research/2026-10-26-detent-ratio-vs-absolute.md：业界桌面 IDE/Agent 全部绝对 px，
 // 比例档位只属固定画布；比例档在 1920+ 撞 760 墙会塌缩。
-// 护栏：chat = clamp(detent, 320, min(760, availableWidth − 520 工作台下限))。
+// 护栏：chat = clamp(detent, 320, min(760, availableWidth − 640 工作台下限))。
+// 2026-10-27：工作台下限 520 → 640（与 chat 默认档拉平，spec 2026-10-27-left-rail-visual-polish §6.5）。
 export type WorkbenchDetent = 520 | 640 | 760
 
 export const WORKBENCH_DETENTS: WorkbenchDetent[] = [520, 640, 760]
 export const WORKBENCH_DEFAULT_DETENT: WorkbenchDetent = 640
 export const CHAT_PX_FLOOR = 320
 export const CHAT_PX_CEIL = 760
-export const WORKBENCH_MIN_WIDTH = 520
+export const WORKBENCH_MIN_WIDTH = 640
 
 /** 档位 → 对话列宽度（px，护栏优先）。 */
 export function chatPxForDetent(detent: WorkbenchDetent, availableWidth: number): number {

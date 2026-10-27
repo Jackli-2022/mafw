@@ -19,14 +19,16 @@ describe("workbench absolute px detents (spec 2026-10-26, rev: default 640)", ()
     assert.equal(WORKBENCH_DEFAULT_DETENT, 640)
     assert.equal(CHAT_PX_FLOOR, 320)
     assert.equal(CHAT_PX_CEIL, 760)
-    assert.equal(WORKBENCH_MIN_WIDTH, 520)
+    assert.equal(WORKBENCH_MIN_WIDTH, 640)
   })
 
-  test("chatPxForDetent：绝对档 + 护栏（工作台下限 520 / 墙 320-760）", () => {
+  test("chatPxForDetent：绝对档 + 护栏（工作台下限 640 / 墙 320-760）", () => {
     assert.equal(chatPxForDetent(520, 1394), 520)
     assert.equal(chatPxForDetent(640, 1394), 640)
-    assert.equal(chatPxForDetent(760, 1394), 760)
-    assert.equal(chatPxForDetent(760, 1154), 634) // available − 520
+    assert.equal(chatPxForDetent(760, 1394), 754) // available − 640
+    assert.equal(chatPxForDetent(760, 1280), 640) // 默认档预算内：760 档被钳回 640
+    assert.equal(chatPxForDetent(640, 1344), 640)
+    assert.equal(chatPxForDetent(640, 1154), 514) // 1200 窗：chat 让位保工作台 640
     assert.equal(chatPxForDetent(520, 674), 320) // 窄窗退化（<1200 走 overlay）
     assert.equal(chatPxForDetent(520, 2000), 520) // 上限墙不误伤小档
   })
@@ -35,12 +37,12 @@ describe("workbench absolute px detents (spec 2026-10-26, rev: default 640)", ()
     assert.equal(snapDetent(430, 1394), 520)
     assert.equal(snapDetent(500, 1394), 520)
     assert.equal(snapDetent(600, 1394), 640)
-    assert.equal(snapDetent(700, 1394), 640) // 640/760 等距，取先出现档
+    assert.equal(snapDetent(700, 1394), 760) // 760 档被钳到 754，距离 700 比 640 近
     assert.equal(snapDetent(720, 1394), 760)
     assert.equal(snapDetent(200, 1394), 520)
     assert.equal(snapDetent(1000, 1394), 760)
-    // 护栏生效时按钳制后的像素比较：1154 下 640/760 档实际都 = 634
-    assert.equal(snapDetent(600, 1154), 640)
+    // 护栏生效时按钳制后的像素比较：1154 下三档实际都 = 514，取先出现档
+    assert.equal(snapDetent(600, 1154), 520)
   })
 
   test("ratioPercentFromDrag：px → 可用宽百分比（一位小数，仅显示）", () => {
