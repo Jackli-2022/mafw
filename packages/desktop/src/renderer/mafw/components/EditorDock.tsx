@@ -28,9 +28,10 @@ import { JsonPreview } from "./JsonPreview"
 import { OfficePreview } from "./OfficePreview"
 import { langForFile } from "../editor/cm-lang"
 import { mountEditor, type MountedEditor } from "../editor/cm-setup"
-import { annotationApplies, buildAnnotationPrompt, lineRangeOf } from "../editor-annotation"
+import { annotationApplies, buildAnnotationPrompt, buildAnnotationPromptAnchored, lineRangeOf } from "../editor-annotation"
 import { diffEntryFor } from "../editor-diff"
-import { LineCommentEditorV2 } from "@mafw/ui/v2/line-comment-v2"
+import { AnnotationPopover } from "./AnnotationPopover"
+import type { AnnotationAnchor } from "../../../shared/annotation-types"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 
 interface SelectionState {
@@ -48,7 +49,7 @@ export function EditorDock(props: {
   diffs?: FileDiffEntry[]
   onSendAnnotation?: (text: string) => void
   /** 加入批注草稿（v2：草稿优先，发送时随消息打包） */
-  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string }) => void
+  onAddAnnotation?: (a: { rel: string; startLine: number; endLine: number; code: string; comment: string; anchor?: AnnotationAnchor; imageDataUrl?: string }) => void
   onSendComment?: (sid: string, text: string) => void
 }) {
   const [model, setModel] = createSignal<EditorModel>(createEditorModel())
@@ -56,7 +57,6 @@ export function EditorDock(props: {
   const [saving, setSaving] = createSignal(false)
   const [sel, setSel] = createSignal<SelectionState | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
-  const [annotDraft, setAnnotDraft] = createSignal("")
   const [mode, setMode] = createSignal<"edit" | "diff">("edit")
   /** 常驻 IO 错误（读/存/外部打开失败）——统一 DockBanner，不再只用 toast。 */
   const [ioError, setIoError] = createSignal<string | null>(null)
@@ -172,7 +172,6 @@ export function EditorDock(props: {
   function clearSelection() {
     setSel(null)
     setAnnotOpen(false)
-    setAnnotDraft("")
   }
 
   async function unwatchAll() {
@@ -485,11 +484,30 @@ export function EditorDock(props: {
     return lineRangeOf(editor?.getDoc() ?? "", s.from, s.to)
   }
 
-  function submitAnnotation(comment: string, action: "draft" | "send" = "draft") {
-    const s = sel()
+  /** 统一批注出口：anchor=undefined 走 CodeMirror 行号锚；有 anchor 走预览锚点。 */
+  function submitAnnotationAnchored(anchor: AnnotationAnchor | undefined, comment: string, action: "draft" | "send") {
     const f = activeFile()
+    if (!f || !comment.trim()) return
+    if (anchor) {
+      if (action === "send") {
+        if (!props.onSendAnnotation) return
+        props.onSendAnnotation(buildAnnotationPromptAnchored(f.rel, anchor, comment.trim()))
+      } else {
+        props.onAddAnnotation?.({
+          rel: f.rel,
+          startLine: 1,
+          endLine: 1,
+          code: "",
+          comment: comment.trim(),
+          anchor,
+        })
+      }
+      setAnnotOpen(false)
+      return
+    }
+    const s = sel()
     const range = selRange()
-    if (!s || !f || !range || !comment.trim()) return
+    if (!s || !range) return
     if (!annotationApplies(f.rel, s.rel)) { clearSelection(); return }
     if (action === "send") {
       if (!props.onSendAnnotation) return
@@ -609,7 +627,16 @@ export function EditorDock(props: {
           <DockBanner kind="info" text={noteFor(activeFile()!.rel)!} />
         </Show>
 
-        <div class="mafw-editor-body">
+        <div
+          class="mafw-editor-body"
+          onKeyDown={(e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.code === "KeyM" && mode() === "edit" && sel() && !annotOpen()) {
+              e.preventDefault()
+              e.stopPropagation()
+              setAnnotOpen(true)
+            }
+          }}
+        >
           <div
             class="mafw-editor-host"
             ref={(el) => { host = el }}
@@ -689,27 +716,21 @@ export function EditorDock(props: {
             />
           </Show>
 
-          {/* 选区批注入口（人标出 → agent 改）：浮钮 → 浮层（仅编辑模式） */}
+          {/* 选区批注入口（人标出 → agent 改）：浮钮为发现性入口，Ctrl+M 直达 */}
           <Show when={mode() === "edit" && sel() && !annotOpen() && props.onSendAnnotation}>
             <div class="mafw-editor-annot-anchor" style={{ left: `${Math.max(8, sel()!.left)}px`, top: `${sel()!.top + 4}px` }}>
-              <ButtonV2 variant="outline" size="small" onClick={() => { setAnnotDraft(""); setAnnotOpen(true) }}>批注</ButtonV2>
+              <ButtonV2 variant="outline" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setAnnotOpen(true)}>批注</ButtonV2>
             </div>
           </Show>
           <Show when={mode() === "edit" && annotOpen() && sel()}>
-            <div class="mafw-editor-annot-pop" style={{ left: `${Math.max(8, Math.min(sel()!.left, 420))}px`, top: `${sel()!.top + 4}px` }}>
-              <LineCommentEditorV2
-                value={annotDraft()}
-                onInput={setAnnotDraft}
-                onCancel={() => setAnnotOpen(false)}
-                onSubmit={(value: string) => submitAnnotation(value, "draft")}
-                selection={<span>{sel()!.rel}:L{selRange()?.startLine}-{selRange()?.endLine}</span>}
-                placeholder="对这一段的批注…"
-                submitLabel="加入批注"
-                secondaryLabel={props.onSendAnnotation ? "立即发送" : undefined}
-                onSecondary={props.onSendAnnotation ? (value: string) => submitAnnotation(value, "send") : undefined}
-                cancelLabel="取消"
-              />
-            </div>
+            <AnnotationPopover
+              left={Math.max(8, Math.min(sel()!.left, 420))}
+              top={sel()!.top + 4}
+              meta={`${sel()!.rel}:L${selRange()?.startLine}-${selRange()?.endLine}`}
+              placeholder="说明要改什么…"
+              onSubmit={(comment, action) => submitAnnotationAnchored(undefined, comment, action)}
+              onCancel={() => setAnnotOpen(false)}
+            />
           </Show>
 
           <Show when={mode() === "diff" && activeFile() && props.sessionID}>

@@ -27,3 +27,15 @@ test("PendingAnnotations: anchor 标签 + kind 标记", () => {
   assert.match(src, /data-kind/)
   assert.match(src, /mafw-pending-annotation-kind/)
 })
+
+test("源码面交互：Ctrl+M 直达 + AnnotationPopover + 双按钮退役", () => {
+  const src = read("src/renderer/mafw/components/EditorDock.tsx")
+  assert.match(src, /AnnotationPopover/)
+  assert.match(src, /KeyM/)
+  assert.ok(!src.includes("LineCommentEditorV2"))
+  assert.ok(!src.includes('submitLabel="加入批注"'))
+  const ea = read("src/renderer/mafw/editor-annotation.ts")
+  assert.match(ea, /anchorBlockLines/)
+  assert.match(ea, /buildAnnotationPromptAnchored/)
+  assert.match(ea, /item\.anchor/)
+})

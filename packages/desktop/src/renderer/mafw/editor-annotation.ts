@@ -21,7 +21,8 @@ export function annotationApplies(activeRel: string | null, selRel: string | nul
   return !!activeRel && !!selRel && activeRel === selRel
 }
 
-import type { Annotation } from "../../shared/annotation-types"
+import type { Annotation, AnnotationAnchor } from "../../shared/annotation-types"
+import { anchorBlockLines } from "./annotation-anchor"
 
 export function buildAnnotationPrompt(
   rel: string,
@@ -44,7 +45,15 @@ export function buildAnnotationPrompt(
   ].join("\n")
 }
 
+/** 预览锚点批注直发：位置描述走 anchorBlockLines（行号锚仍走 buildAnnotationPrompt）。 */
+export function buildAnnotationPromptAnchored(rel: string, anchor: AnnotationAnchor, comment: string): string {
+  return [...anchorBlockLines(rel, anchor), "", `我的批注：${comment}`, "", "请结合批注查看这段内容并回应。"].join("\n")
+}
+
 function annotationBlock(item: Annotation, index: number): string {
+  if (item.anchor) {
+    return [`【批注 ${index + 1}】`, ...anchorBlockLines(item.rel, item.anchor), "", `我的批注：${item.comment}`].join("\n")
+  }
   const range = item.startLine === item.endLine ? `第 ${item.startLine} 行` : `第 ${item.startLine}-${item.endLine} 行`
   return [
     `【批注 ${index + 1}】`,
