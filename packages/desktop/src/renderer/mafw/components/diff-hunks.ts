@@ -61,6 +61,46 @@ export function pickSelectedFile(files: string[], current: string | null): strin
   return files[0]
 }
 
+/**
+ * W0-3：hunk 内第 idx 行的 new 侧行号（行级评论锚点）。
+ * "+" / " " 行返回 new 侧行号；"-" 行（删除行没有 new 侧位置）与越界返回 null。
+ */
+export function lineNewNumber(h: DiffHunk, idx: number): number | null {
+  if (idx < 0 || idx >= h.lines.length) return null
+  let n = h.newStart
+  for (let i = 0; i < h.lines.length; i++) {
+    const l = h.lines[i]
+    if (l.startsWith('-')) continue
+    if (i === idx) return n
+    n++
+  }
+  return null
+}
+
+/**
+ * W0-3：行级评论回喂的 prompt 组装——比 hunk 级更精确，只引用被点击的一行
+ * （去 +/- 前缀），让 agent 直接定位到具体行。
+ */
+export function buildLineCommentPrompt(
+  file: string,
+  lineNo: number,
+  lineText: string,
+  comment: string,
+): string {
+  const code = lineText.replace(/^[+\- ]/, "")
+  return [
+    `文件 \`${file}\` 第 ${lineNo} 行需要修正：`,
+    "",
+    "```",
+    code,
+    "```",
+    "",
+    `我的意见：${comment}`,
+    "",
+    "请按上述意见修改该行。",
+  ].join("\n")
+}
+
 /** 行级评论回喂的 prompt 组装（opencode onLineComment 模式的纯函数核）。
  *  hunk 行数截断 40 行防巨型 prompt；评论原样嵌入。 */
 export function buildDiffCommentPrompt(

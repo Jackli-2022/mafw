@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, lineNewNumber, buildLineCommentPrompt } from "./diff-hunks"
 
 const PATCH = [
   'diff --git a/x.txt b/x.txt',
@@ -70,5 +70,36 @@ describe('buildDiffCommentPrompt', () => {
     expect(out).toContain('line39')
     expect(out).not.toContain('line40')
     expect(out).toContain('截断')
+  })
+})
+
+describe('lineNewNumber（W0-3 行级评论锚点）', () => {
+  const { hunks } = splitHunks(PATCH)
+  test('context/add 行返回 new 侧行号，del 行返回 null', () => {
+    // hunk0: @@ -1,3 +1,4 @@ / lines: ' one'(1) '-two'(null) '+TWO'(2) '+two-bis'(3) ' three'(4)
+    expect(lineNewNumber(hunks[0], 0)).toBe(1)
+    expect(lineNewNumber(hunks[0], 1)).toBeNull()
+    expect(lineNewNumber(hunks[0], 2)).toBe(2)
+    expect(lineNewNumber(hunks[0], 3)).toBe(3)
+    expect(lineNewNumber(hunks[0], 4)).toBe(4)
+  })
+  test('第二个 hunk 从自己的 newStart 起算', () => {
+    // hunk1: @@ -10 +11 @@ / lines: ' four'(11) '+four-bis'(12)
+    expect(lineNewNumber(hunks[1], 0)).toBe(11)
+    expect(lineNewNumber(hunks[1], 1)).toBe(12)
+  })
+  test('越界下标返回 null', () => {
+    expect(lineNewNumber(hunks[0], 99)).toBeNull()
+  })
+})
+
+describe('buildLineCommentPrompt（W0-3）', () => {
+  test('包含文件、行号、行内容（去 +/- 前缀）与评论', () => {
+    const out = buildLineCommentPrompt('src/a.ts', 42, '+const x = 1', '这个命名不好')
+    expect(out).toContain('src/a.ts')
+    expect(out).toContain('42')
+    expect(out).toContain('const x = 1')
+    expect(out).not.toContain('+const')
+    expect(out).toContain('这个命名不好')
   })
 })

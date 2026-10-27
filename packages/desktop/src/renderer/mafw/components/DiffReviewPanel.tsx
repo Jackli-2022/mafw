@@ -4,7 +4,7 @@
 import { Show, For, createSignal, createMemo, createEffect } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
-import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, type DiffHunk } from "./diff-hunks"
+import { splitHunks, hunkStats, pickSelectedFile, buildDiffCommentPrompt, lineNewNumber, buildLineCommentPrompt, type DiffHunk } from "./diff-hunks"
 import { isFileRevertible } from "./checkpoint-revert"
 import { shouldFetchSessionDiff } from "./turn-diffs"
 import type { FileDiffInfo } from "@mafw/sdk"
@@ -44,6 +44,8 @@ export function DiffReviewPanel(props: {
   const [selectedFileRaw, setSelectedFile] = createSignal<string | null>(props.initialFile ?? null)
   // 行级评论：commentingOn = 正在评论的 hunk key
   const [commentingOn, setCommentingOn] = createSignal<string | null>(null)
+  // W0-3：行级评论——正在评论的具体行（hunk key + 行下标）
+  const [commentingLine, setCommentingLine] = createSignal<{ key: string; idx: number } | null>(null)
   const [commentDraft, setCommentDraft] = createSignal("")
 
   const files = createMemo<FileDiffEntry[]>(() => {
@@ -128,6 +130,41 @@ export function DiffReviewPanel(props: {
     props.onAddAnnotation({ rel: file, startLine: h.newStart, endLine, code, comment: text })
     setCommentDraft("")
     setCommentingOn(null)
+  }
+
+  // W0-3：行级评论——点击某行（"+" / " "）在该行下方就地开评论框
+  const openLineComment = (e: MouseEvent, key: string, idx: number) => {
+    // 阻止 <label> 默认行为（点击行不应切换 hunk 勾选框）
+    e.preventDefault()
+    e.stopPropagation()
+    const cur = commentingLine()
+    if (cur && cur.key === key && cur.idx === idx) {
+      setCommentingLine(null)
+      setCommentDraft("")
+      return
+    }
+    setCommentingOn(null)
+    setCommentingLine({ key, idx })
+    setCommentDraft("")
+  }
+
+  const submitLineComment = (file: string, h: DiffHunk, idx: number) => {
+    const text = commentDraft().trim()
+    const n = lineNewNumber(h, idx)
+    if (!text || n === null || !props.onSendComment) return
+    props.onSendComment(props.sessionID, buildLineCommentPrompt(file, n, h.lines[idx], text))
+    setCommentDraft("")
+    setCommentingLine(null)
+  }
+
+  const submitLineDraftComment = (file: string, h: DiffHunk, idx: number) => {
+    const text = commentDraft().trim()
+    const n = lineNewNumber(h, idx)
+    if (!text || n === null || !props.onAddAnnotation) return
+    const code = h.lines[idx].replace(/^[+\- ]/, "")
+    props.onAddAnnotation({ rel: file, startLine: n, endLine: n, code, comment: text })
+    setCommentDraft("")
+    setCommentingLine(null)
   }
 
   return (
@@ -218,20 +255,60 @@ export function DiffReviewPanel(props: {
                                   variant="ghost"
                                   size="small"
                                   class="mafw-diff-comment-btn"
-                                  onClick={(e: MouseEvent) => { e.preventDefault(); setCommentingOn(commentingOn() === key ? null : key); setCommentDraft("") }}
+                                  onClick={(e: MouseEvent) => { e.preventDefault(); setCommentingLine(null); setCommentingOn(commentingOn() === key ? null : key); setCommentDraft("") }}
                                 >评论</ButtonV2>
                               </Show>
                               <pre class="mafw-diff-hunk-body">
                                 <For each={h.lines}>
-                                  {(line) => (
-                                    <span
-                                      classList={{
-                                        "mafw-diff-line": true,
-                                        add: line.startsWith("+"),
-                                        del: line.startsWith("-"),
-                                      }}
-                                    >{line}</span>
-                                  )}
+                                  {(line, li) => {
+                                    const lineNo = () => lineNewNumber(h, li())
+                                    const commentable = () => lineNo() !== null && (!!props.onSendComment || !!props.onAddAnnotation)
+                                    return (
+                                      <>
+                                      <span
+                                        classList={{
+                                          "mafw-diff-line": true,
+                                          add: line.startsWith("+"),
+                                          del: line.startsWith("-"),
+                                          commentable: commentable(),
+                                        }}
+                                        title={commentable() ? "点击评论此行" : undefined}
+                                        onClick={commentable() ? (e: MouseEvent) => openLineComment(e, key, li()) : undefined}
+                                      >{line}</span>
+                                      <Show when={commentingLine()?.key === key && commentingLine()?.idx === li()}>
+                                        <div class="mafw-diff-comment mafw-diff-comment-line" onClick={(e) => e.preventDefault()}>
+                                          <div class="mafw-diff-comment-line-meta">第 {lineNo()} 行</div>
+                                          <textarea
+                                            class="mafw-diff-comment-input"
+                                            rows={3}
+                                            placeholder="对这一行有什么意见？（回喂给 agent 修正）"
+                                            value={commentDraft()}
+                                            onInput={(e) => setCommentDraft(e.currentTarget.value)}
+                                          />
+                                          <div class="mafw-diff-comment-actions">
+                                            <ButtonV2 variant="ghost" size="small" onClick={() => { setCommentingLine(null); setCommentDraft("") }}>取消</ButtonV2>
+                                            <Show when={props.onAddAnnotation}>
+                                              <ButtonV2
+                                                variant="outline"
+                                                size="small"
+                                                disabled={!commentDraft().trim()}
+                                                onClick={() => submitLineDraftComment(file, h, li())}
+                                              >加入批注</ButtonV2>
+                                            </Show>
+                                            <Show when={props.onSendComment}>
+                                              <ButtonV2
+                                                variant="contrast"
+                                                size="small"
+                                                disabled={!commentDraft().trim()}
+                                                onClick={() => submitLineComment(file, h, li())}
+                                              >发送给 agent</ButtonV2>
+                                            </Show>
+                                          </div>
+                                        </div>
+                                      </Show>
+                                      </>
+                                    )
+                                  }}
                                 </For>
                               </pre>
                               <Show when={commentingOn() === key}>

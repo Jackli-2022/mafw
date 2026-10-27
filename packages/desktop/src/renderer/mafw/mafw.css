@@ -5201,6 +5201,11 @@ html[data-theme="light"] body {
 .mafw-diff-comment-input { width: 100%; resize: vertical; min-height: 54px; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-base); color: var(--text-1); font-size: 12px; font-family: var(--font-ui); box-sizing: border-box; }
 .mafw-diff-comment-input:focus { outline: none; border-color: var(--accent-border); }
 .mafw-diff-comment-actions { display: flex; justify-content: flex-end; gap: 6px; }
+/* W0-3 行级评论 */
+.mafw-diff-line.commentable { cursor: pointer; }
+.mafw-diff-line.commentable:hover { background: var(--hover); }
+.mafw-diff-comment-line { margin: 2px 0 6px; }
+.mafw-diff-comment-line-meta { font-size: 11px; color: var(--text-4); font-family: var(--font-data); }
 .mafw-diff-panel-empty { font-size: 12px; color: var(--text-4); margin: 24px 0; }
 .mafw-diff-file { margin-bottom: 18px; }
 .mafw-diff-file-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
