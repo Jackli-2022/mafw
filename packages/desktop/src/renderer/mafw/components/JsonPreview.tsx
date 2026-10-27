@@ -13,7 +13,6 @@ function JsonValue(props: {
   value: unknown
   depth: number
   path: (string | number)[]
-  annotMode?: boolean
   onAnnotate?: AnnotateFn
 }) {
   const [open, setOpen] = createSignal(props.depth < 2)
@@ -53,14 +52,15 @@ function JsonValue(props: {
                   <div
                     class="mafw-json-entry"
                     onClick={(e: MouseEvent) => {
-                      if (!props.annotMode || !props.onAnnotate) return
+                      if (!props.onAnnotate) return
+                      e.stopPropagation()
                       const el = e.currentTarget as HTMLElement
                       props.onAnnotate(childPath(), jsonSummary(child), el.getBoundingClientRect())
                     }}
                   >
                     <span class="mafw-json-key">{key}</span>
                     <span class="mafw-json-colon">:</span>
-                    <JsonValue value={child} depth={props.depth + 1} path={childPath()} annotMode={props.annotMode} onAnnotate={props.onAnnotate} />
+                    <JsonValue value={child} depth={props.depth + 1} path={childPath()} onAnnotate={props.onAnnotate} />
                     <Show when={props.onAnnotate}>
                       <ButtonV2
                         class="mafw-json-annot"
@@ -88,12 +88,12 @@ function JsonValue(props: {
   )
 }
 
-export function JsonPreview(props: { text: string; annotMode?: boolean; onAnnotate?: AnnotateFn }): JSX.Element {
+export function JsonPreview(props: { text: string; onAnnotate?: AnnotateFn }): JSX.Element {
   const parsed = createMemo(() => parseJsonSafe(props.text))
   return (
     <div class="mafw-json-preview" data-annotatable="json">
       <Show when={parsed().ok} fallback={<div class="mafw-json-error">JSON 解析失败：{(parsed() as { ok: false; error: string }).error}</div>}>
-        <JsonValue value={(parsed() as { ok: true; value: unknown }).value} depth={0} path={[]} annotMode={props.annotMode} onAnnotate={props.onAnnotate} />
+        <JsonValue value={(parsed() as { ok: true; value: unknown }).value} depth={0} path={[]} onAnnotate={props.onAnnotate} />
       </Show>
     </div>
   )

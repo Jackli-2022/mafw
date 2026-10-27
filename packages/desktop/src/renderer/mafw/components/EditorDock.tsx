@@ -64,8 +64,7 @@ export function EditorDock(props: {
   const [saving, setSaving] = createSignal(false)
   const [sel, setSel] = createSignal<SelectionState | null>(null)
   const [annotOpen, setAnnotOpen] = createSignal(false)
-  /** 批注模式（rev2）：选中/落点即打开底部批注抽屉，不再需要先点浮钮。 */
-  const [annotMode, setAnnotMode] = createSignal(false)
+  /** 选中即批注（rev4）：无模式开关，文本选区/节点/单元格/落框直接打开输入。 */
   /** 预览划选批注（md/docx）：锚点 + 浮层坐标（相对 editor-body）。 */
   const [quoteSel, setQuoteSel] = createSignal<{
     anchor: AnnotationAnchor
@@ -566,20 +565,18 @@ export function EditorDock(props: {
       rects,
       box: { left: minX, top: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) },
     })
-    // 批注模式：选中即输入（rev2）——不再需要先点浮钮。
-    if (annotMode()) {
-      setQuoteOpen(true)
-      // 抽屉占据底部空间后，把锚点滚回视野。
-      const anchorEl = (container as HTMLElement)
-      requestAnimationFrame(() => anchorEl.scrollIntoView({ block: "nearest" }))
-    }
+    // 选中即批注（rev4）：无需模式开关，选区完成即打开输入。
+    setQuoteOpen(true)
+    // 输入框占据空间后，把锚点滚回视野。
+    const anchorEl = (container as HTMLElement)
+    requestAnimationFrame(() => anchorEl.scrollIntoView({ block: "nearest" }))
     return true
   }
 
   function handlePreviewSelection(_e: MouseEvent) {
     const gotQuote = captureQuoteFromSelection()
-    // 批注模式：源码选区 mouseup 即打开抽屉（rev2）。
-    if (!gotQuote && !previewing() && annotMode() && sel() && !annotOpen() && props.onSendAnnotation) {
+    // 选中即批注（rev4）：源码选区 mouseup 直接打开输入。
+    if (!gotQuote && !previewing() && !annotOpen() && !quoteOpen() && sel() && props.onSendAnnotation) {
       setAnnotOpen(true)
     }
   }
@@ -587,12 +584,6 @@ export function EditorDock(props: {
   // I1：预览面焦点不在 editor-body 内 —— 键盘路径挂 document；选区变化（含 Shift+方向键）也走同一捕获。
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && annotMode() && !annotOpen() && !quoteOpen() && !anchorOpen()) {
-        e.preventDefault()
-        e.stopPropagation()
-        setAnnotMode(false)
-        return
-      }
       if (!isAnnotationHotkey(e, IS_MAC) || mode() !== "edit") return
       if (sel() && !annotOpen()) {
         e.preventDefault()
@@ -614,9 +605,17 @@ export function EditorDock(props: {
       timer = window.setTimeout(() => captureQuoteFromSelection(), 150)
     }
     document.addEventListener("keydown", onKey, true)
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (mode() !== "edit") return
+      if (!(e.key === "Shift" || e.key.startsWith("Arrow"))) return
+      if (annotOpen() || quoteOpen() || anchorOpen()) return
+      if (!captureQuoteFromSelection() && !previewing() && sel() && props.onSendAnnotation) setAnnotOpen(true)
+    }
+    document.addEventListener("keyup", onKeyUp)
     document.addEventListener("selectionchange", onSelectionChange)
     onCleanup(() => {
       document.removeEventListener("keydown", onKey, true)
+      document.removeEventListener("keyup", onKeyUp)
       document.removeEventListener("selectionchange", onSelectionChange)
       window.clearTimeout(timer)
     })
@@ -843,17 +842,6 @@ export function EditorDock(props: {
             <Icon name="square-arrow-top-right" size="small" />
           </ButtonV2>
         </TooltipV2>
-        <Show when={activeFile() && mode() === "edit" && !isReadOnlyPreview(activeFile()!.kind)}>
-          <TooltipV2 value={annotMode() ? "退出批注模式（Esc）" : "批注模式：选中即批注"} openDelay={300}>
-            <ButtonV2
-              variant={annotMode() ? "contrast" : "ghost"}
-              size="small"
-              aria-label="批注模式"
-              aria-pressed={annotMode()}
-              onClick={() => { setAnnotMode(v => !v); clearSelection() }}
-            >批注</ButtonV2>
-          </TooltipV2>
-        </Show>
         <Show when={activeFile()?.kind === "svg" || activeFile()?.kind === "table" || activeFile()?.kind === "markdown" || activeFile()?.kind === "json"}>
           <TooltipV2 value={previewing() ? "查看源码" : activeFile()?.kind === "table" ? "表格视图" : activeFile()?.kind === "markdown" ? "渲染 Markdown" : activeFile()?.kind === "json" ? "JSON 树视图" : "预览 SVG"} openDelay={300}>
             <ButtonV2
@@ -1042,7 +1030,6 @@ export function EditorDock(props: {
             <div class="mafw-json-preview-wrap">
               <JsonPreview
                 text={activeSourceText()}
-                annotMode={annotMode()}
                 onAnnotate={(path, summary, rect) => {
                   const host = bodyEl?.getBoundingClientRect()
                   if (!host) return
@@ -1142,19 +1129,7 @@ export function EditorDock(props: {
             </For>
           </div>
 
-          {/* 普通模式：浮钮（发现性入口）；批注模式隐藏——选中即输入 */}
-          <Show when={mode() === "edit" && !annotMode() && sel() && !annotOpen() && props.onSendAnnotation}>
-            <div class="mafw-editor-annot-anchor" style={{ left: `${Math.max(8, sel()!.left)}px`, top: `${sel()!.top + 4}px` }}>
-              <ButtonV2 variant="contrast" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setAnnotOpen(true)}>批注</ButtonV2>
-            </div>
-          </Show>
-          <Show when={mode() === "edit" && !annotMode() && quoteSel() && !quoteOpen() && props.onSendAnnotation}>
-            <div class="mafw-editor-annot-anchor" style={{ left: `${quoteSel()!.left}px`, top: `${quoteSel()!.top}px` }}>
-              <ButtonV2 variant="contrast" size="small" onMouseDown={(e: MouseEvent) => e.preventDefault()} onClick={() => setQuoteOpen(true)}>批注</ButtonV2>
-            </div>
-          </Show>
-
-          {/* 底部批注抽屉（rev2）：不遮挡被批注内容 */}
+          {/* 选中即批注（rev4）：无浮钮、无模式；选中/落点直接出输入框 */}
           <Show when={mode() === "edit" && annotOpen() && sel()}>
             <AnnotationSheet
               anchor={{ left: Math.max(8, sel()!.left), top: sel()!.top, width: 8, height: 18 }}
