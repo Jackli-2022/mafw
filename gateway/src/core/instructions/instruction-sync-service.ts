@@ -19,6 +19,8 @@ export interface InstructionSyncDeps {
   syncTimeoutMs?: number;
   disabledCooldownMs?: number;
   maxBlockBytes?: number;
+  /** Session-cache cap (default 1000). */
+  maxSessions?: number;
 }
 
 export interface InstructionSyncResult {
@@ -53,6 +55,8 @@ const ALL_KEYS = [
 ] as const;
 
 const INSPECT_TIMEOUT_MS = 150;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_MAX_SESSIONS = 1000;
 
 function asString(value: unknown): string | null {
   if (typeof value === 'string') return value;
@@ -81,11 +85,13 @@ export class InstructionSyncService {
   private readonly syncTimeoutMs: number;
   private readonly disabledCooldownMs: number;
   private readonly maxBlockBytes: number;
+  private readonly maxSessions: number;
   private readonly log: { info(msg: string): void; warn(msg: string): void };
   private readonly now: () => number;
 
   /** sessionID -> key -> exact value last known to be stored. */
   private readonly cache = new Map<string, Map<string, string>>();
+  private readonly cacheAt = new Map<string, number>();
   private readonly seeded = new Set<string>();
   private readonly singleFlight = new Map<string, Promise<InstructionSyncResult>>();
   private breakerUntil = 0;
@@ -96,6 +102,7 @@ export class InstructionSyncService {
     this.syncTimeoutMs = deps.syncTimeoutMs ?? 250;
     this.disabledCooldownMs = deps.disabledCooldownMs ?? 60_000;
     this.maxBlockBytes = deps.maxBlockBytes ?? 16 * 1024;
+    this.maxSessions = deps.maxSessions ?? DEFAULT_MAX_SESSIONS;
     this.log = deps.log ?? { info: () => {}, warn: () => {} };
     this.now = deps.now ?? (() => Date.now());
   }
@@ -117,6 +124,7 @@ export class InstructionSyncService {
       return { managed: false, error: this.breakerReason ?? 'breaker' };
     }
 
+    this.prune(sessionID);
     const existing = this.singleFlight.get(sessionID);
     if (existing) return existing;
 
@@ -175,6 +183,7 @@ export class InstructionSyncService {
 
   forget(sessionID: string): void {
     this.cache.delete(sessionID);
+    this.cacheAt.delete(sessionID);
     this.seeded.delete(sessionID);
     this.singleFlight.delete(sessionID);
   }
@@ -184,6 +193,7 @@ export class InstructionSyncService {
     this.breakerReason = undefined;
     this.lastError = undefined;
     this.cache.clear();
+    this.cacheAt.clear();
     this.seeded.clear();
   }
 
@@ -240,7 +250,9 @@ export class InstructionSyncService {
 
       if (controller.signal.aborted) return { managed: false, error: 'timeout' };
       this.cache.set(sessionID, store);
+      this.cacheAt.set(sessionID, this.now());
       this.seeded.add(sessionID);
+      this.enforceCacheCap(sessionID);
       this.breakerUntil = 0;
       this.breakerReason = undefined;
       this.lastError = undefined;
@@ -258,6 +270,26 @@ export class InstructionSyncService {
       return { managed: false, error: message };
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  private prune(sessionID: string): void {
+    const at = this.cacheAt.get(sessionID);
+    if (at !== undefined && this.now() - at > CACHE_TTL_MS) {
+      this.cache.delete(sessionID);
+      this.cacheAt.delete(sessionID);
+      this.seeded.delete(sessionID);
+    }
+  }
+
+  private enforceCacheCap(keep: string): void {
+    while (this.cache.size > this.maxSessions) {
+      const oldest = this.cache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      if (oldest === keep && this.cache.size === 1) break;
+      this.cache.delete(oldest);
+      this.cacheAt.delete(oldest);
+      this.seeded.delete(oldest);
     }
   }
 

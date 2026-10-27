@@ -199,6 +199,27 @@ describe('InstructionSyncService.sync', () => {
     await svc.sync('s1');
     expect(String(store.get(INSTRUCTION_KEYS.memoryGuide)).length).toBeLessThanOrEqual(10);
   });
+
+  it('expires a session cache after 24h and re-lists', async () => {
+    const { rt, instructions } = makeRt();
+    const { svc, advance } = makeSvc(rt);
+    await svc.sync('s1');
+    const before = (instructions.list as jest.Mock).mock.calls.length;
+    advance(24 * 60 * 60 * 1000 + 1);
+    await svc.sync('s1');
+    expect((instructions.list as jest.Mock).mock.calls.length).toBe(before + 1);
+  });
+
+  it('caps the session cache and evicts the oldest', async () => {
+    const { rt, instructions } = makeRt();
+    const { svc } = makeSvc(rt, { maxSessions: 2 });
+    await svc.sync('s1');
+    await svc.sync('s2');
+    await svc.sync('s3');
+    const before = (instructions.list as jest.Mock).mock.calls.length;
+    await svc.sync('s1');
+    expect((instructions.list as jest.Mock).mock.calls.length).toBe(before + 1);
+  });
 });
 
 describe('InstructionSyncService.inspect', () => {
