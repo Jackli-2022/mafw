@@ -6,12 +6,16 @@ import { Icon } from "@mafw/ui/icon"
 import { DockEmpty, DockPanelHeader } from "./dock-panel"
 import { DiffReviewPanel, type FileDiffEntry } from "./DiffReviewPanel"
 import { buildChangeTree, nextPulseState, changeStatusLetter, type ChangeTreeNode } from "./change-tree"
+import { menuController } from "../context-menu/controller"
+import { buildReviewRowMenu } from "../context-menu/builders/panel"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 
 function ChangeNode(props: {
   node: ChangeTreeNode
   depth: number
   collapsed: Set<string>
   pulse: Set<string>
+  sessionDirectory: string | null
   onToggle: (path: string) => void
   onOpen: (entry: FileDiffEntry) => void
 }) {
@@ -19,6 +23,28 @@ function ChangeNode(props: {
   const open = () => !props.collapsed.has(props.node.path)
   const indent = () => ({ "padding-left": `${8 + props.depth * 12}px` })
   const statusLetter = () => changeStatusLetter(props.node.status)
+
+  const requestRowMenu = (entry: FileDiffEntry | undefined, event: MouseEvent) => {
+    const rel = entry?.file
+    if (!rel) return
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const root = (props.sessionDirectory ?? "").replace(/[\\/]+$/, "")
+    const abs = root ? `${root}/${rel.replace(/^[\\/]+/, "")}` : rel
+    const name = rel.split(/[\\/]/).pop() ?? rel
+    menuController.request(
+      buildReviewRowMenu,
+      { rel },
+      (id) => {
+        if (id === "review.open" && entry) props.onOpen(entry)
+        else if (id === "review.reveal") void window.api.revealPath(abs)
+        else if (id === "review.copy.rel") void navigator.clipboard.writeText(rel)
+        else if (id === "review.copy.abs") void navigator.clipboard.writeText(abs)
+        else if (id === "review.copy.name") void navigator.clipboard.writeText(name)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
 
   return (
     <Show
@@ -32,6 +58,7 @@ function ChangeNode(props: {
           tabIndex={0}
           aria-label={props.node.path}
           onClick={() => { if (props.node.file) props.onOpen(props.node.file) }}
+          onContextMenu={(event) => requestRowMenu(props.node.file, event)}
           onKeyDown={(e: KeyboardEvent) => {
             if ((e.key === "Enter" || e.key === " ") && props.node.file) {
               e.preventDefault()
@@ -77,6 +104,7 @@ function ChangeNode(props: {
               depth={props.depth + 1}
               collapsed={props.collapsed}
               pulse={props.pulse}
+              sessionDirectory={props.sessionDirectory}
               onToggle={props.onToggle}
               onOpen={props.onOpen}
             />
@@ -89,6 +117,7 @@ function ChangeNode(props: {
 
 export function ChangesDock(props: {
   sessionID: string | null
+  sessionDirectory?: string | null
   diffs: FileDiffEntry[] | undefined
   /** SSE session.diff 实时快照（未收到首帧前为 undefined；不要默认 []） */
   liveDiffs?: FileDiffEntry[]
@@ -181,6 +210,7 @@ export function ChangesDock(props: {
                     depth={0}
                     collapsed={collapsed()}
                     pulse={pulse()}
+                    sessionDirectory={props.sessionDirectory ?? null}
                     onToggle={toggleDir}
                     onOpen={openEntry}
                   />

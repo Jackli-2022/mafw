@@ -39,3 +39,11 @@ test("message, terminal and browser surfaces are wired", () => {
   expect(read("TerminalDock.tsx")).toContain("buildTerminalMenu")
   expect(read("BrowserDock.tsx")).toContain("buildBrowserMenu")
 })
+
+test("panels and goal cells are wired", () => {
+  for (const file of ["BackgroundDock.tsx", "SubagentDock.tsx", "ChangesDock.tsx"]) {
+    expect(read(file)).toContain("menuController.request")
+  }
+  expect(read("NotesDock.tsx")).toContain("buildNotesCardMenu")
+  expect(read("GoalTimelineLane.tsx")).toContain("buildGoalCellMenu")
+})

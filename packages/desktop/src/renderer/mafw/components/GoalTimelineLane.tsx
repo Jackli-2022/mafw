@@ -3,6 +3,9 @@ import { createSignal, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { formatDuration, cellSummary, artifactRef, type Lane } from "../goal-timeline"
+import { menuController } from "../context-menu/controller"
+import { buildGoalCellMenu } from "../context-menu/builders/card"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 
 const TONE_CLASS: Record<string, string> = {
   ok: "mafw-cell-ok", running: "mafw-cell-running", fail: "mafw-cell-fail", idle: "mafw-cell-idle",
@@ -27,6 +30,29 @@ export function GoalTimelineLane(props: {
 
   const cellOf = (node: string, loop: number) =>
     props.lanes.find((l) => l.node === node)?.cells.find((c) => c.loop === loop)!
+
+  const requestCellMenu = (lane: Lane, loop: number, latest: any, event: MouseEvent) => {
+    if (!latest) return
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const art = artifactRef(lane.node, props.goalId, loop)
+    menuController.request(
+      buildGoalCellMenu,
+      {
+        goalId: props.goalId,
+        runId: String(latest.runId ?? ""),
+        sessionID: latest.sessionId,
+        artifact: art?.ref,
+        canRetry: latest.status !== "running",
+      },
+      (id) => {
+        if (id === "goalCell.openSession" && latest.sessionId) props.onOpenSession(latest.sessionId)
+        else if (id === "goalCell.retry") props.onRetry(latest.runId, lane.node)
+        else if (id === "goalCell.copyArtifact" && art) void navigator.clipboard.writeText(art.ref)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
 
   const copy = (text: string) => { try { navigator.clipboard.writeText(text) } catch { /* ignore */ } }
 
@@ -53,6 +79,7 @@ export function GoalTimelineLane(props: {
                       <div
                         class={`mafw-lane-cell ${TONE_CLASS[cell.tone]}`}
                         onClick={() => latest && toggle(lane.node, loop)}
+                        onContextMenu={(event) => requestCellMenu(lane, loop, latest, event)}
                       >
                         <div class="mafw-lane-cell-line1">
                           <span class="mafw-lane-cell-icon">{TONE_ICON[cell.tone]}</span>

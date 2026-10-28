@@ -7,6 +7,10 @@ import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { TooltipV2 } from "@mafw/ui/v2/tooltip-v2"
 import { LoaderV2 } from "@mafw/ui/v2/loader-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { ConfirmOverlay } from "./ConfirmOverlay"
+import { menuController } from "../context-menu/controller"
+import { buildNotesCardMenu } from "../context-menu/builders/card"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 
 interface StickyNote {
   id: string
@@ -78,6 +82,22 @@ export function NotesDock() {
 
   const entries = () => data()?.entries ?? []
   const budget = () => data()?.budget
+  const [deleteConfirmId, setDeleteConfirmId] = createSignal<string | null>(null)
+
+  const requestNoteMenu = (note: StickyNote, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    menuController.request(
+      buildNotesCardMenu,
+      { id: note.id },
+      (id) => {
+        if (id === "notes.renew") void act(note, "renew")
+        else if (id === "notes.unsticky") void act(note, "unstick")
+        else if (id === "notes.delete") setDeleteConfirmId(note.id)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
 
   return (
     <div class="mafw-notes-dock">
@@ -107,7 +127,7 @@ export function NotesDock() {
             {(note) => {
               const left = daysLeft(note.sticky_until)
               return (
-                <div class="mafw-notes-card" classList={{ urgent: left !== null && left <= 1 }}>
+                <div class="mafw-notes-card" classList={{ urgent: left !== null && left <= 1 }} onContextMenu={(event) => requestNoteMenu(note, event)}>
                   <div class="mafw-notes-card-text">{note.memory_value}</div>
                   <div class="mafw-notes-card-meta">
                     <span class="mafw-notes-card-type">[{note.type}]</span>
@@ -133,6 +153,20 @@ export function NotesDock() {
           </For>
         </Show>
       </Show>
+      <ConfirmOverlay
+        open={deleteConfirmId() !== null}
+        title="删除便签记忆"
+        message="会删除记忆本体（不可恢复），不只是从便签板下架。"
+        confirmLabel="删除"
+        danger
+        onConfirm={() => {
+          const id = deleteConfirmId()
+          setDeleteConfirmId(null)
+          const note = entries().find((n) => n.id === id)
+          if (note) void act(note, "delete")
+        }}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   )
 }

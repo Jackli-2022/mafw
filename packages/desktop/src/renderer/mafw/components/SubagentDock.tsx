@@ -5,6 +5,9 @@ import { createSignal, createEffect, onCleanup, For, Show } from "solid-js"
 import { subagentRows } from "../subagent-store"
 import { descendantRows } from "../subagent-tree"
 import { formatDuration } from "../goal-timeline"
+import { menuController } from "../context-menu/controller"
+import { buildExecutionRowMenu } from "../context-menu/builders/panel"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import type { SubagentRow, SubagentStatus } from "../subagent-tracker"
 
 const STATUS_LABEL: Record<SubagentStatus, string> = {
@@ -33,6 +36,20 @@ export function SubagentDock(props: {
 
   const open = (id: string) => props.onOpenSession(id)
 
+  const requestRowMenu = (r: SubagentRow, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    menuController.request(
+      buildExecutionRowMenu,
+      { sessionID: r.childID, kind: "subagent", canCancel: false },
+      (id) => {
+        if (id === "panel.openSession") open(r.childID)
+        else if (id === "panel.copyId") void navigator.clipboard.writeText(r.childID)
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   return (
     <div class="mafw-subagent-dock">
       <div class="mafw-subagent-dock-hint">本会话子代理：状态实时刷新，点击行进入子会话查看全过程。</div>
@@ -52,6 +69,7 @@ export function SubagentDock(props: {
               title={r.title}
               style={{ "padding-left": `${8 + Math.max(0, (r.depth ?? 1) - 1) * 12}px` }}
               onClick={() => open(r.childID)}
+              onContextMenu={(event) => requestRowMenu(r, event)}
               onKeyDown={(e: KeyboardEvent) => {
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(r.childID) }
               }}

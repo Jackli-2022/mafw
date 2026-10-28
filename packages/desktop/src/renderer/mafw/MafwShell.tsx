@@ -2272,6 +2272,7 @@ export function MafwShell() {
                   reviewView={
                     <ChangesDock
                       sessionID={currentSessionID() || null}
+                      sessionDirectory={store.session.find((s: any) => s.id === currentSessionID())?.directory ?? null}
                       diffs={mergedSessionDiffs()}
                       liveDiffs={store.session_diff?.[currentSessionID() ?? ""]}
                       onSendComment={(sid, text) => {

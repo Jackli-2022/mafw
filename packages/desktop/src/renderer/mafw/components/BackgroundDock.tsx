@@ -6,6 +6,9 @@
 import { createSignal, createEffect, onCleanup, For, Show } from "solid-js"
 import { ButtonV2 } from "@mafw/ui/v2/button-v2"
 import { showToastV2 } from "@mafw/ui/v2/toast-v2"
+import { menuController } from "../context-menu/controller"
+import { buildExecutionRowMenu } from "../context-menu/builders/panel"
+import { guardFactsFromEvent, shouldUseNativeMenu } from "../context-menu/guard"
 import { backgroundRows, ingestBackgroundEvent } from "../background-store"
 import { rowsForSession, type BackgroundRow, type BgStatus } from "../background-tracker"
 import { taskRows, cancelTask } from "../task-store"
@@ -132,6 +135,25 @@ export function BackgroundDock(props: {
     else showToastV2({ description: "取消任务失败", variant: "error", duration: 3000 } as any)
   }
 
+  const requestTaskMenu = (t: TaskEntity, event: MouseEvent) => {
+    if (shouldUseNativeMenu(guardFactsFromEvent(event))) return
+    event.preventDefault()
+    const cancellable = t.status === "working" || t.status === "input_required"
+    menuController.request(
+      buildExecutionRowMenu,
+      { taskID: t.id, kind: t.kind === "shell" ? "background" : "subagent", canCancel: cancellable },
+      (id) => {
+        if (id === "panel.copyId") void navigator.clipboard.writeText(t.id)
+        else if (id === "panel.cancel") {
+          void cancelTask(t.id).then((done) => {
+            showToastV2({ description: done ? "任务已取消" : "取消任务失败", duration: 2500 } as any)
+          })
+        }
+      },
+      { point: { x: event.clientX, y: event.clientY } },
+    )
+  }
+
   return (
     <div class="mafw-bg-dock">
       <div class="mafw-bg-dock-hint">本会话后台任务：shell 可看输出/终止，子代理点击进入子会话。</div>
@@ -150,6 +172,7 @@ export function BackgroundDock(props: {
                   tabIndex={0}
                   title={t.title}
                   onClick={() => void toggleTask(t)}
+                  onContextMenu={(event) => requestTaskMenu(t, event)}
                   onKeyDown={(e: KeyboardEvent) => {
                     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void toggleTask(t) }
                   }}
