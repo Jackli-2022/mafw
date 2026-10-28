@@ -47,12 +47,13 @@
 
 ## 3. 约束
 
-- Windows 10/11 x64；Electron + Node/TS gateway（CJS）；Node ≥ 22（以仓库现状为准）。
-- 本地档必须覆盖核显/CPU；RTX 4090 Laptop 16G 为高质量档。
+- **参考机器（v1 验收机）**：本机 `RTX 4090 Laptop 16 GB` + `i9-13900H` + `32 GB RAM` + Windows 11 x64；驱动 621.01；Node v24.9.0 / npm 11.6.0。
+- 核显/CPU 仍是**必须支持的兼容档**，但不是 v1 验收机；核显指标单独列为 P4 硬化项，不阻塞 v1。
 - 中文为主，允许中英混说、英文术语/产品名/代码标识符。
 - 内置模型只用 Apache-2.0 / MIT / BSD-2-Clause；受限模型只经用户插件接入。
 - 需要兼容现有 `mafw_media_speak`、`[语音回复 art:...]`、`/api/tts`、`/api/tts/stream`。
 - 不引入必须常驻的 Python 进程；Python 只用于独显高质量档的可选 sidecar。
+- **v1 不做声音克隆产品化**；`refAudio`/`refText` 只在接口层保留，不开放 UI。
 - 所有阶段 TDD；每个任务独立 commit；报告新增用例数与全量用例数（用户既有偏好）。
 
 ## 4. 目标体验
@@ -71,14 +72,21 @@
 [再按麦克风] → 结束
 ```
 
-关键指标（v1 目标，待实测校准）：
+关键指标（v1 目标，先在本机 4090 上实测校准）：
 
-- 首 partial：≤ 300 ms（本地流式 Zipformer，热模型）。
-- 说完到 `asr.final`：≤ 500 ms（本地，含 Smart Turn 判定）。
-- **端到端首声**（`end_audio` → 第一块 TTS）：核显档 ≤ 1.5 s；独显/云端 ≤ 800 ms。
-- **流水线首声**（首个 LLM token → 第一块 TTS）：核显档 ≤ 300 ms；独显/云端 ≤ 200 ms。
+**主档（本机 4090，v1 验收）**
+
+- 首 partial：≤ 200 ms（Qwen3-ASR-1.7B vLLM 流式，热模型）。
+- 说完到 `asr.final`：≤ 300 ms（含 Smart Turn 判定）。
+- **端到端首声**（`end_audio` → 第一块 TTS）：≤ 800 ms。
+- **流水线首声**（首个 LLM token → 第一块 TTS）：≤ 200 ms。
 - barge-in 停播：≤ 100 ms（本地 flush，不等云端）。
 - 误打断率：≤ 5%（安静室内；外放场景 P2 单独测，不达标则 P2 内上服务端 AEC）。
+
+**兼容档（核显/CPU，P4 硬化，不阻塞 v1）**
+
+- 首 partial ≤ 300 ms；`asr.final` ≤ 500 ms；端到端首声 ≤ 1.5 s；流水线首声 ≤ 300 ms。
+- 以 Zipformer + Qwen3-ASR-0.6B 两遍解码 + Kokoro/Melo 为准，实测校准。
 
 ## 5. 总体架构
 
@@ -204,13 +212,15 @@ interface AsrEngine {
 
 ### 8.2 分档
 
-| 档位 | 主 ASR | 终稿 |
-|---|---|---|
-| 核显/CPU | sherpa-onnx streaming Zipformer bilingual zh-en | Qwen3-ASR-0.6B int8（离线二次解码） |
-| 独显 | Qwen3-ASR-1.7B via vLLM | 同模型 / Fun-ASR-Nano 备选 |
-| 云端 | Qwen3-ASR-Flash Realtime | 云端 batch 兜底 |
+| 档位 | 主 ASR | 终稿 | v1 地位 |
+|---|---|---|---|
+| 独显（本机 4090） | Qwen3-ASR-1.7B via vLLM，真流式 | 同模型；Fun-ASR-Nano 备选 | **v1 主档 / 验收档** |
+| 核显/CPU | sherpa-onnx streaming Zipformer bilingual zh-en | Qwen3-ASR-0.6B int8（离线二次解码） | 兼容档，P4 硬化 |
+| 云端 | Qwen3-ASR-Flash Realtime | 云端 batch 兜底 | v1 可选档 |
 
-### 8.3 两遍解码
+### 8.3 两遍解码（核显兼容档）
+
+> 独显主档用 Qwen3-ASR-1.7B 原生流式，不需要两遍解码；本节只适用于核显/CPU 档。
 
 - **第一遍**：Zipformer 持续 `push(pcm)`，`onPartial` 更新 UI；sherpa endpoint 只作为「这里可能停了一下」的提示，**不**直接产生送 LLM 的 final。
 - **回合边界**：客户端 VAD `speech_stopped` 后跑 Smart Turn；`complete` 才发 `end_audio`。服务端把同一回合内多个 sherpa utterance 的 PCM/文本拼接起来，作为一个完整 utterance。
@@ -251,11 +261,11 @@ interface TtsEngine {
 
 ### 9.2 分档
 
-| 档位 | 主 TTS | 备选 |
-|---|---|---|
-| 核显/CPU | Kokoro multi-lang v1.1 zh_en（质量） | MeloTTS zh_en（弱核显/低延迟） |
-| 独显 | CosyVoice3-0.5B（150 ms 双流式） | Qwen3-TTS-0.6B（97 ms，克隆） |
-| 云端 | MiniMax Speech-02 Turbo | MiMo TTS（现有）/ Azure |
+| 档位 | 主 TTS | 备选 | v1 地位 |
+|---|---|---|---|
+| 独显（本机 4090） | CosyVoice3-0.5B（150 ms 双流式） | Qwen3-TTS-0.6B（97 ms；克隆接口保留不启用） | **v1 主档 / 验收档** |
+| 核显/CPU | Kokoro multi-lang v1.1 zh_en（质量） | MeloTTS zh_en（弱核显/低延迟） | 兼容档，P4 硬化 |
+| 云端 | MiniMax Speech-02 Turbo | MiMo TTS（现有）/ Azure | v1 可选档 |
 
 ### 9.3 逐句流式
 
@@ -442,11 +452,11 @@ interface VoiceModelEntry {
 
 | 阶段 | 交付 | 验收 |
 |---|---|---|
-| P0 | 接口/目录/registry/能力测试；`sherpa-onnx-node` 依赖与打包验证 | 单测绿；Windows 能加载一个模型 |
-| P1 | 本地 ASR 流式 + 两遍解码 + `/ws/voice` ASR-only | 首 partial ≤ 300 ms；final ≤ 500 ms（核显实测） |
-| P2 | 本地 TTS 逐句流 + desktop flag + barge-in + 外放 AEC | 端到端首声 ≤ 1.5 s / 流水线首声 ≤ 300 ms；停播 ≤ 100 ms；外放误打断 ≤ 5% |
+| P0 | 接口/目录/registry/能力测试；vLLM sidecar 生命周期骨架 | 单测绿；4090 能起停一个 sidecar |
+| P1 | 4090 主档 ASR：Qwen3-ASR-1.7B vLLM 流式 + `/ws/voice` ASR-only | 首 partial ≤ 200 ms；final ≤ 300 ms（本机实测） |
+| P2 | 4090 主档 TTS：CosyVoice3 逐句/原生流 + desktop flag + barge-in + 外放 AEC | 端到端首声 ≤ 800 ms / 流水线首声 ≤ 200 ms；停播 ≤ 100 ms；外放误打断 ≤ 5% |
 | P3 | 云端适配器 + router + 设置/许可 UI | 云端断网自动回退；路由徽标正确 |
-| P4 | dGPU sidecar（Qwen3-ASR-1.7B + CosyVoice3，opt-in） | 4090 上首声 ≤ 400 ms；显存可回收 |
+| P4 | 核显兼容档：Zipformer + Qwen3-ASR-0.6B 两遍解码 + Kokoro/Melo + `sherpa-onnx-node` 打包 | 首 partial ≤ 300 ms；final ≤ 500 ms；端到端首声 ≤ 1.5 s |
 | P5 | mobile/TUI/agent 接入；旧路径 deprecated | 协议复用；旧 artifact 不回归 |
 
 ## 17. Builder check 后钉死的点
@@ -460,12 +470,19 @@ interface VoiceModelEntry {
 7. **协议**：v1 只接受 PCM16 16 kHz；`webm-opus` 预留不实现；二进制方向固定（客户端→mic，服务端→TTS）。
 8. **指标定义**：`e2e_first_audio_ms` 从 `end_audio` 到第一块 TTS；`pipeline_first_audio_ms` 从首个 LLM token 到第一块 TTS。验收同时看两者，避免把 LLM 延迟算进 TTS 或反之。
 
-## 18. 需要你拍板
+## 18. 已拍板 / 剩余
 
-1. **参考机器**：本地档验收用哪台核显机器？Intel Iris Xe / AMD 780M / 其他？没有真机就只能远程或借测，P1/P2 的 300/500/800 ms 指标无法签字。
-2. **dGPU 档排期**：Qwen3-ASR-1.7B + CosyVoice3 是放进 v1（P3），还是按草案放 P4（v1 先 iGPU + cloud）？
-3. **云端厂商**：默认阿里 Qwen3-ASR-Flash + MiniMax TTS，还是继续小米 MiMo 全家桶（MiMo ASR 只能做离线/语音消息，不能实时）？
-4. **目标延迟**：iGPU 端到端首声 1.5 s / dGPU+云 800 ms，还是你有更硬/更松的数字？
-5. **声音克隆**：确认 v1 只留接口、不做产品化？
+**已拍板：**
 
-其余我按本文档的「我的暂定」执行：`/ws/voice` + 旧 SSE 兼容、Zipformer + Qwen3-ASR-0.6B 两遍解码、Kokoro/Melo 核显 TTS、外放不过则 P2 内上服务端 AEC、v1 desktop 优先。
+- **参考机器 = 本机 4090 Laptop 16G / i9-13900H / 32G / Windows 11**；核显/CPU 作为兼容档，P4 硬化，不阻塞 v1。
+- **v1 主档 = dGPU**：Qwen3-ASR-1.7B vLLM + CosyVoice3-0.5B；P1/P2 直接按这台机器验收。
+- **v1 不做声音克隆**：`refAudio`/`refText` 只留接口，不开放 UI。
+- **v1 范围 = desktop + `/ws/voice` 协议预留**；mobile/TUI/agent 在 P5 接入。
+- **外放 AEC 是 P2 硬验收**；客户端 AEC 不达标就在 P2 内补服务端 AEC。
+
+**剩余默认（有异议再改）：**
+
+1. **云端厂商**：默认阿里 Qwen3-ASR-Flash Realtime + MiniMax Speech-02 Turbo；MiMo TTS 作为现有适配器保留，MiMo ASR 只做离线/语音消息。
+2. **目标延迟**：dGPU 端到端首声 ≤800 ms / 流水线首声 ≤200 ms；iGPU 兼容档 ≤1.5 s / ≤300 ms。
+
+如果没有异议，下一步进入 `writing-plans`，按 P0–P5 拆成可执行任务；每个任务 TDD + 独立 commit。
