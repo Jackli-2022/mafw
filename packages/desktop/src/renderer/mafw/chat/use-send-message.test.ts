@@ -1,6 +1,23 @@
 import { describe, expect, test } from "bun:test"
-import { parseSlashShape, buildOptimisticParts, useSendMessage } from "./use-send-message"
+import { parseSlashShape, buildOptimisticParts, useSendMessage, decideBusyDelivery } from "./use-send-message"
 import { createInputHistory } from "../components/input-history"
+
+describe("decideBusyDelivery（W5a steer 语义选择）", () => {
+  test("steer 支持 + 无媒体 + Enter → steer", () => {
+    expect(decideBusyDelivery({ mode: "send", steerApi: true, hasMedia: false })).toBe("steer")
+  })
+  test("Ctrl+Enter（queue）→ gateway-queue", () => {
+    expect(decideBusyDelivery({ mode: "queue", steerApi: true, hasMedia: false })).toBe("gateway-queue")
+    expect(decideBusyDelivery({ mode: "queue", steerApi: false, hasMedia: false })).toBe("gateway-queue")
+  })
+  test("runtime 不支持 steer → 本地队列（现状回归）", () => {
+    expect(decideBusyDelivery({ mode: "send", steerApi: false, hasMedia: false })).toBe("local-queue")
+  })
+  test("带媒体 → 本地队列（promptAsync 只承载文本，v1 不丢附件）", () => {
+    expect(decideBusyDelivery({ mode: "send", steerApi: true, hasMedia: true })).toBe("local-queue")
+    expect(decideBusyDelivery({ mode: "queue", steerApi: true, hasMedia: true })).toBe("local-queue")
+  })
+})
 
 describe("parseSlashShape", () => {
   test("解析 /cmd args", () => {
@@ -121,5 +138,70 @@ describe("sendMessage busy 排队路径", () => {
     } finally {
       delete (globalThis as any).window
     }
+  })
+
+  // W5a：忙时 Enter=steer（delivery:'steer'）/ Ctrl+Enter=网关队列（delivery:'queue'）
+  const mockPromptAsync = () => {
+    const calls: any[] = []
+    ;(globalThis as any).window = { api: { mafw: { sessions: { promptAsync: async (req: any) => { calls.push(req) } } } } }
+    return calls
+  }
+
+  test("忙时 Enter（steerApi）→ promptAsync delivery:steer，不进本地队列", async () => {
+    const calls = mockPromptAsync()
+    try {
+      const f = baseDeps({ steerApi: () => true })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(calls).toHaveLength(1)
+      expect(calls[0].delivery).toBe("steer")
+      expect(calls[0].message).toBe("排队的消息")
+      expect(f.queued().length).toBe(0)
+      expect(f.history().up("")).toBe("排队的消息") // 插话也进历史
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时 Ctrl+Enter → promptAsync delivery:queue（gateway 队列）", async () => {
+    const calls = mockPromptAsync()
+    try {
+      const f = baseDeps({ steerApi: () => true })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage("queue")
+      expect(calls).toHaveLength(1)
+      expect(calls[0].delivery).toBe("queue")
+      expect(f.queued().length).toBe(0)
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时 steer 不受支持 → 回落本地队列（现状回归）", async () => {
+    const calls = mockPromptAsync()
+    try {
+      const f = baseDeps({ steerApi: () => false })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(calls).toHaveLength(0)
+      expect(f.queued().length).toBe(1)
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时带附件 → 本地队列（不丢媒体）", async () => {
+    const calls = mockPromptAsync()
+    try {
+      const f = baseDeps({ steerApi: () => true, attachments: () => [{ name: "a.png", mime: "image/png", dataUrl: "data:image/png;base64,x" }] })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(calls).toHaveLength(0)
+      expect(f.queued().length).toBe(1)
+    } finally { delete (globalThis as any).window }
+  })
+
+  test("忙时 steer 调用失败 → 回落本地队列（不丢消息）", async () => {
+    ;(globalThis as any).window = { api: { mafw: { sessions: { promptAsync: async () => { throw new Error("boom") } } } } }
+    try {
+      const f = baseDeps({ steerApi: () => true })
+      const { sendMessage } = useSendMessage(f.deps)
+      await sendMessage()
+      expect(f.queued().length).toBe(1)
+    } finally { delete (globalThis as any).window }
   })
 })

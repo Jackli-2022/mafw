@@ -795,6 +795,7 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
     imageToDataUrl,
     uploadMediaBinary,
     encodeFilePath,
+    steerApi: () => props.runtimeCaps?.steerApi === true,
     pendingAnnotationCount: (sid) => pendingFor(sid).length,
     takeAnnotations: (sid) => takeForSend(sid),
     formatAnnotations: (items) => buildAnnotationBatch(items),
@@ -1985,6 +1986,11 @@ function PaneInner(props: ChatPaneProps & { sid: string }) {
                 // plan/build 模式循环（opencode Tab 语义；补全/mention 激活时不抢）
                 e.preventDefault()
                 cyclePlanBuild()
+              }
+              else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+                // W5a：Ctrl+Enter = 排队（gateway 服务端队列），忙时也可用；空闲时等同发送。
+                e.preventDefault()
+                sendMessage("queue")
               }
               else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (pickerOpen() === "command") { closeCommandPicker(); return } sendMessage() }
               // readline 编辑键（Ctrl+A/E/B/F/K/U/W/T、Alt+B/F）；命中即消费，

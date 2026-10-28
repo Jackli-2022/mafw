@@ -83,6 +83,22 @@ export interface SendMessageDeps {
   pendingCaptureCount?: (sid: string) => number
   takeCaptures?: (sid: string) => PendingCapture[]
   formatCaptures?: (items: PendingCapture[]) => string
+  /** W5a：runtime 是否接受 delivery:'steer'（opencode 2.1 实测为「回合结束后送达」）。 */
+  steerApi?: () => boolean
+}
+
+/**
+ * W5a：忙时发送语义选择（steer wire probe 2006-10-28 结论）：
+ * - opencode `delivery:'steer'` = 回合结束后优先送达（非工具间隙注入）；
+ * - 带媒体 → 本地队列（promptAsync 只承载文本，v1 不丢附件）；
+ * - Ctrl+Enter=queue → gateway 服务端队列（可取消/编辑，Batch 5 inbox）；
+ * - runtime 不支持 steer → 本地队列（现状回归）。
+ */
+export type BusyDelivery = "steer" | "gateway-queue" | "local-queue"
+export function decideBusyDelivery(opts: { mode: "send" | "queue"; steerApi: boolean; hasMedia: boolean }): BusyDelivery {
+  if (opts.hasMedia) return "local-queue"
+  if (opts.mode === "queue") return "gateway-queue"
+  return opts.steerApi ? "steer" : "local-queue"
 }
 
 export function useSendMessage(deps: SendMessageDeps) {
@@ -101,7 +117,7 @@ export function useSendMessage(deps: SendMessageDeps) {
   const takeCaptures = deps.takeCaptures ?? (() => [])
   const formatCaptures = deps.formatCaptures ?? (() => "")
 
-  async function sendMessage() {
+  async function sendMessage(mode: "send" | "queue" = "send") {
     const text = input()
     const atts = attachments()
     const agents = mentionedAgents()
@@ -111,7 +127,7 @@ export function useSendMessage(deps: SendMessageDeps) {
     let sid: string | null = sidProp()
     if (!sid) { sid = await deps.onCreateSession(); if (!sid) return }
     const hasVoice = atts.some(a => a.name?.startsWith("voice-"))
-    console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice)
+    console.log("[mafw] sendMessage", sid.slice(-8), "| text:", text.trim().length, "chars | atts:", atts.length, "| sending:", sending(), "| voice:", hasVoice, "| mode:", mode)
     if (sending()) {
       // Voice messages (walkie-talkie) interrupt the in-flight reply; regular
       // messages queue for the next idle boundary instead of being dropped.
@@ -127,19 +143,43 @@ export function useSendMessage(deps: SendMessageDeps) {
         const queuedAnnotationImages = queuedAnnotations
           .filter(a => a.imageDataUrl)
           .map((a, i) => ({ name: `annotation-${i + 1}.png`, mime: "image/png", dataUrl: a.imageDataUrl }))
+        // W5a：steer / 网关队列优先；带媒体或 runtime 不支持时回落本地 turn-queue。
+        const deliveryKind = decideBusyDelivery({
+          mode,
+          steerApi: deps.steerApi ? deps.steerApi() === true : false,
+          hasMedia: atts.length > 0 || queuedAnnotationImages.length > 0,
+        })
+        const finishBusySend = () => {
+          history.push(text)
+          setInput("")
+          setAttachments([])
+          setMentionedAgents(() => [])
+          setMentionedFiles([])
+          clearDraft(sidProp())
+          const ta = textareaEl()
+          if (ta) ta.style.height = "auto"
+        }
+        if (deliveryKind !== "local-queue") {
+          try {
+            await window.api.mafw.sessions.promptAsync({
+              sessionID: sid,
+              message: queuedText,
+              delivery: deliveryKind === "steer" ? "steer" : "queue",
+            })
+            finishBusySend()
+            // steer wire probe 实证：opencode 的 steer = 回合结束后优先送达——文案不承诺打断。
+            showToastV2({
+              description: deliveryKind === "steer" ? "已插话：本轮结束后优先送达" : "已加入队列：本轮结束后发送",
+              duration: 2500,
+            })
+            return
+          } catch (e: any) {
+            console.warn("[mafw] busy delivery failed, falling back to local queue:", e?.message ?? e)
+          }
+        }
         setQueuedItems(prev => enqueueTurn(prev, { text: queuedText, atts: [...atts, ...queuedAnnotationImages], agents }))
         // 排队发出的消息同样进输入历史（↑ 可召回——与即时发送路径一致）
-        history.push(text)
-        setInput("")
-        setAttachments([])
-        setMentionedAgents(() => [])
-        // The queued turn carries its own @file references inside `text` —
-        // leaving mentionedFiles set would re-prepend them on flush AND leak
-        // the stale chip onto the next manual message.
-        setMentionedFiles([])
-        clearDraft(sidProp())
-        const ta = textareaEl()
-        if (ta) ta.style.height = "auto"
+        finishBusySend()
         return
       }
       console.log("[mafw] sendMessage: voice interrupts in-flight turn")

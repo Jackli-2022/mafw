@@ -65,6 +65,8 @@ export interface RuntimeCapabilities {
   instructionsApi?: boolean;
   /** runtime 提供 command/skill 目录发现（opencode 2.1；pi false）。 */
   discoveryApi?: boolean;
+  /** W5a：runtime 接受 delivery:'steer'（opencode 2.1=回合后优先送达；pi=工具间隙注入）。 */
+  steerApi?: boolean;
 }
 
 export function fullCapabilities(): RuntimeCapabilities {
@@ -93,6 +95,8 @@ export function fullCapabilities(): RuntimeCapabilities {
     questionApi: true,
     instructionsApi: true,
     discoveryApi: true,
+    // W5a：opencode 2.1 接受 delivery:'steer'（wire probe 实证=回合结束后优先送达）。
+    steerApi: true,
   };
 }
 
@@ -114,6 +118,7 @@ export function minimalCapabilities(): RuntimeCapabilities {
     worktreeApi: false,
     instructionsApi: false,
     discoveryApi: false,
+    steerApi: false,
   };
 }
 

@@ -24,6 +24,8 @@ export const PI_CAPABILITIES: RuntimeCapabilities = {
   sessionBranchApi: true,
   runStateApi: true,
   discoveryApi: false,
+  // W5a：pi 原生 streamingBehavior:'steer'（工具调用间隙注入）。
+  steerApi: true,
 };
 
 /** pi 原生工具清单（pi-coding-agent dist/core/tools：read/grep/find/ls/write/edit/bash）。 */
