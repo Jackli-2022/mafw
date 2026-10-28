@@ -38,6 +38,14 @@ export async function archiveWorktree(context: ArchiveContext): Promise<void> {
 
   log.info(`[archive-worktree] Archiving goal ${goalId}`);
 
+  // 非 git 项目目录（临时/非代码项目）：无分支可合并、无 worktree 可归档——
+  // 优雅 no-op。此前 git.revparse 在此抛 fatal: not a git repository →
+  // archive_failed 污染终态（verdict=PASS 却 nextAction=FAILED）。
+  if (!fs.existsSync(path.join(projectDir, '.git'))) {
+    log.info(`[archive-worktree] ${projectDir} is not a git repo — skipping merge/fusion, archiving in place`);
+    return;
+  }
+
   const worktreeManager = new GoalWorktreeManager(projectDir);
   const info = await worktreeManager.getCurrentInfo(goalId);
 

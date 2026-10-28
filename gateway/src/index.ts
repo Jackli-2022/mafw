@@ -137,6 +137,7 @@ import { normalizeMode, SessionPermissionMode } from './core/approval/policy-ser
 import { applyApprovalPolicy } from './core/approval/hook';
 import { handlePermissionModeGet, handlePermissionModeSet } from './routes/permission-mode';
 import { SessionConfigService, SessionConfigError } from './core/session-config';
+import { archiveWorktree } from './core/tools/archive-worktree.js';
 import { CheckpointService } from './core/checkpoint/checkpoint-service';
 import { runAutoCheckpoint } from './core/checkpoint/auto-hook';
 import { RunStateService } from './core/run/run-state-service';
@@ -7592,14 +7593,6 @@ class MafwScheduler {
 
   // 鈹€鈹€ 6. Archive 鈹€鈹€
 
-  private async loadArchiveModule(): Promise<{ archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> }> {
-    const pluginRoot = path.resolve(__dirname, '..', '..');
-    const builtPath = path.join(pluginRoot, 'dist', 'tools', 'archive-worktree');
-    const srcPath = path.join(pluginRoot, 'src', 'tools', 'archive-worktree');
-    const modulePath = fs.existsSync(`${builtPath}.js`) ? builtPath : srcPath;
-    return await import(modulePath) as { archiveWorktree: (ctx: { goalId: string; projectDir: string; loopCount: number }) => Promise<void> };
-  }
-
   private async archiveGoal(goalId: string, outcome?: {
     verdict: 'PASS' | 'FAIL' | 'MAX_RETRIES' | 'ERROR' | 'CANCELLED';
     rounds: number;
@@ -7619,7 +7612,6 @@ class MafwScheduler {
 
     if (projectDir) {
       try {
-        const { archiveWorktree } = await this.loadArchiveModule();
         const state = this.activeGoals.get(goalId);
         await archiveWorktree({ goalId, projectDir, loopCount: state?.loop || 1 });
       } catch (err: any) {
