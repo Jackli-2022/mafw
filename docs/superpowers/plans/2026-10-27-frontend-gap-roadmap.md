@@ -53,18 +53,33 @@
 
 ## W4 MCP / Skills / Hooks 管理 UI（P1，中）
 
-- Config 或独立「扩展」页：MCP server 列表（opencode 配置读取）+ 启停 + OAuth 状态；Skills 列表 + 启停；Hooks 列表（只读起步）。
-- gateway 侧需要只读 API（列 MCP/skills/hooks 现状），写操作先只做启停。
-- 参考：Claude `/mcp` `/skills` `/hooks` + Desktop 连接器；Kimi MCP 面板。
+**调研定稿（`docs/research/2026-10-28-mcp-skills-management-research.md`）**：
+- **MCP v1 零配置写入**：列表/来源/disabled 读 `GET /api/opencode-config`（配置文档层实测可用）；运行时状态与连接/断开/OAuth 走 serve `/mcp` API（SDK 类型确认），MAFW 侧新增 `/api/mcp/*` 反代命名空间（`/mcp` 被 gateway 自身 MCP 服务占用）；添加/删除留 v2。
+- **Skills v1 零写入**：`GET /skill` 已返回 `id/name/description/scope/location/contentLength`（T2-5 discovery 落地）；详情=读 location 的 SKILL.md（复用 Markdown 预览）；打开目录用既有 `revealPath` IPC；禁用留 v2（正规通道 = config `permissions` 的 `skill`+deny）。
+- **Hooks descope**：opencode v2 无用户 hooks 概念，不做假 UI。
+- v2 配置写入（MCP add/remove、Skills 禁用）需单独 spec：jsonc 保注释写 + 备份/回滚/校验 + 只动用户显式目标。
 
 ## W5 Steer + 选区引用 chip（P1，中）
 
 - **Steer**：运行中 Enter = 注入当前 turn（区别于 Ctrl+Enter 排队）。
-  - **runtime 现实（builder check 纠正，我的决定）**：pi 有原生 steer（`streamingBehavior:'steer'`，工具调用间隙注入）；opencode v2 TUI 有原生 steer，但经 gateway serve `promptAsync` 的 busy 语义是**下一回合取**，不是中途注入——需先实证 opencode serve 是否暴露 steer 通道。
-  - 方案：新增能力位 `steerApi`；pi 走原生；opencode 实证后优先原生，不支持则回退「下回合开头送达」+ composer 文案明说（不做 UX 谎言）。
-- **队列语义收敛（我的决定）**：三套队列统一为——Enter=steer（当前 turn）；Ctrl+Enter=gateway 队列 inbox（服务端，Batch 5 已有 UI）；本地 turn-queue 仅作 gateway 队列不可用时的降级，不再新增第四条路径。
+  - **后端已接线（2026-10-28 核实）**：`opencode-adapter.ts:108` 已把 `delivery:'steer'` 映射到 opencode 2.1 `Session.Inbox.Delivery`；pi 映射 `streamingBehavior`。缺的是桌面：全 desktop src 无 `delivery` 引用。
+  - **前置 wire probe**：busy 会话发 steer，实证 serve 2.1 的实语义（mid-turn 注入 vs 下回合取）→ 决定文案；不支持则能力位 `steerApi` 降级为诚实排队文案。
+- **队列语义收敛（我的决定）**：Enter=steer（当前 turn）；Ctrl+Enter=gateway 队列 inbox（服务端，Batch 5 已有 UI）；本地 turn-queue 仅作 gateway 队列不可用时的降级。
 - **引用 chip**：现有批注锚点体系加第二动作「引用到输入框」（不发送，进 composer 草稿区 chip）；与「批注直发」并存。
 - 参考：opencode Quote 工具条、DSH 原生划词 Quote、Claude 排队/steer。
+
+## W4/W5 执行顺序（2026-10-28 定稿，分屏暂缓）
+
+按「共享改造面优先、风险升序」拆 4 批，每批独立可发布：
+
+| 批 | 内容 | 依赖/前置 | 规模 |
+|---|---|---|---|
+| **B1** | W5a Steer：wire probe → composer busy 态（Enter=steer / Ctrl+Enter=队列）→ 能力位与文案 | probe 先行（30min，失败即降级设计） | 小-中 |
+| **B2** | W5b 引用 chip：选区「引用到输入框」→ composer chip（与批注直发并存） | 同 composer 面，紧随 B1（同文件、同冒烟会话） | 中 |
+| **B3** | W4 v1 扩展管理（零写入）：Skills 卡（列表/详情预览/来源/打开目录）+ MCP 卡（列表/状态/连接·断开/OAuth/来源） | gateway `/api/mcp/*` 反代（B3 内）；Skills 数据源现成 | 中 |
+| **B4** | W4c 配置写入能力：jsonc 保注释写 + 备份/回滚 → MCP 添加/删除 + Skills 禁用 | 独立 spec + 用户批准写入边界 | 中-大 |
+
+理由：B1/B2 共享 composer 改造面（一次冒烟、一次回归）；B3 把两块 Config 卡片合并成一批交付；B4 触碰用户全局配置，必须最后且单独授权。每批收尾跑 desktop/gateway 全量 + GUI 冒烟 + AGENTS.md 记录。
 
 ## W6 多面板分屏（P1，大）
 
