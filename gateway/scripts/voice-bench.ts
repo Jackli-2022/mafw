@@ -71,14 +71,16 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runOnce(url: string, pcm: Buffer): Promise<BenchSample> {
+export async function runOnce(url: string, pcm: Buffer): Promise<BenchSample> {
   return new Promise<BenchSample>((resolve, reject) => {
     const ws = new WebSocket(url);
-    let firstPartialAt: number | undefined;
+    let startedAt: number | undefined;
+    let firstPartialMs: number | undefined;
     let endAt: number | undefined;
     let finalAt: number | undefined;
     let text = '';
     let settled = false;
+    let sending = false;
 
     const finish = (err?: Error) => {
       if (settled) return;
@@ -86,37 +88,43 @@ async function runOnce(url: string, pcm: Buffer): Promise<BenchSample> {
       try { ws.close(); } catch { /* already closed */ }
       if (err) reject(err);
       else resolve({
-        firstPartialMs: firstPartialAt,
+        firstPartialMs,
         finalMs: finalAt !== undefined && endAt !== undefined ? finalAt - endAt : undefined,
         text,
       });
     };
 
-    ws.on('open', async () => {
+    const sendAudio = async () => {
+      if (sending || startedAt === undefined) return;
+      sending = true;
       try {
-        ws.send(JSON.stringify({
-          type: 'hello', sessionId: `bench-${Date.now()}`, mode: 'continuous',
-          tier: 'local', language: 'zh', format: 'pcm16', clientVad: true,
-        }));
-        const start = Date.now();
         for (let offset = 0; offset < pcm.length; offset += 640) {
           ws.send(pcm.subarray(offset, Math.min(pcm.length, offset + 640)));
           await delay(20);
         }
         endAt = Date.now();
         ws.send(JSON.stringify({ type: 'end_audio' }));
-        void start;
       } catch (err: any) {
         finish(err);
       }
+    };
+
+    ws.on('open', () => {
+      startedAt = Date.now();
+      ws.send(JSON.stringify({
+        type: 'hello', sessionId: `bench-${Date.now()}`, mode: 'continuous',
+        tier: 'local', language: 'zh', format: 'pcm16', clientVad: true,
+      }));
     });
 
     ws.on('message', (raw: any, isBinary: boolean) => {
       if (isBinary) return;
       let msg: any;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
-      if (msg.type === 'asr.partial' && firstPartialAt === undefined && msg.text) {
-        firstPartialAt = Date.now();
+      if (msg.type === 'ready') {
+        void sendAudio();
+      } else if (msg.type === 'asr.partial' && firstPartialMs === undefined && msg.text) {
+        firstPartialMs = startedAt === undefined ? undefined : Date.now() - startedAt;
       } else if (msg.type === 'asr.final') {
         finalAt = Date.now();
         text = String(msg.text ?? '');

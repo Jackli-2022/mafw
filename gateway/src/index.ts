@@ -529,6 +529,8 @@ class MafwScheduler {
   private voiceAsrRegistry = new AsrEngineRegistry();
   private voiceRuntimeConfig = resolveVoiceConfig({});
   private voiceWss?: WebSocketServer;
+  private voiceStartBlockedUntil = 0;
+  private voiceStartError = '';
   private kernels?: SessionKernels;
   private automationEngine?: AutomationEngine;
   private ledger?: SchedulerLedger;
@@ -3261,6 +3263,8 @@ class MafwScheduler {
     this.taskService?.dispose();
     this.kernels?.disposeAll();
     try { this.layaSidecar?.kill(); } catch { /* best effort */ }
+    try { this.voiceSidecar?.stopSync(); } catch { /* best effort */ }
+    this.voiceSidecar = undefined;
     this.milestonePush?.dispose();
     this.budgetGuards.clear();
     this.customCommandWatcherDispose?.();
@@ -4176,6 +4180,9 @@ class MafwScheduler {
    */
   private async getVoiceRuntime(): Promise<VoiceRuntime> {
     if (this.voiceRuntime) return this.voiceRuntime;
+    if (Date.now() < this.voiceStartBlockedUntil) {
+      throw new Error(this.voiceStartError || 'voice runtime is temporarily unavailable');
+    }
     if (!this.voiceRuntimePromise) {
       this.voiceRuntimePromise = (async () => {
         this.voiceRuntimeConfig = resolveVoiceConfig(config.raw);
@@ -4194,8 +4201,17 @@ class MafwScheduler {
           config: this.voiceRuntimeConfig,
           createAsr: async (name) => this.voiceAsrRegistry.resolve(name),
         });
+        this.voiceStartBlockedUntil = 0;
+        this.voiceStartError = '';
         return this.voiceRuntime;
-      })().finally(() => {
+      })().catch((err: any) => {
+        const message = err?.message || String(err);
+        // A broken Python env must not spawn a 180 s sidecar per client.
+        this.voiceStartBlockedUntil = Date.now() + 15_000;
+        this.voiceStartError = message;
+        log.warn(`[Voice] runtime start failed: ${message}`);
+        throw err;
+      }).finally(() => {
         this.voiceRuntimePromise = undefined;
       });
     }
@@ -4354,10 +4370,10 @@ class MafwScheduler {
 
         // GET /api/tts/voices — 当前引擎音色 + 能力（desktop picker）
         // GET /api/voice/status — voice config + registered ASR engines.
-        if (req.url === "/api/voice/status" && req.method === "GET") {
+        if (req.url?.match(/^\/api\/voice\/status(?:\?|$)/) && req.method === "GET") {
           await handleVoiceStatus(req, res, {
             runtime: this.voiceRuntime,
-            config: this.voiceRuntimeConfig,
+            config: resolveVoiceConfig(config.raw),
           });
           return;
         }

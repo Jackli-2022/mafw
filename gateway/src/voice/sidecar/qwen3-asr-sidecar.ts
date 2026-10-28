@@ -1,4 +1,5 @@
 import { spawn, execFile, type ChildProcess } from 'child_process';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -15,6 +16,10 @@ export interface Qwen3AsrSidecarOptions {
   sleepImpl?: (ms: number) => Promise<void>;
   /** Test seam; defaults to taskkill on Windows, no-op elsewhere. */
   killTreeImpl?: (pid: number) => Promise<void>;
+  /** Test seam for the pre-spawn port probe. */
+  probePortImpl?: (port: number) => Promise<boolean>;
+  /** Test seam for the synchronous shutdown path. */
+  killTreeSyncImpl?: (pid: number) => void;
 }
 
 const DEFAULT_MODELS_DIR = path.join(os.homedir(), '.mafw', 'models', 'voice');
@@ -27,6 +32,32 @@ function defaultKillTree(pid: number): Promise<void> {
   if (process.platform !== 'win32') return Promise.resolve();
   return new Promise((resolve) => {
     execFile('taskkill', ['/PID', String(pid), '/T', '/F'], () => resolve());
+  });
+}
+
+function defaultKillTreeSync(pid: number): void {
+  if (process.platform !== 'win32') return;
+  try {
+    spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+    });
+  } catch { /* best effort on shutdown */ }
+}
+
+function defaultProbePort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    let done = false;
+    const finish = (open: boolean) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(open);
+    };
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+    socket.setTimeout(500, () => finish(false));
   });
 }
 
@@ -44,6 +75,8 @@ export class Qwen3AsrSidecar {
   private readonly fetchImpl: typeof fetch;
   private readonly sleepImpl: (ms: number) => Promise<void>;
   private readonly killTree: (pid: number) => Promise<void>;
+  private readonly killTreeSync: (pid: number) => void;
+  private readonly probePort: (port: number) => Promise<boolean>;
   private readonly injectedSpawn: boolean;
 
   constructor(options: Qwen3AsrSidecarOptions = {}) {
@@ -63,6 +96,10 @@ export class Qwen3AsrSidecar {
     // In tests `spawnImpl` is injected; never run taskkill against the fake PID.
     this.killTree = options.killTreeImpl
       ?? (options.spawnImpl ? async () => {} : defaultKillTree);
+    this.killTreeSync = options.killTreeSyncImpl
+      ?? (options.spawnImpl ? () => {} : defaultKillTreeSync);
+    this.probePort = options.probePortImpl
+      ?? (options.spawnImpl ? async () => false : defaultProbePort);
   }
 
   get baseUrl(): string {
@@ -110,6 +147,12 @@ export class Qwen3AsrSidecar {
   async start(): Promise<void> {
     if (this.child && this.exitCode === null) return;
 
+    if (await this.probePort(this.opts.port)) {
+      throw new Error(
+        `sidecar_port_in_use: 127.0.0.1:${this.opts.port} is already in use`,
+      );
+    }
+
     const spawnImpl = (this.opts.spawnImpl ?? spawn) as typeof spawn;
     const args = [
       this.opts.scriptPath,
@@ -118,15 +161,24 @@ export class Qwen3AsrSidecar {
       '--gpu-memory-utilization', String(this.opts.gpuMemoryUtilization),
       '--cache-dir', this.opts.modelsDir,
     ];
-    const child = spawnImpl(this.opts.python, args, {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, HF_HOME: path.join(this.opts.modelsDir, 'hf') },
-    });
+    let child: ChildProcess;
+    try {
+      child = spawnImpl(this.opts.python, args, {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, HF_HOME: path.join(this.opts.modelsDir, 'hf') },
+      });
+    } catch (err: any) {
+      throw new Error(
+        `sidecar_unavailable: failed to spawn ${this.opts.python} (${err?.code || err?.message || String(err)})`,
+      );
+    }
 
     this.child = child;
     this.exitCode = null;
     this.stderrLines = [];
+    let spawnError: Error | undefined;
+    child.on('error', (err: Error) => { spawnError = err; });
     child.stderr?.on('data', (chunk: Buffer | string) => this.noteStderr(chunk));
     child.on('exit', (code: number | null) => {
       this.exitCode = code ?? -1;
@@ -136,6 +188,11 @@ export class Qwen3AsrSidecar {
     try {
       const deadline = Date.now() + this.opts.startupTimeoutMs;
       while (Date.now() < deadline) {
+        if (spawnError) {
+          throw new Error(
+            `sidecar_unavailable: failed to spawn ${this.opts.python} (${(spawnError as any)?.code || spawnError.message})`,
+          );
+        }
         if (this.exitCode !== null) {
           const message = `Qwen3-ASR sidecar exited (code ${this.exitCode}) during startup${this.tail()}`;
           throw new Error(
@@ -165,20 +222,30 @@ export class Qwen3AsrSidecar {
     const child = this.child;
     if (!child) return;
     const pid = child.pid;
+    // Kill the tree first: once the parent is gone, Windows taskkill /T can no
+    // longer enumerate vLLM's worker children.
+    if (pid) await this.killTree(pid);
     try {
       child.kill();
     } catch { /* already gone */ }
-    if (pid) {
-      await this.killTree(pid);
-      // Injected spawn means a test/dry child; there is no real process to reap.
-      if (!this.injectedSpawn) {
-        const deadline = Date.now() + 5000;
-        while (this.exitCode === null && Date.now() < deadline) {
-          await this.sleepImpl(50);
-        }
+    if (pid && !this.injectedSpawn) {
+      const deadline = Date.now() + 5000;
+      while (this.exitCode === null && Date.now() < deadline) {
+        await this.sleepImpl(50);
       }
     }
     if (this.child === child) this.child = null;
+    this.exitCode = null;
+  }
+
+  /** Synchronous best-effort shutdown for process signal handlers. */
+  stopSync(): void {
+    const child = this.child;
+    if (!child) return;
+    const pid = child.pid;
+    if (pid) this.killTreeSync(pid);
+    try { child.kill(); } catch { /* already gone */ }
+    this.child = null;
     this.exitCode = null;
   }
 }

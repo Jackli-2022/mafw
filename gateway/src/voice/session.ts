@@ -15,6 +15,8 @@ export interface VoiceSessionDeps {
   asr: AsrEngine;
   send: (msg: VoiceServerMessage) => void;
   now?: () => number;
+  /** Deadline for one ASR final; a wedged sidecar must not hang the session. */
+  turnTimeoutMs?: number;
 }
 
 /**
@@ -112,6 +114,10 @@ export class VoiceSession {
           this.send({ type: 'error', code: 'hello_required', message: 'send hello first', recoverable: false });
           return;
         }
+        if (this._state === 'processing') {
+          this.send({ type: 'error', code: 'turn_busy', message: 'a turn is already being finalized', recoverable: true });
+          return;
+        }
         if (this._state !== 'listening') return;
         if (this.bytesPushed === 0) {
           this.send({ type: 'error', code: 'empty_audio', message: 'no audio received for this turn', recoverable: true });
@@ -123,19 +129,34 @@ export class VoiceSession {
         // Keep this.stream pointing at the in-flight stream so cancel() can
         // abort it; the generation check below suppresses its late final.
         let result;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeoutMs = this.deps.turnTimeoutMs ?? 15_000;
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('asr_timeout')), timeoutMs);
+        });
         try {
-          result = await stream?.end();
+          result = await Promise.race([
+            stream?.end() ?? Promise.resolve(undefined),
+            timeout,
+          ]);
         } catch (err: any) {
-          if (generation !== this.generation || this.isClosed()) return;
+          const timedOut = err?.message === 'asr_timeout';
+          if (!timedOut && (generation !== this.generation || this.isClosed())) return;
+          this.generation++;
+          stream?.abort();
+          this.stream = undefined;
+          this.bytesPushed = 0;
           this._state = 'listening';
           this.send({
             type: 'error',
-            code: 'asr_failed',
+            code: timedOut ? 'asr_timeout' : 'asr_failed',
             message: err?.message || String(err),
             recoverable: true,
           });
           this.startStream();
           return;
+        } finally {
+          if (timer) clearTimeout(timer);
         }
         if (generation !== this.generation || this.isClosed()) return;
         this.send({ type: 'asr.final', ...(result ?? {

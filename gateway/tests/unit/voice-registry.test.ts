@@ -33,3 +33,10 @@ test('list reports capabilities and source', () => {
   r.register(fakeAsr('qwen3-asr-vllm'));
   expect(r.list()[0]).toMatchObject({ name: 'qwen3-asr-vllm', source: 'builtin' });
 });
+
+test('rejects invalid capabilities at registration', () => {
+  const r = new AsrEngineRegistry();
+  const engine = fakeAsr('bad');
+  engine.capabilities = { ...engine.capabilities, sampleRate: 0 };
+  expect(() => r.register(engine)).toThrow(/sampleRate/);
+});

@@ -1,4 +1,4 @@
-import type { AsrCapabilities, AsrEngine } from './types';
+import { assertAsrCapabilities, type AsrCapabilities, type AsrEngine } from './types';
 
 export const DEFAULT_ASR_ENGINE = 'qwen3-asr-vllm';
 
@@ -16,6 +16,7 @@ export class AsrEngineRegistry {
   private engines = new Map<string, AsrEngine>();
 
   register(engine: AsrEngine): void {
+    assertAsrCapabilities(engine.capabilities);
     this.engines.set(engine.name, engine);
   }
 

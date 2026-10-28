@@ -29,7 +29,7 @@ test('streams partial and final over the sidecar WS', async () => {
   await new Promise<void>(r => wss.close(() => r()));
 });
 
-test('transcribe posts base64 audio to /transcribe', async () => {
+test('transcribe wraps raw PCM16 in a WAV container', async () => {
   const calls: any[] = [];
   const engine = new Qwen3AsrEngine({
     sidecar: { baseUrl: 'http://127.0.0.1:9', isReady: async () => true } as any,
@@ -41,5 +41,30 @@ test('transcribe posts base64 audio to /transcribe', async () => {
   const r = await engine.transcribe(Buffer.from('abc'), { sessionId: 's1', language: 'en', sampleRate: 16000 });
   expect(r.text).toBe('hi');
   expect(calls[0].url).toContain('/transcribe');
-  expect(calls[0].body.audio_b64).toBe(Buffer.from('abc').toString('base64'));
+  const wav = Buffer.from(calls[0].body.audio_b64, 'base64');
+  expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
+  expect(wav.toString('ascii', 8, 12)).toBe('WAVE');
+  expect(wav.subarray(44).toString()).toBe('abc');
+});
+
+test('abort without end does not leave an unhandled rejection', async () => {
+  const wss = new WebSocketServer({ port: 0 });
+  await new Promise<void>(r => wss.once('listening', () => r()));
+  const port = (wss.address() as any).port;
+  wss.on('connection', (ws) => { ws.on('message', () => {}); });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (err: unknown) => unhandled.push(err);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const engine = new Qwen3AsrEngine({
+      sidecar: { wsUrl: `ws://127.0.0.1:${port}/stream`, isReady: async () => true } as any,
+    });
+    const stream = engine.createStream({ sessionId: 's1', language: 'zh', sampleRate: 16000 });
+    stream.abort();
+    await new Promise(r => setTimeout(r, 50));
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    await new Promise<void>(r => wss.close(() => r()));
+  }
 });

@@ -6,6 +6,7 @@ export interface VoiceSocketLike {
   close(code?: number, reason?: string): void;
   on(event: 'message', cb: (data: Buffer, isBinary: boolean) => void): void;
   on(event: 'close', cb: () => void): void;
+  on(event: 'error', cb: (err: Error) => void): void;
 }
 
 export interface VoiceSocketDeps {
@@ -67,8 +68,13 @@ export function attachVoiceSocket(
 
     if (msg.type === 'hello' && !session) {
       try {
-        await ensureSession();
+        const created = await ensureSession();
+        if (closed) {
+          created.close();
+          return;
+        }
       } catch (err: any) {
+        if (closed) return;
         send(serverError('voice_unavailable', err?.message || String(err), true));
         return;
       }
@@ -83,6 +89,10 @@ export function attachVoiceSocket(
 
   socket.on('message', (data: Buffer, isBinary: boolean) => {
     void handle(data, isBinary);
+  });
+  socket.on('error', () => {
+    closed = true;
+    session?.close();
   });
   socket.on('close', () => {
     closed = true;

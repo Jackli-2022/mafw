@@ -81,3 +81,34 @@ test('cancel during processing suppresses the late final', async () => {
   expect(f.sent.some(m => m.type === 'asr.final')).toBe(false);
   expect(f.sent.some(m => m.type === 'turn.cancelled')).toBe(true);
 });
+
+test('end_audio while processing returns turn_busy, not silence', async () => {
+  const f = fakeAsr();
+  const resolvers: Array<(r: any) => void> = [];
+  f.engine.createStream = () => ({
+    push: () => {}, abort: () => {}, onPartial: () => {},
+    end: () => new Promise((resolve) => { resolvers.push(resolve); }),
+  });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m) });
+  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  s.handleAudio(Buffer.alloc(320));
+  const pending = s.handleControl({ type: 'end_audio' });
+  await s.handleControl({ type: 'end_audio' });
+  expect(f.sent.some(m => m.type === 'error' && m.code === 'turn_busy')).toBe(true);
+  resolvers[0]({ text: 'ok', durationMs: 1, engine: 'fake', final: true });
+  await pending;
+});
+
+test('end_audio times out a wedged ASR stream and returns to listening', async () => {
+  const f = fakeAsr();
+  f.engine.createStream = () => ({
+    push: () => {}, abort: () => {}, onPartial: () => {},
+    end: () => new Promise(() => {}),
+  });
+  const s = new VoiceSession({ asr: f.engine, send: m => f.sent.push(m), turnTimeoutMs: 20 });
+  await s.handleControl({ type: 'hello', sessionId: 's1', mode: 'continuous', tier: 'auto', language: 'zh', format: 'pcm16', clientVad: true });
+  s.handleAudio(Buffer.alloc(320));
+  await s.handleControl({ type: 'end_audio' });
+  expect(s.state).toBe('listening');
+  expect(f.sent.some(m => m.type === 'error' && m.code === 'asr_timeout')).toBe(true);
+});

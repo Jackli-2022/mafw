@@ -18,6 +18,25 @@ export interface Qwen3AsrEngineDeps {
   fetchImpl?: typeof fetch;
 }
 
+/** Wrap raw PCM16 mono in a minimal RIFF/WAVE container. */
+function pcm16ToWav(pcm: Buffer, sampleRate: number): Buffer {
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write('WAVE', 8, 'ascii');
+  header.write('fmt ', 12, 'ascii');
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36, 'ascii');
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
 interface SidecarPartial {
   type: 'partial';
   text: string;
@@ -160,6 +179,10 @@ export class Qwen3AsrEngine implements AsrEngine {
       resolveFinal = resolveEnd;
       rejectFinal = rejectEnd;
     });
+    // A socket can close/abort before the caller ever calls end(). Without a
+    // handler, that rejection becomes an unhandledRejection and Node kills the
+    // gateway. Awaiters of end() still observe the rejection.
+    endPromise.catch(() => {});
 
     return {
       push(pcm: Buffer) {
@@ -195,7 +218,7 @@ export class Qwen3AsrEngine implements AsrEngine {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        audio_b64: audio.toString('base64'),
+        audio_b64: pcm16ToWav(audio, opts.sampleRate).toString('base64'),
         language: opts.language,
         sampleRate: opts.sampleRate,
       }),
