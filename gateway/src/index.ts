@@ -19,6 +19,7 @@ import { handleGoalTimeline } from './routes/goal-timeline';
 import { handleGoalPlan } from './routes/goal-plan';
 import { handleNodeRetry } from './routes/goal-node-retry';
 import { handleMcpList, resolveMcpListCommand } from './routes/mcp-list';
+import { handleMcpRuntime } from './routes/mcp-runtime';
 import { handleSkillContent } from './routes/skill-content';
 import { getActivePolicy } from './orchestration/policy';
 import { recordSessionInDb } from './core/engine/phase-orchestrator';
@@ -81,6 +82,13 @@ import { createKokoroEngine } from "./tts/kokoro-engine";
 import { adaptToStream } from "./tts/sentence-adapter";
 import { handleTtsInterrupt } from './routes/tts-interrupt';
 import { TtsPluginLoader } from './tts/tts-plugin-loader';
+import { AsrEngineRegistry } from './voice/registry';
+import { Qwen3AsrSidecar } from './voice/sidecar/qwen3-asr-sidecar';
+import { Qwen3AsrEngine } from './voice/engines/asr/qwen3-vllm';
+import { resolveVoiceConfig } from './voice/config';
+import { VoiceRuntime } from './voice/runtime';
+import { attachVoiceSocket, isVoiceUpgradePath } from './voice/transport/ws-voice';
+import { handleVoiceStatus } from './voice/routes/voice-status';
 import { handleEvalChatCompletion } from "./eval-endpoint";
 import { SessionKernels } from "./python/kernel-service";
 import { eventBus } from "./event-bus";
@@ -5323,6 +5331,31 @@ class MafwScheduler {
                 });
               } catch { resolve(''); }
             }),
+          })) return;
+        }
+
+        // B3.1：MCP 运行时反代（serve /api/mcp/*）。URL 必须 `${apiBase}${path}` 拼接：
+        // new URL('/mcp', 'http://host/api') 会丢掉 /api（2026-10-28 误判根源）。
+        if (req.url?.match(/^\/api\/mcp(?:\/|$)/)) {
+          if (await handleMcpRuntime(req, res, req.url!, {
+            fetchServe: async (path, init) => {
+              const base = this.runtime?.getBaseUrl?.() ?? config.server.serveUrl;
+              if (!base) throw new Error('runtime not available');
+              const apiBase = base.replace(/\/+$/, '') + '/api';
+              const r2 = await fetch(apiBase + path, {
+                method: init?.method ?? 'GET',
+                headers: {
+                  Accept: 'application/json',
+                  ...serveAuthHeaders(),
+                  ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+                },
+                ...(init?.body ? { body: init.body } : {}),
+              });
+              const text = await r2.text();
+              let body: any = text;
+              try { body = JSON.parse(text); } catch { /* keep text */ }
+              return { status: r2.status, body };
+            },
           })) return;
         }
 

@@ -506,6 +506,10 @@ export interface McpServerEntry {
 export interface McpNamespace {
   /** 官方 CLI `opencode mcp list` 解析结果（serve 2.1 HTTP 无 MCP 运行时端点）。 */
   servers(): Promise<McpServerEntry[]>
+  /** 运行时连接（不改配置；serve 2.1 v2: POST /api/experimental/mcp/:server/connect）。 */
+  connect(name: string): Promise<unknown>
+  /** 运行时断开（不改配置）。 */
+  disconnect(name: string): Promise<unknown>
 }
 
 export interface CommandNamespace {

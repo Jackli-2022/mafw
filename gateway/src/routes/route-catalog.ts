@@ -82,6 +82,8 @@ const SDK_FACING_ROUTES: RouteDef[] = [
   { method: 'GET', path: '/skill', operationId: 'skill.list', tags: ['skill'] },
   { method: 'GET', path: '/api/skill/content', operationId: 'skill.content', tags: ['skill'] },
   { method: 'GET', path: '/api/mcp/servers', operationId: 'mcp.servers', tags: ['mcp'] },
+  { method: 'POST', path: '/api/mcp/:name/connect', operationId: 'mcp.connect', tags: ['mcp'] },
+  { method: 'POST', path: '/api/mcp/:name/disconnect', operationId: 'mcp.disconnect', tags: ['mcp'] },
   { method: 'POST', path: '/api/mafw-commands/run', operationId: 'mafwCommands.run', tags: ['mafwCommands'] },
   { method: 'GET', path: '/api/mafw-commands', operationId: 'mafwCommands.list', tags: ['mafwCommands'] },
   { method: 'GET', path: '/api/manager/session', operationId: 'manager.session', tags: ['manager'] },

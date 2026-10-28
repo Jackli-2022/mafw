@@ -1339,6 +1339,52 @@
         }
       }
     },
+    "/api/mcp/{name}/connect": {
+      "post": {
+        "operationId": "mcp.connect",
+        "tags": [
+          "mcp"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/mcp/{name}/disconnect": {
+      "post": {
+        "operationId": "mcp.disconnect",
+        "tags": [
+          "mcp"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/mafw-commands/run": {
       "post": {
         "operationId": "mafwCommands.run",

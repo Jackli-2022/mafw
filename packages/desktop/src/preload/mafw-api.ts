@@ -145,6 +145,8 @@ export function createMafwApi(): MafwAPI {
     // W4 v1：MCP 服务器状态（CLI 解析）
     mcp: {
       servers: () => invoke("mcp", "servers"),
+      connect: (name) => invoke("mcp", "connect", name),
+      disconnect: (name) => invoke("mcp", "disconnect", name),
     },
 
     mafwCommands: {

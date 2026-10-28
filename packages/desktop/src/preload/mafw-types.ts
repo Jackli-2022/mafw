@@ -108,6 +108,9 @@ export type MafwAPI = {
   /** W4 v1：MCP 服务器状态（CLI `opencode mcp list` 解析）。 */
   mcp: {
     servers: () => Promise<Array<{ name: string; status: string; detail?: string }>>
+    /** B3.1：运行时连接/断开（不改配置）。 */
+    connect: (name: string) => Promise<unknown>
+    disconnect: (name: string) => Promise<unknown>
   }
 
   mafwCommands: {

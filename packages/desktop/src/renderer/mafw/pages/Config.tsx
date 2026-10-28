@@ -602,7 +602,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     }
   }
 
-  // W4 v1：认证在 opencode 内进行（serve 2.1 HTTP 无 MCP 运行时端点）——复制官方命令。
+  // W4 v1：认证在 opencode 内进行（serve 2.1 无 MCP OAuth HTTP 路由）——复制官方命令。
   async function copyMcpAuthCommand(name: string) {
     try {
       await navigator.clipboard.writeText(`opencode mcp auth ${name}`)
@@ -610,6 +610,25 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
     } catch (err: any) {
       showToastV2({ description: `复制失败: ${err.message}`, duration: 3000 })
     }
+  }
+
+  const [mcpBusy, setMcpBusy] = createSignal<Record<string, boolean>>({})
+
+  /** B3.1：运行时连接/断开（serve 2.1 v2 API；不修改配置文件）。 */
+  async function mcpAction(name: string, action: "connect" | "disconnect") {
+    setMcpBusy((prev) => ({ ...prev, [name]: true }))
+    try {
+      if (action === "connect") await window.api.mafw.mcp.connect(name)
+      else await window.api.mafw.mcp.disconnect(name)
+      showToastV2({
+        description: action === "connect" ? `已连接 ${name}` : `已断开 ${name}（未改配置）`,
+        duration: 2500,
+      })
+      await loadMcp()
+    } catch (err: any) {
+      showToastV2({ description: `操作失败: ${err.message}`, duration: 4000 })
+    }
+    setMcpBusy((prev) => ({ ...prev, [name]: false }))
   }
 
   const mcpBadgeClass = (status: string) =>
@@ -1441,7 +1460,7 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
               </div>
               <div class="mafw-config-section-body" style={{ "padding-top": "12px" }}>
                 <div class="mafw-config-section-desc">
-                  展示 opencode 配置中的 MCP 服务器与 CLI 状态（`opencode mcp list`）。连接/断开在 opencode `/mcps` 内操作；需要认证时复制命令执行（v2 将支持图形化添加/删除）。
+                  展示 opencode 配置中的 MCP 服务器与状态（CLI `opencode mcp list`）。连接/断开为运行时操作（不改配置）；OAuth 认证在 opencode `/mcps` 内完成（v2 将支持图形化添加/删除）。
                 </div>
                 <Show when={!mcpErr()} fallback={<div class="mafw-config-error-row"><span>{mcpErr()}</span><ButtonV2 variant="outline" size="small" onClick={() => void loadMcp()}>重试</ButtonV2></div>}>
                   <Show when={mcpStatus()} fallback={<div class="mafw-config-inline-loading"><LoaderV2 width={14} height={14} /> 加载中…</div>}>
@@ -1467,6 +1486,14 @@ export function ConfigPage(props: { onBack?: () => void; initialSection?: NavKey
                               <div class="mafw-ext-actions">
                                 <Show when={st === "needs_auth"}>
                                   <ButtonV2 variant="outline" size="small" onClick={() => void copyMcpAuthCommand(srv.name)}>复制认证命令</ButtonV2>
+                                </Show>
+                                <Show
+                                  when={st === "connected"}
+                                  fallback={
+                                    <ButtonV2 variant="ghost" size="small" disabled={!!mcpBusy()[srv.name]} onClick={() => void mcpAction(srv.name, "connect")}>连接</ButtonV2>
+                                  }
+                                >
+                                  <ButtonV2 variant="ghost" size="small" disabled={!!mcpBusy()[srv.name]} onClick={() => void mcpAction(srv.name, "disconnect")}>断开</ButtonV2>
                                 </Show>
                               </div>
                             </div>

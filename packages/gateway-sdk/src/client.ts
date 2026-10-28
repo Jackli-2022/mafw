@@ -604,6 +604,13 @@ export class MafwClient implements IMafwClient {
       const data = await this.request<{ servers?: Array<import('./types').McpServerEntry> }>('/api/mcp/servers')
       return Array.isArray(data?.servers) ? data.servers : []
     },
+    // B3.1：运行时连接/断开（gateway 反代 serve 2.1 v2 API，不改配置）
+    connect: async (name: string): Promise<unknown> => {
+      return this.request(`/api/mcp/${encodeURIComponent(name)}/connect`, { method: 'POST' })
+    },
+    disconnect: async (name: string): Promise<unknown> => {
+      return this.request(`/api/mcp/${encodeURIComponent(name)}/disconnect`, { method: 'POST' })
+    },
   }
 
   discovery = {
