@@ -940,6 +940,83 @@
         }
       }
     },
+    "/api/sessions/{id}/discovery": {
+      "get": {
+        "operationId": "session.discovery",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/discovery/refresh": {
+      "post": {
+        "operationId": "session.discoveryRefresh",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/discovery/skills/{key}": {
+      "get": {
+        "operationId": "session.discoverySkill",
+        "tags": [
+          "session"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/session/{id}/abort": {
       "post": {
         "operationId": "session.abort",
@@ -1739,73 +1816,6 @@
             }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/goals/{id}/plan": {
-      "get": {
-        "operationId": "goals.plan",
-        "tags": [
-          "goals"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/goals/{id}/plan-approval": {
-      "post": {
-        "operationId": "goals.planApproval",
-        "tags": [
-          "goals"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "approve": {
-                    "type": "boolean"
-                  },
-                  "feedback": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "approve"
-                ]
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "OK"

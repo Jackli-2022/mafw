@@ -22,6 +22,14 @@ import { handleSessionBranch } from './session-branch';
 import { handleSessionCheckpoints } from './session-checkpoints';
 import { handleSessionRun } from './session-run';
 import { handleSessionData } from './session-data';
+import {
+  handleLegacyCommand,
+  handleLegacySkill,
+  handleSessionDiscovery,
+  handleSessionDiscoveryRefresh,
+  handleSessionDiscoverySkill,
+} from './session-discovery';
+import type { DiscoveryService } from '../core/discovery/discovery-service';
 import { handleSessionDiff, handleSessionDiffRevert } from './session-diff';
 import { cleanupWorktreeForSession } from './session-worktree';
 import { handleSessionMutations, type SessionMutationDeps } from './session-mutations';
@@ -65,6 +73,7 @@ export interface Wave1Gateway {
   checkpointService?: import('../core/checkpoint/checkpoint-service').CheckpointService | null;
   runCoordinator?: import('../core/run/run-coordinator').RunCoordinator | null;
   dataPartService?: import('../core/data-parts/data-part-service').DataPartService | null;
+  discovery?: DiscoveryService | null;
   /** T2-1：回合进行中禁止检查点 restore/create（gateway-side apply 无 serve busy 保护）。 */
   isCheckpointBusy?(sessionID: string): boolean;
 }
@@ -135,6 +144,19 @@ export function attachWave1Handlers(registry: RouteRegistry, gw: Wave1Gateway): 
       getRuntime: () => gw.runtime,
       data: gw.dataPartService ?? undefined,
     })));
+
+  for (const op of ['session.discovery', 'session.discoveryRefresh', 'session.discoverySkill'] as const) {
+    registry.attachHandler(op, H(async (req, res, params) => {
+      const deps = { discovery: gw.discovery ?? null };
+      if (op === 'session.discovery') return handleSessionDiscovery(req, res, params, deps);
+      if (op === 'session.discoveryRefresh') return handleSessionDiscoveryRefresh(req, res, params, deps);
+      return handleSessionDiscoverySkill(req, res, params, deps);
+    }));
+  }
+  registry.attachHandler('command.list', H(async (req, res) =>
+    handleLegacyCommand(req, res, { discovery: gw.discovery ?? null })));
+  registry.attachHandler('skill.list', H(async (req, res) =>
+    handleLegacySkill(req, res, { discovery: gw.discovery ?? null })));
 
   registry.attachHandler('session.delete', H(async (req, res) =>
     handleSessionMutations(req, res, {

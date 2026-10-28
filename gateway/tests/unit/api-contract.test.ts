@@ -89,7 +89,7 @@ beforeAll(() => {
  * 由 index.ts 末尾的反代兜底（"Reverse proxy to the agent backend for non-MAFW routes"）
  * 服务的契约路径——无独立路由匹配器，透传 opencode serve。
  */
-const REVERSE_PROXY_PATHS = new Set(['/command', '/skill']);
+const REVERSE_PROXY_PATHS = new Set<string>();
 
 /** 归一化路径是否被源码路由面覆盖。 */
 function isCovered(normPath: string): boolean {

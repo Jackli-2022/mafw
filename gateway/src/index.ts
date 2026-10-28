@@ -103,6 +103,7 @@ import { createBuiltinIdentityRegistry, toAgentDefinition } from './runtime/iden
 import { IdentityState, withIdentityPrompt, mergeAgentLists } from './runtime/identity-state';
 import { withInstructionSync } from './runtime/instruction-wrapper';
 import { InstructionSyncService } from './core/instructions/instruction-sync-service';
+import { DiscoveryService } from './core/discovery/discovery-service';
 import { renderInstructionBlocks, type InstructionBlocks } from './recall/instruction-blocks';
 import { isHiddenSession } from './core/session-visibility';
 
@@ -490,6 +491,7 @@ class MafwScheduler {
   private chatSessions: ChatSessionManager;
   private sdkSession!: SdkSessionResource;
   private instructionSync?: InstructionSyncService;
+  private discovery?: DiscoveryService;
   private subagentService!: SubagentService;
   private taskService!: TaskService;
   private sessionConfigService!: SessionConfigService;
@@ -670,7 +672,7 @@ class MafwScheduler {
       transformEvent: OPENCODE_TRANSFORM_EVENT,
     });
     // 钉死方言：映射表由注册 extras 直接携带（无 resolveEventEntry，探测跳过）
-    const legacyCaps = { ...fullCapabilities(), instructionsApi: false };
+    const legacyCaps = { ...fullCapabilities(), instructionsApi: false, discoveryApi: false };
     this.runtimeLoader.registerBuiltin('opencode@v1', opencodeFactory(false), legacyCaps, external, {
       eventSource: OPENCODE_EVENT_SOURCE,
       eventMappings: OPENCODE_V1_EVENT_MAPPINGS,
@@ -1657,6 +1659,28 @@ class MafwScheduler {
       });
     }
     return this.instructionSync;
+  }
+
+  private getDiscoveryService(): DiscoveryService {
+    if (!this.discovery) {
+      this.discovery = new DiscoveryService({
+        getRuntime: () => this.runtime,
+        getMafwCommands: () => this.getMafwCommandRegistry().list(),
+        resolveDirectory: async (sessionID, provided) => {
+          if (provided) return provided;
+          const rt = this.runtime;
+          if (!rt) return null;
+          const info = await rt.session.get({ sessionID }).catch(() => null);
+          return (info as any)?.directory ?? (info as any)?.location?.directory ?? null;
+        },
+        broadcast: (e) => this.broadcast(e as any),
+        gatewayProjectDir: this.projectDir,
+        mafwDir: this.mafwDir,
+        homeDir: os.homedir(),
+        globalConfigDir: path.join(os.homedir(), '.config', 'opencode'),
+      });
+    }
+    return this.discovery;
   }
 
   /** 包装 runtime 的 prompt 面：按绑定+物化状态注入/剥离 agent 参数（物化车道 1 执行点）。 */
@@ -4138,6 +4162,7 @@ class MafwScheduler {
         get checkpointService() { return gwSelf.checkpointService; },
         get runCoordinator() { return gwSelf.runCoordinator; },
         get dataPartService() { return gwSelf.dataPartService; },
+        get discovery() { return gwSelf.getDiscoveryService(); },
         isCheckpointBusy: (sid) => gwSelf.busySessions.has(sid),
       });
       attachWave2Handlers(this.routeRegistry, {
