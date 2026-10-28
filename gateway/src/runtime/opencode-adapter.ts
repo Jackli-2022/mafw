@@ -20,6 +20,9 @@ import type {
   SessionMessagesOpts,
   SessionSummarizeOpts,
   NativeToolDeclaration,
+  RuntimeCommandInfo,
+  RuntimeSkillInfo,
+  RuntimeDiscoveryResult,
 } from './contract';
 export type {
   SessionCreateOpts,
@@ -149,6 +152,32 @@ function messageToParts(message?: string, parts?: any[]): any[] {
   if (parts && parts.length > 0) return parts;
   if (message) return [{ type: 'text', text: message }];
   return [];
+}
+
+/** live 2.1.0 的 /api/command 项可能只有 name/description——字段存在才映射。 */
+function mapRuntimeCommand(c: any): RuntimeCommandInfo {
+  return {
+    name: String(c?.name ?? ''),
+    ...(c?.description ? { description: String(c.description) } : {}),
+    ...(c?.agent ? { agent: String(c.agent) } : {}),
+    ...(c?.model && typeof c.model === 'object' && c.model.id && c.model.providerID
+      ? { model: { id: String(c.model.id), providerID: String(c.model.providerID), ...(c.model.variant ? { variant: String(c.model.variant) } : {}) } }
+      : {}),
+    ...(c?.subtask !== undefined ? { subtask: !!c.subtask } : {}),
+    ...(c?.template ? { template: String(c.template) } : {}),
+  };
+}
+
+/** live 2.1.0 用 path，类型面用 location；slash 缺省 false。 */
+function mapRuntimeSkill(s: any): RuntimeSkillInfo {
+  return {
+    id: String(s?.id ?? s?.name ?? ''),
+    name: String(s?.name ?? s?.id ?? ''),
+    ...(s?.description ? { description: String(s.description) } : {}),
+    slash: !!s?.slash,
+    ...((s?.path ?? s?.location) ? { location: String(s.path ?? s.location) } : {}),
+    contentLength: typeof s?.content === 'string' ? s.content.length : 0,
+  };
 }
 
 // ─── 适配层实现 ─────────────────────────────────────────────
@@ -714,6 +743,36 @@ export async function createOpencodeAdapter(config: { baseUrl: string; headers?:
         // 2.1.0：agent 列表路由为 /api/agent（旧 /app/agent 404），返回 {location,data}
         const body = await directNative('/agent', 'GET');
         return unwrapNative<any[]>(body) ?? [];
+      },
+    },
+
+    discovery: {
+      async list({ directory }) {
+        const [cmd, skill] = await Promise.allSettled([
+          directNative('/command', 'GET', undefined, directory),
+          directNative('/skill', 'GET', undefined, directory),
+        ]);
+        const warnings: RuntimeDiscoveryResult['warnings'] = [];
+        const commands = cmd.status === 'fulfilled'
+          ? (unwrapNative<any[]>(cmd.value) ?? []).map(mapRuntimeCommand).filter((c) => !!c.name)
+          : [];
+        if (cmd.status === 'rejected') {
+          warnings.push({ source: 'commands', message: String(cmd.reason?.message ?? cmd.reason).slice(0, 300) });
+        }
+        const skills = skill.status === 'fulfilled'
+          ? (unwrapNative<any[]>(skill.value) ?? []).map(mapRuntimeSkill).filter((s) => !!s.id)
+          : [];
+        if (skill.status === 'rejected') {
+          warnings.push({ source: 'skills', message: String(skill.reason?.message ?? skill.reason).slice(0, 300) });
+        }
+        return { commands, skills, warnings };
+      },
+      async loadSkill({ directory, key }) {
+        const body = await directNative('/skill', 'GET', undefined, directory);
+        const raw = unwrapNative<any[]>(body) ?? [];
+        const rawHit = raw.find((s: any) => (s?.id ?? s?.name) === key || s?.name === key);
+        if (!rawHit) return null;
+        return { ...mapRuntimeSkill(rawHit), content: String(rawHit.content ?? '') };
       },
     },
 
